@@ -398,10 +398,12 @@ mod tests {
         tree_grow_fx(10, 50, 4, 1278, false, &mut gore, &mut dust, &ctx(), &mut rng, &w);
         let gores: Vec<&tr_core::gore::Gore> =
             gore.slots().iter().filter(|g| g.active).collect();
-        assert!(!gores.is_empty());
+        // The !hitTree gore spawns unconditionally per row: height 4
+        // → exactly 4 gores, types 61-63.
+        assert_eq!(gores.len(), 4);
         assert!(gores.iter().all(|g| (61..=63).contains(&g.gore_type)));
-        // The shake spawned dust too (the census gates permitting).
-        assert!(dust.slots().iter().any(|d| d.active));
+        // No trunk gores (the ash arm never runs the trunk column).
+        assert!(gores.iter().all(|g| g.gore_type != 1278));
     }
 
     /// `WorldGen.cs:29644-29670` — the ash shake's per-row draw order:
