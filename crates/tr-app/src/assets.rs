@@ -771,6 +771,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // sheets it fills them with — one per town NPC the port ships
         // (`NPC.TypeToDefaultHeadIndex`, `NPC.cs:7510-7553`).
         "Inventory_Back11",
+        // `TextureAssets.NpcHead[0..NPCHeadID.Count]` (`AssetInitializer.cs:406-409`):
+        // the full town-head range. The housing page and the map's town-head
+        // overlay (`Main.DrawNPCHeadFriendly`, `Main.cs:56553`) both index it by
+        // the vanilla head id; the shimmer variants (54-80) and the pet heads
+        // (27-53) ride the same array, so pack the whole set.
+        "NPC_Head_0",
         "NPC_Head_1",
         "NPC_Head_2",
         "NPC_Head_3",
@@ -782,16 +788,119 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_Head_9",
         "NPC_Head_10",
         "NPC_Head_11",
+        "NPC_Head_12",
+        "NPC_Head_13",
         "NPC_Head_14",
         "NPC_Head_15",
+        "NPC_Head_16",
         "NPC_Head_17",
+        "NPC_Head_18",
+        "NPC_Head_19",
         "NPC_Head_20",
         "NPC_Head_21",
         "NPC_Head_22",
         "NPC_Head_23",
         "NPC_Head_24",
         "NPC_Head_25",
+        "NPC_Head_26",
+        "NPC_Head_27",
+        "NPC_Head_28",
+        "NPC_Head_29",
+        "NPC_Head_30",
+        "NPC_Head_31",
+        "NPC_Head_32",
+        "NPC_Head_33",
+        "NPC_Head_34",
+        "NPC_Head_35",
+        "NPC_Head_36",
+        "NPC_Head_37",
+        "NPC_Head_38",
+        "NPC_Head_39",
+        "NPC_Head_40",
+        "NPC_Head_41",
+        "NPC_Head_42",
+        "NPC_Head_43",
+        "NPC_Head_44",
         "NPC_Head_45",
+        "NPC_Head_46",
+        "NPC_Head_47",
+        "NPC_Head_48",
+        "NPC_Head_49",
+        "NPC_Head_50",
+        "NPC_Head_51",
+        "NPC_Head_52",
+        "NPC_Head_53",
+        "NPC_Head_54",
+        "NPC_Head_55",
+        "NPC_Head_56",
+        "NPC_Head_57",
+        "NPC_Head_58",
+        "NPC_Head_59",
+        "NPC_Head_60",
+        "NPC_Head_61",
+        "NPC_Head_62",
+        "NPC_Head_63",
+        "NPC_Head_64",
+        "NPC_Head_65",
+        "NPC_Head_66",
+        "NPC_Head_67",
+        "NPC_Head_68",
+        "NPC_Head_69",
+        "NPC_Head_70",
+        "NPC_Head_71",
+        "NPC_Head_72",
+        "NPC_Head_73",
+        "NPC_Head_74",
+        "NPC_Head_75",
+        "NPC_Head_76",
+        "NPC_Head_77",
+        "NPC_Head_78",
+        "NPC_Head_79",
+        "NPC_Head_80",
+        // `TextureAssets.NpcHeadBoss[0..40]` (`AssetInitializer.cs:410-413`):
+        // the boss-head overlay sheets (`Main.DrawNPCHeadBoss`,
+        // `Main.cs:56562`), indexed by `GetBossHeadTextureIndex`
+        // (`NPCID.Sets.BossHeadTextures`, `NPCID.cs:10479`).
+        "NPC_Head_Boss_0",
+        "NPC_Head_Boss_1",
+        "NPC_Head_Boss_2",
+        "NPC_Head_Boss_3",
+        "NPC_Head_Boss_4",
+        "NPC_Head_Boss_5",
+        "NPC_Head_Boss_6",
+        "NPC_Head_Boss_7",
+        "NPC_Head_Boss_8",
+        "NPC_Head_Boss_9",
+        "NPC_Head_Boss_10",
+        "NPC_Head_Boss_11",
+        "NPC_Head_Boss_12",
+        "NPC_Head_Boss_13",
+        "NPC_Head_Boss_14",
+        "NPC_Head_Boss_15",
+        "NPC_Head_Boss_16",
+        "NPC_Head_Boss_17",
+        "NPC_Head_Boss_18",
+        "NPC_Head_Boss_19",
+        "NPC_Head_Boss_20",
+        "NPC_Head_Boss_21",
+        "NPC_Head_Boss_22",
+        "NPC_Head_Boss_23",
+        "NPC_Head_Boss_24",
+        "NPC_Head_Boss_25",
+        "NPC_Head_Boss_26",
+        "NPC_Head_Boss_27",
+        "NPC_Head_Boss_28",
+        "NPC_Head_Boss_29",
+        "NPC_Head_Boss_30",
+        "NPC_Head_Boss_31",
+        "NPC_Head_Boss_32",
+        "NPC_Head_Boss_33",
+        "NPC_Head_Boss_34",
+        "NPC_Head_Boss_35",
+        "NPC_Head_Boss_36",
+        "NPC_Head_Boss_37",
+        "NPC_Head_Boss_38",
+        "NPC_Head_Boss_39",
         "Heart",
         "Bubble",
         // `TextureAssets.Hb1`/`Hb2` (`AssetInitializer.cs:404-405`): the
@@ -799,8 +908,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // (`Main.DrawHealthBar`, `Main.cs:21909-21990`).
         "HealthBar1",
         "HealthBar2",
-        "NPC_Head_Boss_7",
         "UI/UI_BossBar",
+        // `TextureAssets.BlackTile` (`Images/Black_Tile`,
+        // `AssetInitializer.cs:492`): the white tintable square the pylon
+        // network lines stretch (`TeleportPylonsMapLayer.DrawLine`,
+        // `TeleportPylonsMapLayer.cs:18-28`).
+        "Black_Tile",
+        // `Images/UI/UI_quickicon1`: the town-NPC map head's "new dialogue"
+        // notification bubble (`Utils.DrawNotificationIcon`, `Utils.cs:444`).
+        "UI/UI_quickicon1",
         // The map overlay layers (`Main.cs:66551`'s `Main.MapIcons`): the
         // spawn/bed markers, the ping animation and the layer Extras
         // (`TextureAssets.Extra[n] = Images/Extra_n`, AssetInitializer.cs:365).
@@ -811,6 +927,55 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_282",
         "Extra_299",
         "Extra_305",
+        // The Main.DrawMap icon passes (W4-e17): the death marker
+        // (`TextureAssets.MapDeath`, `AssetInitializer.cs:338`), the boss
+        // head set (`TextureAssets.NpcHeadBoss`, `:410-412` — the whole
+        // array loads, the map draws any `BossHeadTextures` index) and the
+        // Potion-of-Return portals + golf marker (`DrawMiscMapIcons`,
+        // `Main.cs:56466-56539`).
+        "MapDeath",
+        "NPC_Head_Boss_0",
+        "NPC_Head_Boss_1",
+        "NPC_Head_Boss_2",
+        "NPC_Head_Boss_3",
+        "NPC_Head_Boss_4",
+        "NPC_Head_Boss_5",
+        "NPC_Head_Boss_6",
+        "NPC_Head_Boss_8",
+        "NPC_Head_Boss_9",
+        "NPC_Head_Boss_10",
+        "NPC_Head_Boss_11",
+        "NPC_Head_Boss_12",
+        "NPC_Head_Boss_13",
+        "NPC_Head_Boss_14",
+        "NPC_Head_Boss_15",
+        "NPC_Head_Boss_16",
+        "NPC_Head_Boss_17",
+        "NPC_Head_Boss_18",
+        "NPC_Head_Boss_19",
+        "NPC_Head_Boss_20",
+        "NPC_Head_Boss_21",
+        "NPC_Head_Boss_22",
+        "NPC_Head_Boss_23",
+        "NPC_Head_Boss_24",
+        "NPC_Head_Boss_25",
+        "NPC_Head_Boss_26",
+        "NPC_Head_Boss_27",
+        "NPC_Head_Boss_28",
+        "NPC_Head_Boss_29",
+        "NPC_Head_Boss_30",
+        "NPC_Head_Boss_31",
+        "NPC_Head_Boss_32",
+        "NPC_Head_Boss_33",
+        "NPC_Head_Boss_34",
+        "NPC_Head_Boss_35",
+        "NPC_Head_Boss_36",
+        "NPC_Head_Boss_37",
+        "NPC_Head_Boss_38",
+        "NPC_Head_Boss_39",
+        "Extra_173",
+        "Extra_175",
+        "Extra_176",
         "UI/Cursor_0",
         "UI/Cursor_1",
         "Mana",
@@ -1968,6 +2133,32 @@ pub struct Lookups {
     /// (`NPCHeadID`): the town heads the housing page draws. Absent entries are
     /// heads the port ships no NPC for.
     pub npc_heads: Vec<Option<tr_render::SheetRect>>,
+    /// `TextureAssets.NpcHeadBoss[i]` (`AssetInitializer.cs:410-412`), keyed
+    /// by the `NPCID.Sets.BossHeadTextures` index — the map's boss markers
+    /// (`Main.DrawNPCMapIcons`, `Main.cs:56222-56292`). `_7` also rides
+    /// `ui_boss_head` (the boss bar).
+    pub npc_boss_heads: HashMap<u16, tr_render::SheetRect>,
+    /// `TextureAssets.MapDeath` (`AssetInitializer.cs:338`): the player
+    /// death marker (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-56464`)
+    /// and the revenge marker's fallback sheet (`CoinLossRevengeSystem.cs:261`).
+    pub map_death: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[173/175/176]` — `DrawMiscMapIcons`'
+    /// Potion-of-Return exit/home portals + the golf marker
+    /// (`Main.cs:56473-56539`).
+    pub extra_173: Option<tr_render::SheetRect>,
+    pub extra_175: Option<tr_render::SheetRect>,
+    pub extra_176: Option<tr_render::SheetRect>,
+    /// `TextureAssets.NpcHeadBoss[0..40]` (`AssetInitializer.cs:410-413`):
+    /// the boss-head overlay sheets, indexed by `GetBossHeadTextureIndex`
+    /// (`NPCID.Sets.BossHeadTextures`, `NPCID.cs:10479`). Absent entries are
+    /// heads whose sheet file the atlas never packed.
+    pub npc_boss_heads: Vec<Option<tr_render::SheetRect>>,
+    /// `TextureAssets.BlackTile` (`Images/Black_Tile`): the white tintable
+    /// square the pylon network lines stretch (`TeleportPylonsMapLayer.cs:18`).
+    pub black_tile: Option<tr_render::SheetRect>,
+    /// `Images/UI/UI_quickicon1`: the town-NPC map head's notification bubble
+    /// (`Utils.DrawNotificationIcon`, `Utils.cs:444`).
+    pub ui_quickicon1: Option<tr_render::SheetRect>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
     /// The map overlay icons (`Main.MapIcons`' layers, `Main.cs:66551`).
@@ -2362,6 +2553,20 @@ impl Lookups {
             npc_heads: (0..crate::ui::housing::HEAD_COUNT)
                 .map(|h| atlas.sheet(&format!("NPC_Head_{h}")).copied())
                 .collect(),
+            npc_boss_heads: (0..40u16)
+                .filter_map(|i| {
+                    Some((i, atlas.sheet(&format!("NPC_Head_Boss_{i}")).copied()?))
+                })
+                .collect(),
+            map_death: atlas.sheet("MapDeath").copied(),
+            extra_173: atlas.sheet("Extra_173").copied(),
+            extra_175: atlas.sheet("Extra_175").copied(),
+            extra_176: atlas.sheet("Extra_176").copied(),
+            npc_boss_heads: (0..40)
+                .map(|h| atlas.sheet(&format!("NPC_Head_Boss_{h}")).copied())
+                .collect(),
+            black_tile: atlas.sheet("Black_Tile").copied(),
+            ui_quickicon1: atlas.sheet("UI/UI_quickicon1").copied(),
             ui_font,
             item_font,
             death_font,
@@ -3653,6 +3858,27 @@ mod tests {
             );
         }
         assert!(lookups.npc_heads[0].is_none(), "the query cell has no head");
+    }
+
+    /// W4-e17 — the map head-overlay sheets pack: the full town-head range
+    /// (the shimmer variants 54-80 the profiles resolve to), the 40 boss
+    /// heads, the pylon line's BlackTile and the notification quickicon.
+    #[test]
+    fn w4_e17_the_map_head_overlay_sheets_pack() {
+        let (_, lookups) = content_lookups();
+        assert_eq!(lookups.npc_boss_heads.len(), 40);
+        // The boss heads the port's kinds resolve to must all be packed.
+        for head in [0usize, 5, 7, 8, 11, 19, 22, 23, 24, 25, 39] {
+            assert!(
+                lookups.npc_boss_heads[head].is_some(),
+                "NPC_Head_Boss_{head} must reach the atlas"
+            );
+        }
+        // The shimmered Guide (72) and Princess (54) heads.
+        assert!(lookups.npc_heads[72].is_some(), "the shimmered Guide head");
+        assert!(lookups.npc_heads[54].is_some(), "the shimmered Princess head");
+        assert!(lookups.black_tile.is_some(), "Black_Tile for the pylon lines");
+        assert!(lookups.ui_quickicon1.is_some(), "the notification quickicon");
     }
 
     #[test]

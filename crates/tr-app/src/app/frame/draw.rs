@@ -1509,6 +1509,63 @@ impl App {
                                 num46,
                                 1.0,
                             );
+                            // `Main.cs:55709`: `DrawNPCMapIcons2` — the
+                            // minimap's boss/town head pass, between the
+                            // icon layers and the player heads. The C#
+                            // runs it in the `MapScale` batch transform
+                            // (`transformMatrix2`, `:55708`), so the panel
+                            // origin / left / top / sub-offsets ride the
+                            // raw transform space and the clip is the raw
+                            // 240x240 rect; the port folds the transform
+                            // into the positions (the `minimap_origin_raw`
+                            // convention). The hover text rides the same
+                            // `ref text` chain — the layers' write wins
+                            // over the heads' (`:55703` runs first).
+                            let mm_origin = ui::minimap::minimap_origin_raw(screen, map_scale);
+                            let mm_scale = m.minimap_scale;
+                            let win = 240.0 / mm_scale.clamp(0.2, 3.0);
+                            let left = view_center[0].floor() - win * 0.5;
+                            let top = view_center[1].floor() - win * 0.5;
+                            let sub = [
+                                -(view_center[0] - view_center[0].floor()) * mm_scale,
+                                -(view_center[1] - view_center[1].floor()) * mm_scale,
+                            ];
+                            let head_hover = crate::map_npc_icons::draw_npc_map_icons_minimap(
+                                renderer,
+                                lookups,
+                                npcs,
+                                [mm_origin[0] * map_scale, mm_origin[1] * map_scale],
+                                &crate::map_npc_icons::NpcIconView {
+                                    map_position: [left, top],
+                                    sub_offset: [sub[0] * map_scale, sub[1] * map_scale],
+                                    minimap_rect: Some(ui::minimap::scale_rect(
+                                        [mm_origin[0], mm_origin[1], 240.0, 240.0],
+                                        map_scale,
+                                    )),
+                                    map_scale: mm_scale * map_scale,
+                                    // The head draws at `num46` inside the
+                                    // `MapScale` transform — the screen-space
+                                    // size/hover rect is `num46 * MapScale`
+                                    // (the C# compares in transform space
+                                    // against the `num16`-divided mouse,
+                                    // `Main.cs:55512-55513`).
+                                    head_scale: num46 * map_scale,
+                                    alpha: 1.0,
+                                    mouse: self.mouse_pos,
+                                    global_time: anim_time % 3600.0,
+                                },
+                            );
+                            if let Some(t) = head_hover {
+                                crate::ui::text::hud_text(
+                                    renderer,
+                                    lookups,
+                                    self.mouse_pos.x + 12.0,
+                                    self.mouse_pos.y + 12.0,
+                                    0.85,
+                                    [1.0; 4],
+                                    &t,
+                                );
+                            }
                             // The hover highlight is `MinimapFrame.Update`'s
                             // `buttonUnderMouse.IsHighlighted`
                             // (`MinimapFrame.cs:163`), resolved per frame in
@@ -1937,6 +1994,32 @@ impl App {
                                     self.mouse_pos,
                                     screen,
                                 );
+                                // `Main.cs:55915-55921`: `num77` — the
+                                // `(scale*0.25*2+1)/3` formula is dead code
+                                // (the `:55920-55921` unconditional writes
+                                // overwrite it); the head scale is
+                                // `Main.UIScale`.
+                                let num77 = self.settings.applied_ui_scale(screen.x, screen.y);
+                                // `Main.cs:55926`: `DrawNPCMapIcons` — the
+                                // boss/town head pass, AFTER the revenge/
+                                // misc icons and BEFORE the player heads;
+                                // its hover text overrides the tile hover.
+                                let head_hover = crate::map_npc_icons::draw_npc_map_icons_fullscreen(
+                                    renderer,
+                                    lookups,
+                                    npcs,
+                                    map::map_origin(map.pos, map.scale, screen),
+                                    &crate::map_npc_icons::NpcIconView {
+                                        map_position: [0.0, 0.0],
+                                        sub_offset: [0.0, 0.0],
+                                        minimap_rect: None,
+                                        map_scale: map.scale,
+                                        head_scale: num77,
+                                        alpha: 1.0,
+                                        mouse: self.mouse_pos,
+                                        global_time: anim_time % 3600.0,
+                                    },
+                                );
                                 let hover = crate::map_layers::map_layers_draw(
                                     renderer,
                                     lookups,
@@ -1959,7 +2042,12 @@ impl App {
                                     map_draw_scale,
                                     1.0,
                                 );
-                                if let Some(t) = hover.or(tile_hover) {
+                                // The hover precedence is the C#'s write
+                                // order: the tile name (`:55784-55913`),
+                                // then the NPC heads (`:55926`), then the
+                                // icon layers (`:55996`) — each later
+                                // `ref text` write wins.
+                                if let Some(t) = hover.or(head_hover).or(tile_hover) {
                                     crate::ui::text::hud_text(
                                         renderer,
                                         lookups,
