@@ -871,6 +871,130 @@ Audit notes (R9):
   the case-arm scope, verified present.
 - No other R9 id has a second-switch row.
 
+### R10 — dye plants, Abigail/glow-tulip, golem head, gnome, piles: 389, 227, 624, 700, 656, 701, 579, 567, 185, 186, 187, 650, 649, 647, 706 (15 ids, indices 135-149)
+
+C# `TileDrawing.cs:5038-5198`. Verbatim (:5104-5142):
+
+```csharp
+		case 579:
+		{
+			tileWidth = 20;
+			tileHeight = 20;
+			tileTop -= 2;
+			bool flag2 = (float)(x * 16 + 8) > Main.LocalPlayer.Center.X;
+			if (tileFrameX > 0)
+			{
+				if (flag2)
+				{
+					addFrY = 22;
+				}
+				else
+				{
+					addFrY = 0;
+				}
+			}
+			else if (flag2)
+			{
+				addFrY = 0;
+			}
+			else
+			{
+				addFrY = 22;
+			}
+			break;
+		}
+		case 567:
+			tileWidth = 26;
+			tileHeight = 18;
+			if (tileFrameY == 0)
+			{
+				tileTop = -2;
+			}
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+```
+
+The piles inner switch verbatim (:5146-5182):
+
+```csharp
+			tileTop = 2;
+			switch (typeCache)
+			{
+			case 185:
+				if (tileFrameY == 18 && tileFrameX >= 576 && tileFrameX <= 882)
+				{
+					Main.tileShine2[185] = true;
+				}
+				else
+				{
+					Main.tileShine2[185] = false;
+				}
+				if (tileFrameY == 18)
+				{
+					int num18 = tileFrameX / 1908;
+					addFrX -= 1908 * num18;
+					addFrY += 18 * num18;
+				}
+				break;
+			case 186:
+				if (tileFrameX >= 864 && tileFrameX <= 1170)
+				{
+					Main.tileShine2[186] = true;
+				}
+				else
+				{
+					Main.tileShine2[186] = false;
+				}
+				break;
+			case 187:
+			{
+				int num17 = tileFrameX / 1890;
+				addFrX -= 1890 * num17;
+				addFrY += 36 * num17;
+				break;
+			}
+			}
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 389 | shares 388's tall-gate body (R9) | :5038 | `drawdata.rs:467-476` | PORTED |
+| 227 | 32×38; top −6 iff `fx == 238` else −20; `fx == 204` → GetCactusType rewrite (+238 good/+204 evil/+272 crimson); parity flip | :5052-5083 | static :482-487; rewrite `apply_world_corrections` :1316-1320 → `cactus_type` :1193 (`WorldGen.cs:47687-47737`) + `dye_frame_x_offset` :1268-1270 | PORTED (wired :683) |
+| 624 | 20×16, `top += 2`, parity flip (AbigailsFlower) | :5084-5093 | :490-495 | PORTED |
+| 700 | shares | :5085 | :490 | PORTED |
+| 656 | 24×34, `top -= 16`, parity flip (GlowTulip) | :5094-5103 | :498-503; glow :6064-6069 → `cases_a.rs:315-318` (GlowMask 329, white × text pulse, alpha 0) | PORTED (glow unconsumed; pulse fed 255) |
+| 701 | shares + same glow | :5095 | :498; :315 | PORTED (glow unconsumed) |
+| 579 | 20×20, `top -= 2`, eye row faces the player | :5104-5130 | `cases_b.rs:134-147` — full body incl. the 4-way row pick; `player_center_x` fed `p.center().0` (`tiles.rs:355`) | PORTED (delegated, wired :700) |
+| 567 | 26×18, top −2 iff `fy == 0`, parity flip (GardenGnome) | :5131-5142 | `drawdata.rs:509-516` | PORTED |
+| 185 | top 2; row-18 1908 stride; `tileShine2[185]` write | :5149-5164 | :523-529 (stride faithful; shine write NOT ported — documented :518) | PORTED (shine deviation) |
+| 186 | top 2; ONLY the `tileShine2[186]` write | :5165-5174 | :520-521 top 2 (shine not ported) | PORTED (shine deviation) |
+| 187 | top 2; 1890 stride (`−1890*n`, `+36*n`) | :5175-5181 | :530-534 | PORTED |
+| 650 | `tileTop = 2;` | :5184-5186 | :539-541 | PORTED |
+| 649 | top 2 + 1908 stride (echo piles) | :5187-5194 | :544-549 | PORTED |
+| 647 | `tileTop = 2;` | :5195-5198 | :552-554 | PORTED |
+| 706 | shares | :5196 | :552 | PORTED |
+
+Audit notes (R10):
+- **185/186's `Main.tileShine2` writes are draw-side side effects the port does
+  not model** (documented `drawdata.rs:517-519`, `tiles.rs:1582` — the sparkle
+  overlay `Main.shine` :4400 is unported). The frame maths around them is
+  complete; 186's case body is ONLY the shine write + top 2, so its port arm is
+  top-2-only by design. This is a lighting/sparkle lane residual, not a missing
+  case arm.
+- 185's stride gate is `fy == 18` ONLY (the shine gate additionally bounds
+  `576 <= fx <= 882`); the port keeps the stride gate exact and drops the shine
+  gate with the write. 187/648's 1890 stride is unconditional.
+- 227's three independent `if`s sum to the same offset as the port's literal
+  form (flags mutually exclusive by construction, :1266-1267); the rewrite
+  fires only on the `fx == 204` column, matching the C# gate.
+- 656/701's glow colour `new Color(255,255,255,0) * (mouseTextColor/255f)` —
+  the port's `(255.0 * pulse) as u8` with alpha 0; `mouseTextColor` fed steady
+  255 (`tiles.rs:732`, documented `cases_a.rs:51-52`).
+- No other R10 id has a second-switch row.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
