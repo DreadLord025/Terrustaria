@@ -179,3 +179,16 @@ recorded so the wave ports know the rows already exist. The neighbouring
 Empress styles 171/173/179/180 are NOT missing — their five kinds ride the
 kind-guarded empress arm (`projectile.rs:19584`); the style-171 weapon variants
 931/1039 have no rows yet (the arm comment at `:19577-19579` says so).
+
+## Finding F3 — style 37's row is a DELIBERATE stand-in (do not double-fix)
+
+The Spear Trap's spear (186) is C# `aiStyle 37`, 10×14, tileCollide false,
+ignoreWater, friendly AND hostile, penetrate −1, timeLeft 300, trap
+(`Projectile.cs:2728-2740`). The port's row is the 185 spiky-ball stand-in
+(14×14, aiStyle **14**, tileCollide true, timeLeft 900 —
+`projectile/data.rs:2264-2273`), a RECORDED deviation (ANALYSIS "The projectile
+data-row deviations (S1-D-5)"): correcting the row to 37 before the arm exists
+would park the spear in `_ => {}` forever. The stale doc comments at
+`projectile.rs:301-306` still call 186 "the boulder (aiStyle 37)" — the boulder
+is kind 99 / aiStyle 25; 186 is the spear trap. The d4 port (37 ∈ 31-40) must
+land the arm AND the row correction together and retire the ANALYSIS row.
