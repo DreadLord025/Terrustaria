@@ -161,6 +161,7 @@ mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
+mod npc_findframe_mid1;
 mod persist;
 mod grapple;
 mod gore_seam;
