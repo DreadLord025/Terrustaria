@@ -235,3 +235,151 @@ records are produced but **consumed by no pass** (`tiles.rs:731` binds the resul
 UNWIRED rationale identical to batch 2: static fallback `drawdata.rs:933-943`
 (`282 | 505 | 543 | 598 | 568..=570 | 288..=295 | 360 | 580 | 620 | 521..=527` and
 `316 | 317 | 318`, top 2 only); `furniture_post_pass` uncalled; frozen row 0.
+
+### Batch 4 — fountain + monoliths: 207, 410, 480, 509, 657, 720, 721, 725, 658, 733 (10 ids)
+
+All static+animation arms live in `drawdata.rs` and are wired (the animator feeds
+`tile_frame` via `tiles.rs:661-678`, S1-G-1f).
+
+**207 WaterFountain** — C# verbatim (:5908-5929):
+
+```csharp
+		case 207:
+			tileTop = 2;
+			if (tileFrameY >= 72)
+			{
+				addFrY = Main.tileFrame[typeCache];
+				int num2 = x;
+				if (tileFrameX % 36 != 0)
+				{
+					num2--;
+				}
+				addFrY += num2 % 6;
+				if (addFrY >= 6)
+				{
+					addFrY -= 6;
+				}
+				addFrY *= 72;
+			}
+			else
+			{
+				addFrY = 0;
+			}
+			break;
+```
+
+Port `drawdata.rs:947-963`: same order — `n = tile_frame`, `n2 = x` minus 1 when
+`fx % 36 != 0`, `n += n2 % 6`, wrap `>= 6`, `* 72`; else 0; `top = 2`. **PORTED.**
+
+**410 LunarMonolith** — C# verbatim (:5930-5944): `if (tileFrameY == 36) tileHeight = 18;`
+then `if (tileFrameY >= 56) { addFrY = Main.tileFrame[typeCache]; addFrY *= 56; } else
+addFrY = 0;`. Port `drawdata.rs:966-975` — identical gates and stride. **PORTED.**
+
+**480/509/657/720/721/725 monolith group** — C# verbatim (:5945-5961):
+
+```csharp
+		case 480:
+		case 509:
+		case 657:
+		case 720:
+		case 721:
+		case 725:
+			tileTop = 2;
+			if (tileFrameY >= 54)
+			{
+				addFrY = Main.tileFrame[typeCache];
+				addFrY *= 54;
+			}
+			else
+			{
+				addFrY = 0;
+			}
+			break;
+```
+
+Port `drawdata.rs:979-986` (`480 | 509 | 657 | 720 | 721 | 725`). **PORTED.** The 657
+second-switch glow (`if (tileFrameY >= 54)` → `GlowMask[330]`, `Color.White`,
+:6056-6063) is in `cases_a.rs:309-313` — produced, unconsumed (`_glow`).
+
+**658 ShimmerMonolith** — C# verbatim (:5962-5981): `tileTop = 2;` then
+`switch (tileFrameY / 54)`: default `addFrY = Main.tileFrame[typeCache] * 54;`,
+case 1 adds `+ 486`, case 2 adds `+ 972`. Port `drawdata.rs:989-996` —
+`match fy / 54 { 1 => …+486, 2 => …+972, _ => … }`. **PORTED.**
+
+**733 RadioThingMonolith** — C# verbatim (:5982-5990):
+
+```csharp
+		case 733:
+			tileTop = 2;
+			if (tileFrameY < 54)
+			{
+				addFrX += 54;
+			}
+			tileFrameX %= 54;
+			tileFrameY %= 54;
+			break;
+```
+
+Port `drawdata.rs:1000-1007`: `top = 2`, `add_fr_x += 54` below row 54, then
+`frame_x_override = Some(fx % 54)` / `frame_y_override = Some(fy % 54)` — the C# mutates
+the `ref tileFrameX/Y` out-params, the port carries the same fold as overrides consumed
+by `resolve_tile_frame`. **PORTED.**
+
+### Batch 5 — fall blocks/conveyors, echo, starry glass, living fire, benches, campfire: 326-329, 345, 351, 421, 422, 458, 459, 708, 541, 507, 508, 336, 340-344, 89, 102, 753, 215 (23 ids)
+
+**326/327/328/329/345/351/421/422/458/459/708** — C# verbatim (:5991-6003):
+`addFrY = Main.tileFrame[typeCache] * 90;` (no top change). Port `drawdata.rs:1011-1013`
+(`326 | 327 | 328 | 329 | 345 | 351 | 421 | 422 | 458 | 459 | 708`). **PORTED.**
+(422's animator counts DOWN to 3 — `drawdata_anim.rs`, S1-F-9b — upstream of this arm.)
+
+**541 EchoBlock** — C# verbatim (:6004-6006):
+`addFrY = ((!this._shouldShowInvisibleBlocks) ? 90 : 0);`
+Port `cases_b.rs:166-168`: `if !env.inputs.show_invisible_blocks { 90 } else { 0 }`.
+The flag rides `Main.ShouldShowInvisibleBlocksAndWalls` (`TileDrawing.cs:379` →
+`Main.cs:58023`), fed at `tiles.rs:356` from `frame/draw.rs:392`. **PORTED (wired).**
+
+**507/508 StarryGlassBlocks** — C# verbatim (:6007-6013):
+
+```csharp
+		case 507:
+		case 508:
+		{
+			int num = 20;
+			addFrY = 90 * ((Main.tileFrameCounter[typeCache] + x * 11 + y * 27) % (num * 8) / num);
+			break;
+		}
+```
+
+Port `cases_b.rs:160-163`: `90 * ((counter + x * 11 + y * 27) % (num * 8) / num)` with
+`num = 20`; `counter` is `tile_anim.tile_frame_counter[kind]` (`tiles.rs:666-670`).
+**PORTED (wired).** Note the C# reads `tileFrameCounter`, NOT `tileFrame` — the port
+passes the counter, matching.
+
+**336/340/341/342/343/344 LivingFire family** — C# verbatim (:6014-6022):
+`addFrY = Main.tileFrame[typeCache] * 90;` `tileTop = 2;`. Port `drawdata.rs:1019-1022`.
+**PORTED.** (340..344's animator loop is `drawdata_anim.rs`.)
+
+**89/102/753 Benches/Thrones/GiantTiki** — C# verbatim (:6023-6031): three one-statement
+arms, each `tileTop = 2; break;`. Port `drawdata.rs:1025-1027` (`89 | 102 | 753`).
+**PORTED.** The 89 second-switch stride+glow is batch 6's audit.
+
+**215 campfire epilogue** — C# verbatim (:6033-6044), runs AFTER the switch for
+`TileID.Sets.Campfires` (`TileID.cs:616`: `Sets.Campfires = Sets.Factory.CreateBoolSet(215);`):
+
+```csharp
+		if (TileID.Sets.Campfires[tileCache.type])
+		{
+			if (tileFrameY < 36)
+			{
+				addFrY = Main.tileFrame[typeCache] * 36;
+			}
+			else
+			{
+				addFrY = 252;
+			}
+			tileTop = 2;
+		}
+```
+
+Port `drawdata.rs:1036-1043`: `if kind == 215` — `add_fr_y = tile_frame * 36` below row
+36 else 252, `top = 2`, positioned after the match exactly like the C#. **PORTED.**
