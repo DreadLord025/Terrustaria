@@ -102,21 +102,45 @@ d83 = rows 35–64 (30 classes, the "rest" per charter).
 
 ## d82 progress (this branch)
 
+**Re-audit finding (2026-11-20):** research/18's gap table predates S1-E-17 and
+the crafting-filter landing. Five band classes already have faithful immediate
+ports — the lane keeps them (no re-split) and ports only their *missing halves*:
+
+- `UIGenProgressBar` (row 31) — **LANDED** S1-E-17: `ui/world_load.rs`
+  `GenProgressBar`/`GenBarFrame`/`filling_even_width`/`lerp_color_packed` +
+  the draw (`UIGenProgressBar.cs:8-126` whole; the drunk-world `Main.rand`
+  flicker is a documented RNG-order deviation). Nothing left.
+- `UIHeader` (row 33) — **LANDED** S1-E-17: `ui/world_load.rs::draw_header`
+  (`UIHeader.cs:46-62` whole, incl. the HotPink arm). The `Text` setter's
+  change-gate + measure pin now in `ui/chrome_elements.rs::HeaderText`.
+- `UIHorizontalSeparator` (row 34) — **LANDED**: `ui/panel.rs::separator_rects`/
+  `separator_srcs`/`draw_horizontal_separator` (`Utils.DrawPanel` 2/0). Missing
+  halves: the ctor's `highlightSideUp` texture pick + size (`:16-29`) and the
+  `ContainsPoint => false` override (`:37-40`).
+- `UIDifficultyButton` (row 29) — draw/click/title **LANDED**
+  (`char_creation.rs:1981-2018`, `Click::Difficulty`). Missing halves: the
+  `_hovered`/`_soundedHover` one-shot hover sound (`:49-60`) and the
+  `MouseOver`/`MouseOut` flags (`:88-98`).
+- `UIHairStyleButton` (row 32) — draw/click **LANDED**
+  (`char_creation.rs::draw_hair_button`, `Click::Hair`; the head-preview
+  deviation documented there). Missing halves: `SkipRenderingContent`/
+  `_framesToSkip` (`:36-39`, `:65-69`) and the hover-sound latch.
+
 | row | class | status |
 | --- | --- | --- |
-| 22 | `UICreativeInfiniteItemsDisplay` | pending |
-| 23 | `UICreativeItemGrid` | pending |
-| 24 | `UICreativeItemsInfiniteFilteringOptions` | pending |
-| 25 | `UICreativePowerButton` | pending |
-| 26 | `UICyclingImage` | pending |
+| 22 | `UICreativeInfiniteItemsDisplay` | in progress |
+| 23 | `UICreativeItemGrid` | in progress |
+| 24 | `UICreativeItemsInfiniteFilteringOptions` | partial landed (`craft_filter::FilterBoard` + `crafting::filter_*`); element halves pending |
+| 25 | `UICreativePowerButton` | LANDED (empty marker, `ui/creative_powers.rs`) |
+| 26 | `UICyclingImage` | LANDED (`ui/images.rs::CyclingImage`) |
 | 27 | `UIDebugCommandItem` | pending |
 | 28 | `UIDebugLoadoutItem` | pending |
-| 29 | `UIDifficultyButton` | pending |
+| 29 | `UIDifficultyButton` | LANDED (hover latch `ui/buttons.rs`; draw/click pre-landed) |
 | 30 | `UIDynamicItemCollection` | pending |
-| 31 | `UIGenProgressBar` | pending |
-| 32 | `UIHairStyleButton` | pending |
-| 33 | `UIHeader` | pending |
-| 34 | `UIHorizontalSeparator` | pending |
+| 31 | `UIGenProgressBar` | LANDED (S1-E-17, re-verified) |
+| 32 | `UIHairStyleButton` | LANDED (skip + hover latch `ui/buttons.rs`; draw/click pre-landed) |
+| 33 | `UIHeader` | LANDED (S1-E-17, re-verified) |
+| 34 | `UIHorizontalSeparator` | LANDED (ctor pick + hit override `ui/chrome_elements.rs`; draw pre-landed) |
 
 ## Conventions (landed style, per research/18 + S1-E-26 wave B)
 
