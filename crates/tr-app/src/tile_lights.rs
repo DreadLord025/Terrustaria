@@ -447,4 +447,143 @@ mod tests {
         assert!(mushroom_tree_light(0, 0, 255, &mut rng2).is_none());
         assert_eq!(rng2.next_range(0, 1000), twin.next_range(0, 1000));
     }
+
+    // ---- The five DelegateMethods casts (DelegateMethods.cs:712-816). ----
+    // Fixture kinds are pinned against the GENERATED tables so a table regen
+    // that moved a membership fails loudly here instead of silently flipping
+    // an open/solid verdict: 1 Stone (solid), 19 Platform (solid-top),
+    // 4 Torch (active-able, NOT solid).
+
+    fn cast_world() -> tr_core::World {
+        use tr_core::tiledata::{TILE_SOLID, TILE_SOLID_TOP};
+        assert!(TILE_SOLID.has(1) && !TILE_SOLID_TOP.has(1));
+        assert!(TILE_SOLID_TOP.has(19));
+        assert!(!TILE_SOLID.has(4));
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        // (10, 10): an active solid stone — the closed tile.
+        let t = w.tile_mut(10, 10).unwrap();
+        t.kind = 1;
+        t.flags |= tr_core::tile::FLAG_ACTIVE;
+        // (11, 10): an actuated stone — open via inActive().
+        let t = w.tile_mut(11, 10).unwrap();
+        t.kind = 1;
+        t.flags |= tr_core::tile::FLAG_ACTIVE | tr_core::tile::FLAG_INACTIVE;
+        // (12, 10): an active platform — open via tileSolidTop.
+        let t = w.tile_mut(12, 10).unwrap();
+        t.kind = 19;
+        t.flags |= tr_core::tile::FLAG_ACTIVE;
+        // (13, 10): an active torch — open via !tileSolid.
+        let t = w.tile_mut(13, 10).unwrap();
+        t.kind = 4;
+        t.flags |= tr_core::tile::FLAG_ACTIVE;
+        // (14, 10): plain absent dirt (default Tile, kind 0 solid, !active).
+        w
+    }
+
+    fn env() -> CastLightEnv {
+        CastLightEnv {
+            rgb: [0.3, 0.6, 0.9],
+            origin: Vec2::new(0.0, 0.0),
+            range: 10.0,
+        }
+    }
+
+    #[test]
+    fn w4_e8_cast_light_lights_solids_too_and_bounds_gate_the_return() {
+        // `:712-724` — no open-test: the solid stone lights, and only the
+        // bounds/null gate returns false (the port's World has no null tiles
+        // in bounds; `world.tile` is None exactly out of the array).
+        let w = cast_world();
+        let mut out = Vec::new();
+        assert!(cast_light(&w, 10, 10, &env(), &mut out));
+        assert_eq!(out, vec![(10, 10, [0.3, 0.6, 0.9])]);
+        assert!(!cast_light(&w, -1, 10, &env(), &mut out));
+        assert!(!cast_light(&w, 64, 10, &env(), &mut out));
+        assert!(!cast_light(&w, 10, 64, &env(), &mut out));
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn w4_e8_cast_light_open_gates_the_light_not_the_return() {
+        // `:726-741` — the four open arms (!active / inActive / solidTop /
+        // !solid) each light; the closed stone does NOT light but the C#
+        // still returns true (`:740`).
+        let w = cast_world();
+        let mut out = Vec::new();
+        for x in [11, 12, 13, 14] {
+            assert!(cast_light_open(&w, x, 10, &env(), &mut out));
+        }
+        assert_eq!(
+            out.iter().map(|&(x, _, _)| x).collect::<Vec<_>>(),
+            vec![11, 12, 13, 14]
+        );
+        assert!(cast_light_open(&w, 10, 10, &env(), &mut out)); // solid: true…
+        assert_eq!(out.len(), 4); // …but no fifth light.
+        assert!(!cast_light_open(&w, -1, 0, &env(), &mut out));
+    }
+
+    #[test]
+    fn w4_e8_cast_light_stop_for_solids_returns_false_on_the_stone() {
+        // `:781-799` — open lights + true, solid stops the walk (false).
+        let w = cast_world();
+        let mut out = Vec::new();
+        assert!(cast_light_open_stop_for_solids(&w, 11, 10, &env(), &mut out));
+        assert!(!cast_light_open_stop_for_solids(&w, 10, 10, &env(), &mut out));
+        assert!(!cast_light_open_stop_for_solids(&w, 0, -1, &env(), &mut out));
+        assert_eq!(out, vec![(11, 10, [0.3, 0.6, 0.9])]);
+    }
+
+    #[test]
+    fn w4_e8_cast_light_scale_lerps_unclamped_from_the_origin() {
+        // `:761-779` — Lerp(0.65, 1, Distance((x,y), v2_1) / f_1). At (3, 4)
+        // the distance is 5, t = 0.5; MathHelper.Lerp does NOT clamp, so a
+        // tile past f_1 scales ABOVE 1 (the mirror expression pins the exact
+        // f32 op order: value1 + (value2 - value1) * amount).
+        let mut w = cast_world();
+        let t = w.tile_mut(3, 4).unwrap();
+        t.kind = 4; // open (non-solid)
+        t.flags |= tr_core::tile::FLAG_ACTIVE;
+        let e = CastLightEnv {
+            rgb: [1.0, 2.0, 4.0],
+            origin: Vec2::new(0.0, 0.0),
+            range: 10.0,
+        };
+        let mut out = Vec::new();
+        assert!(cast_light_open_stop_scale(&w, 3, 4, &e, &mut out));
+        let scale = 0.65f32 + (1.0f32 - 0.65f32) * (5.0f32 / 10.0f32);
+        assert_eq!(out[0], (3, 4, [scale, 2.0 * scale, 4.0 * scale]));
+        // Past the range: t = 1.5 -> scale 1.175 > 1, still lit (no clamp).
+        let t = w.tile_mut(9, 12).unwrap(); // dist 15
+        t.kind = 4;
+        t.flags |= tr_core::tile::FLAG_ACTIVE;
+        assert!(cast_light_open_stop_scale(&w, 9, 12, &e, &mut out));
+        let scale = 0.65f32 + (1.0f32 - 0.65f32) * (15.0f32 / 10.0f32);
+        assert!(scale > 1.0);
+        assert_eq!(out[1], (9, 12, [scale, 2.0 * scale, 4.0 * scale]));
+        // The solid stone stops the scaled walk too (`:771`/`:778`).
+        assert!(!cast_light_open_stop_scale(&w, 10, 10, &e, &mut out));
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn w4_e8_spread_light_keeps_the_c_quirks_no_bounds_positive_active() {
+        // `:801-816` — THREE kept quirks: (1) no bounds check, so an
+        // out-of-array tile within the radius is `tile == null` -> LIT;
+        // (2) the condition's `tile.active()` term is POSITIVE — an active
+        // SOLID stone lights (unlike every CastLightOpen* arm); (3) a plain
+        // absent SOLID-kind tile (default dirt, !active, !inActive, solid,
+        // not solid-top) is the one false case in bounds.
+        let w = cast_world();
+        let mut out = Vec::new();
+        // Quirk 2: the active solid stone lights.
+        assert!(spread_light_open_stop(&w, 10, 10, &env(), &mut out));
+        // Quirk 1: (-1, 0) is out of the array but distance 1 <= 10.
+        assert!(spread_light_open_stop(&w, -1, 0, &env(), &mut out));
+        assert_eq!(out, vec![(10, 10, [0.3, 0.6, 0.9]), (-1, 0, [0.3, 0.6, 0.9])]);
+        // Quirk 3: the absent dirt tile at (0, 1) fails all four terms.
+        assert!(!spread_light_open_stop(&w, 0, 1, &env(), &mut out));
+        // The radius gate (`:803-806`): distance 15 > 10 -> false, no light.
+        assert!(!spread_light_open_stop(&w, 9, 12, &env(), &mut out));
+        assert_eq!(out.len(), 2);
+    }
 }
