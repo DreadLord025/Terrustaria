@@ -1136,17 +1136,22 @@ pub(crate) fn improve_all_chest_contents(chests: &mut [WorldChest], rng: &mut dy
     }
 }
 
-/// `GiveItemGoodPrefixes` (`:24733-24754`): the accessory / melee / ranged /
-/// magic / summon arms in the C# order.
+/// `GiveItemGoodPrefixes` (`WorldGen.cs:24736-24758`): the accessory / melee /
+/// ranged / magic / summon arms in the C# order. W4-e15: the flags ride the
+/// CORRECTED `registry::item` row (the lunar chainsaws 2773/2778/2783/3463 are
+/// zero rows in the generated table — `melee = false` — while the C# sets
+/// `melee = true`, `Item.cs:26502`; the raw read skipped their melee arm), and
+/// the melee arm reads the C#'s own `Item.melee` FIELD (`:24742`), not the
+/// damage class — machine-diffed identical across all 6 197 generated rows.
 fn give_item_good_prefixes(slot: &mut ItemSlot, rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand) {
-    let def = match crate::itemdata::ITEMS.get(slot.kind as usize) {
+    let def = match crate::registry::item(slot.kind) {
         Some(d) => d,
         None => return,
     };
     if def.accessory {
         prefix_item_from_options(slot, GOOD_PREFIX_ACCESSORY, rng);
     }
-    if def.class == crate::registry::DamageClass::Melee {
+    if def.melee {
         prefix_item_from_options(slot, GOOD_PREFIX_MELEE, rng);
     }
     if prefix::in_set(prefix::GUNS_BOWS, slot.kind) {
@@ -1292,6 +1297,51 @@ mod tests {
                 ..Default::default()
             };
         }
+    }
+
+    /// W4-e15: `GiveItemGoodPrefixes`'s melee arm reads the CORRECTED row —
+    /// the lunar chainsaws (2773/2778/2783/3463) are zero rows in the
+    /// generated table (`melee = false`, damage −1) but the C# sets
+    /// `melee = true` (`Item.cs:26502`, the 2778/2783/3463 arms re-run
+    /// `SetDefaults3(2773)`), transcribed in `ITEM_CORRECTIONS`. The raw-row
+    /// read skipped their melee arm entirely; the corrected read takes the
+    /// {81, 59, 57} table like any melee weapon.
+    #[test]
+    fn w4_e15_the_good_prefix_sweep_reads_the_corrected_melee_flag() {
+        assert!(!crate::itemdata::ITEMS[2773].melee, "the raw row is a zero row");
+        assert!(crate::registry::item(2773).unwrap().melee, "the correction sets melee");
+        for kind in [2773u16, 2778, 2783, 3463] {
+            let mut chests = vec![WorldChest {
+                tile: (10, 10),
+                slots: vec![ItemSlot { kind, name: "", count: 1, prefix: 0 }],
+                name: String::new(),
+                max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
+            }];
+            let mut rng = tr_core::UnifiedRandom::new(0x5EED);
+            improve_all_chest_contents(&mut chests, &mut rng);
+            let p = chests[0].slots[0].prefix;
+            assert!(
+                p == 0 || [81u16, 59, 57].contains(&p),
+                "chainsaw {kind}: the melee sweep ran (prefix {p})"
+            );
+        }
+        // The 2773 witness lands a REAL good prefix on this seed (not the
+        // vacuous 0): damage 80 keeps every melee-table id visible.
+        let mut chests = vec![WorldChest {
+            tile: (10, 10),
+            slots: vec![ItemSlot { kind: 2773, name: "", count: 1, prefix: 0 }],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
+        }];
+        let mut rng = tr_core::UnifiedRandom::new(0x5EED);
+        improve_all_chest_contents(&mut chests, &mut rng);
+        assert!(
+            [81u16, 59, 57].contains(&chests[0].slots[0].prefix),
+            "the corrected chainsaw takes a good prefix: {}",
+            chests[0].slots[0].prefix
+        );
     }
 
     /// `ImproveAllChestContents` (`:24716-24731`): the anniversary world's
