@@ -277,8 +277,37 @@ impl CageAnimator {
         for i in 0..N {
             step_fish_bowl(&mut self.fish_bowl, &mut self.fish_bowl_mode, i, rand); // :16228-16384
         }
-        // The remaining table loops (lavaFishBowl … jellyfish,
-        // Main.cs:16385-16595) land with their step functions next.
+        for i in 0..N {
+            step_lava_fish_bowl(&mut self.lava_fish_bowl, i, rand); // :16385-16397
+        }
+        for r in 0..9 {
+            for i in 0..N {
+                step_butterfly(
+                    &mut self.butterfly,
+                    &mut self.butterfly_mode,
+                    r,
+                    i,
+                    rand,
+                ); // :16398-16525
+            }
+        }
+        // :16526 → UpdateDragonflyJarFrames :16606-16615 + :16668-16727.
+        for r in 0..7 {
+            for i in 0..N {
+                step_dragonfly(&mut self.dragonfly, r, i, rand);
+            }
+        }
+        for r in 0..3 {
+            for i in 0..N {
+                step_jellyfish(
+                    &mut self.jellyfish,
+                    &mut self.jellyfish_mode,
+                    r,
+                    i,
+                    rand,
+                ); // :16527-16595
+            }
+        }
     }
 
     /// G6 key input (the `TileAnimator::anim_key` convention): FNV-1a over
@@ -2036,6 +2065,231 @@ fn step_fish_bowl(
     }
 }
 
+/// `Main.lavaFishBowlFrame[num52]` (`Main.cs:16387-16396`): the
+/// `> 4 + Next(3)` gate draws EVERY tick; wrap > 26 → 0.
+fn step_lava_fish_bowl(t: &mut CageTable, i: usize, rand: &mut UnifiedRandom) {
+    t.counter[i] += 1;
+    if t.counter[i] > 4 + rand.next_max(3) {
+        t.counter[i] = 0;
+        t.frame[i] += 1;
+        if t.frame[i] > 26 {
+            t.frame[i] = 0;
+        }
+    }
+}
+
+/// `Main.butterflyCageFrame[num53, num54]` + `butterflyCageMode`
+/// (`Main.cs:16402-16523`): the mode re-roll (1/3600, then the 1/2 +10
+/// direction bit), the per-mode speed pick (the base Next(3,16) draws
+/// UNCONDITIONALLY at `:16411`), then the reversed (mode >= 10) or forward
+/// flap machine with the 1/20 band-jump and 1/6 direction-flip rolls.
+fn step_butterfly(
+    t: &mut CageTable2<9>,
+    mode: &mut [[u8; N]; 9],
+    r: usize,
+    i: usize,
+    rand: &mut UnifiedRandom,
+) {
+    t.counter[r][i] += 1;
+    if rand.next_max(3600) == 0 {
+        mode[r][i] = rand.next_max(5) as u8;
+        if rand.next_max(2) == 0 {
+            mode[r][i] += 10;
+        }
+    }
+    let m = mode[r][i];
+    let mut num55 = rand.next_range(3, 16);
+    if m == 1 || m == 11 {
+        num55 = 3;
+    }
+    if m == 2 || m == 12 {
+        num55 = 5;
+    }
+    if m == 3 || m == 13 {
+        num55 = 10;
+    }
+    if m == 4 || m == 14 {
+        num55 = 15;
+    }
+    let f = t.frame[r][i];
+    if m >= 10 {
+        if f <= 7 {
+            if t.counter[r][i] < num55 {
+                return;
+            }
+            t.counter[r][i] = 0;
+            t.frame[r][i] -= 1;
+            if t.frame[r][i] < 0 {
+                t.frame[r][i] = 7;
+            }
+            if t.frame[r][i] != 1 && t.frame[r][i] != 4 && t.frame[r][i] != 6 {
+                return;
+            }
+            if rand.next_max(20) == 0 {
+                t.frame[r][i] += 8;
+            } else if rand.next_max(6) == 0 {
+                if mode[r][i] >= 10 {
+                    mode[r][i] -= 10;
+                } else {
+                    mode[r][i] += 10;
+                }
+            }
+        } else {
+            if t.counter[r][i] < num55 {
+                return;
+            }
+            t.counter[r][i] = 0;
+            t.frame[r][i] -= 1;
+            if t.frame[r][i] < 8 {
+                t.frame[r][i] = 14;
+            }
+            if t.frame[r][i] != 9 && t.frame[r][i] != 12 && t.frame[r][i] != 14 {
+                return;
+            }
+            if rand.next_max(20) == 0 {
+                t.frame[r][i] -= 8;
+            } else if rand.next_max(6) == 0 {
+                if mode[r][i] >= 10 {
+                    mode[r][i] -= 10;
+                } else {
+                    mode[r][i] += 10;
+                }
+            }
+        }
+    } else if f <= 7 {
+        if t.counter[r][i] >= num55 {
+            t.counter[r][i] = 0;
+            t.frame[r][i] += 1;
+            if t.frame[r][i] > 7 {
+                t.frame[r][i] = 0;
+            }
+            if (t.frame[r][i] == 1 || t.frame[r][i] == 4 || t.frame[r][i] == 6)
+                && rand.next_max(10) == 0
+            {
+                t.frame[r][i] += 8;
+            }
+        }
+    } else if t.counter[r][i] >= num55 {
+        t.counter[r][i] = 0;
+        t.frame[r][i] += 1;
+        if t.frame[r][i] > 15 {
+            t.frame[r][i] = 8;
+        }
+        if (t.frame[r][i] == 9 || t.frame[r][i] == 12 || t.frame[r][i] == 14)
+            && rand.next_max(10) == 0
+        {
+            t.frame[r][i] -= 8;
+        }
+    }
+}
+
+/// `Main.UpdateDragonflyJarFrame` (`Main.cs:16668-16727`, called per
+/// [style, variation] by `UpdateDragonflyJarFrames` `:16606-16615` at the
+/// `:16526` site): frame 0 waits 300 ticks then rolls NextFromList(1,5,9);
+/// the 1/5/9 pose holds 100 ticks (frame 1 rolls the weighted
+/// (0,5,5,9,9) list); the flap frames re-derive from `counter/4 % 4`
+/// every tick with the 1/30 early-exit at >= 40.
+fn step_dragonfly(t: &mut CageTable2<7>, r: usize, i: usize, rand: &mut UnifiedRandom) {
+    t.counter[r][i] += 1;
+    match t.frame[r][i] {
+        0 => {
+            if t.counter[r][i] >= 300 && rand.next_max(60) == 0 {
+                t.counter[r][i] = 0;
+                t.frame[r][i] = rand.next_from_slice(&[1, 5, 9]);
+            }
+        }
+        1 | 5 | 9 => {
+            if t.counter[r][i] >= 100 {
+                t.counter[r][i] = 0;
+                if t.frame[r][i] == 1 {
+                    t.frame[r][i] = rand.next_from_slice(&[0, 5, 5, 9, 9]);
+                } else {
+                    t.frame[r][i] = 1;
+                }
+            } else if t.counter[r][i] >= 6 {
+                t.counter[r][i] = 0;
+                t.frame[r][i] += 1;
+            }
+        }
+        2 | 3 | 4 | 6 | 7 | 8 | 10 | 11 | 12 => {
+            let num = t.frame[r][i] - 1;
+            let num2 = num % 4 - 1;
+            let mut num3 = t.counter[r][i] / 4 % 4;
+            if num3 > 2 {
+                num3 = 4 - num3;
+            }
+            t.frame[r][i] = num - num2 + 1 + num3;
+            if t.counter[r][i] >= 40 && rand.next_max(30) == 0 {
+                t.counter[r][i] = 100;
+                t.frame[r][i] = num - num2 + 1 - 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+/// `Main.jellyfishCageFrame[num56, num57]` + `jellyfishCageMode`
+/// (`Main.cs:16531-16593`): the four mode arms are SEPARATE ifs (not
+/// else-if) — a mode write inside one arm can re-gate the next in the same
+/// tick (the 1→2 promotion at `:16572` feeds the mode-2 arm below it).
+fn step_jellyfish(
+    t: &mut CageTable2<3>,
+    mode: &mut [[u8; N]; 3],
+    r: usize,
+    i: usize,
+    rand: &mut UnifiedRandom,
+) {
+    t.counter[r][i] += 1;
+    if mode[r][i] == 0 && rand.next_max(1800) == 0 {
+        mode[r][i] = 1;
+    }
+    if mode[r][i] == 2 && rand.next_max(60) == 0 {
+        mode[r][i] = 3;
+    }
+    let mut num58 = 1;
+    if mode[r][i] == 0 {
+        num58 = rand.next_range(10, 20);
+    }
+    if mode[r][i] == 1 {
+        num58 = rand.next_range(15, 25);
+    }
+    if mode[r][i] == 2 {
+        num58 = rand.next_range(4, 9);
+    }
+    if mode[r][i] == 3 {
+        num58 = rand.next_range(15, 25);
+    }
+    if mode[r][i] == 0 && t.frame[r][i] <= 3 && t.counter[r][i] >= num58 {
+        t.counter[r][i] = 0;
+        t.frame[r][i] += 1;
+        if t.frame[r][i] >= 4 {
+            t.frame[r][i] = 0;
+        }
+    }
+    if mode[r][i] == 1 && t.frame[r][i] <= 7 && t.counter[r][i] >= num58 {
+        t.counter[r][i] = 0;
+        t.frame[r][i] += 1;
+        if t.frame[r][i] >= 7 {
+            mode[r][i] = 2;
+        }
+    }
+    if mode[r][i] == 2 && t.frame[r][i] <= 9 && t.counter[r][i] >= num58 {
+        t.counter[r][i] = 0;
+        t.frame[r][i] += 1;
+        if t.frame[r][i] >= 9 {
+            t.frame[r][i] = 7;
+        }
+    }
+    if mode[r][i] == 3 && t.frame[r][i] <= 10 && t.counter[r][i] >= num58 {
+        t.counter[r][i] = 0;
+        t.frame[r][i] += 1;
+        if t.frame[r][i] >= 10 {
+            t.frame[r][i] = 3;
+            mode[r][i] = 0;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2711,5 +2965,176 @@ mod tests {
             saw.insert(t.frame[0]);
         }
         assert_eq!(saw, [12, 14].into_iter().collect());
+    }
+
+    // ---- batch 4: lavaFishBowl … jellyfish + the full-tick witnesses ----
+
+    #[test]
+    fn lava_fish_bowl_gate_draws_every_tick_and_wraps_26() {
+        // Main.cs:16387-16396: `> 4 + Next(3)` — the roll happens even on
+        // a below-gate tick; wrap > 26 → 0.
+        let mut t = CageTable::default();
+        let mut r = rng();
+        step_lava_fish_bowl(&mut t, 0, &mut r);
+        assert_eq!(t.counter[0], 1);
+        let mut r2 = rng();
+        r2.next_max(3);
+        assert_eq!(r.next(), r2.next(), "exactly one Next(3) per tick");
+        t.frame[0] = 26;
+        t.counter[0] = 10; // past any 4+Next(3)
+        step_lava_fish_bowl(&mut t, 0, &mut r);
+        assert_eq!((t.frame[0], t.counter[0]), (0, 0));
+    }
+
+    #[test]
+    fn butterfly_base_speed_draw_is_unconditional() {
+        // Main.cs:16411: Next(3,16) draws even when the mode overwrites
+        // the speed — a mode-1 tick below the gate consumes gate(3600) +
+        // base(3,16) only.
+        let mut t = CageTable2::<9>::default();
+        let mut mode = [[0u8; N]; 9];
+        mode[0][0] = 1;
+        let mut r = rng();
+        step_butterfly(&mut t, &mut mode, 0, 0, &mut r);
+        let mut r2 = rng();
+        r2.next_max(3600);
+        r2.next_range(3, 16);
+        assert_eq!(r.next(), r2.next());
+        assert_eq!(t.counter[0][0], 1, "below the 3-tick speed gate");
+    }
+
+    #[test]
+    fn butterfly_forward_flap_wraps_and_can_jump_bands() {
+        // Main.cs:16495-16522: mode < 10, frame 7 ++ wraps to 0; frames
+        // 1/4/6 roll 1/10 → +8 (the reverse band entry).
+        let mut t = CageTable2::<9>::default();
+        let mut mode = [[0u8; N]; 9];
+        let mut r = rng();
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..400 {
+            t.frame[0][0] = 6;
+            t.counter[0][0] = 100; // past any Next(3,16)
+            step_butterfly(&mut t, &mut mode, 0, 0, &mut r);
+            saw.insert(t.frame[0][0]);
+        }
+        assert!(saw.contains(&7) && saw.contains(&15), "7 holds or jumps to 15");
+        // The reverse machine (mode >= 10) decrements and wraps < 0 → 7.
+        mode[0][0] = 11;
+        t.frame[0][0] = 0;
+        t.counter[0][0] = 100;
+        step_butterfly(&mut t, &mut mode, 0, 0, &mut r);
+        assert_eq!(t.frame[0][0], 7);
+    }
+
+    #[test]
+    fn dragonfly_flap_ladder_and_early_exit() {
+        // Main.cs:16710-16723: num = f-1, num2 = num%4-1, the counter/4%4
+        // triangle (3 folds to 1); the >= 40 1/30 exit sets counter 100
+        // and the band's base frame.
+        let mut t = CageTable2::<7>::default();
+        let mut r = rng();
+        t.frame[0][0] = 2; // num=1, num2=0 → base 2
+        t.counter[0][0] = 7; // ++ → 8, 8/4%4 = 2 → frame 2+2 = 4
+        step_dragonfly(&mut t, 0, 0, &mut r);
+        assert_eq!(t.frame[0][0], 4);
+        t.counter[0][0] = 11; // ++ → 12, 12/4%4 = 3 → folds 1 → frame 3
+        step_dragonfly(&mut t, 0, 0, &mut r);
+        assert_eq!(t.frame[0][0], 3);
+        // Frame 0 below 300 draws nothing.
+        t.frame[0][0] = 0;
+        t.counter[0][0] = 0;
+        let mut r3 = rng();
+        step_dragonfly(&mut t, 0, 0, &mut r3);
+        let mut r4 = rng();
+        assert_eq!(r3.next(), r4.next(), "no draw below the 300 gate");
+    }
+
+    #[test]
+    fn jellyfish_mode_arms_are_separate_ifs() {
+        // Main.cs:16557-16593: the mode-1 arm's >= 7 promotion to mode 2
+        // re-gates the mode-2 arm IN THE SAME TICK — but the counter was
+        // just reset to 0 and num58 was rolled for mode 1 (>= 15), so the
+        // mode-2 arm cannot fire; pin that the frame stays 7.
+        let mut t = CageTable2::<3>::default();
+        let mut mode = [[0u8; N]; 3];
+        mode[0][0] = 1;
+        t.frame[0][0] = 6;
+        t.counter[0][0] = 100; // past any Next(15,25)
+        let mut r = rng();
+        step_jellyfish(&mut t, &mut mode, 0, 0, &mut r);
+        assert_eq!(t.frame[0][0], 7);
+        assert_eq!(mode[0][0], 2, "the promotion fired");
+        assert_eq!(t.counter[0][0], 0);
+        // Mode 3's >= 10 exit resets frame 3 + mode 0 (:16588-16591).
+        mode[0][0] = 3;
+        t.frame[0][0] = 9;
+        t.counter[0][0] = 100;
+        step_jellyfish(&mut t, &mut mode, 0, 0, &mut r);
+        assert_eq!((t.frame[0][0], mode[0][0]), (3, 0));
+    }
+
+    #[test]
+    fn warm_up_runs_3600_gated_calls_and_clears_the_flag() {
+        // Main.cs:6802-6807: the tables are NOT all-zero after startup.
+        let mut a = CageAnimator::new();
+        let mut r = rng();
+        a.warm_up(&mut r);
+        assert!(!a.critter_cage);
+        assert_ne!(a.anim_key(), CageAnimator::new().anim_key());
+        // Deterministic: the same seed reproduces the same tables.
+        let mut b = CageAnimator::new();
+        let mut r2 = rng();
+        b.warm_up(&mut r2);
+        assert_eq!(a.anim_key(), b.anim_key());
+        assert_eq!(r.next(), r2.next(), "same stream position after 3600 calls");
+    }
+
+    #[test]
+    fn full_animate_is_order_stable_and_seed_reproducible() {
+        // Two identically-seeded animators stepped 120 ticks must agree
+        // bit-for-bit (the whole Main.rand draw order).
+        let mut a = CageAnimator::new();
+        let mut b = CageAnimator::new();
+        a.critter_cage = true;
+        b.critter_cage = true;
+        let mut ra = rng();
+        let mut rb = rng();
+        for _ in 0..120 {
+            a.animate(&mut ra);
+            b.animate(&mut rb);
+        }
+        assert_eq!(a.anim_key(), b.anim_key());
+        assert_eq!(ra.next(), rb.next());
+        // The gate-off call is a no-op on both state and stream.
+        a.critter_cage = false;
+        let k = a.anim_key();
+        a.animate(&mut ra);
+        assert_eq!(a.anim_key(), k);
+    }
+
+    #[test]
+    fn zero_tables_stay_the_static_arms_until_animated() {
+        // The census finding: with the animator gated off the cage draw
+        // arms reproduce the static table byte-for-byte (the
+        // drawdata_furniture zero_tables witness, now via frame_of).
+        let a = CageAnimator::new();
+        for kind in [275u16, 285, 282, 316, 710, 620] {
+            let dd = tr_cage(kind, &a);
+            let static_dd = crate::drawdata::draw_data(kind, 13, 7, 18, 18, 0, false);
+            assert_eq!(dd, static_dd, "kind {kind}");
+        }
+    }
+
+    fn tr_cage(kind: u16, a: &CageAnimator) -> crate::drawdata::TileDrawData {
+        crate::drawdata_furniture::cage_draw_data(
+            kind,
+            13,
+            7,
+            18,
+            18,
+            CAGE_FRAMES,
+            |t, r, i| a.frame_of(t, r, i),
+        )
+        .unwrap()
     }
 }
