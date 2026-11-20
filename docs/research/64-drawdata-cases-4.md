@@ -1476,6 +1476,37 @@ Audit notes (R16):
   W4-d57 with `AnimateTiles_CritterCages` (`Main.cs:13511`).
 - No R16 id has a second-switch row other than 564 (audited above).
 
+### R17 — big-cage middle: 279, 280, 281, 296, 297, 309, 358, 359, 413, 414, 542, 550, 551, 553, 554 (15 ids, indices 240-254)
+
+C# `TileDrawing.cs:5674-5753` — the inner arms quoted verbatim in R16's
+window. Per-id table picks:
+
+| Id | C# inner arm (verbatim) | C# line | Rust arm (`cage_table`) | Verdict |
+| --- | --- | --- | --- | --- |
+| 279 | `case 279:` `case 358:` → `addFrY = Main.birdCageFrame[bigAnimalCageFrame] * 54;` | :5718-5721 | `279 \| 358 => (CageAnim::Bird, 0, 54, BIG)` :125 | PORTED-UNWIRED |
+| 280 | `addFrY = Main.blueBirdCageFrame[bigAnimalCageFrame] * 54;` | :5722-5724 | `280 => (BlueBird, 0, 54, BIG)` :126 | PORTED-UNWIRED |
+| 281 | `addFrY = Main.redBirdCageFrame[bigAnimalCageFrame] * 54;` | :5725-5727 | `281 => (RedBird, 0, 54, BIG)` :127 | PORTED-UNWIRED |
+| 296 | `case 296:` `case 297:` → `addFrY = Main.scorpionCageFrame[0, bigAnimalCageFrame] * 54;` | :5735-5738 | `296 \| 297 => (Scorpion, 0, 54, BIG)` :129 | PORTED-UNWIRED |
+| 297 | shares the scorpion arm, row 0 | :5736 | :129 | PORTED-UNWIRED |
+| 309 | `addFrY = Main.penguinCageFrame[bigAnimalCageFrame] * 54;` | :5739-5741 | `309 => (Penguin, 0, 54, BIG)` :130 | PORTED-UNWIRED |
+| 358 | shares 279's bird arm | :5719 | :125 | PORTED-UNWIRED |
+| 359 | shares the bunny arm (`275 \| 359 \| 599..=605`) | :5677 | :117 | PORTED-UNWIRED |
+| 413 | shares the squirrel arm | :5695 | :120 | PORTED-UNWIRED |
+| 414 | shares the squirrel arm | :5696 | :120 | PORTED-UNWIRED |
+| 542 | `addFrY = Main.owlCageFrame[bigAnimalCageFrame] * 54;` | :5691-5693 | `542 => (Owl, 0, 54, BIG)` :119 | PORTED-UNWIRED |
+| 550 | `case 550:` `case 551:` → `addFrY = Main.turtleCageFrame[bigAnimalCageFrame] * 54;` | :5687-5690 | `550 \| 551 => (Turtle, 0, 54, BIG)` :118 | PORTED-UNWIRED |
+| 551 | shares the turtle arm | :5688 | :118 | PORTED-UNWIRED |
+| 553 | `addFrY = Main.grebeCageFrame[bigAnimalCageFrame] * 54;` | :5712-5714 | `553 => (Grebe, 0, 54, BIG)` :123 | PORTED-UNWIRED |
+| 554 | `addFrY = Main.seagullCageFrame[bigAnimalCageFrame] * 54;` | :5715-5717 | `554 => (Seagull, 0, 54, BIG)` :124 | PORTED-UNWIRED |
+
+Audit notes (R17):
+- The scorpion table is 2-D in C# (`[0, idx]` — the black/gold variants share
+  row 0 here); the port's `row` parameter carries the 0. All other big-cage
+  tables are 1-D.
+- UNWIRED rationale identical to R16/d64 batches 2-3: static fallback top-2
+  only, `furniture_post_pass` uncalled, frozen row 0 = C# t=0 pixels.
+- No R17 id has a second-switch row.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
