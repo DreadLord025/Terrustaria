@@ -78,6 +78,45 @@ fn lerp_vec(a: Vec2, b: Vec2, t: f32) -> Vec2 {
     a + (b - a) * t
 }
 
+/// `Utils.NextVector2Circular(rng, halfW, halfH)` (`Utils.cs:1266-1269`):
+/// `NextVector2Unit() * (halfW, halfH) * NextFloat()` — the unit draw (one
+/// `NextFloat`, float angle, double cos/sin) THEN a second `NextFloat` radius.
+fn next_vector2_circular(rng: &mut UnifiedRandom, half_w: f32, half_h: f32) -> Vec2 {
+    let angle = std::f32::consts::PI * 2.0 * rng.next_float();
+    let unit = Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32);
+    let r = rng.next_float();
+    Vec2::new(unit.x * half_w * r, unit.y * half_h * r)
+}
+
+/// The bottom-edge single-dust arm (`:74477-74485` et al.): gated
+/// `velocity.Y > 0`, one dust of `dust_type` at `pos + (0, h−2)` box 2×2,
+/// `position.X -= 2`, `alpha = 38`, `velocity *= 0.1`, `velocity += −oldVel ×
+/// 0.25`, `scale = 0.95`, optionally `noGravity`. The 239/245/264 shape. No
+/// explicit draw.
+fn bottom_dust(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    dust_type: i32,
+    no_gravity: bool,
+) {
+    if s.vel.y > 0.0 {
+        let pos = Vec2::new(s.pos.x, s.pos.y + s.h as f32 - 2.0);
+        let idx = dust.new_dust(rng, ctx, world, pos, 2, 2, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        if no_gravity {
+            d.no_gravity = true;
+        }
+        d.position.x -= 2.0;
+        d.alpha = 38;
+        d.velocity *= 0.1;
+        d.velocity += -s.old_vel * 0.25;
+        d.scale = 0.95;
+    }
+}
+
 /// The center-lerp dust burst (`:73469-73477` et al.): `Next(count_min,
 /// count_max)` dust of `dust_type` at Center 0×0 alpha 100 scale `scale`, each
 /// `velocity *= vel_mul`, `velocity.Y -= 1`, optionally `position -= One×4`,
@@ -705,6 +744,116 @@ fn death_bursts(
                 let idx = dust.new_dust(rng, ctx, world, pos, 0, 0, 182, 0.0, 0.0, 100, Color::default(), 1.6);
                 let d = dust.slot_mut(idx);
                 d.velocity *= 1.5;
+                d.no_gravity = true;
+            }
+        }
+        // `:75307-75323` — the 177: 20 dust-137, alpha Next(0,101) + scale
+        // 1+Next(-20,40)*0.01 BEFORE the spawn, vel −= oldVel×0.2, then Next(3)
+        // gate → scale×0.8/vel×0.5 else noGravity.
+        177 => {
+            for _ in 0..20 {
+                let alpha = rng.next_range(0, 101);
+                let scale = 1.0 + rng.next_range(-20, 40) as f32 * 0.01;
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 137, 0.0, 0.0, alpha, Color::default(), scale);
+                let d = dust.slot_mut(idx);
+                d.velocity -= s.old_vel * 0.2;
+                if rng.next_max(3) == 0 {
+                    d.scale *= 0.8;
+                    d.velocity *= 0.5;
+                } else {
+                    d.no_gravity = true;
+                }
+            }
+        }
+        // `:75324-75346` — the 119/118/128/359: dust-92, count 20 for 119/359
+        // else 10; per dust Next(3) gate ≠0 → vel×2/noGravity/scale×1.75 else
+        // scale×0.5.
+        119 | 118 | 128 | 359 => {
+            let count = if s.kind == 119 || s.kind == 359 { 20 } else { 10 };
+            for _ in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 92, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                if rng.next_max(3) != 0 {
+                    d.velocity *= 2.0;
+                    d.no_gravity = true;
+                    d.scale *= 1.75;
+                } else {
+                    d.scale *= 0.5;
+                }
+            }
+        }
+        // `:75347-75361` — the 309: 10 dust-185; per dust Next(2) gate → vel×2/
+        // noGravity/scale×1.75.
+        309 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 185, 0.0, 0.0, 0, Color::default(), 1.0);
+                if rng.next_max(2) == 0 {
+                    let d = dust.slot_mut(idx);
+                    d.velocity *= 2.0;
+                    d.no_gravity = true;
+                    d.scale *= 1.75;
+                }
+            }
+        }
+        // `:75362-75373` — the 308: 80 dust-185 at pos+(0,16) box h−16, vel×2 +
+        // noGravity + scale×1.15. No explicit draw.
+        308 => {
+            let pos = Vec2::new(s.pos.x, s.pos.y + 16.0);
+            for _ in 0..80 {
+                let idx = dust.new_dust(rng, ctx, world, pos, s.w, s.h - 16, 185, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+                d.scale *= 1.15;
+            }
+        }
+        // `:75276-75285` — the 967: 20 dust-219 speed vel, scale 0.5+Next(-20,40)
+        // *0.01 BEFORE spawn, noGravity + velocity = NextVector2Circular(6,6).
+        967 => {
+            for _ in 0..20 {
+                let scale = 0.5 + rng.next_range(-20, 40) as f32 * 0.01;
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 219, s.vel.x, s.vel.y, 0, Color::default(), scale);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity = next_vector2_circular(rng, 6.0, 6.0);
+            }
+        }
+        // `:75286-75297` — the 1026: 20 dust-2 speed vel, scale 1.2+Next(-20,40)
+        // *0.01 BEFORE spawn, alpha 50 + fadeIn 0.5 + noGravity + velocity =
+        // NextVector2Circular(5,5).
+        1026 => {
+            for _ in 0..20 {
+                let scale = 1.2 + rng.next_range(-20, 40) as f32 * 0.01;
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 2, s.vel.x, s.vel.y, 0, Color::default(), scale);
+                let d = dust.slot_mut(idx);
+                d.alpha = 50;
+                d.fade_in = 0.5;
+                d.no_gravity = true;
+                d.velocity = next_vector2_circular(rng, 5.0, 5.0);
+            }
+        }
+        // `:74475-74486` — the 239: gated vel.Y>0, 1 dust-154 at pos+(0,h−2) 2×2,
+        // position.X−=2 + alpha 38 + vel×0.1 += −oldVel×0.25 + scale 0.95.
+        239 => bottom_dust(s, dust, rng, ctx, world, 154, false),
+        // `:74487-74499` — the 245: the 239 shape, dust-114, noGravity.
+        245 => bottom_dust(s, dust, rng, ctx, world, 114, true),
+        // `:74500-74512` — the 264: the 239 shape, dust-54, noGravity.
+        264 => bottom_dust(s, dust, rng, ctx, world, 54, true),
+        // `:76377-76392` — the 306: 20 dust-184 (scale×1.1 + noGravity) THEN 30
+        // dust-184 (vel×2.5 + scale×0.8 + noGravity). No explicit draw. (The
+        // owner-gated 307 spawn is the projectile lane's, not here.)
+        306 => {
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 184, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale *= 1.1;
+                d.no_gravity = true;
+            }
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 184, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.5;
+                d.scale *= 0.8;
                 d.no_gravity = true;
             }
         }
@@ -1488,5 +1637,62 @@ mod tests {
             assert!((3..=6).contains(&active.len()), "kind {kind} count");
             assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity));
         }
+    }
+
+    /// The 177/119-family/309 gated bursts and the 967/1026 circular-velocity
+    /// bursts (the scale draw rides BEFORE the spawn, the circular draw AFTER).
+    #[test]
+    fn w4_g65_the_177_119_309_967_1026_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(177)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert_eq!(dust.slots().iter().filter(|d| d.active).count(), 20);
+        for (kind, count) in [(119u16, 20), (359, 20), (118, 10), (128, 10)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind} count");
+            assert!(active.iter().all(|d| d.dust_type == 92));
+        }
+        let mut dust = DustPool::new();
+        drain(&[snap(309)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert_eq!(dust.slots().iter().filter(|d| d.active).count(), 10);
+        for (kind, dust_type) in [(967u16, 219), (1026, 2)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 20, "kind {kind} count");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity));
+        }
+    }
+
+    /// The 239/245/264 bottom-edge single dust (gated vel.Y>0) and the 308/306
+    /// multi-loop bursts.
+    #[test]
+    fn w4_g65_the_bottom_edge_and_308_306_bursts() {
+        let w = world();
+        // vel.Y = -2 in the fixture → the bottom dust is suppressed.
+        for kind in [239u16, 245, 264] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            assert!(dust.slots().iter().all(|d| !d.active), "kind {kind} suppressed at vel.Y<0");
+        }
+        // vel.Y > 0 → one dust.
+        let mut s = snap(245);
+        s.vel = Vec2::new(4.0, 2.0);
+        s.old_vel = s.vel;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 1);
+        assert!(active.iter().all(|d| d.dust_type == 114 && d.no_gravity && d.alpha == 38 && d.scale == 0.95));
+        let mut dust = DustPool::new();
+        drain(&[snap(308)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert_eq!(dust.slots().iter().filter(|d| d.active).count(), 80);
+        let mut dust = DustPool::new();
+        drain(&[snap(306)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 50);
+        assert!(active.iter().all(|d| d.dust_type == 184 && d.no_gravity));
     }
 }

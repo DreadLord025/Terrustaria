@@ -39406,3 +39406,20 @@ scale 2 noGravity/noLight), 472 (20× dust-30 noGravity vel×0.45 += baseVel×0.
 module gains `lerp_vec`/`center_lerp_burst` helpers; the count draws ride BEFORE
 the spawns, the 684 NextFloats AFTER. Witnesses: the center-lerp count ranges +
 noGravity, the 684 noLight, the 625/472/440/606 bursts — WRITTEN NOT RUN.
+
+### Batch 9 (10 kinds, the gated + circular-velocity `:74475-76392` bursts)
+
+177 (20× dust-137, alpha Next(0,101) + scale 1+Next(-20,40)*0.01 BEFORE spawn,
+vel −= oldVel×0.2, Next(3) gate → scale×0.8/vel×0.5 else noGravity), 119/118/
+128/359 (dust-92, count 20 for 119/359 else 10, Next(3) gate ≠0 → vel×2/
+noGravity/scale×1.75 else scale×0.5), 309 (10× dust-185, Next(2) gate → vel×2/
+noGravity/scale×1.75), 308 (80× dust-185 at pos+(0,16) box h−16, vel×2/
+noGravity/scale×1.15), 967 (20× dust-219 speed vel, scale 0.5+Next(-20,40)*0.01
+BEFORE, noGravity + vel = NextVector2Circular(6,6)), 1026 (20× dust-2, scale
+1.2+Next(-20,40)*0.01 BEFORE, alpha 50/fadeIn 0.5/noGravity + vel =
+NextVector2Circular(5,5)), 239/245/264 (gated vel.Y>0, 1 dust-154/114/54 at
+pos+(0,h−2) 2×2, position.X−=2/alpha 38/vel×0.1 += −oldVel×0.25/scale 0.95,
+245/264 noGravity), 306 (20× dust-184 scale×1.1/noGravity + 30× dust-184
+vel×2.5/scale×0.8/noGravity). The module gains `next_vector2_circular`/
+`bottom_dust` helpers. Witnesses: the 177/119/309 counts, the 967/1026 circular
+bursts, the bottom-edge vel.Y gate, the 308/306 counts — WRITTEN NOT RUN.
