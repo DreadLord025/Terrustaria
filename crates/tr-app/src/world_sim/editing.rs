@@ -255,22 +255,46 @@ fn remap_gem(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32)
 }
 
 /// `Player.LimitPointToPlayerReachableArea` (`Player.cs:45447-45473`): the
-/// point pulled into the 1920x1200 box centred on the player (the box itself
-/// clamped to the world borders) by the per-axis scale.
+/// point pulled into the 1920x1200 box centred on the player by the per-axis
+/// scale. The box is `Utils.CenteredRectangle(Center, MaxWorldViewSize)`
+/// (`Utils.cs:947-950` — the `(int)` corner truncation, the size stays
+/// 1920x1200) clamped by `WorldUtils.ClampToWorldBorders`
+/// (`WorldBuilding/WorldUtils.cs:24-31` → `Utils.Clamp(Rectangle, Rectangle)`
+/// `Utils.cs:236-239`): the TOP-LEFT slides inside the 640-px-inset play area
+/// (`GetWorldPlayArea` `:16-22`, `leftWorld/topWorld = 0`,
+/// `rightWorld/bottomWorld = maxTiles * 16`, `WorldGen.cs:6553-6554`) while
+/// the box KEEPS its size — on a world smaller than the view the clamp's
+/// max < min and `Utils.Clamp<T>` (`:223-234`, max first) returns the max,
+/// so the box hangs off the far edge exactly as the C#'s does (S1-P-i23).
 fn limit_point_to_player_reachable_area(
     center: Vec2,
     point: Vec2,
     world: &tr_core::World,
 ) -> Vec2 {
-    let half = Vec2::new(1920.0 * 0.5, 1200.0 * 0.5);
-    let (world_w, world_h) = (world.width as f32 * 16.0, world.height as f32 * 16.0);
-    let bx0 = (center.x - half.x).max(0.0);
-    let bx1 = (center.x + half.x).min(world_w.max(bx0));
-    let by0 = (center.y - half.y).max(0.0);
-    let by1 = (center.y + half.y).min(world_h.max(by0));
-    let mid = Vec2::new((bx0 + bx1) * 0.5, (by0 + by1) * 0.5);
+    // `Utils.CenteredRectangle`: the int corner, the float half-size.
+    let rx = (center.x - 1920.0 * 0.5) as i32;
+    let ry = (center.y - 1200.0 * 0.5) as i32;
+    let (rw, rh) = (1920i32, 1200i32);
+    // `GetWorldPlayArea`: the 640-px inset on every side.
+    let (world_w, world_h) = (world.width as i32 * 16, world.height as i32 * 16);
+    let (bl, bt) = (640i32, 640i32);
+    let (br, bb) = (world_w - 640, world_h - 640);
+    // `Utils.Clamp<T>` — the max test FIRST (a max < min returns the max).
+    let clamp = |v: i32, min: i32, max: i32| {
+        if v > max {
+            max
+        } else if v < min {
+            min
+        } else {
+            v
+        }
+    };
+    let rx = clamp(rx, bl, br - rw);
+    let ry = clamp(ry, bt, bb - rh);
+    // `rectangle.Center.ToVector2()` — XNA's int centre (X + Width/2).
+    let mid = Vec2::new((rx + rw / 2) as f32, (ry + rh / 2) as f32);
     let off = point - mid;
-    let (hw, hh) = ((bx1 - bx0) * 0.5, (by1 - by0) * 0.5);
+    let (hw, hh) = (rw as f32 * 0.5, rh as f32 * 0.5);
     let mut scale = 1.0f32;
     if off.x.abs() > hw {
         scale = scale.min(hw / off.x.abs());
@@ -317,6 +341,43 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.mine_prev_down = app.mine_down;
     app.place_released = !app.place_down;
     app.mine_released = !app.mine_down;
+    // `Player.ItemCheck`'s channel clear (`Player.cs:42787-42807`) runs
+    // EVERY tick, ahead of the cursor/reach gates below — the C# clears
+    // `channel` on `!flag5` (the button up, the buffered item switch
+    // `:42800-42803`, the pending inventory actions `:42796-42798`) even
+    // when the cursor is over the HUD or out of reach. The fullscreen map
+    // (`:24799`) and the minimap hover (`MinimapFrame.cs:164`'s
+    // `mouseInterface`) zero `controlUseItem` the same way, so they feed
+    // `flag5` too. The port hoists the clear here so a release cannot leave
+    // the latch armed behind an early return (S1-P-i23); the aim-refresh
+    // block below only runs while the latch survives this gate.
+    {
+        let held = app.inventory[app.selected];
+        let holding_channel_item = registry::get(held.kind).is_some_and(|d| d.channel)
+            && held.count > 0;
+        let use_suppressed = !app.mine_down
+            || app.inventory_open
+            || app.map.as_ref().is_some_and(|m| m.open)
+            || app.minimap_hover.is_some();
+        if let Some(p) = app.player.as_mut() {
+            if p.channel
+                && (use_suppressed || !holding_channel_item || held.kind != p.channel_item)
+            {
+                // `:42804-42807` — `if (!flag5) channel = false`; the empty
+                // hand drops the held channel item the same way
+                // (`HeldItem.shoot == type` no longer holds). The selection
+                // switch rides `:42800-42803`'s `HasBufferedChange` arm
+                // (`flag5 = false`): even a switch to ANOTHER channel item
+                // drops the latch — the new item re-arms at its own use
+                // start with its own cancel key.
+                p.channel = false;
+                p.channel_item = 0;
+                p.channel_target = Vec2::ZERO;
+                p.channel_proj_expected = 0;
+                p.channel_index_expected = 0;
+            }
+        }
+    }
     // The `itemTime` accumulator (`Player.ApplyItemTime`, `Player.cs:4416`):
     // the *action* cadence inside a swing — placement fires whenever it hits
     // zero while the swing animation is still running.
@@ -353,9 +414,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_timer = 0.0;
         return;
     }
-    // `Player.ItemCheck`'s `!frozen && !webbed` gate (`Player.cs:3381`): a
-    // frozen or webbed player cannot swing, throw, mine or place.
-    if app.player.as_ref().is_some_and(|p| p.frozen || p.webbed) {
+    // `Player.ItemCheck`'s CCed head (`Player.cs:42598-42603`): a CCed
+    // player cannot swing, throw, mine or place, AND the channel drops
+    // (`this.channel = false; itemAnimation = itemAnimationMax = 0`).
+    // `CCed` is frozen || webbed || stoned (`:3377-3387`); the port's
+    // `cced()` carries all three (S1-P-i23).
+    if app.player.as_ref().is_some_and(|p| p.cced()) {
+        if let Some(p) = app.player.as_mut() {
+            p.channel = false;
+            p.channel_item = 0;
+            p.channel_target = Vec2::ZERO;
+            p.channel_proj_expected = 0;
+            p.channel_index_expected = 0;
+        }
         app.edit_target = None;
         app.mine_target = None;
         app.mine_timer = 0.0;
@@ -573,28 +644,43 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // `Player.channel` (`Player.cs:52958-52968`): while the button is held
     // on a `channel` item the aim target rides the player for the aiStyle-9
     // spells (`AI_009_MagicMissiles`'s owner block, `Projectile.cs:43239-
-    // 43249`); the release or a switch clears it (`TryCancelChannel`
-    // `:52975-52981`).
+    // 43249`). The C# ARMS the channel at the use start (`StartChanneling
+    // (sItem)` inside `ItemCheck_StartActualUse`, `:51677`) and CLEARS it on
+    // the button release (`ItemCheck` `:42804-42807` — the hoisted clear at
+    // the tick head), a CC (`:42598-42603`), the tracked shot's death
+    // (`TryCancelChannel` `:52975-52981`, the pool kill hook) or the dead
+    // tick (`UpdateDead` `:17017`) — NOT per-tick from the button state. The
+    // port keeps that latch: the arm rides the use start below; this block
+    // only refreshes the aim while the channel is open (S1-P-i23).
     {
-        let holding = registry::get(held.kind).is_some_and(|d| d.channel)
-            && app.mine_down
-            && held_weapon
-            && !app.inventory_open;
+        let holding_channel_item = registry::get(held.kind).is_some_and(|d| d.channel)
+            && held.count > 0;
         if let Some(p) = app.player.as_mut() {
-            if holding {
+            if p.channel
+                && holding_channel_item
+                && held.kind == p.channel_item
+                && app.mine_down
+                && !app.inventory_open
+            {
                 let (cx, cy) = p.center();
                 let target = limit_point_to_player_reachable_area(
                     Vec2::new(cx, cy),
                     world_pos,
                     &app.world,
                 );
-                p.channel = true;
                 p.channel_item = held.kind;
                 p.channel_target = target;
-            } else if p.channel {
-                p.channel = false;
-                p.channel_item = 0;
-                p.channel_target = Vec2::ZERO;
+            } else if !p.channel && holding_channel_item && !held_weapon && app.mine_down && !app.inventory_open {
+                // The projectile-less channel items (the mounts'
+                // `StartChanneling()` `Player.cs:52941`, the parameterless
+                // overload — no cancel key; the fairy bell): the port's use
+                // path only arms the weapon channel at the shot start, so
+                // this family keeps its per-tick arm (the pre-i23 behaviour
+                // for the `!held_weapon` family).
+                p.channel = true;
+                p.channel_item = held.kind;
+                p.channel_proj_expected = 0;
+                p.channel_index_expected = 0;
             }
         }
     }
@@ -670,6 +756,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // EQUIP-9). A failed check blocks the use; the pay resets the mana
             // regen delay (`apply_mana_regen_delay`).
             let base_mana = held_fx.map(|s| s.mana).unwrap_or(0);
+            // `StartChanneling(sItem)`'s `item.channel` gate (`:52960`).
+            let def_is_channel = registry::get(held.kind).is_some_and(|d| d.channel);
             // The mutable player borrow covers the whole throw (the mana
             // pay + the reads the block makes through it).
             let Some(p) = app.player.as_mut() else {
@@ -702,6 +790,27 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
                 p.mana -= mana_cost;
                 crate::regen::apply_mana_regen_delay(&mut p.regen, p.mana_max, p.mana, false);
+            }
+            // `Player.StartChanneling(sItem)` (`Player.cs:52958-52968`, called
+            // by `ItemCheck_StartActualUse` `:51677` AFTER the mana pay): a
+            // `channel` item arms the hold and seeds the cancel key with its
+            // `shoot` — the tracked-shot index resets to the C# struct's 0
+            // default (`_channelShotCache = new ChannelCancelKey { ... }`).
+            // The aim refresh rides the channel block above on the next tick
+            // (the C# reads `Main.MouseWorld` live in the AI, the port
+            // snapshots it); seed it here so the spawn tick already carries
+            // the clamped cursor (S1-P-i23).
+            if def_is_channel {
+                let (cx, cy) = p.center();
+                p.channel = true;
+                p.channel_item = held.kind;
+                p.channel_target = limit_point_to_player_reachable_area(
+                    Vec2::new(cx, cy),
+                    world_pos,
+                    &app.world,
+                );
+                p.channel_proj_expected = registry::projectile(held.kind).unwrap_or(0);
+                p.channel_index_expected = 0;
             }
             // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
             // rides the use start.
@@ -1076,6 +1185,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
                 }
+            }
+            // `NewProjectile`'s `TryUpdateChannel` tail (`Projectile.cs:
+            // 11097-11100`): the use-path spawns track the cancel key on the
+            // SAME tick they spawn (the C# calls it inside `NewProjectile`,
+            // before the next `Update`). The pool queued the intents; apply
+            // them to the local player here so a same-tick death matches the
+            // fresh index (S1-P-i23). The projectile-pass drain handles the
+            // AI-side spawns (the prism lasers, the magnet bolts). A fresh
+            // player borrow — `start_swing_extras` above took the whole app.
+            if let Some(p) = app.player.as_mut() {
+                app.projectiles.apply_channel_tracks(p);
             }
         }
 
@@ -1628,11 +1748,18 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         .map(|d| d.use_time as f32 / 60.0)
         .filter(|t| *t > 0.0)
         .unwrap_or(swing_secs);
-    // `Player.channel` (`Player.cs:52954-52965` sets it; `Player.cs:43576`'s
-    // `if (!this.channel)` guards the animation decrement): while the
-    // button is held the item's animation HOLDS instead of ending — the
-    // channel persists until the release.
-    let channels = timings.is_some_and(|d| d.channel) && app.mine_down && !held_weapon;
+    // `Player.channel`'s toolTime arm (`Player.cs:43576-43587`): while the
+    // channel is open the tool cadence runs off its OWN `toolTime--` counter
+    // (reset to `useTime - 1` on underflow) instead of `itemTime` — the
+    // channel item's animation holds. The port's stand-in keeps the swing
+    // alive while the LATCHED channel is open on a projectile-less channel
+    // item (the mounts, the fairy bell); the latch drops on release/CC/kill/
+    // death, so the hold ends with it (S1-P-i23 — the per-tick button
+    // re-derive would resurrect a kill-cancelled channel).
+    let channels = timings.is_some_and(|d| d.channel)
+        && app.mine_down
+        && !held_weapon
+        && app.player.as_ref().is_some_and(|p| p.channel);
     if channels && app.swing <= 0.0 {
         // The hold: the animation stays at the last frame.
         app.swing = 0.2;
@@ -6984,10 +7111,17 @@ mod tests {
     fn test_dw_5_2_the_channel_holds_the_aim_and_the_release_clears_it() {
         // `Player.cs:52958-52968` + `:52975-52981`: a `channel` item held
         // with the button down keeps the clamped aim on the player; the
-        // release clears it.
+        // release clears it. The channel ARMS at the use start
+        // (`StartChanneling(sItem)` `:51677`), so the fixture drives a real
+        // press edge (`:42733`'s `controlUseItem && releaseUseItem` pair) —
+        // the pre-i23 per-tick re-arm is gone (S1-P-i23).
         let mut app = staff_app(113, "Magic Missile");
         let (sw, sh) = app.screen_size();
-        update_editing(&mut app, 1.0 / 60.0, Vec2::new(sw, sh));
+        let screen = Vec2::new(sw, sh);
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, screen);
         let p = app.player.as_ref().unwrap();
         assert!(p.channel, "the held channel keeps the aim");
         assert_eq!(p.channel_item, 113, "the held item's kind");
@@ -6998,10 +7132,224 @@ mod tests {
         );
         // The release.
         app.mine_down = false;
-        update_editing(&mut app, 1.0 / 60.0, Vec2::new(sw, sh));
+        update_editing(&mut app, 1.0 / 60.0, screen);
         let p = app.player.as_ref().unwrap();
         assert!(!p.channel, "the release clears the channel");
         assert_eq!(p.channel_item, 0, "no held item");
+    }
+
+    // ---- S1-P-i23: the channel-latch witnesses (written, NOT run) ---------
+
+    #[test]
+    fn s1_p_i23_the_use_start_seeds_the_cancel_key() {
+        // `StartChanneling(sItem)` (`Player.cs:52958-52968`, called by
+        // `ItemCheck_StartActualUse` `:51677` after the mana pay): the key
+        // carries the item's SHOOT (16 for the Magic Missile 113) and the
+        // index resets to the struct's 0 default; the spawn's tracking
+        // tail (`Projectile.cs:11097-11100`) then lands the slot index on
+        // the SAME tick.
+        let mut app = staff_app(113, "Magic Missile");
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.channel, "the use start armed the latch");
+        assert_eq!(p.channel_proj_expected, 16, "the item's shoot, not its id");
+        let shot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 16)
+            .expect("the press fired the missile");
+        assert_eq!(
+            p.channel_index_expected, shot as u16,
+            "the use-path tail tracked the spawn on its own tick"
+        );
+    }
+
+    #[test]
+    fn s1_p_i23_the_item_switch_drops_the_latch_even_between_channel_items() {
+        // `Player.cs:42800-42807`: `selectedItemState.HasBufferedChange`
+        // clears `flag5`, so `channel = false` — a hotbar switch to ANOTHER
+        // channel item (Flamelash 218) drops the Magic Missile's latch; the
+        // new item re-arms only at its own use start (its own press edge).
+        let mut app = staff_app(113, "Magic Missile");
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        assert!(app.player.as_ref().unwrap().channel);
+        // The switch: the button stays down, the selection changes.
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 218,
+            name: "Flamelash",
+            count: 1,
+            prefix: 0,
+        };
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let p = app.player.as_ref().unwrap();
+        assert!(!p.channel, "the buffered switch drops the latch");
+        assert_eq!(p.channel_proj_expected, 0, "the key cleared with it");
+        assert_eq!(p.channel_index_expected, 0);
+    }
+
+    #[test]
+    fn s1_p_i23_the_release_clears_even_when_the_cursor_is_out_of_reach() {
+        // `Player.cs:42804-42807` runs every tick, ahead of the cursor/reach
+        // gates — the C# `ItemCheck` clears the channel on the button
+        // release regardless of where the cursor sits. The port hoists the
+        // clear to the tick head so a release cannot leave the latch armed
+        // behind the reach early-return (S1-P-i23). Arm in reach, then move
+        // the player far from the cursor AND release on the same tick.
+        let mut app = staff_app(113, "Magic Missile");
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        assert!(app.player.as_ref().unwrap().channel, "armed in reach");
+        // The player walks far away; the cursor stays put (now out of
+        // reach), and the button releases.
+        app.player.as_mut().unwrap().x += 4000.0;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            !p.channel,
+            "the hoisted clear drops the latch behind the reach gate"
+        );
+        assert_eq!(p.channel_proj_expected, 0);
+    }
+
+    #[test]
+    fn s1_p_i23_the_cc_head_drops_the_channel_and_the_key() {
+        // `ItemCheck`'s CCed head (`Player.cs:42598-42603`): `channel =
+        // false` before the early return — frozen, webbed OR stoned
+        // (`CCed` `:3377-3387`). The key clears with the latch.
+        for cc in ["frozen", "webbed", "stoned"] {
+            let mut app = staff_app(113, "Magic Missile");
+            let (sw, sh) = app.screen_size();
+            let screen = Vec2::new(sw, sh);
+            app.mine_down = false;
+            update_editing(&mut app, 1.0 / 60.0, screen);
+            app.mine_down = true;
+            update_editing(&mut app, 1.0 / 60.0, screen);
+            assert!(app.player.as_ref().unwrap().channel);
+            {
+                let p = app.player.as_mut().unwrap();
+                match cc {
+                    "frozen" => p.frozen = true,
+                    "webbed" => p.webbed = true,
+                    _ => {
+                        p.buffs.add_buff(156, 600);
+                    }
+                }
+            }
+            update_editing(&mut app, 1.0 / 60.0, screen);
+            let p = app.player.as_ref().unwrap();
+            assert!(!p.channel, "the {cc} CC drops the channel");
+            assert_eq!(p.channel_item, 0);
+            assert_eq!(p.channel_proj_expected, 0);
+            assert_eq!(p.channel_index_expected, 0);
+        }
+    }
+
+    #[test]
+    fn s1_p_i23_the_dead_tick_drops_the_channel() {
+        // `UpdateDead` (`Player.cs:17017`): the dead tick clears the
+        // channel — the player-side clear the pool's owner-death kill
+        // (`Projectile.cs:67824`) pairs with.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = crate::player::Player::spawn(&w);
+        p.channel = true;
+        p.channel_item = 113;
+        p.channel_proj_expected = 16;
+        p.channel_index_expected = 7;
+        p.channel_target = Vec2::new(500.0, 400.0);
+        p.update_dead(false, false, false, false);
+        assert!(!p.channel, "the dead tick clears the latch");
+        assert_eq!(p.channel_item, 0);
+        assert_eq!(p.channel_target, Vec2::ZERO);
+        assert_eq!(p.channel_proj_expected, 0);
+        assert_eq!(p.channel_index_expected, 0);
+    }
+
+    #[test]
+    fn s1_p_i23_the_clamp_keeps_the_box_size_on_a_small_world() {
+        // `LimitPointToPlayerReachableArea` (`Player.cs:45447-45473`): the
+        // 1920x1200 box KEEPS its size through `Utils.Clamp(Rectangle,
+        // Rectangle)` (`Utils.cs:236-239`) — on a world smaller than the
+        // view the clamp's max < min and `Utils.Clamp<T>` (`:223-234`, max
+        // FIRST) returns the max, so the box hangs off the far edge. The
+        // 64x64-tile world (1024x1024 px): the play area is (640, 640,
+        // 384−1920, 384−1200) = max (−1536, −816) < min (640, 640), so BOTH
+        // corners clamp to the max — the box centre lands at
+        // (−1536 + 960, −816 + 600) = (−576, −216).
+        let w = World::new("t".into(), 64, 64);
+        let center = Vec2::new(512.0, 512.0);
+        // A point far outside the box: the per-axis scale pulls it onto
+        // the box edge around the (−576, −216) centre.
+        let point = Vec2::new(512.0 + 5000.0, 512.0);
+        let out = limit_point_to_player_reachable_area(center, point, &w);
+        // off = (6088, 728); |off.x| > 960 → 960/6088, |off.y| > 600 →
+        // 600/728 — the x scale wins (the smaller). out = mid + off·scale.
+        let scale = (960.0 / 6088.0).min(600.0 / 728.0);
+        let want = Vec2::new(-576.0 + 6088.0 * scale, -216.0 + 728.0 * scale);
+        assert!(
+            (out - want).length() < 1e-3,
+            "the max-first clamp hangs the box off the far edge (out={out:?})"
+        );
+        assert!((out.x - 384.0).abs() < 1e-3, "the box's right edge: −576 + 960");
+    }
+
+    #[test]
+    fn s1_p_i23_the_clamp_truncates_the_corner_and_centres_on_ints() {
+        // `Utils.CenteredRectangle` (`Utils.cs:947-950`): the corner is
+        // `(int)(center − size/2)` — truncation toward zero — and the
+        // centre is XNA's int `X + Width/2`. On a large world the clamp is
+        // a no-op: centre (2000.7, 1500.2) → corner (1040, 900) → box
+        // centre (2000, 1500), NOT the float centre.
+        let w = World::new("t".into(), 512, 512);
+        let center = Vec2::new(2000.7, 1500.2);
+        // A point inside the box passes through unchanged.
+        let point = Vec2::new(2100.0, 1600.0);
+        let out = limit_point_to_player_reachable_area(center, point, &w);
+        assert_eq!(out, point, "an inside point is untouched");
+        // A point past the right edge lands exactly on it: the int centre
+        // 2000 + the 960 half-width.
+        let far = Vec2::new(9000.0, 1500.0);
+        let out = limit_point_to_player_reachable_area(center, far, &w);
+        assert!(
+            (out.x - 2960.0).abs() < 1e-3 && (out.y - 1500.0).abs() < 1e-3,
+            "the int centre drives the edge (out={out:?})"
+        );
+    }
+
+    #[test]
+    fn s1_p_i23_the_clamp_insets_the_play_area_by_640() {
+        // `GetWorldPlayArea` (`WorldBuilding/WorldUtils.cs:16-22`): the
+        // 640-px inset on every side. On a 200x200-tile world (3200x3200
+        // px) the play area is (640, 640)..(2560, 2560); a player near the
+        // left edge has the box's top-left clamped to 640 — the box centre
+        // sits at 640 + 960 = 1600, not at the player's x.
+        let w = World::new("t".into(), 200, 200);
+        let center = Vec2::new(700.0, 1600.0);
+        // The corner would be 700 − 960 = −260 < 640 → clamped to 640.
+        let point = Vec2::new(700.0 - 5000.0, 1600.0);
+        let out = limit_point_to_player_reachable_area(center, point, &w);
+        // mid = (1600, 1600); off = (−5900, 0) → scale = 960/5900.
+        let want_x = 1600.0 - 5900.0 * (960.0 / 5900.0);
+        assert!(
+            (out.x - want_x).abs() < 1e-3 && (out.y - 1600.0).abs() < 1e-3,
+            "the 640 inset slides the box (out={out:?})"
+        );
+        assert!((out.x - 640.0).abs() < 1e-3, "the box's left edge at the inset");
     }
 
     #[test]

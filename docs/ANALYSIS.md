@@ -12532,6 +12532,139 @@ The batch review's three spell-arm findings (the missing
 default and the retarget's closest-wins loop) were fixed forward against the
 decompilation and pinned with tests.
 
+## The channel machinery (S1-P-i23)
+
+**Code-only mode**: this task was written without invoking any compiler (no
+cargo/rustc/rustfmt/tests/dotnet/graphify). The 25 `s1_p_i23_*` witness tests
+are WRITTEN, NOT RUN — each expected value was verified by re-reading the
+cited C# and hand arithmetic. A follow-up build must run
+`cargo test -p tr-app s1_p_i23` (plus the repointed `test_dw_4b_*`,
+`test_dw_5_2_*` and `prism_rig` fixtures) before merging.
+
+The census found the port's `Player.channel` was a per-tick button re-derive,
+not the C#'s latch, and the cancel-key machinery was absent entirely. The
+fixes (all RNG-neutral — no draw added, removed or reordered):
+
+- **The channel is a LATCH** (`Player.cs:52952-52981`). Armed at the use
+  start AFTER the mana pay (`StartChanneling(sItem)` inside
+  `ItemCheck_StartActualUse` `:51677`); cleared on the button release
+  (`ItemCheck` `:42804-42807`'s `if (!flag5) channel = false`), the buffered
+  item switch (`:42800-42803` — even a switch to ANOTHER channel item drops
+  it; the new item re-arms at its own use start), a CC (`:42598-42603`,
+  `CCed` = frozen || webbed || stoned `:3377-3387` — the port's `cced()`
+  reads buff 156 for stoned), the tracked shot's death (`TryCancelChannel`
+  `:52975-52981`, the pool's `Kill` head) and the dead tick (`UpdateDead`
+  `:17017`). The port hoists the release/switch/inventory clear to the
+  tick head (ahead of the cursor/reach early-returns — the C# `ItemCheck`
+  clears every tick regardless of cursor position); the channel block
+  only REFRESHES the aim while the latch survives; the yoyo/flail
+  snapshots (`world_sim/projectiles.rs`) read the latched `p.channel`, so
+  a kill-cancel can drop the channel mid-hold.
+- **`ChannelCancelKey`** (`Player.cs:115-141`) ported as two Player fields:
+  `channel_proj_expected` (the held item's `shoot`, seeded by
+  `StartChanneling(Item)` `:52963-52966`) and `channel_index_expected` (the
+  pool slot of the LAST spawn of the expected type). The C# struct's index
+  defaults to 0 — NOT an Option — so an untracked cache matches slot 0;
+  the port keeps the same 0 default verbatim.
+- **The intent-queue convention**: `NewProjectile`'s tail
+  (`Projectile.cs:11097-11100`) calls `TryUpdateChannel` on every
+  local-owner spawn, but the pool's slot loop cannot borrow the player.
+  Both spawn seams (`spawn_with_data_ai_owned` and the raw `spawn`) push
+  `(kind, slot)` onto `pending_channel_tracks`; the use-path tail
+  (`world_sim/editing.rs`, same-tick tracking) and the projectile-pass tail
+  (`world_sim/projectiles.rs`, the AI-side spawns) drain them through
+  `apply_channel_tracks` — the `drain_mark_spawns` convention. The last
+  spawn of the expected type wins (`TryTracking` `:134-140`).
+- **The kill-cancel** (`Projectile.Kill`'s head `:70651-70659`):
+  `try_cancel_channel` runs at the pool's per-slot death hook — the
+  `owner == Main.myPlayer` gate, the `DontCancelChannelOnKill` {190}
+  exemption (`ProjectileID.cs:524`, the Piranha Gun's piranha) and the
+  `Matches` arms (`Player.cs:121-132`: the aiStyle-99 `ai[0] == -3`
+  Magic-String ghost cancels regardless of the key; otherwise type+index).
+  The out-of-world guard's direct deactivate (`Projectile.cs:16696` —
+  `active = false` + `return`, NO `Kill()` call) never cancels; the port
+  flags that death path (`died_out_of_world`) to keep the distinction.
+- **The aiStyle-9 hold gate** (`Projectile.cs:43241`): the C# compares
+  `player.HeldItem.shoot == this.type` — the held ITEM's shoot projectile
+  vs the spell's kind. `channel_item` stores the held item's kind, so the
+  arm resolves `registry::projectile(p.channel_item)` before the compare
+  (the pre-i23 code compared the item id against the projectile id — an
+  item id is never a projectile id, so the hold NEVER ran in game).
+- **The homing blend** (`:43297`): `t = base.Distance(vector.Value)` is the
+  projectile CENTRE to the target (`Entity.cs:195-198`), not the velocity's
+  length. (The ramp itself is a C# dead-ramp quirk kept verbatim: the outer
+  `GetLerpValue(200f, 20f, x)` reads x in [0,1], always below the 20f `to`,
+  so the descending range returns 1 and the blend amount is the constant
+  0.2 — the witness pins the exact `Lerp((4,0),(32,0),0.2) = (9.6,0)`.)
+- **The idle rotation** (`:43358`): `rotation.AngleLerp(0f, 0.2f)`
+  (`Utils.cs:2033-2051`) — the shortest-way 20% ANGULAR lerp, not a 0.2*pi
+  max-step turn (`angle_towards`). The port's `angle_lerp` helper carries
+  the XNA `WrapAngle` form.
+- **The Last Prism interval pay** (`:66612-66613` -> `CheckMana(mana, pay:
+  true)` `Player.cs:52576-52586`): the pay scales `(int)(item.mana *
+  manaCost)` — the armor/accessory multiplier the use path already folds.
+  Folds (no port fields): the `manaFlower` quick-mana retry (`:52588-52609`)
+  and the `DebugOptions.ManaV2` cast-at-zero arms (`:52602-52615`) — the
+  plain `statMana >= num` compare stands; the prism gate's `!player.noItems`
+  term (`:66614`) has no port field either (the flail kill gate's same fold,
+  `:43727`).
+- **`LimitPointToPlayerReachableArea`** (`Player.cs:45447-45473`) rewritten
+  verbatim: `Utils.CenteredRectangle(Center, MaxWorldViewSize)`
+  (`Utils.cs:947-950` — the `(int)` corner truncation, the size stays
+  1920x1200) clamped by `WorldUtils.ClampToWorldBorders`
+  (`WorldBuilding/WorldUtils.cs:24-31` -> `Utils.Clamp(Rectangle, Rectangle)`
+  `Utils.cs:236-239`): the TOP-LEFT slides inside the 640-px-inset play
+  area (`GetWorldPlayArea` `:16-22`) while the box KEEPS its size — on a
+  world smaller than the view the clamp's max < min and `Utils.Clamp<T>`
+  (`:223-234`, max FIRST) returns the max, so the box hangs off the far
+  edge exactly as the C#'s does. The centre is XNA's int `X + Width/2`.
+  The pre-i23 helper shrank the box to the world and centred on floats.
+- **The yoyo release** (`Projectile.cs:67920-67925`): `!channel || CCed`
+  drops the aim to -1 — the CCed arm rides the new `YoyoInputs.player_cced`
+  snapshot (the pre-i23 port stubbed it false). The flail kill gate's CCed
+  term (`:43727`) already rode `FlailInputs.player_cced`.
+- **The toolTime hold guard** (`Player.cs:43576-43587`): the port's
+  swing-hold stand-in for the projectile-less channel items now requires
+  the LATCHED `p.channel` — the per-tick button re-derive would resurrect
+  a kill-cancelled channel.
+
+Deliberate folds (recorded, all cited in the code):
+- **The projectile-less channel items keep a per-tick arm**: the mounts'
+  `StartChanneling()` parameterless overload (`Player.cs:52941`, no cancel
+  key) fires from the mount-use path the port has not ported; the port's
+  use path only arms the WEAPON channel at the shot start, so the
+  `!held_weapon` family (the mounts, the fairy bell — the items with no
+  `projectile` row) keeps its pre-i23 per-tick arm in the third else-if of
+  the channel block. The latch's clear paths (release/CC/switch/death)
+  still apply to it.
+- **The aim is a one-tick-old snapshot** (the M4-PROJ-6 deviation above,
+  unchanged): the use start seeds `channel_target` with the clamped cursor
+  so the spawn tick already carries it; the refresh block re-clamps on the
+  following ticks.
+- **The `Matches` ghost arm reads `proj_data(kind).ai_style == 99`**: the
+  C# reads the live `projectile.aiStyle`; the port's row table is the same
+  value for every rowed kind (the yoyo family). A rowless aiStyle-99 kind
+  cannot spawn through the data seam, so the read is equivalent.
+- **Census note (out of scope)**: the port's `channel` item flags match the
+  C# (`itemdata.rs` vs `Item.cs` — RainbowRod 495 shoot 79 channel;
+  VortexBeater 3475 shoot 615 channel (`Item.cs:31175`); LaserMachinegun
+  2795 shoot 439 mana 6 channel; 726 FrostStaff / NimbusRod / MagnetSphere /
+  Shadowbeam NOT channel). The AI_075 channel kinds 439/445/460/595/735/927
+  etc. are rowless in the port (their per-stave spawn params belong to the
+  i20-i22 rows); the machinery here serves every kind once rowed.
+- **Census fold (ammo shooters)**: the C# `ItemCheck_StartActualUse` calls
+  `StartChanneling(sItem)` for EVERY item (`:51677`), including the
+  `useAmmo` guns; the port's use-start arm rides the generic (non-ammo)
+  shoot path only, so the channel guns (Vortex Beater 3475, Phantasm 3540,
+  Celeb2 3930, DD2 Phoenix Bow 3854) do not arm the latch through the
+  separate ammo-shooter arm. Their gunProj rockets (615/630/705/714) carry
+  aiStyle 75, which the port's dispatch currently routes through the
+  `ai_last_prism` stand-in (the per-gun AI_075 arms are unported — the
+  i20-i22 rows); that stand-in reads `p.channel`, so the guns' channel
+  behaviour is already coupled to the prism stand-in, not to a faithful
+  gun arm. Wiring `StartChanneling` into the shared shooter arm and the
+  real per-gun AI_075 arms belong to those rows, not this machinery slice.
+
 ## aiStyle-1 per-type arms (S1-D-5 slice A, 2026-11-18, code-only mode)
 
 **Code-only mode**: this slice was written without invoking any compiler
