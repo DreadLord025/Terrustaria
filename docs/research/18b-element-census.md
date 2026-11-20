@@ -159,9 +159,9 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 39 | `UIItemIcon` | LANDED (`ui/item_collection.rs::ItemIconElement`, 32×32 ctor + context-31 centre draw + blackout tint `UIItemIcon.cs:13-25`; icon draw pre-landed `slot.rs::draw_item_icon`) |
 | 40 | `UIKeybindingCycleListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingCycleRow`, shared row chrome + "???" fallbacks + value GlyphsScale 0.85 window `:18-46`; dead `X -= 17` documented) |
 | 41 | `UIKeybindingListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingRow`, click listen-latch `:28-41`, GenInput join `:80-112`, GetFriendlyName table `:114-176`, listening Gold / unbound (80,80,80) arms + gamepad -3 shift `:43-78`; GlyphTagHandler.GenerateTag table `GlyphTagHandler.cs:169-289`) |
-| 42 | `UIKeybindingSimpleListItem` | pending |
-| 43 | `UIKeybindingSliderItem` | pending |
-| 44 | `UIKeybindingToggleListItem` | pending |
+| 42 | `UIKeybindingSimpleListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingSimpleRow`, centred text X+W/2-strW/2 + shared chrome `:21-39`; DrawSettings2Panel = DrawSettingsPanel documented) |
+| 43 | `UIKeybindingSliderItem` | LANDED (`ui/keybinding_rows.rs::KeybindingSliderRow`, rightHover/rightLock grab machine + num2 bar state + flag overrides + keyboard/gamepad action gates `:42-99`; valuePosition +10; DrawValueBar pre-landed `sliders.rs`) |
+| 44 | `UIKeybindingToggleListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingToggleRow`, (W-2)/2+2 integer toggle frame + right-edge White scale-1 draw `:28-47`; dead Gold arm + X-=17 documented) |
 | 45 | `UIParticleLayer` | pending |
 | 46 | `UIProgressBar` | pending |
 | 47 | `UIResourcePack` | pending |

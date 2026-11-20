@@ -358,6 +358,204 @@ pub struct KeybindDraw {
     pub value_glyphs_scale: f32,
 }
 
+/// `UIKeybindingSimpleListItem` (`UIKeybindingSimpleListItem.cs:9-40`),
+/// research/18b row 42 (W4-d83): the centred single-text row (the "Reset to
+/// Default" buttons). `DrawSettings2Panel` (`Utils.cs:2607-2610`) is the
+/// identical `DrawPanel(SettingsPanel, 2, 0)` call — same chrome.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KeybindingSimpleRow {
+    /// `_color` (`:11`, ctor `:17`).
+    pub color: [u8; 4],
+}
+
+impl KeybindingSimpleRow {
+    /// The ctor's colour half (`:15-19`); the null `getText` reads `"???"`
+    /// (`:18`) — [`KeybindingCycleRow::text_or_placeholder`] mirrors it.
+    pub fn new(color: [u8; 4]) -> Self {
+        Self { color }
+    }
+
+    /// The `DrawSelf` plan (`:21-39`): the shared chrome, but the text is
+    /// **centred** — `X = dimensions.X + Width/2 - stringSize.X/2` (`:37`),
+    /// y stays `Y + 2 + 6`. No glyph-scale window, no right-edge value.
+    pub fn draw_plan(&self, rect: [f32; 4], hovering: bool, text_width: f32) -> SimpleDraw {
+        SimpleDraw {
+            panel_width: rect[2] + 1.0, // `:26`
+            text_pos: [
+                rect[0] + rect[2] / 2.0 - text_width / 2.0, // `:37` float halves
+                rect[1] + 2.0 + 6.0,                        // `:34`
+            ],
+            base_color: row_base_color(hovering, false), // `:29`
+            panel_tint: row_panel_tint(self.color, hovering), // `:30`
+        }
+    }
+}
+
+/// The simple row's draw outputs (`UIKeybindingSimpleListItem.cs:26-38`).
+pub struct SimpleDraw {
+    pub panel_width: f32,
+    pub text_pos: [f32; 2],
+    pub base_color: [u8; 4],
+    pub panel_tint: [u8; 4],
+}
+
+/// `UIKeybindingSliderItem` (`UIKeybindingSliderItem.cs:11-101`), research/18b
+/// row 43 (W4-d83): a settings row whose value is a `DrawValueBar` slider.
+/// The row *drives* the shared `IngameOptions.rightHover`/`rightLock` statics
+/// (`ingame_options.rs`'s fields) — the port takes them by `&mut` so the
+/// window's other bars see the same state. The dead `(0 != 0) ? Gold` arm
+/// (`:73`) never fires; the base colour is the shared hover pair.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KeybindingSliderRow {
+    /// `_color` (`:13`).
+    pub color: [u8; 4],
+    /// `_sliderIDInPage` (`:23`, ctor `:39`) — this row's bar id.
+    pub slider_id: i32,
+}
+
+/// The slider row's per-frame outputs (`UIKeybindingSliderItem.cs:42-99`).
+pub struct SliderDraw {
+    /// `num2` (`:46-59`): 0 free, 1 this row locked, 2 another row locked —
+    /// the `DrawValueBar` state argument (`:83`).
+    pub bar_state: i32,
+    /// `flag` (`:63-71`): the effective hover after the lock overrides.
+    pub flag: bool,
+    pub base_color: [u8; 4],
+    pub panel_tint: [u8; 4],
+    /// The title position (`:77-78`).
+    pub title_pos: [f32; 2],
+    /// `IngameOptions.valuePosition` (`:82`): `(X + W - 10, Y + 10 + 6)` —
+    /// note **+10**, not the +2 of the text rows.
+    pub value_position: [f32; 2],
+    /// `:87-90`: fire `_SlideKeyboardAction(value)` this frame.
+    pub slide_keyboard: bool,
+    /// `:96-99`: fire `_SlideGamepadAction()` this frame.
+    pub slide_gamepad: bool,
+}
+
+impl KeybindingSliderRow {
+    /// The ctor's state half (`:27-40`); the null `Func`/`Action` fallbacks
+    /// (`"???"`, `0f`, no-ops) are the caller's defaults.
+    pub fn new(color: [u8; 4], slider_id: i32) -> Self {
+        Self { color, slider_id }
+    }
+
+    /// One `DrawSelf` pass (`:42-99`) against the shared bar statics.
+    /// `in_bar` is `IngameOptions.inBar` after the caller's `DrawValueBar`
+    /// (`:84`); `mouse_left_trigger` is `PlayerInput.Triggers.Current.MouseLeft`
+    /// (`:87`, the *trigger*, not `Main.mouseLeft` which gates the unlock).
+    pub fn draw_frame(
+        &self,
+        rect: [f32; 4],
+        hovering: bool,
+        mouse_left: bool,
+        mouse_left_trigger: bool,
+        allow_editing: bool,
+        using_gamepad: bool,
+        in_bar: bool,
+        right_hover: &mut i32,
+        right_lock: &mut i32,
+    ) -> SliderDraw {
+        *right_hover = -1; // `:47`
+        if !mouse_left {
+            *right_lock = -1; // `:48-51`
+        }
+        let bar_state = if *right_lock == self.slider_id {
+            1 // `:52-55`
+        } else if *right_lock != -1 {
+            2 // `:56-59`
+        } else {
+            0
+        };
+        let mut flag = hovering; // `:63`
+        if bar_state == 1 {
+            flag = true; // `:64-67`
+        }
+        if bar_state == 2 {
+            flag = false; // `:68-71`
+        }
+        let mut slide_keyboard = false;
+        if in_bar || *right_lock == self.slider_id {
+            *right_hover = self.slider_id; // `:84-86`
+            if mouse_left_trigger && allow_editing && !using_gamepad && *right_lock == self.slider_id
+            {
+                slide_keyboard = true; // `:87-90`
+            }
+        }
+        if *right_hover != -1 && *right_lock == -1 {
+            *right_lock = *right_hover; // `:92-95`
+        }
+        SliderDraw {
+            bar_state,
+            flag,
+            base_color: row_base_color(flag, false), // `:73`
+            panel_tint: row_panel_tint(self.color, flag), // `:74`
+            title_pos: [rect[0] + 8.0, rect[1] + 2.0 + 6.0], // `:77-78`
+            value_position: [rect[0] + rect[2] - 10.0, rect[1] + 10.0 + 6.0], // `:82`
+            slide_keyboard,
+            slide_gamepad: hovering && allow_editing, // `:96-99` — the RAW hover
+        }
+    }
+}
+
+/// `UIKeybindingToggleListItem` (`UIKeybindingToggleListItem.cs:10-48`),
+/// research/18b row 44 (W4-d83): the on/off row with the `Settings_Toggle`
+/// two-frame switch on the right edge. The dead `(0 != 0) ? Gold` arm
+/// (`:36`) never fires; the `X -= 17` at `:43` is dead too (the toggle's
+/// position is rebuilt at `:46`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KeybindingToggleRow {
+    /// `_color` (`:12`).
+    pub color: [u8; 4],
+}
+
+/// The toggle row's draw outputs (`UIKeybindingToggleListItem.cs:30-46`).
+pub struct ToggleDraw {
+    pub panel_width: f32,
+    pub title_pos: [f32; 2],
+    pub base_color: [u8; 4],
+    pub panel_tint: [u8; 4],
+    /// The `Settings_Toggle` source frame (`:44`): half the sheet minus the
+    /// 2 px seam, **integer** division; the on frame starts 2 px further
+    /// right (`(W-2)/2 + 2`).
+    pub toggle_src: [i32; 4],
+    /// The toggle's draw position (`:46`): `(X + W - frameW - 10, Y + 2 + 6)`,
+    /// scale 1, `Color.White` — the toggle never dims with the row.
+    pub toggle_pos: [f32; 2],
+}
+
+impl KeybindingToggleRow {
+    /// The ctor's colour half (`:20-26`); the null fallbacks read `"???"`
+    /// and `false` (`:24-25`).
+    pub fn new(color: [u8; 4]) -> Self {
+        Self { color }
+    }
+
+    /// The `DrawSelf` plan (`:28-47`). `toggle_size` is the `Settings_Toggle`
+    /// sheet's `[w, h]` in pixels.
+    pub fn draw_plan(
+        &self,
+        rect: [f32; 4],
+        hovering: bool,
+        is_on: bool,
+        toggle_size: [i32; 2],
+    ) -> ToggleDraw {
+        let half = (toggle_size[0] - 2) / 2; // `:44` integer division
+        let src = [if is_on { half + 2 } else { 0 }, 0, half, toggle_size[1]];
+        ToggleDraw {
+            panel_width: rect[2] + 1.0,                              // `:33`
+            title_pos: [rect[0] + 8.0, rect[1] + 2.0 + 6.0],         // `:40-41`
+            base_color: row_base_color(hovering, false),             // `:36`
+            panel_tint: row_panel_tint(self.color, hovering),        // `:37`
+            toggle_src: src,
+            toggle_pos: [
+                rect[0] + rect[2] - src[2] as f32 - 10.0, // `:45-46`
+                rect[1] + 2.0 + 6.0,
+            ],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,5 +642,79 @@ mod tests {
         assert_eq!(raw.friendly_name(), "SomeModdedTrigger");
         assert_eq!(KeybindingCycleRow::text_or_placeholder(None), "???");
         assert_eq!(KeybindingCycleRow::text_or_placeholder(Some("Style")), "Style");
+    }
+
+    /// The simple row centres its text (`UIKeybindingSimpleListItem.cs:37`):
+    /// X + W/2 - strW/2 with float halves (odd widths keep the half pixel),
+    /// y stays Y+8; the chrome pair is the shared one.
+    #[test]
+    fn the_simple_row_centres_its_text() {
+        let row = KeybindingSimpleRow::new([63, 65, 151, 255]);
+        let d = row.draw_plan([100.0, 50.0, 401.0, 30.0], false, 61.0);
+        assert_eq!(d.panel_width, 402.0);
+        assert_eq!(d.text_pos, [100.0 + 200.5 - 30.5, 58.0]);
+        assert_eq!(d.base_color, [192, 192, 192, 255]);
+        assert_eq!(d.panel_tint, [44, 45, 106, 255]);
+        let h = row.draw_plan([100.0, 50.0, 401.0, 30.0], true, 61.0);
+        assert_eq!(h.base_color, [255, 255, 255, 255]);
+        assert_eq!(h.panel_tint, [63, 65, 151, 255]);
+    }
+
+    /// The slider row's lock machine (`UIKeybindingSliderItem.cs:46-99`):
+    /// no mouse-left unlocks; a free in-bar hover grabs the lock; the locked
+    /// row forces flag=true even unhovered and fires the keyboard action;
+    /// another row's lock forces flag=false. The gamepad action reads the
+    /// RAW hover, not the flag.
+    #[test]
+    fn the_slider_row_grabs_and_overrides_the_shared_lock() {
+        let row = KeybindingSliderRow::new([63, 65, 151, 255], 3);
+        let rect = [0.0, 0.0, 400.0, 30.0];
+        let (mut hover, mut lock) = (-1, -1);
+        // Free, hovered, in the bar, mouse held: the hover grabs the lock.
+        let d = row.draw_frame(rect, true, true, true, true, false, true, &mut hover, &mut lock);
+        assert_eq!(d.bar_state, 0);
+        assert!(d.flag);
+        assert_eq!(lock, 3, "the in-bar hover grabs (`:92-95`)");
+        assert!(!d.slide_keyboard, "no action before the lock existed");
+        assert_eq!(d.value_position, [390.0, 16.0], "+10 not +2 (`:82`)");
+        // Locked, NOT hovered: flag forced true, keyboard action fires.
+        let d = row.draw_frame(rect, false, true, true, true, false, false, &mut hover, &mut lock);
+        assert_eq!(d.bar_state, 1);
+        assert!(d.flag);
+        assert!(d.slide_keyboard);
+        assert!(!d.slide_gamepad, "raw hover false");
+        // Another row's lock: flag forced false even while hovered.
+        lock = 7;
+        let d = row.draw_frame(rect, true, true, true, true, false, true, &mut hover, &mut lock);
+        assert_eq!(d.bar_state, 2);
+        assert!(!d.flag);
+        assert_eq!(d.panel_tint, [44, 45, 106, 255], "flag=false dims");
+        assert!(d.slide_gamepad, "raw hover true + AllowEditing (`:96`)");
+        assert_eq!(lock, 7, "the other lock survives");
+        // Mouse released: the lock drops (`:48-51`).
+        let _ = row.draw_frame(rect, false, false, false, true, false, false, &mut hover, &mut lock);
+        assert_eq!(lock, -1);
+        assert_eq!(hover, -1);
+        // Gamepad in use blocks the keyboard action (`:87`).
+        lock = 3;
+        let d = row.draw_frame(rect, false, true, true, true, true, false, &mut hover, &mut lock);
+        assert!(!d.slide_keyboard);
+    }
+
+    /// The toggle frame (`UIKeybindingToggleListItem.cs:44-46`): a 30x14
+    /// sheet halves to 14 (integer (30-2)/2), the on frame starts at 16
+    /// (14+2); the switch rides the right edge at scale 1 and never dims.
+    #[test]
+    fn the_toggle_frame_halves_with_the_seam() {
+        let row = KeybindingToggleRow::new([63, 65, 151, 255]);
+        let off = row.draw_plan([100.0, 50.0, 400.0, 30.0], false, false, [30, 14]);
+        assert_eq!(off.toggle_src, [0, 0, 14, 14]);
+        assert_eq!(off.toggle_pos, [100.0 + 400.0 - 14.0 - 10.0, 58.0]);
+        let on = row.draw_plan([100.0, 50.0, 400.0, 30.0], true, true, [30, 14]);
+        assert_eq!(on.toggle_src, [16, 0, 14, 14]);
+        assert_eq!(on.base_color, [255, 255, 255, 255]);
+        // An odd width keeps integer truncation: (31-2)/2 = 14, on at 16.
+        let odd = row.draw_plan([0.0, 0.0, 100.0, 30.0], false, true, [31, 14]);
+        assert_eq!(odd.toggle_src, [16, 0, 14, 14]);
     }
 }
