@@ -40,7 +40,7 @@ their own lanes reconcile them).
 | 6 | Shimmer | `:15195-15245` + `ShimmerMakeBiome` `:34853-35057` + `ShimmerMakeBiomeOpening` `:35059-35102` | `worldgen/shimmer.rs` → step `"shimmer"` after `ocean caves`, before `pyramids`. Publishes `GenVars.shimmer_position` (`GenVars.cs:282`). |
 | 7 | Clean Up Dirt (`DirtWallCleanup`) | `:15246-15359` — the two surface wall-scrub sweeps (the C#'s duplicated `==40` terms kept verbatim) | `passes2.rs::pass_clean_up_dirt` → step `"clean up dirt"` after `shimmer`, before `pyramids` |
 | 8 | Dirt Rock Wall Runner | `:15461-15475` + `DirtyRockRunner` `:77145-77210` — wall-2→59 blobs | `passes2.rs::pass_dirt_rock_wall_runner` → step `"dirt rock wall runner"` after `pyramids`, before `pots` (the vanilla Pyramids `:15360` < Dirt Rock Wall Runner `:15461` < Living Trees `:15476` pair) |
-| 9 | Wood Tree Walls (`LivingTreeWalls`) | `:15717-15749` — the 191-neighbour wall-244 sweep | `passes2.rs::pass_wood_tree_walls` → step `"wood tree walls"` after `living trees`, before `altars` |
+| 9 | Wood Tree Walls (`LivingTreeWalls`) | `:15717-15749` — the 191-neighbour wall-244 sweep | `passes2.rs::pass_wood_tree_walls` → step `"wood tree walls"` after `living trees`, before `trees` (the vanilla Living Trees `:15476` < Wood Tree Walls `:15717` < Altars `:15750` order; the port's `altars` step sits earlier in its grouped chain) |
 
 Every new step draws from its own `pass_rng("<vanilla name>")` stream (the
 port's per-pass re-seed model, `pipeline.rs:212-225`), so no existing step's
@@ -63,5 +63,5 @@ stay in place untouched.
 | Gems | 28ec5561 | landed (code-only; hash re-pin deferred to the gate) |
 | Shimmer | 12154ee7 | landed (code-only; `GenVars.shimmer_position` published; SEED42_512 unchanged — sub-vanilla valve; DEFAULT_WORLD re-pin deferred) |
 | Clean Up Dirt | 73e83ebe | landed (code-only; hash re-pin deferred to the gate; the Shimmer landing's missed step-count bump fixed here — 73) |
-| Dirt Rock Wall Runner | (this commit) | landed (code-only; hash re-pin deferred to the gate) |
-| Wood Tree Walls | — | pending |
+| Dirt Rock Wall Runner | 16aa0c64 | landed (code-only; hash re-pin deferred to the gate) |
+| Wood Tree Walls | (this commit) | landed (code-only; draws nothing; hash re-pin deferred to the gate) — **lane complete 9/9** |

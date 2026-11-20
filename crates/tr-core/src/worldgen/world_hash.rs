@@ -291,6 +291,12 @@ mod tests {
     // one candidate per column retypes wall-2 blobs to 59 in the surface
     // band on every world ≥20 wide (the 512 world qualifies), so this pin
     // moves BY DESIGN; deferred to the gate.
+    // W4-d102 pass 9 (code-only): the Wood Tree Walls sweep
+    // (`WorldGen.cs:15717-15749`, `passes2.rs::pass_wood_tree_walls`)
+    // lands after `living trees` — draws nothing; wall 244 fills the
+    // living-wood 191 interiors wherever the Living Trees step planted
+    // them (the 512 world's count roll can rescue one tree). If a tree
+    // exists this pin moves BY DESIGN; deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -356,6 +362,9 @@ mod tests {
     // W4-d102 pass 8 (code-only): the Dirt Rock Wall Runner pass (see
     // SEED42_512 above) retypes the wall-2 blobs to 59 — this pin moves
     // BY DESIGN; deferred to the gate.
+    // W4-d102 pass 9 (code-only): the Wood Tree Walls sweep (see
+    // SEED42_512 above) walls the living-tree interiors on the full-size
+    // worlds — this pin moves BY DESIGN; deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

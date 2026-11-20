@@ -767,6 +767,53 @@ fn dirty_rock_runner(world: &mut World, rng: &mut Rng, i: i32, j: i32) {
     }
 }
 
+/// The Wood Tree Walls pass (`LivingTreeWalls`, `WorldGen.cs:15717-15749`):
+/// the living-tree interior wall sweep — `i` in `25..width-25`, `j` from
+/// 25 while `(double)j < worldSurface`. The trigger reads `tile.type`
+/// WITHOUT an active gate on the five cross cells (centre, up, left,
+/// right, down — the Slush precedent: the C# reads `type` on inactive
+/// cells too, and the port's tiles keep their kind regardless of the
+/// active flag, so the read is identical). The flag survives only when every
+/// DIAGONAL corner (`k != i && l != j` — the four corners of the 3×3, the
+/// C# has no break) is an active 191 or already carries wall 244; then the
+/// centre wall becomes 244 (no active gate on the write either). Draws
+/// nothing; the progress message is the Living Trees key (`:15721`).
+pub(crate) fn pass_wood_tree_walls(world: &mut World, world_surface: f64) {
+    // `:15719` — the skyblock outer gate (module doc).
+    if world.seeds.contains(SeedFlags::SKYBLOCK) {
+        return;
+    }
+    for i in 25..world.width - 25 {
+        let mut j = 25;
+        while (j as f64) < world_surface {
+            let cross_191 = [(i, j), (i, j - 1), (i - 1, j), (i + 1, j), (i, j + 1)]
+                .iter()
+                .any(|&(x, y)| world.tile(x, y).is_some_and(|t| t.kind == 191));
+            if cross_191 {
+                let mut flag = true;
+                for k in (i - 1)..=(i + 1) {
+                    for l in (j - 1)..=(j + 1) {
+                        if k != i && l != j {
+                            let corner_ok = world.tile(k, l).is_some_and(|t| {
+                                (t.active() && t.kind == 191) || t.wall == 244
+                            });
+                            if !corner_ok {
+                                flag = false;
+                            }
+                        }
+                    }
+                }
+                if flag {
+                    if let Some(t) = world.tile_mut(i, j) {
+                        t.wall = 244;
+                    }
+                }
+            }
+            j += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1193,5 +1240,77 @@ mod tests {
         pass_dirt_rock_wall_runner(&mut w, 12.0, &mut rng);
         assert_eq!(w.tiles, before, "the width valve skips the pass");
         assert_eq!(rng.next_u32(), Rng(0xD127).next_u32(), "no draw fired");
+    }
+
+    /// A 100×100 canvas with a solid 3×3 living-wood (191) block centred
+    /// at (50, 50) — the Wood Tree Walls trigger shape.
+    fn living_wood_world() -> World {
+        let mut w = World::new("treewalls".into(), 100, 100);
+        for x in 49..=51 {
+            for y in 49..=51 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 191;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 80.0;
+        w
+    }
+
+    #[test]
+    fn the_wood_tree_wall_fills_the_trunk_interior_and_replays() {
+        let mut a = living_wood_world();
+        let mut b = living_wood_world();
+        pass_wood_tree_walls(&mut a, 80.0);
+        pass_wood_tree_walls(&mut b, 80.0);
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        // Only the centre cell has all four diagonal corners active 191.
+        assert_eq!(a.tile(50, 50).unwrap().wall, 244);
+        for (x, y) in [(49, 49), (51, 49), (49, 51), (51, 51), (50, 49), (49, 50)] {
+            assert_eq!(a.tile(x, y).unwrap().wall, 0, "edge cell {x},{y}");
+        }
+    }
+
+    #[test]
+    fn a_missing_diagonal_corner_blocks_the_wall() {
+        let mut w = living_wood_world();
+        // Deactivate one corner: the flag fails even though the cross
+        // still reads 191 (the trigger has no active gate).
+        let i = w.index(49, 49);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        pass_wood_tree_walls(&mut w, 80.0);
+        assert_eq!(w.tile(50, 50).unwrap().wall, 0);
+    }
+
+    #[test]
+    fn an_existing_244_corner_satisfies_the_flag() {
+        let mut w = living_wood_world();
+        // The corner is inactive non-wood but already carries wall 244 —
+        // the C#'s `wall != 244` arm keeps the flag alive.
+        let i = w.index(49, 49);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        w.tiles[i].kind = 0;
+        w.tiles[i].wall = 244;
+        pass_wood_tree_walls(&mut w, 80.0);
+        assert_eq!(w.tile(50, 50).unwrap().wall, 244);
+    }
+
+    #[test]
+    fn the_sweep_stays_inside_the_25_margins_and_the_surface_line() {
+        let mut w = living_wood_world();
+        // A second block outside the x margin (column 10) and one below
+        // the surface line (row 85): neither may gain wall 244.
+        for (cx, cy) in [(10, 50), (50, 85)] {
+            for x in (cx - 1)..=(cx + 1) {
+                for y in (cy - 1)..=(cy + 1) {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = 191;
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+        }
+        pass_wood_tree_walls(&mut w, 80.0);
+        assert_eq!(w.tile(10, 50).unwrap().wall, 0, "the x margin");
+        assert_eq!(w.tile(50, 85).unwrap().wall, 0, "the surface line");
     }
 }

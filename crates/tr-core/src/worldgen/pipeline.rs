@@ -1466,6 +1466,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
+    // The vanilla Wood Tree Walls slot (`WorldGen.cs:15717`): after Living
+    // Trees (`:15476`) and before Altars (`:15750`) — W4-d102 pass 9. The
+    // sweep draws nothing; it reads the 191 trunks the living-trees step
+    // just planted.
+    step!("wood tree walls", "Wood Tree Walls", step_wood_tree_walls),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2847,6 +2852,20 @@ fn step_living_trees(
     );
 }
 
+/// The vanilla Wood Tree Walls slot (`WorldGen.cs:15717-15749`) — W4-d102
+/// pass 9: the 191-neighbour wall-244 sweep (draws nothing).
+fn step_wood_tree_walls(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_wood_tree_walls(world, world_surface);
+}
+
 fn step_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3411,8 +3430,9 @@ mod tests {
         // bump the Shimmer landing missed); + `clean up dirt` (vanilla
         // "Clean Up Dirt", `:15246`) after `shimmer`; + `dirt rock wall
         // runner` (vanilla "Dirt Rock Wall Runner", `:15461`) after
-        // `pyramids`.
-        assert_eq!(names.len(), 74);
+        // `pyramids`; + `wood tree walls` (vanilla "Wood Tree Walls",
+        // `:15717`) after `living trees`.
+        assert_eq!(names.len(), 75);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3511,6 +3531,7 @@ mod tests {
                 "shell piles",
                 "slopes",
                 "living trees",
+                "wood tree walls",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3888,6 +3909,26 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Pyramids") < cpos("Dirt Rock Wall Runner"));
         assert!(cpos("Dirt Rock Wall Runner") < cpos("Living Trees"));
+    }
+
+    /// W4-d102 pass 9: `wood tree walls` sits in its vanilla slot — after
+    /// `living trees` (`WorldGen.cs:15476`) and before the port's `trees`
+    /// step; the Wood Tree Walls anchor is `:15717`, Altars `:15750`
+    /// follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_wood_tree_walls_step_sits_after_the_living_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("wood tree walls"), pos("living trees") + 1);
+        assert_eq!(names[pos("wood tree walls") + 1], "trees");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Living Trees") < cpos("Wood Tree Walls"));
+        assert!(cpos("Wood Tree Walls") < cpos("Altars"));
     }
 
     #[test]
