@@ -39278,5 +39278,11 @@ Wave B (sites 11-20): `projectile_gore_b.rs`, 5 witnesses written not run.
 line is REPLACED by the pool fn (gate + type + kicks + post-writes). The
 volcano's shared `num7 = Next(3,7)` (`:42311`) rides `volcano_gores` as an
 input — the caller draws it between the two dust loops.
-Remainder: sites 21-165 (waves C+), the UpdateProjectiles slot dispatch
+Wave C (sites 21-30): `projectile_gore_c.rs`, 5 witnesses written not run.
+The `AI_147` firework gore row is IDENTICAL at all seven state sites — one
+keep-one `celeb2_gore` fn consuming the landed census's same 7 range draws
+(`projectile_ai_misc.rs:490-498`); the wiring swaps each census call. The
+idle gate's `Next(900,1200)` ALWAYS draws (`:51157`); the rope gate is
+`Next(4) != 0` (3-in-4 TAKEN, `:52134`).
+Remainder: sites 31-165 (waves D+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
