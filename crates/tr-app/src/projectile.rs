@@ -13557,6 +13557,7 @@ impl ProjectilePool {
             }
         }
         out
+    }
 
     /// S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
     /// `Main.player[owner]` reads). The world-sim pass builds it per fixed
@@ -13572,8 +13573,6 @@ impl ProjectilePool {
     /// lance held this tick.
     pub fn take_spear_hold(&mut self) -> Option<i32> {
         self.pending_spear_hold.take()
-
-    }
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus

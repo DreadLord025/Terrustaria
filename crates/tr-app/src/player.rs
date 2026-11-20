@@ -3662,37 +3662,52 @@ impl Player {
         self.respawn();
     }
 
-    /// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
+/// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
     /// right-click removal — non-debuffs only, and not Petrified 60 /
-    /// The full per-tick `Player.tileRangeX/Y` pair after the journey block,
-    /// the `equippedAnyTileRangeAcc` accessory grant and the equipped Toolbox
-    /// (`Player.cs:18815-18828` → `:13040-13044` → `:14954-14958`), clamped
-    /// by `TileReachCheckSettings.Simple`'s `TileReachLimit = 20`
-    /// (`TileReachCheckSettings.cs:24-33`, `:81-85`) — the exact reach
-    /// `IsInTileInteractionRange` reads (`Player.cs:32025-32029`). The
-    /// accessory scan is the C#'s `UpdateEquips` loop 3..10 over the
-    /// equipped kinds (`:12946-12952`); the Toolbox 1923's +1/+1 fires from
-    /// the SAME loop (`ApplyEquipFunctional`, `:14954` — an equipped
-    /// accessory, not the held item). Delegates to `craft::tile_reach` —
-    /// one formula, no second copy (S1-P-i43).
-    pub fn tile_interaction_reach(&self) -> (i32, i32) {
-        let range_acc = self.equipped[3..10]
-            .iter()
-            .any(|k| matches!(k, 2215 | 3061 | 5126));
-        let toolbox = self.equipped[3..10].contains(&1923);
-        crate::craft::tile_reach(
-            range_acc,
-            toolbox,
-            self.far_placement_range,
-            false, // the artisan loaf's TB is the AdjTiles scan's, not Simple's
-        )
+    /// Webbed 151; the mount's own buff dismounts instead of removing the
+    /// buff (`Mount.CheckBuff`, `Mount.cs:2933-2936` — `data.buff == b`).
+    /// The dismount is `mount.TryDismount` (`:43377` → `Mount.cs:6137-6140`
+    /// → `CanDismountWithResult` `:6611-6624`): a refused dismount (CCed on
+    /// 55/56/61, or no room for the 20×42 shrink) keeps the buff — the C#
+    /// sets `flag = true` regardless of the `TryDismount` result
+    /// (`:43378`), so `DelBuff` never runs on the mount arm. The cart ride
+    /// hosts its own state (`cart_mounted`), so the cart rows route through
+    /// `try_cart_dismount` — the same `TryDismount` gates plus the ride
+    /// flags. `misc_buffs` carries `miscEquips[0..2].buffType` (the App
+    /// owns the arrays) for the `TryRemovingBuff_CheckBuffHideMisc` arms
+    /// (`:43380-43381`). Returns whether the arm entered (the caller plays
+    /// `SoundEngine.PlaySound(12)`'s MenuTick cue, `:43382`).
+    pub fn try_removing_buff(
+        &mut self,
+        world: &World,
+        i: usize,
+        b: i32,
+        misc_buffs: [i32; 2],
+    ) -> bool {
+        if !crate::buffs::is_debuff(b) && b != 60 && b != 151 {
+            // `:43375-43379` — the mount arm; `flag` latches on the
+            // CheckBuff match, not on the dismount's success.
+            let mut mount_arm = false;
+            if self.mount.is_active() && self.mount.data().map(|d| d.buff) == Some(b) {
+                if self.cart_mounted {
+                    self.try_cart_dismount(world);
+                } else {
+                    self.try_dismount(world);
+                }
+                mount_arm = true;
+            }
+            // `:43380-43381` — the pet / light-pet hide arms.
+            self.check_buff_hide_misc(0, b, misc_buffs[0]);
+            self.check_buff_hide_misc(1, b, misc_buffs[1]);
+            if !mount_arm {
+                self.buffs.del_buff(i); // `:43385`
             }
             return true;
         }
         false
     }
 
-    /// `Main.TryRemovingBuff_CheckBuffHideMisc` (`Main.cs:43390-43404`):
+        /// `Main.TryRemovingBuff_CheckBuffHideMisc` (`Main.cs:43390-43404`):
     /// cancelling the equipped pet's / light pet's buff hides the misc
     /// slot's visual (`hideMisc[slot] = true`) — but only while it is not
     /// already hidden. The 101/102 light-pet buffs also match the Fairy

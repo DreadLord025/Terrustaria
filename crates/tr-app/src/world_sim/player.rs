@@ -1601,6 +1601,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // between the teleport and this drain.
     if let Some((fx, fy)) = force_clear {
         super::editing::spawn_force_clear_area(app, fx, fy);
+    }
 
     // `Player.cs:25214-25217` — `dropItemCheck` runs when `itemAnimation ==
     // 0 && ItemTimeIsZero && reuseDelay == 0` (the port's swing/item_time/
