@@ -17438,6 +17438,28 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d16 — aiStyle 155, the Mystic Snake's rope
+                        // coil (`AI_155_MysticSnakeCoil` `:51939-52112`):
+                        // the rise machine + the owner-gated PlaceTile-504
+                        // column + the attached conversion/death walks.
+                        // The tile writes reborrow `world` mutably (the
+                        // ai_ice_block carve-out). The owner centre rides
+                        // the dispatch's `owner` snapshot; the resolved
+                        // player's presence is `active`.
+                        155 => {
+                            let owner_center = owner.map(|(x, y)| Vec2::new(x, y));
+                            let owner_active = player.is_some();
+                            crate::projectile_ai_misc::ai_mystic_snake_coil(
+                                &mut self.slots[i],
+                                world,
+                                owner_center,
+                                owner_active,
+                                local_owner,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the

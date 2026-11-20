@@ -1195,6 +1195,9 @@ pub const TOILET_EFFECT: u16 = 733;
 /// `ProjectileID.VoidLens` (734) — the Void Lens' placed lens, aiStyle
 /// 154 (`Projectile.cs:7726-7735`). W4-d16.
 pub const VOID_LENS: u16 = 734;
+/// `ProjectileID.MysticSnakeCoil` (754) — the Mystic Snake's rope coil,
+/// aiStyle 155 (`Projectile.cs:7767-7776`). W4-d16.
+pub const MYSTIC_SNAKE_COIL: u16 = 754;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -4049,6 +4052,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             VOID_LENS => {
                 (30.0, 24.0, 154, 1, 10800, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
+            // W4-d16 — `Projectile.cs:7767-7776` (754, the Mystic Snake's
+            // rope coil): 16x16, aiStyle 155, tileCollide false,
+            // ignoreWater (the overlay), penetrate -1, alpha 255.
+            MYSTIC_SNAKE_COIL => {
+                (16.0, 16.0, 155, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4289,9 +4298,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
             // `ignoreWater = true`.
             || kind == HIGH_VELOCITY_BULLET
-            // W4-d16 — `Projectile.cs:7679`/`:9215`/`:9277`/`:9897`/`:7722`:
-            // the four aiStyle-152 slashes + the toilet pop set ignoreWater.
-            || matches!(kind, SUPER_STAR_SLASH | ZENITH_MURAMASA_SLASH | ZENITH_GRASS_SLASH | MOON_LORD_WHIP_PROC | TOILET_EFFECT)
+            // W4-d16 — `Projectile.cs:7679`/`:9215`/`:9277`/`:9897`/`:7722`/
+            // `:7773`: the four aiStyle-152 slashes + the toilet pop + the
+            // snake coil set ignoreWater.
+            || matches!(kind, SUPER_STAR_SLASH | ZENITH_MURAMASA_SLASH | ZENITH_GRASS_SLASH | MOON_LORD_WHIP_PROC | TOILET_EFFECT | MYSTIC_SNAKE_COIL)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
