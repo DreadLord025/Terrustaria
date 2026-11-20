@@ -216,11 +216,8 @@ impl App {
                     inventory,
                     selected,
                     edit_target,
-                    mine_target,
-                    mine_timer,
-                    mine_hardness,
-                    mine_crack_style,
-                    mine_crack_target,
+                    hit_tile,
+                    mine_crack_styles,
                     mine_crack_rng,
                     camera,
                     zoom,
@@ -1187,15 +1184,17 @@ impl App {
                         *world_key = Some(key);
                     }
 
-                    // S1-G-1 wave C: the tile-crack overlay
+                    // S1-G-1 wave C / W4-g77: the tile-crack overlay
                     // (`Main.DrawTileCracks`, `Main.cs:61533-61626`; the
-                    // solid-layer sites `TileDrawing.cs:732-733`). It rides
-                    // the per-frame world range right after the cached tile
-                    // pass — the damage timer advances every frame, so the
-                    // crack cannot live inside the G6-cached range (the
-                    // `WorldFrameKey` is untouched). The port's stand-in for
-                    // the solid-layer site; ANALYSIS "The tile-crack
-                    // overlay (S1-G-1 wave C)".
+                    // solid-layer sites `TileDrawing.cs:732-733`) over the
+                    // local player's real i29 `HitTile` book — every
+                    // damaged slot draws its crack stage, TTL decay
+                    // included. It rides the per-frame world range right
+                    // after the cached tile pass — the book decays every
+                    // tick, so the crack cannot live inside the G6-cached
+                    // range (the `WorldFrameKey` is untouched). The port's
+                    // stand-in for the solid-layer site; ANALYSIS "The
+                    // tile-crack overlay (S1-G-1 wave C)".
                     crate::render::tile_cracks::draw_mining_cracks(
                         renderer,
                         world,
@@ -1203,12 +1202,10 @@ impl App {
                         &style,
                         draw_cam,
                         anim_time,
-                        *mine_target,
-                        *mine_timer,
-                        *mine_hardness,
+                        hit_tile,
+                        mine_crack_styles,
                         mine_crack_rng,
-                        mine_crack_style,
-                        mine_crack_target,
+                        crate::env::show_invisible(),
                     );
                     // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
                     // false)`'s pylon / trophy / void-lens passes

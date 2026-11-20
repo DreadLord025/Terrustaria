@@ -692,22 +692,24 @@ pub(crate) struct App {
     pub(crate) place_down: bool,
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
-    /// The current dig's break interval in seconds — the `mine_timer`
-    /// denominator the tile-crack overlay maps onto the C# `HitTile`
-    /// 0..100 damage (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+    /// The current dig's break interval in seconds (the pre-i29 mining
+    /// pacing; the crack overlay now reads the `hit_tile` book directly —
+    /// W4-g77 — while `sync_mine_crack_state` keeps this pair fresh for
+    /// the mining-state witnesses).
     pub(crate) mine_hardness: f32,
     /// S1-P-i33 — the wall-hammer hit counter (`Player.PickWall`'s `hitTile`
     /// damage book, `Player.cs:45944-45945`): the number of `useTime / 2`-tick
     /// hits landed on the current wall target. The break fires at
-    /// `ceil(100 / (hammer * 1.5))` hits — an integer count, so the cadence is
-    /// exact (the float `mine_timer` still feeds the crack overlay).
+    /// `ceil(100 / (hammer * 1.5))` hits — an integer count, so the cadence
+    /// is exact (the crack overlay reads the `hit_tile` book — W4-g77).
     pub(crate) mine_wall_hits: i32,
-    /// `HitTile.lastCrack` (`HitTile.cs:80`, static, default 0): the last
-    /// rolled crack style the no-repeat reroll compares against.
-    pub(crate) mine_crack_style: i32,
-    /// The dig target the current crack style was rolled for (the C# rolls
-    /// on `HitTileObject.Clear`, i.e. slot reuse — `HitTile.cs:29-46`).
-    pub(crate) mine_crack_target: Option<(i32, i32)>,
+    /// The render-side per-slot crack styles for the `hit_tile` book
+    /// (`HitTile.cs:23`'s `crackStyle` + `:82`'s static `lastCrack`): the
+    /// sim book is RNG-free (i29), so `CrackStyles` rolls on the slot's
+    /// new occupancy (the C# rolls on `HitTileObject.Clear`, i.e. slot
+    /// reuse — `HitTile.cs:29-46`). W4-g77 replaced the single-style
+    /// projection with the book-driven walk.
+    pub(crate) mine_crack_styles: crate::render::tile_cracks::CrackStyles,
     /// `HitTile.rand` (`HitTile.cs:78`): the crack-style stream. Deviation:
     /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
     /// (determinism rule, ANALYSIS "The tile-crack overlay").
@@ -3907,8 +3909,7 @@ impl App {
             mine_timer: 0.0,
             mine_hardness: 0.0,
             mine_wall_hits: 0,
-            mine_crack_style: 0,
-            mine_crack_target: None,
+            mine_crack_styles: crate::render::tile_cracks::CrackStyles::new(),
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
