@@ -4277,6 +4277,117 @@ commit `9ec6f2e`), and the sway pair (`TR_SHOT_FRAME` 60 vs 480 at
 (`test_DW_1_2_herb_pot_pile_geometry_matches_csharp`), the cascade scenarios and
 the pot-loot roll order (fixed-seed `item_rng`).
 
+## Tile-placement validity/adjacency (S1-P-i32)
+
+Code-only census round (2026-11-20, `task/S1-P-i32-tile-placement`, no
+compiler/test run — witnesses WRITTEN NOT RUN). The placement machinery
+(`Player.PlaceThing_Tiles` → `TileObject.CanPlace`/`Place` for the registry
+route, `WorldGen.PlaceTile` for the legacy route) was already largely faithful;
+the census isolated four WRONGs in the tile-validity/adjacency layer and fixed
+them verbatim, each with its C# cite:
+
+1. **Adjacency predicate** (`world_sim/editing.rs::can_place`). The default arm
+   of `BlockPlacementForAssortedThings` (`Player.cs:41247-41261`) accepts a
+   cardinal neighbour that is active and (`tileSolid` **OR `TileID.Sets.IsBeam`
+   OR `tileRope` OR the minecart track 314**) or carries any wall; failing all
+   four, the target cell's **own wall > 0** still accepts (`:41257-41260`). The
+   pre-fix port read only `tileSolid` neighbours and never the target's wall, so
+   a block could not be placed against a rope/beam/track or onto a walled empty
+   cell. Both now read 1:1 (`td::SET_IS_BEAM`/`td::TILE_ROPE` are the generated
+   tables).
+2. **Platform fallback** (`can_place` tail). `Player.cs:41332-41345`: when the
+   default arm refuses a platform-placing item (`TileID.Sets.Platforms`), ANY
+   active tile in the 3×3 around the target accepts — diagonals included. The
+   pre-fix port had no fallback. Added, gated on the held item's `createTile`.
+3. **`Collision.EmptyTile` overlap** (`can_place` head). `Collision.cs:1359-1381`
+   blocks **players AND NPCs**; `WorldGen.PlaceTile` consults it only for SOLID
+   placements (`WorldGen.cs:59373`: `forced || EmptyTile || !tileSolid[num] || …`).
+   The pre-fix port blocked only the player and blocked EVERY kind (a torch could
+   not stand inside the player). Now the overlap reads each NPC's `size()` box and
+   is gated on the held tile's solidity — a non-solid tile bypasses it, exactly as
+   vanilla. The C# `!dead && !ghost` player filters fold to the port's live-player
+   check (no hardcore ghosts / PVP deaths).
+4. **Lava gate** (`use_tile_item` + `tileobject.rs`). `PlaceThing_Tiles`' OR chain
+   (`Player.cs:39743`) refuses an inactive lava target unless the block is
+   replaceable or the item is a grass/moss override; `IsBlockedByLava`
+   (`:41489-41504`) refuses a solid `createTile` outright, else answers
+   `TileObjectData.CheckLiquidPlacement` (`TileObjectData.cs:5039-5042` →
+   the def's `LiquidPlace` or the global `LiquidPlace` `:5044-5071`, which reads
+   `tileLavaDeath`/`tileWaterDeath`). The pre-fix port had NO lava gate. Added
+   `is_blocked_by_lava`, `check_liquid_placement`, `is_replaceable_block`
+   (`Player.cs:39753-39760`) and the `TILE_WATER_DEATH` literal table (10 ids,
+   `Main.cs:8061-8067`/`:8309`/`:9504`/`:9508` — a literal extraction like
+   `torch.rs::NO_ATTACH`, since GenTileData emits `TileID.Sets` only).
+5. **Platform case-19 frame** (`edit/place.rs::place_platform`). `WorldGen.PlaceTile`
+   case 19 (`WorldGen.cs:60221-60225`) writes `frameY = 18*style`, type 19, and
+   `Main.tileFrameImportant[19]` is a boot static (`Main.cs:7654`). The pre-fix
+   port fell through to the generic single-tile write (frames `-1/-1`, no
+   frame-important mirror), so the re-frame drew the platform as a plain merged
+   block. Added the case-19 arm mirroring the existing `place_planter_box`
+   (case 380) pattern; tile 19 is registered but `CustomPlace`-false, so it keeps
+   the legacy route.
+
+RNG order: unchanged. None of the five fixes draws from any stream — they are
+pure predicates/frame writes. The placement sound's `Main.rand.Next(3)` +
+pitch jitter (`LegacySoundPlayer.cs:442-450`, the `UpdatePlayers` swap) and the
+`TileObject` `RandomStyleRange` draws (`World::place_rng`) are untouched.
+
+Deliberate remainders (NOT fixed this round, recorded for the follow-up):
+- The legacy `WorldGen.PlaceTile` per-type arms beyond 19/380/82 (the flowers
+  3/24/201/637, vines 61, doors 10, the `Place*` multi-tile helpers) stay on the
+  generic single-tile write — the registry route already carries the furniture
+  family, and the natural-object arms are the growth/`Place*` lanes.
+- `PlaceThing_Tiles_PlaceIt_GetLegacyTileStyle` (`Player.cs:40490-40526`, the
+  `Main.rand` style re-rolls for 36/141/241/35/129 and the direction styles for
+  212/128/269/334/314) is unported — those draws would ride the `UpdatePlayers`
+  stream; the port places the item's own `placeStyle`.
+- The torch `frameY = 22*style` write (`WorldGen.cs:59839`) and `CheckTorch`'s
+  frame-only-`frameX` behaviour (`:86095-86180`) are i42's torch lane.
+- `BlockPlacementIfOverPlayers` (`Player.cs:41427-41487`, the boulder/teleporter
+  32×32 boxes) and the repeated-pigronata/pumpkin/coral/rainbow-boulder refusals
+  (`:41362-41425`) are unported — the registry `CanPlace` owns the wooden set.
+
+Verification: code-only mode — NO cargo/rustc/test run. 8 witness tests written
+not run (`world_sim/editing.rs::s1_p_i32_*` ×7, `edit/place.rs::s1_p_i32_*` ×1),
+each pinning the C# line it restores; the existing placement suite
+(`test_DW_*`, `item_mechanics`, the seed/planter-box routes) is untouched by the
+signature-preserving edits (`can_place`/`use_tile_item` keep their signatures;
+`place_item_tile` gains only the kind-19 arm).
+
+Retry-round re-verification (W3-i32b, 2026-11-20, code-only): the five fixes of
+`1941824f` were re-read against the C# windows and confirmed 1:1 — the adjacency
+predicate (`Player.cs:41253`, the `tileSolid || IsBeam || tileRope || type == 314`
+disjunction plus the `wall > 0` arms), the own-wall accept (`:41257-41260`), the
+platform 3×3 fallback (`:41332-41345`, gated on `TileID.Sets.Platforms[createTile]`
+after `!canPlace`), the solid-only `EmptyTile` (`WorldGen.cs:59373`'s
+`forced || EmptyTile(i, j) || !Main.tileSolid[num] || …` — the player AND NPC
+loops `Collision.cs:1366-1379`), the lava OR-chain (`Player.cs:39743`: the
+replaceable/grass/moss overrides bypass the gate) and the case-19 write
+(`WorldGen.cs:60221-60225`, `frameY = 18*style` only, `Main.cs:7654`). The
+`TILE_WATER_DEATH` literal table matches the ten `Main.tileWaterDeath` writes
+(`Main.cs:8061-8067`/`:8309`/`:9504`/`:9508`); `is_replaceable_block` matches
+`Player.cs:39753-39760` verbatim (the `tileCut` 484/711 exemptions, the 373-375
+band, 461/709, else `BreakableWhenPlacing`). The 8 witnesses' fixtures were
+cross-checked against the actual helper signatures (`flow_app`, `slot`,
+`set_tile`, `Npc::new(kind, x, y, facing, hop_timer)`, the D_4/D_19 registry
+defs — torch 4 `water_placement/lava_placement = NotAllowed`, platform 19
+`CustomPlace`-false) and the `TILE_CUT`/`BREAKABLE_WHEN_PLACING` membership
+(3/82 cuttable, 484/711 the exemptions, 186 breakable, 1 not).
+
+The retry census also re-verified the surrounding machinery as FAITHFUL (no
+new WRONGs): the reach gate is the documented circular stand-in (M6-CREATIVE-1c,
+`tile_range_x()` 5/18 vs `Player.cs:2496`/`:18815-18828`; the rectangle helper
+`smart_cursor::reachable_rect` ports `TileReachCheckSettings.cs:45-54` for the
+smart-cursor lane); the registry route (`tileobject::can_place`/`place`) matches
+`TileObject.cs:174-853`/`:29-172` including the 5-tile margin (`:215`), the
+anchor scoring and the `randomCache` stickiness (`:764-824`, S1-F-7b); the
+stack consume is the ITEMS-3 seam (`place_item_and_consume`, one per successful
+`Place`); the placement sound is the S1-E-21 wave B façade
+(`Audio::play_place_sound`, case-0 `Next(3)` + `Next(-10,11)*0.01` on the
+`UpdatePlayers` stream, `WorldGen.cs:60263-60282` switch). The preview
+(`objectPreview`, `onlyCheck`) stays the documented deferral (tileobject.rs
+module doc); walls are i33. RNG order: no new draws introduced by either round.
+
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
 - The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime
