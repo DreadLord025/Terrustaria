@@ -4580,6 +4580,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Projectile.cs:51535-51542`). The 946 blade keeps the stock 1
         // (no override; its arm runs no frame machine).
         755 => 5,
+        // W4-a9 — the Storm Tiger gem / Abigail counter's 6-frame sheets
+        // (`Main.cs:8648-8649`) — `AI_164_StormTigerGem`'s 4-tick pulse
+        // wraps at the literal 6 (`Projectile.cs:46607-46614`/
+        // `:46631-46638`).
+        831 | 970 => 6,
         // AI_026 slice B: the boss-head pets' sheets (`Main.cs:8673`
         // 885 → 10, `:8677` 889 → 11) — the spin arm pins frame 6
         // (`Projectile.cs:60192`) and the walk steps frames 0-5

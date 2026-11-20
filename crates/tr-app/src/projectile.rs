@@ -13903,6 +13903,58 @@ fn ai_158_home_location(master: &crate::player::Player, stacked_index: i32) -> V
     (anchor + Vec2::new(0.0, -21.0) + pos).floor()
 }
 
+/// `Projectile.AI_164_GetHomeLocation` (`Projectile.cs:46646-46699`): the
+/// gem/counter orbit above the owner's head — the headgear row lift, the
+/// 4-per-ring stack ladder (the last partial ring re-phases its members),
+/// the miscCounter spin and the floored mount anchor. The port keeps
+/// `gravDir = 1` (the `ai_158_home_location` precedent) and the C#'s
+/// `_ = master.direction;` discard (`:46695`) ports as nothing.
+fn ai_164_home_location(master: &crate::player::Player, stacked_index: i32, total_indexes: i32) -> Vec2 {
+    // `:46648-46654` — the headgear row (`bodyFrame.Height` is the constant
+    // 56 the port's `body_frame` index partition matches, the 158 precedent).
+    let mut vector = Vec2::new(0.0, crate::player::offsets_player_headgear_y(master.body_frame as usize));
+    vector.y -= 2.0;
+    // `:46655-46673` — the ring ladder. `miscCounterNormalized` is
+    // `miscCounter / 300f` (`Player.cs:3389`).
+    let mut num2 = master.misc_counter as f32 / 300.0 * 2.0;
+    let num3 = stacked_index / 4;
+    let mut num4 = total_indexes / 4;
+    if total_indexes % 4 > 0 {
+        num4 += 1;
+    }
+    let mut num5 = (total_indexes - num3 * 4) % 4;
+    if num5 == 0 {
+        num5 = 4;
+    }
+    if num4 - 1 != num3 {
+        num5 = 4;
+    }
+    let num6 = stacked_index % num5;
+    let mut num7 = num6 as f32 / num5 as f32;
+    num2 += num3 as f32 / 8.0;
+    // `:46674-46692` — the last partial ring's re-phase (the C# switch).
+    if stacked_index >= (num4 - 1) * 4 && num3 > 0 {
+        num2 = 0.0;
+        match num5 {
+            1 => num7 = 0.0,
+            2 => num7 = 0.25 + num6 as f32 * 0.5,
+            3 => num7 = (num6 - 1) as f32 / 6.0,
+            4 => num7 = (num6 as f32 - 1.5) / 6.0,
+            _ => {}
+        }
+    }
+    // `:46693` — the ring offset: the (0, −8 − 12·ring) arm rotated by the
+    // spin, plus the 40-px lift (gravDir = 1).
+    vector += rotate(Vec2::new(0.0, -8.0 - 12.0 * num3 as f32), (num2 + num7) * std::f32::consts::TAU)
+        + Vec2::new(0.0, -40.0);
+    // `:46694-46698` — the mount anchor, the 21-px eye line, the gfx lift,
+    // floored.
+    let (mcx, mcy) = master.mounted_center();
+    let mut vec = Vec2::new(mcx, mcy) + Vec2::new(0.0, -21.0) + vector;
+    vec.y += master.gfx_off_y;
+    vec.floor()
+}
+
 /// `Collision.CanHitLine(Vector2, int, int, Vector2, int, int)`
 /// (`Collision.cs:588-778`): the line-of-sight walk the mounts
 /// (`Mount.cs:4912`/`:5220`), the Life Drain (`Player.cs:14067`) and the
@@ -17430,6 +17482,31 @@ impl ProjectilePool {
                                 self.slots[i].direction =
                                     if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                             }
+                        }
+                        // W4-a9 — `AI()`'s `else if (this.aiStyle == 164)`
+                        // (`Projectile.cs:36619-36622`) ->
+                        // `AI_164_StormTigerGem` (`:46593-46644`): the Storm
+                        // Tiger gem (831) + Abigail's counter (970), the
+                        // style's ONLY rows (`:8067-8081`/`:9182-9196`).
+                        // Pool-side — the group index reads the sibling
+                        // slots. The i25 dispatch no-op deferral is
+                        // superseded (the UNARMED_ROWED census drops 164).
+                        // Both rows keep `tileCollide = false` and aiStyle
+                        // 164 is not in `UpdatePosition`'s skip list
+                        // (`:20435`), so the free integrate runs every
+                        // sub-step (the home pin is AI-set; the velocity is
+                        // whatever the spawn carried).
+                        164 => {
+                            self.storm_tiger_gem_step(i, player.as_deref_mut());
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                            // `AutomaticallyChangesDirection` (`:17281-
+                            // 17288`): neither row sets
+                            // `manualDirectionChange`, so the direction
+                            // follows velocity.X's sign after the move
+                            // (`:17016-17026`).
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                         }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
@@ -24468,8 +24545,10 @@ mod tests {
         // Dragon chain (121) WAS ported at the gate (`dragon_step`) — its
         // deferral collided with the same pin and the machine is one
         // self-contained family. W4-a9: 156 LEFT with the `bat_of_light_step`
-        // arm (the pool-side AI_156 port); 164/169/206 follow.
-        const UNARMED_ROWED: [u8; 3] = [164, 169, 206];
+        // arm (the pool-side AI_156 port); 164 LEFT with the
+        // `storm_tiger_gem_step` arm (the pool-side AI_164 port); 169/206
+        // follow.
+        const UNARMED_ROWED: [u8; 2] = [169, 206];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -45145,5 +45224,129 @@ mod w4_a9_bat_of_light_tests {
         assert!((c.x - 410.0).abs() < 0.01, "the glide is vertical: {c}");
         assert!((c.y - 349.0).abs() < 0.01, "381 − 32 = 349 (:51616): {c}");
         assert!(rng.draws.is_empty(), "the glide draws nothing");
+    }
+}
+
+#[cfg(test)]
+mod w4_a9_storm_tiger_gem_tests {
+    //! W4-a9 — the aiStyle-164 machine (`AI_164_StormTigerGem` +
+    //! `AI_164_GetHomeLocation`, `Projectile.cs:46593-46699`, the dispatch
+    //! `:36619-36622`): the Storm Tiger gem (831) + Abigail's counter (970).
+    //! The i25 dispatch no-op deferral is superseded — the pool-side
+    //! `storm_tiger_gem_step` arm lands and `UNARMED_ROWED` drops 164.
+    //! WRITTEN NOT RUN (code-only mode).
+    use super::*;
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at centre (410, 321), the gem summon flag live.
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p.storm_tiger = true;
+        p.max_minions = 3;
+        p
+    }
+
+    /// The scripted stream: records every draw (the ZERO-draw census).
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut Player, rng: &mut CensusRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        let center = p.center();
+        pool.update(
+            w,
+            &mut npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    /// Witness 1 — the gem's home pin + keep-alive + pulse
+    /// (`:46596-46614`, `:46643` + `AI_164_GetHomeLocation`
+    /// `:46646-46699`): a lone gem (index 0 of 1) pins its centre on the
+    /// single-ring home spot. With miscCounter 0, body row 0 and
+    /// gfxOffY 0: headgear 2 − 2 = 0; num3 = 0, num4 = 1, num5 = 1,
+    /// num6 = 0, num7 = 0, num2 = 0; the offset (0, −8) rotated by 0 plus
+    /// (0, −40) = (0, −48); the anchor (410, 321) + (0, −21) + (0, −48) =
+    /// (410, 252), floored. The live flag pins timeLeft = 2 (the tail
+    /// decrements to 1), localAI[1] ticks to 1, the 4-tick pulse counts
+    /// to 1, and the machine draws NOTHING.
+    #[test]
+    fn w4_a9_the_gem_pins_the_single_ring_home_spot() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(831, 0, 500.0, 400.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut rng);
+        let d = &pool.slots()[slot];
+        assert!(d.active);
+        let c = Vec2::from(d.center());
+        assert_eq!(c, Vec2::new(410.0, 252.0), "the floored home pin (:46643/:46698)");
+        assert_eq!(d.time_left, 1, "the keep-alive pin 2 minus the tail decrement (:46605)");
+        assert_eq!(d.local_ai[1], 1.0, "the localAI[1] tick (:46596)");
+        assert_eq!(d.frame_counter, 1, "the 4-tick pulse's first count (:46607)");
+        assert_eq!(d.frame, 0);
+        assert!(rng.draws.is_empty(), "the machine draws NO Next: {:?}", rng.draws);
+        assert_eq!(rng.floats, 0, "the machine draws NO NextFloat");
+    }
+
+    /// Witness 2 — the counter's upgrade latch + keep-alive
+    /// (`:46616-46638`): a second 970 in the owner's count latches
+    /// localAI[0] = 1 (the AbigailUpgrade play is the documented skip);
+    /// the live abigailMinion flag pins timeLeft = 2. A lone counter's
+    /// home spot is the same (410, 252) ring pin. A second tick does NOT
+    /// re-latch (localAI[0] stays 1) and the pulse counts to 2.
+    #[test]
+    fn w4_a9_the_counter_latches_the_upgrade_once() {
+        let mut w = world();
+        let mut p = owner(&w);
+        p.storm_tiger = false;
+        p.abigail_minion = true;
+        p.owned_projectile_counts[970] = 2;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(970, 0, 500.0, 400.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.local_ai[0], 1.0, "the upgrade latch (:46620)");
+        assert_eq!(d.local_ai[1], 1.0, "the shared tick (:46596)");
+        assert_eq!(d.time_left, 1, "the counter's keep-alive pin (:46629)");
+        let c = Vec2::from(d.center());
+        assert_eq!(c, Vec2::new(410.0, 252.0), "the same single-ring pin");
+        tick(&mut pool, &mut w, &mut p, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.local_ai[0], 1.0, "the latch holds — no re-fire (:46618)");
+        assert_eq!(d.local_ai[1], 2.0);
+        assert_eq!(d.frame_counter, 2, "the pulse counts on (:46631)");
+        assert!(rng.draws.is_empty(), "still ZERO draws");
     }
 }
