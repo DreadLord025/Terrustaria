@@ -44,6 +44,8 @@
 //! | 142-145 | `:82496-82499` | the 620 Goblin Shark death (4 gores, base 1183 ladder, 150-dust burst) |
 //! | 146-149 | `:82522-82525` | the 619 Blood Squid death (4 gores, base 1179 ladder, 150-dust fadeIn burst) |
 //! | 150-155 | `:82548-82553` | the 618 Blood Nautilus death: the first six gores (base 1172, 200-dust burst) |
+//! | 156-161 | `:82554-82559` | the 618 Blood Nautilus death: the +4/+4/+5/+5/+6/+6 tail |
+//! | 162-165 | `:82600-82603` | the 541 Sand Elemental death (4 gores 960/961/963/962, tinted 60-dust burst) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -540,9 +542,8 @@ fn blood_squid_death(
 /// 200-dust `NewDustDirect` type-5 burst (velocity ×2.5, scale = 2.5 — the
 /// DEATH scale; the hit half uses 2.0, `:82536`), then 12 gores at base
 /// `num85 = 1172` (`:82547`). The first two type pairs alternate the
-/// `Right.X - 30` anchor with `position`; the rest sit at `position`. This
-/// commit ports the first six gores (sites 150-155, `:82548-82553`); the
-/// +4/+4/+5/+5/+6/+6 tail lands with the next batch.
+/// `Right.X - 30` anchor with `position`; the rest sit at `position`.
+/// Sites 150-161 (all twelve gores).
 fn blood_nautilus_death(
     npc: &Npc,
     dust: &mut DustPool,
@@ -575,6 +576,57 @@ fn blood_nautilus_death(
     gore.new_gore(rng, world, pos, vel, num85 + 1, s); // :82551
     gore.new_gore(rng, world, pos, vel, num85 + 2, s); // :82552
     gore.new_gore(rng, world, pos, vel, num85 + 3, s); // :82553
+    gore.new_gore(rng, world, pos, vel, num85 + 4, s); // :82554
+    gore.new_gore(rng, world, pos, vel, num85 + 4, s); // :82555
+    gore.new_gore(rng, world, pos, vel, num85 + 5, s); // :82556
+    gore.new_gore(rng, world, pos, vel, num85 + 5, s); // :82557
+    gore.new_gore(rng, world, pos, vel, num85 + 6, s); // :82558
+    gore.new_gore(rng, world, pos, vel, num85 + 6, s); // :82559
+}
+
+/// The 541 Sand Elemental death (`NPC.cs:82585-82603`, sites 162-165): the
+/// 30-iteration burst, each spawning TWO type-268 dusts tinted
+/// `new Color(222,108,48) * 0.7f` with noGravity, scale 1.5, fadeIn 0.7,
+/// velocity ×3 (the post-writes draw nothing), then the 4 gores
+/// 960/961/963/962 at the +0/+20/+20/+40 Y ladder (the 963 precedes the
+/// 962, `:82602-82603`). The tint rides the XNA `Color * float` truncation
+/// (`ui::color::mul`): (155,75,33,178).
+fn sand_elemental_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82564` — the tint `new Color(222,108,48) * 0.7f` (alpha 255 * 0.7).
+    let t = crate::ui::color::mul([222, 108, 48, 255], 0.7);
+    let tint = Color::new(t[0], t[1], t[2], t[3]);
+    // `:82585-82599` — 30 iterations x 2 type-268 dusts. The C# NewDust
+    // here passes NO hitDirection (the 4-arg overload, SpeedX/Y default 0).
+    for _ in 0..30 {
+        for _ in 0..2 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 268, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.color = tint;
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 0.7;
+            d.velocity *= 3.0;
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 960, s); // :82600
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 961, s); // :82601
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 963, s); // :82602
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 40.0), vel, 962, s); // :82603
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -653,10 +705,14 @@ pub fn hit_effect_c(
     if npc_type == 619 && npc.hp <= 0 {
         blood_squid_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:82528-82561` — the 618 Blood Nautilus arm (sites 150-155 here; the
-    // +4/+4/+5/+5/+6/+6 tail lands with the next batch).
+    // `:82528-82561` — the 618 Blood Nautilus arm (sites 150-161, all
+    // twelve gores).
     if npc_type == 618 && npc.hp <= 0 {
         blood_nautilus_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82562-82605` — the 541 Sand Elemental arm (sites 162-165).
+    if npc_type == 541 && npc.hp <= 0 {
+        sand_elemental_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -1067,31 +1123,62 @@ mod tests {
         assert!(live.scale <= 1.2, "scale stays the roll: {}", live.scale);
     }
 
-    /// `NPC.cs:82548-82553` — the Blood Nautilus death's first six gores:
+    /// `NPC.cs:82548-82559` — the Blood Nautilus death: all twelve gores at
     /// base 1172, the first two type pairs alternate the Right.X-30 anchor
-    /// with position, then +2/+3 at position; after the 200-dust burst
-    /// (death scale 2.5).
+    /// with position, then +2/+3/+4/+4/+5/+5/+6/+6 at position; after the
+    /// 200-dust burst (death scale 2.5).
     #[test]
-    fn w4_f10_the_blood_nautilus_death_spawns_the_first_six_gores() {
+    fn w4_f10_the_blood_nautilus_death_spawns_the_twelve_gores() {
         let w = air();
         let n = boss(100.0, 100.0, 90.0, 90.0);
         let mut gore = GorePool::new();
         let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(59);
         blood_nautilus_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
-        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
-        assert_eq!(types, vec![1172, 1172, 1173, 1173, 1174, 1175]);
+        let types: Vec<i32> = gore.slots()[..12].iter().map(|g| g.gore_type).collect();
+        assert_eq!(
+            types,
+            vec![1172, 1172, 1173, 1173, 1174, 1175, 1176, 1176, 1177, 1177, 1178, 1178]
+        );
         // Right.X = 190; the alternation anchor is (160, 100).
         assert_eq!(gore.slot(0).position, Vec2::new(160.0, 100.0));
         assert_eq!(gore.slot(1).position, Vec2::new(100.0, 100.0));
         assert_eq!(gore.slot(2).position, Vec2::new(160.0, 100.0));
         assert_eq!(gore.slot(3).position, Vec2::new(100.0, 100.0));
-        assert_eq!(gore.slot(4).position, Vec2::new(100.0, 100.0));
+        // The tail (indices 4-11) all sit at position.
+        for i in 4..12 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
         // The 200-dust burst ran; the death post-write is scale 2.5.
         let dust_active = dust.slots().iter().filter(|d| d.active).count();
         assert!(dust_active >= 150, "the burst spawned: {dust_active}");
         let live = dust.slots().iter().find(|d| d.active).unwrap();
         assert_eq!(live.scale, 2.5);
+    }
+
+    /// `NPC.cs:82600-82603` — the Sand Elemental death: the 4 gores
+    /// 960/961/963/962 (963 precedes 962) at +0/+20/+20/+40 Y, after the
+    /// 30x2 tinted type-268 burst (tint (155,75,33,178), noGravity, scale
+    /// 1.5, fadeIn 0.7).
+    #[test]
+    fn w4_f10_the_sand_elemental_death_tints_the_burst() {
+        let w = air();
+        let n = boss(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(61);
+        sand_elemental_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![960, 961, 963, 962]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 140.0));
+        // The tinted burst: (222,108,48,255) * 0.7 truncates to (155,75,33,178).
+        let live = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(live.color, Color::new(155, 75, 33, 178));
+        assert!(live.no_gravity);
+        assert_eq!(live.scale, 1.5);
+        assert_eq!(live.fade_in, 0.7);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
