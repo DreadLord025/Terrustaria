@@ -297,6 +297,65 @@ fn death_bursts(
         }
         // `:75513-75521` — the 337: 10 dust-197, noGravity. No explicit draw.
         337 => plain_burst(s, dust, rng, ctx, world, 10, 197, 0.0, 0.0, 0, Color::default(), 1.0, None, true),
+        // `:72679-72691` — the 581: 30 dust, type = SelectRandom{229,229,161},
+        // noGravity + scale 1.25+NextFloat + fadeIn 0.25 + vel×2 + noLight.
+        581 => select_random_burst(s, dust, rng, ctx, world, 30, &[229, 229, 161], 1.25, 1.0, 0.25, 2.0, true),
+        // `:72692-72704` — the 671: 30 dust, type = SelectRandom{27,27,62},
+        // the same writes as the 581.
+        671 => select_random_burst(s, dust, rng, ctx, world, 30, &[27, 27, 62], 1.25, 1.0, 0.25, 2.0, true),
+        // `:72705-72713` — the 811/814: 30 dust-5, scale 1.25+NextFloat + vel×2
+        // (no noGravity/fadeIn/noLight).
+        811 | 814 => {
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 5, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale = 1.25 + rng.next_float();
+                d.velocity *= 2.0;
+            }
+        }
+        // `:72714-72723` — the 819: 20 dust-5, scale 1+NextFloat×0.5 + vel×1.5.
+        819 => {
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 5, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale = 1.0 + rng.next_float() * 0.5;
+                d.velocity *= 1.5;
+            }
+        }
+        // `:72724-72736` — the 675: 40 dust, type = SelectRandom{27,242,73,72,
+        // 71,255,255,255}, noGravity + scale 1.25+NextFloat + fadeIn 0.25 +
+        // vel×3 + noLight.
+        675 => select_random_burst(s, dust, rng, ctx, world, 40, &[27, 242, 73, 72, 71, 255, 255, 255], 1.25, 1.0, 0.25, 3.0, true),
+        // `:72668-72678` — the 572: 15 dust-40 alpha 100 speed vel×0.1, vel×3 +
+        // noGravity + scale 1.25 + position = (Center+position)/2. No draw.
+        572 => {
+            let mid = (Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5) + s.pos) / 2.0;
+            for _ in 0..15 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 40, s.vel.x * 0.1, s.vel.y * 0.1, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 3.0;
+                d.no_gravity = true;
+                d.scale = 1.25;
+                d.position = mid;
+            }
+        }
+        // `:72374-72393` — the 658: 10 dust-269 speed vel×0.1 scale 0.5; per
+        // dust a Next(3) gate → fadeIn 0.75+Next(-10,11)*0.01 + scale
+        // 0.25+Next(-10,11)*0.005 + type++ ; else scale 1+Next(-10,11)*0.01.
+        // Then noGravity + vel×1.25 −= oldVel/10.
+        658 => crystal_spark_burst(s, dust, rng, ctx, world, 10, 269, 0.75, 0.25, 0.005, 1.0, 0.01, 1.25),
+        // `:73271-73291` — the 522: the 658 shape, dust-254.
+        522 => crystal_spark_burst(s, dust, rng, ctx, world, 10, 254, 0.75, 0.25, 0.005, 1.0, 0.01, 1.25),
+        // `:73328-73337` — the 520: 10 dust-252 speed vel×0.1 scale 0.75,
+        // noGravity + velocity −= oldVel/3. No explicit draw.
+        520 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 252, s.vel.x * 0.1, s.vel.y * 0.1, 0, Color::default(), 0.75);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity -= s.old_vel / 3.0;
+            }
+        }
         _ => {}
     }
 }
@@ -435,6 +494,83 @@ fn reverse_vel_pair(
         d.velocity *= 2.0;
         let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, sx, sy, 100, Color::default(), scale_b);
         dust.slot_mut(idx).velocity *= 2.0;
+    }
+}
+
+/// `count` dust whose type is `Utils.SelectRandom(rng, choices)` (one
+/// `Next(choices.len())` pick BEFORE the spawn), then `noGravity` (when
+/// `no_gravity`), `scale = scale_base + NextFloat()*scale_float_mul`,
+/// `fadeIn = fade_in`, `velocity *= vel_mul`, `noLight` (when `no_gravity`) —
+/// the 581/671/675 shape (`:72683-72689` et al.).
+#[allow(clippy::too_many_arguments)]
+fn select_random_burst(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    count: i32,
+    choices: &[i32],
+    scale_base: f32,
+    scale_float_mul: f32,
+    fade_in: f32,
+    vel_mul: f32,
+    no_gravity: bool,
+) {
+    for _ in 0..count {
+        let dust_type = choices[rng.next_max(choices.len() as i32) as usize];
+        let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        if no_gravity {
+            d.no_gravity = true;
+        }
+        d.scale = scale_base + rng.next_float() * scale_float_mul;
+        d.fade_in = fade_in;
+        d.velocity *= vel_mul;
+        if no_gravity {
+            d.no_light = true;
+        }
+    }
+}
+
+/// `count` dust of `dust_type` (speed = vel×0.1, scale 0.5); per dust a
+/// `Next(3)` gate: when 0, `fadeIn = fade_base + Next(-10,11)*0.01`,
+/// `scale = small_base + Next(-10,11)*small_step`, `type++`; else
+/// `scale = big_base + Next(-10,11)*big_step`. Then `noGravity`,
+/// `velocity *= vel_mul`, `velocity -= oldVel/10` — the 658/522 crystal-spark
+/// shape (`:72378-72391`). The gate + the branch's range draws ride `rng`
+/// after the spawn.
+#[allow(clippy::too_many_arguments)]
+fn crystal_spark_burst(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    count: i32,
+    dust_type: i32,
+    fade_base: f32,
+    small_base: f32,
+    small_step: f32,
+    big_base: f32,
+    big_step: f32,
+    vel_mul: f32,
+) {
+    for _ in 0..count {
+        let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, s.vel.x * 0.1, s.vel.y * 0.1, 0, Color::default(), 0.5);
+        if rng.next_max(3) == 0 {
+            let d = dust.slot_mut(idx);
+            d.fade_in = fade_base + rng.next_range(-10, 11) as f32 * 0.01;
+            d.scale = small_base + rng.next_range(-10, 11) as f32 * small_step;
+            d.dust_type += 1;
+        } else {
+            let d = dust.slot_mut(idx);
+            d.scale = big_base + rng.next_range(-10, 11) as f32 * big_step;
+        }
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= vel_mul;
+        d.velocity -= s.old_vel / 10.0;
     }
 }
 
@@ -741,5 +877,67 @@ mod tests {
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 10);
         assert!(active.iter().all(|d| d.dust_type == 197 && d.no_gravity));
+    }
+
+    /// The 581/671/675 SelectRandom bursts pick a type from the choice list
+    /// per dust (one Next(len) BEFORE the spawn) and write noGravity/scale/
+    /// fadeIn/vel/noLight. Every spawned type is in the choice set.
+    #[test]
+    fn w4_g65_the_select_random_bursts() {
+        let w = world();
+        for (kind, count, choices) in [
+            (581u16, 30, &[229, 229, 161][..]),
+            (671, 30, &[27, 27, 62][..]),
+            (675, 40, &[27, 242, 73, 72, 71, 255, 255, 255][..]),
+        ] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind} count");
+            assert!(active.iter().all(|d| choices.contains(&d.dust_type)), "kind {kind} type in choices");
+            assert!(active.iter().all(|d| d.no_gravity && d.no_light && d.fade_in == 0.25));
+        }
+    }
+
+    /// The 658/522 crystal-spark bursts: 10 dust each, the Next(3) gate picks
+    /// the small (type++) or big scale branch; every dust ends noGravity. The
+    /// 520 is the plain noGravity −= oldVel/3 burst.
+    #[test]
+    fn w4_g65_the_crystal_spark_bursts() {
+        let w = world();
+        for (kind, base_type) in [(658u16, 269), (522, 254)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 10, "kind {kind} count");
+            // The gate's type++ branch lifts some dust to base+1.
+            assert!(active.iter().all(|d| d.dust_type == base_type || d.dust_type == base_type + 1));
+            assert!(active.iter().all(|d| d.no_gravity));
+        }
+        let mut dust = DustPool::new();
+        drain(&[snap(520)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 252 && d.no_gravity));
+    }
+
+    /// The 811/814/819 scale-roll bursts and the 572 midpoint-position burst.
+    #[test]
+    fn w4_g65_the_811_819_572_bursts() {
+        let w = world();
+        for (kind, count) in [(811u16, 30), (814, 30), (819, 20)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind} count");
+            assert!(active.iter().all(|d| d.dust_type == 5));
+        }
+        let mut dust = DustPool::new();
+        drain(&[snap(572)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 15);
+        // position = (Center + position)/2 = (105+100)/2, (105+100)/2.
+        let mid = Vec2::new(102.5, 102.5);
+        assert!(active.iter().all(|d| d.dust_type == 40 && d.no_gravity && d.scale == 1.25 && d.position == mid));
     }
 }

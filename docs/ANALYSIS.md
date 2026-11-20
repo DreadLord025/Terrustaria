@@ -39347,3 +39347,17 @@ the batch-3 plain-burst counts/types — WRITTEN NOT RUN.
 (10× dust-197 noGravity). The 497/731 explicit draws ride the drain rng after
 each spawn. Witnesses: the pair counts/noGravity alternation, the 495/497
 centre bursts, the 729/731/337 bursts — WRITTEN NOT RUN.
+
+### Batch 5 (10 kinds, the SelectRandom + crystal-spark `:72374-73337` bursts)
+
+581 (30× SelectRandom{229,229,161}, noGravity/scale 1.25+NextFloat/fadeIn
+0.25/vel×2/noLight), 671 (30× SelectRandom{27,27,62}, same), 811/814 (30×
+dust-5, scale 1.25+NextFloat/vel×2), 819 (20× dust-5, scale 1+NextFloat×0.5/
+vel×1.5), 675 (40× SelectRandom{27,242,73,72,71,255,255,255}, noGravity/scale/
+fadeIn/vel×3/noLight), 572 (15× dust-40 alpha 100, vel×3/noGravity/scale 1.25/
+position=(Center+pos)/2), 658 (10× dust-269, `Next(3)` gate → fadeIn/scale/
+type++ else scale; noGravity/vel×1.25 −= oldVel/10), 522 (the 658 shape,
+dust-254), 520 (10× dust-252 scale 0.75, noGravity −= oldVel/3). The
+SelectRandom pick rides BEFORE the spawn; the crystal-spark gate + branch
+range draws ride AFTER. Witnesses: the SelectRandom choice-set membership, the
+crystal-spark type++ branch, the 811/819/572 bursts — WRITTEN NOT RUN.
