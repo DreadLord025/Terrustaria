@@ -52,6 +52,8 @@
 //! | 178-180 | `:82762` | the 510-512 Dune Splicer death (1 gore each, type-510+819, alpha copy) |
 //! | 181-183 | `:82781` | the 621-623 Blood Eel death (1 gore each, type-621+1187, alpha copy, type-5 dust) |
 //! | 184-188 | `:82816-82820` | the 518/416 Solar Spearman/Drakomire Rider death (5 gores, gated type-6 dust) |
+//! | 189-194 | `:82854-82859` | the 419 Solar Solenian death (6 gores, gated type-6 dust) |
+//! | 195-197 | `:82881` | the 412-414 Solar Crawltipede death (1 gore each, type-412+828) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -868,6 +870,85 @@ fn solar_spearman_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 836, s); // :82820
 }
 
+/// The 419 Solar Solenian death (`NPC.cs:82842-82859`, sites 189-194): the
+/// 20-iteration burst (type-241 dust + `Next(3) == 0`-gated type-6 dust,
+/// same as the Spearman), then the 6 gores 844/845/846/846/847/847 at the
+/// +0/+20/+20/+20/+20/+20 Y ladder.
+fn solar_solenian_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82842-82853` — 20 iterations: type-241 + the Next(3)-gated type-6.
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 241, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        if rng.next_max(3) == 0 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 1.0;
+            d.velocity *= 3.0;
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 844, s); // :82854
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 845, s); // :82855
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 846, s); // :82856
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 846, s); // :82857
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 847, s); // :82858
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 847, s); // :82859
+}
+
+/// The 412-414 Solar Crawltipede death (`NPC.cs:82873-82881`, sites
+/// 195-197): the 6-dust type-241 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// -2.5) then the 2-dust type-6 burst (alpha 100, Color.Transparent, scale
+/// 2), then ONE gore of type `this.type - 412 + 828` (412/413/414 ->
+/// 828/829/830). No alpha copy here (unlike the worm arms).
+fn solar_crawltipede_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82873-82876` — the 6-dust type-241 burst.
+    for _ in 0..6 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 241, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:82877-82880` — the 2-dust type-6 burst (alpha 100, transparent, scale 2).
+    for _ in 0..2 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 2.5 * hit_direction, -2.5, 100,
+            Color::TRANSPARENT, 2.0,
+        );
+    }
+    // `:82881` — the single gore (no alpha copy).
+    let ty = npc_type - 412 + 828;
+    gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), ty, 1.0);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -981,6 +1062,14 @@ pub fn hit_effect_c(
     // (sites 184-188).
     if (npc_type == 518 || npc_type == 416) && npc.hp <= 0 {
         solar_spearman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82823-82861` — the 419 Solar Solenian arm (sites 189-194).
+    if npc_type == 419 && npc.hp <= 0 {
+        solar_solenian_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82862-82883` — the 412-414 Solar Crawltipede arm (sites 195-197).
+    if (412..=414).contains(&npc_type) && npc.hp <= 0 {
+        solar_crawltipede_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -1603,6 +1692,45 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the spearman death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:82854-82859` — the Solar Solenian death: the 6 gores
+    /// 844/845/846/846/847/847 at +0/+20 Y (the 846/847 pairs).
+    #[test]
+    fn w4_f10_the_solar_solenian_death_spawns_the_six_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 44.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(97);
+        solar_solenian_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![844, 845, 846, 846, 847, 847]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        for i in 1..6 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 120.0));
+        }
+    }
+
+    /// `NPC.cs:82881` — the Solar Crawltipede death: one gore per segment
+    /// (412/413/414 -> 828/829/830), no alpha copy, after the 6-dust
+    /// type-241 + 2-dust type-6 (alpha 100, transparent, scale 2) bursts.
+    #[test]
+    fn w4_f10_the_solar_crawltipede_death_maps_the_segments() {
+        let w = air();
+        for (ty, gore_ty) in [(412, 828), (413, 829), (414, 830)] {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(101);
+            solar_crawltipede_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "segment {ty}");
+            assert_eq!(gore.slot(0).alpha, 0); // no alpha copy
+            // The type-6 dust carries alpha 100 + transparent + the 2x scale.
+            let d6 = dust.slots().iter().find(|d| d.active && d.dust_type == 6).unwrap();
+            assert_eq!(d6.alpha, 100);
+            assert_eq!(d6.color, Color::TRANSPARENT);
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
