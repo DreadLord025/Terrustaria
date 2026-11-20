@@ -193,7 +193,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // the dual-flail flag5's selected-item gate.
             let held = app.inventory[app.selected];
             let selected_shoot = if held.count > 0 {
-                registry::projectile(held.kind)
+                crate::registry::projectile(held.kind)
             } else {
                 None
             };

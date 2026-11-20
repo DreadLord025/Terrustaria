@@ -14562,10 +14562,6 @@ pub struct YoyoInputs {
     pub player_cced: bool,
     /// `Main.player[owner].dead` (`:67824`).
     pub player_dead: bool,
-    /// `Player.CCed` (`:67920`) — the release arm fires on a CC even while
-    /// the button is held (`Player.ItemCheck`'s `channel = false`,
-    /// `Player.cs:42598-42602`).
-    pub player_cced: bool,
     /// `player.meleeSpeed` (`:67750`, `:67886-67887`).
     pub melee_speed: f32,
 }

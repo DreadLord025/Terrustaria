@@ -575,7 +575,9 @@ fn spawn_whip_shot(
         proj, spawn.x, spawn.y, whip_vx, whip_vy, whip_damage, whip_kb, 0.0, spin,
     );
     if let Some(slot) = slot {
-        projectiles.set_crit(slot, false);
+        // (Resync spawn-crit conversion: the `set_crit(slot, false)` stamp
+        // dropped — the whip's crit is PER-HIT via its tag effect's
+        // `Next(100)` roll, `WhipTagEffect.cs:69`; no spawn draw, no stamp.)
         if snake_refire {
             projectiles.set_ai2(slot, whip_ai2);
         }
@@ -2337,61 +2339,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if crate::potions::use_potion_item(app, held) {
             return;
         }
-        // The mana potions (`Player.cs:42867-42875`'s `healLife > 0 ||
-        // healMana > 0` arm → `ApplyLifeAndOrMana` `:51888-51952`): the
-        // restore clamps at `statManaMax2`, the Mana Sickness buff 94
-        // grants for `manaSickTime` = 300 ticks (`:51938`, `:57101` — the
-        // ONLY grant site; weapons never grant it), and a mid-swing drink
-        // undoes the ManaV2 slow cast (`UndoSlowMagicUse` `:51954-51966`).
-        // The `DebugOptions.ManaPotionDelay` half (`:51939-51943`) is false
-        // in the shipped statics (`DebugOptions.cs:86`) — folded out. The
-        // stock mana potions are `potion: false` (`Item.cs:2680-2691` et
-        // al.), so no Potion Sickness gate rides this arm; the
-        // `ApplyManaPotionManaHeat` method (`:51968-52003`) has NO caller in
-        // the source — dead code, not ported (ANALYSIS "The mana machinery
-        // (S1-P-i19)").
-        let def = registry::get(held.kind);
-        if def.is_some_and(|d| d.heal_mana > 0) {
-            let Some(def) = def else { unreachable!() };
-            let heal_mana = def.heal_mana;
-            if let Some(p) = app.player.as_mut() {
-                // `:51918-51928`: `statMana += healMana` (the ×1f line is a
-                // no-op), capped at the effective max.
-                p.mana = (p.mana + heal_mana).min(p.mana_max);
-                // `:51937-51938`: `manaPotionDelay = 0` has no port field
-                // (the debug flag is off); the buff grants 300 ticks, the
-                // additive cap 600 rides `BuffSlots::add_buff` (`buffs.rs`).
-                p.buffs.add_buff(94, 300);
-                // `UndoSlowMagicUse` (`:51946-51949`, `:51954-51966`): only
-                // mid-animation AND mid-itemTime; the four timers scale by
-                // 1/2.5 floored at 2 ticks, then the flag clears. The
-                // press-tick drink has no animation yet — the arm is a
-                // no-op there, exactly like the C#'s use-start order.
-                if p.slow_magic_use && app.swing > 0.0 && app.item_time > 0.0 {
-                    let rate = 1.0 / crate::regen::SLOW_MAGIC_MULTIPLIER;
-                    let floor2 = 2.0 / 60.0;
-                    app.swing_max = (app.swing_max * rate).max(floor2);
-                    app.swing = (app.swing * rate).max(floor2);
-                    app.item_time = (app.item_time * rate).max(floor2);
-                    p.slow_magic_use = false;
-                }
-                // `ManaEffect(healMana)` (`:51950`, `:4531-4538`): the
-                // HealMana combat text — the cuffs' queue convention.
-                p.queue_mana_effect(heal_mana);
-            }
-            app.inventory[app.selected].count =
-                app.inventory[app.selected].count.saturating_sub(1);
-            if app.inventory[app.selected].count == 0 {
-                app.inventory[app.selected].kind = 0;
-            }
-            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-            app.swing = app.swing_max;
-            start_swing_extras(app, held.kind);
-            app.attack_cd = app.swing_max;
-            app.mine_target = None;
-            app.mine_timer = 0.0;
-            return;
-        }
+        // (Resync keep-one: the gate's i19 inline mana-potion arm was
+        // dropped — the i37 `use_potion_item` seam above owns EVERY drink
+        // (the mana potions are `healMana > 0` drinkables, `Item.cs:2680-
+        // 2692`), including the buff-94 grant + the ManaEffect text + the
+        // `UndoSlowMagicUse` half (`Player.cs:51946-51948`/`:51954-51966`,
+        // folded into `potions::use_potion_item` — the i37 coordination
+        // note's deferred i19 fold).)
     }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
@@ -2882,7 +2836,6 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // (the Aqua Scepter 8 < 16) fires its whole volley in this swing.
                     app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
                 }
-                }
             }
             // `NewProjectile`'s `TryUpdateChannel` tail (`Projectile.cs:
             // 11097-11100`): the use-path spawns track the cancel key on the
@@ -3164,6 +3117,17 @@ fn fire_non_ammo_shot(
         spawn.y = p.y + (p.height as i32 / 3) as f32;
     }
     let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
+    // The i28 consumable tail's flag reads snapshotted here — the shared
+    // `p` read borrow must END before the mutable re-borrows below (the
+    // boomerang facing flip, the Spider cycle write, the whip helper's
+    // repeat-counter write). The four flags are per-tick equip grants;
+    // nothing between here and the tail writes them.
+    let (huntress90, chloro80, ammo80, ammo75) = (
+        p.huntress_ammo_cost90,
+        p.chloro_ammo_cost80,
+        p.ammo_cost80,
+        p.ammo_cost75,
+    );
     // The crit does NOT roll at throw time (the resync spawn-crit conversion,
     // M1 canonical): the C# rolls it PER HIT inside `Damage_PVE_Inner`
     // (`Projectile.cs:12883-12917`) on the `UpdateProjectiles` stream; the
@@ -4312,16 +4276,16 @@ fn fire_non_ammo_shot(
     // chain and always consume.
     let mut consume = true;
     if def.ranged {
-        if p.huntress_ammo_cost90 && loot_rng.next_range(0, 10) == 0 {
+        if huntress90 && loot_rng.next_range(0, 10) == 0 {
             consume = false;
         }
-        if p.chloro_ammo_cost80 && loot_rng.next_range(0, 5) == 0 {
+        if chloro80 && loot_rng.next_range(0, 5) == 0 {
             consume = false;
         }
-        if p.ammo_cost80 && loot_rng.next_range(0, 5) == 0 {
+        if ammo80 && loot_rng.next_range(0, 5) == 0 {
             consume = false;
         }
-        if p.ammo_cost75 && loot_rng.next_range(0, 4) == 0 {
+        if ammo75 && loot_rng.next_range(0, 4) == 0 {
             consume = false;
         }
     }
@@ -5256,7 +5220,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         };
         if !window_blocked {
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), registry::get(held.kind)) {
-                if fire_non_ammo_shot(app, held, held_fx, item_crit, world_pos, proj, def, screen) {
+                if fire_non_ammo_shot(app, held, held_fx, world_pos, proj, def, screen) {
                     // `ApplyItemTime` (`Player.cs:47185-47194`): re-arm the cadence
                     // after EACH shot — the next volley shot fires `useTime` ticks
                     // later, for as long as the swing runs.

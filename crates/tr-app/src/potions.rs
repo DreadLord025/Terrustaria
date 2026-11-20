@@ -459,6 +459,18 @@ pub fn use_potion_item(app: &mut App, held: ItemSlot) -> bool {
     if let Some(amount) = heal_text {
         spawn_heal_text(app, amount);
     }
+    // `:51944-51949`: the ManaV2 `UndoSlowMagicUse` arm (the i19 fold —
+    // the i37 coordination note deferred it to the mana worker; it lives
+    // inside `ApplyLifeAndOrMana`, so the QuickMana path `:5618` rides it
+    // too). The restore above just ran; a mid-swing drink stretches the
+    // timers back by `GetSlowMagicUseRate()` = 1/2.5 (`:51954-51966`, int
+    // truncation, floor 2 ticks), then clears the flag. The gate is
+    // `itemAnimation != 0 && itemTime != 0` — the swing seam above armed
+    // the animation, so the press-tick drink's itemTime (0) keeps the arm
+    // a no-op there, exactly like the C#'s use-start order.
+    if def.heal_mana > 0 {
+        undo_slow_magic_use(app);
+    }
     // `:43280-43326`: the generic consumable tail — one per use; the
     // ForceConsumption set (`ItemID.cs:413-427`) does not touch the drink
     // kinds, `CanConsumeConsumableItem` is `return true` (`:5496-5499`).
@@ -789,8 +801,39 @@ pub fn quick_mana(app: &mut App) -> bool {
     if let Some(amount) = heal_text {
         spawn_heal_text(app, amount);
     }
+    // `:5618` → `ApplyLifeAndOrMana`'s ManaV2 `UndoSlowMagicUse` arm
+    // (`:51946-51948`) — the QuickMana drink rides it too (the i19 fold).
+    if def.heal_mana > 0 {
+        undo_slow_magic_use(app);
+    }
     loc.consume(app); // `:5619-5626`
     true
+}
+
+/// `Player.UndoSlowMagicUse` (`Player.cs:51954-51966`): the ManaV2
+/// mid-swing mana-potion drink stretches the four use timers back by
+/// `GetSlowMagicUseRate()` (= 1/2.5 while the flag is armed — the caller
+/// gates on `slowMagicUse`, `:51946`), int-truncated and floored at 2
+/// ticks, then clears the flag. The `itemAnimation != 0 && itemTime != 0`
+/// gate keeps the press-tick drink (no action timer yet) a no-op. The
+/// port's `app.swing`/`app.swing_max`/`app.item_time` stand in for the
+/// C# timers (`itemTimeMax` has no port field — the cadence re-arms off
+/// `useTime` at the next shot).
+pub fn undo_slow_magic_use(app: &mut App) {
+    let Some(p) = app.player.as_mut() else {
+        return;
+    };
+    if !p.slow_magic_use {
+        return;
+    }
+    if app.swing > 0.0 && app.item_time > 0.0 {
+        let rate = 1.0 / crate::regen::SLOW_MAGIC_MULTIPLIER;
+        let floor2 = 2.0 / 60.0;
+        app.swing_max = (app.swing_max * rate).max(floor2);
+        app.swing = (app.swing * rate).max(floor2);
+        app.item_time = (app.item_time * rate).max(floor2);
+        p.slow_magic_use = false;
+    }
 }
 
 /// The HealLife combat-text spawn (`Player.HealEffect`, `Player.cs:4522-

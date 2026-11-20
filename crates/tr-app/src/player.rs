@@ -855,15 +855,10 @@ pub struct Player {
     /// The WellFed melee speed add (`meleeSpeed +=`, `:11937`) — rides the
     /// swing pacing until the per-item meleeSpeed lands (M3-ITEM).
     pub melee_speed_bonus: f32,
-    /// `Player.summonerWeaponSpeedBonus` (`Player.cs:2460`, reset `:18341`):
-    /// the whip attack-speed buffs' sum (311 +0.35 / 308 +0.25 / 314 +0.12,
-    /// `:10110-10121`). `CapAttackSpeeds` (`:29025`) folds it with the melee
-    /// speed into the use-time multiplier — see
-    /// [`Self::summoner_weapon_speed_multiplier`].
-    pub summoner_weapon_speed_bonus: f32,
-    /// `Player.whipUseTimeMultiplier` (`Player.cs:1142`, reset 1f `:18499`):
-    /// the Obsidian Outlaw set's ×(1/1.15) (`ArmorSetBonuses.cs:124`).
-    pub whip_use_time_multiplier: f32,
+    /// (Resync keep-one: the i12 `summoner_weapon_speed_bonus` /
+    /// `whip_use_time_multiplier` declarations merged with the i24 pair
+    /// above — ONE field each, the read-only
+    /// [`Self::summoner_weapon_speed_multiplier`] accessor is canonical.)
     /// `Player.tileSpeed` / `Player.wallSpeed` (`Player.cs:2470`/`:2468`,
     /// reset 1f `:18532`/`:18531`): the Builder buff's +0.25 (`:10160-10161`)
     /// and the Brick Layer / Extendo Grip accessories' +0.5
@@ -2527,14 +2522,12 @@ impl Player {
             tag_effects: crate::tag_effects::TagEffectStack::default(),
             whip_range_multiplier: 1.0,
             whip_use_time_multiplier: 1.0,
-            // The C# field starts 0 (`Player.cs:2460`) and `ResetEffects`
-            // re-zeroes it (`:18341`), but `CapAttackSpeeds` (`:29025`) folds
-            // it to `1/(meleeSpeed+0) = 1` on the FIRST update, before any
-            // `ApplyItemAnimation` read (`:25976` < `:28285`). The port's
-            // spawn stands in for that post-first-fold state so the editing
-            // tests (which drive `update_editing` without the player tick)
-            // read the same 1f the live sim folds to.
-            summoner_weapon_speed_bonus: 1.0,
+            // The RAW summoner-speed bonus starts 0 (`Player.cs:2460`,
+            // `ResetEffects` re-zeroes `:18341`) — the i12 read-only
+            // `summoner_weapon_speed_multiplier` folds `melee + bonus`
+            // on demand, so the gate's old post-first-fold 1.0 spawn
+            // stand-in is gone (the resync keep-one).
+            summoner_weapon_speed_bonus: 0.0,
             cool_whip_buff: false,
             cob_whip_buff: false,
             acc_snake_band: false,
@@ -2550,8 +2543,6 @@ impl Player {
             well_fed: false,
             pick_speed_bonus: 0.0,
             melee_speed_bonus: 0.0,
-            summoner_weapon_speed_bonus: 0.0,
-            whip_use_time_multiplier: 1.0,
             tile_speed_bonus: 0.0,
             wall_speed_bonus: 0.0,
             auto_reuse_glove: false,
@@ -6092,13 +6083,12 @@ impl Player {
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
-        // `ResetEffects`' attack-speed clears (`Player.cs:18341`
-        // summonerWeaponSpeedBonus = 0f, `:18499` whipUseTimeMultiplier = 1f,
-        // `:18531-18532` wallSpeed/tileSpeed = 1f, `:18710` autoReuseGlove =
-        // false, `:18431` stressBall = false) — the buff/equipment grants
+        // (Resync keep-one: the summoner/whip attack-speed clears live in
+        // the i24/i27 ResetEffects block above — `:18341`/`:18499`.)
+        // `ResetEffects`' attack-speed clears (`Player.cs:18531-18532`
+        // wallSpeed/tileSpeed = 1f, `:18710` autoReuseGlove = false,
+        // `:18431` stressBall = false) — the buff/equipment grants
         // below re-add them per tick, like the melee speed sum.
-        self.summoner_weapon_speed_bonus = 0.0;
-        self.whip_use_time_multiplier = 1.0;
         self.tile_speed_bonus = 0.0;
         self.wall_speed_bonus = 0.0;
         self.auto_reuse_glove = false;
