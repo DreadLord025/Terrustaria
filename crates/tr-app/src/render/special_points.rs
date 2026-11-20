@@ -472,3 +472,366 @@ pub(crate) fn collect_special_points(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tr_core::tile::FLAG_ACTIVE;
+
+    fn world(w: i32, h: i32) -> World {
+        let mut world = World::new("t".into(), w, h);
+        world.compute_column_surface();
+        world.compute_chunks();
+        world
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16) {
+        let i = w.index(x, y);
+        w.tiles[i].kind = kind;
+        w.tiles[i].flags = FLAG_ACTIVE;
+        w.tiles[i].frame_x = fx;
+        w.tiles[i].frame_y = fy;
+    }
+
+    /// Witness: the enum discriminants ARE the C# bucket indices
+    /// (`TileDrawing.cs:21-35` vs `:185`'s `(int)type` index).
+    #[test]
+    fn w4_g30_the_counter_discriminants_are_the_bucket_indices() {
+        assert_eq!(TileCounterType::Tree as usize, 0);
+        assert_eq!(TileCounterType::WindyGrass as usize, 1);
+        assert_eq!(TileCounterType::MultiTileGrass as usize, 2);
+        assert_eq!(TileCounterType::MultiTileVine as usize, 3);
+        assert_eq!(TileCounterType::Vine as usize, 4);
+        assert_eq!(TileCounterType::BiomeGrass as usize, 5);
+        assert_eq!(TileCounterType::VoidLens as usize, 6);
+        assert_eq!(TileCounterType::ReverseVine as usize, 7);
+        assert_eq!(TileCounterType::TeleportationPylon as usize, 8);
+        assert_eq!(TileCounterType::MasterTrophy as usize, 9);
+        assert_eq!(TileCounterType::AnyDirectionalGrass as usize, 10);
+    }
+
+    /// Witness: `AddSpecialPoint` (`:183-185`) appends without dedup and
+    /// honours the `MAX_SPECIALS` 9000 slot cap (`:68`, `:194`).
+    #[test]
+    fn w4_g30_add_special_point_appends_and_caps_at_9000() {
+        let mut reg = SpecialPoints::new();
+        reg.add_special_point(1, 2, TileCounterType::WindyGrass);
+        reg.add_special_point(1, 2, TileCounterType::WindyGrass);
+        assert_eq!(reg.buckets[1], vec![(1, 2), (1, 2)]);
+        for i in 0..(MAX_SPECIALS + 5) {
+            reg.add_special_point(i as i32, 0, TileCounterType::MultiTileGrass);
+        }
+        assert_eq!(reg.buckets[2].len(), MAX_SPECIALS);
+        assert_eq!(reg.buckets[2][0], (0, 0));
+    }
+
+    /// Witness: `ClearSpecialBlockCounts` (`:388-402`) clears the two root
+    /// lists and the ten buckets in the C# order — index 5 (BiomeGrass) is
+    /// the one bucket the method never touches.
+    #[test]
+    fn w4_g30_clear_skips_the_biome_grass_bucket() {
+        let mut reg = SpecialPoints::new();
+        for idx in 0..11 {
+            reg.buckets[idx].push((idx as i32, 0));
+        }
+        reg.vine_roots_seen.insert((1, 1));
+        reg.reverse_vine_roots_seen.insert((2, 2));
+        reg.liquid_drop_cells.push((3, 3, 373));
+        reg.single_tiles = 7;
+        reg.clear_special_block_counts();
+        for idx in [0usize, 1, 2, 3, 4, 6, 7, 8, 9, 10] {
+            assert!(reg.buckets[idx].is_empty(), "bucket {idx}");
+        }
+        assert_eq!(reg.buckets[5], vec![(5, 0)]);
+        assert!(reg.vine_roots_seen.is_empty());
+        assert!(reg.reverse_vine_roots_seen.is_empty());
+        assert!(reg.liquid_drop_cells.is_empty());
+        assert_eq!(reg.single_tiles, 0);
+    }
+
+    /// Witness: `IsTileDrawLayerSolid` (`:4469-4476`) — the five explicit
+    /// `DrawTileInSolidLayer` overrides (`TileID.cs:516-527`: 11/78/470/475/
+    /// 579 all `true`) win over `Main.tileSolid`; everything else falls to
+    /// the solid set. 11 (open door) and 470/475 (display doll/hat rack) are
+    /// NOT in `tileSolid`, so the override is observable.
+    #[test]
+    fn w4_g30_the_solid_layer_override_beats_tile_solid() {
+        for kind in [11u16, 78, 470, 475, 579] {
+            assert!(is_tile_draw_layer_solid(kind), "override kind {kind}");
+        }
+        // Dirt (0) is solid, grass-covered dirt included; a vine (52) and a
+        // torch (4) are not — no override, so the solid set decides.
+        assert!(is_tile_draw_layer_solid(0));
+        assert!(!is_tile_draw_layer_solid(52));
+        assert!(!is_tile_draw_layer_solid(4));
+        // Out-of-table kinds fall through without panicking.
+        assert!(!is_tile_draw_layer_solid(700));
+        assert!(!is_tile_draw_layer_solid(u16::MAX));
+    }
+
+    /// Witness: `ShouldSwayInWind` (`:7702-7717`) — the settings gate, the
+    /// `SwaysInWindBasic` membership, and the frame exceptions gated on
+    /// `type == 227` ONLY (the inline port's every-kind exception is the
+    /// deviation this gate fixes).
+    #[test]
+    fn w4_g30_sway_gate_is_settings_set_and_227_only() {
+        // 83 is a SwaysInWindBasic herb; 227 is the dye plant.
+        assert!(should_sway_in_wind(83, 0, true));
+        assert!(!should_sway_in_wind(83, 0, false));
+        assert!(!should_sway_in_wind(0, 0, true)); // dirt never sways
+        // The five exception frames kill the sway on 227 only.
+        for fx in [204i16, 238, 408, 442, 476] {
+            assert!(!should_sway_in_wind(227, fx, true), "227 frame {fx}");
+            // 83 at the same frameX still sways — C# gates on type == 227.
+            assert!(should_sway_in_wind(83, fx, true), "83 frame {fx}");
+        }
+        assert!(should_sway_in_wind(227, 0, true));
+        assert!(should_sway_in_wind(227, 18, true));
+    }
+
+    /// Witness: the vine arms (`:536-548`) — all eight VineThreads ids crawl
+    /// forward, 549 crawls reverse, regardless of frame.
+    #[test]
+    fn w4_g30_vine_threads_crawl_and_549_reverses() {
+        for kind in [52u16, 62, 115, 205, 382, 528, 636, 638] {
+            assert_eq!(classify_tile(kind, 0, 0, true), CellClass::VineCrawl);
+            assert_eq!(classify_tile(kind, 17, 35, true), CellClass::VineCrawl);
+        }
+        assert_eq!(classify_tile(549, 0, 0, true), CellClass::ReverseVineCrawl);
+    }
+
+    /// Witness: the MultiTileVine anchor gates (`:549-599`) — each family's
+    /// `%` grid, and the `continue` OUTSIDE the gate: an off-anchor cell
+    /// skips, it never falls to the default sway arm.
+    #[test]
+    fn w4_g30_multi_tile_vine_anchors_and_off_grid_skips() {
+        use CellClass::*;
+        use TileCounterType::MultiTileVine as V;
+        // 34: 54×54 grid; 698: 18-wide row 0; 454: 72×54.
+        assert_eq!(classify_tile(34, 0, 0, true), Deferred(V));
+        assert_eq!(classify_tile(34, 54, 108, true), Deferred(V));
+        assert_eq!(classify_tile(34, 18, 0, true), Skip);
+        assert_eq!(classify_tile(698, 18, 0, true), Deferred(V));
+        assert_eq!(classify_tile(698, 0, 18, true), Skip);
+        assert_eq!(classify_tile(454, 72, 54, true), Deferred(V));
+        assert_eq!(classify_tile(454, 36, 0, true), Skip);
+        // The 1×2 family: 18×36; 91: 18×54; 95/126/444: 36×36; 465/591/592: 36×54.
+        for kind in [42u16, 270, 271, 572, 581, 660] {
+            assert_eq!(classify_tile(kind, 18, 36, true), Deferred(V));
+            assert_eq!(classify_tile(kind, 0, 18, true), Skip);
+        }
+        assert_eq!(classify_tile(91, 18, 54, true), Deferred(V));
+        assert_eq!(classify_tile(91, 18, 36, true), Skip);
+        for kind in [95u16, 126, 444] {
+            assert_eq!(classify_tile(kind, 36, 36, true), Deferred(V));
+            assert_eq!(classify_tile(kind, 18, 36, true), Skip);
+        }
+        for kind in [465u16, 591, 592] {
+            assert_eq!(classify_tile(kind, 36, 54, true), Deferred(V));
+            assert_eq!(classify_tile(kind, 36, 36, true), Skip);
+        }
+    }
+
+    /// Witness: the MultiTileGrass anchors (`:600-687`) — the sunflower 27
+    /// (36×row0), the potted plants, the 233 TWO-anchor jungle plant, the
+    /// no-row-gate 652/651, the wind toys, the shards, the golf flag and the
+    /// campfire column split.
+    #[test]
+    fn w4_g30_multi_tile_grass_anchors() {
+        use CellClass::*;
+        use TileCounterType::MultiTileGrass as G;
+        assert_eq!(classify_tile(27, 36, 0, true), Deferred(G));
+        assert_eq!(classify_tile(27, 0, 18, true), Skip);
+        for kind in [236u16, 238, 702] {
+            assert_eq!(classify_tile(kind, 36, 0, true), Deferred(G));
+            assert_eq!(classify_tile(kind, 36, 18, true), Skip);
+        }
+        // 233: the 54-wide top at row 0 AND the 36-wide bulb at row 36.
+        assert_eq!(classify_tile(233, 54, 0, true), Deferred(G));
+        assert_eq!(classify_tile(233, 36, 36, true), Deferred(G));
+        assert_eq!(classify_tile(233, 36, 0, true), Skip);
+        assert_eq!(classify_tile(233, 54, 36, true), Skip);
+        // 652/651: column gates only, no row gate.
+        assert_eq!(classify_tile(652, 36, 54, true), Deferred(G));
+        assert_eq!(classify_tile(652, 18, 0, true), Skip);
+        assert_eq!(classify_tile(651, 54, 18, true), Deferred(G));
+        assert_eq!(classify_tile(651, 36, 0, true), Skip);
+        for kind in [485u16, 489, 490] {
+            assert_eq!(classify_tile(kind, 36, 0, true), Deferred(G));
+            assert_eq!(classify_tile(kind, 36, 18, true), Skip);
+        }
+        for kind in 521u16..=527 {
+            assert_eq!(classify_tile(kind, 36, 0, true), Deferred(G));
+            assert_eq!(classify_tile(kind, 0, 18, true), Skip);
+        }
+        assert_eq!(classify_tile(493, 18, 0, true), Deferred(G));
+        assert_eq!(classify_tile(493, 18, 18, true), Skip);
+        // 519: columns 0-4 register (frameX/18 <= 4), the rest skip.
+        assert_eq!(classify_tile(519, 72, 0, true), Deferred(G)); // col 4
+        assert_eq!(classify_tile(519, 90, 0, true), Skip); // col 5
+    }
+
+    /// Witness: the 530/705 frame-range split (`:636-655`) — below the cut
+    /// the multi-tile gate applies (off-anchor skips); at/above the cut the
+    /// `break` goes STRAIGHT to DrawSingleTile (`:645`/`:655`), never through
+    /// the default arm.
+    #[test]
+    fn w4_g30_oasis_and_sea_oats_split_at_the_frame_cut() {
+        use CellClass::*;
+        use TileCounterType::MultiTileGrass as G;
+        assert_eq!(classify_tile(530, 54, 0, true), Deferred(G));
+        assert_eq!(classify_tile(530, 18, 0, true), Skip);
+        assert_eq!(classify_tile(530, 270, 0, true), SingleTile);
+        assert_eq!(classify_tile(530, 288, 18, true), SingleTile);
+        // 705: the cut is modulo the 486 style block.
+        assert_eq!(classify_tile(705, 54, 36, true), Deferred(G));
+        assert_eq!(classify_tile(705, 18, 36, true), Skip);
+        assert_eq!(classify_tile(705, 270, 0, true), SingleTile);
+        assert_eq!(classify_tile(705, 486, 0, true), Deferred(G)); // 486%486=0
+        assert_eq!(classify_tile(705, 486 + 270, 0, true), SingleTile);
+    }
+
+    /// Witness: the `break` arms (`:695-712`) — 491/597/617 register AND
+    /// draw when on-anchor, draw alone otherwise; the drip tiles (`:688-694`)
+    /// emit and skip; 184 (`:713-715`) defers unconditionally.
+    #[test]
+    fn w4_g30_break_arms_register_and_draw_drips_record() {
+        use CellClass::*;
+        assert_eq!(
+            classify_tile(491, 18, 18, true),
+            DeferredAndSingle(TileCounterType::VoidLens)
+        );
+        assert_eq!(classify_tile(491, 0, 0, true), SingleTile);
+        assert_eq!(classify_tile(491, 18, 0, true), SingleTile);
+        assert_eq!(
+            classify_tile(597, 54, 0, true),
+            DeferredAndSingle(TileCounterType::TeleportationPylon)
+        );
+        assert_eq!(classify_tile(597, 0, 18, true), SingleTile);
+        assert_eq!(
+            classify_tile(617, 54, 72, true),
+            DeferredAndSingle(TileCounterType::MasterTrophy)
+        );
+        assert_eq!(classify_tile(617, 54, 36, true), SingleTile);
+        for kind in [373u16, 374, 375, 461, 709] {
+            assert_eq!(classify_tile(kind, 0, 0, true), LiquidDrops);
+        }
+        assert_eq!(
+            classify_tile(184, 17, 35, true),
+            Deferred(TileCounterType::AnyDirectionalGrass)
+        );
+    }
+
+    /// Witness: the default arm (`:716-722`) — sway candidates defer as
+    /// WindyGrass, everything else reaches DrawSingleTile; the settings gate
+    /// flips the whole arm.
+    #[test]
+    fn w4_g30_the_default_arm_defers_sway_candidates() {
+        assert_eq!(
+            classify_tile(83, 0, 0, true),
+            CellClass::Deferred(TileCounterType::WindyGrass)
+        );
+        assert_eq!(classify_tile(83, 0, 0, false), CellClass::SingleTile);
+        assert_eq!(classify_tile(0, 0, 0, true), CellClass::SingleTile);
+        // 227's exception frames fall through the default arm to SingleTile.
+        assert_eq!(classify_tile(227, 204, 0, true), CellClass::SingleTile);
+    }
+
+    /// Witness: `CacheSpecialDraws_Part1`'s Tree tail (`:4260-4284`) — the
+    /// 323 frond column band and the trunk family's branch rows; the gates
+    /// read the DRAW-DATA frames (the caller passes the overrides).
+    #[test]
+    fn w4_g30_the_tree_tail_registers_canopy_cells() {
+        let mut reg = SpecialPoints::new();
+        // 323 palm: 88 <= frameX <= 132 inclusive, any row.
+        cache_tree_point(1, 1, 323, 88, 0, &mut reg);
+        cache_tree_point(2, 1, 323, 132, 54, &mut reg);
+        cache_tree_point(3, 1, 323, 87, 0, &mut reg);
+        cache_tree_point(4, 1, 323, 133, 0, &mut reg);
+        // The trunk family: frameY >= 198 AND frameX >= 22.
+        cache_tree_point(5, 1, 5, 22, 198, &mut reg);
+        cache_tree_point(6, 1, 589, 44, 220, &mut reg);
+        cache_tree_point(7, 1, 5, 22, 197, &mut reg);
+        cache_tree_point(8, 1, 5, 21, 198, &mut reg);
+        // Non-tree kinds never register.
+        cache_tree_point(9, 1, 0, 22, 198, &mut reg);
+        assert_eq!(reg.buckets[0], vec![(1, 1), (2, 1), (5, 1), (6, 1)]);
+    }
+
+    /// A 40x60 world with a reverse-vine (549) column at x=10, rows 20-22,
+    /// standing on dirt at (10, 23).
+    fn reverse_vine_world() -> World {
+        let mut w = world(40, 60);
+        put(&mut w, 10, 23, 0, 0, 0); // dirt — the ground attachment
+        for y in 20..=22 {
+            put(&mut w, 10, y, 549, 0, 0);
+        }
+        w
+    }
+
+    /// Witness: `CrawlToBottomOfReverseVineAndAddSpecialPoint` (`:764-782`)
+    /// — every cell of one column resolves the SAME root (the row above the
+    /// attachable dirt), deduped once; the loop starts AT j (`:767`), so an
+    /// attachable cell at j itself roots at j-1 (the forward crawl starts
+    /// at j-1 and would never test j).
+    #[test]
+    fn w4_g30_the_reverse_crawl_roots_above_the_attachment() {
+        let w = reverse_vine_world();
+        let mut reg = SpecialPoints::new();
+        for y in 20..=22 {
+            collect_reverse_vine_root(&w, 10, y, &mut reg);
+        }
+        assert_eq!(reg.buckets[TileCounterType::ReverseVine as usize], vec![(10, 22)]);
+        // The k = j start: a solid cell at j roots immediately at j - 1.
+        let mut w2 = world(40, 60);
+        put(&mut w2, 10, 20, 0, 0, 0);
+        let mut reg2 = SpecialPoints::new();
+        collect_reverse_vine_root(&w2, 10, 20, &mut reg2);
+        assert_eq!(reg2.buckets[TileCounterType::ReverseVine as usize], vec![(10, 19)]);
+        // A lone vine cell with empty ground below: k = j + 1 is inactive,
+        // so the root is the cell's own row (y = k - 1 = j).
+        let mut w3 = world(40, 60);
+        put(&mut w3, 10, 20, 549, 0, 0);
+        let mut reg3 = SpecialPoints::new();
+        collect_reverse_vine_root(&w3, 10, 20, &mut reg3);
+        assert_eq!(reg3.buckets[TileCounterType::ReverseVine as usize], vec![(10, 20)]);
+    }
+
+    /// Witness: the driver (`:504-727`) — row-major order, the layer gate
+    /// (`:517`), the vine crawl feeding bucket 4 with the S1-G-1a dedup, and
+    /// the single-tile count. Fixture: dirt (solid) at (5,5), a torch
+    /// (non-solid) at (6,5), a sunflower anchor + sub-cell at (7,5)/(8,5),
+    /// and a vine strip hanging from dirt at (12,4).
+    #[test]
+    fn w4_g30_the_driver_walks_layers_and_collects_in_order() {
+        let mut w = world(40, 40);
+        put(&mut w, 5, 5, 0, 0, 0); // dirt — solid layer
+        put(&mut w, 6, 5, 4, 0, 0); // torch — non-solid
+        put(&mut w, 7, 5, 27, 0, 0); // sunflower anchor
+        put(&mut w, 8, 5, 27, 18, 18); // sunflower sub-cell
+        put(&mut w, 12, 4, 0, 0, 0); // vine attachment
+        for y in 5..=7 {
+            put(&mut w, 12, y, 52, 0, 0);
+        }
+        let mut reg = SpecialPoints::new();
+        collect_special_points(&w, 0, 0, 39, 39, false, true, &mut reg);
+        assert_eq!(reg.single_tiles, 1); // the torch only
+        assert_eq!(reg.buckets[2], vec![(7, 5)]); // the sunflower anchor
+        assert_eq!(reg.buckets[4], vec![(12, 5)]); // one deduped vine root
+        // The solid pass adds BOTH dirt cells to the single count; the
+        // registry keeps the non-solid points (C# clears only before the
+        // non-solid pass, and the port clears once per frame before the
+        // solid walk).
+        collect_special_points(&w, 0, 0, 39, 39, true, true, &mut reg);
+        assert_eq!(reg.single_tiles, 3);
+        assert_eq!(reg.buckets[2], vec![(7, 5)]);
+        // Row-major order: two anchors on one row collect left-to-right.
+        let mut w2 = world(40, 40);
+        put(&mut w2, 9, 5, 27, 0, 0);
+        put(&mut w2, 3, 5, 27, 0, 0);
+        put(&mut w2, 6, 4, 27, 0, 0);
+        let mut reg2 = SpecialPoints::new();
+        collect_special_points(&w2, 0, 0, 39, 39, false, true, &mut reg2);
+        assert_eq!(reg2.buckets[2], vec![(6, 4), (3, 5), (9, 5)]);
+    }
+}
