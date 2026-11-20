@@ -1127,6 +1127,13 @@ pub(crate) struct WorldFrameKey {
     /// range. Zero in single-player (the offsets are zero and no peers).
     pub(crate) net_key: u32,
     pub(crate) world_revision: u64,
+    /// W4-d127 — the WoF draw inputs inside the cached world range: the
+    /// mouth clock (`Main.wofDrawFrameIndex`, `Main.cs:761`), the band
+    /// statics (`wofDrawAreaTop/Bottom`, `:757`/`:759`) and the tongue
+    /// gate (`Player.tongued`). Non-zero only while a wall lives, so
+    /// wall-free worlds keep the pre-wiring cache behaviour bit-for-bit
+    /// (the waterfall/tile_anim key convention).
+    pub(crate) wof_key: u64,
 }
 
 #[cfg(test)]
@@ -1161,6 +1168,7 @@ mod frame_key {
             tile_anim: 0,
             net_key: 0,
             world_revision: 0,
+            wof_key: 0,
         };
         assert_ne!(key(1.2), key(1.0), "blind's GlobalBrightness drop must change the key");
         assert_eq!(key(1.2), key(1.2), "an unchanged brightness must not");
@@ -1193,6 +1201,7 @@ mod frame_key {
             tile_anim,
             net_key: 0,
             world_revision: 0,
+            wof_key: 0,
         };
         let mut a = tr_core::drawdata_anim::TileAnimator::new();
         let k0 = key(a.anim_key());

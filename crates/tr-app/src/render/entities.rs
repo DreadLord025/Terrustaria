@@ -207,6 +207,12 @@ pub(crate) struct NpcAssets {
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
     pub(crate) wof: Option<BgTex>,
+    // W4-d127 — `Main.DrawWoF`'s sheets (`Main.cs:38402`/`:38494`): the
+    // body strip (`TextureAssets.Wof`), the rope/tongue link (`Chain12`)
+    // and the rope's source-rect width (`Chain4`).
+    pub(crate) wof_body: Option<BgTex>,
+    pub(crate) wof_chain12: Option<BgTex>,
+    pub(crate) wof_chain4: Option<BgTex>,
     pub(crate) destroyer: Option<BgTex>,
     pub(crate) prime: Option<BgTex>,
     pub(crate) retinazer: Option<BgTex>,
@@ -482,6 +488,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         queen_bee: npc_tex(atlas, "NPC_222"),
         skeletron_head: npc_tex(atlas, "NPC_35"),
         wof: npc_tex(atlas, "NPC_113"),
+        // W4-d127 — `Main.DrawWoF`'s sheets (`Main.cs:38402`/`:38494`).
+        wof_body: npc_tex(atlas, "WallOfFlesh"),
+        wof_chain12: npc_tex(atlas, "Chain12"),
+        wof_chain4: npc_tex(atlas, "Chain4"),
         destroyer: npc_tex(atlas, "NPC_134"),
         prime: npc_tex(atlas, "NPC_127"),
         retinazer: npc_tex(atlas, "NPC_125"),

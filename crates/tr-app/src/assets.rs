@@ -544,6 +544,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_35",
         "NPC_113",
         "NPC_134",
+        // W4-d127 — `Main.DrawWoF`'s sheets (`Main.cs:38402`/`:38494`):
+        // `TextureAssets.Wof` (the 190x420 body strip, three 140-px mouth
+        // rows), `Chain12` (the 16x28 rope/tongue link) and `Chain4` (the
+        // rope's source-rect width, also 16x28).
+        "WallOfFlesh",
+        "Chain12",
+        "Chain4",
         // The Destroyer's segments + the Probe (S1-D-3-wire-destroyer).
         "NPC_135",
         "NPC_136",

@@ -24,6 +24,10 @@ pub(crate) mod tile_cracks;
 pub(crate) mod tiles;
 pub(crate) mod vines;
 pub(crate) mod wires;
+// W4-d127: `Main.DrawWoF` (`Main.cs:38377-38525`) — the wall's body sweep,
+// the Hungry rope leashes and the tongue chains; the seam sits between the
+// wall pass and the behind-tiles NPC pass (`tiles.rs`).
+pub(crate) mod wof;
 
 /// A decoded sprite rect on the atlas: pixel size plus the normalised UV quad.
 /// Shared by every render module (the `Background_*`/`Player_*`/`NPC_*` sheet

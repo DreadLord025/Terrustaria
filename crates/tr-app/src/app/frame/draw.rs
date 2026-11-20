@@ -1039,6 +1039,28 @@ impl App {
                             h
                         },
                         world_revision: world.revision,
+                        // W4-d127 — the WoF draw inputs inside the cached
+                        // world range (`Main.DrawWoF`, `Main.cs:38377-38525`):
+                        // the mouth clock, the band statics and the tongue
+                        // gate. Non-zero only while a wall lives, so wall-free
+                        // worlds keep the pre-wiring cache behaviour. The
+                        // clock is the NEXT value `draw_tiles` will tick to
+                        // (it advances inside the pass, `:38427`), so the key
+                        // matches the frame the pass actually draws.
+                        wof_key: if world.wof_present {
+                            let next_idx = if game_paused_for_specials {
+                                scratch.wof_draw_frame_index
+                            } else {
+                                (scratch.wof_draw_frame_index + 1) % 18
+                            };
+                            let tongue = player.as_ref().is_some_and(|p| p.tongued && !p.dead);
+                            (next_idx as u64)
+                                | ((world.wof_draw_top as i64 as u64) << 8)
+                                | ((world.wof_draw_bottom as i64 as u64) << 24)
+                                | ((tongue as u64) << 40)
+                        } else {
+                            0
+                        },
                     };
                     let reuse_world = !crate::env::no_cache() && *world_key == Some(key);
                     if reuse_world {
@@ -1183,6 +1205,9 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-d127: the WoF mouth clock's pause gate
+                            // (`Main.cs:38427`).
+                            game_paused_for_specials,
                         );
                         *world_key = Some(key);
                     }
