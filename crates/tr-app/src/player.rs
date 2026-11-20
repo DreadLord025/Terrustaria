@@ -386,6 +386,12 @@ pub struct FrameInputs {
     pub hold_style_dry: bool,
     /// `!happyFunTorchTime || createTile != 4` — the torch hold override.
     pub torch_hold_ok: bool,
+    /// `inventory[selectedItem].useTurn` — the swing direction gate
+    /// (`Player.cs:19837`: `(itemAnimation == 0 || useTurn) &&
+    /// mount.AllowDirectionChange && !sandStorm`). A broadsword
+    /// (`useTurn = false`) locks the facing mid-swing; a pickaxe
+    /// (`useTurn = true`) keeps turning (S1-P-i04).
+    pub use_turn: bool,
     /// The grapple body arm's lean — the hooks' centroid minus the body centre
     /// (`Player.cs:36502-36520`).
     pub grapple_dx: f32,
@@ -7934,15 +7940,21 @@ impl Player {
                 self.vx = self.max_run_speed;
             }
         }
-        // `Player.cs:19835-19843`: the direction lock — the facing follows the
-        // run keys (`ChangeDir(num5)`); a cart keeps the roll direction, read
-        // AFTER the boost above (`Math.Sign(velocity.X) == num5`; `Sign(0) =
-        // 0` locks a stationary cart; `AllowDirectionChange` is true for
-        // carts, `Mount.cs:630-639`).
+        // `Player.cs:19835-19845`: the direction lock — the facing follows the
+        // run keys (`ChangeDir(num5)`) ONLY when `(itemAnimation == 0 ||
+        // inventory[selectedItem].useTurn) && mount.AllowDirectionChange &&
+        // !sandStorm` (`:19837`, S1-P-i04 — the port flipped mid-swing on
+        // every item); a cart keeps the roll direction, read AFTER the boost
+        // above (`Math.Sign(velocity.X) == num5`; `Sign(0) = 0` locks a
+        // stationary cart; `AllowDirectionChange` is true for carts,
+        // `Mount.cs:630-640` — only the Scutlix (9) locks).
         let dir_keys = self.control_right as i32 - self.control_left as i32;
         if dir_keys != 0 {
+            let turn_ok = (!self.frame_inputs.swing_active || self.frame_inputs.use_turn)
+                && self.mount.allow_direction_change()
+                && !self.sand_storm;
             let roll = (self.vx > 0.0) as i32 - (self.vx < 0.0) as i32;
-            if !self.cart_mounted || roll == dir_keys {
+            if turn_ok && (!self.cart_mounted || roll == dir_keys) {
                 self.facing = dir_keys;
             }
         }
@@ -16006,6 +16018,7 @@ mod s1_player_composite_tests {
             aim_relative: 0.0,
             hold_style_dry: true,
             torch_hold_ok: true,
+            use_turn: false,
             grapple_dx: 0.0,
             grapple_dy: 0.0,
         }
@@ -16113,6 +16126,87 @@ mod s1_player_composite_tests {
         // The sleep pose's `fullRotation` rides the subtraction.
         let asleep = item_rotation_for_aim(0.75, 1, std::f32::consts::FRAC_PI_2);
         assert!((asleep - (0.75 - std::f32::consts::FRAC_PI_2)).abs() < 1e-6);
+    }
+
+    /// S1-P-i04 — the swing direction gate (`Player.cs:19837`):
+    /// `(itemAnimation == 0 || inventory[selectedItem].useTurn) &&
+    /// mount.AllowDirectionChange && !sandStorm`. The port's
+    /// `horizontal_movement` flipped the facing on every run-key press
+    /// mid-swing; a broadsword (`useTurn = false`) locks it.
+    #[test]
+    fn s1_p_i04_a_broadsword_swing_locks_the_facing() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.facing = 1;
+        // Mid-swing with the Iron Broadsword (useTurn false): the left key
+        // accelerates but does NOT turn the player.
+        p.frame_inputs = FrameInputs {
+            swing_active: true,
+            use_turn: false,
+            ..FrameInputs::default()
+        };
+        let input = PlayerInput {
+            left: true,
+            ..Default::default()
+        };
+        p.update(&w, input);
+        assert_eq!(p.facing, 1, "the swing locks the facing");
+        assert!(p.vx < 0.0, "the run key still accelerates");
+        // The swing ending (`itemAnimation == 0`) unlocks the turn.
+        p.frame_inputs.swing_active = false;
+        p.update(&w, input);
+        assert_eq!(p.facing, -1, "the turn lands once the swing ends");
+    }
+
+    /// S1-P-i04 — a `useTurn` item (the pickaxe) keeps turning mid-swing
+    /// (`Player.cs:19837`'s second term).
+    #[test]
+    fn s1_p_i04_a_use_turn_item_keeps_turning_mid_swing() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.facing = 1;
+        p.frame_inputs = FrameInputs {
+            swing_active: true,
+            use_turn: true,
+            ..FrameInputs::default()
+        };
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(p.facing, -1, "useTurn keeps the direction live");
+    }
+
+    /// S1-P-i04 — the sandstorm locks the direction even at rest
+    /// (`Player.cs:19837`'s `!this.sandStorm` term). Probed at the movement
+    /// seam directly: the frame pass's sandstorm 4-tick flip
+    /// (`Player.cs:36298-36311`) is a separate consumer of the same flag.
+    #[test]
+    fn s1_p_i04_the_sandstorm_locks_the_direction() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.facing = 1;
+        p.control_left = true;
+        p.control_right = false;
+        p.sand_storm = true;
+        p.horizontal_movement();
+        assert_eq!(p.facing, 1, "the sandstorm keeps the facing");
+        // The flag down, the same press turns.
+        p.sand_storm = false;
+        p.horizontal_movement();
+        assert_eq!(p.facing, -1);
     }
 
     #[test]

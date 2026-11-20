@@ -17183,6 +17183,16 @@ thirds' X sign, the shoot style's item rotation, the hold styles' anchors
 and the eat style's stretch table) вЂ” all mutation-checked (RED on the
 pre-fix code).
 
+**S1-P-i04 update (2026-11-19):** the useStyle-1 arm now routes through
+`melee_swing.rs` - the per-item nudges deviation above is CLOSED for the
+swing (the Bladed Glove claw, the fishing-hammer/Keybrand nudges and the
+Breaker Blade's `UsesBetterMeleeItemLocation` offset are ported), the thirds
+compare the RAW tick counters in double like the C# (`(double)itemAnimation
+< (double)itemAnimationMax * 0.333`), and the draw carries `sItem.type`
+(`PlayerCompositeState.item_type`). The `mountOffset`/`gravDir` deviation
+stands for the DRAW only (the module carries both for the sim-side hitbox).
+See "The broadsword melee swing (S1-P-i04)" below.
+
 
 ## The throw and rapier item placement (S1-G-18, 2026-11-14)
 
@@ -32870,3 +32880,135 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+
+## The broadsword melee swing (S1-P-i04, 2026-11-19)
+
+Code-only round (no compiler invoked; witnesses WRITTEN NOT RUN). The
+census of the useStyle-1 melee interaction found three verdicts:
+
+* **WRONG - the melee hitbox.** The live arm
+  (`world_sim/editing.rs:1120-1365`) hits the CURSOR POINT within four
+  tiles of the player centre. The C# never reads the cursor for the melee
+  hit: `ItemCheck_GetMeleeHitbox` (`Player.cs:45099-45190`) grows an
+  integer `itemRectangle` off the swing's `itemLocation` per animation
+  third, and `ItemCheck_MeleeHitNPCs` (`:44241-44253`) intersects it
+  against every NPC box under the `immune[whoAmI] == 0 &&
+  CanHitNPCWithMeleeHit(i) && attackCD <= 0` gate (`:44246`). The ported
+  module (`melee_swing.rs`) carries the whole rect math verbatim: the DST
+  frame shrinks (5094/5095 -10, 5096 -12, 5097 -8, `:45107-45125`), the
+  `GetAdjustedItemScale` multiply (`:45128-45130`, `:42566-42582` - the
+  1.1 meleeScaleGlove term rides a caller flag, the glove has no port
+  owner), the facing/gravity flips (`:45131-45138`), the END third's
+  `w*1.4`/`h*1.1` growth + the left-facing `(int)(w*1.4-w)` pull + the
+  `(int)(h*0.5*gravDir)` drop (`:45141-45149`), and the START third's
+  `w*=2` + the right-facing `(int)(w*1.2)` pull + the
+  `(int)((h*1.4-h)*gravDir)` lift (`:45151-45159`). Every `(int)` is the
+  C#'s double-product truncation in statement order (the Y shifts read
+  the PRE-growth height). `dontAttack` is a useStyle-3 (spear) concept
+  only (`:45168-45171`) - useStyle 1 always attacks.
+* **WRONG - the swing direction gate.** `Player.cs:19837`:
+  `(itemAnimation == 0 || inventory[selectedItem].useTurn) &&
+  mount.AllowDirectionChange && !sandStorm`. The port's
+  `horizontal_movement` flipped the facing on every run-key press
+  mid-swing. Fixed: the gate now reads `FrameInputs.use_turn` (the
+  registry row) + `MountState::allow_direction_change` (only the Scutlix
+  9 gates on `abilityCooldown < max/2`, `Mount.cs:630-640`) +
+  `!sand_storm`. A broadsword (`useTurn = false`) locks the facing for
+  the swing; a pickaxe (`useTurn = true`) keeps turning. The
+  `ChangeDir` mirror itself (`:42111-42115` - the composite rotations
+  and `itemRotation` negate, `itemLocation.X` mirrors around
+  `MountedCenter.X`) needs no port write: the port recomputes the
+  composite arms and the draw anchors from the facing every frame, so
+  the flip's effect is identical by construction.
+* **MISSING - the per-NPC melee cooldowns.** `meleeNPCHitCooldown[200]`
+  (`Player.cs:44212-44239`): `ResetMeleeHitCooldowns` at every
+  `ItemCheck_StartActualUse` (`:51679`), `UpdateMeleeHitCooldowns`'
+  unconditional per-slot decrement once per melee-block entry
+  (`:43664`), `SetMeleeHitCooldown(npcIndex, itemAnimation)` at the hit
+  (`:44414` - the NPC is immune for the REST of the swing), and
+  `ApplyAttackCooldown`'s `Max(1, (int)(itemAnimationMax * 0.33))`
+  (`:44428-44431`). Ported as `MeleeHitCooldowns`. The port's existing
+  `attack_cd = swing_max` pacing (the whole animation) is a DIFFERENT
+  consumer (the use pacing) and stays untouched this round.
+
+The arc half (`ItemCheck_ApplyUseStyle`'s useStyle-1 arms,
+`Player.cs:50686-50864`) was ported by S1-G-17 for the draw; this round
+re-ports it in `melee_swing.rs::swing_item_placement` with the pieces
+S1-G-17 left out and the draw now routes through it:
+
+* the RAW `itemAnimation`/`itemAnimationMax` counters compared in DOUBLE
+  (`(double)itemAnimation < (double)itemAnimationMax * 0.333`,
+  `:50715/:50746`) - the draw's old f32 `remaining < 0.333` compare
+  drifted on the boundary ticks (max 20: anim 6.66 is the END third,
+  anim 13.32 the middle);
+* the Bladed Glove claw arm (`Item.claw[1827]`, the single writer
+  `Main.cs:6793-6795`; the three hand positions `:50695-50709`);
+* the per-item width/height nudges (the fishing hammers 2330/2320/2341
+  +8/+4/+4 width and +4/+4 height, the Keybrand 671 +12/+6/+8 width and
+  +10/+8 height, `:50734-50741` etc.);
+* the `UsesBetterMeleeItemLocation` offset (`ItemID.cs:348` - the
+  Breaker Blade 426 alone; `itemLocation += zero * Directions`,
+  `:50854-50857`, `Directions = (direction, gravDir)`, `:3849`);
+* the gravDir mirror (`:50860-50864`) and `mountOffset` - carried by the
+  module for the sim-side hitbox; the DRAW keeps mountOffset 0 / gravDir
+  1 (the port has neither state).
+
+Also ported: `GetPointOnSwungItemPath` (`:44742-44752` - the Fiery
+Greatsword's blade probe, `:44282-44285`) with
+`Utils.LineRectangleDistance` (`Utils.cs:827-838`) +
+`Vector2.Between`/`ClosestPointOnLine` (`:1718-1725`/`:1860-1875`). The
+`RotatedRelativePoint` fold (`:4225-4251`) is the identity + `gfxOffY` at
+rest (no fullRotation outside sleep, no sit offset in the sim) - the
+caller passes `gfx_off_y`.
+
+The Lead's i01 census (`docs/research/60-item-use-census.md`, branch
+`task/S1-P-i01-item-use-census`) U13 adds the swing-LENGTH half:
+`ApplyItemAnimation`'s melee arm (`Player.cs:4463-4497`) swings
+`useAnimation * meleeSpeed` ticks where `meleeSpeed` is the accumulated
+1+bonus folded per item (`:25912`,
+`ItemID.Sets.BonusMeleeSpeedMultiplier` - the Bladed Glove 0.5, the Fetid
+Baghnakhs 0.25, the Psycho Knife 0.33, the Beam Sword 0.75,
+`ItemID.cs:1350`), capped at 3 and INVERTED
+(`TurnAttackSpeedToUseTimeMultiplier`, `:29028-29039`), the product
+`(int)` truncated and floored at 1 (`SetItemAnimation`, `:4453-4461`);
+the Terragrim (3821) is `NoMeleeSpeedBonus` (`ItemID.cs:340`) and skips
+the arm. Ported as `melee_animation_frames` +
+`attack_speed_to_use_time_multiplier` + the two set predicates. The
+wiring (the `item::use_animation_secs_of` call sites read the raw
+prefixed ticks today) rides the same follow-up as the hitbox - it changes
+the swing timer the render and the use pacing both read.
+
+**UNWIRED** (the `npc_ai_town.rs` precedent): the module lands pure; the
+live cursor-point arm in `editing.rs` is NOT replaced this round. The
+wiring needs its own verified round because it changes the hit
+selection (the per-NPC loop + the `CanHit` line-of-sight walk), the
+`attack_cd` semantics and the crit/DamageVar draw sites' tick cadence.
+The `HeldItemOffset` symbol the task brief named does not exist in the
+1.4.5.8 decompile (grep-verified) - the C# concept is the
+`itemLocation`/`heldItemFrame` pair above.
+
+**RNG argument:** the module draws NOTHING. The C# hit path's draws -
+the crit `Main.rand.Next(1, 101)` (`Player.cs:44298`) then
+`Main.DamageVar(dmg, luck)` (`:44342`, `Main.cs:66118-66134`) - stay with
+the caller in C# order (the port's `editing.rs:1232-1233` already runs
+crit-then-DamageVar on the `UpdatePlayers` stream). The witness
+`the_hit_path_draws_ride_the_caller_stream_in_csharp_order` replays both
+lanes on CLONES of one seeded `UnifiedRandom` (the port helpers vs the
+raw `Next` calls + banker's round) and asserts equal end states, then
+runs a full 20-tick swing's placement/hitbox/cooldown math between the
+two draws on a third clone and asserts the stream is untouched. No
+draw is added, removed or reordered anywhere.
+
+Tests (WRITTEN NOT RUN): `melee_swing.rs` 23 witnesses (the double
+third boundaries at max 20/35/8, the 3.5-rad sweep, the generic thirds,
+the width/height cascade steps, the per-item nudges, the Breaker Blade
+nudge incl. the facing/gravDir mirrors, the claw arm, the gravity
+mirror, the mount offset, the hitbox base/DST-shrink/END/START/middle
+rects, the full-swing composition, the strict intersects, the
+cooldowns, the attack cooldown floor, the adjusted scale, the
+melee-speed animation length (the cap/invert/floor + the four per-item
+folds), the swung path, the line-rect distance, the RNG clone replay);
+`player.rs::s1_player_composite_tests` 3 direction-gate witnesses;
+`mount.rs` 1 Scutlix gate witness; `render/player_layers.rs` 2 draw
+witnesses (the raw-counter boundaries, the per-item specials).

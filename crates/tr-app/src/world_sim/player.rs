@@ -680,6 +680,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // gates are open (documented in ANALYSIS).
                 hold_style_dry: true,
                 torch_hold_ok: true,
+                // `inventory[selectedItem].useTurn` (`Player.cs:19837`) —
+                // the swing direction gate (S1-P-i04).
+                use_turn: crate::item::use_turn(kind),
                 grapple_dx: dx,
                 grapple_dy: dy,
             };
