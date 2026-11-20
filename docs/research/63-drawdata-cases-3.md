@@ -645,3 +645,53 @@ post-pass wiring land (furniture lane W4-d57). Tests pin the rewrite:
 per-kind sweep `drawdata_furniture.rs:323-370`, zero-table byte-equality :471-493.
 The `Main.critterCage = true` side effect (:5672) gates that animator and is
 likewise deferred (documented :167-168).
+
+### Batch 6 — big-cage group middle: 358, 359, 413, 414, 542, 550, 551, 553, 554, 558, 559, 599, 600, 601, 602 (15 ids)
+
+All fifteen share the group head cited in batch 5 (`tileTop = 2;
+Main.critterCage = true;` + the BIG probe, :5670-5674). Inner arms verbatim
+(`TileDrawing.cs:5676-5745`) vs `cage_table` (`drawdata_furniture.rs`):
+
+| Id | C# inner arm (verbatim) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 358 | `case 279:` `case 358:` → `addFrY = Main.birdCageFrame[bigAnimalCageFrame] * 54;` | :5718-5721 | `279 \| 358 => (CageAnim::Bird, 0, 54, BIG)` :125 | PORTED-UNWIRED |
+| 359 | `case 275:` `case 359:` `case 599:`…`case 605:` → `addFrY = Main.bunnyCageFrame[bigAnimalCageFrame] * 54;` | :5676-5686 | `275 \| 359 \| 599..=605 => (CageAnim::Bunny, 0, 54, BIG)` :117 | PORTED-UNWIRED |
+| 413 | `case 276:` `case 413:` `case 414:` `case 606:`…`case 612:` → `addFrY = Main.squirrelCageFrame[bigAnimalCageFrame] * 54;` | :5694-5705 | `276 \| 413 \| 414 \| 606..=612 => (CageAnim::Squirrel, 0, 54, BIG)` :120 | PORTED-UNWIRED |
+| 414 | shares the squirrel arm | :5696 | :120 | PORTED-UNWIRED |
+| 542 | `case 542:` → `addFrY = Main.owlCageFrame[bigAnimalCageFrame] * 54;` | :5691-5693 | `542 => (CageAnim::Owl, 0, 54, BIG)` :119 | PORTED-UNWIRED |
+| 550 | `case 550:` `case 551:` → `addFrY = Main.turtleCageFrame[bigAnimalCageFrame] * 54;` | :5687-5690 | `550 \| 551 => (CageAnim::Turtle, 0, 54, BIG)` :118 | PORTED-UNWIRED |
+| 551 | shares the turtle arm | :5688 | :118 | PORTED-UNWIRED |
+| 553 | `case 553:` → `addFrY = Main.grebeCageFrame[bigAnimalCageFrame] * 54;` | :5712-5714 | `553 => (CageAnim::Grebe, 0, 54, BIG)` :123 | PORTED-UNWIRED |
+| 554 | `case 554:` → `addFrY = Main.seagullCageFrame[bigAnimalCageFrame] * 54;` | :5715-5717 | `554 => (CageAnim::Seagull, 0, 54, BIG)` :124 | PORTED-UNWIRED |
+| 558 | `case 558:` `case 559:` → `addFrY = Main.seahorseCageFrame[bigAnimalCageFrame] * 54;` | :5742-5745 | `558 \| 559 => (CageAnim::Seahorse, 0, 54, BIG)` :131 | PORTED-UNWIRED |
+| 559 | shares the seahorse arm | :5743 | :131 | PORTED-UNWIRED |
+| 599 | shares the bunny arm | :5678 | :117 | PORTED-UNWIRED |
+| 600 | shares the bunny arm | :5679 | :117 | PORTED-UNWIRED |
+| 601 | shares the bunny arm | :5680 | :117 | PORTED-UNWIRED |
+| 602 | shares the bunny arm | :5681 | :117 | PORTED-UNWIRED |
+
+Verbatim exemplar — the bunny group, the widest label run (:5676-5686):
+
+```csharp
+			case 275:
+			case 359:
+			case 599:
+			case 600:
+			case 601:
+			case 602:
+			case 603:
+			case 604:
+			case 605:
+				addFrY = Main.bunnyCageFrame[bigAnimalCageFrame] * 54;
+				break;
+```
+
+The port's `599..=605` range arm covers exactly the C# label run 599-605 (the
+remaining 603-605 are batch 7's ids). The squirrel run is split in C# — 276/413/414
+then 606-612 — and the port keeps it as one alternation with the same membership.
+UNWIRED rationale identical to batch 5: static fallback `drawdata.rs:890-911`
+(top 2 only), `furniture_post_pass` uncalled, critter animator deferred, frozen
+row 0 = the C# t=0 pixels. The per-kind sweep test
+(`drawdata_furniture.rs:330-369`) pins every one of these picks against a
+distinct-valued fake table, so a wrong table/row/probe would fail loudly once
+wired.
