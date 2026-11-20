@@ -85,4 +85,98 @@ missing on the draw side (wiring, not cases).
 Filled in per batch below. Verdict key: **PORTED** (arm faithful, wired),
 **PORTED-UNWIRED** (arm faithful, no live caller), **DEVIATION** (documented approximation).
 
-*(batches land in subsequent commits)*
+### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
+
+C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
+the shared body is cited once, verbatim):
+
+```csharp
+		case 285:
+		case 286:
+		case 298:
+		case 299:
+		case 310:
+		case 339:
+		case 361:
+		case 362:
+		case 363:
+		case 364:
+		case 391:
+		case 392:
+		case 393:
+		case 394:
+		case 532:
+		case 533:
+		case 538:
+		case 544:
+		case 555:
+		case 556:
+		case 582:
+		case 619:
+		case 629:
+		{
+			tileTop = 2;
+			Main.critterCage = true;
+			int smallAnimalCageFrame2 = this.GetSmallAnimalCageFrame(x, y, tileFrameX, tileFrameY);
+			switch (typeCache)
+			{
+```
+
+The probe, verbatim (`TileDrawing.cs:6535-6540`):
+
+```csharp
+	private int GetSmallAnimalCageFrame(int x, int y, int tileFrameX, int tileFrameY)
+	{
+		int num = x - tileFrameX / 18;
+		int num2 = y - tileFrameY / 18;
+		return num / 3 * (num2 / 3) % Main.cageFrames;
+	}
+```
+
+Per-id inner arms (verbatim, `TileDrawing.cs:5783-5830`) vs the port
+(`drawdata_furniture.rs::cage_table` :134-144, stride 36, SMALL probe;
+`cage_draw_data` :169-201 applies `addFrY = frame * stride`, `top = 2`):
+
+| Id | C# inner arm (verbatim) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 298 | `case 298:` `case 361:` → `addFrY = Main.frogCageFrame[smallAnimalCageFrame2] * 36;` | :5792-5795 | `298 \| 361 => (CageAnim::Frog, 0, 36, SMALL)` :136 | PORTED-UNWIRED |
+| 299 | `case 299:` `case 363:` → `addFrY = Main.mouseCageFrame[smallAnimalCageFrame2] * 36;` | :5800-5803 | `299 \| 363 => (CageAnim::Mouse, 0, 36, SMALL)` :138 | PORTED-UNWIRED |
+| 310 | `case 310:` `case 364:` `case 391:` `case 619:` → `addFrY = Main.wormCageFrame[smallAnimalCageFrame2] * 36;` | :5804-5809 | `310 \| 364 \| 391 \| 619 => (CageAnim::Worm, 0, 36, SMALL)` :139 | PORTED-UNWIRED |
+| 339 | `case 339:` `case 362:` → `addFrY = Main.grasshopperCageFrame[smallAnimalCageFrame2] * 36;` | :5796-5799 | `339 \| 362 => (CageAnim::Grasshopper, 0, 36, SMALL)` :137 | PORTED-UNWIRED |
+| 361 | shares 298's frog arm | :5793 | :136 | PORTED-UNWIRED |
+| 362 | shares 339's grasshopper arm | :5797 | :137 | PORTED-UNWIRED |
+| 363 | shares 299's mouse arm | :5801 | :138 | PORTED-UNWIRED |
+| 364 | shares 310's worm arm | :5805 | :139 | PORTED-UNWIRED |
+| 391 | shares 310's worm arm | :5806 | :139 | PORTED-UNWIRED |
+| 392 | `case 392:` `case 393:` `case 394:` → `addFrY = Main.slugCageFrame[typeCache - 392, smallAnimalCageFrame2] * 36;` | :5810-5814 | `392..=394 => (CageAnim::Slug, kind as i32 - 392, 36, SMALL)` :140 | PORTED-UNWIRED |
+| 393 | shares the slug arm, row 1 | :5811 | :140 | PORTED-UNWIRED |
+| 394 | shares the slug arm, row 2 | :5812 | :140 | PORTED-UNWIRED |
+| 532 | `case 532:` → `addFrY = Main.maggotCageFrame[smallAnimalCageFrame2] * 36;` | :5815-5817 | `532 => (CageAnim::Maggot, 0, 36, SMALL)` :141 | PORTED-UNWIRED |
+| 533 | `case 533:` → `addFrY = Main.ratCageFrame[smallAnimalCageFrame2] * 36;` | :5818-5820 | `533 => (CageAnim::Rat, 0, 36, SMALL)` :142 | PORTED-UNWIRED |
+| 538 | `case 538:` `case 544:` `case 629:` → `addFrY = Main.ladybugCageFrame[smallAnimalCageFrame2] * 36;` | :5821-5825 | `538 \| 544 \| 629 => (CageAnim::Ladybug, 0, 36, SMALL)` :143 | PORTED-UNWIRED |
+| 544 | shares the ladybug arm | :5822 | :143 | PORTED-UNWIRED |
+| 555 | `case 555:` `case 556:` → `addFrY = Main.waterStriderCageFrame[smallAnimalCageFrame2] * 36;` | :5826-5829 | `555 \| 556 => (CageAnim::WaterStrider, 0, 36, SMALL)` :144 | PORTED-UNWIRED |
+| 556 | shares the water-strider arm | :5827 | :144 | PORTED-UNWIRED |
+| 582 | `case 286:` `case 582:` → `addFrY = Main.snail2CageFrame[smallAnimalCageFrame2] * 36;` | :5788-5791 | `286 \| 582 => (CageAnim::Snail2, 0, 36, SMALL)` :135 | PORTED-UNWIRED |
+| 619 | shares 310's worm arm | :5807 | :139 | PORTED-UNWIRED |
+| 629 | shares the ladybug arm | :5823 | :143 | PORTED-UNWIRED |
+
+Probe port: `small_animal_cage_frame` (`drawdata_furniture.rs:91-95`) is term-for-term
+`num / 3 * (num2 / 3) % cage_frames` with `CAGE_FRAMES = 25` (:32, `Main.cs:66901`
+`Main.cageFrames = 25;`); C# truncating division and sign-keeping `%` match Rust i32.
+
+**Why UNWIRED, and what the pixels do today:** the live draw path
+(`render/tiles.rs:671-734`) runs `draw_data` → `apply_world_corrections` → `cases_b` →
+`cases_a`; **`drawdata_furniture::furniture_post_pass` (:262) has zero callers outside its
+own tests** (grep-verified across `crates/`). The static fallback arm in
+`drawdata.rs:912-932` sets only `top = 2` and leaves `add_fr_y = tile_frame * 38`. Cage
+kinds are absent from `Main.AnimateTiles` (`Main.cs:18516-19304` — they animate through
+`AnimateTiles_CritterCages`, `Main.cs:13511`, which moves the `*CageFrame` tables, not
+`tileFrame`), so `tile_frame ≡ 0` for them and the fallback draws row 0 — pixel-identical
+to the C# t=0 state (tables zero-initialised, `Main.cs:66902-66972`) but **frozen**: the
+critter never animates. The `Main.critterCage = true` side effect (:5781) gates that
+animator and is likewise unported (documented in `drawdata_furniture.rs:167-168`).
+Wiring belongs to the furniture lane (W4-d57); the seam is a `furniture_post_pass` call
+after `cases_a` with a `frame_of` backed by a ported `AnimateTiles_CritterCages`.
+Tests already pin the rewrite: `drawdata_furniture.rs` :319/:487 (per-kind sweep),
+:559/:563 (post-pass).
