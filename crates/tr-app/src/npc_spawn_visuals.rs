@@ -2006,9 +2006,11 @@ mod tests {
         let c = ctx();
         let mut npc = Npc::new(NpcKind::Creeper, 100.0, 100.0, 1, 0.0);
         npc.size_override = Some((20.0, 20.0));
-        // time 1.0 → the gate always opens (bound 98).
+        // Synthetic time 1.03 → decrement 1.01 → gate bound 101: the
+        // Next(100) roll ALWAYS opens, so the colour check is
+        // unconditional (at the in-game 1.0 a 99 roll would close it).
         let mut rng = RecordingRng::new(73);
-        let mut tp = (1.0f32, 12i32, 0i32);
+        let mut tp = (1.03f32, 12i32, 0i32);
         let mut env = SpawnVisualsEnv {
             world: &w,
             dust: &mut dust,
@@ -2023,7 +2025,7 @@ mod tests {
         let d = dust.slot(0);
         assert_eq!(d.dust_type, 263);
         assert_eq!((d.color.r, d.color.g, d.color.b, d.color.a), (want[0], want[1], want[2], 0));
-        assert_eq!(tp.0, 1.0 - 0.02 - 0.005);
+        assert_eq!(tp.0, 1.03 - 0.02 - 0.005);
     }
 
     /// `NPC.cs:90238-90262` — the alt-texture transitions: the 0→1

@@ -39250,7 +39250,7 @@ click buffers; the player tick applies).
 
 **2026-11-21, `task/W4-g61-npc-spawn-dust`, commits `0a4af190` +
 `6345f7b7` + `8d23e298`.** `crates/tr-app/src/npc_spawn_visuals.rs`
-(2 081 lines) ports the SPAWN-time visual family as an UNWIRED pure
+(2 092 lines) ports the SPAWN-time visual family as an UNWIRED pure
 module over the d50 `DustPool` contract + the S1-E-4 `GorePool` (the
 style56 Env convention, widened with the gore pool and an inline
 `play_sound` callback so the pitch draws land at the C# call position
@@ -39352,7 +39352,7 @@ port's `Npc` has no teleport fields yet.
 
 **Verification:** code-only — every block re-read against the cited
 C# windows (≤100-line reads, direct file paths, no junction
-recursion); 17 `w4_g61_*` witnesses with a `RecordingRng` that logs
+recursion); 18 `w4_g61_*` witnesses with a `RecordingRng` that logs
 every `Next`/`NextFloat` call shape and pins the exact slot sequence
 per site (the argument-before-allocator order, the gate chains, the
 sentinel writes, the clone pairs, the overwrite-still-drawn rolls).
