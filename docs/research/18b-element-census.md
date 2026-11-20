@@ -145,9 +145,9 @@ ports were byte-equivalent state machines and neither had a consumer yet.
 | 13 | `UIBestiaryInfoLine` | LANDED (`compare_manual_order` batch 1 = `CompareTo` `:92-99`; missing halves `ui/bestiary.rs`: `info_line_text_size` `SetText` `:73-81`, `info_line_text_pos` `DrawSelf` `:83-90`) |
 | 14 | `UIBestiaryNPCEntryPortrait` | LANDED (portrait draw pre-landed `draw_portrait`/`portrait_layout`; missing halves `ui/bestiary.rs`: `NPC_PORTRAIT_SIZE`/`npc_portrait_inner` `:17-28`, `npc_portrait_overlay_color` `:53` — the 216 px info-page card stays the documented stand-in) |
 | 15 | `UIBestiarySortingOptionsGrid` | LANDED (`ui/bestiary.rs`: `sort_grid_container_size`/`sort_button_rect` `BuildGrid` `:37-74`, `sort_click_option` re-click fallback `:89-95`, `sort_button_colors` shares `filter_button_selection` `:100-107`, `sort_grid_entries_to_show` `:117-122`; the sort UI lands with the filters/sort work) |
-| 16 | `UICharacter` | pending |
-| 17 | `UICharacterListItem` | pending |
-| 18 | `UICharacterNameButton` | pending |
+| 16 | `UICharacter` | LANDED (59x58 box/anchor/animation row pre-landed `ui/char_creation.rs`; missing halves: `preview_pet_shoot` `PreparePetProjectiles` `:55-66`, `preview_anchor_with_pet` `:122-130`, `preview_pet_position` `DrawPets` `:139-142`, `preview_held_item_swap` `:116-119` — the card preview draws no pets/held item yet, documented) |
+| 17 | `UICharacterListItem` | LANDED (card geometry/colours/labels/hit/draw pre-landed `ui/char_select.rs`; missing halves: `compare_card_order` `CompareTo` `:285-292`, `renamed_player_name` `:208-214`, `load_status_name`/`card_name_text` `:324-330` + `ID/StatusID.cs:25-32`, `playtime_text` `:376-378` — the draw pins `00:00:00` until play-time tracking lands) |
+| 18 | `UICharacterNameButton` | LANDED (spliced DrawSelf + title/value draw pre-landed `draw_info_menu`/`world_creation::draw_plate`; missing halves `ui/char_creation.rs`: `NAME_BUTTON_SIZE`/`NAME_VALUE_LEFT_INITIAL` `:36-37`/`:56`, `name_value_left` `SetContents` `:98`, `name_value_display` `:88-97`, `trim_last_character` + `trim_display_to_fit` `:106-131` (`Utils.cs:2839-2855` surrogate-safe cut) — the plates draw raw strings today, documented deviation) |
 | 19 | `UIClothStyleButton` | pending |
 | 20 | `UIColoredSlider` | pending |
 | 21 | `UIColoredSliderSimple` | pending |

@@ -482,6 +482,136 @@ pub fn animated_frame_row(time: f32) -> u32 {
     ((time / 0.07) as i32 % 14 + 6) as u32
 }
 
+// --- UICharacter's missing halves (W4-d81 census row 16) -------------------------
+//
+// The 59x58 box, the anchor and the animation row are landed above; the
+// card draw (`char_select`) uses them. These port the pet-preview branch.
+
+/// `UICharacter`'s ctor size (`UICharacter.cs:43-44`): 59x58.
+#[allow(dead_code)] // char_select inlines the same pair in card_layout
+pub const UI_CHARACTER_SIZE: [f32; 2] = [59.0, 58.0];
+
+/// `PreparePetProjectiles` (`UICharacter.cs:55-66`): the preview shows one
+/// pet dummy when `!hideMisc[0]` and `miscEquips[0]` is not air — the item's
+/// `shoot` id becomes the dummy projectile. Returns the pet's projectile id.
+#[allow(dead_code)] // the card preview draws no pets yet (the .plr misc
+// equips are not read; the creation preview's player is always fresh)
+pub fn preview_pet_shoot(hide_misc0: bool, misc0_is_air: bool, misc0_shoot: i32) -> Option<i32> {
+    if !hide_misc0 && !misc0_is_air {
+        Some(misc0_shoot) // `:57-64`
+    } else {
+        None
+    }
+}
+
+/// `GetPlayerPosition`'s pet shift (`UICharacter.cs:122-130`): with a pet
+/// dummy the anchor moves 10 px left (`:125-128`). The base anchor is
+/// [`preview_anchor`].
+#[allow(dead_code)] // the card preview draws no pets yet
+pub fn preview_anchor_with_pet(preview: [f32; 4], has_pet: bool) -> [f32; 2] {
+    let mut a = preview_anchor(preview);
+    if has_pet {
+        a[0] -= 10.0; // `:127`
+    }
+    a
+}
+
+/// `DrawPets`' dummy placement (`UICharacter.cs:139-142`):
+/// `position = playerPosition + (0, player.height) + (20, 0) + (0,
+/// -projectile.height)`, `velocity = (0.1, 0)`, `direction = 1`. Returns the
+/// pet's top-left for a 42 px player hitbox height.
+#[allow(dead_code)] // the card preview draws no pets yet
+pub fn preview_pet_position(anchor: [f32; 2], pet_height: f32) -> [f32; 2] {
+    [anchor[0] + 20.0, anchor[1] + 42.0 - pet_height]
+}
+
+/// `DrawSelf`'s held-item blanking (`UICharacter.cs:116-119`): the draw swaps
+/// `inventory[selectedItem]` for the static `_blankItem` (`:18`, a `new Item()`
+/// — type 0, `:160`) so the preview never renders the held item, then restores
+/// it after `DrawPlayer`. Pure form: `(item to draw, item to restore)` — the
+/// draw slot is always the blank.
+#[allow(dead_code)] // draw_player_preview draws no held item today
+pub fn preview_held_item_swap(held_item_id: i32) -> (i32, i32) {
+    (0, held_item_id) // `:117` blank in, `:119` restore
+}
+
+// --- UICharacterNameButton's missing halves (W4-d81 census row 18) --------------
+//
+// The spliced DrawSelf (White*0.5 base + hovered border) and the title/value
+// draw are pre-landed (`draw_info_menu` below, `world_creation::draw_plate`);
+// these port the ctor geometry, SetContents and the trim-to-fit walk.
+
+/// The ctor size (`UICharacterNameButton.cs:36-37`): 400x40.
+#[allow(dead_code)] // the screens resolve Width (-x, 1) over the same 40 height
+pub const NAME_BUTTON_SIZE: [f32; 2] = [400.0, 40.0];
+
+/// The value `UIText`'s initial `Left` (`UICharacterNameButton.cs:56`): 150 —
+/// `SetContents(null)` in the ctor (`:60`) immediately re-offsets it to
+/// [`name_value_left`]; 150 only stands if SetContents is never called.
+#[allow(dead_code)] // the ctor calls SetContents(null) right away (`:60`)
+pub const NAME_VALUE_LEFT_INITIAL: f32 = 150.0;
+
+/// `SetContents`' value offset (`UICharacterNameButton.cs:98`):
+/// `_title.GetInnerDimensions().Width + DistanceFromTitleToOption` — the
+/// measured title width plus the gap (default 20, `:32`; the world-creation
+/// seed plate passes 29, `UIWorldCreation.cs:270`).
+pub fn name_value_left(title_width: f32, distance_from_title: f32) -> f32 {
+    title_width + distance_from_title // `:98`
+}
+
+/// `SetContents`' display pick (`UICharacterNameButton.cs:88-97`): a
+/// null/empty name shows the empty-content text in Gray, anything else draws
+/// itself in White. Returns `(text, is_gray)`.
+pub fn name_value_display<'a>(name: &'a str, empty_text: &'a str) -> (&'a str, bool) {
+    if name.is_empty() {
+        (empty_text, true) // `Color.Gray` (`:90-91`)
+    } else {
+        (name, false) // `Color.White` (`:95-96`)
+    }
+}
+
+/// `Utils.TrimLastCharacter` (`Utils.cs:2852-2855` → `TrimUserString`
+/// `:2839-2850`): drop the last UTF-16 code unit, never splitting a surrogate
+/// pair (`char.IsHighSurrogate(s[length-1])` backs the cut up one, `:2845-2848`)
+/// — a Rust `char` pop is exactly that pair-safe cut. (C# throws on the empty
+/// string — `Substring(0, -1)`; the trim loop below never asks it to, an empty
+/// text measures 0 wide.)
+pub fn trim_last_character(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next_back() {
+        Some(_) => chars.as_str().to_string(),
+        None => String::new(),
+    }
+}
+
+/// `TrimDisplayIfOverElementDimensions` (`UICharacterNameButton.cs:106-131`):
+/// while the text's right edge (`text_left + measure(text)`) runs past the
+/// element's right edge minus `padding`, drop the last character and re-measure
+/// (`:117-126`); if anything was dropped, drop one more and append "…" (`:129`).
+/// `measure` injects the Mouse-font width (the `RecalculateChildren` re-layout,
+/// `:121`). The callers pass padding 27 (name) / 40 (seed)
+/// (`UIWorldCreation.cs:737, 746`).
+#[allow(dead_code)] // the plates draw raw strings today (documented deviation)
+pub fn trim_display_to_fit(
+    text: &str,
+    element_right: f32,
+    text_left: f32,
+    padding: f32,
+    measure: impl Fn(&str) -> f32,
+) -> String {
+    let mut s = text.to_string();
+    let mut trimmed = false; // `flag` (`:116`)
+    while text_left + measure(&s) > element_right - padding {
+        // `rectangle2.Right > rectangle.Right - padding` (`:117`)
+        s = trim_last_character(&s); // `:119`
+        trimmed = true; // `:120`
+    }
+    if trimmed {
+        s = trim_last_character(&s) + "…"; // `:127-130`
+    }
+    s
+}
+
 /// `layout(screen, name_w)` — the whole page through the shared pass, in the
 /// source's construction order. `name_w` only feeds the name plate's value
 /// offset (the draw), not a rect, so every returned rect is font-free.
@@ -2912,6 +3042,67 @@ mod tests {
         assert_eq!(animated_frame_row(0.07), 7);
         assert_eq!(animated_frame_row(0.07 * 14.0), 6);
         assert_eq!(animated_frame_row(0.07 * 27.0), 19);
+    }
+
+    // --- W4-d81 batch 7: UICharacter (row 16) + UICharacterNameButton (row 18) --
+    // Written in code-only mode — NOT RUN here. Hand-derived from
+    // `UICharacter.cs:55-142`, `UICharacterNameButton.cs:36-131`,
+    // `Utils.cs:2839-2855`.
+
+    #[test]
+    fn the_pet_preview_branch_gates_shifts_and_places() {
+        // `PreparePetProjectiles` (`:55-66`): visible + non-air misc0 -> the
+        // shoot id; hidden or air -> no dummy.
+        assert_eq!(preview_pet_shoot(false, false, 268), Some(268));
+        assert_eq!(preview_pet_shoot(true, false, 268), None); // hideMisc[0]
+        assert_eq!(preview_pet_shoot(false, true, 268), None); // IsAir
+        // `GetPlayerPosition` (`:122-130`): the base anchor, then -10 x with a
+        // pet. The 59x58 card box anchors (19.5, 8) -> (9.5, 8).
+        assert_eq!(preview_anchor_with_pet([0.0, 0.0, 59.0, 58.0], false), [19.5, 8.0]);
+        assert_eq!(preview_anchor_with_pet([0.0, 0.0, 59.0, 58.0], true), [9.5, 8.0]);
+        // `DrawPets` (`:139`): + (0, 42) + (20, 0) + (0, -petHeight). A 30 px
+        // pet at the unshifted anchor lands (39.5, 20).
+        assert_eq!(preview_pet_position([19.5, 8.0], 30.0), [39.5, 20.0]);
+        // The held-item swap (`:116-119`): blank (0) draws, the item restores.
+        assert_eq!(preview_held_item_swap(3507), (0, 3507));
+        // The ctor size (`:43-44`).
+        assert_eq!(UI_CHARACTER_SIZE, [59.0, 58.0]);
+    }
+
+    #[test]
+    fn the_name_plate_offsets_and_empty_pick_match_set_contents() {
+        // The ctor size + initial value offset (`:36-37`, `:56`).
+        assert_eq!(NAME_BUTTON_SIZE, [400.0, 40.0]);
+        assert_eq!(NAME_VALUE_LEFT_INITIAL, 150.0);
+        // `SetContents` (`:98`): title inner width + DistanceFromTitleToOption
+        // (20 default `:32`; the seed plate passes 29, `UIWorldCreation.cs:270`).
+        assert_eq!(name_value_left(40.0, 20.0), 60.0);
+        assert_eq!(name_value_left(40.0, 29.0), 69.0);
+        // The empty pick (`:88-97`): null/empty -> empty text Gray, else White.
+        assert_eq!(name_value_display("", "Empty name."), ("Empty name.", true));
+        assert_eq!(name_value_display("Bob", "Empty name."), ("Bob", false));
+    }
+
+    #[test]
+    fn trim_display_drops_characters_then_the_ellipsis() {
+        // `TrimLastCharacter` (`Utils.cs:2852-2855`) pops one UTF-16 unit
+        // without splitting a surrogate pair — a Rust char pop.
+        assert_eq!(trim_last_character("abc"), "ab");
+        assert_eq!(trim_last_character("a"), "");
+        assert_eq!(trim_last_character("ab😀"), "ab"); // the pair goes whole
+        // `TrimDisplayIfOverElementDimensions` (`:106-131`) with a 10 px/char
+        // metric: element right 100, text left 0, padding 27 -> the text may
+        // reach 73. "abcdefgh" (80) drops to "abcdefg" (70 <= 73), then one
+        // more + "…" -> "abcdef…".
+        let measure = |s: &str| s.chars().count() as f32 * 10.0;
+        assert_eq!(trim_display_to_fit("abcdefgh", 100.0, 0.0, 27.0, measure), "abcdef…");
+        // Already fitting: unchanged, no ellipsis (`flag` stays false).
+        assert_eq!(trim_display_to_fit("abc", 100.0, 0.0, 27.0, measure), "abc");
+        // Exactly at the edge (right == right - padding) does NOT trim (`>`).
+        assert_eq!(trim_display_to_fit("abcdefg", 97.0, 0.0, 27.0, measure), "abcdefg");
+        // The seed plate's 40 padding (`UIWorldCreation.cs:746`): limit 60,
+        // "abcdefg" (70) -> "abcdef" (60 <= 60) -> "abcde…".
+        assert_eq!(trim_display_to_fit("abcdefg", 100.0, 0.0, 40.0, measure), "abcde…");
     }
 
     #[test]
