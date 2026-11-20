@@ -164,6 +164,14 @@ pub mod id {
     /// ignore group (`MessageBuffer.cs:4483-4490`, shared with
     /// 15/26/44/67/83/93) accepts and drops it.
     pub const UNUSED_25: u8 = 25;
+    /// `26 Unused26` (`MessageID.cs:62-63`, `[Old("Deprecated.")]`) — no
+    /// writer arm, no body; the same reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`).
+    pub const UNUSED_26: u8 = 26;
+    /// `44 Unknown44` (`MessageID.cs:99-100`, `[Old("Deprecated.")]`) — no
+    /// writer arm, no body; the same reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`). d96's census row confirms it dead.
+    pub const UNKNOWN_44: u8 = 44;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1827,6 +1835,12 @@ pub enum S2c {
     /// reader's ignore group accepts and drops it
     /// (`MessageBuffer.cs:4483-4490`, shared with 15/26/44/67/83/93).
     Unused25,
+    /// `26 Unused26` — deprecated (`MessageID.cs:62-63`), no body; the same
+    /// reader ignore group (`MessageBuffer.cs:4483-4490`).
+    Unused26,
+    /// `44 Unknown44` — deprecated (`MessageID.cs:99-100`), no body; the same
+    /// reader ignore group (`MessageBuffer.cs:4483-4490`).
+    Unknown44,
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2232,6 +2246,8 @@ impl S2c {
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::Unused25 => id::UNUSED_25,
+            Self::Unused26 => id::UNUSED_26,
+            Self::Unknown44 => id::UNKNOWN_44,
         }
     }
 
@@ -2374,9 +2390,9 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
-            // `25` has no writer arm; a bare frame mirrors the reader's
+            // `25/26/44` have no writer arm; bare frames mirror the reader's
             // ignore group (`MessageBuffer.cs:4483-4490`).
-            Self::Unused25 => w,
+            Self::Unused25 | Self::Unused26 | Self::Unknown44 => w,
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2579,9 +2595,11 @@ impl S2c {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
-            // `25` — the reader's ignore group reads nothing
-            // (`MessageBuffer.cs:4483-4490`); a bare frame decodes.
+            // `25/26/44` — the reader's ignore group reads nothing
+            // (`MessageBuffer.cs:4483-4490`); bare frames decode.
             id::UNUSED_25 => Self::Unused25,
+            id::UNUSED_26 => Self::Unused26,
+            id::UNKNOWN_44 => Self::Unknown44,
             _ => return None,
         })
     }
@@ -4774,5 +4792,22 @@ mod tests {
             other => panic!("expected 25, got {:?}", other.msg_id()),
         }
         assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn w4_f21_deprecated_ignore_group_26_44_are_bare_frames() {
+        // `26 Unused26` (`MessageID.cs:62-63`) and `44 Unknown44`
+        // (`MessageID.cs:99-100`) share the reader's ignore group with 25
+        // (`MessageBuffer.cs:4483-4490`): no writer arm, no body, accepted
+        // and dropped.
+        for (msg, expect_id) in [(S2c::Unused26, 26u8), (S2c::Unknown44, 44u8)] {
+            let f = msg.encode();
+            assert_eq!(f[2], expect_id);
+            assert_eq!(f.len(), 3);
+            let mut r = NetReader::new(&f[3..]);
+            let d = S2c::decode(f[2], &mut r).expect("decode");
+            assert_eq!(d.msg_id(), expect_id);
+            assert_eq!(r.remaining(), 0);
+        }
     }
 }
