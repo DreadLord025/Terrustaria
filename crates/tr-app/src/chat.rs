@@ -67,6 +67,13 @@ pub struct ChatMonitor {
     pub blink_timer: u32,
     /// `Main.textBlinkerState`: `1` draws the `|` cursor.
     pub blink_on: bool,
+    /// The Say path's overhead intent (`ChatHelper.DisplayMessage`'s
+    /// author arm, `ChatHelper.cs:86-87`): `(bare text, color)` — the
+    /// monitor line carries the name-tag prefix (`:88`), the overhead
+    /// does not. The caller drains it into `Player.chat_overhead`
+    /// (`app/loop.rs`); the port's single-player fold runs Say inside
+    /// `send`, so the intent rides here (W4-d121).
+    pub pending_overhead: Option<(String, [u8; 3])>,
 }
 
 impl ChatMonitor {
@@ -135,7 +142,8 @@ impl ChatMonitor {
 
     /// [`ChatMonitor::send`] with the chat-side player state the
     /// `DeathCommand` family reads (the death counters and the dead flag
-    /// the outgoing gates check).
+    /// the outgoing gates check). The Say arm also queues the author's
+    /// overhead intent ([`ChatMonitor::pending_overhead`]).
     pub fn send_with(
         &mut self,
         raw: &str,
@@ -144,6 +152,8 @@ impl ChatMonitor {
         emotes: &mut crate::emotes::EmoteSystem,
         player: Option<&crate::player::Player>,
     ) {
+        // One send = one message: a stale intent never survives the pass.
+        self.pending_overhead = None;
         let Some(command) = raw.strip_prefix('/') else {
             self.say(raw, player_name);
             return;
@@ -301,6 +311,10 @@ impl ChatMonitor {
     /// difficulty is `Color.White` (`Player.ChatColor()`, `:34745`).
     fn say(&mut self, text: &str, player_name: &str) {
         self.new_text(format!("{player_name} {text}"), [255, 255, 255]);
+        // `SayChatCommand.ProcessIncomingMessage` broadcasts AS the client
+        // (`ChatHelper.cs:86-87`): the author's overhead arms with the
+        // BARE text in `Player.ChatColor()` (White, classic difficulty).
+        self.pending_overhead = Some((text.to_string(), [255, 255, 255]));
     }
 }
 
@@ -330,6 +344,24 @@ mod tests {
         chat.send("hello world", "Belsin", &mut tr_core::UnifiedRandom::new(1), &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin hello world");
         assert_eq!(chat.messages[0].color, [255, 255, 255]);
+        // The author arm (`ChatHelper.cs:86-87`): the overhead intent
+        // carries the BARE text, not the name-tag line.
+        assert_eq!(
+            chat.pending_overhead,
+            Some(("hello world".to_string(), [255, 255, 255]))
+        );
+    }
+
+    /// A non-Say command never arms the overhead (`BroadcastChatMessage`
+    /// uses author 255 — `ChatHelper.cs:46-49`, no `NewMessage`), and a
+    /// stale intent from an earlier send does not survive the next pass.
+    #[test]
+    fn only_say_arms_the_overhead_intent() {
+        let mut chat = ChatMonitor::default();
+        chat.send("first line", "Belsin", &mut tr_core::UnifiedRandom::new(1), &mut crate::emotes::EmoteSystem::default());
+        assert!(chat.pending_overhead.is_some());
+        chat.send("/roll", "Belsin", &mut tr_core::UnifiedRandom::new(7), &mut crate::emotes::EmoteSystem::default());
+        assert_eq!(chat.pending_overhead, None);
     }
 
     #[test]

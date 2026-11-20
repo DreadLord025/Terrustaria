@@ -186,6 +186,19 @@ impl ApplicationHandler for App {
                                             &mut self.emotes,
                                             self.player.as_ref(),
                                         );
+                                        // `ChatHelper.DisplayMessage`'s author
+                                        // arm (`ChatHelper.cs:86-87`): the Say
+                                        // path's bare text arms the local
+                                        // player's overhead (400 ticks).
+                                        if let Some((msg, color)) =
+                                            self.chat.pending_overhead.take()
+                                        {
+                                            if let Some(p) = self.player.as_mut() {
+                                                crate::ui::chat_overhead::arm_overhead(
+                                                    p, &msg, color,
+                                                );
+                                            }
+                                        }
                                     }
                                     // The host relays the lines its own submit
                                     // produced (slot 0 is the host's author).
