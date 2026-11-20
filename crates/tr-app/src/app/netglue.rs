@@ -545,11 +545,17 @@ impl App {
                     .map(|p| (p.x, p.y));
                 if let Some((px, py)) = pos {
                     if let Some(it) = self.items.get(drop as usize) {
+                        // The host re-checks the grab gate (`Player.cs:34911`,
+                        // S1-P-i51): a delayed drop refuses the pickup even
+                        // inside the grab rectangle (the S1-P-i47 shape).
+                        let delayed = it.grab_delay_time > 0
+                            && (it.grab_delay_player == id as u8
+                                || it.grab_delay_player == 255);
                         let range = crate::item::get_item_grab_range(
                             it.kind,
                             crate::item::GrabFlags::default(),
                         ) as f32;
-                        if crate::item::grab_rect_intersects(
+                        if !delayed && crate::item::grab_rect_intersects(
                             px,
                             py,
                             player::WIDTH,
@@ -1091,10 +1097,11 @@ impl App {
         server.broadcast(&joined);
         // The join item burst (`MessageBuffer.cs:843-850`): one `21 ItemDrop`
         // + one `22 ItemOwner` per live slot, to the joining client only.
-        // The reservation rides the C# field defaults: 255 = unreserved
-        // (`WorldItem.cs:139`), the grab-delay ints default to 0
-        // (`WorldItem.cs:22-26`), so the `22` body is the zeroed `ItemOwner`
-        // plus the position (`NetMessage.cs:675-685`).
+        // The reservation rides the C# field default 255 = unreserved
+        // (`WorldItem.cs:139`); the grab-delay pair carries the drop's LIVE
+        // `grabDelayPlayer`/`grabDelayTime` (`NetMessage.cs:681-682`), not
+        // zeros — a player drop's 100-tick lock survives the join
+        // (S1-P-i51). The position closes the body (`:683`).
         for (i, it) in self.items.iter().enumerate() {
             let slot = i as i16;
             let st = Self::item_state_of(slot, it);
@@ -1105,8 +1112,8 @@ impl App {
                     slot,
                     reserved_for: 255,
                     hold: 0,
-                    grab_delay_player: 0,
-                    grab_delay: 0,
+                    grab_delay_player: it.grab_delay_player,
+                    grab_delay: it.grab_delay_time.max(0) as u32,
                     x: it.pos.x,
                     y: it.pos.y,
                 })),
@@ -1543,6 +1550,16 @@ impl App {
                     d.vy,
                     0.0,
                 );
+                // `MessageBuffer.cs:1519-1528` — the `21` handler writes
+                // type/prefix/stack/position/velocity/shimmer/enemyGrabDelay
+                // but NOT the grab-delay pair (that is `22`'s job,
+                // `:1558-1559`): a live cadence update must not wipe the
+                // join burst's 100-tick lock (S1-P-i51). The port rebuilds
+                // the record, so carry the pair over from the old one.
+                if let Some(old) = self.net_items.get(&(d.slot as i16)) {
+                    drop.grab_delay_player = old.grab_delay_player;
+                    drop.grab_delay_time = old.grab_delay_time;
+                }
                 drop.shimmered = d.shimmered;
                 drop.shimmer_time = d.shimmer_time;
                 drop.age = 60.0;
@@ -1561,6 +1578,15 @@ impl App {
                     self.net_reserved.remove(&o.slot);
                 } else {
                     self.net_reserved.insert(o.slot, (o.reserved_for, o.hold));
+                }
+                // `MessageBuffer.cs:1558-1559` — the client writes the
+                // grab-delay pair onto the drop (the player drop's 100-tick
+                // lock survives the join, S1-P-i51). The port keys the
+                // client's drops by the host slot in `net_items`.
+                if let Some(d) = self.net_items.get_mut(&o.slot) {
+                    d.grab_delay_player = o.grab_delay_player;
+                    d.grab_delay_time = o.grab_delay as i32;
+                    self.net_items_dirty = true;
                 }
             }
             // `case 5` — one peer inventory slot (`MessageBuffer.cs:399-462`):

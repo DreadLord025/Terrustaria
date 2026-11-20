@@ -560,6 +560,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Mount, *k));
         let mount_edge = mount_key && !app.mount_prev;
         app.mount_prev = mount_key;
+        // `Player.controlThrow` off `Main.cThrowItem` (`Main.cs:67168`,
+        // default `T` — the settings row rebinds it; the task's "Q" is a
+        // rebind, not the seed). The fullscreen-map control clear
+        // (`Player.cs:24801`) zeroes it while the map pans.
+        app.control_throw = !map_open
+            && app
+                .keys
+                .iter()
+                .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Throw, *k));
         if mount_edge && !map_open {
             if let Some(kind) = p.quick_mount(&app.world, &app.inventory) {
                 // `ItemCheck_TryStartUse`'s animation (the saddle's
@@ -1182,6 +1191,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // after the tick closure and the player borrow released `app`.
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
+    }
+    // `Player.cs:25214-25217` — `dropItemCheck` runs when `itemAnimation ==
+    // 0 && ItemTimeIsZero && reuseDelay == 0` (the port's swing/item_time/
+    // reuse_delay seconds trio). Per-frame like the hook/mount key edges
+    // above (the borrow-free tail); the throw key + the cursor-stack arms
+    // live in `world_sim/items.rs::drop_item_check`. The right-click arm is
+    // the pre-pass press edge outside every slot (`drop_right_edge`, the
+    // `mouseInterface` stand-in the players phase captures).
+    if app.swing <= 0.0 && app.item_time <= 0.0 && app.reuse_delay <= 0.0 {
+        let right_click_drop = app.drop_right_edge;
+        crate::world_sim::items::drop_item_check(app, right_click_drop);
+    }
+    // `Player.cs:25248-25255` — the releaseThrow latch refresh at the tick
+    // tail: held key → false, released → true. The check above read LAST
+    // tick's value, so the edge fires once.
+    // `Player.cs:43338-43339` — `JustDroppedAnItem` clears when the drop
+    // animation (`SetItemAnimation(10)`) runs out.
+    if let Some(p) = app.player.as_mut() {
+        p.release_throw = !app.control_throw;
+        if app.swing <= 0.0 {
+            p.just_dropped_an_item = false;
+        }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
     if map_open {

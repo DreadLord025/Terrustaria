@@ -705,9 +705,9 @@ const FRICTION_EPSILON: f32 = 0.1;
 
 /// The accessory flags `GetItemGrabRange`/`GrabItems` read
 /// (`Player.cs:35133-35151`/`:34943-34963`). The port's equipment pass has
-/// not landed the Gold Ring / Mana Magnet / Treasure Magnet grants (the
-/// `manaMagnet` family is a recorded unported seam, `player.rs:986`), so
-/// play passes the defaults; the Lifeforce buff's `lifeMagnet`
+/// not landed the Mana Magnet / Treasure Magnet grants (the `manaMagnet`
+/// family is a recorded unported seam, `player.rs:986`); the Gold Ring's
+/// `gold_ring` flag is live (S1-P-i50); the Lifeforce buff's `lifeMagnet`
 /// (`buff_effects.rs:52`) wires here when the accumulator lands on Player.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct GrabFlags {
@@ -857,6 +857,18 @@ pub(crate) fn pull_item_pickup(
     vel.x = (vel.x * (acc - 1.0) + pull.x) / acc;
     vel.y = (vel.y * (acc - 1.0) + pull.y) / acc;
 }
+
+/// `NewItemOwnership.GrabDelayForLocalPlayer` (`Item.NewItem`'s ownership
+/// argument on the player drop, `Player.cs:5199`): `grabDelayTime = 100`,
+/// `grabDelayPlayer = localPlayerIndex` (`WorldItem.cs:306-309`) — the
+/// dropping player cannot re-grab for 100 ticks, everyone else can at once.
+/// The port's local player index is 0 (S1-P-i51).
+pub(crate) const GRAB_DELAY_LOCAL: u8 = 0;
+/// `NewItemOwnership.GrabDelayForAllPlayers` — `grabDelayPlayer = 255`
+/// (`WorldItem.cs:310-313`); the set is `ItemID.Sets
+/// .DropWithGrabDelayForAllPlayers = CreateBoolSet(267)` (`ItemID.cs:430`,
+/// the Guide Voodoo Doll alone).
+pub(crate) const GRAB_DELAY_ALL: u8 = 255;
 
 #[derive(Clone, Debug)]
 pub struct ItemDrop {

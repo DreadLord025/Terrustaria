@@ -10,6 +10,7 @@ use crate::app::App;
 use crate::audio;
 use crate::npc::NpcKind;
 use crate::player;
+use crate::ui;
 use tr_core::TILE_PX;
 use crate::world_sim::clock::advance_time_with_events;
 
@@ -107,6 +108,27 @@ impl App {
     /// runs in the players→NPCs gap.
     fn players_phase(&mut self, dt: f32, screen: Vec2) {
     self.phase("players");
+    // The `dropItemCheck` right-click edge (`Player.cs:5147`'s
+    // `Main.mouseRight && !mouseInterface && Main.mouseRightRelease`): the
+    // press edge outside every slot hit, captured BEFORE the player pass —
+    // `update_editing` refreshes `place_prev_down` only after it. The
+    // `mouseInterface` stand-in covers every drawn slot surface: the grid/
+    // closed hotbar, the coin/ammo rows, the equipment columns and the
+    // trash cell (`Main.DrawInventory`'s `ItemSlot.Handle` sites).
+    let over_ui_slot = self.slot_at_mouse().is_some()
+        || self.coin_ammo_at_mouse().is_some()
+        || (self.inventory_open && {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            let m_h = self.main_m_h();
+            let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+            let chest_or_shop = self.open_container() >= 0 || self.shop_npc.is_some();
+            ui::inventory::equip_cell_at(self.mouse_pos, screen, m_h, self.equip_page, cell)
+                .is_some()
+                || ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop)
+        });
+    self.drop_right_edge =
+        self.place_down && !self.place_prev_down && !over_ui_slot;
     self.update_player(dt);
     // `UpdateTimeRate` (`Main.cs:6199-6218`): the rate is ×5 while
     // every active player is fully asleep

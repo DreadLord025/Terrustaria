@@ -1214,6 +1214,18 @@ pub struct Player {
     /// released" latch the quick-grapple edge reads (`controlHook` +
     /// `releaseHook` → `QuickGrapple`).
     pub release_hook: bool,
+    /// `Player.releaseThrow` (`Player.cs:1766`, updated `:25248-25255`):
+    /// the throw-key release latch — `dropItemCheck`'s
+    /// `controlThrow && releaseThrow` edge (`:5147`) reads LAST tick's
+    /// value, so the drop fires on the press tick only. The field default
+    /// is `false` (C# bool), the port starts `true` like `release_hook`
+    /// so a key already held at world entry still edges once.
+    pub release_throw: bool,
+    /// `Player.JustDroppedAnItem` (`Player.cs:2426`): set by
+    /// `DropSelectedItem` (`:5213`), cleared when `itemAnimation` hits 0
+    /// (`:43338-43339`). Gates the held-item light/particle emissions
+    /// (`:42837`/`:42847`).
+    pub just_dropped_an_item: bool,
     /// `Player.grappling[0] != -1` (the per-tick rebuilt grapple state): the
     /// hook is attached and `GrappleMovement` drives the velocity.
     pub grappling_active: bool,
@@ -2132,6 +2144,8 @@ impl Player {
             c_mount: 0,
             c_grapple: 0,
             release_hook: true,
+            release_throw: true,
+            just_dropped_an_item: false,
             equipped_prefix: [0; 20],
             banks: std::array::from_fn(|_| std::array::from_fn(|_| crate::item::EMPTY_SLOT)),
             chest: crate::bank::CHEST_CLOSED,

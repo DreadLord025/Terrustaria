@@ -612,6 +612,24 @@ pub(crate) struct App {
     /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
     /// button's release edge, consumed per frame).
     pub(crate) ui_right_release: bool,
+    /// `Player.controlThrow` (`Main.cThrowItem`, default `T` —
+    /// `Main.cs:67168`; the task's "Q key" is the rebind row, the vanilla
+    /// seed is T): the held throw key, refreshed once per frame from the
+    /// bind table (`world_sim/player.rs`'s input assembly).
+    pub(crate) control_throw: bool,
+    /// The right-button press edge captured BEFORE the player pass —
+    /// `Main.mouseRight && !mouseInterface && Main.mouseRightRelease`'s
+    /// `dropItemCheck` arm (`Player.cs:5147`). `update_editing` refreshes
+    /// `place_prev_down` AFTER the player pass, so the drop gate reads this
+    /// pre-pass snapshot instead (the C# evaluates the gate inside
+    /// `Player.Update`, before the item-check pass).
+    pub(crate) drop_right_edge: bool,
+    /// `Player.noThrow` (`Player.cs:1456`): the NPC-hover throw lockout
+    /// (`Main.cs:43030`/`:43067` arm it to 4); `dropItemCheck` zeroes it on
+    /// a closed inventory and counts it down (`Player.cs:5109-5116`). The
+    /// hover sites are unported, so nothing arms it today — the field keeps
+    /// the check's shape.
+    pub(crate) no_throw: i32,
     /// `Main.mouseLeftRelease`'s in-world arm — the left button's release
     /// edge the achievement popup's click reads (`InGamePopups.cs:124`'s
     /// `Main.mouseLeft && Main.mouseLeftRelease`), consumed per frame.
@@ -3793,6 +3811,9 @@ impl App {
             ui_left_press: false,
             ui_right_press: false,
             ui_right_release: false,
+            control_throw: false,
+            drop_right_edge: false,
+            no_throw: 0,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),

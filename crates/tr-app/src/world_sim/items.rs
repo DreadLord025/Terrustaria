@@ -79,15 +79,30 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                         .net_reserved
                         .get(&(*i as i16))
                         .is_some_and(|(who, _)| *who != app.local_id as u8 && *who != 255)
+                    // The grab-delay gate (`Player.cs:34911`, S1-P-i51): the
+                    // host's `22 ItemOwner` carries the drop's live delay —
+                    // a player drop locked for us (or everyone) is not
+                    // grabbable until it expires.
+                    && !(it.grab_delay_time > 0
+                        && (it.grab_delay_player == app.local_id as u8
+                            || it.grab_delay_player == 255))
             })
             .map(|(i, _)| i as u32)
             .collect();
         if let NetRole::Client(client) = &app.net {
-            for id in ids {
+            for &id in &ids {
                 client.send(&crate::net::C2s::Pickup { drop: id });
             }
         }
-        app.items.retain(|it| !in_range(it));
+        // Only the REQUESTED drops hide locally — a delayed/reserved drop
+        // stays visible until its lock expires (the C# keeps it in
+        // `Main.item`; the grab gate just refuses it, S1-P-i51). The ids are
+        // ascending indices, so remove them high-first to keep them valid.
+        let mut requested = ids.clone();
+        requested.sort_unstable_by(|a, b| b.cmp(a));
+        for id in requested {
+            app.items.remove(id as usize);
+        }
         return;
     }
     let world = &app.world;
@@ -700,6 +715,283 @@ pub(crate) fn spawn_item_drop_fields(
         count,
         Vec2::new(tx as f32 * TILE_PX, ty as f32 * TILE_PX),
     );
+}
+
+/// `Player.dropItemCheck` (`Player.cs:5107-5156`) — the drop/throw key pass,
+/// one call per fixed player tick at the `Player.cs:25214-25217` site
+/// (`itemAnimation == 0 && ItemTimeIsZero && reuseDelay == 0`).
+///
+/// The port's folds (ANALYSIS "S1-P-i51"):
+/// - the guide/reforge `GetOrDropItem` returns (`:5118-5127`) ride the shop
+///   close seam (`App::close_shop`) already;
+/// - `inventory[58] = Main.mouseItem.Clone()` (`:5130`) is the port's single
+///   `App.mouse_item` — no second copy exists;
+/// - the `tileTargetX/Y` cursor refresh (`:5132-5140`) feeds the smart-cursor
+///   pass, not the drop spawn (which rides `base.Center`, `:5199`);
+/// - the closed-inventory cursor return (`:5141-5146`) runs inline below
+///   (`GetOrDropItem`'s inventory fill + the overflow spawn).
+///
+/// `right_click_drop` is the `Main.mouseRight && !mouseInterface &&
+/// Main.mouseRightRelease` arm of the `:5147` gate — the C# draw latch
+/// (`Main.cs:62458-62465`) makes it the right PRESS edge; the port reads
+/// `place_down && !place_prev_down` outside every slot hit (the
+/// `mouseInterface` stand-in).
+pub(crate) fn drop_item_check(app: &mut App, right_click_drop: bool) {
+    // The dead-player skip is the port's fold of the C# call sites: the
+    // local `Player.Update` reaches `:25214` only on the alive path
+    // (`UpdateDead` returns first), and death returns the cursor to the
+    // inventory FIRST (`KillMe`, `Player.cs:38937-38944`) — so a dead
+    // player neither throws nor drops, and the noThrow timer does not tick.
+    let alive = app.player.as_ref().is_some_and(|p| !p.dead);
+    if !alive {
+        return;
+    }
+    // `:5109-5112`: a closed inventory zeroes noThrow...
+    if !app.inventory_open {
+        app.no_throw = 0;
+    }
+    // `:5113-5116`: ...then the timer counts down one per check.
+    if app.no_throw > 0 {
+        app.no_throw -= 1;
+    }
+    // `:5141-5146` — a closed inventory returns the cursor stack first
+    // (`GetOrDropItem(Main.mouseItem, ReturnItemFromSlot)`,
+    // `Player.cs:7193-7200`): the inventory takes what fits; the overflow
+    // spawns at `base.Center` under `ReserveForLocalPlayer` — no velocity
+    // argument, so `Item.NewItem`'s scatter draws run (the port's pinned
+    // [`spawn_item_drop_px`] triplet+prefix order). SP arms no reservation
+    // (`WorldItem.cs:300`'s `netMode != 0` gate), so the overflow keeps the
+    // port's `PICKUP_DELAY` stand-in like every other loot spawn. The fill
+    // plays the `IsACoin ? 38 : 7` chime (`GetItem_FillIntoOccupiedSlot`
+    // `Player.cs:39491` — `ReturnItemFromSlot` is NOT NoSound,
+    // `GetItemSettings.cs:59`), once per pickup event (the port's
+    // merged-fill convention), on the `UpdatePlayers` stream.
+    if app.mouse_item.kind > 0 && !app.inventory_open {
+        let it = app.mouse_item;
+        let max_stack = crate::registry::max_stack(it.kind);
+        let mut pending = it.count;
+        while pending > 0 {
+            let Some(slot) = slot_for_pickup(&mut app.inventory, it.kind, it.prefix) else {
+                break;
+            };
+            let room = max_stack.saturating_sub(app.inventory[slot].count);
+            if room == 0 {
+                break;
+            }
+            let take = pending.min(room);
+            app.inventory[slot].count += take;
+            pending -= take;
+        }
+        if it.count > pending {
+            app.audio.play_pickup_sound(
+                crate::registry::is_coin(it.kind),
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        }
+        if pending > 0 {
+            let (cx, cy) = app.player.as_ref().unwrap().center();
+            spawn_item_drop_px(
+                &mut app.items,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                it.kind,
+                pending,
+                Vec2::new(cx - crate::item::SIZE * 0.5, cy - crate::item::SIZE * 0.5),
+            );
+        }
+        app.mouse_item = crate::item::EMPTY_SLOT;
+    }
+    // The `controlThrow && releaseThrow` latch read (`:5147`): the C#
+    // updates `releaseThrow` at the tick TAIL (`:25248-25255`), so the check
+    // reads LAST tick's latch — the edge fires on the press tick only.
+    let throw_edge =
+        app.control_throw && app.player.as_ref().is_some_and(|p| p.release_throw);
+    let held = app.inventory[app.selected];
+    let throw_arm = throw_edge
+        && !app.is_favorite(app.selected)
+        && held.kind > 0
+        && held.count > 0
+        && !app.chat.open; // `!Main.drawingPlayerChat`
+    let cursor_arm = (right_click_drop || !app.inventory_open)
+        && app.mouse_item.kind > 0
+        && app.mouse_item.count > 0;
+    // `:5147`'s `(noThrow <= 0 || (controlThrow && releaseThrow))` tail: the
+    // throw key bypasses the NPC-hover noThrow window, the cursor arm waits.
+    if (throw_arm || cursor_arm) && (app.no_throw <= 0 || throw_edge) {
+        drop_selected_item(app, right_click_drop);
+    }
+}
+
+/// `Player.DropSelectedItem()` (`Player.cs:5158-5168`): the cursor stack
+/// first (slot 58), else the selected hotbar slot. The
+/// `inventoryChestStack[selectedItem]` gate (`:5164`) has no port state
+/// (the quick-stack-to-chest feature is unported) and folds open.
+pub(crate) fn drop_selected_item(app: &mut App, right_click_drop: bool) {
+    if app.mouse_item.kind > 0 && app.mouse_item.count > 0 {
+        drop_selected_item_slot(app, true, right_click_drop);
+    } else {
+        drop_selected_item_slot(app, false, right_click_drop);
+    }
+}
+
+/// `Player.DropSelectedItem(int slot, ref Item)` (`Player.cs:5170-5217`).
+/// `cursor` selects the slot-58 (`Main.mouseItem`) arm; the favorited guard
+/// (`:5173-5184`) returns the item to the inventory instead of dropping it.
+fn drop_selected_item_slot(app: &mut App, cursor: bool, right_click_drop: bool) {
+    let slot = if cursor { 58 } else { app.selected };
+    let mut item = if cursor {
+        app.mouse_item
+    } else {
+        app.inventory[app.selected]
+    };
+    // The favorited guard: the hotbar arm's `:5147` gate already refused a
+    // favorited selected slot; the cursor stack cannot carry the flag (the
+    // port's slot-positional favourites, `App::favorite_slots`), so the
+    // `GetItem`-return half (`:5175-5183`) folds to "nothing to do".
+    if !cursor && app.is_favorite(slot) {
+        return;
+    }
+    // `:5188-5194` — the right-click/closed-inventory SWAP: the slot item
+    // goes to the cursor and the cursor stack is what drops.
+    let mut swapped_in = crate::item::EMPTY_SLOT;
+    if (right_click_drop || !app.inventory_open)
+        && app.mouse_item.kind > 0
+        && app.mouse_item.count > 0
+    {
+        swapped_in = item;
+        item = app.mouse_item;
+        // `delayUseItem = true; controlUseItem = false` (`:5192-5193`): the
+        // port's use gate is the swing/itemTime pair — the drop's own
+        // `SetItemAnimation(10)` below covers the window.
+    }
+    // `:5195-5198` — Lucy the Axe's ThrownAway message: no port chat-bubble
+    // system (ANALYSIS fold).
+    // `:5199` — the spawn itself.
+    let (cx, cy) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or((app.camera.x, app.camera.y));
+    let (vx_player, facing) = app
+        .player
+        .as_ref()
+        .map(|p| (p.vx, p.facing))
+        .unwrap_or((0.0, 1));
+    let velocity = Vec2::new(4.0 * facing as f32 + vx_player, -2.0);
+    // `ItemID.Sets.DropWithGrabDelayForAllPlayers = CreateBoolSet(267)`
+    // (`ItemID.cs:430`): the doll delays EVERY player, everything else the
+    // local one only (`Player.cs:5199`).
+    let grab_delay_player = if item.kind == 267 {
+        crate::item::GRAB_DELAY_ALL
+    } else {
+        crate::item::GRAB_DELAY_LOCAL
+    };
+    spawn_player_drop(
+        &mut app.items,
+        item.kind,
+        item.count,
+        item.prefix,
+        Vec2::new(cx, cy),
+        velocity,
+        grab_delay_player,
+    );
+    // `:5200-5204` — the dropped slot airs out.
+    if cursor {
+        app.mouse_item = crate::item::EMPTY_SLOT;
+    } else {
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+    }
+    // `:5205-5209` — the swap-back reads the cursor AFTER the drop:
+    // `((mouseRight && !mouseInterface) || !playerInventory) &&
+    // Main.mouseItem.type > 0` → `theItemWeDrop = item; Main.mouseItem =
+    // new Item()`: the hotbar slot KEEPS its own item and the cursor airs
+    // out (the cursor stack was what dropped). The C# restores `item` even
+    // when it is air (no kind gate). The slot-58 arm aired the cursor at
+    // `:5203`, so its gate is false and the animation runs.
+    if !cursor
+        && (right_click_drop || !app.inventory_open)
+        && app.mouse_item.kind > 0
+    {
+        app.inventory[app.selected] = swapped_in;
+        app.mouse_item = crate::item::EMPTY_SLOT;
+    } else {
+        // `:5212-5214` — `SetItemAnimation(10)` (`Player.cs:4443-4451`:
+        // itemAnimation = itemAnimationMax = 10) + `JustDroppedAnItem`.
+        app.swing = 10.0 / 60.0;
+        app.swing_max = 10.0 / 60.0;
+        app.swing_style = 0;
+        if let Some(p) = app.player.as_mut() {
+            p.just_dropped_an_item = true;
+        }
+        drop_interrupt_actions(app);
+    }
+}
+
+/// `Player.DropSelectedItem_InterruptActionsThatUseAnimations`
+/// (`Player.cs:5227-5245`): the held projectile dies, then every owned
+/// aiStyle-61/160 projectile (the fishing bobbers `AI_061_FishingBobber`
+/// `Projectile.cs:53658` and the kites `AI_160_Kites` `:48421`). The port
+/// has no `heldProj` field and neither family is ported yet, so the sweep
+/// is the shape-keeper (it fires the day a bobber/kite lands).
+fn drop_interrupt_actions(app: &mut App) {
+    let owner = app.local_id as u8;
+    let doomed: Vec<usize> = app
+        .projectiles
+        .slots()
+        .iter()
+        .enumerate()
+        .filter(|(_, pr)| {
+            pr.active
+                && pr.owner == owner
+                && crate::projectile::proj_data(pr.kind)
+                    .is_some_and(|d| d.ai_style == 61 || d.ai_style == 160)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    for i in doomed {
+        app.projectiles.kill(i);
+    }
+}
+
+/// `Item.RequestNewItem` → `Item.NewItem` (`Item.cs:49639-49771`) with the
+/// player drop's EXPLICIT velocity (`Player.cs:5199`): the `velocity.HasValue`
+/// arm (`Item.cs:49738-49741`) skips the scatter draws entirely, and
+/// `item.Prefix(prefix)` with the carried prefix draws nothing either
+/// (`Item.cs:511-514`: only `-1/-2` roll) — a player drop is DRAW-FREE.
+///
+/// `center` is `base.Center` — the WorldItem's CENTER, so the port's
+/// top-left box sits at `center - SIZE/2` (`WorldItem.Center` setter).
+/// The ownership arms `grabDelayTime = DefaultGrabDelay` for the named
+/// player (`WorldItem.ApplySpawnOwnership`, `:306-313`); the
+/// `enemyGrabDelayTime` twin (`Item.cs:49757-49760`) gates only the monster
+/// grab (`WorldItem.cs:405`), unported.
+fn spawn_player_drop(
+    items: &mut Vec<ItemDrop>,
+    kind: u16,
+    count: u32,
+    prefix: u16,
+    center: Vec2,
+    velocity: Vec2,
+    grab_delay_player: u8,
+) {
+    if count == 0 {
+        // `Item.NewItem`'s `stack <= 0` early return (`Item.cs:49660-49663`).
+        return;
+    }
+    let mut drop = ItemDrop::new(
+        kind,
+        count,
+        prefix,
+        center.x - crate::item::SIZE * 0.5,
+        center.y - crate::item::SIZE * 0.5,
+        velocity.x,
+        velocity.y,
+        0.0,
+    );
+    drop.apply_grab_delay(grab_delay_player);
+    items.push(drop);
+    if items.len() > 300 {
+        items.remove(0);
+    }
 }
 
 #[cfg(test)]
@@ -1742,5 +2034,274 @@ mod pickup_tests {
             update_items(&mut app, 1.0 / 60.0);
         }
         assert_eq!(app.items.len(), 1, "the base magnet never reaches it");
+    }
+}
+#[cfg(test)]
+mod drop_witness_tests {
+    //! S1-P-i51 — the player drop/throw witnesses (`Player.dropItemCheck`
+    //! `Player.cs:5107-5156`, `DropSelectedItem` `:5158-5217`, the
+    //! `Item.NewItem` spawn `Item.cs:49654-49771` and the grab-delay model
+    //! `WorldItem.cs:306-313`/`:441-443` + `Player.GrabItems` `:34911`).
+    //! Written, NOT run (code-only swarm).
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::item::{EMPTY_SLOT, ItemSlot};
+    use crate::player::Player;
+
+    /// A grounded app with the player parked at (160, 1900) — the floor is
+    /// y = 120 tiles (`test_world_helpers::ground`), so the drop falls free.
+    fn drop_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = crate::test_world_helpers::ground();
+        w.compute_column_surface();
+        app.world = w;
+        let mut p = Player::spawn(&app.world);
+        p.x = 160.0;
+        p.y = 1900.0;
+        p.vx = 0.0;
+        p.facing = 1;
+        app.player = Some(p);
+        app.inventory = std::array::from_fn(|_| EMPTY_SLOT);
+        app
+    }
+
+    fn slot(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot { kind, name: crate::registry::name(kind), count, prefix: 0 }
+    }
+
+    /// The throw key drops the WHOLE selected stack with the facing
+    /// velocity `(4*direction + velocity.X, -2)` (`Player.cs:5199`), at
+    /// `base.Center`, and the spawn is DRAW-FREE (the explicit velocity
+    /// skips `Item.NewItem`'s scatter, `Item.cs:49738-49741`; the carried
+    /// prefix rolls nothing, `:511-514`).
+    #[test]
+    fn the_throw_key_drops_the_stack_at_facing_velocity_draw_free() {
+        let mut app = drop_app();
+        app.inventory[0] = slot(2, 37); // Dirt Block x37
+        app.selected = 0;
+        app.control_throw = true;
+        let before = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        drop_item_check(&mut app, false);
+        // The slot aired out, one drop landed.
+        assert_eq!(app.inventory[0].count, 0, "the stack left the slot");
+        assert_eq!(app.items.len(), 1);
+        let d = &app.items[0];
+        assert_eq!(d.kind, 2);
+        assert_eq!(d.count, 37, "the WHOLE stack drops, not one");
+        // The centre spawn: the box top-left is centre - SIZE/2.
+        assert_eq!(d.pos.x, cx - crate::item::SIZE * 0.5);
+        assert_eq!(d.pos.y, cy - crate::item::SIZE * 0.5);
+        // The facing velocity: 4*1 + 0 = 4, y = -2.
+        assert_eq!(d.vel.x, 4.0);
+        assert_eq!(d.vel.y, -2.0);
+        // DRAW-FREE: the stream did not move.
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            before,
+            "the explicit-velocity spawn draws nothing"
+        );
+        // The drop animation armed (`SetItemAnimation(10)`, `:5212`).
+        assert!((app.swing - 10.0 / 60.0).abs() < 1e-6);
+        assert!(app.player.as_ref().unwrap().just_dropped_an_item);
+    }
+
+    /// The facing flips the throw: left-facing drops at `-4 + velocity.X`.
+    #[test]
+    fn the_throw_velocity_follows_the_facing_and_the_player_velocity() {
+        let mut app = drop_app();
+        app.inventory[0] = slot(3, 1);
+        app.selected = 0;
+        app.control_throw = true;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.facing = -1;
+            p.vx = 1.5;
+        }
+        drop_item_check(&mut app, false);
+        assert_eq!(app.items[0].vel.x, 4.0 * -1.0 + 1.5);
+        assert_eq!(app.items[0].vel.y, -2.0);
+    }
+
+    /// The releaseThrow latch: a HELD key drops once (the press edge), not
+    /// every tick — the C# reads last tick's `releaseThrow` (`:5147`) and
+    /// refreshes it at the tick tail (`:25248-25255`).
+    #[test]
+    fn the_throw_key_edges_once_per_press() {
+        let mut app = drop_app();
+        app.inventory[0] = slot(2, 5);
+        app.inventory[1] = slot(3, 5);
+        app.selected = 0;
+        app.control_throw = true;
+        // Tick 1: release_throw starts true → the edge fires.
+        drop_item_check(&mut app, false);
+        assert_eq!(app.items.len(), 1);
+        // The tail refresh (the port's update_player does this): held → false.
+        app.player.as_mut().unwrap().release_throw = !app.control_throw;
+        // Tick 2: still held, latch false → no second drop.
+        app.selected = 1;
+        app.swing = 0.0; // the drop animation ran out
+        drop_item_check(&mut app, false);
+        assert_eq!(app.items.len(), 1, "a held key does not spam drops");
+        // Release then re-press: the latch re-arms, the edge fires again.
+        app.control_throw = false;
+        app.player.as_mut().unwrap().release_throw = !app.control_throw;
+        app.control_throw = true;
+        drop_item_check(&mut app, false);
+        assert_eq!(app.items.len(), 2, "the re-press drops the new slot");
+    }
+
+    /// A favorited selected slot refuses the throw (`:5147`'s
+    /// `!inventory[selectedItem].favorited`).
+    #[test]
+    fn a_favorited_slot_refuses_the_throw() {
+        let mut app = drop_app();
+        app.inventory[0] = slot(2, 5);
+        app.selected = 0;
+        app.favorite_slots.push(0);
+        app.control_throw = true;
+        drop_item_check(&mut app, false);
+        assert!(app.items.is_empty(), "the favorite stays");
+        assert_eq!(app.inventory[0].count, 5);
+    }
+
+    /// The no-grab-delay model: the drop arms `grabDelayTime = 100` for the
+    /// local player (`WorldItem.cs:306-309`), so the dropping player cannot
+    /// re-grab it for 100 ticks even standing on it; the timer decrements
+    /// one per tick (`:441-443`) and the grab opens on expiry.
+    #[test]
+    fn the_drop_arms_a_hundred_tick_local_grab_delay() {
+        let mut app = drop_app();
+        app.inventory[0] = slot(2, 1);
+        app.selected = 0;
+        app.control_throw = true;
+        drop_item_check(&mut app, false);
+        let d = &app.items[0];
+        assert_eq!(d.grab_delay_time, crate::item::DEFAULT_GRAB_DELAY);
+        assert_eq!(d.grab_delay_player, crate::item::GRAB_DELAY_LOCAL);
+        // Rest the drop on the ground (floor y = 120 tiles = 1920 px, the
+        // 14 px box sits at 1906) with zero velocity, aged past the 0.35 s
+        // stand-in, and park the player's centre ON it — so only the
+        // grab-delay gates the pickup, not range or age.
+        {
+            let d = &mut app.items[0];
+            d.vel = Vec2::ZERO;
+            d.age = 1.0;
+            d.pos = Vec2::new(160.0, 1920.0 - crate::item::SIZE);
+        }
+        let dc = app.items[0].center();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = dc.x - crate::player::WIDTH * 0.5;
+            p.y = dc.y - crate::player::HEIGHT * 0.5;
+        }
+        for _ in 0..99 {
+            update_items(&mut app, 1.0 / 60.0);
+            assert!(!app.items.is_empty(), "the delayed drop is not grabbed");
+        }
+        // Tick 100: the delay hit 0, the grab opens.
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the grab opens when the delay expires");
+        assert!(app.inventory.iter().any(|s| s.kind == 2 && s.count == 1));
+    }
+
+    /// The Guide Voodoo Doll (267) delays EVERY player
+    /// (`ItemID.Sets.DropWithGrabDelayForAllPlayers`, `ItemID.cs:430`):
+    /// `grabDelayPlayer = 255`.
+    #[test]
+    fn the_voodoo_doll_delays_all_players() {
+        let mut app = drop_app();
+        app.inventory[0] = slot(267, 1);
+        app.selected = 0;
+        app.control_throw = true;
+        drop_item_check(&mut app, false);
+        assert_eq!(app.items[0].grab_delay_player, crate::item::GRAB_DELAY_ALL);
+        assert_eq!(app.items[0].grab_delay_time, crate::item::DEFAULT_GRAB_DELAY);
+    }
+
+    /// The cursor stack drops on the throw key too (`DropSelectedItem`
+    /// prefers slot 58, `:5160-5163`), and the cursor airs out.
+    #[test]
+    fn the_cursor_stack_drops_before_the_hotbar() {
+        let mut app = drop_app();
+        app.inventory_open = true;
+        app.inventory[0] = slot(2, 5);
+        app.selected = 0;
+        app.mouse_item = slot(3, 9); // the cursor carries stone
+        app.control_throw = true;
+        drop_item_check(&mut app, false);
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.items[0].kind, 3, "the CURSOR stack dropped");
+        assert_eq!(app.items[0].count, 9);
+        assert_eq!(app.mouse_item.count, 0, "the cursor aired out");
+        assert_eq!(app.inventory[0].count, 5, "the hotbar kept its stack");
+    }
+
+    /// A closed inventory returns the cursor stack to the inventory
+    /// (`dropItemCheck` `:5141-5146` → `GetOrDropItem`), NOT a world drop,
+    /// when it fits. The fill plays the Grab chime — `ReturnItemFromSlot`
+    /// is NOT NoSound (`GetItemSettings.cs:59`), ONE `Next(-10, 11)` pitch
+    /// draw (`LegacySoundPlayer.cs:725`) on the `UpdatePlayers` stream.
+    #[test]
+    fn a_closed_inventory_returns_the_cursor_to_the_inventory() {
+        let mut app = drop_app();
+        app.inventory_open = false;
+        app.mouse_item = slot(3, 9);
+        let mut expect = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        let _ = expect.next_range(-10, 11); // the Grab chime's one pitch draw
+        drop_item_check(&mut app, false);
+        assert!(app.items.is_empty(), "no world drop when it fits");
+        assert_eq!(app.mouse_item.count, 0);
+        assert!(app.inventory.iter().any(|s| s.kind == 3 && s.count == 9));
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            expect,
+            "the return draws only the Grab chime's pitch"
+        );
+    }
+
+    /// The right-click world drop (open inventory, cursor stack, press edge
+    /// outside every slot): the cursor stack drops and the hotbar slot keeps
+    /// its own item (`:5188-5209`'s swap + swap-back).
+    #[test]
+    fn the_right_click_drops_the_cursor_and_keeps_the_hotbar() {
+        let mut app = drop_app();
+        app.inventory_open = true;
+        app.inventory[0] = slot(2, 5);
+        app.selected = 0;
+        app.mouse_item = slot(3, 9);
+        drop_item_check(&mut app, true); // right_click_drop
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.items[0].kind, 3, "the cursor stack dropped");
+        assert_eq!(app.mouse_item.count, 0, "the cursor aired out");
+        assert_eq!(app.inventory[0].count, 5, "the hotbar kept its item");
+    }
+
+    /// The dead player neither throws nor drops (`KillMe` returns the cursor
+    /// first, `Player.cs:38937-38944`; the alive-only `:25214` call site).
+    #[test]
+    fn a_dead_player_does_not_throw() {
+        let mut app = drop_app();
+        app.inventory[0] = slot(2, 5);
+        app.selected = 0;
+        app.control_throw = true;
+        app.player.as_mut().unwrap().dead = true;
+        drop_item_check(&mut app, false);
+        assert!(app.items.is_empty());
+        assert_eq!(app.inventory[0].count, 5);
+    }
+
+    /// The chat gate: an open chat refuses the throw (`!Main.drawingPlayerChat`,
+    /// `:5147`).
+    #[test]
+    fn an_open_chat_refuses_the_throw() {
+        let mut app = drop_app();
+        app.inventory[0] = slot(2, 5);
+        app.selected = 0;
+        app.control_throw = true;
+        app.chat.open = true;
+        drop_item_check(&mut app, false);
+        assert!(app.items.is_empty());
     }
 }
