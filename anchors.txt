@@ -762,3 +762,5 @@ crates/tr-app/src/item.rs|fn deposit_pickup|S1-P-i47 - the GetItem deposit walk:
 crates/tr-app/src/item.rs|fn item_space|S1-P-i47 - the ItemSpace pull gate with the favorite guard and the ammo/vault scans (Player.cs:39153-39197)
 crates/tr-app/src/item.rs|fn pull_item_common|S1-P-i47 - the GrabItems magnet pull, 0.45/tick under the 4 cap (Player.cs:34983-35029)
 crates/tr-app/src/item.rs|fn combine_nearby|S1-P-i47 - the passive world stack merge (WorldItem.cs:157-186)
+crates/tr-app/src/app/equip_swap.rs|pub(crate) fn can_equip_in_armor_slot|S1-P-i48 - the accessory equip interaction: the full CanEquipInArmorSlot left-click gate (ItemSlot.cs:1424-1482 - duplicate halves, DualEquipArmor bypass, accessory collision set) over the live Player + armor arrays
+crates/tr-app/src/app/equip_swap.rs|pub(crate) fn try_item_swap|S1-P-i48 - the HasItemSwap right-click variant cycle (ItemSlot.cs:1901-1995 TryItemSwap + :1997-2009 AfterItemSwap cue split), the two-wings arm of CanEquipBothAccessories (:3457-3464 via Player::wing_slot) and the live IsItemSlotUnlockedAndUsable gates (Player.cs:12579-12604)

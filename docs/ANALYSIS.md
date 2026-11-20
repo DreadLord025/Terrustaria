@@ -2290,13 +2290,15 @@ The deviations below are deliberate and are the places the port is **not** pixel
   draws/clicks at the literal coordinates, only the equipment column's `num20`
   rides `mH` (`:41146`). See "Reforge fidelity (S1-P-i45)" below.
 * **Equipment swaps (S1-H-5) вЂ” deviations from `ItemSlot.cs:3283-3650`.**
-  `Item.wingSlot` is not carried by `ItemDef`, so `CanEquipBothAccessories`
-  (`:3451-3472`) loses its `wingSlot > 0` arm: two different wings are accepted
-  together where vanilla refuses them (the 3580 vanity-wings exception has no
-  meaning without the flag). `Player.IsItemSlotUnlockedAndUsable`
-  (`Player.cs:12579-12604`) is reduced to the port's constants вЂ” `extraAccessory`
-  (Demon Heart) and `Main.masterMode` are not modelled, so rows 8/9 and their
-  vanity twins 18/19 are permanently unusable and every other row is usable.
+  RETIRED (S1-P-i48): the two-wings arm of `CanEquipBothAccessories`
+  (`:3457-3464`) now reads the port's `Player::wing_slot` table (the i40
+  wings census, the same 47 `Item.wingSlot` assignments), including the
+  3580 vanity-wings exception. `Player.IsItemSlotUnlockedAndUsable`
+  (`Player.cs:12579-12604`) is now the LIVE gate in the swap helpers too
+  (S1-P-i48): rows 8/18 open with `extraAccessory` + expert mode exactly like
+  the sim's grant loop (`player.rs::is_item_slot_unlocked_and_usable`); rows
+  9/19 stay locked (no master difficulty) and the `Main.gameMenu` escape arms
+  read false in play.
   The achievement hooks (`AchievementsHelper.NotifyItemPickup`/`HandleOnEquip`),
   the display-doll `NetMessage.SendData` tails and the `AnnounceTransfer` call
   have no port counterpart (single-player, no achievement events from swaps).
@@ -15730,11 +15732,17 @@ the old `_ => true` gave):
 * ctx 38 (`TEDisplayDoll.AcceptedInWeaponSlot`) вЂ” no display-doll model;
 * ctx 4/32 (`ChestUI.IsBlockedFromTransferIntoChest`) вЂ” it only blocks a
   favorited money-trough/piggy item and the port has no `favorited` flag on the
-  slot yet;
-* `CanEquipInArmorSlot`'s duplicate half (`HasSameItemInSlot` against the live
-  armour set) and the `ItemID.Sets.DualEquipArmor` ({205, 5004, 4955}) bypass вЂ”
-  the port is permissive on a duplicate equip;
-* `CanEquipAccessoryInSlot`'s `HasIncompatibleAccessory` collision set вЂ” likewise.
+  slot yet.
+
+RETIRED (S1-P-i48): `CanEquipInArmorSlot`'s duplicate half
+(`HasSameItemInSlot` against the live armour set), the
+`ItemID.Sets.DualEquipArmor` ({205, 5004, 4955}) bypass and
+`CanEquipAccessoryInSlot`'s `HasIncompatibleAccessory` collision set are now
+modelled — `equip_swap::can_equip_in_armor_slot` ports the whole
+`ItemSlot.cs:1424-1482` gate over the live `Player` + `App.equip.armor`, and
+`pick_item_movement_action`'s ctx 8-11 arm runs it (the callers hand the
+player/armour pair in; the coin/ammo `context_accepts` callers pass `None`,
+which refuses those arms — they never reach them).
 
 The gate is inert in-game today: the only `context_accepts` readers are the
 coin/ammo rows (contexts 1/2), and the equipment pages draw their cells without
@@ -33715,3 +33723,104 @@ witnesses (`item.rs::s1_p_i47_tests` - 9 tests; `world_sim/items.rs::
 pickup_tests` - 6 new/rebuilt tests; the rebuilt `editing.rs`
 `pickup_merges_to_maxstack`/`test_store_1_*`) are WRITTEN, NOT RUN -
 **no compiler invoked**.
+## The accessory equip interaction (S1-P-i48, 2026-11-20, code-only)
+
+Census of the equip/unequip MACHINERY (`ItemSlot.cs` + the `Player.cs`
+grant seam) against the port. Combat accessory effects (C-12) and movement
+accessories (i40) were out of scope; the stat-apply ORDER was re-verified,
+not re-ported.
+
+**Verdicts (C# cites):**
+
+1. WRONG - `CanEquipBothAccessories` lost its two-wings arm
+   (`ItemSlot.cs:3457-3464`): two different wings equipped together. FIXED:
+   the arm reads `Player::wing_slot` (the i40 table, the same 47
+   `Item.wingSlot` assignments), incl. the `vanity && (type == 3580)`
+   Yoraiz0r exception. The former "wingSlot absent" deviation is retired.
+2. WRONG - the left-click gate `CanEquipInArmorSlot`
+   (`ItemSlot.cs:1424-1482`) was reduced to the row-kind test: the
+   duplicate halves (`HasSameItemInSlot` `:1455/:1461/:1473/:1479`), the
+   `DualEquipArmor` bypass (`ItemID.cs:336` - {205, 5004, 4955}) and the
+   accessory collision set (`CanEquipAccessoryInSlot` `:3531-3538`) were
+   all missing, so a second same-kind accessory / a duplicate armour piece
+   placed anywhere. FIXED: `equip_swap::can_equip_in_armor_slot` ports the
+   whole gate over the live `Player` + `App.equip.armor`;
+   `pick_item_movement_action`'s ctx 8-11 arm takes the pair (the coin/ammo
+   `context_accepts` callers pass `None` and never reach those arms).
+3. WRONG - `IsItemSlotUnlockedAndUsable` in the swap helpers was a constant
+   (`!matches!(slot, 8|9|18|19)`) while the SIM's grant loop reads the live
+   `extraAccessory && expertMode` (`Player.cs:12579-12604`,
+   `player.rs::is_item_slot_unlocked_and_usable`). The machinery could not
+   place into row 8 even after a Demon Heart. FIXED: the helpers take
+   `&Player` and run the same gate; master-mode rows 9/19 stay locked
+   (unported difficulty), `Main.gameMenu` reads false in play.
+4. WRONG - the `HasItemSwap` right-click arm (`ItemSlot.cs:1668-1675` ->
+   `TryItemSwap` `:1901-1995` + `AfterItemSwap` `:1997-2009`) was unported:
+   an Ammo Cycler (6168/6169/6193/6194) right-click EQUIPPED instead of
+   cycling its mode. FIXED: `equip_swap::try_item_swap` ports the whole
+   28-kind switch (the `ChangeItemType` stack/prefix carry included), the
+   grid (ctx 0), the chest (ctx 3) and the equipment columns (ctx 8/10,
+   `canItemSwapAt` `:451-456`) run it on the press edge BEFORE the
+   `SwapEquip` ladder, with the 22/7 cue split (`Unlock`/`Grab`),
+   `stackSplit = 30` and the consumed `mouseRightRelease`.
+5. WRONG - the busy gates were missing: `LeftClick` refuses while
+   `itemAnimation != 0 || itemTime != 0` (`ItemSlot.cs:922-926`) and
+   `RightClick` while `itemAnimation > 0` (`:1644-1647`). FIXED on the
+   grid, the equipment cells and the chest cells (`App::swing` =
+   itemAnimation, `App::item_time` = itemTime).
+6. WRONG - the ctx-3 (chest) `RightClick` carried only the paced pickup
+   split; the C#'s `:1685-1697` `SwapEquip` ladder covers ctx 3 too
+   (`canItemSwapAt[3]`, `:454`). FIXED: a single wearable/dye in a chest
+   cell right-clicks into its equipment row on the press edge.
+7. OK - `ArmorSwap`'s duplicate guard (`:3589` - `item.vanity ? AccSlots :
+   VanityAccSlots`), the collision-slot targeting (`:3609-3614`) and the
+   first-unlocked-empty scan + `:3618` fallback: already verbatim.
+8. OK - `SwapVanityEquip`'s guard chain (`:1874-1877`): the two
+   `CanEquipAccessoryInSlot` legs with the absolute-slot compare (the
+   port's relative `slot - 13` is the same test) and the `npcShop` stand-down.
+9. OK - the visibility tick (`Main.cs:41426-41460`): the flip, the
+   `PlaySound(12)`, the `mouseItem.IsAir` gate, the equipment-page-only
+   scope and the before-the-slot order were already ported
+   (`clicks.rs` + `ui::inventory::accessory_tick_click`). The MP
+   `SendData(4)` tail stays local (the player-info packet's
+   `hide_visible_accessory` is decode-only, `net.rs`).
+10. OK - the equip -> stat apply ORDER: `ResetEffects`' clears
+    (`Player.cs:25491` -> `:18275+`) run before the grant pass
+    (`UpdateEquips` `:25633` -> `:12892`), the per-tick `equipped` snapshot
+    feeds `update_equips` (`:12946-12952`), and the unequip clears re-derive
+    next tick (the dash/wings witnesses already pin it). No change.
+
+**RNG:** the whole equip machinery draws NOTHING - every function ported
+here is a pure gate/swap (the C# `SoundEngine.PlaySound` cues are not RNG).
+The `TryItemSwap` cycle keeps the rolled prefix (`ChangeItemType` re-applies
+`prefixWeWant`, no re-roll). No stream touched.
+
+**Remaining deviations (unchanged):** the ctx 16-20/24/38 movement arms
+keep the `type == 0` shortcut (no hook/mount/pet/display-doll data in
+`pick_item_movement_action` - the equip ACTIONS behind them landed with
+S1-H-5); the achievement/`AnnounceTransfer`/net tails are constants-off;
+the `OpenableBag` arm (`:1660-1667`) has no container-opening state; the
+gamepad `Grapple`-trigger visibility toggle (`ItemSlot.cs:4108-4123`) has
+no gamepad UI. The bank (ctx 4/32) right-click keeps the port's
+place/merge carry (research/20 section 5) - the C# ladder covers ctx 4/32
+too, but the bank panel is the STORE-1 deviation's surface.
+
+Tests: `equip_swap::tests` gains 6 witnesses (the wings arm, the Demon
+Heart unlock, the full `CanEquipInArmorSlot` gate, the vanity-swap wings
+collision, the `TryItemSwap` cycles, the cue split); `clicks.rs` gains 9
+(`s1_p_i48_*`: duplicate refusal, vanity-column refusal, wings swap +
+left-click refusal, the cycler cycle grid + worn, the busy gates, the
+Demon Heart ladder, the ctx-3 chest ladder + cycler-first order). WRITTEN,
+NOT RUN - no compiler invoked (code-only mode).
+
+Retry-round fix (W3-i48b): the first landing hand-edited the GENERATED
+`crates/tr-app/src/sortdata.rs` (`@generated ... Do not edit by hand`) -
+`python tools/GenSortData/gen.py --check` failed on the two new sets. The
+generator now emits them itself (`parse_bool_set` over `ItemID.cs:336`
+`DualEquipArmor` / `:1385` `HasItemSwap`, in `PROJ_HOOK` ->
+`TILE_FRAME_IMPORTANT` order), the file is regenerated (the id lists are
+unchanged - the hand-written rows were verbatim), and the generated
+`counts_match_the_source_tables` test pins both lengths (3 / 28).
+`--check` passes; `GenItemData --check` and `gen_recipes --check` stay
+green. The stale `right_click_split` doc (claiming the swap arms have no
+port state) is corrected - they run in the callers before the split.
