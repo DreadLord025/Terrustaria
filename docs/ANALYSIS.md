@@ -25150,6 +25150,36 @@ tile-entity hooks). The generated defs carry the C# method NAME in
 `PlacementHook::callback` with `hook: None`; the `GetStyleOverride` tag is
 generated data.
 
+### W4-d113 (2026-11-20): the TryGetTileBounds coordinate walk
+
+`tileobject::try_get_tile_bounds` ports `TileObjectData.TryGetTileBounds`
+(`TileObjectData.cs:5163-5194`), the research/08 "coordinate pickup" consumer
+the registry-completeness re-scope left unclaimed (d112 claims the
+`GetTileData(Tile)` overload itself as `resolve_tile_def`).
+
+* **Seam deviation (documented)**: the C# calls `GetTileData(tile)` at :5167;
+  the port takes `resolve: fn(&Tile) -> Option<&'static TileObjectDef>` as a
+  parameter so d113's walk and d112's resolver land independently. The merge
+  wires `try_get_tile_bounds(world, x, y, resolve_tile_def)` — the C# call
+  shape. No logic is duplicated across the two branches.
+* The walk is 1:1: truncating-division frame remainders (:5172-5175), the
+  `while num3 >= CoordinateWidth` column loop (:5176-5181, padding columns
+  step too), the full-array `CoordinateHeights` row loop (:5182-5190), the
+  resolved def's `Width`/`Height` (:5191-5192). The chest's uneven-height
+  padding quirk (frameY 36 on heights [16,18] steps TWO rows) is kept, not
+  fixed — pinned by `w4_d113_walk_chest_21_uneven_heights`.
+* **Degradation (documented)**: out-of-bounds coordinates return `None` (the
+  C# `Main.tile[x, y]` read throws); a failed resolution returns `None` (the
+  C# false + the 1×1 out-param default, which no consumer reads on false).
+* Sole C# consumers: `RichRoomCheckFeedback.cs:228`/:298 — the housing
+  quality particle pass (consume duplicate furniture cells; centre the
+  room-check icon). Unported (housing lane); the walk is the ready seam.
+* Witnesses WRITTEN NOT RUN (code-only mode): `w4_d113_walk_*` (5 Rust
+  tests) + `test_gen.py test_d113_third_block_census/_families` (the 64-kind
+  240-359 census + per-family interpreter pins). Census correction recorded:
+  BeachPiles 324 has NO `GetStyleOverride` (only 233/185/165 are tagged).
+  Analysis: research/08-d113-tileobjectdata-third.md.
+
 ## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
 
 `crates/tr-core/src/lighting/legacy.rs` ports `Terraria.Graphics.Light.LegacyLighting`

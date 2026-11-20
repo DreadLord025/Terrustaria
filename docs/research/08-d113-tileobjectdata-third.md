@@ -85,7 +85,7 @@ Style2x2 :3451-3460 region, Style3x2/Style3x3 presets per the generator doc.
 | 318 | PinkJellyfishBowl | :3719-3721 | water-animal chain |
 | 319 | ShipInABottle | :3619-3620 | Style2x2 |
 | 320 | SeaweedPlanter | :2993-2994 | Style2xX |
-| 324 | BeachPiles | :4430-4439 | GetStyle_Detritus family (natural piles) |
+| 324 | BeachPiles | :4430-4439 | Style1x1 + 20-px cell, wrap 3 horizontal, DrawFlipHorizontal; **NO GetStyleOverride** (correction: only 233/185/165 are tagged, :4968/:4979/:4993) |
 | 334 | WeaponsRack | :4807-4814 | item-frame rack (TE consumer) |
 | 335 | FireworksBox | :3784-3785 | Style2x2 |
 | 337 | AlphabetStatues | :2968-2969 | Style2xX |
@@ -121,10 +121,81 @@ all legacy `WorldGen.PlaceTile` single-tile routes in vanilla too
 3. **Hook bodies** (`TEWeaponRack`/`TEItemFrame` post-place hooks on 334 etc.)
    stay documented callbacks (`hook: None` + name), the wave-A seam.
 
+## Re-scope (registry generated-complete) — the coordinate-walk consumer
+
+The Lead re-scoped d113 after the registry proved complete: port a
+TileObjectData logic consumer NOT claimed by d112. d112's in-flight work
+(`TR-W4-d112` worktree, uncommitted) claims the `GetTileData(Tile)`
+overload (:5196-5261) as `resolve_tile_def` + `apply_style_override` — the
+GetStyleOverride resolution. d113 therefore takes the NEXT logic gap per
+research/08 row 86 ("`TryGetTileBounds` / coordinate pickup"):
+**`TileObjectData.TryGetTileBounds` (:5163-5194)**, ported as
+`tileobject::try_get_tile_bounds(world, x, y, resolve)`.
+
+### Coordinate ANALYSIS (the walk, :5163-5194)
+
+- `bounds = (x, y, 1, 1)`; `GetTileData(tile)` (:5167) gates — a null
+  resolution returns false with the 1×1 bounds (the C# out-param default).
+- `num3 = frameX % CoordinateFullWidth`, `num4 = frameY %
+  CoordinateFullHeight` (:5172-5175, written as `f - (f/c)*c` — truncating
+  division, so negative frames keep a negative remainder and step nothing).
+- The column walk (:5176-5181) is a `while num3 >= CoordinateWidth` loop:
+  one tile left per column, **padding included** (a padding column's
+  remainder 18 ≥ 16 still steps once).
+- The row walk (:5182-5190) is a `for` over EVERY `CoordinateHeights[i]`
+  with `if num4 >= h { num4 -= h; bounds.Y--; }` — no early exit. For
+  uneven heights this has a vanilla quirk: the chest's row-1 PADDING
+  (frameY 36, heights [16,18], CFH 38) subtracts 16 then 18 → TWO row
+  steps, landing one tile above the true top. The port keeps it 1:1
+  (witness `w4_d113_walk_chest_21_uneven_heights`); real chest cells never
+  carry padding frames, so it is unreachable in practice.
+- `bounds.Width/Height = tileData.Width/Height` (:5191-5192) — the
+  RESOLVED def's extents (sub-tile/alternate-aware through the seam).
+
+### The seam (no duplicate port)
+
+The walk's only dependency on the tile-based resolver is :5167. d113's
+first draft ported `GetTileData(Tile)` too; on finding d112's claim that
+duplicate was DELETED and the walk now takes
+`resolve: fn(&Tile) -> Option<&'static TileObjectDef>` as a parameter.
+The merge wires `try_get_tile_bounds(world, x, y, resolve_tile_def)` —
+the C# call shape, no logic duplicated across branches. The Rust witnesses
+use a base-def slice of the seam (exact for the sub-tile-free kinds they
+exercise) plus a synthetic resolved-def test proving the walk reads the
+RESOLVED geometry.
+
+### Wall-frame consumers — analysis result: NOT TileObjectData consumers
+
+research/08's wall-frame gaps (`Framing.WallFrame`, :337-396) consume
+`Main.wallLargeFrames`/`TruncatesWalls`/`invisibleWall`, NOT
+TileObjectData — no `TileObjectData.` reference exists in `Framing.cs`
+(verified by search). The only TileObjectData consumers in the framing
+family are `PlatformFrameWidth()` (:5121-5124, a constant read of
+`_data[19].CoordinateFullWidth` — already reused from `torch.rs`,
+`WorldGen.cs:51858`/:70155`) and `CheckWaterDeath`/`CheckLavaDeath(Tile)`
+(:5073-5119, `WorldGen.cs:72930`/:80439-80444) — the latter DO call
+`GetTileData(Tile)` and are d112-seam consumers, recorded here as the
+next wiring step, not re-ported.
+
+### Sole C# consumers of TryGetTileBounds
+
+`RichRoomCheckFeedback.cs:228` (the housing-quality particle pass consumes
+the other furniture cells inside an object's bounds so a 3×3 table counts
+once) and `:298` (centres the room-check icon particle on the bounds:
+`((Left+Right)/2, Min(Top/2+Bottom/2, Top+1)) * 16`). Housing feedback is
+unported (d118/d119 lane); the walk lands as the registry's generic
+coordinate pickup, ready for that wiring.
+
 ## Witnesses (WRITTEN NOT RUN — code-only mode)
 
-`tools/GenTileObjectData/test_gen.py` gains `test_d113_third_block_*`:
-per-family pins hand-derived from the C# chains above, run through the same
-interpreter the generator uses (the S1-F-7.4 pattern). The Rust-side freeze
-(`tileobject_registry_freeze.rs`) already pins the whole table's FNV — this
-slice adds the per-kind semantic layer for 240–359.
+- Rust: `tileobject.rs` tests `w4_d113_walk_*` (5) — the 283 bench 3×3
+  walk incl. padding + style-column reset, the 275 cage 6-wide column
+  walk, the 21 chest uneven-height quirk, the 270 bottle + the
+  inactive/unregistered/out-of-bounds/negative-frame gates, and the
+  resolved-def geometry proof.
+- Python: `tools/GenTileObjectData/test_gen.py` gains
+  `test_d113_third_block_census` + `test_d113_third_block_families`:
+  per-family pins hand-derived from the C# chains above, run through the
+  same interpreter the generator uses (the S1-F-7.4 pattern). The Rust-side
+  freeze (`tileobject_registry_freeze.rs`) already pins the whole table's
+  FNV — this slice adds the per-kind semantic layer for 240–359.
