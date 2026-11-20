@@ -923,6 +923,22 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   colour as `rgb/max(r,g,b)` with `alpha = max(r,g,b)` вЂ” the same source contribution
   with a slightly dimmed backdrop under the sparkle. `Main.DrawTileInWater` (the
   tile-518 submerged redraw) is not ported: the generator never places tile 518.
+- W4-g76 (shimmer liquid DRAW, code-only, witnesses WRITTEN NOT RUN): the draw-side
+  phase helpers regained the C# f32/f64 split (`LiquidRenderer.cs:754-797`), mirroring
+  the W4-d66 palette-side base-colour split: `GetShimmerWave`/`GetShimmerFrame` compute
+  `(x + y/6)/10` in f32 then subtract `timeForVisualEffects / 360.0` in DOUBLE (the
+  frame's `!top` offset adds the f32 `(wx + wy)` sum cast to double, `:789`); the
+  glitter hue narrows to f32 BEFORE the `% 1f` (`:761`); the glitter inner sine is
+  `Math.Sin((double)((float)noise / 10f) + tve/180.0)` (`:772`) — the old all-f32 add
+  dropped the time term once `noise/10` exceeded the f32 ULP, freezing the sparkle
+  (0.145 vs 0.261 at (1,12,tve=100)). `timeForVisualEffects` is a double tick counter
+  (`Main.cs:1181`, wrap `:17162-17164`); the draw clock's `anim_time * 60` product now
+  runs in f64 so whole ticks stay exact through the f32 narrowing. The sparkle overlay
+  multiplies by the RAW record `Opacity` (`:715`), not the base quad's clamped
+  foreground `val` (`:700-702`) — the old port dimmed the sparkle by an extra 0.75.
+  The base-colour wave itself stays in `tile_light/palette.rs` (W4-d66's lane); the
+  draw-side `shimmer_wave` copy feeds only the glitter opacity/frame. 7 witnesses pin
+  the split values, the noise lanes, the raw-opacity sparkle and the `val` clamp.
 - Not ported: the `HorizonClouds`-style shader tint of `NextHorizonRenderer.CloudsEnd`
   for falls, `Main.ambientLava(X/Y/Strength)` (an audio-ambience feed, not lighting),
   the `player.lavaOpacity` factor and the storm/rare cloud type branches.
