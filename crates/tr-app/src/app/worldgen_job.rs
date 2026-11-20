@@ -204,6 +204,12 @@ impl WorldGenJob {
                     // The header records the draft's seed (`create_world_in`'s
                     // `world.seed = seed`, the `save.rs` header write).
                     world.seed = seed;
+                    // `WorldFile.CreateMetadata:600-604` + the WorldId roll
+                    // (`WorldGen.cs:11337`) — the same identity stamp the
+                    // synchronous `create_world_in` tail runs.
+                    let mut identity = tr_core::wld::identity_rng();
+                    tr_core::wld::stamp_created_identity(&mut world, &mut identity);
+                    world.world_id = identity.next_max(i32::MAX);
                     let side = tr_core::save::WorldSide {
                         chests: world.chests.clone(),
                         ..Default::default()
@@ -295,6 +301,12 @@ mod tests {
         // The saved world loads.
         let (world, _) = tr_core::save::load(&path).unwrap();
         assert_eq!(world.width, 512);
+        // W4-c43: the worker's Completed arm stamps the created identity
+        // (`CreateMetadata:600-604` + the WorldId roll's stand-in).
+        assert_eq!(world.generator_version, tr_core::wld::WORLD_GENERATOR_VERSION);
+        assert_ne!(world.unique_id, [0u8; 16], "the GUID is stamped");
+        assert!(world.world_id >= 0, "the WorldId roll is in [0, int.MaxValue)");
+        assert!(world.creation_time > tr_core::clock::TICKS_AT_UNIX_EPOCH);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

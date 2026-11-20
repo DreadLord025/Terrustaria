@@ -593,7 +593,9 @@ pub struct World {
     /// `Main.ActiveWorldFileData.WorldId` (`WorldFile.cs:1227`, footer `:1756`).
     pub world_id: i32,
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
-    /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
+    /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). The save funnel
+    /// stamps `UtcNow` on every save (`SaveWorldFlags:1251`); 0 = unset/min
+    /// for a world that never went through a save.
     pub last_played: i64,
     /// `Main.ActiveWorldFileData.CreationTime` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1250` write, `:2044` read; S1-J-3b). 0 = unset/min —

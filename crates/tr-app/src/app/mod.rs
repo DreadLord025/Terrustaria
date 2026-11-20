@@ -4180,6 +4180,28 @@ pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
             },
         )
     };
+    // The identity fallbacks the C# runs at load (W4-c43):
+    // * `LoadHeader:1966-1969`: a pre-181 `.wld` (no GUID field) gets
+    //   `UniqueId = Guid.NewGuid()` — the port's clock-seeded stand-in
+    //   (`wld::stamp_created_identity`'s GUID arm). A pre-v18 `.trwld`
+    //   carries the same all-zero GUID, so both arms share the check.
+    // * `WorldFileData.GetFileData:315-318`: a file with no LastPlayed
+    //   field falls back to `File.GetLastWriteTimeUtc(file)`. The port's
+    //   zero stamp (a pre-v18 `.trwld`, a pre-284 `.wld`, or a never-saved
+    //   world) takes the same mtime fallback.
+    if world.unique_id == [0u8; 16] {
+        let mut rng = tr_core::wld::identity_rng();
+        let mut guid = [0u8; 16];
+        rng.next_bytes(&mut guid);
+        guid[7] = (guid[7] & 0x0F) | 0x40;
+        guid[8] = (guid[8] & 0x3F) | 0x80;
+        world.unique_id = guid;
+    }
+    if world.last_played == 0 {
+        if let Some(stamp) = tr_core::clock::file_mtime_binary(world_path) {
+            world.last_played = stamp;
+        }
+    }
     log::info!(
         "loaded '{}' {}x{} ({} tiles, {:.1} MB) in {:.0} ms",
         world.name,

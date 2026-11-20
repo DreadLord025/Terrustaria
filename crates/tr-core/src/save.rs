@@ -55,6 +55,13 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// / `jungleBG` / `hallowBG` / `crimsonBG` at `WorldFile.cs:1319-1323` and
 /// `mushroomBG` at `:1375`) that the `DrawSurfaceBG_*` variants resolve their
 /// `Background_<id>` sheets from; a pre-v16 file loads the `setBG` defaults.
+/// v18 appended the world-identity block (W4-c43): the generator version
+/// (`WorldFile.cs:1225`), the 16-byte GUID (`:1226`), the world id (`:1227`,
+/// footer `:1756`), `CreationTime` and `LastPlayed` as `DateTime.ToBinary`
+/// longs (`:1250-1251`) — the fields the `.wld` header already round-trips
+/// (S1-J-2), which the native format used to drop. A pre-v18 file loads the
+/// `World::new` zeros; the save funnel re-stamps the identity on its first
+/// re-save (`wld::stamp_created_identity` + the WorldId roll).
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -65,7 +72,7 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -428,6 +435,15 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // `:79349`) — S1-D-3 W-9 fishron wiring; the v15 queen-slime byte's
     // shape.
     w.write_all(&[u8::from(world.downed_fishron)])?;
+    // v18: the world-identity block (W4-c43) — the `.wld` header's identity
+    // fields (`WorldFile.cs:1225-1227` + `SaveWorldFlags:1250-1251`), the
+    // same values the retail writer emits; a `.trwld` round trip used to
+    // drop them.
+    w.write_all(&world.generator_version.to_le_bytes())?; // `:1225`
+    w.write_all(&world.unique_id)?; // `:1226`
+    w.write_all(&world.world_id.to_le_bytes())?; // `:1227`
+    w.write_all(&world.creation_time.to_le_bytes())?; // `:1250`
+    w.write_all(&world.last_played.to_le_bytes())?; // `:1251`
     Ok(())
 }
 
@@ -810,6 +826,18 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
     }
+    // v18: the world-identity block (see the writer's citation) — a pre-v18
+    // file keeps the `World::new` zeros, exactly the values the pre-W4-c43
+    // saves carried.
+    if version >= 18 {
+        world.generator_version = r.u64()?;
+        for b in &mut world.unique_id {
+            *b = r.u8()?;
+        }
+        world.world_id = r.i32()?;
+        world.creation_time = r.u64()? as i64;
+        world.last_played = r.u64()? as i64;
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -1054,8 +1082,8 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[17, 0, 0, 0],
-            "the writer emits the current v17"
+            &[18, 0, 0, 0],
+            "the writer emits the current v18"
         );
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
@@ -1067,12 +1095,12 @@ mod tests {
         // DW-1.4: a pristine v3 file (the current stream stripped of the
         // v4 tail (2 bytes) and the v5 tail (1 presence byte — the world has
         // no bed spawn), the version field restored) loads with both
-        // cooldowns at 0.
+        // cooldowns at 0. (+44: the v18 identity block rides the stream end.)
         let mut w = World::new("Test".into(), 32, 32);
         w.sundial_cooldown = 7;
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf.truncate(buf.len() - 3);
+        buf.truncate(buf.len() - 3 - 44);
         buf[8..12].copy_from_slice(&3u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 0);
@@ -1082,13 +1110,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v17 (the downedFishron
-        // byte, S1-D-3 W-9) is now the current format, so the gate pins 17.
+        // current one (`save.rs` version gate). v18 (the world-identity
+        // block, W4-c43) is now the current format, so the gate pins 18.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&18u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 18 is unsupported");
+        buf[8..12].copy_from_slice(&19u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 19 is unsupported");
     }
 
     #[test]
@@ -1166,8 +1194,9 @@ mod tests {
         // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
         // fixed flags block + four empty colour counts + one empty entity count +
         // one empty chest count + one empty banner count + one empty bestiary count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +44: the v18 identity block rides the stream end.)
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1 + 44));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1217,7 +1246,8 @@ mod tests {
         assert_eq!(back.micro_seeds, w.micro_seeds);
         // A v11 file (the same stream minus the v12 block and the v13..v16
         // tails, the version byte restored) loads as the classic world it was.
-        buf.truncate(buf.len() - 10 - EMPTY_V16_TAIL);
+        // (+44: the v18 identity block.)
+        buf.truncate(buf.len() - 10 - EMPTY_V16_TAIL - EMPTY_V18_TAIL);
         buf[8..12].copy_from_slice(&11u32.to_le_bytes());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
@@ -1277,9 +1307,9 @@ mod tests {
         let cur_len = buf.len();
         let mut v12 = buf.clone();
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
-        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5)
-        // and the v17 fishron flag (1).
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1;
+        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
+        // the v17 fishron flag (1) and the v18 identity block (44).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + EMPTY_V18_TAIL;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
@@ -1308,16 +1338,19 @@ mod tests {
     /// for an empty rain event), the v15 Queen Slime flag byte, the v16
     /// five style bytes and the v17 downedFishron byte (S1-D-3 W-9).
     const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1;
+    /// The v18 identity block (W4-c43): u64 generator version + 16 GUID bytes
+    /// + i32 world id + two i64 ToBinary stamps.
+    const EMPTY_V18_TAIL: usize = 8 + 16 + 4 + 8 + 8;
 
     fn back_flags(buf: &[u8]) -> u16 {
-        let end = buf.len() - EMPTY_V16_TAIL;
+        let end = buf.len() - EMPTY_V16_TAIL - EMPTY_V18_TAIL;
         u16::from_le_bytes([buf[end - 10], buf[end - 9]])
     }
 
     /// The v12 block's micro u64 bitmask (the eight bytes ahead of the v13
     /// tail).
     fn back_micro(buf: &[u8]) -> u64 {
-        let end = buf.len() - EMPTY_V16_TAIL;
+        let end = buf.len() - EMPTY_V16_TAIL - EMPTY_V18_TAIL;
         u64::from_le_bytes(buf[end - 8..end].try_into().unwrap())
     }
 
@@ -1494,12 +1527,67 @@ mod tests {
         // A pre-v15 file (the tail truncated, the version patched) loads
         // with the flag down — the vanilla's own reset arm (`:2376`).
         // The v16 style bytes + the v17 fishron byte ride behind the v15
-        // flag (6 bytes).
+        // flag (6 bytes); the v18 identity block (44) rides the stream end.
         let mut v14 = buf.clone();
-        v14.truncate(v14.len() - 1 - 5 - 1);
+        v14.truncate(v14.len() - 1 - 5 - 1 - EMPTY_V18_TAIL);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
+    }
+
+    #[test]
+    fn w4_c43_the_world_identity_round_trips_in_v18() {
+        // W4-c43: the v18 tail carries the `.wld` header's identity fields
+        // (`WorldFile.cs:1225-1227` + `SaveWorldFlags:1250-1251`) — a
+        // `.trwld` round trip used to drop them (the audit's placeholder
+        // finding, research/42).
+        let mut w = World::new("Test".into(), 32, 32);
+        w.generator_version = 140_015_933_8497; // `CreateMetadata:603`
+        w.unique_id = [1, 2, 3, 4, 5, 6, 7, 0x48, 0x89, 10, 11, 12, 13, 14, 15, 16];
+        w.world_id = 0x1234_5678;
+        w.creation_time = 0x48DF_4506_E391_C000u64 as i64; // the fixture clock
+        w.last_played = w.creation_time + 10_000_000; // +1 s of ticks
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.generator_version, w.generator_version);
+        assert_eq!(back.unique_id, w.unique_id);
+        assert_eq!(back.world_id, w.world_id);
+        assert_eq!(back.creation_time, w.creation_time);
+        assert_eq!(back.last_played, w.last_played);
+        // A pre-v18 file (the block truncated, the version patched) loads the
+        // `World::new` zeros — the values the pre-W4-c43 saves carried.
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - EMPTY_V18_TAIL);
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&v17).unwrap();
+        assert_eq!(back.generator_version, 0);
+        assert_eq!(back.unique_id, [0u8; 16]);
+        assert_eq!(back.world_id, 0);
+        assert_eq!(back.creation_time, 0);
+        assert_eq!(back.last_played, 0);
+    }
+
+    #[test]
+    fn w4_c43_the_created_identity_stamp_follows_create_metadata() {
+        // `WorldFile.CreateMetadata` (`WorldFile.cs:600-604`): the stamp sets
+        // the version literal, a v4-shaped GUID and a Utc-kind CreationTime.
+        let mut w = World::new("Test".into(), 32, 32);
+        let mut rng = crate::unified_random::UnifiedRandom::new(1234);
+        crate::wld::stamp_created_identity(&mut w, &mut rng);
+        assert_eq!(w.generator_version, crate::wld::WORLD_GENERATOR_VERSION);
+        assert_eq!(w.unique_id[7] & 0xF0, 0x40, "the GUID version nibble is 4");
+        assert_eq!(w.unique_id[8] & 0xC0, 0x80, "the RFC-4122 variant bits");
+        assert_ne!(w.creation_time & (0x4000_0000_0000_0000u64 as i64), 0, "Utc kind");
+        assert!(w.creation_time > crate::clock::TICKS_AT_UNIX_EPOCH);
+        // The WorldId is NOT part of the stamp — the caller rolls it (the
+        // `WorldGen.cs:11337` stand-in), so the stamp leaves it untouched.
+        assert_eq!(w.world_id, 0);
+        // A different stream draws a different GUID (uniqueness per world).
+        let mut w2 = World::new("Test2".into(), 32, 32);
+        let mut rng2 = crate::unified_random::UnifiedRandom::new(4321);
+        crate::wld::stamp_created_identity(&mut w2, &mut rng2);
+        assert_ne!(w.unique_id, w2.unique_id);
     }
 
     #[test]
@@ -1515,8 +1603,9 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +44: the v18 identity block rides the stream end.)
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + EMPTY_V18_TAIL));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
@@ -1602,8 +1691,8 @@ mod tests {
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[17, 0, 0, 0],
-            "the writer emits the current v17"
+            &[18, 0, 0, 0],
+            "the writer emits the current v18"
         );
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
