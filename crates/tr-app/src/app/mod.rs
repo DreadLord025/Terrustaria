@@ -1122,6 +1122,16 @@ pub(crate) struct WorldFrameKey {
     /// keep the pre-wiring cache behaviour bit-for-bit (the waterfall key's
     /// convention).
     pub(crate) tile_anim: u64,
+    /// W4-d58: `chest::chest_frame_key()` — every live chest's anchor + lid
+    /// frame (`Main.chest[i].frame`, `Chest.cs:86`), which the chest rewrite
+    /// (`CacheSpecialDraws_Part2`, `TileDrawing.cs:4289-4330`) folds into the
+    /// source rects inside the cached world range. Zero unless a BasicChest
+    /// tile (21/467) is active in the view rect, so chest-free worlds keep
+    /// the pre-wiring cache behaviour bit-for-bit (the `tile_anim`
+    /// convention). The lid animator ticks on the world step
+    /// (`Chest.UpdateChestFrames`, `Main.cs:17810`), so an opening/closing
+    /// chest changes this while the camera stands still.
+    pub(crate) chest_frames: u64,
     /// Remote peers' smoothed positions/animations and the NPC smoothing
     /// accumulators: the networked entities drawn inside the cached world
     /// range. Zero in single-player (the offsets are zero and no peers).
@@ -1159,6 +1169,7 @@ mod frame_key {
             brightness: brightness.to_bits(),
             waterfall: 0,
             tile_anim: 0,
+            chest_frames: 0,
             net_key: 0,
             world_revision: 0,
         };
@@ -1191,6 +1202,7 @@ mod frame_key {
             brightness: 0,
             waterfall: 0,
             tile_anim,
+            chest_frames: 0,
             net_key: 0,
             world_revision: 0,
         };
@@ -1206,6 +1218,57 @@ mod frame_key {
         let before = a.anim_key();
         a.weather_vane_bobframe += 1;
         assert_ne!(before, a.anim_key(), "the weather-vane bob rides the key");
+    }
+
+    /// W4-d58 key-coverage witness: the chest lid frames feed the chest
+    /// rewrite inside the cached world range (`CacheSpecialDraws_Part2`,
+    /// `TileDrawing.cs:4309-4320`), so two frames that differ only in a
+    /// chest's lid state must not share a cached range. The key input is
+    /// `chest::chest_frame_key()` — this pins that the i43 animator's
+    /// open/close walk changes it while everything else stands still.
+    #[test]
+    fn chest_lid_state_changes_the_frame_key() {
+        let key = |chest_frames: u64| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim: 0,
+            chest_frames,
+            net_key: 0,
+            world_revision: 0,
+        };
+        let mut chests = vec![crate::chest::WorldChest {
+            tile: (10, 20),
+            ..Default::default()
+        }];
+        let k0 = key(crate::chest::chest_frame_key(&chests));
+        // One open tick: counter 1 → frame 1 (the +38 half-open row).
+        crate::chest::update_chest_frames(&mut chests, 0);
+        let k1 = key(crate::chest::chest_frame_key(&chests));
+        assert_ne!(k0, k1, "an opening lid must change the key");
+        assert_eq!(k1, key(crate::chest::chest_frame_key(&chests)), "a still lid must not");
+        // Nine more ticks reach frame 2 (+76); the close walk returns to 0.
+        for _ in 0..9 {
+            crate::chest::update_chest_frames(&mut chests, 0);
+        }
+        let k2 = key(crate::chest::chest_frame_key(&chests));
+        assert_ne!(k1, k2, "the fully open lid differs from half-open");
+        for _ in 0..10 {
+            crate::chest::update_chest_frames(&mut chests, -1);
+        }
+        assert_eq!(k0, key(crate::chest::chest_frame_key(&chests)), "closed again = k0");
     }
 }
 

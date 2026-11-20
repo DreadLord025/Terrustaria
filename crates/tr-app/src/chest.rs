@@ -150,6 +150,52 @@ pub(crate) fn find_chest(chests: &[WorldChest], x: i32, y: i32) -> Option<usize>
         .position(|c| !is_removed(c) && c.tile == (x, y))
 }
 
+/// W4-d58: the draw-side `_chestPositions` lookup
+/// (`TileDrawing.cs:4291-4303` + `:4309-4311`). The anchor key steps
+/// left/up off the 36 px grid (`tr_render::chest_anchor`, `:4292-4299`),
+/// the `FindChest` result is cached per draw in `positions` (the C# dict,
+/// cleared each draw by `ClearLegacyCachedDraws`, `:6613-6615` — the port
+/// hands a fresh map per `draw_tiles` call), and the answer is the chest's
+/// lid `frame` (`Chest.cs:86`) or `None` for the `-1` miss. Read-only over
+/// the store: the draw side never rolls RNG and never writes sim state —
+/// the frame is produced by [`update_chest_frames`] on the world step.
+pub(crate) fn chest_draw_frame(
+    chests: &[WorldChest],
+    positions: &mut std::collections::HashMap<(i32, i32), Option<i32>>,
+    x: i32,
+    y: i32,
+    frame_x: i16,
+    frame_y: i16,
+) -> Option<i32> {
+    let key = tr_render::chest_anchor(x, y, frame_x, frame_y);
+    *positions
+        .entry(key)
+        .or_insert_with(|| find_chest(chests, key.0, key.1).map(|i| chests[i].frame))
+}
+
+/// W4-d58 G6 key input: a hash of every live chest's anchor + lid frame —
+/// the values [`chest_draw_frame`] feeds the chest rewrite inside the
+/// cached world range. FNV-1a over the raw `i32` little-endian bytes (the
+/// `TileAnimator::anim_key` convention): deterministic, order-sensitive,
+/// no RNG. Coords ride along so a lazily-created or moved entry changes
+/// the key even while every frame is 0; removed (null) slots are skipped
+/// like the C#'s null array entries.
+pub(crate) fn chest_frame_key(chests: &[WorldChest]) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    let mut feed = |v: i32| {
+        for b in v.to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    for c in chests.iter().filter(|c| !is_removed(c)) {
+        feed(c.tile.0);
+        feed(c.tile.1);
+        feed(c.frame);
+    }
+    h
+}
+
 /// `Chest.FindEmptyChest` (`Chest.cs:522-541`): the first null slot index, or
 /// `None` for the C# `-1` — either because a chest already exists at the
 /// coords (`Chest.cs:529-533`, the collision rule) or because the store is
