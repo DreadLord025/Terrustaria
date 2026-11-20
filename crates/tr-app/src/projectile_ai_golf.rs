@@ -1416,11 +1416,12 @@ mod tests {
         // The helper's centre equals the mouse: no move, no facing flip;
         // pos == old_position (both ZERO-default... set them equal).
         helper.old_position = helper.pos;
+        let mouse = helper.center().into();
         let tick = ai_golf_club_helper(
             &mut helper,
             &[],
             player,
-            helper.center().into(),
+            mouse,
             false,
             false,
             0,
@@ -1428,11 +1429,12 @@ mod tests {
         );
         assert_eq!(helper.ai[1], 144.0, "144 is not > 144: no wrap yet");
         assert_eq!(tick.dummy_item_time, Some(12 + 48), "12 + min(48, 144)");
+        let mouse = helper.center().into();
         let _ = ai_golf_club_helper(
             &mut helper,
             &[],
             player,
-            helper.center().into(),
+            mouse,
             false,
             false,
             0,

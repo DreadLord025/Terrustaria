@@ -698,9 +698,12 @@ pub struct Player {
     /// share (`:9888`/`:9893`/`:9898`/`:9903`/`:9908`); `ResetEffects` clears
     /// (`:18361`).
     pub acc_flipper: bool,
-    /// `Player.canFloatInWater` (`Player.cs`): the Water Strider's (buff 265)
-    /// float grant (`:9897`); `ResetEffects` clears (`:18332`).
-    /// `ShouldFloatInWater` (`:3872-3885`) reads it.
+    /// `Player.canFloatInWater` (`Player.cs:1086`): the Water Strider's
+    /// (buff 265) float grant (`:9895-9898`) or the mount item 4404
+    /// (`GrantArmorBenefits` `:13265-13267`); `ResetEffects` clears
+    /// (`:18332`). `ShouldFloatInWater` (`:3872-3885`) reads it; the fishing
+    /// +5 float bonus (`GetFishingConditions` `:42194`, `canFloatInWater &&
+    /// wet`) reads the same field (gate merge i35 ⨉ i41 — one field).
     pub can_float_in_water: bool,
     /// `Player.lavaVision` (`Player.cs`): the Lava Shark's (buff 305) grant
     /// (`:9910`); `ResetEffects` clears (`:18757`). Draw-side, flag only.
@@ -1202,11 +1205,8 @@ pub struct Player {
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
     rocket_release: bool,
-    /// `Player.empressBrooch` (`Player.cs:1994`): the Soaring Insignia
-    /// (item 4989, `:14771-14775`) — infinite wing/rocket flight
-    /// (`:22239-22242`, `:26863-26866`), the +1.8 jump-speed add
-    /// (`:19594-19597`) and the airborne ×1.75 run acceleration (`:26500-26503`).
-    pub empress_brooch: bool,
+    /// (Gate merge i40 ⨉ i41: `empress_brooch` is declared ONCE, with the
+    /// mount block above — the i40 duplicate folded into it.)
     /// `Player.merman` (`Player.cs:2368`): the Neptune's-Shell / Moon-Charm /
     /// Celestial-Shell wet transformation — gates `CanUseWingAbilities`
     /// (`:3990-3999`) and `WingAirLogicTweaks` (`:26496`). Derived per tick
@@ -1650,17 +1650,10 @@ pub struct Player {
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
     /// ResetEffects — a permanent unlock (the player-file field).
     pub used_gummy_worm: bool,
-    /// `Player.canFloatInWater` (`Player.cs:1086`): the merman buff 265
-    /// (`UpdateBuffs` `:9895-9898`) or the Water Strider mount item 4404
-    /// (`GrantArmorBenefits` `:13265-13267`) — the fishing +5 float bonus
-    /// (`GetFishingConditions` `:42194`, `canFloatInWater && wet`).
-    /// `ResetEffects` clears it (`:18332`).
-    pub can_float_in_water: bool,
-    /// `Player.noItems` (`Player.cs:2332`): the Cursed debuff 23
-    /// (`UpdateBuffs` `:11731-11734`) or the mount channel (`:52938`) blocks
-    /// item use — the bobber kill gate reads it (`Projectile.cs:53664`).
-    /// `ResetEffects` clears it (`:18687`).
-    pub no_items: bool,
+    /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
+    /// declared ONCE, with the mount block above — the i35 duplicates
+    /// folded into them; the fishing float bonus / bobber kill gate read
+    /// the same fields.)
     /// `Player.accSentryBackpack` (`Player.cs:1250`): the Heavy Sling family
     /// (6172/6175/6176/6177, `ApplyEquipFunctional` `:14507`/`:14565`/`:14573`/
     /// `:14577`) — the sentry-backpack pickup gate
@@ -2272,7 +2265,6 @@ impl Player {
             rocket_boots: 0,
             can_rocket: false,
             rocket_release: false,
-            empress_brooch: false,
             merman: false,
             acc_merman: false,
             time_since_last_dash_started: 0,
@@ -2399,8 +2391,6 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
-            can_float_in_water: false,
-            no_items: false,
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -2991,6 +2981,13 @@ impl Player {
     /// cooldown the recall spawn clears with the wet flags.
     pub fn reset_wet_count(&mut self) {
         self.wet_count = 0;
+    }
+
+    /// `Player.Spawn`'s `jump = 0` (`Player.cs:37641`) — the recall/teleport
+    /// spawn clears the held-jump boost (gate V3: the i38 module reaches the
+    /// private counter through this seam, the `reset_fall_damage` pattern).
+    pub fn reset_jump_boost(&mut self) {
+        self.jump = 0;
     }
 
     pub fn respawn(&mut self) {
@@ -5101,11 +5098,8 @@ impl Player {
         self.acc_fishing_line = false;
         self.acc_lava_fishing = false;
         self.override_fishing_bobber = -1;
-        // S1-P-i35 — `ResetEffects`' `canFloatInWater = false`
-        // (`Player.cs:18332`) and `noItems = false` (`:18687`): the merman
-        // buff 265 / the Cursed debuff 23 re-grant them in the buff loop.
-        self.can_float_in_water = false;
-        self.no_items = false;
+        // (Gate merge i35 ⨉ i41: the `canFloatInWater`/`noItems` clears run
+        // ONCE, in the i41 mount-flag block above — `Player.cs:18332`/`:18687`.)
         self.set_squire_t2 = false;
         self.set_squire_t3 = false;
         self.set_huntress_t2 = false;

@@ -2059,7 +2059,7 @@ const SUPER_CART_JUMP_SPEED: f32 = 5.15;
 /// What the caller must apply after a successful [`MountState::set_mount`]:
 /// the buff swap plus the hitbox growth (`SetMount` `Mount.cs:6226`,
 /// :6264-6277 — the PlayerSize-delegate branch does not exist in this set).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Equip {
     /// `ClearBuff(old data.buff)` on a swap (:6203).
     pub clear_buff: Option<i32>,

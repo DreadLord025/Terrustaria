@@ -3838,6 +3838,7 @@ fn drop_ctx(app: &App) -> DropCtx {
 
 /// The hit cell's drop-relevant state, captured before the kill clears the
 /// tile (the C# `tileCache` of `KillTile_GetItemDrops`, `WorldGen.cs:63964`).
+#[derive(Clone, Copy)]
 struct HitCell {
     x: i32,
     y: i32,
@@ -4994,7 +4995,7 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
         // were already flattened by `flatten_torch_supports` in the mutable
         // route (`Player.cs:41114-41146` → `WorldGen.SlopeTile`), so the type
         // checks below see flat cells exactly like the C#.
-        let kind_of = |t: Option<&crate::tile::Tile>| -> i32 {
+        let kind_of = |t: Option<&tr_core::tile::Tile>| -> i32 {
             t.filter(|n| tr_core::tileobject::nactive(n))
                 .map_or(-1, |n| n.kind as i32)
         };

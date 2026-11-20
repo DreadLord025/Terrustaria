@@ -529,7 +529,7 @@ pub(crate) fn spawn_recall(app: &mut App) {
     p.vx = 0.0;
     p.vy = 0.0;
     p.on_ground = false;
-    p.jump = 0;
+    p.reset_jump_boost();
     // `:37712-37716` ResetFallDamage: fallStart = fallStart2 = (int)(Y / 16).
     p.reset_fall_damage();
     // `:37647` oldPosition = position + BlehOldPositionFixer (-UnitY, :3235).
