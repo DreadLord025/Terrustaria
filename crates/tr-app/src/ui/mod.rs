@@ -45,6 +45,7 @@ pub mod sliders;
 pub mod select_hit;
 pub mod slot;
 pub mod text;
+pub mod text_box;
 pub mod text_panels;
 pub mod tooltip;
 pub mod uistate;

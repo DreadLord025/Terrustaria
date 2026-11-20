@@ -396,9 +396,95 @@ impl SlicedImage {
     }
 }
 
+/// `UIToggleImage` (`GameContent/UI/Elements/UIToggleImage.cs:8-71`),
+/// research/18b row 55 (W4-d83): the two-frame toggle button — one sheet,
+/// an on/off source offset each, drawn at the ctor's fixed size in
+/// White (hover) or Silver (rest). The achievements filter buttons'
+/// immediate draw is landed (`achievements.rs:356-367`, the 34 px stride);
+/// this is the element state the other screens (workshop, resource packs)
+/// adopt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ToggleImage {
+    /// `_drawWidth`/`_drawHeight` (`:14-16`) — also the element size
+    /// (`:34-35`) and the source rect's size (`:53`).
+    pub draw_size: [i32; 2],
+    /// `_onTextureOffset` (`:18`).
+    pub on_offset: [i32; 2],
+    /// `_offTextureOffset` (`:20`).
+    pub off_offset: [i32; 2],
+    /// `_isOn` (`:22`) — starts false (no ctor assignment).
+    pub is_on: bool,
+}
+
+impl ToggleImage {
+    /// The ctor (`:26-36`): both textures are the *same* sheet; only the
+    /// offsets differ. Size = `(width, height)`, state off.
+    pub fn new(width: i32, height: i32, on_offset: [i32; 2], off_offset: [i32; 2]) -> Self {
+        Self {
+            draw_size: [width, height],
+            on_offset,
+            off_offset,
+            is_on: false,
+        }
+    }
+
+    /// `LeftClick` (`:56-60`): toggle **before** the base bubble.
+    pub fn left_click(&mut self) {
+        self.toggle();
+    }
+
+    /// `SetState` (`:62-65`) / `Toggle` (`:67-70`).
+    pub fn set_state(&mut self, value: bool) {
+        self.is_on = value;
+    }
+
+    pub fn toggle(&mut self) {
+        self.is_on = !self.is_on;
+    }
+
+    /// `DrawSelf` (`:38-54`): the state picks the offset, the destination
+    /// is `(int)X, (int)Y` at the fixed draw size, the source is
+    /// `(offset.X, offset.Y, drawW, drawH)`, the tint White when hovering
+    /// else Silver. Returns `(dest, src, tint)`.
+    pub fn draw_plan(&self, rect: [f32; 4], hovering: bool) -> ([i32; 4], [i32; 4], [u8; 4]) {
+        let point = if self.is_on { self.on_offset } else { self.off_offset };
+        (
+            [rect[0] as i32, rect[1] as i32, self.draw_size[0], self.draw_size[1]],
+            [point[0], point[1], self.draw_size[0], self.draw_size[1]],
+            if hovering {
+                [255, 255, 255, 255]
+            } else {
+                [192, 192, 192, 255] // `Color.Silver`
+            },
+        )
+    }
+}
+
 #[cfg(test)]
 mod element_tests {
     use super::*;
+
+    /// `UIToggleImage` (`UIToggleImage.cs:26-70`): the achievements filter
+    /// geometry — 32×32 frames at (34j, 0)/(34j, 34) — flips on click, the
+    /// rest tint is Silver, and the destination truncates.
+    #[test]
+    fn the_toggle_flips_frames_and_dims_at_rest() {
+        let mut t = ToggleImage::new(32, 32, [34, 0], [34, 34]);
+        assert!(!t.is_on, "the ctor leaves it off");
+        let (dst, src, tint) = t.draw_plan([10.9, 20.8, 99.0, 99.0], false);
+        assert_eq!(dst, [10, 20, 32, 32], "the fixed draw size, not the rect");
+        assert_eq!(src, [34, 34, 32, 32]);
+        assert_eq!(tint, [192, 192, 192, 255]);
+        t.left_click();
+        assert!(t.is_on);
+        let (_, src, tint) = t.draw_plan([0.0, 0.0, 32.0, 32.0], true);
+        assert_eq!(src, [34, 0, 32, 32]);
+        assert_eq!(tint, [255, 255, 255, 255]);
+        t.set_state(false);
+        assert!(!t.is_on);
+        t.toggle();
+        assert!(t.is_on);
+    }
 
     /// `UISlicedImage` (`UISlicedImage.cs:34-66`): the ctor sizes to the
     /// texture and leaves the colour transparent; the 4-arg setter takes

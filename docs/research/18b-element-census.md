@@ -171,9 +171,9 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 51 | `UISlicedImage` | LANDED (`ui/images.rs::SlicedImage`, ctor-only resize + transparent default(Color) + top/bottom-first SetSliceDepths + int-truncated spliced draw `UISlicedImage.cs:34-66`; pieces ride `uistate::spliced_rects`) |
 | 52 | `UISliderBase` | LANDED (`ui/sliders.rs::SliderLocks`, id-keyed CurrentLocked/AimedSlider statics + GetUsageLevel 0/1/2 + EscapeElements `UISliderBase.cs:13-35`; HSL-bar mirror pre-landed `char_creation.rs`) |
 | 53 | `UIText` | LANDED (`ui/text.rs::TextElement`, InternalSetText metrics (16/32*scale vs wrapped +20*scale, MinWidth 0 for wrapped/dynamic) + DrawSelf geometry (-2/-10*scale shift, origin centring, dynamic shrink, shadow*textAlpha) `UIText.cs:82-194`; snippet layout caller's, wrap = `bestiary.rs::wrap_text`) |
-| 54 | `UITextBox` | pending |
-| 55 | `UIToggleImage` | pending |
-| 56 | `UIVerticalSeparator` | pending |
+| 54 | `UITextBox` | LANDED (`ui/text_box.rs::TextBox`, 20-unit cap + cursor clamp/Write-insert/Backspace-tail quirk + draw cursor-to-end pin + 21-of-40 ticker + caret offsets `UITextBox.cs:38-109`; keyboard write/caret halves pre-landed `keyboard.rs`; IME caller's seam) |
+| 55 | `UIToggleImage` | LANDED (`ui/images.rs::ToggleImage`, one-sheet on/off offsets + fixed draw size + White/Silver hover tint + LeftClick toggle `UIToggleImage.cs:26-70`; achievements filter draw pre-landed) |
+| 56 | `UIVerticalSeparator` | LANDED (`ui/chrome_elements.rs::VerticalSeparator`, OnePixel stretch ToRectangle + White ctor + never-hit + dead EdgeWidth `UIVerticalSeparator.cs:16-33`) |
 | 57 | `UIVerticalSlider` | pending |
 | 58 | `UIWorkshopImportWorldListItem` | pending |
 | 59 | `UIWorkshopPublishResourcePackListItem` | pending |
