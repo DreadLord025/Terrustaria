@@ -39317,3 +39317,23 @@ ride `DustPool::new_dust` (type 6 hits the `Dust.cs:214` tweak: +1
 `Next(-10,6)`); the post-spawn writes land on the sentinel included.
 The arm gates / isPerformingJump latch / sound / velocity writes are
 the movement lane's. 4 witnesses written, NOT run (code-only mode).
+
+## The player gore sites (W4-g17, wave B)
+
+`player_gore_b.rs`: `DashMovement`'s dash==1 visual tail
+(`Player.cs:21419-21434`) — 20 type-31 jitter dusts (the position
+`Next(-5,6)` ×2 + scale `Next(20)` post-rolls) then 2 `Next(61,64)`
+gores at centre-(24,34)/(24,14) whose velocity is OVERWRITTEN by
+`Next(-50,51)*0.01` per axis then ×0.4 (the kicks are discarded);
+`DoubleJumpVisuals`' sandstorm arm (`:21905-21926`) — 3 type-124 dusts
+scaled by `num4 = (jump/75 + 1)/2`, the `miscCounter % 3` gate (no
+draw) then ONE `Next(220,223)` gore with the velocity OVERWRITE
+`playerVel * 0.3 * num4` + alpha 100 (the reversed-gravity height pick
+is -6, and `num3 / 2` keeps C# int division); `UpdateHairDyeDust`
+(`:24268-24294`) — the `Next(45)` dust gate and the `Next(225)` gore
+gate ALWAYS draw (both ifs run unconditionally), the gore arm's
+argument order is Type → Position.X `Next(width)` → Position.Y
+`Next(8)`, then the six post rolls (X/Y multipliers, scale, X/Y adds)
++ the Y decrement + `vel*0.2`. The team-dye shader id resolves from
+item 1984 (`ID/ContentSamples.cs:19`); the gate itself is the
+caller's. 3 witnesses written, NOT run (code-only mode).
