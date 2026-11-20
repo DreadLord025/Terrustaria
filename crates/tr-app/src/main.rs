@@ -60,6 +60,7 @@ mod melee_swing;
 mod menu;
 mod minecart;
 mod mount;
+mod mount_dust;
 mod net;
 mod npc;
 mod npc_chat;
