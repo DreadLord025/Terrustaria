@@ -1399,6 +1399,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Floating Island Houses",
         step_floating_island_houses
     ),
+    // The vanilla Quick Cleanup slot (`WorldGen.cs:17875`): after Floating
+    // Island Houses (`:17859`), before Pots (`:17996`) — W4-g37 B6. Own
+    // `pass_rng("Quick Cleanup")` stream.
+    step!("quick cleanup", "Quick Cleanup", step_quick_cleanup),
     // The vanilla Remove Water From Sand / Shell Piles slots
     // (`WorldGen.cs:16211`, `:16266`): after the carve family, before Smooth
     // World (`:16419`) — the M5-OCEAN phase-4 insertion.
@@ -2721,6 +2725,36 @@ fn step_floating_island_houses(
     );
 }
 
+/// The vanilla Quick Cleanup slot (`WorldGen.cs:17875-17995`) — W4-g37 B6:
+/// the ocean/desert/slope cleanup sweep. Own `pass_rng("Quick Cleanup")`
+/// stream.
+fn step_quick_cleanup(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    let rock_layer = gv.layers().rock_layer;
+    let round_landmasses = opts
+        .micro_flags
+        .contains(crate::seeds::MicroSeedFlags::ROUND_LANDMASSES);
+    let dual_dungeons = opts
+        .micro_flags
+        .contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS);
+    let mut rng = streams.pass_rng("Quick Cleanup");
+    passes_b::pass_quick_cleanup(
+        world,
+        world_surface,
+        rock_layer,
+        round_landmasses,
+        dual_dungeons,
+        &mut rng,
+    );
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3312,8 +3346,9 @@ mod tests {
         // (vanilla "Water Chests", `:17245`) after `surface chests`. B4: +
         // `cave walls` (vanilla "Cave Walls", `:17711`) after `temple part 2`.
         // B5: + `floating island houses` (vanilla "Floating Island Houses",
-        // `:17859`) after `floating islands`.
-        assert_eq!(names.len(), 71);
+        // `:17859`) after `floating islands`. B6: + `quick cleanup` (vanilla
+        // "Quick Cleanup", `:17875`) after `floating island houses`.
+        assert_eq!(names.len(), 72);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3416,6 +3451,9 @@ mod tests {
                 // W4-g37 B5: the vanilla Floating Island Houses slot
                 // (`WorldGen.cs:17859`) follows Floating Islands.
                 "floating island houses",
+                // W4-g37 B6: the vanilla Quick Cleanup slot
+                // (`WorldGen.cs:17875`) follows Floating Island Houses.
+                "quick cleanup",
                 "remove water",
                 "shell piles",
                 "slopes",
@@ -3720,6 +3758,25 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Floating Islands") < cpos("Floating Island Houses"));
         assert!(cpos("Floating Island Houses") < cpos("Quick Cleanup"));
+    }
+
+    /// W4-g37 B6: `quick cleanup` sits after `floating island houses`, before
+    /// `pots` (the vanilla QuickCleanup anchor `WorldGen.cs:17875` precedes
+    /// Pots `:17996`).
+    #[test]
+    fn w4_g37_the_quick_cleanup_step_precedes_the_pots() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("quick cleanup"), pos("floating island houses") + 1);
+        assert!(pos("quick cleanup") < pos("pots"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Floating Island Houses") < cpos("Quick Cleanup"));
+        assert!(cpos("Quick Cleanup") < cpos("Pots"));
     }
 
     #[test]

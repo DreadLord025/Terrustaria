@@ -1912,3 +1912,153 @@ pub(crate) fn pass_floating_island_houses(
     }
     built
 }
+
+// --- B6: Quick Cleanup -------------------------------------------------------
+
+/// The `Quick Cleanup` pass (`WorldGen.cs:17875-17995`): the 20-margin sweep
+/// over the whole world — the ocean non-water → water retype, the ocean
+/// surface-sand column fill, the desert-wall (187/216) tile retype + liquid
+/// set, the surface-sand wall bleed, and the slope cleanup (the SaveSlopes /
+/// CanBeClearedDuringGeneration / platform arms). The notTheBees arm
+/// (`:17881-17884`) and the `tileSolid[137/130]` toggles (`:17885-17886`,
+/// `:17992-17993`) are special-seed / unmodelled (module-header deviation).
+pub(crate) fn pass_quick_cleanup(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    round_landmasses: bool,
+    dual_dungeons: bool,
+    rng: &mut Rng,
+) {
+    for i in 20..(world.width - 20) {
+        for j in 20..(world.height - 20) {
+            let ocean = ocean_depths(world, i, j, world_surface, rock_layer);
+            // `:17893-17896`: the ocean non-water liquid → water.
+            if ocean {
+                if let Some(t) = world.tile_mut(i, j) {
+                    if t.liquid > 0 && t.liquid_kind() != crate::tile::LiquidKind::Water {
+                        t.set_liquid_kind(crate::tile::LiquidKind::Water);
+                    }
+                }
+            }
+            // `:17897-17910`: the ocean surface-sand column fill.
+            let sand_top = (j as f64) < world_surface
+                && ocean
+                && !round_landmasses
+                && world.tile(i, j).is_some_and(|t| t.kind == 53 && t.active());
+            if sand_top {
+                if world.tile(i, j).is_some_and(|t| t.bottom_slope()) {
+                    if let Some(t) = world.tile_mut(i, j) {
+                        t.set_slope(0);
+                    }
+                }
+                let fill = rng.range(4, 7);
+                let mut k = j + 1;
+                while k < j + fill {
+                    let c1 = world.tile(i, k).is_some_and(|t| !t.active() || (t.kind != 397 && t.kind != 53));
+                    let c2 = world.tile(i, k + 1).is_some_and(|t| !t.active() || (t.kind != 397 && t.kind != 53 && t.kind != 495));
+                    let c3 = world.tile(i, k + 2).is_some_and(|t| !t.active() || (t.kind != 397 && t.kind != 53 && t.kind != 495));
+                    if !(c1 && c2 && c3) {
+                        break;
+                    }
+                    if let Some(t) = world.tile_mut(i, k) {
+                        t.kind = 0;
+                        t.flags |= FLAG_ACTIVE;
+                        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                        t.set_slope(0);
+                    }
+                    k += 1;
+                }
+            }
+            // `:17911-17933`: the desert-wall retype + liquid set.
+            let desert_wall = world.tile(i, j).is_some_and(|t| t.wall == 187 || t.wall == 216);
+            if desert_wall {
+                let kind = world.tile(i, j).map(|t| t.kind).unwrap_or(0);
+                if matches!(kind, 59 | 123 | 224 | 368 | 367) {
+                    if let Some(t) = world.tile_mut(i, j) {
+                        t.kind = 397;
+                    }
+                }
+                if !dual_dungeons {
+                    if (j as f64) <= rock_layer {
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.liquid = 0;
+                        }
+                    } else if world.tile(i, j).is_some_and(|t| t.liquid > 0) {
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.liquid = 255;
+                            t.set_liquid_kind(crate::tile::LiquidKind::Lava);
+                        }
+                    }
+                }
+            }
+            // `:17934-17957`: the surface-sand wall bleed.
+            let sand_bleed = (j as f64) < world_surface
+                && world.tile(i, j).is_some_and(|t| t.active() && t.kind == 53)
+                && world.tile(i, j + 1).map(|t| t.wall).unwrap_or(0) == 0
+                && !crate::edit::solid_tile(world, i, j + 1);
+            if sand_bleed {
+                let mut num: u16 = 0;
+                'bleed: for l in (i - 3)..=(i + 3) {
+                    for m in (j - 3)..=(j + 3) {
+                        let w = world.tile(l, m).map(|t| t.wall).unwrap_or(0);
+                        if w > 0 {
+                            num = w;
+                            break 'bleed;
+                        }
+                    }
+                }
+                if num > 0 {
+                    if let Some(t) = world.tile_mut(i, j + 1) {
+                        t.wall = num;
+                    }
+                    if world.tile(i, j).map(|t| t.wall).unwrap_or(0) == 0 {
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.wall = num;
+                        }
+                    }
+                }
+            }
+            // `:17958-17989`: the slope cleanup.
+            let t = world.tile(i, j).copied().unwrap_or_default();
+            if !t.active() || !td::SET_SAVE_SLOPES.has(t.kind) {
+                if let Some(tt) = world.tile_mut(i, j) {
+                    tt.set_slope(0);
+                    tt.flags &= !crate::tile::FLAG_HALF_BRICK;
+                }
+            } else if !td::SET_PLATFORMS.has(t.kind)
+                && td::SET_CAN_BE_CLEARED_DURING_GENERATION.has(t.kind)
+            {
+                if t.top_slope() || t.half_brick() {
+                    if t.kind != 225 || !t.half_brick() {
+                        if !crate::edit::solid_tile(world, i, j + 1) {
+                            if let Some(tt) = world.tile_mut(i, j) {
+                                tt.flags &= !FLAG_ACTIVE;
+                            }
+                        }
+                        let dart_near = world.tile(i + 1, j).map(|x| x.kind).unwrap_or(0) == 137
+                            || world.tile(i - 1, j).map(|x| x.kind).unwrap_or(0) == 137;
+                        if dart_near {
+                            if let Some(tt) = world.tile_mut(i, j) {
+                                tt.flags &= !FLAG_ACTIVE;
+                            }
+                        }
+                    }
+                } else if t.bottom_slope() {
+                    if !crate::edit::solid_tile(world, i, j - 1) {
+                        if let Some(tt) = world.tile_mut(i, j) {
+                            tt.flags &= !FLAG_ACTIVE;
+                        }
+                    }
+                    let dart_near = world.tile(i + 1, j).map(|x| x.kind).unwrap_or(0) == 137
+                        || world.tile(i - 1, j).map(|x| x.kind).unwrap_or(0) == 137;
+                    if dart_near {
+                        if let Some(tt) = world.tile_mut(i, j) {
+                            tt.flags &= !FLAG_ACTIVE;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

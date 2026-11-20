@@ -270,6 +270,28 @@ Traps, Final Cleanup.
   became faithful); deferred; `a == b` untouched.
 - **Verification**: code-only — witnesses written, not run.
 
+## B6 Quick Cleanup — landing notes (this commit)
+
+- **Pass body** `WorldGen.cs:17875-17995` → `passes_b.rs::pass_quick_cleanup`.
+  The 20-margin sweep: the ocean non-water→water retype (`:17893-17896`); the
+  ocean surface-sand column fill (`:17897-17910`, the `bottomSlope` clear, the
+  `Next(4,7)` budget, the 397/53/495 stop conditions on k/k+1/k+2); the
+  desert-wall 187/216 retype (59/123/224/368/367→397) + the `rockLayer` liquid
+  clear / lava-255 set (`:17911-17933`, the dualDungeons gate); the
+  surface-sand ±3 wall bleed (`:17934-17957`); the slope cleanup
+  (`:17958-17989`, the `SaveSlopes`/`CanBeClearedDuringGeneration`/platform
+  arms + the 137 dart-trap deactivation + the 225-halfBrick exemption).
+- **Deviations**: the notTheBees arm (`:17881-17884`) is a special seed
+  (deferred); the `tileSolid[137/130]` toggles (`:17885-17886`, `:17992-17993`)
+  are unmodelled (static `td::TILE_SOLID`); the `roundLandmasses` gate reads
+  the micro flag.
+- **Pipeline**: `step!("quick cleanup", …)` after `floating island houses`,
+  before `pots`; count 71→72; witness
+  `w4_g37_the_quick_cleanup_step_precedes_the_pots`; progress
+  `Key("WorldGeneration.QuickCleanup")` (`:17879`).
+- **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.
+- **Verification**: code-only — witnesses written, not run.
+
 ## Landing ledger
 
 | pass | commit | status |
@@ -280,8 +302,8 @@ Traps, Final Cleanup.
 | B2 Surface Chests | 1cf9f0f1 | ported — witnesses written not run |
 | B3 Water Chests | 4c58c56c | ported — witnesses written not run |
 | B4 Cave Walls | ef7c9f76 | ported — witnesses written not run |
-| B5 Floating Island Houses | (this commit) | ported — witnesses written not run |
-| B6 Quick Cleanup | — | pending |
+| B5 Floating Island Houses | 3d74564e | ported — witnesses written not run |
+| B6 Quick Cleanup | (this commit) | ported — witnesses written not run |
 | B7 Hellforge | — | pending |
 | B8 Spreading Grass | — | pending |
 | B9 Surface Ore and Stone | — | pending |
