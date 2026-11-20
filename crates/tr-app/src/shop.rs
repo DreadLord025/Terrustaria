@@ -474,6 +474,28 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // port's town count reads the Angler's presence.
             row(2295, StockWhen::MoonPhaseOdd),
         ],
+        // Santa Claus's shop (index 9, `Chest.cs:2091-2111`, the registry
+        // `NPCInteractions.Shop(142, 9)`, `NPCInteractions.cs:496` —
+        // `NPCID.SantaClaus = 142`, `NPCID.cs:10961`): the six always rows
+        // — the Santa set 588/589/590 + the coloured lights 597/598/596
+        // (`ItemID.cs:2859-2879`) — then the `for (int m = 1873;
+        // m < 1906; m++)` walk (`:2105-2109`): the 33 Christmas-decoration
+        // rows 1873..=1905 (`ItemID.cs:5429-5493`), no gates at all.
+        9 => {
+            let mut rows = vec![
+                row(588, StockWhen::Always),
+                row(589, StockWhen::Always),
+                row(590, StockWhen::Always),
+                row(597, StockWhen::Always),
+                row(598, StockWhen::Always),
+                row(596, StockWhen::Always),
+            ];
+            // `:2105-2109`: `m < 1906` — the last decoration is 1905.
+            for m in 1873u16..1906 {
+                rows.push(row(m, StockWhen::Always));
+            }
+            rows
+        }
         // The Dye Trader's shop (index 12, `Chest.cs:case 12`): the two
         // always rows, the halloween rows (constants-off), the day/night
         // moon-phase 0 pair, the blood-moon-night row and the graveyard
@@ -2174,8 +2196,30 @@ mod town5_tests {
         }
         // The hardmode rows stay out (the constants-off gates).
         assert!(!base.contains(&746));
-        // The unknown index stays empty.
-        assert!(resolve_stock_moon(9, &ShopFlags::default(), &[], 0).is_empty());
+        // The unknown index stays empty (Santa's 9 now carries stock).
+        assert!(resolve_stock_moon(26, &ShopFlags::default(), &[], 0).is_empty());
+    }
+
+    /// W4-d122 shop 9 — Santa Claus (`Chest.cs:2091-2111`, the registry
+    /// `NPCInteractions.Shop(142, 9)`, `NPCInteractions.cs:496`): the six
+    /// head rows then the 1873..=1905 decoration walk, EVERY row
+    /// unconditioned — the flags cannot change the stock. Written, not
+    /// run (code-only).
+    #[test]
+    fn the_santa_stock_is_the_santa_heads_plus_the_decoration_walk() {
+        let stock = resolve_stock(9, &ShopFlags::default(), &[]);
+        let mut expect: Vec<u16> = vec![588, 589, 590, 597, 598, 596];
+        expect.extend(1873u16..1906); // `:2105`'s `m < 1906` — 33 rows
+        assert_eq!(stock, expect, "the exact num order (`:2093-2109`)");
+        assert_eq!(stock.len(), 39);
+        // The gates are all Always — hardmode/night/blood-moon change nothing.
+        let loud = ShopFlags {
+            hard_mode: true,
+            night: true,
+            blood_moon: true,
+            ..Default::default()
+        };
+        assert_eq!(resolve_stock(9, &loud, &[]), expect);
     }
 }
 
