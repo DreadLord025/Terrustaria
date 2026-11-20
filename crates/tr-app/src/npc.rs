@@ -4718,6 +4718,18 @@ impl Npc {
             // (`world_sim/npcs.rs`), `expert = false` keeps the classic
             // solo seam (the style-11 claim's precedent).
             12 => self.update_skeletron_hand(world, player, false),
+            // `if (this.aiStyle == 14)` (`NPC.cs:22849-23486`) — the
+            // flyer family: the port's four kinds CaveBat 49 /
+            // JungleBat 51 / Hellbat 60 / VoodooDemon 66 (the module's
+            // 17-type census covers the rest as cited skips). W4-d23
+            // verify-only census: the landed S1-D-3 bat/fish reconcile
+            // (`update_cave_bat` → `npc_ai_style14::bat_ai`, the W44
+            // audit verdict FAITHFUL — the ungated second generic
+            // pass, the Hellbat's own arm, the X-before-Y shot draws,
+            // the short-circuit Next(300)) is unchanged; the axis
+            // claims the style now, the kind arm becomes the
+            // unreachable marker.
+            14 => self.update_cave_bat(world, player, rng),
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -6148,10 +6160,12 @@ impl Npc {
             // with a type-specific shadowflame machine, not aiStyle 8 caster.
             NpcKind::GoblinSummoner => self.update_goblin_summoner(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
-                // S1-D-3 reconcile: the four kinds ride the faithful
-                // aiStyle-14 machine (`npc_ai_style14::bat_ai`,
-                // `NPC.cs:22849-23486`) — the hash-jitter stand-in retired.
-                self.update_cave_bat(world, player, rng)
+                // W4-d23 axis census: the four bats/demons (aiStyle 14)
+                // ride the style axis above (`14 => update_cave_bat`)
+                // — this arm is unreachable through `update_rng` (the
+                // S1-D-2 axis precedent). The machine itself
+                // (`npc_ai_style14::bat_ai`) is unchanged.
+                unreachable!("aiStyle 14 rides the style axis (W4-d23)")
             }
             // S1-D-2: the aiStyle-5 hover family (6/42/23/5) rides the
             // style axis (`ai_005_hover_family`) — these arms are unreachable
@@ -33937,5 +33951,139 @@ mod w4_d23_style12_census_tests {
         assert_eq!(hand.hp, 0, "the SP death (:22306-22310)");
         assert_eq!(hand.sprite_dir, -1, "the pin still runs (:22302)");
         assert_eq!(rng, UnifiedRandom::new(15), "the cascade draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d23 — the aiStyles 9-14 axis census witnesses (style 14 slice).
+// WRITTEN, NOT RUN (code-only mode). 14 bat family LANDED + WIRED (the
+// S1-D-3 bat/fish reconcile, `update_cave_bat` -> `npc_ai_style14::
+// bat_ai`, the W44 audit verdict FAITHFUL) -> verify-only axis claim
+// here; the machine is unchanged.
+// =====================================================================
+#[cfg(test)]
+mod w4_d23_style14_census_tests {
+    use super::*;
+
+    /// The axis claims style 14 exactly once, and the four-kind bat arm
+    /// is the unreachable marker (the S1-D-2 convention).
+    #[test]
+    fn w4_d23_the_axis_claims_style_14_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "14" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 14 claimed once");
+        assert!(src.contains("aiStyle 14 rides the style axis (W4-d23)"));
+    }
+
+    /// The 14 claim is LIVE and draw-free for the bat kinds: one full
+    /// `update_rng` tick on the dry CaveBat runs the reconcile machine
+    /// — TargetClosest (`NPC.cs:22897`), the generic approach TWICE
+    /// (the ungated second pass, `:23116-23182` + `:23265-23331`: two
+    /// -0.1 X passes, two -0.04 Y passes), the drift tick, and the
+    /// FindFrame tilt — and consumes NO rand (the bats have no shot
+    /// arm; the player parks clear of the contact box).
+    #[test]
+    fn w4_d23_the_cave_bat_rides_the_14_axis_draw_free() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 900.0;
+        p.y = 900.0;
+        p.dead = false;
+        let mut bat = Npc::new(NpcKind::CaveBat, 1000.0, 1000.0, 1, 0.0);
+        bat.hp = bat.max_hp;
+        let mut rng = UnifiedRandom::new(14);
+        bat.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(bat.target, 0, "TargetClosest ran (:22897)");
+        assert_eq!(bat.facing, -1, "the player sits left");
+        assert!((bat.vx - -0.2).abs() < 1e-5, "the twice-run X approach");
+        assert!((bat.vy - -0.08).abs() < 1e-5, "the twice-run Y approach");
+        assert_eq!(bat.ai[1], 1.0, "the drift tick (:23356)");
+        assert!(bat.wants_hostile_shot.is_empty(), "the CaveBat never shoots");
+        assert_eq!(rng, UnifiedRandom::new(14), "the bat tick draws nothing");
+    }
+
+    /// The VoodooDemon's shot tick through the axis: ai[0] 19 -> 20
+    /// (`NPC.cs:23440`), CanHit passes in the open air, EXACTLY two
+    /// `Next(-100, 101)` draws (X then Y, `:23446-23447`), the type-44
+    /// damage-21 request at the AI-time centre. The manual replay on a
+    /// cloned stream reproduces the 0.2-scale aim bit-for-bit.
+    #[test]
+    fn w4_d23_the_voodoo_demon_shot_draws_x_then_y_through_the_axis() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 1100.0;
+        p.y = 1000.0;
+        p.dead = false;
+        let mut vd = Npc::new(NpcKind::VoodooDemon, 1000.0, 1000.0, 1, 0.0);
+        vd.hp = vd.max_hp;
+        vd.ai[0] = 19.0;
+        let (cx, cy) = vd.center();
+        let mut rng = UnifiedRandom::new(12345);
+        let mut witness = UnifiedRandom::new(12345);
+        vd.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(vd.wants_hostile_shot.len(), 1, "the sickle drained");
+        let (kind, sx, sy, svx, svy, dmg) = vd.wants_hostile_shot[0];
+        assert_eq!(kind, crate::projectile::DEMON_SICKLE, "type 44 (:23449)");
+        assert_eq!(dmg, 21, "damage 21 (:23449)");
+        assert_eq!((sx, sy), (cx, cy), "spawned at the centre (:23445)");
+        let dx = 1100.0 + 10.0 - cx + witness.next_range(-100, 101) as f32;
+        let dy = 1000.0 + 21.0 - cy + witness.next_range(-100, 101) as f32;
+        let s = 0.2f32 / (dx * dx + dy * dy).sqrt();
+        assert_eq!((svx, svy), (dx * s, dy * s), "the 0.2-normalised jittered aim");
+        assert_eq!(rng, witness, "exactly two draws, X then Y");
+    }
+
+    /// The reset-roll census (`NPC.cs:23453-23456`): on a non-shot tick
+    /// past ai[0] 300 with the firing-distance flag holding, the arm
+    /// draws ONE `Next(300)`; the `&&` short-circuit means a
+    /// below-threshold tick draws NOTHING. Both pins ride the axis.
+    #[test]
+    fn w4_d23_the_demon_reset_roll_census() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 1100.0;
+        p.y = 1000.0;
+        p.dead = false;
+        // ai[0] 299 -> 300: not a shot value, flag24 holds (the centres
+        // are ~100 px apart), 300 >= 300 + Next(300) only when the roll
+        // is 0 — pin the DRAW itself (one Next(300), whatever it rolls).
+        let mut vd = Npc::new(NpcKind::VoodooDemon, 1000.0, 1000.0, 1, 0.0);
+        vd.hp = vd.max_hp;
+        vd.ai[0] = 299.0;
+        let mut rng = UnifiedRandom::new(7);
+        let mut mirror = UnifiedRandom::new(7);
+        let roll = mirror.next_max(300);
+        vd.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, mirror, "exactly ONE Next(300) on the reset tick");
+        if roll == 0 {
+            assert_eq!(vd.ai[0], 0.0, "the 0 roll resets (:23455)");
+        } else {
+            assert_eq!(vd.ai[0], 300.0, "a non-zero roll keeps the counter");
+        }
+        // Below the threshold the short-circuit skips the draw.
+        let mut vd2 = Npc::new(NpcKind::VoodooDemon, 1000.0, 1000.0, 1, 0.0);
+        vd2.hp = vd2.max_hp;
+        vd2.ai[0] = 99.0; // -> 100, < 300: no draw
+        let mut rng2 = UnifiedRandom::new(8);
+        vd2.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng2);
+        assert_eq!(vd2.ai[0], 100.0);
+        assert_eq!(rng2, UnifiedRandom::new(8), "the short-circuit draws nothing");
     }
 }
