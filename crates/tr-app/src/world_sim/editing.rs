@@ -5810,6 +5810,28 @@ pub(crate) struct DropCtx {
     pub zone_glowshroom: bool,
 }
 
+/// Resolves the `DelWater`/`WaterCheck` retirement-tail kills
+/// (`LiquidSystem::drain_edit_kills`) into item drops — the C# spawns them
+/// inline under the `UpdateLiquid` RNG swap (`WorldGen.cs:71529`), so the
+/// rolls ride the `UpdateLiquid` stream. No hit cell (the kills are the
+/// `Check*` cascade records, not a player break), no staff/axe bonus.
+pub(crate) fn resolve_liquid_edit_kills(app: &mut App, kills: Vec<edit::TileKill>) {
+    if kills.is_empty() {
+        return;
+    }
+    let ctx = drop_ctx(app);
+    for kill in &kills {
+        let (drops, _portals) = {
+            let main_rng = app.rngs.stream(crate::app::RngKey::UpdateLiquid);
+            break_drop_events(kill, &app.world, None, false, 0, main_rng, &ctx)
+        };
+        for (id, count, x, y) in drops {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateLiquid);
+            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, count, x, y);
+        }
+    }
+}
+
 /// Builds [`DropCtx`] from the app state at the break moment.
 fn drop_ctx(app: &App) -> DropCtx {
     let (player_hurt, torches) = match &app.player {

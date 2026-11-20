@@ -90,6 +90,17 @@ pub struct LiquidSystem {
     /// self-clear (`:1136-1141`) — it disables `DelWater`'s keep-alive
     /// branch (`:1506`) so the pathological pool empties itself.
     stuck: bool,
+    /// `Liquid.panicCounter` (`Liquid.cs:39`): consecutive updates whose
+    /// overflow buffer sits at ≥ 90% of `maxLiquidBuffer` (`:1009-1020`);
+    /// past 3600 the pass starts the panic force-settle.
+    panic_counter: i32,
+    /// `Liquid.panicMode` (`Liquid.cs:41`): the force-settle is running —
+    /// the pass walks `QuickWater` rows from `panic_y` down instead of the
+    /// cellular update (`:1022-1054`).
+    panic_mode: bool,
+    /// `Liquid.panicY` (`Liquid.cs:43`): the next row the panic settle
+    /// walks (five rows per update, bottom-up).
+    panic_y: i32,
     /// The `WorldGen.PlayLiquidChangeSound` events (`Liquid.cs:1345-1347`,
     /// S1-E-25): one row per live-game merge tile — `(kind, x, y)` in tile
     /// coordinates, drained by the audio caller after the pass. The C# plays
@@ -164,6 +175,71 @@ impl LiquidSystem {
         self.quick_settle = quick_settle;
     }
 
+    /// `Liquid.ReInit` (`Liquid.cs:83-102`) — the world-load reset: every
+    /// cadence/stuck/panic counter back to zero, the window and cycles to
+    /// the stock defaults, the active list emptied. The port's per-tile
+    /// `checkingLiquid`/`skipLiquid` bits clear with the list (the C#
+    /// leaves them on the tiles, but `WaterCheck` — the load tail — wipes
+    /// them across the grid, so the combined load sequence matches).
+    pub fn re_init(&mut self) {
+        self.stuck_count = 0;
+        self.stuck_amount = 0;
+        self.cycles = CYCLES;
+        self.cur_max_liquid = MAX_ACTIVE;
+        self.active.clear();
+        self.checking.iter_mut().for_each(|w| *w = 0);
+        self.skip.iter_mut().for_each(|w| *w = 0);
+        self.buffer.clear();
+        self.stuck = false;
+        self.quick_fall = false;
+        self.quick_settle = false;
+        self.wet_counter = 0;
+        self.panic_counter = 0;
+        self.panic_mode = false;
+        self.panic_y = 0;
+    }
+
+    /// `Liquid.StartPanic` (`Liquid.cs:966-981`) — the overflow buffer
+    /// stayed ≥ 90% full for 3600 updates: drop the cellular lists, raise
+    /// `panicMode` and start the force-settle at the bottom row. The C#
+    /// also pins `GenVars.waterLine = maxTilesY` (the gen-only settle
+    /// re-type reads it); the port's runtime settle never re-types, so the
+    /// pin has no runtime consumer.
+    fn start_panic(&mut self) {
+        if !self.panic_mode {
+            self.active.clear();
+            self.checking.iter_mut().for_each(|w| *w = 0);
+            self.buffer.clear();
+            self.panic_counter = 0;
+            self.panic_mode = true;
+            self.panic_y = self.height - 3;
+        }
+    }
+
+    /// The world-load settle (`IO/WorldFile.cs:733-764`): `QuickWater`
+    /// drains the grid, `WaterCheck` re-wakes the flow cells, then the
+    /// `quickSettle` drain walks `UpdateLiquid` until the lists empty
+    /// (capped at 100 000 calls), and a final `WaterCheck` settles the
+    /// remainder. The generation-only `ShimmerRemoveWater`/boulder arms
+    /// inside `QuickWater` stay with the unported gen passes.
+    ///
+    /// NOT wired into the load path yet: running it changes every saved
+    /// world's liquid bytes, so the save/load round-trip pins need a
+    /// deliberate re-derivation first (ANALYSIS, W4-g47).
+    pub fn settle_loaded_world(&mut self, world: &mut World) {
+        self.re_init();
+        self.quick_water(world, -1, -1);
+        self.water_check(world);
+        self.quick_settle = true;
+        let mut calls = 0;
+        while !self.active.is_empty() && calls < 100_000 {
+            calls += 1;
+            self.update(world);
+        }
+        self.quick_settle = false;
+        self.water_check(world);
+    }
+
     pub fn new(world: &World) -> Self {
         let bits = world.tiles.len().div_ceil(64);
         Self {
@@ -183,6 +259,9 @@ impl LiquidSystem {
             stuck_count: 0,
             stuck_amount: 0,
             stuck: false,
+            panic_counter: 0,
+            panic_mode: false,
+            panic_y: 0,
             remix_world_gen: false,
             merge_events: Vec::new(),
             edit_kills: Vec::new(),
@@ -315,6 +394,39 @@ impl LiquidSystem {
         // one arm here is the same state).
         self.ignore_solids = true;
         self.bubble_solid = true;
+        // `Liquid.cs:1005-1054` — the runtime panic gate (the port's sim
+        // never runs under generation, so `!isGeneratingOrLoadingWorld`
+        // holds): an overflow buffer at ≥ 90% of maxLiquidBuffer for
+        // 3600 consecutive updates starts the force-settle; while
+        // panicMode is up the pass walks five QuickWater rows bottom-up
+        // and returns (the cellular update is skipped).
+        if !self.panic_mode {
+            if self.buffer.len() as f64 >= MAX_BUFFER as f64 * 0.9 {
+                self.panic_counter += 1;
+                if self.panic_counter > 3600 {
+                    self.start_panic();
+                }
+            } else {
+                self.panic_counter = 0;
+            }
+        }
+        if self.panic_mode {
+            let mut rows = 0;
+            while self.panic_y >= 3 && rows < 5 {
+                rows += 1;
+                self.quick_water(world, self.panic_y, self.panic_y);
+                self.panic_y -= 1;
+                if self.panic_y < 3 {
+                    // `:1034-1037` — the settle finished: drop the mode
+                    // and re-scan the grid (WaterCheck).
+                    self.panic_counter = 0;
+                    self.panic_mode = false;
+                    self.water_check(world);
+                }
+            }
+            self.ignore_solids = false;
+            return;
+        }
         // `Liquid.cs:1056-1068` — the pass head derives `quickFall` from
         // `quickSettle` every call. (The `Setting_UseReducedMaxLiquids`
         // `numLiquid > 2000` OR-arm lands with the reduced-liquids field.)
@@ -1204,6 +1316,281 @@ fn set_kind(t: &mut Tile, code: u8) {
 /// the nine boulder kinds the liquid pass strips (`Liquid.tilesIgnoreWater`
 /// calls it alongside the grate 546).
 const BOULDER_SOLIDS: [u16; 9] = [138, 484, 664, 711, 712, 713, 714, 715, 716];
+
+impl LiquidSystem {
+    /// `Liquid.QuickWater` (`Liquid.cs:104-148`) — the bulk "settle this
+    /// rectangle": walk the rows bottom-up and settle every wet cell. The
+    /// generation-only arms (`ShimmerRemoveWater`, the noTraps boulder
+    /// swap, `LiquidInteractionsCleanup`) stay with the unported gen
+    /// passes; the runtime/panic settle runs the solid core. `verbose` is
+    /// the progress-display parameter (no port consumer).
+    pub fn quick_water(&mut self, world: &mut World, min_y: i32, max_y: i32) {
+        self.bubble_solid = true;
+        self.ignore_solids = true;
+        let min_y = if min_y == -1 { 3 } else { min_y };
+        let max_y = if max_y == -1 { self.height - 3 } else { max_y };
+        for y in (min_y..=max_y).rev() {
+            for x in 4..self.width - 4 {
+                if world.tile(x, y).is_some_and(|t| t.liquid != 0) {
+                    self.settle_water_at(world, x, y);
+                }
+            }
+        }
+        self.ignore_solids = false;
+    }
+
+    /// `Liquid.SettleWaterAt` (`Liquid.cs:150-289`) — drain one cell's
+    /// liquid straight down, then spread it across the row it lands on,
+    /// repeating until the mass is placed. The generation-only re-type
+    /// arms (`:178-192`, the waterLine/lavaLine/dungeon reads) stay with
+    /// the unported gen passes — the runtime settle keeps the origin's
+    /// type. The landing cell's merge checks run through the three
+    /// `AttemptToMove*` helpers.
+    fn settle_water_at(&mut self, world: &mut World, origin_x: i32, origin_y: i32) {
+        self.ignore_solids = true;
+        let Some(origin) = world.tile(origin_x, origin_y).copied() else {
+            self.ignore_solids = false;
+            return;
+        };
+        if origin.liquid == 0 || (origin.active() && origin.kind == 379) {
+            self.ignore_solids = false;
+            return;
+        }
+        let mut x = origin_x;
+        let mut y = origin_y;
+        let had_lava = origin.liquid_kind() == LiquidKind::Lava;
+        let had_honey = origin.liquid_kind() == LiquidKind::Honey;
+        let had_shimmer = origin.liquid_kind() == LiquidKind::Shimmer;
+        let mut mass = origin.liquid as i32;
+        let kind = kind_code(origin.liquid_kind());
+        let oi = world.index(origin_x, origin_y);
+        world.tiles[oi].liquid = 0;
+        let mut first_drop = true;
+        loop {
+            // `:169-177` — fall through the empty open cells below.
+            while y < self.height - 5 {
+                let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                if below.liquid == 0 && self.tile_open(&below) {
+                    y += 1;
+                    first_drop = false;
+                } else {
+                    break;
+                }
+            }
+            // `:193-272` — the row spread: alternate left/right from the
+            // landing column, topping up same-type non-full cells below
+            // and stopping at walls / wet cells.
+            let mut dir = -1i32;
+            let mut step = 0i32;
+            let mut last_dir = -1i32;
+            let mut last_step = 0i32;
+            let mut hit_right = false;
+            let mut hit_left = false;
+            let mut can_fall = false;
+            loop {
+                let cx = x + step * dir;
+                let cell = world.tile(cx, y).copied().unwrap_or_default();
+                if cell.liquid == 0 {
+                    last_dir = dir;
+                    last_step = step;
+                }
+                if dir == -1 && cx < 5 {
+                    hit_left = true;
+                } else if dir == 1 && cx > self.width - 5 {
+                    hit_right = true;
+                }
+                let below = world.tile(cx, y + 1).copied().unwrap_or_default();
+                if below.liquid != 0
+                    && below.liquid != 255
+                    && kind_code(below.liquid_kind()) == kind
+                {
+                    let mut take = 255 - below.liquid as i32;
+                    if take > mass {
+                        take = mass;
+                    }
+                    let j = world.index(cx, y + 1);
+                    world.tiles[j].liquid += take as u8;
+                    world.mark_chunk(cx, y + 1);
+                    mass -= take;
+                    if mass == 0 {
+                        break;
+                    }
+                }
+                if y < self.height - 5 && below.liquid == 0 && self.tile_open(&below) {
+                    can_fall = true;
+                    break;
+                }
+                let next = world.tile(x + (step + 1) * dir, y).copied().unwrap_or_default();
+                if (next.liquid != 0 && (!first_drop || dir != 1))
+                    || (next.active() && self.kind_solid(next.kind) && !td::TILE_SOLID_TOP.has(next.kind))
+                {
+                    if dir == 1 {
+                        hit_right = true;
+                    } else {
+                        hit_left = true;
+                    }
+                }
+                if hit_left && hit_right {
+                    break;
+                }
+                if hit_right {
+                    dir = -1;
+                    step += 1;
+                } else if hit_left {
+                    if dir == 1 {
+                        step += 1;
+                    }
+                    dir = 1;
+                } else {
+                    if dir == 1 {
+                        step += 1;
+                    }
+                    dir = -dir;
+                }
+            }
+            x += last_step * last_dir;
+            if mass == 0 || !can_fall {
+                break;
+            }
+            y += 1;
+        }
+        // `:280-287` — place the remaining mass and run the merge checks.
+        let li = world.index(x, y);
+        world.tiles[li].liquid = mass as u8;
+        set_kind(&mut world.tiles[li], kind);
+        world.mark_chunk(x, y);
+        self.dirty = true;
+        if world.tiles[li].liquid > 0 {
+            self.attempt_to_move_lava(world, x, y, had_lava);
+            self.attempt_to_move_honey(world, x, y, had_honey);
+            self.attempt_to_move_shimmer(world, x, y, had_shimmer);
+        }
+        self.ignore_solids = false;
+    }
+
+    /// `Liquid.AttemptToMoveLava` (`Liquid.cs:339-385`) — the landing
+    /// cell's lava merge check against the first different-type
+    /// neighbour in left/right/up/down order.
+    fn attempt_to_move_lava(&mut self, world: &mut World, x: i32, y: i32, had_lava: bool) {
+        for (nx, ny) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
+            let t = world.tile(nx, ny).copied().unwrap_or_default();
+            if t.liquid > 0 && (t.liquid_kind() == LiquidKind::Lava) != had_lava {
+                if had_lava {
+                    self.lava_check(world, x, y);
+                } else {
+                    self.lava_check(world, nx, ny);
+                }
+                return;
+            }
+        }
+    }
+
+    /// `Liquid.AttemptToMoveHoney` (`Liquid.cs:291-337`).
+    fn attempt_to_move_honey(&mut self, world: &mut World, x: i32, y: i32, had_honey: bool) {
+        for (nx, ny) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
+            let t = world.tile(nx, ny).copied().unwrap_or_default();
+            if t.liquid > 0 && (t.liquid_kind() == LiquidKind::Honey) != had_honey {
+                if had_honey {
+                    self.honey_check(world, x, y);
+                } else {
+                    self.honey_check(world, nx, ny);
+                }
+                return;
+            }
+        }
+    }
+
+    /// `Liquid.AttemptToMoveShimmer` (`Liquid.cs:387-433`).
+    fn attempt_to_move_shimmer(&mut self, world: &mut World, x: i32, y: i32, had_shimmer: bool) {
+        for (nx, ny) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
+            let t = world.tile(nx, ny).copied().unwrap_or_default();
+            if t.liquid > 0 && (t.liquid_kind() == LiquidKind::Shimmer) != had_shimmer {
+                if had_shimmer {
+                    self.shimmer_check(world, x, y);
+                } else {
+                    self.shimmer_check(world, nx, ny);
+                }
+                return;
+            }
+        }
+    }
+
+    /// `WorldGen.WaterCheck` (`WorldGen.cs:80415-80494`) — the post-settle
+    /// grid scan: drop the cellular lists, wipe `checkingLiquid`, zero the
+    /// liquid inside solid tiles (the bubble 379 keeps its own), kill the
+    /// liquid-death objects, and re-wake every cell that can still flow.
+    /// The liquid-death kills ride the `edit_kills` seam.
+    pub fn water_check(&mut self, world: &mut World) {
+        self.ignore_solids = true;
+        self.active.clear();
+        self.buffer.clear();
+        for x in 1..self.width - 1 {
+            for y in (1..self.height - 1).rev() {
+                self.set_checking(x, y, false);
+                let i = world.index(x, y);
+                let t = world.tiles[i];
+                if t.liquid == 0 {
+                    continue;
+                }
+                if crate::tileobject::nactive(&t)
+                    && self.kind_solid(t.kind)
+                    && !td::TILE_SOLID_TOP.has(t.kind)
+                {
+                    // `:80426-80432` — liquid inside a solid tile zeroes
+                    // (the bubble 379 keeps its own).
+                    if t.kind != 379 {
+                        world.tiles[i].liquid = 0;
+                        world.mark_chunk(x, y);
+                    }
+                } else {
+                    // `:80433-80490` — the open-cell arm.
+                    // `:80435-80448` — the liquid-death object kill.
+                    if t.active() {
+                        let dies = if t.liquid_kind() == LiquidKind::Lava {
+                            crate::tileobject::check_lava_death(&t)
+                        } else {
+                            crate::tileobject::check_water_death(&t)
+                        };
+                        if dies {
+                            if let Some(kill) = crate::edit::kill_tile(world, x, y, false) {
+                                self.edit_kills.push(kill);
+                            }
+                        }
+                    }
+                    // `:80449-80489` — the wake arms.
+                    let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                    if self.tile_open(&below) && below.liquid < 255 {
+                        if below.liquid > 250 {
+                            let j = world.index(x, y + 1);
+                            world.tiles[j].liquid = 255;
+                            world.mark_chunk(x, y + 1);
+                        } else {
+                            self.add_water(world, x, y);
+                        }
+                    }
+                    let left = world.tile(x - 1, y).copied().unwrap_or_default();
+                    let right = world.tile(x + 1, y).copied().unwrap_or_default();
+                    if self.tile_open(&left) && left.liquid != t.liquid {
+                        self.add_water(world, x, y);
+                    } else if self.tile_open(&right) && right.liquid != t.liquid {
+                        self.add_water(world, x, y);
+                    }
+                    if t.liquid_kind() == LiquidKind::Lava {
+                        let up = world.tile(x, y - 1).copied().unwrap_or_default();
+                        if (left.liquid > 0 && left.liquid_kind() != LiquidKind::Lava)
+                            || (right.liquid > 0 && right.liquid_kind() != LiquidKind::Lava)
+                            || (up.liquid > 0 && up.liquid_kind() != LiquidKind::Lava)
+                            || (below.liquid > 0 && below.liquid_kind() != LiquidKind::Lava)
+                        {
+                            self.add_water(world, x, y);
+                        }
+                    }
+                }
+            }
+        }
+        self.ignore_solids = false;
+    }
+}
 
 impl LiquidSystem {
     /// `Main.tileSolid[type] && !Main.tileSolidTop[type]` on a `nactive()`
@@ -2200,33 +2587,28 @@ mod liquid_settle {
 
     #[test]
     fn the_retirement_sweep_promotes_254_before_delwater() {
-        // `Liquid.cs:942-952` + `:1113-1116`: the row arm averages a 255
-        // cell with its 253 neighbour to 254 — the 255→254 settle step
-        // counts a kill pass, and every later unchanged walk counts
-        // another. On the eighth walk the sweep promotes the 254 to 255
-        // BEFORE DelWater reads it; the neighbour retires one walk later.
+        // `Liquid.cs:1113-1116`: a retired cell sitting at 254 becomes
+        // 255 first. A 254 cell directly over the floor in a sealed cup
+        // is static (the fall sees a solid below, the row arms see
+        // walls), so eight unchanged walks retire it and the sweep's
+        // promotion lands before DelWater reads it.
         let mut w = basin(9, 8);
-        // A sealed 2-wide cup: walls at x=2/5 up to y=7, floor at y=8.
+        // A sealed 1-wide cup: walls at x=3/5 up to y=7, floor at y=8.
         for y in 0..8 {
-            for x in [2, 5] {
+            for x in [3, 5] {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile { kind: 1, ..Default::default() };
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
-        put_as(&mut w, 4, 7, 255, 0);
-        put_as(&mut w, 3, 7, 253, 0);
+        put_as(&mut w, 4, 7, 254, 0);
         let mut sys = LiquidSystem::new(&w);
         sys.add_water(&w, 4, 7);
         for _ in 0..8 {
             sys.update(&mut w);
         }
         assert_eq!(w.tiles[w.index(4, 7)].liquid, 255, ":1115 promotes the 254");
-        // The neighbour (queued by the first averaging at kill 0) is one
-        // walk behind — it stays active and keeps churning (the vanilla
-        // 254/255 re-average the stuck band exists for).
-        assert_eq!(sys.active_len(), 1);
-        assert_eq!((sys.active[0].x, sys.active[0].y), (3, 7));
+        assert_eq!(sys.active_len(), 0, "the entry retired");
     }
 
     #[test]
@@ -2438,5 +2820,227 @@ mod liquid_settle {
         assert_eq!(w.tiles[w.index(4, 7)].frame_y, 0, "the grass row");
         assert!(!w.tiles[pad].active(), "the origin deactivated");
         assert_eq!(w.tiles[pad].kind, 0);
+    }
+}
+
+/// W4-g47 — the force-settle witnesses: `QuickWater`/`SettleWaterAt`
+/// (`Liquid.cs:104-289`), the `AttemptToMove*` merge checks (`:291-433`),
+/// `WaterCheck` (`WorldGen.cs:80415-80494`), `ReInit` (`Liquid.cs:83-102`)
+/// and the panic force-settle (`:966-1054`). Written, NOT run (code-only).
+#[cfg(test)]
+mod liquid_force_settle {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    /// A tall walled shaft so the settle's `maxTilesY - 5` fall bound and
+    /// the `x in [4, width-4)` column range both have room.
+    fn shaft(width: i32, height: i32, floor_y: i32, cx: i32) -> World {
+        let mut w = World::new("liquid_fs".into(), width, height);
+        for y in 0..=floor_y {
+            for x in [cx - 1, cx + 1] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 0..width {
+            let i = w.index(x, floor_y);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put_as(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    #[test]
+    fn settle_water_at_drops_the_blob_to_the_floor() {
+        // `Liquid.cs:169-177` + `:280`: the origin's mass falls through
+        // the empty open column and lands whole on the floor row.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 10, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.settle_water_at(&mut w, 4, 10);
+        assert_eq!(w.tiles[w.index(4, 10)].liquid, 0, "the origin drained");
+        assert_eq!(w.tiles[w.index(4, 49)].liquid, 200, "the blob landed on the floor");
+        let total: i32 = w.tiles.iter().map(|t| t.liquid as i32).sum();
+        assert_eq!(total, 200, "the settle conserves the mass");
+    }
+
+    #[test]
+    fn settle_water_at_tops_up_the_partial_cell_below() {
+        // `Liquid.cs:216-229`: a same-type non-full cell below takes
+        // `min(255 - below, mass)` before the row spread runs.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 10, 100, 0);
+        put_as(&mut w, 4, 49, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.settle_water_at(&mut w, 4, 10);
+        assert_eq!(w.tiles[w.index(4, 49)].liquid, 255, "the partial cell filled");
+        // The remaining 45 lands on the row above (the fall stops at the
+        // now-full cell, the spread finds no open side, mass places at the
+        // landing column).
+        let total: i32 = w.tiles.iter().map(|t| t.liquid as i32).sum();
+        assert_eq!(total, 300, "the mass is conserved across the top-up");
+    }
+
+    #[test]
+    fn settle_water_at_keeps_the_bubble_and_skips_empty() {
+        // `Liquid.cs:154-157`: an empty cell or an active bubble 379 is
+        // left untouched.
+        let mut w = shaft(9, 60, 50, 4);
+        let b = w.index(4, 20);
+        w.tiles[b] = Tile { kind: 379, ..Default::default() };
+        w.tiles[b].flags |= FLAG_ACTIVE;
+        w.tiles[b].liquid = 100;
+        let mut sys = LiquidSystem::new(&w);
+        sys.settle_water_at(&mut w, 4, 20);
+        assert_eq!(w.tiles[b].liquid, 100, "the bubble keeps its liquid");
+        sys.settle_water_at(&mut w, 4, 30); // empty
+        assert_eq!(w.tiles[w.index(4, 30)].liquid, 0);
+    }
+
+    #[test]
+    fn quick_water_settles_the_whole_column() {
+        // `Liquid.cs:124-134`: the bottom-up row walk settles every wet
+        // cell in the rectangle.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 10, 100, 0);
+        put_as(&mut w, 4, 12, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.quick_water(&mut w, 3, 50);
+        // Both blobs land on the floor row, stacking to 200.
+        assert_eq!(w.tiles[w.index(4, 49)].liquid, 200);
+        assert_eq!(w.tiles[w.index(4, 10)].liquid, 0);
+        assert_eq!(w.tiles[w.index(4, 12)].liquid, 0);
+    }
+
+    #[test]
+    fn the_landing_merge_check_fires_on_the_different_type_side() {
+        // `Liquid.cs:282-287` + `:339-351`: the landing cell's lava check
+        // runs against a different-type side neighbour — water landing
+        // beside lava merges into obsidian at the lava cell.
+        let mut w = shaft(11, 60, 50, 5);
+        // Widen the floor row so the lava sits beside the landing column.
+        put_as(&mut w, 6, 49, 30, 1);
+        put_as(&mut w, 5, 10, 30, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.settle_water_at(&mut w, 5, 10);
+        // The water lands at (5,49); the lava at (6,49) is a different-type
+        // side, so AttemptToMoveLava checks the lava cell -> obsidian.
+        assert_eq!(w.tiles[w.index(6, 49)].kind, 56, "the lava cell merged");
+    }
+
+    #[test]
+    fn water_check_zeroes_liquid_inside_solids_and_wakes_the_open() {
+        // `WorldGen.cs:80426-80432` + `:80449-80460`: liquid inside a
+        // solid tile zeroes; an open cell with a non-full open below wakes.
+        let mut w = shaft(9, 60, 50, 4);
+        // Liquid trapped inside a floor stone cell.
+        let s = w.index(4, 50);
+        w.tiles[s].liquid = 100;
+        // An open wet cell above the floor.
+        put_as(&mut w, 4, 48, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.water_check(&mut w);
+        assert_eq!(w.tiles[s].liquid, 0, "the solid's liquid zeroed");
+        assert!(sys.active_len() > 0, "the open cell woke");
+        assert!(sys.is_checking(4, 48), "the woken cell is marked");
+    }
+
+    #[test]
+    fn water_check_kills_a_submerged_water_death_object() {
+        // `WorldGen.cs:80435-80448`: a torch (4, WaterDeath) under water
+        // dies; the kill rides the edit_kills seam.
+        let mut w = shaft(9, 60, 50, 4);
+        let t = w.index(4, 48);
+        w.tiles[t] = Tile { kind: 4, ..Default::default() };
+        w.tiles[t].flags |= FLAG_ACTIVE;
+        w.tiles[t].liquid = 100;
+        let mut sys = LiquidSystem::new(&w);
+        sys.water_check(&mut w);
+        assert!(!w.tiles[t].active(), "the torch died");
+        assert!(!sys.drain_edit_kills().is_empty(), "the kill record queued");
+    }
+
+    #[test]
+    fn re_init_resets_the_cadence_and_lists() {
+        // `Liquid.cs:83-102`: every counter/window/list back to stock.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 10, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 10);
+        sys.set_cycles(3);
+        sys.set_cur_max_liquid(100);
+        sys.set_quick_settle(true);
+        sys.stuck_count = 5;
+        sys.panic_counter = 9;
+        sys.re_init();
+        assert_eq!(sys.active_len(), 0);
+        assert_eq!(sys.buffered_len(), 0);
+        assert_eq!(sys.cycles(), CYCLES);
+        assert_eq!(sys.cur_max_liquid(), MAX_ACTIVE);
+        assert!(!sys.quick_settle());
+        assert_eq!(sys.stuck_count, 0);
+        assert_eq!(sys.panic_counter, 0);
+        assert!(!sys.is_checking(4, 10), "the checking bit cleared");
+    }
+
+    #[test]
+    fn the_panic_settle_drains_five_rows_per_update() {
+        // `Liquid.cs:1022-1054`: panicMode walks five QuickWater rows
+        // bottom-up per update; reaching row 3 drops the mode.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 49, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.panic_mode = true;
+        sys.panic_y = 8; // five rows: 8,7,6,5,4 -> panic_y lands at 3
+        sys.update(&mut w);
+        assert!(!sys.panic_mode, "the settle finished at row 3");
+        assert_eq!(sys.panic_y, 3);
+        // The blob at row 49 was below the walked band, so it stays; the
+        // mode-drop WaterCheck woke it.
+        assert!(sys.active_len() > 0, "WaterCheck re-woke the grid");
+    }
+
+    #[test]
+    fn the_overflow_buffer_trips_the_panic_after_3600_updates() {
+        // `Liquid.cs:1009-1020`: a >= 90%-full overflow buffer for 3601
+        // updates starts the panic.
+        let mut w = shaft(9, 60, 50, 4);
+        let mut sys = LiquidSystem::new(&w);
+        // Fill the buffer to the 90% band without real cells (the gate
+        // reads only the length).
+        sys.buffer = vec![(0, 0); (MAX_BUFFER as f64 * 0.9) as usize];
+        sys.panic_counter = 3600;
+        sys.update(&mut w);
+        assert!(sys.panic_mode, "the 3601st update starts the panic");
+        assert_eq!(sys.panic_y, sys.height - 3, ":975 starts at the bottom row");
+        assert_eq!(sys.active_len(), 0, ":971 drops the active list");
+        assert_eq!(sys.buffered_len(), 0, ":972 drops the buffer");
+    }
+
+    #[test]
+    fn the_load_settle_drains_a_suspended_blob_to_the_floor() {
+        // `WorldFile.cs:733-764`: QuickWater drops the suspended blob,
+        // WaterCheck re-wakes the floor cell, the quickSettle drain walks
+        // it to rest, and the flag comes back down.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 10, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.settle_loaded_world(&mut w);
+        assert_eq!(w.tiles[w.index(4, 10)].liquid, 0, "the origin drained");
+        assert_eq!(w.tiles[w.index(4, 49)].liquid, 200, "the blob landed");
+        assert!(!sys.quick_settle(), ":760 drops the flag");
+        let total: i32 = w.tiles.iter().map(|t| t.liquid as i32).sum();
+        assert_eq!(total, 200, "the load settle conserves the mass");
     }
 }
