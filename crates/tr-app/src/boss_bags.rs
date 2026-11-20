@@ -667,6 +667,35 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             // `:7603` — the Defender Medals Next(30, 51).
             quick_spawn(rng, out, 3817, range(rng, 30, 51));
         }
+        // Empress of Light (`Player.cs:7605-7643`).
+        4782 => {
+            try_getting_dev_armor(rng, out, env.tenth_anniversary);
+            quick_spawn(rng, out, 4989, 1); // Empress Flight Booster (expert-exclusive)
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 4784, 1); // Empress Mask
+            }
+            if rng.next_max(10) == 0 {
+                quick_spawn(rng, out, 4823, 1); // Rainbow Wings
+            }
+            if rng.next_max(20) == 0 {
+                quick_spawn(rng, out, 4715, 1); // Sparkle Guitar
+            }
+            if rng.next_max(4) == 0 {
+                quick_spawn(rng, out, 4778, 3); // Hallow Boss Dye ×3
+            }
+            if rng.next_max(20) == 0 {
+                quick_spawn(rng, out, 5075, 1); // Rainbow Cursor
+            }
+            // `:7628-7642` — the weapon pick: Next(4) → 4923/4952/4953/
+            // 4914 (Starlight / Nightglow / the Eventide bow / the
+            // Rainbow Whip).
+            match rng.next_max(4) {
+                0 => quick_spawn(rng, out, 4923, 1), // Piercing Starlight
+                1 => quick_spawn(rng, out, 4952, 1), // Fairy Queen Magic Item
+                2 => quick_spawn(rng, out, 4953, 1), // Fairy Queen Ranged Item
+                _ => quick_spawn(rng, out, 4914, 1), // Rainbow Whip
+            }
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -1851,6 +1880,74 @@ mod tests {
             }
             spawn_replay(&mut r, &mut want, 3817, r.next_range(30, 51));
             money_replay_on(&mut r, 551, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_empress_bag_zero_script_grants_the_whole_arm() {
+        // The dev set leads, then the Flight Booster (always), the mask
+        // 1/7, the wings 1/10, the guitar 1/20, the dye 1/4 ×3, the
+        // cursor 1/20, the weapon pick 0 → Starlight — then coins.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(4782, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..12],
+            [666, 667, 668, 665, 3287, 4989, 4784, 4823, 4715, 4778, 5075, 4923],
+            "{its:?}"
+        );
+        assert_eq!(out[9].stack, 3, "the dye grants ×3");
+        assert!(its[12..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_empress_bag_weapon_picks() {
+        for (pick, weapon) in [(1i32, 4952u16), (2, 4953), (3, 4914)] {
+            // dev miss, mask miss, wings miss, guitar miss, dye miss,
+            // cursor miss, pick k.
+            let mut rng = ScriptRng::new(&[1, 6, 9, 19, 3, 19, pick]);
+            let mut out = Vec::new();
+            open_boss_bag(4782, &BagEnv::default(), &mut rng, &mut out);
+            let its = items(&out);
+            assert_eq!(its[..2], [4989, weapon], "pick {pick}: {its:?}");
+        }
+    }
+
+    #[test]
+    fn w4_f35_empress_bag_replays_the_csharp_draw_order() {
+        for seed in [67i32, 636636] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(4782, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            dev_armor_replay(&mut r, &mut want, false);
+            spawn_replay(&mut r, &mut want, 4989, 1);
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 4784, 1);
+            }
+            if r.next_max(10) == 0 {
+                spawn_replay(&mut r, &mut want, 4823, 1);
+            }
+            if r.next_max(20) == 0 {
+                spawn_replay(&mut r, &mut want, 4715, 1);
+            }
+            if r.next_max(4) == 0 {
+                spawn_replay(&mut r, &mut want, 4778, 3);
+            }
+            if r.next_max(20) == 0 {
+                spawn_replay(&mut r, &mut want, 5075, 1);
+            }
+            match r.next_max(4) {
+                0 => spawn_replay(&mut r, &mut want, 4923, 1),
+                1 => spawn_replay(&mut r, &mut want, 4952, 1),
+                2 => spawn_replay(&mut r, &mut want, 4953, 1),
+                _ => spawn_replay(&mut r, &mut want, 4914, 1),
+            }
+            money_replay_on(&mut r, 636, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
         }
