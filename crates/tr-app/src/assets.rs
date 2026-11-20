@@ -909,11 +909,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "HealthBar1",
         "HealthBar2",
         "UI/UI_BossBar",
-        // `TextureAssets.BlackTile` (`Images/Black_Tile`,
-        // `AssetInitializer.cs:492`): the white tintable square the pylon
-        // network lines stretch (`TeleportPylonsMapLayer.DrawLine`,
+        // `TextureAssets.BlackTile` also fills the underworld box (the
+        // first occurrence above wins the dedup); the pylon network lines
+        // stretch it (`TeleportPylonsMapLayer.DrawLine`,
         // `TeleportPylonsMapLayer.cs:18-28`).
-        "Black_Tile",
         // `Images/UI/UI_quickicon1`: the town-NPC map head's "new dialogue"
         // notification bubble (`Utils.DrawNotificationIcon`, `Utils.cs:444`).
         "UI/UI_quickicon1",
@@ -928,51 +927,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_299",
         "Extra_305",
         // The Main.DrawMap icon passes (W4-e17): the death marker
-        // (`TextureAssets.MapDeath`, `AssetInitializer.cs:338`), the boss
-        // head set (`TextureAssets.NpcHeadBoss`, `:410-412` — the whole
-        // array loads, the map draws any `BossHeadTextures` index) and the
+        // (`TextureAssets.MapDeath`, `AssetInitializer.cs:338`) and the
         // Potion-of-Return portals + golf marker (`DrawMiscMapIcons`,
-        // `Main.cs:56466-56539`).
+        // `Main.cs:56466-56539`). The boss-head set rides the
+        // `NPC_Head_Boss_0..39` block above (a8b02614).
         "MapDeath",
-        "NPC_Head_Boss_0",
-        "NPC_Head_Boss_1",
-        "NPC_Head_Boss_2",
-        "NPC_Head_Boss_3",
-        "NPC_Head_Boss_4",
-        "NPC_Head_Boss_5",
-        "NPC_Head_Boss_6",
-        "NPC_Head_Boss_8",
-        "NPC_Head_Boss_9",
-        "NPC_Head_Boss_10",
-        "NPC_Head_Boss_11",
-        "NPC_Head_Boss_12",
-        "NPC_Head_Boss_13",
-        "NPC_Head_Boss_14",
-        "NPC_Head_Boss_15",
-        "NPC_Head_Boss_16",
-        "NPC_Head_Boss_17",
-        "NPC_Head_Boss_18",
-        "NPC_Head_Boss_19",
-        "NPC_Head_Boss_20",
-        "NPC_Head_Boss_21",
-        "NPC_Head_Boss_22",
-        "NPC_Head_Boss_23",
-        "NPC_Head_Boss_24",
-        "NPC_Head_Boss_25",
-        "NPC_Head_Boss_26",
-        "NPC_Head_Boss_27",
-        "NPC_Head_Boss_28",
-        "NPC_Head_Boss_29",
-        "NPC_Head_Boss_30",
-        "NPC_Head_Boss_31",
-        "NPC_Head_Boss_32",
-        "NPC_Head_Boss_33",
-        "NPC_Head_Boss_34",
-        "NPC_Head_Boss_35",
-        "NPC_Head_Boss_36",
-        "NPC_Head_Boss_37",
-        "NPC_Head_Boss_38",
-        "NPC_Head_Boss_39",
         "Extra_173",
         "Extra_175",
         "Extra_176",
@@ -2133,11 +2092,6 @@ pub struct Lookups {
     /// (`NPCHeadID`): the town heads the housing page draws. Absent entries are
     /// heads the port ships no NPC for.
     pub npc_heads: Vec<Option<tr_render::SheetRect>>,
-    /// `TextureAssets.NpcHeadBoss[i]` (`AssetInitializer.cs:410-412`), keyed
-    /// by the `NPCID.Sets.BossHeadTextures` index — the map's boss markers
-    /// (`Main.DrawNPCMapIcons`, `Main.cs:56222-56292`). `_7` also rides
-    /// `ui_boss_head` (the boss bar).
-    pub npc_boss_heads: HashMap<u16, tr_render::SheetRect>,
     /// `TextureAssets.MapDeath` (`AssetInitializer.cs:338`): the player
     /// death marker (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-56464`)
     /// and the revenge marker's fallback sheet (`CoinLossRevengeSystem.cs:261`).
@@ -2552,11 +2506,6 @@ impl Lookups {
             ui_back11: atlas.sheet("Inventory_Back11").copied(),
             npc_heads: (0..crate::ui::housing::HEAD_COUNT)
                 .map(|h| atlas.sheet(&format!("NPC_Head_{h}")).copied())
-                .collect(),
-            npc_boss_heads: (0..40u16)
-                .filter_map(|i| {
-                    Some((i, atlas.sheet(&format!("NPC_Head_Boss_{i}")).copied()?))
-                })
                 .collect(),
             map_death: atlas.sheet("MapDeath").copied(),
             extra_173: atlas.sheet("Extra_173").copied(),
