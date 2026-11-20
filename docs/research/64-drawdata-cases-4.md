@@ -995,6 +995,99 @@ Audit notes (R10):
   255 (`tiles.rs:732`, documented `cases_a.rs:51-52`).
 - No other R10 id has a second-switch row.
 
+### R11 — echo piles tail, gems, moss, cattail, golf flag, statue group head: 648, 178, 184, 519, 493, 28, 105, 470, 475, 506, 547, 548, 552, 560, 597 (15 ids, indices 150-164)
+
+C# `TileDrawing.cs:5199-5274`. Verbatim (:5207-5230):
+
+```csharp
+		case 178:
+			if (tileFrameY <= 36)
+			{
+				tileTop = 2;
+			}
+			break;
+		case 184:
+			tileWidth = 20;
+			if (tileFrameY <= 36)
+			{
+				tileTop = 2;
+			}
+			else if (tileFrameY <= 108)
+			{
+				tileTop = -2;
+			}
+			break;
+		case 519:
+			tileTop = 2;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+```
+
+493 verbatim (:5231-5257):
+
+```csharp
+		case 493:
+			if (tileFrameY == 0)
+			{
+				int num4 = Main.tileFrameCounter[typeCache];
+				float num5 = Math.Abs(Main.WindForVisuals);
+				int num6 = y - tileFrameY / 18;
+				int num7 = x - tileFrameX / 18;
+				if (!this.InAPlaceWithWind(x, num6, 1, 1))
+				{
+					num5 = 0f;
+				}
+				if (!(num5 < 0.1f))
+				{
+					if (num5 < 0.5f)
+					{
+						num4 = (num4 / 20 + (num6 + num7)) % 6;
+						addFrY = ((!(Main.WindForVisuals < 0f)) ? (num4 + 1) : (6 - num4)) * 36;
+					}
+					else
+					{
+						num4 = (num4 / 10 + (num6 + num7)) % 6;
+						addFrY = ((!(Main.WindForVisuals < 0f)) ? (num4 + 7) : (12 - num4)) * 36;
+					}
+				}
+			}
+			tileTop = 2;
+			break;
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 648 | top 2 + 1890 stride | :5199-5206 | `drawdata.rs:557-562` | PORTED |
+| 178 | top 2 iff `fy <= 36` (ExposedGems) | :5207-5212 | :565-569 | PORTED |
+| 184 | 20 wide; top 2 / −2 / 0 by row bands | :5213-5223 | :572-579; glow :6114-6151 → `cases_a.rs:346-360` (six columns, mask 127, RAW-frame rect) | PORTED (glow unconsumed; disco deviation) |
+| 519 | top 2 + parity flip (Cattail) | :5224-5230 | :582-585 | PORTED |
+| 493 | the wind-tier flag wave (verbatim above) | :5231-5257 | static top 2 :588-590; `cases_b.rs:247-277` full body | PORTED (delegated, wired :700) |
+| 28, 105, 470, 475, 506, 547, 548, 552, 560, 597 | `tileTop = 2;` (16-label statue/pot group) | :5258-5275 | `drawdata.rs:593-596` (the 16-id `\|` arm) | PORTED |
+
+Audit notes (R11):
+- 493's quirks all carried: the wind probe uses the RAW `x` (not `num7`,
+  :5238 — pinned in the port comment `cases_b.rs:253-254`); the calm tier
+  keeps the prologue `addFrY` default; the sign tests are `!(wind < 0f)`
+  (negative-zero-safe), ported as `!(env.wind.speed_current < 0.0)`; the
+  `tileTop = 2` runs AFTER the `fy == 0` block regardless. Test
+  `case_493_golf_flag_wind_tiers` (`cases_b.rs:606`) pins both tiers, both
+  signs, the row gate and the below-surface calm path.
+- 184's glow: six independent column `if`s (110/132/154/176/198/220), all
+  GlowMask[127], rect `(tileFrameX, tileFrameY, w, h)` — RAW frame, no addFr*
+  (the C# reads `tileCache.frameX` for the gates and `tileFrameX` for the
+  rect; both are the stored frame). The five moss colours are the
+  `TileDrawing.cs:132-140` constants (`cases_a.rs:114-123`); column 220's
+  `new Color(Main.DiscoR, Main.DiscoG, Main.DiscoB)` is engine state not
+  routed — the port emits `[0, 0, 0, 255]` (documented :47-48/:344-345; the
+  `Color(byte,byte,byte)` ctor sets alpha 255). Rect + mask ported; colour
+  pending the disco clock.
+- The statue group's remaining six labels (613/621/622/623/653/699) are
+  indices 165-170, audited in R12; the shared body is quoted once here.
+- No other R11 id has a second-switch row.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
