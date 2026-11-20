@@ -39244,3 +39244,68 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC lights, second half (W4-e7, S1-E-5 wave 4, 2026-11-21, code-only)
+
+**Claim map (probed in-flight before work).** NPC.cs carries exactly 80
+`Lighting.AddLight` call sites (full-file grep). W4-c20's pushed claim
+(`9555e586`) owns the FIRST 40 (`:21307`-`:48641`, `npc_lights_a.rs`);
+this lane (`task/W4-e7-addlight-npc-2`) owns the SECOND 40
+(`:49929`-`:92412`). The in-flight `npc_lights_b.rs` draft (dirty=1) was
+continued, verified site-by-site against the C#, and landed in five
+~10-site commits. No overlap with c20 (first half) or e8/f9 (Main.cs
+tile sites).
+
+Port: `crates/tr-app/src/npc_lights_b.rs` (1014 lines), declared in
+`main.rs`, fed per live NPC in `app/frame/draw.rs` after the aiStyle-8
+tail (`npc_lights.rs`) and before the Horseman (W-10). One
+`EntityLights` pair, `Main.npc` slot order, draw-side. The feed runs
+`UpdateNPC`'s call order: CastLights (`:90320`) -> BuffApplyVFX
+(`:90378`) -> AI (`:90423`) -> UpdateTrails (`:90512`).
+
+**The 40 sites.** Ported: destroyer airborne 41, probe 42, town
+shimmer/magic/arrival/slime 44-48, Medusa 49-50, torch zombies 51-54,
+fighter tail 55-59, slime lantern/rainbow/golden/shimmer/lava 60/63-66,
+trail mode-4 68, buff-VFX 69-75, cast 79-80. Cited skips: Hungry II 116
+(43, no kind), ore/herb slime content (61/62, deferred init + NPC.color),
+the three CastLights flicker arms (76/77/78, `Next(28,42)` per tick).
+Already landed: Horseman (67, `npc_ai_unicorn_b::horseman_light`) -
+census-only, no double-feed.
+
+**Fixes vs the in-flight draft (all re-derived from the C#):**
+1. `cs_type` no longer maps `Hungry => 116`. The roster's `Hungry` is
+   TheHungry 115 (aiStyle 29, `data.rs:2326`; bestiary net_id 115;
+   `world_sim/npcs.rs:6017`). The 116 arm (`:52425-52428`) is a separate
+   30x32/80 HP/aiStyle-2 kind with no port kind - lighting it via the 115
+   roster would light the wrong NPC. Now a cited skip; the `Hungry`
+   fallback resolves to 115, which the `type == 116` gate never matches.
+2. `torch_zombie_light`'s neighbour liquid check now PASSES out of
+   world: `Framing.GetTileSafely` (`Framing.cs:426-438`) returns a fresh
+   `Tile` (liquid 0) there, not a failed read. The draft's `is_some_and`
+   wrongly darkened torches at the world edge.
+3. `town_shimmer_light` emits for EVERY reached state-25 tick, not only
+   `ai[1] >= 30`: the `AddLight` line (`:53232`) sits after the
+   `ai[2] > 0` countdown return (`:53206-53214`) but outside the
+   `>= 30` block; below 30 the `Utils.Remap` clamps to a zero amount
+   (the source still enters the C#'s list). The `ai[2] > 0` early-return
+   is now gated.
+4. The town magic/arrival aura arms carry the aiStyle-7 dispatch gate
+   (`NPC.cs:20812-20816`): `ai[0]` states are per-machine, so a non-town
+   machine's state 14/24 must never light.
+5. `can_display_buffs` justification corrected: the flag IS read at
+   `:91145` (the draft claimed "no other reader"). The Golem 245-248
+   clears (`:18010/18015/18020`) live inside `getGoodAdjustments`, gated
+   by `Main.getGoodWorld` (`:17843`); the port's machines run stock
+   (`get_good_world: false`), so the fold to TRUE is correct for the
+   shipped config. The gate is kept explicit as the FTW seam.
+
+**RNG / determinism.** Every ported `AddLight` line is RNG-free; the
+rand-bearing dust halves are skipped wholesale (the `npc_lights.rs`
+precedent), so the feed cannot move any `Main.rand` stream. The three
+CastLights flicker arms draw `Next(28,42)` unconditionally per tick and
+stay cited skips until a sim-side feed lands. netOffset is added only
+where the C# wraps it (Medusa, torch zombies, LavaSlime 59, BuffApplyVFX
+head); every other arm reads the raw position.
+
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked;
+the 17 witness tests are WRITTEN, NOT RUN.**
