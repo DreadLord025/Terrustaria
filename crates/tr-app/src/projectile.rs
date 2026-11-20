@@ -14477,6 +14477,19 @@ pub struct ProjectilePool {
     /// (`set_screen_width`, the `set_disco` pattern). The default is the
     /// headless 1280 fallback (`App::screen_size`).
     screen_width: f32,
+    /// W4-d13 — the aiStyle-125 Wire Kite's per-tick mouse/channel snapshot
+    /// (`Projectile.cs:35697-35833`'s `Main.mouseRight`/`mouseRightRelease`
+    /// + the screen-space mouse point). The world sim feeds it before the
+    /// pass (the `set_bobber_inputs` pattern); `None` keeps the arm inert.
+    wire_kite_inputs: Option<crate::projectile_ai_wire_kite::WireKiteInputs>,
+    /// W4-d13 — the kite arm's `Main.blockMouse = true` intent
+    /// (`Projectile.cs:35714`), drained by the world-sim pass (the
+    /// `pending_spear_hold` pattern).
+    pending_block_mouse: bool,
+    /// W4-d13 — the kite arm's `SetDummyItemTime(2)` hold
+    /// (`Projectile.cs:35831`), drained by the world-sim pass onto
+    /// `app.swing`/`app.item_time` (the `pending_spear_hold` pattern).
+    pending_kite_hold: bool,
     /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
     /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
     /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
@@ -14917,6 +14930,9 @@ impl ProjectilePool {
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             screen_width: 1280.0,
+            wire_kite_inputs: None,
+            pending_block_mouse: false,
+            pending_kite_hold: false,
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
@@ -15008,6 +15024,29 @@ impl ProjectilePool {
     /// default mirrors the headless 1280 fallback (`App::screen_size`).
     pub fn set_screen_width(&mut self, screen_width: f32) {
         self.screen_width = screen_width;
+    }
+
+    /// W4-d13 — the aiStyle-125 Wire Kite's per-tick snapshot
+    /// (`Projectile.cs:35697-35833`). The world sim builds it from the live
+    /// mouse/channel state before the pass (the `set_bobber_inputs` pattern).
+    pub fn set_wire_kite_inputs(
+        &mut self,
+        inputs: Option<crate::projectile_ai_wire_kite::WireKiteInputs>,
+    ) {
+        self.wire_kite_inputs = inputs;
+    }
+
+    /// W4-d13 — the kite arm's `Main.blockMouse = true` drain
+    /// (`Projectile.cs:35714`): the world sim applies it to `app.block_mouse`.
+    pub fn take_block_mouse(&mut self) -> bool {
+        std::mem::take(&mut self.pending_block_mouse)
+    }
+
+    /// W4-d13 — the kite arm's `SetDummyItemTime(2)` drain
+    /// (`Projectile.cs:35831`): the world sim re-arms the swing/item timers
+    /// at 2 ticks (the `take_spear_hold` pattern).
+    pub fn take_kite_hold(&mut self) -> bool {
+        std::mem::take(&mut self.pending_kite_hold)
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -17432,6 +17471,35 @@ impl ProjectilePool {
                             // skip list (`:20435`) — the free integrate runs
                             // every sub-step, dead slots included (the C#
                             // moves before the `!active` return, `:17027`).
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
+                        // W4-d13 — `AI()`'s `else if (this.aiStyle == 125)`
+                        // (`Projectile.cs:35697-35833`): the Wire Kite
+                        // (651). The mouse/channel snapshot rides
+                        // `wire_kite_inputs` (the bobber pattern); the
+                        // blockMouse + dummy-time intents drain at the
+                        // pass tail. The arm pins the velocity to zero, so
+                        // the free integrate is a no-op move.
+                        125 => {
+                            let mk = self.wire_kite_inputs.unwrap_or_default();
+                            let aim_pt = inputs.aim.map(|(x, y)| Vec2::new(x, y));
+                            let tick = self.slots[i].ai_wire_kite(
+                                player.as_deref_mut(),
+                                aim_pt,
+                                mk.mouse_right,
+                                mk.mouse_right_release,
+                                local_owner,
+                                i,
+                            );
+                            if tick.block_mouse {
+                                self.pending_block_mouse = true;
+                            }
+                            if tick.dummy_hold {
+                                self.pending_kite_hold = true;
+                            }
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:6997`) — the free integrate (`:20445`).
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
                         }
@@ -20013,6 +20081,14 @@ impl ProjectilePool {
                 // called from `Kill()` `:77258-77261`): the trio's death
                 // crack roll on the tile below its centre.
                 self.debris_death_crack(i, world, rng, local_owner);
+                // W4-d13 — `Kill()`'s type-651 arm (`Projectile.cs:72051-
+                // 72067`): the Wire Kite's `localAI[0] == 1` release latch
+                // (the aiStyle-125 arm sets it, `:35720`) runs
+                // `Wiring.MassWireOperation(ps, pe, master)` — the tile
+                // anchors ride `ai[0]`/`ai[1]`. DEFERRED with the wiring
+                // system's mass wire operation (`world_sim/editing/
+                // wiring.rs:28-29` — it needs the unported `WiresUI` tool
+                // modes); the latch itself is ported.
                 // `Kill()`'s floating-turret arms (`Projectile.cs:72068-72093`/
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.

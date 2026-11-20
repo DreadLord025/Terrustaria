@@ -196,6 +196,10 @@ mod projectile_ai067_b;
 // the 957 ground bounce and the 650 ore scan + steering tail
 // (`Projectile.cs:34970-35696`). Code-only — witnesses written not run.
 mod projectile_ai_pets124;
+// W4-d13 — the aiStyle-125 Wire Kite (651): the channel mouse-follow, the
+// three kill gates and the owner tail (`Projectile.cs:35697-35833`).
+// Code-only — witnesses written not run.
+mod projectile_ai_wire_kite;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;

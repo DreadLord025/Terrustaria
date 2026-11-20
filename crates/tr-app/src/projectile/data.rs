@@ -1030,6 +1030,9 @@ pub const STYLE124_PETS: [u16; 7] = [
     SUSPICIOUS_TENTACLE, EOC_PET, TWINS_PET, FAIRY_QUEEN_PET, PUMPKING_PET,
     ICE_QUEEN_PET, GLOMMER_PET,
 ];
+/// `ProjectileID.WireKite` (651) — the Grand Design / Multicolor Wrench's
+/// mass-wire kite (aiStyle 125, `Projectile.cs:6990-7000`).
+pub const WIRE_KITE: u16 = 651;
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -3543,6 +3546,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             | ICE_QUEEN_PET | GLOMMER_PET => {
                 (20.0, 20.0, 124, -1, 18000, 0, false, false, false, RESET_STATE)
             }
+            // W4-d13 — `Projectile.cs:6990-7000` (651, the Wire Kite): 10x10,
+            // aiStyle 125, `friendly = true` (the pool default), `ignoreWater`,
+            // `tileCollide = false`, `penetrate = -1`; `drawLayer = 5` is a
+            // draw-side field with no pool consumer. The stock 3600 life.
+            WIRE_KITE => (10.0, 10.0, 125, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -4209,6 +4217,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d13 — the aiStyle-124 pets set `ignoreWater` themselves
             // (`Projectile.cs:6986`/`:8470`/`:8516`/`:8562`/`:8584`/`:9043`).
             || STYLE124_PETS.contains(&kind)
+            // W4-d13 — the Wire Kite sets `ignoreWater`
+            // (`Projectile.cs:6996`).
+            || kind == WIRE_KITE
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)

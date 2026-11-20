@@ -336,6 +336,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // distance gate (`Projectile.cs:35577`); the same swapchain width the
     // dust cull reads (`App::spawn_ctx`).
     app.projectiles.set_screen_width(sw);
+    // W4-d13 — the aiStyle-125 Wire Kite's mouse-right pair
+    // (`Projectile.cs:35710`). The release flag lags one frame in the C#
+    // (`Main.cs:62458-62465` runs after Draw), so the pair's `true && true`
+    // is the PRESS tick — the golf context's same-edge convention. The
+    // mouse world point rides `inputs.aim` (the yoyo's math, gravDir = 1).
+    app.projectiles.set_wire_kite_inputs(Some(crate::projectile_ai_wire_kite::WireKiteInputs {
+        mouse_right: app.place_down,
+        mouse_right_release: !app.place_prev_down,
+    }));
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -421,6 +430,18 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // touch `itemAnimationMax`).
     if let Some(frames) = app.projectiles.take_spear_hold() {
         let secs = frames as f32 / 60.0;
+        app.swing = secs;
+        app.item_time = secs;
+    }
+    // W4-d13 — the Wire Kite's per-tick writes (`Projectile.cs:35714`/
+    // `:35831`): `Main.blockMouse = true` on the right-click press kill and
+    // `SetDummyItemTime(2)` while the kite lives (the `take_spear_hold`
+    // pattern; `Player.cs:4432-4441` — itemAnimation = itemTime = 2).
+    if app.projectiles.take_block_mouse() {
+        app.block_mouse = true;
+    }
+    if app.projectiles.take_kite_hold() {
+        let secs = 2.0 / 60.0;
         app.swing = secs;
         app.item_time = secs;
     }
