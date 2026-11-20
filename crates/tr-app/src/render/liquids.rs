@@ -204,20 +204,20 @@ pub(crate) fn draw_shimmer(
     pass: LiquidPass,
 ) -> u32 {
     let anim_frame = ((anim_time * 8.0) as i32) & 15;
-    // `Main.timeForVisualEffects` (`Main.cs:19751`-shaped wrap at 216000).
-    let tve = (anim_time * 60.0) % 216000.0;
+    // `Main.timeForVisualEffects` is a DOUBLE tick counter (`Main.cs:1181`,
+    // `++` then wrap at 216000, `Main.cs:17162-17164`). The product runs in
+    // f64 so whole ticks stay exact through the f32 narrowing (f32 holds
+    // integers below 2^24 losslessly); the old f32 product quantised the
+    // phase by up to one ULP at 216000 (W4-g76).
+    let tve = ((anim_time as f64 * 60.0) % 216000.0) as f32;
     let mut quads = 0;
     for d in draws {
         if !d.visible || d.liquid_type != 3 || d.src_w <= 0 || d.src_h <= 0 {
             continue;
         }
-        // `val = Opacity * (isBackgroundDraw ? 1f : 0.75f)`.
-        let val = if pass == LiquidPass::Background {
-            d.opacity
-        } else {
-            d.opacity * 0.75
-        }
-        .min(1.0);
+        // `val = Math.Min(1f, Opacity * (isBackgroundDraw ? 1f : 0.75f))`
+        // (`LiquidRenderer.cs:700-702`).
+        let val = shimmer_base_val(d.opacity, pass == LiquidPass::Background);
         let src_y = if d.is_surface { 1280 } else { d.src_y + anim_frame * 80 };
         let Some(uv) = lookups.liquid_uv(14, d.src_x, src_y, d.src_w as u32, d.src_h as u32)
         else {
@@ -250,24 +250,25 @@ pub(crate) fn draw_shimmer(
         else {
             continue;
         };
-        let glitter: [[f32; 3]; 4] = corners
-            .iter()
-            .zip([[d.x, d.y], [d.x + 1, d.y], [d.x, d.y + 1], [d.x + 1, d.y + 1]])
-            .map(|(_, [cx, cy])| {
-                let o = glitter_opacity(flag, cx, cy, tve);
-                let g = tr_core::tile_light::hsl_to_rgb(
-                    (((cx as f32 + cy as f32 / 6.0) + tve / 30.0) / 6.0) % 1.0,
-                    1.0,
-                    0.5,
-                );
-                [g[0] * o * val, g[1] * o * val, g[2] * o * val]
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("four corners");
+        // `SetShimmerVertexColors_Sparkle` (`LiquidRenderer.cs:725-736`)
+        // multiplies the glitter colour by the RAW `ptr2->Opacity` (:715),
+        // NOT the base quad's clamped foreground `val` — the old port dimmed
+        // the sparkle by the extra 0.75 (W4-g76).
+        let glitter: [[f32; 3]; 4] = [[d.x, d.y], [d.x + 1, d.y], [d.x, d.y + 1], [d.x + 1, d.y + 1]]
+            .map(|[cx, cy]| shimmer_glitter_corner(flag, cx, cy, tve, d.opacity));
         quads += push_split_premultiplied(r, suv, d, &glitter);
     }
     quads
+}
+
+/// One corner of `SetShimmerVertexColors_Sparkle` (`LiquidRenderer.cs:725-736`):
+/// `GetShimmerGlitterColor(top, x, y) * opacity` — the byte-quantised rainbow
+/// hue (`Main.hslToRgb`, alpha forced to 0 at :762, i.e. the additive term),
+/// times the wave/noise opacity, times the RAW record opacity (:731-734).
+fn shimmer_glitter_corner(top: bool, x: i32, y: i32, tve: f32, opacity: f32) -> [f32; 3] {
+    let o = glitter_opacity(top, x, y, tve);
+    let g = tr_core::tile_light::hsl_to_rgb(shimmer_glitter_hue(x as f32, y as f32, tve), 1.0, 0.5);
+    [g[0] * o * opacity, g[1] * o * opacity, g[2] * o * opacity]
 }
 
 /// Pushes one record's quad as the 3x3 bilinear split (the shared light-split
@@ -344,30 +345,60 @@ fn push_split_premultiplied(
 
 /// `LiquidRenderer.GetShimmerFrame` (`LiquidRenderer.cs:782-792`): the sparkle
 /// strip's frame for a cell, a 16-frame cycle along the same diagonal wave.
+/// The phase `(wx + wy/6)/10` is computed in f32, then `timeForVisualEffects /
+/// 360.0` is subtracted in DOUBLE (:786); the `!top` offset adds the f32 sum
+/// `(wx + wy)` cast to double (:789). The old all-f32 phase drifted the frame
+/// index at large tick counts (W4-g76, mirroring the W4-d66 palette split).
 fn shimmer_frame(x: i32, y: i32, top: bool, tve: f32) -> i32 {
     let wx = x as f32 + 0.5;
     let wy = y as f32 + 0.5;
-    let mut num = (wx + wy / 6.0) / 10.0 - tve / 360.0;
+    let mut num = ((wx + wy / 6.0) / 10.0) as f64 - tve as f64 / 360.0;
     if !top {
-        num += wx + wy;
+        num += (wx + wy) as f64;
     }
     ((num as i32) % 16 + 16) % 16
 }
 
 /// `LiquidRenderer.GetShimmerGlitterOpacity` (`LiquidRenderer.cs:766-773`).
+/// The inner sine is `Math.Sin((double)((float)SimpleWhiteNoise / 10f) +
+/// timeForVisualEffects / 180.0)` (:772): the noise is narrowed to f32 and
+/// divided by 10 in f32, THEN widened to double for the `+ tve/180` add and the
+/// double sin. The old all-f32 add lost the `tve/180` term entirely once the
+/// noise/10 magnitude exceeded the f32 ULP (the sparkle froze in time).
 fn glitter_opacity(top: bool, x: i32, y: i32, tve: f32) -> f32 {
     if top {
         return 0.5;
     }
     let wave = shimmer_wave(x as f32, y as f32, tve);
-    let noise = simple_white_noise(x as u32, y as u32) as f32;
-    let inner = (noise / 10.0 + tve / 180.0).sin();
+    let noise = simple_white_noise(x as u32, y as u32) as f32 / 10.0;
+    let inner = (noise as f64 + tve as f64 / 180.0).sin() as f32;
     remap(remap(wave, -0.5, 1.0, 0.0, 0.35) * inner, 0.0, 0.5, 0.0, 1.0)
 }
 
-/// `LiquidRenderer.GetShimmerWave` (`LiquidRenderer.cs:754-757`).
+/// `LiquidRenderer.GetShimmerWave` (`LiquidRenderer.cs:754-757`): the position
+/// `(x + y/6)/10` is f32, the `timeForVisualEffects / 360.0` subtraction, the
+/// `* 6.2831854820251465` and the sin are DOUBLE before the f32 narrowing
+/// (W4-g76 — same split W4-d66 landed on the palette-side base colour).
 fn shimmer_wave(x: f32, y: f32, tve: f32) -> f32 {
-    (((x + y / 6.0) / 10.0 - tve / 360.0) * std::f32::consts::TAU).sin()
+    let pos = (x + y / 6.0) / 10.0;
+    ((pos as f64 - tve as f64 / 360.0) * 6.2831854820251465).sin() as f32
+}
+
+/// `LiquidRenderer.GetShimmerGlitterColor`'s hue (`LiquidRenderer.cs:761`):
+/// `(float)(((double)(x + y/6f) + timeForVisualEffects / 30.0) / 6.0) % 1f` —
+/// the `x + y/6` sum is f32, widened to double for `+ tve/30` and `/6`, narrowed
+/// back to f32, and only THEN taken `% 1f` (the modulo is f32, not double).
+fn shimmer_glitter_hue(x: f32, y: f32, tve: f32) -> f32 {
+    let sum = x + y / 6.0;
+    (((sum as f64 + tve as f64 / 30.0) / 6.0) as f32) % 1.0
+}
+
+/// `DrawShimmer`'s base-quad opacity (`LiquidRenderer.cs:700-702`):
+/// `val = Math.Min(1f, Opacity * (isBackgroundDraw ? 1f : 0.75f))`. The sparkle
+/// overlay (:715) instead multiplies by the RAW `Opacity`, not this clamped
+/// `val` — see [`draw_shimmer`].
+fn shimmer_base_val(opacity: f32, background: bool) -> f32 {
+    (opacity * if background { 1.0 } else { 0.75 }).min(1.0)
 }
 
 /// `LiquidRenderer.SimpleWhiteNoise` (`LiquidRenderer.cs:775-780`).
@@ -713,5 +744,140 @@ mod tests {
         let empty = World::new("mask-dry".into(), 40, 40);
         let dry = tr_core::liquid_draw::build(&empty, 0, 0, 39, 39);
         assert!(water_mask_rects(&dry).is_empty());
+    }
+
+    // ---- W4-g76 shimmer-draw witnesses (WRITTEN NOT RUN, code-only) ----
+    // Reference values from an f32/f64-split evaluation of the exact C#
+    // expressions (LiquidRenderer.cs:754-797): f32 position sums, double
+    // time subtraction / multiplication / sin, f32 narrowing where the C#
+    // casts. Tolerances 1e-6 discriminate the old all-f32 drift while
+    // allowing libm last-ULP differences in the double sin.
+
+    fn close3(a: [f32; 3], b: [f32; 3]) {
+        for i in 0..3 {
+            assert!((a[i] - b[i]).abs() < 1e-6, "channel {i}: {a:?} != {b:?}");
+        }
+    }
+
+    /// `GetShimmerWave` (:756): double sin of the f32 position minus
+    /// `tve/360.0` in double, times the C# literal 6.2831854820251465.
+    /// The old all-f32 wave gave -0.98482203 at (10,20,200000) — 2.6e-6 off.
+    #[test]
+    fn w4_g76_shimmer_wave_sins_in_double() {
+        for (x, y, tve, want) in [
+            (10.0, 20.0, 200000.0, -0.9848246574401855f64),
+            (3.0, 7.0, 0.0, 0.5),
+            (120.0, 340.0, 123456.0, -0.9945167899131775),
+            (0.0, 0.0, 215999.0, 0.017347514629364014),
+        ] {
+            let w = shimmer_wave(x, y, tve);
+            assert!((w - want as f32).abs() < 1e-6, "({x},{y},{tve}): {w}");
+        }
+        // The old all-f32 wrap-edge value (0.0176287) is 2.8e-4 away.
+        assert!((shimmer_wave(0.0, 0.0, 215999.0) - 0.0176287).abs() > 1e-4);
+    }
+
+    /// `GetShimmerFrame` (:782-792): f32 `(wx + wy/6)/10`, double
+    /// `- tve/360`, `!top` adds the f32 `(wx + wy)` cast to double; the
+    /// truncation is toward zero and the double modulo re-wraps negatives.
+    #[test]
+    fn w4_g76_shimmer_frame_double_phase_and_offsets() {
+        for (top, x, y, tve, want) in [
+            (true, 10, 20, 200000.0, 6),
+            (false, 10, 20, 200000.0, 5),
+            (true, 120, 340, 123456.0, 11),
+            (false, 120, 340, 123456.0, 7),
+            (true, 10, 20, 0.0, 1),
+            (false, 10, 20, 0.0, 0),
+            (true, 0, 0, 215999.0, 9),
+            (false, 0, 0, 215999.0, 10),
+        ] {
+            assert_eq!(shimmer_frame(x, y, top, tve), want, "({x},{y},{top},{tve})");
+        }
+        // The old all-f32 phase answered 6 here; the double phase gives 7.
+        assert_eq!(shimmer_frame(120, 340, true, 113661.0), 7);
+    }
+
+    /// `SimpleWhiteNoise` (:775-780): unchecked u32 arithmetic, the two
+    /// 16-bit lanes folded with 36469 / 18012 then packed `(x << 16) + y`.
+    #[test]
+    fn w4_g76_simple_white_noise_pins() {
+        assert_eq!(simple_white_noise(10, 20), 2425847600);
+        assert_eq!(simple_white_noise(3, 7), 2875255940);
+        assert_eq!(simple_white_noise(120, 340), 3342168624);
+        assert_eq!(simple_white_noise(0, 0), 0);
+        // (float)uint narrows: 2425847600 -> 2425847552 (f32 ULP = 256 here).
+        assert_eq!(simple_white_noise(10, 20) as f32, 2425847552.0);
+    }
+
+    /// `GetShimmerGlitterOpacity` (:766-773): top is a flat 0.5; otherwise
+    /// Remap(Remap(wave,-0.5,1,0,0.35) * sin((double)(noise/10f) + tve/180),
+    /// 0,0.5,0,1). The inner sin's time term lives in DOUBLE — the old f32
+    /// add dropped it once noise/10 exceeded the f32 ULP (0.145 vs 0.261).
+    #[test]
+    fn w4_g76_glitter_opacity_double_inner_sin() {
+        assert_eq!(glitter_opacity(true, 1, 12, 100.0), 0.5);
+        for (x, y, want) in [
+            (1, 12, 0.2608494460582733f64),
+            (1, 25, 0.6818357706069946),
+            (1, 19, 0.49602243304252625),
+        ] {
+            let o = glitter_opacity(false, x, y, 100.0);
+            assert!((o - want as f32).abs() < 1e-6, "({x},{y}): {o}");
+        }
+        // The old all-f32 answers (0.14531924 / 0.49842459) are far away.
+        assert!((glitter_opacity(false, 1, 12, 100.0) - 0.14531924).abs() > 0.1);
+        assert!((glitter_opacity(false, 1, 25, 100.0) - 0.49842459).abs() > 0.1);
+        // Negative wave remaps to 0 -> the product and the opacity are 0.
+        assert_eq!(glitter_opacity(false, 10, 20, 200000.0), 0.0);
+    }
+
+    /// The glitter hue (:761): `(float)(((double)(x + y/6f) + tve/30) / 6) % 1f`
+    /// — the modulo runs on the f32 narrowing, not in double. At the wrap
+    /// edge (0,0,215999) the old all-f32 chain gave 0.99450684 (1.2e-4 off).
+    #[test]
+    fn w4_g76_glitter_hue_double_add_f32_modulo() {
+        for (x, y, tve, want) in [
+            (1.0, 12.0, 100.0, 0.05555558204650879f64),
+            (10.0, 20.0, 200000.0, 0.3333740234375),
+            (0.0, 0.0, 215999.0, 0.994384765625),
+        ] {
+            let h = shimmer_glitter_hue(x, y, tve);
+            assert!((h - want as f32).abs() < 1e-6, "({x},{y},{tve}): {h}");
+            assert!((0.0..1.0).contains(&h), "hue stays in [0,1): {h}");
+        }
+        assert!((shimmer_glitter_hue(0.0, 0.0, 215999.0) - 0.99450684).abs() > 1e-4);
+    }
+
+    /// `SetShimmerVertexColors_Sparkle` (:725-736): the byte-quantised
+    /// rainbow (hslToRgb, sat 1, lum 0.5) times the glitter opacity times
+    /// the RAW record opacity — never the base quad's clamped `val`.
+    #[test]
+    fn w4_g76_glitter_corner_uses_raw_opacity() {
+        // (1,12,100): hue 0.0555556 -> bytes (255,85,0), o = 0.26084945.
+        let want = [0.2608494460582733f32, 0.08694981783628464, 0.0];
+        close3(shimmer_glitter_corner(false, 1, 12, 100.0, 1.0), want);
+        // Raw opacity 0.5 halves the corner — the old port's `val` path
+        // would have multiplied by 0.75 * 0.5 = 0.375 instead.
+        let half = [0.13042472302913666, 0.04347490891814232, 0.0];
+        close3(shimmer_glitter_corner(false, 1, 12, 100.0, 0.5), half);
+        // top: flat 0.5 opacity; hue 0.5277778 -> bytes (0,212,255).
+        close3(
+            shimmer_glitter_corner(true, 5, 5, 100.0, 1.0),
+            [0.0, 0.4156862795352936, 0.5],
+        );
+        // Zero wave opacity -> a black (invisible) additive corner.
+        close3(shimmer_glitter_corner(false, 10, 20, 200000.0, 1.0), [0.0; 3]);
+    }
+
+    /// `DrawShimmer`'s `val` (:700-702): background keeps the raw opacity
+    /// (clamped to 1), foreground takes the 0.75 factor before the clamp.
+    #[test]
+    fn w4_g76_base_val_foreground_factor_and_clamp() {
+        assert_eq!(shimmer_base_val(0.8, true), 0.8);
+        assert_eq!(shimmer_base_val(0.8, false), 0.6);
+        assert_eq!(shimmer_base_val(1.5, true), 1.0);
+        assert_eq!(shimmer_base_val(1.5, false), 1.0);
+        assert_eq!(shimmer_base_val(1.0, false), 0.75);
     }
 }
