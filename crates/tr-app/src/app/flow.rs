@@ -2313,6 +2313,7 @@ pub(crate) mod front_flow_tests {
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
             quick_mana_prev: false,
+            quick_buff_prev: false,
             mouse_npc_index: -1,
             mouse_npc_type: -1,
             ui_left_press: false,

@@ -608,6 +608,13 @@ pub(crate) struct App {
     /// the edge. (The QuickHeal twin `releaseQuickHeal` `:1770` is the i54
     /// hotbar worker's `quick_heal_prev` — not duplicated here.)
     pub(crate) quick_mana_prev: bool,
+    /// The B-key (`Main.cBuff`) press latch (W4-a5), the `quick_mana_prev`
+    /// precedent: `TriggersSet.CopyInto` (`TriggersSet.cs:801-804`) calls
+    /// `Player.QuickBuff` on the QuickBuff trigger under
+    /// `PlayerInput.Triggers.Current` — the port fires it on the key's
+    /// press EDGE (the two-frame latch), not every held tick. Starts
+    /// false — the first held tick counts as the edge.
+    pub(crate) quick_buff_prev: bool,
     /// `Main.mouseNPCIndex` (`Main.cs:751`, default −1): the `Main.npc[]`
     /// slot whose head rides the cursor for a housing relocation; −1 with
     /// `mouse_npc_type == 0` is the housing query, −1/−1 is nothing.
@@ -3876,6 +3883,7 @@ impl App {
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
             quick_mana_prev: false,
+            quick_buff_prev: false,
             mouse_npc_index: -1,
             mouse_npc_type: -1,
             ui_left_press: false,
