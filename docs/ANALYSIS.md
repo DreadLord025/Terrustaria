@@ -14371,6 +14371,113 @@ rows, the hold orbit, the release/flight/retract/wall-bounce/reel-in
 transitions with the per-state factors, the kill gates, the morph, the
 Flairon bubbles, the Drippler's extra ball, the damage gates and a full
 holdв†’throwв†’bounceв†’reel lifecycle.
+## The spear family (S1-P-i06)
+
+The held-spear thrust (useStyle 5, aiStyle **19**) ports as
+`crates/tr-app/src/projectile_ai_spear.rs`, driven by the dispatch arm
+`AI()`'s `else if (this.aiStyle == 19)` (`Projectile.cs:25477-25480`) →
+`AI_019_Spears` (`:45857-46073`). The 21 kinds (46/47/49/64/66/97/105/130/
+153/212/215/218/222/342/367/368/730/877/878/879/1103) all ride
+`DefaultToSpear` (`:10720-10730`: aiStyle 19, friendly, `penetrate = -1`,
+`tileCollide = false`, drawLayer 7, `usesOwnerLight`, `ownerHitCheck`,
+melee); their `SetDefaults` rows + the 8 sub-shot rows land in
+`projectile/data.rs` (cited per field). The legacy `AI_019_Spears_Old`
+(`:46222+`, the ai[0] accumulator form) has **no caller** in the 1.4.5.8
+decompile — it is dead and is NOT ported; the live arm is the offset-curve
+form.
+
+The Player side spawns the spear through the GENERIC `ItemCheck_Shoot` tail
+(`Player.cs:49437`, `ai0/ai1/ai2 = 0`): the aim normalized to `shootSpeed`
+(`:47277-47307`), the spawn at `RotatedRelativePoint(MountedCenter)`
+(`:47196`). There is **no spear-specific ai payload** — the extension is
+driven by the OWNER's `itemAnimation` countdown, read each tick by the AI.
+The `useStyle == 5` block (`:47349-47375`) only sets `itemRotation` (the
+port's `item_rotation_for_aim`, already wired). The melee
+`speed /= meleeSpeed` (`:47061-47064`) applies to every spear EXCEPT the
+jousting lances 877-879, which ride
+`ProjectileID.Sets.NoMeleeSpeedVelocityScaling` (`ProjectileID.cs:547`);
+the shoot path's exception list now carries them (the prior comment claimed
+no ported kind rode the set — corrected).
+
+The arm: re-centre the box on the owner anchor (`:45864`), add
+`velocity * spear_offset` (`:45880`), the per-kind sub-shot switch
+(`:45881-45938`), the rotation `atan2(vy,vx) + π/2 + π/4`, minus π/2 when
+`spriteDirection == -1` (`:45943-45947`), then `ai[0]++` and the kill at
+`ai[0] >= itemAnimationMax` (`:46063-46072`) — the lances (877-879) hold
+while `player.channel` (`flag3 &= !channel`). The offset curve
+(`AI_019_Spears_GetSpearOffsetRelativeToPlayer` `:46075-46184`):
+`num3 = max/3` (integer), `num4 = min(anim, num3)`, `num5 = anim - num4`,
+the per-kind `(num6 base, num7 extend, num8 retract)` triple feeds
+`num6 + num7·((max−num3)−num5) − num8·(num3−num4)`. The extension hitbox
+(`:46186-46220`) exists only in the extension phase (`anim >= max/3`) and
+only for 46/105/153: reach `10 + reachScale·(1/meleeSpeed)·t`, side
+`10 + widthScale·t`, `t = Remap(anim, max, max/3, 0, 1)`, centred at
+`Center + aimUnit·reach`.
+
+Movement: aiStyle 19 is NOT in `UpdatePosition`'s skip list (`:20435`), so
+the generic `HandleMovement` → `position += velocity` (`:20445`) runs AFTER
+the AI (`:17015`) — the dispatch runs `kill_step` (the `tileCollide = false`
+free-move branch) after the arm. The AI's own `velocity * offset` and the
+post-AI `velocity` step are both kept, in order.
+
+Hit side: the `ownerHitCheck` gate (`Damage_PVE_Inner` `:12637`:
+`!noTileCollide && ownerHitCheck && !CanHitWithMeleeWeapon` → return) is
+keyed on `SPEAR_KINDS` (the only ported ownerHitCheck family); the sight
+lines (`CanHitWithMeleeWeapon` `:12400-12411`) read the owner snapshot. The
+`Colliding` aiStyle-19 arm (`:15815-15843`) steps a box-sized rect from the
+projectile centre toward the extension-box centre (step = max(side, 12)),
+then tests the box itself; it only returns on a HIT — a miss falls through
+to the base-rect test (`:15888`), so the port ORs the two.
+
+The owner snapshot (`SpearOwner`) rides the pool's `set_spear_owner` seam
+(the `set_disco`/`set_wind` setter pattern — no `update` signature churn);
+`world_sim/projectiles.rs` builds it per fixed step from the live player +
+the swing timers (`itemAnimation = round(app.swing·60)`, the `ticks_of`
+convention). The lances' channel-hold (`SetDummyItemTime(max/3)`,
+`:45941` → `Player.cs:4432-4441`) drains via `take_spear_hold` and re-arms
+`app.swing`/`app.item_time` (the `FlailTick.facing` write-back precedent).
+
+The sub-shots ride their OWN aiStyles, ported here so the spawns are not
+inert: the Mushroom Spear's spore **131** (aiStyle 30 default arm
+`:26775-26784`: velocity×0.8, rot+=0.2, alpha+=4, kill at 255); the
+Chlorophyte Partisan's cloud **228** + the Thunder Spear's bolt **732**
+(aiStyle 44 `:27893-27948`: the fade + the frame machine, `projFrames`
+5/4); the North Pole's snowflake **343** (aiStyle 57 `:28867-28905`: the
+30-tick gravity, the alpha-50 fade, the `Next(7)`-seeded cadence spawning
+**344** with `ai1 = Next(3)`); the 344 falling flake (aiStyle 1, the
+`AI_001` type hook `:57062-57114`: the tile-kill probe, the localAI[1]
+fade/gravity/sibling-push machine, `frame = (int)ai[1]`, the 60-px
+same-kind separation scan — precomputed pool-side, the `minion_separation`
+pattern; the 344 has its OWN gravity-chain arm so the generic `ai[0] >= 15`
+gravity does NOT apply, and the `:57748` rotation exclusion means no
+default rotation); the Obsidian Swordfish's bones **1107-1109** (aiStyle
+14, the generic `ai_spear` tail — no type branch in `AI_014`).
+
+RNG (the `UpdateProjectiles` stream, `Main.cs:17775-17777`): the
+behaviour-feeding draws stay in C# order — the swordfish bone burst
+(`Next(1,4)` count, then per bone `NextFloat`×3 velocity jitter + `Next(3)`
+kind + `Next(30,150)` timeLeft, `:45926-45934`) and the snowflake cadence
+(`Next(7)` seed + the trailing `Next(3)` frame, `:28890`/`:28902`). The
+dust/light BODIES are skipped (no draw layer) and their explicit gate rolls
+go with them (the `projectile_ai_frostmoon` zero-RNG convention — no
+observable state depends on a skipped dust): the Trident's `wet && Next(2)`
+bubble (`:45884`), the 732/46/105/153/342/1103/877-879 trailing dust gates.
+The spore/cloud/bolt spawns are RNG-free cadences.
+
+Deliberate skips (none simulated): dust, `Lighting.AddLight`, sound,
+`netUpdate`, `player.heldProj` / `MatchItemTimeToItemAnimation` (no port
+consumer — the flail precedent), `drawLayer`/`usesOwnerLight` (no draw
+consumer), the `noTileCollide` term of the ownerHitCheck gate (no NPC
+field; the ghost kinds are not spear targets here). The 344's
+`Main.projFrames[344] = 3` (`Main.cs:8568`), the 228's 5 (`:8605`) and the
+732's 4 (`:8629`) join `proj_frames`.
+
+CODE-ONLY MODE: the 9 witness tests in `projectile_ai_spear.rs` are WRITTEN
+NOT RUN (no compiler invoked on this branch); verified by re-reading the
+cited C# blocks and hand arithmetic (the offset curve at the extension
+peak/retract floor, the extension-box phase/kind gates, the kill-at-max +
+lance hold, the bone-burst draw order, the spore cadence, the sibling push).
+
 ## The full `PlayerFrame` chain (M2-DRAW-3, 2026-11-11)
 
 `Player::update_frames` now ports `PlayerFrame()` (`Player.cs:35755-36647`) arm for arm

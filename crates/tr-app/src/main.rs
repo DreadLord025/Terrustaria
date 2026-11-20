@@ -192,6 +192,10 @@ mod projectile_ai_misc;
 // remainder; the dispatch claim + the R7 request drain are the wiring
 // follow-up (module doc + docs/ANALYSIS.md "S1-D-4 empress proj").
 mod projectile_ai_empress;
+// S1-P-i06 — the spear family (aiStyle 19, `AI_019_Spears`): the held-spear
+// thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
+// small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
+mod projectile_ai_spear;
 mod rain;
 mod regen;
 mod research;
