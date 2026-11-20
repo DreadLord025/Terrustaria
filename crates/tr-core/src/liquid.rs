@@ -413,7 +413,11 @@ impl LiquidSystem {
         if world.tiles[here_i].liquid < 2 {
             world.tiles[here_i].liquid = 0;
             for nx in [x - 1, x + 1] {
-                let j = world.index(nx, y);
+                // The C#'s `Main.tile[nx, y]` is null at the world edge; the
+                // port's `index` would wrap, so probe through `tile` first.
+                let Some(j) = world.tile(nx, y).map(|_| world.index(nx, y)) else {
+                    continue;
+                };
                 if world.tiles[j].liquid < 2 {
                     world.tiles[j].liquid = 0;
                 } else {
