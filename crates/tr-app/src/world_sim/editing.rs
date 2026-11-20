@@ -1509,6 +1509,23 @@ fn wall_hammer_tick(app: &mut App, tx: i32, ty: i32, held: ItemSlot, mouse: (f32
             }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
         // `:45949` — `WorldGen.KillWall(x, y)`.
         break_wall(app, wx, wy);
+    } else {
+        // `:45957` — `WorldGen.KillWall(x, y, fail: true)`: the sub-100 tick
+        // plays the sound table too (`WorldGen.cs:60385` precedes the fail
+        // return), the wall stays and the damage stays in the book. The cue
+        // rides the SAME `UpdatePlayers` stream, BEFORE the prune — the C#
+        // call order (W4-c15; the 3-dust burst is the dust-layer skip).
+        if let Some(edit::WallBreak::Failed(wall)) =
+            edit::kill_wall(&mut app.world, wx, wy, true)
+        {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            app.audio.play_wall_break_sound(
+                edit::kill_wall_sound(wall),
+                wx as f32 * TILE_PX,
+                wy as f32 * TILE_PX,
+                rng,
+            );
+        }
     }
     // `:45963-45966` — a non-zero damage prunes AFTER both branches (the
     // fail tick's KillWall(fail) dust is the recorded deviation).
@@ -5285,8 +5302,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
 }
 
 pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
-    let Some(wall) = edit::break_wall(&mut app.world, tx, ty) else {
+    // W4-c15 — the full `KillWall` entry: the sound table plays on the
+    // progression-fail arm too (`WorldGen.cs:60385` precedes the fail return
+    // `:60395`); only the success arm drops and replicates.
+    let Some(outcome) = edit::kill_wall(&mut app.world, tx, ty, false) else {
         return;
+    };
+    let wall = match outcome {
+        edit::WallBreak::Broken(w) | edit::WallBreak::Failed(w) => w,
     };
     // `WorldGen.KillWall` plays BEFORE the dust and the drop
     // (`WorldGen.cs:60385` precedes `KillWall_DropItems` `:60400`): the
@@ -5300,6 +5323,11 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
         ty as f32 * TILE_PX,
         rng,
     );
+    if matches!(outcome, edit::WallBreak::Failed(_)) {
+        // `:60395-60399` — the fail return: no drop, no wall write, no edit
+        // record (the 3-dust burst is the recorded dust-layer skip).
+        return;
+    }
     // `KillWall_DropItems` (`WorldGen.cs:60443-60450`) drops the
     // `KillWall_GetItemDrops` conversion, not a reverse `createWall` lookup:
     // the unsafe dungeon walls drop their SAFE item (7→135, 94→1378, …),
@@ -7620,12 +7648,19 @@ fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
 }
 
 /// Applies a replicated edit. `kind`: 0 break tile, 1 place tile, 2 break wall,
-/// 3 place wall. Returns the wall id a kind-2 break removed — the C# replay
-/// runs the full `KillWall` (`MessageBuffer.cs:1177`), whose sound arm plays
-/// on the receiver too; the caller plays the cue on the bare `Main.rand`
-/// stream (the message handler runs outside every swap, `Main.cs:16895`'s
-/// `NpcStrike` precedent — S1-E-21i).
-pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16) -> Option<u16> {
+/// 3 place wall. Returns the kind-2 `KillWall` outcome — the C# replay runs
+/// the full entry (`MessageBuffer.cs:1177`), whose sound arm plays on the
+/// receiver on BOTH the break and the progression-fail arms
+/// (`WorldGen.cs:60385` precedes the fail return; W4-c15); the caller plays
+/// the cue on the bare `Main.rand` stream (the message handler runs outside
+/// every swap, `Main.cs:16895`'s `NpcStrike` precedent — S1-E-21i).
+pub(crate) fn apply_edit(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    kind: u8,
+    tile: u16,
+) -> Option<edit::WallBreak> {
     match kind {
         0 => {
             // Vanilla suppresses item drops on the replication side
@@ -7649,7 +7684,12 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
             edit::place_item_tile(world, x, y, tile, 0, 1);
             None
         }
-        2 => edit::break_wall(world, x, y),
+        // `WorldGen.KillWall(i, j, flag15)` (`MessageBuffer.cs:1177`): the
+        // outcome rides both arms — the fail return plays the cue too. The
+        // wire carries no `fail` byte (the port's `17` deviation, ANALYSIS),
+        // so the caller's sub-100 flag cannot reach here; the progression
+        // refusal re-evaluates on the receiver exactly as the C# does.
+        2 => edit::kill_wall(world, x, y, false),
         3 => {
             edit::place_wall(world, x, y, tile);
             None
@@ -18716,6 +18756,109 @@ mod wall_placement_tests {
         assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "12 ticks is short");
         update_editing(&mut app, 1.0 / 60.0, SCREEN);
         assert_eq!(app.world.tile(10, 10).unwrap().wall, 0, "the 13th tick breaks");
+    }
+
+    /// W4-c15 — `Player.PickWall`'s sub-100 tick (`Player.cs:45957` →
+    /// `WorldGen.KillWall(x, y, fail: true)`): the sound table plays on the
+    /// fail arm (`WorldGen.cs:60385` precedes the fail return `:60395`),
+    /// the wall AND the damage book stay. The Dig cue's two draws
+    /// (`Next(3)` variation + `Next(-10, 11)` pitch) ride `UpdatePlayers`,
+    /// attenuation gate first — one fail tick, exactly two draws.
+    #[test]
+    fn w4_c15_the_sub_100_hammer_tick_plays_the_fail_cue_on_update_players() {
+        let mut w = empty_world();
+        set_wall(&mut w, 10, 10, 4);
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 3505, 1); // Copper Hammer (hammer 35 → 52)
+        let held = app.inventory[app.selected];
+        wall_hammer_tick(&mut app, 10, 10, held, (168.0, 168.0));
+        // The wall stays, the 52 damage stays in the WALL book.
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "the fail tick keeps the wall");
+        let slot = app.hit_tile.hit_object(10, 10, tr_core::hit_tile::WALL);
+        assert_eq!(app.hit_tile.data[slot].damage, 52, "the damage stays in the book");
+        // Exactly the Dig cue's two draws on UpdatePlayers, nothing else.
+        let mut witness = tr_core::UnifiedRandom::new(0);
+        let _ = witness.next_range(0, 3);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            witness,
+            "one fail tick draws the variation + the pitch, once"
+        );
+        assert!(app.items.is_empty(), "the fail arm drops nothing");
+        // The muted gate: another fail tick (the book reset keeps it
+        // sub-100) is draw-free.
+        app.hit_tile.clear(slot);
+        let l = crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        };
+        app.audio.set_listener(l);
+        wall_hammer_tick(&mut app, 10, 10, held, (168.0, 168.0));
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            witness,
+            "the muted fail tick draws nothing"
+        );
+        assert_eq!(app.hit_tile.data[slot].damage, 52, "the book still accumulates");
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "still a fail tick");
+    }
+
+    /// W4-c15 — the progression refusal plays the cue and keeps the wall:
+    /// `break_wall` on a pre-Skeletron dungeon wall 7 reports `Failed`, the
+    /// Dig cue's two draws ride `UpdatePlayers`, and NO drop/replication
+    /// follows (the fail return `WorldGen.cs:60395-60399`). Post-boss the
+    /// same cell breaks and drops its safe item 135.
+    #[test]
+    fn w4_c15_the_progression_refusal_plays_but_never_drops() {
+        let mut w = empty_world();
+        set_wall(&mut w, 10, 10, 7); // blue dungeon unsafe, pre-Skeletron
+        let mut app = wall_app(w, 10, 10);
+        break_wall(&mut app, 10, 10);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 7, "the refusal keeps the wall");
+        assert!(app.items.is_empty(), "the fail return drops nothing");
+        let mut witness = tr_core::UnifiedRandom::new(0);
+        let _ = witness.next_range(0, 3);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            witness,
+            "the fail arm's Dig cue drew exactly twice, no drop rolls"
+        );
+        // Post-Skeletron the break lands: the cue plays AND the drop rolls.
+        app.world.downed_skeletron = true;
+        break_wall(&mut app, 10, 10);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 0);
+        assert!(app.items.iter().any(|d| d.kind == 135), "the safe item drops");
+        assert_ne!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            witness,
+            "the success arm's drop rolls advance the stream past the cue"
+        );
+    }
+
+    /// W4-c15 — the replicated `17` wall edit (`MessageBuffer.cs:1177`)
+    /// surfaces BOTH arms: the pre-Skeletron dungeon wall reports `Failed`
+    /// (the receiver's cue plays, the wall stays), post-boss `Broken`.
+    #[test]
+    fn w4_c15_apply_edit_reports_the_wall_break_fail_arm() {
+        let mut w = empty_world();
+        set_wall(&mut w, 10, 10, 7);
+        assert_eq!(
+            apply_edit(&mut w, 10, 10, 2, 0),
+            Some(edit::WallBreak::Failed(7)),
+            "the progression refusal replays as Failed"
+        );
+        assert_eq!(w.tile(10, 10).unwrap().wall, 7);
+        w.downed_skeletron = true;
+        assert_eq!(apply_edit(&mut w, 10, 10, 2, 0), Some(edit::WallBreak::Broken(7)));
+        assert_eq!(w.tile(10, 10).unwrap().wall, 0);
+        assert_eq!(apply_edit(&mut w, 10, 10, 2, 0), None, "the empty cell answers None");
     }
 
     /// `break_wall`'s drop is the `KillWall_GetItemDrops` conversion, not a

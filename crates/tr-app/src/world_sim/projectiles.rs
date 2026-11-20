@@ -471,6 +471,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
         }
     }
+    // W4-c15 — the explosion wall-walk's `KillWall_PlaySounds` plays
+    // (`Projectile.ExplodeTiles`' 3×3 `WorldGen.KillWall`, `Projectile.cs:
+    // 78745`): the four-arm table's draws ride the SAME `UpdateProjectiles`
+    // stream (`Main.cs:17775`), attenuation gate first. Drained AFTER the
+    // proj cues — the blast cue queues at detonation, the wall walk runs in
+    // `Kill` after it (the C# draws mid-walk; the pass-tail batch convention,
+    // ANALYSIS "The world-sounds wave" addendum).
+    for (cue, x, y) in app.projectiles.drain_wall_break_sounds() {
+        app.audio.play_wall_break_sound(cue, x, y, rng);
+    }
     // `NewProjectile`'s `TryUpdateChannel` (`Projectile.cs:11097-11100`):
     // the local spawns of this tick track the cancel key's expected type —
     // the last one wins (`ChannelCancelKey.TryTracking` `Player.cs:134-140`).
@@ -803,6 +813,114 @@ mod s1_e_21h_sound_stream_tests {
             witness,
             "the one-cue-per-life latch draws nothing on tick 2"
         );
+    }
+}
+
+/// W4-c15 — the explosion wall-walk drain's stream contract (written, NOT
+/// run — code-only mode): the queued `KillWall_PlaySounds` cues draw on the
+/// `UpdateProjectiles` stream at the pass-tail drain, attenuation gate
+/// first — the draw census equals the queue's payload census (Shatter 0,
+/// Dig 2 per cue), plus the blast cue's one case-2 pitch draw.
+#[cfg(test)]
+mod w4_c15_wall_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::projectile::BOMB;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::{UnifiedRandom, World};
+
+    /// The bomb + slab fixture: glass walls (21 → Shatter, draw-free) with
+    /// one pre-Skeletron dungeon wall (7 → the Dig fail arm) at the centre.
+    fn bomb_wall_app(sound_volume: f32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("t".into(), 64, 64);
+        for y in 14..34 {
+            for x in 10..40 {
+                let i = app.world.index(x, y);
+                app.world.tiles[i] = Tile { kind: 1, wall: 21, ..Default::default() };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let i = app.world.index(20, 20);
+        app.world.tiles[i].wall = 7;
+        app.projectiles.spawn_with_data(BOMB, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 0, 0.0);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (320.0, 320.0),
+            sound_volume,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    #[test]
+    fn w4_c15_the_wall_drain_draws_match_the_queue_census_on_update_projectiles() {
+        // The queue census: a sibling pool run (the bomb_tests shape) drains
+        // the intents the pass will play — every Dig cue owes two draws
+        // (`Next(3)` + `Next(-10, 11)`), every Shatter none.
+        let mut census = bomb_wall_app(1.0);
+        for _ in 0..181 {
+            census.projectiles.update(
+                &mut census.world,
+                &mut census.npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        }
+        let queued = census.projectiles.drain_wall_break_sounds();
+        let digs = queued.iter().filter(|(c, _, _)| *c == (0, 1)).count();
+        let shatters = queued.iter().filter(|(c, _, _)| *c == (13, 1)).count();
+        assert!(digs >= 1, "the dungeon fail arm queued");
+        assert!(shatters >= 1, "the glass walk queued");
+        // The muted pass: the gate refuses every play — the stream state is
+        // the gameplay-only baseline (the bomb arc's dust draws are skipped).
+        let mut muted = bomb_wall_app(0.0);
+        for _ in 0..181 {
+            update_projectiles(&mut muted, 1.0 / 60.0);
+        }
+        // The audible pass: baseline + the blast's one case-2 default pitch
+        // (`Next(-6, 7)`) + the wall census, in drain order (proj cues first).
+        let mut audible = bomb_wall_app(1.0);
+        for _ in 0..181 {
+            update_projectiles(&mut audible, 1.0 / 60.0);
+        }
+        let mut witness = muted.rngs.stream(RngKey::UpdateProjectiles).clone();
+        let _ = witness.next_range(-6, 7);
+        for _ in 0..digs {
+            let _ = witness.next_range(0, 3);
+            let _ = witness.next_range(-10, 11);
+        }
+        assert_eq!(
+            *audible.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "the drain drew exactly the blast + the queue census"
+        );
+        // Every other stage stream matches the muted baseline — the wall
+        // cues never leak onto another stage's stream.
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert_eq!(
+                *audible.rngs.stream(key),
+                *muted.rngs.stream(key),
+                "{} stayed on the muted baseline",
+                key.name()
+            );
+        }
+        // The refused wall stayed through the whole pass.
+        assert_eq!(audible.world.tile(20, 20).unwrap().wall, 7);
+        assert_eq!(audible.world.tile(19, 20).unwrap().wall, 0, "the glass broke");
     }
 }
 

@@ -14487,6 +14487,14 @@ pub struct ProjectilePool {
     /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
     /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
     pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// W4-c15 — the explosion wall-walk's `KillWall_PlaySounds` intents
+    /// (`Projectile.ExplodeTiles`' 3×3 `WorldGen.KillWall` calls,
+    /// `Projectile.cs:78745`): `(cue, x, y)` per broken/failed wall, the
+    /// `kill_wall_sound` table's payload. The world sim drains them through
+    /// `Audio::play_wall_break_sound` on the `UpdateProjectiles` stream
+    /// (`Main.cs:17775` wraps the whole walk) — the E21i deferral closed on
+    /// the E21h queue→drain convention (the C# draws mid-walk).
+    pending_wall_break_sounds: Vec<(tr_core::edit::SoundCue, f32, f32)>,
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
     /// the world-sim pass onto the player's `_channelShotCache` — the LAST
@@ -14913,6 +14921,7 @@ impl ProjectilePool {
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
+            pending_wall_break_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
             pending_spear_hold: None,
@@ -16137,6 +16146,18 @@ impl ProjectilePool {
     /// first — the wave-C drain convention.
     pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_proj_sounds)
+    }
+
+    /// W4-c15 — the explosion wall-walk's wall-break cue intents
+    /// (`Projectile.ExplodeTiles` `Projectile.cs:78745` →
+    /// `WorldGen.KillWall_PlaySounds` `WorldGen.cs:60423-60441`):
+    /// `(cue, x, y)` per wall the 3×3 walk broke (or progression-failed —
+    /// the C# plays on both arms). The world sim drains and plays them
+    /// through `Audio::play_wall_break_sound` on the `UpdateProjectiles`
+    /// stream (`Main.cs:17775`), attenuation gate first — the wave-C
+    /// drain convention.
+    pub fn drain_wall_break_sounds(&mut self) -> Vec<(tr_core::edit::SoundCue, f32, f32)> {
+        std::mem::take(&mut self.pending_wall_break_sounds)
     }
 
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
@@ -20400,7 +20421,21 @@ impl ProjectilePool {
                     for l in (j - 1)..=(j + 1) {
                         if let Some(wt) = world.tile(k, l) {
                             if wt.wall != 0 && wt.wall != 350 {
-                                let _ = tr_core::edit::break_wall(world, k, l);
+                                // W4-c15 — `WorldGen.KillWall(k, l)`
+                                // (`:78745`): the cue plays on the
+                                // progression-fail arm too; the queue rides
+                                // the pass-tail drain (E21h convention).
+                                if let Some(outcome) = tr_core::edit::kill_wall(world, k, l, false) {
+                                    let wall = match outcome {
+                                        tr_core::edit::WallBreak::Broken(w)
+                                        | tr_core::edit::WallBreak::Failed(w) => w,
+                                    };
+                                    self.pending_wall_break_sounds.push((
+                                        tr_core::edit::kill_wall_sound(wall),
+                                        k as f32 * 16.0,
+                                        l as f32 * 16.0,
+                                    ));
+                                }
                             }
                         }
                     }
@@ -21989,11 +22024,23 @@ impl ProjectilePool {
                             continue;
                         };
                         if wt.wall != 0 && wt.wall != 350 {
-                            // `WorldGen.KillWall` — the port's wall break
-                            // discards the item (the C# KillWall drops the
-                            // wall item; the explosion path drops nothing —
-                            // see ANALYSIS).
-                            let _ = tr_core::edit::break_wall(world, wx, wy);
+                            // `WorldGen.KillWall` (`:78745`) — the port's wall
+                            // break discards the item (the C# KillWall drops
+                            // the wall item; the explosion path drops nothing
+                            // — see ANALYSIS). W4-c15: the cue queues for the
+                            // pass-tail drain on the `UpdateProjectiles`
+                            // stream (the progression-fail arm plays too).
+                            if let Some(outcome) = tr_core::edit::kill_wall(world, wx, wy, false) {
+                                let wall = match outcome {
+                                    tr_core::edit::WallBreak::Broken(w)
+                                    | tr_core::edit::WallBreak::Failed(w) => w,
+                                };
+                                self.pending_wall_break_sounds.push((
+                                    tr_core::edit::kill_wall_sound(wall),
+                                    wx as f32 * 16.0,
+                                    wy as f32 * 16.0,
+                                ));
+                            }
                         }
                     }
                 }
@@ -22139,7 +22186,23 @@ impl ProjectilePool {
                         for l in (j - 1)..=(j + 1) {
                             if let Some(wt) = world.tile(k, l) {
                                 if wt.wall != 0 && wt.wall != 350 {
-                                    let _ = tr_core::edit::break_wall(world, k, l);
+                                    // W4-c15 — `WorldGen.KillWall(k, l)`
+                                    // (`:78745`): the cue queues on both the
+                                    // break and the progression-fail arms,
+                                    // drained on `UpdateProjectiles`.
+                                    if let Some(outcome) =
+                                        tr_core::edit::kill_wall(world, k, l, false)
+                                    {
+                                        let wall = match outcome {
+                                            tr_core::edit::WallBreak::Broken(w)
+                                            | tr_core::edit::WallBreak::Failed(w) => w,
+                                        };
+                                        self.pending_wall_break_sounds.push((
+                                            tr_core::edit::kill_wall_sound(wall),
+                                            k as f32 * 16.0,
+                                            l as f32 * 16.0,
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -27491,6 +27554,98 @@ mod bomb_tests {
         assert!(
             w.tile(28, 20).unwrap().flags & FLAG_ACTIVE != 0,
             "8 tiles out survives"
+        );
+    }
+
+    #[test]
+    fn w4_c15_the_explosion_wall_walk_queues_the_cue_on_both_arms() {
+        // `ExplodeTiles`' 3×3 wall walk (`Projectile.cs:78738-78752`): the
+        // stone slab around the blast carries glass walls (21 → Shatter)
+        // and one pre-Skeletron dungeon wall (7 → Dig on the FAIL arm —
+        // `KillWall_CheckFailure` keeps it, `KillWall_PlaySounds` still
+        // plays, `WorldGen.cs:60384-60399`).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(BOMB, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 0, 0.0);
+        let mut w = world();
+        for y in 14..34 {
+            for x in 10..40 {
+                put(&mut w, x, y, 1);
+                let i = w.index(x, y);
+                w.tiles[i].wall = 21;
+            }
+        }
+        // The dungeon wall sits behind a stone tile inside the radius; the
+        // 3×3 walks re-visit it, but after the first Failed attempt the
+        // queue holds ONE intent per visit of a still-walled cell — the
+        // walk order is (ty, tx, wy, wx), the centre's own 3×3 first.
+        let i = w.index(20, 20);
+        w.tiles[i].wall = 7;
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..181 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        }
+        assert!(!pool.slots()[0].active, "the bomb exploded");
+        // The glass walls in the crater came off; the dungeon wall stayed.
+        assert_eq!(w.tile(19, 20).unwrap().wall, 0, "the glass broke");
+        assert_eq!(w.tile(20, 20).unwrap().wall, 7, "the dungeon wall refused");
+        let queued = pool.drain_wall_break_sounds();
+        assert!(!queued.is_empty(), "the walk queued its cues");
+        // Every broken glass cell queued the Shatter arm at tile pixels;
+        // the refused dungeon cell queued the Dig arm — and ONLY that arm
+        // for wall 7 (`kill_wall_sound(7) == (0, 1)`).
+        let digs = queued.iter().filter(|(cue, _, _)| *cue == (0, 1)).count();
+        assert!(digs >= 1, "the fail arm queued the Dig cue");
+        assert!(
+            queued.iter().all(|(cue, _, _)| *cue == (13, 1) || *cue == (0, 1)),
+            "only the glass/dungeon arms ran"
+        );
+        assert!(
+            queued.iter().any(|(cue, x, y)| *cue == (0, 1)
+                && *x == 20.0 * 16.0 && *y == 20.0 * 16.0),
+            "the refused cell's cue at (320, 320)"
+        );
+        // The drain empties exactly once.
+        assert!(pool.drain_wall_break_sounds().is_empty());
+        // The 350 fold: an unbreakable wall inside the blast never queues.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(BOMB, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 0, 0.0);
+        let mut w = world();
+        for y in 14..34 {
+            for x in 10..40 {
+                put(&mut w, x, y, 1);
+                let i = w.index(x, y);
+                w.tiles[i].wall = 350;
+            }
+        }
+        for _ in 0..181 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        }
+        assert_eq!(w.tile(20, 20).unwrap().wall, 350, "the 350 stays");
+        assert!(
+            pool.drain_wall_break_sounds().is_empty(),
+            "the caller's 350 gate (`:78743`) queues nothing"
         );
     }
 

@@ -419,13 +419,19 @@ impl App {
             }
             C2s::Edit { x, y, kind, tile } => {
                 log::info!("net edit kind {kind} at {x},{y} from {id}");
-                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
+                let wall_outcome = apply_edit(&mut self.world, x, y, kind, tile);
                 // S1-E-21i — the `KillWall` replay's sound arm
                 // (`MessageBuffer.cs:1177`): the host is `netMode == 2`, so
                 // the positioned gate refuses before any draw
                 // (`LegacySoundPlayer.cs:386-388` — the listener's `server`
-                // flag); the play call keeps the C#'s shape.
-                if let Some(wall) = broken_wall {
+                // flag); the play call keeps the C#'s shape. W4-c15: the
+                // progression-fail arm plays the cue too (`WorldGen.cs:
+                // 60385` precedes the fail return `:60395`).
+                if let Some(outcome) = wall_outcome {
+                    let wall = match outcome {
+                        tr_core::edit::WallBreak::Broken(w)
+                        | tr_core::edit::WallBreak::Failed(w) => w,
+                    };
                     self.audio.play_wall_break_sound(
                         tr_core::edit::kill_wall_sound(wall),
                         x as f32 * 16.0,
@@ -1438,12 +1444,18 @@ impl App {
                 self.world.day_time = day;
             }
             S2c::Edit { x, y, kind, tile } => {
-                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
+                let wall_outcome = apply_edit(&mut self.world, x, y, kind, tile);
                 // S1-E-21i — the client's `KillWall` replay plays too
                 // (`MessageBuffer.cs:1177`); the message handler runs
                 // outside every `SwapRandom` (`Main.cs:16895`'s NpcStrike
-                // precedent), so the draws ride the bare stream.
-                if let Some(wall) = broken_wall {
+                // precedent), so the draws ride the bare stream. W4-c15:
+                // the progression-fail arm plays the cue too — the wall
+                // stays, no drop (the fail return `WorldGen.cs:60395`).
+                if let Some(outcome) = wall_outcome {
+                    let wall = match outcome {
+                        tr_core::edit::WallBreak::Broken(w)
+                        | tr_core::edit::WallBreak::Failed(w) => w,
+                    };
                     self.audio.play_wall_break_sound(
                         tr_core::edit::kill_wall_sound(wall),
                         x as f32 * 16.0,
