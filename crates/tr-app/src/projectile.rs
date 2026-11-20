@@ -177,6 +177,16 @@ fn hit_time_damage(kind: u16, damage: i32) -> i32 {
         SWORD_WHIP => (damage as f64 * 0.8) as i32,
         // `:13479-13481` — the Flower Whip.
         FLOWER_WHIP => (damage as f64 * 0.85) as i32,
+        // `:13482-13484` — the Mace Whip.
+        MACE_WHIP => (damage as f64 * 0.95) as i32,
+        // `:13485-13487` — the Scythe Whip (Dark Harvest).
+        SCYTHE_WHIP => (damage as f64 * 0.9) as i32,
+        // `:13488-13490` — the Eel Whip.
+        EEL_WHIP => (damage as f64 * 0.95) as i32,
+        // `:13491-13493` — the Rainbow Whip.
+        RAINBOW_WHIP => (damage as f64 * 0.8) as i32,
+        // `:13494-13496` — the Constellation.
+        CONSTELLATION_WHIP => (damage as f64 * 0.9) as i32,
         _ => damage,
     }
 }
@@ -44802,6 +44812,32 @@ mod w4_a4_hit_time_tests {
             (COOL_WHIP, 70, 49),
             (SWORD_WHIP, 80, 64),
             (FLOWER_WHIP, 85, 72),
+        ] {
+            let mut pool = whip_slot(kind, 100);
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m1, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[0] = 0;
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m2, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 100 + m1, "kind {kind} hit 2 strikes the decay");
+        }
+    }
+
+    /// `:13482-13496` — the Mace Whip ×0.95, the Scythe Whip (Dark
+    /// Harvest) ×0.9, the Eel Whip ×0.95, the Rainbow Whip ×0.8 and the
+    /// Constellation ×0.9. The Mace/Eel 0.95 is the `(double)` form
+    /// (95.0 → 95), unlike the harp notes' `(float)` 0.95f (94).
+    #[test]
+    fn w4_a4_the_mace_scythe_eel_rainbow_constellation_whips_decay() {
+        for (kind, m1, m2) in [
+            (MACE_WHIP, 95, 90),
+            (SCYTHE_WHIP, 90, 81),
+            (EEL_WHIP, 95, 90),
+            (RAINBOW_WHIP, 80, 64),
+            (CONSTELLATION_WHIP, 90, 81),
         ] {
             let mut pool = whip_slot(kind, 100);
             let mut npc = victim();
