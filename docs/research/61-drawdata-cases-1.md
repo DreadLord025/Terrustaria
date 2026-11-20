@@ -631,3 +631,26 @@ The port's range spellings `574..=578` / `712..=716` expand to exactly the C#'s
 contiguous label runs; the full alternation covers all 27 labels with no extras
 (checked label-by-label against :4880-4906). No glow rows for any of these ids in
 the second switch.
+
+### Batch 10 — height-18 group middle (boulders/altars echoes/beams): 352, 462, 487, 488, 574, 575, 576, 577, 578, 664 (10 ids)
+
+C# `TileDrawing.cs:4890-4908` — the same group body cited verbatim in batch 9
+(`tileHeight = 18; break;`); labels 352..664 at :4890-4899.
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 352 | height-18 group | :4890-4908 | `drawdata.rs:327-347` | PORTED |
+| 462 | shares the group | :4891 | :327-347 | PORTED |
+| 487 | shares the group | :4892 | :327-347 | PORTED |
+| 488 | shares the group | :4893 | :327-347 | PORTED |
+| 574 | shares the group (`574..=578` run) | :4894 | :341 (`574..=578`) | PORTED |
+| 575 | shares the run | :4895 | :341 | PORTED |
+| 576 | shares the run | :4896 | :341 | PORTED |
+| 577 | shares the run | :4897 | :341 | PORTED |
+| 578 | shares the run | :4898 | :341 | PORTED |
+| 664 | shares the group | :4899 | :342 | PORTED |
+
+No second-switch rows for these ids. The boulder kinds (272/411/487/488/574-578/
+664/712-716 family) get their `DrawSingleTile` parity/source shifts elsewhere
+(case 272's cog-style shift is d63's quarter; 487/488/574-578 have no
+DrawSingleTile companion arms — checked `:1020-1165`).
