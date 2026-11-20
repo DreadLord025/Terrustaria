@@ -10752,6 +10752,162 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI_135_OgreStomp` (`Projectile.cs:68671-68787`) — the Ogre's ground
+    /// pound (683) and the Queen Slime's twin (922). W4-d14.
+    ///
+    /// The C# order: the per-kind radius cap (40, the 922's 30), the
+    /// counter, the 10-tick kill, the velocity zero, the position→centre
+    /// collapse, the `Lerp(5, cap, GetLerpValue(0, 9, ai[0]))` box growth
+    /// (the `Size` setter truncates to int, Entity.cs:164-168), the
+    /// centre re-pin, then — every 3rd tick only — the tile walk: the
+    /// radius gate, the exposed-full-solid gate, the dust-amount row, the
+    /// layer-2 second row, the 2-in-3 gore gate (the 922 swaps the gore
+    /// for the crystal dust).
+    ///
+    /// RNG census (the `UpdateProjectiles` stream): the first dust row
+    /// draws ONE `NextFloat` per dust (`:68720`, the velocity.Y scale —
+    /// the `KillTile_MakeTileDust` bodies are the dust skip, its type
+    /// table rand-free for the exposed-solid kinds); the layer-2 second
+    /// row the same (`:68750`); the gore gate is `Next(3)` (`:68755`),
+    /// the taken branch draws the `61 + Next(3)` type (`:68780`) + the
+    /// NewGore kicks `Next(10,31)`/`Next(-20,21)` (Gore.cs:1327-1328) +
+    /// one `NextFloat` (`:68782`). The 922's dust arms draw the colour
+    /// helper's TWO `NextFloat`s per call (`NPC.cs:45121-45124`) plus the
+    /// per-dust `NextFloat`/`NextFloatDirection`/`Next(16)` pair/`Next(3)`
+    /// (`:68732-68741`/`:68766-68775`) — the bodies are skipped, the
+    /// explicit draws stay. The `num5 <= 0` short-circuit (`:68755`)
+    /// skips the gate draw entirely (the `||`'s left operand).
+    fn ai_ogre_stomp(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // `:68673-68677` — the radius cap.
+        let cap = if self.kind == QUEEN_SLIME_SMASH { 30.0 } else { 40.0 };
+        // `:68678-68683` — the counter and the 10-tick kill.
+        self.ai[0] += 1.0;
+        if self.ai[0] > 9.0 {
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        // `:68684-68687` — the velocity zero, the position→centre collapse,
+        // the box growth, the centre re-pin. `base.position = base.Center`
+        // then `Size = 16 * Lerp(...)` then `Center = position` — the box
+        // grows around the OLD centre, truncated to int per axis.
+        self.vel = Vec2::ZERO;
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let side = 16.0 * (5.0 + (cap - 5.0) * get_lerp_value(0.0, 9.0, self.ai[0]));
+        self.w = side as i32 as f32;
+        self.h = side as i32 as f32;
+        self.pos = center - Vec2::new(self.w * 0.5, self.h * 0.5);
+        // `:68688-68691` — the tile box (`ToTileCoordinates` is
+        // `(int)X >> 4`, Utils.cs:1807-1810 — the arithmetic shift, NOT a
+        // division: negatives floor) and the integer radius half.
+        let x0 = (self.pos.x as i32) >> 4;
+        let y0 = (self.pos.y as i32) >> 4;
+        let x1 = ((self.pos.x + self.w) as i32) >> 4;
+        let y1 = ((self.pos.y + self.h) as i32) >> 4;
+        let mid_col = x0 / 2 + x1 / 2;
+        let radius = self.w as i32 / 2;
+        // `:68692-68696` — the every-3rd-tick gate.
+        if self.ai[0] as i32 % 3 != 0 {
+            return;
+        }
+        let layer = self.ai[0] as i32 / 3;
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        for i in x0..=x1 {
+            for j in y0..=y1 {
+                // `:68701-68704` — the radius gate.
+                if center.distance(Vec2::new(i as f32 * 16.0, j as f32 * 16.0))
+                    > radius as f32
+                {
+                    continue;
+                }
+                // `:68705-68709` — the exposed full-solid gate.
+                let Some(t) = world.tile(i, j) else {
+                    continue;
+                };
+                let solid = tr_core::tiledata::TILE_SOLID.has(t.kind);
+                let solid_top = tr_core::tiledata::TILE_SOLID_TOP.has(t.kind);
+                let important = world
+                    .frame_important
+                    .get(t.kind as usize)
+                    .copied()
+                    .unwrap_or(false);
+                if !t.active() || !solid || solid_top || important {
+                    continue;
+                }
+                // `:68710-68714` — the tile above must not be a full solid.
+                let above_full_solid = world.tile(i, j - 1).is_some_and(|a| {
+                    a.active()
+                        && tr_core::tiledata::TILE_SOLID.has(a.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(a.kind)
+                });
+                if above_full_solid {
+                    continue;
+                }
+                // `:68715-68723` — the first dust row: one NextFloat each.
+                let amount = crate::collision::tile_dust_amount(t.kind, true, t.frame_x);
+                for _ in 0..amount {
+                    let _ = rng.next_float(); // `:68720`
+                }
+                // `:68724-68754` — the layer-2 second row.
+                if layer >= 2 {
+                    if self.kind == QUEEN_SLIME_SMASH {
+                        // `:68728-68742` — the crystal dust: the colour
+                        // helper's 2 floats, then per dust the Y-scale
+                        // float, the X-direction float, the position
+                        // `Next(16)` pair and the `Next(3)` noGravity pick.
+                        let _ = rng.next_float(); // GetDustColor lerp 1
+                        let _ = rng.next_float(); // GetDustColor lerp 2
+                        for _ in 0..(amount - 1) {
+                            let _ = rng.next_float(); // `:68734`
+                            let _ = rng.next_float(); // `:68735` direction
+                            let _ = rng.next_range(0, 16); // `:68736` X
+                            let _ = rng.next_range(0, 16); // `:68736` Y
+                            let _ = rng.next_range(0, 3); // `:68737`
+                        }
+                    } else {
+                        // `:68746-68752` — the tile dust: one float each.
+                        for _ in 0..(amount - 1) {
+                            let _ = rng.next_float(); // `:68750`
+                        }
+                    }
+                }
+                // `:68755-68758` — the 2-in-3 gate (`num5 <= 0` skips the
+                // draw — the `||`'s left operand short-circuits).
+                if amount <= 0 || rng.next_range(0, 3) == 0 {
+                    continue;
+                }
+                // `:68759` — the gore scale's column term (draw-only).
+                let _col = (mid_col - i).abs() as f32 / (cap / 2.0);
+                if self.kind == QUEEN_SLIME_SMASH {
+                    // `:68762-68776` — three crystal dusts: the colour
+                    // helper's 2 floats, then per dust the Y-scale float,
+                    // the X-direction float and the `Next(3)` pick (the
+                    // position is the fixed `(i*16+20, j*16+20)` — no
+                    // draws, `:68770`).
+                    let _ = rng.next_float(); // GetDustColor lerp 1
+                    let _ = rng.next_float(); // GetDustColor lerp 2
+                    for _ in 0..3 {
+                        let _ = rng.next_float(); // `:68768`
+                        let _ = rng.next_float(); // `:68769` direction
+                        let _ = rng.next_range(0, 3); // `:68771`
+                    }
+                } else {
+                    // `:68780-68783` — the gore: the type roll, the two
+                    // NewGore kicks, the velocity.Y scale.
+                    let _ = rng.next_range(0, 3); // `:68780` 61 + Next(3)
+                    let _ = rng.next_range(10, 31); // Gore.cs:1327
+                    let _ = rng.next_range(-20, 21); // Gore.cs:1328
+                    let _ = rng.next_float(); // `:68782`
+                }
+            }
+        }
+        // `HandleMovement`'s `UpdatePosition` (`:20433-20446`): aiStyle 135
+        // is not on the skip list, so `position += velocity` runs — the
+        // arm zeroed the velocity, a no-op move (the aiStyle-139 shape).
+        let vel = self.vel;
+        self.pos += vel;
+    }
+
     /// `AI_187_ShadowHand` (`Projectile.cs:42502-42591`) with its variation
     /// helper (`:42592-42634`) — the Insanity shadow (964 friendly / 965
     /// hostile).
@@ -17676,6 +17832,10 @@ impl ProjectilePool {
                         // The aiStyle-132 crystal-destruction marker
                         // (`:36318-36434`): the 4-state defeat drama.
                         132 => self.slots[i].ai_elder_wins(world, rng),
+                        // The aiStyle-135 Ogre/QueenSlime stomp
+                        // (`AI_135_OgreStomp`, `:68671-68787`): the growing
+                        // box and the every-3-tick tile walk.
+                        135 => self.slots[i].ai_ogre_stomp(world, rng),
                         // The aiStyle-187 Insanity shadow (`:42502-42591`):
                         // the four variation choreographies and the alpha
                         // ramp.
@@ -44938,5 +45098,127 @@ mod w4_d14_elder_wins_tests {
         // State 3 kills on the next tick.
         p.ai_elder_wins(&w, &mut rng);
         assert!(!p.active, ":36412");
+    }
+}
+
+/// W4-d14 — aiStyle 135 (`AI_135_OgreStomp`, `Projectile.cs:68671-68787`):
+/// the 683/922 ground pounds. Code-only: WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_d14_ogre_stomp_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn stomp(kind: u16) -> Projectile {
+        let d = proj_data(kind).expect("the stomp row");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 255;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    struct R {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for R {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            // Non-zero so the `Next(3) == 0` gore gate (`:68755`) TAKES
+            // the branch — the census proves the taken path's draws.
+            1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    /// The rows (`Projectile.cs:7282-7293` / `:8745-8756`).
+    #[test]
+    fn the_stomp_rows_match_set_defaults() {
+        for kind in [OGRE_SMASH, QUEEN_SLIME_SMASH] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (30.0, 30.0), "kind {kind}");
+            assert_eq!(d.ai_style, 135, "kind {kind}");
+            assert_eq!(d.alpha, 255, "kind {kind}");
+            assert!(!d.tile_collide, "kind {kind}");
+            assert!(d.ignore_water, "kind {kind}");
+            assert_eq!(d.time_left, 120, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+        }
+    }
+
+    /// The box growth (`:68684-68687`): tick 1 → 16·Lerp(5,40,1/9) =
+    /// 142.22 → 142; the centre holds; the velocity zeroes. The walk runs
+    /// only on ticks 3/6/9 (`:68692`); the 10th tick kills (`:68679`).
+    #[test]
+    fn the_box_grows_and_the_tenth_tick_kills() {
+        let w = World::new("t".into(), 300, 200);
+        let mut p = stomp(OGRE_SMASH);
+        p.vel = Vec2::new(5.0, 5.0);
+        let c0 = Vec2::new(p.pos.x + 15.0, p.pos.y + 15.0);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        p.ai_ogre_stomp(&w, &mut rng);
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(p.vel, Vec2::ZERO, ":68684");
+        assert_eq!((p.w, p.h), (142.0, 142.0), "16·(5+35/9) = 142.22 → 142");
+        let c1 = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        assert!((c1 - c0).length() < 1e-3, "the centre holds");
+        assert!(rng.ranges.is_empty(), "tick 1: no walk (1 % 3 != 0)");
+        // Ticks 2..9 in an empty world: the walk finds no tiles.
+        for _ in 0..8 {
+            p.ai_ogre_stomp(&w, &mut rng);
+        }
+        assert_eq!(p.ai[0], 9.0);
+        assert_eq!((p.w, p.h), (640.0, 640.0), "tick 9: the full 16·40");
+        assert!(p.active);
+        p.ai_ogre_stomp(&w, &mut rng);
+        assert!(!p.active, ":68679-68683 — ai[0] > 9 kills");
+    }
+
+    /// The tile walk (`:68697-68786`): one exposed dirt tile under the
+    /// centre. Tick 3 (layer 1): 3 dust floats + the gore gate taken
+    /// (CensusRng returns 0) → the type roll + 2 kicks + 1 float. Tick 6
+    /// (layer 2): the second row adds 2 floats. The 922 twin swaps the
+    /// gore for 3 crystal dusts (2 colour floats + 3×3 draws).
+    #[test]
+    fn the_walk_censuses_the_dust_and_gore_rows() {
+        let mut w = World::new("t".into(), 300, 200);
+        // The stomp centre is (1615, 815); tile (100, 51) = (1600, 816)
+        // sits inside every grown box. Dirt (kind 0) is a full solid.
+        let idx = w.index(100, 51);
+        w.tiles[idx] = Tile { kind: 0, ..Default::default() };
+        w.tiles[idx].flags |= FLAG_ACTIVE;
+        let mut p = stomp(OGRE_SMASH);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        for _ in 0..3 {
+            p.ai_ogre_stomp(&w, &mut rng);
+        }
+        // Tick 3: amount = 3 (the fail row), layer 1 → no second row.
+        assert_eq!(rng.floats, 3 + 1, "3 dust scales + the gore velocity");
+        assert_eq!(rng.ranges, [(0, 3), (0, 3), (10, 31), (-20, 21)]);
+        for _ in 0..3 {
+            p.ai_ogre_stomp(&w, &mut rng);
+        }
+        // Tick 6: layer 2 → the second row's 2 floats join.
+        assert_eq!(rng.floats, 4 + 3 + 2 + 1);
+        assert_eq!(rng.ranges.len(), 8, "two walk ticks × 4 ranges");
+        // The 922 twin: the same walk, the crystal-dust draw rows.
+        let mut q = stomp(QUEEN_SLIME_SMASH);
+        let mut rng2 = R { ranges: Vec::new(), floats: 0 };
+        for _ in 0..3 {
+            q.ai_ogre_stomp(&w, &mut rng2);
+        }
+        // Tick 3 (layer 1): 3 dust floats + the gate + 2 colour floats +
+        // 3 dusts × (2 floats + Next(3)).
+        assert_eq!(rng2.floats, 3 + 2 + 6);
+        assert_eq!(rng2.ranges, [(0, 3), (0, 3), (0, 3), (0, 3)]);
     }
 }

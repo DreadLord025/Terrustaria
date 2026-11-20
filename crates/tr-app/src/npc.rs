@@ -15540,15 +15540,31 @@ impl Npc {
             self.vy = -13.0;
         }
         // `:63888-63913`'s throw: at `num9 = 36` the projectile leaves from
-        // the offset, aimed with the `Math.Abs(v.X) * num15` drop.
+        // the offset. W4-d14: the 683 stomp is NOT aimed — the case-2 block
+        // (`:63085-63101`) keeps the stock `num18 = 1f` launch offset and
+        // `vector2 = null`, so the velocity is the 13-speed aim vector PLUS
+        // the `RandomVector2(-0.5, 0.5)` jitter (`:63904`, two NextDouble
+        // draws on the UpdateNPCs stream) and the spawn point steps one
+        // velocity-length along the aim (`:63906`). The 676 spit keeps the
+        // port's existing aimed shape.
         if (proj == 676 || proj == 683) && self.ai[0] == 36.0 {
             let (sx, sy) = (cx + ox, cy + oy);
             let drop = (pcx - sx).abs() * 0.15;
             let (dx, dy) = (pcx - sx, pcy - sy - drop);
             let len = (dx * dx + dy * dy).sqrt().max(1.0);
             let speed = 13.0;
-            self.wants_hostile_shot
-                .push((proj, sx, sy, dx / len * speed, dy / len * speed, dmg));
+            let (mut vx, mut vy) = (dx / len * speed, dy / len * speed);
+            let (mut px, mut py) = (sx, sy);
+            if proj == 683 {
+                // `:63904` — `Utils.RandomVector2(Main.rand, -0.5, 0.5)`
+                // (Utils.cs:2431-2434: `(max-min)*NextDouble + min` per axis).
+                vx += rng.next_double() as f32 - 0.5;
+                vy += rng.next_double() as f32 - 0.5;
+                // `:63906` — `vector7 += vector5 * num18` (num18 = 1).
+                px += dx / len * speed;
+                py += dy / len * speed;
+            }
+            self.wants_hostile_shot.push((proj, px, py, vx, vy, dmg));
         }
         // The walker physics (the shared `AI_107` body's accel/friction):
         // `num23 = 1.0`, `num24 = 0.07`, `num25 = 0.8`.

@@ -361,6 +361,15 @@ pub const DARK_MAGE_HEAL: u16 = 674;
 /// alpha 255, tileCollide false, ignoreWater, timeLeft 900, hostile,
 /// penetrate -1); the AI()'s inline 4-state machine is `:36318-36434`.
 pub const DD2_ELDER_WINS: u16 = 672;
+/// `ProjectileID.DD2OgreSmash` (683) — the Ogre's ground pound
+/// (`Projectile.cs:7282-7293`: 30x30, aiStyle 135, alpha 255, tileCollide
+/// false, ignoreWater, timeLeft 120, hostile, penetrate -1); the growing
+/// box's tile walk is `AI_135_OgreStomp` `:68671-68787`.
+pub const OGRE_SMASH: u16 = 683;
+/// `ProjectileID.QueenSlimeSmash` (922) — the Queen Slime's ground pound,
+/// the 683 row's twin (`Projectile.cs:8745-8756`); `AI_135`'s 922 arms
+/// shrink the box to 30 and swap the gore for the crystal dust.
+pub const QUEEN_SLIME_SMASH: u16 = 922;
 /// `ProjectileID.DD2DarkMageShot` (675) — the Dark Mage's shadowflame
 /// (`Projectile.cs:7221-7230`: 10x10, aiStyle 1, alpha 255, penetrate -1).
 pub const DARK_MAGE_FLAME: u16 = 675;
@@ -2602,6 +2611,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `DD2OgreSmash` / `QueenSlimeSmash` (`Projectile.cs:7282-7293` /
+            // `:8745-8756`): 30x30, aiStyle 135, alpha 255, tileCollide
+            // false, ignoreWater, timeLeft 120, penetrate -1 — the two rows
+            // are byte-identical. W4-d14.
+            OGRE_SMASH | QUEEN_SLIME_SMASH => (
+                30.0,
+                30.0,
+                135,
+                -1,
+                120,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `DD2DarkMageRaise` / `DD2DarkMageHeal` (`Projectile.cs:7208-7219`):
             // 10x10, aiStyle 133, `alpha = 255`, `timeLeft = 900`,
             // `penetrate = -1`, no tile collision, water-ignoring. The 674
@@ -4250,7 +4275,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (673/674) set `ignoreWater = true` (the 673 row's flag was
             // missing from the overlay; the 674 heal twin shares it).
             // `:7203`: the 672 victory marker sets it too.
-            || matches!(kind, DARK_MAGE_MARKER | DARK_MAGE_HEAL | DD2_ELDER_WINS),
+            || matches!(kind, DARK_MAGE_MARKER | DARK_MAGE_HEAL | DD2_ELDER_WINS)
+            // `Projectile.cs:7289`/`:8752` — the Ogre/QueenSlime stomps.
+            || matches!(kind, OGRE_SMASH | QUEEN_SLIME_SMASH),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
