@@ -157,7 +157,7 @@ Screens already covered by immediate ports are listed for completeness at the en
 | C# state (file) | Lines | Rust counterpart | Notes |
 | --- | --- | --- | --- |
 | `UIWorkshopHub` | 13 | none | Steam Workshop hub |
-| `UIWorkshopSelectResourcePackToPublish` | 17 | none | |
+| `UIWorkshopSelectResourcePackToPublish` | 17 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopPublishPacks`) | PORTED (W4-d84 row 2; the publish tail is a notice — the Steam form is out of range) |
 | `UIWorkshopSelectWorldToPublish` | 16 | none | |
 | `UIWorkshopWorldImport` | 18 | none | |
 | `UIResourcePackSelectionMenu` | 17 | `ui/resource_packs.rs` (`FrontScreen::ResourcePackSelection`) | PORTED (W4-d84 row 5; the enabled-only ApplyListChanges save, the two-list scroll routing) |

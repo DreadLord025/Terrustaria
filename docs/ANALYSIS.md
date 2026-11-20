@@ -36089,6 +36089,34 @@ Deviations (cluster-wide):
   twin), not `ChatManager.LayoutSnippets`' snippet walk; plain pack
   descriptions wrap identically.
 
+### UIWorkshopSelectResourcePackToPublish (row 2)
+
+`ui/workshop_publish.rs` + `FrontScreen::WorkshopPublishPacks`. The shared
+list chrome (`workshop_root`/`workshop_panel`/`workshop_title`/
+`workshop_back`/`workshop_scrollbar`, `UIWorkshopSelectResourcePackToPublish.cs:40-82`)
+carries the `Recalculate` scrollbar-attach branch (`:84-102`) as the
+layout's `attached` flag — the list width drops 25 while attached.
+`PopulateEntries` (`:137-151`) re-lists on `OnActivate`:
+`ResourcePackList::publishable` (no saved state) + the `Branding == None`
+filter (always true without Steam) + the stable `orderby IsCompressed`
+(all false — the `AllPacks` name/version/file order survives).
+
+- The rows are the 82 px `UIWorkshopPublishResourcePackListItem`
+  (`:41-215`): the 72x72 icon block (`Left 4, VAlign 0.5`, the 66x66
+  `ScaleToFit` inner + the `Achievement_Borders` frame), the Publish
+  `UIIconTextButton` (`HAlign 1, VAlign 1`), the author/version plates
+  (`num2 = (innerW - 22 - iconW - buttonW)/2`, bottom-aligned at the
+  button height, the centred labels at `+3` y).
+- The grey `!canPublish` row colours (`:109-110`, `:120-121`) and the zip
+  rejection menu (`:133-147`) are ported but unreachable (no zips) —
+  pinned by tests.
+- The Publish tail is the `front_hint` notice (cluster deviation): the
+  button plays 12 itself (`UIIconTextButton.LeftMouseDown`, `:102-106`);
+  the icon/body double-click publishes silently (`:56/:82`'s
+  `OnLeftDoubleClick`, no cue in the handler).
+- Back (`HandleBackButtonUsage`, `:109-113`) plays 11 and restores the
+  parked hub verbatim (`FlowClick::WorkshopListBack`).
+
 ### UIResourcePackInfoMenu (row 6)
 
 `ui/resource_pack_info.rs` + `FrontScreen::ResourcePackInfo`. The payload

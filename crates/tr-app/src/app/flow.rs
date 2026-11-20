@@ -68,6 +68,14 @@ pub(crate) enum FrontScreen {
     /// (`AssetInitializer.CreateResourcePackList`), the ctor's
     /// `PopulatePackList` (`:57`).
     ResourcePackSelection(Box<ui::resource_packs::PackSelectionState>),
+    /// W4-d84 row 2's `UIWorkshopSelectResourcePackToPublish`
+    /// (`UIWorkshopSelectResourcePackToPublish.cs:17`) — the publishable
+    /// pack list the hub's Publish-Packs button opens
+    /// (`Click_OpenResourcePackPublishMenu`, `UIWorkshopHub.cs:156-160`).
+    /// The payload is the screen's own state (`_entries` + the list
+    /// scroll + the `_menuToGoBackTo` target); `enter_front` re-lists
+    /// (`OnActivate` → `PopulateEntries`, `:128-151`).
+    WorkshopPublishPacks(Box<ui::workshop_publish::PublishPacksState>),
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -186,6 +194,11 @@ pub(crate) enum FlowClick {
     /// screen opens over the live selection screen (parked as its back
     /// target). The store index rides along.
     PackInfo(usize),
+    /// The three workshop list screens' `HandleBackButtonUsage`
+    /// (`UIWorkshopSelectResourcePackToPublish.cs:109-113` and twins):
+    /// sound 11 + `SetState(_menuToGoBackTo)` — the parked hub returns
+    /// verbatim (no `OnActivate` re-list on the hub).
+    WorkshopListBack,
 }
 
 /// One hop of the `Main.menuMode` alternation as a pure table — the plan's
@@ -307,6 +320,20 @@ pub(crate) fn next_flow_state(
                     None,
                 ),
                 None => (front, backup, page),
+            }
+        }
+        // The workshop list screens' Back (`:109-113` and twins): the
+        // `_menuToGoBackTo` target returns verbatim; a null target (only
+        // reachable through a synthetic payload — every live opener is
+        // the hub) closes the 888 side like the pack-selection Back.
+        FlowClick::WorkshopListBack => {
+            let back = match &front {
+                Some(FrontScreen::WorkshopPublishPacks(state)) => state.back.as_deref().cloned(),
+                _ => None,
+            };
+            match back {
+                Some(target) => (Some(target), None, None),
+                None => (None, None, Some(P::Main)),
             }
         }
         // Any other combination is a no-op (a click kind its screen never
@@ -590,6 +617,17 @@ impl FrontScreenBehaviours for FrontScreen {
                 // `UIResourcePackSelectionMenu.Draw` (`:537-541`): the two
                 // pack lists, the titles, the header and Back/Open Folder.
                 ui::resource_packs::draw(
+                    d.renderer,
+                    d.lookups,
+                    state,
+                    d.screen,
+                    d.mouse,
+                );
+            }
+            FrontScreen::WorkshopPublishPacks(state) => {
+                // `UIWorkshopSelectResourcePackToPublish.Draw` (`:153-162`):
+                // the chrome + the publishable pack rows.
+                ui::workshop_publish::draw_publish_packs(
                     d.renderer,
                     d.lookups,
                     state,
@@ -1255,6 +1293,57 @@ impl FrontScreenBehaviours for FrontScreen {
                     ui::resource_packs::Click::None => None,
                 }
             }
+            FrontScreen::WorkshopPublishPacks(_) => {
+                // `GoBackClick` (`:104-107`) + the Publish button /
+                // card double-click (`PublishButtonClick_ImportResourcePack
+                // ToLocalFiles`, `UIWorkshopPublishResourcePackListItem.cs:
+                // 125-131`). The Publish button plays 12 itself
+                // (`UIIconTextButton.LeftMouseDown`, `:102-106`); the tail
+                // is the documented notice (the Steam publish form is out
+                // of the d84 range).
+                let Some(FrontScreen::WorkshopPublishPacks(state)) = app.front.as_mut() else {
+                    return None;
+                };
+                let rows = state.rows().len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                let scroll = state.scroll;
+                let lookups = &app.lookups;
+                let action = |rr: [f32; 4], i: usize| {
+                    ui::workshop_publish::pack_action_rect(lookups, rr, i)
+                };
+                let click = ui::workshop_publish::click_at(
+                    &l, rows, 82.0, scroll, action, mouse, double_click, false,
+                );
+                match click {
+                    ui::workshop_publish::Click::Back => Some(FlowClick::WorkshopListBack),
+                    ui::workshop_publish::Click::Publish(row) => {
+                        // `:127` — the `evt.Target` gate: the button's own
+                        // click or the icon/body double-click. `canPublish`
+                        // is always true (no zips), so the rejection menu
+                        // (`:133-147`) never runs. The 12 cue is the
+                        // button's `LeftMouseDown` (`UIIconTextButton.cs:
+                        // 102-106`) — the body double-click plays none.
+                        let hit = ui::workshop_publish::hit_element(
+                            &l, rows, 82.0, scroll, action, mouse,
+                        );
+                        if hit.is_some_and(|id| {
+                            id >= ui::workshop_publish::ROW_BASE
+                                && (id - ui::workshop_publish::ROW_BASE) % 2
+                                    == ui::workshop_publish::PART_ACTION
+                        }) {
+                            app.audio.play("Menu_Tick");
+                        }
+                        let name = state.rows().get(row)
+                            .map(|&i| state.packs.packs[i].name.clone())
+                            .unwrap_or_default();
+                        app.front_hint = Some(format!(
+                            "Publishing \"{name}\" is not ported yet (no Steam Workshop)"
+                        ));
+                        None
+                    }
+                    _ => None,
+                }
+            }
         }
     }
 
@@ -1369,6 +1458,9 @@ impl App {
     /// the info screen's description list (`UIResourcePackInfoMenu.cs:119-130`).
     /// Returns whether a pack screen was live (the wheel is consumed).
     fn front_pack_wheel(&mut self, delta: i32) -> bool {
+        if self.front_workshop_wheel(delta) {
+            return true;
+        }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
         let mouse = self.mouse_pos;
@@ -1458,6 +1550,9 @@ impl App {
     /// the press — the same press must not also reach a card button, exactly as
     /// the C#'s `evt.Target == this` keeps it on the bar.
     pub(crate) fn front_scrollbar_press(&mut self) -> bool {
+        if self.front_workshop_scrollbar_press() {
+            return true;
+        }
         if self.front_pack_scrollbar_press() {
             return true;
         }
@@ -1553,6 +1648,9 @@ impl App {
         let Some(offset) = self.front_scroll_drag else {
             return;
         };
+        if self.front_workshop_scrollbar_drag(offset) {
+            return;
+        }
         if self.front_pack_scrollbar_drag(offset) {
             return;
         }
@@ -1605,6 +1703,100 @@ impl App {
         }
     }
 
+    /// `UIList.ScrollWheel` for the workshop list screens' single list
+    /// (`UIWorkshopSelectResourcePackToPublish.cs:54-63` and twins) — the
+    /// whole list rect scrolls (the inner list's `ContainsPoint` is true,
+    /// `UIList.cs:16-19`), the attached bar is its own target. Returns
+    /// whether a workshop list screen was live.
+    fn front_workshop_wheel(&mut self, delta: i32) -> bool {
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
+        let wheel = |l: &ui::workshop_publish::ListLayout, rows: usize, row_h: f32, scroll: &mut f32| {
+            let content = ui::workshop_publish::content_height(rows, row_h);
+            if crate::ui::in_rect(mouse, l.list)
+                || (l.attached && crate::ui::in_rect(mouse, l.scrollbar))
+            {
+                *scroll = ui::char_select::scroll_wheel(*scroll, delta, l.list[3], content);
+            }
+        };
+        match self.front.as_mut() {
+            Some(FrontScreen::WorkshopPublishPacks(state)) => {
+                let rows = state.rows().len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                wheel(&l, rows, 82.0, &mut state.scroll);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`) for the
+    /// workshop list screens' attached bar — the handle grab keeps the
+    /// pointer offset, the track press jumps. The drag latch records no
+    /// list flag (these screens have one list).
+    fn front_workshop_scrollbar_press(&mut self) -> bool {
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
+        let bar_press = |bar: [f32; 4], view_h: f32, content_h: f32, scroll: f32|
+            -> Option<(f32, Option<f32>)> {
+            if !crate::ui::in_rect(mouse, bar) {
+                return None;
+            }
+            let handle = ui::panel::scrollbar_handle_at(bar, view_h, content_h, scroll);
+            if crate::ui::in_rect(mouse, handle) {
+                Some((scroll, Some(mouse.y - handle[1])))
+            } else {
+                Some((
+                    ui::panel::scrollbar_jump_value(bar, view_h, content_h, handle[3], mouse.y),
+                    None,
+                ))
+            }
+        };
+        match self.front.as_mut() {
+            Some(FrontScreen::WorkshopPublishPacks(state)) => {
+                let rows = state.rows().len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                if !l.attached {
+                    return false;
+                }
+                let content = ui::workshop_publish::content_height(rows, 82.0);
+                if let Some((scroll, drag)) =
+                    bar_press(l.scrollbar, l.list[3], content, state.scroll)
+                {
+                    state.scroll = scroll;
+                    self.front_scroll_drag = drag;
+                    return true;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// The drag frame for the workshop list screens' latched bar
+    /// (`UIScrollbar.DrawSelf`'s `_isDragging` arm, `:109-112`).
+    fn front_workshop_scrollbar_drag(&mut self, offset: f32) -> bool {
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse_y = self.mouse_pos.y;
+        match self.front.as_mut() {
+            Some(FrontScreen::WorkshopPublishPacks(state)) => {
+                let rows = state.rows().len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                if !l.attached {
+                    return false;
+                }
+                let content = ui::workshop_publish::content_height(rows, 82.0);
+                state.scroll =
+                    ui::panel::scrollbar_drag_value(l.scrollbar, l.list[3], content, offset, mouse_y);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// The element id under the pointer on the live front screen — the
     /// framework's `GetElementAt` (`UIElement.cs:324-352`), fed to the pointer
     /// machine so its `LastClicked` compares elements and a card's double-click
@@ -1629,6 +1821,17 @@ impl App {
                 let l = self.select_layout(screen, &header, self.worlds.len());
                 let favorites: Vec<bool> = self.worlds.iter().map(|w| w.is_favorite).collect();
                 ui::world_select::hit_element(&l, &favorites, self.mouse_pos)
+            }
+            FrontScreen::WorkshopPublishPacks(state) => {
+                // The publish rows' double-click identity
+                // (`UIWorkshopPublishResourcePackListItem.cs:56/:82`).
+                let rows = state.rows().len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                ui::workshop_publish::hit_element(
+                    &l, rows, 82.0, state.scroll,
+                    |rr, i| ui::workshop_publish::pack_action_rect(&self.lookups, rr, i),
+                    self.mouse_pos,
+                )
             }
             _ => None,
         }
@@ -1672,6 +1875,8 @@ impl App {
             // (`:170-173`) plays no sound (only its hover plays 12).
             // `PackSelectionBack`/`PackInfo` already played their own cue in
             // the selection screen's click arm (`:478`'s 11, `:267`'s 10).
+            // `WorkshopListBack` is the workshop lists' `HandleBackButtonUsage`
+            // (`:109-113` and twins) — sound 11, the same Back cue.
             if matches!(
                 click,
                 FlowClick::PackInfoBack | FlowClick::PackSelectionBack | FlowClick::PackInfo(_)
@@ -1683,6 +1888,7 @@ impl App {
                     | FlowClick::WorldBack
                     | FlowClick::WorldCreateBack
                     | FlowClick::ConfirmNo
+                    | FlowClick::WorkshopListBack
             ) {
                 self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
             } else {
@@ -2035,6 +2241,30 @@ pub(crate) mod front_flow_tests {
     }
 
     #[test]
+    fn workshop_list_back_returns_to_the_parked_target_or_menu() {
+        // `HandleBackButtonUsage` (`UIWorkshopSelectResourcePackToPublish.cs:
+        // 109-113`): sound 11 + `SetState(_menuToGoBackTo)` — the parked
+        // hub returns verbatim. The hub lands with row 1; until then any
+        // FrontScreen rides the same back slot.
+        let mut state = ui::workshop_publish::PublishPacksState::default();
+        state.back = Some(Box::new(FrontScreen::CharSelect));
+        let parked = FrontScreen::WorkshopPublishPacks(Box::new(state));
+        let (front, backup, page) =
+            next_flow_state(Some(parked), None, None, FlowClick::WorkshopListBack);
+        assert_eq!(front, Some(FrontScreen::CharSelect));
+        assert!(backup.is_none() && page.is_none());
+        // A null target (synthetic — every live opener is the hub) closes
+        // the 888 side like the pack-selection Back.
+        let orphan = FrontScreen::WorkshopPublishPacks(Box::new(
+            ui::workshop_publish::PublishPacksState::default(),
+        ));
+        let (front, _, page) =
+            next_flow_state(Some(orphan), None, None, FlowClick::WorkshopListBack);
+        assert!(front.is_none());
+        assert_eq!(page, Some(P::Main));
+    }
+
+    #[test]
     fn pack_info_opens_over_the_parked_selection_screen() {
         // `Click_Info` (`UIResourcePackSelectionMenu.cs:263-270`): the info
         // screen opens with the named pack and the live selection screen
@@ -2181,6 +2411,10 @@ pub(crate) mod front_flow_tests {
             Some(FrontScreen::ResourcePackSelection(Box::new(
                 ui::resource_packs::PackSelectionState::new(),
             ))),
+            // W4-d84 row 2: the pack-publish screen joins the matrix.
+            Some(FrontScreen::WorkshopPublishPacks(Box::new(
+                ui::workshop_publish::PublishPacksState::default(),
+            ))),
         ];
         let backs = [
             None,
@@ -2218,6 +2452,7 @@ pub(crate) mod front_flow_tests {
             FlowClick::PackInfoBack,
             FlowClick::PackSelectionBack,
             FlowClick::PackInfo(0),
+            FlowClick::WorkshopListBack,
         ];
         for front in &fronts {
             for backup in &backs {

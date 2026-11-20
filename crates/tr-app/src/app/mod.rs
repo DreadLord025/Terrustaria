@@ -2456,6 +2456,19 @@ impl App {
                 state.available_scroll = 0.0;
                 state.enabled_scroll = 0.0;
             }
+            // `UIWorkshopSelectResourcePackToPublish.OnActivate` (`:128-135`)
+            // → `PopulateEntries` (`:137-151`): the publishable list (no
+            // saved state), Branding-None filter + IsCompressed sort. The
+            // back target rode in from the hub's opener.
+            FrontScreen::WorkshopPublishPacks(ref mut state) => {
+                let dir = crate::resource_pack::resource_packs_dir();
+                state.packs = match dir {
+                    Some(dir) => crate::resource_pack::ResourcePackList::publishable(&dir),
+                    None => crate::resource_pack::ResourcePackList::default(),
+                };
+                state.populate();
+                state.scroll = 0.0;
+            }
         }
         self.park_menu();
         self.front = Some(front);

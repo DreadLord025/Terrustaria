@@ -37,6 +37,7 @@ pub mod text;
 pub mod tooltip;
 pub mod uistate;
 pub(crate) mod workshop_kit;
+pub(crate) mod workshop_publish;
 pub mod world_creation;
 pub(crate) mod world_load;
 pub mod world_select;
