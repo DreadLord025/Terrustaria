@@ -11,6 +11,10 @@
 //! - 58134/58164/58194/58224 — `KillWire`/`2`/`3`/`4`
 //!   (`:58122-58229`, identical dust bodies).
 //!
+//! Batch 2 adds site 60287 (`PlaceTile`'s kind-22/140 arm) here; the
+//! `KillWall_MakeWallDust` sites 62140-62155 live in
+//! `worldgen_dust_wall.rs`.
+//!
 //! Contract (the S1-E-1 pool, d50's `DustPool`): every draw rides the
 //! caller's stream in C# statement order — explicit argument draws
 //! FIRST (C# evaluates arguments before the call), then the `NewDust`
@@ -356,6 +360,39 @@ pub fn kill_wire_dust(
     five_type50(i, j, rng, dust, ctx, world);
 }
 
+/// Site 60287 — `WorldGen.PlaceTile`'s kind-22/140 dust arm
+/// (`WorldGen.cs:60283-60289`): inside the `!mute` block, after the
+/// placement sound switch, kinds 22 (Demonite Ore) and 140 (the
+/// inactive-stone variant) spawn THREE type-14 dusts at `(i*16, j*16)`,
+/// box 16×16, defaults. The caller gates on `!mute && (kind == 22 ||
+/// kind == 140)`; this is the dust half only (the sound switch is the
+/// audio lane's, `edit::place_tile_sound` already carries the table).
+pub fn place_tile_ore_dust(
+    i: i32,
+    j: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..3 {
+        dust.new_dust(
+            rng,
+            ctx,
+            world,
+            Vec2::new((i * 16) as f32, (j * 16) as f32),
+            16,
+            16,
+            14,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -526,6 +563,33 @@ mod tests {
             assert_eq!(pool.slot(i).velocity, base.slot(i).velocity);
         }
         streams_agree(&mut rng, &mut brng);
+    }
+
+    /// W4-g14 — site 60287: the PlaceTile 22/140 arm spawns three
+    /// type-14 dusts, no explicit draws; a mirrored stream lands the
+    /// same records.
+    #[test]
+    fn w4_g14_place_tile_ore_spawns_three_type14() {
+        let w = world();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(61);
+        let mut mpool = DustPool::new();
+        let mut m = UnifiedRandom::new(61);
+        place_tile_ore_dust(8, 9, &mut rng, &mut pool, &c, &w);
+        for _ in 0..3 {
+            mpool.new_dust(
+                &mut m, &c, &w, Vec2::new(128.0, 144.0), 16, 16, 14,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+        }
+        assert_eq!(active(&pool).len(), 3);
+        for i in 0..3 {
+            assert_eq!(pool.slot(i).dust_type, 14);
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+        }
+        streams_agree(&mut rng, &mut m);
     }
 
     /// W4-g14 — sites 29649/29657: the full ash-shake draw census on a
