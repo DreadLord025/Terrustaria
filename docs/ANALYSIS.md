@@ -39423,3 +39423,21 @@ pos+(0,h−2) 2×2, position.X−=2/alpha 38/vel×0.1 += −oldVel×0.25/scale 0
 vel×2.5/scale×0.8/noGravity). The module gains `next_vector2_circular`/
 `bottom_dust` helpers. Witnesses: the 177/119/309 counts, the 967/1026 circular
 bursts, the bottom-edge vel.Y gate, the 308/306 counts — WRITTEN NOT RUN.
+
+### Batch 10 (10 kinds, the trail-position + ring `:73745-77160` bursts)
+
+115 (27× dust-27 pair at pos−oldVel×(30/i) box 8×8, scale 1.4 noGravity vel×0.5
++ scale 0.9 vel×0.5), 114 (the pair, gated per-i Next(128) >= alpha), 116 (27×
+dust-64 pair, scale 1.8/1.4 both noGravity), 173 (20× dust Next(3){15,57,58} at
+pos−oldVel×(30/i) speed oldVel×0.2 scale 1.8 vel×1.5 noGravity), 132 (27×
+dust-107 pair at oldPos−oldVel×(30/i), scale 1.8 noGravity vel×0.5 + scale 1.4
+vel×0.05), 156 (27× dust-73 pair at oldPos alpha 255, scale 1.8 noGravity vel×0.5
++ scale 1.4 vel×0.05 noGravity), 157 (27× dust-107 at pos speed oldVel scale 1.8
+noGravity vel×0.5), 343 (27× dust-197 at oldPos−oldVel×(30/i) scale 1.2 noGravity
+vel×0.5), 408 (15× dust-5 at Center−One×10 box 50×50 speed (0,−2) vel/=2), 385
+(36× dust-172 ring at Center+rotated(norm(vel)×(w/2,h)×0.75), speed offset×2
+scale 1.4 noGravity/noLight vel=offset). The `DeathSnapshot` gains `old_pos`; the
+module gains `trail_pair`/`trail_pair_oldpos`/`rotate_vec` helpers. The 114 gate
++ 173 type pick draw per iteration; the rest are internals-only. Witnesses: the
+trail pair counts (27×2), the 114 alpha-0 gate, the 173 pick set, the 157/343
+single trails, the 408/385 bursts — WRITTEN NOT RUN.
