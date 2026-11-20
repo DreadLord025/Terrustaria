@@ -494,3 +494,187 @@ fn e12_w2_kind_652_653_654_style2x2_variants() {
     w.heights = &[16, 18];
     check(654, &w);
 }
+
+// ---------------------------------------------------------------------------
+// Batch 3 — kinds 656..698 (emission indices 548..567, 20 defs).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e12_w3_kind_656_glow_tulip() {
+    // 656 (:4269-4270): bare CopyFrom(Style1x1).
+    check(656, &style1x1(656));
+}
+
+/// The `Style2xX` base (`TileObjectData.cs:2860-2869`): 2x3 origin (1,2),
+/// bottom 11 width 2, custom, heights 16x3, cw16 pad2, horizontal. The base
+/// block does NOT set LavaDeath (the newTile cursor was reset to _baseObject
+/// by the preceding addTile), so LavaDeath stays false and LavaPlacement
+/// stays the SetupBaseObject NotAllowed.
+fn style2xX(kind: u16) -> Want {
+    Want {
+        kind, w: 2, h: 3, ox: 1, oy: 2, dir: Dir::None,
+        heights: &[16, 16, 16], cw: 16, pad: 2, fx: 0, fy: 0,
+        horiz: true, wrap: 0, mult: 1, skip: 1, rand: 0,
+        top: E, bot: a(11, 2), left: E, right: E, wall: false,
+        valid: &[], invalid: &[], alt_tiles: &[], walls: &[],
+        water: LP::Allowed, lava: LP::NotAllowed, wdeath: false, ldeath: false,
+        custom: true, global: false, nalts: 0, nsubs: 0,
+    }
+}
+
+#[test]
+fn e12_w3_kind_657_658_663_monoliths() {
+    // 657 EchoMonolith (:2907-2912) and 658 ShimmerMonolith (:2913-2918):
+    // CopyFrom(Style2xX) + Height 3/origin (1,2)/heights 16x3 (the base values
+    // re-written) + DrawYOffset 2 (draw class). 663 Moondial (:3803-3804):
+    // bare CopyFrom(Style2xX).
+    check(657, &style2xX(657));
+    check(658, &style2xX(658));
+    check(663, &style2xX(663));
+}
+
+/// The `Style1x2Top` base (`TileObjectData.cs:2432-2441`): 1x2 origin (0,0),
+/// TOP SolidTile|SolidSide|PlanterBox (=521) width 1, custom, heights 16x2,
+/// cw16 pad2, LavaDeath=true. Horizontal stays base false.
+fn style1x2top(kind: u16) -> Want {
+    Want {
+        kind, w: 1, h: 2, ox: 0, oy: 0, dir: Dir::None,
+        heights: &[16, 16], cw: 16, pad: 2, fx: 0, fy: 0,
+        horiz: false, wrap: 0, mult: 1, skip: 1, rand: 0,
+        top: a(521, 1), bot: E, left: E, right: E, wall: false,
+        valid: &[], invalid: &[], alt_tiles: &[], walls: &[],
+        water: LP::Allowed, lava: LP::NotAllowed, wdeath: false, ldeath: true,
+        custom: true, global: false, nalts: 0, nsubs: 0,
+    }
+}
+
+#[test]
+fn e12_w3_kind_660_shimmerfly_bottle() {
+    // 660 (:2463-2469): CopyFrom(Style1x2Top) + DrawYOffset -2 (draw class) +
+    // ONE platform alternate (top Platform=256, DrawYOffset -10, style 0 —
+    // addAlternate(0) keeps Style 0).
+    let mut w = style1x2top(660);
+    w.nalts = 1;
+    check(660, &w);
+    let d = def_for_tile(660).unwrap();
+    let alt = get_tile_data(d, 0, 1).unwrap();
+    assert_eq!(alt.anchor_top, a(256, 1), "660 A1 platform anchor (:2466)");
+    assert_eq!(alt.style, 0, "660 A1 style 0 (addAlternate(0) :2468)");
+}
+
+#[test]
+fn e12_w3_kind_664_665_boulders() {
+    // 664 BouncyBoulder (:3631-3634): Style2x2 + heights {16,18} +
+    // LavaDeath=false (the lava placement stays NotAllowed — no own-liquid
+    // fold clears it; Calculate only folds death->NotAllowed).
+    let mut w = style2x2(664);
+    w.heights = &[16, 18];
+    w.ldeath = false;
+    check(664, &w);
+    // 665 LifeCrystalBoulder (:3975-3976): bare CopyFrom(Style2x2).
+    check(665, &style2x2(665));
+}
+
+#[test]
+fn e12_w3_kind_693_stalactite_1x1_echo() {
+    // 693 (:4415-4425): CopyFrom(Style1x1) + horizontal + bottom empty + top
+    // 169 + StyleWrapLimit 39 (the num2 local :4415); ONE sub-tile object
+    // registered under styles 39..77 (addSubTileRange(39,39) :4424 — the SAME
+    // object under every style, :2043-2070): top empty, bottom 11.
+    let mut w = style1x1(693);
+    w.horiz = true;
+    w.bot = E;
+    w.top = a(169, 1);
+    w.wrap = 39;
+    w.nsubs = 39;
+    check(693, &w);
+    let d = def_for_tile(693).unwrap();
+    // Every style 39..77 resolves the same sub-tile; style 38 stays the base.
+    let sub39 = get_tile_data(d, 39, 0).unwrap();
+    assert_eq!(sub39.anchor_top, E);
+    assert_eq!(sub39.anchor_bottom, a(11, 1));
+    for style in 40..=77 {
+        let sub = get_tile_data(d, style, 0).unwrap();
+        assert_eq!(sub.anchor_bottom, a(11, 1), "693 sub style {style}");
+    }
+    let base38 = get_tile_data(d, 38, 0).unwrap();
+    assert_eq!(base38.kind, 693, "style 38 keeps the ceiling base");
+    assert_eq!(base38.anchor_top, a(169, 1));
+}
+
+#[test]
+fn e12_w3_kind_694_stalactite_1x2_echo() {
+    // 694 (:4227-4239): CopyFrom(Style1x2 :4131-4140 — 1x2 origin (0,1)
+    // bottom 11) + horizontal + bottom empty + top 169 + wrap 39 + origin
+    // (0,0); ONE sub-tile under styles 39..77: origin (0,1), top empty,
+    // bottom 11.
+    let w = Want {
+        kind: 694, w: 1, h: 2, ox: 0, oy: 0, dir: Dir::None,
+        heights: &[16, 16], cw: 16, pad: 2, fx: 0, fy: 0,
+        horiz: true, wrap: 39, mult: 1, skip: 1, rand: 0,
+        top: a(169, 1), bot: E, left: E, right: E, wall: false,
+        valid: &[], invalid: &[], alt_tiles: &[], walls: &[],
+        water: LP::Allowed, lava: LP::NotAllowed, wdeath: false, ldeath: true,
+        custom: true, global: false, nalts: 0, nsubs: 39,
+    };
+    check(694, &w);
+    let d = def_for_tile(694).unwrap();
+    let sub = get_tile_data(d, 39, 0).unwrap();
+    assert_eq!((sub.origin.x, sub.origin.y), (0, 1), "694 sub origin (:4235)");
+    assert_eq!(sub.anchor_top, E);
+    assert_eq!(sub.anchor_bottom, a(11, 1));
+}
+
+#[test]
+fn e12_w3_kind_695_696_replicas() {
+    // 695 DemonAltarReplica (:3234-3237): Style3x2 + LavaDeath=false +
+    // heights {16,18}.
+    let mut w = style3x2(695);
+    w.ldeath = false;
+    w.heights = &[16, 18];
+    check(695, &w);
+    // 696 ShadowOrbsReplica (:3988-3991): Style2x2 + horizontal + bottom empty.
+    let mut w = style2x2(696);
+    w.horiz = true;
+    w.bot = E;
+    check(696, &w);
+}
+
+#[test]
+fn e12_w3_kind_698_display_jar() {
+    // 698 DeadCellsDisplayJar (:2470-2502): CopyFrom(Style1x2Top) +
+    // DrawYOffset -2 + horizontal + DrawXOffset 10 + DrawFrameOffsets (draw
+    // class) + top 681 (SolidTile|SolidSide|AlternateTile|SolidBottom|
+    // PlanterBox) + alternate tiles {213,366,365,353,214,449,450,451} + the
+    // TEDeadCellsDisplayJar.Hook_AfterPlacement post hook (-1, processed).
+    // ONE platform alternate (top 256, style 0) + TWO sub-tiles (styles 1/2),
+    // each LinkedAlternates with its OWN platform alternate.
+    let mut w = style1x2top(698);
+    w.horiz = true;
+    w.top = a(681, 1);
+    w.alt_tiles = &[213, 366, 365, 353, 214, 449, 450, 451];
+    w.nalts = 1;
+    w.nsubs = 2;
+    check(698, &w);
+    let d = def_for_tile(698).unwrap();
+    assert_eq!(
+        d.hook_post_place_my_player.callback,
+        "TEDeadCellsDisplayJar.Hook_AfterPlacement"
+    );
+    assert_eq!(d.hook_post_place_my_player.bad_return, -1);
+    assert!(d.hook_post_place_my_player.processed_coordinates);
+    // The base alternate (:2482-2485): platform top, style 0.
+    let alt = get_tile_data(d, 0, 1).unwrap();
+    assert_eq!(alt.anchor_top, a(256, 1));
+    // Sub-tile 1 (:2486-2493): keeps the base top 681 + its OWN alternate.
+    let sub1 = get_tile_data(d, 1, 0).unwrap();
+    assert_eq!(sub1.anchor_top, a(681, 1));
+    assert_eq!(sub1.alternates.len(), 1, "698 sub1 linked alternate");
+    // GetTileData indexes the RESOLVED sub-tile's alternates (:5148-5157).
+    let sub1_alt = get_tile_data(d, 1, 1).unwrap();
+    assert_eq!(sub1_alt.anchor_top, a(256, 1), "698 sub1 platform alternate");
+    let sub2 = get_tile_data(d, 2, 0).unwrap();
+    assert_eq!(sub2.anchor_top, a(681, 1));
+    let sub2_alt = get_tile_data(d, 2, 1).unwrap();
+    assert_eq!(sub2_alt.anchor_top, a(256, 1), "698 sub2 platform alternate");
+}
