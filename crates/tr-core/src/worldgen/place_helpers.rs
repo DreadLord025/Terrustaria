@@ -502,6 +502,99 @@ pub(crate) fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32
     }
 }
 
+/// The shared wall-painting core (`WorldGen.Place{3x2,3x3,2x3,4x3,6x4}Wall`
+/// — `WorldGen.cs:44725-44756`/`:44254-44292`/`:44568-44599`/
+/// `:44854-44886`/`:44946-44979`): every body cell must be inactive AND
+/// carry a wall (`wall != 0`), then the rect is written active with
+/// `frameX = fx_base + col * 18`, `frameY = fy_base + row * 18`,
+/// column-major (the C# loop order). The C# `break` exits only the inner
+/// loop, but `flag = false` is sticky — a full scan is equivalent. The
+/// port bounds-guards the rect (the C# null-tile reads would throw; every
+/// worldgen caller sits well inside the world).
+fn place_wall_rect(
+    world: &mut World,
+    x0: i32,
+    y0: i32,
+    w: i32,
+    h: i32,
+    kind: u16,
+    fx_base: i32,
+    fy_base: i32,
+) {
+    for i in x0..(x0 + w) {
+        for j in y0..(y0 + h) {
+            let ok = world
+                .tile(i, j)
+                .is_some_and(|t| !t.active() && t.wall != 0);
+            if !ok {
+                return;
+            }
+        }
+    }
+    for k in x0..(x0 + w) {
+        for l in y0..(y0 + h) {
+            let i = world.index(k, l);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = kind;
+            t.frame_x = (fx_base + 18 * (k - x0)) as i16;
+            t.frame_y = (fy_base + 18 * (l - y0)) as i16;
+        }
+    }
+}
+
+/// `WorldGen.Place3x2Wall` (`WorldGen.cs:44725-44756`): the 3×2 painting
+/// at `(x-1, y)` — `frameX = col * 18`, `frameY = 36 * style + row * 18`.
+pub(crate) fn place_3x2_wall(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    place_wall_rect(world, x - 1, y, 3, 2, kind, 0, style * 36);
+}
+
+/// `WorldGen.Place3x3Wall` (`WorldGen.cs:44254-44292`): the 3×3 painting
+/// at `(x-1, y-1)` — the style wraps every 36 rows (`while style > 35`:
+/// `:44275-44279`): `frameX = (style % 36) * 54 + col * 18`,
+/// `frameY = (style / 36) * 54 + row * 18` (the C# subtractive loop keeps
+/// the `> 35` boundary: style 36 wraps once, style 35 does not — the
+/// modulo form matches for non-negative styles).
+pub(crate) fn place_3x3_wall(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    let mut style = style;
+    let mut rows = 0;
+    while style > 35 {
+        rows += 1;
+        style -= 36;
+    }
+    place_wall_rect(world, x - 1, y - 1, 3, 3, kind, style * 54, rows * 54);
+}
+
+/// `WorldGen.Place2x3Wall` (`WorldGen.cs:44568-44599`): the 2×3 painting
+/// at `(x, y-1)` — `frameX = 36 * style + col * 18`, `frameY = row * 18`.
+pub(crate) fn place_2x3_wall(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    place_wall_rect(world, x, y - 1, 2, 3, kind, style * 36, 0);
+}
+
+/// `WorldGen.Place4x3Wall` (`WorldGen.cs:44854-44886`): the 4×3 painting
+/// at `(x-1, y-1)` — `frameX = col * 18` (the C# `num3` stays 0),
+/// `frameY = 54 * style + row * 18`.
+pub(crate) fn place_4x3_wall(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    place_wall_rect(world, x - 1, y - 1, 4, 3, kind, 0, style * 54);
+}
+
+/// `WorldGen.Place6x4Wall` (`WorldGen.cs:44946-44979`): the 6×4 painting
+/// at `(x-2, y-2)` — the 27-per-sheet-row wrap (`:44966-44968`):
+/// `frameX = (style / 27) * 108 + col * 18`,
+/// `frameY = (style % 27) * 72 + row * 18`.
+pub(crate) fn place_6x4_wall(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    place_wall_rect(
+        world,
+        x - 2,
+        y - 2,
+        6,
+        4,
+        kind,
+        style / 27 * 108,
+        style % 27 * 72,
+    );
+}
+
 /// `WorldGen.Place6x3` (`WorldGen.cs:50465-50512`): the 6-wide, 3-tall
 /// bed — body `(x-3..=x+2, y-2..=y)` empty, each floor column
 /// `SolidTile2` OR an active `tileSolidTop` with `frameY == 0`
@@ -1174,5 +1267,44 @@ mod tests {
         assert_eq!(t.frame_y, 72); // 36 * 2
         assert_eq!(w3.tile(32, 19).unwrap().frame_x, 126); // 72 + 54
         assert_eq!(w3.tile(32, 19).unwrap().frame_y, 90);
+    }
+
+    /// The wall paintings need a wall under every body cell; the frame
+    /// strides and the style wraps match the C# per wrapper.
+    #[test]
+    fn wall_paintings_need_walls_and_wrap_their_styles() {
+        let mut w = World::new("ph".into(), 60, 60);
+        for x in 0..w.width {
+            for y in 0..w.height {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 1;
+            }
+        }
+        place_3x2_wall(&mut w, 10, 10, 240, 2);
+        assert!(w.tile(9, 10).unwrap().active());
+        assert_eq!(w.tile(9, 10).unwrap().frame_y, 72); // 36 * 2
+        assert_eq!(w.tile(11, 11).unwrap().frame_x, 36);
+        // A wall-less cell refuses the whole painting.
+        let i = w.index(20, 10);
+        w.tiles[i].wall = 0;
+        place_3x3_wall(&mut w, 20, 10, 241, 0);
+        assert!(!w.tile(19, 9).unwrap().active());
+        // 3x3 style wrap: style 36 → frameX 0, frameY 54.
+        place_3x3_wall(&mut w, 30, 10, 241, 36);
+        assert_eq!(w.tile(29, 9).unwrap().frame_x, 0);
+        assert_eq!(w.tile(29, 9).unwrap().frame_y, 54);
+        // 2x3 at (x, y-1): frameX = 36*style.
+        place_2x3_wall(&mut w, 40, 10, 242, 1);
+        assert_eq!(w.tile(40, 9).unwrap().frame_x, 36);
+        assert_eq!(w.tile(41, 11).unwrap().frame_y, 36);
+        // 4x3: frameY = 54*style.
+        place_4x3_wall(&mut w, 50, 10, 243, 1);
+        assert_eq!(w.tile(49, 9).unwrap().frame_y, 54);
+        assert_eq!(w.tile(52, 11).unwrap().frame_x, 54);
+        // 6x4 at (x-2, y-2): style 28 → frameX 108, frameY 72.
+        place_6x4_wall(&mut w, 10, 30, 244, 28);
+        assert_eq!(w.tile(8, 28).unwrap().frame_x, 108);
+        assert_eq!(w.tile(8, 28).unwrap().frame_y, 72);
+        assert_eq!(w.tile(13, 31).unwrap().frame_x, 198); // 108 + 90
     }
 }
