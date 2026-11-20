@@ -39272,3 +39272,49 @@ convention). The eight new kinds + their axis/kind wiring are the
 follow-up wave — the machines are pure and reachable through their
 `ty` parameters today. All witnesses WRITTEN, NOT RUN (code-only mode:
 no cargo/rustc/tests/graphify invoked on this branch).
+
+## The aiStyles 51-58 axis census (W4-d28, code-only mode)
+
+The wave-4 census of the `NPC.AI()` style-axis claims for aiStyles 51-58
+(`NPC.cs:31717-33197`), run at branch base `a725acb0`. Verdicts per style
+(the C# arm citations are the `if (this.aiStyle == N)` chain heads):
+
+| style | C# arm | kind(s) | pre-census state | W4-d28 action |
+| --- | --- | --- | --- | --- |
+| 51 | `:31717-32075` | Plantera 262 (`:12384`) | machine LANDED (`npc_ai_plantera.rs`, ba8159fc + W1-5), routed via the kind arm only | axis claim `51 => update_plantera`; kind arm retired to `unreachable!` |
+| 52 | `:32076-32240` | PlanterasHook 263 (`:12402`) | machine LANDED (`npc_ai_style52.rs`, 61e1bd5c), WIRED via the sim pool pass | empty axis claim `52 \| 53 => {}` — the pool pass owns the AI + integration |
+| 53 | `:32241-32369` | PlanterasTentacle 264 (`:12414`) | machine LANDED (`npc_ai_style53.rs`, 89a9b808), WIRED via the pool pass | same empty claim |
+| 54 | `:32370-32656` | BrainOfCthulhu 266 (`:12443`) | machine LANDED (`update_brain`, S1-D-3e audited 2026-11-18), kind-arm routed | VERIFY-ONLY: axis claim `54 => update_brain`, machine byte-unchanged; kind arm retired |
+| 55 | `:32657-32741` | Creeper 267 (`:12460`) | axis-claimed (S1-D-3 W-2, `ai_055_creeper_family`) | verify-only, no change |
+| 56 | `:32742-32760` | DungeonSpirit 288 (`:12742`) | PORTED + WIRED (`npc_ai_style56.rs` c7fa4513, wired 29be1002: the sim dust pre-pass runs `style56_step`, the axis' 56 arm owns the noTileCollide tail) — the task brief's "UNPORTED" is stale | verify-only: the module re-read line-for-line against `:32744-32759` (TargetClosest first, the f64-sqrt 12-px aim, the 100:1 blend, the atan2−1.57f rotation, the netOffset round trip, the type-180 NewDust + the ×0.1/1.3/noGravity post-writes) — FAITHFUL, no change |
+| 57 | `:32761-33043` | MourningWood 325 (`:13119`) + Everscream 344 (`:13359`) | BOTH axis-claimed kind-gated (982d3caf slice B / e5b5cf52 S1-F-13c) — the task brief's "port" is already landed | verify-only, no change |
+| 58 | `:33044-33197` | Pumpking 327 (`:13146`) | axis-claimed (982d3caf, `pumpking_step`) | verify-only, no change |
+
+**The one real gap was the axis census itself**: styles 51/52/53/54 had no
+`match self.kind.ai_style()` arm — 51/54 fell through to the kind match
+(the machines ran, but the axis did not claim the style), 52/53 fell
+through to empty kind arms (correct behaviour, implicit). The claims make
+the axis exhaustive over 51-58 and pin the routing in the test run
+(`w4_d28_axis_census_tests`, WRITTEN NOT RUN — code-only mode).
+
+**Behaviour is frozen**: the 51/54 claims call the SAME fns the kind arms
+called (`update_plantera`/`update_brain`); the 52/53 claims are empty (the
+pool pass `update_plantera_minions` runs after the per-NPC step and owns
+the machines + the `integrate_no_tile_collide` tail — no double step). The
+RNG streams are untouched: the Plantera full-life volley is draw-free
+(the Next(4)/Next(8) picks are below-0.8-life gated, `:31937-31957`), the
+Brain's normal-phase tick draws exactly one Next(300) period roll
+(`:32573`), the minions' solo axis tick draws nothing.
+
+**The 57 shared-kind note**: the arm's two kind-gated claims
+(`57 if MourningWood` / `57 if Everscream`) are the C#'s own structure —
+one aiStyle-57 block with `this.type == 344` branches inside; the port
+splits it into two named machines (`npc_ai_pumpkin_boss::mourning_wood_step`
+for the 325 arms, `npc_ai_frost_boss_b::frost_boss_b_step` for the 344
+arms incl. the live per-tick dust). The census pin counts 57 twice.
+
+**Deviations kept (documented, unchanged)**: the Plantera world-bottom
+despawn tail (the C# arm has none — the generic despawn pass owns it),
+the Brain swarm's float-scatter stand-in (`update_brain_state`), the
+52/53 pool-pass one-tick lag for freshly spawned minions (the worm-pass
+precedent), the 56 spirit's dust pre-pass slot-turn order.
