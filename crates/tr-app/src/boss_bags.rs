@@ -385,6 +385,30 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             }
             quick_spawn(rng, out, 3224, 1); // Worm Scarf (expert-exclusive)
         }
+        // Brain of Cthulhu (`Player.cs:7285-7314`).
+        3321 => {
+            // `:7287` — the DISCARDED Next(20, 46) (num6, never read).
+            let _num6 = range(rng, 20, 46);
+            // `:7288-7295` — the Crimtane Ore: master 110..135, else 80..110.
+            if env.master_mode {
+                quick_spawn(rng, out, 880, range(rng, 110, 136));
+            } else {
+                quick_spawn(rng, out, 880, range(rng, 80, 111));
+            }
+            // `:7296-7303` — the Tissue Samples: master 30..50, else 20..40.
+            if env.master_mode {
+                quick_spawn(rng, out, 1329, range(rng, 30, 51));
+            } else {
+                quick_spawn(rng, out, 1329, range(rng, 20, 41));
+            }
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2104, 1); // Brain Mask
+            }
+            if rng.next_max(20) == 0 {
+                quick_spawn(rng, out, 3060, 1); // Bone Rattle
+            }
+            quick_spawn(rng, out, 3223, 1); // Brain of Confusion (expert-exclusive)
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -735,6 +759,67 @@ mod tests {
                 }
                 spawn_replay(&mut r, &mut want, 3224, 1);
                 money_replay_on(&mut r, 13, 1.0, &mut want);
+                assert_eq!(got, want, "master {master} seed {seed}");
+                assert_eq!(got_rng, r, "master {master} seed {seed} stream");
+            }
+        }
+    }
+
+    #[test]
+    fn w4_f35_boc_bag_zero_script_grants_the_whole_arm() {
+        // The zero script: the discarded num6 Next(20,46) first, ore
+        // 880×80, samples 1329×20, the mask 1/7 + rattle 1/20 hit, the
+        // Brain of Confusion — then coins.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3321, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..5], [880, 1329, 2104, 3060, 3223], "{its:?}");
+        assert_eq!(out[0].stack, 80);
+        assert_eq!(out[1].stack, 20);
+        assert!(its[5..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+        // The FIRST draw is the discarded Next(20, 46) — span 26.
+        assert_eq!(rng.ranges[0], (0, 26), "num6 Next(20,46) span 26");
+    }
+
+    #[test]
+    fn w4_f35_boc_bag_master_mode_bumps_the_ore_and_samples() {
+        let env = BagEnv { master_mode: true, ..Default::default() };
+        let mut rng = ScriptRng::new(&[0, 0, 0, 6, 19]); // mask + rattle miss
+        let mut out = Vec::new();
+        open_boss_bag(3321, &env, &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..3], [880, 1329, 3223], "{its:?}");
+        assert_eq!(out[0].stack, 110);
+        assert_eq!(out[1].stack, 30);
+    }
+
+    #[test]
+    fn w4_f35_boc_bag_replays_the_csharp_draw_order_both_modes() {
+        for master in [false, true] {
+            for seed in [13i32, 555] {
+                let env = BagEnv { master_mode: master, ..Default::default() };
+                let mut got_rng = UnifiedRandom::new(seed);
+                let mut got = Vec::new();
+                open_boss_bag(3321, &env, &mut got_rng, &mut got);
+                let mut r = UnifiedRandom::new(seed);
+                let mut want: Vec<BagGrant> = Vec::new();
+                let _num6 = r.next_range(20, 46);
+                if master {
+                    spawn_replay(&mut r, &mut want, 880, r.next_range(110, 136));
+                    spawn_replay(&mut r, &mut want, 1329, r.next_range(30, 51));
+                } else {
+                    spawn_replay(&mut r, &mut want, 880, r.next_range(80, 111));
+                    spawn_replay(&mut r, &mut want, 1329, r.next_range(20, 41));
+                }
+                if r.next_max(7) == 0 {
+                    spawn_replay(&mut r, &mut want, 2104, 1);
+                }
+                if r.next_max(20) == 0 {
+                    spawn_replay(&mut r, &mut want, 3060, 1);
+                }
+                spawn_replay(&mut r, &mut want, 3223, 1);
+                money_replay_on(&mut r, 266, 1.0, &mut want);
                 assert_eq!(got, want, "master {master} seed {seed}");
                 assert_eq!(got_rng, r, "master {master} seed {seed} stream");
             }
