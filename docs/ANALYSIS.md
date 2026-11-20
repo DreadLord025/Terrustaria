@@ -39244,3 +39244,76 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d46 FindFrame mid-band slice 1 (code-only mode, task/W4-d46-findframe-mid-1, 2026-11-20)
+
+`crates/tr-app/src/npc_findframe_mid1.rs` ports the FIRST 12 missing
+`NPC.FindFrame` case ids of the 150-350 band (the same census d47's header
+cites): **150/151/152/156/157/158/159/160/162/163/164/165**. The kinds are NOT
+in `NpcKind` yet — the machines land as pure functions over
+`FrameState`/`FrameInput` (the S1-D-3 waves A/B precedent), wired through a
+`cs_id`-keyed hook at the head of `npc.rs::find_frame`
+(`find_frame_kind_for_cs_id` + `Npc::find_frame_wave_mid1`). NO current
+kind's `cs_id` lands in the set (verified over `ALL_KINDS` — the bestiary's
+only in-band id is 161 ZombieEskimo, a wave-A walker), so the hook is
+stream-inert today and auto-activates when the roster wave adds the kinds.
+The module is named `mid1` (d47's `mid2` precedent) because d48 already
+owns `npc_findframe_c.rs`. The tortoises 153/154 have no `FindFrame` case
+— their frames ride the aiStyle-39 post-switch tail (`NPC.cs:77292-77368`,
+caller-owned per `npc_ai_style39.rs`) and stay out of the census.
+
+Per-case notes (all verbatim, row-index convention — `num` cancels):
+
+* **150/151/152/158 the bat flap group** (`NPC.cs:74786-74822`, 4 rows):
+  the velocity-sign flip (vx == 0 leaves it), the `vx * 0.1` tilt, the
+  6-tick strip over the full 4 rows. DELIBERATE SKIPS (count-only visual):
+  the Lavabat's unconditional `Dust.NewDust(6)` (`:74791-74795`) and the
+  IceBat's `Main.rand.Next(10) == 0`-gated `Dust.NewDust(67)`
+  (`:74796-74802`) — `find_frame` is RNG-free by construction (the
+  `npc_findframe_b.rs` precedent); carrying the `Next(10)` draw would
+  offset every downstream stream. Case-mate 226 FlyingSnake is a later
+  wave's kind, not carried.
+* **156 RedDevil** (`:73903-73915`, 5 rows): the UNCONDITIONAL
+  `spriteDirection = direction`, the `vx * 0.1` tilt, the counter wraps
+  at >= 20 and the row reads `(int)counter / 4` — rows 0..4, the wrap tick
+  reads row 0 in the SAME tick (no hold quirk here).
+* **157 Arapaima** (`:74134-74180`, 6 rows): the counter ticks once wet,
+  TWICE dry (`:74138`); the `num50 = 5` bands pick rows 0/1/2/1/3/4/5/4;
+  the `else` resets the counter WITHOUT writing the row — the row holds 4
+  for that tick (the vanilla quirk). The dry strip's odd-width bands: the
+  [10,15) and [30,35) bands hold THREE even counters, the rest two — the
+  22-tick dry witness is [0,0,1,1,2,2,2,1,1,3,3,3,4,4,5,5,5,4,4,4,0,0].
+* **159/160/162 the humanoid group** (`:68569-68571` → `:68647-69655`):
+  none is `IsTownSlime` so `num108` = 6 / `num109` = row 2. `num57` =
+  `isLikeATownNPC ? ExtraFramesCount[type] : 0` (`:68635`): the Truffle
+  is `townNPC` (`SetDefaults` `:11005`) with `ExtraFramesCount[160]`
+  = 7 (`NPCID.cs:10464`) → its walk wraps at 23 - 7 = 16 (the attack rows
+  16..22 are never walked); the Vampire/Frankenstein wrap at the full 15.
+  The airborne pin list (`:69647`) carries 159 (row 0) but NOT 160/162
+  (the group's row 1). DELIBERATE SKIPS: the town `ai[0]` pose zones
+  (`:68662-69488` — the Truffle's town machine does not model them yet,
+  the `humanoid_town_frame` precedent; the Vampire/Frankenstein are
+  aiStyle-3 fighters whose turn counter leaves `ai[0]` at 0/1,
+  `:57381-57397`), the disabled profile-texture block (`:68637`,
+  `if (false && …)`) and the `IsTownSlime` flip inversion
+  (`:68657-68660`).
+* **163 BlackRecluse** (`:73227-73267`, 8 rows): the air pins counter -12
+  and row 5 (rising) / 6 (falling); the ground accumulates `|vx| * 1.1`
+  and the bands pick rows 6/7/1/2/3 with the `else` counter-reset HOLDING
+  the row. At vx 0 the -12 landing counter parks in the `< -6` band
+  (row 6) forever. Rows 0/4 are never written by this machine.
+* **164 WallCreeper** (`:73083-73111`, the 164/236/239/530 group, 5 rows):
+  the air zeroes the counter and pins row 4 (rising) / 0 (falling); the
+  ground's WHILE loop steps a row per 6 KEEPING the remainder (several rows
+  a tick at speed), wrapping past row 3 to 0.
+* **165 WallCreeperWall** (`:73112-73145`, the 165/237/238/240/531 group,
+  4 rows): `num194` = 0.5 (the 0.4 is type 531's, not this wave's); the
+  `(|vx| + |vy|) * 0.5` accumulator's 6/12/18/24 bands over rows 0/1/2/3,
+  the `else` reset holding the row. NO sprite/rotation write.
+
+Verification: code-only — every arm re-read against the cited C# windows;
+the frame counts counted entry-by-entry out of `Main.cs:67099-67100` and
+cross-checked against `render::entities::NPC_FRAME_COUNT`; the hook's
+inertness proven over `ALL_KINDS`' `cs_id` rows (direct + bestiary
+fallback). The 11 machine witnesses + 2 bridge witnesses are WRITTEN, NOT
+RUN — **no cargo/rustc/rustfmt/tests/graphify invoked**. No RNG touched.
