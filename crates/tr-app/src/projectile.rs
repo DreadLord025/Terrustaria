@@ -12638,7 +12638,7 @@ impl ProjectilePool {
     }
 
     #[cfg(test)]
-    fn slots_mut(&mut self) -> &mut [Projectile] {
+    pub(crate) fn slots_mut(&mut self) -> &mut [Projectile] {
         &mut self.slots
     }
 
