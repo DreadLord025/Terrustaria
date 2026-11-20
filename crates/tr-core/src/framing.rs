@@ -1474,7 +1474,9 @@ mod tests {
         w2.tiles[s].flags |= crate::tile::FLAG_ACTIVE;
         frame_walls(&mut w2);
         let t2 = *w2.tile(4, 4).unwrap();
-        assert_eq!(t2.wall_row(), 4, "stone does not truncate the wall");
+        // Gate V3: the isolated-cell mask 0 picks WALL_FRAMES[0] = (9,3) —
+        // row 3 (`Framing.cs:119` AddWallFrameLookup(0, 9,3,...)), not row 4.
+        assert_eq!(t2.wall_row(), 3, "stone does not truncate the wall");
     }
 
     /// S1-P-i33 — an echo-coated invisible wall (`Tile.invisibleWall`,
@@ -1493,9 +1495,9 @@ mod tests {
         frame_walls(&mut w);
         // The left wall (4,4) sees its right neighbour as invisible → the
         // right bit (4) is NOT set; with no other neighbour the mask is 0 →
-        // the isolated cell (row 4).
+        // the isolated cell WALL_FRAMES[0] = (9,3), row 3 (`Framing.cs:119`).
         let t = *w.tile(4, 4).unwrap();
-        assert_eq!(t.wall_row(), 4, "the invisible neighbour does not connect");
+        assert_eq!(t.wall_row(), 3, "the invisible neighbour does not connect");
     }
 
     #[test]

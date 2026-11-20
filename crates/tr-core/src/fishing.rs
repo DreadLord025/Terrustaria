@@ -1103,12 +1103,15 @@ mod tests {
             pull_bobber_decision(2674, -618.0, false, &mut rng_a),
             PullOutcome::SpawnEnemy { npc: 618, y_offset: 64 }
         );
-        // Neither drew: the streams still match a fresh one.
+        // Neither drew: the streams still match a fresh one. (This comparison
+        // itself consumes one draw from each — rng_a is now 1 ahead of fresh.)
         assert_eq!(rng_a.next_range(0, 7), rng_b.next_range(0, 7));
         // The line accessory blocks the snap but NOT the draw: after 20
-        // accessory pulls rng_a sits 20 Next(7) draws ahead of a fresh
-        // stream, and every outcome is ReelIn.
+        // accessory pulls rng_a sits 20 Next(7) draws ahead of where the
+        // comparison left it, and every outcome is ReelIn. Gate V3: rng_c
+        // mirrors the comparison draw first, then the 20 pull draws.
         let mut rng_c = FastRandom::new(3);
+        let _ = rng_c.next_range(0, 7); // mirror the comparison draw above
         for _ in 0..20 {
             assert_eq!(
                 pull_bobber_decision(2674, 100.0, true, &mut rng_a),

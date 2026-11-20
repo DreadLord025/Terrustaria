@@ -575,9 +575,12 @@ mod tests {
     /// stalactite and the crimson grass (`:53905-53908`, `:53980-53983`).
     #[test]
     fn s1_p_i29_the_instant_break_rows() {
-        // A torch (noFail 4) breaks on the first hit even at power 1.
-        assert_eq!(dmg(4, 1, 2100, 200), 100);
-        assert_eq!(dmg(3, 1, 2100, 200), 100, "grass");
+        // Gate V3: the noFail head sets num=100, then the multiplier ladder
+        // ADDS pickPower (`:53909` else arm `num + pickPower`), so a noFail
+        // tile at power 1 answers 101 — still an instant break (>= 100). The
+        // rope/stalactite/crimson arm (`:53980-53983`) OVERWRITES num=100.
+        assert_eq!(dmg(4, 1, 2100, 200), 101, "torch: noFail 100 + power 1");
+        assert_eq!(dmg(3, 1, 2100, 200), 101, "grass: noFail 100 + power 1");
         assert_eq!(dmg(213, 1, 2100, 200), 100, "rope");
         assert_eq!(dmg(365, 1, 2100, 200), 100, "silk rope");
         assert_eq!(dmg(165, 1, 2100, 200), 100, "stalactite");

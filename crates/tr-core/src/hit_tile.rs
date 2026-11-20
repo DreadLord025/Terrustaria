@@ -376,13 +376,15 @@ mod tests {
         book.prune(always_active, no_wall);
         assert_eq!(book.data[id].damage, 40);
         assert_eq!(book.data[id].time_to_live, 59);
-        // Walk the TTL down to 47 (12 more prunes): still no decay.
-        for _ in 0..12 {
+        // Gate V3: walk the TTL down to 48 (11 more prunes): the decay arm
+        // fires on the prune that LANDS below 48 (`timeToLive--` THEN the
+        // `< 48` check, `HitTile.cs:297-313`), so TTL 48 still keeps 40.
+        for _ in 0..11 {
             book.prune(always_active, no_wall);
         }
-        assert_eq!(book.data[id].time_to_live, 47);
+        assert_eq!(book.data[id].time_to_live, 48);
         assert_eq!(book.data[id].damage, 40);
-        // TTL 47 -> 46: the < 48 arm loses 2.
+        // TTL 48 -> 47: the < 48 arm loses 2.
         book.prune(always_active, no_wall);
         assert_eq!(book.data[id].damage, 38);
         // Drain to the < 36 arm: TTL 35 loses 5.
@@ -429,8 +431,13 @@ mod tests {
         book.add_damage(a, 10, true);
         let b = book.hit_object(2, 2, TILE);
         book.add_damage(b, 10, true);
-        assert_eq!(book.order[0], b, "the newest hit leads");
-        assert_eq!(book.order[1], a);
+        // Gate V3: the faithful C# `SortSlots` (`HitTile.cs:208-238`) rotates
+        // the BUFFER to order[0] (order[0] = the NEW bufferLocation = the old
+        // tail), and the just-hit slot lands at order[1]. So after two fresh
+        // hits the newest hit `b` leads the LIVE entries at order[1], with the
+        // rotated buffer at order[0] and `a` at order[2].
+        assert_eq!(book.order[1], b, "the newest hit leads the live entries");
+        assert_eq!(book.order[2], a);
         // Re-hitting `a` bubbles it to order[1] (the buffer stays at 0).
         let a2 = book.hit_object(1, 1, TILE);
         assert_eq!(a2, a);

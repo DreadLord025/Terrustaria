@@ -3626,11 +3626,11 @@ mod tests {
     #[test]
     fn gate_v3_i35_the_combat_book_and_red_slime_flags_follow_their_version_gates() {
         // v203: the combat book byte does not exist yet.
-        let w = parse(&synthetic_file(203, &[2, 144], 160, 11)).expect("v203 loads");
+        let w = parse(&synthetic_file(203, &[2, 144], 160, 9)).expect("v203 loads");
         assert!(!w.combat_book_was_used, "below 204: combatBookWasUsed stays false");
         // v204: it lands. The book is the LAST byte of the v204 tail (the
         // lantern snapshot needs 207, tree tops 211).
-        let mut data = synthetic_file(204, &[2, 144], 160, 11);
+        let mut data = synthetic_file(204, &[2, 144], 160, 9);
         let tail_at = tail_offset_in_synthetic(&data, 204);
         let book_at = flags_tail(204).len() - 1;
         data[tail_at + book_at] = 1;
