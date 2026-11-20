@@ -33799,9 +33799,12 @@ four and the non-arrow shooters keep the generic spawn (their launch arms
 are their own tasks). `Projectile.no_drop_item` + `set_no_drop_item` carry
 the multi-shot stamp (`Player.cs:47806`/`:48305`/`:47497`/`:47955`), which
 the kill path's ammo-recovery drop reads (`Projectile.cs:77367`).
-**RNG order.** The port rolls the crit at THROW time (the established
-`world_sim` convention, a documented deviation from the C#'s hit-time
-`Projectile.Damage` roll); that one draw precedes the launch arm's draws.
+**RNG order.** No crit rolls at THROW time — the gate reconciliation with
+S1-P-i11 moved the projectile crit to the per-hit roll
+(`Projectile.cs:12883-12917`, `damage_pve`'s `projectile_hit_crit` on the
+`UpdateProjectiles` stream), matching the C# (`ItemCheck_Shoot` never rolls
+a ranged crit at spawn). The throw's `UpdatePlayers` stream spends no crit
+draw; the launch arm's count roll is the first draw.
 Within each arm the `Main.rand` draws are consumed in the C#'s exact order:
 the Stormbow's count `Next(3)` then six per shot (`Next(201)`,
 `Next(-100,101)`, `Next(-40,41)` vx, `Next(-40,41)` vy, `Next(75,150)`,
