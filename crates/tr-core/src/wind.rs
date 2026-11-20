@@ -15,9 +15,10 @@
 //!   replaces both; the *order* of the draws is the original one, so a seed
 //!   fully determines the history.
 //! * This module is the single-player/server branch. Client sync, the menu
-//!   pause, the creative-power freeze and Lantern Night are folded into
-//!   [`Wind::frozen`]; when frozen only the current speed still eases towards
-//!   the target, exactly as in `UpdateWeather`.
+//!   pause and the creative-power freeze fold into [`Wind::frozen`]; Lantern
+//!   Night has its own [`Wind::lantern_night`] gate (W4-c39,
+//!   `Main.cs:58856-58859`). When either is up only the current speed still
+//!   eases towards the target, exactly as in `UpdateWeather`.
 //! * [`Wind::update_rain`] takes the real 0..1 `Main.maxRaining` intensity
 //!   (`Main.cs:58832`); the world tick feeds it per dayRate iteration.
 //! * `world_surface` defaults to +infinity, which is treated as "not
@@ -73,8 +74,12 @@ pub struct Wind {
     /// Player with `statLifeMax >= 120` exists (`flag`, `Main.cs:58863-58871`).
     /// While false the walk caps `|speed_target|` at 0.35.
     pub any_player_120_life: bool,
-    /// Creative wind freeze, Lantern Night, client/menu: skip the target walk.
+    /// Creative wind freeze, client/menu: skip the target walk.
     pub frozen: bool,
+    /// `LanternNight.LanternsUp` (`Main.cs:58856-58859`): the lantern night
+    /// freezes the wind walk on its own — the early `return` before
+    /// `windCounter--`, separate from the creative freeze (W4-c39).
+    pub lantern_night: bool,
     /// `Main._shouldUseWindyDayMusic` (`Main.cs:2903`, `Main.IsItAHappyWindyDay`):
     /// the sticky windy-day flag. The ambience gates for the Airship, Slime
     /// Balloons and the Lost Kite read it (`AmbienceServer.cs:62-66`).
@@ -111,6 +116,7 @@ impl Wind {
             sway_enabled: true,
             any_player_120_life: true,
             frozen: false,
+            lantern_night: false,
             happy_windy_day: false,
             storming: false,
             wind_grid: WindGrid::new(),
@@ -193,7 +199,9 @@ impl Wind {
 
         // `if (Main.netMode == 1 || (Main.netMode != 2 && Main.gameMenu)) return;`
         // `if (!CreativePower...Enabled) { if (LanternNight.LanternsUp) return; ... }`
-        if self.frozen {
+        // (`Main.cs:58850-58859`) — W4-c39: the lantern night is its own
+        // early return, distinct from the creative freeze.
+        if self.frozen || self.lantern_night {
             return;
         }
 
@@ -809,6 +817,30 @@ mod tests {
                 wind.speed_current
             );
         }
+    }
+
+    #[test]
+    fn w4_c39_the_lantern_night_freezes_the_wind_walk() {
+        // `Main.cs:58856-58859`: `if (LanternNight.LanternsUp) return;` —
+        // the lantern night skips the windCounter walk like the creative
+        // freeze, but on its own flag; the drift towards the target still
+        // runs (the early return sits after it).
+        let mut walking = Wind::new(11);
+        let mut lantern = Wind::new(11);
+        for w in [&mut walking, &mut lantern] {
+            w.counter = 1;
+            w.speed_current = 0.0;
+            w.speed_target = 0.3;
+        }
+        lantern.lantern_night = true;
+        walking.update_rain(0.0);
+        lantern.update_rain(0.0);
+        assert_eq!(walking.counter, 0, "the plain walk decrements");
+        assert_eq!(lantern.counter, 1, "the lantern night returns first");
+        assert!(
+            lantern.speed_current > 0.0,
+            "the drift still eases towards the target"
+        );
     }
 
     #[test]

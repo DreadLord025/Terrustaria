@@ -162,6 +162,13 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             app.audio
                 .play_thunder(strike.slot, strike.cue, strike.x, strike.y, strike.pitch);
         }
+        // W4-c39: `Main.cs:58856-58859` — the lantern night freezes the
+        // wind walk on its own flag (the drift towards the target still
+        // runs inside `update_rain`). The C# reads `LanternsUp` live per
+        // iteration; the port snapshots it once per tick (the flag only
+        // flips at the boundaries/UpdateTime, never mid-loop).
+        let lanterns_up = crate::world_events::lanterns_up(&app.world_events);
+        wind.lantern_night = lanterns_up;
         // (2) `Main.cs:17228-17231` + `:58830-58950`: the wind walk, once per
         // dayRate iteration, with the real `Main.maxRaining` (`:58832`).
         let day_rate = world.day_rate();
@@ -184,6 +191,12 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             // (`Main.cs:64668`) — the port's single player, 0 when none
             // (the C# falls back to a fresh `Player()`).
             app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
+            // W4-c39: the three `Main.cs:64868`/`:64890` gates —
+            // `LanternNight.LanternsUp` (the stop-rain arm + the start-arm
+            // block), `NextNightIsLanternNight` and `Main.slimeRain`.
+            lanterns_up,
+            app.world_events.next_night_is_lantern_night,
+            world.slime_rain,
         );
         // (4) `Main.cs:64963-64966`: the event walks — CultistRitual
         // (the delay decay + the recheck window's AnyDanger arm),
@@ -203,8 +216,14 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         }
         crate::world_events::update_time_party(&mut app.world_events);
         // `LanternNight.UpdateTime`'s persistence gate: the lanterns ride
-        // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`).
-        let lantern_can_persist = !world.day_time;
+        // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`,
+        // `LanternNight.cs:42-48`). W4-c39: the `LanternsCanStart` half is
+        // live — a boss/invasion/moon-event mid-night drops the genuine
+        // lanterns on this tick (the manual ones persist regardless).
+        let lantern_gates =
+            crate::world_events::LanternGates::from_world(world, &app.npcs);
+        let lantern_can_persist =
+            !world.day_time && crate::world_events::lanterns_can_start(&lantern_gates);
         let _ = crate::world_events::update_time_lanterns(
             &mut app.world_events,
             lantern_can_persist,
@@ -976,6 +995,51 @@ mod tests {
                 .all(|n| n.kind != crate::npc::NpcKind::TravellingMerchant),
             "the night tick departs him"
         );
+    }
+
+    #[test]
+    fn w4_c39_the_lantern_night_wires_the_wind_and_rain_gates_through_the_tick() {
+        // The live wiring: `world_events.manual_lanterns` up → the tick
+        // freezes the wind walk (`Main.cs:58856-58859`), clears the storm
+        // deck (`:64825-64831`) and blocks the rain start arms
+        // (`:64890`) — the same fire-seeded stream that starts rain with
+        // the gates down stays dry with them up.
+        let fire = (1..2_000_000u64)
+            .find(|&s| {
+                let mut r = (s ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+                r = r.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = r;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                (z ^ (z >> 31)) % 496_800 == 0
+            })
+            .expect("a fire seed exists");
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.world_surface = 200.0;
+        app.world.day_time = false; // night: the genuine lanterns persist
+        app.rain = Rain::with_forced(fire, None, false);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 120;
+        app.player = Some(player);
+        app.wind.counter = 60;
+        app.world_events.manual_lanterns = true;
+        update_world_tick(&mut app, STEP);
+        assert!(app.wind.lantern_night, "the tick latches the wind gate");
+        assert_eq!(app.wind.wind_counter(), 60, "the walk is frozen");
+        assert!(!app.rain.is_raining(), "the start arms are blocked");
+        // The contrast arm: the same seed with the lanterns down starts
+        // the rain and walks the wind.
+        let mut plain = flow_app(None, vec![], vec![]);
+        plain.world.world_surface = 200.0;
+        plain.world.day_time = false;
+        plain.rain = Rain::with_forced(fire, None, false);
+        let mut player = crate::player::Player::spawn(&plain.world);
+        player.max_hp = 120;
+        plain.player = Some(player);
+        plain.wind.counter = 60;
+        update_world_tick(&mut plain, STEP);
+        assert!(plain.rain.is_raining(), "the gates-down twin starts rain");
+        assert_eq!(plain.wind.wind_counter(), 59);
     }
 
     #[test]

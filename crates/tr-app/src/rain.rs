@@ -647,10 +647,12 @@ impl Rain {
     /// `(netMode != 1 && !gameMenu) && (isThereAWorldSurface || remixWorld)` gate
     /// (`:64846` — netMode 0 and an in-game tick make the first conjunct true),
     /// the raining branch (`:64864-64888`), then the not-raining start arms
-    /// (`:64890-64923`). The slime-rain block after them (`:64925-64949`) is M4
-    /// events. `FreezeRainPower`, `LanternNight` and `slimeRain` do not exist in
-    /// the port — their gates resolve to the C# shape with all false. There is no
-    /// `Main.dayTime` gate on the start arms (only the slime roll is day-gated).
+    /// (`:64890-64923`). The slime-rain block after them (`:64925-64949`) rides
+    /// the weather tick. `FreezeRainPower` does not exist in the port;
+    /// `lanterns_up`/`next_night_lantern` are the W4-c39 lantern gates
+    /// (`LanternNight.LanternsUp`/`NextNightIsLanternNight`), `slime_rain` is
+    /// `Main.slimeRain`. There is no `Main.dayTime` gate on the start arms
+    /// (only the slime roll is day-gated).
     pub(crate) fn update_time(
         &mut self,
         day_rate: i32,
@@ -658,12 +660,24 @@ impl Rain {
         any_player_120: bool,
         remix_world: bool,
         player_luck: f32,
+        lanterns_up: bool,
+        next_night_lantern: bool,
+        slime_rain: bool,
     ) {
         // TR_RAIN pin / TR_NO_WEATHER: port-only scheduler switches — the pin
         // overrides the state machine exactly as the retired session schedule was
         // skipped under it, and `start_calm` disabled that schedule too.
         if self.forced.is_some() || self.calm {
             return;
+        }
+        // W4-c39: `Main.cs:64825-64831` — `UpdateTime`'s head, BEFORE the
+        // ladybug drain: while the lanterns are up `cloudBGActive = 0f`
+        // and `numClouds` caps at 30. The port's `numClouds` stand-in is
+        // pinned at 100 (`NUM_CLOUDS_STAND_IN`) and both `> 150`/`> 100`
+        // band arms are dead at 100 AND at 30, so the cap changes no
+        // outcome (recorded); the storm-deck clear is observable.
+        if lanterns_up {
+            self.cloud_bg = 0.0;
         }
         // `Main.cs:64833-64836`.
         if self.lady_bug_rain_boost > 0 {
@@ -677,6 +691,12 @@ impl Rain {
         }
         if self.raining {
             // `Main.cs:64864-64888` — the drain and the strength-change roll.
+            // W4-c39: `:64868-64871` — the lantern night stops the rain
+            // outright (`Main.StopRain()`), no drain, no roll.
+            if lanterns_up {
+                self.stop_rain();
+                return;
+            }
             self.rain_time -= day_rate; // `:64874`
             if day_rate > 0 {
                 // `:64875` — always true today (`day_rate()` is 60|1); the gate is
@@ -688,9 +708,9 @@ impl Rain {
                     self.change_rain(); // `:64882-64885`
                 }
             }
-        } else {
+        } else if !slime_rain && !lanterns_up && !next_night_lantern {
             // `Main.cs:64890-64923`: `!slimeRain && !LanternsUp &&
-            // !NextNightIsLanternNight` — all port-absent.
+            // !NextNightIsLanternNight` — W4-c39 wires all three gates.
             let num2 = 86400 / if day_rate == 0 { 1 } else { day_rate }; // `:64892`
             // `:64893`: `!FreezeRainPower.Enabled && Main.dayRate != 0` — the
             // freeze power is port-absent.
@@ -1514,7 +1534,7 @@ mod tests {
         ending.rain_time = 0;
         let mut tall = ground();
         tall.world_surface = 200.0; // `isThereAWorldSurface` (`Main.cs:2788`)
-        ending.update_time(1, &tall, true, false, 0.0);
+        ending.update_time(1, &tall, true, false, 0.0, false, false, false);
         assert_eq!(ending.max_raining(), 0.0);
         assert!(!ending.is_raining());
     }
@@ -1763,11 +1783,11 @@ mod tests {
             })
             .expect("a 8280-only seed exists");
         let mut fast = Rain::with_forced(fire_at_60, None, false);
-        fast.update_time(60, &w, true, false, 0.0);
+        fast.update_time(60, &w, true, false, 0.0, false, false, false);
         assert!(fast.is_raining(), "the ×5.75 roll hit at dayRate 60");
 
         let mut slow = Rain::with_forced(fire_at_60, None, false);
-        slow.update_time(1, &w, true, false, 0.0);
+        slow.update_time(1, &w, true, false, 0.0, false, false, false);
         assert!(
             !slow.is_raining(),
             "dayRate 1 rolls the plain 86400·5.75 denominator"
@@ -1779,10 +1799,10 @@ mod tests {
             .find(|&s| StreamReplay::new(s).next_u64() % 496_800 == 0)
             .expect("a 496800 seed exists");
         let mut both_fast = Rain::with_forced(fire_at_both, None, false);
-        both_fast.update_time(60, &w, true, false, 0.0);
+        both_fast.update_time(60, &w, true, false, 0.0, false, false, false);
         assert!(both_fast.is_raining());
         let mut both_slow = Rain::with_forced(fire_at_both, None, false);
-        both_slow.update_time(1, &w, true, false, 0.0);
+        both_slow.update_time(1, &w, true, false, 0.0, false, false, false);
         assert!(
             both_slow.is_raining(),
             "the plain 86400 shape fired at dayRate 1"
@@ -1800,7 +1820,7 @@ mod tests {
         rain.target = 0.8;
         rain.rain_time = 1;
         let state = rain.rng;
-        rain.update_time(1, &w, true, false, 0.0);
+        rain.update_time(1, &w, true, false, 0.0, false, false, false);
         assert!(!rain.is_raining());
         assert_eq!(rain.max_raining(), 0.0);
         assert_eq!(rain.rain_time, 0, "StopRain pins rainTime to 0 (`:64648`)");
@@ -1811,9 +1831,66 @@ mod tests {
         alive.raining = true;
         alive.target = 0.8;
         alive.rain_time = 2;
-        alive.update_time(1, &w, true, false, 0.0);
+        alive.update_time(1, &w, true, false, 0.0, false, false, false);
         assert!(alive.is_raining(), "rainTime 1 is still above the boundary");
         assert_eq!(alive.rain_time, 1);
+    }
+
+    #[test]
+    fn w4_c39_the_lantern_night_stops_rain_and_blocks_the_start_arms() {
+        // `Main.cs:64868-64871`: while the lanterns are up a running rain
+        // stops outright (`Main.StopRain()`) — no drain, no strength roll.
+        let w = rain_world();
+        let mut rain = Rain::with_forced(7, None, false);
+        rain.raining = true;
+        rain.target = 0.8;
+        rain.rain_time = 500;
+        let state = rain.rng;
+        rain.update_time(1, &w, true, false, 0.0, true, false, false);
+        assert!(!rain.is_raining(), "the lantern night stops the rain");
+        assert_eq!(rain.max_raining(), 0.0);
+        assert_eq!(rain.rain_time, 0, "StopRain pins rainTime to 0");
+        assert_eq!(rain.rng, state, "no roll is consumed on the lantern arm");
+
+        // `Main.cs:64890`: `!slimeRain && !LanternsUp &&
+        // !NextNightIsLanternNight` — each gate blocks the start arms alone.
+        // The ×5.75 seed fires with all gates down (the test above), so the
+        // same seed with any gate up must NOT start rain and must NOT draw.
+        let fire = (1..8_000_000u64)
+            .find(|&s| StreamReplay::new(s).next_u64() % 496_800 == 0)
+            .expect("a 496800 seed exists");
+        for (lanterns, next_night, slime) in
+            [(true, false, false), (false, true, false), (false, false, true)]
+        {
+            let mut gated = Rain::with_forced(fire, None, false);
+            let before = gated.rng;
+            gated.update_time(1, &w, true, false, 0.0, lanterns, next_night, slime);
+            assert!(!gated.is_raining(), "gate ({lanterns},{next_night},{slime}) blocks");
+            assert_eq!(gated.rng, before, "no start roll under the gate");
+        }
+    }
+
+    #[test]
+    fn w4_c39_the_lantern_head_clamps_the_storm_deck_before_the_drain() {
+        // `Main.cs:64825-64831`: `UpdateTime`'s head clears `cloudBGActive`
+        // while the lanterns are up — BEFORE the ladybug drain and the
+        // rain branches, and with no draw. The `numClouds` cap at 30 is
+        // outcome-neutral (the 100 stand-in's `> 150`/`> 100` arms are
+        // dead at 100 AND at 30 — recorded at the clamp).
+        let w = rain_world();
+        let mut rain = Rain::with_forced(7, None, false);
+        rain.cloud_bg = 0.8;
+        rain.lady_bug_rain_boost = 100;
+        let state = rain.rng;
+        rain.update_time(1, &w, true, false, 0.0, true, false, false);
+        assert_eq!(rain.cloud_bg(), 0.0, "the lantern head clears the deck");
+        assert_eq!(rain.lady_bug_rain_boost, 99, "the drain still runs");
+        assert_eq!(rain.rng, state, "the clamp draws nothing");
+        // The contrast arm: no lanterns, the deck keeps its value.
+        let mut plain = Rain::with_forced(7, None, false);
+        plain.cloud_bg = 0.8;
+        plain.update_time(1, &w, true, false, 0.0, false, false, false);
+        assert_eq!(plain.cloud_bg(), 0.8);
     }
 
     #[test]
@@ -1826,7 +1903,7 @@ mod tests {
             .find(|&s| StreamReplay::new(s).next_u64() % 496_800 == 0)
             .expect("a 496800 seed exists");
         let mut rain = Rain::with_forced(fire, None, false);
-        rain.update_time(1, &w, true, false, 0.0);
+        rain.update_time(1, &w, true, false, 0.0, false, false, false);
         assert!(rain.is_raining());
         assert!(rain.rain_time > 0);
     }
@@ -1841,9 +1918,9 @@ mod tests {
         let w = rain_world();
         let mut drain = Rain::with_forced(7, None, false);
         drain.lady_bug_rain_boost = 120;
-        drain.update_time(60, &w, false, false, 0.0); // no 120-HP player: arms gated
+        drain.update_time(60, &w, false, false, 0.0, false, false, false); // no 120-HP player: arms gated
         assert_eq!(drain.lady_bug_rain_boost, 60);
-        drain.update_time(60, &w, false, false, 0.0);
+        drain.update_time(60, &w, false, false, 0.0, false, false, false);
         assert_eq!(drain.lady_bug_rain_boost, 0, "the `> 0` gate clamps at 0");
 
         let fire = (1..200_000u64)
@@ -1858,11 +1935,11 @@ mod tests {
             .expect("a ladybug-arm seed exists");
         let mut rain = Rain::with_forced(fire, None, false);
         rain.lady_bug_rain_boost = 100;
-        rain.update_time(60, &w, true, false, 0.0);
+        rain.update_time(60, &w, true, false, 0.0, false, false, false);
         assert!(rain.is_raining(), "the ladybug arm fired");
 
         let mut quiet = Rain::with_forced(fire, None, false);
-        quiet.update_time(60, &w, true, false, 0.0);
+        quiet.update_time(60, &w, true, false, 0.0, false, false, false);
         assert!(
             !quiet.is_raining(),
             "boost 0 gates the third arm before its roll"
@@ -1929,7 +2006,7 @@ mod tests {
         rain.rain_time = 0;
         rain.lady_bug_rain_boost = 100;
         let state = rain.rng;
-        rain.update_time(60, &w, true, false, 0.0);
+        rain.update_time(60, &w, true, false, 0.0, false, false, false);
         assert_eq!(rain.rain_time, 0, "no drain under the pin");
         assert_eq!(rain.lady_bug_rain_boost, 100, "no drain under the pin");
         assert_eq!(rain.rng, state, "no rolls under the pin");
@@ -1953,7 +2030,7 @@ mod tests {
         let mut quiet = Rain::with_forced(9, None, true);
         quiet.lady_bug_rain_boost = 100;
         let state = quiet.rng;
-        quiet.update_time(60, &w, true, false, 0.0);
+        quiet.update_time(60, &w, true, false, 0.0, false, false, false);
         assert_eq!(
             quiet.lady_bug_rain_boost, 100,
             "no drain under TR_NO_WEATHER"

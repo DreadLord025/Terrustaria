@@ -112,7 +112,7 @@ impl LanternGates {
 }
 
 /// `LanternNight.LanternsCanStart` (`LanternNight.cs:49-56`).
-fn lanterns_can_start(g: &LanternGates) -> bool {
+pub(crate) fn lanterns_can_start(g: &LanternGates) -> bool {
     !g.spawn_meteor
         && !g.blood_moon
         && !g.pumpkin_moon
@@ -367,6 +367,53 @@ mod tests {
         ev3.manual_lanterns = true;
         check_morning_lanterns(&mut ev3);
         assert!(!ev3.manual_lanterns);
+    }
+
+    #[test]
+    fn w4_c39_the_persistence_gate_drops_genuine_lanterns_on_a_midnight_boss() {
+        // `LanternNight.cs:150-154` + `:42-48`: `UpdateTime` clears the
+        // GENUINE lanterns when `LanternsCanPersist` fails — night AND
+        // `LanternsCanStart`. A boss coming up mid-night drops them; the
+        // MANUAL lanterns persist regardless (the clear is genuine-only).
+        let mut ev = WorldEvents::default();
+        ev.genuine_lanterns = true;
+        let calm = LanternGates {
+            spawn_meteor: false,
+            blood_moon: false,
+            pumpkin_moon: false,
+            snow_moon: false,
+            invasion_type: 0,
+            moon_lord_countdown: 0,
+            boss_active: false,
+        };
+        // Night (`!dayTime` = true) + calm: persists; was_lantern_night
+        // starts false, so the first call reports the up-edge.
+        let night = true;
+        assert_eq!(
+            update_time_lanterns(&mut ev, night && lanterns_can_start(&calm)),
+            Some(true),
+            "the up-edge fires once"
+        );
+        assert_eq!(update_time_lanterns(&mut ev, true), None, "no re-edge");
+        // The boss gate fails mid-night: the genuine lanterns drop.
+        let boss = LanternGates { boss_active: true, ..calm };
+        assert_eq!(
+            update_time_lanterns(&mut ev, night && lanterns_can_start(&boss)),
+            Some(false),
+            "the down-edge fires"
+        );
+        assert!(!ev.genuine_lanterns);
+        // The manual lanterns ride through the same failed gate.
+        let mut manual = WorldEvents::default();
+        manual.manual_lanterns = true;
+        assert_eq!(update_time_lanterns(&mut manual, false), Some(true));
+        assert_eq!(update_time_lanterns(&mut manual, false), None);
+        assert!(manual.manual_lanterns, "the clear is genuine-only");
+        // Daytime fails the persist gate on its own (`!dayTime` half).
+        let mut day = WorldEvents::default();
+        day.genuine_lanterns = true;
+        assert_eq!(update_time_lanterns(&mut day, false), Some(false));
+        assert!(!day.genuine_lanterns);
     }
 
     #[test]
