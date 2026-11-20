@@ -6805,6 +6805,67 @@ Deviations: the chat UI landed with S1-E-10b (below); the port's
 `ConditionalDialogue` (the pending-dialogue half, `NPC.cs:6539`) is not
 ported; the C#'s `nextDialogue` branch (`:93768-93771`) comes with it.
 
+### W4-d120 re-pin (2026-11-21, code-only mode)
+
+The ladder was re-verified line-by-line against `NPC.cs:93766-94821` and
+re-pinned; **code-only mode** — no compiler/tests invoked, the new census
+witnesses are written not run.
+
+- **The flag renames**: the presence scan's ids were always the C#'s
+  (`:93831-93854`), but four fields were misnamed — 160 is the TRUFFLE
+  (`flag10`, not the Party Girl), 229 the PIRATE (`flag12`, not the
+  Zoologist), 208 the PARTY GIRL (`flag14`), 353 the STYLIST (`flag15`).
+  The Dryad's 238 / Clothier's 237 / Tinkerer's 309 / Painter's 251 /
+  Dye Trader's 260 neighbour lines now gate on the right neighbours.
+- **The real Party Girl (208) ladder** (`:94410-94456`): `Next(7)` UP
+  FRONT (before the event text), then the DD2/male/Stylist gates, then
+  the seven fixed lines 265/266/267/269/270/271/272 (268 is the male-gate
+  line, not a switch arm). The old port carried the Truffle's (160,
+  `:94302-94341`) ladder here; the Truffle kind is unported, so that
+  ladder has no consumer yet.
+- **The new arms**: the Stylist (353, `:94614-94749` — the moon-phase
+  fixed band 5/4 + the `StylistChatter` rows), the Tavernkeep (550,
+  `:94784-94787` → `Lang.BartenderChat`, `Lang.cs:331-338` — the T3-first
+  tier line), the Sleeping Golfer (589), the Bound Goblin (105 → dialog
+  120), the Bound Mechanic (123 → 156) and the Webbed Stylist (354 →
+  `Next(315, 319)`).
+- **The two pick directions** (`LanguageManager.cs:392-411`): the
+  `SelectRandom` chatter picks the REVERSE index (`--num == index`:
+  index 0 answers the LAST matching row), the `FindAll` mixed arms
+  (Nurse/Tinkerer/Mechanic/Stylist) the FORWARD row (`array[num - k]`).
+  The tr-core registry keeps the Dictionary's INSERTION order
+  (`text_order`) because the order is behaviour. The count draw ALWAYS
+  fires — even `Next(0)` advances the stream (`UnifiedRandom.cs:140`).
+- **The event census** (`:94860-94895`): the 1/3 roll fires only while
+  the event is active (`&&` short-circuit); the party's
+  `HasNoPartyText` gate (`NPCID.cs:10461`: 441/453) sits AFTER the roll;
+  an empty category pick declines the event and the next event rolls.
+  The Tax Collector's `(roll == 0) & flag` arms use the NON-short-circuit
+  `&` — all four `Next(6)` draws fire even with every neighbour absent.
+- **The live triggers** (`talk_to_npc`): the graveyard zone, the party,
+  the rain-not-storm, the happy windy day, the storm, the lanterns, the
+  Moon Lord and the DD2 T3 latches all read live App state now; the
+  player feeds (`statDefense`, `Player.head` vanity/armor headSlot,
+  `NormalizedLuck` ±cap ratio, `Player.Male` via the session draft's
+  cloth style, `anglerQuestFinished`) replaced the stubs. `Main.raining`
+  reads the LIVE `Rain` latch (`world.raining` only mirrors it at save).
+- **The FreeCakeDialogue** (`ConditionalDialogue.cs:51-66` — the only
+  registered conditional): the talk arm consumes the `NPC.freeCake`
+  latch a natural party sets (`BirthdayParty.cs:106`), gifts the cake
+  (3750, `QuickSpawnItem` → the inventory slot walk, overflow drop at
+  the player centre), then draws the `Cake{Next(1,4)}` text. The 10-tick
+  `CheckDialogue` refresh (`NPC.cs:90519-90532`) collapses to the talk
+  (the condition is the world-level latch, not per-NPC state). EVERY
+  dusk clears the latch (`Main.cs:65222`); `world_clear` clears it too
+  (`WorldGen.cs:6945`).
+- **Remaining deviations**: the Old Man (37), Truffle (160), Steampunker
+  (178), Pirate (229), Cyborg (209), Skeleton Merchant (453), Santa
+  (142), the unconscious Bartender (579) and the town pets/slime arms
+  (`:94804-94819`) have no ported kinds — their ladder arms wait for the
+  kinds; `Main.remixWorld` and `WorldGen.crimson` stay false (the port
+  carries no world-evil flag); the cake gift's `newAndShiny`/pickup-sound
+  side effects ride the port's existing pickup seams, not the talk.
+
 ## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/ui/npc_chat.rs` ports the UI half of the town chatter вЂ”
