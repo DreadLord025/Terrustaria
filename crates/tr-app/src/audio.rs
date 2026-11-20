@@ -510,6 +510,9 @@ const TRACKED_CUES: &[&str] = &[
     "dd2_kobold_scream_charge_loop",
     "dd2_wither_beast_aura_pulse_0",
     "dd2_wither_beast_aura_pulse_1",
+    // W4-d80 — the bomb fuse (`SoundID.cs:1764`, vol 0.2; the aiStyle-16
+    // loop, `Projectile.cs:46917-46921`).
+    "fuse",
 ];
 
 /// The `Sounds/Custom/` trackables the item-use wave names

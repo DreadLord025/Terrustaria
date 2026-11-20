@@ -466,6 +466,28 @@ impl GemStaffFeatures {
     }
 }
 
+/// W4-d80 — one queued tracked-sound intent for a projectile slot (the
+/// bomb fuse, research/64 sites 20/21): the ensure-play / stop the C#
+/// runs inline (`Projectile.cs:46917-46921` / `:70673-70677`). The sim
+/// drain applies it against the tracked pool and writes the `SlotId`
+/// float back into `Projectile.local_ai[2]` (the C# `localAI[2]` dance).
+/// ZERO gameplay draws — the variation/pitch picks ride the two
+/// audio-only statics (the census' RNG contract).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ProjTrackedCue {
+    /// `PlayTrackedLoopedSound(BombFuse, Center, tracker)` — the ensure
+    /// (`Projectile.cs:46917-46919`): `GetActiveSound == null && timeLeft
+    /// > 1 && IsABombWithFuse[type]`. The `ProjectileAudioTracker`
+    /// condition folds to the explicit death stop (the census fold 4 —
+    /// the pool cannot hand a live projectile reference to a `Send`
+    /// closure). The trailing `GetActiveSound` read (`:46920`) is dead.
+    BombFuseEnsure,
+    /// `GetActiveSound(localAI[2])?.Stop()` + `localAI[2] = 0` — the
+    /// aiStyle-16 `Kill()` tail (`Projectile.cs:70673-70677`, the
+    /// `netMode != 2` stop gate folds with the single-player port).
+    BombFuseStop,
+}
+
 /// One pool slot (`Projectile.cs:296-470`, the engine-relevant subset).
 #[derive(Clone, Debug)]
 pub struct Projectile {
@@ -714,6 +736,20 @@ pub struct Projectile {
     /// tick — the `wants_mark_spawn` intent pattern. `None` for every slot
     /// that played nothing this sub-step.
     pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32)>,
+    /// W4-d80 — one slot's queued tracked-sound intent (the bomb fuse,
+    /// `Projectile.cs:46917-46921`): the ensure-play / stop the C# runs
+    /// inline. The slot arms cannot see the pool's queue, so they park the
+    /// request here and the dispatch forwards it into
+    /// `pending_proj_tracked` on the same tick (the `wants_sound` intent
+    /// pattern). `None` for every slot that queued nothing this sub-step.
+    pub(crate) wants_tracked: Option<ProjTrackedCue>,
+    /// W4-d80 — the bomb-fuse loop's live flag (the `ProjectileAudioTracker`
+    /// condition fold, research/64): `Some(Arc<AtomicBool>)` while the fuse
+    /// loop plays, `None` otherwise. The tracked play's `LoopedPlayCondition`
+    /// reads it; the slot's death/detonation flips it false (the pool cannot
+    /// hand a live projectile reference to a `Send` closure, so the closure
+    /// reads this shared atomic — the census fold 4). Reset on spawn.
+    pub(crate) fuse_alive: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     /// `Projectile.melee`/`ranged`/`magic` (`:434-438`, reset false
     /// `:751-753`) — the damage-class flags the per-hit crit block reads
     /// (`Damage_PVE_Inner`, `Projectile.cs:12890-12898`). The data-carrying
@@ -842,6 +878,8 @@ impl Default for Projectile {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            wants_tracked: None,
+            fuse_alive: None,
             melee: false,
             ranged: false,
             magic: false,
@@ -867,6 +905,19 @@ impl Default for Projectile {
 /// take the per-family flight arms instead of the thrown-bomb arc.
 pub(crate) fn is_launcher_rocket(kind: u16) -> bool {
     matches!(kind, 133..=144 | 338..=341 | 776..=801 | 803..=810 | 862 | 863)
+}
+
+/// W4-d80 — `ProjectileID.Sets.IsABombWithFuse` (`ProjectileID.cs:424`):
+/// the bomb-fuse loop's membership gate (`Projectile.cs:46917`). The
+/// verbatim set — the thrown bombs/dynamite/scarab/dry-bomb/cluster-bomb
+/// family plus the Skeletron bomb (102), the DD2 goblin bomb (681) and
+/// the boulder (75). Every member is aiStyle 16.
+pub(crate) fn is_bomb_with_fuse(kind: u16) -> bool {
+    matches!(
+        kind,
+        28 | 37 | 516 | 519 | 910 | 911 | 1086 | 1087 | 906 | 905 | 904 | 903
+            | 773 | 1077 | 75 | 102 | 681 | 470 | 29 | 637
+    )
 }
 
 /// The straight-flight rocket set — the Rocket Launcher's 134/137/140/143,
@@ -6365,6 +6416,18 @@ impl Projectile {
         if is_launcher_rocket(self.kind) {
             self.ai_rocket(world, npcs, rng, local_owner);
             return;
+        }
+        // W4-d80 — `Projectile.cs:46917-46921`: the bomb-fuse loop ensure.
+        // `GetActiveSound(localAI[2]) == null && timeLeft > 1 &&
+        // IsABombWithFuse[type]` → `PlayTrackedLoopedSound(BombFuse,
+        // Center, tracker)` into `localAI[2]`. The queue fires while no
+        // handle stands; the drain owns the authoritative null test AND
+        // the playing state (a stopped-but-not-reaped slot must not
+        // re-play — the C# `GetActiveSound` returns stopped slots too, the
+        // census fold 4). The trailing `GetActiveSound` read (`:46920`)
+        // is dead — dropped. ZERO gameplay draws.
+        if self.time_left > 1 && is_bomb_with_fuse(self.kind) {
+            self.wants_tracked = Some(ProjTrackedCue::BombFuseEnsure);
         }
         self.ai[0] += 1.0;
         if STICKY_BOMBS.contains(&self.kind) {
@@ -14506,6 +14569,13 @@ pub struct ProjectilePool {
     /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
     /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
     pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// W4-d80 — the tracked-sound intents the AI arms and the bomb kill
+    /// path queued this tick: `(slot, cue, x, y)` — the ensure-play / stop
+    /// the C# runs inline (`Projectile.cs:46917-46921` / `:70673-70677`).
+    /// The world-sim pass drains them against the tracked pool and writes
+    /// the `SlotId` floats back into the slots' `local_ai[2]` (the
+    /// `pending_proj_sounds` queue→drain convention). ZERO gameplay draws.
+    pending_proj_tracked: Vec<(usize, ProjTrackedCue, f32, f32)>,
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
     /// the world-sim pass onto the player's `_channelShotCache` — the LAST
@@ -14932,6 +15002,7 @@ impl ProjectilePool {
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
+            pending_proj_tracked: Vec::new(),
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
             pending_spear_hold: None,
@@ -16156,6 +16227,16 @@ impl ProjectilePool {
     /// first — the wave-C drain convention.
     pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_proj_sounds)
+    }
+
+    /// W4-d80 — the tracked-sound intents the AI arms and the bomb kill
+    /// path queued: `(slot, cue, x, y)`. The world sim drains them against
+    /// the tracked pool (`apply_proj_tracked_cue`) and writes the `SlotId`
+    /// floats back into the slots' `local_ai[2]` — the bomb fuse's
+    /// ensure/stop dance (`Projectile.cs:46917-46921` / `:70673-70677`).
+    /// ZERO gameplay draws (the census' RNG contract).
+    pub fn drain_proj_tracked(&mut self) -> Vec<(usize, ProjTrackedCue, f32, f32)> {
+        std::mem::take(&mut self.pending_proj_tracked)
     }
 
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
@@ -19816,6 +19897,16 @@ impl ProjectilePool {
                     if let Some(req) = self.slots[i].wants_sound.take() {
                         self.pending_proj_sounds.push(req);
                     }
+                    // W4-d80 — forward the arm's queued tracked-sound intent
+                    // (the bomb fuse ensure) into the pool's tracked queue
+                    // (the same `wants_sound` pattern): the sim drain applies
+                    // it against the pool and writes the handle back.
+                    if let Some(cue) = self.slots[i].wants_tracked.take() {
+                        let pos = self.slots[i].pos;
+                        let (w, h) = (self.slots[i].w, self.slots[i].h);
+                        self.pending_proj_tracked
+                            .push((i, cue, pos.x + w * 0.5, pos.y + h * 0.5));
+                    }
                     // S1-P-i55 — `base.oldPosition = base.position`
                     // (`Projectile.cs:17013`) latches between the AI and
                     // `HandleMovement` for the golf kinds: the ball's pad
@@ -19987,6 +20078,24 @@ impl ProjectilePool {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
                     }
+                }
+                // W4-d80 — `Kill()`'s aiStyle-16 fuse stop
+                // (`Projectile.cs:70673-70677`): the slot died this pass —
+                // stop the bomb-fuse loop and zero `localAI[2]`. The C#
+                // gates the stop on `netMode != 2` (the port is single-
+                // player, always true) and runs it for EVERY aiStyle-16
+                // death (the `flag3` ai[0]==1000 guard only gates the
+                // explosion, not the stop). The drain applies the stop +
+                // the zero write-back.
+                if proj_data(self.slots[i].kind).is_some_and(|d| d.ai_style == 16) {
+                    let pos = self.slots[i].pos;
+                    let (w, h) = (self.slots[i].w, self.slots[i].h);
+                    self.pending_proj_tracked.push((
+                        i,
+                        ProjTrackedCue::BombFuseStop,
+                        pos.x + w * 0.5,
+                        pos.y + h * 0.5,
+                    ));
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
@@ -30462,6 +30571,8 @@ mod phasmal_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            wants_tracked: None,
+            fuse_alive: None,
             melee: false,
             ranged: false,
             magic: false,
@@ -30871,6 +30982,8 @@ mod ritual_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            wants_tracked: None,
+            fuse_alive: None,
             melee: false,
             ranged: false,
             magic: false,
