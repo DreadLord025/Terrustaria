@@ -75,10 +75,10 @@ the C# call site), so no stream is invented.
 | H4 | `Place2x2` (general) | `:51330-51423` | Piles/Traps (d104) — the 411-only slice exists (`mini_biomes.rs:1673`) | (this slice) |
 | H5 | `Place2x2Style` | `:52198-52256` | furniture passes | (this slice) |
 | H6 | `Place3x2` (general) | `:52066-52196` | the 26-altar slice exists (`evil.rs:1925`) | (this slice) |
-| H7 | `Place3x3` | `:53534-53635` | Statues (g37), Hellforge | pending |
+| H7 | `Place3x3` | `:53534-53634` | Statues (g37), Hellforge | landed f3b8665d |
 | H8 | `Place1x1` (general) | `:45188-45235` | the 141-only slice exists (`mini_biomes.rs:1653`); 324 seashell arm | (this slice) |
-| H9 | `Place3x4` / `Place5x4` | `:51912-51962` / `:51963-52021` | Statues/large furniture | pending |
-| H10 | `Place4x2` / `Place6x3` | `:50514-50873` / `:50465-50513` | beds/benches (Floating Island Houses d103/d104) | pending |
+| H9 | `Place3x4` / `Place5x4` | `:51912-51961` / `:51963-52020` | Statues/large furniture | landed f3b8665d |
+| H10 | `Place4x2` / `Place6x3` | `:50514-50584` / `:50465-50512` | beds/benches (Floating Island Houses d103/d104) | (this slice) |
 | H11 | `Place3x2Wall` / `Place3x3Wall` / `Place2x3Wall` / `Place4x3Wall` / `Place6x4Wall` | `:44725-44853` / `:44254-44567` / `:44568-44724` / `:44854-44945` / `:44946-45187` | paintings (Floating Island Houses, temple) | pending |
 | H12 | `PlaceOnTable1x1` / `PlaceLogicTiles` | `:45340-45379` / `:45309-45339` | Guide/house furniture | pending |
 | H13 | `Place1xX` / `Place2xX` | `:39177-39522` / `:39663-39935` | the temple slices exist (`temple.rs:1880`); general banners/statues | pending |

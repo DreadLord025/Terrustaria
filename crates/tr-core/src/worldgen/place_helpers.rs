@@ -502,6 +502,98 @@ pub(crate) fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32
     }
 }
 
+/// `WorldGen.Place6x3` (`WorldGen.cs:50465-50512`): the 6-wide, 3-tall
+/// bed — body `(x-3..=x+2, y-2..=y)` empty, each floor column
+/// `SolidTile2` OR an active `tileSolidTop` with `frameY == 0`
+/// (`:50489`). The 5-tile bounds gate. The C# `direction`/`style`
+/// parameters are UNUSED in the body (the bed sheet has one orientation);
+/// the port keeps them out of the signature — the callers pass the
+/// defaults. Frames: column-major `frameX = col * 18`,
+/// `frameY = row * 18` (the C# loop order, `:50499-50511`).
+pub(crate) fn place_6x3(world: &mut World, x: i32, y: i32, kind: u16) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let mut flag = true;
+    for i in (x - 3)..(x + 3) {
+        for j in (y - 2)..=y {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                flag = false;
+            }
+        }
+        let solid_top_ok = world
+            .tile(i, y + 1)
+            .is_some_and(|t| t.active() && TILE_SOLID_TOP.has(t.kind) && t.frame_y == 0);
+        if !solid_tile2(world, i, y + 1) && !solid_top_ok {
+            flag = false;
+        }
+    }
+    if !flag {
+        return;
+    }
+    // `:50498-50511` — column-major write order.
+    let mut num = 0i16;
+    for k in (x - 3)..(x + 3) {
+        let mut num2 = 0i16;
+        for l in (y - 2)..=y {
+            let i = world.index(k, l);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.frame_y = num2;
+            t.frame_x = num;
+            t.kind = kind;
+            num2 += 18;
+        }
+        num += 18;
+    }
+}
+
+/// `WorldGen.Place4x2` (`WorldGen.cs:50514-50584`): the 4-wide, 2-tall
+/// object at `(x-1..=x+2, y-1..=y)` — body empty, `SolidTile2` under all
+/// four columns; the 5-tile bounds gate. `direction == 1` flips to the
+/// right-facing sheet half (`frameX += 72`, `:50544-50547`);
+/// `frameY = 36 * style + row * 18`, `frameX = col * 18 + num`.
+pub(crate) fn place_4x2(world: &mut World, x: i32, y: i32, kind: u16, direction: i32, style: i32) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let mut flag = true;
+    for i in (x - 1)..(x + 3) {
+        for j in (y - 1)..(y + 1) {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                flag = false;
+            }
+        }
+        if !solid_tile2(world, i, y + 1) {
+            flag = false;
+        }
+    }
+    let num: i16 = if direction == 1 { 72 } else { 0 };
+    let num2 = (36 * style) as i16;
+    if flag {
+        // `:50551-50582` — row-major, top row then bottom row.
+        for (col, row) in [
+            (x - 1, y - 1),
+            (x, y - 1),
+            (x + 1, y - 1),
+            (x + 2, y - 1),
+            (x - 1, y),
+            (x, y),
+            (x + 1, y),
+            (x + 2, y),
+        ] {
+            let fx = num + ((col - (x - 1)) * 18) as i16;
+            let fy = num2 + if row == y { 18 } else { 0 };
+            let i = world.index(col, row);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.frame_y = fy;
+            t.frame_x = fx;
+            t.kind = kind;
+        }
+    }
+}
+
 /// `WorldGen.Place3x4` (`WorldGen.cs:51912-51961`): the 3-wide, 4-tall
 /// object — body `(x-1..=x+1, y-3..=y)` empty, `SolidTile2` under all
 /// three columns; the 5-tile bounds gate. `frameX = 54 * style + col*18`,
@@ -1052,5 +1144,35 @@ mod tests {
         w3.tiles[i].kind = 753;
         place_3x3(&mut w3, 30, 19, 753, 0);
         assert!(w3.tile(30, 17).unwrap().active());
+    }
+
+    /// `Place6x3` lays the bed column-major and accepts a platform floor;
+    /// `Place4x2` flips to the +72 sheet half on direction 1.
+    #[test]
+    fn place_6x3_bed_and_4x2_direction_flip() {
+        let mut w = floor_world();
+        place_6x3(&mut w, 10, 19, 79);
+        assert!(w.tile(7, 17).unwrap().active());
+        assert_eq!(w.tile(7, 17).unwrap().frame_x, 0);
+        assert_eq!(w.tile(12, 19).unwrap().frame_x, 90); // col 5 * 18
+        assert_eq!(w.tile(12, 19).unwrap().frame_y, 36);
+        // The platform (solidTop, frameY 0) floor passes.
+        let mut w2 = floor_world();
+        for col in 17..23 {
+            let i = w2.index(col, 20);
+            w2.tiles[i].kind = 19;
+            w2.tiles[i].frame_y = 0;
+        }
+        place_6x3(&mut w2, 20, 19, 79);
+        assert!(w2.tile(20, 17).unwrap().active());
+        // 4x2: direction 1 shifts every frameX by 72.
+        let mut w3 = floor_world();
+        place_4x2(&mut w3, 30, 19, 90, 1, 2);
+        let t = w3.tile(29, 18).unwrap();
+        assert!(t.active() && t.kind == 90);
+        assert_eq!(t.frame_x, 72);
+        assert_eq!(t.frame_y, 72); // 36 * 2
+        assert_eq!(w3.tile(32, 19).unwrap().frame_x, 126); // 72 + 54
+        assert_eq!(w3.tile(32, 19).unwrap().frame_y, 90);
     }
 }
