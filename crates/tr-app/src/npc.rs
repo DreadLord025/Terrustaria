@@ -33965,7 +33965,7 @@ mod w4_d25_style28_census_tests {
         let mut p = Player::spawn(&w);
         p.x = 150.0 * TILE_PX;
         p.y = 50.0 * TILE_PX;
-        let mut n = Npc::new(NpcKind::WallOfFleshEye, 500.0, 1000.0, 1, 0.0);
+        let mut n = Npc::new(NpcKind::WallOfFleshEye, 500.0, 1100.0, 1, 0.0);
         n.hp = n.max_hp;
         n.ai[0] = 1.0; // the top eye
         let mut rng = UnifiedRandom::new(28);
