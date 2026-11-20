@@ -718,6 +718,88 @@ Audit notes (R7):
 - 14/21/411's `tileFrameY == 18` is an EXACT equality (not `%`): only the
   second sheet row shrinks; the port matches (`fy == 18`).
 
+### R8 — chest-row tail, chairs/sinks strides, sunflower, plates, herbs, vines head: 467, 469, 15, 497, 172, 376, 27, 132, 135, 82, 83, 84, 324, 494, 52 (15 ids, indices 105-119)
+
+C# `TileDrawing.cs:4946-5013`. Verbatim (:4953-4999):
+
+```csharp
+		case 15:
+		case 497:
+			if (tileFrameY % 40 == 18)
+			{
+				tileHeight = 18;
+			}
+			break;
+		case 172:
+		case 376:
+			if (tileFrameY % 38 == 18)
+			{
+				tileHeight = 18;
+			}
+			break;
+		case 27:
+			if (tileFrameY % 74 == 54)
+			{
+				tileHeight = 18;
+			}
+			break;
+		case 132:
+		case 135:
+			tileTop = 2;
+			tileHeight = 18;
+			break;
+		case 82:
+		case 83:
+		case 84:
+			tileHeight = 20;
+			tileTop = -2;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		case 324:
+			tileWidth = 20;
+			tileHeight = 20;
+			tileTop = -2;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		case 494:
+			tileTop = 2;
+			break;
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 467 | row-18 arm (Containers2) | :4946 | `drawdata.rs:385-389`; glow :6277 (shares 21's body, R7) → `cases_a.rs:450-459` | PORTED (glow unconsumed) |
+| 469 | row-18 arm (Tables2) | :4947 | :385 | PORTED |
+| 15 | `fy % 40 == 18` → height 18 | :4953-4959 | :392-396; second switch :6244-6267 → `cases_a.rs:428-442` (2040 stride BOTH kinds, glow only kind 15 rows 32/33, masks 54/116) | PORTED (glow unconsumed) |
+| 497 | shares the `%40` arm (toilets) | :4954 | :392; stride applies, no glow (`kind == 15` gate) — faithful | PORTED |
+| 172 | `fy % 38 == 18` → height 18 | :4960-4966 | :399-403; second switch :6487-6506 → `cases_a.rs:598-610` (2014 stride, rows 28/29, masks 88/122, rect `(fx, fy%38)`) | PORTED (glow unconsumed) |
+| 376 | shares the `%38` arm (FishingCrate) | :4961 | :399 | PORTED |
+| 27 | `fy % 74 == 54` → height 18 (Sunflower) | :4967-4972 | :406-410 | PORTED |
+| 132 | `tileTop = 2; tileHeight = 18;` (Lever) | :4973-4977 | :413-416 | PORTED |
+| 135 | shares (PressurePlates) | :4974 | :413 | PORTED |
+| 82 | herbs: 20 tall, top −2, parity flip | :4978-4987 | :419-423 | PORTED |
+| 83 | shares | :4979 | :419 | PORTED |
+| 84 | shares | :4980 | :419 | PORTED |
+| 324 | BeachPiles: 20×20, top −2, parity flip | :4988-4996 | :426-431 | PORTED |
+| 494 | `tileTop = 2;` (GolfTee) | :4997-4999 | :433-435 | PORTED |
+| 52 | vine arm: `tileTop = -2;` + parity flip | :5000-5013 | :438-441 (`52 \| 62 \| 115 \| 205 \| 382 \| 528 \| 636 \| 638`) | PORTED |
+
+Audit notes (R8):
+- 15/497's second-switch stride verbatim (:6247-6250): `num46 = fy/40;
+  num53 = num46/51; addFrY -= 2040*num53; addFrX += 36*num53;` — the port's
+  deltas match term-for-term; the `typeCache == 15` glow gate is the port's
+  `kind == 15`. 172's 2014 = 53×38 stride likewise (:6489-6492).
+- The `%`-row gates (40/38/74) are the sheet strides of the chair/sink/
+  sunflower families — distinct from R7's exact `== 18`; both shapes ported.
+- 638 shares the vine arm here (index 126 audits its glow row :6080-6084);
+  62/115/205/382/528/636 follow in R9. No other R8 id has a second-switch row.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
