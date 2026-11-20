@@ -39358,7 +39358,7 @@ rounding at the near-boundary links (link 10 x=95.99999 -> tile 5, link
 float, which equals the correctly-rounded f32 sqrt, so the mirror's
 `f32::sqrt` is bit-exact with the C#. **Merger obligation:** replay e8's
 `christmas_hook_chain_lights` against the file's `ORACLE_FIXTURES`
-(same inputs, same `(tile_x, tile_y, [r,g,b])` sequence). 6 witnesses
+(same inputs, same `(tile_x, tile_y, [r,g,b])` sequence). 5 witnesses
 WRITTEN NOT RUN. g19's in-flight `main_addlight_census.rs` keeps the
 whole-file structural freeze - no duplicate census test here.
 
