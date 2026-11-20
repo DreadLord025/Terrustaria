@@ -116,8 +116,9 @@ use glam::Vec2;
 
 use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
-    BRAIN_SCRAMBLER, CHARGED_BLASTER_ORB, ELECTROSPHERE_MISSILE, FLAMING_WOOD, LASER_DRILL, MISSILE,
-    NEBULA_BLAZE_1, NEBULA_BLAZE_2, RAY_GUNNER, SAUCER_LASER, STARDUST_CELL,
+    BRAIN_SCRAMBLER, CHARGED_BLASTER_ORB, ELECTROSPHERE_MISSILE, EXPLOSIVE_TRAP_1, EXPLOSIVE_TRAP_2,
+    EXPLOSIVE_TRAP_3, FLAME_BURST_TOWER_1, FLAME_BURST_TOWER_2, FLAME_BURST_TOWER_3, FLAMING_WOOD,
+    LASER_DRILL, MISSILE, NEBULA_BLAZE_1, NEBULA_BLAZE_2, RAY_GUNNER, SAUCER_LASER, STARDUST_CELL,
 };
 
 /// The AI-arm `AddLight` sources this projectile contributes for one frame,
@@ -274,6 +275,40 @@ pub(crate) fn proj_ai_lights(
                 ));
             }
         }
+    }
+    // `AI_130_FlameBurstTower`'s per-tier pair (`:68120-68231`): each tier
+    // appends TWO lights — `AddLight(base.Center, c)` then
+    // `AddLight(base.Bottom + (0,-10), c)` — `c = (0.4,0.2,0.1)` scaled by
+    // the tier (T1 ×1 `:68124-68125`, T2 ×1.2 `:68172-68173`, T3 ×1.5
+    // `:68224-68225`). `base.Bottom` = `(position.X + width/2f,
+    // position.Y + height)` (`Entity.cs`), the Vector2 overload truncates
+    // the quotient per axis (`Lighting.cs:140-143`).
+    if kind == FLAME_BURST_TOWER_1 || kind == FLAME_BURST_TOWER_2 || kind == FLAME_BURST_TOWER_3 {
+        let mult = if kind == FLAME_BURST_TOWER_1 {
+            1.0
+        } else if kind == FLAME_BURST_TOWER_2 {
+            1.2
+        } else {
+            1.5
+        };
+        let rgb = [0.4 * mult, 0.2 * mult, 0.1 * mult];
+        out.push((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            rgb,
+        ));
+        let bottom = Vec2::new(pos.x + w * 0.5, pos.y + h) + Vec2::new(0.0, -10.0);
+        out.push(((bottom.x / 16.0) as i32, (bottom.y / 16.0) as i32, rgb));
+    }
+    // `AI_138_ExplosiveTrap`'s shared tail (`:69332`): after the
+    // sentry-backpack reposition, `AddLight(base.Center, 0.6, 0.5, 0.3)`
+    // for all three tiers (691/692/693).
+    if kind == EXPLOSIVE_TRAP_1 || kind == EXPLOSIVE_TRAP_2 || kind == EXPLOSIVE_TRAP_3 {
+        out.push((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [0.6, 0.5, 0.3],
+        ));
     }
     out
 }
@@ -433,6 +468,39 @@ mod tests {
     }
 
     #[test]
+    fn the_flame_burst_towers_append_the_centre_bottom_pair() {
+        // `:68124-68125` (T1 ×1), `:68172-68173` (T2 ×1.2),
+        // `:68224-68225` (T3 ×1.5) — each tier appends the Centre light
+        // then the Bottom+(0,-10) light, same colour. The 30x54 T1 box at
+        // (160, 176): centre (175, 203) → (10, 12); Bottom = (175, 230),
+        // +(0,-10) = (175, 220) → (10, 13).
+        let pos = Vec2::new(160.0, 176.0);
+        let t1 = proj_ai_lights(FLAME_BURST_TOWER_1, pos, 30.0, 54.0, 0, 0.0, None);
+        assert_eq!(t1.len(), 2);
+        assert_eq!(t1[0], (10, 12, [0.4, 0.2, 0.1]));
+        assert_eq!(t1[1], (10, 13, [0.4, 0.2, 0.1]));
+        // T2 ×1.2 — the f32 PRODUCTS, not rounded literals.
+        let t2 = proj_ai_lights(FLAME_BURST_TOWER_2, pos, 28.0, 58.0, 0, 0.0, None);
+        assert_eq!(t2[0].2, [0.4 * 1.2, 0.2 * 1.2, 0.1 * 1.2]);
+        assert_eq!(t2[1].2, t2[0].2);
+        // T3 ×1.5.
+        let t3 = proj_ai_lights(FLAME_BURST_TOWER_3, pos, 28.0, 60.0, 0, 0.0, None);
+        assert_eq!(t3[0].2, [0.4 * 1.5, 0.2 * 1.5, 0.1 * 1.5]);
+        assert_eq!(t3[1].2, t3[0].2);
+    }
+
+    #[test]
+    fn the_explosive_traps_share_the_warm_tail() {
+        // `:69332` — all three tiers (691/692/693) light Centre with
+        // (0.6, 0.5, 0.3). The 16x16 box centres on (168, 184) → (10, 11).
+        for kind in [EXPLOSIVE_TRAP_1, EXPLOSIVE_TRAP_2, EXPLOSIVE_TRAP_3] {
+            let got = at(kind);
+            assert_eq!(got.len(), 1, "kind {kind}");
+            assert_eq!(got[0], (10, 11, [0.6, 0.5, 0.3]), "kind {kind}");
+        }
+    }
+
+    #[test]
     fn every_ported_kind_has_a_proj_data_row() {
         // The absent-wholesale rule's invariant: every kind this feed
         // serves resolves a `proj_data` row (the spawn gate).
@@ -451,6 +519,12 @@ mod tests {
             1113,
             STARDUST_CELL,
             LASER_DRILL,
+            FLAME_BURST_TOWER_1,
+            FLAME_BURST_TOWER_2,
+            FLAME_BURST_TOWER_3,
+            EXPLOSIVE_TRAP_1,
+            EXPLOSIVE_TRAP_2,
+            EXPLOSIVE_TRAP_3,
         ] {
             assert!(
                 crate::projectile::proj_data(kind).is_some(),
