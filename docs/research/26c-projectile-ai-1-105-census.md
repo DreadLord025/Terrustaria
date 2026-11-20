@@ -210,3 +210,18 @@ bounce ladder `:18941-19277`, the RainbowBoulder helpers `:20024-20315`, the
 Shimmer arm `:22504-22515` and the Kill hooks (26b's cite list). The 26b
 verify-only verdicts for 21-24/26-30 match this census (arms present); its
 style-28 deviation note (967/1026 frame machines skipped) stands as recorded.
+
+## Finding F5 — BETSY_BREATH 687 row deviates (aiStyle 1 vs C# 136)
+
+`data.rs:2608-2621` rows Betsy's breath (687) as 12×12, aiStyle **1**,
+extraUpdates 1, tileCollide true. The C# SetDefaults (`Projectile.cs:7315-7324`)
+is 30×30, aiStyle **136**, alpha 255, penetrate −1, hostile. The row comment
+cites "`AI_110`'s `NewProjectile(..., 687, 35, ...)`" — but the live spawn
+sites pass ai0 = 0f (`NPC.cs:62026` for 687, `:62085` for 686); the comment's
+"35" matches neither the aiStyle nor the spawn ai0, and the row's 1 does not
+match the C# style.
+Style 136 belongs to d14 (131-140, claimed); the row correction must land with
+that arm (the F3 pattern — correcting early parks the kind in `_ => {}`).
+BETSY_FIREBALL 686's row (aiStyle 1, `:2622-2635`) matches its SetDefaults
+(`:7305-7314`, aiStyle 1) on the style axis; its box is 22×22 vs C# 30×30 —
+a second, smaller row deviation in the same block. Both recorded for d14.
