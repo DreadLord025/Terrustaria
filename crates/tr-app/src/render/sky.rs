@@ -6,7 +6,7 @@ use super::bg::{
     FrontLayer, bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees, front_layers,
     layer_y_offset, mushroom_tint, push_screen_rot,
 };
-use crate::app::{next_rand, rand01};
+use crate::app::next_rand;
 use crate::assets;
 use glam::Vec2;
 use tr_core::lighting::LightMap;
@@ -222,125 +222,10 @@ fn next_range(state: &mut u64, lo: i32, hi: i32) -> i32 {
     lo + (next_rand(state) % (hi - lo) as u64) as i32
 }
 
-/// `Cloud.GetParallax` (`Cloud.cs:318-338`): the per-cloud fraction of the
-/// camera's X movement, from its scale bucket.
-fn cloud_parallax(scale: f32) -> f32 {
-    let (a, b) = if scale < 1.0 {
-        (0.07, (scale + 0.15 + 1.0) / 2.0)
-    } else if scale <= 1.15 {
-        (0.19, scale - 0.075)
-    } else {
-        (0.23, scale - 0.15 - 0.075)
-    };
-    a * (b * b)
-}
-
-/// One background cloud from the `Cloud.addCloud` distribution below. `x` is a
-/// world-space anchor: the pass renders the cloud `parallax * camera.x` screen
-/// pixels to the left of it, the world-space form of `Cloud.UpdateCloudParallax`
-/// (`Cloud.cs:295-316`, `position.X -= cameraDelta * GetParallax()`). `y` is the
-/// vanilla spawn height in the 600 px reference screen the original spawns in;
-/// each pass maps it with its own `DrawClouds_*` formula.
-#[derive(Clone, Copy)]
-pub(crate) struct CloudSprite {
-    uv: [f32; 4],
-    w: f32,
-    h: f32,
-    x: f32,
-    y: f32,
-    scale: f32,
-    /// `Cloud.rotation`, settled into the ±0.02 clamp of `Cloud.Update`
-    /// (`Cloud.cs:430-437`).
-    rotation: f32,
-    /// The `SpriteEffects.FlipHorizontally` coin flip (`Cloud.cs:88-91`).
-    flip: bool,
-}
-
-/// Deterministic stand-in for the original's live 200-slot cloud array: the
-/// attributes of every cloud and the total count follow `Cloud.addCloud`
-/// (`Cloud.cs:60-178`) and the clear-weather `numCloudsTemp` equilibrium
-/// (`Main.cs:58980-58982`) from the world seed, spread over the world so every
-/// camera shows about as many clouds as the original's screen-anchored
-/// spawn/kill cycle keeps alive. Deviations (see `docs/ANALYSIS.md`): the wind
-/// drift is a constant light wind scaled by `GetParallax` (the original
-/// integrates `windSpeedCurrent * 9 * GetParallax` per tick, `Cloud.cs:391`),
-/// the spawn-time overlap rejection (`Cloud.cs:170-177`) is not simulated, and
-/// the storm type branch (`Cloud.cs:116-127`) and rare clouds
-/// (`Cloud.RollRareCloud`, `Cloud.cs:140-147`) need weather/boss state that the
-/// static field does not have.
-pub(crate) fn make_clouds(world: &World, lookups: &assets::Lookups) -> Vec<CloudSprite> {
-    if lookups.clouds.is_empty() {
-        return Vec::new();
-    }
-    let mut state = world.seed ^ 0x2545_F491_4F6C_DD1D;
-    // Clear-weather cloud count: the `numCloudsTemp` walk is clamped into
-    // 0..=100 while the sky is clear (`Main.cs:58980-58982`) and the
-    // `weatherCounter` jumps (`Main.cs:59012-59031`) drive it into that clamp,
-    // so the steady state sits at the clamp itself.
-    let num_clouds = 100.0f32;
-    let span = world.width as f32 * TILE_PX * 0.55 + 3000.0;
-    // Anchors spread over `span` (plus the spawn margin) so a 1600 px screen —
-    // the original's backbuffer — cuts `num_clouds` of them, matching the
-    // original's on-screen density for its `numClouds`.
-    let band = span + 1000.0;
-    let pool = (num_clouds * band / (1600.0 + 1200.0)).ceil() as usize;
-    (0..pool)
-        .filter_map(|_| {
-            // `Cloud.addCloud` (`Cloud.cs:82-158`) in its RNG order.
-            let mut scale = next_range(&mut state, 70, 131) as f32 * 0.01;
-            if scale > 1.3 {
-                scale = 1.3;
-            }
-            if scale < 0.7 {
-                scale = 0.7;
-            }
-            // `Cloud.Update` nudges exact 1/1.15 scales out of the bucket edges
-            // (`Cloud.cs:383-390`) on its first tick; generate past that so the
-            // buckets and the type branches see the steady-state value.
-            if scale == 1.0 {
-                scale = 0.9999;
-            }
-            if scale == 1.15 {
-                scale = 1.1499;
-            }
-            let rotation = (next_range(&mut state, -10, 11) as f32 * 0.01).clamp(-0.02, 0.02);
-            let flip = next_range(&mut state, 0, 2) == 0;
-            let x = rand01(&mut state) * band - 1000.0;
-            // Spawn heights in the 600 px reference screen: `-0.25*h .. 0.15*h`,
-            // a third of the clouds lifted by up to `0.1*h` (`Cloud.cs:110-114`).
-            let mut y = next_range(&mut state, -150, 90) as f32;
-            if next_range(&mut state, 0, 3) == 0 {
-                y -= next_range(&mut state, 0, 60) as f32;
-            }
-            let mut kind = next_range(&mut state, 0, 4) as usize;
-            // The clear-weather type branches (`Cloud.cs:128-139`), with the
-            // screen-height terms at h = 600.
-            if scale < 1.0 && y < -90.0 && num_clouds <= 80.0 {
-                kind = next_range(&mut state, 9, 14) as usize;
-            } else if ((scale < 1.15 && y < -180.0) || (scale < 0.85 && y < 90.0))
-                && num_clouds > 70.0
-            {
-                kind = next_range(&mut state, 4, 9) as usize;
-            } else if y > -90.0 && next_range(&mut state, 0, 2) == 0 && num_clouds > 20.0 {
-                kind = next_range(&mut state, 14, 18) as usize;
-            }
-            if scale > 1.2 {
-                y += 100.0;
-            }
-            let tex = lookups.clouds.get(kind).and_then(|t| t.as_ref())?;
-            Some(CloudSprite {
-                uv: tex.uv,
-                w: tex.w,
-                h: tex.h,
-                x,
-                y,
-                scale,
-                rotation,
-                flip,
-            })
-        })
-        .collect()
-}
+// The live cloud field (`crate::cloud::CloudField`, W4-g69) replaced the
+// retired `make_clouds`/`CloudSprite` stand-in: `Cloud.addCloud`'s spawn RNG,
+// the wind drift, the rain-cloud darkening and the camera parallax now run as
+// the C# does; the draw below consumes the 200-slot pool directly.
 
 /// Default-derivable: every sheet is an `Option` guard (`None` draws nothing),
 /// which is also what the headless flow tests construct.
@@ -538,68 +423,115 @@ pub(crate) fn make_stars(world: &World) -> Vec<StarSprite> {
         .collect()
 }
 
-/// One `DrawClouds_*` pass (`Main.cs:59644-59703`): every cloud of the scale
-/// bucket, at `cY = y * screen_y_scale + top`, drawn the way
-/// `NextHorizonRenderer.DrawCloud` (`NextHorizonRenderer.cs:241-252`) composes
-/// it: `Cloud.cloudColor` (`Cloud.cs:227-235`) scales the sky colour by
-/// `scale * Alpha` on every channel including alpha, the distant pass pulls red
-/// and green down (`OriginalColorsForCloud`, `NextHorizonRenderer.cs:254-263`),
-/// and the sprite rotates about its centre. `bucket` is 1 (scale < 1), 2
-/// (1 ..< 1.15) or 3 (>= 1.15) — the `DrawClouds_Distant/Closer/Closest` split.
+/// `DrawClouds_Distant`'s cY (`Main.cs:59682-59703`): the UNSCALED cloud Y
+/// over `num = backgroundTopMagicNumber * 750 + 830 + scAdj + pushBGTopHack`
+/// (the distant call passes hack 0, `Main.cs:59334`).
+pub(crate) fn cloud_distant_cy(y: f32, magic: f32, sc_adj: f32) -> f32 {
+    y + (magic * 750.0 + 830.0 + sc_adj)
+}
+
+/// `DrawClouds_Closer`'s cY (`Main.cs:59663-59680`):
+/// `Y * (screenHeight / 600) + num + 200`, `num = bgTopY - 50`.
+pub(crate) fn cloud_closer_cy(y: f32, screen_h: f32, bg_top_y: f32) -> f32 {
+    y * (screen_h / 600.0) + (bg_top_y - 50.0) + 200.0
+}
+
+/// `DrawClouds_Closest`'s cY (`Main.cs:59644-59661`):
+/// `Y * (screenHeight / 600) - 100 + num`, `num = bgTopY * 1.01 - 150`.
+pub(crate) fn cloud_closest_cy(y: f32, screen_h: f32, bg_top_y: f32) -> f32 {
+    y * (screen_h / 600.0) - 100.0 + (bg_top_y * 1.01 - 150.0)
+}
+
+/// The `DrawCloud` colour chain (`NextHorizonRenderer.cs:241-252`), verbatim
+/// byte math: `Cloud.cloudColor(ColorOfTheSkies)` (`Cloud.cs:227-235`, every
+/// channel including alpha truncated through the byte cast), the distant
+/// pass's red/green pull (`OriginalColorsForCloud`, `:254-263`), the
+/// `atmo < 1` dim (`:247-250`, XNA's float `Color * float` truncates each
+/// channel through the byte cast) and the `globalCloudAlpha` multiply
+/// (`:251`). Returns the tint normalised to `[0, 1]` — the `render/gore.rs`
+/// byte convention.
+pub(crate) fn draw_cloud_color(
+    sky: [f32; 3],
+    scale: f32,
+    alpha: f32,
+    pass: u8,
+    atmo: f32,
+    global_cloud_alpha: f32,
+) -> [f32; 4] {
+    // `Main.ColorOfTheSkies` as XNA bytes (alpha 255 — `SetBackColor` builds
+    // it from `new Color(r, g, b)`).
+    let bg = [
+        (sky[0] * 255.0) as i32 as u8,
+        (sky[1] * 255.0) as i32 as u8,
+        (sky[2] * 255.0) as i32 as u8,
+        255u8,
+    ];
+    let mut c = crate::cloud::cloud_color(scale, alpha, bg);
+    crate::cloud::original_colors_for_cloud(&mut c, scale, pass);
+    if atmo < 1.0 {
+        // `Color operator *(Color, float)`: `(byte)((int)channel * value)` —
+        // XNA truncates, it does not round (`Color.cs` multiply operator).
+        for ch in c.iter_mut() {
+            *ch = (*ch as f32 * atmo) as i32 as u8;
+        }
+    }
+    let mut out = [0.0f32; 4];
+    for (o, ch) in out.iter_mut().zip(c) {
+        *o = (ch as f32 * global_cloud_alpha) as i32 as u8 as f32 / 255.0;
+    }
+    out
+}
+
+/// One `DrawClouds_*` pass (`Main.cs:59644-59703`) over the live 200-slot pool:
+/// slot order 0..200, the verbatim bucket gate (`cloud_in_bucket` — scale
+/// 1.15f passes BOTH 2 and 3, the C# double/float edge), `cY` from the caller
+/// (each pass's own formula), the screen X straight off `Cloud.position.X`
+/// (`UpdateCloudParallax` already moved it against the camera). `sky` is
+/// `Main.ColorOfTheSkies` and `global_cloud_alpha` is
+/// `ProcessCloudAlpha() * Main.atmo` (`Main.cs:59330`).
 #[allow(clippy::too_many_arguments)]
 fn draw_cloud_pass(
     r: &mut SpriteRenderer,
     camera: Vec2,
     zoom: f32,
     screen: Vec2,
-    clouds: &[CloudSprite],
-    tint: [f32; 3],
-    bucket: u8,
-    screen_y_scale: f32,
-    top: f32,
-    drift: f32,
+    field: &crate::cloud::CloudField,
+    lookups: &assets::Lookups,
+    sky: [f32; 3],
+    pass: u8,
+    cy_of: impl Fn(&crate::cloud::Cloud) -> f32,
+    atmo: f32,
+    global_cloud_alpha: f32,
 ) {
-    for c in clouds {
-        let in_bucket = match bucket {
-            1 => c.scale < 1.0,
-            2 => c.scale >= 1.0 && c.scale < 1.15,
-            _ => c.scale >= 1.15,
+    for c in field.slots.iter() {
+        if !c.active || !crate::cloud::cloud_in_bucket(c.scale, pass) {
+            continue;
+        }
+        let Some(tex) = lookups.clouds.get(c.kind.max(0) as usize).and_then(|t| *t) else {
+            continue;
         };
-        if !in_bucket {
+        let cy = cy_of(c);
+        let color = draw_cloud_color(sky, c.scale, c.alpha, pass, atmo, global_cloud_alpha);
+        if color[3] <= 0.0 {
             continue;
         }
-        let p = cloud_parallax(c.scale);
-        let w = c.w * c.scale;
-        let h = c.h * c.scale;
-        let sx = c.x - p * camera.x + drift * p;
-        let cy = c.y * screen_y_scale + top;
-        // `Cloud.Update` retires clouds 600 px off the sides (`Cloud.cs:417-420`);
-        // the screen-space cull here only saves instances, so a small margin
-        // over the ±0.02 rotation is enough.
-        if sx + w < -100.0 || sx > screen.x + 100.0 || cy + h < -100.0 || cy > screen.y + 100.0 {
-            continue;
-        }
-        // `Cloud.cloudColor` (`Cloud.cs:227-235`).
-        let a = c.scale;
-        let mut color = [tint[0] * a, tint[1] * a, tint[2] * a, a];
-        if bucket == 1 {
-            // `OriginalColorsForCloud` (`NextHorizonRenderer.cs:254-263`).
-            color[0] *= c.scale * 0.8;
-            color[1] *= (c.scale + 1.0) / 2.0 * 0.9;
-        }
+        // `DrawData(…, position = (X, cY) + asset.Size()/2, origin =
+        // asset.Size()/2, scale, spriteDir)` (`NextHorizonRenderer.cs:244-251`):
+        // the UNSCALED half-size offset cancels the origin, so the sprite's
+        // top-left lands at `(X, cY)` and it rotates about its scaled centre.
+        let w = tex.w * c.scale;
+        let h = tex.h * c.scale;
         let uv = if c.flip {
-            [c.uv[2], c.uv[1], c.uv[0], c.uv[3]]
+            [tex.uv[2], tex.uv[1], tex.uv[0], tex.uv[3]]
         } else {
-            c.uv
+            tex.uv
         };
-        // `DrawCloud` centres the sprite at the top-left plus half the scaled
-        // size and rotates about it (`NextHorizonRenderer.cs:244-251`).
         push_screen_rot(
             r,
             camera,
             zoom,
             screen,
-            [sx + w * 0.5, cy + h * 0.5],
+            [c.position.x + w * 0.5, cy + h * 0.5],
             [w, h],
             uv,
             color,
@@ -614,7 +546,7 @@ pub(crate) fn draw_sky(
     zoom: f32,
     screen: Vec2,
     world: &World,
-    clouds: &[CloudSprite],
+    cloud_field: &crate::cloud::CloudField,
     sky: &SkyAssets,
     stars: &[StarSprite],
     surface_px: f32,
@@ -625,6 +557,9 @@ pub(crate) fn draw_sky(
     tint: [f32; 3],
     storm: f32,
     background_enabled: bool,
+    // `Main.mapFullscreen` — `ShouldDrawSurfaceBackground` returns false while
+    // the fullscreen map is open (`Main.cs:59715-59718`).
+    map_fullscreen: bool,
     // `Main.caveParallax` (`Main.cs:53059`, `this.bgParallax = caveParallax`):
     // the "Parallax" slider's scroll factor for the underground backdrop.
     cave_parallax: f32,
@@ -942,26 +877,41 @@ pub(crate) fn draw_sky(
     // `DrawSurfaceBG`'s three cloud passes, in the original order: distant
     // (`Main.cs:59334`, before the storm banks), closer (`Main.cs:59449`,
     // between the mountain steps) and closest (`Main.cs:59520`, before the front
-    // layers). Clouds live in screen space: `Cloud.UpdateCloudParallax`
-    // (`Cloud.cs:295-316`) shifts each cloud against the camera by
-    // `Cloud.GetParallax` of the pan, so the screen X is the world anchor minus
-    // that fraction of `camera.x`, plus the constant light wind of
-    // `make_clouds` scaled the same way (`Cloud.cs:391`).
-    let drift = anim_time * 9.0 * 60.0 * 0.1;
-    if view_top < world_surface_px + TILE_PX {
-        // `DrawClouds_Distant` (`Main.cs:59682-59703`): unscaled cloud Y over
-        // `magic * 750 + 830 + scAdj + pushBGTopHack(0)`.
+    // layers). The live pool's screen X is `Cloud.position.X` itself —
+    // `Cloud.UpdateCloudParallax` (`Cloud.cs:295-316`, called per draw at
+    // `Main.cs:61833`) already shifted it against the camera pan and
+    // `Cloud.Update` integrates the wind drift (`Cloud.cs:391`).
+    // `num5 = ProcessCloudAlpha() * Main.atmo` (`Main.cs:59330`): no custom
+    // skies are active in-world, so `ProcessCloudAlpha` clamps 1
+    // (`SkyManager.cs` `ProcessCloudAlpha`) and the factor is `atmo` itself.
+    let global_cloud_alpha = atmo;
+    // `flag = ShouldDrawSurfaceBackground()` (`Main.cs:59300`, `:59707-59720`):
+    // false on remix worlds in-game (the drunk+remix gen combo aside) and
+    // while the fullscreen map is open (`Main.cs:59715`).
+    let should_draw_surface =
+        !world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) && !map_fullscreen;
+    // The closer/closest block's own gate (`Main.cs:59354`): `!drunkWorldGen &&
+    // flag && screenPosition.Y / 16 <= worldSurface + 10`; each pass then
+    // re-checks the tighter `screenPosition.Y < worldSurface * 16 + 16`
+    // (`Main.cs:59648`, `:59667`).
+    let cloud_block = should_draw_surface
+        && !world.seeds.contains(tr_core::seeds::SeedFlags::DRUNK)
+        && bg_block
+        && view_top < world_surface_px + TILE_PX;
+    if should_draw_surface && view_top < world_surface_px + TILE_PX {
+        // `DrawClouds_Distant` (`Main.cs:59682-59703`): unscaled Y, hack 0.
         draw_cloud_pass(
             r,
             camera,
             zoom,
             screen,
-            clouds,
-            tint,
+            cloud_field,
+            lookups,
+            sky_color,
             1,
-            1.0,
-            magic * 750.0 + 830.0 + sc_adj,
-            drift,
+            |c| cloud_distant_cy(c.position.y, magic, sc_adj),
+            atmo,
+            global_cloud_alpha,
         );
     }
     // `DrawSurfaceBG` positions every layer from `screenPosition.Y` alone; anchoring
@@ -1084,23 +1034,26 @@ pub(crate) fn draw_sky(
     // pass: the mid-depth entities draw between the mountain rows and the
     // closer clouds.
     crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, &mut amb_last);
-    if bg_block {
-        let closer_top = if background_enabled {
-            magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
+    if cloud_block {
+        // `bgTopY` as Step1 (`Main.cs:59808`) or the plain head (`:59328`)
+        // leaves it; the pass adds its own `-50 + 200`.
+        let closer_bg_top = if background_enabled {
+            magic * 1300.0 + 1090.0 + sc_adj + 30.0
         } else {
-            magic * 1200.0 + 1190.0 + sc_adj + 150.0
+            magic * 1200.0 + 1190.0 + sc_adj
         };
         draw_cloud_pass(
             r,
             camera,
             zoom,
             screen,
-            clouds,
-            tint,
+            cloud_field,
+            lookups,
+            sky_color,
             2,
-            screen.y / 600.0,
-            closer_top,
-            drift,
+            |c| cloud_closer_cy(c.position.y, screen.y, closer_bg_top),
+            atmo,
+            global_cloud_alpha,
         );
     }
 
@@ -1182,8 +1135,8 @@ pub(crate) fn draw_sky(
     // 600) - 100 + bgTopY * 1.01 - 150`, with `bgTopY` from the near-mountain
     // setup (`Main.cs:59514`; the port always has the forest near layer) or,
     // with parallax off, the plain `bgTopY` of `Main.cs:59328`.
-    if bg_block {
-        let closest_base = if background_enabled {
+    if cloud_block {
+        let closest_bg_top = if background_enabled {
             magic * 1400.0 + 1260.0 + sc_adj + 30.0
         } else {
             magic * 1200.0 + 1190.0 + sc_adj
@@ -1193,12 +1146,13 @@ pub(crate) fn draw_sky(
             camera,
             zoom,
             screen,
-            clouds,
-            tint,
+            cloud_field,
+            lookups,
+            sky_color,
             3,
-            screen.y / 600.0,
-            closest_base * 1.01 - 150.0,
-            drift,
+            |c| cloud_closest_cy(c.position.y, screen.y, closest_bg_top),
+            atmo,
+            global_cloud_alpha,
         );
     }
 
@@ -1558,9 +1512,9 @@ mod cloud_star_tests {
         // `Cloud.GetParallax` (`Cloud.cs:318-338`): 0.07/0.19/0.23 over the
         // squared factor; the nudged bucket edges (`Cloud.cs:383-390`) land in
         // the low buckets.
-        let small = cloud_parallax(0.9999);
-        let mid = cloud_parallax(1.1499);
-        let big = cloud_parallax(1.3);
+        let small = crate::cloud::cloud_parallax(0.9999);
+        let mid = crate::cloud::cloud_parallax(1.1499);
+        let big = crate::cloud::cloud_parallax(1.3);
         assert!((small - 0.07 * (1.074_95 * 1.074_95)).abs() < 1e-5);
         assert!((mid - 0.19 * (1.074_9 * 1.074_9)).abs() < 1e-5);
         assert!((big - 0.23 * (1.075 * 1.075)).abs() < 1e-5);
@@ -1660,42 +1614,79 @@ mod cloud_star_tests {
     }
 
     #[test]
-    fn clouds_stay_within_the_vanilla_scale_clamps() {
-        let mut w = World::new("t".into(), 4200, 1200);
-        w.seed = 7;
-        // The vanilla pool types 0..21 (`Cloud_0..21`); a synthetic entry per
-        // type exercises the whole `addCloud` generation path.
-        let mut lookups = assets::Lookups::default();
-        lookups.clouds = (0..22)
-            .map(|_| {
-                Some(assets::CloudTex {
-                    uv: [0.0; 4],
-                    w: 100.0,
-                    h: 50.0,
-                })
-            })
-            .collect();
-        let clouds = make_clouds(&w, &lookups);
-        assert!(!clouds.is_empty());
-        for c in &clouds {
-            assert!((0.7..=1.3).contains(&c.scale));
-            assert!(c.rotation.abs() <= 0.02);
-            // The 600 px reference-screen spawn band plus the >1.2 lift
-            // (`Cloud.cs:110-114`, `Cloud.cs:148-151`).
-            assert!((-360.0..=190.0).contains(&c.y));
-        }
-        // Deterministic per seed.
-        let again = make_clouds(&w, &lookups);
-        assert_eq!(clouds.len(), again.len());
-        assert_eq!(clouds[0].x, again[0].x);
+    fn cloud_pass_cy_formulas_are_verbatim() {
+        // `DrawClouds_Distant` (`Main.cs:59699`): UNSCALED Y + the
+        // magic*750+830+scAdj head (hack 0). At 720p the closer/closest
+        // passes scale Y by 720/600 = 1.2 (`:59678`, `:59659`).
+        assert_eq!(cloud_distant_cy(-90.0, 0.5, 20.0), -90.0 + 1225.0);
+        // Closer: `Y * (h/600) + (bgTopY - 50) + 200` — the +150 net.
+        let closer = cloud_closer_cy(-100.0, 720.0, 1000.0);
+        assert!((closer - (-120.0 + 1150.0)).abs() < 1e-2, "closer {closer}");
+        // Closest: `Y * (h/600) - 100 + bgTopY * 1.01 - 150`.
+        let closest = cloud_closest_cy(-100.0, 720.0, 1000.0);
+        let want = -120.0 - 100.0 + (1000.0 * 1.01 - 150.0);
+        assert!((closest - want).abs() < 1e-2, "closest {closest} vs {want}");
+        // At the 600 px reference screen the scale term is identity.
+        assert_eq!(cloud_closer_cy(-100.0, 600.0, 1000.0), -100.0 + 1150.0);
     }
 
     #[test]
-    fn empty_cloud_textures_yield_an_empty_field() {
+    fn draw_cloud_color_replays_the_byte_chain() {
+        // `NextHorizonRenderer.DrawCloud` (`:241-252`): cloudColor scales the
+        // sky bytes by min(scale*Alpha, 1) with the byte truncation, pass 1
+        // pulls R/G, atmo < 1 dims, then globalCloudAlpha multiplies.
+        let white = [1.0, 1.0, 1.0];
+        // scale 0.8, Alpha 1: every channel (byte)(255 * 0.8) = 204; the
+        // distant pull: R = (byte)(204 * 0.64) = 130, G = (byte)(204 * 0.81)
+        // = 165 (0.9 * (0.8+1)/2 = 0.81).
+        let c = draw_cloud_color(white, 0.8, 1.0, 1, 1.0, 1.0);
+        assert_eq!(c[0], 130.0 / 255.0);
+        assert_eq!(c[1], 165.0 / 255.0);
+        assert_eq!(c[2], 204.0 / 255.0);
+        assert_eq!(c[3], 204.0 / 255.0);
+        // Pass 2 leaves R/G at the cloudColor value.
+        let c2 = draw_cloud_color(white, 0.8, 1.0, 2, 1.0, 1.0);
+        assert_eq!(c2, [204.0 / 255.0; 4]);
+        // Alpha 0.5 halves the factor: (byte)(255 * 0.4) = 102.
+        let faded = draw_cloud_color(white, 0.8, 0.5, 2, 1.0, 1.0);
+        assert_eq!(faded, [102.0 / 255.0; 4]);
+        // atmo 0.5 truncates (byte)(204 * 0.5) = 102, then globalCloudAlpha
+        // 0.5: (byte)(102 * 0.5) = 51.
+        let dim = draw_cloud_color(white, 0.8, 1.0, 2, 0.5, 0.5);
+        assert_eq!(dim, [51.0 / 255.0; 4]);
+        // globalCloudAlpha 0 (atmo 0 deep underground) blacks the sprite out.
+        let gone = draw_cloud_color(white, 1.0, 1.0, 3, 0.0, 0.0);
+        assert_eq!(gone, [0.0; 4]);
+    }
+
+    #[test]
+    fn live_pool_feeds_the_passes_after_reset() {
+        // W4-g69: the draw consumes the live 200-slot pool — after the
+        // `DrawBG` reset latch (`Main.cs:63980-63984`) exactly `numClouds`
+        // slots are active with Alpha 1 (0x0 sheets: no overlap rejection,
+        // the `cloud.rs` reset-witness convention), and the clamps hold.
+        let mut field = crate::cloud::CloudField::new(7);
         let mut w = World::new("t".into(), 4200, 1200);
         w.seed = 7;
-        let clouds = make_clouds(&w, &assets::Lookups::default());
-        assert!(clouds.is_empty());
+        let env = crate::cloud::CloudEnv::gather(
+            &w,
+            Vec2::new(1280.0, 720.0),
+            0.3,
+            0.0,
+            false,
+            1,
+            0.0,
+            0.0,
+        );
+        field.num_clouds = 100;
+        field.reset_clouds(&env, &assets::Lookups::default());
+        field.reset_pending = false;
+        assert_eq!(field.slots.iter().filter(|c| c.active).count(), 100);
+        for c in field.slots.iter().filter(|c| c.active) {
+            assert!((0.7..=1.3).contains(&c.scale));
+            assert!(c.rotation.abs() <= 0.1 + 1e-6);
+            assert_eq!(c.alpha, 1.0);
+        }
     }
 
     #[test]

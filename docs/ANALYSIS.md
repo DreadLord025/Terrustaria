@@ -1468,35 +1468,50 @@ Not ported: the eclipse (`Sun3`), the `head == 12` sun (`Sun2` + `Extra_280`), t
 moons (`Moon_Pumpkin`/`Moon_Snow`/`Moon_Smile`) and the title-screen grab-the-sun
 interaction. The first sun pass is always `Color.White` because no eclipse is modelled.
 
-### Clouds and stars (M1.4-BG-11/16)
+### Clouds and stars (M1.4-BG-11/16, W4-g69)
 
-`make_clouds`/`make_stars` port the spawn recipes; `draw_sky` ports the draw passes.
+`make_stars` ports the star spawn recipe; `draw_sky` ports the draw passes.
 
-Clouds: the field is a deterministic stand-in for the live 200-slot array
-(`Cloud.resetClouds`/`addCloud`/`UpdateClouds`, `Cloud.cs:39-293`) вЂ” the original's array
-state (wind-drift integration, the spawn/kill cycle, the spawn-time overlap rejection of
-`Cloud.cs:170-177`) is not simulated. Per-cloud attributes follow `Cloud.addCloud` in its
-RNG order (scale `Next(70,131)В·0.01` clamped 0.7..1.3 with the `Cloud.Update` 1/1.15 nudge
-already applied, rotation `Next(-10,11)В·0.01` clamped В±0.02, the flip coin, spawn heights
-`-0.25h..0.15h` in the 600 px reference screen, and the clear-weather type branches of
-`Cloud.cs:128-139`); the count is the clear-weather steady state `numClouds = 100` (the
-`numCloudsTemp` clamp of `Main.cs:58980-58982`, which the `weatherCounter` jumps drive it
-into). Anchors spread over a world-span band so every camera cuts about `numClouds` of
-them. The draw runs as the three `DrawSurfaceBG` passes in the original order вЂ” distant
-(`Main.cs:59334`), closer (`Main.cs:59449`), closest (`Main.cs:59520`) вЂ” with the
-`DrawClouds_*` cY formulas (the closer pass reads the `bgTopY` `BackMountainsStep1`
-leaves, `Main.cs:59808`; the closest the near-mountain setup, `Main.cs:59514`), and the
-screen X is the world anchor minus `Cloud.GetParallax(scale)` (`Cloud.cs:318-338`) of the
-camera pan, the world-space form of `Cloud.UpdateCloudParallax` (`Cloud.cs:295-316`).
-Colour is `Cloud.cloudColor` (`Cloud.cs:227-235`) with the distant pass's
-`OriginalColorsForCloud` pull (`NextHorizonRenderer.cs:254-263`).
+Clouds (W4-g69, `task/W4-g69-weather-clouds-parallax`, code-only): the field is the LIVE
+200-slot pool — `crates/tr-app/src/cloud.rs` (`CloudField`) ports `Cloud.cs:9-451` 1:1
+(`resetClouds`/`addCloud` in its exact RNG order incl. the rain-cloud dark types 18-21 and
+`RollRareCloud`, `Update`'s wind drift `windSpeedCurrent·9·GetParallax·dayRate`
+(`Cloud.cs:391`), alpha ramps, rotation jitter, retire bounds, `UpdateClouds`' bubble pass
+with the `j > 1` quirk and the one-add/one-kill balance, `UpdateCloudParallax`). The
+`Main` walkers ride the shared world tick (`world_sim/weather.rs`): `updateCloudLayer`
+(`Main.cs:13174-13231`, once per tick at `:17226`) and the `numCloudsTemp` walk
+(`Main.cs:58952-59036`, once per dayRate iteration) on the bare `Main.rand` stand-in
+(`NamedRngs::global`), then `Cloud.UpdateClouds` gated on
+`screenPosition.Y < worldSurface·16 + 16` (`Main.cs:17249-17254`). The draw head
+(`app/frame/draw.rs`) runs `UpdateCloudParallax` per draw (`Main.cs:61833`) and the
+`DrawBG` `resetClouds` latch (`Main.cs:63980-63984`, `windSpeedCurrent = windSpeedTarget`
+first). `Cloud.rand` is the C#'s private static stream, pinned to the world seed (the
+`make_stars` precedent). The retired `make_clouds`/`CloudSprite` static stand-in is gone.
 
-Cloud deviations: the wind drift is a constant light wind scaled by `GetParallax` (the
-original integrates `windSpeedCurrentВ·9В·GetParallax` per tick, `Cloud.cs:391`); the storm
-type branch (`Cloud.cs:116-127`) and `RollRareCloud` (`Cloud.cs:140-147`, needs the boss
-flags) are not applied at generation; `globalCloudAlpha` (= `ProcessCloudAlpha В· atmo`) is
-1 because no active skies/`atmo` are modelled; and the `HorizonClouds` shader of
-`NextHorizonRenderer.CloudsEnd` (sun-tinted cloud shading) is not ported.
+The draw runs as the three `DrawSurfaceBG` passes in the original order — distant
+(`Main.cs:59334`), closer (`Main.cs:59449`), closest (`Main.cs:59520`) — over the pool in
+slot order with the verbatim bucket gates (scale 1.15f passes BOTH closer and closest, the
+C# double/float edge, `cloud.rs::cloud_in_bucket`), the `DrawClouds_*` cY formulas
+(`cloud_distant_cy`/`cloud_closer_cy`/`cloud_closest_cy`; the closer pass reads the
+`bgTopY` `BackMountainsStep1` leaves, `Main.cs:59808`; the closest the near-mountain setup,
+`Main.cs:59514`), and the screen X straight off `Cloud.position.X`. Colour is the verbatim
+`DrawCloud` byte chain (`render/sky.rs::draw_cloud_color`): `Cloud.cloudColor`
+(`Cloud.cs:227-235`) on `ColorOfTheSkies`, the distant `OriginalColorsForCloud` pull
+(`NextHorizonRenderer.cs:254-263`), the `atmo < 1` byte-truncated dim and the
+`globalCloudAlpha = ProcessCloudAlpha()·atmo` multiply (`Main.cs:59330`; no custom skies
+are active in-world so `ProcessCloudAlpha` clamps 1). The `ShouldDrawSurfaceBackground`
+gate (`Main.cs:59707-59720`) folds the remix seed + the fullscreen map.
+
+Cloud deviations (W4-g69): `CloudEnv::gather` folds `WorldGen.crimson` to false (no
+world-level field yet) and `downedBoss2` to `downed_eow`; the drunk-menu type override's
+gen flags stay false in-world. `Rain::change_rain` still reads the `NUM_CLOUDS_STAND_IN`
+constant (100), not the live `num_clouds` — the ChangeRain band gates are the
+weather-completion row's remainder. The `cloudBGAlpha` visual ramp (`Rain::cloud_bg`)
+keeps its 10× stand-in schedule even though `cloudBGActive` now runs live. The
+`HorizonClouds` shader of `NextHorizonRenderer.CloudsEnd` (sun-tinted cloud shading) and
+the dead `BetterColorsForClouds` (never called in 1.4.5.8) are not ported. The old
+100 px screen cull is gone — the C# draws every active in-bucket cloud (the retire bounds
+of `Cloud.cs:417-420` keep them near the screen anyway).
 
 Stars: `make_stars` ports `Star.SpawnStars` (`Star.cs:86-158`) in its RNG order вЂ” count
 `Next(200,400)`, positions in the 1920x1200 design space, `rotation Next(628)В·0.01`,
@@ -8625,13 +8640,13 @@ Deviations, all deliberate:
   and `WorldGen.GetWorldUpdateRate` (`WorldGen.cs:72020-72028`) only clamps it at 24
   and freeze-gates it. `world_sim/growth.rs:18` passes the literal `1`; never feed it
   `day_rate()`.
-- **The `numClouds` stand-in is pinned at 100** (`NUM_CLOUDS_STAND_IN`, matching
-  `render/sky.rs` `make_clouds`' static `num_clouds = 100.0`): with exactly 100 the
+- **The `numClouds` stand-in is pinned at 100** (`NUM_CLOUDS_STAND_IN`): the live
+  cloud-count walk (`Main.cs:58952-59036`) now runs on `CloudField` (W4-g69), but
+  `Rain::change_rain` still reads the constant — with exactly 100 the
   `numClouds > 150`/`> 100` ChangeRain bands are dead and only the storm gate
-  (`cloudBGActive >= 1f` в†’ `cloud_bg >= 1.0`) reaches the heavy bands; the same
-  `cloud_bg` stand-in reads the Г—4.25 start arm (`:64916`). The live cloud-count
-  system (`Main.cs:58952-59036`) is unported вЂ” revisit both with the
-  weather-completion row.
+  (`cloudBGActive >= 1f` → `cloud_bg >= 1.0`) reaches the heavy bands; the same
+  `cloud_bg` stand-in reads the ×4.25 start arm (`:64916`). Re-home both onto the
+  live `CloudField.num_clouds`/`cloud_bg_active` with the weather-completion row.
 - **`Rain.wind` (the drop drift) is static now.** The retired session schedule was
   its last writer; vanilla's drops read the live `Main.windSpeedCurrent` per tick
   (`:58830-58950` feeds `Wind` directly). The field stays seed-time-fixed until a

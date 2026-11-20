@@ -2131,6 +2131,7 @@ pub(crate) mod front_flow_tests {
     ) -> App {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
+        let cloud_field = crate::cloud::CloudField::new(world.seed);
         App {
             ambient_waterfall: (0.0, 0.0, 0.0),
             ambient_lavafall: (0.0, 0.0, 0.0),
@@ -2170,7 +2171,7 @@ pub(crate) mod front_flow_tests {
             font_atlas: None,
             world,
             lookups: assets::Lookups::default(),
-            clouds: Vec::new(),
+            cloud_field,
             sky: SkyAssets::default(),
             bg_style: 0,
             bg_delay: 0,

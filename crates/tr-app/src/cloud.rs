@@ -16,7 +16,11 @@
 //! (`NamedRngs::global`).
 //!
 //! Draw side: `render/sky.rs`'s three `DrawClouds_*` passes consume this pool
-//! (`Main.cs:59644-59703` + `NextHorizonRenderer.DrawCloud` `:241-252`).
+//! (`Main.cs:59644-59703` + `NextHorizonRenderer.DrawCloud` `:241-252`);
+//! W4-g69 wired them plus the tick glue — `updateCloudLayer`/the numClouds
+//! tail/`UpdateClouds` ride `world_sim::weather::update_world_tick`,
+//! `UpdateCloudParallax` + the `DrawBG` `resetClouds` latch ride the draw head
+//! (`app/frame/draw.rs`).
 
 use glam::Vec2;
 use tr_core::{UnifiedRandom, World};

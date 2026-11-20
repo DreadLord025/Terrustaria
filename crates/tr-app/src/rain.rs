@@ -52,14 +52,16 @@ const RAMP_PER_TICK: f32 = 0.0005;
 /// The `cloudBGAlpha` clamp-step per tick — 10× the `cloudAlpha` ramp so the storm
 /// deck appears within it (kept from the retired session schedule), scaled by
 /// `max(1, dayRate)` like the `cloudBGActive` ramp it stands in for
-/// (`Main.cs:13187/13205`; the full `updateCloudLayer` state machine is unported).
+/// (`Main.cs:13187/13205`; the real `updateCloudLayer` state machine now lives on
+/// `CloudField` — W4-g69 — but this visual stand-in still drives `cloud_bg`).
 const CLOUD_BG_RAMP_PER_TICK: f32 = 0.005;
-/// The `numClouds` stand-in for `ChangeRain`'s strength bands (`Main.cs:64730`): the
-/// port's static cloud field is pinned at 100 (`render/sky.rs` `make_clouds`'s
-/// `num_clouds = 100.0`) — the live cloud-count system (`Main.cs:58952-59036`) is
-/// unported. With exactly 100 the `numClouds > 150` and `numClouds > 100` arms are
-/// both false, so only the storm gate (`cloudBGActive >= 1f` → `cloud_bg >= 1.0`)
-/// reaches the heavy bands; revisit with the weather-completion row.
+/// The `numClouds` stand-in for `ChangeRain`'s strength bands (`Main.cs:64730`):
+/// pinned at 100 — the clear-weather steady state of the live pool's count walk
+/// (W4-g69 wired `Main.cs:58952-59036` onto `CloudField`, but `change_rain` still
+/// reads this constant, not the live `num_clouds`). With exactly 100 the
+/// `numClouds > 150` and `numClouds > 100` arms are both false, so only the storm
+/// gate (`cloudBGActive >= 1f` → `cloud_bg >= 1.0`) reaches the heavy bands;
+/// revisit with the weather-completion row.
 const NUM_CLOUDS_STAND_IN: i32 = 100;
 const DROP_W: f32 = 2.0;
 const DROP_H: f32 = 40.0;
@@ -279,6 +281,12 @@ impl Rain {
     /// `Main.cloudAlpha` clamped to the range the sky tint uses.
     pub fn visual_alpha(&self) -> f32 {
         self.intensity.clamp(0.0, 1.0)
+    }
+
+    /// `Main.cloudAlpha` RAW — the cloud spawn/kill gates read the unclamped
+    /// intensity (`Cloud.cs:116`, `Main.cs:58980-59001`; W4-g69).
+    pub fn raw_alpha(&self) -> f32 {
+        self.intensity
     }
 
     /// `Main.raining`: the toggle the tile-light scanner reads for the water
@@ -1696,7 +1704,7 @@ mod tests {
     fn test_DW_2_1_change_rain_band_gates_pick_by_cloud_bg_stand_in() {
         // `Main.cs:64730`: the bands gate on `cloudBGActive >= 1f ||
         // numClouds > 150`, then `numClouds > 100`. The stand-in pins numClouds
-        // at 100 (`sky.rs` `make_clouds`), so only the `cloud_bg >= 1.0` storm
+        // at 100 (the `NUM_CLOUDS_STAND_IN` constant), so only the `cloud_bg >= 1.0` storm
         // gate reaches the heavy band; the middle band is dead by construction.
         for seed in [5u64, 77, 1234] {
             let mut calm = Rain::with_forced(seed, None, false);

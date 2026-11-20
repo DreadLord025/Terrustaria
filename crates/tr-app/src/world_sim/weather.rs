@@ -166,8 +166,50 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         // dayRate iteration, with the real `Main.maxRaining` (`:58832`).
         let day_rate = world.day_rate();
         let max_raining = rain.max_raining();
+        // (1b) `Main.cs:17226`: `updateCloudLayer` — the overcast state machine
+        // runs ONCE per tick, before the dayRate loop, on the bare `Main.rand`
+        // stand-in (outside every SwapRandom block). W4-g69.
+        let game_menu = app.menu.is_some() || app.front.is_some();
+        app.cloud_field.update_cloud_layer(
+            app.rngs.global(),
+            rain.raw_alpha(),
+            day_rate,
+            rain.is_raining(),
+            wind.storming,
+            game_menu,
+        );
         for _ in 0..day_rate {
             wind.update_rain(max_raining);
+            // (2b) `UpdateWeather`'s cloud-count tail (`Main.cs:58952-59036`)
+            // rides the same per-iteration walk, right after the wind part.
+            app.cloud_field.update_num_clouds(
+                app.rngs.global(),
+                rain.raw_alpha(),
+                rain.cloud_bg(),
+            );
+        }
+        // (2c) `Main.cs:17249-17254`: `Cloud.UpdateClouds` — once per tick,
+        // gated on the view being above the surface line
+        // (`screenPosition.Y < worldSurface * 16 + 16`); the pool's own
+        // private `Cloud.rand` stream, not `Main.rand`. The screen size reads
+        // the gpu config directly (the closure holds disjoint field borrows).
+        let (sw, sh) = app
+            .gpu
+            .as_ref()
+            .map_or((1280.0, 720.0), |g| (g.config.width as f32, g.config.height as f32));
+        let view_top = app.camera.y - sh * 0.5;
+        if view_top < world.world_surface as f32 * TILE_PX + 16.0 {
+            let env = crate::cloud::CloudEnv::gather(
+                world,
+                Vec2::new(sw, sh),
+                wind.speed_current,
+                app.player.as_ref().map(|p| p.vx).unwrap_or(0.0),
+                game_menu,
+                day_rate,
+                rain.raw_alpha(),
+                app.bg_alpha_front[4],
+            );
+            app.cloud_field.update_clouds(&env, &app.lookups);
         }
         // (3) `Main.cs:64833-64949`: Main.UpdateTime's rain section — the
         // `ladyBugRainBoost` drain, the `rainTime` drain + strength-change roll
@@ -1002,6 +1044,74 @@ mod tests {
             59,
             "one decrement at dayRate=1 — no walk"
         );
+    }
+
+    #[test]
+    fn w4_g69_tick_walks_the_cloud_count_on_the_bare_stream() {
+        // `Main.cs:17226-17231` + `:58952-59036`: `updateCloudLayer` once per
+        // tick, then the numClouds tail once per dayRate iteration, both on
+        // the bare `Main.rand` stand-in. State pin: an independent replay of
+        // the same walks lands on the same counters AND the same stream
+        // position after the cloud draws (the wind walk uses its own RNG).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.cloud_field.num_clouds_temp = 150;
+        app.cloud_field.weather_counter = 5;
+        let mut rng = app.rngs.global().clone();
+        let mut f = crate::cloud::CloudField::new(app.world.seed);
+        f.num_clouds_temp = 150;
+        f.weather_counter = 5;
+        f.update_cloud_layer(&mut rng, 0.0, 1, false, false, false);
+        f.update_num_clouds(&mut rng, 0.0, 0.0);
+        update_world_tick(&mut app, STEP);
+        assert_eq!(app.cloud_field.num_clouds_temp, f.num_clouds_temp);
+        assert_eq!(app.cloud_field.weather_counter, f.weather_counter);
+        assert_eq!(app.cloud_field.cloud_bg_active, f.cloud_bg_active);
+        assert_eq!(
+            app.rngs.global().peek(),
+            rng.peek(),
+            "the cloud walks consumed exactly the replayed draws"
+        );
+        // The clear-sky clamp fired (`Main.cs:58980-58982`) unless the
+        // overcast roll opened the deck on this stream.
+        if app.cloud_field.cloud_bg_active <= 0.0 {
+            assert_eq!(app.cloud_field.num_clouds_temp, 100);
+        }
+    }
+
+    #[test]
+    fn w4_g69_surface_gate_runs_update_clouds_and_deep_view_skips_it() {
+        // `Main.cs:17249-17254`: `Cloud.UpdateClouds` runs only while
+        // `screenPosition.Y < worldSurface * 16 + 16`. One active cloud at
+        // the surface drifts by the wind term; the same cloud with the
+        // camera deep underground stays put (its jitter draw never runs).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.wind.speed_current = 0.3;
+        app.cloud_field.num_clouds = 1;
+        // Hold the weatherCounter jump off so `num_clouds` stays 1 — no
+        // balance spawn can bubble a new cloud into slot 0.
+        app.cloud_field.weather_counter = 100;
+        app.cloud_field.slots[0] = crate::cloud::Cloud {
+            active: true,
+            scale: 0.9,
+            alpha: 1.0,
+            position: Vec2::new(100.0, 0.0),
+            ..Default::default()
+        };
+        let rand_before = app.cloud_field.rand.peek();
+        // Deep view: camera far below the surface line — no pool tick.
+        app.camera.y = app.world.world_surface as f32 * TILE_PX + 5000.0;
+        update_world_tick(&mut app, STEP);
+        assert_eq!(app.cloud_field.slots[0].position.x, 100.0);
+        assert_eq!(app.cloud_field.rand.peek(), rand_before);
+        // Surface view: the drift integrates (`Cloud.cs:391`).
+        app.camera.y = app.world.world_surface as f32 * TILE_PX - 400.0;
+        update_world_tick(&mut app, STEP);
+        assert!(
+            app.cloud_field.slots[0].position.x > 100.0,
+            "the wind drifted the cloud: {}",
+            app.cloud_field.slots[0].position.x
+        );
+        assert_ne!(app.cloud_field.rand.peek(), rand_before, "the jitter drew");
     }
 
     #[test]

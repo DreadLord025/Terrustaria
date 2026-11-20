@@ -203,7 +203,7 @@ impl App {
                     world,
                     atlas,
                     lookups,
-                    clouds,
+                    cloud_field,
                     sky,
                     bg_alpha_front,
                     bg_alpha_far,
@@ -1063,13 +1063,37 @@ impl App {
                         world.width,
                     );
                     draw_phase("sky");
+                    // `Main.cs:61832-61833`: `Cloud.UpdateCloudParallax` runs
+                    // per draw, right after the camera update — each active
+                    // cloud shifts against the camera-centre X delta by its
+                    // own `GetParallax` fraction (W4-g69).
+                    cloud_field.update_parallax(draw_cam);
+                    // `Main.DrawBG`'s head (`Main.cs:63980-63984`): the
+                    // `resetClouds` latch — `windSpeedCurrent = windSpeedTarget`
+                    // then the full respawn (`Cloud.cs:39-58`).
+                    if cloud_field.reset_pending {
+                        wind.speed_current = wind.speed_target;
+                        let (sw, sh) = (screen.x, screen.y);
+                        let env = crate::cloud::CloudEnv::gather(
+                            world,
+                            Vec2::new(sw, sh),
+                            wind.speed_current,
+                            player.as_ref().map(|p| p.vx).unwrap_or(0.0),
+                            menu.is_some() || front.is_some(),
+                            world.day_rate(),
+                            rain.raw_alpha(),
+                            bg_alpha_front[4],
+                        );
+                        cloud_field.reset_clouds(&env, lookups);
+                        cloud_field.reset_pending = false;
+                    }
                     draw_sky(
                         renderer,
                         draw_cam,
                         bg_zoom,
                         screen,
                         world,
-                        clouds,
+                        cloud_field,
                         sky,
                         stars,
                         surface_px,
@@ -1080,6 +1104,7 @@ impl App {
                         sky_tint,
                         rain.cloud_bg(),
                         settings.background,
+                        settings.map_enabled && map.as_ref().is_some_and(|m| m.open),
                         cave_parallax(settings.parallax_scroll),
                         bg_alpha_front,
                         bg_alpha_far,
