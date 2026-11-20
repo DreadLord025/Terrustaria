@@ -25,6 +25,16 @@
 //!   convention); this module never rolls RNG.
 //! * [`light_override`] — right after the vision floors, before the light
 //!   test (`:969`), and in `DrawGrass` (:8349).
+//! * [`tile_draw_gate`] — the `flag` light test + `IsVisible` + the
+//!   `DrawBlack` decision (`:970-991`), consuming the override's output.
+//! * [`final_light`] — `GetFinalLight` (`:4358-4389`): the tint multiply,
+//!   the fullbright white, the actuation ghost (`Tile.actColor`,
+//!   `Tile.cs:272-280`) and the [`shine_color`] arm (`Main.shine`,
+//!   `Main.cs:21557-21660`) gated by [`should_tile_shine`] (`:4404-4432`).
+//!   The torch/candle flame quads (`tr-core/flame.rs`) never consume this
+//!   colour — they draw self-lit (`DrawSingleTile_Flames` uses its own
+//!   per-style colours); the fall-block sprites (drawdata case-326 group)
+//!   do.
 //!
 //! Deviations (recorded in docs/ANALYSIS.md "The animated-tile light chain
 //! (W4-d56)"):
@@ -415,6 +425,302 @@ pub fn light_override(
     l
 }
 
+/// `Main.tileFlame` (`Main.cs:9300-9312`): the 13 flame-overlay types. The
+/// `flag` light test (`TileDrawing.cs:971`) draws these even in pitch black —
+/// the flame quad is self-lit (`DrawSingleTile_Flames`). Inlined verbatim
+/// (the `tr-render` crate cannot read `tr-core::flame`); the census witness
+/// pins it against the C# assignments.
+const TILE_FLAME: [u16; 13] = [4, 33, 34, 35, 42, 49, 93, 98, 100, 173, 174, 372, 646];
+
+/// `TileID.Sets.IgnoreDrawLightConditions` (`TileID.cs:623`):
+/// `CreateBoolSet(144, 300, 303, 306)` — the timer / candle-family glows that
+/// draw regardless of light (`TileDrawing.cs:975`).
+const IGNORE_DRAW_LIGHT_CONDITIONS: [u16; 4] = [144, 300, 303, 306];
+
+/// The `flag` light test's output (`TileDrawing.cs:970-991`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DrawGate {
+    /// `flag` after the `IsVisible` veto — whether the cell's sprite draws.
+    pub draw: bool,
+    /// `(!flag & flag2) && TileDrawingBase.DrawOwnBlacks` (`:988-990`): the
+    /// cell emits a `DrawBlack` coverage quad instead of a sprite. The C#
+    /// bitwise `&` on two bools has no side effect, so it is the same as `&&`.
+    pub draw_black: bool,
+}
+
+/// `DrawSingleTile`'s `flag` light test + `IsVisible` + the `DrawBlack`
+/// decision (`TileDrawing.cs:970-991`, `IsVisible` `:1411-1432`), consuming
+/// the [`light_override`] output. Every animated tile (torch/candle flame
+/// families, waterfall/lavafall fall blocks) passes through it.
+///
+/// Inputs: the post-override light bytes, `has_glow_texture`
+/// (`tileDrawInfo.glowTexture != null`), `glow_mask_id`
+/// (`Main.tileGlowMask[type]`, `-1` = none), the wall id +
+/// `fullbright_wall` (`tileCache.fullbrightWall()`), and the Echo-sight pair
+/// (`invisible_block` = `tileCache.invisibleBlock()`,
+/// `show_invisible_blocks` = `_shouldShowInvisibleBlocks`).
+/// `draw_own_blacks` is `TileDrawingBase.DrawOwnBlacks` (static-ctor `true`,
+/// `TileDrawingBase.cs:52-55`).
+#[allow(clippy::too_many_arguments)]
+pub fn tile_draw_gate(
+    kind: u16,
+    frame_y: i16,
+    wall: u16,
+    light: [u8; 4],
+    has_glow_texture: bool,
+    glow_mask_id: i16,
+    fullbright_wall: bool,
+    invisible_block: bool,
+    show_invisible_blocks: bool,
+    draw_own_blacks: bool,
+) -> DrawGate {
+    // `TileDrawing.cs:971-974` — glow/flame types always draw.
+    let mut flag = has_glow_texture || glow_mask_id != -1 || TILE_FLAME.contains(&kind);
+    // `:975-978` — any lit channel, or the ignore-light set.
+    flag = flag
+        || light[0] >= 1
+        || light[1] >= 1
+        || light[2] >= 1
+        || IGNORE_DRAW_LIGHT_CONDITIONS.contains(&kind);
+    // `:979-982` — the echo wall (318) or a fullbright wall lifts a dark cell.
+    if wall > 0 && (wall == 318 || fullbright_wall) {
+        flag = true;
+    }
+    // `IsVisible` (`:1411-1432`): an Echo-coated cell hides unless sight is
+    // granted; the martian-conduit platform row 48 and the echo/luminite
+    // blocks (541/631) are ALWAYS sight-gated.
+    let mut hidden = invisible_block;
+    if kind == 19 && frame_y as i32 / 18 == 48 {
+        hidden = true;
+    }
+    if kind == 541 || kind == 631 {
+        hidden = true;
+    }
+    let visible = if hidden { show_invisible_blocks } else { true };
+    // `:983-987` — the visibility veto clears the draw flag.
+    if !visible {
+        flag = false;
+    }
+    // `:988-991` — a visible-but-undrawn cell paints black coverage.
+    let draw_black = !flag && visible && draw_own_blacks;
+    DrawGate { draw: flag, draw_black }
+}
+
+/// `Main.tileShine2` (`Main.cs:7137-7187`, `:7517`, `:9653`, `:10002-10292`,
+/// the `262..=268` loop `:10334-10342`): the static true rows, in source
+/// order. The two DYNAMIC rows 185/186 are written per-draw by
+/// `GetTileDrawData` (`TileDrawing.cs:5150-5173`) — see [`tile_shine2`].
+const TILE_SHINE2_STATIC: [u16; 59] = [
+    221, 222, 223, 6, 7, 8, 9, 166, 167, 168, 169, 12, 21, 467, 441, 468, 22, 25, 45, 46, 47, 63,
+    64, 65, 66, 67, 68, 566, 107, 108, 111, 121, 122, 117, 211, 682, 681, 680, 685, 686, 178, 639,
+    346, 347, 348, 370, 407, 147, 161, 163, 164, 204, 262, 263, 264, 265, 266, 267, 268,
+];
+
+/// `Main.tileShine2[type]` including the two dynamic rows. The C# writes
+/// `tileShine2[185]`/`[186]` inside `GetTileDrawData`
+/// (`TileDrawing.cs:5150-5173`) as a GLOBAL last-write-wins flag, then reads
+/// it in `ShouldTileShine`/`Main.shine`. The port evaluates the same frame
+/// window PER TILE (the common single-tile case is identical); the
+/// last-write-wins cross-tile quirk is a recorded deviation (ANALYSIS "The
+/// animated-tile draw gate + final colour"). The windows match the spelunker
+/// highlight windows (`Main.IsTileSpelunkable`).
+pub fn tile_shine2(kind: u16, frame_x: i16, frame_y: i16) -> bool {
+    if kind == 185 {
+        // `TileDrawing.cs:5150-5157`.
+        return frame_y == 18 && (576..=882).contains(&frame_x);
+    }
+    if kind == 186 {
+        // `TileDrawing.cs:5166-5173`.
+        return (864..=1170).contains(&frame_x);
+    }
+    TILE_SHINE2_STATIC.contains(&kind)
+}
+
+/// `TileDrawing.ShouldTileShine` (`TileDrawing.cs:4404-4432`): the
+/// `GetFinalLight` shine gate. `tile_solid` is the caller's
+/// `Main.tileSolid[type]` probe; `shimmer_alpha` is `Main.shimmerAlpha`.
+/// `frame_y` rides the dynamic 185/186 window (see [`tile_shine2`]).
+pub fn should_tile_shine(
+    kind: u16,
+    frame_x: i16,
+    frame_y: i16,
+    shimmer_alpha: f32,
+    tile_solid: bool,
+) -> bool {
+    // `:4406-4409` — shimmer over any solid, plus the three unconditional ids.
+    if (shimmer_alpha > 0.0 && tile_solid) || kind == 165 || kind == 693 || kind == 694 {
+        return true;
+    }
+    // `:4410-4413`.
+    if !tile_shine2(kind, frame_x, frame_y) {
+        return false;
+    }
+    // `:4414-4432` — the two frame-windowed gem/sparkle families.
+    match kind {
+        467 | 468 => (144..178).contains(&frame_x),
+        21 | 441 => (36..178).contains(&frame_x),
+        _ => true,
+    }
+}
+
+/// `Main.shine(Color, int)` (`Main.cs:21557-21660`): the per-type sparkle
+/// tint applied by `GetFinalLight` when [`should_tile_shine`] holds. Pure
+/// byte maths — the float arms truncate toward zero, the `B` arms marked
+/// `double` in the C# multiply in f64 (the literal `1.1`/`1.2`/`1.15` are
+/// doubles there), and the 204 arm early-returns with alpha 255 BEFORE the
+/// shimmer blend. `tile_shine2` is the [`tile_shine2`] result (the default
+/// arm re-reads it); `shimmer_shine` is `Main.shimmerShine` (XYZ).
+#[allow(clippy::too_many_arguments)]
+pub fn shine_color(
+    light: [u8; 4],
+    kind: u16,
+    tile_shine2: bool,
+    mouse_text_color: u8,
+    shimmer_alpha: f32,
+    shimmer_shine: [f32; 3],
+) -> [u8; 4] {
+    let (mut r, mut g, mut b) = (light[0] as i32, light[1] as i32, light[2] as i32);
+    // `Main.cs:21562` — the default multiplier base.
+    let mut num4 = 0.6f32;
+    match kind {
+        // `:21565-21569` — B is a double multiply.
+        25 => {
+            r = (light[0] as f32 * 0.95) as i32;
+            g = (light[1] as f32 * 0.85) as i32;
+            b = (light[2] as f64 * 1.1) as i32;
+        }
+        // `:21570-21574`.
+        117 => {
+            r = (light[0] as f32 * 1.1) as i32;
+            g = (light[1] as f32 * 1.0) as i32;
+            b = (light[2] as f64 * 1.2) as i32;
+        }
+        // `:21575-21582` — the pulse arm early-returns (alpha 255, no shimmer).
+        204 => {
+            num4 = 0.3 + mouse_text_color as f32 / 300.0;
+            r = (light[0] as f32 * (1.3 * num4)) as i32;
+            if r > 255 {
+                r = 255;
+            }
+            return [r as u8, g as u8, b as u8, 255];
+        }
+        // `:21583-21587`.
+        211 => {
+            num4 = 0.3 + mouse_text_color as f32 / 300.0;
+            g = (light[1] as f32 * (1.5 * num4)) as i32;
+            b = (light[2] as f32 * (1.1 * num4)) as i32;
+        }
+        // `:21588-21593`.
+        147 | 161 => {
+            r = (light[0] as f32 * 1.1) as i32;
+            g = (light[1] as f32 * 1.12) as i32;
+            b = (light[2] as f64 * 1.15) as i32;
+        }
+        // `:21594-21598`.
+        163 => {
+            r = (light[0] as f32 * 1.05) as i32;
+            g = (light[1] as f32 * 1.1) as i32;
+            b = (light[2] as f64 * 1.15) as i32;
+        }
+        // `:21599-21603`.
+        164 => {
+            r = (light[0] as f32 * 1.1) as i32;
+            g = (light[1] as f32 * 1.1) as i32;
+            b = (light[2] as f64 * 1.2) as i32;
+        }
+        // `:21604-21609`.
+        178 => {
+            num4 = 0.5;
+            r = (light[0] as f32 * (1.0 + num4)) as i32;
+            g = (light[1] as f32 * (1.0 + num4)) as i32;
+            b = (light[2] as f32 * (1.0 + num4)) as i32;
+        }
+        // `:21610-21616`.
+        185 | 186 => {
+            num4 = 0.3;
+            r = (light[0] as f32 * (1.0 + num4)) as i32;
+            g = (light[1] as f32 * (1.0 + num4)) as i32;
+            b = (light[2] as f32 * (1.0 + num4)) as i32;
+        }
+        // `:21617-21627` — the glow-mushroom family adds a flat 100.
+        262..=268 => {
+            r += 100;
+            g += 100;
+            b += 100;
+        }
+        // `:21628-21635` — the default sparkle lift, gated on tileShine2.
+        _ => {
+            if tile_shine2 {
+                r = (light[0] as f32 * (1.0 + num4)) as i32;
+                g = (light[1] as f32 * (1.0 + num4)) as i32;
+                b = (light[2] as f32 * (1.0 + num4)) as i32;
+            }
+        }
+    }
+    // `:21637-21643` — the shimmer blend (per-channel truncation).
+    if shimmer_alpha > 0.0 {
+        r = (r as f32 * (1.0 - shimmer_alpha) + r as f32 * shimmer_shine[0] * shimmer_alpha) as i32;
+        g = (g as f32 * (1.0 - shimmer_alpha) + g as f32 * shimmer_shine[1] * shimmer_alpha) as i32;
+        b = (b as f32 * (1.0 - shimmer_alpha) + b as f32 * shimmer_shine[2] * shimmer_alpha) as i32;
+    }
+    // `:21644-21659` — clamp, keep the incoming alpha.
+    [r.min(255) as u8, g.min(255) as u8, b.min(255) as u8, light[3]]
+}
+
+/// `Tile.actColor(Color)` (`Tile.cs:272-280`): the actuation ghost — a
+/// `double` 0.4 multiply per channel, truncated, alpha preserved. Only
+/// reached when the tile is actuated (`inActive()`), which the caller gates.
+fn act_color(c: [u8; 4]) -> [u8; 4] {
+    let s = |x: u8| (0.4 * x as f64) as u8;
+    [s(c[0]), s(c[1]), s(c[2]), c[3]]
+}
+
+/// `TileDrawing.GetFinalLight(Tile, ushort, Color, Color)`
+/// (`TileDrawing.cs:4358-4389`): the sprite's final colour. The tint multiply
+/// truncates `(int)((float)(R*tint.R)/255f)` and clamps to 255, alpha is
+/// forced to 255 (`PackedValue | -16777216`, `:4375`); then fullbright →
+/// white, actuated → [`act_color`], else the [`shine_color`] arm gated by
+/// [`should_tile_shine`]. `tile_solid` rides the shimmer-solid probe;
+/// `shimmer_shine` is `Main.shimmerShine`.
+#[allow(clippy::too_many_arguments)]
+pub fn final_light(
+    kind: u16,
+    frame_x: i16,
+    frame_y: i16,
+    light: [u8; 4],
+    tint: [u8; 4],
+    fullbright_block: bool,
+    inactive: bool,
+    tile_solid: bool,
+    mouse_text_color: u8,
+    shimmer_alpha: f32,
+    shimmer_shine: [f32; 3],
+) -> [u8; 4] {
+    // `:4360-4375` — the tint multiply + clamp, alpha 255.
+    let mul = |l: u8, t: u8| (((l as i32 * t as i32) as f32 / 255.0) as i32).min(255) as u8;
+    let mut l = [mul(light[0], tint[0]), mul(light[1], tint[1]), mul(light[2], tint[2]), 255];
+    // `:4376-4379` — fullbright repaints white but does NOT return: the
+    // actuation/shine arm below still runs on the white (an actuated
+    // fullbright block ghosts to 102).
+    if fullbright_block {
+        l = [255, 255, 255, 255];
+    }
+    // `:4380-4387` — actuation beats shine (the `else if`).
+    if inactive {
+        l = act_color(l);
+    } else if should_tile_shine(kind, frame_x, frame_y, shimmer_alpha, tile_solid) {
+        l = shine_color(
+            l,
+            kind,
+            tile_shine2(kind, frame_x, frame_y),
+            mouse_text_color,
+            shimmer_alpha,
+            shimmer_shine,
+        );
+    }
+    l
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -713,5 +1019,236 @@ mod tests {
             assert_eq!(v.light, raw, "family {k} floors");
             assert_eq!(light_override(k, 0, 0, false, v.light, 225, 0.375, false), raw, "family {k} override");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 2: the draw gate + final colour (the second half of the chain).
+    // ------------------------------------------------------------------
+
+    /// W4-d56 census witness: the inlined `Main.tileFlame` rows match the C#
+    /// assignments (`Main.cs:9300-9312`) and `IgnoreDrawLightConditions`
+    /// matches `TileID.cs:623`.
+    #[test]
+    fn gate_tables_match_the_csharp_sets() {
+        assert_eq!(TILE_FLAME.len(), 13);
+        for k in [4u16, 33, 34, 35, 42, 49, 93, 98, 100, 173, 174, 372, 646] {
+            assert!(TILE_FLAME.contains(&k), "flame {k}");
+        }
+        for k in [144u16, 300, 303, 306] {
+            assert!(IGNORE_DRAW_LIGHT_CONDITIONS.contains(&k), "ignore-light {k}");
+        }
+        assert!(!IGNORE_DRAW_LIGHT_CONDITIONS.contains(&302));
+    }
+
+    /// `TileDrawing.cs:971-978` — a flame type (torch 4 / candle 42) draws
+    /// even in pitch black; a plain dark block does not. The ignore-light
+    /// set draws dark too.
+    #[test]
+    fn gate_flame_and_ignore_light_draw_in_the_dark() {
+        let dark = [0u8, 0, 0, 255];
+        for k in [4u16, 33, 42, 49] {
+            let g = tile_draw_gate(k, 0, 0, dark, false, -1, false, false, false, true);
+            assert!(g.draw && !g.draw_black, "flame {k} draws dark");
+        }
+        for k in [144u16, 300, 303, 306] {
+            let g = tile_draw_gate(k, 0, 0, dark, false, -1, false, false, false, true);
+            assert!(g.draw, "ignore-light {k}");
+        }
+        // A plain dark block paints black coverage instead.
+        let g = tile_draw_gate(1, 0, 0, dark, false, -1, false, false, false, true);
+        assert!(!g.draw && g.draw_black);
+        // Any lit channel draws it.
+        let g = tile_draw_gate(1, 0, 0, [1, 0, 0, 255], false, -1, false, false, false, true);
+        assert!(g.draw && !g.draw_black);
+    }
+
+    /// `TileDrawing.cs:971/:979-982` — a glow texture or a non-(-1) glow-mask
+    /// id lifts a dark cell; the echo wall 318 and a fullbright wall do too.
+    #[test]
+    fn gate_glow_and_wall_arms() {
+        let dark = [0u8, 0, 0, 255];
+        assert!(tile_draw_gate(1, 0, 0, dark, true, -1, false, false, false, true).draw);
+        assert!(tile_draw_gate(1, 0, 0, dark, false, 5, false, false, false, true).draw);
+        assert!(!tile_draw_gate(1, 0, 0, dark, false, -1, false, false, false, true).draw);
+        assert!(tile_draw_gate(1, 0, 318, dark, false, -1, false, false, false, true).draw);
+        assert!(tile_draw_gate(1, 0, 2, dark, false, -1, true, false, false, true).draw);
+        // wall 0 never lifts even when fullbright.
+        assert!(!tile_draw_gate(1, 0, 0, dark, false, -1, true, false, false, true).draw);
+    }
+
+    /// `TileDrawing.cs:983-991` + `IsVisible` `:1411-1432` — an Echo-coated
+    /// cell hides (no sprite, no black) unless sight is granted; the
+    /// platform row 48 and 541/631 are always sight-gated. The `DrawBlack`
+    /// arm needs `DrawOwnBlacks`.
+    #[test]
+    fn gate_visibility_veto_and_black() {
+        let lit = [200u8, 200, 200, 255];
+        // Echo-coated, no sight: neither sprite nor black.
+        let g = tile_draw_gate(1, 0, 0, lit, false, -1, false, true, false, true);
+        assert!(!g.draw && !g.draw_black);
+        // With sight it draws.
+        let g = tile_draw_gate(1, 0, 0, lit, false, -1, false, true, true, true);
+        assert!(g.draw);
+        // Platform row 48 (frameY 864) is sight-gated even uncoated.
+        let g = tile_draw_gate(19, 864, 0, lit, false, -1, false, false, false, true);
+        assert!(!g.draw && !g.draw_black);
+        let g = tile_draw_gate(19, 864, 0, lit, false, -1, false, false, true, true);
+        assert!(g.draw);
+        // 541/631 always sight-gated.
+        for k in [541u16, 631] {
+            assert!(!tile_draw_gate(k, 0, 0, lit, false, -1, false, false, false, true).draw);
+            assert!(tile_draw_gate(k, 0, 0, lit, false, -1, false, false, true, true).draw);
+        }
+        // DrawOwnBlacks off: a dark visible cell draws nothing, no black.
+        let g = tile_draw_gate(1, 0, 0, [0, 0, 0, 255], false, -1, false, false, false, false);
+        assert!(!g.draw && !g.draw_black);
+    }
+
+    /// `Main.cs:7137-10342` — the static tileShine2 census (59 rows) plus the
+    /// two dynamic 185/186 frame windows (`TileDrawing.cs:5150-5173`).
+    #[test]
+    fn shine2_static_census_and_dynamic_windows() {
+        assert_eq!(TILE_SHINE2_STATIC.len(), 59);
+        for k in TILE_SHINE2_STATIC {
+            assert!(tile_shine2(k, 0, 0), "shine2 {k}");
+        }
+        assert!(!tile_shine2(0, 0, 0));
+        assert!(!tile_shine2(4, 0, 0), "torch 4 is not shine2");
+        assert!(!tile_shine2(326, 0, 0), "waterfall 326 is not shine2");
+        // 185 needs frameY 18 AND frameX 576..=882.
+        assert!(tile_shine2(185, 576, 18));
+        assert!(tile_shine2(185, 882, 18));
+        assert!(!tile_shine2(185, 575, 18));
+        assert!(!tile_shine2(185, 600, 0));
+        // 186 reads only frameX 864..=1170.
+        assert!(tile_shine2(186, 864, 999));
+        assert!(tile_shine2(186, 1170, 0));
+        assert!(!tile_shine2(186, 863, 0));
+        assert!(!tile_shine2(186, 1171, 0));
+    }
+
+    /// `TileDrawing.cs:4404-4432` — the shine gate: shimmer over a solid,
+    /// the three unconditional ids, the tileShine2 requirement, and the two
+    /// frame-windowed families.
+    #[test]
+    fn should_shine_gates() {
+        // shimmerAlpha>0 over a solid shines even a non-shine2 type.
+        assert!(should_tile_shine(1, 0, 0, 0.5, true));
+        assert!(!should_tile_shine(1, 0, 0, 0.5, false));
+        assert!(!should_tile_shine(1, 0, 0, 0.0, true));
+        // The unconditional ids shine without shimmer/solid/shine2.
+        for k in [165u16, 693, 694] {
+            assert!(should_tile_shine(k, 0, 0, 0.0, false), "unconditional {k}");
+        }
+        // A shine2 type with no shimmer shines (default arm true).
+        assert!(should_tile_shine(6, 0, 0, 0.0, false));
+        // Non-shine2 without shimmer does not.
+        assert!(!should_tile_shine(4, 0, 0, 0.0, false));
+        // 467/468 window 144..178 (upper exclusive).
+        assert!(should_tile_shine(467, 144, 0, 0.0, false));
+        assert!(should_tile_shine(467, 177, 0, 0.0, false));
+        assert!(!should_tile_shine(467, 178, 0, 0.0, false));
+        assert!(!should_tile_shine(467, 143, 0, 0.0, false));
+        // 21/441 window 36..178.
+        assert!(should_tile_shine(21, 36, 0, 0.0, false));
+        assert!(!should_tile_shine(21, 35, 0, 0.0, false));
+        assert!(should_tile_shine(441, 177, 0, 0.0, false));
+    }
+
+    /// `Main.cs:21557-21660` — the shine byte maths: the default 1.6 lift,
+    /// the per-type arms, the flat +100 mushroom family, the 204 early
+    /// return (alpha 255, no shimmer), and the 255 clamp.
+    #[test]
+    fn shine_byte_maths() {
+        let no_shimmer = ([0.0f32; 3], 0.0f32);
+        // Default arm (tileShine2 true): 100*1.6=160.
+        assert_eq!(shine_color([100, 100, 100, 40], 6, true, 225, no_shimmer.1, no_shimmer.0), [160, 160, 160, 40]);
+        // tileShine2 false in the default arm: identity.
+        assert_eq!(shine_color([100, 100, 100, 40], 6, false, 225, no_shimmer.1, no_shimmer.0), [100, 100, 100, 40]);
+        // 25: R*0.95f32=94.99999881 rounds to the nearest f32 95.0 (the
+        // product is within half an ulp of 95), so the truncation reads 95;
+        // G*0.85f32=85.0000024→85; B*1.1(double)=110.
+        assert_eq!(shine_color([100, 100, 100, 9], 25, true, 225, 0.0, [0.0; 3]), [95, 85, 110, 9]);
+        // 178: 1.5 lift → 100*1.5=150.
+        assert_eq!(shine_color([100, 100, 100, 9], 178, true, 225, 0.0, [0.0; 3]), [150, 150, 150, 9]);
+        // 185: 1f+0.3f rounds to 1.29999995, 100*that=129.9999952 rounds to
+        // the nearest f32 130.0 → the truncation reads 130.
+        assert_eq!(shine_color([100, 100, 100, 9], 185, true, 225, 0.0, [0.0; 3]), [130, 130, 130, 9]);
+        // 262..268: +100 flat, clamp at 255.
+        assert_eq!(shine_color([100, 200, 250, 9], 262, true, 225, 0.0, [0.0; 3]), [200, 255, 255, 9]);
+        // 204 early return: alpha forced 255, R only, no shimmer applied.
+        // mouse 225: num4=0.3+0.75=1.05, R=100*1.3*1.05=136.5→136.
+        let got = shine_color([100, 100, 100, 9], 204, true, 225, 0.9, [1.0; 3]);
+        assert_eq!(got, [136, 100, 100, 255]);
+        // 204 clamp: R 250*1.365=341→255.
+        assert_eq!(shine_color([250, 0, 0, 9], 204, true, 225, 0.0, [0.0; 3])[0], 255);
+    }
+
+    /// `Main.cs:21637-21643` — the shimmer blend truncates per channel and
+    /// runs AFTER the type arm (except the 204 early return).
+    #[test]
+    fn shine_shimmer_blend() {
+        // 178 lifts 100→150, then shimmer 0.5 with shine XYZ=1 → 150*0.5+150*1*0.5=150.
+        assert_eq!(shine_color([100, 100, 100, 9], 178, true, 225, 0.5, [1.0; 3]), [150, 150, 150, 9]);
+        // shimmer 0.5 with shine XYZ=0 → 150*0.5=75.
+        assert_eq!(shine_color([100, 100, 100, 9], 178, true, 225, 0.5, [0.0; 3]), [75, 75, 75, 9]);
+        // shimmer 1.0 with shine XYZ=2 → 150*2=300→clamp 255.
+        assert_eq!(shine_color([100, 100, 100, 9], 178, true, 225, 1.0, [2.0; 3]), [255, 255, 255, 9]);
+    }
+
+    /// `TileDrawing.cs:4358-4389` — the final-colour chain order: tint
+    /// multiply (alpha 255) → fullbright white → actuation ghost → shine.
+    /// The animated families (torch/candle/fall blocks) are not shine2 and
+    /// not solid-shimmer, so with white tint they pass the light through.
+    #[test]
+    fn final_light_chain_order() {
+        let white = [255u8; 4];
+        // White tint is identity on RGB, alpha forced 255.
+        let got = final_light(1, 0, 0, [100, 150, 200, 40], white, false, false, true, 225, 0.0, [0.0; 3]);
+        assert_eq!(got, [100, 150, 200, 255]);
+        // A dim tint truncates: 100*128/255=50.19→50.
+        let got = final_light(1, 0, 0, [100, 100, 100, 40], [128, 128, 128, 255], false, false, true, 225, 0.0, [0.0; 3]);
+        assert_eq!(got, [50, 50, 50, 255]);
+        // fullbright repaints white, but the actuation arm STILL runs on it
+        // (`:4376-4387` is not an early return): 255*0.4=102.
+        assert_eq!(final_light(1, 0, 0, [10, 10, 10, 40], white, true, true, true, 225, 0.5, [1.0; 3]), [102, 102, 102, 255]);
+        // fullbright + active + no shine: pure white.
+        assert_eq!(final_light(1, 0, 0, [10, 10, 10, 40], white, true, false, true, 225, 0.0, [0.0; 3]), [255; 4]);
+        // Actuation ghost beats shine: 100*0.4=40 (double truncation).
+        let got = final_light(6, 0, 0, [100, 100, 100, 40], white, false, true, true, 225, 0.0, [0.0; 3]);
+        assert_eq!(got, [40, 40, 40, 255]);
+        // Active shine2 type 6 (not actuated): the 1.6 lift.
+        let got = final_light(6, 0, 0, [100, 100, 100, 40], white, false, false, false, 225, 0.0, [0.0; 3]);
+        assert_eq!(got, [160, 160, 160, 255]);
+    }
+
+    /// W4-d56 frame witness (the four families ride the whole chain): a
+    /// torch 4 / candle 42 / waterfall 326 / lavafall 327 cell with no vision
+    /// buff, no override, white tint, no shimmer passes gate→final_colour
+    /// unchanged (the flame/fall pixels are the pre-W4-d56 ones until the
+    /// wiring lands). The flame types draw even dark; the fall blocks are
+    /// solid so shimmer would shine them, but at shimmer 0 they pass.
+    #[test]
+    fn the_four_families_ride_gate_then_final_colour() {
+        let white = [255u8; 4];
+        for k in [4u16, 33, 42, 49, 326, 327] {
+            let raw = [123u8, 45, 67, 255];
+            // No buff → the phase-1 chain is identity (re-asserted here).
+            let v = vision_changer_light(raw, false, false, None, true, true, false, false, false).light;
+            let ov = light_override(k, 0, 0, false, v, 225, 0.375, false);
+            assert_eq!(ov, raw);
+            // Gate: flame types draw; fall blocks draw when lit.
+            let solid = k == 326 || k == 327;
+            let g = tile_draw_gate(k, 0, 0, ov, false, -1, false, false, false, true);
+            assert!(g.draw && !g.draw_black, "family {k} draws lit");
+            // Final colour: white tint, no shimmer, not actuated → identity RGB.
+            let fc = final_light(k, 0, 0, ov, white, false, false, solid, 225, 0.0, [0.0; 3]);
+            assert_eq!(fc, [123, 45, 67, 255], "family {k} final colour");
+        }
+        // A dark torch still draws (flame), a dark fall block paints black.
+        let dark = [0u8, 0, 0, 255];
+        assert!(tile_draw_gate(4, 0, 0, dark, false, -1, false, false, false, true).draw);
+        let g = tile_draw_gate(326, 0, 0, dark, false, -1, false, false, false, true);
+        assert!(!g.draw && g.draw_black);
     }
 }

@@ -36131,6 +36131,55 @@ frame witnesses pin the chain ORDER (floors → override, `DrawSingleTile`
 :897-969) and the no-buff pass-through for the torch/candle/fall-block
 families (the pre-W4-d56 pixels are unchanged until the wiring lands).
 
+### Phase 2 — the draw gate + final colour (W4-d56, 2026-11-20)
+
+The second half of the same `DrawSingleTile` chain, after
+`DrawTiles_GetLightOverride` and before the sprite: the `flag` light test +
+`IsVisible` + the `DrawBlack` decision (`TileDrawing.cs:970-991`, `IsVisible`
+`:1411-1432`) as [`tile_draw_gate`], and `GetFinalLight` (`:4358-4389`) as
+[`final_light`] — the tint multiply (`(int)((float)(R*tint.R)/255f)` truncate
++ 255 clamp, alpha forced 255 via `PackedValue | -16777216`), the fullbright
+white, the actuation ghost (`Tile.actColor`, `Tile.cs:272-280`, a **double**
+0.4 multiply) and the `Main.shine` arm (`Main.cs:21557-21660`) gated by
+`ShouldTileShine` (`:4404-4432`). The torch/candle flame quads
+(`tr-core/flame.rs`) never consume `finalColor` — `DrawSingleTile_Flames`
+draws self-lit per-style colours — but the fall-block sprites (drawdata
+case-326 group) do, and every family rides the gate.
+
+Deliberate deviations (phase 2):
+
+* **UNWIRED, code-only** — same as phase 1: the pure decision maths lands in
+  `tr-render::animated_tiles` (no `tr-core` dependency), the `draw_tiles`
+  seam stays contested by d57/d58/d59/d60. The intended call sites: the gate
+  replaces the dark-cell-merge + `IsVisible` gates (`tiles.rs:786-848`), and
+  `final_light` replaces the actuation-ghost-only `l` (`tiles.rs:610-619`).
+* **The dynamic `tileShine2[185]/[186]` rows are per-tile.** The C# writes
+  them inside `GetTileDrawData` (`TileDrawing.cs:5150-5173`) as a GLOBAL
+  last-write-wins flag (the last 185/186 cell drawn sets the flag every
+  other 185/186 cell reads in `ShouldTileShine`/`shine`). The port evaluates
+  the same frame window per tile — identical for the common single-tile
+  case; the cross-tile quirk is recorded here.
+* **`Main.shine`'s double arms.** The `B` multiplies marked `(double)` in
+  the C# (`1.1`/`1.2`/`1.15` literals, `:21568/:21573/:21592/:21597/:21602`)
+  run in f64; the rest are f32 with the product rounded to nearest before
+  the `(int)` truncation (100×0.95f32 → 95.0 → 95, 100×(1f+0.3f) → 130.0 →
+  130 — pinned by `shine_byte_maths`). The 204 arm early-returns with alpha
+  255 BEFORE the shimmer blend (`:21582`).
+* **fullbright is not an early return.** `GetFinalLight` repaints white
+  (`:4376-4379`) but the actuation/shine arm still runs on the white — an
+  actuated fullbright block ghosts to 102 (`final_light_chain_order`).
+* `Main.tileGlowMask` rides the `glow_mask_id` parameter (the table is its
+  own wide task, TILE-DRAW-2); the torch/candle/fall families all read −1
+  there (no `Main.tileGlowMask[4/33/42/49/326/327]` assignment exists), so
+  their gate arm is the `tileFlame` membership / the light bytes alone.
+
+Verification (phase 2): code-only, every arm re-read against the cited
+windows; 10 new frame witnesses WRITTEN, NOT RUN (the gate tables' census,
+the dark-flame/ignore-light arms, the glow/wall lifts, the visibility veto +
+`DrawBlack`, the shine2 census + dynamic windows, the shine gate, the shine
+byte maths incl. the f32-rounding pins, the shimmer blend, the final-colour
+chain order, and the four families' gate→final-colour pass-through).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

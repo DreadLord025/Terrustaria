@@ -14,9 +14,9 @@ pub mod water_mask;
 mod test_gpu;
 
 pub use animated_tiles::{
-    is_tile_biome_sightable, is_tile_dangerous, is_tile_spelunkable, light_override,
-    vision_changer_light, VisionDust, VisionLight, BIOME_DUST_GATE, DANGER_DUST_GATE,
-    SPELUNKER_DUST_GATE,
+    final_light, is_tile_biome_sightable, is_tile_dangerous, is_tile_spelunkable, light_override,
+    shine_color, should_tile_shine, tile_draw_gate, tile_shine2, vision_changer_light, DrawGate,
+    VisionDust, VisionLight, BIOME_DUST_GATE, DANGER_DUST_GATE, SPELUNKER_DUST_GATE,
 };
 pub use atlas::{Atlas, AtlasImage, SheetLayout, SheetRect};
 pub use clip::{intersect as clip_intersect, ClipStack, NO_CLIP};
