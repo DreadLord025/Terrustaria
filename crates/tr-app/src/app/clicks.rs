@@ -1509,20 +1509,24 @@ impl App {
                 }
             }
         }
-        // The reforge menu regions (`Main.cs:41639-41661`): the (50, 270)
-        // input slot and the (120, 310) button (30x30), both + m_h. A hit
-        // consumes the press before the slot grid.
+        // The reforge menu regions (`Main.cs:41639-41641` button, `:41673`
+        // slot): the (50, 270) input slot and the (120, 310) button centre
+        // (strict ±15). Neither rides `Main.mH` — the reforge block uses the
+        // literal coordinates (`Main.cs:41581-41582`); a hit consumes the
+        // press before the slot grid.
         if self.inventory_open && self.in_reforge_menu {
-            let (sw, sh) = self.screen_size();
-            let m_h = (sh as f32 - 600.0) / 2.0;
+            let cell = self
+                .lookups
+                .ui_back
+                .map(|b| b.width as f32)
+                .unwrap_or(52.0);
             let (mx, my) = (self.mouse_pos.x, self.mouse_pos.y);
-            let in_slot = mx >= 50.0 && mx <= 106.0 && my >= 270.0 + m_h && my <= 326.0 + m_h;
-            let in_button = mx >= 120.0 && mx <= 150.0 && my >= 310.0 + m_h && my <= 340.0 + m_h;
-            if left && in_slot {
+            let mouse = Vec2::new(mx, my);
+            if left && ui::inventory::reforge_slot_hit(mouse, cell) {
                 self.reforge_slot_click();
                 return;
             }
-            if left && in_button {
+            if left && ui::inventory::reforge_button_hit(mouse) {
                 self.reforge_click();
                 return;
             }

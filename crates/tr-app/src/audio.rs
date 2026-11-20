@@ -269,6 +269,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_32", 2),
     ("Item_34", 2),
     ("Item_36", 2),
+    // S1-P-i45: the reforge's non-top-tier cue (`SoundID.Item37`,
+    // `Main.cs:41931`; `Sounds/Item_37.xnb`).
+    ("Item_37", 2),
     ("Item_38", 2),
     ("Item_39", 2),
     ("Item_40", 2),
@@ -487,6 +490,9 @@ const TRACKED_CUES: &[&str] = &[
 /// variation (`_0`) of the multi-variation families — the variation pick
 /// rides `LegacySoundStyle.Random` in the C#, an audio-only stream.
 pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
+    // S1-P-i45: the reforge's top-tier cue (`SoundID.BestReforge`,
+    // `Main.cs:41909`; `Sounds/Custom/best_reforge.xnb`, one variation).
+    "best_reforge",
     "dd2_defense_tower_spawn",
     "dd2_betsy_fireball_shot_0",
     "dd2_book_staff_cast_0",

@@ -1694,6 +1694,7 @@ impl App {
                                             .unwrap_or(0),
                                             self.reforge_slot.count.max(1),
                                             self.shop_mood,
+                                            self.discount_available,
                                         )
                                     })
                                     .unwrap_or(0);

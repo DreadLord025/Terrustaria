@@ -1415,20 +1415,27 @@ pub(crate) fn display_price_row(
 }
 
 /// The reforge cost (`Main.DrawInventory`'s inline block,
-/// `Main.cs:41584-41601`): `value * stack`, ×0.8 behind the Discount Card
-/// (not ported — no discount accessory yet), × the happiness
-/// `PriceAdjustment`, then the integer `/3`. The vanilla `<1 → 1` clamp is
-/// the DISPLAY only — the actual charge at `:41658` is the unclamped
-/// product (`BuyItem(0)` always succeeds on a value-0 item). `value` is
-/// the instance's CURRENT value — the kind's defaults after the current
-/// prefix's ×value² (`Item.cs:614-615`), so the cost scales with prefix
-/// quality; the reforge slot always holds exactly one item
-/// (`ItemSlot.cs:821-836`'s transfer splits stacks), so `stack` is 1.
-pub(crate) fn reforge_cost(value: i32, stack: u32, mood: f32) -> u64 {
-    // `Main.cs:41584-41601`'s order: value×stack (long), the float mood
-    // multiply, THEN the integer /3.
-    let product = (value as f32 * stack as f32 * mood) as i64;
-    (product / 3).max(0) as u64
+/// `Main.cs:41584-41591`): `value * stack` (long), ×0.8 behind the Discount
+/// Card (`:41587-41590`, a DOUBLE multiply then a long truncation), × the
+/// happiness `PriceAdjustment` (a FLOAT multiply then a long truncation,
+/// `:41591`), then the integer `/3`. The vanilla `<1 → 1` clamp
+/// (`num58`, `:41598-41601`) is the DISPLAY only — the actual charge at
+/// `:41658` is the unclamped `num53` (`BuyItem(0)` always succeeds on a
+/// value-0 item). `value` is the instance's CURRENT value — the kind's
+/// defaults after the current prefix's ×value² (`Item.cs:614-615`), so the
+/// cost scales with prefix quality; the reforge slot always holds exactly
+/// one item (`ItemSlot.cs:821-836`'s transfer splits stacks), so `stack` is 1.
+pub(crate) fn reforge_cost(value: i32, stack: u32, mood: f32, discount_available: bool) -> u64 {
+    // `Main.cs:41586` — `long num53 = (long)value * (long)stack`.
+    let mut num53 = value as i64 * stack as i64;
+    // `:41587-41590` — `num53 = (long)((double)num53 * 0.8)` (truncate).
+    if discount_available {
+        num53 = (num53 as f64 * 0.8) as i64;
+    }
+    // `:41591` — `num53 = (long)((float)num53 * PriceAdjustment) / 3`: the
+    // float multiply truncates to long FIRST, then the integer /3.
+    num53 = (num53 as f32 * mood) as i64 / 3;
+    num53.max(0) as u64
 }
 
 /// The sell transaction's payout (`Player.SellItem`,
@@ -1746,14 +1753,33 @@ mod tests {
 
     #[test]
     fn the_reforge_cost_follows_the_inline_block() {
-        // `Main.cs:41584-41601`: the value × the stack, × the mood, then the
+        // `Main.cs:41584-41591`: the value × the stack (long), the Discount
+        // Card ×0.8 (double, truncate), × the mood (float, truncate), then the
         // integer /3 — 2000 copper at mood 1 = 666, the happiness 1.25 =
         // 833; the <1 → 1 clamp is the display only, so a value-0 item
         // costs 0 and `BuyItem(0)` always succeeds.
-        assert_eq!(reforge_cost(2000, 1, 1.0), 666);
-        assert_eq!(reforge_cost(2000, 1, 1.25), 833);
-        assert_eq!(reforge_cost(0, 1, 1.0), 0);
-        assert_eq!(reforge_cost(1, 1, 1.0), 0);
+        assert_eq!(reforge_cost(2000, 1, 1.0, false), 666);
+        assert_eq!(reforge_cost(2000, 1, 1.25, false), 833);
+        assert_eq!(reforge_cost(0, 1, 1.0, false), 0);
+        assert_eq!(reforge_cost(1, 1, 1.0, false), 0);
+    }
+
+    #[test]
+    fn the_reforge_cost_discount_card_arm() {
+        // `Main.cs:41587-41590`: `num53 = (long)((double)num53 * 0.8)` runs
+        // BEFORE the mood multiply. 2000 → 1600 → /3 = 533 (not 666); at
+        // mood 1.25 the float multiply truncates 1600×1.25 = 2000 → /3 = 666.
+        assert_eq!(reforge_cost(2000, 1, 1.0, true), 533);
+        assert_eq!(reforge_cost(2000, 1, 1.25, true), 666);
+        // The double truncation: 1×0.8 = 0.8 → (long)0 → /3 = 0.
+        assert_eq!(reforge_cost(1, 1, 1.0, true), 0);
+        // A value whose ×0.8 is not integral truncates toward zero:
+        // 3×0.8 = 2.4 → 2 → /3 = 0; 5×0.8 = 4.0 → 4 → /3 = 1.
+        assert_eq!(reforge_cost(3, 1, 1.0, true), 0);
+        assert_eq!(reforge_cost(5, 1, 1.0, true), 1);
+        // The stack multiplies first (long): 2000×2 = 4000 → ×0.8 = 3200 →
+        // /3 = 1066.
+        assert_eq!(reforge_cost(2000, 2, 1.0, true), 1066);
     }
 
     #[test]

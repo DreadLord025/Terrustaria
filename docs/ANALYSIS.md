@@ -2279,11 +2279,16 @@ The deviations below are deliberate and are the places the port is **not** pixel
   (`EquipPage 1`) are not drawn yet.
 * `Main.inventoryBack`-tinted labels use white instead of the pulsing
   `Main.mouseTextColor` (`ui/inventory.rs` `LABEL_COLOR`).
-* The reforge slot's menu opened with M3-REFORGE-1 вЂ” the (50,270) slot, the
+* The reforge slot's menu opened with M3-REFORGE-1 — the (50,270) slot, the
   (120,310) button and the cost label ride the text-panel fidelity at the
   vanilla coordinates (`ui/mod.rs` + `clicks.rs`; the Reforge[0]/[1] button
   textures and the coin breakdown stay out). The guide/crafting slots keep
-  their empty frames.
+  their empty frames. **S1-P-i45 (2026-11-20)** corrected the hit boxes to the
+  C# geometry (the slot `[50, 50+52*0.85] x [270, 270+52*0.85]` inclusive,
+  `Main.cs:41673`; the button the strict `(105,135) x (295,325)`,
+  `:41639-41641`) and removed the wrong `Main.mH` offset — the reforge block
+  draws/clicks at the literal coordinates, only the equipment column's `num20`
+  rides `mH` (`:41146`). See "Reforge fidelity (S1-P-i45)" below.
 * **Equipment swaps (S1-H-5) вЂ” deviations from `ItemSlot.cs:3283-3650`.**
   `Item.wingSlot` is not carried by `ItemDef`, so `CanEquipBothAccessories`
   (`:3451-3472`) loses its `wingSlot > 0` arm: two different wings are accepted
@@ -12532,8 +12537,117 @@ Deviations that remain, on purpose:
   prefixes through `prefix::roll_prefix_splitmix` over the per-world `chest_rng`,
   byte-identical to before this change (no chest contents move); S1-A-4 owns that
   stream (the vanilla `WorldGen.genRand` interleave).
-- **`item_rng`'s other consumers are untouched** (loot, crit, luck, particles вЂ” ~97
+- **`item_rng`'s other consumers are untouched** (loot, crit, luck, particles — ~97
   call sites keep the splitmix step); the prefix part of S1-A-5 does not reorder them.
+
+## Reforge fidelity (S1-P-i45)
+
+The Goblin Tinkerer reforge (`Main.ReforgeItemInReforgeSlot`, `Main.cs:41902-41933`,
+the `DrawInventory` inline block `:41557-41685`, and `Item.Prefix`, `Item.cs:504-618`)
+was censused arm-for-arm against the decompile. The roll engine's draw order, all 80+
+`TryGetPrefixStatMultipliersForItem` switch arms (`Item.cs:720-1045`), the value
+multiplier (`:1046-1062`), the invisible-change rejection (`:1063-1078`), the rare
+ladder (`:587-613`), `BestPrefixValue` (`:1082-1099`), the eight roll tables + the
+membership sets (`PrefixLegacy.cs:27-104`), the reduced-natural-chance set
+(`PrefixID.cs:14`), the accessory denial list (`ItemID.cs:429`), the coin-consume gate
+(`BuyItem(num53)` before the roll, `Main.cs:41658`) and the per-tick cooldown decay
+(`Main.cs:17121-17123`, ported in `world_sim/npcs.rs`) are **verbatim-correct**. The
+fixes below close the confirmed divergences; the prefix *stat application* breadth
+(the `prefixed_stats` consumers) is i49's scope, not this slice.
+
+**Fixed (WRONG → C#):**
+
+- **The cost's Discount-Card arm + cast chain** (`shop.rs::reforge_cost`). The port
+  folded `value × stack × mood` into one f32 product and omitted the Discount Card.
+  The C# (`Main.cs:41586-41591`) is `long num53 = (long)value * (long)stack`; under
+  `discountAvailable`, `num53 = (long)((double)num53 * 0.8)` (a DOUBLE multiply, long
+  truncation); then `num53 = (long)((float)num53 * PriceAdjustment) / 3` (a FLOAT
+  multiply, long truncation, THEN the integer /3). The port now mirrors the chain and
+  takes `discount_available`; the `<1 → 1` clamp (`num58`, `:41598-41601`) stays
+  display-only (the charge at `:41658` is the unclamped `num53`).
+- **The roll engine reads the corrected registry seam** (`prefix.rs`). `roll_prefix`,
+  `best_prefix_value` and `rollable_prefixes` read raw `itemdata::ITEMS` while
+  `prefixed_stats` reads `registry::item` (the M4-PROJ-6 corrections seam). For the
+  corrected kind 6171 (Bejeweled Staff: generated placeholder damage −1 / mana 0 vs
+  corrected damage 27 / mana 15) the rejection and top-tier math diverged from the
+  applied stats. All three now read `registry::item`, so the roll, the best-value
+  marker and the applied stats agree. Pinned by
+  `the_roll_engine_reads_the_corrected_registry_seam`.
+- **The accessory pool honours `!vanity`** (`prefix.rs::rollable_prefixes`).
+  `IsAPrefixableAccessory` (`Item.cs:1150-1157`) is `accessory && !vanity &&
+  CanGetPrefixes[type]`; `ItemDef` carries `vanity`, so the gate reads it verbatim
+  (the Jungle Rose 208, `Item.cs:3987-3994`, is a vanity accessory and no longer
+  prefixes). Pinned by `vanity_accessories_are_not_prefixable`.
+- **The ctx-5 transfer gate** (`app/mod.rs::reforge_slot_click`). The port accepted any
+  cursor; the C# `PickItemMovementAction` ctx 5 (`ItemSlot.cs:1515-1520`) returns
+  action 1 only for a prefixable cursor (`CanHavePrefixes`) or air, else −1 (refused).
+  The three action-1 arms (`:1019-1106`) are now ported: swap a single item gated on
+  `IsNotTheSameAs` (`Item.cs:49847-49854`), take out with an air cursor, place a single
+  item, clone ONE from a stack into the empty slot; each moving arm plays
+  `SoundEngine.PlaySound(7)`. The old test's fixtures (Flaming Arrow 41 / Wood 9, both
+  non-prefixable) were pinning the WRONG permissive behaviour and are replaced with
+  prefixable fixtures + refusal witnesses.
+- **The slot/button hit boxes** (`ui/inventory.rs::reforge_slot_hit`/`reforge_button_hit`,
+  `clicks.rs`, `ui/mod.rs`). The port used `106 x 326` / `120..150 x 310..340` offset by
+  `(screenH-600)/2`; the C# slot is `[50, 50+52*0.85] x [270, 270+52*0.85]` inclusive
+  (`Main.cs:41673`, `inventoryScale = 0.85` restored at `:41526`) and the button the
+  strict `(105,135) x (295,325)` (`:41639-41641`). Neither rides `Main.mH` — the reforge
+  block uses the literal `(50,270)`/`(120,310)`; only the equipment column's `num20`
+  rides `mH` (`:41146`). The draw labels lose the same wrong offset.
+
+- **The presentation RNG tail** (`prefix.rs::reforge_presentation_tail`, wired in
+  `reforge_click` after the roll). On a top-tier roll the C# (`Main.cs:41907-41927`)
+  plays `SoundID.BestReforge` and spawns five `ParticleOrchestrator.RequestParticleSpawn`
+  calls — two `RainbowRodHit` (`Spawn_RainbowRodHit`, `ParticleOrchestrator.cs:3444-3492`)
+  and three `BestReforge` (`Spawn_BestReforge`, `:3069-3087`) — each drawing `Main.rand`
+  (`NextVector2Circular` = unit `NextFloat` + radius `NextFloat`, `Utils.cs:1266-1269`).
+  The port consumes those draws on `NamedRngs::global()` in the C#'s order (the
+  `npc_ai_empress.rs::do_magic_effect_draws` "RNG consumption only, visuals skipped"
+  convention — the port has no `ParticleOrchestrator` renderer): the settings' own
+  circular (`Main.cs:41914`/`:41919`/`:41925`, 2 draws each) THEN the spawn body —
+  `Spawn_RainbowRodHit` = 2 head floats + 6×(direction + scale + angle + circular(2) +
+  2 colour floats = 7) + 12×(2 colour floats + `NewDust`'s 6 + circular(2) + direction +
+  scale + fadeIn + `CloneDust`'s `NewDust` 6 = 19) = 272, under the documented `NewDust`
+  pool assumption (no skip draws, on-screen, `Dust.cs:170-175`/`:190`); `Spawn_BestReforge`
+  = 8×circular(2) = 16. The top branch totals 2×(2+272) + 3×(2+16) = 602 gameplay draws.
+  The non-top arm plays `SoundID.Item37` (`Main.cs:41931`), whose case-2 pitch roll draws
+  one `Main.rand.Next(-6,7)` (`LegacySoundPlayer.cs:632`, volume ×0.5 `:564-565`). The
+  sounds play through `Audio::play_use_sound` (the `BestReforge`/`Item37` cue keys are now
+  in `audio.rs`'s bank — `Item_37.xnb`/`Custom/best_reforge.xnb`); the `GetRandomPitch`
+  `NextFloat` rides the audio-only `sound_style_random`, never the gameplay stream, and
+  the trackable `BestReforge` (id 42) draws no gameplay sound. `PopupText.NewText`
+  (`Main.cs:41906`) draws no `Main.rand` at spawn for the reforge contexts
+  (`PopupText.cs:194-412` — the effects are `ItemCraft`-only; its dust is the deferred
+  `EmitFancyFlashDust` at `framesSinceSpawn == 8`, `:674-676`), so it adds no draw.
+  Pinned by `the_reforge_tail_consumes_the_cited_draws` (each helper replayed against a
+  hand-built twin-stream sequence) + `the_reforge_roll_consumes_the_global_stand_in`
+  (the roll THEN the tail on `global()`). **The particle VISUALS remain the documented
+  skip** (the render task's remainder); the draws are exact, so the shared-stream
+  interleave stays faithful.
+- **The hover state + close chain** (`app/mod.rs::update_reforge_menu`,
+  `return_reforge_slot`; `frame.rs` head). The C# draw block (`Main.cs:41559-41572`)
+  ramps `reforgeScale` +0.02/frame toward 1 while the button is hovered, −0.02 toward 1
+  while not, and an unhovered button clears `reforgeCooldown` (`:41568`); the hover latch
+  `mouseReforge` resolves from the button hit box (`:41649-41666`, hover-edge sound 12).
+  The port runs this per-frame in `frame_head` (the C# block sits in `DrawInventory`).
+  The force-close (`:41574-41578`) and the inventory-close
+  (`DrawInterface_26_InterfaceLogic3`, `:45676-45683`) both clear the menu and return the
+  slot item through `dropItemCheck` (`Player.cs:5123-5127`, `GetOrDropItem` — the pickup
+  stack first, the overflow a world drop with the prefix preserved). The port's
+  collapsed Tinkerer entry (the menu auto-opens beside the shop, `world_sim/npcs.rs:971`,
+  the recorded #9 deviation) maps the C#'s `talkNPC == -1`/`npcShop != 0` close pair to
+  the shop-closed state (`shop_npc.is_none()`); a container opening or the crafting panel
+  also force-closes. Pinned by `the_reforge_hover_scale_and_unhovered_cooldown_clear`,
+  `the_reforge_menu_force_closes_and_returns_the_item`, `the_reforge_menu_closes_with_the_shop`,
+  `the_inventory_close_returns_the_reforge_item`.
+
+**Recorded deviation (the port's collapsed entry, #9).** The C# opens the reforge menu
+through the Tinkerer's chat button (`NPCInteractions.TinkererReforge`,
+`NPCInteractions.cs:407-423` → `Main.NPCChatText_TinkererReforge`, `Main.cs:40022-40029`,
+sound 12); the port auto-opens it on the Tinkerer shop-open (`world_sim/npcs.rs:971`,
+the ПКМ-collapse the Nurse/shop rows already use). The chat-button entry rides the
+town-chatter UI task (S1-E-10b's deferred interaction buttons); the menu's behaviour
+once open is faithful.
 
 ## Named RNG streams (`Main.SwapRandom`, S1-A-2)
 

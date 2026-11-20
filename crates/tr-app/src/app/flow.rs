@@ -2197,6 +2197,8 @@ pub(crate) mod front_flow_tests {
             in_reforge_menu: false,
             reforge_slot: crate::item::EMPTY_SLOT,
             reforge_cooldown: 0,
+            mouse_reforge: false,
+            reforge_scale: 0.8, // `Main.cs:67157`
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             shop_mood: 1.0,
@@ -3478,12 +3480,20 @@ pub(crate) mod front_flow_tests {
         assert!(app.players.iter().any(|p| p.name == "Zealot"));
     }
 
-    // -- M3-REFORGE-1: the reforge action (`Main.ReforgeItemInReforgeSlot`,
-    // `Main.cs:41902-41933`) + the slot transfer (`ItemSlot.cs:821-836`) --
+    // -- M3-REFORGE-1 / S1-P-i45: the reforge action
+    // (`Main.ReforgeItemInReforgeSlot`, `Main.cs:41902-41933`) + the slot
+    // transfer (`ItemSlot.Handle` ctx 5, `ItemSlot.cs:1515-1520`/`:1019-1106`) --
 
     fn reforge_app() -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.coins = 100_000;
+        // The reforge menu rides beside the open Tinkerer shop
+        // (`world_sim/npcs.rs:971`) inside the open inventory (the C# block
+        // sits in `DrawInventory`, which runs whenever `playerInventory`);
+        // the force-close gate reads `shop_npc`, so the fixture models the
+        // open shop + inventory (the menu's live state).
+        app.shop_npc = Some(0);
+        app.inventory_open = true;
         app.in_reforge_menu = true;
         app.reforge_slot = crate::item::ItemSlot {
             kind: 1, // the Iron Pickaxe — value 2000, the swords table
@@ -3530,19 +3540,23 @@ pub(crate) mod front_flow_tests {
 
     #[test]
     fn the_reforge_roll_consumes_the_global_stand_in() {
-        // `Prefix(-2)` (`Main.cs:41924`) draws from `Main.rand` — the menu
-        // path's bare-`Main.rand` stand-in (`global()`, DW-4.2), never a
-        // stage stream.
+        // `Prefix(-2)` (`Main.cs:41905`) + the presentation tail
+        // (`Main.cs:41906-41932`) draw from `Main.rand` — the menu path's
+        // bare-`Main.rand` stand-in (`global()`, DW-4.2), never a stage
+        // stream. The replay mirrors the roll THEN the tail (the sound's
+        // case-2 pitch roll / the top-tier particle draws).
         let mut app = reforge_app();
         let mut expect = tr_core::UnifiedRandom::new(0); // `flow_app`'s seed
-        let (expected, _) = crate::prefix::reforge_roll(app.reforge_slot.kind, &mut expect);
+        let (expected, top) = crate::prefix::reforge_roll(app.reforge_slot.kind, &mut expect);
+        let mut expect_audio = crate::audio::Audio::new(None);
+        crate::prefix::reforge_presentation_tail(top, &mut expect, &mut expect_audio);
         app.reforge_click();
         assert_eq!(app.reforge_slot.prefix, expected);
-        // The global stand-in paid exactly the roll's draws (DW-4.2).
+        // The global stand-in paid exactly the roll's + the tail's draws.
         assert_eq!(
             *app.rngs.global(),
             expect,
-            "the global stand-in paid the reforge roll's draws"
+            "the global stand-in paid the reforge roll's + tail's draws"
         );
         // The npcs pass's streams must not advance (the reforge rides the
         // global stand-in).
@@ -3565,6 +3579,51 @@ pub(crate) mod front_flow_tests {
         let coins = app.coins;
         app.reforge_click();
         assert_eq!(app.coins, coins, "the cooldown gates the charge");
+    }
+
+    #[test]
+    fn the_reforge_charge_honours_the_discount_card() {
+        // `Main.cs:41587-41590`: the Discount Card's ×0.8 runs before the
+        // mood multiply and the /3. The 2000-value pickaxe costs 666 without
+        // the card and 533 with it (2000×0.8 = 1600 → /3 = 533).
+        let mut app = reforge_app();
+        app.discount_available = true;
+        app.reforge_click();
+        assert_eq!(app.coins, 100_000 - 533, "the discounted charge");
+        assert_ne!(app.reforge_slot.prefix, 0, "the roll still ran");
+
+        // Without the card the same fixture pays 666.
+        let mut app = reforge_app();
+        app.discount_available = false;
+        app.reforge_click();
+        assert_eq!(app.coins, 100_000 - 666);
+    }
+
+    #[test]
+    fn the_reforge_hit_boxes_match_the_csharp_geometry() {
+        // `Main.cs:41673` (slot) and `:41639-41641` (button): the slot is
+        // `[50, 50+52*0.85] x [270, 270+52*0.85]` inclusive, the button the
+        // strict open interval `(105,135) x (295,325)`. Neither rides mH.
+        use crate::ui::inventory::{reforge_button_hit, reforge_slot_hit};
+        let cell = 52.0;
+        // Slot interior + the inclusive left/top edges; the right/bottom
+        // bound is `50 + 52*0.85 = 94.2` / `270 + 52*0.85 = 314.2` — points
+        // safely inside pass, points safely outside fail (the exact f32
+        // boundary is not pinned to avoid a rounding-direction assumption).
+        assert!(reforge_slot_hit(Vec2::new(50.0, 270.0), cell));
+        assert!(reforge_slot_hit(Vec2::new(94.0, 314.0), cell));
+        assert!(!reforge_slot_hit(Vec2::new(95.0, 314.0), cell));
+        assert!(!reforge_slot_hit(Vec2::new(49.0, 270.0), cell));
+        // The old port rect (106 x 326, +mH) wrongly covered this point.
+        assert!(!reforge_slot_hit(Vec2::new(100.0, 320.0), cell));
+        // Button centre in, the integer edges strictly out.
+        assert!(reforge_button_hit(Vec2::new(120.0, 310.0)));
+        assert!(!reforge_button_hit(Vec2::new(105.0, 310.0)), "left edge excluded");
+        assert!(!reforge_button_hit(Vec2::new(135.0, 310.0)), "right edge excluded");
+        assert!(!reforge_button_hit(Vec2::new(120.0, 295.0)), "top edge excluded");
+        assert!(!reforge_button_hit(Vec2::new(120.0, 325.0)), "bottom edge excluded");
+        // The old port rect (120..150 x 310..340) wrongly covered this point.
+        assert!(!reforge_button_hit(Vec2::new(140.0, 330.0)));
     }
 
     /// DW-4.2: the char-creation randomize draws the bare-`Main.rand`
@@ -3610,30 +3669,35 @@ pub(crate) mod front_flow_tests {
 
     #[test]
     fn the_reforge_slot_transfer_follows_the_vanilla_split() {
-        // The single-item cursor swaps both ways; a stack splits ONE into
-        // the empty slot (`ItemSlot.cs:821-836`).
+        // The ctx-5 movement gate (`ItemSlot.cs:1515-1520`) accepts only a
+        // prefixable cursor; the action-1 arms (`:1019-1106`) then swap a
+        // single item both ways (`:1020-1023`, gated on `IsNotTheSameAs`)
+        // and clone ONE from a stack into the empty slot (`:1078-1084`).
         let mut app = reforge_app();
         app.mouse_item = crate::item::ItemSlot {
-            kind: 41,
-            name: "Dye",
+            kind: 4, // Iron Broadsword — prefixable, distinct from the pickaxe
+            name: "Iron Broadsword",
             count: 1,
             prefix: 3,
         };
         app.reforge_slot_click();
-        assert_eq!(app.reforge_slot.kind, 41);
+        assert_eq!(app.reforge_slot.kind, 4);
         assert_eq!(
             app.reforge_slot.prefix, 3,
             "the carried prefix moves with the item"
         );
         assert_eq!(app.mouse_item.kind, 1, "the pickaxe returns to the cursor");
 
-        // The stack split into the EMPTY slot (the fixture's pickaxe goes
-        // back to the cursor first).
+        // The clone-1 arm into the EMPTY slot. Vanilla's prefixable kinds
+        // all carry maxStack 1, so a >1 prefixable cursor is unrepresentable
+        // in a real session — the arm (`:1078-1084`) reads `mouseItem.stack`
+        // regardless, and this synthetic stack pins its logic (the gate
+        // checks prefixability, not the stack size).
         let mut app = reforge_app();
         app.reforge_slot = crate::item::EMPTY_SLOT;
         app.mouse_item = crate::item::ItemSlot {
-            kind: 9,
-            name: "Wood",
+            kind: 1, // Iron Pickaxe — prefixable
+            name: "Iron Pickaxe",
             count: 5,
             prefix: 0,
         };
@@ -3647,6 +3711,49 @@ pub(crate) mod front_flow_tests {
     }
 
     #[test]
+    fn the_reforge_slot_refuses_a_non_prefixable_cursor() {
+        // `ItemSlot.cs:1515-1520`: ctx 5 → action 1 only when the cursor
+        // `CanHavePrefixes()` or is air; a non-prefixable cursor (action -1)
+        // refuses the move (`:928-931`). Wood (9) and Flaming Arrow (41) have
+        // no rollable table, so neither enters the slot nor swaps the held
+        // pickaxe out.
+        let mut app = reforge_app();
+        app.mouse_item = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 1,
+            prefix: 0,
+        };
+        app.reforge_slot_click();
+        assert_eq!(app.reforge_slot.kind, 1, "the held pickaxe stays");
+        assert_eq!(app.mouse_item.kind, 9, "the wood stays on the cursor");
+
+        // A stack of a non-prefixable kind also refuses the clone-1 arm.
+        let mut app = reforge_app();
+        app.reforge_slot = crate::item::EMPTY_SLOT;
+        app.mouse_item = crate::item::ItemSlot {
+            kind: 41,
+            name: "Flaming Arrow",
+            count: 5,
+            prefix: 0,
+        };
+        app.reforge_slot_click();
+        assert_eq!(app.reforge_slot.count, 0, "nothing enters the empty slot");
+        assert_eq!(app.mouse_item.count, 5);
+    }
+
+    #[test]
+    fn the_reforge_slot_air_cursor_takes_the_held_item_out() {
+        // `ItemSlot.cs:1044-1046`: an air cursor + a held item swaps the item
+        // out to the cursor (the air cursor passes the ctx-5 gate).
+        let mut app = reforge_app();
+        app.mouse_item = crate::item::EMPTY_SLOT;
+        app.reforge_slot_click();
+        assert_eq!(app.mouse_item.kind, 1, "the pickaxe moves to the cursor");
+        assert_eq!(app.reforge_slot.count, 0, "the slot empties");
+    }
+
+    #[test]
     fn closing_the_shop_returns_the_reforge_item() {
         // `Main.cs:41574-41578`'s force-close: the slot item drops back into
         // the inventory.
@@ -3657,6 +3764,122 @@ pub(crate) mod front_flow_tests {
         assert!(
             app.inventory.iter().any(|sl| sl.kind == 1 && sl.count == 1),
             "the pickaxe landed in the first free slot"
+        );
+    }
+
+    #[test]
+    fn closing_the_shop_with_a_full_inventory_spawns_the_overflow_drop() {
+        // `Player.GetOrDropItem` (`Player.cs:7193-7200`): when `GetItem`
+        // cannot take the item, `Item.RequestNewItem(..., item2.prefix, ...)`
+        // spawns it at `base.Center` WITH the rolled prefix — the old port
+        // destroyed the item instead. Fill every grid slot with a
+        // non-mergeable kind, reforge the pickaxe to a non-zero prefix, then
+        // close: the drop carries that exact prefix (no fresh roll).
+        let mut app = reforge_app();
+        for sl in app.inventory.iter_mut() {
+            *sl = crate::item::ItemSlot {
+                kind: 2, // dirt — never merges with the pickaxe
+                name: "Dirt Block",
+                count: 9999,
+                prefix: 0,
+            };
+        }
+        app.reforge_click();
+        let rolled = app.reforge_slot.prefix;
+        assert_ne!(rolled, 0, "Prefix(-2) never lands none");
+        let drops_before = app.items.len();
+        let global_before = app.rngs.global().clone();
+        app.close_shop();
+        assert_eq!(app.reforge_slot.count, 0, "the slot empties either way");
+        assert_eq!(app.items.len(), drops_before + 1, "the overflow spawned");
+        let drop = app.items.last().unwrap();
+        assert_eq!(drop.kind, 1);
+        assert_eq!(drop.count, 1);
+        assert_eq!(drop.prefix, rolled, "the rolled prefix rides the drop");
+        // The spawn's velocity/phase triplet drew the global stand-in (the
+        // close runs outside every swap); no stage stream moved.
+        assert_ne!(*app.rngs.global(), global_before, "the spawn drew");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            tr_core::UnifiedRandom::new(0),
+            "UpdateNPCs untouched"
+        );
+    }
+
+    #[test]
+    fn the_reforge_hover_scale_and_unhovered_cooldown_clear() {
+        // `Main.cs:41559-41572`: hovered → scale +0.02/frame toward 1;
+        // unhovered → cooldown = 0 + scale −0.02 toward 1. The hover latch
+        // resolves from the button hit box (`:41649-41666`).
+        let mut app = reforge_app();
+        app.reforge_cooldown = 30;
+        app.reforge_scale = 0.8;
+        // Unhovered (the mouse is far from the button): the cooldown clears
+        // and the scale stays at 0.8 (the −0.02 arm only fires above 1).
+        app.mouse_pos = Vec2::new(500.0, 500.0);
+        app.update_reforge_menu();
+        assert!(!app.mouse_reforge);
+        assert_eq!(app.reforge_cooldown, 0, "the unhovered button clears it");
+        assert_eq!(app.reforge_scale, 0.8);
+        assert!(app.in_reforge_menu, "the shop is open — no force-close");
+        // Hovered (the mouse on the button centre): the scale ramps up.
+        app.mouse_pos = Vec2::new(120.0, 310.0);
+        app.reforge_cooldown = 30;
+        app.update_reforge_menu();
+        assert!(app.mouse_reforge);
+        assert!((app.reforge_scale - 0.82).abs() < 1e-6, "+0.02 toward 1");
+        assert_eq!(app.reforge_cooldown, 30, "hovered keeps the cooldown");
+        // The scale clamps at 1 (no overshoot).
+        app.reforge_scale = 0.99;
+        app.update_reforge_menu();
+        assert!((app.reforge_scale - 1.0).abs() < 1e-6);
+        app.update_reforge_menu();
+        assert!((app.reforge_scale - 1.0).abs() < 1e-6, "clamped at 1");
+    }
+
+    #[test]
+    fn the_reforge_menu_force_closes_and_returns_the_item() {
+        // `Main.cs:41574-41578`: a container opening force-closes the menu
+        // and `dropItemCheck` returns the slot item (`Player.cs:5123-5127`).
+        let mut app = reforge_app();
+        // Open a chest (the port's container state) → the next frame closes.
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.player.as_mut().unwrap().chest = 0;
+        app.update_reforge_menu();
+        assert!(!app.in_reforge_menu, "the chest opening force-closed");
+        assert_eq!(app.reforge_slot.count, 0);
+        assert!(
+            app.inventory.iter().any(|sl| sl.kind == 1 && sl.count == 1),
+            "the pickaxe returned to the inventory"
+        );
+    }
+
+    #[test]
+    fn the_reforge_menu_closes_with_the_shop() {
+        // The port's collapsed entry (#9): the menu rides beside the shop,
+        // so the shop closing (`shop_npc = None`) force-closes it (the C#'s
+        // `talkNPC == -1`/`npcShop != 0` pair, `Main.cs:41574`).
+        let mut app = reforge_app();
+        app.shop_npc = None;
+        app.update_reforge_menu();
+        assert!(!app.in_reforge_menu);
+        assert_eq!(app.reforge_slot.count, 0);
+    }
+
+    #[test]
+    fn the_inventory_close_returns_the_reforge_item() {
+        // `Main.DrawInterface_26_InterfaceLogic3` (`Main.cs:45676-45683`):
+        // with the inventory closed, `InReforgeMenu = false` and the slot
+        // item returns through `dropItemCheck`. The frame head runs it.
+        let mut app = reforge_app();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.inventory_open = false;
+        app.frame();
+        assert!(!app.in_reforge_menu, "the closed inventory cleared the menu");
+        assert_eq!(app.reforge_slot.count, 0);
+        assert!(
+            app.inventory.iter().any(|sl| sl.kind == 1 && sl.count == 1),
+            "the pickaxe returned to the inventory"
         );
     }
 
