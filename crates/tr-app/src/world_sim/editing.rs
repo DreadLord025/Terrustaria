@@ -4291,8 +4291,11 @@ fn fire_non_ammo_shot(
 /// then EVERY animation tick the swing rect off `swing_item_placement`
 /// intersects ALL NPCs in slot order (`ItemCheck_MeleeHitNPCs`,
 /// `Player.cs:44241-44253`), one `resolve_melee_strike` call per hit.
-/// The cooldown/`attack_cd` pacing pass is phase 2 — this arm keeps the
-/// per-NPC lock the shared strike tail arms (`:44414`). Returns true when
+/// W4-a1 phase 2 (the pacing pass): NO cooldown decays here beyond the
+/// C# block's own `UpdateMeleeHitCooldowns` (`:43664`) — `attackCD--`
+/// belongs to the player tick (`Player.cs:24710-24712`), hosted once per
+/// tick in `world_sim/npcs.rs::update_npcs` (the real loop runs it ahead
+/// of this pass). Returns true when
 /// the held item took the swing path AND owns the tick (a pure melee item —
 /// the caller skips the mining arms); false lets the mining arms run (the
 /// tile-first diversion) or the shoot/volley arms run (a projectile melee
@@ -4512,7 +4515,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     // press starts the use (`StartActualUse` `:51657-51698`), every
     // animation tick scans the rect cursor-free; the tile-first order for
     // the tools and the ammo-shooter/useStyle-3 exclusions ride inside.
-    // The cooldown/`attack_cd` pacing pass is phase 2.
+    // Phase 2 (pacing census): the seam decays ONLY the per-NPC locks
+    // (`:43664`); `attack_cd` decays once per tick in `update_npcs`
+    // (`world_sim/npcs.rs:4070`) — no double-decrement.
     if melee_swing_tick(
         app,
         thrust_took,
@@ -7952,10 +7957,11 @@ fn resolve_melee_strike(
                 // (`Player.cs:44414/:44419`) — the landed hit re-arms the
                 // per-NPC melee lock to the CURRENT `itemAnimation` ticks
                 // and `ApplyAttackCooldown` (`:44428-44431`) sets
-                // `attackCD = max(1, (int)(itemAnimationMax * 0.33))`. The
-                // cursor arm's caller overwrites `attack_cd` with the full
-                // swing right after (the established start-arm stand-in);
-                // the stab sweep keeps this C# value.
+                // `attackCD = max(1, (int)(itemAnimationMax * 0.33))`.
+                // W4-a1 phase 2: BOTH melee callers (the swing-rect scan
+                // and the stab sweep) keep this C# value — the old cursor
+                // arm's full-swing overwrite died with the arm; the live
+                // per-slot gates (`:44246`) read it each slot.
                 if landed {
                     let anim_ticks = ticks_of(app.swing);
                     let uid = app.npcs[idx].uid;
@@ -8205,7 +8211,6 @@ fn thrust_stab_tick(
     let (pcx, _) = p.center();
     let melee_pen = p.get_armor_penetration(true);
     let (kill_guide, kill_clothier) = p.doll_flags();
-    let attack_ready = app.attack_cd <= 0.0;
     let hits_town_npc = matches!(held.kind, 5129 | 3351);
     let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
     // `Player.cs:43664`: `UpdateMeleeHitCooldowns` — one decrement per
@@ -8236,7 +8241,10 @@ fn thrust_stab_tick(
         {
             continue;
         }
-        if !attack_ready || cooldowns.get(&n.uid).is_some_and(|&cd| cd > 0) {
+        // `:44246` reads the LIVE attackCD per slot (W4-a1 phase 2: the
+        // pre-scan snapshot would go stale after a refused strike keeps
+        // the walk going — the swing arm reads it live too).
+        if app.attack_cd > 0.0 || cooldowns.get(&n.uid).is_some_and(|&cd| cd > 0) {
             continue;
         }
         // `ProcessHitAgainstNPC`'s rect intersect (`:44278-44279`).
@@ -8250,11 +8258,18 @@ fn thrust_stab_tick(
             continue;
         }
         resolve_melee_strike(app, idx, held, true, held_fx, melee_pen, pcx);
-        // The landed hit re-armed `attack_cd` (ApplyAttackCooldown) —
-        // the C# scan keeps walking the slots under the new cooldown
-        // (`:44246` reads the live field); with attackCD >= 1 no further
-        // slot can hit this tick, so the walk ends here.
-        break;
+        // W4-a1 phase 2: the walk ends only when the strike LANDED —
+        // `strike_melee`'s immune gate (`NPC.StrikeNPC`'s
+        // `nPC.immune[whoAmI] == 0`, the port's `hurt_cd` stand-in,
+        // `npc.rs::strike_melee`) can REFUSE the hit: no re-arm, and the
+        // C# scan keeps walking (`ItemCheck_MeleeHitNPCs`,
+        // `Player.cs:44245-44252` — the loop never breaks). A landed hit
+        // re-arms `attack_cd` (ApplyAttackCooldown) and `:44246` reads
+        // the LIVE field per slot, so with attackCD >= 1 no further slot
+        // can hit this tick — the walk ends here.
+        if app.attack_cd > 0.0 {
+            break;
+        }
     }
     true
 }
@@ -8864,11 +8879,14 @@ mod tests {
     /// hit. Two slimes inside the right-facing START rect: the tick-1 scan
     /// hits slot 0 and `ApplyAttackCooldown` (`:44428-44431`) arms
     /// `attackCD = max(1, (int)(20 * 0.33)) = 6`, so the LIVE per-slot gate
-    /// (`:44246`) skips slot 1 until the cooldown decays (the player-update
-    /// pass — the rig decays it by hand like `repress` does for the start
-    /// lock). At tick 7 slot 0's per-NPC lock (`:44414`, 20 − 6 = 14) still
-    /// refuses the re-hit and slot 1 takes its OWN strike. WRITTEN NOT RUN
-    /// (code-only mode).
+    /// (`:44246`) skips slot 1 until the cooldown decays. Phase-2 census:
+    /// the ONE real decay is `world_sim/npcs.rs:4070` (`update_npcs`, the
+    /// `attackCD--` of `Player.cs:24710-24712`), which the live loop runs
+    /// BEFORE the editing pass (`frame/world.rs` npcs→editing) — the seam
+    /// itself never decays `attack_cd`, so the rig's hand-mirror below is
+    /// the SAME single decrement, not a second one. At tick 7 slot 0's
+    /// per-NPC lock (`:44414`, 20 − 6 = 14) still refuses the re-hit and
+    /// slot 1 takes its OWN strike. WRITTEN NOT RUN (code-only mode).
     #[test]
     fn w4_a1_the_swing_rect_hits_every_npc_in_the_arc() {
         let mut app = melee_app();
@@ -8881,9 +8899,12 @@ mod tests {
         app.npcs.push(second);
         let hp0 = app.npcs[0].hp;
         let hp1 = app.npcs[1].hp;
-        // The full 20-tick swing with the button held; the per-tick
-        // `attackCD--` decay rides `world_sim/npcs.rs` in the live loop —
-        // the rig mirrors it so the mid-swing second hit is reachable.
+        // The full 20-tick swing with the button held. The rig drives
+        // `update_editing` alone, so it mirrors the real loop's ONE
+        // `attackCD--` decay (`world_sim/npcs.rs:4070`, ahead of the
+        // editing pass — the seam decays nothing) AFTER the editing tick,
+        // making the mid-swing second hit reachable at tick 7 exactly as
+        // the live npcs→editing order does.
         for _ in 0..20 {
             mine_frames(&mut app, 1);
             app.attack_cd = (app.attack_cd - ONE_TICK_SECS).max(0.0);
@@ -8897,7 +8918,8 @@ mod tests {
         let cds = &app.player.as_ref().unwrap().melee_npc_hit_cooldown;
         assert!(cds.contains_key(&1) && cds.contains_key(&2), "both locks armed");
         // The held button past the animation end starts nothing (the sword
-        // is not autoReuse) — no repeat strikes on either NPC.
+        // is not autoReuse) — no repeat strikes on either NPC (the same
+        // single-decay mirror as above).
         let (a, b) = (app.npcs[0].hp, app.npcs[1].hp);
         for _ in 0..20 {
             mine_frames(&mut app, 1);
@@ -8948,6 +8970,109 @@ mod tests {
         mine_frames(&mut app, 1);
         assert!(app.swing > 0.0, "the press started the use");
         assert!(app.npcs[0].hp < hp0, "the rect hit despite the far cursor");
+    }
+
+    /// W4-a1 phase 2 witness 4 — the pacing census pin: the swing seam
+    /// decays ONLY the per-NPC melee locks (`UpdateMeleeHitCooldowns`,
+    /// `Player.cs:43664`, inside `ItemCheck`), NEVER `attack_cd` — the
+    /// `attackCD--` (`Player.cs:24710-24712`) lives once per tick in
+    /// `world_sim/npcs.rs:4070` (`update_npcs`), which the real loop runs
+    /// ahead of the editing pass. A mid-swing miss tick leaves a seeded
+    /// `attack_cd` untouched and decrements each lock exactly once; the
+    /// real-loop decay line then takes the one tick off. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_a1_the_seam_decays_the_locks_but_never_attack_cd() {
+        let mut app = melee_app();
+        app.inventory[app.selected].kind = 24;
+        // Arm the swing WITHOUT the use-start (mine_down false skips the
+        // start block) and park the slime out of the arc — a miss tick.
+        app.mine_down = false;
+        app.swing_max = 20.0 * ONE_TICK_SECS;
+        app.swing = app.swing_max;
+        app.npcs[0].x = 2000.0;
+        app.attack_cd = 5.0 * ONE_TICK_SECS;
+        app.player
+            .as_mut()
+            .unwrap()
+            .melee_npc_hit_cooldown
+            .insert(1, 3);
+        mine_frames(&mut app, 1);
+        assert_eq!(ticks_of(app.attack_cd), 5, "no seam-side decay");
+        assert_eq!(
+            app.player.as_ref().unwrap().melee_npc_hit_cooldown[&1],
+            2,
+            "the lock decremented exactly once (:43664)"
+        );
+        // The real loop's single owner (`world_sim/npcs.rs:4070`, the
+        // `update_npcs` pass ahead of editing) — mirrored line-for-line.
+        app.attack_cd = (app.attack_cd - ONE_TICK_SECS).max(0.0);
+        assert_eq!(ticks_of(app.attack_cd), 4);
+    }
+
+    /// W4-a1 phase 2 witness 5 — the useStyle-3 thrust seam coexistence
+    /// (S1-P-i05): the two melee arms are mutually exclusive per tick
+    /// (the thrust takes only `use_style == 3`, the swing only
+    /// `use_style == 1` AND `!thrust_took`), and ONE landed thrust strike
+    /// re-arms `attack_cd` so the LIVE per-slot gate (`:44246`) refuses
+    /// every later slot the same tick — no double-hit. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_a1_the_thrust_and_swing_arms_never_double_hit() {
+        let mut app = thrust_app();
+        // A second slime inside the same stab rect.
+        let mut second = app.npcs[0].clone();
+        second.x = 550.0;
+        second.uid = 2;
+        app.npcs.push(second);
+        // Mid-stab without the use-start: remaining 11/22 = 0.5, the
+        // extension arm (past the 0.666 wind-up).
+        app.mine_down = false;
+        app.swing_max = 22.0 * ONE_TICK_SECS;
+        app.swing = 11.0 * ONE_TICK_SECS;
+        app.swing_style = 3;
+        let (hp0, hp1) = (app.npcs[0].hp, app.npcs[1].hp);
+        assert!(thrust_stab_tick(&mut app, false, false, false));
+        assert!(app.npcs[0].hp < hp0, "slot 0 took the stab");
+        assert_eq!(app.npcs[1].hp, hp1, "the live attackCD gate skips slot 1");
+        // ApplyAttackCooldown: max(1, (int)(22 * 0.33)) = 7 ticks.
+        assert_eq!(ticks_of(app.attack_cd), 7);
+        // The swing arm refuses the style-3 item both ways: the
+        // thrust_took exclusion AND its own use_style == 1 gate.
+        assert!(!melee_swing_tick(
+            &mut app, true, 0, false, false, false, false,
+            Vec2::new(488.0, 4168.0),
+        ));
+        assert!(!melee_swing_tick(
+            &mut app, false, 0, false, false, false, false,
+            Vec2::new(488.0, 4168.0),
+        ));
+        assert_eq!(app.npcs[1].hp, hp1, "still no second hit");
+    }
+
+    /// W4-a1 phase 2 witness 6 — a REFUSED strike keeps the thrust walk
+    /// going (`ItemCheck_MeleeHitNPCs`, `Player.cs:44245-44252` — the C#
+    /// loop never breaks): slot 0 sits in the `hurt_cd` immune window
+    /// (`strike_melee`'s `nPC.immune[whoAmI] == 0` stand-in), so its
+    /// resolve lands nothing and re-arms nothing — the scan walks on and
+    /// slot 1 takes the tick's strike. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_a1_a_refused_thrust_strike_keeps_the_slot_walk_going() {
+        let mut app = thrust_app();
+        let mut second = app.npcs[0].clone();
+        second.x = 550.0;
+        second.uid = 2;
+        app.npcs.push(second);
+        app.npcs[0].hurt_cd = 0.18; // the immune-window stand-in
+        app.mine_down = false;
+        app.swing_max = 22.0 * ONE_TICK_SECS;
+        app.swing = 11.0 * ONE_TICK_SECS;
+        app.swing_style = 3;
+        let (hp0, hp1) = (app.npcs[0].hp, app.npcs[1].hp);
+        assert!(thrust_stab_tick(&mut app, false, false, false));
+        assert_eq!(app.npcs[0].hp, hp0, "the immune slot refused the strike");
+        assert!(app.npcs[1].hp < hp1, "the walk reached the hittable slot");
+        assert_eq!(ticks_of(app.attack_cd), 7, "slot 1's landed re-arm");
     }
 
     /// S1-P-i05 — the useStyle-3 (Thrust) stab-sweep rig: the `melee_app`
