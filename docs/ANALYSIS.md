@@ -39244,3 +39244,53 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The WorldGen.cs sound sites wave (W4-g24, 2026-11-21, code-only mode) вЂ” CLAIM
+
+**Census**: `Select-String 'PlaySound'` over `decompiled/Terraria/WorldGen.cs`
+(ascending line order) yields 83 `SoundEngine.PlaySound` sites plus the
+`KillWall_PlaySounds`/`KillTile_PlaySounds` tables and their call seams.
+**Already landed, kept untouched**: the liquid-merge cues `:4636-4651`
+(S1-E-25 `play_liquid_change`), `CloseDoor` `:31908` / `OpenDoor` `:37727`
+(S1-E-21i `play_door_sound`), the `PlaceTile` tail switch `:60268-60280`
+(S1-E-21b `place_tile_sound`), `PlaceWall` `:75141`, the `KillWall_PlaySounds`
+table `:60423-60441` + the fail arm + explosion walk (S1-E-21i, c15 27aab255),
+the `KillTile_PlaySounds` table `:66427-66575` (S1-E-21c), `CheckPot`
+`:56858-56866` (`pot_break_sound`), `SlopeTile`/`PoundTile` `:80782`/`:80822`
+(i31/i42 `play_place_sound`), and `SaveAndQuit`'s `:6703`/`:6676`
+(`saveglue::save_and_quit`). **Claimed by g24** (this branch,
+`task/W4-g24-sounds-worldgen`), in C# line order:
+(1) `SecretSeed.Enable` `:539` (the tracked `MenuAccept`, once per
+`TryApplyingCopiedSeed` list вЂ” `WorldFileData.cs:268-272` flips `playSound`
+false after the first Enable), (2) `worldGenCallback` `:6593` (the
+generation-start 10; the completion `:6603` already plays in
+`update_world_load`), (3) `playWorldCallBack` `:6843` (the world-enter 11),
+(4) `serverLoadWorldCallBack` `:6921` (the host-load 10 вЂ” the port hosts on
+the live world, so the seam is the Host action), (5) `UnlockDoor` `:37614`
+(the legacy 22 Unlock + the golden-door frame walk), (6) `Check2x1`'s
+piggy `:47235` / bowl `:47255` Shatter tails (the 103 bowl check joins so
+its cue has a live path; the 462/16/18/134/185 drop arms stay as-is),
+(7) `PlaceObject` `:51441` (covered by the landed `place_tile` cue вЂ” the
+`routes_through_tile_object` kinds play the plain 0; witness only),
+(8) `ShiftTrapdoor` `:51470`/`:51512`/`:51563` + the refuse `:51594`
+(the 8/9 pitched plays, the 2x2/2x1 toggles 386в†”387),
+(9) `ShiftTallGate` `:51762` (the 8 play; 388в†”389, the 1x5 gate вЂ” the
+town-NPC `doors.shift_tall_gate` stub gets its real impl in a later batch),
+(10) `CheckOrb` `:54337`/`:54341` (the crimson-4 / shadow-13 tail at the
+TRIGGER cell), (11) the ten wiring-tool Dig-0 sites `:58015`/`:58026`/
+`:58115`/`:58126`/`:58145`/`:58156`/`:58175`/`:58186`/`:58205`/`:58216`
+(the `wire_placed_feedback` stand-in plays a pinned `Dig_1` with NO draws вЂ”
+upgraded to the faithful case-0 variation+pitch on `UpdatePlayers`, the
+S1-E-21i convention). **Deferred, recorded**: `JustQuit` `:6631-6632` +
+`StopWaterfallAmbienceAudio` `:6693-6694` (the 34/35 liquid-loop stops вЂ”
+the loop layer's `set_liquid_loop(ch, 0.0)` seam exists; `JustQuit` has no
+port caller yet), `serverLoadWorldCallBack`'s retry ladder (load-failure
+UI, out of scope). RNG contract: every gameplay draw keeps its exact slot
+on the C# statement order, on the named stream of the enclosing pass
+(world-pass slots: the world-enter/gen cues are menu-thread 2D plays with
+no `Main.rand` draws вЂ” cases 10/11/13/22 draw NOTHING,
+`LegacySoundPlayer.cs:750-792`/`:937-946`; the int overload
+`SoundEngine.cs:102-108` draws no NextFloat). Attenuation BEFORE any case
+draw; commits в‰¤10 sites; witnesses WRITTEN NOT RUN (no
+cargo/rustc/rustfmt/tests/graphify invoked).
+
