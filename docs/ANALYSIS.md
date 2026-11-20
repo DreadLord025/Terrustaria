@@ -39244,3 +39244,158 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## Sky lakes / floating-island residuals (W4-g44, census + verbatim pass, code-only mode, 2026-11-21)
+
+**Census.** The landed port (`worldgen/islands.rs`, M1.4-WGEN-4 +
+M5-SEED-2) was a *compact stand-in* for the C# `FloatingIslands` pass
+(`WorldGen.cs:12927-13122`) — the island count, the y-band, the lake
+cadence, the spacing list and the house placement all diverged from
+the source. The line-by-line re-read (the whole pass `:12927-13122`,
+the `FloatingIslandHouses` pass `:17859-17874`, `IslandHouse`
+`:79203-79484`, the `Reset` skyLakes block `:11182-11190`, the
+`Variations` gates `:169-178`/`:233-255`/`:329-336`, the
+`Skyblock.denyFloatingIslands` gate `:3087-3096`, `GenVars.cs:210-226`
++ `:453-456`) found these residuals, ALL landed verbatim by this task
+unless marked deferred:
+
+1. **The count formula** (`:12934`): C# `num = (int)(maxTilesX *
+   0.0008)` (4200 → 3, 6400 → 5, 8400 → 6). The port had
+   `3 + width / 4200` (4200 → 4, 8400 → 5) — wrong on every width.
+   LANDED: the verbatim formula.
+2. **The skyLakes budget** (`:11182-11190`, `:12955`): C# resets
+   `GenVars.skyLakes = 1`, `++` above 8000 wide, `++` above 6000 wide,
+   and the loop runs `num4 = num + skyLakes` islands — the tail
+   `skyLakes` of them forced lakes (`num2 >= num`, `:13051-13053`).
+   The port had NO skyLakes: `count` stood in for the sum and every
+   third island (`i % 3 == 2`) was a lake. LANDED: `GenVars.sky_lakes`
+   reset in `reset_genvars` (the C# Reset spot), the `num + sky_lakes`
+   loop bound, the `num2 >= num` force.
+3. **The errorWorld triple** (`:12936-12939`): `errorWorld &&
+   errorWorldAdjustment(1.0) < 3` triples `num` BEFORE `num3 = num`
+   (so the house cap `num3 * 2` triples too). The port had no
+   errorWorld arm. LANDED: `error_world_adjustment` (`:329-336` —
+   `< 1` active seeds → 4, else `(int)(value * ((count + 3) / 4))`)
+   + the triple.
+4. **The lake cadence**: C# `flag3 = num2 >= num` — the FIRST `num`
+   placed islands are dry, the tail `skyLakes` are lakes. The port's
+   `i % 3 == 2` scattered lakes through the whole run and its
+   `lake_forced` latch modelled `flag` wrong (the C# `flag` only gates
+   the extraFloatingIslands `i > 4` re-roll, `:13055-13065`). LANDED:
+   the `num2 >= num` cadence; the `i > 4` arm keeps its
+   force-then-1-in-4 shape with the C# `flag` semantics (set on ANY
+   lake, `:13066-13068`).
+5. **The spawn exclusion** (`:12969-12979`): C# `num8 = 150`
+   (extraFloatingIslands → 100) with a RE-DRAW loop (`while` inside
+   the band), skipped entirely under errorWorld (`:12974`). The port
+   used 340 classic / 100 flagged with a `continue` (burning the
+   attempt budget instead of re-drawing). LANDED: 150/100, the
+   re-draw loop, the errorWorld skip.
+6. **The spacing list** (`:12981-12993`): C# checks `num7` against
+   `floatingIslandHouseX[0..numIslandHouses]` — the placed-island
+   anchors, strict `>` / `<` bounds. The port checked its own list
+   with `abs() < spacing` (inclusive). LANDED: the GenVars anchor list
+   (`floating_island_house_x`), the strict bounds.
+7. **The y-band** (`:12998-13048`): C# scans the column from row 200
+   for the first active tile (`num6`), rolls
+   `num11 = Next(90, num6 - 100)`, then clamps
+   `num11 = Min(num11, (int)worldSurfaceLow - 50)`; noSurface rolls
+   `Next(200, UnderworldLayer - 200)` instead; errorWorld re-rolls
+   `Next(worldSurface + 50, UnderworldLayer - 50)` on `Next(4) != 0`.
+   The port rolled `Next(90, world_surface - 100)` against the
+   DEEPEST surface and scanned a ±75 clear window on EVERY world
+   (the C# window is skyblock-only, `:13024`). LANDED: the column
+   scan, the verbatim roll + clamp, the noSurface/errorWorld arms;
+   the clear window gates on the port's SKYBLOCK bit (the recorded
+   skyblock-worldgen deviation stands — no skyblock terrain).
+8. **The attempt budget** (`:12959-12964`): C# `num5 = maxTilesX`
+   (`/= 42` skyblock), `while (--num5 > 0)`. The port capped at 200
+   attempts per island and RETURNED (dropping the tail islands).
+   LANDED: the width budget; an exhausted budget skips the island
+   and the loop continues (`num5 = -1` on success, `:13041`).
+9. **The pass gates** (`:12929`): `!Skyblock.denyFloatingIslands &&
+   !Variations.noSurfaceNoFloatingIslands` — noSurface WITHOUT
+   errorWorld and WITHOUT extraFloatingIslands skips the whole pass.
+   The port had no gate. LANDED: both gates (`denyFloatingIslands` =
+   skyblock && !extra, `:3087-3096`; the houses pass gates on the
+   deny half only, `:17861`).
+10. **The house pass split** (`:17859-17874`): C# places the discs in
+    `FloatingIslands`, stores x/y/style/skyLake per island
+    (`GenVars.cs:220-226`, the 300-slot arrays `:453-456`), and the
+    SEPARATE `FloatingIslandHouses` pass builds a house on every
+    non-lake island. The port built a planks-9 box inline on EVERY
+    island (lakes included). LANDED: the GenVars arrays
+    (`island_house_x/y/style`, `sky_lake`, `num_island_houses`), the
+    new `floating island houses` pipeline step at its vanilla slot
+    (`:17859` — after `cave houses`, before the micro group in the
+    port's grouped chain), the lake skip, the house cap applied to
+    `numIslandHouses` AFTER the loop (`:13117-13120`).
+11. **The house itself** (`IslandHouse`, `:79203-79484`): C# builds a
+    SUNPLATE (202) box with the DISC WALL (82) interior — not planks
+    9 / cloud wall 73 — sized `Next(7,12)` × `Next(5,7)`, the
+    `Next(2)` door-side flip, the ground scan (`wall > 0 && active &&
+    SolidTile`, kinds 192/191/384 excluded, `:79238-79247`), the
+    5-wide door carve + the style-9 door (`PlaceDoor`'s three
+    `Next(3)` frame rolls, `:31781-31794`), the opposite wall column,
+    the chest at `(i, num13 - 3)` through `AddBuriedChest` (style 13,
+    getGood → 2, `:79369-79376`), the wall-21 window strips
+    (`:79395-79419`), the table 14 style 7 + two chairs 15 style 10
+    (the left chair's `frameX += 18` flip, `:79438-79443`), the three
+    banners 91 (`Next(7,10)` styles, `:79446-79460`), the
+    dungeon-wall abort (±30 scan, `:79207-79216`). LANDED: the whole
+    classic arm (the furniture draws in C# order). The drunk
+    snow/desert fountain (`:79377-79392`) and palm (`:79462-79483`)
+    arms, the remix furniture variants (`:79323-79332`,
+    `:79421-79435`) are DEFERRED (the seed-variant follow-up).
+12. **The chest item cycle** (`:79348-79368`, `:79394`): the landed
+    port already had the `skyIslandHouseCount` cycle + the `> 3 →
+    Next(4)` re-roll + the post-place increment — VERIFIED faithful,
+    kept (the counter now advances only on non-lake islands, the C#
+    house-pass order).
+13. **The disc bodies** (`CloudIsland` `:78132-78538`, `CloudLake`
+    `:78539-79202`): the port's ellipse + 2-row grass cap +
+    rain-cloud bowl remains the documented shape-level stand-in (the
+    shrinking-ring walk, the dirt underside and the lake's own ring
+    walk are the M1.4-WGEN-4 deviation, NOT re-litigated here). The
+    house ground-scan needs the wall-73 flood's *effect* (a wall
+    under the grass cap, `:78421-78442`): `build_island` now writes
+    wall 73 on the disc's interior cells whose 3×3 neighbourhood is
+    all active with no foreign wall (the verbatim `:78430` test) —
+    the one CloudIsland slice the house pass consumes.
+
+**The RNG world-pass slots.** Both passes move onto their own
+`Streams::pass_rng` streams — `pass_rng("Floating Islands")` (was the
+shared `drng`) and `pass_rng("Floating Island Houses")` (new) — the
+`WorldGenerator.cs:497` per-pass re-seed model every faithful pass
+uses. The shared `drng` loses the islands' draws: its remaining
+consumers (`fragile ice`, `exposed gems`, `vines`) are all EARLIER in
+the executed chain, so no other pass's stream shifts. The draw ORDER
+inside each pass follows the C# statement order 1:1 (the citation
+comments are the ledger). The world-hash pins move BY DESIGN (the
+discs relocate, the houses retype 9 → 202, the lakes re-cadence);
+`a == b` determinism is untouched (no new entropy source). Code-only
+mode: no compiler on this branch — the pins are STALE-BY-DESIGN and
+re-pin at the merge gate (the `world_hash.rs` note records it).
+
+**Deferred (recorded, not fixed here).** The drunk
+`SnowCloudIsland`/`DesertCloudIsland` variant islands (`:13075-13087`)
++ their fountain/palm house arms; the remix/tenthAnniversary/getGood
+style arms (`:13090-13103` — the port passes `get_good` for the chest
+style only, the num10 style table is the classic 0); the skyblock
+worldgen terrain (the SKYBLOCK bit gates the clear window and the
+deny gate, but no skyblock island chain runs — M5-SEED-1's recorded
+deviation); `SquareTileFrame`/`SquareWallFrame` after the house
+writes (the port's framing passes run later in the chain — the
+temple precedent); the `IslandHouse` crimson `flag` (`:79205`) is
+read but only the remix door arms consume it (deferred with them).
+
+**Witnesses (written, NOT run — code-only mode).**
+`islands.rs::tests`: the count formula widths (4200/6400/8400 →
+3/5/6 + skyLakes 1/2/3), the errorWorld triple + the num3 cap carry,
+the skyLakes tail-lake cadence, the spawn-exclusion re-draw + the
+errorWorld skip, the anchor spacing's strict bounds, the
+noSurface/errorWorld y-arms, the pass gates, the house cap
+(`num3 * 2` post-loop), the lake islands carry NO house, the
+sunplate/disc-wall house shape + the chest cycle order, the `a == b`
+determinism over the flagged seeds. `pipeline.rs::tests`: the new
+step's slot + the 67-step count.
