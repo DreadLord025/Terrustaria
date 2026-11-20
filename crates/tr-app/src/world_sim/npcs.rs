@@ -5342,6 +5342,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         spawn_coins(app, &npc);
         spawn_loot(app, &npc);
+        // W4-f32 — the luck-consuming death tail: `NPCLoot_DropHeals`
+        // (the common life/mana roll + the per-type hearts, `NPC.cs:79098-
+        // 79195`/`:79531-79557`) and `DoDeathEvents_SummonDungeonSpirit`
+        // (`:79064-79078`). Appended after the port's coins/loot batch
+        // (ANALYSIS "The luck consumers (W4-f32)").
+        spawn_heals_and_death_events(app, &npc);
     }
     // B-6b — the shield lifecycle's live consumers, at the death path's
     // tail (the C# owns the reset in the static state, `NPC.cs:95247-
@@ -6972,6 +6978,255 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
     }
 }
 
+/// `NPC.NPCLoot_DropCommonLifeAndMana` (`NPC.cs:79531-79557`): the
+/// heart/star drops every hostile NPC rolls on death. Returns the item
+/// kinds to spawn in the C#'s order (0..2 entries). RNG slots exact:
+/// the 1/6 `RollLuck(6)` gate draws for every net id except 16/121/81
+/// (the Mother Slime / Slimer skip it, the Corrupt Slime is `num = 1`);
+/// the C# `&&` order is `RollLuck(6) == 0 && lifeMax > 1 && damage > 0`
+/// — the roll draws BEFORE the life/damage gates. On a hit `Next(2)`
+/// picks star-first, and a refused star branch draws a SECOND `Next(2)`
+/// for the heart (`:79539-79546` — the `else if` re-rolls). The 1/2
+/// `RollLuck(2)` star gate then draws for every `num == 0` kind
+/// (`:79553`, roll before the life/damage/mana gates).
+fn npc_loot_common_life_and_mana(
+    rng: &mut UnifiedRandom,
+    net_id: i32,
+    luck: f32,
+    life_max: i32,
+    damage: i32,
+    mana: i32,
+    mana_max: i32,
+    life: i32,
+    life_max_player: i32,
+) -> Vec<u16> {
+    let mut out = Vec::new();
+    // `:79534-79536`: 16/121 set num = 1 (skip the 1/6 arm); 81 is num = 1
+    // too (`(this.netID == 81) ? 1 : 0`).
+    let num = if net_id == 16 || net_id == 121 || net_id == 81 { 1 } else { 0 };
+    if num == 0
+        && tr_core::loot::roll_luck(rng, luck, 6) == 0
+        && life_max > 1
+        && damage > 0
+    {
+        // `:79539-79546`: star first (mana missing), else a fresh Next(2)
+        // for the heart (life missing).
+        if rng.next_max(2) == 0 && mana < mana_max {
+            out.push(184);
+        } else if rng.next_max(2) == 0 && life < life_max_player {
+            out.push(58);
+        }
+    }
+    if num == 0
+        && tr_core::loot::roll_luck(rng, luck, 2) == 0
+        && life_max > 1
+        && damage > 0
+        && mana < mana_max
+    {
+        out.push(184); // `:79553-79556`
+    }
+    out
+}
+
+/// `NPC.NPCLoot_DropHeals`' per-type tail (`NPC.cs:79098-79195`, the
+/// switch AFTER `NPCLoot_DropCommonLifeAndMana`): the pumpkin/frost-moon
+/// heart drops. Returns the heart count (each a separate `Item.NewItem`
+/// in the C#). The luck rolls: 305-314/329/330 `RollLuck(4)` (`:79115`),
+/// 326 `RollLuck(6)` (`:79121`), 338-340 `RollLuck(5)` (`:79141`); the
+/// rest are plain `Main.rand` rolls. `expert` gates the 116-119 arm's
+/// guaranteed heart (`:79183` — the port's classic mode always draws
+/// the `Next(5)` only when expert).
+fn npc_loot_drop_hearts(
+    rng: &mut UnifiedRandom,
+    net_id: i32,
+    luck: f32,
+    expert: bool,
+    life: i32,
+    life_max_player: i32,
+) -> i32 {
+    match net_id {
+        // `:79103-79119`: the scarecrow family + Hellhound/Poltergeist.
+        305..=314 | 329 | 330 => {
+            if tr_core::loot::roll_luck(rng, luck, 4) == 0 { 1 } else { 0 }
+        }
+        326 => {
+            if tr_core::loot::roll_luck(rng, luck, 6) == 0 { 1 } else { 0 }
+        }
+        315 => 1, // `:79126-79128` — the Horseman's guaranteed heart
+        341 => rng.next_range(5, 11), // `:79129-79137` — the Present Mimic
+        338..=340 => {
+            if tr_core::loot::roll_luck(rng, luck, 5) == 0 { 1 } else { 0 }
+        }
+        // `:79146-79151`: the Gingerbread Man's 2/3 heart.
+        342 => {
+            if rng.next_max(3) != 0 { 1 } else { 0 }
+        }
+        // `:79152-79163`: the moon bosses' 6..11 hearts.
+        325 | 327 | 344 | 345 | 346 => rng.next_max(6) + 6,
+        // `:79165-79170`: the Creeper's 1/2 gated on the player's life.
+        267 => {
+            if rng.next_max(2) == 0 && life < life_max_player { 1 } else { 0 }
+        }
+        // `:79171-79178`: the EoW segments' 1/4, life-gated.
+        13 | 14 | 15 => {
+            if rng.next_max(4) == 0 && life < life_max_player { 1 } else { 0 }
+        }
+        // `:79179-79187`: the WoF's Hungry — guaranteed outside expert,
+        // 1/5 inside (`!Main.expertMode || Next(5) == 0`).
+        116..=119 => {
+            if !expert || rng.next_max(5) == 0 { 1 } else { 0 }
+        }
+        // `:79188-79193`: the Probe's 1/2.
+        139 => {
+            if rng.next_max(2) == 0 { 1 } else { 0 }
+        }
+        _ => 0,
+    }
+}
+
+/// `NPC.DoDeathEvents_SummonDungeonSpirit` (`NPC.cs:79064-79078`): the
+/// post-Plantera hardmode dungeon wisp. The `RollLuck(range)` draws ONLY
+/// when every gate passed (lifeMax > 100, type != 288, value > 0,
+/// HasPlayerTarget, hardmode, downedPlantBoss, the TARGET player's
+/// ZoneDungeon); range 13 classic / 9 expert (`:79068-79072`). On a hit
+/// the C# also needs `Main.wallDungeon[centre tile wall]` (`:79073`) —
+/// the wall check runs AFTER the roll (the `&&` order), so a miss on the
+/// wall still consumed the luck draw. Returns the spawn request (the
+/// caller places the 288 at the NPC's centre).
+fn summon_dungeon_spirit_roll(
+    rng: &mut UnifiedRandom,
+    luck: f32,
+    life_max: i32,
+    net_id: i32,
+    value: f32,
+    hard_mode: bool,
+    downed_plant_boss: bool,
+    zone_dungeon: bool,
+    expert: bool,
+    centre_wall_dungeon: bool,
+) -> bool {
+    if life_max > 100
+        && net_id != 288
+        && value > 0.0
+        && hard_mode
+        && downed_plant_boss
+        && zone_dungeon
+    {
+        let range = if expert { 9 } else { 13 };
+        // `HasPlayerTarget` is constants-on (the port's single player is
+        // every hostile's target — `spawn_loot`'s same stand-in).
+        if tr_core::loot::roll_luck(rng, luck, range) == 0 && centre_wall_dungeon {
+            return true;
+        }
+    }
+    false
+}
+
+/// The death path's `NPCLoot_DropHeals` + `DoDeathEvents_SummonDungeonSpirit`
+/// lane (W4-f32): runs AFTER `spawn_coins`/`spawn_loot` in the port's
+/// batched death pass — the C# order inside `NPCLoot` is DropItems →
+/// DoDeathEvents → DropMoney → DropHeals (`NPC.cs:78855-78898`); the
+/// port's documented coins-first batching keeps the pre-existing
+/// coin/loot stream intact and appends the new draws at the tail
+/// (ANALYSIS "The luck consumers (W4-f32)"). All draws ride the
+/// `UpdateNPCs` stream (the `NPC.UpdateNPC` swap).
+fn spawn_heals_and_death_events(app: &mut App, npc: &Npc) {
+    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
+    let net_id = entry.net_id;
+    let rng = app.rngs.stream(RngKey::UpdateNpcs);
+    let (luck, mana, mana_max, life, life_max_player) = app
+        .player
+        .as_ref()
+        .map(|p| (p.luck(), p.mana, p.mana_max, p.hp, p.max_hp))
+        .unwrap_or((0.0, 0, 0, 0, 0));
+    // The contact damage the life/mana gates read (`this.damage > 0`):
+    // the slime variants carry their own row, the rest the kind default.
+    let damage = if npc.kind == NpcKind::Slime {
+        npc.slime.stats().damage
+    } else {
+        npc.damage_override.unwrap_or_else(|| npc.kind.contact_damage())
+    };
+    let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
+    // `NPCLoot_DropHeals` opens with the common life/mana roll
+    // (`NPC.cs:79100`), then the per-type heart tail.
+    let kinds = npc_loot_common_life_and_mana(
+        rng, net_id, luck, npc.max_hp, damage, mana, mana_max, life, life_max_player,
+    );
+    let hearts = npc_loot_drop_hearts(rng, net_id, luck, expert, life, life_max_player);
+    // The seasonal flags for the heart/star remap (`Item.NewItem`,
+    // `Item.cs:49668-49714`) — the same snapshot `spawn_loot` reads.
+    let tenth = app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    let halloween = app
+        .world
+        .micro_seeds
+        .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+    let xmas = app
+        .world
+        .micro_seeds
+        .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+    let (x, y) = (npc.x, npc.y);
+    let mut drops: Vec<u16> = kinds;
+    drops.extend(std::iter::repeat(58u16).take(hearts.max(0) as usize));
+    for raw_kind in drops {
+        let kind = crate::world_sim::items::seasonal_pickup_kind(
+            raw_kind, tenth, halloween, xmas, rng,
+        );
+        // The port's ItemDrop scatter model (the same triplet
+        // `spawn_loot` uses; the C#'s `Next(-30,31)*0.1` /
+        // `Next(-40,-15)*0.1` defaults are the documented stand-in).
+        let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+        let vy = -1.5 - rng.next_float();
+        let phase = rng.next_float() * std::f32::consts::TAU;
+        app.items.push(ItemDrop::new(
+            kind,
+            1,
+            crate::prefix::roll_prefix(kind, -1, rng),
+            x,
+            y,
+            vx,
+            vy,
+            phase,
+        ));
+    }
+    // `DoDeathEvents_SummonDungeonSpirit` — the wisp spawn at the NPC's
+    // centre on a dungeon-wall tile (`Main.wallDungeon`, `Main.cs:10598-
+    // 10606`: 7/8/9/94-99 — `tr_core::scene::is_dungeon_wall`).
+    let (cx, cy) = npc.center();
+    let centre_wall_dungeon = app
+        .world
+        .tile((cx / 16.0) as i32, (cy / 16.0) as i32)
+        .is_some_and(|t| tr_core::scene::is_dungeon_wall(t.wall));
+    if summon_dungeon_spirit_roll(
+        rng,
+        luck,
+        npc.max_hp,
+        net_id,
+        npc.value(),
+        app.world.hard_mode,
+        app.world.downed_plant_boss,
+        app.scene_metrics.zone_dungeon,
+        expert,
+        centre_wall_dungeon,
+    ) {
+        // `NPC.NewNPC(source, (int)Center.X, (int)Center.Y, 288)` —
+        // `NewNPC` sets `Bottom = (X, Y)` (`NPC.cs:80770`), so the wisp's
+        // feet sit at the dead NPC's centre.
+        let (w, h) = NpcKind::DungeonSpirit.size();
+        let mut spirit = Npc::new(
+            NpcKind::DungeonSpirit,
+            cx - w * 0.5,
+            cy - h,
+            1,
+            0.0,
+        );
+        spirit.hp = spirit.max_hp;
+        app.npcs.push(spirit);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8019,6 +8274,175 @@ mod tests {
                 it.count
             );
         }
+    }
+
+    // ---- W4-f32: the death path's luck consumers ----
+
+    #[test]
+    fn f32_common_life_and_mana_rng_slots_are_exact() {
+        // `NPC.cs:79531-79557`: a plain hostile (net 1) draws RollLuck(6)
+        // then RollLuck(2) at luck 0 — two plain Next draws, byte-identical
+        // to Next(6)/Next(2). The 16/121/81 kinds skip the 1/6 arm.
+        let mut a = UnifiedRandom::new(4);
+        let out = npc_loot_common_life_and_mana(&mut a, 1, 0.0, 25, 7, 0, 20, 50, 100);
+        let mut b = UnifiedRandom::new(4);
+        let r6 = b.next_max(6);
+        let mut want = Vec::new();
+        if r6 == 0 {
+            if b.next_max(2) == 0 {
+                want.push(184u16); // mana 0 < 20
+            } else if b.next_max(2) == 0 && 50 < 100 {
+                want.push(58);
+            }
+        }
+        if b.next_max(2) == 0 {
+            want.push(184); // the 1/2 star gate, mana missing
+        }
+        assert_eq!(out, want);
+        assert_eq!(a, b, "the draw sequence replays exactly");
+        // The Mother Slime (16) skips the 1/6 arm — only the 1/2 draws.
+        let mut c = UnifiedRandom::new(4);
+        let out16 = npc_loot_common_life_and_mana(&mut c, 16, 0.0, 25, 7, 0, 20, 50, 100);
+        let mut d = UnifiedRandom::new(4);
+        let want16: Vec<u16> = if d.next_max(2) == 0 { vec![184] } else { vec![] };
+        assert_eq!(out16, want16);
+        assert_eq!(c, d);
+        // The Corrupt Slime (81) is num = 1 too (`:79536`).
+        let mut e = UnifiedRandom::new(4);
+        let out81 = npc_loot_common_life_and_mana(&mut e, 81, 0.0, 25, 7, 0, 20, 50, 100);
+        assert_eq!(out81, want16);
+    }
+
+    #[test]
+    fn f32_common_life_and_mana_luck_one_always_hits_both_gates() {
+        // Luck 1.0: the 1/2 RollLuck(2) gate ALWAYS hits (the inner
+        // Next(1,2) is always 1, the outer Next(1) always 0); the 1/6
+        // gate hits when Next(Next(3,6)) lands 0 — find such a seed and
+        // pin the double-star outcome (the 1/6 arm's star + the 1/2 arm).
+        let mut hit_seed = None;
+        for seed in 0..500i32 {
+            let mut probe = UnifiedRandom::new(seed);
+            if tr_core::loot::roll_luck(&mut probe, 1.0, 6) == 0 {
+                hit_seed = Some(seed);
+                break;
+            }
+        }
+        let seed = hit_seed.expect("a 1/6 hit in the sweep");
+        let mut rng = UnifiedRandom::new(seed);
+        let out = npc_loot_common_life_and_mana(&mut rng, 1, 1.0, 25, 7, 0, 20, 100, 100);
+        assert_eq!(out, vec![184, 184], "both gates hit at luck 1.0");
+        // Full mana: the 1/6 arm's star refuses, the else-if Next(2)
+        // decides the heart; the 1/2 arm's mana gate refuses the star.
+        let mut rng2 = UnifiedRandom::new(seed);
+        let out2 = npc_loot_common_life_and_mana(&mut rng2, 1, 1.0, 25, 7, 20, 20, 50, 100);
+        assert!(out2.iter().all(|&k| k == 58), "no star at full mana");
+        // lifeMax 1 (a critter): the rolls still draw but nothing drops.
+        let mut rng3 = UnifiedRandom::new(seed);
+        let out3 = npc_loot_common_life_and_mana(&mut rng3, 1, 1.0, 1, 0, 0, 20, 50, 100);
+        assert!(out3.is_empty());
+    }
+
+    #[test]
+    fn f32_drop_hearts_per_type_ranges() {
+        // `NPC.cs:79098-79195`: the Horseman's guaranteed heart, the
+        // Present Mimic's 5..10, the moon bosses' 6..11, the scarecrow
+        // 1/4 (luck 1.0 always hits), the Gingerbread 2/3.
+        let mut rng = UnifiedRandom::new(2);
+        assert_eq!(npc_loot_drop_hearts(&mut rng, 315, 0.0, false, 100, 100), 1);
+        let mimic = npc_loot_drop_hearts(&mut rng, 341, 0.0, false, 100, 100);
+        assert!((5..=10).contains(&mimic));
+        let boss = npc_loot_drop_hearts(&mut rng, 327, 0.0, false, 100, 100);
+        assert!((6..=11).contains(&boss));
+        assert_eq!(npc_loot_drop_hearts(&mut rng, 305, 1.0, false, 100, 100), 1);
+        assert_eq!(npc_loot_drop_hearts(&mut rng, 326, 1.0, false, 100, 100), 1);
+        assert_eq!(npc_loot_drop_hearts(&mut rng, 338, 1.0, false, 100, 100), 1);
+        // The Creeper's life gate: full life refuses even on a Next(2) hit.
+        let mut rng2 = UnifiedRandom::new(0);
+        let full = npc_loot_drop_hearts(&mut rng2, 267, 0.0, false, 100, 100);
+        assert_eq!(full, 0);
+        // The Hungry: classic guarantees, expert rolls 1/5.
+        let mut rng3 = UnifiedRandom::new(0);
+        assert_eq!(npc_loot_drop_hearts(&mut rng3, 116, 0.0, false, 100, 100), 1);
+        // An unlisted kind draws nothing.
+        let mut rng4 = UnifiedRandom::new(0);
+        assert_eq!(npc_loot_drop_hearts(&mut rng4, 1, 0.0, false, 100, 100), 0);
+        assert_eq!(rng4, UnifiedRandom::new(0), "no draw for an unlisted kind");
+    }
+
+    #[test]
+    fn f32_dungeon_spirit_gates_and_range() {
+        // `NPC.cs:79064-79078`: every gate must pass before the roll;
+        // range 13 classic / 9 expert; the wall check runs AFTER the draw.
+        let mut rng = UnifiedRandom::new(3);
+        // Gates closed: no draw at all.
+        assert!(!summon_dungeon_spirit_roll(
+            &mut rng, 1.0, 200, 1, 50.0, false, true, true, false, true,
+        ));
+        assert_eq!(rng, UnifiedRandom::new(3), "hardmode off: no draw");
+        // All gates open, luck 1.0, dungeon wall: the shrunk Next(Next(6,13))
+        // can hit 0 — sweep seeds for a hit and pin the draw shape.
+        let mut hit = false;
+        for seed in 0..200i32 {
+            let mut a = UnifiedRandom::new(seed);
+            let got = summon_dungeon_spirit_roll(
+                &mut a, 1.0, 200, 1, 50.0, true, true, true, false, true,
+            );
+            let mut b = UnifiedRandom::new(seed);
+            let _gate = b.next_float();
+            let inner = b.next_range(6, 13);
+            let roll = b.next_range(0, inner);
+            assert_eq!(got, roll == 0, "seed {seed}");
+            assert_eq!(a, b, "the draw shape is the luck double-roll");
+            hit |= got;
+        }
+        assert!(hit, "some seed summons the spirit");
+        // The wall miss still consumes the roll (the && order).
+        let mut c = UnifiedRandom::new(3);
+        let mut d = UnifiedRandom::new(3);
+        let no_wall = summon_dungeon_spirit_roll(
+            &mut c, 1.0, 200, 1, 50.0, true, true, true, false, false,
+        );
+        let _ = summon_dungeon_spirit_roll(
+            &mut d, 1.0, 200, 1, 50.0, true, true, true, false, true,
+        );
+        assert!(!no_wall);
+        assert_eq!(c, d, "the wall gate judges after the draw");
+        // The spirit itself (288) never summons another.
+        let mut e = UnifiedRandom::new(3);
+        assert!(!summon_dungeon_spirit_roll(
+            &mut e, 1.0, 200, 288, 50.0, true, true, true, false, true,
+        ));
+        assert_eq!(e, UnifiedRandom::new(3));
+    }
+
+    #[test]
+    fn f32_death_tail_rides_the_update_npcs_stream() {
+        // The wired tail: a dead slime's heals draws append to the
+        // UpdateNPCs stream after coins+loot; luck 1.0 diverges (the
+        // RollLuck gates always hit), luck 0 keeps the plain shape.
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut a = flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.compute_column_surface();
+        a.world = world;
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        let npc = Npc::spawn_slime_variant(&a.world, 30, SlimeVariant::Blue).unwrap();
+        spawn_heals_and_death_events(&mut a, &npc);
+        let after0 = a.rngs.stream(RngKey::UpdateNpcs).clone();
+        assert_ne!(after0, UnifiedRandom::new(a.world.seed as i32), "the tail drew");
+        // Twin at luck 1.0: the 1/6 and 1/2 gates always hit — the stream
+        // lands elsewhere.
+        let mut b = flow_app(None, vec![], vec![]);
+        b.world = crate::test_world_helpers::ground();
+        b.world.compute_column_surface();
+        b.player = Some(crate::player::Player::spawn(&b.world));
+        b.player.as_mut().unwrap().luck_state.luck = 1.0;
+        spawn_heals_and_death_events(&mut b, &npc);
+        assert_ne!(
+            *b.rngs.stream(RngKey::UpdateNpcs),
+            after0,
+            "luck 1.0 takes the hit branches"
+        );
     }
 
     // M5-SEED-2: `endlessHalloween` / `endlessChristmas`
@@ -17111,7 +17535,8 @@ mod dw3_tests {
         // (`NPC.checkDead` `NPC.cs:78193`, one case-4 pitch draw
         // `LegacySoundPlayer.cs:693` — S1-E-21 wave C), then the NPCLoot
         // order (coins, then the rule engine, then the velocity/prefix
-        // draws); the replay is byte-for-byte.
+        // draws, then the W4-f32 heals/spirit tail); the replay is
+        // byte-for-byte.
         let mut twin = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         twin.world = crate::test_world_helpers::ground();
         twin.world.compute_column_surface();
@@ -17119,6 +17544,7 @@ mod dw3_tests {
         let _death_pitch = twin.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
         spawn_coins(&mut twin, &slime);
         spawn_loot(&mut twin, &slime);
+        spawn_heals_and_death_events(&mut twin, &slime);
         assert_eq!(
             *twin.rngs.stream(RngKey::UpdateNpcs),
             after,
