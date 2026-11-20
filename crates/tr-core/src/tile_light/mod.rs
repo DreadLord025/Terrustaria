@@ -36,12 +36,29 @@ pub fn apply_wall_light(
 ) {
     let blocked = light_blocked(tile, inv.block, p.draw_invisible_walls);
     let mut l = [0.0f32; 3];
+    // The C# `flag` (`TileLightScanner.cs:169`): only walls 357 (`:178`) and
+    // 175 (`:214`, painted arm) ever set it — every other glowing wall keeps
+    // its own colour even when painted (W4-d66).
+    let mut flag = false;
     match tile.wall {
-        357 if !blocked => l = [0.15, 0.27, 0.3],
-        182 if !blocked => l = [0.24, 0.12, 0.09],
-        33 if !blocked => l = [0.09, 0.0525, 0.24],
+        357 if !blocked => {
+            l = [0.15, 0.27, 0.3];
+            flag = true;
+        }
+        // The 0.089999996f / 0.052500002f literals are distinct f32 values
+        // from 0.09 / 0.0525 (`TileLightScanner.cs:186/192-193`, W4-d66).
+        182 if !blocked => l = [0.24, 0.12, 0.089999996],
+        33 if !blocked => l = [0.089999996, 0.052500002, 0.24],
         174 if !blocked => l = [0.2975, 0.0, 0.0],
-        175 if !blocked => l = [0.075, 0.15, 0.4],
+        175 if !blocked => {
+            // `TileLightScanner.cs:203-217`: unpainted takes the blue base,
+            // painted defers to the /765 override below.
+            if wall_paint == 0 {
+                l = [0.075, 0.15, 0.4];
+            } else {
+                flag = true;
+            }
+        }
         176 if !blocked => l = [0.1, 0.1, 0.1],
         137 if !blocked => {
             // `0.4 + (270 - mouseTextColor) / 1500 + random * 0.0005`
@@ -79,9 +96,10 @@ pub fn apply_wall_light(
         _ => {}
     }
     // `TileLightScanner.cs:318-324`: `if (flag && tile.wallColor() != 0)` —
-    // the `flag` arms are the `!blocked` glow walls; the paint colour lands at
-    // the /765 scaling (3x dimmer than the painted-tile override).
-    if wall_paint != 0 && blocked == false && l != [0.0f32; 3] {
+    // ONLY the flag arms (357/175) take the paint colour, at the /765 scaling
+    // (3x dimmer than the painted-tile override). W4-d66: the previous
+    // `l != 0` proxy painted every glowing wall, which the C# never does.
+    if flag && wall_paint != 0 {
         let pc = crate::tile_light::paint_color(wall_paint);
         l = [pc[0] / 3.0, pc[1] / 3.0, pc[2] / 3.0];
     }
@@ -307,5 +325,35 @@ mod tests {
         // `0.4 + delta * 0.6 + random * 0.0005`, times (1, 0.5, 0.1).
         assert!((c[0] - 0.46).abs() < 0.03, "crystal wall {c:?}");
         assert!((c[1] - c[0] * 0.5).abs() < 1e-4, "crystal wall {c:?}");
+    }
+
+    /// W4-d66 witness: `TileLightScanner.cs:318` gates the /765 paint override
+    /// on `flag`, set ONLY by wall 357 (`:178`) and painted wall 175 (`:214`).
+    /// The old `l != 0` proxy painted every glowing wall.
+    #[test]
+    fn wall_paint_only_overrides_the_flag_arms() {
+        let p = LightParams::default();
+        let inv = InvisibleBits::default();
+        let seed = |wall: u16, paint: u8| -> [f32; 3] {
+            let mut t = Tile::default();
+            t.wall = wall;
+            let mut c = [0.0f32; 3];
+            let mut rng = FastRandom::new(0).with_modifier(1, 1);
+            apply_wall_light(&t, paint, inv, &mut rng, &p, &mut c);
+            c
+        };
+        // Wall 357 (flag arm): red paint at /765 = (1/3, 0, 0).
+        let c = seed(357, 1);
+        assert!((c[0] - 1.0 / 3.0).abs() < 1e-6 && c[1] == 0.0, "357 {c:?}");
+        // Wall 175 unpainted: the blue base (`:208-210`).
+        assert_eq!(seed(175, 0), [0.075, 0.15, 0.4]);
+        // Wall 175 painted: flag → /765 override.
+        let c = seed(175, 1);
+        assert!((c[0] - 1.0 / 3.0).abs() < 1e-6 && c[1] == 0.0, "175 {c:?}");
+        // Wall 154 (gem wall, NO flag, NO blocked gate): paint is ignored,
+        // the magenta base survives (`:243-246`).
+        assert_eq!(seed(154, 1), [0.6, 0.0, 0.6]);
+        // Wall 182 (glow arm without flag): paint is ignored too (`:181-188`).
+        assert_eq!(seed(182, 1), [0.24, 0.12, 0.089999996]);
     }
 }

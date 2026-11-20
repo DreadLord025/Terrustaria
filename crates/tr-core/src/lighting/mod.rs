@@ -702,6 +702,27 @@ mod tests {
         );
     }
 
+    /// W4-d66 witness: `GetTileMask` (`TileLightScanner.cs:68`) includes
+    /// `!tile.inActive()` — an actuated block is air to the modern blur mask
+    /// too, not just the legacy swipes. The old `mask_of` dropped the term.
+    #[test]
+    fn actuated_block_is_air_to_the_modern_mask() {
+        let mut w = World::new("t".into(), 8, 8);
+        let i = w.index(4, 4);
+        w.tiles[i].kind = 1; // stone: TILE_BLOCK_LIGHT
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        assert_eq!(
+            blur::mask_of(&w.tiles[i], 4, 4, false, &w),
+            blur::Mask::Solid
+        );
+        w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
+        assert_ne!(
+            blur::mask_of(&w.tiles[i], 4, 4, false, &w),
+            blur::Mask::Solid,
+            "actuated block must not form the Solid mask"
+        );
+    }
+
     /// `TileLightScanner.cs:3149`: a hidden invisible sun-blocking tile still
     /// receives the sun seed when the exemption's four neighbours are dry.
     /// Pinned at the seed level (`apply_surface_light`) — the blur would flood

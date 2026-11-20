@@ -139,7 +139,7 @@ fn torch_lights(
                         p.disco[1] as f32 / 255.0,
                         p.disco[2] as f32 / 255.0,
                     ],
-                    6 => [0.75, 1.2825, 1.2],
+                    6 => [0.75, 1.2824999, 1.2],
                     7 => [0.95, 0.65, 1.3],
                     8 => [1.4, 0.85, 0.55],
                     9 => [0.25, 1.3, 0.8],
@@ -613,9 +613,20 @@ fn paintable_lights(
                     4 => [0.5, 0.7, 0.4],
                     5 => [0.9, 0.4, 0.2],
                     6 => [0.7, 0.75, 0.3],
-                    7 => torch_color(7, p),
+                    // `TileLightScanner.cs:2608-2615`: NOT the demon-torch
+                    // recipe — a `demonTorch * 0.2` shift off 0.9/0.9/0.7.
+                    7 => {
+                        let n = p.demon_torch * 0.2;
+                        [0.9 - n, 0.9 - n, 0.7 + n]
+                    }
                     8 => [0.75, 0.6, 0.3],
-                    9 => torch_color(7, p),
+                    // `TileLightScanner.cs:2621-2627`: base 1/0.3/0.5 with the
+                    // demon-torch shifts, also not `TorchColor(7)`.
+                    9 => [
+                        1.0 - p.demon_torch * 0.1,
+                        0.3 - p.demon_torch * 0.2,
+                        0.5 + p.demon_torch * 0.2,
+                    ],
                     11 => [0.85, 0.6, 1.0],
                     14 => [1.0, 0.95, 0.65],
                     15 => [1.0, 0.95, 0.65],
@@ -1225,6 +1236,29 @@ mod tests {
         close(lit(&tile(42, 0, 36), 5, 5, &p), [0.9, 0.75, 0.6]);
         // frameX != 0 is a multi-tile part that must not glow on its own.
         close(lit(&tile(42, 18, 36), 5, 5, &p), [0.0; 3]);
+    }
+
+    /// W4-d66 witness: lantern (42) frames 7/9 are NOT `TorchColor(7)` —
+    /// `TileLightScanner.cs:2608-2615` shifts 0.9/0.9/0.7 by `demonTorch*0.2`
+    /// and `:2621-2627` shifts 1/0.3/0.5 by -0.1/-0.2/+0.2. The old port fed
+    /// both through `torch_color(7)` (0.5d+(1-d) / 0.3 / d+0.5(1-d)).
+    #[test]
+    fn lantern_frames_7_and_9_use_their_own_demon_shifts() {
+        let mut p = LightParams::default();
+        p.demon_torch = 1.0;
+        // case 7 @ d=1: (0.9-0.2, 0.9-0.2, 0.7+0.2); torch_color(7) = (0.5, 0.3, 1.0).
+        close(lit(&tile(42, 0, 36 * 7), 5, 5, &p), [0.7, 0.7, 0.9]);
+        // case 9 @ d=1: (1-0.1, 0.3-0.2, 0.5+0.2).
+        close(lit(&tile(42, 0, 36 * 9), 5, 5, &p), [0.9, 0.1, 0.7]);
+        p.demon_torch = 0.0;
+        // case 7 @ d=0 keeps the base; case 9 @ d=0 is (1, 0.3, 0.5) while
+        // torch_color(7) @ d=0 would be (1.0, 0.3, 0.5) — same at d=0, so the
+        // d=1 pins above are the discriminating witnesses.
+        close(lit(&tile(42, 0, 36 * 7), 5, 5, &p), [0.9, 0.9, 0.7]);
+        close(lit(&tile(42, 0, 36 * 9), 5, 5, &p), [1.0, 0.3, 0.5]);
+        // case 32 really is the demon recipe (`:2696-2700`).
+        p.demon_torch = 1.0;
+        close(lit(&tile(42, 0, 36 * 32), 5, 5, &p), [0.5, 0.3, 1.0]);
     }
 
     #[test]
