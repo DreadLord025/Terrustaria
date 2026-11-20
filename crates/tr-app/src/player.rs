@@ -1612,9 +1612,22 @@ pub struct Player {
     /// clears it (`:18325`).
     pub ash_wood_bonus: bool,
     /// `Player.frostBurn` (`ArmorSetBonuses.cs:271`): the Frost set's
-    /// on-hit Frostburn flag — the melee/projectile consumers are unported
-    /// (ANALYSIS "S1-C-12 wave D"). `ResetEffects` clears it (`:18686`).
+    /// on-hit Frostburn flag — the melee consumer is
+    /// `melee_on_hit.rs::status_to_npc` (S1-P-i10, `Player.cs:6548-6551`);
+    /// the projectile consumers stay unported (ANALYSIS "S1-C-12 wave D").
+    /// `ResetEffects` clears it (`:18686`).
     pub frost_burn: bool,
+    /// `Player.magmaStone` (`Player.cs:18610`'s clear): the Magma Stone
+    /// 1322 (`:15336-15339`), the Fire Gauntlet 1343 (`:15313`) and the
+    /// Pyroclast 6178 (`:14580-14583`) arm it; the melee on-hit consumer
+    /// is `melee_on_hit.rs::status_to_npc` (`:6552-6566`, S1-P-i10).
+    /// `ResetEffects` clears it every tick (`:18610`).
+    pub magma_stone: bool,
+    /// `Player.catalystBand` (`Player.cs:18608`'s clear): the Catalyst
+    /// Band 6185 (`:14615-14619`) arms it; the melee on-hit consumer is
+    /// `melee_on_hit.rs::status_to_npc` (`:6536-6539`, S1-P-i10 —
+    /// AcceleratePoisons 398). `ResetEffects` clears it (`:18608`).
+    pub catalyst_band: bool,
     /// `Player.vampireBurningInSunlight` (`Player.cs:28709`): the vampire
     /// seed's sun-scorch flag — the gate on the Molten set's
     /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter
@@ -2336,6 +2349,8 @@ impl Player {
             crimson_regen: false,
             ash_wood_bonus: false,
             frost_burn: false,
+            magma_stone: false,
+            catalyst_band: false,
             vampire_burning_in_sunlight: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
@@ -4224,6 +4239,19 @@ impl Player {
             // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
             // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
             6184 => self.honey_comb = true,
+            // S1-P-i10 — the melee on-hit accessory flags.
+            // Magma Stone 1322 (`:15336-15339`): the bare flag; the
+            // OnFire3 infliction is `melee_on_hit.rs` (`:6552-6566`).
+            1322 => self.magma_stone = true,
+            // Pyroclast 6178 (`:14580-14583`): magmaStone + accPyroclast
+            // (the snapping-stone strike `:44338-44341` is an unported
+            // projectile family — only the flag half lands here).
+            6178 => self.magma_stone = true,
+            // Catalyst Band 6185 (`:14615-14619`): catalystBand +
+            // accPoisonBarb/pStone (unported families — the
+            // AcceleratePoisons infliction is `melee_on_hit.rs`,
+            // `:6536-6539`).
+            6185 => self.catalyst_band = true,
             // Hive Pack 3333 (`:15344-15347`): `strongBees`.
             3333 => self.strong_bees = true,
             // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
@@ -4632,6 +4660,12 @@ impl Player {
         self.space_gun = false;
         self.shadow_armor = false;
         self.frost_burn = false;
+        // S1-P-i10 — `ResetEffects`' on-hit accessory flag clears
+        // (`Player.cs:18608` catalystBand, `:18610` magmaStone): the
+        // `apply_equip_functional` arms (1322/1343/6178/6185) re-grant
+        // them per tick from the worn slots.
+        self.magma_stone = false;
+        self.catalyst_band = false;
         self.crimson_regen = false;
         self.vampire_burning_in_sunlight = false;
         self.gills = false;
@@ -9278,6 +9312,48 @@ mod tests {
         p.equipped[3] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.acc_sentry_backpack, "the flag clears");
+    }
+
+    /// S1-P-i10 — the melee on-hit accessory flags
+    /// (`ApplyEquipFunctional`, `Player.cs:15336-15339` Magma Stone 1322,
+    /// `:14580-14583` Pyroclast 6178, `:15306-15314` Fire Gauntlet 1343,
+    /// `:14615-14619` Catalyst Band 6185). `ResetEffects` clears both
+    /// flags every tick (`:18608`/`:18610`), so taking the accessory off
+    /// drops them.
+    #[test]
+    fn s1_p_i10_the_on_hit_accessories_grant_and_clear_their_flags() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.magma_stone && !p.catalyst_band, "nothing worn");
+        // The Magma Stone (1322): the bare flag.
+        p.equipped[3] = 1322;
+        p.update(&w, PlayerInput::default());
+        assert!(p.magma_stone, "1322 grants magmaStone (:15338)");
+        assert!(!p.catalyst_band);
+        // The Pyroclast (6178): the same flag (its accPyroclast half is
+        // an unported projectile family).
+        p.equipped[3] = 6178;
+        p.update(&w, PlayerInput::default());
+        assert!(p.magma_stone, "6178 grants magmaStone (:14581)");
+        // The Fire Gauntlet (1343): the flag through the combat-family
+        // grant path (`accessory_combat.rs::fire_gauntlet`).
+        p.equipped[3] = 1343;
+        p.update(&w, PlayerInput::default());
+        assert!(p.magma_stone, "1343 grants magmaStone (:15313)");
+        // Taking it off clears the flag (ResetEffects `:18610`).
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.magma_stone, "the flag clears");
+        // The Catalyst Band (6185): catalystBand (its accPoisonBarb /
+        // pStone halves are unported families).
+        p.equipped[3] = 6185;
+        p.update(&w, PlayerInput::default());
+        assert!(p.catalyst_band, "6185 grants catalystBand (:14618)");
+        assert!(!p.magma_stone);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.catalyst_band, "the flag clears (:18608)");
     }
 
     /// S1-D-4b-2 — the DD2 sentry armor sets' flags (`ArmorSetBonuses.Benefits`,
