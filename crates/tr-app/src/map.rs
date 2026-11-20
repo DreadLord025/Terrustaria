@@ -6,8 +6,8 @@
 use glam::Vec2;
 use tr_core::lighting::LightMap;
 use tr_core::map::{
-    MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect, unlock_map_section,
-    unlock_map_tile_pretty, update_map_lighting, update_type,
+    MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect, section_rect,
+    unlock_map_section, unlock_map_tile_pretty, update_map_lighting, update_type,
 };
 use tr_core::{TILE_PX, World};
 use tr_render::SpriteRenderer;
@@ -445,16 +445,25 @@ impl WorldMap {
         }
     }
 
-    /// Reveals 4x/second from `light` — the `LightingEngine.ExportToMiniMap`
-    /// rect (`LightingEngine.cs:246-262`): the engine's processed area
-    /// shrunk 28 px on every side, intersected with the world bounds inset
-    /// 40 and the scene area (`MapHelper.sceneArea`,
-    /// `MapHelper.cs:1819` = the player tile centre's
-    /// `SceneMetrics.ZoneScanSize` box — `SceneMetrics.cs:917-919`'s
-    /// 1920x1200 / 16 + the 25 px padding). The port used to reveal a fixed
-    /// player-centred 75x47 box (the audit's D10) — a smaller, trail-prone
-    /// window than the vanilla's view-derived one.
-    pub fn update(&mut self, world: &World, player: Option<&Player>, light: &LightMap, dt: f32) {
+    /// Reveals from `light` on the `mapTime` cadence — the
+    /// `LightingEngine.ExportToMiniMap` rect (`LightingEngine.cs:246-270`):
+    /// the engine's processed area shrunk 28 tiles on every side, intersected
+    /// with the world bounds inset 40 and the scene area
+    /// (`MapHelper.sceneArea`, `MapHelper.CaptureSceneState`,
+    /// `MapHelper.cs:1819` = `Utils.CenteredRectangle(TileCenter,
+    /// ZoneScanSize)` — the 169x124 box, `SceneMetrics.cs:917-919`'s
+    /// 1920x1200 / 16 + the 25 px padding - 1). All three rects are
+    /// HALF-OPEN (`Rectangle.Intersect`, XNA): the old inclusive walk
+    /// revealed one extra column/row past every edge (W4-e18).
+    /// `map_enabled` is `Main.mapEnabled`, the export's first gate (`:248`).
+    pub fn update(
+        &mut self,
+        world: &World,
+        player: Option<&Player>,
+        light: &LightMap,
+        map_enabled: bool,
+        dt: f32,
+    ) {
         let _ = dt;
         // `Main.cs:61818-61821` — the C# decrements `mapTime` once per frame;
         // `ExportToMiniMap` (`LightingEngine.cs:246-270`) is what the legacy
@@ -468,6 +477,10 @@ impl WorldMap {
             return;
         }
         self.map_time = self.map_time_max;
+        // `LightingEngine.cs:248`: `!Main.mapEnabled || processed area empty`.
+        if !map_enabled || light.w <= 0 || light.h <= 0 {
+            return;
+        }
         // `:256`: `MapHelper.sceneArea` is the scene-metrics scan's
         // player-centred box — its C# static defaults to `Rectangle.Empty`,
         // so without a scan (no player) the intersect is empty and nothing
@@ -475,27 +488,38 @@ impl WorldMap {
         let Some(p) = player else {
             return;
         };
-        // `LightingEngine.cs:252`: the processed area minus 28 px per side.
+        // `LightingEngine.cs:252`: the processed area minus 28 tiles per side
+        // (`Rectangle(X + 28, Y + 28, W - 56, H - 56)` — half-open edges).
         let (ax, ay, aw, ah) = (light.x0, light.y0, light.w, light.h);
         let mut x0 = ax + 28;
         let mut y0 = ay + 28;
         let mut x1 = ax + aw - 28;
         let mut y1 = ay + ah - 28;
-        // `:253-255`: the world bounds inset 40.
+        // `:253-255`: `Rectangle(0, 0, maxX, maxY).Inflate(-40, -40)` —
+        // the half-open world rect [40, maxX - 40) x [40, maxY - 40).
         x0 = x0.max(40);
         y0 = y0.max(40);
         x1 = x1.min(world.width - 40);
         y1 = y1.min(world.height - 40);
-        // The player tile centre's 169x124 zone-scan box
-        // (`SceneMetrics.cs:919`'s `ZoneScanSize`).
-        let cx = (p.x / TILE_PX) as i32;
-        let cy = (p.y / TILE_PX) as i32;
-        let (hw, hh) = (169 / 2, 124 / 2);
-        x0 = x0.max(cx - hw);
-        y0 = y0.max(cy - hh);
-        x1 = x1.min(cx + hw);
-        y1 = y1.min(cy + hh);
-        if x0 > x1 || y0 > y1 {
+        // `MapHelper.cs:1819`: `CenteredRectangle(metrics.TileCenter,
+        // ZoneScanSize)` (`Utils.cs:952-955`, the Point overload — integer
+        // halves, size kept whole). `TileCenter` is the scan centre's
+        // `ToTileCoordinates().ClampedInWorld()` (`SceneMetrics.cs:333`):
+        // `(int)v >> 4` (`Utils.cs:1807-1810`) of the player CENTRE
+        // (`Main.cs:62534`), both axes clamped to `maxTilesX - 1` — the
+        // vanilla Y clamp reads `maxTilesX` too (`Utils.cs:1855-1858`,
+        // latent bug pinned in `scene_scan.rs`'s `scan_scene_full`).
+        let (zw, zh) = tr_core::scene::ZONE_SCAN_SIZE;
+        let cx = ((p.x + crate::player::WIDTH * 0.5) as i32) >> 4;
+        let cy = ((p.y + crate::player::HEIGHT * 0.5) as i32) >> 4;
+        let cx = cx.clamp(0, world.width - 1);
+        let cy = cy.clamp(0, world.width - 1);
+        x0 = x0.max(cx - zw / 2);
+        y0 = y0.max(cy - zh / 2);
+        x1 = x1.min(cx - zw / 2 + zw);
+        y1 = y1.min(cy - zh / 2 + zh);
+        // `Rectangle.Intersect`: an empty overlap has Left >= Right.
+        if x0 >= x1 || y0 >= y1 {
             return;
         }
         let changed = reveal_rect(world, &mut self.tiles, light, x0, y0, x1, y1);
@@ -533,13 +557,11 @@ impl WorldMap {
     /// the rect is the same pixels for one texture sync.
     pub fn unlock_section(&mut self, world: &World, sx: i32, sy: i32, pretty: bool) {
         crate::map::unlock_map_section(world, &mut self.tiles, sx, sy, pretty);
-        // `:111-119` — the same 40 inset clamp the C# applies (nested so a
-        // test-sized world's inverted range cannot panic).
-        let clamp = |v: i32, max: i32| v.clamp(40, (max - 40).max(40));
-        let x0 = clamp(sx * 200, world.width);
-        let x1 = clamp(sx * 200 + 200, world.width);
-        let y0 = clamp(sy * 150, world.height);
-        let y1 = clamp(sy * 150 + 150, world.height);
+        // `:111-119` — the SAME clamped rect the reveal walk used
+        // (`crate::map::section_rect`, the max-first `Utils.Clamp`): the
+        // dirty push cannot drift from the walk (W4-e18; the old duplicate
+        // min-first clamp folded differently on test-sized worlds).
+        let (x0, y0, x1, y1) = section_rect(world, sx, sy);
         for y in y0..y1 {
             for x in x0..x1 {
                 self.dirty.push((x, y));
@@ -1207,17 +1229,17 @@ mod tests {
         // The C# starts `mapTime == 0` (`Main.cs:803`), so the first frame
         // exports and re-arms from the budget (`LegacyLighting.cs:349-373`).
         m.map_time_max = 3;
-        m.update(&world, Some(&p), &light, 0.016);
+        m.update(&world, Some(&p), &light, true, 0.016);
         assert!(m.tiles.iter().any(|t| t.light > 0), "the first frame exports");
         let _ = m.take_dirty();
         // The next three frames only count down.
         for _ in 0..3 {
-            m.update(&world, Some(&p), &light, 0.016);
+            m.update(&world, Some(&p), &light, true, 0.016);
         }
         assert!(m.take_dirty().is_empty(), "nothing exports mid-countdown");
         // The fourth frame hits zero, exports (no new pixels — the map is
         // already fully revealed) and re-arms from the budget.
-        m.update(&world, Some(&p), &light, 0.016);
+        m.update(&world, Some(&p), &light, true, 0.016);
         assert_eq!(
             m.map_time(),
             3,
@@ -1298,7 +1320,7 @@ mod tests {
             &LightParams::default(),
         );
         let mut m = WorldMap::new(&world);
-        m.update(&world, Some(&p), &light, 0.3);
+        m.update(&world, Some(&p), &light, true, 0.3);
         assert!(m.tiles[world.index(px, py)].light > 0);
     }
 
@@ -1307,8 +1329,108 @@ mod tests {
         let world = ground_world();
         let light = LightMap::compute(&world, 0, 0, 63, 127, &LightParams::default());
         let mut m = WorldMap::new(&world);
-        m.update(&world, None, &light, 1.0);
+        m.update(&world, None, &light, true, 1.0);
         assert!(m.tiles.iter().all(|t| t.light == 0));
+    }
+
+    /// W4-e18 witness (written, not run — code-only): the `Main.mapEnabled`
+    /// gate (`LightingEngine.cs:248`) refuses the export even on the export
+    /// frame; the countdown still re-arms (`Main.cs:61818-61821` runs before
+    /// the engine's gate).
+    #[test]
+    fn w4_e18_map_disabled_refuses_the_export() {
+        let world = ground_world();
+        let mut p = Player::spawn(&world);
+        p.x = 100.0 * TILE_PX;
+        let px = (p.x / TILE_PX) as i32;
+        let py = (p.y / TILE_PX) as i32;
+        let light = LightMap::compute(
+            &world,
+            px - 40,
+            py - 30,
+            px + 40,
+            py + 30,
+            &LightParams::default(),
+        );
+        let mut m = WorldMap::new(&world);
+        m.map_time_max = 2;
+        m.update(&world, Some(&p), &light, false, 0.016);
+        assert!(m.tiles.iter().all(|t| t.light == 0), "the gate refuses");
+        assert!(m.take_dirty().is_empty());
+        assert_eq!(m.map_time(), 2, "the countdown re-arms regardless");
+        // Enabling on the next export frame reveals.
+        m.update(&world, Some(&p), &light, false, 0.016);
+        m.update(&world, Some(&p), &light, false, 0.016);
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert!(m.tiles.iter().any(|t| t.light > 0), "enabled exports");
+    }
+
+    /// W4-e18 witness (written, not run — code-only): the scene box is
+    /// `CenteredRectangle(TileCenter, ZoneScanSize)` (`MapHelper.cs:1819`,
+    /// `Utils.cs:952-955`) — the player CENTRE's tile (`Main.cs:62534`,
+    /// `Utils.cs:1807-1810`), the 169x124 box's integer halves 84/62, the
+    /// right/bottom edges exclusive. A player whose centre sits on tile
+    /// (100, 41) reveals inside [16, 185) x [-21, 103) ∩ the 40-inset world
+    /// ∩ the light rect — never at the exclusive edges even when lit.
+    #[test]
+    fn w4_e18_scene_box_is_the_centred_zone_scan_rect() {
+        let world = ground_world();
+        let mut p = Player::spawn(&world);
+        // Centre exactly on tile (100, 41): x + 10 = 1608, y + 21 = 664.
+        p.x = 100.0 * TILE_PX + 8.0 - crate::player::WIDTH * 0.5;
+        p.y = 41.0 * TILE_PX + 8.0 - crate::player::HEIGHT * 0.5;
+        // A light rect wider than the scene box on every side.
+        let light = LightMap::compute(&world, 0, 0, 199, 127, &LightParams::default());
+        let mut m = WorldMap::new(&world);
+        m.update(&world, Some(&p), &light, true, 0.016);
+        // Scene box: cx=100, cy=41 → x [16, 185), y [-21, 103); the world
+        // inset 40 trims to x [40, 160), y [40, 88). The processed-area
+        // shrink is [28, 172) x [28, 100) — the intersection is
+        // [40, 160) x [40, 88).
+        assert!(
+            m.tiles[world.index(100, 41)].light > 0,
+            "the centre reveals"
+        );
+        assert_eq!(m.tiles[world.index(39, 41)].light, 0, "the 40 inset");
+        assert_eq!(m.tiles[world.index(160, 41)].light, 0, "the world inset x1");
+        assert_eq!(m.tiles[world.index(100, 88)].light, 0, "the world inset y1");
+        // The dirty list stays inside the half-open intersection.
+        let dirty = m.take_dirty();
+        assert!(!dirty.is_empty());
+        for (x, y) in dirty {
+            assert!((40..160).contains(&x), "dirty x {x} outside the window");
+            assert!((40..88).contains(&y), "dirty y {y} outside the window");
+        }
+    }
+
+    /// W4-e18 witness (written, not run — code-only): the dirty-rect push
+    /// shares `section_rect` with the reveal walk (`WorldMap.cs:111-119`,
+    /// the max-first `Utils.Clamp`, `Utils.cs:223-234`) — on a world smaller
+    /// than the 40 inset the max-first clamp inverts the range
+    /// (x0 = 40 > x1 = max - 40), so the section walks and pushes nothing.
+    #[test]
+    fn w4_e18_unlock_section_dirty_rect_shares_the_fold() {
+        // 60x60 < 80: x0 clamps to 40 (min), x1 to 20 (max) → inverted, empty.
+        let world = World::new("tiny".into(), 60, 60);
+        let mut m = WorldMap::new(&world);
+        m.unlock_section(&world, 0, 0, false);
+        assert!(m.tiles.iter().all(|t| t.light == 0), "the folded rect is empty");
+        assert!(m.take_dirty().is_empty(), "nothing pushed");
+        // A normal-sized section: the push covers exactly the clamped rect.
+        let world = ground_world(); // 200x128
+        let mut m = WorldMap::new(&world);
+        m.unlock_section(&world, 0, 0, false);
+        // x: [40, 160), y: [40, 88) — the same fold the reveal walk used.
+        let dirty = m.take_dirty();
+        assert_eq!(dirty.len(), 120 * 48);
+        for (x, y) in &dirty {
+            assert!((40..160).contains(x));
+            assert!((40..88).contains(y));
+        }
+        assert!(dirty.contains(&(40, 40)));
+        assert!(dirty.contains(&(159, 87)));
+        assert!(!dirty.contains(&(160, 87)), "x1 exclusive");
+        assert!(!dirty.contains(&(159, 88)), "y1 exclusive");
     }
 
     // ---- Task 6b: fullscreen zoom / pan / minimap geometry ----

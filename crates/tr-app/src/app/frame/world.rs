@@ -543,7 +543,15 @@ impl App {
         // `ExportToMiniMap` countdown lives inside `WorldMap::update`.
         m.tick_map_time();
     } else {
-        m.update(&self.world, self.player.as_ref(), &self.light, dt);
+        // `Main.mapEnabled` — the export's first gate
+        // (`LightingEngine.cs:248`).
+        m.update(
+            &self.world,
+            self.player.as_ref(),
+            &self.light,
+            self.settings.map_enabled,
+            dt,
+        );
     }
     // `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:36-39`):
     // the markers older than 15 s drop while the map is up.
