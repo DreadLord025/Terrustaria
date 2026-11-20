@@ -12371,8 +12371,22 @@ impl Npc {
                 self.vy = 0.0;
                 self.facing = dir2 as i32;
                 self.sprite_dir = self.facing;
-                self.wants_hostile_shot
-                    .push((687u16, cx, cy, self.vx, self.vy, 35));
+                // `NPC.cs:62026` — `NewProjectile(..., 687, num3, 0f,
+                // Main.myPlayer, 0f, base.whoAmI)`: ai1 names the breathing
+                // NPC (the aiStyle-136 arm anchors to it), so the payload
+                // rides the ai-shot list (the deathray precedent). The C#
+                // passes the CENTRE; the drain converts to the top-left.
+                self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                    kind: 687u16,
+                    x: cx,
+                    y: cy,
+                    vx: self.vx,
+                    vy: self.vy,
+                    damage: 35,
+                    ai0: 0.0,
+                    ai1: self.slot as f32,
+                    scale: None,
+                });
             } else if self.ai[1] >= 40.0 && (pcx - cx).abs() > 550.0 && self.vx.abs() < 20.0 {
                 self.vx += self.vx.signum() * 0.5;
             }

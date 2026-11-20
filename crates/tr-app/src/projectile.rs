@@ -19002,6 +19002,104 @@ impl ProjectilePool {
                                 self.slots[i].dd2_sentry_step(world);
                             }
                         }
+                        136 => {
+                            // `AI_136_BetsyBreath` (`Projectile.cs:68789-68852`):
+                            // Betsy's breath (687), W4-d14. The C# order: the
+                            // ai[1] host-index guard, the host-anchored centre +
+                            // rotation, the three PlotTileLine light casts
+                            // (SKIPPED — no pool light layer, the aiStyle-139
+                            // precedent), the 3-dust head plume while the tail
+                            // is still at 0, the 1-in-5 gore roll, the per-tick
+                            // 31 dust along the beam, then frameCounter++ /
+                            // ai[0]++ and the 78-tick kill.
+                            //
+                            // RNG (the pass's `UpdateProjectiles` stream, the
+                            // celeb2 census convention): the head plume draws
+                            // `NextFloatDirection` + `NextFloat` per dust
+                            // (`:68819`); the gore gate is `Next(5)` FIRST in
+                            // the `&&` (`:68826`), and the taken branch draws
+                            // the `RandomVector2` pair (`:68828`, Utils.cs:
+                            // 2431-2434 — two NextDoubles), the `61 + Next(3)`
+                            // type, then the NewGore kicks `Next(10,31)` /
+                            // `Next(-20,21)` (Gore.cs:1327-1328); the beam dust
+                            // draws `NextFloatDirection` + `NextFloat` +
+                            // the lerp `NextFloat` (`:68837`/`:68842`). The
+                            // dust/gore bodies are SKIPPED (no draw layer).
+                            let host_index = self.slots[i].ai[1];
+                            // `:68791-68795` — `ai[1] < 0 || > Main.maxNPCs`
+                            // kills (maxNPCs = 200, InitData.cs:9). The port's
+                            // NPC vec is compacted, so an index past its end
+                            // kills too (the deathray's `npcs.get` precedent).
+                            let host = if host_index < 0.0 || host_index > 200.0 {
+                                None
+                            } else {
+                                npcs.get(host_index as usize)
+                            };
+                            if let Some(host) = host {
+                                let host_center = npc_center(host);
+                                let host_vel = Vec2::new(host.vx, host.vy);
+                                // `:68797` — Centre = host.Centre + ((110 - 8)
+                                // * spriteDirection, 30).RotatedBy(rotation).
+                                let anchor = host_center
+                                    + rotate(
+                                        Vec2::new(102.0 * host.sprite_dir as f32, 30.0),
+                                        host.rotation,
+                                    );
+                                let p = &mut self.slots[i];
+                                p.pos = anchor - Vec2::new(p.w * 0.5, p.h * 0.5);
+                                // `:68798` — rotation = host.DirectionTo
+                                // (Centre).ToRotation() (Entity.cs:205-208).
+                                let aim = safe_normalize(anchor - host_center);
+                                p.rot = aim.y.atan2(aim.x);
+                                // `:68800-68809` — the head/tail envelopes.
+                                let num = (p.ai[0] / 40.0).min(1.0);
+                                let num2 = ((p.ai[0] - 38.0) / 40.0).max(0.0);
+                                // `:68810-68812` — the three light casts:
+                                // skipped (no pool light layer).
+                                let _dir = rotation_vector(p.rot);
+                                // `:68813-68825` — the head plume.
+                                if num2 == 0.0 && num > 0.1 {
+                                    for _ in 0..3 {
+                                        // `:68819` — spread + speed draws.
+                                        let _spread = rng.next_float() * 2.0 - 1.0;
+                                        let _speed = rng.next_float();
+                                    }
+                                }
+                                // `:68826-68831` — the gore roll: `Next(5)` is
+                                // drawn every tick (the `&&`'s left operand).
+                                if rng.next_range(0, 5) == 0 && p.ai[0] >= 15.0 {
+                                    let _ = rng.next_double(); // RandomVector2 X
+                                    let _ = rng.next_double(); // RandomVector2 Y
+                                    let _ = rng.next_range(0, 3); // 61+Next(3)
+                                    let _ = rng.next_range(10, 31); // gore Y kick
+                                    let _ = rng.next_range(-20, 21); // gore X kick
+                                }
+                                // `:68832-68845` — the one beam dust (the
+                                // `j < 1` loop runs exactly once).
+                                let _spread = rng.next_float() * 2.0 - 1.0; // `:68837`
+                                let _speed = rng.next_float();
+                                let _lerp = rng.next_float(); // `:68842` num3
+                                // `:68846-68851` — the frame counter, the age
+                                // and the 78-tick kill.
+                                p.frame_counter += 1;
+                                p.ai[0] += 1.0;
+                                let dead = p.ai[0] >= 78.0;
+                                let _ = host_vel; // the dust bodies' vel add
+                                if dead {
+                                    self.kill(i);
+                                } else {
+                                    // `HandleMovement`: 687 keeps
+                                    // `tileCollide = true` (`:7315-7324`
+                                    // writes no override) and is not on the
+                                    // DD2 blocked-move list (`:17986`) — the
+                                    // generic tile-hit movement runs (the
+                                    // aiStyle-131 kill_step precedent).
+                                    self.slots[i].kill_step(world);
+                                }
+                            } else {
+                                self.kill(i);
+                            }
+                        }
                         137 => {
                             // `AI_137_LightningAura` (`Projectile.cs:68854-69023`):
                             // the DD2 Lightning Aura sentry (688/689/690). The
@@ -31085,7 +31183,7 @@ mod widened_state_tests {
     /// sweep lives here rather than over `0..2048`. The rows whose C#
     /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
     /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
-    const BASELINE_ROWS: [u16; 39] = [
+    const BASELINE_ROWS: [u16; 37] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -31128,8 +31226,8 @@ mod widened_state_tests {
         DD2_SPEAR,
         DD2_SPEAR_T3,
         DD2_BOMB,
-        BETSY_BREATH,
-        BETSY_FIREBALL,
+        // W4-d14 / f19 F5: 686/687 write `alpha = 255` (`Projectile.cs
+        // :7310`/`:7320`) — both leave the reset sweep.
     ];
 
     fn world() -> World {
@@ -44382,5 +44480,167 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+/// W4-d14 — aiStyle 136 (`AI_136_BetsyBreath`, `Projectile.cs:68789-68852`)
+/// + the f19 F5 row corrections (687/686). Code-only round: the witnesses
+/// are WRITTEN NOT RUN (no compiler on this branch); each assertion is
+/// re-derived from the cited C# block by hand arithmetic.
+#[cfg(test)]
+mod w4_d14_betsy_breath_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 300, 200)
+    }
+
+    /// A breathing Betsy at (1600, 800), facing right, no rotation — the
+    /// anchor is then host.Centre + (102, 30) exactly.
+    fn betsy() -> Npc {
+        let mut n = Npc::new(NpcKind::DD2Betsy, 1600.0, 800.0, 1, 0.0);
+        n.hp = 1000;
+        n.max_hp = 1000;
+        n.sprite_dir = 1;
+        n.rotation = 0.0;
+        n.vx = 10.0;
+        n.vy = 0.0;
+        n
+    }
+
+    fn breath(pool: &mut ProjectilePool, ai1: f32) -> usize {
+        pool.spawn_hostile_ai_owned(
+            BETSY_BREATH,
+            0,
+            Vec2::new(1600.0, 800.0),
+            Vec2::new(10.0, 0.0),
+            35,
+            0.0,
+            0.0,
+            ai1,
+        )
+        .expect("a free slot")
+    }
+
+    fn tick(
+        pool: &mut ProjectilePool,
+        w: &mut World,
+        npcs: &mut [Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            true,
+        );
+    }
+
+    /// f19 F5 — the corrected `SetDefaults` rows (`Projectile.cs:7305-7324`).
+    #[test]
+    fn f5_the_687_and_686_rows_match_set_defaults() {
+        let b = proj_data(BETSY_BREATH).expect("the 687 row");
+        assert_eq!((b.w, b.h), (30.0, 30.0), ":7317-7318");
+        assert_eq!(b.ai_style, 136, ":7319 — NOT the old aiStyle 1");
+        assert_eq!(b.alpha, 255, ":7320");
+        assert_eq!(b.penetrate, -1, ":7321");
+        assert_eq!(b.extra_updates, 0, "the stock 0 — the old 1 deviated");
+        assert!(b.tile_collide, "the stock true (`:775`) — no override");
+        assert_eq!(b.time_left, 3600, "the stock 3600 (`:787`)");
+        let f = proj_data(BETSY_FIREBALL).expect("the 686 row");
+        assert_eq!((f.w, f.h), (30.0, 30.0), ":7307-7308 — NOT 22x22");
+        assert_eq!(f.ai_style, 1, ":7309");
+        assert_eq!(f.alpha, 255, ":7310");
+        assert_eq!(f.penetrate, -1, ":7311");
+    }
+
+    /// The host anchor (`:68797-68798`): Centre = host.Centre +
+    /// (102·spriteDirection, 30).RotatedBy(host.rotation); the rotation is
+    /// the host→Centre heading. The age/frame counters advance (`:68846-
+    /// 68847`), and the plume/gore/beam draws land in the C# order.
+    #[test]
+    fn the_breath_anchors_to_its_host_and_counts() {
+        let mut w = air();
+        let mut pool = ProjectilePool::new();
+        let mut npcs = [betsy()];
+        let slot = breath(&mut pool, 0.0);
+        // ai[0] = 20: num = 0.5 > 0.1 and num2 = 0 → the 3-dust head plume
+        // runs; the gore gate rolls Next(5) and 20 >= 15, so a 0 roll
+        // takes the gore branch too.
+        pool.slots_mut()[slot].ai[0] = 20.0;
+        struct R {
+            ranges: Vec<(i32, i32)>,
+            floats: usize,
+            doubles: usize,
+        }
+        impl tr_core::loot::DropRng for R {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                self.floats += 1;
+                0.0
+            }
+            fn next_double(&mut self) -> f64 {
+                self.doubles += 1;
+                0.0
+            }
+        }
+        let mut rng = R { ranges: Vec::new(), floats: 0, doubles: 0 };
+        tick(&mut pool, &mut w, &mut npcs, &mut rng);
+        let p = &pool.slots()[slot];
+        let hc = npc_center(&npcs[0]);
+        let anchor = hc + Vec2::new(102.0, 30.0);
+        let c = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        // kill_step adds the (10, 0) velocity AFTER the anchor write.
+        assert!((c - (anchor + Vec2::new(10.0, 0.0))).length() < 1e-3);
+        assert!((p.rot - (30.0f32).atan2(102.0)).abs() < 1e-5, ":68798");
+        assert_eq!(p.ai[0], 21.0, ":68847");
+        assert_eq!(p.frame_counter, 1, ":68846");
+        // Draw census: plume 3×(direction+speed) = 6 floats, gore gate
+        // Next(5)=0 taken (ai0 20 >= 15): RandomVector2's 2 doubles + the
+        // 61+Next(3) type + the two NewGore kicks, then the beam dust's
+        // 3 floats (direction, speed, lerp).
+        assert_eq!(rng.floats, 9, "6 plume + 3 beam");
+        assert_eq!(rng.doubles, 2, "RandomVector2 (Utils.cs:2431-2434)");
+        assert_eq!(rng.ranges, [(0, 5), (0, 3), (10, 31), (-20, 21)]);
+    }
+
+    /// The ai[1] guard (`:68791-68795`): a negative index or one past
+    /// Main.maxNPCs (200) kills; the compacted-vec miss kills too.
+    #[test]
+    fn the_host_guard_kills_on_a_bad_index() {
+        for ai1 in [-1.0f32, 201.0, 5.0] {
+            let mut w = air();
+            let mut pool = ProjectilePool::new();
+            let mut npcs = [betsy()];
+            let slot = breath(&mut pool, ai1);
+            tick(&mut pool, &mut w, &mut npcs, &mut tr_core::tile_light::FastRandom::new(1));
+            assert!(!pool.slots()[slot].active, "ai1 {ai1} kills");
+        }
+    }
+
+    /// The 78-tick lifetime (`:68848-68851`): the 78th ai[0]++ kills.
+    #[test]
+    fn the_breath_dies_at_seventy_eight() {
+        let mut w = air();
+        let mut pool = ProjectilePool::new();
+        let mut npcs = [betsy()];
+        let slot = breath(&mut pool, 0.0);
+        let mut rng = tr_core::tile_light::FastRandom::new(3);
+        for i in 1..=77 {
+            tick(&mut pool, &mut w, &mut npcs, &mut rng);
+            assert!(pool.slots()[slot].active, "tick {i} lives");
+            assert_eq!(pool.slots()[slot].ai[0], i as f32);
+        }
+        tick(&mut pool, &mut w, &mut npcs, &mut rng);
+        assert!(!pool.slots()[slot].active, "ai[0] = 78 kills (:68848)");
     }
 }

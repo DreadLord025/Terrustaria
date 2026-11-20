@@ -356,7 +356,9 @@ pub const DARK_MAGE_MARKER: u16 = 673;
 /// (`Projectile.cs:7221-7230`: 10x10, aiStyle 1, alpha 255, penetrate -1).
 pub const DARK_MAGE_FLAME: u16 = 675;
 /// `ProjectileID.DD2BetsyBreath` (687) — Betsy's breath
-/// (`AI_110`'s `NewProjectile(..., 687, 35, ...)`).
+/// (`Projectile.cs:7315-7324`: 30x30, aiStyle 136, alpha 255, penetrate -1,
+/// hostile; the spawn is `NPC.cs:62026`'s `NewProjectile(..., 687, num3,
+/// 0f, Main.myPlayer, 0f, base.whoAmI)` — ai1 names the breathing NPC).
 // --- the whip family (M4-PROJ-7): `ProjectileID.Sets.IsAWhip`
 // (`ProjectileID.cs:193`) — the 18 kinds, all `DefaultToWhip()`'s slice
 // (`Projectile.cs:10704-10718`: 18x18, aiStyle 165, penetrate -1,
@@ -2605,25 +2607,31 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
-            // Betsy's breath 687 (`Projectile.cs`'s SetDefaults row: the
-            // aiStyle-1 breath flight).
+            // Betsy's breath 687 (`Projectile.cs:7315-7324`): 30x30, aiStyle
+            // 136 (`AI_136_BetsyBreath` `:68789-68852`), alpha 255, penetrate
+            // -1, hostile. The stock `tileCollide = true` (`:775`),
+            // extraUpdates 0 and timeLeft 3600 (`:787`) stand — the arm
+            // writes NO override. W4-d14 / f19 F5: the old 12x12 aiStyle-1
+            // extraUpdates-1 row deviated on every axis.
             BETSY_BREATH => (
-                12.0,
-                12.0,
-                1,
+                30.0,
+                30.0,
+                136,
                 -1,
                 TIME_LEFT_DEFAULT,
-                1,
+                0,
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
-            // Betsy's fireball 686 (`AI_110`'s `NewProjectile(..., 686, 35,
-            // ...)` — the 1500-px leaping shot).
+            // Betsy's fireball 686 (`Projectile.cs:7305-7314`): 30x30,
+            // aiStyle 1 (the slice-B `AI_001` ladder), alpha 255, penetrate
+            // -1, hostile. The stock tileCollide/timeLeft/extraUpdates stand.
+            // W4-d14 / f19 F5: the box was 22x22 and the alpha reset 0.
             BETSY_FIREBALL => (
-                22.0,
-                22.0,
+                30.0,
+                30.0,
                 1,
                 -1,
                 TIME_LEFT_DEFAULT,
@@ -2631,7 +2639,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // --- The magic (caster) families (M4-PROJ-6, in `ProjectileID`
             // order) --- the aiStyle declaration is what Phases 3-4 need; the

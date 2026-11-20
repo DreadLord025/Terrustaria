@@ -5945,9 +5945,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
     for shot in ai_shots {
-        let slot = app.projectiles.spawn_hostile_ai(
+        // W4-d14: Betsy's breath (`NPC.cs:62026`) passes `Owner:
+        // Main.myPlayer` (the deathray precedent — owner 255 would leave
+        // the aiStyle-136 arm unsimulated on a client) and the CENTRE (the
+        // `NewProjectile` box-centring `Projectile.cs:10876-10877`); the
+        // other payload shots keep the stock 255-owner/top-left shape.
+        let (owner, x, y) = if shot.kind == crate::projectile::BETSY_BREATH {
+            let d = crate::projectile::proj_data(shot.kind).expect("the rowed breath");
+            (app.local_id as u8, shot.x - d.w * 0.5, shot.y - d.h * 0.5)
+        } else {
+            (255, shot.x, shot.y)
+        };
+        let slot = app.projectiles.spawn_hostile_ai_owned(
             shot.kind,
-            Vec2::new(shot.x, shot.y),
+            owner,
+            Vec2::new(x, y),
             Vec2::new(shot.vx, shot.vy),
             shot.damage,
             0.0,
