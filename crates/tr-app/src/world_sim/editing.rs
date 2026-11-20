@@ -6125,15 +6125,14 @@ mod tests {
         let plain = run(false);
         let remix = run(true);
         assert_eq!(plain, 60, "a plain world drains every snowball");
-        // The mirror: per shot the remix arm's `Next(2)` (save on 0) then the
-        // wire's crit draw `next_range(1, 101)` (`crit_roll`, the shot fires
-        // whether or not the ammo drained) — the chain's exact draw sequence
-        // for this shooter (its only roll arm).
+        // The mirror: per shot the remix arm's `Next(2)` (save on 0) is the
+        // shooter's ONLY `UpdatePlayers` draw — the crit rolls per-hit on
+        // `UpdateProjectiles` (S1-P-i11's spawn→hit move; the gate dropped
+        // the wire's old throw-time `crit_roll` from this mirror).
         let mut mirror = tr_core::UnifiedRandom::new(0x5190_0519);
         let drains = (0..60)
             .filter(|_| {
                 let saved = mirror.next_max(2) == 0;
-                let _crit = mirror.next_range(1, 101);
                 !saved
             })
             .count();
