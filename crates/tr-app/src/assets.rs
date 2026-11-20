@@ -186,6 +186,24 @@ pub fn load_world_sheets(
     .flatten()
     .filter(|&id| id >= 0)
     .collect();
+    // W4-g70: the four forest sets' own sheets (`SetForestBGSet` ids — tree
+    // lines AND hills). The animated hill families (94/114-116, 180-183) and
+    // the far-row swaps (168-170) are packed whole so the update-side
+    // animation can swap ids without a re-pack; the 173 tree line's four
+    // draw-time frames (251..254, `Main.cs:61371-61376`) ride along too.
+    for n in 0..4 {
+        let (mnt, tree) = world.forest_bg(n);
+        bg_ids.extend(mnt.into_iter().chain(tree).filter(|&id| id >= 0));
+        if mnt[1] == 94 {
+            bg_ids.extend([114, 115, 116, 168, 169, 170]);
+        }
+        if (180..=183).contains(&mnt[1]) {
+            bg_ids.extend([181, 182, 183]);
+        }
+        if tree[0] == 173 {
+            bg_ids.extend([251, 252, 253, 254]);
+        }
+    }
     bg_ids.sort_unstable();
     bg_ids.dedup();
     let bg_images: Vec<(i32, Result<AtlasImage>)> = bg_ids

@@ -207,6 +207,8 @@ impl App {
                     sky,
                     bg_alpha_front,
                     bg_alpha_far,
+                    forest_hills,
+                    bg_flash,
                     stars,
                     player_assets,
                     player,
@@ -1091,6 +1093,8 @@ impl App {
                         self.atmo,
                         self.game_update_count,
                         self.mouse_text_color,
+                        &*forest_hills,
+                        std::array::from_fn(|n| bg_flash.get_flash_power(n)),
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.

@@ -1178,6 +1178,175 @@ pub(crate) fn front_layers(
     })
 }
 
+/// `Main.DrawSurfaceBG_Forest` (`Main.cs:61273-61519`) for one of the four
+/// tree sets: the three rows with every per-id quirk in the C#'s order —
+/// the row-0 scale/parallax overrides (`:61278-61301`), the row-0 top
+/// rewrites + nudges (`:61311-61358`), the row-1/row-2 top rewrites + nudges
+/// (`:61399-61436`, `:61473-61510`), the row-1 mirror on 51/54 (`:61440`)
+/// and the row-2 `ids[0] == 91` scale/parallax drop (`:61457-61462`).
+/// `ids[0] == 173` swaps row 0's DRAWN sheet to the animated 251..254 frame
+/// (`:61371-61376`) while every offset/rect read keeps id 173 — the caller
+/// passes that resolved frame as `frame_173`.
+pub(crate) fn forest_layers(
+    ids: [i32; 3],
+    texs: [Option<BgTex>; 3],
+    hack: f32,
+    frame_173: Option<BgTex>,
+) -> [FrontLayer; 3] {
+    // The C#'s per-row write order is NOT the other biomes' (`front_layers`):
+    // row 0 runs `SetBackgroundOffsets` at `:61302`, multiplies by 2 at
+    // `:61303`, then runs it AGAIN at `:61307` with no re-multiply — a tabled
+    // id's scale ends UN-multiplied. Rows 1/2 multiply FIRST (`:61389`,
+    // `:61453`) and call the offsets once after (`:61391`, `:61455`), so
+    // their tabled scales are un-multiplied too.
+    let row = |i: usize, scale: f32, parallax: f32, k: f32, top: f32| FrontLayer {
+        tex: texs[i],
+        scale,
+        parallax,
+        k,
+        top: top + hack,
+        depth: 1.0 / parallax,
+        flip: false,
+        x_shift: 0.0,
+        extra: 0,
+        frame_step: background_frame_step(ids[i]),
+        tint: None,
+    };
+    let mut rows = [
+        row(0, 1.25, 0.40, 1800.0, 1500.0),
+        row(1, 1.31 * 2.0, 0.43, 1950.0, 1750.0),
+        row(2, 1.34 * 2.0, 0.49, 2100.0, 2000.0),
+    ];
+    // Row 0's pre-offset overrides (`Main.cs:61278-61301`), on the
+    // un-multiplied scale.
+    match ids[0] {
+        91 => {
+            rows[0].parallax = 0.27;
+            rows[0].scale = 1.2;
+        }
+        173 => {
+            rows[0].parallax = 0.25;
+            rows[0].scale = 1.3;
+        }
+        178 => {
+            rows[0].parallax = 0.30;
+            rows[0].scale = 1.2;
+        }
+        184 => {
+            rows[0].parallax = 0.25;
+            rows[0].scale = 1.2;
+        }
+        282 => rows[0].scale = 1.4,
+        _ => {}
+    }
+    // `SetBackgroundOffsets` pass 1 (`:61302`), the ×2 (`:61303`), then pass 2
+    // (`:61307`) — the second pass's scale write wins without a re-multiply.
+    // (282's 1.4 pre-write is dead: its own table entry 2.6 overwrites it.)
+    // `apply_top`: row 0's top survives the offsets (its base write precedes
+    // them, `:61277`); rows 1/2 rewrite `bgTopY` unconditionally AFTER the
+    // call (`:61399`, `:61473`), so their table top pair is dead code.
+    let apply_offsets = |r: &mut FrontLayer, id: i32, apply_top: bool| {
+        if let Some((s, p, num, num2)) = bg_offsets(id) {
+            if let Some(p) = p {
+                r.parallax = p;
+            }
+            if let Some(s) = s {
+                r.scale = s;
+            }
+            if apply_top && (num != 0 || num2 != 0) {
+                r.k = num as f32;
+                r.top = num2 as f32 + hack;
+            }
+        }
+    };
+    apply_offsets(&mut rows[0], ids[0], true);
+    rows[0].scale *= 2.0;
+    apply_offsets(&mut rows[0], ids[0], true);
+    rows[0].depth = 1.0 / rows[0].parallax;
+    // Rows 1/2: the single post-multiply offsets call (`:61391`, `:61455`).
+    apply_offsets(&mut rows[1], ids[1], false);
+    rows[1].depth = 1.0 / rows[1].parallax;
+    apply_offsets(&mut rows[2], ids[2], false);
+    rows[2].depth = 1.0 / rows[2].parallax;
+    // Row 0's post-offset top rewrites + nudges (`Main.cs:61311-61358`).
+    match ids[0] {
+        91 | 173 | 184 => {
+            rows[0].k = 1600.0;
+            rows[0].top = 1400.0 + hack;
+        }
+        _ => {}
+    }
+    rows[0].top += match ids[0] {
+        50 => -50.0,
+        53 => -100.0,
+        91 | 173 => 200.0,
+        178 => 75.0,
+        330 | 335 => -150.0,
+        343 => -300.0,
+        _ => 0.0,
+    };
+    // Row 1 (`Main.cs:61385-61445`): the top rewrites, the nudges, the mirror.
+    match ids[1] {
+        329 => {
+            rows[1].k = 1900.0;
+            rows[1].top = 1600.0 + hack;
+        }
+        334 => {
+            rows[1].k = 1900.0;
+            rows[1].top = 1650.0 + hack;
+        }
+        _ => {}
+    }
+    rows[1].top += match ids[1] {
+        51 => -50.0,
+        54 => -100.0,
+        329 | 334 => -150.0,
+        342 => -300.0,
+        _ => 0.0,
+    };
+    rows[1].flip = ids[1] == 51 || ids[1] == 54;
+    // Row 2 (`Main.cs:61447-61518`): the `ids[0] == 91` drop runs AFTER
+    // `SetBackgroundOffsets` AND after the row's `DrawToDepth` (`:61456`),
+    // so it wins over the table for the X phase but the depth boundary
+    // keeps the pre-drop parallax.
+    if ids[0] == 91 {
+        rows[2].scale = 1.3 * 2.0;
+        rows[2].parallax = 0.42;
+    }
+    match ids[2] {
+        328 => {
+            rows[2].k = 2600.0;
+            rows[2].top = 2300.0 + hack;
+        }
+        333 => {
+            rows[2].k = 2800.0;
+            rows[2].top = 2550.0 + hack;
+        }
+        _ => {}
+    }
+    rows[2].top += match ids[2] {
+        52 => -50.0,
+        55 => -100.0,
+        92 => 150.0,
+        328 | 333 => -150.0,
+        341 => -50.0,
+        _ => 0.0,
+    };
+    // The 173 draw-time sheet swap (`Main.cs:61371-61376`): the frame is
+    // `251 + (GetBackgroundCounter() / 10) % 4`, a whole sheet (no
+    // `GetBackgroundRect` frame — that reads id 173, which has none).
+    if ids[0] == 173 {
+        rows[0].tex = frame_173;
+    }
+    rows
+}
+
+/// The 173 tree line's draw-time frame id (`Main.cs:61373`):
+/// `251 + (GetBackgroundCounter() / 10) % 4`.
+pub(crate) fn forest_173_frame_id(counter: u32) -> i32 {
+    251 + (counter / 10 % 4) as i32
+}
+
 /// The Mushroom chain's per-row colour (`Main.cs:60001-60035` / `:60065-60099` /
 /// `:60127-60157`): each channel lifted to the glow value, kept at or above the
 /// base colour's byte.
@@ -1210,8 +1379,9 @@ pub(crate) fn mushroom_tint(
 /// plus the `num`/`num2` pair that replaces `bgTopY` when non-zero.
 /// Rows the C# does not list return `None` (the caller keeps its own defaults).
 ///
-/// Deliberately absent: the forest tree sets, snow, ocean and underworld ids —
-/// those biomes' style tables are still unported.
+/// Deliberately absent: the snow, ocean and underworld ids — those biomes'
+/// style tables are still unported. The forest tree-set ids ride here since
+/// W4-g70 (styles 9..13; the classic 9..11/50..55 rows have no C# entry).
 #[allow(clippy::type_complexity)]
 pub(crate) fn bg_offsets(id: i32) -> Option<(Option<f32>, Option<f32>, i32, i32)> {
     Some(match id {
@@ -1260,18 +1430,48 @@ pub(crate) fn bg_offsets(id: i32) -> Option<(Option<f32>, Option<f32>, i32, i32)
         255 => (Some(1.15), Some(0.25), 1800, 1450),
         256 => (Some(1.21), Some(0.32), 1950, 1550),
         257 => (Some(1.34), Some(0.40), 2100, 1550),
+        // W4-g70: the forest tree-set ids (`SetForestBGSet` styles 9..13).
+        279 => (Some(2.5), Some(0.35), 1850, 1750),
+        282 => (Some(2.6), Some(0.25), 1800, 1340),
+        328 => (Some(2.01), Some(0.34), 0, 0),
+        329 => (Some(2.29), Some(0.26), 0, 0),
+        330 => (None, Some(0.25), 1750, 1450),
+        333 => (Some(2.01), Some(0.37), 0, 0),
+        334 => (None, Some(0.26), 0, 0),
+        335 => (None, Some(0.22), 1650, 1470),
+        341 => (None, Some(0.30), 0, 0),
+        342 => (None, Some(0.25), 0, 0),
+        343 => (None, Some(0.20), 1650, 1550),
         _ => return None,
     })
 }
 
-/// `Main.DrawSurfaceBG_GetLayerYOffset` (`Main.cs:59740-59797`), reduced to the
-/// ids the five surface-variant styles reach. The rest of the table belongs to
-/// the forest/snow/desert mountain rows and stays unported.
+/// `Main.DrawSurfaceBG_GetLayerYOffset` (`Main.cs:59740-59797`): the
+/// per-texture vertical nudge the mountain passes apply to `bgTopY`.
+/// The rest of the table belongs to the snow/desert mountain rows and
+/// stays unported.
 pub(crate) fn layer_y_offset(id: i32) -> f32 {
     match id {
         59 => -550.0,
+        93 | 168 | 169 | 170 => -50.0,
+        171 => -100.0,
+        172 => 130.0,
+        176 => -760.0,
+        177 => -200.0,
+        179 => -100.0,
+        180 | 181 | 182 | 183 => -350.0,
+        246 | 247 => -150.0,
+        263 => -700.0,
+        269 => -600.0,
+        270 => -50.0,
         271 => -300.0,
         272 => -380.0,
+        277 => -260.0,
+        278 => -120.0,
+        280 => -170.0,
+        281 => -300.0,
+        283 => -800.0,
+        332 | 340 => -25.0,
         _ => 0.0,
     }
 }
@@ -1824,5 +2024,182 @@ mod surface_variant_bg_tests {
         // The cross-fade alpha scales the tint (`num4 = Colour.A / 255`).
         let faded = mushroom_tint(base, 0.25, 0.5, [0.3, 0.45, 0.9], num5);
         assert!(faded[2] < t[2] * 0.3, "faded b = {}", faded[2] * 255.0);
+    }
+}
+
+/// W4-g70: `DrawSurfaceBG_Forest`'s per-id parallax math (`Main.cs:61273-61519`)
+/// and the forest rows of `SetBackgroundOffsets` (`:60536-60770`). The tops
+/// carry the front loop's `pushBGTopHack = -150`. Written, not run.
+#[cfg(test)]
+mod w4_g70_forest_layer_tests {
+    use super::*;
+
+    const HACK: f32 = -150.0;
+
+    fn tex() -> Option<BgTex> {
+        Some(BgTex { uv: [0.0, 0.0, 1.0, 1.0], w: 1024.0, h: 512.0 })
+    }
+
+    /// Style 0 (`[9, 10, 11]`): the plain row bases — scale 1.25/1.31/1.34 x2,
+    /// parallax 0.40/0.43/0.49, tops 1500/1750/2000 minus the 150 hack. The
+    /// row-0 double offsets call is a no-op for untabled ids, so its ×2
+    /// survives (`Main.cs:61302-61307`).
+    #[test]
+    fn style_zero_keeps_the_row_bases() {
+        let rows = forest_layers([9, 10, 11], [tex(); 3], HACK, None);
+        assert!((rows[0].scale - 2.5).abs() < 1e-6);
+        assert_eq!(rows[0].parallax, 0.40);
+        assert_eq!((rows[0].k, rows[0].top), (1800.0, 1350.0));
+        assert!((rows[1].scale - 2.62).abs() < 1e-6);
+        assert_eq!(rows[1].parallax, 0.43);
+        assert_eq!((rows[1].k, rows[1].top), (1950.0, 1600.0));
+        assert!(!rows[1].flip, "only 51/54 mirror");
+        assert!((rows[2].scale - 2.68).abs() < 1e-6);
+        assert_eq!(rows[2].parallax, 0.49);
+        assert_eq!((rows[2].k, rows[2].top), (2100.0, 1850.0));
+        // The DrawToDepth boundaries are 1/parallax per row.
+        assert!((rows[0].depth - 2.5).abs() < 1e-6);
+        assert!((rows[2].depth - 1.0 / 0.49).abs() < 1e-6);
+    }
+
+    /// Style 1 (`[50, 51, 52]`): the -50 nudges on every row and the row-1
+    /// mirror (`Main.cs:61327-61330`, `:61417-61420`, `:61440`, `:61487-61490`).
+    #[test]
+    fn style_one_nudges_fifty_and_mirrors_row_one() {
+        let rows = forest_layers([50, 51, 52], [tex(); 3], HACK, None);
+        assert_eq!(rows[0].top, 1300.0);
+        assert_eq!(rows[1].top, 1550.0);
+        assert!(rows[1].flip);
+        assert_eq!(rows[2].top, 1800.0);
+        assert!(!rows[0].flip && !rows[2].flip);
+    }
+
+    /// Style 3 (`[91, -1, 92]`): row 0 drops to 0.27/1.2 and its top rewrites
+    /// to 1600/1400 then +200; row 2 drops to 0.42/1.3 AFTER the offsets call
+    /// and nudges +150 (`Main.cs:61278-61282`, `:61311-61314`, `:61335-61338`,
+    /// `:61457-61462`, `:61495-61498`).
+    #[test]
+    fn style_91_rewrites_row_zero_and_drops_row_two() {
+        let rows = forest_layers([91, -1, 92], [tex(), None, tex()], HACK, None);
+        assert_eq!(rows[0].parallax, 0.27);
+        assert!((rows[0].scale - 2.4).abs() < 1e-6);
+        assert_eq!((rows[0].k, rows[0].top), (1600.0, 1450.0));
+        assert!(rows[1].tex.is_none(), "-1 draws nothing");
+        assert_eq!(rows[2].parallax, 0.42);
+        assert!((rows[2].scale - 2.6).abs() < 1e-6);
+        assert_eq!((rows[2].k, rows[2].top), (2100.0, 2000.0));
+        // The drop lands AFTER the row's DrawToDepth (`:61456`): the
+        // boundary keeps the pre-drop 0.49, the X phase uses 0.42.
+        assert!((rows[2].depth - 1.0 / 0.49).abs() < 1e-6);
+    }
+
+    /// Style 6 (`[173, -1, -1]`): row 0 is 0.25/1.3, top 1600/1400 +200, and
+    /// the DRAWN sheet is the 251..254 frame the caller resolved
+    /// (`Main.cs:61283-61287`, `:61315-61318`, `:61339-61342`, `:61371-61376`).
+    #[test]
+    fn style_173_swaps_the_drawn_sheet_to_the_frame() {
+        let frame = Some(BgTex { uv: [0.5, 0.5, 1.0, 1.0], w: 100.0, h: 100.0 });
+        let rows = forest_layers([173, -1, -1], [tex(), None, None], HACK, frame);
+        assert_eq!(rows[0].parallax, 0.25);
+        assert!((rows[0].scale - 2.6).abs() < 1e-6);
+        assert_eq!((rows[0].k, rows[0].top), (1600.0, 1450.0));
+        assert_eq!(rows[0].tex, frame);
+        // The frame id ladder: 251 + (counter / 10) % 4 (`Main.cs:61373`).
+        assert_eq!(forest_173_frame_id(0), 251);
+        assert_eq!(forest_173_frame_id(9), 251);
+        assert_eq!(forest_173_frame_id(10), 252);
+        assert_eq!(forest_173_frame_id(39), 254);
+        assert_eq!(forest_173_frame_id(40), 251);
+    }
+
+    /// Style 10 (`[282, -1, -1]`): the 1.4 pre-write is dead — the id's own
+    /// `SetBackgroundOffsets` entry (2.6/0.25, 1800/1340) overwrites it, and
+    /// the second offsets call (`:61307`) lands AFTER the ×2 with no
+    /// re-multiply, so the tabled scale stays 2.6 (`Main.cs:61298-61307`,
+    /// `:60542-60547`).
+    #[test]
+    fn style_282_rides_its_offsets_table_entry() {
+        let rows = forest_layers([282, -1, -1], [tex(), None, None], HACK, None);
+        assert_eq!(rows[0].scale, 2.6);
+        assert_eq!(rows[0].parallax, 0.25);
+        assert_eq!((rows[0].k, rows[0].top), (1800.0, 1190.0));
+    }
+
+    /// Style 11 (`[330, 329, 328]`): row 0's table top 1750/1450 then -150;
+    /// row 1's 1900/1600 rewrite then -150 — its tabled scale 2.29 lands
+    /// after the ×2 un-multiplied; row 2's 2600/2300 rewrite then -150,
+    /// scale 2.01 likewise (`Main.cs:61389-61391`, `:61453-61455`).
+    #[test]
+    fn style_11_rewrites_all_three_rows() {
+        let rows = forest_layers([330, 329, 328], [tex(); 3], HACK, None);
+        assert_eq!(rows[0].parallax, 0.25);
+        assert_eq!((rows[0].k, rows[0].top), (1750.0, 1150.0));
+        assert_eq!(rows[1].scale, 2.29);
+        assert_eq!(rows[1].parallax, 0.26);
+        assert_eq!((rows[1].k, rows[1].top), (1900.0, 1300.0));
+        assert_eq!(rows[2].scale, 2.01);
+        assert_eq!(rows[2].parallax, 0.34);
+        assert_eq!((rows[2].k, rows[2].top), (2600.0, 2000.0));
+    }
+
+    /// Style 13 (`[343, 342, 341]`): row 0 table 1650/1550 then -300; row 1
+    /// parallax 0.25 + -300; row 2 parallax 0.30 + -50 and the 15-tick
+    /// `GetBackgroundRect` frame step (`Main.cs:61249-61253`).
+    #[test]
+    fn style_13_nudges_and_animates_row_two() {
+        let rows = forest_layers([343, 342, 341], [tex(); 3], HACK, None);
+        assert_eq!(rows[0].parallax, 0.20);
+        assert_eq!((rows[0].k, rows[0].top), (1650.0, 1100.0));
+        assert_eq!(rows[1].parallax, 0.25);
+        assert_eq!(rows[1].top, 1300.0);
+        assert_eq!(rows[2].parallax, 0.30);
+        assert_eq!(rows[2].top, 1800.0);
+        assert_eq!(rows[2].frame_step, 15);
+    }
+
+    /// The forest `SetBackgroundOffsets` rows verbatim (`Main.cs:60536-60547`,
+    /// `:60716-60770`): scale/parallax/num/num2, `None` where the C# leaves
+    /// the caller's value.
+    #[test]
+    fn the_forest_offsets_rows_match_the_csharp_switch() {
+        assert_eq!(bg_offsets(279), Some((Some(2.5), Some(0.35), 1850, 1750)));
+        assert_eq!(bg_offsets(282), Some((Some(2.6), Some(0.25), 1800, 1340)));
+        assert_eq!(bg_offsets(328), Some((Some(2.01), Some(0.34), 0, 0)));
+        assert_eq!(bg_offsets(329), Some((Some(2.29), Some(0.26), 0, 0)));
+        assert_eq!(bg_offsets(330), Some((None, Some(0.25), 1750, 1450)));
+        assert_eq!(bg_offsets(333), Some((Some(2.01), Some(0.37), 0, 0)));
+        assert_eq!(bg_offsets(334), Some((None, Some(0.26), 0, 0)));
+        assert_eq!(bg_offsets(335), Some((None, Some(0.22), 1650, 1470)));
+        assert_eq!(bg_offsets(341), Some((None, Some(0.30), 0, 0)));
+        assert_eq!(bg_offsets(342), Some((None, Some(0.25), 0, 0)));
+        assert_eq!(bg_offsets(343), Some((None, Some(0.20), 1650, 1550)));
+        // The classic rows have no entry — the caller's bases survive.
+        assert_eq!(bg_offsets(9), None);
+        assert_eq!(bg_offsets(50), None);
+        assert_eq!(bg_offsets(173), None);
+    }
+
+    /// `GetLayerYOffset`'s forest-hill arms (`Main.cs:59744-59793`).
+    #[test]
+    fn the_hill_y_offsets_match_the_csharp_switch() {
+        assert_eq!(layer_y_offset(7), 0.0);
+        assert_eq!(layer_y_offset(8), 0.0);
+        assert_eq!(layer_y_offset(90), 0.0);
+        assert_eq!(layer_y_offset(93), -50.0);
+        assert_eq!(layer_y_offset(168), -50.0);
+        assert_eq!(layer_y_offset(170), -50.0);
+        assert_eq!(layer_y_offset(171), -100.0);
+        assert_eq!(layer_y_offset(172), 130.0);
+        assert_eq!(layer_y_offset(176), -760.0);
+        assert_eq!(layer_y_offset(177), -200.0);
+        assert_eq!(layer_y_offset(179), -100.0);
+        assert_eq!(layer_y_offset(180), -350.0);
+        assert_eq!(layer_y_offset(183), -350.0);
+        assert_eq!(layer_y_offset(277), -260.0);
+        assert_eq!(layer_y_offset(278), -120.0);
+        assert_eq!(layer_y_offset(280), -170.0);
+        assert_eq!(layer_y_offset(281), -300.0);
+        assert_eq!(layer_y_offset(331), 0.0);
+        assert_eq!(layer_y_offset(336), 0.0);
     }
 }

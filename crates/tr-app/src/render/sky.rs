@@ -3,8 +3,8 @@
 //! underground backdrop it tails into lives in [`super::bg`].
 use super::BgTex;
 use super::bg::{
-    FrontLayer, bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees, front_layers,
-    layer_y_offset, mushroom_tint, push_screen_rot,
+    FrontLayer, bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees,
+    forest_layers, front_layers, layer_y_offset, mushroom_tint, push_screen_rot,
 };
 use crate::app::{next_rand, rand01};
 use crate::assets;
@@ -346,11 +346,6 @@ pub(crate) fn make_clouds(world: &World, lookups: &assets::Lookups) -> Vec<Cloud
 /// which is also what the headless flow tests construct.
 #[derive(Default)]
 pub(crate) struct SkyAssets {
-    /// Forest far/near mountain layers (`Background_7`/`Background_8`).
-    pub(crate) far: Option<BgTex>,
-    pub(crate) near: Option<BgTex>,
-    /// Forest foreground tree line (`Background_50..52`).
-    pub(crate) forest: [Option<BgTex>; 3],
     /// Snow biome: mountains `Background_35/36`, pine line `Background_37..39`.
     pub(crate) snow_far: Option<BgTex>,
     pub(crate) snow_near: Option<BgTex>,
@@ -379,6 +374,21 @@ pub(crate) struct SkyAssets {
     pub(crate) crimson_layers: [Option<BgTex>; 3],
     /// `DrawSurfaceBG_Mushroom` (style 0: `Background_46/47/48`).
     pub(crate) mushroom_layers: [Option<BgTex>; 3],
+    /// W4-g70: the four forest sets' tree lines (`Main.treeBGSet1..4`,
+    /// resolved from `World.forest_bg_styles` through `SetForestBGSet`).
+    /// Set 1 style 0 is the classic `Background_9/10/11` row.
+    pub(crate) forest_sets: [[Option<BgTex>; 3]; 4],
+    /// The four forest sets' hill pairs (`Main.treeMntBGSet1..4` at `setBG`
+    /// time; the live animated ids ride `App.forest_hills` and resolve
+    /// through `forest_mnt_anim` at draw).
+    pub(crate) forest_mnt: [[Option<BgTex>; 2]; 4],
+    /// The animated hill families' sheets, indexed by id: 94/114/115/116
+    /// (near) + 93/168/169/170 (far) and 180..183 (near). `None` when the
+    /// world's styles never reach them (the atlas packs them only then).
+    pub(crate) forest_mnt_anim: std::collections::HashMap<i32, BgTex>,
+    /// The 173 tree line's four draw-time frames (`Background_251..254`,
+    /// `Main.cs:61373`), packed only when a set's row 0 is 173.
+    pub(crate) forest_173_frames: [Option<BgTex>; 4],
     /// `Background_1`: the one-row surface transition into the underground backdrop.
     pub(crate) underground_transition: Option<BgTex>,
     /// `Background_2`: the tiled dirt backdrop (`_drawBackground_backTexture[1]`).
@@ -462,9 +472,6 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
         })
     };
     SkyAssets {
-        far: sky_tex(atlas, "Background_7", None),
-        near: sky_tex(atlas, "Background_8", None),
-        forest: [50, 51, 52].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
         snow_far: sky_tex(atlas, "Background_35", None),
         snow_near: sky_tex(atlas, "Background_36", None),
         snow_trees: [37, 38, 39].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
@@ -480,6 +487,19 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
         hallow_layers: layers(world.hallow_bg()),
         crimson_layers: layers(world.crimson_bg()),
         mushroom_layers: layers(world.mushroom_bg()),
+        forest_sets: std::array::from_fn(|n| layers(world.forest_bg(n).1)),
+        forest_mnt: std::array::from_fn(|n| {
+            world
+                .forest_bg(n)
+                .0
+                .map(|i| sky_tex(atlas, &format!("Background_{i}"), None))
+        }),
+        forest_mnt_anim: [93, 94, 114, 115, 116, 168, 169, 170, 180, 181, 182, 183]
+            .into_iter()
+            .filter_map(|i| sky_tex(atlas, &format!("Background_{i}"), None).map(|t| (i, t)))
+            .collect(),
+        forest_173_frames: [251, 252, 253, 254]
+            .map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
         underground_transition: sky_tex(atlas, "Background_1", None),
         underground: sky_tex(atlas, "Background_2", None),
         rock: sky_tex(atlas, "Background_3", None),
@@ -608,6 +628,53 @@ fn draw_cloud_pass(
     }
 }
 
+/// W4-g70: the far-alpha slot of forest set `n` — `UpdateBGVisibility_BackLayer`
+/// maps styles 10/11/12 to their own slots (`Main.cs:64145-64209`), set 1 to 0.
+fn forest_far_slot(n: usize) -> usize {
+    match n {
+        0 => 0,
+        1 => 10,
+        2 => 11,
+        _ => 12,
+    }
+}
+
+/// W4-g70: resolve one live hill id (`forest_hills[n][row]`) to its sheet:
+/// the `setBG`-time pair first, then the animated families' packed sheets.
+/// `-1` (a style's skipped layer) draws nothing.
+fn forest_hill_tex(
+    sky: &SkyAssets,
+    n: usize,
+    row: usize,
+    hills: &[[i32; 2]; 4],
+) -> Option<BgTex> {
+    let id = hills[n][row];
+    if id < 0 {
+        return None;
+    }
+    sky.forest_mnt[n][row].or_else(|| sky.forest_mnt_anim.get(&id).copied())
+}
+
+/// `DrawSurfaceBG_DrawChangeOverlay` (`Main.cs:61098-61107`): a full-screen
+/// `MagicPixel` quad at `Color.Black * flashPower` — the style-change flash.
+/// `Color.Transparent` (power 0) skips the draw entirely.
+fn draw_change_overlay(r: &mut SpriteRenderer, camera: Vec2, zoom: f32, screen: Vec2, power: f32) {
+    if power <= 0.0 {
+        return;
+    }
+    let white = r.white_uv();
+    super::bg::push_screen(
+        r,
+        camera,
+        zoom,
+        screen,
+        [0.0, 0.0],
+        [screen.x, screen.y],
+        white,
+        [0.0, 0.0, 0.0, power],
+    );
+}
+
 pub(crate) fn draw_sky(
     r: &mut SpriteRenderer,
     camera: Vec2,
@@ -650,6 +717,12 @@ pub(crate) fn draw_sky(
     counter: u32,
     // `Main.mouseTextColor` (`Main.cs:1683`): the Mushroom glow's pulse.
     mouse_text_color: u8,
+    // W4-g70: `Main.treeMntBGSet1..4` as `DoUpdate_AnimateBackgrounds` left
+    // them this update — the live hill ids of the four forest sets.
+    forest_hills: &[[i32; 2]; 4],
+    // W4-g70: `WorldGen.BackgroundsCache.GetFlashPower` for the four forest
+    // change overlays (areas 0..3, `DrawSurfaceBG_DrawChangeOverlay(0..3)`).
+    forest_flash: [f32; 4],
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -901,6 +974,7 @@ pub(crate) fn draw_sky(
     let far_desert = bg_alpha_far[1];
     let far_snow = bg_alpha_far[4];
     let far_ocean = bg_alpha_far[3];
+    // `Main.cs:59327`: `num3 = (0 - (screenPosition.Y - 300)) / (worldSurface * 16)`.
     let magic = (300.0 - view_top) / world_surface_px;
     let sc_adj = bg_scale_adjust(world, view_top, screen.y);
     // `Main.DrawSurfaceBG`: `pushBGTopHack = 30` for the mountain passes, then
@@ -1022,21 +1096,31 @@ pub(crate) fn draw_sky(
         &mut amb_last,
     );
     if show_bg {
-        if far_forest > 0.0 {
-            if let Some(far) = sky.far {
-                draw_bg_layer(
-                    r,
-                    camera,
-                    zoom,
-                    screen,
-                    &far,
-                    2.0,
-                    0.15,
-                    magic * 1300.0 + 1090.0 + sc_adj + 30.0,
-                    false,
-                    tint,
-                    far_forest,
-                );
+        // W4-g70: the four forest far hills (`Main.cs:59827-59846`), in the
+        // C#'s order 0, 10, 11, 12 — each at its own `bgAlphaFarBackLayer`
+        // slot, id from the live animated set, `GetLayerYOffset` nudged.
+        // Step1's own `screenPosition.Y < worldSurface*16 + 16` gate
+        // (`:59823`) is tighter than the enclosing +10-tile block.
+        let hills_visible = view_top < world_surface_px + TILE_PX;
+        for n in 0..4 {
+            let alpha = bg_alpha_far[forest_far_slot(n)];
+            if hills_visible && alpha > 0.0 {
+                if let Some(far) = forest_hill_tex(sky, n, 0, forest_hills) {
+                    draw_bg_layer(
+                        r,
+                        camera,
+                        zoom,
+                        screen,
+                        &far,
+                        2.0,
+                        0.15,
+                        magic * 1300.0 + 1090.0 + sc_adj + 30.0
+                            + layer_y_offset(forest_hills[n][0]),
+                        false,
+                        tint,
+                        alpha,
+                    );
+                }
             }
         }
         if far_desert > 0.0 {
@@ -1105,11 +1189,15 @@ pub(crate) fn draw_sky(
     }
 
     // `DrawSurfaceBG_BackMountainsStep2`: near mountains, parallax 0.20, scale 2.3,
-    // in vanilla order: forest (0), desert (1), ocean (`Main.oceanBG`,
-    // `Background_28`, 3), snow (4).
+    // in vanilla order: forest set 1 (0), desert (1), ocean (`Main.oceanBG`,
+    // `Background_28`, 3), snow (4), then forest sets 2-4 (10/11/12) — the
+    // C# walks 0..6 first and the three extra forest slots last
+    // (`Main.cs:59895-59962`).
     if show_bg {
-        if far_forest > 0.0 {
-            if let Some(near) = sky.near {
+        // Step2's own `+16 px` gate (`Main.cs:59891`), like Step1's.
+        let hills_visible = view_top < world_surface_px + TILE_PX;
+        if hills_visible && far_forest > 0.0 {
+            if let Some(near) = forest_hill_tex(sky, 0, 1, forest_hills) {
                 draw_bg_layer(
                     r,
                     camera,
@@ -1118,7 +1206,8 @@ pub(crate) fn draw_sky(
                     &near,
                     2.3,
                     0.20,
-                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0
+                        + layer_y_offset(forest_hills[0][1]),
                     false,
                     tint,
                     far_forest,
@@ -1176,6 +1265,29 @@ pub(crate) fn draw_sky(
                 );
             }
         }
+        // W4-g70: forest sets 2-4's near hills (`Main.cs:59939-59962`), each
+        // gated on its own far alpha and `treeMntBGSetN[1] > -1`.
+        for n in 1..4 {
+            let alpha = bg_alpha_far[forest_far_slot(n)];
+            if hills_visible && alpha > 0.0 && forest_hills[n][1] > -1 {
+                if let Some(near) = forest_hill_tex(sky, n, 1, forest_hills) {
+                    draw_bg_layer(
+                        r,
+                        camera,
+                        zoom,
+                        screen,
+                        &near,
+                        2.3,
+                        0.20,
+                        magic * 1400.0 + 1260.0 + sc_adj + 30.0
+                            + layer_y_offset(forest_hills[n][1]),
+                        false,
+                        tint,
+                        alpha,
+                    );
+                }
+            }
+        }
     }
 
     // `DrawClouds_Closest` (`Main.cs:59644-59661`): `cY = y * (screenHeight /
@@ -1219,28 +1331,14 @@ pub(crate) fn draw_sky(
         const HACK: f32 = -150.0;
         // Dispatch order is the C# `l` loop's (`Main.cs:59529-59597`).
 
-        // `DrawSurfaceBG_Forest` (`Main.cs:61273-61370`, tree set 1 =
-        // `Background_50..52`): bgScale 1.25/1.31/1.34 (C# 61275) x2 (C# 59329);
-        // bgParallax 0.40/0.43/0.49; tops 1500/1750/2000 (`Main.cs:61277`).
-        // Layer 1 is mirrored horizontally.
-        let forest = front_layers(
-            [50, 51, 52],
-            [
-                (1.25, 0.40, 1800.0, 1500.0),
-                (1.31, 0.43, 1950.0, 1750.0),
-                (1.34, 0.49, 2100.0, 2000.0),
-            ],
-            sky.forest,
-            HACK,
-        );
-        let forest = [
-            forest[0],
-            FrontLayer {
-                flip: true,
-                ..forest[1]
-            },
-            forest[2],
-        ];
+        // `DrawSurfaceBG_Forest` (`Main.cs:61273-61519`) for tree set 1
+        // (`Main.treeBGSet1`, `World.forest_bg_styles[0]`): the row bases,
+        // per-id overrides, top rewrites/nudges and the 51/54 mirror ride
+        // `forest_layers`; the 173 row swaps its drawn sheet to the
+        // `251 + counter/10 % 4` frame (`:61373`).
+        let forest_ids = world.forest_bg(0).1;
+        let frame_173 = sky.forest_173_frames[(counter / 10 % 4) as usize];
+        let forest = forest_layers(forest_ids, sky.forest_sets[0], HACK, frame_173);
         draw_front_trees(
             r,
             camera,
@@ -1255,6 +1353,8 @@ pub(crate) fn draw_sky(
             amb_pass.as_mut(),
             false,
         );
+        // `DrawSurfaceBG_DrawChangeOverlay(0)` (`Main.cs:59537`).
+        draw_change_overlay(r, camera, zoom, screen, forest_flash[0]);
 
         // `DrawSurfaceBG_Corrupt` (`Main.cs:61109-61218`). Row 1 is mirrored; the
         // `ids[0] == 56` nudge (`:61128`, `:61199`) applies to every row and reads
@@ -1520,6 +1620,30 @@ pub(crate) fn draw_sky(
             amb_pass.as_mut(),
             true,
         );
+
+        // W4-g70: `DrawSurfaceBG_Forest` for tree sets 2-4 — the `l` loop's
+        // 10/11/12 arms (`Main.cs:59539-59553`), which run AFTER mushroom
+        // (`l == 9`) in the 0..15 walk, each followed by its
+        // `DrawChangeOverlay(1..3)`. Same chain as set 1.
+        for n in 1..4 {
+            let ids = world.forest_bg(n).1;
+            let rows = forest_layers(ids, sky.forest_sets[n], HACK, frame_173);
+            draw_front_trees(
+                r,
+                camera,
+                zoom,
+                screen,
+                &rows,
+                bg_alpha_front[forest_far_slot(n)],
+                magic,
+                sc_adj,
+                tint,
+                counter,
+                amb_pass.as_mut(),
+                false,
+            );
+            draw_change_overlay(r, camera, zoom, screen, forest_flash[n]);
+        }
     }
 
     // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
