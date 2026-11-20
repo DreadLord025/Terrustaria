@@ -3176,11 +3176,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i13 — the bow-launch arrows that set `ignoreWater` in their
             // `SetDefaults` bodies: the JestersArrow 5 (`Projectile.cs:859`)
             // and the DD2BetsyArrow 710 (`:7529`).
-            || matches!(kind, 5 | 710),
+            || matches!(kind, 5 | 710)
             // S1-P-i14 — the bullet-launch projectiles that set `ignoreWater`:
             // the Xenopopper bubble 444 (`Projectile.cs:5159`) and the Onyx
             // black bolt 661 (`:7118`).
-            || matches!(kind, XENOPOPPER_BUBBLE | ONYX_BLACK_BOLT),
+            || matches!(kind, XENOPOPPER_BUBBLE | ONYX_BLACK_BOLT)
             // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
             // `ignoreWater = true`.
             || kind == HIGH_VELOCITY_BULLET,

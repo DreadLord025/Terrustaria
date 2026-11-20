@@ -15980,6 +15980,9 @@ mod tests {
 mod summon_tests {
     use super::*;
     use crate::item::EMPTY_SLOT;
+    // S1-P-i12's mirror witnesses reuse the main test module's world fixture
+    // (the V5 first-compile fix — the coder referenced it without the import).
+    use crate::player::tests::ground_world;
 
     /// `Player.FindItem`'s stand-in: the inventory with the staff (4281) in
     /// slot 0 (the `ItemDef` verified this phase: shoot 759, damage 7,

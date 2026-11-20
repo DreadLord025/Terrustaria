@@ -1048,6 +1048,10 @@ mod tests {
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 485);
+        // Read the shot's fields before the mutable stream probe (the V5
+        // first-compile borrow fix — no behaviour change).
+        let spin_differs = (shots[0].ai[0] - shots[0].vel.x).abs() > 1e-4
+            || (shots[0].ai[1] - shots[0].vel.y).abs() > 1e-4;
         assert_eq!(
             stream_of(&mut app),
             draws_after(0x5EED, 4),
@@ -1055,8 +1059,7 @@ mod tests {
         );
         // The ai[0]/ai[1] carry the wider spin, distinct from the velocity.
         assert!(
-            (shots[0].ai[0] - shots[0].vel.x).abs() > 1e-4
-                || (shots[0].ai[1] - shots[0].vel.y).abs() > 1e-4,
+            spin_differs,
             "the ai-spin (π/8) differs from the velocity spin (π/16)"
         );
     }
@@ -1093,7 +1096,7 @@ mod tests {
                 "the rain spawns above the player (y={})",
                 s.pos.y
             );
-            assert!(s.vy > 0.0, "the rain falls downward");
+            assert!(s.vel.y > 0.0, "the rain falls downward");
         }
         let _ = mcx;
     }

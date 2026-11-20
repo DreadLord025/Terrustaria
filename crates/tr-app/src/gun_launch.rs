@@ -402,7 +402,11 @@ fn xenopopper(
     let mut shots = Vec::new();
     for _ in 0..count {
         let factor = rng.next_double() as f32 * 0.2 + 0.05;
-        let angle = num23 as f64 * rng.next_double() - (num23 / 2.0) as f64;
+        // `RotatedBy(num23 * (float)Main.rand.NextDouble() - num23 / 2f)`
+        // (`:47620`): the angle product + subtraction are f32 (the NextDouble
+        // is CAST to float first), promoted to double only inside RotatedBy
+        // (the V5 fidelity fix — the f64 product drifted sub-ulp).
+        let angle = (num23 * rng.next_double() as f32 - num23 / 2.0) as f64;
         let v = rotated_by(aim, angle) * factor;
         shots.push(Shot {
             kind: 444,
