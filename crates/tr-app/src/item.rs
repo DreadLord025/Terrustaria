@@ -1378,6 +1378,65 @@ mod tests {
         }
     }
 
+    /// W4-g25 batch 2 — the null/trackable/deprecated/override sound
+    /// provisions (10 sites). The explicit `UseSound = null` rows, the
+    /// non-`ItemN` style names, the `Deprecated` → air zeroing, and the
+    /// post-helper overrides. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g25_batch2_the_null_trackable_deprecated_and_override_rows() {
+        let row = |kind: u16| {
+            let d = registry::get(kind).expect("the kind is registered");
+            let style = d.use_sound.map(|i| crate::soundid::SOUND_STYLES[i as usize].name);
+            (style, d.use_style, d.use_sound_pitch)
+        };
+        // 1. Medusa Head 3269 — explicit `UseSound = null` (`Item.cs:30324`),
+        //    useStyle 4 (`:30314`): the use start is silent.
+        assert_eq!(row(3269), (None, 4, 0.0));
+        assert_eq!(initial_use_sound(3269), None);
+        // 2. Zenith 4956 — explicit null (`:40004`), useStyle 1 (`:40001`).
+        assert_eq!(row(4956), (None, 1, 0.0));
+        // 3. Portal Gun 3384 — explicit null (`:30958`), useStyle 5.
+        assert_eq!(row(3384), (None, 5, 0.0));
+        // 4. Leaf Blower 1178 — `SoundID.LeafBlower` (`:14469`), a NAMED
+        //    id-2 style: `(2, 34).WithVolume(0.13)` (`SoundID.cs:1726`),
+        //    NOT a trackable. The volume override rides the style row.
+        let leaf = &crate::soundid::SOUND_STYLES[registry::get(1178).unwrap().use_sound.unwrap() as usize];
+        assert_eq!((leaf.sound_id, leaf.style, leaf.trackable), (2, 34, None));
+        assert_eq!(leaf.volume, 0.13);
+        // 5. Palworld Pet Chillet 5665 — `SoundID.PalSummon` (`:44514`), a
+        //    TRACKABLE (id 42, `CreateTrackable("pal_summon").WithVolume(0.15)`,
+        //    `SoundID.cs:1712`); useStyle 1 (`:44511`).
+        let pal = &crate::soundid::SOUND_STYLES[registry::get(5665).unwrap().use_sound.unwrap() as usize];
+        assert_eq!((pal.sound_id, pal.trackable), (42, Some("pal_summon")));
+        assert_eq!(pal.volume, 0.15);
+        assert_eq!(row(5665).1, 1);
+        // 6. Glacier Fang 6153 — `SoundID.GlacierFang_Charging` (`:47431`),
+        //    a NAMED id-2 style `(2, 210)` (`SoundID.cs:1594`), useStyle 5.
+        let glacier = &crate::soundid::SOUND_STYLES[registry::get(6153).unwrap().use_sound.unwrap() as usize];
+        assert_eq!((glacier.sound_id, glacier.style, glacier.trackable), (2, 210, None));
+        assert_eq!(row(6153).1, 5);
+        // 7. Vortex Axe 2772 — the case provisions Item1 (`:26478`) BUT the
+        //    id is `Deprecated` (`ItemID.cs:1316`), so the epilogue
+        //    `TurnToAir` (`Item.cs:48922-48925`) zeroes it: name "None",
+        //    useStyle 0, no sound.
+        assert_eq!(row(2772), (None, 0, 0.0));
+        assert_eq!(registry::get(2772).unwrap().name, "None");
+        // 8. First Fractal 4722 — same Deprecated → air zeroing (case
+        //    `:38793` Item1, `ItemID.cs:1316`).
+        assert_eq!(row(4722), (None, 0, 0.0));
+        // 9. Whoopie Cushion 215 — `DefaultToVoiceOverrideAccessory` sets
+        //    null (`:4049` → `:47788`), then the case OVERRIDES to Item16
+        //    (`:4057`) + useStyle 10 (`:4056`). The override wins.
+        assert_eq!(row(215), (Some("Item16"), 10, 0.0));
+        // 10. Arc Surge 6173 — `DefaultToStaff` provisions Item43 (`:47556`
+        //     → `:48021`), then the case OVERRIDES to Item15 (`:47560`);
+        //     useStyle 5 from the staff helper stands.
+        assert_eq!(row(6173), (Some("Item15"), 5, 0.0));
+        // The deprecated ids answer None through the use-start gate too.
+        assert_eq!(initial_use_sound(2772), None);
+        assert_eq!(initial_use_sound(4722), None);
+    }
+
     #[test]
     fn s1_f_10_item_slot_clone_and_refresh_snapshot() {
         // `Item.Clone`/`Item.Refresh` (`Item.cs:49837-49840`, `:49945-49961`,
