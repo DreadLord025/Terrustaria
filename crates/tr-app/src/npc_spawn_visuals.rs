@@ -25,9 +25,15 @@
 //!   `transform_to_kind` (`npc.rs:5080`) does not call it yet — the
 //!   wiring round drains it at the C# call position.
 //!
-//! The teleport-in family ([`teleport_effect`], [`npc_teleport`],
-//! [`update_npc_teleport_visuals`]) lands in the follow-up commits of
-//! this lane.
+//! The teleport-in family: [`teleport_effect`] (`Main.TeleportEffect`,
+//! `Main.cs:13233-13464` — all eleven style arms), [`npc_teleport`]
+//! (`NPC.Teleport`, `NPC.cs:81035-81058` — the two-sided Entry/Exit
+//! driver), [`update_npc_teleport_visuals`]
+//! (`NPC.UpdateNPC_TeleportVisuals`, `NPC.cs:92194-92241` — the
+//! per-tick fade, styles 0/4/12/13) and
+//! [`make_transition_effects_for_texture_changes`]
+//! (`NPC.cs:90236-90263` — the town alt-texture puffs, the party-hat /
+//! zoologist transitions).
 //!
 //! **`NewNPC` itself draws no spawn dust.** `NPC.NewNPC`
 //! (`NPC.cs:80750-80795`) has exactly ONE RNG draw — the
@@ -399,8 +405,8 @@ pub fn transform_visuals<R: DustRng + GoreRng>(
 /// teleport-out burst family. `NPC.Teleport` (`NPC.cs:81035-81058`)
 /// calls it TWICE (Entry at the old rect, Exit at the new) — the `side`
 /// parameter is unread inside the C# body (only style 10 reads
-/// `otherPosition`), so the port drops it. Styles 0/1/2/3/4/5/7/9/10
-/// here; 11/13 + the per-tick `UpdateNPC_TeleportVisuals` follow.
+/// `otherPosition`), so the port drops it. All eleven C# arms:
+/// 0/1/2/3/4/5/7/9/10/11/13 (6/8 have no arm).
 ///
 /// The `effectRect` is `NPC.getRect()` (`NPC.cs:90025-90028`): the
 /// INTEGER-cast top-left + the integer width/height. Styles 9/10
@@ -420,7 +426,6 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
     other_position: Vec2,
     water_style: i32,
 ) {
-    let top_left = || Vec2::new(rect.0 as f32, rect.1 as f32);
     match style {
         0 | 1 => {
             // `:13237-13274` — the wizard (0: type 159, Item6) and
@@ -442,7 +447,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
                     env.rng,
                     env.dust_ctx,
                     env.world,
-                    top_left(),
+                    Vec2::new(rect.0 as f32, rect.1 as f32),
                     rect.2,
                     rect.3,
                     dust_type,
@@ -473,7 +478,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
                     env.rng,
                     env.dust_ctx,
                     env.world,
-                    top_left(),
+                    Vec2::new(rect.0 as f32, rect.1 as f32),
                     rect.2,
                     rect.3,
                     58,
@@ -505,7 +510,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
                     env.rng,
                     env.dust_ctx,
                     env.world,
-                    top_left(),
+                    Vec2::new(rect.0 as f32, rect.1 as f32),
                     rect.2,
                     rect.3,
                     180,
@@ -557,7 +562,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
                     env.rng,
                     env.dust_ctx,
                     env.world,
-                    top_left(),
+                    Vec2::new(rect.0 as f32, rect.1 as f32),
                     rect.2,
                     rect.3,
                     263,
@@ -596,7 +601,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
                     env.rng,
                     env.dust_ctx,
                     env.world,
-                    top_left(),
+                    Vec2::new(rect.0 as f32, rect.1 as f32),
                     rect.2,
                     rect.3 + 24,
                     dust_type,
@@ -700,9 +705,81 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
             }
             (env.play_sound)(2, 8, (rect.0 + rect.2 / 2) as f32, (rect.1 + rect.3 / 2) as f32);
         }
+        11 => {
+            // `:13419-13446` — the mystic-frog / shellphone hop: 50
+            // dust (NO mult), per dust the `Next(4)` colour pick
+            // FIRST, then the position's TWO NextFloats
+            // (`Utils.NextVector2FromRectangle`, `Utils.cs:1256-1259`)
+            // inside the NewDustPerfect argument, the allocator, then
+            // noGravity / colour / velocity ×2 / scale
+            // 0.8+NextFloat×0.6 / fadeIn 0.5. NO sound.
+            for _ in 0..50 {
+                let num4 = DustRng::next_max(env.rng, 4);
+                let color = match num4 {
+                    0 | 1 => Color::new(100, 255, 100, 255),
+                    2 => Color::new(255, 255, 0, 255), // Color.Yellow
+                    _ => Color::WHITE,                 // 3: Color.White
+                };
+                let px = rect.0 as f32 + DustRng::next_float(env.rng) * rect.2 as f32;
+                let py = rect.1 as f32 + DustRng::next_float(env.rng) * rect.3 as f32;
+                let idx = env.dust.new_dust_perfect(
+                    env.rng,
+                    env.dust_ctx,
+                    env.world,
+                    Vec2::new(px, py),
+                    267,
+                    None,
+                    0,
+                    Color::default(),
+                    1.0,
+                );
+                let scale = 0.8 + DustRng::next_float(env.rng) * 0.6;
+                let d = env.dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.color = color;
+                d.velocity *= 2.0;
+                d.scale = scale;
+                d.fade_in = 0.5;
+            }
+        }
+        13 => {
+            // `:13447-13462` — the frog's style-13 sparkle: Item8
+            // first (integer Centre), then 21 dust (NO mult): the
+            // position's two NextFloats, the `Next(1,3)` SCALE
+            // argument (drawn before the allocator), a 2×2 type-27
+            // box (alpha 100), velocity ×1.75, the i%3==0 ×1.5 bump,
+            // noLightEmittance + noGravity.
+            (env.play_sound)(2, 8, (rect.0 + rect.2 / 2) as f32, (rect.1 + rect.3 / 2) as f32);
+            for i in 0..21 {
+                let px = rect.0 as f32 + DustRng::next_float(env.rng) * rect.2 as f32;
+                let py = rect.1 as f32 + DustRng::next_float(env.rng) * rect.3 as f32;
+                let scale_arg = DustRng::next_range(env.rng, 1, 3) as f32;
+                let idx = env.dust.new_dust(
+                    env.rng,
+                    env.dust_ctx,
+                    env.world,
+                    Vec2::new(px, py),
+                    2,
+                    2,
+                    27,
+                    0.0,
+                    0.0,
+                    100,
+                    Color::default(),
+                    scale_arg,
+                );
+                let d = env.dust.slot_mut(idx);
+                d.velocity *= 1.75;
+                if i % 3 == 0 {
+                    d.velocity *= 1.5;
+                }
+                d.no_light_emittance = true;
+                d.no_gravity = true;
+            }
+        }
         _ => {
-            // Styles 6/8 have no C# arm; 11/13 land in the next commit
-            // of this lane (the module keeps the switch shape).
+            // Styles 6/8 have no C# arm — the switch falls through
+            // with zero draws.
         }
     }
 }
@@ -815,6 +892,210 @@ pub fn npc_teleport<R: DustRng + GoreRng>(
     // `:81052-81053`.
     teleport.0 = 1.0;
     teleport.1 = style;
+}
+
+/// `NPC.UpdateNPC_TeleportVisuals` (`NPC.cs:92194-92241`) — the
+/// per-tick teleport fade, called from `UpdateNPC` (`:90322`) AFTER
+/// the AI + cast lights, on the `UpdateNPCs` stream. The teleport
+/// fields ride the caller's `(teleportTime, teleportStyle,
+/// lastPortalColorIndex)` triple (see [`npc_teleport`]);
+/// `time_for_visual_effects` is `Main.timeForVisualEffects`
+/// (`Main.cs:1181`, a double).
+///
+/// * Style 0 (`:92200-92209`): the `Next(100)` gate against
+///   `100×time×2`, then ONE type-159 dust at the getRect box with
+///   scale = time×1.5, noGravity, velocity ×1.1. NO time decrement
+///   inside the arm — only the shared −0.005 tail.
+/// * Style 4 (`:92210-92222`): time −0.02 FIRST, the `Next(100)` gate
+///   against `100×time` (the DECREMENTED value), then a type-263 dust
+///   coloured `GetPortalColor(lastPortalColorIndex)` — alpha stays 66
+///   (no overwrite here, unlike the TeleportEffect burst) — noLight,
+///   noGravity, scale 1.2, fadeIn 0.4.
+/// * Style 12 (`:92223-92235`): the same shape, colour
+///   `hslToRgb((float)(timeForVisualEffects/60.0) % 1f, 1, 0.75, 0)`
+///   — alpha 0.
+/// * Style 13 (`:92236-92239`): time = 0, no dust.
+/// * The tail (`:92240`): `time = max(0, time − 0.005)` runs for EVERY
+///   style that entered (the `time > 0` head gate `:92196-92199`
+///   returns before it otherwise).
+pub fn update_npc_teleport_visuals<R: DustRng + GoreRng>(
+    env: &mut SpawnVisualsEnv<'_, R>,
+    npc: &Npc,
+    teleport: &mut (f32, i32, i32),
+    time_for_visual_effects: f64,
+) {
+    // `:92196-92199` — the head gate: no draws, no decrement.
+    if !(teleport.0 > 0.0) {
+        return;
+    }
+    let pos = Vec2::new(npc.x, npc.y);
+    let (wf, hf) = npc.size();
+    let (w, h) = (wf as i32, hf as i32);
+    match teleport.1 {
+        0 => {
+            // `:92202` — the gate compares the int roll as float.
+            if (DustRng::next_max(env.rng, 100) as f32) <= 100.0 * teleport.0 * 2.0 {
+                // `:92204` — the box origin is getRect().X/Y: the
+                // INTEGER-cast position (`NPC.cs:90027`).
+                let rect_pos = Vec2::new((npc.x as i32) as f32, (npc.y as i32) as f32);
+                let idx = env.dust.new_dust(
+                    env.rng,
+                    env.dust_ctx,
+                    env.world,
+                    rect_pos,
+                    w,
+                    h,
+                    159,
+                    0.0,
+                    0.0,
+                    0,
+                    Color::default(),
+                    1.0,
+                );
+                let d = env.dust.slot_mut(idx);
+                d.scale = teleport.0 * 1.5;
+                d.no_gravity = true;
+                d.velocity *= 1.1;
+            }
+        }
+        4 => {
+            // `:92212-92213` — decrement BEFORE the gate.
+            teleport.0 -= 0.02;
+            if (DustRng::next_max(env.rng, 100) as f32) <= 100.0 * teleport.0 {
+                let idx = env.dust.new_dust(
+                    env.rng,
+                    env.dust_ctx,
+                    env.world,
+                    pos,
+                    w,
+                    h,
+                    263,
+                    0.0,
+                    0.0,
+                    0,
+                    Color::default(),
+                    1.0,
+                );
+                let d = env.dust.slot_mut(idx);
+                d.color = portal_color(teleport.2);
+                d.no_light = true;
+                d.no_gravity = true;
+                d.scale = 1.2;
+                d.fade_in = 0.4;
+            }
+        }
+        12 => {
+            // `:92225-92226`.
+            teleport.0 -= 0.02;
+            if (DustRng::next_max(env.rng, 100) as f32) <= 100.0 * teleport.0 {
+                let hue = ((time_for_visual_effects / 60.0) as f32) % 1.0;
+                let rgb = crate::ui::color::hsl_to_rgb(hue as f64, 1.0, 0.75, 0);
+                let idx = env.dust.new_dust(
+                    env.rng,
+                    env.dust_ctx,
+                    env.world,
+                    pos,
+                    w,
+                    h,
+                    263,
+                    0.0,
+                    0.0,
+                    0,
+                    Color::default(),
+                    1.0,
+                );
+                let d = env.dust.slot_mut(idx);
+                d.color = Color::new(rgb[0], rgb[1], rgb[2], rgb[3]);
+                d.no_light = true;
+                d.no_gravity = true;
+                d.scale = 1.2;
+                d.fade_in = 0.4;
+            }
+        }
+        13 => {
+            // `:92238` — the frog's instant clear.
+            teleport.0 = 0.0;
+        }
+        _ => {}
+    }
+    // `:92240` — the shared decay tail (Math.Max(0f, ..)).
+    teleport.0 = (teleport.0 - 0.005).max(0.0);
+}
+
+/// `NPC.MakeTransitionEffectsForTextureChanges`
+/// (`NPC.cs:90236-90263`) — the town-NPC alt-texture transition puffs,
+/// called by `UpdateAltTexture` (`:90231`) when the party hat /
+/// zoologist form flips (the `!ForcePartyHatOn` gate lives in the
+/// caller). Three arms, all separate `if`s:
+/// * 0→1 (`:90238-90244`): 20× dust of type `139 + Next(4)` — the type
+///   draw BEFORE the allocator — SpeedY −2, the height/4 INTEGER box.
+/// * 1→0 (`:90245-90248`): the [`poof_of_smoke`] at the position.
+/// * type 633 only, 0↔2 (`:90249-90262`): 20× NewDustDirect type 262,
+///   SpeedY −2, noGravity + scale 2 post-writes.
+pub fn make_transition_effects_for_texture_changes<R: DustRng + GoreRng>(
+    env: &mut SpawnVisualsEnv<'_, R>,
+    npc: &Npc,
+    old_alt_texture: i32,
+    current_alt_texture: i32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let (wf, hf) = npc.size();
+    let (w, h) = (wf as i32, hf as i32);
+    if old_alt_texture == 0 && current_alt_texture == 1 {
+        // `:90240-90243` — `(float)(base.height / 4)` is INTEGER
+        // division; the type argument draws per dust.
+        for _ in 0..20 {
+            let dust_type = 139 + DustRng::next_max(env.rng, 4);
+            env.dust.new_dust(
+                env.rng,
+                env.dust_ctx,
+                env.world,
+                pos,
+                w,
+                h / 4,
+                dust_type,
+                0.0,
+                -2.0,
+                0,
+                Color::default(),
+                1.0,
+            );
+        }
+    }
+    if old_alt_texture == 1 && current_alt_texture == 0 {
+        // `:90247`.
+        poof_of_smoke(env, pos);
+    }
+    // `:90249-90252` — the zoologist gate.
+    if npc.kind.cs_id() != 633 {
+        return;
+    }
+    let num = 2;
+    if (old_alt_texture == 0 && current_alt_texture == num)
+        || (old_alt_texture == num && current_alt_texture == 0)
+    {
+        // `:90256-90261` — NewDustDirect (the NaN zeroing runs even
+        // though the rolled velocity is never NaN here).
+        for _ in 0..20 {
+            let idx = env.dust.new_dust_direct(
+                env.rng,
+                env.dust_ctx,
+                env.world,
+                pos,
+                w,
+                h,
+                262,
+                0.0,
+                -2.0,
+                0,
+                Color::default(),
+                1.0,
+            );
+            let d = env.dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale = 2.0;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1550,6 +1831,301 @@ mod tests {
         for i in 6..12 {
             assert_eq!(dust.slot(i).color.r, new_c.r);
             assert!(dust.slot(i).position.x >= 300.0);
+        }
+    }
+
+    /// `Main.cs:13419-13446` — style 11: per dust the Next(4) colour
+    /// pick, the two position NextFloats, the 0×0 block, the scale
+    /// NextFloat; the colour table and the ×2 velocity.
+    #[test]
+    fn w4_g61_teleport_style11_colour_pick_and_position_floats() {
+        let w = air();
+        let mut dust = DustPool::new();
+        let mut gore = GorePool::new();
+        let c = ctx();
+        let mut rng = RecordingRng::new(53);
+        let mut sounds = Vec::new();
+        let mut env = SpawnVisualsEnv {
+            world: &w,
+            dust: &mut dust,
+            dust_ctx: &c,
+            gore: &mut gore,
+            rng: &mut rng,
+            play_sound: &mut |a, b, x, y| sounds.push((a, b, x, y)),
+        };
+        teleport_effect(&mut env, (100, 100, 20, 40), 11, 0, 1.0, Vec2::ZERO, 0);
+        let mut expected = Vec::new();
+        for _ in 0..50 {
+            expected.push(Draw::Max(4));
+            expected.push(Draw::Float);
+            expected.push(Draw::Float);
+            expected.extend(dust_block(0, 0));
+            expected.push(Draw::Float);
+        }
+        assert_eq!(rng.log, expected);
+        assert!(sounds.is_empty(), "style 11 plays no sound");
+        let mut replay = UnifiedRandom::new(53);
+        for i in 0..50 {
+            let pick = replay.next_max(4);
+            let px = 100.0 + replay.next_float() * 20.0;
+            let py = 100.0 + replay.next_float() * 40.0;
+            let _ = replay.next_max(1);
+            let _ = replay.next_max(1);
+            let vx = replay.next_range(-20, 21) as f32 * 0.1;
+            let vy = replay.next_range(-20, 21) as f32 * 0.1;
+            let _ = replay.next_max(3);
+            let _ = replay.next_range(-20, 21);
+            let scale = 0.8 + replay.next_float() * 0.6;
+            let d = dust.slot(i);
+            assert_eq!(d.dust_type, 267);
+            assert_eq!(d.position, Vec2::new(px, py), "Perfect overwrites");
+            let want = match pick {
+                0 | 1 => Color::new(100, 255, 100, 255),
+                2 => Color::new(255, 255, 0, 255),
+                _ => Color::WHITE,
+            };
+            assert_eq!(d.color, want);
+            assert_eq!(d.velocity, Vec2::new(vx * 2.0, vy * 2.0));
+            assert_eq!(d.scale, scale);
+            assert_eq!(d.fade_in, 0.5);
+            assert!(d.no_gravity);
+        }
+    }
+
+    /// `Main.cs:92200-92240` — the per-tick fade: style 0's ×2 gate
+    /// with NO in-arm decrement, style 4's decrement-BEFORE-gate, the
+    /// shared −0.005 tail, style 13's instant clear, and the time<=0
+    /// head gate drawing nothing.
+    #[test]
+    fn w4_g61_teleport_visuals_gates_decrements_and_tail() {
+        let w = air();
+        let mut npc = Npc::new(NpcKind::Creeper, 100.0, 100.0, 1, 0.0);
+        npc.size_override = Some((20.0, 20.0));
+        // Style 0 at time 0.001: the gate bound is 0.2 — only a 0 roll
+        // opens; either way NO in-arm decrement, then the −0.005 tail.
+        {
+            let mut dust = DustPool::new();
+            let mut gore = GorePool::new();
+            let c = ctx();
+            let mut rng = RecordingRng::new(59);
+            let mut tp = (0.001f32, 0i32, 0i32);
+            let mut env = SpawnVisualsEnv {
+                world: &w,
+                dust: &mut dust,
+                dust_ctx: &c,
+                gore: &mut gore,
+                rng: &mut rng,
+                play_sound: &mut |_, _, _, _| {},
+            };
+            update_npc_teleport_visuals(&mut env, &npc, &mut tp, 0.0);
+            let gate = UnifiedRandom::new(59).next_max(100);
+            let mut expected = vec![Draw::Max(100)];
+            if (gate as f32) <= 0.2 {
+                expected.extend(dust_block(20, 20));
+            }
+            assert_eq!(rng.log, expected);
+            assert_eq!(tp.0, 0.0, "0.001 − 0.005 floors at 0");
+        }
+        // Style 4 at time 0.5: −0.02 first → gate bound 48; tail →
+        // 0.475. The dust colour keeps alpha 66 (no overwrite).
+        {
+            let mut dust = DustPool::new();
+            let mut gore = GorePool::new();
+            let c = ctx();
+            let mut rng = RecordingRng::new(61);
+            let mut tp = (0.5f32, 4i32, 1i32);
+            let mut env = SpawnVisualsEnv {
+                world: &w,
+                dust: &mut dust,
+                dust_ctx: &c,
+                gore: &mut gore,
+                rng: &mut rng,
+                play_sound: &mut |_, _, _, _| {},
+            };
+            update_npc_teleport_visuals(&mut env, &npc, &mut tp, 0.0);
+            let gate = UnifiedRandom::new(61).next_max(100);
+            let mut expected = vec![Draw::Max(100)];
+            if (gate as f32) <= 48.0 {
+                expected.extend(dust_block(20, 20));
+                let d = dust.slot(0);
+                assert_eq!(d.dust_type, 263);
+                assert_eq!(d.color.a, 66, "the fade keeps the portal alpha");
+                assert_eq!(d.scale, 1.2);
+                assert_eq!(d.fade_in, 0.4);
+            }
+            assert_eq!(rng.log, expected);
+            assert_eq!(tp.0, 0.5 - 0.02 - 0.005);
+        }
+        // Style 13: instant clear, zero draws, the tail keeps 0.
+        {
+            let mut dust = DustPool::new();
+            let mut gore = GorePool::new();
+            let c = ctx();
+            let mut rng = RecordingRng::new(67);
+            let mut tp = (0.9f32, 13i32, 0i32);
+            let mut env = SpawnVisualsEnv {
+                world: &w,
+                dust: &mut dust,
+                dust_ctx: &c,
+                gore: &mut gore,
+                rng: &mut rng,
+                play_sound: &mut |_, _, _, _| {},
+            };
+            update_npc_teleport_visuals(&mut env, &npc, &mut tp, 0.0);
+            assert!(rng.log.is_empty());
+            assert_eq!(tp.0, 0.0);
+        }
+        // time <= 0: the head gate returns before any draw/decrement.
+        {
+            let mut dust = DustPool::new();
+            let mut gore = GorePool::new();
+            let c = ctx();
+            let mut rng = RecordingRng::new(71);
+            let mut tp = (0.0f32, 0i32, 0i32);
+            let mut env = SpawnVisualsEnv {
+                world: &w,
+                dust: &mut dust,
+                dust_ctx: &c,
+                gore: &mut gore,
+                rng: &mut rng,
+                play_sound: &mut |_, _, _, _| {},
+            };
+            update_npc_teleport_visuals(&mut env, &npc, &mut tp, 0.0);
+            assert!(rng.log.is_empty());
+            assert_eq!(tp.0, 0.0);
+        }
+    }
+
+    /// `Main.cs:92223-92235` — style 12's colour is the visual-effects
+    /// clock hue at luminosity 0.75, alpha 0.
+    #[test]
+    fn w4_g61_teleport_visuals_style12_clock_hue() {
+        let w = air();
+        let mut dust = DustPool::new();
+        let mut gore = GorePool::new();
+        let c = ctx();
+        let mut npc = Npc::new(NpcKind::Creeper, 100.0, 100.0, 1, 0.0);
+        npc.size_override = Some((20.0, 20.0));
+        // time 1.0 → the gate always opens (bound 98).
+        let mut rng = RecordingRng::new(73);
+        let mut tp = (1.0f32, 12i32, 0i32);
+        let mut env = SpawnVisualsEnv {
+            world: &w,
+            dust: &mut dust,
+            dust_ctx: &c,
+            gore: &mut gore,
+            rng: &mut rng,
+            play_sound: &mut |_, _, _, _| {},
+        };
+        // clock 90 → 90/60 = 1.5 → %1 = 0.5.
+        update_npc_teleport_visuals(&mut env, &npc, &mut tp, 90.0);
+        let want = crate::ui::color::hsl_to_rgb(0.5, 1.0, 0.75, 0);
+        let d = dust.slot(0);
+        assert_eq!(d.dust_type, 263);
+        assert_eq!((d.color.r, d.color.g, d.color.b, d.color.a), (want[0], want[1], want[2], 0));
+        assert_eq!(tp.0, 1.0 - 0.02 - 0.005);
+    }
+
+    /// `NPC.cs:90238-90262` — the alt-texture transitions: the 0→1
+    /// per-dust type draw + the height/4 INTEGER box; the 633-only
+    /// 0↔2 direct arm; the 1→0 poof delegation.
+    #[test]
+    fn w4_g61_alt_texture_transitions_type_draws_and_zoologist_gate() {
+        let w = air();
+        // 0→1 on a non-633 town NPC: 20 × [Next(4), block(w, h/4)].
+        {
+            let mut dust = DustPool::new();
+            let mut gore = GorePool::new();
+            let c = ctx();
+            let mut rng = RecordingRng::new(79);
+            let mut npc = Npc::new(NpcKind::Zoologist, 100.0, 100.0, 1, 0.0);
+            npc.size_override = Some((18.0, 41.0)); // 41/4 = 10
+            let mut env = SpawnVisualsEnv {
+                world: &w,
+                dust: &mut dust,
+                dust_ctx: &c,
+                gore: &mut gore,
+                rng: &mut rng,
+                play_sound: &mut |_, _, _, _| {},
+            };
+            make_transition_effects_for_texture_changes(&mut env, &npc, 0, 1);
+            let mut expected = Vec::new();
+            let mut replay = UnifiedRandom::new(79);
+            for i in 0..20 {
+                expected.push(Draw::Max(4));
+                expected.extend(dust_block(18, 10));
+                let t = 139 + replay.next_max(4);
+                for _ in 0..6 {
+                    let _ = replay.next_max(1); // shapes pinned by the log
+                }
+                assert!((139..143).contains(&dust.slot(i).dust_type));
+                assert_eq!(dust.slot(i).dust_type, t);
+            }
+            assert_eq!(rng.log, expected);
+        }
+        // 0↔2 on the Zoologist (633): 20 direct type-262 blocks, the
+        // scale-2/noGravity post-writes; a non-633 kind draws nothing.
+        {
+            let mut dust = DustPool::new();
+            let mut gore = GorePool::new();
+            let c = ctx();
+            let mut rng = RecordingRng::new(83);
+            let mut npc = Npc::new(NpcKind::Zoologist, 100.0, 100.0, 1, 0.0);
+            npc.size_override = Some((18.0, 40.0));
+            let mut env = SpawnVisualsEnv {
+                world: &w,
+                dust: &mut dust,
+                dust_ctx: &c,
+                gore: &mut gore,
+                rng: &mut rng,
+                play_sound: &mut |_, _, _, _| {},
+            };
+            make_transition_effects_for_texture_changes(&mut env, &npc, 2, 0);
+            let mut expected = Vec::new();
+            for _ in 0..20 {
+                expected.extend(dust_block(18, 40));
+            }
+            assert_eq!(rng.log, expected);
+            for i in 0..20 {
+                let d = dust.slot(i);
+                assert_eq!(d.dust_type, 262);
+                assert!(d.no_gravity);
+                assert_eq!(d.scale, 2.0);
+            }
+            // The same transition on a non-633: zero draws.
+            let mut rng2 = RecordingRng::new(83);
+            let mut dust2 = DustPool::new();
+            let mut gore2 = GorePool::new();
+            let npc2 = Npc::new(NpcKind::Creeper, 100.0, 100.0, 1, 0.0);
+            let mut env2 = SpawnVisualsEnv {
+                world: &w,
+                dust: &mut dust2,
+                dust_ctx: &c,
+                gore: &mut gore2,
+                rng: &mut rng2,
+                play_sound: &mut |_, _, _, _| {},
+            };
+            make_transition_effects_for_texture_changes(&mut env2, &npc2, 2, 0);
+            assert!(rng2.log.is_empty());
+        }
+        // 1→0: the poof delegation (count + gores + ten dust).
+        {
+            let mut dust = DustPool::new();
+            let mut gore = GorePool::new();
+            let c = ctx();
+            let mut rng = RecordingRng::new(89);
+            let npc = Npc::new(NpcKind::Creeper, 100.0, 100.0, 1, 0.0);
+            let mut env = SpawnVisualsEnv {
+                world: &w,
+                dust: &mut dust,
+                dust_ctx: &c,
+                gore: &mut gore,
+                rng: &mut rng,
+                play_sound: &mut |_, _, _, _| {},
+            };
+            make_transition_effects_for_texture_changes(&mut env, &npc, 1, 0);
+            assert_eq!(rng.log.first(), Some(&Draw::Range(3, 7)), "the poof count");
+            assert_eq!(dust.slot(0).dust_type, 16);
         }
     }
 }
