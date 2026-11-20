@@ -1304,6 +1304,224 @@ pub(crate) fn minecart_bumper_sound(
     });
 }
 
+/// `Minecart._trackSwitchOptions` (`Minecart.cs:449-518`): for each of the 64
+/// nearby-track bitmasks, the ascending list of frame ids whose side-connection
+/// mask fits the neighbourhood. A frame's mask is `left` (0→1, 1→2, 2→4) |
+/// `right` (0→8, 1→0x10, 2→0x20); a dead-end side (−1) contributes 0. With
+/// fewer than 2 neighbour tracks the mask must match exactly; otherwise it
+/// must be a non-zero subset. `None` when no frame fits (the C# null array).
+fn track_switch_options(mask: u32) -> Option<Vec<i32>> {
+    let neighbour_count = mask.count_ones();
+    let mut options = Vec::new();
+    for (frame, data) in TRACK_FRAMES.iter().enumerate() {
+        let mut frame_mask = 0u32;
+        match data.left_connection {
+            0 => frame_mask |= 1,
+            1 => frame_mask |= 2,
+            2 => frame_mask |= 4,
+            _ => {}
+        }
+        match data.right_connection {
+            0 => frame_mask |= 8,
+            1 => frame_mask |= 0x10,
+            2 => frame_mask |= 0x20,
+            _ => {}
+        }
+        let fits = if neighbour_count < 2 {
+            mask == frame_mask
+        } else {
+            frame_mask != 0 && (mask & frame_mask) == frame_mask
+        };
+        if fits {
+            options.push(frame as i32);
+        }
+    }
+    if options.is_empty() { None } else { Some(options) }
+}
+
+/// `Minecart.GetNearbyTilesSetLookupIndex` (`Minecart.cs:1170-1198`): the
+/// 6-bit mask of the surrounding 314 tracks — left column (x−1) rows y−1/y/y+1
+/// are bits 1/2/4, right column (x+1) are bits 8/16/32. The C# tests
+/// `type == 314` without an activity check.
+fn nearby_track_mask(world: &World, i: i32, j: i32) -> u32 {
+    let is_track = |x: i32, y: i32| world.tile(x, y).is_some_and(|t| t.kind == 314);
+    let mut mask = 0u32;
+    if is_track(i - 1, j - 1) { mask += 1; }
+    if is_track(i - 1, j) { mask += 2; }
+    if is_track(i - 1, j + 1) { mask += 4; }
+    if is_track(i + 1, j - 1) { mask += 8; }
+    if is_track(i + 1, j) { mask += 16; }
+    if is_track(i + 1, j + 1) { mask += 32; }
+    mask
+}
+
+/// `Minecart._firstPressureFrame` (`Minecart.cs:519-527`): the first frame whose
+/// `_trackType` is 1 (pressure) — frame 20 in the table.
+fn first_pressure_frame() -> i32 {
+    TRACK_FRAMES
+        .iter()
+        .position(|d| d.track_type == 1)
+        .map_or(-1, |f| f as i32)
+}
+
+/// `Minecart.FrameTrack(i, j, pound: true, mute: true)` (`Minecart.cs:943-1168`,
+/// the pound branch `:1040-1108` + the write tail `:1110-1167`): re-frames a
+/// switch/booster track to the next compatible option. The wiring caller
+/// (`FlipSwitchTrack` case 2) always passes `pound: true, mute: true`, so the
+/// non-pound branch (`:976-1039`) and the `KillTile(fail)` sound (`:1163-1166`,
+/// gated on `!mute`) are unreachable here and not ported. Returns whether the
+/// frame was rewritten (the C# `bool`).
+fn frame_track_pound(world: &mut World, i: i32, j: i32) -> bool {
+    // `:955-958`: `mute && tile.type != 314` → false.
+    let Some(tile) = world.tile(i, j).copied() else {
+        return false;
+    };
+    if tile.kind != 314 {
+        return false;
+    }
+    let options = match track_switch_options(nearby_track_mask(world, i, j)) {
+        Some(o) => o,
+        // `:966-974`: a null option list with `pound` → false (no reset).
+        None => return false,
+    };
+    let front = i32::from(tile.frame_x); // `tile.FrontTrack()` (`:1632-1635`)
+    let back = i32::from(tile.frame_y); // `tile.BackTrack()` (`:1642-1645`)
+    let front_type = if front >= 0 && (front as usize) < TRACK_FRAMES.len() {
+        i32::from(TRACK_FRAMES[front as usize].track_type)
+    } else {
+        0
+    };
+    // `:1042-1052`: the front/back indices in the option list (−1 = absent).
+    let mut num4: i32 = -1;
+    let mut num5: i32 = -1;
+    for (l, &opt) in options.iter().enumerate() {
+        if front == opt { num4 = l as i32; }
+        if back == opt { num5 = l as i32; }
+    }
+    // `:1053-1068`: count the same-type options — through (both sides connected)
+    // vs dead-end (either side −1).
+    let is_dead_end = |f: i32| {
+        let d = &TRACK_FRAMES[f as usize];
+        d.left_connection == -1 || d.right_connection == -1
+    };
+    let mut through = 0;
+    let mut dead_end = 0;
+    for &opt in &options {
+        if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type {
+            if is_dead_end(opt) { dead_end += 1; } else { through += 1; }
+        }
+    }
+    // `:1069-1072`: fewer than two of either kind → no flip.
+    if through < 2 && dead_end < 2 {
+        return false;
+    }
+    let flag2 = through == 0; // `:1073`: only dead-ends remain.
+    let mut flag3 = false;
+    // `:1075-1090`: with through options, advance the BACK index past the
+    // current front to the next through option with a different connection.
+    // The C# reads `array[num4]` here; a front frame absent from the option
+    // list leaves `num4 == -1` and the C# throws `IndexOutOfRangeException`
+    // (the module's out-of-range convention, `track_collision`'s doc).
+    if !flag2 {
+        assert!(num4 >= 0, "FrameTrack: front frame absent from the switch options (C# IndexOutOfRange)");
+        while !flag3 {
+            num5 += 1;
+            if num5 >= options.len() as i32 {
+                num5 = -1;
+                break;
+            }
+            let cand = options[num5 as usize];
+            let cur = options[num4 as usize];
+            let cd = &TRACK_FRAMES[cand as usize];
+            let ud = &TRACK_FRAMES[cur as usize];
+            if (cd.left_connection != ud.left_connection
+                || cd.right_connection != ud.right_connection)
+                && i32::from(cd.track_type) == front_type
+                && cd.left_connection != -1
+                && cd.right_connection != -1
+            {
+                flag3 = true;
+            }
+        }
+    }
+    // `:1091-1108`: otherwise advance the FRONT index to the next same-type
+    // option whose dead-end-ness matches `flag2` (wrapping once).
+    if !flag3 {
+        loop {
+            num4 += 1;
+            if num4 >= options.len() as i32 {
+                num4 = -1;
+                loop {
+                    num4 += 1;
+                    let opt = options[num4 as usize];
+                    if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type
+                        && is_dead_end(opt) == flag2
+                    {
+                        break;
+                    }
+                }
+                break;
+            }
+            let opt = options[num4 as usize];
+            if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type
+                && is_dead_end(opt) == flag2
+            {
+                break;
+            }
+        }
+    }
+    // `:1143-1162`: write the new front/back frames. num4 == −2 (pressure) and
+    // −1 (reset) are non-pound sentinels; the pound path keeps num4 ≥ 0 (the
+    // wrap loop always lands on a valid option), so the default arm applies.
+    let new_front = if num4 == -2 {
+        first_pressure_frame()
+    } else if num4 == -1 {
+        0
+    } else {
+        options[num4 as usize]
+    };
+    let new_back = if num5 == -1 { -1 } else { options[num5 as usize] };
+    if let Some(t) = world.tile_mut(i, j) {
+        t.frame_x = new_front as i16;
+        t.frame_y = new_back as i16;
+    }
+    true
+}
+
+/// `Minecart.FlipSwitchTrack` (`Minecart.cs:1296-1319`): the wired switch-track
+/// flip (`HitWireSingle` case 314, `Wiring.cs:1744-1748`). A normal track
+/// (`_trackType` 0) swaps its front/back frames when a back exists; a booster
+/// (`_trackType` 2) re-frames through `FrameTrack(pound, mute)`; a pressure
+/// track (1) is a no-op. `FrontTrack`/`BackTrack` are `frameX`/`frameY`
+/// (`Minecart.cs:1632-1650`).
+pub(crate) fn flip_switch_track(world: &mut World, i: i32, j: i32) {
+    let Some(tile) = world.tile(i, j).copied() else {
+        return;
+    };
+    let front = i32::from(tile.frame_x);
+    if front == -1 {
+        return;
+    }
+    if front < 0 || front as usize >= TRACK_FRAMES.len() {
+        return;
+    }
+    match TRACK_FRAMES[front as usize].track_type {
+        0 => {
+            let back = i32::from(tile.frame_y);
+            if back != -1 {
+                if let Some(t) = world.tile_mut(i, j) {
+                    t.frame_x = back as i16;
+                    t.frame_y = front as i16;
+                }
+            }
+        }
+        2 => {
+            frame_track_pound(world, i, j);
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1345,6 +1563,63 @@ mod tests {
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn flip_switch_track_swaps_a_normal_tracks_front_and_back() {
+        // `Minecart.cs:1306-1313`: a normal track (type 0) with a back frame
+        // swaps front/back. Frame 1 (straight) front, frame 5 back.
+        let mut w = track_world();
+        place_track(&mut w, 10, 10, 1, 5);
+        flip_switch_track(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 5);
+        assert_eq!(w.tile(10, 10).unwrap().frame_y, 1);
+        // A second flip swaps back.
+        flip_switch_track(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 1);
+        assert_eq!(w.tile(10, 10).unwrap().frame_y, 5);
+    }
+
+    #[test]
+    fn flip_switch_track_no_back_is_a_no_op() {
+        // `Minecart.cs:1307`: `BackTrack() != -1` gates the swap — a lone
+        // normal track (back −1) does not flip.
+        let mut w = track_world();
+        place_track(&mut w, 10, 10, 1, -1);
+        flip_switch_track(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 1);
+        assert_eq!(w.tile(10, 10).unwrap().frame_y, -1);
+    }
+
+    #[test]
+    fn flip_switch_track_pressure_is_a_no_op() {
+        // `Minecart.cs:1304-1318`: only types 0 and 2 act; a pressure track
+        // (type 1, frame 21) is untouched.
+        let mut w = track_world();
+        place_track(&mut w, 10, 10, 21, -1);
+        flip_switch_track(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 21);
+    }
+
+    #[test]
+    fn flip_switch_track_booster_reframes_to_the_next_option() {
+        // `Minecart.cs:1314-1317`: a booster (type 2) re-frames through
+        // `FrameTrack(pound, mute)`. A straight booster (frame 30) flanked by
+        // straight tracks left/right (mask 18) fits the through options
+        // {1, 30, 31} among others; the two boosters 30/31 share connections,
+        // so the back-index search (`:1075-1090`) finds no different-connection
+        // candidate and the front wraps (`:1091-1108`) to the next same-type
+        // through option — frame 31. The back stays −1.
+        let mut w = track_world();
+        place_track(&mut w, 10, 10, 30, -1);
+        place_track(&mut w, 9, 10, 1, -1);
+        place_track(&mut w, 11, 10, 1, -1);
+        flip_switch_track(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 31, "30 → 31, the next booster");
+        assert_eq!(w.tile(10, 10).unwrap().frame_y, -1);
+        // A second flip wraps 31 → 30 (the only other same-type through option).
+        flip_switch_track(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 30);
     }
 
     /// A player position whose bottom-center magnet sits at `magnet`:
