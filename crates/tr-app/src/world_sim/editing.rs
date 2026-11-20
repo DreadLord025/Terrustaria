@@ -5616,6 +5616,11 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_x: t.frame_x,
             frame_y: t.frame_y,
         });
+    // The FULL pre-kill tile — the C# `tile` reference of
+    // `KillTile_MakeTileDust` (`WorldGen.cs:63699-63703` reads it while
+    // the cell is still intact: the liquid, the frames, the ground
+    // scans below it). The clear happens in the drop half.
+    let dust_tile = app.world.tile(tx, ty).filter(|t| t.active()).copied();
     app.queue_map_ring(tx, ty);
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
@@ -5674,6 +5679,21 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
                 volume,
             );
         }
+    }
+    // `KillTile`'s dust loop (`WorldGen.cs:63699-63703`):
+    // `KillTile_GetTileDustAmount(fail: false, tile)` calls of
+    // `KillTile_MakeTileDust` on the PRE-KILL tile, after the sounds
+    // and before the drops (W4-d54 batch 3). The type chain's genRand
+    // rolls ride the `frame_rng` snapshot; the spawn blocks ride
+    // `UpdatePlayers`.
+    if let Some(t) = &dust_tile {
+        let ctx = app.spawn_ctx();
+        let mut gen = app.world.frame_rng.clone();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_tile::tile_break_burst(
+            rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, t, false,
+        );
+        app.world.frame_rng = gen;
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
