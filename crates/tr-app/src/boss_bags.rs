@@ -696,6 +696,37 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 _ => quick_spawn(rng, out, 4914, 1), // Rainbow Whip
             }
         }
+        // Queen Slime (`Player.cs:7644-7673`).
+        4957 => {
+            // NO dev-armor roll (the Queen Slime bag is not in the
+            // hardmode dev-set group).
+            quick_spawn(rng, out, 4987, 1); // Volatile Gelatin (expert-exclusive)
+            // `:7647` — the Gel Balloon 4986 stack Next(25, 76).
+            quick_spawn(rng, out, 4986, range(rng, 25, 76));
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 4959, 1); // Queen Slime Mask
+            }
+            if rng.next_max(2) == 0 {
+                quick_spawn(rng, out, 4981, 1); // Queen Slime Mount Saddle
+            }
+            if rng.next_max(3) == 0 {
+                quick_spawn(rng, out, 4758, 1); // Smolstar
+            }
+            if rng.next_max(2) == 0 {
+                quick_spawn(rng, out, 4980, 1); // Queen Slime Hook
+            }
+            // `:7664-7671` — two DISTINCT Crystal Ninja pieces: the
+            // do-while re-picks the FIRST slot (num) until it differs
+            // from num2 (the King Slime bag re-picks the SECOND — the
+            // asymmetry).
+            let mut num = range(rng, 4982, 4985);
+            let num2 = range(rng, 4982, 4985);
+            while num2 == num {
+                num = range(rng, 4982, 4985);
+            }
+            quick_spawn(rng, out, num, 1);
+            quick_spawn(rng, out, num2, 1);
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -1948,6 +1979,81 @@ mod tests {
                 _ => spawn_replay(&mut r, &mut want, 4914, 1),
             }
             money_replay_on(&mut r, 636, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_queen_slime_bag_zero_script_grants_the_whole_arm() {
+        // NO dev-armor roll: the Volatile Gelatin leads, the Gel Balloon
+        // 25, the mask 1/7, the saddle 1/2, the Smolstar 1/3, the hook
+        // 1/2, then the pieces: num=4982, num2=4982, re-pick num=4983
+        // (the forced 1) — then coins.
+        let mut rng = ScriptRng::new(&[0, 0, 0, 0, 0, 0, 0, 1]);
+        let mut out = Vec::new();
+        open_boss_bag(4957, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..8],
+            [4987, 4986, 4959, 4981, 4758, 4980, 4983, 4982],
+            "the re-picked FIRST slot leads the pair: {its:?}"
+        );
+        assert_eq!(out[1].stack, 25, "Gel Balloon Next(25,76) minimum");
+        assert!(its[8..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+        // THREE Next(3) piece draws (num, num2, the num re-pick).
+        let piece_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (0, 3)).collect();
+        // The Smolstar gate is also Next(3) — 4 total.
+        assert_eq!(piece_draws.len(), 4, "the Smolstar gate + 3 piece draws");
+    }
+
+    #[test]
+    fn w4_f35_queen_slime_bag_re_pick_redraws_the_first_slot() {
+        // The asymmetry vs the King Slime bag: num2 stays FIXED, num
+        // re-rolls. Forced: num=4982, num2=4984 (pick 2), no re-pick;
+        // the pair is (4982, 4984).
+        let mut rng = ScriptRng::new(&[6, 1, 2, 1, 0, 2]);
+        let mut out = Vec::new();
+        open_boss_bag(4957, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        // mask miss, saddle miss, Smolstar miss, hook miss… the script
+        // feeds the piece draws 0 then 2.
+        assert_eq!(its[0], 4987);
+        assert_eq!(its[1], 4986);
+        assert_eq!(its[2], 4982, "num stays the first pick");
+        assert_eq!(its[3], 4984, "num2 the second pick");
+    }
+
+    #[test]
+    fn w4_f35_queen_slime_bag_replays_the_csharp_draw_order() {
+        for seed in [71i32, 657657] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(4957, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            spawn_replay(&mut r, &mut want, 4987, 1);
+            spawn_replay(&mut r, &mut want, 4986, r.next_range(25, 76));
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 4959, 1);
+            }
+            if r.next_max(2) == 0 {
+                spawn_replay(&mut r, &mut want, 4981, 1);
+            }
+            if r.next_max(3) == 0 {
+                spawn_replay(&mut r, &mut want, 4758, 1);
+            }
+            if r.next_max(2) == 0 {
+                spawn_replay(&mut r, &mut want, 4980, 1);
+            }
+            let mut num = r.next_range(4982, 4985);
+            let num2 = r.next_range(4982, 4985);
+            while num2 == num {
+                num = r.next_range(4982, 4985);
+            }
+            spawn_replay(&mut r, &mut want, num, 1);
+            spawn_replay(&mut r, &mut want, num2, 1);
+            money_replay_on(&mut r, 657, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
         }
