@@ -971,9 +971,18 @@ mod tests {
     /// below `worldSurface` (`:1034`).
     #[test]
     fn lava_quads_carry_the_190_self_glow_floor() {
-        let mut w = lava_spout_world();
-        // Push the spout below the surface: the water 0.6 dim must NOT apply.
+        // A tall world so the fall walks the full 100 steps and reaches
+        // `GetAlpha`'s last-10-steps fade (k > 90).
+        let mut w = World::new("test".into(), 80, 140);
         w.world_surface = 5.0;
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        let mut lava = Tile::default();
+        lava.liquid = 255;
+        lava.flags |= FLAG_LIQUID_LAVA;
+        put(&mut w, 11, 9, lava);
+        put(&mut w, 11, 10, lava);
         let mut mgr = WaterfallManager::new();
         mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
         mgr.update_tick();
@@ -985,13 +994,12 @@ mod tests {
         let out = mgr.take_quads();
         let lava: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 1).collect();
         assert!(!lava.is_empty());
-        for q in &lava {
-            // (int)(190 * 1.0) / 255 on every channel, alpha 255.
-            assert_eq!(q.color, [190.0 / 255.0, 190.0 / 255.0, 190.0 / 255.0, 1.0]);
-        }
+        // The head segment: (int)(190 * 1.0) / 255 on every channel, alpha 255.
+        assert_eq!(lava[0].color, [190.0 / 255.0, 190.0 / 255.0, 190.0 / 255.0, 1.0]);
         // The fade tail (`GetAlpha`'s last-10-steps ramp, `:1039-1042`) scales
-        // the floor with alpha: the final segment's channels drop below 190.
+        // the floor with alpha: the final segment (k = 99) fades to 0.1.
         let last = lava.last().unwrap();
+        assert!((last.color[0] - 19.0 / 255.0).abs() < 1e-6);
         assert!(last.color[0] < 190.0 / 255.0);
     }
 
