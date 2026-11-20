@@ -110,7 +110,7 @@ Ids: 703, 20, 590, 595, 615, 16, 17, 26, 32, 69, 72, 77, 124, 137, 138.
 ```
 
 Rust (`drawdata.rs:311-316`): `3 | 24 | 61 | 71 | 110 | 201 | 637 | 703 => { data.height = 20; data.flip = flip_x; }`
-with `flip_x = x % 2 == 0` (`:128`). **PORTED** — 703 (CorruptJungle plants echo) rides
+with `flip_x = x % 2 == 0` (`:128`). **PORTED** — 703 (JunglePlantsEcho) rides
 the shared arm; the group's other labels are d61/d63 ids. 637's second-switch painted-
 sheet glow (`:6075-6079`) is cases_a's (mask-0 deviation, d63's index).
 
@@ -138,7 +138,7 @@ label with the identical body):
 
 Rust (`drawdata.rs:317-322`): `20 | 590 | 595 | 615 => { data.height = 18; data.flip = flip_x; }`.
 **PORTED** — the two C# label groups fold into one arm; same metrics, same parity flip.
-Saplings / gemcorns (590/595) / the 615 sapling echo.
+Saplings 20 / GemSaplings 590 / VanityTreeSakuraSaplings 595 / VanityTreeWillowSaplings 615.
 
 **16 / 17 / 26 / 32 / 69 / 72 / 77 / 124 / 137 / 138** — first ten labels of the 27-label
 18-px group (`TileDrawing.cs:4880-4908`; the remaining 17 labels are batch 2):
@@ -184,3 +184,44 @@ Traps 137 / Boulder 138. None of the ten has a second-switch case or a
 `DrawSingleTile` nudge — the static arm is the whole draw-data story.
 
 Batch 1 verdict: **15/15 PORTED**, no draw-side gap.
+
+### Batch 2 — the 18-px furniture tail: #81-95 (15 ids)
+
+Ids: 352, 462, 487, 488, 574, 575, 576, 577, 578, 664, 695, 704, 712, 713, 714.
+
+All fifteen are labels of the SAME 27-label group quoted verbatim in batch 1
+(`TileDrawing.cs:4880-4908`); the body is the single `tileHeight = 18; break;`. The
+labels in this batch, verbatim from the group:
+
+```csharp
+		case 352:
+		case 462:
+		case 487:
+		case 488:
+		case 574:
+		case 575:
+		case 576:
+		case 577:
+		case 578:
+		case 664:
+		case 695:
+		case 704:
+		case 712:
+		case 713:
+		case 714:
+```
+
+Rust (`drawdata.rs:337-345`): `352 | 462 | 487 | 488 | 574..=578 | 664 | 695 | 704 | 712..=716`
+inside the batch-1 arm — `data.height = 18` only. **PORTED** for all fifteen
+(TileID.cs names): CrimsonThorns 352 / DjinnLamp 462 / PicnicTable 487 /
+FallenLog 488 / BorealBeam 574 / RichMahoganyBeam 575 / GraniteColumn 576 /
+SandstoneColumn 577 / MushroomBeam 578 / BouncyBoulder 664 /
+DemonAltarReplica 695 / FallenLogEcho 704 / Poulder 712 / LavaBoulder 713 /
+SpiderBoulder 714 (Ghoulder 715 / BoulderThatSpawnsPet 716 are batch 3).
+None has a second-switch case,
+a `DrawSingleTile` nudge, or an animator row beyond the global
+`addFrY = Main.tileFrame[type] * 38` default (which the port carries for every
+kind, `drawdata.rs:121-125`). The boulder kinds' 18-px height is what lets the
+20-px-tall boulder sprite overhang the cell by 2 px like vanilla.
+
+Batch 2 verdict: **15/15 PORTED**, no draw-side gap.
