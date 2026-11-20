@@ -16,6 +16,11 @@ pub(crate) mod pylons;
 pub(crate) mod ropes;
 pub(crate) mod screen_fx;
 pub(crate) mod sky;
+// W4-g30 pass 3: UNWIRED Draw classification switch + special-point registry
+// (TileDrawing.cs:534-723/:183-195/:388-402/:764-782/:7702-7717) — the
+// draw_tiles seam is contested by the in-flight pass siblings; wiring is the
+// family's merge step (the module doc lists the intended call sites).
+pub(crate) mod special_points;
 // S1-G-1e: UNWIRED special-tile slice (DrawSpecialTilesLegacy + chest frames
 // + platform slope side-fills) — the draw_tiles seam is contested by the
 // in-flight S1-G-1 siblings; wiring is the family's merge step.
