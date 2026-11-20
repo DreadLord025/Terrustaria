@@ -147,6 +147,19 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- S1-I-1 wave B (W4-d89): the join/lobby 1-16 region census ----
+    // Every id 1..=16 now has a constant; the two the wave-A census missed:
+    /// `11 TileFrameSection` (`MessageID.cs:29-30`, marked `[Old]` — framing
+    /// happens as needed after TileSection). The writer arm DOES exist
+    /// (`NetMessage.cs:427-432`: four `(short)`s) and the client reads it
+    /// (`MessageBuffer.cs:895-899` → `WorldGen.SectionTileFrame`,
+    /// `WorldGen.cs:80343`); no C# call site sends it any more.
+    pub const TILE_FRAME_SECTION: u8 = 11;
+    /// `15 Unknown15` (`MessageID.cs:38-39`, `[Old("Deprecated.")]`): no
+    /// writer arm; the reader's deprecated group (`MessageBuffer.cs:4483-
+    /// 4490`, with 25/26/44/67/83/93) accepts and ignores it.
+    pub const UNKNOWN_15: u8 = 15;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -185,8 +198,10 @@ pub mod client_state {
     pub const WORLD_LOADING: i32 = 5;
     /// `8 SpawnRequest` sent (`Netplay.cs:511-516`).
     pub const SPAWN_REQUESTED: i32 = 6;
-    /// `49 WorldComplete` received: the player spawns in (`SpawningIntoWorld`,
-    /// `MessageBuffer.cs:2448-2452`).
+    /// `49 InitialSpawn` received: the player spawns in (`SpawningIntoWorld`,
+    /// `MessageBuffer.cs:2447-2453`). NOT "world stream complete" — the old
+    /// `WORLD_COMPLETE` reading was wrong (research/17 deviation 3, fixed
+    /// S1-E-28); the stream completes with the section walk itself.
     pub const IN_WORLD: i32 = 10;
 }
 
@@ -1291,6 +1306,19 @@ pub struct PlayerSpawn {
     pub spawn_context: u8,
 }
 
+/// `msg 11 TileFrameSection`'s body (`NetMessage.cs:427-432`): the section
+/// rectangle as four `(short)`s — `WorldGen.SectionTileFrame(sectionStartX,
+/// sectionStartY, sectionEndXInclusive, sectionEndYInclusive)`
+/// (`MessageBuffer.cs:895-899`, `WorldGen.cs:80343`). Deprecated on the wire
+/// (`MessageID.cs:29-30`): no C# `SendData(11)` call site remains.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileFrameSection {
+    pub start_x: i16,
+    pub start_y: i16,
+    pub end_x: i16,
+    pub end_y: i16,
+}
+
 /// `msg 31 RequestChestOpen`'s body (`NetMessage.cs:860-863`): the chest
 /// tile's top-left. The server answers `33` + the whole `32`/`155` contents
 /// (`MessageBuffer.cs:1868-1895`).
@@ -1791,6 +1819,14 @@ pub enum S2c {
     /// `10 TileBlock` — one section's tile snapshot (the C#'s
     /// `SendSection`, `NetMessage.cs:2697-2712`).
     TileBlock(Box<TileBlock>),
+    /// `11 TileFrameSection` — the deprecated re-frame request
+    /// (`NetMessage.cs:427-432`; the client runs `WorldGen.SectionTileFrame`,
+    /// `MessageBuffer.cs:895-899`). No C# site sends it; codec kept for the
+    /// id-table census (S1-I-1 wave B).
+    TileFrameSection(TileFrameSection),
+    /// `15 Unknown15` — deprecated (`MessageID.cs:38-39`), no body; the
+    /// reader's ignore group (`MessageBuffer.cs:4483-4490`).
+    Unknown15,
     /// `20 SectionRange` — a rectangle of tile changes
     /// (`SendTileSquare`, `NetMessage.cs:2627-2630`).
     SectionRange(Box<SectionRange>),
@@ -2169,6 +2205,8 @@ impl S2c {
             Self::WorldInfo(_) => id::WORLD_INFO,
             Self::Status { .. } => id::STATUS,
             Self::TileBlock(_) => id::TILE_BLOCK,
+            Self::TileFrameSection(_) => id::TILE_FRAME_SECTION,
+            Self::Unknown15 => id::UNKNOWN_15,
             Self::SectionRange(_) => id::SECTION_RANGE,
             Self::NetModule { .. } => id::NET_MODULE,
             Self::Projectile(_) => id::PROJECTILE,
@@ -2257,6 +2295,9 @@ impl S2c {
                 }),
             Self::WorldInfo(wi) => wi.write_to(w),
             Self::Status { text, max } => NetText(text.clone()).write_to(w.i32(*max)).u8(0),
+            // `NetMessage.cs:427-432` — four (short)s, verbatim order.
+            Self::TileFrameSection(t) => w.i16(t.start_x).i16(t.start_y).i16(t.end_x).i16(t.end_y),
+            Self::Unknown15 => w,
             Self::InitialSpawn => w,
             Self::Ping => w,
             Self::NpcKilled { npc } => w.i16(*npc),
@@ -2397,6 +2438,14 @@ impl S2c {
                 Self::Status { text, max }
             }
             id::TILE_BLOCK => Self::TileBlock(Box::new(TileBlock::decode_from(r)?)),
+            // `MessageBuffer.cs:895-899` — four (short)s into SectionTileFrame.
+            id::TILE_FRAME_SECTION => Self::TileFrameSection(TileFrameSection {
+                start_x: r.i16()?,
+                start_y: r.i16()?,
+                end_x: r.i16()?,
+                end_y: r.i16()?,
+            }),
+            id::UNKNOWN_15 => Self::Unknown15,
             id::SECTION_RANGE => Self::SectionRange(Box::new(SectionRange::decode_from(r)?)),
             id::NET_MODULE => Self::NetModule {
                 module: r.u16()?,
@@ -4708,6 +4757,75 @@ mod tests {
         assert_eq!(packed, hide);
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
+        }
+    }
+
+    // ---- S1-I-1 wave B (W4-d89): the 1-16 region census ----
+
+    #[test]
+    fn s1_i_1b_tile_frame_section_round_trips() {
+        // `NetMessage.cs:427-432`: four (short)s — startX, startY,
+        // endXInclusive, endYInclusive (`MessageBuffer.cs:895-899` reads
+        // them into `WorldGen.SectionTileFrame`).
+        let t = TileFrameSection {
+            start_x: 3,
+            start_y: -2,
+            end_x: 7,
+            end_y: 5,
+        };
+        let f = S2c::TileFrameSection(t).encode();
+        assert_eq!(f[2], 11);
+        let mut body = Vec::new();
+        for v in [3i16, -2, 7, 5] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TileFrameSection(d) => assert_eq!(d, t),
+            other => panic!("expected 11, got {:?}", other.msg_id()),
+        }
+        // A truncated body (3 of 4 shorts) is malformed, not a partial frame.
+        assert!(S2c::decode(11, &mut NetReader::new(&body[..6])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_unknown_15_is_a_bare_no_op_frame() {
+        // `MessageID.cs:38-39` ([Old]); no writer arm; the reader's ignore
+        // group (`MessageBuffer.cs:4483-4490`) consumes nothing.
+        let f = S2c::Unknown15.encode();
+        assert_eq!(f[2], 15);
+        assert_eq!(f.len(), 3, "id 15 has no body");
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::Unknown15 => {}
+            other => panic!("expected 15, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1b_the_1_to_16_region_is_fully_mapped() {
+        // The census against `MessageID.cs:9-41`: every id 1..=16 has a
+        // constant in `id` (11/15 landed with wave B). 17-19 stay outside
+        // this family (17 superseded by 20, 18 rides internal 205).
+        let region: [u8; 16] = [
+            id::CONNECT,
+            id::DISCONNECT,
+            id::PLAYER_ID,
+            id::PLAYER_INFO,
+            id::PLAYER_INVENTORY,
+            id::WORLD_REQUEST,
+            id::WORLD_INFO,
+            id::SPAWN_REQUEST,
+            id::STATUS,
+            id::TILE_BLOCK,
+            id::TILE_FRAME_SECTION,
+            id::PLAYER_SPAWN,
+            id::PLAYER_STATE,
+            id::PLAYER_ACTIVE,
+            id::UNKNOWN_15,
+            id::PLAYER_HP,
+        ];
+        for (i, v) in region.iter().enumerate() {
+            assert_eq!(*v as usize, i + 1, "MessageID region slot {}", i + 1);
         }
     }
 }

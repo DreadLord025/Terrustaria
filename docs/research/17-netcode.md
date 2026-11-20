@@ -106,8 +106,8 @@ ANALYSIS.md:7288-7293).
 148, 154, 162. `GetData` reads **159**; the only three it never dispatches are
 **138, 145, 148** (deprecated, removed ids). Everything else is read somewhere.
 `net.rs` ports **25** ids + 5 internal ones (as researched; S1-E-27/S1-I-5 grew
-that, and S1-I-1 wave A added the join bundle's 11 — see the map's per-row
-notes).
+that, S1-I-1 wave A added the join bundle's 11, and wave B (W4-d89) closed the
+1-16 region census with `11`/`15` — see the map's per-row notes).
 
 | id | C# name | Rust | Evidence |
 | --- | --- | --- | --- |
@@ -122,11 +122,11 @@ notes).
 | 8 | SpawnTileData | `id::SPAWN_REQUEST` | `net.rs:64` |
 | 9 | StatusTextSize | `id::STATUS` | `net.rs:65` |
 | 10 | TileSection | `id::TILE_BLOCK` | `net.rs:67` |
-| 11 | TileFrameSection | NOT-FOUND | deprecated (`MessageID.cs:29-30`); no `SendData` arm |
+| 11 | TileFrameSection | `id::TILE_FRAME_SECTION` | S1-I-1 wave B (W4-d89): `S2c::TileFrameSection`, four `(short)`s (`NetMessage.cs:427-432` → `WorldGen.SectionTileFrame`, `MessageBuffer.cs:895-899`); the writer arm EXISTS — the earlier "no SendData arm" note was wrong; no C# call site sends it (deprecated, `MessageID.cs:29-30`); netglue arm parked for I-4 |
 | 12 | PlayerSpawn | `id::PLAYER_SPAWN` | `net.rs:76` |
 | 13 | PlayerControls | `id::PLAYER_STATE` | `net.rs:78`; arm `NetMessage.cs:446-513` |
 | 14 | PlayerActive | `id::PLAYER_ACTIVE` | `net.rs:66` |
-| 15 | Unknown15 | NOT-FOUND | deprecated (`MessageID.cs:38-39`) |
+| 15 | Unknown15 | `id::UNKNOWN_15` | S1-I-1 wave B (W4-d89): `S2c::Unknown15`, a bare frame — deprecated (`MessageID.cs:38-39`), the reader's ignore group accepts it (`MessageBuffer.cs:4483-4490`, shared with 25/26/44/67/83/93) |
 | 16 | PlayerLifeMana | `id::PLAYER_HP` | `net.rs:73` |
 | 17-19 | TileManipulation, SetTime, ToggleDoorState | NOT-FOUND | 17 superseded by 20 (`MessageID.cs:43`); 18's clock rides internal `205` (ANALYSIS.md:7275-7278) |
 | 20 | AreaTileChange | `id::SECTION_RANGE` | `net.rs:72`; arm `:543-644` |
@@ -313,9 +313,10 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
 - **S — Map the ported client onto real ids.** Replace `201-205` with the C# ids they
   stand in for (`17`/`21`+`151`/`4`+`12`+`14`) and keep a compatibility note in
   `ANALYSIS.md`. Unblocks any future vanilla interop work. Depends on: nothing.
-- **S — Rename `WORLD_COMPLETE` (49).** Confirm the intended semantic against
-  `MessageBuffer.cs:2447-2453` and either rename the const or add the real
-  initial-spawn arm so the two meanings cannot collide. Depends on: nothing.
+- ~~**S — Rename `WORLD_COMPLETE` (49).**~~ Done (S1-E-28 renamed + re-armed;
+  wave B (W4-d89) purged the last stale `WorldComplete` doc in
+  `client_state::IN_WORLD`). The semantic is confirmed against
+  `MessageBuffer.cs:2447-2453`.
 - **S — Port ping as id 154** (`Net/Ping.cs:23-35`) alongside module 2, and expose
   `CurrentPing` to the HUD. Depends on: nothing.
 - **M — Port the join bundle**: `SyncConnectedPlayer`/`SyncOnePlayer`/
