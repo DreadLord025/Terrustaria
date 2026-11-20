@@ -1918,6 +1918,48 @@ mod tests {
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
     }
 
+    /// W4-d58 draw-feed witness: the chest rewrite sits at the C#
+    /// `CacheSpecialDraws_Part2` position — AFTER the whole `GetTileDrawData`
+    /// dispatch (static table + world corrections + slice B + slice A) and
+    /// BEFORE the source-rect resolution (`DrawSingleTile`,
+    /// `TileDrawing.cs:993` vs `:1007`), gated on `BasicChest` and keyed on
+    /// the per-draw `_chestPositions` cache. The lid frame comes from the
+    /// store (`Main.chest[i].frame`, `:4311`) — read-only, no RNG draw.
+    #[test]
+    fn w4_d58_the_chest_rewrite_runs_after_the_dispatch_before_the_rect() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        let cases_a = dd_block.find("apply_cases_a").expect("slice A dispatch");
+        let chest = dd_block
+            .find("is_basic_chest(tile.kind)")
+            .expect("the chest rewrite gate");
+        assert!(
+            cases_a < chest,
+            "the chest rewrite runs after GetTileDrawData (TileDrawing.cs:993)"
+        );
+        assert!(
+            dd_block[chest..].contains("tr_render::chest_frame_adjust"),
+            "the +0/38/76 selection lives in tr-render"
+        );
+        assert!(
+            dd_block[chest..].contains("crate::chest::chest_draw_frame"),
+            "the lid frame rides the _chestPositions cache (:4300-4303)"
+        );
+        // Exactly one rewrite site, and the per-draw cache is fresh per call
+        // (ClearLegacyCachedDraws, :6613-6615). Count the CALL (`let adj =`),
+        // not the name — the citation comment above the gate mentions it too.
+        assert_eq!(body.matches("let adj = tr_render::chest_frame_adjust").count(), 1);
+        assert!(body.contains("let mut chest_positions"));
+        // The rewrite writes addFr + the height clamp, nothing else.
+        let rewrite = &dd_block[chest..];
+        assert!(rewrite.contains("dd.add_fr_x = adj.add_fr_x;"));
+        assert!(rewrite.contains("dd.add_fr_y = adj.add_fr_y;"));
+        assert!(rewrite.contains("dd.height = h as u16;"));
+    }
+
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain
     // (`TileDrawing.cs:3578-3581` high arm, `:3634-3637` medium arm): the
     // slice averages the neighbourhood colour with the tile's own RAW light
