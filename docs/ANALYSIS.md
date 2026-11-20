@@ -38538,6 +38538,25 @@ Deviations (deliberate, recorded):
 * The PVE strike's debuff bonuses (ichor +15 / broken armor +20 / Betsy's
   curse +40, `NPC.cs:81148`) pass false — the NPC debuff scan has not
   landed on this seam (the melee hit's convention).
+* W4-f13 — the melee HIT path no longer keeps that convention:
+  `world_sim/editing.rs::resolve_melee_strike` (shared by the cursor arm
+  and the useStyle-3 stab sweep) now passes the victim's LIVE
+  `buffs.has_buff(69/36/203)` into `check_armor_penetration`
+  (`Player.cs:44400` → `NPC.cs:81149-81160` +15/+20/+40, the defense/2
+  cap `:81166-81169`). The read sits AFTER `StatusToNPC` (`:44391`) like
+  the C#, so a flask-inflicted debuff counts on the same hit; the C#
+  `UpdateNPC_BuffSetFlags` latches (`NPC.cs:92021-92028`,
+  `:92101-92104`) are derived fresh at the read (the a3 projectile-side
+  precedent). The Sharpened 159 melee-side +12 was ALREADY present —
+  both callers pass `get_armor_penetration(true)` and the buff arm
+  folds `melee_armor_penetration` (`player.rs`, `Player.cs:9927-9930`).
+  Witnesses: `w4_f13_ichor_and_broken_armor_pen_join_the_melee_hit`,
+  `w4_f13_betsys_curse_and_sharpened_pen_on_the_melee_hit` (WRITTEN NOT
+  RUN, code-only mode). Note for the a3 merge: their un-run witness
+  `w4_a3_ichor_and_broken_armor_pen_join_the_pve_strike` expects 17 for
+  ichor+broken on defense 24, but 15+20 = 35 > 24 trips the
+  `:81166-81169` cap — the correct lift is 12, not 17 (the melee
+  witnesses here pin the capped value).
 * The gem-staff ArPenSpread's +4 (`Projectile.cs:22084`) stays unported
   (the `gem_staves_finalize` note) — the slot field now exists for it.
 * The revolver's `revolverCritChanceBonus` clamp (`Player.cs:42677-42698`,
