@@ -31703,6 +31703,27 @@ pixel-diff gates) lives in **`docs/GOLDEN_REPIN.md`** — owed, executed in the
 next build-allowed window. Unblocks: N16 wyvern sheets, S1-L-8b mounts, gore
 draw refinements (each lane re-takes the goldens it touches at its merge).
 
+**Fresh measurement (2026-11-20, `node tools/atlas_sim.js`, real `.xnb` dims,
+no compiler).** The sheet set GREW since the 2026-11-19 measurement (E-4b's
+1402 gore sheets landed on main plus the wave-3 sheet additions): the full
+set is now **9498 sheets / 64.3 Mpx padded area** (was 9254). Heights:
+
+| sheet set (2026-11-20 census) | best-fit shelves | skyline waste | skyline span | maxrects BAF |
+| --- | --- | --- | --- | --- |
+| main (E-4b gore landed, 9497 sheets) | 9012 OVERFLOW | **8115** | 8140 | 7956 |
+| full: L-8b static list + gore + font (9498) | 9012 OVERFLOW | **8119** | 8142 | 7956 |
+| main pre-E-4b (historical, 8095 sheets) | 8628 OVERFLOW | **7711** | 7743 | 7946 |
+
+The 7932 px figure above is the 2026-11-19 census; today's full set packs in
+**8119 px ≤ 8192 — 73 px headroom** (was 260). The fit proof still holds
+(deterministic double run, no overlaps incl. padding, in-bounds — the sim
+verifies all three), but the headroom is nearly eaten: the N16 wyvern sheets
+(~6 more) and any further sheet wave must re-measure, and **maxrects BAF
+(7956 px, 236 px headroom) is now the recommended next packer step** rather
+than a distant fallback. The L-8b additions are already on main (the sim's
+fallback list resolves to 0 new names — the mount/glow/minecart rows landed
+with the mount waves), so the "full" scenario equals main + font today.
+
 ## The vines keep their background walls (fix/vines-destroy-walls)
 
 **User report.** Spawned vines destroy background-wall tiles: in mini-caves

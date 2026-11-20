@@ -18,9 +18,10 @@ from this wave by changing draw code — re-take the golden first, then diff.
   (`Lookups::sheet_uv` / `uv_rect`, `assets.rs:3166-3174`; the sprite pipeline's
   per-sheet UV table, `sprite.rs:494-500`). No UV is hardcoded in draw code —
   the pixels sampled are the same texels at new normalized coordinates.
-- The atlas height changed (main set ~7289 px skyline vs ~8117 px shelves,
-  `tools/atlas_sim.js` measured), so even sheets whose `x` happens to survive
-  get a different `y / atlas.height` normalization.
+- The atlas height changed (2026-11-20 census: main set 8115 px skyline vs
+  9012 px shelves, `tools/atlas_sim.js` measured; the 2026-11-19 census was
+  7289/8117 before the wave-3 sheet additions), so even sheets whose `x`
+  happens to survive get a different `y / atlas.height` normalization.
 - Name dedup (first occurrence wins) removed 41 duplicate `Projectile_*`
   decodes — UV-neutral for lookups (the HashMap always kept one rect per name).
 
