@@ -1155,6 +1155,9 @@ fn play_npc_sound_request(
         NpcSoundCue::NpcDeath61 => {
             audio.play_npc_death_style(61, req.x, req.y, rng);
         }
+        NpcSoundCue::NpcDeath55 => {
+            audio.play_npc_death_style(55, req.x, req.y, rng);
+        }
         NpcSoundCue::NpcDeath13 => {
             audio.play_npc_death_style(13, req.x, req.y, rng);
         }

@@ -129,6 +129,25 @@ pub fn vile_spit_counter_tick(ai0: f32) -> (f32, bool) {
     (ai0, ai0 == 2.0)
 }
 
+/// W4-e9 — the Vile Spits' `ai[0] == 2` tick sound (`NPC.cs:21478-21480`):
+/// AFTER the double move (`position += velocity`) the arm plays
+/// `PlaySound(4, (int)position.X, (int)position.Y, 9)` — the int overload
+/// (`SoundEngine.cs:102-108`, NO NextFloat), case 4's one pitch draw on
+/// the `UpdateNPCs` stream. Queues on `wants_sound` at the MOVED position
+/// (the C# reads `base.position` after the `+=`); the 20-dust burst
+/// (`:21481-21487`) stays the documented skip. RNG-free (the push draws
+/// nothing). The 112/666 kinds' wiring calls this on the counter's
+/// double-move tick ([`vile_spit_counter_tick`]'s `true`).
+#[allow(dead_code)] // the 112/666 kinds' wiring consumes the cry
+pub fn vile_spit_queue_cry(npc: &mut Npc) {
+    let (sx, sy) = (npc.x, npc.y);
+    npc.wants_sound.push(crate::npc::NpcSoundRequest {
+        cue: crate::npc::NpcSoundCue::NpcDeath(9),
+        x: sx,
+        y: sy,
+    });
+}
+
 /// `Utils.RotatedBy` (`Utils.cs:1675-1684`) about the origin: the f32
 /// cos/sin of the f64 angle, the XNA rotation direction.
 #[allow(dead_code)] // the Solar Flare 516 kind's wiring consumes the rotation
@@ -392,6 +411,34 @@ mod tests {
         assert_eq!(vile_spit_counter_tick(1.0), (2.0, true));
         assert_eq!(vile_spit_counter_tick(2.0), (3.0, false));
         assert_eq!(vile_spit_counter_tick(3.0), (3.0, false));
+    }
+
+    /// W4-e9 — `NPC.cs:21478-21480`: the double-move tick queues ONE
+    /// int-death style-9 cry at the MOVED position (`position += velocity`
+    /// precedes the play), and the push draws nothing. The counter's
+    /// other ticks queue nothing.
+    #[test]
+    fn w4_e9_the_vile_spit_cry_queues_at_the_moved_position() {
+        let mut n = Npc::new(NpcKind::ChaosBall, 100.0, 200.0, 1, 0.0);
+        n.vx = 7.0;
+        n.vy = -3.0;
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        // The ai[0] 1 → 2 tick: the double move, then the cry.
+        let (ai0, double_move) = vile_spit_counter_tick(1.0);
+        assert!(double_move);
+        n.ai[0] = ai0;
+        n.x += n.vx;
+        n.y += n.vy;
+        vile_spit_queue_cry(&mut n);
+        assert_eq!(n.wants_sound.len(), 1);
+        let req = n.wants_sound[0];
+        assert_eq!(req.cue, crate::npc::NpcSoundCue::NpcDeath(9));
+        assert_eq!((req.x, req.y), (107.0, 197.0), "the post-move position");
+        assert_eq!(rng.peek(), peek, "the queue push draws nothing");
+        // The 2 → 3 tick: no double move, no cry queued by the wiring.
+        let (_, double_move) = vile_spit_counter_tick(ai0);
+        assert!(!double_move);
     }
 
     /// `NPC.cs:21395-21400` + `Utils.cs:1697-1700` — the launch consumes
