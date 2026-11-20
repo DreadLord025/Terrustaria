@@ -1437,6 +1437,35 @@ pub struct Player {
     /// this flag, so one bool carries both — the +0.05 equipment-luck add
     /// is `update_equips`' tail gate (`:13066-13069`).
     pub has_lucky_coin: bool,
+    /// `Player.hasLuck_LuckyHorseshoe` (`Player.cs:2652`) — W4-e26: the
+    /// horseshoe family's +0.05 equipment-luck flag. The
+    /// `ApplyEquipFunctional` rows arm it (5331 `:14834`, 1250 `:14841`,
+    /// 1252 `:14848`, 1251 `:14855`, 3250 `:14862`, 3252 `:14869`, 3251
+    /// `:14876`, 158 `:15032`, 396 `:15207`); `ResetEffects` clears it
+    /// (`:18763`); the `update_equips` tail adds +0.05 once (`:13062-13065`).
+    /// The team-share copy (`:12709-12712`) is multiplayer-only.
+    pub has_luck_lucky_horseshoe: bool,
+    /// `Player.hasLuck_LuckyClover` (`Player.cs:2654`) — the Lucky Clover
+    /// 5574 (`RefreshInfoAccsFromItemType`, `:12723-12726`): +0.03 at the
+    /// `update_equips` tail (`:13050-13053`). NOT an accessory — the C#
+    /// grants it from the inventory scan (`:12900-12914`), so simply
+    /// carrying one counts. `ResetEffects` clears (`:18764`).
+    pub has_luck_lucky_clover: bool,
+    /// `Player.hasLuck_WiltedClover` (`Player.cs:2656`) — the Wilted Clover
+    /// 5575 (`:12727-12730`): −0.1 at the tail (`:13054-13057`). Carried,
+    /// not worn, like the Lucky Clover. `ResetEffects` clears (`:18766`).
+    pub has_luck_wilted_clover: bool,
+    /// `Player.hasLuck_RavenFeather` (`Player.cs:2658`) — the Raven Feather
+    /// 5576 (`:12731-12734`): −0.1 at the tail (`:13058-13061`). Carried,
+    /// not worn. `ResetEffects` clears (`:18765`).
+    pub has_luck_raven_feather: bool,
+    /// The per-tick inventory snapshot `UpdateEquips`' first loop scans
+    /// (`Player.cs:12900-12914` — `inventory[0..58]`'s types): the App
+    /// fills it from the grid + coin/ammo rows before the fixed step
+    /// (`world_sim/player.rs`, the `equipped`/`held_item_kind` snapshot
+    /// convention). W4-e26: the clover/feather luck family reads it; the
+    /// info-acc siblings stay on their own seams.
+    pub carried_kinds: Vec<u16>,
     /// `Player.manaMagnet` (`Player.cs:932`): the Celestial Magnet 2219
     /// (`:14940-14943`), the Celestial Emblem 2220 (`:14944-14948`), the
     /// Celestial Cuffs 2221 (`:14949-14953`) and the Magnet Flower 4000
@@ -2751,6 +2780,11 @@ impl Player {
             magic_cuffs: false,
             gold_ring: false,
             has_lucky_coin: false,
+            has_luck_lucky_horseshoe: false,
+            has_luck_lucky_clover: false,
+            has_luck_wilted_clover: false,
+            has_luck_raven_feather: false,
+            carried_kinds: Vec::new(),
             mana_magnet: false,
             life_magnet: false,
             latest_mana_potion_damage_bonus: 0.0,
@@ -4894,6 +4928,30 @@ impl Player {
     /// `ItemDef` carries no `expert_only` and every ported grant kind is
     /// classic (deviation, docs/ANALYSIS.md "The UpdateEquip seam").
     fn update_equips(&mut self) {
+        // `UpdateEquips`' FIRST loop (`Player.cs:12900-12914`): the
+        // inventory[0..58] scan feeding `RefreshInfoAccsFromItemType` —
+        // W4-e26 ports its luck family (`:12723-12734`): the Lucky Clover
+        // 5574 / Wilted Clover 5575 / Raven Feather 5576 are CARRIED, not
+        // worn (the registry rows are not accessories, `Item.cs:43910-
+        // 43926`). The port's inventory[0..50] grid + the coin/ammo rows
+        // (the App-held halves of the C#'s 50..58) stand in for the 58-slot
+        // walk; `carried_kinds` is the per-tick snapshot the App fills
+        // (`world_sim/player.rs`, the `void_vault_enabled` precedent). The
+        // void-bag pass (`:12931-12941`, gated on carrying the Void Bag
+        // 4131) re-scans bank4 for `WorksInVoidBag` kinds (`ItemID.cs:350`:
+        // {4346, 5095}) — neither is a luck kind, so the clovers never arm
+        // from the vault; the pass is a no-op for this family (recorded).
+        // The info-acc/mechanical/kiting siblings of the same scan are
+        // unported (the flags stay on their own seams).
+        for &kind in self.carried_kinds.iter() {
+            // `RefreshInfoAccsFromItemType` (`Player.cs:12723-12734`).
+            match kind {
+                5574 => self.has_luck_lucky_clover = true,
+                5575 => self.has_luck_wilted_clover = true,
+                5576 => self.has_luck_raven_feather = true,
+                _ => {}
+            }
+        }
         for m in 3..10 {
             if !self.is_item_slot_unlocked_and_usable(m) {
                 continue;
@@ -4908,15 +4966,27 @@ impl Player {
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
             self.apply_equip_functional(m, kind);
         }
-        // `UpdateEquips`' luck tail (`Player.cs:13066-13069`): ONE +0.05
-        // `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` — the flag
-        // the Lucky Coin family arms (855/3034/3035); two rings still add
-        // 0.05 once. (`Main.myPlayer`-only in the C# — the port's single
-        // player.) The clover/horseshoe/raven-feather siblings
-        // (`:13050-13065`) are unported families.
+        // `UpdateEquips`' luck tail (`Player.cs:13050-13069`, W4-e26): the
+        // five flags in the C#'s order — clover +0.03, wilted clover −0.1,
+        // raven feather −0.1, horseshoe +0.05, lucky coin +0.05 — each ONCE
+        // (`Main.myPlayer`-only in the C# — the port's single player; two
+        // carriers of one family still add once). The flags are boolean
+        // ORs, so the f32 adds run in the source order for bit-identical
+        // accumulation.
+        if self.has_luck_lucky_clover {
+            self.luck_state.equipment_based_luck_bonus += 0.03; // `:13050-13053`
+        }
+        if self.has_luck_wilted_clover {
+            self.luck_state.equipment_based_luck_bonus -= 0.1; // `:13054-13057`
+        }
+        if self.has_luck_raven_feather {
+            self.luck_state.equipment_based_luck_bonus -= 0.1; // `:13058-13061`
+        }
+        if self.has_luck_lucky_horseshoe {
+            self.luck_state.equipment_based_luck_bonus += 0.05; // `:13062-13065`
+        }
         if self.has_lucky_coin {
-            self.luck_state.equipment_based_luck_bonus += 0.05;
-
+            self.luck_state.equipment_based_luck_bonus += 0.05; // `:13066-13069`
         }
         // `Player.UpdateEquips`' tail (`Player.cs:13097-13100`):
         // `mount.UpdateAfterEquips(this)` — the Velociraptor's selective-fly
@@ -5036,14 +5106,23 @@ impl Player {
             987 => self.has_jump_options[ExtraJump::Blizzard.index()] = true,
             1724 => self.has_jump_options[ExtraJump::Fart.index()] = true,
             3201 => self.has_jump_options[ExtraJump::Sail.index()] = true,
-            // The bottle combos (`:14822-14835`): 1164 (Bundle of
-            // Balloons) and 5331 (its Amber/Glass variant) carry all three
-            // bottles at once.
-            1164 | 5331 => {
+            // The bottle combos (`:14820-14835`): 1164 (Bundle of
+            // Balloons) carries all three bottles at once; 5331 (the
+            // horseshoe variant) adds `noFallDmg` + the luck flag
+            // (`:14833-14834`, W4-e26).
+            1164 => {
                 self.has_jump_options[ExtraJump::Cloud.index()] = true;
                 self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
                 self.has_jump_options[ExtraJump::Blizzard.index()] = true;
                 self.jump_boost = true;
+            }
+            5331 => {
+                self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                self.has_jump_options[ExtraJump::Blizzard.index()] = true;
+                self.jump_boost = true;
+                self.no_fall_dmg = true;
+                self.has_luck_lucky_horseshoe = true;
             }
             // Every other bottle/balloon carries its own option *and*
             // `jumpBoost` (`:14806/:15093-15103`, `:14797-14860`): `399`
@@ -5054,25 +5133,61 @@ impl Player {
             // Comb) carry the boost AND `honeyCombItem` (`:14871-14882`,
             // S1-C-7 wave B); `159`/`3225` (the Aglet-style `jumpSpeedBoost`
             // rows) carry only the boost.
-            399 | 1250 => {
+            // W4-e26: the horseshoe-balloon halves split from the plain
+            // balloons — 1250/1251/1252/3250/3252 each add the luck flag
+            // beside `noFallDmg` (`:14841/:14855/:14848/:14862/:14869`);
+            // 399/1163/983/1863/3241 are the plain rows (`:15214-15218`,
+            // `:14806-14810`, `:14797-14801`, `:14815-14819`,
+            // `:14883-14887` — no luck flag).
+            399 => {
                 self.has_jump_options[ExtraJump::Cloud.index()] = true;
                 self.jump_boost = true;
             }
-            1251 | 1163 => {
+            1250 => {
+                self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                self.jump_boost = true;
+                self.no_fall_dmg = true;
+                self.has_luck_lucky_horseshoe = true;
+            }
+            1163 => {
                 self.has_jump_options[ExtraJump::Blizzard.index()] = true;
                 self.jump_boost = true;
             }
-            983 | 1252 => {
+            1251 => {
+                self.has_jump_options[ExtraJump::Blizzard.index()] = true;
+                self.jump_boost = true;
+                self.no_fall_dmg = true;
+                self.has_luck_lucky_horseshoe = true;
+            }
+            983 => {
                 self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
                 self.jump_boost = true;
             }
-            1863 | 3250 => {
+            1252 => {
+                self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                self.jump_boost = true;
+                self.no_fall_dmg = true;
+                self.has_luck_lucky_horseshoe = true;
+            }
+            1863 => {
                 self.has_jump_options[ExtraJump::Fart.index()] = true;
                 self.jump_boost = true;
             }
-            3252 | 3241 => {
+            3250 => {
+                self.has_jump_options[ExtraJump::Fart.index()] = true;
+                self.jump_boost = true;
+                self.no_fall_dmg = true;
+                self.has_luck_lucky_horseshoe = true;
+            }
+            3241 => {
                 self.has_jump_options[ExtraJump::Sail.index()] = true;
                 self.jump_boost = true;
+            }
+            3252 => {
+                self.has_jump_options[ExtraJump::Sail.index()] = true;
+                self.jump_boost = true;
+                self.no_fall_dmg = true;
+                self.has_luck_lucky_horseshoe = true;
             }
             159 | 3225 => self.jump_boost = true,
             // The Honey Comb 1249 (`Player.cs:14878-14882`): `jumpBoost` +
@@ -5082,14 +5197,15 @@ impl Player {
                 self.honey_comb = true;
             }
             // The Honey Balloon 3251 (`:14871-14877`): the same pair PLUS
-            // `noFallDmg` (its `hasLuck_LuckyHorseshoe` half `:14876` has no
-            // port field - deferred). The `noFallDmg` row lives HERE, not in
-            // the horseshoe arm below: this arm matches first, so a 3251
-            // pattern there would be unreachable.
+            // `noFallDmg` + the luck flag (`:14876`, W4-e26). The
+            // `noFallDmg` row lives HERE, not in the horseshoe arm below:
+            // this arm matches first, so a 3251 pattern there would be
+            // unreachable.
             3251 => {
                 self.jump_boost = true;
                 self.honey_comb = true;
                 self.no_fall_dmg = true;
+                self.has_luck_lucky_horseshoe = true;
             }
             // The base boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
             // `:15017-15020` Sailfish - `accRunSpeed = 6f`).
@@ -5290,10 +5406,25 @@ impl Player {
             // The Aglet / the Anklet of the Wind (`:15114-15121`).
             285 => self.move_speed += 0.05,
             212 => self.move_speed += 0.1,
-            // `Player.cs:15029-15033` + the horseshoe balloons: the fall
-            // damage immunity. (3251's row lives in its Honey Balloon arm
-            // above - a pattern here would be unreachable.)
-            158 | 1250 | 1251 | 1252 | 3250 | 3252 => self.no_fall_dmg = true,
+            // `Player.cs:15029-15033` — the Lucky Horseshoe itself: the
+            // fall immunity + the luck flag. The balloons' `noFallDmg`
+            // halves ride the SHARED arm below (`:14840`/`:14847`/`:14854`/
+            // `:14861`/`:14868` — one row per balloon, like the C#'s
+            // independent if-blocks; 3251's lives in its Honey Balloon arm
+            // above, 5331's in its combo arm).
+            158 => {
+                self.no_fall_dmg = true;
+                self.has_luck_lucky_horseshoe = true;
+            }
+            // `Player.cs:15203-15208` — the Obsidian Horseshoe: `noFallDmg`
+            // + `fireWalk` + the luck flag (the fire-walk half already rides
+            // `accessory_defense.rs`'s 396 row; the two OR passes are
+            // behaviour-identical, W4-e26).
+            396 => {
+                self.no_fall_dmg = true;
+                self.fire_walk = true;
+                self.has_luck_lucky_horseshoe = true;
+            }
             // `Player.cs:15025-15028` - the Cobalt Shield.
             156 => self.no_knockback = true,
             // The sentry-backpack slings (`ApplyEquipFunctional`,
@@ -6753,6 +6884,12 @@ impl Player {
         // family's per-tick clears (the equip pass below re-arms them).
         self.gold_ring = false;
         self.has_lucky_coin = false;
+        // `:18763-18766` — the four equipment-luck flags clear per tick
+        // (W4-e26); the equip pass + the inventory scan re-arm them.
+        self.has_luck_lucky_horseshoe = false;
+        self.has_luck_lucky_clover = false;
+        self.has_luck_raven_feather = false;
+        self.has_luck_wilted_clover = false;
         self.ice_skate = false;
         self.desert_boots = false;
         self.rocket_boots = 0;
@@ -15510,6 +15647,133 @@ mod tests {
         assert!(!p.gold_ring);
         assert!(!p.has_lucky_coin);
         assert_eq!(p.luck_state.equipment_based_luck_bonus, 0.0);
+    }
+
+    /// W4-e26 — the horseshoe family's luck flag + fall immunity
+    /// (`ApplyEquipFunctional`, `Player.cs:14827-14876`, `:15029-15033`,
+    /// `:15203-15208`): all nine carriers arm `hasLuck_LuckyHorseshoe`,
+    /// the balloon halves keep their `noFallDmg` (the shared row's kinds
+    /// now match their own arms first — first-match-wins would otherwise
+    /// eat the fall immunity).
+    #[test]
+    fn w4_e26_the_horseshoe_family_arms_the_luck_flag_and_fall_immunity() {
+        for kind in [158u16, 396, 1250, 1251, 1252, 3250, 3251, 3252, 5331] {
+            let p = player_with_accessory(kind);
+            assert!(p.has_luck_lucky_horseshoe, "{kind} arms the luck flag");
+            assert!(p.no_fall_dmg, "{kind} keeps noFallDmg");
+            assert!(
+                (p.luck_state.equipment_based_luck_bonus - 0.05).abs() < 1e-6,
+                "{kind}: +0.05 once (`:13062-13065`), got {}",
+                p.luck_state.equipment_based_luck_bonus
+            );
+        }
+        // The Obsidian Horseshoe's fireWalk half survives the arm split
+        // (`:15206` + `accessory_defense.rs`'s OR pass).
+        let p = player_with_accessory(396);
+        assert!(p.fire_walk, "396 fireWalk (`:15206`)");
+        // The plain balloons carry NO luck flag (`:15214-15218`,
+        // `:14806-14810`, `:14797-14801`, `:14815-14819`, `:14883-14887`).
+        for kind in [399u16, 1163, 983, 1863, 3241, 1164, 1249] {
+            let p = player_with_accessory(kind);
+            assert!(!p.has_luck_lucky_horseshoe, "{kind} is a plain balloon");
+            assert_eq!(p.luck_state.equipment_based_luck_bonus, 0.0, "{kind}");
+        }
+        // The per-tick reset (`:18763`): taking the horseshoe off clears
+        // the flag and the bonus on the next tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 158;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_luck_lucky_horseshoe);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.has_luck_lucky_horseshoe);
+        assert_eq!(p.luck_state.equipment_based_luck_bonus, 0.0);
+    }
+
+    /// W4-e26 — the carried luck family (`RefreshInfoAccsFromItemType`,
+    /// `Player.cs:12723-12734` via `UpdateEquips`' first loop `:12900-
+    /// 12914`): the clovers/feather are NOT accessories — the inventory
+    /// snapshot arms the flags, worn or not.
+    #[test]
+    fn w4_e26_the_carried_clover_family_arms_from_the_inventory_scan() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.carried_kinds = vec![5574];
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_luck_lucky_clover);
+        assert!((p.luck_state.equipment_based_luck_bonus - 0.03).abs() < 1e-6);
+        // The snapshot refresh clears the previous tick's kinds — dropping
+        // the clover drops the bonus (`ResetEffects` `:18764` + the re-scan).
+        p.carried_kinds.clear();
+        p.update(&w, PlayerInput::default());
+        assert!(!p.has_luck_lucky_clover);
+        assert_eq!(p.luck_state.equipment_based_luck_bonus, 0.0);
+        // The two bad-luck carriers, each −0.1 (`:13054-13061`).
+        for (kind, flag) in [
+            (5575u16, "wilted"),
+            (5576, "raven"),
+        ] {
+            let mut p = Player::spawn(&w);
+            p.carried_kinds = vec![kind];
+            p.update(&w, PlayerInput::default());
+            if flag == "wilted" {
+                assert!(p.has_luck_wilted_clover);
+            } else {
+                assert!(p.has_luck_raven_feather);
+            }
+            assert!(
+                (p.luck_state.equipment_based_luck_bonus + 0.1).abs() < 1e-6,
+                "{kind}: −0.1, got {}",
+                p.luck_state.equipment_based_luck_bonus
+            );
+        }
+    }
+
+    /// W4-e26 — the `UpdateEquips` luck tail's f32 ACCUMULATION ORDER
+    /// (`Player.cs:13050-13069`): clover +0.03, wilted −0.1, raven −0.1,
+    /// horseshoe +0.05, coin +0.05 — in the source order, bit-for-bit.
+    /// The mixed-family sum is order-sensitive in f32: 0.03 − 0.1 − 0.1
+    /// + 0.05 + 0.05 accumulates to a different bit pattern than the
+    /// reordered sum, exactly like the C# `float` adds.
+    #[test]
+    fn w4_e26_the_luck_tail_accumulates_in_the_csharp_order() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.carried_kinds = vec![5574, 5575, 5576];
+        p.equipped[3] = 158; // horseshoe
+        p.equipped[4] = 855; // lucky coin
+        p.update(&w, PlayerInput::default());
+        // The verbatim f32 chain, one add per C# if-block.
+        let mut want = 0.0_f32;
+        want += 0.03;
+        want -= 0.1;
+        want -= 0.1;
+        want += 0.05;
+        want += 0.05;
+        assert_eq!(
+            p.luck_state.equipment_based_luck_bonus.to_bits(),
+            want.to_bits(),
+            "the tail's f32 adds run in the C# order: {} vs {want}",
+            p.luck_state.equipment_based_luck_bonus
+        );
+        // Each family adds ONCE regardless of carrier count: two clovers
+        // + two horseshoes still add 0.03 + 0.05 (the flags are bool ORs).
+        let mut p = Player::spawn(&w);
+        p.carried_kinds = vec![5574, 5574, 5574];
+        p.equipped[3] = 158;
+        p.equipped[4] = 1250;
+        p.update(&w, PlayerInput::default());
+        let mut want = 0.0_f32;
+        want += 0.03;
+        want += 0.05;
+        assert_eq!(
+            p.luck_state.equipment_based_luck_bonus.to_bits(),
+            want.to_bits()
+        );
+        // The bonus feeds `RecalculateLuck` raw (`:29158`) — the same
+        // bit pattern lands in `luck` when every other term is neutral.
+        assert_eq!(p.luck_state.luck.to_bits(), want.to_bits());
     }
 
     #[test]

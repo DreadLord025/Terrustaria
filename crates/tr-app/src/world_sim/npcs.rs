@@ -4802,6 +4802,44 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         n.tick_despawn();
     }
     app.npcs.retain(|n| !n.despawn_expired());
+    // W4-e26 — `NPC.CheckActive`'s ladybug window (`NPC.cs:77930-77938`):
+    // when the NPC's screen-size rect (`sWidth/sHeight` = 1920×1200 around
+    // its centre, `:77903`, inflated by its own box) intersects the local
+    // player's hitbox AND the type is 604/605, `LadyBugLuck` runs
+    // (`:81600-81626` — the good-luck window; the `releaseOwner != 255`
+    // wild-only gate rides `luck::on_lady_bug_nearby`'s caller note). The
+    // port's roster carries no kind 604/605 row yet (M4 critter gap — the
+    // catch/release items 4361/4362 exist, the released NPC spawns nothing
+    // through `kind_from_net_id`), so the pass is gated by the cs-id test
+    // and inert until the critter kinds land; the wiring is the seam.
+    // Draw-free (the timer math only), so no stream choice arises. The
+    // C# has NO dead-player gate here (`:81600-81626` tests only the
+    // release owner + the bad-luck timer).
+    if let Some(p) = app.player.as_mut() {
+        for n in app.npcs.iter() {
+            let ty = n.kind.cs_id() as i32;
+            if n.hp <= 0 || (ty != 604 && ty != 605) || n.release_owner != 255 {
+                continue;
+            }
+            let (ncx, ncy) = n.center();
+            let (nw, nh) = n.size();
+            // `rectangle2` (`NPC.cs:77903`): x = centre.X − sWidth/2 −
+            // width, w = sWidth + width·2 (the Y pair likewise) — the
+            // half-open intersect against the player's 20×42 hitbox (the
+            // bug_net.rs `intersects` convention).
+            let rx = ncx - crate::spawner::S_WIDTH as f32 * 0.5 - nw;
+            let ry = ncy - crate::spawner::S_HEIGHT as f32 * 0.5 - nh;
+            let rw = crate::spawner::S_WIDTH as f32 + nw * 2.0;
+            let rh = crate::spawner::S_HEIGHT as f32 + nh * 2.0;
+            let hit = rx < p.x + crate::player::WIDTH
+                && rx + rw > p.x
+                && ry < p.y + crate::player::HEIGHT
+                && ry + rh > p.y;
+            if hit {
+                p.on_lady_bug_nearby((ncx, ncy), ty == 605);
+            }
+        }
+    }
     // The worm pass (`AI_006`): the chain movement after the per-NPC step
     // (the vanilla interleaves it in the slot order; the port's pass reads
     // the same spawn order).
@@ -4998,6 +5036,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // death carries them.
         if npc.has_carrier() {
             continue;
+        }
+        // W4-e26 — `NPC.checkDead`'s town-NPC luck arm (`NPC.cs:78138-
+        // 78143`): `townNPC && type != 37 && type != 453` runs `NPCLuck`
+        // (`:81628-81652`) — the Guide's death grants +43200/3 ladybug
+        // time, any other town NPC −10800/3 (Clothier 54 exempt), extremes
+        // win. `is_town_npc_like` is the port's C#-`townNPC` set (the ten
+        // housing kinds PLUS the eleven sellers — every one carries
+        // `townNPC = true`, `NPC.cs:8982-:17386`; the Old Man 37 /
+        // Skeleton Merchant 453 have no ported kinds, the exclusion is
+        // vacuous). The `netMode != 2` gate: the C# host defers to its
+        // clients — the port's host path skips it likewise.
+        if npc.kind.is_town_npc_like() && !matches!(app.net, crate::app::NetRole::Host(_)) {
+            if let Some(p) = app.player.as_mut() {
+                p.on_town_npc_death(npc.kind.cs_id() as i32);
+            }
         }
         // `NPC.checkDead`'s DD2 crystal arms (`NPC.cs:79240-79278`,
         // `DoDeathEvents`'s 552-578 rows — they run inside `NPCLoot`
@@ -7197,6 +7250,72 @@ mod tests {
                 k.name()
             );
         }
+    }
+
+    /// W4-e26 — `NPC.checkDead`'s town-NPC luck arm (`NPC.cs:78138-78143`
+    /// → `NPCLuck` `:81628-81652`): the Guide's death grants +43200/3
+    /// ladybug time, any other town NPC −10800/3, the Clothier (54)
+    /// exempt, extremes win. The arm rides the port's death pass (the
+    /// draw-free luck setters — no stream choice arises).
+    #[test]
+    fn w4_e26_the_town_npc_death_moves_the_ladybug_timer() {
+        // The Guide dies → +14400 (`NPC.cs:81635`).
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let mut guide = Npc::new(NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = 0;
+        app.npcs.push(guide);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            14_400,
+            "the Guide's death grants the good third"
+        );
+        // Another town NPC dies → the bad third wins only if worse
+        // (`:81645-81649`: keep the extreme). +14400 stands vs −3600?
+        // NO — the bad arm has NO good-luck guard: −3600 < 14400, so the
+        // bad value OVERWRITES (the C# `num2 < ladyBugLuckTimeLeft`).
+        let mut merchant = Npc::new(NpcKind::Merchant, 100.0, 100.0, 1, 0.0);
+        merchant.hp = 0;
+        app.npcs.push(merchant);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            -3_600,
+            "the bad third overwrites the good timer (`:81646`)"
+        );
+        // The Clothier's death moves nothing (`:81643`'s type != 54).
+        let mut clothier = Npc::new(NpcKind::Clothier, 100.0, 100.0, 1, 0.0);
+        clothier.hp = 0;
+        app.npcs.push(clothier);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            -3_600,
+            "the Clothier is exempt"
+        );
+        // A dead player takes nothing (`:81633`/`:81643`'s !dead gate).
+        app.player.as_mut().unwrap().dead = true;
+        let mut guide2 = Npc::new(NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide2.hp = 0;
+        app.npcs.push(guide2);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            -3_600,
+            "the dead player bails"
+        );
+        // A hostile death moves nothing (the townNPC gate).
+        app.player.as_mut().unwrap().dead = false;
+        let mut zombie = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+        zombie.hp = 0;
+        app.npcs.push(zombie);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            -3_600,
+            "a hostile death is not NPCLuck's caller"
+        );
     }
 
     /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries

@@ -1305,6 +1305,61 @@ mod tests {
         assert_eq!(app.inventory[0].count, 1);
     }
 
+    /// W4-e26 — the Luck Potion factor end to end: the three items
+    /// (`Item.cs:37773-37811` — 4477/4478/4479, buff 257 at
+    /// 18000/36000/54000) drink through the shared seam, the `UpdateBuffs`
+    /// arm (`Player.cs:10285-10301`) tiers by REMAINING time (>36000 → 3,
+    /// >18000 → 2, else 1), and `RecalculateLuck` weights the tier ×0.1
+    /// (`:29140`). No new RNG draws — the buff grant itself is draw-free.
+    #[test]
+    fn w4_e26_the_luck_potions_feed_the_tiered_luck_factor() {
+        for (kind, time, tier) in [(4477u16, 18000i32, 1u8), (4478, 36000, 2), (4479, 54000, 3)] {
+            let mut app = drink_app();
+            app.inventory[0] = slot(kind, 2);
+            app.selected = 0;
+            let held = app.inventory[0];
+            assert!(use_potion_item(&mut app, held), "{kind} drinks");
+            let p = app.player.as_ref().unwrap();
+            let i = p.buffs.find_buff_index(257).expect("Lucky granted");
+            assert_eq!(p.buffs.buff_time[i], time, "{kind}'s buffTime verbatim");
+            assert_eq!(p.potion_delay, 0, "not potion-flagged, no sickness");
+            // One player tick derives the tier + recalculates.
+            let w = app.world.clone();
+            let p = app.player.as_mut().unwrap();
+            p.update(&w, PlayerInput::default());
+            assert_eq!(p.luck_state.luck_potion, tier, "{kind} tiers to {tier}");
+            let want = tier as f32 * 0.1;
+            assert!(
+                (p.luck() - want).abs() < 1e-6,
+                "{kind}: luck {} vs {want}",
+                p.luck()
+            );
+        }
+        // The strict `>` boundaries (`:10289`/`:10293`): exactly 36000
+        // tiers 2, exactly 18000 tiers 1 — the C# tests are strict. The
+        // timer head (`:9869-9876`) decrements BEFORE the effect chain
+        // reads, so seed time+1 to probe the exact boundary value.
+        let w = crate::test_world_helpers::ground();
+        for (time, tier) in [(36001, 3u8), (36000, 2), (18001, 2), (18000, 1), (60, 1)] {
+            let mut p = Player::spawn(&w);
+            p.buffs.add_buff(257, time + 1);
+            p.update(&w, PlayerInput::default());
+            assert_eq!(p.luck_state.luck_potion, tier, "remaining {time}");
+        }
+        // Expiry: `ResetEffects` zeroes `luckPotion` (`:18814`) and the
+        // gone buff grants no tier — the factor drops to 0 next tick.
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(257, 54000);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 3);
+        let i = p.buffs.find_buff_index(257).unwrap();
+        p.buffs.buff_time[i] = 0;
+        p.buffs.buff_type[i] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 0, "expiry clears the tier");
+        assert_eq!(p.luck(), 0.0);
+    }
+
     #[test]
     fn use_mana_potion_grants_94_and_queues_the_mana_text() {
         let mut app = drink_app();

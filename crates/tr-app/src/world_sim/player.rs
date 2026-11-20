@@ -583,6 +583,29 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // The zone flags (`Player.ZoneSnow`-family) — the torch-luck table's
         // inputs (`Player.cs:17924-18036`), refreshed beside the auras.
         p.zones = app.scene_metrics.zones();
+        // `Player.HasGardenGnomeNearby` (`Player.cs:16726-16730`,
+        // `UpdateBiomes`): the SceneMetrics tile-567 marker copies into
+        // the player's +0.2 luck input (`RecalculateLuck` `:29150-29153`).
+        // The `luckNeedsSync` diff half is net-only. W4-e26.
+        p.luck_state.has_garden_gnome_nearby = app.scene_metrics.has_garden_gnome;
+        // `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — the
+        // +0.3 lantern-night luck input (`RecalculateLuck` `:29146-29149`):
+        // the S1-F-14 scheduler state reads through the same property the
+        // C# formula reads. W4-e26.
+        p.luck_state.lantern_night = crate::world_events::lanterns_up(&app.world_events);
+        // `UpdateEquips`' first-loop inventory scan input (`Player.cs:
+        // 12900-12914`): the grid + coin/ammo kinds (the port's halves of
+        // the C# inventory[0..58]) — the clover/feather luck family arms
+        // from carried items (W4-e26).
+        p.carried_kinds.clear();
+        p.carried_kinds.extend(
+            app.inventory
+                .iter()
+                .chain(app.equip.coins.iter())
+                .chain(app.equip.ammo.iter())
+                .filter(|sl| sl.count > 0)
+                .map(|sl| sl.kind),
+        );
         // The held torch's style (`inventory[selectedItem].createTile == 4`,
         // `Player.cs:17917-17920`).
         p.held_torch_style = app
@@ -1724,6 +1747,68 @@ mod tests {
     use tr_core::tile::FLAG_ACTIVE;
     use tr_core::wiring::WireColor;
     use tr_core::{Tile, UnifiedRandom, World};
+
+    /// W4-e26 — the per-tick luck-input wiring in `update_player`:
+    /// the SceneMetrics gnome marker (`Player.cs:16726-16730`), the
+    /// LanternNight flag (`LanternNight.cs:17-27` via `RecalculateLuck`
+    /// `:29146-29149`), and the carried-kinds snapshot for the clover
+    /// family's first-loop scan (`Player.cs:12900-12914`).
+    #[test]
+    fn w4_e26_the_luck_inputs_refresh_from_the_scene_events_and_inventory() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        // The gnome marker: SceneMetrics.HasGardenGnome copies into the
+        // player's +0.2 input on the tick (`:16729`).
+        app.scene_metrics.has_garden_gnome = true;
+        // A lantern night is up (the manual flag — `LanternsUp` ORs both).
+        app.world_events.manual_lanterns = true;
+        // A Lucky Clover in the grid + a Raven Feather in the ammo rows.
+        app.inventory[7] = crate::item::ItemSlot {
+            kind: 5574,
+            name: "Lucky Clover",
+            count: 1,
+            prefix: 0,
+        };
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 5576,
+            name: "Raven Feather",
+            count: 1,
+            prefix: 0,
+        };
+        // An EMPTY slot's kind must not count (count 0 filters out).
+        app.inventory[8] = crate::item::ItemSlot {
+            kind: 5575,
+            name: "Wilted Clover",
+            count: 0,
+            prefix: 0,
+        };
+        update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.luck_state.has_garden_gnome_nearby, "gnome copy");
+        assert!(p.luck_state.lantern_night, "LanternsUp copy");
+        assert!(p.carried_kinds.contains(&5574), "grid clover");
+        assert!(p.carried_kinds.contains(&5576), "ammo feather");
+        assert!(!p.carried_kinds.contains(&5575), "count-0 filtered");
+        assert!(p.has_luck_lucky_clover, "the scan armed the clover");
+        assert!(p.has_luck_raven_feather, "the scan armed the feather");
+        assert!(!p.has_luck_wilted_clover, "the empty slot armed nothing");
+        // The factors ride the recalculation: +0.2 gnome +0.3 lanterns
+        // +0.03 clover −0.1 feather = 0.43 (f32 order per the C#).
+        let mut want = 0.0_f32; // ladybug 0 + torch 0
+        want += 0.3; // lantern night (`:29146-29149`)
+        want += 0.2; // gnome (`:29150-29153`)
+        let mut equip = 0.0_f32;
+        equip += 0.03; // clover tail
+        equip -= 0.1; // feather tail
+        want += equip;
+        assert_eq!(p.luck_state.luck.to_bits(), want.to_bits(), "luck {}", p.luck());
+        // Morning clears the lanterns (`CheckMorning` `:29-40` — the
+        // scheduler ran); the next tick's copy drops the +0.3.
+        crate::world_events::check_morning_lanterns(&mut app.world_events);
+        update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert!(!p.luck_state.lantern_night, "the flag copy refreshes");
+    }
 
     /// DW-4.1 (the players group) + DW-4.4: the touch-damage rolls draw the
     /// `UpdatePlayers` stream — one `update_player` tick standing on spikes
