@@ -39244,3 +39244,38 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## Town-spawn census tail (W4-f43)
+
+`town_arrival_pets.rs` ports the unclaimed `UpdateTime_SpawnTownNPCs`
+arms verbatim (census: `docs/research/64-town-spawn-census.md`): the three
+pet-license arms (637/638/656 on `NPC.boughtCat/Dog/Bunny`), the eight town
+slimes (670/678-684 on the `unlockedSlime*Spawn` flags, Green also on
+`GenuineParty`), Santa (142 on `downedFrost && Main.xMas`) and the
+Princess's full flag9 (all 24 town residents, the anniversary override, the
+unlock). Deliberate deviations / recorded gaps:
+
+- **UNWIRED, id-keyed** — the module takes `i32` npc types and injected
+  counts/flags/rolls so it splices without the missing `NpcKind` rows
+  (d36/d43 lanes) or the save-flag widening (`flags.rs:608` currently
+  skips `boughtCat/Dog/Bunny` on load; only the rainbow/red slime flags
+  exist on `World`). Production behaviour is unchanged this wave.
+- **The directive's slime ids 701-707 do not exist** in this decompile
+  (`NPCID.Count = 697`); the real set is 670/678-684 (`NPCID.cs:10119`).
+- **RNG slots**: the table/ladder draw nothing; the license exchange rolls
+  `Main.rand.Next(6)` up to 100 times (`NPC.cs:80941`), and the pet/slime
+  name pick rides `WorldGen.genRand` (`NPC.cs:7311-7322` →
+  `LanguageManager.cs:419`) — a different stream, kept separate in the
+  port (`name_category_for` returns the key only).
+- **`check_xmas` takes the wall-clock date as inputs** — the C# reads
+  `DateTime.Now` (`Main.cs:13120`); the port injects day/month so the
+  sim stays deterministic (the caller supplies the local date).
+- The ladder-order quirks are kept 1:1: slimes pick Copper→Blue→Green→Old→
+  Purple→Red→Yellow→Rainbow (Red before Rainbow, unlike the canSpawn write
+  order), pets close Bunny→Cat→Dog.
+
+Verification: code-only — every arm re-read against the cited C# windows
+(`Main.cs:65542-66116` in ≤100-line reads, `Player.cs:45352-45445`,
+`NPC.cs:80894-80961`/`7311-7325`/`19136-19182`, `Profiles.cs`,
+`TownNPCProfiles.cs`, `LanguageManager.cs:413-420`); 13 witness tests
+WRITTEN NOT RUN — no cargo/rustc/tests/graphify invoked.
