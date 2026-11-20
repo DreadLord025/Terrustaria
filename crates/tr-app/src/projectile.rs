@@ -18155,6 +18155,10 @@ impl ProjectilePool {
             // both skipped, no explicit draw, no state.
             METEOR_SHOT | CURSED_BULLET | CHLOROPHYTE_BULLET | HIGH_VELOCITY_BULLET
             | ICHOR_BULLET | NANO_BULLET | GOLDEN_BULLET => {}
+            _ => {}
+        }
+    }
+
     /// S1-P-i28 — the thrown-consumable death hooks (`Kill()`): the water
     /// bottles' splash conversion (`Projectile.cs:77629-77645`), the beenade's
     /// bee burst (`:76431-76463`) and the molotov's greek-fire burst
