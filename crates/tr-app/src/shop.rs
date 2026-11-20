@@ -91,6 +91,41 @@ pub struct ShopFlags {
     /// (`Player.cs:2048`) — the Skeleton Merchant's 5326 row
     /// (`Chest.cs:2958`).
     pub ate_artisan_bread: bool,
+    /// W4-d123: the Decor shop's / pylon tail's zone gates
+    /// (`Chest.cs:2509-2612`/`:3472-3536`) — the player's biome zones the
+    /// second-half shops read (`ZoneCrimson`/`ZoneCorrupt`/`ZoneHallow`/
+    /// `ZoneDesert`/`ZoneDungeon`/`ZoneSkyHeight`/`ZoneGlowshroom`/
+    /// `ZoneUnderworldHeight`).
+    pub zone_crimson: bool,
+    pub zone_corrupt: bool,
+    pub zone_hallow: bool,
+    pub zone_desert: bool,
+    pub zone_dungeon: bool,
+    pub zone_sky_height: bool,
+    pub zone_glowshroom: bool,
+    pub zone_underworld_height: bool,
+    /// W4-d123: `Main.IsItStorming` (`Chest.cs:2589`'s Decor 5251 row).
+    pub storming: bool,
+    /// W4-d123: `Player.ShoppingZone_BelowSurface` (`Player.cs:3835` —
+    /// `Center.ToTileCoordinates().Y > Main.worldSurface`).
+    pub shopping_below_surface: bool,
+    /// W4-d123: `TeleportPylonsSystem.DoesPositionHaveEnoughNPCs(2, …)`
+    /// (`Chest.cs:3472`, `TeleportPylonsSystem.cs:221-238`) — two housed
+    /// town NPCs in the zone-scan rect near the player.
+    pub pylon_enough_npcs: bool,
+    /// W4-d123: the remix purity-pylon depth window (`Chest.cs:3478` —
+    /// `rockLayer < Center.Y/16 < maxTilesY - 350`).
+    pub pylon_remix_depth: bool,
+    /// W4-d123: the remix ocean-pylon depth window (`Chest.cs:3518-3519`
+    /// — the SAME bounds over `position.Y/16`, NOT the center).
+    pub pylon_remix_ocean_depth: bool,
+    /// W4-d123: the remix ocean-pylon edge (`Chest.cs:3517-3519` —
+    /// `position.X/16 < maxTilesX*0.43 || > maxTilesX*0.57`, AND the
+    /// position depth window).
+    pub pylon_remix_edge: bool,
+    /// W4-d123: `position.Y < Main.worldSurface * 16.0` (`Chest.cs:3514`'s
+    /// ocean-pylon surface conjunct).
+    pub beach_above_surface: bool,
     /// M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
     /// `SecretSeed.vampirism.Enabled` write) — the Dryad's and the Bestiary
     /// Girl's vampirism rows (`Chest.cs:1733`/`:3403`).
@@ -147,6 +182,21 @@ impl Default for ShopFlags {
             remix_world: false,
             world_time: 0.0,
             ate_artisan_bread: false,
+            zone_crimson: false,
+            zone_corrupt: false,
+            zone_hallow: false,
+            zone_desert: false,
+            zone_dungeon: false,
+            zone_sky_height: false,
+            zone_glowshroom: false,
+            zone_underworld_height: false,
+            storming: false,
+            shopping_below_surface: false,
+            pylon_enough_npcs: false,
+            pylon_remix_depth: false,
+            pylon_remix_ocean_depth: false,
+            pylon_remix_edge: false,
+            beach_above_surface: false,
             vampirism: false,
             infected_seed: false,
             crimson_world: false,
@@ -262,10 +312,10 @@ pub enum StockWhen {
     VampirismInfectedCrimson,
     /// The Dryad tail's other half — the Corrupt Torch (4385).
     VampirismInfectedCorrupt,
-    /// `ZoneUnderworldHeight` (`:1710`) — constants-off until the scene
-    /// metrics' underworld flag reaches the shop call.
+    /// `ZoneUnderworldHeight` (`:1710`) — W4-d123 wired it from the scene
+    /// metrics (`zone_underworld_height`).
     ZoneUnderworld,
-    /// `ZoneGlowshroom` (`:1713`) — constants-off like the underworld.
+    /// `ZoneGlowshroom` (`:1713`) — W4-d123 wired it like the underworld.
     ZoneGlowshroom,
     /// The moon-phase pairs (`:1740+`'s `moonPhase / 2` switches): the row
     /// appears when `moon_phase / 2 == n` (the non-hardmode pairs).
@@ -403,6 +453,41 @@ pub enum StockWhen {
     /// W4-d123: `!ateArtisanBread && Main.moonPhase >= 3 && Main.moonPhase
     /// <= 5` (`Chest.cs:2958`'s Skeleton Merchant 5326 row).
     ArtisanBreadPhases345,
+    /// W4-d123: `!ZoneGraveyard` (`Chest.cs:2509`'s Decor 1490 + moon
+    /// ladder block and `:2576`'s sky block).
+    NotGraveyard,
+    /// W4-d123: `Main.moonPhase <= 1` (`Chest.cs:2513`'s Decor 1481 row —
+    /// INSIDE the !ZoneGraveyard block).
+    NotGraveyardMoon01,
+    /// W4-d123: `Main.moonPhase <= 3` else-arm (`:2518`'s 1482 — phases
+    /// 2..3 inside the block).
+    NotGraveyardMoon23,
+    /// W4-d123: `Main.moonPhase <= 5` else-arm (`:2523`'s 1483 — phases
+    /// 4..5 inside the block).
+    NotGraveyardMoon45,
+    /// W4-d123: the `:2528` else (`:2530`'s 1484 — phases 6..7 inside
+    /// the block).
+    NotGraveyardMoon67,
+    /// W4-d123: `Player.ShoppingZone_Forest` (`Chest.cs:2534`'s Decor
+    /// 5245 row — `!ShoppingZone_AnyBiome && !ShoppingZone_BelowSurface`,
+    /// `Player.cs:3823-3847`).
+    ShoppingForest,
+    /// W4-d123: `ZoneCrimson` (`Chest.cs:2539`'s Decor 1492 row).
+    ZoneCrimson,
+    /// W4-d123: `ZoneCorrupt` (`Chest.cs:2544`'s Decor 1488 row).
+    ZoneCorrupt,
+    /// W4-d123: `ZoneHallow` (`Chest.cs:2549`'s Decor 1489 row).
+    ZoneHallow,
+    /// W4-d123: `ZoneDesert` (`Chest.cs:2566`'s Decor 1491 row).
+    ZoneDesert,
+    /// W4-d123: `Main.IsItStorming` (`Chest.cs:2589`'s Decor 5251 row).
+    Storming,
+    /// W4-d123: `!ZoneGraveyard && ZoneSkyHeight` (`Chest.cs:2578`'s
+    /// Decor 1485 row).
+    NotGraveyardSky,
+    /// W4-d123: `!ZoneGraveyard && ZoneSkyHeight && Main.hardMode`
+    /// (`Chest.cs:2583`'s Decor 1494 row).
+    NotGraveyardSkyHardMode,
     /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
     DownedMechAll,
     /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`; also the Skeleton
@@ -434,10 +519,12 @@ pub enum StockWhen {
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
 /// Merchant's shop (index 1, `Chest.cs:1371-1483`); the other indexes land
 /// with their NPCs (M4-TOWN umbrella). The order is the vanilla's `num`
-/// order (the UI fills the slots left to right).
+/// order (the UI fills the slots left to right). The shared tail — the
+/// pylon rows (`:3472-3537`) and the `isAShopItem` stamp (`:3538-3541`) —
+/// rides [`setup_shop_tail`].
 pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> Vec<ShopEntry> {
     let _ = inventory_ids;
-    match shop_index {
+    let mut rows: Vec<ShopEntry> = match shop_index {
         // The Merchant (`Chest.cs:1371-1483`).
         1 => vec![
             row(88, StockWhen::Always),
@@ -631,9 +718,10 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(271, StockWhen::Always),
         ],
         // The Dryad (`Chest.cs:1568-1745`): the blood-moon corruption seed
-        // branch, the base rows, the flower-seed moon-phase pairs. The
-        // crimson variants (2886/2171/4508), the graveyard/underworld/
-        // glowshroom rows and the halloween rows sit constants-off.
+        // branch, the base rows, the flower-seed moon-phase pairs, the
+        // underworld/glowshroom rows (W4-d123 wired the zones). The
+        // crimson variants (2886/2171/4508), the graveyard rows and the
+        // halloween rows sit constants-off.
         3 => vec![
             row(67, StockWhen::BloodMoonCorruption),
             row(59, StockWhen::BloodMoonCorruption),
@@ -1089,7 +1177,147 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             }
             rows
         }
+        // The Painter's Decor shop (index 25, `Chest.cs:2483-2614`,
+        // W4-d123 — `Shop(227, 25, "GameUI.PainterDecor")`,
+        // `NPCInteractions.cs:512`): the Christmas walk 1948..1957 sits
+        // constants-off (no season, `:2485-2494`); the 2158..2160 and
+        // 2008..2014 walks are unconditioned (`:2495-2508`), then the
+        // !graveyard block (1490 + the <=1/<=3/<=5/else moon ladder
+        // 1481/1482/1483/1484, `:2509-2533`), the forest 5245, the biome
+        // rows (crimson 1492, corrupt 1488, hallow 1489, jungle 1486,
+        // snow 5491+1487, desert 1491), the blood-moon 1493, the
+        // !graveyard sky block (1485 + hardmode 1494), the storm 5251
+        // and the graveyard octet 4723..4729+5257 (`:2594-2612`).
+        25 => {
+            let mut rows = Vec::new();
+            // `:2495-2501` — `while (num9 <= 2160 && num < 39)`.
+            for id in 2158..=2160u16 {
+                rows.push(row(id, StockWhen::Always));
+            }
+            // `:2502-2508` — `while (num10 <= 2014 && num < 39)`.
+            for id in 2008..=2014u16 {
+                rows.push(row(id, StockWhen::Always));
+            }
+            // `:2509-2533` — the !graveyard block: 1490 then EXACTLY ONE
+            // of the four moon-ladder rows.
+            rows.push(row(1490, StockWhen::NotGraveyard));
+            rows.push(row(1481, StockWhen::NotGraveyardMoon01));
+            rows.push(row(1482, StockWhen::NotGraveyardMoon23));
+            rows.push(row(1483, StockWhen::NotGraveyardMoon45));
+            rows.push(row(1484, StockWhen::NotGraveyardMoon67));
+            // `:2534-2570` — the forest + biome rows.
+            rows.push(row(5245, StockWhen::ShoppingForest));
+            rows.push(row(1492, StockWhen::ZoneCrimson));
+            rows.push(row(1488, StockWhen::ZoneCorrupt));
+            rows.push(row(1489, StockWhen::ZoneHallow));
+            rows.push(row(1486, StockWhen::ZoneJungle));
+            rows.push(row(5491, StockWhen::ZoneSnow));
+            rows.push(row(1487, StockWhen::ZoneSnow));
+            rows.push(row(1491, StockWhen::ZoneDesert));
+            // `:2571-2575` — the blood-moon row.
+            rows.push(row(1493, StockWhen::BloodMoon));
+            // `:2576-2588` — the !graveyard sky block.
+            rows.push(row(1485, StockWhen::NotGraveyardSky));
+            rows.push(row(1494, StockWhen::NotGraveyardSkyHardMode));
+            // `:2589-2593` — the storm row.
+            rows.push(row(5251, StockWhen::Storming));
+            // `:2594-2612` — the graveyard octet (5257 sits BETWEEN
+            // 4727 and 4728).
+            for id in [4723, 4724, 4725, 4726, 4727, 5257, 4728, 4729] {
+                rows.push(row(id, StockWhen::ZoneGraveyard));
+            }
+            rows
+        }
         _ => Vec::new(),
+    };
+    setup_shop_tail(shop_index, flags, &mut rows);
+    rows
+}
+
+/// `Chest.SetupShop`'s shared tail (`Chest.cs:3472-3541`) — runs AFTER the
+/// switch for EVERY shop index: the pylon rows (gated on the two-housed-
+/// NPC scan + the !corrupt/!crimson zones, skipped for indexes 19/20/21)
+/// and the `isAShopItem = true` stamp on every row the switch wrote.
+/// The port's dense Vec carries only the WRITTEN rows (the C# walks
+/// `num13 < num` over the stamped slots; the air gaps never stamp).
+fn setup_shop_tail(shop_index: u32, flags: &ShopFlags, rows: &mut Vec<ShopEntry>) {
+    // `:3472` — `(type != 19 && type != 20 && type != 21) &&
+    // DoesPositionHaveEnoughNPCs(2, …) && !ZoneCorrupt && !ZoneCrimson`.
+    if shop_index != 19
+        && shop_index != 20
+        && shop_index != 21
+        && flags.pylon_enough_npcs
+        && !flags.zone_corrupt
+        && !flags.zone_crimson
+    {
+        // `:3474-3487` — the purity pylon 4876: no biome zone, then the
+        // remix depth window OR the classic !below-surface arm.
+        let no_biome = !flags.zone_snow
+            && !flags.zone_desert
+            && !flags.zone_beach
+            && !flags.zone_jungle
+            && !flags.zone_hallow
+            && !flags.zone_glowshroom;
+        if no_biome {
+            if flags.remix_world {
+                if flags.pylon_remix_depth && rows.len() < 39 {
+                    rows.push(row(4876, StockWhen::Always));
+                }
+            } else if !flags.shopping_below_surface && rows.len() < 39 {
+                rows.push(row(4876, StockWhen::Always));
+            }
+        }
+        // `:3488-3495` — the snow/desert pylons.
+        if flags.zone_snow && rows.len() < 39 {
+            rows.push(row(4920, StockWhen::Always));
+        }
+        if flags.zone_desert && rows.len() < 39 {
+            rows.push(row(4919, StockWhen::Always));
+        }
+        // `:3496-3513` — the underworld pylon 5652, else the cavern
+        // pylon 4917 (the remix arm drops the glowshroom exclusion).
+        if flags.zone_underworld_height {
+            if rows.len() < 39 {
+                rows.push(row(5652, StockWhen::Always));
+            }
+        } else {
+            let cavern_ok = !flags.zone_snow
+                && !flags.zone_desert
+                && !flags.zone_beach
+                && !flags.zone_jungle
+                && !flags.zone_hallow
+                && flags.shopping_below_surface
+                && (flags.remix_world || !flags.zone_glowshroom);
+            if cavern_ok && rows.len() < 39 {
+                rows.push(row(4917, StockWhen::Always));
+            }
+        }
+        // `:3514-3524` — the ocean pylon 4918: beach + above-surface, OR
+        // (remix) the edge-x + depth window.
+        let mut ocean = flags.zone_beach && flags.beach_above_surface;
+        if flags.remix_world {
+            ocean |= flags.pylon_remix_edge && flags.pylon_remix_ocean_depth;
+        }
+        if ocean && rows.len() < 39 {
+            rows.push(row(4918, StockWhen::Always));
+        }
+        // `:3525-3536` — the jungle/hallow/mushroom pylons.
+        if flags.zone_jungle && rows.len() < 39 {
+            rows.push(row(4875, StockWhen::Always));
+        }
+        if flags.zone_hallow && rows.len() < 39 {
+            rows.push(row(4916, StockWhen::Always));
+        }
+        if flags.zone_glowshroom
+            && (!flags.remix_world || !flags.zone_underworld_height)
+            && rows.len() < 39
+        {
+            rows.push(row(4921, StockWhen::Always));
+        }
+    }
+    // `:3538-3541` — every written row is a shop item.
+    for e in rows.iter_mut() {
+        e.is_a_shop_item = true;
     }
 }
 
@@ -1749,7 +1977,10 @@ pub fn resolve_stock_entries_moon(
             StockWhen::VampirismInfectedCorrupt => {
                 !flags.hard_mode && flags.vampirism && flags.infected_seed && !flags.crimson_world
             }
-            StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
+            // W4-d123: the scene metrics now feed both zones (the Decor
+            // shop's pylon tail reads the same pair).
+            StockWhen::ZoneUnderworld => flags.zone_underworld_height,
+            StockWhen::ZoneGlowshroom => flags.zone_glowshroom,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
             // W4-d123: `Chest.cs:2260`'s exact-phase compare.
             StockWhen::MoonPhaseIs(n) => moon_phase == n as u32,
@@ -1818,6 +2049,39 @@ pub fn resolve_stock_entries_moon(
             StockWhen::HardModeBloodMoon => flags.hard_mode && flags.blood_moon,
             StockWhen::ArtisanBreadPhases345 => {
                 !flags.ate_artisan_bread && (3..=5).contains(&moon_phase)
+            }
+            // W4-d123: the Decor shop's gates (`Chest.cs:2483-2614`).
+            StockWhen::NotGraveyard => !flags.zone_graveyard,
+            StockWhen::NotGraveyardMoon01 => !flags.zone_graveyard && moon_phase <= 1,
+            StockWhen::NotGraveyardMoon23 => {
+                !flags.zone_graveyard && moon_phase > 1 && moon_phase <= 3
+            }
+            StockWhen::NotGraveyardMoon45 => {
+                !flags.zone_graveyard && moon_phase > 3 && moon_phase <= 5
+            }
+            StockWhen::NotGraveyardMoon67 => !flags.zone_graveyard && moon_phase > 5,
+            // `Player.cs:3823-3847` — the forest = no biome zone (the
+            // nine-zone AnyBiome list) AND above the surface.
+            StockWhen::ShoppingForest => {
+                !flags.zone_dungeon
+                    && !flags.zone_corrupt
+                    && !flags.zone_crimson
+                    && !flags.zone_glowshroom
+                    && !flags.zone_hallow
+                    && !flags.zone_jungle
+                    && !flags.zone_snow
+                    && !flags.zone_beach
+                    && !flags.zone_desert
+                    && !flags.shopping_below_surface
+            }
+            StockWhen::ZoneCrimson => flags.zone_crimson,
+            StockWhen::ZoneCorrupt => flags.zone_corrupt,
+            StockWhen::ZoneHallow => flags.zone_hallow,
+            StockWhen::ZoneDesert => flags.zone_desert,
+            StockWhen::Storming => flags.storming,
+            StockWhen::NotGraveyardSky => !flags.zone_graveyard && flags.zone_sky_height,
+            StockWhen::NotGraveyardSkyHardMode => {
+                !flags.zone_graveyard && flags.zone_sky_height && flags.hard_mode
             }
             StockWhen::DownedMechAll => {
                 flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
@@ -2604,17 +2868,132 @@ mod tests {
         assert_eq!(buy_price_row(&base[1], false, 0.75), 1875);
     }
 
+    /// The Decor shop (`case 25`, W4-d123, `Chest.cs:2483-2614`): the
+    /// unconditioned walks, the !graveyard moon ladder, the biome rows,
+    /// the sky block, the storm row and the graveyard octet.
+    #[test]
+    fn the_decor_shop_walks_the_zones_and_phases() {
+        // Phase 0, no zones, above surface: the two walks + 1490 + 1481
+        // (phase <= 1) + the forest 5245. The Christmas walk stays out.
+        let base = resolve_stock_moon(25, &ShopFlags::default(), &[], 0);
+        assert_eq!(
+            base,
+            vec![2158, 2159, 2160, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 1490, 1481, 5245],
+            "the phase-0 surface stock"
+        );
+        // The moon ladder: exactly one of 1481/1482/1483/1484 per phase.
+        for (phase, want) in [(0u32, 1481u16), (1, 1481), (2, 1482), (3, 1482), (4, 1483), (5, 1483), (6, 1484), (7, 1484)] {
+            let s = resolve_stock_moon(25, &ShopFlags::default(), &[], phase);
+            for id in [1481, 1482, 1483, 1484] {
+                assert_eq!(s.contains(&id), id == want, "phase {phase} ladder {id}");
+            }
+        }
+        // The graveyard flips BOTH blocks: the 1490+ladder and the sky
+        // rows vanish, the octet appears (5257 between 4727 and 4728).
+        let grave = ShopFlags { zone_graveyard: true, zone_sky_height: true, hard_mode: true, ..Default::default() };
+        let g = resolve_stock_moon(25, &grave, &[], 0);
+        assert!(!g.contains(&1490) && !g.contains(&1481) && !g.contains(&1485) && !g.contains(&1494));
+        let tail: Vec<u16> = g[g.len() - 8..].to_vec();
+        assert_eq!(tail, vec![4723, 4724, 4725, 4726, 4727, 5257, 4728, 4729]);
+        // The sky block needs !graveyard + sky (+ hardmode for 1494).
+        let sky = ShopFlags { zone_sky_height: true, ..Default::default() };
+        let s = resolve_stock_moon(25, &sky, &[], 0);
+        assert!(s.contains(&1485) && !s.contains(&1494));
+        let skyh = ShopFlags { hard_mode: true, ..sky };
+        assert!(resolve_stock_moon(25, &skyh, &[], 0).contains(&1494));
+        // The biome rows + the snow pair + the storm + the blood moon.
+        let zones = ShopFlags {
+            zone_crimson: true, zone_corrupt: true, zone_hallow: true,
+            zone_jungle: true, zone_snow: true, zone_desert: true,
+            storming: true, blood_moon: true, ..Default::default()
+        };
+        let z = resolve_stock_moon(25, &zones, &[], 0);
+        for id in [1492, 1488, 1489, 1486, 5491, 1487, 1491, 1493, 5251] {
+            assert!(z.contains(&id), "the zone row {id}");
+        }
+        assert!(!z.contains(&5245), "no forest row in a biome");
+        // Below the surface the forest row vanishes too.
+        let below = ShopFlags { shopping_below_surface: true, ..Default::default() };
+        assert!(!resolve_stock_moon(25, &below, &[], 0).contains(&5245));
+    }
+
+    /// The shared pylon tail (`Chest.cs:3472-3537`, W4-d123): the
+    /// two-NPC gate, the zone exclusions, the purity/cavern/ocean/
+    /// underworld arms and the 19/20/21 skip.
+    #[test]
+    fn the_pylon_tail_rides_the_shared_setup() {
+        let npc2 = ShopFlags { pylon_enough_npcs: true, ..Default::default() };
+        // Surface purity: 4876 after the Merchant's rows.
+        let m = resolve_stock(1, &npc2, &[]);
+        assert_eq!(m.last(), Some(&4876), "the purity pylon: {m:?}");
+        // No NPCs / corrupt / crimson: no pylon rows anywhere.
+        assert!(!resolve_stock(1, &ShopFlags::default(), &[]).contains(&4876));
+        let corrupt = ShopFlags { zone_corrupt: true, ..npc2 };
+        assert!(!resolve_stock(1, &corrupt, &[]).contains(&4876));
+        let crimson = ShopFlags { zone_crimson: true, ..npc2 };
+        assert!(!resolve_stock(1, &crimson, &[]).contains(&4876));
+        // The 19/20/21 skip (`:3472`'s type gate).
+        assert!(!resolve_stock(20, &npc2, &[]).contains(&4876));
+        let tav = ShopFlags { travel_stock: [8; 40], ..npc2 };
+        assert!(!resolve_stock(19, &tav, &[]).contains(&4876));
+        assert!(!resolve_stock(21, &npc2, &[]).contains(&4876));
+        // Below surface (classic): the cavern pylon 4917 replaces 4876.
+        let below = ShopFlags { shopping_below_surface: true, ..npc2 };
+        let b = resolve_stock(1, &below, &[]);
+        assert!(b.contains(&4917) && !b.contains(&4876));
+        // Snow/desert/jungle/hallow/mushroom pylons.
+        let snow = ShopFlags { zone_snow: true, ..npc2 };
+        assert!(resolve_stock(1, &snow, &[]).contains(&4920));
+        let desert = ShopFlags { zone_desert: true, ..npc2 };
+        assert!(resolve_stock(1, &desert, &[]).contains(&4919));
+        let jungle = ShopFlags { zone_jungle: true, ..npc2 };
+        assert!(resolve_stock(1, &jungle, &[]).contains(&4875));
+        let hallow = ShopFlags { zone_hallow: true, ..npc2 };
+        assert!(resolve_stock(1, &hallow, &[]).contains(&4916));
+        let shroom = ShopFlags { zone_glowshroom: true, ..npc2 };
+        assert!(resolve_stock(1, &shroom, &[]).contains(&4921));
+        // The underworld pylon 5652 wins over the cavern arm; the remix
+        // underworld also kills the mushroom pylon (`:3533`).
+        let hell = ShopFlags { zone_underworld_height: true, zone_glowshroom: true, ..npc2 };
+        let h = resolve_stock(1, &hell, &[]);
+        assert!(h.contains(&5652) && h.contains(&4921) && !h.contains(&4917));
+        let hellr = ShopFlags { remix_world: true, ..hell };
+        let hr = resolve_stock(1, &hellr, &[]);
+        assert!(hr.contains(&5652) && !hr.contains(&4921));
+        // The ocean pylon: beach + above surface, or the remix edge+depth.
+        let beach = ShopFlags { zone_beach: true, beach_above_surface: true, ..npc2 };
+        assert!(resolve_stock(1, &beach, &[]).contains(&4918));
+        let beach_low = ShopFlags { zone_beach: true, ..npc2 };
+        assert!(!resolve_stock(1, &beach_low, &[]).contains(&4918));
+        let remix_ocean = ShopFlags {
+            remix_world: true, pylon_remix_edge: true, pylon_remix_ocean_depth: true,
+            shopping_below_surface: true, ..npc2
+        };
+        let ro = resolve_stock(1, &remix_ocean, &[]);
+        assert!(ro.contains(&4918) && ro.contains(&4917), "the remix ocean+cavern");
+        // The remix purity arm needs the depth window (`:3478`).
+        let remix_surf = ShopFlags { remix_world: true, ..npc2 };
+        assert!(!resolve_stock(1, &remix_surf, &[]).contains(&4876));
+        let remix_depth = ShopFlags { pylon_remix_depth: true, ..remix_surf };
+        assert!(resolve_stock(1, &remix_depth, &[]).contains(&4876));
+        // Every written row carries the isAShopItem stamp (`:3538-3541`).
+        let entries = resolve_stock_entries(1, &npc2, &[]);
+        assert!(entries.iter().all(|e| e.is_a_shop_item));
+    }
+
     #[test]
     fn the_entry_stock_matches_the_id_stock() {
         // The ids wrapper stays the tests' surface; the entries carry the
-        // row's price fields (all unset on the ported shops).
+        // row's price fields. The shared tail (`Chest.cs:3538-3541`)
+        // stamps isAShopItem on EVERY written row (W4-d123); the price
+        // override + buyOnce stay unset on the ported switch rows.
         let ids = resolve_stock(1, &ShopFlags::default(), &[]);
         let entries = resolve_stock_entries(1, &ShopFlags::default(), &[]);
         assert_eq!(ids, entries.iter().map(|e| e.item).collect::<Vec<_>>());
         assert!(
             entries
                 .iter()
-                .all(|e| e.shop_custom_price.is_none() && !e.buy_once && !e.is_a_shop_item)
+                .all(|e| e.shop_custom_price.is_none() && !e.buy_once && e.is_a_shop_item)
         );
     }
 
@@ -2760,6 +3139,13 @@ mod town5_tests {
         }
         // The hardmode rows stay out (the constants-off gates).
         assert!(!base.contains(&746));
+        // W4-d123: the underworld/glowshroom rows ride the wired zones
+        // (`Chest.cs:1710-1715`) — off by default, on under the flag.
+        assert!(!base.contains(&5214) && !base.contains(&194));
+        let hell = ShopFlags { zone_underworld_height: true, ..ShopFlags::default() };
+        assert!(resolve_stock_moon(3, &hell, &[], 0).contains(&5214));
+        let shroom = ShopFlags { zone_glowshroom: true, ..ShopFlags::default() };
+        assert!(resolve_stock_moon(3, &shroom, &[], 0).contains(&194));
         // The unknown index stays empty.
         assert!(resolve_stock_moon(9, &ShopFlags::default(), &[], 0).is_empty());
     }
