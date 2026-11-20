@@ -575,9 +575,10 @@ impl VerticalSlider {
         ];
         let fill_h = (inner[3] as f32 * self.fill_percent) as i32; // `:97`
         let filled = [inner[0], inner[1] + inner[3] - fill_h, inner[2], fill_h]; // `:98`
-        // `:100` — Center.X is the float centre (`Rectangle.Center` truncates
-        // the halves), +1; CenteredRectangle's float form truncates each part.
-        let center_x = filled[0] as f32 + filled[2] as f32 / 2.0 + 1.0;
+        // `:100` — `Rectangle.Center` is `X + Width / 2` in **integer**
+        // division (XNA), then +1; CenteredRectangle's float form
+        // (`Utils.cs:947-950`) truncates each part after the halving.
+        let center_x = (filled[0] + filled[2] / 2 + 1) as f32;
         let knob_w = filled[2] + 16;
         let knob = [
             (center_x - knob_w as f32 / 2.0) as i32,
