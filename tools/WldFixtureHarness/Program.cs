@@ -264,11 +264,55 @@ internal class Program
         WorldGen.crimson = false;
         WorldGen.corruptBG = 1; WorldGen.jungleBG = 2; WorldGen.hallowBG = 3;
         WorldGen.crimsonBG = 4; WorldGen.mushroomBG = 5;
-        BannerSystem.SetKillCount(1, 50);
-        BannerSystem.SetClaimable(1, 1);
+        // W4-c44: the banner counts come from the REAL kill chain, not shim
+        // setters. 50 kills of the Angler Fish (NPCID 102 -> NPCtoBanner = 1,
+        // BannerSystem.cs:407-408) run the extracted AddNPCKillBy/AddKill/
+        // AddClaimableBanner (:231-278): KillsToBanner[BannerToItem(1)=1615]
+        // is the default 50 (ItemID.cs:1303-1304), so the 50th kill lands
+        // killCount[1]=50 + claimable[1]=1 and broadcasts the milestone
+        // announcement through the extracted NetworkText/ChatHelper/Lang
+        // bodies into the Main.NewTextMultiline shim sink.
+        Terraria.Main.player = new Player[256]; // Main.cs:67020's Initialize shape
+        for (int i = 0; i < Terraria.Main.player.Length; i++) Terraria.Main.player[i] = new Player();
+        Terraria.Main.player[0].name = "Golden";
+        for (int k = 0; k < 50; k++)
+            BannerSystem.AddNPCKillBy(NPCID.AnglerFish, 0);
+        if (BannerSystem.GetKillCount(1) != 50 || BannerSystem.GetClaimableBannerCounts()[1] != 1)
+            throw new Exception("the kill chain did not land killCount[1]=50 / claimable[1]=1");
+        string expectedAnnouncement = "Golden has defeated the 50th Angler Fish!";
+        if (Terraria.Main.FixtureChatSink.Count != 1 || Terraria.Main.FixtureChatSink[0] != expectedAnnouncement)
+            throw new Exception("the milestone announcement did not fire exactly once: "
+                + string.Join(" | ", Terraria.Main.FixtureChatSink));
+        // Tree-tops: the variation rides the REAL Save -> Load round-trip
+        // (TreeTopsInfo.cs:47-68), and the pre-211 arm's CopyExistingWorldInfo
+        // (:222-237) is exercised too; the final state stays variation 2.
         WorldGen.TreeTops.SetVariation(0, 2);
+        byte[] treeTopBytes;
+        using (var ms = new MemoryStream())
+        {
+            using (var w = new BinaryWriter(ms)) WorldGen.TreeTops.Save(w);
+            treeTopBytes = ms.ToArray();
+        }
+        using (var ms = new MemoryStream(treeTopBytes))
+        using (var r = new BinaryReader(ms))
+            WorldGen.TreeTops.Load(r, 326);
+        if (WorldGen.TreeTops.GetTreeStyle(0) != 2)
+            throw new Exception("the tree-top Save/Load round-trip lost variation 2");
+        using (var r = new BinaryReader(new MemoryStream()))
+            WorldGen.TreeTops.Load(r, 210); // <211: nothing read, CopyExistingWorldInfo
+        if (WorldGen.TreeTops.GetTreeStyle(0) != Terraria.Main.treeStyle[0]
+            || WorldGen.TreeTops.GetTreeStyle(4) != WorldGen.corruptBG
+            || WorldGen.TreeTops.GetTreeStyle(12) != WorldGen.underworldBG)
+            throw new Exception("the pre-211 tree-top load did not copy the existing world info");
+        using (var ms = new MemoryStream(treeTopBytes))
+        using (var r = new BinaryReader(ms))
+            WorldGen.TreeTops.Load(r, 326); // restore the fixture state
         WorldGen.SavedOreTiers.Copper = 7; // the real cctor default, restated
         WorldGen.Manifest = new WorldManifest(); // empty -> the null-field JSON
+        // The manifest JSON is the REAL WorldManifest.Serialize (Newtonsoft,
+        // the verbatim Generated/WorldManifest.cs) - pin its exact shape.
+        if (WorldGen.Manifest.Serialize() != "{\"GenPassResults\":[],\"Version\":null,\"GitSHA\":null,\"FinalHash\":null}")
+            throw new Exception("the empty-manifest JSON drifted: " + WorldGen.Manifest.Serialize());
 
         // --- the REAL save -------------------------------------------------------------------
         string outDir = args.Length != 0 ? args[0] : ".";

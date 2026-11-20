@@ -3337,6 +3337,112 @@ mod tests {
     }
 
     #[test]
+    fn w4_c44_the_fixture_banner_treetop_manifest_state_matches_the_csharp_bodies() {
+        // W4-c44: the fixture's four unowned fields are produced by the REAL
+        // C# bodies, not shim setters — 50 `BannerSystem.AddNPCKillBy(102, 0)`
+        // kills (BannerSystem.cs:231-278: NPCtoBanner(102)=1, the milestone
+        // divisor KillsToBanner[BannerToItem(1)=1615]=50), the TreeTopsInfo
+        // Save->Load round-trip (TreeTopsInfo.cs:47-68) and the real
+        // WorldManifest.Serialize JSON. This test walks the fixture's flags
+        // block in SaveWorldFlags order and pins those four payloads against
+        // the port's own banner tables (tr_core::bestiary) and the C# shapes.
+        let banner = crate::bestiary::npc_to_banner(102);
+        assert_eq!(banner, 1, "NPCtoBanner(AnglerFish) — BannerSystem.cs:407-408");
+        assert_eq!(crate::bestiary::banner_to_npc(banner), 102);
+        let needed = crate::bestiary::kills_needed_for(102);
+        assert_eq!(needed, 50, "the default KillsToBanner — ItemID.cs:1303");
+        let f = section_bodies(GOLDEN_WLD);
+        let mut r = crate::binio::Reader::new(f[1]);
+        // world head (SaveWorldHeader)
+        r.cs_string(); r.cs_string(); r.u64();
+        for _ in 0..16 { r.u8(); }
+        r.i32();
+        for _ in 0..6 { r.i32(); }
+        // flags up to BannerSystem.Save (WorldFile.cs:1238-1341)
+        r.i32(); // GameMode
+        for _ in 0..9 { r.boolean(); } // the secret-seed flags
+        r.u64(); r.u64(); // CreationTime, LastPlayed
+        r.u8(); // moonType
+        for _ in 0..3 { r.i32(); } for _ in 0..4 { r.i32(); } // treeX/treeStyle
+        for _ in 0..3 { r.i32(); } for _ in 0..4 { r.i32(); } // caveBackX/Style
+        r.i32(); r.i32(); r.i32(); // ice/jungle/hell back styles
+        r.i32(); r.i32(); // spawn
+        r.f64(); r.f64(); r.f64(); // surface/rock/time
+        r.boolean(); r.i32(); r.boolean(); r.boolean(); // dayTime/moonPhase/bloodMoon/eclipse
+        r.i32(); r.i32(); r.boolean(); // dungeonX/Y, crimson
+        for _ in 0..18 { r.boolean(); } // the downed/saved block
+        r.boolean(); r.boolean(); r.u8(); r.i32(); // orbs/meteor/altars
+        r.boolean(); r.boolean(); // hardMode, afterPartyOfDoom
+        r.i32(); r.i32(); r.i32(); r.f64(); r.f64(); r.u8(); // invasion + sundial
+        r.boolean(); r.i32(); r.f32(); // rain
+        r.i32(); r.i32(); r.i32(); // the hardmode ore trio
+        for _ in 0..8 { r.u8(); } // the BG styles
+        r.i32(); r.i16(); r.f32(); // clouds/wind
+        let anglers = r.i32().unwrap();
+        for _ in 0..anglers { r.cs_string(); }
+        r.boolean(); r.i32(); // savedAngler, anglerQuest
+        r.boolean(); r.boolean(); r.boolean(); // stylist/taxCollector/golfer
+        r.i32(); r.i32(); // invasionSizeStart, cultistDelay
+        // BannerSystem.Save: killCount[293] then claimableBanners[293].
+        // 50 kills of banner 1: the count is the kill tally, the claimable
+        // is one per milestone (50 / needed == 1), every other banner zero.
+        assert_eq!(r.i16().unwrap(), 293, "killCount.Length — BannerSystem.cs:174");
+        for i in 0..293 {
+            let expected = if i == banner { needed } else { 0 };
+            assert_eq!(r.i32().unwrap(), expected, "killCount[{i}]");
+        }
+        assert_eq!(r.i16().unwrap(), 293, "claimableBanners.Length — :180");
+        for i in 0..293 {
+            // exactly `needed` kills -> one milestone -> one claimable banner
+            let expected = if i == banner { 1u16 } else { 0 };
+            assert_eq!(r.u16().unwrap(), expected, "claimable[{i}]");
+        }
+        // flags between the banners and TreeTops.Save (WorldFile.cs:1342-1385)
+        r.boolean(); // fastForwardTimeToDawn
+        for _ in 0..18 { r.boolean(); } // event bosses + towers + apocalypse
+        r.boolean(); r.boolean(); r.i32(); // party manual/genuine/cooldown
+        let celebrants = r.i32().unwrap();
+        for _ in 0..celebrants { r.i32(); }
+        r.boolean(); r.i32(); r.f32(); r.f32(); // sandstorm
+        r.boolean(); // savedBartender
+        r.boolean(); r.boolean(); r.boolean(); // DD2 tiers
+        for _ in 0..5 { r.u8(); } // mushroom/underworld/treeBG2-4
+        r.boolean(); // combatBook
+        r.i32(); r.boolean(); r.boolean(); r.boolean(); // lantern night
+        // TreeTopsInfo.Save: 13 variations, only area 0 set (the fixture's
+        // Save->Load round-trip kept variation 2).
+        assert_eq!(r.i32().unwrap(), 13, "_variations.Length — TreeTopsInfo.cs:49");
+        for i in 0..13 {
+            let expected = if i == 0 { 2 } else { 0 };
+            assert_eq!(r.i32().unwrap(), expected, "treeTop[{i}]");
+        }
+        // the tail (WorldFile.cs:1386-1430)
+        r.boolean(); r.boolean(); // forceHalloween/XMasToday
+        r.i32(); r.i32(); r.i32(); r.i32(); // the classic ore quartet
+        for _ in 0..3 { r.boolean(); } // bought pets
+        for _ in 0..3 { r.boolean(); } // empress/queenSlime/deerclops
+        for _ in 0..9 { r.boolean(); } // the town unlocks
+        r.boolean(); r.boolean(); // combatBookTwo, peddlersSatchel
+        for _ in 0..7 { r.boolean(); } // the slime unlocks
+        r.boolean(); r.u8(); // fastForwardDusk, moondialCooldown
+        r.boolean(); r.boolean(); // forceHalloween/XMasForever
+        r.boolean(); r.boolean(); // vampire/infected seed
+        r.i32(); r.i32(); // meteorShowerCount, coinRain
+        r.boolean(); // teamBasedSpawns
+        let spawns = r.u8().unwrap();
+        for _ in 0..spawns { r.i16(); r.i16(); }
+        r.boolean(); r.boolean(); r.boolean(); // dualDungeons/lightning seeds
+        // WorldGen.Manifest.Serialize — the REAL Newtonsoft JSON of an empty
+        // manifest (WorldManifest.cs:51-54; the null-field shape).
+        assert_eq!(
+            r.cs_string().unwrap(),
+            "{\"GenPassResults\":[],\"Version\":null,\"GitSHA\":null,\"FinalHash\":null}",
+            "the empty-manifest JSON"
+        );
+        assert_eq!(r.pos(), f[1].len(), "the walk consumes the whole flags section");
+    }
+
+    #[test]
     fn s1_j_3b_check_saved_ore_tiers_rederives_the_quartet_from_the_tiles() {
         // `WorldFile.cs:794-849`: any -1 quartet member triggers the tile
         // count; per pair the classic metal wins only on a STRICTLY greater

@@ -17,6 +17,17 @@ decompile is the source, only the global lookups become shim state).
   spawn/treetops `Save` bodies, `Item.Serialize`, `EquipmentLoadout.Serialize`
   and the small whole files (`BitsByte`, `Point16`, `FileMetadata`, `FileType`,
   `SetFactory`, `WorldManifest`, `GenPassResult`, ...).
+  **W4-c44** extends the extraction to the state-producing chains behind the
+  four unowned header fields: `BannerSystem.Load`/`AddNPCKillBy`/`AddKill`/
+  `AddClaimableBanner`/`BannerToItem`/`NPCtoBanner`/`BannerToNPC`/
+  `GetKillCount`/`GetClaimableBannerCounts`/`Clear`/the static cctor
+  (`BannerSystem.cs:134-278,341-1457`), `TreeTopsInfo.Load`/
+  `CopyExistingWorldInfo`/`GetTreeStyle` (`TreeTopsInfo.cs:56-94,222-237`),
+  `NetworkText`'s construction + `ToString` path
+  (`NetworkText.cs:8-63,115-157`), `Lang.GetNPCName` (`Lang.cs:180-191`) and
+  the announcement sink `ChatHelper.BroadcastChatMessage`/`…As`/
+  `DisplayMessage`/`ShouldCacheMessage` (`ChatHelper.cs:46-128`) +
+  `NameTagHandler.GenerateTag` (`NameTagHandler.cs:13-16`).
 * **One — and only one — textual substitution** is made:
   `DateTime.UtcNow` → `FixtureClock.UtcNow` (a pinned 2026-11-18T00:00:00Z).
   The vanilla writers stamp the wall clock (`SaveWorldFlags:1251`,
@@ -48,7 +59,11 @@ dotnet run --project tools/WldFixtureHarness -- assets/test
 
 Two runs must produce byte-identical files (the clock is pinned). The Rust
 tests `s1_j_3_*` in `crates/tr-core/src/wld/mod.rs` and
-`crates/tr-app/src/player_file.rs` pin the result.
+`crates/tr-app/src/player_file.rs` pin the result;
+`w4_c44_the_fixture_banner_treetop_manifest_state_matches_the_csharp_bodies`
+walks the flags block and pins the four unowned payloads against the port's
+banner tables. W4-c44 verified: two consecutive regens left `golden.wld`
+SHA256 `5C32D867…F162A9` and `golden.plr` `13369854…A9E1A3E3` unchanged.
 
 ## Fixture coverage
 
@@ -68,7 +83,16 @@ tests `s1_j_3_*` in `crates/tr-core/src/wld/mod.rs` and
   chats. **creative powers**: all six persistent registrations.
 * **flags**: a broad non-default sweep (blood moon, hardmode, downed flags,
   rain, sundial/moondial, banner counts, tree-top variation, ore tiers, the
-  empty-manifest JSON).
+  empty-manifest JSON). **W4-c44**: the four unowned fields are produced by
+  the REAL C# bodies — 50 `BannerSystem.AddNPCKillBy(102, 0)` kills land
+  `killCount[1]=50` / `claimable[1]=1` through `AddKill`/`AddClaimableBanner`
+  (the milestone announcement fires once through the extracted
+  `NetworkText`/`ChatHelper`/`Lang` chain into the `Main.NewTextMultiline`
+  shim sink, pinned by the driver); the tree-top variation rides the real
+  `TreeTopsInfo.Save`→`Load` round-trip (the pre-211 `CopyExistingWorldInfo`
+  arm is exercised too); the manifest JSON is the real
+  `WorldManifest.Serialize` (Newtonsoft) output, shape-pinned by the driver.
+  The fixture bytes are unchanged by this (regen is SHA256-stable).
 * **.plr**: the fresh-player defaults plus four inventory items (one
   favorited), pinned play time zero.
 
@@ -81,6 +105,13 @@ store), the tree-top variations (`treeTop[0]`, no store) and the world-gen
 manifest JSON (`manifest`, the port writes the empty string) — pinned
 field-by-field by
 `s1_j_3_the_header_flags_divergences_are_exactly_the_unowned_fields`.
+W4-c44 makes the fixture side of those four divergences run through the real
+C# state chains (see "Fixture coverage") and adds
+`w4_c44_the_fixture_banner_treetop_manifest_state_matches_the_csharp_bodies`,
+which pins the fixture's kill/claimable/tree-top/manifest payloads against
+`tr_core::bestiary`'s `NPCtoBanner`/`BannerToItem`/`KillsToBanner` ports. The
+port still writes its defaults there (the fields stay unowned); only the
+fixture's provenance changed, so **`golden.wld` needs no regeneration**.
 
 S1-J-3b closed the rest of the header/flags remainder: `CreationTime`, the
 file-faithful `spawnTileY` (the old derived-spawn override removed), the seven
