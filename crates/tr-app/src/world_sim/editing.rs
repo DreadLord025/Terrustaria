@@ -4285,6 +4285,193 @@ fn fire_non_ammo_shot(
     true
 }
 
+/// W4-a1 phase 1 — the useStyle-1 swing-rect hit seam. Wires the landed
+/// `melee_swing::melee_hitbox` (`Player.cs:45099-45190`) into the old
+/// cursor-point melee arm: the press starts the use (`start_use_timers`),
+/// then EVERY animation tick the swing rect off `swing_item_placement`
+/// intersects ALL NPCs in slot order (`ItemCheck_MeleeHitNPCs`,
+/// `Player.cs:44241-44253`), one `resolve_melee_strike` call per hit.
+/// The cooldown/`attack_cd` pacing pass is phase 2 — this arm keeps the
+/// per-NPC lock the shared strike tail arms (`:44414`). Returns true when
+/// the held item took the swing path AND owns the tick (a pure melee item —
+/// the caller skips the mining arms); false lets the mining arms run (the
+/// tile-first diversion) or the shoot/volley arms run (a projectile melee
+/// weapon — the C# melee-hit block never consumes `ItemCheck`).
+fn melee_swing_tick(
+    app: &mut App,
+    thrust_took: bool,
+    held_use_ammo: i32,
+    held_weapon: bool,
+    prev_mine_released: bool,
+    prev_mine_down: bool,
+    cursor_blocked: bool,
+    world_pos: Vec2,
+) -> bool {
+    if thrust_took || held_use_ammo != 0 {
+        return false;
+    }
+    let held = app.inventory[app.selected];
+    let Some(def) = registry::get(held.kind) else {
+        return false;
+    };
+    // `Player.cs:43648`: the block gate is `damage > 0 && !noMelee` (the
+    // `damage >= 0` half feeds the catch/cut arms, not the hit scan) — the
+    // registry's `melee` flag is the `!noMelee` stand-in (the Holy Water
+    // 422 row: style 1, damage 20, `melee: false` — it throws, never swings).
+    if def.use_style != 1 || held.count == 0 || def.damage <= 0 || !def.melee {
+        return false;
+    }
+    // The use start (`ItemCheck_TryStartUse` `:52042+` → `StartActualUse`
+    // `:51657-51698`): the press edge or the held button on autoReuse, the
+    // timers clear, the cursor unblocked. The cursor gates the START only —
+    // the C# melee-hit block runs every animation tick cursor-free. The
+    // start precedes the tile-first diversion below: the C# use-start
+    // (`:42733`) runs ahead of `ItemCheck_UseMiningTools` (`:43593`).
+    let reuse_ready = def.auto_reuse || (prev_mine_released && !prev_mine_down);
+    if app.mine_down
+        && reuse_ready
+        && !cursor_blocked
+        && !app.inventory_open
+        && app.swing <= 0.0
+        && app.attack_cd <= 0.0
+        && app.reuse_delay <= 0.0
+    {
+        start_use_timers(app, held);
+        // `StartActualUse` (`Player.cs:51678-51679`): `attackCD = 0;
+        // ResetMeleeHitCooldowns()` — the same override the stab seam keeps
+        // (`start_use_timers` arms the swing-length start lock as the port's
+        // rig stand-in; the C# start clears it, so the FIRST animation tick
+        // can already hit). The landed strike re-arms it to the C#
+        // `ApplyAttackCooldown` value (`:44428-44431`).
+        app.attack_cd = 0.0;
+        if let Some(p) = app.player.as_mut() {
+            p.melee_npc_hit_cooldown.clear();
+        }
+        // `StartActualUse` (`Player.cs:51660-51663`): a tool arms
+        // `toolTime = 1` — the first pick hit lands one tick later.
+        if def.pick > 0 || def.axe > 0 || def.hammer > 0 {
+            app.tool_time = ONE_TICK_SECS;
+        }
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+    }
+    // The tile-first order (the old cursor arm's gate, kept for the tools):
+    // a tool whose cursor cell is a tile it can work mines instead
+    // (`ItemCheck_UseMiningTools`, `Player.cs:43593` ahead of `:43648`) —
+    // the hit SCAN yields to the mining arm (return false so the mining
+    // arms below run); the started swing keeps ticking (its own countdown
+    // owns the animation).
+    if app.swing <= 0.0 {
+        return false;
+    }
+    // `Player.cs:43664`: `UpdateMeleeHitCooldowns` — one decrement per
+    // damage tick, BEFORE the NPC scan (`:43681`), even when the tile-first
+    // order below diverts the scan to the mining arm (the C# block is
+    // cursor-free).
+    if let Some(p) = app.player.as_mut() {
+        for cd in p.melee_npc_hit_cooldown.values_mut() {
+            *cd -= 1;
+        }
+    }
+    if !held_weapon && cursor_cell_is_tile_target(app, world_pos) {
+        return false;
+    }
+    // The no-player bail: the scan needs the placement reads; the mining
+    // arms below still run (the C# block is one arm of `ItemCheck`, never a
+    // return).
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let anim = ticks_of(app.swing);
+    let anim_max = ticks_of(app.swing_max);
+    let scale = crate::player::adjusted_item_scale(
+        crate::prefix::prefixed_stats(held.kind, held.prefix)
+            .map_or(def.scale, |s| s.scale),
+    );
+    // The held frame — the atlas icon quad is the `GetDrawHitbox` stand-in
+    // (the thrust seam's same fallback).
+    let (frame_w, frame_h) = app
+        .lookups
+        .item_icon(held.kind)
+        .map_or((def.width as f32, def.height as f32), |(_, w, h)| (w, h));
+    let (loc, _rot) = crate::melee_swing::swing_item_placement(
+        i32::from(held.kind),
+        anim,
+        anim_max,
+        p.facing,
+        1.0, // gravDir — the port has no gravity-flip field yet
+        [p.x, p.y],
+        crate::player::WIDTH,
+        crate::player::HEIGHT,
+        frame_w,
+        frame_h,
+        0.0, // mountOffset — HeightOffsetHitboxCenter stands at 0
+    );
+    let rect = crate::melee_swing::melee_hitbox(
+        i32::from(held.kind),
+        anim,
+        anim_max,
+        p.facing,
+        1.0,
+        loc,
+        frame_w as i32,
+        frame_h as i32,
+        scale,
+    );
+    let (pcx, _) = p.center();
+    let melee_pen = p.get_armor_penetration(true);
+    let (kill_guide, kill_clothier) = p.doll_flags();
+    let hits_town_npc = matches!(held.kind, 5129 | 3351);
+    let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
+    let cooldowns = p.melee_npc_hit_cooldown.clone();
+    // `ItemCheck_MeleeHitNPCs` (`Player.cs:44241-44253`): the slot-order
+    // scan over ALL NPCs; the gates are `active && immune[whoAmI] == 0 &&
+    // CanHitNPCWithMeleeHit && attackCD <= 0`. The `immune` gate rides
+    // `strike_melee`'s `hurt_cd` stand-in (the established melee path);
+    // `attackCD` reads the LIVE field each slot (`:44246`) — a landed hit
+    // re-arms it (`ApplyAttackCooldown` `:44428-44431`), so the walk stops.
+    for idx in 0..app.npcs.len() {
+        let n = &app.npcs[idx];
+        if n.hp <= 0 || n.dont_take_damage {
+            continue;
+        }
+        if n.kind.is_friendly()
+            && !(n.kind == NpcKind::Guide && kill_guide)
+            && !(n.kind == NpcKind::Clothier && kill_clothier)
+            && !(n.kind.is_town_npc_like() && hits_town_npc)
+        {
+            continue;
+        }
+        if app.attack_cd > 0.0 || cooldowns.get(&n.uid).is_some_and(|&cd| cd > 0) {
+            continue;
+        }
+        // `ProcessHitAgainstNPC`'s rect intersect (`:44278-44279`).
+        let (nw, nh) = n.size();
+        let npc_rect = crate::melee_swing::MeleeRect {
+            x: n.x as i32,
+            y: n.y as i32,
+            width: nw as i32,
+            height: nh as i32,
+        };
+        if !rect.intersects(&npc_rect) {
+            continue;
+        }
+        resolve_melee_strike(app, idx, held, held_weapon, held_fx, melee_pen, pcx);
+    }
+    // The C# melee-hit block never consumes `ItemCheck` (`Player.cs:43644-
+    // 43686` falls through to the mining/place arms). A pure melee item owns
+    // the tick here — the mining arms would no-op on it anyway, and the old
+    // cursor arm's return kept the place/volley tails off the swing. A
+    // PROJECTILE melee weapon (the Beam Sword 723 family) falls through so
+    // its `ItemCheck_Shoot` volley arms below still fire. A TOOL falls
+    // through too: the pound + wall passes (`:45639-45643`) run on cells
+    // `cursor_cell_is_tile_target` does not cover (an exposed wall under an
+    // inactive cell), so consuming the tick would drop wall hammering
+    // (S1-P-i33) — the mining arms below keep their own no-match gates.
+    let is_tool = def.pick > 0 || def.axe > 0 || def.hammer > 0;
+    !held_weapon && !is_tool
+}
+
 /// `Player.ItemCheck`'s tile-first order for the tools: the cursor cell is a
 /// minable/chopable tile the held tool can work, and the vanilla checks the
 /// tile against the tool before the NPC boxes — `ItemCheck_UseMiningTools`
@@ -4317,91 +4504,26 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     pick > 0 && tr_core::tool::pick_can_mine(tile.kind, pick as i32, below_surface)
 }
 
-    // Melee: LMB over an NPC within four tiles hits it instead of mining.
-    // `ItemCheck_MeleeHitNPCs` runs for every item with `damage > 0` and
-    // `!noMelee` (`Player.cs:43648`) — the tools included, their damage
-    // coming from the same registry row. The ammo shooters skip it — they
-    // fire their `useAmmo` projectile instead (`ItemCheck_Shoot`'s gate,
-    // `Player.cs:47069-47075`). The vanilla prioritises the TILE under the
-    // cursor for the tools: an NPC hit only lands when the cell under the
-    // cursor is not a targetable tile (the `ItemCheck` tile-first order).
-    // S1-P-i05: the useStyle-3 sweep above owns the umbrella pair — the
-    // cursor arm must not double-fire (`thrust_took`).
-    if app.mine_down
-        && !thrust_took
-        && held_use_ammo == 0
-        && app.attack_cd <= 0.0
-        && app.reuse_delay <= 0.0
-        && app.mine_released
-        && !app.inventory_open
-        && (held_weapon || !cursor_cell_is_tile_target(app, world_pos))
-    {
-        let ax = world_pos.x;
-        let ay = world_pos.y;
-        let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
-        // `:44383`'s `this.GetArmorPenetration(sItem.melee)` sum, read before
-        // the `app.npcs` borrow below.
-        let melee_pen = app
-            .player
-            .as_ref()
-            .map_or(0, |p| p.get_armor_penetration(true));
-        let reach2 = 4.0 * TILE_PX;
-        if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
-            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44272-44276`):
-            // `nPC.friendly && (nPC.type != 22 || !this.killGuide) &&
-            // (nPC.type != 54 || !this.killClothier) && (!nPC.isLikeATownNPC
-            // || (sItem.type != 5129 && sItem.type != 3351))` → `return`.
-            // So every friendly NPC (all town kinds plus the six
-            // bound/rescue forms, [`crate::npc::NpcKind::is_friendly`]) is
-            // refused except: the Guide under the Guide Voodoo Doll (267),
-            // the Clothier under the Clothier's Voodoo Doll (1307), and any
-            // town NPC under the Flymeal (5129) or the Tax Collector's Stick
-            // of Doom (3351) — the two items the C# whitelists by id.
-            // `dontTakeDamage` skips the shielded (the Brain's Creeper
-            // shield, the crystal's spawn shield). The dolls arm their flags
-            // through `ApplyEquipFunctional` (`Player.cs:14368`, the
-            // accessory slots 3..10 the `UpdateEquips` loop `:12948-12954`
-            // walks) and `ResetEffects` clears them every tick (`:18365-18366`
-            // — the port reads the per-tick `Player.equipped` snapshot, so a
-            // doll in the bag no longer counts; the pre-fix gate scanned the
-            // whole inventory).
-            let (kill_guide, kill_clothier) = app
-                .player
-                .as_ref()
-                .map(|p| p.doll_flags())
-                .unwrap_or((false, false));
-            let hits_town_npc = matches!(held.kind, 5129 | 3351);
-            let hit_idx = app.npcs.iter().position(|n| {
-                n.contains(ax, ay)
-                    && !n.dont_take_damage
-                    && (!n.kind.is_friendly()
-                        || (n.kind == NpcKind::Guide && kill_guide)
-                        || (n.kind == NpcKind::Clothier && kill_clothier)
-                        || (n.kind.is_town_npc_like() && hits_town_npc))
-            });
-            if let Some(idx) = hit_idx {
-                // S1-P-i05/i10/i11 keep-one (M1 re-sync): the landed-strike
-                // resolution lives in the extracted resolve_melee_strike —
-                // the cursor arm and the useStyle-3 stab sweep share it. The
-                // V4 i50 Lucky Coin proc was folded INTO the shared fn (it
-                // sits after the hit-cue tail there, C# ApplyNPCOnHitEffects
-                // order :44404). The swing-start tail below is i12's
-                // start_use_timers (ApplyItemAnimation, V4-landed).
-                resolve_melee_strike(app, idx, held, held_weapon, held_fx, melee_pen, pcx);
-                // One swing per `ApplyItemAnimation` (`Player.cs:4463-4497`):
-                // the melee branch scales by the inverted meleeSpeed, the
-                // reuse lock rides the start (`:4496`).
-                start_use_timers(app, held);
-                app.mine_target = None;
-                app.mine_timer = 0.0;
-                return;
-            }
-        }
-        // The healing-potion duplicate that used to sit here (the gated
-        // `!sick` copy) was SHADOWED by the ungated press-arm above and is
-        // gone with it (S1-P-i37): every melee strike already returns, so
-        // the block was unreachable for NPCs in reach, and the drink family
-        // now rides `potions::use_potion_item` at the use-start seam.
+    // Melee (W4-a1 phase 1): the useStyle-1 swing-rect seam REPLACES the
+    // old cursor-point pick — `melee_swing::melee_hitbox`
+    // (`Player.cs:45099-45190`) off the live `swing_item_placement` arc
+    // intersects ALL NPCs in slot order (`ItemCheck_MeleeHitNPCs`,
+    // `Player.cs:44241-44253`), one `resolve_melee_strike` per hit. The
+    // press starts the use (`StartActualUse` `:51657-51698`), every
+    // animation tick scans the rect cursor-free; the tile-first order for
+    // the tools and the ammo-shooter/useStyle-3 exclusions ride inside.
+    // The cooldown/`attack_cd` pacing pass is phase 2.
+    if melee_swing_tick(
+        app,
+        thrust_took,
+        held_use_ammo,
+        held_weapon,
+        prev_mine_released,
+        prev_mine_down,
+        cursor_blocked,
+        world_pos,
+    ) {
+        return;
     }
     // `Player.cs:42768-42771` (the use-success arm) + the can-use gate
     // `:52312-52314` -> `Mount.CanMount` (`Mount.cs:6581-6604`): a saddle
@@ -8524,7 +8646,7 @@ mod tests {
         let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
         a.npcs.clear();
         a.npcs.push(guide);
-        a.npcs[0].x = 30.0 * TILE_PX;
+        a.npcs[0].x = 546.0; // W4-a1: inside the right-facing swing arc
         a.npcs[0].y = 260.0 * TILE_PX;
         a.inventory[a.selected].kind = 5129;
         a.inventory[a.selected].count = 1;
@@ -8541,11 +8663,15 @@ mod tests {
     /// slots 3..10, `Player.cs:14368`/`:12948-12954`).
     #[test]
     fn bug_10_melee_refuses_the_town_npcs() {
-        // A Guide standing on the floor at the cursor.
+        // A Guide standing inside the swing arc (W4-a1: the rect, not the
+        // cursor, decides the reach — the refusal must come from the
+        // friendly gate, not from a miss).
         let mut a = melee_app();
         let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
         a.npcs.clear();
         a.npcs.push(guide);
+        a.npcs[0].x = 546.0;
+        a.npcs[0].y = 260.0 * TILE_PX;
         a.inventory[a.selected].kind = 24; // the wooden sword
         let hp = a.npcs[0].hp;
         let hp_max = a.npcs[0].max_hp;
@@ -8562,7 +8688,7 @@ mod tests {
         bag.inventory[bag.selected].kind = 24; // the sword does the hit
         bag.inventory[0].kind = 267; // the voodoo doll in the bag
         bag.inventory[0].count = 1;
-        bag.npcs[0].x = 30.0 * TILE_PX;
+        bag.npcs[0].x = 546.0; // W4-a1: inside the right-facing swing arc
         bag.npcs[0].y = 260.0 * TILE_PX;
         let hp = bag.npcs[0].hp;
         mine_frames(&mut bag, 1);
@@ -8583,7 +8709,7 @@ mod tests {
         // The Guide spawns at the surface; the rig's cursor sits at
         // (30, 260) — park the Guide into the cursor's box the way the
         // slime rig does.
-        b.npcs[0].x = 30.0 * TILE_PX;
+        b.npcs[0].x = 546.0; // W4-a1: inside the right-facing swing arc
         b.npcs[0].y = 260.0 * TILE_PX;
         let hp = b.npcs[0].hp;
         mine_frames(&mut b, 1);
@@ -8620,7 +8746,7 @@ mod tests {
             let mut npc = crate::npc::Npc::spawn_town(&a.world, 30, kind)
                 .unwrap_or_else(|| panic!("{kind:?} spawns"));
             a.npcs.clear();
-            npc.x = 30.0 * TILE_PX;
+            npc.x = 546.0; // W4-a1: inside the right-facing swing arc
             npc.y = 260.0 * TILE_PX;
             a.npcs.push(npc);
             a.inventory[a.selected].kind = 24; // the wooden sword
@@ -8642,7 +8768,7 @@ mod tests {
         let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
         a.npcs.clear();
         a.npcs.push(guide);
-        a.npcs[0].x = 30.0 * TILE_PX;
+        a.npcs[0].x = 546.0; // W4-a1: inside the right-facing swing arc
         a.npcs[0].y = 260.0 * TILE_PX;
         a.inventory[a.selected].kind = 5129;
         a.inventory[a.selected].count = 1;
@@ -8669,7 +8795,7 @@ mod tests {
         let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
         b.npcs.clear();
         b.npcs.push(guide);
-        b.npcs[0].x = 30.0 * TILE_PX;
+        b.npcs[0].x = 546.0; // W4-a1: inside the right-facing swing arc
         b.npcs[0].y = 260.0 * TILE_PX;
         b.inventory[b.selected].kind = 3351;
         b.inventory[b.selected].count = 1;
@@ -8716,10 +8842,112 @@ mod tests {
         let mut npc =
             crate::npc::Npc::spawn_slime_variant(&app.world, 30, crate::npc::SlimeVariant::Blue)
                 .expect("the floor row spawns the slime");
-        npc.x = 30.0 * TILE_PX;
+        // W4-a1: the swing rect is FACING-dependent (the old cursor-point
+        // stand-in was not) — park the slime inside the right-facing arc,
+        // the `thrust_app` precedent: the player's top-left is (528, 4160),
+        // the START-third rect of a 24x28 frame spans [516,564)x[4131,4170),
+        // so the 24x18 slime at (546, 4160) intersects on the first tick.
+        npc.x = 546.0;
         npc.y = 260.0 * TILE_PX;
+        npc.uid = 1;
         app.npcs.push(npc);
+        // The press edge (`ItemCheck_TryStartUse`'s `releaseUseItem` latch,
+        // the stab rig's same arming): a non-autoReuse sword starts on the
+        // press, not on a held button.
+        app.mine_released = true;
+        app.mine_prev_down = false;
         app
+    }
+
+    /// W4-a1 witness 1 — the swing rect intersects ALL NPCs in slot order
+    /// (`ItemCheck_MeleeHitNPCs`, `Player.cs:44241-44253`), one strike per
+    /// hit. Two slimes inside the right-facing START rect: the tick-1 scan
+    /// hits slot 0 and `ApplyAttackCooldown` (`:44428-44431`) arms
+    /// `attackCD = max(1, (int)(20 * 0.33)) = 6`, so the LIVE per-slot gate
+    /// (`:44246`) skips slot 1 until the cooldown decays (the player-update
+    /// pass — the rig decays it by hand like `repress` does for the start
+    /// lock). At tick 7 slot 0's per-NPC lock (`:44414`, 20 − 6 = 14) still
+    /// refuses the re-hit and slot 1 takes its OWN strike. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_a1_the_swing_rect_hits_every_npc_in_the_arc() {
+        let mut app = melee_app();
+        app.inventory[app.selected].kind = 24; // the wooden sword
+        // The second slime inside the same START rect ([504,552) x
+        // [4131,4170) for the 24x28 frame at the (528, 4160) player).
+        let mut second = app.npcs[0].clone();
+        second.x = 520.0;
+        second.uid = 2;
+        app.npcs.push(second);
+        let hp0 = app.npcs[0].hp;
+        let hp1 = app.npcs[1].hp;
+        // The full 20-tick swing with the button held; the per-tick
+        // `attackCD--` decay rides `world_sim/npcs.rs` in the live loop —
+        // the rig mirrors it so the mid-swing second hit is reachable.
+        for _ in 0..20 {
+            mine_frames(&mut app, 1);
+            app.attack_cd = (app.attack_cd - ONE_TICK_SECS).max(0.0);
+        }
+        assert!(app.npcs[0].hp < hp0, "slot 0 took the tick-1 strike");
+        assert!(app.npcs[1].hp < hp1, "slot 1 took its own mid-swing strike");
+        // One strike per NPC: the sword's 7 ±15 % through the slime's
+        // defence 1, x2 on a crit — the single-hit ceiling is 15.
+        assert!(hp0 - app.npcs[0].hp <= 15, "slot 0 hit exactly once");
+        assert!(hp1 - app.npcs[1].hp <= 15, "slot 1 hit exactly once");
+        let cds = &app.player.as_ref().unwrap().melee_npc_hit_cooldown;
+        assert!(cds.contains_key(&1) && cds.contains_key(&2), "both locks armed");
+        // The held button past the animation end starts nothing (the sword
+        // is not autoReuse) — no repeat strikes on either NPC.
+        let (a, b) = (app.npcs[0].hp, app.npcs[1].hp);
+        for _ in 0..20 {
+            mine_frames(&mut app, 1);
+            app.attack_cd = (app.attack_cd - ONE_TICK_SECS).max(0.0);
+        }
+        assert_eq!((app.npcs[0].hp, app.npcs[1].hp), (a, b), "no re-hit");
+    }
+
+    /// W4-a1 witness 2 — the rect is FACING-dependent (the old cursor-point
+    /// stand-in was not): a slime at (480, 4180) sits outside every
+    /// right-facing third (START [504,552), middle/END [540,…)) but inside
+    /// the LEFT-facing END rect ([503,536) x [4170,4200), the `:45139-45148`
+    /// pull-back). The END third runs at anim ≤ 6 (20 * 0.333 = 6.66) —
+    /// swing ticks 15..20. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_a1_the_swing_rect_follows_the_facing() {
+        let mut right = melee_app();
+        right.inventory[right.selected].kind = 24;
+        right.npcs[0].x = 480.0;
+        right.npcs[0].y = 4180.0;
+        let hp_r = right.npcs[0].hp;
+        mine_frames(&mut right, 20);
+        assert_eq!(right.npcs[0].hp, hp_r, "the right-facing arc never reaches");
+        let mut left = melee_app();
+        left.inventory[left.selected].kind = 24;
+        left.npcs[0].x = 480.0;
+        left.npcs[0].y = 4180.0;
+        left.player.as_mut().unwrap().facing = -1;
+        let hp_l = left.npcs[0].hp;
+        mine_frames(&mut left, 20);
+        assert!(left.npcs[0].hp < hp_l, "the left-facing END third lands");
+    }
+
+    /// W4-a1 witness 3 — the scan is cursor-free once the use starts
+    /// (`Player.cs:43644-43686` gates on `itemAnimation > 0`, never on the
+    /// cursor): the press starts the swing with the pointer 360 px away
+    /// from the NPC (world x 848 vs the slime at 546 — outside the old
+    /// arm's four-tile cursor reach AND its `contains` box), and the rect
+    /// still lands the tick-1 strike. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_a1_the_scan_is_cursor_free_after_the_start() {
+        let mut app = melee_app();
+        app.inventory[app.selected].kind = 24;
+        // Screen (1000, 360) → world (848, 4168): unblocked (not the HUD
+        // corner), but nowhere near the slime's box.
+        app.mouse_pos = Vec2::new(1000.0, 360.0);
+        let hp0 = app.npcs[0].hp;
+        mine_frames(&mut app, 1);
+        assert!(app.swing > 0.0, "the press started the use");
+        assert!(app.npcs[0].hp < hp0, "the rect hit despite the far cursor");
     }
 
     /// S1-P-i05 — the useStyle-3 (Thrust) stab-sweep rig: the `melee_app`
