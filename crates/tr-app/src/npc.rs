@@ -4706,6 +4706,18 @@ impl Npc {
             // `expert = false` keeps the live dispatch's classic solo
             // seam (the style31 CLASSIC_SOLO precedent).
             11 => self.update_skeletron(world, player, rng, false),
+            // `if (this.aiStyle == 12)` (`NPC.cs:22300-22614`) — the
+            // Skeletron hand (36), the style's only user (`SetDefaults`
+            // `:9183-9196`). W4-d23 verify-only census: the landed H1-
+            // H11 machine (`update_skeletron_hand` — the head-gone
+            // cascade, the RAW localAI[3] mirror, the spin-dock, the
+            // rise/slam/wind-out states, the hover-dock's BOTH Y
+            // branches) is unchanged; the axis claims the style now,
+            // the kind arm becomes the unreachable marker. The head
+            // anchor rides the sim's `World.skeletron_*` write-through
+            // (`world_sim/npcs.rs`), `expert = false` keeps the classic
+            // solo seam (the style-11 claim's precedent).
+            12 => self.update_skeletron_hand(world, player, false),
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -5799,7 +5811,14 @@ impl Npc {
             NpcKind::SkeletronHead => {
                 unreachable!("aiStyle 11 rides the style axis (W4-d23)")
             }
-            NpcKind::SkeletronHand => self.update_skeletron_hand(world, player, false),
+            // W4-d23 axis census: the Skeletron hand (aiStyle 12) rides
+            // the style axis above (`12 => update_skeletron_hand`,
+            // classic solo) — this arm is unreachable through
+            // `update_rng` (the S1-D-2 axis precedent). The direct-call
+            // tests keep using the machine fn itself.
+            NpcKind::SkeletronHand => {
+                unreachable!("aiStyle 12 rides the style axis (W4-d23)")
+            }
             // S1-D-3 W-1: the WoF family's aiStyles 27/28/29 ride the
             // style axis above (the faithful modules); `ai_style()` maps
             // these kinds unconditionally, so the fallthrough never
@@ -33784,5 +33803,139 @@ mod w4_d23_style11_census_tests {
         let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
         assert!((speed - 8.0).abs() < 0.01, "the 8-speed rush (:22268)");
         assert_eq!(rng, UnifiedRandom::new(12), "the rage tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d23 — the aiStyles 9-14 axis census witnesses (style 12 slice).
+// WRITTEN, NOT RUN (code-only mode). 12 Skeletron hand LANDED (the
+// H1-H11 machine `update_skeletron_hand`) -> verify-only axis claim
+// here; the machine is unchanged.
+// =====================================================================
+#[cfg(test)]
+mod w4_d23_style12_census_tests {
+    use super::*;
+
+    /// The axis claims style 12 exactly once, and the SkeletronHand
+    /// kind arm is the unreachable marker (the S1-D-2 convention).
+    #[test]
+    fn w4_d23_the_axis_claims_style_12_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "12" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 12 claimed once");
+        assert!(src.contains("aiStyle 12 rides the style axis (W4-d23)"));
+    }
+
+    /// A hand parked exactly on its hover dock: the head anchor rides
+    /// the sim's World mirror (`skeletron_x` = centre X, `skeletron_y`
+    /// = TOP Y — `world_sim/npcs.rs`'s write-through). The dock target
+    /// is (headCX - 200*side, headY + 230) (`NPC.cs:22447-22494`); at
+    /// the target both steering branches are strict compares, so the
+    /// velocity stays zero. The state-0 attack timer ticks +1
+    /// (`:22381`), the spriteDirection pins -(int)ai[0] (`:22302`),
+    /// localAI[3] copies the head's ai[3] RAW (`:22315`), and the dock
+    /// aim rotation is atan2(0, 0) + 1.57 (`:22496-22500`). Draw-free.
+    #[test]
+    fn w4_d23_the_docked_hand_rides_the_12_axis_draw_free() {
+        let mut w = World::new("t".into(), 300, 300);
+        w.skeletron_head_present = true;
+        w.skeletron_head_state = 0.0;
+        w.skeletron_head_ai3 = 0.0;
+        w.skeletron_x = 100.0 * TILE_PX; // the head's centre X
+        w.skeletron_y = 60.0 * TILE_PX; // the head's TOP Y
+        let mut p = Player::spawn(&w);
+        p.x = 140.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        // side = -1: dock centre X = 1600 + 200 = 1800, dock TOP Y =
+        // 960 + 230 = 1190; the 52x52 hand's top-left is (1774, 1190).
+        let mut hand = Npc::new(
+            NpcKind::SkeletronHand,
+            1800.0 - 26.0,
+            60.0 * TILE_PX + 230.0,
+            0,
+            0.0,
+        );
+        hand.hp = hand.max_hp;
+        hand.ai[0] = -1.0;
+        let mut rng = UnifiedRandom::new(13);
+        hand.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(hand.sprite_dir, 1, "-(int)ai[0] (:22302)");
+        assert_eq!(hand.local_ai[3], 0.0, "the RAW head ai[3] copy (:22315)");
+        assert_eq!(hand.ai[3], 1.0, "the classic attack timer +1 (:22381)");
+        assert_eq!(hand.ai[2], 0.0, "still docked");
+        assert_eq!(hand.vx, 0.0, "the strict dock compares hold");
+        assert_eq!(hand.vy, 0.0);
+        assert!((hand.rotation - 1.57).abs() < 1e-4, "atan2(0,0)+1.57 (:22500)");
+        assert_eq!(rng, UnifiedRandom::new(13), "the dock tick draws nothing");
+    }
+
+    /// The 300-tick attack transition (`NPC.cs:22390-22395`): ai[3]
+    /// reaches 300 -> ai[2]++ (the rise), ai[3] = 0, netUpdate. The
+    /// classic timer adds exactly 1 (no red-hat +1, no expert +0.5).
+    /// Draw-free.
+    #[test]
+    fn w4_d23_the_hand_attack_timer_transitions_at_300() {
+        let mut w = World::new("t".into(), 300, 300);
+        w.skeletron_head_present = true;
+        w.skeletron_x = 100.0 * TILE_PX;
+        w.skeletron_y = 60.0 * TILE_PX;
+        let mut p = Player::spawn(&w);
+        p.x = 140.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        let mut hand = Npc::new(
+            NpcKind::SkeletronHand,
+            1800.0 - 26.0,
+            60.0 * TILE_PX + 230.0,
+            0,
+            0.0,
+        );
+        hand.hp = hand.max_hp;
+        hand.ai[0] = -1.0;
+        hand.ai[3] = 299.0;
+        let mut rng = UnifiedRandom::new(14);
+        hand.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(hand.ai[2], 1.0, "the rise state (:22392)");
+        assert_eq!(hand.ai[3], 0.0, "the timer reset (:22393)");
+        assert!(hand.net_update, "the transition nets (:22394)");
+        assert_eq!(rng, UnifiedRandom::new(14), "the transition draws nothing");
+    }
+
+    /// The head-gone cascade (`NPC.cs:22303-22312`): no live head ->
+    /// ai[2] += 10 and the single-player death (life = -1 / active =
+    /// false folds to hp = 0, the prime-limb precedent). The early
+    /// return skips the dock entirely. Draw-free.
+    #[test]
+    fn w4_d23_the_headless_hand_dies_draw_free() {
+        let mut w = World::new("t".into(), 300, 300);
+        w.skeletron_head_present = false;
+        let mut p = Player::spawn(&w);
+        p.x = 140.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        let mut hand = Npc::new(NpcKind::SkeletronHand, 1774.0, 1190.0, 0, 0.0);
+        hand.hp = hand.max_hp;
+        hand.ai[0] = 1.0;
+        let mut rng = UnifiedRandom::new(15);
+        hand.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(hand.ai[2], 10.0, "the +10 cascade (:22305)");
+        assert_eq!(hand.hp, 0, "the SP death (:22306-22310)");
+        assert_eq!(hand.sprite_dir, -1, "the pin still runs (:22302)");
+        assert_eq!(rng, UnifiedRandom::new(15), "the cascade draws nothing");
     }
 }
