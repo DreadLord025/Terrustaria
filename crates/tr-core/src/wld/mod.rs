@@ -1679,6 +1679,11 @@ mod tests {
         world.lunar_apocalypse_is_up = true;
         world.unlocked_party_girl = true;
         world.unlocked_princess = true;
+        // Gate V3 (S1-P-i35): the two newly-owned flag bytes — the combat
+        // book (WorldFile.cs:1379, v204) and the red slime unlock
+        // (`:1413`, v261) — ride the round-trip at non-default values.
+        world.combat_book_was_used = true;
+        world.unlocked_slime_red_spawn = true;
         world
     }
 
@@ -1896,6 +1901,15 @@ mod tests {
             got.unlocked_princess, want.unlocked_princess,
             "{context}: unlockedPrincessSpawn"
         );
+        // Gate V3 (S1-P-i35): the combat book + red slime unlock bytes.
+        assert_eq!(
+            got.combat_book_was_used, want.combat_book_was_used,
+            "{context}: combatBookWasUsed"
+        );
+        assert_eq!(
+            got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
+            "{context}: unlockedSlimeRedSpawn"
+        );
     }
 
     #[test]
@@ -2041,8 +2055,15 @@ mod tests {
         tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
         tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
-        // green/old/purple, then rainbow@2041.
+        // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
         tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
+        tail[2042] = u8::from(world.unlocked_slime_red_spawn);
+        // combatBookWasUsed (`WorldFile.cs:1379`): trio-end 88 + 8 setBG +
+        // 10 clouds/wind + 4 angler count + 8 saved-NPC/quest + 8 invasion/
+        // cultist + 2+1172+2+586 banners + 1 dawn + 9+9 event/tower + 10
+        // party + 13 sandstorm + 4 DD2 + 5 BG (mushroom/underworld/tree2-4)
+        // = tail offset 1939 (gate V3, i35).
+        tail[1939] = u8::from(world.combat_book_was_used);
         tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
         tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
         b.extend(tail);
@@ -3594,6 +3615,52 @@ mod tests {
         let w = parse(&data).expect("v251 loads");
         assert!(w.unlocked_party_girl, "unlockedPartyGirlSpawn reads from 251");
         assert!(w.unlocked_princess, "unlockedPrincessSpawn reads from 251");
+    }
+
+    /// Gate V3 (S1-P-i35) — the two newly-owned flag bytes follow their C#
+    /// version gates (`WorldFile.LoadWorldFlags`): `combatBookWasUsed` reads
+    /// from v204 (`:2233`), `unlockedSlimeRedSpawn` from v261 (`:2404-2410`).
+    /// Below a gate the field keeps its fresh-world false; at/above it the
+    /// byte lands. Offsets derive from `flags_tail(version)`'s own width, so
+    /// the check is independent of the v326 layout.
+    #[test]
+    fn gate_v3_i35_the_combat_book_and_red_slime_flags_follow_their_version_gates() {
+        // v203: the combat book byte does not exist yet.
+        let w = parse(&synthetic_file(203, &[2, 144], 160, 11)).expect("v203 loads");
+        assert!(!w.combat_book_was_used, "below 204: combatBookWasUsed stays false");
+        // v204: it lands. The book is the LAST byte of the v204 tail (the
+        // lantern snapshot needs 207, tree tops 211).
+        let mut data = synthetic_file(204, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 204);
+        let book_at = flags_tail(204).len() - 1;
+        data[tail_at + book_at] = 1;
+        let w = parse(&data).expect("v204 loads");
+        assert!(w.combat_book_was_used, "combatBookWasUsed reads from 204");
+        assert!(!w.unlocked_slime_red_spawn, "below 261: the red slime stays false");
+        // v260: the slime block does not exist yet (the satchel byte is last).
+        let mut data = synthetic_file(260, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 260);
+        data[tail_at + flags_tail(260).len() - 1] = 1; // peddlersSatchelWasUsed — skipped
+        let w = parse(&data).expect("v260 loads");
+        assert!(!w.unlocked_slime_red_spawn, "below 261: red slime stays false");
+        // v261: green/old/purple(3) rainbow(1) red(1) yellow/copper(2) — the
+        // red byte sits 3 from the tail end (2 skip + 1 red).
+        let mut data = synthetic_file(261, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 261);
+        let red_at = flags_tail(261).len() - 3;
+        data[tail_at + red_at] = 1;
+        let w = parse(&data).expect("v261 loads");
+        assert!(w.unlocked_slime_red_spawn, "unlockedSlimeRedSpawn reads from 261");
+        assert!(!w.unlocked_slime_rainbow_spawn, "the rainbow byte before it stays 0");
+        // v326 (the writer's version): both round-trip at their pinned tail
+        // offsets — the DW-2.2 owned-fields sweep covers the values; here the
+        // raw bytes prove the offsets (book@1939, red@2042).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let tail_at = ptr1 - flags_tail(VER).len();
+        assert_eq!(buf[tail_at + 1939], 1, "combatBookWasUsed at tail 1939");
+        assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

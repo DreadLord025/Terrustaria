@@ -1025,54 +1025,13 @@ fn after_edit(world: &mut World, x: i32, y: i32) {
     framing::reframe_area(world, x, y, 2, true);
 }
 
-/// `WorldGen.SlopeTile(i, j, slope = 0)` (`WorldGen.cs:80768-80803`) — the
-/// placement-route slice (S1-P-i42): the `CanPoundTile` gate
-/// (`:80695-80743` — the mechanism types, the boulders, the `ForbidsSloping`
-/// tile above, `CanKillTile`), then `halfBrick(false); slope(0)`
-/// (`:80774-80775`) and the non-generation `SquareTileFrame` (`:80783`).
-/// The `KillTile(fail, effectOnly)` dust + the Dig sound (`:80780-80782`)
-/// and the player push-out (`:80785-80796`) are app-scope effects the
-/// caller owns (the torch flatten's caller plays the cue); the generation
-/// slice (`worldgen/temple.rs::slope_tile_p2`) keeps its own no-effects form.
-pub fn slope_tile(world: &mut World, x: i32, y: i32) -> bool {
-    if !can_pound_tile(world, x, y) {
-        return false;
-    }
-    let i = world.index(x, y);
-    let t = &mut world.tiles[i];
-    t.flags &= !crate::tile::FLAG_HALF_BRICK;
-    t.set_slope(0);
-    framing::reframe_area(world, x, y, 1, true);
-    true
-}
-
-/// `WorldGen.CanPoundTile` (`WorldGen.cs:80695-80743`): the mechanism types
-/// refuse (`:80709-80720`), the boulders refuse (`:80722-80725`), an active
-/// `ForbidsSloping` tile above refuses (`:80737-80740`), then `CanKillTile`
-/// (`:80741`). The generation-only 190/30 arms (`:80726-80736`) never fire
-/// outside worldgen.
-fn can_pound_tile(world: &World, x: i32, y: i32) -> bool {
-    let Some(t) = world.tile(x, y) else {
-        return false;
-    };
-    if matches!(t.kind, 10 | 48 | 137 | 232 | 380 | 387 | 388 | 476 | 484) {
-        return false;
-    }
-    if crate::tiledata::SET_BOULDERS.has(t.kind) {
-        return false;
-    }
-    // `WorldGen.ForbidsSloping` (`:80745-80766`).
-    if world.tile(x, y - 1).is_some_and(|above| {
-        above.active()
-            && matches!(
-                above.kind,
-                21 | 26 | 77 | 88 | 235 | 237 | 441 | 467 | 468 | 470 | 475 | 488 | 597
-            )
-    }) {
-        return false;
-    }
-    crate::edit::can_kill_tile(world, x, y, |_, _| false)
-}
+// Gate merge (i31 ⨉ i42): the i42 torch-flatten copies of
+// `WorldGen.SlopeTile`/`CanPoundTile` are folded into the i31
+// `edit::hammer` canonical family (`slope_tile(world, x, y, 0, false,
+// chest_gate)` — the full `:80768-80803` form incl. the `SquareTileFrame`
+// cascade; the i42 copy's bare `reframe_area` was the placement-route
+// slice). The torch flatten's caller (`flatten_torch_supports`) passes the
+// real chest gate and keeps its app-side Dig cue.
 
 #[cfg(test)]
 mod tests {

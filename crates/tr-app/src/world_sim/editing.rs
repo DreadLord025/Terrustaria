@@ -5248,8 +5248,17 @@ fn flatten_torch_supports(app: &mut App, tx: i32, ty: i32) {
             continue;
         };
         if s.half_brick() || s.slope() != 0 {
+            // The chest closure captures the DISJOINT `world_chests` field
+            // (the try_pounding_tile_tick precedent) — `chest_holds_items`
+            // borrows all of `app` and would conflict with `&mut app.world`.
+            let chests = &app.world_chests;
+            let holds = |x: i32, y: i32| {
+                chests
+                    .iter()
+                    .any(|c| c.tile == (x, y) && c.slots.iter().any(|s| s.count > 0))
+            };
             if !td::SET_PLATFORMS.has(s.kind)
-                && tr_core::edit::slope_tile(&mut app.world, sx, sy)
+                && tr_core::edit::slope_tile(&mut app.world, sx, sy, 0, false, holds)
             {
                 app.audio.play_place_sound(
                     (0, 1),
