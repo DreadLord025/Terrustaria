@@ -147,6 +147,42 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- S1-I-1 wave E: the event/misc tail (W4-d99) ----
+    // The census after the d89-d98 lanes' named regions: the weather-adjacent
+    // 51 MiscDataSync (sundial/moondial; the slime rain itself rides 61's
+    // -19), the invasion/event ids 61/78/112/113/114/116/143, the moon/lunar
+    // ids 101/103, the teleport family 65/73/95/96/100 (+ module 8's pylon
+    // body in `netmodules.rs`), and the misc leftovers 75/77/106/127/141.
+    // Bodies + codecs only; the apply/relay arms and send fan-out stay
+    // S1-I-4. Not taken (other d-lanes' regions): 17/19/63/64/79/86/87/89/
+    // 105/108/109/110/121-125/133/149/156 tile edit+entities+wiring (d95),
+    // 18/57/136/158/159 clock+world sync (d90), 34/35/39/41/52/85/88/90/104/
+    // 130/131/146/160 items+containers+shops (d98), 36/43/55/62/66/84/99/
+    // 102/115/117/118/120/134/150 player (d96/97), 56/92/137/153 NPC (d91/
+    // 92), 81/91/107/119 combat text+emote bubbles+chat (UI lanes), 68/139/
+    // 161/162 join/lobby (d89), 94 dev commands, 128 golf, 132 sounds
+    // (c-lanes), 157 team tail (d96/97).
+    pub const MISC_DATA_SYNC: u8 = 51; // MessageID.cs:115 / NetMessage.cs:1010-1013 / MessageBuffer.cs:2482-2530
+    pub const SPAWN_BOSS_EVENT: u8 = 61; // MessageID.cs:135 / NetMessage.cs:1073-1076 / MessageBuffer.cs:2740-2878
+    pub const TELEPORT_ENTITY: u8 = 65; // MessageID.cs:143 / NetMessage.cs:1088-1109 / MessageBuffer.cs:2949-3035
+    pub const REQUEST_TELEPORT: u8 = 73; // MessageID.cs:159 / NetMessage.cs:1142-1144 / MessageBuffer.cs:3127-3146
+    pub const ANGLER_QUEST_FINISHED: u8 = 75; // MessageID.cs:163 — no body either side (MessageBuffer.cs:3154-3163)
+    pub const TEMPORARY_ANIMATION: u8 = 77; // MessageID.cs:167 / NetMessage.cs:1154-1159 / MessageBuffer.cs:3183-3185
+    pub const INVASION_PROGRESS: u8 = 78; // MessageID.cs:169 / NetMessage.cs:1160-1165 / MessageBuffer.cs:3186-3191
+    pub const MURDER_PORTAL: u8 = 95; // MessageID.cs:204 / NetMessage.cs:1333-1336 / MessageBuffer.cs:3519-3537
+    pub const TELEPORT_PLAYER_PORTAL: u8 = 96; // MessageID.cs:206 / NetMessage.cs:1337-1346 / MessageBuffer.cs:3538-3557
+    pub const TELEPORT_NPC_PORTAL: u8 = 100; // MessageID.cs:214 / NetMessage.cs:1361-1370 / MessageBuffer.cs:3598-3610
+    pub const TOWER_SHIELDS: u8 = 101; // MessageID.cs:216 / NetMessage.cs:1371-1376 / MessageBuffer.cs:3611-3651
+    pub const MOONLORD_COUNTDOWN: u8 = 103; // MessageID.cs:220 / NetMessage.cs:1383-1386 / MessageBuffer.cs:3708-3714
+    pub const POOF_OF_SMOKE: u8 = 106; // MessageID.cs:226 / NetMessage.cs:1400-1402 / MessageBuffer.cs:3742-3751
+    pub const SPECIAL_FX: u8 = 112; // MessageID.cs:238 / NetMessage.cs:1424-1431 / MessageBuffer.cs:3815-3840
+    pub const CRYSTAL_INVASION_START: u8 = 113; // MessageID.cs:240 / NetMessage.cs:1432-1435 / MessageBuffer.cs:3841-3854
+    pub const CRYSTAL_INVASION_WIPE: u8 = 114; // MessageID.cs:242 — no body (DD2Event.cs:636, MessageBuffer.cs:3855-3860)
+    pub const CRYSTAL_INVASION_WAIT: u8 = 116; // MessageID.cs:246 / NetMessage.cs:1436-1438 / MessageBuffer.cs:3861-3866
+    pub const REMOVE_REVENGE_MARKER: u8 = 127; // MessageID.cs:268 / NetMessage.cs:1518-1520 / MessageBuffer.cs:4049-4057
+    pub const LUCY_POPUP: u8 = 141; // MessageID.cs:296 / NetMessage.cs:1595-1602 / MessageBuffer.cs:4265-4281
+    pub const CRYSTAL_INVASION_SKIP: u8 = 143; // MessageID.cs:300 — no body (MessageBuffer.cs:4298-4303)
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
