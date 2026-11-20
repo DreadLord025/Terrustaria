@@ -68,6 +68,15 @@ pub struct ShopFlags {
     /// W4-d123: `Main.eclipse` — the Cyborg shop's event gates
     /// (`Chest.cs:2368-2381`).
     pub eclipse: bool,
+    /// W4-d123: `NPC.downedPlantBoss` — the Witch Doctor's and Painter's
+    /// Plantera gates (`Chest.cs:2630`/`:2475`).
+    pub downed_plant_boss: bool,
+    /// W4-d123: `NPC.AnyNPCs(124)` — the Mechanic's presence (the Painter's
+    /// 5344 row, `Chest.cs:2475`).
+    pub mechanic_present: bool,
+    /// W4-d123: `NPC.AnyNPCs(108)` — the Wizard's presence (the Witch
+    /// Doctor's 2999 row, `Chest.cs:2618`).
+    pub wizard_present: bool,
     /// M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
     /// `SecretSeed.vampirism.Enabled` write) — the Dryad's and the Bestiary
     /// Girl's vampirism rows (`Chest.cs:1733`/`:3403`).
@@ -117,6 +126,9 @@ impl Default for ShopFlags {
             downed_golem: false,
             party_is_up: false,
             eclipse: false,
+            downed_plant_boss: false,
+            mechanic_present: false,
+            wizard_present: false,
             vampirism: false,
             infected_seed: false,
             crimson_world: false,
@@ -273,6 +285,29 @@ pub enum StockWhen {
     /// W4-d123: `HasItem(a) || HasItem(b)` (`Chest.cs:2435`'s Cyborg 3664
     /// row — the two carried-portal-gun ids).
     PlayerHasEither(u16, u16),
+    /// W4-d123: `Main.hardMode && NPC.downedPlantBoss` (`Chest.cs:2630`'s
+    /// Witch Doctor 1159/1160/1161/1339 block).
+    HardModePlantBoss,
+    /// W4-d123: `Main.hardMode && NPC.downedPlantBoss && ZoneJungle`
+    /// (`Chest.cs:2635`'s Witch Doctor 1167 row — the jungle conjunct
+    /// INSIDE the hardmode+Plantera block).
+    HardModePlantBossJungle,
+    /// W4-d123: `Main.hardMode && ZoneJungle` (`Chest.cs:2641`'s Witch
+    /// Doctor 1171 row).
+    HardModeJungle,
+    /// W4-d123: `Main.hardMode && ZoneJungle && !Main.dayTime &&
+    /// NPC.downedPlantBoss` (`Chest.cs:2644`'s Witch Doctor 1162 row).
+    HardModeJungleNightPlantBoss,
+    /// W4-d123: `NPC.downedPlantBoss || NPC.AnyNPCs(124)` (`Chest.cs:2475`'s
+    /// Painter 5344 row) — the disjunction itself; the graveyard conjunct
+    /// rides the row's own gate below.
+    PlantBossOrMechanic,
+    /// W4-d123: `ZoneGraveyard && (NPC.downedPlantBoss || NPC.AnyNPCs(124))`
+    /// (`Chest.cs:2471-2480`'s Painter 5344 row — the graveyard conjunct).
+    GraveyardPlantBossOrMechanic,
+    /// W4-d123: `NPC.AnyNPCs(108)` (`Chest.cs:2618`'s Witch Doctor 2999
+    /// row) — the Wizard's presence.
+    WizardPresent,
     /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
     DownedMechAll,
     /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`).
@@ -395,9 +430,6 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3664, StockWhen::PlayerHasEither(3384, 3664)),
             row(5928, StockWhen::Always),
         ],
-        // The Painter (`Chest.cs:2443-2483`): the paint rollers and the
-        // paintings (1071/1072/1100/1097/1099/1098/1966); the moon-phase
-        // painting row (num6) rides the moon-pair pass.
         // The Goblin Tinkerer (`Chest.cs:1989-2003`): the 7 rows, no
         // gating — the Rocket Boots 128, the Ruler 486, the Tinkerer's
         // Workshop 398, the Grappling Hook 84, the Toolbelt 407, the
@@ -411,15 +443,33 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(161, StockWhen::Always),
             row(5324, StockWhen::Always),
         ],
-        15 => vec![
-            row(1071, StockWhen::Always),
-            row(1072, StockWhen::Always),
-            row(1100, StockWhen::Always),
-            row(1097, StockWhen::Always),
-            row(1099, StockWhen::Always),
-            row(1098, StockWhen::Always),
-            row(1966, StockWhen::Always),
-        ],
+        // The Painter's shop (index 15, `Chest.cs:2443-2481`, W4-d123): the
+        // rollers, the 1073-1084 paint loop (`:2451-2455`), the three
+        // paintings + 1966, the hardmode pair 1967/1968 (`:2464-2470`) and
+        // the graveyard arm — 4668 always inside it, 5344 behind
+        // `downedPlantBoss || AnyNPCs(124)` (`:2471-2480`).
+        15 => {
+            let mut rows = vec![
+                row(1071, StockWhen::Always),
+                row(1072, StockWhen::Always),
+                row(1100, StockWhen::Always),
+            ];
+            // `:2451-2455` — `for (num6 = 1073; num6 <= 1084; num6++)`.
+            for id in 1073..=1084u16 {
+                rows.push(row(id, StockWhen::Always));
+            }
+            rows.push(row(1097, StockWhen::Always));
+            rows.push(row(1099, StockWhen::Always));
+            rows.push(row(1098, StockWhen::Always));
+            rows.push(row(1966, StockWhen::Always));
+            // `:2464-2470` — the hardmode pair.
+            rows.push(row(1967, StockWhen::HardMode));
+            rows.push(row(1968, StockWhen::HardMode));
+            // `:2471-2480` — the graveyard arm.
+            rows.push(row(4668, StockWhen::ZoneGraveyard));
+            rows.push(row(5344, StockWhen::GraveyardPlantBossOrMechanic));
+            rows
+        }
         // The Demolitionist (`Chest.cs:1746-1814`): the Grenade 168/the
         // Bomb 166/the Dynamite 167 always; the Land Mine 5542 rides the
         // downedBoss1/slimeKing night gate (constants-off); the hardmode
@@ -429,12 +479,49 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(166, StockWhen::Always),
             row(167, StockWhen::Always),
         ],
-        // The Witch Doctor (`Chest.cs:2615-2672`): the Blowgun 1430 and the
-        // Flask 986 always; the conditionals (the Queen Bee 2999, the
-        // jungle 6147/1167, the night 1158, the hardmode 1159, the
-        // Imbuing Station 1160?/1161, the 1339/1171/1162 rows) sit
-        // constants-off until their flags land.
-        16 => vec![row(1430, StockWhen::Always), row(986, StockWhen::Always)],
+        // The Witch Doctor's shop (index 16, `Chest.cs:2615-2671`,
+        // W4-d123): the Blowgun/Flask head, the Wizard-presence 2999, the
+        // jungle 6147, the night 1158, the hardmode+Plantera imbuing block
+        // (1159/1160/1161 + the jungle 1167 + 1339), the hardmode+jungle
+        // 1171 (+ the night+Plantera 1162), the ten always summon/flask
+        // rows, the two carried-item restocks and the halloween 1791
+        // (constants-off — no season).
+        16 => vec![
+            row(1430, StockWhen::Always),
+            row(986, StockWhen::Always),
+            // `:2618-2621` — `NPC.AnyNPCs(108)` (the Wizard).
+            row(2999, StockWhen::WizardPresent),
+            // `:2622-2625` — `ZoneJungle`.
+            row(6147, StockWhen::ZoneJungle),
+            // `:2626-2629` — `!Main.dayTime`.
+            row(1158, StockWhen::Night),
+            // `:2630-2640` — `Main.hardMode && NPC.downedPlantBoss`.
+            row(1159, StockWhen::HardModePlantBoss),
+            row(1160, StockWhen::HardModePlantBoss),
+            row(1161, StockWhen::HardModePlantBoss),
+            // `:2635-2638` — the jungle conjunct INSIDE that block.
+            row(1167, StockWhen::HardModePlantBossJungle),
+            row(1339, StockWhen::HardModePlantBoss),
+            // `:2641-2648` — `Main.hardMode && ZoneJungle`.
+            row(1171, StockWhen::HardModeJungle),
+            // `:2644-2647` — `!Main.dayTime && NPC.downedPlantBoss` inside it.
+            row(1162, StockWhen::HardModeJungleNightPlantBoss),
+            // `:2649-2658` — the ten always rows.
+            row(909, StockWhen::Always),
+            row(910, StockWhen::Always),
+            row(940, StockWhen::Always),
+            row(941, StockWhen::Always),
+            row(942, StockWhen::Always),
+            row(943, StockWhen::Always),
+            row(944, StockWhen::Always),
+            row(945, StockWhen::Always),
+            row(4922, StockWhen::Always),
+            row(4417, StockWhen::Always),
+            // `:2659-2666` — the carried-item restocks (the C#'s order:
+            // 1835 first, then 1258).
+            row(1836, StockWhen::PlayerHasItem(1835)),
+            row(1261, StockWhen::PlayerHasItem(1258)),
+        ],
         // The Clothier (`Chest.cs:1814-1989`): the base 254/981; the day
         // 242; the moon-phase hats; the full set in the tail — the v1
         // carries the always-on rows (the moon-phase and the clown rows
@@ -1447,6 +1534,21 @@ pub fn resolve_stock_entries_moon(
             StockWhen::PlayerHasEither(a, b) => {
                 inventory_ids.contains(&a) || inventory_ids.contains(&b)
             }
+            // W4-d123: the Witch Doctor's / Painter's Plantera gates
+            // (`Chest.cs:2630-2648` / `:2475`).
+            StockWhen::HardModePlantBoss => flags.hard_mode && flags.downed_plant_boss,
+            StockWhen::HardModePlantBossJungle => {
+                flags.hard_mode && flags.downed_plant_boss && flags.zone_jungle
+            }
+            StockWhen::HardModeJungle => flags.hard_mode && flags.zone_jungle,
+            StockWhen::HardModeJungleNightPlantBoss => {
+                flags.hard_mode && flags.zone_jungle && flags.night && flags.downed_plant_boss
+            }
+            StockWhen::PlantBossOrMechanic => flags.downed_plant_boss || flags.mechanic_present,
+            StockWhen::GraveyardPlantBossOrMechanic => {
+                flags.zone_graveyard && (flags.downed_plant_boss || flags.mechanic_present)
+            }
+            StockWhen::WizardPresent => flags.wizard_present,
             StockWhen::DownedMechAll => {
                 flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
             }

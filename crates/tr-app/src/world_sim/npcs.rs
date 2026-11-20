@@ -948,6 +948,18 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // W4-d123: `Main.eclipse` — the Cyborg shop's event gates
         // (`Chest.cs:2368-2381`).
         eclipse: app.world.eclipse,
+        // W4-d123: the Witch Doctor's / Painter's Plantera + roster gates
+        // (`Chest.cs:2630`/`:2475`/`:2618`) — the world latch and the live
+        // town scans (`NPC.AnyNPCs(124)`/`AnyNPCs(108)`).
+        downed_plant_boss: app.world.downed_plant_boss,
+        mechanic_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::Mechanic),
+        wizard_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::Wizard),
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
         coins_over_gold: coin_total(&app.inventory, app.coins) >= 1_000_000,

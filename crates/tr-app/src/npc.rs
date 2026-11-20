@@ -21645,6 +21645,35 @@ mod tests {
         for id in [1071, 1072, 1100, 1097, 1099, 1098, 1966] {
             assert!(stock.contains(&id), "the paint row {id} missing");
         }
+        // W4-d123: the `:2451-2455` paint loop — every id 1073..=1084.
+        for id in 1073..=1084u16 {
+            assert!(stock.contains(&id), "the loop paint {id} missing");
+        }
+        // The default stock: 3 rollers + 12 loop paints + 3 paintings + 1966.
+        assert_eq!(stock.len(), 19, "the day stock: {stock:?}");
+        // The hardmode pair (`:2464-2470`).
+        let hard = crate::shop::ShopFlags { hard_mode: true, ..Default::default() };
+        let hr = crate::shop::resolve_stock(15, &hard, &[]);
+        assert!(hr.contains(&1967) && hr.contains(&1968));
+        // The graveyard arm (`:2471-2480`): 4668 on-zone, 5344 behind
+        // Plantera OR the Mechanic's presence.
+        assert!(!stock.contains(&4668), "no graveyard roller off-zone");
+        let grave = crate::shop::ShopFlags { zone_graveyard: true, ..Default::default() };
+        let gr = crate::shop::resolve_stock(15, &grave, &[]);
+        assert!(gr.contains(&4668), "the graveyard roller");
+        assert!(!gr.contains(&5344), "5344 needs Plantera or the Mechanic");
+        let grave_plant = crate::shop::ShopFlags {
+            zone_graveyard: true, downed_plant_boss: true, ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(15, &grave_plant, &[]).contains(&5344));
+        let grave_mech = crate::shop::ShopFlags {
+            zone_graveyard: true, mechanic_present: true, ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(15, &grave_mech, &[]).contains(&5344));
+        // Plantera alone (off-zone) does NOT open 5344 — the graveyard
+        // conjunct (`:2471`).
+        let plant_only = crate::shop::ShopFlags { downed_plant_boss: true, ..Default::default() };
+        assert!(!crate::shop::resolve_stock(15, &plant_only, &[]).contains(&5344));
     }
     #[test]
     fn eoc_hovers_dashes_and_phases() {
@@ -21752,11 +21781,56 @@ mod tests {
         // The arrival: the downedQueenBee gate (constants-off in the port).
         assert!(!crate::spawner::spawn_allowed_witch_doctor(false));
         assert!(crate::spawner::spawn_allowed_witch_doctor(true));
-        // The shop index 16: the Blowgun and the Flask always; the
-        // conditionals constants-off.
+        // The shop index 16 (W4-d123, `Chest.cs:2615-2671`): the Blowgun/
+        // Flask head + the ten always summon/flask rows.
         let stock = crate::shop::resolve_stock(16, &crate::shop::ShopFlags::default(), &[]);
-        assert!(stock.contains(&1430) && stock.contains(&986));
+        for id in [1430, 986, 909, 910, 940, 941, 942, 943, 944, 945, 4922, 4417] {
+            assert!(stock.contains(&id), "the always row {id}");
+        }
         assert!(!stock.contains(&1158), "the night row leaks");
+        assert!(!stock.contains(&2999), "no Wizard-presence row");
+        assert!(!stock.contains(&6147), "no jungle row off-zone");
+        // The night row (`:2626`).
+        let night = crate::shop::ShopFlags { night: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(16, &night, &[]).contains(&1158));
+        // The Wizard-presence row (`:2618`).
+        let wiz = crate::shop::ShopFlags { wizard_present: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(16, &wiz, &[]).contains(&2999));
+        // The jungle row (`:2622`).
+        let jungle = crate::shop::ShopFlags { zone_jungle: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(16, &jungle, &[]).contains(&6147));
+        // The hardmode+Plantera imbuing block (`:2630-2640`).
+        let hp = crate::shop::ShopFlags {
+            hard_mode: true, downed_plant_boss: true, ..Default::default()
+        };
+        let hpr = crate::shop::resolve_stock(16, &hp, &[]);
+        for id in [1159, 1160, 1161, 1339] {
+            assert!(hpr.contains(&id), "the imbuing row {id}");
+        }
+        assert!(!hpr.contains(&1167), "1167 needs the jungle conjunct");
+        // Hardmode alone does NOT open the imbuing block (Plantera needed).
+        let hard = crate::shop::ShopFlags { hard_mode: true, ..Default::default() };
+        assert!(!crate::shop::resolve_stock(16, &hard, &[]).contains(&1159));
+        // The jungle conjunct inside the block (`:2635`) opens 1167.
+        let hpj = crate::shop::ShopFlags {
+            hard_mode: true, downed_plant_boss: true, zone_jungle: true, ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(16, &hpj, &[]).contains(&1167));
+        // The hardmode+jungle 1171 (`:2641`) + the night+Plantera 1162 (`:2644`).
+        let hj = crate::shop::ShopFlags {
+            hard_mode: true, zone_jungle: true, ..Default::default()
+        };
+        let hjr = crate::shop::resolve_stock(16, &hj, &[]);
+        assert!(hjr.contains(&1171));
+        assert!(!hjr.contains(&1162), "1162 needs night + Plantera");
+        let hjnp = crate::shop::ShopFlags {
+            hard_mode: true, zone_jungle: true, night: true, downed_plant_boss: true,
+            ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(16, &hjnp, &[]).contains(&1162));
+        // The carried-item restocks (`:2659-2666`).
+        assert!(crate::shop::resolve_stock(16, &crate::shop::ShopFlags::default(), &[1835]).contains(&1836));
+        assert!(crate::shop::resolve_stock(16, &crate::shop::ShopFlags::default(), &[1258]).contains(&1261));
     }
 
     #[test]
