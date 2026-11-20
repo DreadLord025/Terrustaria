@@ -595,16 +595,28 @@ pub fn draw_buffs(
         }
         let [x, y] = buff_slot_pos(num3);
         num3 += 1;
-        let Some(rect) = lookups.buff_icons.get(&(bt as u16)) else {
-            continue;
-        };
-        let (w, h) = (rect.width as f32, rect.height as f32);
-        let Some(uv) = lookups.hud_uv(Some(rect)) else {
-            continue;
-        };
-        // The icon (`:43311`): the full sheet tinted by the slot alpha.
+        // The icon (`:43311`): the full sheet tinted by the slot alpha. A
+        // buff with no extracted sheet draws a grey 32×32 placeholder box
+        // on the white UV (the crafting-slot convention, `ui/crafting.rs`
+        // — documented in docs/ANALYSIS.md) so the slot still fades, texts,
+        // hover-tooltips and right-click-cancels instead of silently
+        // vanishing. The C# never misses (`TextureAssets.Buff[num]` loads
+        // eagerly, `AssetInitializer.cs`); the port's atlas is enumeration-
+        // only, hence the stand-in.
         let a = buff_alpha[i];
-        r.push_ui_sprite([x, y], [w, h], uv, [a, a, a, a]);
+        let rect = lookups.buff_icons.get(&(bt as u16));
+        let (w, h, tint) = match rect {
+            Some(rect) => (
+                rect.width as f32,
+                rect.height as f32,
+                [a, a, a, a],
+            ),
+            // The grey box at the crafting convention's 0.5, still riding
+            // the slot alpha so the fade/hover reads the same.
+            None => (32.0, 32.0, [0.5 * a, 0.5 * a, 0.5 * a, 0.5 * a]),
+        };
+        let uv = lookups.hud_uv(rect).unwrap_or_else(|| r.white_uv());
+        r.push_ui_sprite([x, y], [w, h], uv, tint);
         // The icon text (`:43316-43327`): `buff_icon_text` picks the counter
         // or the duration — `FontAssets.ItemStack` at 0.8 under the icon,
         // tinted by the SAME slot-alpha colour as the icon (`:43314`'s
@@ -615,7 +627,10 @@ pub fn draw_buffs(
         }
         // The hover + the right-click removal (`:43329-43349`). The C#'s
         // `!PlayerInput.IgnoreMouseInterface` gate has no port counterpart.
-        if mouse.x < x + w && mouse.y < y + h && mouse.x > x && mouse.y > y {
+        // `ui::in_rect_strict` is the same open-on-every-edge comparison
+        // (`:43329`'s strict `<`/`>` on all four sides) — the shared seam,
+        // not a private copy.
+        if crate::ui::in_rect_strict(mouse, [x, y, w, h]) {
             hovered = Some(i);
             buff_alpha[i] += 0.1;
             // `:43333` — `Main.mouseRight && Main.mouseRightRelease`.
@@ -736,10 +751,125 @@ mod s1_e_6_tests {
         // A non-fed buff ignores the flag.
         p.buffs.expert_mode = false;
         assert_eq!(buff_tooltip(&p, 26), "Minor improvements to all stats");
-        // The `ManaSickness` (94) / `ManaHeat` (396) percentage arms are
-        // documented drops: they fall back to the plain description row (no
-        // `Player.manaSickReduction` / `manaHeat` in the port).
-        assert_eq!(buff_tooltip(&p, 396), crate::lang::buff_description(396));
+        // The `ManaHeat` (396) arm now appends the player-computed percent
+        // (`Main.cs:43285`): the default `manaHeat == 1.0` ceils to exactly
+        // 100, so the appended text is "0%" — not a bare description.
+        assert_eq!(
+            buff_tooltip(&p, 396),
+            format!("{}0%", crate::lang::buff_description(396))
+        );
+    }
+
+    /// W4-c26 — `Main.GetBuffTooltip`'s two player-computed percent arms
+    /// (`Main.cs:43282`/`:43285`), the S1-E-6 drops closed now that i19/i52
+    /// landed `Player.manaSickReduction`/`manaHeat`.
+    #[test]
+    fn w4_c26_the_mana_percent_arms_append_the_player_computed_text() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{
+                "BuffDescription": {
+                    "ManaSickness": "Cannot use magic items ",
+                    "ManaHeat": "Magic damage reduced by "
+                }
+            }"#,
+        );
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        // `:43282` — `(int)(manaSickReduction * 100f) + 1`, the +1 AFTER
+        // the truncating cast: 0.25 → 25 + 1 = 26.
+        p.mana_sick_reduction = 0.25;
+        assert_eq!(buff_tooltip(&p, 94), "Cannot use magic items 26%");
+        // The truncation: 0.259 → 25 (not 26) + 1 = 26.
+        p.mana_sick_reduction = 0.259;
+        assert_eq!(buff_tooltip(&p, 94), "Cannot use magic items 26%");
+        // Zero reduction still appends 1% (the vanilla's floor).
+        p.mana_sick_reduction = 0.0;
+        assert_eq!(buff_tooltip(&p, 94), "Cannot use magic items 1%");
+        // `:43285` — `(int)(Math.Ceiling(manaHeat * 100f) - 100.0)`:
+        // 1.123 → ceil(112.3…) = 113 − 100 = 13.
+        p.mana_heat = 1.123;
+        assert_eq!(buff_tooltip(&p, 396), "Magic damage reduced by 13%");
+        // Exactly 1.0 ceils to 100 → 0%.
+        p.mana_heat = 1.0;
+        assert_eq!(buff_tooltip(&p, 396), "Magic damage reduced by 0%");
+    }
+
+    /// W4-c26 — `Main.DrawBuffIcon`'s icon-text selection
+    /// (`Main.cs:43316-43324`): the counter wins, else the over-2-tick
+    /// duration at second resolution (`buffTimeValue / 60`), else nothing.
+    #[test]
+    fn w4_c26_the_icon_text_prefers_the_counter_then_the_duration() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Game.json",
+            r#"{ "Misc": { "ShortMinutes": "m", "ShortSeconds": "s" } }"#,
+        );
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        // The handler buff (64 → projectile 266) with a live counter wins
+        // (`:43317-43320` before `:43321`) — 64 is also in the
+        // no-time-display set, so the counter is its ONLY text.
+        p.buffs.buff_type[0] = 64;
+        p.buffs.buff_time[0] = 6000;
+        p.owned_projectile_counts[266] = 2;
+        assert_eq!(buff_icon_text(&p, 0, false).as_deref(), Some("x2"));
+        // Counter back to zero: 64's duration stays hidden (the
+        // `buffNoTimeDisplay` gate, `:43295`).
+        p.owned_projectile_counts[266] = 0;
+        assert_eq!(buff_icon_text(&p, 0, false), None);
+        // A timed buff (1, ObsidianSkin) falls to the duration: 6000 ticks
+        // / 60 = 100 s → "2 m" (the ceiling bump, `Lang.cs:1183-1189`).
+        p.buffs.buff_type[0] = 1;
+        assert_eq!(buff_icon_text(&p, 0, false).as_deref(), Some("2 m"));
+        // 2 ticks or fewer: no text (`:43321`'s `> 2`).
+        p.buffs.buff_time[0] = 2;
+        assert_eq!(buff_icon_text(&p, 0, false), None);
+        // 3 ticks: 3/60 = 0 s → "0 s" — the vanilla draws the zero.
+        p.buffs.buff_time[0] = 3;
+        assert_eq!(buff_icon_text(&p, 0, false).as_deref(), Some("0 s"));
+        // The TryGetBuffTime gates hide it: OnFire (24) sub-10 under the
+        // vampire seed (`:43297-43300`).
+        p.buffs.buff_type[0] = 24;
+        p.buffs.buff_time[0] = 9;
+        assert_eq!(buff_icon_text(&p, 0, true), None);
+        assert!(buff_icon_text(&p, 0, false).is_some(), "no seed, no hide");
+    }
+
+    /// W4-c26 — the hover block's name read (`Main.cs:43237`):
+    /// `Lang.GetBuffName(num6)` is the `BuffName.{const}` row, direct — the
+    /// c21 accessor lane's `lang::buff_name`, no intermediate table.
+    #[test]
+    fn w4_c26_the_hover_name_reads_the_buff_name_row_directly() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{ "BuffName": { "ObsidianSkin": "Obsidian Skin" } }"#,
+        );
+        assert_eq!(crate::lang::buff_name(1), "Obsidian Skin");
+        // An id with no const answers empty (`Lang.cs:241-244`'s cache miss).
+        assert_eq!(crate::lang::buff_name(99999), "");
+    }
+
+    /// W4-c26 — the cancel hit-test (`Main.cs:43329`) rides the shared
+    /// `ui::in_rect_strict` seam: open on EVERY edge, at the grid's slot-0
+    /// rect. The gate conjunction itself is witnessed at
+    /// `app/frame/draw.rs::s1_p_i53_the_cancel_gate_fires_on_press_not_on_release`;
+    /// this pins the rect half the draw feeds it.
+    #[test]
+    fn w4_c26_the_cancel_hit_test_is_strict_on_every_edge() {
+        let [x, y] = buff_slot_pos(0);
+        let rect = [x, y, 32.0, 32.0];
+        let hit = |mx: f32, my: f32| crate::ui::in_rect_strict(Vec2::new(mx, my), rect);
+        assert!(hit(x + 1.0, y + 1.0), "inside");
+        assert!(!hit(x, y + 1.0), "the left edge is open (`mouseX > x`)");
+        assert!(!hit(x + 1.0, y), "the top edge is open (`mouseY > y`)");
+        assert!(!hit(x + 32.0, y + 1.0), "the right edge is open (`<`)");
+        assert!(!hit(x + 1.0, y + 32.0), "the bottom edge is open (`<`)");
+        // The packed grid: slot 1 sits at +38, so the 6-px gap between the
+        // 32-wide icons never hover-cancels either slot.
+        assert!(!hit(x + 34.0, y + 1.0), "the inter-icon gap");
     }
 
     #[test]

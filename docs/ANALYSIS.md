@@ -39244,3 +39244,96 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The buff HUD verbatim round (W4-c26, 2026-11-20)
+
+Code-only follow-up on S1-E-6 + S1-P-i53 (`task/W4-c26-buff-hud`).
+
+### The three verbatim draw deltas (fixed)
+
+`Main.DrawBuffIcon` (`Main.cs:43307-43368`) draws the icon text at
+`:43327` on `FontAssets.ItemStack.Value`, scale `0.8f`, at
+`(x, y + Buff[num].Height())`, in the SAME `color` the icon used —
+the four-channel `Main.buffAlpha[slot]` colour built at `:43314`.
+The S1-E-6 pass drew it white `[1;4]` at 0.85 through `hud_text`
+(the Mouse_Text font). All three are verbatim deltas; the draw now
+calls `text::hud_item_text` (the ItemStack seam) at 0.8 with
+`[a,a,a,a]`. The selection (`:43316-43324`: the
+`BuffTextHandlers` counter wins, else the `TryGetBuffTime`-gated
+duration when `> 2` ticks, `buffTimeValue / 60` seconds) is split
+into `resources::buff_icon_text` so the gates witness without a
+renderer.
+
+### GetBuffTooltip's percent arms (the S1-E-6 drops closed)
+
+`Main.cs:43282`: `text + ((int)(player.manaSickReduction * 100f) + 1) + "%"`
+— the f32 multiply, the truncating `(int)`, then the `+ 1` AFTER
+the cast (a 0.0 reduction still appends "1%"). `:43285`:
+`text + (int)(Math.Ceiling(player.manaHeat * 100f) - 100.0) + "%"` —
+the multiply is f32, `Math.Ceiling` promotes the product to double,
+minus the double `100.0`, then the `(int)` truncation. Both fields
+exist on the port's Player since i19/i52 (`mana_sick_reduction`
+starts 0.0, `mana_heat` starts 1.0 — `Player.cs:16994`/`:18593`),
+so `buff_tooltip`'s two match arms append the computed percent.
+`DebugOptions.ManaPotionDelay` (`:43278-43281`) is the developer
+test toggle — constants-off false, the plain arm always runs. The
+old S1-E-6 witness that pinned 396 to the bare description row was
+repointed: default `manaHeat == 1.0` ceils to 100, so the appended
+text is "0%".
+
+### The atlas placeholder (deliberate deviation)
+
+The C# never misses an icon: `TextureAssets.Buff[num]` is requested
+eagerly for the whole id range. The port's atlas is enumeration-only
+(`Buff_<id>.xnb` present in the content dir), and the S1-E-6 draw
+`continue`d on a missing sheet — the slot silently vanished AND
+skipped its hover/cancel block (a real behavioural loss, not just a
+pixel one). Now a missing sheet draws a grey 32x32 box on
+`SpriteRenderer::white_uv` tinted `0.5 * a` (the crafting-slot
+placeholder convention, `ui/crafting.rs`), sized 32x32 because the
+retail buff icons are 32x32 sheets (every sampled `Buff_<id>.xnb` —
+1/24/111/147/396 — decompresses to 4273 bytes = a 173-byte reader
+header + the i32 pixel-block length + 4096 = 32*32*4 RGBA); the slot
+keeps its grid cell,
+alpha fade, icon text, hover tooltip and right-click cancel. This is
+a stand-in for unextracted content, never a substitute for a present
+sheet.
+
+### The cancel hit-test seam (i53 wired)
+
+The gate half is i53's `App::buff_cancel_gate` (`Main.cs:43333`'s
+`mouseRight && mouseRightRelease` + the `:62458-62465` end-of-draw
+latch); `draw_region` computes it once and feeds `draw_buffs`'
+`right_click`. The rect half (`:43329`) is strict `<`/`>` on
+ALL four edges — the shared `ui::in_rect_strict` seam, which the
+draw now calls instead of a private four-comparison copy (identical
+semantics, one copy per the house rule). On hit: hovered slot +
+alpha +0.1 + the slot pushed onto `buff_removals` when the gate is
+true; the tick drains through `Player::try_removing_buff`
+(`world_sim/player.rs`, ahead of the dead branch). The hover NAME
+row reads `lang::buff_name` direct (`Lang.GetBuffName`,
+`Lang.cs:241-244`) — the c21 accessor lane owns any deeper
+rework; this lane only pins the read.
+
+### The witnesses (written, NOT run)
+
+`ui/resources.rs` (`s1_e_6_tests`): the repointed 396 default-0%
+arm; `w4_c26_the_mana_percent_arms_append_the_player_computed_text`
+(the +1-after-truncation, the ceil-then-minus-100 order, the 1%/0%
+floors); `w4_c26_the_icon_text_prefers_the_counter_then_the_duration`
+(counter-only 64, the no-time-display hide, the 100 s -> "2 m"
+ceiling, the >2-tick gate incl. the drawn "0 s", the vampire-seed
+hide); `w4_c26_the_hover_name_reads_the_buff_name_row_directly`;
+`w4_c26_the_cancel_hit_test_is_strict_on_every_edge` (all four open
+edges + the 6-px inter-icon gap). The gate-conjunction witness stays
+`app/frame/draw.rs::s1_p_i53_the_cancel_gate_fires_on_press_not_on_release`.
+
+### Verification
+
+Code-only: no cargo/rustc/rustfmt/tests invoked (worker rules). Every
+delta re-read against `Main.cs:43203-43404` and `:62450-62465`;
+the `manaHeat` semantics cross-checked at `Player.cs:980/:10340/
+:16994/:24630-24635/:25906`; the no-time-display membership of 64
+checked against the generated 124-id table before the witness was
+written. RNG untouched (the draw path draws no gameplay RNG; the
+MenuTick cue is the fixed sound).
