@@ -41,6 +41,8 @@
 //! | 127-132 | `:82442-82447` | the 564/565 DD2 Dark Mage death: the first six gores (base 1009 ladder) |
 //! | 133-137 | `:82448-82452` | the 564/565 DD2 Dark Mage death: the +6/+10/+7/+8/+9 tail |
 //! | 138-141 | `:82470-82473` | the 578 DD2 Lightning Bug death (4 gores 999/998/998/997) |
+//! | 142-145 | `:82496-82499` | the 620 Goblin Shark death (4 gores, base 1183 ladder, 150-dust burst) |
+//! | 146-149 | `:82522-82525` | the 619 Blood Squid death (4 gores, base 1179 ladder, 150-dust fadeIn burst) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -453,6 +455,80 @@ fn lightning_bug_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, 997, s); // :82473
 }
 
+/// The 620 Goblin Shark death (`NPC.cs:82489-82499`, sites 142-145): the
+/// 150-dust `NewDustDirect` type-5 burst (velocity ×2.5, scale = 1.7 — the
+/// post-writes draw nothing), then 4 gores at base `num79 = 1183`
+/// (`:82495`) with the type order `base/+2/+3/+1` at the +0/+20/+20/+34 Y
+/// ladder. The dust runs through `new_dust_direct` (the C# `NewDustDirect`,
+/// `Dust.cs:65-73`) on the strike stream.
+fn goblin_shark_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82489-82494` — the 150-dust direct burst.
+    for _ in 0..150 {
+        let idx = dust.new_dust_direct(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.5;
+        d.scale = 1.7;
+    }
+    // `:82495` — num79 = 1183.
+    let num79 = 1183;
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, num79, s); // :82496
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num79 + 2, s); // :82497
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num79 + 3, s); // :82498
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, num79 + 1, s); // :82499
+}
+
+/// The 619 Blood Squid death (`NPC.cs:82515-82525`, sites 146-149): the
+/// 150-dust `NewDustDirect` type-5 burst (velocity ×2.5, fadeIn = 1.7 — the
+/// post-writes draw nothing), then 4 gores at base `num82 = 1179`
+/// (`:82521`) with the type order `base/+2/+3/+1` at the +0/+20/+20/+34 Y
+/// ladder. Same shape as the Goblin Shark, but the dust post-write is
+/// `fadeIn` (not `scale`) and the base is 1179.
+fn blood_squid_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82515-82520` — the 150-dust direct burst (fadeIn, not scale).
+    for _ in 0..150 {
+        let idx = dust.new_dust_direct(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.5;
+        d.fade_in = 1.7;
+    }
+    // `:82521` — num82 = 1179.
+    let num82 = 1179;
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, num82, s); // :82522
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num82 + 2, s); // :82523
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num82 + 3, s); // :82524
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, num82 + 1, s); // :82525
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); only the death
@@ -520,6 +596,14 @@ pub fn hit_effect_c(
     // `:82455-82475` — the 578 DD2 Lightning Bug arm (sites 138-141).
     if npc_type == 578 && npc.hp <= 0 {
         lightning_bug_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82476-82501` — the 620 Goblin Shark arm (sites 142-145).
+    if npc_type == 620 && npc.hp <= 0 {
+        goblin_shark_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82502-82527` — the 619 Blood Squid arm (sites 146-149).
+    if npc_type == 619 && npc.hp <= 0 {
+        blood_squid_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -884,6 +968,50 @@ mod tests {
         assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
         assert_eq!(gore.slot(1).position, Vec2::new(100.0, 110.0));
         assert_eq!(gore.slot(3).position, Vec2::new(100.0, 110.0));
+    }
+
+    /// `NPC.cs:82496-82499` — the Goblin Shark death: base 1183, the
+    /// base/+2/+3/+1 type order at +0/+20/+20/+34 Y, after the 150-dust
+    /// direct burst (velocity ×2.5, scale 1.7).
+    #[test]
+    fn w4_f10_the_goblin_shark_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 64.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(47);
+        goblin_shark_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1183, 1185, 1186, 1184]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        // The 150-dust burst ran (the pool holds the dust); the post-writes
+        // set scale 1.7 on the live slots.
+        let dust_active = dust.slots().iter().filter(|d| d.active).count();
+        assert!(dust_active >= 100, "the burst spawned: {dust_active}");
+    }
+
+    /// `NPC.cs:82522-82525` — the Blood Squid death: base 1179, the
+    /// base/+2/+3/+1 type order, and the dust post-write is fadeIn = 1.7
+    /// (NOT scale) — the shape differs from the Goblin Shark only there.
+    #[test]
+    fn w4_f10_the_blood_squid_death_uses_fade_in_not_scale() {
+        let w = air();
+        let n = boss(100.0, 100.0, 48.0, 48.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        blood_squid_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, -1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1179, 1181, 1182, 1180]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        // The live dust slots carry fadeIn 1.7 (the post-write); the scale
+        // stays the NewDust roll x the 1.0 Scale arg (in [0.8, 1.2], never
+        // the forced 1.7 the Goblin Shark arm writes).
+        let live = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(live.fade_in, 1.7);
+        assert!(live.scale <= 1.2, "scale stays the roll: {}", live.scale);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
