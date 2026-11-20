@@ -1174,6 +1174,9 @@ pub const GOLF_BALL: u16 = 721;
 /// false, ignoreWater, penetrate -1, hide (`Projectile.cs:7636-7645`).
 /// S1-P-i55.
 pub const GOLF_CLUB_HELPER: u16 = 722;
+/// `ProjectileID.SuperStar` (728, `ProjectileID.cs`'s row) — the Super
+/// Star Cannon's star, aiStyle 151 (`Projectile.cs:7659-7671`). W4-d16.
+pub const SUPER_STAR: u16 = 728;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -3969,6 +3972,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // W4-d16 — `Projectile.cs:7659-7671` (728, the Super Star
+            // Cannon's star): 24x24, aiStyle 151, alpha 255, tileCollide
+            // true (the stock), ranged + friendly (the overlays),
+            // penetrate -1, the LOCAL pair (-1, `:7669-7670`).
+            SUPER_STAR => {
+                (24.0, 24.0, 151, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, -1, false, -1, 255, 1.0))
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4249,6 +4259,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ),
         ranged: matches!(
             kind,
+            // W4-d16 — `Projectile.cs:7666`: the Super Star (728) sets
+            // `ranged = true` (the aiStyle-151 row).
+            SUPER_STAR |
             // The arrows/bullets (1/2/14, `:814`/`:825`/`:961`), the thrown
             // kinds (3/48/166, `:835`/`:1317`/`:2555`), the moon-lord drop
             // shots (638/639/640, `:6867`/`:6880`/`:6895`), the DD2 kobold

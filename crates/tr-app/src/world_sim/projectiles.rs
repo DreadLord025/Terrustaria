@@ -332,6 +332,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // W4-d16 — the aiStyle-151 SuperStar's on-screen gore gate
+    // (`Projectile.cs:22152-22153`): the screen rect in world px. The
+    // port's camera IS the screen centre (`Main.screenPosition +
+    // (screenWidth, screenHeight)/2` at zoom 1); the world-space size
+    // divides the pixel size by the zoom (the golf mouse-world conversion).
+    let screen_view = Some((
+        Vec2::new(app.camera.x, app.camera.y),
+        Vec2::new(sw / app.zoom, sh / app.zoom),
+    ));
+    app.projectiles.set_screen_view(screen_view);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and

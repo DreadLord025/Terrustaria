@@ -14460,6 +14460,13 @@ pub struct ProjectilePool {
     /// the app's wind is wired in through [`ProjectilePool::set_wind`] — no
     /// ported arm's behaviour changes meanwhile.
     wind_speed: f32,
+    /// W4-d16 — the aiStyle-151 SuperStar's on-screen gore gate
+    /// (`Projectile.cs:22152-22153`): `(screen centre, screen size)` in
+    /// world px — `Main.screenPosition + (screenWidth, screenHeight)/2`
+    /// and the size. The world-sim pass feeds it per tick through
+    /// [`ProjectilePool::set_screen_view`] (the `set_wind` setter
+    /// pattern); `None` folds the gate false (the pool-only tests).
+    screen_view: Option<(Vec2, Vec2)>,
     /// `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`) per
     /// owner: the tiles that owner's hooks may not latch on. The C# rebuilds
     /// the set when a hook latches (`Projectile.cs:52772` →
@@ -14909,6 +14916,7 @@ impl ProjectilePool {
             hook_reg: [-1; 10],
             hook_grap_count: 0,
             wind_speed: 0.0,
+            screen_view: None,
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
@@ -14987,6 +14995,13 @@ impl ProjectilePool {
     /// (`Projectile.cs:16777-16781`, the port's `Main.windSpeedCurrent`).
     pub fn set_wind(&mut self, wind_speed: f32) {
         self.wind_speed = wind_speed;
+    }
+
+    /// W4-d16 — the aiStyle-151 SuperStar's on-screen gate view
+    /// (`Projectile.cs:22152-22153`): `(screen centre, screen size)` in
+    /// world px. The world-sim pass feeds it before `update`.
+    pub fn set_screen_view(&mut self, view: Option<(Vec2, Vec2)>) {
+        self.screen_view = view;
     }
 
     /// `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll sees it
@@ -17337,6 +17352,21 @@ impl ProjectilePool {
                             crate::projectile_ai_misc::ai_flamethrower(
                                 &mut self.slots[i],
                                 rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d16 — aiStyle 151, the Super Star Cannon's
+                        // star (`AI_151_SuperStar` `:22138-22168`): the
+                        // alpha ramp, the Item9 cue re-arm, the spin, the
+                        // on-screen gore gate + the two dust gates. The
+                        // row keeps tileCollide true (`:7665`) — the
+                        // kill_step probe is HandleMovement's default arm.
+                        151 => {
+                            crate::projectile_ai_misc::ai_super_star(
+                                &mut self.slots[i],
+                                rng,
+                                self.screen_view,
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);

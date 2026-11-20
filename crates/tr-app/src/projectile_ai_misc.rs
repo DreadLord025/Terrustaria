@@ -697,6 +697,81 @@ fn create_ground_explosion(
 }
 
 // ---------------------------------------------------------------------------
+// W4-d16 — projectile aiStyles 151-160 MINUS 156/164 (task/W4-a9 owns those
+// two). The census found 157/158 already armed (projectile.rs's
+// `ai_sharp_tears`/`ai_baby_bird` — verify-only) and 151/152/153/154/155/
+// 159/160 MISSING: no rows, no arms. The rows land in projectile/data.rs
+// (cited per field); this module owns the machines, one style per commit.
+//
+// RNG contract (the `projectile_ai_misc` S1-D-4 precedent above): every
+// EXPLICIT `Main.rand` call-site draw stays in C# order (gates included,
+// with the C#'s `&&` short-circuits); the `Dust.NewDust*` bodies + their
+// internal rolls go with the dust layer; the `Gore.NewGore` kicks
+// `Next(10, 31)` / `Next(-20, 21)` stay (`Gore.cs:1327-1328`).
+//
+// CODE-ONLY MODE (W4-d16): the witness tests are WRITTEN NOT RUN.
+
+/// `AI_151_SuperStar` (`Projectile.cs:22138-22168`) — the Super Star
+/// Cannon's star (728). The −10 alpha ramp to the 100 floor, the Item9
+/// cue's `20 + Next(40)` re-arm, the `(|vx|+|vy|)·0.005·direction` spin,
+/// the on-screen 1-in-6 gore gate (the `SelectRandom(16,17,17,17)` pick +
+/// the NewGore kicks) and the two 1-in-8 dust gates (bodies skipped).
+///
+/// `screen` is the pool's per-tick view snapshot `(centre, size)` —
+/// `Main.screenPosition + (screenWidth, screenHeight)/2` and the size
+/// (`:22152-22153`); `None` folds the hitbox test false (the C#'s
+/// off-screen short-circuit spends NO `Next(6)`).
+///
+/// `direction` is the velocity-sign stand-in (`AutomaticallyChangesDirection`
+/// is true for style 151, `:17283` — the `ai_spray` precedent).
+pub(crate) fn ai_super_star(
+    p: &mut Projectile,
+    rng: &mut dyn DropRng,
+    screen: Option<(Vec2, Vec2)>,
+) {
+    // `:22140-22145` — the alpha ramp and its floor.
+    p.alpha -= 10;
+    if p.alpha < 100 {
+        p.alpha = 100;
+    }
+    // `:22146-22150` — the cue re-arm (the pool decrements soundDelay
+    // ahead of the AI, `:16768-16771`; the `-1` latch convention holds).
+    if p.sound_delay == 0 {
+        p.sound_delay = 20 + rng.next_range(0, 40);
+        p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0));
+    }
+    // `:22151` — the spin.
+    let direction = if p.vel.x < 0.0 { -1.0 } else { 1.0 };
+    p.rot += (p.vel.x.abs() + p.vel.y.abs()) * 0.005 * direction;
+    // `:22152-22156` — the on-screen gore gate: the hitbox against the
+    // screen rect grown 400 px (`Utils.CenteredRectangle`), THEN the
+    // `Next(6)` (the `&&` order — off-screen spends nothing).
+    let on_screen = screen.is_some_and(|(centre, size)| {
+        let half = (size + Vec2::splat(400.0)) * 0.5;
+        let (l, t) = (centre.x - half.x, centre.y - half.y);
+        let (r, b) = (centre.x + half.x, centre.y + half.y);
+        // XNA `Rectangle.Intersects` — the strict edge comparisons.
+        p.pos.x < r && l < p.pos.x + p.w && p.pos.y < b && t < p.pos.y + p.h
+    });
+    if on_screen && rng.next_range(0, 6) == 0 {
+        // `Utils.SelectRandom(Main.rand, 16, 17, 17, 17)` — one `Next(4)`
+        // (`Utils.cs:2459-2462`); the gore body is skipped, the NewGore
+        // kicks stay (`Gore.cs:1327-1328`).
+        let _ = rng.next_range(0, 4);
+        let _ = rng.next_range(10, 31);
+        let _ = rng.next_range(-20, 21);
+    }
+    // `:22157-22167` — the two dust gates: the `Next(8)` draws stay, the
+    // `NewDustDirect` bodies + their internal rolls go with the dust
+    // layer (the velocity blend is deterministic — no draws inside).
+    for _ in 0..2 {
+        if rng.next_range(0, 8) == 0 {
+            // The dust spawn + its ×0.25 / rotated-velocity blend — SKIPPED.
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1233,5 +1308,160 @@ mod tests {
                 pool.slots()[s].kind
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_151_tests {
+    //! W4-d16 — aiStyle 151 (`AI_151_SuperStar`, `Projectile.cs:22138-22168`,
+    //! the dispatch `:36567-36570`). WRITTEN NOT RUN (code-only mode). The
+    //! witnesses mirror the C# on the port's seams: the row, the alpha
+    //! ramp + floor, the cue re-arm's `Next(40)`, the spin, the on-screen
+    //! gore gate's `&&` short-circuit (off-screen spends NO `Next(6)`) and
+    //! the two dust gates' `Next(8)` pair — the RNG census pins count AND
+    //! order on a recording stream.
+    use super::*;
+    use crate::projectile::{ProjectilePool, SUPER_STAR, FlailInputs, YoyoInputs, proj_data};
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min // every gate takes its branch — the census sees the kicks
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn star() -> Projectile {
+        let d = proj_data(SUPER_STAR).expect("the 728 row");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = SUPER_STAR;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    /// The row (`Projectile.cs:7659-7671`): 24x24, aiStyle 151, alpha 255,
+    /// tileCollide true, ranged, friendly, penetrate -1, the LOCAL pair
+    /// (-1).
+    #[test]
+    fn w4_d16_151_the_row_matches_set_defaults() {
+        let d = proj_data(SUPER_STAR).unwrap();
+        assert_eq!((d.w, d.h), (24.0, 24.0), ":7661-7662");
+        assert_eq!(d.ai_style, 151, ":7663");
+        assert_eq!(d.alpha, 255, ":7664");
+        assert!(d.tile_collide, ":7665");
+        assert!(d.ranged, ":7666");
+        assert_eq!(d.penetrate, -1, ":7668");
+        assert!(d.uses_local_immunity, ":7669");
+        assert_eq!(d.local_hit_cooldown, -1, ":7670");
+        assert_eq!(d.extra_updates, 0, "no override — the stock 0");
+    }
+
+    /// The alpha ramp (`:22140-22145`): −10/tick, floored at 100. The
+    /// cue re-arm (`:22146-22150`): `20 + Next(40)` — the census min 0
+    /// gives 20; the Item9 cue rides `wants_sound`. The spin (`:22151`):
+    /// (|3|+|4|)·0.005·1 = 0.035.
+    #[test]
+    fn w4_d16_151_the_ramp_cue_and_spin() {
+        let mut p = star();
+        p.vel = Vec2::new(3.0, 4.0);
+        let mut rng = census();
+        // Off-screen (`None`): the gore gate short-circuits BEFORE its
+        // Next(6) — the census sees only the cue + the two dust gates.
+        ai_super_star(&mut p, &mut rng, None);
+        assert_eq!(p.alpha, 245, "255 − 10");
+        assert_eq!(p.sound_delay, 20, "20 + Next(40)=0");
+        assert_eq!(p.wants_sound, Some((2, 9, 1600.0, 800.0, 0.0)), "Item9");
+        assert!((p.rot - 0.035).abs() < 1e-6, "the spin: {}", p.rot);
+        assert_eq!(rng.ranges, vec![(0, 40), (0, 8), (0, 8)], "no Next(6) off-screen");
+        assert_eq!(rng.floats, 0);
+        // The floor: alpha 105 → 95 → 100.
+        p.alpha = 105;
+        p.sound_delay = -1; // the latch — no re-arm, no draw
+        let mut rng2 = census();
+        ai_super_star(&mut p, &mut rng2, None);
+        assert_eq!(p.alpha, 100, "the floor");
+        assert_eq!(rng2.ranges, vec![(0, 8), (0, 8)], "the latch spends no Next(40)");
+        // The negative-velocity spin mirrors (`direction = -1`).
+        let mut p3 = star();
+        p3.vel = Vec2::new(-3.0, 4.0);
+        p3.sound_delay = -1;
+        ai_super_star(&mut p3, &mut census(), None);
+        assert!((p3.rot + 0.035).abs() < 1e-6, "the mirrored spin");
+    }
+
+    /// The on-screen gore gate (`:22152-22156`): the hitbox inside the
+    /// grown screen rect → `Next(6)`; on the taken branch the
+    /// `SelectRandom` pick `Next(4)` + the NewGore kicks `Next(10,31)` /
+    /// `Next(-20,21)` (`Gore.cs:1327-1328`). The dust gates follow.
+    #[test]
+    fn w4_d16_151_the_on_screen_gore_census() {
+        let mut p = star();
+        p.sound_delay = -1;
+        let mut rng = census();
+        // The screen centre on the star, any size — the box intersects.
+        ai_super_star(&mut p, &mut rng, Some((Vec2::new(1612.0, 812.0), Vec2::new(800.0, 600.0))));
+        assert_eq!(
+            rng.ranges,
+            vec![(0, 6), (0, 4), (10, 31), (-20, 21), (0, 8), (0, 8)],
+            "the gate, the pick, the kicks, the dust pair"
+        );
+        // Far off-screen: the rect test fails, NO Next(6) (`&&` order).
+        let mut p2 = star();
+        p2.sound_delay = -1;
+        let mut rng2 = census();
+        ai_super_star(&mut p2, &mut rng2, Some((Vec2::new(9000.0, 9000.0), Vec2::new(800.0, 600.0))));
+        assert_eq!(rng2.ranges, vec![(0, 8), (0, 8)]);
+    }
+
+    /// The dispatch wiring: one pool update runs the arm (alpha 255→245,
+    /// the cue re-arm, the spin) and the kill_step integrates the flight.
+    #[test]
+    fn w4_d16_151_the_dispatch_arms_the_star() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(SUPER_STAR, 1600.0, 800.0, 3.0, 4.0, 40, 2.0)
+            .unwrap();
+        pool.slots_mut()[slot].alpha = 255;
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.alpha, 245, "one sub-step (extraUpdates 0)");
+        assert_eq!(p.pos, Vec2::new(1603.0, 804.0), "the kill_step integrate");
+        assert_eq!(p.time_left, 3599, "the lifetime block");
+        // screen_view None in the pool-only test: no Next(6).
+        assert_eq!(rng.ranges, vec![(0, 40), (0, 8), (0, 8)]);
     }
 }
