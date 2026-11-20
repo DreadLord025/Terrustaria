@@ -356,7 +356,17 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
-
+                // `UIDebugLoadoutsList`'s list wheel (W4-d85 row 8).
+                if self.debug_loadouts_open {
+                    self.pointer.queue_scroll(d.round() as i32);
+                    if matches!(
+                        self.pointer.scroll_wheel(Some(SCROLL_UI)),
+                        Some(PointerEvent::ScrollWheel { .. })
+                    ) {
+                        self.scroll_debug_loadouts(d.round() as i32);
+                    }
+                    return;
+                }
                 // `UIList.ScrollWheel` through `UserInterface.Update`'s wheel
                 // arm (`:219-222`): while a list screen is live the `UIList`
                 // under the pointer owns the notch — `ViewPosition -=
@@ -472,7 +482,11 @@ impl ApplicationHandler for App {
                                     self.handle_debug_commands_clicks();
                                     return;
                                 }
-
+                                if pressed && self.debug_loadouts_open {
+                                    self.ui_left_press = true;
+                                    self.handle_debug_loadouts_clicks();
+                                    return;
+                                }
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
                                 // Bug 17: the legacy menu's click tick —
@@ -728,6 +742,8 @@ impl App {
                     // GoBack — the port's Escape stand-in, the achievements
                     // overlay's M6-ACH-2 pattern).
                     self.close_debug_commands();
+                } else if self.debug_loadouts_open {
+                    self.close_debug_loadouts();
                 } else if self.emotes.menu_open {
                     self.emotes.close();
                 } else if self.map.as_ref().is_some_and(|m| m.open) {

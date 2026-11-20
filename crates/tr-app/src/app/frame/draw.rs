@@ -1859,7 +1859,18 @@ impl App {
                             self.is_client(),
                         );
                     }
-
+                    // `UIDebugLoadoutsList` (W4-d85 row 8) — the twin overlay.
+                    if self.debug_loadouts_open {
+                        ui::debug_loadouts::draw_screen(
+                            renderer,
+                            lookups,
+                            screen,
+                            &self.debug_loadouts,
+                            &self.debug_loadouts_search,
+                            self.debug_loadouts_scroll,
+                            self.mouse_pos,
+                        );
+                    }
                     // `DrawInterface_13_AchievementCompletePopups`
                     // (`Main.cs:44779-44783`, `:46143-46146`): the unlock
                     // toasts draw over the interface — after the fancy UI

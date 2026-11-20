@@ -32,6 +32,7 @@ impl App {
     // `IngameFancyUI` state like the bestiary; its clicks consume the press
     // before the chest/crafting/inventory handlers see it.
     self.handle_debug_commands_clicks();
+    self.handle_debug_loadouts_clicks();
     // The town-chatter panel's Close button + hover tick
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.

@@ -176,8 +176,8 @@ the `AWorkshopPublishInfoState` pair if not folded into d84).
 | `UIResourcePackSelectionMenu` | 17 | none | |
 | `UIResourcePackInfoMenu` | 15 | none | |
 | `UIDebugCommandsList` | 165 | `ui/debug_commands.rs` (W4-d85) | PORTED (immediate overlay; `/hh` opener, 62-row registry, search + scroll; fake-item hover tooltip not drawn — ANALYSIS "Debug lists (W4-d85)") |
-| `UIDebugLoadoutsList` | 14 | none | debug |
-| `UIDebugLoadoutItem`-family screens | — | none | debug |
+| `UIDebugLoadoutsList` | 146 | `ui/debug_loadouts.rs` + `loadout.rs` (W4-d85) | PORTED (immediate overlay; `/loadouts` opener, ScenarioTestLoadout JSON reader + Apply, static `_lastSearch`; minion respawn deferred — ANALYSIS "Debug lists (W4-d85)") |
+| `UIDebugLoadoutItem`-family screens | — | `ui/debug_commands.rs` + `ui/debug_loadouts.rs` row halves (W4-d85) | PORTED (the two row elements; hover tooltips not drawn) |
 | `UIReportsPage` | 16 | none | |
 | `UIWorldCreationAdvanced` | 16 | none | ROADMAP:953 lists it; world_creation.rs covers the base screen only |
 | `UIWorldCreationAdvancedSecretSeedsList` | 17 | none | same |

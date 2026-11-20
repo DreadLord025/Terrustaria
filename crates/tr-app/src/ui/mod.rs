@@ -18,6 +18,7 @@ pub mod color;
 pub mod crafting;
 pub mod cursor;
 pub mod debug_commands;
+pub mod debug_loadouts;
 pub mod ingame_options;
 pub mod housing;
 pub mod inventory;

@@ -700,6 +700,13 @@ pin_bool! {
 }
 
 pin_bool! {
+    /// `TR_DEBUG_LOADOUTS_LIST`: opens `UIDebugLoadoutsList` on start (the
+    /// W4-d85 screenshot fixture; the vanilla opens on `/loadouts` only).
+    debug_loadouts_list_open,
+    "TR_DEBUG_LOADOUTS_LIST"
+}
+
+pin_bool! {
     /// `TR_NOCRAFT=1` turns the crafting panel off (`TR_CRAFT=1` forces it back on).
     no_craft,
     "TR_NOCRAFT"

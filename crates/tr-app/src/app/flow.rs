@@ -110,6 +110,10 @@ pub(crate) enum KeyboardTail {
     /// cancel restores the list unchanged. Both tails land back on the
     /// overlay (`back: None` — the overlay lives on the App, not the flow).
     DebugCommandSearch,
+    /// The loadouts list's search bar — the same `UIWrappedSearchBar`
+    /// pair, plus the static `_lastSearch` latch
+    /// (`UIDebugLoadoutsList.cs:94`).
+    DebugLoadoutSearch,
 }
 
 /// One click into the front-end flow — the rows of the
@@ -2156,6 +2160,11 @@ pub(crate) mod front_flow_tests {
             debug_commands_open: false,
             debug_commands_search: String::new(),
             debug_commands_scroll: 0.0,
+            debug_loadouts_open: false,
+            debug_loadouts: Vec::new(),
+            debug_loadouts_search: String::new(),
+            debug_loadouts_last_search: String::new(),
+            debug_loadouts_scroll: 0.0,
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),

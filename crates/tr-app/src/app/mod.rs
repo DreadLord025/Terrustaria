@@ -325,6 +325,17 @@ pub(crate) struct App {
     pub(crate) debug_commands_search: String,
     /// The commands list's `UIScrollbar.ViewPosition`.
     pub(crate) debug_commands_scroll: f32,
+    /// `UIDebugLoadoutsList`'s overlay state (W4-d85 row 8) — opened by
+    /// `/loadouts` (`ToolkitDebugCommands.cs:884-889`). The entries load
+    /// at the open (`PopulateLoadouts`, `UIDebugLoadoutsList.cs:134-145`).
+    pub(crate) debug_loadouts_open: bool,
+    pub(crate) debug_loadouts: Vec<ui::debug_loadouts::LoadoutEntry>,
+    /// The loadouts search bar's contents — seeded from the static
+    /// `_lastSearch` at the open (`:85`).
+    pub(crate) debug_loadouts_search: String,
+    /// `UIDebugLoadoutsList._lastSearch` (`:20`) — static across opens.
+    pub(crate) debug_loadouts_last_search: String,
+    pub(crate) debug_loadouts_scroll: f32,
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
@@ -2606,6 +2617,14 @@ impl App {
                 self.debug_commands_scroll = 0.0;
                 self.front = None;
             }
+            // The loadouts twin — `SubmitVirtualText` trims first
+            // (`UIWrappedSearchBar.cs:186`), then
+            // `searchbar_OnSearchContentsChanged` latches `_lastSearch`
+            // (`:94`) with the trimmed contents.
+            KeyboardTail::DebugLoadoutSearch => {
+                self.set_debug_loadouts_search(name);
+                self.front = None;
+            }
         }
     }
 
@@ -2620,7 +2639,10 @@ impl App {
             return;
         };
         let is_chest = session.tail == KeyboardTail::ChestRename;
-        let is_debug_search = session.tail == KeyboardTail::DebugCommandSearch;
+        let is_debug_search = matches!(
+            session.tail,
+            KeyboardTail::DebugCommandSearch | KeyboardTail::DebugLoadoutSearch
+        );
         let back = session.back.clone();
         // `Cancel`'s cue (`SoundEngine.PlaySound(11)`,
         // `UIVirtualKeyboard.cs:984`) — the C# cancels play it before the
@@ -3774,6 +3796,11 @@ impl App {
             debug_commands_open: crate::env::debug_commands_list_open(),
             debug_commands_search: String::new(),
             debug_commands_scroll: 0.0,
+            debug_loadouts_open: false, // the tail below runs the real opener
+            debug_loadouts: Vec::new(),
+            debug_loadouts_search: String::new(),
+            debug_loadouts_last_search: String::new(),
+            debug_loadouts_scroll: 0.0,
             // The filter bits default to all-on (`SetState(value: true)`);
             // a shot run can pin a single category through the bitmask.
             achievements_categories: {
@@ -4118,6 +4145,11 @@ impl App {
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
             app.preset_ui(preset);
+        }
+        // `TR_DEBUG_LOADOUTS_LIST` opens the loadouts overlay through the
+        // real opener (the ctor's `PopulateLoadouts` reads the dir).
+        if crate::env::debug_loadouts_list_open() {
+            app.open_debug_loadouts();
         }
         app
     }

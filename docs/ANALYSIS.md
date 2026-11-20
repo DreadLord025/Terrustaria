@@ -39274,3 +39274,36 @@ The `UIDebugCommandsList` + `UIDebugCommandItem` port
   `chat.text = "/name "` and appends the yellow (255,255,0) notice.
 - Code-only mode: the witness tests (`debug_commands.rs` 6 +
   `clicks.rs` 2) are WRITTEN, NOT RUN — no cargo/graphify invoked.
+
+The `UIDebugLoadoutsList` + `UIDebugLoadoutItem` port
+(`ui/debug_loadouts.rs` + `loadout.rs`, table row 8 + the row-9 element
+half):
+
+- **Data layer**: `ScenarioTestLoadout`'s JSON shape read through
+  `serde_json::Value` walks (the Newtonsoft
+  `EasyDeserializationJsonContractResolver` is not ported — the shipped
+  files carry plain PascalCase fields); `FindAll` = the `*json` files
+  under `Terrustaria/Loadouts` (`Main.SavePath/Loadouts`);
+  `TryReadFromFilePath`'s catch answers `None` on any failure.
+- **Apply** (`ScenarioTestLoadout.cs:88-106`): the clock (off-client
+  only), life/mana stats, the selection request, the four item groups
+  (inventory / ammo 54..57 / armor / misc equips), the owned-minion kill
+  and the direct buff-slot writes. **Deviation**:
+  `MinionRespawner.RestoreMinionsFor` has no port — the recorded minions
+  are not respawned (the kill half runs).
+- **Geometry**: the commands list's container/panel/search chain
+  byte-for-byte (`BuildPage` `:34-83`); rows 70+5; the four
+  `PositionItems` icon groups at (0.1-0.3, 0.75), (0.35-0.45, 0.75),
+  (0.65-0.75, 0.25), (0.6-0.9, 0.75) with `HAlign = i/(n-1)`.
+- **`_lastSearch`** is static (`UIDebugLoadoutsList.cs:20`) — it survives
+  the close and re-seeds the next open (`:85`); the port keeps it on the
+  App (`debug_loadouts_last_search`).
+- **Deviations**: the hover tooltip (`MouseOver`'s hardcoded "test"
+  wrap, `UIDebugLoadoutItem.cs:132-133`) is not drawn; the search bar
+  opens the keyboard (`KeyboardTail::DebugLoadoutSearch`); `/loadout
+  <name>` applies from the dir, `/loadout` bare lists the names
+  (`ToolkitDebugCommands.cs:862-882`); `/saveloadout` is NOT ported (the
+  writer half — `Prepare` reads the live minion/buff state the port's
+  split arrays only partially mirror).
+- Code-only mode: the witness tests (`loadout.rs` 3 +
+  `debug_loadouts.rs` 5 + `clicks.rs` 2) are WRITTEN, NOT RUN.
