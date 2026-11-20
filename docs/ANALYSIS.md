@@ -39244,3 +39244,47 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Journey powers menu (W4-c24, task/W4-c24-journey-ui, 2026-11-21, code-only mode)
+
+The `ui/journey.rs` + `app/journey_clicks.rs` port of `CreativeUI` /
+`UICreativePowersMenu` / `UICreativeInfiniteItemsDisplay` (the layout and
+behaviour map lives in `docs/UI.md`). **No compiler invoked; the witness
+tests are WRITTEN, NOT RUN.** Deliberate deviations:
+
+- **ByCreativeSortingId falls through** (`SortingSteps.cs:116-134`): the
+  middle sort step reads `ContentSamples.ItemCreativeSortingId`, a generated
+  group/order table the port does not carry. The grid sorts
+  newly-researched → fully-researched (`ByUnlockStatus`, `:84-113`) then
+  alphabetical (`:136-147`); the group step is inert until the table lands.
+- **The unported powers draw as chrome**: the wind/rain sliders + freezes
+  (`ModifyWindDirectionAndStrength`/`ModifyRainPower`/`Freeze*`,
+  `CreativePowers.cs:1474-1539`), the enemy-spawn-rate slider
+  (`SpawnRateSliderPerPlayerPower`) and the difficulty slider
+  (`DifficultySliderPower`, `:1002`) are outside `creative.rs`'s v1
+  registry. Their strip buttons draw + play the click cue; the subcategory
+  buttons open an empty slider slot; the toggles do not flip a state.
+- **The research counts are in-memory**: `ItemsSacrificedUnlocksTracker`'s
+  `Save`/`Load` (`:157-196`, the persistent-id string map) rides the
+  M6-SAVE world-section pass; `App.research` resets per session. The
+  teammate-credit half (`_unlockedByTeammate`/`AnyNewUnlocksFromTeammates`,
+  the toggle button's notification icon `CreativeUI.cs:172-175`) is
+  single-player inert and unported.
+- **The duplication search box keeps no text** — the same recorded deviation
+  as crafting's (no keyboard text field wired to the in-game UI); the
+  `BySearch` tooltip scan (`ItemFilters.cs:28-48`) stays unported.
+- **The sacrifice slot's right-click pickup** drains the slot (context 30 is
+  not 29, `ItemSlot.cs:1739-1742`) at the port's press-edge pacing; the
+  held-frame `superFastStack` multiplier is not applied (the port's
+  stack-split machine drives the inventory arms only).
+- **The x24/x12/x1 labels keep the black shadow on hover** — the C# swaps
+  `UIText.ShadowColor` to OurFavoriteColor (`CreativePowers.cs:944-960`);
+  the port's bordered-string helper has no per-call shadow-colour seam.
+- **The difficulty stand-in**: `CreativeUI.Draw`'s `difficulty == 3` gate
+  reads `App::active_player_difficulty` (the session draft) — the port's
+  `Player` carries no difficulty field (the R-03-6 plumbing).
+- **RNG order**: the spark burst draws 15×(angle NextFloat, radius
+  NextFloat) on the bare-`Main.rand` stand-in at timeLeft 56
+  (`UICreativeInfiniteItemsDisplay.cs:351-364`, `Utils.cs:1261-1269`), then
+  the thunk's `Next(1, 4)` bank pick (`LegacySoundPlayer.cs:482`) — the
+  C#'s draw-then-play order kept. No existing stream reordered.

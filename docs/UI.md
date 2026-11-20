@@ -589,6 +589,52 @@ settings toggle. Deviations: the shielded `DrawFancyBar` overload
 caller) — the full list is in `docs/ANALYSIS.md` →
 "Minimap frame and boss bar (P4)".
 
+### The Journey powers menu (W4-c24, `ui/journey.rs` + `app/journey_clicks.rs`)
+
+`CreativeUI` (`GameContent/Creative/CreativeUI.cs`) +
+`UICreativePowersMenu` (`UI/States/UICreativePowersMenu.cs`) +
+`UICreativeInfiniteItemsDisplay` (`UI/Elements/`). The toggle button
+(`Journey_Toggle`, at (28, 267), +52·inventoryScale on screens under 650 px
+while open, `CreativeUI.cs:104-111`) draws for every Journey player
+(difficulty 3, unblocked — talking/chest block, the visible crafting panel
+unblocks, `:47-65`); `C` toggles (`Player.ToggleCreativeMenu`,
+`Player.cs:5091-5105`). The window lives at Left 80 / Top 314, 480 wide
+(`UICreativePowersMenu.cs:151-158`); the main strip (Left 20, 48 wide, 44 px
+pitch, `PowerStripUIElement.cs:17-40`) carries the duplication/research/
+time/weather/personal category buttons + StopBiomeSpread + the (unported)
+difficulty slider.
+
+* **Research page** (`UICreativeInfiniteItemsDisplay.cs:207-287`): the
+  170×170 panel, the symmetric cog trio (speeds 2·num / 1.1428572·num /
+  −num, num = 0.05·(1+lerp²·2), `:330-340`), the `Research_Slots` plate +
+  9-frame piston strip (`:341-346`), 15 sparks at timeLeft 56
+  (`NextVector2Circular(4,3)`, sound 63) and the completion chime (64) at
+  40, the context-30 sacrifice slot (no background,
+  `ItemSlot.cs:2261-2263`), the `(have/needed)` / `???` / `X` progress text
+  (`:404-434`) and the Research confirm button. Shift-click on an inventory
+  slot swaps + sacrifices in one press (`ItemSlot.cs:815-820`).
+* **Duplication page** (`:165-205`): the Blue-theme search bar + filter
+  strip (`Infinite_Tabs_B`, the shared `craft_filter::FilterBoard`), the
+  grid of every kind with research progress (`ForEachItemWithResearchProgress`)
+  sorted newly-researched → fully-researched → alphabetical
+  (`SortingSteps.cs:84-147`), 44 px cells at scale 3465/4095
+  (`UIDynamicItemCollection.cs:40`), contexts 29 (fully, `(53,69,127)`) /
+  34 (partial, `(25,44,65,180)·0.9`) on `Inventory_Back18`
+  (`ItemSlot.cs:2253-2259`). Left click on a fully-researched cell fills
+  the cursor with a max stack (action 5, `ItemSlot.cs:1242-1251`); right
+  click picks one per paced frame without draining (`:1717-1746`).
+* **Power strips** (Phase 3): FreezeTime + the four clock buttons + the
+  time-rate slider (x1..x24, banker's-rounded remap,
+  `CreativePowers.cs:877-880`), Godmode + Far Placement Range, and the
+  weather strip's chrome. The counts/positions ride
+  `UICreativePowersMenu.cs:314-369`.
+
+Deviations (docs/ANALYSIS.md): the `ByCreativeSortingId` middle sort step
+falls through to alphabetical (no generated group table); the wind/rain/
+spawn-rate/difficulty sliders and the teammate-unlock notification are
+unported; the research counts are in-memory (the world-section save rides
+M6-SAVE); the search box keeps no text (no keyboard field wired).
+
 ## Deviations
 
 * The framework ports the **flat/event halves** of `UIElement`/`UserInterface`:
