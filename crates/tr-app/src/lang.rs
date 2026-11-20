@@ -910,8 +910,14 @@ pub fn prefix_name(id: i32) -> String {
 }
 
 /// `Lang.GetProjectileName(type)` (`Lang.cs:441-448`):
-/// `ProjectileName.{const name}`.
+/// `ProjectileName.{const name}`, bounded by the cache length
+/// (`ProjectileID.Count`) — an out-of-range id answers `LocalizedText.Empty`
+/// (W4-c21). Id 0 is in-cache: the shipped `ProjectileName.None` row is the
+/// empty string.
 pub fn projectile_name(id: i32) -> String {
+    if id < 0 || id >= crate::projectile_id::PROJECTILE_COUNT {
+        return String::new();
+    }
     match crate::projectile_id::PROJECTILE_ID
         .iter()
         .find(|(n, _)| *n as i32 == id)
@@ -1163,5 +1169,27 @@ mod tests {
         assert_eq!(inter(65), text("LegacyInterface.65"));
         // A missing key falls back to the key text, not a crash.
         assert_eq!(tip(9999), text("LegacyTooltip.9999"));
+    }
+
+    /// W4-c21 — `Lang.GetProjectileName` (`Lang.cs:441-448`) bounds the id by
+    /// the cache length (`ProjectileID.Count` = 1136) and answers
+    /// `LocalizedText.Empty` outside it; before the bounds the port answered
+    /// a bare `ProjectileName.{...}` key for out-of-range ids.
+    #[test]
+    fn w4_c21_projectile_name_bounds_answer_empty() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        // Inside the cache: the localized row (`ProjectileID.BoneJavelin`).
+        assert_eq!(projectile_name(598), "Bone Javelin");
+        // Id 0 (`ProjectileID.None`): `FillNameCacheArray`'s `num >= 0` gate
+        // admits it, and the shipped `ProjectileName.None` row IS the empty
+        // string — so 0 answers empty exactly like the C# cache row.
+        assert_eq!(projectile_name(0), "");
+        // Negative ids and ids at/over `Count` answer Empty (`:443`).
+        assert_eq!(projectile_name(-1), "");
+        assert_eq!(projectile_name(crate::projectile_id::PROJECTILE_COUNT), "");
+        assert_eq!(projectile_name(i32::MAX), "");
+        // The last in-cache id resolves (`ProjectileID.KrakenWave` = 1135).
+        assert!(!projectile_name(crate::projectile_id::PROJECTILE_COUNT - 1).is_empty());
     }
 }
