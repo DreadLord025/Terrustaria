@@ -238,6 +238,13 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-c29 (code-only): the dead-man's-chest block lands BEFORE the
+    // thin ice — the pin stays UNCHANGED: `generate()` carries no
+    // chest-stock hook, so `world.chests` is empty, the candidate scan
+    // finds nothing and the block draws only the DeadManChests config
+    // roll on its own fresh `pass_rng("Micro Biomes")` copy (no tile
+    // writes, no other step's ledger shifts). The 138 frame-important
+    // boot bit is inert without the kind.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +288,15 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-c29 (2026-11-21, code-only): the dead-man's-chest block
+    // (`DeadMansChestBiome.cs:10-625` + `WorldGen.cs:20916-20938`) draws
+    // only the DeadManChests config roll on the no-hook path (empty
+    // `world.chests` → no candidates → no tile writes), on its own fresh
+    // `pass_rng("Micro Biomes")` copy — this pin is UNCHANGED by W4-c29.
+    // The stocked tr-app path traps gold chests by design (the 467
+    // retype, the 137/138/141 traps, the red wires); that moves the
+    // APP-side world, not this tr-core pin. The S1-P-i33 deferral above
+    // still stands; the gate re-pins sequentially.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

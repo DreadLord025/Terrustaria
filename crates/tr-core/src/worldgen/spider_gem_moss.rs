@@ -195,8 +195,8 @@ fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
 /// `WorldGen.countTiles`'s scratch state (`WorldGen.cs:9546-9557`): the
 /// counters the pass's acceptance tests read.
 #[derive(Default, Clone, Copy)]
-struct CaveCounts {
-    tiles: i32,
+pub(super) struct CaveCounts {
+    pub(super) tiles: i32,
     shroom: i32,
     lava: i32,
     ice: i32,
@@ -210,8 +210,11 @@ struct CaveCounts {
 
 /// `WorldGen.countTiles` (`WorldGen.cs:9546-9635`) over an explicit stack: the
 /// C# recursion depth is the pocket size, so the port walks it iteratively
-/// (the fill carries no RNG, so the traversal order is free).
-fn count_tiles(world: &World, x: i32, y: i32, lava_ok: bool, max: i32) -> CaveCounts {
+/// (the fill carries no RNG, so the traversal order is free). Shared with
+/// the dead-man's-chest pocket gate (`mini_biomes::dead_mans_good_spot`,
+/// `WorldGen.cs:9546-9635` — the same `countTiles(jungle: false, lavaOk:
+/// true)` reading, the same baseline-wall adaptation).
+pub(super) fn count_tiles(world: &World, x: i32, y: i32, lava_ok: bool, max: i32) -> CaveCounts {
     let mut c = CaveCounts::default();
     let mut seen: HashSet<(i32, i32)> = HashSet::new();
     let mut stack = vec![(x, y)];
