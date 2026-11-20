@@ -230,6 +230,23 @@ and one persistent store per world (the `.wld` section 10 triple).
 | 20 | Altar hammer smash is routed through `break_tile` + `smash_altar` in the active-tile branch (`app.ore_tiers` updated), firing BEGONE_EVIL; `tile_drop(26)=None` (C# empty drop group). Self-hurt/wraith halves of the C# refusal are follow-ups. | behavioural (partial) | Partly (S1-E-18) |
 | 21 | `StopSlimeRain` sets the negative cooldown clock (`Main.cs:64787-64820`); `stopMoonEvent` does not clear `bloodMoon` (cleared in `UpdateTime_StartDay`). | behavioural (closer) | Yes (S1-E-18) |
 
+## Lane claim — W4-c36 (achievement notify + save), 2026-11-20
+
+**IN FLIGHT** on `task/W4-c36-achievement-notify-save`: wire the ~30 missing
+`AchievementsHelper.Notify*`/`Handle*` sites per the C# call-site census, plus
+the `AchievementManager.Save` wire audit (`Player.InternalSavePlayer`'s first
+statement, `Player.cs:54700` — already wired via `save_world`; this lane pins
+the remaining routes). **Co-lane reservation for W4-f30 (achievement-notify-2,
+second batch):** f30 owns the *tail* sites — progression 33-41/43-46 (research,
+golf, fishing milestones, shimmer/void bag, nurse 46, dryad 27 special-event),
+`MechaMayhem_*` (progression 21) and the `CheckResearchAchievement` family;
+c36 takes the first batch — `OnPlayerEnteredWorld`/`HandleOnEquip` equip+use
+flags, `HandleSpecialEvent` reach/hit/use rows with ported owning systems,
+natural blood-moon/invasion progressions 2/4, and the save-route audit. Sites
+neither lane's systems own stay unwired and cited. Condition-table work is
+W4-e22's (its branch pins the 180-condition table) — c36/f30 touch **notify
+sites only**, never `achievements_data.rs`.
+
 ## Task seeds
 
 - ~~**S** — Model `NPCKilledCondition.CreateMany` faithfully~~ — **done (S1-E-18)**.
