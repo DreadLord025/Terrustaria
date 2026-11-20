@@ -737,3 +737,95 @@ not cages; 642 is the Extractinator variant, batch 4) and the port's
 rationale identical to batches 5-6. With this batch all 40 big-animal cage ids
 (:5629-5669 label run) are audited — every one falls in d63's quarter (batches
 5-7); d64's cage batches cover the small/water/jellyfish groups only.
+
+### Batch 8 — pufferfish + snail cages: 710, 285, 286 (3 ids) + quarter summary
+
+**710 PufferfishInABowl** — the big-cage group's one two-axis arm, C# verbatim
+(:5746-5752):
+
+```csharp
+			case 710:
+			{
+				int num9 = Main.pufferfishCageFrame[bigAnimalCageFrame] / 33;
+				addFrX = 108 * num9;
+				addFrY = (Main.pufferfishCageFrame[bigAnimalCageFrame] - num9 * 33) * 54;
+				break;
+			}
+```
+
+Port `cage_draw_data`'s Pufferfish branch (`drawdata_furniture.rs:191-196`):
+`num9 = frame / 33`, `add_fr_x = 108 * num9`,
+`add_fr_y = (frame - num9 * 33) * 54` — the frame value splits into a 108-wide
+column block and a 54-tall row within it, term-for-term (the table is read twice
+in C#, once in the port — same value, no side effects). BIG probe, group head
+`top = 2`. Test pins the split at frame 33/40 boundaries
+(`drawdata_furniture.rs:372-385`). **PORTED-UNWIRED** (same rationale as batches
+5-7).
+
+**285/286 Snail / GlowingSnail cages** — the small-animal group head, verbatim
+(:5779-5783; labels 298..629 at :5758-5778 fall in d64's quarter, the shared head
+cited once per doc):
+
+```csharp
+		{
+			tileTop = 2;
+			Main.critterCage = true;
+			int smallAnimalCageFrame2 = this.GetSmallAnimalCageFrame(x, y, tileFrameX, tileFrameY);
+			switch (typeCache)
+```
+
+Inner arms verbatim (:5785-5791):
+
+```csharp
+			case 285:
+				addFrY = Main.snailCageFrame[smallAnimalCageFrame2] * 36;
+				break;
+			case 286:
+			case 582:
+				addFrY = Main.snail2CageFrame[smallAnimalCageFrame2] * 36;
+				break;
+```
+
+Ports: `285 => (CageAnim::Snail, 0, 36, SMALL)`
+(`drawdata_furniture.rs:134`), `286 | 582 => (CageAnim::Snail2, 0, 36, SMALL)`
+(:135 — 582's index is d64's, the shared arm cited here). SMALL probe
+(`small_animal_cage_frame` :91-95, `/3 * /3`, verbatim in d64's doc). Static
+fallback `drawdata.rs:914-932` (top 2 only); `furniture_post_pass` uncalled;
+frozen row 0 = C# t=0. **PORTED-UNWIRED** both.
+
+## Quarter summary — [186, 279), 93/93 audited
+
+| Verdict | Count | Ids |
+| --- | --- | --- |
+| PORTED (wired) | 44 | 355 499 377 463 464 491 379 390 412 36 406 452 (12, batch 2) · 455 454 453 456 405 12 31 96 639 665 696 238 592 (13, batch 3) · 228 231 243 247 244 565 235 217 218 219 220 642 270 271 (14, batch 4) · 581 660 572 428 442 (5, batch 5) |
+| DEVIATION (wired, documented gap) | 6 | 349 593 594 (temp-frame probe stub, full bodies ported) · 441 468 (static half only — temp-frame rewrite unported) · 564 (glow rect y misses the pre-clear addFrY; final tile draw correct) |
+| PORTED-UNWIRED (cages) | 43 | all 40 big-cage ids (275-281 296 297 309 358 359 413 414 542 550 551 553 554 558 559 599-612 632 640 643-645 710) + 285 286 |
+| MISSING | 0 | — |
+
+44 + 6 + 43 = 93. 454's frozen row is faithful, not a gap (batch 3 note: C# never
+writes `tileFrame[454]`).
+
+**What is actually missing on the draw side in this quarter (no case gaps):**
+1. **The critter-cage wiring** — 43 ids frozen at row 0. The arms are complete
+   and tested (`drawdata_furniture.rs`); the missing pieces are the
+   `AnimateTiles_CritterCages` animator (`Main.cs:13511`, deferred at
+   `drawdata_anim.rs:455`) and a live `furniture_post_pass` call in
+   `render/tiles.rs` after `cases_a`. Furniture lane W4-d57 owns the seam.
+2. **The temporary-animation registry** — `Animation._temporaryAnimations`
+   (`Animation.cs:186-196`) unported; `cases_b::temporary_frame` returns `None`.
+   Affects 349/593/594 (bodies complete around the stub) and 441/468 (rewrite
+   not yet stubbed — add the `38 * f + num44` `frame_y_override` when the
+   registry lands, the 349 pattern at `cases_b.rs:300-302`).
+3. **The glow bind** — every glow record this quarter produces (441/468 chest
+   rows, 463 forge, 412 lunar station, 564 plasma lamp) is dropped at
+   `tiles.rs:731` (`_glow`, TILE-DRAW-2). The 564 rect needs the pre-clear
+   `addFrY` (batch 4 finding) when the bind lands.
+4. **Stale comments** — `drawdata.rs:708-710` (455 "always false") and
+   `drawdata.rs:865-867` (428 "not pressed") describe pre-wiring behaviour; the
+   live `cases_b` path feeds both inputs. Cosmetic, flagged for the next
+   doc-sweep.
+
+The "DrawData missing cases" premise is confirmed stale for this quarter:
+**0 of 93 ids lack an arm**; the gaps are wiring (cages, glow) and one unported
+engine registry (temporary animations), all documented above with C# verbatim
+and Rust line citations.
