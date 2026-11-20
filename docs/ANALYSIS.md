@@ -559,11 +559,14 @@ Deviations (deliberate, recorded):
   has no slope/half-brick kind (a kind-0 break would mis-replicate), so the
   pound updates the local world + caches only. MP slope replication is the
   net follow-up.
-- **The pound audio.** One Dig-0 play per pound; the platform's last step
-  runs `SlopeTile` + `PoundTile` (two cues in the C#). The case-0
-  variation/pitch draws ride `UpdatePlayers` through `play_place_sound`
-  (the attenuation gate first), so the stream order is preserved; the
-  missing second cue is audio-only.
+- **The pound audio.** One Dig-0 play per LANDED gated write — the C# cue
+  sits INSIDE `SlopeTile`/`PoundTile` after the `CanPoundTile` gate
+  (`WorldGen.cs:80770-80782`/`:80807-80822`), so a refused write plays
+  nothing (`PoundOutcome::GateRefused`); the platform's last step is a
+  DIRECT `slope(0)` write + `PoundTile` (`Player.cs:46047-46048`) — ONE cue,
+  matching the C# exactly. The case-0 variation/pitch draws ride
+  `UpdatePlayers` through `play_place_sound` (the attenuation gate first),
+  so the stream order is preserved. No audio deviation remains here.
 - **The fail-tick dust.** `KillTile(fail, effectOnly)`'s dust on the locked-
   door refusal and the `SlopeTile`/`PoundTile` effects have no per-tick dust
   path (the i29 deviation, unchanged).
@@ -583,13 +586,14 @@ crack-style/wobble rolls are the render-side i29 deviation). No stream
 reordered; the worldgen pins are untouched (the player-path edits never run
 during generation).
 
-Tests: 20 `edit::hammer` unit tests (the `CanPoundTile` switch/boulders/
+Tests: 21 `edit::hammer` unit tests (the `CanPoundTile` switch/boulders/
 generation exclusions/`ForbidsSloping`, the `SlopeTile`/`PoundTile` writes,
 the poundable/target tables, `CanPlayerSmashWall`'s four arms, the finder's
 house/edge/active keeps + the banker's quadrant scan, the flat-stone cycle,
 the right-lean/ceiling flips, the platform cycle + diagonal flip, the
 locked-door refusal, the wire-pipe/trap/pressure-pad frame tables, the
-470/314 seams, the flatten-lift flag) + 9 `s1_p_i31_*` app witnesses (the
+470/314 seams, the gate-refused no-write/no-cue arm, the flatten-lift flag)
++ 9 `s1_p_i31_*` app witnesses (the
 release-then-press latch, the full cycle over presses, the platform cycle,
 the orb break vs the pick refusal, the altar self-hurt, the house-wall
 break + the WALL-book damage, the interior-unsafe-wall refusal, the
@@ -606,6 +610,35 @@ unused `Tile` import in `edit/hammer.rs` and corrected the witness count
 (20 core, not 17). No behaviour change; HEAD stayed `0c888e89` (the i30 OLD
 tip — the gate owns the merge-over onto i30's chainsaw tip `0b0a7954`;
 `hammer.rs` is disjoint from the chainsaw rows).
+
+Resume record (W3-i31c, second resume): the writer committed `66f9c5e6`
+(the union incl. the `GateRefused` split) and pushed mid-verification; this
+resume's final review round then landed the remaining WRONG-vs-C# fixes on
+top (all cite-verified against the decompile):
+
+- **The break-tick tail prune.** The C# arms prune AFTER BOTH branches —
+  the pick (`Player.cs:53822-53825`), the axe (`:45764-45767`), the hammer
+  (`:45698-45701`) and `PickWall` (`:45963-45966`) each run the tail
+  `Prune()` even on the break tick (a SECOND prune after
+  `ClearMiningCacheAt`'s own, `HitTile.cs:149-157`). The port's `else if`
+  shapes pruned once; all four arms now prune twice on a break, the C#
+  order (the TTL decay ladder therefore advances one extra step on break
+  ticks — the faithful behaviour).
+- **The wall break's `ClearMiningCacheAt(x, y, 2)`** (`Player.cs:45948`)
+  ignores its type argument and always prunes the TILE book (`:53848-53849`
+  passes 1); `wall_hammer_tick` now clears + prunes the TILE slot at the
+  wall cell alongside the WALL slot's `Clear` (`:45947`), before
+  `KillWall` (`:45949`).
+- **The no-match fall-through** (`Player.cs:45665-45667` + `:45777-45781`):
+  ANY `tileHammer` tile refuses the wall pass even without a matching
+  hammer, and the shared `sItem.pick > 0` cadence tail runs before the
+  pound on the fall-through too (a hamaxe over a plain poundable tile).
+  Both were missing; `mining_tick`'s no-match arm now carries them.
+
+The gate owns the merge-over onto i30's chainsaw tip `0b0a7954`; the i31
+diff stays disjoint from the chainsaw rows except `mining_tick`'s shared
+seams (the tail-prune fix touches the pick/axe arms' break paths — cite
+`Player.cs:53822`/`:45764`, chain-consistent).
 
 ## Lighting
 

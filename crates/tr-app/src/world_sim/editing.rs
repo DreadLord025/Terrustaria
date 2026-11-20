@@ -433,6 +433,13 @@ fn pick_tile_hit(app: &mut App, tx: i32, ty: i32, pick_power: i32) -> bool {
                 app.world.tile(x, y).is_some_and(|t| t.active())
             }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
         break_tile(app, tx, ty);
+        // `:53822-53825` — the tail prune runs AFTER both branches (the
+        // break tick prunes twice: ClearMiningCacheAt's own prune + this).
+        if damage != 0 {
+            app.hit_tile.prune(|x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        }
         return true;
     }
     // `:53815` — the fail tick (`KillTile(fail: true)`): the port's
@@ -866,7 +873,8 @@ fn hammer_tile_hit(
     // `:45681` — the accumulation; `>= 100` breaks.
     let total = app.hit_tile.add_damage(tile_hit_id, damage, true);
     if total >= 100 {
-        // `:45683` — `ClearMiningCacheAt(x, y, 1)`.
+        // `:45683` — `ClearMiningCacheAt(x, y, 1)` (its own Prune runs
+        // here, `HitTile.cs:149-157`).
         app.hit_tile
             .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
                 app.world.tile(x, y).is_some_and(|t| t.active())
@@ -889,8 +897,11 @@ fn hammer_tile_hit(
             let _ = ore;
             app.world_key = None;
         }
-    } else if damage != 0 {
-        // `:45698-45701` — a non-zero damage prunes the book.
+    }
+    // `:45698-45701` — a non-zero damage prunes the book AFTER both
+    // branches (the break tick prunes TWICE: the ClearMiningCacheAt prune
+    // above + this tail — the C# order, kept).
+    if damage != 0 {
         app.hit_tile.prune(|x, y| {
             app.world.tile(x, y).is_some_and(|t| t.active())
         }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
@@ -1071,12 +1082,21 @@ fn wall_hammer_tick(app: &mut App, tx: i32, ty: i32, held: ItemSlot, mouse: (f32
     let wall_id = app.hit_tile.hit_object(wx, wy, tr_core::hit_tile::WALL);
     let total = app.hit_tile.add_damage(wall_id, damage, true);
     if total >= 100 {
-        // `:45947-45948` — `hitTile.Clear(tileId)` + `ClearMiningCacheAt`.
+        // `:45947` — `hitTile.Clear(tileId)` clears the WALL slot.
         app.hit_tile.clear(wall_id);
+        // `:45948` — `ClearMiningCacheAt(x, y, 2)`. The C# ignores the type
+        // argument and always prunes the TILE book (`Player.cs:53848-53849`
+        // passes 1): a TILE slot at the cell, if any, clears + prunes.
+        app.hit_tile
+            .try_clearing_and_pruning(wx, wy, tr_core::hit_tile::TILE, |x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        // `:45949` — `WorldGen.KillWall(x, y)`.
         break_wall(app, wx, wy);
-    } else if damage != 0 {
-        // `:45963-45966` — the prune (the fail tick's KillWall(fail) dust
-        // is the recorded deviation).
+    }
+    // `:45963-45966` — a non-zero damage prunes AFTER both branches (the
+    // fail tick's KillWall(fail) dust is the recorded deviation).
+    if damage != 0 {
         app.hit_tile.prune(|x, y| {
             app.world.tile(x, y).is_some_and(|t| t.active())
         }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
@@ -1160,6 +1180,13 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
         // (5295), replants an acorn sapling into the felled base cell.
         if replant_base {
             try_replanting_tree(app, tx, ty);
+        }
+        // `:45764-45767` — the tail prune runs AFTER both branches (the
+        // break tick prunes twice: ClearMiningCacheAt's own prune + this).
+        if damage != 0 {
+            app.hit_tile.prune(|x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
         }
         // `:45768` — `ApplyItemTime(sItem)`: `itemTime = useTime` verbatim
         // (`Player.cs:4416-4419` — NO `pickSpeed` scale; the pick arm's

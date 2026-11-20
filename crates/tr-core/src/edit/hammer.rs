@@ -997,6 +997,24 @@ mod tests {
     }
 
     #[test]
+    fn s1_p_i31_the_gate_refused_pound_writes_and_sounds_nothing() {
+        // A chest ABOVE the stone refuses every SlopeTile/PoundTile at the
+        // CanPoundTile gate (`WorldGen.cs:80737-80740`): the cycle arm runs
+        // but nothing lands — GateRefused (no Dig-0 cue, no sound RNG; the
+        // latch still clears app-side, `Player.cs:46310`).
+        let mut w = lone(1);
+        set_active(&mut w, 10, 14, 21);
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::GateRefused);
+        let t = w.tile(10, 15).unwrap();
+        assert!(!t.half_brick() && t.slope() == 0, "nothing changed");
+        // The platform cycle refuses the same way (its first SlopeTile).
+        let mut w = lone(19);
+        set_active(&mut w, 10, 14, 21);
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::GateRefused);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 0);
+    }
+
+    #[test]
     fn s1_p_i31_the_flatten_lift_flag() {
         // The half → flat pound lifts; the flat → half pound does not
         // (WorldGen.cs:80824-80835); the cycle's final SlopeTile(0) lifts.
