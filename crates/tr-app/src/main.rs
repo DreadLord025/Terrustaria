@@ -141,6 +141,7 @@ mod npc_ai_style75;
 // pure machines, one module per style (the npc_ai_style73 precedent).
 mod npc_ai_style99;
 mod npc_ai_style100;
+mod npc_ai_style101;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
