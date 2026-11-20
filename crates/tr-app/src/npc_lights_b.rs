@@ -7,7 +7,7 @@
 //! (`npc_lights.rs`) and every other family (one list pair per engine,
 //! `LightingEngine.cs:36-38`, max-merged one frame late `:208-235`).
 //!
-//! ## Sites 41-75, in C# source order
+//! ## The 40 sites, in C# source order
 //!
 //! | # | site | arm | port |
 //! |---|------|-----|------|
@@ -46,6 +46,11 @@
 //! | 73 | `:91480` | Frostburn 44 | [`buff_vfx_lights`] |
 //! | 74 | `:91496` | Frostfire 324 | [`buff_vfx_lights`] |
 //! | 75 | `:91512` | Cursed Inferno 39 | [`buff_vfx_lights`] |
+//! | 76 | `:92382` | Truffle 160 cast light | cited skip (`Main.rand.Next(28,42)` per tick) |
+//! | 77 | `:92395` | mushroom towns 254-261/634/635 | cited skip (same rand draw) |
+//! | 78 | `:92404` | Cyborg 209 cast light | cited skip (same rand draw) |
+//! | 79 | `:92407` | Cyborg 209 rocket pose | [`cast_lights`] |
+//! | 80 | `:92412` | UndeadMiner 44 helmet lamp | [`cast_lights`] |
 //!
 //! ## RNG census — why the feed is draw-side
 //!
@@ -57,7 +62,12 @@
 //! (`:60347`, `:60892`, `:61113`, `:61131`, `:61455`), and every
 //! `UpdateNPC_BuffApplyVFX` dust arm (`:91150-91511`). Skipping an arm
 //! wholesale leaves the `Main.rand` stream untouched, so the fixed-step
-//! order stays exact.
+//! order stays exact. The three `UpdateNPC_CastLights` flicker arms
+//! (160/254-261+634/635/209) draw `Main.rand.Next(28, 42)` UNCONDITIONALLY
+//! every tick and cannot be reconstructed without a sim-side feed — they
+//! stay cited skips (the `gold_worm_sparkle` precedent,
+//! `npc_ai_style66.rs`, for the future wiring). The gold-critter sparkle
+//! (`:92345-92368`) has no `AddLight`.
 //!
 //! ## netOffset conventions (verbatim per site)
 //!
@@ -70,6 +80,8 @@
 //! (`:58402-58421` unwrapped) and the slime arms except 59 read the RAW
 //! position.
 //! * `UpdateNPC_BuffApplyVFX` adds it once at the head (`:91149`).
+//! * `UpdateNPC_CastLights`' gold block adds/removes it around itself
+//!   only (`:92347`/`:92367`) — the 209/44 arms read the RAW position.
 //! * `UpdateNPC_UpdateTrails`' mode-4 light reads the RAW position
 //!   (`:90841` — only `oldPos[0]` gets the offset, `:90843`).
 //!
@@ -695,14 +707,45 @@ pub(crate) fn buff_vfx_lights(n: &Npc) -> Vec<Light> {
     out
 }
 
+/// Sites 79/80 — `UpdateNPC_CastLights`' RNG-free arms
+/// (`NPC.cs:92397-92413`): the Cyborg 209's rocket-pose light
+/// (`ai[0] == 12`, `base.Top`, (0.3, 0.1, 0.1) — the Top overload
+/// truncates the quotient per axis) and the UndeadMiner 44's helmet
+/// lamp at `((int)(position.X + width/2) / 16, (int)(position.Y + 4) /
+/// 16)` — TRUNCATED centre x, +4 y — (0.9, 0.75, 0.5). RAW position
+/// (the method's only netOffset wrap is the gold-critter block's,
+/// `:92347`/`:92367`). The 160/254-261/634/635/209 flicker arms draw
+/// `Main.rand.Next(28, 42)` every tick — cited skips (module docs).
+pub(crate) fn cast_lights(n: &Npc) -> Vec<Light> {
+    let mut out = Vec::new();
+    let t = cs_type(n);
+    let (w, h) = n.size();
+    let pos = n_pos(n);
+    if t == 209 && n.ai[0] == 12.0 {
+        out.push((
+            tile_x(pos, w, XAnchor::Top),
+            tile_y(pos, h, XAnchor::Top),
+            [0.3, 0.1, 0.1],
+        ));
+    }
+    if t == 44 {
+        out.push((
+            (pos.x + w / 2.0) as i32 / 16,
+            (pos.y + 4.0) as i32 / 16,
+            [0.9, 0.75, 0.5],
+        ));
+    }
+    out
+}
+
 /// The whole second-half feed for one NPC, in `UpdateNPC`'s call order
-/// (`NPC.cs:90378` BuffApplyVFX → `:90423` AI → `:90512` UpdateTrails;
-/// the `:90320` CastLights head lands with sites 76-80). The AI arms are
-/// mutually exclusive by aiStyle/type in the C#; the port evaluates each
-/// gate independently (the same set fires). No arm draws RNG — the feed
-/// is draw-side safe.
+/// (`NPC.cs:90320` CastLights → `:90378` BuffApplyVFX → `:90423` AI →
+/// `:90512` UpdateTrails). The AI arms are mutually exclusive by
+/// aiStyle/type in the C#; the port evaluates each gate independently
+/// (the same set fires). No arm draws RNG — the feed is draw-side safe.
 pub(crate) fn npc_lights_b(n: &Npc, world: &World, p: &LightParams) -> Vec<Light> {
     let mut out = Vec::new();
+    out.extend(cast_lights(n));
     out.extend(buff_vfx_lights(n));
     if let Some(l) = destroyer_light(n, world) {
         out.push(l);
@@ -991,5 +1034,32 @@ mod tests {
         let mut m = Npc::new(NpcKind::Zombie, 160.0, 160.0, 1, 0.0);
         m.buffs.add_buff(203, 600);
         assert_eq!(buff_vfx_lights(&m)[0].2, [0.6, 0.1, 0.9]);
+    }
+
+    #[test]
+    fn undead_miner_helmet_lamp_truncates_the_centre() {
+        // `:92412` — ((int)(x + width/2)/16, (int)(y + 4)/16). The 18×40
+        // miner at (160, 160): (169/16, 164/16) = (10, 10),
+        // (0.9, 0.75, 0.5). RAW position.
+        let mut n = Npc::new(NpcKind::UndeadMiner, 160.0, 160.0, 1, 0.0);
+        let ls = cast_lights(&n);
+        assert_eq!(ls, vec![(10, 10, [0.9, 0.75, 0.5])]);
+        n.net_offset = glam::Vec2::new(16.0, 0.0);
+        assert_eq!(cast_lights(&n), ls, "the 44 arm reads RAW position");
+    }
+
+    #[test]
+    fn the_feed_runs_cast_then_buff_then_ai_then_trail() {
+        // `UpdateNPC`'s call order (:90320/:90378/:90423/:90512). An
+        // IlluminantSlime on fire: the buff light precedes the trail's
+        // nine duplicates; no AI arm matches 138.
+        let mut n = Npc::new(NpcKind::IlluminantSlime, 160.0, 160.0, 1, 0.0);
+        n.buffs.add_buff(24, 600);
+        let w = air();
+        let p = LightParams::default();
+        let ls = npc_lights_b(&n, &w, &p);
+        assert_eq!(ls.len(), 10);
+        assert_eq!(ls[0], (10, 11, [1.0, 0.3, 0.1]), "buff first");
+        assert_eq!(ls[1], (10, 10, [0.3, 0.0, 0.2]), "trail after");
     }
 }

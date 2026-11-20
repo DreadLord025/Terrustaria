@@ -450,6 +450,20 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
+                        // The NPC lights SECOND half (W4-e7, S1-E-5):
+                        // `NPC.cs:49929-92412`'s 40 sites — the destroyer
+                        // airborne / probe / town / Medusa / torch-zombie /
+                        // fighter-tail / slime AI arms, the buff-VFX fire
+                        // lights, the trail mode-4 duplicates and the
+                        // cast-light arms (`npc_lights_b.rs`). Same slot
+                        // order, same one-list-pair feed; no arm draws
+                        // `Main.rand` (the rand halves are cited skips),
+                        // so the placement leaves the streams untouched.
+                        // The Horseman `:62420` is fed below (W-10) — the
+                        // module records it as a census-only no-double-feed.
+                        for (x, y, rgb) in crate::npc_lights_b::npc_lights_b(n, world, &params) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                         // S1-D-4 W-10: the Horseman's unconditional
                         // `Lighting.AddLight(Center, 0.4, 0.36, 0.2)`
                         // (`NPC.cs:62420`) — slice B's pure fn, no RNG
