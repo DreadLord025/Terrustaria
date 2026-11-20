@@ -7,7 +7,7 @@
 //! (`npc_lights.rs`) and every other family (one list pair per engine,
 //! `LightingEngine.cs:36-38`, max-merged one frame late `:208-235`).
 //!
-//! ## The first slice, sites 41-50, in C# source order
+//! ## The first two slices, sites 41-60, in C# source order
 //!
 //! | # | site | arm | port |
 //! |---|------|-----|------|
@@ -21,22 +21,36 @@
 //! | 48 | `:55559` | TownSlimeYellow 683/687 | [`town_slime_light`] |
 //! | 49 | `:56420` | Medusa 480 charge-up | [`medusa_light`] |
 //! | 50 | `:56427` | Medusa 480 charge hold | [`medusa_light`] |
+//! | 51 | `:56925` | TorchZombie 590 (left) | [`torch_zombie_light`] |
+//! | 52 | `:56939` | TorchZombie 590 (right) | [`torch_zombie_light`] |
+//! | 53 | `:56955` | ArmedTorchZombie 591 (left) | [`armed_torch_zombie_light`] |
+//! | 54 | `:56963` | ArmedTorchZombie 591 (right) | [`armed_torch_zombie_light`] |
+//! | 55 | `:58404` | hell Armored Bones 277-280 | [`fighter_tail_light`] |
+//! | 56 | `:58408` | MartianWalker 520 | [`fighter_tail_light`] |
+//! | 57 | `:58412` | DesertGhoulCorruption 525 | [`fighter_tail_light`] |
+//! | 58 | `:58416` | DesertGhoulCrimson 526 | [`fighter_tail_light`] |
+//! | 59 | `:58420` | DesertGhoulHallow 527 | [`fighter_tail_light`] |
+//! | 60 | `:60346` | slime 1 lantern content 75 | [`slime_lights`] |
 //!
 //! ## RNG census — why the feed is draw-side
 //!
 //! Every ported arm's `AddLight` line is itself RNG-free. The rand-bearing
 //! halves are skipped WHOLESALE (the `npc_lights.rs` precedent): the
-//! shimmer-state dust (`:53231`/`:53233`/`:53237`) and Medusa's charge dust
-//! (`:56409-56417`, `:56442-56455`). Skipping an arm wholesale leaves the
-//! `Main.rand` stream untouched, so the fixed-step order stays exact.
+//! shimmer-state dust (`:53231`/`:53233`/`:53237`), Medusa's charge dust
+//! (`:56409-56417`, `:56442-56455`), the torch zombies' `Next(30)` dust
+//! (`:56926`/`:56940`/`:56956`/`:56964`) and the slime lantern dust gate
+//! (`:60347`). Skipping an arm wholesale leaves the `Main.rand` stream
+//! untouched, so the fixed-step order stays exact.
 //!
 //! ## netOffset conventions (verbatim per site)
 //!
 //! The C# adds `netOffset` only inside the arms that say so — Medusa
-//! (`:56386`/`:56421`, `:56426`/`:56457`). The Destroyer (`AI_037` has ZERO
-//! netOffset writes), the Probe's `:50630` (the arm's wraps are elsewhere),
-//! the Hungry II and the town arms (`AI_007` has ZERO) read the RAW
-//! position.
+//! (`:56386`/`:56421`, `:56426`/`:56457`) and the torch zombies
+//! (`:56916`/`:56946`, `:56950`/`:56970`). The Destroyer (`AI_037` has
+//! ZERO netOffset writes), the Probe's `:50630` (the arm's wraps are
+//! elsewhere), the Hungry II, the town arms (`AI_007` has ZERO), the
+//! fighter tail (`:58402-58421` unwrapped) and the slime lantern read the
+//! RAW position.
 //!
 //! ## Folds and cited skips (ANALYSIS "The NPC lights, second half")
 //!
@@ -65,6 +79,10 @@
 //!   (`NPCID.Sets.AttackType == 2`, `:10473`) and only the Dryad 20 the
 //!   arrival pose (`HaveDryadDoStardewAnimation`, `:19184-19194`) — the
 //!   `None` fold for unrowed types is unreachable, recorded here.
+//! * The slime lantern content 75 (`:60346`) needs `SlimeCanContainItems`'
+//!   init (`npc_ai_slime.rs`'s deferred A1-5 slice — `ai[1]` never holds
+//!   a content id yet). The arm is ported behind its gate (unreachable
+//!   until the init lands, the module's own census).
 
 use tr_core::lighting::LightParams;
 use tr_core::tile_light::hsl_to_rgb;
@@ -395,6 +413,115 @@ pub(crate) fn medusa_light(n: &Npc) -> Option<Light> {
     ))
 }
 
+/// Sites 51/52 — TorchZombie 590's torch (`NPC.cs:56914-56947`): the
+/// torch tile sits at `(int)(position.Y + 6) / 16` rows, column
+/// `(int)(Center.X - 22) / 16` facing left / `(int)(Center.X + 14) / 16`
+/// facing right; the light fires only when the column is in-world and
+/// BOTH it and its neighbour are liquid-free. The neighbour reads
+/// `Framing.GetTileSafely` (`Framing.cs:426-438`): out of world it yields
+/// a FRESH `Tile` (liquid 0) — the check PASSES there. (1, 0.95, 0.8).
+/// The C# adds `netOffset` (`:56916`/`:56946`). The `Next(30)` dust
+/// (`:56926`/`:56940`) is the wholesale skip. `spriteDirection` is the
+/// port's `sprite_dir`. No port kind yet — ported whole.
+pub(crate) fn torch_zombie_light(n: &Npc, world: &World) -> Option<Light> {
+    if cs_type(n) != 590 {
+        return None;
+    }
+    let (w, _h) = n.size();
+    let pos = n_pos(n) + n.net_offset;
+    let cx = pos.x + w / 2.0;
+    let num52 = (pos.y + 6.0) as i32 / 16;
+    let col = if n.sprite_dir < 0 {
+        (cx - 22.0) as i32 / 16
+    } else {
+        (cx + 14.0) as i32 / 16
+    };
+    let neighbour = if n.sprite_dir < 0 { col + 1 } else { col - 1 };
+    // `GetTileSafely`'s fresh-tile fallback: liquid 0 out of world.
+    let liquid_free = |x: i32| world.tile(x, num52).map_or(true, |t| t.liquid == 0);
+    if !(in_world(world, col, num52) && liquid_free(neighbour) && liquid_free(col)) {
+        return None;
+    }
+    Some((col, num52, [1.0, 0.95, 0.8]))
+}
+
+/// Sites 53/54 — ArmedTorchZombie 591's torch (`NPC.cs:56948-56970`):
+/// while DRY, the light sits at the Vector2 point `(Center.X - 36,
+/// position.Y + 24)` facing left / `(Center.X + 28, position.Y + 24)`
+/// facing right — the Vector2 overload truncates the quotient per axis
+/// (`Lighting.cs:140-143`). (1, 0.95, 0.8). netOffset added
+/// (`:56950`/`:56970`); the `ai[2] == 0 && Next(30)` dust is the
+/// wholesale skip. No port kind yet — ported whole.
+pub(crate) fn armed_torch_zombie_light(n: &Npc) -> Option<Light> {
+    if cs_type(n) != 591 || n.wet {
+        return None;
+    }
+    let (w, _h) = n.size();
+    let pos = n_pos(n) + n.net_offset;
+    let cx = pos.x + w / 2.0;
+    let (px, py) = if n.sprite_dir < 0 {
+        (cx - 36.0, pos.y + 24.0)
+    } else {
+        (cx + 28.0, pos.y + 24.0)
+    };
+    Some(((px / 16.0) as i32, (py / 16.0) as i32, [1.0, 0.95, 0.8]))
+}
+
+/// Sites 55-59 — `AI_003_Fighters`' unconditional type tail
+/// (`NPC.cs:58402-58421`): the hell Armored Bones 277-280 light
+/// (0.2, 0.1, 0) at the TRUNCATED centre (`(int)Center.X / 16` —
+/// truncate before dividing); the MartianWalker 520 lights
+/// `Top + (0, 20)` with (0.3, 0.3, 0.7); the Desert Ghouls 525/526/527
+/// light `Top + (0, 15)` with their (0.7, 1, 0.2)×0.5 / (1, 1, 0.5)×0.4
+/// / (0.6, 0.3, 1)×0.4 colours. `Top` = `(position.X + width/2,
+/// position.Y)` (`Entity.cs:86-91`), the Vector2 overload truncates the
+/// quotient per axis. RAW position (the tail is unwrapped — the
+/// fighter's netOffset wraps are elsewhere).
+pub(crate) fn fighter_tail_light(n: &Npc) -> Option<Light> {
+    let t = cs_type(n);
+    let (w, h) = n.size();
+    let pos = n_pos(n);
+    if (277..=280).contains(&t) {
+        return Some((
+            tile_x(pos, w, XAnchor::CenterTruncated),
+            tile_y(pos, h, XAnchor::CenterTruncated),
+            [0.2, 0.1, 0.0],
+        ));
+    }
+    let (dy, rgb) = match t {
+        520 => (20.0, [0.3, 0.3, 0.7]),
+        525 => (15.0, [0.7 * 0.5, 1.0 * 0.5, 0.2 * 0.5]),
+        526 => (15.0, [1.0 * 0.4, 1.0 * 0.4, 0.5 * 0.4]),
+        527 => (15.0, [0.6 * 0.4, 0.3 * 0.4, 1.0 * 0.4]),
+        _ => return None,
+    };
+    let top_x = pos.x + w / 2.0;
+    let top_y = pos.y + dy;
+    Some(((top_x / 16.0) as i32, (top_y / 16.0) as i32, rgb))
+}
+
+/// Site 60 — `AI_001_Slimes`' lantern-content light (`NPC.cs:60343-60346`):
+/// type 1 with the lantern content `ai[1] == 75` lights
+/// (0.8, 0.7, 0.1)×0.3 at the quotient-truncated centre. Unreachable
+/// until the content init lands (`npc_ai_slime.rs`'s A1-5 census —
+/// `ai[1]` never holds a content id yet). The `Next(12)` dust
+/// (`:60347`) is the wholesale skip. RAW position.
+pub(crate) fn slime_lights(n: &Npc, _p: &LightParams) -> Vec<Light> {
+    let mut out = Vec::new();
+    let t = cs_type(n);
+    let (w, h) = n.size();
+    let raw = n_pos(n);
+    if t == 1 && n.ai[1] == 75.0 {
+        let num = 0.3;
+        out.push((
+            tile_x(raw, w, XAnchor::Center),
+            tile_y(raw, h, XAnchor::Center),
+            [0.8 * num, 0.7 * num, 0.1 * num],
+        ));
+    }
+    out
+}
+
 /// The raw top-left as a `Vec2` for the shared anchor helpers.
 fn n_pos(n: &Npc) -> glam::Vec2 {
     glam::Vec2::new(n.x, n.y)
@@ -531,5 +658,57 @@ mod tests {
         // The anchor math the arm uses: offset centre, quotient form.
         let pos = n_pos(&n) + glam::Vec2::new(16.0, 0.0);
         assert_eq!(tile_x(pos, 18.0, XAnchor::Center), 11);
+    }
+
+    #[test]
+    fn torch_zombie_neighbour_passes_out_of_world() {
+        // `:56921-56923` — the neighbour reads GetTileSafely, whose
+        // out-of-world fresh Tile has liquid 0: the check PASSES there
+        // (the draft's `is_some_and` wrongly failed it). No 590 kind yet,
+        // so the gate is pinned through the same expression the arm uses.
+        let w = air();
+        let liquid_free = |x: i32, y: i32| w.tile(x, y).map_or(true, |t| t.liquid == 0);
+        assert!(liquid_free(-1, 5), "fresh tile out of world is dry");
+        assert!(liquid_free(64, 5), "the far edge too");
+        // In-world liquid blocks it.
+        let mut w2 = air();
+        let i = w2.index(10, 5);
+        w2.tiles[i].liquid = 100;
+        let lf2 = |x: i32, y: i32| w2.tile(x, y).map_or(true, |t| t.liquid == 0);
+        assert!(!lf2(10, 5));
+    }
+
+    #[test]
+    fn fighter_tail_martian_walker_lights_top_plus_20() {
+        // `:58408` — the Walker's 34×110 box at (160, 176): Top =
+        // (160+17, 176) + (0, 20) = (177, 196) → (11, 12),
+        // (0.3, 0.3, 0.7). RAW position — netOffset must not move it.
+        let mut n = Npc::new(NpcKind::MartianWalker, 160.0, 176.0, 1, 0.0);
+        let l = fighter_tail_light(&n).expect("walker tail lights");
+        assert_eq!(l, (11, 12, [0.3, 0.3, 0.7]));
+        n.net_offset = glam::Vec2::new(16.0, 0.0);
+        assert_eq!(fighter_tail_light(&n).unwrap(), l);
+    }
+
+    #[test]
+    fn fighter_tail_other_types_stay_dark() {
+        // The 277-280 / 525-527 arms have no port kinds yet; a plain
+        // zombie never matches the tail.
+        let n = Npc::new(NpcKind::Zombie, 160.0, 176.0, 1, 0.0);
+        assert!(fighter_tail_light(&n).is_none());
+    }
+
+    #[test]
+    fn slime_lantern_content_lights_behind_its_gate() {
+        // `:60343-60346` — type 1 + ai[1] == 75: (0.8, 0.7, 0.1)×0.3 at
+        // the quotient centre. The 24×18 blue slime at (160, 160):
+        // centre (172, 169) → (10, 10).
+        let mut n = Npc::new(NpcKind::Slime, 160.0, 160.0, 1, 0.0);
+        let p = LightParams::default();
+        assert!(slime_lights(&n, &p).is_empty(), "no content yet");
+        n.ai[1] = 75.0;
+        let ls = slime_lights(&n, &p);
+        assert_eq!(ls.len(), 1);
+        assert_eq!(ls[0], (10, 10, [0.8 * 0.3, 0.7 * 0.3, 0.1 * 0.3]));
     }
 }
