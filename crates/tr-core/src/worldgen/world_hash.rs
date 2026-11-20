@@ -299,6 +299,13 @@ mod tests {
     // (the Beaches carve), so the pass runs; whether a style-17 chest
     // lands is unmeasured (no compiler on this branch). Stale-by-design
     // if one does; the gate re-pins. a == b stays.
+    // W4-d103 pass 26 (2026-11-20, code-only): the `Cave Walls` pass
+    // (`WorldGen.cs:17711-17839`) lands on a fresh `pass_rng("Cave Walls")`
+    // stream after `water chests`. The size guard needs > 400 wide — the
+    // 512 fixture PASSES it (512 > 400), and the y band (512−220=292)
+    // sits above the (surface+rock)/2 floor, so the pass runs; whether a
+    // counted pocket qualifies is unmeasured (no compiler on this branch).
+    // Stale-by-design if walls paint; the gate re-pins. a == b stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -385,6 +392,11 @@ mod tests {
     // pin BY DESIGN. The re-pin is DEFERRED to the merge gate (no compiler
     // on this branch); a == b stays green — the pass draws only its own
     // fresh stream.
+    // W4-d103 pass 26 (code-only): the Cave Walls pass (168 pocket
+    // retextures + 84 jungle-wall conversions on the 4200-wide default,
+    // the Spread.Wall/Wall2 floods) moves this pin BY DESIGN. The re-pin
+    // is DEFERRED to the merge gate (no compiler on this branch); a == b
+    // stays green — the pass draws only its own fresh stream.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

@@ -32,6 +32,7 @@
 use super::biome_detail;
 use super::biomes::{self, BiomeSpans};
 use super::buried_chest;
+use super::cave_walls;
 use super::caves;
 use super::desert;
 use super::desert_dunes;
@@ -1447,6 +1448,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // Caves (`:17356`) — W4-d103 pass 25. The executed chain's `chests`
     // step covers the jungle-chest slot earlier (the pre-scaffold order).
     step!("water chests", "Water Chests", step_water_chests),
+    // The vanilla Cave Walls slot (`WorldGen.cs:17711`): after Water
+    // Chests (`:17245`) and the temple (`:17701`), before the underground
+    // jungle trees (`:17840`) — W4-d103 pass 26. The executed chain's
+    // temple + jungle-trees steps sit earlier (the pre-scaffold order).
+    step!("cave walls", "Cave Walls", step_cave_walls),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2874,6 +2880,31 @@ fn step_water_chests(
     );
 }
 
+/// The vanilla Cave Walls slot (`WorldGen.cs:17711`): the enclosed-pocket
+/// wall retexture on a fresh `pass_rng("Cave Walls")` stream. The
+/// `Skyblock.denyAllGeneration` gate (`:17716`) rides the skyblock flag.
+fn step_cave_walls(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    cave_walls::pass_cave_walls(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        gv.lava_line,
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        &mut streams.pass_rng("Cave Walls"),
+    );
+}
+
 fn step_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3481,8 +3512,9 @@ mod tests {
         // + `statues` (vanilla "Statues", `:16853`) after `life crystals`;
         // + `surface chests` (vanilla "Surface Chests", `:17130`) after
         // `statues`; + `water chests` (vanilla "Water Chests", `:17245`)
-        // after `surface chests`.
-        assert_eq!(names.len(), 73);
+        // after `surface chests`; + `cave walls` (vanilla "Cave Walls",
+        // `:17711`) after `water chests`.
+        assert_eq!(names.len(), 74);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3580,6 +3612,7 @@ mod tests {
                 "statues",
                 "surface chests",
                 "water chests",
+                "cave walls",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3676,7 +3709,8 @@ mod tests {
         assert_eq!(names[pos("life crystals") + 1], "statues");
         assert_eq!(names[pos("statues") + 1], "surface chests");
         assert_eq!(names[pos("surface chests") + 1], "water chests");
-        assert_eq!(names[pos("water chests") + 1], "trees");
+        assert_eq!(names[pos("water chests") + 1], "cave walls");
+        assert_eq!(names[pos("cave walls") + 1], "trees");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
@@ -3718,6 +3752,10 @@ mod tests {
         // Caves).
         assert!(cpos("Jungle Chests Placement") < cpos("Water Chests"));
         assert!(cpos("Water Chests") < cpos("Spider Caves"));
+        // W4-d103 pass 26: the vanilla Cave Walls pairs (`:17701` Temple →
+        // `:17711` Cave Walls → `:17840` Jungle Trees).
+        assert!(cpos("Temple") < cpos("Cave Walls"));
+        assert!(cpos("Cave Walls") < cpos("Jungle Trees"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 
