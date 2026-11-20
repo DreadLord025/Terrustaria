@@ -6119,7 +6119,7 @@ impl Npc {
             }
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => {
-                self.update_caster(world, player, rng)
+                self.update_caster(world, player, rng, dust, dust_ctx)
             }
             // S1-D-3: the aiStyle-9 sphere family (25/30+665/33) rides the
             // style axis (`ai_009_sphere_family`) — this arm is unreachable
@@ -10766,10 +10766,17 @@ impl Npc {
     /// `NPC.NewNPC`'s `Bottom` semantics (`:80770`). The Poltergeist (aiStyle
     /// 22) rides this arm as its documented stand-in and stays shotless (the
     /// step's standard shoot match has no arm for it).
-    fn update_caster(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    fn update_caster(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         self.ai[0] = self.caster_counter as f32;
         self.ai[1] = self.cast_windup as f32;
-        let shot = crate::npc_ai_bat::ai_style_8_step(self, world, player, rng);
+        let shot = crate::npc_ai_bat::ai_style_8_step(self, world, player, rng, dust, dust_ctx);
         self.caster_counter = self.ai[0] as i32;
         self.cast_windup = self.ai[1] as i32;
         if let Some(shot) = shot {
@@ -22387,14 +22394,14 @@ mod tests {
         let mut wd = ground_air();
         let mut dc = Npc::new(NpcKind::DarkCaster, 100.0 * 16.0, 118.0 * 16.0, 1, 0.0);
         dc.hp = dc.max_hp;
-        dc.update_caster(&wd, &player, &mut rng);
+        dc.update_caster(&wd, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&wd));
         assert_eq!(dc.local_ai[3], 0.0, "no head, no latch");
         wd.skeletron_red_hat = true;
-        dc.update_caster(&wd, &player, &mut rng);
+        dc.update_caster(&wd, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&wd));
         assert_eq!(dc.local_ai[3], 1.0, "`:20825`'s latch");
         assert!(dc.red_hat_skeletron_adjustments_enabled());
         wd.skeletron_red_hat = false;
-        dc.update_caster(&wd, &player, &mut rng);
+        dc.update_caster(&wd, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&wd));
         assert_eq!(dc.local_ai[3], 1.0, "the C# has no reset arm");
         // `FindFrame`'s `:77050-77053`: the latched caster banks 3 rows.
         dc.vy = 0.0;
@@ -22407,7 +22414,7 @@ mod tests {
         let mut fired = false;
         for _ in 0..1200 {
             dc.wants_sphere.clear();
-            dc.update_caster(&wd, &player, &mut rng);
+            dc.update_caster(&wd, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&wd));
             if let Some((kind, _, _, ai3)) = dc.wants_sphere.first().copied() {
                 assert_eq!(kind, NpcKind::WaterSphere);
                 assert_eq!(ai3, 1.0, "the latched caster's sphere rides ai[3]=1");
@@ -27175,6 +27182,21 @@ mod tests {
         n.ai_028_wof_eye_family(&w, &player);
         assert_eq!((n.facing, n.sprite_dir), (-1, -1), "ignores the aim");
     }
+
+    /// W4-d52 — a permissive dust ctx (the whole world on-screen, full
+    /// budget) for the dust-wired arms' direct-call tests: the pool never
+    /// culls, so the scratch spawn always lands and the draw count matches
+    /// the live empty-pool path (the `update_rng` house pattern).
+    fn dust_ctx(w: &World) -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        }
+    }
 }
 
 mod shard_stat_tests {
@@ -28603,6 +28625,19 @@ mod s1_d_3n_tests {
 mod s1_f_13b_tests {
     use super::*;
 
+    /// W4-d52 — a permissive dust ctx for the dust-wired arms' direct-call
+    /// tests (the `update_rng` house pattern).
+    fn dust_ctx(w: &World) -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     /// The 16 Pumpkin Moon kinds with the C#'s verbatim `SetDefaults` rows
     /// (`NPC.cs:12929-12977` the 305-314 group, `:12978` 315, `:13115` 325,
     /// `:13129` 326, `:13142` 327, `:13175` 329, `:13188` 330): the vanilla
@@ -29450,7 +29485,7 @@ mod s1_f_13b_tests {
                     | NpcKind::Tim
                     | NpcKind::DarkCaster
                     | NpcKind::FireImp
-                    | NpcKind::DesertDjinn => legacy.update_caster(&w, &player_b, &mut rng_b),
+                    | NpcKind::DesertDjinn => legacy.update_caster(&w, &player_b, &mut rng_b, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w)),
                     _ => unreachable!(),
                 }
                 legacy.find_frame();
@@ -29506,7 +29541,7 @@ mod s1_f_13b_tests {
         let mut rng_a = UnifiedRandom::new(31);
         let mut rng_b = UnifiedRandom::new(31);
         named.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
-        stand.update_caster(&w, &player_b, &mut rng_b);
+        stand.update_caster(&w, &player_b, &mut rng_b, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w));
         stand.find_frame();
         stand.contact(&mut player_b, &mut rng_b);
         assert_eq!(named.alpha, 0, "the named machine's 330 row");
