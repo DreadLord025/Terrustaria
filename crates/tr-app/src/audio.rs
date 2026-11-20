@@ -272,6 +272,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // S1-P-i45: the reforge's non-top-tier cue (`SoundID.Item37`,
     // `Main.cs:41931`; `Sounds/Item_37.xnb`).
     ("Item_37", 2),
+    // W4-e28 — the Ammo Box's use cue (`SoundID.Item149 = new
+    // LegacySoundStyle(2, 149)`, `SoundID.cs:1533`; `Player.cs:32634`'s
+    // `PlaySound(SoundID.Item149, base.position)`; `Sounds/Item_149.xnb`).
+    ("Item_149", 2),
     ("Item_38", 2),
     ("Item_39", 2),
     ("Item_40", 2),
@@ -3587,6 +3591,15 @@ mod tests {
         // the dial arm's cue (`Player.cs:32642`/:32652), the same legacy
         // Item track as `Item_1`.
         assert_eq!(sound_type("Item_4"), 2);
+    }
+
+    #[test]
+    fn w4_e28_item149_cue_maps_to_the_item_legacy_track() {
+        // W4-e28 — the Ammo Box's use cue: `SoundID.Item149 = new
+        // LegacySoundStyle(2, 149)` (`SoundID.cs:1533`), played by
+        // `Player.cs:32634` at `base.position`; `Sounds/Item_149.xnb`.
+        assert_eq!(sound_type("Item_149"), 2);
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Item_149"));
     }
 
     #[test]

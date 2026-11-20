@@ -13195,6 +13195,95 @@ mod tests {
     }
 
     #[test]
+    fn w4_e28_the_bast_aura_grants_the_defense_buff() {
+        // `Player.cs:25536-25539`: `HasCatBast` → `AddBuff(215, 2)`; the
+        // effect arm (`:10106-10109`) reads the PREVIOUS tick's grant:
+        // `statDefense += 5`.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.auras.cat_bast = true;
+        p.update(&w, PlayerInput::default());
+        let slot = p.buffs.find_buff_index(215).expect("the 2-tick grant");
+        assert_eq!(p.buffs.buff_time[slot], 2);
+        assert_eq!(p.stat_defense, 0, "the effect reads the previous tick");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 5, "the +5 defense arm");
+    }
+
+    #[test]
+    fn w4_e28_the_aura_grants_expire_when_the_player_leaves() {
+        // The 2-tick grants refresh only while the aura holds
+        // (`Player.cs:25532-25547`): leaving the scan window lets the buff
+        // times run out — campfire/heart/star/bast all drop.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.auras.campfire = true;
+        p.auras.heart_lantern = true;
+        p.auras.star_in_bottle = true;
+        p.auras.cat_bast = true;
+        p.update(&w, PlayerInput::default());
+        for id in [87, 89, 158, 215] {
+            assert!(p.buffs.find_buff_index(id).is_some(), "buff {id} granted");
+        }
+        // The aura vanishes (the player walked out of the scan window).
+        p.auras = Default::default();
+        for _ in 0..3 {
+            p.update(&w, PlayerInput::default());
+        }
+        for id in [87, 89, 158, 215] {
+            assert!(p.buffs.find_buff_index(id).is_none(), "buff {id} expired");
+        }
+        assert_eq!(p.mana_regen_bonus, 0, "the star's +10 dropped too");
+        assert_eq!(p.stat_defense, 0, "the bast's +5 dropped too");
+    }
+
+    #[test]
+    fn w4_e28_the_campfire_and_heart_auras_feed_the_regen() {
+        // `UpdateLifeRegen` (`Player.cs:19170-19177`): the campfire adds +1
+        // regen and ×1.1 ramp, the heart lantern +2 — the aura snapshot,
+        // not the buff slot, feeds these rows (the wiring:
+        // `update_survival`'s `campfire: self.auras.campfire`).
+        use crate::regen::{RegenInputs, RegenState, update_life_regen};
+        let mut st = RegenState::default();
+        let mut life = 50;
+        let mut in_ = RegenInputs {
+            max_life: 100,
+            ..RegenInputs::default()
+        };
+        in_.campfire = true;
+        in_.heart_lantern = true;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        // +1 (campfire) +2 (heart) before the ramp rows; the base ramp at
+        // life_regen_time 1 contributes round(0) = 0 — the tick regens 3.
+        assert_eq!(st.life_regen, 3);
+        // Without the auras the same tick regens 0.
+        let mut st2 = RegenState::default();
+        let mut life2 = 50;
+        let _ = update_life_regen(&mut st2, &RegenInputs { max_life: 100, ..RegenInputs::default() }, &mut life2);
+        assert_eq!(st2.life_regen, 0);
+    }
+
+    #[test]
+    fn w4_e28_the_clairvoyance_buff_arm_is_verbatim() {
+        // `Player.cs:11886-11892` — the Crystal Ball's buff 29: magicCrit
+        // +2, magicDamage +0.05, statManaMax2 +20, manaCost −0.02.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let (crit0, dmg0, mana0, cost0) =
+            (p.magic_crit, p.magic_damage, p.mana_max, p.mana_cost);
+        p.buffs.add_buff(29, 108000);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.magic_crit, crit0 + 2);
+        assert!((p.magic_damage - (dmg0 + 0.05)).abs() < 1e-5);
+        assert_eq!(p.mana_max, mana0 + 20);
+        assert!((p.mana_cost - (cost0 - 0.02)).abs() < 1e-5);
+        // 108000 ticks = 30 minutes at 60 Hz — the grant duration.
+        let slot = p.buffs.find_buff_index(29).unwrap();
+        assert!(p.buffs.buff_time[slot] > 107000);
+    }
+
+    #[test]
     fn movement_speed_per_liquid() {
         // Player.cs:28168-28171: water/lava 0.5, honey 0.25, shimmer 0.375,
         // dry 1.0.

@@ -249,6 +249,16 @@ pub enum TileInteraction {
     /// the consumption). No world write here — the extraction only consumes the
     /// held item and spawns the output.
     Extractinator,
+    /// The station-buff arms (W4-e28): the Crystal Ball (tile 125,
+    /// `Player.cs:32594-32599`) grants Clairvoyance (29) and the Ammo Box
+    /// (tile 287, `:32630-32635`) grants Ammo Box (93), both `AddBuff(id,
+    /// 108000)` (30 min) then `SoundEngine.PlaySound(SoundID.Item4/Item149,
+    /// base.position)` — the buff slots and the cue are app-side (the core
+    /// has neither); the sound rides the PLAYER's position, not the tile's.
+    StationBuff {
+        buff_type: i32,
+        buff_time: i32,
+    },
 }
 
 /// The world-interaction dispatcher — the port of the right-click tile hook:
@@ -282,6 +292,16 @@ pub fn interact_at(
     // the kind literal before the dials and the furniture.
     if matches!(t.kind, 132 | 136 | 144) {
         return TileInteraction::HitSwitch { x: i, y: j };
+    }
+    // The station-buff arms (W4-e28, `Player.cs:32594-32599`/`:32630-32635`):
+    // the C# chain tests the kind literals 125 (Crystal Ball → buff 29) and
+    // 287 (Ammo Box → buff 93) before the dials; both grant 108000 ticks and
+    // consume the click (`flag2 = true`). The buff + cue land app-side.
+    if t.kind == 125 || t.kind == 287 {
+        return TileInteraction::StationBuff {
+            buff_type: if t.kind == 125 { 29 } else { 93 },
+            buff_time: 108000,
+        };
     }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no
@@ -1941,6 +1961,39 @@ mod tests {
         let mut w = soil_world(2);
         let hit = interact_at(&mut w, 10, 20, 1, &|_, _| false);
         assert!(matches!(hit, TileInteraction::StationInteract { .. }));
+    }
+
+    #[test]
+    fn w4_e28_the_station_buff_arms_dispatch_the_grants() {
+        // W4-e28 — `Player.cs:32594-32599`: tile 125 (Crystal Ball) grants
+        // buff 29 for 108000 ticks; `:32630-32635`: tile 287 (Ammo Box)
+        // grants buff 93 for 108000. Both consume the click; the buff slots
+        // and the cue are the app's, the dispatch only carries the row.
+        for (kind, buff) in [(125u16, 29), (287u16, 93)] {
+            let mut w = object_world();
+            set_active(&mut w, 10, 19, kind);
+            let blocked = no_blocker as fn(i32, i32) -> bool;
+            match interact_at(&mut w, 10, 19, 1, &blocked) {
+                TileInteraction::StationBuff {
+                    buff_type,
+                    buff_time,
+                } => {
+                    assert_eq!(buff_type, buff, "tile {kind}");
+                    assert_eq!(buff_time, 108000, "the 30-minute grant");
+                }
+                other => panic!("expected StationBuff for {kind}, got {other:?}"),
+            }
+            // No world write: the cell keeps its kind and frame.
+            let t = w.tile(10, 19).unwrap();
+            assert_eq!((t.kind, t.frame_x, t.frame_y), (kind, 0, 0));
+        }
+        // The neighbouring kinds keep the station tail (no over-capture).
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 126);
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &no_blocker),
+            TileInteraction::StationInteract { .. }
+        ));
     }
 
     // ---- Phase 2 (M1.4-BG-21): the dial triggers (356/663) -----------------
