@@ -1001,6 +1001,41 @@ pub struct Player {
     /// (`:5881-5884`).
     pub mana_cost: f32,
     pub mana_max: i32,
+    /// `Player.potionDelay`/`manaPotionDelay` (`Player.cs:1650-1652`): the
+    /// Potion Sickness / Mana Potion cooldown clocks (S1-P-i37). Decremented
+    /// once per tick (`Player.cs:24718-24724`); the buff-21 mirror re-assigns
+    /// `potion_delay = buffTime[j]` from the debuff scan (`:11719-11722`);
+    /// `ApplyPotionDelay` (`:51853-51886`) arms it at the drink; `UpdateDead`
+    /// zeroes both (`:17018-17019`). `mana_potion_delay` stays 0 on the
+    /// retail path — `DebugOptions.ManaPotionDelay` (`Testing/DebugOptions.cs:28`,
+    /// static ctor `:86`) is false, its only writers (`:51941`, `:10322`)
+    /// are constants-off.
+    pub potion_delay: i32,
+    pub mana_potion_delay: i32,
+    /// `Player.manaSick`/`manaSickReduction` (`Player.cs:974-976`): the Mana
+    /// Sickness (buff 94) magic-damage penalty. `ResetEffects` clears
+    /// `manaSick` (`:18592`); the buff-94 arm (`:10318-10327`) re-arms it
+    /// through `potions::apply_mana_sickness_arm`. NOTE: the magic-damage
+    /// TAIL (`:25900-25911`) is owned by the i19 mana worker — this branch
+    /// only carries the fields + the buff arm (`potions::apply_magic_damage_sickness_tail`
+    /// is the tail's port, wired by i19's `Update` fold).
+    pub mana_sick: bool,
+    pub mana_sick_reduction: f32,
+    /// `Player.manaHeat` (`Player.cs:980`): reset to 1f every tick
+    /// (`:18593`). `ApplyManaPotionManaHeat` (`:51968-52004`) has NO caller
+    /// in the retail source (the only `TryApplyManaHeat` callers are the
+    /// mana-star pickups `:35071`/`:35087`, an unported lane) — drinking a
+    /// mana potion grants NO ManaHeat, so the field stays 1.
+    pub mana_heat: f32,
+    /// `Player.pStone` (`Player.cs:2404`): the Philosopher's Stone family —
+    /// 535 (`:15574-15577`), Charm of Myths 860 (`:15150-15153`), Catalyst
+    /// Band 6185 (`:14615-14620`). `ResetEffects` clears (`:18720`), the
+    /// accessory rows re-arm; a CHANGE rescales the live buff-21 timer
+    /// (`:25640-25643` -> `AdjustRemainingPotionSickness` `:28939-28952`).
+    pub p_stone: bool,
+    /// The previous tick's `pStone` — the `flag9` latch (`Player.cs:25477`)
+    /// the `:25640` change check compares against.
+    p_stone_prev: bool,
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
@@ -2092,6 +2127,13 @@ impl Player {
             mana: 20,
             mana_cost: 1.0,
             mana_max: 20,
+            potion_delay: 0,
+            mana_potion_delay: 0,
+            mana_sick: false,
+            mana_sick_reduction: 0.0,
+            mana_heat: 1.0,
+            p_stone: false,
+            p_stone_prev: false,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             black_belt: false,
@@ -2644,6 +2686,14 @@ impl Player {
         self.pending_mana_effect.take()
     }
 
+    /// `Player.ManaEffect` (`Player.cs:4531-4538`): queue the HealMana
+    /// combat-text amount (S1-P-i37 — the mana-potion drink's
+    /// `ApplyLifeAndOrMana` `:51950` half; the cuffs' `Hurt` arm writes the
+    /// field directly, `:38299`). The caller owns `Main.combatText`.
+    pub(crate) fn queue_mana_effect(&mut self, amount: i32) {
+        self.pending_mana_effect = Some(amount);
+    }
+
     /// S1-C-7 wave B: takes the accepted-hurt retaliation request
     /// (`Player.cs:38401-38517`) — the hit-moment snapshot (final post-floor
     /// `num2` + pre-knockback position/center/velocity). The caller owns the
@@ -2972,6 +3022,11 @@ impl Player {
         self.dead_time += 1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
         self.hp = 0;
+        // `Player.cs:17018-17019`: the dead tick zeroes both sickness clocks
+        // (the buff-21 slot itself survives until expiry — only the counters
+        // reset, exactly like the source).
+        self.potion_delay = 0;
+        self.mana_potion_delay = 0;
         self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
         // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
         // budget zeroes while dead — the pool stays until AI_062's dead-owner
@@ -3327,7 +3382,9 @@ impl Player {
     /// C#) and the per-cooldown array collapsed onto the one `hurt_cd` (the
     /// M4-HAZARD-1 admission). The dodge handlers pass the 120/80 pair
     /// directly; `iframes_for` (the normal-hurt window) is not involved.
-    fn set_immune_time_for_all_types(&mut self, time: i32) {
+    /// `pub(crate)`: the Strange Brew's bonus i-frames (`ApplyLifeAndOrMana`,
+    /// `Player.cs:51912-51915`) call it from `potions.rs` (S1-P-i37).
+    pub(crate) fn set_immune_time_for_all_types(&mut self, time: i32) {
         self.immune = true;
         self.immune_time = time;
         self.hurt_cd = time as f32 / 60.0;
@@ -4091,6 +4148,11 @@ impl Player {
             // Nature's Gift (`:15110-15113`, −0.06).
             555 => self.mana_cost -= 0.08,
             223 => self.mana_cost -= 0.06,
+            // The Philosopher's Stone family (S1-P-i37): 535
+            // (`:15574-15577`) and the Charm of Myths 860 (`:15150-15153`)
+            // arm `pStone` — the Potion Sickness durations ×0.75
+            // (`Player.cs:25481-25486`).
+            535 | 860 => self.p_stone = true,
             // The Ice Skates (`:15089-15092`).
             950 => self.ice_skate = true,
             // The Aglet / the Anklet of the Wind (`:15114-15121`).
@@ -4194,6 +4256,9 @@ impl Player {
             // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
             // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
             6184 => self.honey_comb = true,
+            // Catalyst Band 6185 (`:14615-14620`): `pStone` + `catalystBand`
+            // (the latter unported) — the Stone family's third member.
+            6185 => self.p_stone = true,
             // Hive Pack 3333 (`:15344-15347`): `strongBees`.
             3333 => self.strong_bees = true,
             // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
@@ -4354,6 +4419,19 @@ impl Player {
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
         // caller passes the registered set, so derive it here.
         self.grappling_active = !grapple.is_empty();
+        // `Player.Update`'s sickness clocks (`Player.cs:24718-24724`): both
+        // cooldowns decrement once per tick BEFORE `UpdateBuffs` (`:25566`)
+        // re-mirrors `potionDelay` from the live buff-21 timer (S1-P-i37).
+        if self.potion_delay > 0 {
+            self.potion_delay -= 1;
+        }
+        if self.mana_potion_delay > 0 {
+            self.mana_potion_delay -= 1;
+        }
+        // The `flag9` pStone latch (`Player.cs:25477`): snapshotted BEFORE
+        // `ResetEffects` (`:25491`) clears it; the post-`UpdateEquips` change
+        // check (`:25640-25643`) rescales the live buff-21 timer.
+        self.p_stone_prev = self.p_stone;
         // The buff-frame head of `Player.Update` (`Player.cs:25555-25616`): the
         // `buffImmune` reset precedes `UpdateBuffs` and every re-grant; the
         // end-of-update purge consumes the table at `:26011-26016`.
@@ -4623,6 +4701,12 @@ impl Player {
         self.ranged_damage = 1.0;
         self.magic_damage = 1.0;
         self.minion_damage = 1.0;
+        // `ResetEffects`' Mana Sickness pair (`Player.cs:18592-18593`):
+        // `manaSick = false` (the buff-94 arm below re-arms per tick);
+        // `manaHeat = 1f` (no use-path writer exists — the star-pickup lane
+        // is unported, `potions.rs`'s tail note).
+        self.mana_sick = false;
+        self.mana_heat = 1.0;
         // `:18338`/`:18396-18399` — the ranged effective-damage components.
         self.ranged_mult_damage = 1.0;
         self.arrow_damage = 1.0;
@@ -4679,6 +4763,9 @@ impl Player {
         self.stat_defense = 0;
         // `:18334`: `manaCost = 1f` — the reductions re-apply below.
         self.mana_cost = 1.0;
+        // `:18720`: `pStone = false` — the Stone family's accessory rows
+        // (535/860/6185) re-arm below (`:15576`/`:15152`/`:14617`).
+        self.p_stone = false;
         // `:18497`: `endurance = 0f` — the rows below re-apply.
         self.endurance = 0.0;
         // `:18323-18324`: the penetration reset.
@@ -4961,6 +5048,25 @@ impl Player {
                 31 => self.confused = true,
                 // `:10041-10044` — Silenced (35): mana items refuse.
                 35 => self.silence = true,
+                // `:11719-11722` — Potion Sickness (21): the debuff timer IS
+                // the cooldown — `potionDelay = buffTime[j]` every scan tick
+                // (the drink gates read it, S1-P-i37). The assignment (not a
+                // max) mirrors the source: the last live slot wins.
+                21 => {
+                    if let Some(i) = self.buffs.find_buff_index(21) {
+                        self.potion_delay = self.buffs.buff_time[i];
+                    }
+                }
+                // `:10318-10327` — Mana Sickness (94): the mana-potion magic
+                // penalty (`manaSick = true`, `manaSickReduction = 0.25 *
+                // buffTime / manaSickTime`). The `DebugOptions.ManaPotionDelay`
+                // mirror (`:10320-10323`) is constants-off.
+                94 => {
+                    if let Some(i) = self.buffs.find_buff_index(94) {
+                        let t = self.buffs.buff_time[i];
+                        crate::potions::apply_mana_sickness_arm(self, t);
+                    }
+                }
                 // `:10045-10048` — Dazed (160): the jump-static clamp.
                 160 => self.dazed = true,
                 22 => self.blind = true, // `BuffID.Darkness`
@@ -5193,6 +5299,12 @@ impl Player {
         // matched directly here.
         if (self.equipped[0], self.equipped[1], self.equipped[2]) == (3266, 3267, 3268) {
             self.whip_use_time_multiplier *= 1.0 / 1.15;
+        }
+        // `Player.cs:25640-25643`: a pStone CHANGE across `UpdateEquips`
+        // rescales the live Potion Sickness timer (`AdjustRemainingPotionSickness`,
+        // `:28939-28952`) — ×0.75 equipping the Stone family, ÷0.75 removing it.
+        if self.p_stone_prev != self.p_stone {
+            crate::potions::adjust_remaining_potion_sickness(self);
         }
         // S1-C-12 wave C — the defense/immunity accessory rows kept in
         // their own module (the Obsidian/Paladin-family shields' knockback

@@ -33025,3 +33025,119 @@ WRITTEN, NOT RUN — **no compiler invoked**. Three resume workers
 (i12b/i12c/i12d) independently verified the same windows; their stand-down
 reports' findings are folded into the fixes above.
 
+## Potion use (S1-P-i37, task/S1-P-i37-potions-use, 2026-11-20, code-only mode)
+
+The `Player.ItemCheck` potion arm as a module: `crates/tr-app/src/potions.rs`
+ports `ApplyPotionDelay` (`Player.cs:51853-51886`), `ApplyLifeAndOrMana`
+(`:51888-51952`), the sickness gates/clocks, `QuickHeal`/`QuickMana`
+(`:5501-5649`) and the hunger reset (`TryToResetHungerToNeutral`/
+`UpdateHungerBuffs`, `:12081-12150`). The buff EFFECTS already landed with
+S1-E-7 (the `player.rs` buff scan); this slice is the USE side only.
+
+**The census P0s fixed (i01/i03 censuses, LEAD notes deleted pre-commit):**
+- **P1 CRITICAL** — `world_sim/editing.rs`'s heal arm computed `sick` but
+  NEVER read it, and ran on every `mine_down` tick: holding LMB healed every
+  tick, drained the stack and re-armed buff 21 forever (the gated duplicate
+  below it was shadowed). Both arms are gone; the consumable block now gates
+  on the `Player.cs:42733` press edge (`controlUseItem && releaseUseItem &&
+  itemAnimation == 0` — the port's `mine_released`/`mine_prev_down` latches +
+  `attack_cd`/`reuse_delay`) and routes through `potions::use_potion_item`,
+  whose can-use gate reads `potionDelay > 0` (`:52217-52220`) — the CLOCK,
+  not the buff slot (the buff-21 mirror `:11719-11722` keeps them equal).
+- **P2-P5** — the flat 3600 delay is now the per-kind table: Restoration
+  227/126 → 2700, Eggnog 1912 → 2400 (unscaled by pStone), Mushroom 5 →
+  1800, Strange Brew 3001 → `Next(2400, 4201)` (`Item.cs:49968-49971`,
+  `Player.cs:25477-25486`). Mana potions (110/189/500/2209 — `potion=false`,
+  `healMana>0`) had NO use path; they now drink through the same seam and
+  grant **ManaSickness buff 94** (`BuffID.cs:359`, NOT 89) for
+  `manaSickTime = 300` (`:57101`); the buff-94 scan arm (`:10318-10327`)
+  assigns `manaSickReduction = 0.25 * buffTime / 300`. Buff potions
+  (Ironskin 292 etc.) grant their `buffType`/`buffTime` verbatim on use
+  (`:42876-42883`, the 90/27 exclusions) and drink THROUGH sickness (they
+  are not potion-flagged).
+- **QuickMana key** — the J edge (`Player.cs:24834-24845`'s
+  `releaseQuickMana` latch) fires `potions::quick_mana` from
+  `world_sim/player.rs`; the App carries `quick_mana_prev`.
+- **pStone** — the Philosopher's Stone family (535/860/6185,
+  `:15574-15577`/`:15150-15153`/`:14615-14620`) arms `Player.p_stone`
+  (`ResetEffects` clear `:18720`); the delay trio scales ×0.75 f32-truncated
+  (`:25481-25486`), and a pStone CHANGE across `UpdateEquips` rescales the
+  live buff-21 timer (`:25640-25643` → `AdjustRemainingPotionSickness`
+  `:28939-28952`, ÷0.75 on removal). The `flag9` latch is `p_stone_prev`.
+
+**Deliberate seams / deviations:**
+- The mid-swing `ItemTimeIsZero` heal/buff window (`:42856-42883`) folds onto
+  the press tick (the food arm's existing swing seam). The RNG ORDER is the
+  source's: ItemCheck path = delay roll (`:42758`) → use-sound pitch
+  (`:51680`) → heal roll + i-frame float (`:51895`/`:51898`) → HealEffect
+  jitter (`CombatText.cs:88-89`); the quick-use path plays the sound FIRST
+  (`:5516` before `:5519`), so its pitch draw precedes the delay roll. Only
+  the tick of the heal shifts, not the stream order.
+- The `AdjustRemainingPotionSickness` hook sits after the port's whole equip
+  fold rather than strictly after `UpdateEquips` (`:25640`) — no other pass
+  writes buff-21 timers between the two, so the rescale is order-identical.
+- The 0-stack slot's `TurnToAir` folds onto the consume tick (the C# waits
+  for the next tick's IsAir check, `:42824-42828`; `Item.IsAir` is
+  `stack <= 0`, `Item.cs:385-395`, so the use gates already refuse it).
+- `DebugOptions.ManaV2` is **TRUE** in the shipped build
+  (`Testing/DebugOptions.cs:85`) — the earlier census note "false static"
+  was WRONG. Consequences here: QuickMana's full-mana refusal
+  (`!ManaV2 && statMana == statManaMax2`, `:5600`) is constants-OFF (the
+  port drinks at full mana, the stack still drains); the
+  `ManaV2 && slowMagicUse → UndoSlowMagicUse` arm (`:51946-51948`) is LIVE
+  but its fields are the i19 mana worker's — that half lands with its
+  `CheckMana` fold. `DebugOptions.ManaPotionDelay` IS false (`:86`): the
+  8*60 delay + re-grant (`:51939-51943`) and the buff-94 mirror
+  (`:10320-10323`) stay constants-off; `mana_potion_delay` is always 0.
+- `ApplyManaPotionManaHeat` (`:51968-52004`) has NO caller in the retail
+  source (the only `TryApplyManaHeat` callers are the mana-star pickups
+  `:35071`/`:35087`, unported) — drinking a mana potion grants NO ManaHeat;
+  `mana_heat` stays 1f (`ResetEffects` `:18593`).
+- The magic-damage sickness TAIL (`:25900-25911`,
+  `potions::apply_magic_damage_sickness_tail`) is exported for i19's
+  `Update` fold — this branch carries the fields + the buff arm only.
+- The hunger reset's follow-up `UpdateHungerBuffs` is a structural no-op on
+  the just-zeroed slots (`:12102-12105` skips `buffTime <= 0`) — kept for
+  the source shape; the remix+dontStarve 28800 expiry row (`:12110-12113`)
+  reads the port's REMIX/DONT_STARVE seed flags.
+- The WellFed food kinds (26/206/207) stay the FOOD arm's (editing.rs's
+  `can_eat` branch, the 14400 fallback); `drinkable` excludes them so a
+  well-fed player's food never re-consumes through the drink seam.
+
+**Coordination (swarm):**
+- **i54** owns the QuickHeal H-key EDGE + the hotbar chooser
+  (`hotbar.rs` + its `world_sim/player.rs` seam). This module is the
+  canonical `Player.QuickHeal` machinery; the merge takes i54's edge latch
+  calling THIS `potions::quick_heal`, not its inline drink copy. The
+  `quick_heal_prev` App field is i54's — not duplicated here.
+- **i19** owns the mana machinery (`CheckMana`'s flower arm `:52588-52609`
+  calls this module's `quick_mana`; the `mana_flower`/`slow_magic_use`
+  fields + the magic-damage tail fold are its lane). This branch adds
+  `mana_sick`/`mana_sick_reduction`/`mana_heat`/`queue_mana_effect` with
+  i54/i19-compatible shapes; the merge reconciles the duplicate field
+  definitions (identical semantics, both cited to the same C# lines).
+- **QuickBuff** (`Player.cs:5766-6017`) is census-MISSING and deferred (its
+  food-priority + `ShouldBotherUsingThisBuff` + mana-pay table is a separate
+  slice); the B key stays unbound in this slice.
+
+**RNG:** the only draws in the use path are the Strange Brew's delay roll
+`Next(2400, 4201)` and heal roll `Next(healLife, 121)` + i-frame
+`NextFloat()`, the use-sound pitch (the audio seam's gated case-2 draw), and
+the HealEffect/ManaEffect combat-text jitter — all on the `UpdatePlayers`
+named stream (`Main.cs:17754` swap). The witness seeds were derived from a
+JS mirror of `UnifiedRandom` validated against the crate's `GOLDEN_42`
+prefix (all 8 pinned draws reproduced exactly).
+
+**Verification:** compile-by-inspection only — **no cargo/rustc invoked**
+(code-only swarm). 34 witness tests WRITTEN, NOT RUN: 28 in `potions.rs`
+(the delay table, the pStone truncations, the Strange Brew RNG order + the
+i-frame table, the buff-94 grant/scan/expiry, the dead-tick zeroing, the
+drink seam's gates/consume/achievement, the quick-use choosers + gates, the
+hunger reset), 4 press-edge regression witnesses in
+`world_sim/editing.rs::item_mechanics` (the P1 held-LMB drain, the
+sick-repress refusal, the buff/mana potion presses) and 1 QuickMana key-edge
+witness in `world_sim/player.rs`. The in-flight `potions.rs` from the
+429-dead original worker was verified against the C# windows (≤200-line
+reads) and completed: the ManaV2 gate corrected, the remix hunger row
+added, the sound/delay/heal RNG order fixed on both paths, the food kinds
+excluded, and the Player fields/clocks/scan arms it referenced landed.

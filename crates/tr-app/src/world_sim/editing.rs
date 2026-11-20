@@ -800,19 +800,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         held.kind, app.mine_down
     );
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
-    // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
-    // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
-    // (`ApplyPotionDelay` + `ApplyLifeAndOrMana`) and the magic weapons'
-    // mana pay (`CheckMana`). They ride the same start gate as every other
-    // use (`:42733`): animation zero, release ready (the auto-reuse forced
-    // release included), no pending reuse lock.
-    if app.mine_down
-        && held.count > 0
-        && !app.inventory_open
+    // `Player.ItemCheck`'s use-start gate (`Player.cs:42733`): `controlUseItem
+    // && releaseUseItem && itemAnimation == 0` — ONE use per press edge
+    // (S1-P-i37: the old ungated `mine_down` block re-drank every tick while
+    // LMB was held, draining the stack and re-arming buff 21 forever). The
+    // captured previous-frame edges are the `releaseUseItem` stand-in; the
+    // swing timers are the `itemAnimation == 0` half.
+    let use_press_edge = app.mine_down
+        && prev_mine_released
+        && !prev_mine_down
         && app.attack_cd <= 0.0
-        && app.reuse_delay <= 0.0
-        && app.mine_released
-    {
+        && app.reuse_delay <= 0.0;
+    // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
+    // gated by `CanUseItem`'s wellFed check `:14353`) and the drink family
+    // (the healing/mana/buff potions — `potions.rs`, S1-P-i37).
+    if use_press_edge && held.count > 0 && !app.inventory_open {
         let def = registry::get(held.kind);
         if def.is_some_and(|d| d.consumable && matches!(d.buff_type, 26 | 206 | 207)) {
             let Some(def) = def else { unreachable!() };
@@ -840,32 +842,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 return;
             }
         }
-        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
-        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
-        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
-        // clamps to max, the count decrements.
-        let def = registry::get(held.kind);
-        if def.is_some_and(|d| d.potion && d.heal_life > 0) {
-            let Some(def) = def else { unreachable!() };
-            let sick = app
-                .player
-                .as_ref()
-                .and_then(|p| p.buffs.find_buff_index(21))
-                .is_some();
-            let heal = def.heal_life;
-            if let Some(p) = app.player.as_mut() {
-                p.hp = (p.hp + heal).min(p.max_hp);
-                // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
-                // rides `Item.potionDelay` = 3600 (60 s).
-                p.buffs.add_buff(21, 3600);
-            }
-            app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
-            if app.inventory[app.selected].count == 0 {
-                app.inventory[app.selected].kind = 0;
-            }
-            start_use_timers(app, held);
-            app.mine_target = None;
-            app.mine_timer = 0.0;
+        // The drink family (S1-P-i37 — `potions.rs`): the healing potions
+        // (`item.potion`, `Player.cs:42756-42758` + `:42867-42875`), the mana
+        // potions (`healMana`, NOT potion-flagged — `Item.cs:2680-2692`) and
+        // the buff potions (`buffType > 0`, `:42876-42883`). The Potion
+        // Sickness gate (`ItemCheck_CheckCanUse_Inner`, `:52217-52220`), the
+        // per-kind delays (`ApplyPotionDelay` `:51853-51886`), the Mana
+        // Sickness grant (`:51938`) and the stack consume all live there.
+        if crate::potions::use_potion_item(app, held) {
             return;
         }
     }
@@ -1700,37 +1684,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 return;
             }
         }
-        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
-        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
-        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
-        // clamps to max, the count decrements.
-        let def = registry::get(held.kind);
-        if def.is_some_and(|d| d.potion && d.heal_life > 0) {
-            let Some(def) = def else { unreachable!() };
-            let sick = app
-                .player
-                .as_ref()
-                .and_then(|p| p.buffs.find_buff_index(21))
-                .is_some();
-            if !sick {
-                let heal = def.heal_life;
-                if let Some(p) = app.player.as_mut() {
-                    p.hp = (p.hp + heal).min(p.max_hp);
-                    // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
-                    // rides `Item.potionDelay` = 3600 (60 s).
-                    p.buffs.add_buff(21, 3600);
-                }
-                app.inventory[app.selected].count =
-                    app.inventory[app.selected].count.saturating_sub(1);
-                if app.inventory[app.selected].count == 0 {
-                    app.inventory[app.selected].kind = 0;
-                }
-                start_use_timers(app, held);
-                app.mine_target = None;
-                app.mine_timer = 0.0;
-                return;
-            }
-        }
+        // The healing-potion duplicate that used to sit here (the gated
+        // `!sick` copy) was SHADOWED by the ungated press-arm above and is
+        // gone with it (S1-P-i37): every melee strike already returns, so
+        // the block was unreachable for NPCs in reach, and the drink family
+        // now rides `potions::use_potion_item` at the use-start seam.
     }
     // `Player.cs:42768-42771` (the use-success arm) + the can-use gate
     // `:52312-52314` -> `Mount.CanMount` (`Mount.cs:6581-6604`): a saddle
@@ -9041,5 +8999,129 @@ mod item_mechanics {
             "the drop lies flush on the floor, at {}",
             rest.pos.y
         );
+    }
+
+    // ---- S1-P-i37: the drink press-edge regression witnesses ---------------
+    // WRITTEN NOT RUN (code-only swarm). The P1 census bug: the old heal arm
+    // computed `sick` but never read it and ran on every `mine_down` tick —
+    // holding LMB drained the whole stack and re-armed buff 21 forever. The
+    // fix gates the consumable arms on the `Player.cs:42733` press edge
+    // (`controlUseItem && releaseUseItem && itemAnimation == 0`) and routes
+    // the drink through `potions::use_potion_item` (the `:52217` sickness
+    // gate reads `potionDelay`, not the buff slot).
+
+    const DRINK_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+
+    /// A drink rig on the flow app's 8x8 air world: the player parked at the
+    /// world centre, the camera pinned on the cursor cell (in bounds, in
+    /// reach, no tile under it — the melee/mining arms fall through), the
+    /// SILENT listener so the use-sound draws nothing.
+    fn potion_press_app(kind: u16, count: u32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = Player::spawn(&app.world);
+        p.x = 4.0 * TILE_PX;
+        p.y = 4.0 * TILE_PX;
+        p.hp = 50;
+        app.player = Some(p);
+        app.camera = Vec2::new(4.0 * TILE_PX + 8.0, 4.0 * TILE_PX + 8.0);
+        app.mouse_pos = Vec2::new(640.0, 360.0);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.inventory[app.selected] = ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        };
+        // The released state: one idle frame arms the press edge.
+        app.mine_down = false;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        app
+    }
+
+    #[test]
+    fn holding_lmb_drinks_once_not_every_tick() {
+        let mut app = potion_press_app(188, 30);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN); // idle: edge armed
+        app.mine_down = true;
+        for _ in 0..120 {
+            update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(app.inventory[app.selected].count, 29, "ONE drink per press");
+        assert_eq!(p.hp, 100);
+        assert!(p.potion_delay > 3500, "the 3600 clock barely decayed");
+        let i = p.buffs.find_buff_index(21).expect("buff 21 granted once");
+        assert!(p.buffs.buff_time[i] > 3500, "no per-tick re-arm");
+    }
+
+    #[test]
+    fn a_second_press_while_sick_drinks_nothing() {
+        let mut app = potion_press_app(188, 5);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN); // the first drink
+        assert_eq!(app.inventory[app.selected].count, 4);
+        // Release + re-press while the sickness clock runs: the `:52217`
+        // gate refuses — no heal, no consume, no buff refresh. The swing
+        // locks are cleared (their decay lives in the npcs pass, outside
+        // `update_editing`) so the press edge REACHES the sickness gate —
+        // the refusal under test is the gate's, not the animation's.
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.attack_cd = 0.0;
+        app.reuse_delay = 0.0;
+        let before = app.player.as_ref().unwrap().buffs.buff_time
+            [app.player.as_ref().unwrap().buffs.find_buff_index(21).unwrap()];
+        app.player.as_mut().unwrap().hp = 50;
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert_eq!(app.inventory[app.selected].count, 4, "the stack untouched");
+        assert_eq!(app.player.as_ref().unwrap().hp, 50, "no heal while sick");
+        let after = app.player.as_ref().unwrap().buffs.buff_time
+            [app.player.as_ref().unwrap().buffs.find_buff_index(21).unwrap()];
+        // `update_editing` does not tick the buff clocks (that is the player
+        // pass) — the pin is the absence of a RE-ARM: the timer is unchanged.
+        assert_eq!(after, before, "no buff-21 refresh on the refused press");
+    }
+
+    #[test]
+    fn a_buff_potion_press_grants_its_buff_through_sickness() {
+        // Ironskin 292 (buffType 5, buffTime 28800): NOT potion-flagged, so
+        // the sickness clock does not gate it (`Item.cs:4858-4871`).
+        let mut app = potion_press_app(292, 3);
+        app.player.as_mut().unwrap().potion_delay = 3000;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        let p = app.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(5).expect("Ironskin on the press");
+        assert_eq!(p.buffs.buff_time[i], 28800);
+        assert_eq!(app.inventory[app.selected].count, 2);
+    }
+
+    #[test]
+    fn a_mana_potion_press_restores_and_grants_94() {
+        // The Lesser Mana Potion 110 had NO use path before i37 (the old
+        // arm gated on `potion && heal_life > 0`).
+        let mut app = potion_press_app(110, 3);
+        let p = app.player.as_mut().unwrap();
+        p.mana = 0;
+        p.mana_max = 200;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 50);
+        assert!(p.buffs.find_buff_index(94).is_some(), "ManaSickness 94");
+        assert_eq!(app.inventory[app.selected].count, 2);
     }
 }

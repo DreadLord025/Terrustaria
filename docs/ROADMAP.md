@@ -1133,3 +1133,4 @@ WRITTEN NOT RUN; verification = whole-block C# re-reads + hand arithmetic.
   ai1=0) — flagged by the audit as "not fully traced", left for B-6b's
   wiring wave to resolve with the spawn sites.
 
+| S1-P-i37 | Potion USE machinery: the `ItemCheck` potion arm's sickness gates (`Player.cs:52217-52220` reads `potionDelay`), the per-kind delays (`ApplyPotionDelay` `:51853-51886`), mana potions + buff 94, buff-potion grants, QuickMana key, the pStone rescale | M | B+P | LEAD-i01/i03 censuses (research/60, research/62) | done (code-only, `task/S1-P-i37-potions-use`): the P1 CRITICAL ungated heal (editing.rs computed `sick` never read it, held LMB drained the stack + re-armed buff 21 every tick) fixed via the `:42733` press edge + `potions::use_potion_item`; 34 witnesses WRITTEN NOT RUN; ANALYSIS "Potion use (S1-P-i37)" |
