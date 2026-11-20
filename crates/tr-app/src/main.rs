@@ -245,6 +245,7 @@ mod projectile_gore_j;
 mod projectile_gore_k;
 mod projectile_gore_l;
 mod projectile_gore_m;
+mod projectile_gore_n;
 mod rain;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
