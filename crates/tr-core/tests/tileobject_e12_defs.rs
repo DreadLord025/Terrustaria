@@ -678,3 +678,130 @@ fn e12_w3_kind_698_display_jar() {
     let sub2_alt = get_tile_data(d, 2, 1).unwrap();
     assert_eq!(sub2_alt.anchor_top, a(256, 1), "698 sub2 platform alternate");
 }
+
+// ---------------------------------------------------------------------------
+// Batch 4 — kinds 699..716 (emission indices 568..585, 18 defs).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e12_w4_kind_699_potion_station() {
+    // 699 DeadCellsPotionStation (:3448-3450): CopyFrom(Style4x4 :3437-3447 —
+    // 4x4 origin (1,3) bottom 11 horizontal LavaDeath true) + DrawYOffset 2.
+    let w = Want {
+        kind: 699, w: 4, h: 4, ox: 1, oy: 3, dir: Dir::None,
+        heights: &[16, 16, 16, 16], cw: 16, pad: 2, fx: 0, fy: 0,
+        horiz: true, wrap: 0, mult: 1, skip: 1, rand: 0,
+        top: E, bot: a(11, 4), left: E, right: E, wall: false,
+        valid: &[], invalid: &[], alt_tiles: &[], walls: &[],
+        water: LP::Allowed, lava: LP::NotAllowed, wdeath: false, ldeath: true,
+        custom: true, global: false, nalts: 0, nsubs: 0,
+    };
+    check(699, &w);
+}
+
+#[test]
+fn e12_w4_kind_700_701_replica_plants() {
+    // 700 AbigailsFlowerReplica (:4258-4268): Style1x1 + bottom SolidTile|
+    // SolidSide (=9) + WaterPlacement NotAllowed + cw 20 + DrawYOffset 2 +
+    // DrawFlipHorizontal (draw class).
+    let mut w = style1x1(700);
+    w.bot = a(9, 1);
+    w.water = LP::NotAllowed;
+    w.cw = 20;
+    check(700, &w);
+    // 701 GlowTulipReplica (:4271-4280): Style1x1 + WaterPlacement NotAllowed
+    // + heights {34} + cw 24 + DrawYOffset -16 + DrawFlipHorizontal.
+    let mut w = style1x1(701);
+    w.water = LP::NotAllowed;
+    w.heights = &[34];
+    w.cw = 24;
+    check(701, &w);
+}
+
+#[test]
+fn e12_w4_kind_702_703_replicas() {
+    // 702 LifeFruitReplica (:3997-4000): Style2x2 + horizontal + LavaDeath true.
+    let mut w = style2x2(702);
+    w.horiz = true;
+    check(702, &w);
+    // 703 JunglePlantsEcho (:4295-4296): bare CopyFrom(Style1x1Plant_Height22
+    // :4281-4287 — Style1x1 + horizontal + WaterPlacement NotAllowed +
+    // LavaDeath true; DrawFlipHorizontal is the draw class).
+    let mut w = style1x1(703);
+    w.horiz = true;
+    w.water = LP::NotAllowed;
+    check(703, &w);
+}
+
+#[test]
+fn e12_w4_kind_704_705_706_echo_plants() {
+    // 704 FallenLogEcho (:3257-3259): Style3x2 + LavaDeath=false.
+    let mut w = style3x2(704);
+    w.ldeath = false;
+    check(704, &w);
+    // 705 OasisPlantsEcho (:3260-3265): Style3x2 + LavaDeath=false +
+    // StyleWrapLimit 9 (horizontal already in the base).
+    let mut w = style3x2(705);
+    w.ldeath = false;
+    w.wrap = 9;
+    check(705, &w);
+    // 706 TerragrimShrineEcho (:3224-3226): bare Style3x2 + DrawYOffset 2.
+    check(706, &style3x2(706));
+}
+
+#[test]
+fn e12_w4_kind_707_books_echo() {
+    // 707 (:2377-2379): StyleOnTable1x1 + horizontal.
+    let mut w = style_on_table(707);
+    w.horiz = true;
+    check(707, &w);
+}
+
+#[test]
+fn e12_w4_kind_709_shimmer_drip() {
+    // 709 (:4715-4716): CopyFrom(Style1x1Drip :4702-4708 — Style1x1 + bottom
+    // empty + top SolidTile (=1) + WaterDeath=false + LavaDeath=false +
+    // ApplyNaturalObjectRules). LavaPlacement stays NotAllowed (the base
+    // default; clearing LavaDeath does not re-allow it).
+    let mut w = style1x1(709);
+    w.bot = E;
+    w.top = a(1, 1);
+    w.ldeath = false;
+    w.custom = false;
+    w.global = true;
+    check(709, &w);
+}
+
+#[test]
+fn e12_w4_kind_710_pufferfish_cage() {
+    // 710 (:2735-2736): bare CopyFrom(Style6x3).
+    check(710, &style6x3(710));
+}
+
+#[test]
+fn e12_w4_kind_711_712_boulders() {
+    // 711 RainbowBoulder (:3635-3649): Style2x2 + heights {16,18} +
+    // LavaDeath=false + DrawFrameOffsets (draw class — the 2x2 gap grid).
+    let mut w = style2x2(711);
+    w.heights = &[16, 18];
+    w.ldeath = false;
+    check(711, &w);
+    // 712 Poulder (:3650-3653): Style2x2 + heights {16,18} + LavaDeath=false.
+    let mut w = style2x2(712);
+    w.heights = &[16, 18];
+    w.ldeath = false;
+    check(712, &w);
+}
+
+#[test]
+fn e12_w4_kind_713_714_715_716_boulders() {
+    // 713 LavaBoulder (:3977-3979): Style2x2 + WaterPlacement NotAllowed.
+    let mut w = style2x2(713);
+    w.water = LP::NotAllowed;
+    check(713, &w);
+    // 714 SpiderBoulder (:3980), 715 Ghoulder (:3982), 716 BoulderThatSpawnsPet
+    // (:3984): bare CopyFrom(Style2x2).
+    for kind in [714u16, 715, 716] {
+        check(kind, &style2x2(kind));
+    }
+}
