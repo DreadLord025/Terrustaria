@@ -129,6 +129,30 @@ fn refuses_friendly(n: &Npc, kind: u16, kill_guide: bool, kill_clothier: bool) -
     true
 }
 
+/// `Damage_PVE_Inner`'s hit-time `switch (this.type)` (`Projectile.cs:
+/// 13409-13533`): every NPC contact COMPOUNDS the projectile's STORED damage
+/// by the kind's multiplier — `(int)` truncation, the C#'s `(double)`/
+/// `(float)` cast widths kept verbatim (the f32 arms 1115/301/76-78/1117
+/// round differently from f64 at some magnitudes). The 1125 arm zeroes the
+/// store outright (the Cascade Explosion's post-hit damage cut). The switch
+/// mutates ONLY `this.damage`: the strike's `dmg` was derived at `:12852`/
+/// `:12938` BEFORE it, so the current hit keeps full damage and the NEXT
+/// hit (or the post-strike spawn arms, `:13707-13809`) reads the decayed
+/// store. Kinds without a case return the store unchanged.
+fn hit_time_damage(kind: u16, damage: i32) -> i32 {
+    match kind {
+        // `:13411-13413` — the Shadowbeam Staff's beam.
+        SHADOWBEAM => (damage as f64 * 0.9) as i32,
+        // `:13414-13419` — the Poison Fang / Venom Fang.
+        POISON_FANG | VENOM_FANG => (damage as f64 * 0.75) as i32,
+        // `:13420-13422` — the friendly Unholy Trident.
+        UNHOLY_TRIDENT => (damage as f64 * 0.9) as i32,
+        // `:13423-13425` — the Cascade Explosion zeroes its store.
+        CASCADE_EXPLOSION => 0,
+        _ => damage,
+    }
+}
+
 /// `Projectile.CanExplodeTile`'s guard set (`Projectile.cs:78640-78700`):
 /// the per-tile permission for the bomb crater. The hardmode gates (the
 /// ores 107/108/111/221-223, the chests 37/58, the altars 77) stay closed —
@@ -22957,6 +22981,22 @@ impl ProjectilePool {
             // position on the pass's `UpdateProjectiles` stream (S1-P-i24 —
             // the resync dropped main's post-strike copy, it doubled the
             // draw).
+            // W4-a4 — `Damage_PVE_Inner`'s hit-time `this.damage` switch
+            // (`Projectile.cs:13409-13533`): every contact COMPOUNDS the
+            // slot's stored damage by the kind's truncation multiplier.
+            // The switch mutates ONLY the store — `dmg` was derived at
+            // `:12852`/`:12938` from the pre-switch value, so THIS hit keeps
+            // full damage and the next hit (or the post-strike spawn arms)
+            // reads the decayed store. The mutation is ungated (the 477
+            // retarget below the strike is the landed-gate precedent); the
+            // old post-strike 294-only arm moved here and folded into the
+            // table. Deviation (the moon-lord precedent): the port snapshots
+            // `damage` once per pass, so a second NPC in the SAME pass still
+            // reads the pre-decay base; the C# re-reads `this.damage` per
+            // `Damage_PVE_Inner` call (`:12852`). Compounding across passes
+            // (the two-hit pin) is exact.
+            let p = &mut self.slots[slot];
+            p.damage = hit_time_damage(p.kind, p.damage);
             if is_whip {
                 self.whip_debuffs(slot, &mut npcs[idx], rng);
             }
@@ -23234,16 +23274,11 @@ impl ProjectilePool {
                 if matches!(p.kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL) {
                     p.damage = (p.damage as f64 * 0.96) as i32;
                 }
-                // S1-P-i21 — `Damage_PVE_Inner`'s type-294 arm
-                // (`Projectile.cs:13411-13413`): the Shadowbeam's stored damage
-                // decays ×0.9 (the `(int)((double)damage * 0.9)` truncation) on
-                // every landed hit — the switch runs before `StrikeNPC`, but
-                // the strike reads the local `dmg` (computed at `:12938` from
-                // the pre-decay value), so this hit keeps full damage and the
-                // NEXT hit reads the decayed store (the moon-lord precedent).
-                if p.kind == SHADOWBEAM {
-                    p.damage = (p.damage as f64 * 0.9) as i32;
-                }
+                // (W4-a4: the old post-strike 294-only decay arm moved into
+                // the pre-strike hit-time switch above — the C# position,
+                // `Projectile.cs:13411-13413`. The strike still reads the
+                // local `dmg` from the pre-decay store, so this hit keeps
+                // full damage and the NEXT hit reads the decayed store.)
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
                     break;
@@ -44382,5 +44417,169 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+/// W4-a4 — `Damage_PVE_Inner`'s hit-time `this.damage` switch
+/// (`Projectile.cs:13409-13533`): the COMPOUNDING slot mutation. Witnesses
+/// written, NOT run (code-only mode).
+#[cfg(test)]
+mod w4_a4_hit_time_tests {
+    use super::*;
+
+    /// A flat empty world — the PVE walk is pure rectangle math, no tiles
+    /// are read.
+    fn air() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// A zero-variance stream: `DamageVar`'s `Next(-15, 16)` returns 0, so
+    /// the hit damage is the store verbatim; the class-crit `Next(1, 101)`
+    /// returns 100 (never crits at the base-0 class stats). Every other
+    /// draw panics, so an unexpected roll cannot hide in the witness.
+    struct NoVarRng;
+    impl DropRng for NoVarRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            match (min, max) {
+                (-15, 16) => 0,
+                (1, 101) => 100,
+                _ => panic!("unexpected draw ({min}, {max})"),
+            }
+        }
+        fn next_float(&mut self) -> f32 {
+            panic!("no float draw in the hit-time witnesses");
+        }
+    }
+
+    /// A parked, defense-zero victim: the slot's box sits inside it.
+    fn victim() -> Npc {
+        let mut n = Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0);
+        n.hp = 10_000;
+        n.max_hp = 10_000;
+        n.defense_override = Some(0);
+        n
+    }
+
+    /// One PVE pass on one NPC, no player/flail/owner anchor.
+    fn hit(pool: &mut ProjectilePool, slot: usize, npc: &mut Npc) {
+        pool.damage_pve(
+            &air(),
+            slot,
+            std::slice::from_mut(npc),
+            None,
+            None,
+            None,
+            &mut NoVarRng,
+        );
+    }
+
+    /// `:13411-13413` — the Shadowbeam's two-hit COMPOUNDING pin: the store
+    /// truncates ×0.9 on EVERY contact while the strike reads the pre-switch
+    /// `dmg` (`:12852`/`:12938`), so hit 1 deals the full 100 and leaves 90;
+    /// hit 2 deals 90 and leaves 81. The 7-store chain separates the
+    /// per-hit truncation from a one-shot product: 7 → 6 → 5 (6·0.9 = 5.4
+    /// → 5), while a flat ×0.81 would read (int)(7·0.81) = 5 on hit 2 with
+    /// hit 2's STRIKE at 7, not 6.
+    #[test]
+    fn w4_a4_the_shadowbeam_compounds_the_slot_on_every_hit() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SHADOWBEAM, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let mut npc = victim();
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 90, "hit 1 compounds the store");
+        assert_eq!(10_000 - npc.hp, 100, "hit 1 strikes the PRE-decay store");
+        // The beam's stock penetrate −1 keeps the slot alive; the stock
+        // per-owner window (penetrate != 1) sets immune[0] = 10 — clear it
+        // for the re-hit (the NPC update's decrement stand-in).
+        npc.immune[0] = 0;
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 81, "hit 2 compounds again");
+        assert_eq!(10_000 - npc.hp, 190, "hit 2 strikes the decayed 90");
+        // The truncation-chain separator.
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data(SHADOWBEAM, 100.0, 100.0, 0.0, 0.0, 7, 0.0)
+            .unwrap();
+        let mut n2 = victim();
+        hit(&mut pool2, s2, &mut n2);
+        assert_eq!(pool2.slots()[s2].damage, 6, "(int)(7·0.9) = 6");
+        n2.immune[0] = 0;
+        hit(&mut pool2, s2, &mut n2);
+        assert_eq!(pool2.slots()[s2].damage, 5, "(int)(6·0.9) = 5");
+        assert_eq!(10_000 - n2.hp, 13, "7 then 6 — the per-hit truncation chain");
+    }
+
+    /// `:13414-13419` — the Poison Fang / Venom Fang ×0.75 pair, and
+    /// `:13420-13422` — the friendly Unholy Trident ×0.9. The fangs are
+    /// local-immunity rows (cooldown 10): the re-hit clears the slot's
+    /// local row, the C# `immuneArray` decrement stand-in.
+    #[test]
+    fn w4_a4_the_fangs_and_the_trident_decay_their_stores() {
+        for (kind, mult) in [(POISON_FANG, 0.75), (VENOM_FANG, 0.75), (UNHOLY_TRIDENT, 0.9)] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+                .unwrap();
+            // The single-hit rows die on contact (penetrate 1 → 0 breaks
+            // the walk); open the budget so the second pass re-hits.
+            pool.slots_mut()[slot].penetrate = -1;
+            pool.slots_mut()[slot].max_penetrate = -1;
+            let mut npc = victim();
+            hit(&mut pool, slot, &mut npc);
+            let want = (100.0 * mult) as i32;
+            assert_eq!(pool.slots()[slot].damage, want, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[slot * 256] = 0;
+            hit(&mut pool, slot, &mut npc);
+            assert_eq!(
+                pool.slots()[slot].damage,
+                (want as f64 * mult) as i32,
+                "kind {kind} hit 2 compounds"
+            );
+            assert_eq!(10_000 - npc.hp, 100 + want, "kind {kind} hit 2 reads the decay");
+        }
+    }
+
+    /// `:13423-13425` — the Cascade Explosion's store ZEROES on contact:
+    /// hit 1 still strikes full (the local-immunity row, cooldown −1, keeps
+    /// the slot alive), every later pass deals nothing (the walk's
+    /// `damage <= 0` refusal, `:12559`).
+    #[test]
+    fn w4_a4_the_cascade_explosion_zeroes_its_store_on_contact() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(CASCADE_EXPLOSION, 100.0, 100.0, 0.0, 0.0, 40, 0.0)
+            .unwrap();
+        let mut npc = victim();
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 0, "the store zeroes (`:13424`)");
+        assert_eq!(10_000 - npc.hp, 40, "hit 1 strikes the pre-switch store");
+        // The −1 sentinel blocks the re-hit anyway; clear it to prove the
+        // zeroed store alone refuses the pass.
+        pool.local_immunity[slot * 256] = 0;
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(10_000 - npc.hp, 40, "the zeroed store deals nothing after");
+    }
+
+    /// The unlisted kinds keep their store verbatim — the switch's default
+    /// arm is a no-op (the wooden arrow is not in the C# switch).
+    #[test]
+    fn w4_a4_unlisted_kinds_keep_their_store() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOODEN_ARROW, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].penetrate = -1;
+        pool.slots_mut()[slot].max_penetrate = -1;
+        let mut npc = victim();
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 100, "no case, no decay");
+        npc.immune[0] = 0;
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 100, "still no decay on hit 2");
+        assert_eq!(10_000 - npc.hp, 200, "both hits strike full");
     }
 }
