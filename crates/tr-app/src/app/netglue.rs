@@ -3641,6 +3641,17 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d35 (G): the 140 walkers plant feet on the
+        // column surface (the generic surface ctor; the family machine
+        // takes over on the first tick).
+        crate::npc::NpcKind::PossessedArmor => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d35 (G): the 122/137 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::Gastropod
+        | crate::npc::NpcKind::IlluminantBat => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

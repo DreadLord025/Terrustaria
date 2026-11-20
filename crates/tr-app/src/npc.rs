@@ -1206,6 +1206,18 @@ pub enum NpcKind {
     /// 40x30, aiStyle 14, dmg 45, def 20, 60 HP,
     /// kb 0.8, value 0, noGravity. UNWIRED (data-only; the AI lands with its wave).
     Slimer,
+    /// `NPCID.Gastropod` (122) - W4-d35 data wave (`NPC.cs:10479-10492`):
+    /// 20x20, aiStyle 22, dmg 60, def 22, 220 HP,
+    /// kb 0.8, value 600, noGravity. UNWIRED (data-only; the AI lands with its wave).
+    Gastropod,
+    /// `NPCID.IlluminantBat` (137) - W4-d35 data wave (`NPC.cs:10735-10747`):
+    /// 26x20, aiStyle 14, dmg 75, def 30, 200 HP,
+    /// kb 0.75, value 500, noGravity. UNWIRED (data-only; the AI lands with its wave).
+    IlluminantBat,
+    /// `NPCID.PossessedArmor` (140) - W4-d35 data wave (`NPC.cs:10763-10775`):
+    /// 18x40, aiStyle 3, dmg 55, def 28, 260 HP,
+    /// kb 0.4, value 400. UNWIRED (data-only; the AI lands with its wave).
+    PossessedArmor,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3712,6 +3724,11 @@ impl Npc {
             NpcKind::TheHungryII => 0.8,
             NpcKind::ChaosElemental => 0.4,
             NpcKind::Slimer => 0.8,
+            // W4-d35 (G): the 122/137/140 knockBackResist rows
+            // (the no-row kinds keep the head's 1f, NPC.cs:8533).
+            NpcKind::Gastropod => 0.8,
+            NpcKind::IlluminantBat => 0.75,
+            NpcKind::PossessedArmor => 0.4,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4128,6 +4145,10 @@ impl Npc {
             NpcKind::TheHungryII => 6,
             NpcKind::ChaosElemental => 30,
             NpcKind::Slimer => 20,
+            // W4-d35 (G): the 122/137/140 defense rows.
+            NpcKind::Gastropod => 22,
+            NpcKind::IlluminantBat => 30,
+            NpcKind::PossessedArmor => 28,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4536,6 +4557,10 @@ impl Npc {
             NpcKind::TheHungryII => 0.0,
             NpcKind::ChaosElemental => 600.0,
             NpcKind::Slimer => 0.0,
+            // W4-d35 (G): the 122/137/140 value rows (copper).
+            NpcKind::Gastropod => 600.0,
+            NpcKind::IlluminantBat => 500.0,
+            NpcKind::PossessedArmor => 400.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6593,6 +6618,11 @@ impl Npc {
             | NpcKind::TheHungryII
             | NpcKind::ChaosElemental
             | NpcKind::Slimer => {}
+            // W4-d35 (G): the 122/137/140 kinds are UNWIRED (data-only);
+            // the AI lands with its wave (the wyvern no-op precedent).
+            NpcKind::Gastropod
+            | NpcKind::IlluminantBat
+            | NpcKind::PossessedArmor => {}
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
         }
     }
@@ -9389,6 +9419,11 @@ impl Npc {
             | NpcKind::TheHungryII
             | NpcKind::ChaosElemental
             | NpcKind::Slimer => {}
+            // W4-d35 (G): the 122/137/140 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::Gastropod
+            | NpcKind::IlluminantBat
+            | NpcKind::PossessedArmor => {}
         }
     }
 
@@ -18985,6 +19020,10 @@ impl Npc {
             NpcKind::TheHungryII => 456,
             NpcKind::ChaosElemental => 457,
             NpcKind::Slimer => 458,
+            // W4-d35 (G): the port-local band (to_u16's ids).
+            NpcKind::Gastropod => 459,
+            NpcKind::IlluminantBat => 460,
+            NpcKind::PossessedArmor => 461,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24054,7 +24093,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 300] = [
+    pub(super) const ALL_KINDS: [NpcKind; 303] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24368,6 +24407,10 @@ mod tests {
         NpcKind::TheHungryII,
         NpcKind::ChaosElemental,
         NpcKind::Slimer,
+        // W4-d35 (G): the 122/137/140 data-wave kinds.
+        NpcKind::Gastropod,
+        NpcKind::IlluminantBat,
+        NpcKind::PossessedArmor,
         NpcKind::WyvernTail,
     ];
 
@@ -27980,7 +28023,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            300,
+            303,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31658,6 +31701,10 @@ mod s1_d_2_tests {
         (NpcKind::TheHungryII, 2),
         (NpcKind::ChaosElemental, 3),
         (NpcKind::Slimer, 14),
+        // W4-d35 (G).
+        (NpcKind::Gastropod, 22),
+        (NpcKind::IlluminantBat, 14),
+        (NpcKind::PossessedArmor, 3),
         (NpcKind::WyvernTail, 6),
     ];
 
@@ -34673,5 +34720,92 @@ mod w4_d35_f_tests {
         assert_eq!(e.kind, NpcKind::Corruptor, "VileSpit folds to Corruptor");
         assert_eq!(NpcKind::VileSpit.net_id(), e.net_id, "VileSpit net reads the fold");
         assert_eq!(crate::render::entities::texture_net_id(NpcKind::VileSpit), 112, "VileSpit draw sheet stays own");
+    }
+}
+
+#[cfg(test)]
+mod w4_d35_g_tests {
+    //! W4-d35 batch G (122/137/140) - the data-only SetDefaults wave.
+    //! Every row pins verbatim to the C# (`NPC.cs:10479-10492`, `NPC.cs:10735-10747`, `NPC.cs:10763-10775`). WRITTEN, NOT RUN
+    //! (code-only mode); the smallkinds-witness precedent.
+    use super::*;
+
+    #[test]
+    fn w4_d35_g_the_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value, scale, alpha)
+        let rows = [
+            (NpcKind::Gastropod, 122u16, 22u8, 20.0, 20.0, 60, 22, 220, 0.8f32, 600.0f32, 1.0f32, 0u8),
+            (NpcKind::IlluminantBat, 137u16, 14u8, 26.0, 20.0, 75, 30, 200, 0.75f32, 500.0f32, 1.0f32, 0u8),
+            (NpcKind::PossessedArmor, 140u16, 3u8, 18.0, 40.0, 55, 28, 260, 0.4f32, 400.0f32, 1.0f32, 0u8),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value, scale, alpha) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            // cs_id: visible kinds ride their own vanilla id; the Hide
+            // kinds fold to the head (the fallback reads the head entry).
+            if crate::bestiary::has_entry(kind, SlimeVariant::Blue) {
+                assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            }
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(shell.scale, scale, "{kind:?} scale");
+            assert_eq!(shell.alpha, alpha, "{kind:?} alpha");
+        }
+        // sounds
+        assert_eq!(NpcKind::Gastropod.hit_sound(), Some("NPC_Hit_1"), "Gastropod hit");
+        assert_eq!(NpcKind::Gastropod.death_sound(), Some("NPC_Killed_1"), "Gastropod death");
+        assert_eq!(NpcKind::IlluminantBat.hit_sound(), Some("NPC_Hit_1"), "IlluminantBat hit");
+        assert_eq!(NpcKind::IlluminantBat.death_sound(), Some("NPC_Killed_6"), "IlluminantBat death");
+        assert_eq!(NpcKind::PossessedArmor.hit_sound(), Some("NPC_Hit_4"), "PossessedArmor hit");
+        assert_eq!(NpcKind::PossessedArmor.death_sound(), Some("NPC_Killed_6"), "PossessedArmor death");
+        // protocol band (port-local 429..; the vanilla ids collide)
+        assert_eq!(NpcKind::Gastropod.to_u16(), 459, "Gastropod proto");
+        assert_eq!(NpcKind::from_u16(459), Some(NpcKind::Gastropod), "Gastropod decode");
+        assert_eq!(NpcKind::IlluminantBat.to_u16(), 460, "IlluminantBat proto");
+        assert_eq!(NpcKind::from_u16(460), Some(NpcKind::IlluminantBat), "IlluminantBat decode");
+        assert_eq!(NpcKind::PossessedArmor.to_u16(), 461, "PossessedArmor proto");
+        assert_eq!(NpcKind::from_u16(461), Some(NpcKind::PossessedArmor), "PossessedArmor decode");
+        // flags
+        assert_eq!(NpcKind::Gastropod.behind_tiles(), false, "Gastropod behindTiles");
+        assert_eq!(NpcKind::Gastropod.no_gravity(), true, "Gastropod noGravity");
+        assert_eq!(NpcKind::IlluminantBat.behind_tiles(), false, "IlluminantBat behindTiles");
+        assert_eq!(NpcKind::IlluminantBat.no_gravity(), true, "IlluminantBat noGravity");
+        assert_eq!(NpcKind::PossessedArmor.behind_tiles(), false, "PossessedArmor behindTiles");
+        assert_eq!(NpcKind::PossessedArmor.no_gravity(), false, "PossessedArmor noGravity");
+        // debuff immunities (NPCID.cs DebuffImmunitySets)
+        let b = NpcBuffs::for_kind(NpcKind::Gastropod);
+        assert!(b.buff_immune[20], "Gastropod immune 20");
+        assert!(b.buff_immune[31], "Gastropod immune 31");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "Gastropod derived 20");
+        let b = NpcBuffs::for_kind(NpcKind::IlluminantBat);
+        assert!(b.buff_immune[20], "IlluminantBat immune 20");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "IlluminantBat derived 20");
+        let b = NpcBuffs::for_kind(NpcKind::PossessedArmor);
+        assert!(b.buff_immune[20], "PossessedArmor immune 20");
+        assert!(b.buff_immune[24], "PossessedArmor immune 24");
+        assert!(b.buff_immune[323], "PossessedArmor immune 323");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "PossessedArmor derived 20");
+        // bestiary entries / Hide folds
+        let e = crate::bestiary::entry_for_npc(NpcKind::Gastropod, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 122, "Gastropod net");
+        assert_eq!(e.credit_id, "Gastropod", "Gastropod credit");
+        assert_eq!(e.name, "Gastropod", "Gastropod name");
+        assert_eq!(NpcKind::Gastropod.cs_id(), 122, "Gastropod cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::IlluminantBat, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 137, "IlluminantBat net");
+        assert_eq!(e.credit_id, "IlluminantBat", "IlluminantBat credit");
+        assert_eq!(e.name, "Illuminant Bat", "IlluminantBat name");
+        assert_eq!(NpcKind::IlluminantBat.cs_id(), 137, "IlluminantBat cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::PossessedArmor, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 140, "PossessedArmor net");
+        assert_eq!(e.credit_id, "PossessedArmor", "PossessedArmor credit");
+        assert_eq!(e.name, "Possessed Armor", "PossessedArmor name");
+        assert_eq!(NpcKind::PossessedArmor.cs_id(), 140, "PossessedArmor cs_id");
     }
 }

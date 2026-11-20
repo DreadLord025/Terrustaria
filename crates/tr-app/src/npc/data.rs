@@ -639,6 +639,13 @@ impl NpcKind {
             NpcKind::TheHungryII => 456,
             NpcKind::ChaosElemental => 457,
             NpcKind::Slimer => 458,
+            // W4-d35 (G): the 122/137/140 band - port-local protocol ids
+            // 429.. (the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::Gastropod => 459,
+            NpcKind::IlluminantBat => 460,
+            NpcKind::PossessedArmor => 461,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -999,6 +1006,9 @@ impl NpcKind {
             456 => NpcKind::TheHungryII,
             457 => NpcKind::ChaosElemental,
             458 => NpcKind::Slimer,
+            459 => NpcKind::Gastropod,
+            460 => NpcKind::IlluminantBat,
+            461 => NpcKind::PossessedArmor,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1890,6 +1900,10 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d35 (G): the 122/137/140 HitSound rows.
+            NpcKind::Gastropod => "NPC_Hit_1",
+            NpcKind::IlluminantBat => "NPC_Hit_1",
+            NpcKind::PossessedArmor => "NPC_Hit_4",
             // W4-d35 (F): the 110/112/116/120/121 HitSound rows.
             NpcKind::SkeletonArcher => "NPC_Hit_2",
             NpcKind::TheHungryII => "NPC_Hit_9",
@@ -2229,6 +2243,10 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d35 (G): the 122/137/140 DeathSound rows.
+            NpcKind::Gastropod => "NPC_Killed_1",
+            NpcKind::IlluminantBat => "NPC_Killed_6",
+            NpcKind::PossessedArmor => "NPC_Killed_6",
             // W4-d35 (F): the 110/112/116/120/121 DeathSound rows.
             NpcKind::SkeletonArcher => "NPC_Killed_2",
             NpcKind::VileSpit => "NPC_Killed_9",
@@ -2376,6 +2394,9 @@ impl NpcKind {
             | NpcKind::GreenJellyfish => true,
             // W4-d35 (F): the 121 noGravity flyers (kb>0).
             NpcKind::Slimer => true,
+            // W4-d35 (G): the 122/137 noGravity flyers (kb>0).
+            NpcKind::Gastropod
+            | NpcKind::IlluminantBat => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2677,6 +2698,12 @@ impl NpcKind {
             NpcKind::VileSpit => 9,
             // aiStyle 14 - W4-d35 (F; NPC.cs :10466).
             NpcKind::Slimer => 14,
+            // aiStyle 3 - W4-d35 (G; NPC.cs :10763).
+            NpcKind::PossessedArmor => 3,
+            // aiStyle 14 - W4-d35 (G; NPC.cs :10735).
+            NpcKind::IlluminantBat => 14,
+            // aiStyle 22 - W4-d35 (G; NPC.cs :10479).
+            NpcKind::Gastropod => 22,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3243,6 +3270,10 @@ impl NpcKind {
             NpcKind::TheHungryII => (30.0, 32.0),
             NpcKind::ChaosElemental => (18.0, 40.0),
             NpcKind::Slimer => (40.0, 30.0),
+            // W4-d35 (G): the 122/137/140 SetDefaults boxes.
+            NpcKind::Gastropod => (20.0, 20.0),
+            NpcKind::IlluminantBat => (26.0, 20.0),
+            NpcKind::PossessedArmor => (18.0, 40.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3347,6 +3378,10 @@ impl NpcKind {
             NpcKind::TheHungryII => 116,
             NpcKind::ChaosElemental => 120,
             NpcKind::Slimer => 121,
+            // W4-d35 (G): the 122/137/140 vanilla NPC.type rows.
+            NpcKind::Gastropod => 122,
+            NpcKind::IlluminantBat => 137,
+            NpcKind::PossessedArmor => 140,
             NpcKind::BlazingWheel => 72,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
@@ -3961,6 +3996,10 @@ impl NpcKind {
             NpcKind::TheHungryII => 80,
             NpcKind::ChaosElemental => 370,
             NpcKind::Slimer => 60,
+            // W4-d35 (G): the 122/137/140 lifeMax rows.
+            NpcKind::Gastropod => 220,
+            NpcKind::IlluminantBat => 200,
+            NpcKind::PossessedArmor => 260,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4361,6 +4400,10 @@ impl NpcKind {
             NpcKind::TheHungryII => 30,
             NpcKind::ChaosElemental => 40,
             NpcKind::Slimer => 45,
+            // W4-d35 (G): the 122/137/140 damage rows.
+            NpcKind::Gastropod => 60,
+            NpcKind::IlluminantBat => 75,
+            NpcKind::PossessedArmor => 55,
             NpcKind::DungeonSpirit => 70,
         }
     }

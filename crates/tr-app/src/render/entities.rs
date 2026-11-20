@@ -3230,6 +3230,13 @@ pub(crate) fn draw_npcs(
             NpcKind::TheHungryII => generic_anchor(assets.npc_sheet(116), 6, n, w, h),
             NpcKind::ChaosElemental => humanoid_draw(assets.npc_sheet(120), 15, n, w, h),
             NpcKind::Slimer => generic_anchor(assets.npc_sheet(121), 4, n, w, h),
+            // W4-d35 (G): the 122/137/140 draw arms. **Sheet deferral**:
+            // NPC_122/137/140 are NOT packed (the atlas stands at the 8192
+            // strict-GPU bound - the wyvern precedent); npc_sheet returns
+            // None and the draw skips. The packing rides the atlas-repack wave.
+            NpcKind::Gastropod => generic_anchor(assets.npc_sheet(122), 11, n, w, h),
+            NpcKind::IlluminantBat => generic_anchor(assets.npc_sheet(137), 4, n, w, h),
+            NpcKind::PossessedArmor => humanoid_draw(assets.npc_sheet(140), 15, n, w, h),
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }

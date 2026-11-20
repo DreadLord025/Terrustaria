@@ -515,6 +515,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::VileSpit => &[31],
         NpcKind::TheHungryII => &[31],
         NpcKind::ChaosElemental => &[20],
+        // W4-d35 (G): the 122/137/140 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::Gastropod => &[20, 31],
+        NpcKind::IlluminantBat => &[20],
+        NpcKind::PossessedArmor => &[20, 24, 323],
         NpcKind::Slimer => &[20],
         NpcKind::Clown => &[31],
         NpcKind::SeekerTail => &[31],
