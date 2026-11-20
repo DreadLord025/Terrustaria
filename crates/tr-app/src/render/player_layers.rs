@@ -180,14 +180,12 @@ pub(crate) struct PlayerCompositeState {
     /// `sItem.type` — the useStyle-1 arm's per-item specials: the Bladed
     /// Glove claw (1827), the fishing-hammer/Keybrand nudges, the Breaker
     /// Blade's `UsesBetterMeleeItemLocation` offset (`Player.cs:50693-
-    /// 50857`, S1-P-i04).
+    /// 50857`, S1-P-i04); the useStyle-3 arm's 946/4707 umbrella nudge
+    /// (`:51054-51057`, S1-P-i05). 0 = empty hand.
     pub(crate) item_type: i32,
     /// The held item's atlas quad and frame size, `None` = empty hand.
     pub(crate) item_uv: Option<[f32; 4]>,
     pub(crate) item_size: [f32; 2],
-    /// `Item.type` of the held kind (S1-P-i05) — the useStyle-3 arm's
-    /// 946/4707 umbrella nudge (`Player.cs:51054-51057`). 0 = empty hand.
-    pub(crate) item_type: i32,
     /// `GetAdjustedItemScale(sItem)` (`Player.cs:42566-42574`) — the
     /// prefixed `Item.scale` (the `meleeScaleGlove` arm has no port
     /// granter). The useStyle-3 extension reads it (`:51043`).
@@ -2166,7 +2164,6 @@ mod tests {
             item_type: 0,
             item_uv: None,
             item_size: [16.0, 16.0],
-            item_type: 0,
             item_scale: 1.0,
             light: [1.0, 1.0, 1.0],
             head_armor: -1,
@@ -3001,7 +2998,6 @@ mod player_draw_tests {
             item_type: 0,
             item_uv: None,
             item_size: [0.0, 0.0],
-            item_type: 0,
             item_scale: 1.0,
             light: [1.0, 1.0, 1.0],
             mount: None,

@@ -1629,168 +1629,6 @@ fn resolve_melee_strike(
                 }
 }
 
-/// S1-P-i05 — `ItemCheck`'s useStyle-3 (Thrust) use-start + stab sweep
-/// (`Player.cs:43644-43686` with the `ItemCheck_GetMeleeHitbox` arm
-/// `:45164-45189`). The umbrella pair (946/4707) are the only style-3
-/// items in 1.4.5.8 (`Item.cs:12320-12332`/`:38683-38695`); they are
-/// `noMelee: false` melee weapons with no projectile, so the port's
-/// cursor arm never fired them (its `held_weapon` = `projectile.is_some()`
-/// gate is the shooter definition) — this seam gives them the C#'s
-/// behaviour: the press starts the use (`ItemCheck_TryStartUse` →
-/// `ItemCheck_StartActualUse` `:51657-51698`: `attackCD = 0`,
-/// `ResetMeleeHitCooldowns`, `ApplyItemAnimation`), then EVERY tick of
-/// the animation the stab rect (`thrust_melee_hitbox` off the live
-/// `thrust_item_placement`) scans the NPC pool — the wind-up third is
-/// `dontAttack` (`:45168-45172`), the extension/retract rect hits every
-/// NPC it intersects once per swing (`meleeNPCHitCooldown`,
-/// `:44246`/`:44414`), under `attackCD <= 0` (`ApplyAttackCooldown`
-/// `:44428-44431` after each landed hit). The per-tick
-/// `UpdateMeleeHitCooldowns` decrement (`:43664`) runs once per damage
-/// tick before the scan. The friendly/dontTakeDamage gates ride the
-/// same predicates as the cursor arm (`ProcessHitAgainstNPC`
-/// `:44265-44277`); the `CanHit` wall check (`:44287`) and the
-/// `nPC.immune[whoAmI] == 0` gate ride the port's established
-/// `strike_melee` `hurt_cd` stand-in. Returns true when the held item
-/// took the thrust path (the caller skips the cursor melee arm).
-fn thrust_stab_tick(
-    app: &mut App,
-    prev_mine_released: bool,
-    prev_mine_down: bool,
-    cursor_blocked: bool,
-) -> bool {
-    let held = app.inventory[app.selected];
-    let Some(def) = registry::get(held.kind) else {
-        return false;
-    };
-    if def.use_style != 3 || held.count == 0 || def.damage <= 0 {
-        return false;
-    }
-    // The use-start: the press edge (or the held button on autoReuse)
-    // with the timers clear (`ItemCheck_TryStartUse`'s gates,
-    // `Player.cs:52042+`; the port's cursor arm's timer pair + the
-    // `controlUseItem && releaseUseItem` edge, `:42733`). The umbrellas
-    // are `autoReuse: false` (`Item.cs:12320+`) — one stab per press.
-    // The cursor gate (`controlUseItem` zeroed over the HUD,
-    // `Player.cs:24798-24807`) blocks the START only.
-    let reuse_ready = def.auto_reuse || (prev_mine_released && !prev_mine_down);
-    if app.mine_down
-        && reuse_ready
-        && !cursor_blocked
-        && !app.inventory_open
-        && app.swing <= 0.0
-        && app.attack_cd <= 0.0
-        && app.reuse_delay <= 0.0
-    {
-        app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-        app.swing = app.swing_max;
-        start_swing_extras(app, held.kind);
-        // `ItemCheck_StartActualUse` (`Player.cs:51678-51680`):
-        // `attackCD = 0; ResetMeleeHitCooldowns(); ApplyItemAnimation`.
-        app.attack_cd = 0.0;
-        if let Some(p) = app.player.as_mut() {
-            p.melee_npc_hit_cooldown.clear();
-        }
-    }
-    if app.swing <= 0.0 {
-        return true;
-    }
-    let Some(p) = app.player.as_ref() else {
-        return true;
-    };
-    let remaining = app.swing / app.swing_max.max(f32::EPSILON);
-    let scale = crate::player::adjusted_item_scale(
-        crate::prefix::prefixed_stats(held.kind, held.prefix)
-            .map_or(def.scale, |s| s.scale),
-    );
-    // The held frame: the atlas icon quad is the `GetDrawHitbox`
-    // stand-in the renderer uses (`Item.GetDrawHitbox` returns the
-    // texture frame; the umbrellas' 44x44 stock frame `Item.cs:12321`).
-    let (frame_w, frame_h) = app
-        .lookups
-        .item_icon(held.kind)
-        .map_or((def.width as f32, def.height as f32), |(_, w, h)| (w, h));
-    let (loc, _rot) = crate::player::thrust_item_placement(
-        p.x,
-        p.y,
-        crate::player::WIDTH,
-        p.facing as f32,
-        remaining,
-        frame_w,
-        scale,
-        0.0, // mountOffset — HeightOffsetHitboxCenter stands at 0
-        i32::from(held.kind),
-    );
-    let Some(hitbox) = crate::player::thrust_melee_hitbox(
-        loc,
-        frame_w,
-        frame_h,
-        scale,
-        p.facing,
-        remaining,
-        i32::from(held.kind),
-    ) else {
-        // `dontAttack` — the wind-up third never attacks (`:45170`), and
-        // the `:43651` gate skips `UpdateMeleeHitCooldowns` too.
-        return true;
-    };
-    let (rx, ry, rw, rh) = hitbox;
-    let (pcx, _) = p.center();
-    let melee_pen = p.get_armor_penetration(true);
-    let (kill_guide, kill_clothier) = p.doll_flags();
-    let attack_ready = app.attack_cd <= 0.0;
-    let hits_town_npc = matches!(held.kind, 5129 | 3351);
-    let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
-    // `Player.cs:43664`: `UpdateMeleeHitCooldowns` — one decrement per
-    // non-dontAttack damage tick, BEFORE the NPC scan (`:43681`).
-    if let Some(p) = app.player.as_mut() {
-        for cd in p.melee_npc_hit_cooldown.values_mut() {
-            *cd -= 1;
-        }
-    }
-    let cooldowns = app
-        .player
-        .as_ref()
-        .map(|p| p.melee_npc_hit_cooldown.clone())
-        .unwrap_or_default();
-    // `ItemCheck_MeleeHitNPCs` (`Player.cs:44243-44252`): the slot-order
-    // scan; the gates are `active && immune[whoAmI] == 0 &&
-    // CanHitNPCWithMeleeHit && attackCD <= 0`. The `immune` gate rides
-    // `strike_melee`'s `hurt_cd` stand-in (the established melee path).
-    for idx in 0..app.npcs.len() {
-        let n = &app.npcs[idx];
-        if n.hp <= 0 || n.dont_take_damage {
-            continue;
-        }
-        if n.kind.is_friendly()
-            && !(n.kind == NpcKind::Guide && kill_guide)
-            && !(n.kind == NpcKind::Clothier && kill_clothier)
-            && !(n.kind.is_town_npc_like() && hits_town_npc)
-        {
-            continue;
-        }
-        if !attack_ready || cooldowns.get(&n.uid).is_some_and(|&cd| cd > 0) {
-            continue;
-        }
-        // `ProcessHitAgainstNPC`'s rect intersect (`:44278-44279`).
-        let (nw, nh) = n.size();
-        let (nx, ny) = (n.x as i32, n.y as i32);
-        let intersects = rx < nx + nw as i32
-            && rx + rw > nx
-            && ry < ny + nh as i32
-            && ry + rh > ny;
-        if !intersects {
-            continue;
-        }
-        resolve_melee_strike(app, idx, held, true, held_fx, melee_pen, pcx);
-        // The landed hit re-armed `attack_cd` (ApplyAttackCooldown) —
-        // the C# scan keeps walking the slots under the new cooldown
-        // (`:44246` reads the live field); with attackCD >= 1 no further
-        // slot can hit this tick, so the walk ends here.
-        break;
-    }
-    true
-}
-
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
     // `ItemCheck_MeleeHitNPCs` runs for every item with `damage > 0` and
     // `!noMelee` (`Player.cs:43648`) — the tools included, their damage
@@ -4324,6 +4162,168 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
         }
         _ => None,
     }
+}
+
+/// S1-P-i05 — `ItemCheck`'s useStyle-3 (Thrust) use-start + stab sweep
+/// (`Player.cs:43644-43686` with the `ItemCheck_GetMeleeHitbox` arm
+/// `:45164-45189`). The umbrella pair (946/4707) are the only style-3
+/// items in 1.4.5.8 (`Item.cs:12320-12332`/`:38683-38695`); they are
+/// `noMelee: false` melee weapons with no projectile, so the port's
+/// cursor arm never fired them (its `held_weapon` = `projectile.is_some()`
+/// gate is the shooter definition) — this seam gives them the C#'s
+/// behaviour: the press starts the use (`ItemCheck_TryStartUse` →
+/// `ItemCheck_StartActualUse` `:51657-51698`: `attackCD = 0`,
+/// `ResetMeleeHitCooldowns`, `ApplyItemAnimation`), then EVERY tick of
+/// the animation the stab rect (`thrust_melee_hitbox` off the live
+/// `thrust_item_placement`) scans the NPC pool — the wind-up third is
+/// `dontAttack` (`:45168-45172`), the extension/retract rect hits every
+/// NPC it intersects once per swing (`meleeNPCHitCooldown`,
+/// `:44246`/`:44414`), under `attackCD <= 0` (`ApplyAttackCooldown`
+/// `:44428-44431` after each landed hit). The per-tick
+/// `UpdateMeleeHitCooldowns` decrement (`:43664`) runs once per damage
+/// tick before the scan. The friendly/dontTakeDamage gates ride the
+/// same predicates as the cursor arm (`ProcessHitAgainstNPC`
+/// `:44265-44277`); the `CanHit` wall check (`:44287`) and the
+/// `nPC.immune[whoAmI] == 0` gate ride the port's established
+/// `strike_melee` `hurt_cd` stand-in. Returns true when the held item
+/// took the thrust path (the caller skips the cursor melee arm).
+fn thrust_stab_tick(
+    app: &mut App,
+    prev_mine_released: bool,
+    prev_mine_down: bool,
+    cursor_blocked: bool,
+) -> bool {
+    let held = app.inventory[app.selected];
+    let Some(def) = registry::get(held.kind) else {
+        return false;
+    };
+    if def.use_style != 3 || held.count == 0 || def.damage <= 0 {
+        return false;
+    }
+    // The use-start: the press edge (or the held button on autoReuse)
+    // with the timers clear (`ItemCheck_TryStartUse`'s gates,
+    // `Player.cs:52042+`; the port's cursor arm's timer pair + the
+    // `controlUseItem && releaseUseItem` edge, `:42733`). The umbrellas
+    // are `autoReuse: false` (`Item.cs:12320+`) — one stab per press.
+    // The cursor gate (`controlUseItem` zeroed over the HUD,
+    // `Player.cs:24798-24807`) blocks the START only.
+    let reuse_ready = def.auto_reuse || (prev_mine_released && !prev_mine_down);
+    if app.mine_down
+        && reuse_ready
+        && !cursor_blocked
+        && !app.inventory_open
+        && app.swing <= 0.0
+        && app.attack_cd <= 0.0
+        && app.reuse_delay <= 0.0
+    {
+        app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+        app.swing = app.swing_max;
+        start_swing_extras(app, held.kind);
+        // `ItemCheck_StartActualUse` (`Player.cs:51678-51680`):
+        // `attackCD = 0; ResetMeleeHitCooldowns(); ApplyItemAnimation`.
+        app.attack_cd = 0.0;
+        if let Some(p) = app.player.as_mut() {
+            p.melee_npc_hit_cooldown.clear();
+        }
+    }
+    if app.swing <= 0.0 {
+        return true;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return true;
+    };
+    let remaining = app.swing / app.swing_max.max(f32::EPSILON);
+    let scale = crate::player::adjusted_item_scale(
+        crate::prefix::prefixed_stats(held.kind, held.prefix)
+            .map_or(def.scale, |s| s.scale),
+    );
+    // The held frame: the atlas icon quad is the `GetDrawHitbox`
+    // stand-in the renderer uses (`Item.GetDrawHitbox` returns the
+    // texture frame; the umbrellas' 44x44 stock frame `Item.cs:12321`).
+    let (frame_w, frame_h) = app
+        .lookups
+        .item_icon(held.kind)
+        .map_or((def.width as f32, def.height as f32), |(_, w, h)| (w, h));
+    let (loc, _rot) = crate::player::thrust_item_placement(
+        p.x,
+        p.y,
+        crate::player::WIDTH,
+        p.facing as f32,
+        remaining,
+        frame_w,
+        scale,
+        0.0, // mountOffset — HeightOffsetHitboxCenter stands at 0
+        i32::from(held.kind),
+    );
+    let Some(hitbox) = crate::player::thrust_melee_hitbox(
+        loc,
+        frame_w,
+        frame_h,
+        scale,
+        p.facing,
+        remaining,
+        i32::from(held.kind),
+    ) else {
+        // `dontAttack` — the wind-up third never attacks (`:45170`), and
+        // the `:43651` gate skips `UpdateMeleeHitCooldowns` too.
+        return true;
+    };
+    let (rx, ry, rw, rh) = hitbox;
+    let (pcx, _) = p.center();
+    let melee_pen = p.get_armor_penetration(true);
+    let (kill_guide, kill_clothier) = p.doll_flags();
+    let attack_ready = app.attack_cd <= 0.0;
+    let hits_town_npc = matches!(held.kind, 5129 | 3351);
+    let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
+    // `Player.cs:43664`: `UpdateMeleeHitCooldowns` — one decrement per
+    // non-dontAttack damage tick, BEFORE the NPC scan (`:43681`).
+    if let Some(p) = app.player.as_mut() {
+        for cd in p.melee_npc_hit_cooldown.values_mut() {
+            *cd -= 1;
+        }
+    }
+    let cooldowns = app
+        .player
+        .as_ref()
+        .map(|p| p.melee_npc_hit_cooldown.clone())
+        .unwrap_or_default();
+    // `ItemCheck_MeleeHitNPCs` (`Player.cs:44243-44252`): the slot-order
+    // scan; the gates are `active && immune[whoAmI] == 0 &&
+    // CanHitNPCWithMeleeHit && attackCD <= 0`. The `immune` gate rides
+    // `strike_melee`'s `hurt_cd` stand-in (the established melee path).
+    for idx in 0..app.npcs.len() {
+        let n = &app.npcs[idx];
+        if n.hp <= 0 || n.dont_take_damage {
+            continue;
+        }
+        if n.kind.is_friendly()
+            && !(n.kind == NpcKind::Guide && kill_guide)
+            && !(n.kind == NpcKind::Clothier && kill_clothier)
+            && !(n.kind.is_town_npc_like() && hits_town_npc)
+        {
+            continue;
+        }
+        if !attack_ready || cooldowns.get(&n.uid).is_some_and(|&cd| cd > 0) {
+            continue;
+        }
+        // `ProcessHitAgainstNPC`'s rect intersect (`:44278-44279`).
+        let (nw, nh) = n.size();
+        let (nx, ny) = (n.x as i32, n.y as i32);
+        let intersects = rx < nx + nw as i32
+            && rx + rw > nx
+            && ry < ny + nh as i32
+            && ry + rh > ny;
+        if !intersects {
+            continue;
+        }
+        resolve_melee_strike(app, idx, held, true, held_fx, melee_pen, pcx);
+        // The landed hit re-armed `attack_cd` (ApplyAttackCooldown) —
+        // the C# scan keeps walking the slots under the new cooldown
+        // (`:44246` reads the live field); with attackCD >= 1 no further
+        // slot can hit this tick, so the walk ends here.
+        break;
+    }
+    true
 }
 
 #[cfg(test)]

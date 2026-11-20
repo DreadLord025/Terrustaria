@@ -1665,17 +1665,16 @@ pub(crate) fn draw_player(
         swing_max_ticks: player.frame_inputs.swing_anim_max * 60.0,
         use_animation: player.frame_inputs.use_animation,
         // `sItem.type` — the useStyle-1 arm's per-item specials (the claw,
-        // the nudges, the BetterMeleeItemLocation set — S1-P-i04).
+        // the nudges, the BetterMeleeItemLocation set — S1-P-i04) and the
+        // useStyle-3 arm's 946/4707 umbrella nudge (S1-P-i05,
+        // `Player.cs:51054-51057`).
         item_type: player.frame_inputs.item_type,
         item_size: held
             .and_then(|(kind, _, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)
             .unwrap_or([0.0, 0.0]),
-        // S1-P-i05: the useStyle-3 arm's per-item inputs — `Item.type`
-        // (the 946/4707 umbrella nudge, `Player.cs:51054-51057`) and
-        // `GetAdjustedItemScale` (`:42566-42574`, the PREFIXED scale —
-        // `Item.Prefix` mutates the instance the C# reads).
-        item_type: held.map_or(0, |(kind, _, _)| i32::from(kind)),
+        // S1-P-i05: `GetAdjustedItemScale` (`:42566-42574`, the PREFIXED
+        // scale — `Item.Prefix` mutates the instance the C# reads).
         item_scale: held.map_or(1.0, |(kind, _, prefix)| {
             crate::player::adjusted_item_scale(
                 crate::prefix::prefixed_stats(kind, prefix)

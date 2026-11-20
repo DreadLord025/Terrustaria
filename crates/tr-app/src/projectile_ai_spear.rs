@@ -122,7 +122,7 @@ fn kill(p: &mut Projectile) {
 /// (`Projectile.cs:45859-45868`), snapshotted by the dispatch (the slot loop
 /// cannot borrow the player — the `FlailInputs` pattern). The C# reads the
 /// live `Player` fields; the port snapshots them once per fixed step.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct SpearOwner {
     /// `player.RotatedRelativePoint(player.MountedCenter)` (`:45860`) — the
     /// spear's anchor. The port's `mounted_center()` folds to `center()` (no

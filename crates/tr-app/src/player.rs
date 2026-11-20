@@ -1426,6 +1426,11 @@ pub struct Player {
     /// rail-slope tilt from `Minecart.TrackRotation` (`Player.cs:28114-28115`).
     pub full_rotation: f32,
     pub full_rotation_origin: (f32, f32),
+    /// `Player.itemRotation` (`Player.cs:1836`): the held item's draw
+    /// rotation. The shooting styles derive it from the aim each frame
+    /// (`:47371-47378`, `FrameInputs.item_rotation`); the flail chain writes
+    /// it per tick (`Projectile.cs:44162-44167`, S1-P-i07's `FlailTick`).
+    pub item_rotation: f32,
     /// `Player.fallStart2` (`Player.cs:2884`): the fall origin the rail-landing
     /// gate reads (`Minecart.cs:809-813`), captured pre-movement when
     /// `velocity.Y <= 0` (`Player.cs:25295-25297`).
@@ -2302,6 +2307,7 @@ impl Player {
             cart_ramp_time: 0,
             full_rotation: 0.0,
             full_rotation_origin: (0.0, 0.0),
+            item_rotation: 0.0,
             fall_start2: (sy / TILE_PX) as i32,
             pending_switch_trip: None,
             pending_hurt_sound: None,
@@ -16262,7 +16268,6 @@ mod s1_player_composite_tests {
             aim_relative: 0.0,
             hold_style_dry: true,
             torch_hold_ok: true,
-            use_turn: false,
             grapple_dx: 0.0,
             grapple_dy: 0.0,
         }

@@ -1002,11 +1002,12 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         fire(&mut app, 3019, 485, 9.0, 27, 5.5, cursor, 13, 12);
+        let after = stream_of(&mut app);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 485);
         assert_eq!(
-            stream_of(&mut app),
+            after,
             draws_after(0x5EED, 4),
             "the ai-spin pair then the velocity pair (`:47575-47576`)"
         );
@@ -1050,7 +1051,7 @@ mod tests {
                 "the rain spawns above the player (y={})",
                 s.pos.y
             );
-            assert!(s.vy > 0.0, "the rain falls downward");
+            assert!(s.vel.y > 0.0, "the rain falls downward");
         }
         let _ = mcx;
     }
@@ -1158,12 +1159,12 @@ mod tests {
         left.player.as_mut().unwrap().facing = -1;
         let (cx, cy) = left.player.as_ref().unwrap().center();
         let cursor = Vec2::new(cx - 80.0, cy);
-        fire(&mut left, 4953, 2, 13.0, 55, 2.0, false, cursor, 30, 27);
+        fire(&mut left, 4953, 2, 13.0, 55, 2.0, cursor, 30, 27);
         let mut right = rig(0x5EED);
         right.player.as_mut().unwrap().facing = 1;
         let (cx2, cy2) = right.player.as_ref().unwrap().center();
         let cursor2 = Vec2::new(cx2 + 80.0, cy2);
-        fire(&mut right, 4953, 2, 13.0, 55, 2.0, false, cursor2, 30, 27);
+        fire(&mut right, 4953, 2, 13.0, 55, 2.0, cursor2, 30, 27);
         // num61 = (30-27)/2 = 1; left num62 = 1, right num62 = 3. The fan
         // offsets differ, so the spawn Y differs.
         let ly = live(&left)[0].pos.y;

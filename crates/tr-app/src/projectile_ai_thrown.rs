@@ -73,8 +73,8 @@ use tr_core::World;
 use crate::npc::Npc;
 use crate::projectile::{
     can_hit, chaseable, Projectile, BEE, BEENADE, BLOOD_WATER, BONE_JAVELIN, GIANT_BEE,
-    HOLY_WATER, MOLOTOV_COCKTAIL, MOLOTOV_FIRE_1, MOLOTOV_FIRE_2, MOLOTOV_FIRE_3,
-    POISONED_KNIFE, UNHOLY_WATER,
+    GRENADE, HOLY_WATER, MOLOTOV_COCKTAIL, MOLOTOV_FIRE_1, MOLOTOV_FIRE_2, MOLOTOV_FIRE_3,
+    POISONED_KNIFE, STICKY_GRENADE, UNHOLY_WATER,
 };
 
 /// The aiStyle-1 kind this module owns (the javelin 507). Kind-disjoint from
@@ -694,9 +694,9 @@ mod tests {
         let mut n = Npc::new(crate::npc::NpcKind::Zombie, 600.0, 500.0, 0, 0.0);
         n.hp = n.max_hp;
         p.local_ai[0] = 898.0;
-        bone_javelin_step(&mut p, &w, &[n]);
+        bone_javelin_step(&mut p, &w, std::slice::from_ref(&n));
         assert!(p.active, "899 < 900 still stuck");
-        bone_javelin_step(&mut p, &w, &[n]);
+        bone_javelin_step(&mut p, &w, std::slice::from_ref(&n));
         assert!(!p.active, "900 >= 900 expires");
     }
 

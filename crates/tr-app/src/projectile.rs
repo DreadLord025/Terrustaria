@@ -18601,7 +18601,6 @@ impl ProjectilePool {
             None,
             None,
             &mut tr_core::tile_light::FastRandom::new(0),
-            world,
         );
         // S1-P-i28 — `Kill_ExplodeTiles` (`Projectile.cs:77265-77296`): the
         // grenades (30/397/517) take the `ExplodeCrackedTiles` arm
@@ -19210,7 +19209,6 @@ impl ProjectilePool {
         owner: Option<(f32, f32)>,
         mut player: Option<&mut crate::player::Player>,
         rng: &mut dyn tr_core::loot::DropRng,
-        world: &World,
     ) {
         let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
         let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, center) = {
@@ -19484,11 +19482,10 @@ impl ProjectilePool {
             // AFTER DamageVar (`:12938`) and BEFORE the Hellfire clamp
             // (`:13252`) / StatusNPC / StrikeNPC, so the Daybroken gate
             // below reads the fresh pin.
-            if self.slots[slot].kind == BONE_JAVELIN && self.slots[slot].ai[0] < 2.0 {
-                let (ncx, ncy) = npcs[idx].center();
+            if p.kind == BONE_JAVELIN && p.ai[0] < 2.0 {
+                let (ncx, ncy) = n.center();
+                let (pcx, pcy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
                 let pj = &mut self.slots[slot];
-                let pcx = pj.pos.x + pj.w * 0.5;
-                let pcy = pj.pos.y + pj.h * 0.5;
                 pj.ai[0] = 1.0;
                 pj.ai[1] = idx as f32;
                 pj.vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
@@ -19496,8 +19493,12 @@ impl ProjectilePool {
             // S1-P-i17 — `Damage_PVE_Inner`'s Hellfire clamp
             // (`Projectile.cs:13252-13255`): the 41's contact pins
             // `timeLeft = 1` (the C# site sits between DamageVar `:12938`
-            // and the yoyo doublings `:13389`, ABOVE the strike).
-            crate::special_arrows::hellfire_hit_clamp(&mut self.slots[slot]);
+            // and the yoyo doublings `:13389`, ABOVE the strike). The
+            // scalars were read above; the `p` borrow ends here so the
+            // mutation lands (E0502).
+            if p.kind == HELLFIRE_ARROW && p.time_left > 1 {
+                self.slots[slot].time_left = 1;
+            }
             // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
             // 13300`, S1-P-i09): the dropped twin squashes its velocity to
             // len/5 and takes the `Next(50, 81) * 0.1` upward lift (clamped
@@ -21068,7 +21069,7 @@ mod tests {
         pool.slots_mut()[slot].penetrate = -1;
         pool.slots_mut()[slot].max_penetrate = -1;
         let mut rng = tr_core::tile_light::FastRandom::new(7);
-        pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
         assert!(npc.hp < 10_000, "the burst lands");
         // The sentinel stamp: update_count 0 + (u32::MAX) — never expires.
         let stamp = pool.id_static.get(&(RAINBOW_CRYSTAL_EXPLOSION, 0)).copied();
@@ -21076,7 +21077,7 @@ mod tests {
         assert_eq!(npc.immune[0], 0, "the id-static arm clears the per-owner window");
         // A second hit on the same NPC is refused (the sentinel blocks).
         let hp_after = npc.hp;
-        pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
         assert_eq!(npc.hp, hp_after, "the block-forever sentinel refuses the re-hit");
     }
 
@@ -21097,7 +21098,7 @@ mod tests {
                 .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .unwrap();
             let mut rng = tr_core::tile_light::FastRandom::new(7);
-            pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
             assert!(npc.hp < 10_000, "kind {kind} lands");
             assert_eq!(npc.immune[0], 5, "kind {kind}: the 5-tick per-type arm");
         }
@@ -21119,7 +21120,7 @@ mod tests {
                 .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .unwrap();
             let mut rng = tr_core::tile_light::FastRandom::new(7);
-            pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
             assert!(npc.hp < 10_000, "kind {kind} lands");
             assert_eq!(npc.immune[0], want, "kind {kind}: the per-type arm");
         }
@@ -21147,13 +21148,13 @@ mod tests {
                 .spawn_with_data_ai(LAST_PRISM_LASER, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .unwrap();
             let mut rng = tr_core::tile_light::FastRandom::new(7);
-            pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
             assert!(npc.hp < 10_000, "the laser lands");
             assert_eq!(npc.immune[0], 5, "the 5-tick per-type arm (plain walk)");
             // penetrate −1 keeps the shot alive, but the 5-tick window
             // refuses the immediate re-hit (`:12620-12624`).
             let hp_after = npc.hp;
-            pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
             assert_eq!(npc.hp, hp_after, "the per-owner window refuses the re-hit");
         }
         // The boxed walk — same arm, same position in the if/else chain.
@@ -21220,7 +21221,6 @@ mod tests {
             None,
             None,
             &mut rng,
-            &world,
         );
         assert!(
             npc.hp < before,
@@ -21263,7 +21263,6 @@ mod tests {
             None,
             None,
             &mut rng,
-            &w,
         );
         assert_eq!(
             npc.hp,
@@ -26704,6 +26703,9 @@ mod phasmal_projectile_tests {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
+            no_drop_item: false,
+            wet: false,
+            wants_dart_spawns: Vec::new(),
         }
     }
 
@@ -27102,6 +27104,9 @@ mod ritual_projectile_tests {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
+            no_drop_item: false,
+            wet: false,
+            wants_dart_spawns: Vec::new(),
         }
     }
 
