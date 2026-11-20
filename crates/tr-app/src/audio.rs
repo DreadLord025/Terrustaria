@@ -463,13 +463,18 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     // `SoundID.*Hurt` trackables (`SoundID.cs:1746-1761`, one variation
     // each, variance 0.4). The Bell arm is NOT here — `BellHurt` is the
     // legacy id-2 style 35 (`SoundID.cs:1745`), `Item_35` in SFX_CUES.
-    // Commit 1 lands the first five switch arms; the rest join in the
-    // follow-up commits (the 5-sites-per-commit cadence).
+    // Commit 1 landed the first five switch arms; commit 2 adds the next
+    // five (the 5-sites-per-commit cadence).
     "player_hit_balloon",
     "player_hit_cat",
     "player_hit_chicken",
     "player_hit_chicken_rare",
     "player_hit_crow",
+    "player_hit_dog",
+    "player_hit_fairy",
+    "player_hit_frog",
+    "player_hit_goat",
+    "player_hit_goblin",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
@@ -3817,6 +3822,71 @@ mod tests {
             Some("dd2_goblin_hurt_0")
         );
         assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+    }
+
+    /// W4-c13 — the voice-override hit play's RNG contract
+    /// (`NPC.cs:81490-81549` → `SoundEngine.cs:93-99` → case 42
+    /// `LegacySoundPlayer.cs:1376-1381`): the `GetRandomPitch` NextFloat
+    /// rides the audio-only stream (variance 0.4), NO gameplay draw; the
+    /// Bell arm (`BellHurt`, the legacy id-2 style 35, `SoundID.cs:1745`)
+    /// instead spends ONE `Next(-6, 7)` on the strike's stream (case 2's
+    /// default pitch arm `:632`, then the `:635-638` music overwrite).
+    /// A muted/out-of-range play is gameplay-draw-free (the gate precedes
+    /// the switch); an unknown row is the no-row refusal.
+    #[test]
+    fn w4_c13_the_voice_hit_plays_split_the_trackable_and_bell_paths() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 42 (the CatHurt arm): no gameplay draw, the audio-only
+        // NextFloat moves (variance 0.4 ≠ 0).
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_npc_voice_hit("CatHurt", 0.0, 0.0, &mut rng),
+            Some("player_hit_cat")
+        );
+        assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+        assert_ne!(audio.sound_style_random, style_before, "the façade NextFloat");
+        // The Bell arm: ONE Next(-6, 7) on the strike's stream + the
+        // NextFloat; the cue is the style-35 asset.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_npc_voice_hit("BellHurt", 0.0, 0.0, &mut rng),
+            Some("Item_35")
+        );
+        assert_eq!(rng, witness, "the Bell arm's one case-2 draw");
+        // Muted: both paths refuse before any gameplay draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_voice_hit("CatHurt", 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_voice_hit("BellHurt", 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted plays are gameplay-draw-free");
+        // Out of attenuation range: also draw-free.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_npc_voice_hit("BellHurt", 5000.0, 0.0, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the inaudible Bell play is draw-free");
+        // Commit 2's frog arm resolves; an unknown row draws nothing.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_npc_voice_hit("FrogHurt", 0.0, 0.0, &mut rng),
+            Some("player_hit_frog"),
+            "commit 2 registered the frog arm"
+        );
+        assert_eq!(rng.peek(), peek);
+        assert_eq!(audio.play_npc_voice_hit("NotAVoice", 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "an unknown row draws nothing");
     }
 
     /// S1-E-21h — the projectile cue play's RNG contract: every ported
