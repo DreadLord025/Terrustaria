@@ -654,3 +654,45 @@ No second-switch rows for these ids. The boulder kinds (272/411/487/488/574-578/
 664/712-716 family) get their `DrawSingleTile` parity/source shifts elsewhere
 (case 272's cog-style shift is d63's quarter; 487/488/574-578 have no
 DrawSingleTile companion arms — checked `:1020-1165`).
+
+### Batch 11 — height-18 group tail: 695, 704, 712 (3 ids)
+
+C# `TileDrawing.cs:4900-4908` — the same group body cited verbatim in batch 9;
+712 is d61's LAST id (index 92), 713 (`:4903`) opens d62's quarter.
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 695 | height-18 group | :4900-4908 | `drawdata.rs:343` | PORTED |
+| 704 | shares the group | :4901 | :344 | PORTED |
+| 712 | shares the group (`712..=716` run; 713-716 are d62's labels on the same arm) | :4902 | :345 (`712..=716`) | PORTED |
+
+No second-switch rows for these ids.
+
+## Quarter summary — 93/93 audited, 0 MISSING
+
+Coverage check: `python tools/_d61_check.py` → `claimed: 93 distinct: 93`,
+`matches census quarter: True`, `ids without a table row: []`.
+
+| Verdict | Count | Ids |
+| --- | --- | --- |
+| PORTED (arm faithful, wired) | 93 | all 93 (metrics/frame/top/flip arms) |
+| — of which glow record also ported but UNWIRED (`_glow`, TILE-DRAW-2) | 4 | 634 (mask 315), 100 (mask 68 martian), 33 (mask 61 martian), 637 (painted-sheet sentinel) |
+| DEVIATION (sub-part, documented) | 2 | 4 (caller `solid_above` probe omits halfBrick/slope/inActive/null clauses — `tiles.rs:654-656` vs `WorldGen.cs:70115-70119`); 637 (glow sheet binding `GetTileDrawTexture` unrouted, `cases_a.rs:46-48`) |
+| MISSING | **0** | — |
+
+The d63 pattern holds for the first quarter: **the gaps are wiring, not arms.**
+Every one of the 93 ids has a faithful arm; the delegated engine-driven bodies
+(719 clock, 518 liquid float, 530/529 biome rows, 485/489/490 wind+counter) are
+fully ported in `cases_a`/`cases_b` and wired through `render/tiles.rs` — several
+static-table "documented deviation" comments (518/530/485/489/490/529 and the
+tree-variant "dead in the app" note) are STALE and were re-derived here from the
+C# verbatim. Residual wiring gaps for follow-up tasks:
+
+1. **TILE-DRAW-2 glow bind** — the four glow records (634/100/33/637) ride `_glow`
+   (`tiles.rs:731`); 637 additionally needs the painted-sheet texture route.
+2. **Torch probe fidelity** — point `tiles.rs:654` at the full
+   `WorldGen.SolidTile` predicate (already ported as `cases_a.rs:129-139`) plus
+   the null-cell → true edge decision.
+3. Martian event (`martianLight` 0) and UI text pulse (255 steady) inputs remain
+   the documented neutral values (`cases_a.rs:51-54`) — they gate 100/33's glow
+   colour only, no metric effect.
