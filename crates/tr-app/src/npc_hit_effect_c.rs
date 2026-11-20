@@ -46,6 +46,8 @@
 //! | 150-155 | `:82548-82553` | the 618 Blood Nautilus death: the first six gores (base 1172, 200-dust burst) |
 //! | 156-161 | `:82554-82559` | the 618 Blood Nautilus death: the +4/+4/+5/+5/+6/+6 tail |
 //! | 162-165 | `:82600-82603` | the 541 Sand Elemental death (4 gores 960/961/963/962, tinted 60-dust burst) |
+//! | 166-168 | `:82650-82652` | the 546 Tumbleweed death (3 gores 964/965/966, tinted 40-dust + 20 type-54 burst) |
+//! | 169-174 | `:82676` | the 437 Cultist Tablet `dmg == 9999` burst (6 gores 728-733, RotatedByRandom velocity) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -104,6 +106,23 @@ fn center(npc: &Npc) -> Vec2 {
 fn right_x(npc: &Npc) -> f32 {
     let (w, _) = npc.size();
     npc.x + w
+}
+
+/// `Utils.RotatedBy` (`Utils.cs:1675-1684`), centre default (0,0): the
+/// cos/sin are FLOAT casts of the double radians, the products float.
+fn rotated_by(v: Vec2, radians: f64) -> Vec2 {
+    let num = radians.cos() as f32;
+    let num2 = radians.sin() as f32;
+    Vec2::new(v.x * num - v.y * num2, v.x * num2 + v.y * num)
+}
+
+/// `Utils.RotatedByRandom` (`Utils.cs:1697-1700`): TWO `NextDouble` draws
+/// (`NextDouble()*max - NextDouble()*max`), then `RotatedBy`. The draws hit
+/// the strike stream in that order.
+fn rotated_by_random(v: Vec2, max_radians: f64, rng: &mut UnifiedRandom) -> Vec2 {
+    let a = rng.next_double() * max_radians;
+    let b = rng.next_double() * max_radians;
+    rotated_by(v, a - b)
 }
 
 /// The death-half dust loop shared by the DD2 rows (`NPC.cs` per-arm
@@ -629,11 +648,85 @@ fn sand_elemental_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 40.0), vel, 962, s); // :82603
 }
 
+/// The 546 Tumbleweed death (`NPC.cs:82629-82652`, sites 166-168): the
+/// 20-iteration burst, each spawning TWO type-268 dusts tinted
+/// `new Color(150,108,78) * 0.7f` (noGravity, scale 1.5, fadeIn 0.7,
+/// velocity ×3), then a 20-dust type-54 burst (alpha 50, scale 1.5,
+/// velocity ×2, noGravity), then the 3 gores 964/965/966 at the +0/+20/+20
+/// Y ladder. The tint rides the XNA truncation: (105,75,54,178).
+fn tumbleweed_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82608` — the tint `new Color(150,108,78) * 0.7f`.
+    let t = crate::ui::color::mul([150, 108, 78, 255], 0.7);
+    let tint = Color::new(t[0], t[1], t[2], t[3]);
+    // `:82629-82643` — 20 iterations x 2 type-268 dusts (4-arg NewDust).
+    for _ in 0..20 {
+        for _ in 0..2 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 268, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.color = tint;
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 0.7;
+            d.velocity *= 3.0;
+        }
+    }
+    // `:82644-82649` — the 20-dust type-54 burst (alpha 50, scale 1.5).
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 964, s); // :82650
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 965, s); // :82651
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 966, s); // :82652
+}
+
+/// The 437 Cultist Tablet `dmg == 9999` burst (`NPC.cs:82672-82677`, sites
+/// 169-174): 6 gores 728-733 at `Center - (10,10)`, each with velocity
+/// `Vector2.UnitY.RotatedByRandom(2π) * 5f`. The `RotatedByRandom` draws TWO
+/// `NextDouble` per gore BEFORE the spawn's kicks; the types are the loop
+/// index (no type draw). Gated on `dmg == 9999.0` (the C# exact-double
+/// compare) — NOT a `life <= 0` gate.
+fn cultist_tablet_burst(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let anchor = center(npc) - Vec2::new(10.0, 10.0);
+    for num94 in 0..6 {
+        // `:82676` — UnitY.RotatedByRandom(2π) * 5 (two NextDouble draws).
+        let vel = rotated_by_random(Vec2::new(0.0, 1.0), 6.2831854820251465, rng) * 5.0;
+        gore.new_gore(rng, world, anchor, vel, 728 + num94, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
-/// (the strike writes it before calling, `:81488`); only the death
-/// (`life <= 0`) halves carry gore here. `hit_direction` is the C#
-/// `hitDirection` (a velocity offset for the dust, no extra draw).
+/// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
+/// halves carry gore here, plus the 437 tablet's `dmg == 9999.0` burst (a
+/// dmg-gated arm, not life-gated). `hit_direction` is the C# `hitDirection`
+/// (a velocity offset for the dust, no extra draw); `dmg` rides the tablet
+/// gate (the dmg-scaled hit-half dust loops are the wiring wave's).
 ///
 /// The dispatch grows one arm per commit; the wiring wave folds it into the
 /// wave-A/B `StrikeNPC_Inner` claim.
@@ -641,6 +734,7 @@ pub fn hit_effect_c(
     npc: &Npc,
     npc_type: i32,
     hit_direction: f32,
+    dmg: f64,
     gore: &mut GorePool,
     dust: &mut DustPool,
     dust_ctx: &SpawnCtx,
@@ -713,6 +807,15 @@ pub fn hit_effect_c(
     // `:82562-82605` — the 541 Sand Elemental arm (sites 162-165).
     if npc_type == 541 && npc.hp <= 0 {
         sand_elemental_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82606-82654` — the 546 Tumbleweed arm (sites 166-168).
+    if npc_type == 546 && npc.hp <= 0 {
+        tumbleweed_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82672-82678` — the 437 Cultist Tablet burst (sites 169-174), gated
+    // on the exact `dmg == 9999.0` double compare (NOT life <= 0).
+    if npc_type == 437 && dmg == 9999.0 {
+        cultist_tablet_burst(npc, gore, rng, world);
     }
 }
 
@@ -1181,6 +1284,61 @@ mod tests {
         assert_eq!(live.fade_in, 0.7);
     }
 
+    /// `NPC.cs:82650-82652` — the Tumbleweed death: the 3 gores
+    /// 964/965/966 at +0/+20/+20 Y, after the 20x2 tinted type-268 burst
+    /// (tint (105,75,54,178)) and the 20-dust type-54 burst (alpha 50,
+    /// scale 1.5, noGravity).
+    #[test]
+    fn w4_f10_the_tumbleweed_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 48.0, 48.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(67);
+        tumbleweed_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![964, 965, 966]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        // The tinted type-268 dust: (150,108,78,255) * 0.7 = (105,75,54,178).
+        let tinted = dust.slots().iter().find(|d| d.active && d.dust_type == 268).unwrap();
+        assert_eq!(tinted.color, Color::new(105, 75, 54, 178));
+        assert_eq!(tinted.scale, 1.5);
+        // The type-54 dust carries alpha 50 and noGravity.
+        let t54 = dust.slots().iter().find(|d| d.active && d.dust_type == 54).unwrap();
+        assert_eq!(t54.alpha, 50);
+        assert!(t54.no_gravity);
+    }
+
+    /// `NPC.cs:82676` — the Cultist Tablet burst: 6 gores 728-733 at
+    /// Center-(10,10), each velocity UnitY.RotatedByRandom(2π)*5 (two
+    /// NextDouble draws per gore BEFORE the kicks). The twin replay pins
+    /// the 6x(2 rotation + 2 kick) draw sequence.
+    #[test]
+    fn w4_f10_the_cultist_tablet_burst_rotates_the_velocity() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(71);
+        cultist_tablet_burst(&n, &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![728, 729, 730, 731, 732, 733]);
+        // Center = (120,130); the anchor is (110,120).
+        for i in 0..6 {
+            assert_eq!(gore.slot(i).position, Vec2::new(110.0, 120.0));
+        }
+        // The twin: per gore two NextDouble (the rotation) then the two kicks.
+        let mut twin = UnifiedRandom::new(71);
+        for _ in 0..6 {
+            let _a = twin.next_double();
+            let _b = twin.next_double();
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the tablet burst mirrors the C# draws");
+    }
+
     /// The wave-C dispatch gates the flipped Betsy branch on
     /// `spriteDirection == -1` and `life <= 0`; a non-flipped or living
     /// Betsy spawns nothing here (the non-flipped branch is wave B's).
@@ -1192,21 +1350,21 @@ mod tests {
         let mut rng = UnifiedRandom::new(5);
         // Flipped + dead -> the 10 gores.
         let n = boss(100.0, 100.0, 232.0, 156.0);
-        hit_effect_c(&n, 551, 1.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        hit_effect_c(&n, 551, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
         assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 10);
         // Non-flipped -> nothing here (wave B's branch).
         let mut gore2 = GorePool::new();
         let mut dust2 = DustPool::new();
         let mut n2 = boss(100.0, 100.0, 232.0, 156.0);
         n2.sprite_dir = 1;
-        hit_effect_c(&n2, 551, 1.0, &mut gore2, &mut dust2, &ctx(), &mut rng, &w);
+        hit_effect_c(&n2, 551, 1.0, 10.0, &mut gore2, &mut dust2, &ctx(), &mut rng, &w);
         assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 0);
         // Living -> nothing (the hit half is dust-only, the wiring wave's).
         let mut gore3 = GorePool::new();
         let mut dust3 = DustPool::new();
         let mut n3 = boss(100.0, 100.0, 232.0, 156.0);
         n3.hp = 50;
-        hit_effect_c(&n3, 551, 1.0, &mut gore3, &mut dust3, &ctx(), &mut rng, &w);
+        hit_effect_c(&n3, 551, 1.0, 10.0, &mut gore3, &mut dust3, &ctx(), &mut rng, &w);
         assert_eq!(gore3.slots().iter().filter(|g| g.active).count(), 0);
     }
 }
