@@ -39344,5 +39344,25 @@ scale BEFORE signs. The 246 gore is the 483 row verbatim (keep-one). The
 370/371 duck gores normalize a `Next(-10,11)` pair (no draw for the
 normalize), the 371 scales the vector ×0.4 before both uses and draws its
 type `Next(435,438)` after the speed; both set `sticky = false`.
-Remainder: sites 132-165 (the `Kill_Bombs_DoUsualKillCode` family, waves
-M+), the UpdateProjectiles slot dispatch (the wiring wave).
+Waves M/N/O (sites 132-165): `projectile_gore_m.rs` / `_n.rs` / `_o.rs`,
+the `Kill_Bombs_DoUsualKillCode` family — 9 witnesses written not run.
+The bomb gore blocks are all `NewGore(Direct)(pos, Zero, Next(61,64))`
+with a scale-then-sign postlude; they collapse to a few keep-one rows:
+the 4-corner ×0.4 (wave-J `corner_gores`), the 8-gore two-pass 0.4/0.8
+(wave-L `kill312_gores`), the gated rocket corner (wave-E), the offset
+scale-1.5 boulder (wave-I). The distinct shapes: the bundle's three-pass
+fractional scale (`num38/3`), the cluster's single-pass ×0.8 (`num49 =
+2..=2`, the `== 1` arm dead), the sticky's offset three-pass 0.33/0.66/1.0,
+the scarab's dig-direction push (`velocity*0.5 + digDir*3 + sign*0.2`),
+and the 588 confetti bomb's four INDEPENDENT `Next(2)` gates with the
+confetti type range 276-283 (not 61-64).
+
+**CENSUS COMPLETE**: all 165 `Gore.NewGore*` sites in `Projectile.cs` are
+ported across waves A-O (15 modules, `projectile_gore_a.rs` .. `_o.rs`),
+verified by the coverage check against the direct grep of the decompiled
+file (the junction never recursed). Two gaps found and filled mid-run
+(`:24037` type-9 trail, `:36331` crystal burst + `:75871-75883` 240
+corners). Remainder: the `UpdateProjectiles` slot dispatch (the wiring
+wave — which arm runs for which slot, the `npc_hit_effect_a.rs`
+precedent) and the census→pool upgrades of the landed lava/firework
+censuses in `projectile.rs` / `projectile_ai_misc.rs`.
