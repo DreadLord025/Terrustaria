@@ -2933,6 +2933,12 @@ impl App {
             y: p.y,
             vx: p.vx,
             vy: p.vy,
+            // No mount/potion/camera sim: the gate bits stay clear so the
+            // C# bodies (`NetMessage.cs:496-508`) stay off the wire.
+            mount_type: 0,
+            potion_use: (0.0, 0.0),
+            potion_home: (0.0, 0.0),
+            camera_target: (0.0, 0.0),
             on_ground: p.on_ground,
             leg_frame: p.leg_frame,
             body_frame: p.body_frame,

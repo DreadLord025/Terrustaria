@@ -607,11 +607,13 @@ pub struct PlayerNet {
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
 /// BitsByte groups, the selected item, the full-float position and the
-/// conditional velocity/mount/potion/camera bodies. The port has no mounts,
-/// potions or camera-target sync, so those bits ride as flags with no bodies
-/// (deviation in `docs/ANALYSIS.md`); the trailing anim/hp fields are the
-/// port's two-client extension — the C# derives them from each peer's local
-/// simulation, which the port does not run for remote players.
+/// conditional velocity/mount/potion/camera bodies — all verbatim, in the C#
+/// gate order (`:492-508`: velocity b2, mount b7, potion c6, camera d5). The
+/// port stores the mount/potion/camera values but simulates none of them
+/// (the reader's `SetMount`/potion/camera arms are S1-I-4); the trailing
+/// anim/hp fields are the port's two-client extension — the C# derives them
+/// from each peer's local simulation, which the port does not run for remote
+/// players (deviation in `docs/ANALYSIS.md`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PlayerState {
     pub player_id: u8,
@@ -628,6 +630,17 @@ pub struct PlayerState {
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
+    /// `(ushort)mount.Type`, gated by flags_b bit 7 (`NetMessage.cs:496-499`;
+    /// the reader `SetMount`/`Dismount`, `MessageBuffer.cs:1021-1028`).
+    pub mount_type: u16,
+    /// `PotionOfReturnOriginalUsePosition`, gated by flags_c bit 6
+    /// (`NetMessage.cs:500-504`; reader `MessageBuffer.cs:1029-1038`).
+    pub potion_use: (f32, f32),
+    /// `PotionOfReturnHomePosition`, the second Vector2 of the same gate.
+    pub potion_home: (f32, f32),
+    /// `netCameraTarget`, gated by flags_d bit 5 (`NetMessage.cs:505-508`;
+    /// reader `MessageBuffer.cs:1051`).
+    pub camera_target: (f32, f32),
     // ---- port extension: the render fields the C# derives locally ----
     pub on_ground: bool,
     pub leg_frame: u32,
@@ -647,9 +660,26 @@ impl PlayerState {
             .u8(self.selected_item)
             .f32(self.x)
             .f32(self.y);
-        // `velocity != Vector2.Zero` gate (`NetMessage.cs:491-495`).
+        // `velocity != Vector2.Zero` gate (`NetMessage.cs:492-495`).
         if self.flags_b.get(2) {
             w = w.f32(self.vx).f32(self.vy);
+        }
+        // `mount.Active` gate (`NetMessage.cs:496-499`): (ushort)mount.Type.
+        if self.flags_b.get(7) {
+            w = w.u16(self.mount_type);
+        }
+        // `PotionOfReturnOriginalUsePosition.HasValue` gate
+        // (`NetMessage.cs:500-504`): TWO Vector2s, use then home.
+        if self.flags_c.get(6) {
+            w = w
+                .f32(self.potion_use.0)
+                .f32(self.potion_use.1)
+                .f32(self.potion_home.0)
+                .f32(self.potion_home.1);
+        }
+        // `netCameraTarget.HasValue` gate (`NetMessage.cs:505-508`).
+        if self.flags_d.get(5) {
+            w = w.f32(self.camera_target.0).f32(self.camera_target.1);
         }
         // The port's render extension (two-client only; see the struct doc).
         w.bool(self.on_ground)
@@ -668,7 +698,24 @@ impl PlayerState {
         let selected_item = r.u8()?;
         let x = r.f32()?;
         let y = r.f32()?;
+        // `MessageBuffer.cs:993-997`: the velocity stays Zero without bit 2.
         let (vx, vy) = if flags_b.get(2) {
+            (r.f32()?, r.f32()?)
+        } else {
+            (0.0, 0.0)
+        };
+        // `MessageBuffer.cs:1021-1028`: SetMount(type) or Dismount — the port
+        // stores the type only (no mount sim yet), 0 = dismounted.
+        let mount_type = if flags_b.get(7) { r.u16()? } else { 0 };
+        // `MessageBuffer.cs:1029-1038`: the two Vector2s or both null.
+        let (potion_use, potion_home) = if flags_c.get(6) {
+            ((r.f32()?, r.f32()?), (r.f32()?, r.f32()?))
+        } else {
+            ((0.0, 0.0), (0.0, 0.0))
+        };
+        // `MessageBuffer.cs:1051`: netCameraTarget or null — read AFTER the
+        // sleeping/autoreuse/... flag copies but at this wire position.
+        let camera_target = if flags_d.get(5) {
             (r.f32()?, r.f32()?)
         } else {
             (0.0, 0.0)
@@ -689,6 +736,10 @@ impl PlayerState {
             y,
             vx,
             vy,
+            mount_type,
+            potion_use,
+            potion_home,
+            camera_target,
             on_ground,
             leg_frame,
             body_frame,
@@ -953,8 +1004,9 @@ pub struct PlayerInfo {
     pub under_shirt_color: Rgb,
     pub pants_color: Rgb,
     pub shoe_color: Rgb,
-    /// bit 0-2: difficulty (1/2/3), bit 2 of group 1 is extraAccessory
-    /// (`NetMessage.cs:184-186`).
+    /// Group 1: difficulty 1 → bit 0, 2 → bit 1, 3 → bit **3**; bit 2 is
+    /// `extraAccessory` (`NetMessage.cs:166-179`; the reader re-derives the
+    /// same mapping, `MessageBuffer.cs:323-341`).
     pub flags1: BitsByte,
     pub flags2: BitsByte,
     pub flags3: BitsByte,
@@ -4572,10 +4624,37 @@ mod tests {
                 y: 34.0,
                 vx: 0.5,
                 vy: -1.0,
+                mount_type: 0,
+                potion_use: (0.0, 0.0),
+                potion_home: (0.0, 0.0),
+                camera_target: (0.0, 0.0),
                 on_ground: true,
                 leg_frame: 2,
                 body_frame: 7,
                 hp: 80,
+                max_hp: 100,
+            })),
+            // All three conditional tails gated on (`NetMessage.cs:496-508`):
+            // mount u16, potion use+home Vector2s, camera Vector2.
+            S2c::PlayerState(Box::new(PlayerState {
+                player_id: 2,
+                flags_a: BitsByte::new(),
+                flags_b: BitsByte(0b1000_0100),
+                flags_c: BitsByte(0b0100_0000),
+                flags_d: BitsByte(0b0010_0000),
+                selected_item: 0,
+                x: 0.0,
+                y: 0.0,
+                vx: 2.0,
+                vy: 3.0,
+                mount_type: 8,
+                potion_use: (100.0, 200.0),
+                potion_home: (300.0, 400.0),
+                camera_target: (500.0, 600.0),
+                on_ground: false,
+                leg_frame: 0,
+                body_frame: 0,
+                hp: 100,
                 max_hp: 100,
             })),
             S2c::NpcInfo(Box::new(NpcInfo {
@@ -5411,5 +5490,93 @@ mod tests {
             } => assert_eq!((player_id, hp, max_hp), (0, 400, 500)),
             other => panic!("expected 16, got {:?}", other.msg_id()),
         }
+    }
+
+    /// `13 PlayerControls`' conditional tails (`NetMessage.cs:492-508`):
+    /// velocity (b2) then `(ushort)mount.Type` (b7) then the potion use+home
+    /// Vector2 pair (c6) then the camera Vector2 (d5) — in that gate order,
+    /// ahead of the port's render extension. The reader consumes them at
+    /// the same positions (`MessageBuffer.cs:993-997`, `:1021-1038`, `:1051`).
+    #[test]
+    fn w4_d96_player_state_conditional_tails_verbatim() {
+        let ps = PlayerState {
+            player_id: 3,
+            flags_a: BitsByte(0b0100_0000),
+            flags_b: BitsByte(0b1000_0100), // velocity + mount
+            flags_c: BitsByte(0b0100_0000), // potion return
+            flags_d: BitsByte(0b0010_0000), // camera target
+            selected_item: 2,
+            x: 64.0,
+            y: 96.0,
+            vx: 1.5,
+            vy: -2.5,
+            mount_type: 12,
+            potion_use: (10.0, 20.0),
+            potion_home: (30.0, 40.0),
+            camera_target: (50.0, 60.0),
+            on_ground: true,
+            leg_frame: 4,
+            body_frame: 9,
+            hp: 80,
+            max_hp: 100,
+        };
+        let mut body = vec![3, 0x40, 0x84, 0x40, 0x20, 2];
+        for v in [64.0f32, 96.0, 1.5, -2.5] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(&12u16.to_le_bytes()); // mount (b7)
+        for v in [10.0f32, 20.0, 30.0, 40.0] {
+            body.extend_from_slice(&v.to_le_bytes()); // potion pair (c6)
+        }
+        for v in [50.0f32, 60.0] {
+            body.extend_from_slice(&v.to_le_bytes()); // camera (d5)
+        }
+        // The port's render extension rides AFTER the C# tails.
+        body.push(1); // on_ground
+        body.extend_from_slice(&4u32.to_le_bytes());
+        body.extend_from_slice(&9u32.to_le_bytes());
+        body.extend_from_slice(&80i32.to_le_bytes());
+        body.extend_from_slice(&100i32.to_le_bytes());
+        let c = C2s::PlayerState(ps).encode();
+        assert_eq!(c[2], 13);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerState(d) => assert_eq!(d, ps),
+            other => panic!("expected 13, got {:?}", other.msg_id()),
+        }
+        // All gates clear: the C# body is 15 bytes (id + 4 flags + selected +
+        // position), the extension follows immediately.
+        let bare = PlayerState {
+            player_id: 1,
+            x: 5.0,
+            y: 6.0,
+            ..Default::default()
+        };
+        let c = C2s::PlayerState(bare).encode();
+        let mut body = vec![1, 0, 0, 0, 0, 0];
+        body.extend_from_slice(&5.0f32.to_le_bytes());
+        body.extend_from_slice(&6.0f32.to_le_bytes());
+        assert_eq!(&c[3..3 + body.len()], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerState(d) => assert_eq!(d, bare),
+            other => panic!("expected 13, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `4 SyncPlayer`'s difficulty bits (`NetMessage.cs:166-179`): 1 → bit 0,
+    /// 2 → bit 1, 3 → bit **3**; bit 2 is `extraAccessory`. The reader maps
+    /// them back the same way (`MessageBuffer.cs:323-341`).
+    #[test]
+    fn w4_d96_player_info_difficulty_bit_three() {
+        let mut pi = PlayerInfo::with_name(1, "Jour");
+        pi.flags1 = BitsByte(0b0000_1100); // difficulty 3 (bit 3) + extraAccessory (bit 2)
+        let body = pi.write_to(NetWriter::open(id::PLAYER_INFO)).finish();
+        // flags1 is the third-from-last byte (flags2, flags3 follow).
+        let f1 = body[body.len() - 3];
+        assert_eq!(f1, 0b0000_1100);
+        let back = PlayerInfo::read_from(&mut NetReader::new(&body[3..])).expect("decode");
+        assert!(back.flags1.get(3), "difficulty 3 rides bit 3, not bit 2");
+        assert!(back.flags1.get(2), "bit 2 is extraAccessory");
+        assert!(!back.flags1.get(0) && !back.flags1.get(1));
     }
 }
