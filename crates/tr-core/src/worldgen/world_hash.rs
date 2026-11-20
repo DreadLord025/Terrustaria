@@ -285,6 +285,12 @@ mod tests {
     // columns beside every first-active row), so this pin moves BY
     // DESIGN; deferred to the gate. The noSurface arm replaces the scrub
     // with the top-100/101 fill (a classic world reads no flag).
+    // W4-d102 pass 8 (code-only): the Dirt Rock Wall Runner pass
+    // (`WorldGen.cs:15461-15475` + DirtyRockRunner `:77145-77210`,
+    // `passes2.rs::pass_dirt_rock_wall_runner`) lands after `pyramids` —
+    // one candidate per column retypes wall-2 blobs to 59 in the surface
+    // band on every world ≥20 wide (the 512 world qualifies), so this pin
+    // moves BY DESIGN; deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -347,6 +353,9 @@ mod tests {
     // W4-d102 pass 7 (code-only): the Clean Up Dirt pass (see SEED42_512
     // above) scrubs the surface dirt-wall band on every world — this pin
     // moves BY DESIGN; deferred to the gate.
+    // W4-d102 pass 8 (code-only): the Dirt Rock Wall Runner pass (see
+    // SEED42_512 above) retypes the wall-2 blobs to 59 — this pin moves
+    // BY DESIGN; deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

@@ -1399,6 +1399,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // insertion.
     step!("wet jungle", "Wet Jungle", step_wet_jungle),
     step!("pyramids", "Pyramids", step_pyramids),
+    // The vanilla Dirt Rock Wall Runner slot (`WorldGen.cs:15461`): after
+    // Pyramids (`:15360`) and before Living Trees (`:15476`) — W4-d102
+    // pass 8. Own `pass_rng("Dirt Rock Wall Runner")` stream.
+    step!(
+        "dirt rock wall runner",
+        "Dirt Rock Wall Runner",
+        step_dirt_rock_wall_runner
+    ),
     step!("pots", "Pots", step_pots),
     step!("beehives", "Hives", step_beehives),
     step!("hell forts", "", step_hell_forts),
@@ -1970,6 +1978,24 @@ fn step_clean_up_dirt(
 ) {
     let world_surface = gv.layers().world_surface;
     passes2::pass_clean_up_dirt(world, world_surface, &mut streams.pass_rng("Clean Up Dirt"));
+}
+
+/// The vanilla Dirt Rock Wall Runner slot (`WorldGen.cs:15461-15475` +
+/// DirtyRockRunner `:77145-77210`) — W4-d102 pass 8: the wall-2→59 blobs.
+fn step_dirt_rock_wall_runner(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_dirt_rock_wall_runner(
+        world,
+        world_surface,
+        &mut streams.pass_rng("Dirt Rock Wall Runner"),
+    );
 }
 
 fn step_evil(
@@ -3383,8 +3409,10 @@ mod tests {
         // between `gravitating sand` and `ocean caves`; + `shimmer`
         // (vanilla "Shimmer", `:15195`) after `ocean caves` (the count
         // bump the Shimmer landing missed); + `clean up dirt` (vanilla
-        // "Clean Up Dirt", `:15246`) after `shimmer`.
-        assert_eq!(names.len(), 73);
+        // "Clean Up Dirt", `:15246`) after `shimmer`; + `dirt rock wall
+        // runner` (vanilla "Dirt Rock Wall Runner", `:15461`) after
+        // `pyramids`.
+        assert_eq!(names.len(), 74);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3460,6 +3488,7 @@ mod tests {
                 "altars",
                 "wet jungle",
                 "pyramids",
+                "dirt rock wall runner",
                 "pots",
                 "beehives",
                 "hell forts",
@@ -3839,6 +3868,26 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
         assert!(cpos("Clean Up Dirt") < cpos("Pyramids"));
+    }
+
+    /// W4-d102 pass 8: `dirt rock wall runner` sits in its vanilla slot —
+    /// after `pyramids` (`WorldGen.cs:15360`) and before the port's `pots`
+    /// step; the Dirt Rock Wall Runner anchor is `:15461`, Living Trees
+    /// `:15476` follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_dirt_rock_wall_runner_step_sits_after_the_pyramids() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dirt rock wall runner"), pos("pyramids") + 1);
+        assert_eq!(names[pos("dirt rock wall runner") + 1], "pots");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Pyramids") < cpos("Dirt Rock Wall Runner"));
+        assert!(cpos("Dirt Rock Wall Runner") < cpos("Living Trees"));
     }
 
     #[test]

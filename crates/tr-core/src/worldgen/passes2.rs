@@ -688,6 +688,85 @@ fn do_no_surface_fill_the_top(world: &mut World, rng: &mut Rng) {
     }
 }
 
+/// The Dirt Rock Wall Runner pass (`WorldGen.cs:15461-15475`): one
+/// candidate per world column — x `Next(10, width-10)` then y
+/// `Next(10, (int)worldSurface)`, both drawn BEFORE the wall test; only a
+/// wall-2 cell fires `DirtyRockRunner`. The pass sets no progress message
+/// (the C# body has none). The port's baseline wall 2 under the surface
+/// rows IS the vanilla Dirt Wall Backgrounds wall the runner retypes (the
+/// equality test reads identically — no `BASELINE_WALLS` adaptation).
+///
+/// The sub-vanilla valve: the C#'s `Next(10, width-10)` /
+/// `Next(10, (int)worldSurface)` bands throw when `width < 20` /
+/// `worldSurface < 10`; the port skips the pass before any draw (the
+/// `mining explosives` width-guard precedent).
+pub(crate) fn pass_dirt_rock_wall_runner(world: &mut World, world_surface: f64, rng: &mut Rng) {
+    // `:15463` — the skyblock outer gate (module doc).
+    if world.seeds.contains(SeedFlags::SKYBLOCK) {
+        return;
+    }
+    if world.width < 20 || (world_surface as i32) < 10 {
+        return;
+    }
+    for _ in 0..world.width {
+        let x = rng.range(10, world.width - 10);
+        let y = rng.range(10, world_surface as i32);
+        if world.tile(x, y).is_some_and(|t| t.wall == 2) {
+            dirty_rock_runner(world, rng, x, y);
+        }
+    }
+}
+
+/// `WorldGen.DirtyRockRunner` (`WorldGen.cs:77145-77210`): the wall-2→59
+/// blob walk. Strength `Next(2, 6)` and steps `Next(5, 50)` draw first,
+/// then the two `Next(-10, 11) * 0.1` velocity components. Each of the
+/// `steps` iterations sizes the disc `strength * (budget / steps)` (the
+/// budget decrements AFTER the size), clamps the `(int)`-truncated rect to
+/// the world, and retypes every wall-2 cell inside the Manhattan-distance
+/// gate — the per-cell `Next(-10, 11) * 0.015` jitter draw fires for EVERY
+/// rect cell (the C# evaluates the comparison's right side before the
+/// `&& wall == 2` test). The walker then advances and jitters both
+/// velocity components (`* 0.05`, clamped to ±1 — the C#'s two ifs).
+fn dirty_rock_runner(world: &mut World, rng: &mut Rng, i: i32, j: i32) {
+    let strength = rng.range(2, 6) as f64;
+    let steps = rng.range(5, 50) as f64;
+    let mut budget = steps;
+    let (mut cx, mut cy) = (i as f64, j as f64);
+    let (mut vx, mut vy) = (
+        rng.range(-10, 11) as f64 * 0.1,
+        rng.range(-10, 11) as f64 * 0.1,
+    );
+    while strength > 0.0 && budget > 0.0 {
+        let size = strength * (budget / steps);
+        budget -= 1.0;
+        let mut left = (cx - size * 0.5) as i32;
+        let mut right = (cx + size * 0.5) as i32;
+        let mut top = (cy - size * 0.5) as i32;
+        let mut bottom = (cy + size * 0.5) as i32;
+        left = left.max(0);
+        right = right.min(world.width);
+        top = top.max(0);
+        bottom = bottom.min(world.height);
+        for k in left..right {
+            for l in top..bottom {
+                let jitter = 1.0 + rng.range(-10, 11) as f64 * 0.015;
+                let dist = (k as f64 - cx).abs() + (l as f64 - cy).abs();
+                if dist < strength * 0.5 * jitter
+                    && world.tile(k, l).is_some_and(|t| t.wall == 2)
+                {
+                    world.tile_mut(k, l).unwrap().wall = 59;
+                }
+            }
+        }
+        cx += vx;
+        cy += vy;
+        vx += rng.range(-10, 11) as f64 * 0.05;
+        vx = vx.clamp(-1.0, 1.0);
+        vy += rng.range(-10, 11) as f64 * 0.05;
+        vy = vy.clamp(-1.0, 1.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1054,5 +1133,65 @@ mod tests {
         pass_clean_up_dirt(&mut w, 60.0, &mut Rng(0xC1EA));
         assert!(!w.tile(10, 10).unwrap().active(), "the dungeon wall exempts");
         assert_eq!(w.tile(10, 10).unwrap().kind, 41);
+    }
+
+    /// A dirt-wall canvas: wall 2 over the whole world — the Dirt Rock
+    /// Wall Runner's retype substrate.
+    fn dirt_wall_world() -> World {
+        let mut w = World::new("dirtyrock".into(), 200, 200);
+        for x in 0..200 {
+            for y in 0..200 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 2;
+            }
+        }
+        w.world_surface = 60.0;
+        w
+    }
+
+    #[test]
+    fn the_dirty_rock_blobs_retype_wall_two_and_replay() {
+        let mut a = dirt_wall_world();
+        let mut b = dirt_wall_world();
+        pass_dirt_rock_wall_runner(&mut a, 60.0, &mut Rng(0xD1B7));
+        pass_dirt_rock_wall_runner(&mut b, 60.0, &mut Rng(0xD1B7));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        let retyped = a.tiles.iter().filter(|t| t.wall == 59).count();
+        assert!(retyped > 0, "the runners retype wall 2 -> 59");
+        // The blobs stay inside the reachable band: candidates draw
+        // y < 60, the walker drifts at most +1/step over ≤49 steps and the
+        // disc radius is ≤2.5 — no write can reach row 110.
+        for x in 0..200 {
+            for y in 110..200 {
+                assert_eq!(a.tile(x, y).unwrap().wall, 2, "deep wall at {x},{y}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_non_dirt_wall_candidate_draws_but_does_not_run() {
+        // Every cell carries wall 1 (stone): both candidate draws still
+        // fire per column, but no runner starts — the world is untouched.
+        let mut w = dirt_wall_world();
+        for t in &mut w.tiles {
+            t.wall = 1;
+        }
+        let before = w.tiles.clone();
+        pass_dirt_rock_wall_runner(&mut w, 60.0, &mut Rng(0xD127));
+        assert_eq!(w.tiles, before, "no wall-2 cell, no retype");
+    }
+
+    #[test]
+    fn the_sub_vanilla_valve_skips_before_any_draw() {
+        let mut w = World::new("tiny".into(), 16, 16);
+        for t in &mut w.tiles {
+            t.wall = 2;
+        }
+        w.world_surface = 12.0;
+        let before = w.tiles.clone();
+        let mut rng = Rng(0xD127);
+        pass_dirt_rock_wall_runner(&mut w, 12.0, &mut rng);
+        assert_eq!(w.tiles, before, "the width valve skips the pass");
+        assert_eq!(rng.next_u32(), Rng(0xD127).next_u32(), "no draw fired");
     }
 }
