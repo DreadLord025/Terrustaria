@@ -14,6 +14,7 @@
 
 use crate::app::App;
 use crate::craft::{self, NO_GROUP};
+use crate::item::ItemDrop;
 use glam::Vec2;
 use crate::registry;
 use tr_core::shimmer;
@@ -52,11 +53,12 @@ pub enum ShimmerOutcome {
     /// (`:1721-1722`, `:1737-1738`): the item does NOT air out and does not
     /// transform — vanilla returns before any change.
     Refused,
-    /// `ItemID.Sets.CommonCoin` (`:1696-1712`): the stack merges by the tier
+    /// `ItemID.Sets.CommonCoin` (`:1697-1719`): the stack merges by the tier
     /// (silver ×100, gold ×10000, platinum ×1000000 after flooring the stack to
-    /// 1) and `AddCoinLuck` spends the merged stack.
+    /// 1; copper has NO switch case — it stays ×1) and `AddCoinLuck` spends the
+    /// merged stack.
     CoinMerge {
-        /// The tier multiplier (100 / 10000 / 1000000).
+        /// The tier multiplier (1 / 100 / 10000 / 1000000).
         multiplier: u32,
     },
     /// `GetTransformToItem` (`:1713-1718`): `SetDefaults(target)`, the stack is
@@ -99,8 +101,8 @@ pub fn can_shimmer(ctx: &ShimmerContext, item_type: u16, stack: u32, make_npc: u
     if equivalent == 560 && ctx.slime_rain {
         return false;
     }
-    let create_tile = registry::place_tile(item_type).map_or(-1, i32::from) as i16;
-    let place_style = registry::place_style(item_type);
+    let create_tile = registry::place_tile(equivalent).map_or(-1, i32::from) as i16;
+    let place_style = registry::place_style(equivalent);
     let transform = shimmer::transform_to_item(equivalent, create_tile, place_style, ctx.moon_phase);
     if (equivalent != 4986 || ctx.unlocked_slime_rainbow)
         && transform <= 0
@@ -215,9 +217,13 @@ pub fn resolve_shimmer(
         };
         return ShimmerOutcome::CoinMerge { multiplier };
     }
-    // 2. Transform to item (`:1713-1718`).
-    let create_tile = registry::place_tile(item_type).map_or(-1, i32::from) as i16;
-    let place_style = registry::place_style(item_type);
+    // 2. Transform to item (`:1720-1726`). The C# resolves the transform on
+    // the EQUIVALENT type (`:1695`) — the trophy/lunar arms read
+    // `ContentSamples.ItemsByType[shimmerEquivalentType]`
+    // (`ShimmerTransforms.cs:95-108`), so the createTile/placeStyle fields
+    // come from the equivalent too (the old port read the RAW kind).
+    let create_tile = registry::place_tile(equivalent).map_or(-1, i32::from) as i16;
+    let place_style = registry::place_style(equivalent);
     let transform = shimmer::transform_to_item(equivalent, create_tile, place_style, ctx.moon_phase);
     if transform > 0 {
         return ShimmerOutcome::Transform {
@@ -251,17 +257,20 @@ pub fn resolve_shimmer(
         let attempts = stack.min(50);
         return ShimmerOutcome::ReleaseNpc { npc_type, attempts };
     }
-    // 6. The decraft (`:1773-1828`).
+    // 6. The decraft (`:1788-1834`). The C# only checks the index here —
+    // `FindDecraftAmount()` (`Item.cs:49466-49474`) is `stack /
+    // createItem.stack`, which can be 0; the arm still runs (the ingredient
+    // walk spawns nothing, `stack -= 0` keeps the drop) and falls through to
+    // the shared tail. The `CanShimmer` gate normally refuses such a drop,
+    // but `GetShimmered` itself has no `amount > 0` guard.
     let index = decrafting_recipe_index(shimmer::shimmer_equivalent_type(item_type, true));
     if index >= 0 {
         let index = index as usize;
         let amount = stack / craft::RECIPES[index].create.1;
-        if amount > 0 {
-            return ShimmerOutcome::Decraft {
-                recipe_index: index,
-                amount,
-            };
-        }
+        return ShimmerOutcome::Decraft {
+            recipe_index: index,
+            amount,
+        };
     }
     ShimmerOutcome::Nothing
 }
@@ -291,14 +300,23 @@ pub fn group_decraft_item(group_id: u16) -> Option<u16> {
         .min_by_key(|&m| registry::get(m).map_or(0, |d| d.value))
 }
 
-/// The decraft's ingredient list for a recipe index (`WorldItem.cs:1810-1823`'s
-/// `enumerable`), with `units` pre-discount. `customShimmerResults` are absent
-/// from the port's recipe data (a documented deviation) — the plain
-/// `requiredItem` list is used.
+/// The decraft's ingredient list for a recipe index (`WorldItem.cs:1793-1801`'s
+/// `enumerable`), with `units` pre-discount. The `customShimmerResults`
+/// override (`Recipe.cs:78`, `AddCustomShimmerResult` `:174-183`) replaces the
+/// plain `requiredItem` walk when present — the five vanilla rows (Silver
+/// Bullet 278, Crystal Bullet 4915, the copper tools 3509/3506/3507) spend
+/// their authored result list instead (no recipe-group substitution there:
+/// the C# `Select` reads `item.type` directly, `:1796-1800`).
 pub fn decraft_ingredients(recipe_index: usize) -> Vec<DecraftIngredient> {
     let Some(recipe) = craft::RECIPES.get(recipe_index) else {
         return Vec::new();
     };
+    if let Some(custom) = custom_shimmer_results(recipe.create.0) {
+        return custom
+            .iter()
+            .map(|&(item_type, units)| DecraftIngredient { item_type, units })
+            .collect();
+    }
     recipe
         .required
         .iter()
@@ -317,6 +335,32 @@ pub fn decraft_ingredients(recipe_index: usize) -> Vec<DecraftIngredient> {
         .collect()
 }
 
+/// `Recipe.AddCustomShimmerResult`'s five call sites (`Recipe.cs:2193-2194`,
+/// `:2202-2203`, `:9664-9665`, `:9674-9675`, `:9694`) keyed by the created
+/// item — the port's generated recipe rows carry no `customShimmerResults`
+/// list (`tools/gen_recipes.py` does not extract it yet), so the override
+/// lives here, verbatim. The C# `null` check (`WorldItem.cs:1794`) means an
+/// EMPTY list never occurs — only these five recipes override.
+fn custom_shimmer_results(create_type: u16) -> Option<&'static [(u16, u32)]> {
+    match create_type {
+        // `:2187-2195` — Silver Bullet x70: 70 Musket Balls + 1 Silver Bar
+        // normally; the shimmer refunds the balls + a Silver ORE (14).
+        278 => Some(&[(97, 70), (14, 1)]),
+        // `:2196-2204` — Crystal Bullet x70: the shimmer refunds the balls
+        // + 701 (the authored `AddCustomShimmerResult(701)` row) instead of
+        // the 705 the craft spends.
+        4915 => Some(&[(97, 70), (701, 1)]),
+        // `:9657-9666` — Copper Pickaxe (3509): the shimmer refunds 1 Copper
+        // Bar (12) + 1 Wood (9) — NOT the 8 bars / 4 wood the craft spends.
+        3509 => Some(&[(12, 1), (9, 1)]),
+        // `:9667-9676` — Copper Axe (3506): the same 1+1 refund.
+        3506 => Some(&[(12, 1), (9, 1)]),
+        // `:9690-9695` — Copper Shortsword (3507): 1 Copper Bar only.
+        3507 => Some(&[(12, 1)]),
+        _ => None,
+    }
+}
+
 /// The app-side apply of [`ShimmerOutcome`] — `WorldItem.GetShimmered`'s
 /// chain tail (`WorldItem.cs:1691-1849`): the coin merge's luck, the transform
 /// replace, the two special events, the release spawn and the decraft's
@@ -333,7 +377,7 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
     let ctx = ShimmerContext {
         slime_rain: app.world.slime_rain,
         unlocked_slime_rainbow: app.world.unlocked_slime_rainbow_spawn,
-        downed_moonlord: false, // no Moon Lord flag in the port's save yet
+        downed_moonlord: app.world.downed_moon_lord,
         downed_skeletron: app.world.downed_skeletron,
         downed_golem: app.world.downed_golem,
         moon_phase: app.world.moon_phase,
@@ -342,10 +386,10 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
         let Some(drop) = app.items.get(idx as usize).cloned() else {
             continue;
         };
-        // The C#'s `Item.makeNPC` — the port's generated item data does not
-        // carry the field yet, so the release arm only fires for the kinds the
-        // item step maps (none today; the map + accounting are ported and unit
-        // tested — the roster gap is an ANALYSIS note).
+        // `Item.makeNPC` — the generated item data carries the column
+        // (`registry::make_npc`, S1-P-i36); the release arm fires for the
+        // critter/bait kinds whose NPC the roster models (the rest consume
+        // the stack unit with no spawn — the C# accounting, ANALYSIS).
         let make_npc = crate::registry::make_npc(drop.kind);
         if !can_shimmer(&ctx, drop.kind, drop.count, make_npc) {
             continue;
@@ -357,53 +401,67 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
         match outcome {
             ShimmerOutcome::Nothing | ShimmerOutcome::Refused => {}
             ShimmerOutcome::CoinMerge { multiplier } => {
-                // `WorldItem.cs:1696-1712` — the platinum arm floors the stack
-                // to 1 before the multiply.
+                // `WorldItem.cs:1699-1719` — the platinum arm floors the stack
+                // to 1 before the multiply; copper (71) has no switch case.
                 let stack = if multiplier == 1_000_000 {
                     drop_mut.count.min(1)
                 } else {
                     drop_mut.count
                 };
                 drop_mut.count = stack.saturating_mul(multiplier);
-                // `AddCoinLuck` (`Player.cs:18090-18101`): add the merged stack
-                // within 1000 px of the player, capped at 1,000,000.
+                // `AddCoinLuck` (`Player.cs:18090-18101`): the merged stack
+                // within 1000 px, capped at 1,000,000. The C# sets
+                // `luckNeedsSync` only — NO `RecalculateLuck` here (the
+                // per-tick `UpdateLuck` rebuilds it, `:18840`); the old port
+                // recalculated eagerly (a same-tick luck read deviation).
+                let c = drop_mut.center();
                 if let Some(p) = app.player.as_mut() {
-                    let pc = Vec2::new(p.center().0, p.center().1);
-                    // `Player.cs:18092`'s `!this.dead && distance < 1000`.
-                    if !p.dead && (drop_mut.center() - pc).length() < 1000.0 {
-                        p.luck_state.coin_luck =
-                            (p.luck_state.coin_luck + drop_mut.count as f32).min(1_000_000.0);
-                        p.luck_state.recalculate_luck();
-                    }
+                    p.add_coin_luck((c.x, c.y), drop_mut.count as i32);
                 }
                 air_out(app, idx);
             }
             ShimmerOutcome::Transform { new_type } => {
-                // `:1713-1718` — SetDefaults + the stack is kept + shimmered.
+                // `:1720-1726` — SetDefaults + the stack is kept + shimmered.
+                // The shared tail (`:1835-1846`) sets shimmerTime = 1 (the
+                // stack survives), shimmerWet/wet, velocity *= 0.1 — applied
+                // by `shimmer_tail` below, not per-arm.
                 drop_mut.kind = new_type;
                 drop_mut.shimmered = true;
-                drop_mut.shimmer_time = 1.0;
-                drop_mut.shimmer_wet = true;
-                drop_mut.vel *= 0.1;
             }
             ShimmerOutcome::SlimeRainbowUnlock => {
-                // `:1720-1735` — the flag, the NPC 681 spawn, the stack--. The
-                // spawn takes `app` wholesale, so the drop borrow ends first.
-                let c = drop_mut.center();
+                // `:1727-1748` — the flag, the NPC 681 spawn, the stack--.
+                // The C# `NewNPC((int)Center.X + 4, (int)Center.Y, 681)`
+                // (`:1735`) truncates the pixel coords FIRST and spawns
+                // DIRECTLY (no `ReleaseNPC` gate); the spawned NPC keeps the
+                // item's velocity (`:1739`) and gets `shimmerTransparency =
+                // 1f` (`:1740`). The spawn takes `app` wholesale, so the
+                // drop borrow ends first.
+                let (c, v) = (drop_mut.center(), drop_mut.vel);
                 app.world.unlocked_slime_rainbow_spawn = true;
-                crate::world_sim::npcs::spawn_shimmer_release(app, 681, c.x + 4.0, c.y);
+                let spawned = crate::world_sim::npcs::spawn_shimmer_new_npc(
+                    app,
+                    681,
+                    c.x as i32 + 4,
+                    c.y as i32,
+                );
+                if spawned {
+                    if let Some(npc) = app.npcs.last_mut() {
+                        npc.vx = v.x;
+                        npc.vy = v.y;
+                    }
+                }
                 let Some(drop_mut) = app.items.get_mut(idx as usize) else {
                     continue;
                 };
                 drop_mut.count = drop_mut.count.saturating_sub(1);
                 if drop_mut.count == 0 {
                     air_out(app, idx);
-                } else {
-                    drop_mut.shimmered = true;
                 }
+                // NOTE: the C# 4986 arm does NOT set `shimmered` — the drop
+                // stays un-shimmered (it can transform again next ramp).
             }
             ShimmerOutcome::SlimeRainStart => {
-                // `:1736-1746` — `Main.StartSlimeRain()` (the SP branch's
+                // `:1749-1765` — `Main.StartSlimeRain()` (the SP branch's
                 // duration), the stack-- or `shimmered = true`. The C# call
                 // runs in `WorldItem.UpdateItem` under the `UpdateItems`
                 // swap (`Main.cs:18024`) — the duration draw rides
@@ -424,22 +482,38 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
                     drop_mut.shimmered = true;
                 }
             }
-            ShimmerOutcome::ReleaseNpc { npc_type, attempts } => {
-                // `:1747-1772` — one release per attempt, `shimmerTransparency
-                // = 1f` on the spawned NPC.
-                for _ in 0..attempts {
+            ShimmerOutcome::ReleaseNpc { npc_type, attempts: _ } => {
+                // `:1766-1787` — the C# loop: `num3 = 50` attempts, `num4` =
+                // the free-slot budget (`GetAvailableAmountOfNPCsToSpawnUpToSlot`
+                // `NPC.cs:80635-80654`), and `stack > 0`; EVERY iteration
+                // decrements all three and the stack BEFORE the release —
+                // a failed release still consumes one unit (the old port
+                // only decremented on success and never ran the budget).
+                // The release position is the TRUNCATED `(int)Center.X,
+                // (int)Bottom.Y` (`:1776`), the override style is 0 when the
+                // transform map hits, else the item's `placeStyle`.
+                let make_npc = crate::registry::make_npc(app.items[idx as usize].kind);
+                let style = if shimmer::transform_to_npc(make_npc) >= 0 {
+                    0
+                } else {
+                    crate::registry::place_style(app.items[idx as usize].kind)
+                };
+                let mut budget = crate::world_sim::npcs::npc_spawn_budget(
+                    app.npcs.len(),
+                    app.items[idx as usize].count,
+                );
+                let mut left = 50u32;
+                while left > 0 && budget > 0 && app.items[idx as usize].count > 0 {
+                    left -= 1;
+                    budget -= 1;
+                    app.items[idx as usize].count -= 1;
                     let (cx, by) = {
                         let d = &app.items[idx as usize];
-                        (d.center().x, d.pos.y + SIZE_PX)
+                        (d.center().x as i32, (d.pos.y + SIZE_PX) as i32)
                     };
-                    let spawned =
-                        crate::world_sim::npcs::spawn_shimmer_release(app, npc_type, cx, by);
-                    if app.items[idx as usize].count == 0 {
-                        break;
-                    }
-                    if spawned {
-                        app.items[idx as usize].count -= 1;
-                    }
+                    crate::world_sim::npcs::spawn_shimmer_release_styled(
+                        app, npc_type, cx, by, style,
+                    );
                 }
                 app.items[idx as usize].shimmered = true;
                 if app.items[idx as usize].count == 0 {
@@ -453,13 +527,14 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
                 apply_decraft(app, idx, recipe_index, amount);
             }
         }
-        // `WorldItem.cs:1849` — the shared tail every arm falls through to:
-        // `AchievementsHelper.NotifyProgressionEvent(27)` (TRANSMUTE_ITEM).
-        // `Refused` is the two early returns above it (`:1732` the
-        // already-unlocked rainbow slime, `:1754` the active slime rain), and
-        // `Nothing` is `CanShimmer() == false` — the C# never reaches
-        // `GetShimmered` then, so neither credits.
+        // `WorldItem.cs:1835-1852` — the shared tail every arm falls through
+        // to (the two `Refused` early returns and the `Nothing` gate never
+        // reach it): `shimmerTime = stack > 0 ? 1 : 0`, `shimmerWet = true`,
+        // `wet = true`, `velocity *= 0.1f`, `ShimmerEffect(Center)` (the
+        // Item176 cue + 20 dust 309), `SyncItem` (net-only), progression 27
+        // (TRANSMUTE_ITEM), and `TurnToAir` when the stack hit 0.
         if !matches!(outcome, ShimmerOutcome::Nothing | ShimmerOutcome::Refused) {
+            shimmer_tail(app, idx);
             let _ = app.notify_progression_net(27);
         }
     }
@@ -473,6 +548,89 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
 /// The 14x14 item box in pixels (`ItemDrop::SIZE`).
 const SIZE_PX: f32 = crate::item::SIZE;
 
+/// `WorldItem.GetShimmered`'s shared tail (`WorldItem.cs:1835-1852`): the
+/// `shimmerTime` reset (1 while a stack survives, else 0), the wet flags, the
+/// ×0.1 velocity cut, `ShimmerEffect(Center)` and the final `TurnToAir`.
+/// `SyncItem` (`:1847`) is net-only — the host's snapshot carries the drop.
+fn shimmer_tail(app: &mut App, idx: u32) {
+    let (center, alive) = {
+        let Some(drop) = app.items.get_mut(idx as usize) else {
+            return;
+        };
+        // `:1835-1842` — `stack > 0 ? shimmerTime = 1f : 0f`.
+        drop.shimmer_time = if drop.count > 0 { 1.0 } else { 0.0 };
+        // `:1843-1845` — shimmerWet + wet + the velocity cut. The port's
+        // `ItemDrop` has no separate `wet` field (the box probe re-derives
+        // it each tick, `item.rs::box_is_wet`); shimmerWet is the flag the
+        // ramp/float read, so it is the one carried.
+        drop.shimmer_wet = true;
+        drop.vel *= 0.1;
+        (drop.center(), drop.count > 0)
+    };
+    // `:1846` — `WorldItem.ShimmerEffect(base.Center)` (`:1661-1689`): the
+    // Item176 cue at the TRUNCATED pixel coords + 20 dust 309 (scale ×1.2,
+    // the four-colour `Next(6)` switch). The draws ride `UpdateItems`
+    // (`Main.cs:17779`'s swap — `GetShimmered` runs inside `UpdateItem`).
+    shimmer_effect(app, center);
+    // `:1849-1852` — `stack == 0` → `TurnToAir` (the arm already zeroed the
+    // kind/count via `air_out`; the retain sweep drops it).
+    if !alive {
+        air_out(app, idx);
+    }
+}
+
+/// `WorldItem.ShimmerEffect` (`WorldItem.cs:1661-1689`): `PlaySound(
+/// SoundID.Item176, (int)x, (int)y)` then 20 × `Dust.NewDust(center, 1, 1,
+/// 309)` with `scale *= 1.2f` and the `Next(6)` colour switch (0 →
+/// (255,255,210), 1 → (190,245,255), 2 → (255,150,255), default →
+/// (190,175,255)). The `netMode == 2` arm (`:1663-1667`) is the host's `146`
+/// send — out here (SP port); the cue + dust run on the local client.
+fn shimmer_effect(app: &mut App, center: Vec2) {
+    // The cue: `SoundID.Item176 = new LegacySoundStyle(2, 176)`
+    // (`SoundID.cs:1560`) — case 2's ×0.9 volume + the `Next(-6, 7) * 0.01`
+    // pitch (`sound.rs::item_use_case2`), gated by attenuation FIRST.
+    let idx = crate::soundid::SOUND_STYLES
+        .iter()
+        .position(|s| s.name == "Item176")
+        .expect("Item176 in the generated SoundID table") as u16;
+    app.audio.play_use_sound(
+        idx,
+        center.x as i32 as f32,
+        center.y as i32 as f32,
+        0.0,
+        app.rngs.stream(crate::app::RngKey::UpdateItems),
+    );
+    // The 20 dust: `NewDust(center, 1, 1, 309)` — the 1x1 box pads to 5x5
+    // inside `NewDust` (`Dust.cs:155-162`); the colour switch draws AFTER
+    // the spawn (the C# order: NewDust's own draws, then `Next(6)`).
+    let ctx = app.spawn_ctx();
+    for _ in 0..20 {
+        let slot = app.dust.new_dust(
+            app.rngs.stream(crate::app::RngKey::UpdateItems),
+            &ctx,
+            &app.world,
+            center,
+            1,
+            1,
+            309,
+            0.0,
+            0.0,
+            0,
+            tr_core::particles::Color::default(),
+            1.0,
+        );
+        let d = app.dust.slot_mut(slot);
+        d.scale *= 1.2;
+        let roll = app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(6);
+        d.color = match roll {
+            0 => tr_core::particles::Color::new(255, 255, 210, 255),
+            1 => tr_core::particles::Color::new(190, 245, 255, 255),
+            2 => tr_core::particles::Color::new(255, 150, 255, 255),
+            _ => tr_core::particles::Color::new(190, 175, 255, 255),
+        };
+    }
+}
+
 /// The air-out (`WorldItem.TurnToAir`'s effect on the drop list, `:1845-1848`).
 fn air_out(app: &mut App, idx: u32) {
     if let Some(drop) = app.items.get_mut(idx as usize) {
@@ -481,26 +639,28 @@ fn air_out(app: &mut App, idx: u32) {
     }
 }
 
-/// `WorldItem.GetShimmered`'s decraft arm (`:1773-1828`): per ingredient
+/// `WorldItem.GetShimmered`'s decraft arm (`:1788-1834`): per ingredient
 /// `amount * entry.stack` units, the alchemy discount (1/3 of the units dropped,
 /// one `Next(3)` per unit), `maxStack` chunking and the final
 /// `stack -= amount * createItem.stack`.
 fn apply_decraft(app: &mut App, idx: u32, recipe_index: usize, amount: u32) {
-    let pos = {
+    let center = {
         let drop = &app.items[idx as usize];
-        drop.pos
+        drop.center()
     };
     let ingredients = decraft_ingredients(recipe_index);
     let alchemy = craft::RECIPES.get(recipe_index).is_some_and(|r| r.alchemy);
-    // The drop's own position spawns the ingredients (the C#'
-    // `SpawnShimmeredItem(index, type, stack)` at the item's box).
+    // The C# spawns at `base.Center` (`SpawnShimmeredItem` `:623-626` passes
+    // `base.Center` to the static `:628-637`), with the per-spawn index
+    // `num7` driving the velocity `(num7 * (num7 % 2 * 2 - 1), 0)` — an
+    // alternating left/right fan, NOT the random scatter.
     let mut spawns: Vec<(u16, u32)> = Vec::new();
     for ing in ingredients {
         let mut units = ing.units * amount;
         if alchemy {
-            // `:1794-1800` — one `Main.rand.Next(3) == 0` per unit; the
+            // `:1811-1820` — one `Main.rand.Next(3) == 0` per unit; the
             // decraft runs in `WorldItem.GetShimmered` under the `UpdateItems`
-            // swap (`Main.cs:18024`), so the draws ride `UpdateItems`.
+            // swap (`Main.cs:17779`), so the draws ride `UpdateItems`.
             for _ in 0..ing.units * amount {
                 if app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(3) == 0 {
                     units = units.saturating_sub(1);
@@ -514,18 +674,38 @@ fn apply_decraft(app: &mut App, idx: u32, recipe_index: usize, amount: u32) {
             spawns.push((ing.item_type, chunk));
         }
     }
-    for (kind, count) in spawns {
-        // `SpawnShimmeredItem` → `Item.NewItem` on the `UpdateItems` stream.
-        let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
-        crate::world_sim::items::spawn_item_drop_px(&mut app.items, rng, kind, count, pos);
+    for (n, (kind, count)) in spawns.into_iter().enumerate() {
+        // `SpawnShimmeredItem` (`:628-637`) → `Item.RequestNewItem(source,
+        // center, type, stack, prefix: 0, ownership: None, velocity:
+        // (n * (n % 2 * 2 - 1), 0), modifier)`. The modifier sets
+        // shimmerTime = 1, shimmered = true, shimmerWet = true, wet = true.
+        // `prefix: 0` draws NOTHING (`Item.Prefix` `:511-514` returns early);
+        // the explicit velocity skips the two scatter draws (`Item.cs:49738-
+        // 49741`) — so a shimmered spawn is RNG-FREE apart from the alchemy
+        // discount above. The old port ran the full random scatter + prefix
+        // roll (a stream deviation).
+        let vx = (n as i32 * (n as i32 % 2 * 2 - 1)) as f32;
+        let mut drop = ItemDrop::new(kind, count, 0, 0.0, 0.0, vx, 0.0, 0.0);
+        // `worldItem.Center = center` (`Item.cs:49736`) — the box centres on
+        // the source drop's centre.
+        drop.pos = center - Vec2::splat(SIZE_PX * 0.5);
+        drop.shimmer_time = 1.0;
+        drop.shimmered = true;
+        drop.shimmer_wet = true;
+        app.items.push(drop);
+        if app.items.len() > 300 {
+            app.items.remove(0);
+        }
     }
+    // `:1828-1833` — `stack -= amount * createItem.stack`; `stack <= 0` →
+    // `stack = 0; type = 0`. The C# does NOT set `shimmered` on a surviving
+    // decraft source (the old port did — a deviation: the source keeps
+    // ramping and can decraft again).
     let create_stack = craft::RECIPES.get(recipe_index).map_or(1, |r| r.create.1);
     if let Some(drop) = app.items.get_mut(idx as usize) {
         drop.count = drop.count.saturating_sub(amount * create_stack);
         if drop.count == 0 {
             air_out(app, idx);
-        } else {
-            drop.shimmered = true;
         }
     }
 }
@@ -640,8 +820,18 @@ mod tests {
                 amount: 2 // 60 / 30
             }
         );
-        // Below one result unit → no decraft.
-        assert_eq!(resolve_shimmer(&ctx(), 3077, 29, 0), ShimmerOutcome::Nothing);
+        // Below one result unit the C# `GetShimmered` STILL enters the decraft
+        // arm with `FindDecraftAmount() == 0` (`Item.cs:49473` — no guard);
+        // the ingredient walk spawns nothing and `stack -= 0` keeps the drop.
+        // (`CanShimmer` refuses such a drop earlier, so this only matters for
+        // a direct `GetShimmered` call — the resolve mirrors the C# branch.)
+        assert_eq!(
+            resolve_shimmer(&ctx(), 3077, 29, 0),
+            ShimmerOutcome::Decraft {
+                recipe_index: 62,
+                amount: 0
+            }
+        );
         // A torch (8) is in the transform set (8 → 5353), so the transform arm
         // runs first — the chain order, not the decraft.
         assert_eq!(
@@ -732,5 +922,89 @@ mod tests {
         let a = resolve_shimmer(&ctx(), 8, 30, 0);
         let b = resolve_shimmer(&ctx(), 8, 30, 0);
         assert_eq!(a, b);
+    }
+
+    // --- W4-e19: the f47-second-half census fixes -------------------------
+
+    #[test]
+    fn w4_e19_custom_shimmer_results_override_the_required_list() {
+        // `Recipe.cs:2193-2194` — Silver Bullet (278, recipe 266) refunds
+        // 70 Musket Balls + 1 Silver Ore (14), NOT the 70 balls + 1 Silver
+        // Bar (21) the craft spends. The override replaces the whole list.
+        let idx = decrafting_recipe_index(278) as usize;
+        let ings = decraft_ingredients(idx);
+        assert_eq!(ings.len(), 2);
+        assert_eq!((ings[0].item_type, ings[0].units), (97, 70));
+        assert_eq!((ings[1].item_type, ings[1].units), (14, 1));
+        // `:9664-9665` — Copper Pickaxe (3509) refunds 1 Copper Bar (12) +
+        // 1 Wood (9), NOT the 8 bars / 4 wood the craft spends (the group
+        // substitution is bypassed — the C# `Select` reads `item.type`).
+        let idx = decrafting_recipe_index(3509) as usize;
+        let ings = decraft_ingredients(idx);
+        assert_eq!(ings.len(), 2);
+        assert_eq!((ings[0].item_type, ings[0].units), (12, 1));
+        assert_eq!((ings[1].item_type, ings[1].units), (9, 1));
+        // `:9694` — Copper Shortsword (3507) refunds 1 Copper Bar only.
+        let idx = decrafting_recipe_index(3507) as usize;
+        let ings = decraft_ingredients(idx);
+        assert_eq!(ings.len(), 1);
+        assert_eq!((ings[0].item_type, ings[0].units), (12, 1));
+        // A recipe with NO override keeps the plain required walk (Silk
+        // Rope 3077 → 1 Cobweb 225).
+        let idx = decrafting_recipe_index(3077) as usize;
+        let ings = decraft_ingredients(idx);
+        assert_eq!(ings.len(), 1);
+        assert_eq!((ings[0].item_type, ings[0].units), (225, 1));
+    }
+
+    #[test]
+    fn w4_e19_the_transform_resolves_on_the_equivalent_type() {
+        // `WorldItem.cs:1695` resolves `GetTransformToItem` on the EQUIVALENT
+        // type, and `ShimmerTransforms.cs:95-108` reads
+        // `ContentSamples.ItemsByType[type]` (the equivalent) for the
+        // trophy/lunar arms. The port now reads `registry::place_tile/
+        // place_style(equivalent)` to match. The six `ShimmerCountsAsItem`
+        // pairs (`ItemID.cs:354`) all map non-placeable items to non-placeable
+        // targets, so no current row exercises the trophy/lunar arm through a
+        // remap — this pins the mapping + the gate agreement (the structural
+        // fix is verified by the cite; a future placeable remap inherits it).
+        for (raw, eq) in [(5358u16, 5437u16), (5361, 5437), (5360, 5437), (5359, 5437), (5455, 5323), (6195, 6190)] {
+            assert_eq!(shimmer::shimmer_equivalent_type(raw, false), eq);
+            // Neither the raw nor the equivalent is in the transform set, and
+            // neither places a tile — both resolve Nothing, gate refuses.
+            assert_eq!(resolve_shimmer(&ctx(), raw, 1, 0), ShimmerOutcome::Nothing);
+            assert!(!can_shimmer(&ctx(), raw, 1, 0));
+        }
+        // The lunar-brick arm IS reachable directly (3461, no remap): the
+        // moon-phase table drives it (`ShimmerTransforms.cs:106-108`).
+        assert_eq!(
+            resolve_shimmer(&ShimmerContext { moon_phase: 4, ..ctx() }, 3461, 1, 0),
+            ShimmerOutcome::Transform { new_type: 5408 }
+        );
+    }
+
+    #[test]
+    fn w4_e19_the_release_budget_counts_free_slots() {
+        // `NPC.GetAvailableAmountOfNPCsToSpawnUpToSlot` (`NPC.cs:80635-80654`):
+        // 200 slots, the free count capped at the wanted amount.
+        use crate::world_sim::npcs::npc_spawn_budget;
+        assert_eq!(npc_spawn_budget(0, 60), 60); // 200 free, want 60
+        assert_eq!(npc_spawn_budget(190, 60), 10); // 10 free, want 60
+        assert_eq!(npc_spawn_budget(200, 60), 0); // full
+        assert_eq!(npc_spawn_budget(250, 60), 0); // over-full saturates
+        assert_eq!(npc_spawn_budget(0, 0), 0); // want 0 → 0 (no draw)
+    }
+
+    #[test]
+    fn w4_e19_the_decraft_arm_runs_at_zero_amount() {
+        // `WorldItem.cs:1788` — the branch is `decraftingRecipeIndex >= 0`,
+        // NOT `amount > 0`. A 29-stack of Silk Rope (recipe 62, create 30)
+        // resolves Decraft{amount: 0}: the walk spawns nothing, the source
+        // keeps its 29. (`CanShimmer` refuses it earlier — this pins the
+        // resolve's branch shape against a direct GetShimmered call.)
+        assert_eq!(
+            resolve_shimmer(&ctx(), 3077, 29, 0),
+            ShimmerOutcome::Decraft { recipe_index: 62, amount: 0 }
+        );
     }
 }

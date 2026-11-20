@@ -3450,26 +3450,80 @@ fn invasion_spawn_pick(
 /// Returns whether a drop-owning spawn happened (the roster only covers the 85
 /// ported kinds — the shimmer slime 676, the shimmered town NPC 677 and the
 /// rainbow slime 681 wait for the M4-NPC roster).
-pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32) -> bool {
-    // S1-P-i36 repair: the C# `NPC.ReleaseNPC` types live in the vanilla
-    // `NPC.type` space (the bestiary NET id) — `NpcKind::from_u16` maps the
-    // port's internal protocol ids and would decode a wrong kind (55 is
-    // BrainOfCthulhu there, not the Goldfish).
+/// The 4986 arm's DIRECT `NPC.NewNPC` (`WorldItem.cs:1735` — no `ReleaseNPC`
+/// gate, no catchable whitelist, no budget): the Rainbow Slime 681 at the
+/// truncated `(int)Center.X + 4, (int)Center.Y`, `shimmerTransparency = 1f`.
+/// Returns whether a kind spawned (the roster gap returns false).
+pub(crate) fn spawn_shimmer_new_npc(app: &mut App, npc_type: u16, x: i32, y: i32) -> bool {
     let Some((kind, slime)) = crate::npc::kind_from_net_id(npc_type as i32) else {
-        // The roster gap: the C#'s `ReleaseNPC` still spawns, but the port has
-        // no model for the type — the arm's accounting still runs.
         return false;
     };
-    let mut npc = Npc::new(kind, x, y, 1, 0.0);
+    // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`, `Entity.cs:128-131`).
+    let (w, h) = kind.size();
+    let mut npc = Npc::new(kind, x as f32 - w * 0.5, y as f32 - h, 1, 0.0);
     npc.slime = slime;
     npc.shimmer_transparency = 1.0;
-    // `WorldItem.GetShimmered` releases through `NPC.ReleaseNPC`
-    // (`WorldItem.cs:1776`), whose every arm writes `releaseOwner = who`
-    // (`NPC.cs:80121+`) — the shimmer-released critter is NOT wild, so
-    // the 90-tick friendly window never arms (S1-P-i36).
-    npc.release_owner = app.local_id as u8;
+    // `NewNPC`'s `timeLeft = (int)(activeTime * 1.25)` (`NPC.cs:80772`,
+    // `activeTime = 750` `NPC.cs:95186`).
+    npc.despawn_timer = (750.0 * 1.25) as i32;
     app.npcs.push(npc);
     true
+}
+
+/// `NPC.GetAvailableAmountOfNPCsToSpawnUpToSlot` (`NPC.cs:80635-80654`): the
+/// free-slot count up to `Main.maxNPCs` (200, `InitData.cs:9`), capped at the
+/// wanted amount. The port's `App::npcs` compacts (no fixed 200-slot array),
+/// so the free count is `200 - live` — the C# counts inactive slots, which
+/// is the same number when the roster is the live set.
+pub(crate) fn npc_spawn_budget(live: usize, want: u32) -> u32 {
+    if want == 0 {
+        return 0;
+    }
+    let free = 200usize.saturating_sub(live) as u32;
+    free.min(want)
+}
+
+/// `WorldItem.GetShimmered`'s release arm (`WorldItem.cs:1776`) through
+/// `NPC.ReleaseNPC` (`NPC.cs:80106-80167`, the `bug_net::release_npc` port —
+/// the type switch, the `CanReleaseNPCs` budget, the `releaseOwner` write),
+/// then the `shimmerTransparency = 1f` post-write (`:1779`). `style` is 0
+/// for a transform-map hit, else the item's `placeStyle` (`:1776`'s two
+/// arms). Returns whether a kind spawned (the roster gap / a refused gate
+/// returns false — the C# still consumes the stack unit, the caller does).
+pub(crate) fn spawn_shimmer_release_styled(
+    app: &mut App,
+    npc_type: u16,
+    x: i32,
+    y: i32,
+    style: i32,
+) -> bool {
+    let before = app.npcs.len();
+    // `NPC.ReleaseNPC(x, y, Type, Style, Main.myPlayer)` — the local player
+    // bypasses the `npcCatchable` whitelist (`NPC.cs:80113`). The 148
+    // penguin variant draw rides the caller's stream: `release_npc` reads
+    // `UpdatePlayers` (the bug-net use path, `Player.ItemCheck` under the
+    // `Main.cs:17754` swap), but the SHIMMER release runs under `UpdateItems`
+    // (`Main.cs:17779`) — the 148 draw is the only RNG in the switch, so the
+    // shimmer caller pre-draws it on `UpdateItems` and passes the resolved
+    // type (the 148 arm then draws nothing).
+    let resolved = if npc_type == 148 {
+        npc_type as i32
+            + app
+                .rngs
+                .stream(crate::app::RngKey::UpdateItems)
+                .next_range(0, 2)
+    } else {
+        npc_type as i32
+    };
+    crate::bug_net::release_npc(app, x, y, resolved, style, app.local_id as u8);
+    if app.npcs.len() > before {
+        // `:1777-1780` — `if (num5 >= 0) Main.npc[num5].shimmerTransparency
+        // = 1f`. The release pushed the new NPC last.
+        app.npcs.last_mut().unwrap().shimmer_transparency = 1.0;
+        true
+    } else {
+        false
+    }
 }
 
 /// The saucer/scutlix/dutchman carrier write-through PRE-pass (S1-D-8b's

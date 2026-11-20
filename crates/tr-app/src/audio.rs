@@ -45,6 +45,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_127", 2),
     ("Item_173", 2),
     ("Item_177", 2),
+    // W4-e19 — the shimmer transmute cue (`WorldItem.ShimmerEffect`,
+    // `WorldItem.cs:1668`: `SoundID.Item176 = (2, 176)`, `SoundID.cs:1560`).
+    ("Item_176", 2),
     ("NPC_Hit_25", 3),
     ("Item_1", 2),
     // S1-E-21f — the coin-pickup chime family (`SoundCoin[5]`,
