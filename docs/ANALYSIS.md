@@ -28308,6 +28308,50 @@ the tests. Deliberate deviations:
   decodes (`TextureAssets.SunOrb`, the item sheets) and
   `Main.sunCircle`/`mouseTextColor` are caller inputs. The additive alpha-0
   tints ride the port's existing blend deviation (S1-G-3).
+
+### W4-d59 wiring (2026-11-20, code-only mode)
+
+The platform slope side-fills and the half-brick neighbour joins are now
+WIRED into `render/tiles.rs::draw_tiles`'s cell dispatch — the
+`DrawBasicTile` slope family (`TileDrawing.cs:1510-1629`) lands as the C#
+`if` chain:
+
+- **`flag2 = !DontDrawTileSlopes`** (`:1510`) gates the whole slope family;
+  gated kinds fall through to the sliced/plain draws below.
+- **Platforms + slope > 0** (`:1515-1545`): the FULL `normalTileRect` draws
+  flat (`:1523`, `flat_src_uv` — the case-80-style row shift applies, never
+  the column path), then `draw_platform_side_fill` pushes the ONE
+  behind-tiles fill quad via `special_tiles::platform_side_fill` +
+  `push_platform_side_fill` (the 198/324 + 162/306 picks, the veto tails,
+  `finalColor` tint, `tileSpriteEffect` flip and the paint byte). The C#
+  returns early (`:1544`) — no slope columns.
+- **`HasSlopeFrames`** (`:1546-1550`, kinds 421/422): one flat 16x16 draw
+  from `tileFrameX/Y + addFrX/addFrY` (`tf.uv` already carries the frame).
+- **Half-brick neighbour joins** (`:1586-1629`): `half_brick_join` reads the
+  gate chain (`!Platforms`, `!IgnoresNearbyHalfbricksWhenDrawn`, `tileSolid`,
+  `!NotReallySolid`, `!halfBrick`, then the neighbours' `halfBrick()` bit
+  WITHOUT an active test) and `half_brick_join_rects`/`push_half_brick_join`
+  rebuild the bottom strip + the join-column top strips (126/90 both-sides
+  with the same-kind-non-bottom-slope-above swap, 144/148 left, the FIXED
+  156/158 + 156 right columns with NO addFr, the smooth-border 4→2 shrink).
+  The join arm sits BEFORE the cell's own half-brick arm, exactly like the
+  C# chain.
+
+Resolved deviations from the S1-G-1e slice:
+- **invisibleBlock bit**: now REAL — `FillNeighbor::from_world` reads
+  `World::invisible_block` (the extras byte's 0x20, the i31 sim's Echo
+  coating); `from_tile` keeps `false` for callers without the world.
+- **Behind-tiles layer**: still deferred (S1-G-13 unwired) — the fill quad
+  draws into the world range; `PlatformSideFill.behind_tiles` records the
+  decision. Z-order approximation: the fill draws after the cell sprite
+  (row-major), the C# routes it to the behind-tiles layer.
+- **Glow arm's twin fill** (`:1367-1401`): rides the still-unwired glow pass
+  (TILE-DRAW-2) — the martian/meteor conduit rows' side-fill glows are not
+  drawn yet.
+- **Code-only mode**: no cargo/rustc/test runs; the 5 new tiles.rs tests
+  (gate chain, smooth/same-above flags, both-sides rects, one-sided rects,
+  dispatch-order witness) + the special_tiles.rs `from_world` test are
+  WRITTEN, NOT RUN; verification is the C# line-by-line citations.
 ## The world-sounds wave (S1-E-21i, 2026-11-18)
 
 **Code-only mode**: this wave was implemented without invoking any compiler вЂ”
