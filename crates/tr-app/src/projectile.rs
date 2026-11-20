@@ -4705,6 +4705,83 @@ impl Projectile {
         self.pos += self.vel;
     }
 
+    /// `AI()`'s aiStyle-55 block (`Projectile.cs:28773-28844`) — the
+    /// Pumpking's FlamingJack (321): the every-tick 3-frame cycle (the
+    /// `frameCounter++` fires the `> 0` arm each tick), the velocity-sign
+    /// sprite facing + the mirrored atan2 rotation, then the `ai[0]` target
+    /// machine: a held chaseable non-critter NPC steers at speed 8 through
+    /// the `(v * 14 + d) / 15` blend; a stale target rescans every chaseable
+    /// non-critter inside the Manhattan 1000f + `CanHit` and keeps the
+    /// tightest (`ai[0] = index`, RAW). An out-of-range `ai[0]` kills
+    /// (`:28840-28843`). The inset-8 dust 6 (`:28832-28838`) rolls no
+    /// `Main.rand` — SKIPPED.
+    ///
+    /// `NPCID.Sets.CountsAsCritter` (`NPCID.cs:10460`) — every listed id
+    /// has `lifeMax <= 5`, so the port's `chaseable` gate (`lifeMax > 5`)
+    /// already excludes them; the extra test is kept explicit for the
+    /// census. The row keeps `tileCollide = false` (`:4146`) — the movement
+    /// is a plain integration the arm owns (HandleMovement after the AI,
+    /// including the kill tick).
+    fn ai_flaming_jack(&mut self, world: &World, npcs: &[Npc]) {
+        // `:28775-28784` — the frame machine: ++ then `> 0` always fires.
+        self.frame_counter += 1;
+        if self.frame_counter > 0 {
+            self.frame += 1;
+            self.frame_counter = 0;
+            if self.frame > 2 {
+                self.frame = 0;
+            }
+        }
+        // `:28785-28794` — the facing + rotation off the velocity's sign.
+        if self.vel.x < 0.0 {
+            self.sprite_direction = -1;
+            self.rot = (-self.vel.y).atan2(-self.vel.x);
+        } else {
+            self.sprite_direction = 1;
+            self.rot = self.vel.y.atan2(self.vel.x);
+        }
+        // `:28795-28843` — the target machine. `Main.maxNPCs` is 200
+        // (`InitData.cs:9`); an out-of-range index kills.
+        if self.ai[0] >= 0.0 && self.ai[0] < crate::npc_ai_style59::MAX_NPCS as f32 {
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let held = self.ai[0] as usize;
+            let held_ok = npcs
+                .get(held)
+                .is_some_and(|n| chaseable(n) && !counts_as_critter(n));
+            if held_ok {
+                // `:28801-28811` — the speed-8 `(v*14 + d)/15` blend.
+                let target = npc_center(&npcs[held]);
+                self.steer_blend(target, center, 8.0, 15.0);
+            } else {
+                // `:28815-28830` — the re-scan: Manhattan < running min
+                // (opens 1000) + CanHit, the RAW index into ai[0].
+                let mut scan = 1000.0f32;
+                for (idx, n) in npcs.iter().enumerate() {
+                    if !chaseable(n) || counts_as_critter(n) {
+                        continue;
+                    }
+                    let nc = npc_center(n);
+                    let manhattan = (center.x - nc.x).abs() + (center.y - nc.y).abs();
+                    let (nw, nh) = n.size();
+                    if manhattan < scan
+                        && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                    {
+                        scan = manhattan;
+                        self.ai[0] = idx as f32;
+                    }
+                }
+            }
+            // The inset dust (`:28832-28838`) — SKIPPED (no rolls).
+        } else {
+            // `:28840-28843` — the out-of-range kill.
+            self.active = false;
+            self.time_left = 0;
+        }
+        // The row's `tileCollide = false` — the free integrate (the dead
+        // slot moves too, `:17015`/`:17027`).
+        self.pos += self.vel;
+    }
+
     /// `AI()`'s aiStyle-118 block (`Projectile.cs:34638-34807`) — the Nebula
     /// Arcanum (617). Two flight modes picked per tick off the speed: above
     /// 4.0 the fast spin (`rotation -= PI/30`, the 0.98 decay + the 0.0074468083
@@ -13892,6 +13969,25 @@ pub(crate) fn chaseable_held(n: &Npc) -> bool {
     n.hp > 0 && n.max_hp > 5
 }
 
+/// `NPCID.Sets.CountsAsCritter` (`NPCID.cs:10460`) — the verbatim id set
+/// the aiStyle-55 FlamingJack's target gates exclude (`Projectile.cs:28799`/
+/// `:28819`), kept explicit so the C# `CanBeChasedBy && !CountsAsCritter`
+/// gate reads 1:1 (W4-d6).
+const COUNTS_AS_CRITTER: [u16; 99] = [
+    46, 303, 337, 540, 443, 74, 297, 298, 442, 611, 689, 377, 446, 612, 613, 356, 444, 595,
+    596, 597, 598, 599, 600, 601, 604, 605, 357, 448, 374, 484, 355, 358, 606, 359, 360, 485,
+    486, 487, 148, 149, 55, 230, 592, 593, 299, 538, 539, 300, 447, 361, 445, 362, 363, 364,
+    365, 367, 366, 583, 584, 585, 602, 603, 607, 608, 609, 610, 616, 617, 625, 626, 627, 615,
+    639, 640, 641, 642, 643, 644, 645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655, 661,
+    669, 671, 672, 673, 674, 675, 677, 687, 688,
+];
+
+/// The `!NPCID.Sets.CountsAsCritter[type]` half of the FlamingJack's target
+/// gates (`Projectile.cs:28799`/`:28819`).
+pub(crate) fn counts_as_critter(n: &Npc) -> bool {
+    COUNTS_AS_CRITTER.contains(&n.kind.to_u16())
+}
+
 /// `NPC.Center` (`Entity.cs`: `position + Size / 2f`) for the pool's slots.
 /// `pub(crate)`: S1-P-i18's special-bullet homing / re-target arms read it.
 pub(crate) fn npc_center(n: &Npc) -> Vec2 {
@@ -17541,6 +17637,14 @@ impl ProjectilePool {
                         // even on the contact-kill tick, `:17015`/`:17027`).
                         52 => {
                             self.slots[i].ai_heal_orb(player.as_deref_mut(), local_owner);
+                        }
+                        // W4-d6 — `AI()`'s `else if (this.aiStyle == 55)`
+                        // (`Projectile.cs:28773-28844`): the Pumpking's
+                        // FlamingJack (321), the style's only rowed kind.
+                        // The arm owns its integration (the row's
+                        // `tileCollide = false`, `:4146`).
+                        55 => {
+                            self.slots[i].ai_flaming_jack(world, &npcs[..]);
                         }
                         // The Spectre Wrath (`:28938-28993`): the hostile
                         // window, the uniform re-pick (one rng draw) and the
@@ -34367,6 +34471,89 @@ mod magic_ai_tests {
         assert!(!d.magic, "the 305 arm sets no class (`:3965-3973`)");
         assert_eq!(d.penetrate, 1);
         assert_eq!(d.time_left, 3600);
+    }
+
+    #[test]
+    fn test_w4_d6_style_55_the_jack_cycles_3_frames_and_faces_the_velocity() {
+        // `:28775-28794`: the frameCounter arm fires EVERY tick (3 frames
+        // wrap); a -X flight mirrors the atan2 and flips spriteDirection.
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FLAMING_JACK, 10.0 * TILE_PX, 10.0 * TILE_PX, -5.0, 0.0, 40, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        for t in 1..=3 {
+            tick_npcs(&mut w, &mut pool, &mut npcs);
+            let p = &pool.slots()[slot];
+            assert_eq!(p.frame, t % 3, "one frame per tick, wrap at 3");
+            assert_eq!(p.frame_counter, 0, "the > 0 arm always resets");
+            assert_eq!(p.sprite_direction, -1, "the -X flight mirrors");
+            assert!(p.rot.abs() < 1e-6, "atan2(-0, +5) = 0");
+        }
+        // The +X arm: rotation atan2(vy, vx), sprite +1.
+        pool.slots_mut()[slot].vel = Vec2::new(0.0, 5.0);
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.sprite_direction, 1);
+        assert!((p.rot - std::f32::consts::FRAC_PI_2).abs() < 1e-6, "atan2(5, 0)");
+    }
+
+    #[test]
+    fn test_w4_d6_style_55_the_held_target_blends_at_15_and_the_stale_one_rescans() {
+        // `:28801-28811`: the held chaseable target steers `(v*14 + d)/15`
+        // at speed 8. `:28815-28830`: a stale index rescans the tightest
+        // Manhattan inside 1000f + CanHit, storing the RAW index.
+        let mut w = world();
+        let mut npcs = vec![
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 300.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 100.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+        ];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FLAMING_JACK, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 40, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = 1.0; // the near slime, held
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        let center = Vec2::new(20.0 * TILE_PX + 15.0, 24.0 * TILE_PX + 15.0);
+        let delta = npc_center(&npcs[1]) - center;
+        let expected = delta * (8.0 / delta.length()) / 15.0;
+        assert!(
+            (p.vel.x - expected.x).abs() < 1e-5 && (p.vel.y - expected.y).abs() < 1e-5,
+            "one speed-8 (v*14 + d)/15 blend from rest"
+        );
+        // The stale hold (npc 1 dead) rescans onto the far slime (index 0).
+        npcs[1].hp = 0;
+        pool.slots_mut()[slot].vel = Vec2::ZERO;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert_eq!(pool.slots()[slot].ai[0], 0.0, "the RAW npc index lands");
+        // `:28840-28843`: an out-of-range ai[0] kills.
+        pool.slots_mut()[slot].ai[0] = 200.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert!(!pool.slots()[slot].active, "ai[0] >= Main.maxNPCs kills");
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FLAMING_JACK, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 40, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert!(!pool.slots()[slot].active, "a negative ai[0] kills");
+    }
+
+    #[test]
+    fn test_w4_d6_style_55_the_jack_row_is_verbatim() {
+        // `:4139-4148`: 30x30, aiStyle 55, friendly, melee, tileCollide
+        // false, ignoreWater; the stock penetrate 1 / timeLeft 3600.
+        let d = proj_data(FLAMING_JACK).unwrap();
+        assert_eq!((d.w, d.h), (30.0, 30.0));
+        assert_eq!(d.ai_style, 55);
+        assert!(d.melee);
+        assert!(!d.tile_collide);
+        assert!(d.ignore_water);
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, 3600);
+        assert_eq!(d.extra_updates, 0);
     }
 
     #[test]

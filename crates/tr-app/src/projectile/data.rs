@@ -2839,6 +2839,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // alpha 255, `tileCollide = false`, `extraUpdates = 10`. NO
             // magic flag (the C# arm sets none — the heal is classless).
             VAMPIRE_HEAL => (6.0, 6.0, 52, 1, TIME_LEFT_DEFAULT, 10, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:4139-4148` FlamingJack (321): 30x30, aiStyle 55,
+            // friendly, melee, `tileCollide = false`, `ignoreWater` (the
+            // overlay below). The stock penetrate 1 / timeLeft 3600 stand.
+            FLAMING_JACK => (30.0, 30.0, 55, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             // `:4903-4915` Typhoon — 30x30, aiStyle 71, `penetrate = -1`,
             // alpha 255, `timeLeft = 300`, `extraUpdates = 2`, `ignoreWater`
             // dropped.
@@ -4241,7 +4245,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d6 — `Projectile.cs:4147`: the FlamingJack (321) ignores water.
+            || kind == FLAMING_JACK,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4276,6 +4282,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d6 — the FlamingJack's `melee = true` (`:4145`).
+                    | FLAMING_JACK
             ),
         ranged: matches!(
             kind,
