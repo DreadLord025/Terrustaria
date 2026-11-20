@@ -3165,8 +3165,10 @@ and a third was the click gate the geometry feeds):
   36 px cells at `maxEmotesPerRow = 14`. The wheel now owns its container and
   grid, and its scroll offset moved from standing still to `UIList.ScrollWheel`
   (`UIList.cs:107-114`) with `UIScrollbar`'s clamp (`:37-47`), reset on each open
-  (`OnActivate`'s rebuild). The C#'s per-group titles/separators are **not** ported
-  вЂ” the port keeps one flat roster вЂ” and the menu-side container split is
+  (`OnActivate`'s rebuild). The flat-roster stand-in this entry originally
+  recorded (per-group titles/separators not ported, one flat roster) was
+  **replaced by the full grouped page in W4-g54** — see "The emote wheel's
+  grouped page (W4-g54)" below; the menu-side container split is
   unimplemented (the wheel is reachable only in-game).
 * **The emote wheel had no hover and dead clicks; the bubbles drew offscreen
   (fix/emote-hover-and-spawn, 2026-11-18).** Three separate breaks:
@@ -3197,6 +3199,63 @@ and a third was the click gate the geometry feeds):
   M4-TOWN, and the button blink rides the world step instead of the UI update
   (the wheel is only reachable in-game where the world keeps stepping).
 
+### The emote wheel's grouped page (W4-g54)
+
+**Landed (code-only mode — tests written, not run; no compiler invoked).**
+The flat 151-roster stand-in is replaced by the C# `UIEmotesMenu` page:
+
+* **The rosters** (`crates/tr-app/src/emotes.rs::build_groups`):
+  `InitializePage`'s seven `TryAddingList` calls (`UIEmotesMenu.cs:90-97`) in
+  the C# order — General 29, RPS 6, Items 23, BiomesAndEvents 23, TownNPCs 30,
+  Critters 10 + 4 gated, Bosses 0 + up to 26 gated. An empty list is skipped
+  WITHOUT consuming a group index (`:100-106`'s `currentGroupIndex++` inside
+  the non-empty arm). The per-row caps (10/10/11/8/9/7/8) are dead — the
+  `EmotesGroupListItem` ctor hard-overrides `maxEmotesPerRow = 14`
+  (`EmotesGroupListItem.cs:25`), so one 14-wide lattice serves every group.
+* **The gates** (`EmoteGates::from_world`): the Critters/Bosses tails read the
+  world's downed flags (`GetEmotesCritters` `:153-176`, `GetEmotesBosses`
+  `:178-283`), sampled on every open (`OnActivate` → `InitializePage`). The
+  C# if-order is kept verbatim — boss2 adds TWO ids (40, 41), mech3 before
+  mech2, pirates/martians feed both lists, `DD2Event.DownedInvasionAnyDifficulty`
+  is `T1 || T2 || T3` (`DD2Event.cs:89-98`). **Deliberate gap**: the six flags
+  the port's world does not own — Empress of Light, HalloweenTree/King,
+  ChristmasTree/IceQueen/Santank (`wld/sections/flags.rs:146-150`/`:217`
+  skip them on read AND write) — stay `false`, so emotes 143, 54, 55, 56, 57,
+  58 never appear until those flags land. `boss2` maps to `downed_eow`, which
+  the port sets for both the Eater and the Brain (`world_sim/npcs.rs`).
+* **The layout** (`ui/emotes.rs`): every rect resolves through the landed
+  `uistate::resolve` (`UIElement.cs:306-323`) — the 590-wide outer container
+  (`Top 120 / Height −120` in-game), the `(33,43,79)*0.8` `UIPanel` with
+  `PaddingTop 0`, the `UIList` (`Width −25` attached / `0` unattached,
+  `Height −50`, `Top 50`, `ListPadding 14`), the group heights
+  `30 + 36·rows` with the ctor's dead `num6` walk pinned at `−16`
+  (`EmotesGroupListItem.cs:58-81`), the header separator
+  (`Lerp(White, (63,65,151), 0.85)*0.9`) + localized `UI.EmoteCategory*`
+  title, and the 34×28 `EmoteButton` frames on the 8×39 `Extra_48` sheet.
+  The list draws under the `OverflowHidden` scissor (`push_clip`,
+  `UIList.cs:59` + `UIElement.cs:222-237`) with the `UIInnerList` AABB gate.
+* **The scroll** (`EmoteSystem.scroll` is now PIXELS —
+  `UIScrollbar._viewPosition`): the wheel notch applies
+  `ViewPosition -= delta` (`UIList.cs:107-114`) clamped to
+  `[0, maxView − view]` (`UIScrollbar.cs:45`); the attach machine
+  (`UIEmotesMenu.Recalculate` `:285-303`) attaches iff content > viewport.
+  The scrollbar's handle drag (`_dragYOffset` latch, `LeftMouseDown`
+  `:131-135`, `DrawSelf` `:109-112`, `LeftMouseUp` `:145-149`) and track jump
+  (`:137-141`) ride the shared `ui/panel.rs` helpers — `App.emote_scroll_drag`
+  is the latch, cleared on release in `loop.rs`. **Recorded stand-in**: the
+  port's pointer machine counts notches, so one notch scrolls the 36 px cell
+  stride, not XNA's raw 120 (`PlayerInput.cs:898-899`) — the same notch
+  stand-in the select screens' `WHEEL_STEP` uses.
+* **The hit walk** (`card_at`): `GetElementAt`'s parent-chain gates
+  (`UIElement.cs:324-352`) — the point must be inside the list rect, then a
+  group, then the int-truncated 34×28 button rect (`ContainsPoint` `:354-357`).
+  A button straddling the list edge is hittable in its visible part (the
+  scissor clips the DRAW, not the hit).
+* **Still deferred**: the gamepad snap-point nav
+  (`SetupGamepadPoints2` `:330-464`), the hover sound-12 on the scrollbar
+  handle (`UIScrollbar.cs:117-120`), the menu-side container arm (unreachable),
+  and the six unowned gate flags above.
+
 Open gaps (deliberately out, each with its reason):
 
 * **Event bubbling** (`UIElement.cs:414-546`: every mouse event fires the
@@ -3215,15 +3274,18 @@ Open gaps (deliberately out, each with its reason):
   `AWorkshopPublishInfoState`) вЂ” the select screens' clipped rows already emulate
   the clip by omitting the row from the element list.
 * **`UIList`/`UIScrollbar` behaviour** (`UIList.cs:107-128`, `UIScrollbar.cs:37-143`):
-  the draw-only helpers exist in `ui/panel.rs`, but there is no `view_position`,
-  no drag and no handle geometry; the char/world select bars draw at a hard-coded
-  ratio and the emotes wheel's scroll is a plain row offset.
+  the draw-only helpers exist in `ui/panel.rs`; the select screens and (since
+  W4-g54) the emotes wheel now carry the pixel `view_position`, the handle
+  geometry and the drag latch through those helpers — the char/world select
+  bars' hard-coded ratio note is superseded by the front screens' own landed
+  scrollbar work.
 * **`IsElementUnderMouse`/`MouseCaptured`** (`UserInterface.cs:113-124`, `:349-356`)
   вЂ” only the minimap's hover mirrors the mine/place suppression today.
 * **`OnActivate`/`OnDeactivate` for the remaining screens** вЂ”
   `NewCraftingUI.cs:901`/`:911`, `UIAchievementsMenu.cs:177`, `UIManageControls.cs:694`,
   `UICreativePowersMenu.cs:97` have no ported screens; `UIEmotesMenu`'s
-  `RemoveAllChildren` rebuild is only its scroll reset; and the 13 `front = None`
+  `RemoveAllChildren` rebuild is ported since W4-g54 (`open_with` rebuilds the
+  gated page); and the 13 `front = None`
   exit sites have no `leave_front` seam, so the 200 ms disable is never re-armed
   on the leave direction the C#'s `SetState(null)` also resets
   (`open_keyboard_with_tail` at `app/mod.rs:1159` and the mode-40 `No` restore at

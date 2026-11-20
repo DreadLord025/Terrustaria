@@ -633,18 +633,24 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   yet: the `SetMouseNPC` click (`:42065-42071`, the port has no `Main.mouseNPC`
   housing query), the `Inventory_Back14` white gamepad highlight and the
   `hidePVPAndTeamIcons` third-column suppression.
-* The emote wheel + bubbles (S1-E-26 wave B, `ui/emotes.rs` + `emotes.rs`): the
+* The emote wheel + bubbles (S1-E-26 wave B + **W4-g54 grouped page**,
+  `ui/emotes.rs` + `emotes.rs`): the
   inventory's emote button (`Main.DrawEmoteBubblesButton`, `Main.cs:42369-42408`,
   the `(534, 278)` 30×30 box) opens the `UIEmotesMenu` wheel — its own 590-wide
-  container (`Top 120 / Height −120` in game), the 36 px / 14-col `EmoteButton`
-  lattice, the border-tint hover + `/EmojiName.*` tooltip and the wheel's own
-  `Top(−45)` Back panel. A pick spawns the 360-tick bubble above the local player
+  container (`Top 120 / Height −120` in game), rebuilt on every open from the
+  world's downed flags (`InitializePage`'s seven `TryAddingList` rosters,
+  `UIEmotesMenu.cs:90-97`): the General/RPS/Items/BiomesAndEvents/TownNPCs/
+  Critters/Bosses category lists with localized titles + separators, the
+  36 px / 14-col `EmoteButton` lattice per group, the pixel `UIScrollbar`
+  (wheel notches, handle drag + track jump), the border-tint hover +
+  `/EmojiName.*` tooltip and the wheel's own `Top(−45)` Back panel. A pick
+  spawns the 360-tick bubble above the local player
   (`EmoteBubble.Draw`'s pop shells, 8-tick frame flip, 87/89 un-flip, camera/zoom
   transform) and closes; Back/Escape close. The update ticks on the world step,
   the draw rides the HUD pass beside the notifications. Local display only — the
-  MP broadcast, NPC anchors/reactions, reverse gravity, the per-group category
-  layout and the gamepad nav are deferred (ANALYSIS "The emote bubble wheel
-  (S1-E-26 wave B)").
+  MP broadcast, NPC anchors/reactions, reverse gravity, the six unowned
+  downed-gate flags (Empress/Halloween/Christmas) and the gamepad nav are
+  deferred (ANALYSIS "The emote wheel's grouped page (W4-g54)").
 * Chest panel (M3-CHEST-UI) deviations are collected in `docs/ANALYSIS.md` →
   "Chest UI + world chests (M3-CHEST-UI)" (lazy store entries, no lid animation,
   the rename keyboard pauses the sim, the cursor-override textures deferred …);
