@@ -766,6 +766,10 @@ mod w4_e25_scaling_tests {
     //! exact f32/f64 semantics (the census doc §1 carries the tables).
     use super::*;
 
+    fn no_npcs(_: i32) -> bool {
+        false
+    }
+
     fn env(difficulty: f32) -> ScalingEnv<'static> {
         ScalingEnv {
             difficulty,
@@ -773,7 +777,7 @@ mod w4_e25_scaling_tests {
             get_good_world: false,
             downed_plant_boss: false,
             net_mode: 0,
-            any_npcs: &|_| false,
+            any_npcs: &no_npcs,
         }
     }
 
