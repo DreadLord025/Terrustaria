@@ -136,9 +136,9 @@ ports were byte-equivalent state machines and neither had a consumer yet.
 | 4 | `GroupOptionButton` | LANDED (colour state batch 1; missing halves `ui/elements.rs`: `InnerHighlightRim`/`highlight_rect` `:32`/`:236`, `hover_border_color` `:240`, `icon_tint` `:242-249`, `hover_sound_tick` `:212-223`, `GROUP_OPTION_SIZE`/`group_option_title_rect` `:124-125`/`:136-142`; the world-creation draw pre-landed `option_button_colors`) |
 | 5 | `PowerStripUIElement` | LANDED (`ui/elements.rs` strip layout/colours, batch 1; re-audit: ctor `:13-43` fully covered minus the unported gamepad snap points) |
 | 6 | `UIAchievementListItem` | LANDED (draw/geometry/hover pair/sort pre-landed `ui/achievements.rs::draw_row` + `sorted_indices`; missing halves: `row_height`/`icon_offsets` small-language branch `:49-53`, `icon_frame_rect` `:57-61`/`:155-169`, `description_scale_y` `:101-112`, `tracker_bar_geometry`/`tracker_bar_colors` `:139-149`/`:241-256` — the flat-bar draw + horizontal shrink stay documented stand-ins) |
-| 7 | `UIBestiaryEntryButton` | pending |
-| 8 | `UIBestiaryEntryGrid` | pending |
-| 9 | `UIBestiaryEntryIcon` | pending |
+| 7 | `UIBestiaryEntryButton` | LANDED (card draw/hover text pre-landed `ui/bestiary.rs::draw_card`; missing halves: `entry_button_border_layers` `:150-169`/`:93-96`, `pick_background_provider` `:104-129`, `first_display_index` `:131-140`; the always-overlay hover stack stays a documented deviation until adoption; the `MouseOver` sound-12 edge `:152` defers to wiring — the shared `elements.rs::hover_sound_tick` latch is the mechanism) |
+| 8 | `UIBestiaryEntryGrid` | LANDED (metrics/range/clamp/draw pre-landed; missing halves `ui/bestiary.rs`: `offset_library_by_pages` `:103-114`, `grid_cell_rect` fractional placement `:50-66` — the raw-lattice draw stays the documented simplification) |
+| 9 | `UIBestiaryEntryIcon` | LANDED (locked draw/hover text/portrait layout pre-landed; missing halves `ui/bestiary.rs`: `icon_is_hovered` `:38`/`:52` ForceHover gate, `icon_walks` `UnlockableNPCEntryIcon.cs:100-109` walk gate — the frame-0 rest stays the documented no-cache deviation) |
 | 10 | `UIBestiaryEntryInfoPage` | pending |
 | 11 | `UIBestiaryFilteringOptionsGrid` | pending |
 | 12 | `UIBestiaryInfoItemLine` | pending |

@@ -152,6 +152,115 @@ pub fn fix_grid_range(at: usize, offset: i64, capacity: usize, total: usize) -> 
     (at as i64 + offset).clamp(0, max as i64) as usize
 }
 
+// --- The element classes' missing pure halves (W4-d81 census rows 7-9) ---------
+//
+// The grid draw/hit/range/clamp are pre-landed above; the card draw
+// (`draw_card`) covers the ctor's layer stack. These port the remaining
+// stateless pieces the screens adopt later (the 18b convention).
+
+/// `UIBestiaryEntryGrid.OffsetLibraryByPages` (`UIBestiaryEntryGrid.cs:103-107`):
+/// the page buttons pass `howManyPages * maxEntriesToHave` to `OffsetLibrary`
+/// (`:109-114`), which clamps through `FixBestiaryRange` and refills.
+#[allow(dead_code)] // paging lands with the filters/sort (the draw pins at 0)
+pub fn offset_library_by_pages(at: usize, pages: i64, capacity: usize, total: usize) -> usize {
+    fix_grid_range(at, pages * capacity as i64, capacity, total)
+}
+
+/// `FillBestiarySpaceWithEntries`' cell placement
+/// (`UIBestiaryEntryGrid.cs:50-66`): the button is 72x72, `HAlign/VAlign 0.5`,
+/// `Left (0, k/cols - 0.5 + 0.5/cols)`, `Top (0, j/rows - 0.5 + 0.5/rows)` —
+/// the fractional offsets centre the lattice inside the grid rect even when
+/// the space is not a whole multiple of 72. The port's draw/hit use the raw
+/// CELL lattice (the documented simplification, exact when the space divides).
+#[allow(dead_code)] // the draw keeps the raw lattice; the exact form is pinned
+pub fn grid_cell_rect(
+    rect: &[f32; 4],
+    cols: usize,
+    rows: usize,
+    col: usize,
+    row: usize,
+) -> [f32; 4] {
+    let num3 = 0.5 / cols as f32; // `:51`
+    let num4 = 0.5 / rows as f32; // `:52`
+    let left_pct = col as f32 / cols as f32 - 0.5 + num3; // `:65`
+    let top_pct = row as f32 / rows as f32 - 0.5 + num4; // `:66`
+    [
+        rect[0] + (rect[2] - CELL) * 0.5 + left_pct * rect[2],
+        rect[1] + (rect[3] - CELL) * 0.5 + top_pct * rect[3],
+        CELL,
+        CELL,
+    ]
+}
+
+/// `UIBestiaryEntryButton`'s border layer order (`MouseOver`/`MouseOut`,
+/// `UIBestiaryEntryButton.cs:150-169`): hovered draws `Slot_Front` then
+/// `Slot_Selection` (the overlay is removed, `:153-157`); idle draws
+/// `Slot_Overlay` then `Slot_Front` (no glow, `:163-167`). Returns
+/// `(draw_overlay, draw_glow)`. The pretty-portrait ctor removes the overlay
+/// outright (`:93-96`). The current `draw_card` keeps the overlay under the
+/// hover stack — a documented deviation until the adoption.
+#[allow(dead_code)] // draw_card keeps its always-overlay stack for now
+pub fn entry_button_border_layers(hovered: bool, pretty_portrait: bool) -> (bool, bool) {
+    if pretty_portrait {
+        return (false, false); // `:93-96` — the overlay never draws
+    }
+    if hovered {
+        (false, true) // `:153-157`
+    } else {
+        (true, false) // `:163-167`
+    }
+}
+
+/// `TryGettingBackgroundImageProvider` (`UIBestiaryEntryButton.cs:104-129`):
+/// the first preference-matched provider with a non-null background image
+/// wins (`:112-119`); failing that, the first provider with one in entry
+/// order (`:120-127`). The port models each provider as
+/// `(matches_a_preference, has_image)`; the bestiary entries carry no
+/// background providers yet (the pretty-portrait backgrounds defer).
+#[allow(dead_code)] // no background providers on the port's entries yet
+pub fn pick_background_provider(providers: &[(bool, bool)]) -> Option<usize> {
+    for (i, &(matched, has_image)) in providers.iter().enumerate() {
+        if matched && has_image {
+            return Some(i); // `:112-119`
+        }
+    }
+    for (i, &(_, has_image)) in providers.iter().enumerate() {
+        if has_image {
+            return Some(i); // `:120-127`
+        }
+    }
+    None // `:128`
+}
+
+/// `TryGettingDisplayIndex` (`UIBestiaryEntryButton.cs:131-140`): the first
+/// `IBestiaryEntryDisplayIndex` in `entry.Info` supplies the corner number
+/// (`None` = no number drawn, `:61-70`). The port's entries print their
+/// roster position instead (`draw_card`); this is the source's lookup shape.
+#[allow(dead_code)] // the draw prints idx + 1; the info-element lookup is ready
+pub fn first_display_index(info_display_indices: &[Option<i32>]) -> Option<i32> {
+    info_display_indices.iter().find_map(|x| *x) // `FirstOrDefault` (`:134`)
+}
+
+/// `UIBestiaryEntryIcon`'s hover gate (`UIBestiaryEntryIcon.cs:38`, `:52`):
+/// `IsMouseHovering || ForceHover` — the button's `MouseOver` sets
+/// `ForceHover` on its icon (`UIBestiaryEntryButton.cs:158`/`:168`) because
+/// the icon itself ignores mouse interaction (`:24`).
+#[allow(dead_code)] // the draw derives hover from card_at directly
+pub fn icon_is_hovered(is_mouse_hovering: bool, force_hover: bool) -> bool {
+    is_mouse_hovering || force_hover
+}
+
+/// The icon's walk gate (`UnlockableNPCEntryIcon.cs:100-109`): without a
+/// `Frame` override, a portrait OR hovered icon runs
+/// `velocity.X = direction * Velocity` + `FindFrame` (the walk cycle); with
+/// one, the frame pins to `frame.Height * num` (`:105-109`). The port's
+/// immediate draw rests on frame 0 (no NPC cache to simulate — the documented
+/// deviation); this pins the gate for the animation's landing.
+#[allow(dead_code)] // the walk-cycle simulation lands with the NPC cache
+pub fn icon_walks(frame_override: Option<i32>, is_portrait: bool, is_hovered: bool) -> bool {
+    frame_override.is_none() && (is_portrait || is_hovered) // `:100`
+}
+
 /// The completion bar's rect — `FillProgressBottomBar`
 /// (`UIBestiaryTest.cs:158-179`): the `UIColoredSliderSimple` fills the
 /// bottom strip (`Width (0, 1)`, `Height 15`, `VAlign 1`, `:168-171`); the
@@ -1888,6 +1997,80 @@ fn draw_sheet_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_page_offset_multiplies_the_capacity() {
+        // `OffsetLibraryByPages` (`UIBestiaryEntryGrid.cs:103-107`) +
+        // `FixBestiaryRange` (`:116-123`): 2 pages of 20 over 55 entries
+        // clamps to 35 (55 - 20), never past the last full page.
+        assert_eq!(offset_library_by_pages(0, 2, 20, 55), 35);
+        assert_eq!(offset_library_by_pages(10, -1, 20, 55), 0);
+        // A roster smaller than a page pins to 0.
+        assert_eq!(offset_library_by_pages(0, 3, 20, 5), 0);
+    }
+
+    #[test]
+    fn the_fractional_cell_placement_centres_the_lattice() {
+        // `FillBestiarySpaceWithEntries` (`:50-66`): a 200x150 rect fits
+        // 2x2 cells; the fractional offsets centre the 144x144 lattice —
+        // cell (0,0) at (28, 3), cell (1,1) at (100, 75).
+        let rect = [0.0, 0.0, 200.0, 150.0];
+        assert_eq!(grid_cell_rect(&rect, 2, 2, 0, 0), [28.0, 3.0, 72.0, 72.0]);
+        assert_eq!(grid_cell_rect(&rect, 2, 2, 1, 1), [100.0, 75.0, 72.0, 72.0]);
+        // An exact-multiple rect matches the raw CELL lattice the draw uses.
+        let rect = [10.0, 20.0, 144.0, 144.0];
+        assert_eq!(grid_cell_rect(&rect, 2, 2, 1, 0), [82.0, 20.0, 72.0, 72.0]);
+    }
+
+    #[test]
+    fn the_border_layers_swap_on_hover_and_drop_for_portraits() {
+        // `MouseOver`/`MouseOut` (`UIBestiaryEntryButton.cs:150-169`).
+        assert_eq!(entry_button_border_layers(false, false), (true, false));
+        assert_eq!(entry_button_border_layers(true, false), (false, true));
+        // The pretty-portrait ctor removes the overlay (`:93-96`).
+        assert_eq!(entry_button_border_layers(false, true), (false, false));
+        assert_eq!(entry_button_border_layers(true, true), (false, false));
+    }
+
+    #[test]
+    fn the_background_pick_prefers_matched_providers() {
+        // `TryGettingBackgroundImageProvider` (`:104-129`): the matched
+        // provider with an image wins over an earlier unmatched one.
+        let providers = [(false, true), (true, false), (true, true)];
+        assert_eq!(pick_background_provider(&providers), Some(2));
+        // No matched image: the first image in entry order (`:120-127`).
+        assert_eq!(
+            pick_background_provider(&[(false, false), (false, true)]),
+            Some(1)
+        );
+        assert_eq!(
+            pick_background_provider(&[(true, false), (false, false)]),
+            None
+        );
+        assert_eq!(pick_background_provider(&[]), None);
+    }
+
+    #[test]
+    fn the_display_index_is_the_first_info_element() {
+        // `TryGettingDisplayIndex` (`:131-140`): FirstOrDefault over Info.
+        assert_eq!(first_display_index(&[None, Some(7), Some(9)]), Some(7));
+        assert_eq!(first_display_index(&[None, None]), None);
+        assert_eq!(first_display_index(&[]), None);
+    }
+
+    #[test]
+    fn the_icon_hover_and_walk_gates_follow_the_source() {
+        // `UIBestiaryEntryIcon.cs:38`/`:52`: IsMouseHovering || ForceHover.
+        assert!(icon_is_hovered(false, true));
+        assert!(icon_is_hovered(true, false));
+        assert!(!icon_is_hovered(false, false));
+        // `UnlockableNPCEntryIcon.cs:100-109`: no Frame override + (portrait
+        // or hovered) walks; a Frame override pins instead.
+        assert!(icon_walks(None, false, true));
+        assert!(icon_walks(None, true, false));
+        assert!(!icon_walks(None, false, false));
+        assert!(!icon_walks(Some(2), true, true));
+    }
 
     #[test]
     fn dw_3_1_panel_rect_is_the_c_sharp_container() {
