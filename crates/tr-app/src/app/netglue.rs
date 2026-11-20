@@ -821,6 +821,11 @@ impl App {
             // and the apply+relay arm (`:3867-3885`) land with the send-path
             // pass (S1-I-4).
             C2s::NebulaLevelupRequest(_) | C2s::PlayerHurtV2(_) => {}
+            // W4-d97 batch 2: the host `KillMe`+`SendPlayerDeath` arm
+            // (`MessageBuffer.cs:3887-3903`) and the emote-bubble arm
+            // (`:3905-3918`, `EmoteID.Count` gate + 360-tick bubble) land
+            // with the send-path pass (S1-I-4).
+            C2s::PlayerDeathV2(_) | C2s::Emoji(_) => {}
         }
     }
 
@@ -1868,6 +1873,11 @@ impl App {
             // (`MessageBuffer.cs:3662-3705`) and the quiet `Player.Hurt`
             // replay (`:3879`) — land with the send-path pass (S1-I-4).
             S2c::NebulaLevelupRequest(_) | S2c::PlayerHurtV2(_) => {}
+            // W4-d97 batch 2: the client `Player.KillMe` read site
+            // (`MessageBuffer.cs:3898`) lands with the send-path pass
+            // (S1-I-4). 120 Emoji has no S2c side — the host consumes it
+            // without relaying (`:3905-3918`).
+            S2c::PlayerDeathV2(_) => {}
         }
     }
 

@@ -171,6 +171,24 @@ pub mod id {
     /// via `SendPlayerHurt` (`:3882`); the client send site is
     /// `Player.Hurt` (`Player.cs:38369-38377`).
     pub const PLAYER_HURT_V2: u8 = 117;
+    /// `118 PlayerDeathV2` (`MessageID.cs:250`) — `(byte)` player,
+    /// `PlayerDeathReason.WriteSelfTo`, `(short)` damage,
+    /// `(byte)(hitDirection + 1)`, `BitsByte{bit0 pvp}`
+    /// (`NetMessage.cs:1447-1453`, packed by `SendPlayerDeath`,
+    /// `:2607-2613` — no crit bit, no cooldown sbyte, unlike 117). The host
+    /// applies `Player.KillMe` and relays via `SendPlayerDeath`
+    /// (`MessageBuffer.cs:3887-3903`).
+    pub const PLAYER_DEATH_V2: u8 = 118;
+    /// `120 Emoji` (`MessageID.cs:254`) — `(byte)` player, `(byte)` emote id
+    /// (`NetMessage.cs:1454-1457`; send sites
+    /// `EmoteBubble.MakeLocalPlayerEmote`, `UI/EmoteBubble.cs:289`, and the
+    /// chat commands `EmojiCommand.cs:85` / `RockPaperScissorsCommand.cs:27`).
+    /// The host is the *only* consumer: it validates
+    /// `0 <= id < EmoteID.Count` (151, `UI/EmoteID.cs:317`), spawns the
+    /// bubble for 360 ticks and runs the NPC reaction check
+    /// (`MessageBuffer.cs:3905-3918`) — no relay arm, so this id has no
+    /// S2c side.
+    pub const EMOJI: u8 = 120;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1741,6 +1759,62 @@ impl PlayerHurtV2 {
     }
 }
 
+/// `msg 118 PlayerDeathV2`'s body (`NetMessage.cs:1447-1453`):
+/// `(byte)number`, the death reason, `(short)number2` damage,
+/// `(byte)(number3 + 1f)` direction, `(byte)number4` the
+/// `BitsByte{bit0 pvp}` packed by `SendPlayerDeath` (`:2610-2612`).
+/// Unlike 117 there is no crit bit and no trailing cooldown sbyte. The
+/// reader subtracts the 1 back off the direction and unpacks bit0 as pvp
+/// (`MessageBuffer.cs:3896-3897`) before `Player.KillMe` (`:3898`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerDeathV2 {
+    pub player_id: u8,
+    pub reason: PlayerDeathReason,
+    pub damage: i16,
+    /// The wire value is `hitDirection + 1` (`NetMessage.cs:1451`); -1 rides
+    /// as 0, +1 as 2. Stored un-offset like `PlayerHurtV2.hit_direction`.
+    pub hit_direction: i8,
+    pub pvp: bool,
+}
+
+impl PlayerDeathV2 {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut b = BitsByte::new();
+        b.set(0, self.pvp);
+        let w = w.u8(self.player_id);
+        let w = self.reason.write_to(w);
+        w.i16(self.damage)
+            .u8(self.hit_direction.wrapping_add(1) as u8)
+            .bitsbyte(b)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let player_id = r.u8()?;
+        let reason = PlayerDeathReason::read_from(r)?;
+        let damage = r.i16()?;
+        let hit_direction = (r.u8()? as i8).wrapping_sub(1);
+        let b = r.bitsbyte()?;
+        Some(Self {
+            player_id,
+            reason,
+            damage,
+            hit_direction,
+            pvp: b.get(0),
+        })
+    }
+}
+
+/// `msg 120 Emoji`'s body (`NetMessage.cs:1454-1457`): `(byte)number` the
+/// player, `(byte)number2` the emote id. The host validates the id against
+/// `EmoteID.Count` = 151 (`UI/EmoteID.cs:317`) before `EmoteBubble.NewBubble`
+/// with the 360-tick lifetime (`MessageBuffer.cs:3912-3916`); the codec
+/// keeps the byte verbatim either way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Emoji {
+    pub player_id: u8,
+    pub emote_id: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1860,6 +1934,14 @@ pub enum C2s {
     /// `netMode == 1` send, `Player.cs:38376`; the host applies + relays,
     /// `MessageBuffer.cs:3867-3885`).
     PlayerHurtV2(PlayerHurtV2),
+    /// `118 PlayerDeathV2` - a client died (`Player.KillMe`'s send through
+    /// `SendPlayerDeath`, `NetMessage.cs:2607-2613`; the host applies +
+    /// relays, `MessageBuffer.cs:3887-3903`).
+    PlayerDeathV2(PlayerDeathV2),
+    /// `120 Emoji` - a client emoted (`EmoteBubble.MakeLocalPlayerEmote`,
+    /// `UI/EmoteBubble.cs:289`; the host spawns the bubble,
+    /// `MessageBuffer.cs:3905-3918` — no relay).
+    Emoji(Emoji),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1991,6 +2073,10 @@ pub enum S2c {
     /// `SendPlayerHurt` (`MessageBuffer.cs:3882`); the client replays
     /// `Player.Hurt(quiet: true)` (`:3879`).
     PlayerHurtV2(PlayerHurtV2),
+    /// `118 PlayerDeathV2` - a peer died, relayed by the host via
+    /// `SendPlayerDeath` (`MessageBuffer.cs:3901`); the client runs
+    /// `Player.KillMe` (`:3898`).
+    PlayerDeathV2(PlayerDeathV2),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2081,6 +2167,8 @@ impl C2s {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
             Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
+            Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
+            Self::Emoji(_) => id::EMOJI,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2156,6 +2244,10 @@ impl C2s {
             }
             // `NetMessage.cs:1439-1446` via `SendPlayerHurt` (`:2598-2605`).
             Self::PlayerHurtV2(h) => h.write_to(w),
+            // `NetMessage.cs:1447-1453` via `SendPlayerDeath` (`:2607-2613`).
+            Self::PlayerDeathV2(d) => d.write_to(w),
+            // `NetMessage.cs:1454-1457`: (byte)number, (byte)number2.
+            Self::Emoji(e) => w.u8(e.player_id).u8(e.emote_id),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2289,6 +2381,15 @@ impl C2s {
             // `MessageBuffer.cs:3869-3878`: the direction byte minus 1, the
             // crit/pvp BitsByte, the sbyte cooldown counter.
             id::PLAYER_HURT_V2 => Self::PlayerHurtV2(PlayerHurtV2::read_from(r)?),
+            // `MessageBuffer.cs:3889-3897`: the direction byte minus 1, the
+            // pvp-only BitsByte — no cooldown sbyte follows.
+            id::PLAYER_DEATH_V2 => Self::PlayerDeathV2(PlayerDeathV2::read_from(r)?),
+            // `MessageBuffer.cs:3907-3912`: (byte)player, (byte)emoteId; the
+            // `0 <= id < EmoteID.Count` gate is the host arm's, not the codec's.
+            id::EMOJI => Self::Emoji(Emoji {
+                player_id: r.u8()?,
+                emote_id: r.u8()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2451,6 +2552,7 @@ impl S2c {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
             Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
+            Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
         }
     }
 
@@ -2600,6 +2702,8 @@ impl S2c {
             }
             // `NetMessage.cs:1439-1446` via `SendPlayerHurt` (`:2598-2605`).
             Self::PlayerHurtV2(h) => h.write_to(w),
+            // `NetMessage.cs:1447-1453` via `SendPlayerDeath` (`:2607-2613`).
+            Self::PlayerDeathV2(d) => d.write_to(w),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2813,6 +2917,9 @@ impl S2c {
             // `MessageBuffer.cs:3869-3878`: the direction byte minus 1, the
             // crit/pvp BitsByte, the sbyte cooldown counter.
             id::PLAYER_HURT_V2 => Self::PlayerHurtV2(PlayerHurtV2::read_from(r)?),
+            // `MessageBuffer.cs:3889-3897`: the direction byte minus 1, the
+            // pvp-only BitsByte — no cooldown sbyte follows.
+            id::PLAYER_DEATH_V2 => Self::PlayerDeathV2(PlayerDeathV2::read_from(r)?),
             _ => return None,
         })
     }
@@ -5105,5 +5212,82 @@ mod tests {
         assert_eq!(&f[3..], &body);
         let back = PlayerDeathReason::read_from(&mut NetReader::new(&f[3..])).expect("decode");
         assert_eq!(back, by_npc);
+    }
+
+    #[test]
+    fn w4_d97_player_death_v2_byte_pin() {
+        // `NetMessage.cs:1447-1453`: (byte)number, the reason block,
+        // (short)damage, (byte)(direction + 1), the pvp-only BitsByte
+        // (`SendPlayerDeath`, `:2610-2612`) — no cooldown sbyte tail.
+        let d = PlayerDeathV2 {
+            player_id: 4,
+            reason: PlayerDeathReason {
+                source_npc_index: 17, // `ByNPC` (`PlayerDeathReason.cs:79-85`)
+                ..Default::default()
+            },
+            damage: 999,
+            hit_direction: 1, // rides as 2
+            pvp: true,
+        };
+        let mut body = vec![4, 0b0000_0010];
+        body.extend_from_slice(&17i16.to_le_bytes());
+        body.extend_from_slice(&999i16.to_le_bytes());
+        body.push(2); // direction 1 + 1
+        body.push(0b01); // bit0 pvp (`SendPlayerDeath`, `:2611`)
+        let f = C2s::PlayerDeathV2(d.clone()).encode();
+        assert_eq!(f[2], 118);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerDeathV2(got) => assert_eq!(got, d),
+            other => panic!("expected 118, got {:?}", other.msg_id()),
+        }
+        // The host relay carries the same bytes (`MessageBuffer.cs:3901`).
+        let s = S2c::PlayerDeathV2(d.clone()).encode();
+        assert_eq!(s[2], 118);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::PlayerDeathV2(got) => assert_eq!(got, d),
+            other => panic!("expected 118, got {:?}", other.msg_id()),
+        }
+        // The empty-reason PvE death: bare 0 flag byte, direction -1 rides
+        // as 0, pvp bit clear (`MessageBuffer.cs:3896-3897` reads both back).
+        let d2 = PlayerDeathV2 {
+            player_id: 0,
+            reason: PlayerDeathReason::default(),
+            damage: 42,
+            hit_direction: -1,
+            pvp: false,
+        };
+        let mut body2 = vec![0, 0];
+        body2.extend_from_slice(&42i16.to_le_bytes());
+        body2.extend_from_slice(&[0, 0]);
+        let f2 = C2s::PlayerDeathV2(d2.clone()).encode();
+        assert_eq!(&f2[3..], &body2);
+        match C2s::decode(f2[2], &mut NetReader::new(&f2[3..])).expect("decode") {
+            C2s::PlayerDeathV2(got) => assert_eq!(got, d2),
+            other => panic!("expected 118, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d97_emoji_byte_pin() {
+        // `NetMessage.cs:1454-1457`: (byte)number, (byte)number2 — two raw
+        // bytes, no flags. 150 is the last valid emote (`EmoteID.Count` 151,
+        // `UI/EmoteID.cs:317`; the gate is `MessageBuffer.cs:3913`'s host arm).
+        let e = Emoji {
+            player_id: 2,
+            emote_id: 150,
+        };
+        let body = [2u8, 150];
+        let f = C2s::Emoji(e).encode();
+        assert_eq!(f[2], 120);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::Emoji(got) => assert_eq!(got, e),
+            other => panic!("expected 120, got {:?}", other.msg_id()),
+        }
+        // 120 is host-consumed only (`MessageBuffer.cs:3905-3918` has no
+        // relay): the client decoder must not accept it.
+        assert!(S2c::decode(120, &mut NetReader::new(&body)).is_none());
     }
 }
