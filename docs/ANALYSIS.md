@@ -9614,7 +9614,9 @@ The four fixes (all in `craft.rs`, witnesses written not run):
    world-chest tiles are `TileID.Sets.BasicChest = {21 Containers, 467
    Containers2}` (`TileID.cs:570`, `:671`/:1563). Now `[21, 467]`. (The
    chest-stocking/save subsystem's own `chest_gen.rs::CHEST_KINDS` still reads
-   `[21, 341]` — that is S1-A-4's lane, out of scope here, noted for follow-up.)
+   `[21, 341]` — that is S1-A-4's lane, out of scope here, noted for follow-up.
+   **Closed by W4-a2 / P0-3, 2026-11-20** — see "Chest tile-kind audit
+   (W4-a2 / P0-3)" below.)
 2. **Group ingredient drain order** — the inventory pass walked group members
    in registration order (`consume_kind` per member), emptying all of member[0]
    before member[1] regardless of slot position. The C# `ConsumeItemsFrom`
@@ -9651,6 +9653,49 @@ gamepad quick-craft (`ItemSlot.GetQuickCraftGamepadInstructions`
 `ItemSlot.cs:4555-4576`, `CraftItem(recipe, 1, quickCraft: true)`) has no port
 input path; `TryRefocusingRecipe` (`Recipe.cs:477-495`) is not ported (the port
 re-derives the list per frame and keeps `focus_recipe` as a raw index).
+
+## Chest tile-kind audit (W4-a2 / P0-3)
+
+The i46 follow-up: `chest_gen.rs::CHEST_KINDS` was `[21, 341]`; 341 is
+`LivingDemonFire` (`TileID.cs:1311`), a fire block. The C# world-chest tiles
+are `TileID.Sets.BasicChest = {21 Containers, 467 Containers2}`
+(`TileID.cs:570`). Now `[21, 467]` — the load-cull consumer
+(`store_from_records`, the `LoadChests`/`FixAgainstExploits` validity sweep)
+admits a real Containers2 chest and culls the fire block.
+
+**The placement audit (every worldgen chest site).** The port places NO 341
+tiles: `structures.rs::place_chest` writes `TILE_CHEST = 21` for every site
+(the jungle shrines + the cave scatter `:17220`/`:17024`, the pyramid
+`:27873`, the hell houses `:29341`, the sky houses `:79371`/`:79375`, the
+cave houses `HouseBuilder.cs:666-692`, the mahogany trees
+`MahoganyTreeBiome.cs:89`, the spider caves `:17412-17414`), and the temple's
+`place_buried_chest` places `def_for_tile(21)` (`WorldGen.cs:57813`). That
+matches the C#: every one of those call sites passes `chestTileType: 0`,
+which `AddBuriedChest` rewrites to 21 (`WorldGen.cs:35880-35882`). The C#'s
+arms that CONVERT the kind to 467 mid-call — the underground-desert `flag3`
+arm (`:36023-36027`, `IsUndergroundDesert` `:35755-35781`), the jungle-dungeon
+`flag18` arm (`:36104-36107`), the remix sky arm (`:36192`) and the noTraps
+arm (`:36201-36204`) — are unported (the desert/jungle conversions ride the
+secret-seed/remix lanes and the unported underground-desert chest pass); the
+port's stocking hook already gates its 21-only rows on `chest_tile_type`
+(`:37384-37470` vs the 467 block `:37471-37532`), so the seam is ready when
+those arms land. **No placement changed → no world output changed → the
+`SEED42_512`/`DEFAULT_WORLD` pins stay** (the audit note in
+`worldgen/world_hash.rs`).
+
+Fixed together (the 341 census): the constant + its doc cite; the
+`worldgen/mod.rs` S1-A-4 survivor-count test (`21 || 341` → `21 || 467`);
+the `chest_gen.rs` kind-gating test's deliberately planted "mahogany" quad
+(341 → 467, both the tile plant and the event kind); the cave-house 25-tile
+exclusion probe (`mini_biomes.rs`, 21-only → `BasicChest` {21, 467},
+`CaveHouseBiome.cs:49` — a no-op today, no gen pass writes 467); the stale
+`:47466-47500` citations repointed to the real 467 block `:37471-37532`;
+the `saveglue.rs`/`chest.rs` doc comments. Witness
+`the_record_cull_reads_the_basic_chest_kinds` (21 and 467 anchors survive
+the cull, the 341 fire block is dropped) — written, not run (code-only
+branch). RNG untouched: the chest loot's splitmix seam is the S1-A-7 gate's
+known deviation, out of scope; this task changed tile-kind constants and
+probes only, no draw site or order.
 
 ## Floating islands (M1.4-WGEN-4)
 
