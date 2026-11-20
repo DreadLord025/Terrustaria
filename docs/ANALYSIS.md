@@ -39423,3 +39423,94 @@ ExtraFramesCount-9 band + lift-then-step order, the Penguin 4-bank
 walk/idle/air matrix, the two-penguin byte-parity run, and the
 15-kind strip sweep (5x3x3x2x2 input grid, 40 ticks each, rows stay
 inside their sheets).
+## W4-f26 FindFrame extra wave 3 (2026-11-20, code-only mode)
+
+`crates/tr-app/src/npc_findframe_extra3.rs` — the first 15 UNCLAIMED
+remaining `NPC.FindFrame` case ids after the d44-d49 claims and the
+e13/e14 waves (e13 owns 121/137/141/142/148/149/181/182/185/195/196/
+198/199/201/202, e14 owns 84/93/94/101/102/103/116/120 + the shared
+tails; the overlapping ids ride BOTH branches as verbatim twins — the
+merger dedupes keep-one). THIS wave owns **182/185/195/196/198/199/
+201/202/203/204/205/209/217/218/219**; the next 15 (220/221/224/226/
+229/230/231/232/…) ride `task/W4-f27-findframe-extra-4` (the co-lane).
+Landed 6 kinds per commit (batches 6/6/3), 12 witness tests WRITTEN,
+NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
+| id | kind | C# case | rows (`Main.cs` npcFrameCount, cross-checked vs `NPC_FRAME_COUNT`) |
+| --- | --- | --- | --- |
+| 182 | FloatyGross | `:74829` (the floater group) | 5 |
+| 185 | SnowFlinx | `:68575` (the fighter group) | 12 |
+| 195 | LostGirl | `:73146-73171` | 7 |
+| 196 | Nymph | `:68576` (the fighter group) | 14 |
+| 198 | Lihzahrd | `:68578` (the fighter group) | 16 |
+| 199 | LihzahrdCrawler | `:75030-75068` | 8 |
+| 201 | HeadacheSkeleton | `:68579` (the fighter group) | 15 |
+| 202 | MisassembledSkeleton | `:68580` (the fighter group) | 15 |
+| 203 | PantlessSkeleton | `:68581` (the fighter group) | 16 |
+| 204 | SpikedJungleSlime | `:70810` (the slime group) | 2 |
+| 205 | Moth | `:74935-74957` | 3 |
+| 209 | Cyborg | `:68584` (the humanoid TOWN group) | 26 |
+| 217 | CochinealBeetle | `:74572` (the crab group) | 2 |
+| 218 | CyanBeetle | `:74573` (the crab group) | 2 |
+| 219 | LacBeetle | `:74574` (the crab group) | 2 |
+
+Shape: the kinds are NOT in `NpcKind` yet — pure fns over
+`FrameState`/`FrameInput` with `find_frame_kind_extra3` as the
+vanilla-id seam (the `npc_findframe_a.rs` precedent); the wiring
+bridge is a later round. `FrameInput` carries `ai_action` (batch 2 —
+the slime group's `num2` motion class, `NPC.cs:66696-66704`). **No
+RNG**: none of the 15 arms draws `Main.rand` (the floater group's dust
+is types 60/634's `:74839-74849`, the humanoid town pose zones'
+chat-bubble draws are the documented skip).
+
+Per-case notes (all verbatim, row-index convention — `num` cancels):
+
+* **182 FloatyGross** (the floater group `:74823-74884`): the vx-sign
+  flip (0 holds), the `vx * 0.1` tilt (the 210/211 `* 0.2` +
+  double-increment override is other members'), the 6-tick strip over
+  the FULL 5 rows (the `num292--` list 49/51/60/634 `:74867-74870`
+  does not carry 182; the type-48 `num291 = 5` override is 48's).
+* **185/196/198/201/202/203** (the humanoid fighter group): delegate
+  to `npc_findframe_b::humanoid_fighter_frame` (the `pub(crate)` lift,
+  the e14 ChaosElemental/FaceMonster keep-one precedent). None is
+  `isLikeATownNPC` (`NPC.cs:6856-6866`; the six SetDefaults arms
+  `:11365`/`:11510`/`:11537`/`:11576`/`:11589`/`:11602` set aiStyle 3,
+  no townNPC), so `num57` = 0 and the walk wraps at the FULL count;
+  `num108` = 6, `num109` = row 2. **201/202 ARE in the `:69647` air
+  pin-0 list; 185/196/198/203 are NOT** (the group's air row 1) — the
+  `air_row0` split witness pins it. The aiStyle-3 turn counter leaves
+  `ai[0]` at 0/1 (`:57381-57397`), so the town pose zones
+  (`:68662-69488`) are unreachable and not carried.
+* **195 LostGirl** (`:73146-73171`): the `ai[0]` transform ladder —
+  six 3-tick bands (<3/<6/<9/<12/<15 → rows 0..4, else row 5); NO
+  counter/sprite/rotation write; the 7th sheet row is never shown.
+* **199 LihzahrdCrawler** (`:75030-75068`): the grounded ±1-only flip;
+  below row 3 the plain counter steps every > 6 ticks (the crawl-in
+  band); at row >= 3 the AIRBORNE tick breaks with NO write (the row
+  AND counter hold), the grounded tick accumulates `|vx|` stepping
+  every > 12 over rows 3..7, wrapping > 7 back to 3.
+* **204 SpikedJungleSlime** (the slime group `:70801-70846`): the
+  `num2` motion class (`:66696-66704` — aiAction 0: vy<0 → 2, vy>0 →
+  3, vx≠0 → 1, else 0; aiAction 1 → 4) doubles the counter while
+  moving/airborne and triples it while attacking; the 8-tick stride
+  walks the 2-row sheet. The `type == 302 || type == 304` sprite snap
+  (`:70824-70827`) is the town slimes' — 204 writes NO flip. SAME
+  machine as wave A's slime arm — verbatim twin, merger keep-one.
+* **205 Moth** (`:74935-74957`): `frameCounter += 0.5`, the
+  <2/<4/<6/<8 bands pick rows 0/1/2/1; the `else` zeroes the counter
+  WITHOUT writing the row — the vanilla quirk holds row 1 for the
+  reset tick, then the cycle restarts at row 0 (the witness pins the
+  16-tick pattern + the hold).
+* **209 Cyborg** (the humanoid TOWN group `:68584`): `townNPC = true`
+  (`:11684`), so `num57` = `ExtraFramesCount[209]` = 10
+  (`NPCID.cs:10464`) — the walk band wraps at 26 - 10 = 16 (rows
+  2..15; the attack rows 16..25 are never walked). Not a town slime,
+  not the 140/489 idle-row-1 pair (idle snaps row 0), NOT in the
+  `:69647` pin list (air holds row 1). The town pose zones are the
+  documented skip (the e14 Santa precedent).
+* **217/218/219 the dye beetles** (the crab group `:74571-74589`,
+  shared with the Crab 67 — main's): the grounded tick writes
+  `spriteDirection = direction` UNCONDITIONALLY (0 included — not
+  the humanoid ±1 gate); the airborne tick holds the flip but KEEPS
+  striding (no air hold in this group); the 6-tick counter walks the
+  FULL 2-row sheet.
