@@ -190,6 +190,9 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// S1-P-i16: the dart guns' projectile AIs (267/477/478/479/442 aiStyle 1,
+// 443 aiStyle 77, 167-170 aiStyle 34, the 480 flame drop's dust census).
+mod projectile_ai_darts;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
 // a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs

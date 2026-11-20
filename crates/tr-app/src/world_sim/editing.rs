@@ -139,6 +139,42 @@ fn gun_proj_row(kind: u16) -> Option<&'static GunProj> {
     GUN_PROG.iter().find(|g| g.kind == kind)
 }
 
+/// S1-P-i16 — `Player.DestroyOldestProximityMinesOverMinesCap`
+/// (`Player.cs:46976-47017`, called from `ItemCheck_Shoot`'s 760 arm
+/// `:49450-49453`): while the owner's live proximity mines (the twelve
+/// kinds `:46986-46997`) exceed the cap, the LOWEST-timeLeft mine dies
+/// (the C#'s strict `<` scan keeps the first on ties). The C# `Kill()`
+/// (`:47013`) runs the aiStyle-16 explosion inline — the port latches
+/// `detonated` so the pool's end-of-tick explosion pass resolves it (the
+/// `ai_bomb` fuse convention).
+fn destroy_oldest_proximity_mines_over_cap(app: &mut App, owner: u8, cap: usize) {
+    const MINES: [u16; 12] = [135, 138, 141, 144, 778, 782, 786, 789, 792, 795, 798, 801];
+    loop {
+        // The C# collects the owner's mines, then kills the oldest until
+        // the count fits. The port re-scans per kill (the list is the
+        // pool's live slots — the same set, the kill removes one).
+        let mut count = 0usize;
+        let mut oldest: Option<usize> = None;
+        let mut oldest_time = i32::MAX;
+        for (i, p) in app.projectiles.slots().iter().enumerate() {
+            if p.active && p.owner == owner && MINES.contains(&p.kind) {
+                count += 1;
+                if p.time_left < oldest_time {
+                    oldest_time = p.time_left;
+                    oldest = Some(i);
+                }
+            }
+        }
+        if count <= cap {
+            break;
+        }
+        match oldest {
+            Some(i) => app.projectiles.detonate(i),
+            None => break,
+        }
+    }
+}
+
 /// The shooter's effective `sItem.useAmmo` (`Item.cs:48996`): the registry's
 /// value, or the id-keyed vanilla one for the four `gunProj` items whose scaled
 /// rows are placeholders. This is the gate `ItemCheck_Shoot` runs `PickAmmo`
@@ -2387,28 +2423,109 @@ fn thrust_stab_tick(
             if dir == Vec2::ZERO {
                 return;
             }
-            let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
-            // The ranged shot's crit does NOT roll here: the C# rolls it
-            // per-hit in `Damage_PVE_Inner` (`Projectile.cs:12883-12917`) on
-            // the `UpdateProjectiles` stream (S1-P-i11). The spawn carries
-            // the ranged flag (`proj_data`); the `UpdatePlayers` stream
-            // spends no crit draw. The owned spawner + the ammo resolution:
-            // the pair table's or the ammo's own projectile, the gunProj
-            // fixed id when the weapon is one of the four, and the fused
-            // knockback (the weapon's own + the ammo's + the magicQuiver
-            // scale).
-            let _slot = app.projectiles.spawn_with_data_owned(
-                gun_proj.map_or(resolved.projectile, |g| g.projectile),
-                app.local_id as u8,
-                spawn.x,
-                spawn.y,
-                dir.x * speed,
-                dir.y * speed,
-                damage as i32,
-                knock_back,
-                0.0,
-                0.0,
-            );
+            // S1-P-i16 — the dart guns' muzzle offsets
+            // (`Player.cs:47267-47276`): the Blowgun 986 / Blowpipe 281
+            // `pointPosition.X += 6 * direction; pointPosition.Y -= 6f *
+            // gravDir`, the Dart Pistol 3007 `X -= 4 * direction; Y -= 2f *
+            // gravDir` (the port keeps gravDir 1). The port's spawn keeps
+            // its documented centre + 10·dir stand-in (ANALYSIS "Bombs");
+            // the offsets ride ON TOP of it — the C# shifts the aim origin
+            // too (`:47277-47278`), a sub-pixel aim difference at the
+            // port's 80-px test reach.
+            let muzzle = match held.kind {
+                986 | 281 => Vec2::new(6.0 * p.facing as f32, -6.0),
+                3007 => Vec2::new(-4.0 * p.facing as f32, -2.0),
+                _ => Vec2::ZERO,
+            };
+            let spawn = Vec2::new(pcx, pcy) + dir * 10.0 + muzzle;
+            let aim = dir;
+            // No crit draw at throw time (S1-P-i11): the projectile crit
+            // rolls per-hit in damage_pve (Projectile.cs:12883-12917).
+            // S1-P-i16 — the launcher/dart per-weapon spawn arms
+            // (`ItemCheck_Shoot`'s tail, `Player.cs:48991-49031` +
+            // `:49388-49453`), in the C#'s order. The generic spawn below
+            // keeps the resolved projectile + the fused stats; these arms
+            // override the projectile / ai / velocity where the C# does.
+            let mut shot_kind = gun_proj.map_or(resolved.projectile, |g| g.projectile);
+            let mut ai0 = 0.0f32;
+            let mut ai1 = 0.0f32;
+            let vel = Vec2::new(aim.x * speed, aim.y * speed);
+            // `Player.cs:47169-47172` — the Electrosphere Launcher fires the
+            // FIXED 442 bolt (the PickAmmo additive arm's result discarded).
+            if held.kind == 2796 {
+                shot_kind = 442;
+            }
+            // `Player.cs:48991-48995` — the Celebration Mk2: the fixed 714
+            // with `ai0 = 5 * Next(0, 20)` (the gunProj reset already set
+            // the kind/stats; the ai0 draw is the arm's own).
+            if held.kind == 3930 {
+                let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                ai0 = 5.0 * loot_rng.next_range(0, 20) as f32;
+            }
+            // `Player.cs:49388-49392` — the 442 bolt seeds its target tile
+            // (`Player.tileTargetX/Y` — the port's cursor cell).
+            if shot_kind == 442 {
+                ai0 = (world_pos.x / TILE_PX).floor();
+                ai1 = (world_pos.y / TILE_PX).floor();
+            }
+            // origin/main’s owned spawner (the owner plumbing of the
+            // projectile-ownership task) + this task’s resolution: the pair
+            // table’s or the ammo’s own projectile, the gunProj fixed id when
+            // the weapon is one of the four, and the fused knockback (the
+            // weapon’s own + the ammo’s + the magicQuiver scale), which
+            // supersedes the pre-fuse `w_kb` read.
+            if held.kind == 3546 {
+                // `Player.cs:49019-49031` — the Fireworks Launcher: TWO
+                // rockets per shot, each a jittered aim (`Next(-40,41) *
+                // 0.05` per axis), the spawn 6 px perpendicular to the
+                // jittered aim (`RotatedBy(-π/2 * direction)`), the kind
+                // `167 + Next(4)`, `ai1 = 1f`. The ammo fuse's stats ride
+                // both (the C# passes the same Damage/KnockBack).
+                for _ in 0..2 {
+                    let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    let jx = aim.x * speed + loot_rng.next_range(-40, 41) as f32 * 0.05;
+                    let jy = aim.y * speed + loot_rng.next_range(-40, 41) as f32 * 0.05;
+                    let jitter = Vec2::new(jx, jy);
+                    let perp = jitter
+                        .normalize_or_zero()
+                        .rotate(Vec2::from_angle(
+                            -std::f32::consts::FRAC_PI_2 * p.facing as f32,
+                        ))
+                        * 6.0;
+                    let pos = spawn + perp;
+                    let kind = 167 + loot_rng.next_range(0, 4) as u16;
+                    let slot = app.projectiles.spawn_with_data_owned(
+                        kind,
+                        app.local_id as u8,
+                        pos.x,
+                        pos.y,
+                        jx,
+                        jy,
+                        damage as i32,
+                        knock_back,
+                        0.0,
+                        1.0,
+                    );
+                }
+            } else {
+                let slot = app.projectiles.spawn_with_data_owned(
+                    shot_kind,
+                    app.local_id as u8,
+                    spawn.x,
+                    spawn.y,
+                    vel.x,
+                    vel.y,
+                    damage as i32,
+                    knock_back,
+                    ai0,
+                    ai1,
+                );
+                // `Player.cs:49450-49453` — the Proximity Mine Launcher
+                // caps its owner's mines at 20 (the oldest die).
+                if held.kind == 760 {
+                    destroy_oldest_proximity_mines_over_cap(app, app.local_id as u8, 20);
+                }
+            }
             app.audio.play_at("Item_1", pcx, pcy, 1.0);
         }
         // `ApplyItemTime` (`Player.cs:47184-47193` → `SetItemTime(useTime)`,
@@ -5367,6 +5484,12 @@ mod tests {
         }
         let (sw, sh) = app.screen_size();
         app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
+        // S1-P-i16 — level the aim: the rig's player centre sits 13 px below
+        // the camera line (`mining_app`'s cell + 8 vs the centre's + 21), so
+        // the generic aim would tilt −0.16 rad. The launcher/dart witnesses
+        // read exact velocity/position components — the cursor line rides
+        // the centre, `dir` is exactly +x (the staff rig keeps its own).
+        app.camera.y = app.player.as_ref().unwrap().center().1;
         app
     }
 
@@ -6161,6 +6284,289 @@ mod tests {
             app.equip.ammo[0].count, 2,
             "ten acorns drained — the box never saves for the Acorn Slingshot"
         );
+    }
+
+    // ---- S1-P-i16: the rocket launchers & dart guns ------------------------
+
+    /// The Rocket Launcher + Rocket I resolve through the pair table to the
+    /// 134 rocket (`AmmoID.cs:28`), the fused damage = the weapon's 55 + the
+    /// rocket's 40 (both × the specialist multiplier 1.0 at the rig's
+    /// defaults), the speed = the launcher's 5 + the rocket's 0, and the
+    /// rocket KEEPS its damage in flight (`Projectile.cs:47175`'s
+    /// keep-damage list — the pre-port `ai_bomb` zeroed it).
+    #[test]
+    fn s1_p_i16_the_rocket_launcher_fires_the_134_rocket_with_fused_stats() {
+        let mut app = shooter_rig(759, "Rocket Launcher", &[(0, 771, 9)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 32, &mut log);
+        assert_eq!(log.len(), 1, "one rocket per swing (useTime == useAnimation 30)");
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].kind, 134, "the pair table's 759 + 771 cell");
+        assert_eq!(fired[0].damage, 95, "55 + 40, both × 1.0");
+        assert!(
+            (fired[0].vel.length() - 5.0).abs() < 0.001,
+            "the launcher's shootSpeed 5 + the rocket's 0"
+        );
+        assert_eq!(app.equip.ammo[0].count, 8, "the rocket drained");
+        // The flight keeps the damage: one pool tick must not zero it.
+        let mut rng = tr_core::tile_light::FastRandom::new(1);
+        app.projectiles.update(
+            &mut app.world,
+            &mut [],
+            None,
+            None,
+            None,
+            crate::projectile::YoyoInputs::default(),
+            crate::projectile::FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let rocket = app.projectiles.slots().iter().find(|p| p.active).unwrap();
+        assert_eq!(rocket.damage, 95, ":47175 — the keep-damage list");
+        // The ×1.1 speed-up below 15 (`:47364-47367`): 5 → 5.5.
+        assert!(
+            (rocket.vel.length() - 5.5).abs() < 0.01,
+            "the straight-flight rocket accelerates"
+        );
+    }
+
+    /// The Grenade Launcher's 133 grenade arcs (`Projectile.cs:47496-47506`):
+    /// no gravity before ai[0] > 15, then +0.2/tick. The Proximity Mine
+    /// Launcher's 135 mine settles (`:47483-47495`): +0.2 gravity × 0.97 drag
+    /// from the first tick.
+    #[test]
+    fn s1_p_i16_the_grenade_arcs_and_the_mine_settles() {
+        // The grenade: 15 straight ticks, then the arc.
+        let mut app = shooter_rig(758, "Grenade Launcher", &[(0, 771, 9)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 22, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired[0].kind, 133, "the pair table's 758 + 771 cell");
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(1);
+        for _ in 0..15 {
+            app.projectiles.update(
+                &mut app.world, &mut [], None, None, None,
+                crate::projectile::YoyoInputs::default(),
+                crate::projectile::FlailInputs::default(),
+                &mut rng, 0, false,
+            );
+        }
+        assert_eq!(
+            app.projectiles.slots()[slot].vel.y, 0.0,
+            ":47498 — no gravity before ai[0] > 15"
+        );
+        app.projectiles.update(
+            &mut app.world, &mut [], None, None, None,
+            crate::projectile::YoyoInputs::default(),
+            crate::projectile::FlailInputs::default(),
+            &mut rng, 0, false,
+        );
+        assert!(
+            (app.projectiles.slots()[slot].vel.y - 0.2).abs() < 1e-5,
+            ":47504 — the 16th tick adds 0.2"
+        );
+        // The mine: the settle runs from the first tick.
+        let mut app2 = shooter_rig(760, "Proximity Mine Launcher", &[(0, 771, 9)]);
+        let mut log2 = Vec::new();
+        hold(&mut app2, screen, 52, &mut log2);
+        let mine = app2.projectiles.slots().iter().find(|p| p.active).unwrap();
+        assert_eq!(mine.kind, 135, "the pair table's 760 + 771 cell");
+        let slot2 = app2.projectiles.slots().iter().position(|p| p.active).unwrap();
+        let vy0 = mine.vel.y;
+        let mut rng2 = tr_core::tile_light::FastRandom::new(1);
+        app2.projectiles.update(
+            &mut app2.world, &mut [], None, None, None,
+            crate::projectile::YoyoInputs::default(),
+            crate::projectile::FlailInputs::default(),
+            &mut rng2, 0, false,
+        );
+        let vy1 = app2.projectiles.slots()[slot2].vel.y;
+        assert!(
+            (vy1 - (vy0 + 0.2) * 0.97).abs() < 1e-4,
+            ":47485-47486 — the +0.2 gravity then the 0.97 drag"
+        );
+    }
+
+    /// The Snowman Cannon's 338 rocket homes (`Projectile.cs:47270-47309`):
+    /// the acquire opens at ai[0] > 30, the 1/12 lerp toward the nearest
+    /// chaseable NPC at speed 16.
+    #[test]
+    fn s1_p_i16_the_snowman_rocket_homes_after_30_ticks() {
+        let mut app = shooter_rig(1946, "Snowman Cannon", &[(0, 771, 9)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 17, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired[0].kind, 338, "the pair table's 1946 + 771 cell");
+        assert!(
+            (fired[0].vel.length() - 15.0).abs() < 0.001,
+            "the Snowman's shootSpeed 15"
+        );
+    }
+
+    /// The Dart Pistol + Poison Dart: the 267 dart spawns (`Item.shoot` arm
+    /// `Player.cs:53491-53494`), the muzzle offset shifts the spawn −4·dir X
+    /// / −2 Y (`:47272-47276`), the fused damage = 28 + 10.
+    #[test]
+    fn s1_p_i16_the_dart_pistol_fires_the_267_dart_from_its_offset_muzzle() {
+        let mut app = shooter_rig(3007, "Dart Pistol", &[(0, 1310, 9)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 24, &mut log);
+        assert_eq!(log.len(), 1);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].kind, 267, "the Poison Dart's Item.shoot");
+        assert_eq!(fired[0].damage, 38, "28 + 10");
+        assert!(
+            (fired[0].vel.length() - 15.0).abs() < 0.001,
+            "the pistol's 13 + the dart's shootSpeed 2"
+        );
+        // The muzzle offset: the spawn sits 4 px LEFT of the centre + 10·dir
+        // line and 2 px UP (the rig aims +x, facing +1).
+        let (pcx, pcy) = app.player.as_ref().unwrap().center();
+        assert!(
+            (fired[0].pos.x - (pcx + 10.0 - 4.0)).abs() < 0.01,
+            ":47274 — the −4·direction X offset"
+        );
+        assert!(
+            (fired[0].pos.y - (pcy - 2.0)).abs() < 0.01,
+            ":47275 — the −2·gravDir Y offset"
+        );
+        assert_eq!(app.equip.ammo[0].count, 8, "the dart drained");
+    }
+
+    /// The Dart Rifle + Crystal Dart: the 477 dart spawns with penetrate 5 /
+    /// extraUpdates 1 (`Projectile.cs:5518-5528`), the fused damage 52 + 14.
+    #[test]
+    fn s1_p_i16_the_dart_rifle_fires_the_477_crystal_dart() {
+        let mut app = shooter_rig(3008, "Dart Rifle", &[(0, 3009, 9)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 40, &mut log);
+        assert_eq!(log.len(), 1);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired[0].kind, 477, "the Crystal Dart's Item.shoot");
+        assert_eq!(fired[0].damage, 66, "52 + 14");
+        assert_eq!(fired[0].penetrate, 5, ":5525");
+        assert_eq!(fired[0].extra_updates, 1, ":5526");
+        assert!(
+            (fired[0].vel.length() - 15.5).abs() < 0.001,
+            "the rifle's 14.5 + the dart's 1"
+        );
+    }
+
+    /// The Electrosphere Launcher fires the FIXED 442 bolt
+    /// (`Player.cs:47169-47172`) with the cursor tile as its ai[0]/ai[1]
+    /// target (`:49388-49392`), NOT the PickAmmo additive arm's result.
+    #[test]
+    fn s1_p_i16_the_electrosphere_fires_the_442_bolt_at_the_cursor_tile() {
+        let mut app = shooter_rig(2796, "Electrosphere Launcher", &[(0, 771, 9)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 14, &mut log);
+        assert_eq!(log.len(), 1);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired[0].kind, 442, ":47171 — the fixed bolt");
+        // The cursor sits 80 px right of the screen centre; the target tile
+        // is the cursor cell (`Player.tileTargetX/Y`).
+        let (sw, sh) = app.screen_size();
+        let world_pos = app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom;
+        assert_eq!(fired[0].ai[0], (world_pos.x / TILE_PX).floor(), ":49390");
+        assert_eq!(fired[0].ai[1], (world_pos.y / TILE_PX).floor(), ":49391");
+        assert_eq!(fired[0].time_left, 600, ":5134");
+    }
+
+    /// The Fireworks Launcher fires TWO rockets per shot
+    /// (`Player.cs:49019-49031`), each `167 + Next(4)` with ai1 = 1.
+    #[test]
+    fn s1_p_i16_the_fireworks_launcher_fires_two_rockets() {
+        let mut app = shooter_rig(3546, "Fireworks Launcher", &[(0, 771, 9)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 32, &mut log);
+        assert_eq!(log.len(), 1, "one USE per swing");
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired.len(), 2, ":49021 — the two-rocket loop");
+        for p in fired {
+            assert!((167..=170).contains(&p.kind), "167 + Next(4)");
+            assert_eq!(p.ai[1], 1.0, ":49028 — ai1: 1f");
+            assert_eq!(p.time_left, 45, ":2565");
+        }
+        assert_eq!(app.equip.ammo[0].count, 8, "ONE rocket drained per use");
+    }
+
+    /// The Celebration Mk2 fires the FIXED 714 with `ai0 = 5 * Next(0, 20)`
+    /// (`Player.cs:48991-48994`), the gunProj reset's own stats (50 damage /
+    /// 17 speed / 10 kb, `Item.cs:34741-34748`), NOT the ammo fuse's.
+    #[test]
+    fn s1_p_i16_the_celebration_fires_the_714_with_the_ai0_draw() {
+        let mut app = shooter_rig(3930, "Celebration Mk2", &[(0, 771, 9)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 8, &mut log);
+        assert_eq!(log.len(), 1, "one shot (useTime == useAnimation 6)");
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].kind, 714, ":48993 — the fixed 714");
+        assert_eq!(fired[0].damage, 50, "the gunProj reset's own damage");
+        assert!(
+            (fired[0].vel.length() - 17.0).abs() < 0.001,
+            "the gunProj reset's shootSpeed 17"
+        );
+        // `ai0 = 5 * Next(0, 20)` — a multiple of 5 in [0, 95].
+        let ai0 = fired[0].ai[0];
+        assert!(ai0 >= 0.0 && ai0 <= 95.0, ":48993 — the ai0 range, got {ai0}");
+        assert_eq!(ai0 % 5.0, 0.0, ":48993 — 5 × an integer");
+    }
+
+    /// The Proximity Mine Launcher caps its owner's mines at 20
+    /// (`Player.cs:49450-49453` → `:46976-47017`): the 21st shot kills the
+    /// oldest mine (the lowest timeLeft).
+    #[test]
+    fn s1_p_i16_the_proximity_mine_launcher_caps_at_20() {
+        let mut app = shooter_rig(760, "Proximity Mine Launcher", &[(0, 771, 99)]);
+        let screen = app.screen_size().into();
+        // Seed 20 live mines directly (the pool's spawn seam), all the 135
+        // kind, ASCENDING timeLeft so the oldest (the lowest) is slot 0 —
+        // the C#'s strict `<` scan (`:47008`) keeps the first on ties.
+        for i in 0..20 {
+            let s = app
+                .projectiles
+                .spawn_with_data_owned(
+                    135, 0, 200.0 + i as f32 * 20.0, 200.0, 0.0, 0.0, 80, 4.0, 0.0, 0.0,
+                )
+                .unwrap();
+            app.projectiles.slots_mut()[s].time_left = 1000 + i as i32;
+        }
+        let mut log = Vec::new();
+        // 51 frames: the useTime == useAnimation 50 gun fires once (the
+        // press frame), the second would need frame 52.
+        hold(&mut app, screen, 51, &mut log);
+        assert_eq!(log.len(), 1, "the 21st mine fired");
+        // The cap killed the oldest (slot 0, timeLeft 1000) — it detonates
+        // (the `detonate` latch; the pool's next update resolves the blast).
+        assert!(
+            app.projectiles.slots()[0].detonated,
+            "the oldest mine is detonating"
+        );
+        let live_mines = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 135 && !p.detonated)
+            .count();
+        assert_eq!(live_mines, 20, "the cap holds at 20");
     }
 
     fn mining_app(world: World, tx: i32, ty: i32) -> App {
