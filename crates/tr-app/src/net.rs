@@ -1671,6 +1671,42 @@ pub struct TemporaryAnimation {
     pub y: i16,
 }
 
+/// `msg 78 ReportInvasionProgress`'s body (`NetMessage.cs:1160-1165`):
+/// `(int)` progress, `(int)` progressMax, `(sbyte)` icon, `(sbyte)` wave —
+/// `Main.ReportInvasionProgress`'s four args verbatim
+/// (`MessageBuffer.cs:3186-3191`, client-only read). The classic invasion
+/// sends icon `invasionType + 3` (`Main.cs:47683`), the moons send 1/2
+/// (`NPC.cs:78583`/`:78717`), DD2 sends 3 + the wave
+/// (`DD2Event.cs:191` et al.). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvasionProgress {
+    pub progress: i32,
+    pub progress_max: i32,
+    pub icon: i8,
+    pub wave: i8,
+}
+
+/// `msg 96 TeleportPlayerThroughPortal`'s body (`NetMessage.cs:1337-1346`):
+/// `(byte)` player, `(short)` number4 (the portal color index
+/// `owner * 2 + ai[1]`, `PortalHelper.cs:181`), the destination floats, then
+/// `WriteVector2(player.velocity)` — the player's *current* velocity read
+/// from the live entity at send time, NOT the destination echoed back.
+/// The portal-gun's owner client sends it after teleporting itself
+/// (`PortalHelper.cs:188-192`, followed by a `13` push); the host relays
+/// (`MessageBuffer.cs:3552-3555`), the client flips the color parity
+/// (`num184 + (num184 % 2 == 0 ? 1 : -1)`), teleports style 4 and overwrites
+/// the velocity (`:3549-3551`, parked for S1-I-4). Both directions — the
+/// NPC twin (100) rides d94.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlayerPortalTeleport {
+    pub player: u8,
+    pub color_index: i16,
+    pub x: f32,
+    pub y: f32,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1798,6 +1834,9 @@ pub enum C2s {
     /// no body (`MessageBuffer.cs:3154-3163` adds the sender's name;
     /// `Main.cs:40254`).
     AnglerQuestFinished,
+    /// `96 TeleportPlayerThroughPortal` - the portal-gun owner teleported
+    /// itself (`PortalHelper.cs:190`; the host relays, `:3552-3555`).
+    PlayerPortalTeleport(PlayerPortalTeleport),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1930,6 +1969,12 @@ pub enum S2c {
     /// `77 SyncTilePicking` - a temporary tile animation for one client
     /// (`NetMessage.SendTemporaryAnimation`, `MessageBuffer.cs:3183-3185`).
     TemporaryAnimation(TemporaryAnimation),
+    /// `78 ReportInvasionProgress` - the invasion/moon/DD2 progress bar
+    /// (`Main.cs:47683`, `DD2Event.cs:191`; `MessageBuffer.cs:3186-3191`).
+    InvasionProgress(InvasionProgress),
+    /// `96 TeleportPlayerThroughPortal` - the host's relay of a player's
+    /// portal teleport (`MessageBuffer.cs:3554`; style 4 + parity flip).
+    PlayerPortalTeleport(PlayerPortalTeleport),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2023,6 +2068,7 @@ impl C2s {
             Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
             Self::RequestTeleport(_) => id::REQUEST_TELEPORT,
             Self::AnglerQuestFinished => id::ANGLER_QUEST_FINISHED,
+            Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2113,6 +2159,15 @@ impl C2s {
             Self::RequestTeleport(q) => w.u8(q.kind),
             // No writer arm — bodyless (`MessageBuffer.cs:3154-3163`).
             Self::AnglerQuestFinished => w,
+            // `NetMessage.cs:1337-1345`: (byte)player + (short)color + the
+            // destination floats + WriteVector2(the player's live velocity).
+            Self::PlayerPortalTeleport(p) => w
+                .u8(p.player)
+                .i16(p.color_index)
+                .f32(p.x)
+                .f32(p.y)
+                .f32(p.velocity_x)
+                .f32(p.velocity_y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2246,6 +2301,14 @@ impl C2s {
             id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
             id::REQUEST_TELEPORT => Self::RequestTeleport(RequestTeleport { kind: r.u8()? }),
             id::ANGLER_QUEST_FINISHED => Self::AnglerQuestFinished,
+            id::TELEPORT_PLAYER_PORTAL => Self::PlayerPortalTeleport(PlayerPortalTeleport {
+                player: r.u8()?,
+                color_index: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2438,6 +2501,8 @@ impl S2c {
             Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
             Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
             Self::TemporaryAnimation(_) => id::TEMPORARY_ANIMATION,
+            Self::InvasionProgress(_) => id::INVASION_PROGRESS,
+            Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
         }
     }
 
@@ -2604,6 +2669,22 @@ impl S2c {
                 .u16(a.tile_type)
                 .i16(a.x)
                 .i16(a.y),
+            // `NetMessage.cs:1160-1165`: (int)progress + (int)max +
+            // (sbyte)icon + (sbyte)wave.
+            Self::InvasionProgress(p) => w
+                .i32(p.progress)
+                .i32(p.progress_max)
+                .i8(p.icon)
+                .i8(p.wave),
+            // `NetMessage.cs:1337-1345`: (byte)player + (short)color + the
+            // destination floats + WriteVector2(the player's live velocity).
+            Self::PlayerPortalTeleport(p) => w
+                .u8(p.player)
+                .i16(p.color_index)
+                .f32(p.x)
+                .f32(p.y)
+                .f32(p.velocity_x)
+                .f32(p.velocity_y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2816,6 +2897,20 @@ impl S2c {
                 tile_type: r.u16()?,
                 x: r.i16()?,
                 y: r.i16()?,
+            }),
+            id::INVASION_PROGRESS => Self::InvasionProgress(InvasionProgress {
+                progress: r.i32()?,
+                progress_max: r.i32()?,
+                icon: r.i8()?,
+                wave: r.i8()?,
+            }),
+            id::TELEPORT_PLAYER_PORTAL => Self::PlayerPortalTeleport(PlayerPortalTeleport {
+                player: r.u8()?,
+                color_index: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
             }),
             _ => return None,
         })
@@ -5157,6 +5252,79 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::TemporaryAnimation(d) => assert_eq!(d, a),
             other => panic!("expected 77, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_invasion_progress_round_trips() {
+        // `NetMessage.cs:1160-1165` (case 78), verbatim: (int)number
+        // (progress), (int)number2 (max), (sbyte)number3 (icon),
+        // (sbyte)number4 (wave). Pin the DD2 shape (icon 3, wave 5,
+        // `DD2Event.cs:191`) and a negative sbyte so the sign survives.
+        for p in [
+            InvasionProgress {
+                progress: 120,
+                progress_max: 200,
+                icon: 3,
+                wave: 5,
+            },
+            InvasionProgress {
+                progress: 0,
+                progress_max: 1,
+                icon: -1,
+                wave: -2,
+            },
+        ] {
+            let f = S2c::InvasionProgress(p).encode();
+            assert_eq!(f[2], 78);
+            let mut body = Vec::new();
+            body.extend_from_slice(&p.progress.to_le_bytes());
+            body.extend_from_slice(&p.progress_max.to_le_bytes());
+            body.push(p.icon as u8);
+            body.push(p.wave as u8);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::InvasionProgress(d) => assert_eq!(d, p),
+                other => panic!("expected 78, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    #[test]
+    fn w4_d99_player_portal_teleport_round_trips() {
+        // `NetMessage.cs:1337-1345` (case 96), verbatim field order:
+        // (byte)number (player), (short)number4 (color index), number2 (x),
+        // number3 (y), WriteVector2(player.velocity) — the velocity is the
+        // player's live one, deliberately different from the destination
+        // so a swapped pair cannot pass. Both directions
+        // (`PortalHelper.cs:190` client send, `MessageBuffer.cs:3554` relay).
+        let p = PlayerPortalTeleport {
+            player: 1,
+            color_index: 4, // owner 2 * 2 + ai[1] 0 (`PortalHelper.cs:181`)
+            x: 2048.5,
+            y: -256.25,
+            velocity_x: -2.5,
+            velocity_y: -0.1, // the `ent.velocity.Y = -num * 0.1f` floor
+        };
+        let mut body = vec![1u8];
+        body.extend_from_slice(&4i16.to_le_bytes());
+        body.extend_from_slice(&2048.5f32.to_le_bytes());
+        body.extend_from_slice(&(-256.25f32).to_le_bytes());
+        body.extend_from_slice(&(-2.5f32).to_le_bytes());
+        body.extend_from_slice(&(-0.1f32).to_le_bytes());
+        let f = C2s::PlayerPortalTeleport(p).encode();
+        assert_eq!(f[2], 96);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerPortalTeleport(d) => assert_eq!(d, p),
+            other => panic!("expected 96, got {:?}", other.msg_id()),
+        }
+        let s = S2c::PlayerPortalTeleport(p).encode();
+        assert_eq!(s[2], 96);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::PlayerPortalTeleport(d) => assert_eq!(d, p),
+            other => panic!("expected 96, got {:?}", other.msg_id()),
         }
     }
 }

@@ -829,6 +829,10 @@ impl App {
             // sender's name to anglerWhoFinishedToday) — same wave, same
             // parking.
             C2s::AnglerQuestFinished => {}
+            // 96's client half (`PortalHelper.cs:190` send; the host forces
+            // the subject and relays, `MessageBuffer.cs:3538-3555`) — same
+            // wave, same parking.
+            C2s::PlayerPortalTeleport(_) => {}
         }
     }
 
@@ -1882,6 +1886,10 @@ impl App {
             // 77 SyncTilePicking (`MessageBuffer.cs:3183-3185`
             // Animation.NewTemporaryAnimation) — same wave, same parking.
             S2c::TemporaryAnimation(_) => {}
+            // 78 ReportInvasionProgress (`MessageBuffer.cs:3186-3191`
+            // Main.ReportInvasionProgress) + 96's relay (`:3538-3557`
+            // parity flip + style-4 teleport) — same wave, same parking.
+            S2c::InvasionProgress(_) | S2c::PlayerPortalTeleport(_) => {}
         }
     }
 
