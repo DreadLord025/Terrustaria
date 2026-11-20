@@ -50,7 +50,7 @@ impl RecipeEntry {
     }
 
     /// `Recipe => Main.recipe[this.index]` (`:33`) — the port's recipe table.
-    pub fn recipe(&self) -> &'static crate::craft::Recipe {
+    pub(crate) fn recipe(&self) -> &'static crate::craft::Recipe {
         &crate::craft::RECIPES[self.index]
     }
 }
