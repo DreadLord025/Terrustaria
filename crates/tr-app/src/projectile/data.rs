@@ -3288,6 +3288,30 @@ pub const SENTRY_SHOT: &[u16] = &[
     680, 664, 666, 668, 694, 695, 696, 644, 642, 378, 379, 309, 967, 1026,
 ];
 
+/// `ProjectileID.Sets.MinionShot` (`ID/ProjectileID.cs:431`): the minion
+/// projectiles' own shots — the `WhipTagEffect.CanRunHitEffects` gate admits
+/// them (with the `minion`/`sentry` flags and [`SENTRY_SHOT`]) so a tagged
+/// NPC feeds the summon bonus to the minion's attacks, not just the body.
+pub const MINION_SHOT: &[u16] = &[
+    374, 376, 389, 195, 408, 433, 614, 818, 1044, 1097, 1106, 1120,
+];
+
+/// `WhipTagEffect.CanRunHitEffects` (`GameContent/Items/WhipTagEffect.cs:75-86`):
+/// `optionalProjectile.OwnedBySomeone && (minion || MinionShot[type] ||
+/// sentry || SentryShot[type])`. The owned check is the caller's (`owner !=
+/// 255`); this folds the four-way shot test the tag-damage math gates on.
+pub fn can_run_whip_hit_effects(minion: bool, sentry: bool, kind: u16) -> bool {
+    minion || sentry || MINION_SHOT.contains(&kind) || SENTRY_SHOT.contains(&kind)
+}
+
+/// `ItemID.Sets.SummonerWeaponThatScalesWithAttackSpeed` (`ID/ItemID.cs:497`):
+/// the 18 whip items — `ApplyItemAnimation` (`Player.cs:4474-4476`) scales
+/// their swing by `summonerWeaponSpeedBonus * whipUseTimeMultiplier`.
+pub const SUMMONER_WEAPON_SCALES_WITH_ATTACK_SPEED: &[u16] = &[
+    4672, 4679, 4680, 4678, 4913, 4912, 4911, 4914, 5074, 5473, 5474, 5475, 5476, 5477, 5478,
+    5479, 5480, 5688,
+];
+
 pub const MINION_TARGETING_FEATURE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 625, 755,
     758, 759, 831, 833, 834, 835, 864, 946, 951, 963, 970, 1022, 1093, 1094, 1112, 1113, 1118,

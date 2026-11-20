@@ -843,6 +843,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if p.acc_sentry_backpack_grab_cooldown > 0 {
                 p.acc_sentry_backpack_grab_cooldown -= 1;
             }
+            // `Player.Update_SnakeBand` (`Player.cs:28412-28418`, called at
+            // `:24567` right after `Update_AmmoCycler`): the whip-repeat
+            // reset cooldown counts down one per tick; at 0 the swing
+            // counter returns to −1 (the next whip throw is swing #0).
+            p.update_snake_band();
             // M4-PROJ-8 Phase 6 — `MinionRestTargetAim`'s invalidation half
             // (`Player.cs:57009-57011`): an unchaseable or >3000-px whip
             // target drops every tick.

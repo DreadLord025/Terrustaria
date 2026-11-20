@@ -13880,6 +13880,88 @@ Deviations recorded here:
    `CanRunHitEffects` admits nothing in-game until M4-PROJ-8; the
    `is_summon_shot` slot flag carries the gate and the tests set it directly,
    so the math is proven end-to-end (`a_tagged_summon_shot_takes_the_damage_bonus`).
+
+7. **S1-P-i24 census — the WRONGs fixed and the missing fire arm.** A
+   code-only census of the whip system against the C# found five defects
+   and one wholly-missing arm, all repaired (tests written, not run):
+   - **The curve's spiral sign** (`FillWhipControlPoints` `:48292`): `num4`
+     carries `(float)(-proj.spriteDirection)`, not `+`. Invisible while
+     `num13 == 0` (ai1 = 0, the render curve of a fresh spawn) but the
+     collision path forces `num13 = 1`, so the spiral wound the wrong way.
+     Fixed; `the_collision_spiral_winds_against_the_sprite_facing` pins the
+     golden tip (74.40, 77.25) vs the wrong-sign (121.69, 69.44).
+   - **The tag crit roll** (`WhipTagEffect.cs:69`): `Main.rand.Next(100)`
+     (0..99), not `Next(1,101)`. A 10% tag crits on 0..9; the old roll
+     shifted the window to 1..10 (an off-by-one). Fixed;
+     `the_tag_crit_roll_is_next_100_not_next_1_101` pins the boundary.
+   - **The proc window's duration** (`TagEffectState.cs:70`):
+     `EnableProcOnNPC` reads the STATE's own `_effect.TagDuration`, not the
+     front effect's. The Constellation's 480 must not leak into a plain
+     whip's window nor vice versa. Fixed;
+     `the_proc_window_runs_the_states_own_duration_not_the_fronts` pins it.
+   - **The on-hit gating/order** (`Projectile.cs:13579-14263`): the whip
+     debuffs (`StatusNPC`) and the tag application run BEFORE `StrikeNPC`
+     (`:13580`/`:13583` vs `:13649`) — moved pre-strike (the ThornWhip's 1/5
+     poison roll now rides its C# position ahead of `DamageVar`). The
+     per-type switch is gated by `flag8` (`!immortal`, `:12815`/`:13673`)
+     AND `flag10` (`num24 > 0 && lifeMax > 5 && friendly && !hostile`,
+     `:13659`/`:13810`), while the `MinionAttackTargetNPC` retarget
+     (`:14257-14263`) is OUTSIDE both gates — the port ran the switch
+     ungated; fixed. The C# runs `TagEffectStack.OnHit` (`:13658`) before
+     the switch (`:13904`) and gates it on `CanRunHitEffects`; the port
+     KEEPS the landed order (switch then `tag_on_hit`, ungated) because the
+     Constellation's `OnTaggedHit` self-arm
+     (`the_constellation_first_hit_arms_and_clears_the_proc_window`) depends
+     on it — the gate + the order swap are a recorded follow-up.
+     `the_whip_per_type_switch_is_gated_by_flag8_and_flag10` pins the gate.
+   - **The `ItemCheck_Shoot` whip arm was MISSING** (`Player.cs:48655-48690`):
+     the port spawned whips through the generic `Item.shoot` path with
+     ai1 = 0 (a straight whip) and a spurious crit draw. The C# arm rolls
+     the spin seed `ai1 = 0.6 + 0.4*NextFloat()` (`:48657`), then the
+     `x-2.5` flip on `Next(3) == 0` for every whip but the Dark Harvest
+     (4680, `:48658`), adds the Wicked Armlet's +1 knockback
+     (`:48663-48666`), and — for the Snake Band's
+     `withAudioVisualFeedback = false` refire (`:42729`) — rotates the
+     velocity by `RotatedByRandom(pi/10)` (`:48670`, two `NextDouble`s),
+     overrides `timeToFlyOut` via `ai2 = 1000 + itemAnimationMax*2`
+     (`:48673`), cuts damage x0.3 (floor 3) and knockback x0.25
+     (`:48676-48681`), and bumps `repeatWhipSwings`/re-arms the 120-tick
+     reset only on the audible swing (`:48684-48688`). Ported verbatim as
+     `spawn_whip_shot` + the mid-animation refire trigger;
+     `the_whip_spin_seed_is_nonzero_and_seed_deterministic`,
+     `the_dark_harvest_never_flips_its_spin`,
+     `the_whip_throw_bumps_the_repeat_counter_and_cooldown`,
+     `the_wicked_armlet_adds_one_knockback_to_the_whip` pin it. The damage
+     reads `GetWeaponDamage`'s `+5E-06f` epsilon (`:53428`).
+   - **The whip speed buffs + range consumers were MISSING**: the
+     summoner-speed buff arms (Dark Harvest 311 +0.35, Sword Whip 308
+     +0.25, Thorn Whip 314 +0.12, `Player.cs:10110-10121`) fold through
+     `CapAttackSpeeds` (`:29021-29039`, cap 3 / invert) into the use-time
+     multiplier `ApplyItemAnimation` (`:4474-4476`) scales the whip swing
+     by; the Cool/Cob Whip buff flags (312/365, `:10122-10129`) re-affirm
+     the on-hit latch; the `whipRangeMultiplier` rows (Tiki head +0.1
+     `:13854`, Stardust body/legs +0.15 `:13879`, Tiki set +0.2
+     `ArmorSetBonuses.cs:15`, Obsidian Outlaw +0.3 / x1/1.15 use-time
+     `:120-125`, Mobius Strip +0.1 `:12979`) stretch the curve (both render
+     and collision); the tag-cap accessories (Silver Bracer +1 cap/+2
+     duration, Mobius/Wicked +1 cap, `:12970-12984`) raise the stack. All
+     wired; `the_whip_speed_buffs_fold_through_cap_attack_speeds`,
+     `the_obsidian_outlaw_set_speeds_the_whip_and_stretches_its_reach`,
+     `the_whip_accessories_raise_the_tag_cap_and_duration`,
+     `the_whip_armor_rows_carry_their_range_and_speed` pin them. The
+     melee-half of `CapAttackSpeeds` (assigns `meleeSpeed` itself) stays a
+     separate deviation — the port's `melee_speed()` accessor returns the
+     uncapped `1 + bonus` the flail/shoot paths read.
+   RNG order: the whip fire arm draws the spin `NextFloat` then the flip
+   `Next(3)` (skipped for 4680) on the `UpdatePlayers` stream
+   (`Main.cs:17754`); the refire adds the `RotatedByRandom` pair; the
+   ThornWhip's 1/5 poison roll now rides its pre-strike `StatusNPC`
+   position (`:11738`) ahead of `DamageVar` (`:12938`), matching the C#.
+   The `CanRunHitEffects` gate now admits the `MINION_SHOT`/`SENTRY_SHOT`
+   kind sets (`ProjectileID.cs:431-432`) via `can_run_whip_hit_effects`, so
+   the ported minion/sentry shots take the tag bonus without the
+   `is_summon_shot` latch; the whip's own hit is not a summon shot, so its
+   `OnHit` never consumes a proc window.
 ## The lunar chain (M4-EVENT-15)
 
 The apocalypse is a state chain, not a machine: the cultist's death в†’

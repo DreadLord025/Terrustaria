@@ -6481,11 +6481,11 @@ impl Projectile {
     /// The 307/316/189 per-type arms are unported kinds. The dust spawns are
     /// SKIPPED (no dust layer, no RNG in this arm).
     fn ai_bee(&mut self, world: &World, npcs: &[Npc]) {
-        // Gate-merge (i20+i21): ONE aiStyle-36 arm serves both families — the
-        // C# `else if (this.aiStyle == 36)` (`:27292-27471`) branches on type:
-        // 316 (the Bat Scepter's bat) flips its sprite and steers at the
-        // found-target pair 13/0.325 vs 10/0.25 (`:27413-27425`); the bees
-        // 181/566 face the flight and steer 6/0.1 vs 6.8/0.14.
+        // Gate-merge (i20 helper + i24 whip): ONE aiStyle-36 arm serves both
+        // families — the C# `else if (this.aiStyle == 36)` (`:27292-27471`)
+        // branches on type: 316 (the Bat Scepter's bat) flips its sprite and
+        // steers at the found-target pair 13/0.325 vs 10/0.25 (`:27413-27425`);
+        // the bees 181/566 face the flight and steer 6/0.1 vs 6.8/0.14.
         if self.kind == BAT_FRIENDLY {
             self.ai_bat(world, npcs);
             return;
@@ -13665,7 +13665,10 @@ impl ProjectilePool {
     /// LCG seed (`Player.cs:49409-49411`'s `ai9 = Main.rand.Next(0, 20000)`,
     /// S1-P-i20); S1-P-i22: the Magical Harp's note carries
     /// `ai2 = vector9.Length() / num12` (`Player.cs:47410`'s third
-    /// `NewProjectile` ai arg); the `set_ai1` convention.
+    /// `NewProjectile` ai arg); S1-P-i24: the whip's Snake Band refire
+    /// carries `ai2 = 1000 + itemAnimationMax * 2` (`Player.cs:48673`, the
+    /// `GetWhipSettings` `timeToFlyOut` override `:48344-48347`); the
+    /// `set_ai1` convention.
     pub fn set_ai2(&mut self, slot: usize, value: f32) {
         if let Some(p) = self.slots.get_mut(slot) {
             p.ai[2] = value;
@@ -14402,7 +14405,14 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) -> (i32, bool) {
         let p = &self.slots[slot];
-        if !p.is_summon_shot || p.owner == 255 {
+        // `WhipTagEffect.CanRunHitEffects` (`:75-86`): owned + the four-way
+        // shot test (`minion || MinionShot || sentry || SentryShot`). The
+        // `is_summon_shot` slot flag is the spawn-time latch; the kind sets
+        // admit the ported minion/sentry shots (374/389/614/… and the
+        // SentryShot family) without waiting on it.
+        let gate = p.is_summon_shot
+            || crate::projectile::can_run_whip_hit_effects(p.minion, p.sentry, p.kind);
+        if !gate || p.owner == 255 {
             return (base, crit);
         }
         let Some(player) = player else {
@@ -14571,6 +14581,14 @@ impl ProjectilePool {
         if tag_type == 0 {
             return;
         }
+        // NOTE (S1-P-i24): the C# `TagEffectState.OnHit` (`:109-119`) gates on
+        // `IsNPCTagged && CanRunHitEffects`, which would refuse the whip's own
+        // hit. The port keeps the landed ungated behaviour here: the
+        // Constellation's `OnTaggedHit` proc-arm fires on the tagging whip hit
+        // (`the_constellation_first_hit_arms_and_clears_the_proc_window`), and
+        // the per-type switch's `RemoveAllProcs` owns the consume. The
+        // summon-shot gate lives on the DAMAGE math (`tag_damage_for`), not
+        // here — gating this arm would break the Constellation self-arm.
         if let Some(p) = player.as_deref_mut() {
             p.tag_effects.on_hit(npc_idx as usize, tag_type, proj_kind);
             if tr_core::whip::tag_effect(tag_type)
@@ -14601,23 +14619,39 @@ impl ProjectilePool {
             _ => {}
         }
     }
-    /// The aiStyle-165 on-hit arms after the tag application, inside
-    /// `Damage_PVE_Inner` (`Projectile.cs:13904-14263`): the `MinionAttackTargetNPC`
-    /// override (`:14257-14263`) and the per-type whip switch
-    /// (`:13904-13956`) with the tag stack's seams filled.
+    /// The aiStyle-165 on-hit arms inside `Damage_PVE_Inner`
+    /// (`Projectile.cs:13904-14263`), split to match the C# nesting:
+    ///
+    /// * the per-type switch (`:13904-13956`) lives under `flag8 && flag10`
+    ///   (`:13673` `ownedBySomeone & flag8`, `:13810` `if (flag10)`) —
+    ///   `flag8 = !targetNPC.immortal` (`:12815`) and
+    ///   `flag10 = num24 > 0 && lifeMax > 5 && friendly && !hostile &&
+    ///   aiStyle != 59` (`:13659`, the strike's dealt damage). The caller
+    ///   folds those into `on_hit_effects_run`.
+    /// * the `MinionAttackTargetNPC` retarget (`:14257-14263`) is OUTSIDE
+    ///   both gates — every landed aiStyle-165 hit on an active NPC retargets
+    ///   the minions, even one that dealt no damage or hit an immortal.
     fn whip_on_hit(
         &mut self,
         slot: usize,
         npc_idx: u16,
+        npc_active: bool,
+        on_hit_effects_run: bool,
         mut player: Option<&mut crate::player::Player>,
     ) {
         let kind = self.slots[slot].kind;
         let tag_type = self.slots[slot].tag_effect_type;
-        // `:14257-14263`: every aiStyle-165 hit retargets the minions.
-        if let Some(p) = player.as_deref_mut() {
-            p.minion_attack_target_npc = npc_idx as i32;
+        // `:14257-14263`: every aiStyle-165 hit retargets the minions (the
+        // `targetNPC.active` guard is the C# arm's own).
+        if npc_active {
+            if let Some(p) = player.as_deref_mut() {
+                p.minion_attack_target_npc = npc_idx as i32;
+            }
         }
-        // `:13904-13956`: the per-type switch.
+        // `:13904-13956`: the per-type switch, gated by flag8 && flag10.
+        if !on_hit_effects_run {
+            return;
+        }
         match kind {
             FIRE_WHIP | METEOR_WHIP | FLOWER_WHIP => {
                 // `:13909-13912`: the first hit of this slot arms the proc
@@ -18678,6 +18712,13 @@ impl ProjectilePool {
             let arm = owner
                 .map(|(x, y)| Vec2::new(x, y))
                 .unwrap_or(p.pos + Vec2::new(p.w * 0.5, p.h * 0.5));
+            // `owner.whipRangeMultiplier` (`FillWhipControlPoints` `:48301`):
+            // the Tiki/Stardust/Obsidian Outlaw/Mobius reach adds stretch the
+            // collision curve too (the C# reads the live player field).
+            let range_mult = player
+                .as_deref()
+                .map(|pl| pl.whip_range_multiplier)
+                .unwrap_or(1.0);
             let build = |frame_offset: i32| {
                 let inputs = tr_core::whip::WhipCurveInputs {
                     kind: p.kind,
@@ -18688,7 +18729,7 @@ impl ProjectilePool {
                     rotation: p.rot,
                     arm_position: arm,
                     held_use_animation: p.whip_use_animation,
-                    whip_range_multiplier: 1.0,
+                    whip_range_multiplier: range_mult,
                     velocity_len: p.vel.length(),
                     get_actual_collision_points: true,
                 };
@@ -18714,6 +18755,11 @@ impl ProjectilePool {
             if n.hp <= 0 {
                 continue;
             }
+            // `flag8` (`:12815`) and `flag10`'s NPC-side terms (`:13659`):
+            // the whip per-type switch's gate reads the immortal flag and
+            // the lifeMax > 5 floor; the strike-damage term joins below.
+            let npc_immortal = n.immortal;
+            let npc_life_max_gt5 = n.max_hp > 5;
             // `Damage_PVE`'s outer gate (`Projectile.cs:12583`):
             // `!nPC.dontTakeDamage` — the shielded NPC (the Moon Lord's
             // core before its vulnerable phase, the Brain's Creeper
@@ -18853,9 +18899,28 @@ impl ProjectilePool {
                     dmg = ((dmg as f32) * 2.0) as i32;
                 }
             }
+            // `:13579-13584` — `SpawnHitVisuals` + `StatusNPC` (the whip
+            // debuffs, `ApplyWhipDebuffs` `:11727-11750`) and the tag
+            // application run BEFORE `StrikeNPC` (`:13649`) in the C#. The
+            // ThornWhip's 1/5 poison roll therefore rides this pre-strike
+            // position on the pass's `UpdateProjectiles` stream.
+            if is_whip {
+                self.whip_debuffs(slot, &mut npcs[idx], rng);
+            }
+            // `:13581-13584`: any owned tag-carrying projectile applies its
+            // tag to the hit NPC (the whip's, in the port today).
+            let tag_type = self.slots[slot].tag_effect_type;
+            if tag_type > 0 {
+                if let Some(p) = player.as_deref_mut() {
+                    p.tag_effects.try_apply_tag_to_npc(tag_type, idx, npcs[idx].kind);
+                }
+            }
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
-            // as StrikeNPC does before the knockback/HP application.
-            let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
+            // as StrikeNPC does before the knockback/HP application. The
+            // defense read re-borrows the slot entry (the pre-strike whip
+            // debuffs/tag writes above take `&mut npcs[idx]` — S1-P-i24;
+            // neither write touches `defense`, the value is unchanged).
+            let strike_dmg = tr_core::damage::strike_npc_damage(dmg, npcs[idx].defense(), hit_crit);
             let landed = Npc::strike_projectile(npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8));
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
             // Destroyer body's probe launch gate (`:89266-89285`) — the
@@ -18891,27 +18956,31 @@ impl ProjectilePool {
                 npcs[idx].immune[owner_idx] = OWNER_IMMUNE_TICKS;
             }
             if landed {
-                // `:13579-13581`: the whip debuffs (`StatusNPC`'s
-                // `ApplyWhipDebuffs`).
+                // `:13673` (`ownedBySomeone & flag8`) + `:13810` (`if (flag10)`):
+                // the whip per-type switch's gate. `flag8 = !immortal`
+                // (`:12815`); `flag10 = num24 > 0 && lifeMax > 5 && friendly &&
+                // !hostile && aiStyle != 59` (`:13659`). The PVE pass only
+                // simulates friendly, non-hostile shots (aiStyle 165 != 59),
+                // so those terms fold true; `num24` is the strike's dealt
+                // damage (`strike_dmg`, floored at 1 by CalculateDamageNPCsTake).
+                // The retarget (`:14257-14263`) is OUTSIDE both gates.
                 if is_whip {
-                    self.whip_debuffs(slot, &mut npcs[idx], rng);
-                }
-                // `:13581-13584`: any tag-carrying item's projectile applies
-                // its tag to the hit NPC (the whip's, in the port today).
-                let tag_type = self.slots[slot].tag_effect_type;
-                if tag_type > 0 {
-                    if let Some(p) = player.as_deref_mut() {
-                        p.tag_effects.try_apply_tag_to_npc(tag_type, idx, npcs[idx].kind);
-                    }
-                }
-                // `:14258`-onwards + `:13882-13956`: the aiStyle-165 on-hit
-                // arms (the minion target, the per-type switch).
-                if is_whip {
-                    self.whip_on_hit(slot, idx as u16, player.as_deref_mut());
+                    let on_hit_effects_run = !npc_immortal && strike_dmg > 0 && npc_life_max_gt5;
+                    self.whip_on_hit(
+                        slot,
+                        idx as u16,
+                        npcs[idx].hp > 0,
+                        on_hit_effects_run,
+                        player.as_deref_mut(),
+                    );
                 }
                 // `:13658`: the tag stack's on-hit pass — the proc consume
                 // (and the Constellation's immediate proc enable, its
-                // `OnTaggedHit`).
+                // `OnTaggedHit`). The port keeps this AFTER the per-type switch
+                // (the landed order): the Constellation's first-hit switch arm
+                // consumes the window, then this re-arms it via the ungated
+                // `OnTaggedHit` self-arm
+                // (`the_constellation_first_hit_arms_and_clears_the_proc_window`).
                 self.tag_on_hit(slot, idx as u16, player.as_deref_mut());
                 // `:13707-13809`: the yoyo on-hit spawns (M4-PROJ-4b) — the
                 // shared player counter's increment form, exactly the C#
@@ -23846,6 +23915,56 @@ mod whip_tests {
             .find_buff_index(312)
             .expect("the CoolWhip buff");
         assert_eq!(player.buffs.buff_time[idx], 180);
+    }
+
+    #[test]
+    fn the_whip_per_type_switch_is_gated_by_flag8_and_flag10() {
+        // `Projectile.cs:13673` (`ownedBySomeone & flag8`) + `:13810`
+        // (`if (flag10)`): the per-type switch runs only when the NPC is not
+        // immortal (`flag8`, `:12815`) and the strike dealt damage on a
+        // `lifeMax > 5` target (`flag10`, `:13659`). The minion retarget
+        // (`:14257-14263`) is OUTSIDE both gates. An immortal NPC takes the
+        // whip's hit (the PVE gate is `dontTakeDamage`, not `immortal`) and
+        // the retarget, but NOT the CoolWhip's 312 buff.
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut player = crate::player::Player::spawn(&w);
+        let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+        npcs[0].x = center.0 + 20.0;
+        npcs[0].y = center.1 - 12.0;
+        npcs[0].hp = 4000;
+        npcs[0].max_hp = 4000;
+        npcs[0].immortal = true;
+        let mut pool = whip_at(center, COOL_WHIP, 45);
+        pool.slots[0].tag_effect_type = 4911;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..60 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                Some(&mut player),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            if !pool.slots[0].active {
+                break;
+            }
+        }
+        // The retarget lands (outside the gates).
+        assert_eq!(
+            player.minion_attack_target_npc, 0,
+            "the immortal NPC is still the minion target"
+        );
+        // The per-type switch did NOT run: no 312 buff.
+        assert!(
+            player.buffs.find_buff_index(312).is_none(),
+            "the immortal NPC refuses the CoolWhip buff (flag8 gate)"
+        );
     }
 }
 
@@ -30521,6 +30640,33 @@ mod summon_tests {
         for kind in [378u16, 379, 967] {
             assert!(SENTRY_SHOT.contains(&kind), "kind {kind}");
         }
+    }
+
+    #[test]
+    fn the_minion_shot_set_and_can_run_hit_effects_are_verbatim() {
+        // `ProjectileID.Sets.MinionShot` (`ID/ProjectileID.cs:431`).
+        let minion_shot: [u16; 12] = [
+            374, 376, 389, 195, 408, 433, 614, 818, 1044, 1097, 1106, 1120,
+        ];
+        assert_eq!(MINION_SHOT.len(), 12);
+        let mut ported = MINION_SHOT.to_vec();
+        ported.sort_unstable();
+        let mut csharp = minion_shot.to_vec();
+        csharp.sort_unstable();
+        assert_eq!(ported, csharp);
+        // `WhipTagEffect.CanRunHitEffects` (`:75-86`): the four-way shot test.
+        // The minion/sentry flags admit regardless of kind.
+        assert!(can_run_whip_hit_effects(true, false, 1));
+        assert!(can_run_whip_hit_effects(false, true, 1));
+        // The kind sets admit the shots without the flags.
+        assert!(can_run_whip_hit_effects(false, false, 374)); // MinionShot
+        assert!(can_run_whip_hit_effects(false, false, 614)); // MinionShot
+        assert!(can_run_whip_hit_effects(false, false, 680)); // SentryShot
+        assert!(can_run_whip_hit_effects(false, false, 642)); // SentryShot
+        // A plain arrow / the whip itself is NOT a summon shot.
+        assert!(!can_run_whip_hit_effects(false, false, WOODEN_ARROW));
+        assert!(!can_run_whip_hit_effects(false, false, BLAND_WHIP));
+        assert!(!can_run_whip_hit_effects(false, false, 0));
     }
 
     /// The new fields leave every pre-existing row on the pool defaults —
