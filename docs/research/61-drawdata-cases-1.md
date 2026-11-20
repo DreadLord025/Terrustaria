@@ -576,3 +576,58 @@ glow record yet — documented deviation, and the whole record is unconsumed
 (`_glow`) until TILE-DRAW-2, so no pixel effect today. 615's separate C# label
 with an identical body is folded into the sapling alternation — behaviourally
 1:1.
+
+### Batch 9 — height-18 group head (anvils/furnaces/altars/thorns/beams/traps): 16, 17, 26, 32, 69, 72, 77, 124, 137, 138 (10 ids)
+
+C# `TileDrawing.cs:4880-4908` (29-line window), verbatim head (the group runs to
+label 716; labels 713-716 are d62's, same body):
+
+```csharp
+		case 16:
+		case 17:
+		case 26:
+		case 32:
+		case 69:
+		case 72:
+		case 77:
+		case 124:
+		case 137:
+		case 138:
+		case 352:
+		case 462:
+		case 487:
+		case 488:
+		case 574:
+		case 575:
+		case 576:
+		case 577:
+		case 578:
+		case 664:
+		case 695:
+		case 704:
+		case 712:
+		case 713:
+		case 714:
+		case 715:
+		case 716:
+			tileHeight = 18;
+			break;
+```
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 16 | `tileHeight = 18;` group | :4880-4908 | `drawdata.rs:327-347` (27-label alternation incl. `574..=578` and `712..=716` ranges — exact label set) | PORTED |
+| 17 | shares the group | :4881 | :327-347 | PORTED |
+| 26 | shares the group | :4882 | :327-347 | PORTED |
+| 32 | shares the group | :4883 | :327-347 | PORTED |
+| 69 | shares the group | :4884 | :327-347 | PORTED |
+| 72 | shares the group (mushroom-tree trunk kind; `tree::is_tree` excludes 72, `tree.rs:26` — the drawing set keeps it on this arm, matching C#) | :4885 | :327-347 | PORTED |
+| 77 | shares the group | :4886 | :327-347 | PORTED |
+| 124 | shares the group | :4887 | :327-347 | PORTED |
+| 137 | shares the group | :4888 | :327-347 | PORTED |
+| 138 | shares the group | :4889 | :327-347 | PORTED |
+
+The port's range spellings `574..=578` / `712..=716` expand to exactly the C#'s
+contiguous label runs; the full alternation covers all 27 labels with no extras
+(checked label-by-label against :4880-4906). No glow rows for any of these ids in
+the second switch.
