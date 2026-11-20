@@ -225,6 +225,7 @@ fn lane_covers(ty: u16) -> bool {
             | 588 | 589 | 633 | 368 | 353 | 354 | 369 | 376 | 663 | 342
             | 338..=340 | 343 | 348 | 349 | 350 | 351 | 489 | 490 | 305..=314
             | 352 | 327 | 325 | 326 | 330 | 329 | 315 | 250 | 261 | 288
+            | 344 | 262..=264 | 265 | 266 | 267 | 370 | 372 | 373
     )
 }
 
@@ -468,6 +469,72 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
                 d.velocity *= 2.0;
                 d.no_gravity = true;
                 d.scale = 1.4;
+            }
+        }
+        // `NPC.cs:84876-84890` — Everscream: 60×196 at `(2×hd, -2)`;
+        // the two gore loops (508-512, 509-512, velocity ×0) are
+        // constant-argument.
+        344 => fx.burst(60, 196, 2.0 * hd, -2.0),
+        // `NPC.cs:87186-87218` — the Plantera family (262/263/264):
+        // 150 iterations; the `type == 265 && Next(3) != 0` gate is
+        // FALSE for every family type (265 short-circuits — NO gate
+        // draw), so all 150 are type-167 at `(2×hd, -2)`. The 262's
+        // nine gores carry `Next(width)`/`Next(height)` ARGUMENT pairs
+        // (`:87199-87207`) — 18 draws consumed here; the 263/264 pairs
+        // (`:87211-87217`) — 4 each. The gore bodies stay the lane's.
+        262..=264 => {
+            fx.burst(150, 167, 2.0 * hd, -2.0);
+            let n_gores = match fx.ty {
+                262 => 9,
+                _ => 2,
+            };
+            for _ in 0..n_gores {
+                fx.rng.next_max(fx.w);
+                fx.rng.next_max(fx.h);
+            }
+        }
+        // `NPC.cs:87226-87236` — the Spore: `life >= 0` returns (the
+        // death half is life < 0); 15 iterations of `Next(3) != 0` →
+        // type-166 else type-167, at `(hitDirection, -1)`. The gate
+        // draws EVERY iteration (the `npc_ai_style50.rs` count plan's
+        // draws, now emitted).
+        265 => {
+            for _ in 0..15 {
+                if fx.rng.next_max(3) != 0 {
+                    fx.d(166, hd, -1.0);
+                } else {
+                    fx.d(167, hd, -1.0);
+                }
+            }
+        }
+        // `NPC.cs:87248-87257` — the Brain of Cthulhu: 150×5 at
+        // `(2×hd, -2)`; the six gores (396-401) each carry TWO
+        // `Next(-30,31)*0.2` velocity ARGUMENT draws (`:87252-87257`)
+        // — 12 draws consumed here in order.
+        266 => {
+            fx.burst(150, 5, 2.0 * hd, -2.0);
+            for _ in 0..6 {
+                fx.rng.next_range(-30, 31);
+                fx.rng.next_range(-30, 31);
+            }
+        }
+        // `NPC.cs:87269-87273` — the Creeper: 20×5 at `(2×hd, -2)`;
+        // one constant gore (402).
+        267 => fx.burst(20, 5, 2.0 * hd, -2.0),
+        // `NPC.cs:84267-84279` — Duke Fishron: 150×5 at `(2×hd, -2)`;
+        // the six gores (576/574/575/573/574/575) are constant-
+        // argument (the direction offsets are data).
+        370 => fx.burst(150, 5, 2.0 * hd, -2.0),
+        // `NPC.cs:84216-84227` — the Sharkron pair (372/373): 75×5
+        // from `Center - (25,25)`, box 50×50, at `(2×hd, -2)`, then
+        // velocity /= 2 (the `npc_ai_style71.rs` death plan's draws).
+        // The four gores (583/577/578/579) are constant-argument.
+        372 | 373 => {
+            let (cx, cy) = (fx.pos.x + fx.w as f32 * 0.5, fx.pos.y + fx.h as f32 * 0.5);
+            let pos = Vec2::new(cx - 25.0, cy - 25.0);
+            for _ in 0..75 {
+                let i = fx.d_full(pos, 50, 50, 5, 2.0 * hd, -2.0, 0, Color::default(), 1.0);
+                fx.dust.slot_mut(i).velocity /= 2.0;
             }
         }
         _ => {}
@@ -861,6 +928,75 @@ mod tests {
         assert_eq!(d.dust_type, 165);
         assert_eq!(d.alpha, 50);
         assert!(d.no_gravity);
+    }
+
+    /// `NPC.cs:87248-87257` — the Brain of Cthulhu: 150×5 then SIX
+    /// gores × TWO `Next(-30,31)` velocity argument draws each.
+    #[test]
+    fn w4_g60_the_brain_consumes_the_twelve_gore_velocity_draws() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(91);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 266,
+            pos: Vec2::new(100.0, 100.0),
+            w: 100,
+            h: 100,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for _ in 0..150 {
+            replay_spawn(&mut r, 100, 100);
+        }
+        for _ in 0..6 {
+            r.next_range(-30, 31);
+            r.next_range(-30, 31);
+        }
+        assert_eq!(rng, r, "150×6 internals + 12 gore velocity draws");
+        assert!(pool.slot(149).active);
+        assert!(!pool.slot(150).active);
+    }
+
+    /// `NPC.cs:87226-87236` — the Spore: 15 × (gate + spawn); the
+    /// `Next(3) != 0` gate draws EVERY iteration and picks 166 vs 167.
+    #[test]
+    fn w4_g60_the_spore_gate_draws_every_iteration() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(92);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 265,
+            pos: Vec2::new(100.0, 100.0),
+            w: 22,
+            h: 22,
+            vel: Vec2::ZERO,
+            hit_dir: -1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for k in 0..15 {
+            let g = r.next_max(3);
+            replay_spawn(&mut r, 22, 22);
+            let d = pool.slot(k);
+            assert_eq!(d.dust_type, if g != 0 { 166 } else { 167 });
+        }
+        assert_eq!(rng, r, "15 × (1 gate + 6 internals)");
+        assert!(pool.slot(14).active);
+        assert!(!pool.slot(15).active);
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
