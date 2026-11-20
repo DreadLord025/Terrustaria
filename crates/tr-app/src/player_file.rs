@@ -120,6 +120,14 @@ pub struct PlayerFile {
     pub inv_favorites: u64,
     pub is_favorite: bool,
     pub revision: u32,
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`, `Deserialize:55722`'s
+    /// `Utils.Clamp(.., 0, Loadouts.Length - 1)`). The port clamps to 0..2.
+    pub current_loadout_index: usize,
+    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`, `Deserialize:55723-55726`):
+    /// the three stored equipment sets. Files below release 262 (and the
+    /// port's inc1/inc2 truncation retries) carry none — they load as three
+    /// fresh `EquipmentLoadout()`s, exactly the C# `else` (no read) arm.
+    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
 }
 
 #[derive(Debug)]
@@ -390,6 +398,10 @@ fn read_player_fields(
         }
         *slot = (id, stack, prefix);
     }
+    // `Player.Loadouts` / `CurrentLoadoutIndex` — read at >= 262 below; files
+    // below that (and the inc1/inc2 retries) keep three fresh sets, index 0.
+    let mut current_loadout_index = 0usize;
+    let mut loadouts = [crate::loadout::EquipmentLoadout::default(); 3];
     // --- the post-inventory tail the old subset never reached -------------
     // miscEquips + miscDyes: 5 x (equip id/prefix, dye id/prefix)
     // (`:55420-55447`, gates 117/136 both true here).
@@ -436,6 +448,8 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
+            current_loadout_index,
+            loadouts,
         ));
     }
     // --- S1-J-5 increment 2: buffs through hideInfo (`:55578-55623`) ------
@@ -495,6 +509,8 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
+            current_loadout_index,
+            loadouts,
         ));
     }
     // --- S1-J-5 increment 3: the Deserialize tail (`:55624-55762`) --------
@@ -594,18 +610,42 @@ fn read_player_fields(
         // CurrentLoadoutIndex + the three loadouts (`:55720-55727`);
         // EquipmentLoadout.Deserialize (`EquipmentLoadout.cs:47-61`):
         // 20 armor + 10 dye x (type, stack, prefix[, favorited >= 322])
-        // then Hide[10] bools.
-        r.i32().ok_or(PlayerFileError::Truncated("loadoutIdx"))?;
-        for _ in 0..3 {
-            for _ in 0..30 {
-                read_item_triple(r, "loadoutItem")?;
-                if version >= 322 {
+        // then Hide[10] bools. The index clamps to 0..2 (`Utils.Clamp`,
+        // `:55722`); a type at/above ItemID.Count turns the slot to air
+        // (`Item.DeserializeFrom:49930-49933`).
+        let idx = r.i32().ok_or(PlayerFileError::Truncated("loadoutIdx"))?;
+        current_loadout_index = idx.clamp(0, 2) as usize;
+        for loadout in loadouts.iter_mut() {
+            for slot in 0..30 {
+                let id = r.i32().ok_or(PlayerFileError::Truncated("loadoutItem"))?;
+                let stack = r.i32().ok_or(PlayerFileError::Truncated("loadoutStack"))?;
+                let prefix = r.u8().ok_or(PlayerFileError::Truncated("loadoutPrefix"))?;
+                let favorited = if version >= 322 {
                     r.boolean()
-                        .ok_or(PlayerFileError::Truncated("loadoutFav"))?;
+                        .ok_or(PlayerFileError::Truncated("loadoutFav"))?
+                } else {
+                    false
+                };
+                let item = if id <= 0 || id >= ITEM_ID_COUNT || stack <= 0 {
+                    crate::item::EMPTY_SLOT
+                } else {
+                    crate::item::ItemSlot {
+                        kind: id as u16,
+                        name: crate::registry::name(id as u16),
+                        count: stack as u32,
+                        prefix: prefix as u16,
+                    }
+                };
+                if slot < crate::inv::ARMOR {
+                    loadout.armor[slot] = item;
+                } else {
+                    loadout.dye[slot - crate::inv::ARMOR] = item;
                 }
+                loadout.set_shared(slot, favorited);
             }
-            for _ in 0..10 {
-                r.boolean()
+            for hide in loadout.hide.iter_mut() {
+                *hide = r
+                    .boolean()
                     .ok_or(PlayerFileError::Truncated("loadoutHide"))?;
             }
         }
@@ -647,6 +687,8 @@ fn read_player_fields(
         inv_favorites,
         is_favorite,
         revision,
+        current_loadout_index,
+        loadouts,
     ))
 }
 
@@ -667,6 +709,8 @@ fn finish_player_file(
     inv_favorites: u64,
     is_favorite: bool,
     revision: u32,
+    current_loadout_index: usize,
+    loadouts: [crate::loadout::EquipmentLoadout; 3],
 ) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
     PlayerFile {
@@ -689,6 +733,8 @@ fn finish_player_file(
         inv_favorites,
         is_favorite,
         revision,
+        current_loadout_index,
+        loadouts,
     }
 }
 
@@ -784,6 +830,9 @@ fn read_legacy_port_subset(
         inv_favorites,
         is_favorite,
         revision,
+        // The 279 subset predates loadouts (release 262) — three fresh sets.
+        current_loadout_index: 0,
+        loadouts: Default::default(),
     })
 }
 
@@ -816,6 +865,14 @@ pub struct PlayerFileWrite {
     /// the golden-fixture test pins the harness's `FixtureClock` value
     /// (2026-11-18T00:00:00Z, kind Utc → kind bits 01, no offset).
     pub last_saved_binary: i64,
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`, `Serialize:54919`).
+    /// The caller passes the live index; a fresh character is 0.
+    pub current_loadout_index: usize,
+    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`, `Serialize:54920-54923`):
+    /// the three stored equipment sets, each `EquipmentLoadout.Serialize`
+    /// (`EquipmentLoadout.cs:31-45`). A fresh character carries three empty
+    /// sets — the 310-zero-byte block the golden fixture pins.
+    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
 }
 
 /// The `SavePlayer` mirror (`Player.cs:54736-54742`): release 326, the
@@ -1018,21 +1075,23 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // (`Player.cs:2052`, default false), bit1 enabledSuperCart
     // (`Player.cs:2054`, default **true**) → 0b10 = 2.
     w.u8(2);
-    w.i32(0); // `:54919` CurrentLoadoutIndex (`Player.cs:3207`, default 0)
-              // `:54920-54923` Loadouts[3].Serialize (`Player.cs:3200-3204`;
-              // `EquipmentLoadout.cs:31-45`): Armor[20] + Dye[10] each
-              // Item.Serialize(writeFavorite: true) = (type, stack, prefix, favorited)
-              // — fresh `Item()`s are (0, 0, 0, false) (`EquipmentLoadout.cs:14-19`) —
-              // then Hide[10] bools, all false.
-    for _ in 0..3 {
-        for _ in 0..30 {
-            w.i32(0);
-            w.i32(0);
-            w.u8(0);
-            w.boolean(false);
+    // `:54919` CurrentLoadoutIndex (`Player.cs:3207`); `:54920-54923`
+    // Loadouts[3].Serialize (`Player.cs:3200-3204`; `EquipmentLoadout.cs:31-45`):
+    // Armor[20] + Dye[10] each Item.Serialize(writeFavorite: true) =
+    // (type, stack, prefix, favorited) — a fresh `Item()` is (0, 0, 0, false)
+    // (`EquipmentLoadout.cs:14-19`) — then Hide[10] bools. The live sets ride
+    // the caller's carrier; three empty sets reproduce the golden 310-zero block.
+    w.i32(file.current_loadout_index as i32);
+    for loadout in &file.loadouts {
+        for slot in 0..30 {
+            let item = loadout.item_at(slot);
+            w.i32(item.kind as i32);
+            w.i32(item.count as i32);
+            w.u8(item.prefix.min(u8::MAX as u16) as u8);
+            w.boolean(loadout.is_shared(slot));
         }
-        for _ in 0..10 {
-            w.boolean(false);
+        for hide in loadout.hide {
+            w.boolean(hide);
         }
     }
     w.u8(1); // `:54924` (byte)voiceVariant — the ctor sets 1 (`Player.cs:56045`)
@@ -1148,6 +1207,8 @@ mod tests {
             inventory,
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
             last_saved_binary: 0,
+            current_loadout_index: 0,
+            loadouts: Default::default(),
         }
     }
 
@@ -1454,6 +1515,10 @@ mod tests {
             // 2026-11-18T00:00:00Z, DateTimeKind.Utc → kind bits 01, no
             // offset: ticks 639305568000000000 | 0x4000000000000000.
             last_saved_binary: 0x48DF_4506_E391_C000,
+            // The harness's player is on loadout 0 with three empty sets —
+            // the golden fixture's 310-zero-byte loadout block.
+            current_loadout_index: 0,
+            loadouts: Default::default(),
         };
         let plain = serialize_plaintext(&file);
         let fixture_raw = include_bytes!("../../../assets/test/golden.plr");
@@ -1695,5 +1760,69 @@ mod tests {
             b'h', 0, b'3', 0, b'y', 0, b'_', 0, b'g', 0, b'U', 0, b'y', 0, b'Z', 0,
         ];
         assert_eq!(ENCRYPTION_KEY, expected);
+    }
+
+    /// W4-g55 — the three loadouts + the index round-trip through the
+    /// release-326 `Serialize`/`Deserialize` (`Player.cs:54919-54923` /
+    /// `:55720-55727`, `EquipmentLoadout.cs:31-61`): a stored armor piece, a
+    /// dye, a share flag and a hide flag all survive, and the index clamps.
+    #[test]
+    fn w4_g55_the_loadouts_round_trip_through_the_plr() {
+        let mut file = sample();
+        file.current_loadout_index = 2;
+        // Loadout 1 stores an Iron Helmet (armor 0) + Red Dye (dye 0), shares
+        // the head (bit 0) and hides accessory 3.
+        file.loadouts[1].armor[0] = crate::item::ItemSlot {
+            kind: 90,
+            name: crate::registry::name(90),
+            count: 1,
+            prefix: 0,
+        };
+        file.loadouts[1].dye[0] = crate::item::ItemSlot {
+            kind: 1007,
+            name: crate::registry::name(1007),
+            count: 1,
+            prefix: 0,
+        };
+        file.loadouts[1].set_shared(0, true);
+        file.loadouts[1].hide[3] = true;
+        let bytes = write_player_bytes(&file);
+        let read = read_player_bytes(&cbc_decrypt(&bytes)).unwrap();
+        assert_eq!(read.current_loadout_index, 2);
+        assert_eq!(read.loadouts[1].armor[0].kind, 90);
+        assert_eq!(read.loadouts[1].dye[0].kind, 1007);
+        assert!(read.loadouts[1].is_shared(0), "the head share flag survived");
+        assert!(!read.loadouts[1].is_shared(20), "the dye share stayed off");
+        assert!(read.loadouts[1].hide[3]);
+        assert!(!read.loadouts[1].hide[4]);
+        // The other two sets stay empty.
+        assert_eq!(read.loadouts[0], crate::loadout::EquipmentLoadout::default());
+        assert_eq!(read.loadouts[2], crate::loadout::EquipmentLoadout::default());
+    }
+
+    /// W4-g55 — `Deserialize:55722` clamps the index to `0..Loadouts.Length-1`;
+    /// an out-of-range stored index reads back clamped, not raw.
+    #[test]
+    fn w4_g55_the_loadout_index_clamps_on_read() {
+        let mut file = sample();
+        file.current_loadout_index = 7; // out of range — the writer stores it raw
+        let bytes = write_player_bytes(&file);
+        let read = read_player_bytes(&cbc_decrypt(&bytes)).unwrap();
+        assert_eq!(read.current_loadout_index, 2, "Utils.Clamp(.., 0, 2)");
+    }
+
+    /// W4-g55 — a fresh character's loadout block is the golden 310-zero-byte
+    /// shape: three empty sets, index 0 (`EquipmentLoadout.cs:14-19`). The
+    /// full-file byte parity with the C# fixture is pinned by
+    /// `golden_plr_writer_matches_the_csharp_fixture_byte_for_byte`.
+    #[test]
+    fn w4_g55_a_fresh_character_loadout_block_is_all_zero() {
+        let plain = serialize_plaintext(&sample());
+        // The loadout index sits 4 bytes before the 930-byte loadout block,
+        // which ends 13 bytes before the plaintext end (voice 1 + pitch 4 +
+        // refunds 4 + dialogues 4 = 13).
+        let block_start = plain.len() - 13 - 930;
+        assert_eq!(&plain[block_start - 4..block_start], &[0, 0, 0, 0]);
+        assert_eq!(&plain[block_start..block_start + 930], &[0u8; 930][..]);
     }
 }

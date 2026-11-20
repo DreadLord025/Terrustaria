@@ -267,6 +267,10 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the port tracks
         // no save clock; 0 is the documented "unknown" stamp (ANALYSIS).
         last_saved_binary: 0,
+        // A freshly-created character is on loadout 0 with three empty sets
+        // (`Player.cs:3200-3207`).
+        current_loadout_index: 0,
+        loadouts: Default::default(),
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

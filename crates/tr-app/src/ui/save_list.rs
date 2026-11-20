@@ -661,6 +661,8 @@ mod tests {
             inventory,
             inv_favorites: 0,
             last_saved_binary: 0,
+            current_loadout_index: 0,
+            loadouts: Default::default(),
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
         std::fs::write(dir.join("junk.plr"), b"garbage").unwrap();
@@ -726,6 +728,8 @@ mod tests {
             inventory,
             inv_favorites: 0,
             last_saved_binary: 0,
+            current_loadout_index: 0,
+            loadouts: Default::default(),
         };
         crate::player_file::write_player_file(path, &file).unwrap();
     }
@@ -993,6 +997,8 @@ mod tests {
                 // Slots 0 and 4 starred — the BUG-03 half of the card.
                 inv_favorites: 1 << 0 | 1 << 4,
                 last_saved_binary: 0,
+                current_loadout_index: 0,
+                loadouts: Default::default(),
             },
         )
         .unwrap();

@@ -264,9 +264,18 @@ impl App {
                     .pairs()
                     .map(|(id, count)| (id.to_string(), count))
                     .collect();
-                if let Err(e) =
-                    persist::save(&self.world_path, p, inv, self.coins, armor, &dye, &kills)
-                {
+                if let Err(e) = persist::save(
+                    &self.world_path,
+                    p,
+                    inv,
+                    self.coins,
+                    armor,
+                    &dye,
+                    &kills,
+                    // The live equip set's share flags ride the v7 loadout
+                    // block (`Player.cs:3200-3207`).
+                    self.equip_share_flags,
+                ) {
                     log::warn!("player save failed: {e}");
                 }
             }
@@ -1484,7 +1493,7 @@ mod chest_save_tests {
         let player = Player::spawn(&chest_rig());
         let inv: [(u16, u32); 50] = std::array::from_fn(|_| (0, 0));
         let kills = vec![("Pinky".to_string(), 4), ("BlueSlime".to_string(), 25)];
-        persist::save(&path, &player, inv, 0, [0, 0, 0], &[0; 10], &kills)
+        persist::save(&path, &player, inv, 0, [0, 0, 0], &[0; 10], &kills, 0)
             .expect("the sidecar writes");
 
         let (world, sections) = crate::app::load_world(&path).expect("the v8 world reloads");

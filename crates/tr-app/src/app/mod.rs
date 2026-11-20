@@ -2918,6 +2918,9 @@ impl App {
         let mut armor_kinds = [0u16; 3];
         // `Player.dye[0..10]`'s item kinds (sidecar v6), same restore path.
         let mut dye_kinds = [0u16; 10];
+        // The live equip set's share word (sidecar v7); older sidecars load 0.
+        // The stored sets + index ride the Player directly in the restore below.
+        let mut loaded_share_flags = 0u32;
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
             0 => ItemSlot {
                 kind: 2, // ItemID.DirtBlock
@@ -2989,6 +2992,11 @@ impl App {
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;
+                    // The loadout block (sidecar v7): the stored sets + index
+                    // ride the Player; the live share word rides the App.
+                    p.loadouts = saved.loadouts;
+                    p.current_loadout_index = saved.current_loadout_index;
+                    loaded_share_flags = saved.equip_share_flags;
                     for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                         inventory[i] = ItemSlot {
                             kind: *kind,
@@ -3743,7 +3751,7 @@ impl App {
             // the per-frame `SelectEquipPage` resolution below.
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             dye_swap_counter: 0,
-            equip_share_flags: 0,
+            equip_share_flags: loaded_share_flags,
             loadout_change_time: f32::NEG_INFINITY,
             loadout_mouse_over: -1,
             selected: 0,
