@@ -269,6 +269,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_32", 2),
     ("Item_34", 2),
     ("Item_36", 2),
+    // S1-P-i45: the reforge's non-top-tier cue (`SoundID.Item37`,
+    // `Main.cs:41931`; `Sounds/Item_37.xnb`).
+    ("Item_37", 2),
     ("Item_38", 2),
     ("Item_39", 2),
     ("Item_40", 2),
@@ -487,6 +490,9 @@ const TRACKED_CUES: &[&str] = &[
 /// variation (`_0`) of the multi-variation families — the variation pick
 /// rides `LegacySoundStyle.Random` in the C#, an audio-only stream.
 pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
+    // S1-P-i45: the reforge's top-tier cue (`SoundID.BestReforge`,
+    // `Main.cs:41909`; `Sounds/Custom/best_reforge.xnb`, one variation).
+    "best_reforge",
     "dd2_defense_tower_spawn",
     "dd2_betsy_fireball_shot_0",
     "dd2_book_staff_cast_0",
@@ -1808,6 +1814,33 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit(cue, -1.0, -1.0, tweak, pitch.clamp(-1.0, 1.0));
         Some(cue)
+    }
+
+    /// S1-P-i43 — the chest eat-animation chime (`Chest.UpdateChestFrames`,
+    /// `Chest.cs:3628-3631`: `PlaySound(7, new Vector2(chest.x * 16 + 16,
+    /// chest.y * 16 + 16))` at `eatingAnimationTime == 9 && frame == 1`) —
+    /// POSITIONED case 7: the attenuation gate first, then the same
+    /// `Next(-10, 11) * 0.01` pitch draw as [`Audio::play_pickup_sound`].
+    /// The `Main.cs:17810` call site sits outside every SwapRandom block, so
+    /// the caller passes the bare-`Main.rand` stand-in (`rngs.global()`, the
+    /// Lead's faithful-cue decision). Dormant until the eat timer's producer
+    /// (`AskForChestToEatItem`) lands. Returns the cue played; `None` when
+    /// the gate refused (no draw spent).
+    pub fn play_chest_eat_sound(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The attenuation gate first (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(7, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let pitch =
+            sound::legacy_family_pitch(sound::Family::Grab, &mut |lo, hi| rng.next_range(lo, hi));
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("Grab", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        Some("Grab")
     }
 
     /// S1-E-21f — the revenge pickup's coin ping (`NPC.moneyPing`,
@@ -4317,6 +4350,36 @@ mod tests {
             assert_eq!(audio.play_pickup_sound(coin, &mut rng), None);
             assert_eq!(rng.peek(), peek);
         }
+    }
+
+    /// S1-P-i43 — the chest eat-animation chime (`Chest.cs:3628-3631`,
+    /// `PlaySound(7, chest centre)`): POSITIONED case 7 — one
+    /// `Next(-10, 11)` pitch draw on the caller's bare stream when the
+    /// attenuation passes, none when it refuses (the Lead's faithful-cue
+    /// decision applied to the lid animator's dormant chime).
+    #[test]
+    fn s1_p_i43_the_chest_eat_chime_draws_one_case7_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // In range (the listener sits at the origin): one draw.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(audio.play_chest_eat_sound(16.0, 16.0, &mut rng), Some("Grab"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Out of range: the gate refuses, no draw.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_chest_eat_sound(5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the out-of-range chime is draw-free");
+        // Muted: draw-free too.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_chest_eat_sound(16.0, 16.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
     }
 }
 

@@ -15,9 +15,11 @@
 //!
 //! Deviations (also in ANALYSIS): `aggro` has no port field (no
 //! multiplayer aggro consumer — same precedent as the Scout Sling row
-//! in `player.rs`), and `autoReuseGlove`/`meleeScaleGlove` have no port
-//! fields or consumers yet (the Titan Glove row, `player.rs`), so those
-//! halves are documented and skipped. No RNG rides these arms.
+//! in `player.rs`), and `meleeScaleGlove` has no port field or consumer
+//! yet, so that half is documented and skipped. `autoReuseGlove` IS
+//! ported (S1-P-i12): the gloves grant it and `TryAllowingItemReuse`
+//! (`Player.cs:52905-52920`) reads it in the use path. No RNG rides
+//! these arms.
 
 use crate::player::Player;
 
@@ -83,11 +85,12 @@ fn putrid_scent(p: &mut Player) {
 fn flesh_knuckles(_p: &mut Player) {}
 
 /// The Power Glove (`Player.cs:15299-15305`): `kbGlove = true`,
-/// `autoReuseGlove = true`, `meleeScaleGlove = true` (the two glove
-/// flags have no port fields/consumers yet — skipped), `meleeSpeed +=
-/// 0.12f`.
+/// `autoReuseGlove = true` (the reuse gate `TryAllowingItemReuse`,
+/// `:52905-52920`), `meleeScaleGlove = true` (no port consumer yet —
+/// skipped), `meleeSpeed += 0.12f`.
 fn power_glove(p: &mut Player) {
     p.kb_glove = true;
+    p.auto_reuse_glove = true;
     p.melee_speed_bonus += 0.12;
 }
 
@@ -95,6 +98,7 @@ fn power_glove(p: &mut Player) {
 /// rows plus `meleeDamage += 0.12f`.
 fn mechanical_glove(p: &mut Player) {
     p.kb_glove = true;
+    p.auto_reuse_glove = true;
     p.melee_speed_bonus += 0.12;
     p.melee_damage += 0.12;
 }
@@ -107,6 +111,7 @@ fn mechanical_glove(p: &mut Player) {
 /// of the switch arm removed it (S1-C-12e dedupe).
 fn berserker_glove(p: &mut Player) {
     p.kb_glove = true;
+    p.auto_reuse_glove = true;
     p.melee_speed_bonus += 0.12;
 }
 
@@ -117,6 +122,7 @@ fn berserker_glove(p: &mut Player) {
 /// port fields yet — skipped like the Mechanical Glove's arm.
 fn fire_gauntlet(p: &mut Player) {
     p.kb_glove = true;
+    p.auto_reuse_glove = true;
     p.melee_speed_bonus += 0.12;
     p.melee_damage += 0.12;
     p.magma_stone = true;

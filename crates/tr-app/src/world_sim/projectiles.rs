@@ -206,7 +206,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 center: Some((cx, cy)),
                 player_vel: (p.vx, p.vy),
                 player_dir: p.facing,
-                melee_speed: p.melee_speed(),
+                // `player.meleeSpeed` as the flail reads it — the inverted,
+                // held-item-scaled multiplier (`Player.cs:25912` +
+                // `CapAttackSpeeds` `:29021-29039`), keyed on the owner's
+                // selected item exactly like `BonusMeleeSpeedMultiplier
+                // [inventory[selectedItem].type]`.
+                melee_speed: p.melee_speed(app.inventory[app.selected].kind),
                 local_owner: app.local_id as u8,
                 selected_shoot,
             }

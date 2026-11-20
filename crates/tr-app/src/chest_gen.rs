@@ -1102,6 +1102,7 @@ pub(crate) fn store_from_records(
             // implicit-air store still reads back through the 40-slot window.
             name: rec.name.clone(),
             max_items: rec.slots.len().max(crate::chest::DEFAULT_MAX_ITEMS as usize),
+            ..Default::default()
         });
     }
     out
@@ -1312,6 +1313,7 @@ mod tests {
             }],
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }];
         let mut rng = tr_core::UnifiedRandom::new(0x5EED);
         improve_all_chest_contents(&mut chests, &mut rng);
@@ -1332,6 +1334,7 @@ mod tests {
             }],
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }];
         let mut rng2 = tr_core::UnifiedRandom::new(0x5EED);
         improve_all_chest_contents(&mut again, &mut rng2);
@@ -1400,6 +1403,7 @@ mod tests {
             }],
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }
     }
 
@@ -1415,6 +1419,7 @@ mod tests {
             }],
             name: name.into(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }
     }
 

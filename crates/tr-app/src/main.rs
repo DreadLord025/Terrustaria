@@ -4,6 +4,7 @@
 mod accessory_defense;
 mod ammo;
 mod bow_launch;
+mod gun_launch;
 mod angler;
 mod armor_sets;
 mod app;
@@ -165,12 +166,14 @@ mod gore_seam;
 mod creative;
 mod creative_sacrifices;
 mod happiness;
+mod hotbar;
 mod hurt_modifiers;
 // S1-P-i10: the melee on-hit debuff infliction (Player.StatusToNPC,
 // Player.cs:6502-6617) — wired at world_sim/editing.rs's pre-strike site.
 mod melee_on_hit;
 mod player;
 mod player_file;
+mod potions;
 mod prefix;
 pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;

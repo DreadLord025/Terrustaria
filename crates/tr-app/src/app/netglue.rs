@@ -537,16 +537,35 @@ impl App {
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
                 // C# `SyncItem`→`151` path — `WorldItem.cs:612-615`). The host
-                // validates the range, removes the slot and announces the
+                // validates the range as `GrabItems`' expanded grab rectangle
+                // (`Player.cs:34926`, S1-P-i47 — the same gate the client
+                // requested through), removes the slot and announces the
                 // removal as `151`; the indices shift, and the next cadence
                 // tick's `21` diff streams the shifted slots.
-                let center = self
+                let pos = self
                     .remote_players
                     .get(&id)
-                    .map(|p| Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5));
-                if let Some(center) = center {
-                    if let Some(c) = self.items.get(drop as usize).map(|it| it.center()) {
-                        if (c - center).length() < 60.0 {
+                    .map(|p| (p.x, p.y));
+                if let Some((px, py)) = pos {
+                    if let Some(it) = self.items.get(drop as usize) {
+                        // The host re-checks the grab gate (`Player.cs:34911`,
+                        // S1-P-i51): a delayed drop refuses the pickup even
+                        // inside the grab rectangle (the S1-P-i47 shape).
+                        let delayed = it.grab_delay_time > 0
+                            && (it.grab_delay_player == id as u8
+                                || it.grab_delay_player == 255);
+                        let range = crate::item::get_item_grab_range(
+                            it.kind,
+                            crate::item::GrabFlags::default(),
+                        ) as f32;
+                        if !delayed && crate::item::grab_rect_intersects(
+                            px,
+                            py,
+                            player::WIDTH,
+                            player::HEIGHT,
+                            range,
+                            it.pos,
+                        ) {
                             self.items.remove(drop as usize);
                             server.broadcast(&S2c::ItemDead { slot: drop as i16 });
                         }
@@ -633,21 +652,34 @@ impl App {
             }
             // `case 33` — the open chest / its rename (`MessageBuffer.cs:1920-1982`).
             C2s::PlayerChest(pc) => {
-                if pc.name_len != 0 && pc.name_len != 255 {
-                    // `:1974-1977` — the rename: rewrite the chest and relay
-                    // `69` to the others.
-                    if let Some(chest) = self.world_chests.get_mut(pc.chest.max(0) as usize) {
-                        chest.name = pc.name.clone();
-                        let (tx, ty) = chest.tile;
-                        server.broadcast_except(
-                            &S2c::ChestName(net::ChestName {
-                                chest: pc.chest,
-                                x: tx as i16,
-                                y: ty as i16,
-                                name: pc.name.clone(),
-                            }),
-                            id,
-                        );
+                if pc.name_len != 0 {
+                    // `:1972-1977` — the rename: the target is the SENDER's
+                    // tracked open chest (`Main.player[whoAmI].chest`,
+                    // `:1974`), not the message's index — a close-transition
+                    // flush carries -1 while the name belongs to the chest
+                    // the player just closed (S1-P-i43). The 255 refusal
+                    // byte still APPLIES (the C# reader keeps `name = ""`
+                    // for it, `:1926-1936` — the default-name reset rides
+                    // this arm). Rewrite + relay `69` to the others.
+                    let tracked = self
+                        .remote_players
+                        .get(&id)
+                        .and_then(|p| p.chest)
+                        .unwrap_or(pc.chest);
+                    if tracked >= 0 {
+                        if let Some(chest) = self.world_chests.get_mut(tracked as usize) {
+                            chest.name = pc.name.clone();
+                            let (tx, ty) = chest.tile;
+                            server.broadcast_except(
+                                &S2c::ChestName(net::ChestName {
+                                    chest: tracked,
+                                    x: tx as i16,
+                                    y: ty as i16,
+                                    name: pc.name.clone(),
+                                }),
+                                id,
+                            );
+                        }
                     }
                 }
                 self.remote_players
@@ -1068,10 +1100,11 @@ impl App {
         server.broadcast(&joined);
         // The join item burst (`MessageBuffer.cs:843-850`): one `21 ItemDrop`
         // + one `22 ItemOwner` per live slot, to the joining client only.
-        // The reservation rides the C# field defaults: 255 = unreserved
-        // (`WorldItem.cs:139`), the grab-delay ints default to 0
-        // (`WorldItem.cs:22-26`), so the `22` body is the zeroed `ItemOwner`
-        // plus the position (`NetMessage.cs:675-685`).
+        // The reservation rides the C# field default 255 = unreserved
+        // (`WorldItem.cs:139`); the grab-delay pair carries the drop's LIVE
+        // `grabDelayPlayer`/`grabDelayTime` (`NetMessage.cs:681-682`), not
+        // zeros — a player drop's 100-tick lock survives the join
+        // (S1-P-i51). The position closes the body (`:683`).
         for (i, it) in self.items.iter().enumerate() {
             let slot = i as i16;
             let st = Self::item_state_of(slot, it);
@@ -1082,8 +1115,8 @@ impl App {
                     slot,
                     reserved_for: 255,
                     hold: 0,
-                    grab_delay_player: 0,
-                    grab_delay: 0,
+                    grab_delay_player: it.grab_delay_player,
+                    grab_delay: it.grab_delay_time.max(0) as u32,
                     x: it.pos.x,
                     y: it.pos.y,
                 })),
@@ -1520,6 +1553,16 @@ impl App {
                     d.vy,
                     0.0,
                 );
+                // `MessageBuffer.cs:1519-1528` — the `21` handler writes
+                // type/prefix/stack/position/velocity/shimmer/enemyGrabDelay
+                // but NOT the grab-delay pair (that is `22`'s job,
+                // `:1558-1559`): a live cadence update must not wipe the
+                // join burst's 100-tick lock (S1-P-i51). The port rebuilds
+                // the record, so carry the pair over from the old one.
+                if let Some(old) = self.net_items.get(&(d.slot as i16)) {
+                    drop.grab_delay_player = old.grab_delay_player;
+                    drop.grab_delay_time = old.grab_delay_time;
+                }
                 drop.shimmered = d.shimmered;
                 drop.shimmer_time = d.shimmer_time;
                 drop.age = 60.0;
@@ -1538,6 +1581,15 @@ impl App {
                     self.net_reserved.remove(&o.slot);
                 } else {
                     self.net_reserved.insert(o.slot, (o.reserved_for, o.hold));
+                }
+                // `MessageBuffer.cs:1558-1559` — the client writes the
+                // grab-delay pair onto the drop (the player drop's 100-tick
+                // lock survives the join, S1-P-i51). The port keys the
+                // client's drops by the host slot in `net_items`.
+                if let Some(d) = self.net_items.get_mut(&o.slot) {
+                    d.grab_delay_player = o.grab_delay_player;
+                    d.grab_delay_time = o.grab_delay as i32;
+                    self.net_items_dirty = true;
                 }
             }
             // `case 5` — one peer inventory slot (`MessageBuffer.cs:399-462`):
@@ -4835,6 +4887,60 @@ mod message_family_tests {
         // `80` told the other players the asker's chest index; here the
         // host's own record (`:1886`).
         assert_eq!(host_app.remote_players.get(&1).map(|p| p.chest), Some(Some(0)));
+    }
+
+    /// S1-P-i43 — the `editedChestName` chain (`ChestUI.cs:855-859` →
+    /// `Player.cs:33097-33101`): a client's rename latches the flag, the
+    /// open-click flush sends `33` with the CURRENT chest index + the name
+    /// (`NetMessage.cs` case 33's `number2 == 1f` arm), the host rewrites its
+    /// own store and relays `69`. A no-change submit never latches.
+    #[test]
+    fn a_client_rename_flushes_through_the_33_name_arm() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // The chest exists on both sides (the world load carries it; here
+        // the fixture plants matching entries directly).
+        for app in [&mut host_app, &mut client_app] {
+            let mut chest = crate::chest::WorldChest {
+                tile: (3, 5),
+                max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
+            };
+            chest.slots.resize(crate::chest::DEFAULT_MAX_ITEMS as usize, crate::item::EMPTY_SLOT);
+            app.world_chests.push(chest);
+        }
+        // The client browses chest 0 (the shared open block's state).
+        crate::chest::toggle_open(&mut client_app, 3, 5, 0);
+        assert_eq!(client_app.player.as_ref().unwrap().chest, 0);
+        // The rename submit writes + latches (netMode 1).
+        assert_eq!(crate::chest::rename_submit(&mut client_app, "Booty"), 12);
+        assert!(client_app.player.as_ref().unwrap().edited_chest_name);
+        assert_eq!(crate::chest::chest_name(&client_app, 0), "Booty");
+        // An unchanged re-submit keeps the flag but does not re-latch a
+        // cleared one (the write-if-different guard).
+        client_app.player.as_mut().unwrap().edited_chest_name = false;
+        crate::chest::rename_submit(&mut client_app, "Booty");
+        assert!(!client_app.player.as_ref().unwrap().edited_chest_name);
+        // Re-latch, then the flush (the open click's `:33097` seam) sends
+        // the `33` name arm and clears the flag.
+        crate::chest::rename_submit(&mut client_app, "Treasure");
+        assert!(client_app.player.as_ref().unwrap().edited_chest_name);
+        crate::chest::flush_edited_chest_name(&mut client_app);
+        assert!(!client_app.player.as_ref().unwrap().edited_chest_name, "cleared on the send");
+        let mut renamed = false;
+        for _ in 0..60 {
+            host_app.poll_net();
+            client_app.poll_net();
+            renamed = host_app.world_chests.first().is_some_and(|c| c.name == "Treasure");
+            if renamed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(renamed, "the host's store took the 33 rename (:1974-1977)");
+        // A second flush is a no-op (the flag is clear).
+        crate::chest::flush_edited_chest_name(&mut client_app);
+        assert!(!client_app.player.as_ref().unwrap().edited_chest_name);
     }
 
     /// `case 59` — a client's switch trip replays on the host and relays to
