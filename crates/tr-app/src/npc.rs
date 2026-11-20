@@ -1086,6 +1086,32 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.Snail` (359, `NPCID.cs:11395`) — the wall-crawler critter
+    /// (`NPC.cs:13573-13586`): 12x12, aiStyle 67, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default — the row writes none), npcSlots 0.5,
+    /// noGravity, catchItem 2006. WIRED (W4-c9): the axis' 67 arm rides
+    /// `npc_ai_style67::snail_ai_step` — the 359-only scale roll
+    /// `Next(80,111)` + the integer-half `-2f` resize.
+    Snail,
+    /// `NPCID.GlowingSnail` (360, `NPCID.cs:11397`) — the blue-light
+    /// snail (`NPC.cs:13587-13600`): 14x14, the 359 stats, catchItem
+    /// 2007; the AI's `AddLight(Center, 0.1, 0.2, 0.7)` (`:34387`) rides
+    /// the draw-side `EntityLights` feed.
+    GlowingSnail,
+    /// `NPCID.MagmaSnail` (655, `NPCID.cs:11987`) — the orange-light,
+    /// lava-immune snail (`NPC.cs:17280-17294`): 14x14, the 359 stats +
+    /// lavaImmune, catchItem 4849; the AI's `AddLight(Center, 0.6, 0.3,
+    /// 0.1)` (`:34391`) rides the same feed.
+    MagmaSnail,
+    /// `NPCID.Shimmerfly` (677, `NPCID.cs:12031`) — the shimmer
+    /// transform target of all three snails (`NPCID.cs:10470`'s
+    /// `ShimmerTransformToNPC` rows, `GetShimmered` `NPC.cs:91561-91565`
+    /// → `Transform(677)` `:81084`). `NPC.cs:17579-17593`: 10x10,
+    /// aiStyle 64, dmg 0, def 0, 5 HP, npcSlots 0.2, noGravity +
+    /// noTileCollide, catchItem 5350. WIRED (W4-c9): the kind-gated 64
+    /// axis arm rides `npc_ai_style64::ai_064_step`'s 677 branches (the
+    /// solo self-view threat scan; the pooled firefly pass is W4-c7's).
+    Shimmerfly,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3529,6 +3555,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // The snail family + its shimmer target (W4-c9): the
+            // `SetDefaults` rows write no knockBackResist — the head's
+            // 1f (`NPC.cs:8533`) stands (the ForceBubble precedent).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail | NpcKind::Shimmerfly => 1.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3939,9 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // The snail family + its shimmer target (W4-c9): defense 0
+            // each (`NPC.cs:13579` / `:13593` / `:17286` / `:17585`).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail | NpcKind::Shimmerfly => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4314,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // The snail family + its shimmer target (W4-c9): the rows
+            // write no value — the head's 0f (`NPC.cs:8544`) stands.
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail | NpcKind::Shimmerfly => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6287,6 +6323,15 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // The snail family + its shimmer target (W4-c9): claimed by
+            // the aiStyle-67 axis (the snails) and the kind-gated 64 arm
+            // (the Shimmerfly) above — these arms keep the kind match
+            // exhaustive and route direct-kind callers to the same
+            // machines (the fishron precedent).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                self.ai_067_snail(world, player, rng)
+            }
+            NpcKind::Shimmerfly => self.ai_064_shimmerfly(world, player, rng),
         }
     }
 
@@ -18591,6 +18636,12 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // The snail family + its shimmer target (W4-c9): the vanilla
+            // ids — unused by every arm above (the G6 key stays injective).
+            NpcKind::Snail => 359,
+            NpcKind::GlowingSnail => 360,
+            NpcKind::MagmaSnail => 655,
+            NpcKind::Shimmerfly => 677,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band

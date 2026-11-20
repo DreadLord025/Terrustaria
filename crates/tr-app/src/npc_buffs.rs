@@ -484,6 +484,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // The snail family + its shimmer target (W4-c9): none of
+        // 359/360/655/677 has a `DebuffImmunitySets` row (`NPCID.cs:6075+`
+        // carries no entry for them) — the null-row else-branch.
+        NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail | NpcKind::Shimmerfly => &[],
     }
 }
 
