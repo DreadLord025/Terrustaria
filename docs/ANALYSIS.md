@@ -39282,8 +39282,9 @@ wiring wave. netMode: single-player (the `== 0` arm runs, `== 2` drops).
 ## The world gore sites (W4-g17, wave B)
 
 `world_gore_b.rs`: `WorldGen.CheckPot`'s gore switch
-(`WorldGen.cs:56878-56954`), styles 0-2 this commit — the 51/52/53,
-166/167/168, 169/170/171 rows. The fixed rows draw NOTHING but the
+(`WorldGen.cs:56878-56954`), styles 0-12 so far — the 51/52/53,
+166/167/168, 169/170/171, 172/173/174 rows + the 2-gore bands
+(4-6 → 197/198, 7-9 → 199/200, 10-12 → 201/202). The fixed rows draw NOTHING but the
 `NewGore` kicks; the spawn point is the TRIGGER cell `(i*16, j*16)`,
 not the pot's 2x2 origin. The style is `frameY / 36` (`:56810-56816`).
 The validation/KillTile/loot tail stay in the edit lane

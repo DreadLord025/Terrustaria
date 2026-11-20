@@ -4,17 +4,20 @@
 //! lane's `check_pot` → `PotEvent`, `tr_core::edit::kill`) is the
 //! wiring wave — the `npc_hit_effect_a.rs` (W4-d55) precedent.
 //!
-//! ## Scope — this commit's sites (source order)
+//! ## Scope — this wave's sites so far (source order)
 //!
 //! | # | C# site | arm |
 //! | --- | --- | --- |
 //! | 1-3 | `:56881`-`:56883` | style 0 — the clay pot 51/52/53 |
 //! | 4-6 | `:56886`-`:56888` | style 1 — 166/167/168 |
 //! | 7-9 | `:56891`-`:56893` | style 2 — 169/170/171 |
+//! | 10-12 | `:56896`-`:56898` | style 3 — 172/173/174 |
+//! | 13-14 | `:56903`-`:56904` | styles 4-6 — 197/198 |
+//! | 15-16 | `:56909`-`:56910` | styles 7-9 — 199/200 |
+//! | 17-18 | `:56914`-`:56915` | styles 10-12 — 201/202 |
 //!
-//! Style 3 (`:56896-56898`), the 2-gore rows (styles 4-15,
-//! `:56903-56920`) and the `genRand` rows (styles 25-36,
-//! `:56930-56950`) land in the follow-up commits of this wave.
+//! Styles 13-15 (`:56919-56920`) and the `genRand` rows (styles 25-36,
+//! `:56930-56950`) land in the follow-up commit of this wave.
 //! Styles 16-24 spawn NOTHING (`:56924-56927`'s break).
 //!
 //! ## RNG contract
@@ -49,10 +52,10 @@ use tr_core::gore::GorePool;
 use tr_core::{UnifiedRandom, World};
 
 /// `WorldGen.CheckPot`'s gore switch (`WorldGen.cs:56878-56954`),
-/// styles 0-2 (this commit): the three 3-gore rows. `style` is the
-/// pot's `frameY / 36` row (`:56810-56816`); `(i, j)` is the trigger
-/// cell — the C# spawns every gore at `(i*16, j*16)` with zero
-/// velocity and scale 1.
+/// styles 0-12 (this wave so far): the four 3-gore rows + the three
+/// 2-gore bands. `style` is the pot's `frameY / 36` row
+/// (`:56810-56816`); `(i, j)` is the trigger cell — the C# spawns
+/// every gore at `(i*16, j*16)` with zero velocity and scale 1.
 pub fn pot_break_gores(
     style: i32,
     i: i32,
@@ -62,11 +65,16 @@ pub fn pot_break_gores(
     world: &World,
 ) {
     let pos = Vec2::new((i * 16) as f32, (j * 16) as f32);
-    // `:56878-56894` — the fixed-type 3-gore rows.
+    // `:56878-56921` — the fixed-type rows (3-gore styles 0-3, then
+    // the 2-gore bands 4-6 / 7-9 / 10-12).
     let types: &[i32] = match style {
         0 => &[51, 52, 53],     // :56881-56883
         1 => &[166, 167, 168],  // :56886-56888
         2 => &[169, 170, 171],  // :56891-56893
+        3 => &[172, 173, 174],  // :56896-56898
+        4..=6 => &[197, 198],   // :56903-56904
+        7..=9 => &[199, 200],   // :56909-56910
+        10..=12 => &[201, 202], // :56914-56915
         _ => return,
     };
     for &ty in types {
@@ -82,7 +90,7 @@ mod tests {
         World::new("t".into(), 200, 200)
     }
 
-    /// `WorldGen.cs:56881-56893` — the three 3-gore rows, the types in
+    /// `WorldGen.cs:56881-56898` — the four 3-gore rows, the types in
     /// source order, every gore at the trigger cell's top-left.
     #[test]
     fn w4_g17_the_pot_rows_match_the_csharp() {
@@ -90,6 +98,7 @@ mod tests {
             (0, [51, 52, 53]),
             (1, [166, 167, 168]),
             (2, [169, 170, 171]),
+            (3, [172, 173, 174]),
         ];
         for (style, types) in rows {
             let w = air();
@@ -121,12 +130,33 @@ mod tests {
         assert_eq!(rand.peek(), twin.peek(), "kicks only");
     }
 
-    /// Styles without a row (this commit: 3+, incl. the 16-24 no-gore
-    /// band) spawn nothing and draw nothing.
+    /// `WorldGen.cs:56900-56916` — the 2-gore bands: styles 4-6 share
+    /// 197/198, 7-9 share 199/200, 10-12 share 201/202 (the C# range
+    /// guards, not per-style rows).
+    #[test]
+    fn w4_g17_the_pot_two_gore_bands_match_the_csharp() {
+        let bands = [
+            (4, [197, 198]), (5, [197, 198]), (6, [197, 198]),
+            (7, [199, 200]), (8, [199, 200]), (9, [199, 200]),
+            (10, [201, 202]), (11, [201, 202]), (12, [201, 202]),
+        ];
+        for (style, types) in bands {
+            let w = air();
+            let mut gore = GorePool::new();
+            let mut rand = UnifiedRandom::new(6);
+            pot_break_gores(style, 3, 4, &mut gore, &mut rand, &w);
+            let got: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(got, types.to_vec(), "style {style}");
+            assert!(!gore.slot(2).active, "style {style} spawns exactly two");
+        }
+    }
+
+    /// Styles without a row (this wave so far: 13+, incl. the 16-24
+    /// no-gore band) spawn nothing and draw nothing.
     #[test]
     fn w4_g17_the_unported_styles_spawn_nothing() {
         let w = air();
-        for style in [3, 4, 7, 16, 24, 25, 34, 99, -1] {
+        for style in [13, 15, 16, 24, 25, 34, 99, -1] {
             let mut gore = GorePool::new();
             let mut rand = UnifiedRandom::new(8);
             pot_break_gores(style, 7, 9, &mut gore, &mut rand, &w);
