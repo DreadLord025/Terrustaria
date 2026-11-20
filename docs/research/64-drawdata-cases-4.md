@@ -411,6 +411,106 @@ Audit notes (R3):
   arithmetic).
 - No second-switch glow rows exist for any R3 id.
 
+### R4 — candelabra stride, oasis/sea-oats biome rows, wind trio, candles, plants: 652, 100, 530, 705, 485, 489, 490, 33, 49, 174, 372, 646, 529, 3, 24 (15 ids, indices 45-59)
+
+C# `TileDrawing.cs:4694-4863`. Verbatim key bodies:
+
+```csharp
+		case 100:
+		{
+			tileTop = 2;
+			int num41 = tileFrameY / 2016;
+			addFrY -= 2016 * num41;
+			addFrX += 72 * num41;
+			break;
+		}
+```
+
+```csharp
+		case 530:
+		{
+			int num35 = y - tileFrameY % 36 / 18 + 2;
+			int num36 = x - tileFrameX % 54 / 18;
+			WorldGen.GetBiomeInfluence(num36, num36 + 3, num35, num35, out var corruptCount2, out var crimsonCount2, out var hallowedCount2);
+			int num37 = corruptCount2;
+			if (num37 < crimsonCount2)
+			{
+				num37 = crimsonCount2;
+			}
+			if (num37 < hallowedCount2)
+			{
+				num37 = hallowedCount2;
+			}
+			int num38 = 0;
+			addFrY += 36 * ((corruptCount2 != 0 || crimsonCount2 != 0 || hallowedCount2 != 0) ? ((hallowedCount2 == num37) ? 1 : ((crimsonCount2 != num37) ? 3 : 2)) : 0);
+			tileTop = 2;
+			break;
+		}
+```
+
+```csharp
+		case 529:
+		{
+			int num28 = y + 1;
+			WorldGen.GetBiomeInfluence(x, x, num28, num28, out var corruptCount, out var crimsonCount, out var hallowedCount);
+			int num29 = corruptCount;
+			if (num29 < crimsonCount)
+			{
+				num29 = crimsonCount;
+			}
+			if (num29 < hallowedCount)
+			{
+				num29 = hallowedCount;
+			}
+			int num30 = 0;
+			addFrY += 34 * ((corruptCount == 0 && crimsonCount == 0 && hallowedCount == 0) ? ((x < WorldGen.beachDistance || x > Main.maxTilesX - WorldGen.beachDistance) ? 1 : 0) : ((hallowedCount == num29) ? 2 : ((crimsonCount != num29) ? 4 : 3))) - tileFrameY;
+			tileHeight = 32;
+			tileTop = -14;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		}
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 652 | `tileTop = 2;` (top-2 group tail, R3's body) | :4694-4696 | `drawdata.rs:256-258` | PORTED |
+| 100 | top 2; `num41 = fy / 2016; addFrY -= 2016*num41; addFrX += 72*num41;` | :4697-4704 | :261-266 — `add_fr_y = tile_frame*38 - 2016*n41` folds the `-=` onto the prologue default; `add_fr_x = 72*n41` (default 0) | PORTED |
+| 530 | biome band under the anchor, `addFrY += 36 * pick`, top 2 | :4705-4722 | static top 2 :270-272; `cases_a.rs::oasis_plants_add_fr_y` :207-230 + `apply_cases_a` :644-648 (`wrapping_add`) | PORTED (delegated, wired :731) |
+| 705 | `tileTop = 2;` (OasisPlantsEcho) | :4724-4726 | :274-276 | PORTED |
+| 485 | top 2; `addFrY = (tileFrameCounter/5 + (y - fy/18 + (x - fx/18))) % 4 * 36` | :4727-4730 | static top 2 :280-282; `cases_b.rs:171-174` verbatim | PORTED (delegated, wired :700) |
+| 489 | top 2; wind-gated `(counter/5 + (n32+n33)) % 16 * 54`, probe `(x - fx/18, y - fy/18, 2, 3)` | :4731-4741 | static :286-288; `cases_b.rs:178-185` — outside wind keeps the `tile_frame*38` base, matching | PORTED (delegated, wired) |
+| 490 | top 2; the two bob tables + `%12*36` wrap | :4742-4818 | static :293-295; `cases_b.rs:189-242` — both 8-arm tables value-for-value (strong :4752-4778, calm :4782-4808), `n12<0 → +12`, `%12*36` | PORTED (delegated, wired) |
+| 33 | `tileHeight = 20; tileTop = -4;` (candles) | :4819-4826 | `drawdata.rs:298-301` (`33 \| 49 \| 174 \| 372 \| 646`) | PORTED |
+| 49 | shares the candle arm | :4820 | :298 | PORTED |
+| 174 | shares | :4821 | :298 | PORTED |
+| 372 | shares | :4822 | :298 | PORTED |
+| 646 | shares | :4823 | :298 | PORTED |
+| 529 | 32 tall, top −14, parity flip + the biome/beach `34*pick - fy` rewrite | :4827-4849 | static :306-310; `cases_a.rs::sea_oats_add_fr_y` :238-262 + :649-655 (beach 380) | PORTED (delegated, wired) |
+| 3 | `tileHeight = 20;` + parity flip (plants) | :4850-4863 | `drawdata.rs:313-316` (`3 \| 24 \| 61 \| 71 \| 110 \| 201 \| 637 \| 703`) | PORTED |
+| 24 | shares the plant arm | :4851 | :313 | PORTED |
+
+Audit notes (R4):
+- `biome_influence` (`cases_a.rs:182-200`) is `WorldGen.GetBiomeInfluence`
+  (`WorldGen.cs:47750-47777`) verbatim: inclusive rect, null cells skipped,
+  three independent set tests (a tile can count in more than one set).
+  `beachDistance = 380` pinned (`WorldGen.cs:86914`); `Main.maxTilesX` ↔
+  `world.width`. The 530 tie order (hallow → crimson → corrupt) and the 529
+  beach-band pick are the exact nested-ternary shapes; the dead C# locals
+  `num38`/`num30` (`= 0`, never read) have no port counterpart — no behaviour.
+- 490's `Main.WindForVisuals` is `Main.windSpeedCurrent` (`Main.cs:2823`
+  expression-bodied property) — the port reads `wind.speed_current`, matching.
+  A bobframe outside 0..=7 leaves `num13 = 0` in C# (no default arm); the
+  port's `_ => 0` is that same value. The animator's bobframe bump
+  (`Main.cs:19325`, `++weatherVaneBobframe == 8` reset) is the S1-G-1f lane.
+- 485/489/490's static arms keep only `top = 2`; the full bodies run in
+  `cases_b` BEFORE slice A — the C# first-switch order. The 489 no-wind path
+  leaves `addFrY` at the prologue default in both.
+- No second-switch glow rows exist for any R4 id (637's glow row is audited
+  with its first-switch index in R5).
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
