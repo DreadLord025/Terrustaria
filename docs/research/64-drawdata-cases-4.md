@@ -1088,6 +1088,62 @@ Audit notes (R11):
   indices 165-170, audited in R12; the shared body is quoted once here.
 - No other R11 id has a second-switch row.
 
+### R12 — statue tail, trophy, tendrils, coral, cog, sawmill, crafting stations head: 613, 621, 622, 623, 653, 699, 617, 614, 81, 272, 106, 300, 301, 302, 303 (15 ids, indices 165-179)
+
+C# `TileDrawing.cs:5268-5315`. Verbatim (:5276-5300):
+
+```csharp
+		case 617:
+			tileTop = 2;
+			tileFrameY %= 144;
+			tileFrameX %= 54;
+			break;
+		case 614:
+			addFrX = Main.tileFrame[typeCache] * 54;
+			addFrY = 0;
+			tileTop = 2;
+			break;
+		case 81:
+			tileTop -= 8;
+			tileHeight = 26;
+			tileWidth = 24;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		case 272:
+			addFrY = 0;
+			break;
+		case 106:
+			addFrY = Main.tileFrame[typeCache] * 54;
+			break;
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 613, 621, 622, 623, 653, 699 | `tileTop = 2;` (statue group tail, R11's body) | :5268-5275 | `drawdata.rs:593-596` | PORTED |
+| 617 | top 2; `tileFrameY %= 144; tileFrameX %= 54;` | :5276-5280 | :599-603 (both overrides, Y first like C#) | PORTED |
+| 614 | `addFrX = tileFrame * 54; addFrY = 0; tileTop = 2;` | :5281-5285 | :606-610 | PORTED |
+| 81 | `top -= 8;` 26 tall, 24 wide, parity flip (Coral) | :5286-5294 | :613-618 | PORTED |
+| 272 | `addFrY = 0;` (Cog) | :5295-5297 | :622-624; the `DrawSingleTile` parity `*90` (:1125-1131) rides `apply_world_corrections` → `cog_source_y_offset` :1281-1283 | PORTED (wired :683) |
+| 106 | `addFrY = tileFrame * 54;` (Sawmill, NO top change) | :5298-5300 | :626-628 | PORTED |
+| 300-303 | `addFrY = tileFrame * 54; tileTop = 2;` (crafting stations) | :5301-5315 | :632-635 (`300..=308 \| 354 \| 355 \| 499`) | PORTED |
+
+Audit notes (R12):
+- 617's `%=` mutate the `ref tileFrameX/Y` out-params — the port carries them
+  as `frame_*_override` consumed by `resolve_tile_frame`, the same fold as
+  case 733 (d64 batch 4). Order Y-then-X kept.
+- 614 is the one arm where the animation row rides addFrX (not Y) and addFrY
+  is CLEARED — the port matches all three statements in order.
+- 272's case body only clears the row; the cog parity shift
+  `(tileFrame + x%2 + y%2 + x%3 + y%3) % 2 * 90` is a `DrawSingleTile`
+  correction (:1125-1131), ported term-for-term (`cog_source_y_offset`) and
+  applied on the flat draw rect — outside the case scope, verified present.
+- 106 has NO `tileTop` statement (stays 0) — distinct from the 300-group;
+  the port keeps them separate arms.
+- No R12 id has a second-switch row.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
