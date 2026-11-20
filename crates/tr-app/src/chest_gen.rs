@@ -1304,12 +1304,15 @@ mod tests {
     /// generated table (`melee = false`, damage −1) but the C# sets
     /// `melee = true` (`Item.cs:26502`, the 2778/2783/3463 arms re-run
     /// `SetDefaults3(2773)`), transcribed in `ITEM_CORRECTIONS`. The raw-row
-    /// read skipped their melee arm entirely; the corrected read takes the
-    /// {81, 59, 57} table like any melee weapon.
+    /// read skipped their melee arm entirely (zero draws); the corrected
+    /// read runs the {81, 59, 57} try-loop. The witness replays the exact
+    /// `Next(3)` pick on a twin stream — a skipped arm fails the state
+    /// equality, not just the landing set.
     #[test]
     fn w4_e15_the_good_prefix_sweep_reads_the_corrected_melee_flag() {
         assert!(!crate::itemdata::ITEMS[2773].melee, "the raw row is a zero row");
         assert!(crate::registry::item(2773).unwrap().melee, "the correction sets melee");
+        let good = [81u16, 59, 57];
         for kind in [2773u16, 2778, 2783, 3463] {
             let mut chests = vec![WorldChest {
                 tile: (10, 10),
@@ -1319,29 +1322,16 @@ mod tests {
                 ..Default::default()
             }];
             let mut rng = tr_core::UnifiedRandom::new(0x5EED);
+            let mut twin = tr_core::UnifiedRandom::new(0x5EED);
             improve_all_chest_contents(&mut chests, &mut rng);
-            let p = chests[0].slots[0].prefix;
-            assert!(
-                p == 0 || [81u16, 59, 57].contains(&p),
-                "chainsaw {kind}: the melee sweep ran (prefix {p})"
-            );
+            // The melee arm is the ONLY arm these kinds take (not accessory,
+            // not in the guns/magic/summon sets): one `Next(3)` option pick,
+            // then the exact-id `Prefix(num)` applies with no draw (damage
+            // 80 / kb 4 keep every melee-table id visible).
+            let pick = good[twin.next_max(3) as usize];
+            assert_eq!(chests[0].slots[0].prefix, pick, "chainsaw {kind}");
+            assert_eq!(rng.peek(), twin.peek(), "chainsaw {kind}: exactly one Next(3)");
         }
-        // The 2773 witness lands a REAL good prefix on this seed (not the
-        // vacuous 0): damage 80 keeps every melee-table id visible.
-        let mut chests = vec![WorldChest {
-            tile: (10, 10),
-            slots: vec![ItemSlot { kind: 2773, name: "", count: 1, prefix: 0 }],
-            name: String::new(),
-            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
-            ..Default::default()
-        }];
-        let mut rng = tr_core::UnifiedRandom::new(0x5EED);
-        improve_all_chest_contents(&mut chests, &mut rng);
-        assert!(
-            [81u16, 59, 57].contains(&chests[0].slots[0].prefix),
-            "the corrected chainsaw takes a good prefix: {}",
-            chests[0].slots[0].prefix
-        );
     }
 
     /// `ImproveAllChestContents` (`:24716-24731`): the anniversary world's

@@ -1055,7 +1055,7 @@ mod tests {
         // 18 ids — 7-11, 22-24, 29-31, 39-41, 47-49, 56. The gate
         // (`Item.cs:556`) fires ONLY for prefixWeWant == -1.
         let expected = [7u16, 8, 9, 10, 11, 22, 23, 24, 29, 30, 31, 39, 40, 41, 47, 48, 49, 56];
-        assert_eq!(REDUCED_NATURAL_CHANCE, expected);
+        assert_eq!(REDUCED_NATURAL_CHANCE, &expected[..]);
         // The neighbours are NOT reduced: 6/12, 21/25, 28/32, 38/42, 46/50,
         // 55/57 — a fat-fingered set edit lands here first.
         for p in [6u16, 12, 21, 25, 28, 32, 38, 42, 46, 50, 55, 57] {
