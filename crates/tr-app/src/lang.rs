@@ -898,7 +898,7 @@ fn const_name(table: &'static [(i32, &'static str)], id: i32) -> Option<&'static
         })
 }
 
-/// `Lang.GetNPCName(netID)` (`Lang.cs:188-195`): `NPCName.{const name}`.
+/// `Lang.GetNPCName(netID)` (`Lang.cs:180-191`): `NPCName.{const name}`.
 ///
 /// A negative net id walks the negative cache (`Lang.cs:524-526`): the
 /// `NPCID.FromNetId` map first, then the twelve explicit slime rows.

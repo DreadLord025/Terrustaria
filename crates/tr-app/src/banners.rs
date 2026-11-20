@@ -111,6 +111,10 @@ mod tests {
 
     #[test]
     fn the_milestone_lands_every_kills_to_banner() {
+        // The announcement reads the live language manager — pin the culture
+        // like the other lang-reading tests (the shared `test_lock`).
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // The blue slime needs 50 kills for the banner milestone; the 50th
         // returns the announcement, the 49th returns nothing.
         let mut sys = BannerSystem::default();

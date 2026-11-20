@@ -118,6 +118,9 @@ crates/tr-app/src/lang.rs|fn npc_producers_answer_given_or_type_name|S1-L-12b - 
 crates/tr-app/src/lang.rs|fn input_trigger_producers_read_the_live_binds|S1-L-12b - input trigger tags read the keyboard profile binds (PlayerInput.cs:819-841,1942-1990)
 crates/tr-app/src/lang.rs|fn the_refresh_covers_all_65_producers|S1-L-12b - the refresh sets all 41 non-NPC producers of Lang.cs:102-166 (24 NPC keys stay null-unset)
 crates/tr-app/src/lang.rs|fn init|S1-L-12c - deterministic sorted registration order for localization resource files (Lang.cs manifest-order parity)
+crates/tr-app/src/lang.rs|const MANIFEST_ORDER|S1-L-12c re-pin (W4-c23) - the exact C# csproj manifest load order per culture (Terraria.csproj:133-219), not read_dir/alphabetical; BuffDescription spans Game+Items with per-culture index 0
+crates/tr-app/src/lang.rs|pub fn npc_name_or|W4-c23 - the Lang.GetNPCNameValue seam (Lang.cs:175-178) with the resource-less English fallback; banner announcement, bestiary names and SlimeVariant::localized_name read it
+crates/tr-app/src/npc/data.rs|pub fn localized_name|W4-c23 - slime variant names ride the NPCName.* rows via npc_name_or (Lang.cs:520-533), English base only as fallback
 crates/tr-core/src/wiring.rs|the_wire_rolls_come_from_the_unified_random_stream|S1-L-6c - the wiring RNG is UnifiedRandom (the C# Main.rand generator), seeded per world via seed_rand
 crates/tr-app/src/item.rs|fn s1_f_10_item_slot_clone_and_refresh_snapshot|S1-F-10 - ItemSlot clone/refresh snapshot and CommonMaxStack 9999 default
 crates/tr-app/src/registry.rs|pub fn max_stack|S1-F-10 - unregistered item max_stack defaults to Item.CommonMaxStack 9999 (Item.cs:49017,49966)
