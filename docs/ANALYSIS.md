@@ -39312,5 +39312,11 @@ cursed-flame position rolls are `Next(width)`/`Next(height)` on the GROWN
 box (NOT the ×Next(100)/100 shape); its 5th gore takes the switch default
 (-,-). The 483 kicks are INTEGER `Next(-1,2)`. The 459/709 count is 0
 below scale 1 (the delegation draws nothing at count 0).
-Remainder: sites 75-165 (waves H+), the UpdateProjectiles slot dispatch
+Wave H (sites 75-84): `projectile_gore_h.rs`, 5 witnesses written not run.
+The 408 triple divides timeLeft by 10 post-spawn (sticky 600 → 60). The
+nebula gores add a `Circular(25,25)` reposition (two floats) to the celeb2
+argument row — the 1078 twin (`:75030`) shares it. The confetti postlude
+ADDS before MULTIPLYING (`:74581-74587`), the opposite order of enchant-7
+(`:17453-17457`); seven rolls either way.
+Remainder: sites 85-165 (waves I+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
