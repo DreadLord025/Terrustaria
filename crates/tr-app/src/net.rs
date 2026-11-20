@@ -1761,6 +1761,36 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    // ---- S1-I-1 wave B: the world-sync region (bodies + codecs; the
+    // dispatcher arms are S1-I-4) ----
+    /// `17 TileManipulation` - a client's single-tile edit
+    /// (`Player.cs:39626`, `DelegateMethods.cs:515`; host relay
+    /// `MessageBuffer.cs:1285`).
+    TileEdit(TileEdit),
+    /// `19 ToggleDoorState` - a client opened/closed a door/trapdoor/gate
+    /// (`Player.cs:32844-32861`, `:32301-32310`; relay
+    /// `MessageBuffer.cs:1330`).
+    DoorToggle(DoorToggle),
+    /// `63 SyncTilePaintOrCoating` - a client painted/coated a tile
+    /// (`MessageBuffer.cs:2909-2928` relays it).
+    TilePaint(TilePaint),
+    /// `64 SyncWallPaintOrCoating` - a client painted/coated a wall
+    /// (`MessageBuffer.cs:2929-2948` relays it).
+    WallPaint(TilePaint),
+    /// `125 SyncTilePicking` - a client's pickaxe hit on a tile
+    /// (`MessageBuffer.cs:4023-4042` overrides the id and relays).
+    TilePicking(TilePicking),
+    /// `157 TeamChangeFromUI` - the team change from the UI
+    /// (`Main.cs:42766`); same body as `45`, the reader adds the team-spawn
+    /// tail (`MessageBuffer.cs:2355-2363`). The host relays as `45`.
+    TeamChangeUi(TeamChange),
+    /// `159 RequestSection` - a client asks for a section
+    /// (`Player.cs:41534`, `WorldItem.cs:375`); the writer writes `short`s,
+    /// the reader reads `ushort`s (`MessageBuffer.cs:4460`).
+    SectionRequest {
+        section_x: u16,
+        section_y: u16,
+    },
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1907,6 +1937,32 @@ pub enum S2c {
     /// `20 SectionRange` — a rectangle of tile changes
     /// (`SendTileSquare`, `NetMessage.cs:2627-2630`).
     SectionRange(Box<SectionRange>),
+    // ---- S1-I-1 wave B: the world-sync region (bodies + codecs; the
+    // dispatcher arms are S1-I-4) ----
+    /// `11 TileFrameSection` — deprecated, never sent by the C# (0 sites),
+    /// but read at `netMode == 1` (`MessageBuffer.cs:895-900`).
+    TileFrameSection(TileFrameSection),
+    /// `17 TileManipulation` — the host's relay of a client's edit
+    /// (`MessageBuffer.cs:1285`).
+    TileEdit(TileEdit),
+    /// `19 ToggleDoorState` — the host's door/trapdoor/gate relay
+    /// (`MessageBuffer.cs:1330`).
+    DoorToggle(DoorToggle),
+    /// `63 SyncTilePaintOrCoating` — the host's paint relay
+    /// (`MessageBuffer.cs:2925`).
+    TilePaint(TilePaint),
+    /// `64 SyncWallPaintOrCoating` — the host's paint relay
+    /// (`MessageBuffer.cs:2945`).
+    WallPaint(TilePaint),
+    /// `125 SyncTilePicking` — another player's pickaxe hit
+    /// (`MessageBuffer.cs:4039`).
+    TilePicking(TilePicking),
+    /// `158 ExtraSpawnSectionLoaded` — the team-swap respawn: the extra
+    /// spawn section is in, `Spawn(TeamSwap)` (`MessageBuffer.cs:4450-4456`,
+    /// sent by the `157` tail `:2361`).
+    ExtraSpawnLoaded {
+        player_id: u8,
+    },
     /// `23 NPCInfo` — one NPC's state (the C#'s per-NPC `SendData(23)`,
     /// `NPC.cs:90613`).
     NpcInfo(Box<NpcInfo>),
@@ -1972,6 +2028,13 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::TileEdit(_) => id::TILE_EDIT,
+            Self::DoorToggle(_) => id::DOOR_TOGGLE,
+            Self::TilePaint(_) => id::TILE_PAINT,
+            Self::WallPaint(_) => id::WALL_PAINT,
+            Self::TilePicking(_) => id::TILE_PICKING,
+            Self::TeamChangeUi(_) => id::TEAM_CHANGE_UI,
+            Self::SectionRequest { .. } => id::SECTION_REQUEST,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2040,6 +2103,29 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // ---- S1-I-1 wave B ----
+            // `NetMessage.cs:524-530`: byte kind + short x + short y +
+            // short value + byte style.
+            Self::TileEdit(t) => w.u8(t.kind).i16(t.x).i16(t.y).i16(t.value).u8(t.style),
+            // `NetMessage.cs:537-542`: byte action + short x + short y +
+            // byte direction (the C# writes `number4 == 1f`).
+            Self::DoorToggle(d) => w.u8(d.action).i16(d.x).i16(d.y).u8(d.direction),
+            // `NetMessage.cs:1081-1087`: short x + short y + byte paint +
+            // byte coat.
+            Self::TilePaint(p) | Self::WallPaint(p) => {
+                w.i16(p.x).i16(p.y).u8(p.paint).u8(p.coat)
+            }
+            // `NetMessage.cs:1509-1514`: byte player + short x + short y +
+            // byte damage.
+            Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
+            // `NetMessage.cs:970-974` — 157 shares 45's case.
+            Self::TeamChangeUi(t) => w.u8(t.player_id).u8(t.team),
+            // `NetMessage.cs:1662-1665`: two `(short)`s (the reader reads
+            // them as ushorts, `MessageBuffer.cs:4460` — same bytes).
+            Self::SectionRequest {
+                section_x,
+                section_y,
+            } => w.u16(*section_x).u16(*section_y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2162,6 +2248,55 @@ impl C2s {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            // ---- S1-I-1 wave B ----
+            // `MessageBuffer.cs:1121-1125`: byte, short, short, short, byte.
+            id::TILE_EDIT => Self::TileEdit(TileEdit {
+                kind: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                value: r.i16()?,
+                style: r.u8()?,
+            }),
+            // `MessageBuffer.cs:1301-1306`: byte, short, short, byte.
+            id::DOOR_TOGGLE => Self::DoorToggle(DoorToggle {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                direction: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2911-2914` / `:2931-2934`: short, short,
+            // byte, byte.
+            id::TILE_PAINT | id::WALL_PAINT => {
+                let p = TilePaint {
+                    x: r.i16()?,
+                    y: r.i16()?,
+                    paint: r.u8()?,
+                    coat: r.u8()?,
+                };
+                if msg_id == id::TILE_PAINT {
+                    Self::TilePaint(p)
+                } else {
+                    Self::WallPaint(p)
+                }
+            }
+            // `MessageBuffer.cs:4025-4028`: byte, short, short, byte.
+            id::TILE_PICKING => Self::TilePicking(TilePicking {
+                player_id: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                damage: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2325-2333` — 157 shares 45's reader arm.
+            id::TEAM_CHANGE_UI => Self::TeamChangeUi(TeamChange {
+                player_id: r.u8()?,
+                team: r.u8()?,
+            }),
+            // `MessageBuffer.cs:4460`: two ReadUInt16 (the writer wrote
+            // shorts — the non-negative section indices are the same bytes).
+            id::SECTION_REQUEST => Self::SectionRequest {
+                section_x: r.u16()?,
+                section_y: r.u16()?,
+            },
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2322,6 +2457,13 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::TileFrameSection(_) => id::TILE_FRAME_SECTION,
+            Self::TileEdit(_) => id::TILE_EDIT,
+            Self::DoorToggle(_) => id::DOOR_TOGGLE,
+            Self::TilePaint(_) => id::TILE_PAINT,
+            Self::WallPaint(_) => id::WALL_PAINT,
+            Self::TilePicking(_) => id::TILE_PICKING,
+            Self::ExtraSpawnLoaded { .. } => id::EXTRA_SPAWN_LOADED,
         }
     }
 
@@ -2464,6 +2606,21 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // ---- S1-I-1 wave B ----
+            // `NetMessage.cs:427-432`: four shorts.
+            Self::TileFrameSection(f) => w.i16(f.start_x).i16(f.start_y).i16(f.end_x).i16(f.end_y),
+            // `NetMessage.cs:524-530`.
+            Self::TileEdit(t) => w.u8(t.kind).i16(t.x).i16(t.y).i16(t.value).u8(t.style),
+            // `NetMessage.cs:537-542`.
+            Self::DoorToggle(d) => w.u8(d.action).i16(d.x).i16(d.y).u8(d.direction),
+            // `NetMessage.cs:1081-1087`.
+            Self::TilePaint(p) | Self::WallPaint(p) => {
+                w.i16(p.x).i16(p.y).u8(p.paint).u8(p.coat)
+            }
+            // `NetMessage.cs:1509-1514`.
+            Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
+            // `NetMessage.cs:1659-1661`: one byte.
+            Self::ExtraSpawnLoaded { player_id } => w.u8(*player_id),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2666,6 +2823,50 @@ impl S2c {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            // ---- S1-I-1 wave B ----
+            // `MessageBuffer.cs:898`: four ReadInt16.
+            id::TILE_FRAME_SECTION => Self::TileFrameSection(TileFrameSection {
+                start_x: r.i16()?,
+                start_y: r.i16()?,
+                end_x: r.i16()?,
+                end_y: r.i16()?,
+            }),
+            id::TILE_EDIT => Self::TileEdit(TileEdit {
+                kind: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                value: r.i16()?,
+                style: r.u8()?,
+            }),
+            id::DOOR_TOGGLE => Self::DoorToggle(DoorToggle {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                direction: r.u8()?,
+            }),
+            id::TILE_PAINT | id::WALL_PAINT => {
+                let p = TilePaint {
+                    x: r.i16()?,
+                    y: r.i16()?,
+                    paint: r.u8()?,
+                    coat: r.u8()?,
+                };
+                if msg_id == id::TILE_PAINT {
+                    Self::TilePaint(p)
+                } else {
+                    Self::WallPaint(p)
+                }
+            }
+            id::TILE_PICKING => Self::TilePicking(TilePicking {
+                player_id: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                damage: r.u8()?,
+            }),
+            // `MessageBuffer.cs:4453`: one byte, then Spawn(TeamSwap).
+            id::EXTRA_SPAWN_LOADED => Self::ExtraSpawnLoaded {
+                player_id: r.u8()?,
+            },
             _ => return None,
         })
     }

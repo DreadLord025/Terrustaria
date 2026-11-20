@@ -816,6 +816,18 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // S1-I-1 wave B: the world-sync region's client-sent ids have
+            // bodies + codecs (`net.rs`); the host apply/relay arms
+            // (`MessageBuffer.cs:1119-1288`, `:1299-1334`, `:2909-2948`,
+            // `:4023-4042`, `:2355-2363`, `:4457-4462`) land with the
+            // send-path pass (S1-I-4).
+            C2s::TileEdit(_)
+            | C2s::DoorToggle(_)
+            | C2s::TilePaint(_)
+            | C2s::WallPaint(_)
+            | C2s::TilePicking(_)
+            | C2s::TeamChangeUi(_)
+            | C2s::SectionRequest { .. } => {}
         }
     }
 
@@ -1858,6 +1870,18 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // S1-I-1 wave B: the world-sync region's server-sent ids have
+            // bodies + codecs (`net.rs`); the client read sites
+            // (`MessageBuffer.cs:895-900`, `:1119-1288`, `:1299-1334`,
+            // `:2909-2948`, `:4023-4042`, `:4450-4456`) land with the
+            // send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::TileFrameSection(_)
+            | S2c::TileEdit(_)
+            | S2c::DoorToggle(_)
+            | S2c::TilePaint(_)
+            | S2c::WallPaint(_)
+            | S2c::TilePicking(_)
+            | S2c::ExtraSpawnLoaded { .. } => {}
         }
     }
 
