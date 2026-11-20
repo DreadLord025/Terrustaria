@@ -5169,8 +5169,13 @@ impl Player {
                 self.melee_speed_bonus += 0.12;
                 self.auto_reuse_glove = true;
             }
-            // The Wicked Claws (`:14600-14604`): the same pair.
+            // The Wicked Claws (`:14600-14604`): the armlet flag + the
+            // Titan-Glove pair (`autoReuseGlove` + meleeSpeed +0.12). The
+            // resync keep-one: the i24 whip block below ALSO carried a 6182
+            // arm (armlet + meleeSpeed, no glove) — first-match-wins shadowed
+            // it; this i12 arm is the C#-complete one, the duplicate dropped.
             6182 => {
+                self.acc_wicked_armlet = true;
                 self.melee_speed_bonus += 0.12;
                 self.auto_reuse_glove = true;
             }
@@ -5313,40 +5318,11 @@ impl Player {
                 self.acc_sentry_backpack = true;
                 self.no_knockback = true;
             }
-            // S1-P-i27 — the summoner target-priority accessories
-            // (`ApplyEquipFunctional`, `Player.cs:14509-14527`): the flags
-            // the `UpdateEquips` fold (`:12970-12984`) reads. The 6183
-            // Silver Shield's flag joins its knockback/fire-walk row in
-            // `accessory_defense.rs` (the defense family owns that kind).
-            // 6156 Silver Bracer (`:14510`).
-            6156 => self.acc_silver_bracer = true,
-            // 6158 Mobius Strip (`:14513`).
-            6158 => self.acc_mobius_strip = true,
-            // 6159 Wicked Armlet (`:14516`).
-            6159 => self.acc_wicked_armlet = true,
-            // 6162 Ouroboros Ring (`:14519-14520`): the Mobius flag plus
-            // `accSnakeBand` — the snake-band whip-repeat system
-            // (`:42711-42731`) is unported, so that half has no field
-            // (recorded, ANALYSIS).
-            6162 => self.acc_mobius_strip = true,
-            // 6163 Twilight Grasp (`:14523`): BOTH the bracer and the
-            // armlet (`this.accSilverBracer = (this.accWickedArmlet = true)`).
-            6163 => {
-                self.acc_silver_bracer = true;
-                self.acc_wicked_armlet = true;
-            }
-            // 6179 Armlet of Ruin (`:14585-14586`): the armlet flag; the
-            // `accArmletOfRuin` tag-damage half (`:13405`) has no port
-            // consumer yet (the tag-damage pipeline rides M4-PROJ-7's
-            // tables — recorded, ANALYSIS).
-            6179 => self.acc_wicked_armlet = true,
-            // 6182 (`:14601-14603`): the armlet flag plus `autoReuseGlove`
-            // (no port field, the Titan Glove precedent) and
-            // `meleeSpeed += 0.12f`.
-            6182 => {
-                self.acc_wicked_armlet = true;
-                self.melee_speed_bonus += 0.12;
-            }
+            // (Resync keep-one: the i27 whip-accessory flag block that sat
+            // here was the STALE subset — the i24 block below carries the
+            // same rows PLUS the 6157 Snake Band / 6183 Silver Shield arms
+            // and the live `acc_snake_band` grants. First-match-wins made
+            // these arms shadow the fuller ones; dropped.)
             // The dodge family (`ApplyEquipFunctional`): the Black Belt
             // 963 (`:15058-15061`) and the Master Ninja Gear 984
             // (`:15062-15067`) both arm `blackBelt`; the Mystic Arts Sash
@@ -5463,10 +5439,10 @@ impl Player {
             }
             6157 => self.acc_snake_band = true,
             6179 => self.acc_wicked_armlet = true,
-            6182 => {
-                self.acc_wicked_armlet = true;
-                self.melee_speed_bonus += 0.12;
-            }
+            // (Resync keep-one: the 6182 Wicked Claws arm lives in the i12
+            // Titan-Glove block above — armlet + autoReuseGlove + meleeSpeed,
+            // the C#-complete `:14600-14604` set. This block's old copy
+            // lacked the glove grant and was shadowed anyway.)
             6183 => self.acc_silver_bracer = true,
             // Honey Comb 1132 (`:15072-15075`).
             1132 => self.honey_comb = true,
@@ -6843,15 +6819,11 @@ impl Player {
         if wall_acc {
             self.wall_speed_bonus += 0.5;
         }
-        // The Obsidian Outlaw set (`DataStructures/ArmorSetBonuses.cs:120-125`,
-        // the 3266/3267/3268 triple): `whipUseTimeMultiplier *= 1f/1.15f`
-        // — the scaling whips' `ApplyItemAnimation` multiplier (`:4476`).
-        // The set is not in the port's `armor_sets::SETS` flag table (its
-        // minionDamage/whipRange halves are unported), so the triple is
-        // matched directly here.
-        if (self.equipped[0], self.equipped[1], self.equipped[2]) == (3266, 3267, 3268) {
-            self.whip_use_time_multiplier *= 1.0 / 1.15;
-        }
+        // (Resync keep-one: the Obsidian Outlaw ×(1/1.15) triple-match that
+        // sat here was the i12 stand-in from before the set joined
+        // `armor_sets::SETS` — the set-stats fold above now carries
+        // `whip_use_time_mult` (`ArmorSetBonuses.cs:124`), so the direct
+        // match DOUBLE-applied the scale. Dropped.)
         // `Player.cs:25640-25643`: a pStone CHANGE across `UpdateEquips`
         // rescales the live Potion Sickness timer (`AdjustRemainingPotionSickness`,
         // `:28939-28952`) — ×0.75 equipping the Stone family, ÷0.75 removing it.

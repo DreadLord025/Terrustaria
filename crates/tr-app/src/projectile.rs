@@ -20118,10 +20118,18 @@ impl ProjectilePool {
                     }
                 }
                 // The 443's 80×80 half-box subtracts (the C# takes the
-                // centre).
+                // centre). The corpse-flag lift (the moonlord-trail
+                // precedent): the C# `Kill()` runs the 442 arm while the
+                // bolt is STILL active (`active = false` lands at `:77262`,
+                // after), so `GetNextSlot` skips the dying slot — the sphere
+                // takes the NEXT free slot, not the bolt's own. (The M2
+                // resync fix: without the lift the sphere reused the dying
+                // bolt's slot and the arrival witness read a live 442.)
+                self.slots[slot].active = true;
                 let _ = self.spawn_with_data_ai_owned(
                     443, owner, center.x - 40.0, center.y - 40.0, 0.0, 0.0, damage, 0.0, 0.0, 0.0,
                 );
+                self.slots[slot].active = false;
             }
         } else if kind == 478 && p.owner == local_owner {
             // `:75582` — the death flame drop (the same 0.8×/0.5× shape as

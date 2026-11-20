@@ -370,15 +370,16 @@ fn summoner_weapon_scales_with_attack_speed(kind: u16) -> bool {
 /// the PREFIXED instance's `useAnimation`, through the branch chain —
 /// melee (unless `ItemID.Sets.NoMeleeSpeedBonus`, the Ale Throwing Glove
 /// 3821, `ItemID.cs:340`) scales by the inverted `meleeSpeed`; the scaling
-/// whips by `summonerWeaponSpeedBonus * whipUseTimeMultiplier`; `createTile`
-/// items by `tileSpeed`, `createWall` items by `wallSpeed`; everything else
-/// keeps the raw animation plus the `num` bump — `autoReuse && reuseDelay
-/// == 0 && useTime <= useAnimation && shoot > 0 && useStyle == 5` adds ONE
-/// frame (`:4466-4469`) to the non-scaling branches (the melee/summon/tile/
-/// wall branches never add it; the `DebugOptions.ManaV2` slow-magic branch
-/// `:4478-4483` is a debug-only option the port does not carry). The tail
-/// (`:4496`) re-arms `reuseDelay = sItem.reuseDelay` — the caller applies it
-/// through [`arm_reuse_delay`].
+/// whips by `summonerWeaponSpeedBonus * whipUseTimeMultiplier`; the ManaV2
+/// slow cast (`:4478-4483`, S1-P-i19 — `DebugOptions.ManaV2` is the SHIPPED
+/// true, `DebugOptions.cs:85`) stretches a mana weapon's swing ×2.5 THEN
+/// adds the `num` bump; `createTile` items by `tileSpeed`, `createWall`
+/// items by `wallSpeed`; everything else keeps the raw animation plus the
+/// `num` bump — `autoReuse && reuseDelay == 0 && useTime <= useAnimation &&
+/// shoot > 0 && useStyle == 5` adds ONE frame (`:4466-4469`) to the
+/// non-melee/summon/tile/wall branches. The tail (`:4496`) re-arms
+/// `reuseDelay = sItem.reuseDelay` — the caller applies it through
+/// [`arm_reuse_delay`].
 fn apply_item_animation_secs(app: &App, held: ItemSlot) -> f32 {
     let Some(def) = registry::get(held.kind) else {
         return crate::item::use_animation_secs_of(held.kind, held.prefix);
@@ -412,6 +413,14 @@ fn apply_item_animation_secs(app: &App, held: ItemSlot) -> f32 {
         // `Player.cs:4476`).
         let mult = p.map_or(1.0, |p| p.summoner_weapon_speed_multiplier(held.kind));
         scaled_anim_secs(use_anim, mult)
+    } else if def.mana > 0 && p.is_some_and(|p| p.slow_magic_use) {
+        // `:4478-4483`: `DebugOptions.ManaV2 && sItem.mana > 0 &&
+        // slowMagicUse` — `SetItemAnimation(useAnimation, 2.5)` (int
+        // truncation, floor 1) THEN `itemAnimation += num` (the bump rides
+        // AFTER the scale, not before — the i19 resync fold into the i12
+        // branch chain).
+        let base = scaled_anim_secs(use_anim, crate::regen::SLOW_MAGIC_MULTIPLIER);
+        base + num as f32 * ONE_TICK_SECS
     } else if def.tile.is_some() {
         // `:4484-4487`: `createTile >= 0` — the tileSpeed branch.
         let mult = p.map_or(1.0, |p| p.tile_speed_multiplier());
@@ -2788,43 +2797,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // `ItemCheck_StartActualUse` (`:51680`), not `ItemCheck_Shoot`,
                 // so a mid-swing volley shot must NOT restart the swing.
                 if fire_non_ammo_shot(app, held, held_fx, world_pos, proj, def, screen) {
-                    // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
-                    // swing lasts the item's `useAnimation` ticks; `attack_cd`
-                    // matches so the throw repeats only when the swing is over.
-                    // The ManaV2 slow cast (`:4478-4483`): a mana item whose
-                    // `CheckMana` drained the bar stretches the animation ×2.5
-                    // (`GetSlowMagicMultiplier` `:47046-47049`); the same
-                    // multiplier rides `ApplyItemTime` at the shoot
-                    // (`:47187-47194`) — the port's non-ammo mana weapons fire
-                    // at the use start, so the stretched swing IS the cadence.
-                    let slow = if base_mana > 0
-                        && !skip_mana
-                        && app.player.as_ref().is_some_and(|p| p.slow_magic_use)
-                    {
-                        crate::regen::SLOW_MAGIC_MULTIPLIER
-                    } else {
-                        1.0
-                    };
-                    // `Player.ApplyItemAnimation` (`Player.cs:4463-4495`): the
-                    // whip items (`SummonerWeaponThatScalesWithAttackSpeed`,
-                    // `:4474-4476`) scale the swing by `summonerWeaponSpeedBonus *
-                    // whipUseTimeMultiplier` (S1-P-i24); the ManaV2 slow cast
-                    // (`:4478-4483`) stretches a mana weapon's swing x2.5
-                    // (S1-P-i19). The two families are disjoint (whips carry no
-                    // mana cost). `SetItemAnimation` (`:4453-4461`) truncates to
-                    // int ticks and floors at 1. The non-scaling branches ride
-                    // main's i12 `apply_item_animation_secs` (the num+1 bump +
-                    // the tile/wall arms); the slow multiplier stacks on top.
-                    // main's i12 `apply_item_animation_secs` already applied
-                    // the melee/summoner(tile/wall) branch scaling (the whip
-                    // multiplier rides `summoner_weapon_speed_multiplier`
-                    // inside it); only the slow-cast stack is extra here
-                    // (whips carry no mana, so slow == 1 for them).
-                    let base_secs = apply_item_animation_secs(app, held);
-                    let base_ticks = ticks_of(base_secs);
-                    let scaled = (base_ticks as f32 * slow) as i32;
-                    let scaled = if base_ticks > 0 { scaled.max(1) } else { scaled };
-                    app.swing_max = scaled as f32 * ONE_TICK_SECS;
+                    // `Player.ApplyItemAnimation` (`Player.cs:4463-4497`):
+                    // the i12 branch chain — melee/summoner speed scales,
+                    // the ManaV2 slow cast (×2.5 + the num bump, the i19
+                    // fold), tile/wall speed, else useAnimation + num.
+                    // `attack_cd` matches so the throw repeats only when
+                    // the swing is over.
+                    app.swing_max = apply_item_animation_secs(app, held);
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
@@ -14215,11 +14194,14 @@ mod tests {
         assert_eq!(p.mana, 0, "the bar stays drained");
         assert!(p.slow_magic_use, "DoRunOutOfManaEffect armed the slow cast");
         // The slow cast stretches the swing ×2.5 (`ApplyItemAnimation`
-        // `:4478-4483`): the Space Gun's 17-tick animation becomes 42
-        // ((int)(17 × 2.5) = 42, `SetItemAnimation`'s int truncation).
+        // `:4478-4483`): the Space Gun's 17-tick animation truncates to 42
+        // ((int)(17 × 2.5), `SetItemAnimation`'s int truncation) THEN takes
+        // the `num` +1 bump (`:4481-4482` — the autoReuse style-5 shooter
+        // gate `:4466-4469`), so the swing is 43 ticks (the i12 resync
+        // re-pin: the gate's pre-i12 42 missed the bump).
         assert!(
-            (app.swing_max - 42.0 / 60.0).abs() < 1e-4,
-            "the 2.5× slow-cast animation, got {}",
+            (app.swing_max - 43.0 / 60.0).abs() < 1e-4,
+            "the 2.5× slow-cast animation + the num bump, got {}",
             app.swing_max
         );
         // The regen delay re-armed from the empty bar: the long curve
@@ -14240,9 +14222,13 @@ mod tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.mana, 20 - 9, "the plain pay at manaCost 1");
         assert!(!p.slow_magic_use, "enough mana — no slow cast");
+        // The i12 num bump (`:4466-4469` + `:4494`): the Ruby Staff is an
+        // autoReuse style-5 shooter with useTime == useAnimation and
+        // reuseDelay 0, so the else branch swings useAnimation + 1 = 29
+        // (the gate's pre-i12 28 missed the bump — the resync re-pin).
         assert!(
-            (app.swing_max - 28.0 / 60.0).abs() < 1e-4,
-            "the normal 28-tick animation"
+            (app.swing_max - 29.0 / 60.0).abs() < 1e-4,
+            "the normal 28+1-tick animation"
         );
         assert_eq!(p.regen.mana_regen_delay, 4.0, "the V2 pin while mana remains");
     }
@@ -14506,15 +14492,18 @@ mod tests {
         let screen = app.screen_size().into();
         update_editing(&mut app, ONE_TICK_SECS, screen);
         // `ApplyManaRegenerationDelay` (`:19398`): (1 - 10/20)*60*4 + 45 = 165,
-        // ×0.7 = 115.5 → 115. The head re-applied it on this anim tick.
+        // ×0.7 = 115.5 → 115 — THEN the shipped ManaV2 cap (`:19403-19415`,
+        // the V2 fix round): >4 clamps to 4, and mana > 0 pins 4. The head
+        // re-applied it on this anim tick (the i19 cap-4 re-pin — the
+        // pre-V2 115 expectation was the legacy curve).
         let delay = app.player.as_ref().unwrap().regen.mana_regen_delay;
-        assert_eq!(delay, 115.0, "the per-tick re-apply pinned the delay");
+        assert_eq!(delay, 4.0, "the per-tick re-apply pinned the delay (ManaV2 cap)");
         // Drain it by hand, then one more anim tick re-pins it (the swing is
         // still running) — the once-at-pay port would have left it at 0.
         app.player.as_mut().unwrap().regen.mana_regen_delay = 0.0;
         update_editing(&mut app, ONE_TICK_SECS, screen);
         let delay = app.player.as_ref().unwrap().regen.mana_regen_delay;
-        assert_eq!(delay, 115.0, "the next anim tick re-applied it again");
+        assert_eq!(delay, 4.0, "the next anim tick re-applied it again");
         // The spaceGun four skip the delay (`:50589`): with the Meteor set's
         // flag on, the Space Gun's swing never re-applies.
         let mut sg = staff_app(127, "Space Gun");
@@ -14676,23 +14665,23 @@ mod tests {
         );
     }
 
-    /// `Player.cs:47647-47662` — the Razorpine's draw chain: the crit, the
-    /// count roll `Next(3)`, then per needle the spread X, spread Y and the ai0
-    /// roll — `2 + 3*count` draws total.
+    /// `Player.cs:47647-47662` — the Razorpine's draw chain: the count roll
+    /// `Next(3)`, then per needle the spread X, spread Y and the ai0 roll —
+    /// `1 + 3*count` draws total (the resync spawn-crit conversion dropped
+    /// the throw-time crit).
     #[test]
     fn s1_p_i21_the_razorpine_draw_chain_is_seed_deterministic() {
         let seed = 0x51A2_0001;
         // Replay the count to know the draw total.
         let mut state = tr_core::UnifiedRandom::new(seed);
-        let _crit = state.next_range(1, 101);
         let count = 2 + state.next_range(0, 3);
         let mut app = staff_app(1930, "Razorpine");
         seed_stream(&mut app, seed);
         fire_once(&mut app);
         assert_eq!(
             stream_of(&mut app),
-            draws_after(seed, (2 + 3 * count) as usize),
-            "crit + count + 3 draws per needle"
+            draws_after(seed, (1 + 3 * count) as usize),
+            "count + 3 draws per needle"
         );
     }
 
@@ -14717,15 +14706,16 @@ mod tests {
         }
     }
 
-    /// `Player.cs:47663-47692` — the Blizzard's draw chain: the crit, then per
-    /// icicle Next(201), Next(-200, 201), spread X, spread Y, ai1 — 11 draws.
+    /// `Player.cs:47663-47692` — the Blizzard's draw chain: per icicle
+    /// Next(201), Next(-200, 201), spread X, spread Y, ai1 — 10 draws (the
+    /// resync spawn-crit conversion dropped the throw-time crit).
     #[test]
     fn s1_p_i21_the_blizzard_draw_chain_is_seed_deterministic() {
         let seed = 0xB112_0002u32 as i32;
         let mut app = staff_app(1931, "Blizzard Staff");
         seed_stream(&mut app, seed);
         fire_once(&mut app);
-        assert_eq!(stream_of(&mut app), draws_after(seed, 11), "crit + 5 draws per icicle");
+        assert_eq!(stream_of(&mut app), draws_after(seed, 10), "5 draws per icicle");
     }
 
     /// `Player.cs:48271-48277` — the Nimbus Rod spawns one cloud at the aim
@@ -14744,7 +14734,7 @@ mod tests {
         assert!((c.ai[0] - aim.x).abs() < 1e-3 && (c.ai[1] - aim.y).abs() < 1e-3,
             "ai[0..1] = the cursor world point");
         assert!((c.vel.length() - 16.0).abs() < 0.05, "shootSpeed 16");
-        assert_eq!(stream_of(&mut app), draws_after(0xC10D, 1), "only the crit draw");
+        assert_eq!(stream_of(&mut app), draws_after(0xC10D, 0), "no spawn-time draw (crit is per-hit)");
     }
 
     /// `Player.cs:48344-48354` — the Bat Scepter fires `Next(2, 4)` bats (2-3),
@@ -14768,22 +14758,21 @@ mod tests {
         }
     }
 
-    /// `Player.cs:48344-48354` — the Bat Scepter's draw chain: the crit, the
-    /// count roll `Next(2, 4)`, then per bat the spread X and spread Y —
-    /// `2 + 2*count` draws total.
+    /// `Player.cs:48344-48354` — the Bat Scepter's draw chain: the count roll
+    /// `Next(2, 4)`, then per bat the spread X and spread Y — `1 + 2*count`
+    /// draws total (the resync spawn-crit conversion dropped the crit).
     #[test]
     fn s1_p_i21_the_bat_scepter_draw_chain_is_seed_deterministic() {
         let seed = 0xBA75_0003u32 as i32;
         let mut state = tr_core::UnifiedRandom::new(seed);
-        let _crit = state.next_range(1, 101);
         let count = state.next_range(2, 4);
         let mut app = staff_app(1801, "Bat Scepter");
         seed_stream(&mut app, seed);
         fire_once(&mut app);
         assert_eq!(
             stream_of(&mut app),
-            draws_after(seed, (2 + 2 * count) as usize),
-            "crit + count + 2 draws per bat"
+            draws_after(seed, (1 + 2 * count) as usize),
+            "count + 2 draws per bat"
         );
     }
 
@@ -14875,14 +14864,14 @@ mod tests {
     /// `Player.cs:47647-47662` + `:43544`/`:47193` — the Razorpine's volley
     /// re-fire rolls a FRESH count and spreads on the `UpdatePlayers` stream
     /// (the C#'s one `ItemCheck_Shoot` chain runs per shot). The draw chain per
-    /// shot is crit + count + 3·count; two shots in one swing spend the sum.
-    /// (Razorpine useTime 8 == useAnimation 8 → one volley per swing; this
-    /// pins the per-shot draw order the re-fire inherits.)
+    /// shot is count + 3·count (the resync spawn-crit conversion dropped the
+    /// crit); two shots in one swing spend the sum. (Razorpine useTime 8 ==
+    /// useAnimation 8 → the num bump makes the swing 9, so one volley per
+    /// swing; this pins the per-shot draw order the re-fire inherits.)
     #[test]
     fn s1_p_i21_the_razorpine_volley_draw_order_is_per_shot() {
         let seed = 0x51A2_0004;
         let mut state = tr_core::UnifiedRandom::new(seed);
-        let _crit = state.next_range(1, 101);
         let count = 2 + state.next_range(0, 3);
         let mut app = staff_app(1930, "Razorpine");
         app.player.as_mut().unwrap().mana = 100;
@@ -14890,8 +14879,8 @@ mod tests {
         fire_once(&mut app);
         assert_eq!(
             stream_of(&mut app),
-            draws_after(seed, (2 + 3 * count) as usize),
-            "crit + count + 3 draws per needle (the re-fire re-rolls the same chain)"
+            draws_after(seed, (1 + 3 * count) as usize),
+            "count + 3 draws per needle (the re-fire re-rolls the same chain)"
         );
     }
 
@@ -15074,12 +15063,14 @@ mod tests {
             bolts[0].vel.length()
         );
         assert_eq!(bolts[0].damage, 10, "the magic damage 10");
-        // The generic tail spends only the crit's draw.
+        // The generic tail spends NO draw (the resync spawn-crit conversion:
+        // the crit is per-hit on UpdateProjectiles, the Vilethorn's generic
+        // spawn has no other roll).
         let seed = 0x57A2;
         let mut app = staff_app(64, "Vilethorn");
         seed_stream(&mut app, seed);
         fire_once(&mut app);
-        assert_eq!(stream_of(&mut app), draws_after(seed, 1), "the crit only");
+        assert_eq!(stream_of(&mut app), draws_after(seed, 0), "no spawn-time draw");
     }
 
     /// The Band of Starpower (item 111) is an ACCESSORY (`Item.cs:2692-2699`:
@@ -15125,8 +15116,9 @@ mod tests {
             "the LCG seed is a Next(0, 20000) draw ({})",
             bolts[0].ai[2]
         );
-        // The seed is the stream's second draw (after the crit), and the same
-        // seed twice gives the same ai[2].
+        // The seed is the stream's FIRST draw (the resync spawn-crit
+        // conversion dropped the throw-time crit), and the same seed twice
+        // gives the same ai[2].
         let seed = 0xA9A5i32;
         let run = || {
             let mut app = staff_app(157, "Aqua Scepter");
@@ -15138,7 +15130,7 @@ mod tests {
         let (a_seed, a_stream) = run();
         let (b_seed, b_stream) = run();
         assert_eq!(a_seed, b_seed, "the seed is seed-stable");
-        assert_eq!(a_stream, draws_after(seed, 2), "crit, then the LCG seed");
+        assert_eq!(a_stream, draws_after(seed, 1), "the LCG seed only (crit is per-hit)");
         assert_eq!(a_stream, b_stream, "the stream is seed-stable");
     }
 
@@ -15199,9 +15191,9 @@ mod tests {
         let mut saw_third_bonus = false;
         for seed in 0..60u64 {
             let s = (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) as i32;
-            // The replay: predict the count and each bee off the same stream.
+            // The replay: predict the count and each bee off the same stream
+            // (the resync spawn-crit conversion dropped the throw-time crit).
             let mut rng = tr_core::UnifiedRandom::new(s);
-            let _crit = rng.next_range(1, 101);
             let mut count = rng.next_range(1, 4);
             if rng.next_range(0, 6) == 0 {
                 count += 1;
@@ -15377,39 +15369,42 @@ mod tests {
     /// `Item.cs:3252-3268`) fires its whole volley inside ONE swing — the i01
     /// census item. The C# `itemAnimation > 0 && ItemTimeIsZero` gate
     /// (`Player.cs:43544`) fires the first shot on the press tick, then
-    /// `ApplyItemTime` (`:47185-47194`) re-arms `itemTime = useTime = 8`, so the
-    /// second shot lands 8 ticks later while the 16-tick swing still runs. The
-    /// pre-fix port fired once per swing. Mana is paid ONCE per swing
-    /// (`ItemCheck_TryStartUse`, `:52021`), not per volley shot.
+    /// `ApplyItemTime` (`:47185-47194`) re-arms `itemTime = useTime = 8`, so
+    /// the second shot lands 8 ticks later while the swing still runs. The
+    /// i12 num bump (`:4466-4469`) stretches the swing to 17 ticks, so the
+    /// THIRD re-fire (tick 17, swing 1) still lands inside it — the resync
+    /// re-pin: the gate's pre-i12 16-tick swing held only 2 shots. Mana is
+    /// paid ONCE per swing (`ItemCheck_TryStartUse`, `:52021`), not per shot.
     #[test]
     fn s1_p_i20_the_aqua_scepter_fires_a_two_shot_volley_per_swing() {
         let mut app = staff_app(157, "Aqua Scepter");
         let (sw, sh) = app.screen_size();
         let screen = Vec2::new(sw, sh);
         let mut log = Vec::new();
-        // Hold past the 16-tick swing: the volley is 2 shots (press tick + 8).
+        // Hold past the 17-tick swing: the volley is 3 shots (press + 8 + 16).
         hold(&mut app, screen, 20, &mut log);
-        assert_eq!(log.len(), 2, "two shots per swing (the volley)");
-        // The press-frame arming puts the first shot at swing == max (16); the
-        // re-arm fires the second 8 ticks later at swing == 8.
-        assert_eq!(shot_ticks(&log), vec![16, 8], "the volley's shot ticks");
-        assert_eq!(shots(&app), 2, "two water streams spawned");
+        assert_eq!(log.len(), 3, "three shots per swing (the volley + the num bump)");
+        // The press-frame arming puts the first shot at swing == max (17); the
+        // re-arms fire 8 ticks apart at swing 9 and 1.
+        assert_eq!(shot_ticks(&log), vec![17, 9, 1], "the volley's shot ticks");
+        assert_eq!(shots(&app), 3, "three water streams spawned");
         assert!(
             app.projectiles
                 .slots()
                 .iter()
                 .filter(|p| p.active)
                 .all(|p| p.kind == crate::projectile::AQUA_SCEPTER),
-            "both are Item.shoot 22"
+            "all are Item.shoot 22"
         );
         // One mana pay per swing (7), not per shot.
         assert_eq!(app.player.as_ref().unwrap().mana, 20 - 7, "one mana pay");
     }
 
-    /// Each volley shot re-rolls the crit (`Next(1,101)`) AND the Aqua Scepter's
-    /// lava-bounce LCG seed (`Next(0,20000)`, `Player.cs:49409-49411`) — the
-    /// generic tail's per-shot draw order. Two shots spend exactly four draws,
-    /// and the two `ai[2]` seeds differ (the stream advanced between them).
+    /// Each volley shot re-rolls the Aqua Scepter's lava-bounce LCG seed
+    /// (`Next(0,20000)`, `Player.cs:49409-49411`) — the generic tail's per-shot
+    /// draw. The resync spawn-crit conversion dropped the throw-time crit, so
+    /// three shots spend exactly three draws, and the `ai[2]` seeds differ
+    /// (the stream advanced between them).
     #[test]
     fn s1_p_i20_the_aqua_volley_rolls_crit_and_seed_per_shot() {
         let seed = 0xA9A5i32;
@@ -15419,22 +15414,23 @@ mod tests {
         let screen = Vec2::new(sw, sh);
         let mut log = Vec::new();
         hold(&mut app, screen, 20, &mut log);
-        assert_eq!(log.len(), 2, "the volley fired");
-        // The replay: crit, seed, crit, seed — the per-shot generic-tail order.
+        assert_eq!(log.len(), 3, "the volley fired");
+        // The replay: seed, seed, seed — the per-shot generic-tail order
+        // (no crit draw; the crit is per-hit on UpdateProjectiles).
         let mut rng = tr_core::UnifiedRandom::new(seed);
-        let _crit1 = rng.next_range(1, 101);
         let seed1 = rng.next_range(0, 20000);
-        let _crit2 = rng.next_range(1, 101);
         let seed2 = rng.next_range(0, 20000);
+        let seed3 = rng.next_range(0, 20000);
         let bolts: Vec<_> = app
             .projectiles
             .slots()
             .iter()
             .filter(|p| p.active)
             .collect();
-        assert_eq!(bolts.len(), 2, "two streams");
+        assert_eq!(bolts.len(), 3, "three streams");
         assert_eq!(bolts[0].ai[2], seed1 as f32, "the first shot's LCG seed");
         assert_eq!(bolts[1].ai[2], seed2 as f32, "the second shot's LCG seed");
+        assert_eq!(bolts[2].ai[2], seed3 as f32, "the third shot's LCG seed");
         assert_ne!(seed1, seed2, "the stream advanced between the shots");
         assert_eq!(stream_of(&mut app), rng, "the stream is draw-exact");
     }
@@ -15509,7 +15505,8 @@ mod tests {
     // the draws on a clone of the seeded stream.
 
     /// The Laser Rifle's PurpleLaser carries `ai0 = Next(3, 6)`
-    /// (`Player.cs:49379-49382`) — the stream spends the crit + that one draw.
+    /// (`Player.cs:49379-49382`) — the stream spends that one draw (the
+    /// resync spawn-crit conversion dropped the throw-time crit).
     #[test]
     fn s1_p_i22_the_laser_rifle_laser_carries_the_ai0_roll() {
         let mut app = staff_app(514, "Laser Rifle");
@@ -15519,13 +15516,12 @@ mod tests {
         let bolts: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
         assert_eq!(bolts.len(), 1, "one laser");
         assert_eq!(bolts[0].kind, crate::projectile::PURPLE_LASER);
-        // The replay: draw 1 crit, draw 2 the ai0 roll.
+        // The replay: draw 1 the ai0 roll (no crit draw).
         let mut state = tr_core::UnifiedRandom::new(seed);
-        let _crit = state.next_range(1, 101);
         let ai0 = state.next_range(3, 6);
         assert_eq!(bolts[0].ai[0], ai0 as f32, "ai0 = Next(3,6)");
         assert!((3.0..6.0).contains(&bolts[0].ai[0]), "the roll range");
-        assert_eq!(stream_of(&mut app), draws_after(seed, 2), "crit + ai0");
+        assert_eq!(stream_of(&mut app), draws_after(seed, 1), "the ai0 draw only");
     }
 
     /// The Poison Staff fires 3 fangs, 4 on a `Next(3) == 0` roll
@@ -15537,7 +15533,6 @@ mod tests {
         for seed in 0..40u64 {
             let s = (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) as i32;
             let mut state = tr_core::UnifiedRandom::new(s);
-            let _crit = state.next_range(1, 101);
             let extra = state.next_range(0, 3) == 0;
             let count = if extra { 4 } else { 3 };
             let mut app = staff_app(1308, "Poison Staff");
@@ -15556,10 +15551,11 @@ mod tests {
                     f.vel.length()
                 );
             }
-            // The draws: crit + the count roll + 2·count spread draws.
+            // The draws: the count roll + 2·count spread draws (the resync
+            // spawn-crit conversion dropped the throw-time crit).
             assert_eq!(
                 stream_of(&mut app),
-                draws_after(s, 2 + 2 * count),
+                draws_after(s, 1 + 2 * count),
                 "seed {seed}: the draw count"
             );
             if extra { saw4 = true; } else { saw3 = true; }
@@ -15568,8 +15564,8 @@ mod tests {
     }
 
     /// The Magical Harp rolls the note kind `76 + Next(3)` and spends exactly
-    /// crit + Next(3) + two Next(-40,41) + the circular pair
-    /// (`Player.cs:47392-47423`).
+    /// Next(3) + two Next(-40,41) + the circular pair (`Player.cs:47392-47423`;
+    /// the resync spawn-crit conversion dropped the throw-time crit).
     #[test]
     fn s1_p_i22_the_magical_harp_note_kind_and_draws() {
         let mut app = staff_app(494, "Magical Harp");
@@ -15579,21 +15575,21 @@ mod tests {
         let notes: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
         assert_eq!(notes.len(), 1, "one note");
         let mut state = tr_core::UnifiedRandom::new(seed);
-        let _crit = state.next_range(1, 101);
         let kind = 76 + state.next_range(0, 3);
         assert_eq!(notes[0].kind, kind as u16, "the note kind roll");
         assert!([76u16, 77, 78].contains(&notes[0].kind));
         // The note's ai1 is 1 (`:47410`), ai0 the clamped pitch (`:47420`).
         assert_eq!(notes[0].ai[1], 1.0, "ai1 = 1");
         assert!((-1.0..=1.0).contains(&notes[0].ai[0]), "the pitch clamp");
-        // crit + Next(3) + Next(-40,41)×2 + circular(angle,radial) = 6 draws.
-        assert_eq!(stream_of(&mut app), draws_after(seed, 6), "the draw count");
+        // Next(3) + Next(-40,41)×2 + circular(angle,radial) = 5 draws.
+        assert_eq!(stream_of(&mut app), draws_after(seed, 5), "the draw count");
     }
 
     /// The Sky Fracture's ring spends the pre-loop angle + radial draws, then
     /// per-iteration radial → probe → angle (`Player.cs:48808-48827`). In open
-    /// air the first probe passes, so the run is crit + angle + pre-radial +
-    /// loop-radial = 4 draws.
+    /// air the first probe passes, so the run is angle + pre-radial +
+    /// loop-radial = 3 draws (the resync spawn-crit conversion dropped the
+    /// throw-time crit).
     #[test]
     fn s1_p_i22_the_sky_fracture_ring_draw_order() {
         let mut app = staff_app(3787, "Sky Fracture");
@@ -15603,9 +15599,8 @@ mod tests {
         let bolts: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
         assert_eq!(bolts.len(), 1, "one fracture");
         assert_eq!(bolts[0].kind, crate::projectile::SKY_FRACTURE);
-        // The replay: crit, angle, pre-loop radial (discarded), loop radial.
+        // The replay: angle, pre-loop radial (discarded), loop radial.
         let mut state = tr_core::UnifiedRandom::new(seed);
-        let _crit = state.next_range(1, 101);
         let face = state.next_float() * std::f32::consts::TAU;
         let _pre = state.next_float();
         let radius = 20.0 + 40.0 * state.next_float();
@@ -15620,7 +15615,7 @@ mod tests {
             bolts[0].pos,
             ring
         );
-        assert_eq!(stream_of(&mut app), draws_after(seed, 4), "the four draws");
+        assert_eq!(stream_of(&mut app), draws_after(seed, 3), "the three draws");
     }
 
     /// The Starfury star spawns 600 px above the mounted centre with damage
@@ -15649,8 +15644,9 @@ mod tests {
         // Damage 25 × 1.5 = 37 (the melee class multiplier is 1).
         assert_eq!(stars[0].damage, 37, "damage ×1.5");
         assert_eq!(stars[0].knock_back, 0.0, "knockback 0");
-        // crit + Next(201) — the cursor is outside [Left, Right], no Next(2).
-        assert_eq!(stream_of(&mut app), draws_after(seed, 2), "crit + Next(201)");
+        // Next(201) only — the cursor is outside [Left, Right], no Next(2);
+        // the resync spawn-crit conversion dropped the throw-time crit.
+        assert_eq!(stream_of(&mut app), draws_after(seed, 1), "the Next(201) offset only");
     }
 
     /// The Sparkle Guitar with no chaseable target spends crit + the circular
