@@ -1465,6 +1465,21 @@ table with verbatim C# cites: `docs/research/10-lighting.md` § W4-d66. Summary:
   `0.9*0.8`/`0.9*0.2` (folded 0.72/0.18 are one ULP off). The shimmer liquid's
   `n3` keeps its own `/125f` division (`:135`).
 
+Re-census (2026-11-20, second pass, fresh scripted parser): 147/147 arms again,
+per-label frame-table VALUES compared f32-exact (zero diffs), RNG draw
+sequences and paint-`flag` counts per kind (zero diffs), `TILE_LIGHTED`
+re-derived from every `Main.cs` write (153/153 exact), wall/surface/hell/liquid
+gates re-paired verbatim. One new residual: the scanner's `solid_tile3` had
+dropped `WorldGen.SolidTile3(int, int)`'s `InWorld(i, j, 1)` border gate
+(`WorldGen.cs:70467`); the 718 night-glow gate (`TileLightScanner.cs:855`) was
+reading border tiles. Fixed + witness (`solid_tile3_refuses_the_world_border`).
+18 new regression witnesses pin the faithful-but-unpinned arms/gates (sundial
+products, campfire/lamp/wall ULPs, portal hues, rainbow wheel, disco quarter,
+cage modes, gem-torch parent bits, 350 cosine gate, 125 direct accumulator
+write, 238 channel raise, 658 row scales + Echo gate, mushroom paint gates,
+gem-wall themes surface/hell, shimmer second division + lava scaled-store
+quirk) — written-not-run, code-only mode. Full list: research/10 § re-census.
+
 Deliberate deviations / escalations recorded (NOT fixed here):
 - The generator's loop-write gap remains for `tileSolid`/`tileBlockLight`
   727-732 (`Main.cs:9970-9974`), 435-439 (`:9986-9995`), 255-268's solid half

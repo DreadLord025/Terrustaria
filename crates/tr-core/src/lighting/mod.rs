@@ -964,4 +964,47 @@ mod tests {
         expected.next_seed_in_place();
         assert_eq!(once, expected.seed, "Blur must advance the seed exactly once");
     }
+
+    /// W4-d66 re-census witness: `ApplyLiquidLight`'s shimmer arm keeps the
+    /// SECOND `(270 - mouseTextColor) / 125f` division
+    /// (`TileLightScanner.cs:135`) — folding it into `delta * (900/125)` is
+    /// one f32 ULP off at mouseTextColor 192 (Y: 0.33100000 vs 0.33099997).
+    /// The lava arm's compare-against-base / store-scaled quirk (`:116-128`)
+    /// is pinned alongside.
+    #[test]
+    fn liquid_seeds_keep_the_second_division_and_scaled_stores() {
+        let mut p = LightParams::default();
+        p.mouse_text_color = 192;
+        let mut t = Tile::default();
+        t.liquid = 255;
+        t.set_liquid_kind(LiquidKind::Shimmer);
+        let mut c = [0.0f32; 3];
+        liquid_light(&t, &mut c, &p);
+        let n2 = 0.7f32 + (270.0 - 192.0) / 900.0;
+        let n3 = 0.7f32 + (270.0 - 192.0) / 125.0;
+        assert_eq!(c[0].to_bits(), (n2 * 0.6).to_bits());
+        assert_eq!(c[1].to_bits(), (n3 * 0.25).to_bits());
+        assert_eq!(c[2].to_bits(), (n2 * 0.9).to_bits());
+        // The folded form is a distinct f32 — this is the discriminating pin.
+        let delta = (270.0f32 - 192.0) / 900.0;
+        let folded = (0.7f32 + delta * (900.0f32 / 125.0)) * 0.25;
+        assert_ne!(c[1].to_bits(), folded.to_bits());
+        // Lava: every channel compares against the UNSCALED base n, then
+        // stores the scaled value (`:117-127`).
+        t.set_liquid_kind(LiquidKind::Lava);
+        let mut c = [0.0f32; 3];
+        liquid_light(&t, &mut c, &p);
+        let n = 0.55f32 + (270.0 - 192.0) / 900.0;
+        assert_eq!(c, [n, n * 0.6, n * 0.2]);
+        // The quirk cuts both ways: a green BETWEEN n*0.6 and n still passes
+        // the `< num` test and is LOWERED to n*0.6 (`:121-123` compares the
+        // unscaled base, stores the scaled value).
+        let mut c = [0.0f32, n * 0.8, 0.0];
+        liquid_light(&t, &mut c, &p);
+        assert_eq!(c[1].to_bits(), (n * 0.6).to_bits(), "green below n is lowered");
+        // Only a green already at/above the unscaled base survives.
+        let mut c = [0.0f32, n, 0.0];
+        liquid_light(&t, &mut c, &p);
+        assert_eq!(c[1], n, "green at the base must survive");
+    }
 }

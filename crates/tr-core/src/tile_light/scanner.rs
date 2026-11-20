@@ -1152,11 +1152,19 @@ fn misc_lights(
     }
 }
 
-/// `WorldGen.SolidTile3`: a solid, non-platform block that is not actuated.
+/// `WorldGen.SolidTile3(int, int)` (`WorldGen.cs:70465-70472`): the
+/// `InWorld(i, j, 1)` gate refuses the 1-tile world border BEFORE the tile
+/// read (`:70467`, `:9688-9695`) — the same border refusal the ExportTo
+/// null gate uses (`TileLightScanner.cs:45`). Then `SolidTile3(Tile)`
+/// (`:70474-70485`): `t.nactive() && tileSolid[type] && !tileSolidTop[type]`.
 fn solid_tile3(world: &World, x: i32, y: i32) -> bool {
+    if x < 1 || x >= world.width - 1 || y < 1 || y >= world.height - 1 {
+        return false;
+    }
     let Some(t) = world.tile(x, y) else {
         return false;
     };
+    // `Tile.nactive()` (`Tile.cs:240-247`): active AND not framed-off.
     t.active()
         && t.flags & FLAG_INACTIVE == 0
         && crate::tiledata::TILE_SOLID.has(t.kind)
@@ -1317,5 +1325,315 @@ mod tests {
         p.moondial_cooldown = 8;
         close(lit(&tile(356, 0, 0), 5, 5, &p), [0.0; 3]);
         close(lit(&tile(663, 0, 0), 5, 5, &p), [0.0; 3]);
+    }
+
+    /// W4-d66 re-census witness: sundial 84 frame 5 keeps the `num3 = 0.9f`
+    /// products (`TileLightScanner.cs:3009-3013`) — folded 0.72/0.18 are one
+    /// f32 ULP away. Frame 6 keeps `0.08f * 0.8f` (`:3015-3018`); frame 2 is
+    /// the clamped mouseTextColor ramp (`:2995-3007`).
+    #[test]
+    fn sundial_frames_keep_the_f32_products() {
+        let p = LightParams::default(); // mouse_text_color = 225
+        let c = lit(&tile(84, 5 * 18, 0), 5, 5, &p);
+        assert_eq!(c[0].to_bits(), 0.9f32.to_bits());
+        assert_eq!(c[1].to_bits(), (0.9f32 * 0.8).to_bits());
+        assert_ne!(c[1].to_bits(), 0.72f32.to_bits(), "folded 0.72 is 1 ULP off");
+        assert_eq!(c[2].to_bits(), (0.9f32 * 0.2).to_bits());
+        assert_ne!(c[2].to_bits(), 0.18f32.to_bits(), "folded 0.18 is 1 ULP off");
+        let c = lit(&tile(84, 6 * 18, 0), 5, 5, &p);
+        assert_eq!(c, [0.0, 0.08f32 * 0.8, 0.08]);
+        // Frame 2: n = (270 - 225) / 400 = 0.1125; R = n*1.4, G = n*1.2, B = n/2.
+        let c = lit(&tile(84, 2 * 18, 0), 5, 5, &p);
+        let n = 45.0f32 / 400.0;
+        assert_eq!(c, [n * 1.4, n * 1.2, n / 2.0]);
+        // Any other frame column stays dark (no default arm, `:2993-3020`).
+        close(lit(&tile(84, 0, 0), 5, 5, &p), [0.0; 3]);
+    }
+
+    /// W4-d66 re-census witness: campfire 215 frame 6 keeps `G = 1.2824999f`
+    /// (`TileLightScanner.cs:1093-1096`) — one f32 ULP below 1.2825, and the
+    /// flicker add keeps the gap for every possible `Next(28, 42)` draw.
+    #[test]
+    fn campfire_frame_6_green_keeps_the_ulp() {
+        let p = LightParams::default();
+        let c = lit(&tile(215, 6 * 54, 0), 5, 5, &p);
+        // Replay the one draw the arm makes (`:1065`) to rebuild the flicker.
+        let mut rng = FastRandom::new(p.rng_seed).with_modifier(5, 5);
+        let n = rng.next_range(28, 42) as f32 * 0.005
+            + (270.0 - p.mouse_text_color as f32) / 700.0;
+        assert_eq!(c[1].to_bits(), (1.2824999f32 + n).to_bits());
+        assert_ne!(c[1].to_bits(), (1.2825f32 + n).to_bits());
+        assert_eq!(c[0].to_bits(), (0.75f32 + n).to_bits());
+        assert_eq!(c[2].to_bits(), (1.2f32 + n).to_bits());
+    }
+
+    /// W4-d66 re-census witness: the painted-lamp arms keep `G = 128f / 255f`
+    /// (`TileLightScanner.cs:1413-1416` and the four sibling lamp tables) —
+    /// 0.50196081, one f32 ULP above the folded 0.50196078.
+    #[test]
+    fn lamp_green_keeps_the_128_over_255_ulp() {
+        let p = LightParams::default();
+        for (kind, fy) in [(93u16, 48 * 54), (33, 47 * 22), (34, 54 * 54), (100, 48 * 36), (42, 54 * 36)] {
+            let c = lit(&tile(kind, 0, fy as i16), 5, 5, &p);
+            assert_eq!(
+                c[1].to_bits(),
+                (128.0f32 / 255.0).to_bits(),
+                "kind {kind} frame row green"
+            );
+            assert_ne!(c[1].to_bits(), 0.50196078f32.to_bits());
+        }
+    }
+
+    /// W4-d66 re-census witness: portal 209 uses the netMode-0 hue pair
+    /// (`PortalHelper.cs:381-384`): hsl(0.12, 1, 0.5) = bytes (255, 184, 0)
+    /// and hsl(0.52, 1, 0.6) = (51, 231, 255), each scaled by 0.65
+    /// (`TileLightScanner.cs:427-441`). The byte quantisation is the point.
+    #[test]
+    fn portal_hues_are_the_single_player_pair() {
+        let p = LightParams::default();
+        let orange = [255.0f32 / 255.0 * 0.65, 184.0 / 255.0 * 0.65, 0.0];
+        let cyan = [51.0f32 / 255.0 * 0.65, 231.0 / 255.0 * 0.65, 255.0 / 255.0 * 0.65];
+        close(lit(&tile(209, 234, 0), 5, 5, &p), orange);
+        close(lit(&tile(209, 252, 0), 5, 5, &p), orange);
+        close(lit(&tile(209, 306, 0), 5, 5, &p), cyan);
+        close(lit(&tile(209, 324, 0), 5, 5, &p), cyan);
+        // Any other frame column is dark.
+        close(lit(&tile(209, 0, 0), 5, 5, &p), [0.0; 3]);
+    }
+
+    /// W4-d66 re-census witness: rainbow brick 719 walks the 14-step wheel
+    /// indexed by `(x + y + (int)(GlobalTimeWrappedHourly * 15f)) % 14`
+    /// (`TileLightScanner.cs:770-852`).
+    #[test]
+    fn rainbow_brick_walks_the_14_step_wheel() {
+        let mut p = LightParams::default();
+        // x+y = 10, t = 0 → step 10 = (158, 255, 198).
+        close(
+            lit(&tile(719, 0, 0), 5, 5, &p),
+            [158.0 / 255.0, 1.0, 198.0 / 255.0],
+        );
+        // t = 0.27 → (int)(0.27 * 15) = 4 → step (10 + 4) % 14 = 0 = (255, 171, 183).
+        p.global_time = 0.27;
+        close(
+            lit(&tile(719, 0, 0), 5, 5, &p),
+            [1.0, 171.0 / 255.0, 183.0 / 255.0],
+        );
+    }
+
+    /// W4-d66 re-census witness: the disco-quarter arms (160 `:3098-3101`,
+    /// 627/628/692 `:604-609`, 184 frameX 220 `:642-647`) all read
+    /// `DiscoR/G/B / 255f * 0.25f` in that order.
+    #[test]
+    fn disco_quarter_arms_share_the_recipe() {
+        let mut p = LightParams::default();
+        p.disco = [255, 128, 0];
+        let want = [
+            255.0f32 / 255.0 * 0.25,
+            128.0 / 255.0 * 0.25,
+            0.0 / 255.0 * 0.25,
+        ];
+        close(lit(&tile(160, 0, 0), 5, 5, &p), want);
+        close(lit(&tile(627, 0, 0), 5, 5, &p), want);
+        close(lit(&tile(628, 0, 0), 5, 5, &p), want);
+        close(lit(&tile(692, 0, 0), 5, 5, &p), want);
+        close(lit(&tile(184, 220, 0), 5, 5, &p), want);
+        // 184's other columns are the fixed gem hues, not disco (`:611-641`).
+        close(lit(&tile(184, 110, 0), 5, 5, &p), [0.25, 0.1, 0.0]);
+        close(lit(&tile(184, 0, 0), 5, 5, &p), [0.0; 3]);
+    }
+
+    /// W4-d66 re-census witness: the jellyfish cages (316/317/318,
+    /// `TileLightScanner.cs:714-768`) index `jellyfishCageMode[type-316,
+    /// (x-fx/18)/3 * ((y-fy/18)/3) % cageFrames]`; mode 2 is the bright arm.
+    #[test]
+    fn jellyfish_cages_follow_the_cage_mode() {
+        let mut p = LightParams::default();
+        // At (5, 5) with frame 0: (5/3) * (5/3) = 1 → cage index 1.
+        close(lit(&tile(316, 0, 0), 5, 5, &p), [0.1, 0.2, 0.5]);
+        close(lit(&tile(317, 0, 0), 5, 5, &p), [0.05, 0.45, 0.1]);
+        close(lit(&tile(318, 0, 0), 5, 5, &p), [0.4, 0.1, 0.25]);
+        p.cage_mode[0][1] = 2;
+        p.cage_mode[1][1] = 2;
+        p.cage_mode[2][1] = 2;
+        close(lit(&tile(316, 0, 0), 5, 5, &p), [0.2, 0.3, 0.8]);
+        close(lit(&tile(317, 0, 0), 5, 5, &p), [0.2, 0.7, 0.3]);
+        close(lit(&tile(318, 0, 0), 5, 5, &p), [0.7, 0.2, 0.5]);
+        // A different cage index stays in mode 0.
+        p.cage_mode[0][1] = 0;
+        close(lit(&tile(316, 0, 0), 5, 5, &p), [0.1, 0.2, 0.5]);
+    }
+
+    /// W4-d66 re-census witness: gem torch 171 reads the PARENT tile's packed
+    /// frameY bits (`TileLightScanner.cs:2500-2557`): frameX < 10 steps back
+    /// to (x - frameX, y - frameY); the colour is halved after the switch.
+    #[test]
+    fn gem_torch_reads_the_parent_frame_bits() {
+        let p = LightParams::default();
+        let mut w = World::new("t".into(), 64, 64);
+        // Offset arm: the torch part at (5, 5) with frame (4, 2) reads (1, 3).
+        let parent = w.index(1, 3);
+        w.tiles[parent].frame_y = 5 << 10; // bits 5 = amber (0.125, 0.125, 0)
+        let mut t = tile(171, 4, 2);
+        let mut c = [0.0f32; 3];
+        let mut rng = FastRandom::new(p.rng_seed).with_modifier(5, 5);
+        apply_tile_light(&w, &t, 5, 5, &mut rng, &p, &mut c);
+        close(c, [0.0625, 0.0625, 0.0]);
+        // frameX >= 10 reads the tile's own position (`:2501-2505` else arm).
+        t = tile(171, 18, 0);
+        let i = w.index(5, 5);
+        w.tiles[i].frame_y = 2 << 10; // bits 2 = red (0.2, 0, 0)
+        let mut c = [0.0f32; 3];
+        apply_tile_light(&w, &t, 5, 5, &mut rng, &p, &mut c);
+        close(c, [0.1, 0.0, 0.0]);
+        // Bits 0 (no gem) is dark (`:2551-2553` default).
+        w.tiles[i].frame_y = 0;
+        let mut c = [0.0f32; 3];
+        apply_tile_light(&w, &t, 5, 5, &mut rng, &p, &mut c);
+        close(c, [0.0; 3]);
+    }
+
+    /// W4-d66 re-census witness: the 350 cosine pulse
+    /// (`TileLightScanner.cs:2948-2952`) only fires while
+    /// `(int)(num9 / 6.283) % 3 == 1`; elsewhere the phase is 0 and
+    /// `0 - cos(0)*0.1 + 0.1` collapses to exactly 0.
+    #[test]
+    fn cosine_pulse_350_gates_on_the_third() {
+        let mut p = LightParams::default();
+        // t = 0: num9 = 0, index 0 → dark.
+        close(lit(&tile(350, 0, 0), 5, 5, &p), [0.0; 3]);
+        // t = 100: num9 = 8, 8/6.283 = 1.27 → index 1 → 0.1 - cos(8)*0.1.
+        p.time_for_visuals = 100.0;
+        let v = (0.0f64 - (8.0f64).cos() * 0.1 + 0.1) as f32;
+        let c = lit(&tile(350, 0, 0), 5, 5, &p);
+        assert_eq!(c, [v, v, v]);
+        assert!((c[0] - 0.11455).abs() < 1e-6, "pulse {c:?}");
+        // t = 250: num9 = 20, index 3 % 3 = 0 → dark again.
+        p.time_for_visuals = 250.0;
+        close(lit(&tile(350, 0, 0), 5, 5, &p), [0.0; 3]);
+    }
+
+    /// W4-d66 re-census witness: geyser 125 writes `lightColor.Y/Z` DIRECTLY
+    /// (`TileLightScanner.cs:3045-3050`: `G = (lightColor.Y = 0.3f * num)`),
+    /// so a brighter pre-existing accumulator channel is LOWERED to the
+    /// geyser value — unlike every max-merge arm.
+    #[test]
+    fn geyser_125_writes_the_accumulator_directly() {
+        let p = LightParams::default();
+        let w = World::new("t".into(), 64, 64);
+        // Probe the draw on a SEPARATE stream copy — the scanner makes its own.
+        let mut probe = FastRandom::new(p.rng_seed).with_modifier(5, 5);
+        let n = probe.next_range(28, 42) as f32 * 0.01
+            + (270.0 - p.mouse_text_color as f32) / 800.0;
+        let mut rng = FastRandom::new(p.rng_seed).with_modifier(5, 5);
+        let mut c = [0.9f32; 3];
+        apply_tile_light(&w, &tile(125, 0, 0), 5, 5, &mut rng, &p, &mut c);
+        // R keeps the pre-seed (the arm never touches it); G/Z are overwritten.
+        assert_eq!(c[0], 0.9);
+        assert_eq!(c[1].to_bits(), (0.3f32 * n).to_bits());
+        assert_eq!(c[2].to_bits(), (0.6f32 * n).to_bits());
+        assert!(c[1] < 0.9 && c[2] < 0.9, "direct write must lower: {c:?}");
+    }
+
+    /// W4-d66 re-census witness: 238 raises X/Z to 0.5 and 235 raises X/Y to
+    /// 0.6 with per-channel `<` guards (`TileLightScanner.cs:1000-1018`) —
+    /// they never lower a brighter channel. (235 itself is dead in vanilla,
+    /// pinned by `gemspark_blocks_pass_the_lighted_gate`; this pins 238.)
+    #[test]
+    fn tile_238_raises_only_the_dark_channels() {
+        let p = LightParams::default();
+        let w = World::new("t".into(), 64, 64);
+        let mut rng = FastRandom::new(p.rng_seed).with_modifier(5, 5);
+        let mut c = [0.0f32, 0.7, 0.0];
+        apply_tile_light(&w, &tile(238, 0, 0), 5, 5, &mut rng, &p, &mut c);
+        assert_eq!(c, [0.5, 0.7, 0.5]);
+        let mut c = [0.8f32, 0.2, 0.2];
+        apply_tile_light(&w, &tile(238, 0, 0), 5, 5, &mut rng, &p, &mut c);
+        assert_eq!(c, [0.8, 0.2, 0.5], "brighter X must survive");
+    }
+
+    /// W4-d66 re-census witness: the shimmer-torch fixture 658 scales
+    /// `TorchColor(23)` by the frameY/54 row (`TileLightScanner.cs:349-371`:
+    /// default ×0.2, row 1 ×0.3, row 2 ×0.1) and an invisible (Echo) block
+    /// does not emit at all (`:350`).
+    #[test]
+    fn fixture_658_scales_the_shimmer_torch_by_row() {
+        let p = LightParams::default(); // mouse_text_color = 225
+        let base = torch_color(23, &p);
+        for (fy, k) in [(0i16, 0.2f32), (54, 0.3), (108, 0.1)] {
+            let c = lit(&tile(658, 0, fy), 5, 5, &p);
+            close(c, [base[0] * k, base[1] * k, base[2] * k]);
+        }
+        // Echo-coated: dark (`!tile.invisibleBlock()` gate).
+        let mut w = World::new("t".into(), 64, 64);
+        w.set_invisible_block(5, 5, true);
+        let mut c = [0.0f32; 3];
+        let mut rng = FastRandom::new(p.rng_seed).with_modifier(5, 5);
+        apply_tile_light(&w, &tile(658, 0, 0), 5, 5, &mut rng, &p, &mut c);
+        assert_eq!(c, [0.0; 3]);
+    }
+
+    /// W4-d66 re-census witness: the glowing-mushroom family's paint gates —
+    /// 519 only at frameY 90 (`TileLightScanner.cs:2903-2917`), the 70-family
+    /// skips 349 below frameX 36 (`:2927`), painted tiles defer to the paint
+    /// colour (`flag`), and 739 ALWAYS sets the flag (`:2942-2946`).
+    #[test]
+    fn mushroom_paint_gates_follow_the_csharp_arms() {
+        let p = LightParams::default();
+        let n_lo = 0.2f32; // the flicker term is positive; bounds-check below
+        let c = lit(&tile(519, 0, 90), 5, 5, &p);
+        assert!(c[0] == 0.1 && c[1] > n_lo && c[2] > 0.7, "519 lit {c:?}");
+        close(lit(&tile(519, 0, 0), 5, 5, &p), [0.0; 3]);
+        // 349 below frameX 36 is dark; at/above it glows like the family.
+        close(lit(&tile(349, 0, 0), 5, 5, &p), [0.0; 3]);
+        let c = lit(&tile(349, 36, 0), 5, 5, &p);
+        assert!(c[0] == 0.0 && c[2] == 1.0, "349 fx>=36 {c:?}");
+        // Painted family tile: the paint colour replaces the frame colour.
+        let mut painted = tile(70, 0, 0);
+        painted.set_paint(1);
+        close(lit(&painted, 5, 5, &p), [1.0, 0.0, 0.0]);
+        // 739: unpainted keeps its base, painted takes the paint colour.
+        close(lit(&tile(739, 0, 0), 5, 5, &p), [0.35, 0.63, 0.7]);
+        let mut painted = tile(739, 0, 0);
+        painted.set_paint(1);
+        close(lit(&painted, 5, 5, &p), [1.0, 0.0, 0.0]);
+    }
+
+    /// W4-d66 re-census witness (residual 10): `WorldGen.SolidTile3(i, j)`
+    /// refuses the 1-tile world border via `InWorld(i, j, 1)`
+    /// (`WorldGen.cs:70467`, `:9688-9695`) BEFORE reading the tile. The 718
+    /// night-glow gate (`TileLightScanner.cs:855`) therefore treats a solid
+    /// border tile above it as NOT solid — the old port read the border tile
+    /// and muted the glow.
+    #[test]
+    fn solid_tile3_refuses_the_world_border() {
+        let mut p = LightParams::default();
+        p.day_time = false;
+        let mut w = World::new("t".into(), 8, 8);
+        // 718 at (1, 1); the tile above it (1, 0) is solid but ON the border.
+        let i = w.index(1, 1);
+        w.tiles[i].kind = 718;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let above = w.index(1, 0);
+        w.tiles[above].kind = 1; // stone: TILE_SOLID, not SOLID_TOP
+        w.tiles[above].flags |= FLAG_ACTIVE;
+        let mut c = [0.0f32; 3];
+        let mut rng = FastRandom::new(p.rng_seed).with_modifier(1, 1);
+        apply_tile_light(&w, &w.tiles[i], 1, 1, &mut rng, &p, &mut c);
+        assert!(c[0] > 0.3, "border solid must not mute the glow: {c:?}");
+        // Interior control: a solid tile above an interior 718 mutes it.
+        let i = w.index(3, 3);
+        w.tiles[i].kind = 718;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let above = w.index(3, 2);
+        w.tiles[above].kind = 1;
+        w.tiles[above].flags |= FLAG_ACTIVE;
+        let mut c = [0.0f32; 3];
+        apply_tile_light(&w, &w.tiles[i], 3, 3, &mut rng, &p, &mut c);
+        assert_eq!(c, [0.0; 3], "interior solid keeps the glow muted");
+        // Daytime keeps it dark regardless (`!Main.dayTime`).
+        p.day_time = true;
+        let mut c = [0.0f32; 3];
+        apply_tile_light(&w, &w.tiles[w.index(1, 1)], 1, 1, &mut rng, &p, &mut c);
+        assert_eq!(c, [0.0; 3]);
     }
 }

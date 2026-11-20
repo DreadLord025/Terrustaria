@@ -356,4 +356,97 @@ mod tests {
         // Wall 182 (glow arm without flag): paint is ignored too (`:181-188`).
         assert_eq!(seed(182, 1), [0.24, 0.12, 0.089999996]);
     }
+
+    /// W4-d66 re-census witness: walls 182/33 keep the ULP literals
+    /// `0.089999996f` / `0.052500002f` (`TileLightScanner.cs:186/192-193`) —
+    /// distinct f32 values from the folded 0.09 / 0.0525.
+    #[test]
+    fn glowing_wall_bases_keep_the_ulp_literals() {
+        let p = LightParams::default();
+        let inv = InvisibleBits::default();
+        let seed = |wall: u16| -> [f32; 3] {
+            let mut t = Tile::default();
+            t.wall = wall;
+            let mut c = [0.0f32; 3];
+            let mut rng = FastRandom::new(0).with_modifier(1, 1);
+            apply_wall_light(&t, 0, inv, &mut rng, &p, &mut c);
+            c
+        };
+        let c = seed(182);
+        assert_eq!(c[2].to_bits(), 0.089999996f32.to_bits());
+        assert_ne!(c[2].to_bits(), 0.09f32.to_bits());
+        assert_eq!(c, [0.24, 0.12, 0.089999996]);
+        let c = seed(33);
+        assert_eq!(c[0].to_bits(), 0.089999996f32.to_bits());
+        assert_eq!(c[1].to_bits(), 0.052500002f32.to_bits());
+        assert_ne!(c[1].to_bits(), 0.0525f32.to_bits());
+        assert_eq!(c, [0.089999996, 0.052500002, 0.24]);
+    }
+
+    /// W4-d66 re-census witness: the surface gem-wall themes
+    /// (`TileLightScanner.cs:3169-3220`): walls 88-93 map to switch arms 0-5,
+    /// wall 241 maps to arm 6 (`:3175-3178`), and the gate needs
+    /// `liquid < byte.MaxValue` plus the no-sun exemption.
+    #[test]
+    fn surface_gem_wall_themes_match_the_switch() {
+        let mut w = World::new("t".into(), 8, 64);
+        w.world_surface = 30.0;
+        let p = LightParams::default(); // sky = [1, 1, 1], disco = [255, 0, 0]
+        let seed = |wall: u16| -> [f32; 3] {
+            let mut t = Tile::default();
+            t.wall = wall;
+            let mut c = [0.0f32; 3];
+            let mut rng = FastRandom::new(0).with_modifier(4, 20);
+            apply_surface_light(&w, &t, 4, 20, &mut rng, &p, InvisibleBits::default(), &mut c);
+            c
+        };
+        assert_eq!(seed(88), [0.9, 0.15, 0.9]);
+        assert_eq!(seed(89), [0.9, 0.9, 0.15]);
+        assert_eq!(seed(90), [0.15, 0.15, 0.9]);
+        assert_eq!(seed(91), [0.15, 0.9, 0.15]);
+        assert_eq!(seed(92), [0.9, 0.15, 0.15]);
+        // Arm 5 (disco): num10 = 0.7 - 0.2 = 0.5; per-channel
+        // `num10 + Disco/255 * 0.2` → [0.7, 0.5, 0.5] at disco [255, 0, 0].
+        let c = seed(93);
+        assert!((c[0] - 0.7).abs() < 1e-6 && c[1] == 0.5 && c[2] == 0.5, "{c:?}");
+        // Arm 6 (amber, wall 241): [0.9, 0.5, 0].
+        assert_eq!(seed(241), [0.9, 0.5, 0.0]);
+        // A full liquid cell (255) fails the `< byte.MaxValue` gate.
+        let mut t = Tile::default();
+        t.wall = 88;
+        t.liquid = 255;
+        let mut c = [0.0f32; 3];
+        let mut rng = FastRandom::new(0).with_modifier(4, 20);
+        apply_surface_light(&w, &t, 4, 20, &mut rng, &p, InvisibleBits::default(), &mut c);
+        assert_eq!(c, [0.0; 3], "full liquid blocks the gem theme");
+    }
+
+    /// W4-d66 re-census witness: the hell gem-wall themes
+    /// (`TileLightScanner.cs:3252-3303`) scale the pulsing glow base
+    /// `[g, g*0.6, g*0.2]` by the same 0-6 switch; at the static 0.55 base
+    /// wall 88 is `[0.495, 0.0495, 0.099]` and wall 241 `[0.495, 0.165, 0]`.
+    #[test]
+    fn hell_gem_wall_themes_scale_the_glow() {
+        let mut w = World::new("t".into(), 8, 400);
+        w.world_surface = 0.0;
+        let p = LightParams::default(); // hell_glow = 0.55
+        let seed = |wall: u16| -> [f32; 3] {
+            let mut t = Tile::default();
+            t.wall = wall;
+            let mut c = [0.0f32; 3];
+            apply_hell_light(&w, &t, 4, 300, &p, InvisibleBits::default(), &mut c);
+            c
+        };
+        let g = 0.55f32;
+        assert_eq!(seed(88), [g * 0.9, g * 0.6 * 0.15, g * 0.2 * 0.9]);
+        assert_eq!(seed(241), [g * 0.9, g * 0.6 * 0.5, 0.0]);
+        assert_eq!(seed(90), [g * 0.15, g * 0.6 * 0.15, g * 0.2 * 0.9]);
+        // No qualifying wall: the base glow transmit arm needs wallLight or
+        // an Echo wall; a plain dirt wall in the open still gets the base.
+        let mut t = Tile::default();
+        t.wall = 1;
+        let mut c = [0.0f32; 3];
+        apply_hell_light(&w, &t, 4, 300, &p, InvisibleBits::default(), &mut c);
+        assert_eq!(c, [0.0; 3], "non-light wall gets no hell seed");
+    }
 }
