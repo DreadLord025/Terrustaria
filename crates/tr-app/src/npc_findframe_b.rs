@@ -605,8 +605,10 @@ pub fn find_frame_b(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
 /// aiStyle-3 fighters (their turn counter leaves `ai[0]` at 0/1,
 /// `NPC.cs:57381-57397`) and are not carried — the `humanoid_town_frame`
 /// precedent in `npc.rs`. Shared with `npc_findframe_extra2` (the
-/// Chaos Elemental 120 / Face Monster 181 ride the same group) — the
-/// keep-one house rule, the d48 snail-delegate precedent.
+/// Chaos Elemental 120 / Face Monster 181 ride the same group) and
+/// `npc_findframe_extra3` (the Snow Flinx 185 / Nymph 196 / Lihzahrd
+/// 198 + the batch-2 skeletons) — the keep-one house rule, the e14/f26
+/// delegate precedent.
 pub(crate) fn humanoid_fighter_frame(
     s: &mut FrameState,
     i: &FrameInput,
