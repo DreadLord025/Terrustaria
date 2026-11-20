@@ -942,6 +942,64 @@ pub(crate) fn ai_toilet_pop(p: &mut Projectile, rng: &mut dyn DropRng) {
     }
 }
 
+/// `AI_154_VoidLens` (`Projectile.cs:52154-52196`) — the Void Lens'
+/// placed lens (734). The owner-gated same-type dedupe (the YOUNGER lens
+/// kills the older siblings; an older sibling kills THIS lens and
+/// returns), the ×0.94 velocity damp, the direction pin, the 5-tick
+/// 8-frame cycle, the +0.03 opacity climb and the `VoidLensHelper.Update`
+/// dust gate.
+///
+/// The dedupe scans the LIVE pool (the C# reads `Main.projectile` while
+/// killing), so this half is POOL-SIDE ([`crate::projectile::ProjectilePool`]'s
+/// dispatch, the `dragon_step` shape); this fn is the post-dedupe body.
+/// `true` = the lens survived the dedupe (the caller runs the body).
+///
+/// RNG (`VoidLensHelper.SpawnVoidLensDust`, `VoidLensHelper.cs:40-75`):
+/// the `Next(3)` gate, then the `Next(2)` branch pick; EACH branch's
+/// `RotatedByRandom(2π)` pair (two doubles — one float step each), the
+/// `SelectRandom(86, 88)` pick `Next(2)`, the position's `Next(10,21)` /
+/// `Next(5,10)` and the scale `NextFloat`. The dust bodies are skipped.
+/// `Lighting.AddLight` (`:36`) is the light layer's skip (no draws).
+pub(crate) fn ai_void_lens(p: &mut Projectile, rng: &mut dyn DropRng) {
+    use crate::projectile::{alpha_of, opacity_of, proj_frames};
+    // `:52177-52178` — the damp and the direction pin.
+    p.vel *= 0.94;
+    p.direction = 1;
+    // `:52179-52186` — the 5-tick frame cycle over projFrames[734] = 8.
+    p.frame_counter += 1;
+    if p.frame_counter >= 5 {
+        p.frame_counter = 0;
+        p.frame += 1;
+        if p.frame >= proj_frames(p.kind) as i32 {
+            p.frame = 0;
+        }
+    }
+    // `:52187-52194` — the opacity climb (the alpha view).
+    if opacity_of(p.alpha) < 1.0 {
+        let mut opacity = opacity_of(p.alpha) + 0.03;
+        if opacity > 1.0 {
+            opacity = 1.0;
+        }
+        p.alpha = alpha_of(opacity);
+    }
+    // `:52195` → `VoidLensHelper.Update` → `SpawnVoidLensDust`.
+    if rng.next_range(0, 3) == 0 {
+        if rng.next_range(0, 2) == 0 {
+            // `:46-53` — the first branch.
+            let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom(2π)
+            let _ = rng.next_range(0, 2); // SelectRandom(86, 88)
+            let _ = rng.next_range(10, 21); // the position radius
+            let _ = rng.next_float(); // the scale
+        } else {
+            // `:61-68` — the second branch (the 5-10 radius).
+            let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom(2π)
+            let _ = rng.next_range(0, 2); // SelectRandom(86, 88)
+            let _ = rng.next_range(5, 10); // the position radius
+            let _ = rng.next_float(); // the scale
+        }
+    }
+}
+
 /// `Collision.LavaCollision` (`Collision.cs:1653-1684`) — the clamped
 /// box scan (`[x/16−1, (x+w)/16+2)` × `[y/16−1, (y+h)/16+2)`, the y-range
 /// capped at `maxTilesY−40`): any lava cell whose liquid surface
@@ -2028,5 +2086,124 @@ mod w4_d16_153_tests {
         assert_eq!(p.ai[0], 1.0);
         assert_eq!(rng.ranges, vec![(580, 583), (10, 31), (-20, 21)]);
         assert_eq!(rng.floats, 2);
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_154_tests {
+    //! W4-d16 — aiStyle 154 (`AI_154_VoidLens`, `Projectile.cs:52154-
+    //! 52196`, the dispatch `:36579-36582`). WRITTEN NOT RUN (code-only
+    //! mode). The row + sheet, the damp/direction/frame/opacity body, the
+    //! VoidLensHelper dust census (both branches), the pool-side dedupe
+    //! (the younger lens kills the older; an older sibling kills this).
+    use super::*;
+    use crate::projectile::{FlailInputs, ProjectilePool, VOID_LENS, YoyoInputs, proj_data};
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn lens() -> Projectile {
+        let d = proj_data(VOID_LENS).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = VOID_LENS;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    /// The row (`Projectile.cs:7726-7735`) + the 8-frame sheet
+    /// (`Main.cs:8504`).
+    #[test]
+    fn w4_d16_154_the_row_and_sheet_match_set_defaults() {
+        let d = proj_data(VOID_LENS).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (30.0, 24.0, 154));
+        assert!(!d.tile_collide);
+        assert_eq!(d.time_left, 10800);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(crate::projectile::proj_frames(VOID_LENS), 8);
+    }
+
+    /// The body (`:52177-52194`): the ×0.94 damp, direction 1, the 5-tick
+    /// frame cycle, the +0.03 opacity climb (alpha 255 → 247: opacity
+    /// 0.03 → alpha (1−0.03)·255 = 247.35 → 247). The dust census: the
+    /// Next(3) gate + the Next(2) pick (census min 0 → the FIRST branch)
+    /// + the RotatedByRandom pair + the SelectRandom Next(2) + the
+    /// Next(10,21) radius + the scale float.
+    #[test]
+    fn w4_d16_154_the_body_and_dust_census() {
+        let mut p = lens();
+        p.vel = Vec2::new(10.0, 0.0);
+        let mut rng = census();
+        ai_void_lens(&mut p, &mut rng);
+        assert!((p.vel.x - 9.4).abs() < 1e-5, "the ×0.94 damp");
+        assert_eq!(p.direction, 1);
+        assert_eq!(p.frame_counter, 1);
+        assert_eq!(p.frame, 0);
+        assert_eq!(p.alpha, 247, "the opacity climb's truncation");
+        assert_eq!(rng.ranges, vec![(0, 3), (0, 2), (0, 2), (10, 21)]);
+        assert_eq!(rng.floats, 3, "the rotation pair + the scale");
+        // The frame cycle: 5 ticks advance the frame, 40 wrap it.
+        for _ in 0..4 {
+            ai_void_lens(&mut p, &mut census());
+        }
+        assert_eq!(p.frame, 1, "the 5th tick");
+        assert_eq!(p.frame_counter, 0);
+        // The opacity caps at 1 (alpha 0).
+        p.alpha = 3; // opacity ≈ 0.988 + 0.03 > 1 → clamp
+        ai_void_lens(&mut p, &mut census());
+        assert_eq!(p.alpha, 0);
+    }
+
+    /// The dedupe (`:52157-52176`): two lenses, one owner — the YOUNGER
+    /// (lower timeLeft) dies, the older survives; the scan kills the
+    /// older siblings when THIS lens is the oldest.
+    #[test]
+    fn w4_d16_154_the_dedupe_keeps_the_oldest() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let older = pool.spawn_with_data(VOID_LENS, 1600.0, 800.0, 0.0, 0.0, 0, 0.0).unwrap();
+        let younger = pool.spawn_with_data(VOID_LENS, 1700.0, 800.0, 0.0, 0.0, 0, 0.0).unwrap();
+        pool.slots_mut()[younger].time_left = 100; // younger than 10800
+        let mut rng = census();
+        pool.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(pool.slots()[older].active, "the older lens survives");
+        assert!(!pool.slots()[younger].active, "the younger lens dies");
+        // The foreign-owner lens is NOT deduped (`:52166`'s owner gate).
+        let mut pool2 = ProjectilePool::new();
+        let a = pool2.spawn_with_data(VOID_LENS, 1600.0, 800.0, 0.0, 0.0, 0, 0.0).unwrap();
+        let b = pool2.spawn_with_data(VOID_LENS, 1700.0, 800.0, 0.0, 0.0, 0, 0.0).unwrap();
+        pool2.slots_mut()[b].owner = 1;
+        pool2.slots_mut()[b].time_left = 100;
+        pool2.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(pool2.slots()[a].active && pool2.slots()[b].active, "the owner gate");
+        let _ = younger;
     }
 }

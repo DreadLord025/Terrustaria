@@ -1192,6 +1192,9 @@ pub const MOON_LORD_WHIP_PROC: u16 = 1045;
 /// `ProjectileID.ToiletEffect` (733) — the toilet's pop effect, aiStyle
 /// 153 (`Projectile.cs:7716-7725`). W4-d16.
 pub const TOILET_EFFECT: u16 = 733;
+/// `ProjectileID.VoidLens` (734) — the Void Lens' placed lens, aiStyle
+/// 154 (`Projectile.cs:7726-7735`). W4-d16.
+pub const VOID_LENS: u16 = 734;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -4038,6 +4041,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             TOILET_EFFECT => {
                 (2.0, 2.0, 153, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
+            // W4-d16 — `Projectile.cs:7726-7735` (734, the Void Lens):
+            // 30x24, aiStyle 154, tileCollide false, timeLeft 10800,
+            // alpha 255; drawLayer 3 (`:7734`) is render-side (dropped).
+            // Stock penetrate 1, friendly/hostile false — the lens is a
+            // marker, not a shot.
+            VOID_LENS => {
+                (30.0, 24.0, 154, 1, 10800, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4679,6 +4690,9 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
         CRIMSON_HEART => 4,
+        // W4-d16 — the Void Lens' 8-frame sheet (`Main.cs:8504`) —
+        // `AI_154`'s 5-tick cycle wraps at it (`Projectile.cs:52179-52186`).
+        VOID_LENS => 8,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap

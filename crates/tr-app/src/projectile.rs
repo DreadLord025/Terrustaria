@@ -17399,6 +17399,45 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d16 — aiStyle 154, the Void Lens
+                        // (`AI_154_VoidLens` `:52154-52196`): the
+                        // owner-gated same-type dedupe scans the LIVE
+                        // pool (`:52157-52176` — the C# reads
+                        // `Main.projectile` while killing), so the scan
+                        // is pool-side here (the dragon_step shape); the
+                        // post-dedupe body lives in the misc module.
+                        // `HadAnActiveInteractableProjectile` (`:52156`)
+                        // is a frame flag with no port consumer — skipped.
+                        154 => {
+                            let mut survived = true;
+                            if self.slots[i].owner == local_owner {
+                                for j in 0..MAX_PROJECTILES {
+                                    if j == i {
+                                        continue;
+                                    }
+                                    let other = &self.slots[j];
+                                    if other.active
+                                        && other.owner == self.slots[i].owner
+                                        && other.kind == self.slots[i].kind
+                                    {
+                                        if self.slots[i].time_left < other.time_left {
+                                            self.slots[i].kill();
+                                            survived = false;
+                                            break;
+                                        }
+                                        self.slots[j].kill();
+                                    }
+                                }
+                            }
+                            if survived {
+                                crate::projectile_ai_misc::ai_void_lens(
+                                    &mut self.slots[i],
+                                    rng,
+                                );
+                            }
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the
