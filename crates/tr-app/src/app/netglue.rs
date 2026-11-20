@@ -831,6 +831,12 @@ impl App {
             // `:3167-3179`) land with the apply-wiring lanes (g48-g52) /
             // S1-I-4 — bodies + codecs only.
             C2s::InstrumentSound(_) | C2s::QuestsCountSync(_) => {}
+            // S1-I-1 W4-f21: `79`'s host spam/InWorld/section gate +
+            // WorldGen.PlaceObject + SendObjectPlacement relay
+            // (`MessageBuffer.cs:3201-3213`) and `85`'s
+            // QuickStackToNearbyChests (`:3262-3266`) land with the
+            // apply-wiring lanes (g48-g52) / S1-I-4.
+            C2s::PlaceObject(_) | C2s::QuickStackRequest(_) => {}
         }
     }
 
@@ -1891,6 +1897,11 @@ impl App {
             // (`:3173-3175`) land with the apply-wiring lanes (g48-g52) /
             // S1-I-4.
             S2c::InstrumentSound(_) | S2c::QuestsCountSync(_) => {}
+            // S1-I-1 W4-f21: `79`'s client WorldGen.PlaceObject
+            // (`MessageBuffer.cs:3209`) and `85`'s IndicateBlockedChests
+            // (`:3267-3270`) land with the apply-wiring lanes (g48-g52) /
+            // S1-I-4.
+            S2c::PlaceObject(_) | S2c::QuickStackBlockedChests(_) => {}
         }
     }
 

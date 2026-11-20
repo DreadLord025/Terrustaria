@@ -222,6 +222,22 @@ pub mod id {
     /// writer arm, no body; the same reader ignore group
     /// (`MessageBuffer.cs:4483-4490`).
     pub const UNUSED_83: u8 = 83;
+    /// `79 PlaceObject` (`MessageID.cs:171`) — writer
+    /// `NetMessage.cs:1166-1174`, reader `MessageBuffer.cs:3192-3215`
+    /// (host spam count + `InWorld(…, 10)` + section-sent gate, then
+    /// `WorldGen.PlaceObject` + `SendObjectPlacement` relay).
+    /// `SendObjectPlacement` (`NetMessage.cs:2573-2588`) sends it BOTH
+    /// ways: client placement asks (`Player.cs:40147`/`:45819`,
+    /// `Projectile.cs:25356`) and the host's placement relay.
+    pub const PLACE_OBJECT: u8 = 79;
+    /// `85 QuickStackChests` (`MessageID.cs:184`) — writer
+    /// `NetMessage.cs:1205-1215` is DIRECTION-SPLIT: `netMode == 1` writes
+    /// the inventory-slot list + a smart-stack byte
+    /// (`QuickStacking.WriteNetInventorySlots`, `QuickStacking.cs:299-306`
+    /// + `:296`'s send), the host writes the blocked-chest list
+    /// (`WriteBlockedChestList`, `:323-330` + `:277`'s send). Reader
+    /// `MessageBuffer.cs:3261-3271` mirrors the split.
+    pub const QUICK_STACK_CHESTS: u8 = 85;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1689,6 +1705,51 @@ pub struct QuestsCountSync {
     pub golfer_score: i32,
 }
 
+/// `msg 79 PlaceObject`'s body (`NetMessage.cs:1166-1174`): the tile as two
+/// `(short)`s, the object `(short)` type, the `(short)` style, the
+/// `(byte)` alternative, the `(sbyte)` random and `number7 == 1` as a bool
+/// (the reader maps it back to `direction = 1 : -1`,
+/// `MessageBuffer.cs:3200`). The host gates on `InWorld(x, y, 10)` + the
+/// section having been sent (`:3204`) before `WorldGen.PlaceObject`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlaceObject {
+    pub x: i16,
+    pub y: i16,
+    pub kind: i16,
+    pub style: i16,
+    pub alternative: u8,
+    pub random: i8,
+    /// The writer's `number7 == 1` bool; the reader's `direction` is
+    /// `1` when true, `-1` when false.
+    pub direction: bool,
+}
+
+/// `msg 85 QuickStackChests`'s DIRECTION-SPLIT body
+/// (`NetMessage.cs:1205-1215`): the client→host form is the quick-stack
+/// inventory (`QuickStacking.WriteNetInventorySlots`,
+/// `QuickStacking.cs:299-306`: an `int` count then that many `(short)`
+/// `PlayerItemSlotID.SlotId`s) plus the smart-stack byte; the host→client
+/// form is the blocked-chest list (`WriteBlockedChestList`, `:323-330`: an
+/// `int` count then that many `(ushort)` chest indices). The two forms are
+/// distinct wire shapes keyed on `netMode`, so the port keeps them as two
+/// variants rather than one ambiguous body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuickStackRequest {
+    /// `QuickStacking.netInv.slots[i].SlotId` — the `PlayerItemSlotID`
+    /// slot references, in order.
+    pub slots: Vec<i16>,
+    /// `number == 1` — the smart-stack flag (`QuickStacking.cs:296`).
+    pub smart_stack: bool,
+}
+
+/// The host→client half of `85` (`NetMessage.cs:1213`,
+/// `QuickStacking.WriteBlockedChestList` `:323-330`): the chests the
+/// quick-stack was blocked from, as `(ushort)` indices.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuickStackBlockedChests {
+    pub chests: Vec<u16>,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1821,6 +1882,15 @@ pub enum C2s {
     /// accepts them from a peer or `ServerSideCharacter`,
     /// `MessageBuffer.cs:3164-3182`).
     QuestsCountSync(QuestsCountSync),
+    /// `79 PlaceObject` — a client placed a multi-tile object
+    /// (`Player.cs:40147`/`:45819`, `Projectile.cs:25356` via
+    /// `SendObjectPlacement`; host gate + relay
+    /// `MessageBuffer.cs:3192-3215`).
+    PlaceObject(PlaceObject),
+    /// `85 QuickStackChests` — the client's quick-stack ask (the
+    /// `netMode == 1` writer half, `NetMessage.cs:1206-1210`;
+    /// `QuickStacking.cs:296`).
+    QuickStackRequest(QuickStackRequest),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2013,6 +2083,13 @@ pub enum S2c {
     /// `76 QuestsCountSync` — a peer's quest/golf counts, host relay
     /// (`MessageBuffer.cs:3178`).
     QuestsCountSync(QuestsCountSync),
+    /// `79 PlaceObject` — the host's placement relay
+    /// (`SendObjectPlacement`'s `netMode == 2` half,
+    /// `NetMessage.cs:2577-2581` + `MessageBuffer.cs:3212`).
+    PlaceObject(PlaceObject),
+    /// `85 QuickStackChests` — the blocked-chest list (the host writer
+    /// half, `NetMessage.cs:1213`; `QuickStacking.cs:277`).
+    QuickStackBlockedChests(QuickStackBlockedChests),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2072,6 +2149,8 @@ impl C2s {
             Self::LockAndUnlock(_) => id::LOCK_AND_UNLOCK,
             Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
             Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
+            Self::PlaceObject(_) => id::PLACE_OBJECT,
+            Self::QuickStackRequest(_) => id::QUICK_STACK_CHESTS,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2154,6 +2233,25 @@ impl C2s {
                 .u8(q.player_id)
                 .i32(q.angler_quests_finished)
                 .i32(q.golfer_score),
+            // `NetMessage.cs:1166-1174`: two (short)s + (short)type +
+            // (short)style + (byte)alt + (sbyte)random + (number7 == 1).
+            Self::PlaceObject(p) => w
+                .i16(p.x)
+                .i16(p.y)
+                .i16(p.kind)
+                .i16(p.style)
+                .u8(p.alternative)
+                .i8(p.random)
+                .bool(p.direction),
+            // `NetMessage.cs:1206-1210` + `QuickStacking.cs:299-306`:
+            // int count + (short) slots, then the smart-stack byte.
+            Self::QuickStackRequest(q) => {
+                let mut w = w.i32(q.slots.len() as i32);
+                for s in &q.slots {
+                    w = w.i16(*s);
+                }
+                w.bool(q.smart_stack)
+            }
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2306,6 +2404,32 @@ impl C2s {
                 angler_quests_finished: r.i32()?,
                 golfer_score: r.i32()?,
             }),
+            // `MessageBuffer.cs:3194-3200`: two ReadInt16 + ReadInt16 type +
+            // ReadInt16 style + ReadByte alt + ReadSByte random + ReadBoolean
+            // (mapped to direction 1/-1 by the apply arm).
+            id::PLACE_OBJECT => Self::PlaceObject(PlaceObject {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                style: r.i16()?,
+                alternative: r.u8()?,
+                random: r.i8()?,
+                direction: r.bool()?,
+            }),
+            // `MessageBuffer.cs:3265` → `QuickStacking.ReadNetInventory`
+            // (`QuickStacking.cs:308-321`): int count + (short) slots, then
+            // the smart-stack ReadBoolean (`:3265`).
+            id::QUICK_STACK_CHESTS => {
+                let n = r.i32()?;
+                let mut slots = Vec::new();
+                for _ in 0..n.max(0) {
+                    slots.push(r.i16()?);
+                }
+                Self::QuickStackRequest(QuickStackRequest {
+                    slots,
+                    smart_stack: r.bool()?,
+                })
+            }
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2476,6 +2600,8 @@ impl S2c {
             Self::WorldEvilBytes(_) => id::WORLD_EVIL_BYTES,
             Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
             Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
+            Self::PlaceObject(_) => id::PLACE_OBJECT,
+            Self::QuickStackBlockedChests(_) => id::QUICK_STACK_CHESTS,
         }
     }
 
@@ -2634,6 +2760,24 @@ impl S2c {
                 .u8(q.player_id)
                 .i32(q.angler_quests_finished)
                 .i32(q.golfer_score),
+            // `NetMessage.cs:1166-1174` — the shared placement body.
+            Self::PlaceObject(p) => w
+                .i16(p.x)
+                .i16(p.y)
+                .i16(p.kind)
+                .i16(p.style)
+                .u8(p.alternative)
+                .i8(p.random)
+                .bool(p.direction),
+            // `NetMessage.cs:1213` + `QuickStacking.cs:323-330`: int count
+            // + (ushort) chest indices.
+            Self::QuickStackBlockedChests(b) => {
+                let mut w = w.i32(b.chests.len() as i32);
+                for c in &b.chests {
+                    w = w.u16(*c);
+                }
+                w
+            }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2871,6 +3015,26 @@ impl S2c {
                 angler_quests_finished: r.i32()?,
                 golfer_score: r.i32()?,
             }),
+            // `MessageBuffer.cs:3194-3200` — the shared placement read.
+            id::PLACE_OBJECT => Self::PlaceObject(PlaceObject {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                style: r.i16()?,
+                alternative: r.u8()?,
+                random: r.i8()?,
+                direction: r.bool()?,
+            }),
+            // `MessageBuffer.cs:3269` → `QuickStacking.ReadBlockedChestList`
+            // (`QuickStacking.cs:332-341`): int count + (ushort) indices.
+            id::QUICK_STACK_CHESTS => {
+                let n = r.i32()?;
+                let mut chests = Vec::new();
+                for _ in 0..n.max(0) {
+                    chests.push(r.u16()?);
+                }
+                Self::QuickStackBlockedChests(QuickStackBlockedChests { chests })
+            }
             _ => return None,
         })
     }
@@ -5273,6 +5437,104 @@ mod tests {
         }
         // A truncated golf score must not decode.
         assert!(S2c::decode(76, &mut NetReader::new(&body[..8])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_place_object_round_trips_both_directions() {
+        // `NetMessage.cs:1166-1174`: (short)x + (short)y + (short)type +
+        // (short)style + (byte)alt + (sbyte)random + (number7 == 1) bool.
+        let b = PlaceObject {
+            x: -3,
+            y: 500,
+            kind: 21, // a chest
+            style: 4,
+            alternative: 2,
+            random: -7,
+            direction: true,
+        };
+        let mut body = (-3i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&500i16.to_le_bytes());
+        body.extend_from_slice(&21i16.to_le_bytes());
+        body.extend_from_slice(&4i16.to_le_bytes());
+        body.push(2);
+        body.push((-7i8) as u8);
+        body.push(1);
+        let f = C2s::PlaceObject(b).encode();
+        assert_eq!(f[2], 79);
+        assert_eq!(f.len(), 3 + 12);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::PlaceObject(d) => assert_eq!(d, b),
+            other => panic!("expected 79, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::PlaceObject(b).encode();
+        assert_eq!(f[2], 79);
+        match S2c::decode(79, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlaceObject(d) => assert_eq!(d, b),
+            other => panic!("expected 79, got {:?}", other.msg_id()),
+        }
+        // direction=false rides as 0 (the reader maps it to -1).
+        let left = PlaceObject {
+            direction: false,
+            ..b
+        };
+        let f = C2s::PlaceObject(left).encode();
+        assert_eq!(*f.last().unwrap(), 0);
+        // A truncated direction byte must not decode.
+        assert!(C2s::decode(79, &mut NetReader::new(&body[..11])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_quick_stack_direction_split_round_trips() {
+        // C2s half (`NetMessage.cs:1206-1210` + `QuickStacking.cs:299-306`):
+        // int count + (short) SlotIds + the smart-stack byte.
+        let q = QuickStackRequest {
+            slots: vec![0, 10, 58, 179], // inventory + a bank slot id
+            smart_stack: true,
+        };
+        let mut body = 4i32.to_le_bytes().to_vec();
+        for s in &q.slots {
+            body.extend_from_slice(&s.to_le_bytes());
+        }
+        body.push(1);
+        let f = C2s::QuickStackRequest(q.clone()).encode();
+        assert_eq!(f[2], 85);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::QuickStackRequest(d) => assert_eq!(d, q),
+            other => panic!("expected 85, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c half (`NetMessage.cs:1213` + `QuickStacking.cs:323-330`):
+        // int count + (ushort) chest indices, NO smart-stack byte.
+        let b = QuickStackBlockedChests {
+            chests: vec![3, 7999],
+        };
+        let mut body = 2i32.to_le_bytes().to_vec();
+        for c in &b.chests {
+            body.extend_from_slice(&c.to_le_bytes());
+        }
+        let f = S2c::QuickStackBlockedChests(b.clone()).encode();
+        assert_eq!(f[2], 85);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(85, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::QuickStackBlockedChests(d) => assert_eq!(d, b),
+            other => panic!("expected 85, got {:?}", other.msg_id()),
+        }
+        // The empty forms are bare int-0 counts (+ the C2s smart byte).
+        let f = C2s::QuickStackRequest(QuickStackRequest {
+            slots: vec![],
+            smart_stack: false,
+        })
+        .encode();
+        assert_eq!(&f[3..], &[0, 0, 0, 0, 0]);
+        let f = S2c::QuickStackBlockedChests(QuickStackBlockedChests { chests: vec![] }).encode();
+        assert_eq!(&f[3..], &[0, 0, 0, 0]);
+        // A truncated slot list must not decode.
+        assert!(C2s::decode(85, &mut NetReader::new(&[2, 0, 0, 0, 1, 0])).is_none());
     }
 
     #[test]
