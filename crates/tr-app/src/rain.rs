@@ -5,9 +5,10 @@
 //! that ends the event, and one drop per `MakeRain` spawn slot per tick with the
 //! original fall velocity (`wind * 18, 14` px/tick). Drops are drawn rotated around
 //! their top-left origin with the local light colour, and die on solid or wet tiles
-//! with a splash. In a snow biome the event renders as snowfall instead: no rain
-//! drops, and `Dust` type 76 flakes (vanilla's ambient snow dust) drift down all the
-//! time, with the storm intensity increasing the count and the wind.
+//! with a splash. The ambient snowfall is NOT this rig's: vanilla's `Main.snowing()`
+//! (`Main.cs:13032-13116`) spawns `Dust` type 76 into the shared pool wherever the
+//! scene metrics count snow tiles at the surface — `crate::snow` owns that spawn,
+//! AI and draw (W4-d130); the old biome-gated flake approximation is retired.
 //!
 //! Since M1.4-BG-22 the event lifecycle is the vanilla `UpdateTime` rain section
 //! (`Main.cs:64833-64949`) — the `ladyBugRainBoost` drain, the `rainTime` drain with
@@ -42,10 +43,8 @@ use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
 
-/// `Main.maxRain`.
+/// `Main.maxRain` (`Main.cs:66801`).
 const MAX_DROPS: usize = 750;
-/// Active snowflakes; vanilla caps the snow dust counter near 500 per screen.
-const MAX_SNOW: usize = 600;
 const TICKS_PER_SEC: f32 = 60.0;
 /// `cloudAlpha` change per tick while raining (vanilla `0.0005 * dayRate`).
 const RAMP_PER_TICK: f32 = 0.0005;
@@ -65,13 +64,14 @@ const DROP_W: f32 = 2.0;
 const DROP_H: f32 = 40.0;
 const SPLASH_LIFE: f32 = 0.32;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 struct Drop {
+    active: bool,
     pos: Vec2,
     vel: Vec2,
     scale: f32,
     rot: f32,
-    /// Rain frame type (0..2 for water style 0).
+    /// Rain frame type (`waterStyle * 3 + rand(3)`, `Rain.cs:205`).
     kind: u8,
 }
 
@@ -93,17 +93,6 @@ struct Sparkle {
     alpha: f32,
 }
 
-/// One `DustID.Snowflake` (type 76) particle.
-#[derive(Clone, Copy, Debug)]
-struct Snowflake {
-    pos: Vec2,
-    vel: Vec2,
-    scale: f32,
-    /// Sway phase; each flake drifts horizontally on its own sine.
-    phase: f32,
-    frame: u8,
-}
-
 pub struct Rain {
     /// `Main.cloudAlpha`: current visible intensity, 0..~1.5.
     intensity: f32,
@@ -121,11 +110,6 @@ pub struct Rain {
     /// TR_NO_WEATHER: the port's scheduler switch — with it the C#-shaped rolls
     /// never run (the retired session schedule honoured the same switch).
     calm: bool,
-    /// Drop/snow drift velocity, set once at seed time. Vanilla reads the live
-    /// `Main.windSpeedCurrent` per tick (`Cloud.cs`-style drift is unported);
-    /// the retired session schedule was its last writer (`Main.cs:58830-58950`
-    /// feeds `Wind` directly now).
-    wind: f32,
     /// `Main.cloudBGAlpha`: storm cloud-bank opacity, 0..1.
     cloud_bg: f32,
     /// `Main.lightning`: the flash brightness ramping up via `lightningSpeed`
@@ -141,17 +125,13 @@ pub struct Rain {
     lightning_decay: f32,
     /// `Main.IsItStorming` (`Player/Wind` sticky flag) for this tick.
     storming: bool,
+    /// `Main.rain` — the 750-slot pool (`Main.cs:66801`): slot order IS the
+    /// `DrawRain`/`Update` walk order and `NewRain` takes the first inactive
+    /// slot (`Rain.cs:187-194`), so the pool keeps fixed slots, never compacts.
     drops: Vec<Drop>,
     splashes: Vec<Splash>,
     sparkles: Vec<Sparkle>,
-    snow: Vec<Snowflake>,
-    /// The camera is in a snow biome: rain is replaced by snowfall.
-    snow_mode: bool,
-    /// The gfx-quality value the snow cap scales with (S1-B-6) — the
-    /// weather pass copies `App.gfx_quality.quality` in.
-    pub gfx_quality: f32,
     rng: u64,
-    spawn_acc: f32,
     forced: Option<f32>,
     accum: f32,
 }
@@ -216,6 +196,43 @@ pub struct ThunderStrike {
     pub pitch: f32,
 }
 
+/// The per-tick `Main` statics `MakeRain`/`NewRain`/`Rain.Update` read
+/// (`Rain.cs:30-133`): the port gathers them once per frame in
+/// `world_sim::weather::update_rain` — vanilla reads them live inside the
+/// spawn/draw, the values are constant across one frame.
+#[derive(Clone, Copy, Debug)]
+pub struct RainInputs {
+    /// `Main.screenPosition` — the view's world-px CENTRE (the port's camera).
+    pub camera: Vec2,
+    /// `Main.screenWidth`/`screenHeight` — the UI size.
+    pub screen: Vec2,
+    /// The view zoom (the port draws at `zoom` inside the same pixels).
+    pub zoom: f32,
+    /// `Main.dayRate` — the visual-ramp scale.
+    pub day_rate: i32,
+    /// `Main.windSpeedCurrent` — the live wind (`Rain.cs:56/93`).
+    pub wind_speed_current: f32,
+    /// `Main.player[Main.myPlayer].velocity` — the spawn-window shaping
+    /// (`Rain.cs:50-57`); zero when no player exists.
+    pub player_velocity: Vec2,
+    /// `Main.shimmerAlpha` (`Rain.cs:32`).
+    pub shimmer_alpha: f32,
+    /// `Main.atmo` (`Rain.cs:182-186`).
+    pub atmo: f32,
+    /// `Main.SceneMetrics.SnowTileCount` (`Rain.cs:181`).
+    pub snow_tile_count: i32,
+    /// `Main.SceneMetrics.ZoneRain` (`Rain.cs:32`).
+    pub zone_rain: bool,
+    /// `Main.waterStyle` (`Rain.cs:162/205` — the frame type).
+    pub water_style: u32,
+    /// `NPC.AnyDanger(quickBossNPCCheck: true)` (`Rain.cs:37-45`).
+    pub any_danger: bool,
+    /// `Main.gfxQuality` (`Rain.cs:120/176-180`).
+    pub gfx_quality: f32,
+    /// `Main.remixWorld` (`Rain.cs:84/110-116`).
+    pub remix_world: bool,
+}
+
 /// Bridges the Rain stream into [`tr_core::loot::DropRng`] for `Luck.RollLuck`
 /// (`Main.cs:64668`): `Random.Next(min,max)` / `NextDouble()` semantics over
 /// Rain's `range`/`rand01`.
@@ -241,7 +258,6 @@ impl Rain {
     /// world-tick tests pin `max_raining` through it; scene_scan precedent).
     pub(crate) fn with_forced(seed: u64, forced: Option<f32>, start_calm: bool) -> Self {
         let rng = (seed ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
-        let wind = (((rng >> 40) & 0xFFFF) as f32 / 65535.0 - 0.5) * 0.7;
         Self {
             intensity: 0.0,
             target: 0.0,
@@ -249,7 +265,6 @@ impl Rain {
             rain_time: 0,
             lady_bug_rain_boost: 0,
             calm: start_calm,
-            wind,
             cloud_bg: 0.0,
             flash: 0.0,
             thunder_delay: 0,
@@ -257,14 +272,10 @@ impl Rain {
             thunder_distance: 0,
             lightning_speed: 0.0,
             lightning_decay: 0.008,
-            drops: Vec::with_capacity(MAX_DROPS),
+            drops: vec![Drop::default(); MAX_DROPS],
             splashes: Vec::with_capacity(128),
             sparkles: Vec::with_capacity(64),
-            snow: Vec::with_capacity(MAX_SNOW),
-            snow_mode: false,
-            gfx_quality: 0.0,
             rng,
-            spawn_acc: 0.0,
             forced,
             accum: 0.0,
         }
@@ -318,12 +329,9 @@ impl Rain {
         self.raining = raining;
     }
 
+    /// Live drops (`Rain.active` slots) — the debug readout.
     pub fn drop_count(&self) -> usize {
-        self.drops.len()
-    }
-
-    pub fn snow_count(&self) -> usize {
-        self.snow.len()
+        self.drops.iter().filter(|d| d.active).count()
     }
 
     /// Storm cloud-bank opacity (`Main.cloudBGAlpha`).
@@ -378,57 +386,19 @@ impl Rain {
     /// (`update_time`, driven by `world_sim::weather::update_world_tick`) and the
     /// lightning chain runs there too (`thunder_step`). `day_rate` scales the
     /// ramps (`Main.cs:61902-61906`'s `num4 < 1 → 1` clamp shape).
-    ///
-    /// `shimmer_alpha`, `atmo`, `snow_tile_count` and `zone_rain` are the
-    /// `MakeRain`/`NewRain` gate inputs (`Rain.cs:30-207`, S1-L-2).
-    pub fn update(
-        &mut self,
-        world: &World,
-        camera: Vec2,
-        screen: Vec2,
-        zoom: f32,
-        dt: f32,
-        snow_biome: bool,
-        day_rate: i32,
-        shimmer_alpha: f32,
-        atmo: f32,
-        snow_tile_count: i32,
-        zone_rain: bool,
-    ) {
-        self.snow_mode = snow_biome;
+    pub fn update(&mut self, world: &World, inputs: &RainInputs, dt: f32) {
         let step = 1.0 / TICKS_PER_SEC;
         let mut acc = self.accum + dt.min(0.25);
         let mut steps = 0;
         while acc >= step && steps < 12 {
-            self.tick(
-                world,
-                camera,
-                screen,
-                zoom,
-                day_rate,
-                shimmer_alpha,
-                atmo,
-                snow_tile_count,
-                zone_rain,
-            );
+            self.tick(world, inputs);
             acc -= step;
             steps += 1;
         }
         self.accum = acc.min(step * 12.0);
     }
 
-    fn tick(
-        &mut self,
-        world: &World,
-        camera: Vec2,
-        screen: Vec2,
-        zoom: f32,
-        day_rate: i32,
-        shimmer_alpha: f32,
-        atmo: f32,
-        snow_tile_count: i32,
-        zone_rain: bool,
-    ) {
+    fn tick(&mut self, world: &World, i: &RainInputs) {
         if let Some(f) = self.forced {
             self.intensity = f;
             self.target = f;
@@ -439,7 +409,7 @@ impl Rain {
             // tick. Only the `cloudAlpha` ramp remains here, per rain tick
             // (documented deviation vs C#'s per-draw ramp, `Main.cs:61909-61924`),
             // scaled by `max(1, dayRate)` (`:61902-61906`).
-            let rate = day_rate.max(1) as f32;
+            let rate = i.day_rate.max(1) as f32;
             let ramp = RAMP_PER_TICK * rate;
             let delta = (self.target - self.intensity).clamp(-ramp, ramp);
             self.intensity += delta;
@@ -449,7 +419,7 @@ impl Rain {
         // `cloudAlpha` ramp so the deck appears within it; scaled by
         // `max(1, dayRate)` like the `cloudBGActive` ramp it stands in for,
         // `Main.cs:13187/13205`). Runs under the pin too, as before.
-        let rate = day_rate.max(1) as f32;
+        let rate = i.day_rate.max(1) as f32;
         let bg_ramp = CLOUD_BG_RAMP_PER_TICK * rate;
         let target = if self.intensity > 0.05 {
             self.intensity.min(1.0)
@@ -464,27 +434,14 @@ impl Rain {
         // `thunder_step`, called from `world_sim::weather::update_world_tick`
         // — not here with the drop sim.
 
-        // Each tick advances the drops at the original 60 Hz velocity.
-        self.update_drops(world, camera, screen, zoom);
-        self.update_snow(world, camera, screen, zoom);
-        if self.snow_mode {
-            // Vanilla suppresses rain drops in a snow biome and lets the ambient
-            // snow dust carry the weather instead.
-            if rain_zone(world, camera) {
-                self.spawn_snow(world, camera, screen, zoom);
-            }
-        } else if self.intensity > 0.01 {
-            self.spawn(
-                world,
-                camera,
-                screen,
-                zoom,
-                shimmer_alpha,
-                atmo,
-                snow_tile_count,
-                zone_rain,
-            );
+        // `Main.cs:17220-17223`: `if (FocusHelper.AllowRain && cloudAlpha > 0f)
+        // Rain.MakeRain();` — the spawn runs BEFORE the drops' `Update` (which
+        // the C# runs inside `DrawRain`, `Main.cs:38819-38822`). The port keeps
+        // both on this 60 Hz accumulator, spawn-then-update per tick.
+        if self.intensity > 0.0 {
+            self.spawn(world, i);
         }
+        self.update_drops(world, i);
         for s in &mut self.splashes {
             s.pos += s.vel;
             s.vel.y += 0.12;
@@ -853,179 +810,190 @@ impl Rain {
         }
     }
 
-    fn update_drops(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
-        let bottom = camera.y + screen.y * 0.5 / zoom + 100.0 / zoom;
-        let px = tr_core::TILE_PX;
-        let mut i = 0;
-        while i < self.drops.len() {
-            let mut d = self.drops[i];
+    /// `Rain.Update` (`Rain.cs:96-133`) over the fixed pool, in slot order —
+    /// the C# runs it inside `DrawRain` per active slot (`Main.cs:38819-38822`);
+    /// the port's 60 Hz accumulator owns the cadence (the draw stays pure).
+    /// `gamePaused` is folded out (the weather cluster is pause-gated);
+    /// `gameMenu` never holds in-world. The death probes are the real
+    /// `Collision.SolidCollision`/`WetCollision` 2x2 boxes (`:117`).
+    fn update_drops(&mut self, world: &World, i: &RainInputs) {
+        // `:112/:117`: `screenPosition.Y + screenHeight + 100f` — the port's
+        // camera is the view CENTRE; the world-space view bottom plus the
+        // 100 px margin scaled into world space (the sand.rs zoom convention).
+        let bottom = i.camera.y + i.screen.y * 0.5 / i.zoom + 100.0 / i.zoom;
+        for slot in 0..MAX_DROPS {
+            let mut d = self.drops[slot];
+            if !d.active {
+                continue;
+            }
+            // `:102`: `position += velocity`.
             d.pos += d.vel;
-            let tx = (d.pos.x / px).floor() as i32;
-            let ty = (d.pos.y / px).floor() as i32;
-            let hit = world.tile(tx, ty).is_some_and(|t| {
-                (t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind))
-                    || t.liquid > 0
-            });
-            if hit || d.pos.y > bottom {
-                if hit {
+            // `:110-116`: the remixWorld arm — no collision, only the bottom.
+            let die = if i.remix_world {
+                d.pos.y > bottom
+            } else {
+                // `:117`: solid OR bottom OR wet.
+                crate::player::Player::solid_collision(world, d.pos.x, d.pos.y, 2.0, 2.0)
+                    || d.pos.y > bottom
+                    || crate::player::wet_collision(world, d.pos.x, d.pos.y, 2.0, 2.0)
+            };
+            if die {
+                d.active = false;
+                // `:119-131`: the impact dust fires only on the collision
+                // arms (solid/wet) — the bottom kill (`:112-116` remix, and
+                // the off-screen half of `:117`) spawns nothing. The port
+                // probes solid/wet again to pick the arm; the stand-in
+                // splash keeps the `Next(100) < gfxQuality * 100` roll (g67
+                // owns the real `Dust.NewDust(..., dustWater())` splash).
+                let collision = !i.remix_world
+                    && (crate::player::Player::solid_collision(
+                        world, d.pos.x, d.pos.y, 2.0, 2.0,
+                    ) || crate::player::wet_collision(
+                        world, d.pos.x, d.pos.y, 2.0, 2.0,
+                    ));
+                if collision && self.range(0, 100) as f32 < i.gfx_quality * 100.0 {
                     self.spawn_splash(d);
                 }
-                self.drops.swap_remove(i);
-            } else {
-                self.drops[i] = d;
-                i += 1;
             }
+            self.drops[slot] = d;
         }
     }
 
-    /// `Rain.MakeRain` (`Rain.cs:30-89`, S1-L-2): the per-tick drop spawn.
-    /// Gates: `!ZoneRain || shimmerAlpha > 0f` suppress spawning (the C# also
-    /// early-returns on netMode 2 / paused / menu). The attempt rate is
-    /// `screenWidth / MaxWorldViewSize.X * 25 * (0.25 + cloudAlpha)` with the
-    /// `NPC.AnyDanger` 0.05 throttle (`:36-45`); `NewRain` (`:166-207`) then
-    /// caps the live count by `maxRain * cloudAlpha` scaled by `gfxQuality`,
-    /// the snow-tile suppression `(1 - (snow/max)^2)`, and `atmo^9` (0 when
-    /// `atmo < 0.4`), and sets the `waterStyle*3 + rand(3)` frame type.
-    fn spawn(
-        &mut self,
-        world: &World,
-        camera: Vec2,
-        screen: Vec2,
-        zoom: f32,
-        shimmer_alpha: f32,
-        atmo: f32,
-        snow_tile_count: i32,
-        zone_rain: bool,
-    ) {
-        if !zone_rain || shimmer_alpha > 0.0 {
+    /// `Rain.MakeRain` (`Rain.cs:30-89`) + `Rain.NewRain` (`:166-207`),
+    /// verbatim: the attempt rate `screenWidth / MaxWorldViewSize.X * 25 *
+    /// (0.25 + cloudAlpha)` with the `NPC.AnyDanger` 0.05 throttle, the
+    /// player-velocity spawn window, the wind lead (`windSpeedCurrent * 15 *
+    /// 40`) and the open-sky gate; per attempt `NewRain` budgets the FIRST
+    /// inactive slot within `maxRain * cloudAlpha` scaled by gfxQuality, the
+    /// snow-tile suppression `(1 - (snow/threshold)^2)` and `atmo^9`.
+    /// RNG order per attempt: x-window roll, y roll, then (on an open tile)
+    /// the scale roll and the frame roll — exactly `Rain.cs:54-55` + `:202-205`.
+    fn spawn(&mut self, world: &World, i: &RainInputs) {
+        // `:32`: netMode 2 / gamePaused / gameMenu fold out (the pause gate
+        // owns the cluster); ZoneRain + shimmer gate verbatim.
+        if !i.zone_rain || i.shimmer_alpha > 0.0 {
             return;
         }
-        let mut rate = screen.x / 1920.0 * 25.0 * (0.25 + self.intensity);
-        // `Rain.cs:37-45`: `NPC.AnyDanger(quickBossNPCCheck: true)` throttles to
-        // 0.05x (floored to 1 attempt when any would remain). The port has no
-        // boss-danger scan on Rain; the gate is preserved as a hook (no-op).
-        self.spawn_acc += rate;
-        let count = self.spawn_acc.floor();
-        self.spawn_acc -= count;
-        if count <= 0.0 {
-            return;
-        }
-        // `Rain.NewRain` (`:166-207`): the active-slot budget.
-        let mut num2 = (MAX_DROPS as f32 * self.intensity.clamp(0.0, 1.0)) as i32;
-        if num2 > MAX_DROPS as i32 {
-            num2 = MAX_DROPS as i32;
-        }
-        // gfxQuality defaults to 1.0 in the port (no setting); the C# scales by
-        // `(1 + gfxQuality) / 2` when < 0.9 (`:176-180`).
-        let snow_threshold = tr_core::scene::thresholds::SNOW_TILE_NORMAL.max(1) as f32;
-        let snow_ratio = (snow_tile_count.max(0) as f32 / snow_threshold).clamp(0.0, 1.0);
-        num2 = ((num2 as f32) * (1.0 - snow_ratio * snow_ratio)) as i32;
-        num2 = ((num2 as f64) * (atmo.clamp(0.0, 1.0) as f64).powi(9)) as i32;
-        if atmo < 0.4 {
-            num2 = 0;
-        }
-        if self.drops.len() >= num2.max(0) as usize {
-            return;
-        }
-        let px = tr_core::TILE_PX;
-        let half = screen * 0.5 / zoom;
-        let wind = self.wind + 0.05 * (self.intensity * 9.0).sin();
-        for _ in 0..count as usize {
-            if self.drops.len() >= num2.max(0) as usize || self.drops.len() >= MAX_DROPS {
-                break;
+        // `:36`: `screenWidth / MaxWorldViewSize.X * 25f * (0.25f + cloudAlpha)`
+        // — MaxWorldViewSize.X = 1920 (`Main.cs:66714`).
+        let mut num = i.screen.x / 1920.0 * 25.0 * (0.25 + 1.0 * self.intensity);
+        // `:37-45`: the AnyDanger 0.05 cut with the >1 → <1 floor.
+        if i.any_danger {
+            let num2 = num;
+            num *= 0.05;
+            if num2 > 1.0 && num < 1.0 {
+                num = 1.0;
             }
-            let x = camera.x + (self.rand01() * 2.0 - 1.0) * (half.x + 600.0) - wind * 600.0;
-            let y = camera.y - half.y - 20.0 - self.rand01() * 80.0;
-            let tx = (x / px).floor() as i32;
-            let ty = (y / px).floor() as i32;
-            let open = world
-                .tile(tx, ty)
-                .is_some_and(|t| !t.active() && t.wall == 0);
+        }
+        // `Main.screenPosition` — the view's world-px top-left.
+        let view_min = i.camera - i.screen * 0.5 / i.zoom;
+        let mut attempt = 0.0_f32;
+        while attempt < num {
+            attempt += 1.0;
+            // `:49-53`: the window widens while the player rises.
+            let mut num3 = 600;
+            if i.player_velocity.y < 0.0 {
+                num3 += (i.player_velocity.y.abs() * 30.0) as i32;
+            }
+            // `:54-55`: the two window rolls (X then Y — the C# order).
+            let mut x = self.range_signed(
+                view_min.x as i32 - num3,
+                view_min.x as i32 + i.screen.x as i32 + num3,
+            ) as f32;
+            let y = view_min.y - self.range(20, 100) as f32;
+            // `:56-57`: the wind lead and the player-velocity lead.
+            x -= i.wind_speed_current * 15.0 * 40.0;
+            x += i.player_velocity.x * 40.0;
+            // `:58-65`: the world-edge clamps.
+            if x < 0.0 {
+                x = 0.0;
+            }
+            let max_x = ((world.width - 1) * 16) as f32;
+            if x > max_x {
+                x = max_x;
+            }
+            // `:66-83`: the tile indices, clamped to the world.
+            let num4 = ((x as i32) / 16).clamp(0, world.width - 1);
+            let num5 = ((y as i32) / 16).clamp(0, world.height - 1);
+            // `:84`: remixWorld spawns anywhere; else open sky only —
+            // `!SolidTile && wall <= 0`.
+            let open = i.remix_world || {
+                let t = world.tile(num4, num5);
+                let solid = t.is_some_and(|t| {
+                    t.active()
+                        && !t.inactive()
+                        && td::TILE_SOLID.has(t.kind)
+                        && !td::TILE_SOLID_TOP.has(t.kind)
+                        && !t.half_brick()
+                        && t.slope() == 0
+                });
+                !solid && t.is_some_and(|t| t.wall == 0)
+            };
             if !open {
                 continue;
             }
-            let scale = 1.0 + (self.rand01() * 2.0 - 1.0) * 0.2;
-            let vel = Vec2::new(wind * 18.0 * scale, 14.0 * scale);
-            // `Rain.cs:205`: `type = (byte)(Main.waterStyle * 3 + Main.rand.Next(3))`.
-            let water_style = crate::biome::calculate_water_style(world, camera) as u32;
-            let kind = (water_style * 3 + self.range(0, 3)) as u8;
-            self.drops.push(Drop {
-                pos: Vec2::new(x, y),
-                vel,
-                scale,
-                rot: vel.x.atan2(-vel.y),
-                kind,
-            });
+            // `:86`: `NewRain(GetRainFallVelocity(), vector)` — the budget
+            // rolls no RNG; the scale + frame rolls fire only on a taken slot.
+            self.new_rain(Vec2::new(x, y), i);
         }
     }
 
-    fn update_snow(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
-        let bottom = camera.y + screen.y * 0.5 / zoom + 40.0 / zoom;
-        let px = tr_core::TILE_PX;
-        let mut i = 0;
-        while i < self.snow.len() {
-            let mut s = self.snow[i];
-            s.phase += 0.06;
-            s.pos.x += s.vel.x + s.phase.sin() * 0.45;
-            s.pos.y += s.vel.y;
-            let tx = (s.pos.x / px).floor() as i32;
-            let ty = (s.pos.y / px).floor() as i32;
-            let hit = world.tile(tx, ty).is_some_and(|t| {
-                (t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind))
-                    || t.liquid > 0
-            });
-            if hit || s.pos.y > bottom {
-                self.snow.swap_remove(i);
-            } else {
-                self.snow[i] = s;
-                i += 1;
-            }
+    /// `Rain.NewRain` (`Rain.cs:166-207`): the slot budget then the drop
+    /// fields. `GetRainFallVelocity` (`:91-94`) is `(windSpeedCurrent * 18, 14)`.
+    fn new_rain(&mut self, position: Vec2, i: &RainInputs) {
+        // `:169-173`: `num2 = (int)(maxRain * cloudAlpha)`, capped at maxRain.
+        let mut num2 = (MAX_DROPS as f32 * self.intensity) as i32;
+        if num2 > MAX_DROPS as i32 {
+            num2 = MAX_DROPS as i32;
         }
-    }
-
-    /// Ambient snowfall: vanilla spawns `500 * screenWidth/1920` dust flakes in a snow
-    /// biome, multiplied by `1 + 2*cloudAlpha` during a storm. The spawn cap
-    /// carries the gfx-quality budget (`Main.cs:13057`'s
-    /// `num2 * (gfxQuality / 2f + 0.5f) + num2 * 0.1f` — S1-B-6), so the
-    /// low-quality mode flakes fewer.
-    fn spawn_snow(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
-        let px = tr_core::TILE_PX;
-        let half = screen * 0.5 / zoom;
-        let rate = screen.x / 1920.0 * 2.4 * (0.6 + 1.8 * self.intensity);
-        let cap = crate::world_sim::gfx_quality::snow_cap(MAX_SNOW, self.gfx_quality);
-        if self.snow.len() >= cap {
-            return;
+        // `:174-175`: the depth factor is COMPUTED AND DISCARDED in the C#
+        // (a bare `Math.Max(...)` statement) — no effect, kept as a note.
+        // `:176-180`: the gfxQuality scale below 0.9.
+        let num4 = (1.0 + i.gfx_quality) / 2.0;
+        if (num4 as f64) < 0.9 {
+            num2 = (num2 as f32 * num4) as i32;
         }
-        let count = rate.max(0.0).floor() as usize;
-        for _ in 0..count {
-            if self.snow.len() >= cap {
+        // `:181-182`: the snow-tile suppression, then `atmo^9`.
+        let snow_threshold = tr_core::scene::thresholds::SNOW_TILE_NORMAL as f32;
+        let num5 = (i.snow_tile_count as f32 / snow_threshold).clamp(0.0, 1.0);
+        num2 = (((num2 as f32) * (1.0 - num5 * num5)) as i32 as f64
+            * (i.atmo as f64).powf(9.0)) as i32;
+        // `:183-186`: below 0.4 atmo nothing spawns.
+        if (i.atmo as f64) < 0.4 {
+            num2 = 0;
+        }
+        // `:187-198`: the first inactive slot within the budget.
+        let mut slot = None;
+        for (s, d) in self.drops.iter().enumerate().take(num2.max(0) as usize) {
+            if !d.active {
+                slot = Some(s);
                 break;
             }
-            let x = camera.x + (self.rand01() * 2.0 - 1.0) * (half.x + 90.0);
-            let y = camera.y - half.y - 10.0 - self.rand01() * 60.0;
-            let tx = (x / px).floor() as i32;
-            let ty = (y / px).floor() as i32;
-            if !world
-                .tile(tx, ty)
-                .is_some_and(|t| !t.active() && t.wall == 0)
-            {
-                continue;
-            }
-            let scale = 0.55 + self.rand01() * 0.45;
-            let vy = (2.2 + self.rand01() * 2.4) * scale;
-            let vx = self.wind * (5.0 + 9.0 * self.intensity) + (self.rand01() * 2.0 - 1.0) * 0.5;
-            let frame = self.range(0, 3) as u8;
-            let phase = self.rand01() * std::f32::consts::TAU;
-            self.snow.push(Snowflake {
-                pos: Vec2::new(x, y),
-                vel: Vec2::new(vx, vy),
-                scale,
-                phase,
-                frame,
-            });
         }
+        let Some(s) = slot else {
+            return;
+        };
+        // `:199-205`: the drop fields — scale roll then frame roll.
+        let scale = 1.0 + self.range_signed(-20, 21) as f32 * 0.01;
+        // `:93`: `GetRainFallVelocity` — the LIVE wind, no sine term.
+        let vel = Vec2::new(i.wind_speed_current * 18.0, 14.0) * scale;
+        let kind = (i.water_style * 3 + self.range(0, 3)) as u8;
+        self.drops[s] = Drop {
+            active: true,
+            pos: position,
+            vel,
+            scale,
+            // `:204`: `atan2(velocity.X, 0f - velocity.Y)`.
+            rot: vel.x.atan2(-vel.y),
+            kind,
+        };
     }
 
+    /// The impact splash stand-in — the port's own approximation of the C#'s
+    /// `Dust.NewDust(pos - velocity, 2, 2, dustWater())` puff (`Rain.cs:122-130`:
+    /// alpha 38, velocity `*0.1 - vel*0.025`, `Y -= 2`, scale 0.6, noGravity).
+    /// The verbatim pool spawn + the splash dust's AI/draw are g67's scope
+    /// (weather-rain-splash); this keeps the visible impact until it lands.
     fn spawn_splash(&mut self, d: Drop) {
         let n = 1 + (self.next_u64() & 1) as usize;
         for _ in 0..n {
@@ -1043,9 +1011,16 @@ impl Rain {
         }
     }
 
-    /// Draw in the always-rebuilt world-effect range (screen space, under the
-    /// map batches and the interface), so the cached world instance range (G6)
-    /// is unaffected by the moving drops.
+    /// `Main.DrawRain` (`Main.cs:38800-38826`) — the drop pass, verbatim
+    /// colour math: the 2x40 frame at `type * 4`, the light sampled at
+    /// `(int)(position + 4) >> 4` per axis (`:38813`), the `* 0.85` tint and
+    /// the shimmer `* (1 - shimmerAlpha)` (`:38814-38817`), drawn rotated
+    /// about the top-left origin (`:38818`, `origin = Vector2.Zero`).
+    /// Drawn in the always-rebuilt world-effect range (screen space, under
+    /// the map batches and the interface), so the cached world instance
+    /// range (G6) is unaffected by the moving drops. The C#'s in-draw
+    /// `rain.Update()` (`:38819-38822`) rides the 60 Hz accumulator instead
+    /// (`update_drops`) — the recorded cadence deviation.
     pub fn draw(
         &self,
         r: &mut SpriteRenderer,
@@ -1054,10 +1029,10 @@ impl Rain {
         camera: Vec2,
         zoom: f32,
         screen: Vec2,
+        shimmer_alpha: f32,
     ) {
-        if self.drops.is_empty()
+        if self.drop_count() == 0
             && self.splashes.is_empty()
-            && self.snow.is_empty()
             && self.flash <= 0.01
         {
             return;
@@ -1075,32 +1050,29 @@ impl Rain {
                 (p.y - camera.y) * zoom + screen.y * 0.5,
             ]
         };
+        // `:38813`: `Lighting.GetColor((int)(pos.X + 4f) >> 4, ...)`.
+        let light_tile = |p: Vec2| {
+            light.get(
+                ((p.x + 4.0) as i32) >> 4,
+                ((p.y + 4.0) as i32) >> 4,
+            )
+        };
         for d in &self.drops {
+            if !d.active {
+                continue;
+            }
             let Some(uv) = lookups.rain_uv(d.kind) else {
                 continue;
             };
-            let c = light_at(light, d.pos);
+            let c = light_tile(d.pos);
+            // `:38813-38817`: the XNA byte chain (GetColor → *0.85 → shimmer).
+            let tint = rain_tint(c, shimmer_alpha);
             r.push_fx_sprite_rot(
                 to_screen(d.pos),
                 [DROP_W * d.scale * zoom, DROP_H * d.scale * zoom],
                 uv,
-                [c[0] * 0.85, c[1] * 0.85, c[2] * 0.85, 1.0],
+                tint,
                 d.rot,
-            );
-        }
-        for s in &self.snow {
-            let Some(uv) = lookups.dust_uv(760, s.frame as i32 * 10, 8, 8) else {
-                continue;
-            };
-            let c = light_at(light, s.pos);
-            let shade = [c[0] * 0.92 + 0.12, c[1] * 0.95 + 0.12, c[2] + 0.14];
-            let a = (s.scale * 0.75).clamp(0.35, 0.9);
-            r.push_fx_sprite_rot(
-                to_screen(s.pos),
-                [8.0 * s.scale * zoom, 8.0 * s.scale * zoom],
-                uv,
-                [shade[0], shade[1], shade[2], a],
-                0.0,
             );
         }
         for s in &self.splashes {
@@ -1135,12 +1107,28 @@ impl Rain {
     }
 }
 
-/// Vanilla only rains while `SceneMetrics.ZoneRain` is set; approximate it by
-/// requiring the camera to be near that column's surface.
-fn rain_zone(world: &World, camera: Vec2) -> bool {
-    let tx = (camera.x / tr_core::TILE_PX) as i32;
-    let ty = (camera.y / tr_core::TILE_PX) as i32;
-    ty < world.surface_of(tx) + 24
+/// `Main.DrawRain`'s colour chain (`Main.cs:38813-38817`) as XNA bytes:
+/// `Lighting.GetColor` truncates `light * 255` per channel and clamps at 255
+/// (`Lighting.cs:224-240`, alpha 255), `* 0.85f` byte-casts every channel,
+/// then `shimmerAlpha > 0` multiplies by `1 - shimmerAlpha` with another byte
+/// cast. Returns the normalised `[f32; 4]` the sprite pipeline consumes.
+pub(crate) fn rain_tint(light: [f32; 3], shimmer_alpha: f32) -> [f32; 4] {
+    let byte = |v: f32| (v.min(255.0) as i32) as u8;
+    let c = [
+        byte(light[0] * 255.0),
+        byte(light[1] * 255.0),
+        byte(light[2] * 255.0),
+        255u8,
+    ];
+    let mut out = [0.0; 4];
+    for k in 0..4 {
+        let mut b = (c[k] as f32 * 0.85) as i32 as u8;
+        if shimmer_alpha > 0.0 {
+            b = (b as f32 * (1.0 - shimmer_alpha)) as i32 as u8;
+        }
+        out[k] = b as f32 / 255.0;
+    }
+    out
 }
 
 /// `Lighting.GetColor` for a world-space point, clamped to the computed light rect.
@@ -1175,22 +1163,31 @@ mod tests {
         w
     }
 
+    /// The per-tick inputs the tests run under: zoom 1, dry wind, no player,
+    /// open ZoneRain, full quality — the `MakeRain` gate passes.
+    fn inputs() -> RainInputs {
+        RainInputs {
+            camera: Vec2::new(32.0 * 16.0, 25.0 * 16.0),
+            screen: Vec2::new(1600.0, 200.0),
+            zoom: 1.0,
+            day_rate: 1,
+            wind_speed_current: 0.0,
+            player_velocity: Vec2::ZERO,
+            shimmer_alpha: 0.0,
+            atmo: 1.0,
+            snow_tile_count: 0,
+            zone_rain: true,
+            water_style: 0,
+            any_danger: false,
+            gfx_quality: 1.0,
+            remix_world: false,
+        }
+    }
+
     fn run(rain: &mut Rain, w: &World, n: usize) {
-        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let i = inputs();
         for _ in 0..n {
-            rain.update(
-                w,
-                camera,
-                Vec2::new(1600.0, 200.0),
-                1.0,
-                1.0 / 60.0,
-                false,
-                1,
-                0.0,
-                1.0,
-                0,
-                true,
-            );
+            rain.update(w, &i, 1.0 / 60.0);
         }
     }
 
@@ -1214,92 +1211,217 @@ mod tests {
     }
 
     #[test]
-    fn snow_replaces_rain_in_a_snow_biome() {
+    fn snow_tiles_suppress_the_rain_budget_not_the_event() {
+        // `Rain.cs:181-182`: `num2 *= 1 - (SnowTileCount/1500)^2` — at the
+        // threshold the budget is 0 and NO drops spawn even with ZoneRain up
+        // (vanilla's snowfall is `Main.snowing()`'s dust, `crate::snow`, not
+        // a rain-rig mode). Half the threshold keeps 3/4 of the budget.
         let w = ground();
-        let mut rain = Rain::with_forced(17, Some(1.0), false);
-        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let mut full = Rain::with_forced(17, Some(1.0), false);
+        let mut i = inputs();
+        i.snow_tile_count = tr_core::scene::thresholds::SNOW_TILE_NORMAL;
         for _ in 0..120 {
-            rain.update(
-                &w,
-                camera,
-                Vec2::new(1600.0, 200.0),
-                1.0,
-                1.0 / 60.0,
-                true,
-                1,
-                0.0,
-                1.0,
-                0,
-                true,
-            );
+            full.update(&w, &i, 1.0 / 60.0);
         }
-        assert_eq!(rain.drop_count(), 0, "no rain drops while snowing");
-        assert!(rain.snow_count() > 50, "snow {}", rain.snow_count());
+        assert_eq!(full.drop_count(), 0, "the snow suppression zeroes the budget");
+        assert!(full.is_raining(), "the event itself keeps running");
+
+        let mut half = Rain::with_forced(17, Some(1.0), false);
+        i.snow_tile_count = tr_core::scene::thresholds::SNOW_TILE_NORMAL / 2;
+        for _ in 0..120 {
+            half.update(&w, &i, 1.0 / 60.0);
+        }
+        assert!(half.drop_count() > 0, "3/4 of the budget still spawns");
     }
 
     #[test]
-    fn snow_settles_back_into_rain_outside_the_snow_biome() {
+    fn the_atmo_gate_and_power_nine_shape_the_budget() {
+        // `Rain.cs:182-186`: `num2 = (int)(num2 * atmo^9)`, and `atmo < 0.4`
+        // zeroes it outright. At atmo 0.8 the budget is 750 * 0.8^9 ≈ 100.
         let w = ground();
-        let mut rain = Rain::with_forced(19, Some(1.0), false);
-        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
-        let screen = Vec2::new(1600.0, 200.0);
+        let mut low = Rain::with_forced(19, Some(1.0), false);
+        let mut i = inputs();
+        i.atmo = 0.39;
         for _ in 0..60 {
-            rain.update(
-                &w,
-                camera,
-                screen,
-                1.0,
-                1.0 / 60.0,
-                true,
-                1,
-                0.0,
-                1.0,
-                0,
-                true,
-            );
+            low.update(&w, &i, 1.0 / 60.0);
         }
-        let snow = rain.snow_count();
-        assert!(snow > 0);
-        for _ in 0..600 {
-            rain.update(
-                &w,
-                camera,
-                screen,
-                1.0,
-                1.0 / 60.0,
-                false,
-                1,
-                0.0,
-                1.0,
-                0,
-                true,
-            );
+        assert_eq!(low.drop_count(), 0, "below 0.4 nothing spawns");
+        let mut mid = Rain::with_forced(19, Some(1.0), false);
+        i.atmo = 0.8;
+        for _ in 0..60 {
+            mid.update(&w, &i, 1.0 / 60.0);
         }
-        assert_eq!(rain.snow_count(), 0, "flakes should leave the view");
+        let budget = (750.0_f64 * 0.8_f64.powf(9.0)) as usize;
+        assert!(mid.drop_count() > 0);
+        assert!(
+            mid.drop_count() <= budget,
+            "drops {} exceed the atmo^9 budget {}",
+            mid.drop_count(),
+            budget
+        );
+    }
+
+    #[test]
+    fn the_fall_velocity_reads_the_live_wind() {
+        // `Rain.cs:91-94` + `:203-204`: `velocity = (windSpeedCurrent * 18,
+        // 14) * scale`, `rotation = atan2(v.X, -v.Y)` — the frozen seed-time
+        // wind snapshot + sine term are retired (W4-d130).
+        let w = ground();
+        let mut rain = Rain::with_forced(23, Some(1.0), false);
+        let mut i = inputs();
+        i.wind_speed_current = 0.5;
+        rain.update(&w, &i, 1.0 / 60.0);
         assert!(rain.drop_count() > 0);
+        for d in rain.drops.iter().filter(|d| d.active) {
+            assert!(
+                (d.vel.x - 0.5 * 18.0 * d.scale).abs() < 1e-4,
+                "vx {} != wind*18*scale {}",
+                d.vel.x,
+                0.5 * 18.0 * d.scale
+            );
+            assert!((d.vel.y - 14.0 * d.scale).abs() < 1e-4);
+            assert!((d.rot - d.vel.x.atan2(-d.vel.y)).abs() < 1e-6);
+            assert!((0.8..=1.2).contains(&d.scale), "scale {}", d.scale);
+            assert!(d.kind < 3, "waterStyle 0 frames 0..2, got {}", d.kind);
+        }
+    }
+
+    #[test]
+    fn test_DW_d130_make_rain_replay_matches_the_csharp_draw_order() {
+        // One pinned tick of `MakeRain`/`NewRain` replayed straight from the
+        // C# on the Rain stream: 27 attempts at the 1600-px rate
+        // (`1600/1920 * 25 * 1.25 = 26.04`, `i < num` admits i = 0..26), each
+        // rolling X then Y (`Rain.cs:54-55`), then — every tile open in the
+        // fixture — the scale and frame rolls (`:202-205`). Values AND the
+        // exact stream position must match.
+        let w = ground();
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        let i = inputs();
+        rain.update(&w, &i, 1.0 / 60.0);
+        let mut r = StreamReplay::new(7);
+        let view_min_x = (i.camera.x - i.screen.x * 0.5) as i32; // -288
+        let view_min_y = i.camera.y - i.screen.y * 0.5; // 300
+        let mut want = Vec::new();
+        let mut attempt = 0.0_f32;
+        let num = 1600.0 / 1920.0 * 25.0 * (0.25 + 1.0);
+        while attempt < num {
+            attempt += 1.0;
+            let mut x = (view_min_x - 600
+                + (r.next_u64() % ((view_min_x + 1600 + 600) - (view_min_x - 600)) as u64)
+                    as i32) as f32;
+            let y = view_min_y - (20 + r.next_u64() % 80) as f32;
+            x -= 0.0; // wind 0: the `:56-57` leads are zero
+            x = x.clamp(0.0, ((w.width - 1) * 16) as f32);
+            // Every (x, y) lands in open sky above the row-30 ground.
+            let scale = 1.0 + (-20 + (r.next_u64() % 41) as i32) as f32 * 0.01;
+            let vel = Vec2::new(0.0, 14.0) * scale;
+            let kind = (r.next_u64() % 3) as u8;
+            want.push((Vec2::new(x, y), vel, scale, kind));
+        }
+        assert_eq!(want.len(), 27, "the float attempt loop admits 27");
+        assert_eq!(rain.drop_count(), 27);
+        // The drops moved one tick (`Update` runs after the spawn): compare
+        // against pos + vel, and the slot order is the spawn order.
+        let live: Vec<_> = rain.drops.iter().filter(|d| d.active).collect();
+        for (d, (pos, vel, scale, kind)) in live.iter().zip(want.iter()) {
+            assert_eq!(d.pos, *pos + *vel, "position after one Update tick");
+            assert_eq!(d.vel, *vel);
+            assert_eq!(d.scale, *scale);
+            assert_eq!(d.kind, *kind);
+        }
+        assert_eq!(rain.rng, r.0, "exact stream position after the tick");
+    }
+
+    #[test]
+    fn the_any_danger_throttle_floors_at_one_attempt() {
+        // `Rain.cs:37-45`: `num *= 0.05`, floored to 1 when the unthrottled
+        // rate was > 1 and the throttled one < 1. At the 1600-px storm rate
+        // 26.04 → 1.302 → the float loop admits i = 0,1 → 2 attempts.
+        let w = ground();
+        let mut rain = Rain::with_forced(29, Some(1.0), false);
+        let mut i = inputs();
+        i.any_danger = true;
+        rain.update(&w, &i, 1.0 / 60.0);
+        let throttled = 1600.0 / 1920.0 * 25.0 * 1.25 * 0.05;
+        let mut n = 0;
+        let mut k = 0.0_f32;
+        while k < throttled {
+            k += 1.0;
+            n += 1;
+        }
+        assert_eq!(rain.drop_count(), n, "the throttled attempt count");
+        assert!(n < 27, "throttled below the open rate");
+        // A tiny screen whose UNTHROTTLED rate is <= 1 keeps the fractional
+        // rate (the floor only fires when num2 > 1): 50/1920*25*1.25 = 0.814,
+        // throttled 0.041 → 0 attempts.
+        let mut tiny = Rain::with_forced(29, Some(1.0), false);
+        i.screen.x = 50.0;
+        tiny.update(&w, &i, 1.0 / 60.0);
+        assert_eq!(tiny.drop_count(), 0);
+        // And the floor arm itself: 100 px unthrottled 1.628 > 1, throttled
+        // 0.081 < 1 → num = 1 → exactly one attempt (`Rain.cs:41-44`).
+        let mut floored = Rain::with_forced(29, Some(1.0), false);
+        i.screen.x = 100.0;
+        floored.update(&w, &i, 1.0 / 60.0);
+        assert_eq!(floored.drop_count(), 1, "the >1 → <1 floor");
+    }
+
+    #[test]
+    fn the_gfx_quality_scale_bites_below_09() {
+        // `Rain.cs:176-180`: `num4 = (1 + gfxQuality)/2`; below 0.9 the
+        // budget scales by it. At quality 0.5 num4 = 0.75 → 750 * 0.75 = 562.
+        // An all-air world keeps the drops alive to the bottom kill, so the
+        // steady-state population (~675 at the 27/tick rate) reaches past the
+        // scaled budget and the cap is observable.
+        let w = World::new("air".into(), 64, 64);
+        let mut rain = Rain::with_forced(31, Some(1.0), false);
+        let mut i = inputs();
+        i.gfx_quality = 0.5;
+        for _ in 0..240 {
+            rain.update(&w, &i, 1.0 / 60.0);
+        }
+        assert!(
+            rain.drop_count() <= 562,
+            "drops {} exceed the 0.75-scaled budget",
+            rain.drop_count()
+        );
+        // Quality 1.0 leaves num4 = 1.0 — the `< 0.9` gate never fires.
+        let mut full = Rain::with_forced(31, Some(1.0), false);
+        i.gfx_quality = 1.0;
+        for _ in 0..240 {
+            full.update(&w, &i, 1.0 / 60.0);
+        }
+        assert!(full.drop_count() > 562, "the full budget fills higher");
+    }
+
+    #[test]
+    fn the_draw_tint_is_the_xna_byte_chain() {
+        // `Main.cs:38813-38817`: GetColor bytes * 0.85 (byte cast), then
+        // * (1 - shimmerAlpha) (another byte cast) — two truncations, alpha
+        // included (255 * 0.85 = 216).
+        let white = [1.0, 1.0, 1.0];
+        let t = rain_tint(white, 0.0);
+        assert_eq!(t, [216.0 / 255.0; 4]);
+        let t = rain_tint(white, 0.5);
+        // 216 * 0.5 = 108 exactly.
+        assert_eq!(t, [108.0 / 255.0; 4]);
+        // A mid light: (int)(0.5*255) = 127; 127*0.85 = 107.95 → 107;
+        // shimmer 0.25: 107*0.75 = 80.25 → 80. Alpha 216*0.75 = 162.
+        let t = rain_tint([0.5, 0.5, 0.5], 0.25);
+        assert_eq!(t[0], 80.0 / 255.0);
+        assert_eq!(t[3], 162.0 / 255.0);
+        // Overbright light clamps at 255 before the scale (`Lighting.cs:228`).
+        let t = rain_tint([1.4, 1.4, 1.4], 0.0);
+        assert_eq!(t, [216.0 / 255.0; 4]);
+        // Zero shimmer alpha skips the second multiply entirely (`> 0f`).
+        assert_eq!(rain_tint(white, 0.0), rain_tint(white, -0.1));
     }
 
     #[test]
     fn storms_ramp_the_cloud_deck_and_lightning_decays() {
         let w = ground();
         let mut rain = Rain::with_forced(23, Some(1.0), false);
-        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
-        let screen = Vec2::new(1600.0, 200.0);
-        for _ in 0..600 {
-            rain.update(
-                &w,
-                camera,
-                screen,
-                1.0,
-                1.0 / 60.0,
-                false,
-                1,
-                0.0,
-                1.0,
-                0,
-                true,
-            );
-        }
+        run(&mut rain, &w, 600);
         assert!(rain.cloud_bg() > 0.5, "cloud deck {}", rain.cloud_bg());
         rain.flash = 1.0;
         rain.lightning_decay = 0.05; // `NewLightning`'s upper decay rate.
@@ -1877,13 +1999,13 @@ mod tests {
         // `Main.cs:13187/13205` shape at the port's 0.005 stand-in rate).
         let w = ground();
         let step = 1.0 / 60.0;
-        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
-        let screen = Vec2::new(1600.0, 200.0);
+        let mut i = inputs();
+        i.day_rate = 60;
 
         let mut fast = Rain::with_forced(11, None, false);
         fast.raining = true;
         fast.target = 1.0;
-        fast.update(&w, camera, screen, 1.0, step, false, 60, 0.0, 1.0, 0, true);
+        fast.update(&w, &i, step);
         assert!(
             (fast.visual_alpha() - 0.03).abs() < 1e-6,
             "60× ramp: {}",
@@ -1893,7 +2015,8 @@ mod tests {
         let mut slow = Rain::with_forced(11, None, false);
         slow.raining = true;
         slow.target = 1.0;
-        slow.update(&w, camera, screen, 1.0, step, false, 1, 0.0, 1.0, 0, true);
+        i.day_rate = 1;
+        slow.update(&w, &i, step);
         assert!(
             (slow.visual_alpha() - 0.0005).abs() < 1e-9,
             "dry ramp: {}",
@@ -1902,7 +2025,8 @@ mod tests {
 
         let mut deck = Rain::with_forced(11, None, false);
         deck.intensity = 1.0; // above the 0.05 gate: the deck chases the intensity
-        deck.update(&w, camera, screen, 1.0, step, false, 60, 0.0, 1.0, 0, true);
+        i.day_rate = 60;
+        deck.update(&w, &i, step);
         assert!(
             (deck.cloud_bg() - 0.3).abs() < 1e-6,
             "deck at FF: {}",
@@ -1910,7 +2034,8 @@ mod tests {
         );
         let mut dry = Rain::with_forced(11, None, false);
         dry.intensity = 1.0;
-        dry.update(&w, camera, screen, 1.0, step, false, 1, 0.0, 1.0, 0, true);
+        i.day_rate = 1;
+        dry.update(&w, &i, step);
         assert!(
             (dry.cloud_bg() - 0.005).abs() < 1e-9,
             "deck dry: {}",
@@ -1934,19 +2059,10 @@ mod tests {
         assert_eq!(rain.lady_bug_rain_boost, 100, "no drain under the pin");
         assert_eq!(rain.rng, state, "no rolls under the pin");
         // The pin still owns the visual state through the drop-sim tick.
-        rain.update(
-            &w,
-            Vec2::new(512.0, 400.0),
-            Vec2::new(1600.0, 200.0),
-            1.0,
-            1.0 / 60.0,
-            false,
-            60,
-            0.0,
-            1.0,
-            0,
-            true,
-        );
+        let mut i = inputs();
+        i.camera = Vec2::new(512.0, 400.0);
+        i.day_rate = 60;
+        rain.update(&w, &i, 1.0 / 60.0);
         assert_eq!(rain.max_raining(), 0.8);
         assert!(rain.is_raining());
 

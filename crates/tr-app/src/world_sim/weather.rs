@@ -19,39 +19,53 @@
 use glam::Vec2;
 
 use crate::app::App;
-use crate::biome::is_snow_biome;
 use tr_core::{UnifiedRandom, TILE_PX};
 
 /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
 /// per-tick velocity regardless of frame rate. The visual ramps scale by
 /// `max(1, day_rate)` (`Main.cs:61902-61906`).
 pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
-    let snow = is_snow_biome(&app.world, app.camera);
     let day_rate = app.world.day_rate();
-    let shimmer_alpha = app.scene_state.shimmer_alpha;
-    let atmo = crate::render::sky::atmosphere_factor(
-        app.camera.y,
-        app.world.world_surface,
-        app.world.width,
-    );
-    let snow_tile_count = app.scene_metrics.snow_tile_count;
-    let zone_rain = app.scene_metrics.zone_rain;
-    // The snow spawn cap scales with the gfx quality (S1-B-6,
-    // `Main.cs:13057`).
-    app.rain.gfx_quality = app.gfx_quality.quality;
-    app.rain.update(
-        &app.world,
-        app.camera,
+    // `Rain.cs`'s per-call Main statics, gathered once per frame (the vanilla
+    // reads them live inside MakeRain/NewRain/Update — constant per frame).
+    let inputs = crate::rain::RainInputs {
+        camera: app.camera,
         screen,
-        app.zoom,
-        dt,
-        snow,
+        zoom: app.zoom,
         day_rate,
-        shimmer_alpha,
-        atmo,
-        snow_tile_count,
-        zone_rain,
-    );
+        // `Rain.cs:56/93`: the LIVE `Main.windSpeedCurrent` (the frozen
+        // seed-time snapshot + sine term retired, W4-d130).
+        wind_speed_current: app.wind.speed_current,
+        player_velocity: app
+            .player
+            .as_ref()
+            .map_or(Vec2::ZERO, |p| Vec2::new(p.vx, p.vy)),
+        shimmer_alpha: app.scene_state.shimmer_alpha,
+        atmo: crate::render::sky::atmosphere_factor(
+            app.camera.y,
+            app.world.world_surface,
+            app.world.width,
+        ),
+        snow_tile_count: app.scene_metrics.snow_tile_count,
+        zone_rain: app.scene_metrics.zone_rain,
+        // `Main.waterStyle` (`Main.cs:57475`) — the frame-type selector.
+        water_style: crate::biome::calculate_water_style(&app.world, app.camera) as u32,
+        // `NPC.AnyDanger(quickBossNPCCheck: true)` (`NPC.cs:80243-80288`):
+        // the countdown/invasion/moon/DD2 flags plus the boss scan (the port
+        // folds `AnyActiveBossNPC` to its boss-flagged kinds walk).
+        any_danger: app.world.moon_lord_countdown > 0
+            || app.world.invasion_type > 0
+            || app.world.snow_moon
+            || app.world.pumpkin_moon
+            || app.world.dd2_event_ongoing
+            || app
+                .npcs
+                .iter()
+                .any(|n| n.hp > 0 && crate::revenge::BOSS_KINDS.contains(&n.kind)),
+        gfx_quality: app.gfx_quality.quality,
+        remix_world: app.wind.remix_world,
+    };
+    app.rain.update(&app.world, &inputs, dt);
 }
 
 /// The cross-system inputs of the vanilla lightning chain
@@ -773,6 +787,27 @@ mod tests {
         app.sandstorm.time_left = time_left;
     }
 
+    /// The drop-sim inputs the pin-materializing ticks run under (the values
+    /// only matter for the forced intensity — the spawn gates stay open).
+    fn test_inputs(app: &App, day_rate: i32) -> crate::rain::RainInputs {
+        crate::rain::RainInputs {
+            camera: app.camera,
+            screen: Vec2::new(1600.0, 900.0),
+            zoom: 1.0,
+            day_rate,
+            wind_speed_current: app.wind.speed_current,
+            player_velocity: Vec2::ZERO,
+            shimmer_alpha: 0.0,
+            atmo: 1.0,
+            snow_tile_count: 0,
+            zone_rain: true,
+            water_style: 0,
+            any_danger: false,
+            gfx_quality: 1.0,
+            remix_world: false,
+        }
+    }
+
     #[test]
     fn test_DW_1_1_wind_loop_runs_before_the_sandstorm_in_one_tick() {
         // Order pin through real behavior: with `maxRaining` 0.8 the wind
@@ -788,16 +823,8 @@ mod tests {
         // tick so `max_raining()` really reads 0.8.
         app.rain.update(
             &app.world,
-            app.camera,
-            Vec2::new(1600.0, 900.0),
-            1.0,
+            &test_inputs(&app, 1),
             STEP,
-            false,
-            1,
-            0.0,
-            1.0,
-            0,
-            true,
         );
         assert_eq!(app.rain.max_raining(), 0.8);
         app.wind.speed_current = 0.55;
@@ -827,16 +854,8 @@ mod tests {
         // test above.
         app.rain.update(
             &app.world,
-            app.camera,
-            Vec2::new(1600.0, 900.0),
-            1.0,
+            &test_inputs(&app, 1),
             STEP,
-            false,
-            1,
-            0.0,
-            1.0,
-            0,
-            true,
         );
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;

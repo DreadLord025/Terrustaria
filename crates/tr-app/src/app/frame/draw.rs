@@ -1262,7 +1262,15 @@ impl App {
                     crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
 
                     draw_phase("rain");
-                    rain.draw(renderer, lookups, light, draw_cam, world_zoom, screen);
+                    rain.draw(
+                        renderer,
+                        lookups,
+                        light,
+                        draw_cam,
+                        world_zoom,
+                        screen,
+                        scene_state.shimmer_alpha,
+                    );
                     // `Main.DrawGore` (`Main.cs:62282`, body `:21873-21907`):
                     // the gore pool's front pass between the rain and the
                     // dust, in the same world-effect range (S1-E-4b).
@@ -2009,7 +2017,7 @@ impl App {
                             liquids.active_len(),
                             rain.visual_alpha(),
                             rain.drop_count(),
-                            rain.snow_count(),
+                            crate::minecart::live_type(dust, 76),
                         );
                     }
 
