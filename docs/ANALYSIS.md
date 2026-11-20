@@ -3743,6 +3743,11 @@ above) and its chest rewrite shares the `CacheSpecialDraws_Part2` site with
 `resolve_tile_frame`; the platform side-fills need the behind-tiles layer
 (S1-G-13) and the `invisibleBlock` bit. Intended call sites are recorded in
 each module's header and PORT_MAP; the wiring is the next G-1 merge step.
+**W4-f16 update (2026-11-20)**: the chest half of that paragraph is
+resolved — the duplicate `drawdata_furniture::chest_draw_rewrite` is
+deleted (keep-one) and the sole rewrite path is W4-d58's
+`tr-render::chest_frames::chest_frame_adjust` wired by `draw_tiles`; the
+cage half + side-fills stay as described.
 
 **Screenshot recipes (gate phase).** Ropes: a world with a rope column
 crossing a platform — `TR_SHOT=ropes.png TR_CAM=<x>,<y> TR_DAY=1
@@ -3835,12 +3840,18 @@ cache-hit (`TR_STATS=1` `world_reused`).
   draws on `Main.rand`) and the `Main.critterCage` gate it reads; the
   dispatch wiring into `draw_data`/`tiles.rs` is deferred to the S1-F-9
   merge (waves A/B own those files). The chest rewrite
-  (`CacheSpecialDraws_Part2` `:4289-4330`) is ported as
-  `chest_draw_rewrite` (BasicChest 21/467, +38/+76 open rows, bottom-row
-  height 18); the caller supplies `Main.chest[FindChest(anchor)].frame` вЂ”
-  the port's `World::chests` carries anchors but no open-frame state yet,
-  so callers pass `None` (closed) today. The 21-cols-48/49 glow rect
-  (TILE-DRAW-2) and the 378 training-dummy half stay unported.
+ (`CacheSpecialDraws_Part2` `:4289-4330`) was ported as
+ `chest_draw_rewrite` (BasicChest 21/467, +38/+76 open rows, bottom-row
+ height 18) - **W4-f16 keep-one dedupe (2026-11-20)**: that was a SECOND
+ port of the same block (the first is the S1-G-1e `chest_frame_adjust`
+ slice), both unwired with zero live callers (the d62 finding); the dup
+ is deleted and the sole rewrite path is the W4-d58 keep-one move into
+ `tr-render/src/chest_frames.rs::chest_frame_adjust`, wired by
+ `draw_tiles` at the `DrawSingleTile` `:993` position before the source
+ rect (`:1007`), lid frame via `chest::chest_draw_frame`. Only
+ `is_basic_chest` (TileID.cs:570) stays here as the wiring gate. The
+ 21-cols-48/49 glow rect is recorded-unbound by the survivor
+ (TILE-DRAW-2) and the 378 training-dummy half stays unported.
 - `564` (`:5523-5528`): shares the `217|218` arm in C#, but the glow switch
   then unconditionally clears addFrY (`:6105-6113`); the port folds that into
   the arm вЂ” top 2, addFrY always 0.

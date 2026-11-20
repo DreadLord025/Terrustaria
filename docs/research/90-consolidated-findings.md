@@ -136,7 +136,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-09-5 | Vine/rope family (`DrawVines`/`DrawReverseVines`/`DrawVineStrip`/`DrawRisingVineStrip`/`DrawMultiTileVinesInWind` + `DrawTile_BackRope`) | 09 | M | behavioural/pixel (medium) | R-09-6 | 09-tile-drawing.md:244 |
 | R-06-3 | Add the `oldPos`/`oldRot`/`oldSpriteDirection` ring buffer (`TrailCacheLength`) + the trail draw pass | 06 | M | pixel (medium) | — | 06-projectile-core.md:138 |
 | R-06-4 | Port `Projectile.light` into the slot and the draw's light emission for the ~40 kinds whose `SetDefaults` sets it | 06 | M | pixel (low-med) | R-10-1 | 06-projectile-core.md:141 |
-| R-09-2 | Port `CacheSpecialDraws_Part2`'s chest rewrite (`+38/+76` by `Main.chest[i].frame`, `tileHeight = 18`) | 09 | M | behavioural (medium) | — | 09-tile-drawing.md:235 |
+| R-09-2 | Port `CacheSpecialDraws_Part2`'s chest rewrite (`+38/+76` by `Main.chest[i].frame`, `tileHeight = 18`) — DONE via W4-d58 (keep-one `tr-render::chest_frames` + `draw_tiles` wiring); the `drawdata_furniture::chest_draw_rewrite` dup deleted W4-f16 | 09 | M | behavioural (medium) | — | 09-tile-drawing.md:235 |
 | R-14-4 | `MapBG` zone branches (`ZoneDungeon`, `ZoneGlowshroom`, `ZoneCorrupt`/`Crimson`/`Hallow`/`Jungle`, `bloodMoon`, `ZoneGraveyard`) | 14 | M | cosmetic (medium) | module 16 (SceneMetrics) | 14-map-minimap.md:327 |
 | R-10-5 | `slotGetFinalLight` in the sliced path (actuation ×0.4 / `light_scale` / paint tint per slice) | 10 | S | pixel (medium) | — | 10-lighting.md:172 |
 | R-10-6 | `NON_VISIBLE_PADDING` fixed 18 — drop the `/3` clamp in `blur.rs:43` | 10 | S | pixel (low) | — | 10-lighting.md:174 |
