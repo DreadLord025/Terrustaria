@@ -147,6 +147,21 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- S1-I-1 projectile-family first half (W4-d93) ----
+    // Census vs the C# table: 27/28/29 already had ids + bodies (M6-NET);
+    // 29's C2s body now carries the Vector2 verbatim (it used to hardcode
+    // NaN); 95 was NOT-FOUND and lands here. The NPC-side 28 arms belong to
+    // the NPC half (W4-d91/d92); the minion/portal-teleport ids (99/100/115)
+    // are the second half (W4-d94).
+    /// `95 MurderSomeoneElsesPortal` (`MessageID.cs:204`) — a client's new
+    /// portal intersected a peer's portal-gun projectile (type 602):
+    /// `(ushort)owner + (byte)ai[1] form` (`NetMessage.cs:1333-1336`, sent
+    /// by `PortalHelper.RemoveIntersectingPortals`, `PortalHelper.cs:364-367`).
+    /// Host-only read (`MessageBuffer.cs:3519-3537`): kill the first matching
+    /// active 602 and relay one `29`. Client→server only — the C# has no
+    /// host send site for 95.
+    pub const MURDER_PORTAL: u8 = 95;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1604,9 +1619,24 @@ pub enum C2s {
     /// `27 Projectile` — this client's own projectile state (the owner's
     /// machine simulates and sends, `Projectile.cs:17210-17244`).
     Projectile(Box<ProjectileState>),
-    /// `29` — one of this client's projectiles is gone.
+    /// `29` — one of this client's projectiles is gone
+    /// (`Projectile.cs:77254-77257`): the key plus the **entry** position
+    /// (`NetMessage.cs:852-855` writes `Vector2(number2, number3)`; the
+    /// owner-gated `Kill` tail passes the entry snapshot, `:70648`). The
+    /// NaN/NaN pair is the silent-deactivate variant
+    /// (`Projectile.cs:16697`, the host's case-95 relay passes 0/0).
     ProjectileDead {
         key: i32,
+        x: f32,
+        y: f32,
+    },
+    /// `95 MurderSomeoneElsesPortal` — this client's new portal intersected
+    /// a peer's portal projectile (`PortalHelper.cs:364-367`): the peer's
+    /// owner id and the portal form (`ai[1]`), so the host can kill the
+    /// matching type-602 slot (`MessageBuffer.cs:3519-3537`).
+    MurderPortal {
+        owner: u16,
+        form: u8,
     },
     /// `154 Ping` - this client's RTT probe, no body (`Net/Ping.cs:31`).
     Ping,
@@ -1845,6 +1875,7 @@ impl C2s {
             Self::ReleaseNpc { .. } => id::RELEASE_NPC,
             Self::Projectile(_) => id::PROJECTILE,
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
+            Self::MurderPortal { .. } => id::MURDER_PORTAL,
             Self::Ping => id::PING,
             Self::ChestOpenRequest(_) => id::CHEST_OPEN_REQUEST,
             Self::ChestItem(_) => id::CHEST_ITEM,
@@ -1954,13 +1985,17 @@ impl C2s {
                 w.i32(*x).i32(*y).i16(*npc_type).u8(*style)
             }
             Self::Projectile(p) => return p.frame(),
-            Self::ProjectileDead { key } => {
+            // `NetMessage.cs:852-855` — `number` (the key) +
+            // `Vector2(number2, number3)`; the position rides verbatim.
+            Self::ProjectileDead { key, x, y } => {
                 return NetWriter::open(id::PROJECTILE_DEAD)
                     .i32(*key)
-                    .f32(f32::NAN)
-                    .f32(f32::NAN)
+                    .f32(*x)
+                    .f32(*y)
                     .finish();
             }
+            // `NetMessage.cs:1333-1336` — `(ushort)number + (byte)number2`.
+            Self::MurderPortal { owner, form } => w.u16(*owner).u8(*form),
         };
         w.finish()
     }
@@ -2095,7 +2130,17 @@ impl C2s {
                 style: r.u8()?,
             },
             id::PROJECTILE => Self::Projectile(Box::new(ProjectileState::read_from(r)?)),
-            id::PROJECTILE_DEAD => Self::ProjectileDead { key: r.i32()? },
+            // `MessageBuffer.cs:1827-1828` — the key, then the Vector2.
+            id::PROJECTILE_DEAD => Self::ProjectileDead {
+                key: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            },
+            // `MessageBuffer.cs:3521-3522` — (ushort) owner + (byte) form.
+            id::MURDER_PORTAL => Self::MurderPortal {
+                owner: r.u16()?,
+                form: r.u8()?,
+            },
             _ => return None,
         })
     }
@@ -4002,7 +4047,10 @@ mod tests {
             })),
             C2s::ProjectileDead {
                 key: projectile_key(255, 7, 1),
+                x: 12.5,
+                y: -8.0,
             },
+            C2s::MurderPortal { owner: 2, form: 1 },
             C2s::Ping,
             // `31-33`, `46-47`, `50`, `53`, `59` — the message families of
             // S1-E-27 (`MessageBuffer.cs:1868-1982`, `:2366-2405`,
@@ -4709,5 +4757,177 @@ mod tests {
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
+    }
+
+    // ---- S1-I-1 projectile-family first half (W4-d93): 27/28/29/95 ----
+
+    #[test]
+    fn s1_i_1d93_sync_projectile_body_bytes() {
+        // `NetMessage.cs:776-842` (case 27), verbatim field order: key int,
+        // Vector2 position, Vector2 velocity, (short)type, flags1 BitsByte,
+        // [flags2 BitsByte when flags1 bit 2], ai[0], ai[1], (ushort)banner,
+        // (short)damage, float knockBack, (short)originalDamage, ai[2].
+        let st = ProjectileState {
+            key: projectile_key(1, 2, 0),
+            x: 16.0,
+            y: -32.5,
+            vx: 1.5,
+            vy: -2.0,
+            kind: 4,
+            ai0: Some(0.25),
+            ai1: None,
+            banner_id: 0,
+            damage: 12,
+            knock_back: 3.0,
+            original_damage: 0,
+            ai2: Some(-1.0),
+        };
+        let f = st.frame();
+        assert_eq!(f[2], 27);
+        let mut body = Vec::new();
+        body.extend_from_slice(&st.key.to_le_bytes());
+        for v in [16.0f32, -32.5, 1.5, -2.0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(&4i16.to_le_bytes());
+        // bits: 0 ai0, 2 flags2-present, 4 damage, 5 knockback.
+        body.push(0x35);
+        body.push(0x01); // flags2: bit 0 = ai[2] present
+        body.extend_from_slice(&0.25f32.to_le_bytes());
+        body.extend_from_slice(&12i16.to_le_bytes());
+        body.extend_from_slice(&3.0f32.to_le_bytes());
+        body.extend_from_slice(&(-1.0f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        let back = C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode");
+        assert_eq!(back.encode(), f);
+        // The minimal body (`MessageBuffer.cs:1715-1724` with every
+        // conditional absent): flags1 = 0 writes NO flags2 byte and no
+        // extras — 23 bytes of body.
+        let bare = ProjectileState {
+            key: 513,
+            x: 0.0,
+            y: 0.0,
+            vx: 0.0,
+            vy: 0.0,
+            kind: 1,
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 0,
+            knock_back: 0.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        let b = bare.frame();
+        assert_eq!(b[2], 27);
+        assert_eq!(b.len(), 3 + 4 + 16 + 2 + 1);
+        assert_eq!(b[3 + 4 + 16 + 2], 0); // flags1 = 0, no flags2 follows
+        assert_eq!(
+            C2s::decode(b[2], &mut NetReader::new(&b[3..]))
+                .expect("decode")
+                .encode(),
+            b
+        );
+    }
+
+    #[test]
+    fn s1_i_1d93_kill_projectile_body_bytes() {
+        // `NetMessage.cs:852-855` (case 29): `number` (the key int) +
+        // `Vector2(number2, number3)`. Both directions carry the position
+        // verbatim — the C2s used to hardcode NaN, which dropped the kill
+        // site's entry snapshot (`Projectile.cs:77256`).
+        let key = projectile_key(2, 7, 1);
+        let mut body = Vec::new();
+        body.extend_from_slice(&key.to_le_bytes());
+        body.extend_from_slice(&12.5f32.to_le_bytes());
+        body.extend_from_slice(&(-8.0f32).to_le_bytes());
+        let c = C2s::ProjectileDead {
+            key,
+            x: 12.5,
+            y: -8.0,
+        }
+        .encode();
+        assert_eq!(c[2], 29);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ProjectileDead { key: k, x, y } => {
+                assert_eq!((k, x, y), (key, 12.5, -8.0));
+            }
+            other => panic!("expected 29, got {:?}", other.msg_id()),
+        }
+        let s = S2c::ProjectileDead {
+            key,
+            x: 12.5,
+            y: -8.0,
+        }
+        .encode();
+        assert_eq!(s[2], 29);
+        assert_eq!(&s[3..], &body);
+        // The NaN/NaN silent-deactivate variant (`Projectile.cs:16697`)
+        // survives the wire bit-for-bit (`MessageBuffer.cs:1835-1843`).
+        let nan = C2s::ProjectileDead {
+            key,
+            x: f32::NAN,
+            y: f32::NAN,
+        }
+        .encode();
+        match C2s::decode(nan[2], &mut NetReader::new(&nan[3..])).expect("decode") {
+            C2s::ProjectileDead { x, y, .. } => {
+                assert!(x.is_nan() && y.is_nan());
+            }
+            other => panic!("expected 29, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1d93_damage_npc_body_bytes() {
+        // `NetMessage.cs:844-850` (case 28): (byte)npc, (byte)generation,
+        // (short)damage, float knockback, (byte)(hitDirection + 1),
+        // (byte)crit. The NPC-family apply arms belong to the NPC half
+        // (W4-d91/d92); this pins the shared wire layout only.
+        let st = NpcStrike {
+            npc: 7,
+            generation: 2,
+            damage: -13,
+            knock_back: 5.5,
+            hit_direction: -1,
+            crit: true,
+        };
+        let c = C2s::NpcStrike(st).encode();
+        assert_eq!(c[2], 28);
+        let mut body = vec![7, 2];
+        body.extend_from_slice(&(-13i16).to_le_bytes());
+        body.extend_from_slice(&5.5f32.to_le_bytes());
+        body.push(0); // (-1 + 1f) as byte — the wire offset (`:849`)
+        body.push(1);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NpcStrike(d) => assert_eq!(d, st),
+            other => panic!("expected 28, got {:?}", other.msg_id()),
+        }
+        let s = S2c::NpcStrike(st).encode();
+        assert_eq!(s[2], 28);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::NpcStrike(d) => assert_eq!(d, st),
+            other => panic!("expected 28, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1d93_murder_portal_round_trips() {
+        // `NetMessage.cs:1333-1336` (case 95): (ushort)number (the peer's
+        // owner id) + (byte)number2 (the portal form, ai[1]). Client→server
+        // only — the C# host never sends 95 (`MessageBuffer.cs:3519-3537`
+        // reads it at netMode == 2 only).
+        let c = C2s::MurderPortal { owner: 3, form: 1 }.encode();
+        assert_eq!(c[2], 95);
+        assert_eq!(&c[3..], &[3, 0, 1]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MurderPortal { owner, form } => assert_eq!((owner, form), (3, 1)),
+            other => panic!("expected 95, got {:?}", other.msg_id()),
+        }
+        // No S2c counterpart exists in the C# reader.
+        assert!(S2c::decode(95, &mut NetReader::new(&[3, 0, 1])).is_none());
     }
 }

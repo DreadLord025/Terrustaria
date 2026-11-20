@@ -548,19 +548,68 @@ impl App {
                 self.projectiles.upsert_remote(&ps);
                 server.broadcast_except(&S2c::Projectile(ps.clone()), id);
             }
-            // `case 29` — a peer's projectile is gone; the host drops the slot
-            // and relays (`MessageBuffer.cs:1844-1847`).
-            C2s::ProjectileDead { key } => {
+            // `case 29` — a peer's projectile is gone. The host gates on the
+            // key's owner (`MessageBuffer.cs:1831-1834`: only the owner may
+            // kill it), applies the despawn (a finite position moves the
+            // slot before `Kill`, NaN/Inf deactivates silently,
+            // `:1835-1843`) and relays the RECEIVED position to the others
+            // (`:1845-1848` — the relay is skipped when the owner gate
+            // refused). The port's `kill_remote` is the silent-despawn
+            // stand-in for `Kill`'s death effects (same seam as the client
+            // arm below).
+            C2s::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
+                // `:1829` — the gate + position move only run when the key
+                // resolves to the slot's ACTIVE occupant; a stale key falls
+                // through to the relay (`:1845-1848` is outside the block).
+                let live = self
+                    .projectiles
+                    .slots()
+                    .get(slot)
+                    .map_or(false, |p| {
+                        p.active && p.owner == owner && p.generation == generation
+                    });
+                if live {
+                    if owner != id as u8 {
+                        return; // `:1831-1834` — not this client's projectile
+                    }
+                    if x.is_finite() && y.is_finite() {
+                        if let Some(p) = self.projectiles.slots_mut().get_mut(slot) {
+                            p.pos = Vec2::new(x, y); // `:1837`
+                        }
+                    }
+                }
                 self.projectiles.kill_remote(slot, owner, generation);
-                server.broadcast_except(
-                    &S2c::ProjectileDead {
+                server.broadcast_except(&S2c::ProjectileDead { key, x, y }, id);
+            }
+            // `case 95` — MurderSomeoneElsesPortal (`MessageBuffer.cs:3519-
+            // 3537`, host-only): the client's new portal intersected a
+            // peer's portal projectile. Kill the FIRST active type-602
+            // whose owner + ai[1] form match, then broadcast one `29` for
+            // it (`:3532` passes the key only — number2/3 default to 0).
+            C2s::MurderPortal { owner, form } => {
+                // `:3527-3534` — the first active type-602 whose owner and
+                // ai[1] form match; snapshot before the mutable kill.
+                let mut hit = None;
+                for (slot, p) in self.projectiles.slots().iter().enumerate() {
+                    if p.owner as u16 == owner
+                        && p.active
+                        && p.kind == 602
+                        && p.ai[1] == form as f32
+                    {
+                        hit = Some((slot, p.owner, p.generation));
+                        break; // `:3533` — the first match only
+                    }
+                }
+                if let Some((slot, p_owner, generation)) = hit {
+                    let key = self.projectiles.key_of(slot);
+                    self.projectiles.kill_remote(slot, p_owner, generation);
+                    server.broadcast(&S2c::ProjectileDead {
                         key,
-                        x: f32::NAN,
-                        y: f32::NAN,
-                    },
-                    id,
-                );
+                        x: 0.0,
+                        y: 0.0,
+                    });
+                }
             }
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
@@ -1462,11 +1511,27 @@ impl App {
             S2c::Projectile(ps) => {
                 self.projectiles.upsert_remote(&ps);
             }
-            // `case 29` — the projectile is gone; a finite position means the
-            // slot dies there, NaN deactivates it silently
-            // (`MessageBuffer.cs:1825-1850`).
-            S2c::ProjectileDead { key, .. } => {
+            // `case 29` — the projectile is gone (`MessageBuffer.cs:1825-
+            // 1850`): when the key resolves to an ACTIVE occupant, a finite
+            // position moves the slot to it before `Kill` (`:1835-1838`),
+            // NaN/Inf deactivates silently (`:1840-1843`); a stale key is a
+            // no-op. `kill_remote` is the port's silent-despawn stand-in for
+            // `Kill`'s death effects (the effects belong to the projectile
+            // AI pass, not the net reader).
+            S2c::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
+                let live = self
+                    .projectiles
+                    .slots()
+                    .get(slot)
+                    .map_or(false, |p| {
+                        p.active && p.owner == owner && p.generation == generation
+                    });
+                if live && x.is_finite() && y.is_finite() {
+                    if let Some(p) = self.projectiles.slots_mut().get_mut(slot) {
+                        p.pos = Vec2::new(x, y); // `:1837`
+                    }
+                }
                 self.projectiles.kill_remote(slot, owner, generation);
             }
             // `case 28` — a peer's strike: the local flash (the C# applies the
@@ -2558,7 +2623,11 @@ impl App {
                         ProjSend::SyncTo { state, .. } => {
                             client.send(&C2s::Projectile(Box::new(state)))
                         }
-                        ProjSend::Kill { key, .. } => client.send(&C2s::ProjectileDead { key }),
+                        ProjSend::Kill { key, x, y } => {
+                            // `NetMessage.cs:852-855` — the entry position
+                            // rides verbatim (`Projectile.cs:77256`).
+                            client.send(&C2s::ProjectileDead { key, x, y })
+                        }
                     }
                 }
             }
@@ -4610,6 +4679,108 @@ mod handshake_tests {
         assert!(
             client_app.net_proj_outbox.is_empty(),
             "the host's shot is not the client's to sync/despawn"
+        );
+    }
+
+    /// S1-I-1 W4-d93: the `29` body carries the entry position verbatim and
+    /// the host gates on the key's owner (`MessageBuffer.cs:1831-1834`).
+    #[test]
+    fn the_kill_wire_carries_the_position_and_the_owner_gate() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let owner = client_app.local_id as u8;
+        // The client's own shot, seeded into the host pool by key.
+        let key = net::projectile_key(owner, 3, 1);
+        let st = net::ProjectileState {
+            key,
+            x: 100.0,
+            y: 100.0,
+            vx: 4.0,
+            vy: 0.0,
+            kind: 1,
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 10,
+            knock_back: 2.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        host_app.projectiles.upsert_remote(&st);
+        client_app.projectiles.upsert_remote(&st);
+        // A peer's key (a different owner) cannot kill the slot
+        // (`:1831-1834`); the host keeps it.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ProjectileDead {
+                key: net::projectile_key(owner.wrapping_add(1), 3, 1),
+                x: 5.0,
+                y: 5.0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            host_app.projectiles.slots()[3].active,
+            "a stale-owner key never kills (`:1831` gates before TryGet's slot)"
+        );
+        // The owner's kill lands and the position rides the wire
+        // (`NetMessage.cs:852-855`, `Projectile.cs:77256`).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ProjectileDead {
+                key,
+                x: 12.5,
+                y: -8.0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            !host_app.projectiles.slots()[3].active,
+            "the owner's 29 dropped the slot"
+        );
+        assert!(
+            !client_app.projectiles.slots()[3].active,
+            "the relayed 29 dropped the client's copy"
+        );
+    }
+
+    /// S1-I-1 W4-d93: `95 MurderSomeoneElsesPortal` kills the first matching
+    /// active type-602 and relays one `29` (`MessageBuffer.cs:3519-3537`).
+    #[test]
+    fn murder_portal_kills_the_matching_602_and_relays_29() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let owner = client_app.local_id as u8;
+        // A portal-gun projectile (602) owned by the client, form ai[1]=1.
+        let slot = host_app
+            .projectiles
+            .spawn_with_data_owned(602, owner, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 1.0)
+            .expect("spawn");
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(host_app.projectiles.slots()[slot].active);
+        // A wrong form matches nothing (`:3529` compares ai[1]).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MurderPortal {
+                owner: owner as u16,
+                form: 0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            host_app.projectiles.slots()[slot].active,
+            "the form mismatch spared the portal"
+        );
+        // The right form kills it and the `29` relay reaches the client.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MurderPortal {
+                owner: owner as u16,
+                form: 1,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            !host_app.projectiles.slots()[slot].active,
+            "the host killed the matching portal"
+        );
+        assert!(
+            !client_app.projectiles.slots()[slot].active,
+            "the 29 relay dropped the client's copy (`:3532`)"
         );
     }
 
