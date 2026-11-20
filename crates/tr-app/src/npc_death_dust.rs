@@ -223,6 +223,7 @@ fn lane_covers(ty: u16) -> bool {
         668 | 552..=554 | 561..=563 | 555..=557 | 551 | 558..=560 | 566 | 567
             | 576 | 577 | 564 | 565 | 572..=575 | 570 | 571 | 568 | 569 | 550 | 441
             | 588 | 589 | 633 | 368 | 353 | 354 | 369 | 376 | 663 | 342
+            | 338..=340 | 343 | 348 | 349 | 350 | 351 | 489 | 490
     )
 }
 
@@ -355,6 +356,34 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
         // `NPC.cs:86858-86866` — the Gingerbread Man: 50×type-0 at
         // `(2.5×hitDirection, -2.5)`; five constant gores.
         342 => fx.burst(50, 0, 2.5 * hd, -2.5),
+        // `NPC.cs:86878-86896` — the Zombie Elf trio: 50×5; the
+        // per-type head gore (494/495/496) + three body gores are
+        // constant-argument.
+        338..=340 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:86908-86915` — the Yeti: 50×5; four constant gores.
+        343 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:86322-86330` — the Nutcracker pair (348/349): 10×5
+        // at `(2×hitDirection, -2)`; five constant gores (528-532).
+        348 | 349 => fx.burst(10, 5, 2.0 * hd, -2.0),
+        // `NPC.cs:86362-86369` — the Elf Archer: 10×5; four constant
+        // gores (533-536).
+        350 => fx.burst(10, 5, 2.0 * hd, -2.0),
+        // `NPC.cs:86342-86350` — the Krampus: 10×5; five constant
+        // gores (538-542).
+        351 => fx.burst(10, 5, 2.0 * hd, -2.0),
+        // `NPC.cs:86669-86688` — the Blood Zombie (489; the 586
+        // Crimslime shares the arm but has no port kind): 50×5; the
+        // type-gated five gores (722-724) are constant-argument.
+        489 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:86720-86728` — the Drippler: 50×5, then gores
+        // 725/726/727 (constant) and TWO `725 + Main.rand.Next(3)`
+        // wing picks (`:86727-86728`) — TWO argument draws consumed
+        // here in order.
+        490 => {
+            fx.burst(50, 5, 2.5 * hd, -2.5);
+            fx.rng.next_max(3);
+            fx.rng.next_max(3);
+        }
         _ => {}
     }
 }
@@ -602,6 +631,39 @@ mod tests {
         assert_eq!(rng, r, "25×6 internals + 4 tombstone picks");
         assert!(pool.slot(24).active);
         assert!(!pool.slot(25).active);
+    }
+
+    /// `NPC.cs:86720-86728` — the Drippler: 50×5 then TWO `Next(3)`
+    /// wing-gore picks (725+roll), argument-side.
+    #[test]
+    fn w4_g60_the_drippler_consumes_the_two_wing_picks() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(61);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 490,
+            pos: Vec2::new(100.0, 100.0),
+            w: 26,
+            h: 26,
+            vel: Vec2::ZERO,
+            hit_dir: -1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for _ in 0..50 {
+            replay_spawn(&mut r, 26, 26);
+        }
+        r.next_max(3);
+        r.next_max(3);
+        assert_eq!(rng, r, "50×6 internals + 2 wing picks");
+        assert!(pool.slot(49).active);
+        assert!(!pool.slot(50).active);
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
