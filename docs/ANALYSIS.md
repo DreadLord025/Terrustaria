@@ -17799,13 +17799,17 @@ showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
   centred on `(x + 26*scale, y + 26*scale)` and shrunk to `36 / max(w, h)` when it
   is larger than 36 px. The shipped content pack's heads are 24x22, so they draw
   1:1.
-* **Hover** (`:42059-42065`, M7-UI-3c): the cell under the pointer prints a
-  name through the tooltip layer вЂ” `Lang.inter[8]` for the query cell, the NPC's
+* **Hover** (`:42059-42065`, M7-UI-3c; W4-f38): the cell under the pointer prints a
+  name through the tooltip layer - `Lang.inter[8]` for the query cell, the NPC's
   name otherwise. The C# prints `Main.npc[n].FullName`, i.e. the *given* name
-  plus the type ("Andrew the Guide"); the port stores no per-NPC given names, so
-  it prints the type name from the `NPCName.<Kind>` localization key
-  (`housing::npc_type_name` в†’ `lang::npc_name`, the C#'s
-  `Lang.GetNPCName`) вЂ” the same string the bestiary entry carries.
+  plus the type ("Andrew the Guide"). The former deviation (type-name-only,
+  because the port stored no per-NPC given names) is **closed by W4-f38**: the
+  naming layer (`npc_names.rs`, `NPC.GiveTownUniqueDataToNPCsThatNeedIt`
+  `NPC.cs:80839-80856`) writes `given_name` at every town spawn/rescue, and
+  `housing::label` reads `npc_names::full_name` - the same `FullName`/
+  `GetFullNetName` seam (`NPC.cs:6729-6739`/`:7349-7356`) the move-in
+  announcements broadcast. An unnamed NPC still answers the bare `TypeName`
+  (`NPC.cs:6733-6736`), the `NPCName.<Kind>` localization key.
 * **Not ported**: the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
   because the port has no `Main.mouseNPC` housing query at all; the
   `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
