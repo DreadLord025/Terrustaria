@@ -121,6 +121,14 @@ pub struct World {
     pub hallow_bg_style: u8,
     pub crimson_bg_style: u8,
     pub mushroom_bg_style: u8,
+    /// `WorldGen.snowBG` (`setBG` slot 3), `desertBG` (slot 6) and `oceanBG`
+    /// (slot 7) — the three style bytes the W4-g71 lane adopts. The snow slot
+    /// also drives `Main.snowMntBG`, the desert slot the four
+    /// `Main.desertBackgroundSet` variants and the ocean slot `Main.oceanBG`
+    /// (a single texture id, not a triple).
+    pub snow_bg_style: u8,
+    pub desert_bg_style: u8,
+    pub ocean_bg_style: u8,
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
     /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
@@ -697,6 +705,9 @@ impl World {
             hallow_bg_style: 0,
             crimson_bg_style: 0,
             mushroom_bg_style: 0,
+            snow_bg_style: 0,
+            desert_bg_style: 0,
+            ocean_bg_style: 0,
             column_surface: Vec::new(),
             chunks_x: 0,
             chunks_y: 0,
@@ -1366,13 +1377,14 @@ impl World {
     }
 }
 
-/// `WorldGen.setBG` cases 1/2/4/5/8 (`WorldGen.cs:7235-7274`, `7276-7316`,
-/// `7424-7459`, `7460-7500`, `7578-7608`): the three `Background_<id>` texture
-/// ids for a surface style, `-1` meaning "this layer is not drawn".
+/// `WorldGen.setBG` cases 1/2/3/4/5/8 (`WorldGen.cs:7235-7274`, `7276-7316`,
+/// `7317-7423`, `7424-7459`, `7460-7500`, `7578-7608`): the three
+/// `Background_<id>` texture ids for a surface style, `-1` meaning "this
+/// layer is not drawn".
 ///
-/// `bg` is the `setBG` slot: 1 corrupt, 2 jungle, 4 hallow, 5 crimson,
-/// 8 mushroom. The other slots (forest tree sets, snow, desert, ocean,
-/// underworld) have their own tables and are not covered here.
+/// `bg` is the `setBG` slot: 1 corrupt, 2 jungle, 3 snow, 4 hallow, 5 crimson,
+/// 8 mushroom. The other slots (forest tree sets, desert, ocean, underworld)
+/// have their own tables and are not covered here.
 pub fn surface_bg_texture_ids(bg: i32, style: i32) -> Option<[i32; 3]> {
     Some(match bg {
         1 => match style {
@@ -1392,6 +1404,20 @@ pub fn surface_bg_texture_ids(bg: i32, style: i32) -> Option<[i32; 3]> {
             5 => [271, 272, 273],
             6 => [302, 301, 300],
             _ => [15, 16, 17],
+        },
+        // `WorldGen.cs:7317-7423` — case 3. The `default:` arm resets the
+        // mountains to 35/36 first (`:7319-7320`); every listed style below
+        // overrides them. Styles 8 (`:7417-7421`) leaves the mountains alone.
+        3 => match style {
+            1 => [97, 96, 95],
+            2 | 3 | 4 => [-1, -1, -1],
+            21 | 31 | 41 => [95, 96, 97],
+            22 | 32 | 42 => [37, 38, 39],
+            5 => [258, 259, 260],
+            6 => [263, 264, 265],
+            7 => [267, 266, 268],
+            8 => [299, 298, -1],
+            _ => [37, 38, 39],
         },
         4 => match style {
             1 => [102, 103, 104],
@@ -1421,17 +1447,90 @@ pub fn surface_bg_texture_ids(bg: i32, style: i32) -> Option<[i32; 3]> {
     })
 }
 
+/// `WorldGen.setBG` case 3's mountain pair (`WorldGen.cs:7319-7320` reset to
+/// 35/36 before the style switch, then the per-style overrides):
+/// `Main.snowMntBG[0]` (far, Step1) and `[1]` (near, Step2).
+pub fn snow_mountain_texture_ids(style: i32) -> [i32; 2] {
+    match style {
+        2 | 21 | 22 => [98, 99],
+        3 | 31 | 32 => [98, 100],
+        4 | 41 | 42 => [98, 101],
+        5 | 6 => [-1, -1],
+        7 => [269, 270],
+        _ => [35, 36],
+    }
+}
+
+/// `WorldGen.setBG` case 6 (`WorldGen.cs:7501-7546`): the four
+/// `Main.desertBackgroundSet` variants, in the C# field order
+/// (`DataStructures/BackgroundVariantSet.cs:5-11`) — Pure, Corrupt, Crimson,
+/// Hallow. Each row is a `BackgroundVariant` triple (far, middle, near);
+/// `-1` layers are skipped by `DrawSurfaceBG_Desert`.
+pub fn desert_bg_set(style: i32) -> [[i32; 3]; 4] {
+    let cleared = [-1, -1, -1];
+    match style {
+        1 => [[108, 109, -1], cleared, cleared, cleared],
+        2 => [[207, 208, -1], cleared, cleared, cleared],
+        3 => [[217, 218, -1], cleared, cleared, cleared],
+        4 => [[248, 249, 250], cleared, cleared, cleared],
+        51 => [
+            [306, 303, -1],
+            [310, 307, -1],
+            [318, 315, -1],
+            [314, 311, -1],
+        ],
+        52 => [
+            [306, 304, -1],
+            [310, 308, -1],
+            [318, 316, -1],
+            [314, 312, -1],
+        ],
+        53 => [
+            [306, 305, -1],
+            [310, 309, -1],
+            [318, 317, -1],
+            [314, 313, -1],
+        ],
+        _ => [[21, 20, -1], cleared, cleared, cleared],
+    }
+}
+
+/// `BackgroundVariant.HasAny` (`DataStructures/BackgroundVariant.cs:9-19`):
+/// any of the three layers set.
+pub fn desert_variant_has_any(v: [i32; 3]) -> bool {
+    v[0] != -1 || v[1] != -1 || v[2] != -1
+}
+
+/// `WorldGen.setBG` case 7 (`WorldGen.cs:7548-7576`): `Main.oceanBG`, a single
+/// far-layer texture id drawn by `DrawSurfaceBG_BackMountainsStep2`.
+pub fn ocean_bg_texture_id(style: i32) -> i32 {
+    match style {
+        1 => 110,
+        2 => 111,
+        3 => 209,
+        4 => 210,
+        5 => 283,
+        6 => 332,
+        7 => 340,
+        _ => 28,
+    }
+}
+
 impl World {
-    /// `WorldGen.setBG(bg, style)` for the five surface variants the port owns
-    /// (`WorldGen.cs:7235-7274`, `7276-7316`, `7424-7459`, `7460-7500`,
-    /// `7578-7608`). Unknown slots are ignored — their tables are unported.
+    /// `WorldGen.setBG(bg, style)` for the eight surface variants the port owns
+    /// (`WorldGen.cs:7235-7274`, `7276-7316`, `7317-7423`, `7424-7459`,
+    /// `7460-7500`, `7501-7546`, `7548-7576`, `7578-7608`). Unknown slots are
+    /// ignored — their tables are unported.
     pub fn set_surface_bg_style(&mut self, bg: i32, style: i32) {
         let style = style as u8;
         match bg {
             1 => self.corrupt_bg_style = style,
             2 => self.jungle_bg_style = style,
+            3 => self.snow_bg_style = style,
             4 => self.hallow_bg_style = style,
             5 => self.crimson_bg_style = style,
+            6 => self.desert_bg_style = style,
+            7 => self.ocean_bg_style = style,
             8 => self.mushroom_bg_style = style,
             _ => {}
         }
@@ -1454,10 +1553,30 @@ impl World {
     pub fn mushroom_bg(&self) -> [i32; 3] {
         surface_bg_texture_ids(8, self.mushroom_bg_style as i32).unwrap()
     }
+    /// The three pine-line textures of the snow surface style
+    /// (`WorldGen.setBG` case 3).
+    pub fn snow_bg(&self) -> [i32; 3] {
+        surface_bg_texture_ids(3, self.snow_bg_style as i32).unwrap()
+    }
+    /// The snow far/near mountain pair (`Main.snowMntBG`).
+    pub fn snow_mountains(&self) -> [i32; 2] {
+        snow_mountain_texture_ids(self.snow_bg_style as i32)
+    }
+    /// The four desert variants (`Main.desertBackgroundSet`): Pure, Corrupt,
+    /// Crimson, Hallow.
+    pub fn desert_bg_set(&self) -> [[i32; 3]; 4] {
+        desert_bg_set(self.desert_bg_style as i32)
+    }
+    /// `Main.oceanBG` for this world's ocean style.
+    pub fn ocean_bg(&self) -> i32 {
+        ocean_bg_texture_id(self.ocean_bg_style as i32)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn surface_bg_style_tables_match_set_bg() {
         // Spot rows from `WorldGen.setBG`, including the `default:` rows and
@@ -1470,16 +1589,100 @@ mod tests {
         assert_eq!(surface_bg_texture_ids(5, 2), Some([174, -1, 175]));
         assert_eq!(surface_bg_texture_ids(5, 6), Some([339, 338, 337]));
         assert_eq!(surface_bg_texture_ids(8, 4), Some([321, 320, 319]));
-        // Slots with their own tables (snow/desert/ocean/forest/underworld).
-        assert_eq!(surface_bg_texture_ids(3, 0), None);
+        // Slots with their own tables (desert/ocean/forest/underworld).
+        assert_eq!(surface_bg_texture_ids(6, 0), None);
+        assert_eq!(surface_bg_texture_ids(7, 0), None);
         assert_eq!(surface_bg_texture_ids(9, 0), None);
 
         let mut w = World::new("t".into(), 40, 40);
         w.set_surface_bg_style(5, 6);
         assert_eq!(w.crimson_bg(), [339, 338, 337]);
         assert_eq!(w.crimson_bg_style, 6);
-        w.set_surface_bg_style(3, 1); // unowned slot: unchanged
+        w.set_surface_bg_style(0, 1); // unowned slot: unchanged
         assert_eq!(w.crimson_bg_style, 6);
+    }
+
+    #[test]
+    fn w4_g71_snow_style_table_matches_set_bg_case_3() {
+        // `WorldGen.cs:7317-7423`: every arm, incl the -1 triplets and the
+        // default mountain reset (35/36).
+        let cases: [(i32, [i32; 3], [i32; 2]); 16] = [
+            (0, [37, 38, 39], [35, 36]),
+            (1, [97, 96, 95], [35, 36]),
+            (2, [-1, -1, -1], [98, 99]),
+            (21, [95, 96, 97], [98, 99]),
+            (22, [37, 38, 39], [98, 99]),
+            (3, [-1, -1, -1], [98, 100]),
+            (31, [95, 96, 97], [98, 100]),
+            (32, [37, 38, 39], [98, 100]),
+            (4, [-1, -1, -1], [98, 101]),
+            (41, [95, 96, 97], [98, 101]),
+            (42, [37, 38, 39], [98, 101]),
+            (5, [258, 259, 260], [-1, -1]),
+            (6, [263, 264, 265], [-1, -1]),
+            (7, [267, 266, 268], [269, 270]),
+            (8, [299, 298, -1], [35, 36]),
+            (99, [37, 38, 39], [35, 36]),
+        ];
+        for (style, trees, mnts) in cases {
+            assert_eq!(surface_bg_texture_ids(3, style), Some(trees), "snow {style}");
+            assert_eq!(snow_mountain_texture_ids(style), mnts, "snow mnt {style}");
+        }
+    }
+
+    #[test]
+    fn w4_g71_desert_set_matches_set_bg_case_6() {
+        // `WorldGen.cs:7501-7546` — Pure/Corrupt/Crimson/Hallow order per
+        // `BackgroundVariantSet.cs:5-11`; `Clear()` empties the other three.
+        let none = [-1, -1, -1];
+        assert_eq!(desert_bg_set(0), [[21, 20, -1], none, none, none]);
+        assert_eq!(desert_bg_set(1), [[108, 109, -1], none, none, none]);
+        assert_eq!(desert_bg_set(2), [[207, 208, -1], none, none, none]);
+        assert_eq!(desert_bg_set(3), [[217, 218, -1], none, none, none]);
+        assert_eq!(desert_bg_set(4), [[248, 249, 250], none, none, none]);
+        assert_eq!(
+            desert_bg_set(51),
+            [[306, 303, -1], [310, 307, -1], [318, 315, -1], [314, 311, -1]]
+        );
+        assert_eq!(
+            desert_bg_set(52),
+            [[306, 304, -1], [310, 308, -1], [318, 316, -1], [314, 312, -1]]
+        );
+        assert_eq!(
+            desert_bg_set(53),
+            [[306, 305, -1], [310, 309, -1], [318, 317, -1], [314, 313, -1]]
+        );
+        assert_eq!(desert_bg_set(77), desert_bg_set(0)); // `default:` arm
+        // `HasAny` (`BackgroundVariant.cs:9-19`): any layer set counts.
+        assert!(desert_variant_has_any([21, 20, -1]));
+        assert!(desert_variant_has_any([-1, -1, 250]));
+        assert!(!desert_variant_has_any(none));
+    }
+
+    #[test]
+    fn w4_g71_ocean_style_table_matches_set_bg_case_7() {
+        // `WorldGen.cs:7548-7576`.
+        for (style, id) in [
+            (0, 28),
+            (1, 110),
+            (2, 111),
+            (3, 209),
+            (4, 210),
+            (5, 283),
+            (6, 332),
+            (7, 340),
+            (42, 28),
+        ] {
+            assert_eq!(ocean_bg_texture_id(style), id, "ocean {style}");
+        }
+        let mut w = World::new("t".into(), 40, 40);
+        w.set_surface_bg_style(3, 7);
+        w.set_surface_bg_style(6, 52);
+        w.set_surface_bg_style(7, 5);
+        assert_eq!(w.snow_bg(), [267, 266, 268]);
+        assert_eq!(w.snow_mountains(), [269, 270]);
+        assert_eq!(w.desert_bg_set()[0], [306, 304, -1]);
+        assert_eq!(w.ocean_bg(), 283);
     }
 
     #[test]

@@ -2015,11 +2015,15 @@ mod tests {
         tail[68..72].copy_from_slice(&world.rain_time.to_le_bytes());
         tail[72..76].copy_from_slice(&world.max_raining.to_le_bytes());
         // The owned background styles inside setBG 0..7 at 88..95
-        // (`:1318-1325`): corrupt@89, jungle@90, hallow@92, crimson@93.
+        // (`:1318-1325`): corrupt@89, jungle@90, snow@91, hallow@92,
+        // crimson@93, desert@94, ocean@95.
         tail[89] = world.corrupt_bg_style;
         tail[90] = world.jungle_bg_style;
+        tail[91] = world.snow_bg_style;
         tail[92] = world.hallow_bg_style;
         tail[93] = world.crimson_bg_style;
+        tail[94] = world.desert_bg_style;
+        tail[95] = world.ocean_bg_style;
         // savedAngler..savedGolfer follow the 4-byte angler-list count at
         // 106..110 (88 trio-end + 8 setBG + 10 clouds/wind = 106).
         tail[110] = u8::from(world.saved_angler); // savedAngler (`:1334`)
@@ -2847,6 +2851,9 @@ mod tests {
         world.hallow_bg_style = 4;
         world.crimson_bg_style = 5;
         world.mushroom_bg_style = 6;
+        world.snow_bg_style = 21;
+        world.desert_bg_style = 52;
+        world.ocean_bg_style = 5;
         world.hard_mode = true;
         world.downed_eoc = true;
         world.downed_plant_boss = true;
@@ -2881,6 +2888,9 @@ mod tests {
         assert_eq!(back.hallow_bg_style, world.hallow_bg_style);
         assert_eq!(back.crimson_bg_style, world.crimson_bg_style);
         assert_eq!(back.mushroom_bg_style, world.mushroom_bg_style);
+        assert_eq!(back.snow_bg_style, world.snow_bg_style);
+        assert_eq!(back.desert_bg_style, world.desert_bg_style);
+        assert_eq!(back.ocean_bg_style, world.ocean_bg_style);
         assert!(back.hard_mode);
         assert!(back.downed_eoc && back.downed_plant_boss);
         assert!(back.spawn_meteor);
