@@ -114,6 +114,30 @@ pub const NPC_GLOW_RECORDS: &[NpcGlowRecord] = &[
     // :25772 — MartianOfficer 383, (255,255,255,0); the ForceBubble 384
     // companion copy (:25776) is Npc[384], not a glow sheet.
     NpcGlowRecord { npc: 383, masks: &[11], line: 25772 },
+    // :25855 — BrainScrambler 381, (255,255,255,0) over the Extra[0] rider
+    // frame (32x42 cell, the ai[2]/velocity.Y frame pick :25820-25827).
+    NpcGlowRecord { npc: 381, masks: &[24], line: 25855 },
+    // :25936/:25955 — MartianWalker 520: body mask 164 (255,255,255,0) +
+    // the Extra[56] antenna's mask 165 at localAI[3] rotation (+pi flipped).
+    NpcGlowRecord { npc: 520, masks: &[164, 165], line: 25936 },
+    // :25959 — MartianEngineer 386, (255,255,255,0).
+    NpcGlowRecord { npc: 386, masks: &[31], line: 25959 },
+    // :25971 — MartianTurret 387: white*0.75, the ai[0]>0 Lerp-to-White
+    // (ai[0]+1)/60 with A lerp to 0 (:25964-25968), *(255-alpha)/255.
+    NpcGlowRecord { npc: 387, masks: &[32], line: 25971 },
+    // :25975 — MartianDrone 388, (255,255,255,0).
+    NpcGlowRecord { npc: 388, masks: &[33], line: 25975 },
+    // :25979 — GigaZapper 389, (255,255,255,0).
+    NpcGlowRecord { npc: 389, masks: &[34], line: 25979 },
+    // :25998/:25999 — CultistTablet 437: mask 109 on frame6 + mask 108 on
+    // the FULL sheet (null rect), both White A=200.
+    NpcGlowRecord { npc: 437, masks: &[109, 108], line: 25998 },
+    // :26056 — ShadowFlameApparition 472, (255-alpha) grey a0.
+    NpcGlowRecord { npc: 472, masks: &[110], line: 26056 },
+    // :26109 — StardustSoldier 411, (128-alpha/2) grey a0.
+    NpcGlowRecord { npc: 411, masks: &[136], line: 26109 },
+    // :26112 — StardustSpiderBig 409, (255-alpha) grey a=255-alpha.
+    NpcGlowRecord { npc: 409, masks: &[138], line: 26112 },
 ];
 
 #[cfg(test)]
