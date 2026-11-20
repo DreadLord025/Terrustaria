@@ -39244,3 +39244,32 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Main.cs sound sites wave, part 1 (W4-g21, 2026-11-20, code-only mode) — CLAIM
+
+**Line-order split of the 271-site `PlaySound` census in `Main.cs`**
+(`Select-String 'PlaySound\('` over `decompiled/Terraria/Main.cs`,
+ascending line order, first `:3244`, last `:66248`): the sites are split
+into three worktrees — **g21** (this branch,
+`task/W4-g21-sounds-main-1`) owns sites **1-90** (lines
+**`:3244`-`:43936`**), **g22** (`task/W4-g22-sounds-main-2`) owns sites
+91-180 (lines `:44118`-`:49727`), **g23**
+(`task/W4-g23-sounds-main-3`) owns sites 181-271 (lines
+`:49734`-`:66248`). All three branch from `a725acb0`. The landed
+world-sounds wave (S1-E-21i, c15 — `KillWall_PlaySounds` +
+`Wiring.HitSwitch` + door plays) is KEPT untouched; none of its sites
+live in `Main.cs`, but its seams (`play_wall_break_sound` /
+`play_door_sound` / `play_switch_click`, attenuation BEFORE any case
+draw) are the convention this wave follows.
+
+**Code-only mode**: no cargo/rustc/rustfmt/tests/graphify invoked (the
+Lead's constraint); every witness test is WRITTEN NOT RUN. Audio seams
+follow the landed S1-E-21 conventions: the `wants_sound` intent queue
+where the site runs without the `Audio` borrow, attenuation BEFORE any
+case draw (`LegacySoundPlayer.cs:369-436` precedes the type switch),
+the overload split (`SoundEngine.cs:93-99` façade draws the
+`GetRandomPitch` NextFloat on the audio-only `sound_style_random`;
+`:102-108` int overload draws NONE), and every gameplay draw keeps its
+exact slot on the C# statement order, on the named stream of the
+enclosing C# pass. Sites already ported by earlier waves are recorded
+as landed, not re-ported. Commits land ≤15 sites each.
