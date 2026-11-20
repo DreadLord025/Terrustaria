@@ -8795,6 +8795,73 @@ mod tests {
         assert!(dealt > 0, "the umbrella's own damage row");
     }
 
+    /// W4-d116 — the melee text shows the FINAL dealt number
+    /// (`NPC.cs:81250-81264` — `num` after the `:81239-81249` tail), spawns
+    /// on the landed stab, and its jitter rolls ride the strike's
+    /// `UpdatePlayers` stream BEFORE the probe roll (`HitEffect` `:81488`).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d116_the_melee_text_shows_the_dealt_number_and_draws_first() {
+        let mut app = thrust_app();
+        let hp0 = app.npcs[0].hp;
+        app.mine_released = true;
+        app.mine_prev_down = false;
+        mine_frames(&mut app, 9); // the stab arm's first hit tick
+        let dealt = hp0 - app.npcs[0].hp;
+        assert!(dealt > 0, "the stab landed");
+        let text = app
+            .combat_texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the landed strike spawns its text");
+        assert_eq!(text.text, dealt.to_string(), "the FINAL num (:81239-81249)");
+        // The x jitter is `Next(-w/2, w/2+1)` off the box-centred anchor
+        // (`CombatText.cs:86-88`); the measured-size offset only shifts the
+        // anchor left, so the position stays inside the padded window.
+        let (bw, _bh) = app.npcs[0].size();
+        let base_x = app.npcs[0].x + bw * 0.5;
+        assert!(
+            text.position[0] >= base_x - bw * 0.5 - 64.0
+                && text.position[0] <= base_x + bw * 0.5,
+            "the x jitter rides the box window: {} vs {base_x}",
+            text.position[0]
+        );
+    }
+
+    /// W4-d116 — the town NPC's melee text takes the FRIENDLY pair
+    /// (`NPC.cs:81252-81254`), not the hostile one the old port hard-coded.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_town_npc_text_uses_the_friendly_pair() {
+        let mut app = thrust_app();
+        // Swap the victim for a town resident in the same stab reach.
+        let mut guide = crate::npc::Npc::new(
+            crate::npc::NpcKind::Guide,
+            app.npcs[0].x,
+            app.npcs[0].y,
+            1,
+            0.0,
+        );
+        guide.hp = 250;
+        guide.max_hp = 250;
+        guide.uid = app.npcs[0].uid;
+        app.npcs[0] = guide;
+        app.mine_released = true;
+        app.mine_prev_down = false;
+        mine_frames(&mut app, 9);
+        let text = app
+            .combat_texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the town hit spawns its text");
+        assert!(
+            text.color == crate::combat_text::DAMAGED_FRIENDLY
+                || text.color == crate::combat_text::DAMAGED_FRIENDLY_CRIT,
+            "the friendly pair (:81254), got {:?}",
+            text.color
+        );
+    }
+
     /// The one-hit-per-swing lock (`meleeNPCHitCooldown`,
     /// `Player.cs:44246`/`:44414`): the landed hit re-arms the cooldown to
     /// the current `itemAnimation` and `ApplyAttackCooldown`

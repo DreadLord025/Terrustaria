@@ -24831,6 +24831,172 @@ mod tests {
         );
     }
 
+    /// W4-d116 — the PVE strike queues the combat-text intent (`NPC.cs:
+    /// 81250-81264`): `(hitbox, final dealt num, crit, friendly)` on a
+    /// `lifeMax > 1` target; the `lifeMax == 1` critter and the refused hit
+    /// queue nothing. The dealt value is the strike's RETURN (the red-hat/
+    /// taken-mult tail included), not the pre-strike `strike_dmg`.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d116_the_pve_strike_queues_the_damage_text() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 500;
+        npc.max_hp = 500;
+        npc.defense_override = Some(200); // post-defense floor 1
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        let texts = pool.drain_npc_damage_texts();
+        assert_eq!(texts.len(), 1, "one landed hit, one text intent");
+        let (loc, amount, crit, friendly) = texts[0];
+        assert_eq!(amount, 1, "the final dealt number (:81239-81249)");
+        assert!(!crit && !friendly, "the hostile non-crit pair (:81258)");
+        assert_eq!(loc.x, npc.x);
+        assert_eq!(loc.width, npc.size().0);
+        // The drain empties the queue (the mem::take convention).
+        assert!(pool.drain_npc_damage_texts().is_empty());
+        // The lifeMax == 1 critter (`:81250`'s gate) queues nothing.
+        let mut critter = one_npc(&w);
+        critter.x = 20.0 * TILE_PX;
+        critter.y = 24.0 * TILE_PX;
+        critter.hp = 1;
+        critter.max_hp = 1;
+        critter.defense_override = Some(0);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut critter),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert!(critter.hp <= 0, "the hit still lands");
+        assert!(pool.drain_npc_damage_texts().is_empty(), "lifeMax 1: no text");
+    }
+
+    /// W4-d116 — the immortal target's hit queues the text (the C# computes
+    /// `num` and spawns the text BEFORE the `!immortal` life gate,
+    /// `NPC.cs:81250` vs `:81368`) but the life never drops. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_immortal_target_still_gets_the_text_no_life_loss() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 500;
+        npc.max_hp = 500;
+        npc.immortal = true;
+        npc.defense_override = Some(0);
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert_eq!(npc.hp, 500, "the !immortal gate (:81368) holds the life");
+        let texts = pool.drain_npc_damage_texts();
+        assert_eq!(texts.len(), 1, "the text spawns ahead of the gate");
+        assert!((34..=46).contains(&texts[0].1), "DamageVar(40): {}", texts[0].1);
+    }
+
+    /// W4-d116 — the Destroyer body's landed hit queues the probe-roll
+    /// intent instead of drawing inline: the world sim rolls it AFTER the
+    /// text drain (the C# order `:81250` text → `:81488` HitEffect).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_destroyer_hit_queues_the_probe_roll_behind_the_text() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut body = Npc::new(NpcKind::TheDestroyerBody, 20.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
+        body.hp = 1000;
+        body.max_hp = 1000;
+        body.defense_override = Some(0);
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut body),
+            None,
+            None,
+            None,
+            &mut rng,
+        );
+        // Both queues fill; the walk itself drew NO probe roll (deferred).
+        assert_eq!(pool.drain_npc_damage_texts().len(), 1, "the text queued too");
+        assert_eq!(pool.drain_probe_rolls(), vec![0], "the body hit queues idx 0");
+        assert_eq!(body.ai[2], 0.0, "no inline launch write");
+        // The sim-side order: the text's 2 jitter rolls run FIRST (the
+        // drain spawns them), then `probe_launch_on_hit` draws its Next(25)
+        // on the same stream. The mirror replays that exact sequence.
+        let mut mirror = tr_core::tile_light::FastRandom::new(7);
+        let _var = mirror.next_range(-15, 16); // the walk's DamageVar (unowned: no crit roll)
+        let _tx = mirror.next_range(-((body.size().0 * 0.5) as i32), (body.size().0 * 0.5) as i32 + 1);
+        let _ty = mirror.next_range(-((body.size().1 * 0.5) as i32), (body.size().1 * 0.5) as i32 + 1);
+        let probe = mirror.next_range(0, 25);
+        let anchor = crate::npc_ai_style37::probe_launch_on_hit(&mut body, &mut rng, false);
+        assert_eq!(anchor.is_some(), probe == 0, "the mirrored Next(25) decides");
+    }
+
     /// S1-P-i49 — the summon prefixes' armor penetration reaches the strike:
     /// `ApplyStatsFromSource` copies `item.armorPenetration` onto the shot
     /// (`Projectile.cs:11128`), `Damage_PVE_Inner`'s `num5` adds it to the

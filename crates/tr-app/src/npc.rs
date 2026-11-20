@@ -21363,6 +21363,108 @@ mod tests {
         assert_eq!(npcs[0].hp, npcs[0].max_hp, "the head's pool is untouched");
     }
 
+    /// W4-d116 — `StrikeNPC_Inner`'s `!immortal` gate (`NPC.cs:81368-81386`):
+    /// the life subtraction (both arms) sits inside it; the strike still
+    /// returns the dealt number and arms `justHit`/knockback. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_immortal_target_takes_no_life_loss() {
+        let mut n = bare(NpcKind::Slime);
+        n.hp = 100;
+        n.max_hp = 100;
+        n.immortal = true;
+        let mut npcs = vec![n];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 40, 0.0, 0.0, false, Some(0), false);
+        assert_eq!(dealt, 40, "the strike computes num before the gate (:81239)");
+        assert_eq!(npcs[0].hp, 100, "the dummy's life never drops (:81368)");
+        assert!(npcs[0].just_hit, "the one-tick flag still arms (:81274)");
+        // The mortal control drops the same 40.
+        npcs[0].immortal = false;
+        npcs[0].hurt_cd = 0.0;
+        let dealt = Npc::strike_melee(&mut npcs, 0, 40, 0.0, 0.0, false, Some(0), false);
+        assert_eq!(dealt, 40);
+        assert_eq!(npcs[0].hp, 60);
+    }
+
+    /// W4-d116 — the red-hat ×0.7 (`NPC.cs:81240-81243`) runs AFTER the
+    /// caller's defence/crit line, truncates, floors at 1. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_red_hat_skeletron_takes_seventy_percent() {
+        let mut n = bare(NpcKind::SkeletronHead);
+        n.hp = 1000;
+        n.max_hp = 1000;
+        n.ai[3] = 1.0; // the red-hat latch (`:66671-66682`)
+        let mut npcs = vec![n];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 25, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 17, "(int)(25 * 0.7) = 17 (:81242)");
+        assert_eq!(npcs[0].hp, 983);
+        // The ×0.7 truncation to 0 floors back to 1 (`Math.Max(1, ..)`).
+        npcs[0].hurt_cd = 0.0;
+        let dealt = Npc::strike_melee(&mut npcs, 0, 1, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 1, "(int)(1 * 0.7) = 0 → Max(1, 0) = 1");
+        // Unlatched: the full number lands.
+        npcs[0].ai[3] = 0.0;
+        npcs[0].hurt_cd = 0.0;
+        let dealt = Npc::strike_melee(&mut npcs, 0, 25, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 25);
+    }
+
+    /// W4-d116 — `takenDamageMultiplier` is a LIVE field with a `> 1` gate
+    /// (`NPC.cs:81244-81246`), applied after the red-hat step; the final
+    /// `Max(1, num)` (`:81249`) covers the tail. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_live_taken_multiplier_gates_and_floors() {
+        let mut n = bare(NpcKind::Slime);
+        n.hp = 1000;
+        n.max_hp = 1000;
+        n.taken_damage_multiplier = 3.0; // the selenian's roll-phase value (:56776)
+        let mut npcs = vec![n];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 10, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 30);
+        // A < 1 multiplier is IGNORED (the C# gates `> 1f`, never shrinks).
+        npcs[0].taken_damage_multiplier = 0.5;
+        npcs[0].hurt_cd = 0.0;
+        let dealt = Npc::strike_melee(&mut npcs, 0, 10, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 10, "the > 1 gate refuses the 0.5 (:81244)");
+        // Red-hat first, multiplier second: 25 × 0.7 → 17, × 3 → 51.
+        let mut h = bare(NpcKind::SkeletronHead);
+        h.hp = 1000;
+        h.max_hp = 1000;
+        h.ai[3] = 1.0;
+        h.taken_damage_multiplier = 3.0;
+        let mut npcs = vec![h];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 25, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 51, "the C# order: :81242 then :81246");
+    }
+
+    /// W4-d116 — the strike RETURNS the dealt number (`NPC.cs:81563`); a
+    /// refused strike returns 0 (the `!active || life <= 0` gate `:81199`).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_strike_returns_the_dealt_number() {
+        let mut n = bare(NpcKind::Slime);
+        n.hp = 100;
+        n.max_hp = 100;
+        let mut npcs = vec![n];
+        assert_eq!(
+            Npc::strike_melee(&mut npcs, 0, 40, 0.0, 0.0, false, None, false),
+            40
+        );
+        // The melee cooldown gate refuses → 0 (the port's stand-in for the
+        // C# `NPC.immune` window).
+        assert_eq!(
+            Npc::strike_melee(&mut npcs, 0, 40, 0.0, 0.0, false, None, false),
+            0,
+            "the hurt_cd gate refuses"
+        );
+        // The dead gate → 0.
+        npcs[0].hp = 0;
+        npcs[0].hurt_cd = 0.0;
+        assert_eq!(
+            Npc::strike_projectile(&mut npcs, 0, 40, 0.0, 0.0, false, None, false),
+            0
+        );
+    }
+
     #[test]
     fn the_worm_head_digs_and_stumbles() {
         // The head machine (`:51923-52051`): inside the solid the velocity
