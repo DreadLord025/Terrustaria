@@ -39315,3 +39315,71 @@ the chain at that wave (their bodies are already the chain's 213/268 arms).
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
 (user directive). The 38 witnesses are owed a compile window before merge.
 
+## The player dust sites, third batch (W4-f3, task/W4-f3-dust-player-3, 2026-11-21, code-only mode)
+
+The d51 lane (extra-jump `Player.cs:20818-21012`, dash `:21259-21512`, fast-run
+`:20217-20298`) merged into this branch; the sticky lane (`:23036-23076`) already
+rides `take_sticky_dust`. e1 (`task/W4-e1-dust-sites-player-2`) has **no pushed
+claims** (clean worktree at base, no remote branch). The next contiguous unclaimed
+block is **`Player.cs:21654-27933` — exactly 40 sites** (46 minus the 6 already-ported
+sticky sites). W4-f3 addresses all 40 in four commits of 10 (C# line order): 31
+ported dust sites + 9 cited zero-draw deferrals (unported host state). The pre-20217
+cluster (`:12569-20320`, the equip/vanity lanes) is left for e1.
+
+**Ported lanes (the queue convention — the tick snapshots at the C# read moment,
+the drain replays on the `UpdatePlayers` stream, `player_dust.rs`):**
+
+* **DoubleJumpVisuals** (`:21892-22021`, 8 sites) — the performing-jump per-tick
+  trail, 6 arms (Cloud/Sandstorm/Fart/Unicorn/Sail/Blizzard). The single
+  `performing_jump` stands in for the seven `isPerformingJump_*` flags;
+  `CancelAllJumpVisualEffects` clears at the `jump == 0` gate (`:26755`), the CCed
+  flight arm (`:26811`) and the grapple pose (`:36493`). The Sandstorm `Gore.NewGore`
+  sibling (`:21922`) is the gore lane's (W4-d55 skip).
+* **Stoned transition** (`:25228`, 1) — 20 type-1 puffs + the per-puff `Next(2)`
+  noGravity roll; the `PlaySound(0)` (`:25225`) is a cited seam (the stoned hurt
+  rides `hurt_inner`'s own cue).
+* **Drowning bubble** (`:23316`, 1) — the `Next(20)` gate on the tick (draws only
+  while drowning), the type-34 wet-probe kill rides `new_dust`. The breathing-reed /
+  mount-mouth offsets (`:23293-23314`) fold to the base mouth position.
+* **MakeFloorDust** (`:23983`, 1) — `FloorVisuals` captures the floor tile + the
+  slope carve-out (`:23736`) + the dry/non-cart gate (`:23740`); the `falling` latch
+  (`:28073`) feeds the 1-vs-20 count. The drain replays the per-type gate rolls, the
+  `Next(100)` walking gate, the kind-to-dust map + colours, the scale arms and the
+  falling velocity post-arms. The shimmer-block orchestrator (`:23792-23818`, tiles
+  659/667) and the `Item177` landing cue (`:23830`) are cited seams.
+* **Wing-glide** (`:27040-27337`, 10 sites) — the glide arm queues the per-wing
+  snapshot; the drain replays wings 10/34/51/9/29/6/5/4/26/37. `noLightEmittance`
+  (`wingsLogic != wings`, `:27036`) folds false (the port's single wing field); the
+  `cWings` shader is dropped; the wings-4 `wingFrame` machine + `Item13` cadence
+  (`:27149-27191`) are cited seams (the port's `WingFrame` owns the frame machine).
+* **Liquid splash** (`:27783-27940`, 8 sites) — the wet-edge host queues the per-kind
+  arm; the drain replays the shimmer `Next(6)` colour pick / honey / `dustWater()` /
+  lava chains BEFORE the splash sound (the C# dust-loop-then-`PlaySound(19)` order).
+  The water style is `biome::calculate_water_style` under the player.
+
+**Cited zero-draw deferrals (unported host state — the dust gate never fires):**
+
+* **WallClimbMovement** (`:21654`/`:21678`) + **WallslideMovement**
+  (`:21729`/`:21790`/`:21826`, 5 sites) — the wall-climb/slide movement machines are
+  unported (the `spikedBoots` grant exists but the machines do not run), so the
+  type-31 wall dust never fires. The `cShoe` shader is a dropped field.
+* **UpdateHairDyeDust** (`:24274`, 1) — no `Player.hairDye` field (the team-dye
+  cosmetic is unported); the `Next(45)` gate never passes. The `Gore.NewGore` sibling
+  (`:24285`) is the gore lane's.
+* **Mana-heat shimmer** (`:24641`, 1) — `manaHeat` is reset to 1 every tick
+  (`:18593`) with no writer (the buff-396 decay `:10328-10341` and the star-pickup
+  `TryApplyManaHeat` lane are deferred), so `manaHeat != 1f` never holds.
+* **Vortex stealth** (`:25877`/`:25887`, 2) — no `setVortex`/`vortexStealthActive`
+  fields (the vortex stealth system is unported), so the `flag11` dust gate never
+  fires.
+
+**RNG contract:** every gate roll + `NewDust` internal + post-arm draw rides the
+`UpdatePlayers` stream in C# order (the `Main.cs:17754` swap). The drains run in the
+`world_sim/player.rs` tick closure in lane order (stoned, fast-run, jump, dash,
+double-jump, splash-dust, splash-sound, drown-gasp, drown-bubble, floor, wing-glide);
+the cross-lane ordering is the port's documented queue-convention approximation (the
+d51 precedent), the within-lane order is verbatim.
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
+(user directive). The 19 draw-mirror witnesses are owed a compile window before merge.
+
