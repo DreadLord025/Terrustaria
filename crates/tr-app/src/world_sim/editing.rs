@@ -7757,6 +7757,10 @@ fn resolve_melee_strike(
                 let n_defense = n.defense();
                 let (nx, ny) = (n.x, n.y);
                 let (bw, bh) = n.size();
+                // `NPC.cs:81250-81254` — the combat text's gate + colour arm
+                // read `lifeMax > 1` and `friendly` (the town pair).
+                let n_friendly = n.friendly;
+                let n_life_max_gt1 = n.max_hp > 1;
                 // The kind's hit cue (`NPC.HitSound`) — read before the app
                 // borrows below.
                 let hit_cue = n.kind.hit_sound();
@@ -7823,9 +7827,10 @@ fn resolve_melee_strike(
                 // ×15 reads the player's expert flag (the port's world-mode
                 // stand-in, `BuffSlots.expert_mode`).
                 let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
-                let landed = crate::npc::Npc::strike_melee(
+                let dealt = crate::npc::Npc::strike_melee(
                     &mut app.npcs, idx, dmg, pcx, kb, crit, Some(me), expert,
                 );
+                let landed = dealt > 0;
                 // S1-P-i05: `ProcessHitAgainstNPC`'s tail
                 // (`Player.cs:44414/:44419`) — the landed hit re-arms the
                 // per-NPC melee lock to the CURRENT `itemAnimation` ticks
@@ -7848,25 +7853,22 @@ fn resolve_melee_strike(
                             as f32
                             / 60.0;
                 }
-                // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
-                // the Destroyer body's probe gate (`:89266-89285`) — the
-                // roll rides the melee strike's stream (the `UpdatePlayers`
-                // swap the damage/crit rolls above already ride).
-                if landed {
-                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
-                        &mut app.npcs[idx], probe_rng, false,
-                    ) {
-                        app.npcs[idx].wants_probe = Some(anchor);
-                    }
-                }
-                if landed {
-                    // `NPC.cs:81250-81264`: a landed strike on a `lifeMax > 1`
-                    // NPC spawns the combat text with the post-defence number
-                    // (`:81239`) and the crit flag. The local player's strike
-                    // takes the hostile pair (`:81258`) — never the friendly
-                    // (`:81254`) or network (`:81261`) arms.
-                    let text = dmg.to_string();
+                // W4-d116 — the C# draw order: `CombatText.NewText`
+                // (`NPC.cs:81250-81264`, inside `StrikeNPC_Inner` right
+                // after the damage tail) draws its 2 (+1 on crit) rolls
+                // BEFORE `HitEffect`'s probe `Next(25)` (`:81488` →
+                // `:89266-89285`). Both ride the `UpdatePlayers` stream
+                // (the melee swap, `Main.cs:17754`). The old port drew the
+                // probe first and the text second — the census fix.
+                if landed && n_life_max_gt1 {
+                    // `NPC.cs:81250-81264`: the text shows the FINAL dealt
+                    // number (`num` after the red-hat/taken-mult tail,
+                    // `:81239-81249`), the friendly pair on town NPCs
+                    // (`:81254`), the hostile pair otherwise (`:81258`);
+                    // the network arm (`:81261`) never fires on the local
+                    // strike. `flag` (the 9999 instakill, `:81237`) is
+                    // false on every ported melee lane.
+                    let text = dealt.to_string();
                     let font = if crit {
                         app.lookups.combat_crit_font.as_ref()
                     } else {
@@ -7884,7 +7886,7 @@ fn resolve_melee_strike(
                         width: bw,
                         height: bh,
                     };
-                    let color = crate::combat_text::damage_text_color(crit, false, false);
+                    let color = crate::combat_text::damage_text_color(crit, n_friendly, false);
                     // The port's player carries no flipped-gravity state, so
                     // `Main.player[Main.myPlayer].gravDir` is the normal 1f
                     // (`CombatText.cs:93`).
@@ -7900,6 +7902,18 @@ fn resolve_melee_strike(
                         1.0,
                         rng,
                     );
+                }
+                // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
+                // the Destroyer body's probe gate (`:89266-89285`) — the
+                // roll rides the melee strike's stream AFTER the text draws
+                // above (the C#'s order).
+                if landed {
+                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+                        &mut app.npcs[idx], probe_rng, false,
+                    ) {
+                        app.npcs[idx].wants_probe = Some(anchor);
+                    }
                 }
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
