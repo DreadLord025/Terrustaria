@@ -1737,6 +1737,17 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-f45: the eight secret-seed bytes round-trip through micro_seeds.
+        world.micro_seeds = crate::seeds::MicroSeedFlags::from_sum(
+            crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN
+                | crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS
+                | crate::seeds::MicroSeedFlags::VAMPIRISM
+                | crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED
+                | crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS
+                | crate::seeds::MicroSeedFlags::DUAL_DUNGEONS
+                | crate::seeds::MicroSeedFlags::MORE_LIGHTNING
+                | crate::seeds::MicroSeedFlags::NO_LIGHTNING,
+        );
         world
     }
 
@@ -1989,6 +2000,11 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
+        // W4-f45: the eight secret-seed bytes (the micro_seeds mirrors).
+        assert_eq!(
+            got.micro_seeds.sum(), want.micro_seeds.sum(),
+            "{context}: the secret-seed bytes"
+        );
     }
 
     #[test]
@@ -2153,6 +2169,17 @@ mod tests {
         tail[1939] = u8::from(world.combat_book_was_used);
         tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
         tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
+        // W4-f45: the eight secret-seed bytes — the `InitializeSecretSeeds`
+        // mirrors of `World.micro_seeds` (`WorldGen.cs:553-587`).
+        let ms = world.micro_seeds;
+        tail[2047] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)); // forceHalloweenForever (`:1418`)
+        tail[2048] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)); // forceXMasForever (`:1419`)
+        tail[2049] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::VAMPIRISM)); // vampireSeed (`:1420`)
+        tail[2050] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)); // infectedSeed (`:1421`)
+        tail[2059] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS)); // teamBasedSpawnsSeed (`:1424`)
+        tail[2061] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)); // dualDungeonsSeed (`:1426`)
+        tail[2062] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::MORE_LIGHTNING)); // moreLightningSeed (`:1427`)
+        tail[2063] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::NO_LIGHTNING)); // noLightningSeed (`:1428`)
         b.extend(tail);
         b
     }
@@ -3808,6 +3835,91 @@ mod tests {
         let w = parse(&data).expect("v223 loads");
         assert!(w.downed_empress_of_light, "downedEmpressOfLight reads from 223");
         assert!(!w.downed_queen_slime, "the queen slime byte after it stays 0");
+    }
+
+    /// W4-f45 — the eight secret-seed bytes are the `InitializeSecretSeeds`
+    /// mirrors of `World.micro_seeds` (`WorldGen.cs:553-587`): each byte
+    /// lands its bit at its C# tail offset and follows its read gate
+    /// (`LoadWorldFlags:2462-2510`). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_secret_seed_bytes_mirror_the_micro_seed_bits() {
+        use crate::seeds::MicroSeedFlags as MS;
+        // v326: patch each of the eight bytes and read the bits back.
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        for off in [2047, 2048, 2049, 2050, 2059, 2061, 2062, 2063] {
+            data[tail_at + off] = 1;
+        }
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.micro_seeds.contains(MS::ENDLESS_HALLOWEEN), "forceHalloweenForever@2047");
+        assert!(w.micro_seeds.contains(MS::ENDLESS_CHRISTMAS), "forceXMasForever@2048");
+        assert!(w.micro_seeds.contains(MS::VAMPIRISM), "vampireSeed@2049");
+        assert!(w.micro_seeds.contains(MS::WORLD_IS_INFECTED), "infectedSeed@2050");
+        assert!(w.micro_seeds.contains(MS::TEAM_BASED_SPAWNS), "teamBasedSpawnsSeed@2059");
+        assert!(w.micro_seeds.contains(MS::DUAL_DUNGEONS), "dualDungeonsSeed@2061");
+        assert!(w.micro_seeds.contains(MS::MORE_LIGHTNING), "moreLightningSeed@2062");
+        assert!(w.micro_seeds.contains(MS::NO_LIGHTNING), "noLightningSeed@2063");
+        // The writer's own block carries the same eight bytes.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let tail_at = ptr1 - flags_tail(VER).len();
+        for off in [2047, 2048, 2049, 2050, 2059, 2061, 2062, 2063] {
+            assert_eq!(buf[tail_at + off], 1, "seed byte at tail {off}");
+        }
+        // v286: none of the eight exists yet — the moondial pair ends the tail.
+        let w = parse(&synthetic_file(286, &[2, 144], 160, 11)).expect("v286 loads");
+        assert_eq!(w.micro_seeds.sum(), 0, "below 287: no seed bytes");
+        // v287: only the two forced-season bytes exist (the tail's last two).
+        let mut data = synthetic_file(287, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 287);
+        let n = flags_tail(287).len();
+        data[tail_at + n - 2] = 1; // forceHalloweenForever
+        data[tail_at + n - 1] = 1; // forceXMasForever
+        let w = parse(&data).expect("v287 loads");
+        assert!(w.micro_seeds.contains(MS::ENDLESS_HALLOWEEN), "reads from 287");
+        assert!(w.micro_seeds.contains(MS::ENDLESS_CHRISTMAS));
+        assert!(!w.micro_seeds.contains(MS::VAMPIRISM), "below 288");
+        // v288: the vampire byte lands (the tail's last byte).
+        let mut data = synthetic_file(288, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 288);
+        data[tail_at + flags_tail(288).len() - 1] = 1;
+        let w = parse(&data).expect("v288 loads");
+        assert!(w.micro_seeds.contains(MS::VAMPIRISM), "reads from 288");
+        assert!(!w.micro_seeds.contains(MS::WORLD_IS_INFECTED), "below 296");
+        // v296: the infected byte lands; the meteor/coin pair (gate 291)
+        // follows it in the tail, so infected sits 9 from the end.
+        let mut data = synthetic_file(296, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 296);
+        data[tail_at + flags_tail(296).len() - 9] = 1;
+        let w = parse(&data).expect("v296 loads");
+        assert!(w.micro_seeds.contains(MS::WORLD_IS_INFECTED), "reads from 296");
+        assert!(!w.micro_seeds.contains(MS::TEAM_BASED_SPAWNS), "below 297");
+        // v297: teamBased + the extra-spawn count byte (the tail's last two).
+        let mut data = synthetic_file(297, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 297);
+        let n = flags_tail(297).len();
+        data[tail_at + n - 2] = 1; // teamBasedSpawnsSeed
+        let w = parse(&data).expect("v297 loads");
+        assert!(w.micro_seeds.contains(MS::TEAM_BASED_SPAWNS), "reads from 297");
+        assert!(!w.micro_seeds.contains(MS::DUAL_DUNGEONS), "below 304");
+        // v304: the dual-dungeons byte is last.
+        let mut data = synthetic_file(304, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 304);
+        data[tail_at + flags_tail(304).len() - 1] = 1;
+        let w = parse(&data).expect("v304 loads");
+        assert!(w.micro_seeds.contains(MS::DUAL_DUNGEONS), "reads from 304");
+        assert!(!w.micro_seeds.contains(MS::MORE_LIGHTNING), "below 323");
+        // v323: the lightning pair is last (the manifest needs 299 — present;
+        // the pair sits before the manifest's single byte).
+        let mut data = synthetic_file(323, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 323);
+        let n = flags_tail(323).len();
+        data[tail_at + n - 3] = 1; // moreLightningSeed (2 before the manifest byte)
+        data[tail_at + n - 2] = 1; // noLightningSeed
+        let w = parse(&data).expect("v323 loads");
+        assert!(w.micro_seeds.contains(MS::MORE_LIGHTNING), "reads from 323");
+        assert!(w.micro_seeds.contains(MS::NO_LIGHTNING));
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

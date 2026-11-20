@@ -244,25 +244,27 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // unlockedSlimeYellowSpawn
     w.boolean(false); // unlockedSlimeCopperSpawn
     // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
-    // seeds — the seasons/seeds have no World store (the port's `micro_seeds`
-    // bitmask rides the `.trwld` v12 tail only, `save.rs:382-383`); the two
-    // rain counters likewise.
+    // seeds — W4-f45 claims the eight `Main.*` seed bytes: they are the
+    // `InitializeSecretSeeds` mirrors of `World.micro_seeds` (`WorldGen.cs:
+    // 553-587`), the same bits the `.trwld` v12 tail carries (`save.rs:388-390`).
+    // The two rain counters stay unowned (no port state).
     w.boolean(world.fast_forward_to_dusk);
     w.u8(world.moondial_cooldown);
-    w.boolean(false); // forceHalloweenForever
-    w.boolean(false); // forceXMasForever
-    w.boolean(false); // vampireSeed
-    w.boolean(false); // infectedSeed
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)); // forceHalloweenForever (`WorldGen.cs:571-574`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)); // forceXMasForever (`:575-578`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::VAMPIRISM)); // vampireSeed (`:555-558`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)); // infectedSeed (`:559-562`)
     w.i32(0); // _tempMeteorShowerCount
     w.i32(0); // _tempCoinRain
               // WorldFile.cs:1424-1426: team-based spawns plus the extra spawn point
-              // list (`ExtraSpawnPointManager.Write`) — unowned, so a zero count.
-    w.boolean(false); // teamBasedSpawnsSeed
+              // list (`ExtraSpawnPointManager.Write`) — the spawn list is unowned,
+              // so a zero count; the seed byte is the micro-seed mirror.
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS)); // teamBasedSpawnsSeed (`:563-566`)
     w.u8(0); // extraSpawnPoints.Length
              // WorldFile.cs:1427-1429: the remaining secret seeds.
-    w.boolean(false); // dualDungeonsSeed
-    w.boolean(false); // moreLightningSeed
-    w.boolean(false); // noLightningSeed
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)); // dualDungeonsSeed (`:567-570`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::MORE_LIGHTNING)); // moreLightningSeed (`:579-582`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::NO_LIGHTNING)); // noLightningSeed (`:583-586`)
                       // WorldFile.cs:1429: the world-generation manifest. The port has no
                       // JSON manifest, so the empty .NET string is written (deviation: the
                       // generator's own metadata is not persisted).
@@ -652,28 +654,47 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.moondial_cooldown = r.u8()?;
     }
     if version >= 287 {
-        r.skip(2)?; // forceHalloweenForever, forceXMasForever
+        // W4-f45: the two forced-season bytes are the endlessHalloween/
+        // endlessChristmas micro-seed mirrors (`WorldGen.cs:571-578`).
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        }
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+        }
     }
     if version >= 288 {
-        r.skip(1)?; // vampireSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::VAMPIRISM); // vampireSeed
+        }
     }
     if version >= 296 {
-        r.skip(1)?; // infectedSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED); // infectedSeed
+        }
     }
     if version >= 291 {
         r.skip(2 * 4)?; // _tempMeteorShowerCount, _tempCoinRain
     }
     if version >= 297 {
-        r.skip(1)?; // teamBasedSpawnsSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS); // teamBasedSpawnsSeed
+        }
         let extra = r.u8()? as i32;
         r.skip((extra.max(0) as usize) * 4)?; // ExtraSpawnPointManager.Read: (i16, i16) pairs
     }
     if version >= 304 {
-        r.skip(1)?; // dualDungeonsSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS); // dualDungeonsSeed
+        }
     }
     if version >= 323 {
-        r.skip(1)?; // moreLightningSeed
-        r.skip(1)?; // noLightningSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::MORE_LIGHTNING); // moreLightningSeed
+        }
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::NO_LIGHTNING); // noLightningSeed
+        }
     }
     // WorldFile.cs:2499-2501 — the legacy u32 only 299..312 read.
     if (299..313).contains(&version) {
