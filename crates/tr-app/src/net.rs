@@ -147,6 +147,24 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- S1-I-1 W4-f21: the net-id TAIL census (MessageID 1-162 vs net.rs +
+    // the d89-d100/c27 lanes). Bodies + codecs only; the dispatcher apply/relay
+    // arms are the g48-g52 apply-wiring lanes / S1-I-4. ----
+    /// `24 UnusedMeleeStrike` (`MessageID.cs:57`) — DEAD: no `SendData(24)`
+    /// call site anywhere; the writer arm exists (`NetMessage.cs:765-768`,
+    /// `(short)npc + (byte)player`) but the reader asserts false
+    /// (`MessageBuffer.cs:1706-1708`, `Invariant.Assert(false,
+    /// "UnusedMeleeStrike")`) and reads NOTHING — there is no live reader
+    /// codec to port. d91 censused it dead; constant + census doc only, the
+    /// writer bytes recorded above verbatim (no variant is invented for an
+    /// asserting reader).
+    pub const UNUSED_MELEE_STRIKE: u8 = 24;
+    /// `25 Unused25` (`MessageID.cs:59-60`, `[Old("Deprecated. Use
+    /// NetTextModule instead.")]`) — no writer arm, no body; the reader's
+    /// ignore group (`MessageBuffer.cs:4483-4490`, shared with
+    /// 15/26/44/67/83/93) accepts and drops it.
+    pub const UNUSED_25: u8 = 25;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1805,6 +1823,10 @@ pub enum S2c {
     },
     /// `22 ItemOwner` — the reservation announcement.
     ItemOwner(Box<ItemOwner>),
+    /// `25 Unused25` — deprecated (`MessageID.cs:59-60`), no body; the
+    /// reader's ignore group accepts and drops it
+    /// (`MessageBuffer.cs:4483-4490`, shared with 15/26/44/67/83/93).
+    Unused25,
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2209,6 +2231,7 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::Unused25 => id::UNUSED_25,
         }
     }
 
@@ -2351,6 +2374,9 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `25` has no writer arm; a bare frame mirrors the reader's
+            // ignore group (`MessageBuffer.cs:4483-4490`).
+            Self::Unused25 => w,
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2553,6 +2579,9 @@ impl S2c {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            // `25` — the reader's ignore group reads nothing
+            // (`MessageBuffer.cs:4483-4490`); a bare frame decodes.
+            id::UNUSED_25 => Self::Unused25,
             _ => return None,
         })
     }
@@ -4709,5 +4738,41 @@ mod tests {
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
+    }
+
+    // ---- S1-I-1 W4-f21: the net-id tail census witnesses (WRITTEN NOT RUN,
+    // code-only). Each pins the id byte + the exact C# body bytes. ----
+
+    #[test]
+    fn w4_f21_unused_melee_strike_is_censused_dead() {
+        // `24` — no `SendData(24)` site exists; the reader asserts false and
+        // reads nothing (`MessageBuffer.cs:1706-1708`). The constant records
+        // the id; the writer's `(short)npc + (byte)player` bytes
+        // (`NetMessage.cs:765-768`) are documented at the constant, NOT
+        // ported as a live codec (an asserting reader has no decode).
+        assert_eq!(id::UNUSED_MELEE_STRIKE, 24);
+        // The writer shape, pinned as raw bytes for the census record:
+        let w = NetWriter::open(id::UNUSED_MELEE_STRIKE).i16(7).u8(3).finish();
+        assert_eq!(w[2], 24);
+        assert_eq!(&w[3..], &[7, 0, 3]);
+        // No S2c/C2s decode arm exists for 24 (the reader asserts).
+        assert!(S2c::decode(24, &mut NetReader::new(&[])).is_none());
+        assert!(C2s::decode(24, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_unused_25_is_a_bare_no_op_frame() {
+        // `25` — `[Old("Deprecated. Use NetTextModule instead.")]`
+        // (`MessageID.cs:59-60`); the reader's ignore group
+        // (`MessageBuffer.cs:4483-4490`) reads nothing.
+        let f = S2c::Unused25.encode();
+        assert_eq!(f[2], 25);
+        assert_eq!(f.len(), 3); // bare frame, no body
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::Unused25 => {}
+            other => panic!("expected 25, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
     }
 }

@@ -1858,6 +1858,10 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // S1-I-1 W4-f21: `25 Unused25` — deprecated, the reader's ignore
+            // group (`MessageBuffer.cs:4483-4490`) accepts and drops it; the
+            // codec's bare-frame read IS the whole arm.
+            S2c::Unused25 => {}
         }
     }
 
