@@ -587,9 +587,9 @@ mod tests {
         assert!(!e.beetle_buff, "the Solar arm sets no beetleBuff");
         assert_eq!(e.melee_damage, 0.0);
         assert_eq!(r, BoosterArmResult::NextSlot(1));
-        // Set absent -> zero + delete.
+        // Set absent, equal tier (no sweep) -> zero + delete at j.
         let mut sl2 = slots(&[(170, 5)]);
-        let mut st2 = BoosterState { solar_shields: 2, ..Default::default() };
+        let mut st2 = BoosterState { solar_shields: 1, ..Default::default() };
         let (_, r2) = run(&mut st2, &mut sl2, &BoosterEffectContext::default(), 0);
         assert_eq!(st2.solar_shields, 0);
         assert_eq!(sl2.buff_type[0], 0);
@@ -654,20 +654,21 @@ mod tests {
         let mut sl = slots(&[(62, 100)]);
         let mut st = BoosterState::default();
         let mut frames = Vec::new();
-        for _ in 0..36 {
+        for _ in 0..35 {
             let (e, r) = run(&mut st, &mut sl, &ctx, 0);
             assert!(e.ice_barrier);
             assert!((e.endurance - 0.25).abs() < 1e-6);
             assert_eq!(r, BoosterArmResult::NextSlot(1));
             frames.push(st.ice_barrier_frame);
         }
-        // 3 ticks per frame: frames 0,0,0,1,1,1,...,11,11,11 then wrap 0.
-        assert_eq!(frames[2], 0);
-        assert_eq!(frames[3], 1);
-        assert_eq!(frames[35], 11);
+        // The counter increments THEN checks > 2: the frame advances on
+        // ticks 3, 6, 9, ... — frame after tick k = k / 3 (integer).
+        assert_eq!(frames[0], 0);
+        assert_eq!(frames[2], 1, "tick 3 advances the frame");
+        assert_eq!(frames[34], 11, "tick 35 -> frame 11");
         let (e, _) = run(&mut st, &mut sl, &ctx, 0);
         assert!(e.ice_barrier);
-        assert_eq!(st.ice_barrier_frame, 0, "the 12-frame wrap (:10474-10477)");
+        assert_eq!(st.ice_barrier_frame, 0, "tick 36: 12 wraps (:10474-10477)");
     }
 
     #[test]
