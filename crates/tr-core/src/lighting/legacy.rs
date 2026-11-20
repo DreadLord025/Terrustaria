@@ -2281,8 +2281,9 @@ mod tests {
     fn wof_gross_floors_the_nine_column_strip_at_demon_torch_one() {
         // `:684-686` facing right: position.X = 1600 → tile 100 → strip
         // columns [97, 106) world = local [0, 9). `:682-683` rows: camera
-        // 840..1080 px → tiles [42, 78] inclusive. demonTorch = 1 → floors
-        // (0.1, 0.03, 0.3) — the C# expression order kept.
+        // 840..1080 px → tiles [42, 77] inclusive (1080/16 truncates to 67,
+        // +10). demonTorch = 1 → floors (0.1, ~0.03, 0.3) — the C#
+        // expression order kept.
         let (_w, mut e, pos, size) = gross_engine();
         e.wof_gross_light(
             WofGrossLight { position_x: 1600.0, direction: 1 },
