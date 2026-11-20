@@ -695,3 +695,45 @@ row 0 = the C# t=0 pixels. The per-kind sweep test
 (`drawdata_furniture.rs:330-369`) pins every one of these picks against a
 distinct-valued fake table, so a wrong table/row/probe would fail loudly once
 wired.
+
+### Batch 7 — big-cage group tail: 603, 604, 605, 606, 607, 608, 609, 610, 611, 612, 632, 640, 643, 644, 645 (15 ids)
+
+Same group head (batch 5). Inner arms verbatim (`TileDrawing.cs:5682-5734`) vs
+`cage_table` (`drawdata_furniture.rs`):
+
+| Id | C# inner arm (verbatim) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 603 | shares the bunny arm (`case 603:` in the 275/359/599-605 run) | :5682 | `275 \| 359 \| 599..=605 => (CageAnim::Bunny, 0, 54, BIG)` :117 | PORTED-UNWIRED |
+| 604 | shares the bunny arm | :5683 | :117 | PORTED-UNWIRED |
+| 605 | shares the bunny arm | :5684 | :117 | PORTED-UNWIRED |
+| 606 | shares the squirrel arm (`case 606:` in the 276/413/414/606-612 run) | :5697 | `276 \| 413 \| 414 \| 606..=612 => (CageAnim::Squirrel, 0, 54, BIG)` :120 | PORTED-UNWIRED |
+| 607 | shares the squirrel arm | :5698 | :120 | PORTED-UNWIRED |
+| 608 | shares the squirrel arm | :5699 | :120 | PORTED-UNWIRED |
+| 609 | shares the squirrel arm | :5700 | :120 | PORTED-UNWIRED |
+| 610 | shares the squirrel arm | :5701 | :120 | PORTED-UNWIRED |
+| 611 | shares the squirrel arm | :5702 | :120 | PORTED-UNWIRED |
+| 612 | shares the squirrel arm | :5703 | :120 | PORTED-UNWIRED |
+| 632 | `case 632:` `case 640:` `case 643:` `case 644:` `case 645:` → `addFrY = Main.macawCageFrame[bigAnimalCageFrame] * 54;` | :5728-5734 | `632 \| 640 \| 643..=645 => (CageAnim::Macaw, 0, 54, BIG)` :128 | PORTED-UNWIRED |
+| 640 | shares the macaw arm | :5729 | :128 | PORTED-UNWIRED |
+| 643 | shares the macaw arm | :5730 | :128 | PORTED-UNWIRED |
+| 644 | shares the macaw arm | :5731 | :128 | PORTED-UNWIRED |
+| 645 | shares the macaw arm | :5732 | :128 | PORTED-UNWIRED |
+
+Verbatim exemplar — the macaw arm (:5728-5734):
+
+```csharp
+			case 632:
+			case 640:
+			case 643:
+			case 644:
+			case 645:
+				addFrY = Main.macawCageFrame[bigAnimalCageFrame] * 54;
+				break;
+```
+
+The macaw label set is NON-contiguous in C# (632, 640, then 643-645 — 641/642 are
+not cages; 642 is the Extractinator variant, batch 4) and the port's
+`632 | 640 | 643..=645` alternation reproduces exactly that membership. UNWIRED
+rationale identical to batches 5-6. With this batch all 40 big-animal cage ids
+(:5629-5669 label run) are audited — every one falls in d63's quarter (batches
+5-7); d64's cage batches cover the small/water/jellyfish groups only.
