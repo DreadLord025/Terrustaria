@@ -22,6 +22,7 @@ pub mod dungeon;
 pub mod dungeon_features;
 mod caves;
 mod config;
+mod crystals;
 mod desert;
 mod desert_dunes;
 mod desert_entrances;

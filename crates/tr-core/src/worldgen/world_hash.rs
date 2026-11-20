@@ -266,6 +266,13 @@ mod tests {
     // stone-floor pocket (>50 cells, drained, clean) exists is unmeasured
     // (no compiler on this branch). Stale-by-design if one does; the gate
     // re-pins. a == b stays (the pass draws only its own fresh stream).
+    // W4-d103 pass 22 (2026-11-20, code-only): the `Life Crystals` pass
+    // (`WorldGen.cs:16755-16852`) lands on a fresh `pass_rng("Life Crystals")`
+    // stream after `wall variety`. The classic y band needs height − 300
+    // above `(2*surface + rockLayer)/3` — on the 512-tall fixture the band
+    // is narrow but non-empty IF the surface sits low enough; the size
+    // guard skips before any draw otherwise. Unmeasured (no compiler on
+    // this branch); stale-by-design if crystals place. a == b stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -329,6 +336,12 @@ mod tests {
     // re-pin is DEFERRED to the merge gate (no compiler on this branch);
     // a == b stays green — the pass draws only its own fresh stream, and
     // the wall field rides the hash mix.
+    // W4-d103 pass 22 (code-only): the Life Crystals pass (100 heart
+    // crystals on the 4200x1200 default, the 2×2 tile-12 writes with their
+    // 18 px frames + the flattened supports) moves this pin BY DESIGN.
+    // The re-pin is DEFERRED to the merge gate (no compiler on this
+    // branch); a == b stays green — the pass draws only its own fresh
+    // stream.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

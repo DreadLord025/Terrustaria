@@ -36,6 +36,7 @@ use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
+use super::crystals;
 use super::dungeon;
 use super::evil;
 use super::islands;
@@ -1401,6 +1402,9 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // pre-scaffold order), so the relative Waterfalls < Wall Variety and
     // Ice < Wall Variety pairs both hold with the step after `waterfalls`.
     step!("wall variety", "Wall Variety", step_wall_variety),
+    // The vanilla Life Crystals slot (`WorldGen.cs:16755`): after Wall
+    // Variety (`:16697`), before Statues (`:16853`) — W4-d103 pass 22.
+    step!("life crystals", "Life Crystals", step_life_crystals),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2673,6 +2677,41 @@ fn step_wall_variety(
     );
 }
 
+/// The vanilla Life Crystals slot (`WorldGen.cs:16755`): the heart crystals
+/// on a fresh `pass_rng("Life Crystals")` stream. The
+/// `Skyblock.denySomeGeneration` gate (`:16757`) rides the skyblock flag;
+/// the `errorWorld`/`noSurface` mana-crystal arm (`:16812`) rides the micro
+/// flags. The `DoErrorWorldShuffleBlocks`/`NotTheBees()` transforms
+/// (`:16759-16770`) are unported (the module note).
+fn step_life_crystals(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    let mana_arm = opts
+        .micro_flags
+        .contains(crate::seeds::MicroSeedFlags::ERROR_WORLD)
+        || opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE);
+    crystals::pass_life_crystals(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        mana_arm,
+        &mut streams.pass_rng("Life Crystals"),
+    );
+}
+
 fn step_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3250,8 +3289,9 @@ mod tests {
         // W4-d103: + `oasis` (vanilla "Oasis", `WorldGen.cs:16243`) between
         // `remove water` and `shell piles`; + `waterfalls` (vanilla
         // "Waterfalls", `:16610`) after `living trees`; + `wall variety`
-        // (vanilla "Wall Variety", `:16697`) after `waterfalls`.
-        assert_eq!(names.len(), 69);
+        // (vanilla "Wall Variety", `:16697`) after `waterfalls`; + `life
+        // crystals` (vanilla "Life Crystals", `:16755`) after `wall variety`.
+        assert_eq!(names.len(), 70);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3345,6 +3385,7 @@ mod tests {
                 "living trees",
                 "waterfalls",
                 "wall variety",
+                "life crystals",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3437,7 +3478,8 @@ mod tests {
         // Smooth World (`:16419`) < Waterfalls pair holds too.
         assert_eq!(names[pos("living trees") + 1], "waterfalls");
         assert_eq!(names[pos("waterfalls") + 1], "wall variety");
-        assert_eq!(names[pos("wall variety") + 1], "trees");
+        assert_eq!(names[pos("wall variety") + 1], "life crystals");
+        assert_eq!(names[pos("life crystals") + 1], "trees");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
@@ -3463,6 +3505,10 @@ mod tests {
         assert!(cpos("Waterfalls") < cpos("Wall Variety"));
         assert!(cpos("Ice") < cpos("Wall Variety"));
         assert!(cpos("Wall Variety") < cpos("Life Crystals"));
+        // W4-d103 pass 22: the vanilla Life Crystals pairs (`:16697` Wall
+        // Variety → `:16755` Life Crystals → `:16853` Statues — the Statues
+        // step is unported, the chain pair is the witness).
+        assert!(cpos("Life Crystals") < cpos("Statues"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 
