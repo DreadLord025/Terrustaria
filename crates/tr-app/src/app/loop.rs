@@ -170,6 +170,15 @@ impl ApplicationHandler for App {
                                     let text = self.chat.text.clone();
                                     let is_client = self.is_client();
                                     let before = self.chat.messages.len();
+                                    // `Main.cs:18355`: `ChatManager.
+                                    // DebugCommands.Process` runs BEFORE the
+                                    // chat command processor — a handled
+                                    // debug command (`/hh`) skips the send.
+                                    if self.try_debug_command(&text) {
+                                        self.chat.text.clear();
+                                        self.chat.open = false;
+                                        return;
+                                    }
                                     if is_client {
                                         self.send_chat_message("", &text);
                                     } else {
@@ -335,6 +344,19 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // `UIDebugCommandsList`'s list wheel (W4-d85) — the same
+                // `UIList.ScrollWheel` arm as the achievements overlay.
+                if self.debug_commands_open {
+                    self.pointer.queue_scroll(d.round() as i32);
+                    if matches!(
+                        self.pointer.scroll_wheel(Some(SCROLL_UI)),
+                        Some(PointerEvent::ScrollWheel { .. })
+                    ) {
+                        self.scroll_debug_commands(d.round() as i32);
+                    }
+                    return;
+                }
+
                 // `UIList.ScrollWheel` through `UserInterface.Update`'s wheel
                 // arm (`:219-222`): while a list screen is live the `UIList`
                 // under the pointer owns the notch — `ViewPosition -=
@@ -445,6 +467,12 @@ impl ApplicationHandler for App {
                                     self.handle_achievements_clicks();
                                     return;
                                 }
+                                if pressed && self.debug_commands_open {
+                                    self.ui_left_press = true;
+                                    self.handle_debug_commands_clicks();
+                                    return;
+                                }
+
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
                                 // Bug 17: the legacy menu's click tick —
@@ -695,6 +723,11 @@ impl App {
                 } else if self.bestiary_open {
                     self.bestiary_open = false;
                     self.bestiary_selected = None;
+                } else if self.debug_commands_open {
+                    // The overlay's Escape closes it (`IngameFancyUI`'s
+                    // GoBack — the port's Escape stand-in, the achievements
+                    // overlay's M6-ACH-2 pattern).
+                    self.close_debug_commands();
                 } else if self.emotes.menu_open {
                     self.emotes.close();
                 } else if self.map.as_ref().is_some_and(|m| m.open) {

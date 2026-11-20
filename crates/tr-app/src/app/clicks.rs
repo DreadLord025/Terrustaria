@@ -1199,6 +1199,133 @@ impl App {
         }
     }
 
+    /// `UIDebugCommandsList`'s clicks (W4-d85 row 7): the Back panel closes
+    /// (`GoBackClick` → `IngameFancyUI.Close`, `UIDebugCommandsList.cs:122-125`),
+    /// a row seeds the chat (`UIDebugCommandItem.LeftClick`, `:106-112`), the
+    /// search box opens the keyboard (`Click_SearchArea` — the port's
+    /// documented stand-in for the inline `UISearchBar` typing). Consumes
+    /// the press while the overlay is open.
+    pub(crate) fn handle_debug_commands_clicks(&mut self) {
+        if !self.ui_left_press || !self.debug_commands_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let rows = ui::debug_commands::visible_commands(&self.debug_commands_search);
+        let click = ui::debug_commands::click_at(
+            screen,
+            self.mouse_pos,
+            self.debug_commands_scroll,
+            &rows,
+        );
+        match click {
+            ui::debug_commands::Click::Back => {
+                self.close_debug_commands();
+            }
+            ui::debug_commands::Click::Search => {
+                // `OpenVirtualKeyboardWhenNeeded` (`UIWrappedSearchBar.cs:
+                // 171-182`): `UI.PlayerNameSlot` label, the live contents,
+                // `allowEmpty: true`, the `UISearchBar` 50 cap (`:63`).
+                self.audio.play("Menu_Tick");
+                self.open_keyboard_with_tail(
+                    ui::keyboard::Request {
+                        label: crate::lang::text("UI.PlayerNameSlot"),
+                        initial: self.debug_commands_search.clone(),
+                        allow_empty: true,
+                        max_length: 50,
+                        context: ui::keyboard::Context::Text,
+                    },
+                    None,
+                    crate::app::flow::KeyboardTail::DebugCommandSearch,
+                );
+            }
+            ui::debug_commands::Click::SearchCancel => {
+                // `searchCancelButton_OnClick` (`:153-164`): contents clear
+                // with sound 11, an empty box just ticks 12.
+                if self.debug_commands_search.is_empty() {
+                    self.audio.play("Menu_Tick");
+                } else {
+                    self.debug_commands_search.clear();
+                    self.debug_commands_scroll = 0.0;
+                    self.audio.play("Menu_Close");
+                }
+            }
+            ui::debug_commands::Click::Row(i) => {
+                // `LeftClick` (`UIDebugCommandItem.cs:106-112`): close, open
+                // the chat with `"/name "`, and the yellow notice.
+                let name = ui::debug_commands::COMMANDS[i].name.to_lowercase();
+                self.close_debug_commands();
+                self.chat.open = true;
+                self.chat.text = format!("/{name} ");
+                self.chat.new_text(
+                    format!("Chat has been set to \"{}\"", self.chat.text),
+                    [255, 255, 0],
+                );
+            }
+            ui::debug_commands::Click::None => {}
+        }
+        self.ui_left_press = false;
+    }
+
+    /// `IngameFancyUI.Close` for the debug commands overlay: a fresh
+    /// `UIDebugCommandsList` builds on the next open, so the search and
+    /// scroll reset here (the ctor's `BuildPage`, `:21-24`).
+    pub(crate) fn close_debug_commands(&mut self) {
+        self.debug_commands_open = false;
+        self.debug_commands_search.clear();
+        self.debug_commands_scroll = 0.0;
+        self.audio.play("Menu_Close"); // `Close`'s sound 11 (`:165-168`)
+    }
+
+    /// The debug commands list's wheel scroll (`UIList.ScrollWheel`,
+    /// `UIList.cs:107-114` — `ViewPosition -= ScrollWheelValue`, clamped by
+    /// `SetView`).
+    pub(crate) fn scroll_debug_commands(&mut self, delta: i32) {
+        if !self.debug_commands_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        if !ui::debug_commands::wheel_target(screen, self.mouse_pos, ui::debug_commands::visible_commands(&self.debug_commands_search).len()) {
+            return;
+        }
+        let container = ui::debug_commands::container_rect(screen);
+        let panel = ui::debug_commands::panel_rect(&container);
+        let list = ui::debug_commands::list_rect(&panel);
+        let rows = ui::debug_commands::visible_commands(&self.debug_commands_search).len();
+        self.debug_commands_scroll = ui::char_select::scroll_wheel(
+            self.debug_commands_scroll,
+            delta,
+            list[3],
+            ui::debug_commands::content_height(rows),
+        );
+    }
+
+    /// The `/hh` debug command (`ToolkitDebugCommands.cs:42-47`):
+    /// `IngameFancyUI.OpenUIState(new UIDebugCommandsList())`. Returns
+    /// whether the text was a handled debug command (the chat send is then
+    /// skipped, like `DebugCommands.Process`'s `true` at `Main.cs:18355`).
+    /// Gated on `DebugOptions.enableDebugCommands` (`DebugCommandProcessor.
+    /// cs:76-79`) — the port's `TR_DEBUG_COMMANDS` pin.
+    pub(crate) fn try_debug_command(&mut self, text: &str) -> bool {
+        if !crate::env::debug_commands() {
+            return false;
+        }
+        let Some(rest) = text.strip_prefix('/') else {
+            return false;
+        };
+        let name = rest.split(' ').next().unwrap_or("").to_ascii_lowercase();
+        match name.as_str() {
+            "hh" => {
+                self.debug_commands_open = true;
+                self.debug_commands_search.clear();
+                self.debug_commands_scroll = 0.0;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// The achievements menu's clicks (`UIAchievementsMenu`'s
     /// `GoBackClick`/`FilterList`/`FadedMouseOver`): the Back panel closes
     /// the overlay, a category toggle flips the filter, the wheel scrolls
@@ -4062,6 +4189,43 @@ mod tests {
         app.inventory_open = true;
         app.player = Some(crate::player::Player::spawn(&app.world));
         app
+    }
+
+    /// W4-d85 row 7 — `UIDebugCommandItem.LeftClick` (`:106-112`): the row
+    /// click closes the overlay, opens the chat with `"/name "` and appends
+    /// the yellow "Chat has been set to" notice.
+    #[test]
+    fn w4_d85_a_command_row_click_seeds_the_chat() {
+        let mut app = inv_app();
+        app.debug_commands_open = true;
+        // The headless screen is 1280x720: container = (240, 220, 800, 500),
+        // panel h 390, list y 292 (inner 232 + 60), row 0 at 292..322.
+        app.mouse_pos = Vec2::new(400.0, 300.0);
+        app.ui_left_press = true;
+        app.handle_debug_commands_clicks();
+        assert!(!app.debug_commands_open, "IngameFancyUI.Close ran");
+        assert!(app.chat.open, "Main.drawingPlayerChat = true");
+        assert_eq!(app.chat.text, "/= ", "the first sorted row is `=`");
+        assert_eq!(app.chat.messages[0].text, "Chat has been set to \"/= \"");
+        assert_eq!(app.chat.messages[0].color, [255, 255, 0]);
+        assert!(!app.ui_left_press, "the press was consumed");
+    }
+
+    /// W4-d85 row 7 — the Back panel closes and resets the overlay state
+    /// (`GoBackClick` → `IngameFancyUI.Close`; a fresh ctor rebuilds).
+    #[test]
+    fn w4_d85_the_back_panel_closes_and_resets() {
+        let mut app = inv_app();
+        app.debug_commands_open = true;
+        app.debug_commands_search = "snap".into();
+        app.debug_commands_scroll = 100.0;
+        // Back at 1280x720: y = 220 + 500 - 45 - 50 = 625..675, x 445..835.
+        app.mouse_pos = Vec2::new(640.0, 650.0);
+        app.ui_left_press = true;
+        app.handle_debug_commands_clicks();
+        assert!(!app.debug_commands_open);
+        assert!(app.debug_commands_search.is_empty());
+        assert_eq!(app.debug_commands_scroll, 0.0);
     }
 
     /// M7-UI-2b — the coin (ctx 1) and ammo (ctx 2) rows became click

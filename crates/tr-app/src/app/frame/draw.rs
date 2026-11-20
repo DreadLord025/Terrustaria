@@ -1845,6 +1845,21 @@ impl App {
                             menu.is_some(),
                         );
                     }
+                    // `UIDebugCommandsList` (W4-d85 row 7): the same overlay
+                    // treatment — the state draws over whatever the frame
+                    // rendered (`IngameFancyUI.OpenUIState`).
+                    if self.debug_commands_open {
+                        ui::debug_commands::draw_screen(
+                            renderer,
+                            lookups,
+                            screen,
+                            &self.debug_commands_search,
+                            self.debug_commands_scroll,
+                            self.mouse_pos,
+                            self.is_client(),
+                        );
+                    }
+
                     // `DrawInterface_13_AchievementCompletePopups`
                     // (`Main.cs:44779-44783`, `:46143-46146`): the unlock
                     // toasts draw over the interface — after the fancy UI

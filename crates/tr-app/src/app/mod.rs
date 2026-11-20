@@ -316,6 +316,15 @@ pub(crate) struct App {
     pub(crate) achievements_open: bool,
     /// The list's scroll, in px (`UIList._scrollPosition`'s stand-in).
     pub(crate) achievements_scroll: f32,
+    /// `UIDebugCommandsList`'s overlay state (W4-d85 row 7) — opened by the
+    /// `/hh` debug command (`ToolkitDebugCommands.cs:42-47` →
+    /// `IngameFancyUI.OpenUIState`), gated on `DebugOptions.enableDebugCommands`
+    /// (the port's `TR_DEBUG_COMMANDS` pin).
+    pub(crate) debug_commands_open: bool,
+    /// The wrapped search bar's contents (`_searchString`).
+    pub(crate) debug_commands_search: String,
+    /// The commands list's `UIScrollbar.ViewPosition`.
+    pub(crate) debug_commands_scroll: f32,
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
@@ -2588,6 +2597,15 @@ impl App {
             KeyboardTail::ChestRename => {
                 crate::chest::rename_submit(self, &chest_text);
             }
+            // `SubmitVirtualText` (`UIWrappedSearchBar.cs:184-188`): the
+            // trimmed text lands in the search bar and the list returns
+            // (`SetState(this)`); the list rebuilds its rows from the new
+            // contents (`searchbar_OnSearchContentsChanged`).
+            KeyboardTail::DebugCommandSearch => {
+                self.debug_commands_search = name;
+                self.debug_commands_scroll = 0.0;
+                self.front = None;
+            }
         }
     }
 
@@ -2602,6 +2620,7 @@ impl App {
             return;
         };
         let is_chest = session.tail == KeyboardTail::ChestRename;
+        let is_debug_search = session.tail == KeyboardTail::DebugCommandSearch;
         let back = session.back.clone();
         // `Cancel`'s cue (`SoundEngine.PlaySound(11)`,
         // `UIVirtualKeyboard.cs:984`) — the C# cancels play it before the
@@ -2610,6 +2629,12 @@ impl App {
         self.audio.play("Menu_Close");
         if is_chest {
             crate::chest::rename_cancel(self);
+            return;
+        }
+        if is_debug_search {
+            // `GoBackFromVirtualKeyboard` (`UIWrappedSearchBar.cs:190-197`):
+            // the list returns with its contents unchanged.
+            self.front = None;
             return;
         }
         self.enter_front(back.expect("the cancel tail is built with a back screen"));
@@ -3744,6 +3769,11 @@ impl App {
             // categories all start on (`InitializePage`'s `SetState(true)`).
             achievements_open: crate::env::achievements_open(),
             achievements_scroll: 0.0,
+            // `TR_DEBUG_COMMANDS_LIST` opens the debug list for the shot runs
+            // (the vanilla opens on `/hh` only).
+            debug_commands_open: crate::env::debug_commands_list_open(),
+            debug_commands_search: String::new(),
+            debug_commands_scroll: 0.0,
             // The filter bits default to all-on (`SetState(value: true)`);
             // a shot run can pin a single category through the bitmask.
             achievements_categories: {

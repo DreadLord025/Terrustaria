@@ -104,6 +104,12 @@ pub(crate) enum KeyboardTail {
     /// `ChestUI.RenameChestCancel` + `Close(quiet: true)` — both tails land
     /// back in gameplay.
     ChestRename,
+    /// The debug commands list's search bar (`UIWrappedSearchBar.cs:171-197`):
+    /// submit runs `SubmitVirtualText` (`SetContents(text.Trim())` +
+    /// `GoBackFromVirtualKeyboard` — `SetState(this)` restores the list),
+    /// cancel restores the list unchanged. Both tails land back on the
+    /// overlay (`back: None` — the overlay lives on the App, not the flow).
+    DebugCommandSearch,
 }
 
 /// One click into the front-end flow — the rows of the
@@ -2147,6 +2153,9 @@ pub(crate) mod front_flow_tests {
             achievements_open: crate::env::achievements_open(),
             achievements_scroll: 0.0,
             achievements_categories: [true; 4],
+            debug_commands_open: false,
+            debug_commands_search: String::new(),
+            debug_commands_scroll: 0.0,
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),

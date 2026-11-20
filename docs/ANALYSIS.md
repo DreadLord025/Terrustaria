@@ -39244,3 +39244,33 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## Debug lists (W4-d85, 2026-11-20, code-only)
+
+The `UIDebugCommandsList` + `UIDebugCommandItem` port
+(`ui/debug_commands.rs`, table row 7 + the row-9 element half):
+
+- **Registry**: the 62 `[DebugCommand]` attributes of
+  `ToolkitDebugCommands.cs` verbatim (name/description/requirements/
+  help text), sorted `OrdinalIgnoreCase` (`PopulateCommandsList`,
+  `UIDebugCommandsList.cs:140-151`). The requirement composites fold to
+  their `CommandRequirement` values (`Client`=3, `AnyAuthority`=13).
+- **Geometry**: `BuildPage`'s chain resolved through `uistate::resolve`
+  (0.8-wide container, MaxWidth 800 / MinWidth 600, Top 220; panel -110;
+  search 200x24 at Top 20; list (-25,-60) VAlign 1; rows 30+5).
+- **Deviations**: (1) the fake-item hover tooltip
+  (`UIDebugCommandItem.DrawSelf`'s `Main.DisplayAndGetFakeItem`,
+  `:51-56` + `MouseOver`'s wrapped `ItemTooltip`, `:87-98`) is not
+  drawn — the port has no fake-item hover seam; (2) the search bar's
+  inline typing (`UISearchBar.ToggleTakingText`) opens the port's
+  virtual keyboard instead (`KeyboardTail::DebugCommandSearch`,
+  `UIWrappedSearchBar.cs:171-197`'s `OpenVirtualKeyboardWhenNeeded`
+  path); (3) the command *processors* are not ported — only `/hh`
+  (this list's opener) runs, gated on the `TR_DEBUG_COMMANDS` pin
+  (`DebugOptions.enableDebugCommands`); (4) the overlay opens in-world
+  only (the achievements-overlay treatment); the `Main.gameMenu` arm
+  has no legacy-menu entry point in the port.
+- **Row click**: `LeftClick` (`:106-112`) closes the overlay, sets
+  `chat.text = "/name "` and appends the yellow (255,255,0) notice.
+- Code-only mode: the witness tests (`debug_commands.rs` 6 +
+  `clicks.rs` 2) are WRITTEN, NOT RUN — no cargo/graphify invoked.

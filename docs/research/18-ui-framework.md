@@ -175,7 +175,7 @@ the `AWorkshopPublishInfoState` pair if not folded into d84).
 | `UIWorkshopWorldImport` | 18 | none | |
 | `UIResourcePackSelectionMenu` | 17 | none | |
 | `UIResourcePackInfoMenu` | 15 | none | |
-| `UIDebugCommandsList` | 15 | none | debug |
+| `UIDebugCommandsList` | 165 | `ui/debug_commands.rs` (W4-d85) | PORTED (immediate overlay; `/hh` opener, 62-row registry, search + scroll; fake-item hover tooltip not drawn — ANALYSIS "Debug lists (W4-d85)") |
 | `UIDebugLoadoutsList` | 14 | none | debug |
 | `UIDebugLoadoutItem`-family screens | — | none | debug |
 | `UIReportsPage` | 16 | none | |
