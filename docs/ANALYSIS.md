@@ -39320,3 +39320,37 @@ this round re-read the WHOLE arm (`NPC.cs:33681-33921`) against
   `!inActive()` (`Collision.cs:2715`) — the floater probe reads an
   actuated-off tile as solid; recorded in the 57/61 censuses, helper-scope.
 No compiler invoked; no tests run (code-only mode).
+
+## The aiStyle-62 re-verification (W4-d29, 2026-11-20, code-only mode)
+The research/25 row for aiStyle 62 ("MISSING") was stale (2026-11-12,
+pre-S1-F-13c/W-6). Census: whole-tree `aiStyle = 62` grep → exactly ONE
+NPC row, ElfCopter 347 (`NPC.cs:13404`; the DesertDjinn 533 is aiStyle 8
+— the many `Projectile.cs` hits are the minion style space). Re-read the
+WHOLE arm (`NPC.cs:33922-33969`) against
+`npc_ai_frost_mob.rs::elf_copter_ai`: **faithful** —
+the rotation `|vx| * direction * 0.1` + sprite flip BEFORE the velocity
+update (`:33925-33926`), the 7f aim from `Center + (direction*20, 6)`
+with the chase Y at the player's TOP (`position.Y`, `:33930`), the 1×1
+centre `Collision.CanHit` walk (`projectile::can_hit`,
+`Collision.cs:381-479`), the day flee (59/60 lerp AWAY + the
+EncourageDespawn(10) that only lowers), the >600px / no-LOS approach
+(59/60 lerp TOWARD, early return), the 0.98 hover brake, the 15-tick
+cadence under `|vx|<1 && |vy|<1` and the shot's re-aim at the player's
+CENTRE.Y (`:33959`, unlike the chase).
+RNG census: exactly SIX draws on a firing tick, in order —
+Next(-35,36)×2 (aim jitter) → Next(-20,21)×2 (aim scale ×0.015) →
+10f normalise → Next(-20,21)×2 (speed scale ×0.0125, the named-arg
+SpeedX/SpeedY textual order); Type 180 dmg 32 constant, no ai args;
+ZERO draws on every other path (day, approach, sub-cadence hover).
+**New witnesses this round** (`npc.rs::w4_d29_census_tests`): the
+four-kind style census (60→345/61→346/62→347/63→352 over ALL_KINDS — the
+audit's "no test enumerates the aiStyle→kind mapping" gap, closed for
+this range) + the FULL `update_rng` axis-level stream witnesses for
+style 62 (the firing tick pays exactly the six-draw census; 14 hover
+ticks + the day flee pay zero) — the prior witnesses ran the pure
+machine / the `frost_mob_step` seam, never the axis entry.
+Wiring: axis `62 if ElfCopter => frost_mob_step` (kind arm
+`unreachable!`-guarded), `retarget_state` at the `:33924` site, the 180
+request rides `wants_hostile_shot` (`PIRATE_ARROW` = the BulletDeadeye
+row, `projectile/data.rs:340`), noTileCollide integration.
+No compiler invoked; witnesses written not run (code-only mode).
