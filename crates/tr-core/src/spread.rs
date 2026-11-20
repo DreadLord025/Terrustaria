@@ -537,6 +537,81 @@ fn convert_cleanse_cell(world: &mut World, x: i32, y: i32) {
     }
 }
 
+/// `Convert`'s type-3 cell (`WorldGen.cs:55336-55359`), the glowing-mushroom
+/// flavour (W4-g42 G7): the wall arm (`WallID.Sets.
+/// CanBeConvertedToGlowingMushroom` = {64, 67, 15, 247}, `WallID.cs:88`) →
+/// 80 through `Convert_ActuallyConvertWall`'s non-zero+different gate
+/// (`:56329-56343`), then the tile else-if ladder — the torch style-22 arm
+/// (`TileID.Sets.Conversion.Torch(tile, 3)`'s default switch {0, 9, 16, 18,
+/// 19, 20, 21, 22}, `TileID.cs:63-77`), the jungle grass 60 → 70
+/// (`Convert_ActuallyConvertTile`'s active+different + tree-above kill,
+/// `:56312-56327`) and the thorn kill (`Conversion.Thorn` = {32, 352, 69,
+/// 655}, `TileID.cs:95`). The type-3 arm draws NO RNG (the wall-80 depth
+/// rolls live in the type-0 cleanse arm only). The `SquareTileFrame` /
+/// `SquareWallFrame` calls ride the port's `reframe_area` superset (the
+/// `convert_cleanse_cell` precedent); the netMode sends are MP-only.
+pub fn convert_cell_mushroom(world: &mut World, x: i32, y: i32) {
+    // `!InWorld(i2, j2, 1)` (`:55087`) — the size-0 walk's only cell gate.
+    if !in_world(world, x, y, 1) {
+        return;
+    }
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `!theTile.active() && wall <= 0` (`:55092-55095`).
+    if !active && wall == 0 {
+        return;
+    }
+    // The wall half (`:55337-55340`): the shared type-3 ladder row.
+    if let Some(new_wall) = crate::growth::convert_wall_by_case(wall, 3, y, world.world_surface, None)
+    {
+        // `Convert_ActuallyConvertWall`: non-zero, different.
+        if wall != 0 && wall != new_wall {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.wall = new_wall;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+    // The tile half (`:55345-55358`) — the else-if ladder in source order.
+    if active && kind == 4 {
+        // `Conversion.Torch(tile, 3)` — the default-switch style set.
+        let num = world.tile(x, y).map_or(0, |t| t.frame_y as i32 / 22);
+        if matches!(num, 0 | 9 | 16 | 18 | 19 | 20 | 21 | 22) {
+            // `Convert_ActuallyConvertTorch` (`:56287-56310`): style 22, the
+            // type-0 mushroom quirk does not apply (conversionType 3).
+            if num != 22 {
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.frame_y = 22 * 22;
+                }
+                crate::framing::reframe_area(world, x, y, 1, false);
+            }
+            return;
+        }
+        // A torch outside the set falls through the C# else-if chain to the
+        // 60/thorn tests (which a type-4 tile never matches) — a no-op.
+        return;
+    }
+    if kind == 60 {
+        // `Convert_ActuallyConvertTile`: active, different, the tree-above
+        // validity check, then the write + re-frame.
+        if active && kind != 70 {
+            try_kill_invalid_tree_above(world, x, y, 70);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = 70;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        return;
+    }
+    if matches!(kind, 32 | 352 | 69 | 655) {
+        // `Conversion.Thorn[type]` → `KillTile` (`:55352-55357`; the netMode
+        // send is MP-only). The cleanse arm's kill precedent.
+        let _ = crate::edit::kill_tile(world, x, y, false);
+    }
+}
+
 /// `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
 /// (`WorldGen.cs:54802-54899`): the tree trunk (or palm 323) directly above
 /// the converted cell dies when the new floor no longer fits its ground
@@ -951,6 +1026,78 @@ mod tests {
     /// The growth module's wall-chain entry, straight from the test.
     fn growth_wall(wall: u16, conversion_type: u8) -> Option<u16> {
         crate::growth::convert_wall_by_case(wall, conversion_type, 0, 1.0e9, None)
+    }
+
+    /// W4-g42 G7: the type-3 cell (`WorldGen.cs:55336-55359`) — the four
+    /// mushroom-safe walls → 80, the jungle grass 60 → 70, the torch
+    /// default-switch styles → 22, the thorn set dies, and the
+    /// inactive+wall-0 cell early-outs. RNG-free by construction.
+    #[test]
+    fn w4_g42_the_mushroom_conversion_cell_is_verbatim() {
+        let mut w = world();
+        // The wall set {64, 67, 15, 247} (`WallID.cs:88`) — each converts
+        // to 80 on an INACTIVE cell (the wall arm runs before the tile
+        // ladder, gated only by `!active && wall <= 0`).
+        for (x, wall) in [(10i32, 64u16), (12, 67), (14, 15), (16, 247)] {
+            let i = w.index(x, 100);
+            w.tiles[i] = Tile { wall, ..Default::default() };
+            convert_cell_mushroom(&mut w, x, 100);
+            assert_eq!(w.tile(x, 100).unwrap().wall, 80, "wall {wall} → 80");
+        }
+        // A non-set wall stands (the type-3 ladder has no other row).
+        let i = w.index(18, 100);
+        w.tiles[i] = Tile { wall: 2, ..Default::default() };
+        convert_cell_mushroom(&mut w, 18, 100);
+        assert_eq!(w.tile(18, 100).unwrap().wall, 2, "the dirt wall stands");
+        // The inactive + wall-0 cell early-outs (`:55092-55095`).
+        let i = w.index(20, 100);
+        w.tiles[i] = Tile { kind: 60, ..Default::default() }; // stored 60, inactive
+        convert_cell_mushroom(&mut w, 20, 100);
+        assert_eq!(w.tile(20, 100).unwrap().kind, 60, "the dead cell stands");
+        // The jungle grass 60 → 70 (`:55347-55350`).
+        put(&mut w, 22, 100, 60);
+        convert_cell_mushroom(&mut w, 22, 100);
+        assert_eq!(w.tile(22, 100).unwrap().kind, 70, "60 → 70");
+        // The torch default-switch set (`TileID.cs:63-77`): styles
+        // {0, 9, 16, 18, 19, 20, 21, 22} convert to 22; style 5 does not.
+        for (x, style) in [(24i32, 0i16), (26, 9), (28, 16), (30, 21)] {
+            put(&mut w, x, 100, 4);
+            let i = w.index(x, 100);
+            w.tiles[i].frame_y = style * 22;
+            convert_cell_mushroom(&mut w, x, 100);
+            assert_eq!(w.tile(x, 100).unwrap().frame_y, 22 * 22, "torch {style} → 22");
+        }
+        put(&mut w, 32, 100, 4);
+        let i = w.index(32, 100);
+        w.tiles[i].frame_y = 5 * 22;
+        convert_cell_mushroom(&mut w, 32, 100);
+        assert_eq!(w.tile(32, 100).unwrap().frame_y, 5 * 22, "style 5 stands");
+        // The thorn set {32, 352, 69, 655} (`TileID.cs:95`) dies.
+        for (x, kind) in [(34i32, 32u16), (36, 352), (38, 69), (40, 655)] {
+            put(&mut w, x, 100, kind);
+            convert_cell_mushroom(&mut w, x, 100);
+            assert!(!w.tile(x, 100).unwrap().active(), "thorn {kind} dies");
+        }
+    }
+
+    /// W4-g42 G7: the 60 → 70 write kills an invalid tree above
+    /// (`Convert_ActuallyConvertTile` → `TryConvertingOrKillingTreesAbove…`,
+    /// `:56316`): a palm 323 above a jungle-grass cell dies (the mushroom
+    /// grass 70 is not in `Conversion.Sand`), a tile-5 tree survives (70 is
+    /// in the grass-side union).
+    #[test]
+    fn w4_g42_the_mushroom_conversion_kills_the_invalid_tree_above() {
+        let mut w = world();
+        put(&mut w, 50, 100, 60);
+        put(&mut w, 50, 99, 323); // the palm trunk
+        convert_cell_mushroom(&mut w, 50, 100);
+        assert_eq!(w.tile(50, 100).unwrap().kind, 70);
+        assert!(!w.tile(50, 99).unwrap().active(), "the palm dies on 70");
+        let mut w2 = world();
+        put(&mut w2, 50, 100, 60);
+        put(&mut w2, 50, 99, 5); // the vanilla tree trunk
+        convert_cell_mushroom(&mut w2, 50, 100);
+        assert!(w2.tile(50, 99).unwrap().active(), "the tree survives on 70");
     }
 
     #[test]
