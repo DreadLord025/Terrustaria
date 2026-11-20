@@ -861,7 +861,82 @@ impl App {
                     y: e.y,
                 }));
             }
+            // `case 87` — a client placed a tile entity (W4-g50,
+            // `MessageBuffer.cs:3294-3305`): the in-world + free-cell gate
+            // (`:3300`), then `TileEntity.PlaceEntityNet` →
+            // `NetPlaceEntityAttempt` (`TileEntityType.cs:17-20`): place and
+            // answer with the `86` sharing broadcast.
+            C2s::TileEntityPlacement(p) => {
+                let (x, y) = (p.x as i32, p.y as i32);
+                // `WorldGen.InWorld(x8, y8)` — the port's tile lookup bounds.
+                if self.world.tile(x, y).is_none() {
+                    return;
+                }
+                if self.world.tile_entities.get_at(p.x, p.y).is_some() {
+                    return; // `!TileEntity.TryGetAt<TileEntity>(x8, y8, …)`
+                }
+                let Some(kind) = tr_core::tile_entities::TeKind::from_id(p.kind) else {
+                    return; // `InvalidEntityID` (`TileEntitiesManager.cs:59`)
+                };
+                // The pylon's own `NetPlaceEntityAttempt`
+                // (`TETeleportationPylon.cs:13-27`): an untyped frame or a
+                // duplicate type rejects with `KillTile` + a `17` relay.
+                if kind == tr_core::tile_entities::TeKind::TeleportationPylon {
+                    let style = self
+                        .world
+                        .tile(x, y)
+                        .map(|t| t.frame_x as i32 / 54)
+                        .unwrap_or(-1);
+                    let pylon_type = tr_core::pylons::PylonType::from_tile_style(style);
+                    let duplicate = pylon_type.is_some_and(|pt| {
+                        tr_core::pylons::scan_pylons(&self.world)
+                            .iter()
+                            .any(|info| info.pylon_type == pt)
+                    });
+                    if pylon_type.is_none() || duplicate {
+                        crate::world_sim::editing::break_tile(self, x, y);
+                        server.broadcast(&S2c::Edit {
+                            x,
+                            y,
+                            kind: 0, // `KillTile`'s fail=false break
+                            tile: 0,
+                        });
+                        return;
+                    }
+                }
+                // `TileEntityType<T>.Place` — the ValidTile gate + the books.
+                let Some(id) = self.world.tile_entities.place(&self.world, kind, p.x, p.y)
+                else {
+                    return;
+                };
+                self.broadcast_tile_entity(server, id);
+            }
         }
+    }
+
+    /// The `86 TileEntitySharing` broadcast for one live entity
+    /// (`NetMessage.cs:1216-1225`): the id, the presence bool, then the
+    /// `networkSend: true` record. A tombstoned id broadcasts the removal
+    /// shape (the C# `TryGet` fails → `flag2 = false`).
+    fn broadcast_tile_entity(&self, server: &net::Server, id: u32) {
+        let record = match self.world.tile_entities.get_by_id(id) {
+            Some(e)
+                if self
+                    .world
+                    .tile_entities
+                    .get_at(e.x, e.y)
+                    .is_some_and(|live| live.id == id) =>
+            {
+                let mut w = tr_core::binio::Writer::new();
+                e.write_net(&mut w);
+                w.into_inner()
+            }
+            _ => Vec::new(),
+        };
+        server.broadcast(&S2c::TileEntitySharing(net::TileEntitySharing {
+            id: id as i32,
+            record,
+        }));
     }
 
     /// The join bundle when a slot reaches `IN_WORLD` (the port's
@@ -2014,6 +2089,29 @@ impl App {
                     if idx != tr_core::particles::DUST_SENTINEL {
                         self.dust.slot_mut(idx).velocity *= 0.2;
                     }
+                }
+            }
+            // `case 86` — one tile entity's create/update/removal (W4-g50,
+            // `MessageBuffer.cs:3272-3293`): absent removes by id; present
+            // reads the networkSend record and re-adds it under the leading
+            // id (`TileEntity.Add`, `:3288-3290`).
+            S2c::TileEntitySharing(t) => {
+                if t.record.is_empty() {
+                    // `TileEntity.TryGet<TileEntity>(num114, …)` → `Remove`.
+                    if t.id >= 0 {
+                        self.world.tile_entities.remove_by_id(t.id as u32);
+                        self.world_key = None;
+                    }
+                    return;
+                }
+                let mut r = tr_core::binio::Reader::new(&t.record);
+                let Some(mut entity) = tr_core::tile_entities::TileEntity::read_net(&mut r)
+                else {
+                    return; // the C# throws on a corrupt record; the port drops it
+                };
+                entity.id = t.id.max(0) as u32;
+                if self.world.tile_entities.add_net(entity) {
+                    self.world_key = None;
                 }
             }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
@@ -5492,5 +5590,97 @@ mod message_family_tests {
                 .any(|d| d.active && d.dust_type == 244),
             "the moneyPing burst spawned"
         );
+    }
+
+    /// `case 87` → `86` (`MessageBuffer.cs:3294-3305`,
+    /// `TileEntityType.cs:17-20`): the host places the entity on a valid
+    /// free cell and answers with the sharing broadcast; the client's books
+    /// carry it under the host's id.
+    #[test]
+    fn w4_g50_the_87_placement_answers_with_an_86_share() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // An item-frame anchor tile (395, frameX/Y 0) on both sides.
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(10, 4);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 395,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEntityPlacement(net::TileEntityPlacement {
+                x: 10,
+                y: 4,
+                kind: 1, // TEItemFrame
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        let host_te = host_app
+            .world
+            .tile_entities
+            .get_at(10, 4)
+            .expect("the host placed the frame");
+        assert_eq!(host_te.kind, tr_core::tile_entities::TeKind::ItemFrame);
+        let client_te = client_app
+            .world
+            .tile_entities
+            .get_at(10, 4)
+            .expect("the 86 share landed on the client");
+        assert_eq!(client_te.id, host_te.id, "the forced id rides the body");
+        // A second placement on the occupied cell is refused (`:3300`).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEntityPlacement(net::TileEntityPlacement {
+                x: 10,
+                y: 4,
+                kind: 1,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert_eq!(host_app.world.tile_entities.live_entities().count(), 1);
+    }
+
+    /// `case 86`'s removal arm (`MessageBuffer.cs:3279-3284`): the absent
+    /// shape drops the entity from the client's books by id.
+    #[test]
+    fn w4_g50_the_86_absent_shape_removes_by_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let id = host_app
+            .world
+            .tile_entities
+            .place_unchecked(tr_core::tile_entities::TeKind::ItemFrame, 10, 4);
+        let share = |app: &App, id: u32| {
+            let record = match app.world.tile_entities.get_by_id(id) {
+                Some(e)
+                    if app
+                        .world
+                        .tile_entities
+                        .get_at(e.x, e.y)
+                        .is_some_and(|live| live.id == id) =>
+                {
+                    let mut w = tr_core::binio::Writer::new();
+                    e.write_net(&mut w);
+                    w.into_inner()
+                }
+                _ => Vec::new(),
+            };
+            S2c::TileEntitySharing(net::TileEntitySharing {
+                id: id as i32,
+                record,
+            })
+        };
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&share(&host_app, id));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(client_app.world.tile_entities.get_by_id(id).is_some());
+        // The host removes it and shares the absence.
+        host_app.world.tile_entities.remove_by_id(id);
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&share(&host_app, id));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(client_app.world.tile_entities.get_at(10, 4).is_none());
+        assert_eq!(client_app.world.tile_entities.live_entities().count(), 0);
     }
 }

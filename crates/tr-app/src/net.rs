@@ -116,6 +116,15 @@ pub mod id {
     /// `MessageBuffer.cs:3442-3461`): a DELTA in on the client→host leg,
     /// the accumulated TOTAL out on the host→client leg. Both directions.
     pub const NPC_EXTRA_VALUE: u8 = 92;
+    /// `86 TileEntitySharing` (W4-g50, S1-I-4): `(int)` id + `(bool)`
+    /// present + the `TileEntity.Write(networkSend: true)` record when
+    /// present (`MessageID.cs:186`, `NetMessage.cs:1216-1225`,
+    /// `MessageBuffer.cs:3272-3293`, host→client only).
+    pub const TILE_ENTITY_SHARING: u8 = 86;
+    /// `87 TileEntityPlacement` (W4-g50, S1-I-4): `(short)x, (short)y,
+    /// (byte)type` (`MessageID.cs:188`, `NetMessage.cs:1227-1231`,
+    /// `MessageBuffer.cs:3294-3305`, client→host only).
+    pub const TILE_ENTITY_PLACEMENT: u8 = 87;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -1642,6 +1651,35 @@ pub struct NpcExtraValue {
     pub y: f32,
 }
 
+/// `msg 86 TileEntitySharing`'s body (`NetMessage.cs:1216-1225`, W4-g50):
+/// `(int)number` (the entity id), `(bool)` present (`TileEntity.TryGet`),
+/// then — when present — `TileEntity.Write(writer, result3, networkSend:
+/// true)`: the type byte, the position shorts and the extra data, NO id
+/// (`TileEntity.cs:188-197`'s network half). The reader removes the entity
+/// when absent and re-adds it under the leading id when present
+/// (`MessageBuffer.cs:3272-3293`). The record rides as raw bytes — the
+/// per-kind shape is `tr_core::tile_entities::TileEntity::read_net`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TileEntitySharing {
+    pub id: i32,
+    /// The `networkSend: true` record (type byte + position + extra data);
+    /// empty when `present` is false.
+    pub record: Vec<u8>,
+}
+
+/// `msg 87 TileEntityPlacement`'s body (`NetMessage.cs:1227-1231`, W4-g50):
+/// `(short)number` x, `(short)number2` y, `(byte)number3` the entity type
+/// (`TileEntitiesManager.RegisterAll` order, 0..=10). The host places the
+/// entity when the cell is in-world and free, then answers with the `86`
+/// sharing broadcast (`MessageBuffer.cs:3294-3305`,
+/// `TileEntityType.cs:17-20`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileEntityPlacement {
+    pub x: i16,
+    pub y: i16,
+    pub kind: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1760,6 +1798,10 @@ pub enum C2s {
     /// (`WorldItem.cs:1186-1194`; `MessageBuffer.cs:3455-3459` adds it and
     /// relays the total; W4-g50).
     NpcExtraValue(NpcExtraValue),
+    /// `87 TileEntityPlacement` - a client placed a tile entity
+    /// (`TETrainingDummy.Hook_AfterPlacement` etc.;
+    /// `MessageBuffer.cs:3294-3305` places it and answers with 86; W4-g50).
+    TileEntityPlacement(TileEntityPlacement),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1895,6 +1937,10 @@ pub enum S2c {
     /// `92 SyncExtraValue` - a town NPC's accumulated coin credit, relayed
     /// as the TOTAL (`MessageBuffer.cs:3458`; W4-g50).
     NpcExtraValue(NpcExtraValue),
+    /// `86 TileEntitySharing` - one entity's create/update/removal
+    /// (`TileEntity.Write(networkSend: true)`, `NetMessage.cs:1216-1225`;
+    /// W4-g50).
+    TileEntitySharing(TileEntitySharing),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1985,6 +2031,7 @@ impl C2s {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::PlayerStealth(_) => id::PLAYER_STEALTH,
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
+            Self::TileEntityPlacement(_) => id::TILE_ENTITY_PLACEMENT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2057,6 +2104,8 @@ impl C2s {
             Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
             // `NetMessage.cs:1321-1326` — short npc, int value, two floats.
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
+            // `NetMessage.cs:1227-1231` — short x, short y, byte type.
+            Self::TileEntityPlacement(p) => w.i16(p.x).i16(p.y).u8(p.kind),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2191,6 +2240,12 @@ impl C2s {
                 value: r.i32()?,
                 x: r.f32()?,
                 y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3297-3299` — short x, short y, byte type.
+            id::TILE_ENTITY_PLACEMENT => Self::TileEntityPlacement(TileEntityPlacement {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.u8()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2356,6 +2411,7 @@ impl S2c {
             Self::CombatTextString(_) => id::COMBAT_TEXT_STRING,
             Self::PlayerStealth(_) => id::PLAYER_STEALTH,
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
+            Self::TileEntitySharing(_) => id::TILE_ENTITY_SHARING,
         }
     }
 
@@ -2509,6 +2565,12 @@ impl S2c {
             Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
             // `NetMessage.cs:1321-1326` — short npc, int value, two floats.
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
+            // `NetMessage.cs:1216-1225` — int id, bool present, then the
+            // networkSend record when present (the raw bytes carry it).
+            Self::TileEntitySharing(t) => {
+                let w = w.i32(t.id).bool(!t.record.is_empty());
+                w.raw(&t.record)
+            }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2738,6 +2800,14 @@ impl S2c {
                 x: r.f32()?,
                 y: r.f32()?,
             }),
+            // `MessageBuffer.cs:3278-3291`: int id, bool present; the
+            // networkSend record rides the rest of the body when present.
+            id::TILE_ENTITY_SHARING => {
+                let id = r.i32()?;
+                let present = r.bool()?;
+                let record = if present { r.rest()?.to_vec() } else { Vec::new() };
+                Self::TileEntitySharing(TileEntitySharing { id, record })
+            }
             _ => return None,
         })
     }
@@ -5018,6 +5088,91 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::NpcExtraValue(d) => assert_eq!(d, e),
             other => panic!("expected 92, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `86 TileEntitySharing` (`NetMessage.cs:1216-1225`): int id, bool
+    /// present, then the `networkSend: true` record — type byte, position
+    /// shorts, extra data, NO id (`TileEntity.cs:188-197`). The item-frame
+    /// record is the raw triple (no presence byte, `TEItemFrame.cs:40-45`).
+    #[test]
+    fn w4_g50_tile_entity_sharing_round_trips() {
+        use tr_core::tile_entities::{TeData, TeItem, TeKind, TileEntity};
+        let e = TileEntity {
+            id: 7,
+            x: 120,
+            y: 340,
+            kind: TeKind::ItemFrame,
+            data: TeData::Item(Some(TeItem {
+                kind: 29,
+                prefix: 81,
+                stack: 1,
+            })),
+        };
+        let mut w = tr_core::binio::Writer::new();
+        e.write_net(&mut w);
+        let record = w.into_inner();
+        // type 1, x 120, y 340, then the triple (29, 81, 1) — 9 bytes, no id.
+        let mut expect = vec![1u8];
+        expect.extend_from_slice(&120i16.to_le_bytes());
+        expect.extend_from_slice(&340i16.to_le_bytes());
+        expect.extend_from_slice(&29i16.to_le_bytes());
+        expect.push(81);
+        expect.extend_from_slice(&1i16.to_le_bytes());
+        assert_eq!(record, expect);
+        let t = TileEntitySharing {
+            id: 7,
+            record: record.clone(),
+        };
+        let f = S2c::TileEntitySharing(t.clone()).encode();
+        assert_eq!(f[2], 86);
+        let mut body = Vec::new();
+        body.extend_from_slice(&7i32.to_le_bytes());
+        body.push(1); // present
+        body.extend_from_slice(&record);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        // The record decodes back to the entity (the id rides the body head).
+        let back = TileEntity::read_net(&mut tr_core::binio::Reader::new(&record))
+            .expect("record decodes");
+        assert_eq!(back.kind, TeKind::ItemFrame);
+        assert_eq!((back.x, back.y), (120, 340));
+        assert_eq!(back.data, e.data);
+        // The removal shape: id + false, no record.
+        let gone = TileEntitySharing {
+            id: 7,
+            record: Vec::new(),
+        };
+        let f = S2c::TileEntitySharing(gone.clone()).encode();
+        assert_eq!(f.len(), 3 + 4 + 1);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(d, gone),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `87 TileEntityPlacement` (`NetMessage.cs:1227-1231`): short x, short
+    /// y, byte type. Client→host only (`MessageBuffer.cs:3294-3305`).
+    #[test]
+    fn w4_g50_tile_entity_placement_round_trips() {
+        let p = TileEntityPlacement {
+            x: 120,
+            y: 340,
+            kind: 1, // TEItemFrame
+        };
+        let c = C2s::TileEntityPlacement(p).encode();
+        assert_eq!(c[2], 87);
+        let mut body = Vec::new();
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.extend_from_slice(&340i16.to_le_bytes());
+        body.push(1);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TileEntityPlacement(d) => assert_eq!(d, p),
+            other => panic!("expected 87, got {:?}", other.msg_id()),
         }
     }
 }
