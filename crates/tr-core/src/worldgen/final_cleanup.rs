@@ -663,21 +663,23 @@ mod tests {
     #[test]
     fn w4_g37_fc_the_boulder_collapses_under_an_altar() {
         let mut w = flat(600, 600);
-        // The boulder body at (300..302, 300..302), anchor cell (301, 301)
-        // with frameX/frameY 18 → origin (300, 300).
+        // The boulder body at (300..302, 450..452), anchor cell (301, 451)
+        // with frameX/frameY 18 → origin (300, 450). Below the dirt-throw
+        // scatter's y band ([50, height-200) = [50, 400)) so the collapsed
+        // active kind-0 cells (SET_DIRT) cannot be re-typed to 668.
         for x in 300..302 {
-            for y in 300..302 {
+            for y in 450..452 {
                 set(&mut w, x, y, 138, true);
             }
         }
-        let i = w.index(301, 301);
+        let i = w.index(301, 451);
         w.tiles[i].frame_x = 18;
         w.tiles[i].frame_y = 18;
-        set(&mut w, 300, 299, 26, true); // the altar above the left column
+        set(&mut w, 300, 449, 26, true); // the altar above the left column
         let mut rng = Rng(42);
         pass_final_cleanup(&mut w, 200.0, 400.0, false, false, false, false, false, &mut rng);
         for x in 300..302 {
-            for y in 300..302 {
+            for y in 450..452 {
                 let t = w.tile(x, y).unwrap();
                 assert_eq!(t.kind, 0, "the collapsed body ({x},{y})");
                 assert!(t.active());
