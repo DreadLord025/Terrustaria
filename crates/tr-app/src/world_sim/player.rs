@@ -1278,6 +1278,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                         app.npcs[s.idx].wants_probe = Some(anchor);
                     }
                 }
+                // `Player.cs:25605`: `wolfAcc = false` — the C# clears the
+                // flag AFTER `UpdateBuffs` read it (the `:11895` Werewolf
+                // gate); the port's buff scan is this wiring, so the clear
+                // rides here, not inside `update_with_grapple` (clearing it
+                // there would starve the scan). The next tick's equip pass
+                // re-arms it from the worn charm/shell.
+                p.wolf_acc = false;
             }
             // S1-E-7 wave C: the accessory/set-bonus buff arms
             // (`Player.cs:10800-11400` + the imbues `:12013-12044`) — the
@@ -2233,6 +2240,63 @@ mod tests {
             app.player.as_ref().unwrap().auto_actuator,
             "3624 held grants autoActuator"
         );
+    }
+
+    /// W4-f12 gap 3 — the full-seam werewolf chain: the Moon Charm (485)
+    /// arms `wolfAcc` (`Player.cs:15182-15189`), the `:25601-25604` night
+    /// grant adds buff 28, the wiring's wave-E status arm reads the LIVE
+    /// flag and grants the stat block (`:11895-11904`), then the `:25605`
+    /// clear rides AFTER the scan (the C# order). Day breaks: the buff dies.
+    #[test]
+    fn w4_f12_moon_charm_werewolf_chain_through_the_seam() {
+        let mut app = ammo_app();
+        app.world.day_time = false; // night
+        app.equip.armor[3] = slot(485); // Moon Charm
+        // Tick 1: the equip pass arms wolfAcc, the night grant adds buff 28;
+        // the wiring reads the live flag and arms the werewolf effect.
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(28).is_some(), "the night grant (`:25603`)");
+        assert!(p.were_wolf, "the wiring's status arm grants the effect (`:11898`)");
+        assert!(!p.wolf_acc, "the `:25605` clear rides after the scan");
+        assert_eq!(p.melee_crit, 4 + 2, "`:11899`");
+        assert_eq!(p.stat_defense, 3, "`:11902`");
+        // Tick 2: the buff persists (TimeLeftDoesNotDecrease), the effect
+        // re-arms from the re-granted flag.
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(28).is_some(), "the buff stays pinned");
+        assert!(p.were_wolf);
+        // Day breaks: the wiring's day gate deletes the buff (`:11905-11909`).
+        app.world.day_time = true;
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(28).is_none(), "the day gate deletes");
+        assert!(!p.were_wolf);
+    }
+
+    /// W4-f12 gap 2 — the Inferno aura through the seam: the buff arms, the
+    /// ring spreads Hellfire to a nearby zombie, and on the 60-tick cadence
+    /// the strike lands (the combat text + the life drop).
+    #[test]
+    fn w4_f12_inferno_aura_through_the_seam() {
+        let mut app = ammo_app();
+        let p = app.player.as_mut().unwrap();
+        p.buffs.add_buff(116, 14400); // Inferno potion
+        let (cx, cy) = p.center();
+        // A zombie inside the 200px ring.
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Zombie, cx - 10.0, cy - 10.0, 1, 0.0,
+        ));
+        let hp0 = app.npcs[0].hp;
+        // The cadence counter starts at 0; the first tick increments it to
+        // 1, so the strike waits for tick 60. Drive 60 ticks.
+        for _ in 0..60 {
+            tick_ammo(&mut app);
+        }
+        assert!(app.npcs[0].buffs.has_buff(323), "Hellfire spreads (`:10231`)");
+        assert!(app.npcs[0].hp < hp0, "the cadence strike landed");
+        assert!(!app.combat_texts.is_empty(), "the combat text spawned");
     }
 
     /// DW-3.3 (the buff half) — the three buff-granted flags (16 Archery,

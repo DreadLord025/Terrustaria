@@ -7046,11 +7046,10 @@ impl Player {
         self.empress_brooch = false;
         // `:25598`: `accMerman = false` clears after the derivation read it;
         // the shell grants below re-arm it. `merman` itself is re-derived
-        // per tick (`:25577-25589`), not reset here.
+        // per tick (`:25577-25589`), not reset here. (`wolfAcc`'s `:25605`
+        // clear rides the world_sim seam AFTER the wiring's buff scan — the
+        // C# order: the `:11895` gate reads the live grant first.)
         self.acc_merman = false;
-        // `:25605`: `wolfAcc = false` — the C# clears it after the night
-        // grant; the port's grant runs at the merman-derivation tail below,
-        // so the clear rides there too (the equip pass re-arms it first).
         self.accessory_life_regen = 0;
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
@@ -7184,19 +7183,20 @@ impl Player {
             && !self.lava_wet
             && (!self.mount.is_active() || !self.mount.is_considered_a_slime_mount());
         self.merman = self.acc_merman && merman_wet;
-        // `Player.cs:25601-25605`: the Werewolf night grant — a Moon Charm /
+        // `Player.cs:25601-25604`: the Werewolf night grant — a Moon Charm /
         // Moon Shell / Celestial Shell (`wolfAcc`) while NOT merman, at
         // night, without the buff already riding, re-arms buff 28 for 60
         // ticks (the `TimeLeftDoesNotDecrease` set keeps it pinned). The
         // `wereWolf` term reads THIS tick's `UpdateBuffs` result (the buff
-        // scan ran earlier in the tick, `:25566` < `:25601`); the flag
-        // clears right after (`:25605`), the equip grants re-arm it next
-        // tick. (W4-f12 gap 3 — the d71 werewolf EFFECT landed; this is the
-        // accessory GRANT lane it was waiting on.)
+        // scan ran earlier in the tick, `:25566` < `:25601`). (W4-f12 gap 3
+        // — the d71 werewolf EFFECT landed; this is the accessory GRANT lane
+        // it was waiting on.) The `:25605` `wolfAcc = false` clear runs at
+        // the world_sim seam AFTER the wiring's buff scan reads the flag
+        // (the C# order: the `:11895` gate reads the live grant, THEN the
+        // `:25605` clear) — clearing it here would starve the wiring.
         if self.wolf_acc && !self.merman && !world.day_time && !self.were_wolf {
             self.buffs.add_buff(28, 60);
         }
-        self.wolf_acc = false;
         // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
         // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
         // the C# never lets `statDefense` go negative (a negative value would
@@ -12652,7 +12652,7 @@ mod tests {
         // Tick 1: the equip pass arms wolfAcc, the night grant adds buff 28.
         p.update(&w, PlayerInput::default());
         assert!(p.buffs.find_buff_index(28).is_some(), "the night grant (`:25603`)");
-        assert!(!p.wolf_acc, "the flag clears after the grant (`:25605`)");
+        assert!(p.wolf_acc, "the flag stays live until the wiring reads it (`:25605` rides the seam)");
         // The wiring's status arm reads the live wolfAcc (re-armed by the
         // equip pass) and grants the werewolf stat block (`:11895-11904`).
         p.update(&w, PlayerInput::default()); // re-arm wolfAcc + the buff
