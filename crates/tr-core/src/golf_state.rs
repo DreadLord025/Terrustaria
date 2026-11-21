@@ -482,6 +482,40 @@ mod tests {
         assert!(s.get_last_hit_ball(Some(&foreign), 3).is_some());
     }
 
+    /// W4-f29 — `GolfState.cs:102-109`'s four guards through the draw-side
+    /// seam `last_hit_ball_for_draw` (`Main.DrawMapIcons_LastGolfballHit`,
+    /// `Main.cs:56515-56539`): no stored ball, live re-hit, inactive,
+    /// foreign owner — adapted from the retired map-side re-derivation
+    /// (research/140 §3; the guards stay in tr-core).
+    #[test]
+    fn w4_f29_last_hit_golf_ball_guards() {
+        let mut s = GolfState::new();
+        // No stored ball -> None.
+        assert!(s.last_hit_ball_for_draw(None, 0).is_none());
+        let b = ball(5, Vec2::new(160.0, 320.0));
+        s.record_swing(&b);
+        assert!(s.last_hit_ball_for_draw(Some(&b), 0).is_some());
+        assert!(s.last_hit_ball_for_draw(None, 0).is_none(), "the slot is gone");
+        // A re-hit (live ai1 past the recorded swing) drops it.
+        let mut rehit = b;
+        rehit.ai1 = 2.0;
+        assert!(s.last_hit_ball_for_draw(Some(&rehit), 0).is_none());
+        // Back to the recorded count, but inactive -> None.
+        let mut gone = b;
+        gone.active = false;
+        assert!(s.last_hit_ball_for_draw(Some(&gone), 0).is_none());
+        // Active again, but a foreign owner -> None for the local read.
+        let mut foreign = b;
+        foreign.owner = 3;
+        assert!(s.last_hit_ball_for_draw(Some(&foreign), 0).is_none());
+        // The foreign owner's own read resolves.
+        assert!(s.last_hit_ball_for_draw(Some(&foreign), 3).is_some());
+        // A non-golf kind in the slot drops it too.
+        let mut wrong = b;
+        wrong.kind = 1;
+        assert!(s.last_hit_ball_for_draw(Some(&wrong), 0).is_none());
+    }
+
     #[test]
     fn the_ball_returns_to_the_swing_point_unless_already_there() {
         // `:161-172` - the 1 px tolerance.

@@ -662,6 +662,27 @@ mod tests {
         assert!((p[1] - 167.6).abs() < 1e-4, "{}", p[1]);
     }
 
+    /// W4-f29 — `Main.cs:55937-55944` vs `:55718-55725`: the two pin
+    /// transforms, adapted onto e17's `fullscreen_pin_pos`/`minimap_pin_pos`
+    /// (e17 pins the fullscreen order; this adds the minimap transform —
+    /// the `-6` inset pair, the `-(2 - scale/5*2)` y-offset and the sub).
+    #[test]
+    fn w4_f29_head_pos_matches_the_two_modes() {
+        let center = [160.0, 320.0];
+        // Fullscreen: origin (200,300), scale 4.
+        // x = 160/16*4 + 200 - 6 - 40 = 194;
+        // y = 320/16*4 + 300 - 2 - (2 - 1.6) - 40 = 337.6.
+        let p = fullscreen_pin_pos(center, [200.0, 300.0], 4.0);
+        assert_eq!(p[0], 194.0);
+        assert!((p[1] - 337.6).abs() < 1e-4, "{}", p[1]);
+        // Minimap: left_top (5,10), origin (500,90), sub (-0.5,-0.25),
+        // scale 2. x = (10-5)*2 + 500 - 6 - 0.5 = 503.5;
+        // y = (20-10)*2 + 90 - 6 - (2 - 0.8) - 0.25 = 102.55.
+        let p = minimap_pin_pos(center, [5.0, 10.0], [500.0, 90.0], [-0.5, -0.25], 2.0);
+        assert_eq!(p[0], 503.5);
+        assert!((p[1] - 102.55).abs() < 1e-4, "{}", p[1]);
+    }
+
     /// `Main.cs:55726` vs `:55752`: the two insets differ.
     #[test]
     fn w4_e17_minimap_gates_use_their_own_insets() {
