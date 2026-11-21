@@ -2185,6 +2185,170 @@ pub(crate) fn style112_dandelion_burst_836(p: &Projectile, world: &World, d: &mu
     }
 }
 
+/// `:34505-34535` — the aiStyle-117 flag58 half (the 612 SolarWhipSword /
+/// 953 Daybreak / 978 explosions; STAGED — the d12
+/// `projectile_ai_explosions` machine keeps the explicit draws, bodies
+/// skipped; this emitter REPLACES that census at merge). The caller owns
+/// the tick-1 gate + the 52·scale resize (the emitter reads the RESIZED
+/// box). Four loops: 4×31 (alpha 100, scale 1.5), 10×(6 alpha-200 ×2.7
+/// noGravity ×3 + 6 alpha-100 ×1.5 ×2 noGravity fadeIn 2.5), 5×6 (alpha 0,
+/// ×2.7, the UnitX velocity-rotated recipe), 10×31 (alpha 0, ×1.5, same
+/// UnitX recipe). Every position write is POST-spawn:
+/// RotatedByRandom(π)'s TWO NextDouble draws then ONE NextDouble radius
+/// (the UnitY loops × width/2; the UnitX loops rotate by the velocity's
+/// rotation and take the full width/2, no NextDouble radius).
+pub(crate) fn style117_whip_explosion_612(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    let center = Vec2::new(cx, cy);
+    let vel_rot = p.vel.y.atan2(p.vel.x) as f64;
+    let unit_y_point = |d: &mut ProjDust| {
+        center
+            + rotated_by_random(Vec2::Y, 3.1415927410125732, d.rng)
+                * (d.rng.next_double() as f32)
+                * p.w
+                / 2.0
+    };
+    let unit_x_point = |d: &mut ProjDust| {
+        center
+            + crate::bow_launch::rotated_by(
+                rotated_by_random(Vec2::X, 3.1415927410125732, d.rng),
+                vel_rot,
+            )
+                * p.w
+                / 2.0
+    };
+    for _ in 0..4 {
+        let idx = d.new_dust(world, p.pos, p.w as i32, p.h as i32, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+        let at = unit_y_point(d);
+        d.pool.slot_mut(idx).position = at;
+    }
+    for _ in 0..10 {
+        let idx = d.new_dust(world, p.pos, p.w as i32, p.h as i32, 6, 0.0, 0.0, 200, Color::default(), 2.7);
+        let at = unit_y_point(d);
+        let dust = d.pool.slot_mut(idx);
+        dust.position = at;
+        dust.no_gravity = true;
+        dust.velocity *= 3.0;
+        let idx = d.new_dust(world, p.pos, p.w as i32, p.h as i32, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+        let at = unit_y_point(d);
+        let dust = d.pool.slot_mut(idx);
+        dust.position = at;
+        dust.velocity *= 2.0;
+        dust.no_gravity = true;
+        dust.fade_in = 2.5;
+    }
+    for _ in 0..5 {
+        let idx = d.new_dust(world, p.pos, p.w as i32, p.h as i32, 6, 0.0, 0.0, 0, Color::default(), 2.7);
+        let at = unit_x_point(d);
+        let dust = d.pool.slot_mut(idx);
+        dust.position = at;
+        dust.no_gravity = true;
+        dust.velocity *= 3.0;
+    }
+    for _ in 0..10 {
+        let idx = d.new_dust(world, p.pos, p.w as i32, p.h as i32, 31, 0.0, 0.0, 0, Color::default(), 1.5);
+        let at = unit_x_point(d);
+        let dust = d.pool.slot_mut(idx);
+        dust.position = at;
+        dust.no_gravity = true;
+        dust.velocity *= 3.0;
+    }
+}
+
+/// `:34540-34627` — the aiStyle-117 flag59 half (the 624 StardustGuardian
+/// dash explosion; STAGED — the d12 machine's skip). 20×135 (alpha 100,
+/// ×1.5, the UnitY recipe, ×2 noGravity fadeIn 2.5), 15×135 (alpha 0,
+/// ×2.7, the UnitX recipe, noGravity ×3), then the SIX pre-loop draws
+/// (three NextDouble angles, three 7+NextDouble·7 radii, num862 = max)
+/// and the 200×135 ring: 6×6 box at position, alpha 100, stock scale;
+/// velocity captured, position = Centre, the UNGUARDED normalize × the
+/// i-banded radius (>50 → r2, >100 → r1, >150 → r3, else max), the
+/// i-banded axis-half + rotation (>150 Y+angle3, >100 X+angle1, >50
+/// Y+angle2), vel×0.2 + spin, scale 2, noGravity, fadeIn NextFloat·2 with
+/// the Next(4)==0 → 2.5 override, noLight, and the i<100 position
+/// += vel·20 / vel ×= −1 flip. The `shader` writes are the pool's dropped
+/// field (all three loops).
+pub(crate) fn style117_guardian_explosion_624(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    let center = Vec2::new(cx, cy);
+    let vel_rot = p.vel.y.atan2(p.vel.x) as f64;
+    for _ in 0..20 {
+        let idx = d.new_dust(world, p.pos, p.w as i32, p.h as i32, 135, 0.0, 0.0, 100, Color::default(), 1.5);
+        let at = center
+            + rotated_by_random(Vec2::Y, 3.1415927410125732, d.rng)
+                * (d.rng.next_double() as f32)
+                * p.w
+                / 2.0;
+        let dust = d.pool.slot_mut(idx);
+        dust.position = at;
+        dust.velocity *= 2.0;
+        dust.no_gravity = true;
+        dust.fade_in = 2.5;
+    }
+    for _ in 0..15 {
+        let idx = d.new_dust(world, p.pos, p.w as i32, p.h as i32, 135, 0.0, 0.0, 0, Color::default(), 2.7);
+        let at = center
+            + crate::bow_launch::rotated_by(
+                rotated_by_random(Vec2::X, 3.1415927410125732, d.rng),
+                vel_rot,
+            )
+                * p.w
+                / 2.0;
+        let dust = d.pool.slot_mut(idx);
+        dust.position = at;
+        dust.no_gravity = true;
+        dust.velocity *= 3.0;
+    }
+    // `:34557-34571` — the six draws + the max.
+    let a1 = d.rng.next_double() * (std::f64::consts::PI * 2.0);
+    let a2 = d.rng.next_double() * (std::f64::consts::PI * 2.0);
+    let a3 = d.rng.next_double() * (std::f64::consts::PI * 2.0);
+    let r1 = 7.0 + d.rng.next_double() * 7.0;
+    let r2 = 7.0 + d.rng.next_double() * 7.0;
+    let r3 = 7.0 + d.rng.next_double() * 7.0;
+    let rmax = r1.max(r2).max(r3);
+    for i in 0..200 {
+        let radius = if i > 150 {
+            r3
+        } else if i > 100 {
+            r1
+        } else if i > 50 {
+            r2
+        } else {
+            rmax
+        };
+        let idx = d.new_dust(world, p.pos, 6, 6, 135, 0.0, 0.0, 100, Color::default(), 1.0);
+        let mut spin = d.pool.slot(idx).velocity;
+        let dust = d.pool.slot_mut(idx);
+        dust.position = center;
+        spin = xna_normalize(spin);
+        spin *= radius as f32;
+        if i > 150 {
+            spin.y *= 0.5;
+            spin = crate::bow_launch::rotated_by(spin, a3);
+        } else if i > 100 {
+            spin.x *= 0.5;
+            spin = crate::bow_launch::rotated_by(spin, a1);
+        } else if i > 50 {
+            spin.y *= 0.5;
+            spin = crate::bow_launch::rotated_by(spin, a2);
+        }
+        dust.velocity *= 0.2;
+        dust.velocity += spin;
+        dust.scale = 2.0;
+        dust.no_gravity = true;
+        dust.fade_in = d.rng.next_float() * 2.0;
+        if d.rng.next_range(0, 4) == 0 {
+            dust.fade_in = 2.5;
+        }
+        dust.no_light = true;
+        if i < 100 {
+            dust.position += dust.velocity * 20.0;
+            dust.velocity *= -1.0;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
@@ -4230,6 +4394,170 @@ mod tests {
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
             assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
             assert_eq!(pool.slot(i).fade_in, 0.5);
+        }
+    /// W4-e3 AI-inline window — `:34505-34535`: the flag58 explosion's
+    /// 4+20+5+10 = 39 dusts; the UnitY loops draw RotatedByRandom(π)'s TWO
+    /// NextDoubles + ONE NextDouble radius, the UnitX loops rotate by the
+    /// velocity and take the full width/2 (no radius draw). Mirrored.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style117_whip_explosion_612_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(612);
+        p.w = 52.0;
+        p.h = 52.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(83);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(83);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style117_whip_explosion_612(&p, &w, &mut d);
+        let (cx, cy) = p.center();
+        let center = Vec2::new(cx, cy);
+        let vel_rot = p.vel.y.atan2(p.vel.x) as f64;
+        let mut y_point = |m: &mut UnifiedRandom| {
+            let a = m.next_double() * 3.1415927410125732 - m.next_double() * 3.1415927410125732;
+            center + crate::bow_launch::rotated_by(Vec2::Y, a) * (m.next_double() as f32) * 52.0 / 2.0
+        };
+        let mut x_point = |m: &mut UnifiedRandom| {
+            let a = m.next_double() * 3.1415927410125732 - m.next_double() * 3.1415927410125732;
+            center + crate::bow_launch::rotated_by(crate::bow_launch::rotated_by(Vec2::X, a), vel_rot) * 52.0 / 2.0
+        };
+        for _ in 0..4 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 52, 52, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+            let at = y_point(&mut mirror);
+            mpool.slot_mut(idx).position = at;
+        }
+        for _ in 0..10 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 52, 52, 6, 0.0, 0.0, 200, Color::default(), 2.7);
+            let at = y_point(&mut mirror);
+            let md = mpool.slot_mut(idx);
+            md.position = at;
+            md.no_gravity = true;
+            md.velocity *= 3.0;
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 52, 52, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+            let at = y_point(&mut mirror);
+            let md = mpool.slot_mut(idx);
+            md.position = at;
+            md.velocity *= 2.0;
+            md.no_gravity = true;
+            md.fade_in = 2.5;
+        }
+        for _ in 0..5 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 52, 52, 6, 0.0, 0.0, 0, Color::default(), 2.7);
+            let at = x_point(&mut mirror);
+            let md = mpool.slot_mut(idx);
+            md.position = at;
+            md.no_gravity = true;
+            md.velocity *= 3.0;
+        }
+        for _ in 0..10 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 52, 52, 31, 0.0, 0.0, 0, Color::default(), 1.5);
+            let at = x_point(&mut mirror);
+            let md = mpool.slot_mut(idx);
+            md.position = at;
+            md.no_gravity = true;
+            md.velocity *= 3.0;
+        }
+        assert_eq!(active(&pool).len(), 39);
+        for i in 0..39 {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).fade_in, mpool.slot(i).fade_in);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 AI-inline window — `:34540-34627`: the flag59 explosion's
+    /// 20+15+200 = 235 dusts; the six pre-loop draws (3 angles + 3 radii +
+    /// the max banding), the 200-ring's captured-velocity normalize, the
+    /// i-banded axis-half/rotation, the NextFloat·2 + Next(4) fadeIn pair,
+    /// the i<100 position/velocity flip. Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style117_guardian_explosion_624_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(624);
+        p.w = 52.0;
+        p.h = 52.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(89);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(89);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style117_guardian_explosion_624(&p, &w, &mut d);
+        let (cx, cy) = p.center();
+        let center = Vec2::new(cx, cy);
+        let vel_rot = p.vel.y.atan2(p.vel.x) as f64;
+        let norm = |v: Vec2| {
+            let len = (v.x * v.x + v.y * v.y).sqrt();
+            Vec2::new(v.x / len, v.y / len)
+        };
+        for _ in 0..20 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 52, 52, 135, 0.0, 0.0, 100, Color::default(), 1.5);
+            let a = mirror.next_double() * 3.1415927410125732 - mirror.next_double() * 3.1415927410125732;
+            let at = center + crate::bow_launch::rotated_by(Vec2::Y, a) * (mirror.next_double() as f32) * 52.0 / 2.0;
+            let md = mpool.slot_mut(idx);
+            md.position = at;
+            md.velocity *= 2.0;
+            md.no_gravity = true;
+            md.fade_in = 2.5;
+        }
+        for _ in 0..15 {
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 52, 52, 135, 0.0, 0.0, 0, Color::default(), 2.7);
+            let a = mirror.next_double() * 3.1415927410125732 - mirror.next_double() * 3.1415927410125732;
+            let at = center + crate::bow_launch::rotated_by(crate::bow_launch::rotated_by(Vec2::X, a), vel_rot) * 52.0 / 2.0;
+            let md = mpool.slot_mut(idx);
+            md.position = at;
+            md.no_gravity = true;
+            md.velocity *= 3.0;
+        }
+        let two_pi = std::f64::consts::PI * 2.0;
+        let a1 = mirror.next_double() * two_pi;
+        let a2 = mirror.next_double() * two_pi;
+        let a3 = mirror.next_double() * two_pi;
+        let r1 = 7.0 + mirror.next_double() * 7.0;
+        let r2 = 7.0 + mirror.next_double() * 7.0;
+        let r3 = 7.0 + mirror.next_double() * 7.0;
+        let rmax = r1.max(r2).max(r3);
+        for i in 0..200 {
+            let radius = if i > 150 { r3 } else if i > 100 { r1 } else if i > 50 { r2 } else { rmax };
+            let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 6, 6, 135, 0.0, 0.0, 100, Color::default(), 1.0);
+            let mut spin = mpool.slot(idx).velocity;
+            let md = mpool.slot_mut(idx);
+            md.position = center;
+            spin = norm(spin) * radius as f32;
+            if i > 150 {
+                spin.y *= 0.5;
+                spin = crate::bow_launch::rotated_by(spin, a3);
+            } else if i > 100 {
+                spin.x *= 0.5;
+                spin = crate::bow_launch::rotated_by(spin, a1);
+            } else if i > 50 {
+                spin.y *= 0.5;
+                spin = crate::bow_launch::rotated_by(spin, a2);
+            }
+            md.velocity *= 0.2;
+            md.velocity += spin;
+            md.scale = 2.0;
+            md.no_gravity = true;
+            md.fade_in = mirror.next_float() * 2.0;
+            if mirror.next_range(0, 4) == 0 {
+                md.fade_in = 2.5;
+            }
+            md.no_light = true;
+            if i < 100 {
+                md.position += md.velocity * 20.0;
+                md.velocity *= -1.0;
+            }
+        }
+        assert_eq!(active(&pool).len(), 235);
+        for i in 0..235 {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+            assert_eq!(pool.slot(i).fade_in, mpool.slot(i).fade_in);
         }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
