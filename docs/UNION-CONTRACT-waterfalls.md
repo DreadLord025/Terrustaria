@@ -186,6 +186,80 @@ Plus the pre-existing suite (`try_sparkling_grants_deterministically_for_
 a_seed`, the 600-frame determinism test now comparing BOTH scans, the
 spout-detection/lava-kind/tile-196/frame-counter/quad-emission tests, etc.).
 
+## Final sweep (2026-11-21, code-only)
+
+The post-union full-file re-census of `WaterfallManager.cs` (1182 lines) against
+this branch. Verdict: **every spawn/draw/frame/light arm is present**; one
+colour-source bug fixed, two census witnesses added, one residual recorded.
+
+### Census results (C# arm → union location)
+
+| C# arm | Lines | Union location | Verdict |
+| --- | --- | --- | --- |
+| `CheckForWaterfall` | 95-105 | `mod.rs::check_for_waterfall` | PORTED, **UNWIRED** (the `TileDrawing.cs:3858` behind-water refusal — research/09 task seed; the `inActive()` half belongs to g80) |
+| `FindWaterfalls` half-brick spout + lava/honey/shimmer precedence | 157-203 | `mod.rs:391-414` | PRESENT (verbatim `:179` gate, `:182-197` else-if chain) |
+| fountain 196 → type 11 | 204-219 | `mod.rs:415-425` | PRESENT (`waterfall_tile_196_drops_below`) |
+| fountain 460 → type 22 | 220-235 | `mod.rs:426-436` | PRESENT (`sand_fountain_tile_460_drops_below`) |
+| fountain 717 → type 26 | 236-251 | `mod.rs:437-447` | PRESENT — **witness added** (`lava_fountain_tile_717_drops_below`) |
+| `UpdateFrame` 6 counters | 257-323 | `mod.rs::update_tick` | PRESENT (regular >2/>15, slow >6/>15, rain >0/>2, lava-rain ==1/==3/>3, snow >3/>7) |
+| typed falls 1/14/25 slow-frame + drewLava/stopAtStep gate | 352-359 | `draw.rs:71-76` | PRESENT |
+| rain arms 11/22/26 (cull, frame tables, two-sheet pairs, fade, liquid trim, walk) | 364-525 | `draw.rs:77-175` + `rain_frames` | PRESENT — **717 draw witness added** (`lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell`: 27-bg 0.4 / 26-fg 0.9, white-127 tint, 3/2 lead, AddLight 26, `:708` water-ambience inclusion) |
+| style 0 → Style, disco 2 gate | 527-537 | `draw.rs:176-188` | PRESENT |
+| the walk (solid break, bends, num34 conversions 160→2 / 262-268→15-21, all quad arms, 189/196 range extension, k=1000 exits) | 539-958 | `draw.rs:190-754` | PRESENT (incl. `:749` white propagation, `:945` color4 carry) |
+| ambience scans + stores | 685-729, 960-965 | `draw.rs:342-399, 756-769` | PRESENT (both Y quirks verbatim) |
+| `DrawWaterfall(int,...)` type-25 overload | 969-985 | `quad_mark` fill + `render/liquids.rs::draw_shimmer_fall` | PRESENT |
+| `StylizeColor` cases 1/2/15-21 | 987-1028 | `draw.rs::stylize_color` | PRESENT — **case 2 colour source FIXED** (see below) |
+| `GetAlpha` | 1030-1044 | `draw.rs::get_alpha` | PRESENT (`:1037` latch gate) |
+| `TrySparkling` | 1046-1065 | `draw.rs::try_sparkling` | PRESENT (frame-seeded stream, documented) |
+| `AddLight` cases 1/26/2/15-21/25 | 1067-1116 | `draw.rs::add_light` | PRESENT |
+| `Draw()` head latch + pass table | 1118-1174 | `mod.rs::draw` + `set_show_invisible` | PRESENT (12-pass table verbatim) |
+
+### The fix: the disco fall's colour source
+
+The C# manager carries NO `DiscoR/G/B` state — `StylizeColor` case 2
+(`:1010-1012`) and `AddLight` case 2 (`:1084`) read the SHARED `Main.DiscoR/G/B`
+statics `Main.DoUpdate_AnimateDiscoRGB` (`Main.cs:19591-19648`) steps. The
+union's manager-local cycle copy was out of phase with the app's shared one
+(`world_sim::clock::advance_disco`) and initialised `disco_r: 0` against
+`Main.Initialize`'s `DiscoR = 255` (`Main.cs:66780`). The sweep removes the
+private cycle, adds `set_disco_rgb` (the `set_show_invisible` latch pattern) and
+feeds it from `params.disco` in `frame/draw.rs`. Commit `d118f7ba`; witnesses
+`the_disco_fall_reads_the_shared_disco_latch`,
+`update_tick_does_not_cycle_the_disco_rgb`,
+`the_waterfall_block_latches_the_shared_disco_statics`.
+
+### Ambience wiring — verified LIVE
+
+`frame.rs:300-335` (the ¼ s `Main.Ambience` tick) feeds both App triples through
+`sound::liquid_ambience` into `audio.rs::set_liquid_loop` (both re-pitch
+branches, `2^-0.2` / `2^0`). The triples are stored by `frame/draw.rs:689-698`
+from the walk's dual `AmbientScan`. Residual: the `ambientLava` blend
+(`Main.cs:13488-13497`) stays unported — `Main.ambientLava*` is stored by
+`DrawWaters` (`:57934-57936`), outside the waterfall lane.
+
+### Tile-side fountain chain — verified complete
+
+- tile 338 (FireworkFountain) placement: `tileobject/registry.rs` D_338 (1×2,
+  bottom anchor), item 2738 (`itemdata.rs`).
+- wiring case 338: `wiring.rs:2315` → `firework_fountain` (`:1660`,
+  `Wiring.cs:1522-1546` verbatim: 2×2 anchor, SkipWire, `CheckMech(30)`,
+  `419 + Next(4)`); the pool-side aiStyle-73 dedupe lives in
+  `world_sim/wiring.rs:427-430` (`fountain_anchored`).
+- tile 207 (WaterFountain) wiring: `wiring.rs:2544` → `switch_fountain`
+  (`:2808`, `WorldGen.cs:51150-51193` ±72 frameY flip + the running-gated
+  SkipWire block).
+- The proj 419-422 AI arm (`ai_fountain`, aiStyle 73) rides the d8 lane
+  (`task/W4-d8-proj-ai-71-80`, `e66b41b0` — not yet in main; not duplicated
+  here).
+
+### Residuals (recorded, not ported here)
+
+1. `DrawTile_LiquidBehindTile`'s `:3858` `CheckForWaterfall` refusal arm —
+   `check_for_waterfall` is ported but the renderer has no manager handle at
+   that site (research/09 task seed; coordinate with g80's `inActive()` half).
+2. The `ambientLava` blend (above) — a `DrawWaters` lane concern.
+3. `Main.gfxQuality` fixed 1.0 (the documented convergence value, `mod.rs:24-27`).
+
 ## Verification the merger must run (this lane was code-only)
 
 ```powershell

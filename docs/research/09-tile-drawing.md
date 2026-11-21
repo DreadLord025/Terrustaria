@@ -101,6 +101,7 @@ render-target cache.
 | 15. `DrawVoidLenses` (:8708) | PORTED | `render/pylons.rs::void_lens_sprites` + `void_lens_light` | S1-G-1 wave D: `VoidLensHelper.cs:11-105` — the -2px anchor, float-mod frame, 3-copy purple ring, the AddLight(0.4,0.2,0.9) into EntityLights; dust skipped. |
 | 16. `PostDrawTiles` (:414) | MISSING | — | |
 | 17. `Update` counters (:367-388) | PORTED | `wind.rs::advance_counter`/`…_tree`/`…_sunflower`/`…_vine` | |
+| 18. Waterfall overlay (`Main.DoDraw_Waterfalls` :63281 → `WaterfallManager.Draw`, the falls between the non-solid and solid tile passes) | PORTED (W4-g73/g74/g75 FINAL UNION + final sweep, 2026-11-21) | `tr-core/src/waterfall/{mod,draw}.rs` + `render/tiles.rs:494-513` + `render/liquids.rs::draw_shimmer_fall` | The full-file `WaterfallManager.cs` census: all 4 `FindWaterfalls` spawn arms (half-brick spout with the lava/honey/shimmer precedence :182-197, cloud fountains 196→11 :204-219 / 460→22 :220-235 / 717→26 :236-251), every draw arm (typed 1/14/25 slow-frame, rain 11/22/26 two-sheet pairs + frame tables, disco 160→2 + gemspark 262-268→15-21 conversions, the slope/bend walk, the :749 white foam), `UpdateFrame`'s 6 counters, `StylizeColor`/`GetAlpha`/`TrySparkling`/`AddLight` all cases, both ambience scans + the live `sound::liquid_ambience` consumer. Final-sweep fix: the disco fall now reads the SHARED `Main.DiscoR/G/B` via `set_disco_rgb(params.disco)` (the manager-local cycle copy removed — the C# manager has no disco state). Deviations: the row-major fusion z-order (deviation 1), the one-frame-late AddLight (matches vanilla). `docs/UNION-CONTRACT-waterfalls.md`, ANALYSIS "Waterfall overlay". |
 
 ### B. DrawData struct & ordering
 
@@ -135,7 +136,7 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 | **Tile-entity-bearing furniture** — 395/698/520/471/470/475/378/334/620/237 | special-point registry + entity item sprites | none | **MISSING** |
 | **Particles/dust from tiles** — `DrawTiles_EmitParticles` :6688-7548, `EmitLivingTreeLeaf` :7549, `EmitAlchemyHerbParticles` :9605 | per-tile sparkle/dust rolls on `Main.TileFrameSeed` | none (leaves only: `tiles.rs:868-914`) | **MISSING** (leaves partial) |
 | **Dangerous-tile outline / `GetTileOutlineInfo` :4478** | highlight overlay | none | **MISSING** (debug feature) |
-| **`Draw_LiquidBehindTile` / submerged vertex tints :3824-4152, :4145** | water mask behind sloped cells + shimmer tint | `render/liquids.rs::draw_tile_liquid_behind` + comment :638 | **PARTIAL** — the shimmer vertex tint is called out in ROADMAP :188-189 as open |
+| **`Draw_LiquidBehindTile` / submerged vertex tints :3824-4152, :4145** | water mask behind sloped cells + shimmer tint | `render/liquids.rs::draw_tile_liquid_behind` + comment :638 | **PARTIAL** — the shimmer vertex tint is called out in ROADMAP :188-189 as open. **W4-g75 final-sweep census (2026-11-21):** the `:3858` refusal chain is missing its `CheckForWaterfall` arm — `tileCache.halfBrick() && (num3 > 160 || num > 160) && waterfallManager.CheckForWaterfall(tileX, tileY)` (a spouting half-brick suppresses its own behind-water so the fall reads clean); `check_for_waterfall` is ported (`waterfall/mod.rs:238`) but UNWIRED — `draw_tile_liquid_behind` has no manager handle. The `inActive()` half of the same refusal is owned by the g80 actuator lane (`liquid_behind_refused`, `task/W4-g80-tile-actuator-draw` — not duplicated here). |
 | **Master trophy / pylon / void lens / critter cage** | dedicated passes | `render/pylons.rs` (S1-G-1 wave D) | **PORTED** (trophy/pylon/lens; critter cage stays MISSING — `DrawSpecialTilesLegacy`) |
 
 ## Tests
@@ -245,6 +246,12 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 
 ## Task seeds
 
+- **S** — Wire `WaterfallManager.CheckForWaterfall` into `draw_tile_liquid_behind`'s refusal
+  (`TileDrawing.cs:3858`): a half-brick spout with >160 liquid on either side suppresses its
+  behind-water quad. `check_for_waterfall` is already ported (`waterfall/mod.rs:238`); the
+  renderer needs the manager handle (the `draw_tiles` seam already carries it). Coordinate
+  with the g80 actuator lane's `inActive()` half of the same refusal line. *[W4-g75 final
+  sweep residual, 2026-11-21]*
 - **S** — Port the platform arms: `SET_PLATFORMS` cases in `drawdata.rs` (martian glow rows
   26/27 from `TileDrawing.cs:6157-6170`) + the slope side-fill quads (`:1517-1543`) in
   `tiles.rs`. Depends on nothing; high pixel payoff. *[covers deviation 6]*
