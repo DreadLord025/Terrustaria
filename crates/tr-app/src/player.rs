@@ -845,10 +845,14 @@ pub struct Player {
     /// (`Player.cs:9933`), zeroed by `ResetEffects` (`:18655`).
     pub mana_regen_bonus: i32,
     /// `Player.nebulaLevelMana` (`Player.cs:926`): the Nebula Mana booster
-    /// tier 0..3 (`UpdateBuffs_NebulaBuffs` `:12070-12079` derives it from
-    /// the live 176-178 slot — the scan arm landed with W4-f49 lane 12;
-    /// `NebulaLevelup` `:57050-57053` grants the buff, the 3455 pickup is
-    /// its only source). `ResetEffects` zeroes it (`:18755`);
+    /// tier 0..3. R3 EXECUTED: the tier writer is f12's g27 canonical
+    /// `buff_effects_orbs.rs::apply_orb_arm` (`UpdateBuffs_NebulaBuffs`
+    /// `:12070-12079`); its `fold_orb` bridges `orb_scan.nebula_level_mana`
+    /// onto THIS field (the ASSIGN stub `fold_orb_nebula_bridge`) — the
+    /// regen engine's read side (`RegenInputs.nebula_level_mana`) keeps
+    /// the Player field. `NebulaLevelup` `:57050-57053` grants the buff
+    /// (the 3455 pickup is its only source) and writes the field as a
+    /// same-tick hint; `ResetEffects` zeroes it (`:18755`);
     /// `RegenState::nebula_mana_counter` is the cadence half the regen
     /// engine reads (`ApplyNebulaBuffMana`).
     pub nebula_level_mana: i32,
@@ -3516,24 +3520,34 @@ impl Player {
         }
     }
 
-    /// `Player.UpdateBuffs_NebulaBuffs` (`Player.cs:12070-12079`): derive
-    /// the family tier from the live slot (`1 + buffType[b] - baseBuffId`),
-    /// and at the `buffTime == 2` edge with tier > 1 step BOTH the returned
-    /// tier and the slot's buffType down one, re-arming `buffTime = 480`.
-    /// The C# takes `ref nebulaLevel` but its first statement OVERWRITES it
-    /// (`:12072` is an assign, not an add) — the port returns the derived
-    /// value and the caller assigns the family field. `b` is the slot
-    /// index; the timer check reads the POST-tick-head value (the head
-    /// decrements before the scan, `:9869-9876`), so a 480-granted tier-2+
-    /// buff steps down when its timer reaches 2.
-    fn update_buffs_nebula_buffs(&mut self, base_buff_id: i32, b: usize) -> i32 {
-        let mut level = 1 + self.buffs.buff_type[b] - base_buff_id; // `:12072`
-        if self.buffs.buff_time[b] == 2 && level > 1 {
-            level -= 1; // `:12075`
-            self.buffs.buff_type[b] -= 1; // `:12076`
-            self.buffs.buff_time[b] = 480; // `:12077`
-        }
-        level
+    // `Player.UpdateBuffs_NebulaBuffs` (`Player.cs:12070-12079`): the tier
+    // derivation + the `buffTime == 2` step-down. R3 EXECUTED: this port
+    // copy is DELETED — the g27 canonical writer lives in f12's
+    // `buff_effects_orbs.rs::nebula_buffs` (dispatched by
+    // `apply_orb_arm`, verified semantically identical by the f12 sweep
+    // census: the `:12072` ASSIGN, the tier>1 time-2 step, the 480 re-arm,
+    // the POST-tick-head timer read). The `fold_orb` bridge assigns the
+    // scan's tiers onto the Player fields; the pickup grant
+    // (`nebula_levelup`) and the chained `ResetEffects` zero stay here.
+
+    /// The fold_orb mana-bridge ASSIGN stub (R3 contract step 2). f12's
+    /// `buff_frame_wiring::fold_orb` carries these three lines verbatim:
+    /// `p.nebula_level_mana = s.nebula_level_mana;` (+ the life/damage
+    /// twins) — an ASSIGN, because the C# `:12072` is assign-derivation
+    /// and `OrbScanState` zero-seeds each tick (`reset_effects`, the
+    /// `:18755` chained clear), so a stale field cannot survive a
+    /// buff-less tick. The bridge is the ONLY writer onto these fields
+    /// besides `nebula_levelup`'s pickup hint (`:57047-57056`, the C#
+    /// runs the grant in `GrabItems` AFTER the scan — the frame order
+    /// player → projectiles → items keeps it a same-tick hint only).
+    /// In THIS tree f12's wiring module is not present (merge-base
+    /// a725acb0, neither branch is an ancestor); the wiring seam call
+    /// site in `world_sim/player.rs` marks where the bridge lands. The
+    /// regen read keeps the Player field (`RegenInputs.nebula_level_mana`).
+    pub(crate) fn fold_orb_nebula_bridge(&mut self, mana: i32, life: i32, damage: i32) {
+        self.nebula_level_mana = mana;
+        self.nebula_level_life = life;
+        self.nebula_level_damage = damage;
     }
 
     /// S1-C-7 wave B: takes the accepted-hurt retaliation request
@@ -5732,10 +5746,21 @@ impl Player {
     /// Production always goes through the world-sim's `UpdatePlayers` stage
     /// stream, so this wrapper supplies a scratch seed-0 stream for the
     /// gear-less test players (an armed dodge source would draw from it
-    /// deterministically — nothing else).
+    /// deterministically — nothing else). R3: the wrapper also re-adds the
+    /// lifted `update_survival` regen tick (the wiring seam owns it in
+    /// production; the no-wiring callers keep their regen here).
     pub fn update(&mut self, world: &World, input: PlayerInput) {
         let mut scratch = tr_core::UnifiedRandom::default();
-        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch)
+        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch);
+        // W4-f49 R3 step 4 — the regen tick re-added AFTER the movement
+        // wrapper for the no-wiring callers (the equip tests, the potion
+        // rigs): `update_survival` was lifted out of `update_with_grapple`
+        // to the world-sim wiring seam (the C# regen reads sit after the
+        // scan, `Player.cs:25977`/`:25995`). The inline nebula scan arms
+        // are gone, so this wrapper's nebula tier stays 0 — the same
+        // "the wiring owns the scan" shape the f12 gap-3 werewolf
+        // witnesses record.
+        self.update_survival(world, &mut scratch);
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -6846,34 +6871,21 @@ impl Player {
                     self.lava_vision = true;
                     self.fire_walk = true;
                 }
-                // W4-f49 lane 12 — `UpdateBuffs`' Nebula trio arms
-                // (`Player.cs:10444-10461`), in the C# chain order (Mana →
-                // Life → Damage). Each calls `UpdateBuffs_NebulaBuffs`
-                // (`:12070-12079`): tier = 1 + buffType − base, and the
-                // `buffTime == 2 && tier > 1` edge steps the buff DOWN one
-                // id with a fresh 480-tick timer. The scan's snapshot keeps
-                // the slot indices stable across the in-place buffType
-                // write (no compaction happens here). The Life arm's
-                // `lifeRegen += 6 * tier` (`:10451`) and the Damage arm's
-                // `0.15 * tier` four-class adds (`:10456-10460`) are the
-                // W4-f12 buff-frame lane's consumers (its `orb_scan` twins,
-                // branch task/W4-f12-buff-frame-wiring) — the merge keeps
-                // one writer; recorded seam.
-                176..=178 => {
-                    if let Some(i) = self.buffs.find_buff_index(bt) {
-                        self.nebula_level_mana = self.update_buffs_nebula_buffs(176, i);
-                    }
-                }
-                173..=175 => {
-                    if let Some(i) = self.buffs.find_buff_index(bt) {
-                        self.nebula_level_life = self.update_buffs_nebula_buffs(173, i);
-                    }
-                }
-                179..=181 => {
-                    if let Some(i) = self.buffs.find_buff_index(bt) {
-                        self.nebula_level_damage = self.update_buffs_nebula_buffs(179, i);
-                    }
-                }
+                // W4-f49 R3 EXECUTED — the Nebula trio scan arms
+                // (`Player.cs:10444-10461`, the `UpdateBuffs_NebulaBuffs`
+                // helper `:12070-12079`) are DELETED from this inline loop:
+                // the g27 canonical `buff_effects_orbs.rs::apply_orb_arm`
+                // (branch task/W4-f12-buff-frame-wiring, routed EXCLUSIVELY
+                // by `buff_frame_wiring::update_buff_frame`) is the ONE
+                // tier writer. Two writers on one buff bar would double-
+                // step the `buffTime == 2` edge; the one-writer contract
+                // (research/85 R3 + the f12 sweep census) keeps the wiring.
+                // `fold_orb` bridges `orb_scan.nebula_level_*` onto these
+                // Player fields (the assign stub in this tree); the regen
+                // read (`RegenInputs.nebula_level_mana`) keeps the Player
+                // field. The Life/Damage CONSUMERS (`lifeRegen += 6 * tier`
+                // `:10451`, the `0.15 * tier` adds `:10456-10460`) stay
+                // f12's `fold_orb`.
                 _ => {}
             }
         }
@@ -7763,7 +7775,17 @@ impl Player {
             self.floor_visuals(world);
         }
 
-        self.update_survival(world, rng);
+        // W4-f49 R3 step 4 — the regen tick LIFTED out of
+        // `update_with_grapple` to the world-sim wiring seam: the C# order
+        // is the scan (`UpdateBuffs` `:25566`) → `UpdateEquips` (`:25633`)
+        // → `UpdateLifeRegen` (`:25977`) → `UpdateManaRegen` (`:25995`) →
+        // `GrabItems` (`:27428`). With f12's `update_buff_frame` the scan
+        // (and the `fold_orb` nebula bridge) lands AFTER this call returns,
+        // so the regen reads must sit after the wiring — the lifted call
+        // lives in `world_sim/player.rs` at the seam. The standalone
+        // `Player::update` wrapper re-adds it for the no-wiring callers.
+        // (The lift also repairs f12's own `buff_life_regen` feed — its
+        // fold landed after the regen read and the next reset wiped it.)
 
         if self.x < 0.0 {
             self.x = 0.0;
@@ -15118,12 +15140,17 @@ mod tests {
         assert_eq!(p.buffs.active_count(), 3, "no fourth buff from a stray id");
     }
 
-    /// W4-f49 lane 12 — `UpdateBuffs_NebulaBuffs` (`Player.cs:12070-12079`,
-    /// scan arms `:10444-10461`): the live slot derives the tier every tick
-    /// (`1 + buffType - base`, an ASSIGN — a stale field cannot survive a
-    /// tick with the buff up), and the `buffTime == 2 && tier > 1` edge
-    /// steps the buff id down one with a fresh 480 timer. The timer read is
-    /// POST-tick-head (`:9871-9873` decrements inside the same scan).
+    /// W4-f49 lane 12, R3 RE-TARGETED — `UpdateBuffs_NebulaBuffs`
+    /// (`Player.cs:12070-12079`, scan arms `:10444-10461`): the tier
+    /// derivation + the `buffTime == 2` step-down now live ONLY in f12's
+    /// g27 canonical writer (`buff_effects_orbs.rs::nebula_buffs` via
+    /// `apply_orb_arm`, driven by `update_buff_frame` — the f12 gap-3
+    /// convention: drive the wiring call, assert `orb_scan` + the bridged
+    /// field; f12's own `w4_f12_nebula_life_steps_down_and_adds_regen`
+    /// pins the arm core). THIS tree keeps the Player-field halves: the
+    /// pickup ladder (`nebula_levelup`), the `fold_orb` bridge ASSIGN
+    /// stub, and the chained reset. The no-wiring `Player::update`
+    /// wrapper no longer derives tiers (the inline scan arms are gone).
     /// WRITTEN NOT RUN.
     #[test]
     fn w4_f49_the_nebula_scan_derives_the_tier_and_steps_down_at_time_two() {
@@ -15131,49 +15158,46 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.nebula_levelup(176);
         p.nebula_levelup(176); // tier 2, buff 177 @ 480
+        assert_eq!(p.nebula_level_mana, 2, "the pickup hint tier");
+        // The bridge ASSIGN (fold_orb's three lines): the scan-derived
+        // tier lands on the Player field the regen engine reads.
+        p.fold_orb_nebula_bridge(2, 0, 0);
+        assert_eq!(p.nebula_level_mana, 2);
+        // The no-wiring wrapper: the head decrements the timer, but NO
+        // inline arm re-derives — the reset's zero survives (the wiring
+        // owns the scan; the same shape the f12 gap-3 witnesses record).
         p.update(&w, PlayerInput::default());
-        assert_eq!(p.nebula_level_mana, 2, "the scan re-derived the tier");
+        assert_eq!(p.nebula_level_mana, 0, "the wiring owns the scan");
         let i = p.buffs.find_buff_index(177).unwrap();
         assert_eq!(p.buffs.buff_time[i], 479, "one head decrement");
-        // Drive the timer to 3: the NEXT tick's head leaves 2 and the arm
-        // steps 177 → 176 with buffTime 480 (the tier drops to 1).
-        p.buffs.buff_time[i] = 3;
+        // The bridge re-arms the tier for the regen read (the merged
+        // tick: scan → bridge → update_survival).
+        p.fold_orb_nebula_bridge(2, 0, 0);
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.nebula_level_mana, 2, "the bridge keeps the field warm");
+        // The time-2 step-down + the Life/Damage twins are pinned on the
+        // f12 side (`apply_orb_arm`); the bridge carries whatever tier
+        // the scan hands it, verbatim ASSIGNs (no adds, no clamps).
+        p.fold_orb_nebula_bridge(1, 1, 1);
+        assert_eq!(p.nebula_level_mana, 1);
+        assert_eq!(p.nebula_level_life, 1);
+        assert_eq!(p.nebula_level_damage, 1);
+        // The reset zero clears all three (the bridge's zero-seed twin).
         p.update(&w, PlayerInput::default());
-        assert_eq!(p.nebula_level_mana, 1, "the step-down landed on the field");
-        assert!(p.buffs.find_buff_index(177).is_none());
-        let j = p.buffs.find_buff_index(176).expect("stepped to the tier-1 id");
-        assert_eq!(p.buffs.buff_time[j], 480, "the fresh 480 window");
-        // Tier 1 never steps (`tier > 1` gate): time 2 just expires normally.
-        p.buffs.buff_time[j] = 3;
-        p.update(&w, PlayerInput::default());
-        assert_eq!(p.nebula_level_mana, 1, "no step at tier 1");
-        assert_eq!(p.buffs.buff_time[j], 2);
-        // The Life/Damage twins ride the same helper on their own fields.
-        let mut q = Player::spawn(&w);
-        q.nebula_levelup(173);
-        q.nebula_levelup(173);
-        let k = q.buffs.find_buff_index(174).unwrap();
-        q.buffs.buff_time[k] = 3;
-        q.update(&w, PlayerInput::default());
-        assert_eq!(q.nebula_level_life, 1);
-        assert!(q.buffs.find_buff_index(173).is_some());
-        let mut r = Player::spawn(&w);
-        r.nebula_levelup(179);
-        r.nebula_levelup(179);
-        let k = r.buffs.find_buff_index(180).unwrap();
-        r.buffs.buff_time[k] = 3;
-        r.update(&w, PlayerInput::default());
-        assert_eq!(r.nebula_level_damage, 1);
-        assert!(r.buffs.find_buff_index(179).is_some());
+        assert_eq!(p.nebula_level_mana, 0);
+        assert_eq!(p.nebula_level_life, 0);
+        assert_eq!(p.nebula_level_damage, 0);
     }
 
-    /// W4-f49 lane 12 — the END-TO-END mana lane: a 3455 pickup grants buff
-    /// 176, the next player tick's scan derives `nebulaLevelMana = 1`, and
-    /// `ApplyNebulaBuffMana` (`:19421`, d117's read arm) accrues the counter
-    /// — SIX ticks at tier 1 yield ONE mana point (`:19570-19574`), on top
-    /// of the normal regen line. The pickup→writer→reader chain the f49
-    /// first half recorded as "no port writer yet" is now closed on this
-    /// branch. WRITTEN NOT RUN.
+    /// W4-f49 lane 12, R3 RE-TARGETED — the END-TO-END mana lane through
+    /// the WIRING seam: a 3455 pickup grants buff 176, the scan (f12's
+    /// `update_buff_frame`, not present in this tree) derives the tier,
+    /// `fold_orb`'s bridge ASSIGN lands it on `Player.nebula_level_mana`,
+    /// and the LIFTED `update_survival` (now after the wiring seam in
+    /// `world_sim/player.rs`, the C# `:25977`/`:25995` position) feeds
+    /// `ApplyNebulaBuffMana` (`:19421`) — SIX ticks at tier 1 yield ONE
+    /// mana point (`:19570-19574`). The rig drives the bridge per tick
+    /// exactly as the merged frame would. WRITTEN NOT RUN.
     #[test]
     fn w4_f49_the_mana_pickup_feeds_the_regen_engine_through_the_scan() {
         let w = ground_world();
@@ -15184,12 +15208,36 @@ mod tests {
         // Park the normal regen line far out so ONLY the nebula arm grants.
         p.regen.mana_regen_delay = 1000.0;
         for _ in 0..5 {
-            p.update(&w, PlayerInput::default());
+            // The merged tick shape: movement (no inline scan) → the
+            // wiring's fold_orb bridge → the lifted regen read.
+            p.update_with_grapple(
+                &w,
+                PlayerInput::default(),
+                &[],
+                false,
+                false,
+                false,
+                None,
+                &mut tr_core::UnifiedRandom::default(),
+            );
+            p.fold_orb_nebula_bridge(1, 0, 0);
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         }
-        assert_eq!(p.nebula_level_mana, 1, "the scan re-derived the tier");
+        assert_eq!(p.nebula_level_mana, 1, "the bridge carried the tier");
         assert_eq!(p.regen.nebula_mana_counter, 5);
         assert_eq!(p.mana, 10, "no point before the sixth tick");
-        p.update(&w, PlayerInput::default());
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            &[],
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
+        p.fold_orb_nebula_bridge(1, 0, 0);
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.mana, 11, "the 6-counter grant (:19571-19574)");
         assert_eq!(p.regen.nebula_mana_counter, 0);
     }

@@ -1183,6 +1183,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player::update_summon_buff_arms`): the recount
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
+            // W4-f49 R3 step 4 — THE WIRING SEAM + the lifted regen tick.
+            // f12's `crate::buff_frame_wiring::update_buff_frame(p, …)`
+            // hooks HERE (its phase-2 contract: after
+            // `update_summon_buff_arms`, the `:25566` UpdateBuffs scan
+            // position). Its `fold_orb` carries the nebula bridge ASSIGNs
+            // (`p.nebula_level_mana = s.nebula_level_mana;` + the life/
+            // damage twins — the `Player::fold_orb_nebula_bridge` stub)
+            // and the `buff_life_regen` fold.
+            // The C# order is scan (`:25566`) → `UpdateEquips` (`:25633`)
+            // → `UpdateLifeRegen` (`:25977`) → `UpdateManaRegen`
+            // (`:25995`) → `GrabItems` (`:27428`), so the regen reads run
+            // AFTER the scan/bridge: `update_survival` was LIFTED out of
+            // `update_with_grapple` (the pre-lift position read the
+            // PREVIOUS tick's reset-zeroed tier — and f12's own
+            // `buff_life_regen` fold landed after the read and was wiped
+            // by the next reset before any read; the lift repairs both).
+            // Before the accessory pass is fine — the C# regen reads sit
+            // after UpdateEquips too.
+            p.update_survival(
+                &app.world,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
             // S1-E-7 wave C: the accessory/set-bonus buff arms
             // (`Player.cs:10800-11400` + the imbues `:12013-12044`) — the
             // same `UpdateBuffs` slot chain, in its own module so waves A/B
@@ -1828,6 +1850,73 @@ mod tests {
     /// One tick of the pass (the stepper runs its closure once per 1/60 s).
     fn tick_ammo(app: &mut App) {
         update_player(app, 1.0 / 60.0);
+    }
+
+    /// W4-f49 R3 step 4 — the LIFTED regen tick runs at the wiring seam:
+    /// `update_survival` left `update_with_grapple` (its old position read
+    /// the PREVIOUS tick's reset-zeroed nebula tier — the f12 wiring's
+    /// scan + `fold_orb` bridge land after the movement wrapper), and the
+    /// world-sim pass now calls it AFTER `update_summon_buff_arms` (the
+    /// `:25566` scan position where f12's `update_buff_frame` hooks) and
+    /// BEFORE the accessory pass — the C# `UpdateLifeRegen` `:25977` /
+    /// `UpdateManaRegen` `:25995` order. The rig bridges tier 1 mid-tick
+    /// exactly as the merged `fold_orb` would: the lifted read sees it
+    /// the SAME tick (the nebula counter accrues), where the pre-lift
+    /// position would have read the reset's zero. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_lifted_regen_tick_runs_after_the_wiring_seam() {
+        let mut app = ammo_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana = 10;
+            p.mana_max = 200;
+            p.regen.mana_regen_delay = 0.0; // the regen line LIVE
+        }
+        // The lift's presence proof: the normal regen line only moves
+        // inside `update_survival` — if the pass dropped the call, the
+        // delay/count stay parked. One pass tick spends the delay
+        // countdown (`:19426-19429`) and derives the regen line.
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            p.regen.mana_regen > 0 || p.regen.mana_regen_count > 0,
+            "the lifted update_survival ran INSIDE the pass"
+        );
+        assert_eq!(
+            p.regen.nebula_mana_counter, 0,
+            "no buff, no bridge: the tier-0 arm zeroes (:19583)"
+        );
+        // The bridged-tier shape: the fold_orb ASSIGN keeps the field
+        // warm through the lifted read (six tier-1 ticks → one point).
+        let mut q = ammo_app();
+        {
+            let p = q.player.as_mut().unwrap();
+            p.mana = 10;
+            p.mana_max = 200;
+            p.regen.mana_regen_delay = 1000.0;
+        }
+        for _ in 0..6 {
+            // The bridge lands at the seam BEFORE the pass's lifted read
+            // would consume it — the rig applies it after the movement
+            // half by driving the two halves directly (the merged frame's
+            // shape; the full-pass twin above pins the call's presence).
+            let p = q.player.as_mut().unwrap();
+            p.update_with_grapple(
+                &q.world,
+                PlayerInput::default(),
+                &[],
+                false,
+                false,
+                false,
+                None,
+                &mut UnifiedRandom::default(),
+            );
+            p.fold_orb_nebula_bridge(1, 0, 0);
+            p.update_survival(&q.world, &mut UnifiedRandom::default());
+        }
+        let p = q.player.as_ref().unwrap();
+        assert_eq!(p.mana, 11, "the lifted read fed the 6-counter grant");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
     }
 
     /// S1-P-i53 — the buff-bar cancel drains for a LIVING player: the drain
