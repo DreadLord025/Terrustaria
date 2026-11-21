@@ -314,6 +314,28 @@ pub const PHANTASMAL_DEATHRAY: u16 = 455;
 /// (`Projectile.cs:5281-5291`: 16x16, aiStyle 85, hostile,
 /// tileCollide false, timeLeft 600).
 pub const MOON_LEECH: u16 = 456;
+/// `ProjectileID.InfluxWaver` (451) — the Terra Blade-family melee wave
+/// (`Projectile.cs:5229-5239`: 16x16, aiStyle 81, melee, penetrate 3,
+/// light 0.2, alpha 255). W4-d9.
+pub const INFLUX_WAVER: u16 = 451;
+/// `ProjectileID.CultistBossIceMist` (464) — the Lunatic Cultist's ice
+/// mist (`Projectile.cs:5351-5361`: 60x60, aiStyle 86, hostile,
+/// tileCollide false, penetrate −1, alpha 255, ignoreWater). W4-d9.
+pub const CULTIST_BOSS_ICE_MIST: u16 = 464;
+/// `ProjectileID.ClingerStaff` (482) — the Clinger Staff's cursed-flame
+/// wall (`Projectile.cs:5572-5586`: 16x200, aiStyle 87, friendly,
+/// tileCollide false, penetrate −1, alpha 255, ignoreWater, timeLeft
+/// 18000, magic, idStatic-10). W4-d9.
+pub const CLINGER_STAFF: u16 = 482;
+/// `ProjectileID.CultistRitual` (490) — the ritual marker that spawns the
+/// cultist dragon (`Projectile.cs:5655-5666`: 14x14, aiStyle 89, hostile,
+/// alpha 255, ignoreWater, tileCollide false, timeLeft 600,
+/// netImportant). W4-d9.
+pub const CULTIST_RITUAL: u16 = 490;
+/// `ProjectileID.MagicLantern` (492) — the light pet (`Projectile.cs:
+/// 5645-5654`: 18x32, aiStyle 90, friendly, penetrate −1, netImportant,
+/// timeLeft ×5). W4-d9.
+pub const MAGIC_LANTERN: u16 = 492;
 /// `ProjectileID.PhantasmalBolt` (462) — the retargeting lasers
 /// (`Projectile.cs:5329-5339`: 8x8, aiStyle 1, hostile,
 /// extraUpdates 3, tileCollide false, ignoreWater).
@@ -1549,6 +1571,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         LIGHT_BEAM => 0.5,                     // `:2441`
         NIGHT_BEAM => 0.5,                     // `:2453`
         ENCHANTED_BEAM => 0.2,                 // `:2598`
+        INFLUX_WAVER => 0.2,                   // `:5236` (W4-d9)
         PIRATE_ARROW => 0.5,                   // `:2667`
         FROST_HYDRA => 0.25,                   // `:4003`
         BALL_OF_FROST => 0.8,                  // `:3364`
@@ -2455,6 +2478,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false, RESET_STATE),
             PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false, RESET_STATE),
             MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false, RESET_STATE),
+            // W4-d9 — `Projectile.cs:5229-5239`: the InfluxWaver (451): 16x16,
+            // aiStyle 81, melee, penetrate 3, alpha 255, friendly. The stock
+            // tileCollide true (`:775`) / timeLeft 3600 (`:787`) stand; the
+            // light 0.2 rides `set_defaults_light`.
+            INFLUX_WAVER => (16.0, 16.0, 81, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `Projectile.cs:5329-5339` — the Phantasmal Bolt (462): 8x8,
             // aiStyle 1, hostile, `alpha = 255`, extraUpdates 3, tileCollide
             // false, ignoreWater. S1-D-5 carries the C# alpha (the slice-B
@@ -4246,6 +4274,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d9 — the InfluxWaver's melee wave (`Projectile.cs:5234`).
+                    | INFLUX_WAVER
             ),
         ranged: matches!(
             kind,

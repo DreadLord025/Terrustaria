@@ -184,6 +184,11 @@ mod projectile;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
 mod projectile_ai_moonlord;
+// W4-d9 — the five missing aiStyle 81-90 projectile arms (census: 82/83/84/
+// 85/88 were armed on main). One module per style; the rows land in
+// projectile/data.rs, the dispatch arms + on-hit/damage seams in
+// projectile.rs. Code-only mode — witness tests written not run.
+mod projectile_ai_style81;
 
 
 mod projectile_ai001_a;

@@ -17876,6 +17876,22 @@ impl ProjectilePool {
                                 self.slots[i].ai_moon_leech(&npcs[..], p);
                             }
                         }
+                        // W4-d9 — the aiStyle-81 InfluxWaver 451
+                        // (`Projectile.cs:31001-31213`): the four-leg melee
+                        // wave (launch fade / pulse / homing teleport /
+                        // strike decay). The movement is the type-451
+                        // HandleMovement bounce (`:18111-18117`).
+                        81 => {
+                            crate::projectile_ai_style81::ai_influx_waver(
+                                &mut self.slots[i],
+                                &npcs[..],
+                                rng,
+                            );
+                            crate::projectile_ai_style81::influx_waver_move(
+                                &mut self.slots[i],
+                                world,
+                            );
+                        }
                         102 => {
                             let player = owner.unwrap_or((0.0, 0.0));
                             let npcs = &npcs[..];
@@ -22526,6 +22542,13 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
         let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
+        // W4-d9 — `Damage()`'s `Damage_CanDealDamage` gate (`Projectile.cs:
+        // 12497` → `:12448`): the 451's homing-band / ai[1]<5 window deals
+        // no damage. The other listed kinds' clauses are unported (their
+        // rows/AI are follow-ups); the 451 is the first rowed kind here.
+        if crate::projectile_ai_style81::influx_waver_refuses_damage(&self.slots[slot]) {
+            return;
+        }
         let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, center) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
@@ -23243,6 +23266,16 @@ impl ProjectilePool {
                 // NEXT hit reads the decayed store (the moon-lord precedent).
                 if p.kind == SHADOWBEAM {
                     p.damage = (p.damage as f64 * 0.9) as i32;
+                }
+                // W4-d9 — `Damage_PVE_Inner`'s type-451 arm (`Projectile.cs:
+                // 14051-14065`): the on-hit ai[0] ladder (first hit adds
+                // penetrate, later hits subtract penetrate+1), ai[1] reset,
+                // netUpdate, then `keepIterating = false; return` — the walk
+                // stops and the penetrate decrement below is SKIPPED (the
+                // C# returns before `:14125`).
+                if p.kind == INFLUX_WAVER {
+                    crate::projectile_ai_style81::influx_waver_on_hit(p);
+                    break;
                 }
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
