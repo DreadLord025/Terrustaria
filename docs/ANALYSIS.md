@@ -36287,6 +36287,47 @@ consume, the nebula 12/5 pull; `potions.rs` ×1: drink-while-sick full path;
 `regen.rs` ×1: the buff-6 four-site ladder) are WRITTEN, NOT RUN — code-only
 mode, no compiler invoked.
 
+### The W4-f49 MANA RESIDUALS (2026-11-21, the five-item follow-up)
+
+Full report + the f12 merge recipe: `docs/research/85-doc-sweep-mana.md`
+(addendum R1-R5). Verdicts:
+
+- **The Charged Blaster Cannon's `flag3` pay was a REAL CheckMana gap —
+  PORTED.** The i22 `charged_blaster_step` hand-rolled the pay: no
+  `manaCost` scale, the pre-V2 refusal KILLED the holder on a short bar,
+  no flower lane. Now `regen::check_mana` (the shipped ManaV2 never
+  refuses — drain to 0, arm the slow cast, holder lives) + the shared
+  `wants_prism_flower_drink` intent (the `:66613` prism convention; the
+  drain walks all slots). The charge clock also hard-coded 1f "no ManaV2"
+  — `:66362` reads `GetSlowMagicUseRate()` (1/2.5 under the slow cast);
+  fixed. The remaining CheckMana sites (439 Laser Machinegun `:66204`,
+  1115 Glacier Fang `:36943`, Life Drain `:42662`, Medusa Head `:44567`,
+  `CommandForbiddenStorm` `:56870`) ride UNPORTED AI bodies — recorded
+  gaps of those lanes, not new ones.
+- **The manaMagnet chain is complete (i52) — three stale notes fixed**
+  (the PORT_MAP cuffs row, `item.rs` GrabFlags' doc, `player.rs`' 4000
+  comment). The 2221 upgrade's delta over 1595 is exactly the magnet;
+  witnessed end to end (equip tick → GrabFlags → +300 range → 12/5 pull →
+  the `:34947` full-mana gate).
+- **The f12 nebula reconcile CONTRACT published** (research/85 R3): the
+  merge keeps f12's `apply_orb_arm` as the ONE tier writer, bridges
+  `orb_scan.nebula_level_mana` → `Player.nebula_level_mana` in `fold_orb`
+  (the regen engine reads the Player field), deletes this branch's three
+  inline scan arms + helper, and LIFTS `update_survival` after the wiring
+  seam — the C# order is scan (`:25566`) → regen (`:25977/:25995`) →
+  GrabItems (`:27428`); the lift also repairs f12's own `buff_life_regen`
+  feed (its fold currently lands after the regen read and is wiped by
+  the next reset before any read sees it).
+- **The star pickup cue is the UNPOSITIONED id-7 Grab chime**
+  (`Player.cs:35067`), NOT Item style 23/25; `ManaEffect` is text-only.
+  The i52 `play_pickup_sound(false, UpdatePlayers)` verified; witnessed
+  (count+1, the pitch draw, the silent refusal).
+- **The four mana-potion tiers MATCH the generated rows** (110/50,
+  189/100, 500/200, 2209/400 — `Item.cs:2680/:3701/:7336/:22346`); none
+  potion-flagged; the QuickMana chooser is first-fit. Witnessed.
+
+6 new witnesses WRITTEN, NOT RUN (code-only).
+
 ## The magic guns + tomes use arms (S1-P-i22)
 
 `Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:
