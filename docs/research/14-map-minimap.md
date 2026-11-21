@@ -120,7 +120,7 @@ full-screen zoom/pan view — with the colour of each tile derived from the orig
 | `MapHelper.SaveMap` / `InternalSaveMap` | PORTED | `file.rs::write_map_header` (58), `write_option_tables` (105), `encode_tiles` (128) | v326 header, `FileMetadata` revision 1, option bitmaps + non-default counts, row RLE; cloud-save path and `Main.statusText` not ported. |
 | `MapHelper.LoadMapVersion2` | PORTED | `file.rs::read_map_prefix` (319), `decode_tiles` (410) | Header/seed/world-size validation, option-table remap, RLE body. |
 | `LoadMapVersion1` / `LoadMapVersionCompressed` / `DecompressChunk` | MISSING | — | Pre-2 formats never open (`MapHelper.cs:3347-3585`, `:3587-3747`); no error text for them. |
-| `WorldMap.Load` / `Save` / `TryGetMapPath` | PORTED | `map.rs::load_map_file` (622), `save_map_file` (597), `persist.rs:39` | `<world>.map` sidecar next to the `.trwld`; loaded at world start, written by `saveglue.rs:202-214`. |
+| `WorldMap.Load` / `Save` / `TryGetMapPath` | PORTED | `map.rs::load_map_file` (622), `save_map_file` (597), `persist.rs:39` | `<world>.map` sidecar next to the `.trwld`; loaded at world start, written by `saveglue.rs:202-214`. The catch arm (`WorldMap.cs:217-230`) landed the e18 final sweep (re-folded): a corrupt-but-present file copies to `<path>.bad` + `Clear()`, the absent file returns with neither side effect (`:184-188`). |
 | `MapUpdateQueue` (area + tile queues) | PORTED | `map.rs::MapUpdateQueue` | `MapUpdateQueue.cs:21-108` (W4-c35): the 262144 budget, `ClampToWorld` clamps, `RangeFrame`'s inverted rect + border-gated walk, the deterministic drain; net-5/10/20 hooks ride `netglue.rs`, the drain rides `frame/world.rs::map_phase`. |
 | `WorldMap.UnlockMapSection` / `UnlockMapTilePretty` | PORTED | `mod.rs::unlock_map_section`/`unlock_map_tile_pretty`, `map.rs::unlock_section`/`unlock_map` | `WorldMap.cs:109-174` (S1-L-3); the `DebugOptions.unlockMap` sweep driver landed W4-e18 (`frame/world.rs::map_reveal_sweep_core`, `Main.cs:61873-61883`); W4-f46 union: `unlock_map` is the `/map` command's verbatim flag path (`ToolkitDebugCommands.cs:480-494`), not a bulk sweep. |
 | `WorldMap.ClearEdges` | PORTED | `mod.rs::clear_edges` | `WorldMap.cs:260-285` (S1-L-3): the 40-tile bands clear on `.map` load. |
@@ -131,15 +131,15 @@ full-screen zoom/pan view — with the colour of each tile derived from the orig
 | `Main.DrawMap` fullscreen geometry | PORTED | `map.rs::map_scale_clamp` (20), `map_wheel_scale` (28), `map_key_scale` (33), `map_clamp_pos` (38), `map_drag_delta` (49), `map_full_quad` (88), `map_frame_rect` (107) | `Main.cs:55306-55431`, `55342-55359`, `55388-55412`. |
 | `Main.DrawMapFullscreenBackground` (`MapBG`) | PARTIAL | `map.rs::map_bg_index` (231) | Ported-later branch order, but the unevaluable zones take the `false` path: `ZoneDungeon`, `ZoneGlowshroom`, `ZoneCorrupt`, `ZoneCrimson`, `ZoneHallow`, `ZoneJungle`, `bloodMoon` (no doubling), `ZoneGraveyard` (`Main.cs:56342-56444`); ANALYSIS.md:1578-1582 admits it. |
 | Minimap draw + panel geometry | PORTED | `map.rs::map_minimap_quad` (166) | 240×240 panel, `240/scale` window, 10/10/`maxTilesX-10`/`maxTilesY-19` clamps, `MapScale` batch transform (`Main.cs:55293-55296`, `:55503-55545`, `:55309-55329`). |
-| Minimap alpha (`mapMinimapAlpha`) | MISSING | — | `Main.cs:55523-55532`; the panel is always opaque (no fade). |
+| Minimap alpha (`mapMinimapAlpha`) | PORTED | `map.rs::WorldMap::minimap_alpha` + `map_key_alpha`/`map_alpha_clamp`, `app/mod.rs::update_minimap_zoom_keys`, `frame/draw.rs` (backdrop + tile + layer alpha) | `Main.cs:55523-55532` (the clamp + `b` byte), `Player.cs:24921-24928` (the ±0.015 keys); W4-f46 dup fold `a352b16e` (g53 superset + e18 `249a0c1b` alpha state) — D17 closed. |
 | Minimap frame chrome + zoom buttons | PORTED | `ui/minimap.rs` (whole file) | Nine styles, hitboxes, hover sheets, `DEFAULT_ZOOM 1.05`, ×1.025/×0.975, clamp 0.2..3 (`MinimapFrame.cs:59-63`, `:107-136`, `:138-208`). |
 | Frame-style selection UI | PORTED | `menu/pages.rs:268-284`, `menu/actions.rs:332-333`, `settings.rs:113-115` | `MinimapFrame` config key + `CycleSelection` order. |
-| Map style switcher (`mapStyle` 0/1/2) | PARTIAL | icon row `clicks.rs:1572-1602` + `ui/chrome.rs::draw_map_style_icons`; cycle key `app/loop.rs::world_key` (`MapAction::Style`) | The inventory icon row (`Main.cs:41087-41120`) and the Tab cycle (`Player.cs:24949-24965`, W4-f46 closeout) are landed; `mapStyle == 2`'s screen-overlay draw (`Main.cs:55548-55578`, `mapOverlayScale`) and style 0's no-HUD state exist as states, but the style-2 draw half is absent (D18). |
+| Map style switcher (`mapStyle` 0/1/2) | PARTIAL | icon row `clicks.rs:1572-1602` + `ui/chrome.rs::draw_map_style_icons`; cycle key `app/loop.rs::world_key` (`MapAction::Style`) | The inventory icon row (`Main.cs:41087-41120`, the style icons play `PlaySound(12)` — e18 `4ad0f041` re-fold) and the Tab cycle (`Player.cs:24949-24965`, W4-f46 closeout) are landed; `mapStyle == 2`'s screen-overlay draw (`Main.cs:55548-55578`, `mapOverlayScale`) and style 0's no-HUD state exist as states, but the style-2 draw half is absent (D18). |
 | Player head icon | PORTED | `map.rs::head_icon_pos` (76) + `render/entities.rs::draw_player_map_icon` | Position ported (`Main.cs:55937-55954`); the 84×84 `MapHeadRenderer` render target is replaced by a hand-drawn head (ANALYSIS.md:1584-1593). |
 | Other players' head icons | PARTIAL | same draw path | `Main.cs:55931-55954` loops all 255 players; single-player only here. |
-| NPC / chest / pylon / ping / boss-bag icons | MISSING | — | `Main.DrawNPCMapIcons` (`Main.cs:55926`), `DrawMap_FindChestName` (`:56631`), all eight `Map/` overlay layer files (no Rust counterpart — grep for `PingMapLayer|MapIconOverlay|TeleportPylons|BossBagMapLayer` in `crates/` returns nothing). |
-| `Lang.BuildMapAtlas` / map text | MISSING | — | Pointer/active-player name labels under map icons. |
-| Fullscreen map close/`M` toggle, `Main.mapEnabled` gate | PORTED | `map.rs::set_open` (466), `frame.rs:1209`, `clicks.rs` | `Main.cs:41101-41118`, `Player.cs:29105`. |
+| NPC / chest / pylon / ping / boss-bag icons | PORTED (f29/e17, keep-one PENDING at merge) | `map_layers.rs` (S1-L-4, on this union) + `map_overlay.rs`/`map_pylons.rs` (W4-f29) vs `map_npc_icons.rs`/`map_player_icons.rs` (W4-e17) | The six `Map/*Layer*.cs` layers landed S1-L-4; the nine `Main.DrawMap` overlay pieces (pylon lines/click/pan, boss/town heads, death markers, revenge coins, misc portals+golf, minimap heads, hover names) are ported TWICE on the sibling branches — the merger takes ONE per research/140 (e17 skeleton + f29 F1-F6 fixes) and the composition note below. The ping detector (`Main.cs:55486-55495`) is `clicks.rs::handle_fullmap_ping` (S1-L-4, on this union). |
+| `Lang.BuildMapAtlas` / map text | PORTED | `lang.rs::map_object_name`/`map_object_name_for_tile` + `lang_tables.rs::MAP_LEGEND` | The lookup-id indexed legend table (`Lang.cs:554-572`); the fullscreen hover names ride the overlay pick's hover fn (e17's carries the `chestType[52..]` alias, research/140 §3). |
+| Fullscreen map close/`M` toggle, `Main.mapEnabled` gate | PORTED | `map.rs::set_open`, `app/loop.rs::try_open_fullscreen_map` + `world_key`, `clicks.rs::handle_fullmap_close` | `Main.cs:41101-41118`, `Player.cs:29103-29119` (the open arm closes the inventory + dialog + `PlaySound(10)`), `:24967-24986` (the M-key close `PlaySound(11)`), `:4973-4978` (Escape close); W4-e18 final sweep, re-folded onto the union. |
 
 The one DONE row that covers this module, `ROADMAP.md:1598` (`M6-SETTINGS`, "`MapScale` scales the
 minimap panel `Main.cs:55273-55274`/`:55309-55329`"), **verifies PASS**: `ui::minimap::
@@ -312,12 +312,15 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   `Main.cs:66754-66755`, clamps `:55550-55566`); only the `mapStyle == 2`
   screen-overlay map DRAW (`Main.cs:55548-55578`) still has no counterpart
   (style 0 correctly draws no map — `DrawMap`'s branch chain has no style-0 arm).
-- **D19 — map icon overlays entirely missing.** behavioural · *not admitted*. Pings
-  (`PingMapLayer.cs`), team spawn (`TeamBasedSpawnMapLayer.cs`), pylon links
-  (`TeleportPylonsMapLayer.cs`), boss bags (`BossBagMapLayer.cs`), the Digtoise marker
-  (`DigtoiseMapLayer.cs`), `MapIconOverlay`'s NPC/player/chest text (`Main.cs:55782-55926`,
-  `:56631`) and the golf/potion-of-return icons (`Main.cs:56468-56515`) have no Rust code —
-  multiplayer map callouts and single-player NPC/chest labels simply do not exist.
+- **D19 — map icon overlays entirely missing.** behavioural · **closed across
+  branches (S1-L-4 + W4-f29/W4-e17, keep-one PENDING at merge)**. The six
+  `Map/*Layer*.cs` layers landed S1-L-4 (`map_layers.rs`, on this union); the
+  nine `Main.DrawMap` overlay pieces (pylon lines/click/pan, boss/town heads,
+  death markers, revenge coins, misc portals+golf, minimap heads, hover names)
+  are ported on BOTH siblings — research/140 adjudicates e17 as the skeleton
+  (`8500c3e5`) with f29's six fixes F1-F6 folding onto it (`d5aa3621`). The
+  ping detector (`Main.cs:55486-55495`) is `clicks.rs::handle_fullmap_ping`.
+  Until the overlay pick merges, this union alone still lacks the nine pieces.
 - **D20 — head icon is a hand-drawn stand-in.** pixel · *admitted* (ANALYSIS.md:1584-1593).
   Vanilla renders an 84×84 `MapHeadRenderer` render target; the port draws the head, eyes, whites
   and hair plus the outline rings directly, so a head will not match vanilla pixel-for-pixel, and
@@ -327,9 +330,14 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   (cactus/biome-influence tiles) always resolve to option 0, so those tiles show their base colour
   in every biome.
 - **D22 — `Main.mapDelay` and `Main.refreshMap`/`Main.clearMap` not modelled.** behavioural ·
-  *not admitted*. The first-frames skip (`LightingEngine.cs:82-89`) and the
-  content-lost-triggered full refresh (`MapRenderer.cs:363-377`) are replaced by the port's
-  `uploaded`/`needs_full_upload` pair, which is equivalent for a correct upload but never re-runs a
+  *partial (W4-e18 residual census + final sweep, re-folded onto the union)*. The
+  `refreshMap`/`clearMap` statics landed the residual census (`WorldMap::refresh_map`/
+  `clear_map`, the `DrawToMap` tail + the `clearMap` consume in `prepare`); the `mapDelay`
+  first-frames skip (`LightingEngine.cs:82-89`) landed the final sweep
+  (`WorldMap::map_delay`, ctor 2 `Main.cs:66504`, world-load re-arm `WorldGen.cs:6947`
+  via `reset_map_delay` + `enter_loaded_world`, gating `update`'s head). The
+  content-lost-triggered full refresh (`MapRenderer.cs:363-377`) stays unmodelled — the port's
+  `uploaded`/`needs_full_upload` pair is equivalent for a correct upload but never re-runs a
   full sweep after a GPU reset.
 - **D23 — the `.map` deflate stream is not byte-identical to vanilla's (S1-L-5).** determinism ·
   *admitted* (map.rs:706-711, `tools/MapDeflateHarness`, ANALYSIS.md "The `.map` deflate stream").
@@ -344,9 +352,11 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   chunk-invariant on the vanilla runtime (the `fw48/` generator reports "chunked == single: yes";
   modern .NET's is not).
 
-Risk summary: the highest-severity gaps are the map **invalidation** story (D14) — tile changes
-outside the reveal window are silently lost to the map — and the missing icon layers (D19), both
-behavioural and neither currently recorded in the roadmap or ANALYSIS.
+Risk summary (updated W4-f46 final-retire): D14 (map invalidation) closed W4-c35, D19 (icon
+layers) closed across branches (S1-L-4 + the f29/e17 overlay pick, keep-one pending at merge),
+D17 (minimap alpha) closed the dup fold. The remaining behavioural gaps are D18's
+`mapStyle == 0/2` draw halves (the switcher + keys landed) and D22's content-lost refresh
+(no GPU-reset path in the port).
 
 ## Task seeds
 
@@ -367,13 +377,18 @@ behavioural and neither currently recorded in the roadmap or ANALYSIS.
   (research row 16) for the shared zone evaluation. Fixes D16.
 - **M — The eight map overlay layers** (`Map/*Layer*.cs`, `MapIconOverlay.cs`,
   `MapOverlayDrawContext.cs`, `Main.DrawNPCMapIcons`, `Lang.BuildMapAtlas`): pings, team spawn,
-  pylon links, boss bags, Digtoise, NPC/chest labels. Needs the `IMapLayer` seam, the ping network
+  pylon links, boss bags, Digtoise, NPC/chest labels. ~~Needs the `IMapLayer` seam, the ping network
   message and the icon texture whitelist in `assets.rs`. Depends on the netcode research row 17.
-  Fixes D19.
-- **M — Fullscreen map input parity**: `mapStyle` cycling (0/1/2, `Main.cs:41101-41118`), the
+  Fixes D19.~~ **DONE (S1-L-4 + W4-f29/W4-e17, keep-one pending)** — the six layers landed S1-L-4,
+  the nine `Main.DrawMap` overlay pieces are ported twice on the siblings (research/140: e17
+  skeleton + f29 F1-F6); `Lang.BuildMapAtlas` is `lang.rs::map_object_name`.
+- **M — Fullscreen map input parity**: ~~`mapStyle` cycling (0/1/2, `Main.cs:41101-41118`), the
   `mapOverlayScale` screen-overlay map (`:55548-55578`), minimap zoom key/wheel wiring, and
   `DebugOptions.unlockMap` (`Main.cs:61873-61882`, `WorldMap.cs:109-174`). Depends on the UI
-  framework research row 18 for the in-game options rows.
+  framework research row 18 for the in-game options rows.~~ **PARTIAL (W4-e18 + W4-f46)** — the
+  `mapStyle` cycling (Tab key + icon clicks), the minimap zoom/alpha keys (both styles) and
+  `DebugOptions.unlockMap` landed the first half + closeout + dup fold; the `mapOverlayScale`
+  screen-overlay map DRAW (`mapStyle == 2`) stays unported (D18's draw half).
 - **L — Replace the four substituted `GetTileBaseOption` cases**: `461` needs `SceneMetrics`
   ZoneCorrupt/Crimson/Hallow (blocks on row 16), `80` needs `WorldGen.GetCactusType`, `529`/`530`
   need `WorldGen.GetBiomeInfluence` (blocks on row 12, worldgen). Fixes D21.
@@ -587,15 +602,22 @@ commits past the folded base, nothing to re-fold. **SUPERSEDED by the
 shared-gap/dup pass (third re-fetch, same day): the tip is now `75289a2db`**
 — the e18d final sweep landed 10 commits (`0bd346e78`…`75289a2db`); its
 `249a0c1b` key/alpha half is folded into the union per research/84 §10.1
-(the keep-one table), the other nine re-fold per the recipe below at merge
-time. The zoom-key half of the
+(the keep-one table). **SUPERSEDED AGAIN by the final-retire pass (fourth
+re-fetch, same day): the tip is STILL `75289a2db` and ALL NINE remaining
+commits are now RE-FOLDED onto the union** (`4ad0f041` TryOpeningFullscreenMap
+→ `736c86ce`, `029154fe` Load catch → `5566bf25`, `2fa072d0` mapDelay →
+`cd24857e`, `8ec77f0f`+`2e1f97c8` draw-head close → `7d050b7c`, `0d99d968`
+draw-tail chat → `b767ef91`, plus the three docs commits into this file /
+research/84 / ANALYSIS / PORT_MAP). The e18 branch is fully absorbed — the
+merger takes THIS branch and drops e18 wholesale; the re-fetch-at-merge step
+only needs to confirm e18 has not advanced past `75289a2db`. The zoom-key half of the
 e18d brief turned out to be ALREADY LANDED on the shared base (`a725acb0`:
 `map.rs::map_key_scale` `Player.cs:24898-24908` + the held-key wiring in
 `app/mod.rs::update_map_input` `:1427-1438` against the rebindable
 `MapAction::ZoomIn/ZoomOut` rows, defaults `Add`/`Subtract`
 `Main.cs:67190-67191`); the pan-inertia half is a PHANTOM (see the closeout
 census below). If e18d still lands commits later, the re-fold recipe above
-stands unchanged (fetch tip → cherry-pick each commit past `670c948d` →
+stands unchanged (fetch tip → cherry-pick each commit past `75289a2db` →
 per-hunk resolve onto the union seams).
 
 ## W4-f46 closeout census (2026-11-21, code-only, third pass)
@@ -705,3 +727,98 @@ closeout code):**
   e17 `handle_pylon_map_click` + the `map_left_press` snapshot in
   `frame.rs`), NOT through `in_world_click_cluster` — the union's
   ping → close → bestiary order and the S1-B-8 pin are untouched.
+
+## W4-e18 final sweep (2026-11-21, code-only — RE-FOLDED onto the union by the final-retire pass)
+
+The e18d remaining-census close: the minimap key rows, the fullscreen open/close arms, the
+`WorldMap.Load` catch arm, the modern engine's `mapDelay` skip, the fullscreen draw head's
+dialog/inventory close and the draw tail's chat pass. Six mechanics, six commits on
+`task/W4-e18-minimap-reveal-queue`
+(`249a0c1b`/`4ad0f041`/`029154fe`/`2fa072d0`/`8ec77f0f`+`2e1f97c8`/`0d99d968`), plus the
+research/84 cross-note addendum (`0bd346e7`) and the doc sweep (`0002fa1f`/`75289a2d`).
+**All folded onto this union**: `249a0c1b`'s key/alpha arms by the dup fold (`a352b16e`,
+research/84 §10.1 keep-one — the union's `update_minimap_zoom_keys` carries the g53
+superset), the other five mechanics by the final-retire pass
+(`736c86ce`/`5566bf25`/`cd24857e`/`7d050b7c`/`b767ef91`). The sections below describe the
+mechanics under the UNION's names; where e18's own fn names differ the union's keep-one
+ruling wins (research/84 §10.1).
+
+### The minimap remaining census (the seeded four, resolved)
+
+| Candidate | Verdict | Evidence |
+| --- | --- | --- |
+| minimap zoom +/- keys | LANDED (union closeout `08b749bd` + dup fold `a352b16e`) | `Player.cs:24913-24920` (`mapStyle == 1`, map shut): `MapZoomIn` → `mapMinimapScale *= 1.025`, `MapZoomOut` → `* 0.975` — the SAME multipliers as the chrome buttons (`MinimapFrame.cs:122`/`:135`), NOT the fullscreen keys' 1.05/0.95. Union: `ui/minimap.rs::apply_key_zoom` + `app/mod.rs::update_minimap_zoom_keys` (held keys, wired in `world_sim/player.rs`'s not-fullscreen else-arm). The alpha keys (`:24921-24928`, ±0.015) and the Tab style cycle (`:24949-24965`, press edge + `PlaySound(12)`) rode the dup fold + closeout. e18's `249a0c1b` variant (`update_minimap_keys`/`minimap_key_scale`/`map_style_prev`) DROPS per the keep-one. |
+| map ping | VERIFIED LANDED (f29/S1-L-4) | `Main.cs:55486-55495`'s double-press detector is `clicks.rs::handle_fullmap_ping` (S1-L-4); the `PingMapLayer` pool (`PingMapLayer.cs:16-51`) is `map.rs::pings`/`add_ping`/`trigger_ping`/`age_pings` + `map_layers.rs:318-337`'s 1x5 10 Hz draw; the MP relay is `netglue.rs`'s `NetPingModule` (`the_map_ping_relays_through_the_ping_module`). The conversion `(MouseScreen - (num - 10*num5, num2 - 10*num5)) / num5` matches `map_origin`'s inset. |
+| fullscreen pan inertia/friction | PHANTOM | `Main.cs:55342-55359` is the instantaneous per-frame cursor delta (`num20 *= 0.06255f` then `* (16f / mapFullscreenScale)`); `grabMapX`/`grabMapY` (`Main.cs:817-819`) are the ONLY drag statics — grep `mapFullscreenPos` writes finds no velocity/inertia/friction term anywhere. The only eased pan is `PanTargetMapFullscreen`'s `Vector2.Lerp(pos, end, 0.15)` (`:55361-55384`) — the pylon-click recentre, the overlay pick's step (f29 `map_pylons.rs::pan_target_step` / e17's `prepare` lerp; the union carries `pan_target` + the cancels). No inertia to port. |
+| map icon LEGEND | PHANTOM (confirmed) | No legend draw exists in `DrawMap`/`MapRenderer.DrawMap` (the first-half census's grep `Legend` over the map block = 0 hits). `Lang.BuildMapAtlas` (`Lang.cs:554-572`) is the hover-NAME lookup table (`lang.rs::map_object_name`), not a drawn legend. |
+
+### Other DrawMap arms — the unclaimed sweep
+
+Every `Main.DrawMap` arm (`:55283-56650`) is now claimed: the first-half census resolved the
+seed's six (bg/edges + frame landed; grid lines/legend/arrow-rotation/zoom-indicator phantoms)
+and landed the close button + thick cursor; the overlay siblings' nine pieces cover the
+heads/death/revenge/misc/hover/pylon arms (keep-one pending); the residual census covered the
+statics/queues/drag gate. The final sweep found THREE more unclaimed arms outside `DrawMap`
+proper:
+
+1. **The fullscreen draw head's dialog/inventory close** (`Main.cs:62150-62153`):
+   `talkNPC >= 0 || sign >= 0 || (playerInventory && !CaptureManager.Active)` → `ToggleInv`'s
+   talk/inventory arms (`Player.cs:5005-5016`/`:5033-5056`), every drawn frame BEFORE `DrawMap`.
+   Ported: `frame/draw.rs::close_dialog_behind_fullmap`, wired at `draw_region`'s head ahead of
+   the pylon scan. The capture-active arm keeps the inventory; the sign editor has no port state.
+2. **The fullscreen draw tail's chat pass** (`Main.cs:62160`): `DrawPlayerChat` runs after
+   `DrawMap` — the chat log + input strip draw over the map (the HUD is suppressed, the chat is
+   not). Ported: `ui::draw_chat` made pub + called at the fullscreen branch tail (after the
+   union's head icon). `DrawFPS` (`:62159`) rides `showFrameRate` (F10, unported);
+   `DrawPendingMouseText` (`:62161`) is the map's own `MouseText` (`:56046-56049`).
+3. **The Unity-potion teleport block** (`Main.cs:55960-55975`, `:55998-56010`): the
+   `HasUnityPotion` + same-team + `netMode == 1` hover → `PlaySound(12)` + `OurFavoriteColor`
+   head ring + `Game.TeleportTo` text + click → `UnityTeleport` + `TakeUnityPotion`. **MP-client-
+   only** (`netMode == 1`), unported — the netcode ladder (research row 17) owns it; the overlay
+   pick's head-loop territory. Recorded as a seed, not ported here.
+
+### The non-DrawMap residuals (ported by the sweep, re-folded onto the union)
+
+- **`TryOpeningFullscreenMap`** (`Player.cs:29103-29119`): the M-key open arm closes the
+  inventory (`:29107`), clears the talk-NPC latch + chat text (`:29109`), `PlaySound(10)`
+  (`:29111`); scale 2.5 + recentre ride `set_open`. The close arms gain `PlaySound(11)`
+  (`:24973` M-key, `:4976` Escape). The inventory map-icon row (`Main.cs:41095-41120`) rides
+  the shared helper + the style icons' `PlaySound(12)`. `app/loop.rs::try_open_fullscreen_map`.
+  The union's `set_open` → `recentre` also clears `pan_target` (`Main.cs:55418` via the reset
+  arm); `MapPylonTile = (-1,-1)` (`:29113`) rides the overlay pick's field.
+- **`WorldMap.Load`'s catch arm** (`WorldMap.cs:217-230`): a corrupt-but-present `.map` copies
+  to `<path>.bad` (`:227`) + `Clear()` (`:229`); the absent file takes `TryGetMapPath`'s early
+  return (`:184-188`) with neither side effect. `map.rs::load` splits the `load_map_file`
+  `Ok(false)` fold on `path.exists()`.
+- **The modern engine's `mapDelay` skip** (`LightingEngine.cs:82-89`): `WorldMap::map_delay`
+  (ctor 2, `Main.cs:66504`; world-load re-arm `WorldGen.cs:6947`) gates `update`'s head before
+  the `mapTime` countdown. The legacy engine keeps its own copy (S1-E-19 wave B). D22's
+  `mapDelay` half closed.
+
+### Deviations (recorded, deliberate)
+
+- The union's minimap zoom/alpha fn covers BOTH styles (`Player.cs:24911` style-1 rows +
+  `:24930-24947` style-2 rows, the g53 superset fold) — e18's own sweep deferred style 2 to
+  D18; the union's dup fold closed that keys half. The style-2 DRAW stays D18. The style
+  cycle fires in every non-fullscreen style (the shared else row).
+- The fullscreen draw head's `ToggleInv` call reaches the talk/inventory arms, NOT the map-close
+  first arm (`Player.cs:4972-4978`) — the map is already open, so the C# falls through; the port
+  applies exactly the talk/inventory writes.
+- The `num77` draw-scale formula (`Main.cs:55916-55919`) is DEAD CODE — `num77 = 1f` (`:55920`)
+  then `num77 = Main.UIScale` (`:55921`) unconditionally overwrite it. The port's `draw_full`
+  returns the map scale (the pre-existing S1-L-4 seam the overlay pick consumes); the stale
+  citation repaired, the seam not re-tuned (the overlay pick's territory).
+
+Witnesses (written, not run - code-only; the union's re-folded set): the dup fold's key/alpha
+witnesses stand (`app::w4_f46_minimap_zoom_key_tests` incl. the alpha + style-2 pair,
+`map::tests::w4_f46_alpha_and_overlay_clamps_match_the_draw_side`,
+`app::loop::tests::w4_f46_*` — e18's 4 key witnesses + `app::w4_e18_minimap_key_tests` drop
+with `update_minimap_keys` per research/84 §10.1), plus 1
+`app::loop::tests::w4_e18_the_map_open_arm_closes_the_inventory_and_dialog`, 1
+`app::clicks::w4_e18_map_icon_row_tests::w4_e18_the_map_icon_row_opens_the_map_and_sets_the_style`,
+1 `map::tests::w4_e18_a_corrupt_map_is_copied_to_bad_and_cleared`, 1
+`map::tests::w4_e18_the_map_delay_skips_the_first_two_exports`, 1
+`app::frame::draw::w4_e18_fullmap_draw_head_tests::w4_e18_the_fullmap_draw_head_closes_the_dialog_and_inventory`.
+SIX existing `map::tests` witnesses re-pinned with `map_delay = 0` (e18's five — mapTime/
+reveal-window/mapEnabled/scene-box/updateMap — plus the union-only
+`w4_f46_the_export_arms_update_map_even_on_an_empty_intersect`, which the e18 branch never had).

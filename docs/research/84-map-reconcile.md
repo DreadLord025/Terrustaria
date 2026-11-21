@@ -71,6 +71,9 @@
 >   close-button/cursor tail inside the fullscreen draw branch). Re-fold
 >   recipe: fetch the e18 tip, cherry-pick each commit past `670c948d`,
 >   resolve per-hunk keeping the f46 driver placement + consume structure.
+>   **FULFILLED (final-retire pass): the e18 tip `75289a2db`'s ten
+>   final-sweep commits are all folded (§10.1 dup fold + §10.2); the
+>   contract now reads "any commit past `75289a2db`".**
 
 > Reconcile-phase report. NO code changed on either branch by this pass — this
 > document is the only artifact. Inputs read directly from git objects:
@@ -407,6 +410,8 @@ TryOpeningFullscreenMap, `029154fe2` Load catch arm, `2fa072d01` mapDelay,
 `8ec77f0f8`+`2e1f97c83` draw-head dialog close, `0d99d968c` draw-tail chat,
 `0002fa1fe`+`75289a2db` docs) are NOT folded by this pass — they re-fold
 per the research/14 recipe at merge time.
+**SUPERSEDED — EXECUTED by the final-retire pass (same day, §10.2 below):
+all nine are now folded; checklist item 2 is CLOSED.**
 
 **Merger checklist (in order):**
 
@@ -416,11 +421,16 @@ per the research/14 recipe at merge time.
    DoDraw half ahead of `WorldMap::prepare` (NOT an update-half call — the
    S1-B-8 orchestrator pin walks the frozen phase list and the driver is
    deliberately absent from it).
-2. **Re-fetch `origin/task/W4-e18-minimap-reveal-queue` at merge time.** The
+2. ~~**Re-fetch `origin/task/W4-e18-minimap-reveal-queue` at merge time.** The
    tip HAS moved: `75289a2db` (the e18d final sweep, 10 commits past
    `670c948d`). Fold each new commit per research/14's recipe BEFORE
    merging — EXCEPT `249a0c1b`'s key/alpha arms, which the §10.1 fold
-   already landed (skip its duplicate fns/fields/witnesses per the table).
+   already landed (skip its duplicate fns/fields/witnesses per the table).~~
+   **EXECUTED (final-retire pass, same day — §10.2):** the e18 tip re-fetched,
+   still `75289a2db`; all nine non-superseded commits folded per-hunk onto
+   the union (`736c86ce`/`5566bf25`/`cd24857e`/`7d050b7c`/`b767ef91` + the
+   docs). The merger only re-checks that e18 has not advanced past
+   `75289a2db`; if it has, the recipe re-applies for the new commits only.
 3. **The overlay siblings are a SEPARATE keep-one, not part of this union:**
    `origin/task/W4-f29-map-overlay-2` (`e18bf6dd`) and
    `origin/task/W4-e17-map-overlay-layers` (`8500c3e5`, revived) port the
@@ -460,3 +470,28 @@ per the research/14 recipe at merge time.
    ANALYSIS's union note. The overlay pick brings its own doc updates —
    resolve the research/14 append conflicts by keeping both sections (the
    e18/f29/e17 censuses describe different passes, not rivals).
+
+### §10.2 The final-retire re-fold — EXECUTED (2026-11-21, checklist item 2 closed)
+
+The §10-item-2 "re-fold at merge time" instruction is executed NOW on this
+branch. `origin/task/W4-e18-minimap-reveal-queue` re-fetched: tip **still
+`75289a2db`** (`670c948d` + the 10 e18d final-sweep commits). Per-hunk fold
+results, in e18 commit order:
+
+| e18 commit | Piece | Union commit | Fold notes |
+| --- | --- | --- | --- |
+| `249a0c1b` (P1 keys) | minimap keys + alpha | ALREADY folded (`a352b16e`) | SUPERSEDED per §10.1 — its `update_minimap_keys`/`minimap_key_scale`/`minimap_alpha_step`/`clamp_minimap_axes`/`map_style_prev` + 4 witnesses + anchor row DROP; the union's `update_minimap_zoom_keys` carries the g53 superset + the e18 alpha state. Its anchor row is NOT copied. |
+| `4ad0f041` (P2) | `TryOpeningFullscreenMap` | `736c86ce` | `loop.rs::try_open_fullscreen_map` + the M-key/Escape `PlaySound(11)` closes + the icon-row helper routing + style-icon `PlaySound(12)` + the stale audio comment retired; the union's rebindable `MapAction::Full` row kept; `:29113` `MapPylonTile` clear noted as the overlay pick's seam (the union's `set_open`→`recentre` already clears `pan_target`); 2 witnesses + anchor. |
+| `0bd346e7` (docs) | research/84 addendum on the e18 side | this §10.2 + §10.3 | Their addendum was written against the OLD f46 blob (`38c283a0`) — its §10.1 close-button/thick-cursor pieces were ALREADY folded by the union's fold phase (`c06bc2fe`/`6dea2b66`), its §10.2 keys piece superseded by §10.1 above, its §10.3 "7 e18 anchor rows" count superseded (the `update_minimap_keys` row drops). The surviving content is recorded here + the checklist amendment; no byte-copy needed. |
+| `029154fe` (P3) | Load catch arm | `5566bf25` | `map.rs::load`'s `Ok(false)` fold splits on `path.exists()`: `.bad` copy + `clear()`; the union's `clear_edges`/staged-statics load body untouched; 1 witness + anchor. |
+| `2fa072d0` (P4) | mapDelay skip | `cd24857e` | `WorldMap::map_delay` (ctor 2) + `map_delay()`/`reset_map_delay()` + `update`'s head gate + `enter_loaded_world` re-arm; 1 witness + anchor; **6** witnesses re-pinned with `map_delay = 0` (e18's 5 + the union-only empty-intersect witness `w4_f46_the_export_arms_update_map_even_on_an_empty_intersect`, which e18's branch never had — its 5-pin list would have left that witness red). |
+| `8ec77f0f` + `2e1f97c8` (P5 + fix) | draw-head dialog close | `7d050b7c` (folded as one) | `close_dialog_behind_fullmap` wired at `draw_region`'s head BEFORE the pylon scan (the fix's final position, not P5's original after-scan site); 1 witness + anchor. |
+| `0d99d968` (P6) | draw-tail chat | `b767ef91` | `ui::draw_chat` made pub + called at the fullscreen branch tail after the union's head icon; the union's hover→close→cursor→head tail order kept; anchor, no new witness. |
+| `0002fa1f` (docs) | research/14 doc-sweep | research/14 "W4-e18 final sweep" section (union-named) + the port-status/D17-D22/seed-row refresh | The stale MISSING rows (alpha/overlays/BuildMapAtlas/M-toggle) rewritten to the union's landed state; D19 marked closed-across-branches with the keep-one PENDING caveat; D22 partial; the census tables + Unity-potion seed carried. |
+| `75289a2d` (docs) | ANALYSIS + PORT_MAP rows | ANALYSIS "The fullscreen open/close arms + …" section + 3 PORT_MAP rows | The e18-named minimap-keys PORT_MAP row NOT copied (the union's `a352b16e` row already covers that block under the union's names). |
+
+**Post-fold state: the e18 branch is fully absorbed into this union.** The
+merger takes THIS branch and drops `task/W4-e18-minimap-reveal-queue`
+wholesale; item 2's merge-time duty shrinks to a tip re-check (if e18
+advanced past `75289a2db`, re-fold only the new commits per the recipe).
+All re-folded witnesses written not run (code-only, as tasked).
