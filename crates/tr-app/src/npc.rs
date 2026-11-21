@@ -1777,6 +1777,21 @@ pub struct Npc {
     /// (`NPC.cs:36056-36063`): 390 → 382 RayGunner, 416 → 518 SolarSpearman.
     /// The sim runs `NPC.Transform` (`NPC.cs:81084-81114`) in place.
     pub wants_transform: Option<i32>,
+    /// W4-d31 style83 wiring — the cultist tablet's ritual spawn/link
+    /// requests (`NPC.cs:36773-36791` the ritual four, `:36840-36844`
+    /// the boss + `TabletDestroyed`). The pooled arm queues the whole
+    /// `Style83Out` (shots already drained to `wants_hostile_shot_ai`);
+    /// the sim's `resolve_ritual_requests` pass allocates the spawns,
+    /// records the stable uids and runs the ritual-delay reset.
+    pub wants_ritual: Option<crate::npc_ai_style83::Style83Out>,
+    /// W4-d31 style83 wiring — the tablet's four ritual links as STABLE
+    /// uids in spawn order (0 archer, 1/2 devotees, 3 archer — the C#'s
+    /// `ai[0..1]`/`localAI[1..2]` hold slot+1, `NPC.cs:36782`/`:36787`;
+    /// the port's vec compacts, so the uid carries the link — the Moon
+    /// Lord parts' convention). The boss link rides `carrier_uid`. The
+    /// per-tick `ritual_link_prepass` translates them back to the
+    /// slot-aligned ai fields the machine reads. 0 = unresolved.
+    pub ritual_uids: [u32; 4],
     /// The aiStyle-75 `SoundEngine.PlaySound(SoundID.Item12/Item39, pos)`
     /// cues (`(style, x, y)`) queued by the standalone `update_rng` wrapper
     /// (no audio seam there); the sim's pooled path drains them immediately
@@ -3099,6 +3114,8 @@ impl Npc {
             wants_saucer_crew: false,
             wants_mount_carrier: None,
             wants_transform: None,
+            wants_ritual: None,
+            ritual_uids: [0; 4],
             wants_item_sounds: Vec::new(),
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
@@ -4973,10 +4990,17 @@ impl Npc {
             // (the sibling heal resolve rides the sim seam, the dust rings
             // are the documented visual skip). RNG-free at arm level.
             82 => self.update_moon_leech_blob(world, player),
-            // aiStyle 83 (the cultist ritual, `NPC.cs:36757-36925`) has no
-            // ported kind yet (437/438 wait on the roster wave) — the
-            // faithful unwired module is `npc_ai_style83.rs` (W4-d31, the
-            // style73 precedent); the axis claim lands with the kinds.
+            // `else if (this.aiStyle == 83)` (`NPC.cs:36757-36925`) — the
+            // cultist ritual (CultistTablet 437 / CultistDevote 438). The
+            // W4-d31 wiring wave (the d10 activation contract): the faithful
+            // `npc_ai_style83::style83_step` claims the axis. The SOLO path
+            // (a bare `update_rng`) runs it over a one-slot pool; the SIM's
+            // pooled path (the aiStyle-83 arm in `world_sim/npcs.rs`) runs
+            // it over the whole `App::npcs` so the ritual slot links
+            // resolve. The 437/438 kinds ride the roster wave (W4-d40
+            // `7fec14aa`) — until they land no kind has ai_style 83 and this
+            // arm is dormant (the style75 precedent).
+            83 => self.update_rng_style83_solo(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5113,6 +5137,106 @@ impl Npc {
         self.wants_item_sounds.extend(out.sounds);
         // `out.died`: the module already set hp = 0; the death pass owns
         // the HitEffect + deactivation pair (the style72 pop precedent).
+    }
+
+    /// The SOLO aiStyle-83 step (`NPC.cs:36757-36925`) for a bare
+    /// `update_rng` caller (the W4-d31 wiring wave, the style75 solo
+    /// precedent): the faithful `style83_step` over a ONE-slot pool (no
+    /// siblings — the ritual links read unresolved, the module's wiring
+    /// guards skip them). The SIM's pooled path (the aiStyle-83 arm in
+    /// `world_sim/npcs.rs`'s tick closure) is the live route; this wrapper
+    /// queues the out-requests (`wants_ritual` / `wants_hostile_shot_ai`)
+    /// for the caller to drain. The 437/438 kinds ride the roster wave
+    /// (W4-d40 `7fec14aa`) — until they land no kind reaches this arm.
+    fn update_rng_style83_solo(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+    ) {
+        let cand = crate::npc_target::session_candidate(player);
+        let npc_type = self.kind.cs_id() as i32;
+        let just_hit = self.just_hit;
+        let mut pool = [self.clone()];
+        let out = crate::npc_ai_style83::style83_step(
+            &mut pool,
+            0,
+            world,
+            &[cand],
+            npc_type,
+            &|n: &Npc| n.kind.cs_id() as i32,
+            just_hit,
+            0,
+            rng,
+        );
+        *self = pool[0].clone();
+        self.drain_style83_out(out);
+    }
+
+    /// Land a `Style83Out` on this NPC (the solo queue — the sim's pooled
+    /// path drains the same requests with the full pool seams): the 526
+    /// shots ride `wants_hostile_shot_ai` (the C# call sites pass
+    /// `Main.myPlayer`, the sim's ritual drain re-pins the owner — the
+    /// fishron `spawn_hostile_ai_owned` precedent); the spawn/link/
+    /// tablet_destroyed requests queue on `wants_ritual`. `out.died`: the
+    /// module already set hp = 0 (the death pass owns the HitEffect +
+    /// deactivation pair); `out.light` is the draw-side feed's
+    /// (`app/frame/draw.rs`'s style-83 arm, the style72 precedent).
+    fn drain_style83_out(&mut self, mut out: crate::npc_ai_style83::Style83Out) {
+        self.wants_hostile_shot_ai.append(&mut out.shots);
+        let _ = out.light.take();
+        self.wants_ritual = Some(out);
+    }
+
+    /// The aiStyle-83 family's post-`AI()` movement tail (`NPC.UpdateNPC`,
+    /// `NPC.cs:90465-90498`) — the W4-d31 wiring wave. The tablet 437 is
+    /// noGravity + noTileCollide (`NPC.cs:14189-14190`): the dead-band X
+    /// snap (`:90473-90476`) then the raw integration (`:90494-90498`, the
+    /// style-56 arm's shape). The devotee 438 writes NEITHER flag
+    /// (`:14195-14211`): the 0.4 gravity + the 8 fall cap (`:90465-90472`,
+    /// the zombie's GRAVITY/MAX_FALL rows) then the tile collision
+    /// (`UpdateCollision`, `:90490-90492` — the port's `collides_rect`
+    /// axis stand-in, the zombie integration's shape minus the fighter
+    /// scan's jump fallback: the devotee has no obstacle scan). RNG-free.
+    pub(crate) fn style83_movement_tail(&mut self, world: &World) {
+        // `:90473-90476` — the dead-band X snap (double compare), both kinds.
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        if self.kind.cs_id() == 437 {
+            // `:90496-90498` — the stamps + the raw integration.
+            self.old_x = self.x;
+            self.old_y = self.y;
+            self.old_direction = self.facing;
+            self.integrate_no_tile_collide();
+            return;
+        }
+        // The devotee: gravity + the fall cap (`:90465-90472`).
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        let (w, h) = self.size();
+        // `UpdateCollision`'s axis integration (the zombie stand-in shape,
+        // `NPC.cs:92523-92608`): the blocked X axis zeroes the velocity,
+        // the blocked Y axis snaps to the floor/ceiling.
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+        }
     }
 
     /// `NPC.Transform(int newType, ...)` (`NPC.cs:81084-81114`) with the
@@ -33648,13 +33772,21 @@ mod w4_d31_axis_census_tests {
         for &(kind, style) in rows {
             assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle");
         }
-        // aiStyle 83 has NO ported kind (the CultistTablet 437 /
-        // CultistDevote 438, `NPC.cs:14183`/`:14202`, wait on the roster
-        // wave) — the census gap the unwired module documents.
-        assert!(
-            !ALL_KINDS.iter().any(|k| k.ai_style() == 83),
-            "no kind claims aiStyle 83 until the ritual kinds land"
-        );
+        // aiStyle 83 — the cultist ritual (CultistTablet 437 /
+        // CultistDevote 438, `NPC.cs:14183`/`:14202`). The W4-d31 wiring
+        // wave claims the axis (the `83 =>` arm in `update_rng_dust` + the
+        // pooled `world_sim/npcs.rs` branch, the d10 activation contract).
+        // The 437/438 KINDS ride the roster wave (W4-d40 `7fec14aa`): until
+        // they land no ported kind has style 83 and the arm is dormant;
+        // once they merge, exactly those two kinds claim it. This census
+        // pins the wiring contract merge-safely — any style-83 kind must be
+        // one of the ritual pair (no stray kind may claim the axis).
+        for k in ALL_KINDS.iter().filter(|k| k.ai_style() == 83) {
+            assert!(
+                k.cs_id() == 437 || k.cs_id() == 438,
+                "{k:?} claims aiStyle 83 but is not the CultistTablet/Devote"
+            );
+        }
     }
 
     /// The frozen-behaviour A/B + the RNG census (the
@@ -33765,5 +33897,63 @@ mod w4_d31_axis_census_tests {
         let mut n = Npc::new(NpcKind::MartianSaucerCore, 0.0, 0.0, 1, 0.0);
         let mut rng = UnifiedRandom::new(0);
         n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// W4-d31 wiring wave — the style-83 movement tail (`NPC.UpdateNPC`,
+    /// `NPC.cs:90465-90498`). The devotee 438 writes NEITHER noGravity nor
+    /// noTileCollide (`:14195-14211`), so it takes the 0.4 gravity + the 8
+    /// fall cap + the tile collision. The tail keys the tablet branch on
+    /// `cs_id() == 437`; every other kind (the placeholder here) takes the
+    /// devotee gravity+collision path. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d31_the_devotee_movement_tail_falls_and_lands() {
+        let w = ground(); // dirt at y = 30 (480 px)
+        // A devotee-shaped placeholder (22×40) above the ground, at rest.
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 300.0, 1, 0.0);
+        n.size_override = Some((22.0, 40.0));
+        n.vx = 0.0;
+        n.vy = 0.0;
+        // One tail tick: gravity 0.4 added, the box falls 0.4 px (free air).
+        n.style83_movement_tail(&w);
+        assert_eq!(n.vy.to_bits(), 0.4f32.to_bits(), "the 0.4 gravity (:90467)");
+        assert_eq!(n.y.to_bits(), 300.4f32.to_bits(), "the free-air integration");
+        assert!(!n.on_ground);
+        // Run to the ground: the box's bottom (y + 40) reaches 480 → the
+        // floor snap lands it at y = 440, vy zeroed, on_ground true.
+        for _ in 0..600 {
+            n.style83_movement_tail(&w);
+        }
+        assert_eq!(n.y, 440.0, "the floor snap (ty*16 - h)");
+        assert_eq!(n.vy, 0.0);
+        assert!(n.on_ground, "the landing sets on_ground");
+        // The fall cap: a long drop never exceeds the 8 fall speed.
+        let mut n2 = Npc::new(NpcKind::Zombie, 100.0, 0.0, 1, 0.0);
+        n2.size_override = Some((22.0, 40.0));
+        for _ in 0..100 {
+            n2.style83_movement_tail(&w);
+            assert!(n2.vy <= 8.0, "the 8 fall cap (:90468-90471)");
+        }
+    }
+
+    /// W4-d31 wiring wave — the tablet 437's raw integration branch
+    /// (noGravity + noTileCollide, `NPC.cs:14189-14190`): the dead-band X
+    /// snap then the position add, NO gravity, NO tile interaction. The
+    /// tail keys this branch on `cs_id() == 437`; the placeholder cannot
+    /// reach it pre-merge, so this pins the devotee-path dead-band snap
+    /// (shared by both kinds, `:90473-90476`) instead. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d31_the_movement_tail_dead_band_x_snap() {
+        let w = ground();
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 300.0, 1, 0.0);
+        n.size_override = Some((22.0, 40.0));
+        n.vx = 0.004; // inside the ±0.005 dead band
+        n.style83_movement_tail(&w);
+        assert_eq!(n.vx, 0.0, "the dead-band X snap (:90473-90476)");
+        // Outside the band: the velocity survives.
+        let mut n2 = Npc::new(NpcKind::Zombie, 100.0, 300.0, 1, 0.0);
+        n2.size_override = Some((22.0, 40.0));
+        n2.vx = 0.01;
+        n2.style83_movement_tail(&w);
+        assert_eq!(n2.vx.to_bits(), 0.01f32.to_bits(), "outside the band keeps vx");
     }
 }

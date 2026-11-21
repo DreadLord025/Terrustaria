@@ -137,10 +137,12 @@ mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
 mod npc_ai_style75;
-// W4-d31 (research/25 row 83): UNWIRED cultist-ritual family (the
-// CultistTablet 437 / CultistDevote 438, NPC.cs:36757-36925) - the kind
-// rows + the style-axis arm are the roster wave's merge step (the
-// npc_ai_style73 precedent; see the module doc).
+// W4-d31 (research/25 row 83): the cultist-ritual family (the
+// CultistTablet 437 / CultistDevote 438, NPC.cs:36757-36925) - WIRED on
+// the style axis (the d10 activation contract: npc.rs's 83 arm + the
+// world_sim pooled branch + the ritual link/spawn/526-owner-re-pin
+// passes); the 437/438 kinds ride the roster wave (W4-d40 7fec14aa), so
+// the dispatch is dormant until they merge (see the module doc).
 mod npc_ai_style83;
 mod npc_ai_wyvern;
 mod npc_ai_style9;

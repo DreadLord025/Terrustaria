@@ -39306,6 +39306,54 @@ only the `mod npc_ai_style83;` seam landed.
   precedent) until the roster kinds land; the 526 SetDefaults row +
   projectile arm are the projectile family's obligation.
 
+### The wiring wave (W4-d31 RETIRE/FINAL, the d10 activation contract)
+
+The d10 CultistTablet-437 activation contract (`649b18aef`, docsweep 26d
+§98) is DISCHARGED — the style-83 dispatch + the sim plumbing landed
+(research/352 the RETIRE/FINAL + the cultist-ritual family declaration):
+
+- **The dispatch**: `npc.rs::update_rng_dust`'s `83 =>` axis arm (the solo
+  path `update_rng_style83_solo`) + the pooled branch in
+  `world_sim/npcs.rs`'s tick closure (the live route, the style75
+  precedent — in slot order on the `UpdateNPCs` stream). The 437/438
+  kinds ride the roster wave (W4-d40 `7fec14aa`); until they merge no
+  kind has `ai_style() == 83` and the dispatch is DORMANT.
+- **The link pre-pass** (`ritual_link_prepass`, the Moon Lord carrier
+  write-through precedent): the tablet's stable uids (`ritual_uids[4]` +
+  `carrier_uid` for the boss) re-derive the slot-aligned ai fields each
+  tick; the post-summon `ai[0] = -1` latch HOLDS. The devotee's owner
+  link re-derives from `carrier_uid` (a missing tablet → the orphan kill).
+- **The resolve pass** (`resolve_ritual_requests`, the style75
+  carrier-spawn one-tick fold): allocates the spawns IN ORDER
+  (Bottom-placed), hands out the uids, writes the links, runs
+  `TabletDestroyed` (delay 43200). The 379 archer has no ported kind yet
+  — its spawn folds to None, its link stays 0 (the summon gate reads it
+  gone; the recorded roster-wave fold).
+- **The 526 OWNER RE-PIN** (the contract's core): the C# call sites pass
+  `Main.myPlayer` (`NPC.cs:36863`/`:36874`/`:36885`), NOT the hostile
+  default — the generic `wants_hostile_shot_ai` drain hardcodes 255, so
+  the 526 branch spawns via `spawn_hostile_ai_owned(kind, local_id, …)`
+  (the fishron precedent), arming the channel-track tail
+  (`Projectile.cs:11097-11100`). The DEATH VOLLEY rides a side channel
+  (`ritual_death_shots`) — the dying tablet is culled by the death retain
+  before the generic drain; the trickle rides the generic seam.
+- **The 0-link wiring guards** (the module): a 0 link is an inactive slot
+  (the port culls the dead); the release block + the summon scan skip it
+  — behaviour-identical to the C#'s inactive-slot semantics
+  (`SetDefaults` resets on reuse, `NPC.cs:80768`), no underflow panic.
+- **The movement tail** (`style83_movement_tail`, `NPC.UpdateNPC:90465-
+  90498`): the tablet's raw integration (noGravity+noTileCollide) / the
+  devotee's 0.4 gravity + 8 fall cap + tile collision. **The light feed**
+  (`app/frame/draw.rs`, `cs_id() == 437`): the constant
+  `AddLight(Center, 0.8, 0.75, 0.55)`, the `XAnchor::Center` quotient-
+  truncation form (`Lighting.cs:140-143`). Both RNG-free.
+- **The census witness re-pinned merge-safe**: any style-83 kind must be
+  437/438 (was "no kind claims 83" — breaks when d40 merges). 9 wiring
+  witnesses WRITTEN NOT RUN (2 module guards + 2 movement-tail + 4 sim
+  plumbing + the re-pin). The family declaration (research/352 §6): d31
+  machine+dispatch / d40 kinds / d10 526 row+seek / c1 boss-84 — DISJOINT,
+  no two branches own the same fn body.
+
 ## The aiStyle 75-83 axis census (W4-d31, code-only)
 
 The band's other eight styles were ALREADY ported (research/25 rows

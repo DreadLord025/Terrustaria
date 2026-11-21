@@ -494,6 +494,33 @@ impl App {
                             }
                             _ => {}
                         }
+                        // W4-d31 style83 wiring — the cultist tablet's
+                        // constant light (`NPC.cs:36921-36924`:
+                        // `AddLight(Center, 0.8, 0.75, 0.55)`). Keyed on the
+                        // vanilla `cs_id` (437), NOT a kind variant — the
+                        // 437 kind rides the roster wave (W4-d40 `7fec14aa`),
+                        // so this arm is dormant until it lands (the
+                        // kind-agnostic gate keeps the wiring compilable
+                        // pre-merge, the style83 axis-arm precedent). The
+                        // `Lighting.AddLight(Vector2, ...)` overload
+                        // truncates the quotient per axis (`Lighting.cs:
+                        // 140-143` — `(int)(v/16f)`, the `XAnchor::Center`
+                        // form). RNG-free; fed only while the tablet lives
+                        // (the `hp <= 0` gate above — the C#'s early-return
+                        // paths skip the tail too).
+                        if n.kind.cs_id() == 437 {
+                            let x = crate::entity_lights::tile_x(
+                                pos,
+                                w,
+                                crate::entity_lights::XAnchor::Center,
+                            );
+                            let y = crate::entity_lights::tile_y(
+                                pos,
+                                h,
+                                crate::entity_lights::XAnchor::Center,
+                            );
+                            self.entity_lights.add(x, y, [0.8, 0.75, 0.55]);
+                        }
                     }
                     // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,
                     // S1-E-7 wave A): the 0.8/0.95/1.0 light at the player's
