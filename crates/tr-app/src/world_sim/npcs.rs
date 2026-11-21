@@ -3842,7 +3842,23 @@ fn solid_tiles_rect(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
 /// caller's (`SpawnNPC` checks it before both arms); the port folds it
 /// here as the `player.dead` refusal. The journey spawn-rate slider
 /// (`:5906-5913`) and the Moon Lord proximity gate are port-absent.
-fn slime_rain_spawns(app: &mut App, rng: &mut UnifiedRandom) {
+///
+/// The fn binds the persistent `SpawnNPC` stream itself (`Main.cs:17887`'s
+/// swap) — the regular spawner re-binds the same stream after this arm, so
+/// the draws advance across the two in C# order. The stream is copied out
+/// for the call (the body needs `&mut App` for the roster push, which the
+/// live `&mut app.rngs` borrow would block) and written back after EVERY
+/// path — the gate-miss and validity-refusal arms spend draws too, so the
+/// write-back covers them (the copy is the same subtractive state).
+fn slime_rain_spawns(app: &mut App) {
+    let mut rng = app.rngs.stream(RngKey::SpawnNpc).clone();
+    slime_rain_spawns_body(app, &mut rng);
+    *app.rngs.stream(RngKey::SpawnNpc) = rng;
+}
+
+/// The draw-taking body, split from the stream binding so the write-back
+/// in [`slime_rain_spawns`] covers every early-return path.
+fn slime_rain_spawns_body(app: &mut App, rng: &mut UnifiedRandom) {
     let Some(player) = app.player.as_ref() else {
         return;
     };
@@ -6665,7 +6681,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // per-call LCG advance the splitmix bridge needed dies outright.
     let mut spawned = None;
     if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
-        let mut rng = app.rngs.stream(RngKey::SpawnNpc);
         // The Slime Rain sky spawns (`Spawner.SlimeRainSpawns`,
         // `NPC.cs:5892-5955`) — the pre-roll before the regular spawner
         // (`SpawnNPC`'s `:296-299` call order, under the same `SpawnNPC`
@@ -6674,10 +6689,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // 0.65 slime discount), the `45 + (int)(450f * (nearby/15))`
         // denominator, the sky window, the `Collision.SolidTiles` +
         // house-wall validity scan and the full four-arm kind chain
-        // (the `Next(200)` Pinky included).
+        // (the `Next(200)` Pinky included). The fn binds the persistent
+        // `SpawnNPC` stream itself (the regular spawner re-binds it below
+        // — the same stream, the draws advance across the two arms).
         if app.world.slime_rain {
-            slime_rain_spawns(app, &mut rng);
+            slime_rain_spawns(app);
         }
+        let mut rng = app.rngs.stream(RngKey::SpawnNpc);
         // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
         // blocks the attempt (the journey and Moon Lord gates have no
         // sources yet).

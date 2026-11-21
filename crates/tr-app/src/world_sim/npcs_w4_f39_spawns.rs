@@ -76,8 +76,7 @@ fn w4_f39_the_depth_gate_reads_position_y_not_the_centre() {
         let mut app = sky_app();
         app.player.as_mut().unwrap().y = y;
         let pristine = UnifiedRandom::new(app.world.seed as i32);
-        let mut rng = app.rngs.stream(RngKey::SpawnNpc);
-        super::slime_rain_spawns(&mut app, &mut rng);
+        super::slime_rain_spawns(&mut app);
         if passes {
             assert_ne!(
                 *app.rngs.stream(RngKey::SpawnNpc),
@@ -111,8 +110,7 @@ fn w4_f39_the_crowd_gate_is_nearby_gt_15_with_the_slime_discount() {
                 .push(Npc::spawn_slime_sky(pcx, pcy, SlimeVariant::Blue));
         }
         let pristine = UnifiedRandom::new(app.world.seed as i32);
-        let mut rng = app.rngs.stream(RngKey::SpawnNpc);
-        super::slime_rain_spawns(&mut app, &mut rng);
+        super::slime_rain_spawns(&mut app);
         if passes {
             assert_ne!(
                 *app.rngs.stream(RngKey::SpawnNpc),
@@ -147,8 +145,7 @@ fn w4_f39_the_denominator_truncates_the_f32_product() {
     // arm spends the same sequence (the validity scan is RNG-free).
     let mut twin = UnifiedRandom::new(app.world.seed as i32);
     replay_spawn_twin(&mut twin, nearby, pcx, pcy);
-    let mut rng = app.rngs.stream(RngKey::SpawnNpc);
-    super::slime_rain_spawns(&mut app, &mut rng);
+    super::slime_rain_spawns(&mut app);
     assert_eq!(
         *app.rngs.stream(RngKey::SpawnNpc),
         twin,
@@ -191,8 +188,7 @@ fn w4_f39_the_kind_chain_includes_the_next200_pinky() {
         })
         .expect("a pinky seed with a valid window exists");
     app.rngs.reset(fire);
-    let mut rng = app.rngs.stream(RngKey::SpawnNpc);
-    super::slime_rain_spawns(&mut app, &mut rng);
+    super::slime_rain_spawns(&mut app);
     let spawned = app.npcs.last().expect("the spawn fired");
     assert_eq!(spawned.slime, SlimeVariant::Pinky, "the Next(200) arm");
     assert_eq!(spawned.max_hp, 150, "Pinky's 150 life (`NPC.cs:7693`)");
@@ -209,8 +205,7 @@ fn w4_f39_the_full_draw_sequence_matches_the_twin_replay() {
     let mut app = sky_app();
     let (pcx, pcy) = app.player.as_ref().unwrap().center();
     app.rngs.reset(fire);
-    let mut rng = app.rngs.stream(RngKey::SpawnNpc);
-    super::slime_rain_spawns(&mut app, &mut rng);
+    super::slime_rain_spawns(&mut app);
     let (hit, want_variant) = replay_spawn(fire, 0.0, pcx, pcy);
     assert!(hit, "the gate fired");
     // The validity scan may refuse the spawn (the window tile is solid or
@@ -271,7 +266,6 @@ fn w4_f39_the_house_wall_refuses_the_spawn() {
     }
     app.rngs.reset(fire);
     let before = app.npcs.len();
-    let mut rng = app.rngs.stream(RngKey::SpawnNpc);
-    super::slime_rain_spawns(&mut app, &mut rng);
+    super::slime_rain_spawns(&mut app);
     assert_eq!(app.npcs.len(), before, "the house wall refused every tile");
 }
