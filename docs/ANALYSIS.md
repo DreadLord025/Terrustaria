@@ -39244,3 +39244,99 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The demon/crimson altar draw census (W4-g86, 2026-11-21, code-only)
+
+Branch `task/W4-g86-altar-draw` @ base a725acb0. The lane brief: "Demon/crimson
+altar draw per C# TileDrawing (altar frames/glow/hardmode hammer damage —
+census landed, port MISSING verbatim)". The in-flight probe (g84/g85/g87 at
+base with zero commits; d60 particles, g14 dust, g77 cracks pushed) split the
+altar's draw surface into four pieces; three were census-verified PORTED or
+owned by a pushed sibling, one was genuinely MISSING and is ported here.
+
+### The census (per-piece, C#-cited)
+
+The altar family is tile **26** (`TileID.DemonAltar`, `TileID.cs:681`) and its
+replica **695** (`TileID.DemonAltarReplica`, `:2019`); the crimson flavour is
+tile 26's frame columns 54+ (`frameX >= 54`), NOT a second tile id.
+
+1. **Frames — PORTED.** The height-18 group `TileDrawing.cs:4880-4908`
+   (`case 16/17/26/…/695/…: tileHeight = 18;`) is `drawdata.rs:327-347`'s
+   27-label alternation (the d61 batch 9 / d62 batch 2 census verdicts PORTED,
+   label-exact). Tile 26 has NO `Main.tileFrame` animation — no `AnimateTiles`
+   case, no first/second-switch stride — so the static 16x18 rect is the whole
+   frame story; the base `addFrY = tileFrame*38` default is 0 for 26.
+2. **Glow — PORTED (the scanner seed IS the glow).** There is no
+   `tileGlowMask[26]`/`[695]` row (`Main.cs:10024-10068` census) and no
+   glow-switch case (`TileDrawing.cs:6049-6507`). The altar's coloured light is
+   the `TileLightScanner` seed `TileLightScanner.cs:2965-2983` (the shared
+   `case 26/31/695/696`: the `frameX >= 54` crimson-lamp arm
+   `R=0.5+n*2, G=0.2+n, B=0.1` vs the purple demon arm `R=0.31+n, G=0.1,
+   B=0.44+n*2`, one `localRandom.Next(-5,6)*0.0025` draw each), ported verbatim
+   at `tile_light/scanner.rs:1051-1061`. `tileLighted[26]`/`[695]`
+   (`Main.cs:7573-7574`) is in the generated `TILE_LIGHTED` set, so the seed
+   arm is reachable.
+3. **Ambient particles — IN FLIGHT (W4-d60, keep-one).** The
+   `DrawTiles_EmitParticles` altar arm `TileDrawing.cs:7348-7361`
+   (`(typeCache==26||695) && _rand.Next(20)==0`: the `frameX>=54` dust-5
+   scale-1.5/noGravity/velocity*0.75 arm vs the dust-14 arm) is ported in the
+   pushed `task/W4-d60-tile-draw-particles` `tile_draw_particles.rs` (UNWIRED).
+   This lane does NOT duplicate it — the merge keeps d60's.
+4. **Hardmode hammer damage — PORTED gate + IN FLIGHT dust (W4-g14).** The
+   ≥80-power/hardmode refusal + the `Hurt(ByOther(4), statLife/2, -direction)`
+   self-hit + the `HitTile` accumulation + the `SmashAltar`/BEGONE_EVIL seam are
+   landed (S1-P-i31, `editing.rs::hammer_tile_hit`, `Player.cs:45665-45704`).
+   The fail-tick dust TYPE ladder (`WorldGen.cs:68970-68973`: the `frameX>=54`
+   dust-5 short-circuit vs the `genRand.Next(2)` dust-1/14 pick) is ported in
+   the pushed `task/W4-g14-dust-worldgen-sites` `worldgen_dust_tile.rs`. The
+   altar is NOT `tileSolid` (no `tileSolid[26]` in the `Main.cs` init census),
+   so `DrawTileCracks` (`Main.cs:61577`'s `tileSolid && !tileSolidTop` gate)
+   NEVER cracks it — the hammer-damage visual is the dust, not a crack overlay
+   (g77's crack lane correctly skips 26).
+
+### The MISSING verbatim piece — the smart-cursor selection outline
+
+`TileDrawing.GetTileOutlineInfo` (`TileDrawing.cs:4478-4489`) + its draw tail
+(`:1404-1408`), gated by `TileID.Sets.HasOutlines` (`TileID.cs:551`) and fed by
+`Main.InSmartCursorHighlightArea` (`Main.cs:3945-3957`). Tile **26 IS** in
+`HasOutlines` (the `…, 16, 17, 18, 26, 77, …` tail); **695 is NOT** (replicas
+never outline). The port had NO `GetTileOutlineInfo` counterpart (research/09
+row "Dangerous-tile outline / GetTileOutlineInfo … MISSING"; the pylon pass
+feeds `selection_mode = 0`, `pylons.rs:35`). The outline texture
+`Images/Misc/TileOutlines/Tiles_26` exists (`AssetInitializer.cs:356-360`).
+
+**Ported** as `crates/tr-app/src/render/tile_outlines.rs` (UNWIRED):
+* `in_smart_cursor_highlight_area` — `Main.cs:3945-3957` verbatim: the
+  selected-membership out-param computed FIRST (before every gate), `hideUI`
+  refuses, the `Collision.InTileBounds` interaction-rect gate (reusing
+  `smart_cursor::in_tile_bounds`) then the coords membership.
+* `selection_glow_color_bytes` — `Colors.cs:89-92`'s integer halves/thirds as
+  XNA bytes (the pylon pass carries the f32 form; this is the byte form the
+  `Color` ctor needs).
+* `tile_outline_quad` — the `HasOutlines` gate (`:893`) → the highlight-area
+  test → the `(R+G+B)/3` integer average → the `> 10` gate (`:4483`) → the
+  `OutlineQuad` record (the `HighlightMask[type]` sheet name, the framed
+  full-height rect `:1406`, the tint). Returns `None` on every refusal.
+
+### Deviations / feed seams (UNWIRED, documented)
+
+* `Main.SmartInteractTileCoords`/`…Selected` (the highlight-area point lists,
+  `Main.cs:2035-2037`, filled by the smart-cursor lookup tail, cleared by
+  `ClearSmartInteract` `:48054-48062`) are unported — the
+  `world_sim/smart_cursor` lane owns the lookup. `HighlightArea` carries the
+  lists + the interaction rect; fed empty = no outline = the pre-wiring pixels.
+* The `HighlightMask` sheets are not atlas-packed; the draw tail returns an
+  `OutlineQuad` record for the atlas-binding wave (the `CrackQuad`/
+  `SpecialSprite` seam convention).
+* **RNG: ZERO draws** — `GetTileOutlineInfo`, `InSmartCursorHighlightArea` and
+  `GetSelectionGlowColor` are pure reads/integer maths; the outline never
+  touches a stream.
+
+### Verification
+
+Code-only: every piece re-read against the cited C# windows; the referenced
+Rust symbols checked by read/grep (`td::SET_HAS_OUTLINES`, `TileSet::has`,
+`smart_cursor::in_tile_bounds` — all `pub`). The 6 `w4_g86_*` witnesses
+(`tile_outlines.rs`) are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/
+graphify invoked**. The HasOutlines membership (26 yes / 695 no) and the
+TILE_SOLID/TILE_LIGHTED bits were re-derived from the generated bitsets by a
+direct decode (26/695/31/696 all non-solid, all lighted).

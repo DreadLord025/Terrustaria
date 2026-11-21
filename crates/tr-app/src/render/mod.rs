@@ -21,6 +21,11 @@ pub(crate) mod sky;
 // in-flight S1-G-1 siblings; wiring is the family's merge step.
 pub(crate) mod special_tiles;
 pub(crate) mod tile_cracks;
+// W4-g86: the smart-cursor tile-outline overlay (GetTileOutlineInfo,
+// TileDrawing.cs:4478-4489) — UNWIRED (the SmartInteractTileCoords lists +
+// the HighlightMask atlas pack are the feed seams); the altar 26 is the
+// motivating HasOutlines tile. See the module's census header.
+pub(crate) mod tile_outlines;
 pub(crate) mod tiles;
 pub(crate) mod vines;
 pub(crate) mod wires;
