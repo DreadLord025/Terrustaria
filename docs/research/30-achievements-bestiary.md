@@ -823,11 +823,53 @@ neither is on this base; the hunk lands with their merge. The stale
 "waits on a ported Truffle kind" comments on c36 `:4947` and d120
 `:5038` retire then.)
 
+## W4-c36 RETIRE (1) — the d43r-session probe: DEAD pre-work (2026-11-21)
+
+Read-only probe of the d43 lane (no writes to its worktree):
+
+- `origin/task/W4-d43-npc-kinds-631-697` tip **`a725acb04` = origin/main**
+  (`git rev-list --count origin/main..` = 0). No `d43r` branch exists —
+  the full 357-ref `for-each-ref` census finds only the d43 band ref.
+- The `TR-W4-d43` worktree's git dir
+  (`Terraria-Rust/.git/worktrees/TR-W4-d43`): `logs/HEAD` holds exactly
+  TWO entries — the checkout `0000…→a725acb04` at epoch 1795188713
+  (2026-11-20 17:31:53 +0200) and a `reset: moving to HEAD` one second
+  later. `index` mtime 17:38:33; every tracked file's mtime is 17:31:54
+  (the checkout write itself). **Zero commits, zero edits — the d43r
+  session died before any work.** Verdict: DEAD pre-work, not a stalled
+  port; the band needs a fresh dispatch.
+
+**Consequence — the eight town slimes 670/678-684 are UNPORTED on every
+pushed tip** (the all-357-tip `net_id: (670|678|…|684)` bestiary scan is
+EMPTY; d37's `NpcKind::RainbowSlime` is the WILD rainbow slime, bestiary
+`net_id: 244` at `bestiary.rs:2199` on `a341daa12` — NOT the town 681).
+
+**Task-seed priority: HIGH — three published consumers already wait on
+the kinds** (the seed is no longer speculative):
+
+| dependent | what waits | cite |
+| --- | --- | --- |
+| **roster-26-gate** | ALL_TOWN_SLIMES 26 — c36's `check_real_estate_and_town_slimes` is wired at all three C# call sites; the 8-slime half of the roster can never pass until the kinds land | this doc, DOC-SWEEP + NOTIFY-SYNC (4) |
+| **f43-ladder** | `town_arrival_pets.rs`'s license/arrival arms are id-keyed pure fns over `cs_id` 670/678-684 (`:289-296` the `IsTownSlime` set, `:313-317` the `SlimeNames_*` keys) — UNWIRED by its own census until the kinds exist | f43 `79a037f5e` |
+| **c39-slime-colors** | `party_hat.rs:16-19`'s recorded deviation — the town-slime party-hat special cases (`Main.cs:26945-27028`, types 670-684) are dropped until the kinds ship; d120's `slime_chat_colour` is ALREADY type-keyed (zero d120 edits at activation, its RETIRE note §2) | c39 `7dd785dc5`, d120 `2408233da` |
+
+Plus c39 §14's **QueenSlime 657** seed targets the same dead band (its
+READY death-arm hunk, event id 24, waits on the kind; d33's
+`npc_ai_style121.rs` machine is landed UNWIRED). The f45 Ph13 slime-colour
+unlock latches (`7a65b6800`) fold onto the same rows.
+
+**Seed scope (fresh d43r dispatch):** the 8 `NpcKind` rows + bestiary
+`ENTRIES` (vanilla net ids 670/678-684) + sheets/portraits + the f43
+ladder wiring + the f45 colour-latch fold + the c39 party-hat special
+cases + QueenSlime 657 (c39 §14's hunk is ready). Zero c36 edits at
+activation — the roster scan reads `kind.net_id()` through `ENTRIES`.
+
 ## Task seeds
 
 - ~~**S** — Model `NPCKilledCondition.CreateMany` faithfully~~ — **done (S1-E-18)**.
 - ~~**S** — Call `achievements::save` from the autosave/F9 pass~~ — **done (S1-E-18)** (save on completion + `save_world`, path-bound bootstrap).
-- **M** — Continue wiring notify sites for progression/custom rows as owning systems land (remaining: the 20-row gap list, re-probed below — every owning system is still branch-only; 17 partial, 18; 19/20 + nurse `Pay` landed). Partially done (S1-E-18). Dep: owning systems merging to main. **NOTIFY-SYNC: 40/43 retired (g90b/f47 wire them live), TO_INFINITY + 18 hunks published, the roster's 4 town kinds landed on d120/d37.**
+- **M** — Continue wiring notify sites for progression/custom rows as owning systems land (remaining: the gap list, FINAL census below — 17 rows with no notify path on any tip; 17 partial, 18; 19/20 + nurse `Pay` landed). Partially done (S1-E-18). Dep: owning systems merging to main. **NOTIFY-SYNC: 40/43 retired (g90b/f47 wire them live), TO_INFINITY + 18 hunks published, the roster's 4 town kinds landed on d120/d37. RETIRE FINAL: 35 retired (c46 `2802ed5b9` wires EXTRA_LIFE live); the 24/22 seams gained their kinds on d42 `2d7ac08c3` (Gnome 624 / Fairy 583-585) — the AI/sight halves stay unowned.**
+- **M (HIGH priority)** — **d43r fresh dispatch: the 8 town slimes 670/678-684** (+ QueenSlime 657). The d43 session is DEAD pre-work (RETIRE (1) probe: checkout-only reflog, zero commits, no d43r ref); three published consumers wait (the roster-26 gate, f43's id-keyed ladder, c39's party-hat slime-colour cases) + c39 §14's ready 657 death-arm hunk. Zero c36 edits at activation.
 - ~~**S** — Make `kills_needed_for` fall back to
   `ItemID_Sets_DefaultKillsForBannerNeeded` (50) instead of 0, and pin it with a
   regression test that a fresh tracker leaves a non-quick entry at
