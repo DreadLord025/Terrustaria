@@ -5016,6 +5016,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // single running event walks alone.
         app.world.report_frost_moon_kill(npc.kind.to_u16());
         app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
+        // W4-g59 — the death DUST feed: the kind's `HitEffect` death-half
+        // burst (`npc_death_dust.rs`, batch 1: the 10 dust-only kinds).
+        // BEFORE the death cue: the C# runs HitEffect at `:81488`, ahead
+        // of checkDead's DeathSound (`:81561` → `:78186`). The draws ride
+        // the UpdateNPCs stream — the S1-E-21c batched-death deviation
+        // (the death-cue precedent below). Kinds outside the batch's
+        // match draw nothing (the gore-bearing arms are d55's lane).
+        {
+            let ctx = app.spawn_ctx();
+            let rng = app.rngs.stream(RngKey::UpdateNpcs);
+            crate::npc_death_dust::death_dust(
+                npc,
+                npc.kind.cs_id() as i32,
+                &mut app.dust,
+                &ctx,
+                rng,
+                &app.world,
+            );
+        }
         // `NPC.checkDead` plays `this.DeathSound` at `base.position`
         // (`NPC.cs:78186-78194`) — the kind's own death cue through the
         // faithful case-4 path (S1-E-21 wave C): the volume arms + the

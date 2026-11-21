@@ -63,6 +63,7 @@ mod mount;
 mod net;
 mod npc;
 mod npc_chat;
+mod npc_death_dust;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;

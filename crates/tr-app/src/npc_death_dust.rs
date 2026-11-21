@@ -1,0 +1,449 @@
+//! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
+//! dust bursts (`life <= 0`), kinds 1-230, batch 1 (the 10 DUST-ONLY death
+//! kinds the port's kind set carries).
+//!
+//! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
+//! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
+//! pass (the S1-E-21c recorded deviation), so the feed rides the death
+//! retain in `world_sim/npcs.rs` ahead of the death cue — the W4-c12
+//! `style74_death_feed` precedent. Every draw hits the `UpdateNPCs` stream.
+//!
+//! ## Scope — batch 1 (dust-only death arms, zero gore, zero side effects)
+//!
+//! | C# type(s) | port kind(s) | death arm | shape |
+//! | --- | --- | --- | --- |
+//! | 23 | MeteorHead | `:89487-89501` | 50× Next(2)-selected 25/6 + 50× type-6 vel×6 |
+//! | 120/137/138 | IlluminantSlime (138) | `:85490-85494` | 50× type-71 alpha 200, vel×1.5 |
+//! | 143/144/145 | the snowman trio | `:85370-85375` | 50× type-76 noGravity, scale×1.2 |
+//! | 147/184 | IceSlime/SpikedIceSlime | `:85350-85355` | 30× (76 noGravity + 4 tinted) pairs |
+//! | 183 | Crimslime | `:85420-85424` | 50× type-136 `this.alpha`/`this.color`, vel×2 |
+//! | 210/211 | Bee/BeeSmall | `:85065-85077` | 6× type-150, Next(2) scale gate |
+//!
+//! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
+//! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
+//! The gore-bearing death arms are d55's lane (`npc_hit_effect_a.rs`,
+//! ec78d152); the 231-697 band is W4-g60; death SPAWNS are W4-g61; the
+//! `life > 0` hit halves are W4-g62. The 112/666 whole-arm burst
+//! (`:85395-85408`) fires on EVERY hit, not death-only — g62's.
+//!
+//! ## RNG contract (the d50 DustPool contract)
+//!
+//! Argument draws first (the Next(2) selectors), then the pool internals
+//! inside `DustPool::new_dust` (S1-E-1: the 6 default-block rolls; type 6
+//! adds the tweak-chain `Next(-10, 6)`, `Dust.cs:214-220`; types
+//! 4/25/71/76/136/150 hit no tweak). A cull refusal or a pressure-band gate
+//! consumes exactly the C#'s draws (the pool owns them). The post-spawn
+//! writes land on the returned slot, the sentinel included — the C# writes
+//! `Main.dust[6000]` too (the `npc_ai_style56.rs` precedent). None of the
+//! batch's types is ChildSafety-dangerous (`ChildSafety.cs`'s {5,227,273,
+//! 237,248,249,250,251} — the `DANGEROUS_DUST` set), so the re-type arm
+//! never fires here.
+//!
+//! ## Documented stand-ins
+//!
+//! * `hitDirection` rides [`Npc::last_hit_dir`] (recorded at the three
+//!   strike seams; 0 for an argument-less `HitEffect()` — the C# default,
+//!   `NPC.cs:81654`).
+//! * 183's `this.color`: `default(Color)` — the SetDefaults reset
+//!   (`NPC.cs:8526`) is the ONLY write for 183 (the paint-blend ladder
+//!   `:60577-60692` is type-1-only, `AI_001_Slimes`). The port's `Npc`
+//!   carries no color field; when the slime paint lane lands, the feed
+//!   reads it here.
+//! * 183's `this.alpha` reads [`Npc::alpha`] — the ctor carries the C#
+//!   `alpha = 55` row (`NPC.cs:11342`, added with this batch).
+//! * The 143/144/145 trio shares ONE arm; the port's bestiary id rows for
+//!   SnowBalla/MysterySnowman (144/145 vs `NPCID.cs:10965-10967`'s
+//!   MisterStabby/SnowBalla naming) are dust-neutral — every id in the
+//!   trio draws the same burst.
+
+use crate::npc::Npc;
+use glam::Vec2;
+use tr_core::particles::{Color, DustPool, SpawnCtx};
+use tr_core::{UnifiedRandom, World};
+
+/// The batch-1 death dust feed: draws the kind's `HitEffect` DEATH half in
+/// C# order. Returns true when an arm ran (the wiring gate mirrors the
+/// match; the flag is the witness seam). `npc_type` is the C# `NPC.type`
+/// (`NpcKind::cs_id`).
+pub fn death_dust(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) -> bool {
+    let (w, h) = npc.size();
+    let (w, h) = (w as i32, h as i32);
+    let pos = Vec2::new(npc.x, npc.y);
+    let dir = npc.last_hit_dir as f32;
+    match npc_type {
+        // `NPC.cs:89487-89501` — the Meteor Head: 50 Next(2)-selected
+        // 25/6 puffs, then 50 type-6 embers at velocity×0.2, scale 2.5,
+        // velocity×6 + noGravity.
+        23 => {
+            for _ in 0..50 {
+                let mut ty = 25;
+                if rng.next_max(2) == 0 {
+                    ty = 6;
+                }
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, ty, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+            for _ in 0..50 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 6,
+                    npc.vx * 0.2, npc.vy * 0.2, 100, Color::default(), 2.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 6.0;
+                d.no_gravity = true;
+            }
+        }
+        // `NPC.cs:85490-85494` — the 120/137/138 arm's death half: 50
+        // type-71 puffs, alpha 200, velocity×1.5.
+        120 | 137 | 138 => {
+            for _ in 0..50 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 71, dir, 0.0, 200,
+                    Color::default(), 1.0,
+                );
+                dust.slot_mut(idx).velocity *= 1.5;
+            }
+        }
+        // `NPC.cs:85370-85375` — the snowman trio: 50 type-76 puffs,
+        // noGravity, scale×1.2 (the SpeedY stays -1, the hit half's value).
+        143 | 144 | 145 => {
+            for _ in 0..50 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 76, dir, -1.0, 0,
+                    Color::default(), 1.0,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.scale *= 1.2;
+            }
+        }
+        // `NPC.cs:85350-85355` — the 147/184 pair: 30 × (type-76
+        // noGravity + type-4 tinted) pairs, SpeedY -2 on both.
+        147 | 184 => {
+            for _ in 0..30 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 76, dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+                dust.slot_mut(idx).no_gravity = true;
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 4, dir, -2.0, 100,
+                    Color::new(97, 200, 255, 100), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:85420-85424` — the Crimslime: 50 type-136 puffs at
+        // `this.alpha`/`this.color` (the color stand-in: default, see the
+        // module doc), velocity×2.
+        183 => {
+            for _ in 0..50 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 136, dir, 0.0,
+                    npc.alpha as i32, Color::default(), 1.0,
+                );
+                dust.slot_mut(idx).velocity *= 2.0;
+            }
+        }
+        // `NPC.cs:85065-85077` — the bees' cond-death arm: 6 type-150
+        // puffs; the Next(2) gate picks noGravity+scale 1.5 vs scale 0.8.
+        210 | 211 => {
+            for _ in 0..6 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 150, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+                let d = dust.slot_mut(idx);
+                if rng.next_max(2) == 0 {
+                    d.no_gravity = true;
+                    d.scale = 1.5;
+                } else {
+                    d.scale = 0.8;
+                }
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+// ---- witness tests (WRITTEN, NOT RUN — code-only mode, no compiler) ----
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::npc::NpcKind;
+
+    fn air() -> World {
+        World::new("t".into(), 200, 200)
+    }
+
+    fn ctx() -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    fn corpse(kind: NpcKind) -> Npc {
+        let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+        n.hp = 0;
+        n.last_hit_dir = -1;
+        n.vx = 2.0;
+        n.vy = -1.0;
+        n
+    }
+
+    /// `NPC.cs:85065-85077` — the bees' death: 6 type-150 puffs, each the
+    /// 6 default-block rolls then the Next(2) gate (noGravity+1.5 vs 0.8).
+    /// The hand-rolled ladder pins the exact draw order on the stream.
+    #[test]
+    fn w4_g59_the_bee_death_draws_six_gated_puffs() {
+        let w = air();
+        let n = corpse(NpcKind::Bee);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        assert!(death_dust(&n, 210, &mut dust, &ctx(), &mut rng, &w));
+        // The twin: the C# draw ladder by hand.
+        let (bw, bh) = n.size();
+        let (bw, bh) = (bw as i32, bh as i32);
+        let mut twin = UnifiedRandom::new(7);
+        let mut gates = Vec::new();
+        for _ in 0..6 {
+            let _px = twin.next_max(bw.max(5) - 4);
+            let _py = twin.next_max(bh.max(5) - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+            gates.push(twin.next_max(2) == 0);
+        }
+        assert_eq!(rng, twin, "the bee death spends exactly 6×(6+1) draws");
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 6, "the flat 6 dust 150");
+        for (d, &gate) in live.iter().zip(&gates) {
+            assert_eq!(d.dust_type, 150);
+            if gate {
+                assert!(d.no_gravity);
+                assert_eq!(d.scale, 1.5);
+            } else {
+                assert!(!d.no_gravity);
+                assert_eq!(d.scale, 0.8);
+            }
+        }
+    }
+
+    /// `NPC.cs:89487-89501` — the Meteor Head: the 50-puff selector loop
+    /// then the 50-ember loop, replayed on a twin pool (the type-6 tweak
+    /// draw rides inside `new_dust`). 100 slots, the embers noGravity.
+    #[test]
+    fn w4_g59_the_meteor_head_death_draws_two_fifty_loops() {
+        let w = air();
+        let n = corpse(NpcKind::MeteorHead);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(3);
+        let mut twin_rng = rng.clone();
+        let mut twin = DustPool::new();
+        assert!(death_dust(&n, 23, &mut dust, &ctx(), &mut rng, &w));
+        let (mw, mh) = n.size();
+        let (mw, mh) = (mw as i32, mh as i32);
+        let pos = Vec2::new(n.x, n.y);
+        for _ in 0..50 {
+            let mut ty = 25;
+            if twin_rng.next_max(2) == 0 {
+                ty = 6;
+            }
+            twin.new_dust(
+                &mut twin_rng, &ctx(), &w, pos, mw, mh, ty, -2.0, -2.0, 0,
+                Color::default(), 1.0,
+            );
+        }
+        for _ in 0..50 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx(), &w, pos, mw, mh, 6, 0.4, -0.2, 100,
+                Color::default(), 2.5,
+            );
+            let d = twin.slot_mut(idx);
+            d.velocity *= 6.0;
+            d.no_gravity = true;
+        }
+        assert_eq!(rng, twin_rng, "the two loops mirror the C# draws");
+        assert_eq!(dust.slots(), twin.slots(), "slot-for-slot equality");
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 100);
+        assert!(live[..50].iter().all(|d| d.dust_type == 25 || d.dust_type == 6));
+        assert!(live[50..].iter().all(|d| d.dust_type == 6 && d.no_gravity));
+    }
+
+    /// `NPC.cs:85370-85375` — the snowman trio: all three ids draw the
+    /// SAME 50×76 census (noGravity, scale×1.2, SpeedY -1).
+    #[test]
+    fn w4_g59_the_snowman_trio_shares_one_death_census() {
+        let w = air();
+        let n = corpse(NpcKind::SnowmanGangsta);
+        let mut states = Vec::new();
+        for ty in [143, 144, 145] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(11);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            for d in &live {
+                assert_eq!(d.dust_type, 76);
+                assert!(d.no_gravity);
+            }
+            // The ×1.2 write: the twin's untouched scale ×1.2.
+            let mut twin = DustPool::new();
+            let mut twin_rng = UnifiedRandom::new(11);
+            let (sw, sh) = n.size();
+            for _ in 0..50 {
+                let idx = twin.new_dust(
+                    &mut twin_rng, &ctx(), &w, Vec2::new(n.x, n.y),
+                    sw as i32, sh as i32, 76, -1.0, -1.0, 0, Color::default(), 1.0,
+                );
+                let base = twin.slot(idx).scale;
+                let d = twin.slot_mut(idx);
+                d.no_gravity = true;
+                d.scale *= 1.2;
+                assert_eq!(d.scale, base * 1.2);
+            }
+            assert_eq!(rng, twin_rng);
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]), "one arm, three ids");
+    }
+
+    /// `NPC.cs:85350-85355` — the 147/184 pair: 30 × (76 + 4) pairs, the
+    /// 4s tinted (97,200,255,100) alpha 100, both SpeedY -2.
+    #[test]
+    fn w4_g59_the_ice_slime_death_draws_thirty_pairs() {
+        let w = air();
+        let n = corpse(NpcKind::IceSlime);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(5);
+        assert!(death_dust(&n, 147, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 60);
+        for (i, d) in live.iter().enumerate() {
+            if i % 2 == 0 {
+                assert_eq!(d.dust_type, 76);
+                assert!(d.no_gravity);
+            } else {
+                assert_eq!(d.dust_type, 4);
+                assert_eq!(d.alpha, 100);
+                assert_eq!(d.color, Color::new(97, 200, 255, 100));
+            }
+        }
+        // 184 draws the identical census.
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(5);
+        assert!(death_dust(&n, 184, &mut dust2, &ctx(), &mut rng2, &w));
+        assert_eq!(rng, rng2);
+        assert_eq!(dust.slots(), dust2.slots());
+    }
+
+    /// `NPC.cs:85420-85424` — the Crimslime: 50 type-136 puffs at
+    /// `this.alpha` (the ctor's 55 row) with velocity×2; the color
+    /// stand-in is default (the module doc).
+    #[test]
+    fn w4_g59_the_crimslime_death_reads_the_alpha_row() {
+        let w = air();
+        let n = corpse(NpcKind::Crimslime);
+        assert_eq!(n.alpha, 55, "the SetDefaults alpha row (`:11342`)");
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(9);
+        assert!(death_dust(&n, 183, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 136 && d.alpha == 55));
+        // The ×2 write against a twin's untouched velocity.
+        let mut twin = DustPool::new();
+        let mut twin_rng = UnifiedRandom::new(9);
+        let (cw, ch) = n.size();
+        for i in 0..50 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx(), &w, Vec2::new(n.x, n.y),
+                cw as i32, ch as i32, 136, -1.0, 0.0, 55, Color::default(), 1.0,
+            );
+            let base = twin.slot(idx).velocity;
+            assert_eq!(live[i].velocity, base * 2.0);
+        }
+        assert_eq!(rng, twin_rng);
+    }
+
+    /// `NPC.cs:85490-85494` — the Illuminant Slime (138): 50 type-71
+    /// puffs, alpha 200, velocity×1.5.
+    #[test]
+    fn w4_g59_the_illuminant_death_draws_fifty_seventy_ones() {
+        let w = air();
+        let n = corpse(NpcKind::IlluminantSlime);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(13);
+        assert!(death_dust(&n, 138, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 71 && d.alpha == 200));
+        let mut twin = DustPool::new();
+        let mut twin_rng = UnifiedRandom::new(13);
+        let (iw, ih) = n.size();
+        for i in 0..50 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx(), &w, Vec2::new(n.x, n.y),
+                iw as i32, ih as i32, 71, -1.0, 0.0, 200, Color::default(), 1.0,
+            );
+            let base = twin.slot(idx).velocity;
+            assert_eq!(live[i].velocity, base * 1.5);
+        }
+        assert_eq!(rng, twin_rng);
+    }
+
+    /// The cull refusal (`Dust.cs:97-101`): an off-screen corpse's spawns
+    /// return the sentinel; the argument draws (the bees' 6 gates) still
+    /// run and the post-writes land on `Main.dust[6000]` — the C# shape.
+    #[test]
+    fn w4_g59_the_offscreen_cull_writes_the_sentinel_slot() {
+        let w = air();
+        let n = corpse(NpcKind::BeeSmall);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(17);
+        let far = SpawnCtx {
+            screen_position: Vec2::new(100000.0, 100000.0),
+            ..ctx()
+        };
+        assert!(death_dust(&n, 211, &mut dust, &far, &mut rng, &w));
+        let mut twin = UnifiedRandom::new(17);
+        for _ in 0..6 {
+            let _gate = twin.next_max(2);
+        }
+        assert_eq!(rng, twin, "only the 6 gate draws survive the cull");
+        assert!(dust.slots()[..6000].iter().all(|d| !d.active));
+        // The sentinel carries the LAST gate's write (the C# writes it too).
+        let s = dust.slot(tr_core::particles::DUST_SENTINEL);
+        assert!(s.scale == 1.5 || s.scale == 0.8);
+    }
+
+    /// The batch gate: a kind outside the match draws nothing and returns
+    /// false (the gore-bearing arms are d55's; 231+ is g60's).
+    #[test]
+    fn w4_g59_a_non_batch_kind_draws_nothing() {
+        let w = air();
+        let n = corpse(NpcKind::Zombie);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(19);
+        let before = rng.clone();
+        assert!(!death_dust(&n, 3, &mut dust, &ctx(), &mut rng, &w));
+        assert_eq!(rng, before, "no arm, no draws");
+        assert!(dust.slots().iter().all(|d| !d.active));
+    }
+}

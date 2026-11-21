@@ -39244,3 +39244,61 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The NPC death dust table (W4-g59, lane 1: kinds 1-230)
+
+`NPC.HitEffect` (`NPC.cs:81654-89834`) carries the per-kind dust/gore
+table; the DEATH halves (`life <= 0`) fire from `StrikeNPC_Inner`
+(`:81488`) BEFORE `checkDead` (`:81561`). `checkDead` itself
+(`:78040-78276`) draws NO dust (the probe's 4 hits at `:80980-81025` are
+`TransformVisuals`, the shimmer-transform lane). The port batches deaths
+into the NPC pass (S1-E-21c), so the feed rides the death retain
+(`world_sim/npcs.rs::update_npcs`) ahead of the death cue — the W4-c12
+`style74_death_feed` precedent — on the `UpdateNPCs` stream.
+
+**Lane split**: g59 = death dust kinds 1-230; d55 (`npc_hit_effect_a.rs`,
+ec78d152) = the gore sites; g60 = kinds 231-697; g61 = death spawns;
+g62 = the `life > 0` hit halves.
+
+**Census** (the full 1-230 arm walk): 173 kinds have dust-first death
+arms with no side effects (no NewNPC/PlaySound/AddBuff/tile writes in the
+death half); 20 of those are DUST-ONLY (zero gore):
+{23, 34, 63, 75, 112, 120, 122, 137, 138, 141, 143, 144, 145, 147, 169,
+183, 184, 204, 210, 211}. Exactly 10 are present in the port's kind set —
+**batch 1** (`npc_death_dust.rs::death_dust`, wired at the death retain):
+23 MeteorHead (`:89487-89501`, 50 Next(2)-selected 25/6 + 50 type-6
+vel×6), 138 IlluminantSlime (`:85490-85494`, 50×71 alpha 200 vel×1.5),
+143/144/145 the snowman trio (`:85370-85375`, 50×76 noGravity scale×1.2),
+147/184 the ice slimes (`:85350-85355`, 30×(76+4-tinted) pairs),
+183 Crimslime (`:85420-85424`, 50×136 this.alpha/this.color vel×2),
+210/211 the bees (`:85065-85077`, 6×150 Next(2) scale gate).
+
+**Excluded kinds (the census's rejects)**: the slime family 1/16/71
+(`:84721` NewNPC splits), the zombie family 3/52/53/104/109/132/161/162/
+186-189/200/223 (`:86937` gore-first + NewNPC), 4/125/126 (EoC PlaySound),
+25/30/33 (PlaySound), 46/55/67/74/102/224/230 (`:85942` gore-first),
+50 (KingSlime split), 59/60/151 (tile writes), 81/121 (NewNPC),
+113/114 (WoF gore-first), 115/116 (NewNPC), 127-131 (gore-first),
+133 (gore-first), 134-136 (Destroyer NewNPC). 64/103 share the 63 arm
+(their own `:85537`/`:85541` rows are color-only) — batch 2 candidates
+with 63 when the kind lands.
+
+**RNG contract**: the d50 DustPool contract — argument draws first (the
+Next(2) selectors), then the pool internals inside `new_dust` (the 6
+default-block rolls; type 6 adds the tweak-chain Next(-10,6)); cull
+refusals consume exactly the C#'s draws; post-spawn writes land on the
+returned slot, the sentinel included. None of batch 1's types
+(4/6/25/71/76/136/150) is ChildSafety-dangerous.
+
+**Stand-ins**: `hitDirection` rides `Npc::last_hit_dir` (the W4-c12
+staged field, landed here: recorded at hurt/hurt_from_projectile/
+strike_pooled, reset to 0 at the bubble fuse's argument-less HitEffect).
+183's `this.color` = default(Color) — the SetDefaults reset (`:8526`) is
+the only write for 183 (the paint-blend ladder `:60577-60692` is
+type-1-only); the port's Npc has no color field yet. 183's `alpha = 55`
+ctor row added (`NPC.cs:11342`). The 112/666 whole-arm burst
+(`:85395-85408`) fires on every hit — g62's, not death-only.
+
+8 witnesses WRITTEN NOT RUN (code-only): the bee gate ladder, the
+meteor-head twin-pool replay, the snowman trio's shared census, the
+ice-slime pairs, the Crimslime alpha/vel×2, the Illuminant vel×1.5, the
+off-screen sentinel writes, the non-batch no-draw gate.
