@@ -39387,3 +39387,24 @@ end-to-end — the `21` gate, the `162` ack, the `34` place/destroy arms;
 2 `chest.rs` pins — the drop tables + `try_create_chest`; 1
 `edit/place.rs` `place_chest` pin) — **no compiler invoked**.
 
+**Final-audit round (g52c, RESUME).** Code-only: the frozen 4-file WIP
+verified line-by-line and completed — the join bundle tail
+(`MessageBuffer.cs:851-866`: the 23+54 NPC burst + the 27 pet/netImportant
+burst, the cadence-store stamping owner-gated like the cadence itself),
+`SyncConnectedPlayer`'s tail (`NetMessage.cs:2816-2819`: the 60 houses
+with `TownRoomManager.GetHouseholdStatus`'s 1/2 semantics
+(`TownRoomManager.cs:130-142`), the traveller's 72, the 74 quest, the 126
+markers; the 140 credits push constants-off), the in-world `7 WorldInfo`
+re-push apply (`MessageBuffer.cs:473-662` minus the `:655-659` State-3
+walk — no spawn re-request), the LIVE `world_info` fill (the 14 flag
+groups' port-owned bits per `NetMessage.cs:285-389`, the 11-row bg block,
+the ore tiers, `!raining → 0`), and the four re-push sites (the 3600-tick
+heartbeat `Main.cs:64557-64561`, dawn/dusk `:65359-65361`/`:65407-65409`
+AFTER the event-flag clears, the invasion end `:64357-64359`, the
+maxRaining change `:64952-64958`). Fix list + the cross-lane keep-one
+census (g48 FINAL-table feed, the 34 destroy keep-one, the 34/162 codec
+byte-census): **research/284** (139 stays RESERVED for g52c-net-master).
+4 witness tests WRITTEN NOT RUN (`netglue.rs::w4_g52_relay_tests`: the
+heartbeat, the dusk boundary, the join NPC/pet burst, the
+houses/shop/quest/marker bundle) — **no compiler invoked**.
+

@@ -1573,11 +1573,18 @@ impl App {
             };
             server.send(id, &S2c::Projectile(Box::new(st.clone())));
             // The cadence's change-detect store: the join burst counts as
-            // sent (the same convention as the item burst's net_item_last).
-            self.net_proj_prev.insert(key, st);
+            // sent (the same convention as the item burst's net_item_last)
+            // — but ONLY for the host's OWN shots: the cadence's live set
+            // is owner-gated (`Projectile.cs:17210`), so a foreign-owner
+            // pet stamped here would read as "gone" on the next diff and
+            // fire a spurious `29` kill. The C# join burst has no owner
+            // gate (`:861`), its cadence does — the split is the source's.
+            if p.owner == self.local_id as u8 {
+                self.net_proj_prev.insert(key, st);
+            }
         }
         // W4-g52 audit — `SyncConnectedPlayer`'s tail
-        // (`NetMessage.cs:2814-2818`): `SendNPCHousesAndTravelShop` (one `60`
+        // (`NetMessage.cs:2816-2819`): `SendNPCHousesAndTravelShop` (one `60`
         // per housed town NPC + the traveller's `72`), `SendAnglerQuest`
         // (`74`), `SendAllMarkersToPlayer` (`126` per marker). The credits
         // push (`140`) is constants-off (the port's credits screen is
@@ -1587,15 +1594,17 @@ impl App {
             if npc.hp <= 0 {
                 continue;
             }
-            // `:2830-2836`: townNPC && head index > 0, or aiStyle 7. The
+            // `:2834-2838`: townNPC && head index > 0, or aiStyle 7. The
             // head-index stand-in is the housing set (`npc_view_of`'s same
             // fold — the town residents minus the bound/sleeping kinds).
             let town_like = npc.kind.is_town_npc() || npc.kind.ai_style() == 7;
-            if npc.kind == crate::npc::NpcKind::TravellingMerchant {
-                traveller_present = true; // `:2838-2841`
-            }
             if !town_like {
                 continue;
+            }
+            // `:2841-2844`: the traveller flag rides INSIDE the flag2 gate
+            // (type 368 is aiStyle 7, so a live traveller always passes it).
+            if npc.kind == crate::npc::NpcKind::TravellingMerchant {
+                traveller_present = true;
             }
             let (hx, hy) = npc.home.unwrap_or((0, 0));
             let status = if npc.home.is_some() { 2 } else { 1 };
@@ -1701,7 +1710,7 @@ impl App {
             S2c::WorldInfo(info) => {
                 // W4-g52 audit — the C# reader applies the header fields at
                 // ANY state and only walks 3 → 4 inside the `State == 3`
-                // gate (`MessageBuffer.cs:654-658`); the re-pushes
+                // gate (`MessageBuffer.cs:655-659`); the re-pushes
                 // (`Main.cs:64560`'s 3600-tick heartbeat, the dawn/dusk
                 // `SendData(7)`s, the maxRaining change, the invasion end)
                 // arrive in-world and must NOT re-request the spawn.
@@ -2354,7 +2363,7 @@ impl App {
     /// `State == 3` walk): the header fields with a port home land on the
     /// live world; the world-evil/bg/tree/seed-flag groups without one stay
     /// read-and-dropped (the standing `7` deviation, ANALYSIS). The C#
-    /// reader's `Main.raining = maxRaining > 0f` (`:530`) rides the rain
+    /// reader's `Main.raining = maxRaining > 0f` (`:530-531`) rides the rain
     /// restore; `windSpeedCurrent` is NOT touched outside the State-3 gate.
     fn apply_world_info_repush(&mut self, info: &net::WorldInfo) {
         let w = &mut self.world;
@@ -2425,8 +2434,19 @@ impl App {
         w.unlocked_slime_rainbow_spawn = f[8].get(3);
         w.unlocked_slime_red_spawn = f[8].get(4);
         w.fast_forward_to_dusk = f[8].get(7);
+        // The three event-state homes the C# reader owns outside World:
+        // `Sandstorm.Happening` (`:576`), `BirthdayParty.ManualParty`
+        // (`:571`) and `LanternNight.ManualLanterns` (`:583`). The C#
+        // writer sends `PartyIsUp`/`LanternsUp` (genuine || manual) but
+        // the reader lands them on the MANUAL flags — the asymmetry is
+        // the source's, kept verbatim. The `flag8` StartSlimeRain/
+        // StopSlimeRain pair (`:641-648`) stays flag-only here (the
+        // machines draw RNG; the re-push must not consume a stream).
+        self.sandstorm.happening = f[4].get(3);
+        self.world_events.manual_party = f[3].get(7);
+        self.world_events.manual_lanterns = f[5].get(1);
         // `Main.maxRaining` + `Main.raining = maxRaining > 0f`
-        // (`MessageBuffer.cs:529-530`); the rain machine keeps its own
+        // (`MessageBuffer.cs:530-531`); the rain machine keeps its own
         // timer (the header carries no rainTime — the C# re-derives it).
         self.world.max_raining = info.max_raining;
         self.world.raining = info.max_raining > 0.0;
@@ -6730,7 +6750,7 @@ mod w4_g52_relay_tests {
     /// W4-g52 audit — the 3600-tick `7 WorldInfo` re-push
     /// (`Main.cs:64557-64561`): the header carries the LIVE flags; the
     /// in-world client applies them WITHOUT re-requesting the spawn
-    /// (`MessageBuffer.cs:654-658`'s State-3-only walk).
+    /// (`MessageBuffer.cs:655-659`'s State-3-only walk).
     #[test]
     fn w4_g52_the_world_header_heartbeat_repushes_the_live_flags() {
         let (mut host_app, mut client_app) = wide_pair();
@@ -6739,8 +6759,9 @@ mod w4_g52_relay_tests {
         host_app.world.downed_eoc = true;
         host_app.world.invasion_type = 1;
         host_app.world.invasion_goblins = true;
-        // 3600 ticks at the batched +6 per 10 Hz tick = 600 net ticks.
-        for _ in 0..620 {
+        // 3600 ticks at the batched +6 per 10 Hz tick = 600 net ticks =
+        // 3600 frames at 1/60; the margin covers the accumulator's rounding.
+        for _ in 0..3700 {
             host_app.net_tick(1.0 / 60.0);
         }
         pump(&mut host_app, &mut client_app, 15);
@@ -6763,10 +6784,20 @@ mod w4_g52_relay_tests {
         let (mut host_app, mut client_app) = wide_pair();
         host_app.world.day_time = true;
         host_app.world.time = 53999.0;
+        // An eclipse up at dusk: `stopMoonEvent` clears it BEFORE the C#
+        // `SendData(7)` (`Main.cs:65246` before `:65361`) — the boundary
+        // header must carry the CLEARED flag, not the stale one.
+        host_app.world.eclipse = true;
+        client_app.world.eclipse = true;
         let _ = crate::world_sim::clock::advance_time_with_events(&mut host_app, 5.0, false);
         assert!(!host_app.world.day_time, "the host crossed dusk");
+        assert!(!host_app.world.eclipse, "StartNight cleared the eclipse");
         pump(&mut host_app, &mut client_app, 15);
         assert!(!client_app.world.day_time, "the boundary header flipped the client");
+        assert!(
+            !client_app.world.eclipse,
+            "the boundary header carried the CLEARED eclipse (the send rides after the clears)"
+        );
         assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
     }
 
@@ -6831,7 +6862,7 @@ mod w4_g52_relay_tests {
         assert!(!arrow_synced, "the plain arrow waits for the owner cadence");
     }
 
-    /// W4-g52 audit — `SyncConnectedPlayer`'s tail (`NetMessage.cs:2814-2818`):
+    /// W4-g52 audit - `SyncConnectedPlayer`'s tail (`NetMessage.cs:2816-2819`):
     /// the housed town NPC's `60`, the traveller's `72`, the `74` quest and
     /// the `126` markers reach the joiner.
     #[test]
@@ -6874,7 +6905,7 @@ mod w4_g52_relay_tests {
         );
         second.player_name = "second".into();
         second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
-        second.join_target = Some((addr, String::new()));
+        second.join_target = Some((addr.clone(), String::new()));
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while second.net_state != net::client_state::IN_WORLD
             && std::time::Instant::now() < deadline
@@ -6886,27 +6917,75 @@ mod w4_g52_relay_tests {
         }
         assert_eq!(second.net_state, net::client_state::IN_WORLD);
         // The client apply arms for 60/72/74/126 are the g49/g51 lanes; the
-        // witness drains the raw frames (the 162-ack convention).
+        // witness observes the raw frames (the 162-ack convention) — but
+        // `poll_net` already CONSUMED the join batch through the no-op
+        // dispatcher arms, so the channel is drained: the frames are
+        // observed at the dispatcher instead, via a test-only capture of
+        // `client_event`'s input. The capture wrapper replays each frame
+        // into the real handler so the state machine walk is unchanged.
         let mut saw_house = false;
         let mut saw_shop = false;
         let mut saw_quest = false;
         let mut saw_marker = false;
-        while let Some(ev) = second.net_events_for_test() {
-            match ev {
-                net::ClientEvent::Frame(S2c::NpcHouse(h)) => {
-                    saw_house |= h.home_x == 10 && h.home_y == 10 && h.status == 2;
+        {
+            // Re-join a THIRD client while watching its dispatcher input.
+            let mut third = crate::app::flow::front_flow_tests::flow_app(
+                None,
+                Vec::<crate::ui::save_list::PlayerEntry>::new(),
+                Vec::<crate::ui::save_list::WorldEntry>::new(),
+            );
+            third.player_name = "third".into();
+            third.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+            third.join_target = Some((addr.clone(), String::new()));
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            // The join bundle lands AFTER the state flip (the host builds
+            // it on the `12 PlayerSpawn` answer to `49`), so the watch runs
+            // until the LAST bundle message (the `126` markers) or timeout.
+            while !saw_marker && std::time::Instant::now() < deadline
+            {
+                // Drain-and-dispatch by hand: observe every frame, then
+                // apply it exactly as poll_net would (the client_event
+                // path), keeping the handshake walk live.
+                let mut evs = Vec::new();
+                if let NetRole::Client(c) = &third.net {
+                    while let Ok(ev) = c.events.try_recv() {
+                        evs.push(ev);
+                    }
+                    if third.net_state == net::client_state::NOT_CONNECTED {
+                        third.net_state = net::client_state::CONNECT_SENT;
+                        c.send(&C2s::Connect(net::CONNECT_VERSION.to_string()));
+                    }
+                    let role = std::mem::replace(&mut third.net, NetRole::Off);
+                    if let NetRole::Client(client) = &role {
+                        for ev in evs {
+                            if let net::ClientEvent::Frame(msg) = &ev {
+                                match msg {
+                                    S2c::NpcHouse(h) => {
+                                        saw_house |=
+                                            h.home_x == 10 && h.home_y == 10 && h.status == 2;
+                                    }
+                                    S2c::TravelShop(s) => {
+                                        saw_shop |= s.items.first() == Some(&28);
+                                    }
+                                    S2c::AnglerQuest(q) => {
+                                        saw_quest |= q.quest == 7;
+                                    }
+                                    S2c::RevengeMarker(m) => {
+                                        saw_marker |= m.unique_id == 42 && m.coins_value == 5_000;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            third.client_event(client, ev);
+                        }
+                    }
+                    third.net = role;
                 }
-                net::ClientEvent::Frame(S2c::TravelShop(s)) => {
-                    saw_shop |= s.items.first() == Some(&28);
-                }
-                net::ClientEvent::Frame(S2c::AnglerQuest(q)) => {
-                    saw_quest |= q.quest == 7;
-                }
-                net::ClientEvent::Frame(S2c::RevengeMarker(m)) => {
-                    saw_marker |= m.unique_id == 42 && m.coins_value == 5_000;
-                }
-                _ => {}
+                first.poll_net();
+                host_app.poll_net();
+                std::thread::sleep(std::time::Duration::from_millis(2));
             }
+            assert_eq!(third.net_state, net::client_state::IN_WORLD);
         }
         assert!(saw_house, "the guide's 60 house push arrived");
         assert!(saw_shop, "the traveller's 72 stock push arrived");
