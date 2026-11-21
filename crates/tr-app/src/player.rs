@@ -798,6 +798,12 @@ pub struct Player {
     /// world-sim pass drains it into the manager (the `pending_mana_effect`
     /// convention — the bare player tick carries no manager).
     pub pending_lucky_break: bool,
+    /// W4-c36 DOC-SWEEP — the coffin-cart ROLLIN_IN_YOUR_GRAVE hook
+    /// (`Mount.SetMount`'s `:6301-6304`): mounting the Coffin Minecart
+    /// (MountID 38) queues progression 32; the world-sim pass drains it into
+    /// the manager (the `pending_lucky_break` convention — the bare player
+    /// tick carries no manager).
+    pub pending_grave_cart: bool,
     /// `Player.anglerQuestsFinished` (`Player.cs:1910`): the count
     /// the Angler's reward table reads (`GetAnglerReward_MainReward`'s
     /// milestone switch, `Player.cs:56323`).
@@ -2537,6 +2543,7 @@ impl Player {
             deadmans_chest_death_frames: 0,
             trap_debuff_source: false,
             pending_lucky_break: false,
+            pending_grave_cart: false,
             respawn_timer: 0,
             immune: false,
             immune_time: 0,
@@ -9141,6 +9148,16 @@ impl Player {
         if matches!(m, 62..=65) {
             let (cx, cy) = self.center();
             self.pending_chillet_sound = Some((cx, cy));
+        }
+        // W4-c36 DOC-SWEEP — `:6301-6304`: `if (_type == 38 &&
+        // mountedPlayer.whoAmI == Main.myPlayer)` fires progression 32
+        // (ROLLIN_IN_YOUR_GRAVE, the Coffin Minecart mount). The local player
+        // is this `Player` in the port's single-player pass; the queue drains
+        // in `world_sim/player.rs` (the `pending_lucky_break` convention).
+        // The same-type re-mount never reaches here (`MountState::set_mount`'s
+        // `kind == m` guard returns None), matching the C# `:6198` early-out.
+        if m == 38 {
+            self.pending_grave_cart = true;
         }
         true
     }

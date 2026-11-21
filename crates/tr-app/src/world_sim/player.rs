@@ -1654,6 +1654,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         if app.player.as_mut().is_some_and(|p| std::mem::take(&mut p.pending_lucky_break)) {
             let _ = app.achievements.complete_condition("LUCKY_BREAK", "Hit");
         }
+        // W4-c36 DOC-SWEEP — `Mount.SetMount`'s coffin-cart arm
+        // (`Mount.cs:6301-6304`): the Coffin Minecart (MountID 38) mount
+        // queued progression 32 (ROLLIN_IN_YOUR_GRAVE).
+        if app.player.as_mut().is_some_and(|p| std::mem::take(&mut p.pending_grave_cart)) {
+            let _ = app.notify_progression_net(32);
+        }
         // W4-c36 — `Mount.UpdateEffects` case 10 (`Mount.cs:4955-4958`): the
         // Unicorn mount swinging the Rainbow Gun 1260 fires
         // HandleSpecialEvent(5) → RAINBOWS_AND_UNICORNS ("Use").
@@ -2447,6 +2453,37 @@ mod tests {
         let before = app.audio.played_count();
         update_player(&mut app, 1.0 / 60.0);
         assert_eq!(app.audio.played_count(), before, "no item, no UseSound");
+    }
+
+    /// W4-c36 DOC-SWEEP — `Mount.SetMount`'s coffin-cart arm
+    /// (`Mount.cs:6301-6304`): mounting the Coffin Minecart (38) queues
+    /// progression 32 and the player pass drains it into ROLLIN_IN_YOUR_GRAVE;
+    /// a non-coffin mount never queues, and the same-type re-mount is the
+    /// `:6198` no-op (no second event). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c36_the_coffin_cart_mount_completes_rollin_in_your_grave() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        // A non-coffin mount (the Unicorn) queues nothing.
+        app.player.as_mut().unwrap().set_mount(10, false);
+        assert!(!app.player.as_ref().unwrap().pending_grave_cart);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.achievements.list.iter().any(|a| a.name == "ROLLIN_IN_YOUR_GRAVE" && a.completed),
+            "the unicorn is not the coffin cart"
+        );
+        // The coffin cart (38) queues the drain.
+        app.player.as_mut().unwrap().set_mount(38, false);
+        assert!(app.player.as_ref().unwrap().pending_grave_cart);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(!app.player.as_ref().unwrap().pending_grave_cart, "drained");
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "ROLLIN_IN_YOUR_GRAVE" && a.completed),
+            "progression 32 completes the row"
+        );
+        // The same-type re-mount never reaches the arm (`:6198` guard).
+        app.player.as_mut().unwrap().set_mount(38, false);
+        assert!(!app.player.as_ref().unwrap().pending_grave_cart, "the no-op guard");
     }
 
     /// S1-L-10c — `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount

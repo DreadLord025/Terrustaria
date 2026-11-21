@@ -126,6 +126,83 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     true
 }
 
+/// W4-c36 DOC-SWEEP — the locked Lihzahrd door's key pay + unlock
+/// (`Player.cs:32798-32834` + `WorldGen.UnlockDoor` `WorldGen.cs:37599-37627`):
+/// the inventory scan (grid + coins + ammo — the C# `for < 58`, no trash
+/// slot) pays one Temple Key 1141, then `UnlockDoor` walks up to the door's
+/// frameY-594 top cell, plays `SoundID.Unlock` (22) at `(i*16, top*16+16)`,
+/// shifts the three locked cells' frameY by +54 (the unlocked frames) and
+/// fires progression 22 → TEMPLE_RAIDER. The `!flag9 && useVoidBag()`
+/// fallback scans bank4 with the same pay/unlock shape. The dust burst
+/// (4× Dust 11 per cell, `:37621-37624`) has no port layer here — the
+/// standing tile-edit dust deviation; the MP `52` client send (`:32812`)
+/// rides the same unported door-sync gap as the chest key walks.
+fn try_unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
+    // `:32799-32813` — the inventory key scan.
+    let mut paid = false;
+    for slot in app
+        .inventory
+        .iter_mut()
+        .chain(app.equip.coins.iter_mut())
+        .chain(app.equip.ammo.iter_mut())
+    {
+        if slot.kind == 1141 && slot.count > 0 {
+            slot.count -= 1;
+            if slot.count == 0 {
+                *slot = crate::item::EMPTY_SLOT;
+            }
+            unlock_door(app, tx, ty);
+            paid = true;
+            break;
+        }
+    }
+    // `:32816-32834` — the void-bag bank4 fallback.
+    if !paid && crate::chest::use_void_bag(app) {
+        if let Some(p) = app.player.as_mut() {
+            for slot in p.banks[3].iter_mut() {
+                if slot.kind == 1141 && slot.count > 0 {
+                    slot.count -= 1;
+                    if slot.count == 0 {
+                        *slot = crate::item::EMPTY_SLOT;
+                    }
+                    unlock_door(app, tx, ty);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.UnlockDoor` (`WorldGen.cs:37599-37627`): the frameY-594 top
+/// walk (a cell above 594 or the world edge aborts), the sound-22 cue, the
+/// +54 frameY shift on the door's three cells and progression 22.
+fn unlock_door(app: &mut App, i: i32, j: i32) {
+    let mut num = j;
+    loop {
+        let Some(t) = app.world.tile(i, num) else { return };
+        if t.frame_y == 594 {
+            break;
+        }
+        num -= 1;
+        let Some(t) = app.world.tile(i, num) else { return };
+        if t.frame_y < 594 || num <= 0 {
+            return;
+        }
+    }
+    // `:37613` — `PlaySound(22, i * 16, num * 16 + 16)`.
+    app.audio
+        .play_at("Unlock", i as f32 * 16.0, num as f32 * 16.0 + 16.0, 1.0);
+    for k in num..=num + 2 {
+        if let Some(t) = app.world.tile_mut(i, k) {
+            t.frame_y += 54;
+        }
+        app.world.mark_chunk(i, k);
+    }
+    app.world.revision = app.world.revision.wrapping_add(1);
+    // `:37627` — TEMPLE_RAIDER.
+    let _ = app.notify_progression_net(22);
+}
+
 pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     // S1-P-i55 — the golf tee's right-click arm (`TileInteractionsUse`'s
     // `type == 494` branch, `Player.cs:32342-32354`): EVERY owned golf ball
@@ -184,6 +261,24 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         .is_some_and(|t| t.active() && t.kind == 237)
     {
         return use_golem_altar(app);
+    }
+    // W4-c36 DOC-SWEEP — the locked Lihzahrd door arm (`TileInteractionsUse`'s
+    // `type == 10` branch, `Player.cs:32792-32836`): `WorldGen.IsLockedDoor`
+    // (`:69191-69197`, tile 10, frameY 594-646, frameX < 54) + a Temple Key
+    // 1141 in the 58-slot inventory scan (`:32799-32813`) — the key pays,
+    // `WorldGen.UnlockDoor` (`:37599-37627`) shifts the three locked cells
+    // down 54 frameY and fires progression 22 (TEMPLE_RAIDER). The void-bag
+    // fallback (`:32816-32834`) scans bank4 with the same shape. The C#'s
+    // `flag2 = true` consumes the click either way; the port's dispatcher
+    // would answer `DoorBlocked` (open_door refuses the locked frames), so
+    // the arm runs BEFORE `interact_at` and consumes on a locked door.
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && t.kind == 10 && (594..=646).contains(&t.frame_y) && t.frame_x < 54)
+    {
+        try_unlock_temple_door(app, tx, ty);
+        return true;
     }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
@@ -1093,6 +1188,82 @@ mod tests {
                 .iter()
                 .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
             "the hardmode gate refuses"
+        );
+    }
+
+    /// W4-c36 DOC-SWEEP — the locked Lihzahrd door (`Player.cs:32792-32834`
+    /// + `WorldGen.UnlockDoor` `:37599-37627`): a Temple Key pays, the three
+    /// locked cells shift +54 frameY, TEMPLE_RAIDER completes; no key keeps
+    /// the door locked and consumes the click; the void-bag bank4 fallback
+    /// pays from the vault. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c36_the_temple_key_unlocks_the_lihzahrd_door() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 80, 200);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        // The locked door column at x 40: frameY 594/612/630 (the C#
+        // `IsLockedDoor` band), frameX 0.
+        for (dy, fy) in [(0, 594i16), (1, 612), (2, 630)] {
+            let i = w.index(40, 30 + dy);
+            w.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y: fy, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important[10] = true;
+        w.compute_column_surface();
+        app.world = w;
+        let mut p = Player::spawn(&app.world);
+        p.x = 40.0 * 16.0;
+        p.y = 31.0 * 16.0;
+        app.player = Some(p);
+        // No key: the click is consumed, the door stays locked, no credit.
+        assert!(interact_tile(&mut app, 40, 31));
+        assert_eq!(app.world.tile(40, 30).unwrap().frame_y, 594);
+        assert!(
+            !app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "no key, no unlock"
+        );
+        // The key in the grid pays one and unlocks all three cells.
+        app.inventory[3] = ItemSlot { kind: 1141, name: "Temple Key", count: 2, prefix: 0 };
+        assert!(interact_tile(&mut app, 40, 31));
+        assert_eq!(app.inventory[3].count, 1, "one key paid");
+        for (dy, fy) in [(0, 648i16), (1, 666), (2, 684)] {
+            assert_eq!(app.world.tile(40, 30 + dy).unwrap().frame_y, fy, "+54 shift");
+        }
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "progression 22 completes the row"
+        );
+        // The unlocked door no longer matches IsLockedDoor — the key arm
+        // does not run again (the normal open_door dispatcher owns it now).
+        // The row is already completed, so a hypothetical re-fire would be
+        // invisible — the key count is the observable.
+        let _ = interact_tile(&mut app, 40, 31);
+        assert_eq!(app.inventory[3].count, 1, "no second pay on the unlocked door");
+        // The void-bag fallback: a fresh locked column, no inventory key,
+        // the bag + a bank4 key pay from the vault.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 80, 200);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        for (dy, fy) in [(0, 594i16), (1, 612), (2, 630)] {
+            let i = w.index(40, 30 + dy);
+            w.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y: fy, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important[10] = true;
+        w.compute_column_surface();
+        app.world = w;
+        let mut p = Player::spawn(&app.world);
+        p.x = 40.0 * 16.0;
+        p.y = 31.0 * 16.0;
+        p.banks[3][0] = ItemSlot { kind: 1141, name: "Temple Key", count: 1, prefix: 0 };
+        app.player = Some(p);
+        app.inventory[0] = ItemSlot { kind: 4131, name: "Void Bag", count: 1, prefix: 0 };
+        assert!(interact_tile(&mut app, 40, 31));
+        assert_eq!(app.player.as_ref().unwrap().banks[3][0].count, 0, "the vault key paid");
+        assert_eq!(app.world.tile(40, 30).unwrap().frame_y, 648);
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "the fallback fires the same progression"
         );
     }
 }
