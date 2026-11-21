@@ -2485,14 +2485,17 @@ fn creeper_death(
     gore.new_gore(rng, world, pos, vel, 402, 1.0); // :87273
 }
 
-/// The 4/125/126 Eye of Cthulhu family death (`NPC.cs:87275-87340`):
-/// the 150x dust-5 burst, then the TWO-iteration loop — each iteration
-/// spawns 2/7/9 with the scatter velocity `(Next(-30,31)*0.2,
-/// Next(-30,31)*0.2)` (X then Y BEFORE each NewGore), then the per-kind
-/// fourth: 4 EoC → 10 (+ the SoundID.Item15 cue, c13's lane), 125
-/// Retinazer → 146, 126 Spazmatism → 145 (`:87289-87306`). The live
-/// kinds: 125/126 (the twins, sites 385-392); the 4 EoC branch + the
-/// 125/126 sparkle tail land next batch. Scale 1f throughout.
+/// The 4/125/126 Eye of Cthulhu family death (`NPC.cs:87275-87340`,
+/// sites 385-398): the 150x dust-5 burst, then the TWO-iteration loop —
+/// each iteration spawns 2/7/9 with the scatter velocity
+/// `(Next(-30,31)*0.2, Next(-30,31)*0.2)` (X then Y BEFORE each
+/// NewGore), then the per-kind fourth: 4 EoC → 10 (+ the SoundID.Item15
+/// cue, c13's lane), 125 Retinazer → 146, 126 Spazmatism → 145
+/// (`:87289-87306`). The twins' sparkle tail (`:87308-87338`): the 10x
+/// dust-31 (×1.4) + the 5x paired dust-6 bursts (×5 noGravity + ×3),
+/// then the FOUR `Next(61,64)` smoke gores (type argument BEFORE the
+/// NewGore, zero velocity base) with the post ×0.4 + the ±1 quadrant
+/// nudges. Scale 1f throughout.
 fn eye_family_death(
     npc: &Npc,
     npc_type: i32,
@@ -2525,7 +2528,12 @@ fn eye_family_death(
             let vy = rng.next_range(-30, 31) as f32 * 0.2;
             gore.new_gore(rng, world, pos, Vec2::new(vx, vy), t, 1.0); // :87291-87293
         }
-        if npc_type == 125 {
+        if npc_type == 4 {
+            let vx = rng.next_range(-30, 31) as f32 * 0.2;
+            let vy = rng.next_range(-30, 31) as f32 * 0.2;
+            gore.new_gore(rng, world, pos, Vec2::new(vx, vy), 10, 1.0); // :87296
+            // `:87297` — the SoundID.Item15 cue (c13's lane, no draw).
+        } else if npc_type == 125 {
             let vx = rng.next_range(-30, 31) as f32 * 0.2;
             let vy = rng.next_range(-30, 31) as f32 * 0.2;
             gore.new_gore(rng, world, pos, Vec2::new(vx, vy), 146, 1.0); // :87301
@@ -2533,6 +2541,47 @@ fn eye_family_death(
             let vx = rng.next_range(-30, 31) as f32 * 0.2;
             let vy = rng.next_range(-30, 31) as f32 * 0.2;
             gore.new_gore(rng, world, pos, Vec2::new(vx, vy), 145, 1.0); // :87305
+        }
+    }
+    if npc_type == 125 || npc_type == 126 {
+        // `:87308-87322` — the twins' sparkle tail: the 10x dust-31
+        // (velocity ×1.4) then the 5x paired dust-6 bursts (the ×5
+        // noGravity + the ×3 second), all alpha 100.
+        let (w, h) = npc.size();
+        for _ in 0..10 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+                Color::default(), 1.5,
+            );
+            dust.slot_mut(idx).velocity *= 1.4;
+        }
+        for _ in 0..5 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+                Color::default(), 2.5,
+            );
+            {
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 5.0;
+            }
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+                Color::default(), 1.5,
+            );
+            dust.slot_mut(idx).velocity *= 3.0;
+        }
+        // `:87323-87338` — the four Next(61,64) smoke gores: the type
+        // argument draws BEFORE each NewGore (velocity default = zero),
+        // then the post ×0.4 + the ±1 quadrant nudges.
+        let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+        for (dx, dy) in nudges {
+            let t = rng.next_range(61, 64);
+            let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, t, 1.0);
+            let g = gore.slot_mut(idx);
+            g.velocity *= 0.4;
+            g.velocity.x += dx;
+            g.velocity.y += dy;
         }
     }
 }
@@ -2821,9 +2870,8 @@ pub fn hit_effect_d(
     else if npc_type == 267 {
         creeper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:87275-87340` — the 4/125/126 Eye family arm; the 125/126 twins
-    // are live (sites 385-392), the 4 EoC branch + the sparkle tail land
-    // next batch.
+    // `:87275-87340` — the 4/125/126 Eye family arm, COMPLETE (sites
+    // 385-398).
     else if matches!(npc_type, 4 | 125 | 126) {
         eye_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
@@ -5084,5 +5132,77 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "twin {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:87296` — the EoC's fourth is 10 (two rounds, no sparkle
+    /// tail); the sound cue draws nothing.
+    #[test]
+    fn w4_f5d_the_eye_of_cthulhu_fourth_is_ten() {
+        let w = air();
+        let n = mob(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(401);
+        let _ = hit_effect_d(&n, 4, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..8].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![2, 7, 9, 10, 2, 7, 9, 10]);
+        assert!(!gore.slot(8).active, "no sparkle tail for the EoC");
+        let mut twin = UnifiedRandom::new(401);
+        for _ in 0..150 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..8 {
+            let _vx = twin.next_range(-30, 31);
+            let _vy = twin.next_range(-30, 31);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the EoC mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87323-87338` — the twins' sparkle tail: after the two
+    /// rounds + the 10x dust-31 + the 5x paired dust-6 census, FOUR
+    /// Next(61,64) smoke gores with the post ×0.4 + the ±1 quadrant
+    /// nudges (+/+ then -/+ then +/- then -/-).
+    #[test]
+    fn w4_f5d_the_twins_sparkle_tail_nudges_the_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(409);
+        let _ = hit_effect_d(&n, 125, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let smoke: Vec<i32> = gore.slots()[8..12].iter().map(|g| g.gore_type).collect();
+        for t in &smoke {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(12).active, "exactly twelve gores");
+        let mut twin = UnifiedRandom::new(409);
+        for _ in 0..150 {
+            twin_dust(&mut twin, 50, 50);
+        }
+        for _ in 0..8 {
+            let _vx = twin.next_range(-30, 31);
+            let _vy = twin.next_range(-30, 31);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            twin_dust(&mut twin, 50, 50);
+        }
+        for _ in 0..5 {
+            twin_dust(&mut twin, 50, 50);
+            twin_dust(&mut twin, 50, 50);
+        }
+        let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+        for (i, (dx, dy)) in nudges.iter().enumerate() {
+            let t = twin.next_range(61, 64);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(8 + i).gore_type, t);
+            assert_eq!(gore.slot(8 + i).velocity.x, kx * 0.4 + dx);
+            assert_eq!(gore.slot(8 + i).velocity.y, -ky * 0.4 + dy);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the sparkle tail mirrors the C# draws");
     }
 }
