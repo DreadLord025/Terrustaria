@@ -929,6 +929,30 @@ impl App {
             C2s::LucyPopup(l) => {
                 server.broadcast_except(&S2c::LucyPopup(l), id);
             }
+            // `case 142` — a client's piggy-bank / void-lens trackers
+            // (`MessageBuffer.cs:4282-4297`): the host forces the subject to
+            // the sender (`:4284-4287`), stores the two references on the
+            // peer snapshot (stored-not-simulated — the port has no
+            // piggy-bank/void-lens projectile-tracking consumer), then
+            // relays to the OTHERS (`:4292-4295`, `ignoreClient = whoAmI`).
+            C2s::ProjectileTrackers(mut t) => {
+                t.player_id = id as u8; // `:4286`
+                self.remote_players.entry(id).or_default().trackers = Some(t);
+                server.broadcast_except(&S2c::ProjectileTrackers(t), id);
+            }
+            // `case 143` — a client asked to skip the DD2 wave break
+            // (`MessageBuffer.cs:4298-4303`, host-only, no body):
+            // `DD2Event.AttemptToSkipWaitTime` (`DD2Event.cs:1795-1801`) —
+            // `TimeLeftBetweenWaves > 60` → `SetEnemySpawningOnHold(60)`.
+            // The port's `dd2_spawn_hold` is `_timeLeftUntilSpawningBegins`;
+            // the strict `>` gate refuses at exactly 60.
+            C2s::CrystalInvasionSkip => {
+                if let Some(hold) =
+                    tr_core::dd2_victory::attempt_skip_wait_time(self.world.dd2_spawn_hold)
+                {
+                    self.world.dd2_spawn_hold = hold;
+                }
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -2019,7 +2043,6 @@ impl App {
             | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
-            | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
             // `case 135`'s client half (`MessageBuffer.cs:4195-4203`):
             // `Main.player[num103].immuneAlpha = 255` — the dead-peer ghost
@@ -2048,6 +2071,18 @@ impl App {
             // yet, so the arm parks with it (S1-I-4); the host relay above
             // carries the body verbatim.
             S2c::LucyPopup(_) => {}
+            // `case 142`'s client half (`MessageBuffer.cs:4289-4291`): the
+            // two `TrackedProjectileReference.Read`s land on
+            // `Main.player[num79]`. The port has no piggy-bank/void-lens
+            // projectile-tracking consumer, so the references are
+            // stored-not-simulated on the snapshot (the local player's
+            // included — there is no live field to write).
+            S2c::ProjectileTrackers(t) => {
+                self.remote_players
+                    .entry(t.player_id as u32)
+                    .or_default()
+                    .trackers = Some(t);
+            }
             // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
             // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
             // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
@@ -4420,6 +4455,71 @@ mod handshake_tests {
             host_app.npcs[0].buffs.has_buff(20),
             "the empty CanBeRemovedByNetMessage set refuses the removal"
         );
+    }
+
+    /// W4-g51 `143 CrystalInvasionSkip`: the host's `AttemptToSkipWaitTime`
+    /// (`MessageBuffer.cs:4298-4303`, `DD2Event.cs:1795-1801`) clamps a
+    /// >60 wave-break hold to 60; the strict gate refuses at exactly 60.
+    #[test]
+    fn the_crystal_invasion_skip_clamps_the_wave_break_hold() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        host_app.world.dd2_spawn_hold = 1800;
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::CrystalInvasionSkip,
+                },
+            );
+        }
+        host_app.net = role;
+        assert_eq!(host_app.world.dd2_spawn_hold, 60, "the >60 hold clamped to 60");
+        // A second skip at exactly 60 is refused (strict >).
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::CrystalInvasionSkip,
+                },
+            );
+        }
+        host_app.net = role;
+        assert_eq!(host_app.world.dd2_spawn_hold, 60, "the strict gate refused");
+    }
+
+    /// W4-g51 `142 SyncProjectileTrackers`: the host forces the subject to
+    /// the sender and stores the references on the peer snapshot
+    /// (`MessageBuffer.cs:4282-4297`, stored-not-simulated).
+    #[test]
+    fn the_projectile_trackers_store_on_the_peer_snapshot() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::ProjectileTrackers(net::ProjectileTrackers {
+                        player_id: 99, // overridden to the sender (1)
+                        piggy_bank: net::TrackedProjectileRef { key: 7, kind: 1 },
+                        void_lens: net::TrackedProjectileRef { key: 8, kind: 2 },
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        let t = host_app.remote_players[&1]
+            .trackers
+            .expect("the trackers stored");
+        assert_eq!(t.player_id, 1, "the subject was forced to the sender");
+        assert_eq!(t.piggy_bank.key, 7);
+        assert_eq!(t.void_lens.kind, 2);
     }
 
     #[test]

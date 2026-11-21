@@ -179,6 +179,11 @@ pub mod id {
     /// lifted the parked d99 codec; the host relay is wired, the client
     /// `CreateFromNet` popup is parked (no Lucy popup system yet).
     pub const LUCY_POPUP: u8 = 141;
+    /// `143 CrystalInvasionRequestedToSkipWaitTime` (`MessageID.cs:300`) —
+    /// a client asked to skip the DD2 wave break, no body
+    /// (`DD2Event.cs:1790`, `MessageBuffer.cs:4298-4303`). W4-g51 lifted the
+    /// parked d99 codec and wired the host `AttemptToSkipWaitTime` arm.
+    pub const CRYSTAL_INVASION_SKIP: u8 = 143;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -620,6 +625,11 @@ pub struct PlayerNet {
     /// port does not run remote player sims); the local player's live state
     /// is `Player.luck_state`. `None` = never synced (the C# field defaults).
     pub luck: Option<UpdatePlayerLuckFactors>,
+    /// `Main.player[id].piggyBankProjTracker` / `.voidLensChest`, fed by
+    /// `142 SyncProjectileTrackers` (`MessageBuffer.cs:4282-4297`).
+    /// Stored-not-simulated (the port has no piggy-bank/void-lens projectile
+    /// tracking consumer yet). `None` = never synced (the C# field defaults).
+    pub trackers: Option<ProjectileTrackers>,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1868,6 +1878,9 @@ pub enum C2s {
     /// `141 LucyTheAxeMessage` - a talking-axe popup
     /// (`LucyAxeMessage.cs:133`; the host relays, `:4274`).
     LucyPopup(LucyPopup),
+    /// `143 DD2EventSkipWaitTime` - a client asked to skip the DD2 wait,
+    /// no body (`DD2Event.cs:1790`, `MessageBuffer.cs:4298-4303`).
+    CrystalInvasionSkip,
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2109,6 +2122,7 @@ impl C2s {
             Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
             Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
             Self::LucyPopup(_) => id::LUCY_POPUP,
+            Self::CrystalInvasionSkip => id::CRYSTAL_INVASION_SKIP,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2199,6 +2213,8 @@ impl C2s {
                 .f32(l.velocity_y)
                 .i32(l.x)
                 .i32(l.y),
+            // No writer arm — bodyless (`DD2Event.cs:1790` SendData(143)).
+            Self::CrystalInvasionSkip => w,
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2362,6 +2378,8 @@ impl C2s {
                 x: r.i32()?,
                 y: r.i32()?,
             }),
+            // `MessageBuffer.cs:4298-4303`: no body.
+            id::CRYSTAL_INVASION_SKIP => Self::CrystalInvasionSkip,
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -5269,6 +5287,19 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::LucyPopup(d) => assert_eq!(d, l),
             other => panic!("expected 141, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `143 CrystalInvasionSkip` frame is bodyless — a bare
+    /// 3-byte frame (length 3, id 143, no body; `DD2Event.cs:1790`).
+    #[test]
+    fn w4_g51_crystal_invasion_skip_is_bodyless() {
+        let c = C2s::CrystalInvasionSkip.encode();
+        assert_eq!(c.len(), 3, "the bare 3-byte frame");
+        assert_eq!(c[2], 143);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::CrystalInvasionSkip => {}
+            other => panic!("expected 143, got {:?}", other.msg_id()),
         }
     }
 
