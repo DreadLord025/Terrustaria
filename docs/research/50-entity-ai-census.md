@@ -36,7 +36,7 @@ Quality legend:
 - **WIRED-DELEGATE** — live `update_*` fn delegates to a landed faithful helper (`npc_ai`, `npc_ai3_speeds`, `npc_ai_bat`, `npc_ai_golem`, `npc_ai_plantera`, `npc_target`); fidelity of the wrapper itself still needs the per-slice audit.
 - **LIVE-INLINE** — hand-ported inline machine; not covered by a session audit yet (audit wave targets).
 - **STAND-IN** — approximation still live (invented constants / simplified machine); a faithful UNWIRED module exists where noted.
-- **SIM-PASS** — aiStyle-6 worm kinds ride `world_sim/npcs.rs::update_worms_in` (chain move stand-in for `AI_006_Worms` :50963-52273).
+- **SIM-PASS** — aiStyle-6 worm kinds ride `world_sim/npcs.rs::update_worms_in` (`AI_006_Worms` :50963-52273). W4-d22 style-6: the head machine's air stumble (:51925-51973) + dig steer (:52112-52199) are the FAITHFUL three-arm accel approaches (audit T1b landed — the pre-fix velocity-snap/facing/signum stand-in retired), the tile-snapped aim (:51855-51866) feeds both, the dig-mode latch (:52202-52224) restored; the chain assembly/trail/split/crumble-draw ledger were already faithful (W-A2-1/2/3). The wyvern (87-92) + stardust-worm (402) own machines stay their own waves.
 - **EMPTY-OK** — intentional no-op arm (bound/sleeping NPCs; rescue logic lives in `world_sim/npcs.rs` :544-616).
 
 | id | kind | aiStyle | serving fn / module (npc.rs lines) | quality | note |

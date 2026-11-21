@@ -1652,12 +1652,17 @@ pub(crate) fn update_plantera_minions(app: &mut App) {
 /// surface gate (`:51110-51148`), the `flag3` dig-mode scan
 /// (`:51525-51597`, margins + overlap + solidTop + the per-tile
 /// `Next(100)` crumble draw), the 1000-px no-player dig override
-/// (`:51598-51615`), the corruption escape (`:52004-52050`) and the
-/// head rotation (`:52201`). The air stumble / dig steer stays the
-/// documented stand-in (the three-arm accel steer `:52112-52198` is
-/// audit T1b, wave W-A2-2). Returns `true` when the corruption escape
-/// deactivates the whole chain (`:52028-52047`'s `ai[0]` walk).
-/// `noTileCollide` is family-wide — no collision blocks the head.
+/// (`:51598-51615`), the corruption escape (`:52004-52050`), the head
+/// rotation (`:52201`) and the dig-mode latch (`:52202-52224`). W4-d22:
+/// the air stumble (`:51925-51973`) and the dig steer (`:52112-52199`)
+/// are now the FAITHFUL three-arm accel approaches (audit T1b's deferred
+/// rewrite landed) — the air arms key on the velocity sign + the snapped
+/// aim, the dig arm approaches the num45-scaled aim by num46 with the two
+/// cross-axis ×2 kicks and the dominant-axis ×1.1 else arms (the pre-fix
+/// stand-in snapped vx/vy to the aim and used facing/signum/raw-aim).
+/// Returns `true` when the corruption escape deactivates the whole chain
+/// (`:52028-52047`'s `ai[0]` walk). `noTileCollide` is family-wide — no
+/// collision blocks the head.
 fn worm_head_step(
     npc: &mut Npc,
     world: &tr_core::World,
@@ -1761,30 +1766,53 @@ fn worm_head_step(
     }
     let (num45, num46) = npc.kind.worm_tunables();
     let mut despawn_chain = false;
+    // The tile-snapped aim (`NPC.cs:51855-51866`): BOTH the player centre
+    // and the NPC centre floor to the 16-px grid before the delta; num48/
+    // num49 is the snapped vector, num62 its length. Computed once for both
+    // the air stumble (which steers vx toward num48) and the dig branch.
+    let mut num48 = (((ctx.pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16)
+        as f32;
+    let mut num49 = (((ctx.pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16)
+        as f32;
     if !flag3 {
-        // The air stumble (`:51927-51973`) — the stand-in steer (T1b's
-        // faithful three-arm rewrite is wave W-A2-2).
+        // `:51927` — `TargetClosest()` faces the target (the solo fold: the
+        // one player; the retarget itself has no seam, documented).
+        npc.facing = if ctx.pcx >= npc.x + w * 0.5 { 1 } else { -1 };
+        // The air stumble (`NPC.cs:51925-51973`): the gravity +0.11 capped
+        // at num45, then the three-arm steer keyed on the VELOCITY sign
+        // (not the facing) and the snapped aim num48 (not the raw centre
+        // delta). W4-d22: the pre-fix stand-in used `facing`/`signum()`/the
+        // raw aim — the faithful arms restore the C# sign tests (vx == 0
+        // takes the `else` +branch, vy > 4 decelerates toward zero).
         npc.vy = (npc.vy + 0.11).min(num45);
         if (npc.vx.abs() + npc.vy.abs()) < num45 * 0.4 {
-            npc.vx += npc.facing as f32 * num46 * 1.1;
+            // `:51940-51950` — the low-speed kick along the velocity sign.
+            if npc.vx < 0.0 {
+                npc.vx -= num46 * 1.1;
+            } else {
+                npc.vx += num46 * 1.1;
+            }
         } else if npc.vy == num45 {
-            let target_vx = ctx.pcx - (npc.x + w * 0.5);
-            if npc.vx < target_vx {
+            // `:51951-51961` — at terminal fall, steer toward the snapped aim.
+            if npc.vx < num48 {
                 npc.vx += num46;
-            } else if npc.vx > target_vx {
+            } else if npc.vx > num48 {
                 npc.vx -= num46;
             }
         } else if npc.vy > 4.0 {
-            npc.vx -= npc.vx.signum() * num46 * 0.9;
+            // `:51962-51972` — the falling decel toward zero.
+            if npc.vx < 0.0 {
+                npc.vx += num46 * 0.9;
+            } else {
+                npc.vx -= num46 * 0.9;
+            }
         }
-        npc.facing = if ctx.pcx >= npc.x + w * 0.5 { 1 } else { -1 };
     } else {
-        // The dig (`:51974-52002`): the tile-snapped aim at the max speed.
-        let mut dx =
-            (((ctx.pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16) as f32;
-        let mut dy =
-            (((ctx.pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16) as f32;
-        let len = (dx * dx + dy * dy).sqrt().max(0.001);
+        // The dig (`:51974-52200`): the tile-snapped aim (num48/num49 above)
+        // scaled to num45, then the three-arm accel steer — NOT a velocity
+        // snap (W4-d22: the pre-fix stand-in set vx/vy = the scaled aim
+        // directly; the C# approaches it by num46 per tick, audit T1b).
+        let len = (num48 * num48 + num49 * num49).sqrt().max(0.001);
         // S1-E-21g — `NPC.cs:51976-51995`: the dig rumble on the
         // `soundDelay == 0` cadence — the distance/40 clamp (10..20)
         // re-arms the delay BEFORE the play (`:51987`), then the EoW
@@ -1816,9 +1844,14 @@ fn worm_head_step(
                 y: npc.y,
             });
         }
+        // `:51997-52002` — num65/num66 are the UNSCALED |num48|/|num49|
+        // (the axis-dominance test below reads them); num62 re-reads the
+        // length, then the aim scales to num45.
+        let num65 = num48.abs();
+        let num66 = num49.abs();
         let num67 = num45 / len;
-        dx *= num67;
-        dy *= num67;
+        num48 *= num67;
+        num49 *= num67;
         // The corruption escape (`:52004-52050`, INSIDE the dig branch,
         // after the aim scale): Devourer/EoW (7/13) whose target is
         // outside Corrupt/Crimson or dead → `flag6`; then if NO living
@@ -1836,18 +1869,111 @@ fn worm_head_step(
                 if (npc.y / TILE_PX) as f64 > (world.rock_layer + world.height as f64) / 2.0 {
                     despawn_chain = true;
                 }
-                dx = 0.0;
-                dy = num45;
+                num48 = 0.0;
+                num49 = num45;
             }
         }
-        npc.vx = dx;
-        npc.vy = dy;
+        // The three-arm accel steer (`NPC.cs:52112-52199`, flag8 false for
+        // every ported head — the 87/454/621 charge arms are unported).
+        // W4-d22: the faithful approach replaces the pre-fix velocity snap
+        // (audit T1b). The same-sign arm accelerates both axes toward the
+        // aim with the two cross-axis ×2 kicks; the else arms steer the
+        // dominant axis by ×1.1 and nudge the other when slow.
+        let same_sign = (npc.vx > 0.0 && num48 > 0.0)
+            || (npc.vx < 0.0 && num48 < 0.0)
+            || (npc.vy > 0.0 && num49 > 0.0)
+            || (npc.vy < 0.0 && num49 < 0.0);
+        if same_sign {
+            // `:52116-52131` — both axes approach the aim by num46.
+            if npc.vx < num48 {
+                npc.vx += num46;
+            } else if npc.vx > num48 {
+                npc.vx -= num46;
+            }
+            if npc.vy < num49 {
+                npc.vy += num46;
+            } else if npc.vy > num49 {
+                npc.vy -= num46;
+            }
+            // `:52132-52142` — the Y cross-kick: a near-horizontal aim
+            // (|num49| < num45*0.2) with the X velocity opposing the aim
+            // kicks vy away from zero by num46*2.
+            if num49.abs() < num45 * 0.2
+                && ((npc.vx > 0.0 && num48 < 0.0) || (npc.vx < 0.0 && num48 > 0.0))
+            {
+                if npc.vy > 0.0 {
+                    npc.vy += num46 * 2.0;
+                } else {
+                    npc.vy -= num46 * 2.0;
+                }
+            }
+            // `:52143-52153` — the X cross-kick (the mirror).
+            if num48.abs() < num45 * 0.2
+                && ((npc.vy > 0.0 && num49 < 0.0) || (npc.vy < 0.0 && num49 > 0.0))
+            {
+                if npc.vx > 0.0 {
+                    npc.vx += num46 * 2.0;
+                } else {
+                    npc.vx -= num46 * 2.0;
+                }
+            }
+        } else if num65 > num66 {
+            // `:52155-52176` — X-dominant: steer vx by ×1.1, nudge vy when
+            // the total speed is below num45*0.5.
+            if npc.vx < num48 {
+                npc.vx += num46 * 1.1;
+            } else if npc.vx > num48 {
+                npc.vx -= num46 * 1.1;
+            }
+            if npc.vx.abs() + npc.vy.abs() < num45 * 0.5 {
+                if npc.vy > 0.0 {
+                    npc.vy += num46;
+                } else {
+                    npc.vy -= num46;
+                }
+            }
+        } else {
+            // `:52177-52198` — Y-dominant: the mirror.
+            if npc.vy < num49 {
+                npc.vy += num46 * 1.1;
+            } else if npc.vy > num49 {
+                npc.vy -= num46 * 1.1;
+            }
+            if npc.vx.abs() + npc.vy.abs() < num45 * 0.5 {
+                if npc.vx > 0.0 {
+                    npc.vx += num46;
+                } else {
+                    npc.vx -= num46;
+                }
+            }
+        }
     }
     // The head rotation (`NPC.cs:52201`, the no-leader `else`'s tail —
     // every head, every tick): `Atan2(vy, vx) + Math.PI/2`. The heads use
     // PI/2, NOT the followers' `1.57f` literal (`:51878`) — keep the two
     // constants distinct.
     npc.rotation = npc.vy.atan2(npc.vx) + std::f32::consts::FRAC_PI_2;
+    // `:52202-52224` — the dig-mode latch (the ported heads 7/10/13/117
+    // are all on the type list): `localAI[0]` tracks flag3 (1 digging, 0
+    // airborne), arming netUpdate on the transition. The velocity-flip
+    // netUpdate (`:52220`) reads `oldVelocity`, which the C# captures ONLY
+    // in `UpdateCollision` (`:92538`) — the noTileCollide worms skip that
+    // path, so oldVelocity stays (0,0) and the flip test is inert; the
+    // latch is the live write. W4-d22 restored it (the stand-in dropped
+    // both).
+    if matches!(
+        npc.kind,
+        NpcKind::DevourerHead
+            | NpcKind::GiantWormHead
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::LeechHead
+    ) {
+        let latch = if flag3 { 1.0 } else { 0.0 };
+        if npc.local_ai[0] != latch {
+            npc.net_update = true;
+        }
+        npc.local_ai[0] = latch;
+    }
     // `noTileCollide` — the direct integration (`NPC.cs:90495-90498`).
     npc.x += npc.vx;
     npc.y += npc.vy;
@@ -14013,10 +14139,24 @@ mod worm_tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(5);
         let mut next_id = 1u32;
-        // Shallow: the aim overrides to straight down at num45 = 9.
+        // Shallow: the escape aims straight down (num48 = 0, num49 =
+        // num45 = 9). W4-d22: the dig steer is the faithful accel approach
+        // (audit T1b), not a velocity snap — from rest the Y-dominant else
+        // arm (`:52177-52198`) nudges vy by num46*1.1 = 0.11; the total
+        // speed 0 < num45*0.5 also kicks vx by num46 (vx == 0 takes the
+        // `else` −branch, `:52191-52196`). The aim points down; the speed
+        // ramps over ticks.
         update_worms_in(&world, Some((160.0, 176.0)), &mut npcs, &mut rng, &mut next_id);
-        assert_eq!(npcs[0].vx, 0.0, "the escape aims straight down");
-        assert_eq!(npcs[0].vy, 9.0, "num49 = num45");
+        assert!(
+            (npcs[0].vx + 0.1).abs() < 1e-4,
+            "the X slow-speed nudge from rest: {}",
+            npcs[0].vx
+        );
+        assert!(
+            (npcs[0].vy - 0.11).abs() < 1e-4,
+            "the Y-dominant accel approach from rest: {}",
+            npcs[0].vy
+        );
         assert!(npcs[0].hp > 0, "shallow: no despawn");
         // Deep (y/16 = 600 > 550): the chain walks dead.
         let mut deep = Npc::new(NpcKind::DevourerHead, 160.0, 9600.0, 1, 0.0);
@@ -14041,8 +14181,14 @@ mod worm_tests {
         // Giant Worm (type 10) is in the list but NOT in the corruption
         // escape's 7/13 pair — the aim keeps pointing at the far player
         // (a Devourer here would aim straight down, `:52048-52049`, the
-        // escape's own witness below).
-        let world = World::new("t".into(), 200, 800);
+        // escape's own witness below). W4-d22: the dig steer is the
+        // faithful accel approach (audit T1b) — the velocity ramps toward
+        // the num45-scaled aim over ticks, not an instant snap.
+        // A wide world so the head stays in bounds while the velocity
+        // saturates (the off-world guard only kills below the world's
+        // bottom; the X exit has no guard, but the wide row keeps the
+        // chain's follower scans cheap and the head on-map).
+        let world = World::new("t".into(), 2000, 800);
         let mut head = Npc::new(NpcKind::GiantWormHead, 160.0, 160.0, 1, 0.0);
         head.hp = head.max_hp;
         head.worm_inited = true;
@@ -14050,13 +14196,17 @@ mod worm_tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(5);
         let mut next_id = 1u32;
-        // Player 3000 px away: outside the box → the dig branch runs
-        // (the aim snaps toward the player at num45, not the air
-        // stumble's 0.11 gravity).
-        update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        // Player 3000 px away: outside the box → the dig branch runs.
+        // The aim is horizontal (num49 = 0), so the X-dominant else arm
+        // (`:52155-52176`) accelerates vx by num46*1.1 = 0.055 per tick
+        // toward num45 = 6; ~110 ticks saturate it. The head travels
+        // ~660 px over those ticks — well inside the 2000-tile row.
+        for _ in 0..150 {
+            update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        }
         let speed = (npcs[0].vx * npcs[0].vx + npcs[0].vy * npcs[0].vy).sqrt();
         assert!(
-            (speed - 6.0).abs() < 0.01,
+            (speed - 6.0).abs() < 0.1,
             "the override digs at full speed (the Giant Worm's num45 = 6): {speed}"
         );
         assert!(npcs[0].vx > 0.0, "toward the far player");
@@ -14094,6 +14244,73 @@ mod worm_tests {
             (dist - bw).abs() < 0.01,
             "same-tick spacing: {dist} vs {bw}"
         );
+    }
+
+    // ---- W4-d22 style-6 witnesses (the faithful dig/air steer, audit T1b) ----
+    // WRITTEN NOT RUN — code-only mode. Each pins the C# accel approach the
+    // pre-fix velocity-snap stand-in dropped.
+
+    #[test]
+    fn w4_d22_the_dig_steer_accelerates_instead_of_snapping() {
+        // `NPC.cs:52112-52199`: the dig arm approaches the num45-scaled aim
+        // by num46 per tick — NOT a velocity snap. A Giant Worm head
+        // (num45 = 6, num46 = 0.05) at rest digging toward a far horizontal
+        // player takes the X-dominant else arm (`:52155-52176`): the first
+        // tick nudges vx by num46*1.1 = 0.055 (the pre-fix stand-in snapped
+        // vx straight to 6). The Y slow-speed nudge (`:52165-52175`) fires
+        // too (total speed 0 < num45*0.5, vy == 0 takes the −branch).
+        let world = World::new("t".into(), 2000, 800);
+        let mut head = Npc::new(NpcKind::GiantWormHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        assert!(
+            (npcs[0].vx - 0.055).abs() < 1e-4,
+            "the first-tick accel, not the 6-snap: {}",
+            npcs[0].vx
+        );
+        assert!(
+            (npcs[0].vy + 0.05).abs() < 1e-4,
+            "the Y slow-speed nudge from rest: {}",
+            npcs[0].vy
+        );
+        // The dig-mode latch (`:52204-52210`): localAI[0] = 1 while digging.
+        assert_eq!(npcs[0].local_ai[0], 1.0, "the dig latch (:52210)");
+    }
+
+    #[test]
+    fn w4_d22_the_air_stumble_keys_on_the_velocity_sign() {
+        // `NPC.cs:51940-51950`: the low-speed kick follows the VELOCITY sign
+        // (vx < 0 → −num46*1.1, else +), NOT the facing. A Devourer head
+        // (num45 = 9, num46 = 0.1) in open air with the player INSIDE the
+        // ±1000-px box (so the dig override does not fire) and to the RIGHT:
+        // a head already moving LEFT kicks further left even though the
+        // player is right — the pre-fix stand-in used `facing` (+1 here).
+        let world = World::new("t".into(), 2000, 800);
+        let mut head = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        head.vx = -1.0; // moving left, player right
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        // Player centre (600, 160): position (590, 139) sits inside the
+        // head's ±1000-px box → no dig override; open air → flag3 false.
+        update_worms_in(&world, Some((600.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        // Gravity 0.11; |vx| + |vy| = 1.0 + 0.11 = 1.11 < num45*0.4 = 3.6 →
+        // the kick; vx < 0 → −num46*1.1 = −0.11 → vx = −1.11.
+        assert!(
+            (npcs[0].vx + 1.11).abs() < 1e-4,
+            "the velocity-sign kick (not facing): {}",
+            npcs[0].vx
+        );
+        // Airborne: the dig latch clears to 0 (`:52212-52218`).
+        assert_eq!(npcs[0].local_ai[0], 0.0, "the air latch (:52218)");
     }
 
     // ---- W-A2-3 witnesses (audit 55, fix/eow-leech-worm-defects) ----

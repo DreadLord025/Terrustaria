@@ -21610,9 +21610,10 @@ mod tests {
 
     #[test]
     fn the_worm_head_digs_and_stumbles() {
-        // The head machine (`:51923-52051`): inside the solid the velocity
-        // aims at the tile-snapped player at `num45`; in the open air the
-        // gravity pulls.
+        // The head machine (`:51923-52200`): inside the solid the velocity
+        // APPROACHES the tile-snapped player aim at num45 by num46 per tick
+        // (W4-d22: the faithful accel steer, audit T1b — not the pre-fix
+        // velocity snap); in the open air the gravity pulls.
         let mut w = ground_air();
         // The head deep in the dirt, the player above. The Giant Worm
         // (type 10) rides the plain dig — the corruption escape's 7/13
@@ -21627,25 +21628,38 @@ mod tests {
         let mut next_id = 1u32;
         // The player parked above the dirt.
         let pc = (100.0 * 16.0, 116.0 * 16.0);
-        crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
+        // The dig ramps the speed toward num45 = 6 over ~110 ticks (the
+        // accel approach, not an instant snap). The head stays deep in the
+        // dirt while it ramps (the player is ~550 px up-right; the head
+        // travels well under that before saturating).
+        for _ in 0..150 {
+            crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
+        }
         let h0 = &npcs[0];
-        // The dig: the velocity magnitude rides num45 (6 for the Giant Worm).
         let speed = (h0.vx * h0.vx + h0.vy * h0.vy).sqrt();
         assert!((speed - 6.0).abs() < 0.1, "the dig speed ({speed})");
         assert!(h0.vy < 0.0, "the head digs up toward the player");
         // The Devourer (7) in the same dirt with the same non-evil target:
-        // the corruption escape aims straight down at num45 = 9
-        // (`:52048-52049`; shallow — above the (rockLayer+maxTilesY)/2
-        // depth gate, the chain-despawn arm is the worm_tests witness's
-        // own).
+        // the corruption escape aims straight down (num48 = 0, num49 =
+        // num45 = 9, `:52048-52049`). From rest the Y-dominant else arm
+        // nudges vy by num46*1.1 = 0.11 and the X slow-speed nudge kicks
+        // vx by −num46 = −0.1 (the faithful approach, not the 9-snap).
         let mut dev = Npc::spawn_worm_head(&w, 40, 140, NpcKind::DevourerHead);
         dev.hp = dev.max_hp;
         dev.worm_inited = true;
         dev.worm_id = 3;
         let mut npcs3 = vec![dev];
         crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs3, &mut rng, &mut next_id);
-        assert_eq!(npcs3[0].vx, 0.0, "the escape aims straight down");
-        assert_eq!(npcs3[0].vy, 9.0, "num49 = num45 (the Devourer's 9)");
+        assert!(
+            (npcs3[0].vx + 0.1).abs() < 1e-4,
+            "the X slow-speed nudge: {}",
+            npcs3[0].vx
+        );
+        assert!(
+            (npcs3[0].vy - 0.11).abs() < 1e-4,
+            "the Y-dominant approach from rest: {}",
+            npcs3[0].vy
+        );
         assert!(npcs3[0].hp > 0, "shallow: no chain despawn");
         // The air stumble: the head in the open cavern falls.
         let mut w2 = ground_air();

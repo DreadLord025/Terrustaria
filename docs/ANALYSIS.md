@@ -39419,3 +39419,64 @@ Verification: code-only — every draw/behaviour site re-read against the
 cited C# windows; the pool/signature seams checked by read/grep. The 6
 witnesses (`npc.rs` + `npc_ai.rs`) are WRITTEN, NOT RUN — no cargo/tests
 invoked.
+## W4-d22 — the aiStyle-6 worm census fix (code-only)
+
+`AI_006_Worms` (`NPC.cs:50963-52273`) drives the worm families through
+the sim's `update_worms_in` pass (the chain needs the sibling segments;
+the C# reads `Main.npc` the same way). The chain assembly, the budget
+draw ledger, the follower trail, the EoW split and the per-tile crumble
+draw were already faithful (audits W-A2-1/2/3). The remaining delta was
+the HEAD movement machine (`worm_head_step`), flagged in-code as the
+deferred audit-T1b stand-in:
+
+- The DIG branch (`:51974-52200`) snapped `vx/vy` straight to the
+  num45-scaled tile aim. The C# runs a three-arm ACCEL approach
+  (`:52112-52199`): the same-sign arm accelerates both axes toward the
+  aim by num46 with the two cross-axis ×2 kicks (`:52132-52153`, the
+  near-horizontal/near-vertical aim with the opposing velocity); the
+  else arms steer the dominant axis (num65 > num66, the UNSCALED
+  |num48|/|num49|) by num46×1.1 and nudge the other axis when the total
+  speed is below num45×0.5. The port now approaches the aim by num46 per
+  tick — the velocity ramps over ~110 ticks instead of snapping.
+- The AIR stumble (`:51925-51973`) keyed the low-speed kick on `facing`
+  and the falling decel on `signum()`, and steered toward the RAW centre
+  delta. The C# keys every arm on the VELOCITY sign (vx < 0 → −, else +;
+  vx == 0 takes the +branch) and steers toward the tile-SNAPPED aim
+  num48. The faithful sign tests are restored.
+- The tile-snapped aim (`:51855-51866`) — both the player centre and the
+  NPC centre floor to the 16-px grid before the delta — is now computed
+  once and feeds BOTH branches (the air stumble previously read the raw
+  `ctx.pcx - centre` delta).
+- The dig-mode latch (`:52202-52224`): `localAI[0]` tracks flag3 (1
+  digging, 0 airborne) for the ported heads 7/10/13/117, arming netUpdate
+  on the transition. The velocity-flip netUpdate (`:52220`) reads
+  `oldVelocity`, which the C# captures ONLY in `UpdateCollision`
+  (`:92538`) — the noTileCollide worms skip that path, so oldVelocity
+  stays (0,0) and the flip test is inert; the latch is the live write.
+  Both were dropped by the stand-in.
+
+The `TargetClosest()` at the air-branch head (`:51927`) folds to the
+facing write (the solo retarget has no seam — documented). The sound
+cadence (`:51976-51995`), the corruption escape (`:52004-52050`), the
+crumble draw (`:51590`) and the head rotation (`:52201`) were already
+faithful and are unchanged.
+
+SCOPE: the wyvern (87-92, the altitude-gate flyer `npc_ai_wyvern.rs`)
+and the stardust worm (402, `update_stardust_worm_head`) keep their own
+machines — their charge/steer arms (`:52053-52111`, the 402 cycle
+`:51030-51073`) are their own waves, not this pass's. The 454/621
+alpha-fade materialise arms (`:50979-51029`) and the EoW split dust
+(`:52255-52271`) are the documented dust skips (the wave-G deviation).
+
+DELIBERATE FIDELITY DELTA: the three worm witnesses that pinned the
+velocity-snap (`the_worm_head_digs_and_stumbles`,
+`the_corruption_escape_digs_down_and_despawns_deep`,
+`the_far_player_forces_the_dig_override`) are re-derived for the accel
+approach (the first-tick num46×1.1 nudge, the ramp-to-num45 over ticks).
+Two new witnesses pin the faithful steer
+(`w4_d22_the_dig_steer_accelerates_instead_of_snapping`,
+`w4_d22_the_air_stumble_keys_on_the_velocity_sign`) + the dig latch.
+
+Verification: code-only — every movement site re-read against the cited
+C# windows; the witnesses hand-traced against the accel arithmetic. The
+5 witnesses are WRITTEN, NOT RUN — no cargo/tests invoked.
