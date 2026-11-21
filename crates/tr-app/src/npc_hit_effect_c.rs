@@ -154,6 +154,9 @@
 //! | 647-654 | `:86079-86089` | the critter family: jungle turtle 617, sea turtle 625 (completes the block) |
 //! | 655-663 | `:86108-86125` | the penguin family 148/149/168/470 death (per-type gore pairs/triple) |
 //! | 664-665 | `:86142-86143` | the 361 Frog death (2 gores 551/552) |
+//! | 666-667 | `:86187-86188` | the 607 Pupfish death (2 gores 1152/1153) |
+//! | 668-673 | `:86206-86214` | the 688 Pufferfish death (ai[2]==1 ? 4 gores : 2 gores) |
+//! | 674-675 | `:86287-86288` | the 602/603 Seagull death (2 gores 1150/1151) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4151,6 +4154,89 @@ fn frog_death(
     gore.new_gore(rng, world, pos, vel, 552, 1.0); // :86143
 }
 
+/// The 607 Pupfish death (`NPC.cs:86183-86188`, sites 666-667): the
+/// 10-dust type-5 burst, then the 2 gores 1152/1153 at position. Scale
+/// defaults to 1.
+fn pupfish_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1152, 1.0); // :86187
+    gore.new_gore(rng, world, pos, vel, 1153, 1.0); // :86188
+}
+
+/// The 688 Pufferfish death (`NPC.cs:86200-86215`, sites 668-673): the
+/// 10-dust type-5 burst, then the `ai[2] == 1` (puffed) branch spawns 4
+/// gores 1388/1388/1389/1390, else 2 gores 1386/1387. Scale defaults to 1.
+fn pufferfish_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:86204-86215` — the puffed branch.
+    if npc.ai[2] == 1.0 {
+        gore.new_gore(rng, world, pos, vel, 1388, 1.0); // :86206
+        gore.new_gore(rng, world, pos, vel, 1388, 1.0); // :86207
+        gore.new_gore(rng, world, pos, vel, 1389, 1.0); // :86208
+        gore.new_gore(rng, world, pos, vel, 1390, 1.0); // :86209
+    } else {
+        gore.new_gore(rng, world, pos, vel, 1386, 1.0); // :86213
+        gore.new_gore(rng, world, pos, vel, 1387, 1.0); // :86214
+    }
+}
+
+/// The 602/603 Seagull death (`NPC.cs:86281-86288`, sites 674-675): the
+/// 10-dust type-5 burst, then the 2 gores 1150/1151 at position. Scale
+/// defaults to 1.
+fn seagull_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1150, 1.0); // :86287
+    gore.new_gore(rng, world, pos, vel, 1151, 1.0); // :86288
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4646,6 +4732,18 @@ pub fn hit_effect_c(
     // `:86128-86144` — the 361 Frog arm (sites 664-665).
     if npc_type == 361 && npc.hp <= 0 {
         frog_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86173-86189` — the 607 Pupfish arm (sites 666-667).
+    if npc_type == 607 && npc.hp <= 0 {
+        pupfish_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86190-86216` — the 688 Pufferfish arm (sites 668-673).
+    if npc_type == 688 && npc.hp <= 0 {
+        pufferfish_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86271-86290` — the 602/603 Seagull arm (sites 674-675).
+    if (npc_type == 602 || npc_type == 603) && npc.hp <= 0 {
+        seagull_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7385,6 +7483,57 @@ mod tests {
         frog_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![551, 552]);
+    }
+
+    /// `NPC.cs:86187-86188` — the Pupfish death: the 2 gores 1152/1153.
+    #[test]
+    fn w4_f10_the_pupfish_death_spawns_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 24.0, 20.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(619);
+        pupfish_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1152, 1153]);
+    }
+
+    /// `NPC.cs:86206-86214` — the Pufferfish death: the ai[2]==1 (puffed)
+    /// branch spawns 1388/1388/1389/1390, else 1386/1387.
+    #[test]
+    fn w4_f10_the_pufferfish_death_branches_on_ai2() {
+        let w = air();
+        // Puffed.
+        let mut n = boss(100.0, 100.0, 30.0, 30.0);
+        n.ai[2] = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(631);
+        pufferfish_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1388, 1388, 1389, 1390]);
+        // Not puffed.
+        let mut n2 = boss(100.0, 100.0, 30.0, 30.0);
+        n2.ai[2] = 0.0;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(631);
+        pufferfish_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1386, 1387]);
+    }
+
+    /// `NPC.cs:86287-86288` — the Seagull death: the 2 gores 1150/1151.
+    #[test]
+    fn w4_f10_the_seagull_death_spawns_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 24.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(641);
+        seagull_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1150, 1151]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
