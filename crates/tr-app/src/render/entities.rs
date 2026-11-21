@@ -3072,10 +3072,13 @@ pub(crate) fn draw_npcs(
             // `SetFrameSize`'s integer-division row height over
             // `Main.npcFrameCount[type]` (`Main.cs:67082`: the slimes and
             // eyes 2 rows, the walkers 3) with the generic centred anchor
-            // (`Main.cs:25511-25516`) — the pumpkin family's shape. The
-            // C# `scale` rows (the slimes' 1.25/1.1/1.05) are unported
-            // outside the base slime variants — documented deviation
-            // (ANALYSIS "S1-D-3 FindFrame wave A").
+            // (`Main.cs:25511-25516`) — the pumpkin family's shape.
+            // W4-g12 doc-sweep: the slimes' C# `scale` rows
+            // (1.25/1.1/1.05, `NPC.cs:8977`/`:9526`/`:9710`/`:9850`/
+            // `:10761`/`:11344`/`:11354`) now ride `n.scale`
+            // (`wave_a_slime_scale`) through `scaled_anchor` below —
+            // the sprite grows about the frame centre, the hitbox and
+            // the anchor shift keep the unscaled box (the C# shape).
             NpcKind::MotherSlime
             | NpcKind::LavaSlime
             | NpcKind::DungeonSlime
@@ -3084,8 +3087,18 @@ pub(crate) fn draw_npcs(
             | NpcKind::IceSlime
             | NpcKind::Crimslime
             | NpcKind::SpikedIceSlime
-            | NpcKind::UmbrellaSlime
-            | NpcKind::CataractEye
+            | NpcKind::UmbrellaSlime => {
+                // W4-g12: `scaled_anchor` grows the quad about the frame
+                // centre; combined with `generic_anchor_shift_y`'s
+                // `(h - frame_h*scale)/2` term the net top-left is the
+                // C#'s `pos.Y + height - frame_h*scale + 4` (the
+                // BlazingWheel precedent — the two half-shifts compose
+                // to the bottom-anchored scaled draw). IceSlime 147 and
+                // UmbrellaSlime 225 carry scale 1 (no `SetDefaults` row).
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
+            NpcKind::CataractEye
             | NpcKind::SleepyEye
             | NpcKind::DialatedEye
             | NpcKind::GreenEye
@@ -3531,6 +3544,68 @@ mod anchor_tests {
             w,
             h,
         }
+    }
+
+    /// W4-g12 doc-sweep: the wave-A slimes' `NPC.scale` rows
+    /// (`NPC.cs:8977`/`:9526`/`:9710`/`:9850`/`:10761`/`:11344`/`:11354`)
+    /// reach `Npc::scale` at construction; IceSlime/UmbrellaSlime keep 1.
+    #[test]
+    fn w4_g12_the_wave_a_slime_scale_rows_arm_the_ctor() {
+        for (kind, want) in [
+            (NpcKind::MotherSlime, 1.25f32),
+            (NpcKind::DungeonSlime, 1.25),
+            (NpcKind::LavaSlime, 1.1),
+            (NpcKind::CorruptSlime, 1.1),
+            (NpcKind::Crimslime, 1.1),
+            (NpcKind::SpikedIceSlime, 1.1),
+            (NpcKind::IlluminantSlime, 1.05),
+            (NpcKind::IceSlime, 1.0),
+            (NpcKind::UmbrellaSlime, 1.0),
+        ] {
+            assert_eq!(bare(kind).scale, want, "{kind:?} scale");
+        }
+        // The hitbox stays the unscaled SetDefaults box (the C# scale
+        // multiplies the SPRITE, not base.width/height).
+        assert_eq!(bare(NpcKind::MotherSlime).size(), (36.0, 24.0));
+        assert_eq!(bare(NpcKind::LavaSlime).size(), (24.0, 18.0));
+    }
+
+    /// W4-g12 doc-sweep: the scaled draw's net anchor. `scaled_anchor`
+    /// grows the quad about the frame centre; the generic shift's
+    /// `(h - frame_h*scale)/2` term then lands the net top at the C#'s
+    /// `pos.Y + height - frame_h*scale + 4` (`Main.cs:25511-25516` with
+    /// the `scale` argument, `:23124`) — the BlazingWheel composition.
+    #[test]
+    fn w4_g12_the_scaled_slime_quad_lands_at_the_csharp_anchor() {
+        let n = bare(NpcKind::MotherSlime);
+        let (w, h) = n.size(); // 36x24, unscaled
+        // NPC_16: 38x50, 2 rows -> frame 38x25.
+        let t = sheet(38.0, 50.0);
+        let (_, fh, size, pos) = scaled_anchor(Some(&t), 2, &n, w, h);
+        assert_eq!(fh, 25.0);
+        let s = 1.25;
+        assert_eq!(size, [38.0 * s, 25.0 * s]);
+        // Compose the generic shift (no nudge for the slimes).
+        let shift = generic_anchor_shift_y(&n, h, fh);
+        let net_top = pos[1] + shift;
+        let want = n.y + h - fh * s + 4.0;
+        assert!(
+            (net_top - want).abs() < 1e-3,
+            "net top {net_top} != C# anchor {want}"
+        );
+        // The x centre stays the box centre.
+        let net_cx = pos[0] + size[0] * 0.5;
+        assert!((net_cx - (n.x + w * 0.5)).abs() < 1e-3);
+        // A scale-1 slime (IceSlime) is unchanged by the new arm.
+        let ice = bare(NpcKind::IceSlime);
+        let (iw, ih) = ice.size();
+        let (_, ifh, isize, ipos) = scaled_anchor(Some(&t), 2, &ice, iw, ih);
+        assert_eq!(isize, [38.0, 25.0]);
+        assert!(
+            ((ipos[1] + generic_anchor_shift_y(&ice, ih, ifh)) - (ice.y + ih - 25.0 + 4.0))
+                .abs()
+                < 1e-3
+        );
     }
 
     /// The nine 🟡 M4-NPC display rows' arithmetic: every one of these

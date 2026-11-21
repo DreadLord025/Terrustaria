@@ -39500,3 +39500,32 @@ follow-up calls this fn per liquid cell in the C# walk order (row-major
 paint variants in `TilePaintSystemV2`; a painted pad would need the
 g79 paint chain — recorded). 2 witnesses WRITTEN NOT RUN (the lift/
 clamp ladder incl. the actuated ceiling, the gate/anchor source scan).
+
+## The wave-A slime scale rows (W4-g12 doc-sweep)
+
+`entities.rs:3076` recorded "the C# `scale` rows (the slimes'
+1.25/1.1/1.05) are unported outside the base slime variants" (ANALYSIS
+"S1-D-3 FindFrame wave A"). No pushed lane claimed them (d34/d35/d37's
+entities.rs hunks add NEW kinds' arms only). Ported:
+
+* `NpcKind::wave_a_slime_scale` (`npc/data.rs`): MotherSlime 16 /
+  DungeonSlime 71 → 1.25 (`NPC.cs:8977`/`:9710`), LavaSlime 59 /
+  CorruptSlime 81 / Crimslime 183 / SpikedIceSlime 184 → 1.1
+  (`:9526`/`:9850`/`:11344`/`:11354`), IlluminantSlime 138 → 1.05
+  (`:10761`). IceSlime 147 (`:10847-10860`) and UmbrellaSlime 225
+  (`:11898-11910`) write NO scale row — the head's 1f.
+* The ctor chain (`npc.rs`, after `holiday_zombie_scale`) seeds
+  `Npc::scale`; the draw arm splits the nine slimes out of the
+  `pumpkin_moon_draw` group into `scaled_anchor` (the BlazingWheel
+  precedent): the quad grows about the frame centre and the generic
+  shift's `(h - frame_h*scale)/2` term composes to the C#'s
+  bottom-anchored `pos.Y + height - frame_h*scale + 4`
+  (`Main.cs:25511-25516` with the `:23124` scale argument).
+* The hitbox stays the unscaled `SetDefaults` box — the C# scale
+  multiplies the SPRITE only (`base.width/height` are written before
+  the scale row and never re-scaled).
+
+The eyes/zombies of the same wave-A group keep the plain
+`pumpkin_moon_draw` arm (their C# blocks write no scale row). 2
+witnesses WRITTEN NOT RUN (the ctor scale table + the unscaled hitbox;
+the composed anchor vs the C# formula, incl. the scale-1 no-op).
