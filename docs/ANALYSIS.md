@@ -39724,7 +39724,9 @@ transform-visuals + 2 ambient + 1 town-gate (8 sub-arms × 4 walkers)
 
 ### Item 5 — research FINAL
 
-`docs/research/145-waterfowl-band-final.md` (new): the band ledger,
+`docs/research/149-waterfowl-band-final.md` (new, renumbered from 145 in
+the retire phase — g89's rod doc pushed first, 149 the lowest free key
+per the origin scan + the d54 150 registry): the band ledger,
 the cross-lane contract table, the witness index and the merge
-checklist. INDEX row 145 added.
+checklist. INDEX row 149 added.
 

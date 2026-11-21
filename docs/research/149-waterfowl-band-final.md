@@ -1,4 +1,19 @@
-# 145 — W4-c10 waterfowl band FINAL (aiStyle-68 + the walkers + the 1080 drop)
+# 149 — W4-c10 waterfowl band FINAL (aiStyle-68 + the walkers + the 1080 drop)
+
+> **Renumber note (retire phase, 2026-11-21):** this doc was first pushed
+> as `145-waterfowl-band-final.md` (`5d8387955`, 10:12:03 +02:00). The
+> full origin scan (every `task/W4-*` tip's `docs/research/` tree) found
+> key 145 THREE-way contested: W4-g89's
+> `145-rod-teleport-union-composition.md` first-add `41dabfbc8`
+> 09:48:08 wins per the d54 registry's first-pushed rule; W4-c4's
+> `145-d42-keep-d42-verdicts-addendum.md` (10:12:10) is the other loser.
+> 146 is NOT free (g24 `146-wg-sounds-final.md` + e20
+> `146-c42-repick-critical.md`), 147 e20, 148 c4/e20, 150 = the d54
+> collision registry (`150-research-number-registry.md` on
+> `origin/task/W4-d54-dust-sites-world`), 151–236 reserved by that
+> registry's rename block. **149 is the lowest number taken by NO tip** —
+> this doc takes it. Body content-preserving; refs updated: INDEX row,
+> ANALYSIS Item 5, PORT_MAP row, ROADMAP aiStyle-68 row, anchors row 906.
 
 Branch: `task/W4-c10-style68-waterfowl`, final phase 2026-11-21,
 **code-only mode** (no cargo/rustc/rustfmt/tests invoked; every witness

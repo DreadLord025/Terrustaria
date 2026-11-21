@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 145 | W4-c10 waterfowl band FINAL (aiStyle-68 + walkers + 1080 drop: band-complete ledger, the b3/d20/d36/g8/d40 cross-lane contracts, 37-witness index, merge checklist; code-only) | `145-waterfowl-band-final.md` | ✅ |
+| 149 | W4-c10 waterfowl band FINAL (aiStyle-68 + walkers + 1080 drop: band-complete ledger, the b3/d20/d36/g8/d40 cross-lane contracts, 37-witness index, merge checklist; code-only; renumbered from 145 — g89's rod doc pushed first, see the doc's renumber note + d54's 150 registry) | `149-waterfowl-band-final.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
