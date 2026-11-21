@@ -39446,3 +39446,30 @@ port's single-player world — the SendData(159) request arm and its
 Witnesses: the column descent + the non-rope gates, the 6-platform cap +
 both lava arms + the bit-only pin, the 965 Rope item-use extension through
 the app route (one item consumed, the clicked column stands).
+
+**Item-row verifies (union items 4/5, census — no code change needed).**
+* **859 Beach Ball / 1156 Piranha Gun** (`itemdata.rs:1025`/`:1322` vs
+  `Item.cs:11439-11450`/`:14213-14230`): both rows EXIST and are faithful —
+  859 shoot 155 / shootSpeed 6 / useStyle 1 / 20-20 / consumable / value 20
+  / 44×44 / UseSound Item1 (SOUND_STYLES index 126); 1156 shoot 190 /
+  shootSpeed 14 / channel / useStyle 5 / 30-30 / damage 40 / kb 1 / scale
+  1.1 / rare 8 / sellPrice(0,20) = 1 000 000 / 30×10 / UseSound Item10
+  (index 135). The generator check ran green
+  (`python tools/GenItemData/gen.py --check` → `check ok (6196 rows,
+  5977098 bytes)`), so no regen/port was needed; a row-pin witness landed
+  (`w4_d4_verify_the_beach_ball_and_piranha_gun_item_rows`).
+  `noUseGraphic`/`noMelee` are the generator's documented not-provisioned
+  flags (`gen.py:410`) — observationally inert for shoot-carrying
+  useStyle-1/5 items (the port's melee lane never swings them).
+* **190 Mechanical Piranha projectile row** (`projectile/data.rs:621` +
+  `:2352-2363` vs `Projectile.cs:2779-2790`): EXISTS on this branch
+  (landed with the aiStyle-39 machine, `5771c1f0`) and is faithful —
+  22×22 / aiStyle 39 / penetrate −1 / stock timeLeft 3600 / stock
+  tileCollide true / the local-immunity pair (true, 14) / alpha 255 /
+  scale 1; `friendly = true` rides the slot default (`Projectile.cs:2784`
+  sets it, the port's spawn default carries it); `ranged` rides the
+  overlay (`data.rs:4377-4379`, `:2787`); `proj_frames(190) = 4`
+  (`Main.cs:8592`). The dispatch `39 => piranha_step` is live
+  (`projectile.rs`), and the existing witness
+  `the_piranha_row_and_alpha_fade` already pins every field + the −50
+  fade — no new witness needed.
