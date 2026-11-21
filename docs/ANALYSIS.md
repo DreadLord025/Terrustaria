@@ -14815,59 +14815,110 @@ the base). The S1-E-26 wave C "Deferred" list above is now mostly closed.
 
 **Deliberate deviations / remainders (documented, not silently dropped):**
 
-1. **Sorting-id numbers are roster-relative.** The C# numbers the FULL
-   vanilla NPC set; the port numbers its 241-entry `ENTRIES` roster with
-   the same nine-key order. The ORDER semantics are the C#'s; the absolute
-   display numbers differ where unported NPCs would interleave. The
-   corner index and `ByBestiarySortingId` both read the one table.
+1. **Sorting-id numbers are the FULL vanilla set's (LANDED 2026-11-21,
+   remainder 5).** The C# numbers the FULL vanilla NPC set; the port now
+   does too — `tools/gen_bestiary_sorting_ids.py` replays
+   `ContentSamples.NpcBestiarySortingId` (the fresh Classic `SetDefaults`
+   sample per net id -65..696, the nine-key stable orderby of
+   `GetSortedBestiaryEntriesList:765-773`, the `Hide` rows removed `:771`,
+   numbered from 1 `:1083-1092`) into the generated `bestiary_sorting_ids.rs`
+   (546 entries). The corner index (`NPCNetIdBestiaryInfoElement.cs:10`) and
+   `ByBestiarySortingId` both read it — the absolute display numbers match
+   the vanilla (Blue Slime 132, Moon Lord 546, the town roster 1..41), not
+   the port's narrowed roster. The `Hide`-folded segments read 0 (the C#'s
+   absent dictionary keys). The earlier roster-relative narrowing is retired.
 2. **`Alphabetical` uses ordinal `str` order.** The C# `string.CompareTo`
    is culture-aware (`SortingSteps.cs:136`); identical for the English
    name column, may differ under other cultures' collation.
 3. **`BySearch` lowercases both sides** (`Filters.cs:30`'s
    `ToLower().IndexOf(..., OrdinalIgnoreCase)`); culture case-folds beyond
    ASCII are not modelled.
-4. **The info page keeps the port's vertical stat rows.** The C#
-   `NPCStatsReportInfoElement` draws a 2x2 icon grid + a coin row
-   (`Stat_Platinum/Gold/Silver/Copper`, `:165-250`); the port's
-   `stat_row` list is the pre-existing convention (the tier gates and the
-   knockback label ARE the C#'s). The coin-row art + the 2x2 layout are a
-   follow-up; the `Stat_Panel` splice now packs for the flavor/tag panels.
-5. **The info-page scrollbar is not drawn.** `CheckScrollBar` forces
-   `canScroll = true` (`UIBestiaryEntryInfoPage.cs:95`) so the C# always
-   attaches it and shrinks the list by 20 px - the port reserves that
-   20 px in the content box but draws no scrollbar thumb and does not
-   scroll (the rows fit the documented stand-in; `UpdateScrollbar`'s
-   `ViewPosition -= wheel` is pinned in `info_page_scroll`). The wheel is
-   consumed by the open screen either way.
+4. **The info page draws the C#'s 2x2 stat grid + coin row (LANDED
+   2026-11-21, remainder 1).** `NPCStatsReportInfoElement.ProvideUIElement`
+   (`:64-256`): the 96x31 HP/Attack/Defense/Knockback icons on the 99/35
+   lattice with the value texts right-aligned inside each icon (`HAlign 1`,
+   `Left -10`, scale 1, the `UIText` `Y -= 2*scale` ride), the coin
+   separator + the `Stat_Platinum/Gold/Silver/Copper` row when `value > 0`
+   (the clamp/dash `coin_strings:99-119`, the 49-pitch rects with the
+   silver/copper +1 `:176-198`, the 0.85 texts at `Left -7`), the four
+   `ShowStats_*` hover tooltips (`:259-289`), the `stats_block_height`
+   70/108 (`:165`/`:249-251`). The kill counter is
+   `NPCKillCounterInfoElement`'s right-aligned `Stat_Panel` row (`:54-87`:
+   the 12/7 spliced (43,56,101) panel, the item-321 grave icon at 0.8 in the
+   32x32 `UIItemIcon`, the count at 0.85 `PaddingRight 5` `Left -3`, the
+   Slain hover). Atlas +3 coin sheets. The vertical `stat_row` list is retired.
+5. **The info-page scrollbar thumb draws + scrolls (LANDED 2026-11-21,
+   remainder 2).** The g53 `UIScrollbar` pattern: `draw_info_page` is the
+   `AddInfoToList` row model (`InfoRow`, the category order + between-group
+   separators `UIBestiaryEntryInfoPage.cs:128-163`) stacked by
+   `UIList.RecalculateChildren` (`UIList.cs:116-128`, `ListPadding 4`, the
+   single-row no-padding quirk `:122`); the rows ride `-ViewPosition` inside
+   the list's `OverflowHidden` clip (`UIList.DrawSelf:181`) and the thumb
+   draws over the reserved 20 px column via `panel::draw_scrollbar_themed`
+   (the bestiary's `new UIScrollbar()` is the default Blue theme
+   `UIScrollbar.cs:56-66` → `Images/UI/Scrollbar`, atlas +1 sheet). The wheel
+   routes to `UpdateScrollbar` (`UIBestiaryTest.cs:846-850` → `:59-65`,
+   `ViewPosition -= wheel` clamped by `SetView:72-78`), the thumb press grabs
+   the handle / jumps the track (`LeftMouseDown:126-143`), the drag follows
+   the pointer (`DrawSelf:109-112`), the release clears the latch
+   (`:145-149`). `BestiaryUi` carries `info_scroll` + `info_scroll_drag`; a
+   new selection resets the scroll (`FillInfoForEntry` clears the list `:113`).
 6. **The grid uses the raw CELL lattice.** `grid_cell_rect` pins the C#'s
    fractional centring (`UIBestiaryEntryGrid.cs:50-66`); the draw/hit use
    the raw 72 px lattice, exact when the space divides by 72 (the
    documented S1-E-26 simplification, kept).
-7. **The portrait background providers are not drawn.** The tag data
-   carries the `preferred` flags and `pick_background_provider` pins the
-   preference-first pick, but the biome backdrop images
-   (`NPCPortraitInfoElement`'s `MapBG*` providers) are not yet resolved to
-   atlas sheets - the portrait draws on `Slot_Back` alone. The
-   `TryGivingEntryFlavorTextIfItIsMissing` biome-flavor fallback
-   (`:773-800`) is likewise deferred (the port's flavor text is the
-   per-NPC `Bestiary_FlavorText.npc_*` row only).
+7. **The biome portrait backdrops draw (LANDED 2026-11-21, remainder 3).**
+   The `CommonTags.SpawnConditions` background providers
+   (`SpawnConditionBestiaryInfoElement.cs:15-20`'s
+   `backgroundImagePath`/`backgroundColor` ctor args) now draw behind the
+   info-page portrait: `gen_bestiary_tags.py` extracts the per-tag bg sheet +
+   tint into `TagDef`, `portrait_backdrop` ports
+   `NPCPortraitInfoElement.ProvideUIElement`'s pick (`:36-84`: the first
+   preference-matched provider with an image wins `:43-57`, else the first
+   in entry order `:58-70`, the portrait color is the LAST provider's
+   `GetBackgroundColor:71-75`), the two world-evil preference rows 533/529
+   pick the corrupt arm
+   (`BestiaryPortraitBackgroundBasedOnWorldEvilProviderPreferenceInfoElement.cs:22-29`,
+   the port's `WorldGen.crimson == false` default), the Moon Lord's own
+   MapBG1+Black provider (`:639`). The backdrop draws `ScaleToFit` over the
+   portrait inner box tinted by the portrait color
+   (`UIBestiaryNPCEntryPortrait.cs:30-41`) via `Lookups::map_bg_sheet`.
+   Atlas +26 MapBG sheets (7728→7753 px skyline, under 8192). The decorative
+   overlays (`Visuals.*`, `UIBestiaryNPCEntryPortrait.cs:42-55`) and the
+   `TryGivingEntryFlavorTextIfItIsMissing` biome-flavor fallback (`:773-800`)
+   stay deferred (the port's flavor text is the per-NPC
+   `Bestiary_FlavorText.npc_*` row only).
 8. **The gamepad link points** (`SetupGamepadPoints`, ids 3000+) stay
    unported (the whole gamepad-navigation layer is out of scope).
-9. **The hover sound latches** (`GroupOptionButton.DrawSelf:212-223`,
-   `UIImageButton.MouseOver:61`) are pinned in the d81/d82 structs but the
-   immediate draw does not tick them - the click cues (sound 11/12) DO
-   play from the click handler; the per-hover tick is a follow-up.
+9. **The hover sound ticks fire (LANDED 2026-11-21, remainder 4).** The
+   d81/d82 `hover_sound_tick` latch (`GroupOptionButton.cs:212-223`) wires to
+   the screen's controls via `ui/bestiary_hover.rs`: the option-grid buttons
+   tick the per-button draw-side one-shot (only the attached grid draws, the
+   detached grid's latches re-arm), the fixed controls (page back/forward,
+   sort/filter toggles, search magnifier + cancel) tick the
+   `UIImageButton.MouseOver:58-62` rising edge, the grid card ticks
+   `UIBestiaryEntryButton.MouseOver:150-152` on a hovered-slot change.
+   `BestiaryUi` carries the `BestiaryHoverSounds` state; the App ticks it once
+   per open frame in the click cluster and plays `Menu_Tick` (sound 12) on a
+   fired edge; the closed screen resets the latches. The click cues (sound
+   11/12) still play from the click handler.
 
 Tests (written, not run): `bestiary_filter::tests` (10 - the filter list,
 the active-OR + search gate, the saucer boss removal, the wrap-membership
 rule, the sort chain + re-click, the hidden steps, the town-first sorting
-id, the search providers, the working set, the availability test);
+id [repointed to the full-vanilla numbers], the search providers, the
+working set, the availability test);
 `ui::bestiary_screen::tests` (7 - the top-strip layout, the paging, the
 option-grid exclusivity, the sort re-click, the search rebuild, the
 panel-vs-button hit, the side-by-side info page);
 `ui::bestiary_screen_draw::tests` (2 - the tag-icon centring, the shadow
 frame); the reworked `ui::bestiary::tests` (the grid paging + the
-completion-bar rect repointed).
+completion-bar rect repointed, + the remainder witnesses: the 2x2 stat
+grid / coin strings / coin row / block height / kill-counter panel, the
+row layout / view height / SetView clamp / scrollbar press, the backdrop
+preference / fallback / world-evil / Moon Lord / no-provider picks);
+`ui::bestiary_hover::tests` (3 - the MouseOver edge, the per-button latch,
+the card-change-only tick).
 
 ## The pillar worms (M4-EVENT-14)
 
