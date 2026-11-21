@@ -6,9 +6,10 @@
 //! (`shopHappinessTextOffset = (26, 98)`, `shopHappinessIconOffset =
 //! (12, 108)`); `invBottom = 258` (`Main.cs:6608`).
 //!
-//! The `ItemSlot.DrawSavings` coin pile (`:41791`) rides the coin-slot
-//! lane (`ui::coin_slot`) — deferred here (ANALYSIS "Shop happiness UI
-//! (W4-g58)").
+//! The `ItemSlot.DrawSavings` coin pile (`:41791`) lands here too
+//! (W4-g58 D5, `ui::savings`): the four banks' combined coins as the
+//! bank-icon pile + the coin spin strips, drawn between the Shop label
+//! and the happiness icon.
 
 use tr_render::SpriteRenderer;
 
@@ -65,15 +66,21 @@ pub(crate) fn icon_pos() -> [f32; 2] {
 }
 
 /// The shop block's happiness chrome (`Main.cs:41790-41797`): the "Shop"
-/// label + the icon + the percent, all tinted
-/// `Color.White * (mouseTextColor / 255f)` — the border passes stay
-/// `Color.Black` (`Utils.DrawBorderStringFourWay`, `Utils.cs:2464-2496`:
-/// the four ±2 px side passes then the colour pass).
+/// label + the savings pile (`:41791`, W4-g58 D5) + the icon + the
+/// percent, all tinted `Color.White * (mouseTextColor / 255f)` — the
+/// border passes stay `Color.Black` (`Utils.DrawBorderStringFourWay`,
+/// `Utils.cs:2464-2496`: the four ±2 px side passes then the colour pass).
+/// `savings` carries the coin cells + the player's four banks; `None`
+/// skips the pile (the headless/no-player draws).
 pub(crate) fn draw(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     price_adjustment: f32,
     pulse: UiPulse,
+    savings: Option<(
+        &mut crate::ui::coin_slot::CoinSlotState,
+        &[&[crate::item::ItemSlot]; 4],
+    )>,
 ) {
     let tint = [pulse.text; 4];
     const FOUR_WAY: [[f32; 2]; 4] = [[-2.0, 0.0], [2.0, 0.0], [0.0, -2.0], [0.0, 2.0]];
@@ -89,6 +96,12 @@ pub(crate) fn draw(
         tint,
         &crate::lang::inter(28),
     );
+    // `:41791` — `ItemSlot.DrawSavings(Main.spriteBatch, 504f, invBottom)`:
+    // the four banks' combined coins as the bank-icon pile + the coin spin
+    // strips (W4-g58 D5).
+    if let Some((coin_slot, banks)) = savings {
+        crate::ui::savings::draw_savings(r, lookups, coin_slot, banks, 504.0, INV_BOTTOM, tint);
+    }
     // `:41792-41796` — the NPCHappiness strip: `Frame(4, 1, band)`
     // (`Utils.cs:1344-1349`: `width/4` per frame), drawn at scale 1 with
     // the frame-centre origin — the top-left is `anchor − size/2`.

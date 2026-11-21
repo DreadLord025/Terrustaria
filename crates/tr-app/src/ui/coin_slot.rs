@@ -197,32 +197,52 @@ impl CoinEntry {
 }
 
 /// The machine's state — the vanilla's static arrays (`CoinSlot.cs:340-344`)
-/// owned by the App. `UpdateSavings`/`UpdateCustom` have no port consumers
-/// (the piggy-bank HUD and the custom-currency displays are unported), so the
-/// `Savings`/`Custom` arrays stay out.
+/// owned by the App. The `Savings` array lands with the shop savings pile
+/// (W4-g58 D5, `ItemSlot.DrawSavings` → `DrawMoney` → `UpdateSavings`);
+/// `UpdateCustom` has no port consumer (the custom-currency displays are
+/// unported), so the `Custom` array stays out.
 #[derive(Clone, Debug, Default)]
 pub struct CoinSlotState {
     chest_entries: Vec<CoinEntry>,
     inventory_entries: Vec<CoinEntry>,
+    /// `CoinSlot.Savings` (`CoinSlot.cs:341`, `new CoinEntry[4]`): the shop
+    /// savings pile's four coin cells (copper..platinum).
+    savings_entries: Vec<CoinEntry>,
 }
 
 impl CoinSlotState {
-    /// The static constructor's array sizes (`CoinSlot.cs:342-343`).
+    /// The static constructor's array sizes (`CoinSlot.cs:341-343`).
     pub fn new() -> Self {
         Self {
             chest_entries: vec![CoinEntry::default(); 200],
             inventory_entries: vec![CoinEntry::default(); 59],
+            savings_entries: vec![CoinEntry::default(); 4],
         }
     }
 
     /// `CoinSlot.UpdateSlotAnims` (`CoinSlot.cs:358-372`) — the vanilla runs
-    /// it per frame after the interface layers draw (`Main.cs:44936`).
+    /// it per frame after the interface layers draw (`Main.cs:44936`). The
+    /// Savings array steps first (`:359-361`).
     pub fn update_slot_anims(&mut self) {
+        for e in &mut self.savings_entries {
+            e.update_anim();
+        }
         for e in &mut self.chest_entries {
             e.update_anim();
         }
         for e in &mut self.inventory_entries {
             e.update_anim();
+        }
+    }
+
+    /// `CoinSlot.UpdateSavings` (`CoinSlot.cs:225-228`):
+    /// `Savings[slot].UpdateState(71 + slot, count, SavingsCoinJumpScale)`
+    /// — the savings cell's coin type is `71 + slot` (copper..platinum) and
+    /// the jump scale is the savings constant 10 (`:337`).
+    pub fn update_savings(&mut self, slot: usize, count: u32) -> CoinDrawState {
+        match self.savings_entries.get_mut(slot) {
+            Some(e) => e.update_state(71 + slot as u16, count, SAVINGS_COIN_JUMP_SCALE),
+            None => neutral(),
         }
     }
 

@@ -27,6 +27,7 @@ pub(crate) mod npc_chat;
 pub mod panel;
 pub mod pointer;
 pub mod resources;
+pub(crate) mod savings;
 pub mod save_list;
 pub mod sliders;
 pub mod select_hit;
@@ -722,6 +723,10 @@ pub fn draw_hud(
     // (`NPC.CanShowHomelessText`, `NPC.cs:94828-94841`) and the latched
     // `currentShoppingSettings.HappinessReport` is non-empty.
     happiness_button: bool,
+    // `CoinSlot.Savings` (`CoinSlot.cs:341`): the shop savings pile's coin
+    // cells (`ItemSlot.DrawSavings`, `Main.cs:41791`, W4-g58 D5). The
+    // banks ride the `player` already passed above.
+    coin_slot: &mut coin_slot::CoinSlotState,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -908,9 +913,13 @@ pub fn draw_hud(
         // end draws air.
         if let Some((stock, mood, _discount)) = shop {
             // The happiness chrome (`:41790-41797`, W4-g58): the "Shop"
-            // label + the NPCHappiness icon band + the P0 percent — the
-            // DrawSavings coin pile (`:41791`) rides the coin-slot lane.
-            shop_happiness::draw(r, lookups, mood, pulse);
+            // label + the DrawSavings coin pile (`:41791`, D5) + the
+            // NPCHappiness icon band + the P0 percent. The pile reads the
+            // player's four banks (`Player.bank/bank2/bank3/bank4`).
+            let banks: Option<[&[ItemSlot]; 4]> =
+                player.map(|p| [&p.banks[0][..], &p.banks[1][..], &p.banks[2][..], &p.banks[3][..]]);
+            let savings = banks.as_ref().map(|b| (coin_slot, b));
+            shop_happiness::draw(r, lookups, mood, pulse, savings);
             for i in 0..inventory::SHOP_COLS {
                 for j in 0..inventory::SHOP_ROWS {
                     let idx = i + j * inventory::SHOP_COLS;

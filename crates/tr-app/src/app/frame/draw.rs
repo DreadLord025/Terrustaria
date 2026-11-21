@@ -1785,6 +1785,10 @@ impl App {
                             !crate::happiness::can_show_homeless_text(
                                 self.talk_npc.and_then(|i| self.npcs.get(i)),
                             ) && !self.shopping_settings.happiness_report.is_empty(),
+                            // `CoinSlot.Savings` — the shop savings pile's
+                            // coin cells (`ItemSlot.DrawSavings`,
+                            // `Main.cs:41791`, W4-g58 D5).
+                            &mut self.coin_slot,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

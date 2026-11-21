@@ -1453,6 +1453,20 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // `TextureAssets.Coin[0..3]` (`AssetInitializer.cs:367-370`,
+    // `Images/Coin_<i>`): the copper/silver/gold/platinum coin SPIN strips
+    // (8 vertical frames each) `CoinSlot.DrawItemCoin` draws
+    // (`CoinSlot.cs:242-243`, `Frame(1, 8, 0, coinFrame)`). Distinct from
+    // the single-frame `Item_71..74` icons the inventory grid uses — the
+    // shop savings pile (`ItemSlot.DrawSavings` → `DrawMoney`,
+    // `Main.cs:41791`) draws these strips (W4-g58 D5).
+    for i in 0..4u16 {
+        let name = format!("Coin_{i}");
+        if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+            images.push(img);
+        }
+    }
+
     // The tile-side glow sheets of `DrawSingleTile_Flames`
     // (`TileDrawing.cs:2684-2825`, `:3463-3491`): `TextureAssets.GlowMask`
     // loads as `Images/Glow_{id}` (`AssetInitializer.cs:352-354`) and the
@@ -1955,6 +1969,11 @@ pub struct Lookups {
     pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
+    /// `Coin_0..3` (`TextureAssets.Coin`, `AssetInitializer.cs:367-370`):
+    /// the coin SPIN strips — 8 vertical frames each, the
+    /// `CoinSlot.DrawItemCoin` source (`CoinSlot.cs:242-243`). The shop
+    /// savings pile draws these (`ItemSlot.DrawSavings`, W4-g58 D5).
+    pub coin_strips: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
     pub ui_back: Option<tr_render::SheetRect>,
     /// `Inventory_Back14`: the yellow frame of the selected hotbar slot.
@@ -2362,6 +2381,7 @@ impl Lookups {
                 })
                 .collect(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
+            coin_strips: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
@@ -2965,6 +2985,19 @@ impl Lookups {
             rect.width,
             rect.height,
         ))
+    }
+
+    /// One frame of a coin SPIN strip (`CoinSlot.DrawItemCoin`,
+    /// `CoinSlot.cs:242-243`: `TextureAssets.Coin[coinType-71].Frame(1, 8,
+    /// 0, coinFrame)`). Returns `(uv, frame_w, frame_h)` — the frame is
+    /// `width × height/8` (`Utils.Frame`, `Utils.cs:1344-1349`). `kind` is
+    /// 0 copper .. 3 platinum; `frame` is the 0..7 spin row.
+    pub fn coin_strip_frame(&self, kind: usize, frame: i32) -> Option<([f32; 4], f32, f32)> {
+        let rect = self.coin_strips.get(kind)?.as_ref()?;
+        let fw = rect.width;
+        let fh = rect.height / 8;
+        let uv = uv_rect(rect, self.atlas_size, 0, frame * fh as i32, fw, fh);
+        Some((uv, fw as f32, fh as f32))
     }
 
     /// The leaf gore sheet for `WorldGen.GetTreeLeaf`'s `passStyle` —
@@ -3671,6 +3704,27 @@ mod tests {
         // their sheets now arrive through the enumeration instead of the list.
         assert!(lookups.coin_uv(0).is_some());
         assert!(lookups.shuriken_uv().is_some());
+    }
+
+    /// W4-g58 D5: the coin SPIN strips (`TextureAssets.Coin[0..3]`,
+    /// `AssetInitializer.cs:367-370`) pack and slice into 8 vertical frames
+    /// (`CoinSlot.DrawItemCoin`, `CoinSlot.cs:242-243`: `Frame(1, 8, 0,
+    /// coinFrame)`). The shop savings pile draws these.
+    #[test]
+    fn the_coin_spin_strips_pack_and_slice_eight_frames() {
+        let (_, lookups) = content_lookups();
+        for kind in 0..4usize {
+            let rect = lookups.coin_strips[kind].expect("Coin_{kind} packs");
+            // Each frame is width × height/8; frame 0 and frame 7 stay
+            // inside the sheet and differ in V.
+            let (uv0, w0, h0) = lookups.coin_strip_frame(kind, 0).expect("frame 0");
+            let (uv7, w7, h7) = lookups.coin_strip_frame(kind, 7).expect("frame 7");
+            assert_eq!(w0, rect.width as f32);
+            assert_eq!(h0, (rect.height / 8) as f32);
+            assert_eq!((w0, h0), (w7, h7));
+            assert!(uv7[1] > uv0[1], "frame 7 sits below frame 0");
+            assert!(uv7[3] <= (rect.y + rect.height) as f32 / lookups.atlas_size.1 as f32 + 1e-6);
+        }
     }
 
     #[test]
