@@ -520,7 +520,13 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // W4-f40: `Chest.cs:2309-2312` — the Release Lantern (4702)
             // row appears while the lanterns are up (the graveyard 4682
             // row above it stays constants-off, so this lands right after
-            // 4681 in the port's `num` order).
+            // 4681 in the port's `num` order). RETIRE dedupe-check
+            // (research/105 §9.2): this row is NOT one of f41's eleven
+            // `PartyUp` gift rows (`:2345-2358`) — f41 `be4cb841` ported
+            // the SAME 4702 row independently (`StockWhen::LanternsUp`,
+            // same position). The merge keeps f41's `case 13` superset;
+            // this variant renames mechanically (`LanternNight` →
+            // `LanternsUp`), ONE `lanterns_up` field + feed line survive.
             row(4702, StockWhen::LanternNight),
             row(4791, StockWhen::Always),
             row(3747, StockWhen::Always),

@@ -919,6 +919,8 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         blood_moon: app.world.blood_moon,
         // W4-f40: `Chest.cs:2309`'s `LanternNight.LanternsUp` gate — the
         // Party Girl's Release-Lantern row reads the live event flag.
+        // RETIRE (research/105 §9.2): f41 `be4cb841`'s feed line is the
+        // identical expression — the merge keeps ONE (either copy).
         lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         zone_snow: app.scene_metrics.zone_snow,
         zone_jungle: app.scene_metrics.zone_jungle,
