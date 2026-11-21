@@ -39526,3 +39526,263 @@ slots, the rope-coil `ai[1]` gate, the keep-one absence pin; 1 audio — the
 NPCDeath7 route + one-draw contract + bank row) are WRITTEN, NOT RUN — **no
 compiler invoked**.
 
+## The projectile sound wave, part 7 — FINAL (S1-E-21h f1, 2026-11-21, code-only mode)
+
+The final phase, three parts: (1) the d77 keep-one EXECUTE-prep — the exact
+drop-list + the fold-hunks for d77c against d77's pushed tip `d61e6362`
+(`task/W4-d77-proj-sounds-3`, the deferred-arm resolution + the volumeScale
+seam `9d35874a`); (2) the `:70978`-`:85559` range census FINAL — every one of
+the 197 in-range `PlaySound` sites attributed (the script-sweep + the
+full-tip row re-census), the small remainders ported; (3) the 6-tuple
+`volume_scale` seam ADOPTED on f1 (commit `4233ddb4`), so the merge's queue
+shape is identical on both branches.
+
+### The 6-tuple adoption (commit `4233ddb4`)
+
+f1's `pending_proj_sounds` was the 5-tuple `(id, style, x, y, pitchOffset)`;
+d77's seam widened it to `(id, style, x, y, pitchOffset, volumeScale)`
+(`SoundEngine.cs:93`'s fourth argument; `LegacySoundPlayer.cs:1411`'s
+post-gate multiply — the scale folds into the gate probe and the emit, the
+refusal shape and the RNG census stay scale-invariant). **f1 adopts the
+6-tuple NOW**: the field + `drain_proj_sounds` return type, the golf
+`tick.sounds` forward and the `wants_sound` forward push `(..., 1.0)`, every
+`kill_sound_cue` / `rocket_kill_census` push carries 1.0 (no f1 arm plays a
+`WithVolume` style — the 681 goblin bomb's 0.5 is d77's arm), the drain
+destructures the sixth term, and `Audio::play_use_sound_scaled` /
+`play_proj_sound_scaled` land VERBATIM from d77's `9d35874a` (the 5-arg peers
+delegate at 1.0; every stock caller unchanged). f1's int-overload routes
+(0/13/4) stay INSIDE `play_proj_sound_scaled` (f1's part-4 shape — its drain
+special-cases only id 0); d77's drain routes 0/13/6/4/29 BEFORE the call and
+its `_scaled` copy is id-2-only. **Merge shape**: keep d77's drain (the wider
+routes); drop the int match from d77's `play_proj_sound_scaled` OR keep f1's
+— at scale 1.0 both play identically, so the choice is cosmetic; the queue
+contract itself no longer conflicts. The 8 f1 witness payloads re-pin the
+sixth term to 1.0; one new scale witness
+(`s1_e_21h_f1_final_the_volume_scale_rides_after_the_gate_draw_free_census`)
+pins the 0.5-scale one-draw contract + the muted refusal + the int arm's
+scale-invariance.
+
+### The range census FINAL (`Projectile.cs:70978`-`:85559`)
+
+The script-sweep (`SoundEngine.PlaySound` + `KillTile_PlaySounds`, direct
+file read) finds **197 sites in range, the last at `:78505`** — the file's
+437-site census ends there (sites 241-437; `:78506`-`:85559` contains ZERO
+play sites). Every site's kind gate was re-derived from the C# (the
+nearest preceding `this.type` test) and cross-checked against the base
+`proj_data` table (511 rowed kinds, const/range-arm expansion) and ALL 43
+distinct non-base `data.rs` blobs on the pushed tips. Attribution:
+
+- **d77 `kill_tail_cue` (95 sites + the 9 deferred-arm cues)** — the base
+  tip `d61e6362` covers every f1 part-4/5 const arm verbatim (the per-arm
+  diff below) plus the sites f1 never claimed (715-718, 385, 270/837,
+  206/225, 41, 183, 167-170, the common-bullet 19-kind subset, 736-738
+  debris, the 79/16/34/681/661/659/452 deferred-wave cues, the 1088 acorn).
+- **f1 (this branch)** — the 9 part-6 owed arms (949/410/590/539/rope
+  coils/728/729/1120/1115/576), the part-7 second owed wave (below), the
+  Flame Burst remainder `:71848` (commit `0aabccd0`), and the rocket census
+  (keep-one d77 — f1's copy is the drop candidate, it gates out the 133/136
+  Item62 + 139 picks d77 carries).
+- **The landed 24-site wave** — `:78331`/`:78386` (the bomb blasts).
+- **Sibling self-arms (keep-one, part-6 table)** — `:72182` (608 d12),
+  `:72482` (596 g5), `:74452` (229 g2), `:74819` (1024 d12), `:76085`
+  (761/762 d16).
+- **Deferred — state-bearing, writes unported everywhere**: `:71659` (710
+  Betsy Arrow) / `:72286` (617 Nebula Arcanum) — d77's part-3 verdict
+  stands at `d61e6362` (the f20 slice-D ports are the AI_001 flight
+  overlays, not the Kill arms); d77c arms them when the writes land.
+- **Deferred — the scarab dead clause**: `:78218`/`:78222` — the C#'s
+  `type == 794 || 797` test sits INSIDE the `type == 773` arm (`:78211`),
+  so it never fires; 773 is rowless everywhere. d77's pick is recorded
+  dead; no port owed.
+- **Deferred — still rowless on EVERY pushed tip** (the final re-census):
+  `:71526` (1012), `:71954` (669), `:72420` (619), `:72601` (585), `:72645`
+  (587), `:72876` (501), `:73052`/`:73099`/`:73161` (467/468/483), `:73273`
+  (522), `:73330` (520), `:73648` (616), `:73690` (510), `:73707`
+  (868/869/996), `:73821` (424-426), `:74206` (589), `:74252` (335),
+  `:74262` (318), `:74313` (1097), `:74416`/`:74426` (263/261), `:74526`
+  (227), `:74772`-`:74802` (158-161), `:74830` (93), `:75039` (772),
+  `:75183` (907 — the cloak family's Item27 sibling), `:75488` (731),
+  `:75654` (330), `:75753`/`:75758` (281), `:75806` (162), `:76043` (981),
+  `:76099` (712), `:76172` (17), `:76216`-`:76243` (39/71/179/40),
+  `:76252` (21/471/532/1111), `:76260` (583), `:76379` (306 — d77's pick,
+  unrowed), `:76868` (1023 — the DeadCells trackable), `:76892` (312),
+  `:77163`/`:77178`/`:77179` (370/371), `:77195` (936), `:77653` (1077),
+  `:77698` (910/911), `:78451` (588). Plus the unrowed SIBLINGS of rowed
+  arms (the PART convention): 508 (`:73965`), 1073 (`:74014`), 195
+  (`:74305`), 51 (`:75572`), 599/909 (`:75646`), 119/118 (`:75331`),
+  257/302/577/876 (`:76038`), 706 (`:71848`), 1128 (rowed on d19/d10 but
+  NO Kill-tail play site — no cue owed).
+
+**The second owed wave (commit `45abf423`, 33 kinds / 22 sites).** The
+part-6 sweep ran before most sibling tips advanced; the FINAL re-census
+(all 43 non-base `data.rs` blobs, `proj_data`-scoped const/range expansion)
+found 33 of the part-6 "still rowless everywhere" kinds NOW rowed on pushed
+tips, none self-arming their death cue there. Their cue-first / pre-resize
+plays arm on `kill_sound_cue` with NUMERIC literals (INERT until the merge
+lands the rows — the owed-phase convention):
+
+| kind(s) | C# site | cue | play point | row tip (data.rs) |
+| --- | --- | --- | --- | --- |
+| 931/1039 | `:71152` | (2, 10) | Center | d18 `18916087` :3924/:3933 (30×30, aiStyle 171) |
+| 1047 RainbowBoulder | `:71194` | (42, 274) trackable | Center | d3 `2d01693c` :3389 |
+| 523 ToxicBubble | `:73259` | (2, 54) | position | d10 `1f0b60e9` :1771 (32×32, aiStyle 95) |
+| 1037/1049 meteors | `:73868` | (2, 89) | position (cue-first, pre-192×scale recentre) | e3 `1d26efa9` :3863/:3869 |
+| 1124 BoneShard | `:74754` | (0, 0) | position | d78 `cbae0aa3` :3302 (6×6) |
+| 1048 Poulder | `:74859` | (2, 16) | position | d3 :3392 (31×31, aiStyle 25) |
+| 1053 LavaBoulder | `:74863` | (2, 14) | position | d3 :3368-3371 |
+| 1054 SpiderBoulder | `:74867` | (3, 29) NPCHit29 | position | d3 :3372 (timeLeft 300) |
+| 1055 Ghoulder | `:74871` | (4, 6) NPCDeath6 | position | d3 :3373 (timeLeft 900) |
+| 99/727/1013/1014/1021/1057 | `:74875` | (0, 0) | position | d3 :3368-3381 |
+| 1005 MiniBoulder | `:74972` | (0, 0) | position | d3 :3376 (15×15) |
+| 655 BeeHive | `:75082` | (4, 1) default Style | position | d3 :3384 |
+| 723 ManaCloakStar | `:75163` | (2, 10) | position | f48 `69d499c6` :3871-3875 (24×24) |
+| 724/725/726/1133 cloak stars | `:75187` | (2, 10) | position | f48 same block |
+| 128 FrostBlastHostile | `:75331` | (2, 27) | position | g8 `82c93cec` :3216 (14×14, aiStyle 28) |
+| 12 natural FallingStar | `:75683` | (2, 10) | position | d15 `60731d50` :4117 (18×18) |
+| 321 FlamingJack | `:76136` | (2, 10) | position | d6 `451cace1` :2846 (30×30, aiStyle 55) |
+| 31 falling SandBall | `:76180` | (0, 0) | position | f42 `75f055fc` :3996 (g8 :3209 same row — keep-one) |
+| 584 NurseSyringeHeal | `:76268` | (0, 0) | position | d11 `eae7b509` :2566 (10×10) |
+| 514 NailFriendly | `:76345` | (2, 14) | position | d10 :1757 (10×10, aiStyle 93) |
+| 246/249 Stynger | `:76946`/`:76989` | (2, 14) | position | d78 :3822/:3830 |
+| 503 StarWrath | `:75683` | (2, 10) | position | e3 :3858 (24×24, aiStyle 5) |
+
+Façade additions: `play_npc_hit_int` gains the style-29 route (case 3's
+20..54 ×0.5 arm + one `Next(-10, 11)` pitch, `LegacySoundPlayer.cs:646-672`,
+NO NextFloat — the int overload); `play_proj_sound_scaled` gains the
+`(3, 29)` and `(42, 274)` routes (the RainbowBoulder trackable rides
+`play_npc_hit_sound`'s case-42 path — one variation, NO gameplay draw,
+`SoundID.cs:1709`); `play_npc_death_int` gains the style-1 route (the 655's
+`PlaySound(4, x, y)` default Style). Bank: `NPC_Hit_29` (id 3), `Item_89`
+(id 2) join `SFX_CUES`; `rainbow_boulder` joins `NPC_CUSTOM_CUES` (all three
+`.xnb` assets verified on disk, `Test-Path` → True).
+
+**The Flame Burst remainder (commit `0aabccd0`, `:71848`).** The ONE
+base-rowed site neither d77's map nor any sibling arms: the 664/666/668
+Flame Burst Tower shots' Item100 (S1-D-4b-9 rows, 16×16 aiStyle 131). The C#
+RECENTRES first (`:71844-71846`: position = Center, width = height =
+16·num129, Center = position) and runs `Damage()` (`:71847`) BEFORE the
+play; num129 = 6, or 13 under `Main.player[owner].setApprenticeT3`
+(`:71832`/`:71841`). The cue reads the OLD centre minus the blast half
+(48 base / 104 T3 — the 539 jellyfish derived-read precedent);
+`apprentice_t3` threads from the death hook (the local player stands in for
+the owner — the pool's single-player snapshot; a remote owner's shot keeps
+the base 96-box). The unrowed 706 sibling stays out. The resize/Damage/dust
+state halves stay deferred (the S1-D-4b-9 kill-dust deferral stands).
+
+### keep-one EXECUTE-prep — the per-arm diff vs d77 `d61e6362`
+
+**Verdict: d77's `kill_tail_cue` is a strict superset of f1's part-4/5
+base-rowed map.** Every f1 part-4/5 arm (88 kinds — 77 const tokens + the
+numeric 932/323/267/42 + the gem range's 7; the Flame Burst consts are
+f1-UNIQUE, in the fold-hunks below) appears in d77's map with the
+same id/style/position semantics — verified arm-by-arm against the pushed
+`projectile.rs:20131-20376` (the const values resolved through
+`projectile/data.rs`): 932 Center; 662/685/680 Dig; 634/635 Item14
+pre-snap; 819 Dig; 405 Item54; 521 Item110; 444 Item96; 442 Item94; 448
+Item14 pre-snap; 454 (4, 6) cue-first; 399 Shatter; 507/598 Dig;
+1/81/98/980 Dig; 343/349/346 Item27; 323 Dig; 184 Dig; 275/276 Dig; 928
+Dig; 120 Dig; 117 Dig; 166 Item51; 91/92 Item10; 89 Dig; 967 Item45; 1026
+Item167; 359/309/308/337 Item27; 80 Item27 `ai[0] >= 0` gate; 267 Dig;
+2/82/474/172/103/278 Dig; 3/48/54 Dig; 4 Dig; 5/9/955 Item10; 240 Item14
+pre-snap; 282/283 Item10; 286 Item14; 1006 Dig; 660/638/15/253/95/96
+Item10; 42 Dig; 109 Dig; 27/44/45 Item10; 69/70/621 Shatter;
+115/114/116/173/132/156/157 Item10; the gem bolts 121-126/597 Dig
+pre-resize (d77's range arm == f1's `GEM_BOLTS` set). The 454 is the one
+true duplicate payload (same pre-resize position, same id-4 route) — either
+survivor plays it once (the hook fires once per death).
+
+**EXACT DROP-LIST at merge (f1 arms d77 covers verbatim):** the entire
+`kill_sound_cue` part-4/5 block (the 88 kinds above) + f1's
+`rocket_kill_census` cue pushes (d77's census covers all 16 sites AND the
+133/136 Item62 + 139 picks f1 gated out) + f1's `play_proj_sound` int-match
+(d77's drain routes 0/13/6/4/29 before the call) + the 8 re-pinned pool
+witnesses' const-arm cases (keep the owed/final cases). **KEEP on f1 (fold
+into d77c):** the numeric-literal arms below — d77's map has NONE of them.
+
+**The fold-hunks for d77c** (f1-UNIQUE arms d77 `d61e6362` lacks; append to
+`kill_tail_cue`'s match, converting the payload to d77's
+`(id, style, x, y, volume)` shape — every arm 1.0; `center` is d77's
+pre-hook centre local):
+
+```rust
+// part-6 owed wave (rows on d19/d8/d12/d11/d4/d16/a9/d21):
+949 => Some((2, 10, center.x, center.y, 1.0)),          // :70978 Center
+410 => Some((2, 54, pos.x, pos.y, 1.0)),                // :72921
+590 => Some((0, 27, pos.x, pos.y, 1.0)),                // :72616 Style-27 census payload
+539 => Some((4, 7, center.x - 40.0, center.y - 40.0, 1.0)), // :72571 post-80-recentre
+171 | 475 | 505 | 506 if p.ai[1] == 0.0 => Some((0, 0, pos.x, pos.y, 1.0)), // :74619/:74683
+728 | 729 => Some((2, 10, pos.x, pos.y, 1.0)),          // :75127/:75151
+1120 => Some((0, 0, pos.x, pos.y, 1.0)),                // :75376 pre-resize
+1115 => Some((2, 27, pos.x, pos.y, 1.0)),               // :75502
+576 => Some((2, 10, pos.x, pos.y, 1.0)),                // :76038 the 24-kind list's new member
+// part-7 Flame Burst remainder (base-rowed; needs the apprentice_t3 thread):
+FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3 => {
+    let half = if apprentice_t3 { 104.0 } else { 48.0 };
+    Some((2, 100, center.x - half, center.y - half, 1.0)) // :71848
+}
+// part-7 second owed wave (rows on d3/d6/d10/d11/d15/d18/d78/e3/f42/f48/g8):
+931 | 1039 => Some((2, 10, center.x, center.y, 1.0)),   // :71152 Center
+1047 => Some((42, 274, center.x, center.y, 1.0)),       // :71194 trackable Center
+523 => Some((2, 54, pos.x, pos.y, 1.0)),                // :73259
+1037 | 1049 => Some((2, 89, pos.x, pos.y, 1.0)),        // :73868 cue-first
+1124 => Some((0, 0, pos.x, pos.y, 1.0)),                // :74754
+1048 => Some((2, 16, pos.x, pos.y, 1.0)),               // :74859
+1053 => Some((2, 14, pos.x, pos.y, 1.0)),               // :74863
+1054 => Some((3, 29, pos.x, pos.y, 1.0)),               // :74867 NPCHit29
+1055 => Some((4, 6, pos.x, pos.y, 1.0)),                // :74871 NPCDeath6
+99 | 727 | 1013 | 1014 | 1021 | 1057 => Some((0, 0, pos.x, pos.y, 1.0)), // :74875
+1005 => Some((0, 0, pos.x, pos.y, 1.0)),                // :74972
+655 => Some((4, 1, pos.x, pos.y, 1.0)),                 // :75082 default Style 1
+723 => Some((2, 10, pos.x, pos.y, 1.0)),                // :75163
+724 | 725 | 726 | 1133 => Some((2, 10, pos.x, pos.y, 1.0)), // :75187
+128 => Some((2, 27, pos.x, pos.y, 1.0)),                // :75331
+12 => Some((2, 10, pos.x, pos.y, 1.0)),                 // :75683
+321 => Some((2, 10, pos.x, pos.y, 1.0)),                // :76136
+31 => Some((0, 0, pos.x, pos.y, 1.0)),                  // :76180
+584 => Some((0, 0, pos.x, pos.y, 1.0)),                 // :76268
+514 => Some((2, 14, pos.x, pos.y, 1.0)),                // :76345
+246 | 249 => Some((2, 14, pos.x, pos.y, 1.0)),          // :76946/:76989
+503 => Some((2, 10, pos.x, pos.y, 1.0)),                // :75683
+```
+
+Fold companions: the `apprentice_t3: bool` parameter on `kill_tail_cue`
+(the death hook reads `player.set_apprentice_t3`, f1's `:19977-19988`
+shape); the drain's `(3, 29)` / `(42, 274)` routes (d77's drain has no id-3
+/ id-42 arm — add `else if id == 3 && style == 29 { play_npc_hit_int(29, …) }`
+and `else if id == 42 && style == 274 { play_npc_hit_sound("rainbow_boulder", …) }`
+before the id-2 fallthrough, or keep them inside `play_proj_sound_scaled`
+as f1 does); `play_npc_hit_int`'s style-29 route + `NPC_Hit_29` bank row;
+`play_npc_death_int`'s style-1 route (d77's copy has 6/22 — f1 adds 1/7,
+keep the union; NOTE d77's part-3 doc claims a style-19 route for the 385
+Sharknado cry but its pushed `play_npc_death_int` match arms only 6/22 and
+`NPC_Killed_19` is absent from its bank — the cry resolves `None` at
+`d61e6362`; a d77-side gap for d77c to fix, not f1's); `Item_89` bank row +
+`rainbow_boulder` in
+`NPC_CUSTOM_CUES`; f1's `NPC_Killed_7` row + style-7 route (part 6). The
+710/617 bursts stay deferred on BOTH branches (d77c arms them when the Kill
+writes land — the position reads are post-centre-snap, the same mis-order
+d77's part-3 doc records).
+
+**Census closure.** After the three port commits, every in-range site is
+either (a) armed on d77/f1/a sibling/landed wave, (b) a recorded
+state-bearing deferral (710/617), (c) the dead scarab clause, or (d) a
+rowless-kind deferral with its kind named above. **No unclaimed rowed-kind
+play site remains in `:70978`-`:85559`.** The owed arms (part 6 + part 7)
+stay INERT on this branch's base (the row guard declines their kinds) —
+they activate when the merge lands the sibling rows; the keep-one table
+(part 6) plus the drop-list above de-duplicate the merge.
+
+**Verification.** Code-only: the 197-site sweep + the per-site kind-gate
+re-derivation (direct-path C# reads, ≤100-line windows, no junction
+recursion); the base 511-kind row expansion + the 43-blob pushed-tip
+re-census (`proj_data`-scoped, const/range/multi-line-arm expansion — the
+909/312 false positives of the naive sweep excluded by scoping); every new
+arm re-read against its C# window and its row verbatim via `git show`; the
+per-arm d77 diff against the pushed `d61e6362` map. The 4 new witnesses
+(`s1_e_21h_f1_final_*`: the Flame Burst derived-recentre table + the 706
+absence, the second-owed-wave payload table + the rowless-sibling absence,
+the volume-scale one-draw contract, the NPCHit29/RainbowBoulder/NPCDeath1/
+Item89 route contracts) are WRITTEN, NOT RUN — **no compiler invoked**.
+Commits `4233ddb4`/`0aabccd0`/`45abf423` on `task/W4-f1-proj-sounds-4`
+(pushed, unmerged).
+
