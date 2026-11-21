@@ -205,6 +205,8 @@
 //! | 952-960 | `:87199-87207` | the 262 Plantera death (9 random-position gores 381-387) |
 //! | 961-964 | `:87211-87217` | the 263/264 Plantera's Hook/Tentacle death (2 random-position gores each) |
 //! | 965-970 | `:87252-87257` | the 266 Brain of Cthulhu death (6 gores 396-401, Next(-30,31)*0.2 velocity) |
+//! | 971 | `:87273` | the 267 Creeper death (1 gore 402) |
+//! | 972-973 | `:87355-87356` | the 5 Servant of Cthulhu death (2 gores 6/7) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5474,6 +5476,54 @@ fn brain_of_cthulhu_death(
     }
 }
 
+/// The 267 Creeper death (`NPC.cs:87269-87273`, site 971): the 20-dust
+/// type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then the single gore
+/// 402 at position. Scale defaults to 1.
+fn creeper_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 402, 1.0); // :87273
+}
+
+/// The 5 Servant of Cthulhu death (`NPC.cs:87351-87356`, sites 972-973):
+/// the 20-dust type-5 burst, then the 2 gores 6/7 at position. Scale
+/// defaults to 1.
+fn servant_of_cthulhu_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 6, 1.0); // :87355
+    gore.new_gore(rng, world, pos, vel, 7, 1.0); // :87356
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6137,6 +6187,14 @@ pub fn hit_effect_c(
     // `:87238-87258` — the 266 Brain of Cthulhu arm (sites 965-970).
     if npc_type == 266 && npc.hp <= 0 {
         brain_of_cthulhu_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87259-87274` — the 267 Creeper arm (site 971).
+    if npc_type == 267 && npc.hp <= 0 {
+        creeper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87341-87357` — the 5 Servant of Cthulhu arm (sites 972-973).
+    if npc_type == 5 && npc.hp <= 0 {
+        servant_of_cthulhu_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9760,6 +9818,32 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the brain mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87273` — the Creeper death: the single gore 402.
+    #[test]
+    fn w4_f10_the_creeper_death_spawns_the_single_gore() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(907);
+        creeper_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 402);
+    }
+
+    /// `NPC.cs:87355-87356` — the Servant of Cthulhu death: the 2 gores
+    /// 6/7.
+    #[test]
+    fn w4_f10_the_servant_death_spawns_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(911);
+        servant_of_cthulhu_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![6, 7]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
