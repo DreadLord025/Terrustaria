@@ -5071,10 +5071,19 @@ impl Projectile {
     /// The `timeLeft = 60` pin (`:25483`) keeps the slot alive while held.
     fn ai_drill(
         &mut self,
+        world: &World,
         owner: Option<(f32, f32)>,
         aim: Option<(f32, f32)>,
         player: Option<&crate::player::Player>,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
+        let mut d = crate::projectile_dust3::ProjDust3 {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         // `:25483` — the life pin.
         self.time_left = 60;
         let Some(p) = player else {
@@ -5116,6 +5125,16 @@ impl Projectile {
         self.pos = Vec2::new(hand.0 - self.w * 0.5, hand.1 - self.h * 0.5);
         // `:25566` — the rotation follows the velocity (+π/2).
         self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_2;
+        // `:25575-25583` — the aiStyle-20 tail: the per-tick X jitter
+        // (`1 + Next(-3,4)·0.01`) and the 1-in-6 drill spark (W4-f5). The
+        // Laser Drill 445 (aiStyle 75) reuses this arm as a channel stand-in
+        // but its C# `AI_075` arm (`:66244-66358`) has no dust/jitter — the
+        // tail is gated to the aiStyle-20 kinds so the 445 keeps its no-draw
+        // behaviour.
+        if proj_data(self.kind).map_or(255, |dd| dd.ai_style) == 20 {
+            self.vel.x *= 1.0 + d.rng.next_range(-3, 4) as f32 * 0.01;
+            crate::projectile_dust3::style20_drill_spark(self, world, &mut d);
+        }
     }
 
     /// `AI()`'s aiStyle-84 block's Last Prism laser arm
@@ -6932,10 +6951,22 @@ impl Projectile {
     /// `AI()`'s aiStyle-21 music-note arm (`Projectile.cs:25585-25606`): the
     /// Magical Harp's 76/77/78. The rotation clamps `vx·0.1` to ±0.6; the
     /// speed decays by `ai[2]` per tick toward the `3·|ai[0]/2+0.5|` floor
-    /// (`:25589-25593`). The dust roll (`:25594`) and the sound latch
-    /// (`:25600-25605`) are SKIPPED. The bounce is the movement chain's
+    /// (`:25589-25593`). The dust puff (`:25594-25599`) spawns through the
+    /// `projectile_dust3` seam (W4-f5); the sound latch (`:25600-25605`) is
+    /// the sound lane's skip. The bounce is the movement chain's
     /// aiStyle-21 arm (`:19299-19309`: the blocked axis reverses).
-    fn ai_music_note(&mut self, world: &World) {
+    fn ai_music_note(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust3::ProjDust3 {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         // `base.direction` is the velocity-sign stand-in (`:17016-17026`,
         // `AutomaticallyChangesDirection` true for aiStyle 21).
         self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
@@ -6950,6 +6981,9 @@ impl Projectile {
             let angle = self.vel.y.atan2(self.vel.x);
             self.vel = Vec2::from_angle(angle) * (speed - self.ai[2]);
         }
+        // `:25594-25599` — the 1-in-3 dust-27 puff (W4-f5), ahead of the
+        // movement (the C# runs it before HandleMovement).
+        crate::projectile_dust3::style21_note_puff(self, world, &mut d);
         // The movement: the aiStyle-21 bounce (`:19299-19309`) — the blocked
         // axis reverses at full speed (the port's per-axis probe stand-in).
         if self.tile_collide {
@@ -7438,12 +7472,27 @@ impl Projectile {
     /// (the sound seam is the documented skip — no rand draw either way);
     /// the 263/274/1092 riders of the same style have no ported row; the
     /// 2× dust 27 is SKIPPED.
-    fn ai_demon_scythe(&mut self, world: &World) {
+    fn ai_demon_scythe(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust3::ProjDust3 {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         // `:25369-25373` — the sickle's one-tick latch (`SoundEngine.
         // PlaySound(Item8)` is the audio skip; the state write stands).
         if self.ai[1] == 0.0 && self.kind == DEMON_SICKLE {
             self.ai[1] = 1.0;
         }
+        // `:25374-25391` — the 263/274 early-return kinds are unrowed (their
+        // rotation/drag arms never run in the port); the 1092 Librarian Book
+        // (`:25392-25457`) is unrowed too (its `:25402/:25449` sites stay
+        // latent, W4-f5).
         self.rot += 0.8;
         self.ai[0] += 1.0;
         if self.ai[0] >= 30.0 {
@@ -7454,6 +7503,8 @@ impl Projectile {
                 self.ai[0] = 200.0;
             }
         }
+        // `:25471-25475` — the two dust-27 (W4-f5).
+        crate::projectile_dust3::style18_scythe_trail(self, world, &mut d);
         self.kill_step(world);
     }
 
@@ -11315,12 +11366,20 @@ impl Projectile {
     /// `AI()`'s `aiStyle == 23` branch (`Projectile.cs:25861-25935`) — the
     /// Eye Fire (101) and the Flames Trap (188): the 10-tick launch ramp
     /// (`ai[0]` 8→10 scales the dust, 11+ the full size), the 60-tick life cap
-    /// and the spinning sprite.
-    ///
-    /// The port has no `Main.dust` layer (S1-E-1), so the dust block
-    /// (`:25896-25928`) and its `Main.rand` draws are SKIPPED; everything the
-    /// arm does to the projectile itself is ported.
-    fn ai_eye_fire(&mut self, world: &World) {
+    /// and the spinning sprite. The launch dust (`:25896-25928`) spawns
+    /// through the `projectile_dust3` seam (W4-f5) on the ramp ticks.
+    fn ai_eye_fire(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust3::ProjDust3 {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         // `:25863-25870` — the Flames Trap (188) floors its launch counter at
         // 8 and counts `localAI[0]` (the `Damage_CanDealDamage` gate at
         // `:12448` reads it: `localAI[0] < 5`).
@@ -11334,10 +11393,25 @@ impl Projectile {
         if self.time_left > 60 {
             self.time_left = 60;
         }
-        // `:25875-25893` / `:25930-25933` — the launch ramp. Both arms advance
-        // the counter by one (the 8/9/10 dust-scale ladder and the dust itself
-        // are the skipped layer), so the net effect on the slot is the ++.
-        self.ai[0] += 1.0;
+        // `:25875-25933` — the launch ramp. Past 7 the counter advances and
+        // the dust fires at the 8/9/10 ladder scale (11+ full); else it just
+        // counts. The C# reads `ai[0]` for the ladder BEFORE the ++.
+        if self.ai[0] > 7.0 {
+            let num191 = if self.ai[0] == 8.0 {
+                0.25
+            } else if self.ai[0] == 9.0 {
+                0.5
+            } else if self.ai[0] == 10.0 {
+                0.75
+            } else {
+                1.0
+            };
+            self.ai[0] += 1.0;
+            // `:25896-25928` — the launch dust (W4-f5).
+            crate::projectile_dust3::style23_eye_fire(self, world, &mut d, num191);
+        } else {
+            self.ai[0] += 1.0;
+        }
         // `:25934` — the spin: `rotation += 0.3f * direction`.
         self.rot += 0.3 * self.direction as f32;
         self.kill_step(world);
@@ -17454,7 +17528,7 @@ impl ProjectilePool {
                             self.slots[i].wet = wet;
                             self.slots[i].ai_bomb(world, &npcs[..], rng, local_owner);
                         }
-                        18 => self.slots[i].ai_demon_scythe(world),
+                        18 => self.slots[i].ai_demon_scythe(world, rng, dust, dust_ctx),
                         // `AI()`'s `else if (this.aiStyle == 12)`
                         // (`Projectile.cs:24501-24635`) — the Aqua Scepter's
                         // water stream (22): the scale decay, the gravity and
@@ -17593,7 +17667,7 @@ impl ProjectilePool {
                         // mouse while the channel holds; the release kills
                         // it. The position is AI-set (the hand pin), so no
                         // `kill_step` runs.
-                        20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
+                        20 => self.slots[i].ai_drill(world, owner, inputs.aim, player.as_deref(), rng, dust, dust_ctx),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
                         // S1-P-i14 (V5 gate) — `AI_078`
@@ -17694,7 +17768,7 @@ impl ProjectilePool {
                         // 21): the Magical Harp's 76/77/78. The decel toward
                         // the ai0-scaled floor; the bounce is the movement
                         // chain's (`:19299-19309`), the dust roll SKIPPED.
-                        21 => self.slots[i].ai_music_note(world),
+                        21 => self.slots[i].ai_music_note(world, rng, dust, dust_ctx),
                         // S1-P-i22 — `:46573-46591` the Sparkle Guitar note
                         // (aiStyle 167): the 856's CatmullRom arc back to the
                         // owner. The light write SKIPPED (no pool layer).
@@ -17750,7 +17824,7 @@ impl ProjectilePool {
                         // The aiStyle-23 Eye Fire (101) / Flames Trap (188)
                         // (`:25861-25935`): the launch ramp, the 60-tick cap
                         // and the spin.
-                        23 => self.slots[i].ai_eye_fire(world),
+                        23 => self.slots[i].ai_eye_fire(world, rng, dust, dust_ctx),
                         // S1-P-i28 — the thrown-consumable flight arms.
                         // aiStyle 68: the Molotov cocktail (399)
                         // (`Projectile.cs:30166-30239` + the movement-68
@@ -17906,7 +17980,7 @@ impl ProjectilePool {
                             // beam light — is a follow-up); the release kills
                             // it (`:66280-66283`).
                             } else if self.slots[i].kind == LASER_DRILL {
-                                self.slots[i].ai_drill(owner, inputs.aim, player.as_deref());
+                                self.slots[i].ai_drill(world, owner, inputs.aim, player.as_deref(), rng, dust, dust_ctx);
                             } else {
                                 let spawn =
                                     self.slots[i]
@@ -41229,7 +41303,10 @@ mod s1_d_4b_5c_tests {
         let mut p = just(FLAMES_TRAP);
         p.ai[0] = 0.0;
         let w = world();
-        p.ai_eye_fire(&w);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = crate::projectile_dust3::test_dust_ctx(&w);
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        p.ai_eye_fire(&w, &mut rng, &mut dust, &ctx);
         assert_eq!(p.ai[0], 9.0, ":25865-25868 floors 0 to 8, :25890 adds one");
         assert_eq!(p.local_ai[0], 1.0, ":25869 counts the launch");
         assert_eq!(p.time_left, 60, ":25871-25874 caps the life at 60");
@@ -41245,7 +41322,10 @@ mod s1_d_4b_5c_tests {
         p.ai[0] = 0.0;
         p.direction = -1;
         let w = world();
-        p.ai_eye_fire(&w);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = crate::projectile_dust3::test_dust_ctx(&w);
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        p.ai_eye_fire(&w, &mut rng, &mut dust, &ctx);
         assert_eq!(p.ai[0], 1.0, ":25932 — the below-7 arm just counts");
         assert_eq!(p.local_ai[0], 0.0, "the Eye Fire does not count launches");
         assert!((p.rot + 0.3).abs() < 1e-6, ":25934 mirrors with direction");

@@ -144,6 +144,25 @@ impl ProjDust3<'_> {
     }
 }
 
+/// The permissive dust ctx for the witness fixtures (the whole world
+/// on-screen, the full 6000 budget — the scratch pool never culls, so the
+/// draw count matches the live empty-pool path; the `Npc::update_rng`
+/// convention, `npc.rs:4595`).
+#[cfg(test)]
+pub(crate) fn test_dust_ctx(world: &World) -> SpawnCtx {
+    SpawnCtx {
+        game_menu: false,
+        game_paused: false,
+        generating: false,
+        screen_position: Vec2::ZERO,
+        screen_size: Vec2::new(
+            world.width as f32 * tr_core::TILE_PX,
+            world.height as f32 * tr_core::TILE_PX,
+        ),
+        max_dust_to_draw: 6000,
+    }
+}
+
 /// `Utils.NextVector2Unit` (`Utils.cs:1260-1263`) — one `NextFloat` angle,
 /// the f64 cos/sin spin (`ToRotationVector2`).
 fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
@@ -433,6 +452,157 @@ pub(crate) fn style14_greek_fire(p: &Projectile, world: &World, d: &mut ProjDust
         dust.no_gravity = true;
         dust.scale += d.rng.next_float() * 0.8 + 0.3;
         dust.velocity += p.vel;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 18 — the Demon Sickle / Scythe (`Projectile.cs:25367-25476`).
+// ---------------------------------------------------------------------------
+
+/// `:25471-25475` — the 44/45's two dust-27 (noGravity). The caller owns the
+/// rotation/acceleration ahead of this; the 263/274 early-return kinds never
+/// reach it (unrowed).
+pub(crate) fn style18_scythe_trail(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    for _ in 0..2 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            27,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            1.0,
+        );
+        d.pool.slot_mut(idx).no_gravity = true;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 20 — the drill / chainsaw (`Projectile.cs:25481-25584`).
+// ---------------------------------------------------------------------------
+
+/// `:25576-25583` — the 1-in-6 drill spark: a dust-31 at
+/// `position + velocity·Next(6,10)·0.1` (the offset draw evaluates BEFORE the
+/// `NewDust`), alpha 80, scale 1.4; post-arms position.X −4, noGravity,
+/// ×0.2 velocity, then velocity.Y = −Next(7,13)·0.15. The caller owns the
+/// `velocity.X *= 1 + Next(-3,4)·0.01` jitter ahead of this.
+pub(crate) fn style20_drill_spark(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    if d.rng.next_range(0, 6) == 0 {
+        // `:25578` — the position offset's `Next(6,10)` draws first.
+        let off = d.rng.next_range(6, 10) as f32 * 0.1;
+        let idx = d.new_dust(
+            world,
+            p.pos + p.vel * off,
+            p.w as i32,
+            p.h as i32,
+            31,
+            0.0,
+            0.0,
+            80,
+            Color::default(),
+            1.4,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.position.x -= 4.0;
+        dust.no_gravity = true;
+        dust.velocity *= 0.2;
+        dust.velocity.y = -(d.rng.next_range(7, 13) as f32) * 0.15;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 21 — the music notes (`Projectile.cs:25585-25606`).
+// ---------------------------------------------------------------------------
+
+/// `:25594-25599` — the 76/77/78's 1-in-3 dust-27 puff (alpha 80, noGravity,
+/// ×0.2 velocity). The caller owns the decel ahead of this.
+pub(crate) fn style21_note_puff(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    if d.rng.next_range(0, 3) == 0 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            27,
+            0.0,
+            0.0,
+            80,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity *= 0.2;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 23 — the Eye Fire / Flames Trap (`Projectile.cs:25861-25935`).
+// ---------------------------------------------------------------------------
+
+/// `:25896-25928` — the 101/188's launch dust: the `num192 == 6 || Next(2) == 0`
+/// gate (the 188's 6 always fires, the 101's 75 is 1-in-2), then one dust at
+/// `velocity·0.2` speed, alpha 100; the `Next(3) != 0 || (75 && Next(3) == 0)`
+/// post-gate scales ×3 + velocity ×2 + noGravity, the 188 ×1.25 / else ×1.5
+/// scale, the ×1.2 velocity, the `num191` launch-ramp scale, and the 75's
+/// `+velocity` (×0.5 if still gravity-bound). The caller owns the `ai[0]`
+/// ramp (8→0.25, 9→0.5, 10→0.75, 11+→1.0) and the `ai[0]++` ahead of this.
+pub(crate) fn style23_eye_fire(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust3,
+    num191: f32,
+) {
+    // `:25891-25895` — the dust type: 75 for the 101 Eye Fire, else 6 (the
+    // 188 Flames Trap).
+    let num192 = if p.kind == crate::projectile::EYE_FIRE { 75 } else { 6 };
+    // `:25896` — the 6 always fires; the 75 is 1-in-2.
+    if num192 == 6 || d.rng.next_range(0, 2) == 0 {
+        // `:25900` — the dust at velocity·0.2.
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            num192,
+            p.vel.x * 0.2,
+            p.vel.y * 0.2,
+            100,
+            Color::default(),
+            1.0,
+        );
+        // `:25901-25907` — the noGravity/scale/velocity post-gate.
+        if d.rng.next_range(0, 3) != 0 || (num192 == 75 && d.rng.next_range(0, 3) == 0) {
+            let dust = d.pool.slot_mut(idx);
+            dust.no_gravity = true;
+            dust.scale *= 3.0;
+            dust.velocity.x *= 2.0;
+            dust.velocity.y *= 2.0;
+        }
+        // `:25908-25915` — the 188 ×1.25 / else ×1.5 scale.
+        {
+            let dust = d.pool.slot_mut(idx);
+            if p.kind == crate::projectile::FLAMES_TRAP {
+                dust.scale *= 1.25;
+            } else {
+                dust.scale *= 1.5;
+            }
+            // `:25916-25918` — the ×1.2 velocity + the launch-ramp scale.
+            dust.velocity.x *= 1.2;
+            dust.velocity.y *= 1.2;
+            dust.scale *= num191;
+        }
+        // `:25919-25926` — the 75's +velocity (×0.5 if still gravity-bound).
+        if num192 == 75 {
+            let dust = d.pool.slot_mut(idx);
+            dust.velocity += p.vel;
+            if !dust.no_gravity {
+                dust.velocity *= 0.5;
+            }
+        }
     }
 }
 
