@@ -133,6 +133,9 @@
 //! | 559 | `:85313` | the 655 MagmaSnail hit/death (1 gore 1256, same shape) |
 //! | 560 | `:85334` | the 154 IceTortoise death (1 gore 180, type-67 vel-scaled dust) |
 //! | 561 | `:85451` | the 121 Slimer death (1 gore 94 + alpha copy, NPC-81 spawn seam; 81 spawns babies, no gore) |
+//! | 562 | `:85684` | the 50 KingSlime death (1 gore 734 at Center anchor, baby-slimes spawn seam) |
+//! | 563-566 | `:85718-85721` | the 153 GiantTortoise death (4 gores 177/178/179/179) |
+//! | 567-570 | `:85737-85740` | the 177 Derpling death (4 gores 234/235/236/236) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -243,6 +246,12 @@ pub struct HitEffectOutcomeC {
     /// the wiring wave's. The 81 CorruptSlime's own baby-spawn seam
     /// (`:85457-85474`, scale>=1) is likewise the wiring wave's (no gore).
     pub slimer_spawn: Option<(f32, f32)>,
+    /// The 50 KingSlime's baby-slimes spawn seam (`NPC.cs:85689-85702`):
+    /// `Next(4)+4` (4-7) NPC-1s at random positions inside the body with
+    /// random velocities. `Some((x,y,w,h))` = the position/box the spawns
+    /// randomize within; the count draw + the per-spawn draws + the NPC
+    /// spawns are the wiring wave's.
+    pub king_slime_babies: Option<(f32, f32, f32, f32)>,
 }
 
 /// `Utils.RotatedBy` (`Utils.cs:1675-1684`), centre default (0,0): the
@@ -3535,6 +3544,93 @@ fn slimer_death(
     gore.slot_mut(idx).alpha = alpha;
 }
 
+/// The 50 KingSlime death (`NPC.cs:85680-85702`, site 562): the 200-dust
+/// type-4 burst (SpeedX `2*hitDirection`, SpeedY -2, alpha 175, color
+/// `(0,80,255,100)`), then the single gore 734 at
+/// `Center + (-40, -height/2)` (the C# `base.height / 2` is INTEGER
+/// division), then the baby-slimes spawn seam (RETURNED). Scale defaults
+/// to 1.
+fn king_slime_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeC,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:85680-85683` — the 200-dust type-4 burst (blue, alpha 175).
+    for _ in 0..200 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 4, 2.0 * hit_direction, -2.0, 175,
+            Color::new(0, 80, 255, 100), 1.0,
+        );
+    }
+    // `:85684` — the gore 734 at Center + (-40, -height/2).
+    let anchor = center(npc) + Vec2::new(-40.0, -(h as i32 / 2) as f32);
+    gore.new_gore(rng, world, anchor, Vec2::new(npc.vx, npc.vy), 734, 1.0);
+    // `:85689-85702` — the baby-slimes spawn seam (the count + the per-spawn
+    // draws + the spawns are the caller's).
+    outcome.king_slime_babies = Some((npc.x, npc.y, w, h));
+}
+
+/// The 153 GiantTortoise death (`NPC.cs:85714-85721`, sites 563-566): the
+/// 15-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then the 4
+/// gores 177/178/179/179 at position (the 179 repeats). Scale defaults to 1.
+fn giant_tortoise_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..15 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 177, 1.0); // :85718
+    gore.new_gore(rng, world, pos, vel, 178, 1.0); // :85719
+    gore.new_gore(rng, world, pos, vel, 179, 1.0); // :85720
+    gore.new_gore(rng, world, pos, vel, 179, 1.0); // :85721
+}
+
+/// The 177 Derpling death (`NPC.cs:85733-85740`, sites 567-570): the
+/// 15-dust type-5 burst, then the 4 gores 234/235/236/236 at position (the
+/// 236 repeats). Same shape as the GiantTortoise, different types.
+fn derpling_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..15 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 234, 1.0); // :85737
+    gore.new_gore(rng, world, pos, vel, 235, 1.0); // :85738
+    gore.new_gore(rng, world, pos, vel, 236, 1.0); // :85739
+    gore.new_gore(rng, world, pos, vel, 236, 1.0); // :85740
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3956,6 +4052,18 @@ pub fn hit_effect_c(
     // spawn is the wiring wave's (no gore).
     if npc_type == 121 && npc.hp <= 0 {
         slimer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
+    }
+    // `:85670-85703` — the 50 KingSlime arm (site 562 + the babies seam).
+    if npc_type == 50 && npc.hp <= 0 {
+        king_slime_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
+    }
+    // `:85704-85722` — the 153 GiantTortoise arm (sites 563-566).
+    if npc_type == 153 && npc.hp <= 0 {
+        giant_tortoise_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85723-85741` — the 177 Derpling arm (sites 567-570).
+    if npc_type == 177 && npc.hp <= 0 {
+        derpling_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6302,6 +6410,47 @@ mod tests {
         assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
         // The spawn anchor = (pos.X + width/2, pos.Y + height) = (120,130).
         assert_eq!(out.slimer_spawn, Some((120.0, 130.0)));
+    }
+
+    /// `NPC.cs:85684` — the KingSlime death: the gore 734 at
+    /// Center+(-40,-height/2) (integer height/2), after the 200-dust type-4
+    /// blue alpha-175 burst; the babies seam is returned.
+    #[test]
+    fn w4_f10_the_king_slime_death_spawns_the_gore_and_returns_the_seam() {
+        let w = air();
+        let n = boss(100.0, 100.0, 100.0, 80.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(499);
+        let mut out = HitEffectOutcomeC::default();
+        king_slime_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
+        assert_eq!(gore.slot(0).gore_type, 734);
+        // Center = (150,140); height/2 = 40 -> anchor (110,100).
+        assert_eq!(gore.slot(0).position, Vec2::new(110.0, 100.0));
+        assert_eq!(out.king_slime_babies, Some((100.0, 100.0, 100.0, 80.0)));
+    }
+
+    /// `NPC.cs:85718-85721` / `:85737-85740` — the GiantTortoise / Derpling
+    /// deaths: the 4-gore shape with the repeated tail (177/178/179/179 and
+    /// 234/235/236/236).
+    #[test]
+    fn w4_f10_the_tortoise_and_derpling_deaths_spawn_the_four_gores() {
+        let w = air();
+        for (f, gores) in [
+            (giant_tortoise_death as fn(&Npc, &mut DustPool, &SpawnCtx, &mut GorePool, &mut UnifiedRandom, &World, f32), [177, 178, 179, 179]),
+            (derpling_death, [234, 235, 236, 236]),
+        ] {
+            let n = boss(100.0, 100.0, 50.0, 40.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(503);
+            f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores);
+            for i in 0..4 {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+            }
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
