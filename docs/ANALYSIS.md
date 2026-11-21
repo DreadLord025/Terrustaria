@@ -26201,6 +26201,61 @@ Wiring-phase verification: code-only; 4 new witnesses written not run
 vines.rs 20 / vine_checks.rs 17 / vine_growth.rs 16 / tiles.rs 14. The
 world-hash pins stay unchanged (draw-side only).
 
+### Wire phase 2 — the remaining seams EXECUTED (2026-11-21)
+
+The four remaining seams landed on the branch (contract §9, commits
+`885514e1d`/`2325528ce`/`6b9a1d9fa`/`02f4abe9d`/`5ce66d8f3`):
+
+- **The checks ride the framing dispatch** (`edit/kill.rs::square_tile_frame`):
+  `check_underwater_plant` as the case-549 arm BEFORE the tree arms (the
+  frame-important dispatch precedes the non-solid arm, `WorldGen.cs:84972`/
+  `:81353-81359`) and `check_vines` as the non-solid `IsVine` arm after
+  cactus-80 (`:81375-81378`, a `false` return `continue`s). The entry gate
+  admits the vine kinds + 549 explicitly (generated worlds carry no def/flag).
+- **The genRand threading** (the contract §2 cost): the whole
+  `kill_tile`/`square_tile_frame_default`/`_gen`/`actuation_square_frame` +
+  cascade family takes `&mut UnifiedRandom` — the caller's ACTIVE stream
+  (growth `UpdateWorldGen`, liquid `UpdateLiquid` [`WorldGen.cs:71528`],
+  wiring `self.rand`, edit `UpdatePlayers`, npc `UpdateNpcs`, projectile
+  `UpdateProjectiles` via a new pool `gen_rng` param beside the `DropRng`
+  loot object, net the bare global, worldgen a fresh
+  `UnifiedRandom(world.seed)` stand-in). The seaweed tip re-rolls
+  (`:58601`/`:58612`) draw it — NEVER `world.frame_rng` (the variant-reset
+  stream stays separate; the kill.rs twin witness pins the exact prefix).
+- **The port-only `frame_important[vine]` writes DROPPED**
+  (`vine_growth::plant_vine` + `growth.rs::grow_vine_arm`): C# never marks
+  the 8 vine kinds frame-important; the flag mis-routed placed vines away
+  from `reframe_area`'s cosmetic pass.
+- **The grow-tops + jungle-thorn** (contract §3): `grow_overground_vines` at
+  `update_world_overground_tile`'s tail (the C# `:72504` vine chain after the
+  grass/moss arms), `grow_underground_jungle_thorn` after `grow_vine_arm`
+  (`:73658`, no roll), the dead overground-69 arm DELETED. Both draw the
+  caller's `UpdateWorldGen` stream; the growth.rs twin witness pins the
+  genRand position (the tail adds exactly the dye-head + vine-arm draws).
+- **The thorn down-merge** (contract §4): the 4-line `grass_below`/`down=num`
+  insertion in `framing.rs::frame_of_variant` after the own-slope match
+  (the direct assignments GenTileData's merge parser never emits);
+  `thorn_down_merge_frame` kept as the thin witness fixture delegating to
+  the canonical framer (the standalone re-port + private RULES copy dropped).
+- **The g31 keep-one deltas** (contract §1.2/§9.1): `rising_vine_strip_segments`
+  + `draw_reverse_vines` take `show_invisible` and read the FULL `IsVisible`
+  (`TileDrawing.cs:1411-1432`); the final hunk-pair for the g31-side rebind is
+  published in research/123 §9.1.
+
+Standing deviation (recorded per contract §2): `framing.rs::frame_world`
+stays cosmetic-only — the C# `FrameEverything` runs `TileFrame` per cell
+(the checks included), the port's banded-parallel full pass cannot run the
+killing checks; a generated vine that lost its support stands until the
+next edit/growth frame touches it. The worldgen callers' new
+`UnifiedRandom(world.seed)` stand-ins are drawn ONLY by a seaweed tip
+re-roll (none exists in the pinned passes' framing rings), so the
+world-hash pins stay unchanged; the xorshift pass streams are untouched.
+
+Wire-phase-2 verification: code-only; 7 new witnesses written not run
+(2 kill.rs dispatch/stream + 3 growth.rs dispatcher/stream [incl. the
+seam-5 UpdateWorldGen-position twin] + 1 framing.rs down-merge + 1 vines.rs
+full-IsVisible); census 74 file-total (g83 share 52), contract §9.2.
+
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_accessory.rs` ports the `Player.UpdateBuffs`
