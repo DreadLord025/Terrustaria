@@ -1282,6 +1282,39 @@ pub fn cog_source_y_offset(x: i32, y: i32, tile_frame: i32) -> i32 {
     (tile_frame + x % 2 + y % 2 + x % 3 + y % 3) % 2 * 90
 }
 
+/// `Main.ConvertPaintIdToTileShaderIndex` (`Main.cs:58677-58696`): the paint
+/// id → `Main.tileShader` pass index every baked paint render target selects
+/// (`TilePaintSystemV2.cs:77`, the wall settings carry
+/// `UseWallShaderHacks = true`, `TreePaintSystemData.cs:220-224`; the player
+/// display dolls call it with both flags false, `PlayerDrawHelper.cs:55`).
+/// Illuminant (31) is pass 0 — drawn UNPAINTED, its glow rides the light
+/// path; negative (30) takes pass 43 on WALLS but pass 42 on tiles (the
+/// C#'s `&` is non-short-circuit, side-effect-free — same result as `&&`);
+/// ids ≥ 28 shift by +12; the grass special-group arm remaps the twelve
+/// basic hues 1..12 to 28..39 (the deep paints 13..24 keep their own pass).
+/// The passes themselves are compiled HLSL absent from the decompile — the
+/// port's `sprite.wgsl::paint_recolor` reconstruction stays the documented
+/// deviation (ANALYSIS "Paint and coatings"); this pins the pass SELECTION.
+pub fn convert_paint_id_to_tile_shader_index(
+    paint_index_on_tile: i32,
+    is_used_for_painting_grass: bool,
+    use_wall_shader_hacks: bool,
+) -> i32 {
+    if paint_index_on_tile == 31 {
+        return 0;
+    }
+    if (paint_index_on_tile == 30) & use_wall_shader_hacks {
+        return 43;
+    }
+    if paint_index_on_tile >= 28 {
+        return paint_index_on_tile + 12;
+    }
+    if is_used_for_painting_grass && (1..=12).contains(&paint_index_on_tile) {
+        return paint_index_on_tile + 27;
+    }
+    paint_index_on_tile
+}
+
 impl TileDrawData {
     /// Applies the world-probing corrections C# makes for the palm biome row
     /// (323), the dye-plant frame rewrite (227, `tileFrameX == 204`), the
@@ -2957,5 +2990,43 @@ mod tests {
         );
         assert_eq!(dd(325, 0, 0, 0, 0, 0), DEFAULT); // no case
         assert_eq!(dd(655, 0, 0, 0, 0, 0), DEFAULT); // no case, not the 654 arm
+    }
+
+    #[test]
+    fn w4_g79_the_paint_shader_pass_selection_is_verbatim() {
+        // `Main.cs:58677-58696`, tile flags (false, false) — the
+        // `PlayerDrawHelper.cs:55` call shape.
+        let tile = |p| convert_paint_id_to_tile_shader_index(p, false, false);
+        // Illuminant 31 is pass 0 regardless of the flags (`:58679-58682`).
+        assert_eq!(tile(31), 0);
+        assert_eq!(convert_paint_id_to_tile_shader_index(31, true, true), 0);
+        // Negative 30: pass 42 on tiles (`>= 28` arm), pass 43 on walls
+        // (`:58683-58686`).
+        assert_eq!(tile(30), 42);
+        assert_eq!(convert_paint_id_to_tile_shader_index(30, false, true), 43);
+        assert_eq!(convert_paint_id_to_tile_shader_index(30, true, true), 43);
+        // Brown 28 / shadow 29 shift by +12 (`:58687-58690`).
+        assert_eq!(tile(28), 40);
+        assert_eq!(tile(29), 41);
+        assert_eq!(convert_paint_id_to_tile_shader_index(29, true, true), 41);
+        // The basic + deep hues keep their own ids without the grass flag.
+        for p in 0..=27 {
+            assert_eq!(tile(p), p, "tile pass {p}");
+        }
+        // The grass arm remaps ONLY 1..12 (`:58691-58694`) — deep 13..24
+        // keep their ids, 0/25..27 stay.
+        let grass = |p| convert_paint_id_to_tile_shader_index(p, true, false);
+        for p in 1..=12 {
+            assert_eq!(grass(p), p + 27, "grass pass {p}");
+        }
+        for p in [0, 13, 20, 24, 25, 26, 27] {
+            assert_eq!(grass(p), p, "grass keeps {p}");
+        }
+        // The wall settings (`TreePaintSystemData.cs:220-224`) never use
+        // special groups: every non-30/31 id passes through the same ladder.
+        let wall = |p| convert_paint_id_to_tile_shader_index(p, false, true);
+        for p in 0..=29 {
+            assert_eq!(wall(p), tile(p), "wall pass {p}");
+        }
     }
 }
