@@ -611,9 +611,10 @@ pub fn ai_001_slimes(
             }
         }
     }
-    // :61212-61439 — the 535/658/659/204 shooter blocks: unported kinds
-    // (the 535 SpikedSlime is the King Slime's expert minion — its block
-    // lands with that kind; census in the module header). Their flag3
+    // :61212-61439 — the 535/658/659/204 shooter blocks: deferred. W4-d41
+    // ported the 535 SpikedSlime KIND (npc.rs, riding the update_slime
+    // stand-in); its 605-spike shooter (:61212-61264, the 184 machine
+    // with Type 605) lands with this module's wiring slice. The flag3
     // rows keep the machine whole for the future kinds:
     if t == 535 || t == 658 || t == 659 || t == 204 {
         flag3 = true;
