@@ -993,6 +993,85 @@ impl App {
                 // `NetMessage.SendData(86, -1, -1, null, result.ID, x, y)`.
                 self.broadcast_tile_entity(server, frame_id);
             }
+            // `case 95` — MurderSomeoneElsesPortal (`MessageBuffer.cs:3519-
+            // 3537`, host-only): the client's new portal intersected a
+            // peer's portal projectile. Kill the FIRST active type-602
+            // whose owner + ai[1] form match, then broadcast one `29` for
+            // it (`:3532` passes the key only — number2/3 default to 0).
+            C2s::MurderPortal { owner, form } => {
+                // `:3527-3534` — the first active type-602 whose owner and
+                // ai[1] form match; snapshot before the mutable kill.
+                let mut hit = None;
+                for (slot, p) in self.projectiles.slots().iter().enumerate() {
+                    if p.owner as u16 == owner
+                        && p.active
+                        && p.kind == 602
+                        && p.ai[1] == form as f32
+                    {
+                        hit = Some((slot, p.owner, p.generation));
+                        break; // `:3533` — the first match only
+                    }
+                }
+                if let Some((slot, p_owner, generation)) = hit {
+                    let key = self.projectiles.key_of(slot);
+                    self.projectiles.kill_remote(slot, p_owner, generation);
+                    server.broadcast(&S2c::ProjectileDead {
+                        key,
+                        x: 0.0,
+                        y: 0.0,
+                    });
+                }
+            }
+            // `case 96` — the portal-gun owner's self teleport (W4-g50,
+            // `MessageBuffer.cs:3538-3557`): the host forces the subject to
+            // the sender (`:3543`), applies the teleport and relays it to
+            // the other clients (`:3554`'s `SendData(96, -1, num183, …)`).
+            C2s::PlayerPortalTeleport(p) => {
+                let peer = id as u8;
+                self.apply_player_portal_teleport(peer, &p);
+                server.broadcast_except(
+                    &S2c::PlayerPortalTeleport(net::PlayerPortalTeleport {
+                        player: peer,
+                        ..p
+                    }),
+                    id,
+                );
+            }
+        }
+    }
+
+    /// The shared `96` apply (`MessageBuffer.cs:3545-3551`): the color
+    /// parity flip (`num184 + (num184 % 2 == 0 ? 1 : -1)`) feeds the ENTRY
+    /// teleport effect, then `Teleport(dest, 4, num184)` stores the
+    /// UN-flipped wire color (`Player.cs:37477`) and the velocity overwrites.
+    /// The local player runs the ported `teleport_style` core; a peer's
+    /// snapshot snaps directly (the C# `Main.player[num183]` is the same
+    /// array on both sides). The entry/exit `TeleportEffect` dust is the
+    /// unported FX seam — the parity flip rides it, so only the stored
+    /// color lands here.
+    fn apply_player_portal_teleport(&mut self, player: u8, p: &net::PlayerPortalTeleport) {
+        if player as u32 == self.local_id {
+            if let Some(pl) = self.player.as_mut() {
+                pl.teleport_style(p.x, p.y, 4);
+                // `Player.Teleport`'s style-4 tail (`Player.cs:37475-37481`):
+                // `lastPortalColorIndex = extraInfo` (the un-flipped wire
+                // value), the portal-physics flag and the gravity zero (the
+                // gravity is a per-tick rebase in the port — the flag feeds
+                // `wet_gravity_and_cap`).
+                pl.last_portal_color_index = p.color_index;
+                pl.portal_physics = true;
+                pl.vx = p.velocity_x;
+                pl.vy = p.velocity_y;
+            }
+        } else if let Some(entry) = self.remote_players.get_mut(&(player as u32)) {
+            entry.x = p.x;
+            entry.y = p.y;
+            entry.vx = p.velocity_x;
+            entry.vy = p.velocity_y;
+            // `Player.Teleport`'s `netOffset = Vector2.Zero` (`:37447`).
+            entry.off_x = 0.0;
+            entry.off_y = 0.0;
+            entry.last_portal_color_index = p.color_index;
         }
     }
 
@@ -1847,6 +1926,13 @@ impl App {
                     }
                 }
                 self.emotes.upsert_net(&b, self.local_id as u16);
+            }
+            // `case 96` — a peer's portal teleport (W4-g50,
+            // `MessageBuffer.cs:3538-3557`): the color parity flip, the
+            // style-4 teleport and the velocity overwrite. The subject is
+            // the wire's id byte (the host already forced it to the sender).
+            S2c::PlayerPortalTeleport(p) => {
+                self.apply_player_portal_teleport(p.player, &p);
             }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
@@ -5974,5 +6060,78 @@ mod message_family_tests {
         }
         pump(&mut host_app, &mut client_app, 10);
         assert!(!client_app.emotes.bubbles.iter().any(|b| b.id == 42));
+    }
+
+    /// `case 95` (`MessageBuffer.cs:3519-3537`): the host kills the first
+    /// matching type-602 portal and broadcasts the 29; a wrong form spares it.
+    #[test]
+    fn w4_g50_the_95_murder_kills_the_matching_portal() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let owner = client_app.local_id as u8;
+        let slot = host_app
+            .projectiles
+            .spawn_with_data_owned(602, owner, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 1.0)
+            .expect("spawn");
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(host_app.projectiles.slots()[slot].active);
+        // A wrong form matches nothing (`:3529` compares ai[1]).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MurderPortal {
+                owner: owner as u16,
+                form: 0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            host_app.projectiles.slots()[slot].active,
+            "the form mismatch spared the portal"
+        );
+        // The right form kills it and the `29` relay reaches the client.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MurderPortal {
+                owner: owner as u16,
+                form: 1,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            !host_app.projectiles.slots()[slot].active,
+            "the host killed the matching portal"
+        );
+        assert!(
+            !client_app.projectiles.slots()[slot].active,
+            "the 29 relay dropped the client's copy (`:3532`)"
+        );
+    }
+
+    /// `case 96` (`MessageBuffer.cs:3538-3557`): the host forces the subject
+    /// to the sender, applies the teleport and relays; the peer snapshot
+    /// snaps with the velocity and a zeroed netOffset.
+    #[test]
+    fn w4_g50_the_96_portal_teleport_snaps_the_peer() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let peer = client_app.local_id;
+        // Seed the host's peer snapshot so the apply has a target.
+        host_app
+            .remote_players
+            .entry(peer)
+            .or_default();
+        host_app.remote_players.get_mut(&peer).unwrap().off_x = 40.0;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerPortalTeleport(net::PlayerPortalTeleport {
+                player: 250, // the host overrides it (`:3543`)
+                color_index: 4,
+                x: 500.0,
+                y: 300.0,
+                velocity_x: 2.5,
+                velocity_y: -1.0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        let entry = host_app.remote_players.get(&peer).expect("peer stored");
+        assert_eq!((entry.x, entry.y), (500.0, 300.0));
+        assert_eq!((entry.vx, entry.vy), (2.5, -1.0));
+        assert_eq!((entry.off_x, entry.off_y), (0.0, 0.0), "netOffset zeroed");
+        assert_eq!(entry.last_portal_color_index, 4, "the un-flipped wire color");
     }
 }

@@ -146,6 +146,15 @@ pub mod id {
     /// `MessageBuffer.cs:3394-3441`; the host's `EmoteBubble.NewBubble`/
     /// `NewBubbleNPC` sends, `EmoteBubble.cs:128`, `:147`).
     pub const EMOTE_BUBBLE: u8 = 91;
+    /// `95 MurderSomeoneElsesPortal` (W4-g50, S1-I-4): `(ushort)` owner +
+    /// `(byte)` form (`MessageID.cs:204`, `NetMessage.cs:1333-1336`,
+    /// `MessageBuffer.cs:3519-3537`, client→host only).
+    pub const MURDER_PORTAL: u8 = 95;
+    /// `96 TeleportPlayerThroughPortal` (W4-g50, S1-I-4): `(byte)` player,
+    /// `(short)` color, dest Vector2, live-velocity Vector2
+    /// (`MessageID.cs:206`, `NetMessage.cs:1337-1346`,
+    /// `MessageBuffer.cs:3538-3557`). Both directions.
+    pub const TELEPORT_PLAYER_PORTAL: u8 = 96;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -629,6 +638,9 @@ pub struct PlayerNet {
     /// `Main.player[id].emoteTime` (`Player.cs:792`), fed by the `91`
     /// reader's player-anchor arm (`MessageBuffer.cs:3421`; W4-g50).
     pub emote_time: i32,
+    /// `Main.player[id].lastPortalColorIndex`, fed by the `96` reader
+    /// (`MessageBuffer.cs:3549`; W4-g50).
+    pub last_portal_color_index: i16,
 }
 
 impl Default for PlayerNet {
@@ -656,6 +668,7 @@ impl Default for PlayerNet {
             chest: None,
             stealth: 1.0,
             emote_time: 0,
+            last_portal_color_index: 0,
         }
     }
 }
@@ -1920,6 +1933,27 @@ impl EmoteBubble {
     }
 }
 
+/// `msg 96 TeleportPlayerThroughPortal`'s body (`NetMessage.cs:1337-1346`):
+/// `(byte)` player, `(short)` number4 (the portal color index
+/// `owner * 2 + ai[1]`, `PortalHelper.cs:181`), the destination floats, then
+/// `WriteVector2(player.velocity)` — the player's *current* velocity read
+/// from the live entity at send time, NOT the destination echoed back.
+/// The portal-gun's owner client sends it after teleporting itself
+/// (`PortalHelper.cs:188-192`, followed by a `13` push); the host relays
+/// (`MessageBuffer.cs:3552-3555`), the client flips the color parity
+/// (`num184 + (num184 % 2 == 0 ? 1 : -1)`), teleports style 4 and overwrites
+/// the velocity (`:3549-3551`). Both directions — the NPC twin (100) rides
+/// the projectile-support family.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlayerPortalTeleport {
+    pub player: u8,
+    pub color_index: i16,
+    pub x: f32,
+    pub y: f32,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2046,6 +2080,18 @@ pub enum C2s {
     /// (`TEItemFrame.PlaceItemInFrame`, `TEItemFrame.cs:154`;
     /// `MessageBuffer.cs:3377-3393`; W4-g50).
     ItemFrameTryPlacing(ItemFrameTryPlacing),
+    /// `95 MurderSomeoneElsesPortal` — this client's new portal intersected
+    /// a peer's portal projectile (`PortalHelper.cs:364-367`): the peer's
+    /// owner id and the portal form (`ai[1]`), so the host can kill the
+    /// matching type-602 slot (`MessageBuffer.cs:3519-3537`).
+    MurderPortal {
+        owner: u16,
+        form: u8,
+    },
+    /// `96 TeleportPlayerThroughPortal` — the portal-gun owner's self
+    /// teleport (`PortalHelper.cs:188-192`); the host forces the id to the
+    /// sender and relays (`MessageBuffer.cs:3541-3555`; W4-g50).
+    PlayerPortalTeleport(PlayerPortalTeleport),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2199,6 +2245,9 @@ pub enum S2c {
     /// `EmoteBubble.cs:128`, `:147`; the reader is `netMode == 1`-gated,
     /// `MessageBuffer.cs:3396`).
     EmoteBubble(EmoteBubble),
+    /// `96 TeleportPlayerThroughPortal` — a peer's portal teleport, relayed
+    /// by the host (`MessageBuffer.cs:3554`; W4-g50).
+    PlayerPortalTeleport(PlayerPortalTeleport),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2291,6 +2340,8 @@ impl C2s {
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
             Self::TileEntityPlacement(_) => id::TILE_ENTITY_PLACEMENT,
             Self::ItemFrameTryPlacing(_) => id::ITEM_FRAME_TRY_PLACING,
+            Self::MurderPortal { .. } => id::MURDER_PORTAL,
+            Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2370,6 +2421,17 @@ impl C2s {
             Self::ItemFrameTryPlacing(p) => {
                 w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
             }
+            // `NetMessage.cs:1333-1336` — (ushort) owner + (byte) form.
+            Self::MurderPortal { owner, form } => w.u16(*owner).u8(*form),
+            // `NetMessage.cs:1337-1346` — byte player, short color, dest
+            // floats, live-velocity floats.
+            Self::PlayerPortalTeleport(p) => w
+                .u8(p.player)
+                .i16(p.color_index)
+                .f32(p.x)
+                .f32(p.y)
+                .f32(p.velocity_x)
+                .f32(p.velocity_y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2519,6 +2581,21 @@ impl C2s {
                 kind: r.i16()?,
                 prefix: r.u8()?,
                 stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3521-3522` — (ushort) owner + (byte) form.
+            id::MURDER_PORTAL => Self::MurderPortal {
+                owner: r.u16()?,
+                form: r.u8()?,
+            },
+            // `MessageBuffer.cs:3540-3548` — byte player, short color, dest
+            // Vector2, live-velocity Vector2.
+            id::TELEPORT_PLAYER_PORTAL => Self::PlayerPortalTeleport(PlayerPortalTeleport {
+                player: r.u8()?,
+                color_index: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2688,6 +2765,7 @@ impl S2c {
             Self::ItemTweaker(_) => id::ITEM_TWEAKER,
             Self::SpawnInstancedItem(_) => id::SPAWN_INSTANCED_ITEM,
             Self::EmoteBubble(_) => id::EMOTE_BUBBLE,
+            Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
         }
     }
 
@@ -2870,6 +2948,15 @@ impl S2c {
                     }
                 }
             }
+            // `NetMessage.cs:1337-1346` — byte player, short color, dest
+            // floats, live-velocity floats.
+            Self::PlayerPortalTeleport(p) => w
+                .u8(p.player)
+                .i16(p.color_index)
+                .f32(p.x)
+                .f32(p.y)
+                .f32(p.velocity_x)
+                .f32(p.velocity_y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3137,6 +3224,16 @@ impl S2c {
                     })
                 }
             }
+            // `MessageBuffer.cs:3540-3548` — byte player, short color, dest
+            // Vector2, live-velocity Vector2.
+            id::TELEPORT_PLAYER_PORTAL => Self::PlayerPortalTeleport(PlayerPortalTeleport {
+                player: r.u8()?,
+                color_index: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+            }),
             _ => return None,
         })
     }
@@ -5699,6 +5796,59 @@ mod tests {
                 assert_eq!(d.metadata, 0, "the dead gate drops the tail");
             }
             other => panic!("expected 91, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `95 MurderSomeoneElsesPortal` (`NetMessage.cs:1333-1336`): ushort
+    /// owner + byte form. Client→host only (`MessageBuffer.cs:3519-3537`).
+    #[test]
+    fn w4_g50_murder_portal_round_trips() {
+        let c = C2s::MurderPortal { owner: 3, form: 1 }.encode();
+        assert_eq!(c[2], 95);
+        let mut body = Vec::new();
+        body.extend_from_slice(&3u16.to_le_bytes());
+        body.push(1);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MurderPortal { owner, form } => assert_eq!((owner, form), (3, 1)),
+            other => panic!("expected 95, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `96 TeleportPlayerThroughPortal` (`NetMessage.cs:1337-1346`): byte
+    /// player, short color, dest Vector2, live-velocity Vector2 — the
+    /// velocity is the entity's CURRENT velocity, not the destination
+    /// echoed back. Both directions.
+    #[test]
+    fn w4_g50_player_portal_teleport_round_trips() {
+        let p = PlayerPortalTeleport {
+            player: 2,
+            color_index: 5,
+            x: 1234.5,
+            y: -678.25,
+            velocity_x: 3.5,
+            velocity_y: -1.25,
+        };
+        let mut body = Vec::new();
+        body.push(2);
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&(-678.25f32).to_le_bytes());
+        body.extend_from_slice(&3.5f32.to_le_bytes());
+        body.extend_from_slice(&(-1.25f32).to_le_bytes());
+        let c = C2s::PlayerPortalTeleport(p).encode();
+        assert_eq!(c[2], 96);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerPortalTeleport(d) => assert_eq!(d, p),
+            other => panic!("expected 96, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerPortalTeleport(p).encode();
+        assert_eq!(f[2], 96);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerPortalTeleport(d) => assert_eq!(d, p),
+            other => panic!("expected 96, got {:?}", other.msg_id()),
         }
     }
 }

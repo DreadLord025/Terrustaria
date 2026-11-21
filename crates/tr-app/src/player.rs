@@ -2042,6 +2042,16 @@ pub struct Player {
     /// (`Player.cs:24456-24459`). The overlay draw is unported; the field
     /// rides for the net apply (W4-g50).
     pub emote_time: i32,
+    /// `Player.lastPortalColorIndex` (`Player.cs`): the portal-gun's color
+    /// latch — the `96` reader flips the parity then `Teleport(style 4)`
+    /// stores the wire value (`MessageBuffer.cs:3549`, `Player.cs:37477`;
+    /// W4-g50). The portal FX draw is unported; the field rides for the net
+    /// apply and the NPC twin's parity source.
+    pub last_portal_color_index: i16,
+    /// `Player.portalPhysicsFlag` (`Player.cs:3000`): the style-4 teleport
+    /// arms it (`:37479`); landing or a jump clears it (`:25648-25651`).
+    /// The `_portalPhysicsTime` consumer is unported (W4-g50).
+    pub portal_physics: bool,
     // `Player.spaceGun` (`Player.cs`): the mana row's exemption
     // (`Main.cs:20917`).
     pub space_gun: bool,
@@ -2915,6 +2925,8 @@ impl Player {
             shroomite_stealth: false,
             stealth: 0.0,
             emote_time: 0,
+            last_portal_color_index: 0,
+            portal_physics: false,
             space_gun: false,
             shadow_armor: false,
             crimson_regen: false,
@@ -5877,6 +5889,10 @@ impl Player {
                 honey_wet: self.honey_wet,
                 lava_wet: self.lava_wet,
                 shimmer_wet: self.shimmer_wet,
+                // W4-g50: the `96` portal teleport arms the flag
+                // (`Player.cs:37479`); the rebase reads it like the C#
+                // (`:24380-24382`'s maxFallSpeed 35).
+                portal_physics: self.portal_physics,
                 ..WetStaticsFlags::default()
             };
             let (g, mf, jh, js) =
@@ -7008,6 +7024,12 @@ impl Player {
         // decay timers + `RecalculateLuck`, after the buff effects derived
         // stinky/luckPotion/kiteLuckLevel above and before movement.
         self.update_luck(world);
+        // `Player.cs:25648-25651` (W4-g50): landing or a jump clears the
+        // portal-physics flag the `96` teleport armed (`:37479`). The
+        // `_portalPhysicsTime` consumer (`:25652-25655`) is unported.
+        if self.vy == 0.0 || self.control_jump {
+            self.portal_physics = false;
+        }
         // `Player.cs:26004-26009`: the run-speed merge runs AFTER `UpdateEquips`
         // (`:25633`) - the accessory/prefix `moveSpeed` adds ride the debuff
         // multiply too. `oldStyleParkour` (the `:26007` gate) is unported
