@@ -36328,6 +36328,51 @@ Full report + the f12 merge recipe: `docs/research/85-doc-sweep-mana.md`
 
 6 new witnesses WRITTEN, NOT RUN (code-only).
 
+### The W4-f49 MANA FINAL (2026-11-21, the lane's final phase)
+
+Full report + the merger receipt: `docs/research/85-doc-sweep-mana.md`
+(FINAL-STATUS F1-F4). The R3 one-writer contract is EXECUTED on this
+branch (8eb20d8b): the three inline nebula scan arms +
+`update_buffs_nebula_buffs` are DELETED (f12's g27 `apply_orb_arm` is the
+ONE tier writer — the f12 sweep census verified the two writers
+semantically identical), the `fold_orb_nebula_bridge` ASSIGN stub carries
+the three bridge lines f12's `fold_orb` lands at the merge, and
+`nebula_levelup` + both ResetEffects zeros + `items.rs` stay.
+
+**The ordering fix (the lift).** `update_survival` (the regen engine's
+`UpdateLifeRegen`/`UpdateManaRegen` reads, `Player.cs:25977`/`:25995`)
+was LIFTED out of `update_with_grapple` to the world-sim seam in
+`world_sim/player.rs`, AFTER `update_summon_buff_arms` — the `:25566`
+`UpdateBuffs` scan position where f12's `update_buff_frame` hooks — and
+BEFORE the accessory pass. The C# order is scan → `UpdateEquips`
+(`:25633`) → regen (`:25977`/`:25995`) → `GrabItems` (`:27428`); the
+pre-lift position read the PREVIOUS tick's reset-zeroed nebula tier.
+The lift ALSO repairs f12's own `buff_life_regen` feed: on f12's tree the
+fold lands after the regen read and the next tick's reset wipes it
+before any read sees it — the Nebula Life regen add never reached
+`update_life_regen`. The standalone `Player::update` wrapper re-adds the
+call for the no-wiring callers (its nebula tier stays 0 — the wiring
+owns the scan, the f12 gap-3 convention).
+
+**The five CheckMana sites' d-lane census UPDATED** (0e91e70e): d21
+LANDED AI_208 Glacier Fang 1115 (`ai_glacier_fang_shot`, the `:36943`
+charge pay already rides `check_mana`), d19 LANDED AI_185 Life Drain 476
+(`ai_life_drain`, the `:42662` first-tick pay), d10 LANDED AI_100 Medusa
+Head 535 (`ai_medusa_head`, the `:44567` fire pay) — all three on the
+SHARED `regen::check_mana` machine. The 439 Laser Machinegun (`:66204`,
+AI_075's holder arm — no d-lane covers it) and CommandForbiddenStorm
+(`:56870`, the flat 20 pay) stay their lanes'. The `potions.rs`
+constants-copy block pins the five pay amounts (witness pins only — the
+AI lanes read the registry rows).
+
+**The Last Prism flower-lane coverage COMPLETE** (9ee912e71): the one
+missing link was the end-to-end pass-tail — a real 633 holder's
+short-pay intent drained by `update_projectiles` through
+`check_mana_with_flower_on`. Now witnessed (the drink, the re-pay, the
+sickness, the stream isolation).
+
+5 new/re-targeted witnesses WRITTEN, NOT RUN (code-only).
+
 ## The magic guns + tomes use arms (S1-P-i22)
 
 `Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:

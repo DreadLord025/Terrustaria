@@ -479,3 +479,150 @@ through `apply_life_and_or_mana` + the chooser order.
 | `docs/research/85-doc-sweep-mana.md` | this addendum (the R3 merge recipe) |
 | `docs/PORT_MAP.md` | the cuffs row's stale note + the mana row's blaster gap update |
 | `anchors.txt` | the blaster canary row |
+
+---
+
+# FINAL-STATUS — MANA FINAL (W4-f49 continuation, 2026-11-21, commits 8eb20d8b..onward)
+
+The lane's final phase. **Code-only; every new witness WRITTEN, NOT RUN.**
+
+## F1. The R3 contract EXECUTED on this branch (8eb20d8b)
+
+The R3 recipe above is no longer a merge note — this branch's half is
+DONE, so the f12 merge only has to land its own writer + wiring:
+
+1. **The three inline scan arms (`176..=178`/`173..=175`/`179..=181`) and
+   `update_buffs_nebula_buffs` are DELETED** from `player.rs`. The g27
+   canonical `buff_effects_orbs.rs::apply_orb_arm` (f12, adopted
+   byte-exact per its phase-1 contract, cross-verified byte-identical at
+   its final item 5, tip 61724db38) is the ONE tier writer. The f12-side
+   contract (`W4-f12-sweep-census.md` "the orb_scan nebula twin")
+   verified the two writers SEMANTICALLY IDENTICAL line-by-line — this
+   deletion is the keep-one resolution, binding (b): the bridge retargets
+   the scan's write onto the d117 Player field.
+2. **The `fold_orb` bridge ASSIGN stub landed**:
+   `Player::fold_orb_nebula_bridge(mana, life, damage)` — the three
+   `p.nebula_level_* = s.nebula_level_*` lines f12's `fold_orb` carries
+   verbatim at the merge (ASSIGNs, not adds: the `:12072` assign-
+   derivation + the `OrbScanState` zero-seed make a stale field
+   impossible). The Life/Damage consumers stay f12's `fold_orb`; the
+   regen read keeps `Player.nebula_level_mana`.
+3. **`nebula_levelup`, both ResetEffects zeros, and `items.rs` wholesale
+   KEPT** — unchanged.
+4. **`update_survival` LIFTED** out of `update_with_grapple` to the
+   world-sim seam in `world_sim/player.rs`, AFTER
+   `update_summon_buff_arms` (the `:25566` scan position where f12's
+   `update_buff_frame` hooks per its phase-2 contract) and BEFORE the
+   accessory pass — the C# `:25977`/`:25995` regen-read order. The
+   standalone `Player::update` wrapper re-adds the call for the
+   no-wiring callers (equip tests, potion rigs). The lift also repairs
+   f12's own `buff_life_regen` feed (its fold landed after the regen
+   read; the next reset wiped it before any read).
+5. **Witness re-targets per the recorded notes**: the levelup/reset
+   twins keep their Player-field assertions verbatim; the two
+   scan-driving witnesses
+   (`w4_f49_the_nebula_scan_derives_the_tier_and_steps_down_at_time_two`,
+   `…_the_mana_pickup_feeds_the_regen_engine_through_the_scan`) now drive
+   the bridge + the lifted read (the f12 gap-3 convention — the wiring
+   owns the scan; the no-wiring wrapper's tier stays 0). One NEW seam
+   witness (`world_sim/player.rs::w4_f49_the_lifted_regen_tick_runs_after_the_wiring_seam`)
+   pins the lift's presence through the real pass. The `anchors.txt:904`
+   row reworded to cite `buff_effects_orbs.rs::nebula_buffs` as the
+   tier-writer's home (the `nebula_levelup` marker KEPT).
+
+**The f12d/f49-contract receipt (for the merger):** f49's half of the
+one-writer contract is EXECUTED at 8eb20d8b. What remains for the f12
+merge: (a) land `buff_frame_wiring::update_buff_frame` at the marked seam
+(the comment block in `world_sim/player.rs` after
+`update_summon_buff_arms`), (b) add the three bridge ASSIGNs to its
+`fold_orb` (or call `fold_orb_nebula_bridge`), (c) resolve `items.rs` to
+THIS branch's version (R3 step 5). No f49-side scan arm survives to
+conflict; the `Player.nebula_level_*` fields + the chained reset are the
+shared surface. The 4143 producer + the Life/Damage consumers stay their
+lanes' (R3 step 6, unchanged).
+
+## F2. The five CheckMana sites — the d-lane census UPDATED (0e91e70e)
+
+The R1 census table's "AI body unported" column is STALE for three of
+the five — the d-lanes landed since (tips read at this phase):
+
+| C# site | Weapon | d-lane | Status NOW |
+| --- | --- | --- | --- |
+| `Projectile.cs:66204` AI_075 type 439 | Laser Machinegun | — | STILL unported (no d-lane covers AI_075's 439 holder arm; the i22 OUT list stands) |
+| `Projectile.cs:36943` AI_208 | Glacier Fang 1115 | **d21** (tip 9fa9e9ba0) | LANDED — `projectile_ai_201_210.rs::ai_glacier_fang_shot`, the every-20-tick `ai[0] <= 60` charge pay ALREADY rides `regen::check_mana` on the held 6153 row's mana 10 |
+| `Projectile.cs:42662` AI_185 | Life Drain (Soul Drain 476) | **d19** (tip 1054c396a) | LANDED — `projectile_ai_sword_styles.rs::ai_life_drain`, the first-tick overlap pay rides `check_mana` on the 3006 row's mana 10, then latches `localAI[0] = 1` |
+| `Projectile.cs:44567` AI_100 | Medusa Head 535 | **d10** (tip 1f0b60e96) | LANDED — `projectile_ai_91_100.rs::ai_medusa_head`, the fire-cadence pay rides `check_mana` on the 3269 row's mana 15 (the `!flag \|\|` short-circuit never skips it) |
+| `Player.cs:56870` CommandForbiddenStorm | Forbidden set bonus | — | STILL deferred (the storm command's lane; the flat 20 pay + `ApplyManaRegenerationDelay` `:56873`) |
+
+The three landed bodies call the SHARED `regen::check_mana` — the same
+machine the blaster/prism pays ride (the manaCost scale + the shipped
+ManaV2 empty arm). Their flower lanes owe the same
+`wants_prism_flower_drink` intent when they merge (the intent/drain docs
+widened to name them; the drain walks ALL slots, no new machinery).
+
+**The constants-copy** (`potions.rs`): `LASER_MACHINEGUN_MANA = 6`
+(itemdata 2795), `GLACIER_FANG_MANA = 10` (6153), `SOUL_DRAIN_MANA = 10`
+(3006), `MEDUSA_HEAD_MANA = 15` (3269), `FORBIDDEN_STORM_MANA = 20` (the
+flat `:56870` pay, NOT a held-row read). These are WITNESS PINS only —
+the AI lanes read `registry::item(...).mana`, never a hand-typed number.
+One witness
+(`w4_f49_the_five_checkmana_sites_pay_through_the_shared_machine`) arms
+all five pay shapes through the shared machine: the row-vs-pin match,
+the manaCost scale, the V2 empty arm, the flower re-check on
+`UpdateProjectiles`, and the storm's delay reset.
+
+## F3. The Last Prism flower-lane — FINAL witness coverage (9ee912e71)
+
+The lane was verified faithful at R1 (the flag chain: 555/3991/4000/4001
+grants, the ONE −0.08 fold, the `:18721` clear; the use chain:
+ActuallyPayMana + the prism interval pay wired). The final coverage
+check found ONE missing link: the pool-side witnesses pinned the intent
+record/drain and the potions-side witnesses pinned the flower re-check,
+but NO witness drove the **end-to-end pass-tail** — a real 633 holder's
+short-pay intent drained by `update_projectiles` itself. Added:
+`world_sim/projectiles.rs::w4_f49_the_prism_flower_drink_drains_end_to_end_through_the_pass`
+(the holder at `ai[0]` 29→30, the first interval tick; short+flower →
+the V2 empty arm + the intent → the pass-tail drink: 50 capped at 20,
+the 12 re-pay → 8, the slow cast cleared, 94 granted, one potion
+consumed, the intent taken, both streams pristine under the silent
+listener; the full-bar no-drink + flowerless-V2 twins). Coverage is now
+COMPLETE: grant → fold → pay → intent → drain → drink → re-pay → sickness.
+
+## F4. Lane final verdicts
+
+| Lane | Verdict |
+| --- | --- |
+| Nebula/4143 pickups + tier writer | PORTED; R3 EXECUTED (one writer = f12's g27, the bridge stub + the lift landed here) |
+| Mana flower auto-consume | faithful; the blaster gap PORTED; the prism pass-tail NOW witnessed end to end |
+| Magic/Celestial Cuffs | faithful (i52 complete; the stale notes fixed) |
+| Star pickup cue | faithful (id-7 unpositioned Grab) |
+| Mana-potion tiers | MATCH (all four rows) |
+| Drink-while-sick / buff-6 ladder | faithful, witnessed |
+| The five CheckMana AI sites | 3 of 5 LANDED on d10/d19/d21 (shared machine); 439 + ForbiddenStorm stay their lanes' |
+| Mana crystals 20-ladder | g88b's (skipped per lane) |
+
+**Remaining recorded seams (NOT gaps of this lane):** the 4143 producer
+(723 Kill), the Life/Damage consumers (f12 `fold_orb`), the 439 holder
+arm, the CommandForbiddenStorm lane, the f12 wiring merge itself (the
+receipt above).
+
+## FINAL witnesses (WRITTEN, NOT RUN — code-only)
+
+- `player.rs`: the two re-targeted scan witnesses (bridge-driven).
+- `world_sim/player.rs` ×1: the lifted-seam presence.
+- `potions.rs` ×1: the five-site constants-copy pay shapes.
+- `world_sim/projectiles.rs` ×1: the prism flower end-to-end pass-tail.
+
+## FINAL files touched
+
+| File | Change |
+| --- | --- |
+| `crates/tr-app/src/player.rs` | the scan arms + helper deleted, the bridge stub, the lift + the wrapper re-add, ×2 re-targeted witnesses |
+| `crates/tr-app/src/world_sim/player.rs` | the lifted `update_survival` at the wiring seam + the seam marker, ×1 witness |
+| `crates/tr-app/src/potions.rs` | the five-site constants-copy block, ×1 witness |
+| `crates/tr-app/src/projectile.rs` | the intent docs widened to the d-lane holders |
+| `crates/tr-app/src/world_sim/projectiles.rs` | the drain comment widened, ×1 end-to-end witness |
+| `anchors.txt` | the :904 row reworded (the tier-writer's new home) |
+| `docs/research/85-doc-sweep-mana.md` | this FINAL-STATUS + the f12d/f49-contract receipt |
+| `docs/ANALYSIS.md` | the MANA FINAL section (the R3 execution + the lift as the ordering fix) |
+| `docs/PORT_MAP.md` | the nebula row's R3-executed update + the mana row's d-lane census |
