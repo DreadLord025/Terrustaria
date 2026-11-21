@@ -49,6 +49,7 @@ mod wavy;
 mod world_hash;
 mod finish_seeds;
 mod finish_no_traps;
+mod finish_remix;
 
 use self::noise::{Noise, Rng};
 use crate::tiledata as td;

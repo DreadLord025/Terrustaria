@@ -36,6 +36,7 @@ use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
 use super::finish_no_traps;
+use super::finish_remix;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
 use super::evil;
@@ -1453,6 +1454,12 @@ fn step_seed_finish(
     }
     if opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY) {
         finish_seeds::finish_get_good_world(world, streams, opts);
+    }
+    // The vanilla remix slot (`WorldGen.cs:22444-22447`): `FinishRemixWorld`
+    // runs LAST of the classic tails, right after for-the-worthy — W4-g41's
+    // finish-gap port (d107 deferred this host; the census takes it).
+    if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+        finish_remix::finish_remix_world(world, gv, streams, opts);
     }
     if opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY) {
         finish_seeds::finish_tenth_anniversary_world(world, streams, opts);

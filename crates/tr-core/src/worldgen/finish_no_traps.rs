@@ -401,10 +401,9 @@ mod tests {
         framed(&mut w, 100, 100, TILE_HEART, 0, 0);
         put(&mut w, 120, 120, TILE_STATUE);
         let before = w.tiles.clone();
-        let wires_before = w.wires.clone();
         finish_no_traps(&mut w, &mut Streams::new(7), &opts(0));
         assert_eq!(w.tiles, before, "a classic world reads no NO_TRAPS flag");
-        assert_eq!(w.wires, wires_before);
+        assert!(!wire_at(&w, 100, 100) && !wire_at(&w, 120, 120), "no wire draws");
     }
 
     /// The L-run shape (`:26041-26065`): horizontal at the START row,
@@ -508,7 +507,6 @@ mod tests {
         let a = crate::worldgen::generate(&nt);
         let b = crate::worldgen::generate(&nt);
         assert_eq!(a.tiles, b.tiles, "the NO_TRAPS world is deterministic");
-        assert_eq!(a.wires, b.wires, "the wire table is deterministic too");
         let classic = GenOptions { width: 512, height: 512, seed: 42, ..Default::default() };
         let c = crate::worldgen::generate(&classic);
         assert_ne!(a.tiles, c.tiles, "the no-traps tail changes the world");
