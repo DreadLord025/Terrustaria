@@ -5344,8 +5344,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `:78897` → `:78898`): DropItems FIRST (its boss-bag/master-pet
         // CommonCode tails zero npc.value), THEN DropMoney (reads the
         // possibly-zeroed value), THEN DropHeals. The pre-final port ran
-        // coins before loot (the recorded fold — retired here).
-        let value_zeroed = spawn_loot(app, &npc);
+        // coins before loot (the recorded fold — retired here). The
+        // statue gate (`:78849-78852`) returns from the WHOLE NPCLoot —
+        // a refused statue kill drops no coins and no heals either.
+        let Some(value_zeroed) = spawn_loot(app, &npc) else {
+            continue;
+        };
         spawn_coins(app, &npc, value_zeroed);
         spawn_heals(app, &npc);
     }
@@ -6789,11 +6793,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
 /// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
 /// into `loot_db_gen`): the dead NPC's vanilla net id resolves its registered
 /// rules; the executor skips requests for items the registry does not model.
-/// Returns whether any drop zeroed `npc.value` (`DropRequest.resets_money` —
-/// the boss bag / master pet `CommonCode` tails): the death path feeds the
-/// zeroed value into `spawn_coins` (the C# `NPCLoot_DropItems` :78855 runs
-/// BEFORE `NPCLoot_DropMoney` :78897).
-fn spawn_loot(app: &mut App, npc: &Npc) -> bool {
+/// Returns `None` when the statue gate (`NPC.cs:78849-78852`) refuses the
+/// WHOLE NPCLoot (no coins, no heals either — the C# `return`); otherwise
+/// `Some(resets_money)` — whether any drop zeroed `npc.value`
+/// (`DropRequest.resets_money`, the boss bag / master pet `CommonCode`
+/// tails): the death path feeds the zeroed value into `spawn_coins` (the
+/// C# `NPCLoot_DropItems` :78855 runs BEFORE `NPCLoot_DropMoney` :78897).
+fn spawn_loot(app: &mut App, npc: &Npc) -> Option<bool> {
     let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
     let net_id = entry.net_id;
     // W4-f35 LOOT FINAL — `NPCLoot`'s statue gate (`NPC.cs:78849-78852`):
@@ -6810,7 +6816,7 @@ fn spawn_loot(app: &mut App, npc: &Npc) -> bool {
             app.world.hard_mode,
             npc.player_interaction[app.local_id as usize],
         ) {
-            return false;
+            return None;
         }
     }
     let x = npc.x;
@@ -7085,7 +7091,7 @@ fn spawn_loot(app: &mut App, npc: &Npc) -> bool {
             ));
         }
     }
-    resets_money
+    Some(resets_money)
 }
 
 /// `NPC.NPCLoot_DropMoney` through the ported chain
@@ -8220,7 +8226,7 @@ mod tests {
 
         // The C# NPCLoot order: loot first, then the coins (the f35 final
         // fold — the pre-final port ran coins first).
-        let zeroed = spawn_loot(&mut a, &npc);
+        let zeroed = spawn_loot(&mut a, &npc).expect("a wild slime passes the statue gate");
         spawn_coins(&mut a, &npc, zeroed);
         spawn_heals(&mut a, &npc);
         let state_0 = a.rngs.stream(crate::app::RngKey::UpdateNpcs).clone();
@@ -8229,7 +8235,7 @@ mod tests {
         // draw differently (`CommonDrop.cs:36`'s luck double-roll).
         a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
         a.player.as_mut().unwrap().luck_state.luck = 1.0;
-        let zeroed = spawn_loot(&mut a, &npc);
+        let zeroed = spawn_loot(&mut a, &npc).expect("a wild slime passes the statue gate");
         spawn_coins(&mut a, &npc, zeroed);
         spawn_heals(&mut a, &npc);
         assert_ne!(
@@ -8268,7 +8274,7 @@ mod tests {
         // The carried item: ai[1] = 8 (Torch — `GetDropInfo(8)`'s 5..10
         // family), the seam the statue-spawned slime path feeds.
         npc.ai[1] = 8.0;
-        spawn_loot(&mut a, &npc);
+        let _ = spawn_loot(&mut a, &npc);
         let drops: Vec<&crate::item::ItemDrop> = a.items.iter().filter(|it| it.kind == 8).collect();
         assert!(
             !drops.is_empty(),
@@ -17380,7 +17386,7 @@ mod dw3_tests {
         twin.world.compute_column_surface();
         twin.player = Some(crate::player::Player::spawn(&twin.world));
         let _death_pitch = twin.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
-        let zeroed = spawn_loot(&mut twin, &slime);
+        let zeroed = spawn_loot(&mut twin, &slime).expect("a wild slime passes the statue gate");
         spawn_coins(&mut twin, &slime, zeroed);
         spawn_heals(&mut twin, &slime);
         assert_eq!(
@@ -17464,9 +17470,10 @@ mod dw3_tests {
         npc.player_interaction[a.local_id as usize] = true;
         let pristine = UnifiedRandom::new(a.world.seed as i32);
 
-        // Pre-hardmode: the early-mode refusal — no draws at all.
+        // Pre-hardmode: the early-mode refusal — no draws at all, and the
+        // WHOLE NPCLoot returns (None — no coins, no heals either).
         let refused = spawn_loot(&mut a, &npc);
-        assert!(!refused);
+        assert!(refused.is_none(), "the statue gate refuses the whole NPCLoot");
         assert!(a.items.is_empty(), "the statue Hornet dropped nothing");
         assert_eq!(
             *a.rngs.stream(RngKey::UpdateNpcs),
@@ -17477,7 +17484,7 @@ mod dw3_tests {
         // Hardmode: the rarity arm runs (the 0.05 NextFloat gate draws).
         a.world.hard_mode = true;
         a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
-        spawn_loot(&mut a, &npc);
+        let _ = spawn_loot(&mut a, &npc);
         assert_ne!(
             *a.rngs.stream(RngKey::UpdateNpcs),
             pristine,
@@ -17511,7 +17518,7 @@ mod dw3_tests {
         twin.player = Some(crate::player::Player::spawn(&twin.world));
         let slime = Npc::spawn_slime_variant(&twin.world, 30, SlimeVariant::Blue).unwrap();
         let _death_pitch = twin.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
-        let zeroed = spawn_loot(&mut twin, &slime);
+        let zeroed = spawn_loot(&mut twin, &slime).expect("a wild slime passes the statue gate");
         spawn_coins(&mut twin, &slime, zeroed);
         spawn_heals(&mut twin, &slime);
         assert_eq!(
@@ -17527,7 +17534,7 @@ mod dw3_tests {
         rev.player = Some(crate::player::Player::spawn(&rev.world));
         let _death_pitch = rev.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
         spawn_coins(&mut rev, &slime, false);
-        spawn_loot(&mut rev, &slime);
+        let _ = spawn_loot(&mut rev, &slime);
         spawn_heals(&mut rev, &slime);
         assert_ne!(
             *rev.rngs.stream(RngKey::UpdateNpcs),
