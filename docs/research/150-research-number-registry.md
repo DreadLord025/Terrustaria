@@ -831,3 +831,72 @@ header at this fetch. Pushes after it self-adjudicate per the same rules
   winners 237-245 disjoint`.
 - No cargo/tests/rustfmt/graphify run (docs-only extension, per mandate). No
   other branch touched; publication on `task/W4-d54-dust-sites-world` only.
+
+---
+
+## §8 — ROUND 4 FINAL (Lead direct-append; the 281-block self-pick race + post-§7.4 claims)
+
+> **§8 IS AUTHORITY for the rows below. NO SELF-PICKS: lanes EXECUTE §8 assignments
+> ONLY. A fresh tips-only sweep is NOT sufficient — §7.2/§7.3 reservations are
+> claims even when unexecuted (the f4-283/f26-283 lesson).**
+
+Round-3 §7.2 assigned 281–303 to specific lanes. After publication, ~12 lanes
+self-picked 281+ from tips-only sweeps (missing the reservations) and collided.
+§8 adjudicates: **§7.2-assigned lanes KEEP their numbers; contested self-picks
+renumber 308+ in first-add (%cI) order.** Post-§7.4 new claims also assigned here.
+
+### §8.1 — 281-block self-pickers → 308+ (the §7.2 owner of 281 KEEPS 281)
+
+| Lane | Self-picked doc | First-add %cI | §8 FINAL |
+|---|---|---|---|
+| d30 | 281-band-65-72-retire | ec89521fb 15:42:58 | **308** |
+| d125 | 281-empress-sheets-ledger | 5a26ae348 ~15:5x | **309** |
+| g48 | 281-c28-18-send-switch | 9c776ca2f ~15:4x | **310** |
+| c9 | 281-snail-family-final | 9252d6f31 ~16:0x | **311** |
+| d106 | 281-d106-worldgen-6-retire-final | b78762c63 ~16:0x | **312** |
+| d9 | 281-projectile-ai-81-90-final | 88677f9de ~16:0x | **313** |
+| c25 | 281-c25-keyboard-text-field-final | 1d6e31a74 ~16:1x | **314** |
+| c32 | 281-convert-tables-family-bible | de25eddf8 ~16:1x | **315** |
+| f39 | 281-f39-v18-claim-input (244→281 self) | fec65992f ~16:1x | **316** |
+| g8 | 281-g8-kind-wire-final (uncommitted) | pending | **317** |
+
+(§7.2's 281 owner keeps 281; the 10 self-pickers above take 308–317. Exact
+first-add order re-verify at execution; the block is reserved regardless.)
+
+### §8.2 — 282/283/244/245/246/247/248/249/284/304 post-§7.4 claims
+
+| Key | Claimants | Winner | Losers → §8 |
+|---|---|---|---|
+| 282 | g48-39-item (9c776ca2f) / d125-FINAL (5a26ae348) / f39-seal (1c120b550) | §7.2 owner keeps | g48→**318**, d125→**319**, f39→**320** |
+| 283 | f26 §7.3 RESERVATION (68-7j-addendum) / g59-death-bible (073203644) / f4 (renamed 305) | **f26 reservation KEEPS 283** | g59→**321** |
+| 244 | g48 WINS (2b61530b4 14:30:16) / d43-244 (6fbe06250) / g5-244-caster (f044bd315) | g48 | d43→**322**, g5→**323** |
+| 245 | g48 WINS (2b61530b4) / d81+g53 reservation / g65-245-kill (uncommitted) | g48 | g65→**324** |
+| 246 | e23 reservation WINS / g40-246 (0e3a17852) / d16-246 (1d3c4a4b5) | e23 | g40→**325**, d16→**326** |
+| 247 | d10 EXECUTED (72431e61f) KEEPS / d16-247-bible / g68-247 (375466868) / c3-247 (dd0ca4727) / d6-247 (174c0d541) | d10 | d16-bible→**327**, g68→**328**, c3→**329**, d6→**330** |
+| 248 | e26-luck (a23c64933) first / d3-boulder (740026af6) / c27-clock (75902ca72) | e26 | d3→**331**, c27→**332** |
+| 249 | d15-band-141-150 (869ac7edd) | sole | **249 KEEPS** |
+| 284 | g52-relay-census (0224fff80) | sole | **284 KEEPS** |
+| 304 | d50 §7.4 ASSIGNED / d119-housing-bible (c677b252a) self | d50 (§7.4) | d119→**333** |
+| 240 | g58 WINS / g62-240-hit-dust (f5ce54743) / f30-240-systems (973ec04c4) | g58 | g62→**334**, f30→**335** |
+| 243 | g58 WINS / d13-243-pet-light (1e915e254) / f24-243-room-content (706b155c4) | g58 | d13→**336**, f24→**337** |
+
+### §8.3 — execution instructions
+
+- Each loser lane: `git mv <old-doc> → <§8-number>-<same-slug>.md` + header
+  chain-banner + ALL refs (INDEX/ANALYSIS/PORT_MAP/ROADMAP/anchors/code-comments;
+  `git grep` zero-stale at pushed tip).
+- **308–337 RESERVED by this §8. New docs take ≥338 after a fresh sweep AND a
+  registry check. NO max+1 self-picks.**
+- f4 already executed 305 (§7.4) — CONFIRMED, no §8 move.
+- g63 already executed 298 (§7.3) — CONFIRMED.
+- g67 already executed 267 (§7.4 re-issue) — CONFIRMED.
+- d53 275 re-issue (§7.4) — OWED, execute per §7.4.3 (old name 244-proj-dust-retire).
+
+### §8.4 — verification
+
+- Live assignment set after §8: {151..236} ∪ {246..280} ∪ {281..303} ∪ {304..307}
+  ∪ {308..337} = 86+35+23+4+30 = 178 assignments. Winners 237–245 disjoint.
+- 249/284 sole-claimant KEEPS verified (no §7.2 reservation on those keys).
+- Machine-check owed at next full refresh (round 5) — §8 is the interim authority.
+- No cargo/tests/rustfmt/graphify (docs-only). Publication on
+  `task/W4-d54-dust-sites-world` only.
