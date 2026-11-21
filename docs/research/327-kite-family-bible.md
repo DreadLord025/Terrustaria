@@ -1,10 +1,17 @@
-# 247 — KITE-FAMILY BIBLE (SEALED): d16 canonical 151-160, the compose map
+# 327 — KITE-FAMILY BIBLE (SEALED): d16 canonical 151-160, the compose map
+
+> **RENUMBER 247 → 327** per the 150 registry §9.2 FINAL assignment table
+> (UNIFIED FINAL, d54 tip `b243c7086`): **247 = d10's reservation WINS,
+> EXECUTED** (`72431e61f` 16:05:28, `247-projectile-ai-91-100-final.md`);
+> d16's `247-kite-family-bible.md` renumbers to **327**. The companion
+> FINAL renumbers 246 → 326 (246 = e23's published reservation). Chain:
+> 247 → 327.
 
 W4-d16 SEAL phase, branch `task/W4-d16-proj-ai-151-160` (DONE base
 `41080e159`, main base `a725acb04`). Code-only lane: no cargo/tests/
 rustfmt/graphify invoked. The single merger-facing record for the kite
 family and its lane neighbours — the per-item detail lives in
-`246-d16-research-final.md` + ANALYSIS "W4-d16 kite residuals"; this
+`326-d16-research-final.md` + ANALYSIS "W4-d16 kite residuals"; this
 bible is the index the merger reads FIRST (the `91-fighter-family-bible`
 precedent).
 
@@ -64,13 +71,15 @@ per-sub-step), the selectedKite PRE-override re-pin (one-tick-early,
 observation-identical), the pool-derived holdStyle (no item-instance
 field), the M7-TE-2 leashed-kite visual + the CheckAnchor reorient skips,
 the single-player netMode folds. All recorded in ANALYSIS "W4-d16 kite
-residuals" + `246` §4 — they are deliberate, not merge losses.
+residuals" + `326` §4 — they are deliberate, not merge losses.
 
 ## 5. Verification
 
 The SEAL re-probes (2026-11-21): the f20 retire doc + widened moonlord
 (git object), the d77 cue map + witness (git object), the 150 registry +
-the fresh 382-tip ls-tree scan (max taken 245 → 246/247 free), the C#
+the fresh 382-tip ls-tree scan (max taken 245 — the original self-pick;
+SUPERSEDED by the 150 registry §9.2: 246=e23 / 247=d10 → this bible is
+327, the FINAL is 326), the C#
 windows re-read direct (no junction recursion). 69 witnesses WRITTEN NOT
-RUN (the ledger in `246` §2). No cargo/tests/rustfmt/graphify. No other
+RUN (the ledger in `326` §2). No cargo/tests/rustfmt/graphify. No other
 branch touched; publication on `task/W4-d16-proj-ai-151-160` only.

@@ -39444,6 +39444,8 @@ kite_string.rs 6 + world_sim/editing/kites.rs 13 + projectile_ai_misc.rs
 37 + projectile/data.rs 1 + projectile.rs 1 + tr-core wind.rs 1 = 69) are
 WRITTEN, NOT RUN — no cargo/rustc/rustfmt/tests/graphify invoked. The SEAL
 round's record + the merge contracts live in
-`docs/research/246-d16-research-final.md` + `247-kite-family-bible.md`
-(the 150 registry's free block, 237+ — max taken at the 382-tip scan: 245).
+`docs/research/326-d16-research-final.md` + `327-kite-family-bible.md`
+(renumbered 246→326 / 247→327 per the 150 registry §9.2: 246=e23's
+published reservation, 247=d10's reservation EXECUTED — the original
+382-tip scan's "max taken 245" self-pick was superseded).
 

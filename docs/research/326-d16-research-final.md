@@ -1,14 +1,21 @@
-# 246 — W4-d16 RESEARCH FINAL (the aiStyles 151-160 lane, SEALED)
+# 326 — W4-d16 RESEARCH FINAL (the aiStyles 151-160 lane, SEALED)
+
+> **RENUMBER 246 → 326** per the 150 registry §9.2 FINAL assignment table
+> (UNIFIED FINAL, d54 tip `b243c7086`): **246 = e23's published
+> reservation WINS** (§7.4, publish `72226e500` 14:47:50 — the 18b-fork
+> `246-element-census-e23.md`); d16's `246-d16-research-final.md` renumbers
+> to **326**. The companion bible renumbers 247 → 327 (247 = d10's
+> reservation, EXECUTED `72431e61f`). Chain: 246 → 326.
 
 Branch `task/W4-d16-proj-ai-151-160`, base `a725acb04` (main, wave-3
 complete). Code-only lane: no cargo/tests/rustfmt/graphify invoked; every
-witness WRITTEN NOT RUN. Number taken from the free block the 150
-registry leaves open (237+): a fresh 382-tip `git ls-tree docs/research/`
-scan (2026-11-21, this lane) shows the max bare number taken at any tip
-is **245** (`245-39-item-ownership-seed.md`), so 246/247 are collision-free
-(the registry's own 151-236 assignments stay untouched; several have
-already been executed at tips — 196/233/234/235 visible in the scan).
-The merger-facing family record is `247-kite-family-bible.md`.
+witness WRITTEN NOT RUN. The original number was self-picked from the
+free block a fresh 382-tip `git ls-tree docs/research/` scan
+(2026-11-21, this lane) showed open (max bare number taken **245**,
+`245-39-item-ownership-seed.md`) — the scan missed the published
+reservations; the 150 registry §9.2 adjudication now stands: this doc is
+**326**, the bible is **327**.
+The merger-facing family record is `327-kite-family-bible.md`.
 
 ## 1. The commit arc (17 commits, base..41080e159)
 
@@ -99,7 +106,7 @@ PORT_MAP/anchors rows.
    keep-one list ("the self-armed lanes … 761/762 d16 … stay keep-one").
    Merger instruction: keep d77's map row, drop any duplicate 728/729
    arm, keep d16's 761/762 death-hook block verbatim.
-5. **research FINAL + kite-family bible** — this doc + `247`.
+5. **research FINAL + kite-family bible** — this doc (`326`) + `327-kite-family-bible.md`.
 
 ## 4. Standing deviations (unchanged, ANALYSIS "W4-d16 kite residuals")
 
