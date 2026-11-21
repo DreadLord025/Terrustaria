@@ -481,3 +481,124 @@ is the ONE chain member whose spawn IS wired — but its 190 AI arm lives on d19
 so on d20 alone the 1043 spawns and flies inert (no 190 dispatch); on d19 alone
 the 1043 row exists but the 198 flint arm that spawns it does not. **The flint
 slash is the merge canary for the 190/198 cross-lane dependency.**
+
+---
+
+## Item 6 — tracked-loops JimsDrone / FlintCharge: d80 owns (contract doc)
+
+**Ownership.** The tracked-sound layer (S1-E-23, `tracked_sound.rs` +
+`audio.rs::play_tracked*`) and its per-entity wiring are **d80's lane**
+(`task/W4-d80-tracked-sound-layer`, tip `075b954d`). d20 correctly skips the
+drone/flint sound call-sites and documents them as d80's. This item reads d80's
+claims and documents the contract d20's arms must honour when d80 wires them.
+
+**The two call-sites (C#):**
+
+1. **JimsDrone loop** — `AI_195_JimsDrone` (`Projectile.cs:40983-40997`):
+   ```
+   localAI[1] = Lerp(localAI[1], num2, 0.2f);                    // :40983 throttle
+   num3 = Remap(localAI[0],0,5,0,1) * Remap(localAI[0],5,15,1,0); // :40984 steer envelope
+   num4 = Clamp(Max(Remap(localAI[1],0,100,0,25), num3*12),0,100); // :40985 volume
+   activeSound = GetActiveSound(SlotId.FromFloat(localAI[2]));    // :40986
+   if (activeSound == null && num4 != 0f)                         // :40987 ensure
+       localAI[2] = PlayTrackedLoopedSound(SoundID.JimsDrone, Center,
+           new ProjectileAudioTracker(this).IsActiveAndInGame).ToFloat(); // :40989
+   if (activeSound != null) {                                     // :40992 follow
+       activeSound.Volume = num4;                                 // :40994
+       activeSound.Position = Center;                             // :40995
+       activeSound.Pitch = Clamp(Remap(localAI[1],0,100,-1,1)+num3,-1,1); // :40996
+   }
+   ```
+   This is a **`PlayTrackedLoopedSound`** with a live volume/pitch/position
+   follow and a `ProjectileAudioTracker` stop condition. `SoundID.JimsDrone` =
+   `CreateTrackable("Drone").WithVolume(0.1f)` (`SoundID.cs:1706`), port row
+   `soundid.rs:474` (sound_id 42, style 271, vol 0.1, trackable "Drone"). The
+   handle lives in `localAI[2]`. The RC car (`AI_205`, `:38253-38267`) is the
+   identical shape with `SoundID.RCCar` (`soundid.rs:475`).
+
+2. **FlintCharge cue** — `AI_198_Flint` (`Projectile.cs:52303-52306`):
+   ```
+   if (this.ai[1] == 30f)
+       SoundEngine.PlaySound(SoundID.DeadCellsFlintCharge, player.Center); // :52305
+   ```
+   This is a **one-shot `PlaySound(LegacySoundStyle, Vector2)`**
+   (`SoundEngine.cs:88-99`), NOT a tracked loop — it fires once at the 30-tick
+   charge mark and plays out. `SoundID.DeadCellsFlintCharge` =
+   `CreateTrackable("deadcells_flint_charge").WithVolume(0.5f)`
+   (`SoundID.cs:1733`), port row `soundid.rs:501` (sound_id 42, style 296,
+   vol 0.5). Despite the `CreateTrackable` asset family, the **call-site is the
+   legacy one-shot path** (`SoundEngine.PlaySound`, not `PlayTrackedSound`), so
+   it rides the `wants_sound` case-2 façade, not the tracked pool. (The
+   `DeadCellsFlintRelease`/`Wave` cues, `soundid.rs:502-503`, are the release
+   one-shots — also legacy.)
+
+**d80's claims (read from the branch):**
+
+- The census (`docs/research/64-tracked-sound-census.md`, d80 tip) lists the
+  drone loop as **DEFERRED**: "Jim's Drone loop | `Projectile.cs:40983-40997` |
+  the 1020 drone AI has no port arm (id-table row only)" (`:78`), and the RC car
+  likewise (`:77`). **This claim is now STALE** — d20 landed `ai_jims_drone`
+  (`projectile_ai_misc.rs:1092`) after d80's base (`a725acb0`). d80's branch has
+  no `ai_jims_drone`/`ai_flint` (grep: 0 hits), so d80 could not wire them.
+- d80's `ProjTrackedCue` enum (`projectile.rs:477-489` on d80) has ONLY
+  `BombFuseEnsure`/`BombFuseStop` — **no drone/flint variants**. The drone loop
+  was deferred precisely because its owning AI was unported at d80's base.
+- The ANALYSIS contract (d80 `docs/ANALYSIS.md:2511-2545`): the tracked entity
+  loops queue intents (`NpcSoundCue`/`ProjTrackedCue`), the sim drain
+  (`apply_proj_tracked_cue`) applies them and writes the `SlotId` float back into
+  `local_ai[2]`; **RNG contract: NO tracked play draws `Main.rand`** — every
+  `PlayTracked*` consumes exactly two AUDIO-ONLY static streams (the variation
+  pick `LegacySoundStyle.Random` drawn only when `Variations != 1`, and the
+  always-drawn `GetRandomPitch` NextFloat `SoundStyle._random`), port stand-ins
+  `Audio::style_random`/`sound_style_random` (seeded 1). The looped-play
+  conditions fold to shared `Arc<AtomicBool>` (the pool cannot hand a live
+  entity ref to a `Send` closure); `ProjectileAudioTracker.IsActiveAndInGame`
+  (`ProjectileAudioTracker.cs:15-27`: `!gameMenu && active && type ==
+  expectedType`) folds to the atomic the slot's death flips false.
+
+**The contract d20's arms must honour (when d80 wires them):**
+
+- **JimsDrone (T6a):** d20's `ai_jims_drone` already computes the throttle
+  `local_ai[1]` lerp (`:1167`) and keeps `local_ai[2] = 0` (`:1080-1081` doc,
+  `:1168-1169` "the sound volume/pitch envelope feeds only the skipped
+  tracked-loop sound... localAI[2] stays 0"). To wire: d80 adds a
+  `ProjTrackedCue::DroneEnsure`/`DroneFollow` (or a per-tick follow intent),
+  the drain plays `TrackedStyle::by_name("JimsDrone")` looped with the
+  shared-atomic condition, writes the handle to `local_ai[2]`, and sets
+  `Volume = num4`, `Position = Center`, `Pitch = clamp(remap(local_ai[1],0,100,
+  -1,1)+num3,-1,1)` each tick. **The num3/num4 envelope math is currently
+  SKIPPED in d20** (`:1168-1169`) — d80 must re-derive it from `local_ai[0]`
+  (steer age) and `local_ai[1]` (throttle), both of which d20 DOES maintain.
+  ZERO gameplay RNG draws (the census contract) — the drone's dust draws
+  (`:1083-1087`) stay on the gameplay stream, the sound draws ride the audio
+  statics.
+- **FlintCharge (T6b):** d20's `ai_flint` skips the cue (`:1384-1385` doc,
+  `:1474-1475` "The 30-tick charge cue is a tracked sound — skipped (the state
+  still gates the spike wave above)"). **Correction for d80:** the cue is a
+  legacy ONE-SHOT (`PlaySound(LegacySoundStyle, Vector2)`, `SoundEngine.cs:88-99`,
+  `:52305`), not a tracked loop. It is a **case-42 custom-trackable one-shot**,
+  NOT the id-2 item family — so it does NOT ride `play_proj_sound`
+  (`audio.rs:1969`, which refuses `id != 2`, `:1977`). It rides
+  `audio.rs::play_use_sound(style_index, ...)` (`:1053`), whose **case-42 arm**
+  (`:1080-1089`) plays the trackable asset (`deadcells_flint_charge`) at
+  `style.volume` with only the caller's pitch offset clamped — **NO gameplay
+  `Main.rand` draw** (the id-2 case-2 pitch roll at `:1092-1093` is skipped for
+  id 42; the single `GetRandomPitch` NextFloat at `:1064` rides the audio-only
+  `sound_style_random` static). d80 wires it by queueing the cue at the
+  `ai[1] == 30` mark and draining through `play_use_sound` with the
+  `DeadCellsFlintCharge` row's `SOUND_STYLES` index (`soundid.rs:501`, style 296,
+  sound_id 42) — NO tracked pool, NO `local_ai[2]` handle, NO `wants_sound`
+  id-2 tuple (that façade is id-2-only). The existing `wants_sound` seam
+  (`projectile.rs:716`) would need an id-42-aware drain arm, or a dedicated
+  one-shot intent. **T6b note:** d20's doc calling it "a tracked sound" is
+  imprecise — it is a trackable-*asset* played via the legacy one-shot case-42
+  path; the gameplay RNG contract is ZERO draws (unlike the id-2 case-2 cues).
+
+**Verdict — d80 owns both; d20's skips are correct and the contract is
+documented.** The drone loop is a genuine tracked-loop deferred site (d80's
+census claim is stale only in that d20 has now landed the owning AI — the
+*reason* for deferral is resolved, the wiring is still d80's). The flint charge
+is a legacy case-42 one-shot d80 wires through `play_use_sound` (d20's doc
+calling it "a tracked sound" is imprecise — it is a trackable-*asset* played via
+the legacy one-shot path, ZERO gameplay RNG draws; **T6b note**). Neither is a
+d20 port. **Task seeds T6a/T6b** below, owned by d80.
