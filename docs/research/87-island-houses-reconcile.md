@@ -517,3 +517,99 @@ row through the merge.)
   islands/buried-chest family) — it can land with either housing lane's
   merge; whichever lands SECOND sees the delegation already present and
   resolves the identical-block conflict by keeping ONE copy.
+
+## RETIRE §6 — the harpy spawn band: activation receipt (2026-11-21)
+
+The `c55cdc024` dispatch (terminal-default + the Wyvern short-circuits)
+re-verified at the peers' LATEST tips. **Verdict: the kind-gate resolves
+CLEANLY at merge — g8's Harpy row activates the band with ONE published
+hunk below; the feather shot is NOT active at any tip (cited skip), the
+exact port hunk is published for the g8 machine lane.**
+
+### What is landed where (tip reads at retire)
+
+| Piece | Where | Evidence |
+| --- | --- | --- |
+| The sky-band latch (0.35/0.45 height bands, `NPC.cs:980-987`) + the skyMob dispatch shape | **g44** `spawner.rs:798-837/:938-1011` | verbatim `FindSpawnTile`; the dispatch's drone/probe arms spawn, the Wyvern arm (`:989`) carries `hard_mode && !wyvern_exists && !no_worms` BEFORE the `Next(10)` (the C# `:1407` `&&` short-circuit), the town-slime arm (`:1000`) consumes its `Next(25)`, the Harpy default (`:1010`) is TERMINAL `None` — never falls to the ground ladders. |
+| `SpawnContext.wyvern_exists` wiring | **g44** `world_sim/npcs.rs:6752-6755` | `AnyNPCs(87)` = any live `NpcKind::WyvernHead` — d126's head kind is the roster probe; the second site `:7640` pins `false` (the no-roster ctx). |
+| The wyvern CHAIN machinery (assembly, head/follower steps, the pool driver) | **d126** `7ddf25a49` (`npc_ai_wyvern.rs:151/:244/:485/:596`) | landed + wired into the sim; **d126 does NOT touch `spawner.rs`** (empty diff vs base `a725acb04`) — no dispatch conflict with g44. The dispatch-hit spawn itself stays the recorded deferral (the arm consumes the roll, returns `None`); activating it means routing the hit into d126's `assemble_wyvern_chain` (`:151`, head ctor `:773` shape) — a d126-lane decision, NOT a g44 gap. |
+| The Harpy KIND row | **g8** `82c93cecf` (batch 4) AND **d34** `4012a7f3a` | BOTH land `NpcKind::Harpy` — g8 with protocol id **386** (`npc/data.rs:629/:998`, `ai_style` 14 at `:2647`, `net_id` 48 at `:3374`, size 24×34 `:3226`), d34 with protocol id **275** (`data.rs:601`). **The merge must keep ONE Harpy row** (a duplicate enum variant will not compile — the conflict is loud, not silent). Either survivor activates the band identically: `net_id() == 48` + `ai_style() == 14` on both. |
+| The style-14 machine | base + g8 routing | g8 routes `ai_style 14 => update_cave_bat` (`npc.rs:5286-5287`), the kind arm retired to `unreachable!` (`:7123`); `update_cave_bat` (`:12016`) stamps `wet`, builds `Style14Env`, drains `bat_ai`'s shot into `wants_hostile_shot`, integrates `integrate_flyer_collision`. d34's tip routes the same kind through `update_cave_bat` directly (`npc.rs:6439`) — same machine either way. |
+| The Harpy's OWN machine branches (wet arm + feather shot) | **NOT landed anywhere** | `npc_ai_style14.rs:121` (`:23333-23345` wet arm) and `:135` (`:23416-23436` feather shot) are CITED SKIPS at g8's tip, at main, and at EVERY origin branch (the full-branch sweep for `feather_shot`/`harpy_wet`/an active `net_id == 48` arm: zero hits; the file's only commits are the S1-D-3 pair `d6bc30ed1`/`364a9f14b`). g8's batch-4 commit message pins them as "cited machine skips (the machine round)". **g8b-feather-shot is a FUTURE slice, not a landed branch — no origin branch carries that slug.** |
+
+### The merge-resolution verdict (the activation question)
+
+1. **Dispatch × kind: CLEAN.** g8/d34 touch `npc.rs`/`npc/data.rs`/render/
+   bestiary; g44's dispatch lives in `spawner.rs` + the `SpawnContext`
+   field — g8's diff vs base does NOT touch `spawner.rs` (empty diff,
+   verified). No textual conflict on the dispatch; the semantic join is
+   the single hunk below.
+2. **Kind × kind: ONE loud conflict.** g8 (386) vs d34 (275) both add
+   `Harpy` — keep ONE row + its protocol-id band (the merger's roster-band
+   decision; g8's 385-387 band completes the ≤230 wiring, d34's 271-278
+   band completes kinds 1-70 — whichever roster order the merge adopts,
+   the OTHER lane's Harpy row + `to_u16`/`from_u16` entries dedupe onto it).
+   The g44 witnesses reference NO protocol id (they assert `None` spawns
+   today), so either survivor keeps them compiling.
+3. **Wyvern gate × d126: CLEAN.** The `wyvern_exists` probe reads
+   `NpcKind::WyvernHead` — d126's kind, landed. Both deferrals (the
+   dispatch-hit spawn, the 686 town-slime kind) stay recorded, not gaps.
+
+### THE activation hunk (apply at the merge, g44 `spawner.rs`)
+
+Replace the terminal-default block (`spawner.rs:1003-1010` at the retire
+tip — the 8-line comment + `return None;`):
+
+```rust
+        // The Harpy default (`:1419-1422`): `SpawnNPC(spawnTileX * 16 + 8,
+        // spawnTileY * 16, 48)` — the skyMob arm's TERMINAL else. The
+        // Harpy kind (48, aiStyle 14) lands with d34's npc-kinds-1-70
+        // lane (`4012a7f3a`, unmerged); until the merge the dispatch is
+        // terminal-None — a sky candidate NEVER falls through to the
+        // ground ladders (the old port spawned surface slimes in the
+        // sky on a dispatch miss — the C#'s else-if chain cannot).
+        return None;
+```
+
+with:
+
+```rust
+        // The Harpy default (`:1419-1422`): `SpawnNPC(spawnTileX * 16 + 8,
+        // spawnTileY * 16, 48)` — the skyMob arm's TERMINAL else (the
+        // W4-g44 retire activation: the kind landed g8/d34, aiStyle 14
+        // rides update_cave_bat → bat_ai). The C# SpawnNPC (:5238-5267)
+        // hands NewNPC the tile-top Y — the flyer ctor centres X on the
+        // tile (+8 − w/2) and seats the box top at the spawn row, the
+        // spawn_hover convention; a refused (colliding) placement still
+        // returns — the else-if chain never falls through.
+        return Npc::spawn_hover(ctx.world, x, y / 16, NpcKind::Harpy);
+```
+
+Witness update (same merge): `the_sky_default_never_falls_through_to_the_
+ground_ladders` (`spawner.rs:3586`) flips its 400-seed sweep from
+`assert!(n.is_none())` to `assert!(n.is_none_or(|n| n.kind ==
+NpcKind::Harpy))` — the terminal property (never a ground kind) is the
+invariant; the ground control below it is unchanged. The wyvern-gates
+witness (`:3527`) needs NO change: its `assert!(n.is_none(), "the tail
+arms spawn nothing yet")` at `:3554` holds only while the town-slime
+`Next(25)` misses — on a `Next(25)` HIT the activated default spawns a
+Harpy, so that assert becomes `n.is_none_or(|n| n.kind ==
+NpcKind::Harpy)` too (the STREAM equality asserts — the load-bearing
+part — are untouched).
+
+### The feather-shot residual (the g8 machine lane's next slice)
+
+Exact C# re-read (`NPC.cs:23333-23345` + `:23416-23436`, retire): the wet
+arm is the WATER_GROUP lift shape verbatim (`vy>0 → ×0.95`, `−0.5`, cap
+`−4`, `TargetClosest()`); the shot arm is `ai[0]++` every server tick,
+fires at **30/60/90** (NOT the sickle's 20/40/60/80) on `CanHit`, speed
+**6f** (NOT 0.2), the SAME X-then-Y `Next(-100,101)` jitter order, type
+**38** (`ProjectileID.Feather`) damage **15** kb 0, `timeLeft = 300`; the
+reset arm is `flag24 && ai[0] >= 400 + Next(400)` (NOT 300+300). Port
+shape: a second request struct (or a kind-tagged shot enum) drained by
+`update_cave_bat` beside `DemonSickleShot` — the `wants_hostile_shot`
+tuple already carries the type id, so the drain needs no new seam. RNG
+delta: on Harpy shot ticks TWO draws (X then Y), on reset-eligible ticks
+ONE `Next(400)` — the g8 machine round's stream witnesses must pin both.
+Until then a merged Harpy flies + approaches + bounces + wets (the shared
+arms) but does not shoot — the recorded skip, exactly as g8's tip.
