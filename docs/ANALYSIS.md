@@ -18461,6 +18461,24 @@ is consumed by THREE drivers, and the port now carries all three:
    `:21246-21309` (f25's lane; the gen/runtime split contract is recorded
    in the f25 gen-pass census below).
 
+**The LiquidBuffer driver arm** (census re-verified, R-12-5): the buffer is
+NOT scanned per tick — it drains ONLY inside the `wetCounter >= cycles`
+tail (`Liquid.cs:1120-1130`), budget `num8 = min(numLiquid, numLiquidBuffer)`
+where `numLiquid` is the POST-retirement-sweep count (the C#'s
+`curMaxLiquid - (curMaxLiquid - numLiquid)` algebra). Each promotion clears
+the buffered cell's `checkingLiquid` (`:1127`), calls `AddWater` (which may
+REFUSE — dry/solid/border cells) and `DelBuffer(0)` UNCONDITIONALLY
+(`:1129`), the swap-remove moving the LAST entry into slot 0
+(`LiquidBuffer.cs:22-27`) — so a refused cell still leaves the buffer and
+the head order is LIFO-ish, not FIFO. `AddBuffer` (`LiquidBuffer.cs:11-20`)
+caps at `maxLiquidBuffer - 2` and marks `checkingLiquid` for dedupe; the
+port's `add_water` carries both arms (`:1167-1171` overflow threshold
+`curMaxLiquid - 1`). The ≥90%-full panic gate reads `buffer.len()` per
+update (`:1009-1020`). New witnesses (written, NOT run):
+`liquid_settle::the_promotion_budget_is_the_post_sweep_active_count_clamped_to_the_buffer`
+(the 1→2 budget growth over two cycles + the swap-remove head order),
+`...::the_promotion_delbuffers_even_when_addwater_refuses_the_cell`.
+
 ### The DelWater keep-one (W4-g47 vs W4-g45, for the merger)
 
 Both branches ported `Liquid.DelWater` (`:1470-1599`) independently. **g47's

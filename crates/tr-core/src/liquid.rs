@@ -3120,6 +3120,81 @@ mod liquid_settle {
     }
 
     #[test]
+    fn the_promotion_budget_is_the_post_sweep_active_count_clamped_to_the_buffer() {
+        // R-12-5 driver census (`Liquid.cs:1120-1124`): `num8 =
+        // curMaxLiquid - (curMaxLiquid - numLiquid)` is numLiquid AFTER
+        // the retirement sweep (the C#'s own algebra), clamped to
+        // numLiquidBuffer — a buffer longer than the active list drains
+        // only numLiquid entries per cycle, the rest wait for the next.
+        // Five sealed 1-wide cups (x = 1,4,7,10,13) so every walked cell
+        // stays unchanged and no diffusion wakes pollute the counts.
+        let mut w = basin(15, 8);
+        for y in 0..8 {
+            for x in [0, 2, 3, 5, 6, 8, 9, 11, 12, 14] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in [1, 4, 7, 10, 13] {
+            put_as(&mut w, x, 7, 100, 0);
+        }
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_cur_max_liquid(2);
+        sys.add_water(&w, 1, 7);
+        for x in [4, 7, 10, 13] {
+            sys.add_water(&w, x, 7); // active full -> all four buffer
+        }
+        assert_eq!((sys.active_len(), sys.buffered_len()), (1, 4));
+        sys.set_cur_max_liquid(MAX_ACTIVE);
+        sys.set_cycles(1);
+        sys.update(&mut w);
+        // num8 = min(numLiquid 1, buffer 4) = 1: ONE promotion this cycle;
+        // DelBuffer(0) moved the LAST entry (13,7) into slot 0.
+        assert_eq!(sys.buffered_len(), 3, "the budget clamps to numLiquid");
+        assert_eq!(sys.active_len(), 2);
+        assert_eq!(sys.buffer[0], (13, 7), "the swap-remove head");
+        // The next cycle walks both sealed cells unchanged (no retire),
+        // num8 = min(2, 3) = 2 — two more promote: (13,7) then (10,7).
+        sys.update(&mut w);
+        assert_eq!(sys.buffered_len(), 1, "the budget grew with the list");
+        assert_eq!(sys.active_len(), 4);
+        assert_eq!(sys.buffer[0], (7, 7), "the one still waiting");
+    }
+
+    #[test]
+    fn the_promotion_delbuffers_even_when_addwater_refuses_the_cell() {
+        // R-12-5 driver census (`Liquid.cs:1125-1130`): the promotion loop
+        // clears checkingLiquid, calls AddWater and DelBuffer(0)
+        // UNCONDITIONALLY — a buffered cell whose liquid drained away
+        // before its promotion is refused by AddWater (`:1163` liquid==0)
+        // but still leaves the buffer (no stuck slot).
+        let mut w = basin(9, 8);
+        for y in 0..8 {
+            for x in [1, 3, 5] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        put_as(&mut w, 4, 7, 100, 0);
+        put_as(&mut w, 2, 7, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_cur_max_liquid(2);
+        sys.add_water(&w, 4, 7);
+        sys.add_water(&w, 2, 7); // -> buffer
+        // The buffered cell dries out before its promotion (an edit
+        // drained it; the buffer holds coordinates, not a mass snapshot).
+        w.tiles[w.index(2, 7)].liquid = 0;
+        sys.set_cur_max_liquid(MAX_ACTIVE);
+        sys.set_cycles(1);
+        sys.update(&mut w);
+        assert_eq!(sys.buffered_len(), 0, "DelBuffer ran despite the refusal");
+        assert_eq!(sys.active_len(), 1, "AddWater refused the dry cell");
+        assert!(!sys.is_checking(2, 7), ":1127 cleared the bit first");
+    }
+
+    #[test]
     fn the_stuck_band_self_clears_after_10000_cycles() {
         // `Liquid.cs:1131-1149`: an active count pinned inside ±50 of
         // stuckAmount for 10 000 consecutive cycles force-retires the
