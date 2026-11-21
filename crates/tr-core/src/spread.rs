@@ -950,6 +950,98 @@ pub fn convert_spray_cell(world: &mut World, x: i32, y: i32, conversion_type: u8
     }
 }
 
+// ---------------------------------------------------------------------------
+// `WorldGen.Convert` — the chlorophyte cells (W4-f25 helper C5, conversion
+// types 8/9/10). The consumers: hardUpdateWorld's chlorophyte arms
+// (`:69658`/`:69686` type 8, `:69697` type 9 — the ported `convert_cell(..,
+// chlorophyte: true)` approximation stays, unwired) and ChlorophyteDefense's
+// remix-only type 10 (`:69460`). UNWIRED.
+
+/// `WorldGen.Convert(i, j, conversionType, size)` for the chlorophyte types
+/// 8/9/10 (`WorldGen.cs:55067-55083` walk): the square walk with the
+/// Manhattan `< 6` gate, each cell through [`convert_chlorophyte_cell`].
+/// The C# call sites all use the single-cell overload (size 0).
+pub fn convert_sized_chlorophyte(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    conversion_type: u8,
+    size: i32,
+) {
+    if !matches!(conversion_type, 8 | 9 | 10) {
+        return;
+    }
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_chlorophyte_cell(world, k, l, conversion_type);
+            }
+        }
+    }
+}
+
+/// `Convert`'s type-8/9/10 cell arms (`WorldGen.cs:55665-55670` /
+/// `:55671-55720` / `:55721-55763`): tiles-only (no wall half in any of the
+/// three), no torch arm.
+/// - 8: the mud 59 / jungle grass 60 → the chlorophyte 211.
+/// - 9: the FULL grass set (2/23/109/199/477/492/661/662) → 60, dirt 0 → 59,
+///   the evil stone/sand/hardened/sandstone pairs → their pure kinds, the
+///   six thorn/evil kinds (24/32/201/205/352/636) die.
+/// - 10: the same WITHOUT the pure-grass/dirt rows (only the four infection
+///   grasses 23/199/661/662 → 60) — the ChlorophyteDefense remix conversion.
+/// `Convert_ActuallyConvertTile` (`:56312-56327`) writes only when the cell
+/// differs; the re-frame is the `reframe_area` superset (the cleanse/d1
+/// precedent).
+pub fn convert_chlorophyte_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `:55087-55097` — the empty cell converts nothing.
+    if !active && wall == 0 {
+        return;
+    }
+    // Type 8 (`:55665-55670`): `tiles && (type == 59 || type == 60)`.
+    if conversion_type == 8 {
+        if matches!(kind, 59 | 60) && active && kind != 211 {
+            try_kill_invalid_tree_above(world, x, y, 211);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = 211;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        return;
+    }
+    // Types 9/10 (`:55676-55719` / `:55726-55762`): the switch on type.
+    let new_kind: Option<u16> = match kind {
+        // The type-9-only pure rows (`:55678-55690`): the plain/golf/hallow
+        // grasses and the dirt.
+        2 | 109 | 477 | 492 if conversion_type == 9 => Some(60),
+        0 if conversion_type == 9 => Some(59),
+        // The shared infection-grass row (`:55679`/`:55684-55685` vs
+        // `:55728-55731`).
+        23 | 199 | 661 | 662 => Some(60),
+        25 | 203 => Some(1),
+        112 | 234 => Some(53),
+        398 | 399 => Some(397),
+        400 | 401 => Some(396),
+        _ => None,
+    };
+    if let Some(new_kind) = new_kind {
+        if active && kind != new_kind {
+            try_kill_invalid_tree_above(world, x, y, new_kind);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = new_kind;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    } else if matches!(kind, 24 | 32 | 201 | 205 | 352 | 636) {
+        // `:55707-55718` / `:55750-55761` — the thorn/evil kinds die (the
+        // netMode arm is MP-only).
+        let _ = crate::edit::kill_tile(world, x, y, false);
+    }
+}
+
 /// `GERunner`'s wall arms (`:76244-76260`): the sandstone wall 187 → the
 /// hallowed sandstone wall 222; the ebonstone/crimstone walls 3/83 → the
 /// hallowed stone wall 28.
@@ -1813,5 +1905,96 @@ mod tests {
         // An unported type is a no-op, not a mis-conversion.
         convert_sized_spray(&mut w, 200, 200, 9, 0);
         assert_eq!(w.tile(200, 200).unwrap().kind, 147);
+    }
+
+    // W4-f25 helper C5 — the Convert chlorophyte cells, types 8/9/10
+    // (`WorldGen.cs:55665-55763`). WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_c5_type_8_converts_only_mud_and_jungle_grass() {
+        let mut w = World::new("t".into(), 600, 400);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let idx = w.index(x, y);
+            w.tiles[idx] = crate::tile::Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        };
+        for (x, src, dst) in [
+            (100i32, 59u16, 211u16),
+            (101, 60, 211),
+            (102, 2, 2), // the plain grass is NOT in the type-8 arm
+            (103, 1, 1),
+        ] {
+            put(&mut w, x, 200, src);
+            convert_chlorophyte_cell(&mut w, x, 200, 8);
+            assert_eq!(w.tile(x, 200).unwrap().kind, dst, "{src} type 8");
+        }
+    }
+
+    #[test]
+    fn w4_f25_c5_types_9_and_10_differ_on_the_pure_rows() {
+        let mut w = World::new("t".into(), 600, 400);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let idx = w.index(x, y);
+            w.tiles[idx] = crate::tile::Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        };
+        // Type 9's full grass set + dirt (`:55678-55690`).
+        for (x, src, dst) in [
+            (100i32, 2u16, 60u16),
+            (101, 109, 60),
+            (102, 477, 60),
+            (103, 492, 60),
+            (104, 0, 59),
+            (105, 23, 60),
+            (106, 199, 60),
+            (107, 661, 60),
+            (108, 662, 60),
+            (109, 25, 1),
+            (110, 203, 1),
+            (111, 112, 53),
+            (112, 234, 53),
+            (113, 398, 397),
+            (114, 399, 397),
+            (115, 400, 396),
+            (116, 401, 396),
+        ] {
+            put(&mut w, x, 200, src);
+            convert_chlorophyte_cell(&mut w, x, 200, 9);
+            assert_eq!(w.tile(x, 200).unwrap().kind, dst, "{src} type 9");
+        }
+        // Type 10: the pure rows STAY, the infection rows convert
+        // (`:55726-55749` — the ChlorophyteDefense remix arm).
+        for (x, src, dst) in [
+            (100i32, 2u16, 2u16),
+            (101, 109, 109),
+            (102, 477, 477),
+            (103, 492, 492),
+            (104, 0, 0),
+            (105, 23, 60),
+            (106, 199, 60),
+            (107, 661, 60),
+            (108, 662, 60),
+            (109, 25, 1),
+            (110, 203, 1),
+        ] {
+            put(&mut w, x, 210, src);
+            convert_chlorophyte_cell(&mut w, x, 210, 10);
+            assert_eq!(w.tile(x, 210).unwrap().kind, dst, "{src} type 10");
+        }
+        // The thorn/evil kill row, both types (`:55707-55718`/`:55750-55761`).
+        for (i, kind) in [24u16, 32, 201, 205, 352, 636].iter().enumerate() {
+            put(&mut w, 130 + i as i32, 200, *kind);
+            convert_chlorophyte_cell(&mut w, 130 + i as i32, 200, 9);
+            assert!(
+                !w.tile(130 + i as i32, 200).unwrap().active(),
+                "{kind} dies"
+            );
+        }
     }
 }
