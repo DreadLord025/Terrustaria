@@ -434,3 +434,123 @@ piece read from `git diff a725acb0..7f647fda` / `..6381e43e` and
 `git show <tip>:<file>` before the edit; `git grep` confirms zero
 remaining `next_dialogue_free_cake` / `CakeSlice` references in
 `crates/` and the re-pointed anchor marker present.
+
+---
+
+## 8. FINAL SWEEP (post-union, this branch — 2026-11-21)
+
+The six-item final sweep, executed after the f1f95be4 union. Every C#
+claim re-read in ≤100-line windows; every co-lane claim read from
+`git show origin/task/<lane>:<file>` at the fetched tips.
+
+### 8a. The pitched case-2 cue (§1f follow-up) — LANDED (b4ca66e9)
+
+f34's `StationBuff` keep-one landed on this branch (the seven-row
+dispatch + the anchor row `621 => Some((192, 7_200))`), with the cake
+row's cue upgraded to the faithful pitched play: `play_npc_item_cue(2,
+p.x, p.y, UpdatePlayers)` — the GetRandomPitch NextFloat audio-only, the
+attenuation gate, then ONE `Next(-6,7)*0.01` draw
+(`LegacySoundPlayer.cs:632`). The other six rows keep the e28-recorded
+unpitched stand-in (their own noted change if ever upgraded). The single
+`192 =>` SugarRush arm (§1e) landed with f34's verbatim witness beside
+f41's rebase/expiry one. f34's neighbour no-draw witness RE-DERIVED: 621
+left the RNG-free loop (its own new pitched-roll witness pins the draw);
+699/464 keep the contract. Item_149/Item_179 cue registrations + witnesses
+landed.
+
+### 8b. Party-gift shop census — LANDED (be4cb841)
+
+`Chest.SetupShop` keys on the SHOP INDEX; the Party Girl is index 13
+(`Chest.cs:2274-2359`). The `BirthdayParty.PartyIsUp` block
+(`:2345-2358`) adds ELEVEN rows in num order: 3749 PartyPresent (2000),
+3746 Pigronata (10000), 3739/3740/3741 SillyStreamers (50 each),
+3737/3738/3736 SillyBalloons (100 each), 3745/3744/3743 TiedBalloons
+(1000 each) — prices from `Item.cs:33089-33175` SetDefaults, no
+shopCustomPrice. The Merchant's party row (`:1435-1437`) is the Rainbow
+Glowstick 5643. Her Release Lantern 4702 row gates on
+`LanternNight.LanternsUp` (`:2309-2312`). The 1449/4552 pair is a C#
+if/else on `Main.dayTime` (`:2285-2294`) — the port's Always+Night
+double-stock was a bug, fixed via `StockWhen::Day`. Live feeds:
+`ShopFlags.party_up`/`lanterns_up` from `world_events` at the shop-open
+seam. **Census corrections**: PartyBullet is 1349 (NOT sold — Pigronata
+break `WorldGen.cs:52956` + craft `Recipe.cs:2240` only); the ConfettiGun
+is item **1000** (`ItemID.cs:3683`, already an Always row) — **5089 is
+GlommerPetItem** (`ItemID.cs:11861`), not a party gun. f37/g58 cross-read:
+both carry the same constants-off party comment, no party rows — no
+conflict with this landing.
+
+### 8c. Monolith 455 placement — ALREADY COMPLETE, witnesses added (eec344ce)
+
+Item 3747 `createTile = 455` (`Item.cs:33176-33188`, consumable,
+placeStyle 0) was already rowed; the D_455 registry def (Style3x3,
+origin (1,2), anchor 11 = SolidTile|SolidWithTop|Table|SolidSide,
+`TileObjectData.cs:3097-3105`/`:4099-4101`, UsesCustomCanPlace true, NO
+hook) already routes through `place_item_tile`. Nothing to wire — 2
+witnesses pin the loop end-to-end (core 3x3 write + floating refusal +
+per-cell toggle dispatch; app consumption + manual_party toggle).
+
+### 8d. Party hats on PLAYERS — LANDED (73f4f4d4)
+
+Census: C# `Player` has NO partyHat field — `UsesPartyHat`/
+`ForcePartyHatOn`/`GetPartyHatColor` are NPC-only (c39's party_hat.rs
+lane, `NPC.cs:66611-66659`). The player hat is the VANITY ITEM 3732
+(`headSlot = 195`, `Item.cs:33061-33067`; `ArmorIDs.Head.PartyHat = 195`).
+Head 195 is in `GetHairSettings`' hatHair set (`Player.cs:16880`/
+`:16902`): the Player_HairAlt strip draws UNDER the hat
+(`PlayerDrawLayers.cs:2104-2109`, !invis), the Armor_Head_195 sheet takes
+the normal-hat 52px crop over it (`:2254-2281`, cHead dye). Landed: the
+two sheets, the hatHair draw arm, `PlayerCompositeState.invis`, the
+vanity-head resolution at the draw feed (`Player.cs:35765` — armor[10]
+wins when headSlot >= 0) and the effective-head G6 key input (gated;
+hat-free frames bit-identical).
+
+### 8e. BirthdayParty natural-start census — gates CLAIMED, nothing unclaimed
+
+The base chain (party-girl presence, cooldown decrement, Next(10) roll,
+>=5 gather, Next(5,11) cooldown, 1/2/3 celebrant roll, OrderBy pick,
+freeCake :106 arm, dusk :65222 clear, clearWorld :6945) is landed on this
+branch (S1-F-14 + the union). The remaining C# arms are ALL claimed:
+- the `tenthAnniversaryWorld` Next(7) roll (`:84-88`) — **c39**
+  (`728b3d33`, the `tenth_anniversary` parameter +
+  `w4_c39_the_anniversary_party_roll_uses_seven`);
+- `CanNPCParty`'s aiStyle/pet gates as the `can_npc_party` helper —
+  **c39** (same commit; the port ships no town-pet kinds, so the base
+  `is_town_npc` + TaxCollector exclusion is behaviourally identical
+  today);
+- the `UpdateTime` roster prune + gone-home broadcast (`:183-219`, the
+  RemoveAt slide-in skip quirk) — **c39** (same commit, 2 witnesses);
+- the dawn `Game.BirthdayParty_{1,2,3}` broadcasts + the keyed dusk
+  farewell (`Lang.misc[99]` = "Party time's over!") — **f38**
+  (`b7a29e6a`; §1i keeps f38's rows wholesale — this branch's stale
+  literal stays for f38's merge to replace, census comment added).
+No unclaimed natural-trigger arm remains; nothing ported here.
+
+### 8f. c39 cross-read (research/114 does NOT exist) — keep-one verdicts
+
+c39's tip carries NO docs/research/114 (the branch's research tree is
+the base 01-92 set; the task's '114' likely means the sibling
+W4-d114-tileobjectdata-4 lane, whose scope is TileObjectData hooks, not
+party). c39's cake lane (`75922dcc`) wrote a THIRD cake-621 route:
+`TileInteraction::CakeEat` + an unpitched `play_at("Item_2")` app arm +
+a collapsed freeCake talk gift (drop-at-NPC-centre, no latch).
+**Keep-one verdicts for the eventual c39 merge** (extending §2/§4):
+- cake 621 right-click: KEEP this branch's `StationBuff` row with the
+  pitched case-2 cue (8a) — DROP c39's `CakeEat` variant + dispatch +
+  app arm + TR_TOGGLE arm + interaction_events arm (a strict subset,
+  unpitched);
+- the 192 effect arm: KEEP the single landed arm — DROP c39's duplicate
+  (byte-equivalent pickSpeed/moveSpeed rows);
+- the freeCake gift: KEEP the union's latched chain (f38 structure +
+  hp>0 caller gate + gift-THEN-text on the global stream, single
+  slot_for_pickup + player-centre overflow) — DROP c39's collapsed
+  live-flag talk arm (fires without a poll latch, gifts at the NPC
+  centre, no inventory fill);
+- c39's KEEP-ones: the anniversary roll, can_npc_party, the roster prune,
+  party_hat.rs (NPC side), event_skies.rs, the lantern lanes — all
+  disjoint from this branch's files except world_events.rs/clock.rs/
+  weather.rs/npcs.rs, where the merger folds c39's parameter/prune
+  extensions onto the union's chain (the §3 recipe unchanged).
+
+Verification (code-only): no cargo/tests/rustfmt/graphify invoked; all
+witnesses WRITTEN NOT RUN. Commits: b4ca66e9 (8a), be4cb841 (8b),
+eec344ce (8c), 73f4f4d4 (8d), + the 8e census commit.

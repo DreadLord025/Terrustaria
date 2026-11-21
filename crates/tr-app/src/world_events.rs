@@ -176,6 +176,12 @@ pub(crate) fn check_morning_lanterns(ev: &mut WorldEvents) {
 /// clears at dusk (its celebrating roster with it) and the manual one
 /// expires, with the "everyone has gone home" broadcast — `Lang.misc[99]`
 /// keyed, `new Color(255, 0, 160)`.
+///
+/// W4-f41 final-sweep census: the literal below is the pre-1.4.5 text; the
+/// C# keys `Lang.misc[99]` = "Party time's over!" (`LegacyMisc.99`,
+/// verified in the en-US Legacy json). The keyed fix is W4-f38's claimed
+/// broadcast work (its tip `b7a29e6a` carries it; research/70 §1i keeps
+/// f38's row wholesale) — NOT duplicated here.
 pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
     let mut cleared = false;
     if ev.genuine_party {
@@ -199,6 +205,16 @@ pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
 /// `partyable` folds `CanNPCParty`'s gates (`:55-64`) over the port's
 /// compacted vec — the C#'s `OrderBy(Main.rand.Next())` pick indexes the
 /// port's vec slots (deviation recorded).
+///
+/// W4-f41 final-sweep census (the natural-trigger gates' ownership): the
+/// roll's `maxValue` is 10 here, or 7 on `Main.tenthAnniversaryWorld`
+/// (`:84-88`); the anniversary arm + its `Next(7)` witness are W4-c39's
+/// claimed work (its tip `728b3d33` carries the `tenth_anniversary`
+/// parameter + `w4_c39_the_anniversary_party_roll_uses_seven`), as are the
+/// `CanNPCParty` town-pet/aiStyle gates' `can_npc_party` helper and the
+/// `UpdateTime` roster prune (`:183-219`, the RemoveAt slide-in skip
+/// quirk) — NOT duplicated here. The dawn `Game.BirthdayParty_{n}`
+/// broadcasts are W4-f38's (`b7a29e6a`).
 ///
 /// Returns the `CheckForAchievement()` call the C# makes at `:142` — the
 /// party just came up, so THROW_A_PARTY (25) credits (S1-E-18f).
