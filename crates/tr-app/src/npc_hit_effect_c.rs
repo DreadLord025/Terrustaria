@@ -233,6 +233,7 @@
 //! | 1140-1149 | `:88192-88220` | the 178 Steampunker (4 gores) + 353/354 Stylist (6 gores) death (shimmer) |
 //! | 1150-1159 | `:88236-88260` | the 37 OldMan + 54 Clothier death (5 gores each, shimmer) |
 //! | 1160-1169 | `:88276-88303` | the 160 Truffle (type-26 dust) + 18 Nurse death (5 gores each, shimmer) |
+//! | 1170-1179 | `:88319-88346` | the 19 ArmsDealer + 38 Demolitionist death (5 gores each, shimmer) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6829,6 +6830,72 @@ fn nurse_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1327 } else { 35 }, 1.0); // :88303
 }
 
+/// The 19 ArmsDealer death (`NPC.cs:88315-88323`, sites 1170-1174): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder with shimmer variants — 36 (1288 shimmer) head, 37/37
+/// (1289) at +20, 38/38 (1290) at +34. Scale defaults to 1.
+fn arms_dealer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(19);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1288 } else { 36 }, 1.0); // :88319
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1289 } else { 37 }, 1.0); // :88320
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1289 } else { 37 }, 1.0); // :88321
+    gore.new_gore(rng, world, low, vel, if shimmer { 1290 } else { 38 }, 1.0); // :88322
+    gore.new_gore(rng, world, low, vel, if shimmer { 1290 } else { 38 }, 1.0); // :88323
+}
+
+/// The 38 Demolitionist death (`NPC.cs:88335-88346`, sites 1175-1179): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder with shimmer variants — the head 64 (1297 shimmer) gated
+/// on `altTexture == 0` (the stand-in), then 65/65 (1299) at +20 and 66/66
+/// (1300) at +34. Scale defaults to 1.
+fn demolitionist_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(38);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    // `:88339-88341` — the head gated on altTexture == 0 (the stand-in).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1297 } else { 64 }, 1.0);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1299 } else { 65 }, 1.0); // :88343
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1299 } else { 65 }, 1.0); // :88344
+    gore.new_gore(rng, world, low, vel, if shimmer { 1300 } else { 66 }, 1.0); // :88345
+    gore.new_gore(rng, world, low, vel, if shimmer { 1300 } else { 66 }, 1.0); // :88346
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7659,6 +7726,14 @@ pub fn hit_effect_c(
     // `:88282-88304` — the 18 Nurse arm (sites 1165-1169).
     if npc_type == 18 && npc.hp <= 0 {
         nurse_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88305-88324` — the 19 ArmsDealer arm (sites 1170-1174).
+    if npc_type == 19 && npc.hp <= 0 {
+        arms_dealer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88325-88347` — the 38 Demolitionist arm (sites 1175-1179).
+    if npc_type == 38 && npc.hp <= 0 {
+        demolitionist_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -12071,6 +12146,52 @@ mod tests {
         nurse_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1324, 1326, 1326, 1327, 1327]);
+    }
+
+    /// `NPC.cs:88319-88323` — the ArmsDealer death: the 5-gore ladder
+    /// 36/37/38 (normal) or 1288/1289/1290 (shimmer).
+    #[test]
+    fn w4_f10_the_arms_dealer_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1193);
+        arms_dealer_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![36, 37, 37, 38, 38]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1193);
+        arms_dealer_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1288, 1289, 1289, 1290, 1290]);
+    }
+
+    /// `NPC.cs:88341-88346` — the Demolitionist death: the 5-gore ladder
+    /// 64/65/66 (normal) or 1297/1299/1300 (shimmer).
+    #[test]
+    fn w4_f10_the_demolitionist_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1201);
+        demolitionist_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![64, 65, 65, 66, 66]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1201);
+        demolitionist_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1297, 1299, 1299, 1300, 1300]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
