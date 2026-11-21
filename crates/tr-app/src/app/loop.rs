@@ -611,11 +611,13 @@ impl ApplicationHandler for App {
                 }
                 // Bug 17: the front-end hover edge — `FadedMouseOver`'s
                 // menu tick (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`)
-                // fires once when the pointer enters an element.
+                // fires once when the pointer enters an element. W4-g22
+                // DOC-SWEEP: only SOUNDING elements tick — the card bodies
+                // are colour-only (`front_hit_sounds`' census).
                 if self.front.is_some() {
                     let hit = self.front_hit();
                     if hit != self.front_hover_hit {
-                        if hit.is_some() {
+                        if hit.is_some_and(|h| self.front_hit_sounds(h)) {
                             self.audio.play("Menu_Tick");
                         }
                         self.front_hover_hit = hit;

@@ -600,6 +600,21 @@ pub enum Click {
     None,
 }
 
+/// W4-g22 DOC-SWEEP — the hover-sounding element under the pointer: ONLY
+/// the Submit/Cancel pair (`FadedMouseOver`, `UIVirtualKeyboard.cs:1071`
+/// — 12 on the enter edge). The grid keys' `CreateKeyboardButton`
+/// OnMouseOver (`:637-644`) and the shift/symbol handlers (`:234-241`,
+/// `:268-275`) swap colours only — NO sound. Ids: 0 Submit, 1 Cancel.
+pub fn hover_element(l: &Layout, mouse: Vec2) -> Option<u32> {
+    if in_rect(mouse, l.submit) {
+        return Some(0); // `:1071` via `:299`/`:356`
+    }
+    if in_rect(mouse, l.cancel) {
+        return Some(1); // `:1071` via `:324`
+    }
+    None
+}
+
 /// The layer's hit-test — the same [`key_rect`] geometry the draw replays
 /// (Review Focus 2). The visible layer's buttons only: `outerLayer1`'s grid
 /// and bottom row plus the small Submit/Cancel pair while

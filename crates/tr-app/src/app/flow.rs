@@ -1245,8 +1245,8 @@ impl App {
     /// framework's `GetElementAt` (`UIElement.cs:324-352`), fed to the pointer
     /// machine so its `LastClicked` compares elements and a card's double-click
     /// is recognised (`UICharacterListItem.cs:68-69`). Also feeds the Bug-17
-    /// hover edge on the creation screen (W4-g22 DOC-SWEEP). `None` on the
-    /// keyboard and when no front screen is live.
+    /// hover edge on the creation screens and the keyboard (W4-g22
+    /// DOC-SWEEP). `None` when no front screen is live.
     pub(crate) fn front_hit(&self) -> Option<u32> {
         let front = self.front.as_ref()?;
         let (sw, sh) = self.screen_size();
@@ -1284,7 +1284,38 @@ impl App {
                 let l = ui::world_creation::layout(screen, 0.0);
                 ui::world_creation::hover_element(&l, self.mouse_pos).map(|id| id + 2000)
             }
+            // W4-g22 DOC-SWEEP — the keyboard's hover census: ONLY the
+            // Submit/Cancel pair sounds (`FadedMouseOver`); the grid keys
+            // are colour-only. The +3000 base keeps the ids separate.
+            FrontScreen::Keyboard(_) => {
+                let l = ui::keyboard::layout(screen, self.vk_grid);
+                ui::keyboard::hover_element(&l, self.mouse_pos).map(|id| id + 3000)
+            }
             _ => None,
+        }
+    }
+
+    /// W4-g22 DOC-SWEEP — whether the element id [`App::front_hit`]
+    /// answers SOUNDS on hover. The select screens' card BODIES are
+    /// silent (`UICharacterListItem.MouseOver` `:294-300` /
+    /// `UIWorldListItem.MouseOver` `:475-479` swap colours only — the
+    /// tick belongs to the child `UIImageButton.MouseOver`
+    /// `UIImageButton.cs:61` and the Back/New `FadedMouseOver`); every
+    /// other id the hit-test answers is a sounding element.
+    pub(crate) fn front_hit_sounds(&self, hit: u32) -> bool {
+        match self.front.as_ref() {
+            Some(FrontScreen::CharSelect | FrontScreen::WorldSelect) => {
+                if hit == ui::select_hit::BACK || hit == ui::select_hit::NEW {
+                    return true; // `FadedMouseOver` (`:124`/`:126`)
+                }
+                if hit >= ui::select_hit::CARD_BASE {
+                    let part = (hit - ui::select_hit::CARD_BASE) % ui::select_hit::PARTS;
+                    return part != ui::select_hit::PART_BODY;
+                }
+                false
+            }
+            // The creation/keyboard hit-tables list sounding elements only.
+            _ => true,
         }
     }
 
@@ -1872,6 +1903,54 @@ pub(crate) mod front_flow_tests {
         let before = app.audio.played_count();
         front_press(&mut app);
         assert_eq!(app.audio.played_count(), before);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the hover-sound census across the
+    /// screens: the select card BODIES are silent (colour-only MouseOver),
+    /// their buttons and Back/New sound; every creation/keyboard id the
+    /// hit-tables answer sounds.
+    #[test]
+    fn doc_sweep_card_bodies_do_not_tick_but_buttons_do() {
+        let players = vec![entry("Alpha", true)];
+        let mut app = flow_app(Some(FrontScreen::CharSelect), players, Vec::new());
+        use ui::select_hit as sh;
+        assert!(!app.front_hit_sounds(sh::card_part(0, sh::PART_BODY)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_PLAY)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_FAVORITE)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_RENAME)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_DELETE)));
+        assert!(app.front_hit_sounds(sh::BACK));
+        assert!(app.front_hit_sounds(sh::NEW));
+        // The world screen mirrors it.
+        let mut app = flow_app(Some(FrontScreen::WorldSelect), Vec::new(), Vec::new());
+        assert!(!app.front_hit_sounds(sh::card_part(3, sh::PART_BODY)));
+        assert!(app.front_hit_sounds(sh::card_part(3, sh::PART_PLAY)));
+        // The creation screens' tables list sounding elements only.
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(app.front_hit_sounds(1000));
+        // The loop's edge with the gate: a card body enter plays nothing.
+        let players = vec![entry("Alpha", true)];
+        let mut app = flow_app(Some(FrontScreen::CharSelect), players, Vec::new());
+        let (sw, sh2) = app.screen_size();
+        let screen = Vec2::new(sw, sh2);
+        let l = ui::char_select::resolved_layout(screen, app.front_header_w("Select Player"), 1);
+        let c0 = ui::char_select::card_layout(l.list, 0);
+        // A point inside the card but off every button (the name strip).
+        app.mouse_pos = Vec2::new(c0.card[0] + c0.card[2] * 0.5, c0.card[1] + 4.0);
+        let hit = app.front_hit();
+        assert_eq!(hit, Some(ui::select_hit::card_part(0, ui::select_hit::PART_BODY)));
+        let before = app.audio.played_count();
+        if hit != app.front_hover_hit {
+            if hit.is_some_and(|h| app.front_hit_sounds(h)) {
+                app.audio.play("Menu_Tick");
+            }
+            app.front_hover_hit = hit;
+        }
+        assert_eq!(app.audio.played_count(), before, "the body enter is silent");
     }
 
     #[test]
