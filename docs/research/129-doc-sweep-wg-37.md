@@ -1,8 +1,11 @@
-# 129 — Doc-sweep lane 39: worldgen #37-45 residuals (W4-d105 sweep phase)
+# 129 — Doc-sweep lane 39: worldgen #37-45 residuals (W4-d105 sweep phase) — SEALED
 
 > Wave 4 · 2026-11-21 · code-only mode (no cargo/tests/rustfmt/graphify on
 > this branch) · branch `task/W4-d105-worldgen-passes-5` (9/9 DONE at
 > `241ffa39`, this sweep continues the SAME branch).
+> **SEALED at the RETIRE phase** (see the RETIRE section at the tail:
+> the g42/g58/g34/f35/f12 compose census, the corrected Chillet ownership,
+> the two task-seeds, the wg-lane5-family declaration pointer).
 > Scope: the six residuals the lane-39 dispatch named over the landed
 > #37-45 passes — guide starter-NPC spawn, dye-plant variants, herb growth
 > tick, ChilletEggs chain, GlowTulips glow, sunflower happiness. Each was
@@ -301,3 +304,118 @@ stack 518/3, matching the C# `:702` then `:712` order).
 are runtime growth / spawn-rate / flag-feed changes), so neither
 `world_hash.rs` pin moves. The lane-5 gen-time hash pins stay
 stale-by-design (deferred to the merge gate, per the lane discipline).
+
+## RETIRE phase (2026-11-21, code-only) — SEALED
+
+The three sweep ports are final on this branch. This section censuses
+them against the co-lane tips (all reads are `git diff`/`git show` of the
+pushed branches vs the common base `a725acb04`, plus direct ≤100-line C#
+windows). Witnesses stay WRITTEN NOT RUN.
+
+### R1. g42-growth compose (tip `fdedf9776`, GROWTH FINAL)
+
+- **Disjoint, keep-one by construction**: g42's tree-diff vs base carries
+  **ZERO `growth/herbs.rs` hunks** — its `grow_alch` body is the base copy
+  (still the INVERTED `frame_x == 108` gate, no 1/30 tail). The keep-one
+  survivor is **d105's herbs.rs** (`35ccf38ea`: `frame_x != 108 ||
+  next_max(2) == 0` + the `:45890-45898` maturity tail, 2 witnesses). No
+  g42-alch-arm duplicate exists: its dispatcher keeps the single
+  `TILE_ALCH.contains(&kind) => grow_alch(...)` call per path (its
+  growth.rs:777-778 overground / :2104-2105 underground) through the
+  herbs.rs seam.
+- **g42-D6-actuated-wall-arms**: F1 landed the C# wall arms OUTSIDE the
+  active/inactive if-else (`:72499`/`:73809`) — the actuated path skips
+  the growth chain (`:72216`/`:73252` nactive gates) but its evil wall
+  spreads; the overground alch arm no longer returns, so a herb cell's
+  walk reaches the wall arms. That is dispatcher-structure only — it
+  changes WHICH cells reach `grow_alch`'s callers, not its body or draw
+  order. The d105 fix composes under it unchanged.
+- **decorations.rs**: g42's only hunk is `CAT_TAIL_DISTANCE` →
+  `pub(super)` (line 16, the cattail export for its runtime PlaceCatTail
+  copy). d105's dye hunks sit at `plant_dye` (~:560-640) + the two
+  witnesses — no textual overlap, auto-merge clean, both halves keep.
+- **Shared-file merge notes** (the true common set is anchors.txt,
+  decorations.rs, world.rs, pipeline.rs, world_hash.rs): world.rs — g42
+  adds `allowed_to_spread_infections` (:366/:722 regions), d105 adds the
+  gen-NPC ledger + GenVars fields (:585/:624 regions), disjoint.
+  pipeline.rs — g42's 3-line `step_mushroom` desert-veto arg vs d105's
+  nine step insertions, disjoint regions. world_hash.rs — BOTH lanes
+  prepend stale-by-design comments at the same anchor (the S1-P-i33
+  comment above `SEED42_512`, :238); a textual conflict there resolves
+  by KEEPING BOTH comment blocks (the pins stay stale until the merge
+  gate re-pins; g42's mushroom-biome pin moves and d105's #37-45 pin
+  moves are independent). anchors.txt — append-only rows, keep all.
+
+### R2. Chillet egg chain — ownership census CORRECTED
+
+The sweep's §4 recorded both runtime halves as unclaimed cross-lane. The
+retire census re-reads the co-lane tips and corrects the ledger:
+
+- **Egg tile 752 → item 6142 (tile-break drop) — UNCLAIMED; task-seed for
+  the g34 Check\* continuation lane.** g34 (tip `cf85a1cf9`) generalized
+  `check_candelabra_sink` → `check_2x2` (kill.rs:1596, the `:48397-48799`
+  default branch incl. the `:48792-48798` TileFrame tail ring) and wired
+  the 28 water-cage kinds + 100/172 (dispatch arm kill.rs:707-711); its
+  research/68 explicitly parks the "boulder/ceiling/chandelier arms
+  (95/126/132/138/484/664/665/711-716)" as separate lanes — 752 is in
+  NEITHER list. g56 (tip `3ab631923`) is the void-vault UI lane: zero
+  752/Check2x2/OpenChilletEgg hits in its tree-diff; it does NOT own the
+  drop. C# re-read: the `TileFrame` inner switch lists 751/752 as plain
+  `break` (`WorldGen.cs:85689-85691`) — no direct `Check2x2(i,j,752)`
+  call site exists (the three call sites :85659/:85798/:85945 never
+  list 752); the drop arm is `case 752: num14 = 6142` (`:48576-48578`,
+  the sibling `case 751: num14 = 5667` :48573-48574 rides with it) and
+  the reach rides the Style2x2 TileObjectData framing (the Check\*
+  family lane). **Seed**: extend g34's `check_2x2` drop switch with
+  752→6142 (+751→5667) and wire the dispatch through the object-data
+  route — the tile-framing lane (W4-d110 / the g34 Check\* continuation),
+  NOT the void lane, NOT worldgen.
+- **Egg item 6142 → pet (bag-open) — CLAIMED + LANDED on W4-f35.** The
+  sweep's "the port has NO TryOpenContainer system" was true at base but
+  is stale at the f35 tip (`1abae9ade`): `misc_bags.rs::open_chillet_egg`
+  ports `Player.OpenChilletEgg` (`Player.cs:9491-9500`, the `Next(2)==0`
+  → 5666 Ignis else 5665 Chillet, `quick_spawn`) — commit `0fd244e79`;
+  the full 58-kind OpenableBag dispatch + the `TryOpenContainer_GrantItems`
+  tail (`ItemSlot.cs:1806-1865`) wired at clicks.rs:1601 — commit
+  `00a5b27db`; research/66 row `type == 6142 | Chillet Egg |
+  OpenChilletEgg`. Nothing left for d105 or g56 here; the chain closes
+  when f35 + the tile-framing seed both land.
+- The worldgen-owned half (egg placement, `dd43734a6`) stays verified
+  present; item row 6142 exists on base (itemdata.rs:6308) and the mount
+  halves remain as §4 recorded.
+
+### R3. sunflower-happiness g58 compose (tip `2ff3b7062`, happiness final)
+
+- **Disjoint**: g58's tree-diff touches NO spawner.rs, NO
+  buff_effects_accessory.rs, NO player.rs and NO tr-core growth/worldgen
+  files; its only world_sim/npcs.rs hunks are the shop/talk/angler-reward
+  arms (:75-:1058 regions) + tests (:7536) — none near the live
+  SpawnFlags literal. Its SpawnFlags literal (npcs.rs:6684-6713) keeps
+  `invis`/`enemy_spawns` + `..default()` (sunflower constants-off there).
+  **Keep-one: d105's `sunflower: player.sunflower` feed** (`7eb486f07`,
+  the `:6638` hunk + the spawner.rs witness). g58's shop-mood system is
+  the `shopping_settings.price_adjustment` TALK-OPEN LATCH
+  (`Player.SetTalkNPC :4389`, buy/sell/reforge/nurse/tax/angler readers)
+  — a different flag family entirely; no merge interaction.
+- **calmed (106) stays off — f12-claimed, confirmed at its RETIRE tip
+  `22ce2a41f`**: f12 carries `player.calmed` (player.rs:2091, `106,
+  :10142`) + the `buff_frame_wiring.rs:508` `p.calmed |= e.calmed` arm,
+  and its tree-diff has ZERO hunks in world_sim/npcs.rs or spawner.rs —
+  the live `SpawnFlags.calmed` feed is claimed by f12's wiring but NOT
+  yet landed there. d105 keeps the field constants-off verbatim (the
+  spawner arm at spawner.rs:394 exists since M4-SPAWN-1). Merger note:
+  when f12 lands the feed it adds one line beside d105's sunflower line
+  in the same literal — keep both. `angler_set` stays off (C# dead code,
+  §6).
+
+### R4. Seal + family declaration
+
+- **research/129 SEALED**: the six-residual census is final — guide and
+  glow-tulip verified present, the three ports landed (`35ccf38ea` /
+  `52978903f` / `7eb486f07`), the Chillet ledger corrected above (one
+  task-seed to the Check\* lane, one half already landed on f35). No
+  further d105 work on these systems.
+- **wg-lane5-family declaration**: published in
+  `12e-worldgen-passes-5.md` (the RETIRE section there) — the full
+  commit family, the owned files, the co-lane boundaries and the
+  hash-pin state, for the merge gate.

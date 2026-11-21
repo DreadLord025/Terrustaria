@@ -159,7 +159,83 @@ each), the rest verified-present or cross-lane:
 - [x] ChilletEggs — gen placement + mount data + recipes PRESENT; the
       egg-tile-break drop (Check2x2-752) and the bag-open
       (OpenChilletEgg) are real gaps but CROSS-LANE (tile-framing / UI
-      container-opening), recorded not ported.
+      container-opening), recorded not ported. **RETIRE correction**:
+      the bag-open half is CLAIMED + LANDED on W4-f35
+      (`misc_bags::open_chillet_egg` `0fd244e79`, dispatch `00a5b27db`);
+      the tile-break drop stays UNCLAIMED — a task-seed for the g34
+      Check\* continuation (752→6142 + the sibling 751→5667), NOT g56's
+      void lane. Full census: research/129 RETIRE §R2.
 
 No generation-time tile writes in any of the three ports — neither
 `world_hash.rs` pin moves; the lane-5 gen pins stay stale-by-design.
+
+## RETIRE phase — the wg-lane5-family declaration (2026-11-21, SEALED)
+
+Branch `task/W4-d105-worldgen-passes-5`, base `a725acb04`, 20 commits
+(19 + this RETIRE commit), code-only throughout (witnesses WRITTEN NOT RUN, no cargo/rustfmt/
+graphify on the branch). This is the lane's complete family record for
+the merge gate.
+
+### The commit family
+
+| phase | commits | scope |
+| --- | --- | --- |
+| range claim | `5bb4116ee` | the #37-45 range doc (this file's head) |
+| #37 Guide | `c499a7670` | `starter_npcs.rs` + World.gen_npcs + App materialisation |
+| #38 Sunflowers | `4350c46bc` | `surface.rs::pass_sunflowers` + the skyblock gate helper |
+| #39 Herbs | `f42727bfa` | `surface.rs::pass_herbs` (PlantAlch via edit::place_alch) |
+| #40 Dye Plants | `dd43734a6` | `surface.rs` plantDye/PlaceDye/MatureTheHerbPlants/GrowGlowTulips/PlaceChilletEggs |
+| #41 Flowers | `3980b799d` | `surface.rs::pass_flowers` + GenVars.log_x/log_y |
+| #42 Mushrooms | `03efd7bcc` | `surface.rs::pass_mushrooms` |
+| #43 Random Gems | `9f7b1a248` | `spider_gem_moss.rs::pass_random_gems` + 178/184 boot statics |
+| #44 Moss Grass | `d590d99a8` | `spider_gem_moss.rs::pass_moss_grass` |
+| #45 Larva | `22a0026ce` | `structures.rs::pass_larva` (the hive ledger seam); LANE 9/9 |
+| witness re-pins | `93cdd3252` | guide/sunflowers/herbs/dye adjacency pins |
+| #40 faithfulness | `96f65cd60` | dye_nearby hanging-tail counts ANY 227 (`:71445`) |
+| test robustness | `d089699d5`, `15c58b503`, `241ffa394` | seed sweeps, MicroSeedFlags::from_sum, genvars_defaults |
+| doc-sweep ports | `35ccf38ea`, `52978903f`, `7eb486f07` | herb gate+tail / dye remix+veto / sunflower SpawnFlags feed |
+| doc-sweep census | `2983d86c8` | research/129 + this file's sweep section + 3 anchors |
+| RETIRE | (this commit) | research/129 SEALED + this declaration |
+
+### Owned files (the lane's write-set vs base)
+
+- `crates/tr-core/src/worldgen/`: `starter_npcs.rs` (new), `surface.rs`,
+  `spider_gem_moss.rs`, `structures.rs`, `pipeline.rs` (the nine step
+  insertions + GenVars fields), `mod.rs`, `progress.rs`, `mini_biomes.rs`,
+  `world_hash.rs` (stale-by-design comments only).
+- `crates/tr-core/src/`: `world.rs` (gen_npcs + GenVars-facing fields),
+  `tileobject.rs` (the 227/656/752 registry rows),
+  `growth/herbs.rs` + `growth/decorations.rs` (the sweep's runtime fixes).
+- `crates/tr-app/src/`: `app/mod.rs` (starter-NPC materialisation + name
+  resolution), `spawner.rs` (the sunflower witness),
+  `world_sim/npcs.rs` (the one-line SpawnFlags.sunflower feed).
+- `anchors.txt` (+13 rows), docs (this file, research/129, ROADMAP row).
+
+### Co-lane boundaries (retire census, tips read 2026-11-21)
+
+- **g42** (`fdedf9776`): ZERO herbs.rs hunks — d105's grow_alch is the
+  keep-one; its dispatcher D6/F1 actuated-wall-arm structure composes
+  over the fix. decorations.rs overlap is one `pub(super)` export line
+  vs the dye hunks — disjoint. world_hash.rs :238 comment-block conflict
+  resolves KEEP-BOTH (research/129 §R1).
+- **g58** (`2ff3b7062`): shop-mood latch system only; no spawner/player/
+  SpawnFlags-literal overlap — d105's sunflower feed is the keep-one
+  (§R3). **f12** (`22ce2a41f`): owns the calmed (106) field + wiring;
+  its live SpawnFlags.calmed feed is not yet landed — d105 keeps calmed
+  constants-off, the merger keeps both feed lines (§R3).
+- **g34** (`cf85a1cf9`): owns the Check\* break-drop family incl.
+  check_2x2 — the 752→6142 drop arm is its continuation's task-seed
+  (unclaimed, §R2). **g56** (`3ab631923`): void-vault UI only — owns
+  NOTHING of the Chillet chain. **f35** (`1abae9ade`): owns the bag-open
+  half — OpenChilletEgg landed there (§R2).
+- d102/d106 (gen-pass co-lanes): ranges #10-18 / #46+ — disjoint by the
+  range claim above; neither claims the runtime GrowAlch/plantDye twins.
+
+### Hash-pin state
+
+Both `world_hash.rs` pins (`SEED42_512`, `DEFAULT_WORLD`) are
+stale-by-design from #38 on (tile writes: 27/82/227/656/752/3/178/184/
+231 + the herb maturity writes); the re-pin is DEFERRED to the merge
+gate. The `a == b` determinism halves are untouched. The three
+doc-sweep ports are runtime-only and move no pin. Guide (#37) writes no
+tiles (the NPC ledger is not hashed).
