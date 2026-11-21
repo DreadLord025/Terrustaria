@@ -2046,6 +2046,12 @@ pub struct Player {
     /// (`:43472-43475`), consumed by `BloodButcherer_TryButchering`
     /// (`:44174-44186`). W4-d12 DOC-SWEEP item 4.
     pub spawn_blood_butcherer: bool,
+    /// `Player.killingCardFireType` (`Player.cs:3188`): the Dead Cells Killing
+    /// Deck (item 5461) card-draw cycle 0..3 — the four fire modes
+    /// (`ItemCheck_Shoot`'s 5461 arm `:49190-49261`): 0 single, 1 forward+back,
+    /// 2 six-card fan, 3 recall-all. Advances after every use, wraps >3 → 0;
+    /// `UpdateDead` zeroes it (`:16992`). W4-d12 DOC-SWEEP item 5.
+    pub killing_card_fire_type: i32,
     /// The `petFlag*`/light-pet bools (`Player.cs:18413-18600`'s clears),
     /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
     /// sets the 881 and 934 flags shared with buffs 284/317).
@@ -2928,6 +2934,9 @@ impl Player {
             // (`Player.cs:2896`/`:2898`'s bool field defaults).
             spawn_tentacle_spikes: false,
             spawn_blood_butcherer: false,
+            // W4-d12 DOC-SWEEP item 5 — the card-draw cycle opens at 0
+            // (`Player.cs:3188`'s int field default).
+            killing_card_fire_type: 0,
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,
@@ -3828,6 +3837,9 @@ impl Player {
         // flag read (M4-PROJ-8 phase 4) despawns the minions.
         self.num_minions = 0;
         self.slots_minions = 0.0;
+        // W4-d12 DOC-SWEEP item 5 — `Player.cs:16992`: the dead tick zeroes
+        // the Killing Deck card-draw cycle.
+        self.killing_card_fire_type = 0;
         // `Player.cs:17020` — `this.chest = -1`: the dead tick force-closes
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.

@@ -4081,6 +4081,118 @@ fn fire_non_ammo_shot(
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
             }
         }
+    } else if held.kind == 5461 {
+        // W4-d12 DOC-SWEEP item 5 — `Player.ItemCheck_Shoot`'s Dead Cells
+        // Killing Deck arm (`Player.cs:49190-49261`): the four-mode card-draw
+        // cycle (`killingCardFireType` 0..3). The C# `return`s here, so the
+        // generic tail never runs for the deck. The spawn point/aim are the
+        // shared `pointPosition`/`num4,num5` (the port's `spawn`/`shot`); the
+        // damage is the class-multiplied `Damage` (`raw as i32`, the generic
+        // tail's form), the knockback the folded `fx_kb`. Every card spawns
+        // ai0=ai1=0 and seats its spin in ai2 (the `FinalizeProjectile`
+        // aiStyle-113 rotation latch cancels the +π/2 for the card).
+        //
+        // The state-3 pre-check (`:49192-49208`): if NO active 1024 of this
+        // owner is still outbound/stuck (ai[0] != 2), the cycle resets to 0
+        // BEFORE the switch — so a recall with nothing out fires a single
+        // card instead. The scan draws nothing.
+        let owner = app.local_id as u8;
+        let mut fire_type = app.player.as_ref().map_or(0, |pl| pl.killing_card_fire_type);
+        if fire_type == 3 {
+            let any_out = app.projectiles.slots().iter().any(|s| {
+                s.active
+                    && s.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD
+                    && s.owner == owner
+                    && s.ai[0] != 2.0
+            });
+            if !any_out {
+                fire_type = 0;
+            }
+        }
+        // The card spawn helper: ai0/ai1 = 0, ai2 = the spin, the shared
+        // damage/knockback. `NewProjectile` centres the box (`:10876-10877`);
+        // the generic shoot seam takes the point as-is (the established
+        // convention — the card's box is 16×16).
+        let card_damage = raw as i32;
+        let spawn_card = |projectiles: &mut crate::projectile::ProjectilePool,
+                          vx: f32,
+                          vy: f32,
+                          spin: f32| {
+            if let Some(slot) = projectiles.spawn_with_data_ai(
+                crate::projectile::DEAD_CELLS_KILLING_DECK_CARD,
+                spawn.x,
+                spawn.y,
+                vx,
+                vy,
+                card_damage,
+                fx_kb,
+                0.0,
+                0.0,
+            ) {
+                projectiles.set_ai2(slot, spin);
+            }
+        };
+        match fire_type {
+            1 => {
+                // `:49215-49219` — forward + back, each a ±0.4 spin
+                // (`Next(2) * 2 - 1`), two draws in spawn order.
+                let spin_a = (loot_rng.next_range(0, 2) * 2 - 1) as f32 * 0.4;
+                spawn_card(&mut app.projectiles, shot.x, shot.y, spin_a);
+                let spin_b = (loot_rng.next_range(0, 2) * 2 - 1) as f32 * 0.4;
+                spawn_card(&mut app.projectiles, -shot.x, -shot.y, spin_b);
+            }
+            2 => {
+                // `:49220-49237` — the six-card fan: the aim rotated by
+                // `(π/4 / 5) * (-2.5 + i)` for i in 0..6, the spin alternating
+                // sign on `Next(2) == 0` (one draw per card, AFTER its spawn).
+                let step = std::f32::consts::FRAC_PI_4 / 5.0;
+                let mut sign = -1.0f32;
+                for i in 0..6 {
+                    let angle = step * (-2.5 + i as f32);
+                    let v = shot.rotate(Vec2::from_angle(angle));
+                    spawn_card(&mut app.projectiles, v.x, v.y, sign * 0.4);
+                    if loot_rng.next_range(0, 2) == 0 {
+                        sign *= -1.0;
+                    }
+                }
+            }
+            3 => {
+                // `:49238-49253` — the recall: every active 1024 of this owner
+                // takes velocity 0 / ai0=2 / the immunity reset + the inline
+                // Damage(). No new card spawns. The boxed walk reads the
+                // player's doll flags + luck and rides the UpdatePlayers
+                // stream (the melee/shoot pass's `Main.rand`).
+                let dolls = app.player.as_ref().map_or((false, false), |pl| pl.doll_flags());
+                let luck = app.player.as_ref().map_or(0.0, |pl| pl.luck_state.luck);
+                let recalled = app.projectiles.recall_killing_deck_cards(owner);
+                for slot in recalled {
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    app.projectiles.killing_deck_recall_damage(
+                        slot,
+                        &mut app.npcs,
+                        dolls,
+                        rng,
+                        luck,
+                    );
+                }
+            }
+            _ => {
+                // `:49212-49214` (default / state 0) — the single card, one
+                // ±0.4 spin draw.
+                let spin = (loot_rng.next_range(0, 2) * 2 - 1) as f32 * 0.4;
+                spawn_card(&mut app.projectiles, shot.x, shot.y, spin);
+            }
+        }
+        // `:49255-49259` — the cycle advances after EVERY use, wraps >3 → 0.
+        // (The pre-check may have folded fire_type to 0, but the C# increments
+        // the FIELD, which the pre-check also wrote — so the advance reads the
+        // post-pre-check value.)
+        if let Some(pl) = app.player.as_mut() {
+            pl.killing_card_fire_type = fire_type + 1;
+            if pl.killing_card_fire_type < 0 || pl.killing_card_fire_type > 3 {
+                pl.killing_card_fire_type = 0;
+            }
+        }
     } else if tr_core::whip::is_whip(proj) {
         // S1-P-i24 — `Player.ItemCheck_Shoot`'s whip arm
         // (`Player.cs:48655-48690`): the 18 whip items fire
@@ -10481,6 +10593,51 @@ mod tests {
         assert_eq!(resolved.damage, 10, "the resolver returns the unscaled num");
         let fused = 31 + resolved.damage;
         assert_eq!((fused as f32 * 1.25) as i32, 51, "one fused ×1.25");
+    }
+
+    /// W4-d12 DOC-SWEEP item 5 — the Killing Deck's four-mode card cycle
+    /// (`Player.cs:49190-49261`): use 1 (state 0) fires ONE card, use 2
+    /// (state 1) fires TWO (forward + back), use 3 (state 2) fires the SIX-card
+    /// fan, use 4 (state 3) recalls them all (ai0=2, velocity 0) and spawns
+    /// nothing. The cycle field advances 0→1→2→3→0. The deck is autoReuse, so
+    /// holding the button re-fires every `useTime` (20) ticks.
+    #[test]
+    fn w4_d12_doc_sweep_the_killing_deck_cycles_single_pair_fan_recall() {
+        let mut app = shooter_rig(5461, "Dead Cells Killing Deck", &[]);
+        let screen = app.screen_size().into();
+        let cards = |a: &App| {
+            a.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD)
+                .count()
+        };
+        let mut log = Vec::new();
+        // Use 1 (state 0): the single card.
+        hold(&mut app, screen, 1, &mut log);
+        assert_eq!(cards(&app), 1, "state 0 fires one card (:49213)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 1);
+        // Run the cadence out to the next shot (useTime 20).
+        hold(&mut app, screen, 20, &mut log);
+        // Use 2 (state 1): forward + back → 3 total.
+        assert_eq!(cards(&app), 3, "state 1 adds two (:49217-49218)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 2);
+        hold(&mut app, screen, 20, &mut log);
+        // Use 3 (state 2): the six-card fan → 9 total.
+        assert_eq!(cards(&app), 9, "state 2 adds six (:49227-49235)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 3);
+        hold(&mut app, screen, 20, &mut log);
+        // Use 4 (state 3): the recall — no new card, all nine return.
+        assert_eq!(cards(&app), 9, "state 3 spawns nothing (:49238-49253)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 0, "wraps >3 → 0");
+        let returning = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD)
+            .filter(|p| p.ai[0] == 2.0 && p.vel == Vec2::ZERO)
+            .count();
+        assert_eq!(returning, 9, "every card takes ai0=2 / velocity 0 (:49245-49246)");
     }
 
     #[test]

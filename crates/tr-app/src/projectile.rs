@@ -22202,6 +22202,34 @@ impl ProjectilePool {
         Some(slot)
     }
 
+    /// W4-d12 DOC-SWEEP item 5 — the Killing Deck card's state-3 recall:
+    /// `ItemCheck_Shoot`'s 5461 arm, `case 3` (`Player.cs:49238-49253`): every
+    /// active 1024 of this owner takes `velocity = Zero`, `ai[0] = 2`,
+    /// `netUpdate2 = true`, `ResetLocalNPCHitImmunity()` then `Damage()`. The
+    /// recall returns the slots that need the inline boxed damage walk (the
+    /// 113 dispatch's `damage_pve_boxed` convention — the card's stuck→return
+    /// transition `:40783-40784` runs the same pair). The C# scans all 1000
+    /// slots in order; the port walks its slot vec the same way. The ×1.5
+    /// return multiplier (`:14553`) and the +6 hitbox (`:14988`) ride the
+    /// boxed walk (already ported, `damage_pve_boxed`).
+    pub(crate) fn recall_killing_deck_cards(&mut self, owner: u8) -> Vec<usize> {
+        let mut recalled = Vec::new();
+        for (i, p) in self.slots.iter_mut().enumerate() {
+            if p.active && p.kind == DEAD_CELLS_KILLING_DECK_CARD && p.owner == owner {
+                // `:49245-49248` — the recall writes.
+                p.vel = Vec2::ZERO;
+                p.ai[0] = 2.0;
+                p.net_update = true; // netUpdate2 folds to the one net flag
+                // `ResetLocalNPCHitImmunity` (`:43719-43722`): the per-slot
+                // NPC immunity array clears.
+                let base = i * 256;
+                self.local_immunity[base..base + 256].fill(0);
+                recalled.push(i);
+            }
+        }
+        recalled
+    }
+
     /// `Kill()`'s gem arm (`Projectile.cs:75425-75484`): the gem bolts' death
     /// burst. The sound and the 15 (+30) dust spawns are SKIPPED (no sound or
     /// dust layer in the pool), and the `AoeExplosion` feature's damage half
@@ -24237,6 +24265,23 @@ impl ProjectilePool {
                 }
             }
         }
+    }
+
+    /// W4-d12 DOC-SWEEP item 5 — the Killing Deck recall's inline `Damage()`
+    /// (`Player.cs:49249`): the boxed walk for one recalled card. The caller
+    /// (`fire_killing_deck_shot`) owns the NPC vec + the player's doll flags /
+    /// luck / the `UpdatePlayers` stream; the immunity reset already ran in
+    /// [`recall_killing_deck_cards`]. The ×1.5 return multiplier + the +6
+    /// hitbox ride `damage_pve_boxed` (the ai[0]==2 state the recall set).
+    pub(crate) fn killing_deck_recall_damage(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
     }
 
     /// The box walk `Projectile.Damage()` (`:14087-14119`) actually runs:
