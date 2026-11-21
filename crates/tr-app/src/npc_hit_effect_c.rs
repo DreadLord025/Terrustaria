@@ -198,6 +198,7 @@
 //! | 899-907 | `:87075-87087` | the zombie block: 319 ZombieDoctor (5 gores) + 320 ZombieSuperman (4 gores) |
 //! | 908-917 | `:87092-87105` | the zombie block: 321 ZombiePixie + 223 ZombieRaincoat (5-gore ladders) |
 //! | 918-927 | `:87110-87131` | the zombie fall-through: 132 BaldZombie + 189/435 TwiggyZombie (head + shared 4/4/5/5 tails) |
+//! | 928-937 | `:87122-87131` | the zombie fall-through: 251 Eyezor + the generic else-head (3) (head + shared tails) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5122,9 +5123,11 @@ fn moss_zombie_death(
 /// (sites 908-912: ladder 457/458/459) and the 223 ZombieRaincoat (sites
 /// 913-917: ladder 309/310/311). The fall-through tail (the per-type head
 /// at scale 1 + the shared 4/4 at +20 and 5/5 at +34) is started with the
-/// 132 BaldZombie (sites 918-922: head 154) and the 189/435 TwiggyZombie
-/// (sites 923-927: head 246). The remaining zombie types land with the next
-/// batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
+/// 132 BaldZombie (sites 918-922: head 154), the 189/435 TwiggyZombie
+/// (sites 923-927: head 246), the 251 Eyezor (sites 928-932: head 372) and
+/// the generic else-head 3 (sites 933-937: types 3/52/53/536/590/591/430).
+/// The 186/432 PincushionZombie's extra 242 gores and the 187/433
+/// SlimedZombie's blue-dust detail land with the next batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
 /// (the wiring wave's hit-half detail is noted per arm).
 fn zombie_block_death(
     npc: &Npc,
@@ -5273,16 +5276,26 @@ fn zombie_block_death(
         return;
     }
     // `:87108-87139` — the fall-through tail: the per-type head (scale 1),
-    // then the shared 4/4 at +20 and 5/5 at +34. This commit ports the 132
-    // BaldZombie (head 154) and the 189/435 TwiggyZombie (head 246); the
-    // 186/432/251/else heads land with the next batches.
+    // then the shared 4/4 at +20 and 5/5 at +34. The 132 BaldZombie (head
+    // 154), the 189/435 TwiggyZombie (head 246), the 251 Eyezor (head 372)
+    // and the generic else (head 3, any type not 187/433/186/432). The
+    // 186/432 PincushionZombie's extra 242 gores land with the next batch;
+    // the 187/433 SlimedZombie has NO head (just the shared tails).
     let head: Option<i32> = match npc_type {
         132 => Some(154), // :87110
         189 | 435 => Some(246), // :87118
-        _ => None,
+        251 => Some(372), // :87122
+        187 | 433 | 186 | 432 => None, // no head here (the wiring/next batch)
+        _ => Some(3), // :87126 — the generic else head
     };
     if let Some(h) = head {
         gore.new_gore(rng, world, pos, vel, h, 1.0);
+    }
+    // The shared tails fire for EVERY fall-through type (including the
+    // headless 187/433), but the 186/432 extra gores and the 187/433
+    // blue-dust detail are the next batches' — so only run the tails for
+    // the types this commit owns.
+    if !matches!(npc_type, 187 | 433 | 186 | 432) {
         gore.new_gore(rng, world, mid, vel, 4, 1.0); // :87128
         gore.new_gore(rng, world, mid, vel, 4, 1.0); // :87129
         gore.new_gore(rng, world, low, vel, 5, 1.0); // :87130
@@ -5925,13 +5938,16 @@ pub fn hit_effect_c(
         moss_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     // `:86937-87139` — the big zombie block; the 104/632/331/332/109/161/
-    // 431/162/188/434/200/436/319/320/321/223/132/189/435 (sites 853-927);
-    // the rest lands with the next batches.
+    // 431/162/188/434/200/436/319/320/321/223/132/189/435/251 + the generic
+    // else-head types 3/52/53/536/590/591/430 (sites 853-937); the 186/432/
+    // 187/433 land with the next batches.
     if (npc_type == 104 || npc_type == 632 || npc_type == 331 || npc_type == 332 || npc_type == 109
         || npc_type == 161 || npc_type == 431 || npc_type == 162 || npc_type == 188
         || npc_type == 434 || npc_type == 200 || npc_type == 436 || npc_type == 319
         || npc_type == 320 || npc_type == 321 || npc_type == 223 || npc_type == 132
-        || npc_type == 189 || npc_type == 435)
+        || npc_type == 189 || npc_type == 435 || npc_type == 251 || npc_type == 3
+        || npc_type == 52 || npc_type == 53 || npc_type == 536 || npc_type == 590
+        || npc_type == 591 || npc_type == 430)
         && npc.hp <= 0
     {
         zombie_block_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
@@ -9361,6 +9377,24 @@ mod tests {
             assert_eq!(gore.slot(0).scale, 1.0);
             assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
             assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        }
+    }
+
+    /// `NPC.cs:87122-87131` — the zombie fall-through: 251 Eyezor head
+    /// 372, the generic else-head 3 (types 3/52/53/536/590/591/430), then
+    /// the shared 4/4 at +20 and 5/5 at +34.
+    #[test]
+    fn w4_f10_the_zombie_fallthrough_eyezor_and_generic() {
+        let w = air();
+        for (ty, head) in [(251, 372), (3, 3), (52, 3), (53, 3), (536, 3), (590, 3), (591, 3), (430, 3)] {
+            let n = boss(100.0, 100.0, 40.0, 56.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(857);
+            let mut out = HitEffectOutcomeC::default();
+            zombie_block_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![head, 4, 4, 5, 5], "zombie {ty}");
         }
     }
 
