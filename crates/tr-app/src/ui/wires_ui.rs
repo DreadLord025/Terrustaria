@@ -21,11 +21,11 @@
 //! Deviations (recorded in ANALYSIS "The wiring tool-mode UI (S1-W4-g81)"):
 //! * the gamepad branches fold out — `PlayerInput.UsingGamepad` is always
 //!   false in the port (the `lang.rs:230` precedent);
-//! * `Player.cursorItemIconEnabled`/`cursorItemIconID` (the
-//!   `DrawInterface_40` cursor-icon system) are unported; the one read
-//!   that matters here — the Multicolor Wrench's in-reach icon latch
-//!   (`Player.cs:46756-46760`) — rides the `icon_enabled` stand-in the
-//!   caller computes from the held kind + reach;
+//! * `Player.cursorItemIconEnabled` is the port's sim latch
+//!   (`App.cursor_item_icon_enabled`, the wiring/mining in-reach write
+//!   `Player.cs:46756-46760`/`:45620-45624`, S1-W4-g81); `cursorItemIconID`
+//!   stays 0 for the wiring tools — the ID override system is the g86
+//!   research/244 seed's (the `:130` ID gate never trips here);
 //! * `Main.HoveringOverAnNPC` / `Main.SmartInteractShowingGenuine` /
 //!   `player.lastMouseInterface` have no port state — false stand-ins
 //!   (the smart-interact subsystem is a recorded unported leftover,
@@ -105,10 +105,11 @@ pub struct RadialInputs {
     pub dead: bool,
     /// `Main.mouseItem.type > 0` (`:124`/`:163`).
     pub mouse_item: bool,
-    /// The `cursorItemIconEnabled` stand-in: the Multicolor Wrench's
-    /// in-reach icon latch (`Player.cs:46756-46760`); the icon ID stays
-    /// 0 for the wiring tools (`ItemIconCacheUpdate` writes only the
-    /// cache, `Main.cs:46515-46520`).
+    /// `Player.cursorItemIconEnabled` — the port's sim latch
+    /// (`App.cursor_item_icon_enabled`, the wiring/mining in-reach write
+    /// `Player.cs:46756-46760`/`:45620-45624`); the icon ID stays 0 for
+    /// the wiring tools (`ItemIconCacheUpdate` writes only the cache,
+    /// `Main.cs:46515-46520`), so the `:130` ID gate never trips.
     pub icon_enabled: bool,
     /// `Main.drawingPlayerChat` (`:119`).
     pub chat_open: bool,

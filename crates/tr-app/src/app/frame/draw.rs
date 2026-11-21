@@ -1603,12 +1603,12 @@ impl App {
                                 held.count,
                                 &mut self.wires_radial.last_actuator_enabled,
                             );
-                            // The Multicolor Wrench's in-reach icon latch
-                            // (`Player.cs:46756-46760`) — the cursorItemIconEnabled
-                            // stand-in (the icon ID stays 0 for the wiring tools).
                             // The cursor-icon latch (`Player.cs:46756-46760`)
                             // — the sim's per-update in-reach write (the
-                            // `cursor_item_icon_enabled` field, S1-W4-g81).
+                            // `cursor_item_icon_enabled` field, S1-W4-g81;
+                            // the icon ID stays 0 for the wiring tools, so
+                            // the `:130` ID gate never trips — the g86
+                            // research/244 override system owns the ID).
                             let icon_enabled = self.cursor_item_icon_enabled;
                             let over_ui_slot = self.slot_at_mouse().is_some()
                                 || self.coin_ammo_at_mouse().is_some()
