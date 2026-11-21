@@ -341,3 +341,58 @@ tier-2/3 thresholds — zero disagreements):
   `NPCKillsTracker.RegisterKill` shape (`:23-33`), faithful for all 35
   (the 328 credit included, per the vanilla name-row census above).
 
+## 9. FINAL: the research/108 cross-ref (the extend census, d37 tip `bdd59afba`)
+
+The 108 EXTEND re-census (18 pushed claimants + 4 local-only) re-confirms
+d38's corridor at the CURRENT tip `6f9dd02d`:
+
+- **Protocol band: 281-337 vanilla-free, CONFIRMED** (E0 row: "+35 |
+  281-337 | portrait gap CLOSED"). The task's proto-band question
+  ("429-461?") is **NO** — 429-461 is d35's port-local band (renumbered
+  698-730 in the canonical plan); d38 is protocol==vanilla per 108 §1/§3
+  and the extend E3 ("d34/d38/d40 keep pushed … pairwise collision-free").
+  Mechanically re-verified here (`tools/_d38_final_census.py`): all 35
+  `to_u16` ids == their `cs_id` resolutions (hand rows + the S1-F-3
+  bestiary net-id fallback, `data.rs:3363-3370`), band [281,337], the 22
+  holes exactly the base-owned ids 108 §2b lists (288/305-315/319-321/
+  325-327/329-332).
+- **The two d38 dedupes** (E3): GiantCursedSkull keep d38@289 (drop
+  c3@289), PumpkingBlade keep d38@328 (drop c6@328) — both are d38's
+  vanilla-free ids; the dropped lanes keep their AI/draw/sound work.
+  d38's 328 entry question (§8 GAP-3) is independent of the dedupe: c6's
+  dropped port also drew the blade, the bestiary row is d38's alone.
+- **Count pins** (E4 supersedes §6): the union is 550 kinds / 489
+  ENTRIES / ≤357 slots / 446 static NPC sheets / 103 cues / max proto
+  761. d38's contributions to those pins: +35 kinds, +35 entries (the
+  328 row is the one vanilla-exclusion candidate, §8), +35 slots
+  (already landed, 181→216), +35 static sheets (which the 113 §10.6
+  step-7 lazy form moves to the per-world half — the 446 pin is the
+  EAGER-form count, the lazy union's NPC rows leave it).
+- **The findframe cross-ref** (E5): 108's checklist cites f26/f27 at
+  their older tips (`63417edd`/`0b8e225d`); the CURRENT tips
+  (`7f38fd345`/`1a24a133c`) plus d44's `7c430def6` master table are the
+  authoritative wiring-round input — §7 above is the d38-band slice of
+  that table, re-derived mechanically, and its 7-stand-in gap list is
+  the d38 half of the 68 §5 worklist.
+
+## 10. FINAL witnesses
+
+- `tools/_d38_final_census.py` (RUN, passed): the 35-kind extraction
+  (to_u16 batch blocks), cs_id==proto proof, the SetDefaults census
+  (lifeMax/damage/rarity/boss/catchItem per kind, the OR-chain and
+  range-block parsing), the FindFrame case census (34 covered + 328
+  NO-CASE), the npcFrameCount literal rows (all 35, `Main.cs:67082`'s
+  697-entry initializer).
+- `tools/_d38_final_ff.py` (RUN, passed): the port find_frame arm census
+  (35/35 arms, zero missing) + the sibling-tip claim scan.
+- `tools/_d38_final_unlock.py` (RUN, passed): the C# vs port banner/
+  item/kills chains — all 35 agree; the 6-critter provider gap, the
+  5 rarity rows, the 328 Hide exclusion.
+- `tools/_d38_final_lazy.js` (RUN, passed): E35/L91 × boot-font twins,
+  verify() + double-run determinism on every layout (§6 table).
+- `crates/tr-app/src/bestiary.rs`
+  `w4_d38_final_the_unlock_ladders_match_the_banner_chain` — all 35
+  kinds' `kills_needed_for` values pinned (290 Paladin=25, the other 34
+  =50 — the 6 critters' ladder values are what the port computes today,
+  the GAP-1 provider difference is documented not asserted away), the
+  6 critter rows + the 328 Hide row cited; WRITTEN, NOT RUN (code-only).
