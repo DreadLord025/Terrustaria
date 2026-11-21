@@ -277,6 +277,53 @@ passes positions only and needs NO edit. No RNG draw order changes
 (the atan2 is draw-free); the streams stay aligned. Owner: f6-owner
 or the mount-resolve merger (merge-order step 7).
 
+### 7.2 World-side Dust.cs coverage FINAL — the 0-340 type sweep (d50-lane gap-table)
+
+Census basis: C# `Dust.cs` full read (`UpdateDust` :420-2423, spawn
+tweaks :214-252, `GetAlpha` :2425-2727, `GetColor` :2729-2772, visual
+accessors :2774-2790) vs the fetched d50 tip `2e243a2d`
+(`dust_physics.rs` 2154 ln, `dust_table.rs` 658 ln, `particles.rs`
+2181 ln) + main's `dust_lights.rs`/`minecart.rs` tick + d130 tip
+`ec1d73c7` (`snow.rs`, its `particles.rs`/`minecart.rs` deltas).
+Mechanical checks: the C# `this.type` set of GetAlpha (123 types)
+diffed against the Rust arm set (only 327 absent — the documented
+drop); every `dust.type` condition line of :420-2400 extracted and
+matched arm-for-arm against `type_chain`/`pre_move`/`update_dust`.
+
+**Per-column verdict (types 0-340; unnamed types take the generic
+paths — gravity :1819, drag :2071, rotation rebuild :2079, fadeIn
+:2119, noGravity tail :2335, GetAlpha default — ALL ported):**
+
+| Column | File (owner) | Verdict |
+| ------ | ------------ | ------- |
+| Spawn-time tweaks `:214-252` | particles.rs `new_dust` (main) | COMPLETE — torch family (incl 269), 127/187, 308, 33/52/266/98-105, 41, 80, 34/35/152 + the 34 wet-probe deactivate; ChildSafety re-type both copies (:194/:445) |
+| Pre-move `:468-476` | dust_physics.rs `pre_move` (d50) | COMPLETE — 299-301/305 shrink+lift, 35 lavaBubbles++ |
+| Physics chain `:478-2334` | dust_physics.rs `type_chain` (d50) | COMPLETE per-type — every arm present incl. the dead 235 vector3 draws, the 159/164/173/160/162 child-spawn sink, 304 sine/ladder, 43 pre-ramp dark-kill, 27 burn-down, 76/268/270/271, 41/44 clamps, second chain 130-134/278/219-223/226/331/272 with the tail-suppression bool. UNWIRED (the live `minecart.rs::tick` dispatches only 213/268; d130 adds 76+splash) — wiring is the d51-54/e1-e4 wave per the module doc |
+| Generic head/tail `:426-447`, `:2335-2422` | particles.rs `update_dust` (main) | COMPLETE — incl. the verbatim dead dCount nibbles + recompute ladder |
+| GetAlpha/GetColor/visual accessors | dust_table.rs (d50 = main, unchanged) | COMPLETE minus the 2 documented drops (below) |
+| Light `Lighting.AddLight` (94 sites) | dust_lights.rs (S1-E-5, main; **UNCHANGED on d50 tip** — empty diff vs main) | **42/94 ported — the 52-site remainder is the ONE real port-wide gap** (below) |
+
+**GAP-TABLE for the d50-lane (or the S1-E-5 follow-up it hands to):**
+
+| # | Gap | Types / sites | Detail |
+| - | --- | ------------- | ------ |
+| G1 | **The 52 second-chain/RNG-adjacent AddLight sites** (51 reachable + 1 dead) | 159 `:1061`, 164 `:1099`, 173 `:1137`, 160/162 `:1208/:1212`, 168 `:1241`, 244-247 `:1399`, 43 `:1441`, 15/57/58 `:1470/:1474/:1478`, 110-114 `:1501-1537`, 311/312/313 `:1546/:1555/:1564`, 66 `:1588`, 267 `:1619`, 20/21/231 `:1635/:1640/:1644`, 27/45 `:1692`, 55/56/73/74 `:1706/:1714/:1722/:1731`, 71/72 `:1743`, 35 `:1896`, 67/92 `:1926`, 185 `:1939`, 107 `:1950`, 35-wet `:1994`, 68 `:2004`, 70 `:2013`, 41 `:2041`, 44 `:2069`, 130-134 `:2139/:2143/:2147/:2151`, 278 `:2182`, 219-223 `:2214/:2218/:2222/:2226`, 226 `:2254`, 331 `:2299`, 272 `:2312`; DEAD: 226's customData-Color `:2275` (field dropped, never fires) | dust_lights.rs's own module doc promises these "land with S1-E-3's chain port" — d50's chain port (`cb07d2b6`) cites each skipped AddLight but did NOT extend dust_lights.rs (verified: identical to main at d50 tip). The physics mutations they interleave with ARE ported, so the feed can be added as post-update reads exactly like the landed 206/174/230 compensation retire note. This is the ONLY type-arm coverage gap port-wide. |
+| G2 | **76-arm `Main.snowDust++` merge seam** (`:1747`) | 76 | d50's `type_chain` 76 arm cites+skips the increment ("the pool does not carry it") — but d130's particles.rs NOW carries `pool.snow_dust` (reset `:428` at the head, fed by d130's `snow::type_76_arm` through the live minecart tick). At the d50×d130 merge the `type_chain` 76 arm must feed the counter (one env field or a pool write) or the snowfall budget (`Main.cs:13057`) reads 0. Cross-ref §5 row 2 fold F4 (the counter is also the F4 hoist target). |
+| G3 | GetAlpha type 157 (`:2627-2651`) | 157 | DOCUMENTED DROP (dust_table.rs module doc): reads `Main.mouseTextColor`; falls to the default formula. Not a new gap — recorded so the sweep is closed. |
+| G4 | GetAlpha type 327 (`:2658-2676`) | 327 | DOCUMENTED DROP: `!Main.dayTime` gate + THREE `Main.rand.NextFloat()` draws in the DRAW pass + DiscoR/G/B. The only GetAlpha type absent from the Rust arm set (mechanical diff). The disco statics now have a port-wide seam precedent (g75 `d118f7ba` `set_disco_rgb` latch); the draw-pass RNG placement needs its own census when picked up. |
+| G5 | customData follower halves (dropped field) | 325, 86-92/286, 240, 259/6/158/135-int, 263/264, 230, 182, 261, 229/228/279, 269, 304, 31-float/NPC, 267, 219-223, 226-Player/Color, 272-Player/NPC | Port-wide recorded drop (the `Dust` record has no customData); each cited at its arm in dust_physics.rs. The 31 `else if (noGravity)` `:1297` reachability flip is ported. NOT gaps — closure rows. |
+| G6 | 235 fadeIn homing non-zero player index | 235 | Documented single-player approximation (`env.player_center` for index 0, default-ctor (10,21) otherwise) — cited in DustPhysicsEnv; closure row. |
+
+Types 0-340 with NO named arm anywhere (e.g. 0-4, 7-13, 17-19, 22-26,
+28, 30, 36-40, 42, 47-51, 53-54, 69, 77-79*, 81-85, 93-97, 108-109,
+115-122, 125-126, 128-129, 136-138*, 143-151, 153, 155, 161, 165-167,
+171, 176-179, 189-196, 198-203, 207-210, 212, 214-217, 224-225, 227,
+232-233, 236-239, 241, 243, 248-253, 256-257, 265, 275-277, 280-283,
+285, 287, 289-291, 314-321, 330, 332-340; *79 rotation-exempt,
+138/197/180/181/183 GetAlpha-only — all named exceptions checked)
+ride the generic paths, which are ported in full. **No physics arm is
+missing port-wide; the owed work is G1 (lights) + G2 (counter seam).**
+
 ## Verification
 
 Code-only per the task brief: no cargo/tests/rustfmt/graphify. Every
