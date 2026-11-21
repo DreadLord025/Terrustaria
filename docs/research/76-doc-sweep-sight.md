@@ -1,5 +1,14 @@
 # 76 — DOC-SWEEP lane 4: the remaining sight-mechanics census (W4-g78)
 
+> **SUPERSEDED IN PART by research/77 (the wiring phase, 2026-11-21):** the
+> Hunter NPC-tint chain's 14 debuff arms + the behind-tiles black-out scan
+> are now WIRED at the uncontested `entities.rs` colour site (the G6
+> `npc_key` widened); the spelunker helper carries the d9-canonical bitset
+> + the attach-ready AI arms. The still-UNWIRED halves (the spelunker
+> dispatch, the Hunter-floor threading, the 657 use/break arms) have EXACT
+> attach hunks published in research/77 for the contested-seam merger. The
+> census below stands as the C# evidence.
+
 > W4 lane g78 · DOC-SWEEP phase · 2026-11-21 · sources: decompiled (Main.cs,
 > Player.cs, NPC.cs, TileDrawing.cs, WorldGen.cs, Wiring.cs, Item.cs,
 > SpelunkerProjectileHelper.cs, TileObjectData.cs, ID/{TileID,NPCID,ItemID}.cs)

@@ -39383,3 +39383,66 @@ change.
 Verification: code-only — every arm re-read against the cited windows; 14
 witness tests WRITTEN, NOT RUN (spelunker_helper 6, npc_hunter_tint 6,
 player.rs 1, edit/place.rs 1).
+
+### The wiring phase (W4-g78, 2026-11-21 — research/77)
+
+The DOC-SWEEP's two PORTED-UNWIRED modules advance:
+
+* **The NPC debuff-tint family is WIRED.** The 14-arm
+  `GetNPCColorTintedByBuffs` chain (`Main.cs:22939`) + the behind-tiles
+  black-out scan (`:22922-22938`, BEFORE the chain, the 113/114 WoF
+  exemption, the RAW-light zero-brightness test) run at the
+  `render/entities.rs` colour site — the ONE window the per-branch hunk
+  census proved uncontested (every npc-kind/style lane's `entities.rs`
+  hunks land at :3170+ or the signature tail :2156, never :2176-2181).
+  `tint_flags_from_buffs` folds the live `Npc.buffs` bar (the 14
+  `UpdateNPC_BuffSetFlags` ids via `has_buff`'s immune gate; the Golem
+  245-248 `canDisplayBuffs` refusal). **Deliberate deviation
+  (minimal-delta gate):** the byte round-trip (`Lighting.GetColor`'s
+  `(int)(v*255)` quantisation) runs ONLY when the chain is non-identity —
+  a clean NPC keeps the pre-wiring float shade bit-for-bit; the C#'s
+  UNCONDITIONAL GetColor byte quantisation is a residual fidelity item
+  (the whole NPC draw would shift ≤1/255 per channel; recorded, not
+  landed, to keep the buff-free pixel delta zero).
+* **The G6 `npc_key` is widened** in the uncontested free
+  `npc.rs::render_key` (:18631): `tint_key`'s 14-bit buff hash rides the
+  per-NPC fold (the d70 `moon_lord_strength` key precedent). A buff-free
+  world (Golem included — the refusal is kind-static, already keyed)
+  keeps the pre-wiring key bit-for-bit; a midas/ichor/poison gain or
+  expiry rebuilds the cached world range. NO `WorldFrameKey` struct field
+  added (the hash rides the existing `npc_key` slot — the struct itself
+  is contested by g12/g80/f14/d70).
+* **The Hunter floor stays UNWIRED** (`hunter_active`/`hunter_friendly`
+  false in the fold): the `detectCreature` threading needs the contested
+  `draw_npcs` signature tail (c39/d70) + the `DoDraw_WallsTilesNPCs`
+  draw-order swap (`Main.cs:63290-63299`, every tiles.rs lane). Exact
+  hunks: research/77 §2. The debuff arms are independent of the potion,
+  so the wired family is complete without it.
+* **The spelunker helper**: the table becomes the d9-canonical `TileSet`
+  bitset VERBATIM (the keep-one intermediate; the census witness now
+  proves bitset==49-id-list for EVERY id in 0..TILE_COUNT); the
+  caller-side `spot_in_range` distance gate lands; the 473/1008 AI arms
+  gain the attach-ready `SpelunkerSpot` forms (the legacy `None` path is
+  bit-identical). The C# caller census corrects to THREE sites (the held
+  3002 `spelunkerTimer`, `Player.cs:50094-50099`, was missed). The
+  dispatch swap + the pool fields + the pass head/tail + the held-3002
+  attach are contested — exact hunks + the DropRng-stream verdict:
+  research/77 §1.
+* **The 657 use-arm + Check2xX break-drop**: exact hunks published for
+  c42d (research/77 §3) — the `interact_at` kind-literal arm + the
+  `doors.rs` Mech-28/`switch_monolith_use` match arm (e21's kind-gated
+  flip is the single source) + the `check_monolith` sibling of
+  `check_clock` (height 3, the 410 lit-row +2 quirk, the per-kind drop
+  table, the origin-cell spawn). The 32×32-box centre gap is PRE-EXISTING
+  across every `ObjectDrop` consumer (the clock/statue/dial share it) —
+  the merger fixes it once at the spawn seam.
+* **The keep-one dedupe hunks** (research/77 §4): d9's bitset is
+  canonical; g78's copy re-exports it, d13's inline table deletes, d56's
+  tr-render copy is the crate-boundary exception (or the words move to a
+  shared hand-transcribed tr-core module — NOT the generated tiledata/).
+
+RNG: the wired tint chain + black-out draw ZERO (pure colour maths); the
+G6 key-widen changes no stream. The spelunker attach forms draw only
+through the caller's stream when attached (the `None` path draws nothing).
+9 new witnesses WRITTEN, NOT RUN (spelunker_helper 1, npc_hunter_tint 4,
+projectile_ai_light_items 4).

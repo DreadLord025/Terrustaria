@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 64 | Echo-coating tile/wall draw census & port (W4-g78: the sight chain + IsVisible/wall/black-coverage residuals; code-only) | `64-tile-echo-draw-census.md` | ✅ |
 | 76 | DOC-SWEEP lane 4 sight-mechanics census & port (W4-g78: the 4 potion sight flags + the SpelunkerProjectileHelper + the Hunter NPC-tint chain PORTED-UNWIRED; the 657 use/break + goggles slot-split census; code-only) | `76-doc-sweep-sight.md` | ✅ |
+| 77 | Wiring-phase attach contracts (W4-g78: the NPC debuff-tint + black-out WIRED at the uncontested colour site + the G6 npc_key widen; the spelunker dispatch / hunter threading / 657 use+break / keep-one dedupe hunks PUBLISHED for the contested seams; code-only) | `77-wiring-attach-contracts.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
