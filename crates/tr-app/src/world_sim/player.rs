@@ -1445,24 +1445,73 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // at the `Hurt` TAIL — after the cuffs' mana text (`:38291`) and
             // the retaliate block (`:38401-38517`), so its draw follows
             // theirs on the stream. The C# plays the local player's hurt
-            // sound non-positionally (`Player.cs:38572`). S1-E-21f upgrades
-            // the plain play to case 1 (`LegacySoundPlayer.cs:503-515`): the
-            // `Main.rand.Next(3)` slot pick rides the `UpdatePlayers` stream
+            // sound non-positionally (`Player.cs:38572`). W4-e10 ports the
+            // WHOLE decision tree (`:38569-38712`): stoned → voiceOverride →
+            // mount → werewolf → frost/bone armor → DST-world → voiceVariant.
+            // Every gameplay draw rides the `UpdatePlayers` stream
             // (`Player.Hurt` runs under the `Main.cs:17754` swap), only after
-            // the unpositioned gate. The port has no voice setting — variant
-            // 1, `voicePitchOffset` 0 (`Player.cs:38699-38704`).
+            // the attenuation gate; the style façades' `GetRandomPitch`
+            // NextFloat rides the audio-only stream.
             if p.take_hurt_sound().is_some() {
-                app.audio.play_hurt_sound(
-                    0.0,
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                );
+                let dont_starve = app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+                let remix = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+                let voice = p.hurt_voice(dont_starve, remix);
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                match voice {
+                    Some(crate::player::HurtVoice::Stoned) => {
+                        // `:38578` — `PlaySound(0, vector)`, case 0 Dig.
+                        app.audio.play_no_space_sound(-1.0, -1.0, rng);
+                    }
+                    Some(crate::player::HurtVoice::Male(pitch)) => {
+                        app.audio.play_hurt_sound(pitch, rng);
+                    }
+                    Some(crate::player::HurtVoice::Female(pitch)) => {
+                        app.audio.play_female_hurt_sound(pitch, rng);
+                    }
+                    Some(crate::player::HurtVoice::Style(name, pitch)) => {
+                        app.audio.play_voice_style(name, -1.0, -1.0, pitch, rng);
+                    }
+                    Some(crate::player::HurtVoice::Chicken) => {
+                        // `:38602-38609` — the `Next(5) == 0` rare pick.
+                        let name = if rng.next_range(0, 5) == 0 {
+                            "ChickenHurtRare"
+                        } else {
+                            "ChickenHurt"
+                        };
+                        app.audio.play_voice_style(name, -1.0, -1.0, 0.0, rng);
+                    }
+                    Some(crate::player::HurtVoice::Npc(id, style)) => {
+                        app.audio.play_hurt_npc_int(id, style, -1.0, -1.0, rng);
+                    }
+                    None => {}
+                }
             }
             if p.take_death_sound().is_some() {
-                // S1-E-21f — `Player.PlayDeathSound`'s default arm plays at
-                // `base.position` (`Player.cs:38745`), the TOP-LEFT — not the
-                // centre. Case 5 (`LegacySoundPlayer.cs:696-705`) draws
-                // nothing; the attenuation gate still applies.
-                app.audio.play_death_sound(p.x, p.y);
+                // W4-e10 — `Player.PlayDeathSound`'s decision tree
+                // (`Player.cs:38715-38746`), at `base.position` (the
+                // TOP-LEFT, not the centre). Case 5 draws nothing; the style
+                // arms ride the wave-A façade (the NextFloat on the
+                // audio-only stream).
+                let dont_starve = app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+                let tenth = app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+                match p.death_voice(dont_starve, tenth) {
+                    crate::player::DeathVoice::Killed => {
+                        app.audio.play_death_sound(p.x, p.y);
+                    }
+                    crate::player::DeathVoice::Style(name) => {
+                        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        app.audio.play_voice_style(name, p.x, p.y, 0.0, rng);
+                    }
+                }
             }
             // `Player.SpawnFastRunParticles` (`Player.cs:20214`): the
             // fast-run footstep at the player's top-left position — the
@@ -1518,6 +1567,30 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.
             if let Some((idx, sx, sy)) = p.take_flap_sound() {
+                app.audio.play_use_sound(
+                    idx,
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-e10 — the `WingFrame` rocket cue (`Player.cs:27154`/
+            // `:29478`/`:30172`): wave A's façade. It drains BEFORE the boot
+            // trigger cue — the C# `WingFrame` (`:26820`) runs ahead of the
+            // rocket trigger (`:26867`) in `Player.Update`.
+            if let Some((idx, sx, sy)) = p.take_wing_rocket_sound() {
+                app.audio.play_use_sound(
+                    idx,
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-e10 — the rocket-boot trigger cue (`Player.cs:26889`/
+            // `:26894`): wave A's façade, gated by `rocketSoundDelay`.
+            if let Some((idx, sx, sy)) = p.take_rocket_sound() {
                 app.audio.play_use_sound(
                     idx,
                     sx,
