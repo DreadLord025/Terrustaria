@@ -39273,9 +39273,9 @@ EVP all refuse). **No compiler invoked**; the witnesses are WRITTEN, NOT RUN.
 | 188 `localAI[0] < 5` (the launch ramp) | CLAIMED: W4-d4's DOC-SWEEP gate, tip 509b9943c (unmerged) — not re-ported |
 | aiStyle 113 family 598/636/614/971/975/1024 `ai[0] == 1` (the stuck stickers) | CLAIMED: W4-d12's census, tip 719ffb76c (unmerged; only the 598 row exists here) — not re-ported |
 | aiStyle 15 `ai[0] == 0 && localAI[1] <= 12` (the flail hold) | ALREADY PORTED: `flail_damage_adjust` |
-| 434 `localAI[0] != 0`, 451, 631 `localAI[1] == 0`, 537 `localAI[0] <= 30`, 261 speed < 1.5, 818 `ai[0] < 1`, 281 `ai[0] == -3`, 511-513/1128 `ai[1] >= 1`, 1092 `ai[0] <= 1`, 1091/1122 `localAI[0] <= 0` (`:12468-12475`) | UNPORTED: all row-less on every pushed tip (never spawn) — port with their rows |
-| aiStyle 25 `localAI[2] <= 7` with the 1021/1047/1005/1014 exceptions (`:12476`), aiStyle 93 `ai[0]` not 0/2 (`:12452`) | UNPORTED: no style-25/93 rows |
-| the `Main.projPet` block (`:12480` — every pet/minion deals no contact damage EXCEPT the exception ladder: 266/407/317, 388 ai0==2, 390-395, 1093/1112/1118, 533 ai0 6..8, 625-628, 755/946 ai0!=0, 758/951/963/1022, 759 last-frame, 833-835, 864, 623 ai0==2) | REMAINDER: the big one. The port's PVE walk historically hits regardless of `friendly` (the recorded deviation); this block needs its own audit slice — the PROJ_PET table exists (`data.rs`) but the exception ladder interacts with every minion family's friendly-window machine |
+| 434 `localAI[0] != 0`, 451, 631 `localAI[1] == 0`, 537 `localAI[0] <= 30`, 261 speed < 1.5, 818 `ai[0] < 1`, 281 `ai[0] == -3`, 511-513/1128 `ai[1] >= 1`, 1092 `ai[0] <= 1`, 1091/1122 `localAI[0] <= 0` (`:12468-12475`) | PORTED ARM-TOTAL (PROJ-171 retire): all row-less on every pushed tip today; the kind-literal terms auto-activate when a d-lane lands the row (the activation contract — `damage_kind_gate_refuses`) |
+| aiStyle 25 `localAI[2] <= 7` with the 1021/1047/1005/1014 exceptions (`:12476`), aiStyle 93 `ai[0]` not 0/2 (`:12452`) | PORTED ARM-TOTAL (PROJ-171 retire): no style-25/93 row today; the `proj_data().ai_style` read auto-activates on the d-lane row |
+| the `Main.projPet` block (`:12480` — every pet/minion deals no contact damage EXCEPT the exception ladder: 266/407/317, 388 ai0==2, 390-395, 1093/1112/1118, 533 ai0 6..8, 625-628, 755/946 ai0!=0, 758/951/963/1022, 759 last-frame, 833-835, 864, 623 ai0==2) | PORTED (PROJ-171 retire): `proj_pet_contact_refuses` reads the `PROJ_PET` table (`data.rs`, `Main.cs:8728-8852`) + the decoded ladder. The rowed attack-minions (266/533/623/833-835/759/388/755/946/625-628/390-395/1093/1112/1118/758/951/963/1022/864) are ALL ladder exceptions → their attack windows keep biting; the inert pets + the row-less pygmies (191-194, no attack arm here) refuse, faithful to C#. The 759 polarity: refused only on the last/perch frame (`frame == projFrames-1`). No existing damage-walk test uses a non-exception projPet kind (the 373 recount tests assert counts only). |
 
 **Row deviation surfaced.** The `CANNON_EXPLOSIVE` const is 601 = C#
 `PortalGunBolt` (`ProjectileID.cs:1756`), but its row (`data.rs`, the M7-WIRE-2
@@ -39292,3 +39292,21 @@ mislabeled row; the row/const mismatch itself is left for the wiring lane
 keeps the shot) and `w4_d18_the_damage_kind_gate_census` (the unconditional
 list, the tiger/boi/empress/aura windows both sides, the sprays, the sand
 latch, the untouched-kind freeze check, a live 378 PVE refusal).
+
+**PROJ-171 RETIRE round (this branch, code-only).** The two remainders above
+are CLOSED: the row-less conditionals (434/451/631/537/261/818/281/511-513/
+1128/1092/1091/1122 + aiStyles 25/93) ported ARM-TOTAL into
+`damage_kind_gate_refuses`, and the `:12480` projPet block ported as
+`proj_pet_contact_refuses` (the `PROJ_PET` table + the decoded exception
+ladder). **Activation contract verified:** the gate reads `p.kind` literals
++ `proj_data(kind).ai_style`, so every row-less term auto-activates the
+moment a d-lane lands the kind's row — no re-port needed (the gate-shape is
+kind-literal, not row-coupled). The projPet ladder was decoded verbatim from
+the single C# `if` and cross-checked against `Main.projPet` (`Main.cs:8728-
+8852`); the rowed attack-minions are ALL exceptions (their attack windows
+keep biting), the inert pets / row-less pygmies refuse. Two witnesses
+WRITTEN NOT RUN: `w4_d18_the_rowless_conditionals_census` (every term both
+sides + the 451 integer-division window + the row-less activation pins) and
+`w4_d18_the_proj_pet_contact_ladder` (the unconditional exceptions, the
+388/623/533/755/946/759 conditional windows, the inert-pet refusals, a live
+266 PVE bite through the gate). **No compiler invoked.**

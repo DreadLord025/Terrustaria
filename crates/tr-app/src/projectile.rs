@@ -154,18 +154,21 @@ fn flames_faded(p: &Projectile) -> bool {
 /// * aiStyle 15 `ai[0] == 0 && localAI[1] <= 12` — already ported in
 ///   `flail_damage_adjust` (`:12448`, the hold's first 12 ticks).
 ///
-/// Row-less conditional terms stay unported (never spawn — the census in
-/// ANALYSIS "W4-d18 Damage_CanDealDamage"): 434/451/631/537/261/818/281/
-/// 511-513/1128/1092/1091/1122, aiStyles 25/93. The `projPet` block
-/// (`:12480`) is the big remainder — its exception ladder spans every
-/// minion family and needs its own audit slice (ANALYSIS).
+/// PROJ-171 RETIRE: the row-less conditional terms are now ported ARM-TOTAL
+/// (434/451/631/537/261/818/281/511-513/1128/1092 `:12448`, 1091/1122
+/// `:12468-12475`, aiStyles 93 `:12452` / 25 `:12476`). They read `p.kind`
+/// literals + `proj_data().ai_style`, so they AUTO-ACTIVATE the moment a
+/// d-lane lands the kind's row (the activation contract — no re-port needed).
+/// The `projPet` block (`:12480`) is ported too ([`proj_pet_contact_refuses`]):
+/// every pet/minion refuses contact damage EXCEPT the exception ladder.
 ///
 /// Known row deviation surfaced by the census: the `CANNON_EXPLOSIVE`
 /// const is 601 = C# `PortalGunBolt` (`ProjectileID.cs:1756`), but its row
-/// carries `penetrate = -1` where the true C# 601 (`:6502-6510`) keeps the
-/// stock 1 — the true 601 is a damage-less portal bolt (this gate refuses
-/// it), so the gate is behaviour-neutral for the mislabeled row (the
-/// cannonball's damage rides its death blast). ANALYSIS records it.
+/// (M7-WIRE-2's, NOT this lane's) carries `penetrate = -1` / `alpha = 0`
+/// where the true C# 601 (`:6502-6510`) keeps the stock 1 / `alpha = 255`.
+/// The true 601 is the damage-less portal bolt (aiStyle 1, this gate refuses
+/// it); its teleport AI (`PortalHelper.TryPlacingPortal` `:18099`) is
+/// unported — cross-noted to the d6 wiring lane (ANALYSIS), not fixed here.
 fn damage_kind_gate_refuses(p: &Projectile) -> bool {
     // `:12448` — the unconditional type list, verbatim (the row-less ids
     // never spawn; the arm-total port keeps the census 1:1).
@@ -184,6 +187,43 @@ fn damage_kind_gate_refuses(p: &Projectile) -> bool {
     }
     // `:12448` — the Mushroom Boi's spore state (`ai[2] > 0`).
     if p.kind == 1022 && p.ai[2] > 0.0 {
+        return true;
+    }
+    // `:12448` — the row-less conditionals, ARM-TOTAL (PROJ-171 retire).
+    // Every kind below is row-less on every pushed tip today; the terms
+    // auto-activate when a d-lane lands the row (the kind-literal shape).
+    // 434 localAI[0] != 0; 631 localAI[1] == 0; 537 localAI[0] <= 30;
+    // 818 ai[0] < 1; 281 ai[0] == -3; 1092 ai[0] <= 1.
+    if (p.kind == 434 && p.local_ai[0] != 0.0)
+        || (p.kind == 631 && p.local_ai[1] == 0.0)
+        || (p.kind == 537 && p.local_ai[0] <= 30.0)
+        || (p.kind == 818 && p.ai[0] < 1.0)
+        || (p.kind == 281 && p.ai[0] == -3.0)
+        || (p.kind == 1092 && p.ai[0] <= 1.0)
+    {
+        return true;
+    }
+    // `:12448` — 451: `((int)(ai[0] - 1) / penetrate == 0 || ai[1] < 5) &&
+    // ai[0] != 0`. The C# `(int)` cast truncates toward zero; the division
+    // is integer (penetrate 3 on the row, `:5235`). Guard the zero divisor
+    // (the C# would throw; the row never carries 0 — the guard is the
+    // arm-total shape for a row-less kind).
+    if p.kind == 451 && p.ai[0] != 0.0 && p.penetrate != 0 {
+        let quotient = (p.ai[0] - 1.0) as i32 / p.penetrate;
+        if quotient == 0 || p.ai[1] < 5.0 {
+            return true;
+        }
+    }
+    // `:12448` — 261: velocity.Length() < 1.5 (the slow boulder).
+    if p.kind == 261 && p.vel.length() < 1.5 {
+        return true;
+    }
+    // `:12448` — 511-513 / 1128: ai[1] >= 1 (the spent-shot state).
+    if matches!(p.kind, 511..=513 | 1128) && p.ai[1] >= 1.0 {
+        return true;
+    }
+    // `:12468-12475` — 1091 / 1122: localAI[0] <= 0 (the unlit state).
+    if matches!(p.kind, 1091 | 1122) && p.local_ai[0] <= 0.0 {
         return true;
     }
     // `:12448` — the Empress telegraph: the lance 919 / sun dance 923
@@ -217,7 +257,68 @@ fn damage_kind_gate_refuses(p: &Projectile) -> bool {
     if style == Some(10) && p.local_ai[1] == -1.0 {
         return true;
     }
+    // `:12452` — `aiStyle == 93 && ai[0] != 0 && ai[0] != 2`: row-less
+    // today (no style-93 row), arm-total for the d-lane activation.
+    if style == Some(93) && p.ai[0] != 0.0 && p.ai[0] != 2.0 {
+        return true;
+    }
+    // `:12476` — `aiStyle == 25 && type not 1021/1047/1005/1014 &&
+    // localAI[2] <= 7`: row-less today, arm-total.
+    if style == Some(25)
+        && !matches!(p.kind, 1021 | 1047 | 1005 | 1014)
+        && p.local_ai[2] <= 7.0
+    {
+        return true;
+    }
+    // `:12480` — the projPet block: every pet/minion refuses contact
+    // damage EXCEPT the exception ladder (PROJ-171 retire).
+    if proj_pet_contact_refuses(p) {
+        return true;
+    }
     false
+}
+
+/// `Damage_CanDealDamage`'s `Main.projPet` block (`Projectile.cs:12480`):
+/// `projPet[type]` refuses contact damage UNLESS the kind is on the
+/// exception ladder. The table is [`PROJ_PET`] (`Main.cs:8728-8852`).
+/// The ladder, decoded verbatim from the single C# `if`:
+/// * unconditional exceptions: 266/407/317, 390-392, 393-395,
+///   1093/1112/1118, 625-628, 758/951/963/1022, 833/834/835, 864;
+/// * 388 / 623: `ai[0] == 2` (the attack state);
+/// * 533: `ai[0]` in 6..=8 (the DeadlySphere's damage window);
+/// * 755 / 946: `ai[0] != 0` (the BatOfLight / Empress-of-Light summon);
+/// * 759: `frame != projFrames[type] - 1` (the baby bird bites EXCEPT on
+///   its last/perch frame — the C# `(type != 759 || frame == projFrames-1)`
+///   keeps the refusal when the frame IS the last one).
+///
+/// The port's PVE walk historically hits regardless of `friendly` (the
+/// recorded deviation); this block is the C# contact gate the pets/minions
+/// ride. The rowed attack-minions (266/533/623/833-835/759/388/755/946/
+/// 625-628/390-395/1093/1112/1118/758/951/963/1022/864) are ALL ladder
+/// exceptions, so their attack windows keep biting; the inert pets and the
+/// row-less pygmies (191-194, no attack arm here) refuse, faithful to C#.
+fn proj_pet_contact_refuses(p: &Projectile) -> bool {
+    if !PROJ_PET.contains(&p.kind) {
+        return false;
+    }
+    // The unconditional exceptions — these kinds always deal contact damage.
+    if matches!(
+        p.kind,
+        266 | 407 | 317 | 390..=392 | 393..=395 | 1093 | 1112 | 1118
+            | 625..=628 | 758 | 951 | 963 | 1022 | 833 | 834 | 835 | 864
+    ) {
+        return false;
+    }
+    // The conditional exceptions — allowed only in the attack state.
+    match p.kind {
+        388 | 623 => p.ai[0] != 2.0,
+        533 => !(6.0..=8.0).contains(&p.ai[0]),
+        755 | 946 => p.ai[0] == 0.0,
+        759 => p.frame == proj_frames(p.kind) as i32 - 1,
+        // Every other projPet kind refuses (the inert pets / light pets /
+        // the row-less pygmies and Pal summons).
+        _ => true,
+    }
 }
 
 /// `Projectile.CanExplodeTile`'s guard set (`Projectile.cs:78640-78700`):
@@ -24801,6 +24902,152 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
         );
         assert_eq!(npc.hp, 10_000, "the 378 spider egg deals nothing (`:12448`)");
+    }
+
+    /// PROJ-171 RETIRE — the row-less conditional terms, ARM-TOTAL
+    /// (`Projectile.cs:12448` + `:12468-12476`). Every kind is row-less on
+    /// every pushed tip today; the terms read `p.kind` literals +
+    /// `proj_data().ai_style`, so they AUTO-ACTIVATE when a d-lane lands the
+    /// row (the activation contract). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d18_the_rowless_conditionals_census() {
+        let bare = |kind: u16| Projectile { active: true, kind, damage: 10, ..Default::default() };
+        // 434 localAI[0] != 0; 631 localAI[1] == 0; 537 localAI[0] <= 30;
+        // 818 ai[0] < 1; 281 ai[0] == -3; 1092 ai[0] <= 1.
+        let mut p = bare(434);
+        assert!(!damage_kind_gate_refuses(&p), "434: localAI[0]=0 bites");
+        p.local_ai[0] = 1.0;
+        assert!(damage_kind_gate_refuses(&p), "434: localAI[0]!=0 refuses (`:12448`)");
+        let mut p = bare(631);
+        assert!(damage_kind_gate_refuses(&p), "631: localAI[1]=0 refuses (`:12448`)");
+        p.local_ai[1] = 1.0;
+        assert!(!damage_kind_gate_refuses(&p), "631: localAI[1]!=0 bites");
+        let mut p = bare(537);
+        assert!(damage_kind_gate_refuses(&p), "537: localAI[0]=0 refuses (`:12448`)");
+        p.local_ai[0] = 31.0;
+        assert!(!damage_kind_gate_refuses(&p), "537: localAI[0]=31 bites");
+        let mut p = bare(818);
+        assert!(damage_kind_gate_refuses(&p), "818: ai[0]=0 refuses (`:12448`)");
+        p.ai[0] = 1.0;
+        assert!(!damage_kind_gate_refuses(&p), "818: ai[0]=1 bites");
+        let mut p = bare(281);
+        assert!(!damage_kind_gate_refuses(&p), "281: ai[0]=0 bites");
+        p.ai[0] = -3.0;
+        assert!(damage_kind_gate_refuses(&p), "281: ai[0]=-3 refuses (`:12448`)");
+        let mut p = bare(1092);
+        assert!(damage_kind_gate_refuses(&p), "1092: ai[0]=0 refuses (`:12448`)");
+        p.ai[0] = 2.0;
+        assert!(!damage_kind_gate_refuses(&p), "1092: ai[0]=2 bites");
+        // 451: ((int)(ai[0]-1)/penetrate == 0 || ai[1] < 5) && ai[0] != 0.
+        // penetrate 3 (the row, `:5235`): ai[0]=1..3 → quotient 0 → refuse;
+        // ai[0]=4 → quotient 1, ai[1]>=5 → bite; ai[1]<5 always refuses.
+        let mut p = bare(451);
+        p.penetrate = 3;
+        assert!(!damage_kind_gate_refuses(&p), "451: ai[0]=0 bites (the outer gate)");
+        p.ai[0] = 1.0;
+        p.ai[1] = 9.0;
+        assert!(damage_kind_gate_refuses(&p), "451: quotient 0 refuses (`:12448`)");
+        p.ai[0] = 4.0;
+        assert!(!damage_kind_gate_refuses(&p), "451: quotient 1 + ai[1]>=5 bites");
+        p.ai[1] = 4.0;
+        assert!(damage_kind_gate_refuses(&p), "451: ai[1]<5 refuses (`:12448`)");
+        // 261: velocity.Length() < 1.5 (the slow boulder).
+        let mut p = bare(261);
+        assert!(damage_kind_gate_refuses(&p), "261: at rest refuses (`:12448`)");
+        p.vel = Vec2::new(2.0, 0.0);
+        assert!(!damage_kind_gate_refuses(&p), "261: speed 2 bites");
+        // 511-513 / 1128: ai[1] >= 1 (the spent-shot state).
+        for kind in [511u16, 512, 513, 1128] {
+            let mut p = bare(kind);
+            assert!(!damage_kind_gate_refuses(&p), "kind {kind}: ai[1]=0 bites");
+            p.ai[1] = 1.0;
+            assert!(damage_kind_gate_refuses(&p), "kind {kind}: ai[1]>=1 refuses (`:12448`)");
+        }
+        // 1091 / 1122: localAI[0] <= 0 (the unlit state, `:12468-12475`).
+        for kind in [1091u16, 1122] {
+            let mut p = bare(kind);
+            assert!(damage_kind_gate_refuses(&p), "kind {kind}: localAI[0]=0 refuses");
+            p.local_ai[0] = 1.0;
+            assert!(!damage_kind_gate_refuses(&p), "kind {kind}: localAI[0]=1 bites");
+        }
+        // aiStyle 93 (`:12452`) / 25 (`:12476`): row-less today, arm-total.
+        // No style-93/25 row exists, so the terms are unreachable — the
+        // shape is pinned for the d-lane activation (the style read is the
+        // gate's own `proj_data().ai_style`).
+        assert!(proj_data(434).is_none(), "434 stays row-less (activation contract)");
+        assert!(proj_data(451).is_none(), "451 stays row-less");
+        assert!(proj_data(281).is_none(), "281 stays row-less (the bunny cannon)");
+    }
+
+    /// PROJ-171 RETIRE — the `Main.projPet` block (`Projectile.cs:12480`):
+    /// every pet/minion refuses contact damage EXCEPT the exception ladder.
+    /// The rowed attack-minions are ALL ladder exceptions (their attack
+    /// windows keep biting); the inert pets / row-less pygmies refuse.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d18_the_proj_pet_contact_ladder() {
+        let bare = |kind: u16| Projectile { active: true, kind, damage: 10, ..Default::default() };
+        // Non-pet kinds are untouched by the block.
+        for kind in [SHURIKEN, WOODEN_ARROW, 85, FOXSPARKS_FLAMES] {
+            assert!(!proj_pet_contact_refuses(&bare(kind)), "kind {kind}: not projPet");
+        }
+        // The unconditional exceptions always bite.
+        for kind in [266u16, 407, 317, 390, 391, 392, 393, 394, 395, 1093, 1112, 1118,
+                     625, 626, 627, 628, 758, 951, 963, 1022, 833, 834, 835, 864] {
+            assert!(!proj_pet_contact_refuses(&bare(kind)), "kind {kind}: unconditional exception");
+        }
+        // 388 / 623: ai[0] == 2 bites, else refuses.
+        for kind in [388u16, 623] {
+            let mut p = bare(kind);
+            assert!(proj_pet_contact_refuses(&p), "kind {kind}: ai[0]=0 refuses");
+            p.ai[0] = 2.0;
+            assert!(!proj_pet_contact_refuses(&p), "kind {kind}: ai[0]=2 bites (`:12480`)");
+        }
+        // 533: ai[0] in 6..=8 bites, else refuses.
+        let mut p = bare(533);
+        assert!(proj_pet_contact_refuses(&p), "533: ai[0]=0 refuses");
+        p.ai[0] = 6.0;
+        assert!(!proj_pet_contact_refuses(&p), "533: ai[0]=6 bites");
+        p.ai[0] = 8.0;
+        assert!(!proj_pet_contact_refuses(&p), "533: ai[0]=8 bites");
+        p.ai[0] = 9.0;
+        assert!(proj_pet_contact_refuses(&p), "533: ai[0]=9 refuses");
+        // 755 / 946: ai[0] != 0 bites, else refuses.
+        for kind in [755u16, 946] {
+            let mut p = bare(kind);
+            assert!(proj_pet_contact_refuses(&p), "kind {kind}: ai[0]=0 refuses");
+            p.ai[0] = 1.0;
+            assert!(!proj_pet_contact_refuses(&p), "kind {kind}: ai[0]!=0 bites (`:12480`)");
+        }
+        // 759: the baby bird bites EXCEPT on its last/perch frame
+        // (projFrames[759] = 5, `Main.cs:8506`).
+        let mut p = bare(759);
+        assert!(!proj_pet_contact_refuses(&p), "759: frame 0 bites");
+        p.frame = 3;
+        assert!(!proj_pet_contact_refuses(&p), "759: frame 3 bites");
+        p.frame = 4;
+        assert!(proj_pet_contact_refuses(&p), "759: the perch frame refuses (`:12480`)");
+        // The inert pets / row-less pygmies refuse at any state.
+        for kind in [191u16, 192, 193, 194, 373, 375, 387, 883, 887, 893, 175, 197] {
+            assert!(proj_pet_contact_refuses(&bare(kind)), "kind {kind}: inert pet refuses");
+        }
+        // A walk witness: the 266 slime minion (an unconditional exception)
+        // still bites through the gate, while the 373 hornet (no exception)
+        // refuses — the block reaches the PVE pass.
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let slime = pool
+            .spawn_with_data_ai(SLIME_MINION, 300.0, 300.0, 0.0, 0.0, 40, 2.0, 0.0, 0.0)
+            .expect("the 266 row spawns");
+        let mut npc = one_npc(&w);
+        npc.x = 300.0;
+        npc.y = 300.0;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        pool.slots_mut()[slime].friendly = true;
+        pool.damage_pve(&w, slime, std::slice::from_mut(&mut npc), None, None, None,
+            &mut tr_core::tile_light::FastRandom::new(7));
+        assert!(npc.hp < 10_000, "the 266 exception still bites (`:12480`)");
     }
 
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
