@@ -1217,5 +1217,633 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn w4_f35_every_shared_crate_zero_script_grants_the_traced_rows() {
+        // The all-zero pass through the shared loop: the biome weapon
+        // (maxValue=1 always passes), the 1/4 gold 73 ×5, the 1/7 bars
+        // (pick 0 → 12; the hardmode gate HITS at zero: pre-hardmode
+        // `& flag` refuses, hardmode re-picks 364), the 1/4 ores (pick
+        // 0 → 22, stack 6; the hardmode Next(3)!=0 gate MISSES at zero
+        // — no re-pick either mode). The shared tails: 288 ×2, 188 ×5,
+        // 2676 ×2 (the bait Next(2)!=0 false → Master). Per-biome tails
+        // all hit at zero. The lava 174/175 re-types are OVERWRITTEN by
+        // the hardmode re-picks (364/381) — the C# order.
+        let rows: &[(u16, &[u16], &[u32])] = &[
+            (3203, &[162, 73, 12, 22, 288, 188, 2676], &[1, 5, 20, 6, 2, 5, 2]),
+            (
+                3982,
+                &[162, 73, 364, 22, 288, 188, 2676, 521, 522],
+                &[1, 5, 20, 6, 2, 5, 2, 2, 2],
+            ),
+            (3204, &[800, 73, 12, 22, 288, 188, 2676], &[1, 5, 20, 6, 2, 5, 2]),
+            (
+                3983,
+                &[800, 73, 364, 22, 288, 188, 2676, 521, 1332],
+                &[1, 5, 20, 6, 2, 5, 2, 2, 2],
+            ),
+            (
+                3205,
+                &[3085, 149, 134, 73, 12, 22, 288, 188, 2676, 1438],
+                &[1, 5, 25, 5, 20, 6, 2, 5, 2, 1],
+            ),
+            (
+                3984,
+                &[3085, 149, 134, 73, 364, 22, 288, 188, 2676, 1438],
+                &[1, 5, 25, 5, 20, 6, 2, 5, 2, 1],
+            ),
+            (
+                3206,
+                &[158, 73, 12, 22, 288, 188, 2676, 5226, 751, 4978],
+                &[1, 5, 20, 6, 2, 5, 2, 1, 50, 1],
+            ),
+            (
+                3985,
+                &[158, 73, 364, 22, 288, 188, 2676, 5226, 751, 4978],
+                &[1, 5, 20, 6, 2, 5, 2, 1, 50, 1],
+            ),
+            // The Hallowed crate has NO weapon arm (`:8595-8914`).
+            (3207, &[73, 12, 22, 288, 188, 2676], &[5, 20, 6, 2, 5, 2]),
+            (
+                3986,
+                &[73, 364, 22, 288, 188, 2676, 520, 502],
+                &[5, 20, 6, 2, 5, 2, 2, 4],
+            ),
+            (
+                3208,
+                &[3017, 73, 12, 22, 288, 188, 2676, 4564, 753],
+                &[1, 5, 20, 6, 2, 5, 2, 20, 1],
+            ),
+            (
+                3987,
+                &[3017, 73, 364, 22, 288, 188, 2676, 4564, 753],
+                &[1, 5, 20, 6, 2, 5, 2, 20, 1],
+            ),
+            (4405, &[670, 73, 12, 22, 288, 188, 2676, 669], &[1, 5, 20, 6, 2, 5, 2, 1]),
+            (4406, &[670, 73, 364, 22, 288, 188, 2676, 669], &[1, 5, 20, 6, 2, 5, 2, 1]),
+            (
+                4407,
+                &[4056, 4423, 3380, 857, 73, 12, 22, 288, 188, 2676, 4639],
+                &[1, 4, 10, 1, 5, 20, 6, 2, 5, 2, 1],
+            ),
+            (
+                4408,
+                &[4056, 4423, 3380, 857, 73, 364, 22, 288, 188, 2676, 4639],
+                &[1, 4, 10, 1, 5, 20, 6, 2, 5, 2, 1],
+            ),
+            (
+                4877,
+                &[906, 4858, 4879, 4824, 4902, 73, 174, 175, 288, 188, 2676, 1497, 221, 4443, 4737, 4551],
+                &[1, 2, 1, 7, 1, 5, 20, 6, 2, 5, 2, 1, 1, 1, 1, 1],
+            ),
+            (
+                4878,
+                &[906, 4858, 4879, 4824, 4902, 73, 364, 175, 288, 188, 2676, 1497, 221, 4443, 4737, 4551],
+                &[1, 2, 1, 7, 1, 5, 20, 6, 2, 5, 2, 1, 1, 1, 1, 1],
+            ),
+            (
+                5002,
+                &[863, 73, 12, 22, 288, 188, 2676, 5527, 4090, 4460, 4425],
+                &[1, 5, 20, 6, 2, 5, 2, 1, 20, 1, 1],
+            ),
+            (
+                5003,
+                &[863, 73, 364, 22, 288, 188, 2676, 5527, 4090, 4460, 4425],
+                &[1, 5, 20, 6, 2, 5, 2, 1, 20, 1, 1],
+            ),
+        ];
+        for &(kind, want_items, want_stacks) in rows {
+            let mut rng = ScriptRng::new(&[]);
+            let mut out = Vec::new();
+            open_fishing_crate(kind, &CrateEnv::default(), &mut rng, &mut out);
+            assert_eq!(items(&out), want_items, "kind {kind} grants");
+            let stacks: Vec<u32> = out.iter().map(|g| g.stack).collect();
+            assert_eq!(stacks, want_stacks, "kind {kind} stacks");
+        }
+    }
+
+    #[test]
+    fn w4_f35_corrupt_crate_zero_script_draw_census() {
+        // The corrupt 3203 pass: weapon Next(1) + Next(5) pick 162
+        // (a boomerang — one Next(4) prefix gate); gold Next(4) +
+        // range(5,13)→8; bars Next(7) + Next(8) + Next(2) hardmode gate
+        // (hit, `& flag` false) + range(20,36)→16; ore gate Next(4) +
+        // Next(6) + range(6,17)→11 + Next(3) hardmode gate (miss);
+        // tails Next(4) + Next(6) + range(2,5)→3, Next(2) +
+        // range(188,190)→2 + range(5,18)→13, Next(2) + Next(2) bait
+        // gate + range(2,7)→5. No corrupt tail before the hardmode
+        // gate (`!flag` returns).
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_fishing_crate(3203, &CrateEnv::default(), &mut rng, &mut out);
+        assert_eq!(
+            rng.ranges,
+            vec![1, 5, 4, 4, 8, 7, 8, 2, 16, 4, 6, 11, 3, 4, 6, 3, 2, 2, 13, 2, 2, 5],
+            "the corrupt pre-hardmode draw census"
+        );
+    }
+
+    #[test]
+    fn w4_f35_frozen_crate_remix_swaps_the_ice_blade_pick() {
+        // Script the weapon pick to 3 (Ice Blade 1319): the remix seed
+        // swaps it to the Ice Bow 725 AFTER the pick (`:8688-8691`).
+        let mut rng = ScriptRng::new(&[0, 3]);
+        let mut out = Vec::new();
+        let env = CrateEnv { remix: true, ..Default::default() };
+        open_fishing_crate(4405, &env, &mut rng, &mut out);
+        assert_eq!(out[0].item, 725, "the remix swap");
+        // Without the seed the 1319 stays.
+        let mut rng2 = ScriptRng::new(&[0, 3]);
+        let mut out2 = Vec::new();
+        open_fishing_crate(4405, &CrateEnv::default(), &mut rng2, &mut out2);
+        assert_eq!(out2[0].item, 1319, "no swap on a classic world");
+    }
+
+    #[test]
+    fn w4_f35_sky_crate_low_tiles_seam_gates_the_sky_mill() {
+        // `:9153` — the lowTiles gate: false draws NOTHING (the seam
+        // off), true draws the Next(3) and hits at zero (2197).
+        let mut off = ScriptRng::new(&[]);
+        let mut out_off = Vec::new();
+        open_fishing_crate(3206, &CrateEnv::default(), &mut off, &mut out_off);
+        let mut on = ScriptRng::new(&[]);
+        let mut out_on = Vec::new();
+        let env = CrateEnv { skyblock_low_tiles: true, ..Default::default() };
+        open_fishing_crate(3206, &env, &mut on, &mut out_on);
+        assert_eq!(items(&out_on), {
+            let mut v = items(&out_off);
+            v.push(2197);
+            v
+        });
+        assert_eq!(on.ranges.len(), off.ranges.len() + 1, "one extra Next(3)");
+        assert_eq!(*on.ranges.last().unwrap(), 3);
+    }
+
+    #[test]
+    fn w4_f35_hallowed_hardmode_soul_stack_is_redrawn() {
+        // `:9237/:9245` — the second soul row draws range(2,6) FIRST,
+        // then the 3986 arm OVERWRITES it with range(4,11). Script the
+        // two draws apart: the shared tails all miss (4→1, 2→1, 2→1),
+        // the first soul gate 2→0 (520, the range(2,6)→4 draw at 1 →
+        // stack 3), the second 2→0 (the discarded range(2,6) at 3, then
+        // the re-draw range(4,11)→7 at 6 → stack 10).
+        // The pass itself: no weapon arm; gold 4→1 miss, bars 7→1
+        // miss, ore gate 4→0 hit + 6→0 (22) + range 11→0 (6) + 3→0
+        // (no re-pick) — flag5 false.
+        let mut rng = ScriptRng::new(&[
+            1, 1, 0, 0, 0, 0, // gold miss, bars miss, ore hit + pick + stack + gate
+            1, 1, 1, // the three shared tails miss
+            0, 1, // soul 1: 520 ×(2+1)=3 (the range(2,6)→4 draw)
+            0, 3, 6, // soul 2: gate, discarded range(2,6)=2+3, re-draw range(4,11)=4+6=10
+        ]);
+        let mut out = Vec::new();
+        open_fishing_crate(3986, &CrateEnv::default(), &mut rng, &mut out);
+        assert_eq!(items(&out), vec![22, 520, 502]);
+        assert_eq!(out[1].stack, 3);
+        assert_eq!(out[2].stack, 10, "the RE-DRAWN stack, not the first");
+    }
+
+    /// The shared-loop + tails C# replay (`Player.cs:8595-9249`) on a
+    /// twin `UnifiedRandom` — the verbatim expression order for the 20
+    /// non-base crates.
+    fn shared_replay(seed: i32, kind: u16, env: &CrateEnv) -> (Vec<BagGrant>, UnifiedRandom) {
+        let mut r = UnifiedRandom::new(seed);
+        let mut w = Vec::new();
+        let flag = is_hardmode_crate(kind);
+        let lava = kind == 4877 || kind == 4878;
+        let max_value = 1;
+        let mut f5 = true;
+        while f5 {
+            if (kind == 5002 || kind == 5003) && f5 && r.next_max(max_value) == 0 {
+                let n13 = r.next_max(4);
+                let item = if r.next_max(10) == 0 {
+                    863
+                } else {
+                    match n13 {
+                        0 => 186,
+                        1 => 4404,
+                        2 => 277,
+                        _ => 187,
+                    }
+                };
+                spawn_replay(&mut r, &mut w, item, 1);
+                f5 = false;
+            }
+            if (kind == 3203 || kind == 3982) && f5 && r.next_max(max_value) == 0 {
+                let item = match r.next_max(5) {
+                    0 => 162,
+                    1 => 111,
+                    2 => 96,
+                    3 => 115,
+                    _ => 64,
+                };
+                spawn_replay(&mut r, &mut w, item, 1);
+                f5 = false;
+            }
+            if (kind == 3204 || kind == 3983) && f5 && r.next_max(max_value) == 0 {
+                let item = match r.next_max(5) {
+                    0 => 800,
+                    1 => 802,
+                    2 => 1256,
+                    3 => 1290,
+                    _ => 3062,
+                };
+                spawn_replay(&mut r, &mut w, item, 1);
+                f5 = false;
+            }
+            if (kind == 3205 || kind == 3984) && f5 && r.next_max(max_value) == 0 {
+                spawn_replay(&mut r, &mut w, 3085, 1);
+                f5 = false;
+                if r.next_max(2) == 0 {
+                    spawn_replay(&mut r, &mut w, 149, r.next_range(5, 16));
+                }
+                if r.next_max(2) == 0 {
+                    let item = match r.next_max(3) {
+                        0 => 134,
+                        1 => 137,
+                        _ => 139,
+                    };
+                    spawn_replay(&mut r, &mut w, item, r.next_range(25, 51));
+                }
+            }
+            if (kind == 3206 || kind == 3985) && f5 && r.next_max(max_value) == 0 {
+                let item = match r.next_max(4) {
+                    0 => 158,
+                    1 => 65,
+                    2 => 159,
+                    _ => 2219,
+                };
+                spawn_replay(&mut r, &mut w, item, 1);
+                f5 = false;
+            }
+            if (kind == 3208 || kind == 3987) && f5 && r.next_max(max_value) == 0 {
+                if r.next_max(20) == 0 {
+                    let _n14 = r.next_max(5);
+                    spawn_replay(&mut r, &mut w, 3017, 1);
+                    f5 = false;
+                } else {
+                    let item = match r.next_max(5) {
+                        0 => 212,
+                        1 => 964,
+                        2 => 211,
+                        3 => 213,
+                        _ => 2292,
+                    };
+                    spawn_replay(&mut r, &mut w, item, 1);
+                    f5 = false;
+                }
+            }
+            if (kind == 4405 || kind == 4406) && f5 && r.next_max(max_value) == 0 {
+                let mut n15 = [670i32, 724, 950, 1319, 987, 1579, 6153][r.next_max(7) as usize];
+                if env.remix && n15 == 1319 {
+                    n15 = 725;
+                }
+                spawn_replay(&mut r, &mut w, n15, 1);
+                f5 = false;
+            }
+            if kind == 4407 || kind == 4408 {
+                if f5 && r.next_max(max_value) == 0 {
+                    let item = match r.next_max(8) {
+                        0 => 4056,
+                        1 => 4442,
+                        2 => 4055,
+                        3 => 4061,
+                        4 => 4062,
+                        5 => 4276,
+                        6 => 4262,
+                        _ => 4263,
+                    };
+                    spawn_replay(&mut r, &mut w, item, 1);
+                    f5 = false;
+                }
+                if r.next_max(4) == 0 {
+                    spawn_replay(&mut r, &mut w, 4423, r.next_range(4, 7));
+                    f5 = false;
+                }
+                if r.next_max(2) == 0 {
+                    spawn_replay(&mut r, &mut w, 3380, r.next_range(10, 17));
+                    f5 = false;
+                }
+                if r.next_max(35) == 0 {
+                    spawn_replay(&mut r, &mut w, 857, 1);
+                    f5 = false;
+                }
+            }
+            if lava {
+                if f5 && r.next_max(max_value) == 0 {
+                    if r.next_max(20) == 0 {
+                        let _n16 = r.next_max(5);
+                        spawn_replay(&mut r, &mut w, 906, 1);
+                        f5 = false;
+                    } else {
+                        let item = match r.next_max(5) {
+                            0 => 4822,
+                            1 => 4828,
+                            2 => 4880,
+                            3 => 4881,
+                            _ => 4868,
+                        };
+                        spawn_replay(&mut r, &mut w, item, 1);
+                        f5 = false;
+                    }
+                    if r.next_max(4) == 0 {
+                        spawn_replay(&mut r, &mut w, 4858, 2);
+                        f5 = false;
+                    }
+                }
+                spawn_replay(&mut r, &mut w, 4879, 1);
+                f5 = false;
+                if r.next_max(3) == 0 {
+                    spawn_replay(&mut r, &mut w, 4824, r.next_range(7, 11));
+                    f5 = false;
+                }
+                if r.next_max(2) == 0 {
+                    let n17 = match r.next_max(5) {
+                        0 => 4902,
+                        1 => 4903,
+                        2 => 4904,
+                        3 => 4905,
+                        _ => 4906,
+                    };
+                    spawn_replay(&mut r, &mut w, n17, 1);
+                    f5 = false;
+                }
+            }
+            if r.next_max(4) == 0 {
+                spawn_replay(&mut r, &mut w, 73, r.next_range(5, 13));
+                f5 = false;
+            }
+            if r.next_max(7) == 0 {
+                let mut n18 = match r.next_max(8) {
+                    0 => 12,
+                    1 => 699,
+                    2 => 11,
+                    3 => 700,
+                    4 => 14,
+                    5 => 701,
+                    6 => 13,
+                    _ => 702,
+                };
+                if lava {
+                    n18 = 174;
+                }
+                if r.next_max(2) == 0 && flag {
+                    n18 = match r.next_max(6) {
+                        0 => 364,
+                        1 => 1104,
+                        2 => 365,
+                        3 => 1105,
+                        4 => 366,
+                        _ => 1106,
+                    };
+                }
+                spawn_replay(&mut r, &mut w, n18, r.next_range(20, 36));
+                f5 = false;
+            }
+            if r.next_max(4) != 0 {
+                continue;
+            }
+            let mut n19 = match r.next_max(6) {
+                0 => 22,
+                1 => 21,
+                2 => 19,
+                3 => 704,
+                4 => 705,
+                _ => 706,
+            };
+            let mut n20 = r.next_range(6, 17);
+            if lava {
+                n19 = 175;
+            }
+            if r.next_max(3) != 0 && flag {
+                n19 = match r.next_max(6) {
+                    0 => 381,
+                    1 => 382,
+                    2 => 391,
+                    3 => 1184,
+                    4 => 1191,
+                    _ => 1198,
+                };
+                n20 -= r.next_max(2);
+            }
+            spawn_replay(&mut r, &mut w, n19, n20);
+            f5 = false;
+        }
+        shared_tails_replay(&mut r, &mut w, kind, flag, env);
+        (w, r)
+    }
+
+    /// The shared tails replay (`Player.cs:8915-9249`).
+    fn shared_tails_replay(
+        r: &mut UnifiedRandom,
+        w: &mut Vec<BagGrant>,
+        kind: u16,
+        flag: bool,
+        env: &CrateEnv,
+    ) {
+        if r.next_max(4) == 0 {
+            let n21 = match r.next_max(6) {
+                0 => 288,
+                1 => 296,
+                2 => 304,
+                3 => 305,
+                4 => 2322,
+                _ => 2323,
+            };
+            spawn_replay(r, w, n21, r.next_range(2, 5));
+        }
+        if r.next_max(2) == 0 {
+            spawn_replay(r, w, r.next_range(188, 190), r.next_range(5, 18));
+        }
+        if r.next_max(2) == 0 {
+            let bait = if r.next_max(2) != 0 { 2675 } else { 2676 };
+            spawn_replay(r, w, bait, r.next_range(2, 7));
+        }
+        if kind == 5002 || kind == 5003 {
+            if r.next_max(5) == 0 {
+                spawn_replay(r, w, 5527, 1);
+            }
+            if r.next_max(3) == 0 {
+                spawn_replay(r, w, 4090, r.next_range(20, 51));
+            }
+            if r.next_max(10) == 0 {
+                spawn_replay(r, w, 4460, 1);
+            }
+            if r.next_max(10) == 0 {
+                spawn_replay(r, w, 4425, 1);
+            }
+        }
+        if (kind == 3205 || kind == 3984) && r.next_max(2) == 0 {
+            let n22 = match r.next_max(25) {
+                0 => 1438,
+                1 => 1375,
+                2 => 1573,
+                3 => 1420,
+                4 => 1435,
+                5 => 1434,
+                6 => 1421,
+                7 => 5234,
+                8 => 1374,
+                9 => 1425,
+                10 => 1372,
+                11 => 1441,
+                12 => 1373,
+                13 => 1433,
+                14 => 1436,
+                15 => 1426,
+                16 => 1424,
+                17 => 1419,
+                18 => 2995,
+                19 => 1422,
+                20 => 1439,
+                21 => 1502,
+                22 => 1423,
+                23 => 1437,
+                _ => 1500,
+            };
+            spawn_replay(r, w, n22, 1);
+        }
+        if kind == 3208 || kind == 3987 {
+            if r.next_max(3) == 0 {
+                spawn_replay(r, w, 4564, r.next_range(20, 51));
+            }
+            if r.next_max(20) == 0 {
+                spawn_replay(r, w, 753, 1);
+            }
+        }
+        if (kind == 4405 || kind == 4406) && r.next_max(20) == 0 {
+            spawn_replay(r, w, 669, 1);
+        }
+        if (kind == 4407 || kind == 4408) && r.next_max(2) == 0 {
+            let n23 = match r.next_max(14) {
+                0 => 4639,
+                1 => 4627,
+                2 => 4628,
+                3 => 4632,
+                4 => 4630,
+                5 => 4638,
+                6 => 4629,
+                7 => 4633,
+                8 => 4634,
+                9 => 4635,
+                10 => 4636,
+                11 => 4637,
+                12 => 4631,
+                _ => 4626,
+            };
+            spawn_replay(r, w, n23, 1);
+        }
+        if kind == 3206 || kind == 3985 {
+            if r.next_max(2) == 0 {
+                let n24 = match r.next_max(6) {
+                    0 => 5226,
+                    1 => 5254,
+                    2 => 5238,
+                    3 => 5258,
+                    4 => 5255,
+                    _ => 5388,
+                };
+                spawn_replay(r, w, n24, 1);
+            }
+            if r.next_max(2) == 0 {
+                spawn_replay(r, w, 751, r.next_range(50, 101));
+            }
+            if r.next_max(40) == 0 {
+                spawn_replay(r, w, 4978, 1);
+            }
+            if env.skyblock_low_tiles && r.next_max(3) == 0 {
+                spawn_replay(r, w, 2197, 1);
+            }
+        }
+        if kind == 4877 || kind == 4878 {
+            if r.next_max(2) == 0 {
+                let n25 = match r.next_max(12) {
+                    0 => 1497,
+                    1 => 1475,
+                    2 => 1479,
+                    3 => 1542,
+                    4 => 1476,
+                    5 => 1538,
+                    6 => 1501,
+                    7 => 1478,
+                    8 => 1539,
+                    9 => 1540,
+                    10 => 1499,
+                    _ => 1541,
+                };
+                spawn_replay(r, w, n25, 1);
+            }
+            if r.next_max(20) == 0 {
+                spawn_replay(r, w, 221, 1);
+            }
+            if r.next_max(20) == 0 {
+                spawn_replay(r, w, 4443, 1);
+            }
+            if r.next_max(20) == 0 {
+                spawn_replay(r, w, 4737, 1);
+            }
+            if r.next_max(20) == 0 {
+                spawn_replay(r, w, 4551, 1);
+            }
+        }
+        if !flag || (kind != 3982 && kind != 3986 && kind != 3983) {
+            return;
+        }
+        if r.next_max(2) == 0 {
+            let item2 = if kind == 3986 { 520 } else { 521 };
+            spawn_replay(r, w, item2, r.next_range(2, 6));
+        }
+        if r.next_max(2) == 0 {
+            let mut item3 = 522;
+            let mut stack3 = r.next_range(2, 6);
+            match kind {
+                3983 => item3 = 1332,
+                3986 => {
+                    item3 = 502;
+                    stack3 = r.next_range(4, 11);
+                }
+                _ => {}
+            }
+            spawn_replay(r, w, item3, stack3);
+        }
+    }
+
+    #[test]
+    fn w4_f35_every_shared_crate_replays_the_csharp_draw_order() {
+        // The 20 non-base crates × 5 seeds × the classic env: the
+        // grants AND the final stream state match the verbatim replay.
+        let kinds = [
+            3203u16, 3982, 3204, 3983, 3205, 3984, 3206, 3985, 3207, 3986, 3208, 3987, 4405,
+            4406, 4407, 4408, 4877, 4878, 5002, 5003,
+        ];
+        for seed in [1i32, 7, 42, 1234, 99999] {
+            for &kind in &kinds {
+                let env = CrateEnv::default();
+                let mut rng = UnifiedRandom::new(seed);
+                let mut out = Vec::new();
+                open_fishing_crate(kind, &env, &mut rng, &mut out);
+                let (want, r2) = shared_replay(seed, kind, &env);
+                assert_eq!(out, want, "seed {seed} kind {kind} grants");
+                assert_eq!(rng, r2, "seed {seed} kind {kind} stream state");
+            }
+        }
+        // The two env seams ride the same replay: the remix Frozen
+        // swap + the skyblock Sky Mill.
+        for seed in [3i32, 77] {
+            for (kind, env) in [
+                (4405u16, CrateEnv { remix: true, skyblock_low_tiles: false }),
+                (4406, CrateEnv { remix: true, skyblock_low_tiles: false }),
+                (3206, CrateEnv { remix: false, skyblock_low_tiles: true }),
+                (3985, CrateEnv { remix: false, skyblock_low_tiles: true }),
+            ] {
+                let mut rng = UnifiedRandom::new(seed);
+                let mut out = Vec::new();
+                open_fishing_crate(kind, &env, &mut rng, &mut out);
+                let (want, r2) = shared_replay(seed, kind, &env);
+                assert_eq!(out, want, "env seed {seed} kind {kind} grants");
+                assert_eq!(rng, r2, "env seed {seed} kind {kind} stream state");
+            }
+        }
+    }
 }
 
