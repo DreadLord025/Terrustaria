@@ -6338,6 +6338,111 @@ fn cell_drops(
         .collect()
 }
 
+/// W4-d15 — the 1050 Axe Fairy's shake-tick `KillTile_DropItems`
+/// (`Projectile.cs:70228` → `WorldGen.cs:63948-63962`): the per-cell
+/// `KillTile_GetItemDrops` rolls for the SHAKEABLE kinds, WITHOUT killing
+/// the tile (the pet shakes the tree; the C# `KillTile_DropItems` only
+/// spawns the items). The `IsShakeable` set (`TileID.cs:488`) is
+/// 5/72/323/583-589/596/616/634:
+/// - the trunk kinds 5/596/616/634 ride `KillTile_GetTreeDrops`
+///   (`:65214-65231` → `:66189-66261`): the canopy acorn roll + the
+///   family wood + the bonus-wood roll — the SAME resolver the axe break
+///   uses ([`trunk_tree_drops`]), axe power 0 (the pet holds no axe;
+///   `Player.FindClosest` reads the local player's held slot, the
+///   `break_tile` precedent).
+/// - the gem trees 583-589 ride `SetGemTreeDrops` (`:65699-65747` →
+///   `:66094-66108`, [`gem_tree_drops`]).
+/// - the mushroom tree 72 rides `case 71/72` (`:65642-65652`,
+///   [`mushroom_tree_drops`]).
+/// - the palm 323 rides its `:65232-65266` arm (the ground-walk wood
+///   conversion + the canopy acorn).
+/// The `genRand` rolls ride the caller's stream directly (under the C#
+/// swap `genRand == Main.rand`, `WorldGen.cs:4445` — the growth-pass
+/// convention); the trunk resolver's `FastRandom` stand-in takes one
+/// throw off the same stream (the `break_drop_events` precedent).
+/// `SpecialSeedFeatures.ShouldDropExtraWood` (`:65226-65229`) folds
+/// false on a classic world (the tenth-anniversary + drunk + !remix +
+/// !notTheBees conjunction, `SpecialSeedFeatures.cs:17-27`).
+pub(crate) fn dd2_shake_tile_drops(
+    world: &World,
+    x: i32,
+    y: i32,
+    axe_power: i32,
+    extra_wood: bool,
+    rng: &mut UnifiedRandom,
+) -> Vec<(u16, u32)> {
+    let Some(t) = world.tile(x, y).filter(|t| t.active()) else {
+        return Vec::new();
+    };
+    let (kind, fx, fy) = (t.kind, t.frame_x, t.frame_y);
+    match kind {
+        5 | 596 | 616 | 634 => {
+            // `:65219-65229` — the trunk arm: `dropItemStack++` on the
+            // bonus wood (the resolver returns stack 2), ×2 on the
+            // extra-wood seed.
+            let mut gen_stream = tr_core::tile_light::FastRandom::new(rng.next() as u64);
+            let mut drops = trunk_tree_drops(
+                tr_core::tree::tree_type_and_bottom(world, x, y).0,
+                fx,
+                fy,
+                axe_power,
+                &mut gen_stream,
+                rng,
+            );
+            if extra_wood {
+                for (_, count) in &mut drops {
+                    *count *= 2;
+                }
+            }
+            drops
+        }
+        583..=589 => {
+            // `:65699-65747` — the gem/seed pairs per kind.
+            let (gem, seed) = match kind {
+                583 => (180, 4851),
+                584 => (181, 4852),
+                585 => (177, 4853),
+                586 => (179, 4854),
+                587 => (178, 4855),
+                588 => (182, 4856),
+                _ => (999, 4857), // 589
+            };
+            gem_tree_drops(gem, seed, fx, fy, rng)
+        }
+        72 => mushroom_tree_drops(rng),
+        323 => {
+            // `:65232-65266` — the palm: the Coconut 2504 base, the
+            // ground-walk conversion (234→911, 116→621, 112→619), the
+            // canopy acorn (`frameX` 88..=132), the ×3 extra-wood seed.
+            // The tenth-anniversary stack roll (`:65235-65238`) folds
+            // false on a classic world.
+            let mut drop_item = 2504u16;
+            let mut j = y;
+            while j < world.height
+                && !world
+                    .tile(x, j)
+                    .is_some_and(|c| c.active() && tr_core::tiledata::TILE_SOLID.has(c.kind))
+            {
+                j += 1;
+            }
+            if let Some(g) = world.tile(x, j).filter(|c| c.active()) {
+                match g.kind {
+                    234 => drop_item = 911,
+                    116 => drop_item = 621,
+                    112 => drop_item = 619,
+                    _ => {}
+                }
+            }
+            let mut drops = vec![(drop_item, if extra_wood { 3 } else { 1 })];
+            if (88..=132).contains(&fx) {
+                drops.push((27, 1));
+            }
+            drops
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// `IsAlchemyPlantHarvestable` (`WorldGen.cs:66143-66174`): the per-style
 /// bloom window — 0 Daybloom by day, 1 Moonglow by night, 3 Deathweed on a
 /// blood moon (or the new moon), 4 Waterleaf in the rain (`Main.cloudAlpha`

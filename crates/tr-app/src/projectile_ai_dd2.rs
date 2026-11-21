@@ -41,14 +41,18 @@
 //! - `AI_144`'s `Utils.PlotTileLine` light casts (`:70087-70091`), the
 //!   `Opacity` write (`:70155`, no port field — the Last Prism fold) and
 //!   the dead `Hitbox.Intersects` read (`:70143-70144`, result discarded).
-//! - `AI_144`'s 1050 tree-shake `KillTile_MakeTileDust`/`PlaySounds`/
-//!   `DropItems` (`:70217-70229`) — no tile-drop seam in the pool; the
-//!   walk + ALL its `Main.rand` draws stay (`Next(100)`, the conditional
-//!   `Next(20)`, the conditional `Next(5)`), the effects are the recorded
-//!   skip. `KillTile_MakeTileDust`'s own rolls for the shakeable kinds
-//!   ride `WorldGen.genRand` (the worldgen stream, not `Main.rand`) or
-//!   the dust pool — zero `UpdateProjectiles` draws. `TileID.Sets.
-//!   IsShakeable` (`TileID.cs:488`) rides the generated
+//! - `AI_144`'s 1050 tree-shake `KillTile_MakeTileDust`/`PlaySounds`
+//!   (`:70217-70219`) — the dust body is the pool's layer skip and the
+//!   sound plays through the break-cue table in the pass drain; the
+//!   `KillTile_DropItems` (`:70228`) rides the queued [`Dd2Shake`]
+//!   request (the pass resolves the per-cell rolls WITHOUT killing the
+//!   tile — `editing::dd2_shake_tile_drops`). The walk + ALL its
+//!   `Main.rand` draws stay (`Next(100)`, the conditional `Next(20)`,
+//!   the conditional `Next(5)`). `KillTile_MakeTileDust`'s own rolls
+//!   for the shakeable kinds ride `WorldGen.genRand` (the same swapped
+//!   stream) or the dust pool — zero extra `UpdateProjectiles` draws
+//!   beyond the drop resolver's own. `TileID.Sets.IsShakeable`
+//!   (`TileID.cs:488`) rides the generated
 //!   `tr_core::tiledata::SET_IS_SHAKEABLE`.
 //! - `AI_148`'s `Star.StarFall` (`Star.cs:63-84`) picks a BACKGROUND star
 //!   and `Star.Fall()` rolls `Next(700,1001)` then `Next(-400,401)` — the
@@ -150,6 +154,23 @@ pub(crate) struct Dd2Tick {
     pub reuse_delay: Option<i32>,
     /// `player.heldProj = base.whoAmI` (`:69822`) — the slot index.
     pub held_proj: Option<i32>,
+}
+
+/// One queued 1050 shake-tick effect request — the
+/// `KillTile_MakeTileDust`/`PlaySounds`/`DropItems` trio
+/// (`Projectile.cs:70217-70229`) the arm runs on the shake frame. The
+/// three `Main.rand` draws (`Next(100)`, the conditional `Next(20)`, the
+/// conditional `Next(5)`) stay INLINE in the arm (the `UpdateProjectiles`
+/// stream); the effects resolve in the world-sim pass where the tile
+/// cascade + the item-drop seam live (the `pending_catches` precedent).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Dd2Shake {
+    pub x: i32,
+    pub y: i32,
+    /// `Main.netMode != 1 && localAI[2] >= num10 && Next(5) == 0`
+    /// (`:70225`) — the arm already zeroed `localAI[2]` on the taken
+    /// branch; the pass runs the `KillTile_DropItems` cascade.
+    pub drop: bool,
 }
 
 /// `Vector2.AngleTo` (`Utils.cs:1924-1927`) — `atan2(dy, dx)`.
@@ -562,7 +583,13 @@ pub(crate) fn ai_monk_staff_t2_ghast(p: &mut Projectile, rng: &mut dyn DropRng) 
 /// `Hitbox.Intersects` read (`:70143-70144`); the
 /// `suspiciouslookingTentacle` half of `:70241` folds false (no port
 /// field).
-pub(crate) fn ai_dd2_pet(p: &mut Projectile, o: &Dd2Owner, world: &World, rng: &mut dyn DropRng) {
+pub(crate) fn ai_dd2_pet(
+    p: &mut Projectile,
+    o: &Dd2Owner,
+    world: &World,
+    rng: &mut dyn DropRng,
+    shakes: &mut Vec<Dd2Shake>,
+) {
     // `:70041-70049` — the parameter block.
     let mut num = 4.0f32; // the leash radius
     let mut num2 = 6i32; // the idle frame rate
@@ -718,7 +745,8 @@ pub(crate) fn ai_dd2_pet(p: &mut Projectile, o: &Dd2Owner, world: &World, rng: &
                         num5 = 8;
                         num2 = 3;
                         // `:70215-70230` — the shake tick: the dust/sound/
-                        // drop effects are the recorded skip; the three
+                        // drop EFFECTS ride the queued request (the pass
+                        // resolves them on the same stream); the three
                         // Main.rand draws stay in order.
                         if p.frame_counter == 0 && (p.frame == 8 || p.frame == 12) {
                             let mut num10 = 200 + rng.next_range(0, 100);
@@ -726,10 +754,15 @@ pub(crate) fn ai_dd2_pet(p: &mut Projectile, o: &Dd2Owner, world: &World, rng: &
                                 num10 /= 8;
                             }
                             // `Main.netMode != 1` folds true (single
-                            // player); the DropItems effect is the skip.
-                            if p.local_ai[2] >= num10 as f32 && rng.next_range(0, 5) == 0 {
+                            // player). The `localAI[2]` reset stays here
+                            // (the arm owns the counter); the
+                            // `KillTile_DropItems` effect rides the queue.
+                            let drop = p.local_ai[2] >= num10 as f32
+                                && rng.next_range(0, 5) == 0;
+                            if drop {
                                 p.local_ai[2] = 0.0;
                             }
+                            shakes.push(Dd2Shake { x: px, y: py, drop });
                         }
                     }
                 } else {
@@ -1434,14 +1467,14 @@ mod tests {
         o.dead = true;
         let mut p = proj(DD2_PET_DRAGON);
         let mut rng = census();
-        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng, &mut Vec::new());
         assert!(!p.active, ":70052");
         assert_eq!(rng.ranges.len(), 0);
         let mut o = owner(0, 0);
         o.pet_flag_dd2_dragon = true;
         let mut p = proj(DD2_PET_DRAGON);
         p.pos = o.mounted_center + Vec2::new(30.0, -20.0) - Vec2::new(10.0, 10.0);
-        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng, &mut Vec::new());
         assert_eq!(p.time_left, 2, ":70108");
         assert!(p.active);
     }
@@ -1459,21 +1492,21 @@ mod tests {
         let hover = o.mounted_center + Vec2::new(30.0, -20.0);
         p.pos = hover - Vec2::new(10.0, 10.0);
         let mut rng = census();
-        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng, &mut Vec::new());
         // num12 = 0 < 4 → ×0.25 first, then vector5 = 0 → no rewrite.
         assert_eq!(p.vel, Vec2::ZERO);
         assert_eq!(p.local_ai[0], 1.0, ":70318");
         // Far but under 1000: the ×0.1 lerp toward the hover point.
         let mut p = proj(DD2_PET_DRAGON);
         p.pos = o.mounted_center + Vec2::new(500.0, 0.0) - Vec2::new(10.0, 10.0);
-        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng, &mut Vec::new());
         let want = (hover - (o.mounted_center + Vec2::new(500.0, 0.0))) * 0.1;
         assert!((p.vel - want).length() < 1e-3, ":70265");
         // Past 1000: the teleport onto player.Center + vector, THEN the
         // leash reads the post-teleport centre.
         let mut p = proj(DD2_PET_DRAGON);
         p.pos = o.mounted_center + Vec2::new(1500.0, 0.0) - Vec2::new(10.0, 10.0);
-        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng, &mut Vec::new());
         let c = Vec2::new(p.pos.x + 10.0, p.pos.y + 10.0);
         let want_c = o.center + Vec2::new(30.0, -20.0);
         assert!((c - want_c).length() < 1e-3, ":70250");
@@ -1490,7 +1523,7 @@ mod tests {
         let mut p = proj(DD2_PET_GHOST);
         p.pos = o.mounted_center - Vec2::new(10.0, 10.0);
         let mut rng = census();
-        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng, &mut Vec::new());
         assert_eq!(rng.ranges, vec![(0, 24), (0, 3), (0, 2)], ":70070-70079");
         assert_eq!(rng.floats, 1, ":70085");
         // The dragon WITH the ghost flag shifts −64 X (`:70241-70243`);
@@ -1498,7 +1531,7 @@ mod tests {
         let mut d = proj(DD2_PET_DRAGON);
         d.pos = o.mounted_center + Vec2::new(-34.0, -20.0) - Vec2::new(10.0, 10.0);
         let mut rng2 = census();
-        ai_dd2_pet(&mut d, &o, &w, &mut rng2);
+        ai_dd2_pet(&mut d, &o, &w, &mut rng2, &mut Vec::new());
         // hover = mounted + (30 − 64, −20) → the dragon sits on it:
         // velocity stays zero.
         assert_eq!(d.vel, Vec2::ZERO, "the shifted hover point");
@@ -1516,7 +1549,7 @@ mod tests {
         p.pos = o.mounted_center + Vec2::new(30.0, -20.0) - Vec2::new(10.0, 10.0);
         p.vel = Vec2::new(1.0, 0.0);
         let mut rng = census();
-        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng, &mut Vec::new());
         assert_eq!(p.local_ai[0], 1.0, ":70116 — once, not twice");
         let phase = 1.0 * 0.01 + 1.0 / 120.0;
         assert!((p.local_ai[1] - phase * 0.9).abs() < 1e-5, ":70121-70133");
@@ -1525,7 +1558,7 @@ mod tests {
         let mut p2 = proj(UPBEAT_STAR);
         p2.pos = p.pos;
         let mut rng2 = census();
-        ai_dd2_pet(&mut p2, &o, &w, &mut rng2);
+        ai_dd2_pet(&mut p2, &o, &w, &mut rng2, &mut Vec::new());
         assert!(rng2.ranges.is_empty(), ":70134 — the 0.1 floor");
     }
 
@@ -1551,9 +1584,15 @@ mod tests {
         p.local_ai[2] = 100.0;
         put(&mut w, 105, 50, 5); // a tree — IsShakeable
         let mut rng = census();
-        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        let mut shakes = Vec::new();
+        ai_dd2_pet(&mut p, &o, &w, &mut rng, &mut shakes);
         assert_eq!(rng.ranges, vec![(0, 100), (0, 20), (0, 5)], ":70220-70225");
         assert_eq!(p.local_ai[2], 0.0, "the census min returns take the drop arm");
+        // W4-d15 seam — the shake tick queues the effect request: the
+        // scan's cell + the taken drop gate (`:70225-70228`).
+        assert_eq!(shakes.len(), 1, "one shake-tick request");
+        assert_eq!((shakes[0].x, shakes[0].y), (105, 50), "the scanned cell");
+        assert!(shakes[0].drop, "the census min takes the DropItems arm");
         // The hover re-aim: vector = tree(105*16+8, 50*16+8) + (−30, 0)
         // − mounted, THEN the π/30 bob adds cos(0)*2 = +2 Y (`:70238`).
         // The pet is far → the ×0.1 lerp toward it.
@@ -1565,11 +1604,11 @@ mod tests {
         let mut p2 = proj(AXE_FAIRY_PET);
         p2.pos = o.mounted_center + Vec2::new(400.0, 0.0) - Vec2::new(10.0, 10.0);
         let mut rng2 = census();
-        ai_dd2_pet(&mut p2, &o, &w, &mut rng2);
+        ai_dd2_pet(&mut p2, &o, &w, &mut rng2, &mut Vec::new());
         assert_eq!(p2.local_ai[1], -300.0, ":70235");
         assert!(rng2.ranges.is_empty());
         // The cooldown counts back up one per tick (`:70173-70176`).
-        ai_dd2_pet(&mut p2, &o, &w, &mut rng2);
+        ai_dd2_pet(&mut p2, &o, &w, &mut rng2, &mut Vec::new());
         assert_eq!(p2.local_ai[1], -299.0);
     }
 

@@ -14536,6 +14536,12 @@ pub struct ProjectilePool {
     /// `player.reuseDelay = 2` `:69966`): drained by the world-sim pass
     /// after the step (the `take_spear_hold` precedent).
     pending_dd2_writes: Vec<(Option<i32>, Option<i32>)>,
+    /// W4-d15 — the 144 arm's 1050 shake-tick effect requests
+    /// (`KillTile_MakeTileDust`/`PlaySounds`/`DropItems`,
+    /// `Projectile.cs:70217-70229`): the three `Main.rand` draws stay
+    /// inline in the arm; the effects drain in the world-sim pass on the
+    /// same `UpdateProjectiles` stream (the `pending_catches` precedent).
+    pending_dd2_shakes: Vec<crate::projectile_ai_dd2::Dd2Shake>,
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
     /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
@@ -14948,6 +14954,7 @@ impl ProjectilePool {
             pending_spear_hold: None,
             dd2_owner: None,
             pending_dd2_writes: Vec::new(),
+            pending_dd2_shakes: Vec::new(),
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
@@ -15203,6 +15210,14 @@ impl ProjectilePool {
     /// world-sim pass applies them after the step.
     pub fn take_dd2_writes(&mut self) -> Vec<(Option<i32>, Option<i32>)> {
         std::mem::take(&mut self.pending_dd2_writes)
+    }
+
+    /// W4-d15 — drain the 144 arm's 1050 shake-tick effect requests
+    /// (`Projectile.cs:70217-70229`), in slot order. The world-sim pass
+    /// resolves the dust/sound/drop effects on the `UpdateProjectiles`
+    /// stream (the arm's three draws already ran inline).
+    pub fn take_dd2_shakes(&mut self) -> Vec<crate::projectile_ai_dd2::Dd2Shake> {
+        std::mem::take(&mut self.pending_dd2_shakes)
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
@@ -17438,12 +17453,15 @@ impl ProjectilePool {
                         // `set_dd2_owner`; a `None` link holds the slot.
                         144 => {
                             if let Some(o) = self.dd2_owner {
+                                let mut shakes = Vec::new();
                                 crate::projectile_ai_dd2::ai_dd2_pet(
                                     &mut self.slots[i],
                                     &o,
                                     world,
                                     rng,
+                                    &mut shakes,
                                 );
+                                self.pending_dd2_shakes.extend(shakes);
                             }
                             // HandleMovement after the AI (`:17015`); the
                             // rows keep tileCollide = false (`:7444`).

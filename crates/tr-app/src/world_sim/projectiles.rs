@@ -464,6 +464,54 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.reuse_delay = ticks as f32 / 60.0;
         }
     }
+    // W4-d15 — the 144 arm's 1050 shake-tick effects
+    // (`Projectile.cs:70217-70229`): the arm's three `Main.rand` draws
+    // ran inline on the `UpdateProjectiles` stream; the effects resolve
+    // here on the SAME stream (the `drain_catches` precedent). The dust
+    // body is the pool's recorded layer skip (`KillTile_MakeTileDust`'s
+    // shakeable-kind rolls ride `genRand` — the same swapped stream —
+    // or the dust pool); the sound plays through the break-cue table
+    // (`fail: true`, `:70219`); the drop gate runs the
+    // `KillTile_DropItems` per-cell rolls WITHOUT killing the tile.
+    for shake in app.projectiles.take_dd2_shakes() {
+        let Some(tile) = app.world.tile(shake.x, shake.y).copied().filter(|t| t.active()) else {
+            continue;
+        };
+        let (px, py) = (shake.x as f32 * 16.0, shake.y as f32 * 16.0);
+        // `KillTile_PlaySounds(x, y, fail: true, tileCache)` (`:70219`).
+        let sounds = tr_core::edit::kill_tile_sound(tile.kind, tile.frame_x, true);
+        for cue in [sounds.primary, sounds.extra, sounds.shatter].into_iter().flatten() {
+            if let Some((name, volume)) = crate::world_sim::editing::kill_cue(cue) {
+                app.audio.play_at(name, px, py, volume);
+            }
+        }
+        if shake.drop {
+            // `KillTile_DropItems(x, y, tileCache)` (`:70228`): the
+            // bonus-wood roll reads the closest player's held axe
+            // (`WorldGen.cs:66255-66256` — the port's one player).
+            let axe_power = crate::registry::get(app.inventory[app.selected].kind)
+                .map(|d| i32::from(d.axe))
+                .unwrap_or(0);
+            // `SpecialSeedFeatures.ShouldDropExtraWood`
+            // (`SpecialSeedFeatures.cs:17-27`): tenth + drunk + !remix
+            // + !notTheBees.
+            let seeds = app.world.seeds;
+            let extra_wood = seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+                && seeds.contains(tr_core::seeds::SeedFlags::DRUNK)
+                && !seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                && !seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES);
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+            let drops = crate::world_sim::editing::dd2_shake_tile_drops(
+                &app.world, shake.x, shake.y, axe_power, extra_wood, rng,
+            );
+            for (id, count) in drops {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+                crate::world_sim::items::spawn_item_drop(
+                    &mut app.items, rng, id, count, shake.x, shake.y,
+                );
+            }
+        }
+    }
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-
