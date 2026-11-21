@@ -6621,6 +6621,34 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-f27 slice 12 — the bridge into `npc_findframe_extra12`'s
+    /// pure machine (the 549-fix bridge shape, the e11 precedent):
+    /// copy the four `FindFrame` fields out, run one tick, copy them
+    /// back. Betsy reads ONLY ai[0] (the phase) / ai[1] (the timer) —
+    /// no velocity, no sprite/rotation write — but all four fields
+    /// ride the same bridge shape.
+    fn find_frame_extra12(&mut self, kind: crate::npc_findframe_extra12::FindFrameExtra12Kind) {
+        let mut s = crate::npc_findframe_extra12::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra12::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai0: self.ai[0],
+            ai1: self.ai[1],
+            ai2: self.ai[2],
+        };
+        crate::npc_findframe_extra12::find_frame_extra12(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     pub(crate) fn find_frame(&mut self) {
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
@@ -7073,13 +7101,20 @@ impl Npc {
                     self.frame = (self.frame + 1) % 14;
                 }
             }
-            // Betsy: the 11-frame dragon strip.
+            // Betsy (`NPC.cs:67258-67451`, the 11-row dragon sheet):
+            // the ai[0] phase ladders — 4/3 the breath machines (the
+            // (int)ai[1] counter over the >= 5/54/57/60/123/128/133
+            // and >= 5/34/37/40/98/103/108 rungs), 5 the row-3 pin,
+            // 6 the 8-tick landing ladder, else row 0. W4-f27 slice
+            // 12: the v1 `(vx != 0) + 0.6 >= 8` free strip was WRONG
+            // (the M4-EVENT-19 stand-in — Betsy's row NEVER reads
+            // velocity); the arm delegates to the extra-12 machine
+            // (the 549-fix bridge shape). cs_id 551 via the bestiary
+            // net_id row (`bestiary.rs:1569`).
             NpcKind::DD2Betsy => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 11;
-                }
+                self.find_frame_extra12(
+                    crate::npc_findframe_extra12::FindFrameExtra12Kind::DD2Betsy,
+                );
             }
             // The WitherBeast: `Main.npcFrameCount[568/569]` = 17 rows.
             NpcKind::DD2WitherBeast => {
@@ -27710,6 +27745,74 @@ mod s1_d_3b_tests {
         n.find_frame();
         assert_eq!(n.rotation, 3.0 * 0.1);
         assert_eq!(n.sprite_dir, 1);
+    }
+
+    #[test]
+    fn f27s12_betsy_rides_the_extra12_phase_machine() {
+        // W4-f27 slice 12: Betsy's v1 `(vx != 0) + 0.6 >= 8` free strip
+        // (the M4-EVENT-19 stand-in) was WRONG — the C#'s row NEVER
+        // reads velocity (`NPC.cs:67258-67451`, the ai[0] phase
+        // ladders). The arm now delegates to the extra-12 machine;
+        // expectations identical to the e12 module witness
+        // (mechanical replay).
+        assert_eq!(NpcKind::DD2Betsy.cs_id(), 551);
+        // Velocity NEVER feeds the machine: vx 9 + vy -9 with ai[0]
+        // 0 still snaps row 0, counter UNTOUCHED.
+        let mut n = bare(NpcKind::DD2Betsy);
+        n.vx = 9.0;
+        n.vy = -9.0;
+        n.frame = 9;
+        n.frame_counter = 42.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 42.0));
+        // The long breath (ai0 4): the timer ladder — 0→5, 5→6,
+        // 54→7, 57→8, 60→9, 63→10, 123→8, 128→7, 133→0.
+        for (ai1, row) in [
+            (0.0, 5u32), (5.0, 6), (54.0, 7), (57.0, 8), (60.0, 9),
+            (63.0, 10), (123.0, 8), (128.0, 7), (133.0, 0),
+        ] {
+            let mut n = bare(NpcKind::DD2Betsy);
+            n.ai[0] = 4.0;
+            n.ai[1] = ai1;
+            n.frame = 7;
+            n.frame_counter = 99.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (row, ai1), "ai1 {ai1}");
+        }
+        // The short breath (ai0 3): 34→7, 37→8, 40→10 (40/3%2 = 1),
+        // 98→8, 103→7, 108→0.
+        for (ai1, row) in [(34.0, 7u32), (37.0, 8), (40.0, 10), (98.0, 8), (103.0, 7), (108.0, 0)] {
+            let mut n = bare(NpcKind::DD2Betsy);
+            n.ai[0] = 3.0;
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (row, ai1), "ai1 {ai1}");
+        }
+        // The row-3 pin (ai0 5): counter UNTOUCHED.
+        let mut n = bare(NpcKind::DD2Betsy);
+        n.ai[0] = 5.0;
+        n.ai[1] = 7.0;
+        n.frame = 9;
+        n.frame_counter = 42.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (3, 42.0));
+        // The landing ladder (ai0 6): 8→2, 24→4, 32→3, 56→2, 72→0.
+        for (ai1, row) in [(8.0, 2u32), (24.0, 4), (32.0, 3), (56.0, 2), (72.0, 0)] {
+            let mut n = bare(NpcKind::DD2Betsy);
+            n.ai[0] = 6.0;
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (row, ai1), "ai1 {ai1}");
+        }
+        // No sprite/rotation write — the bridge copies them back
+        // unchanged.
+        let mut n = bare(NpcKind::DD2Betsy);
+        n.ai[0] = 4.0;
+        n.ai[1] = 60.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.5;
+        n.find_frame();
+        assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5));
     }
 
     #[test]
