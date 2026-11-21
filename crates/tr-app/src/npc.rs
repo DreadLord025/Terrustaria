@@ -10511,8 +10511,17 @@ impl Npc {
         let (cx, cy) = self.center();
 
         // NPC.cs:56491-56718
+        // W4-g4 — the per-phase `knockBackResist`/`defense` writes the port's
+        // stand-in dropped. `defDefense` is the kind's base 26 (`SetDefaults`
+        // 471, `NPC.cs:15734`); the classic `GetKnockbackMultiplier_ScaledByDifficulty`
+        // sample is ×1 (`GameDifficultyData.cs:86`), so 0.35 stands verbatim.
+        let def_defense = 26;
         if self.ai[3] < 0.0 {
             // shadowflame phase (noGravity/noTileCollide in C#)
+            // `:56495-56496` — the flight phase is knockback-immune and takes
+            // the ×1.1 defense (26 * 1.1 = 28.6 → 28, the C# `(int)` truncation).
+            self.kb_resist_override = Some(0.0);
+            self.defense_override = Some((def_defense as f64 * 1.1) as i32);
             if self.vx < 0.0 {
                 self.facing = -1;
             } else if self.vx > 0.0 {
@@ -10609,6 +10618,12 @@ impl Npc {
         }
 
         // Normal / summoning (ai[3] >= 0). NPC.cs:56520-56717.
+        // `:56522-56525` — the ground phase restores the knockback (0.35
+        // classic) and the base defense; `localAI[3]` (the flight-phase
+        // apparition timer) zeroes.
+        self.local_ai[3] = 0.0;
+        self.kb_resist_override = Some(0.35);
+        self.defense_override = Some(def_defense);
         self.rotation *= 0.9;
         // aiStyle 3 baseline chase (NPC.cs:15728).
         let dx = pcx - cx;
@@ -10626,6 +10641,10 @@ impl Npc {
         if (self.ai[3] - 1.0).abs() < f32::EPSILON {
             // summoning pose (56643-56680); ShadowFlameApparition (472) spawn
             // at ai[2]==60 is not modeled (kind unavailable).
+            // `:56529-56533` — the summoning pose is knockback-immune and
+            // gains +10 defense (the C# `defense += 10` on the restored base).
+            self.kb_resist_override = Some(0.0);
+            self.defense_override = Some(def_defense + 10);
             self.vx *= 0.8;
             self.ai[2] += 1.0;
             if self.ai[2] >= 90.0 {
@@ -27227,6 +27246,50 @@ mod s1_d_3b_tests {
         );
         // caster path would not produce this 471-specific ground-phase cycle
         assert_eq!(n.caster_counter, 0, "must not run aiStyle 8 caster cycle");
+    }
+
+    /// W4-g4 — the summoner's per-phase `knockBackResist`/`defense` writes
+    /// (`NPC.cs:56495-56496` flight, `:56523-56525` ground, `:56531-56532`
+    /// pose). The port's stand-in dropped them; the kind-table kb 0.15 /
+    /// def 26 stood for every phase. Classic difficulty: the flight phase
+    /// kb 0 / def `(int)(26 * 1.1)` = 28, the ground phase kb 0.35 / def 26,
+    /// the summoning pose kb 0 / def 36.
+    #[test]
+    fn w4_g4_the_goblin_summoner_phases_write_knockback_and_defense() {
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        // The player far below: the flight phase's rise/strafe arms keep
+        // ai[3] negative (no ground landing), so the phase writes are stable.
+        player.x = 80.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        let mut rng = UnifiedRandom::new(1);
+
+        // Flight phase (ai[3] = -2, the rise): kb 0, def 28.
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.x = 80.0 * 16.0;
+        n.y = 60.0 * 16.0;
+        n.ai[3] = -2.0;
+        n.update_goblin_summoner(&w, &player, &mut rng);
+        assert_eq!(n.knock_back_resist(), 0.0, "the flight phase is kb-immune");
+        assert_eq!(n.defense(), 28, "the flight defense is (int)(26 * 1.1)");
+
+        // Ground phase (ai[3] = 0): kb 0.35, def 26 (the base restored).
+        let mut g = bare(NpcKind::GoblinSummoner);
+        g.x = 80.0 * 16.0;
+        g.y = 60.0 * 16.0;
+        g.ai[3] = 0.0;
+        g.update_goblin_summoner(&w, &player, &mut rng);
+        assert_eq!(g.knock_back_resist(), 0.35, "the ground phase kb 0.35");
+        assert_eq!(g.defense(), 26, "the ground defense is the base 26");
+
+        // Summoning pose (ai[3] = 1): kb 0, def 36 (the base + 10).
+        let mut s = bare(NpcKind::GoblinSummoner);
+        s.x = 80.0 * 16.0;
+        s.y = 60.0 * 16.0;
+        s.ai[3] = 1.0;
+        s.update_goblin_summoner(&w, &player, &mut rng);
+        assert_eq!(s.knock_back_resist(), 0.0, "the pose is kb-immune");
+        assert_eq!(s.defense(), 36, "the pose defense is the base + 10");
     }
 
     #[test]
