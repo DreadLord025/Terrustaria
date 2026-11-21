@@ -1,5 +1,18 @@
 # 235 — The Grand Design 3611 drag / proj-651: landed-verification + the apply activation (the kite seam)
 
+> **SEALED (wiring-unique seal phase, 2026-11-21)**: both halves
+> FINAL — d13's projectile half re-verified at `462c86097` (the pool
+> seam unchanged: the contract comment `projectiles.rs:456-473`, the
+> buffer park `:474`), the f11 apply stream-threaded and READY. The
+> §2 drain hunk stands with ONE re-target: the union executes against
+> c42 `15810df4a`, whose moved `mass_wire_operation` now sits at
+> `world_sim/wiring.rs:1089` (still 4-arg, the hard-coded stream at
+> `:1143`) — the exact `drop_rng` param diff + the direct-drain
+> replacement (the buffer field DROPS) are research/133 §8.4. The §4
+> table's c42 base (`79b81ae77`) is superseded by the §8 seal monitor
+> there (8.1/8.2-core closed on c42 in its own shape). No scope
+> re-opened.
+>
 > Renumbered 136 → 153 → **235** (2026-11-21, the INDEX-registry
 > collision — g31's `136-tilepass-d-hunks` was first-pushed; the
 > research/150 registry's key-136 row assigns 235; see research/233's
@@ -45,7 +58,13 @@ STREAM NOTE: the fn now takes `drop_rng: RngKey` and rolls the cut-cache
 
 The drain itself is a UNION-MERGE hunk (d13's pool seam is unmerged on
 f11 — a direct call would not compile); the exact hunk is published at
-`world_sim/projectiles.rs`'s pass tail (after `take_spear_hold`):
+`world_sim/projectiles.rs`'s pass tail (after `take_spear_hold`).
+**Seal re-target**: at the d13×c42 union the call path is
+`crate::world_sim::wiring::mass_wire_operation` (the c42-moved copy —
+f11's `wiring_devices.rs` module drops per 133 §4a), and the hunk
+REPLACES d13's park line (`app.pending_mass_wire_ops = …`, the buffer
+field drops — one drain shape, never both); the param diff onto the
+moved fn is research/133 §8.4(a). The shape below is otherwise verbatim:
 
 ```rust
 for (owner, psx, psy, pex, pey) in app.projectiles.take_mass_wire_ops() {

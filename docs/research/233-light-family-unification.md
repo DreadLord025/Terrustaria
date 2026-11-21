@@ -1,5 +1,16 @@
 # 233 — The light-family unification: final hunks for c42c (95 §4 / §8.5)
 
+> **SEALED (wiring-unique seal phase, 2026-11-21)**: the family is
+> FINAL on the c42 free-fn shape — re-verified at c42 `15810df4a`:
+> `toggle_campfire` `wiring.rs:3772` (validate-kill BEFORE the forced
+> gate, `drops` out-param), `toggle_candle` `:3689`, `toggle_chandelier`
+> `:3732`, `toggle_holiday_light` `:3936`, `try_toggle_light` `:3959`
+> (the §8.5 sink contract). §1a/§1b stay SUPERSEDED (§1 header note);
+> the surviving f11 unique is the forced-gate witness — its exact
+> re-point (the chandelier leg drops the fx/fy args + adds `skips`,
+> the campfire leg adds `&mut drops`) is research/133 §8.5 row 4.
+> No scope re-opened.
+>
 > Renumbered 134 → 151 → **233** (2026-11-21): the INDEX-registry wave
 > assigned 134/135/136 to the first-pushed g67/g90/g31 docs; the interim
 > 151-153 pick collided again when **research/150** (the collision

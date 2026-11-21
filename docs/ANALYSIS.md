@@ -36278,6 +36278,30 @@ are ALREADY on e20 (`f167082e`/`6336e3b4`/`b0d0836f`/`5272cd52`), plus
 e20's slot-Vec fix (`a2d6cdad`). The `frame_track` non-pound/hammer half
 stays the 95 §8.8 follow-up salvage note.
 
+**WIRING-UNIQUE SEAL (2026-11-21, research/133 §8 — the LIVE contract):**
+the c42 tip moved to `15810df4a` (its final phase closed 95 §8.1/
+§8.2-core/§8.4/§8.9 in c42's OWN shape: the stamped-boxes `entity_boxes`
+gate + the `door_echoes` tuple queue), so 133 §7.1/§7.2's CORE hunks are
+SUPERSEDED-BY-C42 — the f11 `CellBlocked`/`install_entity_gate` +
+`door_toggles` struct shapes DROP, never ship both. The surviving f11
+uniques (the §8.5 bible): the `send_door_toggle` send-half (g48 has NO
+production send — the tuple-arg re-shape + the 14-site drain re-point
+hunk is §8.2), the kite `drop_rng` param (re-targeted at the c42-moved
+fn `world_sim/wiring.rs:1089`/`:1143`; the direct drain REPLACES d13's
+buffer park, §8.4), the `wires_radial` whole module, and the
+forced-gate/entity/echo witness legs c42's own pins lack. The
+radial-draw texture census (355-tip sweep): NO lane loads
+`UI/Wires_0..11` + `UI/BuilderIcons` (CORRECTED content names,
+`AssetInitializer.cs:299-303` — the "WireUI_*"/"BuilderAcc" spellings
+were C# field names); the draw executor owns the 13 loads (measured
+20 980 px² padded ≈ 3 atlas rows), the claim attaches to d35
+research/113's union as a §14 new-claimant delta. The g48 research/237
+minecart fail-tail fix was taken VERBATIM (`b46556b2d`, blob `8a7c149cb`
+= g48's; the later seal-note header is the only delta — the f11×g48
+minecart merge is a comment-only dedupe); the
+drop-for-e20 ruling stands, any surviving `frame_track` keeps the
+fail-tail NO-OP for the net-17 reader's `mute:false`.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

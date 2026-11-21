@@ -425,7 +425,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // ACTIVATION CONTRACT for the d13 union (research/235). d13's pool
     // Kill hook queues `(owner, ps, pe)` (`take_mass_wire_ops`) and parks
     // them on `app.pending_mass_wire_ops` at THIS seam; the merge wave
-    // drains them right here through the f11 apply:
+    // drains them right here through the f11 apply. SEAL RE-TARGET
+    // (research/133 §8.4): the union calls the c42-MOVED copy
+    // `crate::world_sim::wiring::mass_wire_operation` (this module drops
+    // per §4a) and the direct drain REPLACES d13's park line — the
+    // buffer field drops, one drain shape, never both:
     //   for (owner, psx, psy, pex, pey) in app.projectiles.take_mass_wire_ops() {
     //       if owner as u32 != app.local_id { continue; } // the Kill gate
     //       crate::world_sim::wiring_devices::mass_wire_operation(

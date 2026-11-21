@@ -1,5 +1,13 @@
 # 133 — The f11 unique folds (union-sync → c42c canonical) — FINAL-FINAL
 
+> **SEAL PHASE (2026-11-21, later same day)**: §8 is the LIVE merger
+> contract — the c42 tip moved to `15810df4a` (its final phase closed
+> 95 §8.1/§8.2-core/§8.4/§8.9 in c42's own shape), g48 SEALED at
+> `9460c85d9`. §7.1/§7.2's CORE hunks are SUPERSEDED-BY-C42; the
+> surviving f11 uniques + the exact merge-hunks are the §8.5 bible.
+> The g48 research/237 minecart tail-fix was TAKEN verbatim on this
+> branch (`b46556b2d`).
+>
 > **FINAL-FINAL (retire phase, 2026-11-21)**: §1-2 EXECUTED on c42
 > (`e5569c2a`…`e6169bd1`, receipt `133-fold-receipt.md` on
 > `task/W4-c42-wiring-device-arms` tip `79b81ae77` = c42e-final);
@@ -293,6 +301,14 @@ cooldown witness (`:6738`) was rebased on e20.
 `KillTile(fail)` (`Minecart.cs:976-1038`/`:1110-1166`) is the future
 hammer-placement half (`edit/hammer.rs` `Consumed` seam) — a follow-up
 task, NOT wiring code; use e20's assert convention when it lands.
+**SEAL UPDATE (2026-11-21)**: g48 landed this canonical module on its
+tip (`9460c85d9`, research/237) with the fail-tail FIXED (the f11
+`kill_tile(no_item:true)` was a KILL; the C# `KillTile(fail:true)`
+never removes — the net-17 reader's default `mute:false` made it
+live); the fix + its witness were taken VERBATIM here (`b46556b2d`,
+blob `8a7c149cb` = g48's, the f11×g48 minecart merge is a no-op
+dedupe). The drop-for-e20 ruling stands, BUT any surviving
+`frame_track` shape keeps the fail-tail NO-OP (§8.5 row 7).
 
 ### 4c. `edit.rs` shift copies → c42 `edit/shift.rs`
 95 §2-3: c42's bodies win (paint + fullbright coating, in-body cues at
@@ -359,6 +375,16 @@ the receipt's union lines.)*
 ---
 
 ## 7. POST-95 FOLD-LIST — the five seam-wave uniques for c42e/the merger
+
+> **SEAL-MONITOR BANNER (2026-11-21)**: this section is the historical
+> record at c42e-final `79b81ae77`. The c42 tip has since moved to
+> **`15810df4a`** (the final phase: `c6f40d0aa` closed §8.1/§8.2-core/
+> §8.4/§8.9 in c42's OWN shape, `f173fb88d` the g78 monolith arm,
+> `6ac4925ba`/`15810df4a` docs+witness fixes). §7.1's core hunks and
+> §7.2's core payload hunks are **SUPERSEDED-BY-C42** (its stamped-boxes
+> gate + `door_echoes` tuple queue replace the f11 closure/struct
+> shapes); §7.3/§7.4/§7.5 stand. **The LIVE contract is §8 (the
+> WIRING-UNIQUE SEAL)** — read it instead of applying §7.1/§7.2 hunks.
 
 The five f11 commits AFTER `6bc1547d` (the §1-6 comparison state) closed
 95 §8.1/§8.2-send/§8.5 on this branch and landed the radial/kite halves.
@@ -577,3 +603,261 @@ The §5 cross-note still binds: none of these hunks touches the
 144/421/422/235/226/506 fix-round arms. Every witness named is WRITTEN
 NOT RUN (code-only lanes); the merger runs the catalog command after
 the union per AGENTS.md.
+
+---
+
+## 8. WIRING-UNIQUE SEAL (2026-11-21) — the LIVE merger contract
+
+> Sealed tips (fetch-verified this phase): **c42 `15810df4a`**
+> (`task/W4-c42-wiring-device-arms`), **g48 `9460c85d9`**
+> (`task/W4-g48-net-apply-arms-1`, itself SEALED — research/17 tail +
+> research/237), **d13 `462c86097`** (`task/W4-d13-proj-ai-121-130`),
+> **d35 `1afd327b9`** (`task/W4-d35-npc-kinds-71-140`, the atlas-repack
+> ledger, research/113 RETIRED). f11 = this branch. Code-only: no
+> cargo/tests/rustfmt/graphify run; every claim below re-verified by
+> `git show <tip>:<file>` / `git grep` at the cited lines.
+
+### 8.1 The c42-seal monitor — §7 targets re-audited at `15810df4a`
+
+The c42 final phase (`c6f40d0aa` seams 1, `f173fb88d` seams 2,
+`6ac4925ba` docs, `15810df4a` witness fixes) closed 95 §8.1/§8.2-core/
+§8.4/§8.9 in c42's OWN shape (its research/95 §12 final table). The
+§7 fold-list was written against `79b81ae77`; the re-audit:
+
+| §7 target (old cite) | State at c42 `15810df4a` | Verdict |
+| --- | --- | --- |
+| §7.1 trapdoor closures `wiring.rs:2617`/`:2630` (`&\|_, _\| false` ×2) | NOW `:2667`/`:2685`, BOTH `&\|x, y\| self.cell_blocked_by_entity(x, y)` — the stamped-boxes gate (`entity_boxes` field `:234`, `set_entity_boxes` `:513`, `cell_blocked_by_entity` `:523`) | **SUPERSEDED-BY-C42** — do NOT fold the f11 `CellBlocked`/`install_entity_gate` shape |
+| §7.1 tall-gate closure `:2656` | NOW `:2719`, the same real closure | **SUPERSEDED-BY-C42** |
+| §7.1 door-11 always-free (correct) | NOW `:2752` — the ONLY production always-free closure left (`forced: true` skips the gate); `:7725`/`:7737`/`:7745` are test rigs | unchanged contract |
+| §7.1 the 14 install/clear sites | c42 stamps ALL 14: `stamp_wiring_entity_boxes` at netglue `:646`/`:799`/`:1799`, chest `:1163`, editing `:5603`, doors `:220`, projectiles `:616`/`:657`, tile_entities `:32`, wiring-tick `:154`; the parts form `collect_entity_boxes` at npcs `:4651`, player `:1135`/`:1193`/`:1378` | **SUPERSEDED-BY-C42** (c42's census covers the same 14 entries; g4's bash closure + g48's reader closure stay their own, as §7.1 ruled) |
+| §7.2 core `door_toggles`/`DoorToggle` struct + the five payload pushes | c42 keeps a TUPLE queue: `door_echoes: Vec<(i32,i32,i32,i32)>` `:331`, `take_door_echoes` `:893`; the five sites compute verbatim — trapdoor `num66` ±1 `:2677-2697`, gate UNCONDITIONAL `:2727`, close `:2761`, open+succeeded-lean `:2815` | **SUPERSEDED-BY-C42** — the f11 struct/queue drops; the SEND half re-points at the tuple (§8.2) |
+| §7.5 `mass_wire_operation` c42 moved copy `:1042` | NOW **`world_sim/wiring.rs:1089`** — still 4-arg (NO `drop_rng`), the hard-coded `RngKey::UpdatePlayers` NOW **`:1143`**; the 3625 arm call `editing/wiring.rs:207`; the unit call `world_sim/wiring.rs:2024` | **STILL VALID, re-targeted** — the param hunk is §8.4 |
+| §7.3 c42 free-fn family | `toggle_campfire` `:3772` (validate-kill BEFORE the forced gate, `drops` out-param), `toggle_candle` `:3689`, `toggle_chandelier` `:3732`, `toggle_holiday_light` `:3936`, `try_toggle_light` `:3959` (the §8.5 sink note) | unchanged — witness re-point stands |
+| §7.4 `wires_radial` | `git grep wires_radial` at the tip: ZERO hits | unchanged — whole-module KEEP |
+
+**Net effect**: the f11 uniques that still fold are §7.2's APP
+send-half (re-shaped, §8.2), §7.3's witness, §7.4's module, §7.5's
+param (§8.4) — plus the f11 witness legs c42's own pins do not cover
+(§8.5 bible). The §7.1/§7.2 CORE hunks are dead: applying them would
+re-introduce the second gate/queue shape 95 bans.
+
+### 8.2 g48 keep-one FINAL — the send-half merge-hunk (f11-unique)
+
+Re-verified at g48's SEALED tip `9460c85d9`: **g48 has NO production
+send-half** — its only `C2s::DoorToggle` sends are test fixtures
+(`netglue.rs:6291`/`:6661`/`:6726`, all inside `#[cfg(test)]`, mod at
+`:3986`). The apply lane is complete: `net_apply.rs::host_door_toggle`
+`:598` (the `:1330` normalised-direction relay), `client_door_toggle`
+`:616`, `apply_door_action` `:630` (the 0/1/2-3/4-5 dispatch, the REAL
+`entity_cell_blocked` reader closure `:27`/`:34`, the full
+`can_kill_tile` chest-store injection). f11's `send_door_toggle`
+(`netglue.rs:2986`) is the ONE send copy — KEEP, re-pointed at c42's
+tuple queue. **The exact merge-hunk** (replaces the f11 struct-arg
+form; the `tr_core::wiring::DoorToggle` engine struct DROPS with §8.1):
+
+```rust
+/// One `NetMessage.SendData(19, -1, -1, null, number, x, y, number4)`
+/// — the c42 `door_echoes` tuple `(number, x, y, number4)` straight
+/// off `take_door_echoes()`. Host broadcasts, client sends, `Off` is
+/// the `SendData` netMode-0 return (`NetMessage.cs:83-86`). The wire
+/// direction byte is `number4 == 1f` → 1 else 0 (`NetMessage.cs:541`).
+pub(crate) fn send_door_toggle(&self, number: i32, x: i32, y: i32, number4: i32) {
+    let msg = net::DoorToggle {
+        action: number as u8,
+        x: x as i16,
+        y: y as i16,
+        direction: u8::from(number4 == 1),
+    };
+    match &self.net {
+        NetRole::Host(server) => server.broadcast(&S2c::DoorToggle(msg)),
+        NetRole::Client(client) => client.send(&C2s::DoorToggle(msg)),
+        NetRole::Off => {}
+    }
+}
+```
+
+**The drain re-point — ALL 14 production sites, not just the tick.**
+c42 discards the echoes AT EVERY TRIP SITE (the SP fold), so replacing
+only the wiring-tick drain would silently drop every echo produced by
+a `hit_switch`/plate/sensor trip elsewhere. The merger replaces each
+`let _ = app.wiring.take_door_echoes();` with the send drain — ONE
+shape, 14 sites at c42 `15810df4a`:
+
+| file | line | note |
+| --- | --- | --- |
+| `app/netglue.rs` | `:663`/`:816`/`:1816` | `self.send_door_toggle(n, x, y, d)` |
+| `chest.rs` | `:1185` | |
+| `world_sim/editing.rs` | `:5774` | the plate-break site |
+| `world_sim/editing/doors.rs` | `:243` | |
+| `world_sim/npcs.rs` | `:4697` | parts-borrow site: drains via the `wiring` alias — pass the net role in parts or hoist the drain past the borrow (the `collect_entity_boxes` precedent) |
+| `world_sim/player.rs` | `:1188`/`:1232`/`:1407` | |
+| `world_sim/projectiles.rs` | `:638`/`:691` | |
+| `world_sim/tile_entities.rs` | `:64` | |
+| `world_sim/wiring.rs` | `:429` | the wiring tick (`app.send_door_toggle`) |
+
+The replacement body everywhere:
+`for (n, x, y, d) in app.wiring.take_door_echoes() { app.send_door_toggle(n, x, y, d); }`
+— in SP the `Off` arm makes this the same discard (behaviour frozen);
+in MP the echo reaches the wire at the site that produced it (the C#
+`SendData` runs inline at the five `Wiring.cs` sites, so per-site send
+is MORE faithful than f11's tick-batched drain). The core test asserts
+(`wiring.rs:8229`…`:8300`, `editing.rs:18813`/`:18821`,
+`tile_entities.rs:125`) stay as they are.
+
+**The rest of the keep-one ledger (re-verified at `9460c85d9`):**
+- `net.rs` codec: g48's `id::DOOR_TOGGLE` `:179`, `struct DoorToggle`
+  `:2008` (`u8 action, i16 x, i16 y, u8 direction`), variants
+  `:2265`/`:2502`, id/write/read arms `:2588`/`:2684`/`:2883` +
+  `:3156`/`:3342`/`:3622` — byte-identical to f11's copy (`:104`/
+  `:1402`/`:1660`/`:1760`/`:1885`/`:2053`/`:2239`/`:2521`). KEEP g48's,
+  DROP f11's; the round-trip rows union (g48's
+  `s1_i_1b_door_toggle_round_trips` `:6390` subsumes f11's four rows —
+  dedupe by value).
+- f11's netglue no-op arms `C2s::DoorToggle(_)` `:829` /
+  `S2c::DoorToggle(_)` `:1879` DROP for g48's dispatch
+  (`netglue.rs:923-924`/`:2124-2125`).
+- **g48 signature merge-note (c42's own §12 note, re-verified)**:
+  g48's `net_apply.rs:635` calls `edit::open_door` 5-arg and `:650`
+  `edit::close_door` 6-arg — c42's unioned bodies take the trailing
+  `wire_skips: Option` (`edit.rs:732`/`:868`): add `None` at those two
+  call sites when g48 lands. The `shift_trapdoor`/`shift_tall_gate`
+  calls (`net_apply.rs:698`/`:734`) ALREADY pass the 9-arg union shape
+  (`None` + `&mut cues`) — no edit.
+- `edit/shift.rs` body keep-one: c42 blob `17fec8633` vs g48
+  `41a9056dd` differ ONLY in the anchor helper — c42's
+  `pub(crate) top_left_and_styles` + `.max(1)` divisor guard (the
+  fold-133 §3 keeper) vs g48's private `get_top_left_and_styles`
+  without the guard. **c42's copy wins** (7 insertions/12 deletions
+  diff, nothing else).
+- The g48 research/237 minecart tail-fix: **TAKEN VERBATIM on this
+  branch** (seal commit `b46556b2d` — `crates/tr-core/src/minecart.rs`
+  blob `8a7c149cb`, byte-identical to g48's, `git hash-object`
+  verified; the later seal-note header is the only delta — the
+  f11×g48 minecart merge is a comment-only dedupe). The §4b drop-for-e20 ruling still binds at
+  the full union; any surviving `frame_track` shape keeps the fail-tail
+  NO-OP (never `kill_tile`) for the net-17 reader's `mute: false`.
+
+### 8.3 radial-draw texture-wave contract — the census + attach
+
+Census at ALL 355 origin tips (`git grep -l 'WireUI_|TextureAssets.WireUi|WireUi\[12\]'`
++ `wire_ui|WiresRadial` sweeps): **NO branch loads the radial UI
+textures.** The only hits are f11's own logic module + docs. The
+lane map:
+- **g81** (`wire-draw-overlay`, tip `0017d32ab`) owns `Main.DrawWires`
+  — the `WiresNew`/`Actuator` WORLD overlay, NOT the radial UI sheets.
+- **b4** (`atlas-skyline-packer`, tip `f64fcd59b`) owns the PACKER
+  (`atlas.rs::skyline_pack`), not load lists.
+- **d35** (`npc-kinds-71-140`, tip `1afd327b9`, research/113 RETIRED)
+  owns the atlas UNION LEDGER — its 562-name union (§14/Appendix B-2)
+  contains NO `Wires_*`/`BuilderIcons` row (grep-verified).
+
+**Verdict: the radial-draw EXECUTOR owns the loads; the claim attaches
+to d35's research/113 union as a NEW-claimant delta (§14 form).** The
+attach (published in research/234 §2, corrected names):
+- 13 names: `UI/Wires_0`…`UI/Wires_11` + `UI/BuilderIcons` — the C#
+  `TextureAssets.WireUi[12]` loads `Images\UI\Wires_{i}`
+  (`AssetInitializer.cs:299-301`) and `TextureAssets.BuilderAcc` loads
+  `Images\UI\BuilderIcons` (`:303`). The 234 §2 "WireUI_0..11" /
+  "BuilderAcc" file names were the C# FIELD names, not content paths —
+  corrected.
+- Measured dims (this phase, `tools/atlas_sim.js`'s `sheetDims` LZX
+  first-frame decoder over the real retail `.xnb`s): Wires_0/1/8/9
+  40×40, Wires_2..7/10 32×32, Wires_11 16×16, BuilderIcons 160×32 —
+  **total padded area 20 980 px² ≈ 3 atlas rows at 8192 width**. Fits
+  trivially in d35's lazy-union page-0 headroom (1052 px, §15); no
+  re-measure crisis, but the union list + the packing audit witness
+  gain the 13 rows at merge.
+- Load slot: `assets.rs`'s UI block (the `"UI/…"` list, `:803-861`
+  region) — NOT the `WiresNew`/`Actuator` world-overlay block (`:1447`,
+  g81's seam). Second consumer: `Main.cs:31665-31902`'s wire-tool
+  cursor draws (`WireUi[11]`, twelve sites) — the same load serves both.
+
+### 8.4 kite-drain d13-union — the re-targeted hunks
+
+d13 tip `462c86097` re-read: the pool seam unchanged (`projectiles.rs`
+`:456-473` the contract comment, `:474` the buffer park
+`app.pending_mass_wire_ops = app.projectiles.take_mass_wire_ops();`).
+The f11 apply is stream-threaded and READY (`wiring_devices.rs:418-423`
+the `drop_rng` param, `:481` the stream use). Two hunks execute at the
+d13×c42 union:
+
+**(a) the `drop_rng` param onto c42's MOVED copy** (re-target of §7.5 —
+`world_sim/wiring.rs:1089` at `15810df4a`, NOT the old `:1042`):
+
+```diff
+-pub(crate) fn mass_wire_operation(app: &mut App, ps: (i32, i32), pe: (i32, i32), mode: u8) {
++pub(crate) fn mass_wire_operation(
++    app: &mut App, ps: (i32, i32), pe: (i32, i32), mode: u8,
++    drop_rng: crate::app::RngKey,
++) {
+@@ the DropCache spawn loop (`:1141-1143`) @@
+-                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
++                app.rngs.stream(drop_rng),
+```
+
+Call sites: `editing/wiring.rs:207` (the 3625 arm) appends
+`crate::app::RngKey::UpdatePlayers` (behaviour frozen); the unit call
+`world_sim/wiring.rs:2024` appends the same. The doc comment gains the
+f11 stream note (the kite Kill rides `UpdateProjectiles`).
+
+**(b) the drain — ONE shape, the direct drain wins** (235 §2's ruling:
+the buffer field drops). At the c42 projectiles pass tail (`:418-422`
+after `take_spear_hold`), which is ALSO d13's park seam after the
+union: REPLACE d13's comment block + park line (`:447-474` on d13)
+with:
+
+```rust
+// W4-f11×d13 — the Grand Design's release-death mass-wire apply
+// (`Projectile.cs:72051-72067` → `Wiring.MassWireOperation`): the
+// pool's Kill hook queued `(owner, ps, pe)`; drain HERE (the C#
+// applies synchronously inside Kill, under the UpdateProjectiles
+// swap — `Main.cs:17775`). RAW ToolMode (`Wiring.cs:3241` — the kite
+// does NOT strip the Actuator bit; that mask is the 3625 arm's,
+// `Player.cs:46908`); no cooldown gate (the Kill hook has none).
+for (owner, psx, psy, pex, pey) in app.projectiles.take_mass_wire_ops() {
+    if owner as u32 != app.local_id { continue; } // the Kill gate
+    crate::world_sim::wiring::mass_wire_operation(
+        app, (psx, psy), (pex, pey),
+        app.wire_tool_mode,                    // RAW ToolMode (:3241)
+        crate::app::RngKey::UpdateProjectiles, // the Kill's stage
+    );
+}
+```
+
+`app.pending_mass_wire_ops` (the d13 buffer field + its App ctor init)
+DROPS with the park line — never both shapes. Tile coords compose
+verbatim (`(int)X >> 4`, `Utils.cs:1807-1810`). The f11 witness
+`w4_f11_the_kite_apply_keeps_the_actuator_bit_and_the_proj_stream`
+(`wiring_devices.rs:582`) re-points at the moved fn; c42's two unit
+pins (`:2024` + the receipt's second site) gain the `UpdatePlayers`
+arg. The 109/110 MP apply dispatch stays the g48-g51 wave's (d93's
+codecs landed; unclaimed per the f11 anchors row).
+
+### 8.5 The WIRING-UNIQUE-FAMILY bible (the surviving f11 keep-list)
+
+The FINAL inventory of what f11 contributes to the union — everything
+else on this branch is DEPRECATED-BY-UNION (§4) or SUPERSEDED-BY-C42
+(§8.1). Order = the fold order; every witness WRITTEN NOT RUN.
+
+| # | Family | Surviving shape | Merge instruction |
+| --- | --- | --- | --- |
+| 1 | **19-send** (`send_door_toggle` + the drain re-point) | f11-UNIQUE fn, tuple-arg re-shape (§8.2) | land the §8.2 fn + the 14-site drain replacement on c42; codec keep-one = g48's; f11 `net.rs` copy + no-op arms drop; g48's two door call sites gain the trailing `None` |
+| 2 | **kite-param** (`drop_rng`) | f11-UNIQUE param on the c42-moved fn | §8.4(a) at `world_sim/wiring.rs:1089`/`:1143` + the two call sites; §8.4(b) at the d13×c42 union, buffer drops |
+| 3 | **radial-logic** (`ui/wires_radial.rs` + `App.wires_radial` + `handle_wires_radial` + the click-cluster call) | f11-UNIQUE module (absent on c42, grep-verified) | lands verbatim (§7.4): the module + `ui/mod.rs` row + the field/both-ctor inits + `clicks.rs:820-866` + `frame/world.rs:44`; depends on `App.wire_tool_mode` (already on c42); the DRAW half is the texture-wave contract (§8.3, research/234 §2) |
+| 4 | **forced-gate witness** (`w4_f11_the_unified_light_family_honours_the_forced_state`, f11 `wiring.rs:6893`) | witness-only KEEP (§7.3) | re-point at the c42 free fns (`toggle_campfire` `:3772` + `&mut drops`; holiday `:3936`/candle `:3689` 1:1; chandelier `:3732` drops the fx/fy args, adds `skips`); pins the forced-REFUSAL + null-flip + anchor-keyed legs the d6 four lack |
+| 5 | **entity-gate witness legs** (f11 `wiring.rs:7232`/`:7270`, app `world_sim/wiring.rs:769`) | witness-only KEEP, re-shaped | `install_entity_gate(closure)` → `set_entity_boxes(vec![rect])`; the legs c42's `w4_c42_final_seam_tests` (`:8187`) already pins (stamped trapdoor refusal, stamped gate refusal + echo) DEDUPE; the surviving f11-unique legs: the forced-door-11-through-full-blocker leg (`:7270` tail), the NPC-box REAL-flood legs + the touching-edges-free rectangle math (app `:769`) — c42 has no equivalent pin |
+| 6 | **echo-payload witness legs** (f11 `wiring.rs:7311`) | witness-only KEEP, re-shaped | `take_door_toggles` → `take_door_echoes`, struct asserts → tuples; the trapdoor-open/close-1/open-0+lean legs DEDUPE against c42 `:8260`; the surviving legs: the gate CLOSE direction (389 → action 5) + the refusal-queues-nothing leg |
+| 7 | **minecart fail-tail** (the §4b salvage) | TAKEN from g48 verbatim (seal `b46556b2d`, blob `8a7c149cb`; the seal-note header is the only later delta) | f11×g48 = comment-only dedupe; at the full union the e20 superset still wins BUT the surviving shape must keep the fail-tail NO-OP for `mute: false` (g48 research/237) |
+
+Never-ship-both additions to the 95 §9 list: `entity_boxes`/
+`set_entity_boxes` (c42) vs `CellBlocked`/`install_entity_gate` (f11)
+— c42's wins; `door_echoes` tuple queue (c42) vs `door_toggles` struct
+queue (f11) — c42's wins; `send_door_toggle` exists ONLY on f11 — keep;
+`Wires_0..11`/`BuilderIcons` loads exist NOWHERE — the radial-draw
+executor's claim (§8.3).
+
+*Seal verified by git-show/grep at the four sealed tips + the local
+C# re-reads (`AssetInitializer.cs:299-303`, `TextureAssets.cs:20-22`/
+`:613`, the `WiresUI.cs` draw sites); the sheet dims measured by the
+pinned `atlas_sim.js` decoder over the retail XNBs (direct paths, no
+junction recursion). No cargo/tests/rustfmt/graphify run (code-only).*

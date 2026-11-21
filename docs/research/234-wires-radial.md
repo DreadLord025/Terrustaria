@@ -1,5 +1,11 @@
 # 234 — WiresRadial: the logic half landed, the draw contract (the radial seam)
 
+> **SEALED (wiring-unique seal phase, 2026-11-21)**: the logic half is
+> FINAL (whole-module KEEP — absent on c42 `15810df4a`, grep-verified;
+> research/133 §8.5 row 3). The draw contract's texture census +
+> ownership verdict + the corrected content names are §2 below
+> (research/133 §8.3 is the ledger copy). No scope re-opened.
+>
 > Renumbered 135 → 152 → **234** (2026-11-21, the INDEX-registry
 > collision — g90's `135-g90-persist-folds` was first-pushed; the
 > research/150 registry's key-135 row assigns 234; see research/233's
@@ -46,12 +52,18 @@ Witnesses (written not run): `w4_f11_the_tool_mode_ui_gates_on_the_two_tools`,
 ~450 C# lines of pure sprite draw, gated on infrastructure the port does
 not have yet:
 
-1. **Textures**: `TextureAssets.WireUi[12]` (`TextureAssets.cs:613`,
-   `Images/UI/WireUI_0..11`) + `TextureAssets.BuilderAcc`
-   (`Images/UI/BuilderAcc`, the cursor-area dots' 6×6 source rects
-   `(140,2)`/`(148,2)`/`(128,0)`). The port's `assets.rs` loads neither —
-   the atlas-load wave owns them (the `WireUi` array is also read by
-   `Main.cs:31665-31692`'s wire-tool cursor draws, a second consumer).
+1. **Textures**: `TextureAssets.WireUi[12]` (`TextureAssets.cs:20`/
+   `:613`) + `TextureAssets.BuilderAcc` (`:22`, the cursor-area dots'
+   6×6 source rects `(140,2)`/`(148,2)`/`(128,0)`). **CORRECTED content
+   names (seal phase)**: the C# loads `Images\UI\Wires_{i}` for the
+   array (`AssetInitializer.cs:299-301`) and `Images\UI\BuilderIcons`
+   for BuilderAcc (`:303`) — the earlier "WireUI_0..11"/"BuilderAcc"
+   spellings were the C# FIELD names, not content paths; all 13 `.xnb`
+   files exist in `assets/Content/Images/UI/`. The port's `assets.rs`
+   loads neither — the ownership verdict + measured claim are §2b.
+   The `WireUi` array's second consumer is `Main.cs:31665-31902`'s
+   wire-tool cursor draws (`WireUi[11]`, twelve sites — the earlier
+   `:31665-31692` cite covered only the first three).
 2. **The sprite seam**: every slot draws TWO centred sprites (the base
    disc `WireUi[(Cutter?8:0)+(hover?1:0)]` + the colour icon
    `WireUi[2+i]`/`[6/7]`/`[10]`) at `origin = size/2`, `scale =
@@ -74,6 +86,36 @@ not have yet:
    Vector2.Zero mouse all fold away. When a gamepad lands, the angle
    window is the one LOGIC piece to add (the port's `angle_towards` lives
    in `projectile.rs:14170`).
+
+## 2b. The texture-wave census + the attach (SEALED, 2026-11-21)
+
+**Census** (all 355 origin task tips, `git grep -l` sweeps for
+`WireUI_|TextureAssets.WireUi|WireUi\[12\]` and `wire_ui|WiresRadial`):
+NO branch loads the radial UI textures — the only hits are this
+branch's logic module + docs. The three candidate lanes re-read at
+their tips: **g81** (`0017d32ab`) owns `Main.DrawWires` (the
+`WiresNew`/`Actuator` WORLD overlay — a different sheet family);
+**b4** (`f64fcd59b`) owns the atlas PACKER, not load lists; **d35**
+(`1afd327b9`, research/113 RETIRED) owns the atlas UNION LEDGER — its
+562-name union carries NO `Wires_*`/`BuilderIcons` row.
+
+**Verdict**: the radial-draw EXECUTOR owns the loads (nobody else
+claims them); the claim attaches to **d35 research/113's union as a
+NEW-claimant delta** (its §14 form) at merge:
+
+- **13 names**: `UI/Wires_0`…`UI/Wires_11` + `UI/BuilderIcons`.
+- **Measured dims** (the pinned `tools/atlas_sim.js` `sheetDims` LZX
+  first-frame decoder over the real retail `.xnb`s, this phase):
+  Wires_0/1/8/9 40×40 (the base/hover discs), Wires_2..7/10 32×32 (the
+  colour/cutter/actuator icons), Wires_11 16×16 (the cursor dot),
+  BuilderIcons 160×32. **Total padded area 20 980 px² ≈ 3 atlas rows
+  at the 8192 width** — trivially inside d35's lazy-union page-0
+  headroom (1052 px, its §15); no repack crisis, but the union list +
+  the packing-audit witness gain the 13 rows.
+- **Load slot**: `assets.rs`'s `"UI/…"` static list (the `:803-861`
+  region) — NOT the `WiresNew`/`Actuator` world-overlay block
+  (`:1447`, g81's seam). One load serves both consumers (the radial +
+  the `Main.cs:31665-31902` cursor draws).
 
 ## 3. Documented folds (the logic half's deviations)
 

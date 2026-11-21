@@ -2982,7 +2982,11 @@ impl App {
     /// 4/5 gate dispatch and the normalised-direction relay,
     /// `MessageBuffer.cs:1299-1334`) is g48's `net_apply.rs` — the union
     /// merge re-points this send at its `DoorToggle` codec (byte-identical
-    /// bodies, keep-one).
+    /// bodies, keep-one). SEAL (research/133 §8.2): this fn is the ONE
+    /// send copy (g48 has none in production); at the union it takes the
+    /// c42 `door_echoes` TUPLE `(number, x, y, number4)` (the f11 engine
+    /// struct drops with §8.1) and the drain lands at ALL 14 c42 discard
+    /// sites, not just the wiring tick — the exact hunk is §8.2.
     pub(crate) fn send_door_toggle(&self, t: tr_core::wiring::DoorToggle) {
         let msg = net::DoorToggle {
             action: t.action,

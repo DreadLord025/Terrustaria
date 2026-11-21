@@ -16,6 +16,18 @@
 //! (95 §8.8), not wiring code. See `docs/research/133-f11-unique-folds.md`
 //! §4b.
 //!
+//! **SEAL NOTE (W4-f11 seal phase, 2026-11-21)**: g48 LANDED this canonical
+//! module on its tip (`9460c85d9`, research/237 upstream hunk taken here
+//! verbatim at `b46556b2d` — blob `8a7c149cb`, byte-identical to g48's;
+//! this note is the only later delta), so the f11×g48 minecart merge is
+//! a comment-only dedupe. The §4b drop-for-e20 ruling
+//! still binds at the FULL union: whichever `frame_track` shape survives
+//! (e20's `frame_track_pound` superset has NO `!mute` branch at all) must
+//! keep the fail-tail NO-OP semantics for the net-17 reader's default
+//! `mute: false` (`MessageBuffer.cs:1229`) — never a `kill_tile` call
+//! (g48 research/237: "any survivor of the union keeps the no-op
+//! semantics").
+//!
 //! W4-f11 ports the slice the wiring switch-track arm (`Wiring.cs:1744-1749`,
 //! tile 314) needs: `FlipSwitchTrack` and the `FrameTrack(pound: true, mute:
 //! true)` it calls. The tables are hand-transcribed from `Initialize`'s
