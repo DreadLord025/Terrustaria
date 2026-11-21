@@ -171,6 +171,7 @@
 //! | 739-740 | `:86518-86519` | the 157 Arapaima death (2 gores 186/187, +14 X offset) |
 //! | 741-743 | `:86532-86542` | the 133 WanderingEye hit/death (hit-half <50% latch gore 1 + 2 death gores 155) |
 //! | 744-749 | `:86568-86576` | the antlion 69/580 death (type-250 dust, per-type gores) |
+//! | 750-758 | `:86580-86591` | the antlion 581/508 death (5 and 4 gores respectively) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4605,12 +4606,12 @@ fn wandering_eye_hit(
     }
 }
 
-/// The antlion family death (`NPC.cs:86545-86605`): the type-250 dust burst
-/// (SpeedX `2*hitDirection`, SpeedY -2; count 50, or 10 for the 582 larva),
-/// then the per-type gores at position. This commit ports the 69 Antlion
-/// (sites 744-745: [97,98]) and the 580 WalkingAntlion (sites 746-749:
-/// [1094,1095,1096,1097]). The 581/508/509/582 variants land with the next
-/// batches. Scale defaults to 1.
+/// The antlion family death (`NPC.cs:86545-86605`, sites 744-758): the
+/// type-250 dust burst (SpeedX `2*hitDirection`, SpeedY -2; count 50, or 10
+/// for the 582 larva), then the per-type gores at position — 69 Antlion →
+/// [97,98], 580 WalkingAntlion → [1094,1095,1096,1097], 581 FlyingAntlion →
+/// [1098,1099,1100,1101,1101], 508 GiantWalkingAntlion → [811,812,813,814].
+/// The 509/582 variants land with the next batch. Scale defaults to 1.
 fn antlion_death(
     npc: &Npc,
     npc_type: i32,
@@ -4634,7 +4635,9 @@ fn antlion_death(
     // `:86566-86605` — the per-type gore list.
     let gores: &[i32] = match npc_type {
         69 => &[97, 98],
-        _ => &[1094, 1095, 1096, 1097], // 580 WalkingAntlion
+        580 => &[1094, 1095, 1096, 1097],
+        581 => &[1098, 1099, 1100, 1101, 1101],
+        _ => &[811, 812, 813, 814], // 508 GiantWalkingAntlion
     };
     let vel = Vec2::new(npc.vx, npc.vy);
     for &ty in gores {
@@ -5204,10 +5207,9 @@ pub fn hit_effect_c(
     if npc_type == 133 {
         wandering_eye_hit(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86545-86606` — the antlion family arm; this commit owns the 69/580
-    // variants (sites 744-749); the 581/508/509/582 land with the next
-    // batches.
-    if (npc_type == 69 || npc_type == 580) && npc.hp <= 0 {
+    // `:86545-86606` — the antlion family arm; the 69/580/581/508 variants
+    // (sites 744-758); the 509/582 land with the next batch.
+    if (npc_type == 69 || npc_type == 580 || npc_type == 581 || npc_type == 508) && npc.hp <= 0 {
         antlion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
@@ -8214,12 +8216,19 @@ mod tests {
         assert_eq!(gore2.slot(1).position, Vec2::new(100.0, 114.0));
     }
 
-    /// `NPC.cs:86568-86576` — the antlion 69 (97/98) and 580
-    /// (1094/1095/1096/1097), after the type-250 dust burst.
+    /// `NPC.cs:86568-86591` — the antlion family: 69→[97,98],
+    /// 580→[1094-1097], 581→[1098,1099,1100,1101,1101],
+    /// 508→[811,812,813,814], after the type-250 dust burst.
     #[test]
     fn w4_f10_the_antlion_death_uses_the_per_type_list() {
         let w = air();
-        for (ty, gores) in [(69, [97, 98]), (580, [1094, 1095, 1096, 1097])] {
+        let cases: [(i32, &[i32]); 4] = [
+            (69, &[97, 98]),
+            (580, &[1094, 1095, 1096, 1097]),
+            (581, &[1098, 1099, 1100, 1101, 1101]),
+            (508, &[811, 812, 813, 814]),
+        ];
+        for (ty, gores) in cases {
             let n = boss(100.0, 100.0, 40.0, 30.0);
             let mut gore = GorePool::new();
             let mut dust = DustPool::new();
