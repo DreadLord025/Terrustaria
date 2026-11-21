@@ -1,4 +1,11 @@
-# 26d — the g2d rowless riders: the 981 row + the phaseblade/491 task-seeds + the Shimmer drop-hunk
+# 377 — the g2d rowless riders: the 981 row + the phaseblade/491 task-seeds + the Shimmer drop-hunk
+
+> RENUMBERED per registry `150-research-number-registry.md` §10.2 (round 5,
+> d54 tip `08d21666e`): chain 26d→377 — 26d belongs to W4-d12's round-1 win
+> (`26d-projectile-ai-106-210-census.md`, 00:06:06); this doc's first add
+> `5900648e0` 16:18:41 was the uncovered loser on that key. Old name:
+> `26d-projectile-rowless-riders-g2d.md`. g2's owed round-1 renames
+> (157+163) are unchanged by this renumber.
 
 > Coded 2026-11-21 on `task/W4-g2-proj-ai-missing-b` (resume of the frozen
 > 81c4ab85 tip; the g2 census `d0708e3b` + the reconciliation round

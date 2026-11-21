@@ -10198,7 +10198,7 @@ impl Projectile {
     /// DROPS** (f20d-F5, `0883a80bc`); d53's adopted pub(crate) pair
     /// survives (byte-identical bodies bar the -10 comment fix — the "-8"
     /// in the 25/17 arm comment below is the recorded typo). The drop-hunk
-    /// is published in `research/26d-projectile-rowless-riders-g2d.md` §5.
+    /// is published in `research/377-projectile-rowless-riders-g2d.md` §5.
     /// Until the merge this copy stays — the five `w4_g2_shimmer_*`
     /// witnesses below drive it directly (setting `shimmer_wet`), the e3
     /// STAGED-emitter precedent.
@@ -45199,7 +45199,7 @@ mod w4_g2_rowless_tests {
 
     // --- W4-g2 reconciliation: the Shimmer() family (STAGED here; ACTIVATED
     // by d53 804ad5715 — this staged copy DROPS at merge, f20d-F5; the
-    // drop-hunk: research/26d-projectile-rowless-riders-g2d.md §5) -----------
+    // drop-hunk: research/377-projectile-rowless-riders-g2d.md §5) -----------
     // The helper is driven directly (shimmer_wet set by hand); d53 carries
     // its own 7 dispatch-gate witnesses — keep BOTH sets (disjoint names).
     // WRITTEN NOT RUN (code-only).

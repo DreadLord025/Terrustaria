@@ -39295,7 +39295,7 @@ cargo/rustc/tests/graphify invoked.
 ## The W4-g2d rowless-rider round (2026-11-21, code-only mode)
 
 Branch `task/W4-g2-proj-ai-missing-b` (the g2d resume of the frozen 81c4ab85
-tip; `docs/research/26d-projectile-rowless-riders-g2d.md`). The named
+tip; `docs/research/377-projectile-rowless-riders-g2d.md`). The named
 rowless kinds with LIVE AI arms dispositioned:
 
 - **The 981 SilverBullet — ROWED** (`8bab64583`): the `SetDefaults` slice
