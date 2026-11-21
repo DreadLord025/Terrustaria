@@ -480,9 +480,145 @@ pub fn find_frame_extra10(kind: FindFrameExtra10Kind, s: &mut FrameState, i: &Fr
                 s.counter = 0.0;
             }
         }
-        // The batch-2/3 kinds land in the next commits (the 5-kinds-
+        // `case 537` rides the SAME num2-fed slime strip arm as 535
+        // (the `SlimeSpiked | SandSlime` pattern above — the C#'s
+        // `:70818`/`:70819` labels share one body).
+        // `case 538`/`case 539` in the squirrel group
+        // (`NPC.cs:76459`/`:76460` → `:76458-76512`, shared with
+        // 299/639-645): the grounded ±1 flip (`:76468-76477`), the
+        // idle row-0 snap (`:76484-76489`), the `|vx| * 0.5 + 1`
+        // accumulator with the >6 step (`:76490-76496`) and the
+        // >= count-1 wrap back to row **1** (`:76497-76500` — NOT
+        // row 0, the walk rows are 1..count-2 with row 0 the idle
+        // pose); the air row 2 rising (`:76502-76506`) / row 4
+        // falling (`:76507-76511`), both counter-zeroed. The
+        // aiStyle-3 backpedal branch (`:76478-76483`) is DEAD for
+        // these (style 7, `:15877`/`:15889`) — not carried, the
+        // documented dead branch.
+        FindFrameExtra10Kind::SquirrelRed | FindFrameExtra10Kind::SquirrelGold => {
+            if i.vy == 0.0 {
+                // `:76468-76477`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                // `:76484-76489`.
+                if i.vx == 0.0 {
+                    s.row = 0;
+                    s.counter = 0.0;
+                    return;
+                }
+                // `:76490-76496`.
+                s.counter += i.vx.abs() * 0.5;
+                s.counter += 1.0;
+                if s.counter > 6.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                // `:76497-76500`.
+                if s.row >= kind.frame_count() - 1 {
+                    s.row = 1;
+                }
+            } else if i.vy < 0.0 {
+                // `:76502-76506`.
+                s.counter = 0.0;
+                s.row = 2;
+            } else {
+                // `:76507-76511`.
+                s.counter = 0.0;
+                s.row = 4;
+            }
+        }
+        // `case 540` in the bunny hop group (`NPC.cs:76857` →
+        // `:76851-76904`, shared with 46/47/303/337/443/464 — d44's
+        // 46/47 + e7's 337 + e8's 443 are the same machine, keep-one
+        // at the merge): the grounded ±1 flip (`:76866-76875`), the
+        // idle row-0 snap (`:76876-76881`), the `|vx| + 1`
+        // accumulator with the >6 step (`:76882-76888`) over the
+        // FULL 7 rows with the >= count wrap (`:76889-76892`); the
+        // air pins row 4 rising (`:76894-76898`) / row 6 falling
+        // (`:76899-76903`), both counter-zeroed.
+        FindFrameExtra10Kind::PartyBunny => {
+            if i.vy == 0.0 {
+                // `:76866-76875`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                // `:76876-76881`.
+                if i.vx == 0.0 {
+                    s.row = 0;
+                    s.counter = 0.0;
+                    return;
+                }
+                // `:76882-76888`.
+                s.counter += i.vx.abs() * 1.0;
+                s.counter += 1.0;
+                if s.counter > 6.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                // `:76889-76892`.
+                if s.row >= kind.frame_count() {
+                    s.row = 0;
+                }
+            } else if i.vy < 0.0 {
+                // `:76894-76898`.
+                s.counter = 0.0;
+                s.row = 4;
+            } else {
+                // `:76899-76903`.
+                s.counter = 0.0;
+                s.row = 6;
+            }
+        }
+        // `case 541` (`NPC.cs:69734-69772`): the Sand Elemental.
+        // ATTACK (`ai[0] > 0`, `:69735-69758`): the row ladder —
+        // < 6 → row 4, < 105 → the `(int)(ai[0]/8 % 4 + 5)` 5-8
+        // cycle, < 114 → row 9, < 135 → the
+        // `(int)((ai[0]-99-15)/7 + 10)` 10-12 climb, else row 1;
+        // the counter is NEVER touched in the attack. WALK (else,
+        // `:69759-69771`): the `frameCounter + (double)(|velocity|
+        // * 0.1f) + 1.0` accumulator (`:69761` — the C# promotes
+        // the f32 Length product to double for the add; the port
+        // keeps the f32 counter, the wave-B precedent — at these
+        // magnitudes the >= 8 cadence compares identically), the
+        // >= 8 step over rows 0..3 with the >= 4 wrap
+        // (`:69762-69770`). No sprite/rotation write.
+        FindFrameExtra10Kind::SandElemental => {
+            if i.ai0 > 0.0 {
+                // `:69737-69757`.
+                let n = i.ai0;
+                if n < 6.0 {
+                    s.row = 4;
+                } else if n < 105.0 {
+                    s.row = (n / 8.0 % 4.0 + 5.0) as i32 as u32;
+                } else if n < 114.0 {
+                    s.row = 9;
+                } else if n < 135.0 {
+                    s.row = ((n - 99.0 - 15.0) / 7.0 + 10.0) as i32 as u32;
+                } else {
+                    s.row = 1;
+                }
+            } else {
+                // `:69761-69770`.
+                s.counter += i.vx.hypot(i.vy) * 0.1 + 1.0;
+                if s.counter >= 8.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                if s.row >= 4 {
+                    s.row = 0;
+                }
+            }
+        }
+        // The batch-3 kinds land in the next commit (the 5-kinds-
         // per-commit rule — the e8 batch-1 catch-all precedent).
-        _ => unimplemented!("extra-10 batch 2/3"),
+        _ => unimplemented!("extra-10 batch 3"),
     }
 }
 
@@ -515,6 +651,11 @@ mod tests {
             FindFrameExtra10Kind::DemonTaxCollector,
             FindFrameExtra10Kind::SlimeSpiked,
             FindFrameExtra10Kind::TheBride,
+            FindFrameExtra10Kind::SandSlime,
+            FindFrameExtra10Kind::SquirrelRed,
+            FindFrameExtra10Kind::SquirrelGold,
+            FindFrameExtra10Kind::PartyBunny,
+            FindFrameExtra10Kind::SandElemental,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -706,9 +847,160 @@ mod tests {
         assert_eq!(s.sprite_dir, -1, "the flip precedes the backpedal pin");
     }
 
-    /// The batch-1 strip sweep: a 5x3x3 vx/vy/direction input grid
-    /// (plus the aiAction variants), 40 ticks each — every row stays
-    /// inside its sheet (the extra-9 precedent).
+    /// 537 SandSlime: the SAME num2-fed strip over the 3-row sheet —
+    /// the moving +2 cadence walks 0/1/2 with the >=3 wrap.
+    /// Expectations re-derived by mechanical replay.
+    #[test]
+    fn f27s10_sand_slime_rides_the_three_row_strip() {
+        let rows = rows_over(FindFrameExtra10Kind::SandSlime, input(1.0, 0.0), 24);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 0]
+        );
+        // The attack class (+3) over 3 rows.
+        let mut i = input(0.0, 0.0);
+        i.ai_action = 1;
+        let rows = rows_over(FindFrameExtra10Kind::SandSlime, i, 12);
+        assert_eq!(rows, vec![0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 0, 1]);
+    }
+
+    /// 538/539 the squirrels: the |vx|*0.5+1 >6 walk over rows
+    /// 0..count-2 wrapping at count-1 back to row **1** (NOT 0), the
+    /// air row 2 rising / row 4 falling, the idle row-0 snap.
+    /// Expectations re-derived by mechanical replay.
+    #[test]
+    fn f27s10_squirrels_walk_to_the_count_minus_one_wrap() {
+        // vx 2: +2 a tick — the >6 step every 4th tick; row 5 (the
+        // count-1 boundary) snaps back to 1.
+        let rows = rows_over(FindFrameExtra10Kind::SquirrelRed, input(2.0, 0.0), 20);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 1]
+        );
+        // vx 1: +1.5 a tick — the >6 step every 5th tick.
+        let rows = rows_over(FindFrameExtra10Kind::SquirrelGold, input(1.0, 0.0), 20);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4]
+        );
+        // The wrap tick: row 4 + counter 5 → the step lands 5, the
+        // >= count-1 (5) wrap snaps 1.
+        let mut s = FrameState { row: 4, counter: 5.0, ..Default::default() };
+        find_frame_extra10(FindFrameExtra10Kind::SquirrelRed, &mut s, &input(2.0, 0.0));
+        assert_eq!((s.row, s.counter), (1, 0.0));
+        // The air pins: row 2 rising / row 4 falling, counter zeroed.
+        let mut s = FrameState { row: 3, counter: 4.0, ..Default::default() };
+        find_frame_extra10(FindFrameExtra10Kind::SquirrelRed, &mut s, &input(1.0, -2.0));
+        assert_eq!((s.row, s.counter), (2, 0.0));
+        find_frame_extra10(FindFrameExtra10Kind::SquirrelGold, &mut s, &input(1.0, 2.0));
+        assert_eq!((s.row, s.counter), (4, 0.0));
+        // The idle snap.
+        find_frame_extra10(FindFrameExtra10Kind::SquirrelRed, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0));
+        // The grounded ±1 flip (0 leaves it).
+        let mut s = FrameState::default();
+        let mut i = input(1.0, 0.0);
+        i.direction = -1;
+        find_frame_extra10(FindFrameExtra10Kind::SquirrelRed, &mut s, &i);
+        assert_eq!(s.sprite_dir, -1);
+        i.direction = 0;
+        find_frame_extra10(FindFrameExtra10Kind::SquirrelRed, &mut s, &i);
+        assert_eq!(s.sprite_dir, -1, "direction 0 leaves the sprite");
+    }
+
+    /// 540 PartyBunny: the |vx|+1 >6 hop over the FULL 7 rows, the
+    /// air pins row 4 rising / row 6 falling, the idle row-0 snap.
+    /// Expectations re-derived by mechanical replay.
+    #[test]
+    fn f27s10_party_bunny_hops_the_full_seven_rows() {
+        // vx 2: +3 a tick — the >6 step every 3rd tick.
+        let rows = rows_over(FindFrameExtra10Kind::PartyBunny, input(2.0, 0.0), 20);
+        assert_eq!(
+            rows,
+            vec![0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6]
+        );
+        // vx 1: +2 a tick — the >6 step every 4th tick; the full-7
+        // wrap lands 0 at tick 25 (row 7 → 0).
+        let rows = rows_over(FindFrameExtra10Kind::PartyBunny, input(1.0, 0.0), 24);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6]
+        );
+        let mut s = FrameState { row: 6, counter: 5.0, ..Default::default() };
+        find_frame_extra10(FindFrameExtra10Kind::PartyBunny, &mut s, &input(2.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0), "the full-7 wrap");
+        // The air pins: row 4 rising / row 6 falling.
+        let mut s = FrameState { row: 2, counter: 4.0, ..Default::default() };
+        find_frame_extra10(FindFrameExtra10Kind::PartyBunny, &mut s, &input(1.0, -2.0));
+        assert_eq!((s.row, s.counter), (4, 0.0));
+        find_frame_extra10(FindFrameExtra10Kind::PartyBunny, &mut s, &input(1.0, 2.0));
+        assert_eq!((s.row, s.counter), (6, 0.0));
+        // The idle snap.
+        find_frame_extra10(FindFrameExtra10Kind::PartyBunny, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0));
+    }
+
+    /// 541 SandElemental: the ai[0] attack ladder (the counter
+    /// UNTOUCHED) + the |v|*0.1+1 hover walk over rows 0..3.
+    /// Expectations re-derived by mechanical replay.
+    #[test]
+    fn f27s10_sand_elemental_rides_the_ai0_ladder_and_the_hover_walk() {
+        // The ladder: every band boundary pinned.
+        for &(ai0, row) in &[
+            (1.0, 4u32),
+            (5.0, 4),
+            (6.0, 5),
+            (8.0, 6),
+            (16.0, 7),
+            (32.0, 5),
+            (40.0, 6),
+            (64.0, 5),
+            (96.0, 5),
+            (104.0, 6),
+            (105.0, 9),
+            (113.0, 9),
+            (114.0, 10),
+            (120.0, 10),
+            (121.0, 11),
+            (128.0, 12),
+            (134.0, 12),
+            (135.0, 1),
+            (200.0, 1),
+        ] {
+            let mut s = FrameState { row: 3, counter: 7.0, ..Default::default() };
+            let mut i = input(0.0, 0.0);
+            i.ai0 = ai0;
+            find_frame_extra10(FindFrameExtra10Kind::SandElemental, &mut s, &i);
+            assert_eq!(s.row, row, "ai[0] = {ai0}");
+            assert_eq!(s.counter, 7.0, "the attack never touches the counter");
+        }
+        // The hover walk: |v| = 5 → +1.5 a tick, the >=8 step every
+        // 6th tick (1.5*6 = 9), rows 0..3 wrapping at 4.
+        let rows = rows_over(FindFrameExtra10Kind::SandElemental, input(3.0, 4.0), 20);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3]
+        );
+        // The still hover: +1 a tick, the step every 8th tick.
+        let rows = rows_over(FindFrameExtra10Kind::SandElemental, input(0.0, 0.0), 20);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2]
+        );
+        // The walk wrap: row 3 + counter 7 → the step lands 4, the
+        // >=4 wrap snaps 0.
+        let mut s = FrameState { row: 3, counter: 7.0, ..Default::default() };
+        find_frame_extra10(FindFrameExtra10Kind::SandElemental, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0));
+        // No sprite/rotation write.
+        let mut s = FrameState { sprite_dir: -1, rotation: 0.5, ..Default::default() };
+        find_frame_extra10(FindFrameExtra10Kind::SandElemental, &mut s, &input(3.0, 4.0));
+        assert_eq!((s.sprite_dir, s.rotation), (-1, 0.5));
+    }
+
+    /// The batch-1+2 strip sweep: a 5x3x3 vx/vy/direction input grid
+    /// (plus the aiAction/ai0 variants), 40 ticks each — every row
+    /// stays inside its sheet (the extra-9 precedent).
     #[test]
     fn f27s10_batch1_strip_sweep_stays_inside_the_sheets() {
         let kinds = [
@@ -717,6 +1009,11 @@ mod tests {
             FindFrameExtra10Kind::DemonTaxCollector,
             FindFrameExtra10Kind::SlimeSpiked,
             FindFrameExtra10Kind::TheBride,
+            FindFrameExtra10Kind::SandSlime,
+            FindFrameExtra10Kind::SquirrelRed,
+            FindFrameExtra10Kind::SquirrelGold,
+            FindFrameExtra10Kind::PartyBunny,
+            FindFrameExtra10Kind::SandElemental,
         ];
         for k in kinds {
             let count = k.frame_count();
@@ -724,22 +1021,24 @@ mod tests {
                 for vy in [-3.0f32, 0.0, 3.0] {
                     for direction in [-1i32, 0, 1] {
                         for ai_action in [0i32, 1] {
-                            let i = FrameInput {
-                                vx,
-                                vy,
-                                direction,
-                                ai0: 0.0,
-                                ai_action,
-                            };
-                            let mut s = FrameState::default();
-                            for tick in 0..40 {
-                                find_frame_extra10(k, &mut s, &i);
-                                assert!(
-                                    s.row < count,
-                                    "type {} tick {tick} row {} >= {count} (vx {vx}, vy {vy}, dir {direction})",
-                                    k.vanilla_type(),
-                                    s.row
-                                );
+                            for ai0 in [0.0f32, 50.0, 110.0, 130.0] {
+                                let i = FrameInput {
+                                    vx,
+                                    vy,
+                                    direction,
+                                    ai0,
+                                    ai_action,
+                                };
+                                let mut s = FrameState::default();
+                                for tick in 0..40 {
+                                    find_frame_extra10(k, &mut s, &i);
+                                    assert!(
+                                        s.row < count,
+                                        "type {} tick {tick} row {} >= {count} (vx {vx}, vy {vy}, dir {direction})",
+                                        k.vanilla_type(),
+                                        s.row
+                                    );
+                                }
                             }
                         }
                     }
