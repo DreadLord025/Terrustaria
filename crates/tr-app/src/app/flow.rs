@@ -295,55 +295,46 @@ pub(crate) fn next_flow_state(
         // `UIReportsPage.GoBackClick` (`:206-211`): the parked state
         // returns — the front screen when one was live, else the legacy
         // page id (`_menuIdToGoBackTo`; the port parks the `menu::Page`).
-        FlowClick::ReportsBack => {
-            if let Some(FrontScreen::Reports(state)) = front {
-                (state.back_front, backup, state.back_page)
-            } else {
-                (front, backup, page)
-            }
-        }
+        FlowClick::ReportsBack => match front {
+            Some(FrontScreen::Reports(state)) => (state.back_front, backup, state.back_page),
+            other => (other, backup, page),
+        },
         // `ClickAdvancedSeedMenu` (`UIWorldCreation.cs:505-511`): the
         // draft rides into the Advanced tab (the C# keeps the reference).
-        FlowClick::WorldAdvancedOpen => {
-            if let Some(FrontScreen::WorldCreation(draft)) = front {
+        FlowClick::WorldAdvancedOpen => match front {
+            Some(FrontScreen::WorldCreation(draft)) => {
                 (Some(FrontScreen::WorldCreationAdvanced(draft)), backup, page)
-            } else {
-                (front, backup, page)
             }
-        }
+            other => (other, backup, page),
+        },
         // `UIWorldCreationAdvanced.GoBack` (`:475-481`): the base screen
         // returns with the toggled draft.
-        FlowClick::WorldAdvancedBack => {
-            if let Some(FrontScreen::WorldCreationAdvanced(draft)) = front {
+        FlowClick::WorldAdvancedBack => match front {
+            Some(FrontScreen::WorldCreationAdvanced(draft)) => {
                 (Some(FrontScreen::WorldCreation(draft)), backup, page)
-            } else {
-                (front, backup, page)
             }
-        }
+            other => (other, backup, page),
+        },
         // `SecretSeedButton_OnLeftClick` (`:206-211`): the seeds list
         // opens over the same draft.
-        FlowClick::SecretSeedsOpen => {
-            if let Some(FrontScreen::WorldCreationAdvanced(draft)) = front {
-                (
-                    Some(FrontScreen::SecretSeedsList(Box::new(SecretSeedsState {
-                        draft,
-                        scroll: 0.0,
-                    }))),
-                    backup,
-                    page,
-                )
-            } else {
-                (front, backup, page)
-            }
-        }
+        FlowClick::SecretSeedsOpen => match front {
+            Some(FrontScreen::WorldCreationAdvanced(draft)) => (
+                Some(FrontScreen::SecretSeedsList(Box::new(SecretSeedsState {
+                    draft,
+                    scroll: 0.0,
+                }))),
+                backup,
+                page,
+            ),
+            other => (other, backup, page),
+        },
         // `UIWorldCreationAdvancedSecretSeedsList.GoBack` (`:386-391`).
-        FlowClick::SecretSeedsBack => {
-            if let Some(FrontScreen::SecretSeedsList(state)) = front {
+        FlowClick::SecretSeedsBack => match front {
+            Some(FrontScreen::SecretSeedsList(state)) => {
                 (Some(FrontScreen::WorldCreationAdvanced(state.draft)), backup, page)
-            } else {
-                (front, backup, page)
             }
-        }
+            other => (other, backup, page),
+        },
         // Any other combination is a no-op (a click kind its screen never
         // sends); the state passes through unchanged.
         _ => (front, backup, page),
@@ -1235,25 +1226,34 @@ impl FrontScreenBehaviours for FrontScreen {
             FrontScreen::WorldCreationAdvanced(_) => {
                 // The Advanced tab's click table (`UIWorldCreationAdvanced`'s
                 // handlers through the draft): the randomize icon, the seed
-                // plate, the option grid, the secret cell, Apply.
-                let Some(FrontScreen::WorldCreationAdvanced(draft)) = app.front.as_mut() else {
-                    return None;
+                // plate, the option grid, the secret cell, Apply. The hit
+                // resolves under a short borrow; the handlers re-borrow.
+                let click = {
+                    let Some(FrontScreen::WorldCreationAdvanced(draft)) = app.front.as_ref() else {
+                        return None;
+                    };
+                    ui::world_creation_advanced::click_at(draft, screen, mouse)
                 };
-                match ui::world_creation_advanced::click_at(draft, screen, mouse) {
+                match click {
                     // `ClickRandomizeSeed` (`:441-445`) → `RandomizeSeed`
                     // (`UIWorldCreation.cs:532-539`): `Main.rand.Next()` —
                     // the bare global stand-in (the front end runs outside
                     // every swap).
                     ui::world_creation_advanced::Click::Randomize => {
-                        draft.seed = app.rngs.global().next().to_string();
-                        draft.is_special_seed_text = false;
+                        let seed = app.rngs.global().next().to_string();
+                        if let Some(FrontScreen::WorldCreationAdvanced(draft)) = app.front.as_mut() {
+                            draft.seed = seed;
+                            draft.is_special_seed_text = false;
+                        }
                         None
                     }
                     // `Click_SetSeed` → `OpenSeedInputMenu` (`:447-450`):
                     // the same keyboard the base screen opens, returning
                     // to the Advanced tab (`GoBackHere` → `_goBackTarget`).
                     ui::world_creation_advanced::Click::Seed => {
-                        let back = FrontScreen::WorldCreationAdvanced(draft.clone());
+                        let Some(front) = app.front.clone() else {
+                            return None;
+                        };
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
                                 label: ui::keyboard::enter_seed(),
@@ -1262,7 +1262,7 @@ impl FrontScreenBehaviours for FrontScreen {
                                 max_length: usize::MAX,
                                 context: ui::keyboard::Context::Text,
                             },
-                            Some(back),
+                            Some(front),
                             KeyboardTail::WorldSeed,
                         );
                         None
@@ -1272,13 +1272,12 @@ impl FrontScreenBehaviours for FrontScreen {
                     // LeftMouseDown`, `:253-257`).
                     ui::world_creation_advanced::Click::Option(i) => {
                         app.audio.play("Menu_Tick");
-                        draft.toggle_seed_option(tr_core::seeds::OPTION_TABLE[i].id);
+                        if let Some(FrontScreen::WorldCreationAdvanced(draft)) = app.front.as_mut() {
+                            draft.toggle_seed_option(tr_core::seeds::OPTION_TABLE[i].id);
+                        }
                         None
                     }
-                    // `SecretSeedButton_OnLeftClick` (`:206-211`): sound 12
-                    // rides the flow hop's open cue — the C# plays 12 here,
-                    // the port's table plays 10; the explicit tick keeps
-                    // the source's cue.
+                    // `SecretSeedButton_OnLeftClick` (`:206-211`).
                     ui::world_creation_advanced::Click::SecretSeeds => {
                         Some(FlowClick::SecretSeedsOpen)
                     }
@@ -1302,18 +1301,19 @@ impl FrontScreenBehaviours for FrontScreen {
                     let attached = ui::secret_seeds_list::content_height(rows.len()) > inner[3];
                     (rows, attached, state.scroll)
                 };
-                match ui::secret_seeds_list::click_at(
+                let click = ui::secret_seeds_list::click_at(
                     screen,
                     mouse,
                     rows.len(),
                     scroll,
                     attached,
-                ) {
+                );
+                match click {
                     // `ClickSecretSeed` (`:219-236`): the toggle + sound 12.
                     ui::secret_seeds_list::Click::Row(i) => {
                         app.audio.play("Menu_Tick");
+                        let row = rows[i].clone();
                         if let Some(FrontScreen::SecretSeedsList(state)) = app.front.as_mut() {
-                            let row = rows[i].clone();
                             ui::secret_seeds_list::toggle_row(&mut state.draft, &row);
                         }
                         None
@@ -1366,7 +1366,34 @@ impl FrontScreenBehaviours for FrontScreen {
             }
             // The other screens take no keys: the world controls stay parked
             // while a front screen is live (the gamepad snap points are out
-            // of scope, §J.3).
+            // of scope, §J.3). The W4-d85 screens' `IHaveBackButtonCommand`
+            // Escape arms run through the same Back hops their Apply/Back
+            // panels use (the port's Escape stand-in, the keyboard's
+            // `TryEscapingMenu` pattern).
+            FrontScreen::Reports(_) => {
+                if matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                    app.audio.play("Menu_Close");
+                    if let Some(front) = app.front.clone() {
+                        app.apply_front_flow(front, FlowClick::ReportsBack);
+                    }
+                }
+            }
+            FrontScreen::WorldCreationAdvanced(_) => {
+                if matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                    app.audio.play("Menu_Close");
+                    if let Some(front) = app.front.clone() {
+                        app.apply_front_flow(front, FlowClick::WorldAdvancedBack);
+                    }
+                }
+            }
+            FrontScreen::SecretSeedsList(_) => {
+                if matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                    app.audio.play("Menu_Close");
+                    if let Some(front) = app.front.clone() {
+                        app.apply_front_flow(front, FlowClick::SecretSeedsBack);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1413,17 +1440,21 @@ impl App {
     /// The secret-seeds list's wheel (`UIList.ScrollWheel` through the
     /// attach-on-overflow scrollbar, `Recalculate` `:343-361`).
     pub(crate) fn secret_seeds_wheel(&mut self, delta: i32) -> bool {
+        if !matches!(self.front, Some(FrontScreen::SecretSeedsList(_))) {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
         let Some(FrontScreen::SecretSeedsList(state)) = self.front.as_mut() else {
             return false;
         };
-        let (sw, sh) = self.screen_size();
-        let screen = Vec2::new(sw, sh);
         let rows = ui::secret_seeds_list::interface_rows(&state.draft).len();
         let root = ui::secret_seeds_list::root_rect(screen);
         let panel = ui::secret_seeds_list::panel_rect(&root);
         let inner = ui::secret_seeds_list::list_container_inner(&panel);
         let content = ui::secret_seeds_list::content_height(rows);
-        if ui::secret_seeds_list::wheel_target(screen, self.mouse_pos, rows) {
+        if ui::secret_seeds_list::wheel_target(screen, mouse, rows) {
             state.scroll = ui::char_select::scroll_wheel(state.scroll, delta, inner[3], content);
         }
         true
@@ -1435,11 +1466,12 @@ impl App {
     /// hit (`:222`). The scroll lives on the screen payload, not
     /// `front_scroll` (the reports list's `SetView` is the log height).
     pub(crate) fn reports_wheel(&mut self, delta: i32) -> bool {
-        let Some(FrontScreen::Reports(state)) = self.front.as_mut() else {
+        if !matches!(self.front, Some(FrontScreen::Reports(_))) {
             return false;
-        };
+        }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
         let container = ui::reports::container_rect(screen);
         let panel = ui::reports::panel_rect(&container);
         let log = ui::reports::log_rect(&panel);
@@ -1452,6 +1484,9 @@ impl App {
         let list = ui::reports::list_rect(&log, false);
         let wrap_w = list[2] - 20.0;
         let line_h = ui::text::line_height(&self.lookups);
+        let Some(FrontScreen::Reports(state)) = self.front.as_mut() else {
+            return false;
+        };
         let heights: Vec<f32> = if state.reports.is_empty() {
             vec![line_h]
         } else {
@@ -1465,7 +1500,7 @@ impl App {
                 .collect()
         };
         let content = ui::reports::content_height(&heights);
-        if ui::reports::wheel_target(screen, self.mouse_pos, log[3], content) {
+        if ui::reports::wheel_target(screen, mouse, log[3], content) {
             state.scroll = ui::char_select::scroll_wheel(state.scroll, delta, log[3], content);
         }
         true
@@ -1634,7 +1669,7 @@ impl App {
     /// (`menuMode = 5` / `= 0`) clear the 888 side (`Main.cs:51066-51069`'s
     /// else branch) and the legacy page goes live instead of hiding under the
     /// front screen.
-    fn apply_front_flow(&mut self, front: FrontScreen, click: FlowClick) {
+    pub(crate) fn apply_front_flow(&mut self, front: FrontScreen, click: FlowClick) {
         let delete_index = match click {
             FlowClick::CharDelete(i) | FlowClick::WorldDelete(i) => Some(i),
             _ => None,
@@ -1872,31 +1907,34 @@ pub(crate) mod front_flow_tests {
 
     /// W4-d85 row 11 — an option click toggles through the draft and the
     /// Apply panel routes back; the seed plate opens the keyboard with
-    /// the Advanced tab as the return target.
+    /// the Advanced tab as the return target. Geometry at the headless
+    /// 1280x720: root (390, 202, 500, 400), info (400, 210, 480, 278),
+    /// list (424, 254, 432, 140).
     #[test]
     fn w4_d85_the_advanced_click_table_toggles_and_routes() {
         let draft = ui::world_creation::NewWorldDraft::new(0, 0);
         let front = FrontScreen::WorldCreationAdvanced(draft);
         let mut app = flow_app(Some(front.clone()), vec![], vec![]);
-        let screen = Vec2::new(1600.0, 900.0);
-        // Option 0 (Normal) centre (614, 287): toggling Normal off leaves
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // Option 0 (Normal) centre (454, 287): toggling Normal off leaves
         // every option off (the subscriber re-derives Normal = all-off →
         // true, so the flip is a no-op — the C#'s own behaviour).
-        let _ = front.click(&mut app, screen, Vec2::new(614.0, 287.0), false);
-        // Option 2 (Drunk) centre: x = 584 + 372*2/5 + 30 = 762.8.
-        let _ = front.click(&mut app, screen, Vec2::new(762.0, 287.0), false);
+        let _ = front.click(&mut app, screen, Vec2::new(454.0, 287.0), false);
+        // Option 2 (Drunk) centre: x = 424 + 372*2/5 + 30 = 602.8.
+        let _ = front.click(&mut app, screen, Vec2::new(602.0, 287.0), false);
         let Some(FrontScreen::WorldCreationAdvanced(d)) = app.front.as_ref() else {
             panic!("the tab stays live");
         };
         assert!(d.options_enabled[2], "Drunk toggled on");
         assert!(!d.options_enabled[0], "Normal cleared");
-        // Apply routes back.
+        // Apply routes back (y = 202 + 400 - 93 = 509..559).
         assert_eq!(
-            front.click(&mut app, screen, Vec2::new(800.0, 520.0), false),
+            front.click(&mut app, screen, Vec2::new(640.0, 520.0), false),
             Some(FlowClick::WorldAdvancedBack)
         );
         // The seed plate opens the keyboard returning to the tab.
-        let _ = front.click(&mut app, screen, Vec2::new(800.0, 220.0), false);
+        let _ = front.click(&mut app, screen, Vec2::new(700.0, 220.0), false);
         let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
             panic!("the keyboard opened");
         };

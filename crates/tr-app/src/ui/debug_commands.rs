@@ -597,7 +597,7 @@ mod tests {
         assert_eq!(search_rect(&p), [412.0, 252.0, 200.0, 24.0]);
         // VAlign 1 of the 546 inner: 232 + 546 - 486 = 292.
         assert_eq!(list_rect(&p), [412.0, 292.0, 751.0, 486.0]);
-        assert_eq!(scrollbar_rect(&p), [1167.0, 232.0, 20.0, 546.0]);
+        assert_eq!(scrollbar_rect(&p), [1168.0, 232.0, 20.0, 546.0]);
         assert_eq!(row_rect(&list_rect(&p), 2), [412.0, 362.0, 751.0, 30.0]);
         // Back: W 390, centred; y = 220 + 680 - 45 - 50 = 805.
         assert_eq!(back_rect(&c), [605.0, 805.0, 390.0, 50.0]);

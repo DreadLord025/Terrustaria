@@ -19,7 +19,7 @@ use glam::Vec2;
 use tr_render::SpriteRenderer;
 
 use super::text::{self, BorderFont};
-use super::uistate::{self, Style};
+use super::uistate;
 use super::{color, in_rect, panel};
 use crate::assets::Lookups;
 use crate::item::ItemSlot;

@@ -66,11 +66,11 @@ pub struct NewWorldDraft {
     pub evil: u8,
     /// W4-d85: the Advanced tab's `WorldGenerationOptions` enabled state
     /// (`AWorldGenerationOption.Enabled`, the registration order of
-    /// `WorldGenerationOptions.cs:30-41` — index 0 is Normal). The C#
-    /// statics start ALL false (the ctor never calls `Reset`); Normal's
-    /// `UpdateDependentState` subscriber keeps it true while nothing else
-    /// is on. The `Normal`/`Everything` event cascades live in
-    /// [`NewWorldDraft::toggle_seed_option`].
+    /// `WorldGenerationOptions.cs:30-41` — index 0 is Normal). The UI
+    /// path starts Normal-on: `SetDefaultOptions` → `ClearSeed` →
+    /// `WorldGenerationOptions.Reset()` (`UIWorldCreation.cs:317/:526`,
+    /// `WorldGenerationOptions.cs:52-55`). The `Normal`/`Everything`
+    /// event cascades live in [`NewWorldDraft::toggle_seed_option`].
     pub options_enabled: [bool; 10],
     /// `_isSpecialSeedText` (`UIWorldCreation.cs:145`'s field) — the seed
     /// text names a classic option (`OnFinishedSettingSeed`, `:830`).

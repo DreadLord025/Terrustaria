@@ -132,13 +132,11 @@ pub fn content_height(row_heights: &[f32]) -> f32 {
     let n = row_heights.len() + 2;
     let pad = if n == 1 { 0.0 } else { LIST_PADDING };
     let mut h = 0.0;
-    for (i, rh) in std::iter::once(&0.0)
+    for rh in std::iter::once(&0.0)
         .chain(row_heights.iter())
         .chain(std::iter::once(&0.0))
-        .enumerate()
     {
         h += rh + pad;
-        let _ = i;
     }
     h
 }

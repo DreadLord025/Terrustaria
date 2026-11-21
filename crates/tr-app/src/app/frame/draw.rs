@@ -1849,6 +1849,7 @@ impl App {
                     // treatment — the state draws over whatever the frame
                     // rendered (`IngameFancyUI.OpenUIState`).
                     if self.debug_commands_open {
+                        let is_client = self.is_client();
                         ui::debug_commands::draw_screen(
                             renderer,
                             lookups,
@@ -1856,7 +1857,7 @@ impl App {
                             &self.debug_commands_search,
                             self.debug_commands_scroll,
                             self.mouse_pos,
-                            self.is_client(),
+                            is_client,
                         );
                     }
                     // `UIDebugLoadoutsList` (W4-d85 row 8) — the twin overlay.

@@ -31,7 +31,7 @@ use super::world_creation::NewWorldDraft;
 use super::{color, in_rect, panel};
 use crate::assets::Lookups;
 use crate::lang;
-use tr_core::seeds::{SeedOptionId, OPTION_TABLE};
+use tr_core::seeds::OPTION_TABLE;
 
 /// The option grid's column count (`AddSpecialSeedOptions`'s `num = 6`,
 /// `:215`).

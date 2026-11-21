@@ -1346,6 +1346,8 @@ impl App {
             return;
         };
         let selected = self.selected;
+        let my_player = self.local_id as u8;
+        let is_client = self.is_client();
         crate::loadout::apply(
             loadout,
             &mut player,
@@ -1353,10 +1355,10 @@ impl App {
             &mut self.equip,
             &mut self.world,
             &mut self.projectiles,
-            self.local_id as u8,
+            my_player,
             &mut self.selection,
             selected,
-            self.is_client(),
+            is_client,
         );
         self.player = Some(player);
     }
@@ -4373,7 +4375,7 @@ mod tests {
         let mut app = inv_app();
         app.debug_commands_open = true;
         // The headless screen is 1280x720: container = (240, 220, 800, 500),
-        // panel h 390, list y 292 (inner 232 + 60), row 0 at 292..322.
+        // panel inner (252, 232, 776, 366), list y 292, row 0 at 292..322.
         app.mouse_pos = Vec2::new(400.0, 300.0);
         app.ui_left_press = true;
         app.handle_debug_commands_clicks();

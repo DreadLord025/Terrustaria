@@ -1532,6 +1532,16 @@ impl App {
             Some(FrontScreen::WorldCreation(draft)) => {
                 tr_core::seeds::SeedFlags::from_seed_text(&draft.seed)
             }
+            // W4-d85: the Advanced tab carries the toggled option flags
+            // too (`Main.UpdateAudio_DecideOnNewMusic` reads the live
+            // `WorldGen.drunkWorldGen` statics the toggles write).
+            Some(FrontScreen::WorldCreationAdvanced(draft)) => {
+                tr_core::seeds::SeedFlags::from_seed_text(&draft.seed) | draft.option_flags()
+            }
+            Some(FrontScreen::SecretSeedsList(state)) => {
+                tr_core::seeds::SeedFlags::from_seed_text(&state.draft.seed)
+                    | state.draft.option_flags()
+            }
             _ => tr_core::seeds::SeedFlags::default(),
         };
         self.music.update(audio::MusicEnv {
@@ -2555,12 +2565,13 @@ impl App {
         // `Main.npcChatText`'s sync `:1061-1067`).
         let chest_text = session.state.text.clone();
         let back = session.back.clone();
+        let tail = session.tail;
         // `InternalSubmit`'s cue (`SoundEngine.PlaySound(10)`,
         // `UIVirtualKeyboard.cs:975`) — the callers' `TextIsValidForSubmit`
         // gates already ran (`:358-365`'s click gate, `keyboard_enter`'s
         // `CanSubmit`).
         self.audio.play("Menu_Open");
-        match session.tail {
+        match tail {
             KeyboardTail::Rename => {
                 self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
                 self.enter_front(back.expect("the rename tail is built with a back screen"));
