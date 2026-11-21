@@ -79,8 +79,8 @@ reassigns; the merger reconciles per `12h`.
 | C2 Traps | 9a4deba8 | landed (code-only, witnesses written NOT run) |
 | C3 Piles | 53b57024 | landed (code-only, witnesses written NOT run) |
 | C4 Spawn Point | 4eab35b3 | landed (code-only, witnesses written NOT run) |
-| C5 Guide | (this commit) | landed (code-only, witnesses written NOT run) |
-| C6 Sunflowers | — | pending |
+| C5 Guide | 5ed74951 | landed (code-only, witnesses written NOT run) |
+| C6 Sunflowers | (this commit) | landed (code-only, witnesses written NOT run) |
 | C7 Herbs | — | pending |
 | C8 Dye Plants | — | pending |
 
@@ -265,3 +265,7 @@ substitutions + flags + combo-arm precedence, the infected Dryad + the
 deferred tenth arm) + the pipeline positional witness
 `w4_g38_c5_the_guide_step_sits_after_the_spawn_point`; the
 step-count/name-list tests updated 70→71.
+
+## C6 landing note (2026-11-21)
+
+C6 ports WorldGen.cs:19898-19939 (the SunflowersPart2 pass) + PlaceSunflower (:53636-53686) + the PlaceTile(27) slice (:59373/:59473-59476/:60152-60155) verbatim into surface.rs (pass_sunflowers + place_sunflower + place_tile_sunflower). Slot: after guide, before thin ice (the vanilla :19898 slot between Guide :19685 and Planting Trees :19940). Stream: pass_rng(Sunflowers) - no other step's ledger shifts. The width * 0.002 double-ceil attempts each roll a centre + a +/-(Next(10)+7) span and scan every column top-down for the first grass-2 seat with air above; PlaceSunflower runs the depth gate (y > worldSurface-1 && !remix), the 2x4 clear + wall veto, the two-column grass/hallowed-grass floor, then ONE head-variant Next(3) + a Next(3) per bottom-row cell (5 draws per flower) and writes the 2x4 tile-27 body (frameX = k*18 + variant*36, frameY = (l+3)*18). Progress message Lang.gen[39] (:19902). The 27 frame-important boot bit was already present (Main.cs:7413). Sub-vanilla note: PlaceSunflower has no InWorld guard (the C# throws on an edge column); the port's bounds-checked reads/writes skip out-of-world cells (documented). Hash pins: BOTH move BY DESIGN (the span band is live on 512 - the centre roll spans the full width). Re-pins deferred to the gate; a == b halves untouched. Witnesses: 3 unit tests in surface.rs (the 2x4 frames + the 5-draw schedule, the depth/wall/floor vetoes' no-draw schedule, the pass plants + the deny-gate skip) + the pipeline positional witness w4_g38_c6_the_sunflowers_step_sits_after_the_guide; the step-count/name-list tests updated 71->72.

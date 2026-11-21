@@ -285,6 +285,13 @@ mod tests {
     // `spawn point`. This pin is EXPECTED UNCHANGED: the pass writes only
     // the starter-NPC roster (`world.starter_npcs`, not hashed) + the owned
     // rescue flags — no tiles, no RNG draws. a == b stays green.
+    // W4-g38 C6 (2026-11-21, code-only): the `Sunflowers` pass
+    // (`SunflowersPart2`, `WorldGen.cs:19898-19939` + `PlaceSunflower`
+    // `:53636-53686`) lands after `guide` on a fresh
+    // `pass_rng("Sunflowers")` stream. This pin MOVES BY DESIGN: the span
+    // band is live on the 512-wide world (the centre roll spans the full
+    // width) — the 2×4 tile-27 sunflowers plant on its grass seats.
+    // Re-pin DEFERRED to the merge gate; a == b stays green.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -360,6 +367,12 @@ mod tests {
     // W4-g38 C5 (2026-11-21, code-only): the Guide pass (see SEED42_512
     // above) — the roster + flags are not hashed and the pass draws
     // nothing, so this pin is EXPECTED UNCHANGED. a == b stays green.
+    // W4-g38 C6 (2026-11-21, code-only): the Sunflowers pass (see
+    // SEED42_512 above) — on the 4200-wide default world the `width *
+    // 0.002` = 9 span attempts plant the 2×4 tile-27 sunflowers on the
+    // surface grass — this pin moves BY DESIGN. The pass draws only its
+    // own fresh stream. Re-pin DEFERRED to the merge gate; a == b stays
+    // green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

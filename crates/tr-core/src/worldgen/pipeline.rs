@@ -1364,6 +1364,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // lane's C6) — W4-g38 C5. The pass writes the starter roster
     // (`world.starter_npcs`) + the owned rescue flags; no tiles, no draws.
     step!("guide", "Guide", step_guide),
+    // The vanilla Sunflowers slot (`WorldGen.cs:19898`, SunflowersPart2):
+    // after Guide (`:19685`, C5) and before Planting Trees (`:19940`) —
+    // W4-g38 C6. The pass draws only its own `pass_rng("Sunflowers")`
+    // stream, so the insertion shifts no other step's ledger.
+    step!("sunflowers", "Sunflowers", step_sunflowers),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2470,6 +2475,26 @@ fn step_guide(
     _pass_config: &ConfigSection,
 ) {
     super::starter_npcs::pass_starter_npcs(world, opts);
+}
+
+/// The vanilla Sunflowers slot (`WorldGen.cs:19898-19939`, SunflowersPart2)
+/// — W4-g38 C6: the 0.002w span-scatter of 2×4 sunflowers on the grass
+/// seats, on the pass's own stream.
+fn step_sunflowers(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    surface::pass_sunflowers(
+        world,
+        world_surface,
+        &mut streams.pass_rng("Sunflowers"),
+        opts,
+    );
 }
 
 fn step_campsites(
@@ -3618,7 +3643,9 @@ mod tests {
         // `WorldGen.cs:19460`) after `piles`.
         // W4-g38 C5: + `guide` (vanilla "Guide", `WorldGen.cs:19685`) after
         // `spawn point`.
-        assert_eq!(names.len(), 71);
+        // W4-g38 C6: + `sunflowers` (vanilla "Sunflowers",
+        // `WorldGen.cs:19898`) after `guide`.
+        assert_eq!(names.len(), 72);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3698,6 +3725,7 @@ mod tests {
                 "piles",
                 "spawn point",
                 "guide",
+                "sunflowers",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3916,7 +3944,7 @@ mod tests {
     fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("thin ice"), pos("guide") + 1);
+        assert_eq!(pos("thin ice"), pos("sunflowers") + 1);
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
@@ -4020,7 +4048,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("guide"), pos("spawn point") + 1);
-        assert_eq!(pos("guide") + 1, pos("thin ice"));
+        assert_eq!(pos("guide") + 1, pos("sunflowers"));
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -4030,6 +4058,27 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Spawn Point") < cpos("Guide"));
         assert!(cpos("Guide") < cpos("Sunflowers"));
+    }
+
+    /// W4-g38 C6: `sunflowers` sits after `guide` and before the grouped
+    /// micro family — the vanilla chain's relative order Guide
+    /// (`WorldGen.cs:19685`) → Sunflowers (`:19898`) → Planting Trees
+    /// (`:19940`) puts the pass ahead of the micro group.
+    #[test]
+    fn w4_g38_c6_the_sunflowers_step_sits_after_the_guide() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("sunflowers"), pos("guide") + 1);
+        assert_eq!(pos("sunflowers") + 1, pos("thin ice"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Guide") < cpos("Sunflowers"));
+        assert!(cpos("Sunflowers") < cpos("Planting Trees"));
     }
 
     // --- W4-g38 C4: the Spawn Point pass unit witnesses ---------------------

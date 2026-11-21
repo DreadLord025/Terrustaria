@@ -679,6 +679,255 @@ pub(crate) fn place_fallen_log(
     }
 }
 
+// --- W4-g38 C6: the Sunflowers pass ------------------------------------------
+//
+// `GenPassNameID.SunflowersPart2` (`WorldGen.cs:19898-19939`): `maxTilesX *
+// 0.002` attempts (the double ceil loop), each rolling a centre column
+// `Next(maxTilesX)` and a ±(Next(10)+7) span, then scanning every column
+// top-down for the first grass-2 seat with air above and planting a
+// sunflower there (`PlaceTile(j, k-1, 27, mute: true)` → `PlaceSunflower`).
+//
+// `PlaceSunflower` (`:53636-53686`) draws: the depth gate (`y >
+// worldSurface - 1 && !remix` refuses, no draw), the 2×4 clear scan + the
+// grass/hallowed-grass floor test (no draw), then ONE `Next(3)` head-variant
+// roll + a `Next(3)` per bottom-row cell (the two head rows reuse the
+// variant) — 5 draws per placed flower. The 2×4 body writes at
+// `(x+k, y+l)`, k 0..2, l -3..1: `frameX = k*18 + variant*36`,
+// `frameY = (l+3)*18`.
+//
+// Sub-vanilla note: `PlaceSunflower` has no InWorld guard (the C# would
+// throw on an edge column); the port's bounds-checked reads/writes skip
+// out-of-world cells (the pass's span clamp keeps x+1 in-world, and the
+// negative head rows only occur on a grass seat above row 4 — never on a
+// generated surface).
+
+/// `WorldGen.PlaceSunflower(x, y, 27)` (`WorldGen.cs:53636-53686`) — the
+/// depth gate, the 2×4 clear + wall veto, the two-column grass floor, the
+/// head-variant roll and the 2×4 frame write. Returns whether it wrote.
+fn place_sunflower(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    world_surface: f64,
+    remix: bool,
+    rng: &mut Rng,
+) -> bool {
+    // `:53638-53641`: below the surface line refuses (remix exempt).
+    if (y as f64) > world_surface - 1.0 && !remix {
+        return false;
+    }
+    let mut ok = true;
+    for i in x..(x + 2) {
+        for j in (y - 3)..(y + 1) {
+            if world
+                .tile(i, j)
+                .is_some_and(|t| t.active() || t.wall > 0)
+            {
+                ok = false;
+            }
+        }
+        // `:53660`: nactive + not half-brick + slope 0 + grass 2 / hallowed
+        // grass 109 under both columns.
+        let floor_ok = world.tile(i, y + 1).is_some_and(|t| {
+            t.active()
+                && !t.inactive()
+                && !t.half_brick()
+                && t.slope() == 0
+                && matches!(t.kind, 2 | 109)
+        });
+        if !floor_ok {
+            ok = false;
+        }
+    }
+    if !ok {
+        return false;
+    }
+    // `:53669`: the head variant.
+    let variant = rng.range(0, 3);
+    for k in 0..2 {
+        for l in -3..1 {
+            // `:53674-53678`: the bottom two rows roll per cell, the head
+            // rows reuse the variant.
+            let frame_x = if l <= -2 {
+                k * 18 + variant * 36
+            } else {
+                k * 18 + rng.range(0, 3) * 36
+            };
+            let frame_y = (l + 3) * 18;
+            if let Some(t) = world.tile_mut(x + k, y + l) {
+                t.flags |= FLAG_ACTIVE;
+                t.frame_x = frame_x as i16;
+                t.frame_y = frame_y as i16;
+                t.kind = 27;
+            }
+        }
+    }
+    true
+}
+
+/// `WorldGen.PlaceTile(i, j, 27, mute: true)` (`WorldGen.cs:59342-60295`),
+/// the slice the Sunflowers pass runs: the entry always admits
+/// (`tileSolid[27]` is false, `:59373`), the seat is inactive (the pass
+/// checked) so the clear runs (`:59473-59476`), the dispatch is
+/// `PlaceSunflower` (`:60152-60155`); the `SquareTileFrame` re-frame rides
+/// the post-pipeline seam (the d106 convention).
+fn place_tile_sunflower(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    world_surface: f64,
+    remix: bool,
+    rng: &mut Rng,
+) {
+    if world.tile(x, y).is_none() {
+        return;
+    }
+    if !world.tile(x, y).is_some_and(|t| t.active()) {
+        if let Some(c) = world.tile_mut(x, y) {
+            c.kind = 0;
+            c.flags &= !FLAG_ACTIVE;
+            c.frame_x = 0;
+            c.frame_y = 0;
+            c.set_paint(0);
+            c.flags &= !crate::tile::FLAG_FULLBRIGHT;
+            c.set_slope(0);
+            c.flags &= !FLAG_HALF_BRICK;
+        }
+        world.set_invisible_block(x, y, false);
+    }
+    place_sunflower(world, x, y, world_surface, remix, rng);
+}
+
+/// The Sunflowers pass (`GenPassNameID.SunflowersPart2`,
+/// `WorldGen.cs:19898-19939`). Draws, in C# order on the pass's own stream:
+/// per attempt the centre roll + the two span rolls, then per placed
+/// flower the 5 `PlaceSunflower` draws.
+pub(crate) fn pass_sunflowers(
+    world: &mut World,
+    world_surface: f64,
+    rng: &mut Rng,
+    opts: &GenOptions,
+) {
+    // `:19900`: !Skyblock.denySomeGeneration.
+    if deny_some_generation(opts) {
+        return;
+    }
+    let remix = opts.flags.contains(SeedFlags::REMIX);
+    // `:19903-19904`: the double ceil loop.
+    let count = ((world.width as f64) * 0.002).ceil() as i32;
+    let num6 = world_surface as i32 - 1;
+    for _ in 0..count {
+        // `:19910-19920`: the centre + span rolls, the clamps.
+        let centre = rng.range(0, world.width);
+        let lo = (centre - rng.range(0, 10) - 7).max(0);
+        let hi = (centre + rng.range(0, 10) + 7).min(world.width - 1);
+        // `:19923-19936`: the per-column top-down scan.
+        for j in lo..hi {
+            for k in 1..num6 {
+                let seat = world.tile(j, k).is_some_and(|t| t.active() && t.kind == 2);
+                let air_above = !world.tile(j, k - 1).is_some_and(|t| t.active());
+                if seat && air_above {
+                    place_tile_sunflower(world, j, k - 1, world_surface, remix, rng);
+                }
+                if world.tile(j, k).is_some_and(|t| t.active()) {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod sunflower_tests {
+    use super::*;
+    use crate::tiledata::TILE_COUNT;
+
+    /// A grass-2 surface row at `ground` with air above.
+    fn grass_world(ground: i32) -> World {
+        let mut w = World::new("sunflowers".into(), 120, 120);
+        w.frame_important = vec![false; TILE_COUNT];
+        for x in 0..120 {
+            for y in ground..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: if y == ground { 2 } else { 1 },
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        w
+    }
+
+    /// W4-g38 C6: `place_sunflower` writes the 2×4 body — the head rows
+    /// share the variant, the bottom rows roll per cell; 5 draws total.
+    #[test]
+    fn w4_g38_c6_sunflower_frames_and_draw_count() {
+        let mut w = grass_world(40);
+        let mut rng = Rng(7);
+        let mut probe = Rng(7);
+        assert!(place_sunflower(&mut w, 60, 39, 60.0, false, &mut rng));
+        // The head variant is the first draw.
+        let variant = probe.range(0, 3);
+        for k in 0..2 {
+            for l in -3..1 {
+                let t = w.tile(60 + k, 39 + l).unwrap();
+                assert!(t.active());
+                assert_eq!(t.kind, 27);
+                assert_eq!(t.frame_y, ((l + 3) * 18) as i16);
+                let v = if l <= -2 { variant } else { probe.range(0, 3) };
+                assert_eq!(t.frame_x, (k * 18 + v * 36) as i16);
+            }
+        }
+        // Exactly 5 draws consumed.
+        assert_eq!(rng.next_u32(), probe.next_u32());
+    }
+
+    /// W4-g38 C6: the vetoes — a wall in the body, a non-grass floor and
+    /// the below-surface depth gate all refuse without draws.
+    #[test]
+    fn w4_g38_c6_sunflower_vetoes_draw_nothing() {
+        // Depth gate.
+        let mut w = grass_world(40);
+        let mut rng = Rng(7);
+        assert!(!place_sunflower(&mut w, 60, 39, 30.0, false, &mut rng));
+        assert_eq!(rng.next_u32(), Rng(7).next_u32(), "no draw");
+        // A wall in the body.
+        let mut w = grass_world(40);
+        let i = w.index(61, 38);
+        w.tiles[i].wall = 2;
+        let mut rng = Rng(7);
+        assert!(!place_sunflower(&mut w, 60, 39, 60.0, false, &mut rng));
+        assert_eq!(rng.next_u32(), Rng(7).next_u32(), "no draw");
+        // A stone floor under one column.
+        let mut w = grass_world(40);
+        let i = w.index(61, 40);
+        w.tiles[i].kind = 1;
+        let mut rng = Rng(7);
+        assert!(!place_sunflower(&mut w, 60, 39, 60.0, false, &mut rng));
+        assert_eq!(rng.next_u32(), Rng(7).next_u32(), "no draw");
+    }
+
+    /// W4-g38 C6: the pass plants on the grass seats and the deny gate
+    /// skips without draws.
+    #[test]
+    fn w4_g38_c6_pass_plants_and_gate_skips() {
+        let mut w = grass_world(40);
+        pass_sunflowers(&mut w, 60.0, &mut Rng(3), &GenOptions::default());
+        let flowers = w.tiles.iter().filter(|t| t.active() && t.kind == 27).count();
+        assert!(flowers > 0, "the 120-wide world plants sunflowers");
+        // The skyblock deny gate.
+        let mut w = grass_world(40);
+        let before = w.tiles.clone();
+        let mut opts = GenOptions::default();
+        opts.flags.insert(SeedFlags::SKYBLOCK);
+        let mut rng = Rng(3);
+        pass_sunflowers(&mut w, 60.0, &mut rng, &opts);
+        assert_eq!(w.tiles, before);
+        assert_eq!(rng.next_u32(), Rng(3).next_u32(), "no draw");
+    }
+}
+
 #[cfg(test)]
 mod fallen_log_tests {
     use super::*;
