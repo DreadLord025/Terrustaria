@@ -39569,3 +39569,91 @@ STALE-BY-DESIGN — the graft adds draws ONLY on the flagged seeds
 house stream is unchanged (the vetoes are inert on the sunplate floor,
 the flag12 swap gates on remix).
 
+### W4-g44 biome closeout (the desert boundary + sky-lake water + island-house housing, code-only mode, 2026-11-21)
+
+The lane's four closeout items, each a direct C# re-read + a witness
+(written, NOT run — code-only mode). The FINAL-KEEP instruction and the
+matrix-88/86 cross-receipts live in research/87's closeout addendum.
+
+1. **The desert boundary (`998b7a0c`).** The Lead's census name "g44 owns
+   desert" resolves to the lane SLUG (`biome-sky-lakes`), not a desert
+   pass: g44's `desert.rs`/`desert_entrances.rs` are UNTOUCHED base code
+   (empty diff vs origin/main). The desert family's owners: **Sand
+   Patches** (`WorldGen.cs:11689-11717`) is d101's (`d0042f85e`,
+   `passes1.rs::pass_sand_patches` — re-verified vs the C#: count
+   `0.013*width`, the spawn-middle rejection re-rolls the CLASSIC band
+   even in remix, strength-before-steps draw order); the **antlion-nest
+   entrance family** (`DesertBiome.cs:25-40` → the four Entrance classes)
+   is g40's (`7bb5332e5` + `a8150064b` — the 17-deviation residual closed
+   verbatim, incl. the anniversary short-circuit BEFORE the fraction draw
+   and the JSON 0.5 `ChanceOfEntrance` through `CreateBiome`); the hive
+   `PostPlacementEffect.Smooth` residual stays g40's next slice (its
+   census (c)). g44's ONLY `DesertBiome`-adjacent surface is the
+   buried-chest desert dispatch arm (`:36023-36048`), and it reads WORLD
+   STATE, not GenVars: `IsUndergroundDesert` (`:35755-35781`) is the
+   `y >= worldSurface` + 15%..85% x-band + the ±15 wall-187/216 probe —
+   the walls g40's hive paints. The g40 residual moves the wall geometry,
+   never the probe's shape. New witness
+   `w4_g44_desert_arm_retypes_on_the_hive_wall_probe` pins both wall arms
+   (187/216 → 467 style 10), the wall-free control (21 style 1) and the
+   above-surface refusal.
+2. **Sky-lake WATER physics (`582fa094`).** The lakes SURVIVE settle —
+   verified against the C# chain, not assumed. `WaterCheck`
+   (`WorldGen.cs:80415-80494`) zeroes liquid only INSIDE a solid tile
+   (`:80426-80432` — the bowl cells are inactive water) and wakes a cell
+   only when the cell below is open-and-not-full or a side cell is open
+   with a DIFFERENT level (`:80449-80470`); the compact bowl's rain-cloud
+   196 floor/sides are `tileSolid` true (`Main.cs:7118`, the generated
+   `TILE_SOLID` bit verified set) and the rows are uniformly 255, so no
+   wake arm fires. `SettleWaterAt`'s fall/spread walks
+   (`Liquid.cs:171-278`) have nowhere to go, and the waterLine lava
+   re-type (`:184-187`) needs the fall arm (`flag4`) — inert on an
+   enclosed lake (the load settle pins `waterLine = maxTilesY` anyway).
+   The g47 co-lane machinery (tip `5c09a68b8`) carries the verbatim
+   `gen_settle_loop` (`WorldGen.cs:16158-16206`) + `quick_water` /
+   `water_check` / `settle_water_at` on ONE `UpdateLiquid` engine shared
+   with the runtime — the gen settle does NOT drain island lakes. The
+   `WillWaterPlacedHereStayPut`-gated placement (`islands.rs:192`,
+   `WorldGen.cs:78530-78537`) is exactly the enclosed-bowl invariant the
+   settle preserves. Witness `w4_g44_the_sky_lake_water_survives_settle`
+   builds the lake disc, pins the 31×3×255 mass + the stay-put predicate
+   on every water cell, wakes every bowl cell through the landed
+   `LiquidSystem` and drains 600 updates — mass unchanged, zero leak.
+3. **Island-house NPC housing (`8e791809`).** THE FIX:
+   `housing::is_house_wall` now delegates to `edit::wall_house` (the FULL
+   279-entry `Main.wallHouse`, S1-P-i33, verified member-for-member vs
+   `Main.cs` incl. the `153..167` loop). `CheckRoom`'s ±2 scan reads
+   `Main.wallHouse` DIRECTLY (`WorldGen.cs:6204`/`:6212`); the old narrow
+   subset lacked wall **82** (`WallID.DiscWall`, `Main.cs:10384` true), so
+   every g44 sky-island house failed `TooManyUnsafeWalls`. The full-table
+   read admits the disc-wall room exactly as vanilla — the same
+   correction the hammer lane already made at the i31→i33 gate
+   (`hammer.rs:157-162`), now on the room-check side. **Census:** the
+   housing checker carries NO sky-band gate (`CheckRoom` reads only
+   edge/solid/wall/furniture conditions; the sole surface read is the
+   per-type Truffle condition `:4974`), so altitude never refuses a room.
+   The GENERATED house is not move-in-ready exactly as vanilla: the
+   5-wide door carve (`:79317-79322`) keeps open flanks (`PlaceTile(10)`
+   `:59843-59883` → `PlaceDoor` `:31773-31803` fills ONE column) and the
+   house ships NO torch (`RoomNeeds` incomplete until the player adds a
+   light). Two witnesses: the disc-wall sky room scans + RoomNeeds-
+   completes + scores a home spot (the wall-stripped control fails
+   `HoleInWallIsTooBig`), and the generated-house census pins the open
+   flanks + the missing torch + the table/chair/door flags.
+   **d118/d119 cross-note:** their tips (`91db266ea`/`04d7f9fd2`) keep the
+   narrow `is_house_wall` copy — the merge dedupes onto this full-table
+   read (research/87 closeout §3).
+
+**Deviation (new, deliberate):** none beyond the recorded ones — the
+housing fix RESTORES vanilla behaviour (the narrow subset was the
+deviation). The sky-lake witness uses the runtime `LiquidSystem` as the
+settle engine stand-in (the g47 gen driver wraps the same `update`); the
+gen-only `QuickWater` shimmer/boulder arms are inert on a classic world.
+
+**Witnesses (written, NOT run):** the desert-arm retype/control/gate (1),
+the sky-lake mass + stay-put + no-leak drain (1), the disc-wall room
+scan/score + the wall-stripped control (1), the generated-house
+open-flanks/no-torch census (1). No RNG stream moves — the housing fix is
+a pure predicate widening on the room-check path (no draws), the desert
+and sky-lake witnesses are read-only replays.
+

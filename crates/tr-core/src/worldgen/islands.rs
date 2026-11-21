@@ -2418,8 +2418,8 @@ mod tests {
         let open_flanks = [-2i32, -1, 1, 2]
             .iter()
             .filter(|&&dx| {
-                (0..3).any(|dy| {
-                    w.tile(door_col + dx, door_row - dy)
+                (-2..=2).any(|dy| {
+                    w.tile(door_col + dx, door_row + dy)
                         .is_some_and(|t| !t.active())
                 })
             })

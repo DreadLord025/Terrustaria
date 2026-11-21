@@ -236,3 +236,198 @@ Floating Islands + Floating Island Houses family.** At the merge:
   diff — the assembly is its own pass), `origin/task/W4-g61-npc-spawn-dust`
   @ `a96289284`, `origin/task/W4-f35-expert-drop-trees` @ `cd6d53a2f`,
   `origin/task/W4-f36-ooa-medal-drops` @ `fac5f2224` (claim greps).
+
+---
+
+## BIOME CLOSEOUT — FINAL STATUS + the final-keep instruction (2026-11-21)
+
+The lane's closeout dispatch (desert boundary / sky-lake water /
+island-house housing / this note). Code-only: every verdict is a direct
+source read; the four witnesses are written, NOT run. Branch tip at
+publication: **`8e791809a`** (closeout 3/4; this note is 4/4).
+
+### FINAL-KEEP instruction (publish to the active merge lanes g36d / g37c / d104d)
+
+**KEEP g44's `worldgen/islands.rs` + the grafted `worldgen/buried_chest.rs`
+for the Floating Islands (#26) + Floating Island Houses (#73) + skyLakes
+family. This is FINAL — no salvage candidates remain, no peer arm is
+uncovered.** At the merge:
+
+1. **DROP** `d103:island_houses.rs`, `d104:island_houses.rs`,
+   `g37:passes_b.rs` §B5 (`island_house` / `switch_fountain` /
+   `pass_floating_island_houses`) + their `islands.rs` ledger edits.
+2. **Dedupe the two `add_buried_chest` cores onto ONE** — the kind-aware
+   survivor (`place_chest_kind`, the remix 467 arm needs it). g44's graft
+   IS d103's core re-pointed (`edit::solid_tile` vs the local copy,
+   `place_chest_kind` vs `place_chest`-21-only); keep d103's **Surface
+   Chests** half (`:17130-17210`, its own claim, 86 §2.3 keeps d103's
+   B1-B4 twins).
+3. **Keep ONE deny-gate helper** — f24's shared
+   `skyblock_gates::deny_floating_islands`; re-point g44's two call sites.
+4. **Ledger-y convention** (KEEP-4): g44 stores `num11 - radius/2` for the
+   compact discs, `num11` verbatim for the variant bodies — keep it.
+5. **anchors.txt** (KEEP-5): keep the five g44 rows (`pass_floating_islands`,
+   `pass_floating_island_houses`, `variant_cloud_island`, `switch_fountain`,
+   `add_buried_chest`); repoint the d103/d104/g37 island-houses rows at the
+   g44 markers (never delete to silence the canary).
+6. **NEW — the housing wall-table dedupe:** `housing::is_house_wall` now
+   delegates to `edit::wall_house` (the FULL 279-entry `Main.wallHouse`).
+   d118 (`91db266ea`) / d119 (`04d7f9fd2`) keep the narrow subset copy at
+   their tips — the merge dedupes onto g44's full-table read (see §3 below).
+
+### §1 — The desert boundary (closeout 1/4, `998b7a0c`)
+
+The dispatch's "g44 owns desert" is the lane SLUG (`biome-sky-lakes`), not
+a desert-pass claim. g44's `desert.rs` / `desert_entrances.rs` are
+UNTOUCHED base code (empty diff vs origin/main). Owners, re-verified:
+
+| C# unit | Owner | Evidence (tip read) |
+| --- | --- | --- |
+| `Sand Patches` `WorldGen.cs:11689-11717` | **d101** | `d0042f85e`, `passes1.rs::pass_sand_patches` @ `4194acf8e` — count `0.013*width`, spawn-middle rejection re-rolls the CLASSIC band even in remix (`:11711-11712`), strength-before-steps draw order. Verified line-for-line vs the C#. |
+| `DesertBiome.cs:25-40` entrance family (the antlion nests / larva holes) | **g40** | `7bb5332e5` + `a8150064b` @ `e367fb56b` — the 17-deviation residual closed verbatim (the y-major Circle walk, Blotches at 5 sites, SetTile≠ResetToType, the chambers OuterOutline/tunnel chain, the pit SmootherStep π), the anniversary short-circuit BEFORE the fraction draw + the JSON 0.5 `ChanceOfEntrance` through `CreateBiome`. |
+| `DesertHive` `PostPlacementEffect.Smooth` residual | **g40 next slice** | g40 census (c) — the `tile_smooth_slope_one` seam exists (g40 P1); unclaimed beyond g40. |
+| The buried-chest desert dispatch arm `:36023-36048` | **g44** (the graft) | reads WORLD STATE not GenVars: `IsUndergroundDesert` `:35755-35781` = `y>=worldSurface` + 15%..85% x-band + the ±15 wall-187/216 probe. The g40 residual moves the wall geometry, never the probe's shape. |
+
+Witness `w4_g44_desert_arm_retypes_on_the_hive_wall_probe` (buried_chest.rs):
+both wall arms (187 sandstone / 216 hardened) retype to 467 style 10, the
+wall-free control keeps 21 style 1, the above-surface gate refuses; the
+pocket seats mid-band (x=400 on 800 wide) so the x-window admits.
+
+### §2 — Sky-lake WATER physics (closeout 2/4, `582fa094`)
+
+**The lakes SURVIVE settle.** Verified against the C# chain (not assumed):
+`WaterCheck` (`WorldGen.cs:80415-80494`) zeroes liquid only INSIDE a solid
+tile (`:80426-80432` — the bowl cells are inactive water) and wakes a cell
+only when the cell below is open-and-not-full or a side cell is open with a
+DIFFERENT level (`:80449-80470`). The compact bowl's rain-cloud 196
+floor/sides are `tileSolid` true (`Main.cs:7118`; the generated `TILE_SOLID`
+bit verified set) and the rows are uniformly 255 → no wake arm fires.
+`SettleWaterAt`'s fall/spread walks (`Liquid.cs:171-278`) have nowhere to
+go; the waterLine lava re-type (`:184-187`) needs the fall arm (`flag4`) —
+inert on an enclosed lake (the load settle pins `waterLine = maxTilesY`).
+
+**g47 co-lane read (tip `5c09a68b8`):** `gen_settle_loop` (`liquid.rs:1698`)
+is `WorldGen.cs:16158-16206` verbatim (WaterCheck re-registration,
+quickSettle up, 10 rounds × `num3*5` budget with live re-raise, WaterCheck
+between, ClearPendingLiquid + quickSettle down); `quick_water` /
+`water_check` / `settle_water_at` are the `Liquid.cs` ports on ONE
+`UpdateLiquid` engine shared with the runtime. The gen settle does NOT
+drain island lakes. The `WillWaterPlacedHereStayPut`-gated placement
+(`islands.rs:192`, `WorldGen.cs:78530-78537`) is exactly the enclosed-bowl
+invariant the settle preserves.
+
+Witness `w4_g44_the_sky_lake_water_survives_settle` (islands.rs): builds the
+lake disc, pins the 31×3×255 mass + the stay-put predicate on every water
+cell, wakes every bowl cell through the landed `LiquidSystem`, drains 600
+updates — mass unchanged, zero leak below the floor / past the sides.
+
+### §3 — Island-house NPC housing (closeout 3/4, `8e791809`)
+
+**THE FIX:** `housing::is_house_wall` delegates to `edit::wall_house` (the
+FULL 279-entry `Main.wallHouse`, S1-P-i33, verified member-for-member vs
+`Main.cs` incl. the `153..167` loop; the existing
+`s1_p_i33_wall_house_is_the_full_main_table` witness pins wall 82 + the
+count 279, so the delegation inherits that coverage). `CheckRoom`'s ±2 scan
+reads `Main.wallHouse` DIRECTLY (`WorldGen.cs:6204`/`:6212`); the old narrow
+subset lacked wall **82** (`WallID.DiscWall`, `Main.cs:10384` true), so every
+g44 sky-island house failed `TooManyUnsafeWalls`. The full-table read admits
+the disc-wall room exactly as vanilla — the same correction the hammer lane
+made at the i31→i33 gate (`hammer.rs:157-162`), now on the room-check side.
+
+**Census:** the housing checker carries NO sky-band gate (`CheckRoom` reads
+only edge/solid/wall/furniture conditions; the sole surface read is the
+per-type Truffle condition `:4974`) — altitude never refuses a room. The
+GENERATED house is not move-in-ready exactly as vanilla: the 5-wide door
+carve (`:79317-79322`) keeps open flanks (`PlaceTile(10)` `:59843-59883` →
+`PlaceDoor` `:31773-31803` fills ONE column) and the house ships NO torch
+(`RoomNeeds` incomplete until the player adds a light).
+
+**d118/d119 cross-note:** their tips (`91db266ea` / `04d7f9fd2`) keep the
+narrow `is_house_wall` copy. d118 owns the QuickFindHome pass/canSpawn shape
++ occupancy queries; d119 owns the homeless-arrival + relocation drivers.
+Neither touches the wall table's sky-band correctness — the merge dedupes
+their `is_house_wall` onto g44's full-table read (FINAL-KEEP item 6). The
+housing fix is a pure predicate widening on the room-check path (no RNG
+draws), so d118/d119's stream witnesses stay valid.
+
+Two witnesses: `w4_g44_the_disc_wall_is_a_house_wall_and_the_sky_room_scores`
+(housing.rs — the disc-wall sky room scans + RoomNeeds-completes + scores a
+home spot; the wall-stripped control fails `HoleInWallIsTooBig`) and
+`w4_g44_the_generated_island_house_ships_open_flanks_and_no_torch`
+(islands.rs — pins the open flanks + the missing torch + the
+table/chair/door flags).
+
+### §4 — matrix-88 / matrix-86 cross-receipts
+
+**matrix-88 (g36, tip `6d46f6a54`) — RECEIPT:**
+- §2.11 KEEP g44 (rows 26 + 73): **CONFIRMED, now FINAL.** The §2.11 merger
+  note "verify g44 carries d103's drunk-crimson wall split + case-10 door
+  dispatch (if absent, port those two arms)" is **RESOLVED — both present**:
+  the drunk crimson half-split at `islands.rs:1199-1202` (`:79217-79220`),
+  the case-10 door dispatch at `islands.rs:1011-1027` (`place_tile_door`,
+  the up-hang/down-hang `PlaceTile` case-10 arms `:59843-59883`) + the remix
+  5/38 style split at `:1293-1297`. No gate-port needed.
+- §2.8 "re-point g44's IslandHouse chest call onto d103's buried_chest core":
+  **DONE in-lane** (`e172bc76`, the graft) — g44 carries the full core as
+  `buried_chest.rs`, the house call re-pointed. The merge dedupes the two cores onto
+  the kind-aware survivor (FINAL-KEEP item 2).
+- §6.3 checklist "g44 IslandHouse: drunk crimson wall split + case-10 door
+  dispatch": **CLOSED** (both verified present, above).
+- §6.2 merge order "g44 islands ledger → g44 houses": unchanged; g44's
+  closeout adds no pipeline row (the housing fix is a predicate, the desert
+  + sky-lake items are witnesses).
+
+**matrix-86 (d104, tip `242692e1c`) — RECEIPT:**
+- §1 B5 (d104 vs g37): the d104-wins verdict **stands FOR THAT PAIR** — 86
+  compares d104 vs g37 ONLY (g44 appears nowhere in 86, re-verified by a
+  full-text scan at the new tip `242692e1c`). 87's four-way table (g44 after
+  variant A + the graft) dominates d104 on every house arm AND the pass
+  mechanics. The two notes adjudicate different comparisons — no conflict.
+- d104's house module is UNCHANGED through the new tip: `git diff 93b1938e
+  242692e1c -- island_houses.rs` is EMPTY (the §6 addendum commits are
+  docs-only). The arm table above is still current.
+- 86's other verdicts (Quick Cleanup / Hellforge / Piles / Spawn Point / the
+  Spreading Grass repeat:true fix) are UNTOUCHED by this note.
+
+**Peer-tip re-verification ledger (the house modules at the closeout read):**
+
+| Lane | Tip | House-module drift since 87's read |
+| --- | --- | --- |
+| d103 | `12318e505` | `buried_chest.rs` UNCHANGED (`339d9f6d`→`12318e505` empty); `island_houses.rs` a borrow-fix only (`eb018138`→`12318e505`: copy the ledger entry before the mutable `gv` borrow, +9/-3, no arm change). |
+| d104 | `242692e1c` | `island_houses.rs` UNCHANGED (`93b1938e`→`242692e1c` empty); the §6 addendum is docs-only. |
+| g37 | `81fd1e0d0` | `passes_b.rs` +720 lines but ALL in B6-B9 (the pile/gap-fill arms); §B5 `island_house` still classic-only (door style 9 at `:1751`, the remix 5/38 arms deferred, no crimson input) — strictly dominated by g44. |
+
+### Sources read (closeout)
+
+- `decompiled/Terraria/WorldGen.cs` :11689-11717 (Sand Patches),
+  :12500-12543 (Full Desert), :16156-16207 (the gen settle),
+  :35755-35798 (IsUndergroundDesert/IsDungeon), :36017-36064 (the desert
+  dispatch), :59843-59883 (PlaceTile case 10), :6041-6243
+  (StartRoomCheck/CheckRoom), :5858-6029 (ScoreRoom), :79248-79484
+  (IslandHouse shell/carve/door/furniture), :80415-80513
+  (WaterCheck/ClearPendingLiquid), :31773-31803 (PlaceDoor).
+- `decompiled/Terraria/GameContent/Biomes/DesertBiome.cs` :13-71,
+  `Desert/DesertDescription.cs` :40-97, `Desert/SurfaceMap.cs` :22-74,
+  `Desert/SandMound.cs` (full).
+- `decompiled/Terraria/Liquid.cs` :69-289 (tilesIgnoreWater /
+  worldGenTilesIgnoreWater / QuickWater / SettleWaterAt).
+- `decompiled/Terraria/Main.cs` :7118 (tileSolid[196]), :10384
+  (wallHouse[82]), :10427 (wallHouse[73]), the wallHouse init block
+  (279 members, the `153..167` loop).
+- `git show origin/task/W4-g47-liquid-skip-settle:crates/tr-core/src/liquid.rs`
+  @ `5c09a68b8` (gen_settle_loop / quick_water / water_check /
+  settle_water_at / settle_loaded_world).
+- `git show origin/task/W4-d101-worldgen-passes-1:crates/tr-core/src/worldgen/passes1.rs`
+  @ `4194acf8e` (pass_sand_patches).
+- `git show origin/task/W4-g40-biome-marble-granite:docs/research/94-w4g40-biome-residual-census.md`
+  + `crates/tr-core/src/worldgen/desert.rs` @ `e367fb56b` (the entrance gate
+  + the anniversary witness).
+- `git show origin/task/W4-g36-worldgen-missing-a:docs/research/88-worldgen-master-matrix.md`
+  @ `6d46f6a54` (§2.8/§2.11/§6.2/§6.3).
+- `git show origin/task/W4-d104-worldgen-passes-4:docs/research/86-wg-passes-4-reconcile.md`
+  @ `242692e1c` (§1 B5 + the g44 full-text scan).
+- `origin/task/W4-d118-housing-scoreroom` @ `91db266ea`,
+  `origin/task/W4-d119-housing-relocation` @ `04d7f9fd2` (the
+  `is_house_wall` subset copies + the claim scopes).
+- This branch: `998b7a0c` (desert witness), `582fa094` (sky-lake witness),
+  `8e791809` (the housing fix + 2 witnesses).
