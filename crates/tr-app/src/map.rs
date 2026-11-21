@@ -422,6 +422,17 @@ pub struct WorldMap {
     /// `Main.TriggerPing`'s MP half (`Main.cs:56546-56549`): the markers added
     /// this frame that still need the `NetPingModule` relay.
     pub ping_outbox: Vec<[f32; 2]>,
+    /// `Main.MapPylonTile` (`Main.cs:839`): the pylon anchor the right-click
+    /// selected (`Player.cs:32187`), `(-1, -1)` when none. The fullscreen map
+    /// draws the network lines from it (`TeleportPylonsMapLayer.cs:45-64`).
+    /// Cleared by `TryOpeningFullscreenMap` (`Player.cs:29113`) and the
+    /// inventory map icon (`Main.cs:41102`). W4-f29.
+    pub map_pylon_tile: (i32, i32),
+    /// `Main.PanTargetMapFullscreen` + `PanTargetMapFullscreenEnd`
+    /// (`Main.cs:55361-55385`): an offscreen pylon marker click pans the
+    /// fullscreen map toward the target (`TeleportPylonsMapLayer.cs:105-107`).
+    /// `None` = the C# `PanTargetMapFullscreen == false`. W4-f29.
+    pub pan_target: Option<[f32; 2]>,
 }
 
 impl WorldMap {
@@ -442,6 +453,8 @@ impl WorldMap {
             reset_pos: true,
             pings: Vec::new(),
             ping_outbox: Vec::new(),
+            map_pylon_tile: (-1, -1),
+            pan_target: None,
         }
     }
 
@@ -659,12 +672,23 @@ impl WorldMap {
 
     /// `KeyM`: opening also arms the recentre (`Main.resetMapFull = true`) and
     /// resets the scale (`Main.mapFullscreenScale = 2.5`, `Main.cs:41101`).
+    /// `Player.TryOpeningFullscreenMap` (`Player.cs:29113`) and the inventory
+    /// map icon (`Main.cs:41102`) also clear `Main.MapPylonTile` to `(-1,-1)`;
+    /// the port folds that into the open arm (W4-f29).
     pub fn set_open(&mut self, open: bool) {
         self.open = open;
         if open {
             self.reset_pos = true;
             self.scale = MAP_FULLSCREEN_SCALE_DEFAULT;
+            self.map_pylon_tile = (-1, -1);
         }
+    }
+
+    /// `Main.resetMapFull = false` (`Player.cs:32200`): the pylon right-click
+    /// recentres on the pylon rect, so it disarms the view-centre recentre
+    /// `set_open` armed. W4-f29.
+    pub fn clear_reset_pos(&mut self) {
+        self.reset_pos = false;
     }
 
     /// Per-frame prep: clamp `scale`/`pos`, recentre on the view centre if armed,

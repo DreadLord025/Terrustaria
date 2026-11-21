@@ -173,11 +173,34 @@ pub(crate) struct MapIconInputs<'a> {
     /// The team-based-spawns seed gate (`TeamBasedSpawnMapLayer.cs:10`).
     pub team_based_spawns: bool,
     pub mouse: Vec2,
+    /// `Main.mouseLeft && Main.mouseLeftRelease` (`TeleportPylonsMapLayer.cs:
+    /// 83`): the pylon marker click edge. W4-f29.
+    pub left_click: bool,
+    /// `Main.mapFullscreen` (`TeleportPylonsMapLayer.cs:73-79`): the
+    /// fullscreen map draws the clamped offscreen markers, the minimap the
+    /// plain ones. W4-f29.
+    pub fullscreen: bool,
+    /// `(Main.screenWidth, Main.screenHeight)` — the `DrawClamped` border
+    /// region (`MapOverlayDrawContext.cs:133-136`). W4-f29.
+    pub screen: [f32; 2],
+}
+
+/// The pylon marker click outcome (`TeleportPylonsMapLayer.cs:90-109`):
+/// an on-screen marker teleports, an offscreen one pans the map. W4-f29.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum PylonClick {
+    /// `:93-99`: the marker is on screen — teleport to this pylon.
+    Teleport(PylonInfo),
+    /// `:101-108`: the marker is off screen — pan toward this tile.
+    Pan([f32; 2]),
 }
 
 /// `Main.MapIcons.Draw`'s layer walk (`MapIconOverlay.cs:17-27`) in the
 /// registration order. Returns the hovered layer's localized text, if any —
-/// the C# `ref text` feeds `Main.DrawMap`'s hover line.
+/// the C# `ref text` feeds `Main.DrawMap`'s hover line — plus the pylon
+/// marker click outcome (`TeleportPylonsMapLayer.cs:90-109`), which the
+/// caller applies after the draw (the C# runs it inside the layer's `Draw`,
+/// but the teleport/pan writes need the App, not the renderer). W4-f29.
 pub(crate) fn map_layers_draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -188,7 +211,7 @@ pub(crate) fn map_layers_draw(
     map_scale: f32,
     draw_scale: f32,
     opacity: f32,
-) -> Option<String> {
+) -> (Option<String>, Option<PylonClick>) {
     let mut ctx = MapOverlayContext {
         r,
         mouse: inputs.mouse,
@@ -200,6 +223,7 @@ pub(crate) fn map_layers_draw(
         opacity,
     };
     let mut text: Option<String> = None;
+    let mut pylon_click: Option<PylonClick> = None;
 
     // `DigtoiseMapLayer` (`DigtoiseMapLayer.cs:13-26`): the player's Digtoise
     // tracker (1098/1123) draws Extra_305's 2-frame row, bottom-aligned at
@@ -279,11 +303,19 @@ pub(crate) fn map_layers_draw(
         }
     }
 
-    // `TeleportPylonsMapLayer` (`TeleportPylonsMapLayer.cs:65-89`): the
+    // `TeleportPylonsMapLayer` (`TeleportPylonsMapLayer.cs:65-109`): the
     // markers. `:39-42` dims them to `Color.Gray * 0.5f` when the player is
     // not near a pylon; `:112-119` hides the ones the fog covers once the
-    // team-based-spawns seed is on.
+    // team-based-spawns seed is on. The fullscreen map draws the CLAMPED
+    // markers (`DrawClamped`, `:76-79`) with the offscreen arrows; the
+    // minimap the plain ones (`:73-75`). The click (`:83-87`) records the
+    // last hovered marker; `:90-109` teleports (on screen) or pans (off).
+    // W4-f29.
     let pylon_color = if inputs.near_pylon { 1.0 } else { 0.25 };
+    // `:33-35`: num = 1, scaleIfSelected = 2, scaleIfOffscreen = 0.5.
+    let scale_if_selected = 2.0f32;
+    let scale_if_offscreen = 0.5f32;
+    let mut clicked: Option<(PylonInfo, bool)> = None;
     for p in inputs.pylons {
         // `IsRevealed` (`:112-119`): unconditionally true without the seed.
         if inputs.team_based_spawns
@@ -310,16 +342,46 @@ pub(crate) fn map_layers_draw(
         ];
         // `:73-79`: `PositionInTiles.ToVector2() + (1.5, 2)`, centre-aligned.
         let pos = [p.x as f32 + 1.5, p.y as f32 + 2.0];
-        if ctx.draw_tinted(uv, [fw, fh], pos, ALIGN_CENTER, pylon_color) {
+        let (hovered, on_screen) = if inputs.fullscreen {
+            draw_pylon_clamped(
+                &mut ctx,
+                lookups,
+                uv,
+                [fw, fh],
+                pos,
+                pylon_color,
+                scale_if_selected,
+                scale_if_offscreen,
+                inputs.screen,
+            )
+        } else {
+            (
+                ctx.draw_tinted(uv, [fw, fh], pos, ALIGN_CENTER, pylon_color),
+                true,
+            )
+        };
+        if hovered {
             text = Some(crate::lang::item_name(p.pylon_type.item_id()));
+            // `:83-87`: the click edge records the marker + its on-screen flag.
+            if inputs.left_click {
+                clicked = Some((*p, on_screen));
+            }
         }
+    }
+    // `:90-109`: the recorded click teleports or pans.
+    if let Some((p, on_screen)) = clicked {
+        pylon_click = Some(if on_screen {
+            PylonClick::Teleport(p)
+        } else {
+            PylonClick::Pan([p.x as f32, p.y as f32])
+        });
     }
 
     // `PingMapLayer` (`PingMapLayer.cs:24-42`): the 1x5 ping animation
     // cycles `CurrentRow = seconds * 10 % 5` over the pool.
     if let Some(tex) = lookups.map_ping {
         let Some(full_uv) = lookups.hud_uv(Some(&tex)) else {
-            return text;
+            return (text, pylon_click);
         };
         let fw = tex.width as f32;
         let fh = tex.height as f32 / 5.0;
@@ -335,7 +397,155 @@ pub(crate) fn map_layers_draw(
             ctx.draw(uv, [fw, fh], *pos, ALIGN_CENTER);
         }
     }
-    text
+    (text, pylon_click)
+}
+
+/// `MapOverlayDrawContext.DrawClamped` (`MapOverlayDrawContext.cs:118-216`)
+/// for a pylon marker: the marker rect clamped into the screen border
+/// region, the offscreen arrow (Extra_299 frame (2,1) of 3x3) pointing back
+/// toward the true position, and the hover/scale selection. Returns
+/// `(IsMouseOver, onScreen)`. The tint is the marker colour (`color *
+/// opacity`); the arrow is white. W4-f29.
+#[allow(clippy::too_many_arguments)]
+fn draw_pylon_clamped(
+    ctx: &mut MapOverlayContext,
+    lookups: &assets::Lookups,
+    uv: [f32; 4],
+    frame_size: [f32; 2],
+    position: [f32; 2],
+    tint: f32,
+    scale_if_selected: f32,
+    scale_if_offscreen: f32,
+    screen: [f32; 2],
+) -> (bool, bool) {
+    if ctx.opacity == 0.0 {
+        return (false, true); // `:121-124`
+    }
+    let pos = [
+        (position[0] - ctx.map_position[0]) * ctx.map_scale + ctx.map_offset[0],
+        (position[1] - ctx.map_position[1]) * ctx.map_scale + ctx.map_offset[1],
+    ];
+    let origin = [frame_size[0] * ALIGN_CENTER[0], frame_size[1] * ALIGN_CENTER[1]];
+    let num = ctx.draw_scale * 1.0; // scaleIfNotSelected = num = 1
+    let num2 = ctx.draw_scale * scale_if_offscreen;
+    // The unclamped rect (`:131-132`).
+    let top_left = [pos[0] - origin[0] * num, pos[1] - origin[1] * num];
+    let mut rx = top_left[0] as i32;
+    let mut ry = top_left[1] as i32;
+    let rw = (frame_size[0] * num) as i32;
+    let rh = (frame_size[1] * num) as i32;
+    // The clamped draw position (`vector2`), starting at the true position.
+    let mut vx = pos[0];
+    let mut vy = pos[1];
+    let border = crate::map_pylons::BORDER_SIZE;
+    let num3 = screen[0] as i32 - border;
+    let num4 = screen[1] as i32 - border;
+    let num5 = (border + num3) / 2;
+    let num6 = (border + num4) / 2;
+    let mut on_screen = true;
+    // `:137-160`: the X clamp.
+    if rx < border {
+        let num7 = (rx - num5) as f32;
+        let num8 = (ry - num6) as f32;
+        let num9 = rx - border;
+        let num10 = (num9 as f32 / num7 * num8) as i32;
+        vx -= num9 as f32;
+        rx -= num9;
+        vy -= num10 as f32;
+        ry -= num10;
+        on_screen = false;
+    } else if rx + rw > num3 {
+        on_screen = false;
+        let num11 = (rx - num5) as f32;
+        let num12 = (ry - num6) as f32;
+        let num13 = rx + rw - num3;
+        let num14 = (num13 as f32 / num11 * num12) as i32;
+        vx -= num13 as f32;
+        rx -= num13;
+        vy -= num14 as f32;
+        ry -= num14;
+    }
+    // `:161-184`: the Y clamp.
+    if ry < border {
+        on_screen = false;
+        let num15 = (rx - num5) as f32;
+        let num16 = (ry - num6) as f32;
+        let num17 = ry - border;
+        let num18 = (num17 as f32 / num16 * num15) as i32;
+        vx -= num18 as f32;
+        rx -= num18;
+        vy -= num17 as f32;
+        ry -= num17;
+    } else if ry + rh > num4 {
+        on_screen = false;
+        let num19 = (rx - num5) as f32;
+        let num20 = (ry - num6) as f32;
+        let num21 = ry + rh - num4;
+        let num22 = (num21 as f32 / num20 * num19) as i32;
+        vx -= num22 as f32;
+        rx -= num22;
+        vy -= num21 as f32;
+        ry -= num21;
+    }
+    // `:185`: the hover is on the CLAMPED rect.
+    let mx = ctx.mouse.x as i32;
+    let my = ctx.mouse.y as i32;
+    let hovered = mx >= rx && mx < rx + rw && my >= ry && my < ry + rh;
+    // `:186-198`: the draw scale selection.
+    let mut num23 = num;
+    if !on_screen {
+        num23 = num2;
+        if hovered {
+            num23 *= scale_if_selected;
+        }
+    } else if hovered {
+        num23 = ctx.draw_scale * scale_if_selected;
+    }
+    // `:199-213`: the offscreen arrow.
+    if !on_screen && !hovered {
+        if let Some(arrow) = lookups.extra_299 {
+            if let Some(arrow_uv) = lookups.hud_uv(Some(&arrow)) {
+                let aw = arrow.width as f32 / 3.0;
+                let ah = arrow.height as f32 / 3.0;
+                // `vector4 = position - vector2` (the true minus clamped).
+                let d = [pos[0] - vx, pos[1] - vy];
+                let rotation = d[1].atan2(d[0]);
+                let len = (d[0] * d[0] + d[1] * d[1]).sqrt();
+                let dir = if len > 0.0 { [d[0] / len, d[1] / len] } else { [0.0, 0.0] };
+                // `position2 = rectangle.Center + dir * (sourceHeight/4 * num2)`.
+                let center = [(rx + rw / 2) as f32, (ry + rh / 2) as f32];
+                let off = (frame_size[1] as i32 / 4) as f32 * num2;
+                let anchor = [center[0] + dir[0] * off, center[1] + dir[1] * off];
+                // Frame (2, 1) of 3x3.
+                let auv = [
+                    arrow_uv[0] + (arrow_uv[2] - arrow_uv[0]) * 2.0 / 3.0,
+                    arrow_uv[1] + (arrow_uv[3] - arrow_uv[1]) * 1.0 / 3.0,
+                    arrow_uv[0] + (arrow_uv[2] - arrow_uv[0]) * 3.0 / 3.0,
+                    arrow_uv[1] + (arrow_uv[3] - arrow_uv[1]) * 2.0 / 3.0,
+                ];
+                // origin = (0, value.Height * 0.5); scale num2.
+                let size = [aw * num2, ah * num2];
+                let a_origin = [0.0, ah * 0.5 * num2];
+                let (s, c) = rotation.sin_cos();
+                let tl = [
+                    anchor[0] - (a_origin[0] * c - a_origin[1] * s),
+                    anchor[1] - (a_origin[0] * s + a_origin[1] * c),
+                ];
+                let a = ctx.opacity;
+                ctx.r.push_ui_sprite_rot(tl, size, auv, [a, a, a, a], rotation);
+            }
+        }
+    }
+    // `:214`: the marker itself at the clamped position, tinted.
+    let size = [frame_size[0] * num23, frame_size[1] * num23];
+    let a = ctx.opacity * tint;
+    ctx.r.push_ui_sprite(
+        [vx - origin[0] * num23, vy - origin[1] * num23],
+        size,
+        uv,
+        [a, a, a, a],
+    );
+    (hovered, on_screen)
 }
 
 /// `Main.MapIcons`' accessor over the world map's ping pool — the C# holds

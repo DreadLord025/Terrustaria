@@ -2083,6 +2083,10 @@ pub struct Lookups {
     /// `Utils.cs:444`) — the town-head dialogue indicator
     /// (`Main.DrawNPCHeadFriendly`, `Main.cs:56556-56559`). W4-f29.
     pub ui_quickicon1: Option<tr_render::SheetRect>,
+    /// `TextureAssets.BlackTile` (`AssetInitializer.cs:492`) — the 16x16
+    /// solid black sheet the pylon network lines stretch
+    /// (`TeleportPylonsMapLayer.DrawLine`, `:18-28`). W4-f29.
+    pub black_tile: Option<tr_render::SheetRect>,
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -2517,6 +2521,7 @@ impl Lookups {
             map_death: atlas.sheet("MapDeath").copied(),
             coin_anim: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
             ui_quickicon1: atlas.sheet("UI/UI_quickicon1").copied(),
+            black_tile: atlas.sheet("Black_Tile").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),

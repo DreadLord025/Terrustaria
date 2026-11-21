@@ -191,6 +191,11 @@ impl App {
             // mutates `self` while the draw destructure holds its fields;
             // applied after the gpu block (S1-E-26 wave A).
             let mut popup_goto: Option<&'static str> = None;
+            // W4-f29 — the pylon marker click (`TeleportPylonsMapLayer.cs:
+            // 90-109`): parked here because the teleport/pan writes need
+            // `&mut self` while the draw destructure holds its fields;
+            // applied after the gpu block (the `popup_goto` convention).
+            let mut pylon_click_apply: Option<crate::map_layers::PylonClick> = None;
 
             {
                 let App {
@@ -1482,7 +1487,7 @@ impl App {
                                     ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
                                 )
                             });
-                            let mm_layer_hover = crate::map_layers::map_layers_draw(
+                            let (mm_layer_hover, _mm_pylon_click) = crate::map_layers::map_layers_draw(
                                 renderer,
                                 lookups,
                                 &crate::map_layers::MapIconInputs {
@@ -1496,6 +1501,9 @@ impl App {
                                     map: Some(m),
                                     team_based_spawns,
                                     mouse: self.mouse_pos,
+                                    left_click: false,
+                                    fullscreen: false,
+                                    screen: [screen.x, screen.y],
                                 },
                                 [0.0, 0.0],
                                 ui::minimap::minimap_origin_raw(screen, map_scale),
@@ -2316,7 +2324,23 @@ impl App {
                                         ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
                                     )
                                 });
-                                let hover = crate::map_layers::map_layers_draw(
+                                // `TeleportPylonsMapLayer.cs:45-64`: the pylon
+                                // network lines draw BEFORE the markers (the
+                                // line block precedes the marker loop in the
+                                // layer's `Draw`). W4-f29.
+                                crate::map_pylons::draw_pylon_lines(
+                                    renderer,
+                                    lookups,
+                                    map,
+                                    world,
+                                    &map_layer_pylons,
+                                    [0.0, 0.0],
+                                    map_offset,
+                                    map.scale,
+                                    map_draw_scale,
+                                    team_based_spawns,
+                                );
+                                let (hover, pylon_click) = crate::map_layers::map_layers_draw(
                                     renderer,
                                     lookups,
                                     &crate::map_layers::MapIconInputs {
@@ -2330,6 +2354,9 @@ impl App {
                                         map: Some(map),
                                         team_based_spawns,
                                         mouse: self.mouse_pos,
+                                        left_click: self.ui_left_press,
+                                        fullscreen: true,
+                                        screen: [screen.x, screen.y],
                                     },
                                     [0.0, 0.0],
                                     map_offset,
@@ -2466,6 +2493,8 @@ impl App {
                                         &t,
                                     );
                                 }
+                                // The pylon marker click applies after the draw.
+                                pylon_click_apply = pylon_click;
                             }
                             // The `else if self.map_style == 1` minimap branch
                             // (`Main.cs:55503-55547`) draws above `ui::draw_hud`
@@ -2696,6 +2725,13 @@ impl App {
         // for the next frame's draw.
         if let Some(name) = popup_goto {
             self.open_achievements_and_goto(name);
+        }
+        // W4-f29 — the pylon marker click (`TeleportPylonsMapLayer.cs:90-109`):
+        // an on-screen marker teleports (the gate ladder + the style-9
+        // teleport), an offscreen one arms the pan target. The field borrows
+        // are released, so the writes land for the next frame.
+        if let Some(click) = pylon_click_apply {
+            self.apply_pylon_click(click);
         }
         Some((stats, tile_stats))
     }
