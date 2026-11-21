@@ -36151,7 +36151,8 @@ in jungle`).
 
 The hive landed; this pass censuses the **rest of the C# `WorldGen` jungle
 family** against the port and ports the missing pieces verbatim (the census
-table: `docs/research/12k-c31-jungle-residuals.md`). Three gaps filled:
+table: `docs/research/300-c31-jungle-residuals.md`, renumbered 12k→300 per
+the research/150 registry §7.3). Three gaps filled:
 
 1. **`JungleShrines` faithful rewrite** (`worldgen/structures.rs::
    pass_jungle_shrines`, `WorldGen.cs:15977-16131`) — replaces the
@@ -36176,20 +36177,43 @@ table: `docs/research/12k-c31-jungle-residuals.md`). Three gaps filled:
    the `ClearTile` + grass ring, the 238 place). The
    `NPC.OnGameEventClearedForTheFirstTime` case-16/17/18 hook
    (`NPC.cs:78780-78788`) wires it at the mech-boss death path
-   (`world_sim/npcs.rs`, the `UpdateNpcs` stream). The full
-   `PlaceJunglePlant` port (`growth/jungle_plants.rs`, `:47779-47944` — the
-   2×2 236/238/702 + 3×2 233 shapes) is shared by the event and the growth
-   tick. `World.dungeon_x/y` published by the dungeon step + read/written in
-   the `.wld` flags + TRWLD v18.
-3. **Life-fruit / bulb / 233 hardmode growth** (`growth/grass.rs` case-60
-   tail, `WorldGen.cs:74414-74496`) — the `Next(25)` gate + liquid veto, the
-   all-mechs `Next(60)` bulb arm (150-radius stride-2 density), the any-mech
-   `Next(30/40)` life-fruit arm (60/50-radius, `Next(3)` style), the 233
-   detritus fallback (`Next(8)` styleY 0 / `Next(12)` styleY 1). The
-   plant-above `flag` + the 226 `TooManyJunglePlantsNearby` veto restored
-   (`:74355-74376`). The case-70 mushroom tail (`:74497-74506` —
-   `PlaceCatTail` + the `Next(250)` `GrowTree`); `PlaceCatTail` ported
-   (`growth/decorations.rs`, `:58629-58742`).
+   (`world_sim/npcs.rs`, the `UpdateNpcs` stream). The event places through
+   the g42 keeper `growth/jungle.rs::place_jungle_plant` (`:47779-47944` —
+   the 2×2 236/238/702 + 3×2 233 shapes; the c31 `jungle_plants.rs` duplicate
+   DROPPED per the DUP-RECONCILE below). `World.dungeon_x/y` published by the
+   dungeon step + read/written in the `.wld` flags + TRWLD v18.
+3. **Life-fruit / bulb / 233 hardmode growth** — the case-60/70 tails
+   (`WorldGen.cs:74414-74506`) now ride the g42 keeper
+   `growth/underground_tail.rs::underground_grass_tail` (the `Next(25)` gate
+   + liquid veto, the all-mechs `Next(60)` bulb arm, the any-mech `Next(40)`
+   life-fruit arm, the 233 detritus fallback, the case-70 cattail +
+   `Next(250)` tree); the runtime `PlaceCatTail` (`:58629-58742`) rides the
+   same module (the `CopyPaintAndCoating` `:58738` superset). See the
+   DUP-RECONCILE below.
+
+### The DUP-RECONCILE EXECUTED (g42 GROWTH SEAL 910cc974)
+
+The g42 lane ported the SAME case-60/70 tails plus the full overworld
+switch, the tree-growth rewrite and the Convert family; its GROWTH SEAL
+(12j phase 9) byte-compared every fn and ruled the g42 copy the KEEPER. This
+lane EXECUTED the published drop-hunk set: the c31 `jungle_plants.rs`
+module, the `grass.rs` tail fns / kind-2 row / plain plant-write / 4 tail
+witnesses, and the `decorations.rs::place_cat_tail` copy are GONE; the g42
+keeper blobs (`jungle.rs` / `underground_tail.rs` / `overworld.rs` /
+`grass.rs` / `trees.rs` / `decorations.rs` / `growth.rs`) are adopted
+BYTE-IDENTICAL (`git hash-object` verified against the g42 tip). The
+`plantera.rs` event re-points its two calls at `jungle::place_jungle_plant`
+with the extra `inherit_paint: false` arg per the verdict (the C# passes
+`true` at `:74238`/`:74253` — the flip is the merger's one-arg decision, the
+keeper's paint-copy arm is ready). The ONE c31 witness shape the g42 stream
+pins do not cover (the direct-fn liquid veto) is ported as
+`underground_tail.rs::w4_c31_the_liquid_veto_blocks_the_tail`. The reconcile
+adds `World.allowed_to_spread_infections` (the g42 overworld dispatcher's
+flag field, stock true, `update_world` re-sets per tick). No worldgen pass
+stream is touched (the keeper tails are runtime-only); both world-hash pins
+stay stale-by-design from the JungleShrines/hive rewrites; `a == b` stays
+green. The full drop/keeper table + the compose note live in
+`docs/research/300-c31-jungle-residuals.md`.
 
 **Deviations (recorded):**
 1. The `JungleShrines` rewrite moves OFF the shared `srng` onto its own
@@ -36207,9 +36231,11 @@ table: `docs/research/12k-c31-jungle-residuals.md`). Three gaps filled:
    the dart-trap solidity is read by the temple/trap passes at their own
    slots (the hive.rs window precedent).
 3. `PlaceJunglePlant`'s `KillTile` collapse + `CopyPaintAndCoating` no-op
-   follow the existing `biome_detail.rs::place_jungle_plant_detritus`
-   precedent (the box is fully rewritten on success; paint is 0 during
-   generation / the growth tick carries no paint source here).
+   followed the existing `biome_detail.rs::place_jungle_plant_detritus`
+   precedent in the c31 pass-2 slice — SUPERSEDED by the DUP-RECONCILE: the
+   g42 keeper runs the real `edit::kill_tile` sweep + the paint-inherit arm
+   (the bulb event still passes `inherit_paint: false` per the verdict; the
+   C# `true` flip is the merger's one-arg decision).
 4. The bulb event's `Main.dungeonX` reads `World.dungeon_x`;
    `Main.UnderworldLayer` = `maxTilesY - 200` (`Main.cs:2790`).
    `Main.expertMode` is constants-off (single-difficulty), so the
@@ -36226,12 +36252,13 @@ table: `docs/research/12k-c31-jungle-residuals.md`). Three gaps filled:
 **Tests-as-code (written, not run — code-only mode):** 4 `structures.rs`
 shrine witnesses (the material/wall placement, the pass-level `a == b`
 full-tile determinism, the collapsed-band valve, the hive proximity veto),
-6 `jungle_plants.rs` witnesses (the 2×2 fruit / bulb / 3×2 detritus frames,
-the non-grass/solid-occupant refusals, the `a == b` determinism), 4
-`plantera.rs` witnesses (the event placement, the `a == b` determinism, the
-force-arm grass ring, the container veto), 4 `grass.rs` hardmode-tail
-witnesses (the fruit/bulb/detritus growth, the `a == b` determinism, the
-pre-hardmode detritus-only arm, the liquid veto).
+4 `plantera.rs` witnesses (the event placement, the `a == b` determinism,
+the force-arm grass ring, the container veto). The 6 `jungle_plants.rs`
+witnesses + the 4 `grass.rs` hardmode-tail witnesses DROPPED with their fns
+per the DUP-RECONCILE (the g42 D3/D4 stream pins cover the boxes/draws); the
+one uncovered shape — the direct-fn liquid veto — is ported as
+`underground_tail.rs::w4_c31_the_liquid_veto_blocks_the_tail`. The adopted
+g42 keeper modules carry their own witnesses (written not run on g42).
 
 **Verification.** Code-only: every C# site was re-read line-by-line
 (`WorldGen.cs:15977-16131`, `:74127-74267`, `:74414-74506`, `:47779-47944`,
@@ -36239,6 +36266,10 @@ pre-hardmode detritus-only arm, the liquid veto).
 read/grep (the `GenVars.jungle_hut` field, the Reset draw order, the
 `World.dungeon_x/y` publication + the `.wld`/TRWLD v18 round trip, the
 mech-death hook, the `place_jungle_plant`/`place_cat_tail` seams). The
+DUP-RECONCILE adoption was verified by `git hash-object` (every keeper blob
+byte-identical to the g42 tip) + a zero-stale `git grep` for the dropped
+symbols (`jungle_plants::`, `jungle_grass_hardmode_tail`,
+`mushroom_grass_tail`, `no_nearby_kind`, `growth::place_cat_tail`). The
 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
 
 ### Deliberate folds / gaps (recorded)

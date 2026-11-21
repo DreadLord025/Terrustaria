@@ -19,7 +19,14 @@ use crate::tile::FLAG_ACTIVE;
 use crate::world::World;
 use crate::UnifiedRandom;
 
-use super::jungle_plants::place_jungle_plant;
+// W4-c31 DUP-RECONCILE EXECUTED (g42 GROWTH SEAL 910cc974, research/300):
+// the placement helper is the g42 keeper `jungle::place_jungle_plant` (the
+// kill-sweep + paint-inherit + boot-frame superset); the c31 `jungle_plants`
+// module is dropped. The two call sites carry `inherit_paint: false` per the
+// g42 verdict (12j phase 9) — the c31 paint-no-op behaviour is preserved.
+// DEVIATION (research/300): the C# passes `inheritPaint: true` at
+// `:74238`/`:74253`; the flip to `true` is the merger's one-arg decision.
+use super::jungle::place_jungle_plant;
 
 /// `WorldGen.IsAContainer` (`WorldGen.cs:48822-48829`): the basic dresser /
 /// chest / fake-chest sets plus the two hardcoded kinds 470/475.
@@ -94,7 +101,7 @@ fn attempt_bulb_at(world: &mut World, i: i32, j: i32, force_bulb: bool) -> bool 
                 crate::edit::square_tile_frame_gen(world, cx, cy);
             }
         }
-        place_jungle_plant(world, i, j, 238, 0, 0);
+        place_jungle_plant(world, i, j, 238, 0, 0, false);
         if world.tile(i, j).is_some_and(|t| t.kind == 238) {
             crate::edit::square_tile_frame_gen(world, i, j);
             crate::edit::square_tile_frame_gen(world, i + 2, j);
@@ -102,7 +109,7 @@ fn attempt_bulb_at(world: &mut World, i: i32, j: i32, force_bulb: bool) -> bool 
             return true;
         }
     } else {
-        place_jungle_plant(world, i, j, 238, 0, 0);
+        place_jungle_plant(world, i, j, 238, 0, 0, false);
         if world.tile(i, j).is_some_and(|t| t.kind == 238) {
             crate::edit::square_tile_frame_gen(world, i, j);
             crate::edit::square_tile_frame_gen(world, i + 2, j);
