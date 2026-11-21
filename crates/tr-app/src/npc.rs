@@ -33893,7 +33893,16 @@ mod w4_d33_dragonfly_tests {
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
             assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
-            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            // `net_id` reads the bestiary entry — the five Hide=true
+            // colours fold onto the visible 599 card; only the Red 599
+            // and the Gold 601 keep their own net id (the wyvern-segment
+            // fold precedent).
+            let net = if matches!(kind, NpcKind::RedDragonfly | NpcKind::GoldDragonfly) {
+                ty as i32
+            } else {
+                599
+            };
+            assert_eq!(kind.net_id(), net, "{kind:?} net id (the credit fold)");
             assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
             assert_eq!(kind.size(), (w, h), "{kind:?} size");
             assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
