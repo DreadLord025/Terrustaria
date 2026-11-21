@@ -7170,6 +7170,71 @@ boundary, the Zoologist classic 4-row list + tier/monolith/license
 order, the Princess classic 19-row list + the block's inner gates and
 pet pairs.
 
+## The shop currency remainder (W4-d122, fourth round)
+
+The d123 Tavernkeep medal shop (`675744c0`'s case 21) stamped
+`shopSpecialCurrency` and priced its rows raw, but the BUY refused —
+the wallet was unported. This round ports the wallet and completes the
+buy on the d122 branch (the case-21 row list is re-landed here verbatim
+from the same C# so the branch is self-contained; the two branches'
+`shop_special_currency` field + `row_prices` early return are
+semantically identical for the eventual main merge).
+
+**Currency census (1.4.5.8):** `CustomCurrencyManager.Initialize`
+(`CustomCurrencyManager.cs:14-18`) registers EXACTLY ONE currency —
+`CustomCurrencySingleCoin(3817, 999L)` as `CustomCurrencyID.
+DefenderMedals` (index 0). The medal item is **3817** (`ItemID.
+DefenderMedal`), NOT 3822 — the Elder/Eternia Crystal is the sentry
+ammo (`Player.PayDD2CrystalsBeforeUse`, ported in `world_sim/editing/
+sentry.rs`). There is NO golf-ball currency: the Golfer's case 22
+(`Chest.cs:3156-3262`) stamps no `shopSpecialCurrency` anywhere (the
+only stamps in the whole tree are the Tavernkeep's `:2987-3150`), and
+`RegisterCurrency` has exactly one call site. The base
+`CustomCurrencySystem.TryPurchasing`'s coin-denomination ladder
+(`CustomCurrencySystem.cs:65-216`) is dead code for the registered
+currency — `CustomCurrencySingleCoin` OVERRIDES it (`:26-74`).
+
+**The wallet (`crates/tr-app/src/custom_currency.rs`):**
+* Count — `CustomCurrencyManager.BuyItem` (`:72-77`): the player
+  inventory IGNORING slots {58,57,56,55,54} (the C#'s 59-slot
+  `Player.inventory` tail, `Player.cs:1576`; the port's 50-slot grid
+  has none of them — the ignore list is kept verbatim) + bank/bank2/
+  bank3/bank4, each `CountCurrency` capped at 999 mid-walk
+  (`CustomCurrencySystem.cs:38-42`), then `CombineStacks` capped on the
+  running total (`:49-63`).
+* Spend — `CustomCurrencySingleCoin.TryPurchasing` (`:26-74`): a full
+  item-cache snapshot (`ItemCacheCreate`, `CustomCurrencySystem.cs:
+  244-255`), consume `min(stack, remaining)` per accepted slot in
+  inventory→bank→bank2→bank3→bank4 slot order (the `slotCoins` scan
+  order, `BuyItem` `:99-108`), drained slots turn to air, and a
+  not-fully-covered price RESTORES the whole cache (`ItemCacheRestore`,
+  `:257-263`) — nothing moves on a failed buy.
+* Buy seam — `buy_shop_item`'s medal arm (`Player.BuyItem`'s
+  `customCurrency != -1` route, `Player.cs:35402-35405`): the wallet
+  spends the real 3817 stacks; the aggregate `App.coins` purse is NOT
+  charged, and the sellback memo skips the row (`ItemSlot.cs:2084`'s
+  `shopSpecialCurrency == -1` half). The raw price (no discount/mood/
+  buyOnce divide) rides `row_prices`' `:35361-35365` early return →
+  `CustomCurrencySystem.GetItemExpectedPrice` (`:265-270`).
+* **RNG census: ZERO draws** in `CountCurrency`/`CombineStacks`/
+  `TryPurchasing`/`BuyItem` — the whole buy chain is pure slot
+  arithmetic. The medal DROP side's gravity draws (3 per stack,
+  `Item.cs:49749-49750`) are W4-f36's landed slice (`fac5f222`,
+  ANALYSIS "The OOA medal drop side").
+
+Deviations: the savings-draw/price-text chrome (`CustomCurrencyManager.
+DrawSavings` `:28-62`, `CustomCurrencySingleCoin.DrawSavingsMoney`/
+`GetPriceText` `:76-107`, the `Main.cs:20456-20458` tooltip arm) stays
+the UI follow-up; the no-player headless refusal is the port's safe
+stand-in (the C# always has a local player). Witnesses written, not
+run (code-only): 7 wallet-side (the 3817-not-3822 constants, the
+count/ignore/cap arms, the combine clamp, the five-container count,
+the container/slot spend order, the restore-on-fail + zero-price, the
+capped-wallet buy) + 4 shop-side (the classic 8-row list, the tier
+conjuncts + 40-row write order, the mug ladder, the raw pricing) + 3
+App-side (wallet-not-purse + no memo, inventory-then-bank, the
+short-wallet/funded-purse/no-player refusals).
+
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
 Two late-roster town NPCs. Deviations: the Dye Trader's `item.dye > 0` scan
