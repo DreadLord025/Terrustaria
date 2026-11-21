@@ -39304,3 +39304,72 @@ hover-edge gates). Structural checks performed: brace balance (129/129), no
 duplicate pub-fn names, no symbol collisions with existing modules, the
 `crate::sound::coin_pickup_case38` cross-call matches `audio.rs`'s pattern,
 and the census+tail union covers all 91 census lines exactly.
+
+## W4-g23 wiring phase (2026-11-21, code-only mode)
+
+**g22 seam probe.** `origin/task/W4-g22-sounds-main-2` tip is `a725acb0`
+(the shared base) — ZERO pushed claims, `Menu::pending_cue` NOT landed.
+The 75-site `DRAW_MENU_CUE_CENSUS` stays a census; the merger replays it
+against g22's mapping once it lands. The blanket `Menu_Tick` on row
+activation (`app/loop.rs`) and the hover tick stay as-is — replacing them
+is g22's seam, not this lane's.
+
+**Wired (5 sites, commit 26385511).** All at live C# call positions, all
+draw-free legacy ids, drained through `Menu::pending_ticks` (the draw
+half cannot borrow `Audio`; the frame loop plays after `Menu::draw`):
+
+1. Colour-focus tick `:51276` — `menu/mod.rs::draw_color_screen_chrome`
+   runs the `:51117-51118` capture/reset, maps the highlight flags to the
+   focus ids (`:51149`/`:51181`/`:51218`/`:51255` — the flags ARE the
+   focus conditions), compares via `color_focus_tick`. Fires on enter,
+   row-to-row moves AND leave (the C# `!=`).
+2. Volume-bar hover tick `:51575` — `volume_drag_pass` mirrors the
+   persistent `IngameOptions.rightHover` static (`Menu::bar_right_hover`,
+   `:51527-51528` head capture + reset). **Census correction:** the
+   parallax block (`:51578-51653`) has NO PlaySound — the batch-3 doc's
+   "same shape covers parallax" was wrong; the parallax pass fills the
+   shared static but never ticks.
+3. IP-submit `:52059` — BOTH the Accept row (`Act::Nav` arm,
+   `:50865-50868`) and Enter (`submit_join_ip`) queue 12. Tail-site call
+   position, NOT a DrawMenu census row — does not ride g22's seam.
+4. Password-cancel `:51952` — the JoinPassword Back row (`:48592-48596`)
+   queues 11. The port's Back returns to the port screen (the documented
+   plan deviation); the cue id is the C#'s. Escape queues nothing (the C#
+   `flag5` gamepad-Back arm is unported; no id invented).
+5. NewText tail `:64635`/`:64641` — centralized in
+   `ChatMonitor::new_text` (`pending_cues`); the frame loop drains once
+   per frame and the achievement subscriber drains inline (its old manual
+   `Menu_Tick` replaced — no double cue). One 12 per append, in order.
+
+**Dead arm (stays unwired).** The RGB +/- button hover `:51388`: the
+block's `else if (flag)` at `:51284` follows the HSL block's `if (flag)`
+at `:51110` — the SAME flag, so `:51285-51477` is unreachable in vanilla.
+Wiring it would invent a cue; the pure half stays as a witness only.
+
+**Star-game pair (Audio seam landed, dormant).**
+`Audio::play_star_hit_pair` (audio.rs) plays case 38 THEN case 37 in
+`Main.cs:63168-63169` order on the passed bare-`Main.rand` stream,
+audibility-gated BEFORE drawing (`LegacySoundPlayer.cs:369`); the
+`Item_57`/`Item_58` bank rows register under legacy id 37 (the
+`Coin_N`→38 precedent). No draw-side caller exists: the port's sky pass
+draws static stars (no `Star.falling`/`fallSpeed`, `Star.cs:165-176`)
+and `Main.starGame` is set only by the everything-seed worldgen arm
+(`WorldGen.cs:11212-11215`) — the `play_chest_eat_sound` dormant-seam
+precedent. The exact four-draw order `[Next(5), Next(-40,41), Next(57,59),
+Next(-40,41)]` is pinned by witnesses on both sides.
+
+**Deferred (no live consumer, documented).** Click-pan toggle `:62798`
+(`GetPlayerControlledCameraPan` unported; `PanControl_Keyboard` default
+Hold makes the Click arm unreachable without the profile UI); unity-map
+hover `:55965` (remote fullscreen heads/`HasUnityPotion`/wormhole
+unported — the port draws only the local head); fullscreen-close `:56031`
+(the `MapIcon` button is undrawn; Escape/M close is cue-less in C# —
+wiring 10 there would invent a cue). SelectPlayer `:66224`/`:66248`
+remains landed-by-equivalent (`app/flow.rs:1269`).
+
+**Verification.** Code-only: no cargo/tests/graphify. 7 new witnesses
+written not run (6 menu/chat + 1 audio), brace balance checked on every
+touched file, the changed `draw_color_sliders` signature's only caller
+updated, `volume_drag_pass`/`parallax_drag_pass` callers updated, no
+other `ChatMonitor` literal constructors (`Default` derive covers the
+new field).
