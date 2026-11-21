@@ -742,6 +742,170 @@ pub(crate) fn style24_storm_puff(p: &Projectile, world: &World, d: &mut ProjDust
     }
 }
 
+// ---------------------------------------------------------------------------
+// aiStyle 27 — the caster beams (`Projectile.cs:26420-26554`).
+// ---------------------------------------------------------------------------
+
+/// `:26449-26456` — the 114 Unholy Trident's fade dust: the
+/// `Next(2) == 0 && NextFloat + 0.2 < num211` gate, then a dust-27 at
+/// `(position.X, position.Y + 4)`, 8×8, `oldVelocity` speed, alpha 100,
+/// scale `1 + 0.6·NextFloat`; post-arms ×−0.5 velocity, position += vel·5,
+/// position += NextVector2Circular(16,16), ×−1 velocity. The caller owns the
+/// `num211` Remap ahead of this.
+pub(crate) fn style27_trident_fade(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust3,
+    old_vel: Vec2,
+    num211: f32,
+) {
+    if d.rng.next_range(0, 2) == 0 && d.rng.next_float() + 0.2 < num211 {
+        // `:26451` — the scale argument's NextFloat draws BEFORE NewDust.
+        let scale = 1.0 + 0.6 * d.rng.next_float();
+        let idx = d.new_dust(
+            world,
+            Vec2::new(p.pos.x, p.pos.y + 4.0),
+            8,
+            8,
+            27,
+            old_vel.x,
+            old_vel.y,
+            100,
+            Color::default(),
+            scale,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity *= -0.5;
+        dust.position += dust.velocity * 5.0;
+        dust.position += next_vector2_circular(d.rng, 16.0, 16.0);
+        dust.velocity *= -1.0;
+    }
+}
+
+/// `:26461-26468` — the 115 hostile twin's first-hit 20-step dust-27 trail:
+/// for `num213` in 5..25, a dust at `position − velocity·(30/num213)·80`,
+/// 8×8, `oldVelocity` speed, alpha 100, scale 0.9; post-arms ×0.25 velocity,
+/// velocity −= velocity·5. The caller owns the `localAI[1] < 5f` latch.
+pub(crate) fn style27_hostile_trail(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust3,
+    old_vel: Vec2,
+) {
+    for num213 in 5..25 {
+        let bx = p.vel.x * (30.0 / num213 as f32);
+        let by = p.vel.y * (30.0 / num213 as f32);
+        let idx = d.new_dust(
+            world,
+            Vec2::new(p.pos.x - bx * 80.0, p.pos.y - by * 80.0),
+            8,
+            8,
+            27,
+            old_vel.x,
+            old_vel.y,
+            100,
+            Color::default(),
+            0.9,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity *= 0.25;
+        dust.velocity -= p.vel * 5.0;
+    }
+}
+
+/// `:26470-26479` — the 173 Enchanted Beam's `localAI[1] > 7f` dust: the
+/// `Next(3)` type pick (0→15, 1→57, else→58) draws BEFORE NewDust, at
+/// `position − velocity·4 + (2,2)`, 8×8, alpha 100, scale 1.25; post-arm
+/// ×0.1 velocity.
+pub(crate) fn style27_enchanted(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    let dust_type = match d.rng.next_range(0, 3) {
+        0 => 15,
+        1 => 57,
+        _ => 58,
+    };
+    let idx = d.new_dust(
+        world,
+        Vec2::new(p.pos.x - p.vel.x * 4.0 + 2.0, p.pos.y + 2.0 - p.vel.y * 4.0),
+        8,
+        8,
+        dust_type,
+        0.0,
+        0.0,
+        100,
+        Color::default(),
+        1.25,
+    );
+    d.pool.slot_mut(idx).velocity *= 0.1;
+}
+
+/// `:26480-26487` — the 132 Terra Beam's `localAI[1] > 7f` two dust-107: each
+/// at `position − velocity·4 + (2,2)`, 8×8, `oldVelocity` speed, alpha 100,
+/// scale 1.25, ×−0.25 velocity; the second also position −= velocity·0.5.
+pub(crate) fn style27_terra(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust3,
+    old_vel: Vec2,
+) {
+    let pos = Vec2::new(p.pos.x - p.vel.x * 4.0 + 2.0, p.pos.y + 2.0 - p.vel.y * 4.0);
+    let idx = d.new_dust(world, pos, 8, 8, 107, old_vel.x, old_vel.y, 100, Color::default(), 1.25);
+    d.pool.slot_mut(idx).velocity *= -0.25;
+    let idx = d.new_dust(world, pos, 8, 8, 107, old_vel.x, old_vel.y, 100, Color::default(), 1.25);
+    let dust = d.pool.slot_mut(idx);
+    dust.velocity *= -0.25;
+    dust.position -= p.vel * 0.5;
+}
+
+/// `:26494-26498` — the 114/115's `localAI[1] >= 15f` pulse dust-27: at
+/// `(position.X, position.Y + 4)`, 8×8, `oldVelocity` speed, alpha 100,
+/// scale 0.6, ×−0.25 velocity.
+pub(crate) fn style27_trident_pulse(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust3,
+    old_vel: Vec2,
+) {
+    let idx = d.new_dust(
+        world,
+        Vec2::new(p.pos.x, p.pos.y + 4.0),
+        8,
+        8,
+        27,
+        old_vel.x,
+        old_vel.y,
+        100,
+        Color::default(),
+        0.6,
+    );
+    d.pool.slot_mut(idx).velocity *= -0.25;
+}
+
+/// `:26499-26504` — the 116 Sword Beam's `localAI[1] >= 15f` pulse dust-64:
+/// at `position − velocity·5 + (2,2)`, 8×8, `oldVelocity` speed, alpha 100,
+/// scale 1.5, ×−0.25 velocity, noGravity.
+pub(crate) fn style27_sword_pulse(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust3,
+    old_vel: Vec2,
+) {
+    let idx = d.new_dust(
+        world,
+        Vec2::new(p.pos.x - p.vel.x * 5.0 + 2.0, p.pos.y + 2.0 - p.vel.y * 5.0),
+        8,
+        8,
+        64,
+        old_vel.x,
+        old_vel.y,
+        100,
+        Color::default(),
+        1.5,
+    );
+    let dust = d.pool.slot_mut(idx);
+    dust.velocity *= -0.25;
+    dust.no_gravity = true;
+}
+
 /// `:25195-25212` — the 450 Saucer Scrap's two dust-228: the 1-in-2 first
 /// (position −2/+2, scale +Next(50)·0.01, noGravity, Y −2), then the 1-in-4
 /// second (scale +0.3+Next(50)·0.01, noGravity, ×0.1 velocity). The caller

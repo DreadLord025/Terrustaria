@@ -3980,7 +3980,19 @@ impl Projectile {
     /// The AI body carries no movement of its own — `HandleMovement`
     /// (`:17469`) integrates the position, so the per-kind collision arms of
     /// that half close the arm here (see `unholy_step`).
-    fn ai_unholy_trident(&mut self, world: &World) {
+    fn ai_unholy_trident(
+        &mut self,
+        world: &World,
+        old_vel: Vec2,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust3::ProjDust3 {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         // `:26422-26429` — the hostile twin: `ai[0]++` and the ×1.125 while
         // `ai[0] < 30f`, freezing the speed from the 30th sub-step on.
         if self.kind == UNHOLY_TRIDENT_HOSTILE {
@@ -4012,34 +4024,57 @@ impl Projectile {
             }
             let cached_speed = remap(self.local_ai[0], 2.0, 0.0, 1.0, 0.0);
             self.alpha = (cached_speed * 255.0) as i32;
+            // `:26449-26456` — the fade dust-27 (W4-f5).
+            crate::projectile_dust3::style27_trident_fade(self, world, &mut d, old_vel, cached_speed);
         }
-        // `:26468-26470` — the hostile twin's first-hit trail latch: the pulse
-        // counter is pinned to 5 on the first sub-step (the 19-step dust
-        // skipped), so the shared pulse starts a full 15 away from the cap.
+        // `:26458-26469` — the hostile twin's first-hit trail latch: the pulse
+        // counter is pinned to 5 on the first sub-step and the 20-step dust-27
+        // trail fires (W4-f5), so the shared pulse starts a full 15 away from
+        // the cap.
         if self.kind == UNHOLY_TRIDENT_HOSTILE && self.local_ai[1] < 5.0 {
             self.local_ai[1] = 5.0;
+            crate::projectile_dust3::style27_hostile_trail(self, world, &mut d, old_vel);
         }
-        // `:26507-26525` — the shared pulse: `localAI[1]` counts up to 15 and
-        // holds there; past it every non-114 kind oscillates its scale ±0.02
+        // `:26470-26479` — the 173 Enchanted Beam's `localAI[1] > 7f` dust
+        // (W4-f5).
+        if self.local_ai[1] > 7.0 && self.kind == ENCHANTED_BEAM {
+            crate::projectile_dust3::style27_enchanted(self, world, &mut d);
+        }
+        // `:26480-26487` — the 132 Terra Beam's `localAI[1] > 7f` two dust-107
+        // (W4-f5).
+        if self.local_ai[1] > 7.0 && self.kind == TERRA_BEAM {
+            crate::projectile_dust3::style27_terra(self, world, &mut d, old_vel);
+        }
+        // `:26488-26527` — the shared pulse: `localAI[1]` counts up to 15 and
+        // holds there; past it the 114/115 fire a dust-27 and the 116 a
+        // dust-64 (W4-f5), then every non-114 kind oscillates its scale ±0.02
         // against alpha ±30, flipping phase through `localAI[0]` at the 250
         // ceiling and the 0 floor. 114 spends `localAI[0]` on its cached speed,
         // so it never enters the oscillation — the C# `type != 114` guard.
         if self.local_ai[1] < 15.0 {
             self.local_ai[1] += 1.0;
-        } else if self.kind != UNHOLY_TRIDENT {
-            if self.local_ai[0] == 0.0 {
-                self.scale -= 0.02;
-                self.alpha += 30;
-                if self.alpha >= 250 {
-                    self.alpha = 255;
-                    self.local_ai[0] = 1.0;
-                }
-            } else if self.local_ai[0] == 1.0 {
-                self.scale += 0.02;
-                self.alpha -= 30;
-                if self.alpha <= 0 {
-                    self.alpha = 0;
-                    self.local_ai[0] = 0.0;
+        } else {
+            // `:26494-26504` — the pulse dust (W4-f5).
+            if self.kind == UNHOLY_TRIDENT || self.kind == UNHOLY_TRIDENT_HOSTILE {
+                crate::projectile_dust3::style27_trident_pulse(self, world, &mut d, old_vel);
+            } else if self.kind == SWORD_BEAM {
+                crate::projectile_dust3::style27_sword_pulse(self, world, &mut d, old_vel);
+            }
+            if self.kind != UNHOLY_TRIDENT {
+                if self.local_ai[0] == 0.0 {
+                    self.scale -= 0.02;
+                    self.alpha += 30;
+                    if self.alpha >= 250 {
+                        self.alpha = 255;
+                        self.local_ai[0] = 1.0;
+                    }
+                } else if self.local_ai[0] == 1.0 {
+                    self.scale += 0.02;
+                    self.alpha -= 30;
+                    if self.alpha <= 0 {
+                        self.alpha = 0;
+                        self.local_ai[0] = 0.0;
+                    }
                 }
             }
         }
@@ -17764,7 +17799,7 @@ impl ProjectilePool {
                         // plus its riders and the hostile twin. The arm reads
                         // only the tiles, so it rides the plain
                         // `(world)` shape.
-                        27 => self.slots[i].ai_unholy_trident(world),
+                        27 => self.slots[i].ai_unholy_trident(world, old_velocity, rng, dust, dust_ctx),
                         // The aiStyle-51 Spectre Staff (`:28402-28503`): the
                         // 297's NPC scan and blend plus the 293 hostile twin's
                         // player hunt, on the family signature (`owner` centre,
@@ -23760,6 +23795,9 @@ mod s1_e_21h_sound_tests {
     #[test]
     fn s1_e_21h_the_first_tick_latches_queue_their_style_cues() {
         let w = air();
+        let mut dust = tr_core::particles::DustPool::new();
+        let dust_ctx = crate::projectile_dust3::test_dust_ctx(&w);
+        let mut rng = tr_core::UnifiedRandom::new(7);
         // (kind, arm runner, expected style, latch read) — the aiStyle-8
         // gate (`:24235-24244`), the aiStyle-27 shared latch
         // (`:26529-26540`), the aiStyle-28 latch (`:26648-26674`) and the
@@ -23786,7 +23824,7 @@ mod s1_e_21h_sound_tests {
             };
             match proj_data(kind).map(|d| d.ai_style) {
                 Some(8) => p.ai_ball_of_fire(&w),
-                Some(27) => p.ai_unholy_trident(&w),
+                Some(27) => p.ai_unholy_trident(&w, p.vel, &mut rng, &mut dust, &dust_ctx),
                 Some(28) => p.ai_frost_bolt(&w),
                 Some(50) => p.ai_inferno_fork(&w),
                 other => panic!("kind {kind}'s arm: {other:?}"),
@@ -23800,7 +23838,7 @@ mod s1_e_21h_sound_tests {
             p.wants_sound = None;
             match proj_data(kind).map(|d| d.ai_style) {
                 Some(8) => p.ai_ball_of_fire(&w),
-                Some(27) => p.ai_unholy_trident(&w),
+                Some(27) => p.ai_unholy_trident(&w, p.vel, &mut rng, &mut dust, &dust_ctx),
                 Some(28) => p.ai_frost_bolt(&w),
                 Some(50) => p.ai_inferno_fork(&w),
                 _ => unreachable!(),
