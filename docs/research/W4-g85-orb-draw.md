@@ -693,3 +693,48 @@ tileSpelunker set (d9), the day-surface ladder (the spawner lanes), the
 meteor-crossing re-home (the clock lane), the Brain's Creeper orbit
 (the Boss AI wave), the `SpawnOnPlayer` spawn-area scan (the standing
 at-the-player deviation).
+
+## 9. The RETIRE phase (2026-11-21, same branch, doc-only) — the exact merger receipts
+
+### 9.1 The c36 check_orb DROP receipt — exact line ranges at tip `3a64a1b96`
+
+**Re-probe at the NEW latest pushed tip `3a64a1b96`** (NOTIFY-SYNC (5);
+the §8.1 read was at `4e124425c`). The `4e124425c..3a64a1b96` diff
+touches `achievement_hooks.rs`, `npcs.rs` (a comment-only hunk at
+`:4945`, the Truffle arrival note), and the docs — **`edit/kill.rs`,
+`world.rs` and the `editing.rs` drain are UNTOUCHED**, so the §8.1
+verdict stands verbatim: c36's `check_orb` is STILL the unconditional
+pre-four-case base. The exact ranges the merger needs (all at c36 tip
+`3a64a1b96`, verified by direct read):
+
+| Site | c36 tip `3a64a1b96` | g85 tip `dd237e331` (KEEP) |
+| --- | --- | --- |
+| `kill.rs` dispatch arm | `:650-652` — `12 \| 31 \| 639 => check_orb` (NO 696) | `:650-654` — `12 \| 31 \| 639 \| 696` |
+| `kill.rs` fn doc-comment | `:1087-1095` | `:1089-1099` |
+| **`kill.rs` `fn check_orb` WHOLE** | **`:1096-1184` — DROP THIS ENTIRE FN** | `:1100-1208` — keep whole |
+| the stale drop table | `:1129-1159` — ONE 5-way table; the `crimson` branch feeds 12/639/696 too; the roll is SKIPPED on the forced first smash (`:1136-1140` — the `:54240` draw-then-override order lost) | `:1133-1172` — the four-case switch, the roll drawn even when forced (`:1148-1149`) |
+| the unconditional flag block | `:1164-1170` — `shadow_orb_smashed`/`shadow_orb_count`/`orb_smash_notify_pending` set for EVERY kind, outside any gate; NO `orb_smash_crimson` | `:1177-1194` — the `if kind == 31` block (flags + `orb_smash_crimson` `:1186` + notify `:1193`) |
+| `world.rs` field | `:380-384` (`orb_smash_notify_pending` only; the doc says "every completed orb/heart smash") + default `:734` | `:398-409` (the case-31 doc) + `orb_smash_crimson` `:380-390` + `orb_smash_chat_count` `:391-397`; defaults `:759-761` |
+| `editing.rs` `break_tile` drain | `:5661-5665` (`mem::take` → `notify_progression_net(7)`) | `:5642-5650` — behaviourally IDENTICAL; either copy |
+| witnesses | `the_orb_break_sets_the_world_flag_and_count` `:4984-5028` (asserts the notify on a generic smash — would PASS on c36's copy, FAIL to pin the census) + `the_first_smash_forced_gun_and_the_roll_table` `:5030-5074` | the same two at `:5008-5048`/`:5050-5094` PLUS `w4_g85_the_orb_drop_switch_is_four_cases_not_one_table` `:5103-5174` (the 12/639/696 no-notify pins + the crimson-bit census) |
+
+**The merger's cut list (c36 side):** delete `kill.rs:1087-1184`
+(doc-comment + fn), keep g85's `:1089-1208` in its place; take g85's
+dispatch arm (`696` included); keep ONE field (g85's doc) + ONE drain
+(either); DROP c36's two orb witnesses ONLY IF g85's supersets are
+present (they are — same names, extended bodies); keep every other
+c36 batch-5/NOTIFY-SYNC site (NOT_THE_BEES, GO_LAVA_FISHING,
+TALK_TO_NPC_AT_MAX_HAPPINESS, the 40/43 retirements, the TO_INFINITY/18
+published hunks — all disjoint from the orb lane).
+
+**The 5043-drop-hunk item (c36's Torch God's Favor) — READ, NOT g85's.**
+At `3a64a1b96` the three-way keep-one is recorded in c36's
+`research/30:330-339` + `ANALYSIS.md:14614-14618`: **c36** owns the USE
+half (`editing.rs:2089-2092` the locked-use gate + `:16325-16349`
+`use_torch_gods_favor`, the achievement/bestiary credit); **f33b**
+(`333479e0`) owns the EVENT machine + the survival **5043 DROP**
+(`RequestNewItem`, `torch_god.rs`) + the flag READS
+(`Player.cs:18066-18076`); **g90b** (`1f1b88f0`) the neighbouring 5326
+loaf. The DROP hunk is f33b's — c36 carries no drop code, and the orb
+lane touches no 5043 site: nothing for g85 to keep or drop there; the
+merge keeps both halves of the favor flag per c36's own note.
