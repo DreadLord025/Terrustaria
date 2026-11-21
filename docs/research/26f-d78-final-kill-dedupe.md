@@ -249,3 +249,127 @@ worktrees probed READ-ONLY (`git status`/`git diff`/direct file reads, no
 writes, no junction recursion). No cargo/rustc/rustfmt/tests/graphify
 invoked (the Lead's constraint). The 620-row equivalence witness
 (`w4_d78_final_the_shard_row_matches_the_d77_co_claim`) is WRITTEN NOT RUN.
+
+## 6. SEAL addenda (2026-11-21, the resume pass — this document is SEALED)
+
+The FINAL adjudication (`fd59c51a0`) landed AND pushed before the prior
+session died (ls-remote: `refs/heads/task/W4-d78-ui-sounds-menus` ==
+`fd59c51a0527…`). This section pins the three coordination receipts the
+merger and the sibling lanes consume. All pins re-probed READ-ONLY at seal
+time; no sibling worktree was written.
+
+### 6a. g1-drop-hunks — REFRESHED against g1's LIVE local state
+
+**State-change note:** at adjudication g1's untracked
+`projectile_kill_hooks_a.rs` was 535 lines; at seal time it is **602
+lines** (R3-g1-resume is actively committing it — the file gained the
+witness suite). The §1 verdict is UNCHANGED (re-read arm-by-arm); the
+line pins below REPLACE the §1 hooks_a cites. g1's pushed tip is still
+`5bd68ce2` (census-only) — the port remains LOCAL-ONLY.
+
+**DROP from `projectile_kill_hooks_a.rs` (602-line state):**
+- `phantasmal_eye_kill` + doc **:98-109** (the 452 resize pair + gore census).
+- `phantasmal_sphere_kill` + doc **:111-138** (the 454 208-box + 7/120 ring
+  dusts + 3 gores).
+- `saucer_missile_kill` + doc **:177-192** (the 448 112-box + gore census).
+- `hostile_burst_colliding` + doc **:324-335** (d78's `damage_evp_boxed`
+  carries the same gates in C# Colliding order).
+- witnesses: 452 **:400-413**, 454 **:417-427**, 448 **:460-469**,
+  the colliding-gates test **:572-590**.
+- the shared `gore()` :66-74 / `ring_dust()` :79-82 / `resize()` :89-96
+  helpers **STAY** — the kept 459/521 arms consume them; only the three
+  hostile hooks' census CALLS drop (g65's LOCAL batch-15/17 bodies own
+  those rolls; keeping both double-rolls the stream).
+
+**DROP from g1's local `projectile.rs` diff:**
+- dispatcher arms in `kill_hooks_a` (:20677-20767): the PHANTASMAL_EYE arm
+  **:20689-20694**, PHANTASMAL_SPHERE **:20695-20700**, SAUCER_MISSILE
+  **:20745-20750** (comments included).
+- `death_burst_player_hit` + doc **:20769-20806** — its :20805
+  `player.hurt_with_source(damage, cx, rng, dodgeable, kind)` is the RAW
+  damage hit (§1): no DamageVar(−luck) `:14831`, no hostileDamageScaling
+  `:14842`, no EVP ×2 `:14844`, no BossNoCheese cooldown `:14782-14797`,
+  and the General immune lane would REFUSE the 452/454 boss blasts the
+  C# `:14799` gate lands through i-frames. **This is the
+  g1-raw-damage-no-BossNoCheese deviation** — g1's own doc calls it
+  M4-HAZARD-1; d78's `damage_evp_boxed` + `hurt_inner_cooldown` port it
+  verbatim, so the deviation DIES with the fold, it does not survive.
+
+**KEEP (g1-UNIQUE, kind-disjoint from d78):** `charged_blaster_orb_kill`
+:147-154 + `…_draws` :161-175 (459, gate widens to 459|709 at merge per
+the f20 cross-note), `crystal_pulse2_kill_draws` :201-211,
+`crystal_pulse_kill` :222-269 + `PulseShard` :275-282 (521),
+`crystal_pulse2_step` :291-309 (522 AI), `ice_block_kill_draws` :318-322
+(80); dispatcher arms :20704-20706 (522), :20710-20728 (521 split spawns),
+:20736-20744 (459 PVE burst), :20753-20764 (80 tile break); the hook call
+:20125; the 522 const + row in data.rs; witnesses :433-456 (459),
+:477-524 (521), :529-551/:555-567 (522), :594-601 (80) + the pool-side
+522-row/split tests :44623/:44636.
+
+### 6b. d77-617-drop — the d78-side MUTUAL RECEIPT (for d77d to mirror)
+
+d78 RECEIPTS d77's superset at tip `5f10560b` (Kill-host wave `0573b70f`,
+pushed 12:01): `nebula_arcanum_kill` proj.rs **:20577-20684** (hook
+:20052) ports the SAME 617 C# site `:72278-72373` WHOLE and adds the
+Item14 @centre−88 cue, the dust/gore census, the swept-618 INLINE Kill
+(the C# `Kill()` at `:72333` runs immediately) and the C#-order `:72327`
+owner gate. **d78 DROP list (its own tip `481d0bf4` line space, executed
+by the merger — d78's branch stays frozen as the historical record):**
+the `child_spawn_kill` NEBULA_ARCANUM arm **:21832-21941**; the 620 const
+data.rs **:1058-1061** + row **:2843-2852** + magic census **:4366-4367**
++ flags pin **:4835-4836** + row-witness blocks **:4892-4899/:4914/:4916**
+(byte-identical to d77's `NEBULA_ARCANUM_SHARD` — pinned by the
+`w4_d78_final_the_shard_row_matches_the_d77_co_claim` witness, written
+not run); `ai_nebula_shard` **:7112-7159** + style-29 dispatch
+**:17885-17892**; the three witnesses **:26516-26573**, **:26575-26590**,
+**:26776-26798**; the foreign-owner witness :26711-26729 drops
+NEBULA_ARCANUM from its kind list. d78's ahead-of-resize owner-gate fold
+and its deferred `pool.kill(j)` 618 sweep both die with the arm — d77's
+shapes are the C#'s. **KEEP: the 246/249/117 arms + rows + child AI +
+gates (§4) — d77's boxed ladder has NO 246/249 arm (re-verified at
+`5f10560b`).** d77d mirrors this receipt on its side; the 617/618/620
+lane ledger (§5) is the single ownership record.
+
+### 6c. g3-cue-position-fix — exact hunks (g3-side fix, d78 publishes)
+
+Re-verified by direct C# read at seal time: `Projectile.cs:72015`
+`SoundEngine.PlaySound(SoundID.Item14, base.position)` precedes `:72016`
+`base.position = base.Center` — the 634/635 blaze cue plays at the
+**PRE-snap top-left**. g3 tip `8568ef37` `nebula_spirit_onyx_kill` queues
+its cue at **:21884-21890** AFTER `aimed_spell_kill_resize` (:21875) —
+post-recentre, WRONG for 634/635 (right for 659 `:72511` / 661 `:72234`,
+but d77's map derives those correctly too). d77's `kill_tail_cue`
+(tip `5f10560b`) reads the pre-hook pos: **:20250** `634 | 635 =>
+Some((2, 14, pos.x, pos.y, 1.0))` — CORRECT; :20222 (79/16 centre),
+:20226 (34 post-restore), :20255 (661 centre−80), :20260 (659 centre−40,
+ai0 gate) all correct.
+
+**The fix (g3 executes on its branch; keeping both plays every cue TWICE):**
+- DROP the cue block in `aimed_spell_kill` **:21823-21832** (the `(sx, sy)`
+  read + the `pending_proj_sounds.push((2, 10, …))`).
+- DROP the cue block in `nebula_spirit_onyx_kill` **:21884-21890** (the
+  `(sx, sy)` read + the `pending_proj_sounds.push((2, 14, …))`).
+- KEEP d77's `kill_tail_cue` arms as the single cue owner —
+  **keep-d77-kill_tail_cue**, including its 634/635 pre-snap arm.
+- g3's census calls (:21833-21840, :21891-21899) stay until g65's bodies
+  push per-kind (§2 note 2) — the cue drop does NOT touch them.
+- g3's cue witnesses (`w4_g3_*` cue assertions) reword to cite d77's map.
+
+### 6d. The blasts-family bible (the sealed ownership table)
+
+| family | STATE host | CUE owner | census now | bodies at push |
+| --- | --- | --- | --- | --- |
+| 79/16/34 | g3 `aimed_spell_kill` | d77 `kill_tail_cue` :20222/:20226 | g3 `*_death_draws` | g65 (trails pending) |
+| 634/635/659/661 | g3 `nebula_spirit_onyx_kill` | d77 :20250/:20255/:20260 (634/635 PRE-snap) | g3 census | g65 LOCAL 12/14 |
+| 452/454/448 | **d78** `hostile_death_blast` + `damage_evp_boxed` | d77 (cue-first 29/4, pre-snap Item14) | g65 LOCAL 15/17 (inside bodies) | g65 LOCAL |
+| 617/618/620 | **d77** `nebula_arcanum_kill` + row + AI | d77 (Item14 @centre−88, inline) | d77 census block :20054-20064 | g65 LOCAL :2146 supersedes |
+| 710 | d77 `betsy_arrow_kill` | d77 (Item14 @centre−20) | d77 census | g65 LOCAL :1868 |
+| 246/249/117/1124 | **d78** rows + `child_spawn_kill` + child AI + gates | f1 cue arms (cue-first, compatible) | — | g65/g16 lanes |
+| 459/521/522/80 | **g1** (local, unpushed) | d77 (521 Item110, 80 Item27 gate — armed) | g1 module censuses | g65/g16 at wiring |
+
+**SEAL.** The four-way adjudication is final; §1-§5 verdicts stand as
+pushed at `fd59c51a0`; §6a-c are the merger/sibling receipts with
+seal-time line pins. d78's branch is frozen — every DROP executes at
+merge (or on the sibling's own branch for 6c), never by rewriting this
+record. Code-only: no cargo/tests/rustfmt/graphify invoked; sibling
+worktrees probed READ-ONLY (direct paths, no junction recursion).

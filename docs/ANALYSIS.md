@@ -39523,3 +39523,18 @@ recursion); every branch tip re-fetched at adjudication time (the d77
 ≤100-line windows. 1 new witness
 (`w4_d78_final_the_shard_row_matches_the_d77_co_claim`) WRITTEN, NOT RUN —
 **no cargo/rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).
+
+**SEAL (the resume pass).** The FINAL commit `fd59c51a0` landed AND pushed
+before the prior session died (ls-remote confirmed). research/26f is SEALED
+with §6 addenda: (6a) the g1-drop-hunks refreshed against g1's LIVE 602-line
+local hooks file (was 535 at adjudication — R3-g1-resume grew the witness
+suite; verdict unchanged, exact drop/keep pins republished); (6b) the
+d78-side MUTUAL RECEIPT of the d77-617-drop (d77 `nebula_arcanum_kill`
+:20577-20684 superset at tip `5f10560b`; d78's 617 arm :21832-21941 + 620
+row/const/AI/dispatch + 3 witnesses drop at merge — d77d mirrors);
+(6c) the g3-cue-position-fix hunks (drop g3's cue pushes :21823-21832 /
+:21884-21890 — the 634/635 push reads post-recentre vs the C# :72015
+PRE-snap, re-verified by direct read; keep-d77 `kill_tail_cue` :20250 owns
+every cue); (6d) the blasts-family bible — the sealed per-family
+state/cue/census/body ownership table. d78's branch stays frozen; every
+DROP executes at merge or on the sibling's own branch.
