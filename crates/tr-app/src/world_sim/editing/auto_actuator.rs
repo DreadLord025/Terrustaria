@@ -1,17 +1,18 @@
-//! The autoActuator build pass — the Actuation Accessory (3624) auto-places
-//! an actuator on every newly placed solid block. The C# pair:
+//! The autoPaint + autoActuator build pass — the Actuation Accessory (3624)
+//! auto-places an actuator on every newly placed solid block, the Paint
+//! Sprayer (2216) / Architect Gizmo Pack (3061) / Hand Of Creation (5126)
+//! auto-paint every newly placed tile. The C# pair:
 //! `Player.PlaceThing_Tiles_GetAutoAccessoryCache` (`Player.cs:40460-40488`,
-//! the pre-placement 11×11 snapshot) + the actuator half of
-//! `PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate` (`:40594-40669`), called at
-//! the tail of `PlaceThing_Tiles_PlaceIt` (`:40163`). The flag is granted by
-//! `grant_mechanical_accs` (`world_sim/player.rs`, 3624 equipped or held).
+//! the pre-placement 11×11 snapshot) +
+//! `PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate` (`:40594-40669`, BOTH
+//! halves), called at the tail of `PlaceThing_Tiles_PlaceIt` (`:40163`).
+//! The flags are granted by `grant_mechanical_accs` (`world_sim/player.rs`,
+//! `Player.cs:12813-12820` + the held-item arms `:15271-15298`). The paint
+//! writes/effects ride `auto_paint.rs` (`TryPainting`, `:41946-42024`).
 //!
-//! The autoPaint half (`:40632-40635`, `builderAccStatus[3]`) is out of scope
-//! — the port carries no `auto_paint` flag (the auto-paint family, ANALYSIS
-//! "The wiring tools"). The block-swap consumer (`:39892/:39909`,
-//! `PlaceThing_TryReplacingTiles`) stays parked with the BlockSwap mechanic
-//! (`builderAccStatus[10]`, `TileReplacementEnabled`) — the port has no
-//! `WorldGen.ReplaceTile` route yet.
+//! The block-swap consumer (`:39892/:39909`,
+//! `PlaceThing_TryReplacingTiles`) is ported in `block_swap.rs` — it calls
+//! THIS pass with the same cache (`:39909`).
 
 use tr_core::tiledata as td;
 use tr_core::{World, edit};
@@ -34,9 +35,9 @@ pub(crate) struct CacheCell {
 /// `Player.PlaceThing_Tiles_GetAutoAccessoryCache` (`Player.cs:40460-40488`):
 /// the 11×11 snapshot centred on the placement target, taken BEFORE the
 /// dispatcher writes (the C# calls it at `:40115`, ahead of
-/// `TileObject.Place`/`WorldGen.PlaceTile`). The C# gates the allocation on
-/// `autoPaint || autoActuator` (`:40463`); the port's caller gates on
-/// `auto_actuator` alone (the autoPaint half is unported).
+/// `TileObject.Place`/`WorldGen.PlaceTile`; the block-swap route takes its
+/// own at `:39892`). The C# gates the allocation on
+/// `autoPaint || autoActuator` (`:40463`); the caller gates the same way.
 pub(crate) fn auto_accessory_cache(world: &World, tx: i32, ty: i32) -> [[CacheCell; 11]; 11] {
     let mut cache = [[CacheCell::default(); 11]; 11];
     for i in 0..11 {
@@ -65,10 +66,12 @@ pub(crate) fn auto_accessory_cache(world: &World, tx: i32, ty: i32) -> [[CacheCe
     cache
 }
 
-/// The actuator half of `Player.PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`
+/// `Player.PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`
 /// (`Player.cs:40594-40669`): after a successful placement, scan the window
-/// around the target and auto-place an actuator on every cell that NOW holds
-/// the placed kind but did NOT hold it (or its exact frame) before.
+/// around the target and auto-paint / auto-actuate every cell that NOW holds
+/// the placed kind but did NOT hold it (or its exact frame) before. The
+/// paint half runs FIRST per cell (`:40632-40635`), the actuator half after
+/// (`:40636-40666`) — a cell can take both.
 pub(crate) fn auto_actuate_after_place(
     app: &mut App,
     tx: i32,
@@ -76,21 +79,20 @@ pub(crate) fn auto_actuate_after_place(
     tile_to_create: u16,
     cache: &[[CacheCell; 11]; 11],
 ) {
-    // `:40596-40599` — the flag gate (the C# returns when BOTH autoPaint and
-    // autoActuator are off; only autoActuator is ported).
+    // `:40596-40599` — the flag gate: the C# returns when BOTH autoPaint and
+    // autoActuator are off.
     let Some(p) = app.player.as_ref() else {
         return;
     };
-    if !p.auto_actuator {
+    if !p.auto_paint && !p.auto_actuator {
         return;
     }
-    // `:40636-40639` — the AutoActuate builder toggle
-    // (`BuilderAccToggleIDs.AutoActuate = 2`, `Player.cs:53`). The C# checks
-    // it per cell; nothing in the pass mutates it, so the actuator-only port
-    // hoists it to one gate.
-    if p.builder_acc_status[2] != 0 {
-        return;
-    }
+    // `:40632`/:40636-40639 — the builder toggles
+    // (`BuilderAccToggleIDs.AutoPaint = 3`, `AutoActuate = 2`,
+    // `Player.cs:53-55`). The C# checks them per cell; nothing in the pass
+    // mutates them, so the port hoists each to one gate.
+    let paint_on = p.auto_paint && p.builder_acc_status[3] == 0;
+    let actuate_on = p.auto_actuator && p.builder_acc_status[2] == 0;
     // `:40600-40612` — the TARGET cell (read AFTER the placement) decides the
     // scan window and the same-kind compare mode.
     let Some(target) = app.world.tile(tx, ty).copied() else {
@@ -99,7 +101,7 @@ pub(crate) fn auto_actuate_after_place(
     let platform = td::SET_PLATFORMS.has(target.kind);
     // `flag2` (`:40606`) — the frame-exact same-kind families. Every member
     // (chests, dressers, campfires, torches) is non-solid, so the frame
-    // compare only ever gates the (unported) autoPaint half; kept verbatim.
+    // compare only ever gates the autoPaint half; kept verbatim.
     let same_frame_kind = (td::SET_BASIC_CHEST.has(target.kind)
         && td::SET_BASIC_CHEST.has(tile_to_create))
         || (td::SET_BASIC_CHEST_FAKE.has(target.kind)
@@ -142,10 +144,25 @@ pub(crate) fn auto_actuate_after_place(
             {
                 continue;
             }
+            // `:40632-40635` — the autoPaint half: `TryPainting(num5, num6,
+            // paintingAWall: false, applyItemAnimation: false)`. The paint
+            // source scan runs per cell (the C# re-finds after each burn).
+            if paint_on {
+                super::auto_paint::try_painting(app, x, y, false);
+            }
+            // `:40636-40639` — the actuator gate (hoisted above).
+            if !actuate_on {
+                continue;
+            }
             // `:40640-40652` — the `Wiring.DeActive` solid gate
             // (`Wiring.cs:3201-3213`) WITHOUT the above-cell/`CanKillTile`
             // rule (`:3214` has no twin here): active + tileSolid +
             // !NotReallySolid, minus the {314, 379, 386-389, 476} exceptions.
+            // The C# RE-READS `Main.tile[num5, num6]` here (`:40640`) — the
+            // coating's SquareTileFrame cascade may have changed the cell.
+            let Some(t) = app.world.tile(x, y).copied() else {
+                continue;
+            };
             let mut solid = t.active()
                 && td::TILE_SOLID.has(t.kind)
                 && !td::SET_NOT_REALLY_SOLID.has(t.kind);
