@@ -295,6 +295,22 @@ fn is_track_tile(tile: &tr_core::Tile) -> bool {
     tile.active() && tile.flags & FLAG_INACTIVE == 0 && tile.kind == 314
 }
 
+/// `Minecart.IsPressurePlate` (`Minecart.cs:549-560`): an active tile 314
+/// whose FRONT frame is 20 or 21 — the two unpressed pressure-track fronts
+/// (`_trackType` 1 spans frames 20-23, but the pressed variants 22/23 do NOT
+/// count). The null-tile arm is the caller's `Option` (a missing tile is
+/// `false`). Sole consumer: `WorldGen.IsItATrigger` (`WorldGen.cs:26817-
+/// 26820`) inside the `ClearBrokenTraps` walk (`:26840-26958`, the
+/// `BrokenTrapCleanup` worldgen pass `:22121-22140`) — that pass has no port
+/// yet (the worldgen-passes lanes), so this rides `dead_code` until it lands;
+/// the cleanup's 314 arm sets `frameX = 1` instead of killing (`:26948-
+/// 26951`). NOT the ride's pressure trip — that reads `TrackCollision`'s
+/// flag3 over the whole type-1 range (`Minecart.cs:809-813` region).
+#[allow(dead_code)] // the BrokenTrapCleanup worldgen pass is the consumer
+pub(crate) fn is_pressure_plate(tile: Option<&tr_core::Tile>) -> bool {
+    tile.is_some_and(|t| t.active() && t.kind == 314 && (t.frame_x == 20 || t.frame_x == 21))
+}
+
 /// `Minecart.GetMagnetPosition` (`Minecart.cs:1290-1294`) with the default
 /// settings: `position + (width/2 − 25, height/2) + (25, 26)`. For the mounted
 /// 20×52 body the two halves cancel to the exact bottom-center.
@@ -1764,6 +1780,35 @@ mod tests {
         place_track(&mut w, 10, 10, 21, -1);
         flip_switch_track(&mut w, 10, 10);
         assert_eq!(w.tile(10, 10).unwrap().frame_x, 21);
+    }
+
+    /// W4-e20 final census — `Minecart.IsPressurePlate`
+    /// (`Minecart.cs:549-560`): ONLY the unpressed fronts 20/21 count; the
+    /// pressed variants 22/23, every other frame, an inactive tile, a
+    /// non-314 kind and the null tile all refuse.
+    #[test]
+    fn dw_e20_is_pressure_plate_counts_only_the_unpressed_20_21_fronts() {
+        let mut w = track_world();
+        for fx in [20i16, 21] {
+            place_track(&mut w, 10, 10, fx, -1);
+            assert!(is_pressure_plate(w.tile(10, 10)), "front {fx} is a plate");
+        }
+        for fx in [22i16, 23, 0, 1, 30, 31, -1] {
+            place_track(&mut w, 10, 10, fx, -1);
+            assert!(!is_pressure_plate(w.tile(10, 10)), "front {fx} is not");
+        }
+        // The actuator-hidden tile still counts: C# reads `tile.active()`,
+        // NOT `nactive()` (`:555`).
+        place_track(&mut w, 10, 10, 20, -1);
+        w.tiles[w.index(10, 10)].flags |= FLAG_INACTIVE;
+        assert!(is_pressure_plate(w.tile(10, 10)), "active() ignores actuation");
+        // An inactive tile refuses; a non-314 kind refuses; null refuses.
+        w.tiles[w.index(10, 10)].flags &= !FLAG_ACTIVE;
+        assert!(!is_pressure_plate(w.tile(10, 10)));
+        w.tiles[w.index(10, 10)].flags |= FLAG_ACTIVE;
+        w.tiles[w.index(10, 10)].kind = 135;
+        assert!(!is_pressure_plate(w.tile(10, 10)), "the 135 plate is not 314");
+        assert!(!is_pressure_plate(None));
     }
 
     #[test]
