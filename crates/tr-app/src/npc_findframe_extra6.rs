@@ -761,6 +761,58 @@ mod tests {
         assert_eq!((s.row, s.counter), (0, 0.0), "idle row 0");
     }
 
+    /// The 15-kind strip sweep: every kind ticks 18 input combos
+    /// (vx 0/1/3 × vy 0/-2/2 × ai[2] 0/2, ai[1] = 15, direction
+    /// alternating) for 10 ticks each — every row stays inside its
+    /// own sheet and no arm touches a field outside the triple
+    /// (the slice-5 5x3x3 sweep precedent, replay-derived bounds).
+    #[test]
+    fn f26s6_the_15_kind_strip_sweep_stays_in_sheet() {
+        let kinds = [
+            FindFrameExtra6Kind::HellArmoredBonesSpikeShield,
+            FindFrameExtra6Kind::HellArmoredBonesMace,
+            FindFrameExtra6Kind::HellArmoredBonesSword,
+            FindFrameExtra6Kind::RaggedCaster,
+            FindFrameExtra6Kind::RaggedCasterOpenCoat,
+            FindFrameExtra6Kind::Necromancer,
+            FindFrameExtra6Kind::NecromancerArmored,
+            FindFrameExtra6Kind::DiabolistRed,
+            FindFrameExtra6Kind::DiabolistWhite,
+            FindFrameExtra6Kind::BoneLee,
+            FindFrameExtra6Kind::Paladin,
+            FindFrameExtra6Kind::SkeletonSniper,
+            FindFrameExtra6Kind::TacticalSkeleton,
+            FindFrameExtra6Kind::SkeletonCommando,
+            FindFrameExtra6Kind::AngryBonesBigMuscle,
+        ];
+        for k in kinds {
+            let mut s = FrameState::default();
+            let mut combo = 0;
+            for vx in [0.0f32, 1.0, 3.0] {
+                for vy in [0.0f32, -2.0, 2.0] {
+                    for ai2 in [0.0f32, 2.0] {
+                        let i = FrameInput {
+                            vx,
+                            vy,
+                            direction: if combo % 2 == 0 { 1 } else { -1 },
+                            ai: [0.0, 15.0, ai2, 0.0],
+                        };
+                        for _ in 0..10 {
+                            find_frame_extra6(k, &mut s, &i);
+                            assert!(
+                                s.row < k.frame_count(),
+                                "{k:?} combo {combo} row {} escapes the {}-row sheet",
+                                s.row,
+                                k.frame_count()
+                            );
+                        }
+                        combo += 1;
+                    }
+                }
+            }
+        }
+    }
+
     /// The seam maps exactly this slice's ids — the covered 288/289/
     /// 294/296/305 and the slice-5 277 stay `None`.
     #[test]

@@ -39561,8 +39561,9 @@ pose ladder + counter-hold, the Bone Lee 16-row walk + slow-walk
 accumulator + air-row-1/idle-row-0, the Paladin hammer ladder +
 strict-8 wrap + no-+1 accumulator, the sniper draw pose + saturate +
 21-row walk + air-row-6, the commando delegate count-agreement +
-no-−1 pose + 20-row walk, the Big Muscle air-pin-0 + 15-row wrap, and
-the exact-slice seam sweep (the covered 288/289/294/296/305 stay
-`None`). Frame counts cross-checked entry-by-entry: `Main.cs:67082`'s
+no-−1 pose + 20-row walk, the Big Muscle air-pin-0 + 15-row wrap, the
+15-kind strip sweep (18 input combos × 10 ticks, every row inside its
+own sheet) and the exact-slice seam sweep (the covered 288/289/294/
+296/305 stay `None`). Frame counts cross-checked entry-by-entry: `Main.cs:67082`'s
 697-entry initializer vs `render/entities.rs::NPC_FRAME_COUNT` — all
 15 agree.
