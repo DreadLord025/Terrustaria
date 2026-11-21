@@ -7131,9 +7131,45 @@ impl Npc {
                     self.frame = (self.frame + 1) % 10;
                 }
             }
-            // The cultist + the towers: the 1-frame strips.
-            NpcKind::AncientCultist
-            | NpcKind::StardustTower
+            // The cultist boss (439) rides the SAME `case 439/440`
+            // pose ladder as the clone (`NPC.cs:72017-72101` — the
+            // case list carries BOTH ids; the extra-7 wave's 440
+            // machine is this arm). The v1 1-frame pin here was
+            // WRONG vs the ladder (the slice-7 note): the
+            // `localAI[2]` pose selector picks the idle poses 0/1/2
+            // (the off-home bands + the >= 15 home snap), the attack
+            // poses 10/11/12 (the keep-cycling bands) and the ritual
+            // 13 (rows 13-15); the counter++ runs AFTER the switch.
+            // The `IsABestiaryIconDummy` branch is the display-only
+            // skip (the extra-7 header). No sprite/rotation write —
+            // the ladder never touches them, so only row/counter
+            // copy back (the `find_frame_wave_a` bridge shape).
+            NpcKind::AncientCultist => {
+                let mut s = crate::npc_findframe_extra7::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                };
+                let i = crate::npc_findframe_extra7::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    ai: self.ai,
+                    ai_action: self.ai_action,
+                    local_ai2: self.local_ai[2],
+                };
+                crate::npc_findframe_extra7::find_frame_extra7(
+                    crate::npc_findframe_extra7::FindFrameExtra7Kind::CultistBossClone,
+                    &mut s,
+                    &i,
+                );
+                self.frame = s.row;
+                self.frame_counter = s.counter;
+            }
+            // The towers: the 1-frame strips (422/493/507/517 have
+            // NO FindFrame case — `Main.npcFrameCount` 1).
+            NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => {
@@ -27195,6 +27231,63 @@ mod s1_d_3b_tests {
             n.ai[0], -1.0,
             "cultist should remain in AI_084 spawn-in intro"
         );
+    }
+
+    #[test]
+    fn f27s8_the_cultist_boss_rides_the_439_440_pose_ladder() {
+        // W4-f27 slice 8: the v1 `npc.rs` 1-frame pin for
+        // AncientCultist (cs_id 439 via the bestiary net_id) was WRONG
+        // vs the C#'s `case 439/440` shared ladder
+        // (`NPC.cs:72017-72101` — the case list carries BOTH ids).
+        // The arm now delegates to the extra-7 CultistBossClone
+        // machine; the towers keep their row-0 pin.
+        assert_eq!(NpcKind::AncientCultist.cs_id(), 439);
+        // Pose 0 from an off-home row: the bands 4/5/6 then the
+        // >= 15 home-row-0 snap, the counter++ AFTER the switch.
+        let mut n = bare(NpcKind::AncientCultist);
+        n.frame = 4;
+        n.frame_counter = 0.0;
+        n.local_ai[2] = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..17 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 0, 0]);
+        // Pose 10 keeps cycling through the reset (no home snap).
+        let mut n = bare(NpcKind::AncientCultist);
+        n.local_ai[2] = 10.0;
+        let mut rows = Vec::new();
+        for _ in 0..17 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 4, 4]);
+        // Pose 13: the ritual rows 13-15.
+        let mut n = bare(NpcKind::AncientCultist);
+        n.local_ai[2] = 13.0;
+        n.find_frame();
+        assert_eq!(n.frame, 13);
+        // An unknown selector writes NO frame but still ticks.
+        let mut n = bare(NpcKind::AncientCultist);
+        n.frame = 3;
+        n.frame_counter = 2.0;
+        n.local_ai[2] = 7.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (3, 3.0));
+        // The ladder never writes sprite/rotation — the bridge does
+        // not copy them back.
+        let mut n = bare(NpcKind::AncientCultist);
+        n.sprite_dir = -1;
+        n.rotation = 0.5;
+        n.local_ai[2] = 10.0;
+        n.find_frame();
+        assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5));
+        // The towers keep the row-0 pin (no FindFrame case).
+        let mut t = bare(NpcKind::StardustTower);
+        t.frame = 2;
+        t.find_frame();
+        assert_eq!(t.frame, 0);
     }
 
     #[test]
