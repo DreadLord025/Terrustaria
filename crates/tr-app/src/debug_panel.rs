@@ -834,7 +834,13 @@ fn world_click(app: &mut App, row: usize) {
             } else {
                 let remix_world = app.wind.remix_world;
                 let player_luck = app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
-                app.rain.start_rain(&app.world, remix_world, player_luck);
+                app.rain.start_rain(
+                    &app.world,
+                    remix_world,
+                    player_luck,
+                    app.cloud_field.cloud_bg_active,
+                    app.cloud_field.num_clouds,
+                );
             }
         }
         14 => {

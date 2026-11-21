@@ -226,6 +226,11 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             // (`Main.cs:64668`) — the port's single player, 0 when none
             // (the C# falls back to a fresh `Player()`).
             app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
+            // `Main.cloudBGActive`/`Main.numClouds` — the LIVE cloud statics
+            // the ×4.25 start gate (`:64916`) and ChangeRain's band ladder
+            // (`:64730`) read (W4-g69 deviation fix).
+            app.cloud_field.cloud_bg_active,
+            app.cloud_field.num_clouds,
         );
         // (4) `Main.cs:64963-64966`: the event walks — CultistRitual
         // (the delay decay + the recheck window's AnyDanger arm),
@@ -1117,6 +1122,68 @@ mod tests {
             .expect("the cloud survives");
         assert!(c.position.x > 100.0, "the wind drifted the cloud: {}", c.position.x);
         assert_ne!(app.cloud_field.rand.peek(), rand_before, "the jitter drew");
+    }
+
+    #[test]
+    fn w4_g69_start_arm_and_change_rain_read_the_live_cloud_statics() {
+        // W4-g69 deviation fix: `update_time`'s ×4.25 arm gates on the LIVE
+        // `cloudBGActive >= 1f` (`Main.cs:64916`) — not the cloudBGAlpha
+        // stand-in — and `ChangeRain`'s band ladder reads the live
+        // `numClouds` (`:64730`). Arm 1 misses and arm 2 hits on a pinned
+        // Rain stream: overcast active >= 1 starts the rain with cloud_bg
+        // (the ALPHA) at 0; the cooldown twin with the same stream stays dry.
+        let fire_arm2 = (1..2_000_000u64)
+            .find(|&s| {
+                let mut r = (s ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+                let mut draw = |r: &mut u64| {
+                    *r = r.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                    let mut z = *r;
+                    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                    z ^ (z >> 31)
+                };
+                // dayRate 60 -> num2 1440: arm 1 Next(8280) miss, arm 2
+                // Next(6120) hit (1440*4.25 = 6120).
+                draw(&mut r) % 8280 != 0 && draw(&mut r) % 6120 == 0
+            })
+            .expect("an arm-2 seed exists");
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.fast_forward_to_dawn = true; // day_rate 60
+        app.world.world_surface = 200.0; // `isThereAWorldSurface`
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        app.rain = Rain::with_forced(fire_arm2, None, false);
+        // Deep in the overcast hold (>1): the layer machine only decays it
+        // by dayRate/num3 this tick — no end-roll draw, the >= 1 gate holds.
+        app.cloud_field.cloud_bg_active = 10_000.0;
+        app.cloud_field.weather_counter = 100; // no count jump this tick
+        update_world_tick(&mut app, STEP);
+        assert!(
+            app.rain.is_raining(),
+            "the live cloudBGActive arms the x4.25 start roll"
+        );
+        // ChangeRain took band 1 (`:64730`) — the overcast gate holds
+        // (active ~9940 after the layer decay) and numClouds is still 200.
+        assert!(
+            app.rain.max_raining() >= 0.20,
+            "band 1 strength: {}",
+            app.rain.max_raining()
+        );
+        // The dry twin: same stream, overcast down -> arm 2 never rolls.
+        let mut dry = flow_app(None, vec![], vec![]);
+        dry.world.fast_forward_to_dawn = true;
+        dry.world.world_surface = 200.0;
+        let mut player = crate::player::Player::spawn(&dry.world);
+        player.max_hp = 200;
+        dry.player = Some(player);
+        dry.rain = Rain::with_forced(fire_arm2, None, false);
+        // Deep in the cooldown climb (<0): the machine only adds
+        // dayRate*num3 this tick — no start-roll draw, the gate stays down.
+        dry.cloud_field.cloud_bg_active = -100_000.0;
+        dry.cloud_field.weather_counter = 100;
+        update_world_tick(&mut dry, STEP);
+        assert!(!dry.rain.is_raining(), "the cooldown gates arm 2 before its roll");
     }
 
     #[test]
