@@ -28,10 +28,12 @@
 //! arm (`NPC.cs:88411`) is DEAD CODE: the else-if chain's town arm
 //! (`:88046`) matches 663 first, so only the 25-dust smoke burst fires.
 //! The 402 Stardust Worm Head's `oldPos` trail loop (`:83611-83631`)
-//! reads the C#'s 10-slot trail array (`NPC.cs:6119`) the port's Npc
-//! does not carry: an all-zero array draws each slot's `Next(4)` gate
-//! until the first `== 0` breaks — the port replays exactly that (the
-//! documented stand-in; the live trail is the wiring wave's).
+//! reads the LIVE 10-slot trail ring (`Npc.old_pos`, `NPC.cs:6119`):
+//! `Npc::update_trails` ports `UpdateNPC_UpdateTrails`'s mode-7 shift
+//! (`NPC.cs:90863-90872`, called at `:90512` after `FindFrame`) — the
+//! W4-g60 wiring wave retired the all-zero stand-in. Only a
+//! never-updated corpse still reads an all-zero ring (the gates draw
+//! until the first `== 0` breaks, exactly the C#'s fresh-NPC shape).
 //!
 //! # RNG contract (d50's DustPool, S1-E-1/S1-E-4)
 //!
@@ -49,6 +51,29 @@
 //! cite each consumed argument). Constant-argument gore calls draw
 //! nothing outside the pool. The `SoundEngine...Stop()` calls
 //! (572-575, `:82230-82231`/`:82255`) draw nothing.
+//!
+//! # Keep-one census vs the d55/e5/f10 gore dispatchers (wiring wave)
+//!
+//! The gore lanes' `hit_effect`/`hit_effect_b`/`hit_effect_c` re-run
+//! death DUST loops for kinds this lane already covers. When their
+//! dispatch claims the strike/death slot, the wiring MUST strip those
+//! loops for exactly the overlap kinds (keep this feed, keep the gore
+//! BODIES — one draw per C# statement):
+//! * d55 wave A: 668 (`deerclops_death`'s 120-burst — g60 owns it; the
+//!   7 gores stay d55's, constant-argument). 636 is NOT in this lane
+//!   (census-ineligible, hit half + gore mix): d55/e5 own it whole —
+//!   their `empress_hit_dust_draws` count-plan must become a pool feed
+//!   at their wiring, not a second census.
+//! * e5 wave B: 551/552-554/555-557/561-563 (`dd2_death_dust`'s 20×5
+//!   preamble — g60 owns it; the gore bodies stay e5's). 657/660/667
+//!   are NOT in this lane (gore-FIRST arms): e5 owns them whole.
+//! * f10 wave C: 558-560/564-565/566-567/568-571/572-575/576-577
+//!   (`death_dust_loop`) + 412-417/419/518/416 (the solar pair loops)
+//!   — g60 owns the dust AND the consumed argument draws (the 566/567
+//!   six `Next(2)` gates, the 576/577 `Next(5)` head pick — f10 re-draws
+//!   them today; strip at wiring). 418 stays c12's feed. The e5 551
+//!   mirrored twin vs the f10 551 flipped arm ALSO overlap each other
+//!   (same `spriteDirection == -1` branch) — keep one there too.
 //!
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
@@ -72,6 +97,11 @@ pub(crate) struct DeathFx<'a> {
     pub h: i32,
     pub vel: Vec2,
     pub hit_dir: i32,
+    /// `NPC.oldPos` (`NPC.cs:6119`) — the LIVE trail ring the 402 death
+    /// arm's loop reads (`:83611-83631`); `Npc::update_trails` shifts it
+    /// per NPC update (the W4-g60 wiring wave — the all-zero stand-in is
+    /// retired, only a never-updated corpse still reads all-zero).
+    pub old_pos: [Vec2; 10],
     pub rng: &'a mut UnifiedRandom,
     pub dust: &'a mut DustPool,
     pub ctx: &'a SpawnCtx,
@@ -212,6 +242,7 @@ pub(crate) fn death_dust_feed(app: &mut crate::app::App, npc: &Npc) {
         h: h as i32,
         vel: Vec2::new(npc.vx, npc.vy),
         hit_dir: npc.last_hit_dir,
+        old_pos: npc.old_pos,
         rng,
         dust: &mut app.dust,
         ctx: &ctx,
@@ -744,19 +775,35 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
         }
         // `NPC.cs:83599-83632` — the Stardust Worm Head: 5 ×
         // (`Next(3)==0`-gated 17 + ALWAYS 229 noGravity/×3), then the
-        // oldPos trail loop over the C#'s 10 slots (`NPC.cs:6119`):
-        // each slot draws `Next(4)`, `!= 0` continues, `== 0` reads
-        // the slot — the port carries NO trail array, so the all-zero
-        // stand-in BREAKS at the first `== 0` (the documented
-        // module-header deviation; the gate draws until then are
-        // exactly the C#'s for an untrailed corpse).
+        // oldPos trail loop over the LIVE 10-slot ring (`Npc.old_pos`,
+        // `Npc::update_trails`'s mode-7 shift — the W4-g60 wiring wave):
+        // each slot draws `Next(4)` FIRST (`:83613`), `!= 0` continues;
+        // on `== 0` a zero slot breaks (`:83617-83620`), else TWO gated
+        // pairs spawn at `oldPos[i]` (`:83621-83630`, the same 17/229
+        // shape as the head burst).
         402 => {
             fx.stardust_loop(5, 3, false);
-            for _ in 0..10 {
-                if fx.rng.next_max(4) == 0 {
-                    // `:83617-83620` — oldPos[i] == Vector2.Zero →
-                    // break (the port's array is all-zero).
-                    break;
+            for &slot in &fx.old_pos {
+                if fx.rng.next_max(4) != 0 {
+                    continue; // `:83613-83616`
+                }
+                if slot == Vec2::ZERO {
+                    break; // `:83617-83620` — an unfilled ring slot
+                }
+                for _ in 0..2 {
+                    if fx.rng.next_max(3) == 0 {
+                        fx.dust.new_dust(
+                            fx.rng, fx.ctx, fx.world, slot, fx.w, fx.h, 17, hd, -1.0,
+                            0, Color::default(), 1.0,
+                        ); // `:83625`
+                    }
+                    let i = fx.dust.new_dust(
+                        fx.rng, fx.ctx, fx.world, slot, fx.w, fx.h, 229, 0.0, 0.0,
+                        0, Color::default(), 1.0,
+                    ); // `:83627`
+                    let d = fx.dust.slot_mut(i);
+                    d.no_gravity = true;
+                    d.velocity *= 3.0;
                 }
             }
         }
@@ -819,6 +866,7 @@ mod tests {
             h: 38,
             vel: Vec2::new(2.0, -1.0),
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -860,6 +908,7 @@ mod tests {
             h: 120,
             vel: Vec2::ZERO,
             hit_dir: -1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -912,6 +961,7 @@ mod tests {
             h: 44,
             vel: Vec2::ZERO,
             hit_dir: -1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -949,6 +999,7 @@ mod tests {
             h: 84,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -982,6 +1033,7 @@ mod tests {
             h: 40,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1025,6 +1077,7 @@ mod tests {
             h: 26,
             vel: Vec2::ZERO,
             hit_dir: -1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1058,6 +1111,7 @@ mod tests {
             h: 46,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1097,6 +1151,7 @@ mod tests {
             h: 20,
             vel: Vec2::new(3.0, -1.0),
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1136,6 +1191,7 @@ mod tests {
             h: 30,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1169,6 +1225,7 @@ mod tests {
             h: 100,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1204,6 +1261,7 @@ mod tests {
             h: 22,
             vel: Vec2::ZERO,
             hit_dir: -1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1239,6 +1297,7 @@ mod tests {
             h: 50,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1283,6 +1342,7 @@ mod tests {
             h: 40,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1327,6 +1387,7 @@ mod tests {
             h: 34,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1372,6 +1433,7 @@ mod tests {
             h: 30,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1399,7 +1461,8 @@ mod tests {
 
     /// `NPC.cs:83601-83631` — the Stardust Worm Head: 5 × (gate + 17?
     /// + 229) then the oldPos loop's `Next(4)` gates until the first
-    /// `== 0` breaks (the all-zero trail stand-in).
+    /// `== 0` breaks — an ALL-ZERO ring (a never-updated corpse; the
+    /// live ring rides `Npc::update_trails`, the next witness).
     #[test]
     fn w4_g60_the_worm_head_trail_gates_until_the_zero_break() {
         let w = air();
@@ -1414,6 +1477,7 @@ mod tests {
             h: 32,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1444,6 +1508,93 @@ mod tests {
         assert!(!pool.slot(spawned).active);
     }
 
+    /// `NPC.cs:83611-83631` with a LIVE ring (the W4-g60 wiring wave):
+    /// slots 0-2 carry positions, slot 3 is zero. Every slot draws its
+    /// `Next(4)` gate; a `== 0` gate on a filled slot spawns TWO gated
+    /// pairs AT THE SLOT (not the head position); the zero slot breaks
+    /// AFTER its gate draw — slots 4-9 draw nothing.
+    #[test]
+    fn w4_g60_the_worm_head_trail_spawns_at_the_live_slots() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(4242);
+        let peek = rng.clone();
+        let ring = [
+            Vec2::new(100.0, 100.0),
+            Vec2::new(94.0, 101.0),
+            Vec2::new(88.0, 103.0),
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+        ];
+        let mut fx = DeathFx {
+            ty: 402,
+            pos: Vec2::new(106.0, 100.0),
+            w: 32,
+            h: 32,
+            vel: Vec2::ZERO,
+            hit_dir: -1,
+            old_pos: ring,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        let mut spawned = 0usize;
+        let mut slot_positions: Vec<Vec2> = Vec::new();
+        for _ in 0..5 {
+            if r.next_max(3) == 0 {
+                replay_spawn(&mut r, 32, 32);
+                spawned += 1;
+            }
+            replay_spawn(&mut r, 32, 32);
+            spawned += 1;
+        }
+        for &slot in &ring {
+            if r.next_max(4) != 0 {
+                continue;
+            }
+            if slot == Vec2::ZERO {
+                break;
+            }
+            for _ in 0..2 {
+                if r.next_max(3) == 0 {
+                    replay_spawn(&mut r, 32, 32);
+                    slot_positions.push(slot);
+                    spawned += 1;
+                }
+                replay_spawn(&mut r, 32, 32);
+                slot_positions.push(slot);
+                spawned += 1;
+            }
+        }
+        assert_eq!(rng, r, "the head burst + the gated trail pairs");
+        // Every trail dust spawned inside its slot's box — the default
+        // block stamps `position + Next(w-4) + 4` (`Dust.cs:170-171`),
+        // so the bounds are `[slot+4, slot+w)` — NOT the head position
+        // (106,100) when the slot differs.
+        for (k, &slot) in slot_positions.iter().enumerate() {
+            let d = pool.slot(spawned - slot_positions.len() + k);
+            assert!(
+                d.position.x >= slot.x + 4.0 && d.position.x < slot.x + 32.0,
+                "trail dust {k} rides its slot's X"
+            );
+            assert!(
+                d.position.y >= slot.y + 4.0 && d.position.y < slot.y + 32.0,
+                "trail dust {k} rides its slot's Y"
+            );
+        }
+        assert!(pool.slot(spawned - 1).active);
+        assert!(!pool.slot(spawned).active);
+    }
+
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
     /// ZERO draws (the wrapper's early return).
     #[test]
@@ -1466,6 +1617,7 @@ mod tests {
             h: 20,
             vel: Vec2::ZERO,
             hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
