@@ -76,7 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 74 | NPC loot/death-path DOC-SWEEP (W4-f32 lane 3: the C# NPCLoot call order vs the port's death pass, the re-order + the heart scatter / soul gates / boss roster / boss potions+hat / coin midas+blood-moon / soul physics gaps; code-only) | `74-doc-sweep-loot.md` | ✅ |
-| 75 | SWEEP-LUCK-LOOT (W4-f32 resume: the Player.cs luck-factor/loot-drop census, the projectile-side Lucky Coin proc port, the e26 factor-census disjointness compose, the minecart-strike gap + dead GetClosest helpers; code-only) | `75-sweep-luck-loot.md` | ✅ |
+| 380 | SWEEP-LUCK-LOOT (W4-f32 resume: the Player.cs luck-factor/loot-drop census, the projectile-side Lucky Coin proc port, the e26 factor-census disjointness compose, the minecart-strike gap + dead GetClosest helpers; code-only) — RENUMBERED 75→380 per registry §10 (75 = g37's worldgen-pass-reconcile, 04:32:49) | `380-sweep-luck-loot.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

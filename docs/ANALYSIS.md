@@ -7432,7 +7432,7 @@ Landed sites (C# → Rust):
   Carbon/Ivy 4057/4372 through a dedicated press-edge arm (they never
   start a swing in the port's use path).
 - **The projectile-side Lucky Coin proc** (`projectile.rs::damage_pve` +
-  `world_sim/projectiles.rs` drain, W4-f32 sweep-luck-loot research/75):
+  `world_sim/projectiles.rs` drain, W4-f32 sweep-luck-loot research/380):
   `Projectile.cs:13685-13697` — the `Next(5)` gate + the denomination pair
   (`Next(10)` silver / `Next(100)` gold, gold wins) + the DISCARDED
   `Next(1, 11)` stack draw + the velocity pair, six rolls inline on
@@ -7486,7 +7486,7 @@ Deliberate deviations:
 - **The guitar `58` net-sync + progression-37 notify are skips** (the
   port's single-player audio seam plays the cue only).
 - **The minecart NPC-strike pass is unported** (W4-f32 sweep-luck-loot
-  census, research/75). `Player.cs:27539-27605` — the cart-speed hitbox
+  census, research/380). `Player.cs:27539-27605` — the cart-speed hitbox
   inflate, the max-class crit roll, `TryConsumingTimerCrit`,
   `GetMinecartDamage`'s four `DamageVar(…, luck)` calls (`:29242-29293`),
   the knockback-resist divide, `ApplyDamageToNPC(…, 2343)` and
@@ -7495,7 +7495,7 @@ Deliberate deviations:
   `GetClosestPlayersLuck`/`GetClosestRollBadLuck` helpers (`:18169-18177`/
   `:18241-18249`) are DEAD in C# (zero callers) — nothing to port.
 - **The e26 factor census and the f32 consumer census are disjoint**
-  (research/75 §4): e26 owns the luck VALUE inputs (the `RecalculateLuck`
+  (research/380 §4): e26 owns the luck VALUE inputs (the `RecalculateLuck`
   terms, draw-free), f32 owns the CONSUMER read sites (the `RollLuck`/
   `DamageVar` spends). They meet only at the `player.luck()` accessor; the
   shared `has_lucky_coin` bool is read by both (e26's +0.05 equip twin, the
@@ -38804,7 +38804,7 @@ invoked — the witness tests are WRITTEN, NOT RUN.**
   expert gate keeps the proc's coin safe in classic mode regardless.
 - **The projectile-side Lucky Coin proc** (`Projectile.cs:13685-13697`, the
   `Next(1, 11)` draw discarded, stack 1) — NOW PORTED (W4-f32 sweep-luck-loot,
-  research/75): `projectile.rs::damage_pve`'s landed block (after the javelin
+  research/380): `projectile.rs::damage_pve`'s landed block (after the javelin
   arm, before the whip/yoyo arms — the C# draw order), the six rolls inline on
   `UpdateProjectiles`, the drop queued on `pending_lucky_coin_drops` and spawned
   draw-free at the `world_sim/projectiles.rs` pass tail. The `num23` owner-centre

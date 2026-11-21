@@ -1,4 +1,9 @@
-# 75 — SWEEP-LUCK-LOOT: the Player.cs luck-factor / loot-drop census (W4-f32 resume)
+# 380 — SWEEP-LUCK-LOOT: the Player.cs luck-factor / loot-drop census (W4-f32 resume)
+
+> RENUMBERED 75→380 per registry §10 (150-research-number-registry.md §10.2,
+> round 5, d54 tip `08d21666e`): 75 belongs to W4-g37's earlier
+> `75-worldgen-pass-reconcile.md` (53a5b5b51, 04:32:49); this doc's first add
+> (b67b708fc, 17:01:21) loses the key → 380. Chain: 75→380.
 
 Scope: the code-only RESUME sweep after the f32b DOC-SWEEP timeout. Three
 jobs: (1) the dirty-file in-flight read (none — the tree was clean-frozen),
