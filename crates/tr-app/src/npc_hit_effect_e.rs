@@ -287,6 +287,132 @@ pub fn dd2_skeleton_walk_drip(
     true
 }
 
+// ---- batch 2 (E11-E17) ----
+
+/// E11 — the TownBunny 656 ear-flick gore (`NPC.cs:68951-68957`,
+/// `FindFrame`'s `ai[0]==11` last-row hold): the `Next(30)==0` gate, then
+/// ONE gore of type `Next(580,583)` at
+/// `Center + UnitX * -direction * 8`, velocity ZERO, default scale 1f.
+/// Post-writes (no draws): `velocity /= 2`, then
+/// `velocity.Y = |velocity.Y|`, then
+/// `velocity.X = -|velocity.X| * direction`. The caller gates
+/// `frame.Y/num == num58-1 && frameCounter == 50` and runs the 3+Next(4)
+/// type-216 dust loop FIRST (`:68944-68950`). Returns whether it fired.
+pub fn town_bunny_ear_flick_gore(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) -> bool {
+    // `:68951` — the gate draw runs on every qualifying tick.
+    if rng.next_max(30) != 0 {
+        return false;
+    }
+    // `:68953` — the type argument draws before the kicks.
+    let ty = rng.next_range(580, 583);
+    let pos = center(npc) + Vec2::new(-npc.facing as f32 * 8.0, 0.0);
+    let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+    // `:68954-68956` — the post-writes, sentinel slot included.
+    let g = gore.slot_mut(idx);
+    g.velocity /= 2.0;
+    g.velocity.y = g.velocity.y.abs();
+    g.velocity.x = -g.velocity.x.abs() * npc.facing as f32;
+    true
+}
+
+/// E12-E15 — the MoonLordCore 398 open-frame quad (`NPC.cs:71929-71939`,
+/// `FindFrame`'s case 398): when `ai[0] > 0` and `frame.Y == 0`, the four
+/// gores 619/620/621/622 spawn at `position + (±10, ±15)` in the C# order
+/// (-10,-15), (10,-15), (-10,15), (10,15), velocity `base.velocity`,
+/// default scale 1f; NO post-writes. The 50× type-209 dust loop
+/// (`:71935-71939`) draws AFTER the quad — the caller's (the dust lane).
+pub fn moon_lord_core_open_gores(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for (dx, dy, ty) in [
+        (-10.0, -15.0, 619),
+        (10.0, -15.0, 620),
+        (-10.0, 15.0, 621),
+        (10.0, 15.0, 622),
+    ] {
+        // `:71931-71934` — constant anchors, only the kicks draw.
+        gore.new_gore(rng, world, Vec2::new(npc.x + dx, npc.y + dy), vel, ty, 1.0);
+    }
+}
+
+/// E16 — the SantaNK1 346 half-hp gore (`NPC.cs:81352-81355`,
+/// `StrikeNPC_Inner`): the crossing gate
+/// `life >= lifeMax*0.5 && life - num < lifeMax*0.5` — all three compares
+/// in DOUBLE (the `(double)` casts) — then ONE gore 517 at
+/// `base.position`, velocity `base.velocity`, default scale 1f. `life`
+/// is the POST-strike hp and `num` the final damage int (`:81239`); the
+/// caller hands both. Returns whether the crossing fired.
+pub fn santa_nk1_half_hp_gore(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    num: i32,
+) -> bool {
+    // `:81352` — the double-precision crossing test.
+    let life = npc.hp as f64;
+    let half = npc.max_hp as f64 * 0.5;
+    if !(life >= half && ((npc.hp - num) as f64) < half) {
+        return false;
+    }
+    gore.new_gore(rng, world, Vec2::new(npc.x, npc.y), Vec2::new(npc.vx, npc.vy), 517, 1.0);
+    true
+}
+
+/// E17 — the loveStruck heart (`NPC.cs:91335-91343`,
+/// `UpdateNPC_BuffApplyVFX`): the `Next(5)==0` gate, then the direction
+/// `(Next(-10,11), Next(-10,11))` normalized (XNA's unconditional
+/// `1/sqrt` — a zero draw pair yields NaN, kept) with `X *= 0.66`; the
+/// gore 331 spawns at `position + (Next(width+1), Next(height+1))` with
+/// velocity `dir * Next(3,6) * 0.33` and scale `Next(40,121) * 0.01` —
+/// the argument draws in that order BEFORE the kicks. Post-writes (no
+/// draws): `sticky = false`, `velocity *= 0.4`, `velocity.Y -= 0.6`.
+/// The caller gates `loveStruck` (buff 119) and the `canDisplayBuffs`
+/// head; the earlier buff-VFX arms' draws run FIRST on the same stream.
+pub fn love_struck_heart_gore(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) -> bool {
+    // `:91335` — the gate draw runs every qualifying tick.
+    if rng.next_max(5) != 0 {
+        return false;
+    }
+    // `:91337-91339` — the direction draws, XNA Normalize, the X squash.
+    let mut dir = Vec2::new(
+        rng.next_range(-10, 11) as f32,
+        rng.next_range(-10, 11) as f32,
+    );
+    let n = 1.0 / (dir.x * dir.x + dir.y * dir.y).sqrt();
+    dir *= n;
+    dir.x *= 0.66;
+    let (w, h) = npc.size();
+    // `:91340` — position args, then the speed arg, then the scale arg.
+    let pos = Vec2::new(
+        npc.x + rng.next_max(w as i32 + 1) as f32,
+        npc.y + rng.next_max(h as i32 + 1) as f32,
+    );
+    let vel = dir * rng.next_range(3, 6) as f32 * 0.33;
+    let scale = rng.next_range(40, 121) as f32 * 0.01;
+    let idx = gore.new_gore(rng, world, pos, vel, 331, scale);
+    // `:91341-91343` — the post-writes, sentinel slot included.
+    let g = gore.slot_mut(idx);
+    g.sticky = false;
+    g.velocity *= 0.4;
+    g.velocity.y -= 0.6;
+    true
+}
+
 // ---- witness tests (WRITTEN, NOT RUN — code-only mode, no compiler) ----
 #[cfg(test)]
 mod tests {
@@ -526,6 +652,161 @@ mod tests {
         assert_eq!(g.position, Vec2::new(100.0, 130.0)); // Left = (x, y+h/2)
         assert_eq!(g.velocity.x, kx as f32 * 0.1 * 0.8);
         assert!((g.velocity.y - (-3.0 - ky as f32 * 0.1)).abs() < 1e-6);
+    }
+
+    /// E11 (`NPC.cs:68951-68956`): the Next(30) gate, the type
+    /// Next(580,583) before the kicks, then the three velocity posts
+    /// (half, |Y|, -|X|*direction) — the X sign flips with the facing.
+    #[test]
+    fn w4_f4_e_the_bunny_ear_flick_signs_follow_the_facing() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 30.0, 30.0);
+        n.facing = -1;
+        // Find a seed whose first Next(30) fires.
+        let mut seed = 0;
+        while UnifiedRandom::new(seed).next_max(30) != 0 {
+            seed += 1;
+        }
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(seed);
+        assert!(town_bunny_ear_flick_gore(&n, &mut gore, &mut rng, &w));
+        let mut twin = UnifiedRandom::new(seed);
+        assert_eq!(twin.next_max(30), 0);
+        let ty = twin.next_range(580, 583);
+        let ky = twin.next_range(10, 31);
+        let kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "gate, type, kicks only");
+        let g = gore.slot(0);
+        assert_eq!(g.gore_type, ty);
+        // Center = (115,115); -direction*8 = +8 → x 123.
+        assert_eq!(g.position, Vec2::new(123.0, 115.0));
+        let vx = kx as f32 * 0.1 / 2.0;
+        let vy = (-ky as f32 * 0.1 / 2.0).abs();
+        assert_eq!(g.velocity.y, vy);
+        assert_eq!(g.velocity.x, -vx.abs() * -1.0); // facing -1 → +|X|
+        // The miss path consumes only the gate.
+        let miss = if UnifiedRandom::new(0).next_max(30) == 0 { 1 } else { 0 };
+        let mut rng2 = UnifiedRandom::new(miss);
+        let mut gore2 = GorePool::new();
+        assert!(!town_bunny_ear_flick_gore(&n, &mut gore2, &mut rng2, &w));
+        let mut twin2 = UnifiedRandom::new(miss);
+        let _ = twin2.next_max(30);
+        assert_eq!(rng2.peek(), twin2.peek());
+    }
+
+    /// E12-E15 (`NPC.cs:71931-71934`): the quad's anchors are constants —
+    /// only the two kicks draw per gore (8 total); the types run
+    /// 619/620/621/622 in the C# order, velocity carried.
+    #[test]
+    fn w4_f4_e_the_core_quad_draws_only_the_kicks() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 60.0, 60.0);
+        n.vx = 0.5;
+        n.vy = -2.0;
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(6);
+        moon_lord_core_open_gores(&n, &mut gore, &mut rng, &w);
+        let mut twin = UnifiedRandom::new(6);
+        let anchors = [
+            (90.0, 85.0, 619),
+            (110.0, 85.0, 620),
+            (90.0, 115.0, 621),
+            (110.0, 115.0, 622),
+        ];
+        for (k, (ax, ay, ty)) in anchors.iter().enumerate() {
+            let ky = twin.next_range(10, 31);
+            let kx = twin.next_range(-20, 21);
+            let g = gore.slot(k);
+            assert_eq!(g.gore_type, *ty);
+            assert_eq!(g.position, Vec2::new(*ax, *ay));
+            assert_eq!(g.scale, 1.0);
+            assert_eq!(
+                g.velocity,
+                Vec2::new(0.5 + kx as f32 * 0.1, -2.0 - ky as f32 * 0.1)
+            );
+        }
+        assert_eq!(rng.peek(), twin.peek(), "eight kicks, nothing else");
+    }
+
+    /// E16 (`NPC.cs:81352-81354`): the crossing gate is
+    /// `life >= half && life - num < half` in double; only the crossing
+    /// strike spawns the 517, and it draws only the kicks.
+    #[test]
+    fn w4_f4_e_the_santa_gore_fires_only_on_the_half_crossing() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 40.0);
+        n.max_hp = 1000;
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(2);
+        // Above the half, no crossing: 600 - 50 = 550 >= 500.
+        n.hp = 600;
+        assert!(!santa_nk1_half_hp_gore(&n, &mut gore, &mut rng, &w, 50));
+        // Exactly at the half after the strike: 520 - 20 = 500, NOT < 500.
+        n.hp = 520;
+        assert!(!santa_nk1_half_hp_gore(&n, &mut gore, &mut rng, &w, 20));
+        // Below the half BEFORE the strike: 480 < 500 → the gate's first
+        // term fails.
+        n.hp = 480;
+        assert!(!santa_nk1_half_hp_gore(&n, &mut gore, &mut rng, &w, 20));
+        assert_eq!(rng.peek(), UnifiedRandom::new(2).peek(), "the misses draw nothing");
+        // The crossing: 510 - 20 = 490 < 500 <= 510.
+        n.hp = 510;
+        assert!(santa_nk1_half_hp_gore(&n, &mut gore, &mut rng, &w, 20));
+        let mut twin = UnifiedRandom::new(2);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "two kicks only");
+        assert_eq!(gore.slot(0).gore_type, 517);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+    }
+
+    /// E17 (`NPC.cs:91335-91343`): the gate, the two direction draws, the
+    /// position pair, the speed, the scale, then the kicks — 8 draws on a
+    /// fire; the heart's sticky clears and the velocity takes ×0.4 −0.6.
+    #[test]
+    fn w4_f4_e_the_heart_draws_eight_then_clears_sticky() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        // Find a seed whose first Next(5) fires AND whose direction pair
+        // is non-zero (the XNA normalize stays finite).
+        let mut seed = 0;
+        loop {
+            let mut probe = UnifiedRandom::new(seed);
+            if probe.next_max(5) == 0 {
+                let dx = probe.next_range(-10, 11);
+                let dy = probe.next_range(-10, 11);
+                if dx != 0 || dy != 0 {
+                    break;
+                }
+            }
+            seed += 1;
+        }
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(seed);
+        assert!(love_struck_heart_gore(&n, &mut gore, &mut rng, &w));
+        let mut twin = UnifiedRandom::new(seed);
+        assert_eq!(twin.next_max(5), 0);
+        let dx = twin.next_range(-10, 11) as f32;
+        let dy = twin.next_range(-10, 11) as f32;
+        let nn = 1.0 / (dx * dx + dy * dy).sqrt();
+        let dir = Vec2::new(dx * nn * 0.66, dy * nn);
+        let px = 100.0 + twin.next_max(31) as f32;
+        let py = 100.0 + twin.next_max(31) as f32;
+        let speed = twin.next_range(3, 6) as f32;
+        let scale = twin.next_range(40, 121) as f32 * 0.01;
+        let ky = twin.next_range(10, 31);
+        let kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "gate, dir, pos, speed, scale, kicks");
+        let g = gore.slot(0);
+        assert_eq!(g.gore_type, 331);
+        assert!(!g.sticky, "the heart never sticks");
+        assert_eq!(g.scale, scale);
+        assert_eq!(g.position, Vec2::new(px, py));
+        let kicked = Vec2::new(
+            dir.x * speed * 0.33 + kx as f32 * 0.1,
+            dir.y * speed * 0.33 - ky as f32 * 0.1,
+        );
+        assert_eq!(g.velocity, Vec2::new(kicked.x * 0.4, kicked.y * 0.4 - 0.6));
     }
 }
 
