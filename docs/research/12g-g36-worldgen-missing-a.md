@@ -89,4 +89,4 @@ Waterfalls :16610 (d103 landed), Statues :16853 (g37's B1).
 | A4 Wood Tree Walls | aa3ee000 | landed (code-only; RNG-free; both pins move by design — re-pin deferred to the gate) |
 | A5 Settle Liquids | fd098528 (f25) | yielded — f25's earlier orphan claim wins |
 | A6 Wall Variety | 8486571f | landed (code-only; both pins move by design — re-pin deferred to the gate) |
-| A7 Life Crystals | (this commit) | landed (code-only; sub-vanilla y-band guard — SEED42_512 unchanged; DEFAULT_WORLD re-pin deferred; seed arms documented-deferred) |
+| A7 Life Crystals | f3930740 | landed (code-only; both pins move by design — re-pin deferred; seed arms documented-deferred) |

@@ -268,10 +268,11 @@ mod tests {
     // deferred to the gate.
     // W4-g36 A7 (code-only): the Life Crystals pass
     // (`WorldGen.cs:16755-16852`, `structures.rs::pass_life_crystals`)
-    // lands after `wall variety` — this pin is UNCHANGED by this pass
-    // alone: the sub-vanilla y-band guard (`height - 300 <= y_lo`) skips
-    // the pass before any draw on a 512-tall world (the `pass_altars`
-    // idiom). The DEFAULT_WORLD re-pin is deferred to the gate.
+    // lands after `wall variety` — the 2×2 hearts move this pin BY DESIGN
+    // (the y-band `(worldSurface*2 + rockLayer)/3 .. height-300` does not
+    // collapse on the 512 world, so the pass runs and seats crystals);
+    // deferred to the gate. The sub-vanilla guard only fires when the
+    // band genuinely collapses (a deeper surface/rock layer).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its

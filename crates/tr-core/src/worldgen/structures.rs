@@ -927,12 +927,15 @@ mod tests {
     }
 
     /// W4-g36 A7: the pass is deterministic (a == b) and places crystals
-    /// on a vanilla-sized world; the sub-vanilla y-band guard skips the
-    /// tiny worlds without a draw.
+    /// on a vanilla-sized world. The floor sits above the y-band so the
+    /// column scan always finds it (a deeper floor would let the scan run
+    /// past it and burn the attempt cap).
     #[test]
-    fn a7_the_pass_replays_and_guards_the_tiny_worlds() {
-        let mut a = floor_world(4200, 1200, 400);
-        let mut b = floor_world(4200, 1200, 400);
+    fn a7_the_pass_replays() {
+        // worldSurface 360, rockLayer 500 → y_lo = 406; floor at 380 is
+        // above the band, so every drop seats a crystal on the first try.
+        let mut a = floor_world(4200, 1200, 380);
+        let mut b = floor_world(4200, 1200, 380);
         pass_life_crystals(&mut a, 360.0, 500.0, false, false, false, false, &mut super::super::Rng(42));
         pass_life_crystals(&mut b, 360.0, 500.0, false, false, false, false, &mut super::super::Rng(42));
         assert_eq!(a.tiles, b.tiles, "a == b");
@@ -940,24 +943,30 @@ mod tests {
             a.tiles.iter().any(|t| t.kind == TILE_LIFE_CRYSTAL),
             "the pass must seat life crystals"
         );
-        // The 512-tall world: y_hi = 212 <= y_lo — the guard skips.
-        let mut small = floor_world(512, 512, 400);
-        let before = small.tiles.clone();
-        let mut rng = super::super::Rng(42);
-        pass_life_crystals(&mut small, 100.0, 220.0, false, false, false, false, &mut rng);
-        assert_eq!(small.tiles, before, "the y-band guard writes nothing");
-        assert_eq!(rng.0, super::super::Rng(42).0, "the guard draws nothing");
     }
 
     /// W4-g36 A7: the errorWorld/noSurface mana loop seats mana crystals
     /// (639) at half density.
     #[test]
     fn a7_the_mana_loop_seats_stars() {
-        let mut w = floor_world(4200, 1200, 400);
+        let mut w = floor_world(4200, 1200, 380);
         pass_life_crystals(&mut w, 360.0, 500.0, false, false, false, true, &mut super::super::Rng(7));
         assert!(
             w.tiles.iter().any(|t| t.kind == TILE_MANA_CRYSTAL),
             "the mana loop must seat mana crystals"
         );
+    }
+
+    /// W4-g36 A7: the sub-vanilla y-band guard skips a collapsed band
+    /// without a draw (the `pass_altars` idiom).
+    #[test]
+    fn a7_the_y_band_guard_skips_without_a_draw() {
+        // worldSurface 300, rockLayer 400 → y_lo = 333 > y_hi = 212.
+        let mut w = floor_world(512, 512, 400);
+        let before = w.tiles.clone();
+        let mut rng = super::super::Rng(42);
+        pass_life_crystals(&mut w, 300.0, 400.0, false, false, false, false, &mut rng);
+        assert_eq!(w.tiles, before, "the y-band guard writes nothing");
+        assert_eq!(rng.0, super::super::Rng(42).0, "the guard draws nothing");
     }
 }
