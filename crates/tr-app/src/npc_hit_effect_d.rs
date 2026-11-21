@@ -2070,8 +2070,12 @@ fn moss_zombie_death(
 /// 488/489x2/490x2 (`:87011-87015`, sites 296-300), 332 Sweater Zombie →
 /// 491/492x2/493x2 (`:87020-87024`, sites 301-305), 109 Clown →
 /// 121/122x2/123x2 + the extra 120 at +46 Y (`:87029-87034`, sites
-/// 306-311); the 161/162/... tails land in later batches. The
-/// hit-half 186/632 Next(5) gore gates (`:86945-86952`) are g62's lane.
+/// 306-311), 161/431 Eskimo Zombie → 191/192x2/193x2 (`:87039-87043`,
+/// sites 312-316; the 431 slimed variant shares the row though the arm's
+/// type list omits it — ported as written), 162 Frankenstein →
+/// 194/195x2/196x2 (`:87048-87052`, sites 317-321); the 188/200/...
+/// tails land in later batches. The hit-half 186/632 Next(5) gore gates
+/// (`:86945-86952`) are g62's lane.
 fn zombie_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -2173,6 +2177,26 @@ fn zombie_arm_death(
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 123, s); // :87032
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 123, s); // :87033
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 46.0), vel, 120, s); // :87034
+        return;
+    }
+    if npc_type == 161 || npc_type == 431 {
+        // `:87037-87045` — the Eskimo Zombie ladder + return (the 431
+        // slimed variant shares the row — the C# gate includes it though
+        // the arm's type list does not; ported as written).
+        gore.new_gore(rng, world, pos, vel, 191, s); // :87039
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 192, s); // :87040
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 192, s); // :87041
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 193, s); // :87042
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 193, s); // :87043
+        return;
+    }
+    if npc_type == 162 {
+        // `:87046-87054` — the Frankenstein ladder + return.
+        gore.new_gore(rng, world, pos, vel, 194, s); // :87048
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 195, s); // :87049
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 195, s); // :87050
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 196, s); // :87051
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 196, s); // :87052
         return;
     }
 }
@@ -2423,8 +2447,8 @@ pub fn hit_effect_d(
     }
     // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
     // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
-    // 104/632/331/332/109 branches are live (sites 286-311), the rest
-    // land later.
+    // 104/632/331/332/109/161/162 branches are live (sites 286-321), the
+    // rest land later.
     else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
     {
         zombie_arm_death(
@@ -4311,5 +4335,34 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the clown mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87039-87052` — the Eskimo ladder 191/192x2/193x2 and the
+    /// Frankenstein ladder 194/195x2/196x2.
+    #[test]
+    fn w4_f5d_the_eskimo_and_frankenstein_ladders_spawn_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (161, vec![191, 192, 192, 193, 193]),
+            (162, vec![194, 195, 195, 196, 196]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(317);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "zombie {kind}");
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(317);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
     }
 }
