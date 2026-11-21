@@ -39305,3 +39305,30 @@ id/shape family, the 104 misalignment pin, the 90-vs-21 and
 TryPlacing-quadruplet (89/123/133/149) byte-equality pins, and the 43-id
 census witness. WRITTEN NOT RUN — no cargo/rustc/rustfmt/tests/graphify
 invoked (code-only lane).
+
+## The f21b small apply arms (S1-I-1 W4-f21b, 2026-11-21, code-only)
+
+The apply-audit resume (research/239) censused the g48-g52 lane tips and
+WIRED the three small unclaimed arms whose consumers exist in the port:
+
+- **57 Unknown57**: the client stores the three world-evil bytes into new
+  `World.t_good/t_evil/t_blood` (`WorldGen.cs:4180-4184`); the join push
+  is wired at `MessageBuffer.cs:867`'s position (ahead of 49). Deliberate
+  park: the `CountTiles` recount producer (`WorldGen.cs:71148-71173`)
+  is the tile-count pass's - the fields ride the wire store until it lands.
+- **76 QuestsCountSync**: host own-echo gate (`:3167` runs BEFORE the
+  `:3169` force - a frame naming the host's own slot drops whole), the
+  sender-force, the `PlayerNet.angler_quests_finished/golfer_score` store
+  (new fields; the local Player already had both) and the relay-except;
+  the client own-echo skip + peer store. Deliberate deviation: the
+  `Main.ServerSideCharacter` escape does not exist (the port never SSCs),
+  so the own-echo skip always applies to self.
+- **58 InstrumentSound**: the HOST half only - id-force + relay-except,
+  raw float pitch, no host sound (`MessageBuffer.cs:2642-2650`). The
+  client instrument switch stays parked: PlayGuitarChord/PlayDrums/
+  musicPitch are unported audio players (research/239's gap list).
+
+Witnesses: `netglue::tests::w4_f21b_*` (5) - the join-push store, the
+3-app force/relay pin (bogus wire id 99), both own-echo gates, the raw-frame
+58 relay drain. WRITTEN NOT RUN - no cargo/rustc/rustfmt/tests/graphify
+invoked (code-only lane).
