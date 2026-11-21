@@ -778,7 +778,11 @@ impl NpcInfo {
 /// position/velocity, the stack, the prefix, the flag byte and the type, plus
 /// the conditional shimmer fields. C#'s `noBroadcast`/`instanced` split and
 /// the slot-400 spawn request are the M6-NET-5 follow-ups (deviation in
-/// `docs/ANALYSIS.md`).
+/// `docs/ANALYSIS.md`). W4-g15 lane 5 — the flag bit 3 `enemyGrabDelayTime`
+/// conditional byte (`NetMessage.cs:652`/`:665-668`, the clamp 0..255) is
+/// now carried; the `90` instanced-loot variant (the same body + the
+/// client's `instanced = true` / `reservedFor = myPlayer`,
+/// `MessageBuffer.cs:1489-1493`) stays the g52b pre-switch gap.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ItemState {
     pub slot: i16,
@@ -791,12 +795,17 @@ pub struct ItemState {
     pub kind: i16,
     pub shimmered: bool,
     pub shimmer_time: f32,
+    /// `WorldItem.enemyGrabDelayTime` clamped 0..255 (`NetMessage.cs:667`);
+    /// the flag bit 3 carries its presence. W4-g15 lane 5.
+    pub enemy_grab_delay: u8,
 }
 
 impl ItemState {
     fn write_to(&self, w: NetWriter) -> NetWriter {
         let mut flags = BitsByte::new();
         flags.set(2, self.shimmered || self.shimmer_time > 0.0);
+        // `NetMessage.cs:652` — bit 3 carries the enemy-grab delay presence.
+        flags.set(3, self.enemy_grab_delay > 0);
         let w = w
             .i16(self.slot)
             .f32(self.x)
@@ -807,8 +816,14 @@ impl ItemState {
             .u8(self.prefix)
             .bitsbyte(flags)
             .i16(self.kind);
-        if self.shimmered || self.shimmer_time > 0.0 {
+        let w = if self.shimmered || self.shimmer_time > 0.0 {
             w.bool(self.shimmered).f32(self.shimmer_time)
+        } else {
+            w
+        };
+        // `NetMessage.cs:665-668` — the conditional enemy-grab byte.
+        if self.enemy_grab_delay > 0 {
+            w.u8(self.enemy_grab_delay)
         } else {
             w
         }
@@ -829,6 +844,8 @@ impl ItemState {
         } else {
             (false, 0.0)
         };
+        // `MessageBuffer.cs:1459` — the conditional enemy-grab byte.
+        let enemy_grab_delay = if flags.get(3) { r.u8()? } else { 0 };
         Some(Self {
             slot,
             x,
@@ -840,6 +857,7 @@ impl ItemState {
             kind,
             shimmered,
             shimmer_time,
+            enemy_grab_delay,
         })
     }
 }
@@ -4283,6 +4301,7 @@ mod tests {
                 kind: 42,
                 shimmered: true,
                 shimmer_time: 30.0,
+                enemy_grab_delay: 100,
             })),
             S2c::ItemState(Box::new(ItemState {
                 slot: 6,
@@ -4295,6 +4314,7 @@ mod tests {
                 kind: 1,
                 shimmered: false,
                 shimmer_time: 0.0,
+                enemy_grab_delay: 0,
             })),
             S2c::ItemDead { slot: 9 },
             S2c::NetModule {

@@ -1593,6 +1593,9 @@ impl App {
                 }
                 drop.shimmered = d.shimmered;
                 drop.shimmer_time = d.shimmer_time;
+                // `MessageBuffer.cs:1487` — the `21`/`90` handler writes the
+                // enemy-grab delay from the conditional byte. W4-g15 lane 5.
+                drop.enemy_grab_delay_time = d.enemy_grab_delay as i32;
                 drop.age = 60.0;
                 self.net_items.insert(d.slot as i16, drop);
                 self.net_items_dirty = true;
@@ -2879,6 +2882,8 @@ impl App {
             kind: it.kind as i16,
             shimmered: it.shimmered,
             shimmer_time: it.shimmer_time,
+            // `NetMessage.cs:667` — the clamp 0..255. W4-g15 lane 5.
+            enemy_grab_delay: it.enemy_grab_delay_time.clamp(0, 255) as u8,
         }
     }
 
