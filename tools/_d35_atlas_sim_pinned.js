@@ -607,12 +607,16 @@ function skylinePack(sheets, tieBreak = 'waste', maxWidth = MAX_WIDTH) {
   return { height, layout, nodes };
 }
 
-// Maxrects best-area-fit (comparison only): score = (free-rect area тИТ sheet
+// Maxrects best-area-fit (comparison only): score = (free-rect area − sheet
 // area, short-side leftover, y, x). Free rects split on every placement,
 // contained rects pruned; fixed total-order tie-breaks.
-function maxrectsPack(sheets) {
+// W4-d35 ATLAS-REPACK promotion: `cap` bounds the bin height (Infinity = the
+// original unbounded form); a sheet with no fitting free rect is UNPLACED
+// (layout[i] = null) instead of throwing, so the caller can spill it to a
+// second page. With cap = Infinity every sheet still places (H = 1<<20).
+function maxrectsPack(sheets, cap = Infinity) {
   const order = sorted(sheets);
-  const W = MAX_WIDTH - PAD, H = 1 << 20;
+  const W = MAX_WIDTH - PAD, H = Math.min(1 << 20, cap - PAD);
   let free = [{ x: 0, y: 0, w: W, h: H }];
   const layout = [];
   let used = 0;
@@ -630,7 +634,7 @@ function maxrectsPack(sheets) {
       });
       if (better) { best = f; bestScore = score; }
     }
-    if (!best) throw new Error('no maxrects placement for ' + s.name);
+    if (!best) { layout[s.i] = null; continue; }
     const p = { x: best.x, y: best.y, w, h };
     layout[s.i] = { x: p.x + PAD, y: p.y + PAD };
     used = Math.max(used, p.y + h);
