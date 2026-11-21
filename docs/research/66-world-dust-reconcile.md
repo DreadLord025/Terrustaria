@@ -1,10 +1,12 @@
 # 66 — World-dust RECONCILE (W4-d54 merger assist): arm diffs, KEEP/DROP, witness union
 
-Status: RECONCILE doc (W4-d54, code-only merge-assist round, 2026-11-21).
-Seed: research/67's overlap note. NO code changes in this commit — this is
-the merger's decision record. Filename note: e4's branch carries a
-different doc at the same number (`66-dust-world-sites-2-claims.md`); the
-two coexist (distinct filenames).
+Status: **EXECUTED on `task/W4-d54-dust-sites-world`** (union-exec round,
+2026-11-21 — see §6 below for the landed hashes and the per-step
+record). Originally a RECONCILE doc (code-only merge-assist round,
+2026-11-21). Seed: research/67's overlap note. Filename note: e4's
+branch carries a different doc at the same number
+(`66-dust-world-sites-2-claims.md`); the two coexist (distinct
+filenames).
 
 ## In-flight probe (2026-11-21 02:28 / 02:30, 2× ≥90 s apart)
 
@@ -21,7 +23,7 @@ Branch tips reconciled here (all at base `a725acb0` = origin/main):
 | d54 (this) | `8cb5d5a4` | world_dust{,_main,_tile,_wall}.rs + orch_dust{,_lightning,_boulder,_town}.rs + LIVE editing seams |
 | g14 | `a35efec2` | tr-core worldgen_dust{,_tile,_wall}.rs (all 29 WorldGen sites, UNWIRED) |
 | g11 | `25e180d4` | tr-app main_dust.rs (snowing + TeleportEffect styles 0-7, UNWIRED) |
-| g12 | `73a85c01` | CLAIM DOC ONLY (research/64, 60 lines) — NO code |
+| g12 | `665cd1e8` | tr-app main_dust_b.rs (Main sites 9-16: TeleportEffect 10/11/13 staged + the DrawNPCDirect bone-arm tip puffs 22744/22820 + the Moon Lord flag8 trio 24736/24748/24752, UNWIRED, 7 witnesses) — **the original `73a85c01` claim-only row was STALE; batch 2 landed 02:47, after this doc's 02:28 probe** |
 | g13 | `dca09bed` | tr-app main_dust.rs (Main sites 17-23, UNWIRED) |
 | g61 | `a9628928` | tr-app npc_spawn_visuals.rs (spawn/teleport-in family, UNWIRED) + tr-core particles.rs DustRng generalisation |
 | e4 | `2a79551a` | tr-app orchestrator_dust.rs (orch 41-61) + mount_dust.rs (Mount 1-19), UNWIRED |
@@ -160,7 +162,7 @@ wave, not a fidelity issue. Two wiring-wave reconciles to record:
 | d54 `world_dust_main.rs` | **DROP both bodies** (§4), keep the 9 witnesses as supplements. |
 | g61 `npc_spawn_visuals.rs` | **KEEP whole** — the widest teleport port (§4) + the spawn family (PoofOfSmoke, BigMimicSpawnSmoke, TransformVisuals, NPC.Teleport driver, UpdateNPC_TeleportVisuals, alt-texture transitions). 18 witnesses. |
 | g61 `tr-core/particles.rs` delta | **KEEP** — `new_dust_perfect/direct/clone_dust` generalised `&mut UnifiedRandom` → `R: DustRng` (behaviour identical; `UnifiedRandom` implements the trait, so every d54/e4/f6/g14 call site still compiles). |
-| g12 | claim doc only. **GAP: Main sites 12-16 (`:22744/:22820/:24736/:24748/:24752`) have NO landed port anywhere** (g12 never pushed code; g13 owns only 24756+). The merger owes these five to a follow-up batch — record in ROADMAP, do not silently close the census. Sites 9-11 (13390/13438/13452) ARE covered (d54 + g61). |
+| g12 `main_dust_b.rs` (sites 9-16) | **KEEP whole** — `665cd1e8` landed 817 lines + 7 witnesses AFTER this doc's probe (the matrix row was stale). **Main sites 12-16 (`:22744/:22820/:24736/:24748/:24752`) ARE covered**: the two DrawNPCDirect bone-arm tip puffs (type 5 hand / type 6 Prime limbs, the two-hop tether geometry + AllowMiscDustEffects gate) + the Moon Lord core arm's three flag8 puffs (DEAD-gate census: `Main.cs:24703` never set true in 1.4.5.8 — the fourth puff `:24756` is g13's site 17). The §2 "GAP" note below is SUPERSEDED — no follow-up batch owed; the census closes at the merge-verify wave. Sites 9-11 (13390/13438/13452) are triple-covered (d54 + g61 + g12): g61's teleport wins per §4, g12's cases 10/11/13 witnesses supplement. |
 
 **Filename collision:** g11 and g13 BOTH create
 `crates/tr-app/src/main_dust.rs` with different contents (968 vs 976
@@ -338,7 +340,9 @@ witnesses supplement g61's (§3). The pylon style-9 body stays g61's
 5. Resolve mount_dust.rs to f6's superset + the double-atan2 fix; keep
    e4's orchestrator_dust.rs (disjoint); record the prefix.rs fold.
 6. Compile + run the witness UNION (§3) in the merge-verify wave;
-   record the Main sites 12-16 gap (g12 never landed code).
+   ~~record the Main sites 12-16 gap (g12 never landed code)~~
+   **SUPERSEDED: g12's `665cd1e8` landed main_dust_b.rs covering
+   sites 9-16 incl. 12-16 — no gap, no follow-up owed** (§2 Main row).
 7. anchors.txt: keep one row per surviving module; the dropped d54
    world_dust* rows re-point at the tr-core markers (never delete a
    feature row without its replacement marker landing).
@@ -346,3 +350,46 @@ witnesses supplement g61's (§3). The pylon style-9 body stays g61's
 WRITTEN NOT RUN (code-only directive): no cargo/tests/graphify this
 round; the mechanical censuses above were produced by read-only
 git/grep comparisons, quoted per section.
+
+## 6. EXECUTED — union-exec round on `task/W4-d54-dust-sites-world` (2026-11-21)
+
+The checklist's d54-owned steps ran on this branch (base `b878ef70`,
+the reconcile tip). Landed hashes, in order:
+
+| Step | Hash | What landed |
+| ---- | ---- | ----------- |
+| 1a | `ce1276ba` | g14 claim doc cherry-pick (`46181d09` → research/65-dust-worldgen-sites-claims.md; coexists with d54's same-number claims doc, distinct filenames) |
+| 1b | `8f8471cb` | g14's three tr-core modules + lib.rs rows, cherry-picked clean (`2f8931a7`/`d9b9690d`/`6ab0c7ec`): worldgen_dust{,_wall,_tile}.rs, all 29 WorldGen sites |
+| 1c | `74ba4a2e` | the 2 one-line fixes on the landed copies: arm-11 `:69152` torch `*255` round-trip (d54's maths, XNA `(byte)(v*255f)` convention) + `paint_color` color-30 alpha 150 (`:44026-44032`); g14's wrong-semantics torch witness REWRITTEN to the round-trip assertion; NEW color-30 alpha-150 paint witness (neither lane had one, §3) |
+| 1d | `462a21ff` | g14 docs cherry-pick (`a35efec2`, union-resolved trailing-append conflicts in anchors.txt/ANALYSIS.md — both lanes' rows kept); the ANALYSIS torch-ctor bullet corrected to the round-trip semantics + the paint fix noted; PORT_MAP's all-29 row as g14 wrote it |
+| 2+3 | `e41a90f0` | LIVE seams re-pointed + duplicates dropped: wiring.rs cutter → `kill_actuator_dust`/`kill_wire_dust`; `tile_break_burst` kept, amount gate → `collision::tile_dust_amount` (kind-first!), body → `kill_tile_make_tile_dust` (`edit::solid_tile` OOB-false — d54's local `None→true` copy and duplicate amount table DROPPED per checklist 1's drop-copy option); `wall_break_burst` + `place_tile_torch_dust` (caller-side 22/140 gate kept) → tr-core bodies; world_dust.rs bodies dropped (g14's ash-shake consumes the gore argument draws); 4 orch tile sweeps re-pointed; editing.rs seams unchanged (wrapper signatures kept); 18 d54 witnesses kept as supplements re-pointed (ash oracle adapted to the gore draws; the type-table/arms oracles read the tr-core body's slot type — 454 pins the 139..=142 family, the 352 forced-scale noted); anchors rows re-pointed at surviving markers, never deleted (checklist 7) |
+| 4+5 | (this doc commit) | the g11 budget-hoist cross-doc note (below) + the Main 12-16 matrix correction (§2) |
+
+**Checklist items NOT owned by this branch (cross-doc, no code here):**
+
+- **Step 4 — g11 snowing budget-hoist** (g11b owns the wiring): g11's
+  `main_dust.rs:133` re-reads `minecart::live_type(pool, 76)` INSIDE
+  the snowing loop; C# `Main.snowDust` is constant for the whole call
+  (`Dust.cs:1747` increments only in `UpdateDust`, reset `:428`).
+  **Fix owed by g11b: hoist the live_type read above the loop** (one
+  edit) + adapt the live-76-budget-break witness (§4.3). d54's
+  once-per-call snapshot body (`world_dust_main.rs`) still stands on
+  THIS branch pending the main-lane resolve — the DROP lands when
+  g11's fixed snowing + g61's teleport merge (the §2 filename-collision
+  resolve: one main_dust.rs = g13's bodies + g11's snowing).
+- **Step 5 — Main 12-16**: VERIFIED covered — g12 `665cd1e8`
+  main_dust_b.rs EXISTS (817 lines, sites 9-16, 7 witnesses). The
+  matrix's claim-only row was stale (g12 pushed 02:47, after the
+  02:28/02:30 probes); §2 corrected, checklist 6's gap note
+  superseded. No ROADMAP gap row owed.
+- **Steps 4-5 main/mount resolves** (g13+g11 merge shape, g61 keep,
+  f6 superset + double-atan2 fix, e4 orch keep): merger-wave actions
+  on the OTHER lanes' files — this branch does not carry those files;
+  the decisions stand as §2/§4 record them.
+
+**Witness union state on this branch**: g14's 24 (one torch witness
+rewritten, +1 new paint alpha witness = 25) + d54's 18 batch-1/2/3
+supplements re-pointed + d54's batch-4/5-8 witnesses untouched (48
+total d54 → the 9 main + 21 orch remain as landed). All WRITTEN NOT
+RUN — the compile + union run stays owed to the merge-verify wave
+(checklist 6). No cargo/tests/graphify invoked this round either.
