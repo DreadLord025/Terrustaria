@@ -2,8 +2,8 @@
 //! `ItemCheck_UseLifeCrystal` / `UseLifeFruit` / `UseManaCrystal` /
 //! `UseDemonHeart` / `UseMinecartPowerUp` / `UseArtisanLoaf` /
 //! `UseCombatBook` / `UseTorchGodsFavor` / `UsePeddlersSatchel` /
-//! `UsePetLicenses` (`Player.cs:45192-45383`) and their sibling
-//! `ItemCheck_Use*` arms (`:45385-45423`, later commits).
+//! `UsePetLicenses` / `UseShimmerPermanentItems`
+//! (`Player.cs:45192-45423`) — the full power-up cluster.
 //!
 //! Every arm rides the C# mid-swing gate `itemAnimation > 0 &&
 //! ItemTimeIsZero` (`:4064`): the use START (`ApplyItemAnimation`) ran on
@@ -64,7 +64,7 @@ pub(crate) fn is_powerup(kind: u16) -> bool {
     matches!(
         kind,
         29 | 109 | 1291 | 3335 | 5289 | 5326 | 4382 | 5336 | 5043 | 5343
-            | 4829 | 4830 | 4910
+            | 4829 | 4830 | 4910 | 5337..=5342
     )
 }
 
@@ -101,6 +101,7 @@ fn run_powerup_arm(app: &mut App, held: ItemSlot) -> bool {
         4382 | 5336 => use_combat_book(app, held.kind),
         5343 => use_peddlers_satchel(app),
         4829 | 4830 | 4910 => use_pet_license(app, held.kind),
+        5337..=5342 => use_shimmer_permanent(app, held.kind),
         _ => false,
     };
     if fired {
@@ -420,6 +421,62 @@ fn use_pet_license(app: &mut App, kind: u16) -> bool {
         }
         app.chat
             .new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
+    }
+    true
+}
+
+/// `Player.ItemCheck_UseShimmerPermanentItems` (`Player.cs:45385-45423`):
+/// six one-shot permanents, each gated on its own `used*` flag —
+/// 5337 Aegis Crystal (`usedAegisCrystal`, the +0.2 lifeRegenTime,
+/// `:19113-19116`), 5338 Aegis Fruit (`usedAegisFruit`, +4 defense,
+/// `:12853-12856`), 5339 Arcane Crystal (`usedArcaneCrystal`, the mana
+/// regen rows, `:19430-19433`/`:19453-19456`), 5340 Galaxy Pearl
+/// (`usedGalaxyPearl`, +0.03 luck, `luck.rs`'s `RecalculateLuck` row),
+/// 5341 Gummy Worm (`usedGummyWorm`, +3 fishing, `:12857-12860`),
+/// 5342 Ambrosia (`usedAmbrosia`, the +0.05 speed triple, `:12861-
+/// 12866`). The `SendData(4)` syncs are MP-only.
+fn use_shimmer_permanent(app: &mut App, kind: u16) -> bool {
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    match kind {
+        5337 => {
+            if p.used_aegis_crystal {
+                return false;
+            }
+            p.used_aegis_crystal = true; // `:45390`
+        }
+        5338 => {
+            if p.used_aegis_fruit {
+                return false;
+            }
+            p.used_aegis_fruit = true; // `:45396`
+        }
+        5339 => {
+            if p.used_arcane_crystal {
+                return false;
+            }
+            p.used_arcane_crystal = true; // `:45402`
+        }
+        5340 => {
+            if p.luck_state.used_galaxy_pearl {
+                return false;
+            }
+            p.luck_state.used_galaxy_pearl = true; // `:45408`
+        }
+        5341 => {
+            if p.used_gummy_worm {
+                return false;
+            }
+            p.used_gummy_worm = true; // `:45414`
+        }
+        5342 => {
+            if p.used_ambrosia {
+                return false;
+            }
+            p.used_ambrosia = true; // `:45420`
+        }
+        _ => return false,
     }
     true
 }
@@ -1060,5 +1117,92 @@ mod tests {
         tick(&mut app);
         assert_eq!(app.inventory[app.selected].count, 2, "no consume on refusal");
         assert!(app.chat.messages.is_empty(), "no exchange chat");
+    }
+
+    /// The six shimmer permanents each set their OWN flag and consume one
+    /// (`:45385-45423`): 5337 aegis crystal, 5338 aegis fruit, 5339 arcane
+    /// crystal, 5340 galaxy pearl (the luck-state field), 5341 gummy worm,
+    /// 5342 ambrosia.
+    #[test]
+    fn the_shimmer_permanents_set_their_flags() {
+        for (kind, check) in [
+            (5337u16, 0),
+            (5338, 1),
+            (5339, 2),
+            (5340, 3),
+            (5341, 4),
+            (5342, 5),
+        ] {
+            let mut app = rig(kind, 2);
+            tick(&mut app);
+            app.mine_down = true;
+            tick(&mut app);
+            let p = app.player.as_ref().unwrap();
+            let flags = [
+                p.used_aegis_crystal,
+                p.used_aegis_fruit,
+                p.used_arcane_crystal,
+                p.luck_state.used_galaxy_pearl,
+                p.used_gummy_worm,
+                p.used_ambrosia,
+            ];
+            assert!(flags[check], "kind {kind} sets flag {check}");
+            assert_eq!(
+                flags.iter().filter(|f| **f).count(),
+                1,
+                "kind {kind} sets ONLY its own flag"
+            );
+            assert_eq!(app.inventory[app.selected].count, 1, "one consumed");
+        }
+    }
+
+    /// A second shimmer permanent refuses (its `!used*` gate) — no consume.
+    #[test]
+    fn a_second_shimmer_permanent_refuses() {
+        let mut app = rig(5337, 2);
+        app.player.as_mut().unwrap().used_aegis_crystal = true;
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "no consume on refusal");
+    }
+
+    /// The Aegis Fruit's +4 defense + the Ambrosia speed triple land in the
+    /// per-tick equip pass (`UpdatePermanentBoosters`, `:12853-12866`) and
+    /// SURVIVE the next tick's ResetEffects (the permanents re-apply).
+    #[test]
+    fn aegis_fruit_and_ambrosia_boosters_apply_every_tick() {
+        let mut app = rig(29, 1); // any held item; the flags drive the pass
+        {
+            let p = app.player.as_mut().unwrap();
+            p.used_aegis_fruit = true;
+            p.used_ambrosia = true;
+        }
+        tick(&mut app);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.update(&app.world, crate::player::PlayerInput::default());
+            assert_eq!(p.stat_defense, 4, "the +4 defense");
+            assert!((p.pick_speed_bonus - 0.05).abs() < 1e-6);
+            assert!((p.tile_speed_bonus - 0.05).abs() < 1e-6);
+            assert!((p.wall_speed_bonus - 0.05).abs() < 1e-6);
+            // A second pass re-applies from the reset base (no stacking).
+            p.update(&app.world, crate::player::PlayerInput::default());
+            assert_eq!(p.stat_defense, 4, "no double-apply");
+        }
+    }
+
+    /// The Galaxy Pearl's +0.03 luck rides `RecalculateLuck`
+    /// (`luck.rs:201-203`) once the flag is set.
+    #[test]
+    fn galaxy_permanent_luck_rides_the_recalculation() {
+        let mut app = rig(5340, 1);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        let p = app.player.as_mut().unwrap();
+        assert!(p.luck_state.used_galaxy_pearl);
+        p.luck_state.recalculate_luck();
+        assert!((p.luck_state.luck - 0.03).abs() < 1e-6, "the +0.03 row");
     }
 }

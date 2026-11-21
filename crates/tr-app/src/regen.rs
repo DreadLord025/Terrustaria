@@ -94,6 +94,11 @@ pub struct RegenInputs {
     /// to the base `statManaMax2 / 3 + 1` line).
     pub mana_regen_bonus: i32,
     pub mana_regen_buff: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the permanent Arcane
+    /// Crystal — −0.05 off the delay per delay tick (`:19430-19433`) and
+    /// `statManaMax2 / 50` extra regen inside the expired-delay window
+    /// (`:19453-19456`). W4-a6.
+    pub used_arcane_crystal: bool,
     // — items / misc states (M3-EQUIP) —
     /// soulDrain / heartyMeal / honey / shinyStone-still regen adds
     /// (`:19156-19168`), folded by the owner.
@@ -133,6 +138,7 @@ impl Default for RegenInputs {
             heart_lantern: false,
             mana_regen_bonus: 0,
             mana_regen_buff: false,
+            used_arcane_crystal: false,
             extra_regen: 0,
             extra_time: 0.0,
             extra_ramp_scale: 1.0,
@@ -350,9 +356,10 @@ pub fn check_mana(
 /// `Player.UpdateManaRegen` (`Player.cs:19418-19563`). Returns true when this
 /// tick refilled the last missing mana point (the full-bar sound + dust in the
 /// C# — M6-AUDIO polish). `manaRegenDelayBonus` has no grant source in the
-/// source (`:18656` is its only write) and the arcane crystal is unported —
-/// both folded out (noted in ANALYSIS). `flags.item_in_use` is the C# `flag`
-/// (`:19420`) feeding the ManaV2 animation gate.
+/// source (`:18656` is its only write) — folded out (noted in ANALYSIS).
+/// The Arcane Crystal's two rows ride `RegenInputs::used_arcane_crystal`
+/// (W4-a6). `flags.item_in_use` is the C# `flag` (`:19420`) feeding the
+/// ManaV2 animation gate.
 pub fn update_mana_regen(
     state: &mut RegenState,
     in_: &RegenInputs,
@@ -363,6 +370,11 @@ pub fn update_mana_regen(
         state.mana_regen_delay -= 1.0;
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen_delay -= 1.0;
+        }
+        // `:19430-19433` — the Arcane Crystal's permanent −0.05 per delay
+        // tick (inside the `> 0` guard, after the still/grapple extra).
+        if in_.used_arcane_crystal {
+            state.mana_regen_delay -= 0.05;
         }
     }
     // `:19435-19441`: the ManaV2 sub-4 window counts as expired (flag3) and
@@ -380,6 +392,11 @@ pub fn update_mana_regen(
         state.mana_regen = num5;
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen += num5;
+        }
+        // `:19453-19456` — the Arcane Crystal's `statManaMax2 / 50` extra
+        // (integer division), after the still/grapple double.
+        if in_.used_arcane_crystal {
+            state.mana_regen += in_.max_mana / 50;
         }
         let num6 = *mana as f32 / in_.max_mana as f32;
         let num9: f32 = if in_.mana_regen_buff { 1.0 } else { 0.5 };
@@ -623,6 +640,28 @@ mod tests {
                                              // Once the delay is gone the regen line starts: base 200/3+1 = 67,
                                              // doubled while still → 134, ×(0.5+0.5·frac).
         assert!(st.mana_regen > 0);
+    }
+
+    /// W4-a6 — the Arcane Crystal's two rows (`Player.cs:19430-19433`,
+    /// `:19453-19456`): −0.05 off the delay per delay tick (after the
+    /// still/grapple extra) and `statManaMax2 / 50` extra regen inside the
+    /// expired-delay window.
+    #[test]
+    fn the_arcane_crystal_shaves_the_delay_and_adds_regen() {
+        let mut st = RegenState::default();
+        let mut mana = 100;
+        let mut in_ = inputs(400, 200);
+        in_.standing_still = true;
+        in_.used_arcane_crystal = true;
+        apply_mana_regen_delay(&mut st, 200, mana, false); // 4
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        // −1 base −1 still −0.05 crystal = 1.95 (the plain path lands 2.0).
+        assert!((st.mana_regen_delay - 1.95).abs() < 1e-5);
+        // Drain the delay, then pin the regen line: base 200/3+1 = 67,
+        // doubled while still → 134, + 200/50 = 4 → 138, ×(0.5+0.5·0.5).
+        st.mana_regen_delay = 0.0;
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(st.mana_regen, (138.0 * 0.75) as i32, "the +max/50 row");
     }
 
     #[test]

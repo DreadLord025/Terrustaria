@@ -2136,8 +2136,29 @@ pub struct Player {
     pub override_fishing_bobber: i32,
     /// `Player.usedGummyWorm` (`Player.cs:2074`): the 5341 permanent +3
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
-    /// ResetEffects — a permanent unlock (the player-file field).
+    /// ResetEffects — a permanent unlock (the player-file field). The
+    /// 5341 use rides `powerups::use_shimmer_permanent` (W4-a6).
     pub used_gummy_worm: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Vital Crystal
+    /// — the permanent +0.2 lifeRegenTime per tick (`:19113-19116`, the
+    /// `regen.rs` `extra_time` input). The 5337 use rides
+    /// `powerups::use_shimmer_permanent` (W4-a6).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedAegisFruit` (`Player.cs:854`): the 5338 Aegis Fruit —
+    /// the permanent +4 defense (`UpdatePermanentBoosters`, `:12853-
+    /// 12856`). The 5338 use rides `powerups::use_shimmer_permanent`
+    /// (W4-a6).
+    pub used_aegis_fruit: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 Arcane
+    /// Crystal — the permanent −0.05 manaRegenDelay per delay tick +
+    /// statManaMax2/50 mana regen (`:19430-19433`, `:19453-19456`). The
+    /// 5339 use rides `powerups::use_shimmer_permanent` (W4-a6).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia — the
+    /// permanent +0.05 pick/tile/wall speed (`UpdatePermanentBoosters`,
+    /// `:12861-12866`). The 5342 use rides `powerups::use_shimmer_permanent`
+    /// (W4-a6).
+    pub used_ambrosia: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2940,6 +2961,10 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            used_aegis_crystal: false,
+            used_aegis_fruit: false,
+            used_arcane_crystal: false,
+            used_ambrosia: false,
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -6871,6 +6896,21 @@ impl Player {
         // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
         if self.used_gummy_worm {
             self.fishing_skill += 3;
+        }
+        // W4-a6 — `UpdatePermanentBoosters`' Aegis Fruit + Ambrosia rows
+        // (`Player.cs:12853-12856`, `:12861-12866`): the permanent +4
+        // defense and the +0.05 pick/tile/wall speed triple. The C# runs
+        // the whole method after `UpdateEquips` (`:25644`); the port folds
+        // its rows into this post-equip seam (the Gummy Worm row's
+        // convention). `pickSpeed -= 0.05` is the port's signed bonus
+        // `pick_speed_bonus += 0.05` (`:4545`'s `1.0 - bonus` form).
+        if self.used_aegis_fruit {
+            self.stat_defense += 4;
+        }
+        if self.used_ambrosia {
+            self.pick_speed_bonus += 0.05;
+            self.tile_speed_bonus += 0.05;
+            self.wall_speed_bonus += 0.05;
         }
         // S1-P-i35 — `UpdateEquips`' post-loop bobber row
         // (`Player.cs:12985-12988`): the glow-bobber accessory's +10 skill,
@@ -11165,6 +11205,7 @@ impl Player {
                 max_mana: self.mana_max,
                 mana_regen_bonus: self.mana_regen_bonus,
                 mana_regen_buff: self.mana_regen_buff,
+                used_arcane_crystal: self.used_arcane_crystal,
                 well_fed: self.well_fed,
                 campfire: self.auras.campfire,
                 heart_lantern: self.auras.heart_lantern,
@@ -11181,7 +11222,11 @@ impl Player {
                 // (`ArmorSetBonuses.cs:248-251` grants the flag):
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
-                extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
+                // W4-a6 — the Aegis Crystal's permanent +0.2 time add
+                // (`Player.cs:19113-19116`) rides the same slot, BEFORE the
+                // crimson row (the C# order: `:19113` < `:19117`).
+                extra_time: if self.used_aegis_crystal { 0.2 } else { 0.0 }
+                    + if self.crimson_regen { 1.0 } else { 0.0 },
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
                 ..RegenInputs::default()
             };
