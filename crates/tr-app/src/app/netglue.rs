@@ -3838,11 +3838,21 @@ impl App {
             }
             // `case 88` — ItemTweaker (W4-g50, `MessageBuffer.cs:3306-3376`):
             // the C# applies the gated writes to `Main.item[slot].inner`
-            // (the mutable per-instance stats). The port's world drops
-            // (`item::ItemDrop`) carry no inner-stat fields — the tweak
-            // system is unported, so the apply is parked; the codec is
-            // byte-verbatim (`net.rs`) for the census. The `0..=400` slot
-            // gate (`:3313`) is the reader's only other behaviour.
+            // (the mutable per-instance stats). FINALIZE-PARK (re-probe
+            // census): the tweak is NOT prefix/stack — it is the 13 inner
+            // STAT fields (color/damage/knockBack/useAnimation/useTime/
+            // shoot/shootSpeed + width/height/scale/ammo/useAmmo/notAmmo).
+            // The port's `ItemDrop` still carries none of them (kind/count/
+            // prefix + the physics fields only, `item.rs:845-891`), and the
+            // ONLY vanilla producer is `CommonCode.ModifyItemDropFromNPC`
+            // (`ItemDropRules/CommonCode.cs:56-95`): six COLOR-only sends
+            // (`SendData(88, …, 1f)` = bitsByte bit 0) for the gel 23
+            // (slime-tinted + remix-59 orange) and the four mimic banners
+            // 319 (netID 542-545 tints) — no stat send exists tree-wide.
+            // The tinted-drop producer itself is unported (the loot lane's),
+            // so there is no message to apply; the `0..=400` slot gate
+            // (`:3313`) stays the reader's only behaviour. The codec is
+            // byte-verbatim (`net.rs`) for the census.
             S2c::ItemTweaker(_) => {}
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
