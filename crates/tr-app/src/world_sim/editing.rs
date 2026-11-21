@@ -2165,6 +2165,31 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         eprintln!("[trace] past the reach gate");
     }
     let held = app.inventory[app.selected];
+    // S1-W4-g81 residuals — the wiring tools' cursor-icon latch
+    // (`Player.ItemCheck_UseWiringTools`, `Player.cs:46752-46760`): the
+    // tool in reach arms `cursorItemIconEnabled` + `ItemIconCacheUpdate`
+    // BEFORE the use gates — the icon shows while hovering, not only while
+    // placing. The reach is `IsInTileInteractionRange(Simple, tileBoost +
+    // blockRange)`; the port's `mining_tile_range` carries the same
+    // journey/accessory/Toolbox grants (blockRange has no port field — 0).
+    // The mining tools' twin latch (`:45620-45624`) rides the same seam.
+    {
+        let tool_kind = held.kind;
+        let is_wiring = matches!(tool_kind, 509 | 510 | 849 | 850 | 851 | 3612 | 3620 | 3625);
+        let is_mining = crate::registry::get(tool_kind)
+            .is_some_and(|d| d.pick > 0 || d.axe > 0 || d.hammer > 0);
+        if held.count > 0 && (is_wiring || is_mining) {
+            let tb = crate::registry::get(tool_kind).map_or(0, |d| d.tile_boost);
+            let (rx, ry) = mining_tile_range(app);
+            let in_reach = app.player.as_ref().is_some_and(|p| {
+                tile_in_reach_rect(p, tx, ty, rx, ry, tb)
+            });
+            if in_reach {
+                app.cursor_item_icon_enabled = true;
+                app.item_icon_cache_update(tool_kind);
+            }
+        }
+    }
     #[cfg(test)]
     eprintln!(
         "[flow-dbg] reached: kind={} mine_down={}",

@@ -695,6 +695,18 @@ pub(crate) struct App {
     /// `Main.cursorAlpha`/`cursorColorDirection`/`cursorScale`: the vanilla cursor
     /// pulse, advanced once per frame by `Main.CursorColor` (`Main.cs:52477`).
     pub(crate) cursor: ui::cursor::CursorState,
+    /// `Player.cursorItemIconEnabled` (`Player.cs:1856`): the held-tool
+    /// cursor-icon latch — the wiring/mining tools arm it in reach
+    /// (`Player.cs:46756-46760`/`:45620-45624`), `MouseOversClear` clears
+    /// it per update (`Main.cs:46503-46513`, `:17035`). S1-W4-g81.
+    pub(crate) cursor_item_icon_enabled: bool,
+    /// `Main._itemIconCacheScreenPosition`/`_itemIconCacheSelectedItemID`/
+    /// `_itemIconCacheTime` (`Main.cs:2411-2415`): the 10-frame icon
+    /// linger after the tool leaves reach (`ItemIconCacheUpdate`
+    /// `:46515-46520`, `ItemIconCacheVerification` `:46522-46540`).
+    pub(crate) item_icon_cache_pos: Vec2,
+    pub(crate) item_icon_cache_kind: u16,
+    pub(crate) item_icon_cache_time: i32,
     /// Last value passed to `Window::set_cursor_visible`, so the OS pointer is only
     /// toggled when the in-world HUD (and thus the vanilla cursor) appears.
     pub(crate) os_cursor_hidden: Option<bool>,
@@ -1316,6 +1328,33 @@ impl App {
             self.zoom,
             self.gfx_quality.max_dust_to_draw,
         )
+    }
+
+    /// `Main.ItemIconCacheUpdate` (`Main.cs:46515-46520`): the tool-icon
+    /// linger re-arm — the mouse position, the selected kind, 10 frames.
+    /// S1-W4-g81 residuals.
+    pub(crate) fn item_icon_cache_update(&mut self, kind: u16) {
+        self.item_icon_cache_pos = self.mouse_pos;
+        self.item_icon_cache_kind = kind;
+        self.item_icon_cache_time = 10;
+    }
+
+    /// `Main.ItemIconCacheVerification` (`Main.cs:46522-46540`): while the
+    /// linger runs, a non-zero mouse move decrements it, a >4 px move
+    /// zeroes it, and a selected-item switch zeroes it. S1-W4-g81.
+    pub(crate) fn item_icon_cache_verification(&mut self) {
+        if self.item_icon_cache_time > 0 {
+            let d = (self.item_icon_cache_pos - self.mouse_pos).length();
+            if d != 0.0 {
+                self.item_icon_cache_time -= 1;
+            }
+            if d > 4.0 {
+                self.item_icon_cache_time = 0;
+            }
+            if self.item_icon_cache_kind != self.inventory[self.selected].kind {
+                self.item_icon_cache_time = 0;
+            }
+        }
     }
 
     /// `Main.mH` (`Main.cs:45771-45783`): 256 while the minimap HUD is live,
@@ -3910,6 +3949,10 @@ impl App {
                 crate::env::mouse_pin().unwrap_or(Vec2::ZERO)
             },
             cursor: ui::cursor::CursorState::with_mouse_color(cursor_mouse_color),
+            cursor_item_icon_enabled: false,
+            item_icon_cache_pos: Vec2::ZERO,
+            item_icon_cache_kind: 0,
+            item_icon_cache_time: 0,
             wire_tool_mode: ui::wires_ui::TOOL_MODE_DEFAULT,
             wires_radial: ui::wires_ui::WiresRadial::default(),
             os_cursor_hidden: None,

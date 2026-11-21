@@ -1897,7 +1897,13 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            self.cursor_item_icon_enabled,
+                            (self.item_icon_cache_kind, self.item_icon_cache_time),
                         );
+                        // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`
+                        // (`Main.cs:45062` inside `DrawInterface_40`): the
+                        // linger's per-draw decay, after the icon pass read it.
+                        self.item_icon_cache_verification();
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
                         // the interface layers draw.
