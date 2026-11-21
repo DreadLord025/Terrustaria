@@ -5941,6 +5941,14 @@ mod tests {
         let _scale = twin.next_range(-20, 21);
     }
 
+    /// The 7 draws of one `Dust.NewDust` for type 6: the 6 default-block
+    /// draws PLUS the type-6 tweak's `Next(-10,6)` Y rewrite
+    /// (`Dust.cs:214-218` — the smoke family re-rolls velocity.Y).
+    fn twin_dust6(twin: &mut UnifiedRandom, bw: i32, bh: i32) {
+        twin_dust(twin, bw, bh);
+        let _ty = twin.next_range(-10, 6);
+    }
+
     /// `NPC.cs:85684` — the King Slime death spawns ONE gore 734 at
     /// Center + (-40, -height/2), scale 1f (no this.scale argument), after
     /// the 200x tinted dust-4 burst; the blue-slime spawn seam is returned.
@@ -8212,8 +8220,8 @@ mod tests {
             twin_dust(&mut twin, 50, 50);
         }
         for _ in 0..5 {
-            twin_dust(&mut twin, 50, 50);
-            twin_dust(&mut twin, 50, 50);
+            twin_dust6(&mut twin, 50, 50);
+            twin_dust6(&mut twin, 50, 50);
         }
         let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
         for (i, (dx, dy)) in nudges.iter().enumerate() {
@@ -10051,8 +10059,8 @@ mod tests {
             twin_dust(&mut twin, 30, 30);
         }
         for _ in 0..3 {
-            twin_dust(&mut twin, 30, 30);
-            twin_dust(&mut twin, 30, 30);
+            twin_dust6(&mut twin, 30, 30);
+            twin_dust6(&mut twin, 30, 30);
         }
         for _ in 0..2 {
             let _ky = twin.next_range(10, 31);
@@ -10084,8 +10092,8 @@ mod tests {
                 twin_dust(&mut twin, 40, 40);
             }
             for _ in 0..5 {
-                twin_dust(&mut twin, 40, 40);
-                twin_dust(&mut twin, 40, 40);
+                twin_dust6(&mut twin, 40, 40);
+                twin_dust6(&mut twin, 40, 40);
             }
             for _ in 0..4 {
                 let _t = twin.next_range(61, 64);
@@ -10123,8 +10131,8 @@ mod tests {
             twin_dust(&mut twin, 40, 40);
         }
         for _ in 0..4 {
-            twin_dust(&mut twin, 40, 40);
-            twin_dust(&mut twin, 40, 40);
+            twin_dust6(&mut twin, 40, 40);
+            twin_dust6(&mut twin, 40, 40);
         }
         for (i, (dx, dy)) in [(1.0, 1.0), (-1.0, -1.0)].iter().enumerate() {
             let t = twin.next_range(61, 64);
@@ -10162,8 +10170,8 @@ mod tests {
             twin_dust(&mut twin, 60, 60);
         }
         for _ in 0..5 {
-            twin_dust(&mut twin, 60, 60);
-            twin_dust(&mut twin, 60, 60);
+            twin_dust6(&mut twin, 60, 60);
+            twin_dust6(&mut twin, 60, 60);
         }
         for _ in 0..4 {
             let _t = twin.next_range(61, 64);
@@ -10198,8 +10206,8 @@ mod tests {
             twin_dust(&mut twin, 60, 60);
         }
         for _ in 0..5 {
-            twin_dust(&mut twin, 60, 60);
-            twin_dust(&mut twin, 60, 60);
+            twin_dust6(&mut twin, 60, 60);
+            twin_dust6(&mut twin, 60, 60);
         }
         for _ in 0..4 {
             let _t = twin.next_range(61, 64);
@@ -10235,8 +10243,8 @@ mod tests {
                 twin_dust(&mut twin, 60, 60);
             }
             for _ in 0..5 {
-                twin_dust(&mut twin, 60, 60);
-                twin_dust(&mut twin, 60, 60);
+                twin_dust6(&mut twin, 60, 60);
+                twin_dust6(&mut twin, 60, 60);
             }
             for _ in 0..4 {
                 let _t = twin.next_range(61, 64);
