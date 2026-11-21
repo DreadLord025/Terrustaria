@@ -246,12 +246,15 @@ pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
         // `tools/_d120_claim.md`).
         NpcKind::SantaClaus => santa(ctx),
         NpcKind::Truffle => truffle(ctx, &flags),
+        NpcKind::Steampunker => steampunker(ctx, &flags),
+        NpcKind::Cyborg => cyborg(ctx, &flags),
         // W4-d120 — the sibling lanes' kinds (OldMan 37 = d34, Pirate 229
         // = d37, SkeletonMerchant 453 = d40): the arms key on the VANILLA
         // type so they compile before the kinds merge and go live the
         // moment they do (`cs_id` keeps the vanilla ids on every lane).
         _ => match ty {
             37 => old_man(ctx),
+            229 => pirate(ctx),
             _ => String::new(),
         },
     }
@@ -1094,6 +1097,90 @@ fn truffle(ctx: &mut ChatContext, f: &Flags) -> String {
     }
 }
 
+/// 178 — the Steampunker (`NPC.cs:94342-94382`): `Next(5)` UP FRONT
+/// (`:94344`), the event text, the blood-moon `Next(3)` gate, the
+/// Cyborg/Pirate neighbour gates (each `Next(6)`), then the five fixed
+/// lines 242/243/244/248/249 (245/246/247 are the gate lines).
+fn steampunker(ctx: &mut ChatContext, f: &Flags) -> String {
+    let num9 = ctx.next(5); // `:94344` — the draw precedes every gate
+    if let Some(text) = special_event_text(ctx, "Steampunker", 178) {
+        return text;
+    }
+    if ctx.blood_moon && ctx.next(3) == 0 {
+        return crate::lang::dialog(245);
+    }
+    if f.cyborg && ctx.next(6) == 0 {
+        return crate::lang::dialog(246);
+    }
+    if f.pirate && ctx.next(6) == 0 {
+        return crate::lang::dialog(247);
+    }
+    match num9 {
+        0 => crate::lang::dialog(242),
+        1 => crate::lang::dialog(243),
+        2 => crate::lang::dialog(244),
+        3 => crate::lang::dialog(248),
+        _ => crate::lang::dialog(249),
+    }
+}
+
+/// 209 — the Cyborg (`NPC.cs:94457-94501`): the event text FIRST (no
+/// up-front draw), the Pirate/Steampunker neighbour gates (each
+/// `Next(6)`), then the mixed arm — `Next(5 + FindAll length)`, indices
+/// >= 5 answer the FORWARD `CyborgChatter` row, the low five the fixed
+/// lines 280/281/282/285/286 (283/284 are the neighbour lines).
+fn cyborg(ctx: &mut ChatContext, f: &Flags) -> String {
+    if let Some(text) = special_event_text(ctx, "Cyborg", 209) {
+        return text;
+    }
+    if f.pirate && ctx.next(6) == 0 {
+        return crate::lang::dialog(284);
+    }
+    if f.steampunker && ctx.next(6) == 0 {
+        return crate::lang::dialog(283);
+    }
+    // `:94473-94500` — the FindAll FORWARD row (`array4[num12 - 5]`).
+    let (n, row) = mixed_chatter(ctx, "CyborgChatter", 5);
+    if let Some(text) = row {
+        return text;
+    }
+    match n {
+        0 => crate::lang::dialog(280),
+        1 => crate::lang::dialog(281),
+        2 => crate::lang::dialog(282),
+        3 => crate::lang::dialog(285),
+        _ => crate::lang::dialog(286),
+    }
+}
+
+/// 229 — the Pirate (`NPC.cs:94569-94609`): the mixed draw fires FIRST
+/// (`:94571-94573` — `Next(6 + FindAll length)` BEFORE the event text),
+/// indices >= 6 answer the FORWARD `PirateChatter` row; below 6 the
+/// event text, then the `!Player.Male` `Next(5)` gate (dialog 276), then
+/// the six fixed lines 273/274/275/277/278/279 (276 is the male-gate
+/// line, NOT a switch arm). The kind rides the d37 lane; this arm keys
+/// on the vanilla type until it merges.
+fn pirate(ctx: &mut ChatContext) -> String {
+    let (num15, row) = mixed_chatter(ctx, "PirateChatter", 6);
+    if let Some(text) = row {
+        return text;
+    }
+    if let Some(text) = special_event_text(ctx, "Pirate", 229) {
+        return text;
+    }
+    if !ctx.player_male && ctx.next(5) == 0 {
+        return crate::lang::dialog(276);
+    }
+    match num15 {
+        0 => crate::lang::dialog(273),
+        1 => crate::lang::dialog(274),
+        2 => crate::lang::dialog(275),
+        3 => crate::lang::dialog(277),
+        4 => crate::lang::dialog(278),
+        _ => crate::lang::dialog(279),
+    }
+}
+
 // ---- the chat dialog's minimal renderer (task wire-npc-chat) -----------
 
 /// The chat dialog's screen box — `NPCChatPanel.Draw`'s rectangle
@@ -1871,5 +1958,114 @@ mod tests {
         );
         assert_eq!(log[0], 6, "the up-front draw precedes the event roll");
         assert_eq!(log[1], 3, "the 1/3 event roll");
+    }
+
+    // ---- W4-d120: the claimed kinds' arms (batch 2: 178/209/229) -------
+
+    /// `NPC.cs:94342-94382` — the Steampunker: `Next(5)` UP FRONT, the
+    /// blood-moon `Next(3)` gate, the Cyborg/Pirate `Next(6)` gates, the
+    /// five fixed lines 242/243/244/248/249.
+    #[test]
+    fn the_steampunker_rolls_five_up_front() {
+        init_lang();
+        let steam = npc(NpcKind::Steampunker);
+        let npcs = [steam];
+        let mut log = Vec::new();
+        let mut rng = census(&[3], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(248), "arm 3");
+        assert_eq!(log, vec![5], "no gates — no extra draws");
+        // The blood-moon gate: a passed Next(3) answers 245.
+        let mut log = Vec::new();
+        let mut rng = census(&[0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.blood_moon = true;
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(245));
+        assert_eq!(log, vec![5, 3], "the up-front draw + the blood gate");
+        // With a Cyborg next door (no blood moon): the gate's Next(6).
+        let npcs = [npc(NpcKind::Steampunker), npc(NpcKind::Cyborg)];
+        let mut log = Vec::new();
+        let mut rng = census(&[1, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(246));
+        assert_eq!(log, vec![5, 6], "the up-front draw + the Cyborg gate");
+    }
+
+    /// `NPC.cs:94457-94501` — the Cyborg: NO up-front draw, the
+    /// Pirate/Steampunker gates, then the FindAll-FORWARD mixed arm
+    /// (`Next(5 + count)`, index >= 5 answers `array4[index - 5]`).
+    #[test]
+    fn the_cyborg_mixed_arm_walks_findall_forward() {
+        init_lang();
+        let cyborg = npc(NpcKind::Cyborg);
+        let npcs = [cyborg];
+        let count = crate::lang::dialog_count("CyborgChatter.") as i32;
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![5], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            crate::lang::dialog_row("CyborgChatter.", 0),
+            "index 5 answers the FIRST FindAll row (forward)"
+        );
+        assert_eq!(log, vec![5 + count], "one mixed draw, no gates");
+        // A low index answers the fixed band (280/281/282/285/286).
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![3], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(285), "arm 3");
+        assert_eq!(log, vec![5 + count]);
+        // The Steampunker neighbour gate fires BEFORE the mixed draw.
+        let npcs = [npc(NpcKind::Cyborg), npc(NpcKind::Steampunker)];
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(283));
+        assert_eq!(log, vec![6], "the gate wins — no mixed draw");
+    }
+
+    /// `NPC.cs:94569-94609` — the Pirate: the mixed draw fires BEFORE the
+    /// event text; below 6 the event text, the `!Male` Next(5) gate, then
+    /// the fixed band (273/274/275/277/278/279 — 276 is the gate line).
+    /// The kind rides d37 — the arm is driven directly until it merges.
+    #[test]
+    fn the_pirate_draws_the_mixed_arm_before_the_event_text() {
+        init_lang();
+        let guide = npc(NpcKind::Guide); // any live shell
+        let npcs = [guide];
+        let count = crate::lang::dialog_count("PirateChatter.") as i32;
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![6], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.party_is_up = true; // the event would win if it rolled first
+        assert_eq!(
+            pirate(&mut ctx),
+            crate::lang::dialog_row("PirateChatter.", 0),
+            "index 6 answers the FIRST FindAll row — the event never rolls"
+        );
+        assert_eq!(log, vec![6 + count], "the mixed draw only");
+        // A low index with a passed event roll: the event text wins.
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![0, 0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.party_is_up = true;
+        assert_eq!(
+            pirate(&mut ctx),
+            crate::lang::select_dialog("PirateSpecialText.Party", 0)
+        );
+        assert_eq!(log[..2], [6 + count, 3], "mixed draw, then the 1/3 roll");
+        // A low index, no event, female player: the Next(5) gate.
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![2, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.player_male = false;
+        assert_eq!(pirate(&mut ctx), crate::lang::dialog(276));
+        assert_eq!(log, vec![6 + count, 5]);
+        // Male: no gate draw, the fixed band skips 276.
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![3], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(pirate(&mut ctx), crate::lang::dialog(277), "arm 3");
+        assert_eq!(log, vec![6 + count]);
     }
 }
