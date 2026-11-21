@@ -39320,3 +39320,54 @@ entry-by-entry and cross-checked against the port's own
 56=3, 57=6, 61=6, 62=5, 63/64=7, 67=8). 12 witness tests are WRITTEN, NOT
 RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (code-only
 mode).
+
+## W4-d44 FindFrame wire round — the d48 wave-C + f26 slice-5 gaps (2026-11-21, code-only mode)
+
+The wire-census (`docs/research/68-findframe-wire-status.md`) found two
+ported-but-UNWIRED blocks: the d48 `npc_findframe_c` 355-365 assignment
+gap (g6 dispatched it to g7, g7 never landed it) and the f26 slice-5
+`npc_findframe_extra5` 15. Both are now wired on this branch; the census
+§7 carries the full record.
+
+* **Modules verbatim**: `npc_findframe_c.rs` copied byte-exact from
+  `origin/task/W4-d48-findframe-high-1` (`3eb2ee08`, blob `71bf90d1`
+  hash-verified) and `npc_findframe_extra5.rs` from
+  `origin/task/W4-f26-findframe-extra-3` (`73150c56`, blob `273d6f3e`).
+  The machines, mappers and their 12 + 10 frame witnesses ride unchanged.
+* **The wave-C hook claims 355-365 ONLY**: `find_frame_kind_c_claimed`
+  is the module mapper minus the 366 scorpion — g7's
+  `find_frame_kind_high2` maps `366 | 367` to the ONE scorpion machine
+  (the C# groups the cases, `NPC.cs:76820-76850`), so a d44 claim on 366
+  would double-claim the id at the merge (census §3.5). The claim-set
+  witness pins all 11 ids + the 366/367/354 exclusions.
+* **The worm slope world-read bridge** (the census g7 bridge-pattern
+  precedent): the c-module's `FrameInput::slope` is CALLER-RESOLVED —
+  the C# probes `Framing.GetTileSafely((int)Center.X/16,
+  (int)position.Y/16)` and falls to the tile one row BELOW when that
+  tile's `slope() == 0` (`NPC.cs:72807-72815`). The port's
+  `Npc::find_frame_worm_slope` mirrors it over `world.tile`, treating
+  out-of-world as slope 0 (`GetTileSafely` returns `new Tile()` there,
+  `Framing.cs:426-439` — never null, so the probe always runs). The
+  int casts truncate toward zero like the C#'s `(int)`. The new
+  `find_frame_world` entry resolves the probe ONLY for the worm kind
+  and is wired at BOTH production `find_frame` call sites
+  (`npc.rs::update_rng`'s tail + `world_sim/npcs.rs`'s slot loop); the
+  world-free `find_frame` hook keeps slope 0 for the solo/test paths
+  (the g6 world-free lane convention). The five-field bridge copies
+  `local_ai[0]` back (the worm's -2f pin / slope lift).
+* **The extra-5 bridge is MINIMAL**: row/counter/sprite_dir both ways,
+  vx/vy/facing inputs only — no slice-5 arm reads wet/ai/aiAction or
+  writes rotation (the f26b census: 256's pulse gate lists 63/64/103/242
+  NOT 256), so the hook rides the world-free `find_frame` directly with
+  no world read. All 15 ids claim through the in-module lookup.
+* **Stream-inert**: no current kind's `cs_id` lands in 355-365 or
+  254-258/268-277 (swept over the `npc/data.rs` hand rows + the bestiary
+  net-id fallback incl. the loot-db slime constants); no arm in either
+  module draws `Main.rand`. Both ALL_KINDS inertness sweeps are pinned
+  as witnesses. The hooks cannot move a stream today; when the roster
+  waves add the kinds the machines are already 1:1 with the C#.
+* **Batching**: the claims landed in ≤5-kind commits (355-359 /
+  360-364 / 365; 254-258 / 268-272 / 273-277), the lane rule. 7 seam
+  witnesses in `npc.rs::w4_d44_wire_tests` + the modules' own 22 are
+  WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/graphify invoked**
+  (code-only mode).

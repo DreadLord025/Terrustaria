@@ -23,11 +23,11 @@ the **30** e13/e14-declared = **249 unclaimed**; f26/f27 took 15 each →
 | d45 | `d45-findframe-low-2` | `aea0aebd` | `npc_findframe_low2.rs` | 12 | YES (cs_id hook + `find_frame_wave_low2`, self-wired) |
 | d46 | `d46-findframe-mid-1` | `055fcf8c` | `npc_findframe_mid1.rs` | 12 | YES (cs_id hook + `find_frame_wave_mid1`, self-wired) |
 | d47 | `d47-findframe-mid-2` | `3d36f76c` | `npc_findframe_mid2.rs` | 12 | NO — wired by g6 (`2fe567f9`) |
-| d48 | `d48-findframe-high-1` | `3eb2ee08` | `npc_findframe_c.rs` | 12 | NO — **UNWIRED everywhere** (see §4) |
+| d48 | `d48-findframe-high-1` | `3eb2ee08` | `npc_findframe_c.rs` | 12 | NO on its own branch — **WIRED(d44)** on `task/W4-d44-findframe-low-1` (§7) |
 | d49 | `d49-findframe-high-2` | `dadfd828` | `npc_findframe_high2.rs` | 12 / 13 ids | NO — wired by g7 (`b6c9c05c`+`1b273055`) |
 | e13 | `e13-findframe-extra-1` | `9fbca588` | `npc_findframe_extra1.rs` | 15 | YES (self-wired) — **fully twinned**, keep-one drop candidate (§3) |
 | e14 | `e14-findframe-extra-2` | `63bc2c9f` | `npc_findframe_extra2.rs` | 15 | NO — wired by g6 (`b58d8d2f`, 15-id mapper) AND g7 (`fbee59b3`, trimmed 7-id mapper) |
-| f26 | `f26-findframe-extra-3` | `73150c56` | `npc_findframe_extra3.rs` (slice 3) + `npc_findframe_extra5.rs` (slice 5) | 15 + 15 | slice 3: NO — wired by g6 (`bf99e983`) AND g7 (`cb68161c`+`76b5252a`); slice 5: NO — **UNWIRED everywhere** |
+| f26 | `f26-findframe-extra-3` | `73150c56` | `npc_findframe_extra3.rs` (slice 3) + `npc_findframe_extra5.rs` (slice 5) | 15 + 15 | slice 3: NO — wired by g6 (`bf99e983`) AND g7 (`cb68161c`+`76b5252a`); slice 5: **WIRED(d44)** on `task/W4-d44-findframe-low-1` (§7) |
 | f27 | `f27-findframe-extra-4` | `ad79bbb7` | `npc_findframe_extra4.rs` | 15 | NO — wired by g7 (`ba1319a8`+`63b66a4e`) |
 | g6 | `g6-npc-findframe-wire-1` | `bf99e983` | wires low1 + mid2 + extra2 + extra3 | 54 ids / 4 hooks | the wire lane itself |
 | g7 | `g7-npc-findframe-wire-2` | `6ca3e668` | wires extra2(trim) + extra3 + extra4 + high2 | 50 ids / 4 hooks | the wire lane itself |
@@ -50,7 +50,8 @@ the g6/g7 ANALYSIS inertness proofs and their `ALL_KINDS` sweep witnesses).
 ## 2. Per-kind table
 
 Status legend: **WIRED(g6)** / **WIRED(g7)** = a pushed wire-lane hook claims
-the id; **branch-wired** = the port branch carries its own hook (d45/d46/e13);
+the id; **WIRED(d44)** = this branch's wire round (§7) claims it;
+**branch-wired** = the port branch carries its own hook (d45/d46/e13);
 **UNWIRED** = no pushed branch hooks the id. "twin" = the id is claimed by
 two modules whose arms were verified verbatim identical (keep-one at merge).
 
@@ -130,22 +131,22 @@ duplicate hook here would only create a merge conflict.
 Seam note: mid2's `local_ai0` is INPUT-only (the CorruptPenguin colour bank)
 — the g6 bridge feeds it in and does NOT copy it back.
 
-### d48 wave C — `npc_findframe_c` — **UNWIRED, the wire-round's first job**
+### d48 wave C — `npc_findframe_c` — **WIRED(d44)** (the wire round landed it)
 
 | id | kind | frames | ported-by | wired-by |
 | --- | --- | --- | --- | --- |
-| 355 | Firefly | 4 | d48 | **UNWIRED** |
-| 356 | Butterfly | 24 | d48 | **UNWIRED** |
-| 357 | Worm | 2 | d48 | **UNWIRED** |
-| 358 | LightningBug | 4 | d48 | **UNWIRED** |
-| 359 | Snail | 6 | d48 | **UNWIRED** |
-| 360 | GlowingSnail | 6 | d48 | **UNWIRED** |
-| 361 | Frog | 13 | d48 | **UNWIRED** |
-| 362 | Duck | 15 | d48 | **UNWIRED** |
-| 363 | Duck2 | 15 | d48 | **UNWIRED** |
-| 364 | DuckWhite | 15 | d48 | **UNWIRED** |
-| 365 | DuckWhite2 | 15 | d48 | **UNWIRED** |
-| 366 | ScorpionBlack | 4 | d48 + d49 twin | **UNWIRED as d48**; g7 high2 hook claims 366 → keep-one fold (§3) |
+| 355 | Firefly | 4 | d48 | WIRED(d44 `9e49ca89`) |
+| 356 | Butterfly | 24 | d48 | WIRED(d44 `9e49ca89`) |
+| 357 | Worm | 2 | d48 | WIRED(d44 `9e49ca89`) — slope world-read bridge |
+| 358 | LightningBug | 4 | d48 | WIRED(d44 `9e49ca89`) |
+| 359 | Snail | 6 | d48 | WIRED(d44 `9e49ca89`) |
+| 360 | GlowingSnail | 6 | d48 | WIRED(d44 `b3e3f33b`) |
+| 361 | Frog | 13 | d48 | WIRED(d44 `b3e3f33b`) |
+| 362 | Duck | 15 | d48 | WIRED(d44 `b3e3f33b`) |
+| 363 | Duck2 | 15 | d48 | WIRED(d44 `b3e3f33b`) |
+| 364 | DuckWhite | 15 | d48 | WIRED(d44 `b3e3f33b`) |
+| 365 | DuckWhite2 | 15 | d48 | WIRED(d44 `7c5f0cbd`) |
+| 366 | ScorpionBlack | 4 | d48 + d49 twin | g7 high2 hook claims 366 → keep-one fold (§3); the d44 claim helper EXCLUDES it |
 
 g6's dispatch census assigned d48 to g7 ("W4-g7 (second half)"), but g7's
 actual commits wired only extra2/extra3/extra4/high2 — `npc_findframe_c` is
@@ -157,6 +158,8 @@ the one Scorpion machine, `NPC.cs:76820-76850` grouped case). Special seam:
 the c-module's worm tile-slope probe (`FrameInput::slope`, the caller-resolved
 `Framing.GetTileSafely` read, `NPC.cs:72807-72825`) needs world access in the
 bridge — the reason g6 kept it out of its world-free lane.
+**DONE on this branch (§7)**: the module + hook + `find_frame_worm_slope`
+world-read bridge landed; 366 excluded from the claim.
 
 ### d49 wave D — `npc_findframe_high2` (hooked only by g7)
 
@@ -257,25 +260,25 @@ copies the state slot back, so either feed resolves.
 | 252 | Parrot | 5 | f27 | WIRED(g7) |
 | 253 | Reaper | 3 | f27 | WIRED(g7) |
 
-### f26 extra-5 slice 5 — `npc_findframe_extra5` — **UNWIRED everywhere**
+### f26 extra-5 slice 5 — `npc_findframe_extra5` — **WIRED(d44)** (the wire round landed it)
 
 | id | kind | frames | ported-by | wired-by |
 | --- | --- | --- | --- | --- |
-| 254 | ZombieMushroom | 3 | f26 slice5 | **UNWIRED** |
-| 255 | ZombieMushroomHat | 3 | f26 slice5 | **UNWIRED** |
-| 256 | FungoFish | 4 | f26 slice5 | **UNWIRED** |
-| 257 | AnomuraFungus | 5 | f26 slice5 | **UNWIRED** |
-| 258 | MushiLadybug | 6 | f26 slice5 | **UNWIRED** |
-| 268 | IchorSticker | 4 | f26 slice5 | **UNWIRED** |
-| 269 | RustyArmoredBonesAxe | 15 | f26 slice5 | **UNWIRED** |
-| 270 | RustyArmoredBonesFlail | 15 | f26 slice5 | **UNWIRED** |
-| 271 | RustyArmoredBonesSword | 15 | f26 slice5 | **UNWIRED** |
-| 272 | RustyArmoredBonesSwordNoArmor | 15 | f26 slice5 | **UNWIRED** |
-| 273 | BlueArmoredBones | 15 | f26 slice5 | **UNWIRED** |
-| 274 | BlueArmoredBonesMace | 15 | f26 slice5 | **UNWIRED** |
-| 275 | BlueArmoredBonesNoPants | 16 | f26 slice5 | **UNWIRED** |
-| 276 | BlueArmoredBonesSword | 15 | f26 slice5 | **UNWIRED** |
-| 277 | HellArmoredBones | 15 | f26 slice5 | **UNWIRED** |
+| 254 | ZombieMushroom | 3 | f26 slice5 | WIRED(d44 `709045f5`) |
+| 255 | ZombieMushroomHat | 3 | f26 slice5 | WIRED(d44 `709045f5`) |
+| 256 | FungoFish | 4 | f26 slice5 | WIRED(d44 `709045f5`) |
+| 257 | AnomuraFungus | 5 | f26 slice5 | WIRED(d44 `709045f5`) |
+| 258 | MushiLadybug | 6 | f26 slice5 | WIRED(d44 `709045f5`) |
+| 268 | IchorSticker | 4 | f26 slice5 | WIRED(d44 `d050833a`) |
+| 269 | RustyArmoredBonesAxe | 15 | f26 slice5 | WIRED(d44 `d050833a`) |
+| 270 | RustyArmoredBonesFlail | 15 | f26 slice5 | WIRED(d44 `d050833a`) |
+| 271 | RustyArmoredBonesSword | 15 | f26 slice5 | WIRED(d44 `d050833a`) |
+| 272 | RustyArmoredBonesSwordNoArmor | 15 | f26 slice5 | WIRED(d44 `d050833a`) |
+| 273 | BlueArmoredBones | 15 | f26 slice5 | WIRED(d44 `a6a62eb1`) |
+| 274 | BlueArmoredBonesMace | 15 | f26 slice5 | WIRED(d44 `a6a62eb1`) |
+| 275 | BlueArmoredBonesNoPants | 16 | f26 slice5 | WIRED(d44 `a6a62eb1`) |
+| 276 | BlueArmoredBonesSword | 15 | f26 slice5 | WIRED(d44 `a6a62eb1`) |
+| 277 | HellArmoredBones | 15 | f26 slice5 | WIRED(d44 `a6a62eb1`) |
 
 The module already ships its `find_frame_kind_extra5(i16)` lookup — the
 wire round only needs the module landing + registration + a cs_id hook +
@@ -283,6 +286,8 @@ bridge (the g6 extra3 shape). Note: the task brief's "f27 slice4 15 kinds
 not yet in g6/g7 hooks" is STALE — g7 wired all 15 extra-4 ids at `6ca3e668`
 (`ba1319a8` first 8 + `63b66a4e` widened to 15). The real second UNWIRED
 block is f26 **slice 5** above, not f27 slice 4.
+**DONE on this branch (§7)**: module + registration + hook + the minimal
+vx/vy/direction bridge landed (no ai/wet per the f26b census).
 
 ## 3. The g6-vs-g7 twin-hook union plan (first-match-wins identical)
 
@@ -342,22 +347,64 @@ behaviourally trivial:
   scorpion fold. This is the census's biggest find: the g6 dispatch table
   says "W4-g7 (second half)" but g7's own ANALYSIS opening line wrongly
   assumes g6 took d48 — the assignment fell between the two lanes.
+  **RESOLVED**: the d44 wire round (§7) landed the module + the
+  355–365-only hook + the worm slope world-read bridge on
+  `task/W4-d44-findframe-low-1`.
 
 ## 5. UNWIRED list — the wire-round worklist
 
 | block | module | ids | count | notes |
 | --- | --- | --- | --- | --- |
-| d48 wave C | `npc_findframe_c` | 355–365 | 11 | claim 355–365 ONLY (366 rides g7 high2); the worm `slope` input needs a world-read bridge |
-| f26 slice 5 | `npc_findframe_extra5` | 254–258, 268–277 | 15 | lookup already in-module; standard cs_id hook + bridge |
+| ~~d48 wave C~~ | `npc_findframe_c` | 355–365 | 11 | **DONE — WIRED(d44)** on this branch: module verbatim (`e94c7c5b`, blob 71bf90d1 ≡ 3eb2ee08) + cs_id hook claiming 355–365 ONLY (366 excluded, g7 fold) + the worm `slope` world-read bridge (`find_frame_worm_slope` + `find_frame_world` at both production call sites), batches `9e49ca89`/`b3e3f33b`/`7c5f0cbd` |
+| ~~f26 slice 5~~ | `npc_findframe_extra5` | 254–258, 268–277 | 15 | **DONE — WIRED(d44)** on this branch: module verbatim (`bd644fd5`, blob 273d6f3e ≡ 73150c56) + cs_id hook + minimal vx/vy/direction three-field bridge (no ai/wet/ai_action/rotation, no world read), batches `709045f5`/`d050833a`/`a6a62eb1` |
 | f26c slice 6 | (unpushed) | unknown (278/279/280 head per slice-5 note) | ? | in-flight; re-census after push |
 | f27b slice 7 | (unpushed) | unknown | ? | in-flight; re-census after push |
 | residual pool | — | the rest of the 219-kind unclaimed pool (204 after slice 5) | ~189+ | port rounds first, then wire |
 
-Already-wired-but-not-on-main reminder: EVERYTHING in §2 except the two
-UNWIRED blocks lives only on the pushed task branches — main `a725acb0`
-has none of the cs_id hooks. The merger lands g6 ∪ g7 (with §3's keep-one
-resolutions) + the d45/d46 self-wired branches, then one small wire round
-covers d48 + extra5 (+ the in-flight slices when they push).
+Already-wired-but-not-on-main reminder: EVERYTHING in §2 lives only on
+the pushed task branches — main `a725acb0` has none of the cs_id hooks.
+The merger lands g6 ∪ g7 (with §3's keep-one resolutions) + the d45/d46
+self-wired branches + THIS branch's two wire blocks (d48 + extra5);
+only the in-flight slices remain when they push.
+
+## 7. Wire-round addendum (2026-11-21, this branch)
+
+The two UNWIRED blocks above are now wired on
+`task/W4-d44-findframe-low-1` (code-only, no cargo/tests invoked):
+
+* **d48 wave C**: `npc_findframe_c.rs` copied byte-exact from
+  `3eb2ee08` (blob `71bf90d1` hash-verified). The hook
+  `find_frame_kind_c_claimed` = the module mapper minus ONLY the 366
+  scorpion (g7's `find_frame_kind_high2` owns `366 | 367`). The
+  five-field bridge `find_frame_wave_c` feeds wet/ai[2]/local_ai[2]
+  and copies local_ai[0] back (the worm −2f pin). The worm's slope
+  probe is CALLER-RESOLVED per the module contract
+  (`NPC.cs:72807-72825`): `find_frame_worm_slope` reads
+  `world.tile((int)Center.X/16, (int)position.Y/16)`, falls to the
+  tile BELOW on slope 0, and treats out-of-world as slope 0
+  (`Framing.GetTileSafely`'s `new Tile()`, `Framing.cs:426-439`).
+  `find_frame_world` (the world-read entry) is wired at BOTH
+  production `find_frame` call sites — `npc.rs::update_rng`'s tail
+  and `world_sim/npcs.rs`'s slot loop; the world-free `find_frame`
+  keeps slope 0 for the solo/test paths. Stream-inert: no current
+  kind's cs_id lands in 355–365 (hand rows + bestiary net ids swept),
+  no arm draws RNG.
+* **f26 slice 5**: `npc_findframe_extra5.rs` copied byte-exact from
+  `73150c56` (blob `273d6f3e` hash-verified). The hook rides the
+  in-module `find_frame_kind_extra5` lookup (all 15 ids). The bridge
+  `find_frame_wave_extra5` is MINIMAL: row/counter/sprite_dir both
+  ways, vx/vy/facing inputs only — no slice-5 arm reads wet/ai/
+  aiAction or writes rotation (the f26b census), so no world read is
+  needed and the hook sits in the world-free `find_frame` directly.
+  Stream-inert: no current kind's cs_id lands in 254–258/268–277, no
+  arm draws RNG.
+* **Witnesses**: 7 seam tests in `npc.rs::w4_d44_wire_tests` (both
+  inertness sweeps over ALL_KINDS, the 355–365-only claim set with
+  the 366 exclusion, the full 15-id extra5 claim set, both bridges'
+  field copy-backs with per-machine frame pins, the worm slope
+  probe's world reads incl. the below-tile fall-through and
+  out-of-world, the world-entry slope resolution) + the modules'
+  own 12 + 10 frame witnesses ride verbatim. Written not run.
 
 ## 6. Verification performed
 
