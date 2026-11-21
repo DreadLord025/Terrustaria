@@ -586,6 +586,16 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-c3 (the style-10 family): the CursedSkull's vanilla 34
+            // is the Merchant's port-local slot above (`to_u16`'s
+            // bijection guard), so it takes the next free port-local id
+            // 355 (354 is W4-c4's in-flight FlyingFish claim — the
+            // BlazingWheel 353 precedent); 289/694 keep their vanilla
+            // ids (both free). `NPC.cs:9150-9165` / `:12753-12768` /
+            // `:17737-17751`.
+            NpcKind::CursedSkull => 355,
+            NpcKind::GiantCursedSkull => 289,
+            NpcKind::WaterBoltMimic => 694,
         }
     }
 
@@ -916,6 +926,12 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-c3 (the style-10 family): 355 is the CursedSkull's
+            // port-local id (the vanilla 34 slot is the Merchant's);
+            // 289/694 keep their vanilla ids (`to_u16` above).
+            355 => NpcKind::CursedSkull,
+            289 => NpcKind::GiantCursedSkull,
+            694 => NpcKind::WaterBoltMimic,
             _ => return None,
         })
     }
@@ -1788,6 +1804,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-c3 (the style-10 family): 34/289 NPCHit2
+            // (`NPC.cs:9158`/`:12761`), 694 DD2_BookStaffCast
+            // (`:17745` — the `CreateTrackable("dd2_book_staff_cast", 3)`
+            // style, `SoundID.cs:1676`; the `_0` pin, the DD2 families'
+            // convention).
+            NpcKind::CursedSkull | NpcKind::GiantCursedSkull => "NPC_Hit_2",
+            NpcKind::WaterBoltMimic => "dd2_book_staff_cast_0",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2115,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-c3 (the style-10 family): 34/289 NPCDeath2
+            // (`NPC.cs:9159`/`:12762`), 694 NPCDeath52 (`:17746`).
+            NpcKind::CursedSkull | NpcKind::GiantCursedSkull => "NPC_Killed_2",
+            NpcKind::WaterBoltMimic => "NPC_Killed_52",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2162,6 +2189,12 @@ impl NpcKind {
             | NpcKind::Drippler
             | NpcKind::Poltergeist
             | NpcKind::DungeonSpirit
+            // W4-c3 (the style-10 family): 34/289/694 all write
+            // `noGravity = true` + kb 0.2 (`NPC.cs:9160-9163`/
+            // `:12763-12766`/`:17747-17750`).
+            | NpcKind::CursedSkull
+            | NpcKind::GiantCursedSkull
+            | NpcKind::WaterBoltMimic
             | NpcKind::Piranha
             | NpcKind::Shark => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
@@ -2451,6 +2484,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-c3 (the style-10 family): aiStyle 10 - NPC.cs:9154
+            // (the CursedSkull 34), :12757 (the GiantCursedSkull 289),
+            // :17741 (the WaterBoltMimic 694) - the census is exactly
+            // these three.
+            NpcKind::CursedSkull | NpcKind::GiantCursedSkull | NpcKind::WaterBoltMimic => 10,
         }
     }
 
@@ -2981,6 +3019,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-c3 (the style-10 family): 34 26x28 (`NPC.cs:9152-9153`),
+            // 289 44x44 (`:12755-12756`), 694 44x44 (`:17739-17740`).
+            NpcKind::CursedSkull => (26.0, 28.0),
+            NpcKind::GiantCursedSkull | NpcKind::WaterBoltMimic => (44.0, 44.0),
         }
     }
 
@@ -3057,6 +3099,13 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            // W4-c3 (the style-10 family): the vanilla `NPC.type` ids
+            // (`NPCID.cs:10745`/`:11255`/`:12065`). The CursedSkull's
+            // protocol id is port-local 355, so its C#-type consumers
+            // (the style-10 machine's type gates) read 34 here.
+            NpcKind::CursedSkull => 34,
+            NpcKind::GiantCursedSkull => 289,
+            NpcKind::WaterBoltMimic => 694,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3622,6 +3671,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-c3 (the style-10 family): 34 40 (`NPC.cs:9157`),
+            // 289 400 (`:12760`), 694 60 (`:17744`).
+            NpcKind::CursedSkull => 40,
+            NpcKind::GiantCursedSkull => 400,
+            NpcKind::WaterBoltMimic => 60,
         }
     }
 
@@ -3986,6 +4040,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-c3 (the style-10 family): 34 35 (`NPC.cs:9155`),
+            // 289 60 (`:12758`), 694 20 (`:17742`).
+            NpcKind::CursedSkull => 35,
+            NpcKind::GiantCursedSkull => 60,
+            NpcKind::WaterBoltMimic => 20,
         }
     }
 }

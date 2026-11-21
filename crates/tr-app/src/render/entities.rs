@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(STYLE10_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -926,7 +927,9 @@ fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
 /// chain overwrites it or adds `num46` for a dozen ids, and the
 /// `:23048` switch adds the last few. Only the ids the port models are
 /// listed; the rest of the switch (the DD2 support ring effects, the
-/// `694`-only offsets, the `469`/`357`/`467` ids) has no port kind.
+/// `469`/`357`/`467` ids) has no port kind. The Water Bolt Mimic's
+/// `case 694` Y terms ride here (W4-c3); its `num45` X term rides
+/// [`npc_anchor_nudge_x`] (the `:25511` X anchor).
 fn npc_anchor_nudge(n: &Npc) -> f32 {
     use NpcKind::*;
     let mut num46 = 0.0;
@@ -954,6 +957,24 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
         DD2GoblinT1 | DD2GoblinT2 => num46 = -2.0,
         // `:23106` — 688's `num46 += 10`.
         DD2GoblinT1 => num46 += 10.0,
+        // W4-c3 — `:23100-23114`'s `case 694`: the Water Bolt Mimic's
+        // `num46 -= 2`, plus the book-state adds (closed +16, wake-up the
+        // `(int)(16 * num48)` fade). `num48 = 1 - clamp(frame.Y / 40 / 17)`
+        // — the sheet's row height is 40 (`Main.npcFrameCount[694]` = 30),
+        // so `frame.Y / 40` is the row. The `num45` X term rides
+        // [`npc_anchor_nudge_x`].
+        WaterBoltMimic => {
+            num46 -= 2.0;
+            if n.ai[3] == 3.0 {
+                num46 += 16.0;
+            } else if n.ai[3] == 4.0 {
+                // `num48 = 1 - clamp(frame.Y / 40 / 17)`; the row height is
+                // 40, so `frame.Y / 40` is the row (`n.frame`). The C#'s
+                // `(int)(16f * num48)` truncates toward zero.
+                let num48 = 1.0 - (n.frame as f32 / 17.0).clamp(0.0, 1.0);
+                num46 += (16.0 * num48) as i32 as f32;
+            }
+        }
         // `:23077-23091` — the `num47` adds of the same switch.
         Plantera => num47 += 26.0,
         BrainOfCthulhu => num47 += 50.0 * n.scale,
@@ -986,6 +1007,27 @@ fn generic_anchor_shift_y(n: &Npc, h: f32, frame_h: f32) -> f32 {
     // etc.) — the step-up lift accumulator (`Npc::gfx_off_y`, zero for
     // every kind without a step-up writer, so a no-op elsewhere).
     (h - frame_h * n.scale) * 0.5 + 4.0 + npc_anchor_nudge(n) + n.gfx_off_y
+}
+
+/// W4-c3 — the C#'s `num45` X anchor term (`Main.cs:22991`, applied at
+/// `:25511`'s `position.X + ... + num45`). Only the Water Bolt Mimic
+/// (`case 694`, `:23100-23114`) writes it among the ported kinds:
+/// `direction`, plus the book-state adds (closed +4, wake-up the
+/// `(int)(4 * num48)` fade). Every other kind keeps 0.
+fn npc_anchor_nudge_x(n: &Npc) -> f32 {
+    if n.kind != NpcKind::WaterBoltMimic {
+        return 0.0;
+    }
+    let mut num45 = n.facing as f32;
+    if n.ai[3] == 3.0 {
+        num45 += 4.0;
+    } else if n.ai[3] == 4.0 {
+        // `num48 = 1 - clamp(frame.Y / 40 / 17)`; the row height is 40, so
+        // `frame.Y / 40` is the row (`n.frame`). `(int)(4f * num48)`.
+        let num48 = 1.0 - (n.frame as f32 / 17.0).clamp(0.0, 1.0);
+        num45 += (4.0 * num48) as i32 as f32;
+    }
+    num45
 }
 
 /// The generic NPC anchor (`Main.cs:25453-25514`) for a sheet-only draw:
@@ -1245,6 +1287,17 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+];
+
+/// W4-c3 (the style-10 family): the three kinds' own sheets
+/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`. The Cursed
+/// Skull's protocol id is port-local 355, but its DRAW sheet is its own
+/// NPC_34 (`texture_net_id` reads `net_id()` = the bestiary entry's 34).
+pub(crate) const STYLE10_SHEETS: &[u32] = &[
+    34,  // the Cursed Skull
+    289, // the Giant Cursed Skull
+    694, // the Water Bolt Mimic
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3170,6 +3223,25 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-c3 (the style-10 family): each kind draws its own sheet
+            // (`STYLE10_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[type]` (34 three frames,
+            // 289 six, 694 thirty; `Main.cs:67082-67153`) with the generic
+            // centred anchor — the pumpkin arm's shape. The C#'s
+            // `GetAlpha` overrides (34/289 white / (250,250,250,50),
+            // `NPC.cs:93609-93611` + `Main.cs:23120`; the 694 book-state
+            // white/lerp, `NPC.cs:93417-93427`) are the documented tint
+            // deviation (ANALYSIS "The style-10 family wiring") — the
+            // port's light-multiplied tint stands.
+            NpcKind::CursedSkull => {
+                pumpkin_moon_draw(assets.npc_sheet(34), npc_rows(34), n, w, h)
+            }
+            NpcKind::GiantCursedSkull => {
+                pumpkin_moon_draw(assets.npc_sheet(289), npc_rows(289), n, w, h)
+            }
+            NpcKind::WaterBoltMimic => {
+                pumpkin_moon_draw(assets.npc_sheet(694), npc_rows(694), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3194,7 +3266,9 @@ pub(crate) fn draw_npcs(
         } else {
             0.0
         };
-        let pos = [pos[0], pos[1] + anchor_shift];
+        // W4-c3 — the C#'s `num45` X term (`Main.cs:25511`): only the Water
+        // Bolt Mimic writes it (`npc_anchor_nudge_x`); every other kind 0.
+        let pos = [pos[0] + npc_anchor_nudge_x(n), pos[1] + anchor_shift];
         // `Main.DrawNPC` multiplies the light by `npc.color`; the slime
         // variants carry their `SetDefaults` colours (alpha included — the
         // premultiplied pipeline renders the translucency directly).
@@ -3319,6 +3393,13 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-c3 (the style-10 family): the aim rotation
+                    // (`NPC.cs:21750-21766`, the atan2 + the 694 sprite
+                    // flip) — the generic draw rotates every NPC by
+                    // `npc.rotation` (`Main.cs:26632`).
+                    | NpcKind::CursedSkull
+                    | NpcKind::GiantCursedSkull
+                    | NpcKind::WaterBoltMimic
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

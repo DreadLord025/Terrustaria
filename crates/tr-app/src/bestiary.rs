@@ -2171,6 +2171,35 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-c3 (the style-10 family): the three kinds' own entries
+    // (`BestiaryDatabaseNPCsPopulator.cs:1112`/`:1559`/`:1561` — the
+    // automated enemy registration, `AddEmptyEntries_CrittersAndEnemies_Automated`
+    // `:851-868`; none is in the Hide exclusions). The credit ids are the
+    // vanilla `NPCID.Search.GetName` rows (`NPCID.cs:10745`/`:11255`/`:12065`).
+    BestiaryEntryDef {
+        credit_id: "CursedSkull",
+        net_id: 34,
+        kind: NpcKind::CursedSkull,
+        variant: None,
+        quick_unlock: false,
+        name: "Cursed Skull",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantCursedSkull",
+        net_id: 289,
+        kind: NpcKind::GiantCursedSkull,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Cursed Skull",
+    },
+    BestiaryEntryDef {
+        credit_id: "WaterBoltMimic",
+        net_id: 694,
+        kind: NpcKind::WaterBoltMimic,
+        variant: None,
+        quick_unlock: false,
+        name: "Water Bolt Mimic",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

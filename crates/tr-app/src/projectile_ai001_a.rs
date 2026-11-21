@@ -10,7 +10,8 @@
 //! 14 MusketBall, 81 WoodenArrowHostile, 83 EyeLaser, 84 DeathLaser (the
 //! Probe's laser, S1-D-3-wire-destroyer), 98 TrapDart,
 //! 100 DestroyerLaser, 180 PirateArrow, 184 SuperDart, 248 FlowerPowPetal,
-//! 259 GolemEyeBeam, 270 Skull, 325 FlamingWood, 389 MiniRetinaLaser,
+//! 259 GolemEyeBeam, 270 Skull, 299 Shadowflames (W4-c3, the Giant Cursed
+//! Skull's bolt), 325 FlamingWood, 389 MiniRetinaLaser,
 //! 436 BrainScrambler, 438 RayGunner.
 //!
 //! C# structure preserved (the per-kind hooks above the flight, the shared
@@ -48,7 +49,7 @@ use tr_core::World;
 use crate::projectile::{
     Projectile, BRAIN_SCRAMBLER, DESTROYER_LASER, EYE_LASER, FLOWER_POW_PETAL, FLAMING_WOOD,
     FLAMING_ARROW_HOSTILE, GOLEM_EYE_BEAM, MINI_RETINA_LASER, MUSKET_BALL, PIRATE_ARROW,
-    PROBE_LASER, RAY_GUNNER, SKULL, TRAP_DART, TRAP_SUPERDART, WOODEN_ARROW_HOSTILE,
+    PROBE_LASER, RAY_GUNNER, SHADOWFLAMES, SKULL, TRAP_DART, TRAP_SUPERDART, WOODEN_ARROW_HOSTILE,
 };
 
 /// The slice-A kind set — slice B must take ids ≥ 449 disjointly
@@ -56,7 +57,7 @@ use crate::projectile::{
 /// C# `SetDefaults` gives it aiStyle **14** (`Projectile.cs:2717-2727`);
 /// its row carried aiStyle 1 until the S1-D-5/S1-D-4c data-row fix split it
 /// onto its own style-14 arm.
-pub(crate) const SLICE_A_KINDS: [u16; 16] = [
+pub(crate) const SLICE_A_KINDS: [u16; 17] = [
     MUSKET_BALL,          // 14
     WOODEN_ARROW_HOSTILE, // 81
     FLAMING_ARROW_HOSTILE, // 82
@@ -69,6 +70,7 @@ pub(crate) const SLICE_A_KINDS: [u16; 16] = [
     FLOWER_POW_PETAL,     // 248
     GOLEM_EYE_BEAM,       // 259
     SKULL,                // 270
+    SHADOWFLAMES,         // 299 (W4-c3: the Giant Cursed Skull's bolt)
     FLAMING_WOOD,         // 325
     MINI_RETINA_LASER,    // 389
     BRAIN_SCRAMBLER,      // 436
@@ -195,6 +197,22 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
         SKULL => skull(p, world, owner),
+        // W4-c3 — `Projectile.cs:56631-56656` — the Shadowflames bolt's
+        // `localAI[0]` counter: at 6 the Item8 cast cue fires (the 40-dust
+        // burst is the documented cosmetic skip), then the counter
+        // increments; past 6 the per-tick 3-dust trail is skipped too. The
+        // bolt is on the `flag3 = false` skip list (`:55981`) — the counter
+        // rests, no gravity; the default rotation tail + the +16 clamp +
+        // the free move (tileCollide false) ride `finish`.
+        SHADOWFLAMES => {
+            if p.local_ai[0] == 6.0 {
+                // `:56635` — `SoundEngine.PlaySound(SoundID.Item8,
+                // base.position)` (the S1-E-21h cue seam).
+                p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+            }
+            p.local_ai[0] += 1.0;
+            finish(p, world, false, Gravity::Rest, Rot::Default);
+        }
         FLAMING_WOOD => {
             // `:55164-55196` — `alpha -= 100` clamp 0; the light plot
             // (`:55171`) and the two dust rolls (`:55175-55189`, the
@@ -790,5 +808,46 @@ mod tests {
              row's extraUpdates = 1)"
         );
         assert!(!handles(SAUCER_LASER), "the kind sets are disjoint");
+    }
+
+    /// W4-c3 — the Shadowflames bolt (299): the `SetDefaults` row
+    /// (`Projectile.cs:3893-3905`) and the `AI_001` arm
+    /// (`Projectile.cs:56631-56656`). The bolt rests its flight counter
+    /// (`flag3 = false`, `:55981`), flies straight (no gravity), and its
+    /// `localAI[0]` counter fires the Item8 cue exactly once at 6. The
+    /// on-hit Cursed debuff rides `damage_player` (the `StatusPlayer`
+    /// `:12280-12283` arm). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c3_the_shadowflames_bolt_row_and_arm() {
+        // The row: 6x6, aiStyle 1, penetrate -1, extraUpdates 2,
+        // tileCollide false, alpha 255.
+        let d = proj_data(SHADOWFLAMES).expect("the 299 row");
+        assert_eq!((d.w, d.h), (6.0, 6.0), "Projectile.cs:3895-3896");
+        assert_eq!(d.ai_style, 1, "Projectile.cs:3897");
+        assert_eq!(d.penetrate, -1, "Projectile.cs:3900");
+        assert_eq!(d.extra_updates, 2, "Projectile.cs:3901");
+        assert!(!d.tile_collide, "Projectile.cs:3904");
+        assert_eq!(d.alpha, 255, "Projectile.cs:3899");
+        assert!(d.magic, "Projectile.cs:3902");
+        assert!(d.ignore_water, "Projectile.cs:3903");
+        assert!(handles(SHADOWFLAMES), "the slice-A gate claims 299");
+        // The arm: the counter rests, the flight is straight, the Item8 cue
+        // fires once at localAI[0] == 6 (the 7th tick).
+        let mut p = proj(SHADOWFLAMES, 6.0, 0.0);
+        let w = world();
+        let mut cues = 0;
+        for tick in 0..10 {
+            p.wants_sound = None;
+            ai001_slice_a(&mut p, &w, None);
+            if p.wants_sound.is_some() {
+                cues += 1;
+                assert_eq!(tick, 6, "the cue fires on the 7th tick (localAI[0] == 6)");
+                assert_eq!(p.wants_sound, Some((2, 8, p.pos.x, p.pos.y, 0.0)));
+            }
+        }
+        assert_eq!(cues, 1, "one Item8 cue per life (:56633-56635)");
+        assert_eq!(p.ai[0], 0.0, "the flag3 counter rests (:55981)");
+        assert_eq!(p.vel.y, 0.0, "no gravity — straight flight");
+        assert_eq!(p.local_ai[0], 10.0, "the counter increments every tick");
     }
 }
