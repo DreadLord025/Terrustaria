@@ -1392,6 +1392,79 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
             }
+            // W4-e1 — the Player.cs dust sites' SECOND batch (the ledger
+            // docs/research/64-dust-sites-player-2.md). Each snapshot was
+            // taken at the C# read moment inside the tick; the pure emitters
+            // replay on the `UpdatePlayers` stream in C# site order, using the
+            // SAME disjoint-field borrow pattern as the sticky drain above
+            // (`app.dust` / `app.rngs` / `&spawn_ctx` / `&app.world` while `p`
+            // is live). Batch 1: the eye trail (12569), glass slipper
+            // (14291/14300), Solar gain burst (16389), teleport visuals
+            // (16623/16633/16652), regen sparkle/crimson/full-mana
+            // (19273/19296/19555).
+            if let Some(b) = p.take_yoraiz_eye_dust() {
+                crate::player_dust2::yoraiz_eye_trail(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            for b in p.take_glass_slipper_dust() {
+                crate::player_dust2::glass_slipper_sparkles(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_solar_burst_dust() {
+                crate::player_dust2::solar_shield_burst(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_teleport_visuals_dust() {
+                crate::player_dust2::teleport_visuals(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_shiny_sparkle_dust() {
+                crate::player_dust2::shiny_stone_sparkle(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_crimson_heal_dust() {
+                crate::player_dust2::crimson_heal_bursts(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_mana_full_dust() {
+                crate::player_dust2::mana_full_burst(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)

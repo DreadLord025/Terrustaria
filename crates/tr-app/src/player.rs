@@ -1355,6 +1355,48 @@ pub struct Player {
     /// mana-star pickups `:35071`/`:35087` — the S1-P-i52 lane owns those);
     /// drinking a mana potion grants NO ManaHeat, so the field stays 1.
     pub mana_heat: f32,
+    /// W4-e1 — `Player.yoraiz0rEye` (`Player.cs:1893`): the Yoraiz0r's Spell
+    /// (3580) vanity grant `itemSlot - 2` (`UpdateVisibleAccessory`
+    /// `:36969-36972`); ResetEffects zeroes it (`:18402`). The eye-trail
+    /// emitter (`Yoraiz0rEye` `:12446-12577`, site 12569) reads it at
+    /// `:25487`. The port grants from the functional accessory pass (the
+    /// vanity column's 3580 exception is `equip_swap.rs`'s — the grant here
+    /// covers the functional slot; ANALYSIS).
+    pub yoraiz0r_eye: i32,
+    /// W4-e1 — `Player.shadowDirection[1]` (`Player.cs:16583-16611`
+    /// `UpdateSocialShadow`): the PREVIOUS tick's facing — the eye trail's
+    /// old-point anchor (`:12495`). The full 3-slot shadow chain is a draw
+    /// seam; only [1] is read by a ported consumer.
+    pub shadow_direction_1: i32,
+    /// W4-e1 — `Player.shinyStone` (`Player.cs:14769`, the Shiny Stone 3337
+    /// grant): the regen sparkle gate (`UpdateLifeRegen` `:18945-18948`,
+    /// site 19273). ResetEffects clears; the accessory row re-arms.
+    pub shiny_stone: bool,
+    /// W4-e1 — `Player.teleportTime`/`teleportStyle` (`Player.cs:37490-37491`
+    /// `Teleport`'s tail): the teleport-visuals countdown + style
+    /// (`UpdateTeleportVisuals` `:16613-16670`, sites 16623/16633/16652).
+    pub teleport_time: f32,
+    pub teleport_style_id: i32,
+    /// W4-e1 — `Player.lastPortalColorIndex` (`Player.cs:37477-37480`,
+    /// style 4): the portal colour pick (`PortalHelper.GetPortalColor`).
+    pub last_portal_color_index: i32,
+    /// W4-e1 — `Player.setSolar`/`solarCounter`/`solarShields`
+    /// (`Player.cs:16366-16402` `ApplySetBonus_Solar`, site 16389): the
+    /// Solar Flare set's shield-charge machine. `set_solar` grants from the
+    /// armor-set row (2763/2764/2765); ResetEffects clears the shields
+    /// (`:18505`) and the set flag (`:25620` region).
+    pub set_solar: bool,
+    pub solar_counter: i32,
+    pub solar_shields: i32,
+    /// W4-e1 — `Player.setVortex` (`Player.cs:2818`, `Benefits.Vortex`
+    /// `ArmorSetBonuses.cs:42-45`): the Vortex stealth machine's gate
+    /// (`:25826-25894`, dust sites 25877/25887). ResetEffects clears; the
+    /// armor-set row re-arms.
+    pub set_vortex: bool,
+    /// W4-e1 — `Player.vortexStealthActive` (`Player.cs:2852`): the Vortex
+    /// stealth toggle (`KeyDoubleTap` `:56775-56778`). The stealth machine
+    /// (`:25829-25871`) ramps `stealth` down while active, up otherwise.
+    pub vortex_stealth_active: bool,
     /// `Player.pStone` (`Player.cs:2404`): the Philosopher's Stone family —
     /// 535 (`:15574-15577`), Charm of Myths 860 (`:15150-15153`), Catalyst
     /// Band 6185 (`:14615-14620`). `ResetEffects` clears (`:18720`), the
@@ -1955,6 +1997,20 @@ pub struct Player {
     /// the RNG order is unchanged (S1-A-10). The type-153 `velocity *= 0.1`
     /// and `noGravity` post-arms ride the drain too.
     pending_sticky_dust: Vec<StickyDust>,
+    /// W4-e1 — the second-batch dust queues (`player_dust2.rs`, the ledger
+    /// docs/research/64-dust-sites-player-2.md). Each is a snapshot taken at
+    /// the C# read moment; the world_sim seam drains them on the
+    /// `UpdatePlayers` stream in C# site order (the sticky-dust pattern —
+    /// disjoint `app.dust`/`app.rngs`/`&spawn_ctx`/`&app.world` borrows while
+    /// `p` is live). One Option per exclusive site; the multi-fire sites
+    /// (glass slipper per equipped slot, crimson per heal chunk) queue Vecs.
+    pending_yoraiz_eye_dust: Option<crate::player_dust2::YoraizEyeDust>,
+    pending_glass_slipper_dust: Vec<crate::player_dust2::GlassSlipperDust>,
+    pending_solar_burst_dust: Option<crate::player_dust2::SolarBurstDust>,
+    pending_teleport_visuals_dust: Option<crate::player_dust2::TeleportVisualsDust>,
+    pending_shiny_sparkle_dust: Option<crate::player_dust2::ShinySparkleDust>,
+    pending_crimson_heal_dust: Option<crate::player_dust2::CrimsonHealDust>,
+    pending_mana_full_dust: Option<crate::player_dust2::ManaFullDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2735,6 +2791,17 @@ impl Player {
             mana_sick: false,
             mana_sick_reduction: 0.0,
             mana_heat: 1.0,
+            yoraiz0r_eye: 0,
+            shadow_direction_1: 1,
+            shiny_stone: false,
+            teleport_time: 0.0,
+            teleport_style_id: 0,
+            last_portal_color_index: 0,
+            set_solar: false,
+            solar_counter: 0,
+            solar_shields: 0,
+            set_vortex: false,
+            vortex_stealth_active: false,
             p_stone: false,
             p_stone_prev: false,
             mana_max_base: 20,
@@ -2885,6 +2952,13 @@ impl Player {
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
+            pending_yoraiz_eye_dust: None,
+            pending_glass_slipper_dust: Vec::new(),
+            pending_solar_burst_dust: None,
+            pending_teleport_visuals_dust: None,
+            pending_shiny_sparkle_dust: None,
+            pending_crimson_heal_dust: None,
+            pending_mana_full_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3472,6 +3546,31 @@ impl Player {
     /// owns `Main.dust`.
     pub(crate) fn take_sticky_dust(&mut self) -> Vec<StickyDust> {
         std::mem::take(&mut self.pending_sticky_dust)
+    }
+
+    /// W4-e1 — the second-batch dust takes (`player_dust2.rs`). The caller
+    /// owns `Main.dust` + the `UpdatePlayers` stream; each drains through the
+    /// matching pure emitter in C# site order.
+    pub(crate) fn take_yoraiz_eye_dust(&mut self) -> Option<crate::player_dust2::YoraizEyeDust> {
+        self.pending_yoraiz_eye_dust.take()
+    }
+    pub(crate) fn take_glass_slipper_dust(&mut self) -> Vec<crate::player_dust2::GlassSlipperDust> {
+        std::mem::take(&mut self.pending_glass_slipper_dust)
+    }
+    pub(crate) fn take_solar_burst_dust(&mut self) -> Option<crate::player_dust2::SolarBurstDust> {
+        self.pending_solar_burst_dust.take()
+    }
+    pub(crate) fn take_teleport_visuals_dust(&mut self) -> Option<crate::player_dust2::TeleportVisualsDust> {
+        self.pending_teleport_visuals_dust.take()
+    }
+    pub(crate) fn take_shiny_sparkle_dust(&mut self) -> Option<crate::player_dust2::ShinySparkleDust> {
+        self.pending_shiny_sparkle_dust.take()
+    }
+    pub(crate) fn take_crimson_heal_dust(&mut self) -> Option<crate::player_dust2::CrimsonHealDust> {
+        self.pending_crimson_heal_dust.take()
+    }
+    pub(crate) fn take_mana_full_dust(&mut self) -> Option<crate::player_dust2::ManaFullDust> {
+        self.pending_mana_full_dust.take()
     }
 
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
@@ -5236,6 +5335,15 @@ impl Player {
                 self.empress_brooch = true;
                 self.move_speed += 0.075;
             }
+            // W4-e1 — the Shiny Stone 3337 (`Player.cs:14767-14770`): the
+            // standing-still regen boost flag; the sparkle gate
+            // (`UpdateLifeRegen` `:18945`, site 19273) reads it.
+            3337 => self.shiny_stone = true,
+            // W4-e1 — Yoraiz0r's Spell 3580 (`Player.cs:36969-36972`,
+            // `UpdateVisibleAccessory`): `yoraiz0rEye = itemSlot - 2`. The
+            // functional-slot grant covers the common equip; the vanity
+            // column's 3580 exception is `equip_swap.rs`'s (ANALYSIS).
+            3580 => self.yoraiz0r_eye = _item_slot as i32 - 2,
             // The merman shells (`:15134-15143` Moon Charm 861,
             // `:15402-15410` Celestial Shell 3110, `:15566-15573` Neptune's
             // Shell 497): `accMerman` arms the wet transformation the flight
@@ -6727,6 +6835,46 @@ impl Player {
                 _ => {}
             }
         }
+        // W4-e1 — `UpdateBuffs`' Solar shield arm (`Player.cs:10373-10407`):
+        // the live 170-172 buff re-affirms its 5-tick timer and derives
+        // `solarShields = 1 + buffType - 170`; a tier change clears the old
+        // slots, and `!setSolar` drops the shield + buff. The C# walks the
+        // buff slots with a `j--` rescan after each DelBuff compaction — the
+        // port re-reads the slot after a delete to match.
+        {
+            let mut j = 0usize;
+            while j < crate::buffs::MAX_BUFFS {
+                let bt = self.buffs.buff_type[j];
+                if bt >= 170 && bt <= 172 && self.buffs.buff_time[j] > 0 {
+                    self.buffs.buff_time[j] = 5;
+                    let num9 = 1 + bt - 170;
+                    if self.solar_shields > 0 && self.solar_shields != num9 {
+                        if self.solar_shields > num9 {
+                            self.buffs.del_buff(j);
+                            j = j.saturating_sub(1);
+                        } else {
+                            let mut n = 0usize;
+                            while n < crate::buffs::MAX_BUFFS {
+                                if self.buffs.buff_type[n] >= 170
+                                    && self.buffs.buff_type[n] <= 170 + num9 - 1
+                                {
+                                    self.buffs.del_buff(n);
+                                    n = n.saturating_sub(1);
+                                }
+                                n += 1;
+                            }
+                        }
+                    }
+                    self.solar_shields = num9;
+                    if !self.set_solar {
+                        self.solar_shields = 0;
+                        self.buffs.del_buff(j);
+                        j = j.saturating_sub(1);
+                    }
+                }
+                j += 1;
+            }
+        }
         if self.slow {
             self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(0.5);
         }
@@ -6739,6 +6887,18 @@ impl Player {
             self.vx = 0.0;
             self.vy = if self.vy != 0.0 { 1e-6 } else { 0.0 };
         }
+        // W4-e1 — `Player.Update`'s pre-ResetEffects visual machines:
+        // `Yoraiz0rEye` (`:25487-25490`, site 12569) reads LAST tick's
+        // `yoraiz0rEye` grant (ResetEffects `:25491` clears it below);
+        // `UpdateSocialShadow` (`:24691`) shifts the facing history the eye
+        // trail's old anchor reads; `UpdateTeleportVisuals` (`:24692`, sites
+        // 16623/16633/16652) ticks the teleport countdown. All three queue
+        // dust for the drain (the `UpdatePlayers` stream).
+        if self.yoraiz0r_eye > 0 {
+            self.yoraiz0r_eye();
+        }
+        self.update_social_shadow();
+        self.update_teleport_visuals();
         // `ResetEffects`' equipment-flag clears (`Player.cs:18348-18788`) and
         // the accessory grant pass - `UpdateEquips` -> `ApplyEquipFunctional`
         // (`Player.cs:12892`/`:14368`, the slots 3..10 loop :12946-12952):
@@ -6757,6 +6917,15 @@ impl Player {
         self.desert_boots = false;
         self.rocket_boots = 0;
         self.no_knockback = false;
+        // W4-e1 — `ResetEffects`' second-batch dust-host clears: `shinyStone`
+        // (`:18454`), `solarShields` (`:18505`), `yoraiz0rEye` (`:18402`),
+        // `setSolar` (`:25620`, the post-UpdateBuffs block). The equip /
+        // armor-set / buff passes below re-arm them per tick.
+        self.shiny_stone = false;
+        self.solar_shields = 0;
+        self.yoraiz0r_eye = 0;
+        self.set_solar = false;
+        self.set_vortex = false;
         // `:18777`: `hasPaladinShield = false` — the wave-C pass
         // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
         // clear lives in the ResetEffects block above (before the buff
@@ -7727,6 +7896,34 @@ impl Player {
             self.swim_time -= 1;
             if !self.wet {
                 self.swim_time = 0;
+            }
+        }
+        // W4-e1 — `PlayerFrame` → `UpdateVisibleAccessories` (`:35768-35770`,
+        // `:36753-36803`): the visible accessory slots 3..10 run
+        // `UpdateVisibleAccessory`, whose Glass Slipper (5077) arm calls
+        // `DoGlassSlipperSparkles` (`:14242`/`:14388`, sites 14291/14300).
+        // One snapshot per equipped slipper; the drain rolls both gates per
+        // snapshot on the `UpdatePlayers` stream. The `hideVisibleAccessory`
+        // gate (`:36789`) and the unlock gate (`:36756`) match the C#.
+        if !self.dead {
+            for slot in 3..10 {
+                if !self.is_item_slot_unlocked_and_usable(slot)
+                    || self.hide_visible_accessory[slot]
+                {
+                    continue;
+                }
+                if self.equipped[slot] == 5077 {
+                    let (cx, cy) = self.center();
+                    self.pending_glass_slipper_dust.push(
+                        crate::player_dust2::GlassSlipperDust {
+                            cx,
+                            cy,
+                            facing: self.facing,
+                            // `CanSpawnWalkingEffects` (`:35750-35753`).
+                            walking: self.vx.abs() + self.vy.abs() > 1.0,
+                        },
+                    );
+                }
             }
         }
         // `:36148-36240`: `flag7` — the mount owns the leg frames unless it is
@@ -9441,6 +9638,190 @@ impl Player {
         }
     }
 
+    /// W4-e1 — `Player.UpdateSocialShadow` (`Player.cs:16583-16611`): the
+    /// 3-slot facing history. Only `shadowDirection[1]` (the PREVIOUS tick's
+    /// facing) has a ported consumer — the Yoraiz0r eye trail's old-point
+    /// anchor (`:12495`). The full pos/rotation/origin shadow chain is a draw
+    /// seam; the facing shift is ported verbatim (`:16585-16589`).
+    fn update_social_shadow(&mut self) {
+        // `for (num = 2; num > 0; num--) shadowDirection[num] =
+        // shadowDirection[num-1]` — [1] takes the old [0]; [0] takes facing.
+        // The port keeps only [1] (the [0] slot is the live facing).
+        self.shadow_direction_1 = self.facing;
+    }
+
+    /// W4-e1 — `Player.Yoraiz0rEye` (`Player.cs:12446-12577`, site 12569):
+    /// the eye-trail geometry at the `:25487` read moment. The scale switch
+    /// (`:12527-12549`) picks `num4`; case 1 returns (no trail). The light
+    /// half (`:12550-12561`, `PlotTileLine`) is the lighting lane's — no
+    /// `Main.rand`, skipped. The trail dust queues for the drain.
+    fn yoraiz0r_eye(&mut self) {
+        let Some(scale) = crate::player_dust2::yoraiz_eye_scale(self.yoraiz0r_eye) else {
+            return; // `:12529-12530` — case 1 returns.
+        };
+        // `:12448-12457` — the headgear offset (X is 0 for every row,
+        // `Main.cs:66638-66660`), the mounted-center lift, the sitting offset.
+        // The port's `body_frame` is the ROW index (the C# `bodyFrame.Y / 56`).
+        let row = self.body_frame as usize;
+        let headgear_y = offsets_player_headgear_y(row);
+        let (mcx, mcy) = self.mounted_center();
+        let (cx, cy) = self.center();
+        let mut pos = Vec2::new(
+            (self.width as i32 / 2) as f32,
+            (self.height as i32 / 2) as f32 + headgear_y,
+        ) + Vec2::new(mcx - cx, mcy - cy);
+        pos += Vec2::new(self.seat_pos_offset.0, self.seat_pos_offset.1 + self.seat_y_offset as f32);
+        // `:12458-12465` — the face-19 / head-276 nudges. The port has no
+        // face/head slot fields (the vanity draw lane), so both fold away.
+        // `:12466-12492` — the mount head offsets.
+        if self.mount.is_active() {
+            match self.mount.kind() {
+                52 => {
+                    pos.x += 14.0 * self.facing as f32;
+                    pos.y -= 2.0;
+                }
+                54 => {
+                    pos = self.apply_head_offset_from_mount(pos);
+                    pos.x -= 14.0 * self.facing as f32;
+                }
+                56 => {
+                    pos = self.apply_head_offset_from_mount(pos);
+                    pos.x += 6.0 * self.facing as f32;
+                    pos.y -= 10.0;
+                }
+                55 => {
+                    pos = self.apply_head_offset_from_mount(pos);
+                    pos.y -= 8.0;
+                }
+                61 => {
+                    pos.x -= 2.0 * self.facing as f32;
+                    pos.y += 8.0;
+                }
+                _ => {}
+            }
+        }
+        // `:12493-12495` — the eye anchor + the shadow-direction old anchor.
+        let y = -11.5;
+        let facing = self.facing as f32;
+        let mut vector2 = Vec2::new(
+            3.0 * facing - if self.facing == 1 { 1.0 } else { 0.0 },
+            y,
+        ) + Vec2::new(0.0, self.gfx_off_y) + pos;
+        let mut vector3 = Vec2::new(
+            3.0 * self.shadow_direction_1 as f32 - if self.facing == 1 { 1.0 } else { 0.0 },
+            y,
+        ) + pos;
+        // `:12496-12511` — the track-rider lean + the sleeping bed offset.
+        let mut zero = Vec2::ZERO;
+        let track_rider = self.mount.is_active()
+            && self.mount.data().is_some_and(|d| d.minecart || d.can_ride_minecart_tracks);
+        if track_rider {
+            let mut num2 = self.vx.signum() as i32;
+            if num2 == 0 {
+                num2 = self.facing;
+            }
+            let t = self.full_rotation / (std::f32::consts::PI / 4.0);
+            // `MathHelper.Lerp(a,b,t) = a + (b-a)*t` (XNA).
+            let mut zero2 = Vec2::new(0.0 + (-8.0 - 0.0) * t, 0.0 + (2.0 - 0.0) * t.abs());
+            zero2 = crate::player_dust2::rotate_by(zero2, self.full_rotation as f64);
+            if num2 == self.full_rotation.signum() as i32 {
+                zero2 *= 1.0 + (0.6 - 1.0) * t.abs();
+            }
+            zero += zero2;
+        }
+        // The sleeping `visualOffsetOfBedBase` (`:12512-12515`) is the bed
+        // draw lane's — the port's sleep is a pose flag (no offset), folds 0.
+        // `:12516-12520` — the full-rotation pivot.
+        if self.full_rotation != 0.0 {
+            let origin = Vec2::new(self.full_rotation_origin.0, self.full_rotation_origin.1);
+            vector2 = crate::player_dust2::rotate_about(vector2, self.full_rotation as f64, origin);
+            vector3 = crate::player_dust2::rotate_about(vector3, self.full_rotation as f64, origin);
+        }
+        // `:12522-12525` — the endpoints (num3 = 0, the Y half-lift is 0).
+        let new_pt = Vec2::new(self.x, self.y) + vector2 + zero;
+        let old_pt = Vec2::new(self.old_x, self.old_y) + vector3 + zero;
+        self.pending_yoraiz_eye_dust = Some(crate::player_dust2::YoraizEyeDust {
+            new_pt,
+            old_pt,
+            cx,
+            cy,
+            scale,
+        });
+    }
+
+    /// W4-e1 — `Player.UpdateTeleportVisuals` (`Player.cs:16613-16670`, sites
+    /// 16623/16633/16652): the per-tick teleport countdown. The time
+    /// decrements + style-2/3 pin run here (the C# order); the gate draw +
+    /// spawn queue for the drain. Style 9 (pylon) queues the gate draw only.
+    fn update_teleport_visuals(&mut self) {
+        if !(self.teleport_time > 0.0) {
+            return;
+        }
+        // `:16639-16646` — styles 2/3 pin the time to 0.005 (no dust).
+        if self.teleport_style_id == 2 || self.teleport_style_id == 3 {
+            self.teleport_time = 0.005;
+        } else if self.teleport_style_id == 4 {
+            // `:16649` — style 4 decays 0.02 BEFORE the gate.
+            self.teleport_time -= 0.02;
+        }
+        // The gate + spawn queue (styles 0/1/4/9); the drain rolls the gate.
+        if matches!(self.teleport_style_id, 0 | 1 | 4 | 9) {
+            self.pending_teleport_visuals_dust =
+                Some(crate::player_dust2::TeleportVisualsDust {
+                    style: self.teleport_style_id,
+                    time: self.teleport_time,
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    portal_color_index: self.last_portal_color_index,
+                });
+        }
+        // `:16669` — the universal tail decay.
+        self.teleport_time -= 0.005;
+    }
+
+    /// W4-e1 — `Player.ApplySetBonus_Solar` (`Player.cs:16366-16439`, site
+    /// 16389): the Solar Flare shield-charge machine. `setSolar` grants from
+    /// the armor-set row; the 180-tick counter charges a shield (buff
+    /// 170+shields, 5 ticks) and queues the 16-dust gain burst. The shield
+    /// POSITION orbit (`:16403-16428`) is a draw seam (no rand); the dashType
+    /// grant (`:16434-16438`) rides the live shields.
+    pub(crate) fn apply_set_bonus_solar(&mut self) {
+        self.endurance += 0.12;
+        self.set_solar = true;
+        self.solar_counter += 1;
+        let num = 180;
+        if self.solar_counter >= num {
+            // `:16374-16383` — a shield-tier change clears the old 170/171.
+            if self.solar_shields > 0 && self.solar_shields < 3 {
+                for i in 0..crate::buffs::MAX_BUFFS {
+                    if self.buffs.buff_type[i] >= 170 && self.buffs.buff_type[i] <= 171 {
+                        self.buffs.del_buff(i);
+                    }
+                }
+            }
+            if self.solar_shields < 3 {
+                self.buffs.add_buff(170 + self.solar_shields, 5);
+                // `:16387-16395` — the 16-dust gain burst queues for the drain.
+                self.pending_solar_burst_dust = Some(crate::player_dust2::SolarBurstDust {
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                });
+                self.solar_counter = 0;
+            } else {
+                self.solar_counter = num;
+            }
+        }
+        // `:16434-16438` — the dash grant (solarDashing/dashDelay are the
+        // dash lane's; the shields>0 half grants dashType 3).
+        if self.solar_shields > 0 {
+            self.dash_type = 3;
+        }
+    }
+
     /// `Player.Teleport` (`Player.cs:37414-37496`) — the movement-relevant
     /// core: `RemoveAllGrapplingHooks` (style != 10), `StopVanityActions`,
     /// the shimmer strip, the position write, the fall-origin reset and the
@@ -9448,6 +9829,15 @@ impl Player {
     /// The velocity is NOT zeroed here — the C# scan zeroes it before the
     /// call (`TeleportHelpers.cs:12`) and `Shellphone_Spawn` after (`:56175`).
     pub fn teleport_style(&mut self, new_x: f32, new_y: f32, style: i32) {
+        // W4-e1 — `:37490-37491`: the teleport-visuals countdown arms.
+        self.teleport_time = 1.0;
+        self.teleport_style_id = style;
+        // `:37477-37480` — style 4 records the portal colour index.
+        if style == 4 {
+            // `extraInfo` is the portal colour; the port's callers pass 0
+            // (the pylon/portal lane owns the index) — kept as the field.
+            self.last_portal_color_index = 0;
+        }
         // `:37420-37423` — every style but 10 removes the hooks.
         if style != 10 {
             self.release_grappling_hooks = true;
@@ -9471,6 +9861,13 @@ impl Player {
         self.fall_start = (new_y / TILE_PX) as i32;
         self.prev_x = new_x;
         self.prev_y = new_y;
+        // W4-e1 — `:37484-37487`: `ResetAdvancedShadows` + three
+        // `UpdateSocialShadow` calls re-pin the facing history at the new
+        // spot (the eye trail's old anchor reads [1]). The pos/rotation
+        // shadow chain is a draw seam; the facing shift is ported.
+        for _ in 0..3 {
+            self.update_social_shadow();
+        }
     }
 
     /// `Player.Shellphone_Spawn` (`Player.cs:56164-56181`): the world-spawn
@@ -11171,12 +11568,21 @@ impl Player {
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
                 extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
+                // W4-e1 — the second-batch dust gates: the shiny-stone still
+                // sparkle (`:18945`, site 19273) and the crimson heal burst
+                // (`:19292`, site 19296). `itemAnimation == 0` is the port's
+                // `mana_regen_item_in_use` stand-in (the swing/reuse timers).
+                shiny_stone_still: self.shiny_stone
+                    && self.vx.abs() < 0.05
+                    && self.vy.abs() < 0.05
+                    && !self.mana_regen_item_in_use,
+                crimson_regen: self.crimson_regen,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
-            update_mana_regen(
+            let refilled = update_mana_regen(
                 &mut self.regen,
                 &in_,
                 &mut self.mana,
@@ -11184,6 +11590,42 @@ impl Player {
                     item_in_use: self.mana_regen_item_in_use,
                 },
             );
+            // W4-e1 — drain the regen dust events into the queues (the
+            // `UpdatePlayers` stream replays them in the world_sim seam).
+            // The shiny sparkle gate (`:19271`) recorded its time; the crimson
+            // chunks counted their bursts; the full-mana bar (`:19550`, site
+            // 19555) arms on the engine's `refilled` return.
+            if let Some(time) = self.regen.shiny_gate_time.take() {
+                self.pending_shiny_sparkle_dust =
+                    Some(crate::player_dust2::ShinySparkleDust {
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        cx: self.x + self.width * 0.5,
+                        cy: self.y + self.height * 0.5,
+                        regen_time: time,
+                    });
+            }
+            let bursts = std::mem::take(&mut self.regen.crimson_heal_bursts);
+            if bursts > 0 {
+                self.pending_crimson_heal_dust =
+                    Some(crate::player_dust2::CrimsonHealDust {
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        bursts,
+                    });
+            }
+            if refilled {
+                self.pending_mana_full_dust = Some(crate::player_dust2::ManaFullDust {
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                });
+            }
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
