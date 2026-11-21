@@ -28769,25 +28769,120 @@ ported inline in `npc.rs::find_frame`. The bestiary entries
 (`BestiaryDatabaseNPCsPopulator.cs:1112`/`:1559`/`:1561`), the sheets
 (NPC_34/289/694, atlas + bestiary tables), the portraits and the
 `NPC_Killed_52`/`dd2_book_staff_cast_0` cue registrations landed with
-the wiring. **Deliberate deviations** (the draw pass): the C#'s
-`GetAlpha` overrides — 34 white (`Main.cs:23120`), 289
-(250,250,250,50) (`NPC.cs:93609-93611`), the 694 book-state
-white/lerp (`:93417-93427`) — are NOT carried; the port's
-light-multiplied tint stands (the house draw-tint fold). The 694's
-`num45`/`num46` anchor terms (`Main.cs:23100-23114`) ARE carried
-(`npc_anchor_nudge` + the new `npc_anchor_nudge_x`). The 299 bolt's
-base sprite stays alpha-255 invisible exactly as the C# (its
-`GetAlpha` falls to the generic fade, `Projectile.cs:79744-79757`);
-the C# glowmask/dust visual is the documented cosmetic skip. The
-dungeon spawn tables (`NPC.cs:2685`/`:2737`/`:2751` — the 289
-hardmode roll, the 34 1/7 roll, the 694 book-find with ai3=3) are NOT
-wired — the port has no dungeon spawn pass yet; the kinds arrive via
-the net seed / debug spawn (the 694's closed-book ai[3]=3 spawn arg is
-the caller's to set, pinned by the axis witness). **Code-only mode**:
-no cargo/rustc runs; the 3 wiring witnesses
+the wiring. **Draw-tint overrides — NOW CARRIED (W4-c3 gap 4,
+2026-11-21)**: the C#'s `GetAlpha` overrides — 34 white
+(`Main.cs:23120-23123` sets `npcColor = White` for `aiStyle == 10 &&
+type != 694` BEFORE `GetAlpha`; the 34 has no type arm so the generic
+fade rides White), 289 (250,250,250,50) (`NPC.cs:93609-93611`, an EARLY
+return — no fade), the 694 book-state white/lerp (`:93417-93427`: ai[3]
+3 → `newColor`, ai[3] 4 → `Lerp(newColor, White, clamp(frame.Y/40/17))`,
+else White) — ARE ported through the `draw_npcs` tint seam
+(`render/entities.rs`, the d70 `GetMoonLordColoring` co-lane pattern).
+These are DRAW-VISIBLE self-illumination: the C# returns a fixed colour,
+NOT the light-multiplied tint, so the house light-fold would hide the
+skulls in the dark dungeon. The 694's tint is frame-determined (the
+book-state and the frame are coupled: closed pins row 0, wake climbs
+0..16, active walks 17..29), so the G6 `render_key`'s `frame` term
+already disambiguates it — no new key term. The 694's `num45`/`num46`
+anchor terms (`Main.cs:23100-23114`) ARE carried (`npc_anchor_nudge` +
+the new `npc_anchor_nudge_x`). The 299 bolt's base sprite stays
+alpha-255 invisible exactly as the C# (its `GetAlpha` falls to the
+generic fade, `Projectile.cs:79744-79757`); the C# glowmask/dust visual
+is the documented cosmetic skip. **Dungeon spawn band — NOW WIRED
+(W4-c3 gaps 2+3, 2026-11-21)**: `spawner.rs::spawn_dungeon_band` ports
+`Spawner.SpawnAnNPC`'s `else if (this.ZoneDungeon)` arm
+(`NPC.cs:2626-2793`) — the wall-colour pick (`num40`: slab 94/96/98 → 1,
+tile 95/97/99 → 2, the 1/7 RollLuck re-roll), the pre-Skeletron Guardian
+(68, unported → None), the bound Mechanic (123), the hardmode roster
+(`hardDungeon = downedPlantBoss && hardMode`, `:380` — the **289 Giant
+Cursed Skull** at `:2683-2687`, num40 1/2 + Next(30)==0, Plantera-gated),
+the 71 Dungeon Slime (1/35), the 72 BlazingWheel (num40 2, 1/5), the
+**34 Cursed Skull** (num40 0, 1/7, `:2735-2739`), the 32 Dark Caster
+(1/7), and the **694 Water Bolt Mimic book-find** (`:2745-2753`:
+Next(8)==0 → `AI_FindNearbyBook` closest/on-screen-gated →
+`SpawnNPC(bookX*16+8, bookY*16, 694, ai3=3)` the closed book, Bottom
+placement). The unported kinds (287/290-293/281-286/269-280/693/294-296/
+the -13/-14/31 angry bones) consume their rolls and spawn nothing (the
+Wyvern consume-and-return-None shape). The `hard_dungeon` flag is wired
+into the live spawn ctx (`world_sim/npcs.rs`). The band sits after the
+water ladder and before the surface/moon ladders; the unmodelled
+pre-dungeon arms (the wall-244 spider/gnome/critter chain, the
+bartender/spider/underground-desert/golfer specials, the evil-water
+hardmode arms, the beach/angler chains, the granite/marble scan's two
+`SetSpawnFlagsForChosenTile` draws, the surface tile-switch critter
+arms) are the documented consume-skip deviation. **g61 cross-note**: the
+dungeon band is a NATURAL `SpawnNPC`/`NewNPC` spawn family — g61's
+seam-6 receipt ("a NewNPC spawn family never TeleportEffect", research/
+238) applies: the 694 book-find and the skull rolls draw NO teleport
+dust; the spawn-visual lane's poof/mimic/transform halves are the
+chest/Transform paths, not this natural-spawn band. **Code-only mode**:
+no cargo/rustc runs; the wiring witnesses
 (`w4_c3_the_style10_defaults_match_the_csharp_rows`,
 `w4_c3_the_style10_axis_claims_the_three_kinds`,
-`w4_c3_the_shadowflames_bolt_row_and_arm`) are WRITTEN NOT RUN.
+`w4_c3_the_shadowflames_bolt_row_and_arm`,
+`w4_c3_the_299_spawn_drain_lands_the_row_hostile`,
+`w4_c3_the_giant_skull_needs_hard_dungeon_and_a_slab_wall`,
+`w4_c3_the_cursed_skull_needs_the_default_wall`,
+`w4_c3_the_water_bolt_mimic_spawns_at_the_closest_book_closed`,
+`w4_c3_the_dungeon_band_is_terminal_and_deterministic`,
+`w4_c3_the_style10_get_alpha_overrides`) are WRITTEN NOT RUN.
+### W4-c3 gap 1 — the 299 Shadowflames SPAWN-side census (2026-11-21)
+The whole decompiled tree carries exactly ONE `NewProjectile` site for
+projectile type 299: `NPC.cs:21808-21810` (the 289 Giant Cursed Skull's
+volley, `short num158 = 299`). The Lead's "Goblin Summoner
+ShadowflameBow?" premise does not hold: item **3014 is the ClingerStaff**
+(`Item.cs:27882` shoots 482, `ProjectileID.cs:1518`), the
+**ShadowFlameBow is item 3052** (`ItemID.cs:7787`, `Item.cs:28223` shoots
+the arrow 495) — neither fires 299. GoblinSummoner 471 is aiStyle-3
+(`NPC.cs:15731`) whose flight arm spawns NPC 30 (`:56514`), never a 299
+projectile. So the spawn side is fully claimed by the style-10 machine's
+`wants_hostile_shot` push (the 289 volley); there is NO unclaimed spawn
+to wire. The d16/d17 proj lanes (aiStyle 151-170) do not touch 299
+(aiStyle 1). The witness `w4_c3_the_299_spawn_drain_lands_the_row_hostile`
+pins the sim drain seam: `spawn_hostile` lands the 299 row hostile and
+the pool's slice-A dispatch flies it.
+### W4-c3 gap 5 — the protocol-355 collision cross-note (2026-11-21)
+The d37 lane's pushed band **354-399** (`750d8e44`, `npc/data.rs`:
+CochinealBeetle 354, CyanBeetle 355, LacBeetle 356, …) collides with
+c3's CursedSkull **355** AND c4's FlyingFish **354**. This is NOT a
+two-lane dispute — d37's own `docs/research/108-roster-master-reconcile.md`
+(the roster master reconcile, pushed on `task/W4-d37-npc-kinds-211-280`)
+already adjudicates it at wave scope: **77 contested protocol ids across
+18 pushed kind-claimants**, and the 354-399 corridor is the single
+most-squatted band (d42 squats all 46, g8 squats 34, plus c3/c4/c7/c8/c9/
+c10/d23/e26). The 108 canonical plan (E2/E3, receipts R1-R9) resolves it
+by **keeping d37's 354-399 anchor** (the contiguous, witness-pinned
+kinds-coverage band) and **dropping the duplicate small-lane ports**:
+- **CursedSkull: keep d34@267, drop c3@355** (d34's kinds 1-70 band
+  266-280 ports CursedSkull at 267, `5f3435a8`).
+- **GiantCursedSkull: keep d38@289, drop c3@289** (d38's kinds 281-350
+  band ports GiantCursedSkull at 289, `6f9dd02d`).
+- **WaterBoltMimic 694 keeps** (vanilla-free, `NPCID.cs:12065`; c3 is the
+  sole claimant).
+The Lead's "recommend c3/c4 keep 353-355 band, d37 shifts" is the
+OPPOSITE of the 108 adjudication: 108 R8 receipts d37's ZERO-move (the
+46-kind band is byte-identical to the witness-pinned port commit) and
+shifts the SMALL lanes, not d37. **c3's position**: the 108 plan is the
+correct adjudication (the kinds-lane owns the corridor over the wiring
+lane; moving d37 costs 46 renumbers + a shattered anchor vs dropping 2
+duplicate c3 ports). c3 accepts the E8 c3 work order (drop CursedSkull
+355 + GiantCursedSkull 289, keep WaterBoltMimic 694) AT MERGE — the
+duplicate `NpcKind` variants + to/from_u16 + ALL_KINDS + ENTRIES rows are
+removed, but c3's style-10 axis wiring, the dungeon spawn band, the
+GetAlpha tint overrides and the 299 bolt row/arm STAY, keyed on the
+canonical d34/d38 kinds (the E3 compose rule: the dropped lane keeps its
+AI/draw/sound wiring). **Merge-wave note**: d34's `update_cursed_skull`
+and d38's `update_giant_cursed_skull` call `style10_ai` but DISCARD the
+`Style10Out` (`let _ = out`) and route through `update_kind_ai` (their
+style axis has NO 10 arm — verified: d34/d38 axis arms are
+5,21,9,27,28,29,49,56,72,30,31,43,47,55,50,69,70,71,75). So the canonical
+kinds LOSE the kb_resist_override / Item8 / WaterSphere drains AND the
+289's bolt (d38 has NO 299 proj_data row — `proj_data(299)` returns None,
+so `spawn_hostile(299)` silently fails). The merge MUST route the
+canonical d34/d38 kinds through c3's style-10 axis arm (the drains) and
+keep c3's 299 row/arm, or the skull family regresses. This is the
+c3→merger hand-off: the wiring is the valuable part, the duplicate kind
+rows are the drop.
 ## The aiStyle-14 flyer family (S1-D-3 aiStyle-14 slice, 2026-11-18, code-only mode)
 `npc_ai_style14.rs::bat_ai` ports `NPC.AI()`'s `if (this.aiStyle == 14)`
 arm (`NPC.cs:22849-23486`) with the branches the port's four style-14 kinds
