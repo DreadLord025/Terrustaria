@@ -1973,8 +1973,11 @@ pub struct Player {
     /// W4-e10 — `Player.voiceVariant` (`Player.cs:1346`, ctor default 1
     /// `:56045`): the default hurt-voice family (1 = the legacy id-1 male,
     /// 2 = the id-20 female, 3 = the `DefaultPlayerHurt` trackable). The
-    /// port has no voice-picker UI, so it stays at the ctor's 1 until a
-    /// save/load surface lands; the decision tree is table-complete.
+    /// char-creation picker cycles it (`UICharacterCreation.cs:452-528`) and
+    /// the `.plr` persists it (`:54924`/`:55730`); the live in-world Player's
+    /// hydration from a loaded file is the f44c save-load audit's seam
+    /// (`CharPlay` is routing-only, spec §9.4), so it stays at the ctor's 1
+    /// in play until that lands. The decision tree is table-complete.
     pub voice_variant: i32,
     /// `Player.voicePitchOffset` (`Player.cs:1348`, default 0): the
     /// per-character pitch the default-voice arms remap through

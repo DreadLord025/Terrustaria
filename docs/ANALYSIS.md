@@ -2453,10 +2453,25 @@ wings-4, `:30172` wings-45) drain on `UpdatePlayers` — the `WingFrame` cue bef
 boot cue, the C# order.
 
 Deviations:
-* **No voice-picker / save-load surface.** `voiceVariant` stays at the ctor's 1 and
-  `voicePitchOffset` at 0 until a character-creation/save surface lands; the decision
-  tree is table-complete and the override/armor/mount arms are reachable in play.
-  `skinVariant` defaults to 0 (male) the same way.
+* **The voice picker + `.plr` voice pair landed (W4-e10 deviation wave).** The
+  char-creation voice row (`UICharacterCreation.cs:452-528`) is ported: the prev/next
+  `TexturePackButtons` cycle `voiceVariant` through `PlayerVoiceID.VariantOrder` {1,2,3}
+  (`Main.CycleVoiceStyle`, `Main.cs:52377-52395`), the play button + the pitch slider's
+  3-tick debounce run `PlayVoicePreview` (`:1517-1527`) through the SAME
+  `default_voice_hurt` tail the world drain uses (`Player.cs:38694-38712`), and
+  `UpdateSelectedGender` (`:1305-1329`) auto-switches variant 1↔2 on a gender flip.
+  The pitch slider quantizes to 1/20 steps with banker's `Math.Round` (`:680-684`) and
+  remaps ±1 → ±0.7 (`:38699-38700`); the per-variant icon tint is
+  `PlayerVoiceID.Sets.Colors` (`ID/PlayerVoiceID.cs:16`). The `.plr` writer emits the
+  picked pair at `Player.cs:54924-54925` and the reader walks it at `:55730`/`:55740`
+  (gates 280/281, the `<280` gender default `:55735`, the `LoadPlayer_LastMinuteFixes`
+  clamp 1..4 `:55831`). **Remaining seam:** the live in-world `Player` is not yet
+  hydrated from a loaded `.plr`'s voice pair — `CharPlay` is routing-only (spec §9.4),
+  so the full-walk live-Player hydration is the f44c save-load audit's scope; the
+  creation draft's pick rides the session card + the saved file, and the preview plays
+  it. `skinVariant` coupling is the landed Male-set (`PlayerVariantID.Sets.Male`
+  {0,1,2,3,8,10}, `ID/PlayerVariantID.cs:20`) the `is_male`/`alt_gender_reference`
+  tables already mirror.
 * **The hurt/death plays drain at the pass tail**, not mid-`Hurt`/`KillMe` (the
   S1-E-21c batch convention) — the gameplay draws still ride `UpdatePlayers` in the
   C# order relative to the other drained cues.
