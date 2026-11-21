@@ -18632,6 +18632,15 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
     let mut h = npcs.len() as u32;
     for n in npcs {
         h = h.wrapping_mul(31).wrapping_add(n.render_key());
+        // W4-g78 wiring — the debuff-tint chain (`GetNPCColorTintedByBuffs`,
+        // `NPC.cs:91024-91141`) now tints the NPC draw colour at the
+        // `entities.rs` colour site (`Main.cs:22939`), so the tint-relevant
+        // buff bar is a draw input inside the cached world range: two
+        // frames differing only in an NPC's midas/ichor/poison/… state must
+        // not share a cached range (the d70 `moon_lord_strength` key-widen
+        // precedent). `tint_key` is zero for a clean bar, so buff-free
+        // worlds keep the pre-wiring key bit-for-bit.
+        h = h.wrapping_mul(31).wrapping_add(crate::npc_hunter_tint::tint_key(n));
     }
     h
 }

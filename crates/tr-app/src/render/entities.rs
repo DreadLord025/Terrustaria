@@ -2178,6 +2178,41 @@ pub(crate) fn draw_npcs(
         let ty = (cy / TILE_PX) as i32;
         let l = light.get(tx, ty);
         let c = style.shade(l, tx, ty, anim_time);
+        // W4-g78 wiring — `Main.DrawNPC`'s `npcColor =
+        // rCurrentNPC.GetNPCColorTintedByBuffs(npcColor)` (`Main.cs:22939`):
+        // the 14-arm debuff tint chain (midas/ichor/poison/… — the family
+        // research/76 censused as MISSING) runs on the light colour BEFORE
+        // the per-kind draw tints. The C# colour is bytes (`Lighting.GetColor`
+        // `Lighting.cs:216-242`: `(int)(v * GlobalBrightness * 255)` clamp
+        // 255); the port's `shade` already applied the brightness + clamp,
+        // so the byte round-trip is the `pylons.rs::color_bytes` convention.
+        // MINIMAL-DELTA GATE (ANALYSIS): the round-trip runs ONLY when the
+        // chain is non-identity (a debuff flag armed AND canDisplayBuffs) —
+        // a clean NPC keeps the pre-wiring float shade bit-for-bit (the
+        // C#'s unconditional GetColor byte quantisation is a residual
+        // fidelity item, recorded). The chain is PURE (zero RNG); the G6
+        // `npc_key` hashes the tint-relevant buff bar (`npc.rs::render_key`
+        // → `npc_hunter_tint::tint_key`) so a gain/loss rebuilds the range.
+        // The Hunter floor's `hunter_active` input stays false until the
+        // contested `draw_npcs` tail threading lands (research/77 §2 —
+        // c39/d70 own the signature); the behind-tiles black-out scan
+        // (`Main.cs:22922-22938`) that PRECEDES the chain in C# is the same
+        // contract's second hunk.
+        let c = {
+            let f = crate::npc_hunter_tint::tint_flags_from_buffs(n);
+            if f.can_display_buffs && crate::npc_hunter_tint::tint_key(n) != 0 {
+                let bytes = [
+                    (c[0] * 255.0) as u8,
+                    (c[1] * 255.0) as u8,
+                    (c[2] * 255.0) as u8,
+                    255,
+                ];
+                let t = crate::npc_hunter_tint::npc_color_tinted_by_buffs(bytes, &f);
+                [t[0] as f32 / 255.0, t[1] as f32 / 255.0, t[2] as f32 / 255.0]
+            } else {
+                c
+            }
+        };
         // The width + the height: the Golem family's draw anchors the
         // frame off the box's bottom edge (the vanilla's
         // `position.Y + height + 4`, `Main.cs:25513`) and the Deerclops'
