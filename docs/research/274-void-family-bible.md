@@ -1,4 +1,12 @@
-# 239 — The VOID-FAMILY BIBLE + the g56 RETIRE verdicts (W4-g56 final, code-only)
+# 274 — The VOID-FAMILY BIBLE + the g56 RETIRE verdicts (W4-g56 final, code-only)
+
+> **RENUMBERED 239 → 274** per registry-150 §6.3 (`task/W4-d54-dust-sites-world`
+> `72226e500`, the round-2 refresh): d42's `239-d42-final-keep-one-and-band.md`
+> (12:55:30, `bac408be0`) landed BEFORE this doc's 239 push (13:57:53,
+> `54c63d8d4`) — first-timestamp rule, g56's 239 loses; the registry assigns
+> **274**. The round-1 "239 free at every tip" scan below predates d42's push.
+> Formerly `239-void-family-bible.md`; all refs repointed (INDEX/ANALYSIS/
+> PORT_MAP/ROADMAP/anchors + the persist.rs/chest.rs comment cites).
 
 Branch `task/W4-g56-ui-void-vault`, retire over DONE `3ab631923` (phase chain
 `273814c51` → `6727fb9ad` → `21d01fa0a` → `d364a2f4c` → docs `3a07ce683` →
@@ -16,7 +24,10 @@ predates; per its first-timestamp rule the two later forks renumber on their
 OWN branches), and **238 consumed** by `task/W4-c8-style66-crawling-critters`
 (`238-c8-crawler-final-census.md`, tip `7c2de9c06`). **239 is free at every
 `origin/task/W4-*` tip** (the `1[5-9][0-9]|2[0-9][0-9]` ls-tree scan over all
-remote tips, re-fetched this session). This doc takes **239**.
+remote tips, re-fetched this session). This doc took **239** — SUPERSEDED by
+the registry-150 round-2 refresh (`72226e500`): d42 pushed its own 239 at
+12:55:30 (`bac408be0`), before this doc's 13:57:53 push, so per §6.3 this doc
+renumbers to **274** (see the banner above).
 
 Co-lane tips read FULL this retire (re-fetched): f44 `d35876af9`
 (research/99 + 132 FINAL-FINAL), g88 `d09d7e10a` (research/103 SEALED +
@@ -251,8 +262,10 @@ The complete void-bag/void-vault family, C# → port, owner per row:
    two pure-insertion hunks; the v11 bodies untouched; both keep at merge.
 4. **SetGlowForChest**: KEEP-ONE = g56's `ui/glow.rs` — the only glow port on
    any of the 355 tips (§4); the stale base comment corrected on this branch.
-5. **This doc = research/239** per registry-150 (237/238 consumed at the
-   tips, the 237 three-way fork flagged for its owners; 239 free everywhere).
+5. **This doc = research/274** (renumbered from 239 per registry-150 §6.3
+   `72226e500` — 237/238 consumed at the tips, the 237 three-way fork flagged
+   for its owners; the round-1 "239 free everywhere" scan was overtaken by
+   d42's earlier 239 push `bac408be0`, so this doc takes **274**).
 
 Code-only retire: no cargo/tests/rustfmt/graphify run; the one code edit is
 the stale `chest.rs:870-871` comment correction (§4). The 27 written-not-run

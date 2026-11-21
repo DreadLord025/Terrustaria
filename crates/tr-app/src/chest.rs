@@ -868,7 +868,7 @@ fn shift_chest_frames(world: &mut World, x: i32, y: i32, kind: u16, shift: i16) 
 /// open (`Main.playerInventory = true` `:33517`) and the tile origin — set
 /// for the banks too (`:33524-33525`), or the per-tick range close would
 /// probe a stale tile. The `ItemSlot.SetGlowForChest` half NOW LANDS below
-/// (W4-g56 void-chain item 5, `ui/glow.rs` — research/239 §4 keep-one); the
+/// (W4-g56 void-chain item 5, `ui/glow.rs` — research/274 §4 keep-one); the
 /// input-navigator arms stay unported UI state (`:33518-33523`).
 ///
 /// The browsed chest's 40-slot window materializes on open: the C#
