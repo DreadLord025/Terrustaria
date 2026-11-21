@@ -169,6 +169,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             .player
             .as_ref()
             .map_or(1.0, |p| p.melee_speed(app.inventory[app.selected].kind)),
+        // W4-d10 — `AI_099_1_Counterweights`'s channel push (`:67521`):
+        // the frame-head `UpdateMainMouse` snapshot (`PlayerInput.cs:
+        // 911-917`), already in the world-update zoom basis
+        // (`SetZoom_MouseInWorld`, `:2528-2542`). Drained per projectile
+        // tick — every sub-step reads the same per-tick delta, exactly
+        // like the C# reads the same `Main.mouseX/lastMouseX` pair.
+        mouse_delta: (app.mouse_tick_delta.x, app.mouse_tick_delta.y),
     };
     // The whips anchor their curve on the player center and aim the Moon
     // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)

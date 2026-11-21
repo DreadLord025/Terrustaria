@@ -14563,6 +14563,8 @@ impl Default for ProjectilePool {
 /// arm `:67920-67925`), the owner's death (`:67824`), `CCed` (the same release
 /// arm) and `meleeSpeed` (the lifetime divisor `:67750` and the range/top-speed
 /// division `:67886-67887` — S1-P-i09 wires the ported `Player.melee_speed()`).
+/// The counterweight sub-arm's channel mouse delta (`:67521`) rides here too
+/// (W4-d10 — `App.mouse_tick_delta`, the frame-head `UpdateMainMouse` snapshot).
 /// The accessory flags (yoyoString / magicString) stay with M3-EQUIP-3 — their
 /// terms (`:67752-67755`, `:67882-67885`, `:68023-68031`) are unported grants.
 #[derive(Clone, Copy, Debug)]
@@ -14580,6 +14582,13 @@ pub struct YoyoInputs {
     pub player_dead: bool,
     /// `player.meleeSpeed` (`:67750`, `:67886-67887`).
     pub melee_speed: f32,
+    /// `Main.mouseX - Main.lastMouseX` (and Y) — the per-tick SCREEN-space
+    /// mouse delta in the world-update zoom basis (`Projectile.cs:67521`,
+    /// `AI_099_1_Counterweights`'s channel push; `PlayerInput.cs:2528-2542`
+    /// scales both offsets by `1/RenderZoom`). The frame-head snapshot
+    /// (`App.mouse_tick_delta`) feeds it; the default `(0, 0)` keeps the
+    /// push inert (the pool-only tests).
+    pub mouse_delta: (f32, f32),
 }
 
 impl Default for YoyoInputs {
@@ -14592,6 +14601,7 @@ impl Default for YoyoInputs {
             player_dead: false,
             player_cced: false,
             melee_speed: 1.0,
+            mouse_delta: (0.0, 0.0),
         }
     }
 }
@@ -18003,10 +18013,13 @@ impl ProjectilePool {
                                     inputs.channel,
                                     // `Main.mouseX - Main.lastMouseX`
                                     // (`:67521`) — the per-tick mouse
-                                    // delta; the pass has no snapshot yet
-                                    // (the M3-EQUIP-3 wiring seam), zero
-                                    // keeps the push inert (documented).
-                                    (0.0, 0.0),
+                                    // delta, un-parked (W4-d10): the
+                                    // frame-head `UpdateMainMouse`
+                                    // snapshot (`App.mouse_tick_delta`)
+                                    // rides `YoyoInputs.mouse_delta`
+                                    // (the zoom-basis screen delta,
+                                    // `PlayerInput.cs:2528-2542`).
+                                    inputs.mouse_delta,
                                     local_owner,
                                 );
                                 crate::projectile_ai_91_100::counterweight_move(
@@ -29607,6 +29620,48 @@ mod s1_p_i09_yoyo_tests {
             "the direction pair, the magnitude, the doubling gate"
         );
         assert_eq!(rng.floats, 0, "the beam block draws no floats");
+    }
+
+    /// W4-d10 — the counterweight channel push drains `YoyoInputs.mouse_delta`
+    /// (the un-parked `:67521` seam). ONE pool update = two sub-steps
+    /// (extraUpdates 1), each reading the SAME per-tick delta (the C# reads
+    /// the same `Main.mouseX/lastMouseX` pair twice). The counterweight
+    /// starts on the owner's centre flying (12, 0), the yoyo sibling holds
+    /// the string. A (+20, 0) delta INVERTS to (−2, 0) per sub-step:
+    /// 12 → 10 → 8, the 9 floor lifts the last to 9. A (−20, 0) delta
+    /// pushes (+2, 0): 12 → cap 12 → cap 12. The zero-delta control floors
+    /// to 9 after sub-step 1 and holds — and never latches the push's
+    /// `netUpdate` (`:67548`).
+    #[test]
+    fn w4_d10_the_counterweight_channel_drains_the_mouse_delta() {
+        let run = |delta: (f32, f32)| {
+            let mut pool = ProjectilePool::new();
+            let cw = pool
+                .spawn_with_data_ai(556, 315.0, 315.0, 12.0, 0.0, 10, 2.0, 0.0, 0.0)
+                .unwrap();
+            // The yoyo sibling holds the string (the no-yoyo sweep). Its
+            // own flight seeks the aim — it never touches the counterweight.
+            pool.spawn_with_data_ai(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5, 0.0, 0.0)
+                .unwrap();
+            let mut w = world();
+            let ins = YoyoInputs {
+                aim: Some((380.0, 320.0)),
+                channel: true,
+                mouse_delta: delta,
+                ..YoyoInputs::default()
+            };
+            tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+            (pool.slots[cw].vel, pool.slots[cw].net_update)
+        };
+        let (shed, shed_net) = run((20.0, 0.0));
+        let (pushed, pushed_net) = run((-20.0, 0.0));
+        let (control, control_net) = run((0.0, 0.0));
+        assert!((shed.x - 9.0).abs() < 1e-4, "two sheds then the floor: {shed:?}");
+        assert!(shed_net, "the push latched netUpdate (`:67548`)");
+        assert!((pushed.x - 12.0).abs() < 1e-4, "the inverted push caps at 12: {pushed:?}");
+        assert!(pushed_net, "the push latched netUpdate");
+        assert!((control.x - 9.0).abs() < 1e-4, "the control floors: {control:?}");
+        assert!(!control_net, "no push, no netUpdate");
     }
 
     /// `Damage_PVE_Inner`'s aiStyle-99 arm (`:13273-13298`): the flying

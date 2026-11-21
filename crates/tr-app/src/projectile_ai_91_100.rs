@@ -1046,7 +1046,9 @@ pub(crate) fn ai_cultist_particle(p: &mut Projectile, rng: &mut dyn DropRng) {
 /// sibling scan over the pool's style-99 NON-counterweight kinds with
 /// `ai[0] >= -1`), the flight states 0/1's string-cap orbit (the
 /// perpendicular tangent blend), the channel mouse-delta push (the
-/// `mouse_delta` input — the C# `Main.mouseX - Main.lastMouseX`), the
+/// `mouse_delta` input — the C# `Main.mouseX - Main.lastMouseX`, wired
+/// W4-d10: the frame-head `UpdateMainMouse` snapshot rides
+/// `YoyoInputs.mouse_delta` in the `SetZoom_MouseInWorld` basis), the
 /// NPC chase (the 800-Manhattan acquire, the per-type blends), the
 /// 12/9 speed floor/cap pair, the magicString ghost split (unported
 /// grant — the −3 state stays reachable only via the spawn ai0), the
@@ -2475,6 +2477,70 @@ mod tests {
             &mut s3, 0, &w, &[], Some((1600.0, 800.0)), true, true, (0.0, 0.0), 0,
         );
         assert!(!s3[0].active);
+    }
+
+    /// The channel push (`:67517-67556`): the local owner's held channel
+    /// adds the INVERTED mouse delta × 0.1 (flag is the `:67383` literal
+    /// true), and the zero-velocity gate skips the add. The un-parked
+    /// input (W4-d10): `YoyoInputs.mouse_delta` carries the frame-head
+    /// snapshot; here it rides the fn argument directly.
+    #[test]
+    fn w4_d10_s99_the_channel_push_inverts_the_mouse_delta() {
+        let w = World::new("t".into(), 300, 200);
+        // The yoyo sibling holds the flight; the counterweight sits ON the
+        // owner (no string cap, no flag3 clamps) flying right at 5.
+        let mut slots = vec![proj(556), proj(541)];
+        slots[1].ai[0] = 0.0;
+        slots[0].pos = Vec2::new(1595.0, 795.0); // centre (1600, 800)
+        slots[0].vel = Vec2::new(5.0, 0.0);
+        ai_counterweight(
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (20.0, 0.0), 0,
+        );
+        // (5,0) + (-20,0)*0.1 = (3,0); the 9 floor lifts it back to 9.
+        assert!((slots[0].vel.x - 9.0).abs() < 1e-4, "the inverted push + the floor");
+        assert!(slots[0].net_update, "`:67548`");
+        // The zero-velocity gate (`:67522`): no add, no netUpdate.
+        let mut s2 = vec![proj(556), proj(541)];
+        s2[1].ai[0] = 0.0;
+        s2[0].pos = Vec2::new(1595.0, 795.0);
+        s2[0].vel = Vec2::ZERO;
+        ai_counterweight(
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, true, (20.0, 0.0), 0,
+        );
+        // The floor still arms (the push skipped): SafeNormalize(0)*9 = 0.
+        assert_eq!(s2[0].vel, Vec2::ZERO, "the zero-velocity gate");
+        assert!(!s2[0].net_update, "the push never ran");
+    }
+
+    /// The flag3 quadrant clamps (`:67528-67546`): beyond 0.9× the string
+    /// radius the inverted delta's outward components zero per axis. The
+    /// counterweight right of the owner: a rightward mouse delta inverts
+    /// leftward (inward, kept); a leftward delta inverts rightward
+    /// (outward, clamped to 0).
+    #[test]
+    fn w4_d10_s99_the_flag3_clamps_zero_the_outward_push() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![proj(556), proj(541)];
+        slots[1].ai[0] = 0.0;
+        // 120 px right of the owner: > 0.9*125 = 112.5 (flag3), < 125 (no cap).
+        slots[0].pos = Vec2::new(1715.0, 795.0); // centre (1720, 800)
+        slots[0].vel = Vec2::new(12.0, 0.0);
+        ai_counterweight(
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (-30.0, 0.0), 0,
+        );
+        // Inverted (+30,0): c.x > pc.x && v5.x > 0 → clamped; the 12 cap
+        // keeps the velocity (12 > 9 floor, 12 == 12 cap).
+        assert!((slots[0].vel.x - 12.0).abs() < 1e-4, "the outward push clamped");
+        // The inward direction survives: a rightward mouse delta.
+        let mut s2 = vec![proj(556), proj(541)];
+        s2[1].ai[0] = 0.0;
+        s2[0].pos = Vec2::new(1715.0, 795.0);
+        s2[0].vel = Vec2::new(12.0, 0.0);
+        ai_counterweight(
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, true, (30.0, 0.0), 0,
+        );
+        // Inverted (-30,0)*0.1 = -3 → 12 - 3 = 9 (the floor boundary).
+        assert!((s2[0].vel.x - 9.0).abs() < 1e-4, "the inward push lands");
     }
 
     /// The string cap (`:67446-67516`): a counterweight beyond the 125-px
