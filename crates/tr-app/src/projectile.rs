@@ -3700,6 +3700,21 @@ impl Projectile {
             hcx + ang.cos() * rx * open - 18.0,
             hcy + ang.sin() * ry * open - 18.0,
         );
+        // S1-E-21h d75 part 3 — `:31500-31505`: the 455's first-tick
+        // zombie-voice cue, `PlaySound(29, (int)X, (int)Y, 104)` — the int
+        // overload, Style 104 IS the slot (case 29, `LegacySoundPlayer.cs:
+        // 1008-1050`). The gate is `type == 455 && localAI[0] == 0f` BEFORE
+        // the increment below, so it fires once on the arm's first call; the
+        // position is the POST-ellipse `base.position` the C# reads (the
+        // placement above ran first). The id-29 drain arm rides the E21e
+        // `play_fighter_moan` façade (the ×0.55 style-104 volume, the playing
+        // guard, the one `Next(-10, 11)` pitch on the UpdateProjectiles
+        // stream). The truncation rides the façade (`play_critter`). The
+        // kind gate is the C#'s — the shared aiStyle-84 else arm keeps the
+        // 537/642 rows cue-less if a later wave routes them here.
+        if self.kind == PHANTASMAL_DEATHRAY && self.local_ai[0] == 0.0 {
+            self.wants_sound = Some((29, 104, self.pos.x, self.pos.y, 0.0));
+        }
         // `:31511-31521`'s lifetime + scale curve.
         self.local_ai[0] += 1.0;
         if self.local_ai[0] >= 180.0 {
@@ -31321,6 +31336,45 @@ mod phasmal_projectile_tests {
         }
         assert!(!p.active, "the ray dies at 180");
         assert!(p.scale > 0.0, "the scale curve");
+    }
+
+    /// S1-E-21h d75 part 3 — the 455's first-tick zombie-voice cue
+    /// (`Projectile.cs:31500-31505`): `PlaySound(29, (int)X, (int)Y, 104)`
+    /// fires ONCE at `localAI[0] == 0` (before the increment), at the
+    /// POST-ellipse position; the id-29/style-104 intent rides `wants_sound`.
+    #[test]
+    fn s1_e_21h_d75_the_deathray_latches_the_104_voice_once() {
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut head = Npc::new(NpcKind::MoonLordHead, 200.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        npcs.push(head);
+        let mut p = spawn(PHANTASMAL_DEATHRAY, 200.0, 100.0);
+        p.ai[0] = 0.0116;
+        // Tick 1: the cue queues at the post-ellipse position.
+        p.ai_phasmal_deathray(&surface_world(), &npcs);
+        assert_eq!(p.local_ai[0], 1.0, "the counter bumped off zero");
+        let (id, style, x, y, pitch) = p.wants_sound.expect("the first-tick cue");
+        assert_eq!((id, style), (29, 104), "case 29, Style 104 IS the slot");
+        assert_eq!((x, y), (p.pos.x, p.pos.y), "the POST-ellipse position");
+        assert_eq!(pitch, 0.0, "the int overload carries no pitchOffset");
+        // Tick 2+: the latch is spent — no further cue.
+        p.wants_sound = None;
+        for _ in 0..5 {
+            p.ai_phasmal_deathray(&surface_world(), &npcs);
+            assert_eq!(p.wants_sound, None, "one cue per life");
+        }
+    }
+
+    /// S1-E-21h d75 part 3 — the cue is the 455's ONLY: a non-455 kind routed
+    /// through the shared aiStyle-84 else arm queues nothing (the C# gate is
+    /// `type == 455`, `:31500`).
+    #[test]
+    fn s1_e_21h_d75_the_deathray_voice_is_455_only() {
+        let npcs: Vec<Npc> = Vec::new();
+        let mut p = spawn(PHANTASMAL_DEATHRAY, 200.0, 100.0);
+        p.kind = 537; // the PhantasmalBolt — a different aiStyle-84 kind
+        p.ai_phasmal_deathray(&surface_world(), &npcs);
+        assert_eq!(p.wants_sound, None, "the 537 plays nothing here");
     }
 
     #[test]

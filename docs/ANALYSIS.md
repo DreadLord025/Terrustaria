@@ -34484,6 +34484,115 @@ re-derivation, the style-overload argument semantics at
 `SoundEngine.cs:88-108`), the three new bank assets confirmed on disk.
 No cargo/rustc/tests invoked — the witnesses are WRITTEN, NOT RUN.
 
+### Part 3 (d75, 2026-11-21, code-only mode) — the deferral census re-run
+
+`task/W4-d75-proj-sounds-1`, part 3. The Lead's directive: re-census the
+first-120 deferral list against the PUSHED sibling AI-lane branches — many
+of the "unported kind/style" deferrals have since landed arms (and cues) on
+`origin/task/W4-d*`. **All siblings branch from the same `a725acb0` as this
+branch; NONE is merged into `origin/main` yet** (every `git merge-base
+--is-ancestor origin/task/W4-d* origin/main` returns 1). So the arms are NOT
+in this worktree's tree — the census records, per deferred site, whether a
+sibling now owns the arm AND queues the cue (the merge owner reconciles), or
+whether the site is still genuinely unported. The one site whose arm IS in
+this tree and whose cue was missing from the part-2 census — `:31504` — is
+PORTED here.
+
+**The :31504 port (the census gap).** The 455 Phantasmal Deathray's
+first-tick zombie-voice cue, `PlaySound(29, (int)X, (int)Y, 104)`
+(`Projectile.cs:31500-31505`). The arm `ai_phasmal_deathray` (the aiStyle-84
+else branch) is in this tree; the part-2 census never listed the site (it is
+a non-id-2 façade, but the E21e `play_fighter_moan` case-29 consumer EXISTS —
+`Audio::play_fighter_moan`, `ambient_sound::critter_legacy_voice`'s 29 arm).
+The cue queues `(29, 104, pos.x, pos.y, 0.0)` on `wants_sound` at
+`kind == 455 && localAI[0] == 0` (BEFORE the increment), at the POST-ellipse
+position; the drain gains an id-29 arm routing to `play_fighter_moan(29,
+style, …)` (the ×0.55 style-104 volume, the playing guard, the one
+`Next(-10, 11)` pitch on the UpdateProjectiles stream, attenuation first,
+the int overload draws no GetRandomPitch). Bank: `Zombie_104` joins
+`SFX_CUES` (id 29) + `zombie_asset`'s slot-104 row (the `.xnb` verified on
+disk); `zombie_asset` widened `pub(crate)` for the witness. The kind gate is
+the C#'s — the shared else arm keeps a future 537/642 routing cue-less.
+Witnesses (3 new, WRITTEN NOT RUN): the deathray's one-cue latch + the
+post-ellipse position, the 455-only negative (a 537 routed through the arm
+queues nothing), and the case-29 style-104 façade contract (one pitch draw,
+muted/far draw-free, the bank row + asset mapper).
+
+**The re-census table.** Every part-2 deferred site, re-classified against
+the pushed sibling tips (hashes are the sibling commit that landed the arm;
+"cue" = the sibling queues it on `wants_sound`/`pending_proj_sounds`):
+
+| C# site(s) | part-2 label | sibling arm + cue | verdict |
+| --- | --- | --- | --- |
+| `:14385-14393` | snapping-stone trio | none (the accessory seam) | STILL DEFERRED |
+| `:16871-16994` | liquid splash family | none (the generic wet block, d53's skip) | STILL DEFERRED |
+| `:18209` | 37-style star (502) | no row on any branch | STILL DEFERRED |
+| `:18292` | (unlisted) 1024 Item10 | d12 `719ffb76c` rows 1024, `kill_step` move — NO `:18292` cue | SIBLING GAP (merge owner) |
+| `:18411` | dropped-yoyo Dig | the `-2` state needs M3-EQUIP-3's magicString (flag never set) | STILL DEFERRED |
+| `:18780/:18959/:18978/:18994/:19067/:19090/:19178/:19241/:19270/:19845` | bounce Digs (1023/1053-family/1055/1021/1013/727/1054/1048/655/1081) | no rows on any branch | STILL DEFERRED |
+| `:19373` | (unlisted) aiStyle-39 Dig | d4 `5771c1f0` piranha 190 sets `tile_collide=false` — the bounce never runs | SIBLING GAP (merge owner) |
+| `:19531` | phaseblade/383 explosion | no 383/phaseblade row | STILL DEFERRED |
+| `:19649` | 261 earth boulder | no row | STILL DEFERRED |
+| `:20104` | Rainbow Boulder | no row (trackable) | STILL DEFERRED |
+| `:22149` | super-star (151) | d16 `a03fbcbd4` — cue `(2,9)` | SIBLING-CUED |
+| `:22263/:22268/:22277` | super-star slash (152) | d16 `939816d43` — cues `(2,1)`/`(2,9)` | SIBLING-CUED |
+| `:24506` | 288 hostile golden shower | no 288 row | STILL DEFERRED |
+| `:24781` | Golem Fist (262) | d2 `15e5448a9` — cue `(2,14)` | SIBLING-CUED |
+| `:25166/:25280` | style-14 second-gate dead code | dead in C# (part-2 re-derivation) | DEAD CODE |
+| `:25357` | aiStyle-17 sign placement | d2 `61c47ed79` — cue `(0,0)` at tile×16 | SIBLING-CUED |
+| `:27506` | 187 flamethrower trap | d4 `a336f4aa7` — cue `(2,34)` | SIBLING-CUED |
+| `:27866` | crystal leaf (227) | d5 `6004751f9` — cue `(6,1)` (id-6 drain follow-up) | SIBLING-CUED |
+| `:27926` | chlorophyte orb (229) | g2 `da1cc410` — cue `(2,8)` | SIBLING-CUED |
+| `:28231` | HeatRay-290 (part-1 deferred) | g2 `8d3cdcb16` — 290 row + cue `(2,8)` at localAI[0]==1 | SIBLING-CUED |
+| `:28259` | 281 cannon bunny style-49 | d5 `5f7390a30` — cue `(2,14)` fuse re-arm | SIBLING-CUED |
+| `:28329` | 291 hostile inferno | g2 `8d3cdcb16` — cue `(2,20)` | SIBLING-CUED |
+| `:31504` | (CENSUS GAP) 455 zombie-voice | THIS BRANCH part 3 — cue `(29,104)` | PORTED HERE |
+| `:31832` | cultist ice-mist (464) | d9 `eb1f19b60` — cue `(2,120)` | SIBLING-CUED |
+| `:31943` | cultist lightning (465) | no 465 row on any branch | STILL DEFERRED |
+| `:32290` | 490 ritual (style 89) | d9 `a9035b6fd` — cue `(2,123)` | SIBLING-CUED |
+| `:34504/:34539` | 117 explosion family | d12 `f0150a695` — cue `(2,14)` (612/953/978/624; 1044 silent) | SIBLING-CUED |
+| `:35524` | Glommer (957) | d13 `69edd7fc4` — arm landed, GlommerBounce TRACKABLE deferred | SIBLING GAP (trackable) |
+| `:35926` | geyser/ogre (654/670) | d13 `fe72ebcc5` — cue `(2,34)` | SIBLING-CUED |
+| `:36008` | sandnado column (656/657) | d13 `e9be56fe6` — cue `(2,82)` | SIBLING-CUED |
+| `:36092` | sandnado mark (658) | d13 `6808d262e` — cue `(2,60)` | SIBLING-CUED |
+| `:36940/:36961` | Glacier Fang (208) | d21 `20fe4b3ed` — arm landed, sound body SKIPPED | SIBLING GAP (sound skip) |
+| `:38108` | RC car (205) | d21 `20fe4b3ed` — tracked-loop sound SKIPPED | SIBLING GAP (sound skip) |
+| `:38517/:38531/:38535/:38682` | Digtoise (204) | d21 `20fe4b3ed` — arm landed, sound bodies SKIPPED | SIBLING GAP (sound skip) |
+| `:39080-39393` | phaseblade whoosh family | no phaseblade row | STILL DEFERRED |
+| `:39786` | storm lightning (203) | d21 `20fe4b3ed` — sound body SKIPPED | SIBLING GAP (sound skip) |
+| `:39931` | torch god (202) | d21 `20fe4b3ed` — Item8 cue SKIPPED | SIBLING GAP (sound skip) |
+| `:40481` | petal (196) | d20 `f4e660a20` — cue `(2,17)` | SIBLING-CUED |
+| `:41369` | Foxparks flame (1106) | no 1106 row | STILL DEFERRED |
+| `:41656` | True Night's Edge (191) | d20 `2b2b71a71` — cue `(2,8)` (973 first tick) | SIBLING-CUED |
+| `:41968` | True Night's Edge spore (191) | d19 `a4185f898` — cue `(2,167)` at spawnPosition | SIBLING-CUED |
+
+**Style-label corrections.** The part-2 list labelled several sites by
+aiStyle as if the STYLE were the unported sound ("style 208/204/205/202/203/
+196/126/127/128/89 unported"). The C# `SoundID` rows are plain id-2 styles
+(`GlacierFang_Charging` = 2/210, `GlacierFang_Muzzle` = 2/201, `Item199` =
+2/199, `Item8` = 2/8, `NPCHit34` = 3/34, `Item17` = 2/17, `Item34/82/60` =
+2/34/82/60, `Item123` = 2/123) — the deferral was the unported ARM, not an
+unportable sound. The d21 arms landed with their sound bodies SKIPPED (the
+no-audio-layer fold), so those sites remain cue-less even after the sibling
+merge — a sound-lane follow-up, recorded as SIBLING GAP.
+
+**The :28231 HeatRay-290 resolution (the Lead's census row).** Part 1
+deferred `:28231` as "C# type 290 unported — draft Heat Ray gate misread".
+The g2 branch (`8d3cdcb16`) now rows the hostile 290 (`SHADOWBEAM_HOSTILE`)
+and queues the Item8 one-shot at `localAI[0] == 1` (post-increment) on
+`wants_sound`, plus the delay-3 snapshot + the 290/294 reflect. This tree's
+`ai_magnet_bolt` keeps the 255/260/294 rows cue-less (the part-1 negative
+witness stands); the 290 cue lands with g2's merge. NOT re-ported here.
+
+**Verification.** Code-only: the :31504 arm re-read against
+`Projectile.cs:31500-31521` (the gate order, the post-ellipse position, the
+kind gate), the case-29 façade against `LegacySoundPlayer.cs:1008-1050` +
+`ambient_sound::critter_legacy_voice`'s 29 arm (the ×0.55 style-104 mult, the
+playing guard, the one pitch draw), the `Zombie_104.xnb` asset confirmed on
+disk. Every sibling verdict cited to a pushed commit hash + the queued tuple
+read from the branch source. No cargo/rustc/tests/graphify invoked — the 3
+new witnesses are WRITTEN, NOT RUN.
+
 ## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
 
 Audit source: `docs/research/53-audit-pillars.md` (branch

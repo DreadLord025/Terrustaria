@@ -489,6 +489,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // jitter)`): case 36 draws nothing, style −1 → slot 0 at
             // Pitch += 0.6.
             app.audio.play_dash_roar(style, x, y);
+        } else if id == 29 {
+            // S1-E-21h d75 part 3 — the Phantasmal Deathray's first-tick
+            // zombie-voice cue (`Projectile.cs:31504`, `PlaySound(29, x, y,
+            // 104)`): case 29's Style IS the slot (`LegacySoundPlayer.cs:
+            // 1008-1050`), the ×0.55 style-104 volume arm, the playing guard
+            // BEFORE the one `Next(-10, 11)` pitch — all ride the E21e
+            // `play_fighter_moan` façade on the same UpdateProjectiles
+            // stream, attenuation gate first. The int overload draws NO
+            // `GetRandomPitch` NextFloat.
+            app.audio.play_fighter_moan(29, style, x, y, rng);
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
         }

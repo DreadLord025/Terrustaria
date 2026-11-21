@@ -430,6 +430,12 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_6", 29),
     ("Zombie_7", 29),
     ("Zombie_8", 29),
+    // S1-E-21h d75 part 3 — the Phantasmal Deathray's first-tick cue
+    // (`Projectile.cs:31504`, `PlaySound(29, x, y, 104)`): case 29's
+    // Style-is-the-slot row 104 (the ×0.55 volume arm,
+    // `LegacySoundPlayer.cs:1029-1032`), the `Sounds/Zombie_104.xnb` asset
+    // verified on disk.
+    ("Zombie_104", 29),
     ("Zombie_21", 14),
     ("Zombie_22", 14),
     ("Zombie_23", 14),
@@ -4189,6 +4195,45 @@ mod tests {
         ] {
             assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
         }
+    }
+
+    /// S1-E-21h d75 part 3 — the Phantasmal Deathray's case-29 style-104
+    /// contract (`Projectile.cs:31504`): the Style IS the slot (104), the
+    /// ×0.55 volume arm (`LegacySoundPlayer.cs:1029-1032`), ONE
+    /// `Next(-10, 11)` pitch behind the playing guard, draw-free when muted
+    /// or out of range. The asset resolves to the registered `Zombie_104`.
+    #[test]
+    fn s1_e_21h_d75_the_104_voice_is_one_pitch_draw_and_bank_registered() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Audible: exactly one Next(-10, 11) pitch, slot 104 pinned.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _pitch = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_fighter_moan(29, 104, 0.0, 0.0, &mut rng),
+            Some("Zombie_104")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one pitch draw, no slot draw");
+        // Muted: the gate precedes the switch — draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_fighter_moan(29, 104, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted play is draw-free");
+        // Out of range: draw-free, volume restored.
+        let mut l = audio.listener;
+        l.sound_volume = 1.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_fighter_moan(29, 104, 3000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the far play is draw-free");
+        // The bank row + the asset mapper both name Zombie_104.
+        assert!(SFX_CUES.iter().any(|(n, t)| *n == "Zombie_104" && *t == 29));
+        assert_eq!(crate::ambient_sound::zombie_asset(104), "Zombie_104");
     }
 
     /// S1-E-21i — the wall-break play's RNG contract
