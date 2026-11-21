@@ -39426,3 +39426,51 @@ fused-pass z-order approximation, same class as the pylon passes).
 4 witnesses WRITTEN NOT RUN (the gate complement over all 15 rows, the
 lift-kept/nudge-dropped geometry twin, the world-range seam source
 scan, the key-coverage motion/frame/fall-frame transitions).
+
+## The savings coin pile (W4-g12 doc-sweep)
+
+The g58 shop-happiness lane deferred `ItemSlot.DrawSavings`
+(`Main.cs:41791`) to "the coin-slot lane"; g57 recorded the reforge
+site's skip; no branch had claimed the port (`git log --all -S 'fn
+draw_savings'` empty). Ported as `ui/savings.rs`:
+
+* `coins_count`/`coins_combine_stacks`/`coins_split`
+  (`Utils.cs:1019-1076`) verbatim — the four denominations, the
+  9999999999 cap checked AFTER each add with the immediate return, the
+  descending remainder walk. The `overFlowing` out-params are dead at
+  every DrawSavings call — dropped.
+* `draw_savings` (`ItemSlot.cs:3704-3741`): the bank/bank2/bank3/bank4
+  totals, the pile icons per NON-EMPTY bank (void vault 4076 `+70,+45`,
+  defender's forge 3813 `+92,+45`, safe 346 `+80,+50`, piggy 87
+  `+70,+60`), each `Utils.CenteredRectangle` at 0.65 (all four casts
+  truncate toward zero), then `DrawMoney(Lang.inter[66], …,
+  CoinsSplit(total), fromSavings: true)`. The `total > 0` gate (`:3717`).
+* `draw_money` (`ItemSlot.cs:3652-3702`): both layouts — horizontal
+  (the label-width offset, coins at `+45+24i, +50`, counts at
+  `v.X-11, v.Y+LineSpacing*0.75` origin `(0, LineSpacing)`) and vertical
+  (coins at `+11+24j, +75`, the `j==0 && count>99` -6 px count shift),
+  the 999 cap, `CoinSlot.UpdateSavings` per cell (the jump offset rides
+  the coin, the text scale rides the count).
+* `CoinSlotState` gains the 4-entry `savings_entries` array
+  (`CoinSlot.cs:341`), `update_savings` (`:225-228`, type `71+slot`,
+  `SavingsCoinJumpScale` 10) and the Savings-first `UpdateSlotAnims`
+  loop order (`:258-261`).
+* `Coin_0..3` spin strips packed (`AssetInitializer.cs:369`),
+  `Lookups::coin_strips`; `DrawItemCoin`'s `Frame(1, 8, 0, frame)` cell
+  math (`CoinSlot.cs:240-254`, the 1024 size-limit guard kept).
+* WIRED: the shop block (`ui::mod`, `Main.cs:41791` — `(504,
+  invBottom=258)`, vertical, before the g58 happiness chrome).
+
+Deviations: (1) the `_customCurrencyForSavings` route (`:3707-3711`) is
+d122's UI follow-up — the vanilla coin path always runs; (2)
+`DrawItemCoin`'s `ContentSamples.ItemsByType[coin].GetAlpha(White)`
+folds to `Color.White` (a fresh sample has alpha 0, coins hit no
+special GetAlpha arm); (3) the pile icons' `GetItemDrawFrame` animation
+lookup folds to the whole sheet (none of 4076/3813/346/87 registers an
+`itemAnimations` row); (4) the reforge (`:41637`) and buy-button
+(`:43862`) sites stay with their lanes' merges (g57's reforge block,
+the NPC-chat buy surface) — `draw_savings` is the shared seam, both
+call shapes (horizontal included) are ported and tested. 6 witnesses
+WRITTEN NOT RUN (the denomination sum, the mid-walk cap, the split
+walk, the truncating CenteredRectangle, the call-shape source scan,
+the savings-row bounce).

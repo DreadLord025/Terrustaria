@@ -497,6 +497,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `Images/Shroom_Tops`, the 3-frame 62x42 strip
         // `TileDrawing.cs:994-1006` draws over a type-72 trunk top).
         "Shroom_Tops",
+        // W4-g12 doc-sweep: the coin spin strips (`TextureAssets.Coin[0..4]`,
+        // `AssetInitializer.cs:369` — `Images/Coin_<i>`, 1x8 frames,
+        // `CoinSlot.DrawItemCoin` `CoinSlot.cs:242-243`).
+        "Coin_0",
+        "Coin_1",
+        "Coin_2",
+        "Coin_3",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -1957,6 +1964,10 @@ pub struct Lookups {
     pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
+    /// `Coin_0..3` (`TextureAssets.Coin`, `AssetInitializer.cs:369`): the
+    /// 1x8 spin strips `CoinSlot.DrawItemCoin` frames (`CoinSlot.cs:242-
+    /// 243`) — the savings pile's coin icons (W4-g12 doc-sweep).
+    pub coin_strips: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
     pub ui_back: Option<tr_render::SheetRect>,
     /// `Inventory_Back14`: the yellow frame of the selected hotbar slot.
@@ -2359,6 +2370,7 @@ impl Lookups {
                 })
                 .collect(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
+            coin_strips: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),

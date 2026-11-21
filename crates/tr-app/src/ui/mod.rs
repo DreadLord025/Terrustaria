@@ -14,6 +14,7 @@ pub mod clipboard;
 pub(crate) mod chest;
 pub mod chrome;
 pub(crate) mod coin_slot;
+pub(crate) mod savings;
 pub mod color;
 pub mod crafting;
 pub mod cursor;
@@ -716,6 +717,10 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // W4-g12 doc-sweep: the CoinSlot machine (S1-H-9) — the savings
+    // pile's `UpdateSavings` rows animate through it (`ItemSlot.cs:3739`
+    // → `DrawMoney` → `CoinSlot.UpdateSavings`).
+    coin_state: &mut coin_slot::CoinSlotState,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -919,6 +924,24 @@ pub fn draw_hud(
                         [220.0 / 255.0; 4],
                     );
                 }
+            }
+            // W4-g12 doc-sweep: `ItemSlot.DrawSavings(sb, 504f,
+            // this.invBottom)` (`Main.cs:41791`) — the savings coin pile
+            // beside the shop grid, vertical, before the happiness
+            // chrome (`:41792-41797`, the g58 lane). The four banks ride
+            // the local player (`Main.player[Main.myPlayer]`,
+            // `ItemSlot.cs:3706`).
+            if let Some(p) = player {
+                savings::draw_savings(
+                    r,
+                    lookups,
+                    coin_state,
+                    &[&p.banks[0], &p.banks[1], &p.banks[2], &p.banks[3]],
+                    504.0,
+                    258.0,
+                    false,
+                    pulse.text,
+                );
             }
         }
         // The reforge menu (`Main.DrawInventory`'s inline block,
