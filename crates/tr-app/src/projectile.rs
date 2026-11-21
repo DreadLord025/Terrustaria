@@ -19971,6 +19971,12 @@ impl ProjectilePool {
                 // runs at the same death hook the blast does.
                 let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
                 self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                // W4-g3 — `Kill()`'s aimed-spell arms (`Projectile.cs:71257-
+                // 71489`): the Magic Missile / Flamelash / Rainbow Rod bolt's
+                // death resizes to its blast box, runs `Damage()` through it,
+                // restores the box, queues the Item10 cue and rolls the
+                // trail-death dust census. Kind-disjoint from the gem bolts.
+                self.aimed_spell_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 // `Kill()`'s debris arm (`Kill_ExplodeTiles` `:77369-77385`,
                 // called from `Kill()` `:77258-77261`): the trio's death
                 // crack roll on the tile below its centre.
@@ -21761,6 +21767,71 @@ impl ProjectilePool {
             damage,
             knock_back,
         );
+    }
+
+    /// W4-g3 — `Kill()`'s aimed-spell arms (`Projectile.cs:71257-71489`): the
+    /// Magic Missile (16, `:71329-71408`), Flamelash (34, `:71409-71489`) and
+    /// Rainbow Rod bolt (79, `:71257-71328`) each resize to a square blast box
+    /// (128 / 96 / 128), open `penetrate`/`maxPenetrate` to −1, run `Damage()`
+    /// through the resized box, restore the old box, play `SoundID.Item10`,
+    /// then roll their trail-death dust census. Kind-gated, one-shot per death
+    /// (a dead slot never returns to `active` — the `spawn_inferno_blast`
+    /// precedent). The dust bodies are SKIPPED, their explicit draws kept (the
+    /// `celeb2_death` convention); the cue rides `pending_proj_sounds` (the
+    /// S1-E-21h seam). The resize keeps the centre fixed, so the restore
+    /// returns the box to its pre-death place.
+    fn aimed_spell_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let kind = self.slots[slot].kind;
+        let (side, at_center) = match kind {
+            MAGIC_MISSILE => (128.0, true),   // `:71332`, Item10 at Center
+            FLAMELASH => (96.0, false),       // `:71412`, Item10 at position
+            RAINBOW_ROD_BULLET => (128.0, true), // `:71260`, Item10 at Center
+            _ => return,
+        };
+        let (old_w, old_h) = {
+            let p = &self.slots[slot];
+            (p.w, p.h)
+        };
+        // `Resize(side, side)` + the penetration open (`:71332-71335`).
+        crate::projectile_ai_misc::aimed_spell_kill_resize(&mut self.slots[slot], side);
+        self.slots[slot].max_penetrate = -1;
+        self.slots[slot].penetrate = -1;
+        // `Damage()` (`:71336`) — the box walk through the resized box.
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        // `Resize(newWidth, newHeight)` (`:71337`) — restore the old box about
+        // the (unchanged) centre.
+        {
+            let p = &mut self.slots[slot];
+            let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            p.w = old_w;
+            p.h = old_h;
+            p.pos = center - Vec2::new(old_w * 0.5, old_h * 0.5);
+        }
+        // `SoundEngine.PlaySound(SoundID.Item10, ...)` (`:71338`) — the cue.
+        let (sx, sy) = {
+            let p = &self.slots[slot];
+            if at_center {
+                (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            } else {
+                (p.pos.x, p.pos.y)
+            }
+        };
+        self.pending_proj_sounds.push((2, 10, sx, sy, 0.0));
+        // The trail-death dust census (bodies skipped, draws kept).
+        let p = &self.slots[slot];
+        match kind {
+            MAGIC_MISSILE => crate::projectile_ai_misc::magic_missile_death_draws(p, rng),
+            FLAMELASH => crate::projectile_ai_misc::flamelash_death_draws(p, rng),
+            RAINBOW_ROD_BULLET => crate::projectile_ai_misc::rainbow_rod_death_draws(p, rng),
+            _ => {}
+        }
     }
 
     /// S1-P-i21 — `AI()`'s aiStyle-45 Nimbus chain (`Projectile.cs:27950-
@@ -44515,5 +44586,110 @@ mod w4_g3_onhit_direction_tests {
             &mut tr_core::tile_light::FastRandom::new(7),
         );
         assert_eq!(pool.slots()[slot].time_left, 0, "the contact kill (`:13224`)");
+    }
+}
+
+// --- W4-g3: the unclaimed aimed-spell Kill arms (16 / 34 / 79) -------------
+#[cfg(test)]
+mod w4_g3_aimed_spell_kill_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 200, 200)
+    }
+
+    /// A draw-recording rng: `next_range` returns min, `next_float` 0 — the
+    /// census proves count AND order (the `projectile_ai_misc` CensusRng).
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    /// The Magic Missile's death resizes to 128, opens penetration, runs the
+    /// box Damage, restores the 32-box, queues Item10 at the centre and rolls
+    /// the trail census. With an empty `oldPos` ring the trail loop breaks at
+    /// step 0, so only the 20-pair tail draws (the `:71393-71406` block).
+    #[test]
+    fn w4_g3_the_magic_missile_death_resizes_bursts_and_restores() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(MAGIC_MISSILE, 500.0, 500.0, 0.0, 0.0, 20, 2.0)
+            .expect("the magic missile row");
+        let (w0, h0, pos0) = {
+            let p = &pool.slots()[slot];
+            (p.w, p.h, p.pos)
+        };
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
+        pool.aimed_spell_kill(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (w0, h0), "the box restored (`:71337`)");
+        assert_eq!(p.pos, pos0, "the centre kept");
+        assert_eq!(p.penetrate, -1, "the penetration open (`:71335`)");
+        assert!(npc.hp < 500, "the resized box Damage lands");
+        assert_eq!(
+            pool.pending_proj_sounds.last(),
+            Some(&(2, 10, 500.0 + w0 * 0.5, 500.0 + h0 * 0.5, 0.0)),
+            "Item10 at the centre (`:71338`)"
+        );
+        // Empty ring: the trail breaks at step 0; the 20-pair tail draws
+        // 2 circular floats + 1 scale + 1 Next(1,16) + 1 scale + 1 Next(1,16).
+        assert_eq!(rng.floats, 20 * 4, "the tail's four floats per pair");
+        assert_eq!(rng.ranges, vec![(1, 16); 40], "the tail's two position draws");
+    }
+
+    /// The Flamelash resizes to 96 and queues Item10 at the POSITION (not the
+    /// centre — `:71418`). Empty ring: the 20-pair tail draws one fadeIn float
+    /// each (`:71474-71487`).
+    #[test]
+    fn w4_g3_the_flamelash_death_uses_the_96_box_and_position_cue() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FLAMELASH, 500.0, 500.0, 0.0, 0.0, 20, 2.0)
+            .expect("the flamelash row");
+        let (w0, h0) = {
+            let p = &pool.slots()[slot];
+            (p.w, p.h)
+        };
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
+        pool.aimed_spell_kill(slot, &mut [], (false, false), &mut rng, 0.0);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (w0, h0), "the box restored");
+        assert_eq!(
+            pool.pending_proj_sounds.last(),
+            Some(&(2, 10, p.pos.x, p.pos.y, 0.0)),
+            "Item10 at the position (`:71418`)"
+        );
+        assert_eq!(rng.floats, 20, "the tail's one fadeIn float per pair");
+        assert!(rng.ranges.is_empty(), "the empty-ring tail rolls no ranges");
+    }
+
+    /// The Rainbow Rod resizes to 128; its census leads with one hue float and
+    /// the 14-dust tail draws one colour float each (`:71268`, `:71320-71326`).
+    #[test]
+    fn w4_g3_the_rainbow_rod_death_leads_with_a_hue_float() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(RAINBOW_ROD_BULLET, 500.0, 500.0, 0.0, 0.0, 20, 2.0)
+            .expect("the rainbow rod row");
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
+        pool.aimed_spell_kill(slot, &mut [], (false, false), &mut rng, 0.0);
+        assert_eq!(rng.floats, 1 + 14, "the lead hue + the 14 colour floats");
+        assert!(rng.ranges.is_empty(), "the empty ring rolls no counts");
     }
 }

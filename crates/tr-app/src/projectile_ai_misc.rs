@@ -458,6 +458,142 @@ pub(crate) fn fairy_queen_death_draws(rng: &mut dyn DropRng) {
     }
 }
 
+/// `Kill()`'s aimed-spell resize (`Projectile.cs:71332-71337` / `:71412-71417`
+/// / `:71260-71265`): `Resize(side, side)` snaps the position to the old
+/// centre, grows the box, then recentres on the new half-box. The caller
+/// saves the old box, runs [`ProjectilePool::damage_pve_boxed`] through the
+/// resized box, then restores (the `gem_bolt_aoe` shape). RNG-free.
+pub(crate) fn aimed_spell_kill_resize(p: &mut Projectile, side: f32) {
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    p.w = side;
+    p.h = side;
+    p.pos = center - Vec2::splat(side * 0.5);
+}
+
+/// `Kill()`'s Magic Missile trail-death dust census
+/// (`Projectile.cs:71340-71407`): the 10-step `oldPos` ring — each step rolls
+/// a colour `NextFloat` (`:71347`) + a `Next(1, 4)` count (`:71348`),
+/// decrements the count past the ring's 0.3/0.75 marks (`:71350-71357`), then
+/// per spawned dust a `Next(3)` gate (`:71362`): the taken branch draws THREE
+/// floats (velocity scale `:71365`, scale `:71367`, fadeIn `:71368`), the else
+/// branch one DISCARDED `Next(2)` (`:71381`) + one fadeIn float (`:71386`).
+/// Then the 20-pair tail (`:71393-71406`): per pair a `NextVector2Circular`
+/// (2 floats), a scale float, a `Next(1, 16)` position draw, then a second
+/// dust's scale float + `Next(1, 16)`. The `CloneDust`/`NewDust` internals go
+/// with the dust pool; a negative count spawns nothing (the C# loop guard).
+pub(crate) fn magic_missile_death_draws(p: &Projectile, rng: &mut dyn DropRng) {
+    for step in 0..p.old_pos.len() {
+        if p.old_pos[step] == Vec2::ZERO {
+            break; // `:71343-71346`
+        }
+        let _ = rng.next_float(); // `:71347` colour
+        let mut count = rng.next_range(1, 4); // `:71348`
+        let n = p.old_pos.len() as f32;
+        if step as f32 >= n * 0.3 {
+            count -= 1; // `:71350-71353`
+        }
+        if step as f32 >= n * 0.75 {
+            count -= 2; // `:71354-71357`
+        }
+        for _ in 0..count.max(0) {
+            if rng.next_range(0, 3) == 0 {
+                // `:71362-71377` — the 267 dust's three explicit floats.
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+            } else {
+                // `:71378-71389` — the 15 dust: the discarded Next(2) + fadeIn.
+                let _ = rng.next_range(0, 2);
+                let _ = rng.next_float();
+            }
+        }
+    }
+    for _ in 0..20 {
+        // `:71393-71406` — the two NewDustDirect(15) per pair.
+        let _ = (rng.next_float(), rng.next_float()); // NextVector2Circular
+        let _ = rng.next_float(); // scale
+        let _ = rng.next_range(1, 16); // position
+        let _ = rng.next_float(); // second dust's scale
+        let _ = rng.next_range(1, 16); // second dust's position
+    }
+}
+
+/// `Kill()`'s Flamelash trail-death dust census
+/// (`Projectile.cs:71420-71488`): the 10-step ring — colour `NextFloat`
+/// (`:71427`) + `Next(1, 5)` count (`:71428`), the 0.3/0.75 decrements, then
+/// per dust a `Next(3)` gate (`:71442`): the taken branch THREE floats
+/// (`:71445-71447`), the else branch one `Next(2)` gate (`:71457`, its body
+/// rolls nothing) . Then the 20-pair tail (`:71474-71487`): per pair one
+/// fadeIn float (the first dust) and no explicit draw on the second.
+pub(crate) fn flamelash_death_draws(p: &Projectile, rng: &mut dyn DropRng) {
+    for step in 0..p.old_pos.len() {
+        if p.old_pos[step] == Vec2::ZERO {
+            break; // `:71423-71426`
+        }
+        let _ = rng.next_float(); // `:71427` colour
+        let mut count = rng.next_range(1, 5); // `:71428`
+        let n = p.old_pos.len() as f32;
+        if step as f32 >= n * 0.3 {
+            count -= 1; // `:71430-71433`
+        }
+        if step as f32 >= n * 0.75 {
+            count -= 2; // `:71434-71437`
+        }
+        for _ in 0..count.max(0) {
+            if rng.next_range(0, 3) == 0 {
+                // `:71442-71455` — the 267 dust's three explicit floats.
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+            } else {
+                // `:71456-71467` — the 6 dust's Next(2) gate (body rolls nothing).
+                let _ = rng.next_range(0, 2);
+            }
+        }
+    }
+    for _ in 0..20 {
+        // `:71474-71487` — the first dust's fadeIn float; the second draws none.
+        let _ = rng.next_float();
+    }
+}
+
+/// `Kill()`'s Rainbow Rod trail-death dust census
+/// (`Projectile.cs:71268-71327`): one lead `NextFloat` (`:71268`), the 10-step
+/// ring — `Next(1, 4)` count (`:71275`) with the 0.3/0.65/0.85 decrements
+/// (`:71278-71289`), then per spawned dust FOUR floats (velocity scale
+/// `:71295`, scale `:71297`, fadeIn `:71298`, and the clone's colour is fixed)
+/// — no `Next(3)` gate here (every dust is the 267 branch). Then the 14-dust
+/// tail (`:71320-71326`): one colour `NextFloat` each. The `CloneDust`/
+/// `NewDust` internals go with the dust pool.
+pub(crate) fn rainbow_rod_death_draws(p: &Projectile, rng: &mut dyn DropRng) {
+    let _ = rng.next_float(); // `:71268` lead hue
+    for step in 0..p.old_pos.len() {
+        if p.old_pos[step] == Vec2::ZERO {
+            break; // `:71271-71274`
+        }
+        let mut count = rng.next_range(1, 4); // `:71275`
+        let n = p.old_pos.len() as f32;
+        if step as f32 >= n * 0.3 {
+            count -= 1; // `:71278-71281`
+        }
+        if step as f32 >= n * 0.65 {
+            count -= 2; // `:71282-71285`
+        }
+        if step as f32 >= n * 0.85 {
+            count -= 3; // `:71286-71289`
+        }
+        for _ in 0..count.max(0) {
+            // `:71292-71308` — the 267 dust's three explicit floats.
+            let _ = rng.next_float();
+            let _ = rng.next_float();
+            let _ = rng.next_float();
+        }
+    }
+    for _ in 0..14 {
+        let _ = rng.next_float(); // `:71322` colour
+    }
+}
+
 /// `AI_147_Explosion` (`Projectile.cs:53130-53399`) — the per-state
 /// firework burst, as the DRAW CENSUS: every explicit `Main.rand` draw
 /// stays on the stream in the C#'s order, the dust/gore bodies are
