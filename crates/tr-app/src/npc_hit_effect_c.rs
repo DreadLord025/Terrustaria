@@ -256,6 +256,7 @@
 //! | 1335-1344 | `:88977-89077` | the 82-family Wraith trio + 315 HeadlessHorseman (+446) + 254-family spore 375/376/377 |
 //! | 1345-1354 | `:89091-89263` | the 140 PossessedArmor trio + 39/40/41 BoneSerpent head + 139 Probe quadrants + 467 DeadlySphere pair |
 //! | 1355-1359 | `:89185-89192` | the 35/68 SkeletronHead/DungeonGuardian death (RedHat 1398/1399/1400 or normal 54/55) |
+//! | 1360-1367 | `:89197-89207` | the 36 SkeletronHand death (RedHat 1401/1402x3 or normal 56/57x3) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8227,6 +8228,43 @@ fn skeletron_head_death(
     }
 }
 
+/// The 36 SkeletronHand death (`NPC.cs:89177-89208`, sites 1360-1367): the
+/// 150-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then at
+/// position with `base.velocity` — the RedHat variant (`localAI[3]==1`)
+/// spawns 1401 then 1402×3, else 56 then 57×3. Scale defaults to 1.
+fn skeletron_hand_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..150 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if red_hat_skeletron_adjustments_enabled(npc, 36) {
+        // `:89197-89200` — the RedHat 1401 + 1402x3.
+        gore.new_gore(rng, world, pos, vel, 1401, 1.0);
+        gore.new_gore(rng, world, pos, vel, 1402, 1.0);
+        gore.new_gore(rng, world, pos, vel, 1402, 1.0);
+        gore.new_gore(rng, world, pos, vel, 1402, 1.0);
+    } else {
+        // `:89204-89207` — the normal 56 + 57x3.
+        gore.new_gore(rng, world, pos, vel, 56, 1.0);
+        gore.new_gore(rng, world, pos, vel, 57, 1.0);
+        gore.new_gore(rng, world, pos, vel, 57, 1.0);
+        gore.new_gore(rng, world, pos, vel, 57, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9225,10 +9263,13 @@ pub fn hit_effect_c(
     if npc_type == 467 && npc.hp <= 0 {
         deadly_sphere_death(npc, dust, dust_ctx, gore, rng, world);
     }
-    // `:89167-89209` — the 35/36/68 Skeletron block; this commit owns the
-    // 35/68 branch (sites 1355-1359); the 36 lands with the next batch.
+    // `:89167-89209` — the 35/36/68 Skeletron block: the 35/68 branch
+    // (sites 1355-1359) + the 36 branch (sites 1360-1367).
     if (npc_type == 35 || npc_type == 68) && npc.hp <= 0 {
         skeletron_head_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    if npc_type == 36 && npc.hp <= 0 {
+        skeletron_hand_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -14499,6 +14540,29 @@ mod tests {
         skeletron_head_death(&n3, 68, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
         let types3: Vec<i32> = gore3.slots()[..2].iter().map(|g| g.gore_type).collect();
         assert_eq!(types3, vec![54, 55]);
+    }
+
+    /// `NPC.cs:89197-89207` — the SkeletronHand death: the RedHat variant
+    /// (localAI[3]==1) spawns 1401/1402/1402/1402, else 56/57/57/57.
+    #[test]
+    fn w4_f10_the_skeletron_hand_death_uses_the_red_hat_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.local_ai[3] = 0.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1471);
+        skeletron_hand_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![56, 57, 57, 57]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.local_ai[3] = 1.0;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1471);
+        skeletron_hand_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1401, 1402, 1402, 1402]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
