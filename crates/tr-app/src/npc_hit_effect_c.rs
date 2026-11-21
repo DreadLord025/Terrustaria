@@ -253,6 +253,7 @@
 //! | 1309-1317 | `:88759-88815` | the 341 PresentMimic + 85/629 Mimic + 473-476 BigMimic deaths (3 smoke gores each) |
 //! | 1318-1325 | `:88858-88887` | the 170/180 + 171 Pigron deaths (4 gores each at Y+h/2-10) |
 //! | 1326-1334 | `:88901-88956` | the 290 Paladin (3 random gores) + 87-92 Wyvern (N random gores) + 78-80/630 Mummy (smoke trio) |
+//! | 1335-1344 | `:88977-89077` | the 82-family Wraith trio + 315 HeadlessHorseman (+446) + 254-family spore 375/376/377 |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7909,6 +7910,127 @@ fn mummy_death(
     }
 }
 
+/// The shared 99 smoke trio at the −10 / height/2−15 / height−20 ladder
+/// (`NPC.cs:88977-88982` and the 315/140 repeats): three type-99 gores,
+/// velocity `(hitDirection, 0)` then `velocity *= 0.3` post-write, at
+/// `this.scale`. The C# `height/2` is the integer half.
+fn smoke_99_trio(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (_, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(hit_direction, 0.0);
+    let s = npc.scale;
+    let top = Vec2::new(pos.x, pos.y - 10.0);
+    let mid = Vec2::new(pos.x, pos.y + (h as i32 / 2) as f32 - 15.0);
+    let bot = Vec2::new(pos.x, pos.y + h - 20.0);
+    for anchor in [top, mid, bot] {
+        let idx = gore.new_gore(rng, world, anchor, vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 82/158/159/250/253 Wraith-family death (`NPC.cs:88971-88982`, sites
+/// 1335-1337): the 20-dust type-54 burst (Alpha 50, scale 1.5, velocity ×2,
+/// noGravity post-writes), then the shared 99 smoke trio.
+fn wraith_family_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    smoke_99_trio(npc, gore, rng, world, hit_direction);
+}
+
+/// The 315 HeadlessHorseman death (`NPC.cs:89038-89051`, sites 1338-1341):
+/// the 20-dust type-54 burst (Alpha 50, scale 1.5, velocity ×2, noGravity),
+/// then the shared 99 smoke trio PLUS a fourth gore 446 at position,
+/// velocity `(hitDirection, 0)` then `velocity *= 0.1` post-write.
+fn headless_horseman_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    smoke_99_trio(npc, gore, rng, world, hit_direction);
+    // `:89050-89051` — the fourth gore 446 at position, ×0.1.
+    let idx = gore.new_gore(rng, world, pos, Vec2::new(hit_direction, 0.0), 446, npc.scale);
+    gore.slot_mut(idx).velocity *= 0.1;
+}
+
+/// The 254-261/634/635 spore-family death (`NPC.cs:89065-89079`, sites
+/// 1342-1344): the 20-dust type-165 burst (Alpha 50, scale 1.5, velocity ×2,
+/// noGravity post-writes), then — UNLESS `type == 261` FungiSpore — the
+/// 375/376/377 trio at the −10 / height/2−15 / height−20 ladder, velocity
+/// `(hitDirection, 0)` then `velocity *= 0.3` post-write, at `this.scale`.
+fn spore_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 165, 0.0, 0.0, 50,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:89071-89079` — the 261 FungiSpore skips the gores.
+    if npc_type == 261 {
+        return;
+    }
+    let vel = Vec2::new(hit_direction, 0.0);
+    let s = npc.scale;
+    let top = Vec2::new(pos.x, pos.y - 10.0);
+    let mid = Vec2::new(pos.x, pos.y + (h as i32 / 2) as f32 - 15.0);
+    let bot = Vec2::new(pos.x, pos.y + h - 20.0);
+    for (anchor, ty) in [(top, 375), (mid, 376), (bot, 377)] {
+        let idx = gore.new_gore(rng, world, anchor, vel, ty, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8874,6 +8996,22 @@ pub fn hit_effect_c(
     // `:88934-88958` — the 78/79/80/630 Mummy arm (sites 1332-1334).
     if (npc_type == 78 || npc_type == 79 || npc_type == 80 || npc_type == 630) && npc.hp <= 0 {
         mummy_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88959-88983` — the 82/158/159/250/253 Wraith-family arm (sites
+    // 1335-1337).
+    if (npc_type == 82 || npc_type == 158 || npc_type == 159 || npc_type == 250 || npc_type == 253)
+        && npc.hp <= 0
+    {
+        wraith_family_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89026-89052` — the 315 HeadlessHorseman arm (sites 1338-1341).
+    if npc_type == 315 && npc.hp <= 0 {
+        headless_horseman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89053-89080` — the 254-261/634/635 spore-family arm (sites
+    // 1342-1344).
+    if ((254..=261).contains(&npc_type) || npc_type == 634 || npc_type == 635) && npc.hp <= 0 {
+        spore_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -13962,6 +14100,62 @@ mod tests {
         let d = dust.slots().iter().find(|d| d.active).unwrap();
         assert_eq!(d.dust_type, 31);
         assert!(d.no_gravity);
+    }
+
+    /// `NPC.cs:88977-88982` — the Wraith-family death: the 99 smoke trio
+    /// at Y−10 / Y+height/2−15 / Y+height−20 (note the −15/−20 offsets).
+    #[test]
+    fn w4_f10_the_wraith_family_death_spawns_the_smoke_trio() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1427);
+        wraith_family_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![99, 99, 99]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 90.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 113.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 136.0));
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.dust_type, 54);
+    }
+
+    /// `NPC.cs:89044-89051` — the HeadlessHorseman death: the 99 trio plus
+    /// the fourth 446 gore at position with the ×0.1 post-write.
+    #[test]
+    fn w4_f10_the_headless_horseman_death_appends_the_446() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1429);
+        headless_horseman_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![99, 99, 99, 446]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 100.0));
+    }
+
+    /// `NPC.cs:89071-89078` — the spore-family death: 375/376/377 at the
+    /// −10/−15/−20 ladder; the 261 FungiSpore spawns NO gores (dust only).
+    #[test]
+    fn w4_f10_the_spore_family_death_skips_the_fungi_spore() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1433);
+        spore_family_death(&n, 254, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![375, 376, 377]);
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 113.0));
+        // The 261: dust only.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1433);
+        spore_family_death(&n, 261, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 0);
+        assert!(dust2.slots().iter().any(|d| d.active && d.dust_type == 165));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
