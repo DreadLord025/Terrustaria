@@ -1120,8 +1120,8 @@ pub struct Player {
     pub pinned_dash: i32,
     /// `Player.extraAccessory` (`Player.cs:866`): the Demon Heart's use-grant
     /// (`:45197`) - unlocks the 6th accessory slot in expert mode
-    /// (`IsItemSlotUnlockedAndUsable` `:12587`). The consumable use is
-    /// unported, so the flag stays false in play.
+    /// (`IsItemSlotUnlockedAndUsable` `:12587`). The consumable use rides
+    /// `powerups::use_demon_heart` (W4-a6).
     pub extra_accessory: bool,
     /// The `TR_MOUNT=<id|name>` pin: the debug stand-in for the saddle item
     /// (the real items equip through `Item.mountType`), re-applied after the

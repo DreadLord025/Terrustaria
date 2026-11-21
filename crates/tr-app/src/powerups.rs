@@ -1,6 +1,7 @@
 //! W4-a6 — the permanent power-up consumables: `Player.ItemCheck`'s
-//! `ItemCheck_UseLifeCrystal` / `UseManaCrystal` (`Player.cs:45274-45320`)
-//! and their sibling `ItemCheck_Use*` arms (`:45192-45423`, later commits).
+//! `ItemCheck_UseLifeCrystal` / `UseLifeFruit` / `UseManaCrystal` /
+//! `UseDemonHeart` (`Player.cs:45192-45320`) and their sibling
+//! `ItemCheck_Use*` arms (`:45322-45423`, later commits).
 //!
 //! Every arm rides the C# mid-swing gate `itemAnimation > 0 &&
 //! ItemTimeIsZero` (`:4064`): the use START (`ApplyItemAnimation`) ran on
@@ -56,21 +57,37 @@ fn use_time_secs(held: ItemSlot) -> f32 {
 }
 
 /// The power-up kinds this machine owns — the `ItemCheck_Use*` cluster's
-/// crystal ids (`Player.cs:43595-43597`'s call row).
+/// ids (`Player.cs:43595-43598`'s call row).
 pub(crate) fn is_powerup(kind: u16) -> bool {
-    matches!(kind, 29 | 109)
+    matches!(kind, 29 | 109 | 1291 | 3335)
+}
+
+/// `Player.ItemCheck_CheckCanUse_Inner`'s Demon Heart refusal
+/// (`Player.cs:52051-52054`): `extraAccessory || !Main.expertMode` refuses
+/// the use START — no swing, no consume. The crystal/fruit caps gate the
+/// GRANT, not the start (the C# has no cap leg here).
+fn use_start_refused(app: &App, kind: u16) -> bool {
+    if kind == 3335 {
+        return app
+            .player
+            .as_ref()
+            .is_some_and(|p| p.extra_accessory || !p.buffs.expert_mode);
+    }
+    false
 }
 
 /// The mid-swing grant dispatch — the C# call order
-/// (`Player.cs:43595-43597`): LifeCrystal → LifeFruit → ManaCrystal.
-/// Returns true when the grant fired (the stack pays one).
+/// (`Player.cs:43595-43598`): LifeCrystal → LifeFruit → ManaCrystal →
+/// DemonHeart. Returns true when the grant fired (the stack pays one).
 fn run_powerup_arm(app: &mut App, held: ItemSlot) -> bool {
     if ticks_of(app.swing) <= 0 || ticks_of(app.item_time) != 0 {
         return false;
     }
     let fired = match held.kind {
         29 => use_life_crystal(app),
+        1291 => use_life_fruit(app),
         109 => use_mana_crystal(app),
+        3335 => use_demon_heart(app),
         _ => false,
     };
     if fired {
@@ -115,6 +132,50 @@ fn use_life_crystal(app: &mut App) -> bool {
     // `HealEffect(20)` (`:45316` → `:4522-4529`): the RAW 20 text — the
     // crystal arm carries NO cap on `statLife` (the C# adds straight).
     crate::potions::spawn_heal_text(app, 20);
+    true
+}
+
+/// `Player.ItemCheck_UseLifeFruit` (`Player.cs:45290-45304`):
+/// `statLifeMax >= 400 && statLifeMax < 500` → `statLifeMax += 5;
+/// statLifeMax2 += 5; statLife += 5` + `HealEffect(5)` +
+/// `HandleSpecialEvent(2)` — GET_A_LIFE's "Use" flag, plus TOPPED_OFF when
+/// both caps are full (`AchievementsHelper.cs:297-303`).
+fn use_life_fruit(app: &mut App) -> bool {
+    let (life_after, mana_base) = {
+        let Some(p) = app.player.as_mut() else {
+            return false;
+        };
+        if !(400..500).contains(&p.life_max_base) {
+            return false;
+        }
+        p.life_max_base += 5;
+        p.max_hp += 5;
+        p.hp += 5;
+        // `HealEffect(5)` (`:45300`) — the RAW 5 text, no statLife cap.
+        crate::potions::spawn_heal_text(app, 5);
+        (p.life_max_base, p.mana_max_base)
+    };
+    let _ = app.achievements.notify_custom("Use");
+    if life_after == 500 && mana_base == 200 {
+        let _ = app.achievements.notify_custom("Use");
+    }
+    true
+}
+
+/// `Player.ItemCheck_UseDemonHeart` (`Player.cs:45192-45200`):
+/// `!extraAccessory && Main.expertMode` → `extraAccessory = true` (the 6th
+/// accessory slot, `IsItemSlotUnlockedAndUsable` `:12587`). The start
+/// refusal (`:52051-52054`) already shut the used/non-expert case; this
+/// leg mirrors the C#'s own double gate. The `SendData(4)` sync (`:45198`)
+/// is MP-only.
+fn use_demon_heart(app: &mut App) -> bool {
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    if p.extra_accessory || !p.buffs.expert_mode {
+        return false;
+    }
+    p.extra_accessory = true;
     true
 }
 
@@ -167,6 +228,9 @@ pub(crate) fn powerup_item_check(app: &mut App, press_edge: bool) -> bool {
         return false;
     }
     if app.mine_down && !app.inventory_open && press_edge {
+        if use_start_refused(app, held.kind) {
+            return false;
+        }
         // `ItemCheck_StartActualUse` → `ApplyItemAnimation` (`:51680`):
         // the swing lasts useAnimation; `itemTime` stays 0 (the `:42836`
         // decrement only runs when > 0), so the grant's `ItemTimeIsZero`
@@ -355,5 +419,130 @@ mod tests {
         p.update(&app.world, crate::player::PlayerInput::default());
         assert_eq!(p.mana_max_base, 40, "the permanent cap persists");
         assert_eq!(p.mana_max, 40, "the rebase reads the grown base");
+    }
+
+    /// Life Fruit 1291: +5 to base/effective/live life at the 400 gate,
+    /// one consumed, the RAW-5 heal text, GET_A_LIFE's "Use" flag.
+    #[test]
+    fn life_fruit_grants_five_at_four_hundred() {
+        let mut app = rig(1291, 3);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.life_max_base = 400;
+            p.max_hp = 400;
+            p.hp = 400;
+        }
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.life_max_base, 405, "statLifeMax += 5");
+        assert_eq!(p.max_hp, 405);
+        assert_eq!(p.hp, 405);
+        assert_eq!(app.inventory[app.selected].count, 2);
+        let t = app.combat_texts.iter().find(|t| t.active).expect("heal text");
+        assert_eq!(t.text, "5");
+        let life = app.achievements.list.iter().find(|a| a.name == "GET_A_LIFE").unwrap();
+        assert!(life.completed, "HandleSpecialEvent(2) → GET_A_LIFE");
+    }
+
+    /// Life Fruit below 400 refuses (the `statLifeMax >= 400` gate) — no
+    /// grant, no consume.
+    #[test]
+    fn life_fruit_below_four_hundred_refuses() {
+        let mut app = rig(1291, 3);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.life_max_base, 100, "no grant below 400");
+        assert_eq!(app.inventory[app.selected].count, 3, "no consume on refusal");
+    }
+
+    /// Life Fruit at 500 refuses (the `statLifeMax < 500` gate).
+    #[test]
+    fn life_fruit_at_five_hundred_refuses() {
+        let mut app = rig(1291, 3);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.life_max_base = 500;
+            p.max_hp = 500;
+            p.hp = 500;
+        }
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().life_max_base, 500);
+        assert_eq!(app.inventory[app.selected].count, 3);
+    }
+
+    /// Twenty fruits walk 400 → 500 and then stop.
+    #[test]
+    fn life_fruits_stop_at_five_hundred() {
+        let mut app = rig(1291, 25);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.life_max_base = 400;
+            p.max_hp = 400;
+            p.hp = 400;
+        }
+        for _ in 0..25 {
+            app.mine_down = false;
+            tick(&mut app);
+            app.attack_cd = 0.0;
+            app.reuse_delay = 0.0;
+            app.swing = 0.0;
+            app.mine_down = true;
+            tick(&mut app);
+        }
+        assert_eq!(app.player.as_ref().unwrap().life_max_base, 500);
+        assert_eq!(app.inventory[app.selected].count, 5, "25 - 20");
+    }
+
+    /// Demon Heart 3335 in expert mode: extraAccessory flips true, one
+    /// consumed (the 6th accessory slot unlock).
+    #[test]
+    fn demon_heart_unlocks_the_extra_slot_in_expert() {
+        let mut app = rig(3335, 2);
+        app.player.as_mut().unwrap().buffs.expert_mode = true;
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.player.as_ref().unwrap().extra_accessory);
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    /// Demon Heart outside expert mode refuses the use START
+    /// (`:52051-52054`) — no swing, no grant, no consume.
+    #[test]
+    fn demon_heart_outside_expert_refuses() {
+        let mut app = rig(3335, 2);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(!app.player.as_ref().unwrap().extra_accessory);
+        assert_eq!(app.inventory[app.selected].count, 2, "no consume");
+        assert_eq!(app.swing, 0.0, "no swing on the refused start");
+    }
+
+    /// A second Demon Heart refuses (extraAccessory already set) — the
+    /// stack keeps its remainder.
+    #[test]
+    fn a_second_demon_heart_refuses() {
+        let mut app = rig(3335, 2);
+        app.player.as_mut().unwrap().buffs.expert_mode = true;
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // Release + re-press with the flag already set.
+        app.mine_down = false;
+        tick(&mut app);
+        app.attack_cd = 0.0;
+        app.reuse_delay = 0.0;
+        app.swing = 0.0;
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 1, "the second refuses");
     }
 }
