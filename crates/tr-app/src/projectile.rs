@@ -13022,7 +13022,7 @@ impl Projectile {
     /// off and `timeLeft` zeroed. The `num` capture (`:70649`, the
     /// pre-zeroing timeLeft) rides `kill_time_left` for the 639's death
     /// hook (`:73444`); every other kind's consumer reads nothing.
-    fn kill(&mut self) {
+    pub(crate) fn kill(&mut self) {
         self.kill_time_left = self.time_left;
         self.active = false;
         self.time_left = 0;
