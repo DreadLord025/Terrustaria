@@ -273,6 +273,13 @@ mod tests {
     // collapse on the 512 world, so the pass runs and seats crystals);
     // deferred to the gate. The sub-vanilla guard only fires when the
     // band genuinely collapses (a deeper surface/rock layer).
+    // W4-g36 gap-fill (code-only): the ShimmerCleanUp arm
+    // (`shimmer.rs::shimmer_clean_up`, the Final Cleanup `:22472` tail) is
+    // UNWIRED — no executed step calls it, so this pin stays UNCHANGED. The
+    // merger composes it into g37's Final Cleanup; the 512 world's Shimmer
+    // pass takes the sub-vanilla width guard (no shimmer placed →
+    // `shimmer_position` None → the arm's zero-sentinel early return), so even
+    // wired the arm is a no-op on the 512 pin. a == b untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -338,6 +345,18 @@ mod tests {
     // W4-g36 A7 (code-only): the Life Crystals pass (see SEED42_512 above)
     // — the 2×2 hearts (and the errorWorld/noSurface mana stars) move this
     // pin BY DESIGN; deferred. Own `pass_rng("Life Crystals")` stream.
+    // W4-g36 gap-fill (code-only): the ShimmerCleanUp arm
+    // (`WorldGen.cs:34716-34821`, `shimmer.rs::shimmer_clean_up`) — the Final
+    // Cleanup pass's `:22472` shimmer tail, deferred back to g36 by g37's
+    // Final Cleanup port (`4ced188f9`). UNWIRED by design (the g39/f25
+    // convention): no executed step calls it yet, so BOTH pins stay UNCHANGED
+    // on this branch. The merger composes it into g37's Final Cleanup at
+    // `:22472`; at that point it moves the pins BY DESIGN (the inner-disc
+    // cleanse, the outer-ellipse wall clear + Convert-0, the pool refill, the
+    // anniversary Shimmerator flood, the tree-under-shimmer kill) — deferred
+    // to the gate. Own draws ride the caller's `pass_rng("Final Cleanup")`
+    // stream (the two NextDouble jitter rolls per outer-sweep cell); a == b
+    // untouched (the W:7 witnesses replay it).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

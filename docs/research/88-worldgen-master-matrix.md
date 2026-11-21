@@ -7,9 +7,18 @@
 > re-registration + Dual Dungeons Dither Snake; 66 executed steps at base
 > a725acb0 citing 55 distinct vanilla names).
 >
+> **Gap-fill re-verification (2026-11-21, this phase):** all pushed tips re-read
+> (d105 advanced to `241ffa39`, f25 to `803093b1`) + the local g37 claim
+> (`4ced188f9`→`81fd1e0d`). The three gaps flagged at `6d46f6a5` (Random Gems,
+> Moss Grass, Final Cleanup) are now ALL filled/claimed elsewhere — §6.1
+> rewritten. New residual: g37's Final Cleanup deferred the **ShimmerCleanUp**
+> arm (`:22472`) back to g36 (it reads g36 A1's `shimmer_position`); PORTED this
+> phase (`shimmer.rs::shimmer_clean_up`, unwired, W:7, a==b). Larva contest
+> re-adjudicated (§2.20): d105 #45 landed a slice, c31 stays the faithful owner.
+>
 > **This doc IS the merger playbook.** Every vanilla pass gets exactly ONE
 > owner branch below; every duplicate gets an explicit KEEP (with arm-count /
-> witness-count evidence) and DROP list. No code changes are made here.
+> witness-count evidence) and DROP list.
 
 ## 1. Pushed tips read (all worldgen lanes, fetched 2026-11-21)
 
@@ -19,12 +28,12 @@
 | d102 | `29e8859b` | Silt/Webs/Slush/Mountain Caves/Gems + Shimmer/Clean Up Dirt/Dirt Runner/Wood Walls (9/9) |
 | d103 | `8be04cb0` | Oasis/Waterfalls/Wall Variety/Life Crystals/Statues/Surface Chests/Water Chests/Cave Walls/Island Houses (9/9) |
 | d104 | `8a229c3e` | Island Houses/Quick Cleanup/Hellforge/Spreading Grass/Surface Ore/Fallen Log/Traps/Piles/Spawn Point (9/9) |
-| d105 | `03efd7bc` | Guide/Sunflowers/Herbs/Dye Plants/Flowers/Mushrooms (6 landed; Random Gems/Moss Grass/Larva NOT landed) |
-| d106 | `e2c2609c` | Grass Wall/Settle Liquids Again/Tile Cleanup/Stalac/Remove Broken Traps (R1–R5; R6 Final Cleanup NOT landed) |
+| d105 | `241ffa39` | Guide/Sunflowers/Herbs/Dye Plants/Flowers/Mushrooms/Random Gems/Moss Grass/Larva (9/9 landed — #43 `9f7b1a24`, #44 `d590d99a`, #45 `22a0026ce`; LANE 5 COMPLETE) |
+| d106 | `e2c2609c` | Grass Wall/Settle Liquids Again/Tile Cleanup/Stalac/Remove Broken Traps (R1–R5; R6 Final Cleanup yielded to g37's gap-fill `4ced188f9`) |
 | f24 | `9f2276d5` | the two GATED passes: Dither Snake (B1–B6) + Skyblock (A1–A4), review-fix round included |
 | f25 | `0ed1f3cf` | Settle Liquids (orphan adoption fd098528, earlier claim than g36's) |
-| g36 | `7f848edd` | A1 Shimmer, A2 Clean Up Dirt, A3 Dirt Runner, A4 Wood Walls, A6 Wall Variety, A7 Life Crystals (A5 yielded to f25) |
-| g37 | `1975f559` | B1–B9: Statues/Surface Chests/Water Chests/Cave Walls/Island Houses/Quick Cleanup/Hellforge/Spreading Grass/Surface Ore |
+| g36 | `6d46f6a5` + gap-fill | A1 Shimmer, A2 Clean Up Dirt, A3 Dirt Runner, A4 Wood Walls, A6 Wall Variety, A7 Life Crystals (A5 yielded to f25); gap-fill: ShimmerCleanUp arm (g37's Final Cleanup deferral, `shimmer.rs::shimmer_clean_up`, unwired) |
+| g37 | `81fd1e0d` (local; pushed tip `53a5b5b5`) | B1–B9 + FINAL CLEANUP gap-fill (`4ced188f9`→`81fd1e0d`, claim-probed against g36 tip `6d46f6a5` row 109 GAP); ShimmerCleanUp arm deferred back to g36 |
 | g38 | `8c9b7b60` | C1 Place Fallen Log only (rest of c-quarter claimed, not landed) |
 | g39 | `bab25558` | H1–H15 PlaceTile-wrapper helper family (`place_helpers.rs`, unwired) |
 | c29 | `d95c32cf` | DeadMansChestBiome + the Micro Biomes dead-man's-chest block |
@@ -291,9 +300,28 @@ Beehives pass over shared srng, the **Larva executed step** (`:20868`, Place3x3
 231 num=-2) at its vanilla slot, the larva-break→Queen Bee seam (gore 300/301/302
 + SpawnOnPlayer 222, never an item), the tileSolid[225] weight-order correction
 (Hives slot 50 runs BEFORE the Life Crystals flip — window wrapper removed).
-**KEEP c31** for Hives (#51) and Larva (#100). d105 claimed Larva but never
-landed it; g40's PlaceTight hive-rising arm composes with c31's dents. The
-retired shape-level dome stays retired.
+**KEEP c31** for Hives (#51) and Larva (#100). g40's PlaceTight hive-rising arm
+composes with c31's dents. The retired shape-level dome stays retired.
+
+**Re-adjudication (gap-fill re-verification, 2026-11-21):** d105 #45 `22a0026ce`
+(pushed tip `241ffa39`) landed a Larva step AFTER this matrix's first pass —
+`structures.rs::pass_larva` consumes a `GenVars.larva: Vec<(i32,i32)>` ledger its
+`pass_beehives` publishes (the ~half-the-hives `Next(2)` anchor roll, the 100-cap
+push), step after `muds walls in jungle`, skyblock denyAll gate, W:3. It is the
+ledger-consumer slice over the RETIRED shape-level dome (`pass_beehives` still
+draws the dome, not the faithful HiveBiome tunnels). c31's `hive.rs` is the
+faithful owner: the full `HiveBiome.Place` (CanPlace gate, 15-disc IsSolid scan,
+the Next(2,5) tunnel chains with the 0.4/0.75/0.6 dither bands, the honey-fall
+cubes/dents, `CreateStandForLarva` at the chain end + the drunk 1000-try extra
+stand `:86-99`), the `LarvaAnchors` 100-slot wrap-at-99 ledger (the C#
+`GenVars.larvaX/Y` array, not a growable Vec), `place_larva_3x3` with the
+Place3x3 clear+floor gates, W:10. **KEEP c31; DROP d105's Larva step +
+`structures.rs::pass_larva` + the `pass_beehives` larva-ledger edits + the
+`GenVars.larva` Vec slot at the merge** (c31's `LarvaAnchors` is the canonical
+slot, §3.4). d105's skyblock denyAll gate on Larva is correct and c31's step
+should carry it too (the C# `:20870` gate) — port the gate onto c31's step at the
+merge if absent (c31's `step_larva` currently has no skyblock gate; the C#
+`BeeLarvaInBeehives` is `!Skyblock.denyAllGeneration`-gated).
 
 ### 2.21 Micro Biomes dead-man's-chest block (`:20916`) — single owner
 
@@ -430,20 +458,21 @@ runs the pruning census test). DROP the locals after rewire.
 | Silt, Webs, Slush, Mountain Caves, Gems | d102 | `passes2.rs` W:23 total (per-pass 2–3 each); producer/consumer GenVars seams with d101 |
 | Oasis (+awakened cacti block), Waterfalls | d103 | `90b7eee6`/`561b3ab2`; oasis ledger + PlaceOasis; both liquid-edge sweeps |
 | Traps, Piles, Spawn Point | d104 | `traps.rs` W:2 (+witness-fix `341f4280`), structures W:2, surface W:1; g38 claimed, never landed |
-| Guide, Sunflowers, Herbs, Dye Plants, Flowers, Mushrooms | d105 | `starter_npcs.rs` W:9, `surface.rs` W:18; g38 claimed, never landed |
-| Grass Wall, Settle Liquids Again (pass), Tile Cleanup, Stalac (pass), Remove Broken Traps | d106 | R1–R5 landed (`surface.rs` W:4, `liquids.rs` W:6, `cleanup.rs` W:3, `spider_gem_moss.rs` W:22); machinery dedupe per §3.2/§3.3 |
+| Guide, Sunflowers, Herbs, Dye Plants, Flowers, Mushrooms, Random Gems, Moss Grass | d105 | `starter_npcs.rs` W:9, `surface.rs` W:18, `spider_gem_moss.rs` #43 W:3 + #44 W:3; 9/9 ledger (Larva #45 yielded to c31, §2.20) |
+| Grass Wall, Settle Liquids Again (pass), Tile Cleanup, Stalac (pass), Remove Broken Traps | d106 | R1–R5 landed (`surface.rs` W:4, `liquids.rs` W:6, `cleanup.rs` W:3, `spider_gem_moss.rs` W:22); R6 Final Cleanup yielded to g37; machinery dedupe per §3.2/§3.3 |
+| Final Cleanup (pass body) | g37 gap-fill | `4ced188f9`→`81fd1e0d` (local; pushed tip `53a5b5b5`), `final_cleanup.rs` W:5 + positional; ShimmerCleanUp arm → g36 (§6.1.5) |
 | Settle Liquids (pass + core) | f25 | §2.19 |
 | Skyblock (gated) | f24 | §2.24 |
 | Dither Snake (gated) | f24 | §2.18 (DROP c30) |
 | Pyramids (faithful) + lily/cattail/bamboo arms | c33 | §2.16 (DROP its Water Chests only) |
-| Hives (faithful) + Larva | c31 | §2.20 |
+| Hives (faithful) + Larva | c31 | §2.20 (DROP d105 #45's Larva slice) |
 | Micro Biomes dead-man's-chest block | c29 | §2.21 |
 | Marble/Granite residuals | g40 (+d101 row) | §2.22 |
 | Spider Caves residuals + validator chain | g41 | §2.23 |
 | Mushroom-biome residuals + GrowTree + plants-pass mushroom arm | g42 | §2.23 |
 | Floating Islands + Floating Island Houses + skyLakes | g44 | §2.11 (DROP d103/d104/g37) |
 | PlaceTile-wrapper helper family | g39 | §3.1 |
-| Shimmer | g36 A1 | §2.1 — **g36's only surviving pass** |
+| Shimmer + ShimmerCleanUp tail arm | g36 A1 + gap-fill | §2.1 — Shimmer is g36's surviving pass; `shimmer_clean_up` (the Final Cleanup :22472 arm, unwired) composes into g37's Final Cleanup |
 
 ## 5. FINAL pipeline order table (all 109 registrations, single owner each)
 
@@ -548,10 +577,10 @@ Order = `VANILLA_CHAIN` declaration order (the C# `AddPasses` anchors).
 | 94 | Flowers | :20447 | **d105** | logX/logY seam from #79 |
 | 95 | Mushrooms | :20599 | **d105** | |
 | 96 | Gems In Ice Biome | :20697 | base | |
-| 97 | Random Gems | :20729 | **GAP — unlanded** | claimed d105 (#43) + g39 d-slice; landed nowhere |
-| 98 | Moss Grass | :20769 | **GAP — unlanded** | claimed d105 (#44) + g39 d-slice; landed nowhere |
+| 97 | Random Gems | :20729 | **d105 #43** | landed `9f7b1a24` (pushed): ExposedGemsUnderground scatter + marble/granite diamond patches, PlaceTile-178 multi-directional anchors, pass_rng(Random Gems); W:3 |
+| 98 | Moss Grass | :20769 | **d105 #44** | landed `d590d99a` (pushed): LongMoss sweep growing 184 on moss-tile neighbours, PlaceTile-184 two-gate arm, pass_rng(Moss Grass); W:3 |
 | 99 | Muds Walls In Jungle | :20813 | base | |
-| 100 | Larva | :20868 | **c31** | d105 claimed, never landed |
+| 100 | Larva | :20868 | **c31** | KEEP c31 (§2.20); d105 #45 `22a0026ce` ALSO landed a Larva step (pushed) — the contest is re-adjudicated in §2.20, c31 stays the faithful owner |
 | 101 | Micro Biomes | :20901 | base + **c29** | dead-man's-chest block leads the micro group; thin ice/campsites/sword/mining/mahogany already base |
 | 102 | Settle Liquids Again | :21246 | **d106 R2** | pass kept, machinery re-based on f25 (§3.3) |
 | 103 | Cactus, Palm Trees, & Coral | :21310 | base | + d103 oasis block + c33 lily/cattail/bamboo arms |
@@ -560,16 +589,53 @@ Order = `VANILLA_CHAIN` declaration order (the C# `AddPasses` anchors).
 | 106 | Water Plants | :21973 | base | |
 | 107 | Stalac | :22038 | **d106 R4** | validator chain unified with g41 (§3.2); gem-trees call g42's trees.rs |
 | 108 | Remove Broken Traps | :22121 | **d106 R5** | |
-| 109 | Final Cleanup | :22141 | **GAP — unlanded** | d106 R6 pending (unchecked in 12f); no other owner |
+| 109 | Final Cleanup | :22141 | **g37 gap-fill** | landed `4ced188f9`→`81fd1e0d` (local g37, claim-probed vs g36 `6d46f6a5`): wall-hole fill + whole-map sweep + 668 dirt-throw scatter, pass_rng(Final Cleanup), W:5+positional; ShimmerCleanUp arm (:22472) deferred to g36 → `shimmer.rs::shimmer_clean_up` (this gap-fill, unwired); liquid-merge sweep (:22473) = f25/d106 seam (§3.3) |
 
 ## 6. Gaps and merger playbook
 
-### 6.1 Unlanded passes (need a follow-up lane, NOT a keep-one decision)
+### 6.1 Unlanded passes — RE-VERIFIED 2026-11-21 (gap-fill phase, all pushed tips + local claims read)
 
-1. **Random Gems** (`:20729`) — d105's ledger stops at #42 Mushrooms; g39 took
-   helpers instead of its d-slice. Unowned in code.
-2. **Moss Grass** (`:20769`) — same.
-3. **Final Cleanup** (`:22141`) — d106 R6 is the only unchecked box in `12f`.
+The three gaps flagged at `6d46f6a5` are now ALL filled/claimed elsewhere — no
+follow-up lane is needed for the pass bodies:
+
+1. **Random Gems** (`:20729`) — LANDED d105 #43 `9f7b1a24` (pushed tip
+   `241ffa39`). ExposedGemsUnderground scatter + marble/granite diamond patches
+   (`spider_gem_moss.rs::pass_random_gems`), PlaceTile-178 multi-directional
+   anchors, `pass_rng("Random Gems")`, W:3. Row 97 → d105.
+2. **Moss Grass** (`:20769`) — LANDED d105 #44 `d590d99a` (pushed). LongMoss
+   sweep growing 184 on moss-tile neighbours (`pass_moss_grass`), PlaceTile-184
+   two-gate arm, `pass_rng("Moss Grass")`, W:3. Row 98 → d105.
+3. **Final Cleanup** (`:22141`) — CLAIMED + LANDED g37 gap-fill `4ced188f9`
+   (local g37 worktree, advanced to `81fd1e0d`; pushed g37 tip is still
+   `53a5b5b5`). g37's claim probe explicitly read g36's tip `6d46f6a5` row 109
+   "GAP — unlanded" + d106 `e2c2609c` R6 unchecked → unclaimed → g37 fills
+   (`final_cleanup.rs::pass_final_cleanup`, wall-hole fill + whole-map sweep +
+   668 dirt-throw scatter, `pass_rng("Final Cleanup")`, W:5 + positional).
+   **KEEP g37** — no duplicate port on g36 (keep-one + never-same-task). Row 109
+   → g37. d106 R6 yields.
+
+**New residual found in the re-verification (the g36 gap-fill this phase ports):**
+
+4. **Larva** (`:20868`) — d105 #45 `22a0026ce` (pushed) landed a Larva step
+   (`structures.rs::pass_larva`, the hive-pass larva ledger consumer) AFTER this
+   matrix assigned row 100 to c31. The contest is re-adjudicated in §2.20: c31
+   stays the faithful owner (its `hive.rs` carries the full HiveBiome rewrite +
+   the drunk extra-stand arm + W:10; d105's is the ledger-consumer slice over the
+   retired dome). **DROP d105's Larva step + its `structures.rs::pass_larva` /
+   `pass_beehives` larva-ledger edits at the merge; KEEP c31.**
+5. **ShimmerCleanUp** (`WorldGen.cs:34716-34821`, the Final Cleanup `:22472`
+   arm) — g37's Final Cleanup port DEFERRED this arm back to g36 ("reads
+   GenVars.shimmerPosition, which g36 A1 owns; no slot on this branch"). g36 A1
+   publishes `shimmer_position`, so the arm is g36-owned. **PORTED this gap-fill**
+   (`shimmer.rs::shimmer_clean_up` + `shimmer_remove_water` + `shimmerator`,
+   verbatim, W:7, a==b). UNWIRED by design (the g39/f25 convention): the merger
+   composes it into g37's Final Cleanup at `:22472`, after the `Finish*` tails
+   and before the `Liquid.LiquidCheck` merge sweep (`:22473-22483`, the f25/d106
+   liquid-core seam §3.3). The `Liquid.tilesIgnoreWater` window (`:34767`/`:34810`)
+   is a documented no-op for this arm (it writes liquid directly, makes no
+   solidity read that the window changes — the Shimmerator flood carries its own
+   `solid_tile_ignore_water` predicate). The `Convert(j,i,0,3)` cleanse reuses the
+   shared `spread::convert_cleanse` (its pre-existing genRand deviation stands).
 
 ### 6.2 Merge order (dependency-first)
 
@@ -580,18 +646,28 @@ Order = `VANILLA_CHAIN` declaration order (the C# `AddPasses` anchors).
    (shimmer_position) → g44 islands ledger → d104 GenVars ore slots.
 3. **Pass waves in vanilla order**: d101/d102 early passes → c33 Pyramids →
    d103 mid passes (Oasis..Cave Walls, chest core first) → g44 houses → d104
-   late passes → d106 R1 → d105 plants/NPC → c31 Larva → c29 micro block →
-   d106 R2–R5 tail. f24's gated steps slot at :11511/:14755 (classic pins
-   unchanged by construction).
+   late passes → d106 R1 → d105 plants/NPC/gems/moss (Random Gems #43, Moss
+   Grass #44) → c31 Larva (DROP d105 #45's Larva, §2.20) → c29 micro block →
+   d106 R2–R5 tail → **g37 Final Cleanup** (`final_cleanup.rs`, the last classic
+   pass; compose g36's `shimmer_clean_up` at its `:22472` arm, then the f25/d106
+   `Liquid.LiquidCheck` merge sweep at `:22473`). f24's gated steps slot at
+   :11511/:14755 (classic pins unchanged by construction).
 4. **DROP list execution** (per branch, surgical — never whole-branch reverts
    where the branch also carries KEEP rows):
    - d102: drop shimmer.rs + Shimmer row ONLY (keep Silt/Webs/Slush/Mountain
      Caves/Gems/Clean Up Dirt/Dirt Runner/Wood Walls).
    - g36: drop A2/A3/A4/A6/A7 blocks (micro_finish/living_trees/structures);
-     keep shimmer.rs + its GenVars publication. g36 contributes ONE pass.
-   - g37: drop B1–B9 entirely (passes_b.rs + islands.rs edits + pipeline rows);
-     g37 contributes NOTHING to the merged chain — its value is the census
-     split + the 512-wide statue proof + the witness set the gate may port.
+     keep shimmer.rs + its GenVars publication + the gap-fill `shimmer_clean_up`
+     arm (unwired; the merger composes it into g37's Final Cleanup at :22472).
+     g36 contributes ONE pass (Shimmer) + the ShimmerCleanUp tail arm.
+   - g37: drop B1–B9 (passes_b.rs + islands.rs edits + pipeline rows) BUT KEEP
+     the Final Cleanup gap-fill (`final_cleanup.rs` + its pipeline row + the
+     `pass_rng("Final Cleanup")` stream); g37 contributes the Final Cleanup pass
+     (the B-row value is the census split + the 512-wide statue proof + the
+     witness set the gate may port). Compose g36's `shimmer_clean_up` into it.
+   - d105: drop the #45 Larva step + `structures.rs::pass_larva` + the
+     `pass_beehives` larva-ledger edits + the `GenVars.larva` Vec slot (§2.20,
+     c31's LarvaAnchors is canonical); KEEP #43 Random Gems + #44 Moss Grass.
    - d103: drop island_houses.rs + its islands.rs ledger edits ONLY.
    - d104: drop island_houses.rs + its islands.rs edits ONLY.
    - g38: drop C1 (surface.rs fallen-log block + pipeline row); port its 3

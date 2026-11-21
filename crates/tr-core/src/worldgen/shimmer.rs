@@ -28,7 +28,7 @@
 use super::biome_detail::empty_tile_check;
 use super::spider_gem_moss::place_tight;
 use super::Rng;
-use crate::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_SHIMMER};
+use crate::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_SHIMMER, LiquidKind};
 use crate::tiledata::{TILE_SOLID, TILE_SOLID_TOP};
 use crate::world::World;
 
@@ -792,6 +792,347 @@ fn invalid_for_piles(world: &World, x: i32, y: i32) -> bool {
         .is_some_and(|t| t.active() && crate::tiledata::SET_BOULDERS.has(t.kind))
 }
 
+// --- ShimmerCleanUp (the Final Cleanup tail arm, WorldGen.cs:34716-34821) -----
+//
+// W4-g36 gap-fill: g37 ported the Final Cleanup pass body (`4ced188f9`,
+// `final_cleanup.rs`) but DEFERRED this arm back to g36 — "reads
+// GenVars.shimmerPosition, which g36 A1 owns; no slot on this branch". g36 A1
+// publishes `GenVars.shimmer_position` (`step_shimmer`), so the arm lands here.
+// It stays UNWIRED (the g39/f25 convention): the merger composes it into g37's
+// Final Cleanup at `:22472`, after the `Finish*` tails and before the
+// `Liquid.LiquidCheck` merge sweep. Every helper below is pass-local and cited;
+// the shared `spread::convert_cleanse` (Convert type 0) and `edit::kill_tile`
+// are reused, not copied.
+
+/// `WorldGen.maxTileCount` (`WorldGen.cs:86921`, static ctor) — the value at
+/// the Final Cleanup slot: the last write before it is `SurfaceDirtWallsToGrassWalls`
+/// (`:19593`, 3500); the only later write is `AddSpikeCaves` (`:24087`), which
+/// runs inside the Shell Piles pass (`:16305`) under a seed gate and also sets
+/// 3500. So the Shimmerator flood budget is 3500 on every world.
+const SHIMMERATOR_MAX_TILES: usize = 3500;
+
+/// `WorldGen.SetBoulderSolidity`'s tile set (`WorldGen.cs:11009-11019`) — the
+/// nine boulder kinds `Liquid.tilesIgnoreWater` strips alongside the grate 546
+/// (`liquid.rs::BOULDER_SOLIDS`'s cited local copy — the pass-local convention).
+const BOULDER_SOLIDS: [u16; 9] = [138, 484, 664, 711, 712, 713, 714, 715, 716];
+
+/// `WorldGen.SolidTile` under the `Liquid.tilesIgnoreWater(ignoreSolids: true)`
+/// window (`:34767`): the grate 546 and the boulder family lose solidity, so
+/// the Shimmerator flood walks through them. The stock `solid_tile` predicate
+/// plus the nine-kind + 546 exemption (`liquid.rs::tile_is_solid`'s window arm).
+fn solid_tile_ignore_water(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    if t.kind == 546 || BOULDER_SOLIDS.contains(&t.kind) {
+        return false;
+    }
+    solid_tile(world, x, y)
+}
+
+/// `Tile.shimmer()` (`Tile.cs:379-382`): the liquid TYPE is shimmer — the two
+/// header bits `(bTileHeader & 0x60) == 96`, independent of the amount. The
+/// port's `liquid_kind()` reads the same two bits (the `any_shimmer` helper
+/// above is the amount-gated `anyShimmer`, a different C# method).
+fn tile_shimmer(t: &Tile) -> bool {
+    t.liquid_kind() == LiquidKind::Shimmer
+}
+
+/// `Tile.honey()` (`Tile.cs:362-365`): the liquid TYPE is honey.
+fn tile_honey(t: &Tile) -> bool {
+    t.liquid_kind() == LiquidKind::Honey
+}
+
+/// `WorldGen.ShimmerRemoveWater` (`WorldGen.cs:34823-34851`): the ±150 ×
+/// [-150, +75] box around the centre; inside the 150-radius disc, non-shimmer
+/// liquid clears and a 162 (BreakableIce) deactivates. The `generatingWorld`
+/// gate (`:34825`) is always true at the Final Cleanup slot.
+fn shimmer_remove_water(world: &mut World, cx: i32, cy: i32) {
+    let num = 150;
+    for i in (cy - num)..=(cy + num / 2) {
+        for j in (cx - num)..=(cx + num) {
+            if !in_world(world, j, i, 0) {
+                continue;
+            }
+            let dx = (j - cx).abs() as f64;
+            let dy = (i - cy).abs() as f64;
+            if (dx * dx + dy * dy).sqrt() as i32 >= num {
+                continue;
+            }
+            let Some(t) = world.tile(j, i).copied() else {
+                continue;
+            };
+            if !tile_shimmer(&t) {
+                if let Some(cell) = world.tile_mut(j, i) {
+                    cell.liquid = 0;
+                }
+            }
+            if t.kind == 162 {
+                if let Some(cell) = world.tile_mut(j, i) {
+                    cell.flags &= !FLAG_ACTIVE;
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.Shimmerator` + `ShimmeratorNext` + `Shimminate`
+/// (`WorldGen.cs:35118-35147`, `:35104-35116`): the bounded flood over the
+/// connected non-solid liquid pool (plus active obsidian 56), then every
+/// counted cell turns to shimmer-255 and the tree/obsidian/cut tiles die.
+/// The C# recurses (`ShimmeratorNext` calls itself on the four neighbours);
+/// the port walks an explicit LIFO stack so a deep pool never overflows the
+/// call stack (the `flood_fill_wall_variety` iterative-fill precedent). The
+/// neighbour push order is down/up/right/left, so the pop visits left first —
+/// a deterministic DFS pre-order (the reverse-push of the C#'s left/right/up/
+/// down recursion). The exact visit order differs from the C# recursion only
+/// in traversal sequence, not in the counted SET (the same connected pool);
+/// the `Shimminate` write loop replays the port's insertion order, which is
+/// deterministic — the a == b contract. `CountedTiles` is a `HashSet`
+/// (membership only — the C# `Dictionary<Point, bool>`'s value is always
+/// `true`); `order` records the insertion sequence for the write loop.
+fn shimmerator(world: &mut World, x: i32, y: i32) {
+    let mut counted: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
+    let mut order: Vec<(i32, i32)> = Vec::new();
+    let mut stack: Vec<(i32, i32)> = vec![(x, y)];
+    let mut num_tile_count = 0usize;
+    while let Some((px, py)) = stack.pop() {
+        if num_tile_count >= SHIMMERATOR_MAX_TILES {
+            break;
+        }
+        // `:35133-35136` — the edge cell saturates the budget (the C# sets
+        // numTileCount = maxTileCount, which aborts the whole flood).
+        if px <= 1 || px >= world.width - 1 || py <= 1 || py >= world.height - 1 {
+            num_tile_count = SHIMMERATOR_MAX_TILES;
+            break;
+        }
+        if counted.contains(&(px, py)) {
+            continue;
+        }
+        let Some(t) = world.tile(px, py).copied() else {
+            continue;
+        };
+        let qualifies = (!solid_tile_ignore_water(world, px, py)
+            && !tile_shimmer(&t)
+            && t.liquid > 0)
+            || (t.active() && t.kind == 56);
+        if !qualifies {
+            continue;
+        }
+        counted.insert((px, py));
+        order.push((px, py));
+        num_tile_count += 1;
+        // `:35141-35144` — the C# recurses left, right, up, down. The LIFO
+        // stack pops last-pushed-first, so push down/up/right/left to visit
+        // left first (the reverse-push DFS pre-order — deterministic, a == b).
+        stack.push((px, py + 1));
+        stack.push((px, py - 1));
+        stack.push((px + 1, py));
+        stack.push((px - 1, py));
+    }
+    // `:35123` — Shimminate only when 0 < numTileCount < maxTileCount.
+    if num_tile_count == 0 || num_tile_count >= SHIMMERATOR_MAX_TILES {
+        return;
+    }
+    // `Shimminate` (`:35104-35116`): every counted cell → shimmer-255, then
+    // the tree 5 / obsidian 56 / cut (except pot 28) tiles die.
+    for &(px, py) in &order {
+        if let Some(cell) = world.tile_mut(px, py) {
+            cell.set_liquid_kind(LiquidKind::Shimmer);
+            cell.liquid = u8::MAX;
+        }
+        let kind = world.tile(px, py).map_or(0, |t| t.kind);
+        if kind == 5 || kind == 56 || (crate::tileobject::tile_cut(kind) && kind != 28) {
+            crate::edit::kill_tile(world, px, py, true);
+        }
+    }
+}
+
+/// `WorldGen.ShimmerCleanUp` (`WorldGen.cs:34716-34821`) — the Final Cleanup
+/// pass's shimmer arm (`:22472`). `shimmer_position` is the `GenVars` centre
+/// g36 A1 publishes (`None` = the zero-vector sentinel, the C# `:34718` early
+/// return). `anniversary` gates the tenth-anniversary drip/Shimmerator tail
+/// (`:34789-34809`). Draws on the pass's own stream (the two `NextDouble`
+/// jitter rolls per outer-sweep cell, `:34753`); the merger passes
+/// `pass_rng("Final Cleanup")` (the scatter's stream, the C# `genRand`).
+///
+/// UNWIRED by design — the merger composes this into g37's Final Cleanup at
+/// `:22472`. The `Liquid.LiquidCheck` merge sweep that follows it in the C#
+/// (`:22473-22483`) is the f25/d106 liquid-core seam (§3.3), not this arm.
+/// The witnesses below exercise it (the g39 `place_helpers` unwired convention);
+/// `allow(dead_code)` keeps the non-test build quiet until the merger wires it.
+#[allow(dead_code)]
+pub fn shimmer_clean_up(
+    world: &mut World,
+    shimmer_position: Option<(i32, i32)>,
+    anniversary: bool,
+    rng: &mut Rng,
+) {
+    // `:34718-34721` — the zero-vector sentinel: no shimmer placed, no arm.
+    let Some((cx, cy)) = shimmer_position else {
+        return;
+    };
+    if cx == 0 && cy == 0 {
+        return;
+    }
+    // `:34722` — ShimmerRemoveWater.
+    shimmer_remove_water(world, cx, cy);
+    let num = 120;
+    let num2 = 90;
+    // `:34730-34763` — the ±120 box, two distance gates per cell.
+    for i in (cy - num)..=(cy + num) {
+        for j in (cx - num)..=(cx + num) {
+            if world.tile(j, i).is_none() {
+                continue;
+            }
+            // `:34734` — the inner 120-radius disc (no jitter): the evil-ore
+            // cleanse, the merge-block/cobweb kill, the moss cleanse, the
+            // long-moss kill. Each `if` re-reads the (possibly just-written)
+            // kind — the C# reads Main.tile[j,i].type fresh each time.
+            let dx = (j - cx).abs() as f64;
+            let dy = (i - cy).abs() as f64;
+            if (dx * dx + dy * dy).sqrt() as i32 < num {
+                let kind = world.tile(j, i).map_or(0, |t| t.kind);
+                if kind == 22 || kind == 204 {
+                    if let Some(cell) = world.tile_mut(j, i) {
+                        cell.kind = 1;
+                    }
+                }
+                let kind = world.tile(j, i).map_or(0, |t| t.kind);
+                if matches!(kind, 51 | 56 | 229 | 230 | 659) {
+                    if let Some(cell) = world.tile_mut(j, i) {
+                        cell.flags &= !FLAG_ACTIVE;
+                    }
+                }
+                let kind = world.tile(j, i).map_or(0, |t| t.kind);
+                if crate::tiledata::SET_CONVERSION_MOSS.has(kind) {
+                    if let Some(cell) = world.tile_mut(j, i) {
+                        cell.kind = 1;
+                    }
+                }
+                let kind = world.tile(j, i).map_or(0, |t| t.kind);
+                if kind == 184 {
+                    if let Some(cell) = world.tile_mut(j, i) {
+                        cell.flags &= !FLAG_ACTIVE;
+                    }
+                }
+            }
+            // `:34753` — the outer 90-radius ellipse, y-stretch 1.4 above the
+            // centre / 1.2 below, each axis jittered ±2% (two NextDouble per
+            // cell, drawn unconditionally — the C# ternary picks the stretch
+            // but both arms draw the same two rolls).
+            let y_stretch = if (i as f64) > cy as f64 { 1.2 } else { 1.4 };
+            let jx = (j - cx).abs() as f64 * (1.0 + rng.next_f64() * 0.02);
+            let jy = (i - cy).abs() as f64 * y_stretch * (1.0 + rng.next_f64() * 0.02);
+            if (jx * jx + jy * jy).sqrt() as i32 < num2 {
+                if world.tile(j, i).is_some_and(|t| t.kind == 162) {
+                    if let Some(cell) = world.tile_mut(j, i) {
+                        cell.flags &= !FLAG_ACTIVE;
+                    }
+                }
+                if let Some(cell) = world.tile_mut(j, i) {
+                    cell.wall = 0;
+                }
+                // `:34760` — Convert(j, i, 0, 3): the cleanse, size 3.
+                crate::spread::convert_cleanse(world, j, i, 3);
+            }
+        }
+    }
+    // `:34764-34788` — the pool refill walk. `Liquid.tilesIgnoreWater(true)`
+    // (`:34767`) only affects the liquid solidity reads, which this arm does
+    // not make (it writes liquid directly); the window is a no-op here and is
+    // documented rather than modelled (the `liquid.rs` ignore_solids seam is
+    // the runtime pass's, §3.3).
+    let mut num7 = cx;
+    let mut num8 = cy;
+    let mut b: u8 = 127;
+    // Sub-vanilla bounds guard (the `pass_shimmer` width-guard precedent): the
+    // C# walks Main.tile[num7, num8] unguarded and relies on the carve's stone
+    // shell to stop it; on a degenerate fixture the walk could leave the map.
+    // The guard breaks before an out-of-bounds read (a generated world's shell
+    // always stops the walk first, so it never fires in practice).
+    loop {
+        let cur = world.tile(num7, num8).copied();
+        let Some(cur) = cur else { break };
+        if !(cur.liquid <= b || !tile_shimmer(&cur)) {
+            break;
+        }
+        // `:34770-34775` — walk left filling inactive cells.
+        while world.tile(num7, num8).is_some_and(|t| !t.active()) {
+            if let Some(cell) = world.tile_mut(num7, num8) {
+                cell.liquid = b;
+                cell.set_liquid_kind(LiquidKind::Shimmer);
+            }
+            num7 -= 1;
+            if !world.in_bounds(num7, num8) {
+                break;
+            }
+        }
+        // `:34776-34780` — walk right from the centre filling inactive cells.
+        num7 = cx;
+        while world.tile(num7, num8).is_some_and(|t| !t.active()) {
+            if let Some(cell) = world.tile_mut(num7, num8) {
+                cell.liquid = b;
+                cell.set_liquid_kind(LiquidKind::Shimmer);
+            }
+            num7 += 1;
+            if !world.in_bounds(num7, num8) {
+                break;
+            }
+        }
+        num7 = cx;
+        num8 += 1;
+        b = u8::MAX;
+        if !world.in_bounds(num7, num8) {
+            break;
+        }
+        if world.tile(num7, num8).is_some_and(|t| t.active()) {
+            break;
+        }
+    }
+    // `:34789-34809` — the tenth-anniversary tail: the ±170 × [+40, height-430)
+    // band retypes the drip blocks to shimmer-drip 709 and Shimmerators every
+    // non-shimmer/non-honey liquid cell (wall != 86).
+    if anniversary {
+        let num9 = 170;
+        for k in (cx - num9)..=(cx + num9) {
+            for l in (cy + 40)..(world.height - 330 - 100) {
+                if !in_world(world, k, l, 0) {
+                    continue;
+                }
+                let Some(t) = world.tile(k, l).copied() else {
+                    continue;
+                };
+                if t.wall == 86 {
+                    continue;
+                }
+                if matches!(t.kind, 375 | 374 | 373) {
+                    if let Some(cell) = world.tile_mut(k, l) {
+                        cell.kind = 709;
+                    }
+                }
+                if t.liquid > 0 && !tile_shimmer(&t) && !tile_honey(&t) {
+                    shimmerator(world, k, l);
+                }
+            }
+        }
+    }
+    // `:34810` — Liquid.tilesIgnoreWater(false): the window closes (no-op here,
+    // documented above).
+    // `:34811-34820` — the tree-under-shimmer kill: every active tree 5 holding
+    // shimmer liquid in the 10-margin box dies.
+    for m in 10..(world.width - 10) {
+        for n in 10..(world.height - 10) {
+            let Some(t) = world.tile(m, n).copied() else {
+                continue;
+            };
+            if t.liquid > 0 && tile_shimmer(&t) && t.kind == 5 {
+                crate::edit::kill_tile(world, m, n, true);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -887,5 +1228,191 @@ mod tests {
         assert!(!w.tile(151, 195).unwrap().active());
         // Beyond the budget the stone survives.
         assert!(w.tile(260, 195).unwrap().active());
+    }
+
+    // --- ShimmerCleanUp witnesses (the Final Cleanup tail arm) ---------------
+
+    /// A stone-box world with a shimmer centre at (cx, cy): solid stone below
+    /// row 40, an air pocket around the centre, and `frame_important` sized so
+    /// the `kill_tile` cascade reads it safely. The centre cell holds a
+    /// shimmer-127 pool row (the carve's shape) so the refill walk terminates.
+    fn cleanup_world(width: i32, height: i32, cx: i32, cy: i32) -> World {
+        let mut w = World::new("shimmer-cleanup".into(), width, height);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        for x in 0..width {
+            for y in 40..height {
+                let i = w.index(x, y);
+                w.tiles[i].kind = TILE_STONE;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        // An air pocket (cx±30, cy±30) so the sweep's writes are observable.
+        for x in (cx - 30)..=(cx + 30) {
+            for y in (cy - 30)..=(cy + 30) {
+                if w.in_bounds(x, y) {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile::default();
+                }
+            }
+        }
+        // The centre pool row: shimmer-127 at the centre, 255 below (the
+        // carve's liquid shape) — the refill walk's termination anchor.
+        let i = w.index(cx, cy);
+        w.tiles[i].liquid = 127;
+        w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
+        for dy in 1..=3 {
+            if w.in_bounds(cx, cy + dy) {
+                let j = w.index(cx, cy + dy);
+                w.tiles[j].liquid = 255;
+                w.tiles[j].set_liquid_kind(LiquidKind::Shimmer);
+            }
+        }
+        w
+    }
+
+    /// The zero-vector sentinel (`:34718`): `None` and `Some((0,0))` both
+    /// return before any write or draw.
+    #[test]
+    fn cleanup_the_zero_sentinel_is_a_noop() {
+        let mut w = cleanup_world(400, 400, 200, 200);
+        let before = w.tiles.clone();
+        let mut rng = Rng(42);
+        shimmer_clean_up(&mut w, None, false, &mut rng);
+        assert_eq!(w.tiles, before, "None writes nothing");
+        assert_eq!(rng.0, Rng(42).0, "None draws nothing");
+        shimmer_clean_up(&mut w, Some((0, 0)), false, &mut rng);
+        assert_eq!(w.tiles, before, "the zero vector writes nothing");
+        assert_eq!(rng.0, Rng(42).0, "the zero vector draws nothing");
+    }
+
+    /// The inner-disc cleanse (`:34736-34751`): an evil-ore 22 → stone 1, a
+    /// cobweb 51 deactivates, a moss conversion tile → stone 1, a long-moss
+    /// 184 deactivates — all inside the 120-radius disc around the centre.
+    #[test]
+    fn cleanup_the_inner_disc_cleanses_and_kills() {
+        let mut w = cleanup_world(400, 400, 200, 200);
+        // Place the targets near the centre (well inside radius 120).
+        let set = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let i = w.index(x, y);
+            w.tiles[i].kind = kind;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        };
+        set(&mut w, 205, 200, 22); // demonite → stone
+        set(&mut w, 210, 200, 51); // cobweb → inactive
+        set(&mut w, 215, 200, 184); // long moss → inactive
+        // A moss conversion tile (the SET_CONVERSION_MOSS family).
+        let moss_kind = (0..crate::tiledata::TILE_COUNT as u16)
+            .find(|&k| crate::tiledata::SET_CONVERSION_MOSS.has(k))
+            .expect("a moss conversion kind exists");
+        set(&mut w, 220, 200, moss_kind);
+        shimmer_clean_up(&mut w, Some((200, 200)), false, &mut Rng(7));
+        assert_eq!(w.tile(205, 200).unwrap().kind, 1, "the demonite cleansed");
+        assert!(!w.tile(210, 200).unwrap().active(), "the cobweb died");
+        assert!(!w.tile(215, 200).unwrap().active(), "the long moss died");
+        assert_eq!(w.tile(220, 200).unwrap().kind, 1, "the moss cleansed");
+    }
+
+    /// The outer-ellipse wall clear + cleanse (`:34753-34761`): a walled cell
+    /// inside the 90-radius ellipse loses its wall and runs Convert-0. The
+    /// two NextDouble jitter rolls are drawn per cell (a == b replays them).
+    #[test]
+    fn cleanup_the_outer_ellipse_clears_walls_and_replays() {
+        let build = || {
+            let mut w = cleanup_world(400, 400, 200, 200);
+            // A dirt wall (2) on a stone cell near the centre — Convert-0
+            // turns the wall to the cleanse target and the wall clears.
+            for x in 190..=210 {
+                let i = w.index(x, 195);
+                w.tiles[i].wall = 2;
+                w.tiles[i].kind = TILE_STONE;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        shimmer_clean_up(&mut a, Some((200, 200)), false, &mut Rng(42));
+        shimmer_clean_up(&mut b, Some((200, 200)), false, &mut Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b — the jitter stream replays");
+        // The centre-adjacent walled cells lost their wall (the ellipse gate).
+        assert_eq!(a.tile(200, 195).unwrap().wall, 0, "the wall cleared");
+    }
+
+    /// The pool refill walk (`:34764-34788`): an inactive cell above the
+    /// centre pool fills with shimmer-127, and the walk terminates at the
+    /// active floor below (the carve's stone shell).
+    #[test]
+    fn cleanup_the_refill_walk_fills_and_terminates() {
+        let mut w = cleanup_world(400, 400, 200, 200);
+        // An inactive cell just left of the centre on the pool row.
+        let i = w.index(199, 200);
+        w.tiles[i] = Tile::default(); // inactive, no liquid
+        shimmer_clean_up(&mut w, Some((200, 200)), false, &mut Rng(3));
+        let t = w.tile(199, 200).unwrap();
+        assert!(t.liquid > 0, "the refill filled the inactive cell");
+        assert_eq!(t.liquid_kind(), LiquidKind::Shimmer, "filled with shimmer");
+    }
+
+    /// The tree-under-shimmer kill (`:34811-34820`): an active tree 5 holding
+    /// shimmer liquid in the 10-margin box dies.
+    #[test]
+    fn cleanup_the_tree_under_shimmer_dies() {
+        let mut w = cleanup_world(400, 400, 200, 200);
+        let i = w.index(100, 100);
+        w.tiles[i].kind = 5; // tree
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].liquid = 200;
+        w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
+        shimmer_clean_up(&mut w, Some((200, 200)), false, &mut Rng(5));
+        assert!(!w.tile(100, 100).unwrap().active(), "the shimmer-soaked tree died");
+    }
+
+    /// The tenth-anniversary tail (`:34789-34809`): a drip block 373 in the
+    /// band retypes to shimmer-drip 709; the classic arm leaves it alone.
+    #[test]
+    fn cleanup_the_anniversary_tail_retypes_drips() {
+        let build = || {
+            let mut w = cleanup_world(600, 900, 300, 300);
+            // A drip 373 below the centre+40 band, wall != 86.
+            let i = w.index(300, 360);
+            w.tiles[i].kind = 373;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            w.tiles[i].wall = 1;
+            w
+        };
+        let mut classic = build();
+        shimmer_clean_up(&mut classic, Some((300, 300)), false, &mut Rng(9));
+        assert_eq!(classic.tile(300, 360).unwrap().kind, 373, "classic keeps the drip");
+        let mut anniversary = build();
+        shimmer_clean_up(&mut anniversary, Some((300, 300)), true, &mut Rng(9));
+        assert_eq!(anniversary.tile(300, 360).unwrap().kind, 709, "anniversary retypes to shimmer-drip");
+    }
+
+    /// The Shimmerator flood (`:35118-35147`): a connected non-shimmer liquid
+    /// pool turns to shimmer-255; the flood is bounded and deterministic.
+    #[test]
+    fn cleanup_the_shimmerator_floods_the_pool() {
+        let build = || {
+            let mut w = cleanup_world(600, 900, 300, 300);
+            // A water pool (non-shimmer) in the anniversary band, below cy+40.
+            for x in 290..=310 {
+                for y in 350..=360 {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile::default();
+                    w.tiles[i].liquid = 200;
+                    w.tiles[i].set_liquid_kind(LiquidKind::Water);
+                }
+            }
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        shimmer_clean_up(&mut a, Some((300, 300)), true, &mut Rng(11));
+        shimmer_clean_up(&mut b, Some((300, 300)), true, &mut Rng(11));
+        assert_eq!(a.tiles, b.tiles, "a == b — the flood replays");
+        // The pool cells turned to shimmer-255 (the Shimmerator write).
+        let t = a.tile(300, 355).unwrap();
+        assert_eq!(t.liquid_kind(), LiquidKind::Shimmer, "the pool shimmerated");
+        assert_eq!(t.liquid, 255, "filled to 255");
     }
 }
