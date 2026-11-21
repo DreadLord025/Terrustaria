@@ -50,6 +50,7 @@
 /// layer-40 ID override draws it. The g86 outline pass is the SELECTION
 /// feedback; this icon is the distinct hover overlay (ANALYSIS "The
 /// altar-26 SUMMON-USE chain — census").
+#[allow(dead_code)] // PORTED-UNWIRED: the tile-hover pass is the research/244 seed
 pub(crate) fn altar_hover_icon(kind: u16, frame_x: i16) -> Option<u16> {
     match kind {
         // `Player.cs:34524-34536` — the demon/crimson altar.
@@ -76,20 +77,21 @@ pub(crate) fn altar_hover_icon(kind: u16, frame_x: i16) -> Option<u16> {
 /// with `(0, 0)` when no bait is carried. The scan is the SAME one
 /// `ConsumeBait` uses (`:52452-52470`, the `fishing_use` precedent) — this
 /// is the icon-side read, no consumption.
+#[allow(dead_code)] // PORTED-UNWIRED: the ItemCheck-head seam is the research/244 seed
 pub(crate) fn fishing_get_bait(
     grid: &[crate::item::ItemSlot],
     ammo: &[crate::item::ItemSlot],
 ) -> (i32, u16) {
     // `:42258-42266` — the ammo row first.
     for slot in ammo {
-        let bait = crate::registry::get(slot.kind).map_or(0, |d| d.bait);
+        let bait = crate::registry::get(slot.kind).map_or(0, |d| d.bait as i32);
         if slot.count > 0 && bait > 0 {
             return (bait, slot.kind);
         }
     }
     // `:42271-42279` — the grid 0-49 (the coin/ammo rows are NOT scanned).
     for slot in grid.iter().take(50) {
-        let bait = crate::registry::get(slot.kind).map_or(0, |d| d.bait);
+        let bait = crate::registry::get(slot.kind).map_or(0, |d| d.bait as i32);
         if slot.count > 0 && bait > 0 {
             return (bait, slot.kind);
         }
@@ -101,8 +103,10 @@ pub(crate) fn fishing_get_bait(
 /// the fishing pole's bait icon pushes 6 (`Player.cs:42622`), the
 /// Clentaminator's solution icon pushes 10 (`:42633`/`:42645`). The draw
 /// adds it to the base 10 (`Main.cs:45089`, `10 + cursorItemIconPush`).
+#[allow(dead_code)] // PORTED-UNWIRED (see item_check_head_icon)
 pub(crate) const BAIT_ICON_PUSH: i32 = 6;
 /// See [`BAIT_ICON_PUSH`] — the solution arm's push (`Player.cs:42633`).
+#[allow(dead_code)] // PORTED-UNWIRED (see item_check_head_icon)
 pub(crate) const SOLUTION_ICON_PUSH: i32 = 10;
 
 /// `Player.ItemCheck`'s head icon arms (`Player.cs:42615-42650`), the
@@ -132,6 +136,7 @@ pub(crate) const SOLUTION_ICON_PUSH: i32 = 10;
 /// writes `cursorItemIconEnabled = true`, `cursorItemIconID = id`,
 /// `cursorItemIconPush = push` (the C# order). NO `ItemIconCacheUpdate`
 /// here — these arms do not arm the linger (only the tool latches do).
+#[allow(dead_code)] // PORTED-UNWIRED: the ItemCheck-head seam is the research/244 seed
 pub(crate) fn item_check_head_icon(
     held: crate::item::ItemSlot,
     grid: &[crate::item::ItemSlot],
