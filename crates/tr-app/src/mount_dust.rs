@@ -1567,11 +1567,42 @@ pub fn generic_spawn_dust(
 // stay inside the emitters, so the drain order IS the C# draw order.
 // ---------------------------------------------------------------------------
 
+/// The player read at the `Mount.UpdateFrame` call moment (`Player.cs:
+/// 36200-36216`), for the per-type extras' anchors. `basilisk_charge` is
+/// the POST-fold value (`Mount.cs:4089-4093` runs before the dusts).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MountFrameSnap {
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub center_x: f32,
+    pub center_y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub facing: i32,
+    pub basilisk_charge: f32,
+}
+
 /// One queued mount dust event. `Spawn` carries the resolved `DoSpawnDust`
 /// box (`Mount.cs:6439-6459` — the caller computes it BEFORE the mount
-/// state clears); `FailedDismount` the inflated hitbox (`:6335-6336`).
+/// state clears); `FailedDismount` the inflated hitbox (`:6335-6336`); the
+/// movement variants the `UpdateFrame` per-type extras (`:3637-4142`).
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum MountDustRequest {
+    /// `Mount.cs:3878` — the Unicorn (10) / Goat (47) dash ring.
+    UnicornGoatRing { kind: i32, anchor: Vec2, frame_extra: i32, run_speed: f32, vx: f32 },
+    /// `Mount.cs:3896` — the Unicorn dash body.
+    UnicornBody { pos: Vec2, width: i32, height: i32 },
+    /// `Mount.cs:3939`/`:4000` — the Pirate/Spooky 20-dust ring.
+    DashRing20 { dust_type: i32, anchor: Vec2, run_speed: f32, vel: Vec2 },
+    /// `Mount.cs:3970` — the Pirate run puff (gate draws every tick).
+    PirateRunPuff { bottom: Vec2, width: i32, run_speed: f32, vx: f32 },
+    /// `Mount.cs:4023` — the Spooky dash body.
+    SpookyBody { center: Vec2, vel: Vec2 },
+    /// `Mount.cs:4103`/`:4123` — the Basilisk run pair + charge dust.
+    Basilisk {
+        charge: f32, center: Vec2, bottom_left: Vec2, width: i32,
+        facing: i32, vel: Vec2, vx: f32, vy: f32, run_speed: f32,
+    },
     /// `Mount.DoSpawnDust` (`:6371`) from `SetMount` (`:6300`,
     /// `is_dismounting` false) or `Dismount` (`:6169`, true).
     Spawn {
@@ -1618,6 +1649,36 @@ pub(crate) fn drain_mount_dust(
 ) {
     for req in requests {
         match req {
+            MountDustRequest::UnicornGoatRing { kind, anchor, frame_extra, run_speed, vx } => {
+                unicorn_goat_dash_ring(
+                    kind, anchor, frame_extra, run_speed, vx, rng, dust, ctx, world,
+                );
+            }
+            MountDustRequest::UnicornBody { pos, width, height } => {
+                unicorn_dash_body(pos, width, height, rng, dust, ctx, world);
+            }
+            MountDustRequest::DashRing20 { dust_type, anchor, run_speed, vel } => {
+                dash_ring_20(dust_type, anchor, run_speed, vel, rng, dust, ctx, world);
+            }
+            MountDustRequest::PirateRunPuff { bottom, width, run_speed, vx } => {
+                pirate_run_puff(bottom, width, run_speed, vx, rng, dust, ctx, world);
+            }
+            MountDustRequest::SpookyBody { center, vel } => {
+                spooky_dash_body(center, vel, rng, dust, ctx, world);
+            }
+            MountDustRequest::Basilisk {
+                charge, center, bottom_left, width, facing, vel, vx, vy, run_speed,
+            } => {
+                // `:4099-4116` — the run pair first, then `:4117-4139` the
+                // charge dust (the emitter carries the facing break).
+                basilisk_run_dust(
+                    bottom_left, width, vx, vy, run_speed, rng, dust, ctx, world,
+                );
+                basilisk_charge_dust(
+                    charge, center, bottom_left, width, facing, vel, run_speed,
+                    rng, dust, ctx, world,
+                );
+            }
             MountDustRequest::Spawn {
                 kind, spawn_dust, spawn_dust_no_gravity, is_cart, is_dismounting,
                 pos, width, height, r_top_left, r_w, r_h, vel, center,
@@ -2866,6 +2927,46 @@ mod tests {
             assert_eq!(pool.slot(i).velocity, dpool.slot(i).velocity);
             assert_eq!(pool.slot(i).scale, dpool.slot(i).scale);
             assert_eq!(pool.slot(i).color, dpool.slot(i).color);
+        }
+        assert_eq!(rng.next(), drng.next(), "the drain changes no draws");
+    }
+
+    /// W4-f6 WIRING — the movement drain: a Basilisk request runs the run
+    /// pair THEN the charge dust (the C# :4099/:4121 order), byte-identical
+    /// to the direct emitter pair on the same stream.
+    #[test]
+    fn w4_f6_drain_basilisk_matches_the_direct_pair() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(500.0, 400.0);
+        let bottom_left = Vec2::new(490.0, 442.0);
+        let vel = Vec2::new(6.0, 0.0);
+        let req = MountDustRequest::Basilisk {
+            charge: 1.0,
+            center,
+            bottom_left,
+            width: 20,
+            facing: 1,
+            vel,
+            vx: 6.0,
+            vy: 0.0,
+            run_speed: 8.0,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        drain_mount_dust(vec![req], "Terrarian", &mut rng, &mut pool, &c, &w);
+        let mut dpool = DustPool::new();
+        let mut drng = UnifiedRandom::new(53);
+        basilisk_run_dust(bottom_left, 20, 6.0, 0.0, 8.0, &mut drng, &mut dpool, &c, &w);
+        basilisk_charge_dust(
+            1.0, center, bottom_left, 20, 1, vel, 8.0, &mut drng, &mut dpool, &c, &w,
+        );
+        assert_eq!(active(&pool).len(), active(&dpool).len());
+        assert_eq!(active(&pool).len(), 5, "2 run + (int)(3*1) charge");
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i).position, dpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, dpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).dust_type, dpool.slot(i).dust_type);
         }
         assert_eq!(rng.next(), drng.next(), "the drain changes no draws");
     }

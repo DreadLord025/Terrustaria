@@ -1956,10 +1956,15 @@ pub struct Player {
     /// and `noGravity` post-arms ride the drain too.
     pending_sticky_dust: Vec<StickyDust>,
     /// W4-f6 wiring — the tick's queued mount dust events
-    /// (`Mount.DoSpawnDust` / `DoFailedDismountDust`, the
-    /// `pending_sticky_dust` convention): the drain calls
-    /// `mount_dust::drain_mount_dust` on the `UpdatePlayers` stream.
+    /// (`Mount.DoSpawnDust` / `DoFailedDismountDust` / the `UpdateFrame`
+    /// per-type extras, the `pending_sticky_dust` convention): the drain
+    /// calls `mount_dust::drain_mount_dust` on the `UpdatePlayers` stream.
     pending_mount_dust: Vec<crate::mount_dust::MountDustRequest>,
+    /// W4-f6 wiring — `Player.basiliskCharge` (`Player.cs:842`): the
+    /// Basilisk's charge accumulator (`Mount.cs:4089-4093` folds it,
+    /// `:4121-4133` reads it). PLAYER state — survives the dismount (the
+    /// vanilla never zeroes it outside the case-14 slow arm).
+    pub basilisk_charge: f32,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2891,6 +2896,7 @@ impl Player {
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
             pending_mount_dust: Vec::new(),
+            basilisk_charge: 0.0,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -7655,6 +7661,49 @@ impl Player {
         self.left_prev = input.left;
     }
 
+    /// W4-f6 wiring — `Mount.UpdateFrame` (`Mount.cs:3581`) with the
+    /// per-type extras head (`:3637-4142`): the Basilisk charge fold runs
+    /// player-side (`Player.basiliskCharge` survives the dismount), the
+    /// extras queue their dusts onto `pending_mount_dust` (the drain draws
+    /// on `UpdatePlayers`), and the possibly re-routed state feeds the
+    /// frame-table switch. The five `PlayerFrame` call sites
+    /// (`Player.cs:36200-36216` + `TryLanding` `Mount.cs:4566`) route here.
+    fn mount_update_frame(&mut self, state: i32) {
+        // `:4083-4093` — the charge fold (case 14 only; the emitter reads
+        // the POST-fold value).
+        if self.mount.kind() == 14 {
+            self.basilisk_charge = crate::mount_dust::basilisk_charge_update(
+                self.basilisk_charge,
+                self.vx,
+                self.mount.run_speed(),
+            );
+        }
+        let (cx, cy) = self.center();
+        let snap = crate::mount_dust::MountFrameSnap {
+            pos_x: self.x,
+            pos_y: self.y,
+            center_x: cx,
+            center_y: cy,
+            width: self.width,
+            height: self.height,
+            facing: self.facing,
+            basilisk_charge: self.basilisk_charge,
+        };
+        let mut reqs = Vec::new();
+        let state = self.mount.frame_extras(state, self.vx, self.vy, &snap, &mut reqs);
+        self.pending_mount_dust.extend(reqs);
+        self.mount.update_frame(
+            state,
+            self.vx,
+            self.vy,
+            self.just_jumped,
+            self.control_down,
+            self.sliding,
+            self.dash,
+            self.dash_delay,
+        );
+    }
+
     /// `Mount.TryLanding` (`Mount.cs:4562-4568`): while the frame state is
     /// still air/fly, a 4px-down tile probe snapping shut pulls the frame to
     /// the grounded set on the touchdown tick (the C# re-probes
@@ -7689,17 +7738,7 @@ impl Player {
             } else {
                 crate::mount::FRAME_RUNNING
             };
-            self.mount
-                .update_frame(
-                    state,
-                    self.vx,
-                    self.vy,
-                    self.just_jumped,
-                    self.control_down,
-                    self.sliding,
-                    self.dash,
-                    self.dash_delay,
-                );
+            self.mount_update_frame(state);
         }
     }
 
@@ -7763,42 +7802,15 @@ impl Player {
                     // `:36199-36200`: `TryBeginningFlight` only fires for
                     // hover mounts (`Mount.cs:4537` — none in this table);
                     // the Rudolph dust trail is a visual seam.
-                    self.mount.update_frame(
-                        crate::mount::FRAME_FLYING,
-                        self.vx,
-                        self.vy,
-                        self.just_jumped,
-                        self.control_down,
-                        self.sliding,
-                        self.dash,
-                        self.dash_delay,
-                    );
+                    self.mount_update_frame(crate::mount::FRAME_FLYING);
                     self.try_landing(world);
                 } else if self.wet {
                     // `:36203-36206`: the swim state (the ground mounts'
                     // swim sets reuse their in-air frames).
-                    self.mount.update_frame(
-                        crate::mount::FRAME_SWIMMING,
-                        self.vx,
-                        self.vy,
-                        self.just_jumped,
-                        self.control_down,
-                        self.sliding,
-                        self.dash,
-                        self.dash_delay,
-                    );
+                    self.mount_update_frame(crate::mount::FRAME_SWIMMING);
                 } else {
                     // `:36207-36212`: plain air.
-                    self.mount.update_frame(
-                        crate::mount::FRAME_IN_AIR,
-                        self.vx,
-                        self.vy,
-                        self.just_jumped,
-                        self.control_down,
-                        self.sliding,
-                        self.dash,
-                        self.dash_delay,
-                    );
+                    self.mount_update_frame(crate::mount::FRAME_IN_AIR);
                     self.try_landing(world);
                 }
             } else {
@@ -7812,16 +7824,7 @@ impl Player {
                 } else {
                     crate::mount::FRAME_RUNNING
                 };
-                self.mount.update_frame(
-                    state,
-                    self.vx,
-                    self.vy,
-                    self.just_jumped,
-                    self.control_down,
-                    self.sliding,
-                    self.dash,
-                    self.dash_delay,
-                );
+                self.mount_update_frame(state);
             }
         }
 
