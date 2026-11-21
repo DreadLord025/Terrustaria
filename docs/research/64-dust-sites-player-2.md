@@ -105,10 +105,36 @@ All 40 sites landed on `task/W4-e1-dust-sites-player-2`:
 | `e8219a01` | batch 2 (sites 11–20, lines 20320–21941) |
 | `73d0aa6b` | batch 3 (sites 21–30, lines 21962–25228) |
 | `53add802` | batch 4 (sites 31–40, lines 25877–27933) |
-| (fixup) | drain execution-order + fidelity fixes below |
+| `3245d624` | drain execution-order + fidelity fixes below |
+| `164596b8` | e1b reconcile: the f3-reconcile WIP completed + 2 drain-order fixes (research/141) |
 
-26 draw-mirror witnesses in `player_dust2.rs` — WRITTEN NOT RUN (code-only
-mode; no cargo/graphify runs this task).
+26 draw-mirror witnesses in `player_dust2.rs` + 15 `w4_e1b_*` host
+witnesses in `player.rs` (the f3-reconcile folds) — WRITTEN NOT RUN
+(code-only mode; no cargo/graphify runs this task).
+
+### The e1b reconcile (f3 `75f3f734` MOVE-RETIRE verdicts, research/141)
+
+- **Wall copy — DROP at the merge, five deviations FIXED here**: the
+  vacuous gravDir-1 clauses dropped from the climb gate (`:21639`), the
+  level-1 slide gate (`:21709`) and the wallslide gate (`:21777`); the
+  unguarded `vy < -0.5` single-boot slide (`:21814`) removed; the climb
+  probe uses `(int)v >> 4` (`Utils.cs:1807-1810`), not `/16`. The block
+  gained the `!grappling && !tongued` guard (`:26494`).
+- **Stealth — spawn 1.0** (`:1562`, was 0.0 WRONG), the final-else
+  `stealth = 1f` (`:25896-25899`) landed, the hurt reveal (`:38245`,
+  keep-one vs f50), ResetEffects `aggro = 0` (`:18377`), the
+  climbing/frog grants (`:15038-15066`/`:14426-14444`), the Vortex
+  ranged kb (`:53364-53367`), the Cloud/Sandstorm suppression
+  (`:21894`), the dash stealth cancel (`:21379`).
+- **Floor dust — KEEP-E1**: the falling head capture (`:28073-28081`)
+  fires the landing burst (f3's rest-path capture never does); the
+  any-wet/cart gate (`:23740`), the Stinky buff-120 grant (`:23732`)
+  and the integer half (`:24026`) re-verified.
+- **Drown bubble** — the host gates `flag` only; the wet flags ride the
+  snapshot, the Next(20) draws BEFORE the wet refuse (`:23283` || order).
+- **Drain order** — MowTheLawn (`:20178`) now drains BEFORE the jump
+  sounds (`:26744`); the drown gasp (`:23257`) inside CheckDrowning
+  before the bubble.
 
 ### Fidelity fixes after the four batches (re-read of the C#)
 
@@ -137,10 +163,11 @@ mode; no cargo/graphify runs this task).
   the base anchor (direction×12, +4) stands; `gravDir` folds to 1.
 - **23983**: the shimmer-block ParticleOrchestrator arm (`:23792-23818`,
   tiles 659/667) is the particle-orchestrator lane's — its draws are NOT
-  NewDust and stay there. The 666/712 landing sound (Item177) and the
-  FloorVisuals shimmer buff-120 grant are the sound/buff lanes'. The
-  TryBouncingBlocks FloorVisuals caller (`:23567`/`:28223`) is the bounce
-  lane's (unported) — only the grounded caller (`:28271`) fires here.
+  NewDust and stay there. The 666/712 landing sound (Item177) is the sound
+  lane's; the FloorVisuals buff-120 grant (`:23732`) LANDED with the e1b
+  reconcile (the g66 row). The TryBouncingBlocks FloorVisuals caller
+  (`:23567`/`:28223`) is the bounce lane's (unported) — only the grounded
+  caller (`:28271`) fires here.
 - **24274**: the gore sibling (`:24285`) body is W4-d55's; its Next(225)
   gate + argument draws + post-write draws are consumed here in order.
   `hairDye` stores the shader index (`TeamDyeShaderIndex` = 9 = Party Hair
@@ -151,9 +178,11 @@ mode; no cargo/graphify runs this task).
   the buff-396 decay `:10328-10341` is unported), but the machinery is
   ported faithfully (`Utils.Remap` clamped, NewDustDirect 267 + CloneDust).
 - **25877/25887**: the stealth-chain's final else (`:25896-25899`,
-  `stealth = 1` without any stealth armor) stays with the shroomite lane —
-  the port's knockback tests read `stealth` directly; the rings never fire
-  without the set. The ±0.04 ramp, ranged damage/crit/aggro grants,
+  `stealth = 1` without any stealth armor) NOW LANDS in the no-set
+  fallback (the e1b reconcile; the spawn default is 1.0 per `:1562`).
+  The Psycho-Knife/Shroomite arms are f3's machine — at the e1b-141
+  merge e1's vortex-arm-only machine + rings drop to f3's full chain
+  (research/141). The ±0.04 ramp, ranged damage/crit/aggro grants,
   run-speed ×0.3 and the mount cancel are ported.
 - **27785–27933**: the exit jump clamp (`:27864`) is a movement seam; the
   splash gate stands alone (the S1-E-21f sound block's convention). Dust

@@ -39259,6 +39259,11 @@ Deliberate deviations beyond the ledger's per-site folds:
   stoned burst (`:25219`), the Vortex rings (`:25872`, UpdateEquips tail),
   the drowning bubble (`:27655`), the splash bursts (`:27772`) and the
   floor dust (`:28271`). The floor dust drains after the splash-sound drain.
+  The e1b reconcile pass fixed two residual order bugs: the Lawn Mower puff
+  (MowTheLawn, HorizontalMovement's tail `:20178`) drains BEFORE the
+  jump-chain sounds (JumpMovement `:26744`), and the drown gasp (`:23257`)
+  drains inside CheckDrowning before the bubble — the full order + the
+  e1-keep/drop verdicts: `docs/research/141-player-dust-reconcile.md`.
 - **`falling` capture**: |vy| > gravity at the movement head
   (`Player.cs:28073-28081`), BEFORE the collision resolve — a landing tick
   reaches FloorVisuals with vy==0 but falling=true (the 20-dust burst).
@@ -39271,12 +39276,16 @@ Deliberate deviations beyond the ledger's per-site folds:
   (Remap gate, NewDustDirect 267, CloneDust white twin) is ported faithfully
   so the buff lane only needs the writer.
 - **Vortex stealth**: the stealth-chain's final else (`stealth = 1`
-  without any stealth armor, `:25896-25899`) stays with the unported
-  shroomite lane — the knockback tests read `stealth` directly and the
-  port constructor defaults it to 0.0 (pre-existing). The set-loss disarm
+  without any stealth armor, `:25896-25899`) NOW LANDS in the port's
+  no-set fallback (the e1b reconcile — the constructor spawns
+  `stealth: 1.0` per `:1562`, was 0.0). The Psycho-Knife/Shroomite arms
+  (`:25733-25825`) are f3's machine; at the e1b-141 merge e1's
+  vortex-arm-only machine + rings DROP to f3's full chain
+  (`docs/research/141-player-dust-reconcile.md`). The set-loss disarm
   (`UpdateArmorSets_Always_Vortex` `:16315-16321`) IS ported. The
   KeyDoubleTap down toggle (`:56775-56778`) is wired in
-  `key_double_tap_down`.
+  `key_double_tap_down`. The hurt reveal `stealth = 1f` (`:38245`)
+  landed in `hurt_inner` (keep-one vs f50's copy at the merge).
 - **Hair dye**: `Player.hair_dye` stores the shader index
   (`hair_dye_shader_index`, the DyeInitializer bind order); the team-dye
   puff gate compares against TeamDyeShaderIndex=9 (`ID/ContentSamples.cs`,
@@ -39292,4 +39301,6 @@ Deliberate deviations beyond the ledger's per-site folds:
 Verification: code-only — every emitter re-read against the cited C#
 windows (argument draws before pool internals, post-writes after; sentinel
 slot 6000 takes writes). 26 draw-mirror witnesses in `player_dust2.rs`
-WRITTEN NOT RUN; no cargo/tests/graphify invoked this task.
++ 15 `w4_e1b_*` host witnesses in `player.rs` (the f3-reconcile folds,
+`docs/research/141-player-dust-reconcile.md`) WRITTEN NOT RUN; no
+cargo/tests/graphify invoked this task.

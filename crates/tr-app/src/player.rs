@@ -22793,4 +22793,378 @@ mod s1_p_i27_tests {
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
     }
+
+    // -----------------------------------------------------------------------
+    // W4-e1b — the f3-reconcile witnesses (research/141). Each pins one
+    // KEEP/DROP verdict row against the cited C# window. WRITTEN NOT RUN
+    // (code-only mode). The wall machines / vortex machine / stealth spawn
+    // are DROP-at-merge (f3-canonical); these witnesses keep e1's copy honest
+    // until the merge lifts f3's, and pin the KEEP-E1 rows (falling capture,
+    // drain order, the disjoint lanes' fidelity fixes).
+    // -----------------------------------------------------------------------
+
+    /// A wall column at tile x=30, rows 40..58, on the ground_world. The
+    /// player rests just left of it (right edge ≈ tile 30) at a row inside the
+    /// column, so the slide-edge probe (x+width+1 → tile 30) and the two-tile
+    /// wallslide probe both read solid. Returns (world, player at the wall).
+    fn wall_world_and_player() -> (World, Player) {
+        let mut w = ground_world();
+        for y in 40..58 {
+            let i = w.index(30, y);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut p = Player::spawn(&w);
+        // Right edge + slideDir(1) = 479 + 1 = 480 → tile 30; feet at row 51.
+        p.x = 459.0;
+        p.y = 780.0; // y + height + 1 = 823 → row 51 (inside the column)
+        p.vx = 0.0;
+        p.vy = 0.0;
+        (w, p)
+    }
+
+    /// DROP verdict (d) deviation 1 — the climb gate `:21639`. At gravDir 1
+    /// the C# `(!(vy < gravity) || gravDir != -1)` disjunct is vacuously true,
+    /// so a resting Rat (vy==0, no up/down key) RETURNS — no cling, no
+    /// `sliding`. e1's old `&& !(vy < gravity)` AND wrongly clung. The fixed
+    /// gate reduces to `wall + (a direction key or vy > 0)`.
+    #[test]
+    fn w4_e1b_climb_gate_resting_rat_returns() {
+        let (w, mut p) = wall_world_and_player();
+        assert!(p.set_mount(55, false), "the Rat mounts");
+        // The Rat's 14×14 size override shrinks the box; re-site the right
+        // edge at the wall (x+width+1 = 480 → tile 30, feet row 51).
+        p.x = 480.0 - p.width - 1.0;
+        p.y = 823.0 - p.height - 1.0;
+        p.spiked_boots = 2; // the climb arm
+        p.slide_dir = 1;
+        p.control_right = true; // slideDir 1 needs controlRight
+        p.control_up = false;
+        p.control_down = false;
+        p.vy = 0.0; // resting — no keys, vy not > 0
+        p.sliding = false;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(!p.sliding, "the resting Rat returns at :21639 (vacuous gravDir clause)");
+        // A direction key (controlUp → flag3) DOES cling: vy pins to -3.
+        p.control_up = true;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(p.sliding, "controlUp clings");
+        assert_eq!(p.vy, -3.0, ":21651 the climb-up impulse");
+    }
+
+    /// DROP verdict (d) deviation 2 — the level-1 slide gate `:21709`. The
+    /// `!(vy < -0.5) || gravDir != -1` disjunct is vacuous at gravDir 1; a
+    /// fast-RISING Rat (vy < -0.5, no keys) returns. Only `vy > 0.5` survives.
+    #[test]
+    fn w4_e1b_slide_gate_rising_rat_returns() {
+        let (w, mut p) = wall_world_and_player();
+        assert!(p.set_mount(55, false));
+        p.x = 480.0 - p.width - 1.0; // re-site after the 14×14 override
+        p.y = 823.0 - p.height - 1.0;
+        p.spiked_boots = 1; // the level-1 (else) arm
+        p.slide_dir = 1;
+        p.control_right = true;
+        p.control_up = false;
+        p.control_down = false;
+        p.vy = -2.0; // rising fast — the old unguarded disjunct clung here
+        p.sliding = false;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(!p.sliding, "the rising Rat returns at :21709");
+        // Falling past 0.5 with no keys clings (vy pins to 0.5).
+        p.vy = 1.0;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(p.sliding, "vy > 0.5 clings");
+        assert_eq!(p.vy, 0.5, ":21724 the no-key slide velocity");
+    }
+
+    /// DROP verdict (d) deviations 3+4 — the wallslide gates `:21777`/`:21814`.
+    /// The >=2 arm needs `wall && vy > 0` (the `vy < gravity` disjunct is dead
+    /// at gravDir 1); the single-boot arm needs `wall && vy > 0.5` — the old
+    /// unguarded `|| vy < -0.5` slid a rising player with NO wall.
+    #[test]
+    fn w4_e1b_wallslide_gates_need_wall_and_downward_vy() {
+        let (w, mut p) = wall_world_and_player();
+        p.slide_dir = 1;
+        p.control_right = true;
+        p.spiked_boots = 2;
+        p.vy = 0.0; // resting — the >=2 arm returns (vy not > 0)
+        p.sliding = false;
+        p.wallslide_movement(&w, GRAVITY);
+        assert!(!p.sliding, ":21777 the resting wallslide returns");
+        // Single-boot, rising, NO wall contact (slide_dir 0 → early return is
+        // separate; here keep the wall but vy < 0): the else-if must NOT fire.
+        p.spiked_boots = 1;
+        p.vy = -2.0;
+        p.sliding = false;
+        p.wallslide_movement(&w, GRAVITY);
+        assert!(!p.sliding, ":21814 the unguarded vy<-0.5 slide is gone");
+        // Falling past 0.5 against the wall: the single-boot slide fires.
+        p.vy = 1.0;
+        p.wallslide_movement(&w, GRAVITY);
+        assert!(p.sliding, "wall && vy>0.5 slides");
+        assert_eq!(p.vy, 0.5, ":21823 the no-down slide velocity");
+    }
+
+    /// DROP verdict (d) deviation 5 — `climb_probe_solid` uses
+    /// `(int)v >> 4` (`Utils.cs:1807-1810`), NOT `/16`. On a negative probe
+    /// coordinate the arithmetic shift floors where the division truncates
+    /// toward zero: probe.x = -1 → -1>>4 = -1, but (-1/16) as i32 = 0.
+    #[test]
+    fn w4_e1b_climb_probe_shifts_not_divides() {
+        let (w, mut p) = wall_world_and_player();
+        // The probe is center + (0,vy).SafeNormalize(0)*10 — vertical, so
+        // probe.x == center.x. Site the center at -15 to expose the negative
+        // rounding: (-15 as i32)>>4 = -1, but (-15/16) as i32 = 0.
+        p.x = -25.0; // center.x = -25 + width/2 = -15
+        p.y = 100.0;
+        p.vy = -3.0; // probe straight up
+        let probe_x = p.center().0;
+        assert_eq!(probe_x, -15.0, "the probe X is the center X");
+        assert_eq!(probe_x as i32 >> 4, -1, "the arithmetic shift floors -15/16 to -1");
+        assert_eq!((probe_x / TILE_PX) as i32, 0, "the old division truncated to 0");
+        // The probe reads the shifted tile (out-of-world → false), not tile 0.
+        assert!(!p.climb_probe_solid(&w), "the shifted probe reads out-of-world");
+    }
+
+    /// KEEP-E1 (verdict (f)) — the `falling` flag is captured at the movement
+    /// HEAD (`:28073-28081`, |vy| > gravity BEFORE the collision resolve), so
+    /// a landing tick reaches FloorVisuals with vy==0 but falling=true and the
+    /// 20-dust burst fires. f3's rest-path capture (vy==0 gate) never fires.
+    /// This pins the head-capture expression the port uses (`player.rs:7912`).
+    #[test]
+    fn w4_e1b_falling_head_capture_fires_on_landing() {
+        let gravity = GRAVITY;
+        // The head capture: |vy| > gravity at the pre-collision velocity.
+        let falling_head = |vy: f32| vy > gravity || vy < -gravity;
+        assert!(falling_head(1.0), "a fast fall captures falling=true");
+        assert!(falling_head(-1.0), "a fast rise captures falling=true");
+        assert!(!falling_head(0.0), "rest captures falling=false");
+        // The REST-path capture (f3's, the wrong one): gated on vy==0 first,
+        // so |vy|>gravity is always false there — the landing burst never fires.
+        let falling_rest = |vy: f32| vy == 0.0 && (vy > gravity || vy < -gravity);
+        assert!(!falling_rest(0.0), "the rest path can never capture falling");
+        // A landing tick: pre-collision vy=1.0 (falling=true captured), the
+        // resolve zeroes vy, FloorVisuals still sees falling=true → 20 puffs.
+        let pre_vy = 1.0;
+        let captured = falling_head(pre_vy);
+        let post_vy = 0.0; // the collision resolve
+        assert!(captured && post_vy == 0.0, "the landing tick fires the burst");
+    }
+
+    /// KEEP-E1 — the floor-dust gate `:23740` is `!base.wet && !mount.Cart`,
+    /// where `base.wet` is WetCollision (ANY liquid). The port's four-flag
+    /// union (water/lava/honey/shimmer) gates it; the old water-only `wet`
+    /// let lava/honey/shimmer feet spawn floor dust. The Stinky buff-120 grant
+    /// (`:23732`) reads the REAL tile BEFORE the slope carve-out.
+    #[test]
+    fn w4_e1b_floor_dust_any_wet_gate_and_stinky_buff() {
+        let mut w = ground_world();
+        // A Stinky tile (666) floor at the player's feet row.
+        let mut p = Player::spawn(&w);
+        p.x = 10.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let fx = ((p.x + p.width * 0.5) / TILE_PX) as i32;
+        let fy = ((p.y + p.body_height()) / TILE_PX) as i32;
+        let i = w.index(fx, fy);
+        w.tiles[i] = Tile { kind: 666, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // Dry feet: the Stinky grant fires (buff 120, 180 ticks) and the dust
+        // queues (falling=false, but the snapshot exists).
+        p.wet = false;
+        p.lava_wet = false;
+        p.honey_wet = false;
+        p.shimmer_wet = false;
+        p.floor_visuals(&w, false);
+        assert!(p.buffs.find_buff_index(120).is_some(), ":23732 the Stinky buff-120 grant");
+        assert!(p.pending_floor_dust.is_some(), "dry feet queue the floor dust");
+        // Lava-wet feet: ANY liquid suppresses the dust (the union gate).
+        p.pending_floor_dust = None;
+        p.lava_wet = true;
+        p.floor_visuals(&w, false);
+        assert!(p.pending_floor_dust.is_none(), ":23740 lava-wet feet spawn no floor dust");
+        // A sloped tile in the window suppresses the dust KIND (not the buff).
+        p.lava_wet = false;
+        p.pending_floor_dust = None;
+        w.tiles[i].set_slope(1);
+        p.floor_visuals(&w, false);
+        assert!(p.pending_floor_dust.is_none(), ":23736 the slope carve-out suppresses the dust");
+        assert!(p.buffs.find_buff_index(120).is_some(), "the buff reads the real tile, pre-carve-out");
+    }
+
+    /// KEEP-E1 — the floor-dust falling chain `:24026` uses the INTEGER half
+    /// `(float)(base.width / 2)`. For an odd width the C# truncates: width 21
+    /// → 21/2 = 10 (not 10.5). The port's `(b.width as i32 / 2) as f32` matches.
+    #[test]
+    fn w4_e1b_floor_dust_integer_half_width() {
+        let width = 21.0f32;
+        let csharp_half = (width as i32 / 2) as f32; // (int)(21/2) = 10
+        assert_eq!(csharp_half, 10.0, "the integer half truncates 21/2 to 10");
+        assert_ne!(csharp_half, width / 2.0, "not the float half 10.5");
+    }
+
+    /// KEEP-E1 — the drown bubble `:23283` gate is
+    /// `!flag || Next(20) != 0 || lavaWet || honeyWet`: the Next(20) draw rides
+    /// whenever drowning, BEFORE the wet flags refuse. The host gates ONLY
+    /// `flag` (drowning); the wet flags ride the snapshot. This pins the
+    /// snapshot contract (the drain witness in player_dust2.rs pins the draw).
+    #[test]
+    fn w4_e1b_drown_bubble_host_gates_flag_only() {
+        let mut w = ground_world();
+        // Flood the head row so DrownCollision fires.
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.lava_wet = true; // wet — the OLD host gate skipped the snapshot
+        p.pending_drown_bubble_dust = None;
+        p.check_drowning(&w);
+        // The fixed host gates flag only: the snapshot EXISTS even while wet,
+        // carrying lava_or_honey_wet=true (the drain refuses AFTER its draw).
+        let b = p.pending_drown_bubble_dust.expect("the wet player still queues the snapshot");
+        assert!(b.lava_or_honey_wet, "the wet flags ride the snapshot");
+        assert_eq!(b.pos.x, p.x + 12.0 * p.facing as f32, "the mouth anchor :23292");
+    }
+
+    /// KEEP-E1 — the stealth spawn default is `1f` (`Player.cs:1562`), not
+    /// 0.0. e1's old 0.0 made the Vortex recovery ramp fire 25 ring ticks on
+    /// the first equip. DROP-at-merge (f3-canonical) but pinned here.
+    #[test]
+    fn w4_e1b_stealth_spawns_at_one() {
+        let w = ground_world();
+        let p = Player::spawn(&w);
+        assert_eq!(p.stealth, 1.0, ":1562 public float stealth = 1f");
+    }
+
+    /// KEEP-E1 — the Vortex stealth machine's final else (`:25896-25899`)
+    /// pins `stealth = 1f` when no stealth source is armed, and the set-loss
+    /// disarm (`:16315-16321`) clears the toggle. The ranged knockback scale
+    /// (`:53364-53367`) reads the live stealth.
+    #[test]
+    fn w4_e1b_vortex_final_else_and_set_loss_disarm() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.stealth = 0.3;
+        p.set_vortex = false;
+        p.vortex_stealth_active = true;
+        p.update_vortex_stealth();
+        assert!(!p.vortex_stealth_active, ":16315 the set-loss disarms the toggle");
+        assert_eq!(p.stealth, 1.0, ":25896 the final else pins stealth=1f");
+        // With the set armed + active, the ramp fades and the rings queue.
+        p.set_vortex = true;
+        p.vortex_stealth_active = true;
+        p.stealth = 1.0;
+        p.pending_vortex_ring_dust = None;
+        p.update_vortex_stealth();
+        assert!((p.stealth - 0.96).abs() < 1e-5, ":25831 the -0.04 fade");
+        assert!(p.pending_vortex_ring_dust.is_some(), "flag11 queues the rings");
+        // The ranged kb scale: 1 + (1-stealth)*0.5 at stealth 0.5 → 1.25.
+        let ranged = crate::registry::get(435).unwrap();
+        p.set_vortex = true;
+        p.shroomite_stealth = false;
+        p.stealth = 0.5;
+        assert!((p.weapon_knockback(ranged, 4.0) - 5.0).abs() < 1e-5, ":53364 the Vortex kb scale");
+    }
+
+    /// KEEP-E1 — `ResetEffects` zeroes `aggro` per tick (`:18377`); the Vortex
+    /// stealth writer (`:25847`) subtracts from it. Without the reset the
+    /// subtraction accumulates across ticks.
+    #[test]
+    fn w4_e1b_aggro_resets_each_tick() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.aggro = -500;
+        p.update(&w, PlayerInput::default());
+        // ResetEffects zeroes it; no stealth source re-subtracts this tick.
+        assert_eq!(p.aggro, 0, ":18377 ResetEffects aggro = 0");
+    }
+
+    /// KEEP-E1 — the climbing grants (`:15038-15066`) and the frog family
+    /// (`:14426-14444`) arm `spiked_boots` (the wall machines' gate input).
+    /// 953/975 +1, 976 +2, 984 =2; 3995/3996 +2 (3994 none).
+    #[test]
+    fn w4_e1b_climbing_and_frog_grants_arm_spiked_boots() {
+        let w = ground_world();
+        let boots = |kind: u16| {
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            p.update(&w, PlayerInput::default());
+            p.spiked_boots
+        };
+        assert_eq!(boots(953), 1, ":15040 Climbing Claws ++");
+        assert_eq!(boots(975), 1, ":15044 Shoe Spikes ++");
+        assert_eq!(boots(976), 2, ":15048 Tiger Climbing Gear += 2");
+        assert_eq!(boots(984), 2, ":15066 Master Ninja Gear = 2");
+        assert_eq!(boots(3994), 0, ":14426 the Flipper bundle has no boots");
+        assert_eq!(boots(3995), 2, ":14437 the Frog Leg bundle += 2");
+        assert_eq!(boots(3996), 2, ":14443 the Tiger Frog bundle += 2");
+        // The frog bundle's auto-jump + jump-speed + safe-fall ride too.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3995;
+        p.update(&w, PlayerInput::default());
+        assert!(p.auto_jump && p.acc_flipper, ":14433-14436");
+        assert_eq!(p.extra_fall, 10, ":14435");
+    }
+
+    /// KEEP-E1 — the Cloud double-jump visual ALSO needs the Sandstorm option
+    /// spent or absent (`:21894` `canJumpAgain_Sandstorm || !hasJumpOption_Sandstorm`).
+    /// An unspent Sandstorm suppresses the Cloud puff.
+    #[test]
+    fn w4_e1b_cloud_visual_suppressed_by_unspent_sandstorm() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.performing_jump = Some(ExtraJump::Cloud);
+        p.has_jump_options[ExtraJump::Cloud.index()] = true;
+        p.can_jump_again[ExtraJump::Cloud.index()] = false;
+        p.vy = -2.0; // ascending
+        // Sandstorm armed AND unspent → the Cloud puff is suppressed.
+        p.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+        p.can_jump_again[ExtraJump::Sandstorm.index()] = false;
+        p.pending_double_jump_visual_dust = None;
+        p.double_jump_visuals();
+        assert!(p.pending_double_jump_visual_dust.is_none(), ":21894 the unspent Sandstorm suppresses Cloud");
+        // Sandstorm spent → the Cloud puff fires.
+        p.can_jump_again[ExtraJump::Sandstorm.index()] = true;
+        p.double_jump_visuals();
+        assert!(p.pending_double_jump_visual_dust.is_some(), "the spent Sandstorm frees the Cloud puff");
+    }
+
+    /// KEEP-E1 — an active dash cancels the Vortex stealth (`:21379`).
+    #[test]
+    fn w4_e1b_active_dash_cancels_vortex_stealth() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.dash_type = 1;
+        p.dash = 1;
+        p.dash_delay = -1; // the active-dash arm
+        p.vx = 20.0; // past the threshold → the fast-decay early return
+        p.vortex_stealth_active = true;
+        p.dash_movement(&w, PlayerInput::default());
+        assert!(!p.vortex_stealth_active, ":21379 the active dash disarms the stealth");
+    }
+
+    /// KEEP-E1 — the wall-cling/double-jump-visual block lives in the
+    /// `grappling[0] == -1 && !tongued` movement arm (`:26494`): a tongued
+    /// player never wall-clings or runs the jump==0 visual cancel. The
+    /// differential: with jump==0 and a performing jump armed, the ungated
+    /// tick cancels it (`:26755`); the tongued tick skips the whole block.
+    #[test]
+    fn w4_e1b_wall_block_gated_on_grapple_and_tongue() {
+        let (w, mut p) = wall_world_and_player();
+        p.performing_jump = Some(ExtraJump::Cloud);
+        p.jump = 0; // the :26753 cancel trigger
+        p.tongued = false;
+        p.update(&w, PlayerInput::default());
+        assert!(p.performing_jump.is_none(), "the ungated tick cancels the jump visual (:26755)");
+        // Tongued: the block is skipped — the performing jump survives.
+        let (w2, mut q) = wall_world_and_player();
+        q.performing_jump = Some(ExtraJump::Cloud);
+        q.jump = 0;
+        q.tongued = true;
+        q.update(&w2, PlayerInput::default());
+        assert!(q.performing_jump.is_some(), "the tongued player skips the wall/visual block (:26494)");
+    }
 }
