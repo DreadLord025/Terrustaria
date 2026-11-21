@@ -5865,6 +5865,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut shots = Vec::new();
     let mut ai_shots = Vec::new();
     let mut gallop_dust = Vec::new();
+    let mut item_sounds = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
         for shot in n.wants_hostile_shot.drain(..) {
             shots.push((i, shot));
@@ -5874,6 +5875,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         for d in n.wants_gallop_dust.drain(..) {
             gallop_dust.push(d);
+        }
+        // W4-d36 E4 batch 2 — the queued item cues (the Moss Hornet's
+        // stinger-cooldown Item17, `NPC.cs:50756`): the style-75 solo
+        // seam's queue, drained here on the UpdateNPCs stream (the
+        // gallop-dust convention — the post-tick draw placement is the
+        // recorded deviation, ANALYSIS "W-10 unicorn tails").
+        for s in n.wants_item_sounds.drain(..) {
+            item_sounds.push(s);
+        }
+    }
+    // The item cues play at the C# call's legacy id (the `SoundID.Item17`
+    // = sound id 2, style 17 — the style-75 drain's lookup shape).
+    if !item_sounds.is_empty() {
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        for (style, sx, sy) in item_sounds {
+            if let Some(idx) = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.sound_id == 2 && s.style == style)
+            {
+                app.audio.play_use_sound(idx as u16, sx, sy, 0.0, rng);
+            }
         }
     }
     for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {

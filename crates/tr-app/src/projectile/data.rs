@@ -865,6 +865,13 @@ pub const FLAMELASH: u16 = 34;
 /// (`NPC.cs:23449`), the aiStyle-18 twin of the friendly DemonScythe 45
 /// (`Projectile.cs:1271-1282`: hostile, penetrate −1).
 pub const DEMON_SICKLE: u16 = 44;
+/// `ProjectileID.Stinger` (55, `ProjectileID.cs:664`) — the Hornet family's
+/// hostile shot (`NPC.cs:50796`, the aiStyle-5 tail's volley): 10x10,
+/// aiStyle 1 on the `flag3 = false` skip list (`Projectile.cs:55954` — the
+/// resting counter, straight flight), `penetrate = -1`, tileCollide; the
+/// stock 3600 life the volley overrides to 300 post-spawn (`NPC.cs:50797`,
+/// the sim's timed-shot list). W4-d36 E4 item 4 (`npc_ai_style5.rs`).
+pub const STINGER: u16 = 55;
 /// `ProjectileID.DemonScythe` (45) — the Demon Scythe's shot.
 pub const DEMON_SCYTHE: u16 = 45;
 /// `ProjectileID.RainbowRodBullet` (79) — the Rainbow Rod's channeled shot.
@@ -3717,6 +3724,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight), `tileCollide = true`; the stock 3600 life (the
             // AI_043 arm overrides to 300 post-spawn, `NPC.cs:30743`).
             QUEEN_BEE_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:1375-1383` — the Hornet family's Stinger (55):
+            // 10x10, hostile, `penetrate = -1`, aiStyle 1, `tileCollide =
+            // true`; the stock 3600 life (the aiStyle-5 volley overrides to
+            // 300 post-spawn, `NPC.cs:50797` — the sim's timed-shot list).
+            // The `flag3 = false` skip-list membership (`:55954`) rides
+            // `AI_STYLE_1_RIDERS` — the resting counter, straight flight
+            // (W4-d36 E4 item 4, `npc_ai_style5.rs`).
+            STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // S1-D-3 W-9 fishron wiring — `Projectile.cs:4676-4685`: the
             // Sharknado bolt (385): 30x30, aiStyle 65, penetrate -1,
             // alpha 255, timeLeft 300 (the stock tileCollide true).

@@ -649,11 +649,20 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | Scarecrow9
             | Scarecrow10
             | Splinterling
-            // W4-d36 E4b — Frankenstein rides the same plain
+            // W4-d36 E4b - Frankenstein rides the same plain
             // `update_skeleton` walker; 162 IS in the `:57340` 1000-roll
-            // moan list (+ its own `:57356` 500-roll — the ambient wave's
+            // moan list (+ its own `:57356` 500-roll - the ambient wave's
             // remainder keeps that arm out until the moan port lands).
             | Frankenstein
+            // W4-d36 E4 batch 2 — the remaining fighters ride the same
+            // plain walker (the Swamp Thing's dwell pre-arm returns before
+            // it, but the counter still ticks), so their `ai[3]` is free
+            // for the idle counter. The moan arms: 167 is in the `:57340`
+            // 1000-roll list; 163/166 are in NEITHER moan list — the gate
+            // keeps their draw shape exact (the rolls never fire).
+            | BlackRecluse
+            | SwampThing
+            | UndeadViking
     )
 }
 

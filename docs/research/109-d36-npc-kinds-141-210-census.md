@@ -2,6 +2,58 @@
 
 Status: CENSUS + PLAN (research phase; the port batches follow).
 
+## E4 BATCH 2 LANDED — the fighters + the style-5 tail wiring (this pass)
+
+The R7-band ascending slots after the Wolf (772) and the concurrent
+writer's Frankenstein (773, tip `85ee24abb`): **163 BlackRecluse → 774,
+166 SwampThing → 775, 167 UndeadViking → 776**. (159 Vampire is g8-claimed
+— their pushed tip's `Vampire => 388`, machine round 3 — skipped; the
+brief's "159-ALREADY-g8" confirmed against `origin/task/W4-g8-npc-kind-wire-1`.)
+
+1. **The three fighters** ride the aiStyle-3 walker family on the ladder's
+   per-type rows (163 the cap-2 group `NPC.cs:57554`, 166 the cap-3 group
+   `:57520` + its own `:55938-55971` dwell pre-arm, 167 the num83 base
+   `:57606`). FindFrame: 163 case `:73227-73267` (the -12 air counter, the
+   |vx|*1.1 bands), 166 case `:75618-75664` (the idle 0..5 / walk 7..12 /
+   air 6 bands), 167 the humanoid-group `:68572` (air row 0 — `:69647`
+   lists 167). All 12 hard sites + the wildcard rows + the sheets/portraits.
+2. **The 163 bestiary fold**: credit → 238 BlackRecluseWall
+   (`ContentSamples.cs:1036`, Hide=true GetLeinforsEntries); the row is
+   emitted at net 238 keyed on the wall crawler's credit (d37's kind is
+   not on this branch), the DRAW sheet stays 163 (`texture_net_id`'s own
+   row, the Sharkron 372 precedent). The portrait samples NPC_238's 4-row
+   strip. Immunities: 163/166 {20}, 167 {20,44,324} (`NPCID.cs:7074`/
+   `:7095`/`:7102`); cues NPC_Hit_29/NPC_Killed_32 (163), NPC_Hit_2/
+   NPC_Killed_2 (167), NPC_Hit_1/NPC_Killed_2 (166).
+3. **The style-5 tail WIRED** (the brief's item 4): the concurrent writer's
+   `npc_ai_style5::style5_tail` module (research/110 §3, the more complete
+   port — the Hornet 42/231-235 family + getGoodWorld third draw + the
+   integer-half anchor + the stealth gate) is now called from
+   `ai_005_hover_family` (the rng thread, the `ai_009_sphere_family`
+   signature precedent); the shot drains to `wants_hostile_shot` (the sim
+   timed list's `timeLeft = 300`), the Item17 cue to `wants_item_sounds` →
+   the sim drain (the style75 `out.sounds` shape). The frozen A/B
+   (`s1_d_2_the_style_axis_keeps_the_hover_behaviour`) legacy twin calls
+   the tail too, so the axis-vs-kind-dispatch equivalence holds (the
+   Hornet 42's charge rolls + volley are the NEW behaviour both share).
+4. **Pins after batch 2:** ALL_KINDS/to/from/s1_f_3 **283**; ENTRIES
+   **254 numeric-net rows** (+3: 238/166/167); BESTIARY_NPC_SHEET_IDS
+   **194**; D36_SHEETS 13 rows; bijection ALL PINS HOLD (283/283, max id
+   793). Witnesses WRITTEN NOT RUN (code-only):
+   `w4_d36_fighters_the_defaults_match_the_csharp_rows`,
+   `w4_d36_fighters_the_frame_clocks_match_the_csharp_cases` (+ the
+   style5 module's own 7). **Kinds remaining: 15** (CorruptPenguin 168,
+   the pigron trio 170/171/180, FaceMonster 181, SnowFlinx 185,
+   ArmoredViking 197, Lihzahrd 198, LihzahrdCrawler 199, the bone trio
+   201/202/203, SpikedJungleSlime 204, IcyMerman 206).
+5. **The writer race** (fourth recurrence): the concurrent E4 writer
+   landed Wolf@772 (`a11f61850`) + Frankenstein@773 (`85ee24abb`) and
+   preserved this pass's earlier 4-kind WIP as
+   `tools/_d36_inflight_batch2{,b,c}.patch` (NOT landed). This pass kept
+   their Frankenstein, added the three remaining fighters + wired their
+   style5 module (the disjoint item-4 seam they left for the walker
+   batch's completion). No stash touched.
+
 ## SUPERSEDED AGAIN — d37-R7 re-pin (research/108 `a341daa12`, latest)
 
 The d37 RECEIPTS pass re-pins d36 to **767-816** (R7): the R5/R6 moves

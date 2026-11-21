@@ -1666,6 +1666,29 @@ fn portrait_data(
                 .unwrap_or(40.0);
             (sheet_i, h, 44.0, h, white)
         }
+        // W4-d36 E4 batch 2 portraits — the sheet's frame height (the
+        // vanilla strips: the 238 fold credit = 4 rows, 166 = 13,
+        // 167 = 15, `Main.cs:67082`) with the padded box width (the b0
+        // convention). The Black Recluse's entry carries the 238 net id,
+        // so its portrait samples the wall crawler's 4-row strip.
+        (NpcKind::BlackRecluse, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(36.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::SwampThing, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::UndeadViking, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
     }
 }
 

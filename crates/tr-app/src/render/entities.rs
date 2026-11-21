@@ -1120,6 +1120,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
         NpcKind::ForceBubble => 384,
+        // W4-d36 E4 batch 2: the Black Recluse's bestiary credit folds
+        // onto 238 BlackRecluseWall (`ContentSamples.cs:1036`, Hide=true),
+        // but its DRAW sheet is its own NPC_163 (the ground crawler's art)
+        // — the fishron-hazard precedent. The 238 wall form is d37's kind.
+        NpcKind::BlackRecluse => 163,
         _ => kind.net_id() as u16,
     }
 }
@@ -1259,8 +1264,9 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// atlas packing is the repack wave's (research/108 §5: the union
 /// overflows 8192); the draw arms reference the sheets, absent ones
 /// render nothing. Batch 0: 141/148/149/153/154; hover batch:
-/// 173/176/205; E4: 155; E4b: 162.
-pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205];
+/// 173/176/205; E4: 155; E4b: 162; E4 batch 2: 163/166/167 (163 is the
+/// DRAW sheet — the bestiary credit folds onto 238, `texture_net_id`).
+pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3195,7 +3201,14 @@ pub(crate) fn draw_npcs(
             // W4-d36 E4 — the Wolf's own 13-row strip (`Main.cs:67082`).
             | NpcKind::Wolf
             // W4-d36 E4b — Frankenstein's own 15-row strip (`Main.cs:67082`).
-            | NpcKind::Frankenstein => {
+            | NpcKind::Frankenstein
+            // W4-d36 E4 batch 2 — the remaining fighters' own strips
+            // (163 = 8, 166 = 13, 167 = 15, `Main.cs:67082`). The Black
+            // Recluse's `texture_net_id` row keeps the 163 draw sheet
+            // under the 238 credit fold.
+            | NpcKind::BlackRecluse
+            | NpcKind::SwampThing
+            | NpcKind::UndeadViking => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }

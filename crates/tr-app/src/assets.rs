@@ -1284,8 +1284,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_154",
         // W4-d36 E4 — the Wolf's own strip.
         "NPC_155",
-        // W4-d36 E4b — Frankenstein's own strip.
+        // W4-d36 E4b - Frankenstein's own strip.
         "NPC_162",
+        // W4-d36 E4 batch 2 — the remaining fighters' own strips (163 is
+        // the draw sheet; the bestiary fold row samples NPC_238, the wall
+        // crawler's credit art — `ContentSamples.cs:1036`).
+        "NPC_163",
+        "NPC_166",
+        "NPC_167",
+        "NPC_238",
         // W4-d36 hover batch.
         "NPC_173",
         "NPC_176",
@@ -1875,7 +1882,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 191] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 194] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1918,6 +1925,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 191] = [
         162,
         // W4-d36 hover batch — ENTRIES order (173/176/205).
         173, 176, 205,
+        // W4-d36 E4 batch 2 — ENTRIES order (238/166/167; the Black
+        // Recluse's row carries the 238 fold credit, `ContentSamples.cs:1036`).
+        238, 166, 167,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2698,6 +2708,13 @@ impl Lookups {
                 atlas.sheet("NPC_173").copied(),
                 atlas.sheet("NPC_176").copied(),
                 atlas.sheet("NPC_205").copied(),
+                // W4-d36 E4 batch 2 — the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (238/166/167; the Black
+                // Recluse's portrait samples the 238 fold credit's art,
+                // the wall crawler — `ContentSamples.cs:1036`).
+                atlas.sheet("NPC_238").copied(),
+                atlas.sheet("NPC_166").copied(),
+                atlas.sheet("NPC_167").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

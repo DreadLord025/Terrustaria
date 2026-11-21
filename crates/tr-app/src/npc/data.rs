@@ -599,8 +599,14 @@ impl NpcKind {
             // W4-d36 E4 — the Wolf (155) at the next R7-band slot.
             NpcKind::Wolf => 772,
             // W4-d36 E4b — Frankenstein (162) at the next R7-band slot
-            // (159 Vampire is g8-claimed @762 — skipped, doc-250 §6.10).
+            // (159 Vampire is g8-claimed — their pushed tip's
+            // `Vampire => 388`, machine round 3 — skipped).
             NpcKind::Frankenstein => 773,
+            // W4-d36 E4 batch 2 — the remaining fighters at the next
+            // R7-band slots (ascending vanilla order).
+            NpcKind::BlackRecluse => 774,
+            NpcKind::SwampThing => 775,
+            NpcKind::UndeadViking => 776,
             // W4-d36 census batch 1 — the aiStyle-5 hover trio at their
             // R7-band slots (ascending vanilla order, the b0 convention).
             NpcKind::Crimera => 781,
@@ -948,6 +954,10 @@ impl NpcKind {
             772 => NpcKind::Wolf,
             // W4-d36 E4b — Frankenstein's decode arm.
             773 => NpcKind::Frankenstein,
+            // W4-d36 E4 batch 2 — the fighters' decode arms.
+            774 => NpcKind::BlackRecluse,
+            775 => NpcKind::SwampThing,
+            776 => NpcKind::UndeadViking,
             // W4-d36 census batch 1 — the hover trio's decode arms.
             781 => NpcKind::Crimera,
             782 => NpcKind::MossHornet,
@@ -1841,7 +1851,15 @@ impl NpcKind {
             // W4-d36 E4: the Wolf's NPCHit1 (`NPC.cs:10969`).
             | NpcKind::Wolf
             // W4-d36 E4b: Frankenstein's NPCHit1 (`NPC.cs:15432`).
-            | NpcKind::Frankenstein => "NPC_Hit_1",
+            | NpcKind::Frankenstein
+            // W4-d36 E4 batch 2: the Swamp Thing's NPCHit1 (`NPC.cs:15445`).
+            | NpcKind::SwampThing => "NPC_Hit_1",
+            // W4-d36 E4 batch 2: the Undead Viking's NPCHit2
+            // (`NPC.cs:11096`) — the skeleton-family hit cue.
+            NpcKind::UndeadViking => "NPC_Hit_2",
+            // W4-d36 E4 batch 2: the Black Recluse's NPCHit29
+            // (`NPC.cs:11038`) — the spider cue (the Wall Creeper's).
+            NpcKind::BlackRecluse => "NPC_Hit_29",
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => "NPC_Hit_24",
             // W4-d36 census batch 1: the hover trio's NPCHit1
@@ -2161,7 +2179,14 @@ impl NpcKind {
             // W4-d36 E4: the Wolf's NPCDeath1 (`NPC.cs:10970`).
             | NpcKind::Wolf => "NPC_Killed_1",
             // W4-d36 E4b: Frankenstein's NPCDeath2 (`NPC.cs:15433`).
-            NpcKind::Frankenstein => "NPC_Killed_2",
+            NpcKind::Frankenstein
+            // W4-d36 E4 batch 2: the Swamp Thing / Undead Viking NPCDeath2
+            // (`NPC.cs:15446`/`:11097`) — the zombie death cue.
+            | NpcKind::SwampThing
+            | NpcKind::UndeadViking => "NPC_Killed_2",
+            // W4-d36 E4 batch 2: the Black Recluse's NPCDeath32
+            // (`NPC.cs:11039`) — the spider death cue.
+            NpcKind::BlackRecluse => "NPC_Killed_32",
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => "NPC_Killed_27",
             // W4-d36 census batch 1: the hover trio's NPCDeath1
@@ -2539,7 +2564,12 @@ impl NpcKind {
             NpcKind::Wolf => 26,
             // W4-d36 E4b: Frankenstein (162) aiStyle 3 (`NPC.cs:15428`) —
             // the walker family on the `npc_ai3_speeds` ladder's cap-2 row.
-            NpcKind::Frankenstein => 3,
+            NpcKind::Frankenstein
+            // W4-d36 E4 batch 2: 163/166/167 aiStyle 3 (`NPC.cs:11034`/
+            // `:15441`/`:11092`) — the walker family's per-type rows.
+            | NpcKind::BlackRecluse
+            | NpcKind::SwampThing
+            | NpcKind::UndeadViking => 3,
             // W4-d36 census batch 1: 173/176/205 aiStyle 5
             // (`NPC.cs:11173`/`:11227`/`:11629`) — the style axis claims
             // them (`ai_005_hover_family`).
@@ -2607,7 +2637,15 @@ impl NpcKind {
             NpcKind::Wolf => 6.0,
             // W4-d36 E4b — Frankenstein (162) rides the cap-2 group
             // (`NPC.cs:57554-57578`, the ladder's `:202` row).
-            NpcKind::Frankenstein => 2.0,
+            NpcKind::Frankenstein
+            // W4-d36 E4 batch 2 — the Black Recluse (163) shares the cap-2
+            // group (`NPC.cs:57554`).
+            | NpcKind::BlackRecluse => 2.0,
+            // W4-d36 E4 batch 2 — the Swamp Thing (166) rides the cap-3
+            // group (`NPC.cs:57520`), the Undead Viking (167) the num83
+            // group base 1.5 (`:57606`).
+            NpcKind::SwampThing => 3.0,
+            NpcKind::UndeadViking => 1.5,
             // S1-D-3ff wave A — the `num107` group's per-type rows
             // (`AI_003_Fighters`, `NPC.cs:58324-58376`): the default 1f
             // (52/53/161 carry no override), 132 0.95f (`:58345-58348`),
@@ -3092,7 +3130,14 @@ impl NpcKind {
             // W4-d36 E4 (`NPC.cs:10963-10964`): the Wolf 46x30.
             NpcKind::Wolf => (46.0, 30.0),
             // W4-d36 E4b (`NPC.cs:15426-15427`): Frankenstein 18x40.
-            NpcKind::Frankenstein => (18.0, 40.0),
+            NpcKind::Frankenstein
+            // W4-d36 E4 batch 2 (`NPC.cs:15439-15440`/`:11090-11091`):
+            // the Swamp Thing / Undead Viking 18x40.
+            | NpcKind::SwampThing
+            | NpcKind::UndeadViking => (18.0, 40.0),
+            // W4-d36 E4 batch 2 (`NPC.cs:11032-11033`): the Black Recluse
+            // 50x20 (the wall-crawler body).
+            NpcKind::BlackRecluse => (50.0, 20.0),
             // W4-d36 census batch 1 (`NPC.cs:11171-11172`/`:11225-11226`/
             // `:11627-11628`): Crimera 30x30, Moss Hornet 34x32, Moth 40x40.
             NpcKind::Crimera => (30.0, 30.0),
@@ -3210,6 +3255,10 @@ impl NpcKind {
             NpcKind::Wolf => 155,
             // W4-d36 E4b (`NPCID.cs:11001`).
             NpcKind::Frankenstein => 162,
+            // W4-d36 E4 batch 2 (`NPCID.cs:11003`/`:11009`/`:11011`).
+            NpcKind::BlackRecluse => 163,
+            NpcKind::SwampThing => 166,
+            NpcKind::UndeadViking => 167,
             // W4-d36 census batch 1 (`NPCID.cs:11023`/`:11029`/`:11087`).
             NpcKind::Crimera => 173,
             NpcKind::MossHornet => 176,
@@ -3265,7 +3314,10 @@ impl NpcKind {
             // W4-d36 E4b — Frankenstein rides `FindFrame`'s humanoid-group
             // case list (`NPC.cs:68571`) on its 15-frame strip
             // (`Main.npcFrameCount[162]`, `Main.cs:67082`).
-            NpcKind::Frankenstein => 15,
+            NpcKind::Frankenstein
+            // W4-d36 E4 batch 2 — the Undead Viking rides the same
+            // humanoid-group case list (`NPC.cs:68572`), 15-frame strip.
+            | NpcKind::UndeadViking => 15,
             // The Zombie Elf trio (`S1-F-13c`): `FindFrame`'s humanoid-group
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
@@ -3772,6 +3824,10 @@ impl NpcKind {
             NpcKind::Wolf => 300,
             // W4-d36 E4b (`NPC.cs:15431`).
             NpcKind::Frankenstein => 350,
+            // W4-d36 E4 batch 2 (`NPC.cs:11037`/`:15444`/`:11095`).
+            NpcKind::BlackRecluse => 350,
+            NpcKind::SwampThing => 450,
+            NpcKind::UndeadViking => 70,
             // W4-d36 census batch 1 (`NPC.cs:11176`/`:11230`/`:11632`).
             NpcKind::Crimera => 40,
             NpcKind::MossHornet => 220,
@@ -4151,6 +4207,10 @@ impl NpcKind {
             NpcKind::Wolf => 65,
             // W4-d36 E4b (`NPC.cs:15429`).
             NpcKind::Frankenstein => 65,
+            // W4-d36 E4 batch 2 (`NPC.cs:11035`/`:15442`/`:11093`).
+            NpcKind::BlackRecluse => 90,
+            NpcKind::SwampThing => 70,
+            NpcKind::UndeadViking => 24,
             // W4-d36 census batch 1 (`NPC.cs:11174`/`:11228`/`:11630`).
             NpcKind::Crimera => 22,
             NpcKind::MossHornet => 70,

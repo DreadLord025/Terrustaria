@@ -2261,6 +2261,41 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Moth",
     },
+    // W4-d36 E4 batch 2 — the remaining fighters' entries (appended last,
+    // the small-lane convention). The populator adds the Eclipse info to
+    // 166 (`BestiaryDatabaseNPCsPopulator.cs:1394`) and the UndergroundSnow
+    // info to 167 (`:1551`); the names ride `Lang.GetNPCNameValue`.
+    // 163 BlackRecluse is `Hide = true` (GetLeinforsEntries) and its
+    // credit folds onto 238 BlackRecluseWall (`ContentSamples.cs:1036`:
+    // `creditIds[163] = creditIds[238]`). d37's 238 kind is not on this
+    // branch, so the row is emitted at net 238 keyed on the wall
+    // crawler's credit (doc-109 §4's fold note; the populator attaches
+    // the SpiderNest info to 238, `:1555`). The DRAW sheet stays 163
+    // through `texture_net_id`'s own row (the Sharkron 372 precedent).
+    BestiaryEntryDef {
+        credit_id: "BlackRecluseWall",
+        net_id: 238,
+        kind: NpcKind::BlackRecluse,
+        variant: None,
+        quick_unlock: false,
+        name: "Black Recluse",
+    },
+    BestiaryEntryDef {
+        credit_id: "SwampThing",
+        net_id: 166,
+        kind: NpcKind::SwampThing,
+        variant: None,
+        quick_unlock: false,
+        name: "Swamp Thing",
+    },
+    BestiaryEntryDef {
+        credit_id: "UndeadViking",
+        net_id: 167,
+        kind: NpcKind::UndeadViking,
+        variant: None,
+        quick_unlock: false,
+        name: "Undead Viking",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

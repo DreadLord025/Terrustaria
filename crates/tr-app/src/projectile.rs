@@ -13660,12 +13660,18 @@ fn trail_segments(
 /// BulletSnowman 110 (the Frost Legion Gangsta's bottle): the first-tick
 /// `ai[1]` latch + the alpha-15 fade, also on the `flag3 = false` list
 /// (`Projectile.cs:55962`).
-const AI_STYLE_1_RIDERS: [u16; 5] = [
+const AI_STYLE_1_RIDERS: [u16; 6] = [
     GREEN_LASER,
     PURPLE_LASER,
     VENOM_FANG,
     SKY_FRACTURE,
     BULLET_SNOWMAN,
+    // W4-d36 E4 item 4 — the Hornet family's Stinger (55): the `flag3 =
+    // false` skip list (`Projectile.cs:55954`) — the resting counter, the
+    // straight flight (no per-type hook; the dust `:55490-55494` is the
+    // pool-wide visual skip). The aiStyle-5 volley spawns it
+    // (`npc_ai_style5.rs`, `NPC.cs:50796`).
+    STINGER,
 ];
 
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).

@@ -3575,9 +3575,14 @@ fn npc_seed(
         // W4-d36 E4 — the Wolf (aiStyle 26) plants its feet like the
         // Horseman/Hellhound seeds above.
         | crate::npc::NpcKind::Wolf
-        // W4-d36 E4b — Frankenstein (aiStyle 3) plants its feet like the
+        // W4-d36 E4b - Frankenstein (aiStyle 3) plants its feet like the
         // wave-A zombie walkers above.
-        | crate::npc::NpcKind::Frankenstein => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        | crate::npc::NpcKind::Frankenstein
+        // W4-d36 E4 batch 2 — the remaining aiStyle-3 fighters plant their
+        // feet on the column surface (the net state overwrites below).
+        | crate::npc::NpcKind::BlackRecluse
+        | crate::npc::NpcKind::SwampThing
+        | crate::npc::NpcKind::UndeadViking => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::Penguin
         | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
         // W4-d36 hover batch — the aiStyle-5 trio rides the hover
