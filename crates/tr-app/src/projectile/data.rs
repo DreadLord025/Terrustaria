@@ -1154,6 +1154,31 @@ pub const RELEASE_LANTERN: u16 = 855;
 /// (`GetFirstFractalColor` = `hslToRgb(ai[1], 1, 0.5)`, `:70517-70520`).
 pub const FIRST_FRACTAL: u16 = 857;
 
+/// W4-d17 FOLLOW-UP — the whip proc-spawn children's kind aliases. The
+/// ROWS for 916/917/918/1039 are d18's (`task/W4-d18-proj-ai-171-180`) and
+/// 1038 is d20's (`task/W4-d20-proj-ai-191-200`) — NOT duplicated here (the
+/// Zenith 933/1100 precedent); the proc spawns below reference the alias but
+/// `proj_data` returns None until those rows merge, so the spawn no-ops.
+/// Only 1036/1037 are UNCLAIMED — their rows land in this branch.
+/// `ProjectileID.ScytheWhipProj` (916) — the Dark Harvest black lightning.
+pub const SCYTHE_WHIP_PROJ: u16 = 916;
+/// `ProjectileID.CoolWhipProj` (917) — the Cool Whip snowflake minion.
+pub const COOL_WHIP_PROJ: u16 = 917;
+/// `ProjectileID.FireWhipProj` (918) — the Firecracker proc explosion.
+pub const FIRE_WHIP_PROJ: u16 = 918;
+/// `ProjectileID.CobWhipProj` (1036, `ProjectileID.cs:2620`) — the Cob
+/// Whip's spark minion (`Projectile.cs:13931`, the `cobWhipBuff` latch;
+/// aiStyle 67's `flag7` chase `:49130`/`:50538`/`:50601`). UNCLAIMED — rowed.
+pub const COB_WHIP_PROJ: u16 = 1036;
+/// `ProjectileID.MeteorWhipMeteor` (1037, `ProjectileID.cs:2622`) — the
+/// Starcrash (Meteor Whip) proc meteor
+/// (`WhipTagEffect_Starcrash.cs:14-25`, aiStyle 5's 1037 arm). UNCLAIMED — rowed.
+pub const METEOR_WHIP_METEOR: u16 = 1037;
+/// `ProjectileID.FlowerWhipPetal` (1038) — the Flower Whip petal fan.
+pub const FLOWER_WHIP_PETAL: u16 = 1038;
+/// `ProjectileID.ConstellationStar` (1039) — the Constellation star fan.
+pub const CONSTELLATION_STAR: u16 = 1039;
+
 /// W4-d17 — the aiStyle-161 kind set (the `DefaultToShortsword` callers:
 /// `Projectile.cs:7921`/`:8145`/`:8917`/`:10559`). The `Colliding` stab arm
 /// (`:15955`) and the `ownerHitCheck` gate (`:12637`) key on it.
@@ -3934,6 +3959,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `projFrames[857]` override — the stock 1 stands (the draw reads
             // the hue sparkle, not a frame slice).
             FIRST_FRACTAL => (32.0, 32.0, 168, -1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, 10, false, -1, 255, 1.0)),
+            // W4-d17 FOLLOW-UP — `Projectile.cs:9767-9779` — the Cob Whip's
+            // spark minion (1036): 18x10, aiStyle 67, `penetrate = -1`,
+            // `netImportant`, the LOCAL pair (20), `armorPenetration = 30`
+            // (the spawn stamp), `decidesManualFallThrough` (the `flag7`
+            // chase `:49130`/`:50538`/`:50601` — the aiStyle-67 machine is
+            // the documented follow-up; the row + the proc spawn land here).
+            COB_WHIP_PROJ => (18.0, 10.0, 67, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 20, false, -1, 0, 1.0)),
+            // `Projectile.cs:9780-9792` — the Starcrash proc meteor (1037):
+            // 24x24, aiStyle 5, the LOCAL pair (−1), scale 0.8,
+            // `extraUpdates = 1`, alpha 254, `tileCollide = false` (the AI's
+            // `Bottom.Y >= ai[1]` latch re-arms it, `:23865-23868`). The
+            // stock penetrate 1 / 3600 life.
+            METEOR_WHIP_METEOR => (24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, -1, false, -1, 254, 0.8)),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4216,6 +4254,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i42 — the glowstick/flare family sets `netImportant = true`
             // (`Projectile.cs:1328`/`:1356`/`:2517`/`:4024`/`:5487`/`:5853`/
             // `:8345`/`:9582`/`:9593`/`:9604`/`:9615`/`:10155`).
+            // W4-d17 FOLLOW-UP — `Projectile.cs:9774`: the Cob Whip spark.
+            || kind == COB_WHIP_PROJ
             || matches!(
                 kind,
                 GLOWSTICK | STICKY_GLOWSTICK | SPELUNKER_GLOWSTICK | BOUNCY_GLOWSTICK
@@ -4338,6 +4378,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // — the flinx (`:8980`), the mushroom boi (`:9679`), the
                 // cattivas (`:10207`/`:10374`) and the clay pot (`:10462`).
                 | 951 | 1022 | 1093 | 1112 | 1118
+                // W4-d17 FOLLOW-UP — `Projectile.cs:9778`: the Cob Whip
+                // spark's `decidesManualFallThrough = true`.
+                | COB_WHIP_PROJ
         ),
         // The damage-class flags (`Projectile.cs:751-753` reset false) the
         // per-hit crit block reads (`:12890-12898`). The census is the

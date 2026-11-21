@@ -810,6 +810,12 @@ pub struct Player {
     /// (`Projectile.cs:13918`/`:13929`) — the buff 312/365 arms re-affirm them.
     pub cool_whip_buff: bool,
     pub cob_whip_buff: bool,
+    /// `Player.chlorophyteBladeCounter` (`Player.cs:894`): the Chlorophyte
+    /// Claymore's empowered-swing cooldown. The launch arm
+    /// (`Player.cs:48900-48910`) reads `<= 0` for the ×1.5 damage / ×1.25
+    /// knockback / vertical-velocity swing, then adds `itemAnimation * 3`;
+    /// the per-tick drain (`:42830-42833`) decrements it while positive.
+    pub chlorophyte_blade_counter: i32,
     /// `Player.accSnakeBand` / `accWickedArmlet` / `accMobiusStrip` /
     /// `accSilverBracer` (`Player.cs:1208`/`:1214`/`:1210`/`:1212`, reset
     /// `:18519-18522`): the whip accessory flags. The Snake Band repeats the
@@ -2530,6 +2536,7 @@ impl Player {
             summoner_weapon_speed_bonus: 0.0,
             cool_whip_buff: false,
             cob_whip_buff: false,
+            chlorophyte_blade_counter: 0,
             acc_snake_band: false,
             acc_wicked_armlet: false,
             acc_mobius_strip: false,

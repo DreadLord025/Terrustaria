@@ -1831,6 +1831,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
     }
     app.swing = (app.swing - dt).max(0.0);
+    // W4-d17 follow-up — `Player.cs:42830-42833`: the Chlorophyte Claymore's
+    // counter drains EVERY tick (it sits between the animation decrement
+    // `:42814` and the itemTime decrement `:42836`, outside the animation
+    // guard), floored at 0 by the `> 0` test. The launch arm's empowered
+    // swing reads `<= 0` (`:48900`).
+    if let Some(p) = app.player.as_mut() {
+        if p.chlorophyte_blade_counter > 0 {
+            p.chlorophyte_blade_counter -= 1;
+        }
+    }
     // (Resync keep-one: the i19 per-anim-tick mana-regen-delay block is the
     // shared `ItemCheck_ApplyManaRegenDelay` head ABOVE — both lanes carried
     // it; the gate's second copy was dropped, it re-applied the same delay
@@ -3391,6 +3401,108 @@ fn fire_non_ammo_shot(
         if let Some(slot) = slot {
             app.projectiles.set_armor_penetration(slot, arpen);
             app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        }
+    } else if matches!(held.kind, 273 | 368 | 1826 | 1226 | 675 | 674 | 757) {
+        // W4-d17 FOLLOW-UP — the sword family's launch arms
+        // (`Player.cs:48870-48937`): the Night's Edge 273 / Excalibur 368 /
+        // Horseman's Blade 1826 / Chlorophyte Claymore 1226 / True Night's
+        // Edge 675 / True Excalibur 674 / Terra Blade 757. Every arm spawns
+        // the swing slash AT `MountedCenter` with velocity
+        // `(direction, 0|1)` — NOT the aim — and `ai0 = direction * gravDir`
+        // (gravDir is always 1 in the port), `ai1 = itemAnimationMax`,
+        // `ai2 = GetAdjustedItemScale(sItem)` (`:42566-42574` — the plain
+        // prefixed scale, the meleeScaleGlove skip is recorded). The C#
+        // `return`s each arm; the aiStyle-190/191 machines are d19/d20's
+        // (the rows no-op the spawn until those branches merge — the Zenith
+        // precedent, recorded not faked).
+        let (mcx, mcy) = p.mounted_center();
+        let facing = p.facing as f32;
+        // `ai1 = this.itemAnimationMax`: the port's press-tick shot fires
+        // BEFORE the use-start swing re-arm (the Zenith ordinal precedent),
+        // so the max reads the PREFIXED useAnimation — the value
+        // `ApplyItemAnimation` is about to arm (the i12 melee-speed fold
+        // rides the swing, not this payload; the C# reads the live field).
+        let anim_max = crate::prefix::prefixed_stats(held.kind, held.prefix)
+            .map(|s| s.use_animation)
+            .unwrap_or(def.use_animation as i32) as f32;
+        let scale = crate::player::adjusted_item_scale(
+            held_fx.map_or(def.scale, |s| s.scale),
+        );
+        // The slash kinds per arm (the C# hardcodes 972/984/982; the rest
+        // ride `projToShoot` = the item's shoot).
+        let (slash_kind, beam_kind, beam_ai1, beam_vel, beam_dmg, vy) = match held.kind {
+            // `:48870-48877` — Night's Edge: the 972 slash (ai1 = animMax)
+            // + a SECOND 972 at the aim velocity, ai0 = dir*0.1, ai1 = 30.
+            273 => (972u16, Some(972u16), 30.0, shot, raw as i32, 0.0),
+            // `:48885-48890` / `:48891-48896` — Excalibur / Horseman's
+            // Blade: the single slash (982 / 997), no beam.
+            368 | 1826 => (proj, None, 0.0, Vec2::ZERO, 0, 0.0),
+            // `:48914-48921` — True Night's Edge: the 972 slash + the 973
+            // beam at the aim velocity, HALF damage, ai1 = 32.
+            675 => (972, Some(proj), 32.0, shot, (raw as i32) / 2, 0.0),
+            // `:48922-48929` — True Excalibur: the 983 slash + a 982
+            // ZERO-damage slash twin (the visual overlay), same velocity.
+            674 => (proj, Some(982), anim_max, Vec2::new(facing, 0.0), 0, 0.0),
+            // `:48930-48937` — Terra Blade: the 984 slash + the 985 beam at
+            // the aim velocity ×5, ai1 = 18.
+            757 => (984, Some(proj), 18.0, shot * 5.0, raw as i32, 0.0),
+            // `:48897-48913` — Chlorophyte Claymore: the empowered swing.
+            // `flag11 = chlorophyteBladeCounter <= 0`: ×1.5 damage (the
+            // float multiply truncates), ×1.25 knockback, velocity
+            // `(dir, 0)`; otherwise `(dir, 1)` at the plain stats. The
+            // empowered use adds `itemAnimation * 3` to the counter —
+            // the shot fires at `itemAnimation == itemAnimationMax`
+            // (the use-start tick), so the add reads the prefixed max.
+            _ => {
+                let empowered = p.chlorophyte_blade_counter <= 0;
+                let (dmg, kb, vy) = if empowered {
+                    ((raw * 1.5) as i32, fx_kb * 1.25, 0.0)
+                } else {
+                    (raw as i32, fx_kb, 1.0)
+                };
+                if empowered {
+                    if let Some(pl) = app.player.as_mut() {
+                        pl.chlorophyte_blade_counter += anim_max as i32 * 3;
+                    }
+                }
+                let (cw, ch) = crate::projectile::proj_data(proj)
+                    .map_or((0.0, 0.0), |d| (d.w, d.h));
+                let slot = app.projectiles.spawn_with_data_ai(
+                    proj, mcx - cw * 0.5, mcy - ch * 0.5, facing, vy, dmg, kb, facing, anim_max,
+                );
+                if let Some(slot) = slot {
+                    app.projectiles.set_ai2(slot, scale);
+                    app.projectiles.set_armor_penetration(slot, arpen);
+                    app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+                }
+                return true;
+            }
+        };
+        let (sw, sh) = crate::projectile::proj_data(slash_kind)
+            .map_or((0.0, 0.0), |d| (d.w, d.h));
+        let slot = app.projectiles.spawn_with_data_ai(
+            slash_kind, mcx - sw * 0.5, mcy - sh * 0.5, facing, vy, raw as i32, fx_kb, facing, anim_max,
+        );
+        if let Some(slot) = slot {
+            app.projectiles.set_ai2(slot, scale);
+            app.projectiles.set_armor_penetration(slot, arpen);
+            app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        }
+        if let Some(beam) = beam_kind {
+            // The beam's ai0: the 273's second slash takes `dir*gravDir*0.1`
+            // (`:48874`); every other beam keeps `dir*gravDir`.
+            let beam_ai0 = if held.kind == 273 { facing * 0.1 } else { facing };
+            let (bw, bh) = crate::projectile::proj_data(beam)
+                .map_or((0.0, 0.0), |d| (d.w, d.h));
+            let slot = app.projectiles.spawn_with_data_ai(
+                beam, mcx - bw * 0.5, mcy - bh * 0.5, beam_vel.x, beam_vel.y,
+                beam_dmg, fx_kb, beam_ai0, beam_ai1,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_ai2(slot, scale);
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
         }
     // S1-P-i25 — the summon-staff minion spawn arm
     // (`Player.ItemCheck_Shoot`'s per-item `SpawnMinionOnCursor`

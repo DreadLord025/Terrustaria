@@ -6867,8 +6867,11 @@ impl Projectile {
     /// (`:23900-23913`); the 955's generic alpha bounce (`:23928-23945`).
     /// The rotation spins by `(|vx|+|vy|)·0.01·direction` (`:23952`). The
     /// dust/gore rolls (`:23883/:23973/:23983/:24035/:24039`) are SKIPPED.
-    fn ai_falling_star(&mut self, world: &World) {
-        if self.kind == STARFURY {
+    fn ai_falling_star(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // W4-d17 FOLLOW-UP — `:23865-23868` names the 1037 Starcrash meteor
+        // alongside the 9 (`this.type == 9 || this.type == 1037`).
+        let bottom_latch = matches!(self.kind, STARFURY | METEOR_WHIP_METEOR);
+        if bottom_latch {
             // `:23865-23868` — `tileCollide = base.Bottom.Y >= this.ai[1]`.
             self.tile_collide = self.pos.y + self.h >= self.ai[1];
         } else {
@@ -6883,12 +6886,23 @@ impl Projectile {
             }
         }
         // `:23881-23885` — the soundDelay roll is SKIPPED (sound + RNG).
+        // The 1037 skips the cue whole (`this.type != 1037 && != 1049`).
         if self.kind == STARFURY {
             // `:23900-23913` — alpha −15, floor 150 above the target / 0 at it.
             self.alpha -= 15;
             let floor = if self.pos.y + self.h * 0.5 >= self.ai[1] { 0 } else { 150 };
             if self.alpha < floor {
                 self.alpha = floor;
+            }
+            self.local_ai[0] +=
+                (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        } else if self.kind == METEOR_WHIP_METEOR {
+            // W4-d17 FOLLOW-UP — `:23886-23899`: the 1037's alpha −10 to the
+            // 0 floor (the `num42 = 0` arm — the `Center.Y >= ai[1]` test
+            // writes 0 either way), the same spin accumulator.
+            self.alpha -= 10;
+            if self.alpha < 0 {
+                self.alpha = 0;
             }
             self.local_ai[0] +=
                 (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
@@ -6912,7 +6926,26 @@ impl Projectile {
         // C# updates it after movement, `:17016-17026` +
         // `AutomaticallyChangesDirection` `:17281-17288`, true for aiStyle 5).
         self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
-        self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        if self.kind == METEOR_WHIP_METEOR {
+            // W4-d17 FOLLOW-UP — `:23946-23949`: the 1037's rotation is the
+            // velocity angle minus a quarter turn (the 503/1049 arm).
+            self.rot = self.vel.y.atan2(self.vel.x) - std::f32::consts::FRAC_PI_2;
+        } else {
+            self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        }
+        // W4-d17 FOLLOW-UP — `:24063-24098`: the 1037's two trail-dust gates
+        // (`Next(2)` each) + the `!wet` centre dust's `NextVector2Circular`
+        // (two floats). The dust BODIES skip (the house convention); the
+        // explicit call-site draws stay on the stream. The `Next(4)` colour
+        // pick inside each `NewDust` is a dust-INTERNAL (the spore precedent).
+        if self.kind == METEOR_WHIP_METEOR {
+            let _ = rng.next_range(0, 2);
+            let _ = rng.next_range(0, 2);
+            if !self.wet {
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+            }
+        }
         // The movement: `HandleMovement`'s default tile arm (`:19849-19853`)
         // — the blocked hit kills. The 9's `tileCollide` is the latch above.
         self.kill_step(world);
@@ -16655,6 +16688,11 @@ impl ProjectilePool {
         slot: usize,
         npc_idx: u16,
         mut player: Option<&mut crate::player::Player>,
+        npc_center: Vec2,
+        npc_top_y: f32,
+        npc_size: Vec2,
+        calc_damage: i32,
+        rng: &mut dyn tr_core::loot::DropRng,
     ) {
         let (tag_type, proj_kind) = {
             let p = &self.slots[slot];
@@ -16671,6 +16709,13 @@ impl ProjectilePool {
         // the per-type switch's `RemoveAllProcs` owns the consume. The
         // summon-shot gate lives on the DAMAGE math (`tag_damage_for`), not
         // here — gating this arm would break the Constellation self-arm.
+        // W4-d17 FOLLOW-UP — the proc-window read BEFORE the consume (the
+        // C# `OnHit` runs `OnTaggedHit` then `OnProcHit` then the clear,
+        // `TagEffectState.cs:113-117`); the spawn bodies below fire on the
+        // armed window, the consume clears it after.
+        let proc_armed = player
+            .as_deref()
+            .is_some_and(|p| p.tag_effects.can_proc(tag_type, npc_idx as usize));
         if let Some(p) = player.as_deref_mut() {
             p.tag_effects.on_hit(npc_idx as usize, tag_type, proj_kind);
             if tr_core::whip::tag_effect(tag_type)
@@ -16679,6 +16724,184 @@ impl ProjectilePool {
                 // `WhipTagEffect_Constellation.OnTaggedHit` — the proc arms
                 // on the very hit that tagged it.
                 p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+            }
+        }
+        // W4-d17 FOLLOW-UP — the `OnTaggedHit` / `OnProcHit` spawn bodies
+        // (`TagEffectState.cs:113-117`). The DarkHarvest's black lightning
+        // fires on EVERY tagged hit (`OnTaggedHit`); the Starcrash meteor +
+        // the FlowerWhip petal fan fire on the armed proc window
+        // (`OnProcHit`), which the consume above already cleared for the
+        // consuming classes — the `proc_armed` snapshot keeps the C# order.
+        if let Some(effect) = tr_core::whip::tag_effect(tag_type) {
+            match effect.class {
+                tr_core::whip::TagEffectClass::DarkHarvest => {
+                    // `WhipTagEffect_DarkHarvest.cs:16-21`: the 916 at the
+                    // victim centre, damage `(int)(TagDamage ·
+                    // SummonTagDamageMultiplier[proj.type])`, zero velocity /
+                    // knockback, `localNPCImmunity[victim] = -1`. The 916 row
+                    // is d18's — the spawn no-ops until it merges.
+                    let dmg = (effect.tag_damage as f32
+                        * tr_core::whip::summon_tag_damage_multiplier(proj_kind))
+                        as i32;
+                    let (fw, fh) = crate::projectile::proj_data(SCYTHE_WHIP_PROJ)
+                        .map_or((0.0, 0.0), |d| (d.w, d.h));
+                    let spawned = self.spawn_with_data_ai_owned(
+                        SCYTHE_WHIP_PROJ,
+                        self.slots[slot].owner,
+                        npc_center.x - fw * 0.5,
+                        npc_center.y - fh * 0.5,
+                        0.0,
+                        0.0,
+                        dmg,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                    if let Some(s) = spawned {
+                        self.local_immunity[s * 256 + npc_idx as usize] = -1;
+                    }
+                }
+                tr_core::whip::TagEffectClass::Starcrash if proc_armed => {
+                    self.starcrash_meteor_spawn(slot, npc_idx, npc_center, npc_top_y, calc_damage, rng);
+                }
+                tr_core::whip::TagEffectClass::ViolentDisplayOfFlower if proc_armed => {
+                    self.flower_whip_petal_fan(slot, npc_idx, npc_center, npc_size, calc_damage, rng);
+                }
+                tr_core::whip::TagEffectClass::Firecracker if proc_armed => {
+                    // W4-d17 FOLLOW-UP — `WhipTagEffect_Firecracker.cs:20-24`:
+                    // the 918 explosion at the victim centre, damage
+                    // `(int)(calcDamage · 2.75)`, zero velocity / knockback,
+                    // `localNPCImmunity[victim] = -1`. The 918 row is d18's —
+                    // the spawn no-ops until it merges.
+                    let dmg = (calc_damage as f32
+                        * tr_core::whip::PROC_FIRECRACKER_MULTIPLIER)
+                        as i32;
+                    let (fw, fh) = crate::projectile::proj_data(FIRE_WHIP_PROJ)
+                        .map_or((0.0, 0.0), |d| (d.w, d.h));
+                    let spawned = self.spawn_with_data_ai_owned(
+                        FIRE_WHIP_PROJ,
+                        self.slots[slot].owner,
+                        npc_center.x - fw * 0.5,
+                        npc_center.y - fh * 0.5,
+                        0.0,
+                        0.0,
+                        dmg,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                    if let Some(s) = spawned {
+                        self.local_immunity[s * 256 + npc_idx as usize] = -1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// W4-d17 FOLLOW-UP — `WhipTagEffect_Starcrash.SpawnMeteorWhipMeteorOn`
+    /// (`WhipTagEffect_Starcrash.cs:14-25`): the 1037 meteor. The C# computes
+    /// a first offset (`(-200 + Next(400), -600)`) then OVERWRITES the spawn
+    /// point with the rotated `(0, -280)` — the first `Next(400)` draw still
+    /// rides the stream (the dead-store precedent). The point is
+    /// `targetNPC.Center + (0,-280).RotatedBy(NextFloatDirection·2π·0.125)`;
+    /// the velocity is `targetNPC.DirectionFrom(point) · 8` (the normalize
+    /// toward the victim, `Entity.cs:210-213`); damage
+    /// `(int)(calcDamage·1.33)`, knockback the whip's, `ai0 = Next(3)`,
+    /// `ai1 = targetNPC.position.Y`. RNG order: the dead `Next(400)`, the
+    /// `NextFloatDirection` (one `NextDouble`), then `Next(3)`.
+    fn starcrash_meteor_spawn(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        npc_center: Vec2,
+        npc_top_y: f32,
+        calc_damage: i32,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let _ = rng.next_range(0, 400); // the dead first-offset X draw
+        let angle = (rng.next_double() as f32 * 2.0 - 1.0)
+            * std::f32::consts::TAU
+            * 0.125;
+        let offset = crate::projectile::rotate(Vec2::new(0.0, -280.0), angle);
+        let point = npc_center + offset;
+        let dir = (npc_center - point).normalize_or_zero();
+        let vel = dir * 8.0;
+        let damage = (calc_damage as f32 * 1.33) as i32;
+        let kb = self.slots[slot].knock_back;
+        let owner = self.slots[slot].owner;
+        let ai0 = rng.next_range(0, 3) as f32;
+        let (fw, fh) = crate::projectile::proj_data(METEOR_WHIP_METEOR)
+            .map_or((0.0, 0.0), |d| (d.w, d.h));
+        let _ = npc_idx;
+        let _ = self.spawn_with_data_ai_owned(
+            METEOR_WHIP_METEOR,
+            owner,
+            point.x - fw * 0.5,
+            point.y - fh * 0.5,
+            vel.x,
+            vel.y,
+            damage,
+            kb,
+            ai0,
+            npc_top_y,
+        );
+    }
+
+    /// W4-d17 FOLLOW-UP — `WhipTagEffect_ViolentDisplayOfFlower.
+    /// SpawnFlowerExplosionOn` (`WhipTagEffect_ViolentDisplayOfFlower.cs:17-33`):
+    /// the 1038 petal fan. `num = calcDamage + projectile.bonusTagDamage`;
+    /// the base angle `NextFloat·2π`; the count `3 + Next(0,4)`; the damage
+    /// `(int)Ceiling((int)(num·2.25) / count)`. Each petal at the victim
+    /// centre, velocity `UnitX.RotatedBy(i/count·2π + base)
+    /// .RotatedByRandom(π/8) · max(w,h)/8`, zero knockback,
+    /// `ai0 = NextFloat·-20`, `localNPCImmunity[victim] = 30`. RNG per petal:
+    /// the `RotatedByRandom`'s two `NextDouble` draws (`Utils.cs:1697-1700`),
+    /// then the ai0 `NextFloat`. The 1038 row is d20's — the spawn no-ops
+    /// until it merges.
+    fn flower_whip_petal_fan(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        npc_center: Vec2,
+        npc_size: Vec2,
+        calc_damage: i32,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let num = calc_damage + self.slots[slot].bonus_tag_damage;
+        let base = rng.next_float() * std::f32::consts::TAU;
+        let count = 3 + rng.next_range(0, 4);
+        let damage = ((num as f32 * 2.25) as i32 as f32 / count as f32).ceil() as i32;
+        let owner = self.slots[slot].owner;
+        let reach = npc_size.x.max(npc_size.y) / 8.0;
+        let (fw, fh) = crate::projectile::proj_data(FLOWER_WHIP_PETAL)
+            .map_or((0.0, 0.0), |d| (d.w, d.h));
+        for i in 0..count {
+            let angle = i as f32 / count as f32 * std::f32::consts::TAU + base;
+            // `RotatedByRandom(0.39269909262657166)` = π/8: two NextDouble
+            // draws, the difference times the max radians.
+            let jitter = rng.next_double() * 0.39269909262657166
+                - rng.next_double() * 0.39269909262657166;
+            let dir = crate::projectile::rotate(
+                crate::projectile::rotate(Vec2::X, angle),
+                jitter as f32,
+            );
+            let vel = dir * reach;
+            let ai0 = rng.next_float() * -20.0;
+            let spawned = self.spawn_with_data_ai_owned(
+                FLOWER_WHIP_PETAL,
+                owner,
+                npc_center.x - fw * 0.5,
+                npc_center.y - fh * 0.5,
+                vel.x,
+                vel.y,
+                damage,
+                0.0,
+                ai0,
+                0.0,
+            );
+            if let Some(s) = spawned {
+                self.local_immunity[s * 256 + npc_idx as usize] = 30;
             }
         }
     }
@@ -16739,6 +16962,10 @@ impl ProjectilePool {
         on_hit_effects_run: bool,
         mut player: Option<&mut crate::player::Player>,
         target_active: bool,
+        npc_center: Vec2,
+        arm_anchor: Vec2,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
     ) {
         let kind = self.slots[slot].kind;
         let tag_type = self.slots[slot].tag_effect_type;
@@ -16766,15 +16993,69 @@ impl ProjectilePool {
                 }
             }
             COOL_WHIP => {
-                // `:13923` — the unconditional player buff grant (the deferred
-                // 917 snowflake spawn waits on the derived buff gate).
+                // W4-d17 FOLLOW-UP — `:13915-13924`: the 917 snowflake spawn
+                // gates on the DERIVED `coolWhipBuff` flag (the buff 312 arm
+                // re-affirms it per tick, `Player.cs:10124`); the spawn sets
+                // it, then the unconditional 312/180 grant runs. The 917 row
+                // is d18's — the spawn no-ops until it merges (the Zenith
+                // precedent). `NewProjectile` centres the box on the point.
+                let cool = player.as_deref().is_some_and(|p| p.cool_whip_buff);
+                if !cool {
+                    let (fw, fh) = crate::projectile::proj_data(COOL_WHIP_PROJ)
+                        .map_or((0.0, 0.0), |d| (d.w, d.h));
+                    let spawned = self.spawn_with_data_ai_owned(
+                        COOL_WHIP_PROJ,
+                        self.slots[slot].owner,
+                        npc_center.x - fw * 0.5,
+                        npc_center.y - fh * 0.5,
+                        0.0,
+                        0.0,
+                        15,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                    if let Some(s) = spawned {
+                        // `:8712` — `armorPenetration = 30`.
+                        self.slots[s].armor_penetration = 30;
+                    }
+                    if let Some(p) = player.as_deref_mut() {
+                        p.cool_whip_buff = true;
+                    }
+                }
+                // `:13923` — the unconditional player buff grant.
                 if let Some(p) = player.as_deref_mut() {
                     p.buffs.add_buff(312, 180);
                 }
             }
             COB_WHIP => {
-                // `:13934` — same shape for the CobWhip (the deferred 1036
-                // spark + the 365 gate).
+                // W4-d17 FOLLOW-UP — `:13926-13935`: the 1036 spark spawn,
+                // the same derived-flag shape (`cobWhipBuff`, `:10128`).
+                let cob = player.as_deref().is_some_and(|p| p.cob_whip_buff);
+                if !cob {
+                    let (fw, fh) = crate::projectile::proj_data(COB_WHIP_PROJ)
+                        .map_or((0.0, 0.0), |d| (d.w, d.h));
+                    let spawned = self.spawn_with_data_ai_owned(
+                        COB_WHIP_PROJ,
+                        self.slots[slot].owner,
+                        npc_center.x - fw * 0.5,
+                        npc_center.y - fh * 0.5,
+                        0.0,
+                        0.0,
+                        2,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                    if let Some(s) = spawned {
+                        // `:9777` — `armorPenetration = 30`.
+                        self.slots[s].armor_penetration = 30;
+                    }
+                    if let Some(p) = player.as_deref_mut() {
+                        p.cob_whip_buff = true;
+                    }
+                }
+                // `:13934` — the unconditional 365/180 grant.
                 if let Some(p) = player.as_deref_mut() {
                     p.buffs.add_buff(365, 180);
                 }
@@ -16787,18 +17068,109 @@ impl ProjectilePool {
             }
             CONSTELLATION_WHIP => {
                 // `:13938`: the first hit with the proc window armed spawns
-                // the star fan (deferred) and clears every proc window.
+                // the star fan and clears every proc window.
                 let armed = player
                     .as_deref()
                     .is_some_and(|p| p.tag_effects.can_proc(tag_type, npc_idx as usize));
                 if self.slots[slot].local_ai[0] == 0.0 && armed {
                     self.slots[slot].local_ai[0] = 1.0;
+                    // W4-d17 FOLLOW-UP — `:13941`: the fan spawns BEFORE the
+                    // `RemoveAllProcs` (the C# order). The damage is
+                    // `this.damage * 2` (the switch's `calcDamage` argument).
+                    self.constellation_star_fan(slot, npc_idx, npc_center, arm_anchor, world, rng);
                     if let Some(p) = player.as_deref_mut() {
                         p.tag_effects.remove_all_procs(tag_type);
                     }
                 }
             }
             _ => {}
+        }
+    }
+
+    /// W4-d17 FOLLOW-UP — `ConstellationWhip_SpawnConstellationStarsTowards`
+    /// (`Projectile.cs:14937-14957`): the star fan off the whip's control
+    /// points. `num = (int)(calcDamage * 0.22)`; the curve is rebuilt with
+    /// `getActualCollisionPoints = false` (the C# default — the spin seed
+    /// `ai[1]` rides, NOT forced to 1); the walk steps `i = 2; i < Count-1;
+    /// i += 3`, each star at `points[i]` with velocity the segment
+    /// `points[i+1] - points[i]` rotated `-π/2 · direction · gravDir`,
+    /// safe-normalized, times `1 + NextFloatDirection·3`. A point in a solid
+    /// tile (`WorldGen.InWorld(p,5) && SolidTile3(p)`) relocates to the
+    /// player centre. The 1039 row is d18's — the spawn no-ops until it
+    /// merges. RNG per star: the `NextFloatDirection` (one `NextDouble`),
+    /// then the ai1 `NextFloat` (`0.02 + 0.09·NextFloat`).
+    fn constellation_star_fan(
+        &mut self,
+        slot: usize,
+        npc_idx: u16,
+        npc_center: Vec2,
+        arm_anchor: Vec2,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let p = &self.slots[slot];
+        let Some(settings) = p.whip_settings else {
+            return;
+        };
+        let damage = (p.damage as f32 * 0.22) as i32;
+        let kb = p.knock_back;
+        let owner = p.owner;
+        let direction = p.sprite_direction;
+        let inputs = tr_core::whip::WhipCurveInputs {
+            kind: p.kind,
+            ai0: p.ai[0],
+            frame_offset: 0,
+            ai1: p.ai[1],
+            sprite_direction: direction,
+            rotation: p.rot,
+            arm_position: arm_anchor,
+            held_use_animation: p.whip_use_animation,
+            whip_range_multiplier: 1.0,
+            velocity_len: p.vel.length(),
+            get_actual_collision_points: false,
+        };
+        let points = tr_core::whip::fill_whip_control_points(&inputs, &settings);
+        let (fw, fh) = crate::projectile::proj_data(CONSTELLATION_STAR)
+            .map_or((0.0, 0.0), |d| (d.w, d.h));
+        let mut i = 2usize;
+        while i + 1 < points.len() {
+            let next = points[i + 1];
+            let at = points[i];
+            let seg = next - at;
+            // `-π/2 · direction · gravDir` (gravDir is always 1 in the port).
+            let angle = -std::f32::consts::FRAC_PI_2 * direction as f32;
+            let dir = crate::projectile::rotate(seg, angle).normalize_or_zero();
+            let spread = 1.0 + (rng.next_double() as f32 * 2.0 - 1.0) * 3.0;
+            let vel = dir * spread;
+            // `WorldGen.InWorld(p, 5) && WorldGen.SolidTile3(p)` — the point's
+            // tile (the `ToTileCoordinates` shift form, `Utils.cs:1807`).
+            let tx = (at.x as i32) >> 4;
+            let ty = (at.y as i32) >> 4;
+            let in_world = tx >= 5
+                && tx < world.width - 5
+                && ty >= 5
+                && ty < world.height - 5;
+            let solid3 = in_world
+                && world.tile(tx, ty).is_some_and(|t| {
+                    t.active()
+                        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                });
+            let spawn_at = if solid3 { arm_anchor } else { at };
+            let ai1 = 0.02 + 0.09 * rng.next_float();
+            let _ = self.spawn_with_data_ai_owned(
+                CONSTELLATION_STAR,
+                owner,
+                spawn_at.x - fw * 0.5,
+                spawn_at.y - fh * 0.5,
+                vel.x,
+                vel.y,
+                damage,
+                kb,
+                npc_idx as f32,
+                ai1,
+            );
+            i += 3;
         }
     }
 
@@ -17201,7 +17573,9 @@ impl ProjectilePool {
                         // i17 slice; the Starfury star 9 + the Star Cannon
                         // star 955 (S1-P-i22) ride the fuller i22 arm (the
                         // tileCollide latches + the alpha ramps + the spin).
-                        // The other aiStyle-5 kinds (12/503/723-726/1037/
+                        // W4-d17 FOLLOW-UP: the 1037 Starcrash meteor joins
+                        // the arm (the `:23865`/`:23886`/`:23946` per-type
+                        // arms). The other aiStyle-5 kinds (12/503/723-726/
                         // 1049/1133) have no rows yet — the arm stays
                         // kind-gated so they keep the no-op fall-through.
                         5 => {
@@ -17210,8 +17584,11 @@ impl ProjectilePool {
                                     &mut self.slots[i],
                                     world,
                                 );
-                            } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR) {
-                                self.slots[i].ai_falling_star(world);
+                            } else if matches!(
+                                self.slots[i].kind,
+                                STARFURY | STAR_CANNON_STAR | METEOR_WHIP_METEOR
+                            ) {
+                                self.slots[i].ai_falling_star(world, rng);
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 10)`
@@ -20352,6 +20729,12 @@ impl ProjectilePool {
                 // (`:75425`); the kinds are disjoint so the relative order
                 // is unobservable.
                 self.tiger_pounce_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                // W4-d17 FOLLOW-UP — `Kill()`'s 1037 arm (`:73862-73920`):
+                // the Starcrash meteor's resize + box Damage + the gore/dust
+                // draw census. C# body order: the 818 dust (`:71587`) < the
+                // 1037 arm (`:73862`) < the gem arm (`:75425`); the kinds are
+                // disjoint so the relative order is unobservable.
+                self.meteor_whip_kill(i, npcs, doll_flags(player.as_deref()), rng, luck, local_owner);
                 self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 // `Kill()`'s debris arm (`Kill_ExplodeTiles` `:77369-77385`,
                 // called from `Kill()` `:77258-77261`): the trio's death
@@ -21999,6 +22382,82 @@ impl ProjectilePool {
         }
         // `:71631-71634` — `this.Damage()` at the completed arc.
         self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+    }
+
+    /// W4-d17 FOLLOW-UP — `Kill()`'s 1037 arm (`Projectile.cs:73862-73920`):
+    /// the Starcrash meteor's death resizes the box to `(int)(192·scale)`
+    /// (the recentre keeps the centre), then `Resize(64, 64)` for the damage
+    /// box, `localAI[1] = -1`, `maxPenetrate = 0` and a box `Damage()` — the
+    /// explosion's AoE. The dust/gore rings (`:73887-73919`) are the
+    /// documented visual skips (their explicit `Next` draws ride the stream
+    /// in the C# order: 3 gore `Next(100)` pairs + `Next(61,64)` + the
+    /// `NextVector2Circular` floats + `Next(-10,11)` pairs, then the 24-dust
+    /// loop draws nothing explicit, then the 4-dust `SelectRandom` +
+    /// `NextFloat`). The `SoundID.Item89` cue + the net SendData are skips.
+    fn meteor_whip_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        if self.slots[slot].kind != METEOR_WHIP_METEOR {
+            return;
+        }
+        // `:73869-73873` — the `(int)(192·scale)` recentre resize.
+        {
+            let p = &mut self.slots[slot];
+            let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            let side = (192.0 * p.scale) as i32 as f32;
+            p.w = side;
+            p.h = side;
+            p.pos = center - Vec2::new(side * 0.5, side * 0.5);
+        }
+        // `:73880` — `Resize(64, 64)` (the 1037 arm; the 1049 takes 112).
+        {
+            let p = &mut self.slots[slot];
+            let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            p.w = 64.0;
+            p.h = 64.0;
+            p.pos = center - Vec2::splat(32.0);
+        }
+        // `:73882-73886` — the local-owner gate: `localAI[1] = -1`,
+        // `maxPenetrate = 0`, then `Damage()`.
+        if self.slots[slot].owner == local_owner {
+            self.slots[slot].local_ai[1] = -1.0;
+            self.slots[slot].max_penetrate = 0;
+            self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        }
+        // `:73891-73899` — the 3-gore ring's explicit draws (the bodies skip).
+        // C# argument order: the position's two `Next(100)` + the type
+        // `Next(61,64)` evaluate BEFORE `NewGore`'s internal kicks
+        // (`Next(10,31)` Y then `Next(-20,21)` X, `Gore.cs:1326-1327` — the
+        // chum census precedent); THEN the call-site `NextVector2Circular`
+        // (angle + radius floats) and the two `Next(-10,11)` velocity jitters.
+        // `ChildSafety.Disabled = true` statically — the dangerous-gore
+        // re-roll never fires.
+        for _ in 0..3 {
+            let _ = rng.next_range(0, 100); // gore position X
+            let _ = rng.next_range(0, 100); // gore position Y
+            let _ = rng.next_range(61, 64); // the gore type
+            let _ = rng.next_range(10, 31); // NewGore internal Y kick
+            let _ = rng.next_range(-20, 21); // NewGore internal X kick
+            let _ = rng.next_float(); // NextVector2Circular angle
+            let _ = rng.next_float(); // NextVector2Circular radius
+            let _ = rng.next_range(-10, 11); // velocity.X jitter
+            let _ = rng.next_range(-10, 11); // velocity.Y jitter
+        }
+        // `:73900-73919` — the `!wet` dust rings. The 24-dust loop's
+        // `NewDust` calls draw nothing explicit; the 4-dust `SelectRandom`
+        // (`Next(3)`) + the `NextFloat` scale add ride the stream.
+        if !self.slots[slot].wet {
+            for _ in 0..4 {
+                let _ = rng.next_range(0, 3); // SelectRandom(6, 259, 158)
+                let _ = rng.next_float(); // the scale add
+            }
+        }
     }
 
     /// W4-d17 — `AI_163_Chum` (`Projectile.cs:53474-53603`, the dispatch
@@ -24115,12 +24574,29 @@ impl ProjectilePool {
                     // liveness is `hp > 0` (the `Npc` list carries no `active`
                     // field — the `can_be_chased_by` precedent).
                     let target_active = npcs[idx].hp > 0;
+                    // W4-d17 FOLLOW-UP — the proc-spawn bodies read the
+                    // victim's centre (the 917/1036 spawns) and the whip's
+                    // arm anchor (the Constellation fan's solid-tile
+                    // relocation to `player.Center`). The anchor is the
+                    // pass's `owner` centre (the `GetArmPosition` stand-in,
+                    // the sweep's own anchor).
+                    let (ncx, ncy) = npcs[idx].center();
+                    let arm_anchor = owner
+                        .map(|(x, y)| Vec2::new(x, y))
+                        .unwrap_or_else(|| {
+                            let p = &self.slots[slot];
+                            p.pos + Vec2::new(p.w * 0.5, p.h * 0.5)
+                        });
                     self.whip_on_hit(
                         slot,
                         idx as u16,
                         on_hit_effects_run,
                         player.as_deref_mut(),
                         target_active,
+                        Vec2::new(ncx, ncy),
+                        arm_anchor,
+                        world,
+                        rng,
                     );
                 }
                 // Gate-merge note (i24 vs i27): the pre-strike whip debuffs +
@@ -24135,7 +24611,22 @@ impl ProjectilePool {
                 // consumes the window, then this re-arms it via the ungated
                 // `OnTaggedHit` self-arm
                 // (`the_constellation_first_hit_arms_and_clears_the_proc_window`).
-                self.tag_on_hit(slot, idx as u16, player.as_deref_mut());
+                // W4-d17 FOLLOW-UP — the proc-spawn bodies read the victim's
+                // centre/top/size and `num6` (the pre-tag hit damage,
+                // `:12852` — the port's `damage` local, the specific
+                // multiplier is 1 for the whip kinds).
+                let (ncx2, ncy2) = npcs[idx].center();
+                let (nw2, nh2) = npcs[idx].size();
+                self.tag_on_hit(
+                    slot,
+                    idx as u16,
+                    player.as_deref_mut(),
+                    Vec2::new(ncx2, ncy2),
+                    npcs[idx].y,
+                    Vec2::new(nw2, nh2),
+                    damage,
+                    rng,
+                );
                 // `:13707-13809`: the yoyo on-hit spawns (M4-PROJ-4b) — the
                 // shared player counter's increment form, exactly the C#
                 // arms: the Cascade's 1125, the Kraken's 3× 1135, the Chik's
@@ -40297,11 +40788,12 @@ mod use_path_tests {
             .expect("the whip row");
         pool.set_whip_params(slot, 0, 0, 30.0);
         p.minion_attack_target_npc = -1;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
         // The live victim: the retarget lands.
-        pool.whip_on_hit(slot, 3, false, Some(&mut p), true);
+        pool.whip_on_hit(slot, 3, false, Some(&mut p), true, Vec2::new(120.0, 100.0), Vec2::new(100.0, 100.0), &w, &mut rng);
         assert_eq!(p.minion_attack_target_npc, 3, "(:14261)");
         // The dead victim: the write is skipped, the old mark holds.
-        pool.whip_on_hit(slot, 7, false, Some(&mut p), false);
+        pool.whip_on_hit(slot, 7, false, Some(&mut p), false, Vec2::new(120.0, 100.0), Vec2::new(100.0, 100.0), &w, &mut rng);
         assert_eq!(p.minion_attack_target_npc, 3, "(:14259) the active gate");
     }
 
