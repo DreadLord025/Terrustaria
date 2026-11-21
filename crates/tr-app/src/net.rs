@@ -737,8 +737,10 @@ pub struct PlayerNet {
     pub off_x: f32,
     pub off_y: f32,
     /// `Main.player[id].inventory` - the peer's slot state, fed by the
-    /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`).
-    pub inventory: HashMap<u8, NetItem>,
+    /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`). The key
+    /// is the vanilla `PlayerItemSlotID.SlotId` (i16 — the bank4 rows ride
+    /// 699+, W4-g50's 85 restore re-sends them).
+    pub inventory: HashMap<i16, NetItem>,
     /// `Main.player[id].buffType[]`'s live ids, fed by `50 PlayerBuffs`
     /// (`MessageBuffer.cs:2454-2480` sets every listed buff's time to 60).
     pub buffs: Vec<u16>,
@@ -1121,14 +1123,18 @@ impl ItemOwner {
 
 /// `msg 5 PlayerInventory`'s item body (`NetMessage.cs:199-222`): the slot
 /// index, the stack, the prefix, the type and a `BitsByte` whose bit 0 is
-/// `favorited` (bit 1 is the server's "blocked slot" indicator, which the
-/// port has no home for yet — deviation in `docs/ANALYSIS.md`).
+/// `favorited` and bit 1 the server's "blocked slot" indicator
+/// (`RestoreToPlayer`'s `flag ? 1 : 0`, `QuickStacking.cs:355`; the client
+/// pulses the slot red — the pulse visual is unported, W4-g50).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct NetItem {
     pub kind: i16,
     pub stack: i16,
     pub prefix: u8,
     pub favorited: bool,
+    /// BitsByte bit 1 — `ItemSlot.IndicateBlockedSlot`'s flag (the 85
+    /// quick-stack restore re-send carries it; every other 5 send is 0).
+    pub blocked: bool,
 }
 
 /// `msg 4 PlayerInfo`'s body (`NetMessage.cs:147-197`; the field order and the
@@ -3184,6 +3190,7 @@ impl C2s {
                 .bitsbyte({
                     let mut b = BitsByte::new();
                     b.set(0, item.favorited);
+                    b.set(1, item.blocked);
                     b
                 }),
             Self::WorldRequest => w,
@@ -3353,6 +3360,7 @@ impl C2s {
                         stack: stack.max(0),
                         prefix,
                         favorited: flags.get(0),
+                        blocked: flags.get(1),
                     },
                 }
             }
@@ -3767,6 +3775,7 @@ impl S2c {
                 .bitsbyte({
                     let mut b = BitsByte::new();
                     b.set(0, item.favorited);
+                    b.set(1, item.blocked);
                     b
                 }),
             Self::WorldInfo(wi) => wi.write_to(w),
@@ -4035,6 +4044,7 @@ impl S2c {
                         stack: stack.max(0),
                         prefix,
                         favorited: flags.get(0),
+                        blocked: flags.get(1),
                     },
                 }
             }
@@ -5262,8 +5272,9 @@ pub struct Slot {
     pub last_seen: Instant,
     /// `Main.player[id].inventory` — the peer's slot state, fed by the
     /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`). The C#'s
-    /// server keeps the same per-client copy of the inventory.
-    pub inventory: HashMap<u8, NetItem>,
+    /// server keeps the same per-client copy of the inventory. The key is
+    /// the vanilla `PlayerItemSlotID.SlotId` (i16 — bank4 rides 699+).
+    pub inventory: HashMap<i16, NetItem>,
     /// `RemoteClient.TileSections` (`RemoteClient.cs:31`): the flattened
     /// `sections_w * sections_h` latch grid of the sections already streamed.
     pub sections: Vec<bool>,
@@ -5440,7 +5451,7 @@ impl Server {
 
     /// Stores one peer inventory slot — `Main.player[id].inventory[slot]`
     /// (`MessageBuffer.cs:399-462`'s `slot.Item = item`).
-    pub fn set_slot_inventory(&self, id: u32, slot: u8, item: NetItem) {
+    pub fn set_slot_inventory(&self, id: u32, slot: i16, item: NetItem) {
         if let Ok(mut s) = self.slots.lock() {
             if let Some(c) = s.get_mut(&id) {
                 c.inventory.insert(slot, item);
@@ -5449,7 +5460,7 @@ impl Server {
     }
 
     /// The peer's inventory slots (a snapshot).
-    pub fn slot_inventory(&self, id: u32) -> HashMap<u8, NetItem> {
+    pub fn slot_inventory(&self, id: u32) -> HashMap<i16, NetItem> {
         self.slots
             .lock()
             .ok()
@@ -5798,6 +5809,7 @@ mod tests {
                     stack: 99,
                     prefix: 3,
                     favorited: true,
+                    blocked: false,
                 },
             },
             C2s::WorldRequest,

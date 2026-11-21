@@ -310,7 +310,7 @@ impl App {
             // `PlayerItemSlotID.CanRelay`).
             C2s::Inventory { slot, item } => {
                 let peer = id as u8;
-                server.set_slot_inventory(id, slot as u8, item);
+                server.set_slot_inventory(id, slot, item);
                 if player_item_slot::can_relay(slot) {
                     server.broadcast_except(
                         &S2c::Inventory {
@@ -1233,14 +1233,17 @@ impl App {
                 self.check_npcs_react_to_emote(subject);
             }
             // `case 85` — the quick-stack ask (W4-g50,
-            // `MessageBuffer.cs:3261-3266`): the host would read the slot list
+            // `MessageBuffer.cs:3261-3266`): the host reads the slot list
             // into a scratch `SourceInventory` (`QuickStacking.ReadNetInventory`)
-            // and run `QuickStackToNearbyChests` (`:3265`). The multi-chest
-            // quick-stack system is unported — the port's `bank::quick_stack`
-            // is the single-container `ChestUI.QuickStack` variant, not the
-            // `QuickStacking` nearby-chest transfer (`QuickStacking.cs:256-266`),
-            // so the apply is parked; the codec is byte-verbatim (`net.rs`).
-            C2s::QuickStackRequest(_) => {}
+            // and runs `QuickStackToNearbyChests` (`:3265`). WIRED via the
+            // W4-g21 batch-3 engine (`crate::quick_stack`, the constants-copy
+            // keep-one — `transfer`/`Dest` are their `Transfer`/
+            // `DestinationHelper` verbatim).
+            C2s::QuickStackRequest(q) => {
+                if id < 255 {
+                    self.host_quick_stack(server, id, &q);
+                }
+            }
             // `case 94` — the debug-command sync (W4-g50,
             // `MessageBuffer.cs:3463-3518`): the reader consumes the four
             // fields, then gates on `DebugOptions.enableDebugCommands`
@@ -1582,7 +1585,7 @@ impl App {
         let inv = server.slot_inventory(id);
         let mut wire_count = 0i32;
         let mut actuator_count = 0i32;
-        for slot in 0u8..58 {
+        for slot in 0i16..58 {
             let Some(it) = inv.get(&slot) else { continue };
             if it.kind == 530 {
                 wire_count += it.stack as i32;
@@ -1724,6 +1727,137 @@ impl App {
             return false;
         }
         true
+    }
+
+    /// `case 85`'s host body (`MessageBuffer.cs:3261-3266` →
+    /// `QuickStacking.ReadNetInventory` + `QuickStackToNearbyChests`,
+    /// `QuickStacking.cs:256-266`, W4-g50 re-probe): the slot list snapshots
+    /// the SENDER's `5`-fed inventory copy into the scratch `SourceInventory`,
+    /// the W4-g21 constants-copy engine transfers into the in-range chests
+    /// (`NearbyChests.GetChestsInRangeOf`, 600 px of `player.position`), the
+    /// restore re-sends one `5` per source slot (the `netMode == 2` arm,
+    /// `:353-356`, blocked flag in bit 1) and the blocked list answers the
+    /// sender via `IndicateBlockedChests`' `SendData(85, whoAmI)` (`:275`).
+    /// The per-slot `SyncSlot(32)` broadcasts (`:91-97`) replicate each
+    /// changed chest slot. The host's peer copy (`remote_players`) takes
+    /// the restored slots too — the C# `Main.player[whoAmI]` IS that copy.
+    fn host_quick_stack(&mut self, server: &net::Server, id: u32, q: &net::QuickStackRequest) {
+        // `ReadNetInventory` (`:308-321`): one snapshot per listed slot id.
+        let inv = server.slot_inventory(id);
+        let mut source: Vec<crate::quick_stack::SourceSlot> = Vec::new();
+        for &slot in &q.slots {
+            let Some(ni) = inv.get(&slot) else { continue };
+            let item = if ni.kind <= 0 || ni.stack <= 0 {
+                crate::item::EMPTY_SLOT
+            } else {
+                crate::item::ItemSlot {
+                    kind: ni.kind as u16,
+                    name: crate::registry::name(ni.kind as u16),
+                    count: ni.stack.max(0) as u32,
+                    prefix: ni.prefix as u16,
+                }
+            };
+            source.push(crate::quick_stack::SourceSlot {
+                slot_id: slot as usize,
+                item,
+                blocked: false,
+            });
+        }
+        // `GetChestsInRangeOf(player.position)` (`NearbyChests.cs:10-31`):
+        // the sender's `13` snapshot position; locked/in-use chests STAY in
+        // the set (`DestinationHelper.Reset` reads `IsLockedOrInUse`,
+        // `QuickStacking.cs:53`) — they block, not vanish.
+        let (px, py) = self
+            .remote_players
+            .get(&id)
+            .map(|p| (p.x, p.y))
+            .unwrap_or((0.0, 0.0));
+        let open = self.remote_players.get(&id).and_then(|p| p.chest).unwrap_or(-1) as i32;
+        let mut in_range: Vec<(usize, bool, (f32, f32))> = Vec::new();
+        for (idx, wc) in self.world_chests.iter().enumerate() {
+            if wc.tile == crate::chest::removed_tile()
+                || wc.tile == crate::chest::unplaced_tile()
+            {
+                continue; // `chest != null` (`:20`)
+            }
+            let cx = wc.tile.0 as f32 * 16.0 + 16.0;
+            let cy = wc.tile.1 as f32 * 16.0 + 16.0;
+            let dx = cx - px;
+            let dy = cy - py;
+            if dx * dx + dy * dy > crate::craft::CHEST_RANGE_PX * crate::craft::CHEST_RANGE_PX {
+                continue;
+            }
+            let locked = crate::chest::is_locked_or_in_use(&self.world_chests, &self.world, idx, open);
+            in_range.push((idx, locked, (cx, cy)));
+        }
+        // The lazy store's implicit airs: size each destination to maxItems
+        // before the borrow (the C# `Chest.item[]` is always maxItems long).
+        for &(idx, _, _) in &in_range {
+            if let Some(wc) = self.world_chests.get_mut(idx) {
+                let max = wc.max_items;
+                if wc.slots.len() < max {
+                    wc.slots.resize(max, crate::item::EMPTY_SLOT);
+                }
+            }
+        }
+        let mut chests: Vec<(&mut [crate::item::ItemSlot], bool, (f32, f32), i32)> = Vec::new();
+        for (idx, locked, pos) in in_range {
+            if let Some(wc) = self.world_chests.get_mut(idx) {
+                chests.push((&mut wc.slots[..], locked, pos, idx as i32));
+            }
+        }
+        let mut dests: Vec<crate::quick_stack::Dest<'_>> = chests
+            .into_iter()
+            .map(|(slots, locked, pos, idx)| crate::quick_stack::Dest::new(slots, locked, pos, idx))
+            .collect();
+        let blocked = crate::quick_stack::transfer(&mut source, &mut dests, q.smart_stack);
+        // `SyncSlot` (`:91-97`): the changed chest slots broadcast as `32`.
+        for dest in &dests {
+            let idx = dest.chest_index();
+            for (slot, item) in dest.changed_slots() {
+                server.broadcast(&S2c::ChestItem(net::ChestItem {
+                    chest: idx as i16,
+                    slot: slot as u8,
+                    stack: item.count.min(i16::MAX as u32) as i16,
+                    prefix: item.prefix.min(u8::MAX as u16) as u8,
+                    kind: item.kind as i16,
+                }));
+            }
+        }
+        // `RestoreToPlayer` (`:343-363`): every source slot restored + one
+        // `5` re-send (blocked flag bit 1); the host's peer copy follows.
+        for s in &source {
+            let ni = net::NetItem {
+                kind: s.item.kind as i16,
+                stack: s.item.count.min(i16::MAX as u32) as i16,
+                prefix: s.item.prefix.min(u8::MAX as u16) as u8,
+                favorited: inv
+                    .get(&(s.slot_id as i16))
+                    .is_some_and(|n| n.favorited),
+                blocked: false,
+            };
+            server.set_slot_inventory(id, s.slot_id as i16, ni);
+            if let Some(p) = self.remote_players.get_mut(&id) {
+                p.inventory.insert(s.slot_id as i16, ni);
+            }
+            // `SendData(5, -1, -1, null, whoAmI, slotId, flag ? 1 : 0)` —
+            // the port's 5 body carries the flag as `NetItem.blocked`.
+            server.broadcast(&S2c::Inventory {
+                player_id: id as u8,
+                slot: s.slot_id as i16,
+                item: net::NetItem { blocked: s.blocked, ..ni },
+            });
+        }
+        // `IndicateBlockedChests`' host leg (`:270-277`): the list answers
+        // the SENDER only (`SendData(85, player.whoAmI, -1, …)`).
+        if !blocked.is_empty() {
+            server.send(
+                id,
+                &S2c::QuickStackBlocked(net::QuickStackBlocked {
+                    chests: blocked.iter().map(|&c| c as u16).collect(),
+                }),
+            );
+        }
     }
 
     /// `Player.ConsumeItem(type)`'s forward scan (`Player.cs:9269-9308`,
@@ -3252,11 +3386,15 @@ impl App {
             // `MessageBuffer.cs:4483-4490`): accepted, nothing to do.
             S2c::Unused93 => {}
             // `case 85` — the blocked-chest list answer (W4-g50,
-            // `MessageBuffer.cs:3267-3270`): the client would run
-            // `QuickStacking.IndicateBlockedChests` (`:3269`) — the red pulse
-            // over each blocked chest (`Chest.IndicateBlockedChest`,
-            // `Chest.cs:3582-3601`). The particle pulse system is unported, so
-            // the apply is parked; the codec is byte-verbatim (`net.rs`).
+            // `MessageBuffer.cs:3267-3270`): the client runs
+            // `QuickStacking.IndicateBlockedChests` (`:3269`) — FINALIZE-PARK
+            // (re-probe): the fn's whole body is the `RoomCheckParticle`
+            // red pulse per chest (`Chest.IndicateBlockedChest`,
+            // `Chest.cs:3582-3601` — a 60-tick Cd-texture particle in
+            // `ParticleSystem_World_OverPlayers`), zero state writes; the
+            // port has no particle system (the g21 engine's module doc
+            // records the same no-op). The transfer itself is WIRED on the
+            // host leg; the codec is byte-verbatim (`net.rs`).
             S2c::QuickStackBlocked(_) => {}
             // `case 94` — the debug-command sync (W4-g50,
             // `MessageBuffer.cs:3463-3518`): the same `enableDebugCommands`
@@ -3287,13 +3425,50 @@ impl App {
                     self.net_items_dirty = true;
                 }
             }
-            // `case 5` — one peer inventory slot (`MessageBuffer.cs:399-462`):
-            // the slot lands in that peer's inventory copy.
+            // `case 5` — one inventory slot (`MessageBuffer.cs:399-462`):
+            // the slot lands in that peer's inventory copy; the SELF leg
+            // (`num25 == Main.myPlayer`, `:414-430`) writes the local
+            // player's slot — the 85 quick-stack restore re-sends ride it
+            // (`RestoreToPlayer`, `QuickStacking.cs:353-356`; the host
+            // locked the slots via `LockNetSlot` before the 85, so the
+            // `HasLockedInventory` refusal does not fire — the lock machine
+            // is the client send path's, W4-g21's button lane). The bit-1
+            // blocked flag pulses the slot red (`IndicateBlockedSlot`) —
+            // the pulse visual is unported, the flag rides the codec.
             S2c::Inventory {
                 player_id,
                 slot,
                 item,
             } => {
+                if player_id as u32 == self.local_id {
+                    let value = if item.kind <= 0 || item.stack <= 0 {
+                        crate::item::EMPTY_SLOT
+                    } else {
+                        crate::item::ItemSlot {
+                            kind: item.kind as u16,
+                            name: crate::registry::name(item.kind as u16),
+                            count: item.stack.max(0) as u32,
+                            prefix: item.prefix as u16,
+                        }
+                    };
+                    // `PlayerItemSlotID.SlotReference`'s grid/coin/ammo/
+                    // bank4 split (the port's arrays).
+                    match slot {
+                        0..=49 => self.inventory[slot as usize] = value,
+                        50..=53 => self.equip.coins[slot as usize - 50] = value,
+                        54..=57 => self.equip.ammo[slot as usize - 54] = value,
+                        s if (player_item_slot::bank_1_0(3)
+                            ..player_item_slot::bank_1_0(3) + 40)
+                            .contains(&s) =>
+                        {
+                            if let Some(p) = self.player.as_mut() {
+                                p.banks[3][(s - player_item_slot::bank_1_0(3)) as usize] = value;
+                            }
+                        }
+                        _ => {} // the other blocks are the equip lanes'
+                    }
+                    return;
+                }
                 let peer = player_id as u32;
                 let (px, py) = self.net_peer_spawn_pos();
                 self.remote_players
@@ -3306,7 +3481,7 @@ impl App {
                         ..Default::default()
                     })
                     .inventory
-                    .insert(slot as u8, item);
+                    .insert(slot, item);
             }
             // `case 32` — one chest slot (`MessageBuffer.cs:1897-1918`): the
             // client writes it into its own chest store.
@@ -3728,6 +3903,7 @@ impl App {
                         stack: 1,
                         prefix: p.equipped_prefix[i].min(255) as u8,
                         favorited: false,
+                        blocked: false,
                     },
                 });
             }
@@ -3739,6 +3915,7 @@ impl App {
                         stack: 1,
                         prefix: 0,
                         favorited: false,
+                        blocked: false,
                     },
                 });
             }
@@ -3750,6 +3927,7 @@ impl App {
                         stack: 1,
                         prefix: 0,
                         favorited: false,
+                        blocked: false,
                     },
                 });
             }
@@ -3785,6 +3963,7 @@ impl App {
             stack: slot.count.min(i16::MAX as u32) as i16,
             prefix: slot.prefix.min(255) as u8,
             favorited,
+            blocked: false,
         }
     }
 
@@ -8023,7 +8202,7 @@ mod message_family_tests {
             server.set_slot_inventory(
                 me,
                 0,
-                net::NetItem { kind: 530, stack: 20, prefix: 0, favorited: false },
+                net::NetItem { kind: 530, stack: 20, prefix: 0, favorited: false, blocked: false },
             );
         }
         // The client carries the same stock (the bill consumes from it).
@@ -8065,5 +8244,66 @@ mod message_family_tests {
             0,
             "the bill cleared the cooldown"
         );
+    }
+
+    /// `case 85` (`MessageBuffer.cs:3261-3266`, `QuickStacking.cs:256-266`):
+    /// the host snapshots the sender's listed slots, transfers into the
+    /// in-range chest via the g21 engine, re-sends the restored slots (5)
+    /// and syncs the changed chest slot (32). WRITTEN NOT RUN.
+    #[test]
+    fn w4_g50_the_85_quick_stack_transfers_and_restores() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id;
+        // The sender stands next to a chest at tile (10, 2).
+        let entry = host_app.remote_players.entry(me).or_default();
+        entry.id = me;
+        entry.x = 10.0 * 16.0;
+        entry.y = 2.0 * 16.0;
+        // A world chest at (10, 2) holding 9900 wood in slot 0 (the tile
+        // must exist unlocked — `Chest.IsLocked`'s null-tile arm reads
+        // locked, `Chest.cs:303-305`).
+        let ti = host_app.world.index(10, 2);
+        host_app.world.tiles[ti].kind = 21;
+        host_app.world.tiles[ti].frame_x = 0;
+        host_app.world.tiles[ti].flags |= tr_core::tile::FLAG_ACTIVE;
+        let idx = crate::chest::create_chest(&mut host_app.world_chests, 10, 2);
+        crate::chest::set_chest_slot(
+            &mut host_app.world_chests,
+            idx,
+            0,
+            crate::item::ItemSlot { kind: 9, name: crate::registry::name(9), count: 9900, prefix: 0 },
+        );
+        // The sender's host-side slot copy: 50 wood in grid slot 10.
+        let wood = net::NetItem { kind: 9, stack: 50, prefix: 0, favorited: false, blocked: false };
+        if let NetRole::Host(server) = &host_app.net {
+            server.set_slot_inventory(me, 10, wood);
+        }
+        client_app.inventory[10] = crate::item::ItemSlot {
+            kind: 9,
+            name: crate::registry::name(9),
+            count: 50,
+            prefix: 0,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::QuickStackRequest(net::QuickStackRequest {
+                slots: vec![10],
+                smart_stack: false,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        // The host's chest merged the 50 wood (9900 + 50).
+        let slots = crate::chest::chest_slots(&host_app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 9950, "the wood merged into the chest");
+        // The 32 sync carried it to the client's chest store.
+        let cslots = crate::chest::chest_slots(&client_app.world_chests, idx).unwrap();
+        assert_eq!(cslots[0].count, 9950, "the 32 sync landed the chest slot");
+        // The 5 restore drained the sender's grid slot on both sides.
+        assert_eq!(client_app.inventory[10].count, 0, "the restore drained the source");
+        let inv = if let NetRole::Host(server) = &host_app.net {
+            server.slot_inventory(me)
+        } else {
+            unreachable!()
+        };
+        assert_eq!(inv.get(&10).map(|i| i.stack), Some(0), "the host copy restored");
     }
 }
