@@ -815,11 +815,19 @@ impl FrontScreenBehaviours for FrontScreen {
                 let mut nav = Nav::None;
                 let mut flow = None;
                 let mut create_draft: Option<ui::world_creation::NewWorldDraft> = None;
+                // W4-g22 DOC-SWEEP — the per-site inline cue
+                // (`UIWorldCreation.cs`'s handlers + the GroupOptionButton
+                // 12, `click_cue`'s census) plays before the state write;
+                // Back's 11 rides the flow hop instead (Bug 17).
+                let click = ui::world_creation::click_at(&l, mouse);
+                if let Some(id) = ui::world_creation::click_cue(click) {
+                    crate::chest::play_menu_sound(app, id);
+                }
                 {
                     let Some(FrontScreen::WorldCreation(draft)) = app.front.as_mut() else {
                         return None;
                     };
-                    match ui::world_creation::click_at(&l, mouse) {
+                    match click {
                         // `ClickRandomizeName` (`:497-503`): the port's
                         // `AssignRandomWorldName` stand-in re-derives the
                         // name (`:1002-1025`'s composition tables have no
@@ -842,8 +850,9 @@ impl FrontScreenBehaviours for FrontScreen {
                         // "UI.EnterSeed", `allowEmpty: true`, no cap (the
                         // source's `int.MaxValue`); the icon's Advanced-tab
                         // click degrades to the same keyboard (plan
-                        // Uncertainty 4).
-                        ui::world_creation::Click::Seed => nav = Nav::Seed(draft.clone()),
+                        // Uncertainty 4) — its own button 12 already played.
+                        ui::world_creation::Click::Seed
+                        | ui::world_creation::Click::SeedIcon => nav = Nav::Seed(draft.clone()),
                         // `Click_NamingAndCreating` (`:710-724`): an empty
                         // name opens the naming keyboard (`allowEmpty: false`,
                         // 27), a filled one finishes (`:722`).
@@ -1718,6 +1727,43 @@ pub(crate) mod front_flow_tests {
         app.mouse_pos = centre(l.back);
         hover(&mut app);
         assert_eq!(app.audio.played_count(), before + 3, "a new element ticks");
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — a size row on the live world
+    /// creator plays ONE Menu_Tick (the GroupOptionButton 12) and the pick
+    /// lands; the seed plate plays ONE Menu_Open (`OpenSeedInputMenu`'s 10,
+    /// `:704`) and opens the keyboard; Back plays ONE Menu_Close (the hop's
+    /// 11, `GoBack` `:672`) — never doubled.
+    #[test]
+    fn doc_sweep_world_creator_rows_and_plates_play_once() {
+        let mut app = flow_app(
+            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(0, 0))),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::world_creation::layout(Vec2::new(sw, sh), 0.0);
+        app.mouse_pos = centre(l.size_buttons[2]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the size row");
+        assert!(matches!(
+            app.front,
+            Some(FrontScreen::WorldCreation(ref d)) if d.size == 2
+        ));
+        app.mouse_pos = centre(l.seed_plate);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 10 on the seed plate");
+        assert!(matches!(app.front, Some(FrontScreen::Keyboard(_))));
+        app.keyboard_cancel();
+        app.pointer.tick(300.0);
+        app.mouse_pos = centre(l.back);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 11 on Back, not two");
+        assert!(matches!(app.front, Some(FrontScreen::WorldSelect)));
     }
 
     #[test]
