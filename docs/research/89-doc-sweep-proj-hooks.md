@@ -219,3 +219,14 @@ surgery — d77's `nebula_arcanum_kill` wins the 617 whole arm).
 3. **The 710 on-hit fan is NOT a dup** (d78 26f §5): g3's DOC-SWEEP
    BetsySharpnel fan (`:14121`/`:53964`) is a different C# site from d77's
    `betsy_arrow_kill` (`Kill()` host) — both survive.
+
+## 7. FINAL receipt — the §3 deferred multipliers landed (g3, this lane)
+
+The WIP left in `projectile.rs` at tip `eccd1ee50` (rocket ×2 / mine ×3 /
+lance mult+kb, §3's three deferred rows) was verified against the C# windows
+and COMPLETED: the `cultist_resistant_to` predicate (the verbatim
+`ProjectileID.cs:525` set, 379 deduped) had no consumer — the
+`:13368-13371` ×0.75 hook now lands in `damage_pve` after the expert cuts,
+gated on `NpcKind::AncientCultist` (439). The `Main.netMode != 2` gate folds
+out (the PVE walk is client/single-player). 5 witnesses WRITTEN NOT RUN
+(`w4_g3_final_damage_mult_tests`). No cargo/tests/rustfmt invoked.

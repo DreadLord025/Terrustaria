@@ -898,6 +898,28 @@ pub(crate) fn rocket_mine(kind: u16) -> bool {
     matches!(kind, 135 | 138 | 141 | 144 | 778 | 782 | 795 | 798 | 801 | 786 | 789 | 792)
 }
 
+/// W4-g3 FINAL — `ProjectileID.Sets.CultistIsResistantTo`
+/// (`ProjectileID.cs:525`): the Lunatic Cultist takes ×0.75 from these shots
+/// (`Damage_PVE_Inner` `:13368-13371`). The full C# set is carried verbatim;
+/// the unrowed members are inert (no slot reaches the arm for them) but the
+/// predicate stays 1:1 with the source. 379 appears twice in the C# list —
+/// deduped here (a bool set).
+pub(crate) fn cultist_resistant_to(kind: u16) -> bool {
+    matches!(
+        kind,
+        207 | 182 | 338 | 339 | 340 | 341 | 266 | 390 | 391 | 392 | 307 | 316 | 190
+            | 227 | 255 | 297 | 317 | 321 | 356 | 407 | 376 | 374 | 379 | 408 | 389
+            | 388 | 533 | 405 | 409 | 535 | 536 | 484 | 477 | 16 | 34 | 79 | 634
+            | 635 | 616 | 189 | 181 | 566 | 837 | 659 | 803 | 804 | 805 | 806 | 807
+            | 808 | 809 | 810 | 856 | 931 | 248 | 393 | 394 | 395 | 378 | 664 | 666
+            | 668 | 680 | 625 | 626 | 627 | 628 | 613 | 614 | 309 | 195 | 433 | 755
+            | 864 | 758 | 759 | 832 | 833 | 834 | 835 | 951 | 644 | 642 | 946 | 930
+            | 937 | 225 | 285 | 917 | 700 | 916 | 640 | 221 | 606 | 567 | 568 | 569
+            | 570 | 571 | 617 | 618 | 619 | 620 | 963 | 967 | 1022 | 1026 | 1036
+            | 1038 | 1037 | 1039 | 1093 | 1112 | 1097 | 1120
+    )
+}
+
 /// The homing rocket set (`Projectile.cs:47197`/`:47463`): the Snowman
 /// Cannon's 338-341 + the 1.4.4 homing kinds 803/804/808/809/810 AND the
 /// liquid Snowman kinds 805/806/807 (the C# arm lists them — they home
@@ -22874,6 +22896,40 @@ impl ProjectilePool {
             if p.kind == DEADLY_SPHERE && p.local_ai[2] >= 40.0 {
                 damage = (damage as f32 * 0.5) as i32;
             }
+            // W4-g3 FINAL — the rocket/mine/lance multipliers, the deferred
+            // set now that the AI lanes (d2/d3/d7 aiStyle 16/19) are armed.
+            // `:14435-14438` — `IsARocketThatDealsDoubleDamageToPrimaryEnemy`
+            // (`ProjectileID.cs:543`: 134/137/140/143/776/780/793/796/799/
+            // 784/787/790/246) && `timeLeft > 3` → ×2. The port's
+            // `rocket_straight` is that set minus the 246 Stynger (d78's
+            // row); the 246 is added back here so the gate is the C# set.
+            if (rocket_straight(p.kind) || p.kind == 246) && p.time_left > 3 {
+                damage = (damage as f32 * 2.0) as i32;
+            }
+            // `:14439-14442` — `IsAMineThatDealsTripleDamageWhenStationary`
+            // (`ProjectileID.cs:544`: 135/138/141/144/778/782/795/798/801/
+            // 786/789/792 = the port's `rocket_mine`) && `velocity.Length()
+            // < 0.5f` → ×3. The mine settles to near-zero velocity before it
+            // arms, so the stationary gate is the per-pass velocity read.
+            if rocket_mine(p.kind) && p.vel.length() < 0.5 {
+                damage = (damage as f32 * 3.0) as i32;
+            }
+            // `:14466-14469` — the 877/878/879 jousting lances: `num = 0.1f +
+            // Main.player[owner].velocity.Length() / 7f * 0.9f` (an ASSIGNMENT
+            // to the specific multiplier, not a compound — the lances carry
+            // no prior multiplier, so it equals the base damage × the scale).
+            // The owner-velocity snapshot is the live player (single-player).
+            // `:12840-12844` — the same trio's knockback scales `num4 *=
+            // velocity.Length() / 7f` in the pre-DamageVar switch.
+            if matches!(p.kind, JOUSTING_LANCE | SHADOW_JOUSTING_LANCE | HALLOW_JOUSTING_LANCE) {
+                let owner_vel_len = player
+                    .as_deref()
+                    .map(|pl| (pl.vx * pl.vx + pl.vy * pl.vy).sqrt())
+                    .unwrap_or(0.0);
+                let lance_mult = 0.1 + owner_vel_len / 7.0 * 0.9;
+                damage = (p.damage as f32 * lance_mult) as i32;
+                kb *= owner_vel_len / 7.0;
+            }
             let touches = if is_whip {
                 let (nw, nh) = n.size();
                 tr_core::whip::sweep_hits(
@@ -23065,6 +23121,17 @@ impl ProjectilePool {
                 if pkind == GOLDEN_SHOWER && destroyer {
                     dmg = (dmg as f64 * 0.75) as i32;
                 }
+            }
+            // W4-g3 FINAL — `:13368-13371`: the Lunatic Cultist (NPC type 439,
+            // the port's `AncientCultist`) takes ×0.75 from the
+            // `ProjectileID.Sets.CultistIsResistantTo` shots (`ProjectileID.cs
+            // :525` — the `cultist_resistant_to` predicate above). The C#
+            // gates `Main.netMode != 2` (not the server); the port's PVE walk
+            // runs client/single-player only, so the gate folds out. The
+            // `type >= 0 && type <= ProjectileID.Count` bounds are the bool
+            // set's own domain — the predicate is the set.
+            if n.kind == NpcKind::AncientCultist && cultist_resistant_to(pkind) {
+                dmg = (dmg as f32 * 0.75) as i32;
             }
             // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
             // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
@@ -45475,6 +45542,165 @@ mod w4_g3_doc_sweep_expert_tests {
             &mut tr_core::tile_light::FastRandom::new(7));
         let dealt_plain = 100_000 - tank2.hp;
         assert!(dealt_aura > dealt_plain, "the aura's full armor pen beats the plain shot");
+    }
+}
+
+/// W4-g3 FINAL — the deferred `Damage_GetProjectileSpecificDamageMultiplier`
+/// set (research/89 §3): the rocket ×2 (`Projectile.cs:14435-14438`), the mine
+/// ×3 (`:14439-14442`), the jousting-lance velocity assignment
+/// (`:14466-14469`) + knockback scale (`:12840-12844`), and the Lunatic
+/// Cultist's ×0.75 resistance (`:13368-13371`, the
+/// `ProjectileID.Sets.CultistIsResistantTo` set `ProjectileID.cs:525`).
+/// Witnesses WRITTEN, NOT RUN (the lane's code-only constraint).
+#[cfg(test)]
+mod w4_g3_final_damage_mult_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 200, 200)
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.hp = 100_000;
+        n.max_hp = 100_000;
+        n.defense_override = Some(0);
+        n
+    }
+
+    fn hit(pool: &mut ProjectilePool, w: &World, slot: usize, npc: &mut Npc) {
+        pool.damage_pve(
+            w, slot, std::slice::from_mut(npc), None, None, None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+    }
+
+    /// The rocket ×2 (`:14435-14438`): `IsARocketThatDealsDoubleDamageTo
+    /// PrimaryEnemy` && `timeLeft > 3`. Same seed both runs, so the DamageVar
+    /// roll matches and the drop isolates the multiplier (the ×2 lands
+    /// BEFORE DamageVar — `num6 = (int)(damage * mult)` `:12852`). The
+    /// bankers-rounding slack of doubling a rounded roll is ±1.
+    #[test]
+    fn w4_g3_fin_the_rocket_doubles_while_time_left_exceeds_three() {
+        let w = air();
+        let run = |time_left: i32| {
+            let mut pool = ProjectilePool::new();
+            let slot = pool.spawn_with_data(134, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+                .expect("the 134 rocket row");
+            pool.slots_mut()[slot].time_left = time_left;
+            let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+            hit(&mut pool, &w, slot, &mut npc);
+            100_000 - npc.hp
+        };
+        let doubled = run(60);
+        let plain = run(3);
+        assert!(
+            (doubled - 2 * plain).abs() <= 1,
+            "the ×2 gate (timeLeft > 3): {doubled} vs 2×{plain}"
+        );
+        assert!(doubled > plain, "the fresh rocket beats the expiring one");
+    }
+
+    /// The mine ×3 (`:14439-14442`): `IsAMineThatDealsTripleDamageWhen
+    /// Stationary` && `velocity.Length() < 0.5f`. The settled mine (zero
+    /// velocity) triples; the drifting mine (1 px/tick) keeps the base.
+    /// The bankers-rounding slack of tripling a rounded roll is ±2.
+    #[test]
+    fn w4_g3_fin_the_stationary_mine_triples() {
+        let w = air();
+        let run = |vx: f32| {
+            let mut pool = ProjectilePool::new();
+            let slot = pool.spawn_with_data(135, 500.0, 500.0, vx, 0.0, 100, 0.0)
+                .expect("the 135 mine row");
+            let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+            hit(&mut pool, &w, slot, &mut npc);
+            100_000 - npc.hp
+        };
+        let settled = run(0.0);
+        let drifting = run(1.0);
+        assert!(
+            (settled - 3 * drifting).abs() <= 2,
+            "the ×3 gate (velocity < 0.5): {settled} vs 3×{drifting}"
+        );
+    }
+
+    /// The 877 jousting lance (`:14466-14469`): the specific multiplier is
+    /// ASSIGNED `0.1 + player.velocity.Length()/7*0.9` — at 7 px/tick it is
+    /// 1.0 (full damage), at rest 0.1 (a tenth). The knockback scales the
+    /// same velocity (`:12840-12844`, `num4 *= len/7`): the resting lance
+    /// pushes nothing, the charging lance pushes.
+    #[test]
+    fn w4_g3_fin_the_lance_damage_and_knockback_scale_with_owner_velocity() {
+        let w = air();
+        let run = |pvx: f32| {
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = 400.0;
+            player.y = 300.0;
+            player.vx = pvx;
+            player.vy = 0.0;
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data(JOUSTING_LANCE, 500.0, 500.0, 0.0, 0.0, 100, 4.0)
+                .expect("the 877 row");
+            let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+            pool.damage_pve(
+                &w, slot, std::slice::from_mut(&mut npc), None,
+                Some(player.center()), Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            (100_000 - npc.hp, npc.vx)
+        };
+        let (charging, charge_vx) = run(7.0);
+        let (resting, rest_vx) = run(0.0);
+        assert!(
+            (charging - 10 * resting).abs() <= 6,
+            "the 1.0 vs 0.1 assignment: {charging} vs 10×{resting}"
+        );
+        assert_eq!(rest_vx, 0.0, "the resting lance's kb ×0 pushes nothing");
+        assert!(charge_vx != 0.0, "the charging lance's kb ×1 pushes");
+    }
+
+    /// The Lunatic Cultist's ×0.75 (`:13368-13371`): the 16 Magic Missile is
+    /// in `CultistIsResistantTo` (`ProjectileID.cs:525`), the 710 Betsy Arrow
+    /// is NOT. Same seed + same air world (the 710's ×1.5 air bonus fires on
+    /// both its runs), zero defense — the resistant shot's drop is the
+    /// plain one's ×0.75, and the non-resistant shot keeps its full damage
+    /// on the same boss.
+    #[test]
+    fn w4_g3_fin_the_cultist_resists_the_listed_shots() {
+        let w = air();
+        let run = |kind: u16, target: NpcKind| {
+            let mut pool = ProjectilePool::new();
+            let slot = pool.spawn_with_data(kind, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+                .expect("the row");
+            let mut npc = npc_at(target, 500.0, 500.0);
+            hit(&mut pool, &w, slot, &mut npc);
+            100_000 - npc.hp
+        };
+        let vs_cultist = run(MAGIC_MISSILE, NpcKind::AncientCultist);
+        let vs_slime = run(MAGIC_MISSILE, NpcKind::Slime);
+        assert!(
+            vs_cultist < vs_slime,
+            "the ×0.75 cut on the Cultist: {vs_cultist} vs {vs_slime}"
+        );
+        let nonres = run(710, NpcKind::AncientCultist);
+        assert!(
+            nonres > vs_cultist,
+            "the unlisted 710 keeps full damage on the Cultist: {nonres} vs {vs_cultist}"
+        );
+    }
+
+    /// The `cultist_resistant_to` predicate carries the C# set verbatim
+    /// (`ProjectileID.cs:525`): spot members across the list's span, the
+    /// deduped 379, and non-members (the 710 Betsy Arrow, the 0 sentinel).
+    #[test]
+    fn w4_g3_fin_the_cultist_set_matches_the_cs_list() {
+        for kind in [207, 16, 34, 79, 379, 634, 635, 659, 803, 931, 1036, 1120] {
+            assert!(cultist_resistant_to(kind), "{kind} is in the C# set");
+        }
+        for kind in [0, 710, 134, 135, 877] {
+            assert!(!cultist_resistant_to(kind), "{kind} is NOT in the C# set");
+        }
     }
 }
 
