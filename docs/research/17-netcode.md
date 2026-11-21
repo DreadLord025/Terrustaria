@@ -482,3 +482,40 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
   Depends on: the join bundle and the chest round trip.
 - **L — Dedicated-server mode** (`Main.dedServ`, `ServerMode.cs`, `NetManager`): the
   port has no headless host path; the branch is exercised in-process only.
+
+## The g52c-139-master receipt (W4-g48 NET-APPLY-1, 2026-11-21)
+
+**Receipt.** The task's cross-note pointed at `research/139` on
+`origin/task/W4-g52` as the master-final table. Probe result at exec
+time: the pushed g52 lane is `task/W4-g52-net-relay-host` tip `590b93565`
+— it carries NO research/139 and no 1-40 master-final table (its docs
+are the ANALYSIS "The SendData host relay gating" relay-census section,
+`NetMessage.cs:1692-1826`). The g52c-net-master sub-round is UNPUSHED —
+the research-number registry (research/150, d54 tip) reserves 139 for it
+and records the g89 collision as ONE-SIDED (g89 renamed its own 139 →
+145, `41dabfbc8`). This lane therefore does NOT take 139 (its own
+final-phase doc took the free 237); the receipt of what g52's pushed tip
+DOES carry:
+
+- **The 1-40 statuses feed:** g52's relay census explicitly defers the
+  client applies to "g48-g51" — its `21` instanced/air send gate, `162`
+  damage-ack send and `34` host place/destroy pass all name the apply
+  side as this lane family's. The g48 FINAL table above IS the 1-40
+  apply-status feed for the g52c master table when it lands: 34 WIRED
+  g48 (`f086297b`) overlaps g52's host remainder (`cdc8fa7b8` +
+  `e2a5968a4` — the destroy-arm `can_kill_tile`/`chest_holds_items` gate
+  + store-removal compensation is g52's LATER refinement; g48's
+  `host_chest_updates` destroy arm has neither, re-read at
+  `net_apply.rs:920-957`; the merger takes g52's destroy arm over
+  g48's, keep-one).
+- **The 6-codec-branches keep-one instruction:** g52 replicated the g48
+  `34 ChestUpdates` codec and the d92 `162 NpcStrikeAck` codec
+  BYTE-VERBATIM ("keep-one at merge", its ANALYSIS deviations +
+  remainder-round note). Re-verified at both tips: the `ChestUpdates`
+  struct (action u8 + x/y/style/chest i16) and both codec arms
+  (`NetMessage.cs:913-927`, the server `number5` short) are identical
+  on g48 and g52 — KEEP ONE copy at the union, either direction is
+  byte-safe. The `162` codec exists on g52 (`NpcStrikeAck` bodyless)
+  and g51 (`51d01bc87` — the pending-damage queue apply); g48 has
+  NEITHER (out of its 1-40 scope) — the merger keeps g51's apply arm
+  with either codec copy.
