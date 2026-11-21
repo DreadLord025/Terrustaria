@@ -236,6 +236,7 @@
 //! | 1170-1179 | `:88319-88346` | the 19 ArmsDealer + 38 Demolitionist death (5 gores each, shimmer) |
 //! | 1180-1189 | `:88362-88389` | the 20 Dryad + 207 DyeTrader death (5 gores each, shimmer) |
 //! | 1190-1199 | `:88405-88446` | the 208 PartyGirl + 209 Cyborg death (5 gores each, shimmer) |
+//! | 1200-1209 | `:88464-88476` | the 212 PirateDeckhand + 213 PirateCorsair death (5 gores each) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7028,6 +7029,40 @@ fn cyborg_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1296 } else { 291 }, 1.0); // :88446
 }
 
+/// The 212/213 PirateDeckhand/Corsair death (`NPC.cs:88458-88476`, sites
+/// 1200-1209): the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// -2.5), then the per-type 5-gore ladder — 212 → 336/337/337/338/338,
+/// 213 → 339/340/340/341/341. Scale defaults to 1.
+fn pirate_invasion_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:88462-88476` — the per-type ladder.
+    let (head, mid, tail) = if npc_type == 212 { (336, 337, 338) } else { (339, 340, 341) };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let midp = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, midp, vel, mid, 1.0);
+    gore.new_gore(rng, world, midp, vel, mid, 1.0);
+    gore.new_gore(rng, world, low, vel, tail, 1.0);
+    gore.new_gore(rng, world, low, vel, tail, 1.0);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7882,6 +7917,12 @@ pub fn hit_effect_c(
     // `:88428-88447` — the 209 Cyborg arm (sites 1195-1199).
     if npc_type == 209 && npc.hp <= 0 {
         cyborg_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88448-88502` — the 212-216 pirate invasion arm; this commit owns
+    // the 212/213 (sites 1200-1209); the 214/215/216 land with the next
+    // batches.
+    if (npc_type == 212 || npc_type == 213) && npc.hp <= 0 {
+        pirate_invasion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -12432,6 +12473,22 @@ mod tests {
         cyborg_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1294, 1295, 1295, 1296, 1296]);
+    }
+
+    /// `NPC.cs:88464-88476` — the PirateDeckhand/Corsair death: 212 →
+    /// 336/337/337/338/338, 213 → 339/340/340/341/341.
+    #[test]
+    fn w4_f10_the_pirate_invasion_death_uses_the_per_type_ladder() {
+        let w = air();
+        for (ty, gores) in [(212, [336, 337, 337, 338, 338]), (213, [339, 340, 340, 341, 341])] {
+            let n = boss(100.0, 100.0, 40.0, 56.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(1231);
+            pirate_invasion_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "pirate {ty}");
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
