@@ -110,6 +110,38 @@ fn apply_proj_tracked_cue(
                 Some(s) => s.position = (x, y),
             }
         }
+        ProjTrackedCue::EngineLoop { style, vol, pitch } => {
+            // `:38256-38267` / `:38288-38299`: the ensure
+            // (`GetActiveSound(localAI[2]) == null && vol != 0`) then the
+            // follow (`Volume = vol`, `Position = Center`, `Pitch = pitch`).
+            // The `ProjectileAudioTracker` condition folds to the shared
+            // atomic (the census fold 4, the bomb-fuse precedent).
+            let live = audio
+                .get_active_sound(handle)
+                .is_some_and(|s| s.is_playing());
+            if !live && vol != 0.0 {
+                if let Some(style) = crate::tracked_sound::TrackedStyle::by_name(style) {
+                    let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+                    p.fuse_alive = Some(alive.clone());
+                    let id = audio.play_tracked_looped(
+                        style,
+                        x,
+                        y,
+                        Box::new(move || alive.load(std::sync::atomic::Ordering::Relaxed)),
+                        Default::default(),
+                    );
+                    p.local_ai[2] = id.to_float();
+                }
+            }
+            // The follow: the live handle's volume/position/pitch ride the
+            // engine-speed envelope every tick.
+            let h = SlotId::from_float(p.local_ai[2]);
+            if let Some(s) = audio.get_active_sound_mut(h) {
+                s.volume = vol;
+                s.position = (x, y);
+                s.pitch = pitch;
+            }
+        }
     }
 }
 
@@ -1532,6 +1564,91 @@ mod w4_d80_dd2_one_shot_tests {
             assert_eq!(style.variations, variations, "{name}");
             assert_eq!(style.max_tracked_instances, 0, "{name} uncapped");
         }
+    }
+}
+
+/// W4-d80 — the RC-car engine loop (research/64 deferred): the ensure-play
+/// into `localAI[2]`, the per-tick volume/position/pitch follow and the RNG
+/// contract (zero gameplay draws). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_engine_loop_tests {
+    use super::*;
+    use crate::projectile::ProjTrackedCue;
+    use tr_core::slot::SlotId;
+
+    /// The headless rig: the engine cue seeded silent so the looped play
+    /// resolves its asset and adds a slot (no output device).
+    fn rig() -> (crate::audio::Audio, Vec<Projectile>) {
+        let mut audio = crate::audio::Audio::new(None);
+        audio.test_seed_tracked_cue("rccar");
+        let p = Projectile {
+            active: true,
+            kind: crate::projectile::REMOTE_CONTROL_CAR,
+            owner: 0,
+            pos: Vec2::new(96.0, 96.0),
+            time_left: 2,
+            ..Default::default()
+        };
+        (audio, vec![p])
+    }
+
+    /// The ensure + follow (`Projectile.cs:38256-38267`): the first cue
+    /// plays the loop into `localAI[2]` and arms the condition atomic; a
+    /// live handle holds the ensure (no re-play) while the follow re-points
+    /// the volume/position/pitch every tick.
+    #[test]
+    fn w4_d80_the_engine_loop_ensures_then_follows() {
+        let (mut audio, mut slots) = rig();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 12.0, pitch: 0.5 }, 100.0, 100.0);
+        let id = SlotId::from_float(slots[0].local_ai[2]);
+        assert!(id.is_active(), "the ensure stored a live handle");
+        assert!(slots[0].fuse_alive.is_some(), "the condition atomic armed");
+        audio.test_keep_tracked_alive(id);
+        // The second tick: no re-play, the envelope follow rides.
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 25.0, pitch: -0.2 }, 200.0, 200.0);
+        assert_eq!(SlotId::from_float(slots[0].local_ai[2]), id, "no re-play while live");
+        let s = audio.get_active_sound(id).unwrap();
+        assert_eq!(s.volume, 25.0, "the follow volume");
+        assert_eq!(s.position, (200.0, 200.0), "the follow position");
+        assert_eq!(s.pitch, -0.2, "the follow pitch");
+    }
+
+    /// The zero-volume gate (`:38257`'s `num11 != 0f`): a silent envelope
+    /// never plays the loop.
+    #[test]
+    fn w4_d80_the_engine_loop_zero_volume_does_not_play() {
+        let (mut audio, mut slots) = rig();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 0.0, pitch: -1.0 }, 100.0, 100.0);
+        assert_eq!(slots[0].local_ai[2], 0.0, "no play at zero volume");
+        assert!(slots[0].fuse_alive.is_none(), "no atomic armed");
+    }
+
+    /// The RNG contract: the engine-loop drain leaves the gameplay stream
+    /// pristine; the style is one variation (`soundid.rs` row) so the
+    /// variation pick draws NOTHING — only the always-drawn pitch roll moves.
+    #[test]
+    fn w4_d80_the_engine_loop_drain_is_gameplay_draw_free() {
+        let (mut audio, mut slots) = rig();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let (style_before, pitch_before) = audio.test_audio_streams();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 12.0, pitch: 0.0 }, 100.0, 100.0);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 25.0, pitch: 0.5 }, 100.0, 100.0);
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the engine-loop path");
+        let (style_after, pitch_after) = audio.test_audio_streams();
+        assert_eq!(style_after, style_before, "one variation: no variation pick");
+        assert_ne!(pitch_after, pitch_before, "the pitch roll moved");
+    }
+
+    /// The style row (`soundid.rs`, the `SoundID.cs` static-ctor port):
+    /// `RCCar` → "rccar" vol 0.015, one variation, uncapped.
+    #[test]
+    fn w4_d80_the_engine_loop_styles_resolve() {
+        let style = crate::tracked_sound::TrackedStyle::by_name("RCCar").expect("RCCar");
+        assert_eq!(style.cue, "rccar");
+        assert_eq!(style.variations, 1);
+        assert!((style.volume - 0.015).abs() < 1e-6, "the 0.015 volume");
+        assert_eq!(style.max_tracked_instances, 0);
     }
 }
 

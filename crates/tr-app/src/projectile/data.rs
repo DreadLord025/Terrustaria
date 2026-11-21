@@ -410,6 +410,10 @@ pub const PHANTOM_PHOENIX: u16 = 706;
 /// (`Projectile.cs:7508-7520`: 12x12, aiStyle 1, the tracked
 /// `DD2_SkyDragonsFuryShot` one-shot, W4-d80).
 pub const SKY_DRAGONS_FURY_SHOT: u16 = 709;
+/// `ProjectileID.RemoteControlCar` (1105) — the RC car, aiStyle 205
+/// (`Projectile.cs:10294-10302`, `AI_205_RemoteControlCar` `:38076-38461`;
+/// the `SoundID.RCCar` engine loop, W4-d80).
+pub const REMOTE_CONTROL_CAR: u16 = 1105;
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -2671,6 +2675,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 (false, -2, false, -1, 255, 0.6),
             ),
+            // W4-d80 — the RC car (1105, `Projectile.cs:10294-10302`): 26x26,
+            // aiStyle 205, friendly, tileCollide true (the slope-collision
+            // move). The stock penetrate 1.
+            REMOTE_CONTROL_CAR => (26.0, 26.0, 205, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // --- The magic (caster) families (M4-PROJ-6, in `ProjectileID`
             // order) --- the aiStyle declaration is what Phases 3-4 need; the
             // AI arms land beside the arrow/boomerang/bomb arms in those
@@ -4753,6 +4761,9 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // frame machine (`:54704-54712`) wraps at 3.
         PHANTOM_PHOENIX => 8,
         SKY_DRAGONS_FURY_SHOT => 3,
+        // W4-d80 — the RC car's 7-frame drive/fly sheet (`Main.cs:8725`) —
+        // the aiStyle-205 frame machines wrap at 4 (ground) / 7 (fly).
+        REMOTE_CONTROL_CAR => 7,
         _ => 1,
     }
 }

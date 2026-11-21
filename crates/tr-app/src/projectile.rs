@@ -509,6 +509,15 @@ pub enum ProjTrackedCue {
     /// position, `SoundEngine.cs:142-149`): the Explosive Trap's explode
     /// (`Projectile.cs:69362`). The handle is discarded. ZERO gameplay draws.
     GlobalOneShot(&'static str),
+    /// The RC-car engine loop (`Projectile.cs:38253-38267` / `:38285-38299`):
+    /// the ensure-play (`GetActiveSound(localAI[2]) == null && vol != 0` →
+    /// `PlayTrackedLoopedSound(style, Center, tracker)` into `localAI[2]`)
+    /// then the per-tick follow (`Volume = vol`, `Position = Center`,
+    /// `Pitch = pitch`). The arm computes the volume/pitch envelope from
+    /// the `localAI[0]`/`[1]` engine-speed state and queues this every tick.
+    /// The `ProjectileAudioTracker` condition folds to the shared atomic
+    /// (the census fold 4, the bomb-fuse precedent). ZERO gameplay draws.
+    EngineLoop { style: &'static str, vol: f32, pitch: f32 },
 }
 
 /// One pool slot (`Projectile.cs:296-470`, the engine-relevant subset).
@@ -14251,7 +14260,7 @@ pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
 /// — `MathHelper.Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue,
 /// clamped: true))`, XNA's `a + (b - a) * amount`. The gem bolt's steering
 /// uses it for the turn rate and the close-range pull.
-fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+pub(crate) fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 
@@ -15572,6 +15581,42 @@ impl ProjectilePool {
             self.slots[slot].active = false;
             self.slots[slot].time_left = 0;
         }
+    }
+
+    /// W4-d80 — the RC car's `HandleMovement` (the aiStyle-205 dispatch
+    /// move): the tile collision + the slope collision (the
+    /// `correctSlopeCollision` row, `Projectile.cs:10301`), then the
+    /// direction follows `velocity.X`'s sign (`AutomaticallyChangesDirection`,
+    /// the aiStyle-205 exclusion list does not carry it). The d21 census
+    /// port (`rc_car_move`).
+    pub(crate) fn rc_car_move(&mut self, slot: usize, world: &World) {
+        let p = &mut self.slots[slot];
+        if p.tile_collide {
+            let tc = crate::collision::tile_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [p.vel.x, p.vel.y],
+                p.w,
+                p.h,
+                false,
+                false,
+            );
+            p.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        }
+        p.pos += p.vel;
+        if p.tile_collide {
+            let sc = crate::collision::slope_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [p.vel.x, p.vel.y],
+                p.w,
+                p.h,
+                false,
+            );
+            p.pos = Vec2::new(sc.pos[0], sc.pos[1]);
+            p.vel = Vec2::new(sc.vel[0], sc.vel[1]);
+        }
+        p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
     }
 
     /// S1-P-i16 — the aiStyle-16 `Kill()` latch for an EXTERNAL kill (the
@@ -17480,6 +17525,21 @@ impl ProjectilePool {
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
+                        }
+                        // W4-d80 — aiStyle 205, the RC car
+                        // (`AI_205_RemoteControlCar` `:38076-38461`): the
+                        // input-bit pack, the wall-flight / ground drive, the
+                        // engine-loop sound, the timeLeft=2 keep-alive. The
+                        // AI moves the position itself (WalkDownSlope); the
+                        // dispatch move runs the slope collision.
+                        205 => {
+                            crate::projectile_ai_rc_drone::ai_remote_control_car(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                rng,
+                            );
+                            self.rc_car_move(i, world);
                         }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
@@ -20220,6 +20280,17 @@ impl ProjectilePool {
                         pos.x + w * 0.5,
                         pos.y + h * 0.5,
                     ));
+                }
+                // W4-d80 — the engine-loop condition fold (the census fold
+                // 4): the RC car's (1105) loop's `ProjectileAudioTracker`
+                // reads `active && type == expected` — the slot's death
+                // flips the shared atomic false so the loop stops. The RC
+                // car has NO explicit `Kill()` stop (`:70855-70864` — only
+                // the 1020 drone arm stops); the atomic flip covers it.
+                if self.slots[i].kind == REMOTE_CONTROL_CAR {
+                    if let Some(alive) = self.slots[i].fuse_alive.take() {
+                        alive.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
