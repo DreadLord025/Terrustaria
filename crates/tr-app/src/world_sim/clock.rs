@@ -41,6 +41,17 @@ pub(crate) fn advance_time(
             // moon) — event rolls land with M4.
             world.fast_forward_to_dusk = false;
             world.moondial_cooldown = world.moondial_cooldown.saturating_sub(1);
+            // `Star.NightSetup` (`Main.cs:65223` → `Star.cs:41-60`): the
+            // starfall-boost roll runs BEFORE the blood-moon roll in the
+            // C# StartNight (W4-d15 final — the growth pass's starfall
+            // gate consumes `world.starfall_boost`). 1-3 `UpdateTime`
+            // draws per dusk (the gate + the taken band's range roll).
+            world.roll_starfall_night_setup(
+                world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+                rng,
+            );
             // `UpdateTime_StartNight`'s blood-moon roll (`Main.cs:65333-65352`):
             // one `Main.rand` draw at the boundary (`Next(maxValue)` in the C#;
             // the port's uniform-threshold form), through the named `UpdateTime`
@@ -379,16 +390,24 @@ mod tests {
         );
     }
 
-    /// A stream whose first `NextDouble()` satisfies `pred`. The boundary rolls
-    /// draw exactly once (`Main.cs:65333-65352`, `:65421-65430`), so a fresh
-    /// `UnifiedRandom` from the found seed reproduces that value.
+    /// A stream whose first `NextDouble()` satisfies `pred`, positioned
+    /// AFTER the dusk `Star.NightSetup` draws (`Main.cs:65223` — 1-3
+    /// draws, W4-d15 final): the boundary rolls draw exactly once
+    /// (`Main.cs:65333-65352`, `:65421-65430`), so replaying the
+    /// NightSetup prefix on the found seed reproduces that value.
     fn stream_with_first_roll(pred: impl Fn(f64) -> bool) -> UnifiedRandom {
         for seed in 0..10_000 {
-            if pred(UnifiedRandom::new(seed).next_double()) {
-                return UnifiedRandom::new(seed);
+            let mut r = UnifiedRandom::new(seed);
+            let mut w = World::new("probe".into(), 8, 8);
+            w.roll_starfall_night_setup(false, &mut r);
+            if pred(r.next_double()) {
+                let mut r = UnifiedRandom::new(seed);
+                let mut w = World::new("probe".into(), 8, 8);
+                w.roll_starfall_night_setup(false, &mut r);
+                return r;
             }
         }
-        panic!("no seed in 0..10_000 has a first roll matching the predicate");
+        panic!("no seed in 0..10_000 has a post-NightSetup roll matching the predicate");
     }
 
     #[test]
@@ -632,5 +651,34 @@ mod tests {
         w.time = 16200.0;
         advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
         assert!(!w.day_time, "midnight is the middle of the night");
+    }
+
+    /// W4-d15 final phase: the dusk boundary runs `Star.NightSetup`
+    /// (`Main.cs:65223`) BEFORE the blood-moon roll (`:65336`) — the
+    /// twin replays the NightSetup draws then the boundary's
+    /// `NextDouble`, and the stream equality pins the order. WRITTEN
+    /// NOT RUN (code-only round).
+    #[test]
+    fn the_dusk_boundary_rolls_the_starfall_boost_before_the_blood_moon() {
+        let mut w = World::new("t".into(), 8, 8);
+        w.day_time = true;
+        w.time = 53999.0;
+        let mut rng = UnifiedRandom::new(42);
+        advance_time(&mut w, 1.0, &mut rng, false);
+        assert!(!w.day_time, "dusk ran");
+        // The twin: NightSetup's 1-3 draws, then the blood-moon roll.
+        let mut twin = UnifiedRandom::new(42);
+        let mut probe = World::new("t".into(), 8, 8);
+        probe.roll_starfall_night_setup(false, &mut twin);
+        assert_eq!(w.starfall_boost, probe.starfall_boost, "the boost landed");
+        let _blood_roll = twin.next_double();
+        assert_eq!(rng, twin, "NightSetup precedes the blood-moon draw");
+        // A dawn crossing does NOT re-roll the boost (StartDay has no
+        // NightSetup — the value persists through the day).
+        let boost = w.starfall_boost;
+        w.time = 32399.0;
+        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(7), false);
+        assert!(w.day_time);
+        assert_eq!(w.starfall_boost, boost, "StartDay leaves the boost");
     }
 }

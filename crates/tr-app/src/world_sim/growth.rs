@@ -114,9 +114,12 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         // W4-d15 — `WorldGen.SpawnFallingObjects` (`WorldGen.cs:71624` →
         // `:71676-71857`), the LAST call of `UpdateWorld`: the natural
         // starfall's 720 spawner loop (`:71828-71856`). The boulder-rain /
-        // meteor-shower / coin-rain arms ahead of it are unported state
-        // (their gates fold false — `_isRainingBoulders`/`meteorShowerCount`/
-        // `coinRain` have no port fields, the recorded skips); the starfall
+        // meteor-shower / coin-rain arms ahead of it are cross-lane state:
+        // `_isRainingBoulders` stays unported (the gate folds false), the
+        // f45 lane (`1f3a47fa`) owns `meteorShowerCount`/`coinRain`'s
+        // .wld round-trip + the StartMeteorShower/StartRain setters (the
+        // 1078 shower spawner + the coin drains are its documented
+        // unported consumers — the cross-note below); the starfall
         // loop is the aiStyle-148 spawner's ONLY spawn site (no item shoots
         // 720 — the census: Starfury 65 shoots 9, `Item.cs:2158`).
         spawn_natural_starfall(
@@ -141,10 +144,19 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
 /// FallingStar 12.
 ///
 /// Folds (recorded, docs/ANALYSIS.md "The W4-d15 DD2 slice"):
-/// - `Star.starfallBoost` (`Star.cs:35`, the `NightSetup` roll
-///   `Main.cs:65223`) has no port state — pinned 1 (the stock,
-///   `Star.cs:43`/`:322`); the night-setup draw chain is its own census
-///   follow-up.
+/// - `Star.starfallBoost` (`Star.cs:35`): LANDED (final phase) —
+///   `World.starfall_boost`, re-rolled every dusk by
+///   `roll_starfall_night_setup` (`Star.NightSetup`, `Main.cs:65223`,
+///   the clock's StartNight arm ahead of the blood-moon roll). The
+///   meteor-shower interplay: the C# shower arm (`:71744-71779`) does
+///   NOT touch `starfallBoost` — the shower spawns 1078 MeteorOre and
+///   decrements `meteorShowerCount` (the f45 lane's field, `1f3a47fa`);
+///   the boost's writers are ONLY `NightSetup` + the static ctor
+///   (`Star.cs:322`). The two systems share `SpawnFallingObjects`, not
+///   state — the shower-arm spawner stays the f45 lane's documented
+///   unported consumer (the 1078 row is unported; wiring it here would
+///   need `Main.masterMode`/`expertMode` damage tiers + the
+///   `FindClosest` dead-gate + the clamp — its own slice).
 /// - `Player.FindClosest` (`Player.cs:4942-4967`) folds to the port's one
 ///   player: a live player is index 0, no player reads the inactive
 ///   slot's default box (position (0,0), luck 0, `afkCounter` 0 — the
@@ -184,8 +196,9 @@ fn spawn_natural_starfall(
     // `:71832` — `for (int i = 0; i < Main.dayRate; i++)`.
     for _ in 0..world.day_rate() {
         // `:71834-71835` — the boost-scaled gate roll. `starfallBoost`
-        // pins 1 (the fold above).
-        let num16 = world.width as f64 / 4200.0 * 1.0;
+        // is the dusk-rolled `World.starfall_boost` (the NightSetup
+        // chain — the fold above, LANDED).
+        let num16 = world.width as f64 / 4200.0 * world.starfall_boost as f64;
         if !((rng.next_max(8000) as f64) < 10.0 * num16) {
             continue;
         }
@@ -456,7 +469,7 @@ mod w4_d15_starfall_tests {
             .map(|p| (p.x, p.y, p.luck()))
             .unwrap_or((0.0, 0.0, 0.0));
         for _ in 0..world.day_rate() {
-            let num16 = world.width as f64 / 4200.0;
+            let num16 = world.width as f64 / 4200.0 * world.starfall_boost as f64;
             if !((twin.next_max(8000) as f64) < 10.0 * num16) {
                 continue;
             }
@@ -528,5 +541,41 @@ mod w4_d15_starfall_tests {
         let night_state = *night.rngs.stream(RngKey::UpdateWorldGen);
         let day_state = *day.rngs.stream(RngKey::UpdateWorldGen);
         assert_ne!(night_state, day_state, "the night starfall drew past the day prefix");
+    }
+
+    /// W4-d15 final phase: the gate threshold reads `starfall_boost`
+    /// (`WorldGen.cs:71834` — the NightSetup-rolled field, no longer
+    /// pinned 1). A boosted world's threshold widens: a seed whose
+    /// gate roll misses at boost 1 but hits at boost 5 spawns ONLY on
+    /// the boosted twin. WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn the_gate_threshold_scales_with_the_night_setup_boost() {
+        // The 400-wide world: threshold = 10 * 400/4200 * boost ≈
+        // 0.952 * boost. A first Next(8000) of 1..4 misses at boost 1
+        // (needs 0) and hits at boost 5 (threshold ≈ 4.76).
+        let seed = (0..100_000i32)
+            .find(|&s| (1..5).contains(&UnifiedRandom::new(s).next_max(8000)))
+            .expect("a band seed");
+        let mut plain = starfall_app();
+        plain.world.seed = seed as u64;
+        plain.rngs.reset(seed);
+        let mut boosted = starfall_app();
+        boosted.world.seed = seed as u64;
+        boosted.world.starfall_boost = 5.0;
+        boosted.rngs.reset(seed);
+        let p1 = plain.player.clone();
+        let rng = plain.rngs.stream(RngKey::UpdateWorldGen);
+        spawn_natural_starfall(&plain.world, &mut plain.projectiles, p1.as_ref(), 0, rng);
+        let p2 = boosted.player.clone();
+        let rng = boosted.rngs.stream(RngKey::UpdateWorldGen);
+        spawn_natural_starfall(&boosted.world, &mut boosted.projectiles, p2.as_ref(), 0, rng);
+        assert!(
+            plain.projectiles.slots().iter().all(|p| !p.active),
+            "boost 1: the roll misses the ≈0.95 threshold"
+        );
+        assert!(
+            boosted.projectiles.slots().iter().any(|p| p.active),
+            "boost 5: the roll hits the ≈4.76 threshold"
+        );
     }
 }

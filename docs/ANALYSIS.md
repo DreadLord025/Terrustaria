@@ -39423,12 +39423,15 @@ missing, and where each landed:
    the sky point, the `RollLuck(15)`/`RollBadLuck(15)` (remix)
    player-targeted branch (`Next(1,640)` then `Next(-n,n+1)`), the
    solid-box refusal and the velocity rolls normalized to 12. Recorded
-   folds: `starfallBoost` pins 1 (the `Star.NightSetup` roll chain,
-   `Main.cs:65223` → `Star.cs:41-60`, is its own census follow-up — no
-   port state), `Player.FindClosest` folds to the one player (no player
-   reads the inactive slot: position (0,0), luck 0), `afkCounter` folds
-   0 (no port field, the hotbar census). The boulder-rain/meteor-shower/
-   coin-rain arms ahead of the loop keep their unported-state folds.
+   folds: `starfallBoost` pinned 1 at the wiring round — LANDED in the
+   final phase (below); `Player.FindClosest` folds to the one player
+   (no player reads the inactive slot: position (0,0), luck 0),
+   `afkCounter` folds 0 (no port field at the wiring round — the final
+   phase ports it, below). The boulder-rain/meteor-shower/coin-rain
+   arms ahead of the loop: `_isRainingBoulders` keeps its unported
+   fold; `meteorShowerCount`/`coinRain` are the f45 lane's fields
+   (`1f3a47fa`, the .wld v291 pair + the start setters — their
+   `SpawnFallingObjects` consumers stay documented-unported there).
    5 witnesses in `world_sim/growth.rs` (the daylight/no-surface
    draw-free gates, the gate-roll draw-order twin, the forced-hit
    payload pin, the phase-order pin). The existing DW-1.4 draw-count
@@ -39461,3 +39464,33 @@ theirs keeps 141 (no local arm); the merged list is
 `[156, 164, 169, 206]`. No behaviour gap remains — cross-note comments
 on the 707/698 rows + the pin, one compose witness
 (`the_707_and_698_rows_match_the_d14_landed_values`).
+
+**The starfallBoost pins-1 fold — LANDED.** The census corrected the
+task's premise: the C# `Star.starfallBoost` is NOT derived from
+`WorldGen.meteorShowerCount`. Its ONLY writers are `Star.NightSetup`
+(`Star.cs:43`/`:53`/`:57`, called from `UpdateTime_StartNight`
+`Main.cs:65223`) and the static ctor (`Star.cs:322`, stock 1); its
+readers are the starfall gate (`WorldGen.cs:71834`) and the
+boosted-night critter spawn (`NPC.cs:2406`, `starfallBoost > 3f` →
+kind 484, an unported kind). The meteor-shower interplay is the
+SIBLING ARM of `SpawnFallingObjects` (`:71744-71779`): the shower
+spawns 1078 MeteorOre (damage 50/40/35 by difficulty, the
+`FindClosest` + `!dead` + `Next(2)` player-clamp branch, the
+`fastForwardTime` zeroing) and decrements `meteorShowerCount` — the
+f45 lane's field (`1f3a47fa`: the .wld v291 round-trip +
+`StartMeteorShower`'s `Next(650,751)*4` + the `HandleMeteorFall`
+failed-pick `Next(3)` arm). The shower's 1078 spawner stays the f45
+lane's documented unported consumer (the 1078 row is unported; its
+`Main.masterMode`/`expertMode` tiers + dead-gate are its own slice) —
+the two systems share the function, not state. The port lands
+`World.starfall_boost` (runtime-only, a C# static — no .wld byte) +
+`World::roll_starfall_night_setup` (the (10,3)/(5,2) gate pair, the
+`Next(300,501)`/`Next(100,151)` band rolls, f32 `* 0.01` exact), wired
+into the clock's dusk boundary AHEAD of the blood-moon roll (the C#
+`:65223` < `:65336` order; 1-3 `UpdateTime` draws per dusk — the
+`stream_with_first_roll` test helper replays the prefix). The growth
+gate consumes the field (`growth.rs`'s `num16`). The second reader
+(`NPC.cs:2406`'s 484 spawn) is a recorded unported-kind fold.
+`starFallCount` (`Star.cs:37`/`:59`) stays unported (the background-
+star layer skip). 3 roll witnesses (tr-core world.rs), 1 dusk-order
+witness (clock.rs), 1 threshold witness (growth.rs). WRITTEN NOT RUN.
