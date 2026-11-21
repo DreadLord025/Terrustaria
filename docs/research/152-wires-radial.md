@@ -1,4 +1,4 @@
-# 152 — WiresRadial: the logic half landed, the draw contract (95 open-seam 4)
+# 152 — WiresRadial: the logic half landed, the draw contract (the radial seam)
 
 > Renumbered 135 → 152 (2026-11-21, the INDEX-registry collision —
 > g90's `135-g90-persist-folds` was first-pushed; see research/151's
