@@ -76,6 +76,8 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 
+| W4-e10 | Voice-family SEAL receipts (the f44g hydration closure + the d79 rewire hunks + the g21 disjointness + the f3 65-seam compose-note + the voice bible; docs-only over 8e0d951fc) | `W4-e10-voice-seal.md` | ✅ SEALED 2026-11-21 |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

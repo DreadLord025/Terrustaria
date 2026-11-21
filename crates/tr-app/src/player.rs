@@ -1994,9 +1994,9 @@ pub struct Player {
     /// 2 = the id-20 female, 3 = the `DefaultPlayerHurt` trackable). The
     /// char-creation picker cycles it (`UICharacterCreation.cs:452-528`) and
     /// the `.plr` persists it (`:54924`/`:55730`); the live in-world Player's
-    /// hydration from a loaded file is the f44c save-load audit's seam
-    /// (`CharPlay` is routing-only, spec §9.4), so it stays at the ctor's 1
-    /// in play until that lands. The decision tree is table-complete.
+    /// hydration is CLOSED by f44's SEAL port (`Player::hydrate_from_file`,
+    /// research/132 §4 + W4-e10-voice-seal.md §1); till the fold merges,
+    /// `CharPlay` stays routing-only (spec §9.4) at the ctor's 1.
     pub voice_variant: i32,
     /// `Player.voicePitchOffset` (`Player.cs:1348`, default 0): the
     /// per-character pitch the default-voice arms remap through
@@ -15799,8 +15799,8 @@ mod tests {
 
     /// W4-e10 — the voice hydration cast-seam contract (research/132 §4): the
     /// `.plr` reader's `finish_player_file` clamps `voice_variant` to 1..4 and
-    /// the live `Player.voice_variant` is `i32` — the f44e full-walk restore
-    /// block hydrates it with `p.voice_variant = file.voice_variant as i32`
+    /// the live `Player.voice_variant` is `i32` — f44's full-walk restore
+    /// (`hydrate_from_file`) hydrates `p.voice_variant = file.voice_variant as i32`
     /// and `p.voice_pitch_offset = file.voice_pitch_offset` (the pitch is a
     /// direct f32 copy). This witness pins the CONSUMER side: a hydrated pair
     /// drives the default-voice tail exactly as the picker's draft does, so
@@ -15810,7 +15810,7 @@ mod tests {
     fn w4_e10_the_hydrated_voice_pair_drives_the_default_voice_tail() {
         let w = World::new("t".into(), 64, 800);
         let mut p = Player::spawn(&w);
-        // The f44e hydration hunk (the cast-seam, research/132 §4): the file's
+        // The f44 hydration hunk (the cast-seam, research/132 §4): the file's
         // u8 variant (already clamped 1..4 on the read) widens to the live i32;
         // the pitch copies straight. Simulate a loaded variant-3 / +0.5 file.
         let file_voice_variant: u8 = 3;

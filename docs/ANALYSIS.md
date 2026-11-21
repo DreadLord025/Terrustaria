@@ -2465,9 +2465,11 @@ Deviations:
   `PlayerVoiceID.Sets.Colors` (`ID/PlayerVoiceID.cs:16`). The `.plr` writer emits the
   picked pair at `Player.cs:54924-54925` and the reader walks it at `:55730`/`:55740`
   (gates 280/281, the `<280` gender default `:55735`, the `LoadPlayer_LastMinuteFixes`
-  clamp 1..4 `:55831`). **Remaining seam:** the live in-world `Player` is not yet
-  hydrated from a loaded `.plr`'s voice pair — `CharPlay` is routing-only (spec §9.4),
-  so the full-walk live-Player hydration is the f44c save-load audit's scope; the
+  clamp 1..4 `:55831`). **Seam CLOSED (W4-e10 seal, 2026-11-21):** the live-Player
+  hydration landed on f44 (`5c8bbb160`, research/132 §4's e10c receipt at `0d1ee2045`)
+  on the cast-seam published below — `Player::hydrate_from_file` applies
+  `voice_variant as i32` + the direct pitch copy; the merge folds our transport diff
+  onto f44's u8 walk and keeps our consumers (research/W4-e10-voice-seal.md §1). The
   creation draft's pick rides the session card + the saved file, and the preview plays
   it. `skinVariant` coupling is the landed Male-set (`PlayerVariantID.Sets.Male`
   {0,1,2,3,8,10}, `ID/PlayerVariantID.cs:20`) the `is_male`/`alt_gender_reference`
@@ -2538,19 +2540,21 @@ family (`:46681-46746`, `ItemCheck_PlayInstruments`/`PlayGuitarChord`/`PlayDrums
 unported — **the S1-E-21f census mislabelled these as "rocket-boot/wing"; they
 are the music instruments**).
 
-#### The voice hydration cast-seam (published for f44e, research/132 §4)
+#### The voice hydration cast-seam (published for f44 — CONSUMED, research/132 §4)
 
 The `.plr` voice pair transport is complete on this branch (the write
 `Player.cs:54924-54925`, the read `:55730`/`:55740`, gates 280/281, the `<280`
 gender default, the `LoadPlayer_LastMinuteFixes` clamp 1..4 `:55831` — all in
-`player_file.rs::finish_player_file`). The live in-world `Player` is NOT yet
-hydrated from a loaded file: `CharPlay` is routing-only (spec §9.4), so the
-full-walk live-Player restore is the **f44e** save-load audit's scope. The exact
-hydration hunk for f44e's restore block (the clean cast-seam, no textual overlap
-— the file field is `u8`, the live field is `i32`):
+`player_file.rs::finish_player_file`). **The seam is CLOSED (W4-e10 seal):** f44's
+SEAL-phase port (`5c8bbb160`, receipt `0d1ee2045`) landed the full-walk live-Player
+restore — `CharPlay` parks the card's `.plr`, `App::new` runs
+`Player::hydrate_from_file` before the sidecar restore — and its voice hunk matches
+the predicted cast-seam below verbatim (the mutual receipt:
+research/W4-e10-voice-seal.md §1). The published hunk (the clean cast-seam, no
+textual overlap — the file field is `u8`, the live field is `i32`):
 
 ```rust
-// f44e full-walk live-Player restore (research/132 §4): the file's voice
+// f44 full-walk live-Player restore (research/132 §4): the file's voice
 // variant is already clamped 1..4 by finish_player_file (:55831); widen the
 // u8 to the live i32, copy the pitch straight. The consumers (hurt_voice /
 // death_voice / default_voice_hurt) read the pair with no further transform.
@@ -2559,12 +2563,14 @@ p.voice_pitch_offset = file.voice_pitch_offset;
 ```
 
 The save direction casts back (`file.voice_variant = p.voice_variant as u8`,
-`:54924`). The consumer-side contract is pinned by
+`:54924`) when the exit-save lane lands — the one remaining shared remainder.
+The consumer-side contract is pinned by
 `w4_e10_the_hydrated_voice_pair_drives_the_default_voice_tail` (a hydrated
 variant-3/+0.5 pair drives the `DefaultPlayerHurt` trackable at the remapped
 pitch; variant 4 falls through the switch silently, the C# `:38701-38712` has
-no case 4). e10 owns the CONSUMERS, f44 owns the TRANSPORT — neither branch
-needs a change for the other to land.
+no case 4). e10 owns the CONSUMERS, f44 owns the TRANSPORT + the HYDRATION —
+the merge deletes our `player_file.rs` diff onto f44's u8 walk and keeps our
+picker/trees/drain wholesale (132 §3-L1 rule 7, the voice-seal §1/§5 bible).
 
 #### The mount voice-override census (complete)
 
@@ -2587,6 +2593,32 @@ landed on this branch as **781d1d6cd** — verified present (the
 `world_sim/player.rs` drain + the `w4_e10_the_cart_cues_ride_the_style_facade_on_update_players`
 witness). It is the concurrent session's work, committed by it; this phase
 leaves it untouched (cross-note only).
+
+#### The VOICE SEAL receipts (W4-e10 seal phase, research/W4-e10-voice-seal.md)
+
+The seal pass published the four mutual receipts + the voice-family bible
+(`docs/research/W4-e10-voice-seal.md`, docs-only over the DONE tip
+`8e0d951fc`): **(1)** the f44g hydration closure — f44's `0d1ee2045`/
+`5c8bbb160` consumed the cast-seam above verbatim (`hydrate_from_file`),
+the OPEN-BOTH hunk is CLOSED by f44, e10 owes no hydration code; the
+transport keep-one (f44's u8 walk) + the picker/session `as u8` re-point
+stand. **(2)** The d79 rewire hunks — our +10 prod menu sites (flow.rs
+:492/:711/:742/:801, loop.rs :710/:719/:726/:765/:778/:833 + the
+smart-cursor :800 twin) rewire onto `play_menu`; the −7 Roar sites keep
+either side's identical `play_roar(0, …)` hunk (all seven C# calls carry
+the explicit 0 — the Roar_0→Roar_1 fix is g21's Destroyer `NPC.cs:50093`
+default-Style-1 site, NOT ours); the cart fallback DELETES onto d79's
+drain; MaxMana d79's pool wins the play, our mana-blade expiry PRODUCER
+keeps (re-pointed at `play_single_voice`); Hungry keeps both producers on
+our one façade; the voice picker keeps wholesale over d79's variant-1
+stand-in. **(3)** The g21 disjointness — BuffStation
+(`edit.rs`/`doors.rs`) untouched by g21's diff; their chat pair DELETES
+onto d79's phase-7 seams; the loop.rs hunks are adjacent, not colliding.
+**(4)** The mount compose-note — our voice census reads only
+`mount.kind()`, never the offset getters; f3's 65-seam re-siting cannot
+change a voice outcome; portableStool stays deferred WITH the seam (not a
+mount, no voice arm). The stale f44c/f44e "routing-only" notes are
+re-stamped to the closure across ANALYSIS/PORT_MAP/ROADMAP/anchors.
 
 ### Ambience emitters (`tr-app/ambient_sound.rs`, M6-AUDIO-1)
 
