@@ -644,4 +644,71 @@ mod tests {
             assert_eq!((p.kind, p.style), (21, 13), "{close} closes the swap");
         }
     }
+
+    /// W4-g44 biome-closeout (desert boundary witness, WRITTEN NOT RUN):
+    /// the desert dispatch arm (`:36023-36048`) — a plain main-0 chest over
+    /// a floor inside the underground-desert band retypes to the locked
+    /// desert chest 467 style 10. `IsUndergroundDesert` (`:35755-35781`)
+    /// is the wall-187/216 probe g40's hive paints (`DesertHive.Place`
+    /// WALL_SANDSTONE 187 / WALL_HARDENED_SAND 216), NOT a GenVars read —
+    /// the g40 entrance/hive residual moves the wall geometry, never this
+    /// probe's shape. Boundary note: research/87 closeout §1.
+    #[test]
+    fn w4_g44_desert_arm_retypes_on_the_hive_wall_probe() {
+        // A pocket seated mid-band: x=400 on the 800-wide world sits
+        // inside the 15%..85% window (120..680); the floor row 64 is
+        // below worldSurface 20 and above the height-205 ceiling
+        // (500-205=295). The wall probe scans ±15 around (i, k).
+        fn desert_pocket() -> World {
+            let mut world = pocket_world();
+            for y in 60..64 {
+                for x in 397..404 {
+                    let i = world.index(x, y);
+                    world.tiles[i].flags &= !FLAG_ACTIVE;
+                }
+            }
+            world
+        }
+        let mut world = desert_pocket();
+        let w = world.index(402, 66);
+        world.tiles[w].wall = 187;
+        let mut hell = 0usize;
+        let p = add_buried_chest(
+            &mut world, 400, 60, 0, false, -1, false, 0,
+            20.0, 200.0, flags(), 500, 0, &mut hell, 5, &mut Rng(42),
+        );
+        let p = p.expect("the desert-band pocket floor takes the chest");
+        assert_eq!((p.kind, p.style), (467, 10), "flag3 retypes the desert chest");
+        assert!(world.tile(p.x, p.y).is_some_and(|t| t.active() && t.kind == 467));
+        // The hardened-sand wall 216 is the same probe's second arm.
+        let mut world2 = desert_pocket();
+        let w2 = world2.index(402, 66);
+        world2.tiles[w2].wall = 216;
+        let p2 = add_buried_chest(
+            &mut world2, 400, 60, 0, false, -1, false, 0,
+            20.0, 200.0, flags(), 500, 0, &mut hell, 5, &mut Rng(42),
+        );
+        assert_eq!(p2.map(|c| (c.kind, c.style)), Some((467, 10)));
+        // No desert wall in the window: the plain wood/gold default stays
+        // (style 1 — the floor is below worldSurface+25).
+        let mut world3 = desert_pocket();
+        let p3 = add_buried_chest(
+            &mut world3, 400, 60, 0, false, -1, false, 0,
+            20.0, 200.0, flags(), 500, 0, &mut hell, 5, &mut Rng(42),
+        );
+        let p3 = p3.unwrap();
+        assert_eq!((p3.kind, p3.style), (21, 1));
+        // The band gates refuse the arm: the floor above worldSurface
+        // (`:35757`, the first gate) keeps the wood default even with the
+        // wall present.
+        let mut world4 = desert_pocket();
+        let w4 = world4.index(402, 66);
+        world4.tiles[w4].wall = 187;
+        let p4 = add_buried_chest(
+            &mut world4, 400, 60, 0, false, -1, false, 0,
+            100.0, 200.0, flags(), 500, 0, &mut hell, 5, &mut Rng(42),
+        );
+        assert_eq!(p4.map(|c| (c.kind, c.style)), Some((21, 0)),
+            "floor above worldSurface — IsUndergroundDesert refuses");
+    }
 }
