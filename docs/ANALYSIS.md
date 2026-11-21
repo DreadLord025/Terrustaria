@@ -39257,19 +39257,22 @@ a725acb0:
 | 9 | `:21377-21571` inline | 7 types: BurningSphere 25 (`:9093-9107`), WaterSphere 33 (`:9135-9149`), VileSpit 112 (`:10326-10341`), SolarFlare 516 (`:15394-15408`), ChaosBall 30 (`:15699-15713`), ChaosBallTim 665 (`:17403-17417`, folded into ChaosBall), VileSpitEoW 666 (`:17418-17433`); ported trio 25/30+665/33 | LANDED+WIRED (S1-D-3-s9) → verify-only re-pin of `sphere_family_step` + the census FIX: the ctor's SetDefaults alpha rows (25/30/665 → 100, 33 → 255 — `:9106`/`:15711`/`:17415`/`:9147`; the stock-0 ctor drew every sphere opaque and the Chaos Ball's first tick jumped 0→255 instead of the C#'s 100→255). RNG: the ported arm draws NOTHING (the dust emissions incl. type 33's `Next(5)` `:21545` are the documented skip); the 516 launch's NextDouble/NextDouble/NextFloat order stays pinned in the module helper. |
 | 11 | `:21919-22299` inline | Skeletron 35 (`:9166-9182`); the Dungeon Guardian 68 shares the C# arm but has no port kind | LANDED (the B-1 audit `update_skeletron`, S1-S9/S11) → verify-only axis claim `11 => update_skeletron(.., false)`; kind arm unreachable. RNG: the expert skull shot's 4 draws (`:21995-22003`) + the red-hat taunt `Next(2,6)` (`:22038`) + the ftw Dark-Caster spawn scan (`:22141-22142`) are all gated off on the classic night hover / day rage (witnesses draw-free). |
 | 12 | `:22300-22614` inline | SkeletronHand 36 (`:9183-9196`) | LANDED (the H1-H11 `update_skeletron_hand`) → verify-only axis claim `12 => update_skeletron_hand(.., false)`; kind arm unreachable. RNG-free by construction (the hand has no rand site; the docked/transition/headless witnesses pin it). |
-| 13 | `:22615-22847` inline | SIX: ManEater 43 (`:9293-9307`), Snatcher 56 (`:9474-9488`), Clinger 101 (`:10186-10201`), AngryTrapper 175 (`:11208-11222`), FungiBulb 259 (`:12332-12347`), GiantFungiBulb 260 (`:12348-12363`) — NONE ported | MISSING → ported verbatim, `npc_ai_style13.rs`, UNWIRED (the W4-d24 style17/20 precedent). The tile-anchor guards (5-fluff InWorld, inactive-anchor death), the per-type accel/range pairs + the `(int)((double)range*1.3)` enrage ladder, the INTEGER-half aim + reciprocal clamp, the 1.5× sign-flip steering, the −0.7 bounce floors, the Clinger CursedFlame 96 shot (120-tick timer, 100 park) + the 260 FungiSpore 261 spawn (150-tick timer, the `num221` steering-delta lift quirk `:22828-22832`, 130 park). RNG: ONLY the two shot/spawn `Next(-10,11)` X-then-Y pairs on qualifying ticks; everything else draw-free (11 witnesses). |
+| 13 | `:22615-22847` inline | SIX: ManEater 43 (`:9293-9307`), Snatcher 56 (`:9474-9488`), Clinger 101 (`:10186-10201`), AngryTrapper 175 (`:11208-11222`), FungiBulb 259 (`:12332-12347`), GiantFungiBulb 260 (`:12348-12363`) — all six ported | LANDED+WIRED (W4-d23 wiring): the axis' `13 =>` arm rides `npc_ai_style13::ai_style13` (the machine UNCHANGED — the tile-anchor guards (5-fluff InWorld, inactive-anchor death), the per-type accel/range pairs + the `(int)((double)range*1.3)` enrage ladder, the INTEGER-half aim + reciprocal clamp, the 1.5× sign-flip steering, the −0.7 bounce floors, the Clinger CursedFlame 96 shot (120-tick timer, 100 park) + the 260 FungiSpore 261 spawn (150-tick timer, the `num221` steering-delta lift quirk `:22828-22832`, 130 park)); the six kind arms are the unreachable markers. The shot/spawn drain through the dedicated `wants_cursed_flame` (timeLeft 300, `spawn_hostile_timed`) / `wants_fungi_spore` (NewNPC Bottom, 937-tick timeLeft) seams — NOT the shared `wants_hostile_shot` list (the Spazmatism's kind-96 shot carries NO timeLeft override). The arm owns the noGravity/noTileCollide `UpdateNPC` raw-integration tail (`:90473-90498`). Protocol ids 354-357 port-local (the vanilla 43/56/101/175 are QueenBee/Creeper/DD2JavelinT1/DD2DrakinT3), 259/260 free vanilla. RNG: ONLY the two shot/spawn `Next(-10,11)` X-then-Y pairs on qualifying ticks; everything else draw-free (11 module witnesses + 7 wiring witnesses incl. the 500-tick frozen A/B + UpdateNPCs stream parity). |
 | 14 | `:22849-23486` inline | 17 types (`npc_ai_style14`'s header census); ported four CaveBat 49 / JungleBat 51 / Hellbat 60 / VoodooDemon 66 | LANDED+WIRED (the S1-D-3 bat/fish reconcile, W44 audit FAITHFUL) → verify-only axis claim `14 => update_cave_bat`; the four-kind arm unreachable. RNG: the bats draw NOTHING; the 62/66 shot arm draws the two `Next(-100,101)` jitters X-then-Y on the 20/40/60/80 ticks, else ONE short-circuit `Next(300)` past 300 with the firing-distance flag (`:23453`) — axis-level witnesses pin all three paths. |
 
 Deliberate folds (all cited in the code): `Main.netMode != 1`/`!= 2` →
 true (single-player); `Main.expertMode` → the classic solo seam (the
 style31 `CLASSIC_SOLO` precedent); `Main.getGoodWorld` stays parked on
 the style-9 wiring (no runtime flag) but rides the style-13 module's
-parameter (the 43 rows are table-complete); `FixExploitManEaters.
-ProtectSpot` is a cited skip (no port registry, no RNG, no AI-visible
-state); the style-13 shot/spawn leave as `Style13Out` requests (the
-`wants_hostile_shot`/`wants_sphere` shape — the spore's `NewNPC` Bottom
-semantics are the wiring's resolve). The six style-13 kinds + their
-axis/kind wiring are the follow-up wave — the machine is pure and
-reachable through its `npc_type` parameter today. All witnesses
-WRITTEN, NOT RUN (code-only mode: no cargo/rustc/tests/graphify invoked
-on this branch).
+parameter (the 43 rows are table-complete; the wiring reads the world's
+FTW seed); `FixExploitManEaters.ProtectSpot` is a cited skip (no port
+registry, no RNG, no AI-visible state); the style-13 shot/spawn leave as
+`Style13Out` requests, drained onto the dedicated `wants_cursed_flame` /
+`wants_fungi_spore` seams (the spore's `NewNPC` Bottom semantics resolved
+in the sim's spawn pass; the Clinger's `timeLeft = 300` rides
+`spawn_hostile_timed`, kept off the shared kind-based shot drain so the
+Spazmatism's override-free kind-96 shot is untouched). The six style-13
+kinds + their axis/kind wiring LANDED with the W4-d23 wiring step (the
+`npcSlots` 0.3 bulb rows are a spawn-budget concern, unported — the AI
+never reads them). All witnesses WRITTEN, NOT RUN (code-only mode: no
+cargo/rustc/tests/graphify invoked on this branch).

@@ -1086,6 +1086,39 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.ManEater` (43) — the jungle's anchored man-eater (`aiStyle
+    /// 13`): 30x30, dmg 34, def 10, 110 HP, kb 0, value 350, noGravity +
+    /// noTileCollide (`NPC.cs:9293-9307`). WIRED (W4-d23): the axis' 13
+    /// arm rides `npc_ai_style13::ai_style13`. The protocol id is 354
+    /// (the vanilla 43 slot is the QueenBee's, `to_u16`'s guard).
+    ManEater,
+    /// `NPCID.Snatcher` (56) — the underground man-eater (`aiStyle 13`):
+    /// 30x30, dmg 25, def 10, 60 HP, kb 0, value 90 (`NPC.cs:9474-9488`).
+    /// WIRED: the axis' 13 arm. Protocol id 355 (the vanilla 56 slot is
+    /// the Creeper's).
+    Snatcher,
+    /// `NPCID.Clinger` (101) — the corruption's cursed-flame man-eater
+    /// (`aiStyle 13`): 30x30, dmg 70, def 30, 320 HP, kb 0.2, value 600,
+    /// behindTiles (`NPC.cs:10186-10201`). WIRED: the axis' 13 arm; the
+    /// CursedFlame 96 shot drains through `wants_cursed_flame` (timeLeft
+    /// 300). Protocol id 356 (the vanilla 101 slot is DD2JavelinT1's).
+    Clinger,
+    /// `NPCID.AngryTrapper` (175) — the hardmode jungle man-eater
+    /// (`aiStyle 13`): 30x30, dmg 100, def 30, 300 HP, kb 0.25, value 650
+    /// (`NPC.cs:11208-11222`). WIRED: the axis' 13 arm. Protocol id 357
+    /// (the vanilla 175 slot is DD2DrakinT3's).
+    AngryTrapper,
+    /// `NPCID.FungiBulb` (259) — the mushroom man-eater (`aiStyle 13`):
+    /// 20x20, dmg 24, def 4, 90 HP, kb 0, value 350, npcSlots 0.3
+    /// (`NPC.cs:12332-12347`). WIRED: the axis' 13 arm. The vanilla 259
+    /// protocol slot is free.
+    FungiBulb,
+    /// `NPCID.GiantFungiBulb` (260) — the hardmode mushroom man-eater
+    /// (`aiStyle 13`): 36x36, dmg 70, def 20, 300 HP, kb 0, value 1250,
+    /// npcSlots 0.3 (`NPC.cs:12348-12363`). WIRED: the axis' 13 arm; the
+    /// FungiSpore 261 spawn drains through `wants_fungi_spore`. The
+    /// vanilla 260 protocol slot is free.
+    GiantFungiBulb,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1524,6 +1557,19 @@ pub struct Npc {
     /// velocity + `localAI[0] = 60`) — the aiStyle-43 axis arm sets it,
     /// the sim's spawn pass drains it (the `wants_sphere` shape).
     pub wants_bee: Option<crate::npc_ai_style43::BeeSpawn>,
+    /// The Clinger's cursed-flame shot request (`NPC.cs:22800-22801`'s
+    /// `Projectile.NewProjectile(..., 96, ...)` + `timeLeft = 300`) — the
+    /// aiStyle-13 axis arm sets it, the sim's spawn pass drains it through
+    /// `spawn_hostile_timed` (the `wants_bee` shape; a dedicated field
+    /// because the shared `wants_hostile_shot` drain derives timeLeft from
+    /// the kind, and the Spazmatism's kind-96 shot carries NO override).
+    pub wants_cursed_flame: Option<crate::npc_ai_style13::CursedFlameShot>,
+    /// The GiantFungiBulb's spore spawn request (`NPC.cs:22837-22840`'s
+    /// `NPC.NewNPC(..., (int)Center.X, (int)Center.Y, 261)` + the 14-speed
+    /// jittered velocity + `netUpdate = true`) — the aiStyle-13 axis arm
+    /// sets it, the sim's spawn pass drains it (the `wants_bee` shape; the
+    /// `NewNPC` Bottom semantics, `NPC.cs:80770`).
+    pub wants_fungi_spore: Option<crate::npc_ai_style13::FungiSporeSpawn>,
     /// `this.defense = 0` — the AI's per-frame stat override (the EoC's
     /// final phase zeroes it, `NPC.cs`'s aiStyle-4 block; the expert rage
     /// makes it negative).
@@ -3019,6 +3065,8 @@ impl Npc {
             ai: [0.0; 4],
             wants_servant: None,
             wants_bee: None,
+            wants_cursed_flame: None,
+            wants_fungi_spore: None,
             defense_override: None,
             // `SetDefaults`' `dontTakeDamage = true` rows the port models
             // at construction: the Plantera hook 263 (`NPC.cs:12406` —
@@ -3419,6 +3467,12 @@ impl Npc {
             NpcKind::TravellingMerchant => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
+            // The man-eater family (W4-d23, aiStyle 13): 43/56/259/260 kb 0
+            // (`NPC.cs:9304`/`:9485`/`:12343`/`:12359`), 101 kb 0.2
+            // (`:10198`), 175 kb 0.25 (`:11219`).
+            NpcKind::ManEater | NpcKind::Snatcher | NpcKind::FungiBulb | NpcKind::GiantFungiBulb => 0.0,
+            NpcKind::Clinger => 0.2,
+            NpcKind::AngryTrapper => 0.25,
             // The volley bees: kb 0.5 (`NPC.cs:11705`/`:11718`).
             NpcKind::Bee | NpcKind::BeeSmall => 0.5,
             NpcKind::SkeletronHead => 0.0,
@@ -3787,6 +3841,13 @@ impl Npc {
             NpcKind::TravellingMerchant => 15,
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
+            // The man-eater family (W4-d23): 43/56 def 10 (`NPC.cs:9301`/
+            // `:9482`), 101/175 def 30 (`:10195`/`:11216`), 259 def 4
+            // (`:12340`), 260 def 20 (`:12356`).
+            NpcKind::ManEater | NpcKind::Snatcher => 10,
+            NpcKind::Clinger | NpcKind::AngryTrapper => 30,
+            NpcKind::FungiBulb => 4,
+            NpcKind::GiantFungiBulb => 20,
             // The volley bees' SetDefaults defense (`NPC.cs:11702`/`:11715`).
             // The classic difficulty keeps them verbatim (the
             // `ScaleStats_ByDifficulty_Tweaks` ×0.8 remap, `:18222`, is
@@ -4174,6 +4235,14 @@ impl Npc {
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::QueenBee => 50000.0,
+            // The man-eater family (W4-d23): 43 value 350 (`NPC.cs:9306`),
+            // 56 90 (`:9487`), 101 600 (`:10200`), 175 650 (`:11221`),
+            // 259 350 (`:12345`), 260 1250 (`:12361`).
+            NpcKind::ManEater | NpcKind::FungiBulb => 350.0,
+            NpcKind::Snatcher => 90.0,
+            NpcKind::Clinger => 600.0,
+            NpcKind::AngryTrapper => 650.0,
+            NpcKind::GiantFungiBulb => 1250.0,
             // The volley bees write no `value` row (`NPC.cs:11696-11721`)
             // — the SetDefaults default 0 (`NPC.cs:8527`).
             NpcKind::Bee | NpcKind::BeeSmall => 0.0,
@@ -4718,6 +4787,51 @@ impl Npc {
             // (`world_sim/npcs.rs`), `expert = false` keeps the classic
             // solo seam (the style-11 claim's precedent).
             12 => self.update_skeletron_hand(world, player, false),
+            // `if (this.aiStyle == 13)` (`NPC.cs:22615-22847`) — the
+            // anchored man-eater family: ManEater 43 / Snatcher 56 /
+            // Clinger 101 / AngryTrapper 175 / FungiBulb 259 /
+            // GiantFungiBulb 260. W4-d23 wiring: the faithful pure machine
+            // (`npc_ai_style13::ai_style13`, the tile-anchor guards, the
+            // per-type leash pairs + the double-x1.3 int enrage ladder,
+            // the INTEGER-half aim, the sign-flip steering, the -0.7
+            // bounce floors, the Clinger CursedFlame + the 260 FungiSpore
+            // arms) claims the axis. The shot/spawn leave as `Style13Out`
+            // requests, drained here onto the `wants_cursed_flame` /
+            // `wants_fungi_spore` seams (the sim resolves them after the
+            // tick). The two `Next(-10,11)` X-then-Y jitters ride the
+            // caller's `UpdateNPCs` stream on their qualifying ticks.
+            // `npc_type` is the VANILLA type (`cs_id`); `get_good_world`
+            // rides the world's FTW seed (the style-55 precedent); the
+            // ticker stand-in is 0 (the zombie convention). All six are
+            // noGravity + noTileCollide, so the arm owns the `UpdateNPC`
+            // raw-integration tail (`NPC.cs:90473-90498`, the 56 arm's
+            // shape). The kind arms become the unreachable markers.
+            13 => {
+                let cand = crate::npc_target::session_candidate(player);
+                let npc_type = self.kind.cs_id() as i32;
+                let get_good = world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+                let out = crate::npc_ai_style13::ai_style13(
+                    self, world, &[cand], 0, npc_type, get_good, rng,
+                );
+                if let Some(shot) = out.cursed_flame {
+                    self.wants_cursed_flame = Some(shot);
+                }
+                if let Some(spore) = out.fungi_spore {
+                    self.wants_fungi_spore = Some(spore);
+                }
+                // `:90473-90476` — the dead-band X snap (double compare).
+                if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+                    self.vx = 0.0;
+                }
+                // `:90496-90498` — the stamps + the raw integration.
+                self.old_x = self.x;
+                self.old_y = self.y;
+                self.old_direction = self.facing;
+                self.x += self.vx;
+                self.y += self.vy;
+            }
             // `if (this.aiStyle == 14)` (`NPC.cs:22849-23486`) — the
             // flyer family: the port's four kinds CaveBat 49 /
             // JungleBat 51 / Hellbat 60 / VoodooDemon 66 (the module's
@@ -6201,6 +6315,17 @@ impl Npc {
             NpcKind::DungeonSpirit => {
                 unreachable!("aiStyle 56 rides the style axis (S1-D-3-wire-smallkinds)")
             }
+            // The man-eater family (W4-d23): the six kinds ride the
+            // aiStyle-13 axis above — these arms are unreachable through
+            // `update_rng` (the axis claims style 13 first).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => {
+                unreachable!("aiStyle 13 rides the style axis (W4-d23)")
+            }
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
             }
@@ -6728,6 +6853,51 @@ impl Npc {
             NpcKind::ForceBubble => {
                 self.frame = 0;
             }
+            // The man-eater family's `case 43 : case 56 : case 175`
+            // (`NPC.cs:74970-74994`) — the 3-frame chomp: the counter
+            // ticks every frame, the row bands 0/1/2/1 over the 6-tick
+            // windows (<6 / <12 / <18 / <24), the counter resets at 23.
+            // `Main.npcFrameCount[43/56/175]` = 3 (`Main.cs:67089`/
+            // `:67090`/`:67101`).
+            NpcKind::ManEater | NpcKind::Snatcher | NpcKind::AngryTrapper => {
+                self.frame_counter += 1.0;
+                if self.frame_counter < 6.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 18.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 24.0 {
+                    self.frame = 1;
+                }
+                if self.frame_counter == 23.0 {
+                    self.frame_counter = 0.0;
+                }
+            }
+            // The Clinger's `case 101` (`NPC.cs:75018-75029`) — the
+            // counter ticks every frame; past 6 the row steps by TWO
+            // (`frame.Y += num * 2`) and the counter zeroes; then the
+            // SEPARATE `frame.Y > num * 2` test wraps to 0. With
+            // `Main.npcFrameCount[101]` = 5 (`Main.cs:67094`, num = h/5)
+            // the row walks 0→2 (2num, not > 2num) →4 (4num > 2num →0)
+            // →2 →0… — the displayed rows are 2/0/2/0, never resting at
+            // 4. The port tracks rows, so the wrap is `frame > 2`.
+            NpcKind::Clinger => {
+                self.frame_counter += 1.0;
+                if self.frame_counter > 6.0 {
+                    self.frame += 2;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame > 2 {
+                    self.frame = 0;
+                }
+            }
+            // The fungi bulbs 259/260 have NO `FindFrame` case
+            // (`NPC.cs:66684-77370` carries no 259/260 arm; the post-switch
+            // tail is aiStyle-39 only, `:77292`) — the frame rests at its
+            // `SetFrameSize` 0 (`Main.npcFrameCount[259]` = 4 / `[260]` = 2
+            // are the sheet's row counts, never advanced).
+            NpcKind::FungiBulb | NpcKind::GiantFungiBulb => {}
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
             // own — the shared town body's rows stand.
@@ -18660,6 +18830,16 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // The man-eater family (W4-d23): the four port-local protocol
+            // ids (the vanilla 43/56/101/175 are the QueenBee/LeechTail/
+            // DD2JavelinT1/DD2DrakinT3 keys above); the two bulbs keep their
+            // vanilla ids (259/260 free). The G6 key stays injective.
+            NpcKind::ManEater => 354,
+            NpcKind::Snatcher => 355,
+            NpcKind::Clinger => 356,
+            NpcKind::AngryTrapper => 357,
+            NpcKind::FungiBulb => 259,
+            NpcKind::GiantFungiBulb => 260,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -23738,7 +23918,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 276] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24010,6 +24190,13 @@ mod tests {
         NpcKind::BlazingWheel,
         NpcKind::AngryNimbus,
         NpcKind::DungeonSpirit,
+        // The man-eater family (W4-d23, aiStyle 13).
+        NpcKind::ManEater,
+        NpcKind::Snatcher,
+        NpcKind::Clinger,
+        NpcKind::AngryTrapper,
+        NpcKind::FungiBulb,
+        NpcKind::GiantFungiBulb,
         // The wyvern family (S1-D-3 wyvern).
         NpcKind::WyvernHead,
         NpcKind::WyvernLegs,
@@ -27628,8 +27815,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            276,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d23's six man-eaters)"
         );
         assert!(
             covered > 43,
@@ -31194,6 +31381,14 @@ mod s1_d_2_tests {
         (NpcKind::BeeSmall, 5),
         (NpcKind::SkeletronHead, 11),
         (NpcKind::SkeletronHand, 12),
+        // The man-eater family (W4-d23, `NPC.cs:9299`/`:9480`/`:10193`/
+        // `:11214`/`:12338`/`:12354`).
+        (NpcKind::ManEater, 13),
+        (NpcKind::Snatcher, 13),
+        (NpcKind::Clinger, 13),
+        (NpcKind::AngryTrapper, 13),
+        (NpcKind::FungiBulb, 13),
+        (NpcKind::GiantFungiBulb, 13),
         (NpcKind::SkeletronPrime, 32),
         (NpcKind::Retinazer, 30),
         (NpcKind::Spazmatism, 31),
@@ -34109,5 +34304,257 @@ mod w4_d23_style14_census_tests {
         vd3.update_rng(&w, &mut far, 1.0 / 60.0, &mut rng3);
         assert_eq!(vd3.ai[0], 300.0, "no reset without the roll");
         assert_eq!(rng3, UnifiedRandom::new(9), "flag24 false draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d23 — the aiStyle-13 WIRING witnesses (the man-eater family).
+// WRITTEN, NOT RUN (code-only mode). The six kinds (43/56/101/175/259/
+// 260) ride the axis' 13 arm -> `npc_ai_style13::ai_style13`; the
+// CursedFlame shot + the FungiSpore spawn drain through the
+// `wants_cursed_flame` / `wants_fungi_spore` seams.
+// =====================================================================
+#[cfg(test)]
+mod w4_d23_style13_wiring_tests {
+    use super::*;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// An open-air world with ONE active anchor tile at (100, 100).
+    fn anchor_world() -> World {
+        let mut w = World::new("t".into(), 200, 200);
+        let i = w.index(100, 100);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w
+    }
+
+    fn player_at(w: &World, x: f32, y: f32) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = x;
+        p.y = y;
+        p.dead = false;
+        p
+    }
+
+    /// A man-eater seated at the anchor (ai[0/1] = the tile coords).
+    fn anchored(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 100.0;
+        n.ai[1] = 100.0;
+        n
+    }
+
+    /// The axis claims style 13 exactly once, and the six-kind arm is
+    /// the unreachable marker (the S1-D-2 convention).
+    #[test]
+    fn w4_d23_the_axis_claims_style_13_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "13" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 13 claimed once");
+        assert!(src.contains("aiStyle 13 rides the style axis (W4-d23)"));
+    }
+
+    /// The six kinds' SetDefaults rows pin against the C# through the
+    /// port's tables (the small-kinds pin's shape).
+    #[test]
+    fn w4_d23_the_maneater_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::ManEater, 43u16, 13u8, 30.0, 30.0, 34, 10, 110, 0.0f32, 350.0f32),
+            (NpcKind::Snatcher, 56, 13, 30.0, 30.0, 25, 10, 60, 0.0, 90.0),
+            (NpcKind::Clinger, 101, 13, 30.0, 30.0, 70, 30, 320, 0.2, 600.0),
+            (NpcKind::AngryTrapper, 175, 13, 30.0, 30.0, 100, 30, 300, 0.25, 650.0),
+            (NpcKind::FungiBulb, 259, 13, 20.0, 20.0, 24, 4, 90, 0.0, 350.0),
+            (NpcKind::GiantFungiBulb, 260, 13, 36.0, 36.0, 70, 20, 300, 0.0, 1250.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+        }
+        // The Clinger alone is behindTiles (`NPC.cs:10190`).
+        assert!(Npc::new(NpcKind::Clinger, 0.0, 0.0, 1, 0.0).behind_tiles);
+        assert!(!Npc::new(NpcKind::ManEater, 0.0, 0.0, 1, 0.0).behind_tiles);
+        // The protocol ids: 354-357 port-local (the vanilla slots taken),
+        // 259/260 free vanilla.
+        assert_eq!(NpcKind::ManEater.to_u16(), 354);
+        assert_eq!(NpcKind::Snatcher.to_u16(), 355);
+        assert_eq!(NpcKind::Clinger.to_u16(), 356);
+        assert_eq!(NpcKind::AngryTrapper.to_u16(), 357);
+        assert_eq!(NpcKind::FungiBulb.to_u16(), 259);
+        assert_eq!(NpcKind::GiantFungiBulb.to_u16(), 260);
+        for (kind, _, _, _, _, _, _, _, _, _) in rows {
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// The plain members (43/56/175/259) ride the axis draw-free: a full
+    /// `update_rng` tick steers toward the anchor+delta, ticks ai[2],
+    /// integrates, and consumes ZERO draws (no shot/spawn arm).
+    #[test]
+    fn w4_d23_the_plain_maneaters_ride_the_axis_draw_free() {
+        let w = anchor_world();
+        let mut p = player_at(&w, 1700.0, 1600.0);
+        for kind in [NpcKind::ManEater, NpcKind::Snatcher, NpcKind::AngryTrapper, NpcKind::FungiBulb] {
+            let mut n = anchored(kind, 1600.0, 1600.0);
+            let mut rng = UnifiedRandom::new(123);
+            for _ in 0..100 {
+                n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+            }
+            assert_eq!(rng, UnifiedRandom::new(123), "{kind:?} 100 ticks, zero draws");
+            assert!(n.wants_cursed_flame.is_none(), "{kind:?} no shot");
+            assert!(n.wants_fungi_spore.is_none(), "{kind:?} no spore");
+            assert_eq!(n.ai[2], 100.0, "{kind:?} the enrage timer ticked");
+            assert!(n.hp > 0, "{kind:?} the anchor holds");
+        }
+    }
+
+    /// The Clinger's shot rides the axis: at localAI[0] 119 the ++ reaches
+    /// 120, the open-air gate passes, the two X-then-Y jitters draw on the
+    /// caller's stream, and the request lands on `wants_cursed_flame`.
+    #[test]
+    fn w4_d23_the_clinger_shot_drains_through_the_axis() {
+        let w = anchor_world();
+        let mut p = player_at(&w, 1700.0, 1600.0);
+        let mut n = anchored(NpcKind::Clinger, 1650.0, 1600.0);
+        n.local_ai[0] = 119.0;
+        let mut rng = UnifiedRandom::new(42);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let shot = n.wants_cursed_flame.expect("the shot drained onto the seam");
+        assert_eq!(n.local_ai[0], 0.0, "the shot resets (:22802)");
+        // The manual replay in the C#'s draw order (X then Y).
+        let mut replay = UnifiedRandom::new(42);
+        let sx = 1650.0 + 30.0 * 0.5;
+        let sy = 1600.0 + 30.0 * 0.5;
+        let mut ax = 1700.0 + 20.0 * 0.5 - sx + replay.next_range(-10, 11) as f32;
+        let mut ay = 1600.0 + 42.0 * 0.5 - sy + replay.next_range(-10, 11) as f32;
+        let k = 10.0 / (ax * ax + ay * ay).sqrt();
+        ax *= k;
+        ay *= k;
+        assert_eq!(shot, crate::npc_ai_style13::CursedFlameShot { x: sx, y: sy, vx: ax, vy: ay });
+        assert_eq!(rng, replay, "exactly the two jitters, in C# order");
+    }
+
+    /// The GiantFungiBulb's spore rides the axis: at localAI[0] 149 the ++
+    /// reaches 150, the gate passes, the two jitters draw, and the request
+    /// lands on `wants_fungi_spore` (the INT centre + the 14-speed aim).
+    #[test]
+    fn w4_d23_the_bulb_spore_drains_through_the_axis() {
+        let w = anchor_world();
+        let mut p = player_at(&w, 1700.0, 1600.0);
+        let mut n = anchored(NpcKind::GiantFungiBulb, 1650.0, 1600.0);
+        n.local_ai[0] = 149.0;
+        let mut rng = UnifiedRandom::new(43);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let spore = n.wants_fungi_spore.expect("the spore drained onto the seam");
+        assert_eq!(n.local_ai[0], 0.0, "the spawn resets (:22841)");
+        let mut replay = UnifiedRandom::new(43);
+        let sx = 1650.0 + 36.0 * 0.5;
+        let sy = 1600.0 + 36.0 * 0.5;
+        let mut ax = 1700.0 + 20.0 * 0.5 - sx + replay.next_range(-10, 11) as f32;
+        // The steering num216 = 1621 - 18 - 1608 = -5 (<= 0): the lift stands.
+        let lift = (ax * 0.1).abs();
+        let mut ay = 1600.0 + 42.0 * 0.5 - sy + replay.next_range(-10, 11) as f32 - lift;
+        let k = 14.0 / (ax * ax + ay * ay).sqrt();
+        ax *= k;
+        ay *= k;
+        assert_eq!(spore, crate::npc_ai_style13::FungiSporeSpawn { x: sx as i32, y: sy as i32, vx: ax, vy: ay });
+        assert_eq!(rng, replay, "exactly the two jitters, in C# order");
+    }
+
+    /// The inactive-anchor death rides the axis draw-free: the hp-0 fold
+    /// (`life = -1; HitEffect(); active = false`) lands before TargetClosest.
+    #[test]
+    fn w4_d23_the_inactive_anchor_kills_through_the_axis() {
+        let mut w = anchor_world();
+        let i = w.index(100, 100);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        let mut p = player_at(&w, 1700.0, 1600.0);
+        let mut n = anchored(NpcKind::ManEater, 1600.0, 1600.0);
+        let mut rng = UnifiedRandom::new(7);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "the anchor death");
+        assert_eq!(n.target, 255, "the death returns before TargetClosest");
+        assert_eq!(rng, UnifiedRandom::new(7), "the death draws nothing");
+    }
+
+    /// The frozen-behaviour A/B: the axis-routed arm produces the exact
+    /// pure-module state sequence over 500 ticks (the module is the
+    /// pre-axis machine; the wiring adds only the integration tail). Both
+    /// runs share one world/player stream; every tick's kinematics + the
+    /// RNG stream must be bit-equal. The Clinger's shot ticks exercise the
+    /// draw path; the plain members pin the draw-free path.
+    #[test]
+    fn w4_d23_the_style13_axis_keeps_the_module_behaviour() {
+        let w = anchor_world();
+        for kind in [NpcKind::ManEater, NpcKind::Clinger, NpcKind::GiantFungiBulb] {
+            let mut player_a = player_at(&w, 1700.0, 1600.0);
+            let mut player_b = player_at(&w, 1700.0, 1600.0);
+            let mut axis = anchored(kind, 1650.0, 1600.0);
+            let mut pure = axis.clone();
+            let mut rng_a = UnifiedRandom::new(99);
+            let mut rng_b = UnifiedRandom::new(99);
+            let npc_type = kind.cs_id() as i32;
+            for tick in 0..500u64 {
+                // A: the live axis route (update_rng -> the 13 arm).
+                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+                // B: the pure module + the same preamble + integration tail.
+                pure.update_preamble(1.0 / 60.0);
+                pure.gfx_off_y = crate::npc_ai_unicorn_b::gfx_off_y_decay(
+                    pure.gfx_off_y, pure.vx, pure.step_speed,
+                );
+                let cand = crate::npc_target::session_candidate(&player_b);
+                let out = crate::npc_ai_style13::ai_style13(
+                    &mut pure, &w, &[cand], 0, npc_type, false, &mut rng_b,
+                );
+                let _ = out;
+                if (pure.vx as f64) < 0.005 && (pure.vx as f64) > -0.005 {
+                    pure.vx = 0.0;
+                }
+                pure.old_x = pure.x;
+                pure.old_y = pure.y;
+                pure.old_direction = pure.facing;
+                pure.x += pure.vx;
+                pure.y += pure.vy;
+                pure.just_hit = false;
+                pure.find_frame();
+                pure.contact(&mut player_b, &mut rng_b);
+                // The kinematics + the AI state must be bit-equal.
+                assert_eq!((axis.x, axis.y), (pure.x, pure.y), "{kind:?} tick {tick} position");
+                assert_eq!((axis.vx, axis.vy), (pure.vx, pure.vy), "{kind:?} tick {tick} velocity");
+                assert_eq!(axis.ai, pure.ai, "{kind:?} tick {tick} ai");
+                assert_eq!(axis.local_ai, pure.local_ai, "{kind:?} tick {tick} localAI");
+                assert_eq!(axis.rotation, pure.rotation, "{kind:?} tick {tick} rotation");
+                assert_eq!(axis.target, pure.target, "{kind:?} tick {tick} target");
+                assert_eq!(axis.frame, pure.frame, "{kind:?} tick {tick} frame");
+                assert_eq!(rng_a, rng_b, "{kind:?} tick {tick} RNG stream parity");
+            }
+        }
     }
 }

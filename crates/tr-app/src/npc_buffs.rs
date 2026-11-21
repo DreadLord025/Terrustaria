@@ -484,6 +484,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // The man-eater family (W4-d23): the `DebuffImmunitySets` rows —
+        // 43 `{20,31}` (`NPCID.cs:6349-6355`), 56 `{31}` (`:6410-6416`),
+        // 101 `{39,31}` (`:6692-6698`), 175 `{20,31}` (`:7139-7145`),
+        // 259/260 `{20,31}` (`:7577-7590`). The 20⇒30+375 derived rule
+        // (`NPC.cs:17828-17833`) applies in `for_kind`.
+        NpcKind::ManEater | NpcKind::AngryTrapper | NpcKind::FungiBulb | NpcKind::GiantFungiBulb => &[20, 31],
+        NpcKind::Snatcher => &[31],
+        NpcKind::Clinger => &[39, 31],
     }
 }
 

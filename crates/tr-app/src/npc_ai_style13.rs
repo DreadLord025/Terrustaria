@@ -5,9 +5,11 @@
 //!
 //! ## Family census (`SetDefaults` `aiStyle = 13` rows, whole-file grep)
 //!
-//! SIX vanilla members, NONE with a port `NpcKind` — the module lands
-//! UNWIRED (the W4-d24 `npc_ai_style17/20` precedent); the step is keyed
-//! on the C# type id (`npc_type`), the wiring passes `kind.net_id()`:
+//! SIX vanilla members, WIRED by W4-d23 (the axis' 13 arm rides this
+//! step; the kinds ManEater/Snatcher/Clinger/AngryTrapper/FungiBulb/
+//! GiantFungiBulb carry the SetDefaults rows in `npc/data.rs`); the step
+//! is keyed on the C# type id (`npc_type`), the wiring passes
+//! `kind.cs_id()`:
 //!
 //! | type | name (`ID/NPCID.cs`) | SetDefaults | box | dmg | def | HP | kb | value |
 //! | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -93,7 +95,7 @@
 //! (`NPC.cs:77652-77781`), the steering, the bounce — draws NOTHING.
 //! The witnesses mirror the rolls on a cloned stream and pin the
 //! draw-free paths.
-#![allow(dead_code)] // UNWIRED (W4-d23): the six kinds + the axis claim are the wiring step
+#![allow(dead_code)] // the STYLE13_ROWS census table is a witness-only pin (the ctor reads the kind tables)
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

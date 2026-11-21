@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(MANEATER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1245,6 +1246,19 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+];
+
+/// The man-eater family's sheets (W4-d23, aiStyle 13): Man Eater (43),
+/// Snatcher (56), Clinger (101), Angry Trapper (175), Fungi Bulb (259)
+/// and Giant Fungi Bulb (260) each draw their own `NPC_<id>` art. Keyed
+/// by the vanilla net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const MANEATER_SHEETS: &[u32] = &[
+    43,  // the Man Eater
+    56,  // the Snatcher
+    101, // the Clinger
+    175, // the Angry Trapper
+    259, // the Fungi Bulb
+    260, // the Giant Fungi Bulb
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3170,6 +3184,23 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // The man-eater family (W4-d23): each kind draws its own
+            // `NPC_<id>` sheet at `Main.npcFrameCount[type]` rows
+            // (43/56/175 three, 101 five, 259 four, 260 two —
+            // `Main.cs:67082`) with the generic centred anchor
+            // (`Main.cs:25511-25516`) — the pumpkin arm's shape. The
+            // frame machines rest the bulbs at row 0 (no FindFrame case);
+            // the chomp/Clinger strips animate. All six rotate (the
+            // aiStyle-13 aim writes, the whitelist below).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3350,15 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // The man-eater family (W4-d23): the aiStyle-13 aim
+                    // writes `rotation` every tick (`NPC.cs:22734-22750` —
+                    // the bulbs' atan2+1.57, the others' atan2/+3.14 face).
+                    | NpcKind::ManEater
+                    | NpcKind::Snatcher
+                    | NpcKind::Clinger
+                    | NpcKind::AngryTrapper
+                    | NpcKind::FungiBulb
+                    | NpcKind::GiantFungiBulb
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

@@ -570,6 +570,19 @@ impl NpcKind {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // The man-eater family (W4-d23, aiStyle 13): the four vanilla
+            // ids 43/56/101/175 are the QueenBee/Creeper/DD2JavelinT1/
+            // DD2DrakinT3 protocol slots (`to_u16`'s bijection guard), so
+            // they take the next-free port-local band 354-357; the two
+            // bulbs keep their vanilla ids (259/260 free).
+            // `NPC.cs:9293-9307` / `:9474-9488` / `:10186-10201` /
+            // `:11208-11222` / `:12332-12347` / `:12348-12363`.
+            NpcKind::ManEater => 354,
+            NpcKind::Snatcher => 355,
+            NpcKind::Clinger => 356,
+            NpcKind::AngryTrapper => 357,
+            NpcKind::FungiBulb => 259,
+            NpcKind::GiantFungiBulb => 260,
             // The Wyvern family (`S1-D-3` wyvern, `NPCID.cs:10851-10861`):
             // the vanilla ids 87-92 collide with the port-local
             // Scutlix/saucer band (87-92 above). GATE REASSIGN (L-C): the
@@ -907,6 +920,14 @@ impl NpcKind {
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
+            // The man-eater family (W4-d23): the port-local 354-357 band
+            // + the two bulbs' free vanilla ids (`to_u16` above).
+            354 => NpcKind::ManEater,
+            355 => NpcKind::Snatcher,
+            356 => NpcKind::Clinger,
+            357 => NpcKind::AngryTrapper,
+            259 => NpcKind::FungiBulb,
+            260 => NpcKind::GiantFungiBulb,
             // The Wyvern family (`S1-D-3` wyvern): the gate-reassigned
             // 223-228 band (`to_u16` above; the vanilla 87-92 collide with
             // the Scutlix/saucer ids). `NPCID.cs:10851-10861`.
@@ -1788,6 +1809,14 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // The man-eater family (W4-d23): all six NPCHit1
+            // (`NPC.cs:9303`/`:9484`/`:10197`/`:11218`/`:12342`/`:12358`).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2121,14 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // The man-eater family (W4-d23): all six NPCDeath1
+            // (`NPC.cs:9305`/`:9486`/`:10199`/`:11220`/`:12344`/`:12360`).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2200,6 +2237,15 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // The man-eater family (W4-d23): all six `SetDefaults` rows
+            // write `noGravity = true` (`NPC.cs:9295`/`:9477`/`:10188`/
+            // `:11210`/`:12334`/`:12350`).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => true,
             _ => false,
         }
     }
@@ -2303,6 +2349,15 @@ impl NpcKind {
             NpcKind::SkeletronHead => 11,
             // aiStyle 12 - NPC.cs:9187
             NpcKind::SkeletronHand => 12,
+            // aiStyle 13 - NPC.cs:9299 (43), :9480 (56), :10193 (101),
+            // :11214 (175), :12338 (259), :12354 (260): the man-eater
+            // family (W4-d23).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => 13,
             // aiStyle 14 - NPC.cs:9378, :9409, :9543, :9629
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => 14,
             // aiStyle 15 - NPC.cs:9392
@@ -2981,6 +3036,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // The man-eater family (W4-d23): 43/56/101/175 30x30
+            // (`NPC.cs:9297-9298`/`:9478-9479`/`:10191-10192`/
+            // `:11212-11213`), 259 20x20 (`:12336-12337`), 260 36x36
+            // (`:12352-12353`).
+            NpcKind::ManEater | NpcKind::Snatcher | NpcKind::Clinger | NpcKind::AngryTrapper => (30.0, 30.0),
+            NpcKind::FungiBulb => (20.0, 20.0),
+            NpcKind::GiantFungiBulb => (36.0, 36.0),
         }
     }
 
@@ -3201,6 +3263,9 @@ impl NpcKind {
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
                 | NpcKind::BlazingWheel
+                // The Clinger's `behindTiles = true` row (`NPC.cs:10190`,
+                // W4-d23 — the family's only behind-tiles member).
+                | NpcKind::Clinger
         )
     }
 
@@ -3622,6 +3687,15 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // The man-eater family (W4-d23): 43 110 (`NPC.cs:9302`), 56 60
+            // (`:9483`), 101 320 (`:10196`), 175 300 (`:11217`), 259 90
+            // (`:12341`), 260 300 (`:12357`).
+            NpcKind::ManEater => 110,
+            NpcKind::Snatcher => 60,
+            NpcKind::Clinger => 320,
+            NpcKind::AngryTrapper => 300,
+            NpcKind::FungiBulb => 90,
+            NpcKind::GiantFungiBulb => 300,
         }
     }
 
@@ -3986,6 +4060,15 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // The man-eater family (W4-d23): 43 34 (`NPC.cs:9300`), 56 25
+            // (`:9481`), 101 70 (`:10194`), 175 100 (`:11215`), 259 24
+            // (`:12339`), 260 70 (`:12355`).
+            NpcKind::ManEater => 34,
+            NpcKind::Snatcher => 25,
+            NpcKind::Clinger => 70,
+            NpcKind::AngryTrapper => 100,
+            NpcKind::FungiBulb => 24,
+            NpcKind::GiantFungiBulb => 70,
         }
     }
 }

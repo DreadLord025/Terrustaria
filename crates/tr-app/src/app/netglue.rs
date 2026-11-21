@@ -3566,6 +3566,19 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The man-eater family (W4-d23): the anchored flyers fly through
+        // tiles (the noTileCollide/noGravity rows); the hover ctor's
+        // open-air seed is the join shape (the aiStyle-13 machine takes
+        // over on the first tick — the fishron precedent).
+        crate::npc::NpcKind::ManEater
+        | crate::npc::NpcKind::Snatcher
+        | crate::npc::NpcKind::Clinger
+        | crate::npc::NpcKind::AngryTrapper
+        | crate::npc::NpcKind::FungiBulb
+        | crate::npc::NpcKind::GiantFungiBulb => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

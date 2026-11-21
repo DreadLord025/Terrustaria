@@ -5524,6 +5524,29 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         bees.push(bee);
     }
     app.npcs.append(&mut bees);
+    // The GiantFungiBulb's spore spawn (W4-d23, `NPC.cs:22837-22840`): the
+    // aiStyle-13 axis arm set `wants_fungi_spore` on a spawn tick (the two
+    // `Next(-10,11)` jitters already rode the UpdateNPCs stream in C#
+    // order); this pass resolves the `NPC.NewNPC(261)` — the (int)Center
+    // truncation is in the payload, `Bottom = (X, Y)` (`NPC.cs:80770`),
+    // the 14-speed jittered velocity and `netUpdate = true` (`:22838-
+    // :22840`). `NewNPC` stamps `timeLeft = (int)(activeTime * 1.25)` = 937
+    // (`:80772`, the plantera-spore precedent).
+    let mut bulb_spores = Vec::new();
+    for n in app.npcs.iter_mut() {
+        let Some(req) = n.wants_fungi_spore.take() else {
+            continue;
+        };
+        let (sw, sh) = NpcKind::FungiSpore.size();
+        let mut spore = Npc::new(NpcKind::FungiSpore, req.x as f32 - sw * 0.5, req.y as f32 - sh, 1, 0.0);
+        spore.hp = spore.max_hp;
+        spore.vx = req.vx;
+        spore.vy = req.vy;
+        spore.net_update = true;
+        spore.despawn_timer = 937;
+        bulb_spores.push(spore);
+    }
+    app.npcs.append(&mut bulb_spores);
     // Plantera's spawn requests (S1-D-3-plantera, `NPC.cs:31736-31742` /
     // `:31983-31994` / `:32054-32073`): S1-D-3-wire-plantera-minions
     // replaces the drain-only stand-in with the real `NewNPC` spawns —
@@ -5960,6 +5983,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if let (Some(slot), Some(scale)) = (slot, shot.scale) {
             app.projectiles.set_scale(slot, scale);
         }
+    }
+    // The Clinger's cursed-flame shot (W4-d23, `NPC.cs:22800-22801`): the
+    // aiStyle-13 axis arm set `wants_cursed_flame` on a qualifying shot
+    // tick (the two `Next(-10,11)` jitters already rode the UpdateNPCs
+    // stream in C# order); this pass resolves the `Projectile.NewProjectile`
+    // — type 96, classic damage 22 (`GetAttackDamage_ForProjectiles(22f,
+    // 17.6f)`, the single-difficulty fold), knockback 0, at the float
+    // centre, with the `timeLeft = 300` override (`:22801`). A dedicated
+    // drain (NOT the shared `wants_hostile_shot` list): the Spazmatism's
+    // kind-96 shot carries NO timeLeft override, so a kind-based override
+    // would misroute it.
+    let mut cursed_flames = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if let Some(shot) = n.wants_cursed_flame.take() {
+            cursed_flames.push(shot);
+        }
+    }
+    for shot in cursed_flames {
+        app.projectiles.spawn_hostile_timed(
+            crate::projectile::CURSED_FLAME,
+            Vec2::new(shot.x, shot.y),
+            Vec2::new(shot.vx, shot.vy),
+            22,
+            0.0,
+            300,
+            0.0,
+        );
     }
     // The Horseman's gallop dust (`NPC.cs:62431-62437`, S1-D-4 W-10):
     // the arm-level gate + jitter draws already rode the UpdateNPCs

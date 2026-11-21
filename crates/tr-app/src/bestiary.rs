@@ -2171,6 +2171,57 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // The man-eater family (W4-d23, aiStyle 13): the six wired kinds' own
+    // entries — the populator registers all six by id (the normal-enemy
+    // kill ladder, no quick-unlock).
+    BestiaryEntryDef {
+        credit_id: "ManEater",
+        net_id: 43,
+        kind: NpcKind::ManEater,
+        variant: None,
+        quick_unlock: false,
+        name: "Man Eater",
+    },
+    BestiaryEntryDef {
+        credit_id: "Snatcher",
+        net_id: 56,
+        kind: NpcKind::Snatcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Snatcher",
+    },
+    BestiaryEntryDef {
+        credit_id: "Clinger",
+        net_id: 101,
+        kind: NpcKind::Clinger,
+        variant: None,
+        quick_unlock: false,
+        name: "Clinger",
+    },
+    BestiaryEntryDef {
+        credit_id: "AngryTrapper",
+        net_id: 175,
+        kind: NpcKind::AngryTrapper,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Trapper",
+    },
+    BestiaryEntryDef {
+        credit_id: "FungiBulb",
+        net_id: 259,
+        kind: NpcKind::FungiBulb,
+        variant: None,
+        quick_unlock: false,
+        name: "Fungi Bulb",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantFungiBulb",
+        net_id: 260,
+        kind: NpcKind::GiantFungiBulb,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Fungi Bulb",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
