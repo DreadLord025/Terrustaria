@@ -2083,9 +2083,10 @@ fn moss_zombie_death(
 /// 309/310x2/311x2 (`:87101-87105`, sites 346-350); the head switch
 /// (132→154, 186/432→241, 189/435→246, 251→372, generic→3, the slimed
 /// 187/433 NO head) + the SHARED 4/4/5/5 tail (`:87108-87131`, sites
-/// 351-359, scale 1f — no this.scale); the 186 extras (`:87132-87139`)
-/// land next batch. The hit-half 186/632 Next(5) gore gates
-/// (`:86945-86952`) are g62's lane.
+/// 351-359, scale 1f — no this.scale); the 186/432 extras — the ungated
+/// 242 + the 1-in-2 second 242 (`:87132-87139`, sites 360-361, the
+/// Next(2) gate draws ONLY for the 186/432 kinds). The hit-half 186/632
+/// Next(5) gore gates (`:86945-86952`) are g62's lane.
 fn zombie_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -2287,6 +2288,68 @@ fn zombie_arm_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 4, 1.0); // :87129
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 5, 1.0); // :87130
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 5, 1.0); // :87131
+    // `:87132-87135` — the 186/432 Bald Zombie's extra 242 (ungated).
+    if npc_type == 186 || npc_type == 432 {
+        gore.new_gore(rng, world, pos, vel, 242, 1.0); // :87134
+    }
+    // `:87136-87139` — the 186/432's 1-in-2 second 242: the Next(2) gate
+    // draws ONLY for the 186/432 kinds (the C# short-circuit), BEFORE
+    // the gore.
+    if (npc_type == 186 || npc_type == 432) && rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, pos, vel, 242, 1.0); // :87138
+    }
+}
+
+/// The 83/84/179 cursed weapon death (`NPC.cs:87141-87164`, sites
+/// 362-364): the 20x dust-31 burst (velocity ×2, noGravity — the post
+/// writes on the returned slot), then THREE gore-61 spawns at
+/// `(pos.X, pos.Y + height/2 - 10)` with velocity
+/// `(Next(-2,3), Next(-2,3))` — the argument draws X then Y BEFORE each
+/// NewGore — then the pool's kicks, then the post `velocity *= 0.5`
+/// (the sentinel included), `this.scale` carried.
+fn cursed_weapon_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:87152-87157` — the 20x dust-31 burst: speed (0,0), alpha 0,
+    // scale 1.5, then velocity ×2 + noGravity on the returned slot.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            31,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:87158-87163` — the three gore-61 sparks.
+    let anchor = Vec2::new(npc.x, npc.y + h / 2.0 - 10.0);
+    let s = npc.scale;
+    for _ in 0..3 {
+        // The velocity argument: Next(-2,3) X then Next(-2,3) Y, BEFORE
+        // the NewGore's own kicks.
+        let vx = rng.next_range(-2, 3) as f32;
+        let vy = rng.next_range(-2, 3) as f32;
+        let idx = gore.new_gore(rng, world, anchor, Vec2::new(vx, vy), 61, s);
+        gore.slot_mut(idx).velocity *= 0.5;
+    }
 }
 
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
@@ -2536,8 +2599,8 @@ pub fn hit_effect_d(
     // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
     // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
     // 104/632/331/332/109/161/162/188/200/319/320/321/223 branches + the
-    // head-switch/shared-tail are live (sites 286-359); the 186 extras
-    // land later.
+    // head-switch/shared-tail + the 186 extras are live (sites 286-361,
+    // the arm COMPLETE).
     else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
     {
         zombie_arm_death(
@@ -2551,6 +2614,10 @@ pub fn hit_effect_d(
             hit_direction,
             &mut outcome,
         );
+    }
+    // `:87141-87164` — the 83/84/179 cursed weapon arm (sites 362-364).
+    else if matches!(npc_type, 83 | 84 | 179) {
+        cursed_weapon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4593,6 +4660,84 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87134-87138` — the Bald Zombie extras: the ungated 242
+    /// then the 1-in-2 second 242; the Next(2) gate draws ONLY for the
+    /// 186/432 kinds (the twin pins both the taken and refused paths via
+    /// the stream position).
+    #[test]
+    fn w4_f5d_the_bald_zombie_extras_draw_the_one_in_two_gate() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(359);
+        let _ = hit_effect_d(&n, 186, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore
+            .slots()
+            .iter()
+            .take_while(|g| g.active)
+            .map(|g| g.gore_type)
+            .collect();
+        // Head 241 + tail 4/4/5/5 + the ungated 242 (+ maybe the gated).
+        assert_eq!(&types[..6], &[241, 4, 4, 5, 5, 242]);
+        assert!(types.len() == 6 || types.len() == 7, "the gated extra: {types:?}");
+        let mut twin = UnifiedRandom::new(359);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        let gate = twin.next_max(2);
+        if gate == 0 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(types.len(), 7, "the gate taken spawns the extra");
+        } else {
+            assert_eq!(types.len(), 6, "the gate refused spawns nothing");
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the bald zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87158-87163` — the cursed weapon's three gore-61 sparks:
+    /// the velocity argument draws Next(-2,3) X then Y BEFORE each
+    /// NewGore, the pool's kicks follow, then the post velocity ×0.5;
+    /// the 20x dust-31 census runs first (the ×2/noGravity post writes
+    /// draw nothing).
+    #[test]
+    fn w4_f5d_the_cursed_weapon_sparks_draw_the_velocity_arguments() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for kind in [83, 84, 179] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(367);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![61, 61, 61], "weapon {kind}");
+            // The anchor: pos.Y + height/2 - 10 = 105.
+            for i in 0..3 {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 105.0));
+            }
+            let mut twin = UnifiedRandom::new(367);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for i in 0..3 {
+                let vx = twin.next_range(-2, 3) as f32;
+                let vy = twin.next_range(-2, 3) as f32;
+                let ky = twin.next_range(10, 31) as f32 * 0.1;
+                let kx = twin.next_range(-20, 21) as f32 * 0.1;
+                // The post ×0.5 applies to the WHOLE velocity (argument
+                // + kicks).
+                assert_eq!(gore.slot(i).velocity.x, (vx + kx) * 0.5);
+                assert_eq!(gore.slot(i).velocity.y, (vy - ky) * 0.5);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "weapon {kind} mirrors the C# draws");
         }
     }
 }
