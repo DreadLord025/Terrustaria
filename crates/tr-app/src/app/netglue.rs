@@ -1263,6 +1263,19 @@ impl App {
                     p.off_y = 0.0;
                 }
             }
+            // `case 75` — a client finished today's angler quest
+            // (`MessageBuffer.cs:3154-3163`): the host adds the sender's name
+            // to `Main.anglerWhoFinishedToday` if absent (`:3157-3161`).
+            C2s::AnglerQuestFinished => {
+                let name = if id == 0 {
+                    self.player_name.clone()
+                } else {
+                    self.remote_players.get(&id).map(|p| p.name.clone()).unwrap_or_default()
+                };
+                if !name.is_empty() && !self.world.angler_who_finished_today.contains(&name) {
+                    self.world.angler_who_finished_today.push(name);
+                }
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:4282-4297`, `:4328-4343`) land
@@ -2413,13 +2426,18 @@ impl App {
                     }
                 }
             }
+            // `case 74` — today's angler quest (`MessageBuffer.cs:3147-3153`):
+            // the client stores the quest index and whether it finished today.
+            S2c::AnglerQuest(q) => {
+                self.world.angler_quest = q.quest; // `:3150`
+                self.world.angler_quest_finished = q.finished; // `:3151`
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:1851-1867`, `:2695-2739`, `:3147-3153`,
-            // `:4043-4048`, `:4195-4203`, `:4238-4249`, `:4282-4297`,
-            // `:4328-4343`) land with the send-path pass (S1-I-4).
+            // (`MessageBuffer.cs:1851-1867`, `:2695-2739`, `:4043-4048`,
+            // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
+            // with the send-path pass (S1-I-4).
             S2c::TogglePvp(_)
-            | S2c::AnglerQuest(_)
             | S2c::RevengeMarker(_)
             | S2c::DeadPlayer { .. }
             | S2c::MiscEventValue(_)
@@ -6240,5 +6258,38 @@ mod message_family_tests {
         let peer = host_app.remote_players.get(&client_app.local_id).expect("host peer");
         assert_eq!(peer.x, sx as f32 * TILE_PX, "the shellphone moved the peer to spawn X");
         assert_eq!(peer.y, sy as f32 * TILE_PX, "the shellphone moved the peer to spawn Y");
+    }
+
+    /// W4-g49 `74 AnglerQuest` (`MessageBuffer.cs:3147-3153`): the client
+    /// stores the quest index and the finished-today flag.
+    #[test]
+    fn w4_g49_angler_quest_stores_the_quest() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.send(client_app.local_id, &S2c::AnglerQuest(net::AnglerQuest { quest: 17, finished: true }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(client_app.world.angler_quest, 17, "the quest index stored (`:3150`)");
+        assert!(client_app.world.angler_quest_finished, "the finished flag stored (`:3151`)");
+    }
+
+    /// W4-g49 `75 AnglerQuestFinished` (`MessageBuffer.cs:3154-3163`): the
+    /// host adds the sender's name to anglerWhoFinishedToday (once).
+    #[test]
+    fn w4_g49_angler_quest_finished_adds_the_senders_name() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player_name = "AnglerFan".into();
+        // The host's peer record carries the name (the join push's stand-in).
+        host_app.remote_players.get_mut(&client_app.local_id).unwrap().name = "AnglerFan".into();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::AnglerQuestFinished);
+            client.send(&C2s::AnglerQuestFinished); // a duplicate must not double-add
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(
+            host_app.world.angler_who_finished_today,
+            vec!["AnglerFan".to_string()],
+            "the sender's name added once (`:3157-3161`)"
+        );
     }
 }

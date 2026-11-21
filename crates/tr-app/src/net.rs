@@ -167,6 +167,10 @@ pub mod id {
     /// shellphone teleport request (`NetMessage.cs:1142-1144`,
     /// `MessageBuffer.cs:3127-3146`). W4-g49 (transplanted from W4-d99).
     pub const REQUEST_TELEPORT: u8 = 73;
+    /// `75 AnglerQuestFinished` (`MessageID.cs:163`) — no body either side
+    /// (`MessageBuffer.cs:3154-3163` adds the sender's name on the host).
+    /// W4-g49 (transplanted from W4-d99).
+    pub const ANGLER_QUEST_FINISHED: u8 = 75;
     pub const TRAVEL_SHOP: u8 = 72; // MessageID.cs:157 / NetMessage.cs:1134-1141 / MessageBuffer.cs:3118-3126
     pub const ANGLER_QUEST: u8 = 74; // MessageID.cs:161 / NetMessage.cs:1145-1148 / MessageBuffer.cs:3147-3153
     pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
@@ -1803,6 +1807,9 @@ pub enum C2s {
     /// `73 RequestTeleport` - a client used a conch/potion/shellphone
     /// (`Player.cs:43029`/`:43062`/`:43103`/`:6069`). W4-g49.
     RequestTeleport(RequestTeleport),
+    /// `75 AnglerQuestFinished` - a client finished today's angler quest
+    /// (`Main.cs:40254`). No body. W4-g49.
+    AnglerQuestFinished,
     /// `30 TogglePVP` - a client flipped its PvP flag
     /// (`Main.cs`'s PvP toggle; `MessageBuffer.cs:1851-1867` relays it).
     TogglePvp(TogglePvp),
@@ -2040,6 +2047,7 @@ impl C2s {
             Self::HealPlayer(_) => id::HEAL_PLAYER,
             Self::ClientUuid(_) => id::CLIENT_UUID,
             Self::RequestTeleport(_) => id::REQUEST_TELEPORT,
+            Self::AnglerQuestFinished => id::ANGLER_QUEST_FINISHED,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
@@ -2141,6 +2149,8 @@ impl C2s {
             Self::ClientUuid(u) => w.str(&u.uuid),
             // `NetMessage.cs:1142-1144`: (byte)kind.
             Self::RequestTeleport(q) => w.u8(q.kind),
+            // No writer arm — bodyless (`MessageBuffer.cs:3154-3163`).
+            Self::AnglerQuestFinished => w,
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
             Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
@@ -2282,6 +2292,8 @@ impl C2s {
             id::CLIENT_UUID => Self::ClientUuid(ClientUuid { uuid: r.str()? }),
             // `MessageBuffer.cs:3128`: (byte)kind.
             id::REQUEST_TELEPORT => Self::RequestTeleport(RequestTeleport { kind: r.u8()? }),
+            // `MessageBuffer.cs:3154-3163`: no body.
+            id::ANGLER_QUEST_FINISHED => Self::AnglerQuestFinished,
             id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
                 player_id: r.u8()?,
                 hostile: r.bool()?,
@@ -5146,6 +5158,22 @@ mod tests {
                 other => panic!("expected 73, got {:?}", other.msg_id()),
             }
         }
+    }
+
+    /// W4-g49 `75 AnglerQuestFinished`: no `case 75` writer arm in
+    /// NetMessage.cs and the reader consumes nothing
+    /// (`MessageBuffer.cs:3154-3163` — it only adds the sender's name on the
+    /// host): the frame is exactly [len=3][75]. Byte-verbatim from W4-d99.
+    #[test]
+    fn w4_g49_angler_quest_finished_is_bodyless() {
+        let f = C2s::AnglerQuestFinished.encode();
+        assert_eq!(f, vec![3, 0, 75]);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::AnglerQuestFinished => {}
+            other => panic!("expected 75, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
     }
 
     #[test]

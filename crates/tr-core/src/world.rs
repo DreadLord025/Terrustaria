@@ -549,6 +549,11 @@ pub struct World {
     /// `Main.anglerWhoFinishedToday` (`Main.cs:1781`): the C#'s player
     /// name list — the port's single player collapses to a bool.
     pub angler_quest_turned_in: bool,
+    /// `Main.anglerWhoFinishedToday` (`Main.cs:1781`): the player names that
+    /// finished today's quest — the `75 AnglerQuestFinished` host arm adds
+    /// the sender's name (`MessageBuffer.cs:3154-3163`), the `74` join push
+    /// checks membership (`NetMessage.cs:1147`). W4-g49.
+    pub angler_who_finished_today: Vec<String>,
     /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
     /// (`Main.cs:65373`): the clock arms it (the clock has no RNG), the
     /// world pass resolves it on `Main.rand`'s app stream (the
@@ -795,6 +800,7 @@ impl World {
             angler_quest: 0,
             angler_quest_finished: false,
             angler_quest_turned_in: false,
+            angler_who_finished_today: Vec::new(),
             angler_swap_pending: false,
             travel_shop: [0; 40],
             butterfly_chance: 0,
