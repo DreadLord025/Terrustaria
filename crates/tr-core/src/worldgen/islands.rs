@@ -2301,4 +2301,69 @@ mod tests {
         pass_floating_islands(&mut wb, &mut gvb, &mut Rng(42), 520.0, false);
         assert_eq!(gvb.num_island_houses, 0, "the clear window rejects every site");
     }
+
+    /// W4-g44 biome-closeout (sky-lake WATER physics, WRITTEN NOT RUN):
+    /// the compact `CloudLake` bowl's water SURVIVES settle. The gen
+    /// settle (`WorldGen.cs:16156-16207`, g47's `gen_settle_loop` +
+    /// `water_check`/`quick_water` machinery) never drains an enclosed
+    /// pool: `WaterCheck` (`:80415-80494`) zeroes liquid only INSIDE a
+    /// solid tile (`:80426-80432` — the bowl cells are inactive water)
+    /// and wakes a cell only when the cell below is open and not full,
+    /// or a side cell is open with a DIFFERENT level (`:80449-80470`) —
+    /// the bowl's rain-cloud 196 floor/sides are `tileSolid` true
+    /// (`Main.cs:7118`), the water rows are uniformly 255, so no wake
+    /// arm fires and `SettleWaterAt`'s fall/spread walks
+    /// (`Liquid.cs:171-278`) have nowhere to go. The waterLine re-type
+    /// (`Liquid.cs:184-187`) needs the fall arm (`flag4`) — inert on an
+    /// enclosed lake, and the load-settle pins waterLine = maxTilesY
+    /// anyway (g47 `settle_loaded_world`). This witness replays the
+    /// bowl through the landed runtime `LiquidSystem` (the same
+    /// `UpdateLiquid` engine the gen loop drives) and pins the mass.
+    #[test]
+    fn w4_g44_the_sky_lake_water_survives_settle() {
+        let mut w = sky_world(4200, 1200, 520);
+        build_island(&mut w, 1000, 200, 50, true, &mut Rng(5));
+        w.compute_column_surface();
+        w.compute_chunks();
+        // The bowl: rows 177-179 water, row 180 the rain-cloud floor,
+        // x 984/1016 the rain-cloud sides (half = 50/3 = 16).
+        let bowl_cells: Vec<(i32, i32)> = (985..=1015)
+            .flat_map(|x| (177..=179).map(move |y| (x, y)))
+            .collect();
+        let mass = |w: &World| -> i64 {
+            bowl_cells.iter().map(|&(x, y)| w.tile(x, y).unwrap().liquid as i64).sum()
+        };
+        let before = mass(&w);
+        assert_eq!(before, 31 * 3 * 255, "the bowl is 31x3 full water");
+        for &(x, y) in &bowl_cells {
+            let t = w.tile(x, y).unwrap();
+            assert!(!t.active(), "the water cells are inactive");
+            assert_eq!(t.liquid_kind(), crate::tile::LiquidKind::Water);
+            // `WillWaterPlacedHereStayPut` holds on every water cell:
+            // the floor/sides are solid 196 or full-water neighbours.
+            assert!(will_water_placed_here_stay_put(&w, x, y), "({x},{y})");
+        }
+        // Settle: wake every bowl cell (the WaterCheck registration the
+        // gen loop would do) and drain the engine to quiescence.
+        let mut sys = crate::liquid::LiquidSystem::new(&w);
+        for &(x, y) in &bowl_cells {
+            sys.add_water(&w, x, y);
+        }
+        for _ in 0..400 {
+            sys.update(&mut w);
+        }
+        assert_eq!(mass(&w), before, "the enclosed lake keeps every unit");
+        // No water leaked below the floor or past the sides.
+        for x in 980..=1020 {
+            for y in 181..=210 {
+                assert_eq!(w.tile(x, y).unwrap().liquid, 0, "no leak at ({x},{y})");
+            }
+        }
+        // The retired list is empty or static — the lake is settled, not
+        // flowing (the kill-passes retirement, `Liquid.cs:1120-1130`).
+        for _ in 0..200 {
+            sys.update(&mut w);
+        }
+        assert_eq!(mass(&w), before, "still full after the retirement tail");
+    }
 }
