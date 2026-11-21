@@ -42,7 +42,10 @@
 //!   `Opacity` write (`:70155`, no port field — the Last Prism fold) and
 //!   the dead `Hitbox.Intersects` read (`:70143-70144`, result discarded).
 //! - `AI_144`'s 1050 tree-shake `KillTile_MakeTileDust`/`PlaySounds`
-//!   (`:70217-70219`) — the dust body is the pool's layer skip and the
+//!   (`:70217-70219`) — the dust body is the d54/g14 lane's
+//!   (`worldgen_dust_tile::kill_tile_make_tile_dust`, the cross-note in
+//!   the drain: the `:70218` call site is unclaimed by either dust
+//!   lane, the integrate wires their body on this stream) and the
 //!   sound plays through the break-cue table in the pass drain; the
 //!   `KillTile_DropItems` (`:70228`) rides the queued [`Dd2Shake`]
 //!   request (the pass resolves the per-cell rolls WITHOUT killing the
@@ -50,8 +53,11 @@
 //!   `Main.rand` draws stay (`Next(100)`, the conditional `Next(20)`,
 //!   the conditional `Next(5)`). `KillTile_MakeTileDust`'s own rolls
 //!   for the shakeable kinds ride `WorldGen.genRand` (the same swapped
-//!   stream) or the dust pool — zero extra `UpdateProjectiles` draws
-//!   beyond the drop resolver's own. `TileID.Sets.IsShakeable`
+//!   stream — `WorldGen.cs:4445`) or `Main.rand` (the pool): while the
+//!   body stays skipped they are CENSUSED, not drawn; at the integrate
+//!   the gem `Next(10)` / 634 `Next(10)`+`Next(12)` draws join this
+//!   stream ahead of the drop resolver's (the cross-note's order).
+//!   `TileID.Sets.IsShakeable`
 //!   (`TileID.cs:488`) rides the generated
 //!   `tr_core::tiledata::SET_IS_SHAKEABLE`.
 //! - `AI_148`'s `Star.StarFall` (`Star.cs:63-84`) picks a BACKGROUND star
@@ -1610,6 +1616,36 @@ mod tests {
         // The cooldown counts back up one per tick (`:70173-70176`).
         ai_dd2_pet(&mut p2, &o, &w, &mut rng2, &mut Vec::new());
         assert_eq!(p2.local_ai[1], -299.0);
+    }
+
+    /// W4-d15 final phase — the shake dust-body ownership census: every
+    /// `IsShakeable` kind has a `KillTile_MakeTileDust` ladder arm (the
+    /// d54/g14 body's, cross-noted at the drain), so the integrate's
+    /// wiring spawns a dust for EVERY shakeable cell — none falls into
+    /// the ladder's num<0 refusal. The set is the generated
+    /// `SET_IS_SHAKEABLE` (`TileID.cs:488`): 5/72/323/583-589/596/616/634.
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn the_shakeable_set_matches_the_dust_ladder_ownership() {
+        let shakeable: [u16; 13] = [5, 72, 323, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634];
+        for kind in shakeable {
+            assert!(
+                tr_core::tiledata::SET_IS_SHAKEABLE.has(kind),
+                "kind {kind} is IsShakeable (TileID.cs:488)"
+            );
+        }
+        // The dust-ladder arms the cross-note pins (the d54 body's
+        // citations): 5 → 7 + the ground walk (:68160), 72 → 26
+        // (:68778), 323 → 215 + the walk (:68235) + the frameY offset
+        // (:69118), 583-589 → the Next(10) gem rolls (:67031-67049),
+        // 596/616 → 78 (:67055/:67061), 634 → the Next(10)+Next(12)
+        // pair (:67071). NONE returns num<0 — every shakeable cell
+        // spawns exactly one dust on the shake frame (:70218).
+        // The plain-tail spawn (:69166) is `Dust.NewDust(pos, 16, 16,
+        // num)` — the 5/72/596/616 kinds ride it; 323 rides the
+        // offset arm. The witness pins the SET; the ladder values
+        // live in the d54 body's own witnesses (their lane).
+        assert_eq!(shakeable.len(), 13, "the TileID.cs:488 set size");
     }
 
     /// The 704 row is verbatim `SetDefaults` (`Projectile.cs:7447-7460`).

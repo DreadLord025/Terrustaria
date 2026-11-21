@@ -468,11 +468,24 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // (`Projectile.cs:70217-70229`): the arm's three `Main.rand` draws
     // ran inline on the `UpdateProjectiles` stream; the effects resolve
     // here on the SAME stream (the `drain_catches` precedent). The dust
-    // body is the pool's recorded layer skip (`KillTile_MakeTileDust`'s
-    // shakeable-kind rolls ride `genRand` — the same swapped stream —
-    // or the dust pool); the sound plays through the break-cue table
-    // (`fail: true`, `:70219`); the drop gate runs the
-    // `KillTile_DropItems` per-cell rolls WITHOUT killing the tile.
+    // body (`KillTile_MakeTileDust`, `:70218`) is the recorded layer
+    // skip — CROSS-NOTE (final phase): the BODY is the d54/g14 lane's
+    // (`tr_core::worldgen_dust_tile::kill_tile_make_tile_dust`, d54 tip
+    // `ac132be1` — the full `:66687-69169` ladder incl. every shakeable
+    // kind's arm: the 5 trunk ground-walk `:68160`, the 323 palm
+    // `:68235` + frameY-offset tail `:69118`, the 72 mushroom `:68778`,
+    // the 583-589 gem `Next(10)` rolls `:67031-67049`, 596/616 → 78,
+    // the 634 `Next(10)`+`Next(12)` pair `:67071`). Neither dust lane
+    // claims the `:70218` CALL SITE (d54's census is WorldGen/Main
+    // sites; g17 is gore) — at the integrate this drain calls their
+    // body with (rng = UpdateProjectiles, gen = the SAME stream — the
+    // `genRand == Main.rand` swap, `WorldGen.cs:4445`), app.dust +
+    // spawn_ctx + app.disco; the gem/634 genRand draws then join this
+    // stream AHEAD of the drop resolver's rolls (the C# order: dust
+    // `:70218` → sounds `:70219` → drops `:70228`). The sound plays
+    // through the break-cue table (`fail: true`, `:70219`); the drop
+    // gate runs the `KillTile_DropItems` per-cell rolls WITHOUT killing
+    // the tile.
     for shake in app.projectiles.take_dd2_shakes() {
         let Some(tile) = app.world.tile(shake.x, shake.y).copied().filter(|t| t.active()) else {
             continue;

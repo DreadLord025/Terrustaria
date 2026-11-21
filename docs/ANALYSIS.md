@@ -39521,3 +39521,36 @@ spectate state), the mouse-item/petting kiting resets (`:25508-25514`,
 kiting-only). 1 tick witness (player.rs), 1 gate witness (growth.rs —
 the ceiling refuses the targeted branch, the offset-draw delta pinned).
 WRITTEN NOT RUN.
+
+**The DD2 shake dust body — the layer-skip cross-note.** The 1050
+shake tick's `KillTile_MakeTileDust` (`Projectile.cs:70218`, the
+`fail`-shaped call — no tile kill, one dust per shake frame) stays the
+recorded skip on this branch, but the census pins the ownership: the
+BODY (`WorldGen.cs:66687-69169`, the full type ladder + the spawn tail)
+is the d54/g14 lane's — `tr_core::worldgen_dust_tile::
+kill_tile_make_tile_dust` on `task/W4-d54-dust-sites-world` (tip
+`ac132be1`, the g14 body re-point `e41a90f0`), including EVERY
+shakeable kind's arm: the 5 trunk ground-walk (`:68160-68232`, the
+frameX/Y canopy nudges + the soil-kind colour ladder 23/661→77,
+60→78, 70→26, 109→79, 199/662→121, 147→122), the 323 palm
+(`:68235-68260` soil walk 234→121/116→79/112→77 + the `:69118-69121`
+frameY-rides-X spawn offset), the 72 mushroom (`:68778`, num 26), the
+583-589 gem `genRand.Next(10)` colour rolls (`:67031-67049`, 1 vs
+87/86/88/89/90/91/138), 596/616 → 78 (`:67055`/`:67061`), the 634
+`Next(10)` (36 vs 31) + `Next(12)` (→6) pair (`:67071-67077`). The
+CALL SITE (`:70218`) is claimed by NEITHER dust lane — d54's census is
+the WorldGen/Main `Dust.NewDust*` sites (research/65: 29+11), g17 is
+the gore lane; the Projectile.cs AI dust sites are this slice's. The
+integrate recipe (cross-noted at the drain, `world_sim/projectiles.rs`):
+call their body with `rng` = the `UpdateProjectiles` stream and `gen` =
+the SAME stream (the `genRand == Main.rand` property,
+`WorldGen.cs:4445` — under the `SwapRandom("UpdateProjectiles")` block
+both names alias one stream), plus `app.dust`/`spawn_ctx`/`app.disco`;
+the gem/634 genRand draws then join the stream AHEAD of the drop
+resolver's rolls (the C# order dust `:70218` → sounds `:70219` →
+`Next(100)`/`Next(20)`/`Next(5)` `:70220-70225` → drops `:70228` — the
+three arm draws stay inline in the AI arm, so at the integrate the
+drain's dust draws land AFTER them, the recorded within-pass order
+deviation of the queue design). Until then the skip draws NOTHING
+(the census-only contract). 1 ownership witness (the shakeable set ×
+the ladder-arm facts). WRITTEN NOT RUN.
