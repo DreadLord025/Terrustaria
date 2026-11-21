@@ -1164,6 +1164,9 @@ fn play_npc_sound_request(
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
         }
+        NpcSoundCue::Splash(style) => {
+            audio.play_splash_sound(style, req.x, req.y, rng);
+        }
     }
 }
 
@@ -4570,6 +4573,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // clears at the update's end — the strike tick only
                     // (S1-D-3 W-1: the Hungry's recoil arm reads it).
                     n.just_hit = false;
+                    // W4-e9 — `NPC.UpdateCollision`'s water pass
+                    // (`NPC.cs:90492` → `:92526`): the splash layer runs
+                    // at the C# call position — AFTER the AI machine's
+                    // draws, BEFORE the queued-sound drain — for the
+                    // kinds whose port machine integrates tile collision
+                    // (the `!noTileCollide` branch; the raw-integration
+                    // flyers/bosses take the `:90494-90503` else and
+                    // never wet). The decision queues its case-19 play
+                    // on `wants_sound`; the drain below spends its one
+                    // pitch on the `UpdateNPCs` stream.
+                    if water_collision_kind(n.kind) {
+                        crate::npc_water_collision::collision_water_step(n, world);
+                    }
                     // S1-E-21g — the AI machine's queued sound plays
                     // (the `wants_hostile_shot` shape): drained right
                     // after the machine's draws, BEFORE the moan/critter
@@ -17480,6 +17496,67 @@ mod dw3_tests {
             app.audio.played_count() - before,
             u64::from(hit),
             "the cry plays exactly when the gate hits"
+        );
+    }
+
+    /// W4-e9 — the water-collision wiring's stream contract
+    /// (`NPC.cs:90492` → `:92526`): the splash layer runs AFTER the AI
+    /// machine's draws and queues its case-19 play, which the drain
+    /// spends as exactly ONE `Next(-10, 11)` pitch on the `UpdateNPCs`
+    /// stream. A lone zombie inside a water column above the surface by
+    /// day: the idle ladder has no type-3 arm and the fighter-moan gate
+    /// closes (`NPC.cs:60302`), so the AI is draw-free and the splash is
+    /// the pass's only draw. The entry edge arms `wetCount` 10 (decayed
+    /// to 9) and sets `wet`; the next tick (wet→wet) plays nothing.
+    #[test]
+    fn w4_e9_the_water_splash_wiring_spends_one_case19_pitch() {
+        let build = || {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut world = crate::test_world_helpers::ground();
+            world.day_time = true;
+            world.world_surface = 50.0;
+            // A water column ABOVE the surface line (x 60..64, y 40..50).
+            for x in 60..64 {
+                for y in 40..50 {
+                    let i = world.index(x, y);
+                    world.tiles[i].liquid = 255;
+                }
+            }
+            app.world = world;
+            // Far from the zombie: no contact-damage variance roll.
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 150.0 * 16.0;
+            player.y = 110.0 * 16.0;
+            app.player = Some(player);
+            let mut zombie = Npc::new(NpcKind::Zombie, 61.0 * 16.0, 42.0 * 16.0, 1, 0.0);
+            zombie.hp = zombie.max_hp;
+            app.npcs.push(zombie);
+            app.rngs = crate::app::rng::NamedRngs::new(7);
+            app
+        };
+        let mut app = build();
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count() - before, 1, "the entry splash played");
+        assert!(app.npcs[0].wet && app.npcs[0].wet_prev, "base.wet set (:93175)");
+        assert_eq!(app.npcs[0].wet_count, 9, "10 armed, then :92535's decay");
+        assert!(app.npcs[0].wants_sound.is_empty(), "the queue drained");
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11); // the case-19 pitch, the only draw
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the splash spends exactly one case-19 pitch on the NPC stream"
+        );
+        // The next tick: wet→wet, no edge, no second play, no draw.
+        let before = app.audio.played_count();
+        let peek = app.rngs.stream(RngKey::UpdateNpcs).peek();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count() - before, 0, "no re-splash while wet");
+        assert_eq!(
+            app.rngs.stream(RngKey::UpdateNpcs).peek(),
+            peek,
+            "the wet→wet tick is draw-free"
         );
     }
 

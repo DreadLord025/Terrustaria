@@ -139,6 +139,9 @@ mod npc_ai_style74;
 mod npc_ai_style75;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
+// W4-e9 — the Collision_WaterCollision splash layer (the wiring half of
+// npc.rs::water_collision_splash, NPC.cs:93052-93275).
+mod npc_water_collision;
 mod npc_ai_style30;
 mod npc_ai_style31;
 mod npc_ai_style47;

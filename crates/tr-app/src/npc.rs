@@ -1333,6 +1333,14 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
     /// draws, the pinned variation like wave A).
     EowDig,
+    /// W4-e9 — `PlaySound(19, (int)position.X, (int)position.Y, style)`
+    /// — the `Collision_WaterCollision` entry/exit splash
+    /// (`NPC.cs:93121`/`:93138`/`:93154`/`:93171` + the `:93219-93269`
+    /// exit twins): the int overload, case 19's one pitch draw on the
+    /// `UpdateNPCs` stream. The style is the decision's
+    /// (`water_collision_splash`): entry shimmer 4 / honey 1 / water 0 /
+    /// lava 1, exit shimmer 5 / honey 1 / water 0 / lava 1.
+    Splash(i32),
 }
 
 /// One queued play: the cue plus the C# call site's world-pixel position
@@ -1952,6 +1960,29 @@ pub struct Npc {
     /// swimmer cases read it for the wet flap vs the dry flop
     /// (`NPC.cs:74181`/`:74654`).
     pub wet: bool,
+    /// W4-e9 — `Entity.wetCount` (`NPC.cs:8512`'s `SetDefaults` reset 0):
+    /// the splash cooldown. `Collision_WaterCollision` arms it to 10 on
+    /// either edge (`:93089`/`:93187` — even when the play gate refuses),
+    /// `UpdateCollision` decrements it once per tick (`:92533-92535`),
+    /// the never-wet kinds force it 0 (`:93058`) and aiStyle 116 pins it
+    /// 10 (`:93079`). The style21/67 modules' cited field gap, closed.
+    pub wet_count: i32,
+    /// W4-e9 — `Entity.lavaWet`/`honeyWet`/`shimmerWet`
+    /// (`Collision_WaterCollision`, `NPC.cs:93064-93070`'s sticky sets;
+    /// `UpdateCollision` clears all three on a dry tick, `:92527-92532`;
+    /// the lava entry sets `lavaWet` inside `Collision_LavaCollision`,
+    /// `:93324`). The splash decision reads the fresh sets on entry and
+    /// the OLD flags on exit (`water_collision_splash`).
+    pub lava_wet: bool,
+    pub honey_wet: bool,
+    pub shimmer_wet: bool,
+    /// W4-e9 — the PREVIOUS `Collision_WaterCollision` pass's `base.wet`
+    /// (the edge detector's `was_wet`). The port's flyer/swimmer wrappers
+    /// probe `self.wet` fresh pre-AI for the machine's reads (the documented
+    /// `is_wet` stand-in), so the splash edge cannot key on `self.wet` — it
+    /// keys on this latch, which `collision_water_step` stamps at the pass's
+    /// tail (the C#'s `base.wet` write, `NPC.cs:93175`/`:93180`).
+    pub wet_prev: bool,
     /// `NPC.spriteDirection` (`NPC.cs:6515`, the default -1) — the DISPLAY
     /// direction the `DrawNPCDirect` flip reads (`Main.cs:23124-23128`:
     /// `spriteDirection == 1` is exactly when the sheet flips). The C# keeps
@@ -3288,6 +3319,13 @@ impl Npc {
             },
             head_turn: 0,
             wet: false,
+            // `SetDefaults`' `base.wetCount = 0` (`NPC.cs:8512`) and the
+            // Entity wet flags' false defaults (W4-e9).
+            wet_count: 0,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
+            wet_prev: false,
             carrier_timer: -1.0,
             carrier_phase: 0.0,
             carrier_rot: 0.0,

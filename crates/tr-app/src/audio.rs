@@ -340,6 +340,15 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_188", 2),
     ("Item_196", 2),
     ("Item_210", 2),
+    // W4-e9 tail — the NPC AI sites' Item cues (`SoundID.Item167/170/172`
+    // = `LegacySoundStyle(2, N)`, `SoundID.cs:1551-1556`; `Item150`
+    // `:1534`): the Queen Slime's landing thud (`NPC.cs:45558`), the
+    // Blood Nautilus' volley/scream (`:47263`/`:47268`/`:47293`) and the
+    // Big Mimic's projectile-reflect tink (`:66429`).
+    ("Item_167", 2),
+    ("Item_170", 2),
+    ("Item_172", 2),
+    ("Item_150", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
     // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
     // cue family).
@@ -497,6 +506,13 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_84", 29),
     ("Zombie_85", 29),
     ("Zombie_86", 29),
+    // W4-e9 tail — the Queen Slime's idle moan bank (case 65,
+    // `LegacySoundPlayer.cs:1382-1402`: `Next(115, 118)` behind the
+    // 115/116/117 playing guards, ×0.5, NO pitch draw — the
+    // `NPC.cs:45759` site).
+    ("Zombie_115", 65),
+    ("Zombie_116", 65),
+    ("Zombie_117", 65),
 ];
 
 /// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and
@@ -536,6 +552,19 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     // S1-E-21g — the EoW head's dig rumble (`SoundID.EOWDiggin`,
     // `SoundID.cs:1763`'s `CreateTrackable("eow_dig")`, one variation).
     "eow_dig",
+    // W4-e9 tail — the Pals' pain/joy cries (`AI_127_Pal`,
+    // `NPC.cs:42983`/`:42987`/`:42997`/`:43001`; `SoundID.cs:1714-1721`'s
+    // `CreateTrackable(...).WithVolume(0.35f)`, one variation each) and
+    // the Statue Mimic's scare/jump/laugh (`AI_126_StatueMimic`,
+    // `NPC.cs:43562`/`:43569`/`:43580`/`:43608`; `SoundID.cs:1741-1743`,
+    // the laugh three variations — the `_0` pin like wave A).
+    "pal_cattiva_pain",
+    "pal_foxparks_pain",
+    "pal_cattiva_joy",
+    "pal_foxparks_joy",
+    "statuemimic_scare",
+    "statuemimic_jump",
+    "statuemimic_laugh_0",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
