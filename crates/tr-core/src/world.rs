@@ -77,6 +77,12 @@ pub struct World {
     /// The bed spawn override (`Player.SpawnX/SpawnY`, `Player.cs:54635`'s
     /// `ChangeSpawn`) — `None` = the generated spawn (`RemoveSpawn` clears).
     pub bed_spawn: Option<(i32, i32)>,
+    /// `ExtraSpawnPointManager.extraSpawnPoints` (`WorldFile.cs:1425` write /
+    /// `:2501` read, v297+; `ExtraSpawnPointManager.cs:436-456`): the team-based
+    /// extra respawn anchors as (X, Y) tile pairs — a count byte then that many
+    /// i16 pairs. The c46 respawn lane's consumer reads them; the file
+    /// round-trips the list (W4-f45).
+    pub extra_spawn_points: Vec<(i16, i16)>,
     /// Spawn point from the save header (tile coordinates).
     pub spawn_x: i32,
     /// `Main.worldSurface`: below this row the sun does not reach the surface.
@@ -626,6 +632,7 @@ impl World {
             chests: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,
+            extra_spawn_points: Vec::new(),
             spawn_x: width / 2,
             world_surface: height as f64 * 0.25,
             rock_layer: height as f64 * 0.45,
