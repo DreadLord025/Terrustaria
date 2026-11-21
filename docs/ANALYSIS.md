@@ -39341,3 +39341,70 @@ ai-payload block on the `UpdatePlayers` stream (the exact C# position
 for these kinds: no spread/leaf/aqua draws precede them), and the 5495
 arm passes `(0, 1)`. Three witnesses pin the rolls + the stream spend
 (WRITTEN NOT RUN, code-only).
+
+## W4-d6 residual — the 52 heal-orb spawn sources (Spectre set bonus ported)
+
+**Spawn-source census (C# re-read whole).** The aiStyle-52 orbs have
+exactly two spawn sites:
+
+* **SpiritHeal 298** — `Projectile.ghostHeal` (`Projectile.cs:12064-12096`),
+  called from `Damage_PVE_Inner` at `:13816-13821` (inside `if (flag10)`
+  `:13810`, gate `targetNPC.canGhostHeal | flag9` then the owner's
+  `ghostHeal && !moonLeech`) and from the PVP walk at `:14673-14676`
+  (single-player folds out). `flag9` is the debug target-dummy option
+  (`DebugOptions.LetProjectilesAimAtTargetDummies`, `:12818-12822`) —
+  constants-off, folds false.
+* **VampireHeal 305** — `Projectile.vampireHeal` (`:12098-12106`), called
+  only for the Vampire Knives' type-304 hits (`:13812-13815` /
+  `:14677-14680`, owner `!moonLeech` gated). The 304 knife kind is
+  unported in the pool (no `proj_data` row) — that spawn source stays
+  deferred with the knives' use path; the census records it.
+
+**The `ghostHeal` flag source.** `ArmorSetBonuses.Benefits.SpectreHealing`
+(`ArmorSetBonuses.cs:253-257`): `ghostHeal = true; magicDamage -= 0.4f`,
+registered `Add(..., PartType.Head, 1503, 1504, 1505)` (`:439` — the
+Spectre Hood 1503 + Robe 1504 + Pants 1505). The mask variant
+`SpectreDamage` (`:259-262`, `:440` — head 2189) grants `ghostHurt`
+instead. Neither set was ported: the wave-D `SETS` table stopped at the
+low tiers. This slice lands both rows (the hood's −40% magic damage in
+tr-core `SET_STATS`; the flags in the app seam's `SetFlag::SpectreHeal/
+SpectreHurt`), the `Player.ghost_heal/ghost_hurt` fields +
+`ResetEffects` clears (`Player.cs:18723-18724`), and the per-tick grant
+through the existing `apply_armor_set_bonuses` seam.
+
+**The spawn mechanics ported** (`ghost_heal_on_hit`, the PVE walk hook):
+the share `0.2 − numHits·0.05` (`:12066`, refuses at ≤ 0 — the 5th hit),
+`(int)(dmg·share) > 0 && lifeSteal > 0` (`:12072`), the budget drains by
+the FLOAT share BEFORE the `magic` gate (`:12076-12080` — a non-magic
+shot spends budget without spawning), the 255-slot lowest-health target
+scan folds to the single local player (missing health > 0 wins, else the
+owner keeps the target — the strict `>` from 0), and the draw-free 298
+spawn (`:12095`) rides `pending_heal_orbs` out to the world-sim pass
+(the `drain_light_drops` intent pattern), centred via the
+`NewProjectile` half-extent subtract (`:10876-10877`).
+`Projectile.numHits` lands as a slot field (`:308`, reset `:704`, bump
+`:14199` after the heal arm). `NPC.canGhostHeal` lands as a slot field
+(stock true `:6263`; the false writers are 384/387/388 —
+`:13893`/`:13933`/`:13950` — and the unported AncientDoom 523 `:15811`).
+
+**The lifeSteal budget** (`Player.cs:1006`, stock 99999f):
+`Player.Update` regens +0.6/tick capped 80 classic, +0.5 capped 70
+expert (`:24468-24489` — the two independent `if`s verbatim). The stock
+clamps to the cap on the first tick. NOT a ResetEffects flag.
+
+Deliberate folds: the PVP call site (`:14673`, no PvP in the port), the
+team/hostile/3000px terms of the target scan (single-player), the
+`GetProjectileSource_OnHit` entity-source bookkeeping (no port seam),
+`flag9`'s debug option. The vampireHeal 305 source stays deferred with
+the unported 304 knives (recorded above). The ghostHurt flag lands but
+its 356 spawn consumer keeps the documented M3-EQUIP skip
+(`ai_spectre_wrath` module note).
+
+Witnesses (WRITTEN NOT RUN, code-only): the armor seam's two-set grant +
+damage cut (`w4_d6_the_spectre_sets_grant_their_ghost_flags_and_the_hood_
+damage_cut`), the PVE-walk spawn + share decay + numHits bump
+(`w4_d6_the_spectre_heal_spawns_the_orb_and_the_share_decays_per_hit`),
+the flag/leech/budget/magic/canGhostHeal gates
+(`w4_d6_the_ghost_heal_gates_flag_leech_budget_magic_and_the_npc_flag`),
+the budget regen/caps (`w4_d6_the_life_steal_budget_regens_and_caps_per_
+difficulty`).

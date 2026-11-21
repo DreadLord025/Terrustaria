@@ -2051,6 +2051,22 @@ pub struct Player {
     /// the ramp ×1.5 (`:19242-19245`), fed through `RegenInputs`.
     /// `ResetEffects` clears it (`:18722`).
     pub crimson_regen: bool,
+    /// `Player.ghostHeal` (`ArmorSetBonuses.cs:253-257`, W4-d6 residual):
+    /// the Spectre Hood set's on-hit heal-orb flag — the PVE damage walk's
+    /// `ghostHeal` spawn gate (`Projectile.cs:13818`). `ResetEffects` clears
+    /// it (`Player.cs:18723`).
+    pub ghost_heal: bool,
+    /// `Player.ghostHurt` (`ArmorSetBonuses.cs:259-262`): the Spectre Mask
+    /// set's on-hit Wrath flag (`Projectile.cs:13822-13825` — the 356 spawn
+    /// itself stays the documented M3-EQUIP skip, the `ai_spectre_wrath`
+    /// module note). `ResetEffects` clears it (`Player.cs:18724`).
+    pub ghost_hurt: bool,
+    /// `Player.lifeSteal` (`Player.cs:1006`, stock 99999f): the shared
+    /// heal-budget the `ghostHeal`/`vampireHeal` spawns drain
+    /// (`Projectile.cs:12072-12076`/`:12101-12103`); `Player.Update`
+    /// regens it +0.6/tick capped 80 (classic) or +0.5 capped 70 (expert)
+    /// (`:24468-24489`). NOT a `ResetEffects` flag — it persists.
+    pub life_steal: f32,
     /// `Player.ashWoodBonus` (`ArmorSetBonuses.cs:380-383`): the Ash Wood
     /// set's lava-hit halves (`Player.cs:27694-27702`). `ResetEffects`
     /// clears it (`:18325`).
@@ -2911,6 +2927,11 @@ impl Player {
             space_gun: false,
             shadow_armor: false,
             crimson_regen: false,
+            ghost_heal: false,
+            ghost_hurt: false,
+            // `Player.cs:1006` — the stock lifeSteal budget (the first
+            // Update tick clamps it to the 80/70 cap, `:24474-24488`).
+            life_steal: 99999.0,
             ash_wood_bonus: false,
             frost_burn: false,
             magma_stone: false,
@@ -5702,6 +5723,28 @@ impl Player {
         if self.vy == 0.0 {
             self.mount.fatigue_recovery();
         }
+        // W4-d6 residual — `Player.Update`'s lifeSteal regen
+        // (`Player.cs:24468-24489`): expert +0.5/tick capped 70, classic
+        // +0.6 capped 80 — the shared budget the ghostHeal/vampireHeal
+        // spawns drain (`Projectile.cs:12076`/`:12103`). The two `if`s are
+        // independent (a below-cap budget adds then re-checks; an over-cap
+        // one only clamps). The `ghostDmg` decay above it (`:24460-24467`)
+        // stays with the unported ghostHurt consumer.
+        if self.buffs.expert_mode {
+            if self.life_steal < 70.0 {
+                self.life_steal += 0.5;
+            }
+            if self.life_steal > 70.0 {
+                self.life_steal = 70.0;
+            }
+        } else {
+            if self.life_steal < 80.0 {
+                self.life_steal += 0.6;
+            }
+            if self.life_steal > 80.0 {
+                self.life_steal = 80.0;
+            }
+        }
         // `Player.cs:9881-9913`: a mount-type buff re-affirms its mount every
         // tick (`SetMount` — the `Mount.cs:6198` same-type no-op guard makes
         // the re-call a no-op while it is already up) and holds
@@ -5973,6 +6016,10 @@ impl Player {
         self.magma_stone = false;
         self.catalyst_band = false;
         self.crimson_regen = false;
+        // W4-d6 residual — `ResetEffects`' Spectre pair (`Player.cs:18723-
+        // 18724`): the `armor_sets.rs` seam re-grants them per tick.
+        self.ghost_heal = false;
+        self.ghost_hurt = false;
         self.vampire_burning_in_sunlight = false;
         self.gills = false;
         self.mana_regen_buff = false;
@@ -12279,6 +12326,29 @@ mod tests {
         p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 20, "the 80-damage lava hit");
         assert!(p.buffs.find_buff_index(24).is_some(), "On Fire");
+    }
+
+    /// W4-d6 residual — `Player.Update`'s lifeSteal regen
+    /// (`Player.cs:24468-24489`): classic +0.6/tick capped 80, expert
+    /// +0.5 capped 70; the stock 99999 clamps on the first tick.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_life_steal_budget_regens_and_caps_per_difficulty() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.life_steal, 99999.0, "the :1006 stock");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.life_steal, 80.0, "the first tick clamps to the classic cap");
+        p.life_steal = 10.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.life_steal - 10.6).abs() < 1e-4, "the +0.6 classic regen");
+        p.buffs.expert_mode = true;
+        p.life_steal = 10.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.life_steal - 10.5).abs() < 1e-4, "the +0.5 expert regen");
+        p.life_steal = 69.8;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.life_steal, 70.0, "the expert cap clamps the overshoot");
     }
 
     /// M3-EQUIP-15 — the thorns rows and the reflection arithmetic.

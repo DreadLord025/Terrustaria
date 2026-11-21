@@ -519,6 +519,11 @@ pub struct Projectile {
     /// — the second scratch array, reset to zero with `ai` by `SetDefaults`
     /// (`:736-740`). The magic families keep their phase counters there.
     pub local_ai: [f32; 3],
+    /// `Projectile.numHits` (`Projectile.cs:308`, reset `:704`): the landed
+    /// hit counter — `Damage_PVE_Inner` bumps it at `:14199` after every
+    /// hit; `ghostHeal`'s heal share decays `0.2 − numHits·0.05` (`:12066`,
+    /// W4-d6 residual).
+    pub num_hits: i32,
     /// `Projectile.alpha` (`:326`, reset `:779`) — the draw fade, which the AI
     /// arms also read as a state marker (the magic families, Phase 3).
     pub alpha: i32,
@@ -796,6 +801,7 @@ impl Default for Projectile {
             extra_updates: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
+            num_hits: 0,
             alpha: 0,
             scale: 1.0,
             light: 0.0,
@@ -14717,6 +14723,13 @@ pub struct ProjectilePool {
     /// item spawns (the `drain_catches` intent pattern — the arm cannot
     /// borrow the App's item pool).
     pending_light_drops: Vec<tr_core::edit::ObjectDrop>,
+    /// W4-d6 residual — `Projectile.ghostHeal`'s SpiritHeal spawn requests
+    /// (`Projectile.cs:12095`): `(owner, x, y, ai0 target, ai1 heal)` per
+    /// qualifying hit, drained by the world-sim pass into
+    /// `spawn_with_data_ai_owned(SPIRIT_HEAL, ...)` (the pool cannot borrow
+    /// itself mid-walk — the `drain_light_drops` intent pattern). The C#
+    /// spawn is draw-free (`NewProjectile`'s 298 path rolls nothing).
+    pending_heal_orbs: Vec<(u8, f32, f32, f32, f32)>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -15117,6 +15130,7 @@ impl ProjectilePool {
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
             pending_light_drops: Vec::new(),
+            pending_heal_orbs: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -15219,6 +15233,14 @@ impl ProjectilePool {
     /// (the actuation-drops precedent, `world_sim/wiring.rs`).
     pub fn drain_light_drops(&mut self) -> Vec<tr_core::edit::ObjectDrop> {
         std::mem::take(&mut self.pending_light_drops)
+    }
+
+    /// W4-d6 residual — the `ghostHeal` SpiritHeal spawn drain
+    /// (`Projectile.cs:12095`): `(owner, x, y, ai0, ai1)` per qualifying
+    /// hit; the world sim spawns each as a 298 (`NewProjectile`'s centre
+    /// subtract rides the spawn seam — the orb's 6×6 half-box).
+    pub fn drain_heal_orbs(&mut self) -> Vec<(u8, f32, f32, f32, f32)> {
+        std::mem::take(&mut self.pending_heal_orbs)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -16209,6 +16231,8 @@ impl ProjectilePool {
             // `SetDefaults` zeroes both scratch arrays (`:736-740`) — only the
             // C# `NewProjectile`'s `ai0/ai1` arguments ride along.
             local_ai: [0.0; 3],
+            // `SetDefaults`' `numHits = 0` (`Projectile.cs:704`).
+            num_hits: 0,
             alpha: data.alpha,
             scale: data.scale,
             light: data.light,
@@ -16659,6 +16683,59 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
         crate::projectile_special_bullets::bullet_on_hit_debuffs(self.slots[slot].kind, npc, rng);
+    }
+
+    /// `Projectile.ghostHeal` (`Projectile.cs:12064-12096`, W4-d6 residual)
+    /// — the Spectre Hood set's heal-orb spawn: the heal share decays
+    /// `0.2 − numHits·0.05` (`:12066`, zero at the 4th hit), the truncated
+    /// share must be positive AND the LOCAL player's `lifeSteal` budget
+    /// above 0 (`:12072` — `Main.myPlayer`, not the owner); the budget
+    /// drains by the FLOAT share (`:12076`) BEFORE the `magic` gate
+    /// (`:12077-12080` — a non-magic shot still spends it). The 255-slot
+    /// lowest-health scan folds to the single local player (index 0 wins
+    /// only when missing health > 0 — the C#'s strict `>` keeps the owner
+    /// default otherwise); the team/hostile/distance terms fold true in
+    /// single-player. The spawn (`:12095`) is draw-free: 298 at the victim
+    /// centre, zero velocity, damage 0, ai0 = target index, ai1 = the
+    /// FLOAT share (the orb's contact heal truncates it, `:28519`). The
+    /// request rides `pending_heal_orbs` out to the world sim (the pool
+    /// cannot spawn into itself mid-walk).
+    fn ghost_heal_on_hit(
+        &mut self,
+        slot: usize,
+        dmg: i32,
+        victim: Vec2,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        let Some(pl) = player else { return };
+        let p = &self.slots[slot];
+        // `:13818` — the owner gate the caller checked `ghostHeal` for;
+        // MoonLeech is the owner's buff-145 flag (`Player.cs:11859-11862`).
+        if p.owner != 0 || !pl.ghost_heal || pl.buffs.find_buff_index(145).is_some() {
+            return;
+        }
+        // `:12066-12070` — the decaying share.
+        let share = 0.2 - p.num_hits as f32 * 0.05;
+        if share <= 0.0 {
+            return;
+        }
+        let amount = dmg as f32 * share;
+        // `:12072-12075` — the truncation + budget gates.
+        if amount as i32 <= 0 || pl.life_steal <= 0.0 {
+            return;
+        }
+        // `:12076` — the budget drains by the float share.
+        pl.life_steal -= amount;
+        // `:12077-12080` — only magic shots spawn the orb.
+        if !p.magic {
+            return;
+        }
+        // `:12081-12094` — the lowest-health scan, folded: the single local
+        // player takes the target slot only with missing health (the
+        // strict `num5 > num3` from 0); otherwise the owner keeps it.
+        let target = if !pl.dead && pl.max_hp - pl.hp > 0 { 0 } else { p.owner };
+        // `:12095` — the spawn request (draw-free).
+        self.pending_heal_orbs.push((p.owner, victim.x, victim.y, target as f32, amount));
     }
 
     /// The aiStyle-165 on-hit arms inside `Damage_PVE_Inner`
@@ -23483,6 +23560,28 @@ impl ProjectilePool {
                 // arms: the Cascade's 1125, the Kraken's 3× 1135, the Chik's
                 // 5× 1134 and the Eye-of-Cthulhu's homing 1130.
                 self.yoyo_on_hit(slot, idx as u16, hit, player.as_deref_mut(), rng);
+                // W4-d6 residual — `Damage_PVE_Inner`'s Spectre-heal arm
+                // (`Projectile.cs:13816-13821`, inside `if (flag10)`
+                // `:13810`): `targetNPC.canGhostHeal | flag9` (flag9 is the
+                // debug target-dummy option, folds false) then the owner's
+                // `ghostHeal && !moonLeech` gate. flag10's terms
+                // (`:13659`): num24 > 0, lifeMax > 5, friendly, !hostile,
+                // aiStyle != 59 — the pass simulates friendly non-hostile
+                // shots, so only the damage/lifeMax/style terms stay live
+                // (the Wrath 356 turns friendly at 60 ticks and MUST be
+                // excluded). The victim centre is the POST-strike position
+                // (the knockback moved it — the C# reads it live at
+                // `:13820`).
+                let heal_gate = strike_dmg > 0
+                    && npc_life_max_gt5
+                    && self.slots[slot].friendly
+                    && npcs[idx].can_ghost_heal
+                    && proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) != 59;
+                if heal_gate {
+                    let (nw, nh) = npcs[idx].size();
+                    let victim = Vec2::new(npcs[idx].x + nw * 0.5, npcs[idx].y + nh * 0.5);
+                    self.ghost_heal_on_hit(slot, strike_dmg, victim, player.as_deref_mut());
+                }
             }
             if landed {
                 let p = &mut self.slots[slot];
@@ -23505,6 +23604,10 @@ impl ProjectilePool {
                 if p.kind == SHADOWBEAM {
                     p.damage = (p.damage as f64 * 0.9) as i32;
                 }
+                // W4-d6 residual — `this.numHits++` (`Projectile.cs:14199`):
+                // every landed hit bumps the counter the ghostHeal share
+                // decay reads (`:12066`), AFTER this hit's heal spawn.
+                p.num_hits += 1;
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
                     break;
@@ -24415,6 +24518,139 @@ mod tests {
     fn one_npc(world: &World) -> Npc {
         Npc::spawn_slime(world, 20).unwrap()
     }
+
+    /// W4-d6 residual — `Projectile.ghostHeal` (`Projectile.cs:12064-12096`)
+    /// through the PVE walk's `:13816-13821` arm: the Spectre Hood flag +
+    /// a magic shot's landed hit queues the 298 spawn with the 0.2 share,
+    /// drains the lifeSteal budget by the FLOAT amount and bumps numHits
+    /// (`:14199`); the share decays 0.2/0.15/0.1/0.05 then refuses at the
+    /// 4th re-hit (`:12066-12070`). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_spectre_heal_spawns_the_orb_and_the_share_decays_per_hit() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.ghost_heal = true;
+        player.hp = 50;
+        player.max_hp = 100;
+        player.life_steal = 80.0;
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        // The Lost Soul 297: magic, penetrate 3 — repeated damage_pve calls
+        // re-hit through the id-static window only after it expires, so the
+        // witness drives the helper directly for hits 2-4 (the walk's
+        // numHits bump is pinned on hit 1).
+        let slot = pool
+            .spawn_with_data_ai(LOST_SOUL, npc.x, npc.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut npc), None, None,
+            Some(&mut player), &mut rng,
+        );
+        assert!(npc.hp < 10_000, "the hit lands");
+        assert_eq!(pool.slots()[slot].num_hits, 1, "the :14199 bump");
+        let orbs = pool.drain_heal_orbs();
+        assert_eq!(orbs.len(), 1, "the heal spawn (:12095)");
+        let (owner, x, y, ai0, ai1) = orbs[0];
+        assert_eq!(owner, 0);
+        // The victim centre is the POST-strike position (knockback moved
+        // it) — recompute from the live NPC, the C# reads it at :13820.
+        let (nw, nh) = npc.size();
+        assert_eq!((x, y), (npc.x + nw * 0.5, npc.y + nh * 0.5));
+        assert_eq!(ai0, 0.0, "the missing-health scan picks the local player");
+        // strike_dmg through DamageVar(seed 7) × 0.2 — pin against the
+        // budget drain (the same float the orb carries).
+        let strike = 10_000 - npc.hp;
+        assert!((ai1 - strike as f32 * 0.2).abs() < 1e-3, "the 0.2 share");
+        assert!((player.life_steal - (80.0 - ai1)).abs() < 1e-3, "the :12076 drain");
+        // Hits 2-4: the share decays by 0.05 per numHits; the 5th refuses.
+        for (hits, share) in [(1, 0.15f32), (2, 0.1), (3, 0.05)] {
+            pool.slots_mut()[slot].num_hits = hits;
+            let before = player.life_steal;
+            pool.ghost_heal_on_hit(slot, 100, Vec2::new(x, y), Some(&mut player));
+            let orbs = pool.drain_heal_orbs();
+            assert_eq!(orbs.len(), 1, "hit {} still spawns", hits + 1);
+            assert!((orbs[0].4 - 100.0 * share).abs() < 1e-3, "share {share}");
+            assert!((player.life_steal - (before - orbs[0].4)).abs() < 1e-3);
+        }
+        pool.slots_mut()[slot].num_hits = 4;
+        pool.ghost_heal_on_hit(slot, 100, Vec2::new(x, y), Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty(), "0.2 − 4·0.05 = 0 refuses (:12067)");
+    }
+
+    /// W4-d6 residual — the ghostHeal gates: no flag → nothing; MoonLeech
+    /// (buff 145) refuses; a zero budget refuses; a NON-magic shot still
+    /// drains the budget but spawns nothing (`:12076` before `:12077`);
+    /// the martian trio's `canGhostHeal = false` blocks the walk's arm
+    /// (`:13816`); the full-health scan keeps the owner as target.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_ghost_heal_gates_flag_leech_budget_magic_and_the_npc_flag() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.hp = 50;
+        player.max_hp = 100;
+        player.life_steal = 80.0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(LOST_SOUL, 320.0, 384.0, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let at = Vec2::new(330.0, 390.0);
+        // No ghostHeal flag: nothing.
+        pool.ghost_heal_on_hit(slot, 100, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty());
+        assert_eq!(player.life_steal, 80.0, "no drain without the flag");
+        // MoonLeech refuses.
+        player.ghost_heal = true;
+        player.buffs.add_buff(145, 840);
+        pool.ghost_heal_on_hit(slot, 100, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty());
+        player.buffs.clear_buff(145);
+        // A zero budget refuses (no drain either).
+        player.life_steal = 0.0;
+        pool.ghost_heal_on_hit(slot, 100, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty());
+        // A truncated-zero amount refuses: 4 damage × 0.2 = 0.8 → (int)0.
+        player.life_steal = 80.0;
+        pool.ghost_heal_on_hit(slot, 4, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty());
+        assert_eq!(player.life_steal, 80.0, "the :12072 gate precedes the drain");
+        // The non-magic shot drains but does not spawn.
+        let knife = pool
+            .spawn_with_data_ai(SHURIKEN, 320.0, 384.0, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.ghost_heal_on_hit(knife, 100, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty(), "the :12077 magic gate");
+        assert!((player.life_steal - 60.0).abs() < 1e-3, "the budget still drains");
+        // The full-health player keeps the OWNER as the target (the scan's
+        // strict > from 0 never picks a full-health player).
+        player.hp = 100;
+        pool.ghost_heal_on_hit(slot, 100, at, Some(&mut player));
+        let orbs = pool.drain_heal_orbs();
+        assert_eq!(orbs.len(), 1);
+        assert_eq!(orbs[0].3, 0.0, "owner 0 is the fallback target");
+        // The walk-level canGhostHeal gate: a ForceBubble victim refuses.
+        player.hp = 50;
+        let mut bubble = Npc::new(crate::npc::NpcKind::ForceBubble, 20.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
+        bubble.hp = 10_000;
+        bubble.max_hp = 10_000;
+        bubble.defense_override = Some(0);
+        assert!(!bubble.can_ghost_heal, "the :13893 false row");
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.slots_mut()[slot].penetrate = 3;
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut bubble), None, None,
+            Some(&mut player), &mut rng,
+        );
+        assert!(bubble.hp < 10_000, "the hit lands");
+        assert!(pool.drain_heal_orbs().is_empty(), "canGhostHeal=false refuses (:13816)");
+    }
+
     #[test]
     fn the_hostile_shot_hurts_the_player_and_dies() {
         // The hostile contact pass: the box overlap -> `Player.hurt`

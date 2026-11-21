@@ -1531,6 +1531,13 @@ pub struct Npc {
     /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
     /// it holds (the Brain of Cthulhu's Creeper shield).
     pub dont_take_damage: bool,
+    /// `NPC.canGhostHeal` (`NPC.cs:6263`, stock true, `SetDefaults` re-arms
+    /// `:8553`): the Spectre set's heal-orb spawn gate
+    /// (`Projectile.cs:13816`, W4-d6 residual). The four false writers are
+    /// the ForceBubble 384 (`:13893`), the Tesla Turret 387 (`:13933`), the
+    /// Martian Drone 388 (`:13950`) and AncientDoom 523 (`:15811` — an
+    /// unported kind).
+    pub can_ghost_heal: bool,
     /// `NPC.behindTiles` (`NPC.cs:6517`, default false, reset `:8520`): drawn
     /// only in the behind-tiles pass (`Main.cs:22320,22336`).
     pub behind_tiles: bool,
@@ -3033,6 +3040,13 @@ impl Npc {
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+            ),
+            // `NPC.canGhostHeal = false` (`NPC.cs:13893`/`:13933`/`:13950`
+            // /`:15811`): the martian shield trio; AncientDoom 523 is an
+            // unported kind. Every other ported kind keeps the stock true.
+            can_ghost_heal: !matches!(
+                kind,
+                NpcKind::ForceBubble | NpcKind::MartianTurret | NpcKind::MartianDrone
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),

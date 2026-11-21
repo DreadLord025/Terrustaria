@@ -611,6 +611,29 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, 1, drop.x, drop.y);
         }
     }
+    // W4-d6 residual — the Spectre-heal orb spawns (`Projectile.ghostHeal`,
+    // `Projectile.cs:12095`): the damage walk queued `(owner, x, y, ai0,
+    // ai1)` per qualifying hit; the pass spawns each 298 CENTRED on the
+    // victim point (`NewProjectile`'s half-extent subtract,
+    // `Projectile.cs:10876-10877` — the c6 BladeShot precedent), zero
+    // velocity, damage 0, knockback 0. Draw-free (the 298 NewProjectile
+    // path rolls nothing — no spawn-roll case, no crit at spawn).
+    for (owner, x, y, ai0, ai1) in app.projectiles.drain_heal_orbs() {
+        let d = crate::projectile::proj_data(crate::projectile::SPIRIT_HEAL);
+        let (hw, hh) = d.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::SPIRIT_HEAL,
+            owner,
+            x - hw,
+            y - hh,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            ai0,
+            ai1,
+        );
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's
