@@ -39336,3 +39336,22 @@ the default pool.
 6 witnesses WRITTEN NOT RUN (code-only): the Demon Eye twin-pool replay,
 the type-18 trio's alpha/scale read, the Giant Worm's 2.5 multiplier, the
 town quartet's shared census, the Servant's 20-count, plus batch 1's 8.
+
+### W4-g59 batch 3 (the skeleton/goblin/Skeletron families, 10 kinds)
+
+21 Skeleton / 32 DarkCaster (`:88537-88540`, 20× type-26 bone puffs
+2.5×dir/-2.5 — the big skeleton arm's dust head), 22 Guide
+(`:87932-87935`, 50× type-5), 24 FireImp (`:89514-89519`, 50× type-6
+embers at the corpse's velocity, scale 2.5, noGravity + vel×2),
+26/27/28/29 the goblin quartet (`:89560-89563`, 50× type-5), 35/36
+SkeletronHead/Hand (`:89177-89180`, 150× type-26 — the largest burst).
+
+The batch-3 gore tails draw NO arguments: the skeleton arm's per-kind
+ladder (`:88541-88639`), the goblin type ladder (`:89564-89596`) and the
+Skeletron RedHat gate (`:89181-89208`, reads ai[3]/localAI[3]) are
+constant data / field reads. The dust loop is the whole census; the
+NewGore bodies stay d55's.
+
+6 witnesses WRITTEN NOT RUN (code-only): the skeleton pair's 20-bone
+census, the Fire Imp twin-pool ember replay, the goblin quartet's shared
+census, the Skeletron pair's 150-bone census, the Guide's 50-count.

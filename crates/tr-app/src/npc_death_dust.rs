@@ -1,5 +1,5 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-2 (20 kinds).
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-3 (30 kinds).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -24,14 +24,29 @@
 //! | --- | --- | --- | --- |
 //! | 2 | DemonEye | `:86459-86462` | 50× type-5, 2×dir/-2 |
 //! | 5 | ServantOfCthulhu | `:87351-87354` | 20× type-5, 2×dir/-2 |
-//! | 6/7/13 | EaterOfSouls/Devourer/EoW heads | `:87512`/`:87566`/`:87632` | 50× type-18 alpha/color/scale |
+//! | 6/7/13 | EaterOfSouls/Devourer/EoW heads | `:87512`/`:87566`/`:87632` | 50× type-18 alpha |
 //! | 10 | GiantWormHead | `:87600-87603` | 10× type-5, 2.5×dir/-2.5 |
-//! | 17/18/19/20 | Merchant/Nurse/ArmsDealer/Dryad | `:87662`/`:88292`/`:88315`/`:88358` | 50× type-5, 2.5×dir |
+//! | 17/18/19/20 | Merchant/Nurse/ArmsDealer/Dryad | `:87662` etc. | 50× type-5, 2.5×dir |
 //!
 //! Every batch-2 gore tail draws NO arguments (constant types or
 //! `this.type` arithmetic — the shimmer/altTexture gates are field reads),
 //! so the dust loop is the whole RNG census; the `NewGore` bodies + kicks
 //! stay d55's lane (the g63 claim's gore-sibling rule).
+//!
+//! ## Scope — batch 3 (the skeleton/goblin/Skeletron families)
+//!
+//! | C# type(s) | port kind(s) | death arm | shape |
+//! | --- | --- | --- | --- |
+//! | 21/32 | Skeleton/DarkCaster | `:88537-88540` | 20× type-26, 2.5×dir/-2.5 |
+//! | 22 | Guide | `:87932-87935` | 50× type-5, 2.5×dir/-2.5 |
+//! | 24 | FireImp | `:89514-89519` | 50× type-6 at velocity, noGravity, vel×2 |
+//! | 26/27/28/29 | the goblin quartet | `:89560-89563` | 50× type-5, 2.5×dir/-2.5 |
+//! | 35/36 | SkeletronHead/Hand | `:89177-89180` | 150× type-26, 2.5×dir/-2.5 |
+//!
+//! The batch-3 gore tails also draw NO arguments (the skeleton arm's
+//! per-kind ladder, the goblin type ladder `:89564-89596` and the
+//! Skeletron RedHat gate `:89181-89208` are constant data / ai-field
+//! reads), so the dust loop is again the whole census.
 //!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
@@ -243,6 +258,63 @@ pub fn death_dust(
             for _ in 0..50 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // ---- batch 3 (the skeleton/goblin/Skeletron families).
+        // `NPC.cs:88537-88540` — the Skeleton (21) / Dark Caster (32): 20
+        // type-26 bone puffs at 2.5×dir/-2.5 (the big skeleton arm's dust
+        // head; the gore tail's types are constants, no argument draws).
+        21 | 32 => {
+            for _ in 0..20 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 26, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:87932-87935` — the Guide: 50 type-5 puffs at
+        // 2.5×dir/-2.5 (the shimmer gore gates are field reads).
+        22 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:89514-89519` — the Fire Imp: 50 type-6 embers at the
+        // corpse's velocity, scale 2.5, noGravity + velocity×2.
+        24 => {
+            for _ in 0..50 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 6, npc.vx, npc.vy, 100,
+                    Color::default(), 2.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 2.0;
+            }
+        }
+        // `NPC.cs:89560-89563` — the goblin quartet (26/27/28/29): 50
+        // type-5 puffs at 2.5×dir/-2.5 (the per-kind gore-type ladder
+        // `:89564-89596` is constant data, no argument draws).
+        26 | 27 | 28 | 29 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:89177-89180` — the Skeletron head (35) / hand (36): 150
+        // type-26 bone puffs at 2.5×dir/-2.5 (the RedHat gore gate
+        // `:89181-89208` reads ai[3]/localAI[3], no argument draws).
+        35 | 36 => {
+            for _ in 0..150 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 26, 2.5 * dir, -2.5, 0,
                     Color::default(), 1.0,
                 );
             }
@@ -627,6 +699,108 @@ mod tests {
         assert!(death_dust(&n, 5, &mut dust, &ctx(), &mut rng, &w));
         let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 20);
+        assert!(live.iter().all(|d| d.dust_type == 5));
+    }
+
+    /// `NPC.cs:88537-88540` — the Skeleton/Dark Caster: 20 type-26 bone
+    /// puffs at 2.5×dir/-2.5; both ids share the big skeleton arm's dust
+    /// head (the gore ladder is constant data).
+    #[test]
+    fn w4_g59_the_skeleton_pair_draws_twenty_bones() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut states = Vec::new();
+        for ty in [21, 32] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(43);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 20);
+            assert!(live.iter().all(|d| d.dust_type == 26));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:89514-89519` — the Fire Imp: 50 type-6 embers at the
+    /// corpse's velocity, scale 2.5, noGravity + velocity×2 (the type-6
+    /// tweak draw rides inside the pool).
+    #[test]
+    fn w4_g59_the_fire_imp_death_draws_fifty_embers() {
+        let w = air();
+        let n = corpse(NpcKind::FireImp);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(47);
+        let mut twin_rng = rng.clone();
+        let mut twin = DustPool::new();
+        assert!(death_dust(&n, 24, &mut dust, &ctx(), &mut rng, &w));
+        let (fw, fh) = n.size();
+        for _ in 0..50 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx(), &w, Vec2::new(n.x, n.y),
+                fw as i32, fh as i32, 6, n.vx, n.vy, 100, Color::default(), 2.5,
+            );
+            let d = twin.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 2.0;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 6 && d.no_gravity));
+    }
+
+    /// `NPC.cs:89560-89563` — the goblin quartet (26/27/28/29): 50 type-5
+    /// puffs each; the per-kind gore-type ladder is constant data, so all
+    /// four ids share the census.
+    #[test]
+    fn w4_g59_the_goblin_quartet_shares_one_census() {
+        let w = air();
+        let n = corpse(NpcKind::GoblinPeon);
+        let mut states = Vec::new();
+        for ty in [26, 27, 28, 29] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(53);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:89177-89180` — the Skeletron head/hand: 150 type-26 bone
+    /// puffs at 2.5×dir/-2.5 (the largest batch-3 burst); the RedHat gore
+    /// gate reads ai[3]/localAI[3], no argument draws.
+    #[test]
+    fn w4_g59_the_skeletron_pair_draws_one_fifty_bones() {
+        let w = air();
+        let n = corpse(NpcKind::SkeletronHead);
+        let mut states = Vec::new();
+        for ty in [35, 36] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(59);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 150);
+            assert!(live.iter().all(|d| d.dust_type == 26));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:87932-87935` — the Guide: 50 type-5 puffs at 2.5×dir/-2.5.
+    #[test]
+    fn w4_g59_the_guide_death_draws_fifty() {
+        let w = air();
+        let n = corpse(NpcKind::Guide);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(61);
+        assert!(death_dust(&n, 22, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
         assert!(live.iter().all(|d| d.dust_type == 5));
     }
 }
