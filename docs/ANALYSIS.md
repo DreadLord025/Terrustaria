@@ -39410,3 +39410,31 @@ tests are WRITTEN, NOT RUN.** Deliberate deviations:
   hardUpdateWorld surrogate picks ride the same gate. The default
   registry (TimeRate 1.0, FreezeTime off) keeps the DW-1.4 draw-count
   pins byte-identical.
+
+### The c24 JOURNEY-SEAL round (2026-11-21, same branch, code-only — witness WRITTEN NOT RUN)
+
+- **The swap carry**: `Main.ActivePlayerFileData` survives
+  `Main.LoadWorld` (`Main.cs:66208-66216` — `SelectPlayer` →
+  `data.SetAsActive` caches the hydrated Player; the world load never
+  re-opens the `.plr`). The port's `swap_world` rebuilt the App through
+  `App::new`, whose fresh defaults wiped the CharPlay-hydrated
+  per-character Journey state (the research tracker, the three
+  per-player power rows, the spawn-rate cache, the session draft +
+  name) — the character silently reverted to a fresh Classic session
+  on Play. `app/mod.rs::swap_world` now carries those halves across the
+  reset (the per-WORLD powers are NOT carried — `App::new` re-loads
+  them from the new world's section, `CreativePowerManager.cs:139-151`).
+  Witness `w4_c24_the_character_journey_state_rides_the_world_swap`
+  (the carry, the per-world FreezeTime re-load, the forced-check
+  non-fire on a 2-row tracker).
+- **The family FINAL**: `docs/research/308-journey-family-final.md`
+  (registry 308 per research/150 §7.4 "308+ FREE" + a fresh all-object
+  sweep max 298) — the full C#→port→commit map, the four JOURNEY-SEAL
+  receipts (c24c landed `face9df72`; f30b TRASH_COMPACTOR inert→ACTIVE
+  through the sacrifice producer + the save/load + the version-gated
+  check; e10c/f44g hydration landed on the f44/e10 lanes `5c8bbb160`/
+  `0d1ee2045`/`01054aeb9` with the merge contract; every journey power's
+  UI writer + sim consumer verified live), the deviation ledger and
+  the merger keep-one table (f30's free-fn check + App latch DROP onto
+  c24c's manager-owned shape; f44's hydrate is the canonical
+  character-load, this branch keeps the Journey lines + the carry).

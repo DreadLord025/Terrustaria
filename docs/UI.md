@@ -673,6 +673,13 @@ difficulty slider.
   stops the growth loops entirely (rate 0 returns before every pick);
   ModifyTimeRate scales them (the dial keeps the tiles at 1, the
   all-asleep ×5 rides the target).
+* **The swap carry** (c24 seal, `Main.cs:66208-66216` —
+  `ActivePlayerFileData` survives `LoadWorld`): the CharPlay-hydrated
+  per-character Journey state (research counts, the three per-player
+  powers, the spawn-rate cache, the session difficulty + name) rides
+  `swap_world`'s `App::new` reset (`app/mod.rs`); the per-world powers
+  re-load from the new world's section. The family FINAL + the
+  JOURNEY-SEAL receipts: `docs/research/308-journey-family-final.md`.
 
 Deviations (docs/ANALYSIS.md): the `ByCreativeSortingId` middle sort step
 falls through to alphabetical (no generated group table); the
