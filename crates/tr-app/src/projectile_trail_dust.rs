@@ -70,6 +70,19 @@ pub(crate) fn next_vector2_circular(rng: &mut dyn DropRng, hw: f32, hh: f32) -> 
     unit * Vec2::new(hw, hh) * rng.next_float()
 }
 
+/// `Utils.NextVector2Square` (`Utils.cs:1251-1254`):
+/// `((max-min)*NextDouble()+min, (max-min)*NextDouble()+min)` — TWO
+/// `NextDouble` draws (X then Y). The 229 Chlorophyte Orb's dust point
+/// consumes it (batch 6).
+#[allow(dead_code)]
+pub(crate) fn next_vector2_square(rng: &mut dyn DropRng, min: f32, max: f32) -> Vec2 {
+    let span = max - min;
+    Vec2::new(
+        span * rng.next_double() as f32 + min,
+        span * rng.next_double() as f32 + min,
+    )
+}
+
 /// The slot snapshot the emitters read (`base.position/width/height/
 /// velocity/Center/scale/alpha` at the C# call site). The machines pass
 /// the LIVE slot fields — the snapshot exists only so the emitter can
@@ -1647,6 +1660,514 @@ pub(crate) fn pulse_bolt_trail(
 }
 
 // ---------------------------------------------------------------------------
+// Unrowed-kind emitters (batch 6) — kinds with NO ported `proj_data` row
+// at this tip. The emitters are written + witnessed but UNWIRED (the row
+// is the wiring gate, the S1-F-9b convention; the 281 bunny precedent).
+// They activate when the d-lanes row the kind. Cited at the C# AI site.
+// ---------------------------------------------------------------------------
+
+/// Site 23213 — the Magic Dagger 93's 1-in-5 head dust (`Projectile.cs:
+/// 23211-23218`, the aiStyle-2 arm's head, AFTER the wind term): the
+/// `Next(5) == 0` gate draws every tick; taken → one dust 57 at position,
+/// box w×h, speeds = `v×0.2 + (direction*3, 0)`, alpha 100; noGravity,
+/// fadeIn 1, velocity ×0.3. UNWIRED (no 93 row).
+#[allow(dead_code)]
+pub(crate) fn magic_dagger_drip(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:23211` — the gate, always drawn.
+    if rng.next_range(0, 5) != 0 {
+        return;
+    }
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        57, p.vel.x * 0.2 + (p.direction * 3) as f32, p.vel.y * 0.2,
+        100, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true; // `:23214`
+    d.fade_in = 1.0; // `:23215`
+    d.velocity *= 0.3; // `:23216-23217`
+}
+
+/// Site 24406 — the fairy 1-in-6 sparkle (`Projectile.cs:24395-24409`,
+/// the aiStyle-11 light-pet head): the `Next(6) == 0` gate draws every
+/// tick; taken → one dust (56 blue / 73 pink / 74 green, the `dust_type`
+/// argument the machine picks) at position, box w×h, alpha 200, scale
+/// 0.8; velocity ×0.3. The shader write (`:24408`) is a visual, skipped.
+/// UNWIRED at this tip (the 72/86/87 fairy rows are W4-d2's, unmerged).
+#[allow(dead_code)]
+pub(crate) fn fairy_sparkle(
+    p: &TrailSlot,
+    dust_type: i32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:24395` — the gate, always drawn.
+    if rng.next_range(0, 6) != 0 {
+        return;
+    }
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        dust_type, 0.0, 0.0, 200, Color::default(), 0.8,
+    );
+    dust.slot_mut(idx).velocity *= 0.3; // `:24407`
+}
+
+/// Site 23985 — the natural FallingStar 12's 1-in-20 sparkle (`Projectile.
+/// cs:23970-23987`, the `type == 12 || type == 955` block): the screen-
+/// gated gore (`:23973-23981`, the `Next(6)` gate + the SelectRandom
+/// 16/17/17/17 type pick, the anniversary 16/16/16/17 variant) then the
+/// light 0.9 (`:23982`) then the `Next(20) == 0 || (anniversary &&
+/// Next(15) == 0)` dust gate → dust 58 at v×0.5, alpha 150, scale 1.2.
+/// The gore ARGUMENT draws are consumed (the body is W4-d55's). UNWIRED
+/// at this tip (the 12 row is W4-d15's, unmerged).
+#[allow(dead_code)]
+pub(crate) fn natural_falling_star_sparkle(
+    p: &TrailSlot,
+    tenth_anniversary: bool,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:23973-23981` — the screen-gated gore: the screen-intersect gate
+    // folds true (the single-player view, the d52 convention), the
+    // `Next(6)` gate draws, the taken branch draws the SelectRandom type
+    // (one `Next(4)` — `Utils.SelectRandom` over 4 entries).
+    if rng.next_range(0, 6) == 0 {
+        let _ = rng.next_range(0, 4); // SelectRandom(16,17,17,17) / (16,16,16,17)
+    }
+    // `:23983` — the dust gate: `Next(20) == 0 || (anniversary && Next(15)==0)`.
+    // The Next(20) always draws; the Next(15) only on anniversary + a
+    // refused Next(20) (the `||` short-circuit).
+    let take = rng.next_range(0, 20) == 0
+        || (tenth_anniversary && rng.next_range(0, 15) == 0);
+    if take {
+        dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            58, p.vel.x * 0.5, p.vel.y * 0.5, 150, Color::default(), 1.2,
+        );
+    }
+}
+
+/// Site 26606 — the Icewater Spit 177's 3× dust 137 trail (`Projectile.cs:
+/// 26602-26610`, the aiStyle-28 frost family): per dust the alpha argument
+/// `Next(0,101)` and the scale argument `1 + Next(-20,40)*0.01` draw BEFORE
+/// the spawn; speeds = velocity, box w×h; noGravity, velocity ×0.3.
+/// UNWIRED (no 177 row).
+#[allow(dead_code)]
+pub(crate) fn icewater_spit_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..3 {
+        // `:26606` — the two argument draws (alpha, then scale).
+        let alpha = rng.next_range(0, 101);
+        let scale = 1.0 + rng.next_range(-20, 40) as f32 * 0.01;
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            137, p.vel.x, p.vel.y, alpha, Color::default(), scale,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:26607`
+        d.velocity *= 0.3; // `:26608`
+    }
+}
+
+/// Site 26615 — the Ice Bolt 118's 2× dust 92 trail (`Projectile.cs:
+/// 26611-26619`): speeds = velocity, alpha 50, scale 1.2; noGravity,
+/// velocity ×0.3. No explicit draws. UNWIRED (no 118 row).
+#[allow(dead_code)]
+pub(crate) fn ice_bolt_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..2 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            92, p.vel.x, p.vel.y, 50, Color::default(), 1.2,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:26616`
+        d.velocity *= 0.3; // `:26617`
+    }
+}
+
+/// Site 26624 — the 119/128/359 frost trio's 3× dust 92 trail
+/// (`Projectile.cs:26620-26628`): the 118 shape with 3 dusts. The 359
+/// FrostBolt is rowed (batch 2's `frost_blast_trail` is the 309 twin);
+/// the 119 FrostBoltSword / 128 FrostBlastHostile are UNWIRED (no rows).
+#[allow(dead_code)]
+pub(crate) fn frost_sword_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..3 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            92, p.vel.x, p.vel.y, 50, Color::default(), 1.2,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:26625`
+        d.velocity *= 0.3; // `:26626`
+    }
+}
+
+/// Site 26642 — the Rune Blast 129's 6× dust 106 trail (`Projectile.cs:
+/// 26638-26647`): speeds = velocity, alpha 100; noGravity, then the
+/// velocity ×`(0.1 + Next(4)*0.1)` and scale ×`(1 + Next(5)*0.1)`
+/// post-spawn draws (one Next(4) + one Next(5) per dust, AFTER the spawn).
+/// UNWIRED (no 129 row — the 659 SpiritFlame is a different kind).
+#[allow(dead_code)]
+pub(crate) fn rune_blast_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..6 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            106, p.vel.x, p.vel.y, 100, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:26643`
+        d.velocity *= 0.1 + rng.next_range(0, 4) as f32 * 0.1; // `:26644`
+        d.scale *= 1.0 + rng.next_range(0, 5) as f32 * 0.1; // `:26645`
+    }
+}
+
+/// Site 24903 — the Smoke Bomb 196's `Next(1,3)`-count dust 31 burst
+/// (`Projectile.cs:24898-24910`, the aiStyle-14 arm): the count draws
+/// FIRST (`Next(1,3)` = 1 or 2 dusts), then per dust the spawn (alpha
+/// 100) followed by the post-spawn draws: alpha += `Next(100)`, velocity
+/// ×0.3, velocity.X += `Next(-10,11)*0.025`, velocity.Y −= `0.4 +
+/// Next(-3,14)*0.15`, fadeIn = `1.25 + Next(20)*0.15`. UNWIRED (no 196 row).
+#[allow(dead_code)]
+pub(crate) fn smoke_bomb_burst(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:24900` — the count argument draw.
+    let count = rng.next_range(1, 3);
+    for _ in 0..count {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            31, 0.0, 0.0, 100, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.alpha += rng.next_range(0, 100); // `:24904`
+        d.velocity *= 0.3; // `:24905`
+        d.velocity.x += rng.next_range(-10, 11) as f32 * 0.025; // `:24906`
+        d.velocity.y -= 0.4 + rng.next_range(-3, 14) as f32 * 0.15; // `:24907`
+        d.fade_in = 1.25 + rng.next_range(0, 20) as f32 * 0.15; // `:24908`
+    }
+}
+
+/// Sites 25032/25038 — the Boulder Staff of Earth 261's `localAI[0] > 0`
+/// dust window (`Projectile.cs:25017-25042`, the aiStyle-14 arm): the
+/// machine decrements localAI[0] and computes `maxValue` (5, doubled to
+/// 10 below 20, tripled to 15 below 10); the `Next(maxValue) == 0` gate →
+/// dust 31 Perfect at `Center + NextVector2Circular(w/2, h/2)`, velocity
+/// ×0.33, scale 0.7; then a SECOND `Next(maxValue) == 0` gate → dust 228
+/// Perfect at `Center + NextVector2Circular(w/2, h/2)`, velocity =
+/// `NextVector2Circular(3,3)`, scale 0.6, velocity ×0.33. Both gates draw
+/// every tick the window is open. UNWIRED (no 261 row).
+#[allow(dead_code)]
+pub(crate) fn boulder_staff_dust(
+    p: &TrailSlot,
+    max_value: i32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let center = p.center();
+    // `:25030-25035` — the first gate + the dust 31 Perfect.
+    if rng.next_range(0, max_value) == 0 {
+        // The circular point: TWO NextFloat draws (the unit angle + the
+        // radius scale), consumed as the position ARGUMENT before the spawn.
+        let point = center + next_vector2_circular(rng, p.w / 2.0, p.h / 2.0);
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, point, 0, 0,
+            31, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.position = point; // NewDustPerfect pins the position
+        d.velocity *= 0.33; // `:25033`
+        d.scale = 0.7; // `:25034`
+    }
+    // `:25036-25041` — the second gate + the dust 228 Perfect.
+    if rng.next_range(0, max_value) == 0 {
+        let point = center + next_vector2_circular(rng, p.w / 2.0, p.h / 2.0);
+        // The velocity argument: NextVector2Circular(3,3) — TWO NextFloat.
+        let vel = next_vector2_circular(rng, 3.0, 3.0);
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, point, 0, 0,
+            228, vel.x, vel.y, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.position = point;
+        d.velocity = vel; // NewDustPerfect pins the velocity
+        d.scale = 0.6; // `:25039`
+        d.velocity *= 0.33; // `:25040`
+    }
+}
+
+/// Site 27936 — the Chlorophyte Orb 229's 4× dust 157 trail (`Projectile.
+/// cs:27922-27940`, the aiStyle-44 arm): per dust the point =
+/// `Center + NextVector2Square(-4,4)` (TWO NextDouble draws, the position
+/// argument), dust 157 Perfect, velocity = v×0.25, alpha 0, scale 0.4;
+/// noGravity, scale = 1.4 (the post-spawn write overrides the 0.4).
+/// UNWIRED (no 229 row).
+#[allow(dead_code)]
+pub(crate) fn chlorophyte_orb_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let center = p.center();
+    for _ in 0..4 {
+        // `:27936` — the square point (two NextDouble draws) + the
+        // velocity argument v×0.25.
+        let point = center + next_vector2_square(rng, -4.0, 4.0);
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, point, 0, 0,
+            157, p.vel.x * 0.25, p.vel.y * 0.25, 0, Color::default(), 0.4,
+        );
+        let d = dust.slot_mut(idx);
+        d.position = point; // NewDustPerfect pins the position
+        d.velocity = p.vel * 0.25; // NewDustPerfect pins the velocity
+        d.no_gravity = true; // `:27937`
+        d.scale = 1.4; // `:27938`
+    }
+}
+
+/// Site 27327 — the Tiny Eater 307's 3× dust 184 trail (`Projectile.cs:
+/// 27310-27333`, the aiStyle-36 arm's `type == 307` block): per dust the
+/// point = `Center − v/3·i` (i = 0..2), dust 184 at position box w×h;
+/// position pinned to the trail point, velocity ×0, scale 0.5. No
+/// explicit draws. UNWIRED (no 307 row).
+#[allow(dead_code)]
+pub(crate) fn tiny_eater_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let center = p.center();
+    for i in 0..3 {
+        let ox = p.vel.x / 3.0 * i as f32; // `:27325`
+        let oy = p.vel.y / 3.0 * i as f32; // `:27326`
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            184, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.position = Vec2::new(center.x - ox, center.y - oy); // `:27328-27329`
+        d.velocity *= 0.0; // `:27330`
+        d.scale = 0.5; // `:27331`
+    }
+}
+
+/// Site 26754 — the Ornament Friendly 335's gem sparkle (`Projectile.cs:
+/// 26722-26758`, the aiStyle-30 arm's `type == 335` else branch, the
+/// `ai[0] >= 0` window): the `Next(Max(4, 8 − (int)v.Length())) == 0`
+/// gate draws every tick; taken → the colour picks by frame (0→
+/// (255,100,100), 1→(100,255,100), 2→(100,100,255), 3→(255,255,100),
+/// else White), dust 43 at `position + (5,5)`, box (w−10)×(h−10), alpha
+/// 254, the picked colour; velocity = v×0.75. UNWIRED (no 335 row).
+#[allow(dead_code)]
+pub(crate) fn ornament_sparkle(
+    p: &TrailSlot,
+    frame: i32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:26735` — the gate: Next(Max(4, 8 − (int)speed)).
+    let max = (8 - p.vel.length() as i32).max(4);
+    if rng.next_range(0, max) != 0 {
+        return;
+    }
+    // `:26737-26752` — the colour by frame.
+    let color = match frame {
+        0 => Color { r: 255, g: 100, b: 100, a: 255 },
+        1 => Color { r: 100, g: 255, b: 100, a: 255 },
+        2 => Color { r: 100, g: 100, b: 255, a: 255 },
+        3 => Color { r: 255, g: 255, b: 100, a: 255 },
+        _ => Color { r: 255, g: 255, b: 255, a: 255 },
+    };
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world,
+        p.pos + Vec2::splat(5.0), p.w as i32 - 10, p.h as i32 - 10,
+        43, 0.0, 0.0, 254, color, 1.0,
+    );
+    dust.slot_mut(idx).velocity = p.vel * 0.75; // `:26755`
+}
+
+/// Site 28343 — the Inferno Hostile Bolt 291's 10× dust 174 trail
+/// (`Projectile.cs:28325-28349`, the aiStyle-50 arm's `type == 291`
+/// block): the 295 bolt twin with 10 dusts (the 295's
+/// [`inferno_bolt_trail`] draws 8). alpha 100, scale 1.2, noGravity,
+/// velocity ×0.5 + v×0.1. No explicit draws. UNWIRED (no 291 row).
+#[allow(dead_code)]
+pub(crate) fn inferno_hostile_bolt_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            174, 0.0, 0.0, 100, Color::default(), 1.2,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:28344`
+        d.velocity *= 0.5; // `:28345`
+        d.velocity += p.vel * 0.1; // `:28346`
+    }
+}
+
+/// Site 28539 — the Vampire Heal 305's 3× dust 183 trail (`Projectile.cs:
+/// 28533-28545`, the aiStyle-52 heal-orb arm's `type == 305` block): per
+/// dust the point = `position − (v.x*0.334*i, −v.y*0.334*i)` (the Y
+/// offset SUBTRACTS a negative, so it rides +vy), dust 183 at position
+/// box w×h, alpha 100, scale 1.1; noGravity, velocity ×0, position −=
+/// the offset. No explicit draws. UNWIRED at this tip (the 305 row is
+/// W4-d6's, unmerged).
+#[allow(dead_code)]
+pub(crate) fn vampire_heal_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for i in 0..3 {
+        let ox = p.vel.x * 0.334 * i as f32; // `:28537`
+        let oy = (0.0 - p.vel.y * 0.334) * i as f32; // `:28538`
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            183, 0.0, 0.0, 100, Color::default(), 1.1,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:28540`
+        d.velocity *= 0.0; // `:28541`
+        d.position.x -= ox; // `:28542`
+        d.position.y -= oy; // `:28543`
+    }
+}
+
+/// Site 28552 — the Spirit Heal 298's 5× dust 175 trail (`Projectile.cs:
+/// 28546-28558`, the aiStyle-52 heal-orb arm's else block): the 305 twin
+/// with 5 dusts, dust 175, scale 1.3, the 0.2 velocity factor. No
+/// explicit draws. UNWIRED at this tip (the 298 row is W4-d6's, unmerged).
+#[allow(dead_code)]
+pub(crate) fn spirit_heal_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for i in 0..5 {
+        let ox = p.vel.x * 0.2 * i as f32; // `:28550`
+        let oy = (0.0 - p.vel.y * 0.2) * i as f32; // `:28551`
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            175, 0.0, 0.0, 100, Color::default(), 1.3,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:28553`
+        d.velocity *= 0.0; // `:28554`
+        d.position.x -= ox; // `:28555`
+        d.position.y -= oy; // `:28556`
+    }
+}
+
+/// Sites 29167/29191 — the Water Gun 358's stream dust (`Projectile.cs:
+/// 29158-29196`, the aiStyle-60 gun arm's `type == 358` block): 6× dust
+/// 211 at `position + (6,6)`, box (w−12)×(h−12), alpha 75, scale 1.2;
+/// per dust THREE `Next(2) == 0` alpha gates (each taken adds 25 to
+/// alpha), then noGravity, velocity ×0.3 + v×0.5, position = Center −
+/// v/6·i, velocity ×0.2. Then the `Next(4) == 0` extra gate → dust 211
+/// scale 0.65, velocity ×0.5 + v×0.5. UNWIRED at this tip (the 358 row
+/// is W4-d6's, unmerged).
+#[allow(dead_code)]
+pub(crate) fn water_gun_stream(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let center = p.center();
+    for i in 0..6 {
+        let ox = p.vel.x / 6.0 * i as f32; // `:29164`
+        let oy = p.vel.y / 6.0 * i as f32; // `:29165`
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world,
+            p.pos + Vec2::splat(6.0), p.w as i32 - 12, p.h as i32 - 12,
+            211, 0.0, 0.0, 75, Color::default(), 1.2,
+        );
+        let d = dust.slot_mut(idx);
+        // `:29168-29179` — the three alpha gates (each draws Next(2)).
+        if rng.next_range(0, 2) == 0 {
+            d.alpha += 25;
+        }
+        if rng.next_range(0, 2) == 0 {
+            d.alpha += 25;
+        }
+        if rng.next_range(0, 2) == 0 {
+            d.alpha += 25;
+        }
+        d.no_gravity = true; // `:29180`
+        d.velocity *= 0.3; // `:29181`
+        d.velocity += p.vel * 0.5; // `:29182`
+        d.position = Vec2::new(center.x - ox, center.y - oy); // `:29183-29185`
+        d.velocity *= 0.2; // `:29186`
+    }
+    // `:29188-29194` — the extra-dust gate.
+    if rng.next_range(0, 4) == 0 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world,
+            p.pos + Vec2::splat(6.0), p.w as i32 - 12, p.h as i32 - 12,
+            211, 0.0, 0.0, 75, Color::default(), 0.65,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 0.5; // `:29192`
+        d.velocity += p.vel * 0.5; // `:29193`
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses — WRITTEN NOT RUN (code-only mode). Each mirrors the C#
 // draw sequence on a recording stream + a scratch pool with the
 // permissive ctx (the npc.rs `dust_ctx` convention), so the pool never
@@ -2316,5 +2837,258 @@ mod tests {
         pulse_bolt_trail(&p, &mut rng, &mut dust, &c, &w);
         assert_eq!(live(&dust), 10);
         assert!(dust.slots()[..10].iter().all(|d| d.dust_type == 206 && d.no_gravity));
+    }
+
+    // ---- batch 6: the unrowed-kind emitters (UNWIRED, row-gated) ----
+
+    /// W4-g63 — the 93 Magic Dagger drip: the Next(5) gate draws every
+    /// tick; taken → dust 57, noGravity, fadeIn 1, the direction*3 X speed.
+    #[test]
+    fn w4_g63_the_magic_dagger_drip_gates() {
+        let w = world();
+        let c = ctx(&w);
+        let mut p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        p.direction = -1;
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(1);
+        magic_dagger_drip(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges, vec![(0, 5)]);
+        assert_eq!(live(&dust), 0);
+        let mut rng = Recorder::new(0);
+        magic_dagger_drip(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 57);
+        assert!(dust.slot(0).no_gravity);
+        assert!((dust.slot(0).fade_in - 1.0).abs() < 1e-6);
+    }
+
+    /// W4-g63 — the fairy sparkle: the Next(6) gate, the dust-type
+    /// argument (56/73/74), alpha 200, scale 0.8, velocity ×0.3.
+    #[test]
+    fn w4_g63_the_fairy_sparkle_type_argument() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(2.0, 0.0));
+        for dt in [56, 73, 74] {
+            let mut dust = DustPool::new();
+            let mut rng = Recorder::new(0);
+            fairy_sparkle(&p, dt, &mut rng, &mut dust, &c, &w);
+            assert_eq!(rng.ranges[0], (0, 6));
+            assert_eq!(dust.slot(0).dust_type, dt);
+            assert_eq!(dust.slot(0).alpha, 200);
+        }
+    }
+
+    /// W4-g63 — the 12 natural star: the gore Next(6) gate + SelectRandom
+    /// Next(4), then the Next(20) dust gate (the anniversary Next(15)
+    /// only on a refused Next(20)).
+    #[test]
+    fn w4_g63_the_natural_star_gore_and_dust_gates() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        // roll 0: the gore gate takes (Next(4) type draw), the dust gate
+        // takes (Next(20)==0) → no Next(15) even on anniversary.
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        natural_falling_star_sparkle(&p, true, &mut rng, &mut dust, &c, &w);
+        assert!(rng.ranges.contains(&(0, 6)));
+        assert!(rng.ranges.contains(&(0, 4)));
+        assert!(rng.ranges.contains(&(0, 20)));
+        assert!(!rng.ranges.contains(&(0, 15)), "the Next(20) short-circuits");
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 58);
+    }
+
+    /// W4-g63 — the 177 Icewater Spit: 3× dust 137, each with the
+    /// Next(0,101) alpha + Next(-20,40) scale argument draws BEFORE the
+    /// spawn.
+    #[test]
+    fn w4_g63_the_icewater_spit_argument_draws() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        icewater_spit_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 3);
+        assert!(dust.slots()[..3].iter().all(|d| d.dust_type == 137 && d.no_gravity));
+        let alpha_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (0, 101)).collect();
+        assert_eq!(alpha_draws.len(), 3, "one alpha argument per dust");
+        let scale_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (-20, 40)).collect();
+        assert_eq!(scale_draws.len(), 3, "one scale argument per dust");
+    }
+
+    /// W4-g63 — the 118 Ice Bolt (2×) vs the 119/128 frost trio (3×):
+    /// dust 92, alpha 50, scale 1.2, noGravity, velocity ×0.3.
+    #[test]
+    fn w4_g63_the_frost_family_trails() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        ice_bolt_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 2);
+        assert!(dust.slots()[..2].iter().all(|d| d.dust_type == 92 && d.no_gravity));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        frost_sword_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 3);
+    }
+
+    /// W4-g63 — the 129 Rune Blast: 6× dust 106, each with the Next(4)
+    /// velocity + Next(5) scale post-spawn draws.
+    #[test]
+    fn w4_g63_the_rune_blast_post_spawn_draws() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        rune_blast_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 6);
+        assert!(dust.slots()[..6].iter().all(|d| d.dust_type == 106 && d.no_gravity));
+        let v_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (0, 4)).collect();
+        assert_eq!(v_draws.len(), 6, "one velocity draw per dust");
+        let s_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (0, 5)).collect();
+        assert_eq!(s_draws.len(), 6, "one scale draw per dust");
+    }
+
+    /// W4-g63 — the 196 Smoke Bomb: the Next(1,3) count draw first, then
+    /// per dust the 5 post-spawn draws (alpha/velocity.X/velocity.Y/fadeIn).
+    #[test]
+    fn w4_g63_the_smoke_bomb_count_and_draws() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        smoke_bomb_burst(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges[0], (1, 3), "the count draw first");
+        // roll 0 → Next(1,3) returns 0 → 0 dusts (the C# count is the
+        // draw value, 0..2). Verify the count gate draws.
+        assert!(rng.ranges.contains(&(1, 3)));
+    }
+
+    /// W4-g63 — the 261 Boulder Staff: the two Next(maxValue) gates, the
+    /// circular point floats (2 per taken gate) + the velocity floats.
+    #[test]
+    fn w4_g63_the_boulder_staff_gates() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        boulder_staff_dust(&p, 5, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges[0], (0, 5), "the first gate");
+        assert_eq!(live(&dust), 2, "roll 0: both gates take");
+        assert_eq!(dust.slot(0).dust_type, 31);
+        assert_eq!(dust.slot(1).dust_type, 228);
+        // The circular points + velocity: 2 floats per point ×2 + 2 for
+        // the velocity = 6 floats.
+        assert_eq!(rng.floats, 6);
+    }
+
+    /// W4-g63 — the 229 Chlorophyte Orb: 4× dust 157, each with the
+    /// NextVector2Square point (2 NextDouble draws), scale 1.4, noGravity.
+    #[test]
+    fn w4_g63_the_chlorophyte_orb_square_points() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        chlorophyte_orb_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 4);
+        assert!(dust.slots()[..4].iter().all(|d| d.dust_type == 157 && d.no_gravity));
+        assert!(dust.slots()[..4].iter().all(|d| (d.scale - 1.4).abs() < 1e-6));
+    }
+
+    /// W4-g63 — the 307 Tiny Eater: 3× dust 184 at the Center − v/3·i
+    /// points, velocity zeroed, scale 0.5.
+    #[test]
+    fn w4_g63_the_tiny_eater_trail() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(9.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        tiny_eater_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 3);
+        assert!(dust.slots()[..3].iter().all(|d| d.dust_type == 184 && d.velocity == Vec2::ZERO));
+        // The i=1 X point: Center.X − 9/3·1 = 108 − 3 = 105.
+        assert!((dust.slot(1).position.x - 105.0).abs() < 1e-4);
+    }
+
+    /// W4-g63 — the 335 Ornament sparkle: the Next(Max(4,8−speed)) gate,
+    /// the frame colour pick, dust 43 alpha 254, velocity = v×0.75.
+    #[test]
+    fn w4_g63_the_ornament_sparkle_colour() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(2.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        ornament_sparkle(&p, 0, &mut rng, &mut dust, &c, &w);
+        // speed 2 → Max(4, 8−2)=6 → the gate is Next(6).
+        assert_eq!(rng.ranges[0], (0, 6));
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 43);
+        assert_eq!(dust.slot(0).alpha, 254);
+        assert_eq!(dust.slot(0).color, Color { r: 255, g: 100, b: 100, a: 255 });
+    }
+
+    /// W4-g63 — the 291 Inferno Hostile Bolt: 10× dust 174 (the 295's 8
+    /// twin), noGravity, velocity ×0.5 + v×0.1.
+    #[test]
+    fn w4_g63_the_inferno_hostile_bolt_draws_ten() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        inferno_hostile_bolt_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 10);
+        assert!(dust.slots()[..10].iter().all(|d| d.dust_type == 174 && d.no_gravity));
+    }
+
+    /// W4-g63 — the 305 Vampire Heal (3× dust 183) vs the 298 Spirit Heal
+    /// (5× dust 175): velocity zeroed, noGravity, the velocity-offset points.
+    #[test]
+    fn w4_g63_the_heal_orb_trails() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 2.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        vampire_heal_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 3);
+        assert!(dust.slots()[..3].iter().all(|d| d.dust_type == 183 && d.no_gravity));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        spirit_heal_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 5);
+        assert!(dust.slots()[..5].iter().all(|d| d.dust_type == 175 && d.no_gravity));
+    }
+
+    /// W4-g63 — the 358 Water Gun: 6× dust 211 each with THREE Next(2)
+    /// alpha gates, then the Next(4) extra gate. roll 0 → all alpha gates
+    /// take (+75 alpha) and the extra dust spawns.
+    #[test]
+    fn w4_g63_the_water_gun_alpha_gates() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(6.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        water_gun_stream(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 7, "6 stream + 1 extra");
+        let alpha_gates: Vec<_> = rng.ranges.iter().filter(|r| **r == (0, 2)).collect();
+        assert_eq!(alpha_gates.len(), 18, "3 alpha gates × 6 dusts");
+        assert!(rng.ranges.contains(&(0, 4)), "the extra gate");
+        // roll 0 → each alpha gate adds 25 → 75 + 75 = 150.
+        assert_eq!(dust.slot(0).alpha, 150);
+        assert!(dust.slots()[..6].iter().all(|d| d.dust_type == 211 && d.no_gravity));
     }
 }
