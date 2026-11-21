@@ -174,6 +174,11 @@ pub mod id {
     /// `MessageBuffer.cs:4219-4228`). W4-g51 lifted the parked d92 codec and
     /// wired the host gate (the `CanBeRemovedByNetMessage` set is empty).
     pub const NPC_BUFF_REMOVAL_REQUEST: u8 = 137;
+    /// `141 LucyTheAxeMessage` (`MessageID.cs:296`) — a talking-axe popup
+    /// (`NetMessage.cs:1595-1602`, `MessageBuffer.cs:4265-4281`). W4-g51
+    /// lifted the parked d99 codec; the host relay is wired, the client
+    /// `CreateFromNet` popup is parked (no Lucy popup system yet).
+    pub const LUCY_POPUP: u8 = 141;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -1714,6 +1719,23 @@ pub struct NpcBuffRemovalRequest {
     pub buff_type: u16,
 }
 
+/// `msg 141 LucyTheAxeMessage`'s body (`NetMessage.cs:1595-1602`):
+/// `(byte)` message source, `(byte)` variation, the velocity floats, then
+/// `(int)` x, `(int)` y — the position ints come AFTER the velocity on the
+/// wire (`LucyAxeMessage.cs:133`'s send order). The client creates the
+/// popup via `CreateFromNet(source, variation, new Vector2(x, y), velocity)`
+/// (`MessageBuffer.cs:4278`); the host relays verbatim (`:4274`). Both
+/// directions.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LucyPopup {
+    pub source: u8,
+    pub variation: u8,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+    pub x: i32,
+    pub y: i32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1843,6 +1865,9 @@ pub enum C2s {
     /// `137 RequestNPCBuffRemoval` - a client asks the host to drop an NPC
     /// buff (`NPC.cs:89995-89998`; `MessageBuffer.cs:4219-4229`).
     NpcBuffRemovalRequest(NpcBuffRemovalRequest),
+    /// `141 LucyTheAxeMessage` - a talking-axe popup
+    /// (`LucyAxeMessage.cs:133`; the host relays, `:4274`).
+    LucyPopup(LucyPopup),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1987,6 +2012,9 @@ pub enum S2c {
     /// `136 SyncCavernMonsterType` - the cavern spawn grid, the join push
     /// (`MessageBuffer.cs:870`, read `:4204-4218`).
     CavernMonsterTypes(CavernMonsterTypes),
+    /// `141 LucyTheAxeMessage` - the host's relay of a talking-axe popup
+    /// (`MessageBuffer.cs:4274`; the client CreateFromNet, `:4278`).
+    LucyPopup(LucyPopup),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2080,6 +2108,7 @@ impl C2s {
             Self::FishOutNpc(_) => id::FISH_OUT_NPC,
             Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
             Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
+            Self::LucyPopup(_) => id::LUCY_POPUP,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2161,6 +2190,15 @@ impl C2s {
             Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
             // `NetMessage.cs:1583-1586`: (short)npc, (ushort)buff type.
             Self::NpcBuffRemovalRequest(q) => w.i16(q.npc).u16(q.buff_type),
+            // `NetMessage.cs:1595-1602`: (byte)source + (byte)variation +
+            // the velocity floats + (int)x + (int)y.
+            Self::LucyPopup(l) => w
+                .u8(l.source)
+                .u8(l.variation)
+                .f32(l.velocity_x)
+                .f32(l.velocity_y)
+                .i32(l.x)
+                .i32(l.y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2313,6 +2351,16 @@ impl C2s {
             id::NPC_BUFF_REMOVAL_REQUEST => Self::NpcBuffRemovalRequest(NpcBuffRemovalRequest {
                 npc: r.i16()?,
                 buff_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:4267-4271`: source, variation, velocity
+            // floats, then the position ints.
+            id::LUCY_POPUP => Self::LucyPopup(LucyPopup {
+                source: r.u8()?,
+                variation: r.u8()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+                x: r.i32()?,
+                y: r.i32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2480,6 +2528,7 @@ impl S2c {
             Self::TamperWithNpc(_) => id::TAMPER_WITH_NPC,
             Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
             Self::CavernMonsterTypes(_) => id::CAVERN_MONSTER_TYPES,
+            Self::LucyPopup(_) => id::LUCY_POPUP,
         }
     }
 
@@ -2652,6 +2701,16 @@ impl S2c {
                 }
                 w
             }
+            // `NetMessage.cs:1595-1602`: (byte)source + (byte)variation +
+            // the velocity floats + (int)x + (int)y (the relay reuses the
+            // writer case).
+            Self::LucyPopup(l) => w
+                .u8(l.source)
+                .u8(l.variation)
+                .f32(l.velocity_x)
+                .f32(l.velocity_y)
+                .i32(l.x)
+                .i32(l.y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2900,6 +2959,16 @@ impl S2c {
                 }
                 Self::CavernMonsterTypes(CavernMonsterTypes { types })
             }
+            // `MessageBuffer.cs:4267-4271`: source, variation, velocity
+            // floats, then the position ints.
+            id::LUCY_POPUP => Self::LucyPopup(LucyPopup {
+                source: r.u8()?,
+                variation: r.u8()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+                x: r.i32()?,
+                y: r.i32()?,
+            }),
             _ => return None,
         })
     }
@@ -5166,6 +5235,40 @@ mod tests {
         match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
             C2s::NpcBuffRemovalRequest(d) => assert_eq!(d, q),
             other => panic!("expected 137, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `141 LucyTheAxeMessage` body byte-pins the swapped-pair
+    /// trap (`NetMessage.cs:1595-1602`: source, variation, the velocity
+    /// floats BEFORE the position ints) and round-trips both directions.
+    #[test]
+    fn w4_g51_lucy_popup_round_trips() {
+        let l = LucyPopup {
+            source: 2,
+            variation: 5,
+            velocity_x: 1.5,
+            velocity_y: -2.0,
+            x: 100,
+            y: 200,
+        };
+        let mut body = vec![2u8, 5];
+        body.extend_from_slice(&1.5f32.to_le_bytes());
+        body.extend_from_slice(&(-2.0f32).to_le_bytes());
+        body.extend_from_slice(&100i32.to_le_bytes());
+        body.extend_from_slice(&200i32.to_le_bytes());
+        let c = C2s::LucyPopup(l).encode();
+        assert_eq!(c[2], 141);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::LucyPopup(d) => assert_eq!(d, l),
+            other => panic!("expected 141, got {:?}", other.msg_id()),
+        }
+        let f = S2c::LucyPopup(l).encode();
+        assert_eq!(f[2], 141);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::LucyPopup(d) => assert_eq!(d, l),
+            other => panic!("expected 141, got {:?}", other.msg_id()),
         }
     }
 

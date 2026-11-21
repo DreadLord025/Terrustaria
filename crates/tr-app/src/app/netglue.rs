@@ -922,6 +922,13 @@ impl App {
                     }
                 }
             }
+            // `case 141` — a client's talking-axe popup (`MessageBuffer.cs:
+            // 4265-4281`): the host relays VERBATIM with `ignoreClient =
+            // whoAmI` (`:4272-4275`, `SendData(141, -1, this.whoAmI, …)`).
+            // No host-side apply — the popup is a client effect.
+            C2s::LucyPopup(l) => {
+                server.broadcast_except(&S2c::LucyPopup(l), id);
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -2004,7 +2011,7 @@ impl App {
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
             // `:2695-2739`, `:3118-3126`, `:3147-3153`,
-            // `:4238-4249`, `:4282-4297`, `:4328-4343`) land
+            // `:4282-4297`, `:4328-4343`) land
             // with the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::TogglePvp(_)
             | S2c::PlayerMana(_)
@@ -2012,7 +2019,6 @@ impl App {
             | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
-            | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
             // `case 135`'s client half (`MessageBuffer.cs:4195-4203`):
@@ -2028,6 +2034,20 @@ impl App {
             // reads a fixed roster), so there is no field to write; the arm
             // is parked with the cavern spawn system (S1-I-4).
             S2c::CavernMonsterTypes(_) => {}
+            // `case 140` (`MessageBuffer.cs:4238-4263`): kind 0 is the
+            // client's `CreditsRollEvent.SetRemainingTimeDirect` — the port
+            // has no timed credits-roll state (the Credits front screen is
+            // untimed); kinds 1/2 are the HOST's `TransformCopperSlime` /
+            // `TransformElderSlime` (`NPC.cs:19160`/`:19136`), which need the
+            // unported town-slime kinds. All three arms park with their
+            // systems (S1-I-4).
+            S2c::MiscEventValue(_) => {}
+            // `case 141`'s client half (`MessageBuffer.cs:4276-4279`):
+            // `LucyAxeMessage.CreateFromNet` spawns the popup text +
+            // `LucyTheAxeTalk` cue. The port has no Lucy popup-text system
+            // yet, so the arm parks with it (S1-I-4); the host relay above
+            // carries the body verbatim.
+            S2c::LucyPopup(_) => {}
             // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
             // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
             // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
