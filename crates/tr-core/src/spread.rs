@@ -407,6 +407,34 @@ fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
     x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
 }
 
+/// `WorldGen.TileIsExposedToAir(x, y)` (`WorldGen.cs:54782-54800`, W4-f25
+/// helper C1): the 3x3 box around the cell holds an inactive tile, a
+/// non-solid tile or a platform — any of the three reads "exposed to air".
+/// The `InWorld(2)` gate refuses the border band. UNWIRED (the Convert
+/// 7/15/18/19 dirt arms `:55512`/`:56031`/`:56171`/`:56222` and the c32
+/// biome-dungeon rooms are its consumers; no executed step calls it).
+pub fn tile_is_exposed_to_air(world: &World, x: i32, y: i32) -> bool {
+    // `:54784-54787`.
+    if !in_world(world, x, y, 2) {
+        return false;
+    }
+    // `:54788-54798`: `tile != null && (!tile.active() ||
+    // !Main.tileSolid[tile.type] || TileID.Sets.Platforms[tile.type])`.
+    for i in (x - 1)..=(x + 1) {
+        for j in (y - 1)..=(y + 1) {
+            if let Some(t) = world.tile(i, j) {
+                if !t.active()
+                    || !crate::tiledata::TILE_SOLID.has(t.kind)
+                    || crate::tiledata::SET_PLATFORMS.has(t.kind)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// `WorldGen.Convert(i, j, conversionType, size)` (`WorldGen.cs:55067-55083`):
 /// the square walk with the Manhattan `< 6` gate. The port carries the type-0
 /// (cleanse) cell only — the spray's conversion type.
@@ -1045,5 +1073,49 @@ mod tests {
             hard_update_world(&mut w, 200, 200, false, false, &mut rng);
         }
         assert_eq!(w.tile(201, 200).unwrap().kind, 2, "the spread frozen");
+    }
+
+    // W4-f25 helper C1 — `TileIsExposedToAir` (`WorldGen.cs:54782-54800`).
+    // WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_c1_exposure_reads_the_3x3_box() {
+        let mut w = World::new("t".into(), 60, 60);
+        // A fully-solid stone 3x3: no exposure.
+        for x in 29..=31 {
+            for y in 29..=31 {
+                let i = w.index(x, y);
+                w.tiles[i] = crate::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        assert!(!tile_is_exposed_to_air(&w, 30, 30), "the solid box seals");
+        // An inactive centre opens it (`!tile.active()`).
+        let i = w.index(30, 30);
+        w.tiles[i].flags &= !crate::tile::FLAG_ACTIVE;
+        assert!(tile_is_exposed_to_air(&w, 30, 30), "the inactive centre");
+        // Restore; a non-solid active neighbour (a torch 4) opens it too.
+        w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+        let j = w.index(31, 30);
+        w.tiles[j].kind = 4;
+        assert!(tile_is_exposed_to_air(&w, 30, 30), "the non-solid neighbour");
+        // A platform 19 neighbour: tileSolid true but Platforms — exposed.
+        w.tiles[j].kind = 19;
+        assert!(tile_is_exposed_to_air(&w, 30, 30), "the platform neighbour");
+    }
+
+    #[test]
+    fn w4_f25_c1_the_border_band_refuses() {
+        let w = World::new("t".into(), 60, 60);
+        // `InWorld(x, y, 2)`: x/y < 2 or >= width-2 refuses before the scan.
+        assert!(!tile_is_exposed_to_air(&w, 1, 30));
+        assert!(!tile_is_exposed_to_air(&w, 58, 30));
+        assert!(!tile_is_exposed_to_air(&w, 30, 1));
+        assert!(!tile_is_exposed_to_air(&w, 30, 58));
+        // Inside the band, open air reads exposed.
+        assert!(tile_is_exposed_to_air(&w, 2, 30));
     }
 }
