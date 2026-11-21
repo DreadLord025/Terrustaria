@@ -1343,6 +1343,36 @@ compose-verified EQUAL to f39's tip — no change. f39's season/date lane
 consumers) does NOT overlap d130's files beyond the four gates above —
 the merger keeps f39's bodies for it.
 
+**SEAL (2026-11-21, research/83 §9).** The weather-family close, against
+the co-lane seal tips (g67 `8b9a1ff46`, c39 `7dd785dc5`, f39 `bd5a5a24a`):
+(1) the g67 mutual receipt — g67 renamed research/134 → 146 and published
+its drop-wholesale FINAL; BOTH sides now state the same keep-one (d130's
+rain.rs canonical wholesale, g67's rain.rs + draw.rs census wiring drop,
+ONLY the R5/R6/R7/A2 hash-list crosses — all four folded here, §8/§9.1).
+(2) The c39 EXACT 2-hunk graft (research/114 §13, `8e0946ff`) verified
+still OPEN at the retire tip — the f39-compose had covered the `:64868`
+StopRain arm, not these — then FOLDED verbatim: `Rain::update_time` gains
+the `Main.cs:64825-64831` lanterns-up head clamp (`cloud_bg = 0` BEFORE
+the ladybug drain; the `numClouds` 30 cap outcome-neutral at the 100
+stand-in — the `:64916` second start arm reads the cleared deck), and the
+weather tick's lantern persistence gate is now the FULL
+`LanternsCanPersist` (`LanternNight.cs:49-56` = `!dayTime &&
+LanternsCanStart()` — `LanternGates::from_world` + the seven-conjunct
+AND; the genuine lanterns clear mid-night when a boss/moon/invasion
+conjunct flips, the manual ones persist regardless). The one-word rider
+applied: `world_events::lanterns_can_start` is `pub(crate)` (c39's module
+exports the identical body — one owner at merge). 2 witnesses (c39's
+head-clamp witness ports verbatim; a new tick-level persistence-gate
+witness) WRITTEN NOT RUN. (3) The f39 keep-one re-verified: d130 has zero
+edits to `world_sim/npcs.rs`/`render/sky.rs` since the merge-base — f39's
+SlimeSky bodies, kill-counter refinement and season module stay f39's;
+the five boundary gates are on BOTH branches with identical semantics.
+(4) The WEATHER-FAMILY bible FINAL is research/83 §9.4 — one paragraph,
+one fn owner per body (d130 rain/snow core, f39 slime-rain event half,
+c40 sandstorm, g69 cloud draw, g68 wind sim, c39 lantern grafts), gate
+command `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids`.
+
 ## Biomes
 
 The generator has three surface biomes plus beaches. The forest fills the centre, the snow
@@ -39562,3 +39592,17 @@ d130's name per the union keep-one). g67d's blizzard census CONFIRMS d130's
 `crate::snow` (the `:13092` raining branch) as canonical — g67's `snow_mode`
 gate stays retired; its wind-slant + sandstorm findings match the §5
 cross-note. The full per-item receipt is research/83 §8.
+
+**SEAL UPDATE (research/83 §9, 2026-11-21).** g67's tip moved again:
+`8b9a1ff46` (seal phase 4) — research/134 RENAMED to research/146 (the
+registry sweep: 134 collides f11, 145 double-claimed; 146 provisional,
+renumber at merge), the drop-wholesale FINAL restated, the four-commit
+fold-source hash-list published (R5 `f8c4b659c` / R6 `356a1ac0e` / R7
+`01ba6c7a9` / A2-witness-only `7aaf66f00`). The g67 seal's d130f-monitor
+was written against `97ed44f5d` — every OPEN row it lists is closed by
+this branch's retire phase (`10ee539d`/`df28ea1a`/`af3ebc1a`); the
+BOTH-sides keep-one agreement is mutual (§9.1). The c39 2-hunk graft
+(the storm-deck head clamp + the full LanternsCanPersist gate) was the
+last open ledger — verified OPEN at `af3ebc1a`, folded by the seal
+(§9.2, the "Rain and weather" SEAL paragraph above). No weather fold
+remains open on ANY family lane.

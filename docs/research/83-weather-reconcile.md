@@ -1,6 +1,11 @@
 # 83 — Weather reconcile (W4-d130 merger assist + conflict resolution)
 
-**STATUS: RETIRED — FINAL-FINAL (§8, 2026-11-21).** All folds executed:
+**STATUS: SEALED — §9 (2026-11-21), on top of RETIRED FINAL-FINAL (§8).**
+The seal closes the last three co-lane ledgers: the g67 mutual receipt
+(146-rename, BOTH-sides drop-wholesale agreement, the R5/R6/R7/A2 gifts
+folded — §9.1), the c39 EXACT 2-hunk graft verified-OPEN-then-FOLDED
+(§9.2), the f39 season/SlimeSky keep-one receipt (§9.3), and the
+WEATHER-FAMILY bible FINAL + gate command (§9.4). All folds executed:
 R1–R4 via `16a792d5`, R5 via `10ee539da`, R6/R7 via `df28ea1ac`, the f39
 co-lane compose via `22371b4fe`; g67d's final-phase censuses composed
 (the `rain_light_tile` extract + witness). research/134 EXISTS on g67 now
@@ -437,7 +442,7 @@ record the reconcile.
 Commits: the fix + this doc land on `task/W4-d130-weather-ambience` on top of
 `393000e6` (hashes in the branch log / the report back to the Lead).
 
-## 8. FINAL-FINAL — the retire phase (ALL FOLDS EXECUTED, 2026-11-21)
+## 8. FINAL-FINAL — the retire phase (ALL FOLDS EXECUTED, 2026-11-21; SEALED by §9)
 
 **STATUS: RETIRED.** Every fold-list item from g67 (research/134 R1–R7),
 g67d (the g67 final-phase render/blizzard censuses) and the f39 co-lane is
@@ -538,9 +543,149 @@ this branch (R1–R4 via `16a792d5`, R5 via `10ee539da`, R6/R7 via
 `df28ea1ac`); g67d's censuses are compose-notes with zero open code gaps;
 the f39 boundary hunks are composed (`22371b4fe`). The snow-stream
 adjudication (§7, g11 F1) stands: `crate::snow` on the GLOBAL bare stream.
-**No weather-lane fold remains open.**
+**No weather-lane fold remains open.** (The seal §9.2 adds the two c39
+graft hunks — the `:64825-64831` head clamp + the full `LanternsCanPersist`
+gate — the only ledger items the co-lanes still owed at this declaration;
+both are now folded, and §9.1 records g67's matching drop-wholesale FINAL
+under the 146 rename.)
 
 Retire-phase commits (this branch, on top of `97ed44f5d`):
 `10ee539da` (R5) → `df28ea1ac` (R6+R7) → `22371b4fe` (f39 compose) →
-this docs commit. All witnesses WRITTEN NOT RUN (code-only mode — no
+`af3ebc1a` (the retire docs). All witnesses WRITTEN NOT RUN (code-only mode — no
 cargo/tests/rustfmt/graphify invoked, per the task directive).
+
+---
+
+## 9. SEAL — the weather-family close (2026-11-21, on top of `af3ebc1a`)
+
+The seal re-reads the three co-lane tips (`git fetch`, full hashes):
+**g67 `8b9a1ff46c4a4e795c51ea96f9c13568665ca16b`** (seal phase 4 — the
+146-rename + drop-wholesale FINAL + the family bible), **c39
+`7dd785dc57ebf793f197378451e277a636c162f5`** (retire FINAL-FINAL, research/114
+§16 — code behaviour exactly `4f72847e`'s), **f39
+`bd5a5a24adfef95fafb76f7705b5d7e3dd333b8f`** (Phase B). Four seal items:
+
+### 9.1 The g67 mutual receipt — BOTH sides agree, ONE fn owner
+
+g67's seal renamed research/134 → **research/146** (`c38d42d32` — the
+registry sweep: 134 collides f11's light-family file, 145 double-claimed,
+146 = max-on-origin + 1 provisional; renumber at merge if the registry
+assigns differently). The g67 seal's d130f-monitor was written against tip
+`97ed44f5d` (BEFORE this branch's retire phase) — its OPEN rows are now
+all closed, receipts per item:
+
+| g67 146 row (seal-state) | d130 receipt |
+| --- | --- |
+| R5 skyblock — OPEN → d130f | **FOLDED `10ee539da`** (§8.2): `rain.rs` reads `RainInputs.skyblock_low_tiles` → `scene::snow_tile_threshold` (300/1500), the unconditional `SNOW_TILE_NORMAL` retired |
+| R6 Eyebrella caller — OPEN → d130f | **FOLDED `df28ea1ac`** (§8.2): `do_eyebrella_rain_effect` + the 5101 arm + the `new_rain_forced` drain, the `dead_code` allow lifted |
+| R7 umbrella — OPEN → d130f | **FOLDED `df28ea1ac`** (§8.2): `umbrella_hold_slow_fall` + the render overhead override |
+| A1 tint alpha — NO-OP keep d130's | **KEPT verbatim**: d130's `rain_tint` dims alpha (XNA `Color * float` scales A); g67's alpha-255 witness assertions drop with the wholesale copy |
+| A2 light-tile witness — OPEN → d130f | **FOLDED `af3ebc1a`** (§8.3): `rain_light_tile` extracted (`rain.rs:1309`), `w4_g67d_draw_rain_light_tile_is_pos_plus_four_shifted` (`rain.rs:3428` region) — the 12..15-band crossing, the 63.9 edge, the negative-truncation arms |
+
+**The drop-wholesale agreement is MUTUAL**: g67's 146 FINAL instruction
+(`8b9a1ff46`/`c38d42d32`) says DROP g67's `rain.rs` + `draw.rs` census
+wiring wholesale, ONLY the four-commit hash-list crosses (R5
+`f8c4b659c30dcd6378c8ca5f4a1caff9e84639c4`, R6
+`356a1ac0ef42848a8e5ee0a58abd6c197cc5b38c`, R7
+`01ba6c7a9494fb7f348cc4fc2cb393e1e0c005c8`, A2-witness-only
+`7aaf66f00e00e5e2ca2ffd3c1349e3888c098181`; code tip
+`e777b3e2c2fab2a917fe645df3a4a469b99fad8f`); this branch's §8.5
+declaration says the SAME from the keep side. The R5/R6/R7 player/world/
+scene-lane hunks are the folds themselves, NOT part of the rain.rs drop —
+they are ON this branch already. **ONE fn owner per body**: d130 owns every
+`Rain.cs`/`Main.snowing` fn; g67's copies (`update_drops` compacted-Vec,
+`spawn_acc`, `snow_mode`, `rain_drop_tint`, `DropSimInputs`, the
+KNOWN-WRONG tint witness) all drop. The g67f-4-fold-gifts are folded —
+receipt closed, no g67 content remains uncrossed.
+
+### 9.2 The c39 2-hunk graft — verified OPEN, then FOLDED (this seal)
+
+g67's seal said BOTH c39 hunks still missing at `97ed44f5d`; this seal
+re-verified at `af3ebc1a`: STILL missing — the f39-compose (`22371b4fe`)
+covered the `:64868-64871` lanterns-up StopRain arm + the `:64890` gate
+(`cf4574e9`), NOT the `:64825-64831` head clamp nor the persistence gate.
+The graft spec is **c39 research/114 §13** (`8e0946ff0`, re-read at c39
+tip `7dd785dc5` — §16 seals it unchanged). Both hunks folded EXACTLY as
+specified:
+
+* **Hunk 1** — `rain.rs::update_time`: the `lanterns_up → cloud_bg = 0.0`
+  head clamp inserted between the forced/calm early return and the
+  ladybug drain (`Main.cs:64825-64831`; the `numClouds` 30 cap is
+  outcome-neutral at the 100 stand-in — recorded). The `lanterns_up`
+  param already existed (the f39-order signature) — compiles unchanged.
+  c39's witness `w4_c39_the_lantern_head_clamps_the_storm_deck_before_
+  the_drain` ports VERBATIM (d130's rig names are identical:
+  `rain_world`/`with_forced`/`rng`).
+* **Hunk 2** — `world_sim/weather.rs`: `lantern_can_persist` is now
+  `!world.day_time && lanterns_can_start(&LanternGates::from_world(world,
+  &app.npcs))` — the full `LanternsCanPersist` (`LanternNight.cs:49-56`).
+  The one mechanical rider applied: `world_events.rs::lanterns_can_start`
+  bumped `fn` → `pub(crate) fn` (c39's module exports it with the
+  identical seven-conjunct body — no logic choice). A new tick-level
+  witness `w4_c39_the_lantern_persistence_gate_is_the_full_lanterns_can_
+  persist` pins the calm-night persist, the blood-moon mid-night clear,
+  the manual-lanterns ride-through and the dawn clear.
+* d130's KEEP regions untouched (§10c rows 3/4): the slime-clock-first
+  restructure, the `:64846` surface gate, the if/else StopRain shape,
+  `StartSlimeRain`'s `:64744` fix. The wind rename (`lantern_night` ↔
+  `lanterns_up`) stays f40/105 §4's mechanical verdict — d130 keeps
+  `lanterns_up`.
+
+### 9.3 The f39 season/SlimeSky keep-one receipt
+
+Re-verified against f39 tip `bd5a5a24a` (merge-base `a725acb04`): d130 has
+**zero edits** to `world_sim/npcs.rs` and `render/sky.rs` since the base —
+f39's SlimeSky spawn bodies (`npcs_w4_f39.rs`/`npcs_w4_f39_spawns.rs`),
+the kill-counter refinement (the per-death `slime_rain`/King recheck,
+f39 `npcs.rs:5441` region vs d130's base-inherited `:5202` census-gate
+form), the season/date module (`tr-core/season.rs` — ABSENT on d130,
+grep-verified), the `enter_loaded_world` season re-derivation and the
+`weather_w4_f39.rs`/`saveglue_w4_f39.rs` witness modules do not overlap
+any d130-changed body. **The merger keeps f39's bodies for those lanes.**
+The six shared files (`ambience.rs`, `app/mod.rs`, `app/saveglue.rs`,
+`rain.rs`, `world_sim/weather.rs`, `tr-core/world.rs`) carry the five
+boundary gates already composed BOTH-ways (`22371b4fe`, §8.4 — music
+track 48, the anniversary range-5 + `/2`, the menu-return StopSlimeRain,
+the lowTiles `/5`): d130's `saveglue.rs:373-384` arm and f39's
+`saveglue.rs:366+` arm are the SAME hunk (same comment intent, same
+`rngs.global()` stream); `ambience.rs::reset_spawn_time`'s `/2` is
+byte-identical on both tips. At merge those hunks dedupe; the rain.rs/
+weather.rs core bodies are d130's wholesale (f39's copies are the
+pre-d130 base shapes, superseded).
+
+### 9.4 The WEATHER-FAMILY bible (FINAL — one paragraph, for the merger)
+
+The weather family unions as ONE composed lane, **d130 canonical for the
+rain/snow core**: this branch owns `Rain.cs` verbatim (fall/draw/splash,
+the fixed-750-slot pool, `RainInputs`, the two-arm cloudAlpha ramp, the
+ambient tracks 28/45 lifecycle, the `update_time` roll ladders INCLUDING
+the c39-grafted `:64825-64831` lantern head clamp) and `Main.snowing()` on
+the GLOBAL bare-`Main.rand` stream (F1, §7), with g67's four unique folds
+grafted (R5/R6/R7/A2, the 146 hash-list) and **g67's rain.rs + draw.rs
+census wiring dropped wholesale**; **f39** owns the slime-rain event half
+(`start_slime_rain`/`stop_slime_rain`/the slime clock live on d130's
+f39-shaped tick — `cf4574e9`/`22371b4fe`, mutual exclusion witnessed both
+ways — while the SlimeSky spawn bodies, the kill-counter refinement, the
+season/date module and the v18 seasonal downeds stay f39's, §9.3);
+**c40** owns `Sandstorm.cs` (the wind-only severity machine + the
+flying-sand 268 emit) and the gate is ONE-WAY — `ZoneSandstorm` clears
+`ZoneRain` (`SceneMetrics.cs:698-703`), rain NEVER gates the storm
+(`Sandstorm.cs:32-77`, §5); **g69** owns the cloud draw/parallax lane
+including `rain_dim_sky` (the XNA byte-truncate-FIRST convention) — the
+`cloudAlpha`/`cloudBG` VALUES come from d130's rain state (the head clamp
+included), g69 keeps its draw bodies; **g68** owns the wind sim + leaf
+cadence — its LIVE `windSpeedCurrent` feeds d130's `GetRainFallVelocity`
+(`wind*18,14`), the Eyebrella drip (`wind*3,9`) and c40's severity, ONE
+wind-flag owner with read-only consumers; **c39** touches the family ONLY
+through the two graft hunks — NOW FOLDED (§9.2: the storm-deck head clamp
++ the full `LanternsCanPersist` gate), its lantern/party/event-sky bodies
+stay c39's. No two family branches own the same fn body; the only
+cross-branch writes were the enumerated grafts and they are all landed.
+**Gate command (the merger's verify):** `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` — judge only by the `test result:
+ok` lines (cargo may exit 1 on success in this repo); every witness on
+every family lane is WRITTEN NOT RUN (code-only), so the merged tree's
+first full run is the gate.
+
+Seal-phase commits (this branch, on top of `af3ebc1a`): the c39-graft
+code commit → this docs commit. No cargo/tests/rustfmt/graphify invoked.
