@@ -4746,12 +4746,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // draws — the table's rolls, then the legacy family's
                     // slot/pitch draws. The C#'s `Main.netMode == 2` gate
                     // (`NPC.cs:92245`) is the dedicated server's; the port
-                    // has none. No ported kind matches the critter table
-                    // yet (M4-NPC's roster has no critter ids), so the
-                    // emitter stays silent until they land.
+                    // has none. W4-d127 FINAL: the key is `cs_id()` (the
+                    // C# net id the table tests, `NPC.cs:92249`+), NOT
+                    // `to_u16()` (the port-local protocol space) — the
+                    // MERGER-L7 mis-route: GolemHead's protocol id 74
+                    // collides with the Bird 74 chirp arm, so the old key
+                    // made the Golem's head chirp by day. The bird kinds
+                    // (74/297/298/442/611/671-675/689) land on the roster
+                    // co-lanes (d35/d38/d40/d42/d43); until then no ported
+                    // kind's cs_id matches the table, so the emitter stays
+                    // silent — the arms are census-complete on main
+                    // (`critter_sound_cue`/`critter_legacy_voice`), NOT
+                    // e9/f2 (those port the IdleSounds ladder + water
+                    // splash, a different table).
                     let mut hi_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
                     let cue = crate::ambient_sound::critter_sound_cue(
-                        n.kind.to_u16() as i32,
+                        n.kind.cs_id() as i32,
                         world.day_time,
                         world.time,
                         (world.world_surface * 16.0) as f32,
@@ -7279,7 +7289,7 @@ mod tests {
         let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
         assert_eq!(
             crate::ambient_sound::critter_sound_cue(
-                NpcKind::Zombie.to_u16() as i32,
+                NpcKind::Zombie.cs_id() as i32,
                 true,
                 1000.0,
                 3000.0,
@@ -7295,6 +7305,54 @@ mod tests {
             UnifiedRandom::new(0),
             "out-of-table types consume no draws"
         );
+    }
+
+    /// W4-d127 FINAL — the critter-emitter KEY census (the MERGER-L7
+    /// mis-route fix): the table tests the C# NET ID (`cs_id`), not the
+    /// port-local protocol id (`to_u16`). GolemHead's protocol id 74
+    /// collides with the Bird 74 chirp arm (`NPC.cs:92277`), so the old
+    /// `to_u16` key made the Golem's head chirp by day; its `cs_id` 245
+    /// (the bestiary Golem fold) is outside every table arm and draws
+    /// nothing. The bird kinds' cs_id rows (74/297/298/442/611/671-675/
+    /// 689) are the ones the emitter must read once the roster co-lanes
+    /// land them. WRITTEN NOT RUN.
+    #[test]
+    fn the_critter_emitter_keys_cs_id_not_protocol_id() {
+        // The mis-route: GolemHead's protocol id IS a bird-table id.
+        assert_eq!(NpcKind::GolemHead.to_u16(), 74, "the protocol collision");
+        // Its net id is the Golem fold (245), outside the table.
+        assert_eq!(NpcKind::GolemHead.cs_id(), 245, "the bestiary Golem fold");
+        // Under the OLD key the head would chirp by day (Next(400)==0 →
+        // the 74 arm's Next(3) pick → legacy 32); under the FIXED key it
+        // is silent and draws nothing.
+        let mut old_rng = UnifiedRandom::new(5);
+        let mut old_roll = |hi: u32| old_rng.next_max(hi as i32) as u32;
+        let old = crate::ambient_sound::critter_sound_cue(
+            NpcKind::GolemHead.to_u16() as i32,
+            true, 1000.0, 3000.0, 3000.0, 0.0, &mut old_roll,
+        );
+        // The 74 arm fires on a Next(400)==0; seed 5 may or may not hit,
+        // but the KEY POINT is the arm is REACHABLE under the old key.
+        // Force the gate roll to 0 to prove the mis-route concretely.
+        let mut forced = |hi: u32| if hi == 400 { 0 } else { 1 };
+        let misroute = crate::ambient_sound::critter_sound_cue(
+            NpcKind::GolemHead.to_u16() as i32,
+            true, 1000.0, 3000.0, 3000.0, 0.0, &mut forced,
+        );
+        assert_eq!(misroute, Some((32, 14.0)), "the old key chirps the Golem head");
+        let _ = old;
+        // The fixed key: cs_id 245 is outside the table, no draw.
+        let mut rng = UnifiedRandom::new(5);
+        let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+        assert_eq!(
+            crate::ambient_sound::critter_sound_cue(
+                NpcKind::GolemHead.cs_id() as i32,
+                true, 1000.0, 3000.0, 3000.0, 0.0, &mut hi_roll,
+            ),
+            None,
+            "the fixed key silences the Golem head"
+        );
+        assert_eq!(rng, UnifiedRandom::new(5), "no draw under the fixed key");
     }
 
     /// S1-E-21 wave C — the death play's stream contract: `checkDead`'s
