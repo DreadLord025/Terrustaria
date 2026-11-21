@@ -757,17 +757,22 @@ pub(crate) fn double_jump_visuals(
 // ---------------------------------------------------------------------------
 
 /// The breath-bubble snapshot: the mouth anchor the host computed (the
-/// direction*12 offset + the breathing-reed / mount-mouth adjustments). The
-/// gate (`flag && Next(20)==0 && !lavaWet && !honeyWet`) is the host's; the
-/// drain rolls the Next(20) and spawns the type-34 bubble.
+/// direction*12 offset; the breathing-reed / mount-mouth adjustments fold)
+/// + the lava/honey-wet flags at the C# read moment. The host gates only
+/// `flag` (drowning); the drain rolls the `Next(20)` BEFORE reading the
+/// wet flags — the C# `||` order at `:23283`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct DrownBubbleDust {
     pub pos: Vec2,
     pub width: f32,
+    /// `base.lavaWet || base.honeyWet` — refused AFTER the gate draw.
+    pub lava_or_honey_wet: bool,
 }
 
-/// `:23316` — one type-34 bubble, box (width−8)×8, scale 1.2. The Next(20)
-/// gate draw rides the stream even when the spawn culls.
+/// `:23316` — one type-34 bubble, box (width−8)×8, scale 1.2. The C# gate
+/// is `!flag || Next(20) != 0 || lavaWet || honeyWet` (`:23283`): the draw
+/// rides whenever drowning, even when the wet flags then refuse (the f3
+/// reconcile fix — the old host-side wet gate skipped the draw).
 pub(crate) fn drown_bubble(
     rng: &mut UnifiedRandom,
     dust: &mut DustPool,
@@ -776,8 +781,9 @@ pub(crate) fn drown_bubble(
     b: &DrownBubbleDust,
     gate_pass: bool,
 ) {
-    // `:23283` — the Next(20) gate (the host already checked flag/lava/honey).
-    if !gate_pass || rng.next_max(20) != 0 {
+    // `:23283` — the short-circuit order: flag, then the draw, then the wet
+    // flags. `gate_pass` is the host's drowning check.
+    if !gate_pass || rng.next_max(20) != 0 || b.lava_or_honey_wet {
         return;
     }
     nd(
@@ -927,6 +933,7 @@ pub(crate) fn make_floor_dust(
             d.velocity.y -= 1.0;
             d.velocity *= 0.8;
             d.scale += rng.next_max(3) as f32 * 0.1;
+            // `:24026` — `(float)(base.width / 2)`: the INTEGER half.
             d.velocity.x = (d.position.x - (b.x + (b.width as i32 / 2) as f32)) * 0.2;
             if d.velocity.y > 0.0 {
                 d.velocity.y *= -1.0;
@@ -1760,7 +1767,9 @@ mod tests {
     fn w4_e1_drown_bubble_gate_and_shape() {
         let w = world();
         let c = ctx();
-        let b = DrownBubbleDust { pos: Vec2::new(400.0, 400.0), width: 20.0 };
+        let b = DrownBubbleDust {
+            pos: Vec2::new(400.0, 400.0), width: 20.0, lava_or_honey_wet: false,
+        };
         // gate_pass=false → no draw, no spawn.
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(61);
@@ -1782,6 +1791,16 @@ mod tests {
         let d = pool2.slot(0);
         assert_eq!(d.dust_type, 34);
         assert_eq!(d.alpha, 0);
+        // The wet flags refuse AFTER the gate draw (`:23283` || order):
+        // the stream still spends the Next(20), no bubble spawns.
+        let bw = DrownBubbleDust { lava_or_honey_wet: true, ..b };
+        let mut pool3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(seed);
+        drown_bubble(&mut rng3, &mut pool3, &c, &w, &bw, true);
+        assert!(active(&pool3).is_empty(), "lava/honey-wet refuses the bubble");
+        let mut mirror = UnifiedRandom::new(seed);
+        let _ = mirror.next_max(20);
+        assert_eq!(rng3.next_range(0, 1000), mirror.next_range(0, 1000));
     }
 
     /// W4-e1 site 23983 — the floor dust: a dirt (type 0) floor spawns a

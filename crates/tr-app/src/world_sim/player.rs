@@ -1393,15 +1393,67 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 slot.no_gravity = true;
             }
             // W4-e1 — the Player.cs dust sites' SECOND batch (the ledger
-            // docs/research/64-dust-sites-player-2.md). Each snapshot was
+            // docs/research/64-dust-sites-player-2.md, the 3-way reconcile
+            // docs/research/141-player-dust-reconcile.md). Each snapshot was
             // taken at the C# read moment inside the tick; the pure emitters
-            // replay on the `UpdatePlayers` stream in C# site order, using the
-            // SAME disjoint-field borrow pattern as the sticky drain above
-            // (`app.dust` / `app.rngs` / `&spawn_ctx` / `&app.world` while `p`
-            // is live). Batch 1: the eye trail (12569), glass slipper
-            // (14291/14300), Solar gain burst (16389), teleport visuals
-            // (16623/16633/16652), regen sparkle/crimson/full-mana
-            // (19273/19296/19555).
+            // replay on the `UpdatePlayers` stream in C# EXECUTION order
+            // (not line order), using the SAME disjoint-field borrow pattern
+            // as the sticky drain above (`app.dust` / `app.rngs` /
+            // `&spawn_ctx` / `&app.world` while `p` is live).
+            //
+            // Execution order (Player.Update): hair-dye `:24593` → manaHeat
+            // `:24630` → social-shadow/teleport `:24691-24692` → stoned
+            // `:25228` (`:25219`) → eye `:25487` → UpdateEquips' glass-
+            // slipper `:14242` (`:25633`) → UpdateArmorSets' Solar burst
+            // `:16389` + Vortex rings `:25877` (`:25685`) → regen sparkle/
+            // crimson `:19273/:19296` (`:25977`) → full-mana `:19555`
+            // (`:25995`) → movement (step sound → fast-run → Lawn Mower
+            // `:20320` (`:20178`, the HorizontalMovement tail) → jump
+            // sound/burst → dash → wall `:21654-21826` → DoubleJumpVisuals
+            // `:21901-22014`, `:26688-:26767`) → CheckDrowning bubble
+            // `:23316` (`:27655`) → splash dust-then-sound (`:27772`) →
+            // FloorVisuals `:23983` (`:28271`).
+            if let Some(b) = p.take_hair_dye_dust() {
+                crate::player_dust2::hair_dye_puff(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_mana_heat_dust() {
+                crate::player_dust2::mana_heat_ambient(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_teleport_visuals_dust() {
+                crate::player_dust2::teleport_visuals(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            // The stoned transition (`:25219-25234`) runs right after
+            // `selectedItemState.Update()` (`:25218`) — BEFORE the eye
+            // (`:25487`), ResetEffects (`:25491`), UpdateEquips (`:25633`),
+            // UpdateArmorSets (`:25685`) and the regen calls
+            // (`:25977/:25995`). Its 20 puffs draw here (the 141 order).
+            if let Some(b) = p.take_stoned_burst_dust() {
+                crate::player_dust2::stoned_burst(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
             if let Some(b) = p.take_yoraiz_eye_dust() {
                 crate::player_dust2::yoraiz_eye_trail(
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
@@ -1429,8 +1481,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &b,
                 );
             }
-            if let Some(b) = p.take_teleport_visuals_dust() {
-                crate::player_dust2::teleport_visuals(
+            if let Some(b) = p.take_vortex_ring_dust() {
+                crate::player_dust2::vortex_stealth_rings(
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                     &mut app.dust,
                     &spawn_ctx,
@@ -1463,96 +1515,6 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &spawn_ctx,
                     &app.world,
                     &b,
-                );
-            }
-            // W4-e1 batch 2 — the Lawn Mower puff (20320), the wall-cling puff
-            // (21654/21678/21729/21790/21826) and the DoubleJumpVisuals arm
-            // (21901/21915/21934/21941/21962/21989/22005/22014). Same
-            // disjoint-field borrow pattern; C# site order.
-            if let Some(b) = p.take_mow_lawn_dust() {
-                crate::player_dust2::mow_lawn_puff(
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    &mut app.dust,
-                    &spawn_ctx,
-                    &app.world,
-                    &b,
-                );
-            }
-            if let Some(b) = p.take_wall_cling_dust() {
-                crate::player_dust2::wall_cling_puff(
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    &mut app.dust,
-                    &spawn_ctx,
-                    &app.world,
-                    &b,
-                );
-            }
-            if let Some(b) = p.take_double_jump_visual_dust() {
-                crate::player_dust2::double_jump_visuals(
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    &mut app.dust,
-                    &spawn_ctx,
-                    &app.world,
-                    &b,
-                );
-            }
-            // W4-e1 batch 3 — the hair-dye puff (24274) and the manaHeat
-            // ambient (24641/24654). `Player.Update`'s execution order puts
-            // UpdateHairDyeDust (`:24593`) and the manaHeat block (`:24630`)
-            // BEFORE the stoned transition (`:25219`) and the Vortex stealth
-            // machine (`:25872`, inside UpdateEquips' tail) — the drain
-            // follows the EXECUTION order, not the line order.
-            if let Some(b) = p.take_hair_dye_dust() {
-                crate::player_dust2::hair_dye_puff(
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    &mut app.dust,
-                    &spawn_ctx,
-                    &app.world,
-                    &b,
-                );
-            }
-            if let Some(b) = p.take_mana_heat_dust() {
-                crate::player_dust2::mana_heat_ambient(
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    &mut app.dust,
-                    &spawn_ctx,
-                    &app.world,
-                    &b,
-                );
-            }
-            // W4-e1 batch 3 — the stoned burst (25228, `:25219`) and batch 4 —
-            // the Vortex stealth rings (25877/25887, `:25872`). Both execute
-            // BEFORE CheckDrowning (`:27655`) and FloorVisuals (`:28271`) in
-            // `Player.Update`; the drain keeps the execution order.
-            if let Some(b) = p.take_stoned_burst_dust() {
-                crate::player_dust2::stoned_burst(
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    &mut app.dust,
-                    &spawn_ctx,
-                    &app.world,
-                    &b,
-                );
-            }
-            if let Some(b) = p.take_vortex_ring_dust() {
-                crate::player_dust2::vortex_stealth_rings(
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    &mut app.dust,
-                    &spawn_ctx,
-                    &app.world,
-                    &b,
-                );
-            }
-            // W4-e1 batch 3 — the drowning bubble (23316, `:27655`). The
-            // bubble's Next(20) gate draw precedes the splash block
-            // (`:27772`) below; the floor dust (`:28271`) drains AFTER it.
-            if let Some(b) = p.take_drown_bubble_dust() {
-                crate::player_dust2::drown_bubble(
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    &mut app.dust,
-                    &spawn_ctx,
-                    &app.world,
-                    &b,
-                    true, // the host already gated drowning/lava/honey
                 );
             }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
@@ -1632,6 +1594,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // case-17 `Main.rand.Next(-10, 11)` pitch roll (`:862`) rides
             // the `UpdatePlayers` stream (the `Main.cs:17754` swap covers
             // `Player.Update`), only after the attenuation gate passed.
+            // HorizontalMovement (`:26688`) runs BEFORE JumpMovement
+            // (`:26744`) — the step sound draws first (the movement-block
+            // order, the 141 reconcile).
             if let Some((sound_type, style, sx, sy)) = p.take_step_sound() {
                 app.audio.play_step_sound(
                     (sound_type, style),
@@ -1640,11 +1605,29 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
-            // S1-E-21f — the extra-jump chain's plays: case 16's one
-            // `Next(-10, 11) * 0.01` pitch (`LegacySoundPlayer.cs:851`) rides
-            // the `UpdatePlayers` stream after the gate; the Fart's Item-16
-            // style play rides wave A's façade (the `GetRandomPitch`
-            // NextFloat on the audio-only stream — variance 0, still drawn).
+            // W4-e1 — the Lawn Mower puff (20320). MowTheLawn is the TAIL of
+            // HorizontalMovement (`:20176-20179`, inside `:19772`, called
+            // at `:26688`) — it runs AFTER the fast-run particles
+            // (`:19990/:20020`, the step sound above) and BEFORE JumpMovement
+            // (`:26744`)/DashMovement/the wall machines. Its NewDustDirect
+            // draw therefore precedes the jump-chain sounds (the 141
+            // execution order — the earlier placement after the jump sounds
+            // spent the stream out of order).
+            if let Some(b) = p.take_mow_lawn_dust() {
+                crate::player_dust2::mow_lawn_puff(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            // S1-E-21f — the extra-jump chain's plays (JumpMovement `:26744`,
+            // AFTER MowTheLawn): case 16's one `Next(-10, 11) * 0.01` pitch
+            // (`LegacySoundPlayer.cs:851`) rides the `UpdatePlayers` stream
+            // after the gate; the Fart's Item-16 style play rides wave A's
+            // façade (the `GetRandomPitch` NextFloat on the audio-only stream
+            // — variance 0, still drawn).
             if let Some((sx, sy)) = p.take_double_jump_sound() {
                 app.audio.play_double_jump_sound(
                     sx,
@@ -1659,6 +1642,51 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     sy,
                     0.0,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-e1 — the movement-block dust: the wall-cling puff
+            // (21654/21678/21729/21790/21826, `:26760/:26764`) then the
+            // DoubleJumpVisuals arm (21901/21915/21934/21941/21962/21989/
+            // 22005/22014, `:26767`) — after DashMovement's dust (d51's
+            // lane) and before CheckDrowning/the splash block.
+            if let Some(b) = p.take_wall_cling_dust() {
+                crate::player_dust2::wall_cling_puff(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_double_jump_visual_dust() {
+                crate::player_dust2::double_jump_visuals(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            // S1-E-21f — the drowning gasp (`Player.cs:23257`): case 23 is
+            // Volume/Pan only — no draws, no stream. It fires inside
+            // CheckDrowning (`:27655`) on the breath 1→0 edge, BEFORE the
+            // bubble gate (`:23283-23316`) — the 141 execution order.
+            if p.take_drown_sound() {
+                app.audio.play_drown_sound();
+            }
+            // W4-e1 — the drowning bubble (23316). CheckDrowning runs at
+            // `:27655`, AFTER the movement block and BEFORE the wet/splash
+            // block (`:27772`); the floor dust (`:28271`) drains AFTER both.
+            // The gate draws only while drowning; the wet flags refuse
+            // after the draw (the snapshot carries them — the 141 order).
+            if let Some(b) = p.take_drown_bubble_dust() {
+                crate::player_dust2::drown_bubble(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                    true, // the host gated `flag` (drowning) only
                 );
             }
             // W4-e1 batch 4 — the liquid entry/exit splash dust
@@ -1685,11 +1713,6 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     sy,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
-            }
-            // S1-E-21f — the drowning gasp (`Player.cs:23257`): case 23 is
-            // Volume/Pan only — no draws, no stream.
-            if p.take_drown_sound() {
-                app.audio.play_drown_sound();
             }
             // W4-e1 batch 3 — the floor dust (23983, `:28271`): FloorVisuals
             // runs at the movement tail, AFTER CheckDrowning (`:27655`) and

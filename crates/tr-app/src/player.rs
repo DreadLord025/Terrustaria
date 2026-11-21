@@ -773,9 +773,11 @@ pub struct Player {
     pub dead: bool,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
-    /// the facing-inheritance gate reads (`:77749`). The stealth armour
-    /// writers are unported (the Scout Sling's `aggro -= 400` half,
-    /// `Player.cs:14579`, still skips) — stock 0 until they land; the
+    /// the facing-inheritance gate reads (`:77749`). ResetEffects zeroes
+    /// it per tick (`:18377`); the Vortex stealth writer (`:25847`)
+    /// subtracts (W4-e1 reconcile). The Psycho-Knife/Shroomite writers
+    /// (`:25779`/`:25820`) are f3's machine; the Scout Sling's
+    /// `aggro -= 400` half (`Player.cs:14579`) still skips. The
     /// S1-D-3p wiring reads it through `npc_target::session_candidate`.
     pub aggro: i32,
     /// `Player.npcTypeNoAggro[NPCID.Count]` (`Player.cs:2994`, the bool
@@ -1005,9 +1007,11 @@ pub struct Player {
     /// `Player.lavaVision` (`Player.cs`): the Lava Shark's (buff 305) grant
     /// (`:9910`); `ResetEffects` clears (`:18757`). Draw-side, flag only.
     pub lava_vision: bool,
-    /// `Player.spikedBoots` (`Player.cs`): the Rat mount's wall-slide grant
-    /// (`Mount.UpdateAfterEquips` `Mount.cs:3002`); `ResetEffects` clears
-    /// (`:18660`). The slide consumer is unported — flag only.
+    /// `Player.spikedBoots` (`Player.cs`): the Rat mount's +1
+    /// (`Mount.UpdateAfterEquips` `Mount.cs:3002`) plus the climbing
+    /// accessory grants (953/975 +1, 976 +2, 984 =2, the frog family
+    /// `:14426-14444`); `ResetEffects` clears (`:18660`). The
+    /// WallClimbMovement/WallslideMovement gates read the level (W4-e1).
     pub spiked_boots: i32,
     /// `Player.slideDir` (`Player.cs:28084` reset, `:28242-28252` writes):
     /// the slope-slide direction the Rat's rotation lerp reads
@@ -3060,7 +3064,10 @@ impl Player {
             melee_enchant: 0,
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
-            stealth: 0.0,
+            // `Player.cs:1562`: `public float stealth = 1f` — the f3
+            // reconcile fix (the port's old 0.0 made the Vortex recovery
+            // ramp fire 25 ring ticks on the first equip).
+            stealth: 1.0,
             space_gun: false,
             shadow_armor: false,
             crimson_regen: false,
@@ -4571,6 +4578,13 @@ impl Player {
         // callers are the PVP pair (`Player.cs:44098`, `Projectile.cs:14672`)
         // — unreachable here, so the port's callers all pass false and the
         // flag rides for parity + the maths test.
+        // `Player.cs:38245` — `stealth = 1f`: any landed hit reveals the
+        // player (the f3 reconcile row; the stealth machines re-fade from
+        // the top next tick). Runs AFTER the dodge early-returns, before
+        // the defense reduction — the C# position. CROSS-NOTE (keep-one):
+        // f50 `hurt_inner` carries the SAME write (its panic/squire head,
+        // f3-canonical per its own note) — at merge keep ONE copy.
+        self.stealth = 1.0;
         let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
         let raw = if crit { raw * 2 } else { raw };
@@ -5551,9 +5565,39 @@ impl Player {
             963 => self.black_belt = true,
             984 => {
                 self.black_belt = true;
-                // `:15065`: the Tabi's dash. (`spikedBoots = 2` at `:15066`
-                // has no port field - the wall-cling is unported.)
+                // `:15065`: the Tabi's dash.
                 self.dash_type = 1;
+                // `:15066`: `spikedBoots = 2` (the ASSIGNMENT) — the
+                // wall-cling machines now consume it (W4-e1 reconcile).
+                self.spiked_boots = 2;
+            }
+            // W4-e1 reconcile — the climbing grants (`ApplyEquipFunctional`
+            // `:15038-15049`, the f3 rows): Climbing Claws 953 / Shoe Spikes
+            // 975 `spikedBoots++`, Tiger Climbing Gear 976 `+= 2`. The
+            // WallClimbMovement/WallslideMovement gates read the level.
+            953 | 975 => self.spiked_boots += 1,
+            976 => self.spiked_boots += 2,
+            // W4-e1 reconcile — the frog family (`:14426-14444`, the f3
+            // rows): the auto-jump + 1.6 jump-speed + 10 safe-fall bundle;
+            // 3994/3995 add `accFlipper`, 3995/3996 add `spikedBoots += 2`.
+            3994 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.acc_flipper = true;
+            }
+            3995 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.acc_flipper = true;
+                self.spiked_boots += 2;
+            }
+            3996 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.spiked_boots += 2;
             }
             // The dash granters: the Tabi (`:15050-15053`, type 1) and the
             // Shield of Cthulhu (`:15054-15057`, type 2).
@@ -5768,9 +5812,9 @@ impl Player {
     /// staff's shot knockback takes the `minionKB` bonus FIRST (`:53348-53351`,
     /// `if (sItem.summon) KnockBack += this.minionKB`), then the melee glove's
     /// ×2 (`:53352-53355`), the Titan buff's ×1.5 (`:53356-53359`) and the
-    /// shroomite-stealth ranged scale (`:53360-53363`). The `setVortex` ranged
-    /// arm (`:53364-53367`) has no port field (the vortex stealth is unported)
-    /// and folds out. `ItemCheck_Shoot` calls this at `:47151` before the
+    /// shroomite-stealth ranged scale (`:53360-53363`) and the `setVortex`
+    /// ranged scale (`:53364-53367`, the W4-e1 reconcile row).
+    /// `ItemCheck_Shoot` calls this at `:47151` before the
     /// spawn, so the minion/sentry shots carry the bonus — the port's throw
     /// path previously passed the raw `fx_kb` and dropped it.
     pub fn weapon_knockback(&self, def: &registry::ItemDef, knock_back: f32) -> f32 {
@@ -5785,6 +5829,11 @@ impl Player {
             kb *= 1.5;
         }
         if def.ranged && self.shroomite_stealth {
+            kb *= 1.0 + (1.0 - self.stealth) * 0.5;
+        }
+        // `:53364-53367` — the Vortex set's ranged knockback scale (the f3
+        // reconcile row; the two ifs are independent in the C#).
+        if def.ranged && self.set_vortex {
             kb *= 1.0 + (1.0 - self.stealth) * 0.5;
         }
         kb
@@ -6024,11 +6073,10 @@ impl Player {
             self.pending_splash_sound = Some((style, self.x, self.y));
             // W4-e1 — the entry splash dust (`:27783-27940`, sites
             // 27785/27812/27825/27839). The liquid kind picks the burst; the
-            // water style feeds Dust.dustWater(). The drain replays it AFTER
-            // the splash sound (the C# sound-then-dust order is dust-then-
-            // sound here — the sound queues first, the dust drain follows the
-            // sound drain in the world_sim seam, matching the source's
-            // PlaySound-after-NewDust within the same tick).
+            // water style feeds Dust.dustWater(). The C# runs the dust loop
+            // BEFORE PlaySound(19) within each arm — the world_sim seam
+            // drains the dust first, then this queued sound (the 141
+            // reconcile order; both queue here at the same read moment).
             let liquid_kind = if now_lava { 1 } else if now_shimmer { 3 } else if now_honey { 2 } else { 0 };
             self.pending_liquid_splash_dust = Some(crate::player_dust2::LiquidSplashDust {
                 x: self.x,
@@ -6435,6 +6483,11 @@ impl Player {
         self.melee_crit = 4;
         self.ranged_crit = 4;
         self.magic_crit = 4;
+        // `Player.cs:18377` — `aggro = 0`: ResetEffects zeroes it every
+        // tick; the Vortex stealth writer (`:25847`) subtracts from it per
+        // tick (the f3 reconcile row — without the reset the subtraction
+        // accumulates across ticks).
+        self.aggro = 0;
         // S1-C-12 wave E — the combat family's per-tick clears the wired
         // grants need: `minionKB = 0f` (`Player.cs:18347`) and `kbGlove
         // = false` (`:18709`). Without them the sky-stone bundle's
@@ -7623,16 +7676,21 @@ impl Player {
         // W4-e1 — `Player.cs:26753-26767`: the jump==0 visual cancel, then the
         // wall-cling machines (WallClimbMovement for the Rat mount, else
         // WallslideMovement), then DoubleJumpVisuals. The C# order sits right
-        // after DashMovement and before the flight section.
-        if self.jump == 0 {
-            self.cancel_all_jump_visual_effects();
+        // after DashMovement and before the flight section. The whole block
+        // lives in the `grappling[0] == -1 && !tongued` movement arm
+        // (`:26494`, the f3 reconcile guard — a grappled/tongued player
+        // never wall-clings or trails the double-jump visuals).
+        if !grappling && !self.tongued {
+            if self.jump == 0 {
+                self.cancel_all_jump_visual_effects();
+            }
+            if self.mount.is_active() && self.mount.kind() == 55 {
+                self.wall_climb_movement(world, gravity);
+            } else {
+                self.wallslide_movement(world, gravity);
+            }
+            self.double_jump_visuals();
         }
-        if self.mount.is_active() && self.mount.kind() == 55 {
-            self.wall_climb_movement(world, gravity);
-        } else {
-            self.wallslide_movement(world, gravity);
-        }
-        self.double_jump_visuals();
         // `Player.cs:26799-26812`: while CCed the mount dismounts and the
         // plain gravity takes over (the port's CC input zeroing and the
         // flight gate below already cover the rest of that branch).
@@ -9152,6 +9210,9 @@ impl Player {
             if self.dash <= 0 {
                 return;
             }
+            // `:21379` — an active dash cancels the Vortex stealth (the f3
+            // reconcile row; the door-helper call above it is unported).
+            self.vortex_stealth_active = false;
             if self.vx > threshold || self.vx < -threshold {
                 self.vx *= fast;
                 return;
@@ -10074,10 +10135,11 @@ impl Player {
             });
         };
         if self.spiked_boots >= 2 {
-            // `:21639` — the climb gate.
-            if !wall
-                || (!(flag3 | flag4) && !(self.vy > 0.0) && !(self.vy < gravity))
-            {
+            // `:21639` — the climb gate. With gravDir folded to +1 the C#'s
+            // second velocity disjunct (`vy < gravity || gravDir != -1`) is
+            // vacuously true, so the gate reduces to wall + (a direction
+            // key or vy > 0) — the f3 reconcile reading (W4-e1 fixup).
+            if !wall || (!(flag3 | flag4) && !(self.vy > 0.0)) {
                 return;
             }
             let mut num3 = gravity;
@@ -10101,8 +10163,10 @@ impl Player {
             }
             self.sliding = true;
         } else {
-            // `:21709` — the slide gate (the 0.5 threshold).
-            if !wall || (!(flag3 | flag4) && !(self.vy > 0.5) && !(self.vy < -0.5)) {
+            // `:21709` — the slide gate (the 0.5 threshold). The gravDir-1
+            // fold kills the `vy < -0.5` disjunct (it needs gravDir == -1);
+            // only `vy > 0.5` survives (the f3 reconcile reading).
+            if !wall || (!(flag3 | flag4) && !(self.vy > 0.5)) {
                 return;
             }
             self.fall_start = (self.y / TILE_PX) as i32;
@@ -10122,12 +10186,15 @@ impl Player {
 
     /// W4-e1 — the wall-climb ahead probe (`:21652`/`:21676`/`:21727`):
     /// `SolidTile((Center + (0,vy).SafeNormalize(0)*10).ToTileCoordinates())`.
+    /// `ToTileCoordinates` is `(int)v >> 4` (`Utils.cs:1807-1810`) — the
+    /// truncation-then-arithmetic-shift, NOT a division (the f3 reconcile
+    /// fix: `/16` rounds differently for negatives).
     fn climb_probe_solid(&self, world: &World) -> bool {
         let (cx, cy) = self.center();
         let dir = Vec2::new(0.0, self.vy);
         let n = if dir.length() > 0.0 { dir / dir.length() } else { Vec2::ZERO };
         let probe = Vec2::new(cx, cy) + n * 10.0;
-        solid_tile(world, (probe.x / TILE_PX) as i32, (probe.y / TILE_PX) as i32)
+        solid_tile(world, (probe.x as i32) >> 4, (probe.y as i32) >> 4)
     }
 
     /// W4-e1 — `Player.WallslideMovement` (`Player.cs:21750-21840`, sites
@@ -10167,8 +10234,9 @@ impl Player {
             });
         };
         if self.spiked_boots >= 2 {
-            // `:21777` — the slide gate.
-            if !wall || (!(self.vy > 0.0) && !(self.vy < gravity)) {
+            // `:21777` — the slide gate: gravDir 1 reduces to wall + vy > 0
+            // (the `vy < gravity` disjunct needs gravDir == -1 — dead).
+            if !wall || !(self.vy > 0.0) {
                 return;
             }
             let mut num3 = gravity;
@@ -10183,8 +10251,12 @@ impl Player {
                 self.vy = -num3 + 1e-5;
             }
             self.sliding = true;
-        } else if (wall && self.vy > 0.5) || self.vy < -0.5 {
-            // `:21814` — the single-boot slide.
+        } else if wall && self.vy > 0.5 {
+            // `:21814` — the single-boot slide. The C# is
+            // `(flag && vy > 0.5 && gravDir == 1) || (vy < -0.5 && gravDir
+            // == -1)`; the second disjunct is dead at gravDir 1 (the earlier
+            // `|| self.vy < -0.5` fired without a wall — the f3 reconcile
+            // fix).
             self.fall_start = (self.y / TILE_PX) as i32;
             if self.control_down {
                 self.vy = 4.0;
@@ -10215,6 +10287,16 @@ impl Player {
         // The mount jumps (Santank/Goat/Basilisk) have no DoubleJumpVisuals
         // arm — their visuals are the jump-chain burst (d51's lane).
         if matches!(kind, ExtraJump::Santank | ExtraJump::WallOfFleshGoat | ExtraJump::Basilisk) {
+            return;
+        }
+        // `:21894` — the Cloud arm ALSO needs the Sandstorm option spent or
+        // absent (`canJumpAgain_Sandstorm || !hasJumpOption_Sandstorm`);
+        // an unspent Sandstorm suppresses the Cloud puff (the f3 reconcile
+        // reading — W4-e1 fixup).
+        if kind == ExtraJump::Cloud
+            && self.has_jump_options[ExtraJump::Sandstorm.index()]
+            && !self.can_jump_again[ExtraJump::Sandstorm.index()]
+        {
             return;
         }
         self.pending_double_jump_visual_dust =
@@ -10286,16 +10368,21 @@ impl Player {
     /// stealth ramps ±0.04/tick (down while active, up otherwise); while it
     /// moves (flag11) the two ring dust sites queue. The ranged damage/crit/
     /// aggro grants + the run-speed ×0.3 ride the live stealth. The mount
-    /// cancels the active state (`:25850-25853`).
+    /// cancels the active state (`:25850-25853`). The Psycho-Knife (3106)
+    /// and Shroomite arms (`:25733-25825`) + the `stealth = 1f` fallback
+    /// (`:25896-25899`) are the f3 machine's — this port keeps the Vortex
+    /// arm + the fallback (the f3 reconcile; the shroomite knockback scale
+    /// reads `stealth` at its 1f idle).
     fn update_vortex_stealth(&mut self) {
         if !self.set_vortex {
             // `UpdateArmorSets_Always_Vortex` (`:16315-16321`): losing the set
-            // disarms the toggle. The C# stealth-chain's final else
-            // (`:25896-25899`) would reset stealth to 1 here, but the port's
-            // shroomite lane is unported and its knockback tests read the
-            // stealth field directly — the reset stays with that lane
-            // (ANALYSIS); the rings never fire without the set.
+            // disarms the toggle.
             self.vortex_stealth_active = false;
+            // `:25896-25899` — the stealth chain's final else: no stealth
+            // source pins `stealth = 1f`. The Psycho-Knife arm (`:25733`,
+            // held 3106) is f3's machine; when it lands its check goes
+            // ahead of this fallback (the reconcile doc's fold-hunk).
+            self.stealth = 1.0;
             return;
         }
         let mut flag11 = false;
@@ -11502,14 +11589,26 @@ impl Player {
         self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
             || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
-        // W4-e1 — `:23732-23743`: the 666/712 shimmer buff (the buff lane's),
-        // the slope carve-out (a sloped floor tile suppresses the dust), and
-        // the `!wet && !mount.Cart` gate before MakeFloorDust.
+        // W4-e1 — `:23732-23735`: the Stinky tiles (666/712) grant buff 120
+        // for 180 ticks (the g66 reconcile row — `whoAmI == Main.myPlayer`
+        // is the port's single player). The grant reads the REAL tile, so
+        // it runs BEFORE the slope carve-out.
+        if kind == 666 || kind == 712 {
+            self.buffs.add_buff(120, 180);
+        }
+        // `:23736-23739`: the slope carve-out (a sloped tile in the
+        // three-tile window suppresses the dust kind). `:23740`: the C#
+        // `base.wet` is WetCollision — ANY liquid — so the gate is the
+        // four-flag union (the g66 reconcile row; the water-only `wet`
+        // let lava/honey/shimmer feet spawn floor dust).
         let sloped = [x - 1, x, x + 1].iter().any(|&tx| {
             world.tile(tx, y).is_some_and(|t| t.slope() != 0)
         });
         let dust_kind = if sloped { -1 } else { kind as i32 };
-        if !self.wet && !self.cart_mounted && dust_kind >= 0 {
+        let any_wet = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        let cart = self.cart_mounted
+            || (self.mount.is_active() && crate::mount::is_cart(self.mount.kind()));
+        if !any_wet && !cart && dust_kind >= 0 {
             self.pending_floor_dust = Some(crate::player_dust2::FloorDust {
                 tile: dust_kind,
                 frame_y: floor_frame_y,
@@ -11833,7 +11932,7 @@ impl Player {
     /// (`:56779-56786`). The `CommandForbiddenStorm` half (`:56784`) is the
     /// storm command's own lane (deferred, ANALYSIS — it spawns the 656
     /// projectile + pays mana). The Vortex stealth toggle (`:56775-56778`)
-    /// is the stealth system's lane (unported).
+    /// landed with the W4-e1 stealth machine.
     ///
     /// `reversed` is `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`):
     /// when true the set-bonus cardinal is UP (keyDir 1), so the DOWN
@@ -11960,13 +12059,14 @@ impl Player {
             self.breath = (self.breath + 3).min(BREATH_MAX);
             self.breath_cd = 0;
         }
-        // W4-e1 — `:23283-23316`: the breath bubble (site 23316). The gate is
-        // `drowning && Next(20)==0 && !lavaWet && !honeyWet`; the drain rolls
-        // the Next(20). The mouth anchor: direction*12 + the gravDir-1 fold
-        // (num4=0, +4); the breathing-reed / mount-mouth adjustments are the
-        // accessory/mount lanes' (no port fields — documented skip, the base
-        // anchor stands).
-        if drowning && !self.lava_wet && !self.honey_wet {
+        // W4-e1 — `:23283-23316`: the breath bubble (site 23316). The host
+        // gates ONLY `flag` (drowning) — the C# `||` chain draws the
+        // Next(20) BEFORE reading lavaWet/honeyWet, so the wet flags ride
+        // the snapshot and the drain refuses after its draw (the f3
+        // reconcile fix). The mouth anchor: direction*12 + the gravDir-1
+        // fold (num4=0, +4); the breathing-reed / mount-mouth adjustments
+        // are the accessory/mount lanes' (documented skip, the base stands).
+        if drowning {
             let pos = Vec2::new(
                 self.x + 12.0 * self.facing as f32,
                 self.y + 4.0,
@@ -11974,6 +12074,7 @@ impl Player {
             self.pending_drown_bubble_dust = Some(crate::player_dust2::DrownBubbleDust {
                 pos,
                 width: self.width,
+                lava_or_honey_wet: self.lava_wet || self.honey_wet,
             });
         }
     }
