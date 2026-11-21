@@ -673,6 +673,12 @@ const MAX_FALL: f32 = 7.0;
 /// `gravity = 0.065f; maxFallSpeed = 4f; wetVelocity = velocity * 0.375f`.
 const SHIMMER_GRAVITY: f32 = 0.065;
 const SHIMMER_MAX_FALL: f32 = 4.0;
+/// `WorldItem.UpdateItem`'s wet-velocity factors (`WorldItem.cs:379-390`):
+/// the air default `wetVelocity = velocity * 0.5f` (`:379`), the shimmer-wet
+/// override `* 0.375f` (`:384`). `ApplyMovement` (`:1074-1084`) integrates a
+/// wet drop at `wetVelocity` while the collision pass runs at full velocity.
+const WET_STEP_AIR: f32 = 0.5;
+const WET_STEP_SHIMMER: f32 = 0.375;
 /// `WorldItem.MoveInWorld` (`WorldItem.cs:854-860`): the horizontal friction
 /// `base.velocity.X *= 0.95f` and the snap to rest below `0.1`.
 const FRICTION_X: f32 = 0.95;
@@ -1198,7 +1204,9 @@ impl ItemDrop {
     pub fn update(&mut self, world: &World, dt: f32) {
         self.age += dt;
         if self.being_grabbed {
-            // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`).
+            // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`): the wet
+            // flags clear and `ApplyMovement` integrates at FULL velocity
+            // (`wet` false → `:1082`).
             self.shimmer_wet = false;
             self.being_grabbed = false;
             self.on_conveyor = false;
@@ -1211,23 +1219,25 @@ impl ItemDrop {
             // the honeyWet/wet flags the port does not carry per-drop yet — the
             // air pair stands in for them (ANALYSIS).
             let (mut gravity, mut max_fall) = (GRAVITY, MAX_FALL);
+            // `:379-384` — `wetVelocity = velocity * 0.5f`, the shimmer-wet
+            // arm re-scales to `* 0.375f`. The factor rides the same
+            // previous-tick flag as the gravity pair.
+            let mut wet_step = WET_STEP_AIR;
             if self.shimmer_wet {
                 gravity = SHIMMER_GRAVITY;
                 max_fall = SHIMMER_MAX_FALL;
+                wet_step = WET_STEP_SHIMMER;
             }
             // `UpdateShimmer` (`:403`) runs BEFORE `MoveInWorld` (`:413`); a
             // shimmered drop overrides gravity to 0 (`:483`).
             if let Some(g) = self.update_shimmer(world) {
                 gravity = g;
             }
-            // `MoveInWorld`'s wet re-probe (`:870-878`): `Collision.shimmer`
-            // sets `shimmerWet` for the NEXT tick's gravity head.
-            self.shimmer_wet = self.box_in_shimmer(world);
             // `MoveInWorld` (`:413`) runs for EVERY non-grabbed drop — the
             // shimmered one too (gravity 0, but the friction/conveyor/collision
             // tail still applies; the old port skipped it with a bare
             // `pos += vel`).
-            self.move_in_world(world, gravity, max_fall);
+            self.move_in_world(world, gravity, max_fall, wet_step);
         }
         // `WorldItem.cs:441-444` — the grab delay ticks down every update,
         // grabbed or not.
@@ -1240,10 +1250,11 @@ impl ItemDrop {
     /// head (`WorldItem.cs:774-786`) or the gravity/friction head
     /// (`:849-862`), then the conveyor + tile-collision pass. `gravity`/
     /// `max_fall` are the caller's resolved pair (the shimmer-wet override or
-    /// the shimmered 0). The repulsion scan itself (`:790-847`) is the
+    /// the shimmered 0); `wet_step` is the head's `wetVelocity` factor
+    /// (`:379-390`). The repulsion scan itself (`:790-847`) is the
     /// slice-level [`Self::repel_shimmered`] the items pass runs before this
     /// update; its `flag` rides [`Self::repulsed`].
-    fn move_in_world(&mut self, world: &World, gravity: f32, max_fall: f32) {
+    fn move_in_world(&mut self, world: &World, gravity: f32, max_fall: f32, wet_step: f32) {
         if !self.shimmered && item_no_gravity(self.kind) {
             // `WorldItem.cs:774-786` — the float: BOTH axes ×0.95 with the
             // 0.1 rest snap, no gravity add, no repulsion (the scan lives in
@@ -1286,30 +1297,67 @@ impl ItemDrop {
         );
         self.pos = Vec2::new(bp[0], bp[1]);
         self.vel = Vec2::new(bv[0], bv[1]);
+        // `MoveInWorld`'s wet re-probe (`:865-878`), BEFORE the collision +
+        // `ApplyMovement` halves: `LavaCollision`/`WetCollision` at the
+        // pre-movement position. The port derives `wet`/`shimmerWet` from the
+        // faithful probes each tick (the C# LATCHES them, `:868`/`:877` — the
+        // kind flags clear only via `!wet` at `:1036-1041`; the honey/lava
+        // per-drop flags land with the gravity arms, ANALYSIS W4-e19). The
+        // probe result feeds BOTH the next tick's gravity head and THIS
+        // tick's `ApplyMovement` gate (`:1076` reads `base.wet` post-set).
+        let wet_now = self.box_is_wet(world);
+        self.shimmer_wet = self.box_in_shimmer(world);
+        // `wetVelocity` (`:379-390`'s head value, `:1046-1066`'s refresh):
+        // the collision pass runs at FULL velocity; an axis it overrides
+        // keeps that residual in `wetVelocity` too (`:1052-1059`), the free
+        // axes integrate at the liquid fraction.
+        let mut wet_vel = self.vel * wet_step;
+        let pre = self.vel;
         let nx = self.pos.x + self.vel.x;
         if crate::player::collides_rect(world, nx, self.pos.y, SIZE, SIZE) {
             // `Collision.TileCollision` (`Collision.cs:2415-2426`) leaves only
             // the residual that fit on the blocked axis (`result.X = …`), so a
-            // drop stops dead against a wall instead of bouncing back.
+            // drop stops dead against a wall instead of bouncing back (the
+            // port's zero-residual stand-in, both wet and dry).
             self.vel.x = 0.0;
-        } else {
-            self.pos.x = nx;
         }
         let ny = self.pos.y + self.vel.y;
         if crate::player::collides_rect(world, self.pos.x, ny, SIZE, SIZE) {
-            if self.vel.y > 0.0 {
+            let flush = if self.vel.y > 0.0 {
                 let ty = ((ny + SIZE) / TILE_PX).floor() as i32;
-                self.pos.y = ty as f32 * TILE_PX - SIZE;
+                ty as f32 * TILE_PX - SIZE
             } else {
                 let ty = (ny / TILE_PX).floor() as i32;
-                self.pos.y = (ty + 1) as f32 * TILE_PX;
-            }
+                (ty + 1) as f32 * TILE_PX
+            };
             // `Collision.cs:2446-2451`: `result.Y` collapses to the flush
-            // residual (`+ 0.01f` for `gravDir == 1`), i.e. no restitution —
-            // the drop lies where it landed.
-            self.vel.y = 0.0;
+            // residual — no restitution. The WET arm keeps that residual as
+            // the velocity (`:1056-1059` copies it into `wetVelocity`, and
+            // `ApplyMovement` steps the drop flush); the DRY arm keeps the
+            // standing flush-rest deviation (snap the position, zero the
+            // velocity — the resting witnesses pin vel 0).
+            if wet_now {
+                self.vel.y = flush - self.pos.y;
+            } else {
+                self.pos.y = flush;
+                self.vel.y = 0.0;
+            }
+        }
+        // `:1052-1059` — the axes the collision changed refresh `wetVelocity`
+        // to the new (full) value; the free axes keep the scaled head value.
+        if self.vel.x != pre.x {
+            wet_vel.x = self.vel.x;
+        }
+        if self.vel.y != pre.y {
+            wet_vel.y = self.vel.y;
+        }
+        // `ApplyMovement` (`:1074-1084`): a wet drop integrates `wetVelocity`,
+        // a dry one the full velocity. The dry blocked-Y arm already snapped
+        // the position flush and zeroed vel.y, so its Y term adds nothing.
+        if wet_now {
+            self.pos += wet_vel;
         } else {
-            self.pos.y = ny;
+            self.pos += self.vel;
         }
     }
 
@@ -2377,5 +2425,66 @@ mod s1_p_i47_tests {
         // (the else arm frictions X only).
         assert!((soul.vel.y - 1.8).abs() < 1e-5, "the else arm: {}", soul.vel.y);
         assert!((soul.vel.x - 1.9).abs() < 1e-5);
+    }
+
+    /// W4-e19 — the `wetVelocity` blend (`WorldItem.cs:379-396`/`:1046-1084`):
+    /// a wet drop's collision pass runs at FULL velocity but `ApplyMovement`
+    /// integrates the free axes at the liquid fraction — shimmer-wet 0.375
+    /// (`:384`), the air default 0.5 (`:379`, the water arm's stand-in until
+    /// the per-drop wet flag lands).
+    #[test]
+    fn w4_e19_the_wet_drop_integrates_at_the_liquid_fraction() {
+        let w = shimmer_pool();
+        // A drop INSIDE the pool (rows 18-19), shimmerWet carried from the
+        // previous tick: gravity 0.065, wet_step 0.375.
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 18.0 * TILE_PX + 4.0, 2.0, 0.0, 0.0);
+        d.shimmer_wet = true;
+        let before = d.pos;
+        d.update(&w, 1.0 / 60.0);
+        // X: 2.0 ×0.95 friction = 1.9, integrated ×0.375 = 0.7125.
+        assert!(
+            (d.pos.x - (before.x + 1.9 * 0.375)).abs() < 1e-4,
+            "the shimmer fraction: {}",
+            d.pos.x - before.x
+        );
+        // Y: gravity 0.065, integrated ×0.375 = 0.024375.
+        assert!(
+            (d.pos.y - (before.y + 0.065 * 0.375)).abs() < 1e-4,
+            "the Y fraction: {}",
+            d.pos.y - before.y
+        );
+        // The velocity itself stays FULL (the collision ran at 1.9 / 0.065).
+        assert!((d.vel.x - 1.9).abs() < 1e-5);
+        assert!((d.vel.y - 0.065).abs() < 1e-6);
+    }
+
+    /// The dry arm is unchanged: full-velocity integration (`:1082`), the
+    /// flush-rest deviation keeps the resting drop still.
+    #[test]
+    fn w4_e19_the_dry_drop_integrates_at_full_velocity() {
+        let w = ground();
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 0.0, 0.0);
+        let before = d.pos;
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.pos.x - (before.x + 1.9)).abs() < 1e-5, "full X: {}", d.pos.x - before.x);
+        assert!((d.pos.y - (before.y + 0.1)).abs() < 1e-5, "full Y: {}", d.pos.y - before.y);
+    }
+
+    /// The wet blocked-Y arm keeps the flush residual (`:1056-1059` →
+    /// `wetVelocity.Y` full): a shimmer-wet drop landing on the pool floor
+    /// steps flush in ONE tick and carries the residual velocity, not the
+    /// dry arm's zero.
+    #[test]
+    fn w4_e19_the_wet_landing_keeps_the_flush_residual() {
+        let w = shimmer_pool();
+        // Resting one px above the floor (floor top 20*16 = 320, box 14 →
+        // flush pos.y = 306): pos.y 305, falling at 2 (capped 4 → stays 2).
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 305.0, 0.0, 2.0, 0.0);
+        d.shimmer_wet = true;
+        d.update(&w, 1.0 / 60.0);
+        // The blocked Y: residual 306 - 305 = 1.0, copied FULL into
+        // wetVelocity.Y → the drop lands flush this tick.
+        assert!((d.pos.y - 306.0).abs() < 1e-4, "flush landing: {}", d.pos.y);
+        assert!((d.vel.y - 1.0).abs() < 1e-4, "the residual velocity: {}", d.vel.y);
     }
 }
