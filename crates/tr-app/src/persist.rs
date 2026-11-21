@@ -27,6 +27,18 @@ pub struct SavedPlayer {
     /// with none. Vanilla keeps the same pairs in world-file section 11
     /// (`NPCKillsTracker.Save`, M6-SAVE-1's scope).
     pub kills: Vec<(String, i32)>,
+    /// `Player.extraAccessory` (`Player.cs:866`, the Demon Heart's permanent
+    /// sixth accessory slot, use-grant `:45197`) — version 7 of the sidecar
+    /// (W4-g87). The `.plr` half (`Serialize:54776`) is the f44 verify-sweep's
+    /// lane; this is the live-session `.trplayer` carrier. Older files load
+    /// false. Rides the self-identifying `dh` line (the g88 research/103 §6
+    /// rule-5 contract — a sentinel prefix, never a bare numeric line).
+    pub extra_accessory: bool,
+    /// `Player.unlockedSuperCart` (`Player.cs:2052`, the Minecart Powerup's
+    /// permanent Super Cart unlock, use-grant `:45209`) — version 7 (W4-g87),
+    /// the second token of the `dh` line. The `.plr` half is the super-cart
+    /// BitsByte (`Serialize:54914-54918`, f44's lane). Older files load false.
+    pub unlocked_super_cart: bool,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
@@ -49,7 +61,7 @@ pub fn save(
     dye: &[u16; 10],
     kills: &[(String, i32)],
 ) -> std::io::Result<()> {
-    let mut s = format!("6\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("7\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -69,6 +81,18 @@ pub fn save(
         s.push_str(&format!("{kind} "));
     }
     s.push_str("\n");
+    // Version 7 (W4-g87): the Demon Heart / Super Cart unlock line — a
+    // SELF-IDENTIFYING `dh <extraAccessory> <unlockedSuperCart>` sentinel
+    // line (the g88 research/103 §6 rule-5 contract: a new post-dye line
+    // appends with a shape distinct from the numeric pair/flag/loadout
+    // lines, so the superset reader's shape walk never misparses it). The
+    // `.plr` halves are f44's lane; the pet `bought_*` flags are WORLD
+    // globals (`.wld`/`.trwld`), never the sidecar.
+    s.push_str(&format!(
+        "dh {} {}\n",
+        u8::from(player.extra_accessory),
+        u8::from(player.unlocked_super_cart),
+    ));
     std::fs::write(player_path(world), s)
 }
 
@@ -78,9 +102,10 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let version = lines.next()?.trim();
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
-        // dye kinds; 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
+        // dye kinds; 7 the Demon Heart / Super Cart `dh` unlock line (W4-g87);
+        // 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
         // tile/wall/weapon/coin ranges and are converted on load.
-        "3" | "4" | "5" | "6" => false,
+        "3" | "4" | "5" | "6" | "7" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -107,7 +132,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if version == "4" || version == "5" || version == "6" {
+    if matches!(version, "4" | "5" | "6" | "7") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -115,7 +140,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if version == "5" || version == "6" {
+    if matches!(version, "5" | "6" | "7") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -130,10 +155,26 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if version == "6" {
+    if matches!(version, "6" | "7") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
+        }
+    }
+    // Version 7 (W4-g87) adds the Demon Heart / Super Cart `dh` unlock line
+    // (the self-identifying sentinel — `dh <extraAccessory> <unlockedSuperCart>`).
+    // Older files load both false. The line is optional (a v7 file written
+    // before this lane keeps the defaults), so a missing/non-`dh` line is
+    // tolerated rather than fatal.
+    let mut extra_accessory = false;
+    let mut unlocked_super_cart = false;
+    if version == "7" {
+        if let Some(dh_line) = lines.next() {
+            let mut parts = dh_line.split_whitespace();
+            if parts.next() == Some("dh") {
+                extra_accessory = parts.next().and_then(|v| v.parse::<u8>().ok()) == Some(1);
+                unlocked_super_cart = parts.next().and_then(|v| v.parse::<u8>().ok()) == Some(1);
+            }
         }
     }
     Some(SavedPlayer {
@@ -145,6 +186,8 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         armor,
         dye,
         kills,
+        extra_accessory,
+        unlocked_super_cart,
     })
 }
 
@@ -188,6 +231,54 @@ mod tests {
         assert_eq!(s.inventory[49], (0, 0));
         assert_eq!(s.armor, [89, 80, 76]);
         assert_eq!(s.dye, dye);
+        // W4-g87: a fresh player carries neither permanent unlock.
+        assert!(!s.extra_accessory, "fresh Demon Heart flag false");
+        assert!(!s.unlocked_super_cart, "fresh Super Cart flag false");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g87 — the Demon Heart / Super Cart `dh` unlock line round-trips
+    /// (the v7 self-identifying sentinel, the g88 research/103 §6 rule-5
+    /// contract). Both flags survive the save/load; the `.plr` halves are
+    /// f44's lane, this is the live-session sidecar carrier.
+    #[test]
+    fn w4_g87_the_demon_heart_and_super_cart_unlocks_round_trip() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.extra_accessory = true; // the Demon Heart use-grant (`:45197`)
+        p.unlocked_super_cart = true; // the Minecart Powerup grant (`:45209`)
+        let dir = crate::test_world_helpers::test_scratch("persist-g87-dh");
+        let path = dir.join("tr-persist-g87.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        // The writer emits the v7 `dh 1 1` sentinel line.
+        let text = std::fs::read_to_string(player_path(&path)).unwrap();
+        assert!(text.starts_with("7\n"), "the writer emits v7");
+        assert!(text.lines().any(|l| l == "dh 1 1"), "the dh unlock line");
+        let s = load(&path).expect("sidecar");
+        assert!(s.extra_accessory, "the Demon Heart flag survives");
+        assert!(s.unlocked_super_cart, "the Super Cart flag survives");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g87 — a v6 sidecar (no `dh` line) loads both unlocks false (the
+    /// back-compat default; the Demon Heart / Super Cart are new in v7).
+    #[test]
+    fn w4_g87_a_v6_sidecar_loads_the_unlocks_false() {
+        let dir = crate::test_world_helpers::test_scratch("persist-g87-v6");
+        let path = dir.join("tr-persist-g87-v6.trwld");
+        let mut line = String::from("6\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n1 (BlueSlime 7) \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push('\n');
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v6 sidecar");
+        assert!(!s.extra_accessory, "v6 has no Demon Heart flag");
+        assert!(!s.unlocked_super_cart, "v6 has no Super Cart flag");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

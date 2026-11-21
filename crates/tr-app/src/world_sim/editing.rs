@@ -23,6 +23,12 @@ mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;
+// W4-g87 — the permanent power-up use arms this lane owns (`Player.cs:45192-
+// 45424`'s unclaimed remainder): the Demon Heart (3335), the Minecart Powerup
+// (5289) and the Pet Licenses (4829/4830/4910). The crystals/fruit (g88), the
+// shimmer permanents/books/satchel (g89/g90), the Torch God (f33) and the
+// Artisan Loaf (g90) are the sibling lanes' — see the module header.
+mod permanent_upgrades;
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
@@ -1996,6 +2002,27 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // frame at the top). A started use consumes the tick like the boss arms;
     // a live swing's per-tick arm runs without consuming.
     if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
+    // W4-g87 — the permanent power-up use arms this lane owns
+    // (`ItemCheck_OwnerOnlyCode`, `Player.cs:43598-43599` + `:43606`): the
+    // Demon Heart (3335, `:43598`), the Minecart Powerup (5289, `:43599`)
+    // and the Pet Licenses (4829/4830/4910, `:43606`). Same shared machine
+    // as g88's fruit/crystals (the recall-machine shape: the use START on
+    // the press edge, the grant at ItemTimeIsZero inside the swing, one use
+    // per press — autoReuse false). The sibling lanes wire the Life Crystal
+    // (`:43595`, g88), the Life Fruit (`:43596`, g88), the Mana Crystal
+    // (`:43597`, g88), the Torch God (`:43600`, f33), the Artisan Loaf
+    // (`:43601`, g90), the Combat Book (`:43604`, g89/g90) and the Peddler's
+    // Satchel (`:43605`, g90) at their own C#-order slots; the merge keeps
+    // the full `:43595-43607` ladder. A started use consumes the tick.
+    if permanent_upgrades::demon_heart_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
+    if permanent_upgrades::minecart_powerup_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
+    if permanent_upgrades::pet_license_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,

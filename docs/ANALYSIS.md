@@ -39244,3 +39244,81 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The Demon Heart / Minecart / Pet License use arms (W4-g87)
+
+**Status: DONE (code-only, 2026-11-21).** The unclaimed remainder of the
+`Player.ItemCheck_OwnerOnlyCode` permanent-item cluster (`Player.cs:45192-
+45424`). The sibling lanes own the rest (the g90 DOC-SWEEP census is the
+authoritative lane map): the Life Crystal 29 / Mana Crystal 109 / Life Fruit
+1291 (g88 `crystals.rs`/`life_fruit.rs`), the Artisan Loaf 5326 (g90), the
+Torch God's Favor 5043 (f33), the Combat Book 4382 / Volume Two 5336 + the
+Peddler's Satchel 5343 (g89/g90), and the shimmer permanents 5337/5338/5339/
+5340/5341/5342 (g89/g90). This lane ports ONLY:
+
+* **Demon Heart 3335** (`ItemCheck_UseDemonHeart` `:45192-45200`, called
+  `:43598`): the permanent expert accessory slot. The gate `!extraAccessory
+  && Main.expertMode` (`:45194`) reads `buffs.expert_mode` (the same mirror
+  the slot-8 `is_item_slot_unlocked_and_usable` gate uses, `player.rs:4880`);
+  on it `ApplyItemTime` (30-tick cadence) + `extraAccessory = true` (`:45197`)
+  + the generic consumable pay (`:43280-43326`). The slot-8 consumer
+  (`player.rs:4880` + `equip_swap.rs:104`) already landed (S1-H-5/i48) — the
+  flag had no writer until now.
+* **Minecart Powerup 5289** (`ItemCheck_UseMinecartPowerUp` `:45202-45214`,
+  called `:43599`): the Super Cart unlock ONCE (`unlockedSuperCart` `:45209`)
+  + the ALWAYS `QuickSpawnItem(3353)` Minecart Mech (`:45212`). Unlike the
+  other permanents the use has NO flag gate (`:45204`) — a re-use still
+  spawns a Mech and pays the stack. The `QuickSpawnItem` -> `GetOrDropItem`
+  fills the inventory first, the overflow drops at the player centre; the
+  Mech's prefix rolls on `UpdateItems` (the bobber-catch drain's convention).
+* **Pet Licenses 4829/4830/4910** (`ItemCheck_UsePetLicenses` `:45352-45366`
+  -> `LicenseOrExchangePet` `:45438-45445` -> `NPC.UnlockOrExchangePet`
+  `NPC.cs:80894-80918`, called `:43606`): the `boughtCat`/`boughtDog`/
+  `boughtBunny` WORLD unlocks + the `Misc.License*Used` `ChatColors.World`
+  text. The grant gate `ItemTimeIsZero && (!petBoughtFlag || NPC.AnyNPCs)`
+  (`:45440`).
+
+**The machine.** The Demon Heart + Minecart Powerup ride g88's
+`life_fruit::permanent_upgrade_item_check` shape (inlined in
+`permanent_upgrades.rs` so the branch is self-contained — the merge dedupes
+onto g88's shared helper): the use START on the `controlUseItem &&
+releaseUseItem && itemAnimation == 0` press edge (`:42733`), the grant on the
+first action tick inside the animation at `ItemTimeIsZero` (`StartActualUse`
+leaves `itemTime` 0 — the boss-spawner precedent). Both stock `useTime 30 /
+useAnimation 30 / useStyle 4`, `autoReuse` false. The Pet Licenses run the
+same press-edge start inline (the bought-flag gate cannot ride the shared
+fn-pointer machine's per-item closure).
+
+**Deviations (recorded):**
+* The Pet License exchange (`NPC.UnlockOrExchangePet`'s `RerollVariation`
+  arms, `NPC.cs:80910-80917`) needs a live TownCat/Dog/Bunny NPC + the
+  `TownNPCProfiles` variation table — neither is shipped. `NPC.AnyNPCs` is
+  therefore always false (a re-use refuses) and the exchange folds to the
+  fail branch; the first-purchase unlock is the live path. The
+  `NetMessage.TrySendData(7)` world sync (`:80908`) has no SP port.
+* The `NetMessage.SendData(4)` player-info syncs (`:45198`/`:45210`) have no
+  single-player port.
+* The Mech's `QuickSpawnItem` prefix rolls on `UpdateItems` at the overflow
+  drop (the port's `spawn_item_drop_px` convention); the C# rolls it at spawn
+  (`Prefix(-1)` `:7176`) and `GetItem` keeps it — the recorded order deviation
+  (the bobber-catch drain's same shape).
+
+**Persistence.** The `.plr` (vanilla `Player.Serialize`) halves of
+`extraAccessory` (`:54776`) and the super-cart BitsByte (`:54914-54918`) are
+the f44 verify-sweep's lane (`player_file.rs`, the G7 unlock-header block) —
+NOT this lane's scope. The `.trplayer` live-session sidecar (`persist.rs`)
+carries `extra_accessory` + `unlocked_super_cart` on a new self-identifying
+`dh <extra> <cart>` sentinel line (version 7 on this branch's base; the g88
+research/103 §6 rule-5 contract — a new post-dye line appends with a shape
+distinct from the numeric pair/flag/loadout lines, so the superset reader's
+shape walk never misparses it; the merge folds it into the v9+ superset).
+The pet `bought_*` flags are WORLD globals: the `.wld` flags block
+(`WorldFile.cs:1392-1394`, write + read gate 217, the golden-fixture tail
+offsets 2021/2022/2023) and the `.trwld` v18 three-byte tail (the v15
+queen-slime byte's shape; pre-v18 loads false). The combat-book-vol-two /
+peddler-satchel `.trwld` v18 pair is the g90 lane's — the Lead merges the two
+v18 tails.
+
+**Verification (code-only).** 6 use-arm witnesses + 3 persist witnesses +
+the `.wld` owned-field round-trip + the `.trwld` v18 round-trip — all WRITTEN
+NOT RUN (the lane's no-cargo constraint). Every touched file parse-checked
+via `rustfmt --edition 2024 --check`.
