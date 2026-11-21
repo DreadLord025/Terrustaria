@@ -39262,7 +39262,7 @@ EVP all refuse). **No compiler invoked**; the witnesses are WRITTEN, NOT RUN.
 | types 18/72/86/87/226/650/439/535/651/600/602 (row-less) | ported arm-total in `damage_kind_gate_refuses` (never spawn) |
 | 378 SpiderEgg, 613 StardustCellMinion, 444 Xenopopper bubble, 500 CrimsonHeart, 1018 DirtiestBlock, 1056 BoulderPet, 460 ChargedBlasterCannon holder, 633 LastPrism holder, 601, 831 StormTigerGem, 970 AbigailCounter, 861 Football (row-less), 1007 GasTrap (row-less) | PORTED (the unconditional list, this round) |
 | 882/888/895/896/653/1090 (row-less light pets) | ported arm-total |
-| aiStyle 31 (sprays 145 + the seven W4-d18 solution rows) / 32 (row-less) | PORTED |
+| aiStyle 31 (sprays 145 + the seven W4-d18 solution rows) / 32 (row-less) | PORTED — the seven rows are a d18/f25 DUP (f25 `5e83d3ecb` vs d18 `78ffe8e11`, same match key = duplicate-arm compile error on keep-both); KEEP d18's superset row (alpha 255 + ignoreWater overlay), DROP f25's row + stats-only witness, KEEP f25's ammo/C3/C4 wiring — the exact keep-one publish: research/26h seal continuation §2 |
 | aiStyle 137 `ai[0] != 0` (the Lightning Auras 688-690 — zap only on the wrap tick, `:68886-68890`) | PORTED |
 | aiStyle 138 (the Explosive Traps 691-693 — the sentry never deals contact damage; the 139 blast is NOT gated) | PORTED |
 | 833/834/835 `ai[0] == 4` (the Storm Tigers' pounce) | PORTED |
@@ -39301,7 +39301,13 @@ because 601 deals no contact damage in C# either. **Disposition: the row is
 M7-WIRE-2's, not W4-d18's — the row-shape fix (penetrate 1 / alpha 255) +
 the teleport-AI port are cross-noted to the d6 wiring/teleport lane, not
 done here** (renaming the const + re-porting the row is out of this retire
-task's scope; the gate already refuses 601 faithfully).
+task's scope; the gate already refuses 601 faithfully). **SEAL
+continuation:** the EXACT C# spec for BOTH halves (the row-shape target
+tuple + the `HandleMovement`/`PortalHelper.TryPlacingPortal` teleport
+chain, every helper window cited) is published as task seed **R-26-13**
+(90-consolidated §2(d); the full spec in research/26h "SEAL continuation
+— cross-lane publishes" §1) for the d6 lane (`7edfcd49` tip) to port
+without re-deriving the census.
 
 **Witnesses (WRITTEN, NOT RUN).** `w4_d18_the_flames_smoke_tail_deals_no_damage`
 (0/53 bite, 54/71 refuse, both kinds, all three walks, the refused contact
