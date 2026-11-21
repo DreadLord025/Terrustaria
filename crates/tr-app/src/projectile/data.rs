@@ -1102,6 +1102,26 @@ pub const SPARKLE_GUITAR: u16 = 856;
 /// `ProjectileID.StarCannonStar` (955, `ProjectileID.cs:2464`) — the Star
 /// Cannon's shot (aiStyle 5, `penetrate = -1`, `alpha = 50`).
 pub const STAR_CANNON_STAR: u16 = 955;
+/// `ProjectileID.StarWrath` (503, `ProjectileID.cs:1560`) — the Star Wrath's
+/// star (aiStyle 5, melee, `penetrate = 2`, `alpha = 255`, `tileCollide =
+/// false`, `extraUpdates = 1`, local immunity 15; `Projectile.cs:5743-5756`).
+/// W4-e3 coverage phase — the row unblocks `ai_falling_star_family`'s 503
+/// gate + the `style5_spark_503` emitter (g64's unwired `trail_503` twin is
+/// the merge keep-one; docs/research/125-proj-dust-coverage.md).
+pub const STAR_WRATH: u16 = 503;
+/// `ProjectileID.MeteorWhipMeteor` (1037, `ProjectileID.cs:2628`) — the
+/// Meteor Whip's meteor (aiStyle 5, `alpha = 254`, `scale = 0.8`,
+/// `extraUpdates = 1`, `tileCollide = false`, local immunity −1;
+/// `Projectile.cs:9780-9792`). W4-e3 coverage phase.
+pub const METEOR_WHIP_METEOR: u16 = 1037;
+/// `ProjectileID.MeteorStormMeteor` (1049, `ProjectileID.cs:2652`) — the
+/// Meteor Staff's storm meteor (aiStyle 5, friendly AND hostile, `alpha =
+/// 254`, `scale = 0.8`, `timeLeft = 1200`, `penetrate = -1`, `tileCollide =
+/// false`, trap; `Projectile.cs:9938-9952`). The hostile half rides the
+/// `spawn_hostile` friendly=false flip (the FLAMES_TRAP precedent); the
+/// `netMode == 2` localAI[0] counter (`:23832-23840`) is server-only, dropped.
+/// W4-e3 coverage phase.
+pub const METEOR_STORM_METEOR: u16 = 1049;
 /// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
 /// 14x18, `penetrate = -1`, `tileCollide = false`).
 pub const LAST_PRISM: u16 = 633;
@@ -3831,6 +3851,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 5, `penetrate = -1`, `alpha = 50`, ranged (`light = 1f`
             // dropped).
             STAR_CANNON_STAR => (18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 50, 1.0)),
+            // W4-e3 coverage phase — `Projectile.cs:5743-5756`: the Star
+            // Wrath star (503): 24x24, aiStyle 5, friendly, `penetrate = 2`,
+            // `alpha = 255`, `tileCollide = false`, melee, `extraUpdates = 1`,
+            // local immunity 15. The stock timeLeft 3600 (`:787`).
+            STAR_WRATH => (24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 1, false, false, false, (true, 15, false, -1, 255, 1.0)),
+            // `Projectile.cs:9780-9792`: the Meteor Whip meteor (1037): 24x24,
+            // aiStyle 5, friendly, local immunity −1, `scale = 0.8`,
+            // `extraUpdates = 1`, `alpha = 254`, `tileCollide = false`. The
+            // stock penetrate 1 (`:774`) + timeLeft 3600 (`:787`).
+            METEOR_WHIP_METEOR => (24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, -1, false, -1, 254, 0.8)),
+            // `Projectile.cs:9938-9952`: the Meteor Staff storm meteor (1049):
+            // 24x24, aiStyle 5, friendly AND hostile (the hostile half rides
+            // `spawn_hostile`'s friendly=false flip — the FLAMES_TRAP
+            // precedent), `scale = 0.8`, `timeLeft = 1200`, `extraUpdates = 1`,
+            // `alpha = 254`, `penetrate = -1`, `tileCollide = false`, trap.
+            METEOR_STORM_METEOR => (24.0, 24.0, 5, -1, 1200, 1, false, false, true, (false, -2, false, -1, 254, 0.8)),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4246,6 +4282,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-e3 coverage phase — the Star Wrath star sets
+                    // `melee = true` (`Projectile.cs:5752`).
+                    | STAR_WRATH
             ),
         ranged: matches!(
             kind,
@@ -4792,5 +4831,52 @@ mod tests {
         assert!(!proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
+    }
+
+    /// W4-e3 coverage phase — the three UNROWED aiStyle-5 kinds' rows land
+    /// verbatim (`Projectile.cs:5743-5756`/`:9780-9792`/`:9938-9952`), the
+    /// census in docs/research/125-proj-dust-coverage.md. They unblock the
+    /// `ai_falling_star_family` kind gate (the e3 batch-3 emitters were
+    /// already written; g64's unwired `trail_503` twin is the merge
+    /// keep-one). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_e3_the_star_wrath_and_meteor_rows_are_verbatim() {
+        let star = proj_data(STAR_WRATH).expect("the 503 row");
+        assert_eq!((star.w, star.h), (24.0, 24.0), ":5745-5746");
+        assert_eq!(star.ai_style, 5, ":5747");
+        assert_eq!(star.penetrate, 2, ":5749");
+        assert_eq!(star.alpha, 255, ":5750");
+        assert!(!star.tile_collide, ":5751");
+        assert!(star.melee, ":5752");
+        assert_eq!(star.extra_updates, 1, ":5753");
+        assert!(star.uses_local_immunity, ":5754");
+        assert_eq!(star.local_hit_cooldown, 15, ":5755");
+        assert_eq!(star.time_left, TIME_LEFT_DEFAULT, "the stock :787");
+        assert_eq!(star.scale, 1.0, "the stock :785");
+        let whip = proj_data(METEOR_WHIP_METEOR).expect("the 1037 row");
+        assert_eq!((whip.w, whip.h), (24.0, 24.0), ":9782-9783");
+        assert_eq!(whip.ai_style, 5, ":9784");
+        assert!(whip.uses_local_immunity, ":9786");
+        assert_eq!(whip.local_hit_cooldown, -1, ":9787");
+        assert_eq!(whip.scale, 0.8, ":9788");
+        assert_eq!(whip.extra_updates, 1, ":9789");
+        assert_eq!(whip.alpha, 254, ":9790");
+        assert!(!whip.tile_collide, ":9791");
+        assert_eq!(whip.penetrate, 1, "the stock :774 — the arm sets none");
+        assert!(!whip.melee && !whip.ranged && !whip.magic, "no class flag");
+        let storm = proj_data(METEOR_STORM_METEOR).expect("the 1049 row");
+        assert_eq!((storm.w, storm.h), (24.0, 24.0), ":9940-9941");
+        assert_eq!(storm.ai_style, 5, ":9942");
+        assert_eq!(storm.scale, 0.8, ":9945");
+        assert_eq!(storm.time_left, 1200, ":9946");
+        assert_eq!(storm.extra_updates, 1, ":9947");
+        assert_eq!(storm.alpha, 254, ":9948");
+        assert_eq!(storm.penetrate, -1, ":9949");
+        assert!(!storm.tile_collide, ":9950");
+        assert!(storm.trap, ":9951");
+        // The friendly+hostile pair (`:9943-9944`): the row carries friendly
+        // (the pool's spawn default true); the hostile half is the
+        // `spawn_hostile` flip, not a ProjData field (the FLAMES_TRAP shape).
+        assert!(!storm.melee && !storm.ranged && !storm.magic, "no class flag");
     }
 }

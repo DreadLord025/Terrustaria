@@ -7008,10 +7008,16 @@ impl Projectile {
     /// [`Self::ai_falling_star`] and the 92 rides `special_arrows::
     /// falling_star_step`; this arm serves the rest. The dispatch kind-gates
     /// it so it stays a no-op until the rows land (the aiStyle-6/152
-    /// precedent). ROW CENSUS (this round): the five cloak stars
-    /// 723/724/725/726/1133 are ROWED on the pushed W4-f48 lane (bba610bb,
-    /// the shared `:7646-7658` row + `ai_cloak_star`); the 503/1037/1049
-    /// stay unrowed on every pushed tip — their gates keep the no-op.
+    /// precedent). ROW CENSUS (W4-e3 coverage phase, 2026-11-21): the five
+    /// cloak stars 723/724/725/726/1133 are ROWED on the pushed W4-f48 lane
+    /// (bba610bb, the shared `:7646-7658` row + `ai_cloak_star`); the
+    /// 503/1037/1049 rows NOW LAND ON THIS BRANCH (`data.rs`, verbatim
+    /// `:5743-5756`/`:9780-9792`/`:9938-9952` — the census in
+    /// docs/research/125-proj-dust-coverage.md), so this arm's 503/1037/1049
+    /// halves are LIVE: the dispatch kind gate reaches them through their
+    /// rows. The d75 hum extension for the 503 (`:23881-23885`, its re-arm
+    /// covers the 9/955 only) is the sound lane's merge edit — the skip
+    /// below stays cited until then.
     ///
     /// KEEP-ONE (cloak stars): f48's `ai_cloak_star` covers the same
     /// `:23845-23953` head (latch + twinkle `Next(40)` + alpha ramp + spin)
@@ -17327,19 +17333,19 @@ impl ProjectilePool {
                         // i17 slice; the Starfury star 9 + the Star Cannon
                         // star 955 (S1-P-i22) ride the fuller i22 arm (the
                         // tileCollide latches + the alpha ramps + the spin).
-                        // W4-e3: the unrowed family kinds (503/723-726/1037/
-                        // 1049/1133) ride `ai_falling_star_family` — kind-
-                        // gated so they keep the no-op fall-through until
-                        // their rows land (the aiStyle-6 precedent); the
+                        // W4-e3: the family kinds (503/723-726/1037/
+                        // 1049/1133) ride `ai_falling_star_family` — the
                         // 723's manual fall-through gate reads the owner's
                         // Top.Y (`:23847`, the pass's player snapshot).
-                        // ROW CENSUS: the cloak five (723-726/1133) are
-                        // rowed on the pushed W4-f48 lane (bba610bb) with
-                        // their own `ai_cloak_star` arm — at the merge keep
-                        // ONE machine (f48's rowed arm survives, this
-                        // arm's cloak half feeds it the dust block; the
-                        // keep-one note on `ai_falling_star_family`). The
-                        // 503/1037/1049 stay unrowed on every pushed tip.
+                        // ROW CENSUS (coverage phase): the cloak five
+                        // (723-726/1133) are rowed on the pushed W4-f48 lane
+                        // (bba610bb) with their own `ai_cloak_star` arm — at
+                        // the merge keep ONE machine (f48's rowed arm
+                        // survives, this arm's cloak half feeds it the dust
+                        // block; the keep-one note on
+                        // `ai_falling_star_family`). The 503/1037/1049 rows
+                        // land on THIS branch (coverage phase, `data.rs`
+                        // verbatim) — their halves of this arm are live.
                         5 => {
                             if self.slots[i].kind == FALLING_STAR {
                                 crate::special_arrows::falling_star_step(

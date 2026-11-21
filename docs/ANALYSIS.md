@@ -39347,3 +39347,40 @@ seam). The gore/sound/light halves stay their lanes' documented skips.
 no cargo/rustc/rustfmt/tests/dotnet/graphify invoked. Verified by
 re-reading the cited C# (`:22230-22351`, `:23830-24099`, `:24110-24150`),
 the d16/d1/f48/g64 pushed tips via `git show`, and the 42-site line scan.
+
+## The PROJ-DUST coverage phase: the master census + the 503/1037/1049 rows (W4-e3, 2026-11-21, code-only mode)
+
+**The master census** lives in `docs/research/125-proj-dust-coverage.md`:
+the 1195-site `Dust.NewDust` line scan of `Projectile.cs` attributed per
+enclosing method and matched against every pushed dust-lane tip (module
+bodies AND commit messages) plus main's draw-census stubs. The early-AI
+region `:0-22297` is FULLY claimed (d53's sites 1-40; its batch 4 wired the
+wet 8, batch 3 re-censused the 466/728). The unclaimed windows: the `Kill()`
+remainder (234 sites — g65's continuation), the `Kill_Bombs_DoUsualKillCode`
+dust tail (15 sites `:78227-78508` — the smallest free window, claimed and
+ported this round, below), the `AI()` inline remainder (40), the
+named-machine region (87+36) and the `AI_001` edges (2).
+
+**The three UNROWED aiStyle-5 rows land verbatim on this branch**
+(`projectile/data.rs`): the 503 StarWrath (`:5743-5756` — 24x24, melee,
+penetrate 2, alpha 255, tileCollide false, extraUpdates 1, local immunity 15),
+the 1037 MeteorWhipMeteor (`:9780-9792` — alpha 254, scale 0.8, local
+immunity −1, the stock penetrate 1) and the 1049 MeteorStormMeteor
+(`:9938-9952` — friendly+hostile, scale 0.8, timeLeft 1200, penetrate −1,
+trap; the hostile half rides `spawn_hostile`'s friendly=false flip, the
+FLAMES_TRAP precedent; the `netMode == 2` localAI[0] counter
+`:23832-23840` is server-only, dropped). This unblocks the e3
+`ai_falling_star_family` kind gate — the arm + the `style5_spark_503` /
+`style5_comet_tail` emitters were already written (batch 3), their
+503/1037/1049 halves are now LIVE. Cross-notes: f48's cloak-five keep-one is
+unchanged (its rowed `ai_cloak_star` survives, takes the cloak dust half);
+g64's unwired `trail_503` twin is now wireable via the 503 row — keep ONE
+at the wiring wave (the e3 arm is the rowed survivor here); d75's falling-star
+hum re-arm covers the 9/955 only — the 503's `:23881-23885` extension
+(`20 + Next(40)`, the `type != 1037 && type != 1049` gate) is the sound
+lane's merge edit, the e3 arm keeps the hum skip cited until then.
+
+**Code-only round.** The 1 new row witness
+(`w4_e3_the_star_wrath_and_meteor_rows_are_verbatim`) is WRITTEN, NOT RUN —
+no cargo/rustc/rustfmt/tests/dotnet/graphify invoked. Verified by re-reading
+the cited C# SetDefaults arms and the pushed-tip census via `git show`.
