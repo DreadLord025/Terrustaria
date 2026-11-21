@@ -680,6 +680,14 @@ pub(crate) struct DoubleJumpDust {
     pub(crate) vx: f32,
     pub(crate) vy: f32,
     pub(crate) jump: i32,
+    /// W4-f3 seal (KEEP-E1, e1 3245d624) — the Sandstorm gore sibling's gate
+    /// (`Player.cs:21920`, `miscCounter % 3 == 0`). When it fires, the
+    /// `Gore.NewGore` type ARGUMENT `Main.rand.Next(220,223)` (`:21922`) draws on
+    /// `UpdatePlayers` BEFORE the gore body; the body + its post-writes are
+    /// W4-d55's lane (the gore body is unported), but the argument draw is NOT
+    /// d55's — skipping it shifts every later draw on the stream. e1 keeps the
+    /// argument draw; f3's canonical copy adopts it here.
+    pub(crate) sandstorm_gore_gate: bool,
 }
 
 /// One queued wall-climb/wallslide dust puff (`Player.WallClimbMovement`
@@ -8331,6 +8339,14 @@ impl Player {
         // tell "moved onto the plate" from "stands on it".
         self.old_x = self.x;
         self.old_y = self.y;
+        // W4-f3 seal (KEEP-E1, e1 3245d624 / g66 248f0ff4d) — `Player.cs:28073-
+        // 28081`: the `falling` flag captures the PRE-integration velocity at the
+        // movement head (|vy| > gravity), so a landing tick arrives at FloorVisuals
+        // (`:28271`) with vy == 0 but falling == true and fires the 20-dust burst.
+        // The old rest-path capture read the POST-collision vy (always 0 at rest),
+        // so the landing burst never fired. e1 and g66 both already carry this
+        // head capture; f3 adopts it here (the e1b-141 merge dedupes to one).
+        let falling = self.vy > gravity || self.vy < -gravity;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
@@ -8450,12 +8466,12 @@ impl Player {
         }
 
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
-        // the movement block reads the flags next tick (one tick stale).
+        // the movement block reads the flags next tick (one tick stale). The
+        // `falling` flag is the movement-head capture above (a landing tick
+        // arrives here with vy == 0 but falling == true — the 20-dust burst
+        // fires; the `TryBouncingBlocks` caller `:34861` is the bounce lane's,
+        // unported — ANALYSIS).
         if self.vy == 0.0 && !grappling {
-            // `Player.cs:28073-28081`: the `falling` latch — `velocity.Y` beyond
-            // ±gravity. At rest (vy == 0) it is false; the `TryBouncingBlocks`
-            // call site (`:34861`) is unported, so only the rest path rides here.
-            let falling = self.vy > gravity || self.vy < -gravity;
             self.floor_visuals(world, falling);
         }
 
@@ -9211,10 +9227,16 @@ impl Player {
     /// `Player.ShouldDrawWingsThatAreAlwaysAnimated` (`Player.cs:30737-30748`):
     /// the three always-animated wing sets keep the rest legs while airborne.
     fn should_draw_wings_that_are_always_animated(&self) -> bool {
+        // W4-f3 seal (KEEP-g66, g66 248f0ff4d): the mount gate is
+        // `mount.CanUseWings` (`:30743`) — `Mount.cs:570-580` returns TRUE when
+        // `_data == null || !_active`. The stale `data().is_some_and` form
+        // folded it to false and starved the Rainbow/Spooky/Bat leg arms
+        // unmounted (the `the_moon_lord_legs_overrun_the_body_rows` witness
+        // already expects row 0 for wings 22 unmounted). g66's fix adopted.
         self.vy != 0.0
             && !self.grappling_active
             && (!self.wet || !self.should_float_in_water())
-            && self.mount.data().is_some_and(|d| d.can_use_wings)
+            && self.mount.can_use_wings()
     }
 
     /// `Player.ShouldFloatInWater` (`Player.cs:3872-3885`): `canFloatInWater`
@@ -9611,6 +9633,7 @@ impl Player {
             vx: self.vx,
             vy: self.vy,
             jump: self.jump,
+            sandstorm_gore_gate: self.misc_counter % 3 == 0,
         });
     }
 
@@ -24314,5 +24337,37 @@ mod w4_f3_carpet_tests {
         assert!(p.release_down, "an unheld key arms the latch (:27636)");
         p.update_minion_rest_command(&w, Vec2::ZERO, true, false);
         assert!(!p.release_down, "holding down clears it (:27636)");
+    }
+
+    /// W4-f3 seal (KEEP-E1, e1 3245d624) — `Player.cs:28073-28081`: the
+    /// `falling` flag captures the PRE-integration velocity at the movement
+    /// head, so a landing tick reaches `FloorVisuals` (`:28271`) with vy == 0
+    /// but falling == true and queues the 20-dust landing burst. The old
+    /// rest-path capture read the POST-collision vy (always 0 at rest), so the
+    /// burst never fired. Drop the player one tile above a snow floor (147 →
+    /// dust 76) with a falling velocity; after one tick it rests and the floor
+    /// snapshot carries falling == true.
+    #[test]
+    fn w4_f3_the_landing_tick_captures_falling_at_the_head() {
+        let w = ground_world();
+        // A snow surface (kind 147 → dust type 76, in the allow-list).
+        let mut w = w;
+        for x in 0..64 {
+            let i = w.index(x, 60);
+            w.tiles[i].kind = 147;
+        }
+        let mut p = Player::spawn(&w);
+        // Seat the body's bottom exactly on the row-60 surface top, with a
+        // falling velocity beyond gravity (0.4): the head capture reads
+        // falling == true, the collision zeroes vy, FloorVisuals fires.
+        p.x = 10.0 * 16.0;
+        p.y = 60.0 * 16.0 - p.height;
+        p.vy = 5.0;
+        p.vx = 0.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.vy, 0.0, "the landing tick rests");
+        let b = p.take_floor_dust().expect("FloorVisuals queues on the landing tick");
+        assert!(b.falling, "the head capture survives the collision (the 20-dust burst)");
+        assert_eq!(b.kind, 147, "the snow floor");
     }
 }

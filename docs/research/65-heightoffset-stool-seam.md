@@ -128,3 +128,64 @@ the jump-off unboost + the camera modifier + the offset getters' stool arms
 **RNG contract:** none of the offsets draw; the stool machine is
 deterministic state. The `StoolJump` camera modifier is local-player-only
 (`Main.myPlayer == whoAmI`, `:20772`).
+
+## 5. The lane-owner question + the task-seed (W4-f3 seal, 2026-11-21)
+
+**Who owns the movement lane?** The player-move family (pulley / carpet /
+wallclimb / stealth) is **W4-f3 canonical** (the PLAYER-MOVE-FAMILY declaration,
+ANALYSIS retire item 4). The HeightOffset seam is the family's **deferred
+mount/stool offset half** — it is NOT a separate subsystem and NOT self-contained
+(§3). The seam touches three lanes at once:
+
+* **The movement lane (f3's family)** — the `mounted_center`/`mounted_top`
+  accessors (`player.rs:5204`/`:5214`) route ALL 15 downstream consumers
+  (bow_launch / projectile / projectile_ai_spear / editing / world_sim/projectiles);
+  the FindPulley stool gate (`player.rs:10199`) is f3's pulley machine.
+* **The mount lane** — the five getters' mount arms read `mount.rs`
+  (`player_offset` `:2921`, `player_offset_hitbox` `:2933`, the
+  `height_boost`/`player_head_offset` rows); the piecemeal `height_boost` growth
+  (`player.rs:10876`/`:11015`/`:11900`) is the mount framework's.
+* **The draw lane** — the duplicate `player_layers.rs` offset table (`:142`,
+  rows `:2521-2691`, applied `:1469`) + `MountXOffset` (`PlayerDrawSet.cs:342`) +
+  the head-dot (`PlayerDrawHeadSet.cs:155`).
+
+**Recommendation: the seam is a SINGLE movement-lane task, executed by the
+player-move family's owner (the f3 successor / the merger's future wave), NOT
+split across the mount/draw lanes.** The leverage is the two accessors (step 2):
+re-siting them re-sites every consumer without touching the consumer files, so the
+task is one coherent `player.rs` + `mount.rs` change with a draw-side unification
+step. Splitting it would re-introduce the fold-to-0 drift the seam exists to
+remove. The mount/draw lanes are CONSULTED (the `mount.rs` accessors already exist;
+the `player_layers.rs` table is the duplicate to drop), not co-owners.
+
+**Which lane executes the 6-step seam-task?** The **movement lane** (the f3
+family's successor). The 6 steps (§4) are ordered so steps 1-2 (the getters + the
+accessor re-site) are the movement-lane core; step 3 (the draw unification) is the
+one cross-lane edit, done IN the same task because the getter is the single source
+the draw table must read; steps 4-5 (the stool machine + the FindPulley un-fold)
+are movement-lane; step 6 (witnesses) spans all three but is written by the task
+owner. **The merger does NOT execute the seam** — it is a future-wave task seeded
+here, deferred WITH the family's merge (the FindPulley stool gate stays folded
+false until the seam lands).
+
+### The task-seed (for the merger / future-wave catalog)
+
+> **Task:** the HeightOffset-family mount/stool offset seam + portableStool.
+> **Lane:** movement (the player-move family's deferred half). **Size:** M-L.
+> **Sev:** B (the fold-to-0 is a documented deviation, not a crash). **Deps:** the
+> e1b-141 player-move merge (the family must be canonical first). **Evidence:**
+> this doc (§1-§4) + `Player.cs:3237-3311`/`:3335`/`:29193-29222`/`:6102-6106`/
+> `:19614`/`:19646`/`:20768-20776` + `Mount.cs:407-433`/`:570-580` +
+> `PortableStoolUsage.cs:3-31`. **Verify:** the offset getters per mount kind (the
+> `mount.rs` frame-table witness precedent), the stool usage gate chain, the
+> jump-off unboost position maths, the FindPulley refusal while perched, the
+> `mounted_center`/`mounted_top` re-site (the 15 consumers route through them).
+> **Scope:** the 6 steps (§4) as ONE task; the `player_layers.rs` duplicate table
+> drops; `MountXOffset` + the head-dot offset land; the `cPortableStool` dye slot
+> is a cited third seam (the dye pass). **Out of scope:** the dye pass itself, the
+> minimap head-dot consumer (the map lane's). **RNG:** zero draws (deterministic
+> state); the `StoolJump` camera modifier is local-player-only.
+
+**Status:** seed (deferred WITH the seam, NOT dropped — the W4-f3 close-out (b)
+verdict, re-verified at the seal). The portableStool machine + the offset family
+land together in this task; neither lands alone.

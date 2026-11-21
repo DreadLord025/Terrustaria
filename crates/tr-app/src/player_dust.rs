@@ -784,10 +784,13 @@ fn dj_cloud(app: &mut App, b: &DoubleJumpDust) {
 /// `(x, y+height/2)`, speed `(vx*0.3, vy*0.3)`, alpha 150, scale `1*num4`
 /// where `num4 = (jump/75 + 1)/2`. Post: `velocity *= 0.5*num4`,
 /// `fadeIn = 1.5*num4`. The `Gore.NewGore` sibling (`:21922`, the
-/// `miscCounter % 3 == 0` arm) is the gore lane's (W4-d55 skip).
+/// `miscCounter % 3 == 0` arm) is the gore lane's (W4-d55 body); its type
+/// ARGUMENT draw `Next(220,223)` rides this stream (KEEP-E1, the seal).
 fn dj_sandstorm(app: &mut App, b: &DoubleJumpDust) {
     let num4 = (b.jump as f32 / 75.0 + 1.0) / 2.0;
-    let pos = Vec2::new(b.x, b.y + b.height * 0.5);
+    // `:21915`: `(float)(num3 / 2)` — INTEGER half (the wall-corner class;
+    // gravDir 1 so num3 = height). KEEP-E1's int form (W4-f3 seal).
+    let pos = Vec2::new(b.x, b.y + (b.height as i32 / 2) as f32);
     for _ in 0..3 {
         let idx = nd(
             app,
@@ -804,6 +807,16 @@ fn dj_sandstorm(app: &mut App, b: &DoubleJumpDust) {
         let d = app.dust.slot_mut(idx);
         d.velocity *= 0.5 * num4;
         d.fade_in = 1.5 * num4;
+    }
+    // W4-f3 seal (KEEP-E1) — `:21920-21925`: the Sandstorm gore sibling. When
+    // the `miscCounter % 3 == 0` gate fires, the `Gore.NewGore` type ARGUMENT
+    // `Main.rand.Next(220,223)` (`:21922`) draws on `UpdatePlayers` BEFORE the
+    // gore body. The body + its `velocity`/`alpha` post-writes are W4-d55's
+    // lane (the gore body is unported), but the argument draw is NOT d55's —
+    // it rides this stream and must not be skipped (determinism invariant).
+    if b.sandstorm_gore_gate {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let _ = rng.next_range(220, 223);
     }
 }
 
@@ -1200,7 +1213,11 @@ pub(crate) fn drain_floor_dust(app: &mut App, b: FloorDust) {
             d.velocity.y -= 1.0;
             d.velocity *= 0.8;
             d.scale += rng.next_max(3) as f32 * 0.1;
-            d.velocity.x = (d.position.x - (b.x + b.width * 0.5)) * 0.2;
+            // `:24026`: `(float)(base.width / 2)` — INTEGER half (the same
+            // int-division class as the wall-puff corner, g66 248f0ff4d). f3's
+            // float half drifted 0.5 px on odd widths; e1's make_floor_dust
+            // already uses the int form. KEEP-E1's form (W4-f3 seal).
+            d.velocity.x = (d.position.x - (b.x + (b.width as i32 / 2) as f32)) * 0.2;
             if d.velocity.y > 0.0 {
                 d.velocity.y *= -1.0;
             }
@@ -1394,7 +1411,10 @@ pub(crate) fn drain_splash_dust(app: &mut App, b: SplashDust) {
 /// `Next(6)` colour pick (0 → (255,255,210), 1 → (190,245,255), 2 → (255,150,255),
 /// else (190,175,255)).
 fn splash_shimmer(app: &mut App, b: &SplashDust, scale: f32) {
-    let pos = Vec2::new(b.x - 6.0, b.y + b.height * 0.5);
+    // `:27785`: `(float)(base.height / 2)` — INTEGER half (the wall-corner
+    // int-division class). f3's float half drifted 0.5 px on odd heights;
+    // e1's liquid_splash already uses the int form. KEEP-E1 (W4-f3 seal).
+    let pos = Vec2::new(b.x - 6.0, b.y + (b.height as i32 / 2) as f32);
     for _ in 0..50 {
         let idx = nd(app, pos, b.width as i32 + 12, 24, 308, 0.0, 0.0, 0, Color::default(), 1.0);
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
@@ -1417,7 +1437,9 @@ fn splash_shimmer(app: &mut App, b: &SplashDust, scale: f32) {
 /// `velocity.X *= 2.5`, scale set, alpha 100 (when `alpha100`), noGravity.
 #[allow(clippy::too_many_arguments)]
 fn splash_simple(app: &mut App, b: &SplashDust, ty: i32, count: i32, dy: f32, y_sub: f32, scale: f32, alpha100: bool) {
-    let pos = Vec2::new(b.x - 6.0, b.y + b.height * 0.5 + dy);
+    // `:27812`/`:27825`/`:27839` et al.: `(float)(base.height / 2)` — INTEGER
+    // half (the wall-corner class). KEEP-E1's int form (W4-f3 seal).
+    let pos = Vec2::new(b.x - 6.0, b.y + (b.height as i32 / 2) as f32 + dy);
     for _ in 0..count {
         let idx = nd(app, pos, b.width as i32 + 12, 24, ty, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = app.dust.slot_mut(idx);
@@ -2303,6 +2325,7 @@ mod tests {
             vx: 3.0,
             vy: -5.01,
             jump: 30,
+            sandstorm_gore_gate: false,
         }
     }
 
@@ -2358,6 +2381,32 @@ mod tests {
         }
         assert_eq!(stream_of(&mut app), rng);
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 3 * 6));
+    }
+
+    /// W4-f3 seal (KEEP-E1) — `:21920-21922`: when the `miscCounter % 3 == 0`
+    /// gate fires, the Sandstorm gore sibling's type ARGUMENT `Next(220,223)`
+    /// draws on `UpdatePlayers` AFTER the three puffs' 18 default draws (the
+    /// gore body is d55's, unported; the argument draw is NOT — it must ride
+    /// the stream). The dust records are unchanged; the stream advances one
+    /// extra `next_range` step.
+    #[test]
+    fn w4_f3_the_sandstorm_gore_gate_draws_the_argument() {
+        let mut app = rig(0x5EED);
+        let mut b = dj_burst(ExtraJump::Sandstorm);
+        b.sandstorm_gore_gate = true;
+        drain_double_jump_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 3, "the dust chain is unchanged");
+        let num4 = (b.jump as f32 / 75.0 + 1.0) / 2.0;
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            let (v, _) = default_six(&mut rng, b.width as i32, 32, b.vx * 0.3, b.vy * 0.3, num4);
+            assert_eq!(d.velocity, v * (0.5 * num4));
+            assert_eq!(d.fade_in, 1.5 * num4);
+        }
+        // The gore argument draw rides after the 18 default draws.
+        let _ = rng.next_range(220, 223);
+        assert_eq!(stream_of(&mut app), rng);
     }
 
     /// `:21927-21938` — the Fart visual: the Cloud shape plus `velocity *= 0.5`.

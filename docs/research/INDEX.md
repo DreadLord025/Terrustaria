@@ -76,7 +76,9 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 
-| 65 | HeightOffset family seam + portableStool deferral (movement-lane task seed: the 5 offset getters, the fold-to-0 sites, the consumers-list, the stool machine's blast radius; W4-f3 retire, code-only) | `65-heightoffset-stool-seam.md` | seed |
+| 65 | HeightOffset family seam + portableStool deferral (movement-lane task seed: the 5 offset getters, the fold-to-0 sites, the consumers-list, the stool machine's blast radius; the lane-owner recommendation + the 6-step task-seed for the merger/future-wave; W4-f3 retire + seal, code-only) | `65-heightoffset-stool-seam.md` | seed |
+| 66 | The f3 × g66 player-move mutual receipt (trail-final compose: WallClimb/carpet IDENTICAL keep-f3, the integer-half corner + the should_draw_wings mount-gate adopted into f3, g66's wing/boot/trail own-lanes kept, the wing-glide overlap dedupes to g66; g66 tip 248f0ff4d NOW PUSHED; W4-f3 seal, code-only) | `66-f3-g66-player-move-receipt.md` | receipt |
+| 67 | The e1b-141 reconcile: e1 drop-hunks + keep-lanes (the 5-deviation wall copy + the vortex-arm-only machine + stealth:0.0 spawn dropped; the stoned/drown/splash/floor/double-jump duplicate drains dedupe to f3; the falling head capture + drain order + integer halves + sandstorm gore argument-draw adopted into f3; e1's pre-21654 own-lanes kept; e1 tip 3245d624, no e1b branch; W4-f3 seal, code-only) | `67-e1b-141-e1-drop-hunks.md` | reconcile |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

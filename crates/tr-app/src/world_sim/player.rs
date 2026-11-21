@@ -1556,6 +1556,29 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_double_jump_dust() {
                 crate::player_dust::drain_double_jump_dust(app, burst);
             }
+            // W4-f3 seal (KEEP-E1 drain order, e1 3245d624) — the wing-glide dust
+            // (`Player.cs:27040-27337`) drains HERE, right after DoubleJumpVisuals
+            // (`:26767`): the glide arm runs inside `WingMovement` (`:26818` →
+            // `:27034`), BEFORE `CheckDrowning` (`:27655`) and the splash
+            // (`:27783`). The old f3 order drained it after the floor dust, a
+            // cross-lane RNG-order deviation. The wings-4 wingFrame machine +
+            // Item13 cadence stay g66's cited seams (the wing lane's).
+            if let Some(burst) = p.take_wing_glide_dust() {
+                crate::player_dust::drain_wing_glide(app, burst);
+            }
+            // S1-E-21f — the drowning gasp (`Player.cs:23257`): case 23 is
+            // Volume/Pan only — no draws, no stream.
+            if p.take_drown_sound() {
+                app.audio.play_drown_sound();
+            }
+            // W4-f3 seal (KEEP-E1 drain order) — the drowning bubble
+            // (`Player.cs:23283-23316`, `CheckDrowning` `:27655`) drains BEFORE
+            // the splash (`:27783`): the C# runs CheckDrowning before the
+            // WetCollision splash block. The `Next(20)` gate drew on the tick
+            // side; the type-34 puff rides the pool's own wet-probe kill.
+            if let Some((mouth, width)) = p.take_drown_bubble() {
+                crate::player_dust::drain_drown_bubble(app, mouth, width);
+            }
             // W4-f3 — the liquid entry/exit splash DUST (`Player.cs:27783-27940`):
             // the C# runs the dust loop BEFORE `PlaySound(19)`, so the drain
             // precedes the splash sound on the `UpdatePlayers` stream.
@@ -1574,31 +1597,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
-            // S1-E-21f — the drowning gasp (`Player.cs:23257`): case 23 is
-            // Volume/Pan only — no draws, no stream.
-            if p.take_drown_sound() {
-                app.audio.play_drown_sound();
-            }
-            // W4-f3 — the drowning bubble (`Player.cs:23283-23316`): the
-            // `Next(20)` gate drew on the tick side; the type-34 puff rides the
-            // pool's own wet-probe kill. Same stream, after the gasp.
-            if let Some((mouth, width)) = p.take_drown_bubble() {
-                crate::player_dust::drain_drown_bubble(app, mouth, width);
-            }
             // W4-f3 — the floor dust (`Player.cs:23790-24043`, `MakeFloorDust`):
             // the `FloorVisuals` call (`:28271`) queues the floor-tile snapshot;
             // the drain replays the per-iteration gate rolls + the NewDust chain
             // on the `UpdatePlayers` stream (the shimmer orchestrator + Item177
-            // cue are cited seams).
+            // cue are cited seams). It drains AFTER the splash sound (`:28271`
+            // follows `:27783`), the e1 execution order.
             if let Some(burst) = p.take_floor_dust() {
                 crate::player_dust::drain_floor_dust(app, burst);
-            }
-            // W4-f3 — the wing-glide dust (`Player.cs:27040-27337`): the glide
-            // arm queues the per-wing snapshot; the drain replays the gate rolls
-            // + the NewDust chains on the `UpdatePlayers` stream (the wings-4
-            // wingFrame machine + Item13 cadence are cited seams).
-            if let Some(burst) = p.take_wing_glide_dust() {
-                crate::player_dust::drain_wing_glide(app, burst);
             }
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.
