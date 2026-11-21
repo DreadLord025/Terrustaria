@@ -604,8 +604,10 @@ fn gem_squirrel_death(
 /// — the live sub-branches: 46/303/337/540 → 76/77 (+ the 303's extra 10x
 /// dust-193 AFTER the two gores, + the 540's extra gore 926,
 /// `:85956-85971`), 67 → 95/95/96 (`:85972-85977`), 55/230 → 553/554
-/// (`:85978-85982`), 615 → 1198/1199/1200/1200 (`:85983-85989`), 74 → 100
-/// (`:85992`), 297 → 431 (`:85996`), 298 → 432 (`:86000`). The remaining
+/// (`:85978-85982`), 615 Dolphin → 1198/1199/1200/1200 (`:85983-85989`),
+/// 74 Bird → 100 (`:85992`), 297 Blue Bird → 431 (`:85996`), 298 Red Bird
+/// → 432 (`:86000`), the 671/672/673 macaw/toucan triples — head at
+/// position + wing pair at Center ±(4,0) (`:86002-86019`). The remaining
 /// sub-branches land in later batches; an unported kind in the arm spawns
 /// the dust burst only (the census note — the gores follow in source
 /// order).
@@ -680,6 +682,20 @@ fn critter_arm_death(
         gore.new_gore(rng, world, pos, vel, 431, 1.0); // :85996
     } else if npc_type == 298 {
         gore.new_gore(rng, world, pos, vel, 432, 1.0); // :86000
+    } else if npc_type == 671 {
+        // `:86002-86007` — the Scarlet Macaw: head at position, the wing
+        // pair at Center ±(4,0).
+        gore.new_gore(rng, world, pos, vel, 1277, 1.0); // :86004
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1279, 1.0); // :86005
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1279, 1.0); // :86006
+    } else if npc_type == 672 {
+        gore.new_gore(rng, world, pos, vel, 1280, 1.0); // :86010
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1281, 1.0); // :86011
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1281, 1.0); // :86012
+    } else if npc_type == 673 {
+        gore.new_gore(rng, world, pos, vel, 1282, 1.0); // :86016
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1283, 1.0); // :86017
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1283, 1.0); // :86018
     }
 }
 
@@ -755,8 +771,8 @@ pub fn hit_effect_d(
         gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     // `:85942-86091` — the 29-type critter arm; the 46/303/337/540, 67,
-    // 55/230, 615, 74, 297, 298 sub-branches are live (sites 42-56), the
-    // rest land later.
+    // 55/230, 615, 74, 297, 298, 671/672/673 sub-branches are live (sites
+    // 42-65), the rest land later.
     else if matches!(
         npc_type,
         46 | 55
@@ -1364,6 +1380,36 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "critter {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86004-86018` — the macaw/toucan triples: head at position,
+    /// the wing pair at Center ±(4,0); Center = pos + size/2.
+    #[test]
+    fn w4_f5d_the_macaw_triples_anchor_the_wings_at_center() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, head, wing) in [(671, 1277, 1279), (672, 1280, 1281), (673, 1282, 1283)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(79);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![head, wing, wing], "macaw {kind}");
+            // Center = (112,111); the wings at (116,111)/(108,111).
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(116.0, 111.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(108.0, 111.0));
+            assert!(!gore.slot(3).active, "exactly three gores");
+            let mut twin = UnifiedRandom::new(79);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..3 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "macaw {kind} mirrors the C# draws");
         }
     }
 }
