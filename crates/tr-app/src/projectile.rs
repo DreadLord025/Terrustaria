@@ -14472,6 +14472,16 @@ pub struct ProjectilePool {
     /// [`ProjectilePool::set_disco`]; the default is `Main.Initialize`'s
     /// `DiscoR = 255` with G/B at 0.
     disco: [u8; 3],
+    /// W4-c19 round 3 — the rand-gated light intents the AI arms collected
+    /// this tick, in `Main.projectile` slot + sub-step order:
+    /// `(tile x, tile y, rgb)`. The C# `Lighting.AddLight` sits inside the
+    /// AI's `Main.rand` gate (`:30378` typhoon, `:34226` spore, `:47846` /
+    /// `:48011` whips); the arm takes the gate draw on the pass's named
+    /// `UpdateProjectiles` stream and appends the light here — the draw-pass
+    /// feed stays pure. The world-sim pass drains them into the ONE
+    /// `EntityLights` pair (`drain_ai_lights`, the `item_lights.rs`
+    /// named-stream precedent — the e6-rule exception).
+    pending_ai_lights: Vec<(i32, i32, [f32; 3])>,
     /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
     /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
     /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
@@ -14911,6 +14921,7 @@ impl ProjectilePool {
             wind_speed: 0.0,
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
+            pending_ai_lights: Vec::new(),
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
@@ -14994,6 +15005,14 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// W4-c19 round 3 — the rand-gated AI-arm light drain
+    /// (`Projectile.cs:30378`/`:34226`/`:47846`/`:48011`): the world-sim pass
+    /// appends each into the ONE `EntityLights` pair after the step, in the
+    /// C# slot + sub-step order the arms collected them.
+    pub fn drain_ai_lights(&mut self) -> Vec<(i32, i32, [f32; 3])> {
+        std::mem::take(&mut self.pending_ai_lights)
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
