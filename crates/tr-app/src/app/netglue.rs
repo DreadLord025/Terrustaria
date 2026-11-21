@@ -1228,6 +1228,15 @@ impl App {
                 // `CheckForNPCsToReactToEmoteBubble(emote, player)` (`:3916`).
                 self.check_npcs_react_to_emote(subject);
             }
+            // `case 85` — the quick-stack ask (W4-g50,
+            // `MessageBuffer.cs:3261-3266`): the host would read the slot list
+            // into a scratch `SourceInventory` (`QuickStacking.ReadNetInventory`)
+            // and run `QuickStackToNearbyChests` (`:3265`). The multi-chest
+            // quick-stack system is unported — the port's `bank::quick_stack`
+            // is the single-container `ChestUI.QuickStack` variant, not the
+            // `QuickStacking` nearby-chest transfer (`QuickStacking.cs:256-266`),
+            // so the apply is parked; the codec is byte-verbatim (`net.rs`).
+            C2s::QuickStackRequest(_) => {}
         }
     }
 
@@ -3056,6 +3065,16 @@ impl App {
             // `case 83` — the deprecated ignore group (W4-g50,
             // `MessageBuffer.cs:4483-4490`): accepted, nothing to do.
             S2c::Unused83 => {}
+            // `case 93` — the deprecated ignore group (W4-g50,
+            // `MessageBuffer.cs:4483-4490`): accepted, nothing to do.
+            S2c::Unused93 => {}
+            // `case 85` — the blocked-chest list answer (W4-g50,
+            // `MessageBuffer.cs:3267-3270`): the client would run
+            // `QuickStacking.IndicateBlockedChests` (`:3269`) — the red pulse
+            // over each blocked chest (`Chest.IndicateBlockedChest`,
+            // `Chest.cs:3582-3601`). The particle pulse system is unported, so
+            // the apply is parked; the codec is byte-verbatim (`net.rs`).
+            S2c::QuickStackBlocked(_) => {}
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
                 self.net_items.remove(&slot);

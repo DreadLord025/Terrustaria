@@ -255,6 +255,15 @@ pub mod id {
     /// `[Old]`), no writer arm; the reader's ignore group
     /// (`MessageBuffer.cs:4483-4490`, with 15/25/26/44/67/93).
     pub const UNUSED_83: u8 = 83;
+    /// `93 SocialHandshake` (W4-g50, S1-I-4): deprecated (`MessageID.cs:200`),
+    /// no writer arm; the reader's ignore group (`MessageBuffer.cs:4483-4490`).
+    pub const UNUSED_93: u8 = 93;
+    /// `85 QuickStackChests` (W4-g50, S1-I-4): the client's quick-stack ask —
+    /// `(int)` slot count + `(short)` slot ids + `(byte)` smartStack
+    /// (`MessageID.cs:184`, `NetMessage.cs:1205-1210`,
+    /// `MessageBuffer.cs:3261-3266`); the host's answer is the blocked-chest
+    /// list (`NetMessage.cs:1213`, `MessageBuffer.cs:3267-3270`).
+    pub const QUICK_STACK_CHESTS: u8 = 85;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -2600,6 +2609,31 @@ pub struct Emoji {
     pub emote_id: u8,
 }
 
+/// `msg 85 QuickStackChests`'s client→host body (`NetMessage.cs:1205-1210`,
+/// `QuickStacking.WriteNetInventorySlots`, `QuickStacking.cs:299-306`):
+/// `(int)` the slot count, then one `(short)` `PlayerItemSlotID.SlotId` per
+/// packed quick-stackable slot, then `(byte)number` the smartStack flag.
+/// The host reads it into a scratch `SourceInventory`
+/// (`QuickStacking.ReadNetInventory`, `:308-321`) and runs
+/// `QuickStackToNearbyChests` (`MessageBuffer.cs:3265`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuickStackRequest {
+    /// The `PlayerItemSlotID.SlotId` list (the packed quick-stackable slots).
+    pub slots: Vec<i16>,
+    /// `smartStack` — the category-aware second pass (`QuickStacking.cs:430`).
+    pub smart_stack: bool,
+}
+
+/// `msg 85 QuickStackChests`'s host→client body (`NetMessage.cs:1213`,
+/// `QuickStacking.WriteBlockedChestList`, `QuickStacking.cs:323-330`):
+/// `(int)` the blocked-chest count, then one `(ushort)` chest index per
+/// blocked chest. The client runs `IndicateBlockedChests`
+/// (`MessageBuffer.cs:3269`, the red pulse over each chest).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuickStackBlocked {
+    pub chests: Vec<u16>,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2775,6 +2809,10 @@ pub enum C2s {
     /// `netMode != 0` arm, `EmoteBubble.cs:289`); the host validates + bubbles
     /// it (`MessageBuffer.cs:3905-3919`; W4-g50).
     Emoji(Emoji),
+    /// `85 QuickStackChests` — this client's quick-stack ask
+    /// (`QuickStacking.SendQuickStackToNearbyChests`, `QuickStacking.cs:287-297`);
+    /// the host runs the transfer (`MessageBuffer.cs:3261-3266`; W4-g50).
+    QuickStackRequest(QuickStackRequest),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2984,6 +3022,13 @@ pub enum S2c {
     /// `83 Unused83` — deprecated (`MessageID.cs:179-180`), no body; the
     /// reader's ignore group (`MessageBuffer.cs:4483-4490`; W4-g50).
     Unused83,
+    /// `93 SocialHandshake` — deprecated (`MessageID.cs:200`), no body; the
+    /// reader's ignore group (`MessageBuffer.cs:4483-4490`; W4-g50).
+    Unused93,
+    /// `85 QuickStackChests` — the host's blocked-chest list answer
+    /// (`QuickStacking.WriteBlockedChestList`, `QuickStacking.cs:323-330`;
+    /// `MessageBuffer.cs:3267-3270`; W4-g50).
+    QuickStackBlocked(QuickStackBlocked),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -3088,6 +3133,7 @@ impl C2s {
             Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
             Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
             Self::Emoji(_) => id::EMOJI,
+            Self::QuickStackRequest(_) => id::QUICK_STACK_CHESTS,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -3206,6 +3252,15 @@ impl C2s {
             Self::PlayerDeathV2(d) => d.write_to(w),
             // `NetMessage.cs:1454-1457`: (byte)number, (byte)number2.
             Self::Emoji(e) => w.u8(e.player_id).u8(e.emote_id),
+            // `NetMessage.cs:1205-1210` / `QuickStacking.cs:299-306`: int
+            // count, the short slot ids, the byte smartStack flag.
+            Self::QuickStackRequest(q) => {
+                let mut w = w.i32(q.slots.len() as i32);
+                for slot in &q.slots {
+                    w = w.i16(*slot);
+                }
+                w.bool(q.smart_stack)
+            }
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3423,6 +3478,20 @@ impl C2s {
                 player_id: r.u8()?,
                 emote_id: r.u8()?,
             }),
+            // `MessageBuffer.cs:3265` / `QuickStacking.cs:308-321`: int count,
+            // the short slot ids, the byte smartStack flag.
+            id::QUICK_STACK_CHESTS => {
+                let n = r.i32()?;
+                if n < 0 {
+                    return None;
+                }
+                let mut slots = Vec::with_capacity(n as usize);
+                for _ in 0..n {
+                    slots.push(r.i16()?);
+                }
+                let smart_stack = r.bool()?;
+                Self::QuickStackRequest(QuickStackRequest { slots, smart_stack })
+            }
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3609,6 +3678,8 @@ impl S2c {
             Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
             Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
             Self::Unused83 => id::UNUSED_83,
+            Self::Unused93 => id::UNUSED_93,
+            Self::QuickStackBlocked(_) => id::QUICK_STACK_CHESTS,
         }
     }
 
@@ -3872,6 +3943,17 @@ impl S2c {
             Self::PlayerDeathV2(d) => d.write_to(w),
             // Deprecated (`MessageID.cs:179-180`) — no body.
             Self::Unused83 => w,
+            // Deprecated (`MessageID.cs:200`) — no body.
+            Self::Unused93 => w,
+            // `NetMessage.cs:1213` / `QuickStacking.cs:323-330`: int count,
+            // the ushort chest indices.
+            Self::QuickStackBlocked(b) => {
+                let mut w = w.i32(b.chests.len() as i32);
+                for chest in &b.chests {
+                    w = w.u16(*chest);
+                }
+                w
+            }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -4257,6 +4339,21 @@ impl S2c {
             id::PLAYER_DEATH_V2 => Self::PlayerDeathV2(PlayerDeathV2::read_from(r)?),
             // `MessageBuffer.cs:4488` — the deprecated ignore group, no body.
             id::UNUSED_83 => Self::Unused83,
+            // `MessageBuffer.cs:4489` — the deprecated ignore group, no body.
+            id::UNUSED_93 => Self::Unused93,
+            // `MessageBuffer.cs:3269` / `QuickStacking.cs:332-341`: int count,
+            // the ushort chest indices.
+            id::QUICK_STACK_CHESTS => {
+                let n = r.i32()?;
+                if n < 0 {
+                    return None;
+                }
+                let mut chests = Vec::with_capacity(n as usize);
+                for _ in 0..n {
+                    chests.push(r.u16()?);
+                }
+                Self::QuickStackBlocked(QuickStackBlocked { chests })
+            }
             _ => return None,
         })
     }
@@ -7420,6 +7517,66 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::Unused83 => {}
             other => panic!("expected 83, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `93 SocialHandshake` (`MessageID.cs:200`): no body — a bare 3-byte
+    /// frame; the reader's ignore group (`MessageBuffer.cs:4483-4490`).
+    #[test]
+    fn w4_g50_unused_93_is_a_bare_no_op_frame() {
+        let f = S2c::Unused93.encode();
+        assert_eq!(f[2], 93);
+        assert_eq!(f.len(), 3, "id 93 has no body");
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::Unused93 => {}
+            other => panic!("expected 93, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `85 QuickStackChests` (`NetMessage.cs:1205-1215`): the client leg is
+    /// int count + short slot ids + byte smartStack; the host leg is int
+    /// count + ushort chest indices. Both round-trip byte-verbatim.
+    #[test]
+    fn w4_g50_quick_stack_chests_round_trips() {
+        // The client ask: two slots, smartStack on.
+        let q = QuickStackRequest {
+            slots: vec![10, 55],
+            smart_stack: true,
+        };
+        let c = C2s::QuickStackRequest(q.clone()).encode();
+        assert_eq!(c[2], 85);
+        let mut body = Vec::new();
+        body.extend_from_slice(&2i32.to_le_bytes());
+        body.extend_from_slice(&10i16.to_le_bytes());
+        body.extend_from_slice(&55i16.to_le_bytes());
+        body.push(1);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::QuickStackRequest(d) => assert_eq!(d, q),
+            other => panic!("expected 85, got {:?}", other.msg_id()),
+        }
+        // The host answer: two blocked chests.
+        let b = QuickStackBlocked {
+            chests: vec![3, 7],
+        };
+        let f = S2c::QuickStackBlocked(b.clone()).encode();
+        assert_eq!(f[2], 85);
+        let mut body = Vec::new();
+        body.extend_from_slice(&2i32.to_le_bytes());
+        body.extend_from_slice(&3u16.to_le_bytes());
+        body.extend_from_slice(&7u16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::QuickStackBlocked(d) => assert_eq!(d, b),
+            other => panic!("expected 85, got {:?}", other.msg_id()),
+        }
+        // An empty list round-trips (count 0, no tail).
+        let empty = QuickStackBlocked { chests: vec![] };
+        let f = S2c::QuickStackBlocked(empty.clone()).encode();
+        assert_eq!(f.len(), 3 + 4);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::QuickStackBlocked(d) => assert_eq!(d, empty),
+            other => panic!("expected 85, got {:?}", other.msg_id()),
         }
     }
 }
