@@ -1,6 +1,21 @@
 # 140 — Map-overlay 2-way reconcile (W4-f29 × W4-e17)
 
-**Phase:** reconcile, docs-only. No code changes to e17. This document is the
+**Phase:** ~~reconcile, docs-only~~ → **EXECUTED (2026-11-21, code-only,
+`task/W4-f29-map-overlay-2`)**. The adjudication below stands as the record;
+the execution log is §7. No cargo/tests were run (code-only mode) — the
+witnesses are WRITTEN NOT RUN.
+
+> **MERGER INSTRUCTION — keep the f29 TIP ONLY.** This branch was rebuilt
+> onto the e17 skeleton (`8500c3e5d`) and carries F1-F6 as cited patches on
+> top of it (§7). At merge time: land e17 → main first (§6 step 1), then
+> merge **the f29 tip** — its tree IS the e17 skeleton + the six fixes + the
+> deduped docs/witnesses. Do NOT cherry-pick the pre-rebuild f29 commits
+> (the `map_overlay.rs`/`map_pylons.rs` era, ≤ `d5aa3621f`): those modules
+> are retired and their code must not re-land. The f29 tip's diff vs the
+> e17 tip is exactly the F1-F6 patches + the witness union + the docs
+> dedupe — review that diff, not the branch's full history.
+
+**Phase (original):** reconcile, docs-only. No code changes to e17. This document is the
 adjudication record + fold-list + merge order for the two independent ports of
 the `Main.DrawMap` overlay second half.
 
@@ -224,6 +239,43 @@ apply cleanly onto e17's named sites. Reversing the order would force
 re-porting the shimmer profiles, the type-keyed boss table, the remote pins,
 the press snapshot and the C#-order wiring — all of which f29 lacks or got
 wrong.
+
+---
+
+## 7. Execution log (2026-11-21, code-only, this branch)
+
+The §6 order was executed with one deviation forced by the exec brief: the
+branch could not wait for e17 → main, so step 2's "sync onto post-e17 main"
+was done as a **direct rebuild onto the e17 tip `8500c3e5d`** — the map-file
+set was taken from e17 wholesale (`git checkout 8500c3e5d -- …`), the f29
+duplicates deleted, and F1-F6 applied as small cited commits. The resulting
+tree is exactly what §6 step 2's conflict resolution would have produced;
+the merger keeps the f29 TIP ONLY (see the banner).
+
+| Commit | Scope |
+| --- | --- |
+| `352644d24` | Step 1 — rebuild onto the e17 skeleton; retire list §4 applied (`map_overlay.rs`/`map_pylons.rs` deleted, `mount.rs` reverted to base, e17's player.rs/lang.rs/map.rs/draw.rs/clicks.rs/doors.rs/assets.rs/anchors/PORT_MAP/ROADMAP/ANALYSIS taken) |
+| `e78178e15` | **F1** — `unclamped_center_int` + the endpoint witness (fractional case added) |
+| `f8df2276f` | **F2** — `rect_contains_int` on all three context hovers; the e17 pull-back witness extended + the two clamp witnesses folded |
+| `22df1dee8` | **F3** — `utils_floor` on the portal/golf positions + the floored witness (negative case) |
+| `8ccb7966b` | **F4** — `Coin_0..3` + `Lookups.coin_anim`, both revenge draws repointed, the asset witness merged, atlas re-measured **8131 px < 8192** |
+| `8a29b8253` | **F5** — `draw_death_marker(minimap)` + `death_hover_rect`; the wrong e17 witness re-derived; the death-transform witness folded (minimap y-pin 108.55) |
+| `b50d96ca0` | **F6** — `map.rs::pan_target_step` pure helper, `prepare` delegates, the pan witness folded |
+| `c19521b32` | Secondary folds — head-pos two-modes, duration largest-unit (test_lock), golf guards (tr-core seam) |
+| `c15a13188` | Docs dedupe §5 — ANALYSIS exec section + corrected e17 claims, PORT_MAP pylon row, research/14 SUPERSEDED banner |
+
+**Witness union landed: 34.** e17's 25 (the death-hover one re-derived per
+F5) + 9 f29 folds: F1 endpoint, F3 floored, F5 death transform, F6 pan step,
+head-pos two-modes, golf guards, clamped on-screen, clamped left-overflow,
+duration largest-unit; the F2 far-edge exclusion extends the e17 pull-back
+witness and the coin/town-head rows merge into the e17 asset witness (no
+new test fns). ~14 f29 duplicates dropped per §5. All WRITTEN NOT RUN
+(code-only mode); the atlas measurement DID run (`node
+tools/atlas_e17_check.js`: baseline 8123 → 8131 px, OK).
+
+**Verification owed at merge (§6 step 4):** `cargo test --workspace --skip
+migrates_version_2_kinds_to_item_ids` green, canary `main_anchors` green,
+then the ancestor + symbol checks per MAIN-RULES.
 
 ---
 
