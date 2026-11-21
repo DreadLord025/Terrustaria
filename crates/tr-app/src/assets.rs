@@ -811,6 +811,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_282",
         "Extra_299",
         "Extra_305",
+        // S1-W4-g81 residuals: the builder-toggle column's sheets —
+        // `TextureAssets.InfoIcon[13]` the hover ring (`Main.cs:47566`),
+        // `blockReplaceIcon[0]` (`UI/BlockReplace_0`, `AssetInitializer.cs:477`)
+        // and `Extra[211]` the torch-swap icon (`Main.cs:42573`).
+        "UI/InfoIcon_13",
+        "UI/BlockReplace_0",
+        "Extra_211",
         "UI/Cursor_0",
         "UI/Cursor_1",
         "Mana",
@@ -1996,6 +2003,16 @@ pub struct Lookups {
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
+    /// `Images/UI/InfoIcon_13` (`TextureAssets.InfoIcon[13]`): the
+    /// builder-toggle column's hover ring (`Main.cs:47566`). S1-W4-g81.
+    pub info_icon_13: Option<tr_render::SheetRect>,
+    /// `Images/UI/BlockReplace_0` (`TextureAssets.blockReplaceIcon[0]`,
+    /// `AssetInitializer.cs:477`): the block-replacer toggle's 3-frame
+    /// sheet (`Main.cs:42533-42534`). S1-W4-g81.
+    pub block_replace_0: Option<tr_render::SheetRect>,
+    /// `Images/Extra_211` (`TextureAssets.Extra[211]`): the torch-biome
+    /// swap toggle's 4-frame sheet (`Main.cs:42573-42574`). S1-W4-g81.
+    pub extra_211: Option<tr_render::SheetRect>,
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -2427,6 +2444,9 @@ impl Lookups {
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
+            info_icon_13: atlas.sheet("UI/InfoIcon_13").copied(),
+            block_replace_0: atlas.sheet("UI/BlockReplace_0").copied(),
+            extra_211: atlas.sheet("Extra_211").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),

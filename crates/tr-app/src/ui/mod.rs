@@ -3,6 +3,7 @@
 
 pub mod achievements;
 pub mod bars;
+pub mod builder_toggles;
 pub(crate) mod bestiary;
 pub(crate) mod bestiary_draw_offsets;
 pub(crate) mod emotes;

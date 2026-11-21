@@ -1734,6 +1734,35 @@ impl App {
                             .map_or(crate::bank::CHEST_CLOSED, |p| p.chest);
                         let (panel_chest_x, panel_chest_y) =
                             player.as_ref().map_or((0, 0), |p| (p.chest_x, p.chest_y));
+                        // S1-W4-g81 residuals — `DrawInterface_31_BuilderAccToggles`
+                        // (`Main.cs:45477-45480` → `DrawBuilderAccToggles(10, 77)`,
+                        // `:47353-47590`): the wire-channel cycle column + the
+                        // ruler/actuator/paint on/off rows + the block-replacer/
+                        // torch-swap side icons. The layer rides between the
+                        // hotbar (30) and the mouse text (33) — the port draws it
+                        // just before `draw_hud` (which carries 25/27/30/33+);
+                        // the column's own `playerInventory` gate is inside.
+                        // The click's sound-12 (`Main.cs:47413` etc.) plays here.
+                        if let Some(p) = player.as_mut() {
+                            let toggled = ui::builder_toggles::draw_builder_acc_toggles(
+                                renderer,
+                                lookups,
+                                p,
+                                &ui::builder_toggles::ToggleInputs {
+                                    mouse: self.mouse_pos,
+                                    screen,
+                                    left_press: self.mine_down && !self.mine_prev_down,
+                                    inventory_open: self.inventory_open,
+                                    pulse: ui::UiPulse {
+                                        text: self.mouse_text_color as f32 / 255.0,
+                                        cursor_scale: self.cursor.scale(),
+                                    },
+                                },
+                            );
+                            if toggled == Some(true) {
+                                self.audio.play("Menu_Tick");
+                            }
+                        }
                         ui::draw_hud(
                             renderer,
                             *camera,
