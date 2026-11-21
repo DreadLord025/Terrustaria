@@ -1,5 +1,10 @@
 # 64 — NPC kinds 351–697 `SetDefaults` census + first-20 port (W4-f18)
 
+**Status: SEALED** (see the SEAL section at the end — the roster-collision
+adjudication + the kinds-verify-2 family bible; code-only, witnesses WRITTEN
+NOT RUN). Registry-150 FROZEN §9 voided the round-1 `64→249` rename (249=d15);
+the doc keeps the `64-` filename pending a Lead §9 assignment ≥367.
+
 Census of the vanilla `NPC.SetDefaults` type arms
 (`decompiled/Terraria/NPC.cs`, the `else if (this.type == N)` chain)
 against the port's kind roster, for the 347 ids 351–697, plus the
@@ -550,4 +555,316 @@ boundary); the rest are the d39–d43 waves' scope.
 | 695 | PalworldCattivaDistressed | 17752-17765 | 127 | d43 |
 | 696 | PalworldFoxsparksDistressed | 17766-17779 | 127 | d43 |
 | 697 | ? | — | — | d43 |
+
+## SEAL — the roster-collision adjudication + the kinds-verify-2 family bible (W4-f18)
+
+Status: **SEALED** (code-only; the four seal items below are verified at the
+pushed tip `a832d38ea`, branch `task/W4-f18-npc-kinds-verify-2`, base
+`a725acb04` == the d39 base). This section is the f18-side receipt for the
+d37-E8 roster collision; it consumes the d39 SEAL (`048c74f8f`, research/125
+§6) and the d37 S4 merger bible (`fbb948172`, research/108). **Doc-only: the
+f18 code rows stay on-branch so the exhaustive `NpcKind` matches compile (the
+E8 dropped-lane rule); the drop-hunks below are EXECUTE-prep for the merger.**
+
+> **Registry note (registry-150 FROZEN §9, d54 tip `880b9ecbe`).** This doc's
+> round-1/§6.3 assignment `64 → 249` is **VOID**: §8.2/§9.1 give **249 to d15**
+> (band-141-150, `869ac7edd`, sole claimant KEEPS) and §9 carries **no f18
+> reassignment**. §9.3 forbids self-picks ("New docs require a registry check +
+> Lead assignment; NO self-picks"). The doc therefore **keeps the `64-` filename
+> on-branch** (a merge-time collision the registry must adjudicate — f18 requests
+> a §9 number ≥367); it is NOT renamed to 249. This SEAL section rides the same
+> census doc (no new numbered doc is created, so no new number is consumed).
+
+### Seal item 1 — the 20-kind port landed (verified)
+
+The twenty kinds 355–380 + 430 landed in four batch commits
+(`e098cf888`/`89a8d9d6f`/`8e10f9c34`/`b05706702`) + the census/witness/compile-fix
+commits. Re-verified at `a832d38ea` by static script (no cargo):
+
+- **Protocol bijection:** `to_u16` 290 arms / `from_u16` 290 arms, **0 duplicate
+  ids, 0 kind↔id mismatches, to-set == from-set**; `ALL_KINDS` decl 290 == 290
+  rows == the to_u16 kind-set (0 dups, 0 missing, 0 extra); max proto 353
+  (i16-safe). The twenty ride port-local **237–258** (250/288 skipped — the
+  AngryNimbus/DungeonSpirit's base ids).
+- **`npc_ai_style65`** (the Butterfly 356's `AI_065_Butterflies`,
+  `NPC.cs:44896-45119`) + **`npc_ai_town_critter`** (the `AI_007_TownEntities`
+  TownCritter subset, `NPC.cs:52965-55561`) modules landed; the style-axis
+  64/66/67/68/1/41 claims ride the existing modules.
+- **4 Hide-folds:** Duck2 363→362, DuckWhite2 365→364, TruffleWormDigger 375→374,
+  CultistArcherWhite 380→379 (`bestiary.rs` `try_entry_for_npc`/`entry_for_npc`
+  twins; each folded kind keeps its OWN render key + draw sheet).
+- **290-bijection** is the `s1_f_3` coverage pin (`npc.rs:28916`) + the
+  round-trip test (`npc.rs:25301`).
+
+### Seal item 3 — the `value()` merge-scar repair landed + compile-fixed (verified)
+
+`npc.rs::value()` (the exhaustive match, no wildcard): the 402 StardustWormHead
+700→0 (`NPC.cs:15018`), the Moon Lord kb group purged (the core's 1_000_000 row
+restored, `NPC.cs:14130`), the six shard kb rows replaced with explicit `0.0`
+arms (405/406/407/423/425/429 write no C# value row, stock 0f `NPC.cs:8544`), the
+6× repeat SolarCrawltipede×3/StardustWormHead/SolarSpearman block deduped to one,
+the second `DD2LanePortal => 0.0` arm removed. Re-verified: each repaired kind
+appears **once** in `value()`; the same-value shadowed duplicates
+(`DD2LanePortal`×3, `VortexTower`×3, frost trio×2, `EyeOfCthulhu`×2) remain as
+documented (compile warnings, no behaviour change — out of scope). The
+compile-fix `a832d38ea` saturates the butterfly FindFrame colour offset at
+`ai[2]=0` (the unreachable grid state; the live 1..8 style unchanged).
+
+### Seal item 2 — ROSTER-COLLISION d37-E8: the keep-one verdict + exact drop-hunks
+
+**The collision.** f18's twenty kinds ride port-local **237–258**, which is
+**off-plan on two counts** (d39 SEAL §3, confirmed against research/108):
+1. **237–249 are the reserved cs-holes** ("cs-owned, never reassign", 108 §3
+   base-roster row + R4/R6). Verified owners at the d37 tip (ENTRIES net_id /
+   cs_id scan): 237 JungleCreeper(Wall), 238 BlackRecluse, 239/240 the
+   BloodCrawler pair, 241 BloodFeeder, 242 BloodJelly, 243 IceGolem, 244
+   RainbowSlime (R6's list), 245 Golem (base cs), 246-249 the remaining d37
+   cs ids — all owned by d37's pushed 354–399 protocol band kinds (their
+   `cs_id`/`net_id`, NOT their protocol ids).
+2. **250–265 are the base/d37 cs corridor**: 250 AngryNimbus (base kind, proto
+   250), 251 Eyezor, 252 Parrot, 253 Reaper, 254/255 SporeZombie, 256 FungoFish,
+   257 AnomuraFungus, 258 MushiLadybug, 259 FungiBulb, 260 GiantFungiBulb (d37
+   ENTRIES nets), 261-265 the base Plantera family (FungiSpore/Plantera/
+   PlanterasHook/PlanterasTentacle/Spore).
+
+So **none of f18's 237–258 ids survives the merge**. The d39 SEAL (`048c74f8f`)
+adjudicates the keep-one (consumed here as the f18-side receipt):
+
+| f18 kind | f18 proto | verdict | canonical owner / id |
+|---|---|---|---|
+| Butterfly 356 | 238 | **keep-d39-roster + splice-f18-AI** | d39 @817 |
+| ScorpionBlack 366 | 248 | keep-d39-roster + splice-f18-AI | d39 @818 |
+| Scorpion 367 | 249 | keep-d39-roster + splice-f18-AI | d39 @819 |
+| Grasshopper 377 | 254 | keep-d39-roster + splice-f18-AI | d39 @820 |
+| ChatteringTeethBomb 378 | 255 | keep-d39-roster + splice-f18-AI | d39 @821 |
+| CultistArcherBlue 379 | 256 | keep-d39-roster + splice-f18-AI | d39 @822 |
+| CultistArcherWhite 380 | 257 | keep-d39-roster + splice-f18-AI | d39 @823 |
+| Firefly 355 | 237 | drop → E8 owner | c7 @735 |
+| LightningBug 358 | 240 | drop → E8 owner | c7 @736 |
+| Worm 357 | 239 | drop → E8 owner | c8 @737 |
+| TruffleWorm 374 | 252 | drop → E8 owner | c8 @738 |
+| TruffleWormDigger 375 | 253 | drop → E8 owner | c8 @739 |
+| Snail 359 | 241 | drop → E8 owner | c9 @740 |
+| GlowingSnail 360 | 242 | drop → E8 owner | c9 @741 |
+| Frog 361 | 243 | drop → E8 owner | e26 @744 |
+| Duck 362 | 244 | drop → E8 owner | c10 @731 |
+| Duck2 363 | 245 | drop → E8 owner | c10 @732 |
+| DuckWhite 364 | 246 | drop → E8 owner | c10 @733 |
+| DuckWhite2 365 | 247 | drop → E8 owner | c10 @734 |
+| ArmedZombie 430 | 258 | drop → E8 owner | d40 @430 |
+
+**f18 contributes ZERO roster rows at merge** (d39 SEAL §4): every `NpcKind`
+variant + `to_u16`/`from_u16`/`ALL_KINDS`/`ENTRIES`/stat row drops. **f18's
+faithful AI/draw/sound wiring SURVIVES, spliced onto the canonical kinds** (the
+E3 dropped-lane rule): the 7 overlap kinds keep d39's roster rows @817–823 but
+route through f18's machines (the scorpion pair's `npc_ai_town_critter` arm, the
+grasshopper's `ai_001_grasshopper`, the archer pair's `update_cultist_archer`
+shooter, the butterfly's `npc_ai_style65`); the 13 non-overlap kinds' wiring
+rides the E8 owners' kinds. The stat rows are **byte-equal across lanes**
+(d39 SEAL §3 scripted spot-check ALL AGREE; both port the same `NPC.cs` arms),
+so the drop loses no behaviour — the owners' roster + f18's wiring is the
+superset.
+
+**The E8 target ids are the d37 plan, NOT yet executed at the owner tips**
+(d37 S1 receipts: c7/c8/c9/c10/e26 "none executed their E8 tables"; c9's
+ALL_KINDS array-missing-4 is the S2 fix-hunk `0466ecf81`). The table's
+"canonical owner / id" column is the **merge-wave destination** per the d37 S4
+merger bible (c10 ducks→731–734, c7→735/736, c8→737–739, c9→740/741,
+e26 Frog→744, d40 ArmedZombie@430 as-pushed); the owners execute their own
+renumbers on their own branches. f18's drop-hunks below are independent of
+those renumbers (f18's rows drop wholesale; the owners' rows are already on
+their branches at their current ids).
+
+**The f18 ArmedZombie 430 × d40 note.** d40 (`f4355d380`, the sheets phase) owns
+430 at protocol==vanilla (the 430–488 band, 108 §3). d40's ArmedZombie is
+data-only + the grouped draw arm; its bestiary credit **folds onto Zombie 3**
+(`ContentSamples.cs:1027`, Hide=true `NPCID.cs:427-432`) — f18's own `ArmedZombie`
+ENTRIES row (net 430) is the deviation that drops. f18's `walker_step_fighter`
+charge-family wiring (the `npc_ai3_speeds` 430–436 arm) splices onto d40's kind.
+
+#### The exact f18 drop-hunks (EXECUTE-prep, pinned to `a832d38ea`)
+
+Every range below was read from the working tree at `a832d38ea` (clean). DROP =
+delete the lines (the canonical owner's row survives); the per-kind line map is
+the appendix at the end of this section (scripted, whole-word kind match). The
+hunks are grouped by file; **apply bottom-up** (descending line order) so earlier
+ranges stay valid. `cs_id`/`net_id`/sheets/render-keys are cs/net-keyed and DO
+NOT move (R1's seam evidence) — but f18's kinds ALL drop, so their cs/net rows
+drop too; the owners' cs/net rows are already on their branches.
+
+**`crates/tr-app/src/npc.rs`** (the enum + the stat tables + the AI dispatch +
+FindFrame + render_key + ALL_KINDS + the test pins):
+- 1089–1200 DROP — the 20 enum variants + doc-triples (Firefly…ArmedZombie).
+- 1892–1896 + 3220 DROP — the `wants_transform_ai1` field + init (the aiStyle-68
+  dry-landing seam; KEEP if the c10 waterfowl splice needs it — the merger
+  decides; f18's Duck2/DuckWhite2 wiring rides c10).
+- 3158–3162 EDIT — the `chaseable` gate: revert to `chaseable: true` (the
+  cultist-archer false-writers ride d39's roster; d39's own gate carries them).
+- 3651–3671 DROP — the kb block (20 rows).
+- 4052–4066 DROP — the defense block (20 rows).
+- 4418–4436 DROP — the value block (20 rows).
+- 5077–5130 DROP — the style-axis arms 64/65/66/67/7/68/1/41 (the f18 claims).
+  **SPLICE NOTE:** the 7 overlap kinds' arms (65 butterfly, 7 scorpion, 1
+  grasshopper, 41 teeth-bomb) are the faithful machines d39 keeps — the merger
+  re-points them at d39's kinds, NOT a blind drop. The 13 non-overlap arms drop
+  to the E8 owners' wiring.
+- 5882–6445 DROP — the nine family wrappers (`ai_064_firefly_family`,
+  `ai_065_butterfly_family`, `ai_066_crawler_family`, `ai_067_snail_family`,
+  `ai_007_town_critter`, `ai_068_waterfowl`, `ai_001_grasshopper`,
+  `update_cultist_archer`, `update_truffle_worm_digger`). **SPLICE NOTE:** the
+  butterfly/scorpion/grasshopper/archer wrappers survive keyed on d39's kinds.
+- 6906–6983 DROP — the `update_kind_ai` arms (the unreachable! markers + the
+  TruffleWormDigger/cultist-archer/ArmedZombie dispatch).
+- 7502–7943 DROP — the FindFrame cases (355/358, 356, 357, 359/360, 361,
+  362/364, 363/365, 366/367, 374, 375, 377, 378, 379/380, 430).
+- 19895–19926 DROP — the render_key block (20 rows).
+- 24995 EDIT — `ALL_KINDS: [NpcKind; 290]` → **270** (the base count; the merger
+  reconciles to the union 583, not 270 — this is the f18-local revert).
+- 25274–25297 DROP — the 20 ALL_KINDS rows + 4 batch comments.
+- 26080–26086 DROP — the butterfly frame-strip test's 24-row colour-band arm.
+- 28916–28917 EDIT — the `s1_f_3` pin 290 → **270** + the message (f18-local).
+- 32559–32585 DROP — the `s1_d_2` CS_STYLES rows (20).
+
+**`crates/tr-app/src/npc/data.rs`**:
+- 589–619 DROP — the 20 `to_u16` arms + 4 batch comments.
+- 950–978 DROP — the 20 `from_u16` arms + 4 batch comments.
+- 1043–1049 + 1164–1166 + 3378–3380 DROP — the TruffleWormDigger `is_worm` /
+  worm_tunables / behind_tiles rows (ride c8's kind).
+- 1869–1880 DROP — the hit-sound block.
+- 2185–2198 DROP — the death-sound block.
+- 2299–2316 DROP — the no_gravity block.
+- 2568–2591 DROP — the ai_style block.
+- 2700–2705 DROP — the ai3_walk_speed shooter/charge rows.
+- 3128–3157 DROP — the size block.
+- 3802–3816 DROP — the max_hp block.
+- 4181–4195 DROP — the contact_damage block.
+
+**`crates/tr-app/src/bestiary.rs`**:
+- 2174–2318 DROP — the 16 ENTRIES rows + comments (the 4 Hide-folds have no row).
+- 2440–2451 DROP — the `try_entry_for_npc` folds (Duck2/DuckWhite2/
+  TruffleWormDigger/CultistArcherWhite).
+- 2523–2532 DROP — the `entry_for_npc` folds (the twins).
+
+**`crates/tr-app/src/npc_buffs.rs`**: 487–518 DROP — the immunity block (20).
+
+**`crates/tr-app/src/app/netglue.rs`**: 3569–3623 DROP — the npc_seed arms (20).
+
+**`crates/tr-app/src/ui/bestiary.rs`**: 1598–1721 DROP — the portrait arms (20).
+
+**`crates/tr-app/src/render/entities.rs`**:
+- 518 DROP — the `.chain(CRITTER_SHEETS)`.
+- 1117–1128 DROP — the texture_net_id Hide-fold rows (Duck2/DuckWhite2/
+  TruffleWormDigger/CultistArcherWhite).
+- 1263–1274 DROP — the `CRITTER_SHEETS` const.
+- 3198–3274 DROP — the draw arms (20).
+- 3424–3443 DROP — the rotation-whitelist rows.
+
+**`crates/tr-app/src/assets.rs`**:
+- 1278–1306 DROP — the STATIC_SHEET_NAMES rows (20).
+- 1892 EDIT — `BESTIARY_NPC_SHEET_IDS: [u16; 197]` → **181** (f18-local).
+- 1927–1939 DROP — the 16 sheet-id rows.
+- 2702–2725 DROP — the 16 strip lookups.
+
+**`crates/tr-app/src/main.rs`**: 78–80 DROP — the `npc_w4_f18_witnesses`
+module decl + comment (the witnesses drop with the roster). 71–77 KEEP — the
+`npc_ai_style65` + `npc_ai_town_critter` decls survive (the splice keepers, see
+the style65 keep-one below).
+
+**`crates/tr-app/src/npc_ai_town.rs`**: the `pub(crate)` visibility upgrades
+(tile_at/raw_solid/raw_solid_top/nactive/top_slope/solid_tiles/
+solid_tiles_versatile/drown_collision/step_down/town_step_up) — KEEP (the
+town_critter module reads them; harmless if unused).
+
+**`crates/tr-app/src/world_sim/npcs.rs`**: 6165–6181 DROP — the Transform drain
+arms (362/364/375) + the ai1 write (ride c10/c8's kinds).
+
+**Whole-file DROP:** `crates/tr-app/src/npc_w4_f18_witnesses.rs` (303 lines, 21
+tests — the stat pins ride the owners' witnesses).
+
+### Seal item 4 — research/64 SEALED + the kinds-verify-2 family bible
+
+This census (research/64) is **SEALED**: the 347-id 351–697 `SetDefaults` census
+(343 arm-bearing + 4 no-arm), the 105→125 ported scoreboard, the first-20 port,
+the `value()` repair, and the roster-collision adjudication above are complete
+and verified at `a832d38ea`. The remaining 222 unported kinds are the d39–d43
+waves' scope (the table above).
+
+**The kinds-verify-2 family bible (one paragraph).** W4-f18 is the **verify lane**
+for the NPC kinds 351–697 band: it censused the `SetDefaults` chain, ported the
+first 20 arm-bearing missing kinds (355–380 + 430) verbatim with full stat rows +
+protocol bijection + bestiary + FindFrame + AI routing, repaired the `value()`
+merge-scar, and wrote 21 stat witnesses (WRITTEN NOT RUN, code-only). Its twenty
+kinds **all drop at merge** (the 237–258 band squats the reserved cs-holes +
+d37's corridor): the 7 overlap kinds (Butterfly/ScorpionBlack/Scorpion/
+Grasshopper/ChatteringTeethBomb/CultistArcherBlue/CultistArcherWhite) keep d39's
+roster @817–823 and splice f18's faithful AI arms; the 13 non-overlap drop to
+their E8 owners (c7 Firefly/LightningBug, c8 Worm/TruffleWorm/TruffleWormDigger,
+c9 Snail/GlowingSnail, e26 Frog, c10 the four ducks, d40 ArmedZombie). f18's
+enduring contribution is the **wiring superset** — the `npc_ai_style65` butterfly
+module, the `npc_ai_town_critter` TownCritter module, the `ai_001_grasshopper`
+faithful hop (the 377 flee/friendly-latch/+3-charge/0.9-0.6-damping/ceiling-clamp
+rows, `NPC.cs:61080/:61440/:61588/:61684` — the d39 "AI_001 has no 377 branch"
+claim was WRONG, corrected in both lanes), the `update_cultist_archer` AI_003
+shooter (80-tick cooldown, 81 arrow / 40 dmg / 11 speed, ±40 jitter NO rescale,
+|dx|*0.1 aim lift NOT zeroed, centre spawn NO +6 y), and the AI_006 lone-digger
+(inverted aim). The merger splices these onto the canonical kinds; the bijection
+gate (decodable == ALL_KINDS.len(), i16-safe) + the s1_f_3 pin guard every splice
+(552 core / 583 grand per d37 S4). **f18 zero roster rows; the wiring is the
+legacy.**
+
+### The style65 keep-one (f18 × d39, same module name)
+
+Both lanes add `npc_ai_style65.rs` (f18 629 lines / 7 tests; d39 625 lines / 8
+tests). They are the **same `AI_065_Butterflies` port** with one behavioural
+difference: **d39's tile scans carry `WorldGen.InWorld(x,y,2)` guards; f18's do
+not.** The C# `AI_065` (`NPC.cs:45026/:45044`) reads `Main.tile[num28,j] != null`
+with **NO InWorld gate** (unlike `AI_064`'s `:34197/:34215` which DO gate) — so
+**f18's version is the faithful one** (the null-check is the port's
+`world.tile()` `Option`). The merger keeps **f18's `npc_ai_style65`** (the
+no-InWorld version) and drops d39's; the colour-roll/scale-latch/rearm/threat-flee
+maths are byte-identical (both cite the same `Next` order). The d39 FindFrame
+butterfly arm lacks f18's `ai[2]=0` saturation compile-fix (`a832d38ea`) — f18's
+FindFrame arm is the keeper too.
+
+### Appendix — the per-kind f18 line map (scripted, `a832d38ea`, whole-word match)
+
+Each cell lists the f18 line numbers mentioning the kind (the drop-hunk atoms;
+the grouped ranges above are the apply-ready hunks). Files abbreviated:
+`npc`=npc.rs, `data`=npc/data.rs, `best`=bestiary.rs, `buff`=npc_buffs.rs,
+`net`=app/netglue.rs, `ui`=ui/bestiary.rs, `ent`=render/entities.rs,
+`ass`=assets.rs, `main`=main.rs, `sim`=world_sim/npcs.rs. Shared group rows
+(the kb/def/value/hit/death/ai_style/size/hp/dmg blocks) list every member kind
+on one line — drop the whole block, not per-kind.
+
+| kind | npc | data | best | buff | net | ui | ent | ass | main | sim |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Firefly | 1089,1093,1107,3654,4054,4421,5078,5883,6911,7506,19897,25275,32561 | 593,952,1871,2187,2304,2571,3132,3804,4183 | 2179,2181,2184 | 490 | 3574 | 1605 | 1266,3204 | — | — | — |
+| Butterfly | 1094,1098,3654,4054,4421,5084,5915,6914,7525,19898,25276,26080,26086,32562 | 594,953,1871,2187,2304,2572,3133,3804,4183 | 2187,2189,2192 | 491 | 3575 | 1611 | 1266,3207,3429 | — | 71 | — |
+| Worm | 1099,1103,3654,4054,4421,5088,5932,6917,7561,19899,25277,32563 | 595,954,1871,2187,2301,2573,3134,3804,4183 | 2195,2197,2200 | 492 | 3580 | 1617 | 1266,3210,3430 | — | — | — |
+| LightningBug | 1104,1108,3654,4054,4421,6911,7506,19900,25278,32564 | 596,955,1871,2187,2304,2571,3135,3804,4183 | 2203,2205 | 493 | 3576 | 1605 | 3213 | — | — | — |
+| Snail | 1109,1113,1117,3654,4054,4421,5095,5970,6920,7587,7597,19901,25279,32565 | 597,956,1871,2187,2302,2304,2574,3136,3804,4183 | 2211,2213,2216 | 494 | 3580 | 1623 | 1267,3216,3431,3433 | — | — | — |
+| GlowingSnail | 1114,1118,3658,4057,4425,5095,5970,6923,6926,7599,19905,25281,32568 | 600,959,1874,2190,2305,2309,2577,3140,3807,4186 | 2218,2223,2225 | 498 | 3583,3587 | 1629,1632 | 3219,3223,3432,3435 | 1930 | — | — |
+| Frog | 1119,1123,3658,4057,4425,5103,5108,5998,6005,6924,6929,7613,19906,25282,32569 | 601,960,1874,2190,2306,2578,3141,3807,4186 | 2231,2233,2236 | 499 | 3584,3591 | 1629,1638 | 3220,3226 | 1930 | 75 | — |
+| Duck | 1124,1128,1132,3658,4057,4425,5103,5108,5998,6924,6929,7659,19907,25283,32570 | 602,961,1874,2190,2578,3142,3807,4186 | 2239,2241,2244 | 500 | 3584,3592 | 1630,1644,1650 | 1118,3229 | — | 75 | 6166,6168 |
+| Duck2 | 1127,1129,1134,3658,4057,4425,5112,6021,6924,6932,7682,7717,19903,19908,25284,32571 | 603,962,1874,2190,2307,2579,3143,3807,4186 | 2440,2443,2523,2525 | 501 | 3585,3593 | 1630,1650,1653 | 1117,1120,1270,3221,3232,3433,3436 | 1286,1931 | — | 6165 |
+| DuckWhite | 1135,1139,1143,3658,4057,4425,5103,5108,5999,6924,6929,7659,19909,25285,32572 | 604,963,1874,2190,2578,3142,3807,4186 | 2247,2249,2256 | 502 | 3584,3594 | 1644,1660 | 3235 | — | 75 | 6170,6172 |
+| DuckWhite2 | 1138,1140,1145,3659,3663,4060,4429,6935,6938,7719,19911,19914,25287,32575 | 608,967,1877,2193,2310,2582,3147,3810,4189 | 2444,2447,2526,2528 | 506 | 3597,3602 | 1660,1675 | 1121,1124,3238,3242,3437,3441 | 1293,1934 | — | 6169 |
+| ScorpionBlack | 1146,1150,3663,4060,4429,5108,6941,7757,19915,25288,32576 | 609,968,1877,2193,2583,3148,3810,4189 | 2260,2262 | 507 | 3603 | 1663 | 3245 | — | — | — |
+| Scorpion | 1151,1155,3663,4060,4429,5108,6941,7757,19916,25289,32577 | 610,969,1877,2193,2583,3148,3810,4189 | 2265,2268,2270,2273 | 508 | 3604 | 1663 | 3248 | — | — | — |
+| TruffleWorm | 1156,1161,1166,3659,3663,4060,4429,5088,5932,5952,6936,6944,7785,19917,25290,32578 | 611,970,1877,2193,2310,2584,3149,3810,4189 | 2276,2278,2446,2448,2529 | 509 | 3598,3605 | 1659,1661,1669 | 3239,3251,3438,3442 | 1933 | — | 6170 |
+| TruffleWormDigger | 1160,1162,1169,3661,3664,4060,4429,5954,6248,6947,6951,7816,19911,19918,25291,32579 | 612,971,1043,1049,1164,1166,1877,2193,2311,2585,3150,3378,3380,3810,4189 | 2445,2448,2526,2529 | 510 | 3599,3608 | 1661,1681 | 1121,1125,3240,3254,3439,3443 | 1294,1934 | — | 6171,6173 |
+| Grasshopper | 1170,1175,3668,4063,4433,5118,5123,6070,6952,6955,7829,19922,25293,32581 | 615,974,1880,2197,2588,3154,3813,4192 | 2288,2290,2293 | 514 | 3612,3617 | 1687,1692 | 3257,3260 | — | — | — |
+| ChatteringTeethBomb | 1176,1181,3669,4064,4434,5127,6953,6958,7840,19923,25294,32582 | 616,975,1880,2197,2589,3155,3814,4193 | 2296,2298 | 515 | 3613,3618 | 1687,1698 | 3257,3263 | — | — | — |
+| CultistArcherBlue | 1182,1187,1192,3162,3670,4065,4435,6113,6963,7862,19924,25295,32583 | 617,976,1880,2197,2590,2704,3156,3815,4194 | 2304,2306,2450,2451,2531,2532 | 516 | 3619 | 1688,1704 | 3266 | — | — | — |
+| CultistArcherWhite | 1188,1194,3162,3670,4065,4435,6113,6963,7862,19920,19925,25296,32584 | 618,977,1880,2197,2590,2704,3156,3815,4194 | 2449,2451,2530,2532 | 517 | 3620 | 1689,1710 | 1126,1128,3269 | 1301,1937 | — | — |
+| ArmedZombie | 1195,1200,3671,4066,4436,6966,6969,7899,19926,25297,32585 | 619,978,1880,2195,2198,2591,2701,2705,3157,3816,4195 | 2312,2314 | 512,518 | 3613,3621 | 1688,1716 | 3258,3272 | — | — | — |
+
+(The `best` cells omit the shared batch-comment lines 2174/2218/2254/2283 and
+the fold-comment lines; the `ent`/`ass` cells include the CRITTER_SHEETS /
+STATIC_SHEET_NAMES / sheet-id / strip rows. The Worm/Snail `best`/`ent`/`ass`/
+`sim` hits at 695/1919/823/2165/13806/etc. are the PRE-EXISTING base Worm-kind
+references — NOT f18 additions; the scripted whole-word match catches the base
+`Worm`/`Snail` substrings. The f18-added rows are the ones in the grouped
+drop-hunks above; the appendix is the kind→line index, the hunks are the
+authority.)
 
