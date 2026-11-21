@@ -18494,6 +18494,10 @@ written against g47 `cfe5f1c9` — BEFORE the settle wiring (`551c1e7b` /
    becomes "keep one" — the gen module calls `sys.set_gen_shimmer_position`
    / `sys.set_gen_dungeon_context` and drops its private copies).
 
+The full graft order, the producer wiring and the witness re-pin table live
+in **`docs/research/70-liquid-merge-order.md`** (the FINAL liquid merge-order
+doc — which branch base, graft steps 1-7, re-pins, gate checklist).
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as
