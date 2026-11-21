@@ -68,6 +68,26 @@ impl GoreRng for UnifiedRandom {
     }
 }
 
+/// The dust-spawn adapter (W4-g68): the C#'s `Gore_UpdateLeaf` lava arm calls
+/// `Dust.NewDust` on the SAME `Main.rand` the gore walk rolls (both sit inside
+/// `Main.SwapRandom("UpdateGores")`, `Main.cs:17771-17774`), so the gore
+/// stream feeds the dust pool directly — [`GoreRng`]'s three draw kinds are
+/// exactly [`crate::particles::DustRng`]'s. One adapter borrow per spawn; no
+/// new stream instance (the S1-E-1 seam rule).
+struct DustFromGore<'a, R: GoreRng>(&'a mut R);
+
+impl<R: GoreRng> crate::particles::DustRng for DustFromGore<'_, R> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next_max(max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
+    }
+}
+
 /// The collision seam the update walk needs. The port's collision ports live
 /// in `tr-app` (`collision.rs`, `player.rs::wet_collision`), which `tr-core`
 /// cannot depend on — the App injects the probes once (the same seam the
@@ -606,29 +626,39 @@ fn rect_intersects(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> bool {
 impl GorePool {
     /// `Main.UpdateWorld_Gores` (`Main.cs:17971-17996`) — the per-frame walk
     /// over the 600 live slots (the sentinel 600 is never updated).
+    ///
+    /// W4-g68: the dust seam — `dust`/`dust_ctx` carry the App's `Main.dust`
+    /// pool and the per-call `Dust.NewDust` inputs; `None` keeps the recorded
+    /// dust-seam drops (the lava leaf puff, the 1218 coin burst) inactive.
+    /// When present, the spawns roll the SAME stage stream (`rng`) the gore
+    /// walk does — the C# runs both inside `SwapRandom("UpdateGores")`.
     pub fn update<R: GoreRng>(
         &mut self,
         rng: &mut R,
         world: &World,
         collision: &dyn GoreCollision,
         wind_for_visuals: f32,
+        mut dust: Option<(&mut crate::particles::DustPool, &crate::particles::SpawnCtx)>,
     ) {
         for num in 0..GORE_SLOTS {
             if !self.slots[num].active {
                 continue;
             }
-            self.update_slot(rng, world, collision, wind_for_visuals, num);
+            let dust_slot = dust.as_mut().map(|(p, c)| (&mut **p, &**c));
+            self.update_slot(rng, world, collision, wind_for_visuals, num, dust_slot);
         }
     }
 
     /// `Gore.Update` (`Gore.cs:308-1083`) — one gore's frame.
     ///
     /// Documented drops (the port has no texture tracking, no entity lights
-    /// and no player/dust/sound seams in `tr-core`): the texture-gated
+    /// and no player/sound seams in `tr-core`): the texture-gated
     /// position/light/player/dust writes (`Gore.cs:794-806`, `:825-841`,
     /// `:850-864`, `:883-911`, `:1064-1082`) and the drip's sound and ripple
     /// (`:953`, `:965-968`). None of them draws a random number, so the
-    /// stream order is untouched.
+    /// stream order is untouched. The lava leaf's five-dust puff
+    /// (`:1119-1122`) IS wired (W4-g68): it fires when the caller hands the
+    /// `dust` seam in, on the same stage stream.
     fn update_slot<R: GoreRng>(
         &mut self,
         rng: &mut R,
@@ -636,6 +666,7 @@ impl GorePool {
         collision: &dyn GoreCollision,
         wind_for_visuals: f32,
         num: usize,
+        dust: Option<(&mut crate::particles::DustPool, &crate::particles::SpawnCtx)>,
     ) {
         // `Gore.cs:314-325`: the sticky clamp — the world check first, then
         // the speed cap.
@@ -862,7 +893,7 @@ impl GorePool {
         if special_ai == 1 {
             self.update_sail(world, collision, num);
         } else if special_ai == 3 {
-            self.update_leaf(world, collision, wind_for_visuals, num);
+            self.update_leaf(world, collision, wind_for_visuals, num, rng, dust);
         } else {
             let velocity = self.slots[num].velocity;
             self.slots[num].position += velocity;
@@ -1368,12 +1399,14 @@ impl GorePool {
 
     /// `Gore.Gore_UpdateLeaf` (`Gore.cs:1085-1209`) — the falling leaf: the
     /// rising half, then the flutter with the slope pass.
-    fn update_leaf(
+    fn update_leaf<R: GoreRng>(
         &mut self,
         world: &World,
         collision: &dyn GoreCollision,
         wind_for_visuals: f32,
         num: usize,
+        rng: &mut R,
+        dust: Option<(&mut crate::particles::DustPool, &crate::particles::SpawnCtx)>,
     ) {
         // `:1087-1089` — the leaf's own origin, 4 px right and 4 px down of
         // its pivot's top edge.
@@ -1403,9 +1436,33 @@ impl GorePool {
             if flag {
                 match tile.liquid_kind() {
                     crate::tile::LiquidKind::Honey => vector3.x = 0.0,
-                    // `:1116-1123` — the lava arm deactivates; its five-dust
-                    // puff (`:1119-1122`) waits for the dust seam.
-                    crate::tile::LiquidKind::Lava => self.slots[num].active = false,
+                    // `:1116-1123` — the lava arm deactivates, then the five
+                    // dust-31 puffs at the leaf's position (`NewDust(position,
+                    // 3, 3, 31, 0f, -0.2f)`), rolled on the stage stream
+                    // (W4-g68 dust seam). The leaf keeps falling through the
+                    // rest of the tick — the C# does not return here.
+                    crate::tile::LiquidKind::Lava => {
+                        self.slots[num].active = false;
+                        if let Some((pool, ctx)) = dust {
+                            let position = self.slots[num].position;
+                            for _ in 0..5 {
+                                pool.new_dust(
+                                    &mut DustFromGore(rng),
+                                    ctx,
+                                    world,
+                                    position,
+                                    num_v,
+                                    num_v,
+                                    31,
+                                    0.0,
+                                    -0.2,
+                                    0,
+                                    crate::particles::Color::default(),
+                                    1.0,
+                                );
+                            }
+                        }
+                    }
                     _ => vector3.x = wind_for_visuals,
                 }
                 if self.slots[num].position.y as f64 > world.world_surface * 16.0 {
@@ -1764,7 +1821,7 @@ mod tests {
         // (`Gore.cs:1017`): 2 + 255 ticks to the `alpha >= 255` kill
         // (`:1055-1058`).
         for tick in 0..257 {
-            pool.update(&mut rng, &world, &collisions, 0.0);
+            pool.update(&mut rng, &world, &collisions, 0.0, None);
             if tick < 2 {
                 assert_eq!(pool.slot(0).time_left, 1 - tick as i32);
                 assert_eq!(pool.slot(0).alpha, 0, "the life runs out before the fade");
@@ -1774,7 +1831,7 @@ mod tests {
         }
         assert!(!pool.slot(0).active, "alpha 255 deactivates the gore");
         // The inactive slot is skipped from now on (`Gore.cs:310-313`).
-        pool.update(&mut rng, &world, &collisions, 0.0);
+        pool.update(&mut rng, &world, &collisions, 0.0, None);
         assert_eq!(pool.slot(0).alpha, 255);
     }
 
@@ -1792,11 +1849,11 @@ mod tests {
         pool.slot_mut(0).sticky = false;
         let collisions = NoCollision;
         for _ in 0..127 {
-            pool.update(&mut rng, &world, &collisions, 0.0);
+            pool.update(&mut rng, &world, &collisions, 0.0, None);
         }
         assert!(pool.slot(0).active);
         assert_eq!(pool.slot(0).alpha, 254);
-        pool.update(&mut rng, &world, &collisions, 0.0);
+        pool.update(&mut rng, &world, &collisions, 0.0, None);
         assert!(!pool.slot(0).active);
     }
 
@@ -1819,12 +1876,12 @@ mod tests {
         pool.slot_mut(0).alpha = 0;
         pool.slot_mut(0).time_left = 2;
         let collisions = NoCollision;
-        pool.update(&mut rng, &world, &collisions, 2.5);
+        pool.update(&mut rng, &world, &collisions, 2.5, None);
         let gore = pool.slot(0);
         assert_eq!(gore.velocity.x, 0.4 * 2.5);
         assert_eq!(gore.time_left, 1);
         assert!(gore.active);
-        pool.update(&mut rng, &world, &collisions, 2.5);
+        pool.update(&mut rng, &world, &collisions, 2.5, None);
         assert_eq!(pool.slot(0).time_left, 0);
         assert!(!pool.slot(0).active, "an empty timeLeft deactivates the cloud");
     }
@@ -1920,7 +1977,7 @@ mod tests {
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
         let wind = 0.5_f32;
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, None);
         let g = pool.slot(0);
         let theta = std::f32::consts::PI / 180.0;
         assert_eq!(g.velocity.y, theta, "the angle grows one degree per tick");
@@ -1941,7 +1998,7 @@ mod tests {
         world.world_surface = 0.0; // every position is underground
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, None);
         let g = pool.slot(0);
         let theta = std::f32::consts::PI / 180.0;
         assert!((g.position.x - (500.0 - theta.sin())).abs() < 1e-4);
@@ -1954,7 +2011,7 @@ mod tests {
         let world = leaf_physics_world();
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
-        pool.update(&mut VecRng::new(vec![]), &world, &WallCollision, 0.5);
+        pool.update(&mut VecRng::new(vec![]), &world, &WallCollision, 0.5, None);
         assert_eq!(pool.slot(0).velocity.y, -1.0, "the rest-phase sentinel");
     }
 
@@ -1976,7 +2033,7 @@ mod tests {
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
         let wind = 0.5_f32;
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, None);
         let g = pool.slot(0);
         assert!((g.velocity.x - wind * 0.94).abs() < 1e-5, "the 0.94 decay");
         assert!((g.position.x - (160.0 + wind * 0.94)).abs() < 1e-4);
@@ -1985,7 +2042,7 @@ mod tests {
         world.world_surface = 0.0;
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
         pool.slot_mut(0).position = Vec2::new(160.0, 160.0);
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, None);
         assert_eq!(pool.slot(0).velocity.x, 0.0);
     }
 
@@ -2000,13 +2057,14 @@ mod tests {
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, None);
         assert_eq!(pool.slot(0).velocity.x, 0.0);
         assert_eq!(pool.slot(0).position.x, 160.0);
     }
 
     /// LAVA burns the leaf up (`Gore.cs:1116-1123`): the slot deactivates.
-    /// The five-dust puff (`:1119-1122`) is the recorded dust-seam drop.
+    /// Without the dust seam the five-dust puff stays dropped (the recorded
+    /// S1-E-4 behaviour); the seam-on witness below pins the puffs.
     #[test]
     fn w4_g68_lava_burns_the_leaf() {
         let mut world = leaf_physics_world();
@@ -2016,8 +2074,67 @@ mod tests {
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, None);
         assert!(!pool.slot(0).active, "the lava arm deactivates at once");
+    }
+
+    /// The W4-g68 dust seam: the lava arm's five `Dust.NewDust(position, 3,
+    /// 3, 31, 0f, -0.2f)` puffs (`Gore.cs:1119-1122`) roll the SAME stream
+    /// the gore walk does (`SwapRandom("UpdateGores")`, `Main.cs:17771`).
+    /// Each `NewDust` consumes six draws in `Dust.cs:170-190` order:
+    /// `Next(1)` X-offset, `Next(1)` Y-offset (the 3×3 box clamps to 5×5,
+    /// so `num - 4 = 1`), `Next(-20, 21)` vel-X, `Next(-20, 21)` vel-Y,
+    /// `Next(3)` frame row, `Next(-20, 21)` scale; the type-31 tweak chain
+    /// draws NOTHING (31 is in no arm, `Dust.cs:214-252`).
+    #[test]
+    fn w4_g68_the_lava_arm_puffs_five_dust_on_the_gore_stream() {
+        let mut world = leaf_physics_world();
+        let i = world.index(10, 10);
+        world.tiles[i].liquid = 100;
+        world.tiles[i].flags |= crate::tile::FLAG_LIQUID_LAVA;
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        let mut dust = crate::particles::DustPool::new();
+        let ctx = crate::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::new(0.0, 0.0),
+            screen_size: Vec2::new(640.0, 480.0),
+            max_dust_to_draw: 6000,
+        };
+        // Six draws per puff × five puffs; the offsets pinned to 0, the
+        // velocity rolls to +1.0/+0.5, the frame row to 1, the scale to
+        // 1 + 10*0.01 = 1.1.
+        let mut draws = Vec::new();
+        for _ in 0..5 {
+            draws.extend_from_slice(&[0, 0, 10, 5, 1, 10]);
+        }
+        let mut rng = VecRng::new(draws);
+        pool.update(
+            &mut rng,
+            &world,
+            &FreeCollision,
+            0.5,
+            Some((&mut dust, &ctx)),
+        );
+        assert_eq!(rng.idx, 30, "six stream draws per puff, five puffs");
+        assert!(!pool.slot(0).active);
+        let live: Vec<_> = (0..crate::particles::DUST_SENTINEL)
+            .filter(|&i| dust.slot(i).active)
+            .collect();
+        assert_eq!(live.len(), 5, "five dust-31 puffs");
+        for &i in &live {
+            let d = dust.slot(i);
+            assert_eq!(d.dust_type, 31);
+            // The 5×5 clamp: offset Next(1)=0 + 4 → position + 4 on both axes.
+            assert_eq!(d.position, Vec2::new(164.0, 164.0));
+            assert_eq!(d.velocity, Vec2::new(1.0, 0.5 - 0.2), "the -0.2 Y kick");
+            assert_eq!(d.frame_y, 10, "the Next(3)=1 row");
+            assert!((d.scale - 1.1).abs() < 1e-5);
+            assert_eq!(d.alpha, 0);
+        }
     }
 
     /// The ground freeing up under a resting leaf resumes the fall
@@ -2032,7 +2149,7 @@ mod tests {
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
         pool.slot_mut(0).alpha = 0;
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
         let g = pool.slot(0);
         assert_eq!(g.velocity.y, 0.1);
         assert_eq!(g.time_left, 0);
@@ -2050,11 +2167,11 @@ mod tests {
         pool.slot_mut(0).time_left = 1;
         // Keep the leaf falling in open air; the FreeCollision seam never
         // brakes, so the rest switch never fires.
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
         assert_eq!(pool.slot(0).time_left, 0);
         assert_eq!(pool.slot(0).alpha, 0);
         for tick in 1..=255 {
-            pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0);
+            pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
             if tick < 255 {
                 assert!(pool.slot(0).active);
                 assert_eq!(pool.slot(0).alpha, tick);

@@ -275,11 +275,18 @@ impl App {
         {
             let rng = self.rngs.stream(crate::app::RngKey::UpdateGores);
             let wind_for_visuals = self.wind.speed_current;
+            // W4-g68 dust seam: the lava leaf's five-dust puff
+            // (`Gore.cs:1119-1122`) spawns into `Main.dust` on the same
+            // stage stream — the C# runs both inside
+            // `SwapRandom("UpdateGores")` (`Main.cs:17771-17774`).
+            let ctx = self.spawn_ctx();
+            let dust = &mut self.dust;
             self.gore.update(
                 rng,
                 &self.world,
                 &crate::gore_seam::AppGoreCollision,
                 wind_for_visuals,
+                Some((dust, &ctx)),
             );
         }
     }
