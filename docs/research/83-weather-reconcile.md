@@ -1,5 +1,21 @@
 # 83 — Weather reconcile (W4-d130 merger assist + conflict resolution)
 
+**STATUS: EXECUTED** (union-exec phase, commit `88cfbf38` on this branch). §1's gate
+fix landed in `50c845e5`; §3's splash union is now transplanted IN THIS BRANCH —
+`spawn_splash` (the DustPool recipe), `water_splash_arm`, `draw_splashes` and the
+`Option<(DustPool, SpawnCtx)>` drain seam are live in `rain.rs`/`minecart.rs`/
+`weather.rs`/`app/frame/draw.rs`, the `Splash` vec stand-in is retired. **The merger
+keeps THIS branch for BOTH rain AND snow** — g67's rain.rs drops wholesale (its
+`update_drops`/compacted Vec/stand-in-adjacent rig keeps NOTHING; see the tip census
+below), d54's `world_dust_main.rs::snowing` and g11's `main_dust.rs::snowing` retire
+per §2. g67 tip census (`006bc04d`, re-fetched at union-exec): the tip is
+`40128e5d` (code) + `006bc04d` (docs-only: ANALYSIS + PORT_MAP + anchors row) — NO
+g67b code residuals beyond the two known commits; the doc-unique content (the
+QueueRipple no-rain-caller finding, the 4×4 draw-cull widening, the RNG census, the
+retired stand-in constants) is folded into ANALYSIS "The rain collision splash (g67,
+transplanted W4-d130)" and the PORT_MAP splash row; the anchors row re-lands adapted
+below.
+
 Code-only pass on `task/W4-d130-weather-ambience` (base `393000e6`), reconciling the
 three weather lanes that touch the same systems: **W4-d130** (this branch — the
 verbatim rain fall/draw core + `Main.snowing()`), **W4-g67**
@@ -122,7 +138,7 @@ convention, same as the rain rig; if the merger prefers g11's `NamedRngs::global
 slot instead, that is a stream-convention decision, not a maths one, and either
 way the d54/g11 bodies must not survive beside `snow.rs`.
 
-## 3. The splash union — g67's real splash supersedes d130's stand-in
+## 3. The splash union — g67's real splash supersedes d130's stand-in — EXECUTED
 
 d130's `spawn_splash` is an explicit stand-in (its doc: "the verbatim pool spawn
 + the splash dust's AI/draw are g67's scope"). g67 (`40128e5d`) landed the real
@@ -156,6 +172,40 @@ overlay, Black kill). **The union at merge:**
 * d130's stand-in-only witnesses that assert `splashes` contents retire with the
   vec; the gate/remix witnesses (§1) survive unchanged (they pin the roll, not
   the puff).
+
+### Execution record (union-exec, `88cfbf38` + the docs commit on this branch)
+
+Everything above landed as written, with these adaptations recorded:
+
+* `spawn_splash(pool, ctx, world, camera, pos, vel)` — g67's body verbatim
+  (`new_dust` on `SplitmixRand(&mut self.rng)`, `dust_water(water_style)`, the
+  eight writes, the sentinel post-writes). Called from d130's `update_drops`
+  behind the (already-fixed) gate; `i.camera` feeds the water-style read.
+* `water_splash_arm` + `is_splash_type` + `draw_splashes` — g67's bodies
+  verbatim. Hook dispatch: the `minecart::tick` else fall-through AFTER the
+  d130 type-76 arm (g67's branch had no 76 arm; the union keeps both — 76 is an
+  else-if of the first ladder, the splash arm is a standalone statement, the
+  C# order holds). Draw call site: after `minecart::draw`, before `snow::draw`.
+* The drain seam rides d130's `update(world, &RainInputs, dt, pool)` — NOT
+  g67's positional-args `update`; `tick`/`update_drops` thread
+  `Option<(&mut DustPool, &SpawnCtx)>` the same way g67 did.
+* g67's 7 witnesses adapted: `one_falling_drop` → d130's `pin_drop` (fixed
+  slot 0..4), `rain.gfx_quality` field → `RainInputs.gfx_quality`,
+  `drops.len()` → `drop_count()`, `full_quality()` helper dropped (the
+  `inputs()` helper already pins quality 1), `impact_ctx()` → `splash_ctx()`
+  directly. d130's `the_impact_gate_rolls_for_all_three_kills` (b) arm and
+  `the_remix_kill_arm_never_rolls` now hand a real pool and assert
+  `splash_count`; the (c)/(d) quality-0 arms keep `None` (no spawn possible)
+  and a tail census pins that only the quality-1 kill left dust.
+* `forced_rain_spawns_drops_that_die_on_the_ground` runs with a pool now —
+  the below-screen kills' dust survives the spawn cull (591 < 900 margin
+  box), so the steady-state assertion holds against the REAL lane.
+* g67 tip census: `006bc04d` = `40128e5d` + docs only (anchors/ANALYSIS/
+  PORT_MAP). No unique code residuals to fold. The doc-unique content is
+  folded: ANALYSIS "The rain collision splash (g67, transplanted W4-d130)"
+  (the full lane + the QueueRipple finding + the census + the deviations,
+  re-pinned to the union's shapes), the PORT_MAP splash row, and the
+  anchors.txt row (the marker `fn spawn_splash` survives the transplant).
 
 ## Verification
 

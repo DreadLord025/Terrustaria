@@ -1289,14 +1289,16 @@ easing, already ported). W4-d130 landed the verbatim rain fall/draw core and
 `Main.Update`; the port keeps the drop/snow sim on the 60 Hz accumulator and the spawn
 on the frame's scene slot — the recorded cadence fold, same as the rest of the weather
 rig. (b) `Main.maxScreenW` is pinned at its Reach value 1920 (`Main.cs:66715`/`:3715`);
-the HiDef 4096 arm (`:3709`) is dropped. (c) the impact splash is still the port's
-stand-in puff — the verbatim `Dust.NewDust(..., dustWater())` splash + its AI/draw are
-g67's lane (weather-rain-splash, `40128e5d`/`006bc04d`), which supersedes the stand-in
-at merge: the union is d130's verbatim fall/draw core (fixed 750-slot pool, slot order,
-the remix kill-only arm, the live-wind velocity, the tint chain) + g67's real splash
-spawn/kill-gate (`docs/research/83-weather-reconcile.md`). The `Next(100)` gate is
+the HiDef 4096 arm (`:3709`) is dropped. (c) the impact splash is g67's REAL
+`Dust.NewDust(..., dustWater())` lane (weather-rain-splash, `40128e5d`/`006bc04d`),
+TRANSPLANTED onto this core by the union-exec (`docs/research/83-weather-reconcile.md`
+§3 EXECUTED): d130's verbatim fall/draw core (fixed 750-slot pool, slot order, the remix
+kill-only arm, the live-wind velocity, the tint chain) + g67's `spawn_splash` DustPool
+recipe, `water_splash_arm` physics and `draw_splashes` draw — g67's compacted-Vec
+`update_drops` was NOT taken wholesale (it lacks the remix arm). The `Next(100)` gate is
 verbatim for ALL THREE `:117` kills (the reconcile fix — the earlier collision-only
-gate was a misreading). (d) `NewRain`'s depth factor (`Rain.cs:174-175`) is computed-and-discarded in
+gate was a misreading). See "The rain collision splash (g67, transplanted W4-d130)"
+below for the lane's own deviations. (d) `NewRain`'s depth factor (`Rain.cs:174-175`) is computed-and-discarded in
 the C# (a bare `Math.Max` statement) — ported as a note, no effect. Still first-pass: no
 lightning bolt geometry and no thunder audio — the flash rides WEATHER-1's tiered
 thunder chain, not a bolt mesh.
@@ -39288,3 +39290,112 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The rain collision splash (g67, transplanted W4-d130 union-exec, 2026-11-21, code-only mode)
+
+g67's lane (`task/W4-g67-weather-rain-splash`, code `40128e5d`, docs `006bc04d` —
+the tip census found NO further residuals: `006bc04d` is docs-only on top of the
+code commit) landed the real splash lane on a compacted-Vec rain rig; the W4-d130
+union-exec transplanted its spawn body + physics + draw INTO this branch's
+verbatim core (`docs/research/83-weather-reconcile.md` §3 EXECUTED). The kill
+gate itself was already reconciled (§1 of that doc): ONE combined
+`SolidCollision(position, 2, 2) || position.Y > screenPosition.Y + screenHeight +
+100f || WetCollision(position, 2, 2)` branch (`Rain.cs:117`), ALL THREE kills roll
+the `Next(100) < gfxQuality * 100` gate and spawn one
+`Dust.NewDust(position - velocity, 2, 2, Dust.dustWater())` with eight recipe
+writes; the `remixWorld` kill-only arm (`:110-116`) never rolls — the union KEEPS
+it (g67 had folded it out; `gameMenu` never holds in-world, that fold is safe).
+
+* **Kill chain** (`rain.rs::update_drops`, d130's shape kept) — the fixed
+  750-slot pool in slot order (`Main.rain[i]`, `Main.cs:66801`), the real
+  `Player::solid_collision`/`wet_collision` probes (`Collision.cs:2700-2733`
+  / `:1572-1651`, the half-brick cut, the `maxTilesY - 40` clamp, the liquid
+  surface at `(256-liquid)/32*2`), the `||` short-circuit order kept (the wet
+  probe runs only when dry + on-screen), the below-screen bound at
+  `camera.y + screen.y*0.5/zoom + 100` (RAW world px, no zoom term on the 100).
+  The gate rolls for the below-screen kill too; the dust's own off-screen cull
+  (`Dust.cs:97-101`) decides whether that spawn survives, exactly like the C#.
+  g67's compacted `drops.swap_remove(i)` Vec was NOT taken — slot order is the
+  C#'s draw/update order and `NewRain` takes the first inactive slot.
+* **Spawn** (`rain.rs::spawn_splash`, g67's body verbatim) — `DustPool::new_dust`
+  on Rain's own splitmix stream (`SplitmixRand(&mut self.rng)`, the WEATHER-2
+  per-consumer convention), `dustWater()`'s per-water-style id
+  (`calculate_water_style(world, camera)` — the same live read the drop frame
+  type uses), then the eight writes in C# order: `position.X -= 2`,
+  `position.Y += 2`, `alpha = 38`, `velocity *= 0.1`,
+  `velocity += -velocity * 0.025`, `velocity.Y -= 2`, `scale = 0.6`,
+  `noGravity = true`. The refused sentinel takes the writes
+  (`Main.dust[6000]`, the minecart convention). The type-33/98..105 spawn tweak
+  (`Dust.cs:230-235`: alpha 170, vel ×0.5, Y++) runs inside `new_dust` BEFORE
+  the recipe overwrites alpha/velocity — the C# order.
+* **Physics** (`rain.rs::water_splash_arm`, `Dust.cs:1834-1874`) — the
+  `308 | 33 | 52 | 266 | 98..=105 | 123 | 288` FIRST-ladder if-block: the
+  still-X solid probe + spin/nibble, the 4×4 wet probe (+20 alpha, −0.1 scale),
+  the +2/−0.005 fade pair, the alpha-255 scale zero, the >4 fall clamp, the
+  no-gravity sign-picked ±0.2 spin / +0.03 grow / ×1.05 X / +0.15 sink. It
+  returns `false` (a standalone FIRST-ladder statement), so the shared loop's
+  `:2335` no-gravity tail (×0.92 damp, fadeIn-gated −0.04) runs alongside — the
+  corrected S1-E-3 chain reading. The arm draws NO RNG. Dispatch: the
+  `minecart::tick` hook's else fall-through AFTER the d130 type-76 arm (the
+  213/268/76 arms keep their positions); the arm's own type gate carries the
+  full C# member list.
+* **Draw** (`rain.rs::draw_splashes`, `Main.cs:38836-39018`) — the generic
+  `DrawDust` path over the family slots: the light sample at
+  `(position + 4) / 16` as XNA bytes, `dust_table::get_alpha` (the default
+  formula for the whole family), the `(4, 4)`-origin rotated quad at
+  `get_visual_scale` (the gore `plan_quad` emulation), the `get_color` overlay
+  when the spawn colour is packed non-zero (dead for rain — `default(Color)` —
+  kept verbatim), and the `newColor == Color.Black` kill (`(0,0,0,255)`, NOT
+  alpha-0). The call site sits after `minecart::draw`, before the type-76
+  snow draw, in the fx range (`app/frame/draw.rs`).
+* **Drain** (`world_sim/weather.rs::update_rain`) — `Rain::update` gains the
+  `Option<(&mut DustPool, &SpawnCtx)>` seam alongside the d130 `RainInputs`
+  struct (g67's positional-args shape was NOT taken); the world pass hands
+  `app.dust` + `app.spawn_ctx()`. `None` (the drop-sim tests) keeps the gate
+  rolling with the spawn dropped — the stream shape is identical either way,
+  so the witnesses pin the census without a pool.
+
+**RNG census.** Per collision kill: 1 gate draw (`range(0,100)`, the modulo
+seam) + the `new_dust` default block's 6 draws (`Next(1)`×2 — the min-5 box on
+the 2×2 args, `Next(-20,21)`×2 velocity, `Next(3)` frame row, `Next(-20,21)`
+scale) on Rain's stream; the pressure bands never roll while the first inactive
+slot sits under `0.5 * maxDustToDraw` (the low band resets `dCount`). The gate
+rolls even when the spawn culls/refuses (it sits OUTSIDE `NewDust`); the
+`gameMenu`/`gamePaused`/`generating` guards refuse BEFORE any default draw. The
+physics arm and the draw draw zero.
+`w4_g67_the_splash_draws_ride_rains_stream_in_kill_order` pins 5 kills = 35
+draws + same-seed byte-equality of every pool slot (in SLOT order — the fixed
+pool's walk, g67's compacted kill order adapted).
+
+**Deliberate deviations / drops (each cited at its site):**
+
+* The `gameMenu` (+2000 bound) kill-only arm (`Rain.cs:103-109`) has no port
+  seam — the drop sim runs in-world only (the frame's weather cluster is
+  pause-gated, the menu never ticks it). The `remixWorld` arm (`:110-116`) IS
+  kept — remix holds in-world (the REMIX seed); g67's fold of it was wrong for
+  the union (research/83 §1).
+* The `DrawDust` 4×4 on-screen cull rect (`Main.cs:38847`, the ±1000/±1050
+  slack box) is not modelled in `draw_splashes`: the spawn cull already dropped
+  off-screen dust and the shared loop kills below-view slots; the widening
+  only matters for dust dragged far off-screen by velocity within one tick.
+* The water-surface ripple wording of the task row maps to the splash dust
+  itself: the C# `QueueRipple` family (`WaterShaderData.cs:445-467`) has NO
+  rain caller — its callers are Gore.cs:967 (drips), the player/NPC/projectile
+  wet walks and FakeFishParticle. Rain's surface effect IS the `dustWater()`
+  splash; the wet-probe arm's +20 alpha / −0.1 scale fade is the surface
+  interaction. The distortion-side rain term (`SceneState.cs:129`'s
+  `maxRaining` intensity) already landed with the filter driver.
+* The old stand-in's 0.32 s life / 1-2 particle count / 0.0975 velocity blend
+  are retired — the C# spawns exactly ONE dust per kill and its life is the
+  alpha/scale fade ladder above.
+
+**Witnesses.** g67's 7 `w4_g67_*` witnesses adapted to this branch's pool shape
+(`pin_drop` into fixed slots instead of the compacted-Vec push, quality through
+`RainInputs.gfx_quality` instead of g67's `Rain.gfx_quality` field,
+`drop_count()` instead of `drops.len()`); d130's stand-in-content assertions
+(`splashes` vec) re-pinned to the pool's `splash_count`, the gate/remix
+witnesses keep their stream pins unchanged. The collision witnesses use
+128-tall worlds: the `maxTilesY - 40` scan clamp makes the 64-tall test worlds'
+row-30 floor invisible to the real probes. Code-only mode: **written NOT run,
+no cargo/rustc/rustfmt/tests/graphify invoked** (task directive) — the adapted
+witnesses are owed a compile window before merge.
