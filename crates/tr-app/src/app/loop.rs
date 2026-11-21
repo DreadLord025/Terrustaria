@@ -708,6 +708,16 @@ impl App {
                     // menu close (`SoundEngine.PlaySound(11)`,
                     // `Player.cs:4976`).
                     self.audio.play("Menu_Close");
+                } else if self.talk_npc.is_some() {
+                    // W4-e10 — `ToggleInv`'s talk arm (`Player.cs:5005-
+                    // 5015`): `SetTalkNPC(-1)`, the chat text clears,
+                    // `PlaySound(11)` (`:5010`) and `playerInventory =
+                    // false` — the press is consumed, no inventory toggle.
+                    // (`npcChatCornerItem` has no port field.)
+                    self.talk_npc = None;
+                    self.npc_chat_text.clear();
+                    self.audio.play("Menu_Close");
+                    self.inventory_open = false;
                 } else {
                     self.inventory_open = !self.inventory_open;
                     // W4-e10 — `ToggleInv`'s close arm plays 11
