@@ -257,12 +257,12 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
         );
     } else {
         kill_invalid_tree_above(world, i, j, grass);
+        // `Main.tile[i, j].type = (ushort)grass` (`:75223`) — a FIELD write:
+        // the cell's wall/liquid/frames survive (the vine-arm precedent,
+        // W4-g42 GROWTH FINAL; the old whole-Tile replacement zeroed them).
+        // The active bit is already set (the entry gate proved it).
         let idx = world.index(i, j);
-        world.tiles[idx] = crate::tile::Tile {
-            kind: grass,
-            flags: FLAG_ACTIVE,
-            ..Default::default()
-        };
+        world.tiles[idx].kind = grass;
         if world.frame_important.len() <= grass as usize {
             world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
         }
@@ -794,24 +794,30 @@ pub fn spread_desert_walls(
         return;
     };
     let (wall, active, kind) = (tile.wall, tile.active(), tile.kind);
+    // `:74986`: the entry gate is the Sandstone WALL, the Sandstone TILE,
+    // or the HardenedSand WALL — there is NO HardenedSand-tile arm (the
+    // old port's extra check let a plain hardened-sand tile with an evil
+    // wall through; W4-g42 GROWTH FINAL).
     let sandstone_wall = CONVERSION_SANDSTONE_WALLS.contains(&wall);
     let hardened_wall = CONVERSION_HARDENED_SAND_WALLS.contains(&wall);
     let sandstone_tile = active && crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind);
-    let hardened_tile = active && crate::tiledata::SET_CONVERSION_SAND.has(kind);
-    if !sandstone_wall && !hardened_wall && !sandstone_tile && !hardened_tile {
+    if !sandstone_wall && !hardened_wall && !sandstone_tile {
         return;
     }
     let mut flavour = 0u8;
+    // `:74993-75001`: the flavour source reads the tile TYPE without an
+    // active check (unlike SpreadGrassWalls' `:74891` — an actuated evil
+    // sandstone still carries its flavour; W4-g42 GROWTH FINAL).
     if SPREADS_CORRUPTION_WALLS.contains(&wall)
-        || (active && crate::spread::SPREADS_CORRUPTION.contains(&kind))
+        || crate::spread::SPREADS_CORRUPTION.contains(&kind)
     {
         flavour = 1;
     }
-    if SPREADS_HALLOW_WALLS.contains(&wall) || (active && SPREADS_HALLOW.contains(&kind)) {
+    if SPREADS_HALLOW_WALLS.contains(&wall) || SPREADS_HALLOW.contains(&kind) {
         flavour = 2;
     }
     if SPREADS_CRIMSON_WALLS.contains(&wall)
-        || (active && crate::spread::SPREADS_CRIMSON.contains(&kind))
+        || crate::spread::SPREADS_CRIMSON.contains(&kind)
     {
         flavour = 3;
     }
@@ -838,11 +844,23 @@ pub fn spread_desert_walls(
     if !box_has_source(world, wall_dist, i, j, source) {
         return;
     }
+    // `:75088-75122`: the conversion fires only when the neighbour wall is
+    // in the Sandstone or HardenedSand family (the num6 switch) AND differs
+    // from the flavour's target — the PureSand gate alone is not enough.
+    let neighbour_wall = neighbour.wall;
+    if !CONVERSION_SANDSTONE_WALLS.contains(&neighbour_wall)
+        && !CONVERSION_HARDENED_SAND_WALLS.contains(&neighbour_wall)
+    {
+        return;
+    }
     let Some(new) =
-        convert_wall_by_case(neighbour.wall, conversion_type, y, world.world_surface, None)
+        convert_wall_by_case(neighbour_wall, conversion_type, y, world.world_surface, None)
     else {
         return;
     };
+    if neighbour_wall == new {
+        return;
+    }
     let idx = world.index(x, y);
     world.tiles[idx].wall = new;
 }
@@ -1167,6 +1185,26 @@ mod tests {
             23,
             "the corruption converts the dirt"
         );
+    }
+
+    /// W4-g42 GROWTH FINAL: `SpreadGrass`'s plain write (`:75223`) is a
+    /// FIELD write — `Main.tile[i, j].type = grass` — so the converted
+    /// cell's wall and liquid survive (the old whole-Tile replacement
+    /// zeroed them).
+    #[test]
+    fn w4_g42_final_the_plain_spread_write_keeps_wall_and_liquid() {
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 150.0;
+        let i = w.index(100, 100);
+        w.tiles[i] = Tile { kind: 0, flags: FLAG_ACTIVE, liquid: 120, ..Default::default() };
+        w.tiles[i].wall = 2; // the natural dirt wall behind the cell
+        w.tiles[i].set_wall_frame(3, 1);
+        spread_grass(&mut w, 100, 100, 0, 2);
+        let t = *w.tile(100, 100).unwrap();
+        assert_eq!(t.kind, 2, "the dirt converted");
+        assert_eq!(t.wall, 2, "the wall survives the type write");
+        assert_eq!((t.wall_col(), t.wall_row()), (3, 1), "the wall frame survives");
+        assert_eq!(t.liquid, 120, "the liquid survives");
     }
 
     /// DW-2.8: the SpreadGrass conversion dispatch (WorldGen.cs:75207-75221):

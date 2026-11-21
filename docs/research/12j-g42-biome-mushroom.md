@@ -133,6 +133,20 @@ solution (ammo 113) routes through the aiStyle-31 Clentaminator arm, which
 the port documents as type-0-only (`spread.rs:391-395`, S1-D-4) — the other
 spray kinds have no `proj_data` rows. **No missing Convert(3) runtime arm.**
 
+**GROWTH FINAL correction (phase 8)**: the literal-`3` grep missed the
+VARIABLE-typed fourth site — `Projectile.cs:26834`
+`WorldGen.Convert(point2.X, point2.Y, num245, size)` where the aiStyle-31
+ladder (`:26791-26825`) maps the DarkBlueSolution projectile 148 →
+`num245 = 3`. So Convert(3) has FOUR call sites: three gen-only
+(`DoSurfaceIsMushrooms`) + one runtime (the Clentaminator spray). The
+verdict stands for the UpdateWorld side (no mushroom-spread Convert arm
+there — the runtime grass-70 spread is the `SpreadGrass(59, 70)` mud scan,
+covered by T-3's overworld case-70 + D1's underground soil scan + D4's
+tail); the spray side is the projectile lane's documented park
+(`projectile_ai_misc.rs::ai_spray` ports the ladder, runs only the type-0
+cleanse cell — the 146-149/1015-1017 solutions are unrowed;
+`spread::convert_cell_mushroom` (G7) stands ready for that wiring).
+
 The OVERWORLD grass-growth case arms (`UpdateWorld_GrassGrowth`'s
 `switch (num10)` `:74510-74868`, incl. the mushroom case-70 arm `:74704-74750`:
 the `Next(10)` plant-71 roll + `CopyPaintAndCoating`, the `Next(300)`
@@ -279,3 +293,71 @@ changes touch NO worldgen pass stream — both world-hash pins stay; the
 PlaceCatTail (fd7fae0e) untouched (the runtime copy is a separate fn over
 UnifiedRandom); d102/d106's growth.rs re-export lines untouched; d105's
 sunflower item row untouched.
+
+## Phase 8 — GROWTH FINAL (the last-pass census + the tiny closes)
+
+The full-fn final verify of `UpdateWorld_GrassGrowth` (`WorldGen.cs:74269-
+74867`) every-case against the three port modules (`growth/grass.rs`
+underground slice, `growth/overworld.rs` overworld arms,
+`growth/underground_tail.rs` tail switch) after D1-D5. The case bodies are
+1:1 (the plant rolls' odds/order, the `&` non-short-circuit draws, the
+spread ladders' call order, the tail's flag/break semantics — re-read line
+by line). The residuals found and closed:
+
+| # | residual | C# anchor | close |
+| --- | --- | --- | --- |
+| F1 | the D6 wall-arm residual: both dispatchers returned early on the inactive path; the actuated (`nactive()` false) path ran the growth chain | `:72499-72503` / `:73809-73813` sit OUTSIDE the if-else; `:72216`/`:73252` gate on `nactive()` | the inactive path runs the tail-else web + the wall arms; the actuated path skips the chain, runs web + walls; the underground `nactive()` body split into `underground_nactive_arms` so the alch arm falls through to the walls; the overground alch/vanity-kill/cactus/sand/moss arms no longer return |
+| F2 | the overground window unclamped — at the pick j=10 the port read row 9 and spent the plant roll; the C# minJ is the source cell itself | `:72032-72051` (the clamp before any arm) | the clamped min/max window threaded through every grass call + the moss arm |
+| F3 | the overworld arms lacked the entry guard | `:74271` `InWorld(i,j,10)` sits before the `if (underground)` split | all four overworld arms + T-3's mushroom arm carry it, plus the callers' `nactive()` gate folded in |
+| F4 | the vanity-kill below-gate checked `active()` | `:72146` reads the TYPE only | the extra active check removed |
+| F5 | `SpreadGrass`'s plain write replaced the whole Tile (wall/liquid zeroed) | `:75223` `tile.type = grass` — a field write | the kind-only write (the vine-arm precedent) |
+| F6 | `SpreadDesertWalls`: an extra HardenedSand-TILE entry check; the flavour source gated on active; the num6 neighbour-family gate missing | `:74986` (Sandstone wall/tile + HardenedSand WALL only), `:74993-75001` (no active check), `:75088-75122` (the Sandstone/HardenedSand neighbour gate + the same-wall skip) | all three closed (RNG-neutral — the gates sit after the ±2 draws) |
+
+**The actuated-grass census verdict (F1)**: actuated grass grows NO grass
+(the `nactive()` gates) but its evil WALL still spreads (the wall arms'
+source test reads `tile.wall` when `tile.active()` is off, and an actuated
+tile keeps both bits). The inactive cell's type-keyed head arms
+(`:72146-72215` vanity-kill/bamboo/lily/cattail/liquid — they run on `.type`
+regardless of the active bit) stay parked (ANALYSIS); the web arm
+(`:72491`/`:73803`) now reaches them.
+
+**The mushroom-CONVERT runtime census (corrected)**: Convert(3) has FOUR
+call sites — the three gen-only `DoSurfaceIsMushrooms` arms (`:2101/:2125/
+:2129`, G6/G7 landed) AND `Projectile.cs:26834` (the aiStyle-31 Clentaminator
+spray: the ladder `:26791-26825` maps proj 148 → type 3; the shoot math is
+`Player.cs:53487-53490` `projToShoot += item.shoot` — Clentaminator 779
+shoot 145 + DarkBlueSolution 783 shoot 3 = 148). The phase-6 "three call
+sites" verdict missed the variable-typed site. The UpdateWorld side has NO
+Convert(3) arm — the runtime grass-70 spread is the `SpreadGrass(59, 70)`
+mud scan, covered by T-3 (overworld case-70 `:74731-74745`) + D1
+(underground soil scan `:74377-74413`) + D4 (the tail). The spray side is
+the projectile lane's park: `ai_spray` ports the ladder, runs only the
+type-0 cleanse (the 146-149/1015-1017 solutions unrowed);
+`spread::convert_cell_mushroom` (G7) stands ready for that wiring.
+
+**The tree-GROWTH chain verified complete (sapling→tree tick)**: the acorn
+item 27 / gemcorns 4851-4857 place through the TileObject registry
+(`itemdata.rs` rows + the D_20/D_590 defs) → the overground Next(20) arm
+(`:72431-72436`) / the underground Next(5) arms (`:73756-73780`, D5 — the
+gemcorn 590 included) → `attempt_grow_tree_from_sapling`
+(`:72810-72924` verbatim: the style switch, the underground gates with the
+bees/remix exemption, the gem style≥7 → 587 default) →
+`try_growing_tree_by_type` (`:30343-30384`: case-5 → `grow_tree`
+(`:29767-29980`, G5 verbatim), 323 → `grow_palm_tree`, the gem/vanity/ash
+profiles → `grow_tree_with_settings` (`:30388-30847`) with the T1 WallTest
+delegates). The d105/g17 tree-FX co-lanes (`PlayerLOS`/`TreeGrowFXCheck`)
+stay unported — the `&`/`&&` conjunctions evaluate the grow regardless.
+
+### Phase-8 landing ledger
+
+| phase | scope | commit | status |
+| --- | --- | --- | --- |
+| F1-F6 | the tiny closes (growth.rs both dispatchers + the split body, growth/overworld.rs entry guards, growth/grass.rs field write + the desert-wall gates) + 5 witnesses + ANALYSIS/12j | (this commit) | landed |
+
+All phase-8 changes code-only (no cargo/tests/graphify). 5 witnesses WRITTEN
+NOT RUN: growth.rs (3 — the actuated/inactive wall-arm reach + no-grass
+control, the margin clamp draw-skip, the acorn end-to-end grow),
+growth/overworld.rs (1 — the entry guards skip margin + actuated),
+growth/grass.rs (1 — the plain write keeps wall/liquid). Runtime-only — no
+worldgen pass stream touched, both world-hash pins stay; the `a == b`
+halves untouched. Co-lane boundaries unchanged (g83/c33/d102/d106/d105).

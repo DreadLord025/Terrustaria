@@ -39,9 +39,18 @@ pub(super) fn overworld_grass_growth(
     allowed: bool,
     rng: &mut UnifiedRandom,
 ) {
+    // `:74271`: the entry guard binds the overworld switch too.
+    if !in_world_10(world, i, j) {
+        return;
+    }
     let Some(t) = world.tile(i, j) else {
         return;
     };
+    // The callers gate on `nactive()` (`:72216`/`:73252`) — an actuated
+    // grass grows nothing (W4-g42 GROWTH FINAL).
+    if t.inactive() {
+        return;
+    }
     let mut num10 = t.kind as i32;
     // The halloween pumpkin arm (`:74524-74546`): `Main.halloween &&
     // Next(75) == 0 && (2 || 109)` — the port carries no halloween flag, the
@@ -304,7 +313,9 @@ pub(super) fn is_fit_to_place_flower_in(world: &World, x: i32, y: i32, num: u16)
 }
 
 /// `WorldGen.InWorld(i, j, 10)` — the 10-tile margin the spread scans use.
-fn in_world_10(world: &World, i: i32, j: i32) -> bool {
+/// The `UpdateWorld_GrassGrowth` entry guard (`:74271`) sits BEFORE the
+/// `if (underground)` split, so it binds the overworld switch too.
+pub(super) fn in_world_10(world: &World, i: i32, j: i32) -> bool {
     i >= 10 && j >= 10 && i < world.width as i32 - 10 && j < world.height as i32 - 10
 }
 
@@ -324,6 +335,14 @@ pub(super) fn overworld_jungle_growth(
     max_j: i32,
     rng: &mut UnifiedRandom,
 ) {
+    // `:74271`: the entry guard binds the overworld switch too.
+    if !in_world_10(world, i, j) {
+        return;
+    }
+    // The callers gate on `nactive()` (`:72216`/`:73252`).
+    if world.tile(i, j).is_some_and(|t| t.inactive()) {
+        return;
+    }
     let above_active = world.tile(i, min_j).is_some_and(|t| t.active());
     // `:74754`: `!active && Next(7) == 0` → PlaceTile(61).
     if !above_active && rng.next_max(7) == 0 {
@@ -437,6 +456,14 @@ pub(super) fn overworld_jungle_plant_growth(
     min_j: i32,
     rng: &mut UnifiedRandom,
 ) {
+    // `:74271`: the entry guard binds the overworld switch too.
+    if !in_world_10(world, i, j) {
+        return;
+    }
+    // The callers gate on `nactive()` (`:72216`/`:73252`).
+    if world.tile(i, j).is_some_and(|t| t.inactive()) {
+        return;
+    }
     if !world.tile(i, min_j).is_some_and(|t| t.active())
         && rng.next_max(7) == 0
         && !super::jungle::too_many_jungle_plants_nearby(world, i, min_j, 2)
@@ -475,6 +502,14 @@ pub(super) fn overworld_ash_growth(
     max_j: i32,
     rng: &mut UnifiedRandom,
 ) {
+    // `:74271`: the entry guard binds the overworld switch too.
+    if !in_world_10(world, i, j) {
+        return;
+    }
+    // The callers gate on `nactive()` (`:72216`/`:73252`).
+    if world.tile(i, j).is_some_and(|t| t.inactive()) {
+        return;
+    }
     if !world.tile(i, min_j).is_some_and(|t| t.active()) && rng.next_max(10) == 0 {
         place_flower_above(world, i, j, min_j, 637, rng);
     }
@@ -696,5 +731,32 @@ mod tests {
             }
         }
         assert!(!placed_any, "the crowded box never places");
+    }
+
+    /// W4-g42 GROWTH FINAL: the `:74271` InWorld(i,j,10) entry guard binds
+    /// the OVERWORLD switch too (it sits before the `if (underground)`
+    /// split) — a grass cell at the margin draws NOTHING. The `nactive()`
+    /// caller gate (`:72216`/`:73252`) folds in as well: an actuated grass
+    /// grows nothing through the arm.
+    #[test]
+    fn w4_g42_final_the_overworld_entry_guards_skip_margin_and_actuated() {
+        // The margin: the kind-2 cell at (100, 9) — outside InWorld(10).
+        let mut w = world();
+        put(&mut w, 100, 9, 2);
+        let mut rng = UnifiedRandom::new(5);
+        let witness = UnifiedRandom::new(5);
+        overworld_grass_growth(&mut w, 100, 9, 99, 102, 8, 11, true, &mut rng);
+        assert_eq!(rng, witness, "the margin cell draws nothing");
+        // The actuated control: the same cell in-world but actuated.
+        let mut w = world();
+        put(&mut w, 100, 200, 2);
+        let i = w.index(100, 200);
+        w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
+        put(&mut w, 101, 200, 0); // the dirt neighbour the arm would convert
+        let mut rng = UnifiedRandom::new(5);
+        let witness = UnifiedRandom::new(5);
+        overworld_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+        assert_eq!(rng, witness, "the actuated cell draws nothing");
+        assert_eq!(w.tile(101, 200).unwrap().kind, 0, "no spread off the actuated grass");
     }
 }

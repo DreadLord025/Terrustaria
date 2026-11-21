@@ -707,14 +707,54 @@ pub fn update_world_overground_tile(
     wind_speed: f32,
     rng: &mut UnifiedRandom,
 ) {
-    let kind = world.tile(x, y).map(|t| (t.active(), t.kind));
-    let Some((active, kind)) = kind else {
+    // The clamped window (`:72032-72051`): the C# clamps the ±1 box to the
+    // 10-tile margin BEFORE any arm — at the pick j=10 the C# minJ is 10
+    // (the source cell itself, active → the plant rolls skip without a
+    // draw), not the raw row 9 (W4-g42 GROWTH FINAL).
+    let min_i = (x - 1).max(10);
+    let max_i = (x + 2).min(world.width - 10);
+    let min_j = (y - 1).max(10);
+    let max_j = (y + 2).min(world.height - 10);
+    let kind = world.tile(x, y).map(|t| (t.active(), t.inactive(), t.kind));
+    let Some((active, inactive, kind)) = kind else {
         return;
     };
     if !active {
         // The beach-shells arm (`:72073`): an inactive beach cell under the
         // surface grows a shell pile behind the wind/rain odds.
         grow_shell_pile(world, x, y, wind_speed, max_raining, raining, rng);
+        // The tail else (`:72491-72498`): the web arm (wall 62, dry) runs
+        // for inactive cells too; the town-NPC arm parks.
+        if world.tile(x, y).is_some_and(|t| t.wall == 62 && t.liquid == 0) {
+            grow_web(world, x, y, rng);
+        }
+        // The wall arms (`:72499-72503`) sit OUTSIDE the active/inactive
+        // if-else — an inactive cell with an evil WALL still spreads it
+        // (the source test reads `tile.wall` when `tile.active()` is off).
+        // W4-g42 GROWTH FINAL: the D6 residual, ported. The inactive path's
+        // vanity-kill/bamboo/lily/cattail/liquid arms (`:72146-72215`) stay
+        // parked (ANALYSIS).
+        if world.allowed_to_spread_infections {
+            spread_grass_walls(world, 3, x, y, rng);
+            spread_desert_walls(world, 3, x, y, rng);
+        }
+        return;
+    }
+    if inactive {
+        // `:72216`'s `nactive()` gate: an ACTUATED tile (active bit set,
+        // inActive bit set) skips the whole growth chain — actuated grass
+        // grows no grass. The else arm (`:72491-72498`) runs the web arm
+        // (wall 62, dry), then the wall arms below (W4-g42 GROWTH FINAL,
+        // the D6 census verdict). The type-keyed head arms (`:72146-72215`
+        // vanity-kill/bamboo/lily/cattail/liquid) on actuated cells stay
+        // parked (ANALYSIS).
+        if world.tile(x, y).is_some_and(|t| t.wall == 62 && t.liquid == 0) {
+            grow_web(world, x, y, rng);
+        }
+        if world.allowed_to_spread_infections {
+            spread_grass_walls(world, 3, x, y, rng);
+            spread_desert_walls(world, 3, x, y, rng);
+        }
         return;
     }
     // `:72063-72067`: the tombstone arm — a grave cell rolls
@@ -736,7 +776,9 @@ pub fn update_world_overground_tile(
     }
     if TILE_ALCH.contains(&kind) {
         grow_alch(world, x, y, day_time, raining, rng);
-        return;
+        // The C# alch arm (`:72068`) does NOT return — the walk reaches the
+        // wall arms (`:72499`). No later arm matches 82/83/84, so the port
+        // falls through (W4-g42 GROWTH FINAL).
     }
     // The sapling arm (:72430-72449): the kind-20 sapling at `Next(20)`,
     // the beach palm saplings 595/615 at `Next(5)` (the settings profiles
@@ -752,16 +794,19 @@ pub fn update_world_overground_tile(
     }
     // The vanilla/KillTile arm (:72146-72152): the sakura/willow sapling or
     // its grown tile standing on the evil grass is killed (the trees do not
-    // take root in the corruption/crimson).
+    // take root in the corruption/crimson). The C# below-gate reads the
+    // TYPE only — no active check (an actuated evil grass still kills).
     if matches!(kind, 595 | 615 | 596 | 616)
         && world
             .tile(x, y + 1)
-            .is_some_and(|t| t.active() && matches!(t.kind, 199 | 23))
+            .is_some_and(|t| matches!(t.kind, 199 | 23))
     {
         if let Some(t) = world.tile_mut(x, y) {
             t.flags &= !FLAG_ACTIVE;
         }
-        return;
+        // The C# KillTile (`:72148`) does NOT return — the killed cell's
+        // walk reaches the wall arms (W4-g42 GROWTH FINAL). No later arm
+        // matches 595/615/596/616.
     }
     // The bamboo arm (:72154-72156): the bamboo 571 or the jungle grass 60
     // with liquid above, at `Next(5)`, when the cell above is free and — for
@@ -781,17 +826,17 @@ pub fn update_world_overground_tile(
             place_bamboo(world, x, y - 1, rng);
         }
     }
-    // The cactus arm (:72229-72231): `Next(15)`.
+    // The cactus arm (:72229-72231): `Next(15)`. The C# else-if does not
+    // return — the walk reaches the wall arms (W4-g42 GROWTH FINAL); no
+    // later arm matches 80.
     if kind == 80 && rng.next_max(15) == 0 {
         grow_cactus(world, x, y, rng);
-        return;
     }
     // The bare-sand arm (:72282-72284) rolls `Next(300)` inside the
     // beach-distance bounds — the port has no beachDistanceYet; the
     // water-box abort inside `grow_cactus` keeps the shore in check.
     if matches!(kind, 53 | 234 | 116 | 112) && rng.next_max(300) == 0 {
         grow_cactus(world, x, y, rng);
-        return;
     }
     // The grass-growth pass (:72357 + :73282): the spread-overground grasses
     // with the plant windows (minI/maxI = i±1, minJ/maxJ = j±1 per :72350-
@@ -809,17 +854,9 @@ pub fn update_world_overground_tile(
     if (crate::tiledata::TILE_MOSS.has(kind) || crate::tiledata::SET_TILE_MOSS_BRICK.has(kind))
         && active
     {
-        grow_moss_arm(
-            world,
-            x,
-            y,
-            x - 1,
-            x + 2,
-            y - 1,
-            y + 2,
-            rng,
-        );
-        return;
+        grow_moss_arm(world, x, y, min_i, max_i, min_j, max_j, rng);
+        // The C# moss else-if (`:72371`) does not return — the walk reaches
+        // the wall arms (W4-g42 GROWTH FINAL). No later arm matches a moss.
     }
     if grass_pass {
         // W4-g42 dispatcher follow-up D2: the OVERGROUND caller passes
@@ -833,18 +870,18 @@ pub fn update_world_overground_tile(
         // (the `update_world` caller sets it from the journey power).
         let allowed = world.allowed_to_spread_infections;
         match kind {
-            70 => overworld_mushroom_growth(world, x, y, x - 1, x + 2, y - 1, y + 2, rng),
-            60 => overworld::overworld_jungle_growth(world, x, y, x - 1, x + 2, y - 1, y + 2, rng),
-            226 => overworld::overworld_jungle_plant_growth(world, x, y, y - 1, rng),
-            633 => overworld::overworld_ash_growth(world, x, y, x - 1, x + 2, y - 1, y + 2, rng),
+            70 => overworld_mushroom_growth(world, x, y, min_i, max_i, min_j, max_j, rng),
+            60 => overworld::overworld_jungle_growth(world, x, y, min_i, max_i, min_j, max_j, rng),
+            226 => overworld::overworld_jungle_plant_growth(world, x, y, min_j, rng),
+            633 => overworld::overworld_ash_growth(world, x, y, min_i, max_i, min_j, max_j, rng),
             _ => overworld::overworld_grass_growth(
                 world,
                 x,
                 y,
-                x - 1,
-                x + 2,
-                y - 1,
-                y + 2,
+                min_i,
+                max_i,
+                min_j,
+                max_j,
                 allowed,
                 rng,
             ),
@@ -867,7 +904,8 @@ pub fn update_world_overground_tile(
     }
     // The overground wall arms (`:72499-72503`, behind
     // `AllowedToSpreadInfections`) — AFTER the whole else-if chain, for
-    // every active kind (the C# runs them outside the chain). The port's
+    // every kind, active or not (the C# runs them outside the chain; the
+    // inactive/actuated paths carry their own copies above). The port's
     // overground dispatcher lacked them entirely (W4-g42 dispatcher
     // follow-up D2); the g83 vine grow-tops (`:72506+`) stay g83's lane.
     if world.allowed_to_spread_infections {
@@ -903,6 +941,10 @@ fn overworld_mushroom_growth(
     max_j: i32,
     rng: &mut UnifiedRandom,
 ) {
+    // `:74271`: the entry guard binds the overworld switch too.
+    if !overworld::in_world_10(world, i, j) {
+        return;
+    }
     // `if (!Main.tile[i, j].inActive())` (`:74706`).
     if !world.tile(i, j).is_some_and(|t| t.inactive()) {
         // The plant-71 roll (`:74708-74719`): the free cell above, Next(10).
@@ -1901,6 +1943,127 @@ pub(super) mod tests {
         assert!(converted, "the grass cell's walk reaches SpreadGrassWalls");
     }
 
+    /// W4-g42 GROWTH FINAL (the D6 residual): the C# wall arms (`:72499-
+    /// 72503`/`:73809-73813`) sit OUTSIDE the active/inactive if-else — an
+    /// ACTUATED corrupt-grass cell grows no grass (`:72216`/`:73252`
+    /// `nactive()` gates) but its evil WALL still spreads. An INACTIVE cell
+    /// with the evil wall spreads it too (the source test reads
+    /// `tile.wall`).
+    #[test]
+    fn w4_g42_final_the_actuated_grass_grows_walls_not_grass() {
+        let build = |actuated: bool, active: bool| {
+            let mut w = world();
+            w.world_surface = 100.0;
+            put(&mut w, 100, 200, 23, 0);
+            if actuated {
+                let i = w.index(100, 200);
+                w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
+            }
+            if !active {
+                let i = w.index(100, 200);
+                w.tiles[i].flags &= !FLAG_ACTIVE;
+            }
+            set_wall(&mut w, 100, 200, 69);
+            for dx in -3i32..=3 {
+                for dy in -3i32..=3 {
+                    if (dx, dy) != (0, 0) {
+                        set_wall(&mut w, 100 + dx, 200 + dy, 63);
+                    }
+                }
+            }
+            // An exposed dirt neighbour the active arm WOULD convert.
+            put(&mut w, 101, 200, 0, 0);
+            // An ACTIVE corrupt tile inside the wallDist box — the C# box
+            // scan (`:74904`) reads `active()` only, so an inactive source
+            // cell alone carries no source for the wall arms.
+            put(&mut w, 102, 200, 23, 0);
+            w.allowed_to_spread_infections = true;
+            w
+        };
+        for (actuated, active) in [(true, true), (false, false)] {
+            let mut w = build(actuated, active);
+            let mut converted = false;
+            for seed in 1i32..400 {
+                let mut rng = UnifiedRandom::new(seed);
+                update_world_underground_tile(&mut w, 100, 200, 3, true, true, false, &mut rng);
+                let mut rng = UnifiedRandom::new(seed + 10_000);
+                update_world_overground_tile(&mut w, 100, 200, true, false, 0.0, 0.0, &mut rng);
+                if (97..=103).any(|x| {
+                    (197..=203).any(|y| {
+                        (x, y) != (100, 200) && w.tile(x, y).is_some_and(|t| t.wall == 69)
+                    })
+                }) {
+                    converted = true;
+                    break;
+                }
+            }
+            assert!(converted, "actuated={actuated} active={active}: the wall arms ran");
+            assert_eq!(
+                w.tile(101, 200).unwrap().kind,
+                0,
+                "actuated={actuated} active={active}: no grass spread off the cell"
+            );
+        }
+        // The active control converts the dirt (the grass arm runs).
+        let mut w = build(false, true);
+        let mut rng = UnifiedRandom::new(7);
+        for _ in 0..50 {
+            update_world_underground_tile(&mut w, 100, 200, 3, true, true, false, &mut rng);
+        }
+        assert_eq!(w.tile(101, 200).unwrap().kind, 23, "the active grass spreads");
+    }
+
+    /// W4-g42 GROWTH FINAL: the overground window clamps (`:72032-72051`) —
+    /// at the pick j=10 the C# minJ is 10, the SOURCE cell itself (active →
+    /// the plant roll skips with NO draw). The old unclamped port read row
+    /// 9 and spent the Next(12).
+    #[test]
+    fn w4_g42_final_the_overground_window_clamps_at_the_margin() {
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 10, 2, 0);
+        let mut pinned = false;
+        for seed in 1i32..64 {
+            let mut rng = UnifiedRandom::new(seed);
+            let mut witness = UnifiedRandom::new(seed);
+            update_world_overground_tile(&mut w, 100, 10, true, false, 0.0, 0.0, &mut rng);
+            // The dye head draws Next(3000); the plant roll must NOT draw
+            // (the clamped minJ reads the active source cell). Skip the
+            // rare dye-hit stream (its own draws would follow).
+            if witness.next_max(3000) == 0 {
+                continue;
+            }
+            assert_eq!(rng, witness, "seed {seed}: no plant-roll draw at the margin");
+            pinned = true;
+        }
+        assert!(pinned, "the miss streams pin the clamp");
+        assert!(w.tile(100, 9).is_none_or(|t| !t.active()), "nothing planted at row 9");
+    }
+
+    /// W4-g42 GROWTH FINAL: the tree-GROWTH chain end-to-end — a planted
+    /// acorn sapling (kind 20, the registry route's tile) on the grass grows
+    /// a tile-5 trunk through the overground Next(20) arm (`:72431-72436`)
+    /// → AttemptToGrowTreeFromSapling → TryGrowingTreeByType(5) → GrowTree.
+    #[test]
+    fn w4_g42_final_the_acorn_sapling_grows_its_tree() {
+        let mut grew = false;
+        for seed in 1i32..800 {
+            let mut w = world();
+            w.world_surface = 250.0;
+            for dx in -3i32..=3 {
+                put(&mut w, 100 + dx, 200, 2, 0); // the grass ground row
+            }
+            put(&mut w, 100, 199, 20, 0); // the acorn sapling, style 0
+            let mut rng = UnifiedRandom::new(seed);
+            update_world_overground_tile(&mut w, 100, 199, true, false, 0.0, 0.0, &mut rng);
+            if (180..=199).any(|y| w.tile(100, y).is_some_and(|t| t.active() && t.kind == 5)) {
+                grew = true;
+                break;
+            }
+        }
+        assert!(grew, "the Next(20) roll grows the acorn's tree");
+    }
+
 }
 
 /// `WorldGen.UpdateWorld_UndergroundTile` (`WorldGen.cs:73214-73614`): the
@@ -1932,13 +2095,17 @@ pub fn update_world_underground_tile(
     let Some(tile) = world.tile(i, j) else {
         return;
     };
-    let (kind, active) = (tile.kind, tile.active());
+    let (kind, active, actuated) = (tile.kind, tile.active(), tile.inactive());
     // The 655 life-fruit kill parks (`:73239-73246`).
+    // The wall arms (`:73809-73813`) sit OUTSIDE the alch/active if-else —
+    // the C# walks every path into them (W4-g42 GROWTH FINAL, the D6
+    // residual). The inactive path's own copy is below; the actuated
+    // (`nactive()` false, `:73252`) path takes the else arm's web + walls.
     if TILE_ALCH.contains(&kind) {
         grow_alch(world, i, j, day_time, raining, rng);
-        return;
-    }
-    if !active {
+        // The C# alch arm (`:73248`) does not return — no later arm
+        // matches 82/83/84, so the port falls through to the wall arms.
+    } else if !active {
         // The hard-mode infection arm (`:73252`) and the tail `else`'s web arm
         // (`:73803-73806`: wall 62, no liquid). The dye/seaweed, 444/396 and
         // town-NPC arms park.
@@ -1946,8 +2113,64 @@ pub fn update_world_underground_tile(
         if world.tile(i, j).is_some_and(|t| t.wall == 62 && t.liquid == 0) {
             grow_web(world, i, j, rng);
         }
+        if allowed_to_spread {
+            spread_grass_walls(world, wall_dist, i, j, rng);
+            spread_desert_walls(world, wall_dist, i, j, rng);
+        }
         return;
+    } else if actuated {
+        // `:73252`'s `nactive()` gate: an ACTUATED tile skips the growth
+        // chain — the else arm (`:73801-73808`) runs the web, then the
+        // wall arms. Actuated grass grows no grass, but its evil WALL
+        // still spreads (W4-g42 GROWTH FINAL, the D6 census verdict).
+        if world.tile(i, j).is_some_and(|t| t.wall == 62 && t.liquid == 0) {
+            grow_web(world, i, j, rng);
+        }
+        if allowed_to_spread {
+            spread_grass_walls(world, wall_dist, i, j, rng);
+            spread_desert_walls(world, wall_dist, i, j, rng);
+        }
+        return;
+    } else {
+        underground_nactive_arms(
+            world,
+            i,
+            j,
+            allowed_to_spread,
+            kind,
+            min_i,
+            max_i,
+            min_j,
+            max_j,
+            rng,
+        );
     }
+    // The wall arms (`:73809-73813`, behind `AllowedToSpreadInfections`) —
+    // AFTER the whole chain, for every kind (the old port ran them
+    // only on the vine-arm fall-through). The web and town-NPC arms park.
+    if allowed_to_spread {
+        spread_grass_walls(world, wall_dist, i, j, rng);
+        spread_desert_walls(world, wall_dist, i, j, rng);
+    }
+}
+
+/// `UpdateWorld_UndergroundTile`'s `nactive()` body (`:73252-73800`): the
+/// dye head, the cattail/seaweed arms, the grass family + spikes, the lily
+/// conversion, the vine families and the sapling arms. Split out of the
+/// dispatcher so the alch/inactive/actuated paths reach the wall arms
+/// (W4-g42 GROWTH FINAL) without duplicating the chain.
+fn underground_nactive_arms(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    allowed_to_spread: bool,
+    kind: u16,
+    min_i: i32,
+    max_i: i32,
+    min_j: i32,
+    max_j: i32,
+    rng: &mut UnifiedRandom,
+) {
     // `:73255-73262`: the dye-plant head — `Main.rand.Next(2500)` on every
     // `nactive` pick, the exotic arm at `Next(10000)` in hardmode.
     if rng.next_max(2500) == 0 {
@@ -2035,13 +2258,9 @@ pub fn update_world_underground_tile(
     if matches!(kind, 20 | 590 | 595 | 615) && rng.next_max(5) == 0 {
         attempt_grow_tree_from_sapling(world, i, j, true, rng);
     }
-    // The wall arms (`:73809-73813`, behind `AllowedToSpreadInfections`) —
-    // AFTER the whole chain, for every active kind (the old port ran them
-    // only on the vine-arm fall-through). The web and town-NPC arms park.
-    if allowed_to_spread {
-        spread_grass_walls(world, wall_dist, i, j, rng);
-        spread_desert_walls(world, wall_dist, i, j, rng);
-    }
+    // The wall arms run in the DISPATCHER after this body returns — every
+    // path (alch/inactive/actuated/nactive) reaches them (`:73809-73813`,
+    // W4-g42 GROWTH FINAL).
 }
 
 

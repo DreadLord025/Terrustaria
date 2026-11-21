@@ -13142,14 +13142,69 @@ re-frames and netMode sends are the framer's/MP's job; expertMode folds to
 normal (the life-fruit Next(40)/radius-60); the `AllowedToSpreadInfections`
 flag rides a new runtime-only `World` field (the overground dispatcher has
 no flag parameter; `update_world` sets it per tick from the journey power).
-Residual (pre-existing structure, out of the case-routing scope): the C#
-wall arms (`:72499`/`:73809`) run for INACTIVE cells too (they sit outside
-the active/inactive if-else); both port dispatchers return early on the
-inactive path (the beach-shells / hard-update-world arms), so an actuated
-evil-wall cell does not spread its wall — the active-path arms landed here.
+Deviation parked (ANALYSIS): the inactive/actuated cells' type-keyed head
+arms (`:72146-72215` — the vanity-kill/bamboo/lily/cattail/liquid chain runs
+on `.type` regardless of the active bit) stay out; the wall arms and the
+web arm now reach them (the D6 residual, GROWTH FINAL).
 The changes are runtime-only — no worldgen pass stream touched, both
 world-hash pins stay; 14 witnesses written not run (5 overworld, 4
 underground-tail, 3 underground-slice, 2 dispatcher/gemcorn).
+
+**GROWTH FINAL (W4-g42, code-only — the last-pass closes)**:
+
+- **The D6 residual landed**: the C# wall arms (`:72499-72503`/`:73809-73813`)
+  sit OUTSIDE the active/inactive if-else — an actuated or inactive cell
+  with an evil WALL still spreads it (the source test reads `tile.wall`
+  when `tile.active()` is off). Both dispatchers now run the wall arms on
+  the inactive path (with the tail-else web arm, `:72491`/`:73803`) and on
+  the ACTUATED path (the `nactive()` gate `:72216`/`:73252` skips the growth
+  chain — actuated grass grows NO grass, but its wall spreads). The
+  underground `nactive()` body split into `underground_nactive_arms` so the
+  alch arm falls through to the wall arms too (the C# alch arm does not
+  return). The overground alch/vanity-kill/cactus/sand/moss arms no longer
+  return either (the C# else-ifs walk on to the wall arms).
+- **The overground window clamps** (`:72032-72051`): the ±1 box clamps to
+  the 10-margin BEFORE any arm — at the pick j=10 the C# minJ is the SOURCE
+  cell itself (active → the plant rolls skip with no draw); the old
+  unclamped port read row 9 and spent the Next(12)/Next(7)/Next(10).
+- **The overworld entry guards** (`:74271` `InWorld(i,j,10)` sits before the
+  `if (underground)` split): the four overworld arms + T-3's mushroom arm
+  now carry it, plus the callers' `nactive()` gate folded in.
+- **The vanity-kill below-gate** (`:72146`): reads the TYPE only — the
+  port's extra `active()` check removed (an actuated evil grass still kills
+  the sapling).
+- **SpreadGrass's plain write** (`:75223`): a FIELD write (`tile.type =
+  grass`) — the converted cell's wall/liquid/frames survive (the old
+  whole-Tile replacement zeroed them; the vine-arm precedent).
+- **SpreadDesertWalls' gates** (`:74986`/`:74993-75001`/`:75088-75122`):
+  the entry gate is the Sandstone WALL / Sandstone TILE / HardenedSand
+  WALL (no HardenedSand-tile arm — the old extra check removed); the
+  flavour source reads the tile type WITHOUT an active check (unlike
+  SpreadGrassWalls); the conversion fires only when the neighbour wall is
+  in the Sandstone/HardenedSand family and differs from the target (the
+  num6 gate). All RNG-neutral (the gates sit after the ±2 draws).
+- **The mushroom-CONVERT census (runtime)**: `Convert(3)` has FOUR call
+  sites, not three — `WorldGen.cs:2101/:2125/:2129` (`DoSurfaceIsMushrooms`,
+  gen-only, G6/G7 landed) AND `Projectile.cs:26834` (the Clentaminator
+  aiStyle-31 spray, the DarkBlueSolution 148 → conversion type 3). The
+  port's `ai_spray` (`projectile_ai_misc.rs`) ports the per-kind ladder but
+  parks the non-cleanse conversions (the 146-149/1015-1017 solutions are
+  unrowed — `convert_cell_mushroom` stands ready for that lane). The
+  runtime grass-70→mushroom spread itself is the `SpreadGrass(59, 70)` mud
+  scan — covered: the overworld case-70 (T-3) + the underground slice's
+  soil scan (D1) + the tail (D4). No UpdateWorld-side Convert(3) arm exists.
+- **The tree-GROWTH chain verified complete**: the acorn item 27 / gemcorns
+  4851-4857 place through the TileObject registry (D_20/D_590) → the
+  overground Next(20) arm (`:72431`) / the underground Next(5) arms
+  (`:73756-73780`, D5) → `AttemptToGrowTreeFromSapling` (`:72810-72924`,
+  the style switch + the underground gates verbatim) →
+  `TryGrowingTreeByType` (`:30343`, case-5 → `GrowTree`, the gem/vanity/ash
+  profiles → `GrowTreeWithSettings` with the T1 WallTest delegates). The
+  d105/g17 tree-FX co-lanes (`PlayerLOS`/`TreeGrowFXCheck`) stay unported
+  (the conjunctions evaluate the grow regardless).
+- 5 witnesses written not run (the actuated/inactive wall-arm reach +
+  no-grass control, the margin clamp draw-skip, the acorn end-to-end grow,
+  the overworld entry guards, the plain-write wall/liquid survival).
 
 - **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
   velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
