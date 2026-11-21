@@ -175,8 +175,11 @@ pub(crate) fn draw_capture_entity_tail(
     // projectile slots push `push_ui_*`), `DrawRain` (`:57011`), `DrawGore`
     // (`:57014`), `DrawDust` (`:57016`, the flying sand + the wheel
     // sparks). The back range stays parked — the framebuffer already holds
-    // the composited background.
+    // the composited background. The world range is cleared first (the
+    // player/npcs/items batch already rendered); the yoyo strings push
+    // fresh world quads below.
     let parked_back = renderer.take_back();
+    renderer.begin_world_batch();
     renderer.fx.clear();
     renderer.ui.clear();
     let hand = ents.player.map(|pl| {
@@ -213,13 +216,18 @@ fn render_screen_ranges(
     anim_time: f32,
 ) {
     // The world-range half (the yoyo strings push `push_sprite_origin_rot`)
-    // under the chunk camera; then the fx+ui ranges under the identity
-    // camera with the world parked (`render_map_ui` draws fx+map+ui).
+    // under the chunk camera — `render_world_only` parks back AND fx, so
+    // the fx range survives for the second half.
     renderer.render_world_only(gpu, fb, camera.to_array(), 1.0, anim_time, None);
-    let parked_world = renderer.take_world();
-    let size = FB_SIZE;
-    renderer.render_map_ui(gpu, fb, [size * 0.5, size * 0.5], 1.0, anim_time);
-    renderer.restore_world(parked_world);
+    // The fx range (rain/gore/dust) alone under the UI camera with Load —
+    // `render_fx_only` parks back+world and draws only fx (`draw_ranges`
+    // world_half=true, ui_half=false, clear=None). The camera/zoom args
+    // feed globals_world (unused — world is parked); fx rides globals_ui's
+    // identity camera.
+    renderer.render_fx_only(gpu, fb, [FB_SIZE * 0.5, FB_SIZE * 0.5], 1.0, anim_time);
+    // The ui range (the projectile sprites) under the UI camera —
+    // `render_map_ui` draws map+ui (world_half=false skips back/world/fx).
+    renderer.render_map_ui(gpu, fb, [FB_SIZE * 0.5, FB_SIZE * 0.5], 1.0, anim_time);
 }
 
 /// `CaptureCamera.FRAMEBUFFER_PIXEL_SIZE` (`CaptureCamera.cs:36`) — the
