@@ -1,7 +1,9 @@
 # 103 — The `.trplayer` sidecar FINAL layout (the v7-collision superset, writer v11)
 
-**Status: SEALED — THE MERGER CONTRACT (L2) + §L3-DEFINITIVE (the
-107-byte `.trwld` v18 union, C#-order re-derived) + the persist-family
+**Status: SEALED + ARBITRATED — THE MERGER CONTRACT (L2) + §L3-DEFINITIVE (the
+107-byte `.trwld` v18 union, C#-order re-derived) + §L3-ARBITER FINAL (the
+107-byte-order arbitration: D5 CONFIRMED against g71 92 §1-FULL's
+books-in-prefix order, quoted C# Write() evidence) + the persist-family
 merger-bible (the SEAL paragraph at the end).** Any merge of W4-g88 / W4-g89 /
 W4-g89b / W4-g89c / W4-g90 / W4-g90b / W4-a6 / W4-g55 / W4-f33 (and the
 future booster lanes) keeps the writer and reader described here —
@@ -1061,6 +1063,136 @@ recorded in §2a: token 7's activation bump moves v12→**v13** IF the
 merger takes the dh fold. Both options are published; the merger
 picks one (132-RETIRE's fold is the newer input and keeps g87's two
 unlocks lossless — recommended).
+
+## L3-ARBITER FINAL — the 107-byte-order arbitration (2026-11-21, post-SEAL)
+
+**VERDICT: D5 CONFIRMED — g88's strict-C#-row middle IS the C# save
+sequence; g71 92 §1-FULL.2's books-in-prefix middle is OVERRULED.**
+Arbitration authority (this pass's brief): *the C# ACTUAL write order is
+DEFINITIVE — the port must match the C# save format for cross-compat.*
+That directive supersedes the Lead-designation / prefix-stability /
+publication-timestamp rationale g71's BG SEAL (`b706737a1`) recorded
+for its own order. The ONE definitive layout is D3's table, restated
+in A3 below — no byte moves from the SEAL.
+
+### A1. The C# evidence — direct line-by-line re-read (definitive)
+
+Read directly this pass from `decompiled/Terraria/IO/WorldFile.cs`,
+`SaveWorldHeader` `:1221-1236` → `SaveWorldFlags` `:1238-1430`. Every
+disputed field's `writer.Write(...)` call, quoted verbatim with its
+line number, in EXACT sequential order:
+
+```
+:1225  writer.Write(Main.ActiveWorldFileData.WorldGeneratorVersion);   ┐ identity
+:1226  writer.Write(Main.ActiveWorldFileData.UniqueId.ToByteArray());  │ (header,
+:1227  writer.Write(Main.ActiveWorldFileData.WorldId);                 │ 44 B with
+:1250  writer.Write(Main.ActiveWorldFileData.CreationTime.ToBinary()); │ the two
+:1251  writer.Write(DateTime.UtcNow.ToBinary());                       ┘ timestamps)
+:1281  writer.Write(WorldGen.crimson);                       ← crimson
+:1347  writer.Write(NPC.downedHalloweenKing);                ┐ moon
+:1348  writer.Write(NPC.downedHalloweenTree);                │ quintet
+:1349  writer.Write(NPC.downedChristmasIceQueen);            │ (save-row
+:1350  writer.Write(NPC.downedChristmasSantank);             │  order)
+:1351  writer.Write(NPC.downedChristmasTree);                ┘
+:1376  writer.Write((byte)WorldGen.underworldBG);            ← underworld
+:1392  writer.Write(NPC.boughtCat);                          ┐ pet
+:1393  writer.Write(NPC.boughtDog);                          │ licenses
+:1394  writer.Write(NPC.boughtBunny);                        ┘
+:1395  writer.Write(NPC.downedEmpressOfLight);               ← empress
+:1407  writer.Write(NPC.combatBookVolumeTwoWasUsed);         ┐ books
+:1408  writer.Write(NPC.peddlersSatchelWasUsed);             ┘ (vol2+satchel)
+```
+
+Order-proof interstitials (non-claimant writes BETWEEN the disputed
+fields — they add zero `.trwld` bytes but pin the relative order):
+`:1352-1374` towers/party/sandstorm/bartender + `DD2Event.Save(writer)`
+between quintet and underworld; `:1375` mushroomBG + `:1377-1379`
+treeBG2-4 (bridged into g70's forest block) + `:1380`
+`writer.Write(NPC.combatBookWasUsed)` — the FIRST combat book, already
+`.wld`-owned (`wld/sections/flags.rs:191`, read `:572`), NOT a `.trwld`
+claimant, so the books block stays 2 B — + `:1386-1387` force-today
+pair (f39, `.wld`-ONLY) + `:1388-1391` ore tiers between underworld
+and pets; `:1396-1406` queenSlime/deerclops/unlocked-spawns between
+empress and books. **Journey/bread carriers: NONE in this region** —
+`Main.GameMode` `:1240` is the only journey-adjacent world write (the
+mode int, pre-v18, not a claimant); the journey/bread unlock flags are
+Player fields riding `.plr`/`.trplayer` (L1/L2), zero `.trwld` bytes
+(g90's own SEAL `43fee29a4` states the same).
+
+### A2. Adjudication — which layout matches the C# sequence?
+
+Relative order of the seven claimed flag groups in the C# stream:
+**crimson `:1281` < moon `:1347-1351` < underworld `:1376` < pets
+`:1392-1394` < empress `:1395` < books `:1407-1408`.** (Identity rides
+the header + timestamps; both layouts seat it LAST of the head under
+the shared 64a frame — an already-published, order-agnostic regrouping
+both consolidators invoke, unchanged by this arbitration.)
+
+- **g88 D5/D3 middle** — crimson[50] → moon[51..56] → underworld[56] →
+  pets[57..60] → empress[60] → books[61..63]: **matches the C#
+  sequence EXACTLY, field-for-field, including empress AFTER pets
+  (`:1395` > `:1394`) and books LAST of flags (`:1407-1408`).**
+- **g71 92 §1-FULL.2 middle** — crimson[50] → books[51..53] →
+  moon[53..58] → underworld[58] → pets[59..62] → empress[62]:
+  **INVERTS the C# rows** — it seats books (`:1407-1408`, the LAST two
+  flag writes of the whole function) BEFORE the moon quintet
+  (`:1347-1351`), underworld, pets and empress. Its own §1-FULL.2 text
+  concedes the inversion ("C# order, before books there; … group to
+  keep 64a stable"). The 64a-stable-prefix rationale protects offsets
+  of an UNMERGED proposal; under this pass's brief the C# order is
+  definitive, so the concession is overruled.
+- **f44 132-RETIRE middle** — underworld[50] before crimson[51]:
+  inverts `:1376` > `:1281` — also non-matching (already superseded by
+  D3; unchanged here).
+
+NEITHER consolidator's prefix argument survives the cross-compat
+directive: `.trwld` is forward-only (no released v18 — zero back-compat
+cost either way, both docs agree), and the C# rows are the one
+external, verifiable tie-breaker. **D5 stands as published.**
+
+### A3. THE ONE definitive offset table (D3 restated — no byte moves)
+
+```
+v18 UNION tail — fixed head (107 bytes) + dense variants (W×H bytes):
+  [0..16]    g70 forest   tree_x 3×i32 + forest_bg_styles 4×u8   (:1253-1255/:1318/:1377-1379)
+  [16..47]   g72 cave     cave_back_x 3×i32 + cave_back_style 4×i32
+                          + ice/jungle/hell 3×u8                (:1260-1269)
+  [47..50]   g71 surface  snow/desert/ocean 3×u8                (:1321/:1324-1325)
+  ---- flag middle: STRICT C# row order (A1) ----
+  [50]       crimson                        u8   (:1281)
+  [51..56]   moon quintet                   5×u8 (:1347-1351, king/tree/icequeen/santank/xmastree)
+  [56]       underworld_bg_style            u8   (:1376)
+  [57..60]   pets cat/dog/bunny             3×u8 (:1392-1394)
+  [60]       downed_empress_of_light        u8   (:1395 — AFTER pets)
+  [61..63]   books vol2/satchel             2×u8 (:1407-1408 — LAST flags)
+  [63..107]  identity 44 B: generator_version u64 + unique_id 16 + world_id i32
+                          + creation_time i64 + last_played i64 (:1225-1227/:1250-1251)
+  [107..107+W*H]  d109 dense variants W×H×u8, LAST
+```
+
+Head sum 16+31+3+1+5+1+3+1+2+44 = **107**; `v18_tail_len` =
+`107 + width*height`; VERSION 18 forward-only. Per-field detail and
+the delta lists vs c39-106 / 132-RETIRE / 92 §1-FULL are D3's (above)
+— all unchanged. 92 §1-FULL.4's per-branch truncation-site table
+stands (the sites are order-agnostic); only the middle-offset
+assertions inside round-trip witnesses follow A3, not §1-FULL.2.
+
+### A4. Cross-receipt — the five re-pin dependents (notify table)
+
+Published here as the standing receipt; each lane re-pins its
+witnesses/constants to A3 (the D3 table) — tips read at this pass:
+
+| Lane | Tip read | Re-pin action |
+| --- | --- | --- |
+| **92** g71 (`origin/task/W4-g71-bg-layers-2`) | `b706737a1` (BG SEAL, §1-SEAL.1 "64a-stable prefix WINS") | Its ORDER ADJUDICATION is OVERRULED by this arbitration's C#-definitive brief; §1-FULL.2's writer/reader snippet moves books [51..53]→[61..63], moon [53..58]→[51..56], underworld [58]→[56], pets [59..62]→[57..60], empress [62]→[60]. Registry/census/dedups/§1-FULL.4 site table all stand. Its own §1-SEAL.1 already records this exact move as "free" — this arbitration activates it |
+| **132** f44 (`origin/task/W4-f44-save-plr-2`) | `d35876af9` (RETIRE) | underworld [50]→[56], crimson [51]→[50], moon [52..57]→[51..56] (D3's one-move delta); its L1/L2 authority + §8 merger-bible steps unchanged |
+| **64b** g72 (`origin/task/W4-g72-bg-layers-3`) | `b069439eb` (retire) | 64b's underworld [58] seat → [56]; the 64a 53-byte-prefix offsets are RETIRED with the unmerged proposal (books leave [51..53]); its eleven truncation sites re-pin 53→107 per §1-FULL.4 regardless; cave-array + roll keep-one verdicts unchanged |
+| **138** a6 (`origin/task/W4-a6-crystals-powerups`) | `8fad5555d` (POWERUP SEAL §12) | its §12 107-authority alignment receipt re-pins to THIS arbitration (A3 = D3, no byte change from what it receipted IF it took D3; if it followed 92's b706737a1 order, apply the 92-row move above) |
+| **135** g90 (`origin/task/W4-g90-artisan-bread-use`) | `43fee29a4` (BOOSTER SEAL) | ALREADY on A3 — its seal explicitly took g88 `fc5cf11ae` D1-D5, books [61]/[62], journey/bread = L1/L2 not `.trwld`; its six truncation sites +107 stand. CONFIRMED, no action |
+
+The merger seats A3's table VERBATIM. If any lane lands a later
+revision first, the C# rows (A1) remain the tie-breaker per this
+arbitration's brief — not publication timestamp, not designation.
 
 ## SEAL — the persist-family merger-bible (one paragraph, three layers)
 
