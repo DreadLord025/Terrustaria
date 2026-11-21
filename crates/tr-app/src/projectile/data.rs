@@ -1136,6 +1136,16 @@ pub const WHITE_TIGER_POUNCE: u16 = 818;
 /// the 60-tick cap are ported.
 pub const CHUM_BUCKET: u16 = 820;
 
+/// W4-d17 — the dove/lantern release pair (aiStyle 166, `AI_166_Dove`
+/// `Projectile.cs:47540-47610`, the dispatch `:36627-36630`):
+/// `ProjectileID.ReleaseDoves` (851, `ProjectileID.cs:2256`) — the 4x4
+/// dove (`:8173-8181`, timeLeft 300); `ProjectileID.ReleaseLantern` (855,
+/// `:2264`) — the 12x12 lantern (`:8197-8205`, timeLeft 1000). Both
+/// `netImportant`, `penetrate = -1`, the stock tileCollide true. The
+/// blocked-move bounces are the OUTER type chain (`:18336-18361`).
+pub const RELEASE_DOVES: u16 = 851;
+pub const RELEASE_LANTERN: u16 = 855;
+
 /// W4-d17 — the aiStyle-161 kind set (the `DefaultToShortsword` callers:
 /// `Projectile.cs:7921`/`:8145`/`:8917`/`:10559`). The `Colliding` stab arm
 /// (`:15955`) and the `ownerHitCheck` gate (`:12637`) key on it.
@@ -3902,6 +3912,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // stock extraUpdates 0; NO immunity slice (the bait is
             // friendly but deals no damage — the spawner's damage 0).
             CHUM_BUCKET => (12.0, 12.0, 163, -1, 86400, 0, true, false, false, RESET_STATE),
+            // W4-d17 — `Projectile.cs:8173-8181` — the Release Doves (851):
+            // 4x4, aiStyle 166, `penetrate = -1`, `timeLeft = 300`,
+            // `netImportant`. The stock tileCollide true / extraUpdates 0.
+            RELEASE_DOVES => (4.0, 4.0, 166, -1, 300, 0, true, false, false, RESET_STATE),
+            // `:8197-8205` — the Release Lantern (855): 12x12, aiStyle 166,
+            // `penetrate = -1`, `timeLeft = 1000`, `netImportant`.
+            RELEASE_LANTERN => (12.0, 12.0, 166, -1, 1000, 0, true, false, false, RESET_STATE),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4193,6 +4210,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d17 — `Projectile.cs:8026`: the chum bait (820) sets
             // `netImportant = true`.
             || kind == CHUM_BUCKET
+            // W4-d17 — `Projectile.cs:8174`/`:8198`: the dove/lantern pair
+            // (851/855) set `netImportant = true`.
+            || matches!(kind, RELEASE_DOVES | RELEASE_LANTERN)
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
@@ -4787,6 +4807,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // first-tick `frame = Next(4)` roll (`Projectile.cs:53553`) picks
         // the row; no frame machine steps it after.
         CHUM_BUCKET => 4,
+        // W4-d17 — the dove/lantern pair's 4-frame sheets (`Main.cs:8657`/
+        // `:8660`) — the aiStyle-166 frame machine (`Projectile.cs:47553-
+        // 47560`) wraps at 3 (the dove 4-tick, the lantern 6-tick stride).
+        RELEASE_DOVES | RELEASE_LANTERN => 4,
         _ => 1,
     }
 }
