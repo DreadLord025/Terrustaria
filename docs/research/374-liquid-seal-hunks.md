@@ -1,4 +1,9 @@
-# 71 — Liquid SEAL: the steps-6/7 merger hunks + the liquid-family bible
+# 374 — Liquid SEAL: the steps-6/7 merger hunks + the liquid-family bible
+
+> Chain-banner: 71 → 374 per research-number-registry §10.2 (d54 tip
+> `08d21666e`): `71-liquid-seal-hunks.md` → `374-liquid-seal-hunks.md` —
+> 71 belongs to e20's wiring-device-reconcile; g46's 69 KEEP +
+> 70-fork→252 unchanged. Cite THIS registry §10.
 
 Date: 2026-11-21. Author: W4-g46 (seal phase, code-only — no cargo/tests run).
 Branch `task/W4-g46-liquid-evaporation`, continuing the RE-FOLD union tip
@@ -312,4 +317,5 @@ migrates_version_2_kinds_to_item_ids`, judged by the `test result: ok` lines).
   dedupes applied; the f25 gen-hash RE-DERIVE obligation stands (drain
   choice DISCARD, recorded §7.3).
 - research/69 SUPERSEDED-BY-70; research/70 §8-12 carried + the SEAL status
-  notes; this note (71) is the steps-6/7 hunk record + the bible.
+  notes; this note (374, was 71 — registry §10) is the steps-6/7 hunk record
+  + the bible.
