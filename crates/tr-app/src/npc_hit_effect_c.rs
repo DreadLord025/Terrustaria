@@ -261,6 +261,7 @@
 //! | 1373-1378 | `:89328-89349` | the 347 ElfCopter death (524-527 heads + the diagonal 2-gore explosion) |
 //! | 1379-1388 | `:89359-89390` | the 346 SantaNK1 death (518-523 heads + the full 4-quadrant explosion) |
 //! | 1389-1394 | `:89400-89427` | the 127 SkeletronPrime death (149/150 heads + the full 4-quadrant explosion) |
+//! | 1395-1400 | `:89437-89464` | the 128-131 Prime-limb death (147/148 heads + the full 4-quadrant explosion) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8446,6 +8447,35 @@ fn skeletron_prime_death(
     );
 }
 
+/// The 128-131 Prime-limb death (`NPC.cs:89437-89467`, sites 1395-1400):
+/// the heads 147/148 at position with `base.velocity` FIRST, then the
+/// explosion tail — 10 type-31 dusts, 5 type-6 pairs, the full four
+/// quadrant gores. Scale defaults to 1.
+fn prime_limb_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 147, 1.0); // :89437
+    gore.new_gore(rng, world, pos, vel, 148, 1.0); // :89438
+    mech_explosion_tail(
+        npc,
+        10,
+        5,
+        &[(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)],
+        dust,
+        dust_ctx,
+        gore,
+        rng,
+        world,
+    );
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9477,6 +9507,10 @@ pub fn hit_effect_c(
     // `:89396-89432` — the 127 SkeletronPrime arm (sites 1389-1394).
     if npc_type == 127 && npc.hp <= 0 {
         skeletron_prime_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:89433-89469` — the 128-131 Prime-limb arm (sites 1395-1400).
+    if (128..=131).contains(&npc_type) && npc.hp <= 0 {
+        prime_limb_death(npc, dust, dust_ctx, gore, rng, world);
     }
     outcome
 }
@@ -14913,6 +14947,21 @@ mod tests {
             let t = gore.slot(i).gore_type;
             assert!((61..64).contains(&t), "quadrant gore {i} type {t}");
         }
+    }
+
+    /// `NPC.cs:89437-89467` — the Prime-limb death: the 147/148 heads then
+    /// the full four-quadrant explosion (6 total gores).
+    #[test]
+    fn w4_f10_the_prime_limb_death_spawns_the_six_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1493);
+        prime_limb_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        let heads: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(heads, vec![147, 148]);
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 6);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
