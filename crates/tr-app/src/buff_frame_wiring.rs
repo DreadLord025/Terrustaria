@@ -24,8 +24,9 @@
 //!     half is folded out of the wave-A match so it is not applied twice)
 //!   - `:11406-12012` the late-pet / status / hunger ids the inline match and
 //!     the accessory pass do NOT own (wave E), plus the wave-D misc ids wave E
-//!     does not own (the DoT flags 70/397/20/24/137/67/68/39/323/44/324, Wet
-//!     103, Tipsy 25 completion).
+//!     does not own (the DoT flags 70/397/20/24/137/67/68/39/323/44/324; Wet
+//!     103 stays with `refresh_wet_state`, Tipsy 25's COMPLETE arm is
+//!     inline-owned — gap-1 keep-one, no second grant here).
 //! The frame head/tails (`:9857-9864`, `:12046-12067`) ride
 //! `buff_effects_frame.rs::run_buff_frame` around this pass.
 //!

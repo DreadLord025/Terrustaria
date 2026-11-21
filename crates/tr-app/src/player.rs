@@ -6806,8 +6806,23 @@ impl Player {
                         self.thorns = 1.0;
                     }
                 }
-                // `:11921` — `BuffID.Tipsy`: `statDefense -= 4`.
-                25 => self.stat_defense -= 4,
+                // `Player.cs:11918-11930` — `BuffID.Tipsy` (25): the COMPLETE
+                // arm (W4-f12 gap 1 keep-one — the old inline copy carried
+                // only the defense half). The Ale (3821) held adds the ranged
+                // pair on top of the melee block. `held_item_kind` is the
+                // `inventory[selectedItem]` snapshot the world_sim feeds
+                // before the tick (`world_sim/player.rs`).
+                25 => {
+                    self.tipsy = true;
+                    self.stat_defense -= 4;
+                    self.melee_crit += 2;
+                    self.melee_damage += 0.1;
+                    self.melee_speed_bonus += 0.1;
+                    if self.held_item_kind == 3821 {
+                        self.ranged_damage += 0.1;
+                        self.ranged_crit += 5;
+                    }
+                }
                 // The whip attack-speed buffs (`Player.cs:10110-10121`):
                 // 311 +0.35, 308 +0.25, 314 +0.12 onto
                 // `summonerWeaponSpeedBonus` — `ApplyItemAnimation`'s
@@ -13178,6 +13193,58 @@ mod tests {
             p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
         }
         assert!(!p.well_fed);
+    }
+
+    /// W4-f12 gap 1 — Tipsy (25) completes in the inline arm (`Player.cs:
+    /// 11918-11930`): the flag, −4 defense, +2 melee crit, +10% melee
+    /// damage/speed; the Ale (3821) held adds +10% ranged damage +5 ranged
+    /// crit. ONE application — the wiring's misc dispatch excludes 25.
+    #[test]
+    fn w4_f12_tipsy_completes_the_inline_arm() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(25, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.tipsy, "the flag arms (`:11920`)");
+        assert_eq!(p.stat_defense, 0, "−4 floors at 0 (`:25927`)");
+        assert_eq!(p.melee_crit, 4 + 2, "`:11922`");
+        assert!((p.melee_damage - 1.1).abs() < 1e-4, "`:11923`");
+        assert!((p.melee_speed_bonus - 0.1).abs() < 1e-4, "`:11924`");
+        assert!((p.ranged_damage - 1.0).abs() < 1e-4, "no Ale held");
+        assert_eq!(p.ranged_crit, 4, "no Ale held");
+        // The Ale (3821) in hand arms the ranged pair (`:11925-11929`).
+        p.held_item_kind = 3821;
+        p.update(&w, PlayerInput::default());
+        assert!((p.ranged_damage - 1.1).abs() < 1e-4);
+        assert_eq!(p.ranged_crit, 4 + 5);
+        // Taking the Ale away drops the pair (the per-tick re-derivation).
+        p.held_item_kind = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.ranged_damage - 1.0).abs() < 1e-4);
+        assert_eq!(p.ranged_crit, 4);
+    }
+
+    /// W4-f12 gap 1 — the keep-one census: the wiring pass must NOT apply
+    /// Tipsy's effect a second time (the misc module owns a 25 arm, but the
+    /// wiring's MISC_DISPATCH excludes it — the inline arm is the ONE grant).
+    #[test]
+    fn w4_f12_tipsy_is_not_double_granted_by_the_wiring() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(25, 3600);
+        let mut pool = crate::projectile::ProjectilePool::default();
+        static NO_SOLID: fn(i32, i32) -> bool = |_, _| false;
+        let inputs = crate::buff_frame_wiring::BuffFrameInputs {
+            day_time: true,
+            dont_starve: false,
+            remix: false,
+            solid3: &NO_SOLID,
+            held_item_type: 0,
+        };
+        crate::buff_frame_wiring::update_buff_frame(&mut p, &mut pool, &w, &inputs);
+        assert!(!p.tipsy, "the wiring skips 25 (inline-owned)");
+        assert_eq!(p.stat_defense, 0, "no second −4");
+        assert_eq!(p.melee_crit, 4, "no second +2");
     }
 
     #[test]
