@@ -802,6 +802,11 @@ impl App {
                 if let Some(npc) = self.npcs.get_mut(slot) {
                     npc.buffs
                         .add_buff(ab.buff_type as i32, ab.time as i32); // `:2570`
+                    // The C# applies with `quiet: true` (`:2570`) — the
+                    // handler's own `54` below IS the fan-out; drop the
+                    // engine's queue so the catch-all drain does not
+                    // double-send it (W4-c28).
+                    npc.buffs.net_sends.clear();
                     let buffs = npc_buffs_of(npc);
                     server.broadcast(&S2c::NpcBuffs(net::NpcBuffs {
                         npc: ab.npc,
@@ -3007,6 +3012,13 @@ impl App {
             // 60 Hz step (`Player.Update` → `TrySyncingInput`,
             // `Main.DoUpdate` → `TrySyncingMyPlayer`/`UpdateClient`).
             self.player_sync_cadence();
+            // W4-c28: the catch-all NPC buff send drain — the AI/timer lane
+            // (`update_npcs`, which runs in the npcs phase before this net
+            // phase) mutates buffs without a sim-pass drain; the C# sends
+            // inline at each `NPC.AddBuff` (`NPC.cs:89932-89935` client `53`
+            // / `:89979-89982` host `54`). The sim-pass drains already took
+            // the player-hit queues; this catches the rest, once per step.
+            self.drain_npc_buff_sends();
             steps += 1;
         }
         if self.net_sync_cadence_timer > 8.0 / 60.0 {
@@ -3067,8 +3079,19 @@ impl App {
                     });
                 }
                 // Newly approached sections stream before the cadence batch
-                // (the C#'s per-tick CheckSection).
-                for (id, sx, sy) in self.pending_sections(server) {
+                // (the C#'s per-tick CheckSection, `Main.cs:64620-64623`).
+                // `RemoteClient.cs:177-188`: one `9 Status` announcing the
+                // missing count, then the `SendSection` walk row-major.
+                for (id, sx, sy, announce) in self.pending_sections(server) {
+                    if announce > 0 {
+                        server.send(
+                            id,
+                            &S2c::Status {
+                                text: "Receiving tile data".into(),
+                                max: announce,
+                            },
+                        );
+                    }
                     server.mark_section_sent(id, sx, sy);
                     let block = self.tile_block_at(sx, sy);
                     server.send(id, &S2c::TileBlock(Box::new(block)));
@@ -3506,6 +3529,69 @@ impl App {
                 hit_direction: if from_right { 1 } else { -1 },
                 crit,
             }));
+        }
+    }
+
+    /// W4-c28: a client-side `NPC.AddBuff` (`NPC.cs:89932-89935`): the `53`
+    /// body addressed by the host's slot (`NetMessage.cs:1019-1022` —
+    /// `(short)number, (ushort)number2, (short)number3`). Client-only: the
+    /// host's own AddBuff fan-out is the `54` full list
+    /// (`NPC.cs:89979-89982`, the same drain's host arm).
+    pub(crate) fn send_npc_add_buff(&self, idx: usize, buff_type: u16, time: i32) {
+        let NetRole::Client(client) = &self.net else {
+            return;
+        };
+        let Some(slot) = self.net_npc_slots.get(idx).copied() else {
+            return;
+        };
+        client.send(&C2s::AddNpcBuff(net::AddNpcBuff {
+            npc: slot as i16,
+            buff_type,
+            time: time.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        }));
+    }
+
+    /// W4-c28: drain the per-NPC buff send queue the buff engine fills
+    /// (`NpcBuffs::net_sends`). The C# has two role-gated branches at the
+    /// same `NPC.AddBuff` site: the client's `53` BEFORE the apply
+    /// (`NPC.cs:89932-89935`) and the host's `54` full list AFTER it
+    /// (`:89979-89982`). The port queues at the accepted-write point and
+    /// this drain picks the wire by role — client: one `53` per queued pair
+    /// through the host slot map; host: ONE `54` per touched NPC (the C#
+    /// sends per AddBuff call, but the list body is identical within a
+    /// pass — the last write wins, the same bytes). SP: the queue drops.
+    /// Runs at the sim-pass tails that mutate NPC buffs (the melee hit,
+    /// the projectile pass, the player-tick retaliate drain).
+    pub(crate) fn drain_npc_buff_sends(&mut self) {
+        match self.net_mode() {
+            1 => {
+                for idx in 0..self.npcs.len() {
+                    let sends = self.npcs[idx].buffs.take_net_sends();
+                    for (buff, time) in sends {
+                        self.send_npc_add_buff(idx, buff as u16, time);
+                    }
+                }
+            }
+            2 => {
+                let NetRole::Host(server) = &self.net else {
+                    return;
+                };
+                for idx in 0..self.npcs.len() {
+                    if self.npcs[idx].buffs.take_net_sends().is_empty() {
+                        continue;
+                    }
+                    let buffs = npc_buffs_of(&self.npcs[idx]);
+                    server.broadcast(&S2c::NpcBuffs(net::NpcBuffs {
+                        npc: idx as i16,
+                        buffs,
+                    }));
+                }
+            }
+            _ => {
+                for n in self.npcs.iter_mut() {
+                    n.buffs.net_sends.clear();
+                }
+            }
         }
     }
 
@@ -5657,6 +5743,95 @@ mod message_family_tests {
         client_app.net_player_outbox.clear();
         client_app
     }
+
+    /// The `53` client send (`NPC.cs:89932-89935`): a melee on-hit debuff on
+    /// a joined client queues one `AddNpcBuff` per accepted pair, addressed
+    /// by the HOST slot; the host applies it and pushes the `54` back.
+    #[test]
+    fn a_melee_on_hit_debuff_sends_53_from_the_client() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app
+            .npcs
+            .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(client_app.npcs.len(), 1);
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // The Flask of Venom arm: Venom 70 + PotentAcid 395 (the slime is
+        // immune to neither — `NPCID.cs:6079-6084` lists only 20).
+        let flags = crate::melee_on_hit::MeleeOnHitFlags {
+            melee_enchant: 1,
+            ..Default::default()
+        };
+        let mut rng = tr_core::UnifiedRandom::default();
+        crate::melee_on_hit::status_to_npc_flags(
+            flags,
+            24, // a plain sword kind — no per-weapon arm
+            &mut client_app.npcs[0].buffs,
+            &mut rng,
+        );
+        // The engine queued both accepted pairs.
+        assert_eq!(client_app.npcs[0].buffs.net_sends.len(), 2);
+        client_app.drain_npc_buff_sends();
+        assert!(client_app.npcs[0].buffs.net_sends.is_empty(), "the drain took the queue");
+        pump(&mut host_app, &mut client_app, 15);
+        // The host applied the 53s (`MessageBuffer.cs:2570`) and the 54
+        // list came back to the client.
+        let host_bar = &host_app.npcs[0].buffs;
+        assert!(host_bar.find_buff_index(70).is_some(), "Venom landed on the host");
+        assert!(host_bar.find_buff_index(395).is_some(), "PotentAcid landed on the host");
+    }
+
+    /// The host's `54` fan-out (`NPC.cs:89979-89982`): an AddBuff on the
+    /// host's own NPC queues the list; the drain broadcasts it the same
+    /// pass (the C# sends inline at the AddBuff site).
+    #[test]
+    fn a_host_add_buff_broadcasts_the_54_list_at_the_drain() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app
+            .npcs
+            .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        pump(&mut host_app, &mut client_app, 15);
+        // The host's own AddBuff (the AI/timer lane): Confused 31 — the
+        // slime is NOT immune to it.
+        host_app.npcs[0].buffs.add_buff(31, 600);
+        assert_eq!(host_app.npcs[0].buffs.net_sends, vec![(31, 600)]);
+        host_app.drain_npc_buff_sends();
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(
+            client_app.npcs[0].buffs.find_buff_index(31).is_some(),
+            "the 54 list reached the client"
+        );
+    }
+
+    /// The catch-all buff drain: an AI-side buff mutation (no sim-pass drain)
+    /// still rides one `54` on the next 60 Hz net step — the C# sends inline
+    /// at `NPC.AddBuff` (`NPC.cs:89979-89982`); the port's net-phase drain
+    /// picks up the queue the npcs phase left. One send per touched NPC, not
+    /// per tick (the queue is taken, so an unchanged bar sends nothing).
+    #[test]
+    fn the_catch_all_drain_sends_one_buff_list_per_touched_npc() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app
+            .npcs
+            .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        pump(&mut host_app, &mut client_app, 15);
+        // An AI-side mutation (the drains never ran): the queue holds the pair.
+        host_app.npcs[0].buffs.add_buff(31, 600);
+        assert_eq!(host_app.npcs[0].buffs.net_sends, vec![(31, 600)]);
+        // One net step drains it (the catch-all in the 60 Hz loop).
+        host_app.net_tick(1.0 / 60.0);
+        assert!(host_app.npcs[0].buffs.net_sends.is_empty(), "the drain took the queue");
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(
+            client_app.npcs[0].buffs.find_buff_index(31).is_some(),
+            "the 54 list reached the client"
+        );
+        // No further change: the queue stays empty, nothing re-sends.
+        host_app.net_tick(1.0 / 60.0);
+        assert!(host_app.npcs[0].buffs.net_sends.is_empty());
+    }
+
+    // --- W4-c28: the player-state send cadence (the SWAP witnesses) ---------
 
     #[test]
     fn the_cadence_quiesces_once_the_clone_matches() {

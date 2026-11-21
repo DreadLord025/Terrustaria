@@ -1440,6 +1440,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     expert,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
+                // W4-c28: the brain's Confused AddBuff queued its net
+                // intent (`NPC.cs:89932-89935`/`:89979`) — drain here.
+                app.drain_npc_buff_sends();
             }
             // `Player.PlayHurtSound` (`Player.cs:38525`): the hurt cue plays
             // at the `Hurt` TAIL — after the cuffs' mana text (`:38291`) and

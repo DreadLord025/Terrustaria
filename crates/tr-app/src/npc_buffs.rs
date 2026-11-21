@@ -131,6 +131,14 @@ pub struct NpcBuffs {
     /// `NPC.lifeRegenCount` (`NPC.cs:6249`): the ±120 damage/heal chunk
     /// accumulator carried between ticks.
     pub life_regen_count: i32,
+    /// W4-c28: the `NPC.AddBuff` send queue (`NPC.cs:89932-89935` client `53`,
+    /// `:89979-89982` host `54`) — every accepted (type, time) pair queues one
+    /// intent at the write point (the immune/longer-time rejections never
+    /// queue). The App-side drains (`netglue::drain_npc_buff_sends`, at the
+    /// sim-pass tails + the 60 Hz net-step catch-all) pick the wire by role.
+    /// NOT part of the buff state — the `54` reader's array writes never
+    /// touch it.
+    pub net_sends: Vec<(i32, i32)>,
 }
 
 impl Default for NpcBuffs {
@@ -140,6 +148,7 @@ impl Default for NpcBuffs {
             buff_time: [0; NPC_MAX_BUFFS],
             buff_immune: [false; BUFF_ID_COUNT],
             life_regen_count: 0,
+            net_sends: Vec::new(),
         }
     }
 }
@@ -564,6 +573,18 @@ impl NpcBuffs {
         }
         self.buff_type[num as usize] = buff_type; // NPC.cs:89977-89978
         self.buff_time[num as usize] = time;
+        // W4-c28: the net-send intent (`NPC.cs:89932-89935` client `53` /
+        // `:89979-89982` host `54`) — the port queues at the accepted-write
+        // point (the immune/longer-time early-outs above never reach it);
+        // the App-side drain picks the wire by role.
+        self.net_sends.push((buff_type, time));
+    }
+
+    /// W4-c28: takes the queued `NPC.AddBuff` net intents
+    /// (`NPC.cs:89932-89935`/`:89979-89982`) — the App-side drain owns the
+    /// wire slot + the role gate.
+    pub fn take_net_sends(&mut self) -> Vec<(i32, i32)> {
+        std::mem::take(&mut self.net_sends)
     }
 
     /// `NPC.FindBuffIndex` (`NPC.cs:89910-89924`): the immune table hides the
