@@ -2815,6 +2815,51 @@ fn beetle_death(
     }
 }
 
+/// The 222 Queen Bee death (`NPC.cs:87481-87501`, sites 417-422): the
+/// 50x dust-18 burst carrying `this.alpha`/`this.color`/`this.scale`
+/// (the color default stand-in, render-only), speed (hd, −2) — the 1×
+/// hitDirection — then SIX gores at the Y offsets −35/−45/+0/+20/+10/
+/// −10 (NOT a ladder — the source order), types 303/304/305/306/307/308,
+/// `this.scale` carried.
+fn queen_bee_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87491-87494` — the 50x dust-18 burst, alpha/scale carried.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:87495-87500` — the six offsets in SOURCE order.
+    for (dy, t) in [
+        (-35.0, 303), // :87495
+        (-45.0, 304), // :87496
+        (0.0, 305),   // :87497
+        (20.0, 306),  // :87498
+        (10.0, 307),  // :87499
+        (-10.0, 308), // :87500
+    ] {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, t, s);
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3144,6 +3189,10 @@ pub fn hit_effect_d(
     // `:87452-87480` — the 217/218/219 beetle arm (sites 412-416).
     else if matches!(npc_type, 217 | 218 | 219) {
         beetle_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87481-87501` — the 222 Queen Bee arm (sites 417-422).
+    else if npc_type == 222 {
+        queen_bee_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5630,5 +5679,35 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "beetle {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:87495-87500` — the Queen Bee six: 303/304/305/306/307/308
+    /// at the −35/−45/+0/+20/+10/−10 Y offsets in SOURCE order (not a
+    /// ladder), this.scale carried, after the 50x dust-18 dye census.
+    #[test]
+    fn w4_f5d_the_queen_bee_six_ride_the_source_offsets() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 60.0, 60.0);
+        n.scale = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(449);
+        let _ = hit_effect_d(&n, 222, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![303, 304, 305, 306, 307, 308]);
+        let offsets = [-35.0, -45.0, 0.0, 20.0, 10.0, -10.0];
+        for (i, dy) in offsets.iter().enumerate() {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "gore {i}");
+        }
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(449);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the queen bee mirrors the C# draws");
     }
 }
