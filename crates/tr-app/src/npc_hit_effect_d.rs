@@ -1808,6 +1808,44 @@ fn nymph_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 256, s); // :86805
 }
 
+/// The 198/199 Lihzahrd death (`NPC.cs:86807-86827`, sites 257-262): the
+/// 75x dust-5 burst, then SIX gores — 258 at position, 259/259/260/260/
+/// 261 ALL at +20 Y (no +34 row), `this.scale` carried.
+fn lihzahrd_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86817-86820` — the 75x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        75,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let pos20 = Vec2::new(npc.x, npc.y + 20.0);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 258, s); // :86821
+    gore.new_gore(rng, world, pos20, vel, 259, s); // :86822
+    gore.new_gore(rng, world, pos20, vel, 259, s); // :86823
+    gore.new_gore(rng, world, pos20, vel, 260, s); // :86824
+    gore.new_gore(rng, world, pos20, vel, 260, s); // :86825
+    gore.new_gore(rng, world, pos20, vel, 261, s); // :86826
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -2027,6 +2065,10 @@ pub fn hit_effect_d(
     // `:86787-86806` — the 195/196 Lost Girl/Nymph arm (sites 252-256).
     else if npc_type == 195 || npc_type == 196 {
         nymph_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86807-86827` — the 198/199 Lihzahrd arm (sites 257-262).
+    else if npc_type == 198 || npc_type == 199 {
+        lihzahrd_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3602,6 +3644,38 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "nymph {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86821-86826` — the Lihzahrd six: 258 at position, then
+    /// 259/259/260/260/261 ALL at +20 Y (no +34 row), this.scale carried,
+    /// after the 75x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_lihzahrd_six_all_ride_the_plus_twenty_row() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.0;
+        for kind in [198, 199] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(251);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![258, 259, 259, 260, 260, 261], "lihzahrd {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            for i in 1..6 {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 120.0));
+            }
+            assert!(!gore.slot(6).active, "exactly six gores");
+            let mut twin = UnifiedRandom::new(251);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..6 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "lihzahrd {kind} mirrors the C# draws");
         }
     }
 }
