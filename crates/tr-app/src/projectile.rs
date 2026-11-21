@@ -7867,17 +7867,45 @@ impl Projectile {
     }
 
     /// `AI()`'s aiStyle-50 arm (`Projectile.cs:28323-28401`): the InfernoFork
-    /// family's dust-fade lifetime. The hostile 291 branch is out of scope
-    /// (no ported row), the bolt 295's own arm is its 8× dust 174 and nothing
-    /// else (`:28333-28340`), the dust spawns are SKIPPED, and the first-tick
-    /// `SoundID.Item74` is SKIPPED — what survives of the blast's fade math is
-    /// the counter `ai[0]++` (+3 for the blast 296) and the kill at
-    /// `ai[0] > 540f`, where the C#'s dust count `25 - (ai[0] - 180) / 2`
+    /// family's dust-fade lifetime. The hostile 291's arrival-dot kill
+    /// (`:28325-28349`, W4-g2 d5 F4) rides its own early-return branch; the
+    /// bolt 295's own arm is its 8× dust 174 and nothing else
+    /// (`:28350-28360`), the dust spawns are SKIPPED, and the first-tick
+    /// `SoundID.Item74` rides `wants_sound` — what survives of the blast's
+    /// fade math is the counter `ai[0]++` (+3 for the 296 alone) and the kill
+    /// at `ai[0] > 540f`, where the C#'s dust count `25 - (ai[0] - 180) / 2`
     /// reaches zero.
     fn ai_inferno_fork(&mut self, world: &World) {
-        // `:28333-28340`: the bolt 295's whole AI arm is its 8× dust 174 and
-        // nothing else — the counter, the fade kill and the `+3` belong to the
-        // blast 296 alone, so the bolt flies straight and dies on its
+        // `:28325-28348`: the hostile bolt 291 — the first-tick Item20 cue,
+        // then the arrival test: `Vector2.Dot(target - Center, velocity)
+        // <= 0` zeroes the velocity and (owner-gated) kills. The 10× dust
+        // 174 (`:28341-28347`) is dust-only — skipped with its body; the
+        // branch RETURNS (no counter, no fade kill).
+        if self.kind == INFERNO_HOSTILE_BOLT {
+            if self.local_ai[0] == 0.0 {
+                // `:28327-28331`: the one-shot Item20 cue + the latch.
+                self.wants_sound = Some((2, 20, self.pos.x, self.pos.y, 0.0));
+                self.local_ai[0] = 1.0;
+            }
+            let target = Vec2::new(self.ai[0], self.ai[1]);
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            // `:28332-28333`: the zero-target guard (`vector30 !=
+            // Vector2.Zero`) — an unaimed bolt never arrival-kills.
+            if target != Vec2::ZERO && (target - center).dot(self.vel) <= 0.0 {
+                self.vel = Vec2::ZERO;
+                // `:28336-28339`: `owner == Main.myPlayer` — the port's
+                // local owner 0 (the hostile seam spawns the dungeon
+                // casters' shots with `Owner: Main.myPlayer`,
+                // `NPC.cs:21219`, so the gate is live).
+                if self.owner == 0 {
+                    self.kill();
+                }
+            }
+            return;
+        }
+        // `:28350-28360`: the bolt 295's whole AI arm is its 8× dust 174 and
+        // nothing else — the counter, the fade kill and the `+3` belong to
+        // the blast 296 alone, so the bolt flies straight and dies on its
         // `timeLeft` (the `SetDefaults` default 3600, `:787`) or its
         // `penetrate`, whichever comes first. The dust is SKIPPED (no dust
         // layer in the pool) and the movement is the blocked-move default the
@@ -7889,11 +7917,14 @@ impl Projectile {
         if self.local_ai[0] == 0.0 {
             // `:28361-28365` — the first-tick `SoundID.Item74` blast cue at
             // `base.position` (S1-E-21h); the latch increments after it.
+            // The hostile blast 292 rides this same branch (no type gate).
             self.wants_sound = Some((2, 74, self.pos.x, self.pos.y, 0.0));
             self.local_ai[0] += 1.0;
         }
         self.ai[0] += 1.0;
         if self.kind == INFERNO_BLAST {
+            // `:28367-28370`: ONLY the 296 gets the +3 — the hostile 292
+            // counts +1/tick (its fade kill lands 3× later).
             self.ai[0] += 3.0;
         }
         // `:28376-28379`: `num350 = 25 - (ai[0] - 180) / 2` once
@@ -8503,8 +8534,10 @@ impl Projectile {
     /// bolt's lifetime — the out-of-world kill on a 5-tile margin, the
     /// delay-gated centre snapshot (`AI_048_GetStartPositionSettingDelay`
     /// `:53986-54000`: 255→4, 260/290→3, 294→9) and the alpha 255 write. The
-    /// 290's one-shot sound is SKIPPED (no sound layer in the pool) and the
-    /// movement is the generic blocked-move default (`kill_step`).
+    /// 290's one-shot Item8 cue at `localAI[0] == 1` (`:28229-28232`) rides
+    /// `wants_sound` (W4-g2 — d5's F1 recorded it skipped, but the S1-E-21h
+    /// sound layer has since landed); the movement is the generic
+    /// blocked-move default (`kill_step`) except the 290/294 reflect below.
     fn ai_magnet_bolt(&mut self, world: &World) {
         let (cx, cy) = (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
         let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
@@ -8522,7 +8555,11 @@ impl Projectile {
         let delay = match self.kind {
             MAGNET_SPHERE_BOLT => 4,
             // S1-P-i22: the Heat Ray's 3-tick delay (`:53989-53991`).
-            HEAT_RAY => 3,
+            // W4-g2 (d5 F1): the hostile beam 290 shares the 3-tick case
+            // (`:53990-53992`) — the match omitted it while the kind was
+            // rowless; the row round arms it. The 433 keeps the default 0
+            // (`:53997-53998`) — correct, NOT added.
+            HEAT_RAY | SHADOWBEAM_HOSTILE => 3,
             // S1-P-i21: the Shadowbeam Staff's beam (`:53995-53996`) — the
             // 9-tick delay the doc cited but the match omitted (the beam's
             // reflect trail reads the snapshot at `localAI[0] >= 9`).
@@ -8534,16 +8571,24 @@ impl Projectile {
             self.local_ai[2] = cy;
         }
         self.local_ai[0] += 1.0;
-        // `:28216-28236`: every type writes alpha 255 (the 290's sound at
-        // `localAI[0] == 1` SKIPPED).
+        // `:28216-28236`: every type writes alpha 255.
         self.alpha = 255;
+        // `:28226-28232`: the 290's one-shot Item8 cue at `localAI[0] == 1`
+        // — AFTER the increment above, so it fires on the arm's first call
+        // (W4-g2: the `wants_sound` intent, the S1-E-21h drain).
+        if self.kind == SHADOWBEAM_HOSTILE && self.local_ai[0] == 1.0 {
+            self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0));
+        }
         // S1-P-i21: the Shadowbeam Staff's beam reflects off tiles instead of
         // dying — `HandleMovement`'s 290/294 arm (`Projectile.cs:18861-18904`):
         // a blocked axis steps once more and flips to `-lastVelocity`; the
         // beam never dies on contact (`penetrate = -1`). The particle-orchestra
         // broadcast (`:18893-18898`) is the render layer — skipped; the
         // `localAI[1..2]` centre snapshot it reads is the delay-gated one above.
-        if self.kind == SHADOWBEAM {
+        // W4-g2 (d5 F1): the hostile 290 rides the SAME reflect arm (the C#
+        // gate is `type == 290 || type == 294`, `:18861`); its broadcast gate
+        // (`:18873-18878`) is the netMode fold — single-player keeps it on.
+        if matches!(self.kind, SHADOWBEAM | SHADOWBEAM_HOSTILE) {
             let last = self.vel;
             let nx = self.pos.x + self.vel.x;
             let ny = self.pos.y + self.vel.y;
@@ -21726,19 +21771,32 @@ impl ProjectilePool {
         }
     }
 
-    /// `Kill()`'s type-295 arm (`Projectile.cs:74341-74350`): the Inferno
-    /// Fork bolt's death spawns its blast 296 at the bolt's centre with
-    /// `damage * 0.75` (the C#'s `(int)` truncation) and the same
-    /// knockback/owner. Owner-only (`Main.myPlayer == this.owner`), one-shot
-    /// per bolt ([`Projectile::blast_spawned`]), and kind-gated so the blast
-    /// itself — which rides the same aiStyle — never chains another spawn.
+    /// `Kill()`'s type-291/295 arms (`Projectile.cs:74334-74347`): the
+    /// Inferno bolt's death spawns its blast at the bolt's centre — the
+    /// friendly 295→296 with `damage * 0.75` (the C#'s `(int)` truncation),
+    /// the hostile 291→292 with the FULL damage (W4-g2 d5 F4, no scaling
+    /// line in `:74338`) — and the same knockback/owner. Owner-only
+    /// (`Main.myPlayer == this.owner`), one-shot per bolt
+    /// ([`Projectile::blast_spawned`]), and kind-gated so the blasts —
+    /// which ride the same aiStyle — never chain another spawn.
     fn spawn_inferno_blast(&mut self, slot: usize) {
         let p = &self.slots[slot];
-        if p.blast_spawned || p.kind != INFERNO_FORK_BOLT || p.owner != 0 {
+        if p.blast_spawned || p.owner != 0 {
             return;
         }
+        let blast_kind = match p.kind {
+            INFERNO_FORK_BOLT => INFERNO_BLAST,
+            INFERNO_HOSTILE_BOLT => INFERNO_HOSTILE_BLAST,
+            _ => return,
+        };
         let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-        let damage = (p.damage as f32 * 0.75) as i32;
+        // `:74345`'s `(int)((double)this.damage * 0.75)` is the 295 arm
+        // alone; the 291's `:74338` passes `this.damage` verbatim.
+        let damage = if p.kind == INFERNO_FORK_BOLT {
+            (p.damage as f32 * 0.75) as i32
+        } else {
+            p.damage
+        };
         let knock_back = p.knock_back;
         // One-shot per bolt: the flag rides the *bolt*, written before the
         // spawn — the C#'s `NewProjectile` finds the just-freed bolt slot free
@@ -21748,19 +21806,37 @@ impl ProjectilePool {
         self.slots[slot].blast_spawned = true;
         // The C#'s `NewProjectile` takes the *centre* and offsets the box; the
         // port's spawn takes the top-left (`spawn_with_data_ai`'s
-        // `position = (x, y)`), so the blast's 150×150 box is re-centred.
-        let Some(row) = proj_data(INFERNO_BLAST) else {
+        // `position = (x, y)`), so the blast's box is re-centred (the 296's
+        // 150×150, the hostile 292's 130×130).
+        let Some(row) = proj_data(blast_kind) else {
             return;
         };
-        self.spawn_with_data(
-            INFERNO_BLAST,
-            cx - row.w * 0.5,
-            cy - row.h * 0.5,
-            0.0,
-            0.0,
-            damage,
-            knock_back,
-        );
+        // The hostile blast keeps `friendly = false` but the bolt's owner
+        // (`this.owner` = the local player, `NPC.cs:21219`'s spawn convention)
+        // — `spawn_hostile_ai_owned` with owner 0, NOT the 255 hostile seam
+        // (the C# passes `Owner: this.owner`, `:74338`).
+        if blast_kind == INFERNO_HOSTILE_BLAST {
+            self.spawn_hostile_ai_owned(
+                blast_kind,
+                0,
+                Vec2::new(cx - row.w * 0.5, cy - row.h * 0.5),
+                Vec2::ZERO,
+                damage,
+                knock_back,
+                0.0,
+                0.0,
+            );
+        } else {
+            self.spawn_with_data(
+                blast_kind,
+                cx - row.w * 0.5,
+                cy - row.h * 0.5,
+                0.0,
+                0.0,
+                damage,
+                knock_back,
+            );
+        }
     }
 
     /// S1-P-i21 — `AI()`'s aiStyle-45 Nimbus chain (`Projectile.cs:27950-
