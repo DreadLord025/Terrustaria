@@ -39269,16 +39269,44 @@ byte-identical):
 
 - **gravDir == -1** (the 205's flipped-gravity input XOR, `:38098`): the port
   is upright-only (`gravDir = 1`), so `flag4` is false — the golf precedent.
-- **player.petting** (the 204's state-5 joy, `:38508-38526`): no ported
-  petting layer — the state is unreachable, recorded not ported as dead code.
-  The else-if flag6 reset keeps a stray state-5 from sticking.
+  CENSUS (fold 1): `Player.grav_dir` is NOT landed — only the `grav_control`
+  buff-18 flag (`player.rs`); the i40 wings lane ported the flight budget,
+  not the gravity flip. The C# flip sites (`Player.cs:26298`, `:26692-26724`)
+  need `releaseUp`, which the port lacks. The fold STAYS until the flip lands.
+- **player.petting** (the 204's state-5 joy, `:38508-38526`): UNFOLDED
+  (fold 2) — the petting machine landed: `PettingInfo`/`pet_animal`/
+  `update_petting_animal`/`stop_petting_animal`/`stop_vanity_actions`/
+  `change_dir` (`player.rs`, `Player.cs:33358-33490`/`:42091-42116`), the
+  `TryPetting` right-click seam (`world_sim/editing.rs`, `Main.cs:37925-37981`
+  — moved from the C#'s DrawProj arms into the sim's chest/tile-then-pet
+  chain, the draw→sim deviation), `GetPettingInfo`/`IsInteractable`
+  (`projectile_ai_201_210.rs`, `Projectile.cs:38839-38864`/`:78828-78846`),
+  the `BlockInteractionWithProjectiles` counter (`Main.cs:16849-16852`), the
+  composite back-arm pose (`Player.cs:50243-50270`), the
+  `CanVisuallyHoldItem` holdStyle-4/5/6 refusals + the 4952-light gate
+  (`Player.cs:50204-50232`), and the digtoise state-5 joy entry/reset
+  (`Projectile.cs:38508-38526`) with the `pal_digtoise_joy` id-42 trackable
+  cue (`audio.rs` `PROJ_CUSTOM_CUES`). The only live proj-side reader is the
+  204; the foxsparks/cattiva/claypot AI machines (1093/1094/1112/1113/1118)
+  are unported, so their `flag9`/`flag10` joy folds stay. The else-if flag6
+  reset keeps a stray state-5 from sticking.
 - **Main.Difficulty >= Legendary** (the 203's num3/num4, `:39646-39647`): the
-  port is single-difficulty (below Legendary), so 14/5.
+  port is single-difficulty (below Legendary), so 14/5. CENSUS (fold 5): the
+  e25 `npc_scaling.rs` curves live ONLY on the unmerged sibling
+  `task/W4-e25-expert-master-scaling` branch (unwired — the World carries no
+  game mode). The fold STAYS until the difficulty flip lands.
 - **the LightningGenerator bolt paths + MultiPointHitbox** (the 203's Kill
-  damage, `:70790-70840`): no ported generator — the bolt's collision folds
-  to the 64-px explosion rect at the centre (the `localAI[0] = 1` no-tile-
-  collision path); the `localAI[0]` state + the penetration open stay. The
-  Colliding-203 arm reads the same rect (`storm_explosion_hit`).
+  damage, `:70790-70840`): UNFOLDED (folds 3+4, `b8a4d1288` + `70fe977c3`) —
+  the census proved the generator is NOT render-only (`SolidTileCollision`
+  truncates the bolts, the truncation re-centers the 1091/1117 kill and picks
+  `localAI[0]` 1/2/3, the bolt positions ARE the damage hitbox). Ported
+  verbatim in `lightning_generator.rs` (own `LCG32Random(ai[2])` stream, zero
+  `Main.rand`); `storm_lightning_kill` generates the real bolt, the
+  `MultiPointHitbox` rides the pool's `custom_hitbox` through
+  `damage_pve_boxed`'s 203 arm, and `StormLightningCollisionCheck`'s full
+  chain (64-px explosion rect at `localAI[0]==1` + liquid `PlotLine` at `==3`
+  + multi-point) replaces the old 64-px `storm_explosion_hit` fold. Only
+  `CalcRotations`/`SmoothRotations` (`:206-241`) stay the render-only skip.
 - **SoundEngine.PlayTrackedLoopedSound** (the 205's engine loop,
   `:38256-38267`/`:38288-38299`): no tracked-loop layer — the
   `localAI[1]`/`localAI[2]` state machine runs, the sound body is the skip
@@ -39357,3 +39385,65 @@ registry §9: g13 KEEPS 308 §8.5); the census renumbered
   not gaps), and the 207 faithful no-op. CLOSED = census-complete +
   machine-ported + witnesses-written; NOT merged, NOT dispatch-live
   everywhere, NOT run. The per-tip evidence table: research/340 S3.
+
+### Fold 2 landing receipt (2026-11-21, supersedes the SEAL "IN FLIGHT" bullet)
+
+The dirty-9 co-lane's fold-2 petting work COMMITTED (the SEAL addendum's
+"IN FLIGHT, NOT COMMITTED" bullet is superseded). The machine is compact and
+the only live proj-side reader is the 204's state-5 joy; the port unfolds it
+end-to-end:
+
+- **The player machine** (`player.rs`): `PettingInfo`
+  (`GameContent/PlayerPettingInfo.cs:5-77`, the projectile ctor + the
+  `TryGetTarget` resolution fed per-tick by the world-sim), `pet_animal`
+  (`Player.cs:33358-33399` — the `(target.Bottom + offset).Floor()` snap, the
+  `CanSnapToPosition` + `SolidTileAllowBottomSlope` gates, the repeat-click
+  toggle, the `StopVanityActions` strip, the facing flip, the velocity zero),
+  `update_petting_animal` (`:33470-33490` — the target-loss / >2-px-drift /
+  control / pulley / mount / facing-flip drops), `stop_petting_animal` /
+  `stop_vanity_actions` (`:33458-33468`), `change_dir` (`:42091-42116` — the
+  pulley-2 reposition + the composite/itemRotation mirrors). The
+  `update_with_grapple` call site (`:26124`) runs the drop before the
+  sit/sleep updates; `sleep_down`/`sit_down` join the shared vanity strip.
+- **The right-click seam** (`world_sim/editing.rs::try_petting`): the C# calls
+  `TryPetting` from DrawProj's per-type arms (the foxsparks `Main.cs:33203`,
+  the digtoise `:33700`, the cattiva/claypot `:34264`); the port moves it into
+  the sim's right-click chain AFTER the chest/dresser/tile routes (the
+  draw→sim deviation — the sim has no per-projectile draw pass). The hover
+  half refreshes `noThrow=4` + `cursorItemIconID` every tick; the pet half
+  fires on `mouseRight && mouseRightRelease && Block==0` (the port's
+  `place_down && ui_right_release_latch`), consumes the latch
+  (`Main.cs:37966-37969`), runs `RemoveAllGrapplingHooks` before the snap
+  (the pool borrow), and returns before the place path. The pet-type
+  restriction (1093/1094/1098/1112/1113/1118/1123) keeps the Money Trough /
+  Void Lens / Chester (525/734/960 — their own unported machines) out.
+  `BlockInteractionWithProjectiles` (init 3, `Player.cs:57125`) decrements at
+  the editing-pass head while the right button is released
+  (`Main.cs:16849-16852`). Folds: `SmartInteractProj`/`lastMouseInterface`/
+  gamepad/`SmartCursorIsUsed`/`HasInteractableObjectThatIsNotATile`/the
+  achievement — no ported layers.
+- **The pure helpers** (`projectile_ai_201_210.rs`): `GetPettingInfo`
+  (`Projectile.cs:38839-38864` — the `-num*num2` offset table: 1098/1123→48
+  small, 1093/1112/1118→24, 1094/1113→32, default 36) + `IsInteractable`
+  (`:78828-78846` — the ten-row set).
+- **The joy cue** (`audio.rs`): `PROJ_CUSTOM_CUES = ["pal_digtoise_joy"]` +
+  the `play_proj_sound` id-42 arm routes the landed trackable through the
+  case-42 path (`play_use_sound`, `SoundID.PalDigtoiseJoy` style 289,
+  `SoundID.cs:1724`, `Projectile.cs:38517`); the unlanded id-42 styles keep
+  the documented skip. The bank carries `pal_digtoise_joy.xnb`.
+- **The visual refusals**: the composite back-arm pose
+  (`Player.cs:50243-50270`, the miscCounter%14/7 cadence, −2π·0.3·dir, 0.2
+  small), the `CanVisuallyHoldItem` holdStyle-4/5/6 petting refusals
+  (`:50204-50232`, `world_sim/player.rs`), the 4952-light gate
+  (`player_lights.rs`, `:50174`).
+
+The 1117 liquid self-hurt (`Projectile.cs:70836-70839`) stays the documented
+M2-DEATH deviation (needs `&mut player` mid-death-walk). The 1122 Arc Surge
+hand anchor uses `MountedCenter` + `rotated_relative_point` (HandPosition
+unported). The other petting readers stay folded: AI_026 flag9 (`:58118`,
+foxsparks), AI_067 flag10 (`:49160`, claypot/cattiva) — their machines
+(1093/1094/1112/1113/1118) have rows but no dispatch arms.
+
+10 fold-2 witnesses WRITTEN NOT RUN (5 player-machine + 3 pure-helper/state-5
++ 1 joy-cue + 1 4952-light gate), hand-derived from the cited C#. Code-only
+mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked.
