@@ -2011,6 +2011,69 @@ mod tests {
             "the gpu gate lives in frame/draw.rs"
         );
     }
+
+    /// W4-g34 union tick-order witness (WRITTEN NOT RUN — f14's
+    /// `w4_f14_the_cage_tick_rides_the_animate_tiles_tail` retargeted to
+    /// frame/world.rs + the `animate(bool, rand)` parameter form,
+    /// research/67 §5): `AnimateTiles_CritterCages()` rides `AnimateTiles`'
+    /// TAIL (`Main.cs:19303`) — the cage tick runs AFTER `animate_tiles`
+    /// inside the SAME `tile_anim_step` closure on the SAME
+    /// `rngs.global()` stream.
+    #[test]
+    fn the_cage_tick_rides_the_animate_tiles_tail() {
+        let world = include_str!("frame/world.rs");
+        let body = world
+            .split("fn animate_tiles_phase")
+            .nth(1)
+            .expect("the animate-tiles phase")
+            .split("fn weather_cluster")
+            .next()
+            .expect("the phase ends before the weather cluster");
+        let tiles = body.find("animator.animate_tiles(wind, rng, false)").expect("the tile tick");
+        let cages = body
+            .find("cage_anim.animate(critter_cage, rng)")
+            .expect("the cage tick");
+        let tick = body.find("step.tick(dt, |_|").expect("the shared stepper");
+        assert!(tick < tiles && tiles < cages, "the cage call is the AnimateTiles tail");
+        // One stepper, one stream — no separate accumulator or rng.
+        assert_eq!(body.matches("step.tick").count(), 1);
+        assert!(body.contains("let rng = self.rngs.global();"));
+        assert!(body.contains("let step = &mut self.tile_anim_step;"));
+    }
+
+    /// W4-g34 union key-gate witness (WRITTEN NOT RUN — f14's
+    /// `w4_f14_the_cage_key_is_view_gated_and_the_draw_takes_the_animator`
+    /// retargeted to frame/draw.rs's `tile_anim` FNV-mix form, research/67
+    /// §2.4/§5): the cage contribution is `anim_key()` gated on ANY active
+    /// cage kind in the view rect (`is_cage_kind`, all 92 — a lane-2-only
+    /// gate would stale the g33-half cages), cage-free views keep the
+    /// pre-wiring key, and the draw receives the animator + the flag.
+    #[test]
+    fn the_cage_key_is_view_gated_and_the_draw_takes_the_animator() {
+        let draw = include_str!("frame/draw.rs").replace("\r\n", "\n");
+        let key_block = draw
+            .split("tile_anim: {")
+            .nth(1)
+            .expect("the tile_anim key arm")
+            .split("net_key: {")
+            .next()
+            .expect("the net key follows");
+        assert!(
+            key_block.contains("tr_core::drawdata_furniture::is_cage_kind("),
+            "the gate probes ALL cage kinds (the union)"
+        );
+        assert!(key_block.contains("t.active()"), "inactive cells stay out");
+        assert!(key_block.contains("self.cage_anim.anim_key()"));
+        assert_eq!(key_block.matches("anim_key()").count(), 2, "tile + cage keys");
+        let gated = key_block
+            .split("if any_cage {")
+            .nth(1)
+            .expect("the view gate");
+        assert!(gated.contains("} else {"), "a cage-free view keeps the base key");
+        // The draw call feeds the animator + the proximity flag.
+        assert!(draw.contains("&self.cage_anim,"));
+        assert!(draw.contains("&mut self.critter_cage,"));
+    }
 }
 
 /// M1.4-BG-18 phase 2 harness: uploads `Images/Misc/noise` — the noise image every

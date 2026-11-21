@@ -325,10 +325,10 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
-    // W4-g34 lane 2: the critter-cage animator's tables
-    // (`Main.*CageFrame`, `Main.cs:66902-66972`) — the second-half cage ids'
+    // W4-g34 union: the critter-cage animator's tables
+    // (`Main.*CageFrame`, `Main.cs:66902-66972`) — ALL 92 cage ids'
     // `addFrY = Main.<table>[idx] * stride` rewrite
-    // (`TileDrawing.cs:5783-5907`) reads them through `cage_draw_data`'s
+    // (`TileDrawing.cs:5629-5907`) reads them through `cage_draw_data`'s
     // `frame_of`. `critter_cage` is `Main.critterCage` (`Main.cs:1445`):
     // cleared at the pass head (`TileDrawing.cs:474`), raised for every cage
     // cell drawn (`:5672` etc.), read back by the caller for the animator gate.
@@ -727,10 +727,11 @@ pub(crate) fn draw_tiles(
                     ) {
                         dd = cased;
                     }
-                    // W4-g34 (research/67 §2.3, f14's slice-B/A order): the
-                    // critter-cage rewrite — the C# FIRST GetTileDrawData
-                    // switch's cage case groups (TileDrawing.cs:5629-5907),
-                    // at the FIRST switch's TAIL position: AFTER the static
+                    // W4-g34 union (research/67 §2.2/§2.3): the critter-cage
+                    // rewrite — the C# FIRST GetTileDrawData switch's four
+                    // cage case groups (TileDrawing.cs:5629-5907, ALL 92
+                    // ids: g34's 50 + g33's 42), at the FIRST switch's
+                    // TAIL position: AFTER the static
                     // table + slice B's delegated first-switch cases,
                     // BEFORE slice A's SECOND switch (:6049-6507). The
                     // 568/569/570/580 glow rects read `tileFrameY + addFrY`
@@ -746,7 +747,7 @@ pub(crate) fn draw_tiles(
                     // `Main.critterCage = true` side effect (:5672 etc.)
                     // rides the post-dd flag block below — the port's
                     // fused-pass stand-in, one cell later in the same walk.
-                    if tr_core::drawdata_furniture::is_lane2_cage_kind(tile.kind) {
+                    if tr_core::drawdata_furniture::is_cage_kind(tile.kind) {
                         if let Some(cage) = tr_core::drawdata_furniture::cage_draw_data(
                             tile.kind,
                             tx,
@@ -1933,25 +1934,25 @@ mod tests {
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
     }
 
-    /// W4-g34 lane-2 draw-feed witness (WRITTEN NOT RUN — code-only mode):
-    /// the second-half cage rewrite reads the wired cage animator through
-    /// `cage_draw_data`'s `frame_of` (the C# `GetTileDrawData` cage arms,
-    /// `TileDrawing.cs:5783-5907`), gated on `is_lane2_cage_kind`; the
-    /// `Main.critterCage` flag is cleared at the pass head (`:474`) and
-    /// raised for every cage cell (`:5672` etc.). The old `cage > glow`
-    /// assertion is INVERTED by the order witness below (research/67
-    /// §2.3 — f14's slice-B/A composite order).
+    /// W4-g34 union draw-feed witness (WRITTEN NOT RUN — code-only mode):
+    /// the cage rewrite covers ALL 92 ids (`is_cage_kind`, research/67
+    /// §2.2 — the g33 42 + g34 50 union) and reads the wired cage animator
+    /// through `cage_draw_data`'s `frame_of` (the C# `GetTileDrawData` cage
+    /// arms, `TileDrawing.cs:5629-5907`); the `Main.critterCage` flag is
+    /// cleared at the pass head (`:474`) and raised for every cage cell
+    /// (`:5672` etc.). The old `cage > glow` assertion is INVERTED by the
+    /// order witness below (research/67 §2.3 — f14's slice-B/A order).
     #[test]
-    fn the_lane2_cage_rewrite_feeds_from_the_cage_animator() {
+    fn the_cage_rewrite_feeds_from_the_cage_animator() {
         let src = include_str!("tiles.rs");
         let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
         let body = &body[..body.find("#[cfg(test)]").unwrap()];
         let dd_block = &body[body.find("let dd = if active").unwrap()
             ..body.find("// Resolve the drawn tile frame once").unwrap()];
-        // The rewrite is gated on the lane-2 half and reads the animator.
+        // The rewrite is gated on the FULL cage set and reads the animator.
         assert!(
-            dd_block.contains("is_lane2_cage_kind(tile.kind)"),
-            "the rewrite covers the second-half cage ids"
+            dd_block.contains("is_cage_kind(tile.kind)"),
+            "the rewrite covers all 92 cage ids (the union wiring)"
         );
         assert!(
             dd_block.contains("cage_anim.frame_of(table, row, idx)"),
@@ -2009,7 +2010,7 @@ mod tests {
             "the SECOND switch's glow rects read the POST-cage addFrY (:6085-6104)"
         );
         // The gate precedes the rewrite and feeds the animator's tables.
-        let gate = dd_block.find("is_lane2_cage_kind(tile.kind)").unwrap();
+        let gate = dd_block.find("is_cage_kind(tile.kind)").unwrap();
         assert!(gate < cage, "the cage-kind gate precedes the rewrite");
         assert!(dd_block.contains("cage_anim.frame_of(table, row, idx)"));
         // The source-rect resolve reads the final addFrX/addFrY (:1007).

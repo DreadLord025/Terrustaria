@@ -1012,19 +1012,22 @@ impl App {
                             } else {
                                 0
                             };
-                            // W4-g34 lane 2: the second-half critter-cage ids
-                            // animate through the SEPARATE cage tables
-                            // (`AnimateTiles_CritterCages`), not `tileFrame`,
-                            // and none is in `is_animated_kind`'s gate set — so
-                            // they need their own contribution. Gated on a
-                            // lane-2 cage being active in the view rect (the
-                            // same convention); a cage-free view keeps the
-                            // pre-wiring key bit-for-bit.
+                            // W4-g34 union (research/67 §2.4): ALL 92
+                            // critter-cage ids animate through the SEPARATE
+                            // cage tables (`AnimateTiles_CritterCages`), not
+                            // `tileFrame`, and none is in `is_animated_kind`'s
+                            // gate set — so they need their own contribution.
+                            // Gated on ANY cage kind being active in the view
+                            // rect (the same convention); a cage-free view
+                            // keeps the pre-wiring key bit-for-bit. A
+                            // lane-2-only gate would leave the g33-half cages
+                            // (bunny 275, penguin, owl, ...) animating with a
+                            // stale key under the union wiring.
                             let any_cage = (vy0..=vy1).any(|ty| {
                                 (vx0..=vx1).any(|tx| {
                                     world.tile(tx, ty).is_some_and(|t| {
                                         t.active()
-                                            && tr_core::drawdata_furniture::is_lane2_cage_kind(
+                                            && tr_core::drawdata_furniture::is_cage_kind(
                                                 t.kind,
                                             )
                                     })
@@ -1214,7 +1217,7 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
-                            // W4-g34 lane 2: the critter-cage animator's tables
+                            // W4-g34 union: the critter-cage animator's tables
                             // + the `Main.critterCage` proximity flag the pass
                             // raises (`TileDrawing.cs:474`/`:5672`).
                             &self.cage_anim,
