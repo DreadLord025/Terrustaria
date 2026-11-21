@@ -1202,6 +1202,89 @@ impl App {
                     id,
                 );
             }
+            // `case 120` — an emote (W4-g50, `MessageBuffer.cs:3905-3919`):
+            // the host forces the subject to the sender (`:3910`), validates
+            // the id against `EmoteID.Count` (151), bubbles it on the sender
+            // (`NewBubble`, 360 ticks — the `91` fan-out) and runs the town
+            // NPC reaction (`CheckForNPCsToReactToEmoteBubble`).
+            C2s::Emoji(e) => {
+                let subject = id as u8;
+                if (e.emote_id as i32) >= crate::emotes::EMOTE_COUNT {
+                    return; // `num257 >= 0 && num257 < EmoteID.Count` (`:3913`)
+                }
+                // `EmoteBubble.NewBubble(emote, WorldUIAnchor(player), 360)`
+                // (`:3915`) — the host's own bubble + the `91` broadcast.
+                self.emotes
+                    .new_bubble_on(e.emote_id as i32, 1, subject as u16, self.local_id as u16);
+                let bubble_id = self.emotes.bubbles.last().map(|b| b.id).unwrap_or(0);
+                server.broadcast(&S2c::EmoteBubble(net::EmoteBubble {
+                    id: bubble_id as i32,
+                    anchor_kind: 1,
+                    anchor_index: subject as u16,
+                    life_time: 360,
+                    emote: e.emote_id as i32,
+                    metadata: 0,
+                }));
+                // `CheckForNPCsToReactToEmoteBubble(emote, player)` (`:3916`).
+                self.check_npcs_react_to_emote(subject);
+            }
+        }
+    }
+
+    /// `EmoteBubble.CheckForNPCsToReactToEmoteBubble` (`EmoteBubble.cs:152-167`,
+    /// W4-g50): every active aiStyle-7 town NPC not already chatting
+    /// (`ai[0] < 2`) within 200 px of a talkable player — or with no LOS to
+    /// the player — turns to face them and opens the 220-tick chat window
+    /// (`ai[0] = 19, ai[1] = 220, ai[2] = player.whoAmI`).
+    fn check_npcs_react_to_emote(&mut self, player_id: u8) {
+        // The emote's player: the local player or a peer snapshot.
+        let (px, py, talkable) = if player_id as u32 == self.local_id {
+            match self.player.as_ref() {
+                Some(p) => (
+                    p.x,
+                    p.y,
+                    !p.dead && p.stealth == 1.0, // `CanBeTalkedTo` (`Player.cs:3888-3888`)
+                ),
+                None => return,
+            }
+        } else {
+            match self.remote_players.get(&(player_id as u32)) {
+                Some(p) => (p.x, p.y, p.stealth == 1.0),
+                None => return,
+            }
+        };
+        let player_top = (px + crate::player::WIDTH * 0.5, py);
+        for npc in self.npcs.iter_mut() {
+            if npc.hp <= 0 || npc.kind.ai_style() != 7 || !npc.kind.is_town_npc_like() {
+                continue;
+            }
+            if npc.ai[0] >= 2.0 {
+                continue; // already chatting
+            }
+            let (nw, _) = npc.size();
+            let npc_center = (npc.x + nw * 0.5, npc.y + npc.size().1 * 0.5);
+            let dx = npc_center.0 - (px + crate::player::WIDTH * 0.5);
+            let dy = npc_center.1 - (py + crate::player::HEIGHT * 0.5);
+            let near = talkable && (dx * dx + dy * dy).sqrt() < 200.0;
+            let no_los = !crate::projectile::can_hit_line(
+                &self.world,
+                npc.x + nw * 0.5,
+                npc.y,
+                0.0,
+                0.0,
+                player_top.0,
+                player_top.1,
+                0.0,
+                0.0,
+            );
+            if near || no_los {
+                let direction = if npc.x < px { 1 } else { -1 };
+                npc.ai[0] = 19.0;
+                npc.ai[1] = 220.0;
+                npc.ai[2] = player_id as f32;
+                npc.facing = direction;
+                npc.net_update = true;
+            }
         }
     }
 
@@ -2970,6 +3053,9 @@ impl App {
             S2c::PlayerDeathV2(d) => {
                 self.apply_player_death(d.player_id, &d);
             }
+            // `case 83` — the deprecated ignore group (W4-g50,
+            // `MessageBuffer.cs:4483-4490`): accepted, nothing to do.
+            S2c::Unused83 => {}
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
                 self.net_items.remove(&slot);
@@ -7669,5 +7755,44 @@ mod message_family_tests {
         assert!(p.dead, "the local player died");
         assert_eq!(p.hp, 0);
         assert!(p.respawn_timer > 0, "the respawn timer armed");
+    }
+
+    /// `case 120` (`MessageBuffer.cs:3905-3919`): the host bubbles the emote
+    /// on the sender and fans it out via 91; an out-of-range id is refused.
+    #[test]
+    fn w4_g50_the_120_emoji_bubbles_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Emoji(net::Emoji {
+                player_id: 250, // the host overrides it (`:3910`)
+                emote_id: 17,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        // The host bubbled it on the sender's anchor.
+        assert!(
+            host_app
+                .emotes
+                .bubbles
+                .iter()
+                .any(|b| b.emote == 17 && b.anchor_kind == 1 && b.anchor_index == me as u16),
+            "the host bubbled the emote"
+        );
+        // The 91 relay reached the client.
+        assert!(
+            client_app.emotes.bubbles.iter().any(|b| b.emote == 17),
+            "the 91 relay landed the bubble"
+        );
+        // An out-of-range id is refused (no new bubble).
+        let before = host_app.emotes.bubbles.len();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Emoji(net::Emoji {
+                player_id: me,
+                emote_id: 255,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert_eq!(host_app.emotes.bubbles.len(), before, "the over-range id refused");
     }
 }

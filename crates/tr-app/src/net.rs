@@ -247,6 +247,14 @@ pub mod id {
     /// (`MessageID.cs:250`, `NetMessage.cs:1447-1453`,
     /// `MessageBuffer.cs:3887-3904`). Both directions.
     pub const PLAYER_DEATH_V2: u8 = 118;
+    /// `120 Emoji` (W4-g50, S1-I-4): `(byte)` player, `(byte)` emote id
+    /// (`MessageID.cs:254`, `NetMessage.cs:1454-1457`,
+    /// `MessageBuffer.cs:3905-3919`, client→host only).
+    pub const EMOJI: u8 = 120;
+    /// `83 Unused83` (W4-g50, S1-I-4): deprecated (`MessageID.cs:179-180`,
+    /// `[Old]`), no writer arm; the reader's ignore group
+    /// (`MessageBuffer.cs:4483-4490`, with 15/25/26/44/67/93).
+    pub const UNUSED_83: u8 = 83;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -2581,6 +2589,17 @@ impl PlayerDeathV2 {
     }
 }
 
+/// `msg 120 Emoji`'s body (`NetMessage.cs:1454-1457`): `(byte)number` the
+/// player, `(byte)number2` the emote id. The host validates the id against
+/// `EmoteID.Count` = 151 (`UI/EmoteID.cs:317`) before `EmoteBubble.NewBubble`
+/// with the 360-tick lifetime (`MessageBuffer.cs:3912-3916`); the codec
+/// keeps the byte verbatim either way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Emoji {
+    pub player_id: u8,
+    pub emote_id: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2752,6 +2771,10 @@ pub enum C2s {
     /// the host forces the id, applies + relays (`MessageBuffer.cs:3887-
     /// 3904`; W4-g50).
     PlayerDeathV2(PlayerDeathV2),
+    /// `120 Emoji` — this client sent an emote (`MakeLocalPlayerEmote`'s
+    /// `netMode != 0` arm, `EmoteBubble.cs:289`); the host validates + bubbles
+    /// it (`MessageBuffer.cs:3905-3919`; W4-g50).
+    Emoji(Emoji),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2958,6 +2981,9 @@ pub enum S2c {
     /// `118 PlayerDeathV2` - a peer's death, relayed by the host
     /// (`MessageBuffer.cs:3901`; W4-g50).
     PlayerDeathV2(PlayerDeathV2),
+    /// `83 Unused83` — deprecated (`MessageID.cs:179-180`), no body; the
+    /// reader's ignore group (`MessageBuffer.cs:4483-4490`; W4-g50).
+    Unused83,
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -3061,6 +3087,7 @@ impl C2s {
             Self::CrystalInvasionStart(_) => id::CRYSTAL_INVASION_START,
             Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
             Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
+            Self::Emoji(_) => id::EMOJI,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -3177,6 +3204,8 @@ impl C2s {
             Self::PlayerHurtV2(h) => h.write_to(w),
             // `NetMessage.cs:1447-1453` via `SendPlayerDeath` (`:2607-2613`).
             Self::PlayerDeathV2(d) => d.write_to(w),
+            // `NetMessage.cs:1454-1457`: (byte)number, (byte)number2.
+            Self::Emoji(e) => w.u8(e.player_id).u8(e.emote_id),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3388,6 +3417,12 @@ impl C2s {
             // `MessageBuffer.cs:3889-3897`: the direction byte minus 1, the
             // pvp-only BitsByte — no cooldown sbyte follows.
             id::PLAYER_DEATH_V2 => Self::PlayerDeathV2(PlayerDeathV2::read_from(r)?),
+            // `MessageBuffer.cs:3907-3912`: (byte)player, (byte)emoteId; the
+            // `0 <= id < EmoteID.Count` gate is the host arm's, not the codec's.
+            id::EMOJI => Self::Emoji(Emoji {
+                player_id: r.u8()?,
+                emote_id: r.u8()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3573,6 +3608,7 @@ impl S2c {
             Self::CrystalInvasionWait(_) => id::CRYSTAL_INVASION_WAIT,
             Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
             Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
+            Self::Unused83 => id::UNUSED_83,
         }
     }
 
@@ -3834,6 +3870,8 @@ impl S2c {
             Self::PlayerHurtV2(h) => h.write_to(w),
             // `NetMessage.cs:1447-1453` via `SendPlayerDeath` (`:2607-2613`).
             Self::PlayerDeathV2(d) => d.write_to(w),
+            // Deprecated (`MessageID.cs:179-180`) — no body.
+            Self::Unused83 => w,
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -4217,6 +4255,8 @@ impl S2c {
             // `MessageBuffer.cs:3889-3897`: the direction byte minus 1, the
             // pvp-only BitsByte — no cooldown sbyte follows.
             id::PLAYER_DEATH_V2 => Self::PlayerDeathV2(PlayerDeathV2::read_from(r)?),
+            // `MessageBuffer.cs:4488` — the deprecated ignore group, no body.
+            id::UNUSED_83 => Self::Unused83,
             _ => return None,
         })
     }
@@ -7339,6 +7379,47 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::PlayerDeathV2(back) => assert_eq!(back, d),
             other => panic!("expected 118, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `120 Emoji` (`NetMessage.cs:1454-1457`): byte player, byte emote id.
+    /// Client→host only (`MessageBuffer.cs:3905-3919`); the EmoteID.Count
+    /// gate is the host arm's, not the codec's.
+    #[test]
+    fn w4_g50_emoji_round_trips() {
+        let e = Emoji {
+            player_id: 2,
+            emote_id: 17,
+        };
+        let c = C2s::Emoji(e).encode();
+        assert_eq!(c[2], 120);
+        assert_eq!(&c[3..], &[2u8, 17]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::Emoji(d) => assert_eq!(d, e),
+            other => panic!("expected 120, got {:?}", other.msg_id()),
+        }
+        // An out-of-range id still round-trips (the gate is the host's).
+        let over = Emoji {
+            player_id: 0,
+            emote_id: 255,
+        };
+        let c = C2s::Emoji(over).encode();
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::Emoji(d) => assert_eq!(d, over),
+            other => panic!("expected 120, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `83 Unused83` (`MessageID.cs:179-180`, `[Old]`): no body — a bare
+    /// 3-byte frame; the reader's ignore group (`MessageBuffer.cs:4483-4490`).
+    #[test]
+    fn w4_g50_unused_83_is_a_bare_no_op_frame() {
+        let f = S2c::Unused83.encode();
+        assert_eq!(f[2], 83);
+        assert_eq!(f.len(), 3, "id 83 has no body");
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::Unused83 => {}
+            other => panic!("expected 83, got {:?}", other.msg_id()),
         }
     }
 }
