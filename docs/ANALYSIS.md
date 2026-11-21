@@ -30673,7 +30673,11 @@ arm to claim; only the one-line `mod npc_ai_style72;` seam landed.
 `else if (this.aiStyle == 73)` arm (`NPC.cs:35102-35217`) — the
 MartianTurret 387 (`SetDefaults` `:13922-13934`, `ID/NPCID.cs:11451`),
 the Martian Madness gun emplacement. CODE-ONLY MODE: no
-cargo/rustc/rustfmt invoked; the 14 witness tests are written, not run.
+cargo/rustc/rustfmt invoked; the 18 module witness tests + the 3 npc.rs
+wiring witnesses are written, not run. RETIRE/SEAL: research/284
+(`284-c11-martian-turret-final.md`) — the git-log census, the
+all-arms-wired census, the e2 ring activation, the g65-Kill-309 compose
+and the martian-turret-family bible.
 
 **WIRED by W4-c11** (`task/W4-c11-style73-martian-turret`): the roster
 already carries `NpcKind::MartianTurret` (S1-F-13d, wire id 214), so the
@@ -30695,15 +30699,29 @@ precedent). Two wiring witnesses: the axis run (fade → latch → the
 60-tick shot at classic 35 from the planted muzzle) + the retirement
 guard.
 
-**Dust deferral (unchanged by the wiring)**: the fade's eight
-`Dust.NewDust` calls per tick (`:35157`/`:35162`) remain the wholesale
-count-only skip (`turret_materialize_dust_plan` carries the geometry).
-The port's dust pool HAS landed since the module round (S1-E-2/S1-E-3),
-but restoring the ring must draw the `Dust.NewDust` internals
-(`Dust.cs:170-175`/`:190`) in C# order on the UpdateNPCs stream — a
-deliberate deferral, not an oversight: adding the draws now would move
-every stream downstream of a fading turret. The wiring wave that ports
-the ring owns that A/B.
+**Dust ring ACTIVATED (W4-c11 retire, research/284 §3)**: the fade's
+eight `Dust.NewDust` calls per tick (`:35157`/`:35162`) now DRAW through
+the live pool — `npc_ai_style73::turret_materialize_ring` (the W4-e2
+batch-6 STAGED emitter `npc_dust.rs::turret_materialize_ring`, e2 tip
+`bfc081305`, adopted VERBATIM — keep-one, the e2 copy drops at merge)
+drains `turret_materialize_dust_plan`'s 8 placements in C# pair order:
+per dust `NewDust(Center, 0, 0, 226, 0, 0, 100, default, 0.5)` + post
+noGravity / position-overwrite / velocity-zero. The adapter
+(`ai_073_martian_turret`) threads `update_rng_dust`'s pool + ctx (the
+Everscream S1-F-13c precedent) and draws the ring AFTER the pure arm
+returns, BEFORE the gravity tail — on fade ticks the arm's early return
+precedes the shot cycle, so the ring's internals are the tick's ONLY
+draws on the `UpdateNPCs` stream (48 on an empty pool: 6 per dust —
+pos X/Y Next(1), vel X/Y Next(-20,21), frame Y Next(3), scale
+Next(-20,21); type 226 matches no tweak arm and is not dangerous dust;
+the pressure bands add rolls as the pool fills — the verbatim pool owns
+them). The pure `style73_step` is UNCHANGED (the plan seam stays
+count-only; its 14 witnesses stand). The earlier deferral ("adding the
+draws now would move every stream downstream of a fading turret") is
+DISCHARGED: the shift is the C#'s own stream order, pinned by the retire
+witnesses (the 48-draw oracle census + the live-pool fade/latch run).
+The owed-pool item `e2c-MartianTurret-35157/35162-STAGED-gap-sites` is
+CLOSED.
 
 - **Census — exactly one NPC kind**: the whole-tree `aiStyle = 73;`
   census returns two hits: `NPC.cs:13926` (the `type == 387` branch) and
@@ -30748,9 +30766,9 @@ the ring owns that A/B.
   `the_shot_consumes_the_four_draws_in_order` replays them against a
   mirrored oracle stream and pins the aim bit-for-bit. The fade's eight
   `Dust.NewDust` calls per tick (`:35157`/`:35162`) draw only INSIDE
-  `Dust.NewDust` (`Dust.cs:170-175`/`:190`); the dust system is unported
-  (S1-E-2/S1-E-3), so the ring is skipped wholesale — the
-  `npc_lights.rs` precedent, stream untouched.
+  `Dust.NewDust` (`Dust.cs:153-193`) — the retire phase ACTIVATES them
+  through the live pool (the paragraph above; the pure arm still draws
+  nothing, the adapter owns the ring).
   `turret_materialize_dust_plan` ports the ring geometry (the
   `(0,-30).RotatedBy(ai[1]/60 * 1.5 * 2π) * (1, 0.4)` spin through the
   style-37 `rotated_by`, the four offsets/scales −15/0.15, −5/0.3,
@@ -30770,8 +30788,11 @@ the ring owns that A/B.
   the target slot (the C# indexes without a bounds check; an absent
   slot reads inactive — defensive, unreachable from vanilla writes);
   the shot's player re-read uses the same captured slot (nothing moves
-  it between `:35111` and `:35196` within one tick); the dust ring and
-  the bolt's own projectile machine are the documented skips/requests.
+  it between `:35111` and `:35196` within one tick); the bolt's own
+  projectile machine is f20 slice E's row-gated overlay (activates when
+  this branch's 435 row merges — research/284 §2), the Kill burst is
+  g65's (`:73467-73478`, research/284 §4), the bolt's AddLight `:54932`
+  is the lights family's one remaining row-absence re-probe.
 
 ## The Martian Saucer core audit (S1-D-3 aiStyle-76, code-only)
 

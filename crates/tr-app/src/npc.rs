@@ -4758,7 +4758,7 @@ impl Npc {
             // neither, `:13922-13934`), so the depth-scaled 0.3 gravity +
             // the 10 fall cap apply (`:90465-90472`), then UpdateCollision
             // (the spore family's blocked-axis fold, `:92538-92544`).
-            73 => self.ai_073_martian_turret(world, player, rng),
+            73 => self.ai_073_martian_turret(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 30)` (`NPC.cs:26405-27014`) -
             // the Retinazer (125), the style's only user. S1-D-3
             // wire-retinazer: the faithful machine lives in
@@ -5691,11 +5691,12 @@ impl Npc {
     /// style-55 convention — NOT the hurt_cd cooldown). The shot request
     /// queues on `wants_hostile_shot` (the sim's spawn drain resolves the
     /// 435 row); the light is the draw-side feed's (`app/frame/draw.rs`,
-    /// the ForceBubble precedent); the fade's dust ring is the module's
-    /// documented count-only skip (the dust system draws inside
-    /// `Dust.NewDust` — the port's pool is ported but the ring's wholesale
-    /// skip predates it; restoring it must draw the internals in C# order,
-    /// ANALYSIS "The Martian Turret (S1-D-3 aiStyle-73, code-only)").
+    /// the ForceBubble precedent); the fade's dust ring is ACTIVATED by
+    /// the retire phase — `turret_materialize_ring` (the W4-e2 batch-6
+    /// STAGED emitter adopted verbatim, keep-one) draws the eight
+    /// `Dust.NewDust` internals in C# order on the caller's `UpdateNPCs`
+    /// stream through the live pool (the Everscream S1-F-13c precedent;
+    /// research/284 §3).
     ///
     /// The tail: `SetDefaults` 387 writes no noGravity/noTileCollide
     /// (`:13922-13934`), so `UpdateNPC` runs the depth-scaled gravity
@@ -5704,7 +5705,14 @@ impl Npc {
     /// `UpdateCollision` — folded to the blocked-axis collision with the
     /// `collideX/Y` latches (the spore family's `:92538-92544` fold; the
     /// turret never walks, so the slope/stair tails stay inert).
-    fn ai_073_martian_turret(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    fn ai_073_martian_turret(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let cand = crate::npc_target::session_candidate(player);
         let just_hit = self.just_hit;
         let out = crate::npc_ai_style73::style73_step(
@@ -5733,8 +5741,15 @@ impl Npc {
         // The fade pins `frameCounter = 0` / `frame.Y = 0` (`:35129-35130`)
         // BEFORE `FindFrame` runs — the counter field is private to this
         // module's siblings, so the pin lands here on the fade ticks.
-        if out.materialize_dust.is_some() {
+        // The ring itself (`:35157`/`:35162`) draws the eight pool
+        // internals on THIS stream, after the plan, before the arm's
+        // early return propagates (the C#'s ring precedes the AddLight).
+        if let Some(plan) = out.materialize_dust {
             self.frame_counter = 0.0;
+            let (cx, cy) = self.center();
+            crate::npc_ai_style73::turret_materialize_ring(
+                cx, cy, &plan.placements, rng, dust, dust_ctx, world,
+            );
         }
         // `NPC.cs:90465-90472` — the depth-scaled gravity + the fall cap
         // (the style-72 tail's shape; 387 has no per-type gravity arm).
@@ -33663,5 +33678,84 @@ mod s1_f_13d_tests {
         assert_eq!((n.x, n.y), (x0, y0), "still planted after the shot");
         assert_eq!(n.vx, 0.0);
         assert_eq!(n.vy, 0.0, "the collision tail zeroes the fall");
+    }
+
+    /// W4-c11 retire witness — the materialize ring is ACTIVATED on the
+    /// live pool: one `update_rng_dust` fade tick spawns EIGHT type-226
+    /// dusts through the caller's stream (the e2 STAGED emitter adopted
+    /// into `npc_ai_style73::turret_materialize_ring`), the latch tick
+    /// spawns NONE, and the stream consumption equals the mirrored
+    /// eight-dust pool replay (the adapter draws nothing else on fade
+    /// ticks — the arm's early return precedes the shot cycle).
+    #[test]
+    fn w4_c11_the_fade_ring_draws_on_the_live_pool() {
+        let mut w = tr_core::World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * TILE_PX;
+        player.y = 95.0 * TILE_PX;
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(200.0 * TILE_PX, 120.0 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut n = Npc::new(NpcKind::MartianTurret, 100.0 * TILE_PX, 100.0 * TILE_PX - 50.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        // One fade tick: ai[1] 0 → 1, the ring's eight spawns.
+        n.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        let live: Vec<usize> = (0..16).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(live.len(), 8, "the fade tick spawns the eight-dust ring");
+        for &i in &live {
+            assert_eq!(dust.slot(i).dust_type, 226);
+            assert!(dust.slot(i).no_gravity);
+            assert_eq!(dust.slot(i).velocity, Vec2::ZERO);
+        }
+        // The mirror: the same tick on a twin pool/stream — the plan at
+        // ai[1] = 1, the eight verbatim NewDust replays. No other draws.
+        let mut mdust = tr_core::particles::DustPool::new();
+        let mut mrng = UnifiedRandom::new(7);
+        let plan = crate::npc_ai_style73::turret_materialize_dust_plan(
+            1.0, (n.x + 10.0, n.y + 25.0),
+        );
+        crate::npc_ai_style73::turret_materialize_ring(
+            n.x + 10.0, n.y + 25.0, &plan.placements, &mut mrng, &mut mdust, &ctx, &w,
+        );
+        for &i in &live {
+            assert_eq!(dust.slot(i).position, mdust.slot(i).position);
+            assert_eq!(dust.slot(i).scale, mdust.slot(i).scale);
+        }
+        assert_eq!(rng.next(), mrng.next(), "the fade tick draws ONLY the ring");
+        // Run the fade out to the latch on a fresh turret: the LAST fade
+        // tick (119 → 120) still rings; the latch tick (120 → 121) spawns
+        // NOTHING and draws NOTHING (the solid arm's idle climb is
+        // RNG-free; the shot cycle is 60 ticks away; the player is far —
+        // contact never fires). The stream pin is the WHOLE-state
+        // equality against an untouched twin (UnifiedRandom: PartialEq).
+        let mut n2 = Npc::new(NpcKind::MartianTurret, 100.0 * TILE_PX, 100.0 * TILE_PX - 50.0, 1, 0.0);
+        n2.hp = n2.max_hp;
+        n2.ai[1] = 119.0;
+        let mut dust2 = tr_core::particles::DustPool::new();
+        let mut rng2 = UnifiedRandom::new(11);
+        n2.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+        assert_eq!(n2.ai[1], 120.0);
+        let live2: Vec<usize> = (0..16).filter(|&i| dust2.slot(i).active).collect();
+        assert_eq!(live2.len(), 8, "the last fade tick still rings");
+        let frozen = rng2.clone();
+        n2.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+        assert_eq!(n2.ai[1], 121.0);
+        let live3: Vec<usize> = (0..16).filter(|&i| dust2.slot(i).active).collect();
+        assert_eq!(live3.len(), 8, "still exactly the last fade tick's ring");
+        assert_eq!(rng2, frozen, "the latch tick draws NOTHING");
     }
 }
