@@ -1,13 +1,16 @@
-# 238 — W4-g61 NPC spawn / teleport-in dust: FINAL (the spawn-family bible, SEALED)
+# 273 — W4-g61 NPC spawn / teleport-in dust: FINAL (the spawn-family bible, SEALED)
 
-(Number: the d54 research/150 registry's 237+ free block, contested at
-the seal scan — e23 `237-bestiary-ui-final.md` first-add
-2026-11-21T10:53:03+02:00 (`7a7779690`) WINS 237; this lane's first-add
-12:12:59 (`fd406ecba`) loses; g48 `237-f11-tail-fix.md` 12:15:09
-(`34029437a`) loses later still. First-pushed-wins per registry §1;
-this doc renumbered 237→238, the first free number after e23's win.
-239 is the g48 loser's expected renumber — recorded for the merger,
-not this lane's to assign.)
+(RENUMBER BANNER — full chain **237→238→273**, per the d54 research/150
+registry §6.3 round-2 refresh at `72226e500`: the original 237 pick
+(`fd406ecba` first-add 12:12:59) lost to e23 `237-bestiary-ui-final.md`
+first-add 2026-11-21T10:53:03+02:00 (`7a7779690`); g48
+`237-f11-tail-fix.md` 12:15:09 (`34029437a`) lost later still. The seal
+self-rename 237→238 (`6e922fc60` 12:55:22) landed AFTER d42's
+`238-d42-roster-sheets.md` (`9eadc3043` 12:15:55, the 238 winner) and
+c8's `238-c8-crawler-final-census.md` (`2a0b5c701` 12:24:19, itself
+renumbered →262) — first-pushed-wins per registry §1, so this doc
+renumbers again to **273**, the registry-assigned number. Historical
+notes below keep the interim numbers as written at their commits.)
 
 **STATUS: FINAL + SEALED** — 2026-11-21, `task/W4-g61-npc-spawn-dust`,
 the final-phase commits `e6fcb643` (keep-one fix) + `df15960a` (crimson +
@@ -235,8 +238,9 @@ WRITTEN NOT RUN.
 
 ## 6. SEAL (2026-11-21)
 
-**This report is SEALED as research/238** (renumbered from 237 — the
-e23 first-push win, the scan evidence in the header note; every
+**This report is SEALED as research/273** (full chain 237→238→273 — the
+e23 first-push win at 237, then the d42/c8 earlier 238 pushes at the
+round-2 sweep, the scan evidence in the header renumber banner; every
 on-branch ref updated: INDEX row, ANALYSIS FINAL section, PORT_MAP
 row). The lane's complete hand-off to the merge wave:
 
