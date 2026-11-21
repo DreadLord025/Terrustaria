@@ -89,6 +89,33 @@ struct Sparkle {
     alpha: f32,
 }
 
+/// The cross-system inputs of the drop sim + `MakeRain` (W4-g67 residuals):
+/// the C# reads them from `Main` statics / `Main.player[Main.myPlayer]`.
+/// `Default` is the calm in-world shape the drop-sim tests run under.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DropSimInputs {
+    /// `Main.gameMenu` — the `Rain.Update` kill-only arm (`Rain.cs:103-109`)
+    /// and the `MakeRain` spawn-through-solids arm (`:84`). The port's frame
+    /// gates the weather cluster out of menus, so production passes the
+    /// front-state flag for shape; residual drops never tick there.
+    pub game_menu: bool,
+    /// `Main.remixWorld` — the kill-only arm (`Rain.cs:110-116`) and the
+    /// spawn-through-solids arm (`:84`). Reads Wind's stand-in field.
+    pub remix_world: bool,
+    /// `NPC.AnyDanger(quickBossNPCCheck: true)` (`Rain.cs:37`,
+    /// `NPC.cs:80243-80288`): the 0.05 spawn throttle. The weather pass
+    /// derives it (invasion / moon events / DD2 / Moon Lord countdown /
+    /// the boss-flagged NPC scan — the `CurrentFrameFlags.AnyActiveBossNPC`
+    /// stand-in, the `weather.rs` cultist-gate convention).
+    pub any_danger: bool,
+    /// `Main.windSpeedCurrent` — `GetRainFallVelocity` (`Rain.cs:91-94`)
+    /// and the `windSpeedCurrent * 15f * 40f` spawn drift (`:56`).
+    pub wind_current: f32,
+    /// `Main.player[Main.myPlayer].velocity` — the rising-player spawn
+    /// window (`Rain.cs:50-53`) and the `velocity.X * 40f` drift (`:57`).
+    pub player_vel: Vec2,
+}
+
 /// One `DustID.Snowflake` (type 76) particle.
 #[derive(Clone, Copy, Debug)]
 struct Snowflake {
@@ -380,6 +407,9 @@ impl Rain {
     /// from the world pass (the d50 contract — collision splashes spawn
     /// through `DustPool::new_dust` on Rain's own stream); `None` keeps the
     /// gate rolling with the spawn dropped (the drop-sim tests).
+    ///
+    /// `sim` carries the menu/remix/AnyDanger/wind/player-velocity inputs
+    /// (W4-g67 residuals) — `Default::default()` is the calm in-world shape.
     pub fn update(
         &mut self,
         world: &World,
@@ -397,6 +427,7 @@ impl Rain {
             &mut tr_core::particles::DustPool,
             &tr_core::particles::SpawnCtx,
         )>,
+        sim: DropSimInputs,
     ) {
         self.snow_mode = snow_biome;
         let step = 1.0 / TICKS_PER_SEC;
@@ -414,6 +445,7 @@ impl Rain {
                 snow_tile_count,
                 zone_rain,
                 pool.as_mut().map(|(p, c)| (&mut **p, &**c)),
+                sim,
             );
             acc -= step;
             steps += 1;
@@ -433,6 +465,7 @@ impl Rain {
         snow_tile_count: i32,
         zone_rain: bool,
         pool: Option<(&mut tr_core::particles::DustPool, &tr_core::particles::SpawnCtx)>,
+        sim: DropSimInputs,
     ) {
         if let Some(f) = self.forced {
             self.intensity = f;
@@ -470,7 +503,7 @@ impl Rain {
         // — not here with the drop sim.
 
         // Each tick advances the drops at the original 60 Hz velocity.
-        self.update_drops(world, camera, screen, zoom, pool);
+        self.update_drops(world, camera, screen, zoom, pool, sim);
         self.update_snow(world, camera, screen, zoom);
         if self.snow_mode {
             // Vanilla suppresses rain drops in a snow biome and lets the ambient
@@ -860,8 +893,11 @@ impl Rain {
     /// branch rolls the gfx gate and spawns the splash for ALL THREE kills
     /// (`:119-131`), the below-screen one included (the dust's own cull
     /// margin decides whether it survives). The `gameMenu`/`remixWorld`
-    /// kill-only arms (`:103-116`) have no port seam: the drop sim runs
-    /// in-world only.
+    /// kill-only arms (`:103-116`) are ported verbatim (W4-g67 residuals):
+    /// menu kills below `+2000`, remix below `+100`, NEITHER rolls the gate
+    /// nor splashes; the production frame gates the weather cluster out of
+    /// menus, so `sim.game_menu` only fires for a residual drop handed a
+    /// menu tick (the C# `DrawRain` still calls `Update` there).
     ///
     /// `pool` is the splash drain seam (W4-g67): the world tick hands it the
     /// App's `DustPool` + `SpawnCtx` (the D50 contract — the spawn rides
@@ -874,15 +910,39 @@ impl Rain {
         screen: Vec2,
         zoom: f32,
         mut pool: Option<(&mut tr_core::particles::DustPool, &tr_core::particles::SpawnCtx)>,
+        sim: DropSimInputs,
     ) {
         // `Rain.cs:117`: `screenPosition.Y + screenHeight + 100f` — world px,
         // no zoom term (the port's camera-centred view maps it through half.y).
-        let bottom = camera.y + screen.y * 0.5 / zoom + 100.0;
+        let view_bottom = camera.y + screen.y * 0.5 / zoom;
+        let bottom = view_bottom + 100.0;
         let mut i = 0;
         while i < self.drops.len() {
             let mut d = self.drops[i];
-            // `:102`: `position += velocity`.
+            // `:102`: `position += velocity` — runs under EVERY arm, the
+            // menu/remix kill-only ones included.
             d.pos += d.vel;
+            if sim.game_menu {
+                // `:103-109`: menu kill-only — below `+2000`, no gate roll,
+                // no splash (the C# else-if chain never reaches `:117`).
+                if d.pos.y > view_bottom + 2000.0 {
+                    self.drops.swap_remove(i);
+                } else {
+                    self.drops[i] = d;
+                    i += 1;
+                }
+                continue;
+            }
+            if sim.remix_world {
+                // `:110-116`: remix kill-only — below `+100`, same shape.
+                if d.pos.y > bottom {
+                    self.drops.swap_remove(i);
+                } else {
+                    self.drops[i] = d;
+                    i += 1;
+                }
+                continue;
+            }
             // `:117`: SolidCollision OR below-screen OR WetCollision — the C#
             // `||` short-circuits, so the wet probe runs only when dry+on-screen.
             let solid = crate::player::Player::solid_collision(world, d.pos.x, d.pos.y, 2.0, 2.0);
@@ -1394,6 +1454,7 @@ mod tests {
                 0,
                 true,
                 None,
+                DropSimInputs::default(),
             );
         }
     }
@@ -1448,6 +1509,7 @@ mod tests {
                 0,
                 true,
                 Some((&mut pool, &ctx)),
+                DropSimInputs::default(),
             );
         }
         assert!(rain.drop_count() > 100, "drops {}", rain.drop_count());
@@ -1490,6 +1552,7 @@ mod tests {
                 0,
                 true,
                 None,
+                DropSimInputs::default(),
             );
         }
         assert_eq!(rain.drop_count(), 0, "no rain drops while snowing");
@@ -1516,6 +1579,7 @@ mod tests {
                 0,
                 true,
                 None,
+                DropSimInputs::default(),
             );
         }
         let snow = rain.snow_count();
@@ -1534,6 +1598,7 @@ mod tests {
                 0,
                 true,
                 None,
+                DropSimInputs::default(),
             );
         }
         assert_eq!(rain.snow_count(), 0, "flakes should leave the view");
@@ -1560,6 +1625,7 @@ mod tests {
                 0,
                 true,
                 None,
+                DropSimInputs::default(),
             );
         }
         assert!(rain.cloud_bg() > 0.5, "cloud deck {}", rain.cloud_bg());
@@ -2145,7 +2211,7 @@ mod tests {
         let mut fast = Rain::with_forced(11, None, false);
         fast.raining = true;
         fast.target = 1.0;
-        fast.update(&w, camera, screen, 1.0, step, false, 60, 0.0, 1.0, 0, true, None);
+        fast.update(&w, camera, screen, 1.0, step, false, 60, 0.0, 1.0, 0, true, None, DropSimInputs::default());
         assert!(
             (fast.visual_alpha() - 0.03).abs() < 1e-6,
             "60× ramp: {}",
@@ -2155,7 +2221,7 @@ mod tests {
         let mut slow = Rain::with_forced(11, None, false);
         slow.raining = true;
         slow.target = 1.0;
-        slow.update(&w, camera, screen, 1.0, step, false, 1, 0.0, 1.0, 0, true, None);
+        slow.update(&w, camera, screen, 1.0, step, false, 1, 0.0, 1.0, 0, true, None, DropSimInputs::default());
         assert!(
             (slow.visual_alpha() - 0.0005).abs() < 1e-9,
             "dry ramp: {}",
@@ -2164,7 +2230,7 @@ mod tests {
 
         let mut deck = Rain::with_forced(11, None, false);
         deck.intensity = 1.0; // above the 0.05 gate: the deck chases the intensity
-        deck.update(&w, camera, screen, 1.0, step, false, 60, 0.0, 1.0, 0, true, None);
+        deck.update(&w, camera, screen, 1.0, step, false, 60, 0.0, 1.0, 0, true, None, DropSimInputs::default());
         assert!(
             (deck.cloud_bg() - 0.3).abs() < 1e-6,
             "deck at FF: {}",
@@ -2172,7 +2238,7 @@ mod tests {
         );
         let mut dry = Rain::with_forced(11, None, false);
         dry.intensity = 1.0;
-        dry.update(&w, camera, screen, 1.0, step, false, 1, 0.0, 1.0, 0, true, None);
+        dry.update(&w, camera, screen, 1.0, step, false, 1, 0.0, 1.0, 0, true, None, DropSimInputs::default());
         assert!(
             (dry.cloud_bg() - 0.005).abs() < 1e-9,
             "deck dry: {}",
@@ -2209,6 +2275,7 @@ mod tests {
             0,
             true,
             None,
+            DropSimInputs::default(),
         );
         assert_eq!(rain.max_raining(), 0.8);
         assert!(rain.is_raining());
@@ -2384,7 +2451,7 @@ mod tests {
         // The eight recipe writes (`Rain.cs:123-130`).
         let want_pos = Vec2::new(500.0 + jx as f32 + 4.0 - 2.0, 470.0 + jy as f32 + 4.0 + 2.0);
         let want_vel = tweak_v * 0.1 + -vel * 0.025 - Vec2::new(0.0, 2.0);
-        rain.update_drops(&w, camera, Vec2::new(1600.0, 200.0), 1.0, Some((&mut pool, &ctx)));
+        rain.update_drops(&w, camera, Vec2::new(1600.0, 200.0), 1.0, Some((&mut pool, &ctx)), DropSimInputs::default());
         assert_eq!(rain.drops.len(), 0, "the solid kill fired");
         assert_eq!(rain.rng, twin, "gate + 6 default-block draws, in order");
         let live: Vec<_> = pool.slots()[..tr_core::particles::DUST_SENTINEL]
@@ -2420,7 +2487,7 @@ mod tests {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         let mut twin = rain.rng;
         let _gate = crate::app::next_rand(&mut twin) % 100;
-        rain.update_drops(&w, camera, Vec2::new(1600.0, 200.0), 1.0, Some((&mut pool, &ctx)));
+        rain.update_drops(&w, camera, Vec2::new(1600.0, 200.0), 1.0, Some((&mut pool, &ctx)), DropSimInputs::default());
         assert_eq!(rain.rng, twin, "exactly ONE draw: the gate");
         assert_eq!(splash_count(&pool), 0, "quality 0: no splash");
         // The paused ctx refuses INSIDE NewDust (`Dust.cs:85`) — the gate
@@ -2434,7 +2501,7 @@ mod tests {
         };
         let mut twin = rain.rng;
         let _gate = crate::app::next_rand(&mut twin) % 100;
-        rain.update_drops(&w, camera, Vec2::new(1600.0, 200.0), 1.0, Some((&mut pool, &paused)));
+        rain.update_drops(&w, camera, Vec2::new(1600.0, 200.0), 1.0, Some((&mut pool, &paused)), DropSimInputs::default());
         assert_eq!(rain.rng, twin, "the guard precedes every default draw");
         assert_eq!(splash_count(&pool), 0, "the paused guard refused");
         assert!(!pool.slot(tr_core::particles::DUST_SENTINEL).active);
@@ -2461,7 +2528,7 @@ mod tests {
         one_falling_drop(&mut rain, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
         let mut pool = tr_core::particles::DustPool::new();
         let ctx = impact_ctx();
-        rain.update_drops(&w, camera, screen, 1.0, Some((&mut pool, &ctx)));
+        rain.update_drops(&w, camera, screen, 1.0, Some((&mut pool, &ctx)), DropSimInputs::default());
         assert_eq!(rain.drops.len(), 0, "below-screen kill");
         assert_eq!(splash_count(&pool), 1, "the combined branch spawns it");
         // Far below (y 1205 → dust at 1191 > 900): the cull refuses.
@@ -2471,7 +2538,7 @@ mod tests {
         let mut pool = tr_core::particles::DustPool::new();
         let mut twin = rain.rng;
         let _gate = crate::app::next_rand(&mut twin) % 100;
-        rain.update_drops(&w, camera, screen, 1.0, Some((&mut pool, &ctx)));
+        rain.update_drops(&w, camera, screen, 1.0, Some((&mut pool, &ctx)), DropSimInputs::default());
         assert_eq!(rain.rng, twin, "the cull precedes the default draws");
         assert_eq!(splash_count(&pool), 0, "off-screen dust culled");
     }
@@ -2496,7 +2563,7 @@ mod tests {
         let mut pool = tr_core::particles::DustPool::new();
         let ctx = impact_ctx();
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
-        rain.update_drops(&w, camera, Vec2::new(1600.0, 200.0), 1.0, Some((&mut pool, &ctx)));
+        rain.update_drops(&w, camera, Vec2::new(1600.0, 200.0), 1.0, Some((&mut pool, &ctx)), DropSimInputs::default());
         assert_eq!(rain.drops.len(), 0, "the wet kill fired");
         assert_eq!(splash_count(&pool), 1, "wet impacts splash too");
     }
@@ -2675,8 +2742,8 @@ mod tests {
         let mut pa = tr_core::particles::DustPool::new();
         let mut pb = tr_core::particles::DustPool::new();
         let ctx = impact_ctx();
-        a.update_drops(&w, camera, screen, 1.0, Some((&mut pa, &ctx)));
-        b.update_drops(&w, camera, screen, 1.0, Some((&mut pb, &ctx)));
+        a.update_drops(&w, camera, screen, 1.0, Some((&mut pa, &ctx)), DropSimInputs::default());
+        b.update_drops(&w, camera, screen, 1.0, Some((&mut pb, &ctx)), DropSimInputs::default());
         assert_eq!(a.rng, b.rng, "the same seed replays the same draws");
         assert_eq!(splash_count(&pa), 5);
         for i in 0..tr_core::particles::DUST_SENTINEL {
@@ -2688,5 +2755,66 @@ mod tests {
             crate::app::next_rand(&mut twin);
         }
         assert_eq!(a.rng, twin, "5 × (gate + 6 defaults), no extra draws");
+    }
+
+    /// W4-g67 residual witness — the `gameMenu` kill-only arm
+    /// (`Rain.cs:103-109`): the drop still MOVES (`:102` runs first), dies
+    /// only below `screenPosition.Y + screenHeight + 2000`, and NEITHER the
+    /// gfx gate NOR a splash fires (the else-if chain never reaches `:117`).
+    /// view bottom = 400 + 100 = 500 → menu bound 2500.
+    #[test]
+    fn w4_g67_menu_arm_kills_only_below_plus_2000_without_a_roll() {
+        let w = tall_ground();
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        full_quality(&mut rain);
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let screen = Vec2::new(1600.0, 200.0);
+        let sim = DropSimInputs { game_menu: true, ..Default::default() };
+        // A drop INSIDE the solid row-30 floor (y 484) survives the menu
+        // arm — the C# menu branch never probes collisions.
+        one_falling_drop(&mut rain, Vec2::new(500.0, 470.0), Vec2::new(0.0, 14.0));
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = impact_ctx();
+        let state = rain.rng;
+        rain.update_drops(&w, camera, screen, 1.0, Some((&mut pool, &ctx)), sim);
+        assert_eq!(rain.drops.len(), 1, "no collision kill in menu mode");
+        assert_eq!(rain.drops[0].pos, Vec2::new(500.0, 484.0), ":102 moved it");
+        assert_eq!(rain.rng, state, "the gate never rolls");
+        assert_eq!(splash_count(&pool), 0);
+        // Below 2500: kill-only, still no roll, no splash.
+        one_falling_drop(&mut rain, Vec2::new(500.0, 2490.0), Vec2::new(0.0, 14.0));
+        rain.update_drops(&w, camera, screen, 1.0, Some((&mut pool, &ctx)), sim);
+        assert_eq!(rain.drops.len(), 0, "2504 > 2500");
+        assert_eq!(rain.rng, state, "the menu kill rolls nothing");
+        assert_eq!(splash_count(&pool), 0);
+    }
+
+    /// W4-g67 residual witness — the `remixWorld` kill-only arm
+    /// (`Rain.cs:110-116`): below `+100` (the SAME bound as the in-world
+    /// combined branch) but WITHOUT the gate roll / splash / collision
+    /// probes. view bottom 500 → bound 600.
+    #[test]
+    fn w4_g67_remix_arm_kills_below_plus_100_without_a_roll() {
+        let w = tall_ground();
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        full_quality(&mut rain);
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let screen = Vec2::new(1600.0, 200.0);
+        let sim = DropSimInputs { remix_world: true, ..Default::default() };
+        // Inside the solid floor: survives (no SolidCollision probe).
+        one_falling_drop(&mut rain, Vec2::new(500.0, 470.0), Vec2::new(0.0, 14.0));
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = impact_ctx();
+        let state = rain.rng;
+        rain.update_drops(&w, camera, screen, 1.0, Some((&mut pool, &ctx)), sim);
+        assert_eq!(rain.drops.len(), 1, "remix skips the collision probe");
+        assert_eq!(rain.rng, state, "no gate roll");
+        assert_eq!(splash_count(&pool), 0);
+        // Below the +100 bound: kill-only.
+        one_falling_drop(&mut rain, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
+        rain.update_drops(&w, camera, screen, 1.0, Some((&mut pool, &ctx)), sim);
+        assert_eq!(rain.drops.len(), 0, "605 > 600");
+        assert_eq!(rain.rng, state, "the remix kill rolls nothing");
+        assert_eq!(splash_count(&pool), 0, "no splash on the remix kill");
     }
 }

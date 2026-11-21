@@ -39316,9 +39316,15 @@ zero. `w4_g67_the_splash_draws_ride_rains_stream_in_kill_order` pins
 
 **Deliberate deviations / drops (each cited at its site):**
 
-* The `gameMenu` (+2000 bound) and `remixWorld` kill-only arms
-  (`Rain.cs:103-116`) have no port seam — the drop sim runs in-world only
-  (the frame's weather cluster is pause-gated, the menu never ticks it).
+* The `gameMenu` (+2000 bound) and `remixWorld` (+100 bound) kill-only arms
+  (`Rain.cs:103-116`) are ported verbatim (W4-g67 residuals): both MOVE the
+  drop (`:102`) then kill below their bound with NO gate roll and NO splash
+  (the C# else-if chain never reaches `:117`). `DropSimInputs` carries the
+  `game_menu`/`remix_world` flags plus the `AnyDanger`/wind/player-velocity
+  `MakeRain` inputs; the weather pass derives them (`world_sim/weather.rs`).
+  The production frame still gates the weather cluster out of menus, so the
+  menu arm only fires for a residual drop handed a menu tick — exactly the
+  C# `DrawRain`-calls-`Update` shape.
 * The `DrawDust` 4×4 on-screen cull rect (`Main.cs:38847`, the
   ±1000/±1050 slack box) is not modelled in `draw_splashes`: the spawn
   cull already dropped off-screen dust and the shared loop kills

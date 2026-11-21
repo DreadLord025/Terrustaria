@@ -44,6 +44,32 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     // Rain's own stream inside `new_dust`, the ctx is the whole-App spawn
     // snapshot (`Main` statics, `Dust.cs:77-98`).
     let ctx = app.spawn_ctx();
+    // W4-g67 residuals: the menu/remix kill-only arms + the MakeRain
+    // cross-system inputs (`Rain.cs:32-57`). `AnyDanger(quickBossNPCCheck)`
+    // (`NPC.cs:80243-80288`): Moon Lord countdown, invasion, moon events,
+    // DD2, then the boss-flag scan (`CurrentFrameFlags.AnyActiveBossNPC` —
+    // the port's `npc.boss` flag + `BOSS_KINDS`, the cultist-gate
+    // convention below). `DangerThatPreventsOtherDangers` has no ported
+    // members (player.rs:3166).
+    let any_danger = app.world.moon_lord_countdown > 0
+        || app.world.invasion_type > 0
+        || app.world.snow_moon
+        || app.world.pumpkin_moon
+        || app.world.dd2_event_ongoing
+        || app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && (n.boss || crate::revenge::BOSS_KINDS.contains(&n.kind)));
+    let sim = crate::rain::DropSimInputs {
+        game_menu: app.menu.is_some() || app.front.is_some(),
+        remix_world: app.wind.remix_world,
+        any_danger,
+        wind_current: app.wind.speed_current,
+        player_vel: app
+            .player
+            .as_ref()
+            .map_or(glam::Vec2::ZERO, |p| glam::Vec2::new(p.vx, p.vy)),
+    };
     app.rain.update(
         &app.world,
         app.camera,
@@ -57,6 +83,7 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
         snow_tile_count,
         zone_rain,
         Some((&mut app.dust, &ctx)),
+        sim,
     );
 }
 
@@ -797,6 +824,7 @@ mod tests {
             0,
             true,
             None,
+            crate::rain::DropSimInputs::default(),
         );
         assert_eq!(app.rain.max_raining(), 0.8);
         app.wind.speed_current = 0.55;
@@ -837,6 +865,7 @@ mod tests {
             0,
             true,
             None,
+            crate::rain::DropSimInputs::default(),
         );
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;
