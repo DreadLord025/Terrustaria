@@ -223,12 +223,13 @@ WRITTEN NOT RUN (code-only lane). With the sibling lanes merged, the
 MessageID 1-162 census closes: every id has a constant, a codec, or a
 documented dead/ignore verdict; 132 stays the one deliberate dead skip.
 
-### The f21b apply audit (2026-11-21) — research/239
+### The f21b apply audit (2026-11-21) — research/276
 
 The apply-arm coverage census across the g48/g49/g50/g51/g52 tips, the
 remaining-gap list (39/41/43/48/52/79/58-client/TE families/144/150) and the
-union keep-one notes live in `239-f21b-net-apply-audit.md`. The f21b round
-WIRED the small unclaimed arms: **57** client store + join push
+union keep-one notes live in `276-f21b-net-apply-audit.md` (renumbered
+239 → 276 per research/150 round-2 §6.3 — 239 belongs to d42's earlier push).
+The f21b round WIRED the small unclaimed arms: **57** client store + join push
 (`World.t_good/t_evil/t_blood`), **76** host force/store/relay + both own-echo
 gates, **58** host id-force/relay (`PlayerNet.angler_quests_finished/
 golfer_score`); `w4_f21b_*` witnesses WRITTEN NOT RUN. Nothing from the net

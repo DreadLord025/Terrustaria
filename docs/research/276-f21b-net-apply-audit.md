@@ -1,11 +1,27 @@
-# 239 — Net APPLY audit (W4-f21b, code-only, 2026-11-21)
+# 276 — Net APPLY audit (W4-f21b, code-only, 2026-11-21)
+
+> **RENUMBERED 239 → 276** (research/150 round-2 refresh, d54 tip `72226e500`,
+> §6.2/§6.3): this doc's first add `f7bc25471` 2026-11-21T14:11:45+02:00 loses
+> key 239 to d42's `239-d42-final-keep-one-and-band.md` (`bac408be0`
+> 12:55:30 — first-pushed-wins); g56's `239-void-family-bible.md`
+> (`54c63d8d4` 13:57:53) loses too → **274**. The registry's §6.3 row for
+> `f21-net-ids-verify-tail` assigns **276**; refs re-pointed on this branch
+> (research/17, INDEX, ANALYSIS ×2, PORT_MAP, anchors.txt). Body below is
+> content-preserving except this block, the header, the number-choice
+> paragraph and the §6/§7 seal additions.
 
 Worktree TR-W4-f21, branch `task/W4-f21-net-ids-verify-tail`. Resume of the
-TIMEOUT-died f21b round. Number choice: max-on-origin at exec time is **238**
+TIMEOUT-died f21b round. Number choice (SUPERSEDED — historical record):
+max-on-origin at exec time was **238**
 (`origin/task/W4-c8-style66-crawling-critters`); the collision registry
 (`origin/task/W4-d54-dust-sites-world:docs/research/150`) consumed 151–236 and
-left 237+ free; 237 is already triple-claimed (e23/g48/g61), 238 taken → **239**.
-**139 stays RESERVED for g52c-net-master** (the g50b note, research/154).
+left 237+ free; 237 was already triple-claimed (e23/g48/g61), 238 taken → picked
+**239** — which d42 had already pushed (see the renumber block above; the
+registry now bans max-on-origin picks, losers take ≥281 after a fresh sweep).
+**139 stays RESERVED for g52c-net-master** — re-confirmed at the registry
+round-2 refresh (§4-REFRESH: g89 self-renamed its rod doc 139→145 at
+`41dabfbc8`, g50's cross-note — itself assigned 154→271 — explicitly does not
+take 139; if g52c pushes a 139 doc it keeps 139, single claimant).
 
 ## 1. Git log vs origin — what landed
 
@@ -111,3 +127,57 @@ client apply parks, the relay is the observable). **WRITTEN NOT RUN**
 Commits: `93df2fbb1` (port + 4 witnesses), `5230cb99b` (splice repair + the
 host echo gate + 5th witness). Both pushed to
 `origin/task/W4-f21-net-ids-verify-tail`.
+
+## 6. SEAL verification (f21c round, 2026-11-21, code-only)
+
+The f21b WIRED arms re-verified at this branch tip `f7bc25471` (pre-rename):
+
+- **57**: client store `netglue.rs:2005-2009` (`t_good/t_evil/t_blood`,
+  `:2634-2636` cites), join push `:962-973` (the `:867` position, ahead of 49),
+  fields `tr-core/world.rs:572+` (Default-safe `:811`).
+- **76**: host arm `netglue.rs:852-867` — own-echo gate `:853-855` runs BEFORE
+  the store/relay (the `:3167`-before-`:3169` order), peer store `:857-858`,
+  relay-except `:859-866`; client arm `:2019-2027` (own-echo skip + peer
+  store); `PlayerNet.angler_quests_finished/golfer_score` in `tr-app/net.rs`.
+- **58 host**: `netglue.rs:835-843` (id-force `:838`, raw pitch, relay-except
+  `:842`); client `:2014` stays the documented park.
+- All 5 `w4_f21b_*` witnesses present (`netglue.rs:5439/:5457/:5519/:5553/:5602`);
+  anchors.txt row `w4_f21b_quests_count_sync_host_drops_own_slot_echo` intact.
+- **Keep-one re-probe at the ADVANCED sibling tips**: g48 moved
+  `74e1ffa3c`→`2b61530b4` (docs-only correction phase — the diff touches zero
+  crates/ files) and g52 `590b93565`→`856edb86c` (join-bundle WIP checkpoint);
+  `git grep WorldEvilBytes|QuestsCountSync|InstrumentSound` over crates/ at
+  g48/g49/g50/g51/g52 tips is EMPTY on all five — the §4 keep-one verdicts
+  (f21b survivor, no other lane touches 57/76/58) STAND.
+
+## 7. NET-TAIL-FAMILY bible (the union merger's single entry point)
+
+Doc map after the registry round-2 renumbers (research/150 §6, d54 tip
+`72226e500`; sibling renames are THEIR lanes' to execute — cited here at
+assigned numbers):
+
+| doc | lane | role |
+| --- | --- | --- |
+| research/17 (base trunk, SEALed by g48 `9460c85d9`) | g48 | the ids 1–162 census master: per-id codec/writer/reader table + the f21 tail-census section + the f21b cross-note; g48's correction receipts append AFTER the seal (re-probe citations only) |
+| **276 (this doc)** | f21b | the APPLY coverage census (g48–g52 tips), the remaining-gap list (§3), the union keep-one notes (§4), the SEAL (§6) |
+| 271 (g50, `154→271` assigned) | g50b | g52c cross-input: research/40 DONE statuses × the net lane; the 139-RESERVED provenance |
+| 272 (g48, `237→239→272` assigned) | g48 | the f11 minecart fail-tile tail-fix hunk (upstream publish; NOT a net id — rides the family INDEX only) |
+| g48's 18-send-switch publish (`244-c28-18-send-switch.md` at tip `2b61530b4` 14:30:16 — POST-CUTOFF pick; 244 is inside the registry's round-2 assigned block (244=c31 draft) and f39 pushed its own 244 at 14:32:01; g48/f39/c31/d81 must self-adjudicate per the §6.3 cutoff note or request a round-3 refresh — NOT this lane's call) | g48→c28 | id 18 has ZERO SendData sites; the clock rides id 7 WorldData (event edges + the 3600-tick heartbeat); the exact 5-step internal-205→id-7 switch handed to `W4-c28-net-send-cadences` |
+| g48's 39 seed (`245-39-item-ownership-seed.md` at tip — same POST-CUTOFF caveat: 245=d81 draft in the round-2 block) | g48→item lane | 39 ReleaseItemOwnership adjudicated to the ITEM lane (d98 region), NOT M6-NET-5-as-rowed (that ATLAS row is the landed 27/28/29 sync); FindOwner/ReserveFor scope `WorldItem.cs:188-285` + the 151 slot-reuse remainder |
+| 139 (RESERVED, unpushed) | g52c-net-master | the g52c master-final table; g52 tip `856edb86c` carries NO 139 doc — the sub-round is UNPUSHED (g48's receipt `d3200ef3a`); single claimant keeps 139 when pushed |
+
+Owner lanes for the §3 remaining gaps (task-seeds; the registry's ≥281 rule
+applies to any new docs they publish):
+
+- **39** → item lane (d98 region) per g48's seed — supersedes §3's
+  "M6-NET-5" suggestion (the seed's adjudication: the ATLAS M6-NET-5 row is
+  the landed 27/28/29 sync, the ROADMAP pointer is a forward-reference).
+- **18** → c28 cadence lane per g48's send-switch publish — supersedes §2's
+  "internal 205" framing (the switch target is id **7**, not 18).
+- **41/43** → g48-parked (S1-I-4 render-peer/mana-FX); **48** → liquid lane
+  (g46/g47 adjacency); **52** → chest/edit lane; **79** → edit/object lane;
+  **58-client** → audio lane; **121/122/123/124/133/149/156** → TE lane
+  (research/23 adjacency); **144** → dryad/Stardew lane; **150** → S1-I-4.
+- Merge order for the net union: codecs first (f21 base + g51 lifted
+  keep-ones), then the g48–g52 apply arms per §2, then f21b's 57/76/58-host
+  survivors per §4, g52's send-gating census last (it reads the arms).

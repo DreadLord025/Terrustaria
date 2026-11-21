@@ -39308,8 +39308,9 @@ invoked (code-only lane).
 
 ## The f21b small apply arms (S1-I-1 W4-f21b, 2026-11-21, code-only)
 
-The apply-audit resume (research/239) censused the g48-g52 lane tips and
-WIRED the three small unclaimed arms whose consumers exist in the port:
+The apply-audit resume (research/276, renumbered from 239 per research/150
+round-2 §6.3) censused the g48-g52 lane tips and WIRED the three small
+unclaimed arms whose consumers exist in the port:
 
 - **57 Unknown57**: the client stores the three world-evil bytes into new
   `World.t_good/t_evil/t_blood` (`WorldGen.cs:4180-4184`); the join push
@@ -39326,7 +39327,7 @@ WIRED the three small unclaimed arms whose consumers exist in the port:
 - **58 InstrumentSound**: the HOST half only - id-force + relay-except,
   raw float pitch, no host sound (`MessageBuffer.cs:2642-2650`). The
   client instrument switch stays parked: PlayGuitarChord/PlayDrums/
-  musicPitch are unported audio players (research/239's gap list).
+  musicPitch are unported audio players (research/276's gap list).
 
 Witnesses: `netglue::tests::w4_f21b_*` (5) - the join-push store, the
 3-app force/relay pin (bogus wire id 99), both own-echo gates, the raw-frame
