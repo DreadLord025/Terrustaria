@@ -3419,6 +3419,50 @@ fn bound_town_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87900
 }
 
+/// The town shimmer-ladder death shape (`NPC.cs` per-arm): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then head/mid×2/legs×2 at the
+/// +0/+20/+20/+34/+34 Y ladder, scale 1f, the types split on
+/// `IsShimmerVariant`. The 123/124 Mechanic → 151/152x2/153x2 (shimmer
+/// 1317/1318x2/1319x2, `:87916-87920`, sites 505-509); the 22 Guide
+/// (town) → 73/74x2/75x2 (shimmer 1314/1315x2/1316x2, `:87936-87940`,
+/// sites 510-514).
+fn town_ladder_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // The 50x dust-5 burst at the wider velocity (:87912-87915 /
+    // :87932-87935).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if npc_type == 123 || npc_type == 124 {
+        if shimmer { (1317, 1318, 1319) } else { (151, 152, 153) }
+    } else if shimmer {
+        (1314, 1315, 1316)
+    } else {
+        (73, 74, 75)
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3823,6 +3867,11 @@ pub fn hit_effect_d(
     // 495-504).
     else if (105..=108).contains(&npc_type) {
         bound_town_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87902-87941` — the 123/124 Mechanic + 22 town Guide arms (sites
+    // 505-514, the shared shimmer ladder).
+    else if matches!(npc_type, 123 | 124 | 22) {
+        town_ladder_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6736,6 +6785,39 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "wizard {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:87916-87940` — the Mechanic ladder 151/152x2/153x2
+    /// (shimmer 1317/1318x2/1319x2) and the town Guide ladder
+    /// 73/74x2/75x2 (shimmer 1314/1315x2/1316x2).
+    #[test]
+    fn w4_f5d_the_mechanic_and_town_guide_ladders() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (123, false, vec![151, 152, 152, 153, 153]),
+            (124, false, vec![151, 152, 152, 153, 153]),
+            (124, true, vec![1317, 1318, 1318, 1319, 1319]),
+            (22, false, vec![73, 74, 74, 75, 75]),
+            (22, true, vec![1314, 1315, 1315, 1316, 1316]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(541);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(541);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
         }
     }
 }
