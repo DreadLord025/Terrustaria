@@ -18,11 +18,11 @@ triggers, the persistence-order fix, and the wind-drift witness.
 
 | Lane | Tip | Scope (this slice) |
 | --- | --- | --- |
-| W4-f40 (this) | `8b4f87e9` | lantern second half + this sweep |
-| W4-c39 | `a493e8f15` (research/114 master reconcile) | umbrella: gates + scheduler completion + both skies + hats + ai166 + cake |
+| W4-f40 (this) | `3d7a9b77` (FINAL phase) | lantern second half + this sweep + the FINAL phase |
+| W4-c39 | `8ecb288a` (research/114 §7 EXECUTED) | umbrella: gates + scheduler completion + both skies + hats + ai166 + cake |
 | W4-d17 | `84126544` | aiStyle-166 `ai_dove`/`dove_movement`/`dove_bounce` in `projectile.rs` + 851/855 rows |
 | W4-d130 | `50c845e5` | weather: `Wind::lanterns_up` freeze + rain/snow core |
-| W4-f45 | `42b7363b` | .wld header/flags: the lantern quad save/restore |
+| W4-f45 | `6352d384` | .wld header/flags: the lantern quad save/restore + Ph5-13 claims |
 
 c39's `docs/research/114-lantern-party-master-reconcile.md` is the authoritative
 per-function KEEP/DROP sheet for the c39/f40/d17/f38/d120/f41/d55/f34 union.
@@ -77,6 +77,15 @@ items (the C# fires them at the facing). The 851/855 `proj_data` rows are
 **absent on this branch** (d17's claim, `data.rs:3925/3928` at d17's tip), so
 `spawn_with_data_ai` no-ops — the launch decision + consume run, the projectile
 does not yet exist.
+
+**FINAL census correction (§8.3): the DOVES 4682 DO have a per-item arm.**
+`Player.cs:48383-48392`: `if (sItem.type == 4682)` fires THREE projectiles,
+each `SpeedX = num4 + Next(-20, 21) * 0.1`, `SpeedY = num5 + Next(-20, 21) *
+0.1` (six `Main.rand` draws per use, X before Y per shot), then `return` —
+it never reaches the generic tail. The 4702 half of the "no per-item arm"
+claim stands (the whole-file `4702` grep hits only ItemID/Item/Chest — no
+Player arm); the 4682 half was missed at sweep time. The volley is ported
+(`3d7a9b77`) into the same exact-centre release arm.
 
 **Ported** (`23a62996`): a `release_use = matches!(held.kind, 4682 | 4702)`
 variant joins the boomerang's exact-centre arm — the zero-aim gate escape, the
@@ -258,3 +267,179 @@ f45 `app/mod.rs`/`saveglue.rs`/`wld`). The `noUseGraphic` array was
 programmatically extracted + cross-checked (count 391, sorted, no dupes,
 exact set-match against the C#). No working-tree code outside this lane was
 modified.
+
+---
+
+## 8. FINAL phase — the five closing items + the 114 cross-receipt
+
+The FINAL phase re-read the sibling tips (c39 `8ecb288a` §7 EXECUTED, f45
+`6352d384`) and closed the four remaining census questions. All witnesses
+WRITTEN NOT RUN (code-only, no cargo/rustc/tests/rustfmt/graphify invoked).
+
+### 8.1 c39 lantern-exec status (item 1) — verified + the seed graft taken
+
+c39's research/114 §7 is EXECUTED on `task/W4-c39-lantern-birthday` (7 verdict
+commits `b5ab90db`/`4d184569`/`912f0ae2`/`a493e8f1`/`bb19d79f`/`7aff2857`/
+`ce288dac`, landing record `8ecb288a`). For THIS lane:
+
+- **LanternSky-KEEP-f40 confirmed**: §1b/§2 name `render/lantern_sky.rs`
+  (this module) the surviving LanternSky — the depth-band draw, the
+  byte-truncation tint ladder, the unscaled view convention, the world-load
+  reset all KEEP here.
+- **c39 does NOT retire its lantern copy**: verdict 2 (`4d184569`) fixes the
+  colour bug in-place (the tier² rgb drop + the premultiplied glow) and
+  states "The lantern STATE fns stay interim (f40's module is the surviving
+  LanternSky at the merge)" — `event_skies.rs`'s `generate_lanterns`/
+  `reset_lantern`/`update_lanterns`/`draw_lanterns` still exist at `8ecb288a`
+  (verified by `git show`). The retirement happens AT THE MERGE when this
+  module folds wholesale, not on c39's branch. Cross-note: the merge drops
+  c39's lantern half + dedupes `Extra_134` (§1b's assets note).
+- **PartySky-c39-unique + the depth-layering retrofit noted**: §1e verdict
+  YES-unique; the §1e follow-up-1 retrofit LANDED in `4d184569` —
+  `draw_balloons` → `draw_balloons_band` (the `PartySky.cs:185-198` num/num2
+  index walk, unscaled screenPosition + integer-halved centre + zoom-scaled
+  push + `>=` cull), threaded through `draw_sky`'s depth boundaries +
+  `AmbiencePass`/`draw_front_trees` (this module's shape) + a strata
+  witness. Follow-up-2 (the world-load reset seam extended to the party
+  sky) still rides this lane's reset at the merge.
+- **The §1b world-seed graft TAKEN here** (`73eb9060`): `LanternSky::new`
+  now takes `world_seed` and seeds the private stream
+  `world_seed ^ 0x1A2B_3C4D` (c39's `event_skies.rs:105` form — the sheet's
+  preferred per-world variety, still deterministic). Both `App::new` sites
+  feed it (`mod.rs` `world_seed`, `flow.rs` `world.seed`); the `Default`
+  impl dropped with the ctor arg; 1 twin-seed witness (same-seed identical,
+  cross-seed divergent, the xor-constant probe); the ANALYSIS fold
+  re-pinned. The sheet's "RE-DERIVE one twin-seed assert if the seed swap
+  is taken" obligation is discharged.
+
+### 8.2 Lantern-night MUSIC (item 2) — AMBIENT-ONLY, no track, no port
+
+Census (whole reads): `MusicID.cs` carries 105 tracks, **no Lantern entry**
+(the closest event tracks are SlimeRain 48 / PumpkinMoon 30 / FrostMoon 32).
+`Main.UpdateAudio_DecideOnNewMusic` (`:12175-12990`, the whole ladder) has
+**zero** `LanternNight`/`LanternsUp` branches — the town arm `flag23`
+(`:12199`) is `TownNPCCount >= 3 && !ZoneShadowCandle`, NOT the lanterns.
+The `LanternNightActive` field (`Main.cs:216`) is fed only into
+`SetBackColor` (`:56718`/`:61980`), which never reads it — write-only, dead
+(the ANALYSIS fold already recorded it). `LanternNight.cs` whole carries no
+sound/ambience call. **Verdict: a lantern night plays the ordinary night
+track 3 (or town 47 with 3+ town NPCs) — nothing to port.** The census doc
+rides `decide_new_music` + 1 negative witness (`2399a2ab`: night 3, town
+47, `MAX_MUSIC = 105`).
+
+### 8.3 Lantern CRAFT recipe (item 3) — 4702 shop-only; 5613 at the bench
+
+Census: `Recipe.cs` whole-file grep for `4702`/`4682`/`ReleaseLantern`/
+`ReleaseDoves` — **zero hits**. The release pair is shop-only
+(`Chest.cs:2307`/`:2311`, the Party Girl wish rows — 4702 gated on
+`LanternsUp`, this lane's `StockWhen::LanternNight` arm). **No workbench
+recipe exists in the C#, so none is ported** — the generator cannot invent
+one (`gen_recipes.py` splices only the C# bodies). The craftable lantern is
+**5613 FallenStarLantern**: `AddFallenStarFurniture` (`Recipe.cs:16415-16418`)
+— 6 Fallen Star (5622) + 1 Torch (8) at `SetCraftingStation(18)` — tile 18
+is the **Work Bench** (`TileID.cs:665`), NOT by hand. The generator row
+exists: `recipes_gen.rs` row 1548 (`:11021-11027`) carries the exact tuple
+(the `AddFallenStarFurniture` body is spliced literal — the parametric
+`AddStandardFurnitureSetRecipes` helper's `lantern` parameter `:16597-16600`
+is a DIFFERENT family, the per-wood lanterns, not 5613). 1 witness
+(`0d1b10f2`): the release pair recipe-less + the 5613 row's exact
+ingredients/station + craft-at-bench/refuse-without.
+
+### 8.4 Lantern PERSIST quad (item 4) — the f45 compose-contract verified
+
+The order fix (`5a19073e`) verified in-tree: `swap_world` clears at
+`mod.rs:2710-2711` BEFORE the `*self = App::new(` rebuild;
+`client_install_world` clears at `netglue.rs:2017-2018` BEFORE
+`self.world = world` (the tile install); `enter_loaded_world` carries no
+clear. f45's shape re-read at tip `6352d384`:
+
+| f45 piece | Site | C# |
+| --- | --- | --- |
+| save snapshot | `saveglue.rs:132-136` → `World.lantern_night_{cooldown,genuine,manual,next_night_is_genuine}` | `SetTempToOngoing`, `WorldFile.cs:1060-1063` |
+| flags write | `flags.rs:211-214` (tail 1940..1946) | `:1381-1384` |
+| flags read | `flags.rs:670-673` (version ≥ 207) | `:2326-2329` |
+| restore | `App::new` `from_wld` block, `mod.rs:4123-4127` | `SetOngoingToTemps`, `:173-176` |
+
+The four World fields (`lantern_night_cooldown: i32` + three bools) map 1:1
+onto this branch's `WorldEvents` names/types
+(`lantern_nights_on_cooldown`/`genuine_lanterns`/`manual_lanterns`/
+`next_night_is_lantern_night`) — the restore lands cleanly, and the
+clear-then-restore order keeps it. 1 compose-contract witness (`3e2277d7`):
+the typed mirror of f45's assignments (compile-breaks on a rename/retype
+here, before the merge silently breaks the restore) + the quad survives
+the tail + the net-install clear-before-install source-order pin. The
+existing `w4_f40_entering_a_loaded_world_keeps_the_restored_lantern_quad`
+stays (the swap-order half).
+
+### 8.5 The doves-volley census correction (FINAL find)
+
+Re-reading `Player.cs:48360-48419` for the music/recipe census surfaced the
+missed 4682 arm (`:48383-48392`): three projectiles, each
+`aim + Next(-20, 21) * 0.1` per axis, then `return`. The sweep's §1 "no
+per-item arm for them" was half-wrong — 4702's generic-tail half stands,
+4682's volley was missed. Ported (`3d7a9b77`) into the release arm (the
+same exact-centre spawn + facing flip; the six draws ride the shared
+`loot_rng` UpdatePlayers borrow — the C# `Main.rand` stream); 1 witness
+(the doves' six-draw probe + the lantern's zero-draw contrast); the USE-arm
+comment + module doc + anchor row re-pinned. The §1 text above carries the
+correction note.
+
+### 8.6 FINAL commits + witness ledger
+
+| Hash | Item | Mechanic |
+| --- | --- | --- |
+| `73eb9060` | 1 | the world-seed RNG graft (`LanternSky::new(world_seed)`, the xor form) + twin-seed witness + ANALYSIS re-pin |
+| `2399a2ab` | 2 | the music census doc + negative witness (ambient-only) |
+| `0d1b10f2` | 3 | the craft census witness (4702 recipe-less, 5613 at the bench) |
+| `3e2277d7` | 4 | the f45 compose-contract witness (typed mirror + net-install order pin) |
+| `3d7a9b77` | — | the doves-volley census correction + port + witness + anchor re-pin |
+| (this) | 5 | research/105 FINAL + the 114 cross-receipt |
+
+Witnesses this phase: 1 twin-seed + 1 music-negative + 1 craft + 1
+compose-contract + 1 doves-volley = 5 new, all WRITTEN NOT RUN. The lane
+total: 9 sweep + 5 FINAL = 14 new/extended.
+
+### 8.7 The 114 cross-receipt (f40 → c39's sheet)
+
+What c39's research/114 asks of f40, and where it stands on this branch:
+
+| 114 obligation | Status here |
+| --- | --- |
+| §1a KEEP f40's id-table helper + fix the case-4 label | DONE pre-FINAL (`8b4f87e9`, the Mourning Wood label + the id-5/id-20 arm asserts) |
+| §1a f40's EoC-integration witness survives the union | in-tree (`w4_f40_the_first_boss_kill_arms_the_next_lantern_night`) |
+| §1b KEEP f40's lantern_sky module wholesale at the merge | the module is canonical + complete (depth bands, tint ladder, reset); c39's copy stays interim on ITS branch until the merge |
+| §1b the world-seed graft (preferred) + the twin-seed re-derive | TAKEN (`73eb9060`) |
+| §1b f40's 3 lantern-sky witnesses KEEP | in-tree (ladder/determinism, opacity/leaving, surface-band reset) + the wind-drift witness (`522d92bd`) |
+| §1d KEEP f40's shop wish row + luck write | in-tree (the `StockWhen::LanternNight` row + the beside-zones luck snapshot); c39 retired its duplicate (`ce288dac`) |
+| §1e follow-up-2: the party-sky reset rides f40's reset seam | f40's `reset()` + the clear sites are ready; the party half folds at the merge (c39's `SkyManager.Reset` extension) |
+| §5 merge hot-spots: f40's weather hunk takes c39's gate line | noted — this branch keeps the base `!day_time` gate (`weather.rs:207`); the merge takes c39's `LanternGates::from_world` (the §3 table above) |
+| §4 anchor survival: f40's 3 rows verified present | `fn on_game_event_cleared` ✓, `struct LanternSky` ✓, `shop.rs\|LanternNight,` ✓ (+ this lane's 4 DOC-SWEEP rows, all markers present) |
+
+The union contract is unchanged by the FINAL phase except the two census
+corrections (the doves' volley arm — this lane's own §1, no sibling
+overlap; the music/recipe negatives — no port anywhere, so no merge
+conflict). The remaining merge scope on c39's side (§7's tail) is
+unchanged: this module + the shop row + the reset fold wholesale, the
+world-seed graft is now IN this module so the merge takes it as-is.
+
+### 8.8 FINAL verification
+
+Code-only per the lane contract: **no cargo/rustc/tests/rustfmt/graphify
+invoked**. Evidence: `MusicID.cs:1-229` whole; `Main.cs:12140-13019` (the
+whole `UpdateAudio_DecideOnNewMusic` + `UpdateWindyDayState` head),
+`:56690-56749`/`:61940-62019` (the two `SetBackColor` feeds),
+`:63452-63551` (the `SetBackColor` body — no `LanternNightActive` reader),
+`:65195-65249`; the whole-tree `LanternNightActive`/`ReleaseLantern`/
+`4702`/`4682` greps (Main.cs 3 hits / ItemID+ProjectileID+Item+Chest+Player
+only); `Recipe.cs:16363-16456` (`AddFallenStarFurniture` whole + the
+parametric helper's call sites), `:16540-16639`
+(`AddStandardFurnitureSetRecipes` whole), `:6398-6427` (the SetupRecipes
+furniture call order); `TileID.cs:665`; `Player.cs:48360-48419` (the doves
+arm) + `:49425-49464` (the generic tail); `LanternNight.cs:1-153` whole
+(re-read — no sound call). Sibling claims read via `git show` at c39
+`8ecb288a` (research/114 whole + `event_skies.rs` markers) and f45
+`6352d384` (`saveglue.rs`/`flags.rs`/`app/mod.rs` lantern sites). Port
+claims read from this branch's tree (`lantern_sky.rs`, `audio.rs`,
+`craft.rs`/`recipes_gen.rs`, `frame.rs`, `editing.rs`, `world_events.rs`,
+`mod.rs`/`flow.rs`/`netglue.rs`). No working-tree code outside this lane
+was modified; every commit touches only this lane's files.
