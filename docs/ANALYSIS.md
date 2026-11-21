@@ -39522,3 +39522,84 @@ movement-gated 42-step, the follower leader-alpha gate, the floor-at-0).
 **Lane total: 45 witnesses WRITTEN NOT RUN (code-only mode — no
 cargo/rustc/tests invoked): 32 across batches 1-7, 10 across the DOC-SWEEP
 kind batches 8-10, 3 with the EoW fade port.**
+
+### W4-g59 batches 11-13: the d34/c4/d23/d37 row-gated activations
+
+The roster lanes landed kind rows inside this lane's 83-kind row-gated
+remainder. The sweep re-intersected the 83 cs_ids against EVERY pushed
+roster tip (scripted `cs_id` hand-row + bestiary-fallback + Hide-fold
+extraction, git-show per tip): d34 `5f3435a8` (phases 1-3, kinds 1-70),
+d35 `7d131be3`, d37 `08f7d25c` (= `750d8e44` + the research/108 reconcile),
+d38 `c096bac9`, d40 `8fe1d6d3`, d41 `4ed22f0b` (claim), d42 `88df5809`
+(WIP checkpoint), d36 `65e481f9` / d39 / d43 (claim-only, tip == base or
+no kind rows), plus the c4 `22cec16f` / c8 `86769379` / c10 `c48bbb1e` /
+e26 `048cca6c` / d23 `19109424` kind-claims. **23 newly-rowed C# types /
+21 census kinds intersect** — d34's 14 (31/34/37/39/40/41/43/47/48/56/
+57/61/62/63), c4's 157 Arapaima, d23's 175 AngryTrapper, d37's 7
+(217/218/219/220/221/226/229). d35/d38/d40/d41/d42/c8/c10/e26 intersect
+∅ (their bands are >230, already-wired, or g62-owned). ALL 23 activate:
+
+**Batch 11 (10 kinds):** 31 AngryBones (`:88537`, 20× type-26 — the big
+skeleton arm, its gore path falls to the generic 42/43/43/44/44 constant
+tail), 34 CursedSkull (`:89132-89141`, 15× (type-15 noGravity/noLight
+alpha-100 scale-1.8 + type-26 noLight scale-0.9) pairs at -velocity×0.2,
+each velocity×1.3, dust-only), 37 OldMan (`:88232`, 50× type-5 2.5×dir —
+the town shape, the shimmer gore gates are field reads), 39/40/41
+BoneSerpent (`:89109`, 20× type-26 — the 40/41 segments ride d34's
+Hide-fold onto the head's cs_id 39, the feed sees 39, the C# arm reads
+the RAW type, all three draw the same burst), 43/56 ManEater/Snatcher
+(`:89752`, 50× type-40 alpha/color scale-1.2), 47 CorruptBunny (`:86381`,
+10× type-5 — the piranha arm), 48 Harpy (`:89786`, 50× type-5 2×dir).
+
+**Batch 12 (10 kinds):** 57 CorruptGoldfish (`:86381`, the piranha arm),
+61 Vulture (`:86617`, 50× type-5), 62 Demon (`:89803`, the voodoo arm),
+63 BlueJellyfish (`:85554`, 25× type-4 tinted (50,120,255,100) — the
+shared 63/64/103 arm's DEFAULT color row `:85536`; 64 stays row-gated,
+its (225,70,140) tint lands with its d36-band row; 103 wired batch 10),
+157 Arapaima (`:86514`, 50× type-5 — c4's style-44 row), 175 AngryTrapper
+(`:89769`, 50× type-40 alpha/color scale-1.2 — d23's style-13 row, its
+OWN C# arm), 217/218/219 the beetle trio (`:87462`, 50× type-18
+alpha/color/scale), 226 FlyingSnake (`:85807`, 15× type-5 — the bat arm).
+
+**Batch 13 (3 kinds):** 220/221 SeaSnail/Squid (`:88513`, 20× type-151
+2.5×dir scale-0.7), 229 Pirate (`:88129-88143`, the `IsShimmerVariant`
+dust SPLIT — `variation_index == 1 && shimmer_town_transform(229)` (the
+`NPC.cs:6713-6723` composition, 229 IS a ShimmerTownTransform member)
+selects 50× type-180 at the corpse's velocity vel×2 noGravity scale-1.4
+vs the plain 50× type-5 2.5×dir town shape; the altTexture gore gate
+`:88144-88151` is a field read + constants).
+
+All batch-11-13 gore tails draw NO arguments (verified: the skeleton
+ladder's generic tail, the `this.type - 39 + 67` arithmetic, the
+72/72/78/79/80/81/84/86-88/93/94/186/187/227/228/292-299/317-319/328-330
+constants + `this.scale`, the shimmer/altTexture field-read gates).
+
+**The remainder after batches 11-13:** 60 of the 173 dust-first clean
+census kinds stay row-gated UNWIRED — 15 base-present folded kinds
+(8/9/11/12/14/15/88-92/118/119 ride the ALREADY-wired heads 7/10/13/87/
+117 via cs_id fold, no new activation; 105 BoundGoblin folds 107 wired;
+139 Probe folds 134, the Destroyer head UNWIRED) + 45 no-row kinds
+(68 DungeonGuardian / 69 Antlion + the d36 band 141/142/148/149/150/152/
+153/154/155/158/159/160/163-171/173/174/176-182/185/195-199/201-206/209;
+the d36 claim `65e481f9` is pushed but NO kind rows yet). 64
+PinkJellyfish is NOT in the dust-first clean census (its color-only
+nested `:85537` row is the g59_order dust>0 artifact) — it rides 63's
+arm when its row lands. **111 wired match types / 113 census kinds**
+across 13 batches (the 40/41 fold accounts for the 2-type gap).
+
+**The g60 boundary (research/110) stays CLEAN:** every activated cs_id
+is ≤ 229 ≤ 230 — ZERO kinds > 230, nothing flags to the g60 lane. The
+231-697 band remains g60's; the hornet arm's 231-235 siblings stay
+absent (no port kind row), the 250 AngryNimbus arm g60's.
+
+11 witnesses WRITTEN NOT RUN (code-only): the AngryBones skeleton-census
+equality, the CursedSkull twin-pair replay, the OldMan/BoneSerpent
+counts, the ManEater pair's type-40 census, the CorruptBunny/Harpy
+counts (batch 11, 5); the CorruptGoldfish/Vulture/Demon counts, the
+BlueJellyfish default-tint census, the Arapaima/AngryTrapper counts, the
+beetle-trio/FlyingSnake census (batch 12, 4); the SeaSnail/Squid shared
+census, the Pirate shimmer-split twin-pool (batch 13, 2).
+
+**Lane total: 56 witnesses WRITTEN NOT RUN (code-only mode — no
+cargo/rustc/tests invoked): 45 through the DOC-SWEEP + EoW fade, 11
+across batches 11-13.**

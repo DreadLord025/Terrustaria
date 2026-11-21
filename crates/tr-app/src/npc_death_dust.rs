@@ -1,7 +1,10 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-10 (88 kinds — every
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-13 (111 wired C#
+//! match types covering 113 census kinds — the 40/41 BoneSerpent
+//! segments ride the head's cs_id 39 via d34's Hide-fold; every
 //! dust-first clean kind the port's kind set carries, plus the 24 d35
-//! row-gated activations of the DOC-SWEEP phase).
+//! row-gated activations of the DOC-SWEEP phase and the 23 d34/c4/d23/
+//! d37 row-gated activations of batches 11-13).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -206,21 +209,27 @@
 //! ## The row-gated remainder after batches 11-13 (the census doc)
 //!
 //! The 83-kind row-gated set re-intersected against EVERY pushed roster
-//! tip yields **23 newly-rowed clean kinds** — ALL activated above
-//! (d34's 14: 31/34/37/39/40/41/43/47/48/56/57/61/62/63; c4's 157; d23's
-//! 175; d37's 7: 217/218/219/220/221/226/229). **60 stay row-gated
-//! UNWIRED** (the S1-F-9b convention): the base-present folded segments
-//! 8/9/11/12/14/15/88-92/118/119 (their cs_id folds ride the ALREADY-wired
-//! heads 7/10/13/87/117 — the arms fire through the head's match, the
-//! segments' own rows are sentinel/fold, no new activation), 105
-//! BoundGoblin (folds 107, already wired) + 139 Probe (folds 134, the
-//! Destroyer head UNWIRED), and the d36 band's 43 kinds (64/68/69 +
-//! 141/142/148/149/150/152/153/154/155/158/159/160/163-171/173/174/
-//! 176-182/185/195-199/201-206/209 — the claim `65e481f9` is pushed but
-//! NO kind rows yet; 157/175 are c4b/d23b-claimed, activated above).
-//! **Boundary check (g60 research/110):
-//! every activated cs_id ≤ 229 ≤ 230 — ZERO kinds > 230, the boundary
-//! stays CLEAN, nothing flags to the g60 lane.**
+//! tip (d34 `5f3435a8`, d35 `7d131be3`, d37 `08f7d25c`, d38 `c096bac9`,
+//! d40 `8fe1d6d3`, d41 `4ed22f0b`, d42 `88df5809`, d36/d39/d43 claim-only,
+//! + the c4/c8/c10/e26/d23 kind-claims) yields **23 newly-rowed C# types
+//! / 21 census kinds** — ALL activated above (d34's 14 types:
+//! 31/34/37/39/40/41/43/47/48/56/57/61/62/63, the 40/41 BoneSerpent
+//! segments folding onto 39; c4's 157; d23's 175; d37's 7:
+//! 217/218/219/220/221/226/229). **60 census kinds stay row-gated
+//! UNWIRED** (the S1-F-9b convention): 15 base-present folded kinds
+//! (8/9/11/12/14/15/88-92/118/119 — their cs_id folds ride the
+//! ALREADY-wired heads 7/10/13/87/117, the arms fire through the head's
+//! match, no new activation; 105 BoundGoblin folds 107, already wired;
+//! 139 Probe folds 134, the Destroyer head UNWIRED) + 45 no-row kinds
+//! (68 DungeonGuardian / 69 Antlion + the d36 band 141/142/148/149/150/
+//! 152/153/154/155/158/159/160/163-171/173/174/176-182/185/195-199/
+//! 201-206/209 — the claim `65e481f9` is pushed but NO kind rows yet;
+//! 157/175 are c4b/d23b-claimed, activated above; 64 PinkJellyfish is
+//! NOT in the dust-first clean census — its color-only nested row is
+//! the g59_order artifact, it rides 63's arm when its row lands).
+//! **Boundary check (g60 research/110): every activated cs_id ≤ 229 ≤
+//! 230 — ZERO kinds > 230, the boundary stays CLEAN, nothing flags to
+//! the g60 lane.**
 //!
 //! ## The lane's remainder (the census's absent kinds)
 //!
@@ -229,10 +238,12 @@
 //! 31/37/39-41/43, the frost/martian/dd2 families, the 195-206/209/
 //! 217-221/226/229 bands, …); the DOC-SWEEP re-census counts 107 UNWIRED
 //! (the 66 landed C# types cover 66 of the 173). After batches 8-10, 83
-//! stay row-gated UNWIRED until their kinds land (the S1-F-9b row-gate
-//! convention); the census rows + arm citations live in docs/ANALYSIS.md.
-//! The 20 dust-only kinds' still-absent members (34/63/141/169/204) are
-//! the same remainder (75/120/122/137 activated above, 112 re-owned g62).
+//! stayed row-gated UNWIRED; batches 11-13 activated 23 of them (the
+//! d34/c4/d23/d37 rows), leaving **60 row-gated** (the S1-F-9b row-gate
+//! convention — see the remainder section above); the census rows + arm
+//! citations live in docs/ANALYSIS.md. The 20 dust-only kinds'
+//! still-absent members (141/169/204) are the same remainder (34/63
+//! activated in batches 11/12, 75/120/122/137 above, 112 re-owned g62).
 //!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
