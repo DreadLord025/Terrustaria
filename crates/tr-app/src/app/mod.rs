@@ -712,6 +712,15 @@ pub(crate) struct App {
     /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
     /// (determinism rule, ANALYSIS "The tile-crack overlay").
     pub(crate) mine_crack_rng: tr_core::UnifiedRandom,
+    /// `TileDrawing._rand` (`TileDrawing.cs:104`, seeded `:191`): the
+    /// renderer-lifetime gate stream. W4-g68 wiring: the per-frame drip
+    /// emission (`foliage::emit_liquid_drops_area`) rolls its `Next(num*2)`
+    /// gates here — PERSISTENT across frames, unlike the per-frame
+    /// `FastRandom` pin the cached leaf arm still uses (the documented
+    /// determinism stand-in until the d60 wiring reconciles it). The C#
+    /// parameterless ctor is clock-seeded (`UnifiedRandom.cs:18-21`); the
+    /// port seeds the world seed (the `mine_crack_rng` deviation class).
+    pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -3916,6 +3925,7 @@ impl App {
             mine_crack_style: 0,
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
+            tile_draw_rand: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,

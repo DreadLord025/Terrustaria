@@ -1218,6 +1218,51 @@ impl App {
                         mine_crack_style,
                         mine_crack_target,
                     );
+                    // W4-g68 wiring: `TileDrawing.EmitLiquidDrops`
+                    // (`TileDrawing.cs:7594-7674`, the `Draw` switch arm
+                    // `:688-694`) — the vine-tip/stalactite/shimmer-candle
+                    // drips. Like the crack overlay it rides the per-frame
+                    // world range OUTSIDE the G6-cached tile pass (the
+                    // `WorldFrameKey` is untouched): the C# rolls its
+                    // `Next(num*2)` gate per DRAW, so a cached rebuild
+                    // cadence would starve the drips in a calm world.
+                    // The gate stream is the App's persistent
+                    // `TileDrawing._rand` stand-in (`tile_draw_rand`); the
+                    // spawn internals ride the bare global `Main.rand`
+                    // (outside every SwapRandom block). The g30
+                    // tile-pass-attach contract (UNION-CONTRACT-tilepass
+                    // §5) feeds the same cells once the g-family lands —
+                    // until then the driver rescans the draw area.
+                    // Gate: the `emit_effects` stand-in the leaf arm uses
+                    // (`!game_paused && !TR_NO_WIND`, the A/B switch).
+                    // The exact C# `_isActiveAndNotPaused` is the
+                    // DrawnThisUpdate flag (`FocusHelper.cs:27`), NOT
+                    // `!gamePaused` — the port's stepper already carries
+                    // the flag (`world.rs:90/:688`), but its set-site is
+                    // the draw half's HEAD, so reading it here would be
+                    // vacuously true; the flag-gate reconciliation is the
+                    // d60 wiring wave's contract (ANALYSIS "The wind leaf
+                    // particles", deferred-2).
+                    if !game_paused_for_specials && !crate::env::no_wind() {
+                        let mut water_style =
+                            crate::biome::calculate_water_style(world, *camera) as i32;
+                        if let Some(n) = crate::env::water_style() {
+                            water_style = n.min(14) as i32;
+                        }
+                        crate::render::foliage::emit_liquid_drops_area(
+                            world,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            water_style,
+                            self.scene_metrics.zone_corrupt,
+                            self.scene_metrics.zone_crimson,
+                            self.scene_metrics.zone_hallow,
+                            &mut self.tile_draw_rand,
+                            self.rngs.global(),
+                            gore,
+                        );
+                    }
                     // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
                     // false)`'s pylon / trophy / void-lens passes
                     // (`TileDrawing.cs:423-425`). The sprites ride the

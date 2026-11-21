@@ -2343,6 +2343,7 @@ pub(crate) mod front_flow_tests {
             mine_crack_style: 0,
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(0),
+            tile_draw_rand: tr_core::UnifiedRandom::new(0),
             place_prev_down: false,
             place_released: false,
             mine_prev_down: false,

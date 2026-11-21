@@ -39410,8 +39410,39 @@ then overwrites position/velocity — zero velocity survives.
   `IsDrip` gores, the water-style pick (13/14→706, 12→1147, >1→705+style)
   then the kind overrides (374→716, 375→717, 709→1383, 461→943 with the
   corrupt/crimson/hallow tints 1160/1161/1162, LAST zone wins), and the
-  `NewGore` + `velocity *= 0` tail on `Main.rand`. The wiring wave feeds
-  it g30's recorded cells on the reconciled cadence above.
+  `NewGore` + `velocity *= 0` tail on `Main.rand`. ~~The wiring wave feeds
+  it g30's recorded cells on the reconciled cadence above.~~ **WIRED
+  (W4-g68 wiring wave, 2026-11-21):** `foliage::emit_liquid_drops_area`
+  runs per-frame in `frame/draw.rs` right after the tile-cracks overlay
+  (the same per-frame-world-range precedent — the `WorldFrameKey` is
+  untouched, so the G6 cache keeps its calm-world hits while the drips
+  still roll their `Next(num*2)` gate every DRAW like the C# `Draw`
+  switch). The driver rescans the `draw_tiles` view rect (camera ±
+  screen/2/zoom ±1 tile, clamped 4..max−5 — the C# `GetScreenDrawArea`
+  clamps at `:6558-6573`; the ±4-row/±2-col offscreen margin is the
+  recorded deviation, the wind-grid port's convention) row-major for
+  active 373/374/375/461/709 tiles — the five kinds are non-solid (no
+  `tileSolid` write, no `DrawTileInSolidLayer` row), so the C# arm rides
+  the `solidLayer: false` `Draw` pass and the port's fused scan IS that
+  arm. **The g30 attach-contract still holds:** UNION-CONTRACT-tilepass
+  §5 (d60 row, `task/W4-g31` tip `c3027a38`) binds g30's
+  `SpecialPoints.liquid_drop_cells` (`special_points.rs:110`, recorded at
+  `:394-396` for exactly these kinds) to this body; when the g-family
+  lands on main the wiring wave swaps the rescan for the recorded cells
+  — the body, its RNG order and the per-frame cadence are unchanged
+  either way. **The gate stream is now PERSISTENT:** `App.tile_draw_rand`
+  (`UnifiedRandom`, world-seeded — the `mine_crack_rng` deviation class)
+  is the `TileDrawing._rand` stand-in (`:104/:191`, one stream for the
+  renderer's lifetime); the drip witnesses moved from the per-frame
+  `FastRandom` pin to it. The cached leaf arm's per-frame pin stays as
+  documented until the d60 wiring reconciles it. The emission gate is
+  the leaf arm's `emit_effects` stand-in (`!game_paused && !TR_NO_WIND`);
+  the exact `DrawnThisUpdate` mechanism (the port's stepper flag is set
+  at the draw half's HEAD, `world.rs:688`, so a read inside the draw
+  region would be vacuously true) stays the d60 wiring wave's contract.
+  Water style + the three zone flags come from the live frame state
+  (`calculate_water_style(draw_cam)` + `TR_WATER_STYLE`,
+  `scene_metrics.zone_*`).
 * The desert debris (`Sandstorm.EmitDust`, `sand.rs`) already landed with
   S1-E-1/E-3; W4-g68 adds the wind-coupling witness (the
   `sign(wind)*Lerp(0.9,1,|wind|)` drift, the `num13*20` push, the
