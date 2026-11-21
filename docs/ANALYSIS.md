@@ -1370,11 +1370,17 @@ C#-row re-derivation confirming the 13-branch census/dedups/keep-one; f44 132 RE
 §3-L3 `d35876af9` — same field set, different order; g72 64a/64b SEALED `b069439eb` —
 its 53-byte prefix now-in-107 verbatim, retire defers layout authority here "per the
 Lead") and adjudicated the ORDER: research/92 §1-FULL's 64a-stable [0..53] prefix WINS
-(forward-only, no released v18; g88's strict-C#-row middle — books [61..63], underworld
-[56] — recorded as the standing free alternative, a pure offset slide). g88's D5
-flagged three registry tip-column hash slips (e19/d125/c43) — fixed. §1-FULL is THE
-`.trwld` union-layout authority (INDEX pointer); f44's 132 keeps the L1/L2 +
-merger-bible scope. The f45 flags-block audit (§1-SEAL.2): f45's file is
+— **that verdict was OVERRULED by the PERSIST-ARBITER (g88 research/103 §L3-ARBITER
+FINAL, `d09d7e10a`): the C# ACTUAL write order is DEFINITIVE, D5 strict-C#-row middle
+CONFIRMED (the books-before-moon middle inverted `WorldFile.cs:1407-1408` vs
+`:1347-1351`). §1-FULL.2 is CORRECTED to 103 A3: crimson [50] → moon [51..56] →
+underworld [56] → pets [57..60] → empress [60] → books [61..63], identity [63..107];
+the registry/census/dedups + §1-FULL.4 site table STAND (order-agnostic); the seal's
+own "free alternative" move is activated, and 103 A4's 92-row is mutually receipted.
+The `d2fcf9f2` net fix + setBG hunks are UNAFFECTED (wire/draw order, not byte
+layout).** g88's D5 flagged three registry tip-column hash slips (e19/d125/c43) —
+fixed. §1-FULL stays the `.trwld` union-layout DOC (INDEX pointer) seating 103 A3,
+THE byte-order authority; f44's 132 keeps the L1/L2 + merger-bible scope. The f45 flags-block audit (§1-SEAL.2): f45's file is
 the `.wld` base, g71's live setBG 0/3/6/7/9/10-12 hunks supersede its zero stand-ins,
 the five shared live styles + g69's crimson dedup onto f45's write — wire widths
 byte-identical, ownership-only compose. **The net hop was the last LOGIC gap in the
