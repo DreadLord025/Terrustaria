@@ -75,7 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| W4-f12-sweep | The FULL 270-id UpdateBuffs stat-arm census (C# case-list vs every ownership set; 10 gaps closed inline; the nebula-twin f49 one-writer contract + the buff-321 d115 keep-one note) | `W4-f12-sweep-census.md` | ✅ set-diff EMPTY |
+| W4-f12-sweep | The FULL 270-id UpdateBuffs stat-arm census (C# case-list vs every ownership set; 10 gaps closed inline; the nebula-twin f49 one-writer contract + the buff-321 d115 keep-one note; the final-phase g27 cross-verify appended) | `W4-f12-sweep-census.md` | ✅ set-diff EMPTY |
+| W4-f12-final | The buff-HUD final census (icon draw / tooltip lines / time display / debuff cancel / g27 canonical; the 94/396 tooltip arms restored, the icon-text font/scale/tint fixed; ANALYSIS "The buff-HUD final census") | `W4-f12-sweep-census.md` + ANALYSIS | ✅ 5 witnesses written not run |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

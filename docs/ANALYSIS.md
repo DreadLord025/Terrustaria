@@ -22911,6 +22911,49 @@ those rarities (`Main.cs:43239-43246` only uses `-10` for the melee buffs and
 `ui::resources::mouse_text_color` documents them and defers to the shared
 `tooltip::item_name_color` table for every other value.
 
+## The buff-HUD final census (W4-f12 final, 2026-11-21)
+
+The last phase of `task/W4-f12-buff-frame-wiring` re-censused the whole buff
+HUD surface against the C# (`Main.DrawInterface_Resources_Buffs`
+`Main.cs:43202-43252`, `DrawBuffIcon` `:43307-43368`, `GetBuffTooltip`
+`:43254-43289`, `TryGetBuffTime` `:43290-43305`, `TryRemovingBuff`
+`:43370-43404`, `MouseText_DrawBuffTooltip` `:21345-21489`):
+
+1. **ICON draw** — every `Images/Buff_<id>.xnb` (400 files) packs into the
+   atlas (`enumerate_buff_icon_ids` → `buff_icons`); the grid (11/row,
+   38/50 pitch), the per-slot alpha (+0.1 hover / −0.05 decay, [0.4, 1]
+   clamp), the hover pick and the cancel request are 1:1. One drift fixed:
+   the icon text now rides `FontAssets.ItemStack` at scale **0.8** tinted
+   by the SAME `buffAlpha` quadruple as the icon (`:43327`) — it was
+   Mouse_Text at 0.85 full-white.
+2. **TOOLTIP lines** — the name + description lane is f12's (the f28/e16
+   branches' diffs touch only item-tooltip code). The 94/396 percentage
+   arms restored (see "The buff hover's two restored arms" above). The
+   banner list + `(80, 255, 120)` tint are faithful; the 220 px column
+   geometry stays the shared-printer deviation recorded there.
+3. **TIME display** — no drift: the `> 2` tick gate, the whole-second
+   `buffTimeValue / 60` TimeSpan, `Lang.LocalizedDuration`'s strict
+   `> 1 unit` ceilings and the 28-handler `xN` precedence all match
+   (`Lang.cs:1158-1205`).
+4. **DEBUFF cancel** — the i53 gate re-verified against the FULL set: all
+   76 `Main.debuff` ids plus 60/151 refuse the right-click and survive
+   with untouched timers; the non-debuff sample cancels. The
+   `Main.debuff` / `vanityPet` / `lightPet` / `buffNoTimeDisplay` /
+   `meleeBuff` tables were script-diffed against `Main.cs:8865-8940` /
+   `:9214+` / `:9288+` / `:9074-9199` / `:8961+` — 76/74/12/124/8 entries,
+   zero missing, zero extra.
+5. **g27 cross-verify** — `buff_effects_orbs.rs` byte-identical vs
+   `origin/task/W4-g27-orb-keep-one-prep` (1cd7ac367); the 18-id routing
+   exclusivity pinned by witness; the nebula-twin one-writer contract
+   stands (research/W4-f12-sweep-census.md).
+
+Witnesses (written not run, code-only): `w4_f12_final_icon_census_*`,
+`w4_f12_final_tooltip_*`, `w4_f12_final_buff_time_*` (ui/resources.rs),
+`w4_f12_final_cancel_*` (player.rs), `w4_f12_final_g27_*`
+(buff_frame_wiring.rs). The fullscreen-map second `DrawBuffIcon` call site
+(`:41335`, the 46 px column grid + the 0.65 alpha floor) still rides the
+map tasks — unchanged from the S1-E-6 deviation.
+
 ## Entity lights (S1-E-5, 2026-11-16)
 
 The C# funnels every `Lighting.AddLight` overload into
