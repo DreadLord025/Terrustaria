@@ -3,7 +3,7 @@ index 546b0b9..5ebc327 100644
 --- a/crates/tr-app/src/ambient_sound.rs
 +++ b/crates/tr-app/src/ambient_sound.rs
 @@ -651,0 +652,14 @@
-+            // W4-d43 SEAL (research/347 S3, the d34-lane receipt) - the
++            // W4-d43 SEAL (research/369 S3, the d34-lane receipt) - the
 +            // kinds-631-697 wave's plain aiStyle-3 walkers ride the shared
 +            // walker machines (update_zombie/update_skeleton ->
 +            // walker_step_fighter, their ai[3] free for the idle
@@ -19,7 +19,7 @@ index 546b0b9..5ebc327 100644
 +            | SporeSkeleton
 @@ -1880,0 +1881,54 @@
 +
-+    /// W4-d43 SEAL (research/347 S3) - the kinds-631-697 wave's plain
++    /// W4-d43 SEAL (research/369 S3) - the kinds-631-697 wave's plain
 +    /// walkers join the gate: MossZombie/MaggotZombie (`update_zombie`)
 +    /// and RockGolem/SporeSkeleton (`update_skeleton`) ride
 +    /// `walker_step_fighter` (aiStyle 3, `ai[3]` free); the Drippler

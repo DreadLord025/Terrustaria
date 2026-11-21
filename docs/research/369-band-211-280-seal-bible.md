@@ -1,14 +1,25 @@
-# 347 — W4-d34 SEAL: the band-211-280 bible + the roster/fighter/islands receipts
+# 369 — W4-d34 SEAL: the band-211-280 bible + the roster/fighter/islands receipts
+
+> **RENAME CHAIN: 347 (self-pick at `d652e147e`, contested) →
+> 369 (registry-150 §9 Lead assignment).** The d54 collision registry
+> (`150-research-number-registry.md`, §9, read at
+> `origin/task/W4-d54-dust-sites-world` `5869198c5` — "d34-347-self-369
+> (g15-347-executed-wins)") renumbers this doc: g15's §9 assignment was
+> EXECUTED at `648d2abb7` (`347-item-dust-family-bible.md`), so the
+> d34 post-§9 self-pick into 347 is contested → **369**. All refs
+> re-pointed this commit (S5 below + the two patch-file headers);
+> NO SELF-PICKS — §9 assignments only.
 
 Status: SEAL (doc + witness patches only — zero code diff on this branch).
 Author lane: W4-d34 seal executor, on `task/W4-d34-npc-kinds-211-280` cut at
-the co-lane tip `f0d92564e` (phase 4). Registry: key **347** taken per
-research/150 rules (origin `task/W4-d54-dust-sites-world` `0426245f2`, §7.4:
-floor 308+, **no max+1 picks**) after a fresh all-ref first-add sweep
-(`git log --all --diff-filter=A` over `docs/research/*`): 347 has ZERO
-claimants; neighbours 345/346/348/349 are taken (d40-seal / g65-family /
-band-85-93-retire / snail-family). This doc is NOT a max+1 pick — 348/349
-exist, 347 is the verified free hole.
+the co-lane tip `f0d92564e` (phase 4). Registry: key **369** per
+research/150 §9 (Lead amendment, `5869198c5`). The original seal round
+self-picked 347 under the older §7.4 rules (origin
+`task/W4-d54-dust-sites-world` `0426245f2`: floor 308+, **no max+1
+picks**) after an all-ref first-add sweep that missed g15's executed
+§9 assignment `648d2abb7` — the pick was contested and renumbered
+347→369 (chain banner above); neighbours 345/346/348/349 are taken
+(d40-seal / g65-family / band-85-93-retire / snail-family).
 
 **Co-lane status: ALIVE, NOT clobbered.** At seal start `TR-W4-d34` sat on
 `task/W4-d34-npc-kinds-1-70` with 48+ untracked `tools/_d34_*` scripts, fresh
@@ -254,13 +265,17 @@ semantic join is ONE published activation hunk:
 
 ## S5 — research FINAL: the registry number + the band bible
 
-**Registry number: 347** (this doc). Per research/150 §7.4
-(`0426245f2`): assignments live 151-236 + 246-280 + 281-303 + 304-307,
-winners 237-245, floor 308+, no max+1 picks. Fresh all-ref first-add
-sweep this round: post-floor claimants 308×4 / 309 / 312 / 341 / 342 /
-343 / 345 / 346 / 348 / 349 (308 and 304/305 are new multi-way collisions
-for the next d54 refresh — NOT this lane's to adjudicate). **347 free,
-zero claimants** — taken here, first-add timestamp = this commit.
+**Registry number: 369** (this doc — chain 347-self-contested → 369-§9,
+banner above). The original seal round's sweep under the then-live
+research/150 §7.4 (`0426245f2`: assignments live 151-236 + 246-280 +
+281-303 + 304-307, winners 237-245, floor 308+, no max+1 picks) found
+347 free (post-floor claimants 308×4 / 309 / 312 / 341 / 342 / 343 /
+345 / 346 / 348 / 349; 308 and 304/305 were new multi-way collisions
+for the next d54 refresh — NOT this lane's to adjudicate) and self-picked
+it — but g15's §9 assignment was already EXECUTED at `648d2abb7`
+(347-item-dust-family-bible), so the self-pick was contested and the
+d54 §9 registry (`5869198c5`, "d34-347-self-369") assigned **369**.
+Renamed here; §9 floor is now 370+.
 
 **The band-211-280 bible (one paragraph):** d37's port `750d8e446` owns
 NPCID 211-280 as protocol **354-399 port-local** (46 kinds, ENTRIES +43
@@ -304,7 +319,10 @@ ONE owner, ONE harpy row, every join a published hunk.
   d43 alone exit 0; apply sequences d34→d43 and d43→d34 both exit 0
   (results `f8a6a9d79` / `4ff66739c`, all 7 gate arms + both witnesses
   present, braces balanced 229/229).
-- Registry sweep: `git log --all --diff-filter=A --name-only --
-  docs/research/*` bucketed 100-199/200-299/300+ → 347 zero claimants.
+- Registry sweep (original seal round, chain history): `git log --all
+  --diff-filter=A --name-only -- docs/research/*` bucketed
+  100-199/200-299/300+ → 347 zero claimants — that sweep missed g15's
+  executed §9 assignment `648d2abb7`; the self-pick was contested and
+  renamed 347→369 per registry §9 (`5869198c5`).
 - No cargo / tests / rustfmt / graphify (lane constraint). The new
   witness is WRITTEN NOT RUN (the code-only convention).

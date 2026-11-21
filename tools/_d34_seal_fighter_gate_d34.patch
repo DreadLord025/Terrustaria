@@ -3,7 +3,7 @@ index 546b0b9..edb0c3a 100644
 --- a/crates/tr-app/src/ambient_sound.rs
 +++ b/crates/tr-app/src/ambient_sound.rs
 @@ -651,0 +652,11 @@
-+            // W4-d34 SEAL (research/347 S3) - the kinds-1-70 wave's plain
++            // W4-d34 SEAL (research/369 S3) - the kinds-1-70 wave's plain
 +            // aiStyle-3 walkers ride the shared walker_step_fighter
 +            // (update_skeleton, their ai[3] free for the idle counter).
 +            // AngryBones 31 IS in the C#'s zombie/skeleton 1000-roll moan
@@ -16,7 +16,7 @@ index 546b0b9..edb0c3a 100644
 +            | Crab
 @@ -1880,0 +1881,49 @@
 +
-+    /// W4-d34 SEAL (research/347 S3) - the kinds-1-70 wave's skeleton
++    /// W4-d34 SEAL (research/369 S3) - the kinds-1-70 wave's skeleton
 +    /// walkers join the gate: AngryBones/CorruptBunny/Crab ride
 +    /// `update_skeleton` -> `walker_step_fighter` (aiStyle 3, `ai[3]`
 +    /// free); the flyers Harpy/Demon (aiStyle 14) do NOT. AngryBones 31
