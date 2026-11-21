@@ -16986,6 +16986,50 @@ impl ProjectilePool {
                                 );
                             }
                         }
+                        // W4-d2 — `AI()`'s `else if (this.aiStyle == 13)`
+                        // (`Projectile.cs:24636-24829`): the chain weapons
+                        // — the Harpoon 23, the Golem Fist 262, the Boxing
+                        // Glove 271, the Chain Knife 273, the Chain
+                        // Guillotine 481. The outbound flight + the
+                        // per-type distance flips, the return seek + the
+                        // <50 catch, the 262's hitbox burst, the
+                        // itemRotation tail; the movement half is the
+                        // shared 3/13/69/109 blocked-move arm (the return
+                        // WITHOUT a reversal). The player writes ride the
+                        // ChainTick write-back (the FlailTick precedent).
+                        13 => {
+                            if crate::projectile_ai_chain::CHAIN_KINDS
+                                .contains(&self.slots[i].kind)
+                            {
+                                // `player.HeldItem.shoot` (`:22525`) — the
+                                // selected item's shoot, the flail seam's
+                                // snapshot (`:43850`'s selected_shoot).
+                                let held_shoot = flail_inputs.selected_shoot;
+                                let tick = crate::projectile_ai_chain::chain_step(
+                                    &mut self.slots[i],
+                                    world,
+                                    player.as_deref(),
+                                    flail_inputs.control_use_item,
+                                    held_shoot,
+                                    world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+                                );
+                                if let Some(pl) = player.as_deref_mut() {
+                                    if let Some(dir) = tick.facing {
+                                        pl.facing = dir;
+                                    }
+                                    if let Some(rot) = tick.item_rotation {
+                                        pl.item_rotation = rot;
+                                    }
+                                }
+                                if let Some(frames) = tick.dummy_item_time {
+                                    // `SetDummyItemTime(5)` (`:24650`) —
+                                    // the spear-hold seam's write-back
+                                    // (the LAST hold of the tick wins,
+                                    // the C# per-slot overwrite order).
+                                    self.pending_spear_hold = Some(frames);
+                                }
+                            }
+                        }
                         // `AI()`'s `else if (this.aiStyle == 7)`
                         // (`Projectile.cs:24230-24233`) ->
                         // `AI_007_GrapplingHooks` — the grappling hooks.
@@ -23194,6 +23238,21 @@ impl ProjectilePool {
                     idx as u16,
                     rng,
                 );
+                // W4-d2 — `StatusNPC`'s chain-weapon debuffs
+                // (`Projectile.cs:11282-11288`, called at `:13580` —
+                // PRE-strike like the dart/flare arms above): the Golem
+                // Fist's 1/3 Confused (31, 60 × (int)(Next(10,21)·0.1) —
+                // the duration roll ONLY on a hit, the double truncation
+                // verbatim) and the Harpoon's unconditional Bleeding
+                // (30, 60 × Next(8,13)).
+                if self.slots[slot].kind == GOLEM_FIST && rng.next_range(0, 3) == 0 {
+                    let t = 60 * ((rng.next_range(10, 21) as f64) * 0.1) as i32;
+                    npcs[idx].buffs.add_buff(31, t);
+                }
+                if self.slots[slot].kind == HARPOON {
+                    let t = 60 * rng.next_range(8, 13);
+                    npcs[idx].buffs.add_buff(30, t);
+                }
                 // S1-P-i28 — `KillOldestJavelin` (`Projectile.cs:13979-13990`,
                 // `:15074-15101`): the bone javelin caps the sticks on one NPC
                 // at 6 — the 6th stick kills the oldest (lowest timeLeft).
@@ -23266,6 +23325,30 @@ impl ProjectilePool {
                     p.damage = (p.damage as f64 * 0.9) as i32;
                 }
                 p.penetrate -= 1;
+                // W4-d2 — `Damage_PVE_Inner`'s chain-weapon return arms
+                // (`Projectile.cs:14148-14164`), AFTER the penetrate
+                // decrement and BEFORE the `penetrate == 0` stop (the C#
+                // `keepIterating = false` still runs the aiStyle chain for
+                // THIS hit). The harpoon's own type-23 arm precedes the
+                // generic aiStyle-13 arm in the else-if chain: it returns
+                // only once penetrate is spent (≤ 0), zeroing the outbound
+                // velocity and re-arming penetrate −1; every other chain
+                // kind returns on EVERY landed hit (`ai[0] = 1`).
+                if p.kind == HARPOON {
+                    // `:14148-14159`.
+                    if p.penetrate <= 0 {
+                        if p.ai[0] == 0.0 {
+                            p.vel = Vec2::ZERO;
+                        }
+                        p.penetrate = -1;
+                        p.ai[0] = 1.0;
+                        p.net_update = true;
+                    }
+                } else if proj_data(p.kind).is_some_and(|d| d.ai_style == 13) {
+                    // `:14161-14164`.
+                    p.ai[0] = 1.0;
+                    p.net_update = true;
+                }
                 if p.penetrate == 0 {
                     break;
                 }
@@ -24641,6 +24724,96 @@ mod tests {
             assert!(npc.hp < 10_000, "kind {kind} lands");
             assert_eq!(npc.immune[0], want, "kind {kind}: the per-type arm");
         }
+    }
+
+    /// W4-d2 — `Damage_PVE_Inner`'s chain-weapon return arms
+    /// (`Projectile.cs:14148-14164`): every landed hit on a melee chain
+    /// (262/271/273/481) arms `ai[0] = 1` AFTER the penetrate decrement;
+    /// the harpoon returns only once its penetrate 3 is spent, zeroing
+    /// the outbound velocity and re-arming penetrate −1.
+    #[test]
+    fn w4_d2_the_chain_hit_arms_the_return_after_the_decrement() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(GOLEM_FIST, npc.x, npc.y, 5.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert!(npc.hp < 10_000, "the fist lands");
+        assert_eq!(pool.slots()[slot].ai[0], 1.0, "the hit arms the return");
+        assert!(pool.slots()[slot].net_update);
+        assert_eq!(pool.slots()[slot].penetrate, -2, "−1 decrements to −2, never 0");
+        assert!(pool.slots()[slot].active, "the penetrating chain survives");
+    }
+
+    /// W4-d2 — the harpoon's type-23 arm (`:14148-14159`): the first two
+    /// hits only decrement (3 → 2 → 1); the third spends it (1 → 0),
+    /// zeroes the outbound velocity, re-arms penetrate −1 and returns —
+    /// the `penetrate == 0` stop never fires (the re-arm precedes it).
+    #[test]
+    fn w4_d2_the_harpoon_returns_on_the_third_hit_and_rearms_penetrate() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(HARPOON, npc.x, npc.y, 8.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for hit in 1..=3 {
+            // The local-immunity window (12) blocks re-hits — clear it
+            // between the strikes (the C# test harness convention).
+            pool.local_immunity[slot * 256..(slot + 1) * 256].fill(0);
+            npc.immune[0] = 0;
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            let p = &pool.slots()[slot];
+            if hit < 3 {
+                assert_eq!(p.ai[0], 0.0, "hit {hit}: still outbound");
+                assert_eq!(p.penetrate, 3 - hit);
+                assert_eq!(p.vel.x, 8.0, "the outbound velocity holds");
+            } else {
+                assert_eq!(p.ai[0], 1.0, "the spent penetrate arms the return");
+                assert_eq!(p.penetrate, -1, "the re-arm precedes the == 0 stop");
+                assert_eq!(p.vel, Vec2::ZERO, "the outbound velocity zeroes");
+                assert!(p.active);
+            }
+        }
+    }
+
+    /// W4-d2 — `StatusNPC`'s chain debuffs (`Projectile.cs:11282-11288`)
+    /// as the RNG-mirror witness: the fist's Next(3) gate fires EVERY
+    /// hit, the Next(10,21) duration ONLY on a gate hit; the harpoon's
+    /// Next(8,13) fires every hit. The mirror consumes the identical
+    /// stream (the rabid-roll pattern) — peek equality pins the order.
+    #[test]
+    fn w4_d2_the_chain_debuff_rolls_mirror_the_unified_stream() {
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        let mut mirror = tr_core::UnifiedRandom::new(42);
+        for _ in 0..40 {
+            // The fist: Next(3), then ONLY on 0 the Next(10,21).
+            let gate = rng.next_range(0, 3);
+            assert_eq!(gate, mirror.next_range(0, 3));
+            if gate == 0 {
+                let d = rng.next_range(10, 21);
+                assert_eq!(d, mirror.next_range(10, 21));
+                let ticks = 60 * ((d as f64) * 0.1) as i32;
+                assert!((60..=120).contains(&ticks), "the double truncation: {ticks}");
+            }
+            // The harpoon: the unconditional Next(8,13).
+            let b = rng.next_range(8, 13);
+            assert_eq!(b, mirror.next_range(8, 13));
+            assert!((480..=720).contains(&(60 * b)));
+        }
+        assert_eq!(rng.peek(), mirror.peek(), "RNG streams stay aligned");
     }
 
     #[test]

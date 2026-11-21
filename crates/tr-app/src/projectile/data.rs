@@ -177,6 +177,19 @@ pub const BLUE_FAIRY: u16 = 72;
 pub const PINK_FAIRY: u16 = 86;
 /// `ProjectileID.GreenFairy` (87) — aiStyle 11 (`Projectile.cs:1688-1701`).
 pub const GREEN_FAIRY: u16 = 87;
+// W4-d2 — the aiStyle-13 chain weapons (`ProjectileID.cs:600/1078/1096/
+// 1100/1516`).
+/// `ProjectileID.Harpoon` (23) — aiStyle 13 (`Projectile.cs:1057-1068`).
+pub const HARPOON: u16 = 23;
+/// `ProjectileID.GolemFist` (262) — aiStyle 13 (`Projectile.cs:3463-3473`).
+pub const GOLEM_FIST: u16 = 262;
+/// `ProjectileID.BoxingGlove` (271) — aiStyle 13 (`Projectile.cs:3567-3577`).
+pub const BOXING_GLOVE: u16 = 271;
+/// `ProjectileID.ChainKnife` (273) — aiStyle 13 (`Projectile.cs:3588-3597`).
+pub const CHAIN_KNIFE: u16 = 273;
+/// `ProjectileID.ChainGuillotine` (481) — aiStyle 13
+/// (`Projectile.cs:5561-5571`).
+pub const CHAIN_GUILLOTINE: u16 = 481;
 /// `ProjectileID.RainbowGlowstick` (1089) — aiStyle 14, no alpha override
 /// (`Projectile.cs:10153-10162`); the disco light rides `ProjLight`
 /// (`:16434-16439`). S1-P-i42.
@@ -1666,6 +1679,78 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 (false, -2, false, -1, 0, 0.8),
+            ),
+            // W4-d2 — the aiStyle-13 chain weapons. `Projectile.cs:1057-
+            // 1068` — the Harpoon (23): 4x4, penetrate 3, alpha 255,
+            // ranged, usesLocalNPCImmunity + localNPCHitCooldown 12.
+            HARPOON => (
+                4.0,
+                4.0,
+                13,
+                3,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (true, 12, false, -1, 255, 1.0),
+            ),
+            // `:3463-3473` — the Golem Fist (262): 30x30, penetrate −1,
+            // alpha 255, melee, extraUpdates 1.
+            GOLEM_FIST => (
+                30.0,
+                30.0,
+                13,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `:3567-3577` — the Boxing Glove (271): 20x20, penetrate
+            // −1, alpha 255, melee, scale 1.2f.
+            BOXING_GLOVE => (
+                20.0,
+                20.0,
+                13,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.2),
+            ),
+            // `:3588-3597` — the Chain Knife (273): 26x26, penetrate
+            // −1, alpha 255, melee.
+            CHAIN_KNIFE => (
+                26.0,
+                26.0,
+                13,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `:5561-5571` — the Chain Guillotine (481): 22x22,
+            // penetrate −1, alpha 255, melee, extraUpdates 0 (the AI
+            // arm re-arms it 1/2 per state, `:24663-24673`).
+            CHAIN_GUILLOTINE => (
+                22.0,
+                22.0,
+                13,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
@@ -4301,6 +4386,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d2 — the aiStyle-13 melee chains (`Projectile.cs:
+                    // 3471`/`:3575`/`:3596`/`:5569`).
+                    | GOLEM_FIST | BOXING_GLOVE | CHAIN_KNIFE | CHAIN_GUILLOTINE
             ),
         ranged: matches!(
             kind,
@@ -4312,6 +4400,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | SHURIKEN | THROWING_KNIFE | SNOWBALL
                 | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL
                 | DD2_BOMB
+                // W4-d2 — the Harpoon's `this.ranged = true`
+                // (`Projectile.cs:1065`).
+                | HARPOON
             // W3-i11 round 2 — the ranged census completion (the player-fired
             // rows the first pass missed; the per-hit ranged crit never fired
             // for them). The Sandgun balls (42/65/68/354,

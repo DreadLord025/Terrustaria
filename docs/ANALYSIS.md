@@ -39298,3 +39298,71 @@ Verification: code-only вЂ” no cargo/rustc/tests/graphify invoked. The
 12 witness tests in `projectile_ai_light_pets.rs` are WRITTEN NOT RUN;
 every expected value hand-derived from the cited C# lines.
 
+## The aiStyle-13 chain weapons (W4-d2, 2026-11-21, code-only вЂ” tests written NOT run)
+
+The second missing style of the 11-20 census: **aiStyle 13**
+(`Projectile.cs:24636-24829`) вЂ” the Harpoon (23), the Golem Fist (262),
+the Boxing Glove (271), the Chain Knife (273) and the Chain Guillotine
+(481), in `projectile_ai_chain.rs` behind the dispatch's `13 =>` arm
+(kind-gated to `CHAIN_KINDS`).
+
+* **The head**: the dead-owner / 2000-px leash kill;
+  `SetDummyItemTime(5)` (not the 481) rides the spear-hold seam
+  (`pending_spear_hold`); the alpha-0 `ChangeDir` flip and the
+  itemRotation tail ride the `ChainTick` write-back (the FlailTick
+  precedent вЂ” `pl.facing` / `pl.item_rotation` written at the dispatch).
+  The 481's `extraUpdates` re-arms 1/2 per state every tick.
+* **The outbound state**: the distance-flip else-if chain ported
+  VERBATIM (the generic >700 arm precedes the per-type sub-700 arms вЂ”
+  net: 23 at 1000, 262 at 500, 271 at 200, 273 at 150/remix 300, 481 at
+  525). The `ai[1] > 5 в†’ alpha = 0` fade-in, the melee chains' 8-tick
+  cap (they NEVER reach the generic >=10 gravity вЂ” a verbatim source
+  quirk), the harpoon's 17-tick gravity tail (vy += 0.6, vx *= 0.995),
+  the 262/271 sprite, the 262's post-flip `localAI[0] = -1`.
+* **The return state**: the 262's one-shot burst (inside 150 в†’ в€’1;
+  else `localAI[0] = 200` вЂ” the `damage_hitbox` inflate `:14978-14983`
+  already ported consumes it вЂ” + the Item14 cue; the
+  `HitTilesInACircle` is effectOnly dust, zero explicit rand);
+  `tileCollide = false`; the <50 catch kill; the 20/30 seek; the
+  inverted sprite.
+* **The movement** (`HandleMovement`'s shared 3/13/69/109 arm
+  `:19512-19571`): the blocked axis zeroes (the `collides_rect` probe
+  stand-in for `Collision.TileCollision`, the M4-PROJ-3 deviation), the
+  harpoon sticks (both axes zero), every kind arms `ai[0] = 1` WITHOUT
+  a velocity reversal (only 3/109 reverse) + the Dig thud. The
+  world-edge flag feeds the same response (the boomerang precedent).
+  `AutomaticallyChangesDirection` excludes 13 at `ai[0] == 1` вЂ” the
+  direction freezes on the return.
+* **The on-hit return** (`Damage_PVE_Inner` `:14148-14164`, wired in
+  `damage_pve` AFTER the penetrate decrement, BEFORE the `== 0` stop):
+  the harpoon's own arm returns only at penetrate в‰¤ 0 (the outbound
+  zero + penetrate в€’1 re-arm вЂ” the third hit), every other chain kind
+  returns on EVERY hit. The `StatusNPC` debuffs (`:11282-11288`,
+  pre-strike): the fist's 1/3 Confused (the Next(10,21) duration ONLY
+  on a gate hit, the double truncation verbatim) + the harpoon's
+  unconditional Bleeding (60 Г— Next(8,13)).
+* **Rows** (`data.rs`): 23 в†’ 4Г—4 pen 3 ranged local-12; 262 в†’ 30Г—30
+  melee extra 1; 271 в†’ 20Г—20 scale 1.2; 273 в†’ 26Г—26; 481 в†’ 22Г—22
+  extra 0; all alpha 255, aiStyle 13, stock tileCollide/timeLeft.
+
+RNG: the AI body draws ZERO `Main.rand` (the chain_step signature
+takes no rng вЂ” the structural witness). The two debuff rolls are
+HIT-time draws on the pass's `UpdateProjectiles` stream, mirrored
+against a same-seeded `UnifiedRandom` (peek equality) in
+`w4_d2_the_chain_debuff_rolls_mirror_the_unified_stream`.
+
+Deliberate skips: the dust visuals, `netUpdate` (the field rides), the
+wet/shimmer movement half (the generic Update wet block is unported
+for these kinds вЂ” the Shimmer kill `:22467-22470` is unreachable
+without it), the PVP hit arm (`:14704-14708`, no PVP), the
+`HitTiles`/`HitTilesInACircle` cell scans (effectOnly dust, no state).
+Style 13 is NOT wind-eligible (`:22110-22132`). The spawn rides the
+generic `ItemCheck_Shoot` tail (the rows activate
+`spawn_with_data_ai`; the C# `NewProjectile` box-centring convention
+is the shoot seam's standing form).
+
+Verification: code-only вЂ” no cargo/rustc/tests/graphify invoked. The
+13 witness tests in `projectile_ai_chain.rs` + the 3 in
+`projectile.rs` (`w4_d2_the_chain_*`) are WRITTEN NOT RUN; every
+expected value hand-derived from the cited C# lines.
+

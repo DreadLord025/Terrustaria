@@ -207,6 +207,13 @@ mod projectile_ai_light_items;
 // projectile/data.rs; the dispatch arm (11) is wired in
 // projectile.rs::update. Code-only mode — witnesses written not run.
 mod projectile_ai_light_pets;
+// W4-d2 — the aiStyle-13 chain weapons (the Harpoon 23, Golem Fist 262,
+// Boxing Glove 271, Chain Knife 273, Chain Guillotine 481): the outbound
+// flight + per-type distance flips, the return seek + catch, the 262
+// hitbox burst, the itemRotation tail and the shared blocked-move return
+// (`Projectile.cs:24636-24829` + `:19512-19571`). The on-hit return +
+// StatusNPC debuffs ride projectile.rs::damage_pve. Code-only mode.
+mod projectile_ai_chain;
 // S1-P-i55 golf: the two golf projectile AIs (721/739-752 aiStyle 149,
 // 722 aiStyle 150) + the club strike / tee placement / cup scoring,
 // reusing tr-core's golf.rs + golf_state.rs (code-only round — the
