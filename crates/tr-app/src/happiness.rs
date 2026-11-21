@@ -326,6 +326,21 @@ pub struct Mood {
     pub flags: Vec<MoodFlag>,
 }
 
+/// `ShopHelper.GetNearbyResidentNPCs`'s housingCategory gate
+/// (`ShopHelper.cs:305` + `TownRoomManager.CanNPCsLiveWithEachOther_ShopHelper`,
+/// `TownRoomManager.cs:153-161`): the C# admits a crowd neighbor when
+/// `!CanNPCsLiveWithEachOther(npc, nPC)` — CanLive compares the two
+/// `housingCategory` fields for INEQUALITY (`:155`), so the NEGATED gate
+/// counts only SAME-category neighbors: the town pets (category 1,
+/// `NPC.SetDefaults` `NPC.cs:17224`/`:17308`/`:17494`/`:17607`) crowd each
+/// other, never the humans (category 0), and vice versa. The port's
+/// `town::can_npcs_live_with_each_other` carries the same comparison (the
+/// housing lane's port); no pet kind ships yet, so every ported pair is
+/// 0 == 0 → counted — the filter is live for when pets land.
+fn crowd_neighbor_counts(judge_net_id: i32, other_net_id: i32) -> bool {
+    !crate::town::can_npcs_live_with_each_other(judge_net_id, other_net_id)
+}
+
 /// `ShopHelper.ProcessMood` (`ShopHelper.cs:95-174`) + the personality
 /// traits. `raining`/`sandstorm_happening` ride the scene scan's zone
 /// calculation like the player-side scans. The loveStruck ×0.9 rides the
@@ -430,6 +445,14 @@ pub fn process_mood(
         // `TownRoomManager.cs:153-161`) is inert — no pets ported.
         let town_npc = other.kind.is_town_resident() || other.kind == NpcKind::DD2Bartender;
         if !town_npc || other.kind == NpcKind::TravellingMerchant {
+            continue;
+        }
+        // `:305`'s last gate — `!WorldGen.TownManager.
+        // CanNPCsLiveWithEachOther_ShopHelper(npc, nPC)`
+        // (`TownRoomManager.cs:153-161`): CanLive = the housingCategories
+        // DIFFER, so the mood pass admits only SAME-category neighbors
+        // (pets count toward pets, humans toward humans).
+        if !crowd_neighbor_counts(npc.kind.net_id(), other.kind.net_id()) {
             continue;
         }
         let (ox, oy) = match other.home {
@@ -1261,6 +1284,25 @@ mod tests {
                 "the multiplier {}",
                 mood.multiplier
             );
+        }
+
+        /// `ShopHelper.cs:305` + `TownRoomManager.cs:153-161` — the crowd
+        /// gate admits only SAME-housingCategory neighbors (the C# negates
+        /// CanLive, which is category INEQUALITY). Humans count humans;
+        /// a pet never crowds a human and vice versa; pets crowd pets.
+        #[test]
+        fn the_crowd_gate_filters_by_housing_category() {
+            // Human × human (Guide 22, Nurse 18 — both category 0).
+            assert!(crowd_neighbor_counts(22, 18));
+            // Human × pet (TownCat 637, category 1 — `NPC.cs:17224`):
+            // CanLive = true → the negated mood gate DROPS the pet.
+            assert!(!crowd_neighbor_counts(22, 637));
+            assert!(!crowd_neighbor_counts(637, 22));
+            // Pet × pet (TownCat 637, TownDog 638): same category → counts.
+            assert!(crowd_neighbor_counts(637, 638));
+            // Every ported town kind is category 0, so the live roster is
+            // unaffected until a pet kind ships (the filter is armed).
+            assert!(crowd_neighbor_counts(22, 550));
         }
 
         /// `BiomePreferenceListTrait.ModifyShopPrice` (`:38-53`) tests the

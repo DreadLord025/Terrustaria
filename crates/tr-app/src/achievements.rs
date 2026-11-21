@@ -429,6 +429,45 @@ impl AchievementManager {
         self.notify(CondKind::Custom(flag))
     }
 
+    /// `Main.Achievements.GetCondition(row, name).Complete()` — the
+    /// ROW-TARGETED completion the `HandleSpecialEvent` arms use
+    /// (`AchievementsHelper.cs:282-400`: each case names ONE row, e.g.
+    /// `:355-357` case 20 → `TALK_TO_NPC_AT_MAX_HAPPINESS`/"Do"), NOT the
+    /// broadcast `notify_custom` (which completes every row listening for
+    /// the flag). `AchievementCondition.Complete` (`AchievementCondition.cs:
+    /// 37-47`) fires `OnComplete` once → `Achievement.OnConditionComplete`
+    /// (`Achievement.cs:93-108`) → the manager's save + event queue.
+    pub fn complete_row_condition(
+        &mut self,
+        row: &'static str,
+        condition: &str,
+    ) -> Option<&'static str> {
+        let mut done = None;
+        for a in &mut self.list {
+            if a.completed || a.name != row {
+                continue;
+            }
+            let mut touched = false;
+            for c in &mut a.conditions {
+                if c.completed || c.name != condition {
+                    continue;
+                }
+                c.value = c.max;
+                c.completed = true;
+                touched = true;
+            }
+            if touched && a.is_completed() {
+                a.completed = true;
+                done = Some(a.name);
+            }
+        }
+        if let Some(name) = done {
+            self.save();
+            self.completed_events.push(name);
+        }
+        done
+    }
+
     /// `((CustomIntCondition)Main.Achievements.GetCondition(row, name)).Value++`
     /// / `+= amount` (`AchievementsHelper.cs:403`, `:413-417`, `:427`).
     pub fn notify_custom_int(&mut self, name: &'static str, amount: i32) -> Option<&'static str> {
@@ -712,6 +751,35 @@ mod tests {
         // I_AM_LOOT rides the `Peek` CustomFlag (`:347`).
         assert_eq!(m.notify_custom("Peek"), Some("I_AM_LOOT"));
         assert_eq!(m.notify_custom("Nope"), None);
+    }
+
+    /// W4-g58: `GetCondition(row, name).Complete()` — the ROW-TARGETED
+    /// completion (`AchievementsHelper.cs:355-357`'s case 20). The "Do"
+    /// flag is shared by nine rows (`PET_THE_PET`, `FIND_A_FAIRY`, …);
+    /// the targeted hook completes ONLY the named row, unlike the
+    /// broadcast `notify_custom`.
+    #[test]
+    fn the_row_targeted_complete_hits_only_the_named_row() {
+        let mut m = AchievementManager::registry();
+        assert_eq!(
+            m.complete_row_condition("TALK_TO_NPC_AT_MAX_HAPPINESS", "Do"),
+            Some("TALK_TO_NPC_AT_MAX_HAPPINESS")
+        );
+        assert!(m
+            .list
+            .iter()
+            .any(|a| a.name == "TALK_TO_NPC_AT_MAX_HAPPINESS" && a.completed));
+        // The other "Do" rows stay open (the broadcast would close them).
+        assert!(!m.list.iter().any(|a| a.name == "PET_THE_PET" && a.completed));
+        assert!(!m.list.iter().any(|a| a.name == "FIND_A_FAIRY" && a.completed));
+        // The event queue carries exactly the one completion; a second
+        // call is a no-op (`AchievementCondition.Complete`'s guard,
+        // `AchievementCondition.cs:39`).
+        assert_eq!(m.take_completed_events(), vec!["TALK_TO_NPC_AT_MAX_HAPPINESS"]);
+        assert_eq!(m.complete_row_condition("TALK_TO_NPC_AT_MAX_HAPPINESS", "Do"), None);
+        // A wrong condition name touches nothing.
+        let mut m2 = AchievementManager::registry();
+        assert_eq!(m2.complete_row_condition("TALK_TO_NPC_AT_MAX_HAPPINESS", "Nope"), None);
     }
 
     /// `CustomIntCondition.Value` (`CustomIntCondition.cs:15-32`): the setter

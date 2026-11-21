@@ -1949,12 +1949,15 @@ impl App {
         std::mem::swap(&mut self.equip.trash, &mut self.mouse_item);
     }
 
-    /// `Player.SetTalkNPC` (`Player.cs:4375-4394`): the latch write plus
+    /// `Player.SetTalkNPC` (`Player.cs:4375-4404`): the latch write plus
     /// the `currentShoppingSettings` refresh — `-1` resets to `NotInShop`
     /// (`:4383-4386`), a live index runs `ShopHelper.GetShoppingSettings`
-    /// (`:4389`). The bestiary chat tracker (`:4381`), the ≤0.82
-    /// achievement (`:4391-4394`) and the portrait reset (`:4397+`) ride
-    /// their own lanes.
+    /// (`:4389`). The ≤0.82 achievement (`:4391-4394`,
+    /// `AchievementsHelper.HandleSpecialEvent(this, 20)` → the
+    /// `TALK_TO_NPC_AT_MAX_HAPPINESS` "Do" row, `AchievementsHelper.cs:
+    /// 355-357`) fires here on the LATCHED adjustment; the bestiary chat
+    /// tracker (`:4381`) and the portrait reset (`:4397+`) ride their own
+    /// lanes.
     pub(crate) fn set_talk_npc(&mut self, idx: Option<usize>) {
         self.talk_npc = idx;
         self.shopping_settings = match idx {
@@ -1977,6 +1980,32 @@ impl App {
                 )
             }
         };
+        // `Player.cs:4391-4394`: `nPC != null && nPC.type >= 0 &&
+        // !NPCID.Sets.BoundTownNPCs[nPC.type] && !nPC.homeless &&
+        // PriceAdjustment <= 0.82f` → HandleSpecialEvent(20). The bound set
+        // (`NPCID.cs:10441`: 105/123/106/685-687/354/376/579/589) — the
+        // port ships six of them; the homeless stand-in is `home == None`.
+        if let Some(i) = idx {
+            let n = &self.npcs[i];
+            let bound = matches!(
+                n.kind,
+                crate::npc::NpcKind::BoundGoblin
+                    | crate::npc::NpcKind::BoundWizard
+                    | crate::npc::NpcKind::BoundMechanic
+                    | crate::npc::NpcKind::WebbedStylist
+                    | crate::npc::NpcKind::SleepingAngler
+                    | crate::npc::NpcKind::SleepingGolfer
+            );
+            if !bound
+                && n.home.is_some()
+                && self.shopping_settings.price_adjustment <= 0.82
+            {
+                let _ = self.achievements.complete_row_condition(
+                    "TALK_TO_NPC_AT_MAX_HAPPINESS",
+                    "Do",
+                );
+            }
+        }
     }
 
     /// `Main.SetNPCShopIndex(-1)`'s equivalent. The reforge menu force-
@@ -5729,6 +5758,55 @@ mod s1_e_18_tests {
             app.nurse_heal_cost() < cost,
             "the re-latch reads the housed mood"
         );
+    }
+
+    /// W4-g58: `Player.SetTalkNPC`'s ≤0.82 achievement arm
+    /// (`Player.cs:4391-4394` → `HandleSpecialEvent(20)` →
+    /// `TALK_TO_NPC_AT_MAX_HAPPINESS`/"Do", `AchievementsHelper.cs:355-357`).
+    /// The homeless sentinel (1.5) never fires it; a max-happiness housed
+    /// NPC does — and ONLY that row completes (the "Do" flag is shared).
+    #[test]
+    fn the_max_happiness_talk_fires_only_its_achievement_row() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let mut nurse = crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 32.0, 100.0, 1, 0.0);
+        nurse.hp = nurse.max_hp;
+        nurse.home = None; // the NoHome sentinel → 1.5
+        app.npcs.push(nurse);
+        app.set_talk_npc(Some(0));
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        assert!(!app
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "TALK_TO_NPC_AT_MAX_HAPPINESS" && a.completed));
+        // House her beside her LOVED Arms Dealer (`AllPersonalitiesModifier
+        // .cs:61-82`, Love ×0.88) and a Princess (the universal LikePrincess
+        // ×0.94, `:37-40`): LoveSpace ×0.95 × 0.88 × 0.94 = 0.78584 → 0.79
+        // ≤ 0.82 (`ShopHelper.MaxHappinessAchievementPriceMultiplier`).
+        app.npcs[0].home = Some((2, 6));
+        let mut arms = crate::npc::Npc::new(crate::npc::NpcKind::ArmsDealer, 48.0, 100.0, 1, 0.0);
+        arms.hp = arms.max_hp;
+        arms.home = Some((3, 6));
+        app.npcs.push(arms);
+        let mut princess = crate::npc::Npc::new(crate::npc::NpcKind::Princess, 64.0, 100.0, 1, 0.0);
+        princess.hp = princess.max_hp;
+        princess.home = Some((4, 6));
+        app.npcs.push(princess);
+        app.set_talk_npc(Some(0));
+        assert!(
+            app.shopping_settings.price_adjustment <= 0.82,
+            "the housed loved-neighbor mood {} is in the band",
+            app.shopping_settings.price_adjustment
+        );
+        assert!(app
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "TALK_TO_NPC_AT_MAX_HAPPINESS" && a.completed));
+        // The row-targeted hook: the other "Do" rows stay open.
+        assert!(!app.achievements.list.iter().any(|a| a.name == "PET_THE_PET" && a.completed));
+        assert!(!app.achievements.list.iter().any(|a| a.name == "FIND_A_FAIRY" && a.completed));
     }
 }
 
