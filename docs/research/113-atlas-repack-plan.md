@@ -1,11 +1,17 @@
 # 113 — Atlas repack plan: the W4 union overflows the 8192 strict-GPU bound
 
-Status: 🔄 measurement DONE, implementation contract for the merger wave.
-Branch: `task/W4-d35-npc-kinds-71-140` (ATLAS-REPACK phase). Base: `a725acb0`
-(wave-3 landing). Code-only mode: no cargo/tests run; every number below is
-measured by the pinned sim harness over the REAL retail `.xnb` dims (LZX
-first-frame decoder, `tools/_d35_atlas_sim_pinned.js`), with `verify()`
-(no overlap incl. PAD, in-bounds) and double-run determinism on every layout.
+Status: 🔄 measurement DONE (incl. the BG-STYLE extension, §7-9),
+implementation contract for the merger wave.
+Branch: `task/W4-d35-npc-kinds-71-140` (ATLAS-REPACK phase + extension
+phase). Base: `a725acb0` (wave-3 landing). Code-only mode: no cargo/tests
+run; every number below is measured by the pinned sim harness over the
+REAL retail `.xnb` dims (LZX first-frame decoder,
+`tools/_d35_atlas_sim_pinned.js`), with `verify()` (no overlap incl. PAD,
+in-bounds) and double-run determinism on every layout. The bg extension
+(§7-9) is measured by `tools/_d35_bg_inventory.js` →
+`tools/_d35_bg_inventory.json` (commit `239108c2` + the underworld
+own-page follow-up, 27 scenarios, same verify + determinism
+discipline, boundary split recursed to N pages).
 
 ## 1. The crisis, re-measured
 
@@ -356,6 +362,330 @@ implementation is the MERGER WAVE's job: it touches the hot render path
 landed packing witnesses — a coordinated change that must land AFTER
 the W4 sheet branches merge (or simultaneously with them), not on a
 single NPC-kind branch. This doc is its implementation contract.
+
+EXTENSION PHASE (commit `239108c2` + the doc commits after it): §7 the
+bg-style demand (the g71/g72 UNWIRED blockers re-measured on the merged
+base — the full 358-sheet inventory, per-style areas, realistic
+per-world budgets), §8 the lazy-load architecture (the C#
+`AssetInitializer`/`LoadBackground` census — vanilla loads ONLY the
+drawn styles, the port contract is load-on-demand style sheets, NOT
+all-407), §9 the g72 underworld escape (bg-target render-to-texture)
+and the d38c cross-note (its maxrects-8170 fit is superseded).
+
+## 7. BG-STYLE demand: the g71/g72 blockers re-measured on the merged base
+
+The g71 doc-sweep (`origin/task/W4-g71-bg-layers-2`,
+`docs/research/92-doc-sweep-bg.md` §2, commit `e2d085ae`) measured
+non-default surface styles at **+336…+1503 px** over a **7847 px**
+style-0 baseline (corrupt-4 alone **8193** — one pixel over; the
+one-each rolled world **12345**). The g72 lane
+(`origin/task/W4-g72-bg-layers-3`) measured the Underworld style-0 set
+alone at **8424** over its **7530** baseline. **Both baselines predate
+the merged W4 wave** — the same asset set on this branch's HEAD is
+8188 px (§1), and the merged worst case is skyline 9478 / boundary
+pages 8192+1298. The extension re-measures every style add-on on the
+**merged base** (font + pushed-339 + d40-56 + d35-deferred-12, 9904
+sheets, 74.72 Mpx): `tools/_d35_bg_inventory.js` →
+`tools/_d35_bg_inventory.json` (27 scenarios, `verify()` + double-run
+determinism on every layout, boundary split recursed to N pages).
+
+### 7.1 The bg-sheet inventory (all style variants, REAL dims)
+
+**358 sheets** — `Background_0..343` (344, `Main.maxBackgrounds`,
+`Main.cs:66583`) + `Backgrounds/Underworld 0..13` (14,
+`TextureAssets.cs:616`). **0 missing, all decode.** Total padded area
+**200.70 Mpx → area bound 24508 px**: the bg corpus ALONE needs ≥4
+pages (measured skyline 38974, boundary pages 7891/8049/7961/5894).
+The style tables below are transcribed verbatim from `WorldGen.setBG`
+(`WorldGen.cs:7215-7637`), `SetForestBGSet` (`:7639-7768`), the cavern
+sets (`Main.cs:53812-54015`) and the animation families
+(`Main.cs:19658-19735`, `:61371-61376`); the full per-sheet dims live
+in the JSON's `inventory` + `styleRows` arrays.
+
+Per-family style counts and padded areas (Mpx; the roll ranges are
+`RandomizeBackgrounds` `WorldGen.cs:7947-8012` +
+`RollRandomForestBGStyle` `:8034-8058`):
+
+| family | styles (roll-reachable) | sheets/style | area/style Mpx | heaviest style |
+|---|---|---|---|---|
+| forest ×4 sets | 0-13 + 31/51/71/72/73 (19 rows) | 3-9 (anim families inflate 4/5/51 to 8-9, 6 to 7) | 1.77-7.14 | **10** (280/281/282, 7.14) |
+| corrupt | 0-4, 51, 52 (7) | 3 | 1.28-2.06 | 4 (240/241/242, 2.06) |
+| jungle | 0-6 (7) | 3 | 1.65-7.39 | **5** (271/272/273 animated, 7.39) |
+| snow | 0-8 + 21/22/31/32/41/42 (15) | 2-5 (mnt+bg) | 1.04-2.84 | 5 (258/259/260, 2.84) |
+| hallow | 0-5 (6) | 2-3 | 1.12-6.73 | **2** (219/220/221 animated, 6.73) |
+| crimson | 0-6 (7) | 2-3 | 1.28-6.47 | **6** (339/338/337 animated, 6.47) |
+| desert | 0-4, 51/52/53 (8) | 2-8 (51-53 = 4 variant rows ×2) | 0.71-**12.33** | **51/53** (8 sheets incl. three 2048×1200 animated, 12.33) |
+| ocean | 0-7 (8) | 1 | 0.62-1.17 | 5 (283, 1.17) |
+| mushroom | 0-4 (5) | 3 | 1.67-3.33 | 2 (234/235/236 animated, 3.33) |
+| underworld | 0-2 (3) | 5 (9 shared between 1/2) | 6.14-**12.33** | **1** (three 2048×1716, 12.33) |
+| cavern | 0-21 (22) + ice 0-3 / jungle 0-1 / hell 0-2 axes | 4-7 | 0.07-0.10 | all ≈0.10 (tiny 128-256 px tiles) |
+
+The cavern sets are CHEAP (≤0.101 Mpx per style — the sheets are small
+tiled backdrops); the demand is dominated by the surface tree-line
+strips (1024-2048 wide × 600-1600 tall, the animated ones 2×2 frames)
+and the Underworld parallax sheets. The single biggest bg sheet is
+`Background_281` (forest style 10's animated hill, **2048×2048**,
+4.20 Mpx); the biggest Underworld sheet is `Underworld 1`
+(**2048×1900**, 3.90 Mpx).
+
+### 7.2 The g71 single-style add-ons ON THE MERGED BASE
+
+Same add-on sets as g71's table, packed into the merged worst case
+(skyline unbounded → boundary pages; every row verified + deterministic):
+
+| add-on | new sheets | skyline | Δ vs merged 9478 | boundary pages | g71's old number |
+|---|---|---|---|---|---|
+| corrupt 4 (240/241/242) | +3 | **9900** | +422 | 8186 / 1700 | 8193 (+346 over 7847) |
+| snow 7 (267/266/268+269/270) | +5 | 9895 | +417 | 8192 / 1798 | 8323 (+476) |
+| hallow 5 (327/326/325) | +3 | 10050 | +572 | 8192 / 1848 | 8370 (+523) |
+| snow 5 (258/259/260) | +3 | 9820 | +342 | 8192 / 1684 | 8410 (+563) |
+| jungle 6 (302/301/300) | +3 | 10252 | +774 | 8178 / 2146 | 8478 (+631) |
+| crimson 6 (339/338/337) | +3 | 10321 | +843 | 8184 / 2204 | 8729 (+882) |
+| desert 51 (8 variant sheets) | +8 | **11089** | +1611 | 8164 / 2997 | 9350 (+1503) |
+| desert 4 (oasis 248/249/250) | +3 | 9740 | +262 | 8188 / 1572 | 8186 (+339, "fits") |
+| mushroom 4 (321/320/319) | +3 | 9770 | +292 | 8190 / 1619 | 8183 (+336, "fits") |
+| ocean 5 (283) | +1 | 9777 | +299 | 8152 / 1642 | 8008 (+161, "fits") |
+| one-each 8 biomes (g71's rolled world) | +29 | **14067** | +4589 | 8176 / 6247 | 12345 (+4498) |
+
+**Reading**: on the merged base EVERY add-on overflows page 0 — even
+g71's three "fits" rows (desert-4/mushroom-4/ocean-5) — because the
+merged wave already consumes the headroom their 7847 baseline had.
+But **every single-style and one-each world still fits in TWO pages**
+(the boundary page 1 grows from 1298 to at most 6247 px). The
+two-page contract of §1-3 survives the whole g71 surface demand.
+
+### 7.3 Realistic per-world budgets (the rolls, not one-each-of-the-heaviest)
+
+A real world rolls ONE style per family (four pairwise-distinct forest
+styles, `WorldGen.cs:7949-7964`) plus the cavern machine's picks. Two
+worlds measured, both including the underworld set and the full
+reachable cavern set (4 cave bands + snow/jungle/glowshroom + beach +
+deep rows + the boot style-0 set):
+
+| world | new bg sheets | bg area | skyline | boundary pages (mixed) | own-bg-page form (§8.4) |
+|---|---|---|---|---|---|
+| **seed-42** (g71's Python-reference rolls: forest [2,7,51,11], corrupt 51, jungle 5, snow 5, hallow 4, crimson 4, desert 4, ocean 2, mushroom 2, uw 2; cave bands [1,4,3,0], ice 3, hell 2, jungle 0) | +93 | 42.77 Mpx | 15636 | 8152 / **7225** (2 pages) | pages 0/1 unchanged + **one bg page 7448 px** (3 total) |
+| **worst-world** (heaviest rolled style per family: forest [10,5,51,4], corrupt 4, jungle 5, snow 5, hallow 2, crimson 6, desert 51, ocean 5, mushroom 2, uw 1; 4 heaviest cave bands + ALL beach/deep rows — the drunk-hardmode upper bound) | +101 | 70.57 Mpx | **19087** | 8188 / 8184 / **3099** (3 pages) | pages 0/1 unchanged + **two bg pages 8135+2138** (4 total) |
+| ALL-VARIANTS (every style of every family + all cavern axes + all underworld — the load-everything upper bound, NOT the contract) | +307 | 181.48 Mpx | 34399 | 7828/8160/7985/8192/570 (5 pages) | 4 own bg pages (6 total) |
+
+**The realistic per-world budget is 3 pages, 4 in the adversarial
+worst case** — NOT the 5+ an all-styles loader would need. The C#
+never loads all styles (§8); the port must not either. The mixed form
+re-packs the union with the bg sheets interleaved (bg strips are tall,
+they dominate page 0 and push NPC sheets down); the own-bg-page form
+keeps the §1-3 union layout BIT-IDENTICAL on pages 0/1 and appends the
+world's bg set as fresh pages — the recommended shape (§8.4).
+
+### 7.4 The g72 underworld numbers on the merged base
+
+| set | sheets | area | skyline | boundary pages | own bg page |
+|---|---|---|---|---|---|
+| style 0 (Underworld 0-4) | 5 | 6.14 Mpx | 10407 | 8192 / 2313 | 1904 px |
+| style 1 (Underworld 5-9) | 5 | **12.33 Mpx** | **11195** | 8118 / 3312 | **1722 px** |
+| style 2 (Underworld 10-13+9) | 5 | 7.06 Mpx | 10402 | 8191 / 2329 | 1722 px |
+| all three (14 distinct) | 14 | 24.64 Mpx | 12544 | 8188 / 4744 | — |
+
+g72's "style-0 set alone measures 8424" was against its 7530 baseline;
+on the merged base style 0 adds +929 px (9478→10407) and the heaviest
+style 1 adds +1717 (→11195). **Every single underworld style fits on
+ONE extra page** (≤3312 px mixed, ≤1904 px own-page — style 1's three
+2048×1716 sheets stack into a narrower-but-shorter column than style
+0's 2048×1900 giant) — the atlas-block is a SINGLE-page artifact,
+exactly as g72's module docs suspected.
+The render-to-target escape (§9.1) remains the faithful alternative
+for the underworld stack specifically.
+
+## 8. Lazy-load architecture: C# loads ONLY the rolled/drawn styles
+
+### 8.1 The AssetInitializer census (exact)
+
+- `AssetInitializer.Load(asyncLoad)` (`Main.cs:10855`) →
+  `LoadTextures(mode)` where mode = AsyncLoad(2)/ImmediateLoad(1)
+  (`AssetInitializer.cs:78-85`).
+- **ALL 344 background assets register `DoNotLoad`**:
+  `AssetInitializer.cs:239-242` —
+  `for (num25 = 0; num25 < TextureAssets.Background.Length; num25++)
+  TextureAssets.Background[num25] = LoadAsset<Texture2D>(
+  "Images/Background_" + num25, AssetRequestMode.DoNotLoad);`
+  (`Background.Length = Main.maxBackgrounds = 344`,
+  `TextureAssets.cs:683`, `Main.cs:66583`).
+- **ALL 14 Underworld assets register `DoNotLoad`**:
+  `AssetInitializer.cs:390-393` (`"Images/Backgrounds/Underworld " +
+  num49`).
+- The ONLY eager background loads at boot: **`LoadBackground(0)` and
+  `LoadBackground(49)`** (`AssetInitializer.cs:422-423`).
+- `LoadAsset` is a thin `Main.Assets.Request<T>(name, mode)`
+  (`AssetInitializer.cs:656-659`); `Request`'s default mode is
+  `ImmediateLoad` (`AssetRepository.cs:82`) — so every later
+  `LoadBackground` call loads synchronously on first use.
+
+### 8.2 The LoadBackground census (per-draw, idempotent)
+
+`Main.LoadBackground(int i)` (`Main.cs:59039-59074`): guards
+`i >= 0 && State == NotLoaded`, requests the asset, caches
+`backgroundWidth/Height[i]`, and halves both for the 21 animated ids
+(219-221/235/271-273/281/302/303/305/307/309/311/313/315/317/326/
+337/338/341 — the 2×2 frame sheets, `GetBackgroundRect`
+`Main.cs:61220-61262`). **Never called with a style the world did not
+roll.** Call-site census (49 sites):
+
+| caller | ids loaded | when |
+|---|---|---|
+| `DrawBackground_UpdateBackgroundStyles` (`:54009-54015`) | the 7-slot cavern set of the CURRENT + OLD underground style (`:53812-54008` tables) | every frame the cavern bg draws; the old set rides the `ugBackTransition` cross-fade |
+| `OldDrawBackground` (`:54344-54349`) | the 6-slot legacy set (`BackgroundEnabled == false`) | same, legacy path |
+| `DrawSurfaceBG` cloud arm (`:59376-59377`) | `cloudBG[0..1]` = **112/113** (fixed, `Main.cs:66676`) | `cloudBGAlpha > 0` |
+| hallow shimmer (`:59487-59488`) | **18/19** (fixed) | `HolyTileCount > 0` |
+| forest hill (`:59498`) | `treeMntBGSet1[1]` (rolled) | set > -1 |
+| `DrawSurfaceBG_DrawBackMountainsLayer` (`:59729`) | any far-mountain id: the four sets' mnt rows, **23/24/25/42**, snowMnt, **246/247** (hallow-3) | per far layer with alpha > 0 (`:59804-59963`) |
+| `DrawSurfaceBG_{Mushroom,Crimson,Snow,Hallow,Jungle,Desert,Corrupt,Forest}` (`:60038…:61451`) | the rolled 3-row style arrays (`setBG` tables) | per front layer with `bgAlphaFrontLayer[l] > 0` (`:59529-59599`) |
+| `DrawSurfaceBG_GoodEvilDesert` (`:60885/:60907`) | **26/27** (fixed fallback) when the desert variant row is absent | evil/hallow desert cross-fade |
+| forest 173 frame swap (`:61374`) | **251 + counter/10 % 4** | forest style 6's tree line |
+| `DrawUnderworldBackgroundLayer` (`:52687-52691`) | `TextureAssets.Underworld[rolled]` — direct `Request`, NOT LoadBackground | the underworld pass runs |
+
+**The vanilla working set at any instant**: ≤7 cavern ids ×2
+(cross-fade) + ≤3 ids ×10 front layers + ≤10 far ids + 5 underworld
+≈ **≤60 sheets**, and the lifetime set of a world is bounded by its
+ROLLED styles (the §7.3 per-world numbers), never the 358-sheet
+corpus. The four desert variant rows (51-53) are the one place a
+single roll expands to 8 sheets — all four rows load because the
+cross-fade can show any of them (`:60870-60884`).
+
+### 8.3 What the port does today (the census of the gap)
+
+- `load_world_sheets` (`assets.rs:128-223`) ALREADY loads per-world
+  selectively — but only the **five owned surface families**
+  (corrupt/jungle/hallow/crimson/mushroom, `world.rs:1442-1456`), from
+  the world's persisted style bytes. g70's branch extends it to the
+  four forest sets + animation families (its `load_world_sheets`
+  `:62-79`); g71 adds snow/desert/ocean style bytes. The merged
+  loader is the union of those arms.
+- `STATIC_SHEET_NAMES` (`assets.rs:239-280`) pins the style-0/default
+  bg ids (0/1/2/3/4/6/7/8/20/21/22/23/28/35-39/50-52/112/113/125-127/
+  185-187) — the always-loaded core, matching the C#'s fixed ids.
+- The cavern machine (`render/bg.rs`) pins `undergroundBackground = 0`
+  and the underworld stack is UNWIRED (g72) — their sheet demand is
+  NOT yet in the loader. When they wire, their ids join the world
+  half, NOT the static half.
+- The boot rebuild (`app/mod.rs:4642-4705`) re-packs
+  `world ++ static ++ font` on every world swap with the static half
+  cached — the per-world bg set is already the only world-dependent
+  part of the pack. **The swap path is the natural lazy-load seam.**
+
+### 8.4 The port contract: load-on-demand style sheets (extends §3)
+
+The merger's 5-step contract (§3) gains a **step 6** and a page-
+assignment rule:
+
+6. **Per-world bg pages (the lazy-load form)**: the bg style sheets
+   do NOT join the union input list. `Atlas::build_ref` packs the
+   union (static + world tiles/walls/NPC/etc.) into pages 0..N exactly
+   as §3 step 1, then appends the world's rolled bg set as FRESH
+   pages (N+1..M), boundary-split recursively. Measured (§7.3): the
+   union stays 8192/1298; a realistic world adds ONE page (7448 px),
+   the adversarial worst adds TWO (8135+2138). On a world swap the
+   bg pages are re-packed from the new world's rolls while pages
+   0..N are layout-stable for a fixed union input — the same
+   determinism contract as §3 step 1, per page.
+   - **Which ids**: the merged `load_world_sheets` bg arm = the five
+     owned families + g70's four forest sets (+94/180 animation
+     families + 173 frames) + g71's snow/desert/ocean + g72's cavern
+     picks (4 bands + snow/jungle/glowshroom + the reachable
+     beach/deep rows for the world's evil/hallow state + hell rows)
+     + the rolled underworld set. The fixed ids (18/19/24/25/42/
+     246/247/26/27/112/113) stay wherever they are today (static or
+     world) — they are ≤11 sheets, not the demand driver.
+   - **NOT all-407**: the 358-sheet corpus is 200.70 Mpx (≥4 pages
+     alone, §7.1); loading it would cost ~800 MB of atlas and pack
+     styles no world ever shows. The C# census (§8.1-8.2) is the
+     1:1 justification: `DoNotLoad` registration + per-draw
+     `LoadBackground` IS load-on-demand.
+   - **True per-draw laziness is NOT required**: the C# loads a
+     style's sheets the first time its layer draws; the port may
+     pack the whole ROLLED set at world load (a superset — the
+     cross-fade can reach every rolled row within seconds). This
+     keeps the atlas immutable during play (no mid-frame re-pack,
+     no UV invalidation, the G6 cache untouched). A future
+     memory-tightening pass could defer the cavern/underworld pages
+     until first descent, but that is an optimisation, not the
+     contract.
+   - **`SheetRect.page` already carries the assignment** (§2): bg
+     lookups (`sky_tex`, `BgTex`) read the page like every other
+     sheet; no new lookup machinery. The `MAIN_PAGE_COUNT` constant
+     becomes `atlas.pages.len()` at runtime (the layer-range
+     encoding's font offset must use the ACTUAL page count, not a
+     compile-time 2 — §2's "bumped when page 3 arrives" note is
+     superseded: with per-world bg pages the count varies by world,
+     so the uniform form is REQUIRED, not optional).
+   - **Memory**: pages 0/1 ≈311 MB (§3) + one bg page ≤268 MB
+     (7448 px ≈ 244 MB realistic) — ~555 MB realistic, ~640 MB
+     worst-case (two bg pages). The font array's 256 MB/layer is
+     the existing budget shape; if this tightens, the bg pages are
+     the first candidates for the §9.1 render-to-target escape
+     (they are exactly the sheets the C# draws outside the tile
+     atlas anyway).
+
+**What this does NOT change**: §3 steps 1-5 stand as written for the
+union pages; the deferred-12 admission, the d40 forecast, the
+mechanical sweep are all unaffected. The bg extension only adds
+pages AFTER the union and the runtime page-count uniform.
+
+## 9. Cross-lane notes
+
+### 9.1 The g72 underworld escape: bg-target render-to-texture
+
+g72's prep (read on `origin/task/W4-g72-bg-layers-3`, NOT touched):
+`render/underworld_bg.rs` (the verbatim `DrawUnderworldBackground`/
+`Layer` geometry, `Main.cs:52665-52796`, UNWIRED — its module doc
+cites the 8424 single-page overflow), `render/bg_styles.rs` (the
+22-case cavern style machine, `Main.cs:53812-54095`, UNWIRED), and
+`render/bg_target.rs` (the capture/consume seams, commit `86a4471d`).
+The bg_target census CORRECTS the lane's earlier routing claim: the
+underworld stack lands in **screenTarget** (DrawBG under
+`Filters.Scene.BeginCapture`, `Main.cs:62098-62100`/`:64049-64053`;
+`FilterManager.EndCapture` composites skyTarget THEN screenTarget,
+`FilterManager.cs:146-152`), the cavern tree in **backgroundTarget**
+(`WorldSceneLayerTarget`, `Main.cs:57290`→`:55200-55218`).
+
+**The escape, documented**: the C# draws the underworld stack
+through `Main.spriteBatch` under the sky matrix into screenTarget —
+the sheets are NEVER in the tile atlas. The port's faithful shape is
+the same: draw the 5 rolled Underworld sheets as plain textures into
+the d69/S1-G-13 target family (`tr_render::targets`, landed:
+`RenderTargetFamily`/`LayerCamera`/`layer_composite_position`), NOT
+as atlas pages. Cost: 5 standalone textures (≤12.33 Mpx ≈ 49 MB for
+style 1) + one composite pass — vs +1717 px of atlas (§7.4). The
+g72 modules are already pure-plan adapters (`UnderworldLayerPlan`
+carries src/scale/positions); the wiring lane binds them to a
+texture-array draw instead of `BgTex` lookups. **This escape is
+underworld-specific**: the surface/cavern style sheets draw through
+the SAME `Main.spriteBatch` but the port's sky pass already reads
+them from the atlas — for them the §8.4 per-world pages are the
+cheaper path (no new draw path, the existing sky_tex plumbing
+works). The two forms compose: union pages 0/1 + per-world surface/
+cavern bg pages + the underworld stack in screenTarget.
+
+### 9.2 d38c cross-note: the maxrects-8170 fit is SUPERSEDED
+
+d38's sheets phase (`origin/task/W4-d38-npc-kinds-281-350`, commits
+`96a48386`/`518df928`) measured the cumulative d38+d35 set at skyline
+**8452** (+260 over) and proposed **maxrects BAF 8170 (22 px
+headroom)** as the single-page fix. **That fit is superseded by this
+plan**: the re-extracted 26-branch union (339 names, §1) is 72.34
+Mpx — area bound 8835 — so NO single-page packer fits the merged
+wave, maxrects included (measured 9998 on the union, WORSE than
+skyline's 9382, §1). d38's 35 sheets are already IN the union
+(Appendix A); its deferred siblings ride the boundary split like
+everyone else. The d38 branch's ANALYSIS note should point here at
+merge time; the maxrects promotion it asked for landed in the pinned
+harness (§1) as a measured comparison, not the production packer.
+
+### 9.3 Ownership boundaries (unchanged)
+
+The bg ROLLS stay g71's UNWIRED `worldgen/bg_rolls.rs` (the RNG-shift
+pin-move is a worldgen lane's call, its §2); the cavern/underworld
+DRAW machines stay g72's UNWIRED modules; the forest sets/animation
+families stay g70's. This extension owns ONLY the measurement + the
+merger contract — no Rust touched, no rolls wired, no pins moved.
 
 ## Appendix A - the full 407-name union list (priority order: padded area desc)
 

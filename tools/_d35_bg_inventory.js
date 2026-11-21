@@ -477,8 +477,10 @@ const fn = new Function('require', '__dirname', 'pushed', 'D40_IDS', 'D35_DEFERR
     'seed-42 world bg set on its own page(s), merged base untouched on pages 0/1');
   pageForm('pageform+worst-world', [...ws.bg, ...ws.uw, ...wc],
     'worst-case world bg set on its own page(s)');
-  pageForm('pageform+underworld1', UNDERWORLD[1].map(uwName),
-    'g72 style-1 underworld set on its own page');
+  for (const s of [0, 1, 2]) {
+    pageForm('pageform+underworld' + s, UNDERWORLD[s].map(uwName),
+      'g72 style-' + s + ' underworld set on its own page');
+  }
   pageForm('pageform+ALL-VARIANTS', allNames,
     'the load-everything upper bound on its own pages (NOT the contract)');
 
