@@ -586,6 +586,15 @@ pub(crate) fn draw_tiles(
     let mut vine_roots: Vec<(i32, i32)> = Vec::new();
     let mut vine_roots_seen: std::collections::HashSet<(i32, i32)> =
         std::collections::HashSet::new();
+    // W4-g83: `TileDrawing._reverseVineRootsPositions` / the
+    // `TileCounterType.ReverseVine` special points (`TileDrawing.cs:121`,
+    // `:764-782`): the seaweed (549) roots, same per-draw rebuild + dedup as
+    // the hanging vines (`ClearSpecialBlockCounts`, `:391`). The g31 union
+    // folds this list into `SpecialPoints.buckets[ReverseVine]` at the
+    // tile-pass wiring (docs/research/123-vine-wire-contract.md §1).
+    let mut reverse_vine_roots: Vec<(i32, i32)> = Vec::new();
+    let mut reverse_vine_roots_seen: std::collections::HashSet<(i32, i32)> =
+        std::collections::HashSet::new();
     for ty in y0..=y1 {
         scratch.cur.clear();
         let mut run_start = -1i32;
@@ -636,6 +645,22 @@ pub(crate) fn draw_tiles(
                         ty,
                         &mut vine_roots_seen,
                         &mut vine_roots,
+                    );
+                }
+                // W4-g83: the switch's `case 549` arm (`TileDrawing.cs:546-
+                // 548`) — `CrawlToBottomOfReverseVineAndAddSpecialPoint`
+                // registers the rising strip's root and `continue`s, exactly
+                // like the vine arm above. Same position: before any
+                // light/draw gate, regardless of cell light.
+                let reverse_vine_cell =
+                    active && crate::render::vines::is_reverse_vine_thread(tile.kind);
+                if reverse_vine_cell {
+                    crate::render::vines::collect_reverse_vine_root(
+                        world,
+                        tx,
+                        ty,
+                        &mut reverse_vine_roots_seen,
+                        &mut reverse_vine_roots,
                     );
                 }
                 let is_tree = active && tree::is_tree(tile.kind);
@@ -832,8 +857,10 @@ pub(crate) fn draw_tiles(
                     continue;
                 }
                 // The vine cells draw in the deferred strip pass below
-                // (`DrawVines`, `TileDrawing.cs:429`) — never inline.
-                if vine_cell {
+                // (`DrawVines`, `TileDrawing.cs:429`) — never inline. The
+                // reverse-vine (549) cells ride `DrawReverseVines` (`:430`,
+                // W4-g83) — the switch's `continue` at `:548`.
+                if vine_cell || reverse_vine_cell {
                     continue;
                 }
                 let Some(tf) = tile_frame else {
@@ -1166,10 +1193,11 @@ pub(crate) fn draw_tiles(
             y1,
         );
     }
-    // `TileDrawing.PostDrawTiles`' `DrawTrees` → `DrawVines` order
-    // (`TileDrawing.cs:428-429`): the vine strips draw right after the tree
-    // canopies (S1-G-1). `DrawReverseVines` (`:430`) and the multi-tile-vine
-    // pass (`:421`) are separate passes, still unported.
+    // `TileDrawing.PostDrawTiles`' `DrawTrees` → `DrawVines` →
+    // `DrawReverseVines` order (`TileDrawing.cs:428-430`): the vine strips
+    // draw right after the tree canopies (S1-G-1), then the rising seaweed
+    // strips (W4-g83, `DrawReverseVines` `:8903-8914`). The multi-tile-vine
+    // pass (`:421`) is the furniture lane (d57 / g31 drains).
     if !vine_roots.is_empty() {
         stats.quads += crate::render::vines::draw_vines(
             r,
@@ -1182,6 +1210,20 @@ pub(crate) fn draw_tiles(
             wind,
             vine_wind_counter,
             &vine_roots,
+        );
+    }
+    if !reverse_vine_roots.is_empty() {
+        stats.quads += crate::render::vines::draw_reverse_vines(
+            r,
+            world,
+            lookups,
+            atlas,
+            light,
+            style,
+            anim_time,
+            wind,
+            vine_wind_counter,
+            &reverse_vine_roots,
         );
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
@@ -1844,6 +1886,55 @@ mod tests {
             1,
             "one hook, gated by wants_back_rope for both C# sites"
         );
+    }
+
+    /// W4-g83 wiring witness: the reverse-vine (549) crawl sits at the C#
+    /// switch position (`TileDrawing.cs:546-548`) — right after the forward
+    /// vine arm (`:536-545`), BEFORE the draw-data dispatch and any
+    /// light/visibility gate (the switch precedes them all), and the cell
+    /// `continue`s inline (`:548`) exactly like the vine arm (`:545`).
+    #[test]
+    fn w4_g83_the_reverse_crawl_rides_the_switch_and_skips_the_inline_draw() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let forward = body
+            .find("vines::collect_vine_root(")
+            .expect("the forward crawl");
+        let reverse = body
+            .find("vines::collect_reverse_vine_root(")
+            .expect("the reverse crawl");
+        let dd = body.find("let dd = if active").expect("the drawdata dispatch");
+        let visible = body.find("stats.visible += 1;").expect("the visibility gate");
+        assert!(forward < reverse, "case 549 follows the vine cases (:546)");
+        assert!(
+            reverse < dd && reverse < visible,
+            "the crawl runs before any draw/light gate (the switch head)"
+        );
+        // The inline skip covers both families — the C# `continue`s.
+        assert!(
+            body.contains("if vine_cell || reverse_vine_cell {"),
+            "the 549 cell never draws through DrawSingleTile (:548)"
+        );
+        // One crawl site, one dedup set — `_reverseVineRootsPositions`.
+        assert_eq!(body.matches("vines::collect_reverse_vine_root(").count(), 1);
+    }
+
+    /// W4-g83 wiring witness: `PostDrawTiles`' nature order — `DrawVines`
+    /// (`TileDrawing.cs:429`) BEFORE `DrawReverseVines` (`:430`), both after
+    /// the tree-canopy pass (`DrawTrees`, `:428`).
+    #[test]
+    fn w4_g83_the_rising_pass_draws_after_the_hanging_pass() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let trees = body.find("draw_tree_foliage(").expect("the canopy pass");
+        let vines = body.find("vines::draw_vines(").expect("the hanging pass");
+        let reverse = body
+            .find("vines::draw_reverse_vines(")
+            .expect("the rising pass");
+        assert!(trees < vines && vines < reverse, "DrawTrees→DrawVines→DrawReverseVines");
+        assert_eq!(body.matches("vines::draw_reverse_vines(").count(), 1);
     }
 
     /// S1-G-1f draw-feed witness: the animator's rows/counters feed the

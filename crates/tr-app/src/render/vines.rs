@@ -11,9 +11,13 @@
 //! `_vineRootsPositions`), and this pass runs right after the foliage pass —
 //! the C#'s `DrawTrees` → `DrawVines` order. The reverse-vine (549) rising
 //! strip (`DrawReverseVines`/`DrawRisingVineStrip`, `TileDrawing.cs:8903-8914`,
-//! `:9134-9193`) lands with W4-g83 below — UNWIRED, the `tiles.rs`/`draw.rs`
-//! seam is contested by d56-d60; the multi-tile-vine pass (chandeliers/banners,
-//! `DrawMultiTileVines(:InWind)`) is the furniture lane (d57) and stays out.
+//! `:9134-9193`) lands with W4-g83 below — WIRED on this branch into the
+//! fused pass's own uncontested seams (`tiles.rs`'s root collection + the
+//! `draw_vines` tail, the C# `case 549` switch arm `:546-548` and the
+//! `PostDrawTiles` `:430` position); the g31-union tile-pass rebind is
+//! `docs/research/123-vine-wire-contract.md` §1. The multi-tile-vine pass
+//! (chandeliers/banners, `DrawMultiTileVines(:InWind)`) is the furniture
+//! lane (d57) and stays out.
 //!
 //! Deviations (docs/ANALYSIS.md "The vine strip pass"): the `NextNatureRenderer`
 //! LitNature dawn/dusk shader is not ported — segments draw plain, like its
@@ -300,7 +304,6 @@ pub(crate) fn draw_vines(
 /// `TileID.Sets.ReverseVineThreads[type]` (`TileID.cs:545`,
 /// `CreateBoolSet(549)`): the seaweed is the only rising vine.
 #[inline]
-#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
 pub(crate) fn is_reverse_vine_thread(kind: u16) -> bool {
     td::SET_REVERSE_VINE_THREADS.has(kind)
 }
@@ -315,7 +318,6 @@ pub(crate) fn is_reverse_vine_thread(kind: u16) -> bool {
 /// Unlike the forward crawl (`:747` starts at `j - 1`), the reverse crawl
 /// starts AT `j` (`for (int k = j; k < Main.maxTilesY; k++)`, `:767`) and
 /// runs to `maxTilesY` (no `- 1`); if no break fires the root stays `j`.
-#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
 pub(crate) fn collect_reverse_vine_root(
     world: &World,
     x: i32,
@@ -345,7 +347,6 @@ pub(crate) fn collect_reverse_vine_root(
 /// call (`TileDrawing.cs:9188`). Pure world/wind state, so the strip maths is
 /// unit-testable without a GPU.
 #[derive(Clone, Copy, Debug)]
-#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
 pub(crate) struct RisingVineSegment {
     pub kind: u16,
     pub x: i32,
@@ -388,7 +389,6 @@ pub(crate) struct RisingVineSegment {
 /// * the anchor advances along `(rot - PI/2)` (`:9190`, not `+ PI/2`);
 /// * the glow out-params are discarded (`:9173` `out var _`) — the rising
 ///   strip draws NO glowmask.
-#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
 pub(crate) fn rising_vine_strip_segments(
     world: &World,
     wind: &Wind,
@@ -480,11 +480,11 @@ pub(crate) fn rising_vine_strip_segments(
 
 /// `DrawReverseVines` (`TileDrawing.cs:8903-8914`): one `DrawRisingVineStrip`
 /// per registered reverse root, in registration (draw-area row-major) order.
-/// Returns the quad count. UNWIRED (W4-g83): the `tiles.rs`/`draw.rs` seam is
-/// contested by d56-d60; the intended call site is right after `draw_vines`
-/// (`PostDrawTiles` `DrawVines` → `DrawReverseVines`, `:429-430`).
+/// Returns the quad count. WIRED (W4-g83 wiring phase): `tiles.rs` calls this
+/// right after `draw_vines` (`PostDrawTiles` `DrawVines` → `DrawReverseVines`,
+/// `:429-430`); the g31-union rebind maps it onto the `ReverseVines` post step
+/// (`docs/research/123-vine-wire-contract.md` §1).
 #[allow(clippy::too_many_arguments)]
-#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
 pub(crate) fn draw_reverse_vines(
     r: &mut SpriteRenderer,
     world: &World,
