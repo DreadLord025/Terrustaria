@@ -980,6 +980,12 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .npcs
             .iter()
             .any(|n| n.hp > 0 && n.kind == NpcKind::PartyGirl),
+        // W4-f41 final sweep — the live scheduler gates: the Merchant's
+        // Rainbow Glowstick + the Party Girl's gift block
+        // (`BirthdayParty.PartyIsUp`, `Chest.cs:1435`/:2345) and her
+        // Release Lantern row (`LanternNight.LanternsUp`, `:2309`).
+        party_up: crate::world_events::party_is_up(&app.world_events),
+        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         downed_mech_any: app.world.downed_mech_boss1
             || app.world.downed_mech_boss2
             || app.world.downed_mech_boss3,

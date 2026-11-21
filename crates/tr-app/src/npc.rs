@@ -24149,8 +24149,8 @@ mod tests {
         ] {
             assert!(stock.contains(&id), "the {id} party row");
         }
-        // 1449 is the `Main.dayTime` row (the port carries no day gate), 4552
-        // the night half.
+        // 1449 is the `Main.dayTime` row (`StockWhen::Day`, W4-f41 final
+        // sweep), 4552 the night half — exactly one stocks.
         assert!(stock.contains(&1449));
         assert!(!stock.contains(&4552), "the night row is off by day");
         let night = crate::shop::ShopFlags {
@@ -24159,8 +24159,10 @@ mod tests {
         };
         let rows = crate::shop::resolve_stock(13, &night, &[]);
         assert!(rows.contains(&4552), "the night row by night");
-        // The graveyard/lantern/golfer/pirate/golem/hardmode/party rows ride
-        // flags the port has not modelled.
+        // The graveyard/golfer/pirate/golem/hardmode rows ride flags the
+        // port has not modelled; the lantern/party blocks ride the live
+        // schedulers (off on the default flags — the dedicated W4-f41
+        // shop.rs witnesses pin the on-state).
         assert!(!rows.contains(&4682), "no graveyard goggles");
         assert!(!rows.contains(&4743), "no football at score 0");
         assert!(!rows.contains(&3369), "no pirate row");
