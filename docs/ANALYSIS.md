@@ -39379,3 +39379,53 @@ in `tools/_d38_atlas_cumulative.txt`); the dims/rows table from RUNNING
 whitelist arms are WRITTEN, NOT RUN — **no cargo/rustc/tests invoked**.
 Structural check: brace/bracket balance unchanged vs the base file, one
 `d38_sheet_tests` module, 35 STRIPS rows, 8 new whitelist kinds present.
+
+## W4-d38 crossnote phase (2026-11-21, code-only mode)
+
+The sibling-wave crossnote: read the d35 ATLAS-REPACK tips
+(`519c8035`/`7d131be3`, research/113) and the d40 data-only tip
+(`8fe1d6d3`), re-measure the cumulative projection with d40's REAL
+56-sheet set, publish the ADDENDUM (research/125), and close the two
+draw-side gaps the audit found. Full numbers + the merger notes live in
+`docs/research/125-d38-crossnote-atlas-addendum.md`; the summary:
+
+1. **BAF-alone dies WITHIN ONE wave** (the s11 "within two waves" estimate
+   was optimistic): HEAD + d35's 21 + d40's 56 packs maxrects 8278
+   (OVER +86) / skyline 8688 (OVER +496), and the full three-wave set's
+   padded-area bound ALONE is 8258 > 8192 — no single-page packer fits.
+   The s11 proposal 1 (BAF promotion as the fix) is WITHDRAWN; d38
+   endorses research/113's boundary-split 2-page skyline form. Measured
+   by `tools/_d38_crossnote.js` (8 scenarios, verify + determinism,
+   outputs `.txt`/`.json` committed).
+2. **The portrait-slot gap (research/108 §5, d38 half) CLOSED**: the 35
+   kinds had bestiary ENTRIES + in-world draw arms but no
+   `BESTIARY_NPC_SHEET_IDS` slots — `draw_portrait`'s `entry_sheet` gate
+   None-skipped all 35 cards. +35 slots/vec rows in ENTRIES order
+   (181 → 216, earlier slots byte-identical), the `portrait_data` arms
+   ride the sheet row height over `Main.npcFrameCount` (the c4/d35
+   shape; the 286 row the 170/3 = 56 integer division, the 328 row the
+   whole single-frame sheet). The merger pin 323 is unchanged — d38's
+   +35 moved from the merge worklist into this branch; d40's 38-entry
+   half stays open on d40b.
+3. **The rotation whitelist is consumed**: the draw's inline `matches!`
+   extracted verbatim into `npc_rotation_allowed` (55 kinds; membership
+   + order proven identical vs the pre-edit list by
+   `tools/_d38_crossnote_check.py`, RUN). All 8 IN writers reachable
+   (the style-10/style-59 dispatch sites cited in research/125 §4c); the
+   new witness runs the 6 FindFrame machines live with exact tilt
+   values and pins the 27 OUT kinds against a forced rotation.
+4. **In-world draw arms: no None-skip left** — all 35 ids ride
+   `D38_B1..B7_SHEETS` → `npc_sheets` → `STATIC_SHEET_NAMES`, the G6
+   render_key rows landed per batch. The 328 PumpkingArm overlay is c6's
+   lane (not on main), documented, no d38 action.
+
+### Verification (crossnote)
+
+Code-only: the atlas numbers from RUNNING `tools/_d38_crossnote.js`; the
+structural checks from RUNNING `tools/_d38_crossnote_check.py` (gate
+membership/order identical, brace balance on all 3 edited files,
+216 == 216 == 216 table/vec/declared, first 181 rows byte-identical, tail
+in ENTRIES order — ALL PASSED). The 2 new Rust witnesses
+(`w4_d38_crossnote_the_portrait_slots_ride_the_real_strips`,
+`w4_d38_crossnote_the_rotation_gate_consumes_the_writers`) are WRITTEN,
+NOT RUN — **no cargo/rustc/tests invoked**.
