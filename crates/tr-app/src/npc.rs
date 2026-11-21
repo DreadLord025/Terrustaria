@@ -24014,7 +24014,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 279] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24293,6 +24293,16 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-f42 — the sandstorm debris + desert family (the 354-362 band).
+        NpcKind::Tumbleweed,
+        NpcKind::Vulture,
+        NpcKind::Antlion,
+        NpcKind::Mummy,
+        NpcKind::DarkMummy,
+        NpcKind::BloodMummy,
+        NpcKind::LightMummy,
+        NpcKind::WalkingAntlion,
+        NpcKind::FlyingAntlion,
     ];
 
     #[test]
@@ -24386,6 +24396,42 @@ mod tests {
         assert_eq!(NpcKind::ForceBubble.to_u16(), 213);
         for (kind, _, _, _, _, _, _, _, _, _) in rows {
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-f42 — the nine sandstorm debris + desert kinds' `SetDefaults`
+    /// rows pin against the C# (the d40/smallkinds pattern), through the
+    /// port's tables, plus the 354-362 protocol band's round-trip and the
+    /// bestiary net ids (research/108-input-f42's claims table). WRITTEN,
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_f42_the_desert_family_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, proto, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Tumbleweed, 546u16, 354u16, 26u8, 30.0, 30.0, 30, 6, 50, 0.8f32, 100.0f32),
+            (NpcKind::Vulture, 61, 355, 17, 36.0, 36.0, 15, 4, 40, 0.8, 60.0),
+            (NpcKind::Antlion, 69, 356, 19, 24.0, 24.0, 10, 6, 45, 0.0, 60.0),
+            (NpcKind::Mummy, 78, 357, 3, 18.0, 40.0, 50, 16, 130, 0.6, 600.0),
+            (NpcKind::DarkMummy, 79, 358, 3, 18.0, 40.0, 60, 18, 180, 0.5, 700.0),
+            (NpcKind::BloodMummy, 630, 359, 3, 18.0, 40.0, 60, 18, 180, 0.5, 700.0),
+            (NpcKind::LightMummy, 80, 360, 3, 18.0, 40.0, 55, 18, 200, 0.55, 700.0),
+            (NpcKind::WalkingAntlion, 580, 361, 3, 26.0, 26.0, 25, 10, 80, 0.5, 80.0),
+            (NpcKind::FlyingAntlion, 581, 362, 44, 30.0, 22.0, 29, 8, 60, 0.5, 90.0),
+        ];
+        for (kind, ty, proto, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} round-trip");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} bestiary net id");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
         }
     }
 
@@ -27904,8 +27950,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            279,
+            "every decodable kind resolves (the wire roster's size - 279 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-f42's nine desert kinds)"
         );
         assert!(
             covered > 43,
@@ -31547,6 +31593,19 @@ mod s1_d_2_tests {
         (NpcKind::WyvernBody2, 6),
         (NpcKind::WyvernBody3, 6),
         (NpcKind::WyvernTail, 6),
+        // W4-f42 — the sandstorm debris + desert family (`NPC.cs:15976`
+        // the Tumbleweed's 26, `:9558` the Vulture's 17, `:9670` the
+        // Antlion's 19, `:9799`/`:9812`/`:17107`/`:9825` the mummies' 3,
+        // `:14854` the WalkingAntlion's 3, `:14872` the FlyingAntlion's 44).
+        (NpcKind::Tumbleweed, 26),
+        (NpcKind::Vulture, 17),
+        (NpcKind::Antlion, 19),
+        (NpcKind::Mummy, 3),
+        (NpcKind::DarkMummy, 3),
+        (NpcKind::BloodMummy, 3),
+        (NpcKind::LightMummy, 3),
+        (NpcKind::WalkingAntlion, 3),
+        (NpcKind::FlyingAntlion, 44),
     ];
 
     #[test]

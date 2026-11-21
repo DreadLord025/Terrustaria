@@ -139,6 +139,18 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_51", 3),
     ("NPC_Hit_55", 3),
     ("NPC_Hit_57", 3),
+    // W4-f42 — the sandstorm debris + desert family's cues (the S1-E-21
+    // wave C bank-gap close): the Vulture's NPCHit28 (`NPC.cs:9563`), the
+    // Antlion/WalkingAntlion's NPCHit31 (`:9674`/`:14862`), the
+    // FlyingAntlion's NPCHit32 (`:14877`); the deaths NPCDeath31/34/35
+    // (`:9564`/`:9675`+`:14863`/`:14878`). The Tumbleweed's Hit11/Death15
+    // and the mummies' Hit1/Death6 are already above.
+    ("NPC_Hit_28", 3),
+    ("NPC_Hit_31", 3),
+    ("NPC_Hit_32", 3),
+    ("NPC_Killed_31", 4),
+    ("NPC_Killed_34", 4),
+    ("NPC_Killed_35", 4),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
