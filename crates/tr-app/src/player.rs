@@ -734,6 +734,26 @@ pub(crate) struct WingGlideDust {
     pub(crate) always_animated: bool,
 }
 
+/// W4-g66 — one queued `RocketBootVisuals` call (`Player.cs:29330-29458`):
+/// the thrust tick's flame pair, snapshotted BEFORE the thrust's velocity
+/// writes (`:26918` runs before `:26923-26924`). `netOffset` folds to zero
+/// (the port has no net smoothing on the local player).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RocketFlameDust {
+    /// `Player.cShoe` (`:29396`): the tier-4 roll pins to 2 while dyed.
+    pub(crate) c_shoe: u32,
+    pub(crate) vanity: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+    pub(crate) fairy_boots: bool,
+    pub(crate) social_shadow: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -1210,6 +1230,12 @@ pub struct Player {
     pub c_head: u32,
     pub c_body: u32,
     pub c_legs: u32,
+    /// W4-g66 — `Player.cShoe` (`Player.cs:9590` zero-fill, `:9659-9673` the
+    /// `shoeSlot` dye grant): the rocket-flame tier-4 roll pins to 2 while
+    /// dyed (`:29396-29399`). The port's item rows carry no `shoeSlot`, so
+    /// the grant has no producer yet — the field stays 0 (the dye deviation
+    /// family, docs/ANALYSIS.md).
+    pub c_shoe: u32,
     pub c_pet: u32,
     pub c_light: u32,
     pub c_minecart: u32,
@@ -2145,6 +2171,18 @@ pub struct Player {
     pending_wing_air_dust: Option<WingAirDust>,
     /// W4-g66 — the tick's queued wing-glide dust (`Player.cs:27040-27315`).
     pending_wing_glide_dust: Option<WingGlideDust>,
+    /// W4-g66 — the tick's queued `RocketBootVisuals` pair
+    /// (`Player.cs:26918`): snapshotted before the thrust velocity writes.
+    pending_rocket_flame_dust: Option<RocketFlameDust>,
+    /// W4-g66 — `Player.rocketFrame` (`Player.cs:26488`/`:26913`/`:26917`):
+    /// true on a thrust tick; the Molten/Ninja walking-fire arms gate on it
+    /// (`:36067`/`:36087`).
+    rocket_frame: bool,
+    /// W4-g66 — `Player.socialShadowRocketBoots` (`Player.cs:1550`): the
+    /// full Shadow armor set (functional or social) turns the tier-1 rocket
+    /// flame into type 27 (`:29363-29367`). `PlayerFrame` clears + re-grants
+    /// it per tick (`:35933`/`:36030`/`:36039`/`:36043`).
+    social_shadow_rocket_boots: bool,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2871,6 +2909,7 @@ impl Player {
             c_head: 0,
             c_body: 0,
             c_legs: 0,
+            c_shoe: 0,
             c_pet: 0,
             c_light: 0,
             c_minecart: 0,
@@ -3088,6 +3127,9 @@ impl Player {
             pending_floor_dust: None,
             pending_wing_air_dust: None,
             pending_wing_glide_dust: None,
+            pending_rocket_flame_dust: None,
+            rocket_frame: false,
+            social_shadow_rocket_boots: false,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3723,6 +3765,13 @@ impl Player {
         self.pending_wing_glide_dust.take()
     }
 
+    /// W4-g66 — takes the `RocketBootVisuals` snapshot
+    /// (`Player.cs:29330-29458`); drained on `UpdatePlayers`
+    /// (`player_boot_dust::drain_rocket_flames`).
+    pub(crate) fn take_rocket_flame_dust(&mut self) -> Option<RocketFlameDust> {
+        self.pending_rocket_flame_dust.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -3915,6 +3964,7 @@ impl Player {
         self.pending_floor_dust = None;
         self.pending_wing_air_dust = None;
         self.pending_wing_glide_dust = None;
+        self.pending_rocket_flame_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -10257,11 +10307,34 @@ impl Player {
         if self.rocket_delay2 > 0 {
             self.rocket_delay2 -= 1;
         }
+        // `:26911-26914`: a non-thrust tick clears the flame frame (the
+        // Molten/Ninja walking-fire arms gate on it, `:36067`/`:36087`).
+        if self.rocket_delay == 0 {
+            self.rocket_frame = false;
+        }
         // `:26915-26955`: the rocket thrust — 10 ticks per fuel tick. The
         // fall origin refreshes via the caller's `:25379-25382` block (the
         // `rocketDelay > 0` term) — the port keeps its own refresh here so
         // the last thrust tick (delay decremented to 0) still resets it.
         if self.rocket_delay > 0 {
+            // `:26917-26918`: `rocketFrame = true` + `RocketBootVisuals()`
+            // run BEFORE the delay decrement and the thrust velocity writes
+            // — W4-g66 snapshots the pair here (`:29330-29458`); the drain
+            // replays it on `UpdatePlayers` (`drain_rocket_flames`).
+            self.rocket_frame = true;
+            self.pending_rocket_flame_dust = Some(RocketFlameDust {
+                c_shoe: self.c_shoe,
+                vanity: self.vanity_rocket_boots,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+                facing: self.facing,
+                fairy_boots: self.fairy_boots,
+                social_shadow: self.social_shadow_rocket_boots,
+            });
             self.rocket_delay -= 1;
             self.vy -= 0.1;
             if self.vy > 0.0 {

@@ -1534,6 +1534,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_wing_air_dust() {
                 crate::player_wing_dust::drain_wing_air(app, burst);
             }
+            // W4-g66 — `RocketBootVisuals` (`Player.cs:26918`, `:29330-29458`):
+            // the thrust tick's flame pair, snapshotted before the thrust
+            // velocity writes. The Item13/Item24 rocketSoundDelay cues
+            // (`:26884-26896`) stay an audio seam (the S1-E-21 family).
+            if let Some(burst) = p.take_rocket_flame_dust() {
+                crate::player_boot_dust::drain_rocket_flames(app, burst);
+            }
             // W4-g66 — the wing-glide dust (`Player.cs:27040-27315`): the
             // jump-held falling arm's per-wing rolls; the frame machines ran
             // in the tick (`wing_glide_frames`).

@@ -245,6 +245,7 @@ mod player_dust;
 // W4-g66: the movement-trail drain lanes — the DoubleJumpVisuals and
 // floor-dust chains first. Same snapshot-then-replay convention as
 // `player_dust`.
+mod player_boot_dust;
 mod player_trail_dust;
 mod player_wing_dust;
 mod regen;
