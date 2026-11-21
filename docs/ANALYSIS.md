@@ -39413,3 +39413,24 @@ size table + roster, the top-left reconstruction, the style tables + the
 dead-write, the platform lift, the jar cancel + shift, the num7 ladder +
 fairy row), `render/tiles` (2 source-order pins: grass → vine → generic
 raised, raw light + fullbright override, the flame-overlay gate).
+
+### The g31 keep-one prep (W4-g84 final phase, 2026-11-21, code-only)
+
+The final-phase census read `origin/task/W4-g31-tile-draw-pass-4` (tip
+`766a5a5a8`, research/136 + UNION-CONTRACT §8): g31's `tile_drains.rs` ports
+the SAME two bodies as pure plan drains — `drain_multi_tile_grass` /
+`multi_tile_grass_in_wind` (bucket 2) and `drain_multi_tile_vines` /
+`multi_tile_vines_in_wind` (bucket 3) — covering every kind of this roster,
+and §8.3 step 3 already rules "the inline grass/vine/sunflower arms DROP
+(the drains own them)". **Keep-one = g31's drains**; this branch's inline
+arms are the interim per-cell approximation until the §8.3 split. The
+per-kind arm↔bucket seam-mapping, the five duplicate helpers
+(`climb_cat_tail`, `planter_style`, `bottle_style`, `multi_tile_vine_size`,
+`is_below_a_non_hammered_platform`), the witness re-pin map and the ONE feed
+this branch contributes to the merge (the LIVE animator row — g31's
+`drain_draw_data` feeds `tileFrame[type] = 0` until S1-G-1f, while the inline
+arms read the landed `drawdata_anim` rows incl. the 238 `tileFrame*36`) are
+published in `docs/research/137-g84-g31-keep-one.md`. No code change this
+phase — the mapping is the deliverable; the arms stay until the merger
+executes the split (dropping them here would regress the draw to the
+static-generic arm with no drain wired on this branch).
