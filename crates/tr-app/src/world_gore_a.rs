@@ -1,13 +1,15 @@
 //! World-side `Gore.NewGore*` sites, wave A: the tree-fall FX and the
-//! larva burst (`WorldGen.cs`). W4-g17 wiring wave: the larva burst is
-//! LIVE — the edit lane's `check_3x3_bottom` covers kind 231, and
-//! `world_sim::editing::break_tile` drains the record through
-//! [`larva_gores`] + `spawn_queen_bee_on_player` (the `NPC.SpawnOnPlayer`
-//! claim). The tree-FX dispatch claims (`TreeGrowFXCheck`
-//! `:29345-29382`, the axe-hit `:63416` call, `MessageBuffer.cs:3828`)
-//! stay unwired — the growth pass has no FX channel yet and the
-//! single-player port drops the net arm — the `npc_hit_effect_a.rs`
-//! (W4-d55) precedent.
+//! larva burst (`WorldGen.cs`). WIRED (W4-g17 wiring wave): the larva
+//! burst rides the edit lane's `check_3x3_bottom` kind-231 record
+//! (`break_tile` → [`larva_gores`] + `spawn_queen_bee_on_player`); the
+//! tree FX rides TWO dispatches — the growth pass's sapling
+//! `TreeGrowFXCheck` channel (`world_sim::growth` drains
+//! `tree::tree_grow_fx_check` → [`tree_grow_fx`] on the
+//! `UpdateWorldGen` stream) and the axe fail tick's `ShakeTree` arm
+//! (`axe_tile_hit` → `tree::shake_tree_fx` → [`tree_grow_fx`] with
+//! hitTree: true on the `UpdatePlayers` stream). The
+//! `MessageBuffer.cs:3828` net arm drops (single-player port); the
+//! ShakeTree loot ladder stays the loot lane's (documented).
 //!
 //! ## Scope — this module's sites (source order)
 //!
@@ -72,7 +74,7 @@
 //!   returns `paint`); the port reads `Tile::paint()`.
 //!
 //! See docs/ANALYSIS.md "The world gore sites (W4-g17, wave A)".
-#![allow(dead_code)] // the tree-FX arms wait for the growth/axe dispatch; the larva burst is live
+// W4-g17 wiring: the larva burst + both tree-FX dispatches are live.
 
 use glam::Vec2;
 use tr_core::gore::GorePool;

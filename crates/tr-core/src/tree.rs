@@ -440,9 +440,374 @@ pub fn trunk_sheet_offset_at(
     crate::drawdata::tree_frame_x_offset(world, x, y, frame_x, frame_y)
 }
 
+/// `WorldGen.GetHollowTreeFoliageStyle` (`WorldGen.cs:63027-63040`): the
+/// hallowBG switch — 4 → 19, 2/3 → 20, default 3. The port's worlds carry
+/// the `hallow_bg_style` byte (the `.wld` setBG(4) slot).
+pub fn hollow_tree_foliage_style(world: &World) -> i32 {
+    match world.hallow_bg_style {
+        4 => 19,
+        2 | 3 => 20,
+        _ => 3,
+    }
+}
+
+/// `WorldGen.GetTreeLeaf` (`WorldGen.cs:29384-29598`): the leaf-gore style
+/// of a tree's top marker over its ground tile. Returns
+/// `(treeFrame, passStyle)`; `passStyle == -1` = no leaf family. The
+/// hallowed arm bumps `treeHeight` by 5 (`:29593`) — the caller's `ref`
+/// write, returned as the third element. The `render::foliage`
+/// `tree_leaf_pass_style` twin reads the same table for the ambient
+/// leaves (its hallow arm is the style-20-unreachable simplification;
+/// this port carries both branches).
+pub fn tree_leaf(
+    world: &World,
+    x: i32,
+    top_kind: u16,
+    top_frame_x: i16,
+    top_frame_y: i16,
+    ground_kind: u16,
+) -> (i32, i32, i32) {
+    let mut tree_frame = 0;
+    let mut pass_style = -1;
+    // `:29388-29407` — the branch/top frame pick (both arms identical).
+    if matches!(top_frame_x, 22 | 44 | 66) {
+        if top_frame_y == 220 {
+            tree_frame = 1;
+        } else if top_frame_y == 242 {
+            tree_frame = 2;
+        }
+    }
+    // `:29408-29434` — the vanity/gem/ash top-kind overrides.
+    match top_kind {
+        596 => pass_style = 1248,
+        616 => pass_style = 1257,
+        634 => pass_style = 1278,
+        583..=589 => pass_style = 1249 + (top_kind as i32 - 583),
+        _ => {}
+    }
+    if pass_style > -1 {
+        return (tree_frame, pass_style, 0);
+    }
+    // `:29435-29595` — the ground-kind table.
+    let mut height_add = 0;
+    match ground_kind {
+        2 | 477 => pass_style = 910,
+        60 => pass_style = 914,
+        70 => pass_style = 912,
+        23 | 112 => pass_style = 915,
+        199 | 234 => pass_style = 916,
+        53 => pass_style = 911,
+        116 => pass_style = 919,
+        147 => pass_style = 913,
+        633 => pass_style = 1278,
+        109 | 492 => {
+            // `:29467-29592` — the hallowed tables.
+            let num = 917;
+            if hollow_tree_foliage_style(world) != 20 {
+                if x % 3 == 1 {
+                    tree_frame += 3;
+                }
+                if x % 3 == 2 {
+                    tree_frame += 6;
+                }
+                let styles = [2, 1, 7, 4, 5, 6, 3, 8, 0];
+                pass_style = styles.get(tree_frame as usize).copied().unwrap_or(0);
+            } else {
+                let num2 = 196;
+                match x % 6 {
+                    1 => tree_frame += 3,
+                    2 => tree_frame += 6,
+                    3 => tree_frame += 9,
+                    4 => tree_frame += 12,
+                    5 => tree_frame += 15,
+                    _ => {}
+                }
+                let styles = [0, 0, 0, 1, 2, 1, 3, 4, 5, 6, 6, 6, 7, 7, 7, 8, 8, 8];
+                pass_style = num2 + styles.get(tree_frame as usize).copied().unwrap_or(0);
+            }
+            pass_style += num;
+            height_add = 5;
+        }
+        _ => {}
+    }
+    (tree_frame, pass_style, height_add)
+}
+
+/// `WorldGen.TreeGrowFXCheck` (`WorldGen.cs:29345-29382`): the height/style
+/// scan over a grown tree's trunk column. Returns
+/// `Some((height, pass_style))` when the FX should fire (`treeHeight > 0 &&
+/// passStyle > 0`), `None` otherwise. The netMode-2 SendData arm drops
+/// (single-player port); the caller runs `TreeGrowFX` with the pair.
+/// RNG-free — every gate reads tiles only.
+pub fn tree_grow_fx_check(world: &World, x: i32, y: i32) -> Option<(i32, i32)> {
+    let mut tree_height = 1;
+    let mut top: Option<(u16, i16, i16)> = None;
+    // `:29349-29358` — the upward walk over the GetsCheckedForLeaves cells.
+    for num in 1..100 {
+        let Some(t) = world.tile(x, y - num) else { break };
+        if !t.active() || !crate::tiledata::SET_GETS_CHECKED_FOR_LEAVES.has(t.kind) {
+            break;
+        }
+        top = Some((t.kind, t.frame_x, t.frame_y));
+        tree_height += 1;
+    }
+    // `:29359-29370` — the downward walk (max 4 cells), then GetTreeLeaf.
+    let mut pass_style = -1;
+    for i in 1..5 {
+        let Some(t) = world.tile(x, y + i) else { break };
+        if t.active() && crate::tiledata::SET_GETS_CHECKED_FOR_LEAVES.has(t.kind) {
+            tree_height += 1;
+            continue;
+        }
+        if let Some((top_kind, fx, fy)) = top {
+            let (_, style, height_add) = tree_leaf(world, x, top_kind, fx, fy, t.kind);
+            tree_height += height_add;
+            pass_style = style;
+        }
+        break;
+    }
+    // `:29371-29381`.
+    if tree_height > 0 && pass_style > 0 {
+        Some((tree_height, pass_style))
+    } else {
+        None
+    }
+}
+
+/// `WorldGen.PlayerLOS` (`WorldGen.cs:69443-69454`): the 16×16 tile rect
+/// intersects the player's 1.2×sWidth/sHeight screen box (the
+/// `NPC.sWidth/sHeight` 1920/1200 constants). `players` is the roster
+/// snapshot `(active, x, y, width, height)` per slot — the single-player
+/// port passes one. RNG-free.
+pub fn player_los(x: i32, y: i32, players: &[(bool, f32, f32, f32, f32)]) -> bool {
+    // `NPC.sWidth`/`sHeight` (`NPC.cs:6767-6769`).
+    let (s_width, s_height) = (1920.0f64, 1200.0f64);
+    let rx = x * 16;
+    let ry = y * 16;
+    for &(active, px, py, w, h) in players {
+        if !active {
+            continue;
+        }
+        // The C#'s double-then-int truncation (`:69449`).
+        let bx = (px as f64 + w as f64 * 0.5 - s_width * 0.6) as i32;
+        let by = (py as f64 + h as f64 * 0.5 - s_height * 0.6) as i32;
+        let bw = (s_width * 1.2) as i32;
+        let bh = (s_height * 1.2) as i32;
+        // XNA `Rectangle.Intersects`: strict overlap on both axes.
+        if rx < bx + bw && rx + 16 > bx && ry < by + bh && ry + 16 > by {
+            return true;
+        }
+    }
+    false
+}
+
+/// `WorldGen.IsTileALeafyTreeTop` (`WorldGen.cs:29674-29691`): the palm
+/// canopy (323, frameX >= 88) or a top marker (frameX 22, frameY 198-242)
+/// of a GetsCheckedForLeaves kind.
+pub fn is_tile_a_leafy_tree_top(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else { return false };
+    if !t.active() || !crate::tiledata::SET_GETS_CHECKED_FOR_LEAVES.has(t.kind) {
+        return false;
+    }
+    if t.kind == 323 && t.frame_x >= 88 {
+        return true;
+    }
+    t.frame_x == 22 && (198..=242).contains(&t.frame_y)
+}
+
+/// `Collision.SolidTiles(startX, endX, startY, endY)` (`Collision.cs:
+/// 3455-3485`): the bounds refusals (start < 0, endX >= width, endY >=
+/// height - 40 → true), then the inclusive scan for an active,
+/// non-actuated, solid, non-solid-top cell. A null tile answers false
+/// (the scan continues — the C#'s own shape).
+pub fn solid_tiles(world: &World, start_x: i32, end_x: i32, start_y: i32, end_y: i32) -> bool {
+    if start_x < 0 || end_x >= world.width || start_y < 0 || end_y >= world.height - 40 {
+        return true;
+    }
+    for i in start_x..=end_x {
+        for j in start_y..=end_y {
+            let Some(t) = world.tile(i, j) else { continue };
+            if t.active()
+                && !t.inactive()
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.ShakeTree` (`WorldGen.cs:63131-63418`)'s FX slice: the
+/// shake dedupe bookkeeping (`numTreeShakes`/`treeShakeX/Y`, the 500 cap,
+/// the dawn reset), the `GetTreeTypeAndTreeBottom` family probe, the
+/// `IsShakeable` trunk walk up to the leafy top, the
+/// `IsTileALeafyTreeTop` + `SolidTiles` refusal, then the
+/// `GetTreeLeaf` → `TreeGrowFX(bottomX, bottomY, 1, passStyle,
+/// hitTree: true)` tail (`:63404-63417`). Returns the FX request
+/// `Some((bottom_x, bottom_y, pass_style))` — the app runs the gore
+/// burst on its stream. The loot ladder (`:63160-63403`, the genRand
+/// item/NPC/projectile arms) is the loot lane's — documented drop; the
+/// FX tail's position is independent of it (no RNG before it).
+pub fn shake_tree_fx(world: &mut World, i: i32, j: i32) -> Option<(i32, i32, i32)> {
+    // `:63133-63136` — the 500-shake cap (`maxTreeShakes`, `:86960`).
+    if world.tree_shakes.len() >= 500 {
+        return None;
+    }
+    // `:63137-63142` — the family + the ground cell. `num` keeps the
+    // ORIGINAL ground row (`:63138`) — the FX tail's GetTreeLeaf reads
+    // it as the ground tile (`:63406`).
+    let (tree_type, bottom_x, mut bottom_y) = tree_type_and_bottom(world, i, j);
+    let num = bottom_y;
+    if tree_type == TreeType::None {
+        return None;
+    }
+    // `:63143-63149` — the per-day dedupe.
+    if world.tree_shakes.contains(&(bottom_x, bottom_y)) {
+        return None;
+    }
+    // `:63150-63152` — the record.
+    world.tree_shakes.push((bottom_x, bottom_y));
+    // `:63153-63158` — the trunk walk up to the leafy top.
+    bottom_y -= 1;
+    while bottom_y > 10
+        && world
+            .tile(bottom_x, bottom_y)
+            .is_some_and(|t| t.active() && crate::tiledata::SET_IS_SHAKEABLE.has(t.kind))
+    {
+        bottom_y -= 1;
+    }
+    bottom_y += 1;
+    // `:63159-63162` — the leafy-top + the 5x5 solid refusal.
+    if !is_tile_a_leafy_tree_top(world, bottom_x, bottom_y)
+        || solid_tiles(world, bottom_x - 2, bottom_x + 2, bottom_y - 2, bottom_y + 2)
+    {
+        return None;
+    }
+    // `:63404-63417` — the GetTreeLeaf probe: the TOP tile is the walked
+    // leafy cell (`bottomY`), the GROUND tile is `Main.tile[bottomX, num]`
+    // — the ORIGINAL ground row. The loot ladder between
+    // (`:63163-63403`) is the loot lane's — it draws genRand/Main.rand
+    // but never moves the FX position.
+    let Some(top) = world.tile(bottom_x, bottom_y).copied() else {
+        return None;
+    };
+    let Some(ground) = world.tile(bottom_x, num).copied() else {
+        return None;
+    };
+    let mut tree_height = 0;
+    let (_, pass_style, height_add) = tree_leaf(
+        world,
+        bottom_x,
+        top.kind,
+        top.frame_x,
+        top.frame_y,
+        ground.kind,
+    );
+    tree_height += height_add;
+    let _ = tree_height;
+    // `:63407` — `passStyle != -1` fires the FX (the C# height arg is 1).
+    if pass_style != -1 {
+        Some((bottom_x, bottom_y, pass_style))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- W4-g17 wiring: the TreeGrowFXCheck / ShakeTree FX ports ----
+
+    use crate::tile::Tile;
+
+    /// A height-`h` forest tree at x=10 on dirt ground (row 20), the
+    /// canopy marker (22, 198) on top — the `edit::kill` tree_world shape.
+    fn fx_tree(h: i32) -> World {
+        let mut w = World::new("fx".into(), 64, 64);
+        for x in 8..14 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile { kind: 2, flags: crate::tile::FLAG_ACTIVE, ..Default::default() };
+        }
+        for dy in 0..h {
+            let i = w.index(10, 19 - dy);
+            let (fx, fy) = if dy == h - 1 { (22, 198) } else { (0, 0) };
+            w.tiles[i] = Tile {
+                kind: 5,
+                frame_x: fx,
+                frame_y: fy,
+                flags: crate::tile::FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        w
+    }
+
+    /// `WorldGen.cs:29345-29382` — the check scans the trunk column up
+    /// from the base, counts the GetsCheckedForLeaves cells, and the
+    /// ground tile under the base names the leaf family (dirt → 910).
+    #[test]
+    fn w4_g17_the_tree_grow_fx_check_resolves_height_and_style() {
+        let w = fx_tree(5);
+        // The check cell is the sapling's old base row (the growth call
+        // passes the sapling cell; the trunk grew upward from it).
+        let got = tree_grow_fx_check(&w, 10, 19);
+        assert_eq!(got, Some((5, 910)), "height 5, the forest leaf 910");
+        // No tree → no FX.
+        let empty = World::new("e".into(), 64, 64);
+        assert_eq!(tree_grow_fx_check(&empty, 10, 19), None);
+    }
+
+    /// `WorldGen.cs:29408-29434` — the vanity/gem/ash top-kind overrides
+    /// outrank the ground table; the hallowed ground adds 5 to the height.
+    #[test]
+    fn w4_g17_the_tree_leaf_overrides_and_hallow_height() {
+        let w = World::new("t".into(), 64, 64);
+        // The ash top 634 → 1278 regardless of ground.
+        assert_eq!(tree_leaf(&w, 3, 634, 22, 198, 2).1, 1278);
+        // The gem top 583 → 1249.
+        assert_eq!(tree_leaf(&w, 3, 583, 22, 198, 1).1, 1249);
+        // The hallowed ground 109: style 917+ and height +5.
+        let (frame, style, add) = tree_leaf(&w, 3, 5, 22, 198, 109);
+        assert_eq!(add, 5);
+        assert!((917..=925).contains(&style), "style {style}");
+        assert_eq!(frame, 0);
+        // x % 3 == 1 bumps the frame by 3 (the style table's row).
+        let (frame1, style1, _) = tree_leaf(&w, 4, 5, 22, 198, 109);
+        assert_eq!(frame1, 3);
+        assert_ne!(style1, style);
+    }
+
+    /// `WorldGen.cs:63131-63162` + `:63404-63417` — the shake records the
+    /// ground cell, dedupes per day, and the FX tail resolves the leafy
+    /// top's style (hitTree: true, height 1).
+    #[test]
+    fn w4_g17_the_shake_fx_records_and_dedupes() {
+        let mut w = fx_tree(5);
+        let first = shake_tree_fx(&mut w, 10, 17);
+        assert_eq!(first, Some((10, 20, 910)), "the ground cell + the forest leaf");
+        assert_eq!(w.tree_shakes, vec![(10, 20)]);
+        // The same tree shakes once per day.
+        assert_eq!(shake_tree_fx(&mut w, 10, 15), None);
+        // The dawn reset clears the book.
+        w.tree_shakes.clear();
+        assert!(shake_tree_fx(&mut w, 10, 17).is_some());
+    }
+
+    /// `WorldGen.cs:69443-69454` — the LOS box is the 1.2×screen rect
+    /// centred on the player; a far cell refuses.
+    #[test]
+    fn w4_g17_the_player_los_box() {
+        let players = [(true, 1000.0f32, 1000.0f32, 20.0f32, 42.0f32)];
+        // The player's own cell is on screen.
+        assert!(player_los(62, 62, &players));
+        // 200 tiles away is off screen.
+        assert!(!player_los(262, 62, &players));
+        // No players → no LOS.
+        assert!(!player_los(62, 62, &[]));
+    }
 
     #[test]
     fn markers_and_frames_match_vanilla() {

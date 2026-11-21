@@ -1614,6 +1614,29 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
     }
     // `:45758` — the fail tick (`KillTile(fail: true)`): the per-tick
     // sound/dust is the recorded deviation; the damage stays in the book.
+    // W4-g17 wiring — `KillTile(fail: true)`'s `ShakeTree` arm
+    // (`WorldGen.cs:63710-63714`): a shakeable tile (the tree trunks)
+    // shakes on EVERY fail tick; the FX tail (`tree::shake_tree_fx` →
+    // `world_gore_a::tree_grow_fx`, hitTree: true) spawns on the
+    // `UpdatePlayers` stream (the ItemCheck swap). The loot ladder is
+    // the loot lane's (documented drop — the FX position is independent).
+    if tr_core::tiledata::SET_IS_SHAKEABLE.has(kind) {
+        if let Some((bx, by, style)) = tr_core::tree::shake_tree_fx(&mut app.world, tx, ty) {
+            let spawn_ctx = app.spawn_ctx();
+            crate::world_gore_a::tree_grow_fx(
+                bx,
+                by,
+                1,
+                style,
+                true,
+                &mut app.gore,
+                &mut app.dust,
+                &spawn_ctx,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+        }
+    }
     // `:45764-45767` — a non-zero damage prunes the book.
     if damage != 0 {
         app.hit_tile.prune(|x, y| {
@@ -12103,6 +12126,35 @@ mod tests {
                 item.kind
             );
         }
+    }
+
+    /// W4-g17 wiring — the axe fail tick's `ShakeTree` arm
+    /// (`WorldGen.cs:63710-63714` → `tree::shake_tree_fx` →
+    /// `world_gore_a::tree_grow_fx`, hitTree: true): a fail hit on the
+    /// trunk records the shake and spawns the hit-tree leaf burst (the
+    /// ash-free forest tree: 3 trunk gores per row × height + the top
+    /// row's 5 leaves — the hitTree count, `:29625`). The second fail
+    /// tick dedupes (one shake per tree per day).
+    #[test]
+    fn w4_g17_the_axe_fail_tick_shakes_the_tree() {
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        let held = app.inventory[app.selected];
+        // One fail hit (10 damage < 100): the shake fires.
+        let broke = axe_tile_hit(&mut app, 30, 260, 5, 9, held);
+        assert!(!broke, "the first hit is a fail tick");
+        assert_eq!(app.world.tree_shakes, vec![(30, 261)]);
+        let live = app.gore.slots().iter().filter(|g| g.active).count();
+        // hitTree: 4 rows × 3 trunk gores + the top row's 5 leaves = 17.
+        assert_eq!(live, 17, "the hit-tree burst (:29617-29636, num3 = 5)");
+        for g in app.gore.slots().iter().filter(|g| g.active) {
+            assert_eq!(g.gore_type, 910, "the forest leaf style");
+        }
+        // The second fail tick: the dedupe refuses a second burst.
+        let before = app.gore.slots().iter().filter(|g| g.active).count();
+        let _ = axe_tile_hit(&mut app, 30, 259, 5, 9, held);
+        let after = app.gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(after, before, "one shake per tree per day (:63143-63149)");
     }
 
     /// S1-P-i30: the axe arm chops the cactus (80) and the whole plant

@@ -27,6 +27,8 @@ pub fn update_world_grass_growth(
     max_j: i32,
     allowed_to_spread: bool,
     rng: &mut UnifiedRandom,
+    fx_ctx: &super::GrowthFxCtx<'_>,
+    fx: &mut super::TreeFxRequests,
 ) {
     if i < 10 || j < 10 || i >= world.width as i32 - 10 || j >= world.height as i32 - 10 {
         return;
@@ -92,6 +94,21 @@ pub fn update_world_grass_growth(
                     spread_grass(world, k, l, soil2 as u16, grass2 as u16);
                 }
             }
+        }
+    }
+    // W4-g17 wiring — the mushroom-grass tree arm (`:74499-74507`,
+    // `case 70`): the cattail roll above the liquid (`PlaceCatTail` is
+    // the decoration lane's — parked), then `genRand.Next(250) == 0 &&
+    // TryGrowingTreeByType(5, i, j) && PlayerLOS(i, j)` queues the
+    // `TreeGrowFXCheck(i, j - 1)`. The kind-5 growth rides the settings
+    // profile (`grow_tree` — the vanilla `GrowTree` port); the C#
+    // `TryGrowingTreeByType(5, ..)` resolves to the same `GrowTree`
+    // (`:30373-30377`). The `&&` chain draws only when the earlier
+    // gates pass.
+    if t.kind == 70 && rng.next_max(250) == 0 {
+        let grew = super::trees::grow_tree(world, i, j, rng);
+        if grew && crate::tree::player_los(i, j, fx_ctx.players) {
+            fx.push((i, j - 1));
         }
     }
 }
@@ -973,8 +990,8 @@ mod tests {
         let mut rng_a = UnifiedRandom::new(77);
         let mut rng_b = UnifiedRandom::new(77);
         for _ in 0..50 {
-            update_world_grass_growth(&mut open, 100, 100, 99, 102, 99, 102, true, &mut rng_a);
-            update_world_grass_growth(&mut buried, 100, 100, 99, 102, 99, 102, true, &mut rng_b);
+            update_world_grass_growth(&mut open, 100, 100, 99, 102, 99, 102, true, &mut rng_a, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
+            update_world_grass_growth(&mut buried, 100, 100, 99, 102, 99, 102, true, &mut rng_b, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
         }
         assert_eq!(
             open.tile(100, 101).unwrap().kind,
@@ -1097,7 +1114,7 @@ mod tests {
         put(&mut w, 101, 200, 0, 0); // the dirt neighbour
         let mut rng = UnifiedRandom::new(7);
         for _ in 0..50 {
-            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, false, &mut rng);
+            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, false, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
         }
         assert_eq!(
             w.tile(101, 200).unwrap().kind,
@@ -1107,7 +1124,7 @@ mod tests {
         // With the flag back on the same arm converts the dirt.
         let mut rng = UnifiedRandom::new(7);
         for _ in 0..50 {
-            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
         }
         assert_eq!(
             w.tile(101, 200).unwrap().kind,

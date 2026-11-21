@@ -69,6 +69,16 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
     }
     let raining = app.rain.is_raining();
     let day_time = app.world.day_time;
+    // W4-g17 wiring — the `PlayerLOS` roster the growth pass's tree-FX
+    // gates read (`WorldGen.cs:69443`): the single live player's box.
+    let los_roster: Vec<(bool, f32, f32, f32, f32)> = app
+        .player
+        .as_ref()
+        .filter(|p| !p.dead)
+        .map(|p| vec![(true, p.x, p.y, p.width, p.height)])
+        .unwrap_or_default();
+    let fx_ctx = tr_core::growth::GrowthFxCtx { players: &los_roster };
+    let spawn_ctx = app.spawn_ctx();
     app.growth_step.tick(dt.min(0.25), |_| {
         let world = &mut app.world;
         // The port has no freeze-time power and runs at the day rate 1
@@ -78,6 +88,7 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         let allowed_to_spread = app.creative_powers.allowed_to_spread_infections();
         // The shell-pile arm's weather inputs: the live rain intensity and
         // the wind speed (`Main.maxRaining`/`Main.windSpeedCurrent`).
+        let mut fx_requests = tr_core::growth::TreeFxRequests::new();
         tr_core::growth::update_world(
             world,
             1,
@@ -88,7 +99,31 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
             app.rain.max_raining(),
             app.wind.speed_current,
             rng,
+            &fx_ctx,
+            &mut fx_requests,
         );
+        // W4-g17 wiring — the `TreeGrowFXCheck` drain (`WorldGen.cs:
+        // 29345-29382` → `world_gore_a::tree_grow_fx`): the growth's
+        // successful sapling picks queued their check cells; the scan
+        // resolves the height/style and the FX spawns on the SAME
+        // `UpdateWorldGen` stream (the C# `genRand` swap covers
+        // `UpdateWorld`, `Main.cs:17810` — the trunk/leaf draws ride it).
+        for (fx_x, fx_y) in fx_requests {
+            if let Some((height, style)) = tr_core::tree::tree_grow_fx_check(world, fx_x, fx_y) {
+                crate::world_gore_a::tree_grow_fx(
+                    fx_x,
+                    fx_y,
+                    height,
+                    style,
+                    false,
+                    &mut app.gore,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    rng,
+                    world,
+                );
+            }
+        }
         // `hardUpdateWorld`'s spread arms ride the same picks (the port
         // runs them unconditionally — the hardmode gate waits for
         // M5-HARDFORCE; `downedPlantBoss` false = the full rate).
@@ -119,6 +154,7 @@ mod tests {
     use super::{run_hardmode_init, update_growth};
     use crate::app::RngKey;
     use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::tile::FLAG_ACTIVE;
     use tr_core::{UnifiedRandom, World};
 
     /// A growth-sized world: `WorldGen.UpdateWorld`'s pick counts
@@ -199,6 +235,77 @@ mod tests {
         assert_eq!(app.world.tiles, twin_world.tiles, "same ore seeded");
     }
 
+    /// W4-g17 wiring — the growth pass's tree-FX channel is draw-neutral
+    /// when no FX fires: 500 ticks on a treeless world leave the
+    /// `UpdateWorldGen` stream exactly where the twin (empty roster, no
+    /// requests) sits — the channel added no unconditional draws.
+    #[test]
+    fn w4_g17_the_growth_fx_channel_is_draw_neutral_500() {
+        let mut app = fresh_app();
+        let mut twin = fresh_app();
+        for _ in 0..500 {
+            update_growth(&mut app, 1.0 / 60.0);
+            update_growth(&mut twin, 1.0 / 60.0);
+            assert_eq!(
+                *app.rngs.stream(RngKey::UpdateWorldGen),
+                *twin.rngs.stream(RngKey::UpdateWorldGen),
+                "the FX channel drew nothing extra"
+            );
+        }
+        assert!(!app.gore.slots().iter().any(|g| g.active));
+    }
+
+    /// W4-g17 wiring — `TreeGrowFXCheck`'s scan + the FX spawn: a grown
+    /// forest tree's check cell resolves (height, 910) and the drain
+    /// spawns the trunk column's gores (3 per row × height rows + the
+    /// top-row leaf burst of 20) on the `UpdateWorldGen` stream.
+    #[test]
+    fn w4_g17_the_tree_fx_drain_spawns_the_trunk_column() {
+        let mut app = fresh_app();
+        // A height-3 forest tree at (100, 199) on dirt row 200.
+        for x in 98..104 {
+            let i = app.world.index(x, 200);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 2,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        for dy in 0..3 {
+            let i = app.world.index(100, 199 - dy);
+            let (fx, fy) = if dy == 2 { (22, 198) } else { (0, 0) };
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 5,
+                frame_x: fx,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        let (height, style) =
+            tr_core::tree::tree_grow_fx_check(&app.world, 100, 199).expect("the scan resolves");
+        assert_eq!((height, style), (3, 910));
+        let spawn_ctx = app.spawn_ctx();
+        crate::world_gore_a::tree_grow_fx(
+            100,
+            199,
+            height,
+            style,
+            false,
+            &mut app.gore,
+            &mut app.dust,
+            &spawn_ctx,
+            app.rngs.stream(RngKey::UpdateWorldGen),
+            &app.world,
+        );
+        // 3 rows × 3 trunk gores + the top row's 20 leaves = 29.
+        let live = app.gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(live, 29, "3x3 trunk + 20 leaves (:29617-29636)");
+        for g in app.gore.slots().iter().filter(|g| g.active) {
+            assert_eq!(g.gore_type, 910, "the forest leaf style");
+        }
+    }
+
     /// DW-1.4 (determinism pair): two fresh same-seed runs of the growth
     /// phase produce identical worlds.
     #[test]
@@ -238,6 +345,8 @@ mod tests {
             twin.rain.max_raining(),
             twin.wind.speed_current,
             &mut stream,
+            &tr_core::growth::GrowthFxCtx::default(),
+            &mut tr_core::growth::TreeFxRequests::new(),
         );
         let sx = stream.next_range(10, twin.world.width - 10);
         let sy = stream.next_range(twin.world.rock_layer as i32, twin.world.height - 40);
