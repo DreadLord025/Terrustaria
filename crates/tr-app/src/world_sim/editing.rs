@@ -20,6 +20,8 @@ use super::items::spawn_item_drop;
 mod wiring;
 pub(crate) use wiring::use_wiring_tool;
 mod auto_actuator;
+mod auto_paint;
+mod block_swap;
 mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
@@ -5217,6 +5219,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         // tile 642), so the generic place-route timings below must not clobber
         // it; `Some(secs)` is the applied action time.
         let mut extracted_secs = None;
+        // The block-swap's own timer re-arm (`Player.cs:39886-39887`/
+        // `:39907-39908`) — when set, the generic cadence below must not
+        // clobber it (the C# re-arms INSIDE the swap, after the use start).
+        let mut swap_timers: Option<(f32, f32)> = None;
+        let mut swap_blocked = false;
         if !held_wall {
             extracted_secs = crate::world_sim::extract::use_extractinator(app, tx, ty, world_pos);
         }
@@ -5235,13 +5242,54 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             if use_wiring_tool(app, tx, ty) {
                 true
             } else {
-                use_tile_item(app, tx, ty)
+                // `PlaceThing_Tiles`' replacement head (`Player.cs:39728-
+                // 39731`): the block-swap answers BEFORE the normal place
+                // when `TileReplacementEnabled` (`builderAccStatus[10] ==
+                // 0`, `:3373` — the port's toggle defaults ON like
+                // vanilla's, no UI yet).
+                let swap_enabled = app
+                    .player
+                    .as_ref()
+                    .is_none_or(|p| p.builder_acc_status[10] == 0);
+                if swap_enabled {
+                    match block_swap::try_replacing_tiles(app, tx, ty, true) {
+                        block_swap::SwapOutcome::Proceed => {}
+                        block_swap::SwapOutcome::Blocked => swap_blocked = true,
+                        block_swap::SwapOutcome::Timed(swing, item) => {
+                            swap_timers = Some((swing, item));
+                        }
+                    }
+                }
+                if swap_timers.is_some() || swap_blocked {
+                    // The swap consumed the tick — the normal place never
+                    // runs (`canUse = false`, `:39905`).
+                    true
+                } else {
+                    use_tile_item(app, tx, ty)
+                }
             }
         } else {
             false
         };
         if used {
-            if let Some(secs) = extracted_secs {
+            if let Some((swing, item)) = swap_timers {
+                // The block-swap's re-arm (`SetItemAnimation` +
+                // `SetItemTime`, `Player.cs:39907-39908`): the swing and
+                // the action time are DIFFERENT values (the pick's scaled
+                // useTime vs the pick+held sum).
+                app.swing = swing;
+                app.swing_max = swing;
+                app.item_time = item;
+            } else if swap_blocked {
+                // The no-pickaxe / zero-damage refusals (`:39853`/:39865)
+                // return canUse = false with NO timer writes — the use
+                // start's own animation still runs (`ApplyItemAnimation`
+                // fires on the use start regardless of the placement),
+                // but no action re-arm lands.
+                if starting {
+                    start_use_timers(app, held);
+                }
+            } else if let Some(secs) = extracted_secs {
                 // `SetItemTime` (`Player.cs:4406-4413`): swing == item time ==
                 // useTime × multiplier (the extraction's own `ApplyItemTime`).
                 app.swing_max = secs;
@@ -5402,6 +5450,15 @@ pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
             if app.inventory[app.selected].count == 0 {
                 app.inventory[app.selected].kind = 0;
             }
+            // `PlaceThing_TryReplacingWalls`' autoPaint tail
+            // (`Player.cs:39823-39826`): the replaced wall paints too.
+            if app
+                .player
+                .as_ref()
+                .is_some_and(|p| p.auto_paint && p.builder_acc_status[3] == 0)
+            {
+                auto_paint::try_painting(app, tx, ty, true);
+            }
             return true;
         }
         // A refused replacement (350 handled above; progression walls) falls
@@ -5413,6 +5470,16 @@ pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
         place_wall_item(app, tx, ty, create_wall);
         // `PlaceThing_Walls_FillEmptySpace` (`Player.cs:39636-39715`).
         fill_empty_wall_space(app, tx, ty, create_wall);
+        // `PlaceThing_Walls`' autoPaint tail (`Player.cs:39629-39632`):
+        // AFTER the fill — only the clicked cell paints (the C# passes
+        // `Player.tileTargetX/Y`, not the fill cells).
+        if app
+            .player
+            .as_ref()
+            .is_some_and(|p| p.auto_paint && p.builder_acc_status[3] == 0)
+        {
+            auto_paint::try_painting(app, tx, ty, true);
+        }
         return true;
     }
     false
@@ -5551,6 +5618,18 @@ pub(crate) fn kill_cue((id, style): edit::SoundCue) -> Option<(&'static str, f32
 }
 
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
+    break_tile_inner(app, tx, ty, false);
+}
+
+/// `WorldGen.KillTile(..., noItem: true)` — the fossil-shatter kills
+/// (`WorldGen.cs:63506`): the cascade + sounds run, the loot suppresses
+/// (the `noItem` gate at `:63860`). The block-swap's
+/// `AttemptFossilShattering` is the only caller.
+pub(crate) fn break_tile_no_item(app: &mut App, tx: i32, ty: i32) {
+    break_tile_inner(app, tx, ty, true);
+}
+
+fn break_tile_inner(app: &mut App, tx: i32, ty: i32, no_item: bool) {
     // The three `CanKillTile` refusals (`WorldGen.cs:62219-62326`) gate
     // every break source — the C# `KillTile` entry duplicates them through
     // `CheckTileBreakability` (the 1/2 flavours, `:63537-63545`) and
@@ -5591,7 +5670,7 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_y: t.frame_y,
         });
     app.queue_map_ring(tx, ty);
-    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
+    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, no_item) else {
         return;
     };
     // `Chest.DestroyChest` (`Chest.cs:625-645`, called from
@@ -5676,7 +5755,9 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             &ctx,
         )
     };
-    for (id, count, x, y) in drops {
+    // `noItem: true` (`WorldGen.cs:63860`) suppresses the loot — the
+    // fossil-shatter kills drop nothing.
+    for (id, count, x, y) in drops.into_iter().filter(|_| !no_item) {
         // The tile-break drops draw the same `UpdatePlayers` stream the
         // break rolls used (`Main.rand` = the active swap, `Main.cs:17754`).
         // No per-drop cue: the C# plays the break sound once, from
@@ -7527,12 +7608,12 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     }
     // `PlaceThing_Tiles_GetAutoAccessoryCache` (`Player.cs:40115` →
     // `:40460-40488`): the pre-placement 11×11 snapshot, taken BEFORE the
-    // dispatcher write. The C# allocates only when autoPaint || autoActuator;
-    // only autoActuator is ported (the auto-paint family is unported).
+    // dispatcher write. The C# allocates only when autoPaint || autoActuator
+    // (`:40463`) — both halves are ported now.
     let auto_cache = app
         .player
         .as_ref()
-        .filter(|p| p.auto_actuator)
+        .filter(|p| p.auto_paint || p.auto_actuator)
         .map(|_| auto_actuator::auto_accessory_cache(&app.world, tx, ty));
     if !place_item_and_consume(
         &mut app.world,
@@ -7570,10 +7651,9 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     );
     app.request_edit(tx, ty, 1, kind);
     // `PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate` (`Player.cs:40163`) —
-    // the tail pass, after the placement's own net 17/1 (`:40152`). The
-    // actuator half is ported (`auto_actuator.rs`); the autoPaint half
-    // (`:40632-40635`) stays with the unported auto-paint family. The pass
-    // burns actuators from the inventory, so the world key invalidates.
+    // the tail pass, after the placement's own net 17/1 (`:40152`). Both
+    // halves ported (`auto_actuator.rs` + `auto_paint.rs`). The pass burns
+    // actuators/paint from the inventory, so the world key invalidates.
     if let Some(cache) = auto_cache {
         auto_actuator::auto_actuate_after_place(app, tx, ty, kind, &cache);
     }
