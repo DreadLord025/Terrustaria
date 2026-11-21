@@ -2508,6 +2508,128 @@ pub(crate) fn style126_column_tail(
     }
 }
 
+/// `MathHelper.Lerp` (`MathHelper.cs`) — the UNCLAMPED linear interpolation
+/// (the Clamp variant is a different method; the C# sites here use Lerp).
+fn math_lerp(a: f32, b: f32, amount: f32) -> f32 {
+    a + (b - a) * amount
+}
+
+/// `:36094-36117` — the 658 SandnadoHostileMark's spawn plume (aiStyle-128,
+/// STAGED — the d13 `projectile_ai_sandnado_mark` machine keeps the
+/// explicit draws, bodies skipped; this REPLACES that census). The caller
+/// gates `localAI[1] < 30`. ONE dust-269: amount = NextFloat FIRST, then
+/// the X-lerp NextFloat (the Y lerp reuses amount); X ×= Lerp(2.2,0.6,
+/// amount) then ×−1; point = Centre + (60,200)·dir·0.5 + (2,10); the 0×0
+/// spawn, position = point exactly, fadeIn 1, scale 0.3; the
+/// `dir.X > −1.2`-gated NextFloat velocity.X = 1+f, then the
+/// unconditional NextFloat velocity.Y = f·−0.5 − 1. customData dropped.
+pub(crate) fn style128_sandnado_plume_658(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let amount = d.rng.next_float();
+    let mut dir = Vec2::new(
+        math_lerp(0.1, 1.0, d.rng.next_float()),
+        math_lerp(-0.5, 0.9, amount),
+    );
+    dir.x *= math_lerp(2.2, 0.6, amount);
+    dir.x *= -1.0;
+    let offset = Vec2::new(2.0, 10.0);
+    let (cx, cy) = p.center();
+    let point = Vec2::new(cx, cy) + Vec2::new(60.0, 200.0) * dir * 0.5 + offset;
+    let idx = d.new_dust(world, point, 0, 0, 269, 0.0, 0.0, 0, Color::default(), 1.0);
+    let dust = d.pool.slot_mut(idx);
+    dust.position = point;
+    dust.fade_in = 1.0;
+    dust.scale = 0.3;
+    if dir.x > -1.2 {
+        dust.velocity.x = 1.0 + d.rng.next_float();
+    }
+    dust.velocity.y = d.rng.next_float() * -0.5 - 1.0;
+}
+
+/// `:36152-36177` — the 658's TWO orbit-dust loops (aiStyle-128, STAGED —
+/// the d13 machine's skip). Each: 2 iterations, a Next(10)==0 gate; the
+/// spin = UnitY.RotatedBy(i·π) — the FIRST loop additionally
+/// .RotatedBy(rotation), the second does NOT (the C# asymmetry); dust 267
+/// at Centre, 0×0, alpha 225, Color.White, scale 1.5; noGravity, noLight,
+/// scale = Opacity·localAI[0] (the caller passes the product), position =
+/// Centre, velocity = spin·2.5.
+pub(crate) fn style128_sandnado_orbits_658(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    opacity_x_local0: f32,
+) {
+    let (cx, cy) = p.center();
+    let center = Vec2::new(cx, cy);
+    for i in 0..2 {
+        if d.rng.next_range(0, 10) == 0 {
+            let spin = crate::bow_launch::rotated_by(
+                crate::bow_launch::rotated_by(Vec2::Y, i as f64 * std::f64::consts::PI),
+                p.rot as f64,
+            );
+            let idx = d.new_dust(world, center, 0, 0, 267, 0.0, 0.0, 225, Color::WHITE, 1.5);
+            let dust = d.pool.slot_mut(idx);
+            dust.no_gravity = true;
+            dust.no_light = true;
+            dust.scale = opacity_x_local0;
+            dust.position = center;
+            dust.velocity = spin * 2.5;
+        }
+    }
+    for i in 0..2 {
+        if d.rng.next_range(0, 10) == 0 {
+            let spin = crate::bow_launch::rotated_by(Vec2::Y, i as f64 * std::f64::consts::PI);
+            let idx = d.new_dust(world, center, 0, 0, 267, 0.0, 0.0, 225, Color::WHITE, 1.5);
+            let dust = d.pool.slot_mut(idx);
+            dust.no_gravity = true;
+            dust.no_light = true;
+            dust.scale = opacity_x_local0;
+            dust.position = center;
+            dust.velocity = spin * 2.5;
+        }
+    }
+}
+
+/// `:36414-36432` — the 672 DD2ElderWins' destruction motes (aiStyle-132,
+/// STAGED — the d14 `ai_elder_wins` machine's skip). The caller gates
+/// `localAI[1] >= 1`; count = `1 + (int)(0 − vel.Y)` (the C# int cast
+/// truncates toward zero). Per iteration: the Next(2)==0 gate; rise =
+/// NextFloat·(−vel.Y); X = NextFloat·0.1 − 0.05 then += sin((pos.Y+rise)·
+/// 0.01 + 2π·(Next(3)/3.0))·0.5 (the float multiply BEFORE the double
+/// widen, the integer Next(3) over the double 3.0); X = Lerp(NextFloat −
+/// 0.5, X, Clamp(−vel.Y, 0, 1)); Y = 0.5 − |X|; ×(100,50); Y += rise;
+/// NewDustPerfect type 27 at Centre+point, velocity Zero, alpha 0,
+/// `Color.White * 0.1` = (25,25,25,25) (the XNA byte multiply), scale 1.1;
+/// then velocity.Y = NextFloat·2, fadeIn 0.1.
+pub(crate) fn style132_elder_wins_motes_672(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    let count = 1 + (0.0 - p.vel.y) as i32;
+    for _ in 0..count {
+        if d.rng.next_range(0, 2) == 0 {
+            let rise = d.rng.next_float() * (0.0 - p.vel.y);
+            let mut x = d.rng.next_float() * 0.1 - 0.05;
+            let phase = d.rng.next_range(0, 3) as f64 / 3.0;
+            x += (((p.pos.y + rise) * 0.01) as f64 + 6.2831854820251465 * phase).sin() as f32 * 0.5;
+            let amount = (0.0 - p.vel.y).clamp(0.0, 1.0);
+            x = math_lerp(d.rng.next_float() - 0.5, x, amount);
+            let mut point = Vec2::new(x, 0.5 - x.abs());
+            point *= Vec2::new(100.0, 50.0);
+            point.y += rise;
+            let idx = d.new_dust_perfect(
+                world,
+                Vec2::new(cx, cy) + point,
+                27,
+                Some(Vec2::ZERO),
+                0,
+                Color::new(25, 25, 25, 25),
+                1.1,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.velocity.y = d.rng.next_float() * 2.0;
+            dust.fade_in = 0.1;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
@@ -4860,6 +4982,119 @@ mod tests {
             assert_eq!(pool.slot(j).scale, mpool.slot(j).scale);
             assert_eq!(pool.slot(j).fade_in, mpool.slot(j).fade_in);
             assert_eq!(pool.slot(j).no_gravity, mpool.slot(j).no_gravity);
+        }
+    /// W4-e3 AI-inline window — `:36094-36177`: the 658 plume (amount
+    /// NextFloat FIRST, the X-lerp second, the >−1.2-gated velocity.X
+    /// NextFloat, the unconditional velocity.Y NextFloat) + the two orbit
+    /// loops (first .RotatedBy(rotation), second NOT; Next(10) gates every
+    /// iteration). Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style128_sandnado_658_plume_and_orbits_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(658);
+        p.rot = 1.1;
+        let opacity_x_local0 = 0.8 * 0.8;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(103);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(103);
+        {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style128_sandnado_plume_658(&p, &w, &mut d);
+            style128_sandnado_orbits_658(&p, &w, &mut d, opacity_x_local0);
+        }
+        let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+        let amount = mirror.next_float();
+        let mut dir = Vec2::new(lerp(0.1, 1.0, mirror.next_float()), lerp(-0.5, 0.9, amount));
+        dir.x *= lerp(2.2, 0.6, amount);
+        dir.x *= -1.0;
+        let (cx, cy) = p.center();
+        let center = Vec2::new(cx, cy);
+        let point = center + Vec2::new(60.0, 200.0) * dir * 0.5 + Vec2::new(2.0, 10.0);
+        let idx = mpool.new_dust(&mut mirror, &c, &w, point, 0, 0, 269, 0.0, 0.0, 0, Color::default(), 1.0);
+        let md = mpool.slot_mut(idx);
+        md.position = point;
+        md.fade_in = 1.0;
+        md.scale = 0.3;
+        if dir.x > -1.2 {
+            md.velocity.x = 1.0 + mirror.next_float();
+        }
+        md.velocity.y = mirror.next_float() * -0.5 - 1.0;
+        for loop_i in 0..2 {
+            for i in 0..2 {
+                if mirror.next_range(0, 10) == 0 {
+                    let mut spin = crate::bow_launch::rotated_by(Vec2::Y, i as f64 * std::f64::consts::PI);
+                    if loop_i == 0 {
+                        spin = crate::bow_launch::rotated_by(spin, 1.1f64);
+                    }
+                    let idx = mpool.new_dust(&mut mirror, &c, &w, center, 0, 0, 267, 0.0, 0.0, 225, Color::WHITE, 1.5);
+                    let md = mpool.slot_mut(idx);
+                    md.no_gravity = true;
+                    md.no_light = true;
+                    md.scale = opacity_x_local0;
+                    md.position = center;
+                    md.velocity = spin * 2.5;
+                }
+            }
+        }
+        let act = active(&pool);
+        assert_eq!(act.len(), active(&mpool).len());
+        assert!(act.len() >= 1);
+        for &j in &act {
+            assert_eq!(pool.slot(j).position, mpool.slot(j).position);
+            assert_eq!(pool.slot(j).velocity, mpool.slot(j).velocity);
+            assert_eq!(pool.slot(j).scale, mpool.slot(j).scale);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 AI-inline window — `:36414-36432`: the 672 motes at vel.Y −4
+    /// (count 5): the Next(2) gate per iteration, rise NextFloat, the
+    /// X-jitter NextFloat, the integer Next(3) phase, the Lerp NextFloat,
+    /// the Perfect 27 (25,25,25,25), the velocity.Y NextFloat. Mirrored.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style132_elder_wins_672_motes_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(672);
+        p.vel = Vec2::new(0.0, -4.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(107);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(107);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style132_elder_wins_motes_672(&p, &w, &mut d);
+        let (cx, cy) = p.center();
+        let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+        for _ in 0..5 {
+            if mirror.next_range(0, 2) == 0 {
+                let rise = mirror.next_float() * 4.0;
+                let mut x = mirror.next_float() * 0.1 - 0.05;
+                let phase = mirror.next_range(0, 3) as f64 / 3.0;
+                x += (((p.pos.y + rise) * 0.01) as f64 + 6.2831854820251465 * phase).sin() as f32 * 0.5;
+                x = lerp(mirror.next_float() - 0.5, x, 1.0);
+                let mut point = Vec2::new(x, 0.5 - x.abs()) * Vec2::new(100.0, 50.0);
+                point.y += rise;
+                let idx = mpool.new_dust_perfect(
+                    &mut mirror, &c, &w, Vec2::new(cx, cy) + point, 27,
+                    Some(Vec2::ZERO), 0, Color::new(25, 25, 25, 25), 1.1,
+                );
+                let md = mpool.slot_mut(idx);
+                md.velocity.y = mirror.next_float() * 2.0;
+                md.fade_in = 0.1;
+            }
+        }
+        let act = active(&pool);
+        assert_eq!(act.len(), active(&mpool).len());
+        assert!(!act.is_empty(), "seed 107 passes the 1-in-2 gate in 5 tries");
+        for &j in &act {
+            assert_eq!(pool.slot(j).dust_type, 27);
+            assert_eq!(pool.slot(j).color, Color::new(25, 25, 25, 25));
+            assert_eq!(pool.slot(j).position, mpool.slot(j).position);
+            assert_eq!(pool.slot(j).velocity, mpool.slot(j).velocity);
+            assert_eq!(pool.slot(j).fade_in, 0.1);
         }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
