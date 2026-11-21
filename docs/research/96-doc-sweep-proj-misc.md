@@ -11,8 +11,8 @@ Commits (this phase):
 | item | commit | scope |
 | --- | --- | --- |
 | (1) fountain jet-speed math | `9a293e21` | `ai_fountain` + `fountain_jet` + witness |
-| (2) Bubble pop sound + spawn source | `42955200` | `bubble_pop_kill` + death-hook wiring + the BubbleGun volley arm + 3 witnesses |
-| (3)+(4) Scutlix spawn ai-pin + crosshair ability calls | `f7687d54` | the 606 row + slice-B ramp/stick + the Mount ability half + the aiStyle-76 wiring + 4 witnesses |
+| (2) Bubble pop sound + spawn source | `42955200` | `bubble_pop_kill` + death-hook wiring + the BubbleGun volley arm + 2 witnesses |
+| (3)+(4) Scutlix spawn ai-pin + crosshair ability calls | `f7687d54` | the 606 row + slice-B ramp/stick + the Mount ability half + the aiStyle-76 wiring + 3 new witnesses + 1 extended |
 | (5) fountain tile-338 right-click | `8e455fcb` | `interact_tile`'s 338 arm + witness |
 
 ---
