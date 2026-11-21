@@ -17445,6 +17445,68 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             crate::projectile_ai_misc::drone_move(&mut self.slots[i], world);
                         }
+                        // W4-d20 — aiStyle 198, the Dead Cells flint
+                        // (`AI_198_Flint` `:52238-52315`): the channel hold,
+                        // the release slash (1043) + charged spike wave
+                        // (1041) and the follow-through. The player writes
+                        // ride the golf PlayerWrites seam; the spawns ride
+                        // wants_dart_spawns (the pool drains them after).
+                        // The row keeps tileCollide false — the free move.
+                        198 => {
+                            if let Some(ctx) = self.golf_ctx.as_mut() {
+                                let player = if self.slots[i].owner == local_owner {
+                                    ctx.player
+                                } else {
+                                    crate::projectile_ai_golf::GolfClubPlayer {
+                                        active: false,
+                                        ..ctx.player
+                                    }
+                                };
+                                let tick = crate::projectile_ai_misc::ai_flint(
+                                    &mut self.slots[i],
+                                    world,
+                                    player,
+                                    ctx.mouse_world,
+                                    local_owner,
+                                    rng,
+                                );
+                                // The 1043 release slash (ai2 = 1 rides the
+                                // dart-spawn seam's ai1 slot — the 190 arm
+                                // reads ai[1]; ai2 is the slash's scale, set
+                                // at the spawn below).
+                                if let Some((x, y, vx, vy, dmg, kb, ai0, ai1, _ai2)) = tick.wants_slash {
+                                    self.slots[i].wants_dart_spawns.push((
+                                        crate::projectile::DEAD_CELLS_FLINT_SLASH,
+                                        x - 8.0, y - 8.0, vx, vy, dmg, kb, ai0, ai1, 0,
+                                    ));
+                                }
+                                // The 1041 ground spikes.
+                                for (x, y, vx, vy, ai0, ai1) in tick.spikes {
+                                    self.slots[i].wants_dart_spawns.push((
+                                        crate::projectile::DEAD_CELLS_FLINT_SHOT,
+                                        x - 16.0, y - 16.0, vx, vy,
+                                        self.slots[i].damage, self.slots[i].knock_back,
+                                        ai0, ai1, 0,
+                                    ));
+                                }
+                                // The player-side writes.
+                                self.golf_effects.push(
+                                    crate::projectile_ai_golf::GolfEffect::PlayerWrites {
+                                        facing: tick.facing,
+                                        held_proj: if tick.writes_held_proj {
+                                            Some(i as i32)
+                                        } else {
+                                            None
+                                        },
+                                        dummy_item_time: tick.dummy_item_time,
+                                        cancel_use: false,
+                                        item_animation_max: tick.item_animation_max,
+                                    },
+                                );
+                            }
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the
@@ -19875,6 +19937,7 @@ impl ProjectilePool {
                                         },
                                         dummy_item_time: tick.dummy_item_time,
                                         cancel_use: tick.cancel_use,
+                                        item_animation_max: None,
                                     },
                                 );
                             }

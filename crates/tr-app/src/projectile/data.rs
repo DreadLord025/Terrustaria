@@ -3635,6 +3635,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // blocked-move bounce :18057-18067). friendly rides the pool
             // default; the drone damages nothing (no melee/ranged/magic).
             JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d20 — `Projectile.cs:9821-9833` (1040, the Dead Cells flint):
+            // 2x2, aiStyle 198, tileCollide false, ignoreWater, penetrate -1,
+            // alpha 255, manualDirectionChange (the arm owns the facing).
+            // drawLayer 7 / usesOwnerLight are draw-side (no ProjData field).
+            DEAD_CELLS_FLINT => (2.0, 2.0, 198, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d20 — `Projectile.cs:9834-9847` (1041, the flint ground
+            // spike): 32x32, aiStyle 157, friendly, melee, alpha 255,
+            // tileCollide false, ignoreWater, penetrate 4, LOCAL pair (25).
+            DEAD_CELLS_FLINT_SHOT => (32.0, 32.0, 157, 4, TIME_LEFT_DEFAULT, 0, false, false, false, (true, 25, false, -1, 255, 1.0)),
+            // W4-d20 — `Projectile.cs:9858-9874` (1043, the flint release
+            // slash): 16x16, aiStyle 190, friendly, melee, penetrate 2,
+            // LOCAL pair (-1), tileCollide false, ignoreWater, ownerHitCheck
+            // (the 190 arm is d19's lane; the row lets the spawn land).
+            DEAD_CELLS_FLINT_SLASH => (16.0, 16.0, 190, 2, TIME_LEFT_DEFAULT, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -4255,7 +4269,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(kind, FLOWER_WHIP_PETAL | PETALSTORM_SHOT)
             // W4-d20 — `Projectile.cs:9455`: the jumino animation (995) sets
             // `ignoreWater = true`.
-            || kind == JUMINO_STARDROP_ANIMATION,
+            || kind == JUMINO_STARDROP_ANIMATION
+            // W4-d20 — `Projectile.cs:9827`/`:9843`/`:9868`: the flint trio
+            // (1040/1041/1043) set `ignoreWater = true`.
+            || matches!(kind, DEAD_CELLS_FLINT | DEAD_CELLS_FLINT_SHOT | DEAD_CELLS_FLINT_SLASH),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4290,6 +4307,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d20 — `Projectile.cs:9841`/`:9864`: the flint spike
+                    // (1041) and slash (1043) set melee.
+                    | DEAD_CELLS_FLINT_SHOT | DEAD_CELLS_FLINT_SLASH
             ),
         ranged: matches!(
             kind,
@@ -4523,6 +4543,16 @@ pub const JUMINO_STARDROP_ANIMATION: u16 = 995;
 /// `ProjectileID.JimsDrone` (1020) — Jim's RC drone, aiStyle 195
 /// (`Projectile.cs:9659-9666`). W4-d20.
 pub const JIMS_DRONE: u16 = 1020;
+/// `ProjectileID.DeadCellsFlint` (1040) — the Dead Cells flint channel
+/// weapon, aiStyle 198 (`Projectile.cs:9821-9833`). W4-d20.
+pub const DEAD_CELLS_FLINT: u16 = 1040;
+/// `ProjectileID.DeadCellsFlintShot` (1041) — the flint's ground spike,
+/// aiStyle 157 (`Projectile.cs:9834-9847`). W4-d20.
+pub const DEAD_CELLS_FLINT_SHOT: u16 = 1041;
+/// `ProjectileID.DeadCellsFlintSlash` (1043) — the flint's release slash,
+/// aiStyle 190 (`Projectile.cs:9858-9874`). W4-d20 (the 190 arm is d19's
+/// lane; the row lets the flint's spawn land).
+pub const DEAD_CELLS_FLINT_SLASH: u16 = 1043;
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,

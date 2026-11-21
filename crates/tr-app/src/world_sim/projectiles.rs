@@ -375,6 +375,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 channel: p.channel,
                 use_animation,
                 held_item_type: held as i32,
+                // W4-d20 — the flint arm's anchor + dust rotation reads.
+                mounted_center: Vec2::new(p.mounted_center().0, p.mounted_center().1),
+                item_rotation: p.item_rotation,
             },
             player_name: app.player_name.clone(),
             golfer_score: p.golfer_score,
@@ -697,6 +700,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 held_proj,
                 dummy_item_time,
                 cancel_use,
+                item_animation_max,
             } => {
                 if let Some(p) = app.player.as_mut() {
                     // `player.ChangeDir(direction)` (`Player.cs:42091`) —
@@ -708,6 +712,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     // `player.heldProj = whoAmI` (`:52490`/`:52535`).
                     if let Some(slot) = held_proj {
                         p.held_proj = slot;
+                    }
+                    // W4-d20 — `player.itemAnimationMax = useAnimation`
+                    // (`AI_198_Flint` `Projectile.cs:52307`): the port's
+                    // swing_max is the itemAnimationMax stand-in (seconds).
+                    if let Some(max) = item_animation_max {
+                        app.swing_max = max as f32 / 60.0;
                     }
                     if cancel_use {
                         // `SetItemTime(0)` + `itemAnimation/Max = 0` +

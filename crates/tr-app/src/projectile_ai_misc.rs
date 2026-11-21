@@ -1260,6 +1260,253 @@ pub(crate) fn drone_move(p: &mut Projectile, world: &World) {
     p.pos += p.vel;
 }
 
+/// `WorldGen.SolidTile` (`WorldGen.cs:70111-70132`) — the full solid block
+/// (active, solid, not solid-top, no half-brick, no slope, not actuated).
+/// The flint's surface/ceiling walk reads it (the `npc.rs::solid_block`
+/// shape, kept local to avoid the cross-module private fn).
+fn flint_solid_tile(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.active()
+            && !t.inactive()
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            && !t.half_brick()
+            && t.slope() == 0
+    })
+}
+
+/// `WorldGen.ActiveAndWalkableTile` (`WorldGen.cs:70300-70318`) — active,
+/// solid, not actuated (solid-top counts).
+fn flint_walkable(world: &World, x: i32, y: i32) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && !t.inactive() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+}
+
+/// `FindBlockSurface` (`Projectile.cs:52361-52387`) — walk up out of solid
+/// (downMax steps), then down to the first walkable (upmax steps). The
+/// `y < 10` / `y > maxTilesY - 10` bounds break the walks.
+fn find_block_surface(world: &World, x: i32, y: &mut i32, down_max: i32, up_max: i32) {
+    for _ in 0..down_max {
+        if *y < 10 || !flint_solid_tile(world, x, *y) {
+            break;
+        }
+        *y -= 1;
+    }
+    for _ in 0..up_max {
+        if *y > world.height - 10 || flint_walkable(world, x, *y) {
+            break;
+        }
+        *y += 1;
+    }
+}
+
+/// `FindBlockCeiling` (`Projectile.cs:52389-52415`) — the gravity-flip
+/// mirror: walk down out of solid (upMax), then up to the first walkable
+/// (downMax).
+fn find_block_ceiling(world: &World, x: i32, y: &mut i32, up_max: i32, down_max: i32) {
+    for _ in 0..up_max {
+        if *y > world.height - 10 || !flint_solid_tile(world, x, *y) {
+            break;
+        }
+        *y += 1;
+    }
+    for _ in 0..down_max {
+        if *y < 10 || flint_walkable(world, x, *y) {
+            break;
+        }
+        *y -= 1;
+    }
+}
+
+/// `AI_198_Flint_EmitSpikes` (`Projectile.cs:52317-52359`) — the charged
+/// release's ground-spike wave: up to 13 spikes (num3 = 0..12) stepping 2
+/// tiles along `direction`, each on the first walkable surface/ceiling tile.
+/// The port keeps `gravDir = 1` (flag false → the surface walk).
+///
+/// RNG: per spawned spike one `NextFloat` (the ai1 scale, `:52346`) then one
+/// `NextFloatDirection` (the velocity rotation, `:52352`). The
+/// `ParticleOrchestrator` request (`:52322`) is a particle-system spawn —
+/// skipped (no particle layer). The returned vec is the `(x, y, vx, vy,
+/// ai0, ai1)` spike payloads the pool resolves into 1041 spawns.
+fn flint_emit_spikes(
+    p: &Projectile,
+    world: &World,
+    start: Vec2,
+    direction: i32,
+    rng: &mut dyn DropRng,
+) -> Vec<(f32, f32, f32, f32, f32, f32)> {
+    let mut out = Vec::new();
+    let start = start + Vec2::new(direction as f32 * 30.0, 0.0);
+    let mut tx = (start.x / 16.0) as i32;
+    let mut ty = (start.y / 16.0) as i32;
+    // gravDir = 1 → flag false (the surface walk).
+    let num = 12;
+    let num2 = 2;
+    let mut num3 = 0;
+    while num3 <= num {
+        find_block_surface(world, tx, &mut ty, 10, 10);
+        if flint_walkable(world, tx, ty) {
+            // `p.ToWorldCoordinates(8, 0)` = (tx*16 + 8, ty*16).
+            let vector = Vec2::new(tx as f32 * 16.0 + 8.0, ty as f32 * 16.0);
+            let spinningpoint = Vec2::new(direction as f32, -10.0);
+            let ai = 1.0 + num3 as f32 * 0.04 + rng.next_float() * 0.2;
+            let angle = rng.next_float() * 2.0 - 1.0; // NextFloatDirection
+            let vel = rotate(spinningpoint, angle * std::f32::consts::TAU * 0.025);
+            out.push((vector.x, vector.y, vel.x, vel.y, -(num3 * 2) as f32, ai));
+            num3 += 1;
+            tx += direction * num2;
+            continue;
+        }
+        break;
+    }
+    out
+}
+
+/// `AI_198_Flint` (`Projectile.cs:52238-52315`) — the Dead Cells flint
+/// (1040), the channel weapon. While channelling (`ai[0] == 0`) it holds the
+/// player's facing, winds the dummy item time and rolls the charge dust; on
+/// release (`!channel`) it spawns the 1043 slash (damage ×1.78) and — if the
+/// charge reached 30 ticks — the ground-spike wave, then enters the
+/// follow-through (`ai[0] == 1`) that counts down to `useAnimation` and kills.
+///
+/// The port keeps `gravDir = 1` (the aim's `ReverseGravitySupport` folds to
+/// the raw mouse, the spike walk takes the surface branch). The player-side
+/// writes (`ChangeDir`, `heldProj`, `SetDummyItemTime`, `itemAnimationMax`)
+/// ride the [`FlintTick`] return → the pool's `GolfEffect::PlayerWrites` seam.
+/// The `itemLocation.Y += Next(2)` jitter (`:52309`) keeps its draw on the
+/// stream; the draw-side item location is unmodelled (the thrust placement
+/// recomputes it each frame — a documented skip).
+///
+/// RNG (charge phase, `ai[0] == 0`): one `Next(2)` (the itemLocation jitter,
+/// `:52309`) then one `Next(10)` gate (`:52310`); on the taken branch the
+/// dust's `NextVector2Circular(12,12)` pair + `NextFloat` velocity + `NextFloat`
+/// scale (`:52312`). The release's spike wave rides [`flint_emit_spikes`].
+/// The `DeadCellsFlintCharge` cue (`:52305`) is a tracked sound — skipped (no
+/// tracked-sound layer); the 30-tick charge state still gates the spikes.
+pub(crate) fn ai_flint(
+    p: &mut Projectile,
+    world: &World,
+    player: crate::projectile_ai_golf::GolfClubPlayer,
+    mouse_world: Vec2,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+) -> FlintTick {
+    let mut tick = FlintTick::default();
+    // `:52240-52245` — the inactive-owner kill.
+    if !player.active {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return tick;
+    }
+    // `:52246-52260` — the release: !channel while still charging.
+    if !player.channel && p.ai[0] == 0.0 {
+        let charged = p.ai[1] >= 30.0;
+        p.ai[0] = 1.0;
+        p.ai[1] = 0.0;
+        p.net_update = true;
+        if p.owner == local_owner {
+            // The 1043 slash: damage ×1.78, velocity (direction, 0),
+            // ai0 = direction * gravDir (= direction), ai1 = 6, ai2 = 1.
+            let (mcx, mcy) = (player.mounted_center.x, player.mounted_center.y);
+            let slash_damage = (p.damage as f32 * 1.78) as i32;
+            tick.wants_slash = Some((
+                mcx,
+                mcy,
+                p.direction as f32,
+                0.0,
+                slash_damage,
+                p.knock_back,
+                p.direction as f32, // ai0 = direction * gravDir (gravDir = 1)
+                6.0,
+                1.0,
+            ));
+            if charged {
+                tick.spikes = flint_emit_spikes(
+                    p,
+                    world,
+                    player.mounted_center,
+                    p.direction,
+                    rng,
+                );
+            }
+        }
+    }
+    // `:52261-52279` — the follow-through: count to useAnimation, then kill.
+    if p.ai[0] == 1.0 {
+        p.ai[1] += 1.0;
+        let num = player.use_animation as f32;
+        if p.ai[1] >= num {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+            return tick;
+        }
+        p.vel = Vec2::ZERO;
+        tick.facing = Some(p.direction);
+        tick.writes_held_proj = true;
+        let mut num2 = remap(p.ai[1], 0.0, 5.0, num, 0.0) as i32;
+        if num2 < 2 {
+            num2 = 2;
+        }
+        tick.dummy_item_time = Some(num2);
+    }
+    // `:52280-52314` — the charge hold.
+    if p.ai[0] == 0.0 {
+        p.vel = Vec2::ZERO;
+        if p.owner == local_owner {
+            // `ReverseGravitySupport(MouseScreen) + screenPosition` =
+            // MouseWorld (gravDir = 1); face toward it from MountedCenter.
+            let dx = mouse_world.x - player.mounted_center.x;
+            p.direction = if dx >= 0.0 { 1 } else { -1 };
+            tick.facing = Some(p.direction);
+        }
+        p.direction = player.direction;
+        tick.writes_held_proj = true;
+        let use_animation = player.use_animation;
+        let num3 = 3;
+        p.ai[1] += 1.0;
+        let num4 = p.ai[1].min(num3 as f32);
+        let mut num5 = use_animation + num4 as i32;
+        if num5 < 2 {
+            num5 = 2;
+        }
+        // The 30-tick charge cue is a tracked sound — skipped (the state
+        // still gates the spike wave above).
+        tick.item_animation_max = Some(use_animation);
+        tick.dummy_item_time = Some(num5);
+        // `itemLocation.Y += Next(2)` — the draw stays; the location is
+        // draw-side (unmodelled).
+        let _ = rng.next_range(0, 2);
+        // The 1-in-10 charge dust gate.
+        if rng.next_range(0, 10) == 0 {
+            let _ = (rng.next_float(), rng.next_float()); // NextVector2Circular(12,12)
+            let _ = rng.next_float(); // velocity.Y = NextFloat * -8 - 2
+            let _ = rng.next_float(); // scale = 1.3 + NextFloat
+        }
+    }
+    tick
+}
+
+/// What one aiStyle-198 tick hands back to the pool: the player-side writes
+/// (the `GolfClubTick` shape), the 1043 slash spawn and the 1041 spike wave.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FlintTick {
+    /// `player.ChangeDir(direction)` (`:52271`/`:52286`).
+    pub facing: Option<i32>,
+    /// `player.heldProj = whoAmI` (`:52272`/`:52289`).
+    pub writes_held_proj: bool,
+    /// `player.SetDummyItemTime(frames)` (`:52278`/`:52308`).
+    pub dummy_item_time: Option<i32>,
+    /// `player.itemAnimationMax = useAnimation` (`:52307`).
+    pub item_animation_max: Option<i32>,
+    /// The 1043 release slash: `(x, y, vx, vy, damage, kb, ai0, ai1, ai2)`.
+    pub wants_slash: Option<(f32, f32, f32, f32, i32, f32, f32, f32, f32)>,
+    /// The 1041 ground spikes: `(x, y, vx, vy, ai0, ai1)` per spike.
+    pub spikes: Vec<(f32, f32, f32, f32, f32, f32)>,
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
@@ -2311,5 +2558,181 @@ mod tests {
         );
         assert!(pool.slots()[s].active, "the drone keeps alive");
         assert_eq!(pool.slots()[s].time_left, 1, "timeLeft=2 then the tick decrement");
+    }
+
+    // ---- W4-d20 aiStyle 198 (Flint) — WRITTEN NOT RUN ----
+
+    /// The flint trio's rows carry their census slices.
+    #[test]
+    fn w4_d20_the_flint_rows_carry_their_styles() {
+        let f = proj_data(1040).unwrap();
+        assert_eq!(f.ai_style, 198);
+        assert_eq!((f.w, f.h), (2.0, 2.0), "`:9823-9824`");
+        assert!(!f.tile_collide, "`:9826`");
+        assert!(f.ignore_water, "`:9827`");
+        assert_eq!(f.alpha, 255, "`:9831`");
+        let s = proj_data(1041).unwrap();
+        assert_eq!(s.ai_style, 157);
+        assert_eq!(s.penetrate, 4, "`:9844`");
+        assert!(s.melee, "`:9841`");
+        assert!(s.uses_local_immunity && s.local_hit_cooldown == 25, "`:9845-9846`");
+        let sl = proj_data(1043).unwrap();
+        assert_eq!(sl.ai_style, 190);
+        assert_eq!(sl.penetrate, 2, "`:9865`");
+        assert!(sl.melee, "`:9864`");
+    }
+
+    /// A flint player snapshot for the arm tests.
+    fn flint_player(channel: bool) -> crate::projectile_ai_golf::GolfClubPlayer {
+        crate::projectile_ai_golf::GolfClubPlayer {
+            active: true,
+            center: Vec2::new(1600.0, 800.0),
+            bottom: Vec2::new(1600.0, 842.0),
+            direction: 1,
+            channel,
+            use_animation: 20,
+            held_item_type: 5451,
+            mounted_center: Vec2::new(1600.0, 800.0),
+            item_rotation: 0.0,
+        }
+    }
+
+    /// The inactive-owner kill (`:52240-52245`).
+    #[test]
+    fn w4_d20_the_flint_inactive_owner_kills() {
+        let w = world();
+        let mut p = proj(1040);
+        p.owner = 0;
+        let mut pl = flint_player(true);
+        pl.active = false;
+        let tick = ai_flint(&mut p, &w, pl, Vec2::new(1700.0, 800.0), 0, &mut census());
+        assert!(!p.active, "the orphan kill");
+        assert!(tick.wants_slash.is_none());
+    }
+
+    /// The charge hold (`:52280-52314`): zero velocity, the facing tracks the
+    /// mouse, the dummy item time = useAnimation + min(ai[1], 3), the
+    /// itemAnimationMax write, and the Next(2) + Next(10) census.
+    #[test]
+    fn w4_d20_the_flint_charge_holds_and_winds() {
+        let w = world();
+        let mut p = proj(1040);
+        p.owner = 0;
+        p.ai[0] = 0.0;
+        p.ai[1] = 0.0;
+        let pl = flint_player(true);
+        let mut rng = census();
+        let tick = ai_flint(&mut p, &w, pl, Vec2::new(1700.0, 800.0), 0, &mut rng);
+        assert_eq!(p.vel, Vec2::ZERO, "the charge zeroes velocity");
+        assert_eq!(p.direction, 1, "the mouse is to the right");
+        assert_eq!(p.ai[1], 1.0, "the wind-up counter");
+        assert_eq!(tick.dummy_item_time, Some(20 + 1), "useAnimation + min(1,3)");
+        assert_eq!(tick.item_animation_max, Some(20), "`:52307`");
+        assert!(tick.writes_held_proj);
+        // The census: Next(2) jitter + Next(10) gate (census returns min=0,
+        // so the gate is taken → the dust's 2+1+1 floats).
+        assert_eq!(rng.ranges, vec![(0, 2), (0, 10)], "the charge census");
+        assert_eq!(rng.floats, 4, "Circular pair + velocity + scale");
+    }
+
+    /// The release (`:52246-52260`): !channel while charging spawns the 1043
+    /// slash (damage ×1.78) and enters the follow-through. A charge < 30
+    /// spawns no spikes.
+    #[test]
+    fn w4_d20_the_flint_release_spawns_the_slash() {
+        let w = world();
+        let mut p = proj(1040);
+        p.owner = 0;
+        p.damage = 100;
+        p.knock_back = 5.0;
+        p.direction = 1;
+        p.ai[0] = 0.0;
+        p.ai[1] = 10.0; // < 30 → no spikes
+        let pl = flint_player(false); // released
+        let tick = ai_flint(&mut p, &w, pl, Vec2::new(1700.0, 800.0), 0, &mut census());
+        assert_eq!(p.ai[0], 1.0, "the follow-through state");
+        let slash = tick.wants_slash.expect("the slash spawn");
+        assert_eq!(slash.4, 178, "damage ×1.78 (`:52254`)");
+        assert_eq!(slash.2, 1.0, "velocity.X = direction");
+        assert_eq!(slash.6, 1.0, "ai0 = direction * gravDir");
+        assert_eq!(slash.7, 6.0, "ai1 = 6");
+        assert!(tick.spikes.is_empty(), "a < 30 charge spawns no spikes");
+    }
+
+    /// The charged release (ai[1] >= 30) emits the ground-spike wave. A flat
+    /// walkable floor under the start point spawns spikes stepping 2 tiles.
+    #[test]
+    fn w4_d20_the_flint_charged_release_emits_spikes() {
+        let mut w = world();
+        // A walkable floor row at y=52 across x=100..130 (the spike walk).
+        for x in 100..130 {
+            put(&mut w, x, 52, 1);
+        }
+        let mut p = proj(1040);
+        p.owner = 0;
+        p.damage = 50;
+        p.direction = 1;
+        p.ai[0] = 0.0;
+        p.ai[1] = 30.0; // charged
+        // MountedCenter at (1600, 800) → start + 30 = (1630, 800) → tile
+        // (101, 50); the surface walk drops to the y=52 floor.
+        let mut pl = flint_player(false);
+        pl.mounted_center = Vec2::new(1600.0, 800.0);
+        let tick = ai_flint(&mut p, &w, pl, Vec2::new(1700.0, 800.0), 0, &mut census());
+        assert!(!tick.spikes.is_empty(), "the charged wave spawns spikes");
+        // Each spike: ai0 = -(num3*2), ai1 = 1 + num3*0.04 + NextFloat*0.2.
+        let first = tick.spikes[0];
+        assert_eq!(first.4, 0.0, "the first spike ai0 = 0");
+        assert!((first.5 - 1.0).abs() < 1e-6, "ai1 = 1 + 0 + 0 (census float 0)");
+    }
+
+    /// The follow-through (`:52261-52279`): counts to useAnimation then kills.
+    #[test]
+    fn w4_d20_the_flint_follow_through_kills_at_use_animation() {
+        let w = world();
+        let mut p = proj(1040);
+        p.owner = 0;
+        p.ai[0] = 1.0;
+        p.ai[1] = 19.0; // advances to 20 = useAnimation → kill
+        let pl = flint_player(false);
+        let tick = ai_flint(&mut p, &w, pl, Vec2::new(1700.0, 800.0), 0, &mut census());
+        assert!(!p.active, "the follow-through kill at useAnimation");
+        assert!(tick.dummy_item_time.is_none(), "the kill tick writes no dummy time");
+    }
+
+    /// The dispatch wires style 198: one pool update advances the charge.
+    #[test]
+    fn w4_d20_the_dispatch_arms_style_198() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.channel = true;
+        pl.held_item_kind = 5451;
+        // The golf context carries the flint's player snapshot + mouse.
+        let ctx = crate::projectile_ai_golf::GolfContext {
+            golf_state: tr_core::golf_state::GolfState::default(),
+            mouse_world: Vec2::new(1700.0, 800.0),
+            mouse_right: false,
+            mouse_right_release: false,
+            player: flint_player(true),
+            player_name: String::new(),
+            golfer_score: 0,
+        };
+        pool.set_golf_context(ctx);
+        let s = pool.spawn_with_data(1040, 1600.0, 800.0, 0.0, 0.0, 50, 5.0).unwrap();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        assert_eq!(pool.slots()[s].ai[1], 1.0, "the charge counter advanced");
     }
 }
