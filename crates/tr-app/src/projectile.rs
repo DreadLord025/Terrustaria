@@ -17892,6 +17892,21 @@ impl ProjectilePool {
                                 world,
                             );
                         }
+                        // W4-d9 — the aiStyle-86 CultistBossIceMist 464
+                        // (`Projectile.cs:31827-31900`): the rotating spawner
+                        // (ai[1]==1, the 30-tick child) or the six-spoke
+                        // expanding mist. The spawner returns before movement
+                        // (the C# `return` :31865); the mist's position unwind
+                        // cancels the kill_step add (net zero, UpdatePosition).
+                        86 => {
+                            let spawner = crate::projectile_ai_style86::ai_ice_mist(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            if !spawner {
+                                self.slots[i].kill_step(world);
+                            }
+                        }
                         102 => {
                             let player = owner.unwrap_or((0.0, 0.0));
                             let npcs = &npcs[..];
@@ -22779,9 +22794,14 @@ impl ProjectilePool {
                 // (`:12654`): the projectile's damage box against the NPC's
                 // raw rect. `npc.getRect()` is exact (no +4 point-test pad).
                 let (nw, nh) = n.size();
-                proj_rect.intersects(tr_core::whip::Rect::new(
+                let target = tr_core::whip::Rect::new(
                     n.x as i32, n.y as i32, nw as i32, nh as i32,
-                ))
+                );
+                // W4-d9 — `Colliding`'s type-464 arm (`Projectile.cs:16095-
+                // 16108`): the mist form's six 30×30 spoke boxes OR the base
+                // rect (`:15888`). The spawner form keeps the base rect only.
+                proj_rect.intersects(target)
+                    || crate::projectile_ai_style86::ice_mist_colliding(p, target)
             };
             if !touches {
                 continue;
@@ -23456,7 +23476,19 @@ impl ProjectilePool {
             && cx < player.x + crate::player::WIDTH
             && cy >= player.y
             && cy < player.y + crate::player::HEIGHT;
-        if !inside {
+        // W4-d9 — `Damage_EVP`'s `Colliding` (`Projectile.cs:14816`): the
+        // 464 mist form's six 30×30 spoke boxes OR the contact test. The
+        // other kinds keep the port's point-test stand-in.
+        let spoke_hit = crate::projectile_ai_style86::ice_mist_colliding(
+            p,
+            tr_core::whip::Rect::new(
+                player.x as i32,
+                player.y as i32,
+                crate::player::WIDTH as i32,
+                player.height as i32,
+            ),
+        );
+        if !inside && !spoke_hit {
             return;
         }
         // `Projectile.cs:14862-14870` — `bool dodgeable =

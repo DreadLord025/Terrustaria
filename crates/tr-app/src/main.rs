@@ -189,6 +189,7 @@ mod projectile_ai_moonlord;
 // projectile/data.rs, the dispatch arms + on-hit/damage seams in
 // projectile.rs. Code-only mode — witness tests written not run.
 mod projectile_ai_style81;
+mod projectile_ai_style86;
 
 
 mod projectile_ai001_a;

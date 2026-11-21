@@ -2483,6 +2483,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // tileCollide true (`:775`) / timeLeft 3600 (`:787`) stand; the
             // light 0.2 rides `set_defaults_light`.
             INFLUX_WAVER => (16.0, 16.0, 81, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d9 — `Projectile.cs:5351-5361`: the CultistBossIceMist (464):
+            // 60x60, aiStyle 86, hostile, tileCollide false, penetrate −1,
+            // alpha 255, ignoreWater. The stock timeLeft 3600 (`:787`) stands.
+            CULTIST_BOSS_ICE_MIST => (60.0, 60.0, 86, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // `Projectile.cs:5329-5339` — the Phantasmal Bolt (462): 8x8,
             // aiStyle 1, hostile, `alpha = 255`, extraUpdates 3, tileCollide
             // false, ignoreWater. S1-D-5 carries the C# alpha (the slice-B
@@ -4237,6 +4241,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
             // `ignoreWater = true`.
             || kind == HIGH_VELOCITY_BULLET
+            // W4-d9 — `Projectile.cs:5360`: the CultistBossIceMist's
+            // `ignoreWater = true`.
+            || kind == CULTIST_BOSS_ICE_MIST
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
