@@ -13,26 +13,24 @@
 //! hull). Walls (`WallID.cs`): the shrine interiors 24/42/45/10, the
 //! sandstone 187.
 //!
-//! Deviations (ANALYSIS "Structures (M1.4-WGEN-2)"): the chest inventories
-//! ride the storage task (the chests place as tiles only — the C#
-//! `Chest.CreateChest` book is the M7-TE follow-up); the shrine/altar
-//! layouts are shape-level (the C#'s exact brick patterns are not 1:1); the
-//! pyramid corridors are one floor (the C#'s multi-chamber crawl is the
-//! follow-up); the boulder piles and the graveyards are out of scope.
+//! Deviations (ANALYSIS "Structures (M1.4-WGEN-2)" + "Jungle residuals
+//! (W4-c31)"): the chest inventories ride the storage task (the chests place
+//! as tiles only — the C# `Chest.CreateChest` book is the M7-TE follow-up);
+//! the jungle shrines are now FAITHFUL (W4-c31 — the `GenVars.jungleHut`
+//! material, the proximity veto, the torch/floor/pillars/roof sweeps); the
+//! altar layouts stay shape-level; the pyramid corridors are one floor (the
+//! C#'s multi-chamber crawl is the follow-up); the boulder piles and the
+//! graveyards are out of scope.
 
 use super::{TILE_DIRT, TILE_STONE, WALL_DIRT};
 use super::biomes::{TILE_JUNGLE_GRASS, TILE_MUD};
 use crate::tile::{FLAG_ACTIVE, Tile};
 use crate::world::World;
 
-pub(crate) const TILE_SHRINE_BRICK: u16 = 119;
-pub(crate) const TILE_TORCH: u16 = 4;
 pub(crate) const TILE_CHEST: u16 = 21;
 pub(crate) const TILE_ALTAR: u16 = 26;
 pub(crate) const TILE_POT: u16 = 28;
 pub(crate) const TILE_PYRAMID_BRICK: u16 = 480;
-
-pub(crate) const WALL_SHRINE: u16 = 24;
 
 /// The chest 2×2: the anchor tile `(x, y)` with the frame corners
 /// (`TileObject`'s chest frames — the port's `frame_x = 18 * style`
@@ -113,120 +111,237 @@ pub(crate) fn get_next_jungle_chest_item(cycle: &mut u32, rng: &mut super::Rng) 
     item
 }
 
-/// `JungleShrines` (`WorldGen.cs:15977-16140`): the hut rooms inside the
-/// underground jungle — the brick shell (the tile 119), the carved interior
-/// with the shrine walls, a torch, the mud pillars below and the mud cap on
-/// top. Returns the chest spots (the `GenVars.JChestX/Y` slice).
+/// `JungleShrines` (`WorldGen.cs:15977-16131`), the faithful port (W4-c31
+/// jungle residuals — replaces the shape-level hut): the `GenVars.jungleHut`
+/// material shell, the dungeon-opposite-half origin search with the
+/// `num4 > maxTilesX*10` retry valve, the 30-radius hive/temple proximity
+/// veto, `structures.CanPlace(area, 1)`, the carved interior with the
+/// hut-specific wall, the 100-try torch, the floor carve, the mud pillars,
+/// the shrinking roof rows and the `JChestX/Y` publication. Returns the
+/// chest spots (the `GenVars.JChestX/Y` slice). Draws on its own fresh
+/// `pass_rng("Jungle Chests")` slot (the shape-level pass rode the shared
+/// `srng`; the isolation is the recorded stream change).
+///
+/// Deviations: the port has no global `StructureMap`, so the cross-pass
+/// protected-rect intersection is carried by a pass-local `protected` vec
+/// (the shrine rects accumulate via `AddProtectedStructure`); the hive/
+/// temple avoidance is the C#'s own 30-radius tile/wall proximity veto.
+/// The `tileSolid[137] = false` window (`:16129`) has no mutable port
+/// table — the dart-trap solidity is read by the temple/trap passes at
+/// their own slots (the hive.rs window precedent). The sub-vanilla valve:
+/// when the y band `[(worldSurface+rockLayer)/2, maxTilesY-400)` collapses
+/// (a 512-tall world), the C# `Next` would throw — the port skips the pass.
 pub(crate) fn pass_jungle_shrines(
     world: &mut World,
-    spans: &super::biomes::BiomeSpans,
+    dungeon_x: i32,
+    world_surface: f64,
     rock_layer: f64,
+    jungle_hut: u16,
     rng: &mut super::Rng,
 ) -> Vec<(i32, i32)> {
     let mut chests = Vec::new();
-    if spans.jungle_end <= spans.jungle_start {
+    let width = world.width;
+    let height = world.height;
+    // The y band (`:15982`/`:15996`): `Next((int)(worldSurface + rockLayer)
+    // / 2, maxTilesY - 400)`. The sub-vanilla valve — an empty band cannot
+    // exist in-world (the C# throws; the port skips before any draw).
+    let y_lo = ((world_surface + rock_layer) / 2.0) as i32;
+    let y_hi = height - 400;
+    if y_hi <= y_lo {
         return chests;
     }
-    let count = 7 + rng.range(0, 6) as i32;
-    for _ in 0..count * 8 {
-        // The caves carve the mud band before this pass — most spots miss;
-        // the C#'s `num4` retry counter gives each hut ~30 re-rolls
-        // (`:15991-16007`'s `while (flag)` loop).
-        // The hut centre inside the underground jungle band (`:15985-15989`:
-        // `Next(worldSurface + rockLayer) / 2 .. maxTilesY - 400` scaled to
-        // the jungle's own span).
-        let x_lo = spans.jungle_start + 10;
-        let x_hi = (spans.jungle_end - 10).max(x_lo + 1);
-        let x = rng.range(x_lo, x_hi);
-        let y_lo = (world.world_surface as i32).max(spans.jungle_start.min(spans.jungle_end));
-        let y_hi = (rock_layer as i32 + 120).min(world.height - 60);
-        if y_hi <= y_lo {
-            return chests;
-        }
-        let y = rng.range(y_lo, y_hi);
-        let hw = rng.range(2, 4) as i32;
-        let hh = rng.range(2, 4) as i32;
-        if x - hw - 2 < 2 || x + hw + 2 >= world.width - 2 || y + hh + 4 >= world.height - 2 {
-            continue;
-        }
-        // The mud must be at the hut spot (the shrines live in the jungle
-        // mud, `:16007`: `tile.type == 60` guard — the port checks the mud
-        // band's tile).
-        if !world
-            .tile(x, y)
-            .is_some_and(|t| t.active() && matches!(t.kind, TILE_MUD | TILE_JUNGLE_GRASS))
-        {
-            continue;
-        }
-        // The count budget: one shrine per successful spot.
-        if chests.len() >= count as usize {
-            break;
-        }
-        // The shell: the solid brick rectangle.
-        for px in (x - hw - 1)..=(x + hw + 1) {
-            for py in (y - hh - 1)..=(y + hh + 1) {
-                let i = world.index(px, py);
-                let t = &mut world.tiles[i];
-                t.kind = TILE_SHRINE_BRICK;
-                t.flags |= FLAG_ACTIVE;
-                t.liquid = 0;
-                t.set_slope(0);
-                t.wall = super::biomes::WALL_JUNGLE;
+    // The hut material → interior wall map (`:16026-16045`).
+    let wall: u16 = match jungle_hut {
+        119 => 23,
+        120 => 24,
+        158 => 42,
+        175 => 45,
+        45 => 10,
+        _ => 0,
+    };
+    // The two initial draws (`:15981-15982`) — overwritten in the loop but
+    // they consume the stream, so they are drawn to keep the schedule.
+    let _ = rng.range(40, width - 40);
+    let _ = rng.range(y_lo, y_hi);
+    // The hut count (`:15983`): `Next(7, 12) * maxTilesX / 4200.0`.
+    let count = rng.range(7, 12) as f64 * (width as f64 / 4200.0);
+    // The port's dungeon is fixed Right (`plan_spans`' `dungeon_x`, Decision
+    // M5-BIOME #10), so `dungeonSide <= Left` is false and the `num +=
+    // maxTilesX/2` offset never fires — the shrines sit in the left half
+    // (the jungle's dungeon-opposite side). The branch is carried for the
+    // shape; `dungeon_x > width/2` selects it.
+    let dungeon_left = dungeon_x <= width / 2;
+    let mut protected: Vec<(i32, i32, i32, i32)> = Vec::new();
+    let mut num4 = 0i32;
+    let mut i = 0f64;
+    while i < count {
+        let mut flag = true;
+        while flag {
+            num4 += 1;
+            let mut num = rng.range(40, width / 2 - 40);
+            if dungeon_left {
+                num += width / 2;
             }
-        }
-        // The interior: carved with the shrine walls.
-        for px in (x - hw)..=(x + hw) {
-            for py in (y - hh)..=(y + hh) {
-                let i = world.index(px, py);
-                world.tiles[i] = Tile::default();
-                world.tiles[i].wall = WALL_SHRINE;
+            let num2 = rng.range(y_lo, y_hi);
+            let num5 = rng.range(2, 4);
+            let num6 = rng.range(2, 4);
+            // `Rectangle area = (num - num5 - 1, num2 - num6 - 1, num5 + 1,
+            // num6 + 1)` (`:15999`) — the C#'s own (small) CanPlace rect.
+            let area = (num - num5 - 1, num2 - num6 - 1, num5 + 1, num6 + 1);
+            if world
+                .tile(num, num2)
+                .is_some_and(|t| t.active() && t.kind == TILE_JUNGLE_GRASS)
+            {
+                flag = false;
+                // The 30-radius proximity veto (`:16004-16017`): stride-3
+                // scan for hive/temple/shrine tiles (225/229/226/119/120)
+                // and the hive/temple walls (86/87).
+                let num7 = 30;
+                let mut j = num - num7;
+                while j < num + num7 {
+                    let mut k = num2 - num7;
+                    while k < num2 + num7 {
+                        if let Some(t) = world.tile(j, k) {
+                            if t.active()
+                                && matches!(t.kind, 225 | 229 | 226 | 119 | 120)
+                            {
+                                flag = true;
+                            }
+                            if t.wall == 86 || t.wall == 87 {
+                                flag = true;
+                            }
+                        }
+                        k += 3;
+                    }
+                    j += 3;
+                }
+                if !can_place_padded(world, area, 1, &protected) {
+                    flag = true;
+                }
             }
-        }
-        // A torch on the interior wall (`:16060-16072`).
-        for _ in 0..50 {
-            let tx = rng.range(x - hw, x + hw + 1);
-            let ty = rng.range(y - hh, y + hh - 1);
-            let i = world.index(tx, ty);
-            if !world.tiles[i].active() {
-                world.tiles[i] = Tile {
-                    kind: TILE_TORCH,
-                    frame_x: (3 * 18) as i16,
-                    ..Default::default()
-                };
-                world.tiles[i].flags |= FLAG_ACTIVE;
+            if !flag {
+                // The brick shell (`:16046-16055`): active, jungleHut,
+                // liquid 0, lava off.
+                for l in (num - num5 - 1)..=(num + num5 + 1) {
+                    for m in (num2 - num6 - 1)..=(num2 + num6 + 1) {
+                        if let Some(t) = world.tile_mut(l, m) {
+                            t.flags |= FLAG_ACTIVE;
+                            t.kind = jungle_hut;
+                            t.liquid = 0;
+                            t.flags &= !crate::tile::FLAG_LIQUID_LAVA;
+                        }
+                    }
+                }
+                // The carved interior (`:16056-16063`): inactive, hut wall.
+                for n in (num - num5)..=(num + num5) {
+                    for m in (num2 - num6)..=(num2 + num6) {
+                        if let Some(t) = world.tile_mut(n, m) {
+                            t.flags &= !FLAG_ACTIVE;
+                            t.wall = wall;
+                        }
+                    }
+                }
+                // The torch (`:16064-16076`): 100 tries, `PlaceTile(4,
+                // style 3)`; the first active-4 cell ends the loop.
+                let mut placed_torch = false;
+                let mut tries = 0;
+                while !placed_torch && tries < 100 {
+                    tries += 1;
+                    let tx = rng.range(num - num5, num + num5 + 1);
+                    let ty = rng.range(num2 - num6, num2 + num6 - 2);
+                    if crate::edit::place_torch(world, tx, ty, 3) {
+                        placed_torch = true;
+                    }
+                }
+                // The floor carve (`:16077-16090`): the bottom three rows
+                // inactive (the C# runs two overlapping sweeps; the second
+                // is a subset — one sweep over the union is identical).
+                for l in (num - num5 - 1)..=(num + num5 + 1) {
+                    for m in (num2 + num6 - 2)..=(num2 + num6) {
+                        if let Some(t) = world.tile_mut(l, m) {
+                            t.flags &= !FLAG_ACTIVE;
+                        }
+                    }
+                }
+                // The mud pillars (`:16091-16102`): up to 4 mud cells below
+                // the floor per column, stopping at the first active cell.
+                for l in (num - num5 - 1)..=(num + num5 + 1) {
+                    let mut m = num2 + num6 + 2;
+                    let mut fill = 4;
+                    while fill > 0 && m < height {
+                        if world.tile(l, m).is_some_and(|t| t.active()) {
+                            break;
+                        }
+                        if let Some(t) = world.tile_mut(l, m) {
+                            t.flags |= FLAG_ACTIVE;
+                            t.kind = TILE_MUD;
+                        }
+                        m += 1;
+                        fill -= 1;
+                    }
+                }
+                // The shrinking roof rows (`:16103-16114`).
+                let mut half = num5 - rng.range(1, 3);
+                let mut row = num2 - num6 - 2;
+                while half > -1 {
+                    for l in (num - half - 1)..=(num + half + 1) {
+                        if let Some(t) = world.tile_mut(l, row) {
+                            t.flags |= FLAG_ACTIVE;
+                            t.kind = jungle_hut;
+                        }
+                    }
+                    half -= rng.range(1, 3);
+                    row -= 1;
+                }
+                // `JChestX/Y[numJChests] = (num, num2)` + the protected
+                // rect (`:16115-16118`); `num4 = 0` resets the retry valve.
+                chests.push((num, num2));
+                protected.push(area);
+                num4 = 0;
+            } else if num4 > width * 10 {
+                // The retry valve (`:16121-16126`): `i++`, reset, break.
+                i += 1.0;
+                num4 = 0;
                 break;
             }
         }
-        // The mud pillars below the floor (`:16092-16106`).
-        for px in (x - hw - 1)..=(x + hw + 1) {
-            let mut py = y + hh + 2;
-            let mut fill = 4;
-            while fill > 0 && py < world.height - 2 {
-                if world.tile(px, py).is_some_and(|t| t.active()) {
-                    break;
-                }
-                let i = world.index(px, py);
-                world.tiles[i].kind = TILE_MUD;
-                world.tiles[i].flags |= FLAG_ACTIVE;
-                py += 1;
-                fill -= 1;
-            }
-        }
-        // The sloped cap above (`:16108-16120`): the shrinking brick rows.
-        let mut half = hw - rng.range(1, 3);
-        let mut py = y - hh - 2;
-        while half >= 0 {
-            for px in (x - half - 1)..=(x + half + 1) {
-                let i = world.index(px, py);
-                world.tiles[i].kind = TILE_SHRINE_BRICK;
-                world.tiles[i].flags |= FLAG_ACTIVE;
-            }
-            half -= rng.range(1, 3);
-            py -= 1;
-        }
-        chests.push((x, y));
+        i += 1.0;
     }
     chests
+}
+
+/// `StructureMap.CanPlace(area, padding)` (`StructureMap.cs:24-52`): the
+/// bounds gate on the ORIGINAL area, then the protected-rect intersection
+/// and the active-tile validity scan over the area inflated by `padding`
+/// (`TileID.Sets.GeneralPlacementTiles`). The port's `protected` vec is the
+/// structure-map stand-in (the pass-local shrine rects).
+fn can_place_padded(
+    world: &World,
+    area: (i32, i32, i32, i32),
+    padding: i32,
+    protected: &[(i32, i32, i32, i32)],
+) -> bool {
+    let (ax, ay, aw, ah) = area;
+    if ax < 0 || ay < 0 || ax + aw > world.width - 1 || ay + ah > world.height - 1 {
+        return false;
+    }
+    let (rx, ry, rw, rh) = (ax - padding, ay - padding, aw + padding * 2, ah + padding * 2);
+    for &(px, py, pw, ph) in protected {
+        if rx < px + pw && rx + rw > px && ry < py + ph && ry + rh > py {
+            return false;
+        }
+    }
+    for x in rx..rx + rw {
+        for y in ry..ry + rh {
+            if world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && !crate::tiledata::SET_GENERAL_PLACEMENT_TILES.has(t.kind))
+            {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// `ChestsInJungleShrines` + the underground gold chests (`:17211+`): the
@@ -688,4 +803,84 @@ pub(crate) fn pass_hell_forts(
         }
     }
     placed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::noise::Rng;
+
+    /// A mud world with a jungle-grass (60) band in the shrine y-range —
+    /// the origin gate (`tile.type == 60`) passes inside it.
+    fn jungle_world(width: i32, height: i32) -> World {
+        let mut w = World::new("shrines".into(), width, height);
+        for x in 0..width {
+            for y in 0..height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 59, wall: 15, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 40..width / 2 - 40 {
+            for y in 300..500 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 60;
+            }
+        }
+        w
+    }
+
+    /// The faithful pass places hut shells of the picked material with the
+    /// matching interior wall, and returns one chest spot per hut.
+    #[test]
+    fn the_shrine_pass_places_the_hut_material_and_wall() {
+        let mut w = jungle_world(1200, 1000);
+        let spots = pass_jungle_shrines(&mut w, 1000, 250.0, 450.0, 119, &mut Rng(0x5EED));
+        assert!(!spots.is_empty(), "the pass places huts on the grass band");
+        for &(x, y) in &spots {
+            let shell = w.tile(x - 3, y - 3).unwrap();
+            assert!(shell.active() && shell.kind == 119, "the shell at ({x},{y})");
+            let inner = w.tile(x, y).unwrap();
+            assert!(!inner.active() && inner.wall == 23, "the interior wall");
+        }
+    }
+
+    /// The a == b determinism witness: two runs over identical worlds draw
+    /// identical streams and write identical tiles (the full Tile).
+    #[test]
+    fn the_shrine_pass_is_reproducible_for_a_seed() {
+        let run = || {
+            let mut w = jungle_world(1200, 1000);
+            let spots = pass_jungle_shrines(&mut w, 1000, 250.0, 450.0, 120, &mut Rng(42));
+            (w, spots)
+        };
+        let (a, sa) = run();
+        let (b, sb) = run();
+        assert_eq!(sa, sb, "the chest spots");
+        assert_eq!(a.tiles, b.tiles, "a == b — the full tile state");
+    }
+
+    /// The sub-vanilla valve: a collapsed y band skips the pass before any
+    /// draw (the C# `Next` would throw on the empty range).
+    #[test]
+    fn the_shrine_pass_skips_a_collapsed_band() {
+        let mut w = jungle_world(1200, 512);
+        let spots = pass_jungle_shrines(&mut w, 1000, 250.0, 450.0, 119, &mut Rng(7));
+        assert!(spots.is_empty(), "the collapsed band places nothing");
+    }
+
+    /// The proximity veto: a hive tile (225) inside the 30-radius scan
+    /// refuses the origin.
+    #[test]
+    fn the_shrine_pass_refuses_near_a_hive() {
+        let mut w = jungle_world(1200, 1000);
+        for x in 40..600 {
+            for y in 300..500 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 225;
+            }
+        }
+        let spots = pass_jungle_shrines(&mut w, 1000, 250.0, 450.0, 119, &mut Rng(3));
+        assert!(spots.is_empty(), "the hive proximity veto refuses every origin");
+    }
 }

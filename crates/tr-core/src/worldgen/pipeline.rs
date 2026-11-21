@@ -362,6 +362,14 @@ pub(crate) struct GenVars {
     /// two rare overrides (`GetNextJungleChestItem`, `:10170-10196`). S1-A-4:
     /// drawn at the shrine-chest site, in the C#'s spot order.
     pub(crate) jungle_chest_cycle: u32,
+    /// `GenVars.jungleHut` (`GenVars.cs`): the shrine material pick —
+    /// `Reset` draws `Next(5)` (`WorldGen.cs:11167`) and maps it to the
+    /// brick kind (`:11317-11336`: 0→119 rich mahogany, 1→120 boreal,
+    /// 2→158 palm, 3→175 ebonwood, 4→45 living wood). The port draws it
+    /// in the Reset stand-in AFTER `crimson_left` (the C# draws it before
+    /// — the order deviation keeps every existing Reset-stream draw
+    /// byte-identical; W4-c31 jungle residuals).
+    pub(crate) jungle_hut: u16,
     /// `GenVars.skyIslandHouseCount` (`GenVars.cs`, the `IslandHouse`'s
     /// main-item cycle counter, `WorldGen.cs:79344-79363`): the sky houses'
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
@@ -406,6 +414,9 @@ impl Default for GenVars {
             right_beach_start: 0,
             // The shell anchors zero in Reset (`WorldGen.cs:11168-11171`).
             jungle_chest_cycle: 0,
+            // `GenVars.jungleHut`'s raw `Next(5)` pick is mapped in the
+            // Reset stand-in; the zero-init stands for "not drawn yet".
+            jungle_hut: 0,
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
@@ -2079,11 +2090,22 @@ fn step_jungle_shrines(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
+    // The faithful `JungleShrines` (W4-c31 jungle residuals) draws from its
+    // own fresh `pass_rng("Jungle Chests")` slot — the shape-level pass rode
+    // the shared `srng`; the isolation shifts the later `srng` consumers
+    // along the stream (the accepted world change, recorded for ANALYSIS).
+    // The hut material rides `GenVars.jungle_hut` (the Reset pick).
+    let dungeon_x = gv.spans().dungeon_x;
+    let world_surface = gv.layers().world_surface;
+    let rock_layer = gv.layers().rock_layer;
+    let jungle_hut = gv.jungle_hut;
     gv.shrine_spots = structures::pass_jungle_shrines(
         world,
-        gv.spans(),
-        gv.layers().rock_layer,
-        &mut streams.srng,
+        dungeon_x,
+        world_surface,
+        rock_layer,
+        jungle_hut,
+        &mut streams.pass_rng("Jungle Chests"),
     );
 }
 
@@ -2897,6 +2919,17 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
     let mut gv = GenVars::default();
     let mut reset_rng = core.pass_rng("Reset");
     gv.crimson_left = reset_rng.range(0, 2) == 1;
+    // `GenVars.jungleHut` (`WorldGen.cs:11167` `Next(5)` → `:11317-11336`
+    // map). Drawn AFTER `crimson_left` so the existing Reset-stream draw
+    // stays byte-identical (the C# draws it earlier — the recorded order
+    // deviation, W4-c31 jungle residuals).
+    gv.jungle_hut = match reset_rng.range(0, 5) {
+        0 => 119,
+        1 => 120,
+        2 => 158,
+        3 => 175,
+        _ => 45,
+    };
     gv.flip_infections = opts.flags.flip_infections();
     gv
 }
