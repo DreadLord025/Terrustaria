@@ -18830,12 +18830,14 @@ mod extractinator_use_gate_tests {
 
     /// Over the Chlorophyte Extractinator (642) the use passes the gate: the
     /// trader arm fires (Shadow Scale → Tissue Sample), the swing starts and
-    /// the stack decrements.
+    /// the stack decrements. The port routes the extractinator through the
+    /// place path (`PlaceThing_ItemInExtractinator`, `use_extractinator`), so
+    /// the witness presses `place_down`.
     #[test]
     fn w4_f47_the_consumable_uses_over_the_extractinator() {
         let mut app = gate_app(86, Some(642)); // Shadow Scale over 642
-        app.mine_down = true;
-        app.mine_prev_down = false;
+        app.place_down = true;
+        app.place_prev_down = false;
         crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
         assert!(app.swing > 0.0, "the swing started over the extractinator");
         assert_eq!(app.inventory[app.selected].count, 4, "one traded");
