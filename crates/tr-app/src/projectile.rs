@@ -17986,6 +17986,35 @@ impl ProjectilePool {
                             self.slots[i].ai_vortex_ritual(player_pos, rng);
                         }
                         99 => {
+                            // W4-d10 (f19 F1) — the C# `AI()` chain gates
+                            // the counterweight SUB-arm ahead of the yoyo
+                            // arm (`:33153-33156`: `(aiStyle == 99 && type
+                            // >= 556 && type <= 561) || type == 1079` →
+                            // `AI_099_1_Counterweights`). The kind gate
+                            // keeps the yoyo half byte-identical.
+                            if is_counterweight(self.slots[i].kind) {
+                                crate::projectile_ai_91_100::ai_counterweight(
+                                    &mut self.slots,
+                                    i,
+                                    world,
+                                    npcs,
+                                    owner,
+                                    inputs.player_dead,
+                                    inputs.channel,
+                                    // `Main.mouseX - Main.lastMouseX`
+                                    // (`:67521`) — the per-tick mouse
+                                    // delta; the pass has no snapshot yet
+                                    // (the M3-EQUIP-3 wiring seam), zero
+                                    // keeps the push inert (documented).
+                                    (0.0, 0.0),
+                                    local_owner,
+                                );
+                                crate::projectile_ai_91_100::counterweight_move(
+                                    &mut self.slots[i],
+                                    world,
+                                    owner,
+                                );
+                            } else {
                             // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
                             // active slot below this index, same owner and
                             // kind, `ai[0] >= -1f` — the double yoyo (the Yoyo
@@ -18035,6 +18064,7 @@ impl ProjectilePool {
                                 if let Some(p) = player.as_deref_mut() {
                                     p.facing = dir;
                                 }
+                            }
                             }
                         }
                         // W4-d10 — `AI()`'s `else if (this.aiStyle == 91)`

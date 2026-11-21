@@ -810,6 +810,38 @@ pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
 pub const KRAKEN_WAVE: u16 = 1135;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
+/// The yoyo accessory counterweights (`Projectile.cs:6084-6093`): 10×10,
+/// `extraUpdates = 1`, `DefaultToYoyo()` (aiStyle 99, melee, penetrate −1),
+/// `drawLayer = 0`, `scale = 1f`, `counterweight = true`. Their AI is the
+/// style-99 SUB-arm `AI_099_1_Counterweights` (`:67380-67731`), gated ahead
+/// of the yoyo arm by the C# `AI()` chain (`:33153-33156`) — W4-d10 (the
+/// f19 F1 census finding).
+pub const BLACK_COUNTERWEIGHT: u16 = 556;
+pub const BLUE_COUNTERWEIGHT: u16 = 557;
+pub const GREEN_COUNTERWEIGHT: u16 = 558;
+pub const PURPLE_COUNTERWEIGHT: u16 = 559;
+pub const RED_COUNTERWEIGHT: u16 = 560;
+pub const YELLOW_COUNTERWEIGHT: u16 = 561;
+/// `ProjectileID.PinkCounterweight` (1079, the 1.4.4 pink bag drop).
+pub const PINK_COUNTERWEIGHT: u16 = 1079;
+/// The seven counterweight kinds — the `AI()` sub-arm gate
+/// (`(aiStyle == 99 && type >= 556 && type <= 561) || type == 1079`,
+/// `Projectile.cs:33153`).
+pub const COUNTERWEIGHT_KINDS: [u16; 7] = [
+    BLACK_COUNTERWEIGHT,
+    BLUE_COUNTERWEIGHT,
+    GREEN_COUNTERWEIGHT,
+    PURPLE_COUNTERWEIGHT,
+    RED_COUNTERWEIGHT,
+    YELLOW_COUNTERWEIGHT,
+    PINK_COUNTERWEIGHT,
+];
+/// The counterweight kind test — the C# inline
+/// `(type >= 556 && type <= 561) || type == 1079` (`:33153`, `:67397`'s
+/// complement, `:67820`, `:18415`).
+pub const fn is_counterweight(kind: u16) -> bool {
+    matches!(kind, 556..=561 | 1079)
+}
 /// `ProjectileID.LightsBane` (974) — the Light's Bane sword's slash wave
 /// (`Projectile.cs:9237-9252`'s SetDefaults, `AI_188_LightsBane`
 /// `:42229-42262`, `Main.DrawProj_LightsBane` `Main.cs:27455-27495`).
@@ -2992,6 +3024,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             | VALOR_YOYO
             | TERRARIAN_YOYO
             | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),            // The yoyo shots (M4-PROJ-4b): the four children the yoyo
+            // W4-d10 (f19 F1) — the counterweight family
+            // (`Projectile.cs:6084-6093`): 10×10, `extraUpdates = 1`,
+            // `DefaultToYoyo()` (aiStyle 99, melee, penetrate −1),
+            // `drawLayer = 0`, `scale = 1f`, `counterweight = true` (no
+            // port field — the draw path knows the kinds, assets.rs:706).
+            // The AI is the style-99 SUB-arm `AI_099_1_Counterweights`.
+            BLACK_COUNTERWEIGHT | BLUE_COUNTERWEIGHT | GREEN_COUNTERWEIGHT
+            | PURPLE_COUNTERWEIGHT | RED_COUNTERWEIGHT | YELLOW_COUNTERWEIGHT
+            | PINK_COUNTERWEIGHT => (10.0, 10.0, 99, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
             // on-hit arms spawn — `SetDefaults` verbatim.
             // `CascadeExplosion` (`:10528-10541`): 32×32, aiStyle 189, the
             // `alpha = 255`/`hide` pair, `penetrate = 4`, local-immunity with
@@ -4378,6 +4419,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // the whip sets NONE (`DefaultToWhip` `:10704-10718`). The bombs
         // (28/29/37/519) and the Crystal Storm item 518's proj set none.
         melee: YOYO_KINDS.contains(&kind)
+            // W4-d10 — the counterweights ride `DefaultToYoyo` too
+            // (`Projectile.cs:6089` → `:10770`).
+            || is_counterweight(kind)
             || FLAIL_KINDS.contains(&kind)
             || matches!(
                 kind,

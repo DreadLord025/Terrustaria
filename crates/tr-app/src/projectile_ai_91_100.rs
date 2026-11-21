@@ -1035,6 +1035,351 @@ pub(crate) fn ai_cultist_particle(p: &mut Projectile, rng: &mut dyn DropRng) {
     }
 }
 
+/// `AI_099_1_Counterweights` (`Projectile.cs:67380-67731`) — the yoyo
+/// accessory counterweights (556-561/1079), the aiStyle-99 SUB-arm the
+/// C# `AI()` chain gates AHEAD of the yoyo arm (`:33153-33156`). The f19
+/// F1 census finding: the port had only the yoyo half.
+///
+/// The machine: the `timeLeft = 6` refresh, the 250→125 string radius
+/// (the yoyoString +25%+10 grant is M3-EQUIP-3's unported term), the 0.5
+/// spin, the owner-death kill, the local-owner no-yoyo sweep (the
+/// sibling scan over the pool's style-99 NON-counterweight kinds with
+/// `ai[0] >= -1`), the flight states 0/1's string-cap orbit (the
+/// perpendicular tangent blend), the channel mouse-delta push (the
+/// `mouse_delta` input — the C# `Main.mouseX - Main.lastMouseX`), the
+/// NPC chase (the 800-Manhattan acquire, the per-type blends), the
+/// 12/9 speed floor/cap pair, the magicString ghost split (unported
+/// grant — the −3 state stays reachable only via the spawn ai0), the
+/// dropped state −2's gravity fall + the owner-side drift, and the
+/// return state's 18-speed owner seek with the 40/2000 kill gates.
+///
+/// `flag` is the C# `:67383` constant `true` — the `!flag` held-item
+/// pose block (`:67418-67432`) is DEAD CODE in the source, kept as a
+/// comment. ZERO draws — the machine is pure maths.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ai_counterweight(
+    slots: &mut [Projectile],
+    i: usize,
+    world: &World,
+    npcs: &[Npc],
+    owner_center: Option<(f32, f32)>,
+    player_dead: bool,
+    channel: bool,
+    mouse_delta: (f32, f32),
+    local_owner: u8,
+) {
+    // `:67382` — the lifetime refresh.
+    slots[i].time_left = 6;
+    // `:67383-67391` — the constants (flag = true, the C# literal).
+    let mut num = 250.0f32;
+    let num2 = 0.1f32;
+    let mut num3 = 15.0f32;
+    let mut num4 = 12.0f32;
+    num *= 0.5;
+    num3 *= 0.8;
+    num4 *= 1.5;
+    let mut num5 = num3;
+    // `:67392-67407` — the local-owner no-yoyo sweep: no active
+    // same-owner style-99 NON-counterweight slot with `ai[0] >= -1`
+    // means the string is gone — the counterweight returns.
+    if slots[i].owner == local_owner && slots[i].ai[0] >= 0.0 {
+        let owner = slots[i].owner;
+        let mut flag2 = false;
+        for o in slots.iter() {
+            if o.active
+                && o.owner == owner
+                && crate::projectile::proj_data(o.kind).is_some_and(|d| d.ai_style == 99)
+                && o.ai[0] >= -1.0
+                && !crate::projectile::is_counterweight(o.kind)
+            {
+                flag2 = true;
+            }
+        }
+        if !flag2 {
+            slots[i].ai[0] = -1.0;
+            slots[i].net_update = true;
+        }
+    }
+    // `:67408-67411` — the yoyoString grant (M3-EQUIP-3, unported — the
+    // `num += num * 0.25 + 10` term folds out).
+    // `:67412` — the spin.
+    slots[i].rot += 0.5;
+    // `:67413-67417` — the owner-death kill.
+    if player_dead {
+        let p = &mut slots[i];
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    // `:67418-67432` — the `!flag` pose block: DEAD CODE (flag is the
+    // `:67383` literal true).
+    let center = owner_center.map(|(x, y)| Vec2::new(x, y));
+    // `:67433-67634` — the flight states.
+    if slots[i].ai[0] == 0.0 || slots[i].ai[0] == 1.0 {
+        if slots[i].ai[0] == 1.0 {
+            num *= 0.75;
+        }
+        num4 *= 0.5;
+        let mut flag3 = false;
+        let Some(pc) = center else { return };
+        let mut vector = pc - Vec2::from(slots[i].center());
+        if vector.length() > num * 0.9 && slots[i].ai[0] != -2.0 {
+            flag3 = true;
+        }
+        if vector.length() > num {
+            // `:67446-67516` — the string cap: the position snaps to the
+            // radius, the velocity sheds the overshoot (capped at
+            // len−1), the perpendicular tangent blends in.
+            let mut num6 = vector.length() - num;
+            let mut vector2 = Vec2::new(vector.y, vector.x);
+            // `:67452` — the bare `vector.Normalize()` (XNA NaNs a zero
+            // vector; the length > num gate makes zero unreachable here,
+            // the safe form is identical on every reachable input).
+            vector = safe_normalize(vector) * num;
+            let p = &mut slots[i];
+            p.pos = pc - vector;
+            p.pos.x -= (p.w as i32 / 2) as f32;
+            p.pos.y -= (p.h as i32 / 2) as f32;
+            let mut num7 = p.vel.length();
+            p.vel = safe_normalize(p.vel);
+            if num6 > num7 - 1.0 {
+                num6 = num7 - 1.0;
+            }
+            p.vel *= num7 - num6;
+            num7 = p.vel.length();
+            let vector3 = Vec2::from(p.center());
+            let vector4 = pc;
+            if vector3.y < vector4.y {
+                vector2.y = vector2.y.abs();
+            } else if vector3.y > vector4.y {
+                vector2.y = -vector2.y.abs();
+            }
+            if vector3.x < vector4.x {
+                vector2.x = vector2.x.abs();
+            } else if vector3.x > vector4.x {
+                vector2.x = -vector2.x.abs();
+            }
+            vector2 = safe_normalize(vector2) * p.vel.length();
+            // `:67485` — the C#'s discarded `new Vector2(...)` (no write).
+            let _ = num7;
+            if p.vel.x.abs() > p.vel.y.abs() {
+                let mut v = p.vel;
+                v.y += vector2.y;
+                v = safe_normalize(v) * p.vel.length();
+                if vector2.x.abs() < 0.1 || vector2.y.abs() < 0.1 {
+                    p.vel = v;
+                } else {
+                    p.vel = (v + p.vel * 2.0) / 3.0;
+                }
+            } else {
+                let mut v2 = p.vel;
+                v2.x += vector2.x;
+                v2 = safe_normalize(v2) * p.vel.length();
+                if vector2.x.abs() < 0.2 || vector2.y.abs() < 0.2 {
+                    p.vel = v2;
+                } else {
+                    p.vel = (v2 + p.vel * 2.0) / 3.0;
+                }
+            }
+        }
+        // `:67517-67556` — the local-owner channel push / release.
+        if slots[i].owner == local_owner {
+            if channel {
+                let mut vector5 = Vec2::new(mouse_delta.0, mouse_delta.1);
+                if slots[i].vel != Vec2::ZERO {
+                    // `:67524-67527` — flag is true: the delta INVERTS.
+                    vector5 *= -1.0;
+                    if flag3 {
+                        let c = Vec2::from(slots[i].center());
+                        if c.x < pc.x && vector5.x < 0.0 {
+                            vector5.x = 0.0;
+                        }
+                        if c.x > pc.x && vector5.x > 0.0 {
+                            vector5.x = 0.0;
+                        }
+                        if c.y < pc.y && vector5.y < 0.0 {
+                            vector5.y = 0.0;
+                        }
+                        if c.y > pc.y && vector5.y > 0.0 {
+                            vector5.y = 0.0;
+                        }
+                    }
+                    slots[i].vel += vector5 * num2;
+                    slots[i].net_update = true;
+                }
+            } else {
+                slots[i].ai[0] = -1.0;
+                slots[i].net_update = true;
+            }
+        }
+        // `:67557-67623` — the NPC chase (flag true → always for the
+        // counterweights; the per-type list is the yoyo kinds, none of
+        // which is a counterweight — the 800 default radius stands).
+        {
+            let mut num8 = 800.0f32;
+            let mut vector6 = Vec2::ZERO;
+            let mut flag4 = false;
+            let p = &slots[i];
+            let (bcx, bcy) = p.center();
+            for n in npcs {
+                if !chaseable(n) {
+                    continue;
+                }
+                let (nw, nh) = n.size();
+                // `:67582-67583` — the C# INT half-box center.
+                let num9 = n.x + (nw as i32 / 2) as f32;
+                let num10 = n.y + (nh as i32 / 2) as f32;
+                let num11 = (bcx - num9).abs() + (bcy - num10).abs();
+                // `:67585` — the 563-only <200 exclusion never fires for
+                // a counterweight kind (the `this.type != 563` operand).
+                if num11 < num8
+                    && can_hit(world, p.pos.x, p.pos.y, p.w, p.h, n.x, n.y, nw, nh)
+                    && (npc_center(n) - pc).length() < num * 0.9
+                {
+                    num8 = num11;
+                    vector6 = Vec2::new(num9, num10);
+                    flag4 = true;
+                }
+            }
+            if flag4 {
+                let p = &mut slots[i];
+                vector6 = safe_normalize(vector6 - Vec2::from(p.center()));
+                // `:67617-67621` — the default blend (the counterweight
+                // kinds match none of the per-type arms).
+                vector6 *= 6.0;
+                p.vel = (p.vel * 7.0 + vector6) / 8.0;
+            }
+        }
+        // `:67624-67633` — the speed cap/floor pair.
+        let p = &mut slots[i];
+        if p.vel.length() > num3 {
+            p.vel = p.vel.normalize() * num3;
+        }
+        if p.vel.length() < num4 {
+            p.vel = safe_normalize(p.vel) * num4;
+        }
+    }
+    // `:67635-67643` — the magicString ghost split: the accessory grant
+    // is M3-EQUIP-3's unported term — the −1 → −3 transition and the
+    // 0.75-damage clone spawn fold out (the −3 state stays reachable
+    // only via a spawn ai0, the yoyo ghost precedent).
+    // `:67644-67648` — the ghost state: invisible, harmless.
+    if slots[i].ai[0] == -3.0 {
+        slots[i].alpha = 255;
+        slots[i].damage = 0;
+    }
+    // `:67649-67730` — the dropped / return states.
+    if slots[i].ai[0] == -2.0 {
+        // `:67651-67693` — the dropped twin: the gravity fall, the 16
+        // cap, the slow-drift owner-side nudge.
+        let p = &mut slots[i];
+        p.extra_updates = 0;
+        if p.penetrate < 0 {
+            p.penetrate = 1;
+        }
+        p.vel.y += 0.3;
+        if p.vel.length() > 16.0 {
+            p.vel = p.vel.normalize() * 16.0;
+        } else if p.vel.y <= 3.0 {
+            if num5 > 16.0 {
+                num5 = 16.0;
+            }
+            if let Some(pc) = center {
+                let c = Vec2::from(p.center());
+                if p.vel.x.abs() < 0.1 {
+                    if c.x < pc.x {
+                        p.vel.x -= 0.1;
+                        p.direction = -1;
+                    } else {
+                        p.vel.x += 0.1;
+                        p.direction = 1;
+                    }
+                } else if p.vel.x > 0.0 && p.vel.x < num5 {
+                    p.vel.x += 0.1;
+                } else if p.vel.x < 0.0 && p.vel.x > -num5 {
+                    p.vel.x -= 0.1;
+                }
+            }
+        }
+    } else {
+        // `:67695-67730` — the return: only the negative states seek;
+        // the 40/2000/NaN gates kill, the 18-speed owner blend steers.
+        if slots[i].ai[0] >= 0.0 {
+            return;
+        }
+        slots[i].tile_collide = false;
+        let Some(pc) = center else { return };
+        let mut vector7 = pc - Vec2::from(slots[i].center());
+        let num12 = vector7.length();
+        if num12 < 40.0 || vector7.is_nan() || num12 > 2000.0 {
+            let p = &mut slots[i];
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+            return;
+        }
+        // `:67709-67725` — the per-type speed multipliers (the
+        // counterweight kinds match none — 18 stands).
+        let num13 = num3 * 1.5;
+        let num14 = 12.0f32;
+        vector7 = safe_normalize(vector7) * num13;
+        let p = &mut slots[i];
+        p.vel = (p.vel * (num14 - 1.0) + vector7) / num14;
+    }
+}
+
+/// The counterweight's `HandleMovement` blocked-move arm
+/// (`Projectile.cs:18415-18440`): a blocked move reverses the blocked
+/// axes off the pre-collision velocity, then blends 25% of the
+/// owner-direction (SafeNormalize(UnitY)) at the current speed; over 6
+/// the whole velocity halves. The free move slides via TileCollision
+/// (the yoyo family's `:17596` path — no kill).
+pub(crate) fn counterweight_move(
+    p: &mut Projectile,
+    world: &World,
+    owner_center: Option<(f32, f32)>,
+) {
+    if p.tile_collide {
+        let last = p.vel;
+        let tc = crate::collision::tile_collision(
+            world,
+            [p.pos.x, p.pos.y],
+            [p.vel.x, p.vel.y],
+            p.w,
+            p.h,
+            true,
+            true,
+        );
+        p.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        let mut flag12 = false;
+        if p.vel.x != last.x {
+            flag12 = true;
+            p.vel.x = -last.x;
+        }
+        if p.vel.y != last.y {
+            flag12 = true;
+            p.vel.y = -last.y;
+        }
+        if flag12 {
+            if let Some((ox, oy)) = owner_center {
+                let mut vector18 = crate::projectile::safe_normalize_or(
+                    Vec2::new(ox, oy) - Vec2::from(p.center()),
+                    Vec2::Y,
+                );
+                vector18 *= p.vel.length();
+                vector18 *= 0.25;
+                p.vel *= 0.75;
+                p.vel += vector18;
+                if p.vel.length() > 6.0 {
+                    p.vel *= 0.5;
+                }
+            }
+        }
+    }
+    p.pos += p.vel;
+}
+
 // Witnesses (W4-d10 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1788,5 +2133,158 @@ mod tests {
         ai_cultist_particle(&mut q, &mut rng2);
         assert!(!q.active);
         assert_eq!(rng2.floats, 0, "the arrival precedes the trail");
+    }
+
+    /// The seven counterweight rows (`Projectile.cs:6084-6093`): 10×10,
+    /// aiStyle 99, extraUpdates 1, penetrate −1, melee (DefaultToYoyo),
+    /// scale 1, the stock tileCollide/timeLeft. The f19 F1 census: the
+    /// rows were ABSENT at the base.
+    #[test]
+    fn w4_d10_s99_the_counterweight_rows_are_verbatim() {
+        for kind in crate::projectile::COUNTERWEIGHT_KINDS {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (10.0, 10.0), "kind {kind}");
+            assert_eq!(d.ai_style, 99, "kind {kind}");
+            assert_eq!(d.extra_updates, 1, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert!(d.melee, "kind {kind} — DefaultToYoyo");
+            assert_eq!(d.scale, 1.0, "kind {kind}");
+            assert!(d.tile_collide, "kind {kind}");
+            assert_eq!(d.time_left, 3600, "kind {kind}");
+            assert!(crate::projectile::is_counterweight(kind));
+        }
+        // The yoyo kinds are NOT counterweights (the sub-arm gate).
+        assert!(!crate::projectile::is_counterweight(541));
+        assert!(!crate::projectile::is_counterweight(603));
+    }
+
+    /// The machine head (`:67382-67417`): the timeLeft 6 refresh, the
+    /// 0.5 spin, the no-yoyo sweep (no style-99 sibling → ai[0] = −1),
+    /// the owner-death kill. ZERO draws.
+    #[test]
+    fn w4_d10_s99_the_counterweight_refreshes_and_sweeps() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![proj(556)];
+        slots[0].time_left = 100;
+        ai_counterweight(
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0,
+        );
+        assert_eq!(slots[0].time_left, 6, "the refresh");
+        assert_eq!(slots[0].rot, 0.5, "the spin");
+        assert_eq!(slots[0].ai[0], -1.0, "no yoyo sibling → the return");
+        assert!(slots[0].net_update);
+        // A live yoyo sibling keeps the flight state.
+        let mut s2 = vec![proj(556), proj(541)];
+        s2[1].ai[0] = 0.0;
+        ai_counterweight(
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0,
+        );
+        assert_eq!(s2[0].ai[0], 0.0, "the yoyo holds the string");
+        // The owner-death kill.
+        let mut s3 = vec![proj(556)];
+        ai_counterweight(
+            &mut s3, 0, &w, &[], Some((1600.0, 800.0)), true, true, (0.0, 0.0), 0,
+        );
+        assert!(!s3[0].active);
+    }
+
+    /// The string cap (`:67446-67516`): a counterweight beyond the 125-px
+    /// radius snaps back onto it (the center-relative position), the
+    /// velocity sheds the overshoot capped at len−1.
+    #[test]
+    fn w4_d10_s99_the_string_caps_the_orbit() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![proj(556), proj(541)];
+        slots[1].ai[0] = 0.0; // the yoyo sibling holds the flight
+        // The counterweight 200 px right of the owner, flying right at 10.
+        slots[0].pos = Vec2::new(1795.0, 795.0); // centre (1800, 800)
+        slots[0].vel = Vec2::new(10.0, 0.0);
+        ai_counterweight(
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0,
+        );
+        let c = Vec2::from(slots[0].center());
+        assert!((c.distance(Vec2::new(1600.0, 800.0)) - 125.0).abs() < 1.0, "the 125 radius");
+        // The overshoot 75 caps at len−1 = 9 → the speed sheds to 1.
+        assert!(slots[0].vel.length() < 10.0);
+    }
+
+    /// The return state (`:67695-67730`): the 18-speed owner blend, the
+    /// 40-px arrival kill, the 2000-px leash kill.
+    #[test]
+    fn w4_d10_s99_the_return_seeks_and_kills() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![proj(556)];
+        slots[0].ai[0] = -1.0;
+        slots[0].pos = Vec2::new(1795.0, 795.0);
+        slots[0].vel = Vec2::ZERO;
+        ai_counterweight(
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+        );
+        assert!(!slots[0].tile_collide, "the return flies through tiles");
+        // (0*11 + (-18,0))/12 = -1.5.
+        assert!((slots[0].vel.x - (-1.5)).abs() < 1e-5);
+        // The 40-px arrival kill.
+        let mut s2 = vec![proj(556)];
+        s2[0].ai[0] = -1.0;
+        s2[0].pos = Vec2::new(1615.0, 795.0); // centre 20 px off
+        ai_counterweight(
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+        );
+        assert!(!s2[0].active, "the arrival kill");
+        // The 2000-px leash kill.
+        let mut s3 = vec![proj(556)];
+        s3[0].ai[0] = -1.0;
+        s3[0].pos = Vec2::new(4000.0, 795.0);
+        ai_counterweight(
+            &mut s3, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+        );
+        assert!(!s3[0].active, "the leash kill");
+    }
+
+    /// The dropped state (`:67649-67693`): extraUpdates 0, the negative
+    /// penetrate lifts to 1, the 0.3 gravity, the 16 cap.
+    #[test]
+    fn w4_d10_s99_the_dropped_twin_falls() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![proj(556)];
+        slots[0].ai[0] = -2.0;
+        slots[0].extra_updates = 1;
+        slots[0].penetrate = -1;
+        ai_counterweight(
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+        );
+        assert_eq!(slots[0].extra_updates, 0);
+        assert_eq!(slots[0].penetrate, 1);
+        assert!((slots[0].vel.y - 0.3).abs() < 1e-6);
+        // The ghost state: alpha 255, damage 0.
+        let mut s2 = vec![proj(556)];
+        s2[0].ai[0] = -3.0;
+        s2[0].damage = 20;
+        s2[0].pos = Vec2::new(1795.0, 795.0);
+        ai_counterweight(
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+        );
+        assert_eq!(s2[0].alpha, 255);
+        assert_eq!(s2[0].damage, 0);
+    }
+
+    /// The bounce (`:18415-18440`): a blocked move reverses the axis and
+    /// blends 25% of the owner direction; over 6 the velocity halves.
+    #[test]
+    fn w4_d10_s99_the_counterweight_bounces_toward_the_owner() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut p = proj(556);
+        p.vel = Vec2::new(8.0, 0.0);
+        let tx = ((p.pos.x + p.w + 8.0) / 16.0) as i32;
+        let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
+        let i = w.index(tx, ty);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        counterweight_move(&mut p, &w, Some((1600.0, 800.0)));
+        // The X reverse: -8; the owner direction (-5,-5) normalized blends
+        // 25% at speed 8: vel (-8,0)*0.75 + (-1.41,-1.41) = (-7.41,-1.41),
+        // len 7.55 > 6 → the whole velocity halves.
+        assert!(p.vel.x < 0.0, "the reverse");
+        assert!(p.vel.length() <= 6.0, "the over-6 halving");
     }
 }
