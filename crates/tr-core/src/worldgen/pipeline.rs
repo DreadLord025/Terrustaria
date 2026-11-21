@@ -374,6 +374,11 @@ pub(crate) struct GenVars {
     /// `(x, y, island_style, sky_lake)`; the lakes are skipped by the house
     /// pass (`:17868`).
     pub(crate) island_house_sites: Vec<(i32, i32, i32, bool)>,
+    /// `GenVars.numOrePatch` / `orePatchX` / `maxOrePatch` (`GenVars.cs:240-244`,
+    /// `:461-462` — maxOrePatch 50): the `Surface Ore and Stone` pass's
+    /// ore-patch spacing ledger (`WorldGen.cs:18466-18479`) — W4-g37 B9.
+    pub(crate) num_ore_patch: i32,
+    pub(crate) ore_patch_x: [i32; 50],
 }
 
 impl Default for GenVars {
@@ -414,6 +419,10 @@ impl Default for GenVars {
             // The C# allocates the house-site arrays in Reset; the port grows
             // the Vec as the FloatingIslands pass records sites.
             island_house_sites: Vec::new(),
+            // The C# zeroes numOrePatch and allocates orePatchX[50] in Reset
+            // (`GenVars.cs:461-462`).
+            num_ore_patch: 0,
+            ore_patch_x: [0; 50],
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1331,6 +1340,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // pass draws no RNG (the grass spread is tile-only); the step keeps the
     // vanilla slot for the chain witness.
     step!("spreading grass", "Spreading Grass", step_spreading_grass),
+    // The vanilla Surface Ore and Stone slot (`WorldGen.cs:18447`): after
+    // Spreading Grass (`:18237`), before Place Fallen Log (`:18513`) — W4-g37
+    // B9. Own `pass_rng("Surface Ore and Stone")` stream.
+    step!(
+        "surface ore and stone",
+        "Surface Ore and Stone",
+        step_surface_ore_and_stone
+    ),
     step!("beehives", "Hives", step_beehives),
     step!("hell forts", "", step_hell_forts),
     step!("lihzahrd temple", "Jungle Temple", step_temple),
@@ -2802,6 +2819,30 @@ fn step_spreading_grass(
     );
 }
 
+/// The vanilla Surface Ore and Stone slot (`WorldGen.cs:18447-18512`) —
+/// W4-g37 B9: the surface ore veins + stone blobs. Own
+/// `pass_rng("Surface Ore and Stone")` stream.
+fn step_surface_ore_and_stone(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    let surface_low = gv.layers().surface_low;
+    let mut rng = streams.pass_rng("Surface Ore and Stone");
+    passes_b::pass_surface_ore_and_stone(
+        world,
+        world_surface,
+        surface_low,
+        &mut gv.num_ore_patch,
+        &mut gv.ore_patch_x,
+        &mut rng,
+    );
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3397,8 +3438,9 @@ mod tests {
         // "Quick Cleanup", `:17875`) after `floating island houses`. B7: +
         // `hellforge` (vanilla "Hellforge", `:18187`) after `pots`. B8: +
         // `spreading grass` (vanilla "Spreading Grass", `:18237`) after
-        // `hellforge`.
-        assert_eq!(names.len(), 74);
+        // `hellforge`. B9: + `surface ore and stone` (vanilla "Surface Ore and
+        // Stone", `:18447`) after `spreading grass`.
+        assert_eq!(names.len(), 75);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3474,6 +3516,9 @@ mod tests {
                 // W4-g37 B8: the vanilla Spreading Grass slot
                 // (`WorldGen.cs:18237`) follows Hellforge (`:18187`).
                 "spreading grass",
+                // W4-g37 B9: the vanilla Surface Ore and Stone slot
+                // (`WorldGen.cs:18447`) follows Spreading Grass (`:18237`).
+                "surface ore and stone",
                 "beehives",
                 "hell forts",
                 "lihzahrd temple",
@@ -3868,6 +3913,24 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Hellforge") < cpos("Spreading Grass"));
         assert!(cpos("Spreading Grass") < cpos("Surface Ore and Stone"));
+    }
+
+    /// W4-g37 B9: `surface ore and stone` sits after `spreading grass`, before
+    /// `beehives` (the vanilla SurfaceOreAndStone anchor `WorldGen.cs:18447`
+    /// follows Spreading Grass `:18237`, precedes Place Fallen Log `:18513`).
+    #[test]
+    fn w4_g37_the_surface_ore_step_follows_the_spreading_grass() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("surface ore and stone"), pos("spreading grass") + 1);
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Spreading Grass") < cpos("Surface Ore and Stone"));
+        assert!(cpos("Surface Ore and Stone") < cpos("Place Fallen Log"));
     }
 
     #[test]

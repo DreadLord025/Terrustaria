@@ -2286,3 +2286,349 @@ pub(crate) fn pass_spreading_grass(
         }
     }
 }
+
+// --- B9: Surface Ore and Stone -----------------------------------------------
+
+/// `WorldGen.OreHelper(X, Y)` (`WorldGen.cs:10228-10240`): the 3×3 stone/clay
+/// → dirt conversion around an ore cell.
+fn ore_helper(world: &mut World, x: i32, y: i32) {
+    for i in (x - 1)..=(x + 1) {
+        for j in (y - 1)..=(y + 1) {
+            if world.tile(i, j).is_some_and(|t| t.kind == 1 || t.kind == 40) {
+                if let Some(t) = world.tile_mut(i, j) {
+                    t.kind = 0;
+                }
+            }
+        }
+    }
+}
+
+/// The surface-patch floor scan + grass/wall/underground gate shared by
+/// `OrePatch`/`StonePatch` (`WorldGen.cs:10586-10613` / `:10244-10270`): fall
+/// to the first `SolidTile`, the three-column `Conversion.Grass` gate, the
+/// wall-0 gate, then the 21×24 underground box (active, non-dungeon,
+/// non-cloud, non-sand, walled; StonePatch also excludes 199/23). Returns the
+/// floor row, or None.
+fn surface_patch_floor(
+    world: &World,
+    x: i32,
+    y: i32,
+    world_surface: f64,
+    stone: bool,
+) -> Option<i32> {
+    let mut num = y;
+    while !crate::edit::solid_tile(world, x, num) {
+        num += 1;
+        if (num as f64) > world_surface {
+            return None;
+        }
+    }
+    // `Conversion.Grass` = {2, 23, 199, 109, 477, 492} (TileID.cs:86).
+    let grass = |k: u16| matches!(k, 2 | 23 | 199 | 109 | 477 | 492);
+    for dx in [-1, 0, 1] {
+        if !world.tile(x + dx, num).is_some_and(|t| grass(t.kind)) {
+            return None;
+        }
+    }
+    if world.tile(x, num).map(|t| t.wall).unwrap_or(0) > 0 {
+        return None;
+    }
+    for i in (x - 10)..=(x + 10) {
+        for j in (num + 7)..=(num + 30) {
+            let ok = world.tile(i, j).is_some_and(|t| {
+                t.active()
+                    && !super::dungeon_features::is_dungeon_tile(t.kind)
+                    && !td::SET_CLOUDS.has(t.kind)
+                    && !td::SET_CONVERSION_SAND.has(t.kind)
+                    && t.wall != 0
+                    && (!stone || (t.kind != 199 && t.kind != 23))
+            });
+            if !ok {
+                return None;
+            }
+        }
+    }
+    Some(num)
+}
+
+/// `WorldGen.OrePatch(X, Y)` (`WorldGen.cs:10579-10705`): the copper/iron
+/// surface ore vein — the floor scan, the `Next(2)` depth bump, the seed cell
+/// + `OreHelper`, the `Next(8,13)`-budget random walk (the ±1 x / 1-2 y steps,
+/// the 1-in-3 extra-y, the 1-in-4 side cell), then the drifting blob (the
+/// `Next(5,9)` radius / `Next(9,14)` steps, the inner-clear / outer-ore rings).
+fn ore_patch(world: &mut World, x: i32, y: i32, world_surface: f64, rng: &mut Rng) -> bool {
+    // `:10581-10585`: the ore pick (1-in-3 iron, else copper).
+    let kind: u16 = if rng.range(0, 3) == 0 { 6 } else { 7 };
+    let Some(mut num2) = surface_patch_floor(world, x, y, world_surface, false) else {
+        return false;
+    };
+    let mut num = x;
+    // `:10614-10617`: the depth bump + seed cell.
+    num2 += rng.range(0, 2);
+    if let Some(t) = world.tile_mut(num, num2) {
+        t.kind = kind;
+        t.flags |= FLAG_ACTIVE;
+    }
+    ore_helper(world, num, num2);
+    // `:10622-10650`: the random walk.
+    let num3 = num2;
+    while num2 < num3 + rng.range(8, 13) {
+        num += rng.range(-1, 2);
+        num2 += rng.range(1, 3);
+        if rng.range(0, 3) == 0 {
+            num2 += 1;
+        }
+        if let Some(t) = world.tile_mut(num, num2) {
+            t.kind = kind;
+            t.flags |= FLAG_ACTIVE;
+        }
+        ore_helper(world, num, num2);
+        if rng.range(0, 4) == 0 {
+            let num4 = num + rng.range(-2, 3);
+            let num5 = num2 + rng.range(0, 2);
+            if let Some(t) = world.tile_mut(num4, num5) {
+                t.kind = kind;
+                t.flags |= FLAG_ACTIVE;
+            }
+            ore_helper(world, num4, num5);
+        }
+    }
+    // `:10651-10703`: the drifting blob.
+    let mut vec = (num as f64, num2 as f64);
+    let mut drift = (rng.next_f64() * 0.6 - 0.3, rng.next_f64() * 0.5 + 0.5);
+    let mut num6 = rng.range(5, 9) as f64;
+    let mut num7 = rng.range(9, 14);
+    if rng.range(0, 3) == 0 {
+        num6 += rng.range(0, 2) as f64;
+    }
+    if rng.range(0, 3) == 0 {
+        num7 += rng.range(0, 2);
+    }
+    while num7 > 0 {
+        num7 -= 1;
+        let r = (num6 as i32) * 4;
+        for k in (num - r)..=(num + r) {
+            for l in (num2 - r)..=(num2 + r) {
+                let num8 = num6 * (0.5 + rng.next_f64() * 0.5) * 0.1;
+                let mut num9 = num6 * (0.7 + rng.next_f64() * 0.6) * 0.3;
+                if rng.range(0, 8) == 0 {
+                    num9 *= 2.0;
+                }
+                let dx = vec.0 - k as f64;
+                let dy = vec.1 - l as f64;
+                let len = (dx * dx + dy * dy).sqrt();
+                if len < num8 {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        t.flags &= !FLAG_ACTIVE;
+                    }
+                } else if len < num9 {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        t.kind = kind;
+                        if rng.range(0, 4) == 0 {
+                            t.flags |= FLAG_ACTIVE;
+                        }
+                    }
+                    ore_helper(world, k, l);
+                }
+            }
+        }
+        vec.0 += drift.0;
+        vec.1 += drift.1;
+        drift.0 += rng.next_f64() * 0.2 - 0.1;
+        drift.1 += rng.next_f64() * 0.2 - 0.1;
+        drift.0 = drift.0.clamp(-0.3, 0.3);
+        drift.1 = drift.1.clamp(0.5, 1.0);
+    }
+    true
+}
+
+/// `WorldGen.StonePatch(X, Y)` (`WorldGen.cs:10242-10330`): the surface stone
+/// blob — the floor scan (with the 199/23 exclusion), the drifting blob (the
+/// `Next(13,18)` radius / `Next(13,19)` steps), the 1-in-7 pile/furniture arm
+/// (the 186 pile + the 185 small piles), the inner stone retype.
+fn stone_patch(world: &mut World, x: i32, y: i32, world_surface: f64, rng: &mut Rng) -> bool {
+    let Some(num) = surface_patch_floor(world, x, y, world_surface, true) else {
+        return false;
+    };
+    // `:10271-10284`: the blob parameters.
+    let mut vec = (x as f64, num as f64);
+    let mut drift = (rng.next_f64() * 0.6 - 0.3, rng.next_f64() * 0.5 + 0.5);
+    let mut num2 = rng.range(13, 18) as f64;
+    let mut num3 = rng.range(13, 19);
+    if rng.range(0, 3) == 0 {
+        num2 += rng.range(0, 3) as f64;
+    }
+    if rng.range(0, 3) == 0 {
+        num3 += rng.range(0, 3);
+    }
+    while num3 > 0 {
+        num3 -= 1;
+        let r = (num2 as i32) * 4;
+        for k in (x - r)..=(x + r) {
+            for l in (num - r)..=(num + r) {
+                let mut num4 = num2 * (0.7 + rng.next_f64() * 0.6) * 0.3;
+                if rng.range(0, 8) == 0 {
+                    num4 *= 2.0;
+                }
+                let dx = vec.0 - k as f64;
+                let dy = vec.1 - l as f64;
+                let len = (dx * dx + dy * dy).sqrt();
+                // `:10298-10309`: the pile/furniture arm.
+                let floored = world.tile(k, l + 1).is_some_and(|t| t.active() && t.kind == 1);
+                if len < num4 * 2.0
+                    && !world.tile(k, l).is_some_and(|t| t.active())
+                    && floored
+                    && rng.range(0, 7) == 0
+                    && crate::edit::solid_tile(world, k - 1, l + 1)
+                    && crate::edit::solid_tile(world, k + 1, l + 1)
+                {
+                    if rng.range(0, 3) != 0 {
+                        place_tile(world, k, l, 186, true, false, rng.range(7, 13), rng);
+                    }
+                    if rng.range(0, 3) != 0 {
+                        place_small_pile(world, k, l, rng.range(0, 6), 1);
+                    }
+                    place_small_pile(world, k, l, rng.range(0, 6), 0);
+                }
+                // `:10310-10320`: the inner stone retype.
+                if len < num4 {
+                    if world.tile(k, l).is_some_and(|t| td::TILE_SOLID.has(t.kind)) {
+                        if let Some(t) = world.tile_mut(k, l) {
+                            t.kind = 1;
+                        }
+                    }
+                }
+            }
+        }
+        vec.0 += drift.0;
+        vec.1 += drift.1;
+        drift.0 += rng.next_f64() * 0.2 - 0.1;
+        drift.1 += rng.next_f64() * 0.2 - 0.1;
+        drift.0 = drift.0.clamp(-0.3, 0.3);
+        drift.1 = drift.1.clamp(0.5, 1.0);
+    }
+    true
+}
+
+/// `WorldGen.PlaceSmallPile(i, j, pileStyle, pileSize, 185)`
+/// (`WorldGen.cs:46815-46873`): the anyLava veto, the size-1 two-cell arm (the
+/// `SolidTile2` floor + the boulder veto) / the size-0 single-cell arm, the
+/// frame writes (`frameX = style*36` for size 1, `style*18` for size 0).
+fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_size: i32) -> bool {
+    let frame_y = (pile_size * 18) as i16;
+    if world.tile(x, y).is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava) {
+        return false;
+    }
+    if pile_size == 1 {
+        let frame_x = (pile_style * 36) as i16;
+        let seat = crate::edit::solid_tile2(world, x, y + 1)
+            && crate::edit::solid_tile2(world, x + 1, y + 1)
+            && !world.tile(x, y).is_some_and(|t| t.active())
+            && !world.tile(x + 1, y).is_some_and(|t| t.active());
+        let boulder = invalid_tile_for_piles(world, x, y + 1)
+            || invalid_tile_for_piles(world, x + 1, y + 1);
+        if seat && !boulder {
+            for (px, fx) in [(x, frame_x), (x + 1, frame_x + 18)] {
+                if let Some(t) = world.tile_mut(px, y) {
+                    t.flags |= FLAG_ACTIVE;
+                    t.frame_y = frame_y;
+                    t.frame_x = fx;
+                    t.kind = 185;
+                }
+            }
+            return true;
+        }
+    } else if crate::edit::solid_tile2(world, x, y + 1)
+        && !world.tile(x, y).is_some_and(|t| t.active())
+    {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags |= FLAG_ACTIVE;
+            t.frame_y = frame_y;
+            t.frame_x = (pile_style * 18) as i16;
+            t.kind = 185;
+        }
+        return true;
+    }
+    false
+}
+
+/// The `Surface Ore and Stone` pass (`WorldGen.cs:18447-18512`): the
+/// width-scaled ore-patch count (the ±200 spacing ledger, the 0.48-0.52 centre
+/// exclusion), then the stone-patch count (the ±100 spacing, the 0.47-0.53
+/// centre exclusion). Returns the number of ore patches placed.
+pub(crate) fn pass_surface_ore_and_stone(
+    world: &mut World,
+    world_surface: f64,
+    surface_low: f64,
+    num_ore_patch: &mut i32,
+    ore_patch_x: &mut [i32; 50],
+    rng: &mut Rng,
+) -> u32 {
+    const BEACH_DISTANCE: i32 = 380;
+    const MAX_ORE_PATCH: i32 = 50;
+    // The sub-vanilla guard: the C# `Next(beachDistance, maxX-beachDistance)`
+    // band collapses on a tiny world.
+    if world.width <= 2 * BEACH_DISTANCE {
+        return 0;
+    }
+    let y_lo = surface_low as i32;
+    let y_hi = world_surface as i32;
+    if y_hi <= y_lo {
+        return 0;
+    }
+    let mut placed = 0u32;
+    // `:18452-18483`: the ore patches.
+    let num = rng.range(world.width * 5 / 4200, world.width * 10 / 4200);
+    for _i in 0..num {
+        let mut num2 = world.width / 420;
+        while num2 > 0 {
+            num2 -= 1;
+            let mut num3 = rng.range(BEACH_DISTANCE, world.width - BEACH_DISTANCE);
+            while (num3 as f64) >= world.width as f64 * 0.48
+                && (num3 as f64) <= world.width as f64 * 0.52
+            {
+                num3 = rng.range(BEACH_DISTANCE, world.width - BEACH_DISTANCE);
+            }
+            let y = rng.range(y_lo, y_hi);
+            let mut flag = false;
+            for j in 0..*num_ore_patch {
+                if (num3 - ore_patch_x[j as usize]).abs() < 200 {
+                    flag = true;
+                }
+            }
+            if !flag && ore_patch(world, num3, y, world_surface, rng) {
+                if *num_ore_patch < MAX_ORE_PATCH - 1 {
+                    ore_patch_x[*num_ore_patch as usize] = num3;
+                    *num_ore_patch += 1;
+                }
+                placed += 1;
+                break;
+            }
+        }
+    }
+    // `:18484-18510`: the stone patches.
+    let num = rng.range(1, world.width * 7 / 4200);
+    for _k in 0..num {
+        let mut num4 = world.width / 420;
+        while num4 > 0 {
+            num4 -= 1;
+            let mut num5 = rng.range(BEACH_DISTANCE, world.width - BEACH_DISTANCE);
+            while (num5 as f64) >= world.width as f64 * 0.47
+                && (num5 as f64) <= world.width as f64 * 0.53
+            {
+                num5 = rng.range(BEACH_DISTANCE, world.width - BEACH_DISTANCE);
+            }
+            let y2 = rng.range(y_lo, y_hi);
+            let mut flag2 = false;
+            for l in 0..*num_ore_patch {
+                if (num5 - ore_patch_x[l as usize]).abs() < 100 {
+                    flag2 = true;
+                }
+            }
+            if !flag2 && stone_patch(world, num5, y2, world_surface, rng) {
+                break;
+            }
+        }
+    }
+    placed
+}

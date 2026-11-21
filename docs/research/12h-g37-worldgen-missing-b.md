@@ -338,6 +338,48 @@ Traps, Final Cleanup.
   `a == b` untouched.
 - **Verification**: code-only — witnesses written, not run.
 
+## B9 Surface Ore and Stone — landing notes (this commit)
+
+- **Pass body** `WorldGen.cs:18447-18512` →
+  `passes_b.rs::pass_surface_ore_and_stone`. The ore-patch count
+  `Next(maxX*5/4200, maxX*10/4200)` (`:18452`), the `maxX/420` attempt budget,
+  the `Next(beachDistance, maxX-beachDistance)` x roll + the 0.48-0.52 centre
+  re-roll, the `worldSurfaceLow .. worldSurface` y band, the ±200 `orePatchX`
+  spacing ledger (`:18466-18479`, the `maxOrePatch-1` cap), `OrePatch`. The
+  stone-patch count `Next(1, maxX*7/4200)` (`:18484`), the ±100 spacing + the
+  0.47-0.53 centre exclusion, `StonePatch`.
+- **`OrePatch`** (`:10579-10705`): the 1-in-3 iron / else copper pick, the
+  floor scan + grass/wall/underground gate, the `Next(2)` depth bump + seed
+  cell + `OreHelper`, the `Next(8,13)`-budget walk (the ±1 x / 1-2 y steps, the
+  1-in-3 extra-y, the 1-in-4 side cell), the drifting blob (the `Next(5,9)`
+  radius / `Next(9,14)` steps, the inner-clear / outer-ore rings, the
+  `NextDouble` drift + clamp).
+- **`StonePatch`** (`:10242-10330`): the floor scan (with the 199/23
+  exclusion), the `Next(13,18)` radius / `Next(13,19)` steps blob, the 1-in-7
+  pile/furniture arm (the 186 pile + the 185 small piles), the inner stone
+  retype.
+- **Helpers**: `ore_helper` (`:10228-10240`), `surface_patch_floor` (the shared
+  floor scan + gate), `place_small_pile` (`:46815-46873`, the anyLava veto +
+  the size-1 two-cell / size-0 single-cell arms + the boulder veto).
+- **GenVars**: `num_ore_patch` / `ore_patch_x[50]` added (`GenVars.cs:240-244`,
+  `:461-462`).
+- **Pipeline**: `step!("surface ore and stone", …)` after `spreading grass`,
+  before `beehives`; count 74→75; witness
+  `w4_g37_the_surface_ore_step_follows_the_spreading_grass`; progress `Gen(37)`
+  (the pass sets `progress.Set(1.0)` with no message — the slot keeps the prior
+  row).
+- **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.
+- **Verification**: code-only — witnesses written, not run.
+
+## Lane complete
+
+All nine B-passes (B1-B9) are ported, one commit each, witnesses written (not
+run — code-only mode). The `a == b` determinism halves of both `world_hash.rs`
+pin tests stay untouched; the pinned VALUES are stale-by-design and re-pin at
+the merge gate. The g39 helper-lane duplicates (`Place1x1`/`Place1x2`/
+`Place3x2`/`PlaceSmallPile`) and the d103/d104 island-house overlap are
+merger-reconciled. No other lane's landed pass was touched.
+
 ## Landing ledger
 
 | pass | commit | status |
@@ -351,5 +393,5 @@ Traps, Final Cleanup.
 | B5 Floating Island Houses | 3d74564e | ported — witnesses written not run |
 | B6 Quick Cleanup | b48a702b | ported — witnesses written not run |
 | B7 Hellforge | 454e43ba | ported — witnesses written not run |
-| B8 Spreading Grass | (this commit) | ported — witnesses written not run |
-| B9 Surface Ore and Stone | — | pending |
+| B8 Spreading Grass | df468d00 | ported — witnesses written not run |
+| B9 Surface Ore and Stone | (this commit) | ported — witnesses written not run |
