@@ -21,18 +21,28 @@ commits both landed here).
 
 ## What stays deferred (the residual, all cited in ANALYSIS)
 
-- **loadout SharedFrom** (`Main.cs:20640-20643`): `GetSharedLoadoutItem`
-  (`ItemSlot.cs:2839-2846` → `GetEffectiveArmor`/`GetEffectiveDye`) needs
-  the loadout system; the head's other arms are live (the e16 salvage).
-- **Journey research rows** (`:21318-21333`): the ctx whitelist now rides
-  `HoverFlags.context`; the sacrifice tracker has no App feed.
+- **loadout SharedFrom SOURCE**: the row itself landed (`39babafa7` —
+  `HoverFlags.shared_from_loadout`, `Main.cs:20641-20644`); its writer
+  `GetSharedLoadoutItem` (`ItemSlot.cs:2839-2846` →
+  `GetEffectiveArmor`/`GetEffectiveDye`) needs the g55 loadout system.
+- **Journey research SOURCE**: the rows landed (`39babafa7` —
+  `research::research_tooltip_rows`, the 17-context whitelist +
+  difficulty-3 gate + `CreativeSacrificeNeeded`/teammate-credit arms,
+  `Main.cs:21318-21333`); the c24 App fields (`TooltipContext.difficulty`
+  /`research`) stay 0/`None` until the creative tracker ports.
 - **BestiaryNotes writer** (`:21334-21342`): the seam
   (`HoverFlags.bestiary_notes`) is live; the only writer
-  (`UIBestiaryInfoItemLine.cs:137-156`) is unported.
+  (`UIBestiaryInfoItemLine.cs:137-156`) is unported (the e23 branch's
+  `ui::bestiary::bestiary_notes` exists — the hover WIRE is the work).
 - **diff-hover source**: the colour arms are live; no hover passes a
   non-zero `diff` until the stealthed-remote-player hover ports.
 - **crafting-reason writer**: the row seam is live; the persistent
   recipe-list port owns the unavailable-recipe hover.
+
+Witness count note: `39babafa7` (the co-lane contracts commit) landed
+between this census's first draft and its commit — the table's five
+families were already closed by then; the SharedFrom/Journey rows moved
+from "deferred" to "ported, source dormant" in the same window.
 
 ## The e16 MUST-SALVAGE folds (this session, per 128 §4/§5)
 
@@ -51,7 +61,7 @@ commits both landed here).
    session committed the shared files with these hunks in).
 6. The `createWall > 0` place-gate VERIFY (128 §2 row 16) — `f0826fe3d`.
 
-Witness union note: `w4_f28_*` now counts 31 across 8 files (grep
+Witness union note: `w4_f28_*` now counts 33 across 9 files (grep
 `fn w4_f28_`) + 3 unnamed-prefix format tests in `tr-core format.rs`
 (`w4_f28_tests` module). All WRITTEN NOT RUN — the merged branch is the
 first place they execute (128 §8).
