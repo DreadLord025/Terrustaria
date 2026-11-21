@@ -3956,14 +3956,21 @@ impl Projectile {
             self.alpha = 255 - (255.0 * scale) as i32;
             self.rot -= std::f32::consts::PI / 30.0;
             if self.alpha >= 255 {
-                self.active = false;
                 // W4-g64 (the d11 be58df9e fix): the C# `Kill()` does NOT
                 // return (`:33947-33950`) — the 813's death-tick dust
                 // gates + opacity tail below still roll. For the 578/579
                 // it is a no-op (the slot is dead, `ai[0] != 90`, the
                 // opacity tail is 813-only, their dissolve switch rolls
                 // are the co-lane's unmodelled skip), so their state
-                // stays byte-identical.
+                // stays byte-identical. W4-g64 remainder 4 (the d13
+                // a2588cd2 shape): the `self.active &&` head keeps the
+                // Kill once-per-death (`:70644`) and stamps
+                // kill_time_left + zeroes time_left (the Kill body).
+                if self.active {
+                    self.kill_time_left = self.time_left;
+                    self.active = false;
+                    self.time_left = 0;
+                }
             }
             // `:33951-33983` — the 813's two Next(3) switch rings (the
             // case-2 no-op draws nothing further; the spin vector carries
@@ -4005,11 +4012,17 @@ impl Projectile {
                         .push((NpcKind::VortexAlien.to_u16(), self.pos.x, self.pos.y, vx, vy));
                 }
             } else if self.kind == BLOOD_NAUTILUS_TEARS {
+                // `:33792-33795` — the non-flag53 arm's Item8 cue (the d13
+                // a2588cd2 residual: the cue rides wants_sound, the
+                // 578/579's Item113/Item117 stay unported).
+                self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0));
                 // `:33882-33886`'s BloodSquid (619) at `(int)Center`, zero
                 // velocity. The raw C# id rides the intent (the kind is
                 // unported — the drain folds it, a cited skip). W4-g64:
                 // the C# truncates the CENTRE (`:33884`) — the d11 port
-                // carried the top-left; fixed here (ANALYSIS).
+                // carried the top-left; fixed here (ANALYSIS). The d13
+                // residual kept the untruncated centre — the (int) cast
+                // is the C# verbatim, this branch keeps it.
                 self.wants_mark_spawn.push((619, center.x as i32 as f32, center.y as i32 as f32, 0.0, 0.0));
             }
         }
@@ -31521,12 +31534,17 @@ mod ritual_projectile_tests {
 
     #[test]
     fn the_ritual_markers_carry_their_rows() {
-        // `Projectile.cs:6282-6293`'s shared row for the 578 lightning and
-        // the 579 portal, and `:6294-6305`'s 580 bolt.
-        for kind in [VORTEX_LIGHTNING, VORTEX_PORTAL] {
+        // `Projectile.cs:6282-6293`'s shared row for the 578 lightning,
+        // the 579 portal and the 813 tears (W4-g64 remainder 4: the d13
+        // a2588cd2 corrected shape — the stock pen 1 + alpha 255), and
+        // `:6294-6305`'s 580 bolt.
+        for kind in [VORTEX_LIGHTNING, VORTEX_PORTAL, BLOOD_NAUTILUS_TEARS] {
             let data = proj_data(kind).expect("the row");
             assert_eq!(data.ai_style, 108);
             assert_eq!((data.w, data.h), (32.0, 32.0));
+            assert_eq!(data.penetrate, 1, "the stock :774 (the d13 fix)");
+            assert_eq!(data.alpha, 255, ":6288");
+            assert!(data.ignore_water, ":6290 (the d13 flag-list fix)");
             assert!(!data.tile_collide, "the markers pass the tiles");
         }
         let bolt = proj_data(VORTEX_RITUAL_BOLT).expect("the row");
@@ -45266,13 +45284,20 @@ mod w4_g64_wiring_tests {
             .filter(|&r| r == (0, 2)).collect();
         assert_eq!(gates.len(), 1, "the full charge's single if/else roll");
         // Dissolve tick (ai[0] = 120 → 121): two Next(3) switch rolls.
+        // The LIVE bodies add internals between the gates: each spawned
+        // ring's frame_y draws next_max(3) = (0,3) (the d50 default
+        // block), and the opacity tail's Perfect adds one more — both
+        // switches take case 0 (the CountRng min) and the tail passes
+        // (alpha 5 → opacity ~0.98), so FIVE (0,3) draws: 2 gates + 3
+        // frame_y rolls. The d11 gates-only census saw exactly 2.
         let mut p = mk();
         p.ai[0] = 120.0;
         let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
         p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
         let gates: Vec<(i32, i32)> = rng.ranges.iter().copied()
             .filter(|&r| r == (0, 3)).collect();
-        assert_eq!(gates.len(), 2, "the dissolve's two Next(3) switch rolls");
+        assert_eq!(gates.len(), 5, "2 switch gates + 3 frame_y Next(3) internals");
+        assert_eq!(rng.ranges[0], (0, 3), "the first switch gate leads");
     }
 
     /// W4-g64 remainder 2 — the 813's 90th-tick BloodSquid spawn rides the
@@ -45307,6 +45332,8 @@ mod w4_g64_wiring_tests {
         assert_eq!(kind, 619, "the raw C# NPC id");
         assert_eq!((x, y), (1016.0, 1016.0), "(int)Center: 1000.7+16 / 1000.9+16 truncated");
         assert_eq!((vx, vy), (0.0, 0.0));
+        // The Item8 cue (the d13 a2588cd2 residual, `:33792-33795`).
+        assert_eq!(p.wants_sound, Some((2, 8, 1000.7, 1000.9, 0.0)));
         // Run to the death tick: ai[0] = 180 → scale -1 → alpha 510 →
         // Kill; the tail STILL rolls (the slot dead, the draw recorded).
         for _ in 0..90 {
@@ -45314,6 +45341,8 @@ mod w4_g64_wiring_tests {
         }
         assert_eq!(p.ai[0], 180.0);
         assert!(!p.active, "the dissolve kills at the end");
+        assert_eq!(p.time_left, 0, "the Kill body zeroes (the d13 shape)");
+        assert_eq!(p.kill_time_left, 600, "the Kill stamps the pre-death life");
         // The parity twin: the whole 180-tick life lands identical pools
         // and stream tails on a second run.
         let (mut sd2, sc2) = scratch_dust(&w);
@@ -45426,5 +45455,222 @@ mod w4_g64_wiring_tests {
             }
         }
         assert!(found_orphan, "a full-ring seed reaches the orphan cap");
+    }
+
+    /// W4-g64 remainder 4 — the e3 keep-one parity (the 497 twin): e3's
+    /// `style2_trail_497` (wired in ITS ai_style2 497 arm) and this lane's
+    /// `trail_497` (unwired — 497 unrowed here) are the SAME draw sequence
+    /// (`:23413-23417`: the 27 dust with the velocity arguments, alpha
+    /// 100, scale 1.2, the centre blend, noGravity, ×0.3, −vel×0.1). The
+    /// mirror reproduces e3's body verbatim on a twin stream — identical
+    /// records + tails pin the keep-one (either survivor is stream-exact).
+    #[test]
+    fn w4_g64_keep_one_497_matches_the_e3_body() {
+        let w = World::new("g64r4".into(), 200, 200);
+        let (mut sd, sc) = scratch_dust(&w);
+        let pos = Vec2::new(1000.0, 900.0);
+        let vel = Vec2::new(4.0, -3.0);
+        let mut rng = tr_core::UnifiedRandom::new(497);
+        crate::proj_trail_dust::trail_497(pos, 12, 12, vel, &mut rng, &mut sd, &sc, &w);
+        // The e3 body verbatim (projectile_dust.rs style2_trail_497).
+        let mut mpool = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(497);
+        let idx = mpool.new_dust(&mut mirror, &sc, &w, pos, 12, 12, 27, vel.x, vel.y, 100, tr_core::particles::Color::default(), 1.2);
+        let center = pos + Vec2::new(6.0, 6.0);
+        let d = mpool.slot_mut(idx);
+        d.position = (d.position + center) / 2.0;
+        d.no_gravity = true;
+        d.velocity *= 0.3;
+        d.velocity -= vel * 0.1;
+        for i in 0..6000 {
+            assert_eq!(sd.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "tail");
+        }
+    }
+
+    /// W4-g64 remainder 4 — the e3 keep-one parity (the 504/954/979 spark
+    /// twin): e3 splits the num19 ladder + the Next(100) gate into the
+    /// MACHINE and the body into `style2_spark_dust`; this lane's
+    /// `trail_504` carries all three in the emitter. The mirror reproduces
+    /// e3's split verbatim (the ladder, the gate, then the body) against
+    /// the emitter on twin streams — the draw ORDER is identical, so the
+    /// merge keeps either shape stream-exact (the 954 rowed rider is the
+    /// only live kind on both branches; 504/979 unrowed on both).
+    #[test]
+    fn w4_g64_keep_one_504_matches_the_e3_gate_body_split() {
+        let w = World::new("g64r4".into(), 200, 200);
+        for kind in [504u16, 954, 979] {
+            for ai0 in [4.0f32, 10.0, 25.0, 59.0] {
+                let (mut sd, sc) = scratch_dust(&w);
+                let pos = Vec2::new(1000.0, 900.0);
+                let vel = Vec2::new(5.0, 1.0);
+                let mut rng = tr_core::UnifiedRandom::new(504);
+                crate::proj_trail_dust::trail_504(kind, pos, 10, 10, vel, ai0, &mut rng, &mut sd, &sc, &w);
+                // The e3 split verbatim: the machine's ladder + gate
+                // (e3 projectile.rs :2822-2834), then the body
+                // (style2_spark_dust).
+                let mut mpool = tr_core::particles::DustPool::new();
+                let mut mirror = tr_core::UnifiedRandom::new(504);
+                let mut num19 = 100;
+                if ai0 > 20.0 {
+                    let num21 = ai0 - 20.0;
+                    num19 = (100.0 * (1.0 - num21 / 40.0)) as i32;
+                }
+                if ai0 <= 10.0 {
+                    num19 = ai0 as i32 * 10;
+                }
+                if mirror.next_range(0, 100) < num19 {
+                    let dust_type = if kind != 979 { 6 } else { 135 };
+                    let idx = mpool.new_dust(&mut mirror, &sc, &w, pos, 10, 10, dust_type, 0.0, 0.0, 150, tr_core::particles::Color::default(), 1.0);
+                    let center = pos + Vec2::new(5.0, 5.0);
+                    let d = mpool.slot_mut(idx);
+                    d.position = (d.position + center) / 2.0;
+                    d.no_gravity = true;
+                    d.velocity *= 2.0;
+                    d.scale *= 1.6;
+                    d.velocity += vel;
+                }
+                for i in 0..6000 {
+                    assert_eq!(sd.slot(i), mpool.slot(i), "kind {kind} ai0 {ai0} slot {i}");
+                }
+                for _ in 0..8 {
+                    assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "kind {kind} ai0 {ai0} tail");
+                }
+            }
+        }
+    }
+
+    /// W4-g64 remainder 4 — the e3 keep-one parity (the 503 spark twin):
+    /// e3's `style5_spark_503` keeps the :23963 Next(48) GORE gate draw
+    /// (the body d55/g16's); this lane's `trail_503` defers that draw to
+    /// the wiring wave ("the wiring wave interleaves that draw AFTER this
+    /// fn"). The mirror runs the emitter THEN the gore gate — the e3
+    /// order — and the records + tails match: the keep-one contract is
+    /// the gate's placement, pinned here.
+    #[test]
+    fn w4_g64_keep_one_503_gore_gate_rides_after_the_emitter() {
+        let w = World::new("g64r4".into(), 200, 200);
+        let (mut sd, sc) = scratch_dust(&w);
+        let pos = Vec2::new(1000.0, 900.0);
+        let vel = Vec2::new(6.0, -2.0);
+        let mut rng = tr_core::UnifiedRandom::new(503);
+        crate::proj_trail_dust::trail_503(pos, 14, 14, vel, &mut rng, &mut sd, &sc, &w);
+        let _ = rng.next_range(0, 48); // the :23963 gore gate (d55/g16's body)
+        // The e3 body verbatim: the gate, the RotatedByRandom pair, the
+        // 58 dust, the spin overwrites, THEN the gore gate.
+        let mut mpool = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(503);
+        if mirror.next_range(0, 16) == 0 {
+            let max = 1.5707963705062866f64;
+            let ang = mirror.next_double() * max - mirror.next_double() * max;
+            // `Utils.ToRotation` = (float)Math.Atan2 — the double atan2
+            // cast to f32, then widened for RotatedBy (the g64 emitter's
+            // `to_rotation`; e3's f32-atan2 form is its own ulp deviation).
+            let rot = (vel.y as f64).atan2(vel.x as f64) as f32;
+            let v3 = crate::bow_launch::rotated_by(
+                crate::bow_launch::rotated_by(Vec2::UNIT_X, ang),
+                rot as f64,
+            );
+            let idx = mpool.new_dust(&mut mirror, &sc, &w, pos, 14, 14, 58, vel.x * 0.5, vel.y * 0.5, 150, tr_core::particles::Color::default(), 1.2);
+            let center = pos + Vec2::new(7.0, 7.0);
+            let d = mpool.slot_mut(idx);
+            d.velocity = v3 * 0.66;
+            d.position = center + v3 * 12.0;
+        }
+        let _ = mirror.next_range(0, 48);
+        for i in 0..6000 {
+            assert_eq!(sd.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "tail");
+        }
+    }
+
+    /// W4-g64 remainder 4 — the e3 keep-one parity (the 1133 twin): e3's
+    /// `style5_shooting_star` 1133 arm keeps the on-screen Next(24) gore
+    /// gate + its taken Next(2) pick (the body d55/g16's) BEFORE the two
+    /// Direct gates; this lane's `trail_1133` carries only the two Direct
+    /// gates (the gore gate cited for the wiring wave). The mirror runs
+    /// the gore gate pair THEN the emitter — the e3 order. The permissive
+    /// ctx puts the box on-screen (the gate draws).
+    #[test]
+    fn w4_g64_keep_one_1133_gore_gate_rides_before_the_emitter() {
+        let w = World::new("g64r4".into(), 200, 200);
+        let (mut sd, sc) = scratch_dust(&w);
+        let pos = Vec2::new(1000.0, 900.0);
+        let mut rng = tr_core::UnifiedRandom::new(1133);
+        // The e3 order: the on-screen gore gate (the ctx is permissive —
+        // the box is on-screen), the taken pick, then the emitter.
+        if rng.next_range(0, 24) == 0 {
+            let _ = rng.next_range(0, 2); // SelectRandom(16,17)
+        }
+        crate::proj_trail_dust::trail_1133(pos, 14, 14, &mut rng, &mut sd, &sc, &w);
+        let mut mpool = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(1133);
+        if mirror.next_range(0, 24) == 0 {
+            let _ = mirror.next_range(0, 2);
+        }
+        if mirror.next_range(0, 6) == 0 {
+            let idx = mpool.new_dust_direct(&mut mirror, &sc, &w, pos, 14, 14, 89, 0.0, 0.0, 127, tr_core::particles::Color::default(), 1.0);
+            mpool.slot_mut(idx).no_gravity = true;
+        }
+        if mirror.next_range(0, 3) == 0 {
+            let idx = mpool.new_dust_direct(&mut mirror, &sc, &w, pos, 14, 14, 87, 0.0, 0.0, 127, tr_core::particles::Color::default(), 1.0);
+            let d = mpool.slot_mut(idx);
+            d.velocity *= 0.5;
+            d.no_gravity = true;
+        }
+        for i in 0..6000 {
+            assert_eq!(sd.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "tail");
+        }
+    }
+
+    /// W4-g64 remainder 4 — the e3 keep-one parity (the 723 orbit twin):
+    /// e3's `style5_shooting_star` 723 arm keeps the on-screen Next(6)
+    /// gore gate (NO pick draw — the type is literal 17) BEFORE the
+    /// three-ring 267 pair; this lane's `trail_723` carries only the
+    /// orbit. The mirror runs the gore gate THEN the emitter — the e3
+    /// order — and the ring records match (the Blue scale-1 / White
+    /// scale-0.4 pair, noLight/noGravity, the vel×0.2×i velocities).
+    #[test]
+    fn w4_g64_keep_one_723_gore_gate_rides_before_the_orbit() {
+        let w = World::new("g64r4".into(), 200, 200);
+        let (mut sd, sc) = scratch_dust(&w);
+        let pos = Vec2::new(1000.0, 900.0);
+        let center = pos + Vec2::new(7.0, 7.0);
+        let vel = Vec2::new(3.0, 4.0);
+        let rot = 0.7f32;
+        let scale = 1.0f32;
+        let mut rng = tr_core::UnifiedRandom::new(723);
+        let _ = rng.next_range(0, 6); // the :24016 gore gate (no pick draw)
+        crate::proj_trail_dust::trail_723(center, pos.y, rot, scale, vel, &mut rng, &mut sd, &sc, &w);
+        let mut mpool = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::UnifiedRandom::new(723);
+        let _ = mirror.next_range(0, 6);
+        let pi2 = (std::f64::consts::PI * 2.0) as f32;
+        for num49 in 0..3 {
+            let ang = pos.y / 200.0 + num49 as f32 * pi2 + rot;
+            let v7 = center + crate::bow_launch::rotated_by(Vec2::new(0.0, 12.0 * scale), ang as f64) - vel * 0.5;
+            let v = vel * 0.2 * num49 as f32;
+            let idx = mpool.new_dust_perfect(&mut mirror, &sc, &w, v7, 267, Some(v), 0, tr_core::particles::Color::new(0, 0, 255, 255), 1.0);
+            let d = mpool.slot_mut(idx);
+            d.no_light = true;
+            d.no_gravity = true;
+            let idx = mpool.new_dust_perfect(&mut mirror, &sc, &w, v7, 267, Some(v), 0, tr_core::particles::Color::WHITE, 0.4);
+            let d = mpool.slot_mut(idx);
+            d.no_light = true;
+            d.no_gravity = true;
+        }
+        for i in 0..6000 {
+            assert_eq!(sd.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "tail");
+        }
     }
 }

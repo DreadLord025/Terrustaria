@@ -218,3 +218,33 @@ stream-parity witnesses (`w4_g64_wire_*`: the DropRng/DustDraw seam parity,
 the 509 jitter-replacement full-order mirror, the 644 orbit/sparkle/clone
 mirror, the 596 bool-seam contract, the 642 + 509 machine-side parity in
 `projectile.rs`). WRITTEN NOT RUN (code-only).
+
+## The remainder wave (2026-11-21, code-only) — the keep-one refresh
+
+The wiring-wave matrix above is a SNAPSHOT (the d54e reads): the remainder
+wave re-probed the PUSHED co-lane tips (`git show`, never merged) and landed
+the deferred kinds. The updated keep-one table lives in ANALYSIS "The
+remainder wave → The keep-one table" (the merge contracts, per contested
+site). Summary of the deltas against this doc's stale rows:
+
+- **957/895/898 — ROWED + WIRED** (remainder 1, the d13 `314fa6cd` →
+  `a2588cd2` read): the style-124 machine ported dust-wired; the 957's
+  column scan is behaviour-coupled (no dust body — the Next(150) rest roll
+  is its stream draw). The d13 residual's `tentacle_pointer_pose` (the draw
+  consumer) is additive, not ported here.
+- **813 — ROWED + WIRED** (remainder 2, the d11 `e0395afc` + the d13
+  `a2588cd2` read): the four-phase machine's bodies live; the corrected 108
+  row (the stock pen 1 + alpha 255), the ignoreWater flag-list entry, the
+  Item8 cue + the once-per-death Kill head adopted from the d13 residual.
+- **596 — ROWED + WIRED** (remainder 3, the d11 read): the bool seam
+  ACTIVATED in `ai_djinn_curse`; the unrowed list shrinks to 22.
+- **The e3/g63 keep-one contracts** (remainder 4): the 497/504/503/723/1133
+  twins are stream-exact (5 new `w4_g64_keep_one_*` parity witnesses); the
+  survivors are e3's `ai_style2`/`ai_falling_star_family` (the 497/504/503),
+  f48's `ai_cloak_star` (the 723/1133 cloak half), the g64 dust-wired
+  `ai_pets_style124`/`ai_vortex_ritual` (the 895/898/957/813), and d11's
+  `ai_nebula_sphere` 575 half (the 596 seam feeds it). The g63 `update_dust`
+  seam is the SAME shape (the kind gates disjoint: ≤400 / ≥401).
+
+The remainder witnesses (6 style-124 + 3 813 + 1 596 + 5 keep-one = 15) are
+WRITTEN NOT RUN (code-only).

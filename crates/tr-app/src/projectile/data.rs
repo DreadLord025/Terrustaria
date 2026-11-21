@@ -2488,10 +2488,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ignoreWater, extraUpdates 2.
             TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true, RESET_STATE),
             // `:6282-6293`'s ritual markers (the 578 lightning + the 579
-            // portal + the 813 Blood Nautilus tears, W4-g64/d11): 32x32,
-            // aiStyle 108, tileCollide false, ignoreWater.
+            // portal + the 813 Blood Nautilus tears, W4-g64/d11/d13): 32x32,
+            // aiStyle 108, friendly AND hostile, alpha 255, tileCollide
+            // false, ignoreWater, drawLayer 1 (a draw-side field, no pool
+            // consumer). `penetrate` keeps the stock 1 (`:774` — the block
+            // never sets it); the row shape carries neither friendly nor
+            // hostile (the data-row deviation census). W4-g64 remainder 4:
+            // the d13 a2588cd2 residual CORRECTED the d11 row shape (the
+            // stock pen 1 + alpha 255 — the d11 -1/RESET_STATE was stale);
+            // this branch takes the corrected shape for all three kinds.
             VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS => {
-                (32.0, 32.0, 108, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+                (32.0, 32.0, 108, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
             // W4-g64 (the d11 e0395afc row port) — `Projectile.cs:6450-6460`
             // (596, the DesertDjinnCurse): 8x8, aiStyle 107, alpha 255,
@@ -4288,7 +4295,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-g64 (the d11 row port) — the 596 DesertDjinnCurse sets
             // `ignoreWater` (`Projectile.cs:6457`); the 575 sphere does
             // NOT (`:6219-6229` has no such line — d11's census).
-            || kind == DESERT_DJINN_CURSE,
+            || kind == DESERT_DJINN_CURSE
+            // W4-g64 remainder 4 (the d13 a2588cd2 residual) — the
+            // aiStyle-108 ritual markers' shared block sets `ignoreWater`
+            // (`Projectile.cs:6290`); the 578/579 rows predated the flag
+            // list, the 813 joins them.
+            || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

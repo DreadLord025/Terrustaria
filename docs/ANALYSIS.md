@@ -39426,7 +39426,8 @@ model), 670 (the d13 row is UNMERGED; the style-126 sites are style-generic,
 the 670-gated blocks are the height trim + the stomp spawn — no dust), 590
 (the `:34272+` rows belong to 644 behind the `type != 644` return; 590's own
 block is the frame cycle + a LIGHT-intensity `Next(28,42)` draw + the sine
-bob — zero dust, e6/f7's).
+bob — zero dust, e6/f7's). *(SUPERSEDED for 813/957 by the remainder wave
+below — the d11/d13 reads landed both; 670/590 stand.)*
 
 **The 596 bool seam:** `trail_596` returns `false` on the `Next(3) != 0`
 gate — the C# `return` FROM AI() (`:33619-33622`), which skips the orbit's
@@ -39434,7 +39435,8 @@ remaining dusts AND the `timeLeft < 4` death burst below it (g65's). The
 kind is UNWIRED (no row); the seam contract is pinned by
 `w4_g64_wire_596_bool_seam_gates_the_ai_continuation` for the wave that
 lands the row. The 659 twin CONTINUES (wired). The 26 unrowed kinds keep
-their emitters cited + witnessed (the S1-F-9b row gate).
+their emitters cited + witnessed (the S1-F-9b row gate). *(SUPERSEDED: the
+remainder wave landed the 596 row + activated the seam — below.)*
 
 **Witnesses:** 5 new stream-parity witnesses (`w4_g64_wire_*`): the
 DropRng/DustDraw seam parity, the 509 jitter full-order mirror, the 644
@@ -39442,4 +39444,105 @@ orbit/sparkle/clone mirror, the 596 bool contract, and the 642/509
 machine-side parity in `projectile.rs`. The `s1_d_4b_8` spark census
 updated: the 954's gate draws every tick past ai0 > 3 (≥56 range draws over
 59 ticks), the unrowed 504/979 stay draw-free. WRITTEN NOT RUN.
+
+### The remainder wave (2026-11-21, code-only) — the d11/d13 reads + the keep-one refresh
+
+The wiring wave's deferred ledger re-probed against the PUSHED co-lane tips
+(`git show`, never merged): d11 `e0395afc` (the 813 completion + the 596
+row), d13 `314fa6cd` → `a2588cd2` (the style-124 machine + rows, then the
+residual 813 behaviour half + the corrected 108 row), g63 `ed8d4bf5`
+(batches 5-6: the AI_001 slice `step_dust` variants + 17 unrowed emitters),
+e3 `8023aa4d` (the window census + the three keep-one contracts).
+
+**Remainder 1 — the 957 column-scan (commit 80644e7f).** The d13
+`ai_pets_style124` machine ported dust-wired (`projectile_ai_pets124.rs`):
+the 895/898/957 rows + `projFrames` 6/16/12 (the d13 row shape; the
+650/882/888/896 rows stay d13's — the ladder consts are named for the merge
+keep-one), the home-spot ladder, the seven frame machines, the 957's
+`SolidTileAllowBottomSlope` 4-air+1-solid column scan (the shared
+`projectile_ai026_c` helper; the non-short-circuit `&` kept) gating the
+grounded bounce cycle — the 957 draws NO dust; its stream draw is the
+cycle-end `200 + Next(150)` rest roll (`:35519`). The d13 body-skips
+REPLACED: `trail_895`/`trail_898` on the frame-reset tick + the new
+`trail_650_scan_sparkle` (`:35601`) / `trail_650_point_sparkle` (`:35681`,
+the decoded `f` angle + the post-step extension at the C# read moment).
+The `screen_width` seam (`set_screen_width`, the d13 `set_disco` pattern) +
+the buff-spawn rowed-kind drop-in (`spawn_with_data_ai_owned`). The d13
+`a2588cd2` residual added `tentacle_pointer_pose` (the DRAW consumer,
+`Main.cs:34007-34027`) — NOT ported here (the render lane's; the keep-one
+table below).
+
+**Remainder 2 — the 813 four-phase machine (commit 5be4452c).** The d11
+census skips REPLACED with the live bodies: `trail_813_windup` (two
+Next(4), the 5/240 rings ×4/×2), `_charge` (two Next(2), ×6/×3),
+`_full` (ONE Next(2) if/else), `_dissolve` (two Next(3) switch, the
+scale-premultiplied spin vector), `_opacity_tail` (the NextFloat < Opacity
+gate + NextVector2Circular(3,20) + the type-90 Perfect, UnitY/noGravity/
+scale — EVERY tick incl. the death tick; the Kill does not return, the d11
+`be58df9e` fix). The 5-arm's Next(10,21) position re-roll vs the 240's ×30
+keep; `customData = Center` dropped. The 619 spawn takes the C# `(int)Center`
+truncation (`:33884` — the d11 top-left fixed). The d13 `a2588cd2` residual
+re-ported the same machine gates-only with THREE deltas this branch adopts:
+the corrected 108 row (the stock pen 1 + alpha 255 — the d11 -1/RESET_STATE
+was stale; applied to all three markers), the `ignoreWater` flag-list entry
+(`:6290`), the Item8 tick-90 cue (`wants_sound`) + the once-per-death Kill
+head (`self.active &&`, `kill_time_left` stamped). The d13 residual kept
+the untruncated 619 centre — this branch keeps the `(int)` cast (the C#
+verbatim). The 578/579 charge/full/dissolve arms stay the co-lane's
+unmodelled skips (the d11 census — their witnesses pin the current stream).
+
+**Remainder 3 — the 596 row + the bool seam ACTIVATED (commit 060d4e36).**
+The d11 row (8x8/107/pen 1/180/alpha 255/ignoreWater, `projFrames` 4
+`Main.cs:8491`); `ai_djinn_curse` ports the `:33582-33677` arm (the alpha
+fade + solid clamp + the 5-tick 4-frame cycle, the POST-increment `ai[1]`
+orbit, the timeLeft<4 flash census kept — the box/damage re-arm + the ten
+SelectRandom(27,6) Next(2) picks on the stream, the bodies g65's, the
+(v*9+dir*7.5)/10 homing + the orphan cap). `trail_596`'s false IS the C#
+return FROM AI() — the machine returns, the homing tail + the orphan cap
+skipped that tick. The 107 dispatch arm is kind-gated to 596 (the 575 stays
+d11's `ai_nebula_sphere` — the merge keep-one). The d11 module
+(`projectile_ai_101_110.rs`) is NOT copied here (the module-name collision
+at merge; the slot-method shape is the `ai_spirit_flame` precedent).
+
+**Remainder 4 — the e3/g63 keep-one refresh (this commit).** The updated
+keep-one table is below; the research/66 matrix's wiring-wave snapshot is
+superseded in place (the d54e reads). Five new keep-one parity witnesses
+(`w4_g64_keep_one_*`: the 497 body, the 504 gate/body split, the 503 gore
+gate AFTER, the 1133 gore gate BEFORE, the 723 gore gate BEFORE) + the
+remainder witnesses (6 style-124, 3 813, 1 596) WRITTEN NOT RUN.
+
+#### The keep-one table (the merge contracts, superseding research/66's stale matrix)
+
+The g64 lane's WIRED superset vs the co-lanes' emitters, per contested
+site. "Survivor" = the machine/arm that stays at the merge; the dust half
+feeds it through the `update_dust` seam. The g64 emitters are stream-exact
+twins of the e3 bodies (the parity witnesses pin it) — the contracts are
+about DOUBLE-RUNNING machines and DOUBLE-DRAWING gates, not draw shape.
+
+| site (kind) | g64 (this branch) | co-lane tip | keep-one contract |
+| --- | --- | --- | --- |
+| 497 smoke (`:23413`) | `trail_497` UNWIRED (no row) | e3 `style2_trail_497` WIRED in its `ai_style2` 497 arm | e3's arm survives (it owns the machine); g64's `trail_497` retires. Same draws — `w4_g64_keep_one_497_matches_the_e3_body`. |
+| 504/954/979 spark (`:23543`) | `trail_504` WIRED kind-gated to 954 inside `ai_style2` (the 504/979 riders unrowed) | e3 `style2_spark_dust` WIRED for all three in its `ai_style2` | ONE `ai_style2` survives. e3's machine keeps the num19 ladder + the Next(100) gate INLINE and calls the body-only emitter; g64's `trail_504` carries ladder+gate+body. Keep e3's split (its arm is the fuller machine); g64's 954 call retires. The draw ORDER is identical — `w4_g64_keep_one_504_matches_the_e3_gate_body_split`. |
+| 503 spark (`:23959`) | `trail_503` UNWIRED (no row); the `:23963` Next(48) gore gate deferred to the wiring wave | e3 `style5_spark_503` WIRED in `ai_falling_star_family` (the gore gate draw KEPT, the body d55/g16's) | e3's arm survives; g64's `trail_503` retires. The gore gate rides AFTER the spark — `w4_g64_keep_one_503_gore_gate_rides_after_the_emitter`. |
+| 723 orbit (`:24023/24026`) | `trail_723` UNWIRED (no row here) | e3 `style5_shooting_star` 723 arm WIRED; the cloak five ROWED on f48 `bba610bb` (`ai_cloak_star`) | f48's rowed `ai_cloak_star` survives (it owns the spawn seam) and takes the cloak dust half; e3's `ai_falling_star_family` cloak arm + g64's `trail_723` retire. The `:24016` Next(6) gore gate (no pick draw) rides BEFORE the orbit — `w4_g64_keep_one_723_gore_gate_rides_before_the_orbit`. f48 draws the twinkle Next(40) inline (e3 leaves it to the sound lane) — the survivor's draw order wins, the loser's witness re-derives (the e3 contract). |
+| 1133 (`:24003/24008`) | `trail_1133` UNWIRED (no row here) | e3 `style5_shooting_star` 1133 arm WIRED; rowed on f48 | f48's arm survives + takes the 1133 dust half; the on-screen Next(24) gore gate + its Next(2) pick ride BEFORE the two Direct gates — `w4_g64_keep_one_1133_gore_gate_rides_before_the_emitter`. g64's `trail_1133` retires. |
+| 895/898 flight sparkles (`:35231/35295`) | `trail_895`/`trail_898` WIRED in the ported `ai_pets_style124` | d13 `a2588cd2` machine (the bodies SKIPPED) | ONE `ai_pets_style124` survives — the g64 dust-wired port (the d13 machine + the two trail calls + the 650 pair). d13's `tentacle_pointer_pose` (the draw consumer) is ADDITIVE — it joins the survivor (no conflict). The d13 650/882/888/896 rows join the g64 895/898/957 rows (the `STYLE124_PETS` set is already named). |
+| 957 ground bounce (`:35483-35519`) | the column scan + the Next(150) rest roll WIRED (no dust body) | d13 machine (the same scan, gates-only) | the same keep-one as above — the g64 port is the d13 machine verbatim + the dust wiring; no double-run. |
+| 813 four-phase (`:33760-34024`) | `trail_813_*` WIRED in `ai_vortex_ritual` (the d11 machine shape + the d13 deltas) | d11 `e0395afc` + d13 `a2588cd2` (both gates-only) | ONE `ai_vortex_ritual` survives — the g64 dust-wired port. The d11/d13 gates-only census arms retire (their explicit draws are a SUBSET of the live bodies' stream — the internals add draws between them, so the d11/d13 census witnesses RE-DERIVE at the swap, the e3 1051 precedent). The corrected 108 row + the ignoreWater entry + the Item8 cue + the once-per-death Kill head are already adopted here. |
+| 596 orbit (`:33623`) | `trail_596` WIRED in `ai_djinn_curse` (the bool seam activated) | d11 `ai_nebula_sphere` (the 596 half gates-only, the 575 half full) | d11's `ai_nebula_sphere` survives for the 575; the 596 half feeds `trail_596` through the bool seam (the early return). g64's `ai_djinn_curse` retires at the merge (the d11 module owns the 107 dispatch) — OR the d11 596 half takes the g64 seam; either way ONE machine, the seam contract pinned by `w4_g64_wire_596_seam_activated_skips_the_homing_tail`. The timeLeft<4 flash census (the ten Next(2) picks) is identical on both. |
+| 578/579 wind-up (`:33721/33731/33746/33754`) | `trail_579`/`trail_578` WIRED | d11/d13 (unmodelled — the census skips) | the g64 wind-up arms survive (already wired); the d11/d13 machines take them. The charge/full/dissolve 578/579 arms stay unmodelled on every branch (the co-lane's one-shot lane). |
+| the `update_dust` seam | `ProjectilePool::update` = the scratch wrapper over `update_dust` | g63 `ed8d4bf5` (the same shape + the AI_001 slice `step_dust` variants) | the two seams are the SAME shape (the g63 batch-1 precedent) — they reconcile at the merge (the co-lane rule); the g63 slice `step_dust` variants join the g64 per-kind arms. No double-run (the kind gates are disjoint: g63 ≤400, g64 ≥401). |
+
+**The e3 STAGED 152 / 1051 contracts** (the e3 `8023aa4d` doc): unchanged —
+the 152 drop-in feeds d16's count-only arm (the 3-edit contract), the 1051
+`style6_burst` feeds d1's count-only powder twin (keep d1's machine+rows).
+Neither touches a g64 kind (152/1051 are ≤400 / the aiStyle-6 lane) — no g64
+edit owed; cited for the merge wave's completeness.
+
+**Code-only round.** The remainder wave's witnesses (6 style-124 + 3 813 +
+1 596 + 5 keep-one = 15) are WRITTEN, NOT RUN — no cargo/rustc/rustfmt/
+tests/graphify invoked (user directive). Verified by re-reading the cited
+C# (`:33553-33678`, `:33679-34025`, `:34970-35696`, `:23411-23428`,
+`:23520-23556`, `:23954-24031`), the d11/d13/g63/e3 pushed tips via
+`git show`, and the stream-order mirrors.
 
