@@ -1,7 +1,7 @@
 # 68 — FindFrame master wire-census (W4-d44 census refresh, code-only)
 
-Audit date: 2026-11-21 (refresh 3 — the extra7/extra7b wire round;
-the §2 table is the refresh-2 mechanical scan with this round's
+Audit date: 2026-11-21 (refresh 4 — the extra7c/extra8 wire round;
+the §2 table is the refresh-2 mechanical scan with the refresh-3/4
 status cells updated, see the census-vintage note below §0).
 Branch `task/W4-d44-findframe-low-1`,
 worktree `TR-W4-d44`. **Code-only mode: no cargo/rustc/tests/rustfmt/
@@ -21,17 +21,17 @@ per-kind 1-697 status, the per-module bridge shapes, the remaining
 UNCLAIMED kind list with C# case-line anchors, and the remaining-work
 estimate.
 
-## 0. The census arithmetic (refresh 2 mechanically re-derived; refresh 3 wire-round delta applied)
+## 0. The census arithmetic (refresh 2 mechanically re-derived; refresh 3/4 wire-round deltas applied)
 
 | step | count |
 | --- | --- |
 | C# top-level `case` ids (`NPC.cs:66705`, two-tab labels) | **602** |
 | ids 1-697 with NO case label (the NO-CASE rows, §2) | 95 |
 | port-covered: an inline `find_frame` arm on main OR a pushed roster lane (d34/d35/d37/d38/d40) OR the wave-A/B module rosters | **273** |
-| module-claimed ids (deduped across the 16 pushed module mappers) | **199** |
-| — of those, WIRED (a pushed cs_id hook claims the id: g6/g7/d44/d45/d46/e13) | **166** |
-| — of those, MODULE-LANDED but UNWIRED (extra7b keep-inline trio + extra7c/extra8) | **33** |
-| **UNCLAIMED** (no arm, no module claim on ANY pushed tip) | **130** |
+| module-claimed ids (deduped across the pushed module mappers) | **199** |
+| — of those, WIRED (a pushed cs_id hook claims the id: g6/g7/d44/d45/d46/e13) | **196** |
+| — of those, MODULE-LANDED but UNWIRED (the extra7b keep-inline trio ONLY — RESOLVED, not wiring work) | **3** |
+| **UNCLAIMED** (no arm, no module claim on ANY pushed tip — refresh-2 vintage; the refresh-4 re-probe shrinks it, see the vintage note) | **130** |
 
 Check: 273 + 199 + 130 = 602. The f26 slice-7c addendum
 (`68-findframe-census-addendum-7c.md`, tip `a2e47596`) published **127**;
@@ -42,11 +42,14 @@ the d49/g7 mapper does NOT list. They are UNCLAIMED here, not covered.
 
 The wire-round delta (refresh 3, THIS branch): +27 WIRED — extra7's 15
 (316-318/322-324/333-337/437/438/440/442, `5568fabf`) + extra7b's 12
-d40-stub kinds (473-477/479/483-488, `d1d20450`). The remaining 33
+d40-stub kinds (473-477/479/483-488, `d1d20450`).
+
+The wire-round delta (refresh 4, THIS branch): +30 WIRED — extra7c's 15
+(494-506/508/509, `2a4ddf32e`) + extra8's 15 (443-454/460-462,
+`44da5dc19`). 166 + 30 = **196 WIRED**. The remaining 3
 MODULE-LANDED-unwired = the extra7b keep-inline trio 480/481/482 (the
 f26e verdict: the d40 INLINE arms win at merge — RESOLVED, not wiring
-work) + extra7c's 15 + extra8's 15 (the next-round wire worklist, 30
-ids).
+work). **The extra7c/extra8 wire worklist is EMPTY.**
 
 The roster-lane coverage note: d35's arms for 73-140 are `{}` row-0
 STUBS ("UNWIRED (data-only)", its own comment) — they count as
@@ -57,22 +60,39 @@ stand-in (the port's documented town-walk shape); d40's 443-448/473-477/
 479/483-488 are row-0 stubs. The MODULE-LANDED machines are the faithful
 upgrades for those — the keep-one verdicts are in §3.
 
-Census-vintage note (refresh 3): the §2 per-kind table below is the
-refresh-2 mechanical scan's output; THIS refresh updates ONLY the
-status cells this branch's wire round changes (the extra7 15 + the
-extra7b 12 → WIRED(d44)). The f26/f27 tips moved since refresh 2
-(f26 `a2e47596`→`f1a0eaa9` adds extra7d/extra7e claiming
-516/521/523/524/525/526/527/528/529/530; f27 `72448094`→`0e187428`
-adds extra9's fix set 463/467/471/472/492) — those 10 UNCLAIMED rows
-in §2/§6 are STALE (now module-claimed on the pushed f26 tip); the
-next full mechanical refresh re-derives them. The extra7/extra7b
-blobs are UNCHANGED across the tip moves (hash-verified, §7).
+Census-vintage note (refresh 4): the §2 per-kind table below is the
+refresh-2 mechanical scan's output; the refresh-3/4 updates change
+ONLY the status cells this branch's wire rounds touch (the extra7 15 +
+the extra7b 12 + the extra7c 15 + the extra8 15 → WIRED(d44)). The
+f26/f27/d41 tips moved since refresh 2/3:
+* f26 `f1a0eaa9`→`7f38fd34` adds extra7f claiming **531/532/534/535/
+  536**;
+* f27 `0e187428`→`1a24a133` adds extra10 claiming **531/532/534-545**
+  (the 531/532/534/535/536 five are TWIN claims with f26 7f — the
+  keep-one dedupe at the merge; 549 is a FIX of our own inline arm,
+  not a new claim);
+* **d41 ADVANCED `4ed22f0b`→`5d036721`** — its batches 1-2 land the
+  494-506 roster kinds WITH FAITHFUL inline FindFrame arms (the
+  crawdad charge bands `npc.rs:7515`, the shelly 12-row state machine
+  `:7418`, the salamander walk cycle `:7465` — arm-by-arm equal to
+  the extra7c machines). The 13 extra7c ids 494-506 are now
+  faithful-inline TWIN claims (the f26e 480/481/482 precedent); the
+  d44 hook precedes the roster arm at merge and the machines are
+  behaviour-identical, so the wire is safe either way (§3.5 note).
+  508/509 have NO roster kind on any tip.
+The refresh-3 stale-10 note RESOLVED: the 516/521/523-530 rows are
+module-claimed on the pushed f26 tip (extra7d/7e). The NEW stale set:
+531/532/534-545 (24 rows: 531/532/534/535/536 twin-claimed f26+f27,
+537-545 f27-only) — §2/§6 still say UNCLAIMED; the next full
+mechanical refresh re-derives them (130 − 10 − 14 = **106 UNCLAIMED**
+at the current tips). The extra7c/extra8 blobs are UNCHANGED across
+the tip moves (hash-verified, §7c).
 
 ## 1. Branch census (all pushed tips, re-probed 2026-11-21 refresh 2)
 
 | lane | branch (`task/W4-…`) | pushed tip | module(s) | kinds | hook status |
 | --- | --- | --- | --- | --- | --- |
-| d44 | `d44-findframe-low-1` | `d1d20450` | `npc_findframe_low1.rs` + the wire rounds (`c`/`extra5`/`extra6`/`extra7`/`extra7b`) | 12 + 11 + 15 + 15 + 15 + 12 | low1 wired by g6 (`5113ff18`); c/extra5/extra6/extra7/extra7b wired HERE (§7) |
+| d44 | `d44-findframe-low-1` | `44da5dc1` | `npc_findframe_low1.rs` + the wire rounds (`c`/`extra5`/`extra6`/`extra7`/`extra7b`/`extra7c`/`extra8`) | 12 + 11 + 15 + 15 + 15 + 12 + 15 + 15 | low1 wired by g6 (`5113ff18`); c/extra5/extra6/extra7/extra7b/extra7c/extra8 wired HERE (§7/§7b/§7c) |
 | d45 | `d45-findframe-low-2` | `aea0aebd` | `npc_findframe_low2.rs` | 12 | YES (self-wired) |
 | d46 | `d46-findframe-mid-1` | `055fcf8c` | `npc_findframe_mid1.rs` | 12 | YES (self-wired) |
 | d47 | `d47-findframe-mid-2` | `3d36f76c` | `npc_findframe_mid2.rs` | 12 | NO — wired by g6 (`2fe567f9`) |
@@ -80,8 +100,8 @@ blobs are UNCHANGED across the tip moves (hash-verified, §7).
 | d49 | `d49-findframe-high-2` | `dadfd828` | `npc_findframe_high2.rs` | 12 / 13 ids | NO — wired by g7 (`b6c9c05c`+`1b273055`) |
 | e13 | `e13-findframe-extra-1` | `9fbca588` | `npc_findframe_extra1.rs` | 15 | YES (self-wired) — fully twinned, DROP candidate (§3) |
 | e14 | `e14-findframe-extra-2` | `63bc2c9f` | `npc_findframe_extra2.rs` | 15 | NO — wired by g6 (`b58d8d2f`) AND g7 (`fbee59b3`, trimmed 7-id) |
-| f26 | `f26-findframe-extra-3` | `f1a0eaa9` | `extra3` (s3) + `extra5` (s5) + `extra6` (s6) + `extra7b` (s7b) + `extra7c` (s7c) + `extra7d`/`extra7e` | 15×5 + 5×2 | s3: g6+g7; s5/s6: **WIRED(d44)**; s7b: **WIRED(d44 `d1d20450`, 12 stub kinds — 480/481/482 keep d40 inline)**; s7c: MODULE-LANDED, UNWIRED; 7d/7e: new port slices (516/521/523-530), UNWIRED — they SHRINK the §6 UNCLAIMED count by 10 at the next census refresh |
-| f27 | `f27-findframe-extra-4` | `0e187428` | `extra4` (s4) + `extra7` (s7) + `extra8` (s8) + `extra9` (s9) | 15×3 + 5 | s4: g7; s7: **WIRED(d44 `5568fabf`)**; s8: MODULE-LANDED, UNWIRED; s9: the d40-arm FIX set (463/467/471/472/492), self-wired on f27's own npc.rs (the 439 stub-fix rides it too) |
+| f26 | `f26-findframe-extra-3` | `7f38fd34` | `extra3` (s3) + `extra5` (s5) + `extra6` (s6) + `extra7b` (s7b) + `extra7c` (s7c) + `extra7d`/`extra7e`/`extra7f` | 15×5 + 5×3 | s3: g6+g7; s5/s6: **WIRED(d44)**; s7b: **WIRED(d44 `d1d20450`, 12 stub kinds — 480/481/482 keep d40 inline)**; s7c: **WIRED(d44 `2a4ddf32e`, all 15 — 494-506 faithful-inline twins on d41 `5d036721`, behaviour-identical either way)**; 7d/7e/7f: new port slices (516/521/523-530 + 531/532/534/535/536), UNWIRED |
+| f27 | `f27-findframe-extra-4` | `1a24a133` | `extra4` (s4) + `extra7` (s7) + `extra8` (s8) + `extra9` (s9) + `extra10` (s10) | 15×3 + 5 + 15 | s4: g7; s7: **WIRED(d44 `5568fabf`)**; s8: **WIRED(d44 `44da5dc19`, all 15 — NO exclusions, the d40-faithful six 464/465/466/468/469/470 were never in the mapper)**; s9: the d40-arm FIX set (463/467/471/472/492), self-wired on f27's own npc.rs (the 439 stub-fix rides it too); s10: 531/532/534-545 (the 531/532/534/535/536 five TWIN f26 7f) + the 549 lane-portal FIX, UNWIRED |
 | g6 | `g6-npc-findframe-wire-1` | `bf99e983` | wires low1 + mid2 + extra2 + extra3 | 54 ids / 4 hooks | the wire lane itself |
 | g7 | `g7-npc-findframe-wire-2` | `6ca3e668` | wires extra2(trim) + extra3 + extra4 + high2 | 50 ids / 4 hooks | the wire lane itself |
 
@@ -89,11 +109,13 @@ Roster lanes with landed `find_frame` arms (the INLINE-ARM coverage):
 d34 `5f3435a8` (37/43/46/47/48/56/57/61/62/63), d35 `7d131be3` (the
 73-140 row-0 stubs + the faithful 121/137 etc.), d37 `08f7d25c` (the
 217-280 band incl. the faithful 278-280 armored-bones group), d38
-`c096bac9` (the 281-337 band), d40 `8fe1d6d3` (the 437-488 band). d36/
-d39/d41/d42/d43 carry NO new `find_frame` arms (d41 is a claim-only tip
-`4ed22f0b`, d42 a WIP checkpoint `88df5809`, d36/d39/d43 at the wave-3
-base or data-only). The d34/d35/d37 tips moved since refresh 1 — the
-census re-scanned the CURRENT pushed tips.
+`c096bac9` (the 281-337 band), d40 `8fe1d6d3` (the 437-488 band),
+**d41 `5d036721` (NEW at refresh 4 — the 494-506 band, FAITHFUL inline
+arms: the crawdad/shelly/salamander machines, the extra7c twins)**.
+d36/d39/d42/d43 carry NO new `find_frame` arms (d42 the sheets-inventory
+tip `2d7ac08c`, d36/d39/d43 at the wave-3 base or data-only). The
+d34/d35/d37 tips moved since refresh 1 — the census re-scanned the
+CURRENT pushed tips.
 
 Main base for both wire lanes: `a725acb0` (wave-3 land). All hooks are
 `cs_id`-keyed at the `npc.rs::find_frame` head, ahead of the body match,
@@ -570,26 +592,26 @@ The anchor is the FIRST top-level `case` line of the id's group.
 | 440 | CultistBossClone | WIRED(d44 5568fabf) | `extra7` | NPC.cs:72018 |
 | 441 | TaxCollector | INLINE-ARM | npc.rs:TaxCollector | NPC.cs:68609 |
 | 442 | GoldBird | WIRED(d44 5568fabf) | `extra7` | NPC.cs:73631 |
-| 443 | GoldBunny | MODULE-LANDED(f27) | `extra8` | NPC.cs:76855 |
-| 444 | GoldButterfly | MODULE-LANDED(f27) | `extra8` | NPC.cs:72740 |
-| 445 | GoldFrog | MODULE-LANDED(f27) | `extra8` | NPC.cs:76619 |
-| 446 | GoldGrasshopper | MODULE-LANDED(f27) | `extra8` | NPC.cs:70959 |
-| 447 | GoldMouse | MODULE-LANDED(f27) | `extra8` | NPC.cs:76514 |
-| 448 | GoldWorm | MODULE-LANDED(f27) | `extra8` | NPC.cs:72775 |
-| 449 | BoneThrowingSkeleton | MODULE-LANDED(f27) | `extra8` | NPC.cs:71398 |
-| 450 | BoneThrowingSkeleton2 | MODULE-LANDED(f27) | `extra8` | NPC.cs:71399 |
-| 451 | BoneThrowingSkeleton3 | MODULE-LANDED(f27) | `extra8` | NPC.cs:71400 |
-| 452 | BoneThrowingSkeleton4 | MODULE-LANDED(f27) | `extra8` | NPC.cs:71401 |
-| 453 | SkeletonMerchant | MODULE-LANDED(f27) | `extra8` | NPC.cs:68610 |
-| 454 | CultistDragonHead | MODULE-LANDED(f27) | `extra8` | NPC.cs:70952 |
+| 443 | GoldBunny | WIRED(d44 44da5dc1) | `extra8` | NPC.cs:76855 |
+| 444 | GoldButterfly | WIRED(d44 44da5dc1) | `extra8` | NPC.cs:72740 |
+| 445 | GoldFrog | WIRED(d44 44da5dc1) | `extra8` | NPC.cs:76619 |
+| 446 | GoldGrasshopper | WIRED(d44 44da5dc1) | `extra8` | NPC.cs:70959 |
+| 447 | GoldMouse | WIRED(d44 44da5dc1) | `extra8` | NPC.cs:76514 |
+| 448 | GoldWorm | WIRED(d44 44da5dc1) | `extra8` | NPC.cs:72775 |
+| 449 | BoneThrowingSkeleton | WIRED(d44 44da5dc1) | `extra8` (d40 faithful twin) | NPC.cs:71398 |
+| 450 | BoneThrowingSkeleton2 | WIRED(d44 44da5dc1) | `extra8` (d40 faithful twin) | NPC.cs:71399 |
+| 451 | BoneThrowingSkeleton3 | WIRED(d44 44da5dc1) | `extra8` (d40 faithful twin) | NPC.cs:71400 |
+| 452 | BoneThrowingSkeleton4 | WIRED(d44 44da5dc1) | `extra8` (d40 faithful twin) | NPC.cs:71401 |
+| 453 | SkeletonMerchant | WIRED(d44 44da5dc1) | `extra8` (d40 town stand-in superseded) | NPC.cs:68610 |
+| 454 | CultistDragonHead | WIRED(d44 44da5dc1) | `extra8` (d40 faithful twin) | NPC.cs:70952 |
 | 455 | CultistDragonBody1 | NO-CASE | — | — |
 | 456 | CultistDragonBody2 | NO-CASE | — | — |
 | 457 | CultistDragonBody3 | NO-CASE | — | — |
 | 458 | CultistDragonBody4 | NO-CASE | — | — |
 | 459 | CultistDragonTail | NO-CASE | — | — |
-| 460 | Butcher | MODULE-LANDED(f27) | `extra8` | NPC.cs:68611 |
-| 461 | CreatureFromTheDeep | MODULE-LANDED(f27) | `extra8` | NPC.cs:75315 |
-| 462 | Fritz | MODULE-LANDED(f27) | `extra8` | NPC.cs:68612 |
+| 460 | Butcher | WIRED(d44 44da5dc1) | `extra8` (d40 stand-in WRONG — no air tail) | NPC.cs:68611 |
+| 461 | CreatureFromTheDeep | WIRED(d44 44da5dc1) | `extra8` (d40 faithful twin) | NPC.cs:75315 |
+| 462 | Fritz | WIRED(d44 44da5dc1) | `extra8` (d40 stand-in WRONG — no air tail) | NPC.cs:68612 |
 | 463 | Nailhead | INLINE-ARM | d40:Nailhead(npc.rs:9685) | NPC.cs:68613 |
 | 464 | CrimsonBunny | INLINE-ARM | d40:CrimsonBunny(npc.rs:9691) | NPC.cs:76856 |
 | 465 | CrimsonGoldfish | INLINE-ARM | d40:CrimsonGoldfish(npc.rs:9716) | NPC.cs:74186 |
@@ -621,58 +643,58 @@ The anchor is the FIRST top-level `case` line of the id's group.
 | 491 | PirateShip | NO-CASE | — | — |
 | 492 | PirateShipCannon | INLINE-ARM | npc.rs:FlyingDutchmanCannon | NPC.cs:71156 |
 | 493 | LunarTowerStardust | NO-CASE | — | — |
-| 494 | Crawdad | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69657 |
-| 495 | Crawdad2 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69658 |
-| 496 | GiantShelly | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69994 |
-| 497 | GiantShelly2 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69995 |
-| 498 | Salamander | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69849 |
-| 499 | Salamander2 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69850 |
-| 500 | Salamander3 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69851 |
-| 501 | Salamander4 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69852 |
-| 502 | Salamander5 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69853 |
-| 503 | Salamander6 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69854 |
-| 504 | Salamander7 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69855 |
-| 505 | Salamander8 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69856 |
-| 506 | Salamander9 | MODULE-LANDED(f26) | `extra7c` | NPC.cs:69857 |
+| 494 | Crawdad | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69657 |
+| 495 | Crawdad2 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69658 |
+| 496 | GiantShelly | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69994 |
+| 497 | GiantShelly2 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69995 |
+| 498 | Salamander | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69849 |
+| 499 | Salamander2 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69850 |
+| 500 | Salamander3 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69851 |
+| 501 | Salamander4 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69852 |
+| 502 | Salamander5 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69853 |
+| 503 | Salamander6 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69854 |
+| 504 | Salamander7 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69855 |
+| 505 | Salamander8 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69856 |
+| 506 | Salamander9 | WIRED(d44 2a4ddf32) | `extra7c` (d41 faithful twin) | NPC.cs:69857 |
 | 507 | LunarTowerNebula | NO-CASE | — | — |
-| 508 | GiantWalkingAntlion | MODULE-LANDED(f26) | `extra7c` | NPC.cs:70067 |
-| 509 | GiantFlyingAntlion | MODULE-LANDED(f26) | `extra7c` | NPC.cs:70104 |
+| 508 | GiantWalkingAntlion | WIRED(d44 2a4ddf32) | `extra7c` | NPC.cs:70067 |
+| 509 | GiantFlyingAntlion | WIRED(d44 2a4ddf32) | `extra7c` | NPC.cs:70104 |
 | 510 | DuneSplicerHead | NO-CASE | — | — |
 | 511 | DuneSplicerBody | NO-CASE | — | — |
 | 512 | DuneSplicerTail | NO-CASE | — | — |
 | 513 | TombCrawlerHead | NO-CASE | — | — |
 | 514 | TombCrawlerBody | NO-CASE | — | — |
 | 515 | TombCrawlerTail | NO-CASE | — | — |
-| 516 | SolarFlare | **UNCLAIMED** | — | NPC.cs:70740 |
+| 516 | SolarFlare | MODULE-LANDED(f26) — stale cell | `extra7d` (tip 7f38fd34) | NPC.cs:70740 |
 | 517 | LunarTowerSolar | NO-CASE | — | — |
 | 518 | SolarSpearman | INLINE-ARM | npc.rs:SolarSpearman | NPC.cs:70231 |
 | 519 | SolarGoop | NO-CASE | — | — |
 | 520 | MartianWalker | INLINE-ARM | npc.rs:MartianWalker | NPC.cs:71889 |
-| 521 | AncientCultistSquidhead | **UNCLAIMED** | — | NPC.cs:72103 |
+| 521 | AncientCultistSquidhead | MODULE-LANDED(f26) — stale cell | `extra7d` (tip 7f38fd34) | NPC.cs:72103 |
 | 522 | AncientLight | NO-CASE | — | — |
-| 523 | AncientDoom | **UNCLAIMED** | — | NPC.cs:72127 |
-| 524 | DesertGhoul | **UNCLAIMED** | — | NPC.cs:69908 |
-| 525 | DesertGhoulCorruption | **UNCLAIMED** | — | NPC.cs:69909 |
-| 526 | DesertGhoulCrimson | **UNCLAIMED** | — | NPC.cs:69910 |
-| 527 | DesertGhoulHallow | **UNCLAIMED** | — | NPC.cs:69911 |
-| 528 | DesertLamiaLight | **UNCLAIMED** | — | NPC.cs:69946 |
-| 529 | DesertLamiaDark | **UNCLAIMED** | — | NPC.cs:69947 |
-| 530 | DesertScorpionWalk | **UNCLAIMED** | — | NPC.cs:73086 |
-| 531 | DesertScorpionWall | **UNCLAIMED** | — | NPC.cs:73116 |
-| 532 | DesertBeast | **UNCLAIMED** | — | NPC.cs:70068 |
+| 523 | AncientDoom | MODULE-LANDED(f26) — stale cell | `extra7d` (tip 7f38fd34) | NPC.cs:72127 |
+| 524 | DesertGhoul | MODULE-LANDED(f26) — stale cell | `extra7d` (tip 7f38fd34) | NPC.cs:69908 |
+| 525 | DesertGhoulCorruption | MODULE-LANDED(f26) — stale cell | `extra7d` (tip 7f38fd34) | NPC.cs:69909 |
+| 526 | DesertGhoulCrimson | MODULE-LANDED(f26) — stale cell | `extra7e` (tip 7f38fd34) | NPC.cs:69910 |
+| 527 | DesertGhoulHallow | MODULE-LANDED(f26) — stale cell | `extra7e` (tip 7f38fd34) | NPC.cs:69911 |
+| 528 | DesertLamiaLight | MODULE-LANDED(f26) — stale cell | `extra7e` (tip 7f38fd34) | NPC.cs:69946 |
+| 529 | DesertLamiaDark | MODULE-LANDED(f26) — stale cell | `extra7e` (tip 7f38fd34) | NPC.cs:69947 |
+| 530 | DesertScorpionWalk | MODULE-LANDED(f26) — stale cell | `extra7e` (tip 7f38fd34) | NPC.cs:73086 |
+| 531 | DesertScorpionWall | MODULE-LANDED(f26+f27) TWIN — stale cell | `extra7f` / `extra10` | NPC.cs:73116 |
+| 532 | DesertBeast | MODULE-LANDED(f26+f27) TWIN — stale cell | `extra7f` / `extra10` | NPC.cs:70068 |
 | 533 | DesertDjinn | INLINE-ARM | npc.rs:DesertDjinn | NPC.cs:69978 |
-| 534 | DemonTaxCollector | **UNCLAIMED** | — | NPC.cs:68615 |
-| 535 | SlimeSpiked | **UNCLAIMED** | — | NPC.cs:70818 |
-| 536 | TheBride | **UNCLAIMED** | — | NPC.cs:76344 |
-| 537 | SandSlime | **UNCLAIMED** | — | NPC.cs:70819 |
-| 538 | SquirrelRed | **UNCLAIMED** | — | NPC.cs:76459 |
-| 539 | SquirrelGold | **UNCLAIMED** | — | NPC.cs:76460 |
-| 540 | PartyBunny | **UNCLAIMED** | — | NPC.cs:76857 |
-| 541 | SandElemental | **UNCLAIMED** | — | NPC.cs:69734 |
-| 542 | SandShark | **UNCLAIMED** | — | NPC.cs:74681 |
-| 543 | SandsharkCorrupt | **UNCLAIMED** | — | NPC.cs:74682 |
-| 544 | SandsharkCrimson | **UNCLAIMED** | — | NPC.cs:74683 |
-| 545 | SandsharkHallow | **UNCLAIMED** | — | NPC.cs:74684 |
+| 534 | DemonTaxCollector | MODULE-LANDED(f26+f27) TWIN — stale cell | `extra7f` / `extra10` | NPC.cs:68615 |
+| 535 | SlimeSpiked | MODULE-LANDED(f26+f27) TWIN — stale cell | `extra7f` / `extra10` | NPC.cs:70818 |
+| 536 | TheBride | MODULE-LANDED(f26+f27) TWIN — stale cell | `extra7f` / `extra10` | NPC.cs:76344 |
+| 537 | SandSlime | MODULE-LANDED(f27) — stale cell | `extra10` (tip 1a24a133) | NPC.cs:70819 |
+| 538 | SquirrelRed | MODULE-LANDED(f27) — stale cell | `extra10` (tip 1a24a133) | NPC.cs:76459 |
+| 539 | SquirrelGold | MODULE-LANDED(f27) — stale cell | `extra10` (tip 1a24a133) | NPC.cs:76460 |
+| 540 | PartyBunny | MODULE-LANDED(f27) — stale cell | `extra10` (tip 1a24a133) | NPC.cs:76857 |
+| 541 | SandElemental | MODULE-LANDED(f27) — stale cell | `extra10` (tip 1a24a133) | NPC.cs:69734 |
+| 542 | SandShark | MODULE-LANDED(f27) — stale cell | `extra10` (tip 1a24a133) | NPC.cs:74681 |
+| 543 | SandsharkCorrupt | MODULE-LANDED(f27) — stale cell | `extra10` (tip 1a24a133) | NPC.cs:74682 |
+| 544 | SandsharkCrimson | MODULE-LANDED(f27) — stale cell | `extra10` (tip 1a24a133) | NPC.cs:74683 |
+| 545 | SandsharkHallow | MODULE-LANDED(f27) — stale cell | `extra10` (tip 1a24a133) | NPC.cs:74684 |
 | 546 | Tumbleweed | NO-CASE | — | — |
 | 547 | DD2AttackerTest | NO-CASE | — | — |
 | 548 | DD2EterniaCrystal | NO-CASE | — | — |
@@ -847,8 +869,8 @@ at the union (the `find_frame_wave_a` copy-out/tick/copy-back precedent):
 | `extra6` | row/counter/sprite_dir | vx/vy/facing/ai[4] | no |
 | `extra7` | row/counter/sprite_dir/rotation | vx/vy/facing/ai/ai_action/local_ai2 | no |
 | `extra7b` | row/counter/sprite_dir/rotation/local_ai[0..1] | vx/vy/facing/ai + **slope/frame_x36** | YES (crawler/grub/dummy) |
-| `extra7c` | row/counter/sprite_dir/rotation | vx/vy/facing/ai[4] | no |
-| `extra8` | row/counter/sprite_dir/rotation/local_ai0 | vx/vy/facing/wet/ai + **slope** | YES (GoldWorm probe) |
+| `extra7c` | row/counter/sprite_dir/rotation | vx/vy/facing/ai[4] | no — **WIRED(d44 refresh 4)** |
+| `extra8` | row/counter/sprite_dir/rotation/local_ai0 | vx/vy/facing/wet/ai + **slope** | YES (GoldWorm probe) — **WIRED(d44 refresh 4)** |
 
 The g6-vs-g7 twin-hook union (unchanged from refresh 1, still valid):
 1. **extra2 twin: KEEP g7's trimmed 7-id mapper** (`86505082`) — g6's
@@ -873,6 +895,19 @@ The g6-vs-g7 twin-hook union (unchanged from refresh 1, still valid):
    delegates win; 453's town wrap is right but the module is the
    faithful town machine. The d38 287/295/322/323/324 town stand-ins
    are superseded by the extra6/extra7 fighter delegates.
+   **Refresh 4 (the extra7c/extra8 wire):** the d41 tip `5d036721`
+   lands FAITHFUL inline arms for 494-506 (arm-by-arm equal to the
+   extra7c machines — the crawdad `npc.rs:7515`, the shelly `:7418`,
+   the salamander `:7465`): the 13 ids are faithful-inline TWIN
+   claims, the f26e 480/481/482 precedent — behaviour-identical
+   either way, the d44 hook precedes at merge (no exclusion needed;
+   the merger may keep the d41 inline arms and drop the extra7c
+   claims for those 13, the 508/509 module claims stand alone). The
+   extra8 claim needs NO exclusions: the d40-faithful SIX
+   464/465/466/468/469/470 (the f27 slice-9 FAITHFUL-EXCLUDE
+   verdicts) are NOT in the extra8 mapper — verified id-for-id
+   against the pushed blob `9b526e3a`; the d40 449-452/454/461
+   faithful inline twins keep one either way.
 6. **The 439 stub-fix** rides f27's own `npc.rs` (the AncientCultist
    1-frame pin → the extra7 CultistBossClone ladder delegate, the
    `case 439/440` shared pose ladder `NPC.cs:72017-72101`); the towers
@@ -887,32 +922,46 @@ The g6-vs-g7 twin-hook union (unchanged from refresh 1, still valid):
 
 ## 5. UNWIRED list — the MODULE-LANDED worklist (the wire rounds)
 
-33 ids remaining (refresh 3), all landed on the pushed f26/f27 tips:
+3 ids remaining (refresh 4) — ALL RESOLVED keep-inline, ZERO real
+wire work left on the landed modules:
 
 | module | ids | count | bridge shape | wire note |
 | --- | --- | --- | --- | --- |
 | `extra7b` keep-inline trio | 480/481/482 | 3 | — | RESOLVED, NOT wiring work: the f26e verdict keeps the d40 INLINE arms (faithful both sides); the d44 hook NEVER claims them (`d1d20450`), the module arms ride as parity references |
-| `extra7c` (f26 s7c) | 494/495/496/497/498/499/500/501/502/503/504/505/506/508/509 | 15 | 4-field + rotation | NO roster kind exists on any tip → fully stream-inert, the cleanest wire; NEXT ROUND |
-| `extra8` (f27 s8) | 443/444/445/446/447/448/449/450/451/452/453/454/460/461/462 | 15 | 5-field + slope WORLD-READ (GoldWorm) | the d40 443-448 stubs superseded; 449-452/461 faithful inline twins; 453/460/462 town stand-ins (460/462 WRONG) → module wins; the `find_frame_world` slope seam is ALREADY extended (the extra7b round) — the GoldWorm probe reuses `find_frame_worm_slope`; NEXT ROUND |
 
 **DONE refresh 2 (§7):** `extra6` (278-287/290-293/295, 15 ids) —
 WIRED(d44 `59b798dc`).
 
-**DONE refresh 3 (§7):** `extra7` (316-318/322-324/333-337/437/438/
+**DONE refresh 3 (§7b):** `extra7` (316-318/322-324/333-337/437/438/
 440/442, 15 ids) — WIRED(d44 `5568fabf`); `extra7b`'s 12 d40-stub kinds
 (473-477/479/483-488) — WIRED(d44 `d1d20450`, the world-read
 slope/frame_x36 extension landed with it).
 
-The remaining wire rounds: extra7c/extra8 (30 ids, 2 modules × the
-11+4 batch split = 4 wire batches). The extra8 GoldWorm slope probe
-rides the SAME `find_frame_world` entry the extra7b round extended —
-no new seam needed, only the claim + bridge.
+**DONE refresh 4 (§7c):** `extra7c` (494-506/508/509, 15 ids) —
+WIRED(d44 `2a4ddf32e`, the four-field world-free bridge; the d41
+494-506 faithful-inline twins noted §3.5); `extra8` (443-454/460-462,
+15 ids) — WIRED(d44 `44da5dc19`, the five-field/local_ai0 bridge + the
+GoldWorm slope probe reusing `find_frame_worm_slope` through the
+ALREADY-EXTENDED `find_frame_world` entry; NO exclusions — the
+d40-faithful six were never in the mapper).
 
-## 6. UNCLAIMED worklist (the port rounds) — 130 kinds
+The NEXT wire rounds (when their rounds come): the f26 7d/7e/7f
+modules (15 ids: 516/521/523-530 + 531/532/534/535/536) + the f27
+extra10 module (14 new ids: the 531/532/534/535/536 five TWIN f26 7f —
+the keep-one dedupe — + 537-545; the 549 fix rides f27's own npc.rs).
+The 7d SolarFlare needs the two RESOLVED draw seams (the f26f-516
+precedent this lane followed for slope/frame_x36).
 
-No arm and no module claim on ANY pushed tip. The C# anchor is the
-first top-level `case` line of the id's group (the group body serves
-every listed sibling). Contiguous runs:
+## 6. UNCLAIMED worklist (the port rounds) — 130 kinds (refresh-2 vintage; 106 at the current tips)
+
+No arm and no module claim on ANY pushed tip **at refresh-2 scan
+time**. The refresh-4 re-probe: the f26 7d/7e/7f + f27 extra10 slices
+claim 516/521/523-532/534-545 (24 ids, the 531/532/534/535/536 five
+twin-claimed) — **106 UNCLAIMED at the current tips**; the rows below
+for those 24 are stale until the next full mechanical refresh. The
+C# anchor is the first top-level `case` line of the id's group (the
+group body serves every listed sibling). Contiguous runs (refresh-2
+vintage):
 
 435-436 (2), 516 (1), 521 (1), 523-532 (10), 534-545 (12), 578 (1),
 580-587 (8), 590-620 (31), 624-629 (6), 631-632 (2), 634-662 (29),
@@ -1170,30 +1219,100 @@ bridge at both production call sites, the minimal extra5 bridge).
   the modules' own 11 + 12 frame witnesses ride verbatim. Written
   not run.
 
+## 7c. Wire-round addendum (2026-11-21 refresh 4, this branch)
+
+**f26 slice 7c (`extra7c`) — WIRED(d44), all 15 ids**:
+* `npc_findframe_extra7c.rs` copied byte-exact from `7f38fd34` (the
+  f26 tip moved past the census's `f1a0eaa9` — extra7f rides it; blob
+  `658e5366` hash-verified, `git hash-object` == the pushed tip's blob,
+  the committed blob re-verified via `git ls-tree HEAD`). The 15
+  machines + the in-module `find_frame_kind_extra7c` lookup + 10 frame
+  witnesses ride unchanged. Commit `ca88aaf0`.
+* The hook `find_frame_kind_extra7c_claimed` = the in-module lookup
+  verbatim (all 15 ids 494-506/508/509). The bridge
+  `find_frame_wave_extra7c` copies row/counter/sprite_dir/rotation
+  both ways and feeds vx/vy/facing/ai[4] — NO world read this wave
+  (the mechanical grep over the five cited C# ranges
+  `:69657-69733`/`:69994-70066`/`:69849-69907`/`:70067-70103`/
+  `:70104-70119` = ZERO Framing/Main.tile/rand), so the hook rides
+  the world-free `find_frame` directly; the 7b slope/frame_x36 seams
+  are NOT carried. Batches `532e234a` (the first 11: 494-504) +
+  `2a4ddf32` (the last 4: 505/506/508/509).
+* **The d41 twin note**: the d41 tip ADVANCED `4ed22f0b`→`5d036721` —
+  its batches 1-2 land FAITHFUL inline arms for 494-506 (the crawdad
+  charge bands `npc.rs:7515`, the shelly 12-row state machine
+  `:7418`, the salamander walk cycle `:7465` — arm-by-arm equal to
+  the extra7c machines, read via `git show`). The 13 ids are
+  faithful-inline TWIN claims (the f26e 480/481/482 precedent); the
+  hook precedes the roster arm at merge and the machines are
+  behaviour-identical — no exclusion needed (§3.5). 508/509 have NO
+  roster kind on any tip.
+
+**f27 slice 8 (`extra8`) — WIRED(d44), all 15 ids, NO exclusions**:
+* `npc_findframe_extra8.rs` copied byte-exact from `1a24a133` (the
+  f27 tip moved past the census's `0e187428` — extra10 + the 549 fix
+  ride it; blob `9b526e3a` hash-verified equal). The 15 machines +
+  lookup + 15 frame witnesses ride unchanged. Commit `4ba3c815`.
+* **The claim-set verification** (the brief's exclusion question):
+  the extra8 mapper carries EXACTLY 443-454/460/461/462 — the
+  d40-inline-faithful SIX **464/465/466/468/469/470 are NOT in it**
+  (the f27 slice-9 re-census FAITHFUL-EXCLUDE verdicts, re-read from
+  the pushed ANALYSIS; verified id-for-id against the blob). The
+  claim = the in-module lookup verbatim, NO exclusions. The d40
+  443-448 row-0 stubs keep-MODULE (superseded); the 449-452/454/461
+  arms are FAITHFUL inline twins (keep-one either way, the hook
+  precedes at merge); the 453/460/462 `humanoid_town_frame`
+  stand-ins keep-MODULE (460/462 WRONG — no air tail; 453 right only
+  with the 26/9 count rows the module carries internally).
+* The hook `find_frame_kind_extra8_claimed` = the in-module lookup
+  verbatim. The bridge `find_frame_wave_extra8` copies
+  row/counter/sprite_dir/rotation/local_ai0 both ways and feeds
+  vx/vy/facing/wet/ai[4] + the RESOLVED slope. The `find_frame_world`
+  entry EXTENDED (the extra7b precedent): the GoldWorm (448) REUSES
+  `find_frame_worm_slope` (the SAME two-tile probe,
+  `NPC.cs:72807-72826` — NOT the dummy frame_x36 probe, that is
+  TargetDummy-only); the world-free lane passes slope 0. Both
+  production call sites already ride `find_frame_world` — no
+  call-site change. Batches `9a20da59` (the first 11: 443-453) +
+  `44da5dc1` (the last 4: 454/460/461/462).
+* Stream-inert: a mechanical Python scan of the cs_id hand-row match
+  arms (57 ids, the `cs_id` fn `data.rs:2992-3108`) + the bestiary
+  net-id literals (241 ids) over both claim bands = ZERO hits. No
+  arm draws RNG (the f26 7c / f27 slice-8 mechanical greps; the town
+  pose zones are the documented skip).
+* **Witnesses**: 9 seam tests added to `npc.rs::w4_d44_wire_tests`
+  (the extra7c/extra8 inertness sweeps over ALL_KINDS, the two claim
+  sets — the extra8 one pinning the d40-faithful-six NEVER-reach —
+  the two bridge field copy-backs with per-machine frame pins, the
+  extra7c tail-batch bridge, the extra8 tail-batch bridge with the
+  creature aim-ease values re-derived mechanically, the GoldWorm
+  world-entry probe resolution) + the modules' own 10 + 15 frame
+  witnesses ride verbatim. Written not run.
+
 ## 8. Remaining-work estimate
 
-* **UNCLAIMED kinds: 130 at refresh 2, 120 after the f26 7d/7e port
-  slices** (§6; the pushed `f1a0eaa9` claims 516/521/523-530 — the
-  §2/§6 rows for those 10 are stale until the next mechanical
-  refresh). At the established 15-kind slice cadence: **8 port
-  slices** (120 / 15 = 8). The keep-one families (§6 group notes)
-  mean the distinct-machine count is lower, but the slice cadence
-  counts kinds, not bodies.
-* **MODULE-LANDED-but-UNWIRED: 30 real wire ids** (§5) across
-  extra7c/extra8 (the extra7b keep-inline trio 480/481/482 is
-  RESOLVED — the d40 inline arms win, no hook ever). At the ≤11-kind
-  wire cap per batch: **4 wire batches** (extra7c: 11+4, extra8:
-  11+4). The extra8 GoldWorm slope probe rides the ALREADY-EXTENDED
-  `find_frame_world` entry (the extra7b round landed the seam) —
-  only the claim + bridge remain. The f26 7d/7e modules (10 ids)
-  add 2 more wire batches when their round comes (the 7d SolarFlare
-  needs the two RESOLVED draw seams — the f26f-516 precedent this
-  round followed for slope/frame_x36).
-* **Total remaining: ~8 port slices + ~4-6 wire batches.** The
-  merger lands g6 ∪ g7 (with §3's keep-one resolutions) + the
-  d45/d46 self-wired branches + THIS branch's five wire blocks
-  (d48 c + extra5 + extra6 + extra7 + extra7b) + the roster lanes
-  d34/d35/d37/d38/d40; the extra7c/extra8 modules wire next, then
+* **UNCLAIMED kinds: 130 at refresh 2, 106 at the current tips**
+  (§6; the pushed f26 `7f38fd34` claims 516/521/523-530 +
+  531/532/534/535/536, the pushed f27 `1a24a133` extra10 claims
+  531/532/534-545 — the 531/532/534/535/536 five twin-claimed, 24
+  distinct ids; the §2/§6 rows for those are stale until the next
+  mechanical refresh). At the established 15-kind slice cadence:
+  **~7 port slices** (106 / 15 ≈ 7). The keep-one families (§6 group
+  notes) mean the distinct-machine count is lower, but the slice
+  cadence counts kinds, not bodies.
+* **MODULE-LANDED-but-UNWIRED: ZERO real wire ids on the landed
+  modules** (§5 — the extra7c/extra8 rounds closed the worklist; the
+  extra7b keep-inline trio 480/481/482 is RESOLVED, no hook ever).
+  The NEXT wire rounds are the f26 7d/7e/7f + f27 extra10 modules
+  (24 distinct ids after the twin dedupe: 516/521/523-530 +
+  531/532/534-545) — ~4 wire batches at the ≤11-kind cap when their
+  rounds come (the 7d SolarFlare needs the two RESOLVED draw seams —
+  the f26f-516 precedent this lane followed for slope/frame_x36).
+* **Total remaining: ~7 port slices + ~4 wire batches (the 7d/7e/7f/
+  extra10 modules).** The merger lands g6 ∪ g7 (with §3's keep-one
+  resolutions) + the d45/d46 self-wired branches + THIS branch's
+  seven wire blocks (d48 c + extra5 + extra6 + extra7 + extra7b +
+  extra7c + extra8) + the roster lanes d34/d35/d37/d38/d40/d41; then
   the UNCLAIMED port rounds.
 
 ## 9. Verification performed
@@ -1225,3 +1344,31 @@ stepper, the granite tilt modes, the grub slope latch, the dummy
 recoil banks, the cultist pose ladder, the devote mirror). The 8 new
 seam witnesses are WRITTEN NOT RUN — **no cargo/rustc/tests/rustfmt/
 graphify invoked** (code-only mode).
+
+Refresh 4 (the extra7c/extra8 wire round): `git cat-file blob
+658e5366`/`9b526e3a` extracted via cmd redirection (byte-exact, no
+PowerShell encoding mangling) + `git hash-object` == the pushed tips'
+blobs (`7f38fd34`/`1a24a133`) + `git ls-tree HEAD` re-verification of
+the COMMITTED blobs; a Python mechanical scan of the cs_id hand-row
+match arms (the `cs_id` fn `data.rs:2992-3108`, 57 ids) + the bestiary
+net-id literals (241 ids) over both claim bands (ZERO hits — an
+earlier naive whole-file scan's 450/500 tokens were `max_hp` rows,
+not cs_id); the C# arms re-read line-for-line
+(`NPC.cs:69657-69733`/`:69994-70066`/`:69849-69907`/`:70067-70119`
+the 7c five ranges — ZERO Framing/Main.tile/rand;
+`:72774-72828` the worm-group slope probe — the ONLY world read in
+the extra8 ranges, the two `Framing.GetTileSafely` lines;
+`:75315-75360` the creature wet arm); the d41 tip's 494-506 inline
+arms read via `git show` (arm-by-arm equal to the extra7c machines);
+the f27 slice-8/9 ANALYSIS verdicts re-read from the pushed tip (the
+464/465/466/468/469/470 FAITHFUL-EXCLUDE table — none in the extra8
+mapper); every seam-witness expectation hand-re-derived against the
+module arms (the crawdad 39 reset, the shelly 24 reset-tick hold, the
+salamander >7 wrap, the antlion sign gates, the bunny full-7 wrap,
+the butterfly no-bank pin, the frog deadbands, the bone-toss
+literal-15 wrap + the 452 count variant, the merchant town-17 wrap,
+the creature entry quirk + the aim-ease values atan2(4,3)/5 =
+0.18545904 / the mirror tick −0.21454096 re-derived in Python, the
+fritz >9 stride + air pair). The 9 new seam witnesses are WRITTEN NOT
+RUN — **no cargo/rustc/tests/rustfmt/graphify invoked** (code-only
+mode).
