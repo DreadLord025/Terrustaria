@@ -10256,8 +10256,9 @@ impl Projectile {
         zoom: f32,
         screen: Vec2,
         global_time: f32,
+        disco: [u8; 3],
     ) {
-        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None, global_time);
+        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None, global_time, disco);
     }
 
     /// The draw entry the frame calls with the player in scope: the yoyo
@@ -10275,6 +10276,9 @@ impl Projectile {
         screen: Vec2,
         owner_hand: Option<(f32, f32)>,
         global_time: f32,
+        // W4-g35: `Main.DiscoR/G/B` — the 993 rainbow bobber's glow tint
+        // (`Main.cs:34861`). The pool's `disco` field feeds it.
+        disco: [u8; 3],
     ) {
         if crate::yoyo_string::is_yoyo_sprite(self.kind) {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
@@ -10330,6 +10334,128 @@ impl Projectile {
             [c[0], c[1], c[2], 1.0],
             self.rot,
         );
+        // W4-g35: the `proj.glowMask != -1` overlay (`Main.cs:34855-34942`),
+        // drawn right after the sprite at the same anchor/rotation/scale.
+        self.draw_glow(r, lookups, camera, zoom, screen, disco, global_time);
+    }
+
+    /// `Main.DrawProjDirect`'s `proj.glowMask != -1` overlay (W4-g35): the
+    /// generic arm (`Main.cs:34918-34927`) draws `GlowMask[glowMask]` at the
+    /// sprite's own anchor `(position.X + num153, position.Y + height/2 +
+    /// gfxOffY)` with `origin = (num153, height/2 + num151)`, the projectile's
+    /// rotation/scale, tinted `(250, 250, 250, proj.alpha)` (`:34920`). The
+    /// 1101/1102 phaseblade pair draws a `GetPhaseColor` copy first then the
+    /// `drawColor: true` (A 127) copy (`:34921-34925`); the 312 Jack'O'Lantern
+    /// adds four `TileFrameSeed`-jittered `White * 0.2` copies (`:34936-34943`).
+    /// The bobber arm (`:34855-34864`, `proj.ai[0] <= 1`) draws the WHOLE glow
+    /// sheet at `GetAlpha(White)` — the 993 rainbow bobber reads `DiscoR/G/B`
+    /// (`:34861`). `num151`/`num152` are 0 for every glow-carrying kind except
+    /// the bobbers' `num151 = 8` (`:29644-29647`); `num153 = sheet.W/2`
+    /// (`:29834`). The 312/1101/1102 kinds have no `proj_data` row yet (their
+    /// SetDefaults glowMask is recorded, the spawn is a follow-up) — the arms
+    /// are ported verbatim and fire once the rows land.
+    fn draw_glow(
+        &self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+        disco: [u8; 3],
+        global_time: f32,
+    ) {
+        if self.glow_mask < 0 {
+            return;
+        }
+        let name = format!("Glow_{}", self.glow_mask);
+        let Some(sheet) = lookups.glow_sheets.get(name.as_str()).copied() else {
+            return;
+        };
+        // The sprite's own sheet width drives num153 (`Main.cs:29834`); the
+        // glow quad's source rect is the PROJECTILE sheet's size (`:34926`'s
+        // `Rectangle(0, 0, Projectile[type].Width(), Height())`), not the glow
+        // sheet's — the generic arm samples the glow sheet at the sprite rect.
+        let (proj_w, proj_h) = lookups
+            .proj_sheets
+            .get(&self.kind)
+            .map(|s| (s.width as f32, s.height as f32))
+            .unwrap_or((self.w, self.h));
+        let num153 = proj_w * 0.5;
+        let bobber = crate::projectile::BOBBER_KINDS.contains(&self.kind);
+        let num151 = if bobber { 8.0 } else { 0.0 };
+        let scale = self.scale.max(0.0) * zoom;
+        let anchor = [
+            (self.pos.x + num153 - camera.x) * zoom + screen.x * 0.5,
+            (self.pos.y + self.h * 0.5 + self.gfx_off_y - camera.y) * zoom + screen.y * 0.5,
+        ];
+        let origin = [num153 * scale, (self.h * 0.5 + num151) * scale];
+        let (s, co) = self.rot.sin_cos();
+        let tl = [
+            anchor[0] - (origin[0] * co - origin[1] * s),
+            anchor[1] - (origin[0] * s + origin[1] * co),
+        ];
+        let size = [proj_w * scale, proj_h * scale];
+        let f = |c: [u8; 4]| {
+            [
+                c[0] as f32 / 255.0,
+                c[1] as f32 / 255.0,
+                c[2] as f32 / 255.0,
+                c[3] as f32 / 255.0,
+            ]
+        };
+        if bobber {
+            // `:34814-34816`/`:34852-34864` — the fish-on-hook and cast-out
+            // arms draw no glow (the pure gate below).
+            if bobber_glow_suppressed(self.ai) {
+                return;
+            }
+            // `:34855-34864`: the whole glow sheet at GetAlpha(White); the
+            // 993 rainbow bobber's tint is DiscoR/G/B (A 255 → GetAlpha scales).
+            let base = if self.kind == 993 {
+                [disco[0], disco[1], disco[2], 255]
+            } else {
+                [255, 255, 255, 255]
+            };
+            let tint = bobber_glow_tint(base, self.alpha);
+            let uv = assets::uv_rect(&sheet, lookups.atlas_size, 0, 0, sheet.width, sheet.height);
+            let gsize = [sheet.width as f32 * scale, sheet.height as f32 * scale];
+            r.push_ui_sprite_rot(tl, gsize, uv, tint, self.rot);
+            return;
+        }
+        // The generic arm: the glow sheet sampled at the projectile rect.
+        let uv = assets::uv_rect(
+            &sheet,
+            lookups.atlas_size,
+            0,
+            0,
+            proj_w as u32,
+            proj_h as u32,
+        );
+        if matches!(self.kind, 1101 | 1102) {
+            // `:34921-34925`: the GetPhaseColor copy, then the A-127 copy.
+            let misc = 0u32; // the phase ramp's miscCounter — no player link here
+            let first = crate::ui::slot::phase_color(self.kind, misc, false);
+            r.push_ui_sprite_rot(tl, size, uv, f(first), self.rot);
+            let second = crate::ui::slot::phase_color(self.kind, misc, true);
+            r.push_ui_sprite_rot(tl, size, uv, f(second), self.rot);
+            return;
+        }
+        // `:34920`: `(250, 250, 250, proj.alpha)` — the alpha is the raw byte
+        // (NOT GetAlpha; the C# passes proj.alpha directly as the colour A).
+        let tint = f([250, 250, 250, self.alpha.clamp(0, 255) as u8]);
+        r.push_ui_sprite_rot(tl, size, uv, tint, self.rot);
+        if self.kind == 312 {
+            // `:34936-34943`: four TileFrameSeed-jittered White*0.2 copies.
+            // `Main.TileFrameSeed` is the frame's wrapped-clock seed (the
+            // sparkle draws' convention, `flame::tile_frame_seed_at`).
+            let mut seed = tr_core::flame::tile_frame_seed_at(global_time);
+            for _ in 0..4 {
+                let dx = tr_core::flame::random_int(&mut seed, -2, 3) as f32;
+                let dy = tr_core::flame::random_int(&mut seed, -2, 3) as f32;
+                let jitter = [tl[0] + dx * zoom, tl[1] + dy * zoom];
+                r.push_ui_sprite_rot(jitter, size, uv, f([51, 51, 51, 51]), self.rot);
+            }
+        }
     }
 
     /// `Main.DrawProj_LightsBane` (`Main.cs:27455-27495`) — the Light's Bane
@@ -13208,6 +13334,31 @@ struct TrailQuad {
     size: [f32; 2],
     tint: [f32; 4],
     rot: f32,
+}
+
+/// W4-g35 — `Main.DrawProjDirect`'s bobber glow gate (`Main.cs:34814-34816`,
+/// `:34852-34864`): the fish-on-hook arm (`ai[1]` inside the item range AND
+/// `ai[0] == 1`) draws the hooked item, NO glow; `ai[0] > 1` (the cast-out
+/// flight) draws nothing either. The glow lives in the `ai[0] <= 1` arm —
+/// the bobber at rest (`ai[0] == 0`) or reeling (`== 1` without a fish).
+pub(crate) fn bobber_glow_suppressed(ai: [f32; 4]) -> bool {
+    let fish_on_hook =
+        ai[1] > 0.0 && ai[1] < crate::itemdata::ITEMS.len() as f32 && ai[0] == 1.0;
+    fish_on_hook || ai[0] > 1.0
+}
+
+/// W4-g35 — the bobber glow's `GetAlpha(base)` (`Main.cs:34855-34864`):
+/// `GetAlpha` scales the colour by `(255 - proj.alpha) / 255` (light tint
+/// stays White in the port's unlit overlay convention) — every channel,
+/// alpha included, rides the one fade factor.
+pub(crate) fn bobber_glow_tint(base: [u8; 4], alpha: i32) -> [f32; 4] {
+    let fade = (255 - alpha).max(0) as f32 / 255.0;
+    [
+        base[0] as f32 / 255.0 * fade,
+        base[1] as f32 / 255.0 * fade,
+        base[2] as f32 / 255.0 * fade,
+        base[3] as f32 / 255.0 * fade,
+    ]
 }
 
 /// The magic (caster) families' shared constants (M4-PROJ-6, Phase 3).
@@ -44389,5 +44540,90 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+/// W4-g35 — the projectile glow-overlay witnesses (`Main.DrawProjDirect`,
+/// `Main.cs:34814-34943`): the bobber arm's gate + GetAlpha tint, and the
+/// 312 Jack'O'Lantern's TileFrameSeed jitter stream. Written, NOT run —
+/// code-only mode. The renderer-side quad pushes need a GPU; the gate/tint
+/// maths are pure and pinned here (the `lights_bane_batches` precedent).
+#[cfg(test)]
+mod glow_overlay_tests {
+    use super::*;
+
+    #[test]
+    fn w4_g35_the_bobber_glow_gate_matches_the_ai_arms() {
+        // `:34852`'s `else if (proj.ai[0] <= 1f)` arm draws the glow: the
+        // bobber at rest (ai[0] == 0) and reeling without a fish (== 1).
+        assert!(!bobber_glow_suppressed([0.0, 0.0, 0.0, 0.0]), "at rest");
+        assert!(!bobber_glow_suppressed([1.0, 0.0, 0.0, 0.0]), "reeling, no fish");
+        // `:34814-34816`: ai[1] inside the item range AND ai[0] == 1 draws
+        // the hooked item instead — NO glow.
+        assert!(bobber_glow_suppressed([1.0, 29.0, 0.0, 0.0]), "fish on hook");
+        // ai[1] out of the item range is not a fish even at ai[0] == 1.
+        let past = crate::itemdata::ITEMS.len() as f32;
+        assert!(!bobber_glow_suppressed([1.0, past, 0.0, 0.0]), "ai[1] == len is out");
+        assert!(!bobber_glow_suppressed([1.0, -5.0, 0.0, 0.0]), "negative ai[1] is out");
+        // `ai[0] > 1` (the cast-out flight) draws nothing.
+        assert!(bobber_glow_suppressed([2.0, 0.0, 0.0, 0.0]), "cast out");
+        assert!(bobber_glow_suppressed([1.5, 0.0, 0.0, 0.0]));
+    }
+
+    #[test]
+    fn w4_g35_the_bobber_glow_tint_is_get_alpha_of_the_base() {
+        // `:34855-34864`: GetAlpha scales EVERY channel by (255-alpha)/255.
+        let white = bobber_glow_tint([255, 255, 255, 255], 0);
+        assert_eq!(white, [1.0; 4], "alpha 0 keeps the base");
+        let gone = bobber_glow_tint([255, 255, 255, 255], 255);
+        assert_eq!(gone, [0.0; 4], "alpha 255 fades out");
+        // The 993 disco base at alpha 51: fade 204/255 on every channel.
+        let fade = 204.0 / 255.0;
+        let disco = bobber_glow_tint([100, 150, 200, 255], 51);
+        assert_eq!(disco, [
+            100.0 / 255.0 * fade,
+            150.0 / 255.0 * fade,
+            200.0 / 255.0 * fade,
+            fade,
+        ]);
+        // Above 255 the fade floors at 0 (the `.max(0)` guard).
+        assert_eq!(bobber_glow_tint([255; 4], 300), [0.0; 4]);
+    }
+
+    #[test]
+    fn w4_g35_the_312_jitter_stream_is_four_bounded_pairs() {
+        // `:34936-34943`: four `Main.rand.Next(-2, 3)` pairs off TileFrameSeed
+        // — each draw lands in -2..=2 and the stream is a pure function of
+        // the wrapped clock (two equal times give equal quads).
+        let draw = |t: f32| {
+            let mut seed = tr_core::flame::tile_frame_seed_at(t);
+            let mut out = Vec::new();
+            for _ in 0..4 {
+                let dx = tr_core::flame::random_int(&mut seed, -2, 3);
+                let dy = tr_core::flame::random_int(&mut seed, -2, 3);
+                assert!((-2..=2).contains(&dx) && (-2..=2).contains(&dy));
+                out.push((dx, dy));
+            }
+            out
+        };
+        assert_eq!(draw(10.0), draw(10.0), "deterministic per clock");
+        assert_eq!(draw(10.0).len(), 4, "four copies");
+        // White * 0.2 truncates to 51 per channel (the tint the copies ride).
+        assert_eq!((255.0f32 * 0.2) as i32 as u8, 51);
+    }
+
+    #[test]
+    fn w4_g35_the_generic_arm_tint_is_250_grey_raw_alpha() {
+        // `:34920`: `new Color(250, 250, 250, proj.alpha)` — the alpha is the
+        // RAW byte, not GetAlpha's 255-alpha fade (the bobber arm's opposite).
+        let alpha = 100i32;
+        let tint_a = alpha.clamp(0, 255) as f32 / 255.0;
+        assert!((tint_a - 100.0 / 255.0).abs() < 1e-6, "alpha 100 passes through");
+        // The phase pair's colours come from the shared slot helper — the
+        // misc = 0 stand-in lands on the first PHASE_COLORS row, A 127 second.
+        let first = crate::ui::slot::phase_color(1101, 0, false);
+        let second = crate::ui::slot::phase_color(1101, 0, true);
+        assert_eq!(first, [25, 127, 255, 255]);
+        assert_eq!(second, [25, 127, 255, 127]);
     }
 }

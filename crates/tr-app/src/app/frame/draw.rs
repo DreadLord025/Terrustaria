@@ -1349,6 +1349,8 @@ impl App {
                             screen,
                             hand,
                             anim_time % 3600.0,
+                            // W4-g35: the 993 rainbow bobber's glow tint.
+                            self.disco,
                         );
                     }
 
