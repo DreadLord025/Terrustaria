@@ -39703,3 +39703,37 @@ head-wiring sweep + the unwired-134 zero-draw pin (batch 16, 2).
 **Lane total: 66 witnesses WRITTEN NOT RUN (code-only mode — no
 cargo/rustc/tests invoked): 56 through batch 13, 10 across batches
 14-16.**
+
+### W4-g59 SEAL (research/283): the death-effects-family bible FINAL
+
+The lane is SEALED at `d277f782b` — `docs/research/283-death-effects-
+family-bible.md` (number per the registry-150 round-2 ≥281 fresh-sweep
+rule; 281/282 already raced by d30/d125/g48, 283 verified free at 360
+tips). The five seal receipts: (1) ACTIVATIONS-2 landed — 17
+newly-rowed + the 15-base-fold check (105 activated, 139→134 f5's
+keep-one), 129 wired match types / 130 census kinds, 43 row-gated
+remainder; (2) the g60f death-bible compose (g60 `30fea0fe1` §12.8)
+consumed AND refreshed at the new tips — the g59∩f5 re-intersection
+(g60's committed script method, g59 `d277f782b` × f5 `b68eac297`)
+grows 93→**110 kinds in 56 fn-rows** (+17 = exactly the SEAL-1
+activations f5 re-draws; 169 dust-only, no strip), the strip total
+**221 actionable / 0 conditional** (110 g60 baseline + 110 g59∩f5 +
+1 g59∩f10 225) supersedes the 204; (3) the f5f GORE SEAL `b68eac297`
+consumed — and both scheduled executions landed while sealing: f10
+`afea4c0fc` DELETED the overrun pre-merge (152 fns / 147 gates / 157
+witnesses, cross-verified incl the DD2 wyvern name-twin + the
+town_pet straddle; 94 legit + 1 receipt witness survive) and g62
+`f5ce54743` PORTED the 4 hit-half gore bodies (the 133 latch + the
+186/632 gated emits + the 694 LIVE count) — the f5↔DeathFx keep-one
+receipt stays DISJOINTNESS (re-verified: zero gore refs in either
+dust feed, zero ring refs in f5), the 32+110-kind strips ride wiring;
+(4) the boundary re-checked MECHANICALLY (match-arm extraction): 129
+unique ids, **max cs_id 229 ≤ 230, CLEAN**, zero >230 flags; (5) the
+family bible one-paragraph + the gate-commands re-run (NPC 1345 /
+Proj 165 / WG 36 / Player 32 / Main 0 = 1578; the f5 window 853) +
+the witness union re-counted **418 distinct** (was 404: g59 +10,
+f10 +1 receipt, g62 +3). The merger's remaining work: the 8-step
+`npc_death_dust.rs` union (the ONE `air()` height collision — g59's
+200×200 renames `air_tall()`, 64 call sites), the `last_hit_dir`
+ONE-declaration (BOTH fuse resets keep), one compile window for the
+418, and the wiring wave executing the 221 strips.
