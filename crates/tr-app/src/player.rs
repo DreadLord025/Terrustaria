@@ -786,6 +786,26 @@ pub(crate) struct WalkEffectDust {
     pub(crate) stealth: f32,
 }
 
+/// W4-g66 gap-fill — one queued wall-dust puff (`WallClimbMovement`
+/// `Player.cs:21654-21695`/`:21729-21746`, `WallslideMovement`
+/// `:21790-21803`/`:21826-21838`): the shared type-31 8×8 box at the
+/// slide-side edge, snapshotted AFTER the arm's velocity write (the C#
+/// reads `base.position` post-write). The tick ran the solid-tile probe
+/// (`flag` = the Rat-55 mount, the `!flag || !SolidTile(...)` gate); the
+/// drain replays the spawn + the post chain on `UpdatePlayers`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WallDust {
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    /// `slideDir` at the C# read moment (−1 mirrors X by −10).
+    pub(crate) slide_dir: i32,
+    /// `flag` — the Rat mount's active flag (`:21609`): its dust halves the
+    /// scale (`:21667-21670`); the Wallslide arms never set it.
+    pub(crate) rat: bool,
+}
+
 /// W4-g66 — one queued Rudolph flight trail (`Player.cs:36164-36198`): the
 /// mount-0 (Rudolph) flight arm inside `PlayerFrame`'s mount animator — two
 /// 1/4 type-64 puffs per tick at the facing-mirrored foot boxes.
@@ -1247,9 +1267,13 @@ pub struct Player {
     /// `Player.lavaVision` (`Player.cs`): the Lava Shark's (buff 305) grant
     /// (`:9910`); `ResetEffects` clears (`:18757`). Draw-side, flag only.
     pub lava_vision: bool,
-    /// `Player.spikedBoots` (`Player.cs`): the Rat mount's wall-slide grant
+    /// `Player.spikedBoots` (`Player.cs:1092`): the Climbing Claws 953 /
+    /// Shoe Spikes 975 (+1, `:15038-15045`), the Tiger Climbing Gear 976 /
+    /// Master Ninja Gear 984 (+2 / =2, `:15046-15049`/`:15062-15067`), the
+    /// Frog Gear 3995/3996 (+2, `:14432-14444`) and the Rat mount's grant
     /// (`Mount.UpdateAfterEquips` `Mount.cs:3002`); `ResetEffects` clears
-    /// (`:18660`). The slide consumer is unported — flag only.
+    /// (`:18660`). W4-g66 gap-fill: `WallClimbMovement`/`WallslideMovement`
+    /// (`:21607-21840`) consume it.
     pub spiked_boots: i32,
     /// `Player.slideDir` (`Player.cs:28084` reset, `:28242-28252` writes):
     /// the slope-slide direction the Rat's rotation lerp reads
@@ -1916,6 +1940,22 @@ pub struct Player {
     /// W4-g66 gap-fill — `Player.underShirtColor = new Color(160, 180, 215)`
     /// (`Player.cs:2562`): the wings-38 orbit triples' tint (`:30425`).
     pub under_shirt_color: [u8; 4],
+    /// W4-g66 gap-fill — `Player.carpet` (`Player.cs:1090`): the Magic
+    /// Carpet (934) accessory grant (`:15034-15037`), `ResetEffects` clears
+    /// (`:18657`). `CarpetMovement` (`:21842-21890`) gates on it.
+    pub carpet: bool,
+    /// W4-g66 gap-fill — `Player.canCarpet` (`Player.cs:1098`): the carpet
+    /// launch latch — the rest tick re-arms (`:26105-26111`), the grapple
+    /// (`:22624`) re-arms, the launch consumes (`:21849`). The pulley
+    /// re-arm (`:26483`) rides the unported pulley movement (documented).
+    pub can_carpet: bool,
+    /// W4-g66 gap-fill — `Player.carpetTime` (`Player.cs:1100`): the 300-tick
+    /// glide budget (`:21850`), decremented per glide tick (`:21856`); the
+    /// rest tick zeroes it (`:26108`).
+    pub carpet_time: i32,
+    /// W4-g66 gap-fill — `Player.carpetFrameCounter` (`Player.cs:1096`,
+    /// float): `+= 1 + |vx*0.5|` per glide tick, wraps at >8 (`:21866-21871`).
+    pub carpet_frame_counter: f32,
     /// `Player.rocketTime` / `rocketTimeMax` / `rocketDelay` / `rocketDelay2`
     /// (`Player.cs:2744-2748`): the rocket-boots fuel and its thrust cadence.
     pub rocket_time: i32,
@@ -2319,6 +2359,11 @@ pub struct Player {
     /// W4-g66 — the tick's queued `WingFrame` dust call
     /// (`Player.cs:29468-30527`).
     pending_wing_frame_dust: Option<WingFrameDust>,
+    /// W4-g66 gap-fill — the tick's queued wall-dust puff
+    /// (`WallClimbMovement`/`WallslideMovement`, `Player.cs:21607-21840`):
+    /// drained after the dash burst, before `DoubleJumpVisuals`
+    /// (`:26758-26766` runs between them).
+    pending_wall_dust: Option<WallDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3153,6 +3198,11 @@ impl Player {
             // `Player.cs:2558`/`:2562` — the `new Player()` colour inits.
             eye_color: [105, 90, 75, 255],
             under_shirt_color: [160, 180, 215, 255],
+            carpet: false,
+            can_carpet: false,
+            carpet_time: 0,
+            carpet_frame_counter: 0.0,
+            pending_wall_dust: None,
             rocket_time: 0,
             rocket_time_max: 7,
             rocket_delay: 0,
@@ -3934,6 +3984,13 @@ impl Player {
         self.pending_wing_frame_dust.take()
     }
 
+    /// W4-g66 gap-fill — takes the wall-dust snapshot
+    /// (`Player.cs:21607-21840`); drained on `UpdatePlayers`
+    /// (`player_trail_dust::drain_wall_dust`).
+    pub(crate) fn take_wall_dust(&mut self) -> Option<WallDust> {
+        self.pending_wall_dust.take()
+    }
+
 
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
@@ -4131,6 +4188,7 @@ impl Player {
         self.pending_walk_effect_dust = None;
         self.pending_rudolph_trail = None;
         self.pending_wing_frame_dust = None;
+        self.pending_wall_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -5628,6 +5686,29 @@ impl Player {
                 self.fairy_boots = true;
                 self.vanity_rocket_boots = 2;
             }
+            // W4-g66 gap-fill — the Frog Leg 3994 / Frog Gear 3995 / Frog Webbing
+            // 3996 (`:14426-14444`): the auto-jump + 1.6 jump-speed + 10
+            // safe-fall trio; 3994/3995 add the flipper, 3995/3996 the +2
+            // wall-cling grant (`WallslideMovement` consumes it).
+            3994 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.acc_flipper = true;
+            }
+            3995 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.acc_flipper = true;
+                self.spiked_boots += 2;
+            }
+            3996 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.spiked_boots += 2;
+            }
             // The Sand Boots (`:14422-14425`): 6f plus the desert-run flag
             // (the sand-floor 1.75x rides the floor-modifier chain).
             4055 => {
@@ -5822,6 +5903,14 @@ impl Player {
             535 | 860 => self.p_stone = true,
             // The Ice Skates (`:15089-15092`).
             950 => self.ice_skate = true,
+            // W4-g66 gap-fill — the wall-cling family: the Magic Carpet 934
+            // (`:15034-15037`), the Climbing Claws 953 / Shoe Spikes 975
+            // (+1, `:15038-15045`), the Tiger Climbing Gear 976 (+2,
+            // `:15046-15049`). `WallClimbMovement`/`WallslideMovement`/
+            // `CarpetMovement` (`:21607-21890`) consume them.
+            934 => self.carpet = true,
+            953 | 975 => self.spiked_boots += 1,
+            976 => self.spiked_boots += 2,
             // The Aglet / the Anklet of the Wind (`:15114-15121`).
             285 => self.move_speed += 0.05,
             212 => self.move_speed += 0.1,
@@ -5867,9 +5956,10 @@ impl Player {
             963 => self.black_belt = true,
             984 => {
                 self.black_belt = true;
-                // `:15065`: the Tabi's dash. (`spikedBoots = 2` at `:15066`
-                // has no port field - the wall-cling is unported.)
+                // `:15065`: the Tabi's dash; `:15066` the wall-cling grant
+                // (W4-g66 gap-fill — `WallslideMovement` consumes it).
                 self.dash_type = 1;
+                self.spiked_boots = 2;
             }
             // The dash granters: the Tabi (`:15050-15053`, type 1) and the
             // Shield of Cthulhu (`:15054-15057`, type 2).
@@ -6446,6 +6536,9 @@ impl Player {
         // `Player.cs:18455`: `empressBrooch = false`.
         self.empress_brooch = false;
         self.spiked_boots = 0;
+        // W4-g66 gap-fill — `:18657`: `carpet = false` beside the spiked-boot
+        // clear; the equip pass re-grants both per tick.
+        self.carpet = false;
         self.ignore_water = false;
         self.lava_vision = false;
 
@@ -7846,6 +7939,19 @@ impl Player {
         // `Player.cs:26061-26099`: the stale option clear while airborne.
         self.clear_stale_jumps();
 
+        // W4-g66 gap-fill — `Player.cs:26100-26115`: the carpet latch — no
+        // carpet clears it; a rest tick (vy 0 or sliding) re-arms the launch
+        // and zeroes the glide state. The gravDir −1 clear folds away.
+        if !self.carpet {
+            self.can_carpet = false;
+            self.carpet_frame = -1;
+        } else if self.vy == 0.0 || self.sliding {
+            self.can_carpet = true;
+            self.carpet_time = 0;
+            self.carpet_frame = -1;
+            self.carpet_frame_counter = 0.0;
+        }
+
         // `Player.cs:26753-26756`: the hold-boost spent cancels the performing
         // flag (`CancelAllJumpVisualEffects(includeDownDash: false)`,
         // `:36649-36662`) BEFORE `DashMovement`/`DoubleJumpVisuals` read it.
@@ -7872,14 +7978,25 @@ impl Player {
         if !grappling {
             self.dash_movement(world, input);
         }
+        // W4-g66 gap-fill — `Player.cs:26758-26766`: the wall-cling trio
+        // between `DashMovement` and `DoubleJumpVisuals` — the Rat mount
+        // climbs, everything else wallslides, then the Magic Carpet glide.
+        // The type-31 wall dust queues one snapshot; the drain replays it
+        // on `UpdatePlayers` (`player_trail_dust::drain_wall_dust`).
+        if !grappling {
+            if self.mount.is_active() && self.mount.kind() == 55 {
+                self.wall_climb_movement(world, gravity);
+            } else {
+                self.wallslide_movement(world, gravity);
+            }
+            self.carpet_movement(gravity);
+        }
         // W4-g66 — `Player.DoubleJumpVisuals` (`Player.cs:26767`,
         // `:21892-22021`): the per-tick trail while an extra jump performs
         // (the one-shot start burst is W4-d51's `pending_jump_dust`). The
         // C# gates each arm on `isPerformingJump_X && hasJumpOption_X &&
         // !canJumpAgain_X` + the ascent sign (the Sail widens to `vy < 1`);
         // the port's `performing_jump` + option tables carry the same state.
-        // WallClimb/Wallslide/Carpet (`:26758-26766`) are unported movement
-        // seams — their type-31 wall dust rides those tasks.
         if !grappling {
             if let Some(j) = self.performing_jump {
                 let ascent = if j == ExtraJump::Sail { self.vy < 1.0 } else { self.vy < 0.0 };
@@ -10364,6 +10481,238 @@ impl Player {
         self.mount.ability_recovery();
     }
 
+    /// W4-g66 gap-fill — `WorldGen.SolidTile(i, j)`
+    /// (`WorldGen.cs:70111-70132`), the `grapple.rs` shape: active, fully
+    /// solid, no solid-top/half-brick/slope/inactive; out of world false.
+    fn wall_solid_tile(world: &World, x: i32, y: i32) -> bool {
+        let Some(t) = world.tile(x, y) else {
+            return false;
+        };
+        t.active()
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            && !t.half_brick()
+            && t.slope() == 0
+            && !t.inactive()
+    }
+
+    /// W4-g66 gap-fill — the shared wall-dust probe + queue
+    /// (`Player.cs:21652-21671` et al.): `!flag || !SolidTile((Center +
+    /// (0, vy).SafeNormalize(Zero) * 10).ToTileCoordinates())` gates ONE
+    /// type-31 8×8 puff at the slide-side edge; the drain replays it.
+    /// `rat` is the WallClimb `flag` (the scale halver); the position
+    /// snapshot is taken AFTER the arm's velocity write (the C# reads
+    /// `base.velocity.Y` inside the probe post-write).
+    fn queue_wall_dust(&mut self, world: &World, rat: bool) {
+        if rat {
+            let v = Vec2::new(0.0, self.vy);
+            let dir = if v == Vec2::ZERO { Vec2::ZERO } else { v.normalize() };
+            let p = Vec2::new(self.x + self.width * 0.5, self.y + self.height * 0.5)
+                + dir * 10.0;
+            // `ToTileCoordinates` (`Utils.cs:1807-1810`): `(int)X >> 4`.
+            if Self::wall_solid_tile(world, p.x as i32 >> 4, p.y as i32 >> 4) {
+                return;
+            }
+        }
+        self.pending_wall_dust = Some(WallDust {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            slide_dir: self.slide_dir,
+            rat,
+        });
+    }
+
+    /// W4-g66 gap-fill — `Player.WallClimbMovement`
+    /// (`Player.cs:21607-21748`): the Rat mount's (55) wall climb — the
+    /// up/down keys drive vy −3/+4 with the type-31 dust, otherwise the
+    /// cling holds vy at −gravity+1e-5. `gravDir` folds to +1 (the port
+    /// convention); `controlUp` is the port's own field.
+    fn wall_climb_movement(&mut self, world: &World, gravity: f32) {
+        // `:21609-21613`: only the Rat mount climbs.
+        let rat = self.mount.is_active() && self.mount.kind() == 55;
+        if !rat {
+            return;
+        }
+        self.sliding = false;
+        // `:21615-21618`: pressing INTO the wall.
+        if self.slide_dir == 0
+            || ((!self.control_left || self.slide_dir != -1)
+                && (!self.control_right || self.slide_dir != 1))
+        {
+            return;
+        }
+        // `:21619-21634`: the wall probe — the tile beside the slide-side
+        // edge at the foot row.
+        let mut num = self.x;
+        if self.slide_dir == 1 {
+            num += self.width;
+        }
+        num += self.slide_dir as f32;
+        let num2 = self.y + self.height + 1.0;
+        let wall = Self::wall_solid_tile(world, (num / 16.0) as i32, (num2 / 16.0) as i32);
+        // `:21635-21636`: flag3 = up (gravDir +1), flag4 = down.
+        let flag3 = self.control_up;
+        let flag4 = self.control_down;
+        if self.spiked_boots >= 2 {
+            // `:21639-21642`: the wall + (a direction key or falling).
+            if !wall || (!(flag3 | flag4) && self.vy <= 0.0) {
+                return;
+            }
+            // `:21643-21647`: the Featherfall-scaled cling gravity.
+            let num3 = if self.slow_fall {
+                if self.trying_to_hover_up() { gravity / 10.0 } else { gravity / 3.0 }
+            } else {
+                gravity
+            };
+            self.fall_start = (self.y / 16.0) as i32;
+            if flag3 {
+                // `:21651-21671`: the climb-up arm.
+                self.vy = -3.0;
+                self.queue_wall_dust(world, rat);
+            } else if flag4 {
+                // `:21675-21695`: the slide-down arm.
+                self.vy = 4.0;
+                self.queue_wall_dust(world, rat);
+            } else {
+                // `:21701-21704`: the cling.
+                self.vy = -num3 + 1e-5;
+            }
+            self.sliding = true;
+        } else {
+            // `:21709-21712`: the claws-only arm — a direction key or
+            // falling past 0.5.
+            if !wall || (!(flag3 | flag4) && self.vy <= 0.5) {
+                return;
+            }
+            self.fall_start = (self.y / 16.0) as i32;
+            // `:21714-21725`: up −2, down +4, cling +0.5.
+            if self.control_up {
+                self.vy = -2.0;
+            } else if self.control_down {
+                self.vy = 4.0;
+            } else {
+                self.vy = 0.5;
+            }
+            self.sliding = true;
+            // `:21727-21746`: the dust (the same probe).
+            self.queue_wall_dust(world, rat);
+        }
+    }
+
+    /// W4-g66 gap-fill — `Player.WallslideMovement`
+    /// (`Player.cs:21750-21840`): the spiked boots' wall slide (no mount).
+    /// Level 2+ clings at −gravity+1e-5 (down key: +4 with dust); level 1
+    /// slides at +0.5 (down: +4) while falling past 0.5, always with dust.
+    fn wallslide_movement(&mut self, world: &World, gravity: f32) {
+        self.sliding = false;
+        // `:21753-21756`: boots + pressing into the wall, no mount.
+        if self.slide_dir == 0
+            || self.spiked_boots <= 0
+            || self.mount.is_active()
+            || ((!self.control_left || self.slide_dir != -1)
+                && (!self.control_right || self.slide_dir != 1))
+        {
+            return;
+        }
+        // `:21757-21774`: the TWO-tile wall probe (foot row + the one above).
+        let mut num = self.x;
+        if self.slide_dir == 1 {
+            num += self.width;
+        }
+        num += self.slide_dir as f32;
+        let num2 = self.y + self.height + 1.0;
+        let tx = (num / 16.0) as i32;
+        let ty = (num2 / 16.0) as i32;
+        let wall = Self::wall_solid_tile(world, tx, ty)
+            && Self::wall_solid_tile(world, tx, ty - 1);
+        if self.spiked_boots >= 2 {
+            // `:21777-21780`: the wall + falling (vy > 0).
+            if !wall || self.vy <= 0.0 {
+                return;
+            }
+            let num3 = if self.slow_fall {
+                if self.trying_to_hover_up() { gravity / 10.0 } else { gravity / 3.0 }
+            } else {
+                gravity
+            };
+            self.fall_start = (self.y / 16.0) as i32;
+            if self.control_down {
+                // `:21789-21802`: the fast slide + dust (no rat halver).
+                self.vy = 4.0;
+                self.queue_wall_dust(world, false);
+            } else {
+                // `:21808-21811`: the cling.
+                self.vy = -num3 + 1e-5;
+            }
+            self.sliding = true;
+        } else if wall && self.vy > 0.5 {
+            // `:21814-21838`: the level-1 slide.
+            self.fall_start = (self.y / 16.0) as i32;
+            self.vy = if self.control_down { 4.0 } else { 0.5 };
+            self.sliding = true;
+            self.queue_wall_dust(world, false);
+        }
+    }
+
+    /// W4-g66 gap-fill — `Player.CarpetMovement` (`Player.cs:21842-21890`):
+    /// the Magic Carpet glide — no dust, the vy pin + the frame machine.
+    /// The nine `canJumpAgain_X` gates read the port's table (the C# flags
+    /// are false unless an extra jump is mid-flight).
+    fn carpet_movement(&mut self, gravity: f32) {
+        let mut glide = false;
+        // `:26745-26752` runs BEFORE the carpet in the C# tick (the port's
+        // zeroing lives at the flight-section head, later): an unequipped
+        // tier's budget reads as zero here.
+        let wing_time = if self.wings_logic == 0 { 0.0 } else { self.wing_time };
+        let rocket_time = if self.rocket_boots == 0 { 0 } else { self.rocket_time };
+        // `:21845`: the big gate.
+        if !self.grappling_active
+            && self.carpet
+            && !self.can_jump_again.iter().any(|&c| c)
+            && self.jump == 0
+            && self.vy != 0.0
+            && rocket_time == 0
+            && wing_time == 0.0
+            && !self.mount.is_active()
+        {
+            // `:21847-21851`: the launch consumes the latch.
+            if self.control_jump && self.can_carpet {
+                self.can_carpet = false;
+                self.carpet_time = 300;
+            }
+            // `:21852-21880`: the glide tick.
+            if self.carpet_time > 0 && self.control_jump {
+                self.fall_start = (self.y / 16.0) as i32;
+                glide = true;
+                self.carpet_time -= 1;
+                // `:21857-21861`: the vy pin at −(gravity + 1e-6).
+                if self.vy > -gravity {
+                    self.vy = -(gravity + 1e-6);
+                }
+                // `:21866-21879`: the frame machine.
+                self.carpet_frame_counter += 1.0 + (self.vx * 0.5).abs();
+                if self.carpet_frame_counter > 8.0 {
+                    self.carpet_frame_counter = 0.0;
+                    self.carpet_frame += 1;
+                }
+                if self.carpet_frame < 0 {
+                    self.carpet_frame = 0;
+                }
+                if self.carpet_frame > 5 {
+                    self.carpet_frame = 0;
+                }
+            }
+        }
+        // `:21882-21889`: the rest frame / the Featherfall cancel.
+        if !glide {
+            self.carpet_frame = -1;
+        } else {
+            self.slow_fall = false;
+        }
+    }
+
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
     /// `canRocket`, the ground refills, `flag19`, the CCed arm, `WingMovement`,
     /// `WingFrame`, the rocket→wing conversion, the flap edge, the rocket
@@ -11290,9 +11639,10 @@ impl Player {
         if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
             self.try_dismount(world);
         }
-        // `:22624-22640` — the carpet/wing frame head. `canCarpet`/`rocketFrame`
-        // have no port fields; `carpetFrame = -1` and the wing frame ladder are
-        // the visual seam (the wings-4/30 overrides ride the wing draw).
+        // `:22624-22640` — the carpet/wing frame head. W4-g66 gap-fill:
+        // `canCarpet` re-arms while grappling (`:22624`); `rocketFrame`
+        // (`:22642`) still rides the flight section's own writes.
+        self.can_carpet = true;
         self.carpet_frame = -1;
         self.wing_frame = 1;
         // `:22627-22628` — `flag` (nearly stationary) and `flag2` (floating in
@@ -22824,9 +23174,148 @@ mod s1_p_i27_tests {
         assert!(!p.set_stardust, "(:18743)");
     }
 
-    // -- W4-g66 gap-fill: the dev-wing machines + appearance producer -----
+    // -- W4-g66 gap-fill: the wall-cling / carpet ticks -------------------
     // Witnesses WRITTEN NOT RUN (code-only mode).
 
+    /// `:21750-21840` — the Wallslide tick: level-1 boots + a wall at the
+    /// slide edge + falling past 0.5 pins vy 0.5 (down key: 4) and queues
+    /// the puff; level 2 clings at −gravity+1e-5 with NO puff unless the
+    /// down key drives the fast slide.
+    #[test]
+    fn w4_g66_the_wallslide_tick_clings_and_queues() {
+        let mut w = ground_world();
+        // The probe: x = (300 + 20 + 1)/16 = 20, foot row (600+42+1)/16 = 40
+        // and the row above (`:21771` needs BOTH).
+        for y in [39, 40] {
+            let i = w.index(20, y);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut p = Player::spawn(&w);
+        p.x = 300.0;
+        p.y = 600.0;
+        p.vx = 2.0;
+        p.vy = 1.0;
+        p.slide_dir = 1;
+        p.spiked_boots = 1;
+        p.control_right = true;
+        p.wallslide_movement(&w, 0.4);
+        assert!(p.sliding);
+        assert_eq!(p.vy, 0.5, "the level-1 slide");
+        let b = p.take_wall_dust().expect("the level-1 slide always puffs");
+        assert_eq!(b.slide_dir, 1);
+        assert!(!b.rat);
+        // Level 2: the cling, no puff.
+        p.spiked_boots = 2;
+        p.vy = 1.0;
+        p.wallslide_movement(&w, 0.4);
+        assert!(p.sliding);
+        // f32: -0.4 + 1e-5 rounds onto -0.4's own ulp grid (~3e-8).
+        assert!((p.vy - (-0.4f32 + 1e-5)).abs() < 1e-7, "the cling: {}", p.vy);
+        assert!(p.take_wall_dust().is_none());
+        // Level 2 + down: the fast slide WITH the puff.
+        p.vy = 1.0;
+        p.control_down = true;
+        p.wallslide_movement(&w, 0.4);
+        assert_eq!(p.vy, 4.0);
+        assert!(p.take_wall_dust().is_some());
+        // No wall on the left → no slide at all.
+        p.slide_dir = -1;
+        p.control_right = false;
+        p.control_left = true;
+        p.control_down = false;
+        p.vy = 1.0;
+        p.wallslide_movement(&w, 0.4);
+        assert!(!p.sliding);
+        assert!(p.take_wall_dust().is_none());
+    }
+
+    /// `:21607-21748` — the Rat's WallClimb: up −3 / down +4 with the
+    /// rat-halved puff, the level-1 up −2; the solid-tile probe skips the
+    /// dust when the move direction points into a tile.
+    #[test]
+    fn w4_g66_the_rat_wall_climb_arms() {
+        let mut w = ground_world();
+        for y in [39, 40] {
+            let i = w.index(20, y);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut p = Player::spawn(&w);
+        p.x = 300.0;
+        p.y = 600.0;
+        p.vy = 1.0;
+        p.slide_dir = 1;
+        p.control_right = true;
+        p.control_up = true;
+        p.spiked_boots = 2;
+        p.mount.set_mount(55, false);
+        p.wall_climb_movement(&w, 0.4);
+        assert_eq!(p.vy, -3.0, "the climb-up arm");
+        assert!(p.sliding);
+        let b = p.take_wall_dust().expect("the Rat climb puffs");
+        assert!(b.rat, "the Rat halves the scale");
+        // Down: +4.
+        p.control_up = false;
+        p.control_down = true;
+        p.vy = 1.0;
+        p.wall_climb_movement(&w, 0.4);
+        assert_eq!(p.vy, 4.0);
+        assert!(p.take_wall_dust().is_some());
+        // Level 1 (claws only): up −2.
+        p.spiked_boots = 1;
+        p.control_down = false;
+        p.control_up = true;
+        p.vy = 1.0;
+        p.wall_climb_movement(&w, 0.4);
+        assert_eq!(p.vy, -2.0);
+        // Not the Rat → the whole method returns.
+        p.mount.dismount();
+        p.vy = 1.0;
+        p.wall_climb_movement(&w, 0.4);
+        assert_eq!(p.vy, 1.0, "no Rat, no climb");
+    }
+
+    /// `:21842-21890` — the Carpet glide: the launch consumes the latch,
+    /// the vy pin at −(g+1e-6), the frame counter's |vx| accumulation, the
+    /// 300-tick budget, the rest frame −1 and the slowFall cancel.
+    #[test]
+    fn w4_g66_the_carpet_glide_pins_vy_and_frames() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.carpet = true;
+        p.can_carpet = true;
+        p.control_jump = true;
+        p.vy = 2.0;
+        p.vx = 4.0;
+        p.wing_time = 0.0;
+        p.rocket_time = 0;
+        p.slow_fall = true;
+        p.carpet_movement(0.4);
+        assert!(!p.can_carpet, "the launch consumed the latch");
+        assert_eq!(p.carpet_time, 299, "300 minus this tick");
+        assert_eq!(p.vy, -(0.4 + 1e-6), "the vy pin");
+        assert!(!p.slow_fall, "the glide cancels Featherfall");
+        // counter += 1 + |4*0.5| = 3 per tick; >8 wraps at the third.
+        assert_eq!(p.carpet_frame_counter, 3.0);
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_frame_counter, 6.0);
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_frame_counter, 0.0, "9 > 8 wraps");
+        assert_eq!(p.carpet_frame, 1);
+        // The budget spends out → the rest frame.
+        p.carpet_time = 1;
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_time, 0);
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_frame, -1, "the spent glide rests");
+        // No jump held → no glide even with budget.
+        p.carpet_time = 100;
+        p.control_jump = false;
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_frame, -1);
+        assert_eq!(p.carpet_time, 100, "the budget only ticks while gliding");
+    }
 
 
     /// `:29952-30021`/`:30094-30163` — the dev-wing machines: 47's flag3

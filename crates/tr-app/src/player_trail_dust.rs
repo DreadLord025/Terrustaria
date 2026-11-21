@@ -15,10 +15,40 @@
 //! the port treats unported gore (docs/ANALYSIS.md).
 
 use crate::app::App;
+use crate::player::WallDust;
 use crate::player::{DoubleJumpDust, ExtraJump, FloorDust, RudolphTrail};
 use crate::player_dust::nd;
 use glam::Vec2;
 use tr_core::particles::Color;
+
+/// W4-g66 gap-fill — drain the wall-cling dust (`WallClimbMovement`
+/// `Player.cs:21654-21671`/`:21678-21695`/`:21729-21746`,
+/// `WallslideMovement` `:21790-21803`/`:21826-21838`): ONE `Dust.NewDust`
+/// type-31 puff, box 8×8 at `(x + width/2 + (width/2 − 4)*slideDir,
+/// y + height/2 + height/2 − 4)` (INTEGER halves; gravDir +1). Post:
+/// `slideDir < 0` → X −= 10; `velocity *= 0.1`, `scale *= 1.2`, noGravity;
+/// the Rat mount (`flag`) halves the scale again. The tick ran the
+/// solid-tile probe gate; drained between the dash burst and
+/// `DoubleJumpVisuals` (`:26758-26766` order).
+pub(crate) fn drain_wall_dust(app: &mut App, b: WallDust) {
+    let hw = b.width as i32 / 2;
+    let hh = b.height as i32 / 2;
+    let pos = Vec2::new(
+        b.x + hw as f32 + (hw - 4) as f32 * b.slide_dir as f32,
+        b.y + hh as f32 + (hh - 4) as f32,
+    );
+    let idx = nd(app, pos, 8, 8, 31, 0.0, 0.0, 0, Color::default(), 1.0);
+    let d = app.dust.slot_mut(idx);
+    if b.slide_dir < 0 {
+        d.position.x -= 10.0;
+    }
+    d.velocity *= 0.1;
+    d.scale *= 1.2;
+    d.no_gravity = true;
+    if b.rat {
+        d.scale *= 0.5;
+    }
+}
 
 /// Drain the `DoubleJumpVisuals` trail (`Player.cs:21892-22021`). The tick
 /// already applied the per-arm gates (performing + option + !canJumpAgain +
@@ -980,4 +1010,44 @@ mod tests {
             assert_eq!(stream_of(&mut app), rng);
         }
     }
+
+    // -- W4-g66 gap-fill: the wall-cling dust --------------------------------
+    // Witnesses WRITTEN NOT RUN (code-only mode).
+
+    /// `:21654-21671` — the wall puff: the type-31 8×8 box at the slide-side
+    /// edge, the −10 X mirror, the ×0.1/×1.2 post chain, the Rat halver.
+    #[test]
+    fn w4_g66_the_wall_puff_mirrors_and_halves() {
+        for (slide_dir, rat) in [(1, false), (-1, false), (1, true)] {
+            let mut app = rig(0x5EED);
+            let b = WallDust {
+                x: 300.0,
+                y: 600.0,
+                width: 20.0,
+                height: 42.0,
+                slide_dir,
+                rat,
+            };
+            drain_wall_dust(&mut app, b);
+            let slots = live(&app);
+            assert_eq!(slots.len(), 1);
+            let d = slots[0];
+            assert_eq!(d.dust_type, 31);
+            let mut rng = UnifiedRandom::new(0x5EED);
+            // hw = 10, hh = 21: pos = (300 + 10 + 6*dir, 600 + 21 + 17).
+            let px = 310.0 + 6.0 * slide_dir as f32;
+            let (pos, vel, sc) =
+                default_block(&mut rng, Vec2::new(px, 638.0), 8, 8, 0.0, 0.0, 1.0);
+            let mut expect_pos = pos;
+            if slide_dir < 0 {
+                expect_pos.x -= 10.0;
+            }
+            assert_eq!(d.position, expect_pos);
+            assert_eq!(d.velocity, vel * 0.1);
+            assert_eq!(d.scale, sc * 1.2 * if rat { 0.5 } else { 1.0 });
+            assert!(d.no_gravity);
+            assert_eq!(stream_of(&mut app), rng);
+        }
+    }
+
 }

@@ -1522,6 +1522,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_dash_dust() {
                 crate::player_dust::drain_dash_dust(app, burst);
             }
+            // W4-g66 gap-fill — the wall-cling dust (`Player.cs:26758-26766`,
+            // `WallClimbMovement`/`WallslideMovement` `:21607-21840`): the
+            // type-31 puff sits between the dash burst and DoubleJumpVisuals
+            // in the C# call order, same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_wall_dust() {
+                crate::player_trail_dust::drain_wall_dust(app, burst);
+            }
             // W4-g66 — `DoubleJumpVisuals` (`Player.cs:26767`, `:21892-22021`):
             // the per-tick performing-jump trail follows the dash burst in
             // the C# call order, on the same `UpdatePlayers` stream.
