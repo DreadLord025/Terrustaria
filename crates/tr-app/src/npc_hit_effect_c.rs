@@ -61,6 +61,8 @@
 //! | 215-217 | `:83072-83074` | the 426 Nebula Floater death (3 gores, SelectRandom dust + NPC-428 spawn seam) |
 //! | 218-221 | `:83119-83122` | the 427 Nebula Soldier death (4 gores at Center, vel x0.8/x0.9) |
 //! | 222-226 | `:83156-83160` | the 429 Nebula Predictor death (5 gores, projectile-578 spawn seam) |
+//! | 227-233 | `:83238-83244` | the 425 Nebula Beast death (7 gores, gated type-229 dust) |
+//! | 234-235 | `:83270-83271` | the 428 Nebula Brain death (2 gores, vel x0.8, Next(2) type-229/240 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1248,6 +1250,84 @@ fn nebula_predictor_death(
     outcome.nebula_predictor_shot = Some((c.x, c.y));
 }
 
+/// The 425 Nebula Beast death (`NPC.cs:83226-83244`, sites 227-233): the
+/// 20-iteration burst (type-241 dust + `Next(3) == 0`-gated type-229 dust,
+/// noGravity, scale 1.5, fadeIn 1, velocity ×3), then the 7 gores
+/// 796/797/798/809/809/810/810 — 796 at position, 797 at Center, 798/809/809
+/// at +20 Y, 810/810 at +34 Y.
+fn nebula_beast_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83226-83237` — 20 iterations: type-241 + the Next(3)-gated type-229.
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 241, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        if rng.next_max(3) == 0 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 229, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 1.0;
+            d.velocity *= 3.0;
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 796, s); // :83238
+    gore.new_gore(rng, world, center(npc), vel, 797, s); // :83239
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 798, s); // :83240
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 809, s); // :83241
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 809, s); // :83242
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 810, s); // :83243
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 810, s); // :83244
+}
+
+/// The 428 Nebula Brain death (`NPC.cs:83258-83271`, sites 234-235): the
+/// 10-iteration burst, each a type-241 dust then a `Next(2) == 0` ? type-229
+/// : type-240 dust (the gate picks the type, both branches spawn), then the
+/// 2 gores 806/807 at position with velocity ×0.8. Scale defaults to 1.
+fn nebula_brain_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83258-83269` — 10 iterations: type-241 + the Next(2)-picked 229/240.
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 241, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        // `:83261-83268` — the gate picks the type; both branches spawn.
+        let ty = if rng.next_max(2) == 0 { 229 } else { 240 };
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, ty, 0.0, 0.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy) * 0.8;
+    gore.new_gore(rng, world, pos, vel, 806, 1.0); // :83270
+    gore.new_gore(rng, world, pos, vel, 807, 1.0); // :83271
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1396,6 +1476,14 @@ pub fn hit_effect_c(
     // `:83125-83206` — the 429 Nebula Predictor arm (sites 222-226).
     if npc_type == 429 && npc.hp <= 0 {
         nebula_predictor_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
+    }
+    // `:83207-83246` — the 425 Nebula Beast arm (sites 227-233).
+    if npc_type == 425 && npc.hp <= 0 {
+        nebula_beast_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83247-83273` — the 428 Nebula Brain arm (sites 234-235).
+    if npc_type == 428 && npc.hp <= 0 {
+        nebula_brain_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2218,6 +2306,68 @@ mod tests {
         assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
         // The shot seam carries the Center = (124,130).
         assert_eq!(out.nebula_predictor_shot, Some((124.0, 130.0)));
+    }
+
+    /// `NPC.cs:83238-83244` — the Nebula Beast death: the 7 gores
+    /// 796/797/798/809/809/810/810 (796 at position, 797 at Center, the
+    /// 798/809 pair at +20, the 810 pair at +34).
+    #[test]
+    fn w4_f10_the_nebula_beast_death_spawns_the_seven_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(137);
+        nebula_beast_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..7].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![796, 797, 798, 809, 809, 810, 810]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        // Center = (125,125).
+        assert_eq!(gore.slot(1).position, Vec2::new(125.0, 125.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(5).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:83270-83271` — the Nebula Brain death: the 2 gores 806/807
+    /// at position, velocity x0.8, after the 10x(type-241 + Next(2)-picked
+    /// 229/240) burst. The twin replay pins the gate draws (both branches
+    /// spawn a dust).
+    #[test]
+    fn w4_f10_the_nebula_brain_death_picks_the_dust_type() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 36.0, 36.0);
+        n.vx = 5.0;
+        n.vy = 0.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(139);
+        nebula_brain_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![806, 807]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        // The velocity x0.8 plus the kicks.
+        assert!((gore.slot(0).velocity.x - 4.0).abs() <= 2.0);
+        // The twin: 10 x (type-241 census + Next(2) gate + the picked dust's
+        // census), then the 2 gores' kicks.
+        let mut twin = UnifiedRandom::new(139);
+        let census = |r: &mut UnifiedRandom| {
+            let _px = r.next_max(32);
+            let _py = r.next_max(32);
+            let _vx = r.next_range(-20, 21);
+            let _vy = r.next_range(-20, 21);
+            let _row = r.next_max(3);
+            let _scale = r.next_range(-20, 21);
+        };
+        for _ in 0..10 {
+            census(&mut twin); // type 241
+            let _gate = twin.next_max(2);
+            census(&mut twin); // the picked 229/240 (neither hits a tweak)
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the brain death mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
