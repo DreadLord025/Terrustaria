@@ -5275,7 +5275,13 @@ impl Projectile {
     /// straight flight, `ai[0] > 5f` → `velocity.Y += 0.2f` with the 0.97
     /// ground-slide friction, `rotation += velocity.X * 0.1f`, and the
     /// center (+4, +8)-box vs solid-tile scan killing the projectile.
-    fn ai_spear(&mut self, world: &World) {
+    fn ai_spear(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         self.ai[0] += 1.0;
         if self.ai[0] > 5.0 {
             self.ai[0] = 5.0;
@@ -5288,22 +5294,33 @@ impl Projectile {
             self.vel.y += 0.2;
         }
         self.rot += self.vel.x * 0.1;
-        // S1-P-i28 — the greek fires' (400-402) per-kind overlay
-        // (`Projectile.cs:25271-25302`, inside the aiStyle-14 arm, AFTER the
-        // default gravity/rotation above): a wet kill, a friction arm
+        // S1-P-i28 / W4-f5 — the molotov fires' (400-402) and swordfish bones'
+        // (1107-1109) per-kind overlay (`Projectile.cs:25271-25302`, inside the
+        // aiStyle-14 arm, AFTER the default gravity/rotation above): a wet
+        // kill, the two dust-6 (`:25282-25296`), a friction arm
         // (`0.15 < velocity.Y < 0.25 → velocity.X *= 0.8`), and the rotation
-        // REPLACED by `(0 - velocity.X) * 0.05`. The dust (`:25282-25296`) and
-        // the 326-328 sound gate (`:25277-25281`, a different kind) are skipped.
+        // REPLACED by `(0 - velocity.X) * 0.05`. The `ai[1]` sound gate
+        // (`:25277-25281`) is a different kind (326-328) and never fires here.
         // The wet probe folds to the port's `is_wet` box-overlap convention
-        // (the molotov/bee wet folds, ANALYSIS); the 1107-1109 twins share the
-        // C# block but have no ported row.
-        if matches!(self.kind, 400 | 401 | 402) {
+        // (the molotov/bee wet folds, ANALYSIS). The C# wet `Kill()` does NOT
+        // return — the dust still spawns on the dying tick (`:25273-25276`
+        // falls through to `:25282`); the port keeps the draws and skips only
+        // the movement (the dead slot's `kill_step` is idempotent).
+        if matches!(self.kind, MOLOTOV_FIRE_1 | MOLOTOV_FIRE_2 | MOLOTOV_FIRE_3
+            | SWORDFISH_BONE_1 | SWORDFISH_BONE_2 | SWORDFISH_BONE_3)
+        {
+            let mut d = crate::projectile_dust3::ProjDust3 {
+                pool: dust,
+                ctx: dust_ctx,
+                rng: &mut *rng,
+            };
             if crate::npc::is_wet(world, self.pos.x, self.pos.y, self.w, self.h) {
                 self.kill_time_left = self.time_left;
                 self.active = false;
                 self.time_left = 0;
-                return;
             }
+            // `:25282-25296` — the two dust-6 (W4-f5).
+            crate::projectile_dust3::style14_fire_dust(self, world, &mut d);
             if self.vel.y < 0.25 && self.vel.y > 0.15 {
                 self.vel.x *= 0.8;
             }
@@ -17207,20 +17224,110 @@ impl ProjectilePool {
                                         &mut self.slots[i],
                                     );
                                 }
-                                // S1-P-i16 — the Cursed Dart's flame drop
-                                // 480: the AI_014 dust block's draw census
-                                // (`Projectile.cs:25227-25245`), then the
-                                // SAME generic spear tail (AI_014 has no
-                                // 480 flight branch).
+                                // S1-P-i16 / W4-f5 — the Cursed Dart's flame
+                                // drop 480: the AI_014 dust block's two
+                                // dust-75 (`Projectile.cs:25227-25245`) spawn
+                                // through the seam, then the SAME generic
+                                // spear tail (AI_014 has no 480 flight
+                                // branch).
                                 480 => {
                                     crate::projectile_ai_darts::flame_drop_dust(
                                         &mut self.slots[i],
+                                        world,
                                         rng,
+                                        dust,
+                                        dust_ctx,
                                     );
+                                }
+                                // W4-f5 — the 450 Saucer Scrap's AI_014 dust
+                                // block (`Projectile.cs:25188-25226`): the
+                                // `ai[1]` sound latch, the two dust-228, the
+                                // 3-tick/5-frame machine and the friction +
+                                // rotation overlay, then the SAME generic
+                                // spear tail (AI_014 has no 450 flight
+                                // branch — it takes the `:25142` else arm).
+                                SAUCER_SCRAP => {
+                                    let mut d = crate::projectile_dust3::ProjDust3 {
+                                        pool: dust,
+                                        ctx: dust_ctx,
+                                        rng: &mut *rng,
+                                    };
+                                    // `:25190-25194` — the one-tick sound latch
+                                    // (the cue is the sound lane's skip).
+                                    if self.slots[i].ai[1] == 0.0 {
+                                        self.slots[i].ai[1] = 1.0;
+                                    }
+                                    // `:25195-25212` — the two dust-228.
+                                    crate::projectile_dust3::style14_saucer_450(
+                                        &self.slots[i],
+                                        world,
+                                        &mut d,
+                                    );
+                                    // `:25213-25220` — the 3-tick/5-frame machine.
+                                    self.slots[i].frame_counter += 1;
+                                    if self.slots[i].frame_counter >= 3 {
+                                        self.slots[i].frame_counter = 0;
+                                        self.slots[i].frame += 1;
+                                        if self.slots[i].frame >= 5 {
+                                            self.slots[i].frame = 0;
+                                        }
+                                    }
+                                    // `:25221-25225` — the friction + rotation.
+                                    if self.slots[i].vel.y < 0.25
+                                        && self.slots[i].vel.y > 0.15
+                                    {
+                                        self.slots[i].vel.x *= 0.8;
+                                    }
+                                    self.slots[i].rot =
+                                        (0.0 - self.slots[i].vel.x) * 0.05;
+                                }
+                                // W4-f5 — the 326-328 Greek Fire's AI_014 dust
+                                // block (`Projectile.cs:25246-25270`): the wet
+                                // kill, the `ai[1]` sound latch, the 2-in-3
+                                // dust-6 Direct and the friction + rotation
+                                // overlay, then the SAME generic spear tail.
+                                GREEK_FIRE_1 | GREEK_FIRE_2 | GREEK_FIRE_3 => {
+                                    let mut d = crate::projectile_dust3::ProjDust3 {
+                                        pool: dust,
+                                        ctx: dust_ctx,
+                                        rng: &mut *rng,
+                                    };
+                                    // `:25248-25251` — the wet kill (no return;
+                                    // the C# falls through to the dust below).
+                                    if crate::npc::is_wet(
+                                        world,
+                                        self.slots[i].pos.x,
+                                        self.slots[i].pos.y,
+                                        self.slots[i].w,
+                                        self.slots[i].h,
+                                    ) {
+                                        self.slots[i].kill_time_left =
+                                            self.slots[i].time_left;
+                                        self.slots[i].active = false;
+                                        self.slots[i].time_left = 0;
+                                    }
+                                    // `:25252-25256` — the one-tick sound latch.
+                                    if self.slots[i].ai[1] == 0.0 {
+                                        self.slots[i].ai[1] = 1.0;
+                                    }
+                                    // `:25257-25264` — the 2-in-3 dust-6 Direct.
+                                    crate::projectile_dust3::style14_greek_fire(
+                                        &self.slots[i],
+                                        world,
+                                        &mut d,
+                                    );
+                                    // `:25265-25269` — the friction + rotation.
+                                    if self.slots[i].vel.y < 0.25
+                                        && self.slots[i].vel.y > 0.15
+                                    {
+                                        self.slots[i].vel.x *= 0.8;
+                                    }
+                                    self.slots[i].rot =
+                                        (0.0 - self.slots[i].vel.x) * 0.05;
                                 }
                                 _ => {}
                             }
-                            self.slots[i].ai_spear(world)
+                            self.slots[i].ai_spear(world, rng, dust, dust_ctx)
                             }
                         }
                         // S1-P-i42 — the flare family (163/310/1008-1011),

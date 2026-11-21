@@ -410,6 +410,32 @@ pub(crate) fn style14_fire_dust(p: &Projectile, world: &World, d: &mut ProjDust3
     }
 }
 
+/// `:25257-25264` — the 326-328 Greek Fire's 2-in-3 dust-6 Direct: the
+/// `Next(3) != 0` gate, then a `NewDustDirect` (alpha 0, scale 1) whose
+/// velocity.Y −2, noGravity, scale +NextFloat·0.8+0.3, velocity +1×vel.
+/// The caller owns the wet kill and the `ai[1]` sound latch ahead of this.
+pub(crate) fn style14_greek_fire(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    if d.rng.next_range(0, 3) != 0 {
+        let idx = d.new_dust_direct(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            6,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity.y -= 2.0;
+        dust.no_gravity = true;
+        dust.scale += d.rng.next_float() * 0.8 + 0.3;
+        dust.velocity += p.vel;
+    }
+}
+
 /// `:25195-25212` — the 450 Saucer Scrap's two dust-228: the 1-in-2 first
 /// (position −2/+2, scale +Next(50)·0.01, noGravity, Y −2), then the 1-in-4
 /// second (scale +0.3+Next(50)·0.01, noGravity, ×0.1 velocity). The caller
