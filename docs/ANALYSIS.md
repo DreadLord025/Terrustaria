@@ -39314,29 +39314,119 @@ then overwrites position/velocity — zero velocity survives.
 * The emission gate `_isActiveAndNotPaused`
   (`FocusHelper.AllowTileDrawingToEmitEffects`, `TileDrawing.cs:469`)
   reads `!game_paused && !TR_NO_WIND` — the focus gate is unported; the
-  A/B switch keeps the whole wind feature screenshotable.
-* The leaf spawns fire only on a world-range REBUILD (the G6 cache):
-  vanilla re-runs `DrawTiles_EmitParticles` per draw under its
-  `!Lighting.UpdateEveryFrame || FastRandom(TileFrameSeed).WithModifier
-  (x,y).Next(4)==0` quarter-roll (`:965-968`); the port's cached-range
-  model cannot re-emit without invalidating the cache, so the shed
-  cadence is per-rebuild, not per-frame. The d60 wiring wave owns the
-  reconciled emission cadence for the whole particle battery.
-* `Gore_UpdateLeaf`'s lava arm deactivates the leaf but its five-dust
-  puff (`Gore.cs:1119-1122`) stays the recorded S1-E-4 dust-seam drop.
-* `Gore.Width/Height` read the 1f texture-unloaded fallback (the S1-E-4
-  asset-seam drop), so the falling liquid probe centres on
-  `position + 0.5` instead of the sheet half-size.
+  A/B switch keeps the whole wind feature screenshotable. **The exact C#
+  contract (W4-g68 deferred-2 census): the gate is NOT `!gamePaused`** —
+  `FocusHelper.cs:27` reads `!WorldUpdateStepper.DrawnThisUpdate`, a flag
+  cleared at the top of every world update (`Main.cs:17747`) and set at
+  the END of the first draw after it (`Main.cs:62478`, inside `DoDraw`).
+  So vanilla emits on the FIRST DRAW PER WORLD UPDATE — at 60 Hz update +
+  60 Hz draw that is once per frame; at a 144 Hz display the extra draws
+  emit NOTHING (the flag is already set); during a multi-update catch-up
+  frame only the draws after the LAST update's clear can emit. Pause is
+  orthogonal: a paused game still draws, but `ShouldUpdateWorld` gates
+  the update, so the flag stays set and emission stops — the port's
+  `!game_paused` approximates the steady state, not the mechanism.
+* **The per-rebuild emission cadence — the exact d60 wiring contract
+  (W4-g68 deferred-2).** C# runs the emission bodies from THREE draw-pass
+  sites, each with its own cadence:
+  1. `DrawSingleTile` (`TileDrawing.cs:965-968`): the
+     `_isActiveAndNotPaused && (!Lighting.UpdateEveryFrame ||
+     FastRandom(Main.TileFrameSeed).WithModifier(x,y).Next(4)==0)` gate.
+     `Lighting.UpdateEveryFrame` (`Lighting.cs:77-87`) is FALSE whenever
+     render targets are required (the normal path) — so the quarter-roll
+     normally APPLIES: each tile emits on ~1/4 of the eligible draws.
+     `TileFrameSeed` re-seeds every FIFTH draw (`Main.cs:61719-61723`,
+     `_drawCycleCounter % 5`, `Utils.RandomNextSeed`), so the eligible
+     tile set rotates on a 5-draw cycle. The roll is a THROWAWAY
+     `FastRandom` per tile — it does NOT step `TileDrawing._rand`.
+  2. `DrawGrass`/`DrawAnyDirectionalGrass` (`:8346-8352`, `:8403-8409`)
+     and the two multi-tile-grass-in-wind passes (`:8974-8980`,
+     `:9485-9491`): `flag = _rand.Next(4)==0` — a REAL `_rand` draw per
+     special-point tile per draw, then `_isActiveAndNotPaused & flag`.
+     These ride the `PostDrawTiles(solidLayer: false)` chain
+     (`:414-434`), NOT the G6-cacheable tile range.
+  3. `EmitTreeLeaves` (`:7779-7891`, from `DrawTrees` `:8121/8166/8214`):
+     NO quarter-roll — only `_isActiveAndNotPaused` (`:7781`) plus its
+     own `Next(frequency)` gate (`:7830`). `DrawTrees` also rides
+     `PostDrawTiles` (`:428`).
+  The port fires all three from the G6-cached `draw_tiles` rebuild
+  (`render/tiles.rs` + `foliage.rs`), so the shed cadence is per-REBUILD:
+  a windy world rebuilds every frame (the sway counters ride the key) and
+  the cadence approximates vanilla's; a CALM world caches and emits only
+  on camera/liquid/light changes — vanilla would still shed at
+  1/14000-per-tile-draw in dead calm. `_leafFrequency` itself is ticked
+  per world update in C# (`TilesRenderer.Update()`, `Main.cs:17812`,
+  `TileDrawing.cs:376`); the port re-derives it from the live wind each
+  call (`wind::leaf_frequency`) — same value, no state. **Contract for
+  the d60 wiring wave:** move the emission calls OUT of the cached range
+  into a per-frame pass (the `tile_cracks.rs` precedent, `draw.rs:1198-
+  1206`: per-frame world-range overlay, `WorldFrameKey` untouched), gate
+  site 1 on the throwaway `FastRandom(tile_frame_seed).with_modifier
+  (x,y).next(4)==0` with the 5-draw seed cycle, sites 2/3 on their own
+  gates; the `_rand` stand-in must then become a PERSISTENT stream (C#
+  `TileDrawing._rand` is one `UnifiedRandom` for the renderer's lifetime,
+  `:191` — the port's per-frame `FastRandom` pin is a determinism
+  stand-in, not the C# stream), and the `DrawnThisUpdate` flag needs a
+  port field cleared per world tick / set after the first draw. Do NOT
+  widen the G6 key to force per-frame rebuilds — that re-tiles the whole
+  world every frame (the cache exists to avoid exactly that).
+* ~~`Gore_UpdateLeaf`'s lava arm five-dust puff stays dropped~~ —
+  **WIRED (W4-g68 deferred-1).** `GorePool::update` now takes the
+  `DustPool` + `SpawnCtx` seam (`None` keeps the drop for pool-only
+  consumers); the lava arm rolls its five `Dust.NewDust(position, 3, 3,
+  31, 0, −0.2)` puffs on the SAME `UpdateGores` stage stream via the
+  `DustFromGore` adapter — the C# runs both inside
+  `SwapRandom("UpdateGores")` (`Main.cs:17771-17774`), so no stream split.
+  Six draws per puff (`Dust.cs:170-190`: the 5×5-clamped offsets, two
+  velocity rolls, the frame row, the scale roll; type 31 is in no tweak
+  arm). `gores_phase` hands `App.dust` + `spawn_ctx()` in.
+* ~~`Gore.Width/Height` read the 1f fallback~~ — **WIRED (W4-g68
+  deferred-3).** `GorePool::set_texture_sizes` injects the packed
+  `Gore_<id>` sheet sizes (`App::new` feeds `Lookups.gore_sheets`);
+  `width()/height()` = `scale × (tex/count − 2px padding on multi-cell
+  axes)` (`Gore.cs:44-66` + `SpriteFrame.cs:72-77` — the render-side
+  `source_rect` math was verified 1:1 and now shares
+  `SpriteFrame::source_size`), `aabb_rectangle` truncates the scaled
+  product; absent ids keep the C# unloaded fallbacks. The falling-leaf
+  liquid probe (`:1180`) centres on the sheet half-size. STILL DROPPED:
+  the spawn-time position-adjust arms (`:1384-1388`, `:1407-1420`,
+  `:1433-1440`) — they shift spawn geometry AND roll extra randoms, so
+  their wiring is a separate A/B'd step (the module doc records it).
+* **The remaining tile-draw emission arms (W4-g68 deferred-4 census).**
+  The `:7779-7891` region is exactly `EmitTreeLeaves` — no flower-petal
+  or vine-drip arm hides there. The full `TileDrawing` emission census:
+  the lantern petals / herb blooms / chimney smoke / star clouds /
+  pumpkin tiers / torch smoke / rubble gate are d60's
+  `tile_draw_particles.rs` (unwired, claimed); the danger/spelunker/
+  biome-sight vision dust (`:911-962`, `:8481-8552`) is d56's
+  `animated_tiles.rs` (claimed); the special-point collection is g30's
+  `special_points.rs` (unwired, records `liquid_drop_cells`). The ONE
+  unclaimed body was `EmitLiquidDrops` (`:7594-7674`, the vine-tip /
+  stalactite / shimmer-candle drips, called from the `Draw` switch
+  `:688-694` then `continue`) — now ported UNWIRED as
+  `foliage.rs::emit_liquid_drops`: the wet-tile refusal precedes the
+  `Next(num*2)` gate (60/120/180 by kind 373/374/375+461), the
+  anti-cluster box (x−34..+50, y−100..+300) scans the 600 slots for live
+  `IsDrip` gores, the water-style pick (13/14→706, 12→1147, >1→705+style)
+  then the kind overrides (374→716, 375→717, 709→1383, 461→943 with the
+  corrupt/crimson/hallow tints 1160/1161/1162, LAST zone wins), and the
+  `NewGore` + `velocity *= 0` tail on `Main.rand`. The wiring wave feeds
+  it g30's recorded cells on the reconciled cadence above.
 * The desert debris (`Sandstorm.EmitDust`, `sand.rs`) already landed with
   S1-E-1/E-3; W4-g68 adds the wind-coupling witness (the
   `sign(wind)*Lerp(0.9,1,|wind|)` drift, the `num13*20` push, the
   severity scales, the dead-calm refusal) — no behaviour change.
 
-Verification: 17 witness tests WRITTEN NOT RUN (no cargo/rustc invoked) —
-`render/foliage.rs` 8 (the dead-wind double shed, the sideways miss, the
+Verification: 23 witness tests WRITTEN NOT RUN (no cargo/rustc invoked) —
+`render/foliage.rs` 11 (the dead-wind double shed, the sideways miss, the
 two-open-cell gate, the −10 left shift, the paint column, the liquid
 refusal, the two-stream census with the gate-stream step pin, the paused
-gate), `tr-core/gore.rs` 8 (the π/180 sway + wind*4 surface term, the
-underground drop, the collision rest switch, the water drift ×0.94 +
-underground zero, honey freeze, lava burn-up, the open-ground resume
-0.1/0/α+20 (then the same-tick fade point → 21), the 600+255 fade), `sand.rs` 1 (the wind recipe bounds).
+gate, + the 3 drip witnesses: the 706 vine drip with the 15-row/3×-life
+sheet, the kind/water-style/shimmer-zone type overrides, the wet refusal
++ anti-cluster box), `tr-core/gore.rs` 11 (the π/180 sway + wind*4 surface
+term, the underground drop, the collision rest switch, the water drift
+×0.94 + underground zero, honey freeze, lava burn-up, the open-ground
+resume 0.1/0/α+20 (then the same-tick fade point → 21), the 600+255 fade,
++ the lava five-puff seam census (30 stream draws, the 5×5 clamp, the
+−0.2 Y kick), the packed-sheet Width/Height/AABB math, the sheet-half
+fall probe), `sand.rs` 1 (the wind recipe bounds).
