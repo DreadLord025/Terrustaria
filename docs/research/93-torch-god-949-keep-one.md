@@ -1,6 +1,10 @@
 # 93 — The 949 Torch God duplicate: W4-f33 vs W4-d19 keep-one recommendation
 
 **Status:** recommendation (code-only wave; no cargo/tests invoked).
+**Closeout addendum:** `93-torch-god-fold-input-addendum.md` — the
+d19b-tip (`1054c396`) exact drop-hunks supersede this note's `a4185f89`
+line numbers; it also carries the persist fold-input, the c36
+achievement-chain verification and the music-101 census.
 **Branches compared:** `task/W4-f33-torch-god-favor` @ `333479e0` (the
 `projectile_ai_torch_god.rs` arm, commits `ce076c9f` + `333479e0`) vs
 `origin/task/W4-d19-proj-ai-181-190` @ `a4185f89` (the
