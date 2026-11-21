@@ -1234,3 +1234,68 @@ mod s1_p_i09_yoyo_snapshot_tests {
         assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
     }
 }
+
+/// W4-d15 seam witnesses — the DD2 write drain (`take_dd2_writes`, the
+/// `AI_142` arm's `player.heldProj = whoAmI` `Projectile.cs:69822` +
+/// `player.reuseDelay = 2` `:69966`) and the per-tick `heldProj = -1`
+/// reset (`Player.cs:24376`). WRITTEN NOT RUN (code-only round).
+#[cfg(test)]
+mod w4_d15_dd2_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::MONK_STAFF_T2;
+
+    /// One live 699 swing owned by the local player, inside the 8×8-tile
+    /// fixture world; `swing_ticks` arms the owner's `itemAnimation` the
+    /// snapshot derives (`(app.swing * 60).round()`).
+    fn swing_app(swing_ticks: i32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let p = crate::player::Player::spawn(&app.world);
+        app.player = Some(p);
+        app.swing = swing_ticks as f32 / 60.0;
+        app.swing_max = 27.0 / 60.0;
+        app.projectiles.spawn_with_data_ai_owned(
+            MONK_STAFF_T2, 0, 32.0, 32.0, 12.0, 0.0, 45, 7.0, 0.0, 0.0,
+        );
+        app
+    }
+
+    /// The animation-end tick (`itemAnimation <= 2`, `:69963-69967`): the
+    /// arm kills, claims `heldProj` (the claim precedes the kill,
+    /// `:69822`) and queues `reuseDelay = 2`; the drain writes BOTH onto
+    /// the player/app (the port's reuse timer runs in seconds).
+    #[test]
+    fn the_animation_end_drains_the_claim_and_the_two_tick_reuse() {
+        let mut app = swing_app(2);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert!(!app.projectiles.slots()[0].active, ":69965 kills");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.held_proj, 0, ":69822 — the slot index reaches the Player");
+        assert_eq!(app.reuse_delay, 2.0 / 60.0, ":69966 — 2 ticks in seconds");
+    }
+
+    /// A mid-swing tick (`itemAnimation > 2`): the claim drains every tick
+    /// the swing lives, but NO reuse delay is queued (`:69963`'s gate).
+    #[test]
+    fn the_mid_swing_claim_drains_without_the_reuse() {
+        let mut app = swing_app(10);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert!(app.projectiles.slots()[0].active, "the swing keeps flying");
+        assert_eq!(app.player.as_ref().unwrap().held_proj, 0, ":69822");
+        assert_eq!(app.reuse_delay, 0.0, ":69963 — no reuse mid-swing");
+    }
+
+    /// `Player.cs:24376` — the movement-defaults block resets `heldProj`
+    /// to −1 EVERY player tick, ahead of ItemCheck and the projectile
+    /// pass: a stale claim from a dead swing cannot survive a tick with
+    /// no live claimant.
+    #[test]
+    fn the_player_tick_resets_the_held_claim() {
+        let mut app = swing_app(10);
+        let w = app.world.clone();
+        let p = app.player.as_mut().unwrap();
+        p.held_proj = 7;
+        p.update(&w, crate::player::PlayerInput::default());
+        assert_eq!(p.held_proj, -1, ":24376 — the per-tick stock reset");
+    }
+}

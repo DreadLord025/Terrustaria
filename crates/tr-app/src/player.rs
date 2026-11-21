@@ -5854,6 +5854,14 @@ impl Player {
         // writes the statics `Player.jumpHeight = 15` / `jumpSpeed = 5.01f`).
         self.jump_height = 15;
         self.jump_speed = 5.01;
+        // W4-d15 seam — `Player.cs:24376`: `this.heldProj = -1` runs EVERY
+        // player tick in the movement-defaults block, BEFORE ItemCheck
+        // (`:28285`) and the projectile pass (`Main.cs:17775`). The 142
+        // swing arm re-claims it (`Projectile.cs:69822`) through the DD2
+        // write drain each tick it lives; a tick with no live claimant
+        // leaves the stock −1 (the golf helper's `:52490` claim rides the
+        // same reset).
+        self.held_proj = -1;
         // `Player.cs:24380-24437`: the wet/shimmer statics rebase — the C#
         // runs it right after the defaults and BEFORE `UpdateJumpHeight`'s
         // max-lift (`:25656`), so a wet assignment (30/6.01 water) survives
