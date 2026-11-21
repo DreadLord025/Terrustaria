@@ -656,6 +656,14 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // cages drop their cage item (:49460-49524).
         285 | 286 | 298 | 299 | 310 | 339 | 361..=364 | 391..=394 | 532 | 533 | 538 | 544 | 555
         | 556 | 582 | 619 | 629 => check_3x2(world, x, y, kind),
+        // `Check3x2`'s furniture family (`WorldGen.cs:49432-49706`, dispatch
+        // :85959-85989): the fixed-drop kinds (17/77/86/114/217/218/237/244/
+        // 377/405/486), the style-dependent kinds (89/133/215/469/695) and the
+        // altar 26 (drops nothing here — its SmashAltar ore-seeding is
+        // app-wired through break_tile). The echo piles 647/648/651, the
+        // fallen log 488 and the sandcastle 552 ride their own arms below.
+        17 | 26 | 77 | 86 | 89 | 114 | 133 | 215 | 217 | 218 | 237 | 244 | 377 | 405 | 469 | 486
+        | 695 => check_3x2(world, x, y, kind),
         // `Check6x3` (`WorldGen.cs:50242`, dispatch :86019-86026 + the
         // :85278 type-guard fall-through): the 41 cage kinds — 275-281
         // listed at the case, the rest routed by the default's
@@ -1910,6 +1918,17 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
                     broken = true;
                 }
             }
+            // :49270-49279 — the altar (26) and its replica (695):
+            // SolidTileAllowBottomSlope below, but a Boulder under the column
+            // refuses (the altar must not sit on a trap boulder).
+            26 | 695 => {
+                let boulder = world
+                    .tile(k, oy + rows)
+                    .is_some_and(|b| b.active() && td::SET_BOULDERS.has(b.kind));
+                if !solid_tile_allow_bottom_slope(world, k, oy + rows) || boulder {
+                    broken = true;
+                }
+            }
             186 => {
                 if !solid_tile_allow_bottom_slope(world, k, oy + rows)
                     || invalid_tile_for_piles(world, k, oy + rows)
@@ -2025,19 +2044,169 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         285 | 286 | 298 | 299 | 310 | 339 | 361..=364 | 391..=394 | 532 | 533 | 538 | 544 | 555
             | 556 | 582 | 619 | 629
     );
-    Some(CheckPlan {
-        drop: (kind == 14 || kind == 87 || kind == 88 || cage_drop).then(|| ObjectDrop {
+    // The furniture family's fixed drops (:49432-49706) — each equals the
+    // placing item, so `item: None` resolves through `by_tile`. The altar 26
+    // drops NOTHING here (its `SmashAltar` ore-seeding is app-wired through
+    // `break_tile`, editing.rs:1303-1315); the style-dependent kinds
+    // (89/133/215/469/695) resolve in-core via [`check_3x2_furniture_drop`].
+    let furniture_fixed = matches!(
+        kind,
+        17 | 77 | 86 | 114 | 217 | 218 | 237 | 244 | 377 | 405 | 486
+    );
+    let furniture_style = matches!(kind, 89 | 133 | 215 | 469 | 695);
+    let drop = if kind == 14 || kind == 87 || kind == 88 || cage_drop || furniture_fixed {
+        Some(ObjectDrop {
             tile_kind: kind,
             x,
             y,
             item: None,
-        }),
+        })
+    } else if furniture_style {
+        Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: Some(check_3x2_furniture_drop(kind, style, frame_x)),
+        })
+    } else {
+        None
+    };
+    Some(CheckPlan {
+        drop,
         cells: killable_cells(world, &region, kind),
         pot_event: None,
         herb_event: None,
         pile_event,
         ring: Some(region_ring(&region)),
     })
+}
+
+/// The style-dependent `Check3x2` furniture drops (`WorldGen.cs:49432-49706`).
+/// `style` is the horizontal style index (`frameX / 18 / 3`); `frame_x` is the
+/// CHECKED cell's `frameX` (captured at :49416 before the kill loop — the
+/// forge 133 reads it directly). The fixed-item kinds resolve through
+/// `by_tile` instead; this helper covers the arms whose item varies by style.
+fn check_3x2_furniture_drop(kind: u16, style: i32, frame_x: i32) -> i32 {
+    match kind {
+        // :49699 — `GetItemDrop_Benches(style)` (:40169-40243).
+        89 => match style {
+            1..=20 => 2396 + style,
+            21 => 2521,
+            22 => 2527,
+            23 => 2539,
+            24 => 858,
+            25 => 2582,
+            26 => 2634,
+            27 => 2635,
+            28 => 2636,
+            29 => 2823,
+            30 => 3150,
+            31 => 3152,
+            32 => 3151,
+            33 => 3918,
+            34 => 3919,
+            35 => 3947,
+            36 => 3973,
+            37 => 4161,
+            38 => 4182,
+            39 => 4203,
+            40 => 4224,
+            41 => 4313,
+            42 => 4582,
+            43 => 4993,
+            44 => 5164,
+            45 => 5185,
+            46 => 5206,
+            47 => 5564,
+            48 => 5617,
+            49 => 5705,
+            50 => 5728,
+            51 => 5753,
+            52 => 5772,
+            53 => 5793,
+            54 => 5814,
+            55 => 5835,
+            56 => 5854,
+            57 => 5874,
+            58 => 5893,
+            59 => 5914,
+            60 => 5948,
+            61 => 5970,
+            62 => 5991,
+            63 => 6014,
+            64 => 6037,
+            65 => 6060,
+            66 => 6083,
+            67 => 6105,
+            68 => 6127,
+            _ => 335,
+        },
+        // :49701-49709 — the Adamantite/Titanium Forge by the CHECKED cell's
+        // frameX (>= 54 → Titanium 1221, else Adamantite 524).
+        133 => {
+            if frame_x >= 54 {
+                1221
+            } else {
+                524
+            }
+        }
+        // :49559 — `GetCampfireItemDrop(style)` (:50039-50074).
+        215 => match style {
+            0 => 966,
+            1..=5 => 3045 + style,
+            6 => 3723,
+            7 => 3724,
+            8..=13 => 4681 + style,
+            14 => 5299,
+            15 => 5357,
+            _ => 966,
+        },
+        // :49439 — `GetItemDrop_Tables(style, secondType: true)` (:42092-42190).
+        469 => match style {
+            0 => 3920,
+            1 => 3948,
+            2 => 3974,
+            3 => 4162,
+            4 => 4183,
+            5 => 4204,
+            6 => 4225,
+            7 => 4314,
+            8 => 4583,
+            9 => 5165,
+            10 => 5186,
+            11 => 5207,
+            12 => 5565,
+            13 => 5618,
+            14 => 5706,
+            15 => 5729,
+            16 => 5773,
+            17 => 5794,
+            18 => 5815,
+            19 => 5836,
+            20 => 5875,
+            21 => 5894,
+            22 => 5915,
+            23 => 5949,
+            24 => 5971,
+            25 => 5992,
+            26 => 6015,
+            27 => 6038,
+            28 => 6061,
+            29 => 6084,
+            30 => 6106,
+            31 => 6128,
+            _ => 3920,
+        },
+        // :49458 — the altar replica: style 0 → Demon 5467, else Crimson 5468.
+        695 => {
+            if style == 0 {
+                5467
+            } else {
+                5468
+            }
+        }
+        _ => 0,
+    }
 }
 
 /// The `Check6x3` cage-item drop table (`WorldGen.cs:50291-50454`): every
@@ -5368,5 +5537,92 @@ mod tests {
             "the platform carries the cage"
         );
         assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 285));
+    }
+
+    // ---- W4-g34: the Check3x2 furniture break-drop (research/68 §2) ----
+
+    #[test]
+    fn w4_g34_furniture_3x2_fixed_drops_sweep_and_record() {
+        // The fixed-drop furniture (`WorldGen.cs:49432-49706`): each kind
+        // sweeps all six cells and records a drop at the trigger cell with
+        // `item: None` (the app resolves the placing item via `by_tile`).
+        for kind in [17u16, 77, 86, 114, 217, 218, 237, 244, 377, 405, 486] {
+            let mut w = cage_3x2_world(kind);
+            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let cells: Vec<(i32, i32)> = (9..=11)
+                .flat_map(|x| (18..=19).map(move |y| (x, y)))
+                .collect();
+            assert_all_gone(&w, &cells);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (9, 18));
+            assert_eq!(kill.object_drops[0].item, None, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_furniture_3x2_style_drops_resolve_in_core() {
+        // The style-dependent arms resolve their item in-core: the forge 133
+        // by the checked cell's frameX (:49701-49709), the altar replica 695
+        // by style (:49458), the campfire 215 / Tables2 469 / bench 89 by
+        // their style tables.
+        // Forge style 0 (frameX 0..53) → Adamantite 524.
+        let mut w = cage_3x2_world(133);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(524));
+        // Forge style 1 (frameX 54..107) → Titanium 1221.
+        let mut w = object_world();
+        for dx in 0..3 {
+            for dy in 0..2 {
+                set_object_cell(&mut w, 9 + dx, 18 + dy, 133, (54 + dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(1221));
+        // Altar replica style 0 → Demon 5467; style 1 → Crimson 5468.
+        let mut w = cage_3x2_world(695);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(5467));
+        // Campfire style 0 → 966.
+        let mut w = cage_3x2_world(215);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(966));
+        // Tables2 style 0 → Crystal Table 3920.
+        let mut w = cage_3x2_world(469);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(3920));
+        // Bench style 0 → 335.
+        let mut w = cage_3x2_world(89);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(335));
+    }
+
+    #[test]
+    fn w4_g34_altar_3x2_sweeps_but_records_no_drop() {
+        // The altar 26 (`WorldGen.cs:49444-49449`): the cascade sweeps the
+        // cells but records NO item drop — the SmashAltar ore-seeding is
+        // app-wired through break_tile (editing.rs:1303-1315), not a drop.
+        let mut w = cage_3x2_world(26);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let cells: Vec<(i32, i32)> = (9..=11)
+            .flat_map(|x| (18..=19).map(move |y| (x, y)))
+            .collect();
+        assert_all_gone(&w, &cells);
+        assert!(kill.object_drops.is_empty(), "the altar drops nothing here");
+    }
+
+    #[test]
+    fn w4_g34_altar_3x2_refuses_a_boulder_support() {
+        // :49270-49279 — a Boulder under the altar's column refuses the
+        // support (the altar must not sit on a trap boulder): the cascade
+        // sweeps it. Without the boulder the intact altar survives.
+        let mut w = cage_3x2_world(26);
+        set_object_cell(&mut w, 10, 20, 138, 0, 0); // boulder 138 under the middle column
+        let kill = kill_tile(&mut w, 12, 20, false).unwrap();
+        assert!(
+            kill.object_drops.iter().all(|d| d.tile_kind != 26),
+            "the altar records no drop"
+        );
+        assert!(!w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 26));
     }
 }
