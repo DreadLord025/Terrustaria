@@ -806,6 +806,66 @@ fn wrench_movement(p: &mut Projectile, world: &World) {
     p.pos += p.vel;
 }
 
+/// `AI()`'s aiStyle-110 block (`Projectile.cs:34066-34109`) — the 584
+/// NurseSyringeHeal: the first-tick speed latch, the town-NPC host
+/// (`ai[0]` index) seek — die when the host is gone or not town, kill +
+/// heal on the latch-radius catch or the hitbox overlap (the heal is
+/// `min(lifeMax - life, 20)`, positive only), else the 0.04 lerp toward
+/// the host at the latched speed with the Y floor (`value.Y =
+/// max(value.Y, vel.Y)` then `++`) and the `vel.X * 0.05` spin.
+///
+/// `host` is the pool-resolved `ai[0]` NPC slot (the C#
+/// `Main.npc[(int)ai[0]]`). The `HealEffect` (`:34089`) is the combat-
+/// text visual — the heal itself (`life += num822`) is the state write;
+/// the visual is a cited skip (no combat-text layer in the pool). ZERO
+/// `Main.rand` draws.
+///
+/// Movement: 110 is not on `UpdatePosition`'s skip list (`:20435`), so
+/// the dispatch's `kill_step` integrates the seek velocity.
+pub(crate) fn ai_nurse_syringe(p: &mut Projectile, host: Option<&mut Npc>) {
+    // `:34068-34071` — the speed latch.
+    if p.local_ai[1] == 0.0 {
+        p.local_ai[1] = p.vel.length();
+    }
+    // `:34073-34108` — the town-host gate.
+    let Some(h) = host.filter(|h| h.hp > 0 && h.kind.is_town_npc_like()) else {
+        kill(p);
+        return;
+    };
+    let zero4 = crate::projectile::npc_center(h);
+    let num821 = p.local_ai[1];
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let mut value10 = zero4 - center;
+    // `:34078-34091` — the catch: the latch radius OR the hitbox overlap.
+    let (hw, hh) = h.size();
+    let overlap = p.pos.x + p.w > h.x
+        && p.pos.x < h.x + hw
+        && p.pos.y + p.h > h.y
+        && p.pos.y < h.y + hh;
+    if value10.length() < num821 || overlap {
+        kill(p);
+        let mut num822 = h.max_hp - h.hp;
+        if num822 > 20 {
+            num822 = 20;
+        }
+        if num822 > 0 {
+            h.hp += num822;
+            // `:34089`'s HealEffect: the combat-text visual, cited skip.
+        }
+    } else {
+        // `:34094-34102` — the seek: normalize to the latched speed, the
+        // Y floor + the ++, the 0.04 lerp, the spin.
+        value10 = safe_normalize(value10);
+        value10 *= num821;
+        if value10.y < p.vel.y {
+            value10.y = p.vel.y;
+        }
+        value10.y += 1.0;
+        p.vel = Vec2::lerp(p.vel, value10, 0.04);
+        p.rot += p.vel.x * 0.05;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (W4-d11 code-only round — WRITTEN NOT RUN).
 
@@ -1557,5 +1617,79 @@ mod tests {
         assert_eq!(p.ai[0], 1.0, "the return arms");
         assert!(p.net_update, ":19570");
         assert!(p.wants_sound.is_some(), "the Dig thud");
+    }
+
+    /// The 584 row (`Projectile.cs:6340-6348`).
+    #[test]
+    fn w4_d11_110_the_syringe_row_carries_its_style() {
+        let d = proj_data(584).unwrap();
+        assert_eq!((d.ai_style, d.w, d.h, d.penetrate), (110, 10.0, 10.0, 3));
+        assert_eq!(d.scale, 0.8, ":6346");
+    }
+
+    /// `:34073-34108` — a non-town / absent host kills the syringe; the
+    /// speed latch holds the launch speed.
+    #[test]
+    fn w4_d11_110_the_syringe_dies_without_a_town_host() {
+        let mut p = proj(584);
+        p.vel = Vec2::new(5.0, 0.0);
+        ai_nurse_syringe(&mut p, None);
+        assert!(!p.active, "no host -> Kill");
+        assert_eq!(p.local_ai[1], 5.0, "the speed latch ran first");
+        let mut zombie = host_npc(crate::npc::NpcKind::Zombie, 1200.0, 1000.0);
+        let mut p = proj(584);
+        ai_nurse_syringe(&mut p, Some(&mut zombie));
+        assert!(!p.active, "a non-town host -> Kill");
+    }
+
+    /// `:34078-34090` — the catch heals min(lifeMax - life, 20), positive
+    /// only; a full-health host heals nothing.
+    #[test]
+    fn w4_d11_110_the_catch_heals_up_to_twenty() {
+        let mut nurse = host_npc(crate::npc::NpcKind::Nurse, 1002.0, 1000.0);
+        nurse.max_hp = 250;
+        nurse.hp = 200; // 50 missing -> capped at 20
+        let mut p = proj(584);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.local_ai[1] = 6.0;
+        ai_nurse_syringe(&mut p, Some(&mut nurse));
+        assert!(!p.active, "the catch kills the syringe");
+        assert_eq!(nurse.hp, 220, "min(50, 20) = 20");
+        // A full-health host: no heal.
+        let mut nurse = host_npc(crate::npc::NpcKind::Nurse, 1002.0, 1000.0);
+        nurse.max_hp = 250;
+        nurse.hp = 250;
+        let mut p = proj(584);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.local_ai[1] = 6.0;
+        ai_nurse_syringe(&mut p, Some(&mut nurse));
+        assert_eq!(nurse.hp, 250, "no missing life -> no heal");
+        // A small wound heals exactly the wound.
+        let mut nurse = host_npc(crate::npc::NpcKind::Nurse, 1002.0, 1000.0);
+        nurse.max_hp = 250;
+        nurse.hp = 243; // 7 missing
+        let mut p = proj(584);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.local_ai[1] = 6.0;
+        ai_nurse_syringe(&mut p, Some(&mut nurse));
+        assert_eq!(nurse.hp, 250, "min(7, 20) = 7");
+    }
+
+    /// `:34094-34102` — the seek: the Y floor (value.Y = max(value.Y,
+    /// vel.Y)) then ++, the 0.04 lerp, the vel.X*0.05 spin.
+    #[test]
+    fn w4_d11_110_the_seek_floors_y_and_spins() {
+        let mut nurse = host_npc(crate::npc::NpcKind::Nurse, 1200.0, 1000.0);
+        let mut p = proj(584);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.local_ai[1] = 6.0;
+        p.vel = Vec2::new(6.0, 2.0); // a downward vel.Y floor
+        ai_nurse_syringe(&mut p, Some(&mut nurse));
+        assert!(p.active, "outside the latch radius");
+        // dir = (1, 0) * 6 = (6, 0); Y floor: max(0, 2) = 2, then ++ = 3.
+        // vel = lerp((6,2), (6,3), 0.04) = (6, 2.04).
+        assert!((p.vel.x - 6.0).abs() < 1e-4);
+        assert!((p.vel.y - 2.04).abs() < 1e-4, "the Y floor + ++ + lerp");
+        assert!((p.rot - 6.0 * 0.05).abs() < 1e-5, "the spin");
     }
 }

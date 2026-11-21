@@ -347,6 +347,10 @@ pub const DESERT_DJINN_CURSE: u16 = 596;
 /// aiStyle 109 (`Projectile.cs:6316-6324`: 20x20, friendly, penetrate
 /// -1, MaxUpdates 2 = extraUpdates 1). W4-d11.
 pub const MECHANIC_WRENCH: u16 = 582;
+/// `ProjectileID.NurseSyringeHeal` (584) — the Nurse's healing syringe,
+/// aiStyle 110 (`Projectile.cs:6340-6348`: 10x10, friendly, scale 0.8,
+/// penetrate 3). W4-d11.
+pub const NURSE_SYRINGE_HEAL: u16 = 584;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 /// `ProjectileID.BloodNautilusTears` (813) — the Blood Nautilus' tear
@@ -2555,6 +2559,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // MaxUpdates 2 (extraUpdates 1); the stock tileCollide.
             MECHANIC_WRENCH => {
                 (20.0, 20.0, 109, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE)
+            }
+            // W4-d11 — `Projectile.cs:6340-6348` (584, the
+            // NurseSyringeHeal): 10x10, aiStyle 110, scale 0.8,
+            // penetrate 3; the stock tileCollide.
+            NURSE_SYRINGE_HEAL => {
+                (10.0, 10.0, 110, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 0, 0.8))
             }
             // W4-d11 — `Projectile.cs:6107-6119` (536, the MedusaHeadRay):
             // 10x10, aiStyle 101, penetrate -1, tileCollide false;

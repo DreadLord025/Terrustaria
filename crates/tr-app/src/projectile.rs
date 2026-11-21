@@ -18043,6 +18043,20 @@ impl ProjectilePool {
                                 host,
                             );
                         }
+                        // W4-d11 — aiStyle 110 (`AI()` `:34066-34109`):
+                        // the 584 NurseSyringeHeal — the town-NPC host
+                        // (ai[0] index) seek + the catch heal. The host
+                        // is borrowed mutably (the heal writes life);
+                        // `kill_step` integrates the seek velocity.
+                        110 => {
+                            let host_idx = self.slots[i].ai[0] as usize;
+                            let host = npcs.get_mut(host_idx);
+                            crate::projectile_ai_101_110::ai_nurse_syringe(
+                                &mut self.slots[i],
+                                host,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
                         // W4-d11 — aiStyle 105 (`AI()` `:33512-33515` ->
                         // `AI_105_SporeSac` `:40043-40192`): the 567/568
                         // Spore Sac traps. `IndexForVisuals` is the slot
