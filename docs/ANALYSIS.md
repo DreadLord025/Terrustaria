@@ -28883,6 +28883,22 @@ canonical d34/d38 kinds through c3's style-10 axis arm (the drains) and
 keep c3's 299 row/arm, or the skull family regresses. This is the
 c3→merger hand-off: the wiring is the valuable part, the duplicate kind
 rows are the drop.
+### W4-c3 RESEARCH FINAL — the cursed-skull-family bible SEALED (2026-11-21)
+`docs/research/247-cursed-skull-family-bible.md` (number 247 per the
+research/150 registry: 151-236 consumed, the origin first-add scan at
+seal time finds 237-246 claimed, 247 the first free) closes the lane:
+the family bible (the three SetDefaults rows, the machine + drains, the
+299 bolt row/arm/debuff/census, FindFrame + GetAlpha tints + the 694
+anchor, the dungeon band's full roll table + the book-origin gate), the
+E8 drop-hunk table for the two duplicate kind rows (seal-tip line
+ranges), the **tip-re-verified merge hazards** (d34 `5f3435a87` / d38
+`ff4b8ed32` discard `Style10Out` + have no `10` axis arm; d38's
+`proj_data(299)` is None so `spawn_hostile(299)` silently fails —
+`projectile.rs:15974` `let data = proj_data(kind)?`), and the **694
+mutual receipt**: d43 grew a 694 port after 108's census (batch 13
+`0253bde90`) but its own retire doc research/244 (`6fbe06250` §2d)
+drops it onto c3 ("c3's `npc_anchor_nudge` 694 arm is the keeper — d43
+has NO 694 anchor"). 24 witnesses WRITTEN NOT RUN; no further c3 rounds.
 ## The aiStyle-14 flyer family (S1-D-3 aiStyle-14 slice, 2026-11-18, code-only mode)
 `npc_ai_style14.rs::bat_ai` ports `NPC.AI()`'s `if (this.aiStyle == 14)`
 arm (`NPC.cs:22849-23486`) with the branches the port's four style-14 kinds
