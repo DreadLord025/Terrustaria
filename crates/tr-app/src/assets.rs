@@ -1902,7 +1902,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 216] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1937,6 +1937,13 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
         // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
+        // W4-d38 crossnote — the wave's 35 packed kinds' portrait slots
+        // (research/108 §5's d38 half of the gap close), appended last so
+        // the earlier slots keep their indexes; ENTRIES order (b7..b1).
+        333, 334, 335, 336, 337, 318, 322, 323, 324, 328,
+        302, 303, 304, 316, 317, 297, 298, 299, 300, 301,
+        292, 293, 294, 295, 296, 286, 287, 289, 290, 291,
+        281, 282, 283, 284, 285,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2699,6 +2706,43 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
+                // W4-d38 crossnote — the wave's 35 strips, parallel to the
+                // BESTIARY_NPC_SHEET_IDS append above (ENTRIES order).
+                atlas.sheet("NPC_333").copied(),
+                atlas.sheet("NPC_334").copied(),
+                atlas.sheet("NPC_335").copied(),
+                atlas.sheet("NPC_336").copied(),
+                atlas.sheet("NPC_337").copied(),
+                atlas.sheet("NPC_318").copied(),
+                atlas.sheet("NPC_322").copied(),
+                atlas.sheet("NPC_323").copied(),
+                atlas.sheet("NPC_324").copied(),
+                atlas.sheet("NPC_328").copied(),
+                atlas.sheet("NPC_302").copied(),
+                atlas.sheet("NPC_303").copied(),
+                atlas.sheet("NPC_304").copied(),
+                atlas.sheet("NPC_316").copied(),
+                atlas.sheet("NPC_317").copied(),
+                atlas.sheet("NPC_297").copied(),
+                atlas.sheet("NPC_298").copied(),
+                atlas.sheet("NPC_299").copied(),
+                atlas.sheet("NPC_300").copied(),
+                atlas.sheet("NPC_301").copied(),
+                atlas.sheet("NPC_292").copied(),
+                atlas.sheet("NPC_293").copied(),
+                atlas.sheet("NPC_294").copied(),
+                atlas.sheet("NPC_295").copied(),
+                atlas.sheet("NPC_296").copied(),
+                atlas.sheet("NPC_286").copied(),
+                atlas.sheet("NPC_287").copied(),
+                atlas.sheet("NPC_289").copied(),
+                atlas.sheet("NPC_290").copied(),
+                atlas.sheet("NPC_291").copied(),
+                atlas.sheet("NPC_281").copied(),
+                atlas.sheet("NPC_282").copied(),
+                atlas.sheet("NPC_283").copied(),
+                atlas.sheet("NPC_284").copied(),
+                atlas.sheet("NPC_285").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
