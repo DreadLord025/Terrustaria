@@ -150,6 +150,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "traps" => PassMessage::Gen(34),
         // WorldGen.cs:18792 — Lang.gen[89] (Piles, W4-d104).
         "piles" => PassMessage::Gen(89),
+        // WorldGen.cs:19460 — the Spawn Point pass sets only
+        // progress.Set(1.0), no message (W4-d104): absent from the table.
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.

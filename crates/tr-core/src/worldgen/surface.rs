@@ -976,6 +976,106 @@ pub(crate) fn pass_place_fallen_log(
     }
 }
 
+// --- Spawn Point (W4-d104 pass 36) -------------------------------------------
+
+/// `WorldGen.SolidTile3` (`WorldGen.cs:70465-70483`): the skyblock
+/// spawn's floor predicate — `nactive && tileSolid && !tileSolidTop`,
+/// out-of-world (fluff 1) reads false.
+fn solid_tile3(world: &World, x: i32, y: i32) -> bool {
+    if x < 1 || y < 1 || x >= world.width - 1 || y >= world.height - 1 {
+        return false;
+    }
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && !t.inactive() && crate::tiledata::TILE_SOLID.has(t.kind) && !crate::tiledata::TILE_SOLID_TOP.has(t.kind))
+}
+
+/// The `Spawn Point` pass (`WorldGen.cs:19460-19587`, W4-d104 pass 36):
+/// the classic spawn search — the centre column ±5 jitter walk (the
+/// first active non-379 cell per column), the widening retry while the
+/// anchor sits below `worldSurface` / under liquid / near a geyser, then
+/// the ±10 widening fallback. The skyblock arm (the `SolidTile3` drop +
+/// the ±20 acceptance), the noSurface arm (the ±300×±200 valid-area
+/// search) and the SpawnOnBeach arm are the seed lanes'; the remix
+/// bottom-centre arm keeps the M5-SEED-1 shape. Replaces the compact
+/// spawn the world tail used to write.
+pub(crate) fn pass_spawn_point(
+    world: &mut World,
+    world_surface: f64,
+    flags: crate::seeds::SeedFlags,
+    rng: &mut Rng,
+) {
+    if flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        // `:19462-19478`: the skyblock drop.
+        let spawn_x = world.spawn_x;
+        let mut i = world.spawn_y;
+        let num = 20;
+        while !solid_tile3(world, spawn_x, i) && i < world.height - 1 - num {
+            i += 1;
+        }
+        while solid_tile3(world, spawn_x, i) && i > num {
+            i -= 1;
+        }
+        i += 1;
+        if (i - world.spawn_y).abs() <= num {
+            world.spawn_x = spawn_x;
+            world.spawn_y = i;
+        }
+        return;
+    }
+    // `:19481-19573`: the classic search (the noSurface + SpawnOnBeach
+    // arms are the seed lanes').
+    let mut num2 = 5;
+    let mut flag = true;
+    let num3 = world.width / 2;
+    while flag {
+        let num11 = num3 + rng.range(-num2, num2 + 1);
+        for j in 0..world.height {
+            if world.tile(num11, j).is_some_and(|t| t.active() && t.kind != 379) {
+                world.spawn_x = num11;
+                world.spawn_y = j;
+                break;
+            }
+        }
+        flag = false;
+        num2 += 1;
+        if world.spawn_y as f64 > world_surface {
+            flag = true;
+        }
+        if world.tile(world.spawn_x, world.spawn_y - 1).is_some_and(|t| t.liquid > 0)
+            || world.tile(world.spawn_x, world.spawn_y - 2).is_some_and(|t| t.liquid > 0)
+            || world.tile(world.spawn_x, world.spawn_y - 3).is_some_and(|t| t.liquid > 0)
+        {
+            flag = true;
+        }
+        if super::traps::is_tile_nearby(world, world.spawn_x, world.spawn_y, 379, 10) {
+            flag = true;
+        }
+    }
+    // `:19559-19573`: the widening fallback.
+    let mut num12 = 10;
+    while world.spawn_y as f64 > world_surface {
+        let num13 = rng.range(num3 - num12, num3 + num12);
+        for k in 0..world.height {
+            if world.tile(num13, k).is_some_and(|t| t.active() && t.kind != 379) {
+                world.spawn_x = num13;
+                world.spawn_y = k;
+                break;
+            }
+        }
+        num12 += 1;
+    }
+    // `:19574-19584`: the remix bottom-centre arm (M5-SEED-1's shape).
+    if flags.contains(crate::seeds::SeedFlags::REMIX) {
+        world.spawn_x = world.width / 2;
+        let mut num14 = world.height - 10;
+        while num14 > 0 && world.tile(world.spawn_x, num14).is_some_and(|t| t.active()) {
+            num14 -= 1;
+        }
+        world.spawn_y = (num14 + 1).max(1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1063,6 +1163,33 @@ mod tests {
             a.tiles.iter().any(|t| t.active() && (t.kind == 7 || t.kind == 166)),
             "an ore vein landed"
         );
+    }
+
+    /// W4-d104 pass 36: the spawn search seats the anchor on the first
+    /// active surface cell near the centre, and two same-stream runs
+    /// replay byte-equal (a == b).
+    #[test]
+    fn w4_d104_36_the_spawn_seats_on_the_surface() {
+        let build = || {
+            let mut w = World::new("sp".into(), 900, 600);
+            for x in 0..w.width {
+                for y in 200..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = 1;
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            w.world_surface = 250.0;
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        let flags = crate::seeds::SeedFlags::default();
+        pass_spawn_point(&mut a, 250.0, flags, &mut crate::worldgen::noise::Rng(42));
+        pass_spawn_point(&mut b, 250.0, flags, &mut crate::worldgen::noise::Rng(42));
+        assert_eq!((a.spawn_x, a.spawn_y), (b.spawn_x, b.spawn_y), "a == b");
+        assert_eq!(a.spawn_y, 200, "the first active cell");
+        assert!((a.spawn_x - 450).abs() <= 6, "near the centre: {}", a.spawn_x);
     }
 
     /// W4-d104 pass 33: the log lands on the grass triplet and two

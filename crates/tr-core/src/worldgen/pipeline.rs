@@ -1447,6 +1447,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (`:18657`), before Spawn Point (`:19460`) — W4-d104 pass 35. The
     // seven scatters draw on the fresh `pass_rng("Piles")` stream.
     step!("piles", "Piles", step_piles),
+    // The vanilla Spawn Point slot (`WorldGen.cs:19460`): after Piles
+    // (`:18788`), before Grass Wall (`:19589`, lane 5) — W4-d104 pass 36.
+    // The spawn search draws on the fresh `pass_rng("Spawn Point")`
+    // stream; the world tail keeps only the moon/hell draws.
+    step!("spawn point", "Spawn Point", step_spawn_point),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2878,6 +2883,26 @@ fn step_piles(
     structures::pass_piles(world, world_surface, rock_layer, &mut streams.pass_rng("Piles"));
 }
 
+/// The `Spawn Point` pass (`WorldGen.cs:19460-19587`, W4-d104 pass 36):
+/// the spawn search on the fresh `pass_rng("Spawn Point")` stream. The
+/// pass has no skyblock deny gate — the skyblock arm is its own branch.
+fn step_spawn_point(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    surface::pass_spawn_point(
+        world,
+        world_surface,
+        opts.flags,
+        &mut streams.pass_rng("Spawn Point"),
+    );
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3002,39 +3027,17 @@ fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
     // Not a vanilla pass — the generate() tail writes plus the final two rng
     // draws. They MUST stay the last rng-consuming step
-    // (`worldgen_rolls_hell_back_style` pins the order).
+    // (`worldgen_rolls_hell_back_style` pins the order). The spawn moved
+    // to its own `Spawn Point` step (W4-d104 pass 36).
     let layers = gv.layers();
-    let map = gv.map();
     world.world_surface = layers.world_surface;
     world.rock_layer = layers.rock_layer;
-    // `WorldGen.cs:19574-19584`'s remix spawn arm (M5-SEED-1): the bottom
-    // centre of the map instead of the surface anchor — the first air cell
-    // scanning up from `maxTilesY - 10` at the centre column.
-    let remix_spawn = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
-        let x = world.width / 2;
-        let mut y = world.height - 10;
-        while y > 0 && world.tile(x, y).is_some_and(|t| t.active()) {
-            y -= 1;
-        }
-        Some((x, (y + 1).max(1)))
-    } else {
-        None
-    };
-    let (spawn_x, spawn_y) = match remix_spawn {
-        Some((x, y)) => (x, y),
-        None => (
-            map.spawn_center,
-            (map.heights[map.spawn_center as usize] - 6).max(1),
-        ),
-    };
-    world.spawn_x = spawn_x;
-    world.spawn_y = spawn_y;
     world.time = 27000.0; // noon
     world.day_time = true;
     // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
@@ -3742,7 +3745,8 @@ mod tests {
         assert_eq!(pos("surface ore and stone") + 1, pos("place fallen log"));
         assert_eq!(pos("place fallen log") + 1, pos("traps"));
         assert_eq!(pos("traps") + 1, pos("piles"));
-        assert!(pos("piles") < pos("trees"));
+        assert_eq!(pos("piles") + 1, pos("spawn point"));
+        assert!(pos("spawn point") < pos("trees"));
         assert!(pos("floating islands") < pos("floating island houses"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()

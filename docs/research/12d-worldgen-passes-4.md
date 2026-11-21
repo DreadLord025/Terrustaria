@@ -80,7 +80,8 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 | 32 Surface Ore and Stone | 19bc132b | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
 | 33 Place Fallen Log | 2fdc8b96 | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
 | 34 Traps | 7c768356 (+341f4280 witness fix) | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
-| 35 Piles | (this commit) | landed (code-only; both pins stale-by-design; re-pin deferred) |
+| 35 Piles | dc92d139 | landed (code-only; both pins stale-by-design; re-pin deferred) |
+| 36 Spawn Point | (this commit) | landed (code-only; pins unchanged — spawn fields unhashed, own stream) |
 
 ### Pass 28 — Floating Island Houses (landed)
 
@@ -335,6 +336,42 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   Re-pin DEFERRED; **a == b untouched** + the witness
   `w4_d104_35_the_piles_place_and_replay`.
 
+### Pass 36 — Spawn Point (landed)
+
+* **C# read in full**: the pass body `WorldGen.cs:19460-19587` — the
+  skyblock arm (the `SolidTile3` drop + the ±20 acceptance,
+  `:19462-19478`), the classic search (the centre ±5 jitter walk, the
+  first active non-379 cell, the widening retry on the
+  below-surface/liquid/geyser-nearby gates, the ±10 fallback,
+  `:19527-19573`), the remix bottom-centre arm (`:19574-19584`). The
+  noSurface valid-area search + the SpawnOnBeach arm are the seed
+  lanes'. `SolidTile3` `:70465-70483`, `IsTileNearby` (the traps copy
+  promoted `pub(crate)`).
+* **Rust**: `surface.rs::pass_spawn_point` + `solid_tile3` (+ the a==b
+  witness), `pipeline.rs` (`step_spawn_point` after `piles`; the compact
+  spawn + the remix arm LIFTED OUT of `step_world_tail` — the tail keeps
+  only the moon/hell draws), `progress.rs` (no message — the pass sets
+  only `progress.Set(1.0)`).
+* **RNG**: the search draws on the fresh `pass_rng("Spawn Point")`
+  stream; the tail's `streams.rng` moon/hell draws stay last (the
+  `worldgen_rolls_hell_back_style` order pin holds).
+* **Hash doc**: BOTH pins UNCHANGED by this pass (the spawn fields are
+  not hashed; the search draws on its own stream). **a == b untouched**
+  + the witness `w4_d104_36_the_spawn_seats_on_the_surface`.
+
+## Lane result
+
+All nine rows executed: `EXECUTED_PIPELINE` grows by 9 steps (the
+islands pass's inline house build retired into pass 28, the compact
+spawn lifted into pass 36). The unexecuted classic census drops by 9
+(the sibling lanes own the remainder). The hash pins are stale-by-design
+where the passes move tiles (28, 29, 30, 31, 32-default, 33-default,
+34-default, 35); passes 32/33/34 keep the 512 pin via their sub-vanilla
+width guards and pass 36 moves neither pin. The merge gate re-measures
+sequentially after the sibling lanes (the S1-K-2-wave-B convention).
+The `a == b` determinism halves of both pin tests are untouched, and
+every pass carries its own positional + a==b witness.
+
 ## Status
 
 - [x] 28 Floating Island Houses
@@ -345,4 +382,4 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 - [x] 33 Place Fallen Log
 - [x] 34 Traps
 - [x] 35 Piles
-- [ ] 36 Spawn Point
+- [x] 36 Spawn Point

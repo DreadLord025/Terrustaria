@@ -298,6 +298,11 @@ mod tests {
     // fresh `pass_rng("Piles")` stream. The 512-wide pin MOVES by design
     // (the column band `Next(25, 487)` is live there) — stale, the gate
     // re-pins. The a == b halves stay untouched.
+    // W4-d104 pass 36 (2026-11-21, code-only): the `Spawn Point` pass
+    // (`WorldGen.cs:19460-19587`) lands — the spawn search replaces the
+    // compact tail anchor. The spawn fields are NOT hashed (the tile
+    // fold only), and the search draws on its own stream, so this pin is
+    // UNCHANGED by the pass. The a == b halves stay untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -379,6 +384,10 @@ mod tests {
     // moves this pin BY DESIGN — the default world's ~2500 pile decor
     // cells land across the seven scatters. Re-pin DEFERRED to the merge
     // gate; the a == b halves stay untouched.
+    // W4-d104 pass 36 (2026-11-21, code-only): the `Spawn Point` pass
+    // (above) leaves this pin UNCHANGED — the spawn fields are not
+    // hashed and the search draws on its own stream. The a == b halves
+    // stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

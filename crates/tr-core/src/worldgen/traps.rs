@@ -79,8 +79,9 @@ fn trap_can_continue(world: &World, x: i32, y: i32) -> bool {
     world.tile(x, y).map(|t| t.wall).unwrap_or(0) != 350
 }
 
-/// `WorldGen.IsTileNearby` (`WorldGen.cs:8862-8884`).
-fn is_tile_nearby(world: &World, x: i32, y: i32, kind: u16, distance: i32) -> bool {
+/// `WorldGen.IsTileNearby` (`WorldGen.cs:8862-8884`). Shared with the
+/// Spawn Point pass (W4-d104 pass 36).
+pub(crate) fn is_tile_nearby(world: &World, x: i32, y: i32, kind: u16, distance: i32) -> bool {
     let step = if kind == 235 { 3 } else { 1 };
     let mut i = x - distance;
     while i <= x + distance {
