@@ -1955,6 +1955,13 @@ pub struct Player {
     /// arm, `Player.cs:23257`: `PlaySound(23)` — unpositioned). A bare flag:
     /// the case draws nothing, the drain plays `Drown` on no stream.
     pending_drown_sound: bool,
+    /// W4-e10 — the full-bar mana trigger (`Player.UpdateManaRegen`'s
+    /// last-point arm, `Player.cs:19550-19559`: `PlaySound(25)` —
+    /// UNPOSITIONED, case 25 no draws — then 5 type-45 dust with the
+    /// `Next(20, 26) * 0.1` scale rolls). A bare flag: the drain plays
+    /// `MaxMana` and spawns the dust on `UpdatePlayers` (the
+    /// `pending_drown_sound` convention).
+    pending_mana_full: bool,
     /// S1-E-21f — the wing-flap latch `Player.flapSound` (`Player.cs:1128`):
     /// the `wingFrame == 3` edge plays `SoundID.Item32` once (`:26848-26852`),
     /// the off-frame clears it (`:26856`). The port's flap cadence is the
@@ -3012,6 +3019,7 @@ impl Player {
             pending_splash_sound: None,
             wet_count: 0,
             pending_drown_sound: false,
+            pending_mana_full: false,
             flap_sound: false,
             wing_frame: 0,
             wing_frame_counter: 0,
@@ -3514,6 +3522,13 @@ impl Player {
         std::mem::take(&mut self.pending_drown_sound)
     }
 
+    /// W4-e10 — takes the full-bar mana flag (`Player.cs:19552`,
+    /// `PlaySound(25)` — unpositioned, no draws; the 5-dust burst rides
+    /// the drain's `UpdatePlayers` stream).
+    pub(crate) fn take_mana_full(&mut self) -> bool {
+        std::mem::take(&mut self.pending_mana_full)
+    }
+
     /// S1-E-21f — takes the wing-flap `SoundID.Item32` play
     /// (`Player.cs:26850`) — `(style_index, position.X, position.Y)`.
     pub(crate) fn take_flap_sound(&mut self) -> Option<(u16, f32, f32)> {
@@ -3915,6 +3930,7 @@ impl Player {
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
+        self.pending_mana_full = false;
         self.pending_flap_sound = None;
         self.pending_rocket_sound = None;
         self.pending_wing_rocket_sound = None;
@@ -11663,14 +11679,19 @@ impl Player {
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
-            update_mana_regen(
+            if update_mana_regen(
                 &mut self.regen,
                 &in_,
                 &mut self.mana,
                 crate::regen::ManaRegenFlags {
                     item_in_use: self.mana_regen_item_in_use,
                 },
-            );
+            ) {
+                // W4-e10 — `Player.cs:19550-19559`: the last-point chunk
+                // queues the full-bar chime + dust (the drain owns the
+                // audio device and the UpdatePlayers stream).
+                self.pending_mana_full = true;
+            }
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in

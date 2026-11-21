@@ -1589,6 +1589,44 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if p.take_drown_sound() {
                 app.audio.play_drown_sound();
             }
+            // W4-e10 — the full-bar mana trigger (`Player.cs:19550-19559`,
+            // `UpdateManaRegen` at `:25995` — after the drown check, before
+            // the wing/splash blocks): the unpositioned case-25 chime (no
+            // draws), then 5 type-45 dust over the player's box — alpha
+            // 255, `default` colour, the scale `Next(20, 26) * 0.1` draw
+            // BEFORE each `NewDust`'s internals, noLight + noGravity,
+            // velocity halved. All on `UpdatePlayers` (`Main.cs:17754`).
+            if p.take_mana_full() {
+                app.audio.play_max_mana_sound();
+                let (pos, w, h) = (glam::Vec2::new(p.x, p.y), crate::player::WIDTH as i32, p.height as i32);
+                for _ in 0..5 {
+                    let scale = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(20, 26) as f32
+                        * 0.1;
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        pos,
+                        w,
+                        h,
+                        45,
+                        0.0,
+                        0.0,
+                        255,
+                        tr_core::particles::Color::default(),
+                        scale,
+                    );
+                    if idx != tr_core::particles::DUST_SENTINEL {
+                        let d = app.dust.slot_mut(idx);
+                        d.no_light = true;
+                        d.no_gravity = true;
+                        d.velocity *= 0.5;
+                    }
+                }
+            }
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.
             if let Some((idx, sx, sy)) = p.take_flap_sound() {
@@ -2747,6 +2785,79 @@ mod tests {
             }
         }
         unreachable!()
+    }
+
+    /// W4-e10 — the full-bar mana drain (`Player.cs:19550-19559`): the
+    /// last-point chunk queues the flag; the drain plays the unpositioned
+    /// case-25 chime (no draws) and spawns 5 type-45 dust — each with the
+    /// scale `Next(20, 26)` draw BEFORE `NewDust`'s six internals, all on
+    /// `UpdatePlayers`. The silent twin: no chime, but the C# dust still
+    /// spawns (the sound gate does not wrap the dust loop) — the draws
+    /// match.
+    #[test]
+    fn w4_e10_the_full_mana_bar_plays_and_sparks_draw_exact() {
+        let run = |audible: bool| {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = crate::test_world_helpers::ground();
+            let mut p = Player::spawn(&app.world);
+            // Park on the surface so the tick stands still (the regen
+            // line's standing-still double).
+            p.y = 120.0 * 16.0 - p.height;
+            p.vy = 0.0;
+            p.mana = 19;
+            p.mana_max = 20;
+            p.regen.mana_regen_count = 119;
+            p.regen.mana_regen_delay = 0.0;
+            app.camera = Vec2::new(p.x + 10.0, p.y + 20.0);
+            app.player = Some(p);
+            app.gfx_quality.max_dust_to_draw = 6000;
+            app.audio.set_listener(crate::sound::Listener {
+                camera_center: (app.camera.x, app.camera.y),
+                sound_volume: if audible { 1.0 } else { 0.0 },
+                ambient_volume: 1.0,
+                quiet_ambient_sounds: false,
+                game_menu: false,
+                generating_or_loading: false,
+                server: false,
+            });
+            let seed = 0x4655_4C4Ci32;
+            *app.rngs.stream(RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+            let mut twin = UnifiedRandom::new(seed);
+            let before = app.audio.played_count();
+            update_player(&mut app, 1.0 / 60.0);
+            let p = app.player.as_ref().unwrap();
+            assert_eq!(p.mana, 20, "the last point landed");
+            let plays = app.audio.played_count() - before;
+            assert_eq!(plays, u64::from(audible), "the chime is the only play");
+            let active: Vec<_> = (0..tr_core::particles::DUST_SENTINEL)
+                .filter(|&i| app.dust.slot(i).active && app.dust.slot(i).dust_type == 45)
+                .collect();
+            assert_eq!(active.len(), 5, "the five mana sparkles (both listeners)");
+            for &i in &active {
+                let d = app.dust.slot(i);
+                assert!(d.no_light && d.no_gravity);
+                assert_eq!(d.alpha, 255);
+            }
+            // The draw twin: per dust the scale roll, then the six
+            // internals (box 20x42, no pressure band, type 45 has no
+            // tweak/ChildSafety draws).
+            for _ in 0..5 {
+                let _ = twin.next_range(20, 26);
+                let _ = twin.next_max(16);
+                let _ = twin.next_max(38);
+                let _ = twin.next_range(-20, 21);
+                let _ = twin.next_range(-20, 21);
+                let _ = twin.next_max(3);
+                let _ = twin.next_range(-20, 21);
+            }
+            assert_eq!(
+                *app.rngs.stream(RngKey::UpdatePlayers),
+                twin,
+                "the chime is draw-free; the dust chain is exact"
+            );
+        };
+        run(true);
+        run(false);
     }
 
     #[test]
