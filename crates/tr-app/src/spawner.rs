@@ -183,6 +183,9 @@ pub struct SpawnContext<'a> {
     pub any_danger: bool,
     /// `NPC.AnyNPCs(399)`: the probe is unique.
     pub probe_exists: bool,
+    /// `NPC.AnyNPCs(87)` (`NPC.cs:1407`): a live Wyvern head blocks the
+    /// skyMob dispatch's Wyvern roll (the short-circuit skips the draw).
+    pub wyvern_exists: bool,
     /// `Spawner.skyBehindPlayer` (`NPC.cs:412`): the wall behind the
     /// player's tile is light-passing (or wall 73) — the skyMob probe
     /// arm's open-sky gate.
@@ -897,9 +900,13 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<N
 ///   constants-off (M5-SEED-1);
 /// - the skyMob dispatch (`NPC.cs:1354-1412`): the Drone arm consumes the
 ///   dispatch position (the port's invasion path short-circuits the
-///   ladder), the probe arm is verbatim (`:1399-1402`), and the Wyvern arm
-///   (`:1407-1410`) consumes its `Next(10)` and returns no spawn — the
-///   kind lands with the flyer family.
+///   ladder), the probe arm is verbatim (`:1399-1402`), the Wyvern arm
+///   (`:1407-1410`) carries its `!AnyNPCs(87) && !noWorms` short-circuit
+///   gates and consumes its `Next(10)` (the spawn rides d126's assembly),
+///   the town-slime arm (`:1415-1417`) consumes its `RollLuck(25)` draw,
+///   and the Harpy default (`:1419-1422`) is terminal — the kind lands
+///   with d34's npc-kinds lane, until then a sky candidate spawns nothing
+///   and NEVER falls through to the ground ladders (W4-g44).
 fn spawn_npc_at(
     ctx: &SpawnContext,
     rng: &mut UnifiedRandom,
@@ -972,12 +979,35 @@ fn spawn_npc_at(
         // The duplicated probe arm (`:1403-1406`, `&& this.ZoneWaterCandle`
         // appended) is dead in the source — its condition is a subset of
         // the arm above.
-        // The Wyvern arm (`:1407-1410`): the kind lands with the flyer
-        // family; the roll consumes (the vanilla's `Next(10)` here) and a
-        // hit returns no spawn.
-        if ctx.flags.hard_mode && rng.next_max(10) == 0 {
+        // The Wyvern arm (`:1407-1410`): `hardMode && !AnyNPCs(87) &&
+        // !noWorms && Next(10) == 0` — the two roster gates short-circuit
+        // BEFORE the draw (W4-g44: the old port drew unconditionally in
+        // hardmode). The spawn itself rides d126's `wyvern_family_step`
+        // assembly (the chain needs its segment pool); the dispatch
+        // consumes the roll and returns no spawn here — the recorded
+        // flyer-family deferral.
+        if ctx.flags.hard_mode && !ctx.wyvern_exists && !no_worms && rng.next_max(10) == 0 {
             return None;
         }
+        // The duplicated Wyvern arm (`:1411-1413`, `&& this.ZoneWaterCandle`
+        // appended) is dead in the source — a subset of the arm above.
+        // The town-slime-purple arm (`:1415-1417`): `!unlockedSlimePurpleSpawn
+        // && RollLuck(25) == 0 && !AnyNPCs(686)`. The unlock flag has no
+        // port source yet (reads false — the C#'s early-game state, the
+        // draw DOES run), the 686 kind lands with the town-slime family;
+        // `RollLuck` runs as the plain `Next(25)` (the luck-modifier
+        // deferral, the module note). A hit consumes and spawns nothing.
+        if rng.next_max(25) == 0 {
+            return None;
+        }
+        // The Harpy default (`:1419-1422`): `SpawnNPC(spawnTileX * 16 + 8,
+        // spawnTileY * 16, 48)` — the skyMob arm's TERMINAL else. The
+        // Harpy kind (48, aiStyle 14) lands with d34's npc-kinds-1-70
+        // lane (`4012a7f3a`, unmerged); until the merge the dispatch is
+        // terminal-None — a sky candidate NEVER falls through to the
+        // ground ladders (the old port spawned surface slimes in the
+        // sky on a dispatch miss — the C#'s else-if chain cannot).
+        return None;
     }
 
     // ---- the invasion ladder (`NPC.cs:1424-1541`, the zone chain's
@@ -2094,6 +2124,7 @@ mod tests {
             invasion_progress_frac: 0.0,
             any_danger: false,
             probe_exists: false,
+            wyvern_exists: false,
             sky_behind_player: false,
             moon_boss_cap_count: 0.0,
         }
@@ -2968,6 +2999,7 @@ mod tests {
             invasion_progress_frac: 0.0,
             any_danger: false,
             probe_exists: false,
+            wyvern_exists: false,
             sky_behind_player: false,
             moon_boss_cap_count: 0.0,
         }
@@ -3186,6 +3218,7 @@ mod tests {
                     invasion_progress_frac: 0.0,
                     any_danger: false,
                     probe_exists: false,
+            wyvern_exists: false,
                     sky_behind_player: false,
                     moon_boss_cap_count: 0.0,
                 };
@@ -3448,6 +3481,7 @@ mod tests {
             invasion_progress_frac: 0.0,
             any_danger: false,
             probe_exists: false,
+            wyvern_exists: false,
             sky_behind_player: true,
             moon_boss_cap_count: 0.0,
         }
@@ -3478,6 +3512,154 @@ mod tests {
         assert_eq!(n.kind, NpcKind::MartianProbe);
         assert_eq!((n.x, n.y), (2.0 * TILE_PX + 8.0, 80.0));
         assert_eq!(n.facing, 0, "TargetClosest resolves on the first tick");
+    }
+
+    // ---- W4-g44 islands final 4/5: the skyMob dispatch's tail arms ----
+    // (`NPC.cs:1407-1422` — the Wyvern gates, the town-slime draw, the
+    // Harpy terminal default; the height-band latch itself is pinned by
+    // `try_spawn_an_npc`'s 0.35/0.45 arms, `:980-987`).
+
+    /// The Wyvern arm's short-circuit gates (`:1407`): `!AnyNPCs(87)` and
+    /// `!noWorms` skip the `Next(10)` draw entirely — the stream tail
+    /// after a refused arm is the town-slime `Next(25)` alone, not
+    /// `Next(10)` + `Next(25)`.
+    #[test]
+    fn the_wyvern_gates_short_circuit_the_draw() {
+        let w = ground();
+        let mut c = probe_ctx(&w);
+        c.probe_exists = true; // close the probe arm — isolate the tail
+        c.flags.hard_mode = true;
+        // The reference: hardmode, no wyvern, no worms-block → the C#
+        // draws Next(10) then (on a miss) Next(25). Replay the stream.
+        for seed in 1..80u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let mut reference = UnifiedRandom::new(seed as i32);
+            // zombie_style Next(7) + the probe short-circuit draws ride
+            // both streams identically (probe_exists closes the arm but
+            // the rolls still draw — `:1399`'s condition order).
+            let n = spawn_npc_at(&c, &mut rng, 2, 5 * 16, true, false, false);
+            // Replay: zombie 7, probe mv2/mv3 (downed_martians false →
+            // both draw on a miss), then the Wyvern Next(10), then the
+            // town-slime Next(25) on a Wyvern miss.
+            reference.next_max(7);
+            let probe_hit = reference.next_max(8) == 0;
+            if !probe_hit {
+                reference.next_max(30);
+            }
+            let wyvern_hit = reference.next_max(10) == 0;
+            if !wyvern_hit {
+                reference.next_max(25);
+            }
+            assert_eq!(rng, reference, "seed {seed}: the open-gate stream tail");
+            assert!(n.is_none(), "the tail arms spawn nothing yet");
+        }
+        // A live wyvern (or the noWorms block) SKIPS the Next(10): the
+        // tail is Next(25) directly after the probe rolls.
+        for block in ["wyvern", "worms"] {
+            let mut c2 = probe_ctx(&w);
+            c2.probe_exists = true;
+            c2.flags.hard_mode = true;
+            let no_worms = block == "worms";
+            if !no_worms {
+                c2.wyvern_exists = true;
+            }
+            for seed in 1..80u64 {
+                let mut rng = UnifiedRandom::new(seed as i32);
+                let mut reference = UnifiedRandom::new(seed as i32);
+                let _ = spawn_npc_at(&c2, &mut rng, 2, 5 * 16, true, no_worms, false);
+                reference.next_max(7);
+                let probe_hit = reference.next_max(8) == 0;
+                if !probe_hit {
+                    reference.next_max(30);
+                }
+                reference.next_max(25); // the town-slime draw, no Next(10)
+                assert_eq!(rng, reference, "{block} seed {seed}: the skipped draw");
+            }
+        }
+    }
+
+    /// The Harpy default is TERMINAL (`:1419-1422`): a skyMob candidate
+    /// that misses every dispatch arm spawns nothing — it NEVER falls
+    /// through to the surface/underground ladders (the C#'s else-if
+    /// chain; the old port dropped a forest slime into the sky here).
+    #[test]
+    fn the_sky_default_never_falls_through_to_the_ground_ladders() {
+        let w = ground();
+        let mut c = probe_ctx(&w);
+        c.probe_exists = true;
+        c.flags.hard_mode = false; // the Wyvern arm closed — every miss reaches the default
+        for seed in 0..400u64 {
+            let n = spawn_npc_at(
+                &c,
+                &mut UnifiedRandom::new(seed as i32),
+                2,
+                5 * 16,
+                true,
+                false,
+                false,
+            );
+            assert!(n.is_none(), "seed {seed}: the sky default spawns nothing yet");
+        }
+        // The same world WITHOUT the skyMob latch runs the ground ladder
+        // (the control — the fallthrough the old port took).
+        let mut saw_ground = false;
+        for seed in 0..200u64 {
+            if spawn_npc_at(
+                &c,
+                &mut UnifiedRandom::new(seed as i32),
+                2,
+                5 * 16,
+                false,
+                false,
+                false,
+            )
+            .is_some()
+            {
+                saw_ground = true;
+                break;
+            }
+        }
+        assert!(saw_ground, "the unlatched candidate still runs the ground ladder");
+    }
+
+    /// The height-band latch (`FindSpawnTile` `:980-987`): a candidate
+    /// under `worldSurface * 0.35` outside the 45-55 % middle cut latches
+    /// skyMob (no ground descent — the spawn tile stays the air row);
+    /// the dispatch tail spawns nothing yet, so EVERY spawn that comes
+    /// out of this world must be a non-sky candidate riding the ground
+    /// descent (row ~400) — never an air-row spawn.
+    #[test]
+    fn the_sky_height_band_latches_without_the_ground_descent() {
+        let mut w = World::new("skyband".into(), 400, 800);
+        w.world_surface = 200.0; // 0.35 band: rows < 70; 0.45: rows < 90
+        w.rock_layer = 300.0;
+        // Ground at row 400 — far below the sky band.
+        for x in 0..400 {
+            for y in 400..800 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut c = ctx(&w, 30.0 * 16.0, true);
+        c.player_pos = (200.0 * 16.0, 30.0 * 16.0);
+        c.player_center = c.player_pos;
+        c.nearby_active_npcs = 0.0;
+        // The spawn area spans rows 0..~77 (the player at row 30) — every
+        // candidate is either a sky-band latch (j < 70 outside the middle
+        // cut) or a descender that never reaches the ground (row 400 is
+        // far below the area's bottom). The dispatch tail spawns nothing
+        // (probe closed: no golem; wyvern closed: no hardmode; the Harpy
+        // default is terminal) — so the sweep yields ZERO spawns. Before
+        // the terminal-default fix the sky candidates fell through to the
+        // day surface ladder and dropped slimes into the air.
+        for seed in 0..600u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            assert!(
+                try_spawn_an_npc(&c, &mut rng).is_none(),
+                "seed {seed}: no sky fallthrough, no ground in range"
+            );
+        }
     }
 
     #[test]

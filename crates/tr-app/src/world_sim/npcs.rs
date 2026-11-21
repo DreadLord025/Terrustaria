@@ -6746,6 +6746,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     .npcs
                     .iter()
                     .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe),
+                // `NPC.AnyNPCs(87)` (`NPC.cs:1407`): a live Wyvern head
+                // blocks the skyMob Wyvern roll (d126's assembled chains
+                // count — the head kind is the roster probe).
+                wyvern_exists: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::WyvernHead),
                 // `SetSpawnFlags`' `skyBehindPlayer` (`NPC.cs:412`): the
                 // wall behind the player's tile is light-passing (`Main.
                 // wallLight`, the spawner's `LIGHT_WALLS`) or wall 73.
@@ -7630,6 +7637,7 @@ mod tests {
                     invasion_progress_frac: 0.0,
                     any_danger: false,
                     probe_exists: false,
+                    wyvern_exists: false,
                     sky_behind_player: false,
                     moon_boss_cap_count: 0.0,
                 };
