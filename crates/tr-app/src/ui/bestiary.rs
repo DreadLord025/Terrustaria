@@ -1658,6 +1658,22 @@ fn portrait_data(
                 .unwrap_or(34.0);
             (sheet_i, h, 34.0, h, white)
         }
+        // W4-d41 — the Tomb Crawler's portrait: the single-frame NPC_513
+        // sheet (the entry's own; the segments fold onto it).
+        (NpcKind::TombCrawlerHead, _)
+        | (NpcKind::TombCrawlerBody, _)
+        | (NpcKind::TombCrawlerTail, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(22.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        // W4-d41 — the solar fragments have no bestiary entries (the
+        // catalog never shows them); the arms exist for the match's
+        // exhaustiveness — the SetDefaults box.
+        (NpcKind::SolarFlare, _) | (NpcKind::SolarGoop, _) => {
+            (sheet_i, 26.0, 26.0, 26.0, white)
+        }
     }
 }
 

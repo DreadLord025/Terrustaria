@@ -695,6 +695,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dune Splicer",
     },
+    // W4-d41 — the Tomb Crawler: ONE entry on the head's id 513 — the
+    // body/tail's draw modifiers hide them (the leinfors dictionary's
+    // `Hide = true`) and the kills credit the head (the Devourer's fold,
+    // `entry_for_npc`). The UndergroundDesert tag (`:1150`).
+    BestiaryEntryDef {
+        credit_id: "TombCrawlerHead",
+        net_id: 513,
+        kind: NpcKind::TombCrawlerHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Tomb Crawler",
+    },
+    // W4-d41 — the solar fragments (516/519) have NO bestiary entries:
+    // their draw modifiers hide them (the leinfors dictionary's
+    // `Hide = true`) and `entry_for_npc` keeps them entry-less (the
+    // `has_entry` filter skips them in the frame sweep).
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {
@@ -2381,6 +2397,9 @@ pub fn try_entry_for_npc(
         // (the leinfors dictionary's `Hide = true` — one credit for the
         // whole worm, the Devourer precedent).
         NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerHead,
+        // W4-d41 — the Tomb Crawler segments fold onto the head's entry
+        // (the leinfors dictionary's `Hide = true`).
+        NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerHead,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2470,6 +2489,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-d41 — the Dune Splicer segments ride the head's row (the
         // leinfors dictionary's `Hide = true`).
         NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerHead,
+        // W4-d41 — the Tomb Crawler segments ride the head's row (the
+        // leinfors dictionary's `Hide = true`).
+        NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerHead,
         other => other,
     };
     ENTRIES

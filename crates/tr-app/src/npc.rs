@@ -1187,6 +1187,41 @@ pub enum NpcKind {
     /// def 34, 500 HP, the rest of the 511 row. The bestiary credit
     /// folds onto 510; the draw sheet stays NPC_512. W4-d41.
     DuneSplicerTail,
+    /// `NPCID.TombCrawlerHead` (513, `NPCID.cs:11697`) — the desert
+    /// worm's head (`aiStyle 6`, `NPC.cs:14718-14734`): 22x22, dmg 18,
+    /// def 0, 60 HP, kb 0, value 130, noGravity/noTileCollide/
+    /// behindTiles, npcSlots 4, NPCHit1/NPCDeath1. The `AI_006_Worms`
+    /// chain (`NPC.cs:51229-51252`): the Next(6,10) body budget, the
+    /// 7/0.1 dig tunables (`:51682-51686`), the underground-desert
+    /// surface gate (`:51114-51117`). W4-d41.
+    TombCrawlerHead,
+    /// `NPCID.TombCrawlerBody` (514, `NPCID.cs:11699`) — the desert
+    /// worm's body (`aiStyle 6`, `NPC.cs:14735-14753`): 22x22, dmg 7,
+    /// def 12, 60 HP, kb 0, value 130, noGravity/noTileCollide/
+    /// behindTiles, netAlways/dontCountMe/npcSlots 0. The bestiary
+    /// credit folds onto 513 (the head); the draw sheet stays NPC_514.
+    /// W4-d41.
+    TombCrawlerBody,
+    /// `NPCID.TombCrawlerTail` (515, `NPCID.cs:11701`) — the desert
+    /// worm's tail (`aiStyle 6`, `NPC.cs:14754-14772`): 22x22, dmg 7,
+    /// def 14, 60 HP, the rest of the 514 row. The bestiary credit
+    /// folds onto 513; the draw sheet stays NPC_515. W4-d41.
+    TombCrawlerTail,
+    /// `NPCID.SolarFlare` (516, `NPCID.cs:11703`) — the solar pillar's
+    /// homing flare (`aiStyle 9`, `NPC.cs:15394-15408`): 26x26, dmg 100,
+    /// def 0, 1 HP, kb 0, noGravity (noTileCollide FALSE — it collides),
+    /// null sounds, alpha 0. The aiStyle-9 arm's 516 branches
+    /// (`NPC.cs:21380-21406`/`:21497-21515`): the alpha ramp, the
+    /// RotatedByRandom launch, the collide/proximity self-strike, the
+    /// 15-blend homing steer. W4-d41.
+    SolarFlare,
+    /// `NPCID.SolarGoop` (519, `NPCID.cs:11709`) — the solar pillar's
+    /// falling fragment (`aiStyle 99`, `NPC.cs:15409-15423`): 26x26,
+    /// dmg 120, def 0, 1 HP, kb 0, noGravity (noTileCollide FALSE),
+    /// null sounds, alpha 0. The aiStyle-99 arm (`NPC.cs:39927-39990`):
+    /// the 0.2 gravity to the 12 cap, the ground-strike 5-tick
+    /// HitEffect death. W4-d41.
+    SolarGoop,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1965,6 +2000,17 @@ pub struct Npc {
     /// `NPC.cs:51061`'s `SpawnStardustMark_StardustWorm`): the sim
     /// resolves the 405/402/407 pick (the 540 hop unmodelled).
     pub wants_stardust_mark: bool,
+    /// W4-d41 — the Solar Flare spawn request (`NPC.cs:39729`'s
+    /// StardustJellyfishBig ai[0]==2 arm / `:56849`'s SolarDrakomire
+    /// charge arm): `(x, y)` in world px — the sim spawns the 516
+    /// Bottom-anchored (`NPC.cs:80770`). The jellyfish's is the
+    /// centre+(0,26); the drakomire's the centre+(spriteDir*45, 8).
+    pub wants_solar_flare: Option<(f32, f32)>,
+    /// W4-d41 — the Solar Goop spawn request (`NPC.cs:39378`'s
+    /// StardustCellSmall aiStyle-95 arm): `(x, y, vx, vy)` — the sim
+    /// spawns the 519 at the truncated position with the launch
+    /// velocity (`:39379`).
+    pub wants_solar_goop: Option<(f32, f32, f32, f32)>,
     pub wants_obstruct: bool,
     pub wants_moon_leech: bool,
     pub wants_dutchman_crew: bool,
@@ -3257,6 +3303,8 @@ impl Npc {
             wants_lane_portals: None,
             wants_lane_right: false,
             wants_stardust_mark: false,
+            wants_solar_flare: None,
+            wants_solar_goop: None,
             wants_obstruct: false,
             wants_moon_leech: false,
             wants_dutchman_crew: false,
@@ -3660,6 +3708,13 @@ impl Npc {
             NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => 0.0,
+            // W4-d41 — the Tomb Crawler chain's kb 0
+            // (`NPC.cs:14731`/`:14748`/`:14767`), the solar fragments'
+            // 0 (`:15407`/`:15422`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => 0.0,
+            NpcKind::SolarFlare | NpcKind::SolarGoop => 0.0,
             _ => 0.4,
         }
     }
@@ -4062,6 +4117,13 @@ impl Npc {
             NpcKind::DuneSplicerHead => 18,
             NpcKind::DuneSplicerBody => 28,
             NpcKind::DuneSplicerTail => 34,
+            // W4-d41 — the Tomb Crawler head's defense 0
+            // (`NPC.cs:14725`), body's 12 (`:14742`), tail's 14
+            // (`:14760`); the solar fragments' 0 (`:15400`/`:15415`).
+            NpcKind::TombCrawlerHead => 0,
+            NpcKind::TombCrawlerBody => 12,
+            NpcKind::TombCrawlerTail => 14,
+            NpcKind::SolarFlare | NpcKind::SolarGoop => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4456,6 +4518,13 @@ impl Npc {
             NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => 700.0,
+            // W4-d41 — the Tomb Crawler chain's value 130
+            // (`NPC.cs:14733`/`:14750`/`:14769`); the solar fragments
+            // write no value row (the head's 0, `NPC.cs:8544`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => 130.0,
+            NpcKind::SolarFlare | NpcKind::SolarGoop => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6057,6 +6126,24 @@ impl Npc {
             NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => {}
+            // W4-d41 — the Tomb Crawler chain (513-515, aiStyle 6): the
+            // movement runs in the world sim's worm pass (the head's own
+            // Next(6,10) budget, `NPC.cs:51229-51252`, the 7/0.1 dig
+            // tunables `:51682-51686`, the underground-desert surface
+            // gate `:51114-51117`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => {}
+            // W4-d41 — the Solar Flare (516, aiStyle 9): the style axis
+            // claims style 9 (`ai_009_sphere_family`); this arm is
+            // unreachable through `update_rng` (the sphere precedent).
+            NpcKind::SolarFlare => {
+                unreachable!("aiStyle 9 rides the style axis (W4-d41)")
+            }
+            // W4-d41 — the Solar Goop (519, aiStyle 99): the falling
+            // fragment's gravity + ground-strike death
+            // (`NPC.cs:39927-39990`).
+            NpcKind::SolarGoop => self.update_solar_goop(world, player),
             // W4-d41 — the salamanders (498-506, aiStyle 3): the
             // `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
             // 498-506 terms) — the 70-tick cadence, the 7-speed spit 572
@@ -6236,7 +6323,7 @@ impl Npc {
             NpcKind::StardustSpiderBig => self.update_stardust_spider_big(world, player, rng),
             NpcKind::StardustSpiderSmall => self.update_stardust_spider_small(world, player, rng),
             NpcKind::StardustSoldier => self.update_stardust_soldier(world, player, rng),
-            NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player),
+            NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player, rng),
             // The drakomire's rider: aiStyle 75 rides the style axis
             // (S1-D-3-wire-saucer) — this arm is unreachable.
             NpcKind::SolarDrakomireRider => {
@@ -7641,6 +7728,45 @@ impl Npc {
             NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => {
+                self.frame = 0;
+            }
+            // W4-d41 — `case 516` (`NPC.cs:70740-70757`): the Solar
+            // Flare's one-shot random row pick + the 3-tick counter over
+            // the 4-row strip. The C# draws `Main.rand.Next(3)` twice on
+            // the localAI[1] latch; `find_frame` has no rng param, so the
+            // hash stand-in gives the same 0..2 jitter (the MoonLordHead
+            // precedent, `npc.rs:8085`).
+            NpcKind::SolarFlare => {
+                if self.local_ai[1] == 0.0 {
+                    self.local_ai[1] = 1.0;
+                    let h = (self.uid as i32)
+                        .wrapping_mul(0x9E37_79B1u32 as i32)
+                        .wrapping_add((self.frame_counter as i32).wrapping_mul(0x85EB_CA6Bu32 as i32));
+                    self.frame = ((h >> 24) & 0x3) as u32 % 3;
+                    self.frame_counter += (((h >> 20) & 0x3) as u32 % 3) as f32;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter > 3.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame > 3 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d41 — the Solar Goop has NO `FindFrame` case
+            // (`NPC.cs:66684-77370` has no `case 519`;
+            // `Main.npcFrameCount[519]` = 1) — the single frame never
+            // advances.
+            NpcKind::SolarGoop => {
+                self.frame = 0;
+            }
+            // W4-d41 — the Tomb Crawler chain has NO `FindFrame` case
+            // (`Main.npcFrameCount[513..515]` = 1) — the single frame
+            // never advances (the worm-segment precedent).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => {
                 self.frame = 0;
             }
             // W4-d41 — `case 494 : case 495` (`NPC.cs:69657-69733`): the
@@ -12265,6 +12391,68 @@ impl Npc {
         self.integrate_flyer_collision(world);
     }
 
+    /// W4-d41 — `NPC.AI()`'s aiStyle-99 block (`NPC.cs:39927-39990`) for
+    /// the SolarGoop (519): the falling fragment. The 0.2 gravity to the
+    /// 12 cap, the velocity-aim rotation (`ToRotation - π/2`), the
+    /// ground-strike latch (ai[0] 0 → 1 on the first vy==0 tick) and the
+    /// 5-tick HitEffect death. The dust arms (`:39958-39989`) are the
+    /// documented skip (the port's NPC-side dust feed). The
+    /// `noTileCollide = false` row (`NPC.cs:15420`) means the fragment
+    /// collides — the integration is the axis-separated tile move.
+    fn update_solar_goop(&mut self, world: &World, _player: &Player) {
+        // `:39929-39935` — the ground-strike latch.
+        if self.vy == 0.0 && self.ai[0] == 0.0 {
+            self.ai[0] = 1.0;
+            self.ai[1] = 0.0;
+            self.net_update = true;
+            return;
+        }
+        // `:39936-39947` — the strike: freeze, rewind, the 5-tick death.
+        if self.ai[0] == 1.0 {
+            self.vx = 0.0;
+            self.vy = 0.0;
+            self.x = self.old_x;
+            self.y = self.old_y;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 5.0 {
+                // `HitEffect(0, 9999.0)` + `active = false` — the port's
+                // hp = 0 (the death pass owns the dust/gore).
+                self.hp = 0;
+            }
+            return;
+        }
+        // `:39948-39953` — the gravity + the rotation.
+        self.vy = (self.vy + 0.2).min(12.0);
+        self.rotation = self.vy.atan2(self.vx) - std::f32::consts::FRAC_PI_2;
+        // The tile collision (`noTileCollide = false`): the blocked axes
+        // zero the velocity and latch collideX/Y (the ground-strike
+        // reads vy == 0 next tick).
+        let (w, h) = self.size();
+        self.old_x = self.x;
+        self.old_y = self.y;
+        let nx = self.x + self.vx;
+        self.collide_x = crate::player::collides_rect(world, nx, self.y, w, h);
+        if self.collide_x {
+            self.vx = 0.0;
+        } else {
+            self.x = nx;
+        }
+        let ny = self.y + self.vy;
+        self.collide_y = crate::player::collides_rect(world, self.x, ny, w, h);
+        if self.collide_y {
+            if self.vy > 0.0 {
+                let ty = ((ny + h) / TILE_PX).floor() as i32;
+                self.y = ty as f32 * TILE_PX - h;
+            } else if self.vy < 0.0 {
+                let ty = (ny / TILE_PX).floor() as i32;
+                self.y = (ty + 1) as f32 * TILE_PX;
+            }
+            self.vy = 0.0;
+        } else {
+            self.y = ny;
+        }
+    }
+
     // `update_scutlix_rider` RETIRED (S1-D-3-wire-saucer): the 390 arm is
     // the faithful `npc_ai_style75::style75_step` now (the carrier-spawn
     // latch + the ride + the four-draw fire jitter + the idle octant +
@@ -13380,7 +13568,7 @@ impl Npc {
     /// Jellyfish: the desired-velocity bands (20/40/80 px → 0.35/0.65/1.0
     /// × 5 of the 250-px-above-the-player vector), the `moveSpeed = 0.15`
     /// fly, the 70-tick 539 shot (60 damage) from the random ring.
-    fn update_stardust_jellyfish(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    fn update_stardust_jellyfish(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -13423,6 +13611,29 @@ impl Npc {
                 guard += 1;
             }
             self.wants_hostile_shot.push((539u16, cx, cy, sx, sy, 60));
+        }
+        // W4-d41 — the ai[0]==2 flare spawn (`NPC.cs:39720-39735`): the
+        // player within 300 px X + CanHit → the 0.96 brake, the ai[1]
+        // counter, the 20th tick's 516 at centre+(0,26). The sibling
+        // separation (`:39736-39747`) needs the pool — the sim's
+        // pooled path owns it (the solo path skips it).
+        if self.ai[0] == 2.0 {
+            let (w, _h) = self.size();
+            if (pcx - cx).abs() < 300.0
+                && crate::projectile::can_hit(
+                    world, self.x, self.y, w, _h, player.x, player.y,
+                    crate::player::WIDTH, player.height,
+                )
+            {
+                self.vx *= 0.96;
+                self.vy *= 0.96;
+                self.ai[1] += 1.0;
+                if self.ai[1] == 20.0 {
+                    self.wants_solar_flare = Some((cx, cy + 26.0));
+                } else if self.ai[1] >= 30.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
         }
     }
 
@@ -15108,7 +15319,7 @@ impl Npc {
     /// `AI_003_Fighters`'s SolarDrakomire arm (`NPC.cs:58214-58219`'s
     /// 4/0.1/0.95 jump assist + `:58422-58431`'s rider-hide) — the walker
     /// with the mob-specific speed, hidden while a 416 rides it.
-    fn update_solar_drakomire(&mut self, world: &World, player: &Player) {
+    fn update_solar_drakomire(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // S1-D-3p (walker migration): the shared selection at the C#
         // position (`NPC.cs:57369`); S1-D-3's 415 carrier row
         // (`NPC.cs:58214-58219`) rides the same ladder.
@@ -15128,6 +15339,40 @@ impl Npc {
         // `:58426-58430`'s hide: the mount hides while a rider links to it —
         // the vanilla's `hide` has no port field (the pre-pass owns the
         // link), so the mount stays visible.
+        // W4-d41 — the 415 flare charge (`NPC.cs:56786-56853`): the
+        // justHit 120 rest, the ai[2] countdown, the 0-tick's >6-flare
+        // cap + the facing/CanHit gate into the -1 charge, the charge's
+        // 0.8 brake + the -18/-26/-34 dust ticks, the -42 end's
+        // 180+30*Next(10) rearm + the 516 spawn at centre+(spriteDir*45,8).
+        // The flare-count cap needs the pool — the sim's pooled path owns
+        // it (the solo path spawns unconditionally, the documented fold).
+        if self.just_hit {
+            self.ai[2] = 120.0;
+            self.net_update = true;
+        }
+        if self.ai[2] > 0.0 {
+            self.ai[2] -= 1.0;
+        }
+        if self.ai[2] == 0.0 {
+            let (pcx, _pcy) = player.center();
+            let (cx, _cy) = self.center();
+            if ((pcx < cx && self.facing < 0) || (pcx > cx && self.facing > 0))
+                && crate::projectile::can_hit_line(world, cx, _cy, 0.0, 0.0, pcx, _pcy, 0.0, 0.0)
+            {
+                self.ai[2] = -1.0;
+                self.net_update = true;
+            }
+        } else if self.ai[2] < 0.0 && self.ai[2] > -42.0 {
+            self.ai[2] -= 1.0;
+            if self.ai[2] == -42.0 {
+                self.ai[2] = (180 + 30 * rng.next_max(10)) as f32;
+            }
+            self.vx *= 0.8;
+            if self.ai[2] == -42.0 {
+                let (cx, cy) = self.center();
+                self.wants_solar_flare = Some((cx + self.sprite_dir as f32 * 45.0, cy + 8.0));
+            }
+        }
     }
 
     // `update_solar_drakomire_rider` RETIRED (S1-D-3-wire-saucer): the 416
@@ -16290,6 +16535,36 @@ impl Npc {
             self.wants_hostile_shot
                 .push((ritual, pcx, pcy, 0.0, 0.0, 0));
             let _ = ritual;
+        }
+        // W4-d41 — the Solar Tower's aiStyle-94 goop spawn
+        // (`NPC.cs:39370-39382`): the ai[1] cooldown, the live target
+        // within 1080 px and above the 700-px band → the 519 at the
+        // top-band random spot with the upward launch velocity. The
+        // dust arms (`:39351-39369`) are the documented skip.
+        if self.kind == NpcKind::SolarTower {
+            if self.ai[1] > 0.0 {
+                self.ai[1] -= 1.0;
+            }
+            if self.ai[1] <= 0.0
+                && player.hp > 0
+                && !player.dead
+                && (pcx - cx).hypot(pcy - cy) < 1080.0
+                && player.y - self.y < 700.0
+            {
+                // `:39376` — the top-band spot: Top + (-w*0.33, -20) +
+                // (w*0.66, 20) * RandomVector2(0, 1).
+                let rx = rng.next_float();
+                let ry = rng.next_float();
+                let gx = self.x - w * 0.33 + w * 0.66 * rx;
+                let gy = self.y - 20.0 + 20.0 * ry;
+                // `:39377` — -UnitY rotated ±π/4, scaled 7..12.
+                let ang = rng.next_float_direction() * std::f32::consts::FRAC_PI_4;
+                let speed = 7.0 + rng.next_float() * 5.0;
+                let gvx = ang.sin() * speed;
+                let gvy = -ang.cos() * speed;
+                self.wants_solar_goop = Some((gx, gy, gvx, gvy));
+                self.ai[1] = 60.0;
+            }
         }
         let _ = rng;
     }
@@ -19293,6 +19568,14 @@ impl Npc {
             NpcKind::DuneSplicerHead => 510,
             NpcKind::DuneSplicerBody => 511,
             NpcKind::DuneSplicerTail => 512,
+            // W4-d41 — the Tomb Crawler chain + the solar fragments'
+            // vanilla type ids (the same values `to_u16` rides) — unused
+            // by every arm above, so the G6 key stays injective.
+            NpcKind::TombCrawlerHead => 513,
+            NpcKind::TombCrawlerBody => 514,
+            NpcKind::TombCrawlerTail => 515,
+            NpcKind::SolarFlare => 516,
+            NpcKind::SolarGoop => 519,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24361,7 +24644,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 288] = [
+    pub(super) const ALL_KINDS: [NpcKind; 293] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24661,6 +24944,12 @@ mod tests {
         NpcKind::DuneSplicerHead,
         NpcKind::DuneSplicerBody,
         NpcKind::DuneSplicerTail,
+        // W4-d41 — the Tomb Crawler chain + the solar fragments.
+        NpcKind::TombCrawlerHead,
+        NpcKind::TombCrawlerBody,
+        NpcKind::TombCrawlerTail,
+        NpcKind::SolarFlare,
+        NpcKind::SolarGoop,
     ];
 
     #[test]
@@ -25263,6 +25552,148 @@ mod tests {
         for n in &npcs[1..] {
             assert_eq!(n.hp, npcs[0].hp, "the segment mirrors the head's life");
         }
+    }
+
+    /// The Tomb Crawler chain's + the solar fragments' `SetDefaults` rows
+    /// (`NPC.cs:14718-14772` for 513-515, `:15394-15423` for 516/519).
+    #[test]
+    fn w4_d41_the_tomb_crawler_solar_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::TombCrawlerHead, 513u16, 22.0, 22.0, 6u8, 60, 18, 0, 130.0, 0.0f32),
+            (NpcKind::TombCrawlerBody, 514, 22.0, 22.0, 6, 60, 7, 12, 130.0, 0.0),
+            (NpcKind::TombCrawlerTail, 515, 22.0, 22.0, 6, 60, 7, 14, 130.0, 0.0),
+            (NpcKind::SolarFlare, 516, 26.0, 26.0, 9, 1, 100, 0, 0.0, 0.0),
+            (NpcKind::SolarGoop, 519, 26.0, 26.0, 99, 1, 120, 0, 0.0, 0.0),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+        }
+        // The chain draws behind tiles; the fragments do not.
+        for kind in [NpcKind::TombCrawlerHead, NpcKind::TombCrawlerBody, NpcKind::TombCrawlerTail] {
+            assert!(kind.behind_tiles(), "{kind:?} behindTiles");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        assert!(!NpcKind::SolarFlare.behind_tiles());
+        assert!(!NpcKind::SolarGoop.behind_tiles());
+        // The fragments' null sounds.
+        assert_eq!(NpcKind::SolarFlare.hit_sound(), None);
+        assert_eq!(NpcKind::SolarFlare.death_sound(), None);
+        assert_eq!(NpcKind::SolarGoop.hit_sound(), None);
+        assert_eq!(NpcKind::SolarGoop.death_sound(), None);
+        // The Confused [31] immunity rows (`NPCID.cs:8984-9031`).
+        for kind in [
+            NpcKind::TombCrawlerHead,
+            NpcKind::TombCrawlerBody,
+            NpcKind::TombCrawlerTail,
+            NpcKind::SolarFlare,
+            NpcKind::SolarGoop,
+        ] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+    }
+
+    /// The bestiary rows: the Tomb Crawler chain folds onto the head's
+    /// 513 entry; the solar fragments have NO entries (Hide=true). The
+    /// draw sheets stay the segments' own.
+    #[test]
+    fn w4_d41_the_tomb_crawler_solar_bestiary_and_sheets() {
+        let head = crate::bestiary::entry_for_npc(NpcKind::TombCrawlerHead, SlimeVariant::Blue);
+        assert_eq!(head.net_id, 513);
+        assert_eq!(head.credit_id, "TombCrawlerHead");
+        assert_eq!(head.name, "Tomb Crawler");
+        for kind in [NpcKind::TombCrawlerBody, NpcKind::TombCrawlerTail] {
+            assert_eq!(
+                crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id,
+                513,
+                "{kind:?} folds onto the head"
+            );
+        }
+        // The fragments are entry-less.
+        assert!(!crate::bestiary::has_entry(NpcKind::SolarFlare, SlimeVariant::Blue));
+        assert!(!crate::bestiary::has_entry(NpcKind::SolarGoop, SlimeVariant::Blue));
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 513-515 one, 516 four, 519 one).
+        for (kind, net, rows) in [
+            (NpcKind::TombCrawlerHead, 513u16, 1u32),
+            (NpcKind::TombCrawlerBody, 514, 1),
+            (NpcKind::TombCrawlerTail, 515, 1),
+            (NpcKind::SolarFlare, 516, 4),
+            (NpcKind::SolarGoop, 519, 1),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The Tomb Crawler chain: the head's fixed-budget spawn
+    /// (`NPC.cs:51235`, Next(6,10)), the segments' single frame, the
+    /// shared life pool, the 7/0.1 dig tunables.
+    #[test]
+    fn w4_d41_the_tomb_crawler_chain_assembles() {
+        for kind in [NpcKind::TombCrawlerHead, NpcKind::TombCrawlerBody, NpcKind::TombCrawlerTail] {
+            let mut s = bare(kind);
+            s.find_frame();
+            assert_eq!(s.frame, 0, "{kind:?} row 0");
+        }
+        assert!(NpcKind::TombCrawlerHead.is_worm());
+        assert!(NpcKind::TombCrawlerHead.is_worm_head());
+        assert!(NpcKind::TombCrawlerBody.is_worm_mid());
+        assert_eq!(NpcKind::TombCrawlerHead.worm_next(), NpcKind::TombCrawlerBody);
+        assert_eq!(NpcKind::TombCrawlerBody.worm_next(), NpcKind::TombCrawlerTail);
+        assert_eq!(NpcKind::TombCrawlerHead.worm_tunables(), (7.0, 0.1));
+        let w = ground();
+        let mut npcs = vec![Npc::new(NpcKind::TombCrawlerHead, 100.0, 100.0, 1, 0.0)];
+        npcs[0].hp = npcs[0].max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, Some((200.0, 200.0)), &mut npcs, &mut rng, &mut next_id);
+        let links = npcs.len();
+        assert!((7..=10).contains(&links), "the head + Next(6,10) links: {links}");
+        assert_eq!(npcs[links - 1].kind, NpcKind::TombCrawlerTail, "the last link is the tail");
+        for n in &npcs[1..] {
+            assert_eq!(n.hp, npcs[0].hp, "the segment mirrors the head's life");
+        }
+    }
+
+    /// The Solar Flare's aiStyle-9 arm: the alpha ramp, the launch, the
+    /// homing steer, the collide/proximity self-strike. The Solar Goop's
+    /// aiStyle-99 arm: the gravity, the ground-strike 5-tick death.
+    #[test]
+    fn w4_d41_the_solar_fragments_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 100.0 * TILE_PX;
+        // The flare: the alpha ramps +40/tick to 220.
+        let mut f = Npc::new(NpcKind::SolarFlare, 50.0 * TILE_PX, 50.0 * TILE_PX, 1, 0.0);
+        f.hp = f.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        f.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(f.alpha, 40, "the first alpha step");
+        assert_eq!(f.ai[0], 1.0, "the launch latch");
+        // The goop: the gravity + the ground-strike death.
+        let mut g = Npc::new(NpcKind::SolarGoop, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        g.hp = g.max_hp;
+        for _ in 0..200 {
+            g.update(&w, &mut player, 1.0 / 60.0);
+            if g.hp <= 0 {
+                break;
+            }
+        }
+        assert!(g.hp <= 0, "the goop dies on the ground strike");
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -28828,8 +29259,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            288,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five)"
+            293,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five)"
         );
         assert!(
             covered > 43,

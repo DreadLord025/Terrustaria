@@ -612,6 +612,14 @@ impl NpcKind {
             NpcKind::DuneSplicerHead => 510,
             NpcKind::DuneSplicerBody => 511,
             NpcKind::DuneSplicerTail => 512,
+            // W4-d41 — the Tomb Crawler chain + the solar fragments keep
+            // their vanilla ids (513-516/519 free in the wire space).
+            // `NPCID.cs:11697-11709`.
+            NpcKind::TombCrawlerHead => 513,
+            NpcKind::TombCrawlerBody => 514,
+            NpcKind::TombCrawlerTail => 515,
+            NpcKind::SolarFlare => 516,
+            NpcKind::SolarGoop => 519,
         }
     }
 
@@ -963,6 +971,12 @@ impl NpcKind {
             510 => NpcKind::DuneSplicerHead,
             511 => NpcKind::DuneSplicerBody,
             512 => NpcKind::DuneSplicerTail,
+            // W4-d41 — the Tomb Crawler chain + the solar fragments.
+            513 => NpcKind::TombCrawlerHead,
+            514 => NpcKind::TombCrawlerBody,
+            515 => NpcKind::TombCrawlerTail,
+            516 => NpcKind::SolarFlare,
+            519 => NpcKind::SolarGoop,
             _ => return None,
         })
     }
@@ -1037,6 +1051,12 @@ impl NpcKind {
                 | NpcKind::DuneSplicerHead
                 | NpcKind::DuneSplicerBody
                 | NpcKind::DuneSplicerTail
+                // W4-d41 — the Tomb Crawler chain (513-515): the head's
+                // own fixed-budget spawn (`NPC.cs:51229-51252`, the
+                // Next(6,10) roll) + the shared follower trail.
+                | NpcKind::TombCrawlerHead
+                | NpcKind::TombCrawlerBody
+                | NpcKind::TombCrawlerTail
         )
     }
 
@@ -1083,6 +1103,11 @@ impl NpcKind {
                 | NpcKind::DuneSplicerHead
                 | NpcKind::DuneSplicerBody
                 | NpcKind::DuneSplicerTail
+                // W4-d41 — the Tomb Crawler chain shares the head's life
+                // pool (`NPC.cs:51231-51232`/`:51244-51245`).
+                | NpcKind::TombCrawlerHead
+                | NpcKind::TombCrawlerBody
+                | NpcKind::TombCrawlerTail
         )
     }
 
@@ -1114,6 +1139,10 @@ impl NpcKind {
                 // shared `:51301` budget list — the init's budget match
                 // rolls Next(12,21) for it directly.
                 | NpcKind::DuneSplicerHead
+                // W4-d41 — the Tomb Crawler head (513): its own
+                // fixed-budget chain (`NPC.cs:51229-51252`), NOT the
+                // shared `:51301` budget list.
+                | NpcKind::TombCrawlerHead
         )
     }
 
@@ -1133,6 +1162,10 @@ impl NpcKind {
                 // self-chain flag is NOT used for the spawn — but the
                 // followerless-link death gate (`:51419-51433`) reads it.
                 | NpcKind::DuneSplicerBody
+                // W4-d41 — the Tomb Crawler body (514): the head's chain
+                // spawns it directly; the followerless-link death gate
+                // (`:51421-51433`) reads it.
+                | NpcKind::TombCrawlerBody
         )
     }
 
@@ -1161,6 +1194,9 @@ impl NpcKind {
             // budget holds, the last link is the tail.
             NpcKind::DuneSplicerHead => NpcKind::DuneSplicerBody,
             NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerTail,
+            // W4-d41 — the Tomb Crawler chain (`NPC.cs:51238-51242`).
+            NpcKind::TombCrawlerHead => NpcKind::TombCrawlerBody,
+            NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerTail,
             _ => NpcKind::EaterOfWorldsTail,
         }
     }
@@ -1183,6 +1219,9 @@ impl NpcKind {
             // (`:51711-51712`) reads the target's ZoneSandstorm — the
             // worm pass's ctx carries it (`worm_head_step`).
             NpcKind::DuneSplicerHead => (10.0, 0.25),
+            // W4-d41 — the Tomb Crawler head's 7/0.1
+            // (`NPC.cs:51682-51686`).
+            NpcKind::TombCrawlerHead => (7.0, 0.1),
             // The wyvern head's 11/0.25 (`:51720-51724`). The kind stays
             // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
             // precedent): the shared pass's budget chain + dig head are
@@ -1898,6 +1937,13 @@ impl NpcKind {
             NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => "NPC_Hit_1",
+            // W4-d41 — the Tomb Crawler chain's `SoundID.NPCHit1`
+            // (`NPC.cs:14727`/`:14744`/`:14761`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => "NPC_Hit_1",
+            // W4-d41 — the solar fragments write `HitSound = null`
+            // (`NPC.cs:15402`/`:15417`) — no hit sound (the null guard).
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2226,6 +2272,13 @@ impl NpcKind {
             NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => "NPC_Killed_1",
+            // W4-d41 — the Tomb Crawler chain's `SoundID.NPCDeath1`
+            // (`NPC.cs:14728`/`:14745`/`:14762`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => "NPC_Killed_1",
+            // W4-d41 — the solar fragments write `DeathSound = null`
+            // (`NPC.cs:15403`/`:15418`) — no death sound (the null guard).
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2307,6 +2360,14 @@ impl NpcKind {
             | NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => true,
+            // W4-d41 — the Tomb Crawler chain (513-515,
+            // `NPC.cs:14729`/`:14746`/`:14765`; kb 0) and the solar
+            // fragments (516/519, `:15404`/`:15419`; kb 0).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail
+            | NpcKind::SolarFlare
+            | NpcKind::SolarGoop => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
             // noGravity matters to the knockback (the leeches are resist 0).
             NpcKind::Hungry => true,
@@ -2615,6 +2676,15 @@ impl NpcKind {
             NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => 6,
+            // W4-d41 — aiStyle 6, the Tomb Crawler chain
+            // (`NPC.cs:14723`/`:14739`/`:14758`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => 6,
+            // W4-d41 — aiStyle 9, the Solar Flare (`NPC.cs:15398`).
+            NpcKind::SolarFlare => 9,
+            // W4-d41 — aiStyle 99, the Solar Goop (`NPC.cs:15413`).
+            NpcKind::SolarGoop => 99,
             // W4-d41 — aiStyle 39, the shelly pair (`NPC.cs:14682`).
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 39,
         }
@@ -3189,6 +3259,13 @@ impl NpcKind {
             NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => (34.0, 34.0),
+            // W4-d41 — the Tomb Crawler chain's 22x22 box
+            // (`NPC.cs:14721-14722`/`:14737-14738`/`:14756-14757`), the
+            // solar fragments' 26x26 (`:15396-15397`/`:15411-15412`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => (22.0, 22.0),
+            NpcKind::SolarFlare | NpcKind::SolarGoop => (26.0, 26.0),
         }
     }
 
@@ -3296,6 +3373,15 @@ impl NpcKind {
             NpcKind::GiantWalkingAntlion => 508,
             NpcKind::GiantFlyingAntlion => 509,
             NpcKind::DuneSplicerHead => 510,
+            // W4-d41 — the Tomb Crawler head keeps its own (513); the
+            // body/tail fold onto the head's bestiary net id (the
+            // worm-family precedent). The solar fragments keep their
+            // own (516/519 — Hide=true, no bestiary entry, so cs_id
+            // falls through to the sentinel unless hand-rowed; the
+            // hand rows keep the C# type gates readable).
+            NpcKind::TombCrawlerHead => 513,
+            NpcKind::SolarFlare => 516,
+            NpcKind::SolarGoop => 519,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -3446,6 +3532,11 @@ impl NpcKind {
                 | NpcKind::DuneSplicerHead
                 | NpcKind::DuneSplicerBody
                 | NpcKind::DuneSplicerTail
+                // W4-d41 — the Tomb Crawler chain's `behindTiles = true`
+                // rows (`NPC.cs:14732`/`:14749`/`:14768`).
+                | NpcKind::TombCrawlerHead
+                | NpcKind::TombCrawlerBody
+                | NpcKind::TombCrawlerTail
         )
     }
 
@@ -3889,6 +3980,13 @@ impl NpcKind {
             NpcKind::DuneSplicerHead
             | NpcKind::DuneSplicerBody
             | NpcKind::DuneSplicerTail => 500,
+            // W4-d41 — the Tomb Crawler chain's lifeMax 60
+            // (`NPC.cs:14726`/`:14743`/`:14760`), the solar fragments'
+            // 1 (`:15401`/`:15416`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => 60,
+            NpcKind::SolarFlare | NpcKind::SolarGoop => 1,
         }
     }
 
@@ -4275,6 +4373,14 @@ impl NpcKind {
             NpcKind::DuneSplicerHead => 58,
             NpcKind::DuneSplicerBody => 54,
             NpcKind::DuneSplicerTail => 50,
+            // W4-d41 — the Tomb Crawler head's damage 18
+            // (`NPC.cs:14724`), body/tail's 7 (`:14741`/`:14759`); the
+            // Solar Flare's 100 (`:15399`), the Solar Goop's 120
+            // (`:15414`).
+            NpcKind::TombCrawlerHead => 18,
+            NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => 7,
+            NpcKind::SolarFlare => 100,
+            NpcKind::SolarGoop => 120,
         }
     }
 }

@@ -3608,6 +3608,18 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d41 — the Tomb Crawler chain (aiStyle 6, noGravity/
+        // noTileCollide) + the solar fragments (516/519, noGravity): the
+        // flyers ride the hover ctor; the chain links rebuild through
+        // the worm pass.
+        crate::npc::NpcKind::TombCrawlerHead
+        | crate::npc::NpcKind::TombCrawlerBody
+        | crate::npc::NpcKind::TombCrawlerTail
+        | crate::npc::NpcKind::SolarFlare
+        | crate::npc::NpcKind::SolarGoop => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

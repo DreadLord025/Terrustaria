@@ -517,6 +517,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(SMALL_KIND_SHEETS)
             .chain(CAVERN_SHEETS)
             .chain(DESERT_SHEETS)
+            .chain(TOMB_SOLAR_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1139,6 +1140,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // entry's own id, so the head rides the fallback.)
         NpcKind::DuneSplicerBody => 511,
         NpcKind::DuneSplicerTail => 512,
+        // W4-d41 — the Tomb Crawler segments fold onto the head's
+        // bestiary entry, but their DRAW sheets are their own
+        // NPC_514/NPC_515. (513 is the entry's own id.)
+        NpcKind::TombCrawlerBody => 514,
+        NpcKind::TombCrawlerTail => 515,
         _ => kind.net_id() as u16,
     }
 }
@@ -1288,6 +1294,11 @@ pub(crate) const CAVERN_SHEETS: &[u32] = &[
 /// (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id
 /// in `NpcAssets::npc_sheets` exactly like `CAVERN_SHEETS`.
 pub(crate) const DESERT_SHEETS: &[u32] = &[508, 509, 510, 511, 512];
+
+/// W4-d41 — the Tomb Crawler chain's + the solar fragments' own sheets
+/// (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id
+/// in `NpcAssets::npc_sheets` exactly like `DESERT_SHEETS`.
+pub(crate) const TOMB_SOLAR_SHEETS: &[u32] = &[513, 514, 515, 516, 519];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3249,6 +3260,19 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-d41 — the Tomb Crawler chain + the solar fragments draw
+            // their OWN sheets (`TOMB_SOLAR_SHEETS`) at
+            // `Main.npcFrameCount` rows (`Main.cs:67082`: 513-515 one,
+            // 516 four, 519 one) with the generic centred anchor. The
+            // chain's segments rotate with the trail; the flare spins.
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail
+            | NpcKind::SolarFlare
+            | NpcKind::SolarGoop => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3358,6 +3382,15 @@ pub(crate) fn draw_npcs(
                     | NpcKind::DuneSplicerBody
                     | NpcKind::DuneSplicerTail
                     | NpcKind::GiantFlyingAntlion
+                    // W4-d41 — the Tomb Crawler chain's trail/head
+                    // rotations, the Solar Flare's spin
+                    // (`NPC.cs:21499`, `0.1 * direction`) and the Solar
+                    // Goop's velocity aim (`:39953`, `ToRotation - π/2`).
+                    | NpcKind::TombCrawlerHead
+                    | NpcKind::TombCrawlerBody
+                    | NpcKind::TombCrawlerTail
+                    | NpcKind::SolarFlare
+                    | NpcKind::SolarGoop
                     // The saucer family (`Main.cs:24586-24612`) rotates
                     // about its CENTRE (the `origin = halfSize` draw point
                     // — the quad the anchors computed sits at that centre,

@@ -514,6 +514,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::DuneSplicerHead
         | NpcKind::DuneSplicerBody
         | NpcKind::DuneSplicerTail => &[31],
+        // W4-d41 — the Tomb Crawler chain: `{ 513..515,
+        // SpecificallyImmuneTo: [31] }` (`NPCID.cs:8984-9003`); the
+        // solar fragments: `{ 516, [31] }` / `{ 519, [31] }`
+        // (`:9004-9010`/`:9025-9031`).
+        NpcKind::TombCrawlerHead
+        | NpcKind::TombCrawlerBody
+        | NpcKind::TombCrawlerTail
+        | NpcKind::SolarFlare
+        | NpcKind::SolarGoop => &[31],
     }
 }
 

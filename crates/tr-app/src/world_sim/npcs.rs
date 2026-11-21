@@ -1265,6 +1265,10 @@ fn update_worms_ctx(
                 // draw, outside the shared `:51301` budget list (the
                 // crawltipede precedent — no discarded Next(8,13)).
                 NpcKind::DuneSplicerHead => rng.next_range(12, 21) as u32,
+                // W4-d41 — the Tomb Crawler head's own fixed-budget spawn
+                // (`NPC.cs:51235`, `num19 = Main.rand.Next(6, 10)`): ONE
+                // draw, outside the shared `:51301` budget list.
+                NpcKind::TombCrawlerHead => rng.next_range(6, 10) as u32,
                 _ => {
                     // The budget roll (`NPC.cs:51303-51342`): EVERY head
                     // type in the `:51303` list rolls `ai[2] =
@@ -1682,18 +1686,22 @@ fn worm_head_step(
     let (w, h) = npc.size();
     // The surface gate (`NPC.cs:51110-51148`): `flag = true` for types
     // 10/39/95/117/510 — the ported kinds GiantWorm (10), Leech (117) and
-    // the Dune Splicer head (510). Target dead OR (flag && player above
-    // `worldSurface * 16`) → `EncourageDespawn(300)` and `velocity.Y +=
-    // 0.2` while gated. The `TargetClosest()` retarget has no seam in the
-    // single-player port (the target IS the one player) — documented.
+    // the Dune Splicer head (510). The Tomb Crawler head (513) carries
+    // `flag = !ZoneUndergroundDesert` with num10 = 0.1 (`:51114-51117`).
+    // Target dead OR (flag && player above `worldSurface * 16`) →
+    // `EncourageDespawn(300)` and `velocity.Y += num10` while gated. The
+    // `TargetClosest()` retarget has no seam in the single-player port
+    // (the target IS the one player) — documented.
+    let tomb_crawler = npc.kind == NpcKind::TombCrawlerHead;
     let surface_flag = matches!(
         npc.kind,
         NpcKind::GiantWormHead | NpcKind::LeechHead | NpcKind::DuneSplicerHead
-    );
+    ) || (tomb_crawler && !ctx.zone_underground_desert);
     if ctx.dead || (surface_flag && (ctx.py as f64) < world.world_surface * 16.0) {
         npc.encourage_despawn(300);
         if surface_flag {
-            npc.vy += 0.2; // `num10` (`:51111`; the 513's 0.1 rides its own arm)
+            // `num10` (`:51111`): 0.2 default, the 513's 0.1.
+            npc.vy += if tomb_crawler { 0.1 } else { 0.2 };
         }
     }
     // `flag3`: the dig-mode scan (`:51525-51597`). The always-fly presets
@@ -1770,6 +1778,9 @@ fn worm_head_step(
                 // W4-d41 — the Dune Splicer head (510) is on the
                 // `:51598` list.
                 | NpcKind::DuneSplicerHead
+                // W4-d41 — the Tomb Crawler head (513) is on the
+                // `:51598` list.
+                | NpcKind::TombCrawlerHead
         )
     {
         let (nx, ny) = (npc.x as i32, npc.y as i32);
@@ -6178,6 +6189,51 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
         app.npcs.extend(new_bubbles);
+    }
+    // W4-d41 — the Solar Flare / Solar Goop spawn requests
+    // (`NPC.cs:39729`/`:56849`'s 516, `:39378`'s 519): the update pass
+    // set `wants_solar_flare`/`wants_solar_goop`; this pass spawns the
+    // fragment Bottom-anchored (`NPC.cs:80770`) with the launch velocity
+    // (the goop's `:39379` write).
+    {
+        let mut new_fragments: Vec<Npc> = Vec::new();
+        let mut next = app.next_npc_uid;
+        for n in app.npcs.iter_mut() {
+            if let Some((fx, fy)) = n.wants_solar_flare.take() {
+                let (fw, fh) = NpcKind::SolarFlare.size();
+                let mut f = Npc::new(
+                    NpcKind::SolarFlare,
+                    fx as i32 as f32 - fw * 0.5,
+                    fy as i32 as f32 - fh,
+                    1,
+                    0.0,
+                );
+                f.hp = f.max_hp;
+                f.uid = next;
+                next += 1;
+                f.net_update = true;
+                new_fragments.push(f);
+            }
+            if let Some((gx, gy, gvx, gvy)) = n.wants_solar_goop.take() {
+                let (gw, gh) = NpcKind::SolarGoop.size();
+                let mut g = Npc::new(
+                    NpcKind::SolarGoop,
+                    gx as i32 as f32 - gw * 0.5,
+                    gy as i32 as f32 - gh,
+                    1,
+                    0.0,
+                );
+                g.hp = g.max_hp;
+                g.vx = gvx;
+                g.vy = gvy;
+                g.uid = next;
+                next += 1;
+                g.net_update = true;
+                new_fragments.push(g);
+            }
+        }
+        app.next_npc_uid = next;
+        app.npcs.extend(new_fragments);
     }
     // The aiStyle-75 carrier-gone Transform requests (`NPC.cs:36056-36063`:
     // 390 → 382 RayGunner, 416 → 518 SolarSpearman): `NPC.Transform`
