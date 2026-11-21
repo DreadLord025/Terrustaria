@@ -447,6 +447,27 @@ fn square_tile_frame(
             check_mushroom_tree(world, cx, cy, no_item, destroy_object, kill);
             continue;
         }
+        // `TileFrameImportant`'s `case 518` (`WorldGen.cs:84966-84968`): the
+        // lily pad's settle check (W4-g46's dispatch arm, kept through the
+        // g47 base swap — research/70 gate 2). Like the tree arms it carries
+        // no `destroyObject` guard and `return`s from `TileFrameImportant` —
+        // the pad's kills fold into the record, no plan/kill-loop machinery.
+        // The support walk reads the stock raw table (no liquid pass is
+        // running inside a `TileFrame` cascade).
+        if cell.kind == 518 {
+            if let Some(inner) = check_lily_pad(world, cx, cy, |k| {
+                (k as usize) < td::TILE_COUNT && td::TILE_SOLID.has(k)
+            }) {
+                kill.object_drops.extend(inner.object_drops);
+                kill.events.extend(inner.events);
+                kill.herb_events.extend(inner.herb_events);
+                kill.pile_events.extend(inner.pile_events);
+                kill.tree_events.extend(inner.tree_events);
+                kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
+                kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
+            }
+            continue;
+        }
         // `TileFrame`'s non-solid arm (`WorldGen.cs:81361-81374`): the cactus
         // 80 is NOT frame-important, but its `CheckCactus` runs before the
         // cosmetic framing — a cactus that lost its sand dies (and the kill
