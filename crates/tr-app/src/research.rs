@@ -84,8 +84,10 @@ pub fn research_row_context(context: i32) -> bool {
 /// difficulty-3 (Journey) character, a whitelisted context and a catalog
 /// item print `CommonItemTooltip.CreativeSacrificeNeeded` with the
 /// remaining count while unresearched, in `Colors.JourneyMode`
-/// (`Color.Lerp(HotPink, White, 0.1f)` = (255, 117, 181),
-/// `ID/Colors.cs:113`); the fully-researched duplication-grid hover
+/// (`Color.Lerp(HotPink, White, 0.1f)` = (255, 120, 187) — the byte Lerp
+/// truncates per channel: G = 105 + (byte)(150 × 0.1f) = 120, B = 180 +
+/// (byte)(75 × 0.1f) = 187, `ID/Colors.cs:113`); the fully-researched
+/// duplication-grid hover duplication-grid hover
 /// (context 29) prints `CommonItemTooltip.ItemUnlockedByTeammate` when a
 /// teammate credit exists — the credit tracker
 /// (`_unlockedByTeammate`/`TryGetTeammateUnlockCredit`) is multiplayer
@@ -105,8 +107,10 @@ pub fn research_tooltip_rows(
     let Some((have, needed)) = tracker.sacrifice_numbers(kind) else {
         return;
     };
-    // `Colors.JourneyMode` = Lerp(HotPink (255,105,180), White, 0.1).
-    let journey = [1.0, 117.0 / 255.0, 181.0 / 255.0, 1.0];
+    // `Colors.JourneyMode` = Lerp(HotPink (255,105,180), White, 0.1) —
+    // the BYTE Lerp: `(byte)(start + (byte)((end - start) * amount))`
+    // per channel (XNA `Color.Lerp`), G = 105 + 15 = 120, B = 180 + 7 = 187.
+    let journey = [1.0, 120.0 / 255.0, 187.0 / 255.0, 1.0];
     if have < needed {
         lines.push((
             crate::lang::text_args(
@@ -175,7 +179,7 @@ mod tests {
         );
         let mut t = ResearchTracker::default();
         t.register_sacrifice(8, 40); // the Torch: cap 100, 60 remaining
-        let journey = [1.0, 117.0 / 255.0, 181.0 / 255.0, 1.0];
+        let journey = [1.0, 120.0 / 255.0, 187.0 / 255.0, 1.0];
         // The whitelist: all seventeen contexts pass, the others refuse.
         for c in [0, 1, 2, 3, 4, 32, 15, 6, 22, 35, 7, 5, 29, 34, 41, 42, 43] {
             assert!(research_row_context(c), "context {c}");

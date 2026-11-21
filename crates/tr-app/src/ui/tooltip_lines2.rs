@@ -1689,7 +1689,7 @@ mod w4_f28_tests {
             .iter()
             .find(|(t, _)| t == "Research 60 more to unlock duplication")
             .expect("the research row");
-        assert_eq!(row.1, [1.0, 117.0 / 255.0, 181.0 / 255.0, 1.0]);
+        assert_eq!(row.1, [1.0, 120.0 / 255.0, 187.0 / 255.0, 1.0]);
         // No tracker (the pre-c24 default): no row.
         let ctx = TooltipContext { flags, difficulty: 3, ..Default::default() };
         let rows = item_tooltip_lines(8, def(8), ctx);

@@ -12210,7 +12210,8 @@ rapid-attack use-site — see "The 128-salvage round" below):
   `research::research_tooltip_rows` (the 17-context whitelist
   `research_row_context`, the difficulty-3 gate, the
   `CreativeSacrificeNeeded` remaining-count row in `Colors.JourneyMode`
-  (255,117,181), the context-29 `ItemUnlockedByTeammate` arm) fed by
+  (255,120,187 — the byte Lerp truncates: G 105+(byte)(150×0.1f)=120,
+  B 180+(byte)(75×0.1f)=187), the context-29 `ItemUnlockedByTeammate` arm) fed by
   `TooltipContext.difficulty`/`research`; `ResearchTracker.sacrifice_numbers`
   (the c24 accessor, `ItemsSacrificedUnlocksTracker.cs:75-86`) landed with
   them. The c24 branch's `App.research` field + `active_player_difficulty`
