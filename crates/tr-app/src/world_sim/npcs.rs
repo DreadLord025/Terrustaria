@@ -5096,11 +5096,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.world.report_frost_moon_kill(npc.kind.to_u16());
         app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
         // W4-g59 — the death DUST feed: the kind's `HitEffect` death-half
-        // burst (`npc_death_dust.rs`, batches 1-15: every dust-first clean
+        // burst (`npc_death_dust.rs`, batches 1-16: every dust-first clean
         // kind the port's kind set carries + the 24 d35 row-gated
         // activations of the DOC-SWEEP + the 23 d34/c4/d23/d37 row-gated
         // activations of batches 11-13 + the 17 g8/d120/f42 row-gated
-        // activations of batches 14-15). BEFORE the death cue: the C#
+        // activations of batches 14-15 + the 105 base-fold activation
+        // of batch 16). BEFORE the death cue: the C#
         // runs HitEffect at `:81488`, ahead of checkDead's DeathSound
         // (`:81561` → `:78186`). The draws ride the UpdateNPCs stream —
         // the S1-E-21c batched-death deviation (the death-cue precedent

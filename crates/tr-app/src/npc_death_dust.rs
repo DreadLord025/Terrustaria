@@ -1,12 +1,12 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-15 (128 wired C#
-//! match types covering 129 census kinds — the 40/41 BoneSerpent
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-16 (129 wired C#
+//! match types covering 130 census kinds — the 40/41 BoneSerpent
 //! segments ride the head's cs_id 39 via d34's Hide-fold; every
 //! dust-first clean kind the port's kind set carries, plus the 24 d35
 //! row-gated activations of the DOC-SWEEP phase (103's nested-row
 //! artifact included), the 23 d34/c4/d23/d37 row-gated activations of
-//! batches 11-13 and the 17 g8/d120/f42 row-gated activations of
-//! batches 14-15).
+//! batches 11-13, the 17 g8/d120/f42 row-gated activations of
+//! batches 14-15 and the 105 base-fold activation of batch 16).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -257,44 +257,89 @@
 //! COMPLETE: 17 kinds (g8 13 + d120 4, the Antlion 69 double-claimed
 //! by f42).
 //!
-//! ## The row-gated remainder after batches 11-13 (the census doc)
+//! ## Scope — batch 16 (the 15-base-fold head-wiring check)
 //!
-//! The 83-kind row-gated set re-intersected against EVERY pushed roster
-//! tip (d34 `5f3435a8`, d35 `7d131be3`, d37 `08f7d25c`, d38 `c096bac9`,
-//! d40 `8fe1d6d3`, d41 `4ed22f0b`, d42 `88df5809`, d36/d39/d43 claim-only,
-//! + the c4/c8/c10/e26/d23 kind-claims) yields **23 newly-rowed C# types
-//! / 21 census kinds** — ALL activated above (d34's 14 types:
-//! 31/34/37/39/40/41/43/47/48/56/57/61/62/63, the 40/41 BoneSerpent
-//! segments folding onto 39; c4's 157; d23's 175; d37's 7:
-//! 217/218/219/220/221/226/229). **60 census kinds stay row-gated
-//! UNWIRED** (the S1-F-9b convention): 15 base-present folded kinds
-//! (8/9/11/12/14/15/88-92/118/119 — their cs_id folds ride the
-//! ALREADY-wired heads 7/10/13/87/117, the arms fire through the head's
-//! match, no new activation; 105 BoundGoblin folds 107, already wired;
-//! 139 Probe folds 134, the Destroyer head UNWIRED) + 45 no-row kinds
-//! (68 DungeonGuardian / 69 Antlion + the d36 band 141/142/148/149/150/
-//! 152/153/154/155/158/159/160/163-171/173/174/176-182/185/195-199/
-//! 201-206/209 — the claim `65e481f9` is pushed but NO kind rows yet;
-//! 157/175 are c4b/d23b-claimed, activated above; 64 PinkJellyfish is
-//! NOT in the dust-first clean census — its color-only nested row is
-//! the g59_order artifact, it rides 63's arm when its row lands).
+//! The base's `entry_for_npc` folds (bestiary.rs): 8/9→7 Devourer,
+//! 11/12→10 GiantWorm, 14/15→13 EoW, 88-92→87 Wyvern, 118/119→117
+//! Leech, 105→107 GoblinTinkerer, 135/136/139→134 Destroyer. The
+//! heads 7/10/13/87/107/117 are ALL wired (batches 2/5) — the folded
+//! segments fire through the head's match, no new activation; the
+//! C# arms cover the raw segment ids with the SAME burst (`:87556`
+//! 7-9, `:87590` 10-12, `:87622` 13-15, `:88909` 87-92, `:87436`
+//! 117-119, `:87870` 105-108 — verified). 105 joins the
+//! `105 | 106 | 107 | 108` arm as the raw-id belt-and-braces. The
+//! 134 Destroyer head's death arm is NOT dust-first (gore-156 ungated
+//! + the Next(2) gate) — UNWIRED here, f5 wave D's
+//! `destroyer_death`/`probe_death` own it (keep-one at merge), so
+//! 139 stays row-gated. The fold citations land on the head arms.
+//!
+//! ## The row-gated remainder after batches 14-16 (the census doc)
+//!
+//! ACTIVATIONS-2 re-intersected the 60-kind remainder (15 base-present
+//! folds + 45 no-row) against ALL 355 pushed task refs (33 unique
+//! data/bestiary trees, the scripted cs_id hand-row + bestiary-fallback
+//! extraction): the 45-no-row set intersects g8 `82c93cec` (13 kinds),
+//! d120 `c5e68a80` (142/160/178/209) and f42 `75f055fc` (69, the
+//! double-claim with g8) — ALL 17 activated in batches 14-15. The
+//! roster tips re-read: d34 stays `5f3435a8` (no advance), d35
+//! `e5558b0a` (docs-only past `7d131be3`), d36 `0eb4fee9` (census, NO
+//! kind rows), d37 `bdd59afb` (docs past `08f7d25c`), d38 `6f9dd02d`,
+//! d40 `8fe1d6d3`, d41 `4ed22f0b` (claim), d42 `9b22c091` — the
+//! 51-kind wave NOW PUSHED (the batch-13 probe saw WIP `88df5809`),
+//! its band 578-630 intersects ∅; d33 `b08acf46` dragonflies 595-601,
+//! c9 `2042d77f` snails 359/360/655/677, f42's desert band 354-362
+//! (546/580/581/630 etc.) — ALL >230, g60's per research/110.
+//!
+//! The 15-base-fold head-wiring check (batch 16): the base's
+//! `entry_for_npc` folds 8/9→7, 11/12→10, 14/15→13, 88-92→87,
+//! 118/119→117, 105→107 — every head ALREADY wired (batches 2/5), the
+//! arms fire through the head's match, no new activation (105 added
+//! to the arm as the raw-id belt-and-braces; the C# `:87870` arm
+//! covers 105-108 with the same burst). **139 Probe folds 134 — the
+//! Destroyer head's death arm (`:89266-89323`) is NOT dust-first (the
+//! ungated gore-156 + the Next(2) gate wrap the 10×31 + 5×(6+6)
+//! burst) and stays UNWIRED in this lane**: f5 wave D `1b6a1979`
+//! ports `destroyer_death`/`probe_death` (`npc_hit_effect_d.rs`,
+//! sites 776-786) INCLUDING the dust census — the keep-one at merge
+//! (f5's dispatcher is unwired, `#![allow(dead_code)]`, the strike-
+//! path claim is their wiring wave). The 139 Probe arm (`:89210-
+//! 89244`) is the same shape (10×31 + 5 pairs + 4×Next(61,64) ARG
+//! draws). Both stay row-gated here; no double-consume.
+//!
+//! **43 census kinds stay row-gated UNWIRED** (the S1-F-9b convention):
+//! 13 base-present folds riding wired heads (8/9/11/12/14/15/88-92/
+//! 118/119 — no new activation needed; 105 activated batch 16) + 139
+//! Probe (the unwired Destroyer head, f5's keep-one) + 112 (g62's
+//! every-hit re-own) + 28 no-row kinds (68 DungeonGuardian + the d36
+//! band 141/148/149/153/154/155/159/163/166/167/168/170/171/173/176/
+//! 180/181/185/197/198/199/201-206 — d36's census `0eb4fee9` pushes
+//! NO kind rows yet).
+//! 64 PinkJellyfish is NOT in the dust-first clean census (its
+//! color-only nested `:85537` row is the g59_order artifact) — g8's
+//! row landed, it rides 63's arm shape with its own (225,70,140) tint
+//! when the merge composes; recorded, not activated here (the census
+//! exclusion stands). **129 wired match types / 130 census kinds**
+//! across 16 batches (the 40/41 fold accounts for the gap).
+//!
 //! **Boundary check (g60 research/110): every activated cs_id ≤ 229 ≤
 //! 230 — ZERO kinds > 230, the boundary stays CLEAN, nothing flags to
-//! the g60 lane.**
+//! the g60 lane.** The newly-rowed >230 siblings (f42's 546/580/581/
+//! 630, d120's 579 BartenderUnconscious, d42's 578-630 wave, d33's
+//! 595-601, c9's snails) are ALL g60's band — flagged here for the
+//! g60-lane per research/110, none activated.
 //!
 //! ## The lane's remainder (the census's absent kinds)
 //!
 //! The 173-kind dust-first clean census had 109 kinds with NO port kind
-//! row at batch 7's close (the worm segments 8/9/11/12/14/15, the casters
-//! 31/37/39-41/43, the frost/martian/dd2 families, the 195-206/209/
-//! 217-221/226/229 bands, …); the DOC-SWEEP re-census counts 107 UNWIRED
+//! row at batch 7's close; the DOC-SWEEP re-census counted 107 UNWIRED
 //! (the 66 landed C# types cover 66 of the 173). After batches 8-10, 83
-//! stayed row-gated UNWIRED; batches 11-13 activated 23 of them (the
-//! d34/c4/d23/d37 rows), leaving **60 row-gated** (the S1-F-9b row-gate
-//! convention — see the remainder section above); the census rows + arm
-//! citations live in docs/ANALYSIS.md. The 20 dust-only kinds'
-//! still-absent members (141/169/204) are the same remainder (34/63
-//! activated in batches 11/12, 75/120/122/137 above, 112 re-owned g62).
+//! stayed row-gated; batches 11-13 activated 23 (the d34/c4/d23/d37
+//! rows) leaving 60; batches 14-16 activated 17 + the 105 fold, leaving
+//! **43 row-gated** (the S1-F-9b row-gate convention — see the remainder
+//! section above); the census rows + arm citations live in
+//! docs/ANALYSIS.md. The 20 dust-only kinds' still-absent members
+//! (141/204) are the same remainder (34/63 activated in batches 11/12,
+//! 169 batch 15, 75/120/122/137 above, 112 re-owned g62).
 //!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
@@ -494,7 +539,11 @@ pub fn death_dust(
         // color stand-in is default (none of the three writes a color);
         // the alpha reads the LIVE field — the EoW's 255 spawn fade is
         // ported (the ctor row + the worm pass's `:52251-52271` tail,
-        // the DOC-SWEEP), 6/7 keep the ctor 0.
+        // the DOC-SWEEP), 6/7 keep the ctor 0. The 8/9 Devourer and
+        // 14/15 EoW Hide-fold segments ride the heads' cs_ids (the
+        // base's bestiary fold — the feed sees 7/13; the C# `:87556`/
+        // `:87622` arms cover the segments with the same burst; batch
+        // 16 records the folds).
         6 | 7 | 13 => {
             for _ in 0..50 {
                 dust.new_dust(
@@ -504,7 +553,10 @@ pub fn death_dust(
             }
         }
         // `NPC.cs:87600-87603` — the Giant Worm head: 10 type-5 puffs at
-        // 2.5×hitDirection, -2.5.
+        // 2.5×hitDirection, -2.5. The 11/12 Hide-fold segments ride the
+        // head's cs_id 10 (the base's bestiary fold — the C# `:87590`
+        // arm covers 10-12 with the same burst; batch 16 records the
+        // fold).
         10 => {
             for _ in 0..10 {
                 dust.new_dust(
@@ -672,7 +724,10 @@ pub fn death_dust(
         // `NPC.cs:88921-88932` — the Wyvern head (87): 10 type-16 puffs
         // (scale 1.5, vel×2, noGravity), then the gore tail's ARGUMENT
         // draws — Next(1,4) count + Next(11,14) per gore (the bodies +
-        // kicks are d55's; the g63 claim's gore-sibling rule).
+        // kicks are d55's; the g63 claim's gore-sibling rule). The 88-92
+        // Hide-fold segments ride the head's cs_id 87 (the base's
+        // bestiary fold — the feed sees 87, the C# `:88909` arm covers
+        // 87-92 with the same burst; batch 16 records the fold).
         87 => {
             for _ in 0..10 {
                 let idx = dust.new_dust(
@@ -690,8 +745,12 @@ pub fn death_dust(
         }
         // `NPC.cs:87880-87883` — the Bound Wizard (106) / Goblin Tinkerer
         // (107) / Wizard (108): 50 type-5 puffs at 2.5×dir/-2.5 (the
-        // shimmer/altTexture gore gates are field reads).
-        106 | 107 | 108 => {
+        // shimmer/altTexture gore gates are field reads). 105 BoundGoblin
+        // rides the SAME arm (batch 16, the base-fold activation — the
+        // shared `:87870` 105-108 arm; the port's `entry_for_npc` folds
+        // 105→107 so the feed sees 107, the C# arm's 105/107 gore gate
+        // `:87884-87891` is a field read + constants either way).
+        105 | 106 | 107 | 108 => {
             for _ in 0..50 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
@@ -2874,5 +2933,68 @@ mod tests {
             let _gy = twin.next_range(-2, 3);
         }
         assert_eq!(rng_b, twin, "20×6 dust draws + 6 gore argument draws");
+    }
+
+    // ---- batch 16 (the 15-base-fold head-wiring check).
+
+    /// `NPC.cs:87870-87891` — the Bound Goblin (105) rides the
+    /// 106/107/108 arm: 50 type-5 puffs at 2.5×dir/-2.5; the raw id
+    /// 105 and the folded feed id 107 (the port's `entry_for_npc`
+    /// fold) share the census exactly.
+    #[test]
+    fn w4_g59_the_bound_goblin_rides_the_tinkerer_arm() {
+        let w = air();
+        let n = corpse(NpcKind::BoundGoblin);
+        assert_eq!(n.kind.cs_id(), 107, "the base's 105→107 fold");
+        let mut dust_a = DustPool::new();
+        let mut rng_a = UnifiedRandom::new(293);
+        assert!(death_dust(&n, 105, &mut dust_a, &ctx(), &mut rng_a, &w));
+        let mut dust_b = DustPool::new();
+        let mut rng_b = UnifiedRandom::new(293);
+        assert!(death_dust(&n, 107, &mut dust_b, &ctx(), &mut rng_b, &w));
+        assert_eq!(rng_a, rng_b);
+        assert_eq!(dust_a.slots(), dust_b.slots());
+        let live: Vec<_> = dust_a.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 5));
+    }
+
+    /// The base-fold head-wiring census: every folded segment's cs_id
+    /// resolves to its WIRED head — the feed fires the head's arm.
+    /// 8/9→7, 11/12→10, 14/15→13, 88-92→87, 118/119→117 (the
+    /// `entry_for_npc` folds; the 134 head stays UNWIRED — 139's
+    /// cs_id folds to 134 and `death_dust(134)` returns false, f5's
+    /// keep-one).
+    #[test]
+    fn w4_g59_the_worm_folds_resolve_to_wired_heads() {
+        let w = air();
+        for (kind, head) in [
+            (NpcKind::DevourerBody, 7),
+            (NpcKind::DevourerTail, 7),
+            (NpcKind::GiantWormBody, 10),
+            (NpcKind::GiantWormTail, 10),
+            (NpcKind::EaterOfWorldsBody, 13),
+            (NpcKind::EaterOfWorldsTail, 13),
+            (NpcKind::WyvernLegs, 87),
+            (NpcKind::WyvernTail, 87),
+            (NpcKind::LeechBody, 117),
+            (NpcKind::LeechTail, 117),
+        ] {
+            assert_eq!(kind.cs_id(), head, "{kind:?} folds onto {head}");
+            let n = corpse(kind);
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(307);
+            assert!(
+                death_dust(&n, kind.cs_id() as i32, &mut dust, &ctx(), &mut rng, &w),
+                "{kind:?}'s head arm fires"
+            );
+        }
+        // The Destroyer head: NOT wired in this lane (f5's keep-one).
+        let n = corpse(NpcKind::Probe);
+        assert_eq!(n.kind.cs_id(), 134, "the 139→134 fold");
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(307);
+        assert!(!death_dust(&n, 134, &mut dust, &ctx(), &mut rng, &w));
+        assert_eq!(rng, UnifiedRandom::new(307), "the unwired head draws nothing");
     }
 }
