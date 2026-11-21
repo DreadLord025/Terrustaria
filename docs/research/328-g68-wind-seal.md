@@ -452,3 +452,45 @@ C2-class leaf dedupe's FOURTH copy (the three `emit_living_tree_leaf`
 copies keep-one onto g68's foliage body per g31 §9.1; the passStyle
 TABLE keep-one is this new row — g17 canonical).
 
+### 8.4 The tree-shake interplay cross-note (item 4)
+
+g17's ShakeTree lane is ACTIVE at `2c73354f1`: the axe fail tick
+(`editing.rs`, Player.cs:45758 → WorldGen.cs:63710-63714) runs
+`shake_tree_resolve` (`tr-core/tree.rs:663`, :63133-63162
+dedupe/walk) → `shake_loot::shake_tree_loot`
+(`world_sim/editing/shake_loot.rs:120`, :63163-63403, the genRand
+ladder, ONE UpdatePlayers throw seeds the per-shake FastRandom) →
+`shake_tree_fx_at` (`tr-core/tree.rs:707`, :63404-63417) →
+`world_gore_a::tree_grow_fx(hitTree: true)` (`world_gore_a.rs:126`)
+— the C# order, the FX tail RNG-free in its position.
+
+**Composition with g68's wind leaves — NO conflict, three axes:**
+* **Cadence**: the shake burst is EVENT-driven (one 5-leaf top-row
+  burst per shake, `TreeGrowFX` :29626-29634 `num3 = 5` when hitTree
+  (20 for a grow), height 1 → 3 trunk gores + 5 leaves = 8, the g17
+  witness); the wind shed is CADENCE-driven (the frequency gates per
+  draw). Both spawn into the SAME 600-slot GorePool through the same
+  `NewGore` allocator — the pool pressure composes (the first-inactive
+  scan refuses identically for both).
+* **Streams**: the shake's kicks roll the UpdatePlayers stream (the
+  ItemCheck swap); the wind shed's spawn internals roll the bare
+  global Main.rand (outside every SwapRandom, the deferred-2 census);
+  the leaf PHYSICS of both rolls UpdateGores. Three distinct streams,
+  no interleaving constraint — a shake tick and a shed draw never
+  share a stream.
+* **Types**: both use the same passStyle family (the shake reads
+  `tree_leaf` at the walked leafy top over the ORIGINAL ground row
+  `num`; the shed reads the marker's own ground walk). After the §8.3
+  keep-one rebind both read the SAME g17 table — the style outputs
+  agree by construction. The ash shake (1278) delegates to
+  `TreeGrowFX_AshShake` (dust + 61+Next(3) gores, NOT the leaf family)
+  — the wind shed refuses 1278 (`foliage.rs:531`), so the two never
+  double-spawn the same kind from the same tree.
+
+**Cross-note for g17**: the shake's `tree_grow_fx` leaf gores carry
+`Frame.CurrentColumn` from the TRUNK tile's paint (:29614), the wind
+shed's from the MARKER tile's paint (:7889) — both faithful, different
+C# sites, no reconciliation owed. The shake burst's leaves ride the
+same `update_leaf` physics (the wind drift applies to them too — the
+C# does not distinguish spawn source in Gore_UpdateLeaf).
+
