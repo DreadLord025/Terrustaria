@@ -1,11 +1,11 @@
-# 247 — W4-g68 WIND SEAL: the wind-flag owner's close + the weather-family mutual receipts
+# 328 — W4-g68 WIND SEAL: the wind-flag owner's close + the weather-family mutual receipts
 
 Status: **SEALED** (2026-11-21, code-only lane; witnesses WRITTEN NOT RUN).
-Branch: `task/W4-g68-weather-wind-leaves`. Registry number **247** =
-max-on-origin **246** + 1 provisional (the `git ls-tree` sweep over every
-`origin/task/*` branch's `docs/research/` at seal time; first-pushed-wins —
-renumber at merge if the registry assigns differently, the g67 134→146
-precedent `c38d42d32`).
+Branch: `task/W4-g68-weather-wind-leaves`. Registry number **328** (FINAL,
+registry §9.2 UNIFIED FINAL, d54 tip `b243c7086` — renumbered from the
+provisional **247** = max-on-origin **246** + 1 at seal time; **247 = d10's
+reservation WINS, EXECUTED** (`72431e61f`), the first-pushed-wins provisional
+loses, the g67 134→146 precedent `c38d42d32` applied).
 
 Authority consumed: **d130 research/83 §9.4 WEATHER-FAMILY bible FINAL**
 (`b8f655708912431a84da0c90b77fc5d69b1a8303`) — "**g68** owns the wind sim +

@@ -39567,7 +39567,7 @@ resume 0.1/0/α+20 (then the same-tick fade point → 21), the 600+255 fade,
 −0.2 Y kick), the packed-sheet Width/Height/AABB math, the sheet-half
 fall probe), `sand.rs` 1 (the wind recipe bounds).
 
-## The wind seal (W4-g68, 2026-11-21, code-only) — research/247 SEALED
+## The wind seal (W4-g68, 2026-11-21, code-only) — research/328 SEALED
 
 The g68-side close of the d130 WEATHER-FAMILY bible (research/83 §9.4,
 `b8f655708`): **g68 is the SINGLE wind-flag owner** — `tr-core/wind.rs`'s
@@ -39576,8 +39576,8 @@ every family consumer read-only (d130 rain velocity `wind*18,14`, the
 folded g67 Eyebrella drip `wind*3,9`, c40's wind-only Sandstorm severity,
 g68's own leaf cadence `WindForVisuals == windSpeedCurrent`
 `Main.cs:2823`). The full receipts + the wind-family bible live in
-`docs/research/247-g68-wind-seal.md` (registry 247 = max-on-origin 246 +
-1 provisional, first-pushed-wins).
+`docs/research/328-g68-wind-seal.md` (registry 328 FINAL per §9.2 —
+renumbered from provisional 247, d10 EXECUTED keeps 247).
 
 **The final-phase missing arms (landed `32ee28ca5` + `2075c3aaa`):** the
 in-flight dirty state at resume was g68's OWN stale work (co-lane probe:
@@ -39605,7 +39605,7 @@ alive-advancing foreign co-lane). Adjudicated hunk-by-hunk:
   where C# `Math.Sign(0f)=0` pushes nothing; c40's explicit sign is
   faithful). Keep-one = **c40 CANONICAL** (the `b46556b2d` precedent);
   the g68 copy's three UNIQUE refinements survive as the exact graft
-  ledger (research/247 §5.1): **G1** the `isLockedToATile`
+  ledger (research/328 §5.1): **G1** the `isLockedToATile`
   sitting/sleeping gate (`Player.cs:4020-4030`, c40 says "unported
   constant false"), **G2** the `windPushed` term in BOTH
   `GetIntendedGroundedFrame` copies (`Mount.cs:4550` — the `:36216`
