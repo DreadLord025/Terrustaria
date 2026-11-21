@@ -313,6 +313,22 @@ pub fn apply(action: MinimapAction, scale: &mut f32) {
     }
 }
 
+/// The keyboard zoom rows (`Player.cs:24911-24920`): while the map is NOT
+/// fullscreen and `Main.mapStyle == 1`, held `MapZoomIn` (`Main.cMapZoomIn`,
+/// default `Add`) multiplies `Main.mapMinimapScale` by `1.025` and held
+/// `MapZoomOut` (`Subtract`) by `0.975`, once per update — the same constants
+/// as the frame buttons (`MinimapFrame.cs:61-63`). The C# clamps on the draw
+/// side (`Main.cs:55515-55522`); the port clamps here too, matching `apply`.
+/// Both held in one frame multiply in the C#'s order (in, then out).
+pub fn apply_key_zoom(zoom_in: bool, zoom_out: bool, scale: &mut f32) {
+    if zoom_in {
+        *scale = clamp_minimap_scale(*scale * ZOOM_IN_MULTIPLIER);
+    }
+    if zoom_out {
+        *scale = clamp_minimap_scale(*scale * ZOOM_OUT_MULTIPLIER);
+    }
+}
+
 /// `Main.RecommendedEquipmentAreaPushUp` (`Main.cs:2967-2977`): `600` without
 /// the Demon Heart / master-mode accessory rows (the port has neither, and
 /// `PushEquipmentAreaUp` stays off).
@@ -848,5 +864,35 @@ mod tests {
             apply(MinimapAction::Click(MinimapButton::ZoomIn), &mut scale);
         }
         assert_eq!(scale, 3.0);
+    }
+
+    /// W4-f46 closeout census (written, not run - code-only): the keyboard
+    /// zoom rows (`Player.cs:24911-24920`) share the buttons' constants
+    /// (`MinimapFrame.cs:61-63`) — held `Add` multiplies by 1.025, held
+    /// `Subtract` by 0.975, both-held applies in the C#'s order (in, then
+    /// out), and neither held is a no-op. The clamp is the draw-side range
+    /// (`Main.cs:55515-55522`), applied like `apply` does for the buttons.
+    #[test]
+    fn w4_f46_key_zoom_matches_the_button_constants_and_order() {
+        let mut scale = 1.0;
+        apply_key_zoom(true, false, &mut scale);
+        assert_eq!(scale, ZOOM_IN_MULTIPLIER);
+        apply_key_zoom(false, true, &mut scale);
+        assert_eq!(scale, ZOOM_IN_MULTIPLIER * ZOOM_OUT_MULTIPLIER);
+        // Neither held: untouched.
+        let before = scale;
+        apply_key_zoom(false, false, &mut scale);
+        assert_eq!(scale, before);
+        // Both held: in first, then out (`:24913-24919`'s statement order).
+        let mut both = 2.0;
+        apply_key_zoom(true, true, &mut both);
+        assert_eq!(both, 2.0 * ZOOM_IN_MULTIPLIER * ZOOM_OUT_MULTIPLIER);
+        // The clamp bounds (`Main.cs:55516`/`:55520`).
+        let mut hi = 3.0;
+        apply_key_zoom(true, false, &mut hi);
+        assert_eq!(hi, 3.0);
+        let mut lo = 0.2;
+        apply_key_zoom(false, true, &mut lo);
+        assert_eq!(lo, 0.2);
     }
 }

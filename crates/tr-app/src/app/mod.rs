@@ -590,8 +590,10 @@ pub(crate) struct App {
     pub(crate) minimap_hover: Option<ui::minimap::MinimapButton>,
     /// `Main.mapStyle` (`Main.cs:66750`, default 1): 0 = off, 1 = the minimap
     /// frame, 2 = the overlay (out of P4 scope — nothing draws, the whole-UI P4
-    /// plan's Uncertainty 7). The map-style buttons land in Task 3, so a debug
-    /// env var selects it for screenshots.
+    /// plan's Uncertainty 7). Cycled by the inventory icon row
+    /// (`Main.cs:41106-41120`, `handle_inventory_clicks`) and the `cMapStyle`
+    /// key (Tab, `Player.cs:24949-24965`, `world_key`); a debug env var selects
+    /// it for screenshots.
     pub(crate) map_style: i32,
     /// `Main.teamCooldown` (`Main.cs:965`): ticks left before the PVP toggle
     /// and the team cells accept another change (`teamCooldownLen = 300`,
@@ -1458,6 +1460,33 @@ impl App {
         }
         m.scale = map::map_scale_clamp(sw, self.world.width, m.scale);
         m.pos = map::map_clamp_pos(m.pos, &self.world);
+    }
+
+    /// `Player.cs:24909-24928`: the not-fullscreen arm of the map-key input
+    /// block — while `Main.mapStyle == 1`, held `MapZoomIn`/`MapZoomOut`
+    /// (`Main.cMapZoomIn`/`cMapZoomOut`, defaults `Add`/`Subtract`,
+    /// `Main.cs:67190-67191`) scale `Main.mapMinimapScale` by 1.025/0.975 per
+    /// update (`ui::minimap::apply_key_zoom`). No `mapEnabled` gate — the C#
+    /// arm checks only the style (`:24911`); the draw side is what goes dark.
+    /// The `mapAlphaUp/Down` rows (`:24921-24928`) stay unported with the
+    /// alpha itself (research/14 D17); the `mapStyle == 2` arm
+    /// (`:24930-24947`) waits on the overlay draw (D18). The fullscreen half
+    /// is `update_map_input` above.
+    pub(crate) fn update_minimap_zoom_keys(&mut self) {
+        if self.map_style != 1 {
+            return;
+        }
+        let map_binds = self.map_binds.clone();
+        let held = |action: crate::input_map::MapAction| {
+            self.keys.iter().any(|k| {
+                map_binds[action.index()].as_str() == crate::input_map::key_name(*k)
+            })
+        };
+        let zoom_in = held(crate::input_map::MapAction::ZoomIn);
+        let zoom_out = held(crate::input_map::MapAction::ZoomOut);
+        if let Some(m) = self.map.as_mut() {
+            ui::minimap::apply_key_zoom(zoom_in, zoom_out, &mut m.minimap_scale);
+        }
     }
 
     /// `Main.UpdateViewZoomKeys` (`Main.cs:16801-16815`): ViewZoomIn/Out adjust
@@ -5971,5 +6000,76 @@ mod w4_e18_map_drag_capture_tests {
         app.capture.interface.active = false;
         app.update_map_input();
         assert_eq!(app.map_grab, Some([140.0, 120.0]), "the anchor re-grabs");
+    }
+}
+
+#[cfg(test)]
+mod w4_f46_minimap_zoom_key_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-f46 closeout census (written, not run - code-only): the held
+    /// `MapZoomIn` row (`Player.cs:24913-24916`) scales `Main.mapMinimapScale`
+    /// by 1.025 once per update while `mapStyle == 1` and the map is NOT
+    /// fullscreen; the row is the rebindable `cMapZoomIn` (default `Add`,
+    /// `Main.cs:67190`), not a fixed key.
+    #[test]
+    fn w4_f46_held_zoom_in_scales_the_minimap_by_the_button_constant() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("zoom".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.map_style = 1;
+        app.keys.insert(KeyCode::NumpadAdd); // `key_name` -> "Add"
+        app.update_minimap_zoom_keys();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.minimap_scale, 1.05 * ui::minimap::ZOOM_IN_MULTIPLIER);
+        // Rebinding moves the row (`Main.cs:4618`'s single-key profile).
+        app.map_binds[crate::input_map::MapAction::ZoomIn.index()] = "PageUp".into();
+        app.update_minimap_zoom_keys();
+        let after = app.map.as_ref().unwrap().minimap_scale;
+        assert_eq!(after, 1.05 * ui::minimap::ZOOM_IN_MULTIPLIER, "Add is free now");
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        app.update_minimap_zoom_keys();
+        assert_eq!(
+            app.map.as_ref().unwrap().minimap_scale,
+            after * ui::minimap::ZOOM_IN_MULTIPLIER
+        );
+    }
+
+    /// W4-f46 closeout census: the style/fullscreen gates — the C# block is
+    /// the `else` of `if (Main.mapFullscreen)` (`Player.cs:24898`/`:24909`)
+    /// and its `Main.mapStyle == 1` arm (`:24911`, no `mapEnabled` check —
+    /// the scale moves even with the map system dark; the draw is what goes
+    /// off). Style 0/2 and the open fullscreen map leave the minimap scale
+    /// alone (the fullscreen zoom keys ride `update_map_input` on
+    /// `mapFullscreenScale` instead).
+    #[test]
+    fn w4_f46_zoom_keys_gate_on_style_one_and_not_fullscreen() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("zoomgate".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.keys.insert(KeyCode::NumpadAdd);
+        let before = app.map.as_ref().unwrap().minimap_scale;
+        app.map_style = 0;
+        app.update_minimap_zoom_keys();
+        app.map_style = 2;
+        app.update_minimap_zoom_keys();
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, before);
+        app.map_style = 1;
+        app.map.as_mut().unwrap().open = true;
+        app.update_minimap_zoom_keys();
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, before);
+        // mapEnabled off does NOT gate the C# arm (`:24911` checks only the
+        // style) — the scale still moves.
+        app.map.as_mut().unwrap().open = false;
+        app.settings.map_enabled = false;
+        app.update_minimap_zoom_keys();
+        assert_eq!(
+            app.map.as_ref().unwrap().minimap_scale,
+            before * ui::minimap::ZOOM_IN_MULTIPLIER
+        );
     }
 }

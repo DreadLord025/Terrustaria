@@ -134,7 +134,7 @@ full-screen zoom/pan view — with the colour of each tile derived from the orig
 | Minimap alpha (`mapMinimapAlpha`) | MISSING | — | `Main.cs:55523-55532`; the panel is always opaque (no fade). |
 | Minimap frame chrome + zoom buttons | PORTED | `ui/minimap.rs` (whole file) | Nine styles, hitboxes, hover sheets, `DEFAULT_ZOOM 1.05`, ×1.025/×0.975, clamp 0.2..3 (`MinimapFrame.cs:59-63`, `:107-136`, `:138-208`). |
 | Frame-style selection UI | PORTED | `menu/pages.rs:268-284`, `menu/actions.rs:332-333`, `settings.rs:113-115` | `MinimapFrame` config key + `CycleSelection` order. |
-| Map style switcher (`mapStyle` 0/1/2) | PARTIAL | `map_style == 1` only | `mapStyle == 2`'s screen-overlay map (`Main.cs:55548-55578`, `mapOverlayScale`) and `mapStyle == 0`'s retro HUD are absent. |
+| Map style switcher (`mapStyle` 0/1/2) | PARTIAL | icon row `clicks.rs:1572-1602` + `ui/chrome.rs::draw_map_style_icons`; cycle key `app/loop.rs::world_key` (`MapAction::Style`) | The inventory icon row (`Main.cs:41087-41120`) and the Tab cycle (`Player.cs:24949-24965`, W4-f46 closeout) are landed; `mapStyle == 2`'s screen-overlay draw (`Main.cs:55548-55578`, `mapOverlayScale`) and style 0's no-HUD state exist as states, but the style-2 draw half is absent (D18). |
 | Player head icon | PORTED | `map.rs::head_icon_pos` (76) + `render/entities.rs::draw_player_map_icon` | Position ported (`Main.cs:55937-55954`); the 84×84 `MapHeadRenderer` render target is replaced by a hand-drawn head (ANALYSIS.md:1584-1593). |
 | Other players' head icons | PARTIAL | same draw path | `Main.cs:55931-55954` loops all 255 players; single-player only here. |
 | NPC / chest / pylon / ping / boss-bag icons | MISSING | — | `Main.DrawNPCMapIcons` (`Main.cs:55926`), `DrawMap_FindChestName` (`:56631`), all eight `Map/` overlay layer files (no Rust counterpart — grep for `PingMapLayer|MapIconOverlay|TeleportPylons|BossBagMapLayer` in `crates/` returns nothing). |
@@ -298,9 +298,11 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   those biomes until their zone evaluation is wired.
 - **D17 — minimap has no alpha config.** cosmetic · *not admitted*. `Main.mapMinimapAlpha`
   (`Main.cs:55523-55532`) has no config key or clamp; the panel always draws at full alpha.
-- **D18 — `mapStyle` switcher absent.** behavioural · *not admitted*. Only `mapStyle == 1` is
-  modelled; the `mapStyle == 2` screen-overlay map and its `mapOverlayScale`
-  (`Main.cs:55548-55578`) and `mapStyle == 0`'s retro layout have no counterpart.
+- **D18 — `mapStyle` switcher's style-2 draw half absent.** behavioural · *not admitted*. The
+  switcher itself is landed (the inventory icon row `Main.cs:41087-41120` + the Tab cycle key
+  `Player.cs:24949-24965`, W4-f46 closeout), but only `mapStyle == 1` draws; the `mapStyle == 2`
+  screen-overlay map and its `mapOverlayScale` (`Main.cs:55548-55578`) have no draw counterpart
+  (style 0 correctly draws no map — `DrawMap`'s branch chain has no style-0 arm).
 - **D19 — map icon overlays entirely missing.** behavioural · *not admitted*. Pings
   (`PingMapLayer.cs`), team spawn (`TeamBasedSpawnMapLayer.cs`), pylon links
   (`TeleportPylonsMapLayer.cs`), boss bags (`BossBagMapLayer.cs`), the Digtoise marker
@@ -578,3 +580,27 @@ e18d brief turned out to be ALREADY LANDED on the shared base (`a725acb0`:
 census below). If e18d still lands commits later, the re-fold recipe above
 stands unchanged (fetch tip → cherry-pick each commit past `670c948d` →
 per-hunk resolve onto the union seams).
+
+## W4-f46 closeout census (2026-11-21, code-only, third pass)
+
+The e18d brief's remaining candidates re-censused against the union
+(`af1bc80c`) and the C# input block, siblings re-read first
+(`origin/task/W4-e17-map-overlay-layers` @ `8500c3e5` — revived from the
+claim-only death recorded above; `origin/task/W4-f29-map-overlay-2` @
+`e18bf6dd`, census 9/9 ported). Neither sibling claims an input-block piece.
+
+| Candidate | Verdict | Evidence |
+| --- | --- | --- |
+| fullscreen PAN inertia/friction (`Main.cs:55342` drag-release velocity) | PHANTOM | The drag block (`:55342-55359`) is grab-anchor + per-frame cursor delta only: press re-grabs `grabMapX/Y`, hold applies `-delta * 0.06255 * (16/scale)`, release does NOTHING (no velocity capture, no coast). Grep `mapSpeed|mapAccel|mapMomentum|mapDrag|mapFullscreenVel|inertia|friction` over `Main.cs` = 0 hits. The only eased pan is `PanTargetMapFullscreen`'s 0.15 lerp (`:55361-55385`) — the pylon-marker pan, CLAIMED twice (f29 `map_pylons.rs::pan_target_step` wired in `update_map_input`; e17 `map.rs::prepare`'s lerp). Nothing to port. |
+| fullscreen map zoom +/- keybinds | ALREADY LANDED (shared base `a725acb0`) | `map.rs::map_key_scale` (`Player.cs:24898-24908`, ×1.05/×0.95) + `app/mod.rs::update_map_input`'s held-key rows against `MapAction::ZoomIn/ZoomOut` (defaults `Add`/`Subtract`, `Main.cs:67190-67191`), driven from `world_sim/player.rs`'s `map_open` tail. The wheel half (`Player.cs:25190-25197`) rides `loop.rs`'s `MouseWheel` arm. |
+| minimap zoom keybinds (style 1, not fullscreen) | UNCLAIMED + MISSING → PORTED this pass | `Player.cs:24911-24920`: held `MapZoomIn`/`MapZoomOut` scale `Main.mapMinimapScale` ×1.025/×0.975 (the button constants, `MinimapFrame.cs:61-63`). Ported: `ui/minimap.rs::apply_key_zoom` + `app/mod.rs::update_minimap_zoom_keys` (the `mapStyle == 1` gate only — the C# arm has no `mapEnabled` check), wired in `world_sim/player.rs`'s not-fullscreen else-arm — the C#'s own `else` of `if (Main.mapFullscreen)` (`:24898`/`:24909`). |
+| map-style cycle KEY (Tab) | UNCLAIMED + MISSING → PORTED this pass | `Player.cs:24949-24965`: `cMapStyle` (default `Tab`, `Main.cs:67195`) press edge cycles `Main.mapStyle` 0→1→2→0 with `PlaySound(12)`, NOT-fullscreen arm only. Ported: `app/loop.rs::world_key`'s `MapAction::Style` arm (the rebindable row; `world_key` is the port's press edge, like the `Full` row). The style ICON row's clicks were already landed (`clicks.rs:1572-1602`, `Main.cs:41087-41120` — the "map-style cycle button" candidate resolves to it). |
+| `mapAlphaUp/Down` keys (PageUp/PageDown) | STILL MISSING (D17) | `Player.cs:24921-24928`/`:24940-24947` ride `mapMinimapAlpha`/`mapOverlayAlpha`, which have no port counterpart (the panel draws at alpha 1); porting the keys without the alpha state would be a no-op. Left with D17/D18. |
+
+Witnesses (written, not run - code-only): 1
+`ui::minimap::tests::w4_f46_key_zoom_matches_the_button_constants_and_order`
+(constants, both-held order, clamp), 2
+`app::w4_f46_minimap_zoom_key_tests` (held `Add` scales ×1.025 + the rebind
+moves the row; the style-1/not-fullscreen/mapEnabled gates), 2
+`app::loop::tests::w4_f46_*` (Tab cycles 1→2→0→1 + rebind; dead while
+fullscreen).

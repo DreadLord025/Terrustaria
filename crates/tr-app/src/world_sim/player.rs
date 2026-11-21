@@ -1688,6 +1688,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
     if map_open {
         app.update_map_input();
+    } else {
+        // `Player.cs:24909-24928`: the same input block's not-fullscreen arm
+        // — the `mapStyle == 1` minimap zoom keys (W4-f46 closeout census).
+        app.update_minimap_zoom_keys();
     }
 }
 

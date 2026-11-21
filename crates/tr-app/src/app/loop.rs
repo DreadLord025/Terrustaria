@@ -638,8 +638,9 @@ impl ApplicationHandler for App {
 
 impl App {
     /// The world-side key routes — `Main.UpdateInput`'s keyboard pass as the
-    /// port splits it: the Escape close chain, the map key (`Main.cMapFull`,
-    /// `M`), the hotbar digits, the debug panel and the smart-cursor toggle.
+    /// port splits it: the Escape close chain, the map keys (`Main.cMapFull`,
+    /// `M`; `Main.cMapStyle`, `Tab`), the hotbar digits, the debug panel and
+    /// the smart-cursor toggle.
     ///
     /// Extracted from `window_event`'s `KeyboardInput` arm (the chat/menu/front
     /// overlays eat the keys first and stay in the event handler, as in
@@ -736,6 +737,25 @@ impl App {
                     if let Some(m) = self.map.as_mut() {
                         let open = !m.open;
                         m.set_open(open);
+                    }
+                }
+            }
+            _ if self.is_map_bound(crate::input_map::MapAction::Style, code) => {
+                // `Player.cs:24949-24965`: `Main.cMapStyle` (`Main.cs:67195`,
+                // default `Tab`) cycles `Main.mapStyle` 0 → 1 → 2 → 0 on the
+                // press edge (`releaseMapStyle`), with `PlaySound(12)` — but
+                // only in the NOT-fullscreen arm of the map-key block (the
+                // `else` of `if (Main.mapFullscreen)`, `:24898`/`:24909`).
+                // The C# release latch re-arms while held; the port's
+                // `world_key` press-edge convention (winit repeats arrive as
+                // separate `Pressed` events, the doc comment above) matches
+                // the `Full` row's toggle semantics.
+                if self.map.as_ref().is_none_or(|m| !m.open) {
+                    // `SoundEngine.PlaySound(12)` (`:24953`) — the port's cue.
+                    self.audio.play("Menu_Tick");
+                    self.map_style += 1;
+                    if self.map_style > 2 {
+                        self.map_style = 0;
                     }
                 }
             }
@@ -871,6 +891,44 @@ mod tests {
         assert!(app.map.as_ref().is_some_and(|m| m.open), "M opens the map");
         app.world_key(KeyCode::KeyM);
         assert!(!app.map.as_ref().is_some_and(|m| m.open), "M closes it");
+    }
+
+    /// W4-f46 closeout census (written, not run - code-only): `cMapStyle`
+    /// (`Main.cs:67195`, default `Tab`) cycles `Main.mapStyle` 0 → 1 → 2 → 0
+    /// on the press edge (`Player.cs:24949-24958`), from the default 1
+    /// (`Main.cs:66750`). The rebind row is the one the input reads.
+    #[test]
+    fn w4_f46_the_style_key_cycles_zero_one_two() {
+        let mut app = map_app();
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(false);
+        }
+        app.map_style = 1;
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 2);
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 0, "the >2 wrap (`Player.cs:24955-24958`)");
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 1);
+        // A rebind moves the row (`Main.cs:4619`'s single-key profile).
+        app.settings.map_binds[crate::input_map::MapAction::Style.index()] = "G".into();
+        app.apply_settings();
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 1, "Tab is free after the rebind");
+        app.world_key(KeyCode::KeyG);
+        assert_eq!(app.map_style, 2);
+    }
+
+    /// W4-f46 closeout census: the style key is in the NOT-fullscreen arm
+    /// only — the `else` of `if (Main.mapFullscreen)` (`Player.cs:24898`/
+    /// `:24909`); while the fullscreen map is up the press does nothing.
+    #[test]
+    fn w4_f46_the_style_key_is_dead_while_the_map_is_fullscreen() {
+        let mut app = map_app(); // the fixture opens the map
+        app.map_style = 1;
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 1, "the fullscreen arm skips the cycle");
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "the map stays open");
     }
 
     #[test]
