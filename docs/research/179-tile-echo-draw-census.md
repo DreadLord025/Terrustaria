@@ -1,4 +1,13 @@
-# 64 — Echo-coating tile/wall draw census (W4-g78)
+# 179 — Echo-coating tile/wall draw census (W4-g78)
+
+> **NUMBER CHAIN: 64 → 179 (FINAL, EXECUTED per registry-150 §10.4 round-1
+> row).** Number: **64→179 ROUND-1 EXECUTED** — the d54 registry's §10.4
+> round-1 loser table assigns W4-g78 tile-echo-draw-census 02:57:05 → **179**;
+> 64 belongs to W4-d64's earlier `64-drawdata-cases-4.md` (11-20T18:54:02
+> `161c63898`) — d64 KEEPS 64. This was g78's round-1 owed rename (kept
+> through the 78→375 §10.2 rename at `ce6783ffe`). All refs
+> (INDEX/ANALYSIS/PORT_MAP/research/76) follow this rename; the old key 64
+> survives only in this chain-banner (history).
 
 > W4 lane g78 · 2026-11-21 · sources: decompiled (TileDrawing.cs, WallDrawing.cs,
 > Main.cs, Player.cs, SceneMetrics.cs, LightingEngine.cs/LegacyLighting.cs) +

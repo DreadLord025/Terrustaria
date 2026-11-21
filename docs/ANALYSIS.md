@@ -39268,7 +39268,7 @@ pin ORs on top) and feeds all three consumers: `LightParams.
 draw_invisible_walls` (`LightingEngine.cs:124`/`LegacyLighting.cs:726`), the
 tile pass's `show_invisible_blocks` (case 541 + the gates) and the pylon
 passes' `SpecialEnv.show_invisible`. The full census + co-lane splits live in
-`docs/research/64-tile-echo-draw-census.md`.
+`docs/research/179-tile-echo-draw-census.md`.
 
 The draw residuals fixed (all were sight-blind or override-blind):
 
@@ -39326,7 +39326,7 @@ witness tests WRITTEN, NOT RUN (`scene.rs` 4, `player.rs` 3, `vines.rs` 1,
 ## The remaining sight-mechanics (W4-g78 DOC-SWEEP lane 4)
 
 The four potion sight-buffs and the two Echo-sight items beyond the g78
-echo-coating chain (research/64). Census: research/76. Two pure modules land
+echo-coating chain (research/179). Census: research/76. Two pure modules land
 PORTED-UNWIRED here; the rest is recorded for the co-lane merges.
 
 * **SpelunkerProjectileHelper** (`SpelunkerProjectileHelper.cs:6-67`) lands

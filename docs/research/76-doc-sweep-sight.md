@@ -23,7 +23,7 @@
 The four potion sight-buffs (Spelunker 9 / Hunter 17 / Dangersense 111 /
 Biome Sight 343) and the two Echo-sight items (Echo Monolith 5345 / tile 657,
 Spectre Goggles 4409) — the visibility mechanics the g78 echo-coating lane
-(research/64) did NOT cover. g78 landed the `CanSeeInvisibleBlocks` chain
+(research/179) did NOT cover. g78 landed the `CanSeeInvisibleBlocks` chain
 (the monolith/goggles grant → `ShouldShowInvisibleBlocksAndWalls`); THIS
 sweep mines the OTHER sight flags, their draw consumers, and the
 monolith/goggles item-use + equip seams. Co-lanes: **d56** landed the three
