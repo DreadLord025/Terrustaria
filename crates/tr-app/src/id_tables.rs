@@ -1610,30 +1610,40 @@ pub const ARMOR_SHIELD_COUNT: i32 = 13;
 /// `Count`-sized array (`Player.cs:3160`); `General = -1` rides the
 /// `immune`/`immuneTime` pair instead (`Hurt` `:38208`).
 ///
-/// W4-d115 lane 19 usage census (C# → port):
+/// W4-d115 wiring round usage census (C# → port, M4-HAZARD-1 closed —
+/// `Player.hurt_cooldowns` is the ported per-source array):
 /// * `General` −1 — `Hurt`'s default counter; the contact lane
 ///   (`:31332`), the hostile-shot lane (`Projectile.cs:14779`) and the
 ///   PVP sends (`:10260`/`:44144`, `Projectile.cs:14687`). Port: the
-///   single `hurt_cd` lane (the M4-HAZARD-1 collapse, ANALYSIS
-///   "S1-E-13" deviation 4) — every ported hurt rides General.
+///   `immune`/`immune_time` pair (+ the `hurt_cd` seconds mirror the
+///   collapsed-lane witnesses keep) — `hurt`/`hurt_with_source` default.
 /// * `TileContactDamage` 0 — spike/block hurt (`:28981`) and the
-///   cactus hurt (`:45723`). Port: `touch_damage.rs` collapses onto
-///   `hurt_cd`, `retaliate_lane = false` (not a Retaliate member).
+///   cactus hurt (`:45723`). Port: `touch_damage.rs` + the Don't Starve
+///   cactus chop (`world_sim/editing.rs`) pass the id; slot 0 gates and
+///   re-arms (not a Retaliate member).
 /// * `BossNoCheese` 1 — the no-cheese contact kinds 396/397/398/400/401
 ///   (Moon Lord) + 636 (Empress, `:31335-31348`) and the hostile shots
 ///   452/454/455/462 + 871-874/919/923/924 (`Projectile.cs:14782-14796`).
-///   Port: unported as a separate counter — the boss lanes collapse
-///   onto General (recorded gap; the C# lets these hits land THROUGH
-///   the General i-frames, `:38208`'s per-counter flag).
+///   Port: `npc.rs`'s contact + `projectile.rs`'s `damage_player` pick
+///   the id per kind; the hits land THROUGH the General i-frames
+///   (`:38208`'s per-counter flag). The Empress (636) kind + its
+///   `ai[0] 0/10` skip arrive with d125 — the `hurt_cooldown` entry is
+///   the split-contract API it passes `IMMUNITY_BOSS_NO_CHEESE` through.
 /// * `LegacyUnused2` 2 — NO consumer anywhere in the C# (the definition
 ///   is the only reference; the retired second legacy counter).
 /// * `WrongBugNet` 3 — the lava-bait bug-net burn (`:44723`). Port:
-///   `bug_net.rs`'s `LavaHurt` arm collapses onto `hurt_cd`,
-///   `retaliate_lane = false`.
+///   `bug_net.rs`'s `LavaHurt` arm passes the id (not a Retaliate member).
 /// * `Lava` 4 — the lava hurt (`:27708`, gated `:27679`). Port: the
-///   lava lane collapses onto `hurt_cd`, `retaliate_lane = false`.
+///   `update_survival` lava lane passes the id; the `:27679` gate covers
+///   the budget drain AND the hit (not a Retaliate member).
 /// * `PaladinsShield` 5 — the team-share redirect (`:38361`,
-///   `dodgeable: false`). Port: unported (MP team damage share).
+///   `dodgeable: false`). Port: the redirect itself is MP-only and
+///   unported, but the lane's SEMANTICS are table-side: the sole
+///   `ImmuneTimerOnlyLimitsEffects` member — a cooldown-active hit skips
+///   `Hurt`'s `:38210` early-return (damage still lands `:38383`), only
+///   the re-arm (`:38391`'s `== 0`) and the retaliate (`:38401`'s
+///   `& flag`) are limited. `hurt_inner` implements the exemption for
+///   any caller passing the id.
 pub const IMMUNITY_COOLDOWN_ID: &[(i32, &str)] = &[
     (-1, "General"),
     (0, "TileContactDamage"),
@@ -1648,10 +1658,26 @@ pub const IMMUNITY_COOLDOWN_ID: &[(i32, &str)] = &[
 /// size (`Player.cs:3160`); General's −1 lives outside it.
 pub const IMMUNITY_COOLDOWN_COUNT: i32 = 6;
 
+/// W4-d115 wiring round — the named ids (`ID/ImmunityCooldownID.cs:74-80`),
+/// the table-side constants the per-counter lanes key on. The
+/// `IMMUNITY_COOLDOWN_ID` table above is the `(id, name)` census; these
+/// are the values the sim passes to `hurt_cooldown` / `Hurt`'s
+/// `cooldownCounter`. `General` (−1) rides the `immune`/`immuneTime`
+/// pair, NOT the array (`Hurt` `:38208`); the other six index
+/// `Player.hurt_cooldowns` directly.
+pub const IMMUNITY_GENERAL: i32 = -1;
+pub const IMMUNITY_TILE_CONTACT_DAMAGE: i32 = 0;
+pub const IMMUNITY_BOSS_NO_CHEESE: i32 = 1;
+pub const IMMUNITY_LEGACY_UNUSED2: i32 = 2;
+pub const IMMUNITY_WRONG_BUG_NET: i32 = 3;
+pub const IMMUNITY_LAVA: i32 = 4;
+pub const IMMUNITY_PALADINS_SHIELD: i32 = 5;
+
 /// `ImmunityCooldownID.Sets.Retaliate` (`:49`) — {General, BossNoCheese,
 /// PaladinsShield}. Consumed at `Hurt`'s retaliate gate (`:38401`); the
-/// port carries the membership through `hurt_inner`'s `retaliate_lane`
-/// bool (`player.rs`, the S1-C-7 wave B convention).
+/// port reads the membership from the counter directly in `hurt_inner`
+/// (M4-HAZARD-1 — the S1-C-7 wave B `retaliate_lane` bool is retired,
+/// the counter carries both the gate and the membership).
 pub fn immunity_retaliate(id: i32) -> bool {
     matches!(id, -1 | 1 | 5)
 }
@@ -1673,9 +1699,10 @@ pub fn immunity_team_damage_share(id: i32) -> bool {
 
 /// `ImmunityCooldownID.Sets.ImmuneTimerOnlyLimitsEffects` (`:52`) —
 /// {PaladinsShield}. Consumed at `Hurt`'s early-return (`:38210`): a
-/// cooldown-active PaladinsShield hit still runs the EFFECTS (the
-/// redirect bookkeeping) while the damage stays swallowed. The C#
-/// `BoolSet` indexer shifts by +1 (`:11-20`) so General's −1 maps to
+/// cooldown-active PaladinsShield hit still runs the WHOLE body — the
+/// damage lands (`:38383`) — while only the cooldown re-arm (`:38391`'s
+/// `== 0` gate) and the retaliate (`:38401`'s `& flag`) are limited. The
+/// C# `BoolSet` indexer shifts by +1 (`:11-20`) so General's −1 maps to
 /// slot 0 — the port's membership fns need no array.
 pub fn immunity_timer_only_limits_effects(id: i32) -> bool {
     id == 5
@@ -1941,7 +1968,7 @@ mod tests {
             assert_eq!(immunity_timer_only_limits_effects(id), id == 5, "id {id}");
         }
         // The port's lane membership census: lava/tile/bug-net are NOT
-        // Retaliate members (the `retaliate_lane = false` lanes).
+        // Retaliate members (their counters never queue a retaliate).
         assert!(!immunity_retaliate(0), "TileContactDamage");
         assert!(!immunity_retaliate(3), "WrongBugNet");
         assert!(!immunity_retaliate(4), "Lava");

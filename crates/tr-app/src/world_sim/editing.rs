@@ -1551,12 +1551,12 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
     // `:45721-45724` — the Don't Starve cactus chop hurts the chopper on
     // EVERY damaging hit (not only the break): `Main.DamageVar(6f, 0f -
     // this.luck)`, hitDirection 0 (no knockback), not quiet, no crit, the
-    // TileContactDamage cooldown. The port's single hurt lane folds the
-    // cooldown counters onto `hurt_cd` (the M4-HAZARD-1 admission,
-    // `touch_damage.rs`'s precedent) and `hitDirection 0` maps to the
-    // player's own centre (no directional kick). The damage draw rides the
-    // `UpdatePlayers` stream (the ItemCheck swap, `Main.cs:17754`), before
-    // the kill's own drop draws — the C# order.
+    // TileContactDamage cooldown (`:45723`). M4-HAZARD-1: the lane rides
+    // its own `hurt_cooldowns` slot (`touch_damage.rs`'s precedent) and
+    // `hitDirection 0` maps to the player's own centre (no directional
+    // kick). The damage draw rides the `UpdatePlayers` stream (the
+    // ItemCheck swap, `Main.cs:17754`), before the kill's own drop draws —
+    // the C# order.
     if app
         .world
         .seeds
@@ -1569,7 +1569,13 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
         let dmg = tr_core::damage::damage_var(rng, 6.0, -luck);
         if let Some(p) = app.player.as_mut() {
             let (cx, _) = p.center();
-            let _ = p.hurt(dmg, cx, rng, true);
+            let _ = p.hurt_cooldown(
+                dmg,
+                cx,
+                rng,
+                true,
+                crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE,
+            );
         }
     }
     // `:45725` — the accumulation; `>= 100` breaks.

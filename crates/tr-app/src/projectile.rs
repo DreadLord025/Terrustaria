@@ -23444,14 +23444,32 @@ impl ProjectilePool {
         if !inside {
             return;
         }
+        // `Projectile.cs:14779-14796` — the per-kind counter pick: the
+        // Duke Fishron bubbles/sharknados (452/454/455/462) and the Moon
+        // Lord family (871-874 Phantasmal*, 919, 923-924) ride
+        // BossNoCheese; everything else keeps General. M4-HAZARD-1: the
+        // boss shots land THROUGH the General i-frames on their own slot.
+        let cooldown_counter = if matches!(p.kind, 452 | 454 | 455 | 462 | 871..=874 | 919 | 923 | 924)
+        {
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        } else {
+            crate::id_tables::IMMUNITY_GENERAL
+        };
         // `Projectile.cs:14862-14870` — `bool dodgeable =
-        // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`
-        // with `Crit: false` and `PlayerDeathReason.ByProjectile` — the port
-        // hands the shot's type over for the dismount-on-hit gate
+        // this.IsDamageDodgeable();` feeds the player's `Hurt(.., num,
+        // dodgeable)` with `Crit: false` and `PlayerDeathReason.ByProjectile`
+        // — the port hands the shot's type over for the dismount-on-hit gate
         // (`Player.cs:38396-38400`, S1-C-7 wave B).
         // The single-hit kill below runs after `Hurt` regardless of the
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
-        player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+        player.hurt_with_source_cooldown(
+            p.damage,
+            cx,
+            rng,
+            p.is_damage_dodgeable(),
+            p.kind,
+            cooldown_counter,
+        );
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
@@ -24353,6 +24371,74 @@ mod tests {
         pool.damage_player(slot, Some(&mut player), &mut rng);
         assert!(player.hp < hp0, "the 9999 shot lands through the belt");
         assert!(rng.draws.is_empty(), "no dodge roll ran");
+    }
+
+    /// W4-d115 wiring round (M4-HAZARD-1, WRITTEN NOT RUN) — the hostile
+    /// shot's counter pick (`Projectile.cs:14779-14796`): the BossNoCheese
+    /// kinds (452/454/455/462 + 871-874/919/923/924) land THROUGH the
+    /// General i-frames on their own `hurt_cooldowns` slot; a plain kind
+    /// keeps General and is swallowed by the same window.
+    #[test]
+    fn w4_d115_m4_hazard_the_boss_shots_land_through_the_general_iframes() {
+        let w = ground();
+        for kind in [452u16, 454, 455, 462, 871, 872, 873, 874, 919, 923, 924] {
+            let mut player = crate::player::Player::spawn(&w);
+            player.hp = 10_000;
+            player.max_hp = 10_000;
+            player.stat_defense = 0;
+            // A live General window (a prior hit armed it).
+            player.immune = true;
+            player.immune_time = 600;
+            player.hurt_cd = 10.0;
+            let (pcx, pcy) = player.center();
+            let mut pool = ProjectilePool::new();
+            // The slot is laid in directly (the 871 witness's pattern):
+            // the test targets the counter pick, not the spawn path.
+            pool.slots[0] = Projectile {
+                active: true,
+                kind,
+                friendly: false,
+                damage: 20,
+                pos: Vec2::new(pcx - 5.0, pcy - 5.0),
+                ..Default::default()
+            };
+            let hp0 = player.hp;
+            let mut rng = DodgeScript::with_rolls(&[1]); // the belt-less default
+            pool.damage_player(0, Some(&mut player), &mut rng);
+            assert!(
+                player.hp < hp0,
+                "kind {kind}: the BossNoCheese shot lands through the i-frames"
+            );
+            assert!(
+                player.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize] > 0,
+                "kind {kind}: the lane's own slot re-armed (:38391-38393)"
+            );
+            assert_eq!(player.immune_time, 600, "the General window untouched");
+        }
+        // The contrast: a plain hostile kind keeps General (`:14779`) —
+        // the same live window swallows it (the shot still dies).
+        let mut player = crate::player::Player::spawn(&w);
+        player.hp = 10_000;
+        player.max_hp = 10_000;
+        player.immune = true;
+        player.immune_time = 600;
+        player.hurt_cd = 10.0;
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        pool.slots[0] = Projectile {
+            active: true,
+            kind: 100,
+            friendly: false,
+            damage: 20,
+            pos: Vec2::new(pcx - 5.0, pcy - 5.0),
+            ..Default::default()
+        };
+        let hp0 = player.hp;
+        let mut rng = DodgeScript::with_rolls(&[]);
+        pool.damage_player(0, Some(&mut player), &mut rng);
+        assert_eq!(player.hp, hp0, "the General shot is swallowed");
+        assert_eq!(player.hurt_cooldowns, [0; 6], "no array write on General");
+        assert!(!pool.slots()[0].active, "the single-hit kill still fires");
     }
 
     /// W4-d115 — the projectile `TryDoingOnHitEffects` seam

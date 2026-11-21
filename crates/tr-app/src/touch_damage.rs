@@ -18,11 +18,11 @@
 //!
 //! Deviations: `Player.TouchedTiles` (the movement-traced fallback in
 //! `GetHurtTile`) is not modelled — the port's hurt-tile scan covers the same
-//! box with the source's own ±1 margin; `ImmunityCooldownID.TileContactDamage`
-//! collapses into the port's single `hurt_cd` (the port carries one immunity
-//! window, not the C#'s per-source array);
+//! box with the source's own ±1 margin;
 //! `Player.shimmering` (the C#'s gate around the whole pass) has no ported
-//! player state, so the pass always runs.
+//! player state, so the pass always runs. M4-HAZARD-1 closed the
+//! `ImmunityCooldownID.TileContactDamage` collapse: the lane rides its own
+//! `Player.hurt_cooldowns` slot (the C#'s per-source array).
 //!
 //! Out: the dungeon traps (`DungeonGlobalTraps`), lava/meteorite touch damage
 //! (the same table holds them; they need the liquid pass's tick), and the
@@ -260,10 +260,22 @@ pub fn apply_touch_damage(
         // override in the C# (`Player.cs:28982-29019`'s call chain), so a black
         // belt eats spike damage (research S1-C-1 §1.4).
         // `Crit: false` and the `ImmunityCooldownID.TileContactDamage` counter
-        // (`Player.cs:28981`) — TileContactDamage is NOT in `Sets.Retaliate`
-        // (`ImmunityCooldownID.cs:49`), so the S1-C-7 wave B retaliate lane
-        // stays off (vanilla spike hits never retaliate).
-        outcome.damaged = player.hurt_inner(dmg, cx, true, rng, true, false, None, false);
+        // (`Player.cs:28981`) — M4-HAZARD-1: the tile lane gates/re-arms on
+        // its OWN `hurt_cooldowns` slot (spikes hit through the General
+        // i-frames, once per 40-tick tile window). TileContactDamage is NOT
+        // in `Sets.Retaliate` (`ImmunityCooldownID.cs:49`), so the
+        // counter-based retaliate gate never queues (vanilla spike hits
+        // never retaliate).
+        outcome.damaged = player.hurt_inner(
+            dmg,
+            cx,
+            true,
+            rng,
+            true,
+            false,
+            None,
+            crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE,
+        );
     }
     let flag = raw > 0 && !outcome.damaged;
     if !flag {
@@ -512,7 +524,9 @@ mod tests {
             (51..=69).contains(&taken),
             "60 minus the ±15 % variance, got {taken}"
         );
-        // The 40-tick hurt window (`iframes_for`) swallows the next tick.
+        // The 40-tick TILE window (`iframes_for` on the lane's own
+        // `hurt_cooldowns[TileContactDamage]` slot, M4-HAZARD-1) swallows
+        // the next tick.
         let again = apply_touch_damage(&mut w, &mut p, &mut rng, 20, 42);
         assert!(!again.damaged, "one hit per immunity window");
     }
@@ -589,5 +603,55 @@ mod tests {
             !w.tile(11, 30).is_some_and(|t| t.active()),
             "the thorn tile is gone"
         );
+    }
+
+    /// W4-d115 wiring round (M4-HAZARD-1, WRITTEN NOT RUN) — the tile lane
+    /// rides its OWN counter (`Player.cs:28981`'s
+    /// `cooldownCounter: ImmunityCooldownID.TileContactDamage`): a spike
+    /// hit lands THROUGH the General i-frames, re-arms slot 0 with the
+    /// 40-tick num7 (`:38391-38393`), and the second touch inside that
+    /// window is swallowed — while the General pair stays untouched.
+    #[test]
+    fn w4_d115_m4_hazard_the_spike_lane_lands_through_the_general_iframes() {
+        let mut w = world_with(SPIKE, 11, 30);
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 11.0 * 16.0;
+        p.y = 30.0 * 16.0 - 30.0;
+        p.stat_defense = 0;
+        // A live General window (a prior contact hit armed it).
+        p.immune = true;
+        p.immune_time = 600;
+        p.hurt_cd = 10.0;
+        let hp0 = p.hp;
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let out = apply_touch_damage(&mut w, &mut p, &mut rng, 20, 42);
+        assert!(out.damaged, "the spike lands through the General i-frames");
+        assert!(p.hp < hp0);
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE as usize],
+            40,
+            "num7 = 40 on the lane's own slot (:38391-38393)"
+        );
+        assert_eq!(p.immune_time, 600, "the General window untouched");
+        assert!(p.immune);
+        // The bleeding arm fires on the landed hit (`:28991-28993`).
+        assert!(p.buffs.find_buff_index(BUFF_BLEEDING).is_some());
+        // The second touch inside the tile window is swallowed — and the
+        // bleeding arm does not re-fire (the C# `flag`, `:28983-28985`).
+        let hp1 = p.hp;
+        let again = apply_touch_damage(&mut w, &mut p, &mut rng, 20, 42);
+        assert!(!again.damaged, "one hit per tile window");
+        assert_eq!(p.hp, hp1);
+        // The counter decays one per tick (`UpdateImmunity` :18887-18893);
+        // at expiry the spike lands again.
+        for _ in 0..40 {
+            p.update_immunity();
+        }
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE as usize],
+            0
+        );
+        let out = apply_touch_damage(&mut w, &mut p, &mut rng, 20, 42);
+        assert!(out.damaged, "the spike lands once the tile window expires");
     }
 }

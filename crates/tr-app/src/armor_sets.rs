@@ -834,12 +834,15 @@ mod tests {
         let idx = p.buffs.find_buff_index(24).expect("On Fire");
         assert_eq!(p.buffs.buff_time[idx], 210, "the 420-210 burn");
         // Without the set the same hit is the full 80 (floor(80−3.5)=76).
-        // The first hit armed the General window — clear both halves
-        // (`hurt_inner` gates on `immune` AND `hurt_cd`, `:38210-38216`).
+        // The first hit armed the LAVA lane's own counter — clear it
+        // (M4-HAZARD-1: `hurt_inner` gates the lava hit on
+        // `hurt_cooldowns[IMMUNITY_LAVA]`, `:27679`/`:38208`; the General
+        // window is irrelevant to the lane now).
         p.ash_wood_bonus = false;
         p.hp = 100;
         p.immune = false;
         p.hurt_cd = 0.0;
+        p.hurt_cooldowns = [0; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize];
         p.buffs.clear_buff(24);
         p.in_lava = true;
         p.update_survival(&w, &mut tr_core::UnifiedRandom::default());

@@ -18237,12 +18237,39 @@ impl Npc {
                 } else {
                     0
                 };
-                // `Player.cs:31390` — `flag4 = !this.immune`: the PRE-hit
-                // immunity gates the thorns arms (`:31397-31418`), so a
-                // contact that dodges (`Hurt` runs after, `:31423`) still
-                // reflects. The port's `hurt_cd <= 0` is the `!immune`
-                // stand-in (the collapsed General cooldown, M4-HAZARD-1).
-                let pre_hit_not_immune = player.hurt_cd <= 0.0;
+                // `Player.cs:31332-31349` — the per-kind counter pick:
+                // `specialHitSetter` starts General; the Moon Lord family
+                // (396 head / 397 hand / 398 core / 400 free eye / 401 leech
+                // blob) rides BossNoCheese. The Empress (636, `:31342-31348`,
+                // with its ai[0] 0/10 no-contact skip) arrives with d125's
+                // kind — the counter API (`hurt_cooldown`) is the
+                // split-contract entry it will pass `IMMUNITY_BOSS_NO_CHEESE`
+                // through (M4-HAZARD-1).
+                let cooldown_counter = if matches!(
+                    self.kind,
+                    NpcKind::MoonLordHead
+                        | NpcKind::MoonLordHand
+                        | NpcKind::MoonLordCore
+                        | NpcKind::MoonLordFreeEye
+                        | NpcKind::MoonLordLeechBlob
+                ) {
+                    crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+                } else {
+                    crate::id_tables::IMMUNITY_GENERAL
+                };
+                // `Player.cs:31392-31396` — `flag4 = !this.immune`, or the
+                // per-counter `hurtCooldowns[specialHitSetter] == 0` when the
+                // lane is array-backed: the PRE-hit immunity gates the
+                // thorns arms (`:31397-31418`), so a contact that dodges
+                // (`Hurt` runs after, `:31423`) still reflects. The General
+                // arm keeps the port's `hurt_cd` seconds mirror beside the
+                // C# flag (the collapsed-lane witness contract).
+                let pre_hit_not_immune =
+                    if cooldown_counter == crate::id_tables::IMMUNITY_GENERAL {
+                        !player.immune && player.hurt_cd <= 0.0
+                    } else {
+                        player.hurt_cooldowns[cooldown_counter as usize] == 0
+                    };
                 // `Player.cs:31397-31410`: the contact bounces the thorns
                 // back — `thorns` scales the NPC's own damage (2x on the
                 // Turtle set), the Cactus set adds its flat 15.
@@ -18265,12 +18292,20 @@ impl Npc {
                     }
                 }
                 // `Player.cs:31423` — `Hurt(damageSource: ByNPC(i), Damage:
-                // num3, hitDirection: num2, .., dodgeable:
+                // num3, hitDirection: num2, .., cooldownCounter:
+                // specialHitSetter, dodgeable:
                 // Main.npc[i].IsDamageDodgeable())`; the `> 0 && !dead` tail
                 // gates `StatusFromNPC`, whose debuff body the port carries
-                // elsewhere (unchanged).
+                // elsewhere (unchanged). M4-HAZARD-1: the counter-carrying
+                // entry — the boss lanes land THROUGH the General i-frames.
                 if dmg > 0 {
-                    player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
+                    player.hurt_cooldown(
+                        dmg,
+                        cx,
+                        rng,
+                        self.is_damage_dodgeable(),
+                        cooldown_counter,
+                    );
                 }
             }
         }
@@ -19607,6 +19642,127 @@ mod tests {
             let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
             assert!(n.is_damage_dodgeable(), "{kind:?} defaults true");
         }
+    }
+
+    /// W4-d115 wiring round (M4-HAZARD-1, WRITTEN NOT RUN) — the contact
+    /// counter pick (`Player.cs:31332-31349`): the Moon Lord family
+    /// (396/397/398/400/401) rides BossNoCheese and lands THROUGH the
+    /// General i-frames on its own `hurt_cooldowns` slot; a plain NPC
+    /// keeps General and is swallowed by the same window. The thorns
+    /// flag4 (`:31392-31396`) reads the lane's own pre-hit state.
+    #[test]
+    fn w4_d115_m4_hazard_the_moon_lord_contact_lands_through_the_general_iframes() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // Every Moon Lord kind picks BossNoCheese (`:31335-31341`).
+        for kind in [
+            NpcKind::MoonLordHead,
+            NpcKind::MoonLordHand,
+            NpcKind::MoonLordCore,
+            NpcKind::MoonLordFreeEye,
+            NpcKind::MoonLordLeechBlob,
+        ] {
+            let mut n = Npc::new(kind, 32.0, 16.0, 1, 0.0);
+            n.damage_override = Some(20);
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = n.x;
+            player.y = n.y;
+            player.hp = 10_000;
+            player.max_hp = 10_000;
+            player.stat_defense = 0;
+            // A live General window (a prior contact hit armed it).
+            player.immune = true;
+            player.immune_time = 600;
+            player.hurt_cd = 10.0;
+            let hp0 = player.hp;
+            let mut rng = UnifiedRandom::new(9);
+            n.contact(&mut player, &mut rng);
+            assert!(
+                player.hp < hp0,
+                "{kind:?}: the BossNoCheese contact lands through the i-frames"
+            );
+            assert!(
+                player.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize] > 0,
+                "{kind:?}: the lane's own slot re-armed (:38391-38393)"
+            );
+            assert_eq!(player.immune_time, 600, "the General window untouched");
+            // The second contact inside the boss window is swallowed.
+            let hp1 = player.hp;
+            n.contact(&mut player, &mut rng);
+            assert_eq!(player.hp, hp1, "{kind:?}: one hit per boss window");
+        }
+        // The contrast: a plain NPC keeps General (`:31332`) — the same
+        // live window swallows its contact.
+        let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = bat.x;
+        player.y = bat.y;
+        player.hp = 10_000;
+        player.max_hp = 10_000;
+        player.immune = true;
+        player.immune_time = 600;
+        player.hurt_cd = 10.0;
+        let hp0 = player.hp;
+        let mut rng = UnifiedRandom::new(9);
+        bat.contact(&mut player, &mut rng);
+        assert_eq!(player.hp, hp0, "the General contact is swallowed");
+        assert_eq!(player.hurt_cooldowns, [0; 6], "no array write on General");
+    }
+
+    /// W4-d115 wiring round (M4-HAZARD-1, WRITTEN NOT RUN) — the boss
+    /// lane's thorns flag4 (`Player.cs:31392-31396`): with the General
+    /// window live but the BossNoCheese slot free, the PRE-hit flag holds
+    /// and the thorns reflect even though the General lane would refuse;
+    /// with the boss slot running, flag4 is false and nothing reflects.
+    #[test]
+    fn w4_d115_m4_hazard_the_boss_lane_thorns_flag_reads_its_own_counter() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut head = Npc::new(NpcKind::MoonLordHead, 32.0, 16.0, 1, 0.0);
+        head.damage_override = Some(20);
+        head.hp = 10_000;
+        head.max_hp = 10_000;
+        let mut player = crate::player::Player::spawn(&w);
+        player.buffs.add_buff(14, 3600); // the Thorns Potion
+        player.update(&w, crate::player::PlayerInput::default());
+        assert!(player.thorns > 0.0);
+        // Re-pin the overlap after the fold tick (the spawn fall moved it).
+        player.x = head.x;
+        player.y = head.y;
+        // General live, boss slot free: the reflect fires.
+        player.immune = true;
+        player.immune_time = 600;
+        player.hurt_cd = 10.0;
+        let head_hp = head.hp;
+        let mut rng = UnifiedRandom::new(9);
+        head.contact(&mut player, &mut rng);
+        assert!(head.hp < head_hp, "flag4 held: the thorns bit back");
+        // Boss slot running: flag4 false, no reflect on the second touch.
+        let head_hp = head.hp;
+        head.hurt_cd = 0.0; // the NPC's own melee cooldown must not gate
+        head.contact(&mut player, &mut rng);
+        assert_eq!(head.hp, head_hp, "flag4 false: no reflect inside the boss window");
     }
 
     #[test]

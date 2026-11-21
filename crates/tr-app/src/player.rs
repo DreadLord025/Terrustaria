@@ -1413,6 +1413,20 @@ pub struct Player {
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
     pub hurt_cd: f32,
+    /// `Player.hurtCooldowns` (`Player.cs:3160`): the per-source immunity
+    /// counters, `new int[ImmunityCooldownID.Count]` — six slots indexed by
+    /// the `IMMUNITY_*` ids 0..5 (`id_tables.rs`; General's −1 lives OUTSIDE
+    /// the array on the `immune`/`immune_time` pair, `Hurt` `:38208`).
+    /// M4-HAZARD-1: the boss/hazard lanes (BossNoCheese, TileContactDamage,
+    /// WrongBugNet, Lava, PaladinsShield) gate and re-arm on their OWN slot,
+    /// so they land THROUGH the General i-frames (`:38208-38212`). The
+    /// collapsed `hurt_cd` stays as the General lane's seconds mirror (the
+    /// existing witnesses' contract); this array is the C#'s own state.
+    /// Writers: `Hurt`'s per-counter arm (`:38391-38393`, only while the slot
+    /// is 0), `SetImmuneTimeForAllTypes` (`:38017-38020`, all six) and the
+    /// `UpdateImmunity` decay (`:18887-18893`). `Spawn` never clears it (the
+    /// C# field census: no respawn write) — the counters ride through death.
+    pub hurt_cooldowns: [i32; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize],
     /// The dodge-family flags (`Player.blackBelt`/`mysticSashDodge`/
     /// `brainOfConfusionItem`/`shadowDodge`/`longInvince`, `Player.cs:1178-
     /// 1184,2402`): armed per tick in the fold from items 963/984
@@ -1949,9 +1963,10 @@ pub struct Player {
     /// velocity BEFORE the knockback `:38519`) and the drain
     /// (`hurt_modifiers::drain_retaliate`, the `world_sim` seams) rolls the
     /// block on the hit lane's stream — the `pending_mana_effect` convention.
-    /// The C# gates on the PRE-hit `flag` (not immune) AND the Retaliate-set
-    /// membership of the cooldown counter; `hurt_inner`'s `retaliate_lane`
-    /// carries the membership (the lava/tile lanes pass false).
+    /// The C# gates on the PRE-hit `flag` (the per-counter not-immune
+    /// state) AND the Retaliate-set membership of the cooldown counter;
+    /// `hurt_inner` reads both from the counter (M4-HAZARD-1 — the
+    /// lava/tile/bug-net lanes are not members).
     pending_retaliate: Option<crate::hurt_modifiers::RetaliateRequest>,
     /// S1-C-7 wave B: the dismount-on-hit request (`Player.cs:38396-38400`) —
     /// the damage source was a projectile of `ProjectileID.Sets.
@@ -2795,6 +2810,8 @@ impl Player {
             mana_regen_item_in_use: false,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
+            // `Player.cs:3160` — the field initializer zeroes all six slots.
+            hurt_cooldowns: [0; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize],
             black_belt: false,
             mystic_sash_dodge: false,
             brain_of_confusion: false,
@@ -3672,6 +3689,12 @@ impl Player {
         self.immune_time = 180;
         self.immune_no_blink = true;
         self.hurt_cd = 0.0;
+        // M4-HAZARD-1 writer census: the C# `Spawn` never writes
+        // `hurtCooldowns` (the field's only mentions are `Player.cs:3160`
+        // decl, `:18887-18891` decay, `:27679` lava gate, `:31395` thorns
+        // flag, `:38017-38019` all-types, `:38208/:38391-38393` Hurt) — the
+        // per-source counters ride through death untouched, exactly like
+        // the source. No clear here.
         // `UpdateDead`'s brain-counter zero (`Player.cs:16932`): the death tail
         // clears the animation window with the rest of the per-life state.
         self.brain_of_confusion_dodge_animation_counter = 0;
@@ -4232,7 +4255,43 @@ impl Player {
         // `:28981`, fall/petrify `:25223/:25352/:25370`); the projectile lane
         // (`Projectile.cs:14868`, also `Crit: false`) carries its type through
         // `hurt_with_source` for the dismount-on-hit gate (`:38396-38400`).
-        self.hurt_inner(amount, from_x, true, rng, dodgeable, false, None, true)
+        // The default `cooldownCounter = -1` (`:38197`) is General.
+        self.hurt_inner(
+            amount,
+            from_x,
+            true,
+            rng,
+            dodgeable,
+            false,
+            None,
+            crate::id_tables::IMMUNITY_GENERAL,
+        )
+    }
+
+    /// The counter-carrying `Hurt` entry (`Player.cs:38197`'s
+    /// `cooldownCounter` parameter): the boss/hazard lanes pass their
+    /// `ImmunityCooldownID` (the `IMMUNITY_*` constants, `id_tables.rs`) and
+    /// gate/re-arm on their own `hurt_cooldowns` slot — the M4-HAZARD-1
+    /// split-contract entry d125's Empress contact uses
+    /// (`IMMUNITY_BOSS_NO_CHEESE`). `hurt` above is the General default.
+    pub(crate) fn hurt_cooldown(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+        cooldown_counter: i32,
+    ) -> bool {
+        self.hurt_inner(
+            amount,
+            from_x,
+            true,
+            rng,
+            dodgeable,
+            false,
+            None,
+            cooldown_counter,
+        )
     }
 
     /// The projectile-source `Hurt` (`PlayerDeathReason.ByProjectile`,
@@ -4248,6 +4307,29 @@ impl Player {
         dodgeable: bool,
         source_projectile: u16,
     ) -> bool {
+        self.hurt_with_source_cooldown(
+            amount,
+            from_x,
+            rng,
+            dodgeable,
+            source_projectile,
+            crate::id_tables::IMMUNITY_GENERAL,
+        )
+    }
+
+    /// The counter-carrying projectile-source `Hurt`
+    /// (`Projectile.cs:14868`'s `num` cooldownCounter — the `Damage_EVP`
+    /// BossNoCheese shot kinds, `:14779-14796`): identical to
+    /// [`Player::hurt_with_source`] plus the lane's counter.
+    pub(crate) fn hurt_with_source_cooldown(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+        source_projectile: u16,
+        cooldown_counter: i32,
+    ) -> bool {
         self.hurt_inner(
             amount,
             from_x,
@@ -4256,21 +4338,27 @@ impl Player {
             dodgeable,
             false,
             Some(source_projectile),
-            true,
+            cooldown_counter,
         )
     }
 
     /// `Player.SetImmuneTimeForAllTypes` (`Player.cs:38013-38021`): the whole
     /// write rides the port's fields — `immune = true` + `immuneTime = time`
     /// (the fields R-03-5 ported; `immuneNoBlink` stays untouched, like the
-    /// C#) and the per-cooldown array collapsed onto the one `hurt_cd` (the
-    /// M4-HAZARD-1 admission). The dodge handlers pass the 120/80 pair
+    /// C#) and ALL SIX per-cooldown slots (`:38017-38020`, the M4-HAZARD-1
+    /// array — a dodge's i-frames cover every source, boss lanes included).
+    /// `hurt_cd` keeps mirroring the General window in seconds for the
+    /// collapsed-lane witnesses. The dodge handlers pass the 120/80 pair
     /// directly; `iframes_for` (the normal-hurt window) is not involved.
     /// `pub(crate)`: the Strange Brew's bonus i-frames (`ApplyLifeAndOrMana`,
     /// `Player.cs:51912-51915`) call it from `potions.rs` (S1-P-i37).
     pub(crate) fn set_immune_time_for_all_types(&mut self, time: i32) {
         self.immune = true;
         self.immune_time = time;
+        // `Player.cs:38017-38020` — the unconditional all-slot write.
+        for cd in self.hurt_cooldowns.iter_mut() {
+            *cd = time;
+        }
         self.hurt_cd = time as f32 / 60.0;
     }
 
@@ -4375,17 +4463,26 @@ impl Player {
         );
     }
 
-    /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
+    /// `Player.UpdateImmunity` (`Player.cs:18856-18894`): the i-frame
     /// countdown — `immune` clears at 0 and `immuneNoBlink` rides with it;
     /// the `immuneAlpha` blinkVisual half is draw-side and stays out.
     /// (R-03-5's port; the dodge handlers above write the same fields via
     /// `SetImmuneTimeForAllTypes`, so both windows decay through here.)
+    /// M4-HAZARD-1: the tail loop (`:18887-18893`) decrements EVERY
+    /// `hurtCooldowns` slot one per tick, independent of the `immune` flag —
+    /// the per-source counters run down while the General window is live.
     pub fn update_immunity(&mut self) {
         if self.immune {
             self.immune_time -= 1;
             if self.immune_time <= 0 {
                 self.immune = false;
                 self.immune_no_blink = false;
+            }
+        }
+        // `Player.cs:18887-18893` — outside the `if (this.immune)` block.
+        for cd in self.hurt_cooldowns.iter_mut() {
+            if *cd > 0 {
+                *cd -= 1;
             }
         }
     }
@@ -4430,7 +4527,7 @@ impl Player {
         dodgeable: bool,
         crit: bool,
         source_projectile: Option<u16>,
-        retaliate_lane: bool,
+        cooldown_counter: i32,
     ) -> bool {
         // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
         // journey godmode power swallows the hit outright — before the
@@ -4438,18 +4535,41 @@ impl Player {
         if self.creative_god_mode {
             return false;
         }
-        // `Player.Hurt`'s General-cooldown gate (`Player.cs:38210-38216`):
-        // the port's single damage lane rides `ImmunityCooldownID.General`,
-        // whose flag is `!immune` — the spawn i-frames swallow the hit.
-        if self.immune {
+        // M4-HAZARD-1 — the per-source gate (`Player.cs:38208`):
+        // `flag = (cooldownCounter == General) ? !immune
+        //        : hurtCooldowns[cooldownCounter] <= 0`.
+        // General rides the `immune`/`immune_time` pair; the six array lanes
+        // read their OWN slot, so a boss/hazard hit lands THROUGH the General
+        // i-frames while its own counter is free. `hurt_cd` stays the
+        // collapsed General lane's seconds mirror (the existing witnesses'
+        // contract — the dodge-window tests clear it directly), so the
+        // General arm keeps it beside the C# flag.
+        let flag = if cooldown_counter == crate::id_tables::IMMUNITY_GENERAL {
+            !self.immune && self.hurt_cd <= 0.0
+        } else {
+            self.hurt_cooldowns[cooldown_counter as usize] <= 0
+        };
+        // `Player.cs:38210-38212`: the early-return skips ONLY when the
+        // counter is NOT an `ImmuneTimerOnlyLimitsEffects` member.
+        // PaladinsShield (5) is the set's sole member (`ImmunityCooldownID.cs:
+        // 52`): a cooldown-active shield hit runs the whole body — the DAMAGE
+        // STILL LANDS (`:38383`); only the cooldown re-arm (`:38391`'s `== 0`
+        // gate) and the retaliate (`:38401`'s `& flag`) are limited. The
+        // `flag2` remote-player arm is MP-only (`whoAmI != myPlayer && !pvp`)
+        // and collapses false in the single-player port.
+        if !flag
+            && !crate::id_tables::immunity_timer_only_limits_effects(cooldown_counter)
+        {
             return false;
         }
-        if self.hurt_cd > 0.0 || self.hp <= 0 {
+        // `Player.Hurt`'s dead gate: the port's `hp <= 0` refusal (the C#
+        // callers gate `!dead`; the fall/petrify lanes reach `Hurt` alive).
+        if self.hp <= 0 {
             return false;
         }
         // The dodge roll block (`Player.cs:38214-38236`), slotted after the
-        // cooldown early-return (the port's `hurt_cd`-gate IS the C# `flag`
-        // for the General counter) and before the defense reduction.
+        // per-counter gate (the `flag` above IS the C# `:38208` state) and
+        // before the defense reduction.
         // `whoAmI == Main.myPlayer` collapses in the single-player port. The
         // roll order is sash -> belt -> brain -> shadow; each `Next` draws
         // only while its source is armed and the previous source did not
@@ -4543,18 +4663,26 @@ impl Player {
         // also selects the 20-tick immunity window below, not 40).
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
-        // `Player.Hurt`'s immunity window (`Player.cs:38382-38385`):
+        // `Player.Hurt`'s immunity window (`Player.cs:38382-38394`):
         // `int num7 = (pvp ? 8 : ((num2 != 1.0) ? (this.longInvince ? 80 : 40)
-        // : (this.longInvince ? 40 : 20)));` then, on the General lane,
-        // `this.immune = true; this.immuneTime = num7;`. The write lands on
-        // the same `immune`/`immuneTime` fields the dodge handlers arm, so
-        // `UpdateImmunity` (`:18856-18869`) runs the window down. PVP 8 is
-        // unreachable in single-player. `hurt_cd` keeps carrying the window
-        // in seconds for the single collapsed damage lane.
+        // : (this.longInvince ? 40 : 20)));` then the per-counter write:
+        // General (`:38386-38390`) arms `immune`/`immuneTime` — the same
+        // fields the dodge handlers write, so `UpdateImmunity`
+        // (`:18856-18894`) runs the window down; every other counter
+        // (`:38391-38393`) re-arms its OWN array slot with num7, and ONLY
+        // while the slot is exactly 0 — a cooldown-active PaladinsShield hit
+        // lands its damage but never extends the running counter (the `|
+        // flag2` remote arm is MP-only). PVP 8 is unreachable in
+        // single-player. `hurt_cd` keeps mirroring the General window in
+        // seconds for the collapsed-lane witnesses.
         let iframes = tr_core::damage::iframes_for(amount, false, self.long_invince);
-        self.immune = true;
-        self.immune_time = iframes;
-        self.hurt_cd = iframes as f32 / 60.0;
+        if cooldown_counter == crate::id_tables::IMMUNITY_GENERAL {
+            self.immune = true;
+            self.immune_time = iframes;
+            self.hurt_cd = iframes as f32 / 60.0;
+        } else if self.hurt_cooldowns[cooldown_counter as usize] == 0 {
+            self.hurt_cooldowns[cooldown_counter as usize] = iframes;
+        }
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
         // `Player.cs:38396-38400`: the dismount-on-hit — the damage source's
@@ -4570,18 +4698,19 @@ impl Player {
         }
         // `Player.cs:38401`: `(whoAmI == Main.myPlayer && ImmunityCooldownID.
         // Sets.Retaliate[cooldownCounter]) & flag` — `flag` is the PRE-hit
-        // not-immune state (`:38208`), which holds for every hit that reaches
-        // this tail. The Retaliate set is {General, BossNoCheese,
-        // PaladinsShield} (`ImmunityCooldownID.cs:49`); the port's collapsed
-        // lane keeps the membership through `retaliate_lane` — the contact
-        // and projectile lanes (General/BossNoCheese) and the fall/petrify
-        // defaults pass true, the lava (`Lava`, `:27708`) and tile-contact
-        // (`TileContactDamage`, `:28981`) lanes pass false (NOT members —
-        // vanilla lava/spike hits never retaliate). The block needs the NPC
-        // list + projectile pool + the hit lane's RNG: `hurt_modifiers::
-        // drain_retaliate` rolls it at the `world_sim` seams with the final
-        // post-floor damage (the C# `num2` after `:38378-38381`).
-        if retaliate_lane {
+        // per-counter state (`:38208`, captured above). The Retaliate set is
+        // {General, BossNoCheese, PaladinsShield} (`ImmunityCooldownID.cs:
+        // 49`); M4-HAZARD-1 reads the membership from the counter itself
+        // (`id_tables::immunity_retaliate`) — the lava (`Lava`), tile-contact
+        // (`TileContactDamage`) and bug-net (`WrongBugNet`) lanes are NOT
+        // members (vanilla lava/spike hits never retaliate). A
+        // cooldown-active PaladinsShield hit reaches here with flag false
+        // (the `:38210` skip exemption) and queues nothing. The block needs
+        // the NPC list + projectile pool + the hit lane's RNG:
+        // `hurt_modifiers::drain_retaliate` rolls it at the `world_sim` seams
+        // with the final post-floor damage (the C# `num2` after
+        // `:38378-38381`).
+        if crate::id_tables::immunity_retaliate(cooldown_counter) && flag {
             // The hit-moment snapshot: the C# block runs BEFORE `Hurt`'s own
             // knockback (`:38519-38524`), so the dart's `velocity * 0.3`, the
             // stars' aim and the bees' spawn read the pre-knockback state.
@@ -4640,8 +4769,17 @@ impl Player {
         let cx = self.x + self.width * 0.5;
         // The landing hit keeps `Hurt`'s default `dodgeable = true` — a
         // black-belt dodge eats fall damage in the vanilla (research S1-C-1
-        // §1.4).
-        self.hurt_inner(amount, cx, false, rng, true, false, None, true)
+        // §1.4). General counter (`Player.cs:25370`'s default).
+        self.hurt_inner(
+            amount,
+            cx,
+            false,
+            rng,
+            true,
+            false,
+            None,
+            crate::id_tables::IMMUNITY_GENERAL,
+        )
     }
 
     /// `Player.tileRangeX` (`Player.cs:2496`, `DefaultTileRangeX = 5` at
@@ -7711,7 +7849,17 @@ impl Player {
         let stoned = self.buffs.find_buff_index(156).is_some();
         if stoned && !self.last_stoned {
             let cx = self.x + self.width * 0.5;
-            self.hurt_inner(20, cx, false, rng, true, false, None, true);
+            // `Player.cs:25223` — the default General counter.
+            self.hurt_inner(
+                20,
+                cx,
+                false,
+                rng,
+                true,
+                false,
+                None,
+                crate::id_tables::IMMUNITY_GENERAL,
+            );
         }
         self.last_stoned = stoned;
 
@@ -7771,7 +7919,17 @@ impl Player {
                 let dmg = (fell - 2) * 20;
                 if dmg > 0 {
                     let cx = self.x + self.width * 0.5;
-                    self.hurt_inner(dmg, cx, false, rng, true, false, None, true);
+                    // `Player.cs:25352` — the default General counter.
+                    self.hurt_inner(
+                        dmg,
+                        cx,
+                        false,
+                        rng,
+                        true,
+                        false,
+                        None,
+                        crate::id_tables::IMMUNITY_GENERAL,
+                    );
                     self.hurt_cd = 0.0;
                 }
             } else if (fell > threshold) && !self.no_fall_dmg && !self.has_wings {
@@ -11452,38 +11610,63 @@ impl Player {
         // `Player.cs:27676`: `flag25 && !lavaImmune` — ObsidianSkin (buff 1)
         // keeps the flag true, so the drain/hit arm is skipped AND `flag26`
         // stays true (the budget refills while standing in lava).
+        // `Player.cs:27674-27719`: `flag26` starts true and clears only while
+        // standing in lava without immunity — the refill arm below reads it
+        // (the budget does NOT refill in lava, even while the Lava counter
+        // gates the drain/hit arm off).
+        let mut lava_refill = true;
         if self.in_lava && !self.lava_immune {
-            if self.lava_time > 0 {
-                self.lava_time -= 1;
-            } else if self.hurt_cd <= 0.0 {
-                let cx = self.x + self.width * 0.5;
-                // `Player.cs:27687-27707`: the hit's damage/burn pair —
-                // 80/420 classic, halved by the Ash Wood set
-                // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
-                // `:27694-27702`, S1-C-12 wave D). The remix-world
-                // variants (`:27689-27693`, `:27696-27699`) and the
-                // `lavaRose` halves (`:27703-27707`) have no port fields
-                // and stay out (ANALYSIS "S1-C-12 wave D").
-                let (mut num79, mut num80) = (80, 420);
-                if self.ash_wood_bonus {
-                    num79 /= 2;
-                    num80 -= 210;
-                }
-                // The lava hit rolls the dodge block like any `Hurt` — the
-                // stream rides in from the `UpdatePlayers` stage through the
-                // update chain, `dodgeable` keeps `Hurt`'s default `true`
-                // (research S1-C-1 §1.4). `Crit: false` and the
-                // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) — Lava
-                // is NOT in `Sets.Retaliate` (`ImmunityCooldownID.cs:49`), so
-                // the S1-C-7 wave B retaliate lane stays off.
-                if self.hurt_inner(num79, cx, true, rng, true, false, None, false) {
-                    // The Hurt return `num81 > 0.0` gates the OnFire grant
-                    // (`Player.cs:27709-27711`). `AddBuff` applies the expert
-                    // ×2 itself (24 is in the difficulty set, `BuffID.cs:50`).
-                    self.buffs.add_buff(24, num80);
+            lava_refill = false;
+            // `Player.cs:27679`: `hurtCooldowns[ImmunityCooldownID.Lava] <= 0`
+            // gates the WHOLE arm — the budget drain AND the hit (M4-HAZARD-1:
+            // the Lava lane's own slot, not the General window; a contact
+            // hit's i-frames no longer pause the lava budget).
+            if self.hurt_cooldowns[crate::id_tables::IMMUNITY_LAVA as usize] <= 0 {
+                if self.lava_time > 0 {
+                    self.lava_time -= 1;
+                } else {
+                    let cx = self.x + self.width * 0.5;
+                    // `Player.cs:27687-27707`: the hit's damage/burn pair —
+                    // 80/420 classic, halved by the Ash Wood set
+                    // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
+                    // `:27694-27702`, S1-C-12 wave D). The remix-world
+                    // variants (`:27689-27693`, `:27696-27699`) and the
+                    // `lavaRose` halves (`:27703-27707`) have no port fields
+                    // and stay out (ANALYSIS "S1-C-12 wave D").
+                    let (mut num79, mut num80) = (80, 420);
+                    if self.ash_wood_bonus {
+                        num79 /= 2;
+                        num80 -= 210;
+                    }
+                    // The lava hit rolls the dodge block like any `Hurt` — the
+                    // stream rides in from the `UpdatePlayers` stage through the
+                    // update chain, `dodgeable` keeps `Hurt`'s default `true`
+                    // (research S1-C-1 §1.4). `Crit: false` and the
+                    // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) —
+                    // Lava is NOT in `Sets.Retaliate` (`ImmunityCooldownID.cs:
+                    // 49`), so the counter-based retaliate gate never queues.
+                    if self.hurt_inner(
+                        num79,
+                        cx,
+                        true,
+                        rng,
+                        true,
+                        false,
+                        None,
+                        crate::id_tables::IMMUNITY_LAVA,
+                    ) {
+                        // The Hurt return `num81 > 0.0` gates the OnFire grant
+                        // (`Player.cs:27709-27711`). `AddBuff` applies the expert
+                        // ×2 itself (24 is in the difficulty set, `BuffID.cs:50`).
+                        self.buffs.add_buff(24, num80);
+                    }
                 }
             }
-        } else if self.lava_time < self.lava_max {
+        }
+        // `Player.cs:27716-27719`: `if (flag26 && lavaTime < lavaMax)
+        // lavaTime++` — outside the counter gate, so the refill only rides
+        // the not-in-lava (or lava-immune) state.
+        if lava_refill && self.lava_time < self.lava_max {
             self.lava_time += 1;
         }
         if self.lava_time > self.lava_max {
@@ -12715,7 +12898,7 @@ mod tests {
             true,
             false,
             None,
-            true,
+            crate::id_tables::IMMUNITY_GENERAL,
         );
         assert_eq!(p.hp, 70, "the cut, not the raw 40");
         // A 1-damage hit past 25% endurance truncates to 0, then the
@@ -12731,7 +12914,7 @@ mod tests {
             true,
             false,
             None,
-            true,
+            crate::id_tables::IMMUNITY_GENERAL,
         );
         assert_eq!(p.hp, 69, "the sub-one hit floors to 1, not 0");
     }
@@ -12757,7 +12940,7 @@ mod tests {
             true,
             false,
             None,
-            true
+            crate::id_tables::IMMUNITY_GENERAL
         ));
         assert_eq!(p.hp, 99, "the hit lands for the floored 1, not 0");
         assert!(
@@ -15515,7 +15698,7 @@ mod tests {
             true,
             true, // Crit
             None,
-            true
+            crate::id_tables::IMMUNITY_GENERAL
         ));
         assert_eq!(p.hp, hp - 15, "num2 used the pre-crit Damage");
         assert_eq!(p.mana, 40, "the cuffs restore the crit-doubled num");
@@ -15722,7 +15905,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, crate::id_tables::IMMUNITY_GENERAL));
         assert_eq!(p.vx, 0.0, "the shield eats the knockback");
         // Without the shield: the knockback lands.
         let mut p = player_with_accessory(0);
@@ -15730,7 +15913,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, crate::id_tables::IMMUNITY_GENERAL));
         assert!(p.vx != 0.0);
     }
 
@@ -19168,13 +19351,15 @@ mod tests {
 
     /// Runs the dodge window out the way `UpdateImmunity` does in the C# —
     /// the dodge's `SetImmuneTimeForAllTypes` writes `immune`/`immuneTime`
-    /// (R-03-5's ported fields, now gating `hurt_inner`'s General flag), so a
-    /// next hit in these tests needs the expired window, not just a cleared
-    /// `hurt_cd`.
+    /// (R-03-5's ported fields, now gating `hurt_inner`'s General flag) AND
+    /// all six `hurtCooldowns` slots (M4-HAZARD-1, `Player.cs:38017-38020`),
+    /// so a next hit in these tests needs the expired window on every lane,
+    /// not just a cleared `hurt_cd`.
     fn expire_dodge_window(p: &mut Player) {
         p.immune = false;
         p.immune_time = 0;
         p.hurt_cd = 0.0;
+        p.hurt_cooldowns = [0; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize];
     }
 
     #[test]
@@ -19859,6 +20044,314 @@ mod tests {
         assert_ne!(p.render_key(), base, "the brain counter rides the key");
         p.brain_of_confusion_dodge_animation_counter = 0;
         assert_eq!(p.render_key(), base, "a ghost-free player keeps the old key");
+    }
+
+    // ---- W4-d115 wiring round: M4-HAZARD-1, the per-source hurtCooldowns ----
+    // (WRITTEN NOT RUN — code-only mode. Every assert cites the C# line.)
+
+    /// M4-HAZARD-1 — the boss lane lands THROUGH the General i-frames
+    /// (`Player.cs:38208`): `flag = (counter == General) ? !immune :
+    /// hurtCooldowns[counter] <= 0`. A General hit arms `immune`/
+    /// `immuneTime` (`:38386-38390`); the BossNoCheese hit reads only its
+    /// own slot, lands, and re-arms slot 1 with num7 (`:38391-38393`) —
+    /// the General window is untouched. A second boss hit inside its own
+    /// 40-tick window is swallowed (`:38210`, BossNoCheese is not an
+    /// ImmuneTimerOnlyLimitsEffects member).
+    #[test]
+    fn w4_d115_m4_hazard_the_boss_lane_lands_through_the_general_iframes() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.stat_defense = 0;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        // The General hit arms the 40-tick window.
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(p.immune);
+        assert_eq!(p.immune_time, 40);
+        assert_eq!(p.hurt_cooldowns, [0; 6], "General writes no array slot");
+        let hp = p.hp;
+        // The boss hit lands through it and arms slot 1 only.
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+        assert_eq!(p.hp, hp - 20, "the boss damage landed through the i-frames");
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize],
+            40,
+            "num7 = 40 on the lane's own slot (:38391-38393)"
+        );
+        assert_eq!(p.immune_time, 40, "the General window is untouched");
+        assert!(p.immune);
+        // The second boss hit inside its own window is swallowed.
+        let hp = p.hp;
+        assert!(!p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+        assert_eq!(p.hp, hp);
+        // The General hit is still swallowed by its own window.
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
+        // Both windows decay one per tick (`UpdateImmunity`,
+        // `:18860` + `:18887-18893` — the array loop is OUTSIDE the
+        // `if (immune)` block, so the boss slot runs down regardless).
+        p.update_immunity();
+        assert_eq!(p.immune_time, 39);
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize],
+            39
+        );
+        for _ in 0..39 {
+            p.update_immunity();
+        }
+        assert!(!p.immune, "the General window expired");
+        assert_eq!(p.hurt_cooldowns, [0; 6], "the boss slot expired with it");
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+    }
+
+    /// M4-HAZARD-1 — the dodge's `SetImmuneTimeForAllTypes` covers EVERY
+    /// lane (`Player.cs:38017-38020`): the belt dodge writes all six slots
+    /// with the 80-tick pair, so boss/lava/tile/bug-net hits are all
+    /// swallowed inside the dodge window — and all land once it expires.
+    #[test]
+    fn w4_d115_m4_hazard_the_dodge_window_covers_every_lane() {
+        let mut p = dodge_player_with(&[963]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert_eq!(p.immune_time, 80);
+        assert_eq!(p.hurt_cooldowns, [80; 6], "the all-types write (:38017-38020)");
+        let hp = p.hp;
+        for counter in [
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE,
+            crate::id_tables::IMMUNITY_LAVA,
+            crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE,
+            crate::id_tables::IMMUNITY_WRONG_BUG_NET,
+        ] {
+            assert!(
+                !p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, counter),
+                "counter {counter} is covered by the dodge window"
+            );
+        }
+        assert_eq!(p.hp, hp);
+        // The decay runs every slot down; at expiry every lane lands again.
+        for _ in 0..80 {
+            p.update_immunity();
+        }
+        assert!(!p.immune);
+        assert_eq!(p.hurt_cooldowns, [0; 6]);
+        let mut rng = DodgeRng::with_rolls(&[1]); // the belt misses
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+    }
+
+    /// M4-HAZARD-1 — the PaladinsShield semantics (`Player.cs:38210` +
+    /// `ImmunityCooldownID.cs:52`): the sole ImmuneTimerOnlyLimitsEffects
+    /// member skips the early-return, so a cooldown-active hit STILL DEALS
+    /// ITS DAMAGE (`:38383`); only the re-arm (`:38391`'s `== 0` gate) and
+    /// the retaliate (`:38401`'s `& flag`) are limited. A non-member lane
+    /// (Lava) with a live counter is swallowed outright.
+    #[test]
+    fn w4_d115_m4_hazard_paladins_shield_damage_lands_while_the_cooldown_runs() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.stat_defense = 0;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        let shield = crate::id_tables::IMMUNITY_PALADINS_SHIELD;
+        // The first shield hit lands and arms slot 5 with 40.
+        assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, shield));
+        assert_eq!(p.hurt_cooldowns[shield as usize], 40);
+        assert!(!p.immune, "the shield lane never touches the General pair");
+        assert!(p.take_retaliate().is_some(), "flag held: the first hit retaliates");
+        // The second hit inside the window: damage STILL lands, the
+        // counter does NOT extend, no retaliate queues (flag false).
+        let hp = p.hp;
+        assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, shield));
+        assert_eq!(p.hp, hp - 20, "the damage lands through the live counter");
+        assert_eq!(
+            p.hurt_cooldowns[shield as usize],
+            40,
+            "the == 0 gate refuses the re-arm (:38391)"
+        );
+        assert!(
+            p.take_retaliate().is_none(),
+            "the :38401 & flag gates the retaliate off"
+        );
+        // The contrast: a live LAVA counter swallows the hit outright
+        // (Lava is not an ImmuneTimerOnlyLimitsEffects member).
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_LAVA
+        ));
+        let hp = p.hp;
+        assert!(!p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_LAVA
+        ));
+        assert_eq!(p.hp, hp, "the lava lane's early-return holds (:38210)");
+    }
+
+    /// M4-HAZARD-1 — the retaliate gate reads the counter's set membership
+    /// (`Player.cs:38401`, `ImmunityCooldownID.cs:49`): General and
+    /// BossNoCheese queue on an accepted hit; Lava, TileContactDamage and
+    /// WrongBugNet never do (not Retaliate members).
+    #[test]
+    fn w4_d115_m4_hazard_the_retaliate_gate_reads_the_counter_membership() {
+        let w = ground_world();
+        let mut rng = DodgeRng::with_rolls(&[]);
+        for counter in [
+            crate::id_tables::IMMUNITY_GENERAL,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE,
+        ] {
+            let mut p = Player::spawn(&w);
+            assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, counter));
+            assert!(
+                p.take_retaliate().is_some(),
+                "counter {counter} is a Retaliate member"
+            );
+        }
+        for counter in [
+            crate::id_tables::IMMUNITY_LAVA,
+            crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE,
+            crate::id_tables::IMMUNITY_WRONG_BUG_NET,
+        ] {
+            let mut p = Player::spawn(&w);
+            assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, counter));
+            assert!(
+                p.take_retaliate().is_none(),
+                "counter {counter} is NOT a Retaliate member"
+            );
+        }
+    }
+
+    /// M4-HAZARD-1 — the lava budget gates on its OWN counter
+    /// (`Player.cs:27679`): the drain/hit arm reads
+    /// `hurtCooldowns[Lava] <= 0`, NOT the General window — a contact
+    /// hit's i-frames no longer pause the budget. While the Lava counter
+    /// runs, neither the drain nor the hit fires, and the budget does not
+    /// refill in lava (`flag26`, `:27674/:27716`).
+    #[test]
+    fn w4_d115_m4_hazard_the_lava_budget_gates_on_its_own_counter() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.lava_max = 420;
+        p.lava_time = 5;
+        p.hp = 500;
+        p.max_hp = 500;
+        // The General window is LIVE — the budget still drains (the C#
+        // gate reads only the Lava slot).
+        p.immune = true;
+        p.immune_time = 600;
+        p.hurt_cd = 10.0;
+        p.in_lava = true;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p.lava_time, 4, "the drain ignores the General i-frames");
+        // Empty the budget: the hit lands despite the General window and
+        // arms the Lava slot with 40.
+        p.lava_time = 0;
+        let hp = p.hp;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[1]));
+        assert_eq!(p.hp, hp - 80, "the lava hit lands through the i-frames");
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_LAVA as usize],
+            40
+        );
+        assert!(p.buffs.find_buff_index(24).is_some(), "OnFire granted");
+        // Inside the Lava window: no drain, no hit, no refill.
+        p.lava_time = 5;
+        let hp = p.hp;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p.lava_time, 5, "the counter gates the drain off (:27679)");
+        assert_eq!(p.hp, hp, "no second hit inside the Lava window");
+        // Out of the lava the budget refills (flag26 true, :27716).
+        p.in_lava = false;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p.lava_time, 6, "the refill rides the not-in-lava state");
+    }
+
+    /// M4-HAZARD-1 — the respawn census: the C# `Spawn` never writes
+    /// `hurtCooldowns` (the field's only mentions are the `:3160` decl,
+    /// the `:18887-18893` decay, the `:27679` lava gate, the `:31395`
+    /// thorns flag, the `:38017-38019` all-types write and the
+    /// `:38208/:38391-38393` Hurt arms) — the counters ride through death
+    /// untouched, while the General pair re-arms its 180-tick revive
+    /// window (`:37658-37666`).
+    #[test]
+    fn w4_d115_m4_hazard_the_counters_ride_through_death_untouched() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.hurt_cooldowns = [11, 22, 33, 44, 55, 66];
+        p.start_death(&w, false, false);
+        p.respawn();
+        assert_eq!(
+            p.hurt_cooldowns,
+            [11, 22, 33, 44, 55, 66],
+            "Spawn carries no array write (the C# field census)"
+        );
+        assert!(p.immune, "the revive arms the General window");
+        assert_eq!(p.immune_time, 180);
+        assert_eq!(p.hurt_cd, 0.0, "the collapsed mirror clears on respawn");
+    }
+
+    /// M4-HAZARD-1 — source census: outside the test module the array's
+    /// writers are exactly the four C# sites — the spawn initializer
+    /// (`:3160`), the `UpdateImmunity` decay (`:18887-18893`), the
+    /// `SetImmuneTimeForAllTypes` all-slot write (`:38017-38020`) and
+    /// `Hurt`'s per-counter re-arm (`:38391-38393`). The respawn body
+    /// carries none. (Needles split so this witness's own literals do
+    /// not count.)
+    #[test]
+    fn w4_d115_m4_hazard_the_array_writer_census_matches_the_csharp() {
+        let src = include_str!("player.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        // The respawn body: from its signature to the next method.
+        let respawn = body.find("pub fn respawn(&mut self)").unwrap();
+        let respawn_end = body[respawn + 10..].find("\n    pub ").unwrap() + respawn + 10;
+        let respawn_body = &body[respawn..respawn_end];
+        assert!(
+            !respawn_body.contains(concat!("hurt_", "cooldowns")),
+            "Spawn never writes the array (the C# field census)"
+        );
+        // The decay loop lives inside update_immunity.
+        let ui = body.find("pub fn update_immunity").unwrap();
+        let ui_end = body[ui + 10..].find("\n    pub ").unwrap() + ui + 10;
+        assert!(
+            body[ui..ui_end].contains(concat!("for cd in self.hurt_", "cooldowns.iter_mut()")),
+            "the :18887-18893 decay loop"
+        );
+        // The all-types write lives inside set_immune_time_for_all_types.
+        let st = body.find("fn set_immune_time_for_all_types").unwrap();
+        let st_end = body[st + 10..].find("\n    pub ").unwrap() + st + 10;
+        assert!(
+            body[st..st_end].contains(concat!("*cd = ", "time;")),
+            "the :38017-38020 all-slot write"
+        );
+        // Hurt's re-arm is the == 0-gated per-counter write.
+        assert!(body.contains(concat!(
+            "} else if self.hurt_",
+            "cooldowns[cooldown_counter as usize] == 0 {"
+        )));
     }
 
     /// W4-d115 wiring round — the Acc_Neck sim half: the Cross Necklace
