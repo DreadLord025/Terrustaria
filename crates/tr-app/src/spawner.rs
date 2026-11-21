@@ -2197,7 +2197,12 @@ fn find_nearby_book(ctx: &SpawnContext, x: i32, y: i32) -> Option<(i32, i32)> {
             }
         }
     }
-    best
+    // `:62349-62357`: the closestBook return — `bookPosition = vector`,
+    // then `if (vector.X == vector2.X) return vector.Y != vector2.Y;
+    // return true`. A book exactly at the scan origin (or no book at
+    // all, `vector` never moved) compares equal to the search position
+    // and returns false.
+    best.filter(|&(bx, by)| (bx, by) != (sx, sy))
 }
 
 fn spawn_basic_slime(
