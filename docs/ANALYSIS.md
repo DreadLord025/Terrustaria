@@ -39337,3 +39337,63 @@ SetLanguage 10/12 by page; PickColor 10 (`:50256`/`:50265`); Escape parent-walk
 in-flight Nav relation's swapped branches were fixed against the C# (Back =
 `parent(current) == target`, not the reverse).
 
+## W4-g22 batch 3 (2026-11-21, code-only) — sites 121-135
+
+**Batch 3 (sites 121-135)** — the legacy char-creation preview machines
+(menuModes 2/17/20/222, superseded by the 888 `UICharacterCreation` screen
+in the port) land as pure helpers behind witnesses, the `npc_ai_style59`
+unwired precedent; the case-20 female-hit play gains a live `Audio` seam:
+
+| site | C# | port |
+| --- | --- | --- |
+| 121 `:48802` | 889 Start -> host-password 10 | `Act::Nav(ServerSettings -> HostPassword)` queues `Menu_Open` (batch-2 Nav rule) |
+| 122 `:48806` | 889 Back 11 | `Act::Nav` parent relation queues `Menu_Close` |
+| 123 `:48822` | mode-15 disconnect-cancel 11 | UNPORTED surface (the connecting overlay has no cancel row) — recorded |
+| 124 `:48843` | mode-200 Load-Backup success 10 | UNPORTED surface (no corrupt-world recovery screen) — recorded |
+| 125 `:48849` | mode-200 no-backup 11 | UNPORTED — recorded |
+| 126 `:48857` | mode-200 Back 11 | UNPORTED — recorded |
+| 127 `:48876` | mode-201 Back 11 | UNPORTED — recorded |
+| 128 `:48917` | Singleplayer row 10 | LANDED batch 2 — `Act::Out(Singleplayer)` queues `Menu_Open` |
+| 129 `:48925` | Multiplayer row 10 | LANDED batch 2 — `Act::Nav(Main -> Multiplayer)` |
+| 130 `:48932` | Achievements row 10 | LANDED batch 2 — `Act::Out(Achievements)` |
+| 131 `:48942` | Workshop row 10 | UNPORTED (Steam Workshop, spec §9.1) — recorded |
+| 132 `:48954` | ResourcePacks row 10 | `Act::Hint` (the port's "not ported yet" notice) — the C# plays 10 then opens the packs menu; the port's Hint row is cue-less (the notice is not the vanilla open). Recorded deviation |
+| 133 `:48962` | Settings row 10 | LANDED batch 2 — `Act::Nav(Main -> Settings)` |
+| 134 `:48969` | Credits row 10 | LANDED batch 2 — `Act::Nav(Main -> Credits)` |
+| 135 `:48991` | mode-2 Hair-color open 10 | `main_sounds` legacy preview helper (the 888 `Click_ColorPicker` plays 12, a DIFFERENT site — the legacy mode-2 row is unwired) |
+
+**The pure helpers** (`main_sounds.rs`): `gender_toggle_cue` (the mode-2
+male<->female split, case 20 / case 1, `:49041-49052`),
+`randomize_hair_legacy` (the `Next(51)` legacy pool, NOT the 888's 213-id
+`AvailableHairstyles`, `:49076`), `rand_color_legacy` (the rejection-sampled
+`randColor`, three `Next(256)` while sum <= 150, `:47871-47883`),
+`hair_cycle_legacy` (the mode-17 +/- wrap at 51, `:49243-49259`),
+`cycle_clothing_style` (the gender variant-order walk skipping DLC 10/11,
+`:52397-52457` — NO RNG, a pure table walk).
+
+**The live audio seam** (`audio.rs`): `play_female_hit_sound` — case 20
+(`LegacySoundPlayer.cs:911-923`), ONE `Next(3)` slot pick on the caller's
+stream AFTER the unpositioned audibility gate, NO pitch draw; the
+`Female_Hit_0/1/2` bank rows resolve to legacy id 20. This is the seam the
+gender-toggle preview and the voice-variant-2 hurt arm (`Player.cs:38587`)
+will ride; the gameplay hurt drain stays variant-1 (the port has no voice
+setting, the standing deviation).
+
+**RNG**: the case-20 slot pick is the only draw in the live seam (one
+`Next(3)`, caller's stream, gate-first). The unwired legacy preview helpers
+draw on the caller's injected closure — `randomize_hair_legacy` one
+`Next(51)`, `rand_color_legacy` three `Next(256)` per rejection attempt;
+`cycle_clothing_style`/`hair_cycle_legacy`/`gender_toggle_cue` draw nothing.
+No gameplay stream touched (the helpers are unwired; the female-hit seam is
+caller-stream).
+
+**Scope note**: the 888 `UICharacterCreation` inline cues (`Click_ColorPicker
+:1239`, `UIDifficultyButton :84`, `UIHairStyleButton :82`, etc.) are a
+SEPARATE census from the `Main.cs` window g22 owns — they are NOT re-ported
+here (the port's blanket `Menu_Open` on the 888 clicks is the standing
+deviation, recorded for the UI-sounds lane). The legacy mode-2/17/20/222
+rows are unwired because the 888 screen superseded them.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+5 `main_sounds` witnesses + 1 `audio` witness WRITTEN NOT RUN.
+

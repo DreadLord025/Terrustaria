@@ -208,6 +208,112 @@ pub fn female_hit_case20(rng: &mut dyn FnMut(i32, i32) -> i32) -> i32 {
     rng(0, 3)
 }
 
+/// The menuMode 2 gender toggle's cue + state decision (`Main.cs:
+/// 49041-49052`): the male->female arm plays case 20 (`:49045`) and sets
+/// `Male = false`; the female->male arm plays case 1 (`:49050`) and sets
+/// `Male = true`. Returns `(new_male, cue_id)`. The `Player.Male` setter
+/// remaps `skinVariant` to the alt-gender reference (`Player.cs:
+/// 3411-3424`) — the caller applies it through `char_creation::set_male`.
+/// Both plays are unpositioned previews (`PlayVoicePreview` parks the
+/// player at `(-1, -1)`, `UICharacterCreation.cs:1522-1524`); the case-20
+/// slot pick rides `female_hit_case20`, the case-1 pick
+/// `sound::player_hit_case1`, each ONE `Next(3)` on the caller's stream
+/// AFTER the audibility gate.
+pub fn gender_toggle_cue(male: bool) -> (bool, u32) {
+    if male {
+        (false, 20) // `:49045-49046`
+    } else {
+        (true, 1) // `:49050-49051`
+    }
+}
+
+/// The menuMode 2 Randomize row's hair pick (`Main.cs:49075-49076`): the
+/// row plays 12 (`:49075`) then `Main.rand.Next(51)` (`:49076`) — the
+/// legacy 51-hair pool, NOT the 888 screen's 213-id `AvailableHairstyles`
+/// (`UICharacterCreation.cs:1549`). Returns the hair id; the cue is the
+/// constant 12 the caller plays BEFORE the draw (the C# order: sound, then
+/// the roll chain `:49076-49105`). The rest of the chain (the `randColor`
+/// draws, the `Next(60, 120)` skin tint, the `Next(PlayerVariantID.Count)`
+/// variant) is the caller's — this helper pins only the g22 site's own
+/// `Next(51)` slot.
+pub fn randomize_hair_legacy(rng: &mut dyn FnMut(i32) -> i32) -> i32 {
+    rng(51) // `:49076`
+}
+
+/// `Main.randColor` (`Main.cs:47871-47883`): the rejection-sampled colour
+/// the Randomize chain draws — three `Next(256)` channels, re-rolled while
+/// `r + g + b <= 150` (`:47876`), returned as `(r, g, b, 255)`. Each
+/// rejection consumes THREE draws on the caller's stream; the loop is
+/// unbounded in the C# (the `<= 150` gate keeps roughly 1 in 8 rolls).
+pub fn rand_color_legacy(rng: &mut dyn FnMut(i32) -> i32) -> [u8; 4] {
+    loop {
+        let r = rng(256); // `:47878`
+        let g = rng(256); // `:47879`
+        let b = rng(256); // `:47880`
+        if r + g + b > 150 {
+            return [r as u8, g as u8, b as u8, 255]; // `:47882`
+        }
+    }
+}
+
+/// The menuMode 17 hair-cycle row's step (`Main.cs:49243-49259`): the
+/// forward row (`selectedMenu == 0`) plays 12 and increments `hair`,
+/// wrapping at `count` (`:49246-49250`); the back row (`selectedMenu2 ==
+/// 0`, the gamepad/secondary cursor) plays 12 and decrements, wrapping to
+/// `count - 1` (`:49255-49258`). `count` is the legacy `num15 = 51`
+/// (`:49238`). Returns the new hair id; the cue is the constant 12.
+pub fn hair_cycle_legacy(hair: i32, count: i32, forward: bool) -> i32 {
+    if forward {
+        let next = hair + 1; // `:49246`
+        if next >= count {
+            0 // `:49249`
+        } else {
+            next
+        }
+    } else {
+        let next = hair - 1; // `:49255`
+        if next < 0 {
+            count - 1 // `:49258`
+        } else {
+            next
+        }
+    }
+}
+
+/// `Main.CycleClothingStyle` (`Main.cs:52397-52457`): the menuMode 20
+/// Style row (`:49205-49206`) and the clothes-window dummy cycle
+/// (`:44618`) advance `skinVariant` through the gender's variant order,
+/// skipping the two DLC styles 10/11 (`IsValidPlayerStyle`, `:52406-52413`
+/// — `(uint)(skinVariant - 10) <= 1` is false). The male order is
+/// `{0, 1, 2, 3, 8, 10}` and the female `{4, 5, 6, 7, 9, 11}`
+/// (`PlayerVariantID.cs` Sets ctor); the cycle wraps at the order's end
+/// (`:52429-52436`/`:52449-52456`) and the `while (!IsValidPlayerStyle)`
+/// loop (`:52400-52403`) skips 10/11 on landing. Returns the new variant.
+/// NO RNG — the cycle is a pure table walk; the cue (12 at `:49205`, 12 at
+/// `:44617`) is the caller's.
+pub fn cycle_clothing_style(skin_variant: i32, male: bool) -> i32 {
+    const MALE: [i32; 6] = [0, 1, 2, 3, 8, 10];
+    const FEMALE: [i32; 6] = [4, 5, 6, 7, 9, 11];
+    let order = if male { &MALE[..] } else { &FEMALE[..] };
+    // `CycleClothingStyle_Inner` (`:52415-52457`): find the current index
+    // (0 when absent — the C# `num` starts 0), step +1 with wrap.
+    let inner = |variant: i32| -> i32 {
+        let idx = order.iter().position(|&v| v == variant).unwrap_or(0);
+        if idx == order.len() - 1 {
+            order[0] // `:52431`/`:52451`
+        } else {
+            order[idx + 1] // `:52435`/`:52455`
+        }
+    };
+    // `CycleClothingStyle` (`:52397-52404`): one inner step, then re-cycle
+    // while `!IsValidPlayerStyle` (10/11 invalid, `:52406-52413`).
+    let mut variant = inner(skin_variant);
+    while matches!(variant, 10 | 11) {
+        variant = inner(variant);
+    }
+    variant
+}
+
 /// `Main.DrawSettingButton`'s hover-enter cue (`Main.cs:45595-45616`): the
 /// pointer entering the label rect plays ONE sound 12 (`:45601`) on the
 /// `!mouseOver` edge, then latches `mouseOver = true`; leaving the rect
@@ -386,5 +492,77 @@ mod tests {
         assert_eq!(slot, 2);
         // Exactly one draw, the Next(3) half-open range — no pitch roll.
         assert_eq!(draws, vec![(0, 3)]);
+    }
+
+    // ---- char-creation legacy preview (Main.cs:49041-49259) --------------
+
+    #[test]
+    fn g22_the_gender_toggle_splits_case20_and_case1() {
+        // male->female: case 20, Male=false (:49045-49046).
+        assert_eq!(gender_toggle_cue(true), (false, 20));
+        // female->male: case 1, Male=true (:49050-49051).
+        assert_eq!(gender_toggle_cue(false), (true, 1));
+    }
+
+    #[test]
+    fn g22_the_legacy_randomize_hair_draws_next51_not_next213() {
+        // :49076 — the legacy pool is 51, NOT the 888 screen's 213.
+        let mut draws = Vec::new();
+        let hair = randomize_hair_legacy(&mut |max| {
+            draws.push(max);
+            50
+        });
+        assert_eq!(hair, 50);
+        assert_eq!(draws, vec![51]);
+    }
+
+    #[test]
+    fn g22_rand_color_rejects_until_the_sum_exceeds_150() {
+        // :47876 — three Next(256) per attempt, re-roll while sum <= 150.
+        let mut rolls = [10, 20, 30, /* sum 60 <= 150: reject */ 100, 100, 100];
+        let mut i = 0;
+        let mut draws = 0;
+        let c = rand_color_legacy(&mut |_| {
+            let v = rolls[i];
+            i += 1;
+            draws += 1;
+            v
+        });
+        assert_eq!(c, [100, 100, 100, 255]);
+        assert_eq!(draws, 6, "two attempts, three draws each");
+        // The boundary: sum exactly 150 is rejected (<= 150).
+        let mut rolls = [50, 50, 50, /* 150: reject */ 50, 50, 51];
+        let mut i = 0;
+        let c = rand_color_legacy(&mut |_| {
+            let v = rolls[i];
+            i += 1;
+            v
+        });
+        assert_eq!(c, [50, 50, 51, 255], "151 passes");
+    }
+
+    #[test]
+    fn g22_the_hair_cycle_wraps_at_the_legacy_51_pool() {
+        // Forward (:49246-49250): increment, wrap at count.
+        assert_eq!(hair_cycle_legacy(0, 51, true), 1);
+        assert_eq!(hair_cycle_legacy(50, 51, true), 0);
+        // Back (:49255-49258): decrement, wrap to count-1.
+        assert_eq!(hair_cycle_legacy(1, 51, false), 0);
+        assert_eq!(hair_cycle_legacy(0, 51, false), 50);
+    }
+
+    #[test]
+    fn g22_the_clothing_cycle_walks_the_gender_order_and_skips_dlc() {
+        // Male order {0,1,2,3,8,10}: 3 -> 8 (:52435).
+        assert_eq!(cycle_clothing_style(3, true), 8);
+        // 8 -> 10 is invalid (DLC), re-cycle 10 -> 0 (:52400-52403).
+        assert_eq!(cycle_clothing_style(8, true), 0);
+        // The wrap: the last valid male is 8 (10 skipped), so 8 wraps to 0.
+        // Female order {4,5,6,7,9,11}: 7 -> 9.
+        assert_eq!(cycle_clothing_style(7, false), 9);
+        // 9 -> 11 invalid, re-cycle 11 -> 4.
+        assert_eq!(cycle_clothing_style(9, false), 4);
+        // An absent variant starts at index 0 (:52419 num=0), steps to [1].
+        assert_eq!(cycle_clothing_style(99, true), 1);
     }
 }

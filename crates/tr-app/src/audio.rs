@@ -66,6 +66,14 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Player_Hit_0", 1),
     ("Player_Hit_1", 1),
     ("Player_Hit_2", 1),
+    // W4-g22 — the female hurt family (`SoundFemaleHit[3]`,
+    // `LegacySoundPlayer.cs:198-200`): case 20 (`:911-923`) picks
+    // `Female_Hit_<Next(3)>`. The menuMode 2 gender toggle's male->female
+    // preview plays it (`Main.cs:49045`); the voice-variant-2 hurt arm
+    // (`Player.cs:38587`) is the same case.
+    ("Female_Hit_0", 20),
+    ("Female_Hit_1", 20),
+    ("Female_Hit_2", 20),
     // The legacy "Player Killed" id 5 (`Player.PlayDeathSound`,
     // `Player.cs:38745`) — the `Sounds/Player_Killed.xnb` asset.
     ("Player_Killed", 5),
@@ -1726,6 +1734,42 @@ impl Audio {
             _ => "Player_Hit_2",
         };
         self.emit(cue, -1.0, -1.0, 1.0, pitch_offset.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// W4-g22 — one female-hurt play (the menuMode 2 gender toggle's
+    /// male->female preview, `Main.cs:49043-49047` `PlaySound(20)`; the
+    /// voice-variant-2 hurt arm `Player.cs:38587` is the same case). The
+    /// preview is unpositioned (`PlayVoicePreview` parks the player at
+    /// `(-1, -1)`, `UICharacterCreation.cs:1522-1524`), so the attenuation
+    /// walk takes the `x == -1` flag arm — no distance gate, only the
+    /// volume-slider checks.
+    ///
+    /// Case 20 (`LegacySoundPlayer.cs:911-923`): ONE `Main.rand.Next(3)`
+    /// slot pick (`:913`) — `Female_Hit_<n>`, NO pitch draw (the case sets
+    /// Volume/Pan only, `:919-920`). The int overload (`SoundEngine.cs:
+    /// 102-108`) draws NO `GetRandomPitch` NextFloat. The pick rides the
+    /// caller's stream (the front-end bare-`Main.rand` stand-in for the
+    /// preview) and only AFTER the gate passed. The instance Stop +
+    /// re-create (`:914-918`) is the standing D4 deviation. Returns the
+    /// cue played; `None` when the gate refused.
+    pub fn play_female_hit_sound(
+        &mut self,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The unpositioned gate first — the flag arm still checks the
+        // volume slider (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(20, -1.0, -1.0, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let slot = crate::main_sounds::female_hit_case20(&mut |lo, hi| rng.next_range(lo, hi));
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let cue = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        self.emit(cue, -1.0, -1.0, 1.0, 0.0);
         Some(cue)
     }
 
@@ -4354,6 +4398,42 @@ mod tests {
         assert_eq!(sound_type("Coin_0"), 38, "the id-18 alias is retired");
         for n in 0..5 {
             let name = format!("Coin_{n}");
+            assert!(SFX_CUES.iter().any(|(c, _)| *c == name), "{name} in the table");
+        }
+    }
+
+    /// W4-g22 — the female-hurt play (case 20, the menuMode 2 gender
+    /// toggle's male->female preview `Main.cs:49045`): ONE `Next(3)` slot
+    /// pick on the passed stream (`LegacySoundPlayer.cs:913`), NO pitch
+    /// draw; the muted gate refuses before any draw. The int overload draws
+    /// no GetRandomPitch. Written, not run (code-only mode).
+    #[test]
+    fn g22_the_female_hit_draws_one_next3_and_no_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 3);
+        let cue = audio.play_female_hit_sound(&mut rng);
+        let want = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        assert_eq!(cue, Some(want), "the slot pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Muted: the gate precedes the switch — draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_female_hit_sound(&mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted female hit is draw-free");
+        // The bank rows resolve to the legacy id 20.
+        for n in 0..3 {
+            let name = format!("Female_Hit_{n}");
+            assert_eq!(sound_type(&name), 20);
             assert!(SFX_CUES.iter().any(|(c, _)| *c == name), "{name} in the table");
         }
     }
