@@ -5,6 +5,41 @@ Branch: `task/W4-d36-npc-kinds-141-210`, base `a725acb0` (claim `65e481f9`).
 All numbers re-derived by script from the working tree + `git show` of the
 pushed tips (no compiler invoked; code-only mode).
 
+## SUPERSEDED IN PART — Lead ruling (d37c research/108-E `bdd59afb`)
+
+The 108-E full-wave re-census (18 pushed claimants, not the 6-tip read this
+doc's §2 scan predates) is AUTHORITATIVE where it conflicts:
+
+1. **Protocol band: 762-811, NOT §3's 731-768.** 108-E4 re-pins d36 to
+   **762-811** because the canonical small-lane shifts occupy 731-761
+   (g8's 17 owned kinds → 745-761 alone collide with §3's whole 731-768
+   plan). 28 kinds ride 762-789 contiguous, ascending vanilla order.
+2. **Skip-list: 21 claimed, NOT §2's 11 → this wave ports 28, NOT 38.**
+   The scan missed: g8 batch-1's 150 IceBat / 151 Lavabat / 152
+   GiantFlyingFox / 156 RedDevil / 158 VampireBat (108-E2 item 4 lists all
+   five in g8's 17-kind owned set → 745-761); d120's 142 SantaClaus /
+   160 Truffle / 178 Steampunker / 209 Cyborg (108-E0: proto 241-244,
+   kept vanilla-free); g5's **172 RuneWizard** (pushed tip `feb78f109`
+   "wire the two unclaimed aiStyle-8 casters", `RuneWizard => 354` —
+   not in 108-E's tables but a pushed kind-port; ownership rule E3
+   gives it to the pushed lane). 14 g8 + 4 d120 + c4-157 + d23-175 +
+   g5-172 = 21 skips; 49 missing − 21 = **28**.
+3. **The 28-kind list** (§2's 38 minus the 10 newly-found claims):
+   141 ToxicSludge, 148 Penguin, 149 PenguinBlack, 153 GiantTortoise,
+   154 IceTortoise, 155 Wolf, 159 Vampire, 162 Frankenstein,
+   163 BlackRecluse, 166 SwampThing, 167 UndeadViking, 168 CorruptPenguin,
+   170 PigronCorruption, 171 PigronHallow, 173 Crimera, 176 MossHornet,
+   180 PigronCrimson, 181 FaceMonster, 185 SnowFlinx, 197 ArmoredViking,
+   198 Lihzahrd, 199 LihzahrdCrawler, 201 HeadacheSkeleton,
+   202 MisassembledSkeleton, 203 PantlessSkeleton, 204 SpikedJungleSlime,
+   205 Moth, 206 IcyMerman → proto **762-789**.
+4. **Count pins (§9) recompute:** ALL_KINDS 270→298; to/from_u16 298 arms;
+   s1_f_3 298; ENTRIES 241→268 (+27: 28 kinds − 1 fold 198→199; 158 is
+   skipped so its fold row is g8's problem); BESTIARY_NPC_SHEET_IDS
+   181→208 (+27); D36_SHEETS 28 rows (the 198 fold keeps its own sheet).
+   §1's census, §4-§8's folds/immunities/frames/AI-routing stand for the
+   28 kept kinds (the skipped rows are their owners' now).
+
 ## 0. Foreign-writer incident (preserved, not discarded)
 
 At 08:07 local the worktree carried **uncommitted W4-d36 edits this session
