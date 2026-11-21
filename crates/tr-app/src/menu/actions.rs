@@ -32,6 +32,11 @@ pub enum Action {
     /// only reachable on the menu the options window's Keybinds row opened
     /// (`Menu::in_game_keybinds`).
     ReturnToWorld,
+    /// W4-g22 DOC-SWEEP — the connecting overlay's Cancel
+    /// (`Main.cs:48615-48635` menuMode 14 / `:48818-48825` menuMode 15):
+    /// `Netplay.Disconnect = true` + the socket close, `menuMode = 0`,
+    /// `netMode = 0`. The 11 (`:48621`/`:48822`) rides `pending_cue`.
+    CancelConnect,
 }
 
 /// One settings row. Every variant is a `Main`/`ItemSlot` field the screens toggle.
@@ -144,6 +149,16 @@ impl Menu {
             return Action::None;
         }
         self.hint = None;
+        // W4-g22 DOC-SWEEP — while the connecting overlay is live the C#
+        // draws ONLY the status + Cancel rows (`Main.cs:48602-48635`,
+        // menuMode 14 / netMode 1): every click lands on Cancel, which
+        // disconnects and plays 11 (`:48621`). The port keeps the page's
+        // rows drawn under the overlay (deviation) but the click answers
+        // the same Cancel.
+        if self.connecting {
+            self.pending_cue = Some("Menu_Close"); // `:48621`/`:48822`
+            return Action::CancelConnect;
+        }
         // W4-g22 — every activation starts cue-less; the arms below queue
         // the C# site's own `PlaySound` (the g22 window `Main.cs:48489-
         // 49727`). The App drains `pending_cue` after the click/key.
@@ -266,6 +281,9 @@ impl Menu {
                     self.pending_cue = Some("Menu_Close");
                     Action::ReturnToWorld
                 }
+                // No row carries it — the connecting-overlay guard above
+                // `activate` produces it (W4-g22 DOC-SWEEP).
+                Action::CancelConnect => Action::CancelConnect,
             },
             Act::Toggle(toggle) => {
                 // W4-g22 — every settings toggle row plays 12 before the
@@ -539,6 +557,13 @@ impl Menu {
                 return Action::None;
             }
             K::Escape => {
+                // W4-g22 DOC-SWEEP — the connecting overlay's gamepad Back
+                // (`flag5` ORs into the Cancel branch, `Main.cs:48615`):
+                // disconnect + 11 (`:48621`), before every other arm.
+                if self.connecting {
+                    self.pending_cue = Some("Menu_Close");
+                    return Action::CancelConnect;
+                }
                 // The in-world keybinds screen closes back to gameplay
                 // (`IngameFancyUI.Close`'s GoBack).
                 if self.in_game_keybinds {

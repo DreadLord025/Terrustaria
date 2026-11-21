@@ -2664,6 +2664,10 @@ impl App {
                 self.close_menu();
                 self.inventory_open = true;
             }
+            // W4-g22 DOC-SWEEP — the connecting overlay's Cancel
+            // (`Main.cs:48615-48635`): the 11 already rode the cue queue
+            // (`:48621`/`:48822`); the state change is `cancel_connect`.
+            Action::CancelConnect => self.cancel_connect(),
             Action::Singleplayer => {
                 // `Main.cs:48981-48987`: menuMode 1 -> `OpenCharacterSelectUI`
                 // (888) — the real screen flow replaces the old "Single
@@ -2762,6 +2766,26 @@ impl App {
                     }
                 }
             },
+        }
+    }
+
+    /// W4-g22 DOC-SWEEP — the connecting overlay's Cancel state change
+    /// (`Main.cs:48615-48635`): `Netplay.InvalidateAllOngoingIPSetAttempts`
+    /// + `Disconnect = true` + the socket close, then `menuMode = 0` /
+    /// `netMode = 0`. The port drops the client role (the socket close),
+    /// clears the join target and returns the menu to its main page. The
+    /// 11 rides the menu's cue queue (`:48621`/`:48822`), not this fn.
+    pub(crate) fn cancel_connect(&mut self) {
+        self.net = NetRole::Off;
+        self.join_target = None;
+        self.net_state = net::client_state::NOT_CONNECTED;
+        self.net_dropped = false;
+        if let Some(m) = self.menu.as_mut() {
+            m.connecting = false;
+            m.page = menu::Page::Main;
+            m.selected = 0;
+            m.hint = None;
+            m.bar_grab = None;
         }
     }
 
@@ -3265,6 +3289,34 @@ mod tests {
         app.inventory_open = true;
         app.inventory[3] = slot(9, 10);
         assert!(!chest::try_placing_in_chest(&mut app, 3, false));
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the connecting-cancel end to end: the
+    /// menu queues ONE Menu_Close (`Main.cs:48621`), `cancel_connect`
+    /// drops the client role, clears the join target and returns the main
+    /// page (`menuMode = 0` / `netMode = 0`, `:48622-48623`).
+    #[test]
+    fn doc_sweep_cancel_connect_drops_the_role_and_returns_main() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut m = crate::menu::Menu::new(app.settings.clone(), "T".into());
+        m.page = crate::menu::Page::JoinPassword;
+        m.connecting = true;
+        m.hover = Some(0);
+        app.menu = Some(m);
+        app.join_target = Some(("127.0.0.1:7777".into(), String::new()));
+        let action = app.menu.as_mut().unwrap().click();
+        assert!(matches!(action, menu::Action::CancelConnect));
+        let cue = app.menu.as_mut().unwrap().take_cue();
+        assert_eq!(cue, Some("Menu_Close"));
+        let before = app.audio.played_count();
+        app.audio.play(cue.unwrap());
+        assert_eq!(app.audio.played_count(), before + 1, "one 11");
+        app.cancel_connect();
+        assert!(matches!(app.net, NetRole::Off), "the socket closed");
+        assert!(app.join_target.is_none());
+        let m = app.menu.as_ref().unwrap();
+        assert!(!m.connecting);
+        assert_eq!(m.page, crate::menu::Page::Main, "menuMode = 0");
     }
 
     /// DW-4.3 — the accelerator ladder (`Main.cs:61781-61807`): the first

@@ -3258,6 +3258,29 @@ mod tests {
         assert_eq!(m.take_cue(), None);
     }
 
+    /// W4-g22 DOC-SWEEP witness — the connecting overlay's Cancel
+    /// (`Main.cs:48615-48635`): a click on ANY row and the Escape both
+    /// answer `CancelConnect` with ONE Menu_Close queued (`:48621`), and
+    /// the text stays eaten (no 12).
+    #[test]
+    fn doc_sweep_connecting_cancel_queues_eleven() {
+        let mut m = menu(Page::JoinPassword);
+        m.connecting = true;
+        // A click lands on Cancel no matter the row.
+        m.hover = Some(0);
+        assert!(matches!(m.click(), Action::CancelConnect));
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+        // Escape (the flag5 arm) does the same.
+        assert!(matches!(m.key(winit::keyboard::KeyCode::Escape), Action::CancelConnect));
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+        // Typing stays silent under the overlay.
+        m.character('x');
+        assert_eq!(m.take_cue(), None);
+        // Once the overlay clears, the page's own semantics return.
+        m.connecting = false;
+        assert!(matches!(m.key(winit::keyboard::KeyCode::Escape), Action::None));
+    }
+
     #[test]
     fn g22_escape_parent_walk_queues_eleven_and_take_cue_drains_once() {
         let mut m = menu(Page::General);
