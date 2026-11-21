@@ -14607,6 +14607,72 @@ the chat line prints the raw `[a:NAME]` tag (the port's chat carries no
 snippet markup yet, `chat.rs`); the popup's `gameMenu && menuMode == 0` click
 gate is moot for the same reason.
 
+## The achievement notify tail batch (W4-f30)
+
+**Code-only mode** (2026-11-21, `task/W4-f30-achievement-notify-2`): no cargo/
+rustc/tests run — the verification is a line-by-line re-read of the C# call-site
+census against the port's owning systems, plus 13 tests-as-code (written, not
+run). The co-lane split (c36's claim, research/30) gives f30 the *tail* notify
+sites: progression 33-41/43-46, `MechaMayhem_*` (21) and the
+`CheckResearchAchievement` family (45). The full wire-vs-cite census lives in
+research/30 "W4-f30 tail census"; the e22 condition table (180 conditions) is
+untouched — f30 wires notify sites only, never `achievements_data.rs`.
+
+**Wired (the owning system is ported):**
+
+- **MECHA_MAYHEM (21)** — the `AchievementsHelper.MechaMayhem_*` statics
+  (`AchievementsHelper.cs:19-25`, `430-504`) port onto `AchievementManager` as
+  the `MechaMayhem` run state (`mecha_mayhem_{clear,start,kill}` + the private
+  `scan_for_mechs`). `ScanForMechs` reads the living roster's net ids (Prime 127,
+  Destroyer 134, BOTH Twins 125+126); `Clear` resets the three down-latches only
+  when no mech family is alive (`NPC.SpawnBoss`'s pre-spawn bookend,
+  `NPC.cs:80664-80668`); `Start` arms `mayhemOK` only with all three families
+  (the post-spawn bookend, `:80682-80685`); `Kill` latches each family's death
+  and aborts the run when a family vanishes without its latch (`:455-477`),
+  firing 21 when all three fall (`:478-481`). The summon bookends wire into
+  `use_boss_summon_item` — the 544 arm runs Clear/Start PER EYE in the C# order
+  (`Player.cs:43811-43812`'s two `SpawnOnPlayer` calls), the 556/557 arms the
+  shared pair. The death path's `NotifyNPCKilled` block restructures into the
+  faithful `CountKillForAchievements` switch (`NPC.cs:79833-79862`): the Twins
+  credit+mayhem gate on `!AnyNPCs(other eye)`, Prime/Destroyer run
+  mayhem-before-credit, the EoW family (13/14/15) credits only when `boss`. The
+  `DropEoWLoot` last-segment boss latch (`NPC.cs:78414-78430`) lands ahead of the
+  credit so the EoW gate reads it (the port's death batch removes every dead
+  segment first, so the scan reads the survivors + the other dead clones).
+- **SPICY_LICKS (37)** — the Sparkle Guitar 4715's note spawn fires 37
+  (`Player.cs:46603`); the port's `fire_non_ammo_shot` seam is the chord-use
+  stand-in.
+- **ON_FLEEK (38) + MINI_ME (41)** — `update_player`'s armor tail ports the
+  `UpdateArmorSets` local-player block (`Player.cs:25686-25704`): the effective
+  armor slots (vanity 10/11/12 over functional 0/1/2, the no-loadout
+  `GetEffectiveArmor` fold) drive ON_FLEEK (head-slot 12 + the day window +
+  above-surface + no-rain + not-remix) and MINI_ME (the Moon Lord set
+  187/249/217).
+
+**Prep (the count lands, the call sites stay cited):**
+
+- **TRASH_COMPACTOR (45)** — `ResearchTracker` gains `LastEditId` (the
+  `MarkContentsDirty` counter, `ItemsSacrificedUnlocksTracker.cs:222-225`) and
+  `count_fully_researched` (the `ItemID.Count` cap-table walk, `:60-75`), plus
+  the `check_research_achievement` helper (the `fullyResearched >= allItems / 2`
+  integer-division threshold, `AchievementsHelper.cs:387-399`). The live
+  sacrifice UI is unported (the tracker has no App field/consumer), so the
+  per-tick (`Player.cs:25703`) and `EnterWorld` (`:325`, forced) call sites stay
+  cited until the Journey research lands.
+
+**Deviations (the cited sites — the owning system is unported):** 33
+(vampire sun-scorch), 34 (boulder rain), 35 (hardcore death penalty), 36
+(gravestone kill / MP teammate death), 39 (rainbow-boulder draw), 40 (the
+volume-two combat book), 43 (the town shimmer transform), 44 (`BordersMovement`),
+46 (the Dryad Stardew/Joja gift) — each keeps its C# anchor in research/30's
+census. The 37 sites for The Axe 1305 / Carbon+Ivy guitars 4057/4372 stay cited
+(no ported chord-use arm). Progression 31 (QUEEN_MACHINE) stays cited — the
+Mechdusa summon (5334) + its combined-boss death are unported; only its gate
+(`SeedFlags::mechdusa`, `SpecialSeedFeatures.cs:119-128`) lands. The 544 summon
+arm's `boss_handled` flag is a port structural stand-in (the C# pushes each eye
+through its own `SpawnOnPlayer`; the port pushes both in the arm and skips the
+shared tail's push) — observation-identical, the per-eye bookend order preserved.
+
 ## The emote bubble wheel (S1-E-26 wave B)
 
 **Code-only mode** (2026-11-18, `task/S1-E-26b-emote-ui`): no cargo/rustc/
