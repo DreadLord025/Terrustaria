@@ -67,6 +67,8 @@
 //! | 241-243 | `:83340-83342` | the 423 Vortex Hornet death (3 gores at Center, vel x0.8/x0.9) |
 //! | 244-246 | `:83373-83375` | the 421 Vortex Larva death (3 gores at Center, vel x0.8/x0.9) |
 //! | 247-249 | `:83406-83408` | the 420 Vortex Rider death (3 gores at Center, vel x0.8/x0.9) |
+//! | 250-252 | `:83503-83505` | the 409 Stardust Spider death (3 gores at Center, vel x0.8/x0.9) |
+//! | 253-258 | `:83557-83562` | the 407 Stardust Cell death (6 gores, Next(3)!=0 type-17 dust gate) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1458,6 +1460,86 @@ fn vortex_rider_death(
     gore.new_gore(rng, world, c, vel * 0.9, 784, 1.0); // :83408
 }
 
+/// The 409 Stardust Spider death (`NPC.cs:83496-83505`, sites 250-252): the
+/// 20-iteration UNGATED type-17 + type-229 burst (the 229 gets noGravity,
+/// velocity ×3 — NO scale/fadeIn writes here), then the 3 gores 775/776/777
+/// at Center with velocity ×0.8/×0.8/×0.9. Scale defaults to 1.
+fn stardust_spider_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83496-83502` — 20 iterations: type-17 + ungated type-229.
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 17, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 229, 0.0, 0.0, 0,
+            Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+    }
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, c, vel * 0.8, 775, 1.0); // :83503
+    gore.new_gore(rng, world, c, vel * 0.8, 776, 1.0); // :83504
+    gore.new_gore(rng, world, c, vel * 0.9, 777, 1.0); // :83505
+}
+
+/// The 407 Stardust Cell death (`NPC.cs:83547-83562`, sites 253-258): the
+/// 20-iteration burst, each a `Next(3) != 0`-gated type-17 dust (the INVERSE
+/// gate — the draw fires, the spawn is skipped on 0) then an UNGATED
+/// type-229 dust (noGravity, velocity ×3); then the 6 gores 778/779 at Top
+/// (vel ×0.8) and 780/781/780/781 at Center (vel ×0.9). Scale defaults to 1.
+fn stardust_cell_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83547-83556` — 20 iterations: the Next(3)!=0-gated type-17 + ungated 229.
+    for _ in 0..20 {
+        // `:83549` — the INVERSE gate: spawn when Next(3) != 0.
+        if rng.next_max(3) != 0 {
+            dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 17, hit_direction, -1.0, 0,
+                Color::default(), 1.0,
+            );
+        }
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 229, 0.0, 0.0, 0,
+            Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+    }
+    let t = top(npc);
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, t, vel * 0.8, 778, 1.0); // :83557
+    gore.new_gore(rng, world, t, vel * 0.8, 779, 1.0); // :83558
+    gore.new_gore(rng, world, c, vel * 0.9, 780, 1.0); // :83559
+    gore.new_gore(rng, world, c, vel * 0.9, 781, 1.0); // :83560
+    gore.new_gore(rng, world, c, vel * 0.9, 780, 1.0); // :83561
+    gore.new_gore(rng, world, c, vel * 0.9, 781, 1.0); // :83562
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1630,6 +1712,14 @@ pub fn hit_effect_c(
     // `:83378-83410` — the 420 Vortex Rider arm (sites 247-249).
     if npc_type == 420 && npc.hp <= 0 {
         vortex_rider_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83481-83507` — the 409 Stardust Spider arm (sites 250-252).
+    if npc_type == 409 && npc.hp <= 0 {
+        stardust_spider_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83532-83564` — the 407 Stardust Cell arm (sites 253-258).
+    if npc_type == 407 && npc.hp <= 0 {
+        stardust_cell_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2599,6 +2689,67 @@ mod tests {
                 assert_eq!(gore.slot(i).position, Vec2::new(120.0, 120.0));
             }
         }
+    }
+
+    /// `NPC.cs:83503-83505` — the Stardust Spider death: the 3 gores
+    /// 775/776/777 at Center, velocity x0.8/x0.8/x0.9, after the 20x
+    /// ungated (type-17 + type-229) burst.
+    #[test]
+    fn w4_f10_the_stardust_spider_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(163);
+        stardust_spider_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![775, 776, 777]);
+        // Center = (120,115).
+        for i in 0..3 {
+            assert_eq!(gore.slot(i).position, Vec2::new(120.0, 115.0));
+        }
+    }
+
+    /// `NPC.cs:83557-83562` — the Stardust Cell death: the 6 gores
+    /// 778/779 at Top (vel x0.8) and 780/781/780/781 at Center (vel x0.9),
+    /// after the 20x(Next(3)!=0-gated type-17 + ungated type-229) burst. The
+    /// twin replay pins the INVERSE gate (the draw fires even when skipped).
+    #[test]
+    fn w4_f10_the_stardust_cell_death_uses_the_inverse_gate() {
+        let w = air();
+        let n = boss(100.0, 100.0, 36.0, 36.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(167);
+        stardust_cell_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![778, 779, 780, 781, 780, 781]);
+        // Top = (118,100); Center = (118,118).
+        assert_eq!(gore.slot(0).position, Vec2::new(118.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(118.0, 100.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(118.0, 118.0));
+        // The twin: 20 x (Next(3) gate; a taken gate adds the type-17
+        // census; then the type-229 census), then the 6 gores' kicks.
+        let mut twin = UnifiedRandom::new(167);
+        let census = |r: &mut UnifiedRandom| {
+            let _px = r.next_max(32);
+            let _py = r.next_max(32);
+            let _vx = r.next_range(-20, 21);
+            let _vy = r.next_range(-20, 21);
+            let _row = r.next_max(3);
+            let _scale = r.next_range(-20, 21);
+        };
+        for _ in 0..20 {
+            if twin.next_max(3) != 0 {
+                census(&mut twin); // type 17 (no tweak)
+            }
+            census(&mut twin); // type 229 (no tweak)
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the cell death mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
