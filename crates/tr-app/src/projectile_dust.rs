@@ -3999,6 +3999,9 @@ mod tests {
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
             assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
         }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
     /// W4-e3 AI-inline window — `:56042-56055`: the 1006's Next(8) gate,
     /// the wet-halved velocity, Circular(4,4)'s unit+radius pair, the hue
     /// NextFloat BEFORE the scale NextFloat (argument order), the Perfect
@@ -4106,6 +4109,9 @@ mod tests {
             assert!(pool.slot(i).no_gravity);
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
         }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
     /// W4-e3 AI-inline window — `:29238-29303`: the 1042's 6×324 trail
     /// (three alpha gates each, the Centre−v·i/6 position, the ×0.2 tail,
     /// the Next(6) colour) + the Next(4) extra (scale 0.6, no alpha gates,
@@ -4270,6 +4276,10 @@ mod tests {
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
             assert_eq!(pool.slot(i).no_gravity, mpool.slot(i).no_gravity);
         }
+        assert!(pool.slot(2).no_gravity, "the strike arm writes noGravity unconditionally");
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
     /// W4-e3 AI-inline window — `:31889-31899`: the 464's 6×2 spoke ring
     /// (the velocity-rotated (0,−720) spin scaled by ai[0]%45/45, the
     /// RandomVector2(−8,8)/2 jitter = TWO NextDouble-cast draws per dust,
@@ -4531,6 +4541,10 @@ mod tests {
         assert_eq!(active(&pool2).len(), 1);
         assert_eq!(pool2.slot(0).position, at);
         assert_eq!(pool2.slot(0).velocity, Vec2::ZERO);
+        assert_eq!(pool2.slot(0).dust_type, 246);
+        assert_eq!(rng2.next_range(0, 1000), mirror2.next_range(0, 1000));
+    }
+
     /// W4-e3 AI-inline window — `:33011-33026` (the 524's two Next(3)!=0
     /// puffs, i=1's +vel/2, the (800−ai[0])/800+0.1 scale) +
     /// `:33145-33151` (the 526's two Centre 228s, +(4,4), NextFloat scale)
@@ -4676,6 +4690,9 @@ mod tests {
             assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
             assert_eq!(pool.slot(i).fade_in, 0.5);
         }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
     /// W4-e3 AI-inline window — `:34505-34535`: the flag58 explosion's
     /// 4+20+5+10 = 39 dusts; the UnitY loops draw RotatedByRandom(π)'s TWO
     /// NextDoubles + ONE NextDouble radius, the UnitX loops rotate by the
@@ -4840,6 +4857,9 @@ mod tests {
             assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
             assert_eq!(pool.slot(i).fade_in, mpool.slot(i).fade_in);
         }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
     /// W4-e3 AI-inline window — `:35852-35944`: the rise's 3×31 (the TWO
     /// Next(5) post-writes, the integer-half rotated pin) + the 60-burst /
     /// 9-plume SelectRandom(6,259,158) shape (pick FIRST, alpha 200, the
@@ -4983,6 +5003,9 @@ mod tests {
             assert_eq!(pool.slot(j).fade_in, mpool.slot(j).fade_in);
             assert_eq!(pool.slot(j).no_gravity, mpool.slot(j).no_gravity);
         }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
     /// W4-e3 AI-inline window — `:36094-36177`: the 658 plume (amount
     /// NextFloat FIRST, the X-lerp second, the >−1.2-gated velocity.X
     /// NextFloat, the unconditional velocity.Y NextFloat) + the two orbit
