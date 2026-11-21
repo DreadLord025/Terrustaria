@@ -39400,20 +39400,47 @@ spawn + the `TryUpdateChannel` tail landed in `world_sim/editing.rs`.
 **Deviations (documented):** the C# ghost tints carry alpha 0 (a no-op in
 its blend); the port's premultiplied pipeline needs alpha 255 to show the
 ghost - the tail overrides to 255. `Wiring.MassWireOperation` is UNPORTED
-(the mass-op lane; `world_sim/editing/wiring.rs:27-29` records the same
-gap for the Multicolor Wrench) - the kill intents drain and drop in
+ON THIS BRANCH - the kill intents drain and drop in
 `world_sim/projectiles.rs` with the note; the ghost preview + the
-anchor/release machine are the ported visuals.
+anchor/release machine are the ported visuals. **The seal's compose
+verdict (research/283 §4)**: the apply is NOT an open gap - c42 owns it
+(`world_sim/wiring.rs::mass_wire_operation`, fold-133 `05ae5cc6`, the
+58-slot stock census + the core L-walk + the ConsumeItem bill), f11
+threads the `drop_rng` param (research/133 §8.4a), d13 owns the pool
+seam; the merger replaces this lane's drop with the published
+direct-drain hunk (f11 research/133 §8.4b - RAW ToolMode, no Actuator
+strip, no cooldown gate, `owner == local_id`, `UpdateProjectiles`).
+The Multicolor Wrench 3625 use arm rides the same c42 apply
+(`editing/wiring.rs:207`, the Actuator-strip mask `Player.cs:46908`).
 
-### 3. Junction-box hover highlight - NO wire-specific C# exists
+### 3. Junction-box hover highlight - CORRECTED at the seal (research/283)
 
-The highlight is the GENERIC smart-cursor tile-outline subsystem:
-`TileDrawing.GetTileOutlineInfo` (`TileDrawing.cs:4478-4489`),
-`Main.InSmartCursorHighlightArea` (`Main.cs:3945-3957`),
-`TileSmartInteractCandidateProvider.cs:325/:329`. The whole subsystem is
-unported and is NOT wire-specific - porting it here would exceed the
-visual-residual scope. Recorded (PORT_MAP row marked missing), not
-ported; it needs its own lane.
+The census-close called this the GENERIC smart-cursor tile-outline
+subsystem (`TileDrawing.GetTileOutlineInfo` `TileDrawing.cs:4478-4489`,
+`Main.InSmartCursorHighlightArea` `Main.cs:3945-3957`) and recorded it
+MISSING. **The seal re-read corrects the attribution**: the junction box
+is tile 424 (`TileID.WirePipe`, `TileID.cs:1477`; the Pixel Box is 445,
+`:1519`), and **neither 424 nor 445 nor the 423 LogicSensor is in
+`TileID.Sets.HasOutlines`** (`TileID.cs:551` - the full set re-read, the
+three ids absent). The outline subsystem CANNOT highlight them: the
+`GetTileOutlineInfo` call is gated on `HasOutlines[typeCache]`
+(`TileDrawing.cs:893-895`). There is also NO 424/445/423 arm in
+`TileInteractionsMouseOver` (`Player.cs:33587-34743`, the g86
+research/244 101-arm site-list - the only 42x/44x arms are 441/440).
+**No junction-box hover highlight exists in the C#.** What DOES exist:
+* the tile-423 LogicSensor (style 2 "Above", `frameY == 36`) RANGE
+  rectangle - the always-on LightSeaGreen box `DrawWires` draws for
+  every such sensor (`Main.cs:58660-58672`), NOT a hover highlight.
+  **Ported** (`render/wires.rs::special_tile_rect`/`draw_rectangle`,
+  the S1-W4-g81 census commit 6f046998).
+* the generic outline subsystem itself (the `HasOutlines` tiles: chests
+  21/467, doors 10/11, altars 26/237, ...) - **g86 owns it**
+  (`render/tile_outlines.rs` + `world_sim/smart_interact.rs`, the
+  `task/W4-g86-altar-draw` tip): the draw pass, the HighlightMask sheets,
+  the `SmartInteractLookup` feed and the pylon/void-lens selection glow
+  all landed there. The g81 census-close's "needs its own lane" verdict
+  stands, but the lane EXISTS and has landed - the PORT_MAP row is
+  re-pointed, not left MISSING.
 
 ### 4. Wire-adjacent residuals found unported and ported
 
@@ -39452,8 +39479,9 @@ None of the ported visuals draws random numbers - no stream touched.
 ### Verification
 
 Code-only mode - **no cargo/rustc/rustfmt/tests/graphify invoked.**
-36 witnesses WRITTEN, NOT RUN: `projectile_ai_kite.rs` 7,
-`render/wire_kite.rs` 10, `ui/wires_ui.rs` 14, `ui/builder_toggles.rs` 5.
+37 witnesses WRITTEN, NOT RUN: `projectile_ai_kite.rs` 8 (the seal added
+the negative-centre floor pin), `render/wire_kite.rs` 10,
+`ui/wires_ui.rs` 14, `ui/builder_toggles.rs` 5.
 The witness maths were verified by python f32 emulation (struct-pack):
 the ghost mixes above, the badge dim [88,20,21,89], the faded tint 83,
 the f32 opacity ramp's tick-14 snap, the petal angles (3*2pi/5 - pi/11
@@ -39465,3 +39493,41 @@ frame slot), 6789a055 (toggle column), 18e53dd0 (cursor icon + cache),
 851a73e1 (icon-latch fold), de8ce9c4 (witness fix-round + facing sign),
 0e452382 (pre-click tint), 100e9d83 (opacity tie), ababd039
 (ignoreWater), + the census-close docs commit.
+
+### The seal round (research/283, 2026-11-21)
+
+Five code fixes landed at the seal (87f7b159, d17a9da7, b8c46275,
+77505fa0):
+1. **The `flow_app` ctor carried NONE of the six new App fields** - the
+   exhaustive test literal (`app/flow.rs:2134`, no `..Default` spread)
+   would not compile (E0063) against 344 `flow_app` callers. The six
+   fields (`wire_tool_mode`/`wires_radial`/`cursor_item_icon_enabled` +
+   the cache triple) now mirror `App::new` (the two-literal census the
+   c42 fold-133 `wire_tool_mode` precedent pins).
+2. **The kite's owner tail runs on the KILL tick** - the C# else-if
+   chain (`Projectile.cs:35706-35723`) has NO return after the kill
+   arms; `:35825-35832` (ChangeDir/heldProj/SetDummyItemTime(2)/
+   itemRotation) follows it. The port's early returns dropped those
+   writes on the release frame; the arms now fall through (the d13
+   census shape). 3 kill-tick tail pins added.
+3. **The release cell + the ghost draw's `pe` use `(int)X >> 4`** -
+   `Utils.ToTileCoordinates` (`Utils.cs:1807-1810`) casts to int FIRST
+   then arithmetic-shifts (floors negatives); the truncating-divide
+   form differed there. 1 new witness pins centre (-1,-1) -> tile
+   (-1,-1). The anchor latch keeps its OWN verbatim form
+   (`(int)Center.X / 16`, `:35739` - cast before divide, int division).
+4. **The draw pass's three whole-`self` method calls inside the field
+   destructure become disjoint-field forms** - the destructure holds
+   `renderer`/`lookups` mutably, so `self.slot_at_mouse()`/
+   `self.coin_ammo_at_mouse()`/`self.item_icon_cache_verification()`
+   would E0502 against the live borrows (the base's only self-method
+   call sits OUTSIDE the block). `slot_at_mouse_fields`/
+   `coin_ammo_at_mouse_fields` free fns in `clicks.rs` carry the bodies
+   verbatim (the App methods delegate); the cache-verification body
+   inlines in the draw pass (the C#'s only call site `:45062`).
+5. **The callerless `App::item_icon_cache_verification` drops** - the
+   inline is the single body (the C# has one caller); the doc-note
+   records where it lives.
+The mass-op drop notes re-point at the compose verdict (§2 above +
+research/283 §4); the radial's icon_enabled doc-comments drop the stale
+"stand-in" wording (the field IS the sim latch since 851a73e1).
