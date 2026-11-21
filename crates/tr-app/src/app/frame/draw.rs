@@ -191,6 +191,12 @@ impl App {
             // mutates `self` while the draw destructure holds its fields;
             // applied after the gpu block (S1-E-26 wave A).
             let mut popup_goto: Option<&'static str> = None;
+            // S1-G-13 consumers: park the render-target family + compositor
+            // before the field destructure (the gated draw path borrows them
+            // alongside the destructured `&mut` fields; `self.targets` would
+            // conflict). Put back after the gpu block.
+            let mut targets_parked = self.targets.take();
+            let mut compositor_parked = self.target_compositor.take();
 
             {
                 let App {
@@ -2132,9 +2138,8 @@ impl App {
                     // The fused default below is untouched.
                     if layer_targets_on {
                         let now_secs = now.elapsed().as_secs_f32();
-                        if let Some(family) = self.targets.as_mut() {
-                            let compositor = self
-                                .target_compositor
+                        if let Some(family) = targets_parked.as_mut() {
+                            let compositor = compositor_parked
                                 .get_or_insert_with(|| tr_render::TargetCompositor::new(&gpu.device));
                             let remote_vec: Vec<_> =
                                 remote_players.values().cloned().collect();
@@ -2358,6 +2363,9 @@ impl App {
                     gpu.queue.present(frame);
                 }
             }
+            // S1-G-13 consumers: put the parked family + compositor back.
+            self.targets = targets_parked;
+            self.target_compositor = compositor_parked;
         // The popup click's `OpenAchievementsAndGoto` (S1-E-26 wave A) —
         // the field borrows are released, so the overlay open + scroll lands
         // for the next frame's draw.

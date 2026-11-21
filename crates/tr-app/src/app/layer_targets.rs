@@ -135,8 +135,9 @@ pub(crate) fn render_layer_targets(
         3 => 0,
         _ => 1,
     };
-    renderer.restore_world(parked_world);
-    // The composites + the interleaved direct-screen blocks.
+    // The composites + the interleaved direct-screen blocks. The parked
+    // world range stays parked until after the tile composite (the
+    // direct-screen blocks render their own batches into the slot).
     let screen_position = [
         frame.camera.x - frame.screen.x * 0.5 / frame.zoom,
         frame.camera.y - frame.screen.y * 0.5 / frame.zoom,
@@ -194,6 +195,14 @@ pub(crate) fn render_layer_targets(
     draw_direct_screen(gpu, renderer, frame, TileFilter::ScreenExtras, dst, now_secs, &mut stats);
     // `DoDraw_Tiles_Solid` (`Main.cs:63333`).
     composite(SceneLayer::Tile);
+    // The frame's parked world range — the over-tile world passes the draw
+    // region pushed (the tile-crack overlay `Main.DrawTileCracks`, the wire
+    // overlay `Main.DrawWires`, `Main.cs:63343`/`:62309`) — renders over the
+    // tile composite, under the entity tail.
+    renderer.restore_world(parked_world);
+    renderer.render_world_only(
+        gpu, dst, frame.camera.to_array(), frame.zoom, now_secs, None,
+    );
     // The entity tail: NPCs over tiles (`:63301`), players (`:62256`),
     // items (`:62278`), the edit cursor.
     draw_direct_screen(gpu, renderer, frame, TileFilter::Screen, dst, now_secs, &mut stats);
