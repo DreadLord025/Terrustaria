@@ -38053,6 +38053,51 @@ read/grep (`spawn_with_data_ai_owned`'s 10-arg shape, `Npc`'s
 4-arg form, the `recall_killing_deck_cards`/`killing_deck_recall_damage`
 seams, the shooter/melee rig helpers).
 
+## W4-d12 PROJ-111 RETIRE (task/W4-d12-proj-ai-111-120, 2026-11-21, code-only mode)
+
+The lane is SEALED at `c98bd8937` (research/127's RETIRE section, §R1–R5).
+Four receipts, zero behaviour change; the standing deviations are unchanged
+(the Volcano gravDir fold + the 978 ownerHitCheck skip, the recall
+no-active-gate, the cap orthogonality — the FINAL section above). What the
+retire pass adds:
+
+- **The 978 keep-d12c verdict survives the FINAL phase.** The FINAL round's
+  only `projectile/data.rs` delta is a comment (the const doc's spawn-proc
+  pointer); the row/frames/gate tuples are byte-identical to d19's 26g §6a
+  receipt. d19's SEALED tip `61f7638a5` drifted docs-only since that
+  receipt; the d18 978-copy drop-hunks V1–V5 stand at `8248a54be`
+  unchanged. The item-121 proc (`spawn_volcano_proc`) is d12-only across
+  all 357 pushed branches.
+- **The 1024 item lane is single-owner.** The 5461 cycle + the recall +
+  the `killing_card_fire_type` field exist on this branch only (the
+  all-branch census); the cap interplay is closed — recalled ai0=2 cards
+  never count toward a javelin cap (`:15079`'s ai0==1 predicate) and the
+  1024 has no cap arm (`:13979` = 598/636/614 only).
+- **The a9 compose-contract is hunk-verified.** a9 (`8c4fded81`) touches
+  only `projectile.rs` + `data.rs`, with zero hunks in the 62 dispatch
+  arm / the 614 seating; its one production spawn is the 206 machine's
+  1120 sign shot (ai0=features/ai1=0, `Projectile.cs:37592`). The
+  `UNARMED_ROWED` pin-emptying and the `trailing_mode(1120)` test flip are
+  a9-owned edits this branch never touches — the FINAL band witness's
+  local pin (`projectile.rs:25038`) composes untouched.
+- **The 113-stickers gate claim (`719ffb76c`) is confirmed against both
+  neighbours.** d18's `damage_kind_gate_refuses` explicitly defers the
+  sticker term to this branch (its doc cites `719ffb76c`) — the merger
+  must NOT re-add the term there; d12's walk-head gates in
+  `damage_pve`/`damage_pve_boxed` are the single copy (the C# `Damage()`
+  wrap position, `:12497`). The EVP walk needs no sticker term: every
+  census row is friendly and the pool's `damage_player` call is gated
+  `!friendly` (`projectile.rs:20663-20668`) — a behaviour-neutral absence.
+  d77 (`5f10560b2`) has no Damage-switch work; its death-cue map owns the
+  598 Dig thud only, while d12's `sticker_death` owns 636/614/971/1024 and
+  is silent on 598 — one cue per kind at the merge.
+
+CODE-ONLY MODE: no cargo/rustc/rustfmt/tests/graphify invoked; no new
+witnesses (the lane's witnesses stand WRITTEN NOT RUN). Verification =
+whole-window C# re-reads at the cited lines, git-diff drift censuses,
+ancestry checks and the 357-branch ownership census (the ledger in
+research/127's RETIRE section).
+
 ## The item-use timing machinery (S1-P-i12, task/S1-P-i12-autoswing-usetime, 2026-11-20, code-only mode)
 
 The useTime/useAnimation/autoReuse fidelity slice from the i01 census

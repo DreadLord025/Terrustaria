@@ -303,3 +303,233 @@ gate deviation note + the Volcano proc; PORT_MAP gains the two new seams.
 Witnesses: 8 written not run this phase (4 item-1 incl. the 971/975 rig
 repairs, 1 item-2, 2 item-3, 1 item-4). Code-only round — no build/test/lint
 invoked per the task contract.
+
+---
+
+## RETIRE phase — SEALED (2026-11-21, same branch, tip `c98bd8937`)
+
+> **SEALED.** The lane's work is DONE at `c98bd8937` (the 978-Volcano proc +
+> the 111-120 band complete + the 1024 recall fix + the 614 ai1 seating all
+> landed). No further d12 rounds are owed. This section is the four-receipt
+> retire pass + the proj-111-family declaration; the merger consumes §R5
+> and the cross-referenced drop/keep instructions and nothing else. Code-
+> only verification: whole-window C# re-reads (≤100 lines), git-diff drift
+> censuses, ancestry checks and a 357-branch ownership census at the exact
+> tips below. Zero behaviour change; no new witnesses (the lane's witnesses
+> stand WRITTEN NOT RUN — the d19 SWORD-RETIRE precedent).
+
+Tips re-fetched this pass:
+
+| lane | branch | tip |
+| --- | --- | --- |
+| d12 (this) | `task/W4-d12-proj-ai-111-120` | `c98bd8937` |
+| d19 | `task/W4-d19-proj-ai-181-190` | `61f7638a5` (26g SEALED) |
+| d18 | `task/W4-d18-proj-ai-171-180` | `8248a54be` |
+| a9 | `task/W4-a9-minion-four-machines` | `8c4fded81` |
+| d77 | `task/W4-d77-proj-sounds-3` | `5f10560b2` |
+| base | wave-3-complete main | `a725acb04` |
+
+### §R1 — the 978-Volcano vs the d19e sword family: keep-d12c CONFIRMED at the sealed tips
+
+d19's 26g §6a (`e19990685`, re-confirmed by the SEALED tip `61f7638a5`)
+adjudicated the 978 dup **keep-d12c** and published the d18 978-copy
+drop-hunks V1–V5. Re-verified this pass:
+
+- **My tip carries the keeper, whole.** `9e668d0f0` is an ancestor of
+  `c98bd8937` (exit 0). At HEAD: the const (`data.rs:788`), the row
+  (`data.rs:2984-2995`, comment :2977-2983) —
+  `(160.0, 160.0, 189, 3, 30, 0, false, false, false, (true, -1, false,
+  -1, 255, 1.0))` — the ignoreWater term (`:4375`), the melee term
+  (`:4455`), the **frames superset** `VOLCANO => 5` (`:4882`) and the
+  census witness (`:5113-5119`, every field + the frames pin). C# re-read
+  verbatim: `Projectile.cs:9253-9269` (the `:9268` second `timeLeft = 30`
+  wins) + `Main.cs:8493` (`Main.projFrames[978] = 5;`).
+- **The FINAL phase did not drift the keeper.** `git diff 4ba56e660..HEAD
+  -- projectile/data.rs` is ONE comment-only hunk (the const doc gains the
+  FINAL-item-1 spawn-proc pointer); the row/frames/gate tuples are
+  byte-identical to the §6a receipt.
+- **d19 drifted docs-only since the receipt.** `git diff e19990685..
+  61f7638a5 --stat` = ANALYSIS +26 / 26g +47 / INDEX +1 — zero code. d19
+  still has NO 978 row (grep at `61f7638a5`: only the `:1978`
+  BulletSnowman cite).
+- **The d18 V1–V5 drop-hunks re-read at `8248a54be` (unchanged tip):**
+  V1 const `data.rs:825-828`; V2 row+comment `:3964-3973` (the SAME
+  tuple); V3 ignoreWater edit `:4409-4411` (drop `| VOLCANO`, KEEP
+  `INSANITY_SHADOW_FRIENDLY`); V4 melee edit `:4482-4484`; V5 the row
+  witness's 978 block `projectile.rs:40702-40709` (d12's census covers
+  every field + frames — repoint the doc sentence, keep 964/1106). d18's
+  `proj_frames` has NO 978 entry (grep: only the row match) — no
+  frames-row loss.
+- **The item-121 spawn proc is d12-ONLY.** `spawn_volcano_proc`
+  (`projectile.rs:22217`, `Player.cs:44150-44158` re-read: the
+  `HittableForOnHitRewards` gate, ai0=0/ai1=2, vel `(0, -gravDir)`, the
+  latch consume inside the gate; the `:44485-44488` consumption at
+  `(int)(dmg*0.75)` re-read) — the 357-branch census finds it on NO other
+  pushed tip. d18/d19 have no Volcano proc claim. The 978 row census
+  across all pushed branches: d12 + d18 only (the adjudicated dup).
+
+**Verdict: keep-d12c STANDS at the sealed tips; the merger drops the d18
+copy per 26g §6a V1–V5 and keeps this branch's row + frames + proc whole.**
+
+### §R2 — the 1024 recall: the item lane is d12's own; the cap interplay is FINAL
+
+- **Which lane owns the 1024-card item-use? THIS one.** The Killing Deck
+  (item 5461) fires through `fire_non_ammo_shot`'s 5461 arm
+  (`editing.rs:4090-4204`) — the player item-use lane, not a projectile-
+  AI lane. The 357-branch ownership census: `5461` in `editing.rs`,
+  `killing_card_fire_type` in `player.rs` and `recall_killing_deck_cards`
+  appear on `task/W4-d12-proj-ai-111-120` and NO other pushed branch.
+  The card's AI (the 113 return state) is d12's F1 census; the item cycle
+  is d12's DOC-SWEEP item 5. One lane, both halves.
+- **The no-active-gate fix re-read verbatim.** C# `Player.cs:49190-49261`
+  re-read whole: the pre-check (`:49198`) and the recall scan (`:49243`)
+  read type + owner (+ `ai[0] != 2` for the pre-check) with NO `active`
+  term; `Kill()`'s tail (`Projectile.cs:77262`) only flips `active`. The
+  port matches: `recall_killing_deck_cards` (`projectile.rs:22258-22276`,
+  no active gate) + the pre-check (`editing.rs:4107-4120`, no active
+  gate). A dead stuck card is recalled, lands one more ×1.5 boxed hit,
+  and the return-state check re-kills it — pinned by
+  `w4_d12_final_the_recall_census_dead_cards_and_the_javelin_cap` +
+  `w4_d12_final_the_pre_check_counts_a_dead_stuck_card`.
+- **The recall-cap interplay, FINAL.** `KillOldestJavelin`
+  (`Projectile.cs:15074-15101` re-read): the scan predicate is `active &&
+  owner == myPlayer && type == projectileType && ai[0] == 1 && ai[1] ==
+  target` — recalled cards (ai0=2) are invisible to it. The on-hit cap
+  arm (`:13979-13990` re-read) names **598/636/614 only** (caps 6/8/10);
+  the port's cap match (`projectile.rs:24232-24237`) is exactly those
+  three, and `kill_oldest_javelin` (`:22088-22115`) carries the ai0==1 +
+  ai1==target predicate verbatim. The 1024 has NO cap arm; the 971/975
+  cap-5 lives at the SPAWN PROC (`:22201`, `Player.cs:44169/:44183`).
+  **Recall and caps are orthogonal — no interplay term is owed.**
+
+### §R3 — the a9 compose receipt: four machines, own shots, disjoint verified
+
+a9's tip `8c4fded81` is UNCHANGED since the FINAL-item-4 receipt. Re-verified
+by whole-diff census (`git diff a725acb0..8c4fded81`):
+
+- **a9 touches ONLY `projectile.rs` + `projectile/data.rs`** (+1862/−15).
+  Its `projectile.rs` delta has ZERO hunks in the 62 dispatch arm /
+  `ai_flying_minion` / `MinionShot` / the 614 seating (grep: no
+  `shot_ai1`, no `STARDUST_CELL_MINION_SHOT`, no `ai_flying_minion`
+  hits). The d12 62-arm seating sits at base `:19398-19417`
+  (`projectile.rs:20196-20227` at HEAD); a9's hunks are base
+  -8182/-12405/-12457/-13397/-13417/-13466/-13903/-17397/-21264/-21276/
+  -21701/-23833/-35215/-44384 — **disjoint**.
+- **The machines spawn their OWN shots.** The only production spawn site
+  in a9's delta is the 206 machine's 1120 sign shot:
+  `spawn_with_data_ai_owned(1120, owner, …, features.ai_state(), 0.0)` —
+  ai0 = the `GemStaffFeatures.Bits` (FastThenSlow), ai1 = 0, matching
+  `Projectile.cs:37588-37592` re-read (`NewProjectile(…, 1120, num8, num9,
+  num10, gemStaffFeatures.Bits)`). The 755/946/831/970/864/1119 kinds are
+  the machines' own rows (styles 156/164/169/206), never the 62-arm's
+  shot list. a9's `data.rs` delta = the 1120 row (`:10479-10490` re-read:
+  10×10, style 29, alpha 255, local 60, timeLeft 75, extraUpdates 1) +
+  `proj_frames` 755=5 / 831|970=6 / 864=2 / 1119=9. The `MINION_SHOT` set
+  is UNTOUCHED (the base already lists 1120, `data.rs:4502` at
+  `a725acb0`).
+- **The two adjacent seams compose.** (1) The `UNARMED_ROWED` pin: a9
+  empties the base pin (`:23837` → `[u8; 0]`); d12 does not touch that
+  line — the FINAL band witness carries its OWN local pin
+  (`projectile.rs:25038`, asserting 111..120 ∉ {156,164,169,206}), which
+  holds regardless of a9's landing. (2) The `trailing_mode(1120) == -1`
+  base test flip is a9-OWNED (a9's delta deletes that assert and arms
+  mode 2); d12's diff touches neither the table nor the test — the merge
+  takes a9's version cleanly.
+
+**Receipt: the cell→614 target seating (d12) and the four minion machines
+(a9) share NO spawn site, NO ai-arg contract and NO hunk — they compose.**
+
+### §R4 — the 113-stickers gate: d12-719ffb76c CONFIRMED against d77c/d18c
+
+- **The claim is this branch's.** `719ffb76c` is an ancestor of HEAD
+  (exit 0). The 357-branch census: `target_sticker_step` /
+  `TARGET_STICKERS` exist on `task/W4-d12-proj-ai-111-120` ONLY. The
+  six-kind census (`projectile_ai_thrown.rs:211-218`), the whole-arm port
+  (`:277`), the dispatch arm + the card's inline return walk
+  (`projectile.rs:18303-18345`) and the stuck-gate copies in
+  `damage_pve` (`:23556-23560`) + `damage_pve_boxed` (`:24350-24354`)
+  all ride HEAD.
+- **d18c (`5e51c66e3`, tip `8248a54be`) cross-notes the claim and EXCLUDES
+  it.** `damage_kind_gate_refuses`'s doc (d18 `projectile.rs:152-153`):
+  "the aiStyle-113 sticker family 598/636/614/971/975/1024 `ai[0] == 1` —
+  W4-d12's census (tip 719ffb76c, the whole-arm stuck gate)". The function
+  body carries NO sticker term — the two gates are complementary, not
+  duplicated. d18 wires its gate per-NPC in `damage_pve` (d18 `:22938`),
+  in `damage_pve_boxed` (`:23567`) and in `damage_player` (`:23706`);
+  d12's sticker gate sits at the WALK HEAD (the C# `Damage()` wrap
+  position, `:12497` re-read) — different lines, independent conditions,
+  clean merge. The EVP walk needs no sticker term: every census row is
+  `friendly = true`, and the pool's `damage_player` call is gated
+  `!friendly` (`projectile.rs:20663-20668`) — a sticker never reaches it
+  (behaviour-neutral absence, recorded).
+- **d77c (tip `5f10560b2`) has NO Damage-switch work and NO 113-arm
+  claim.** Its delta carries no `damage_kind_gate_refuses`, no
+  `TARGET_STICKERS`; its 113 dispatch arm is still the base's
+  `bone_javelin_step` (d77 `:17636`) — the merge takes d12's
+  `target_sticker_step` arm (d12's hunk base -17577 vs d77's nearest
+  -17757: disjoint). The death-cue census composes per-kind: d77's
+  `kill_tail_cue` map carries the **598** Dig thud (`507 | 598 => (0, 0)`,
+  `:73965/:73982`) and NONE of 614/636/971/975/1024; d12's `sticker_death`
+  (`projectile_ai_thrown.rs:898-949`) owns the 636 blast / 614+971 puffs /
+  1024 Item8+ring and returns `None` for 598 — no double cue, no shared
+  kind. d77's 590 cue cross-note cites d12 `54cbe238` (ancestor, exit 0).
+
+**Verdict: the 113-stickers gate claim (d12 `719ffb76c`) is CONFIRMED at
+every neighbour tip; d18 keeps its own switch census minus the sticker
+term, d77 keeps the 598 death cue, d12 keeps the whole arm.**
+
+### §R5 — THE PROJ-111-FAMILY declaration (the merger-bible, one paragraph)
+
+The proj-111 family — d12's 111–120 band (all TEN ARMED+ROWED, the FINAL
+item-2 table: 111 the 586 ward, 112 the 644/590/836 trio, 113 the whole
+six-kind sticker census 598/614/636/971/975/1024, 114 the 602 gate, 115
+the 604 beam, 116 the 607 ray, 117 the five explosion kinds, 118/119 the
+617/618 Arcanum pair, 120 the 623 guardian) plus the item-use lanes that
+feed it (the 5461 Killing Deck four-mode cycle, the 5094/795 melee
+sticker procs, the 121 Volcano proc — all d12-ONLY per the 357-branch
+census) plus the 978 row keep-d12c (26g §6a: the d18 copy drops V1–V5,
+d12's frames superset `VOLCANO => 5` survives, d19 never had the row) —
+merges as ONE family in this order: (1) d12 lands its band + the sticker
+arm + the item lanes whole (the 614 ai1 seating is the 62 dispatch's
+per-kind branch, `projectile.rs:20207-20211`); (2) the d18 978 copy drops
+per 26g §6a V1–V5 at `8248a54be` (the 964/1106 rows are d18-only and
+survive); (3) d18's `damage_kind_gate_refuses` lands WITHOUT a sticker
+term (its own cross-note defers to d12 `719ffb76c`; d12's walk-head
+sticker gates in `damage_pve`/`damage_pve_boxed` are the single copy —
+never duplicate the term into d18's function); (4) a9's four machines
+land their own shots (the 1120 spawn ai0=features/ai1=0, the
+`UNARMED_ROWED` pin empties on a9's side, the `trailing_mode(1120)` test
+flip is a9's — d12's band witness carries its own local pin and composes
+untouched); (5) d77's death-cue wave lands the 598 Dig thud (d12's
+`sticker_death` owns 636/614/971/1024 and is silent on 598 — one cue per
+kind, the 113 dispatch arm is d12's `target_sticker_step`, never the
+base `bone_javelin_step`). No other branch owns a 111–120 arm, a sticker
+row, a 978 row (besides the adjudicated d18 dup) or a 5461/5094/795/121
+item lane; every boundary is adjudicated in this note (§R1 978/d18/d19,
+§R2 the item lane + caps, §R3 a9, §R4 d18/d77) and in 26g §6a — the
+merger executes those instructions and nothing else.
+
+### RETIRE verification ledger (this pass)
+
+- Ancestry: `9e668d0f0`, `719ffb76c`, `4ba56e660` all ancestors of
+  `c98bd8937` (exit 0 each); merge-base of d12×d18, d12×a9, d12×d77 =
+  `a725acb04` (no cross-merges).
+- C# whole-window re-reads (≤100 lines each): `Projectile.cs:9250-9271`
+  (the 978 row), `Main.cs:8490-8495` (frames), `Player.cs:49190-49264`
+  (the 5461 cycle), `:44148-44159` + `:44483-44490` (the Volcano proc),
+  `Projectile.cs:13970-13999` (the cap arm), `:15060-15104`
+  (KillOldestJavelin), `:12440-12489` + `:12487-12526` (the Damage
+  switch + wrap), `:77255-77269` (Kill's tail), `:40590-40609` (the 614
+  chase), `:37575-37604` (the 1120 fire), `:10476-10493` (the 1120 row).
+- Drift censuses: `git diff 4ba56e660..HEAD -- projectile/data.rs` =
+  one comment-only hunk; `git diff e19990685..61f7638a5 --stat` =
+  docs-only; d18/a9/d77 tips unchanged since their receipts.
+- Ownership census: all 357 pushed branches grepped for `5461`
+  (editing.rs), `killing_card_fire_type` (player.rs),
+  `recall_killing_deck_cards`, `spawn_volcano_proc`, `shot_ai1`,
+  `target_sticker_step|TARGET_STICKERS`, `VOLCANO =>` (data.rs),
+  `damage_kind_gate_refuses` — every d12 symbol is d12-only; the 978 row
+  is d12+d18 (adjudicated); the damage gate is d18-only.
+- Zero code change this phase; no cargo/rustc/rustfmt/tests/graphify
+  invoked; no new witnesses (the lane's 13 DOC-SWEEP+FINAL witnesses and
+  the F1 census witnesses stand WRITTEN NOT RUN).
