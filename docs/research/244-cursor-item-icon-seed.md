@@ -336,17 +336,17 @@ styled drop tables, WIRED at the tile-hover head).
 | 8 | 467 chest2 | :33687-33690 | → Containers — **B3** |
 | 9 | 441 | :33691-33711 | `GetChestIcon(frameX/36, false)` (the 2x2 origin decode) — **B3** |
 | 10 | 468 | :33712-33732 | `GetChestIcon(..., true)` (chestIcon2) — **B3** |
-| 11 | 88 dresser | :33733-33771 | TEXT: `dresserType[frameX/54]` / chest name; collapse → `dresserTypeToIcon`; ID=-1 sentinel |
-| 12 | 10/11 doors | :33772-33801 | `GetDoorItem(style)`; style 11 → 1141 (TempleKey); ID≠0 gate |
-| 13 | 104 clocks | :33802-33807 | `GetItemDrop_Clocks(frameX/36)` |
-| 14 | 356 | :33808-33813 | 3064 |
-| 15 | 663 | :33814-33819 | 5381 |
-| 16 | 377 | :33820-33825 | 3198 |
-| 17 | 209 | :33826-33858 | frameX<72→928 / <144→1337 / <216→3369 / <360→3664; Reversed = (frameX/18 mod 4)<2 |
-| 18 | 216 | :33859-33871 | 970 + frameY/40 |
-| 19 | 387/386 | :33872-33880 | 3239 (the GetTopLeftAndStyles call is dead — the ID is constant) |
-| 20 | 389/388 | :33881-33886 | 3240 |
-| 21 | 335 | :33887-33892 | 2700 |
+| 11 | 88 dresser | :33733-33771 | TEXT: `dresserType[frameX/54]` / chest name; collapse → `dresserTypeToIcon`; ID=-1 sentinel — **B4** |
+| 12 | 10/11 doors | :33772-33801 | `GetDoorItem(style)`; style 11 → 1141 (TempleKey); ID≠0 gate — **B4** |
+| 13 | 104 clocks | :33802-33807 | `GetItemDrop_Clocks(frameX/36)` — **B4** |
+| 14 | 356 | :33808-33813 | 3064 — **B4** |
+| 15 | 663 | :33814-33819 | 5381 — **B4** |
+| 16 | 377 | :33820-33825 | 3198 — **B4** |
+| 17 | 209 | :33826-33858 | frameX<72→928 / <144→1337 / <216→3369 / <360→3664; Reversed = (frameX/18 mod 4)<2 — **B4** (the Cannon) |
+| 18 | 216 | :33859-33871 | 970 + frameY/40 — **B4** |
+| 19 | 387/386 | :33872-33880 | 3239 (the GetTopLeftAndStyles call is dead — the ID is constant) — **B4** |
+| 20 | 389/388 | :33881-33886 | 3240 — **B4** |
+| 21 | 335 | :33887-33892 | 2700 — **B4** |
 | 22 | 15 chair | :33893-33902 | snap-40 gate; `GetItemDrop_Chair(frameY/40)`; Reversed if frameX/18<1 |
 | 23 | 102 | :33903-33908 | snap-40 gate; 355 |
 | 24 | 89 bench | :33909-33914 | snap-40 gate; `GetItemDrop_Benches(frameX/54)` |
@@ -460,7 +460,15 @@ marks a row done per commit.)
   WIRED at the tile-hover head; 8 decode + 1 wiring witnesses. The
   pylon override chain is the base switch's own ids (a no-op kept for
   the citation, `PylonType::item_id` reuse).
-* The rest of the system is the §4 seed — the ~89 remaining hover arms
+* **Batch 4 (§5 arms 11-21)**: `dresser_hover` (the 88 TEXT arm, the 3x2
+  origin + the style-name collapse → `dresserTypeToIcon` + the lower-half
+  269) + `door_hover_icon` (the 10/11 style decode + `GetDoorItem` + the
+  style-11 Temple Key 1141) + `hover_icon_constants` (clocks 104 +
+  356/663/377/216/387-386/389-388/335) + `cannon_hover` (the 209
+  frameX-band ID + the Reversed subtract-4 loop) + the styled tables
+  (`item_drop_clocks/door_item/item_drop_dressers`). WIRED at the
+  tile-hover head; 7 decode + 1 wiring witnesses.
+* The rest of the system is the §4 seed — the ~80 remaining hover arms
   (§4.3, ≤10/commit) + the remaining feeds (§4.4).
 
 ### 6.1 The g53c cross-note (the flagging lane)

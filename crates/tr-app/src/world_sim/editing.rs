@@ -2228,6 +2228,51 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // identical for every reachable state.
             app.cursor_item_icon_enabled = enabled;
         }
+        // W4-g86 batch 4 (§5 arms 13-16/18-20): the clocks 104 + the
+        // constant arms (`Player.cs:33802-33825`/`:33859-33892`). All
+        // write noThrow = 2 + enabled + the ID.
+        if let Some(id) = super::cursor_item_icon::hover_icon_constants(kind, fx, fy) {
+            app.no_throw = 2;
+            app.cursor_item_icon_enabled = true;
+            app.cursor_item_icon_id = i32::from(id);
+        }
+        // W4-g86 batch 4 (§5 arm 17): the Cannon 209
+        // (`Player.cs:33826-33858`) — the frameX-band ID + the Reversed
+        // flag. noThrow/enabled fire even when the band ladder ends
+        // (frameX >= 360, ID stays 0).
+        if kind == 209 {
+            let (id, reversed) = super::cursor_item_icon::cannon_hover(fx);
+            app.no_throw = 2;
+            app.cursor_item_icon_enabled = true;
+            if id != 0 {
+                app.cursor_item_icon_id = i32::from(id);
+            }
+            app.cursor_item_icon_reversed = reversed;
+        }
+        // W4-g86 batch 4 (§5 arm 12): the doors 10/11
+        // (`Player.cs:33772-33801`) — the style decode + GetDoorItem + the
+        // style-11 Temple Key override; icon 0 leaves enabled/ID (noThrow
+        // still 2, `:33775`).
+        if kind == 10 || kind == 11 {
+            let id = super::cursor_item_icon::door_hover_icon(kind, fx, fy);
+            app.no_throw = 2;
+            if id != 0 {
+                app.cursor_item_icon_enabled = true;
+                app.cursor_item_icon_id = i32::from(id);
+            }
+        }
+        // W4-g86 batch 4 (§5 arm 11): the dresser 88 TEXT arm
+        // (`Player.cs:33733-33771`) — the 3x2 origin + FindChest, the
+        // style-name collapse → dresserTypeToIcon, the lower-half 269.
+        // noThrow = 2 + enabled always (`:33764-33765`).
+        if kind == 88 {
+            let (id, text) =
+                super::cursor_item_icon::dresser_hover(fx, fy, tx, ty, &app.world_chests);
+            app.no_throw = 2;
+            app.cursor_item_icon_enabled = true;
+            app.cursor_item_icon_id = id;
+            app.cursor_item_icon_text = text;
+        }
     }
     // S1-W4-g81 residuals — the wiring tools' cursor-icon latch
     // (`Player.ItemCheck_UseWiringTools`, `Player.cs:46752-46760`): the
@@ -11334,6 +11379,38 @@ mod tests {
         assert_eq!(app.cursor_item_icon_id, -1, "the named chest keeps the sentinel");
         assert_eq!(app.cursor_item_icon_text, "My Stash");
         assert!(app.cursor_item_icon_enabled);
+    }
+
+    /// W4-g86 batch 4 — the WIRED door + Cannon hover arms: a door (10,
+    /// style 0) draws the Wooden Door 25; the Cannon (209, frameX 0) draws
+    /// 928 + Reversed (`Player.cs:33772-33801`/`:33826-33858`). WRITTEN
+    /// NOT RUN.
+    #[test]
+    fn w4_g86_the_door_and_cannon_hover_wire() {
+        // Door 10, frameX/frameY 0 → style 0 → 25.
+        let mut app = pick_world_at(10, 30, 260);
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 25, "GetDoorItem(0)");
+        assert!(app.cursor_item_icon_enabled);
+        assert_eq!(app.no_throw, 2);
+        // Cannon 209, frameX 0 → 928 + Reversed.
+        let mut app = pick_world_at(209, 30, 260);
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 928, "the cannon band 0");
+        assert!(app.cursor_item_icon_reversed, "(0/18)%4 = 0 < 2");
+        assert!(app.cursor_item_icon_enabled);
+        // Cannon frameX 36 → 928, NOT Reversed.
+        let mut app = pick_world_at(209, 30, 260);
+        app.world.tiles[app.world.index(30, 260)].frame_x = 36;
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 928);
+        assert!(!app.cursor_item_icon_reversed, "(36/18)%4 = 2 !< 2");
     }
 
     /// The `HitTile` damage at a cell (0 when no slot tracks it).

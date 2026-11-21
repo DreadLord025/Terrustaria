@@ -39770,3 +39770,34 @@ head (the same seam as B1, after the altar arms). The pure decoders in
 container witnesses pin the lang lock + English init (the
 `default_chest_name_matches_the_chestui_chain` precedent). The remaining
 ~89 hover arms stay the §4.3 ≤10/commit seed.
+
+### The cursorItemIcon batch 4 — hover arms 11-21 (W4-g86)
+
+research/244 §5 arms 11-21 landed + WIRED at the tile-hover head. The
+pure decoders in `world_sim/cursor_item_icon.rs`:
+
+* **`dresser_hover`** — the 88 TEXT arm (`Player.cs:33733-33771`): the
+  3x2 origin (`frameX%54/18`, `frameY%36`) + `FindChest`, the -1
+  sentinel, the no-chest `dresserType[0]` / named / style-default text
+  arms, the style-name collapse → `dresserTypeToIcon[style]`
+  (`GetItemDrop_Dressers`), the lower-half (`frameY > 0`) generic Dresser
+  269 + text "" (`:33766-33770`). noThrow/enabled always fire.
+* **`door_hover_icon`** — the 10/11 arm (`:33772-33801`): the subtract-54
+  style loop + `36*(frameX/54)` (tile 10) / `36*(frameX/72)` (tile 11),
+  `GetDoorItem(style)`, the style-11 Temple Key 1141 override
+  (`:33792-33795`), the icon-0 refusal (noThrow still 2).
+* **`hover_icon_constants`** — clocks 104 (`GetItemDrop_Clocks(frameX/36)`)
+  + 356→3064 / 663→5381 / 377→3198 / 216→`970 + frameY/40` (the
+  subtract-40 loop) / 387-386→3239 (the `GetTopLeftAndStyles` call is
+  dead) / 389-388→3240 / 335→2700.
+* **`cannon_hover`** — the 209 Cannon (`:33826-33858`): the frameX-band
+  ID (928/1337/3369/3664, 0 past 360) + the Reversed flag
+  (`(frameX/18) mod 4 < 2`, the verbatim subtract-4 loop). noThrow/enabled
+  fire even at ID 0.
+* **The styled tables**: `item_drop_clocks` (`WorldGen.cs:40089-40167`),
+  `door_item` (`:69200-69407`, style 11 has NO arm — the hover override),
+  `item_drop_dressers` (`:49855-50037` = `Chest.dresserTypeToIcon`).
+
+8 witnesses WRITTEN NOT RUN (7 decode + 1 wiring), zero RNG. The dresser
+witness pins the lang lock + English init. The remaining ~80 hover arms
+stay the §4.3 ≤10/commit seed.

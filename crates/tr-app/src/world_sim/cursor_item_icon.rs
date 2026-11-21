@@ -612,6 +612,337 @@ pub(crate) fn container_hover(
     (id, text, enabled, found)
 }
 
+// ---- Batch 4 (§5 arms 11-20): dresser / doors / clocks / constants --------
+
+/// `WorldGen.GetItemDrop_Clocks` (`WorldGen.cs:40089-40167`), verbatim:
+/// default 359; styles 1-5 → `2237 + style - 1`, 6 → 2560, 7 → 2575,
+/// 8-23 → `2591 + style - 8`, then the per-style tail (24..65).
+pub(crate) fn item_drop_clocks(style: i32) -> u16 {
+    match style {
+        1..=5 => (2237 + style - 1) as u16,
+        6 => 2560,
+        7 => 2575,
+        8..=23 => (2591 + style - 8) as u16,
+        24 => 2809,
+        25 => 3126,
+        26 => 3128,
+        27 => 3127,
+        28 => 3898,
+        29 => 3899,
+        30 => 3900,
+        31 => 3901,
+        32 => 3902,
+        33 => 3940,
+        34 => 3966,
+        35 => 4154,
+        36 => 4175,
+        37 => 4196,
+        38 => 4217,
+        39 => 4306,
+        40 => 4575,
+        41 => 5157,
+        42 => 5178,
+        43 => 5199,
+        44 => 5557,
+        45 => 5610,
+        46 => 5698,
+        47 => 5721,
+        48 => 5746,
+        49 => 5764,
+        50 => 5785,
+        51 => 5806,
+        52 => 5827,
+        53 => 5847,
+        54 => 5866,
+        55 => 5887,
+        56 => 5906,
+        57 => 5940,
+        58 => 5963,
+        59 => 5983,
+        60 => 6006,
+        61 => 6029,
+        62 => 6052,
+        63 => 6075,
+        64 => 6097,
+        65 => 6119,
+        _ => 359,
+    }
+}
+
+/// `WorldGen.GetDoorItem` (`WorldGen.cs:69200-69407`), verbatim: the door
+/// style's item. Default 0 (the C# `result` init — an unknown style drops
+/// nothing); 0 → 25, 1/2/3 → 650/651/652, 4-8 → `812 + style`, 9 → 837,
+/// 10 → 912, 12-15 → 1137..1140, 16/17/18 → 1411/1412/1413, 19 → 1458,
+/// 20-23 → `1709 + style - 20`, then the per-style tail (24..68). Style
+/// 11 has NO arm here (the hover arm overrides it to the Temple Key 1141,
+/// `Player.cs:33792-33795`).
+pub(crate) fn door_item(style: i32) -> u16 {
+    match style {
+        0 => 25,
+        1 => 650,
+        2 => 651,
+        3 => 652,
+        4..=8 => (812 + style) as u16,
+        9 => 837,
+        10 => 912,
+        12 => 1137,
+        13 => 1138,
+        14 => 1139,
+        15 => 1140,
+        16 => 1411,
+        17 => 1412,
+        18 => 1413,
+        19 => 1458,
+        20..=23 => (1709 + style - 20) as u16,
+        24 => 1793,
+        25 => 1815,
+        26 => 1924,
+        27 => 2044,
+        28 => 2265,
+        29 => 2528,
+        30 => 2561,
+        31 => 2576,
+        32 => 2815,
+        33 => 3129,
+        34 => 3131,
+        35 => 3130,
+        36 => 3888,
+        37 => 3941,
+        38 => 3967,
+        39 => 4155,
+        40 => 4176,
+        41 => 4197,
+        42 => 4218,
+        43 => 4307,
+        44 => 4415,
+        45 => 4576,
+        46 => 5158,
+        47 => 5179,
+        48 => 5200,
+        49 => 5558,
+        50 => 5611,
+        51 => 5699,
+        52 => 5722,
+        53 => 5747,
+        54 => 5765,
+        55 => 5786,
+        56 => 5807,
+        57 => 5828,
+        58 => 5867,
+        59 => 5907,
+        60 => 5941,
+        61 => 5964,
+        62 => 5984,
+        63 => 6007,
+        64 => 6030,
+        65 => 6053,
+        66 => 6076,
+        67 => 6098,
+        68 => 6120,
+        _ => 0,
+    }
+}
+
+/// `WorldGen.GetItemDrop_Dressers` (`WorldGen.cs:49855-50037`) = the
+/// `Chest.dresserTypeToIcon` table (`Chest.cs:252-256` fills it from this
+/// fn): default 334; styles 1-3 → `646 + style`, 4 → 918, 5-15 →
+/// `2386 + style - 5`, then the per-style tail (16..64).
+pub(crate) fn item_drop_dressers(style: i32) -> u16 {
+    match style {
+        1..=3 => (646 + style) as u16,
+        4 => 918,
+        5..=15 => (2386 + style - 5) as u16,
+        16 => 2529,
+        17 => 2545,
+        18 => 2562,
+        19 => 2577,
+        20 => 2637,
+        21 => 2638,
+        22 => 2639,
+        23 => 2640,
+        24 => 2816,
+        25 => 3132,
+        26 => 3134,
+        27 => 3133,
+        28 => 3911,
+        29 => 3912,
+        30 => 3913,
+        31 => 3914,
+        32 => 3934,
+        33 => 3968,
+        34 => 4148,
+        35 => 4169,
+        36 => 4190,
+        37 => 4211,
+        38 => 4301,
+        39 => 4569,
+        40 => 5151,
+        41 => 5172,
+        42 => 5193,
+        43 => 5551,
+        44 => 5604,
+        45 => 5692,
+        46 => 5715,
+        47 => 5741,
+        48 => 5766,
+        49 => 5787,
+        50 => 5808,
+        51 => 5829,
+        52 => 5848,
+        53 => 5868,
+        54 => 5888,
+        55 => 5908,
+        56 => 5942,
+        57 => 5965,
+        58 => 5985,
+        59 => 6008,
+        60 => 6031,
+        61 => 6054,
+        62 => 6077,
+        63 => 6099,
+        64 => 6121,
+        _ => 334,
+    }
+}
+
+/// The dresser hover TEXT arm (§5 row 11, `Player.cs:33733-33771`): the
+/// 3x2 origin decode (`frameX%54/18`, `frameY%36`), `FindChest`, the -1
+/// sentinel; no chest → `Lang.dresserType[0]`; named → the name; else →
+/// `dresserType[frameX/54]`; the collapse (text == the style default) →
+/// `dresserTypeToIcon[style]` + text ""; `noThrow = 2` + enabled; then
+/// `frameY > 0` → the icon 269 + text "" (`:33766-33770`, the lower half
+/// draws the generic Dresser icon). Returns `(id, text)` — enabled is
+/// always true (the caller writes it), noThrow always 2.
+pub(crate) fn dresser_hover(
+    frame_x: i16,
+    frame_y: i16,
+    x: i32,
+    y: i32,
+    chests: &[crate::chest::WorldChest],
+) -> (i32, String) {
+    let fx = frame_x as i32;
+    let fy = frame_y as i32;
+    // `:33736-33741` — the 3x2 origin.
+    let ox = x - fx % 54 / 18;
+    let oy = if fy % 36 != 0 { y - 1 } else { y };
+    let found = crate::chest::find_chest(chests, ox, oy);
+    let style = fx / 54;
+    let style_name = crate::chest::default_chest_name(88, frame_x);
+    let mut id: i32 = -1; // `:33743`
+    let mut text;
+    match found {
+        None => {
+            // `:33744-33747` — dresserType[0].
+            text = crate::chest::default_chest_name(88, 0);
+        }
+        Some(ci) => {
+            let name = &chests[ci].name;
+            if !name.is_empty() {
+                // `:33750-33753` — the stored name.
+                text = name.clone();
+            } else {
+                // `:33754-33757` — the style default.
+                text = style_name.clone();
+            }
+            // `:33758-33762` — the collapse.
+            if text == style_name {
+                id = i32::from(item_drop_dressers(style));
+                text.clear();
+            }
+        }
+    }
+    // `:33766-33770` — the lower half draws the generic Dresser 269.
+    if fy > 0 {
+        id = 269;
+        text.clear();
+    }
+    (id, text)
+}
+
+/// The door hover arm (§5 row 12, `Player.cs:33772-33801`): the style
+/// decode (`frameY/54` via the subtract-54 loop + `36 * (frameX/54)` for
+/// tile 10 / `36 * (frameX/72)` for tile 11), `GetDoorItem(style)`, the
+/// style-11 Temple Key 1141 override (`:33792-33795`), the `num9 != 0`
+/// gate (`:33796` — icon 0 leaves enabled/ID, noThrow still 2). Returns
+/// the icon id (0 = the refusal).
+pub(crate) fn door_hover_icon(kind: u16, frame_x: i16, frame_y: i16) -> u16 {
+    let fx = frame_x as i32;
+    let mut fy = frame_y as i32;
+    let mut style = 0;
+    while fy >= 54 {
+        fy -= 54;
+        style += 1;
+    }
+    if kind == 10 {
+        style += 36 * (fx / 54);
+    }
+    if kind == 11 {
+        style += 36 * (fx / 72);
+    }
+    let mut id = door_item(style);
+    if style == 11 {
+        id = 1141; // `:33794` — the Temple Key
+    }
+    id
+}
+
+/// The tile-hover arms 13-20 (§5 rows 13-20,
+/// `Player.cs:33802-33886`): the clocks 104 + the constant arms
+/// 356/663/377/216/387-386/389-388/335. Returns the icon id; `None` = no
+/// arm. The 209 Cannon arm (row 17) writes Reversed too — it rides
+/// [`cannon_hover`] separately.
+pub(crate) fn hover_icon_constants(kind: u16, frame_x: i16, frame_y: i16) -> Option<u16> {
+    let fx = frame_x as i32;
+    let fy = frame_y as i32;
+    match kind {
+        104 => Some(item_drop_clocks(fx / 36)),
+        356 => Some(3064),
+        663 => Some(5381),
+        377 => Some(3198),
+        216 => {
+            // `:33863-33870` — the subtract-40 loop counts the style row.
+            let mut n = fy;
+            let mut row = 0;
+            while n >= 40 {
+                n -= 40;
+                row += 1;
+            }
+            Some((970 + row) as u16)
+        }
+        387 | 386 => Some(3239), // `:33879` (the GetTopLeftAndStyles call is dead)
+        389 | 388 => Some(3240), // `:33885`
+        335 => Some(2700),       // `:33891`
+        _ => None,
+    }
+}
+
+/// The Cannon hover arm (§5 row 17, tile 209,
+/// `Player.cs:33826-33858`): the frameX-band ID decode (928/1337/3369/
+/// 3664 — the cannonball variants) + the Reversed flag (`(frameX/18)
+/// mod 4 < 2`, the verbatim subtract-4 loop). Returns `(id, reversed)`;
+/// the ID stays 0 for frameX >= 360 (the C# writes no ID there — the band
+/// ladder ends, but enabled/noThrow still fire).
+pub(crate) fn cannon_hover(frame_x: i16) -> (u16, bool) {
+    let fx = frame_x as i32;
+    let id = if fx < 72 {
+        928
+    } else if fx < 144 {
+        1337
+    } else if fx < 216 {
+        3369
+    } else if fx < 360 {
+        3664
+    } else {
+        0
+    };
+    // `:33846-33857` — the subtract-4 loop, then `< 2` → Reversed.
+    let mut n = fx / 18;
+    while n >= 4 {
+        n -= 4;
+    }
+    (id, n < 2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -966,5 +1297,163 @@ mod tests {
         }];
         let (_, _, _, found) = container_hover(21, 18, 0, 10, 10, &off);
         assert_eq!(found, Some(0), "frameX%36 != 0 → x-1");
+    }
+
+    // ---- Batch 4 (§5 arms 11-20) ------------------------------------------
+    // WRITTEN NOT RUN (code-only lane). Zero RNG.
+
+    /// `GetItemDrop_Clocks` (`WorldGen.cs:40089-40167`): the range arms +
+    /// the tail + the 359 default.
+    #[test]
+    fn w4_g86_the_clock_drop_table_matches_the_csharp() {
+        assert_eq!(item_drop_clocks(0), 359);
+        assert_eq!(item_drop_clocks(1), 2237); // 2237 + 1 - 1
+        assert_eq!(item_drop_clocks(5), 2241);
+        assert_eq!(item_drop_clocks(6), 2560);
+        assert_eq!(item_drop_clocks(7), 2575);
+        assert_eq!(item_drop_clocks(8), 2591); // 2591 + 8 - 8
+        assert_eq!(item_drop_clocks(23), 2606);
+        assert_eq!(item_drop_clocks(24), 2809);
+        assert_eq!(item_drop_clocks(27), 3127); // the 25/26/27 swap
+        assert_eq!(item_drop_clocks(65), 6119);
+        assert_eq!(item_drop_clocks(66), 359, "out of range keeps the default");
+    }
+
+    /// `GetDoorItem` (`WorldGen.cs:69200-69407`): the range arms + the
+    /// tail + the 0 default; style 11 has NO arm (the hover override).
+    #[test]
+    fn w4_g86_the_door_item_table_matches_the_csharp() {
+        assert_eq!(door_item(0), 25);
+        assert_eq!(door_item(1), 650);
+        assert_eq!(door_item(3), 652);
+        assert_eq!(door_item(4), 816); // 812 + 4
+        assert_eq!(door_item(8), 820);
+        assert_eq!(door_item(9), 837);
+        assert_eq!(door_item(10), 912);
+        assert_eq!(door_item(11), 0, "style 11 has no GetDoorItem arm");
+        assert_eq!(door_item(12), 1137);
+        assert_eq!(door_item(15), 1140);
+        assert_eq!(door_item(19), 1458);
+        assert_eq!(door_item(20), 1709); // 1709 + 20 - 20
+        assert_eq!(door_item(23), 1712);
+        assert_eq!(door_item(35), 3130); // the 33/34/35 swap
+        assert_eq!(door_item(68), 6120);
+        assert_eq!(door_item(69), 0, "out of range keeps the default");
+    }
+
+    /// `GetItemDrop_Dressers` (`WorldGen.cs:49855-50037`): the range arms
+    /// + the tail + the 334 default.
+    #[test]
+    fn w4_g86_the_dresser_drop_table_matches_the_csharp() {
+        assert_eq!(item_drop_dressers(0), 334);
+        assert_eq!(item_drop_dressers(1), 647); // 646 + 1
+        assert_eq!(item_drop_dressers(3), 649);
+        assert_eq!(item_drop_dressers(4), 918);
+        assert_eq!(item_drop_dressers(5), 2386); // 2386 + 5 - 5
+        assert_eq!(item_drop_dressers(15), 2396);
+        assert_eq!(item_drop_dressers(16), 2529);
+        assert_eq!(item_drop_dressers(27), 3133); // the 25/26/27 swap
+        assert_eq!(item_drop_dressers(64), 6121);
+        assert_eq!(item_drop_dressers(65), 334, "out of range keeps the default");
+    }
+
+    /// The door hover arm (`Player.cs:33772-33801`): the style decode
+    /// (the subtract-54 loop + the frameX column), the style-11 Temple
+    /// Key override, the icon-0 refusal.
+    #[test]
+    fn w4_g86_the_door_hover_decodes_the_style_and_temple_key() {
+        // Tile 10, frameY 0, frameX 0 → style 0 → 25.
+        assert_eq!(door_hover_icon(10, 0, 0), 25);
+        // Tile 10, frameY 54 → style 1 → 650.
+        assert_eq!(door_hover_icon(10, 0, 54), 650);
+        // Tile 10, frameX 54 (column 1) → style 36 → 3888.
+        assert_eq!(door_hover_icon(10, 54, 0), 3888);
+        // Tile 11 (the tall door), frameX 72 → column 1 → style 36.
+        assert_eq!(door_hover_icon(11, 72, 0), 3888);
+        // Style 11: tile 10 frameY 594 (11 * 54) → the Temple Key 1141.
+        assert_eq!(door_hover_icon(10, 0, 594), 1141);
+        // An unknown style → 0 (the refusal).
+        assert_eq!(door_hover_icon(10, 0, 3726), 0); // style 69
+    }
+
+    /// The constant hover arms (`Player.cs:33802-33892`): clocks + the
+    /// fixed ids + the 216 subtract-40 row.
+    #[test]
+    fn w4_g86_the_constant_hover_arms() {
+        // Clocks: frameX 36 → style 1 → 2237.
+        assert_eq!(hover_icon_constants(104, 36, 0), Some(2237));
+        assert_eq!(hover_icon_constants(356, 0, 0), Some(3064));
+        assert_eq!(hover_icon_constants(663, 0, 0), Some(5381));
+        assert_eq!(hover_icon_constants(377, 0, 0), Some(3198));
+        // Firework 216: frameY 40 → row 1 → 971.
+        assert_eq!(hover_icon_constants(216, 0, 40), Some(971));
+        assert_eq!(hover_icon_constants(216, 0, 0), Some(970));
+        assert_eq!(hover_icon_constants(387, 0, 0), Some(3239));
+        assert_eq!(hover_icon_constants(386, 0, 0), Some(3239));
+        assert_eq!(hover_icon_constants(389, 0, 0), Some(3240));
+        assert_eq!(hover_icon_constants(388, 0, 0), Some(3240));
+        assert_eq!(hover_icon_constants(335, 0, 0), Some(2700));
+        assert_eq!(hover_icon_constants(1, 0, 0), None);
+    }
+
+    /// The Cannon hover arm (`Player.cs:33826-33858`): the frameX-band
+    /// ID + the Reversed subtract-4 loop.
+    #[test]
+    fn w4_g86_the_cannon_hover_bands_and_reversed() {
+        // frameX 0 → band 928, (0/18)%4 = 0 < 2 → Reversed.
+        assert_eq!(cannon_hover(0), (928, true));
+        // frameX 36 → 928, (36/18)%4 = 2 !< 2 → not Reversed.
+        assert_eq!(cannon_hover(36), (928, false));
+        // frameX 72 → band 1337, (72/18)%4 = 0 → Reversed.
+        assert_eq!(cannon_hover(72), (1337, true));
+        // frameX 144 → band 3369.
+        assert_eq!(cannon_hover(144), (3369, true));
+        // frameX 216 → band 3664.
+        assert_eq!(cannon_hover(216), (3664, true));
+        // frameX 360 → the ladder ends, ID 0 (enabled/noThrow still fire).
+        assert_eq!(cannon_hover(360), (0, true));
+    }
+
+    /// The dresser hover TEXT arm (`Player.cs:33733-33771`): the no-chest
+    /// default, the named chest, the style-name collapse → the icon, the
+    /// lower-half 269. The lang lock + English init pin the style names.
+    #[test]
+    fn w4_g86_the_dresser_hover_text_and_icon_collapse() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // No chest → dresserType[0] ("Dresser"), ID -1.
+        let (id, text) = dresser_hover(0, 0, 10, 10, &[]);
+        assert_eq!(id, -1);
+        assert_eq!(text, "Dresser");
+        // An unnamed chest, style 1 (frameX 54): the collapse → the
+        // Ebonwood Dresser icon 647, text "".
+        let chests = vec![crate::chest::WorldChest {
+            tile: (10, 10),
+            ..Default::default()
+        }];
+        let (id, text) = dresser_hover(54, 0, 10, 10, &chests);
+        assert_eq!(id, 647, "the style-1 dresserTypeToIcon");
+        assert!(text.is_empty());
+        // A named chest keeps its name, ID -1.
+        let named = vec![crate::chest::WorldChest {
+            tile: (10, 10),
+            name: "My Dresser".into(),
+            ..Default::default()
+        }];
+        let (id, text) = dresser_hover(54, 0, 10, 10, &named);
+        assert_eq!(id, -1);
+        assert_eq!(text, "My Dresser");
+        // The lower half (frameY > 0) → the generic Dresser 269, text "".
+        let (id, text) = dresser_hover(54, 18, 10, 10, &chests);
+        assert_eq!(id, 269, ":33768 the lower-half icon");
+        assert!(text.is_empty());
+        // The 3x2 origin: a hovered right-column cell (frameX 18) resolves
+        // the chest at x-1.
+        let off = vec![crate::chest::WorldChest {
+            tile: (9, 10),
+            ..Default::default()
+        }];
+        let (id, _) = dresser_hover(18, 0, 10, 10, &off);
+        assert_eq!(id, 334, "the style-0 icon via the x-1 origin");
     }
 }
