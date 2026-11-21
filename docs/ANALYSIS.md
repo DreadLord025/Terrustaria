@@ -34371,6 +34371,119 @@ negative, the Sword Beam's three-impact budget, the aiStyle-8 bounce
 (the 96 pre-latched to isolate the bounce arm) and the turret pair's
 last-intent fold. The bounce fixtures sit at x 72 against the (5, 4)
 tile's 80-px edge — the probe's −0.01 inset keeps the flush edge out.
+
+### Part 2 (d75, 2026-11-21, code-only mode) — the remainder of the first-120 range
+
+`task/W4-d75-proj-sounds-1`, part 2. **Lane boundary: C# `Projectile.cs`
+PlaySound sites #1–#120 in line order — site #120 = `:41968`
+(`AI_191_TrueNightsEdge`'s spawn-position Item167).** d76 takes sites
+#121–#240 (from `:41978`), d77 the remainder (#241–#436; the file carries
+436 `SoundEngine.PlaySound` sites + one `WorldGen.KillTile_PlaySounds`
+call at `:70219` that is not a cue site).
+
+**The range census.** Of the first 120 sites, part 1 landed 21 and the
+earlier S1-E-21h wave had already taken the aiStyle-8 latch pair
+(`:24238`/`:24243`), the 27/28/50/51 latches (`:26534`–`:28421`), the
+ritual else-arm negative (`:33794`), the boomerang whoosh (`:38889`) and
+the shared wall thud (`:19571`). The meteor-shot bounce (`:19283`) was
+already live in `projectile_special_bullets` (S1-P-i18). **Part 2 ports
+10 more sites**; every other site in the range names an unported kind,
+an unported style arm, or a non-id-2 façade with no port consumer (the
+full deferral list below).
+
+| C# site | cue | Rust seam |
+| --- | --- | --- |
+| `:18090`/`:18094` (601 portal bolt impact, `alpha > 0`) | Item114 (`ai[1] != 0`) / Item115 | `projectile_ai001_b::finish_flight`'s blocked-hit arm (the PRE-move position, then the kill) |
+| `:20751`/`:20765` (sonar bite, item/enemy arms) | SonarPotion (id 42, style 311) | `projectile_bobber::sonar_bite_cues` — the item arm first, the enemy intent REPLACES it when both land (the single-slot fold) |
+| `:25066` (Spider Egg 378, `localAI[0]` latch) | Item17 | `ai_spear`'s head (the cue BEFORE the latch bump) |
+| `:25193` (Saucer Scrap 450, `ai[1]` latch) | Item13 | `ai_spear`'s post-flight block (the latch THEN the cue) |
+| `:25255` (Greek fires 326-328, `ai[1]` latch) | Item13 | the same arm — the wet kill (`:25248`) runs FIRST, a wet fire dies cue-less |
+| `:25943` (Crystal Shard 1134, `ai[0] == 0` gate) | Shatter (int 13, style 0, ×0.35) | `ai_crystal_storm`'s first-tick block — the `localAI[0]` latch fires on EVERY shard, the cue only on the lead (`ai0 = 0`); the Chik's four `ai0 = 1` followers latch silently |
+| `:36821`/`:36825`/`:36830` (yoyo dash 1130 first tick) | Roar 15 / dash-roar 36 / Item20 at Center | `ai_yoyo_shot` (rng threaded) — the `Next(100)` roll ALWAYS draws; the rare tick draws `Next(6)` + the `0.1 − NextFloat()·0.2` jitter in the C# argument order |
+
+**The :25280 dead gate (re-read).** The C#'s 400-402/1107-1109 overlay
+carries an inner `type >= 326 && type <= 328` sound gate (`:25277`) that
+can NEVER hold inside its own outer kind gate — dead code. The molotov
+fires and the swordfish bones play nothing there; the port queues
+nothing (witness-pinned). The 1107-1109 twins' own overlay half (wet
+kill / friction / rotation) is a gameplay gap outside this sound lane —
+deferred.
+
+Deviations (deliberate, recorded):
+- **The yoyo dash's rare-roar pair** drops the jitter VALUE and the 0.35
+  volumeScale at the roar façade (the slots play at their own
+  pitch/volume; case 36's −1 → +0.6 stands) — the draws themselves are
+  kept inline on the `UpdateProjectiles` stream in the C# order
+  (`Next(100)`, then `Next(6)`, then the `NextFloat`). The common Item20
+  arm's `0.08f` is a **pitchOffset** (the style overload's third
+  argument, `SoundEngine.cs:88`), carried in the intent's fifth slot.
+- **The 601 impact cue plays at the PRE-move position** and the port's
+  kill-without-step shape stands (the C# steps once more before its
+  Kill; the slice-B flight's pre-existing deviation).
+  `PortalHelper.TryPlacingPortal` stays unported.
+- **The sonar pair folds to one cue per tick** (the `wants_sound`
+  single-intent slot): both-land keeps the enemy arm's intent, the same
+  fold as the turret pair. The popup text stays a skipped draw seam; the
+  style's `GetRandomPitch` NextFloat (variance 0.03) is audio-only.
+- **The Shatter play** carries its ×0.35 volumeScale through the new
+  `Audio::play_shatter_sound` façade (case 13 draws nothing,
+  `LegacySoundPlayer.cs:783-792`; the instance Stop is the standing D4
+  deviation).
+- **The drain's new arms**: id 13 → `play_shatter_sound`, id 15/36 →
+  the wave-G roar façades, id 42 → wave A's trackable façade
+  (`play_proj_sound` now admits id 42 alongside id 2). All draw-free at
+  the drain; the attenuation gate precedes everything.
+
+**Deferred in the first-120 range** (no ported arm/kind or a non-id-2
+façade with no consumer): the snapping-stone trio (`:14385-14393`, the
+accessory unported), the liquid-entry/exit splash family
+(`:16871-16994`, the pool's wet-transition machine unported — the bobber
+splash seam covers only `DoASplash`), the 37-style star (`:18209`, kind
+502 unported), the style-99 dropped-yoyo Dig (`:18411`, the 999 row's
+`ai[0] == -2` state has no spawn), the 1023/1055-family/1021/1013/727/
+1054/1048/655/1024/1081 bounce Digs (all unported kinds), the
+phaseblade/383 explosion (`:19531`), the 261 earth boulder (`:19649`),
+the Rainbow Boulder (`:20104`), the super-star families (`:22149`/
+`:22263-22277`, styles 151/152 unported), the 288 hostile golden shower
+(`:24506`), the Golem Fist (`:24781`, kind 262), the style-14 538/326-328
+second-gate dead code (`:25166`/`:25280` — the 538 Twinkle unported),
+the aiStyle-17 sign placement (`:25357`, unported), the 187 flamethrower
+trap (`:27506`, style 38), the crystal leaf (`:27866`, kind 227), the
+chlorophyte orb (`:27926`, kind 229), the 281 cannon bunny's style-49
+arm (`:28259` — the kind's `ai_style2` latch is part 1's; the C# style-49
+arm is a DIFFERENT machine, unported), the 291 hostile inferno
+(`:28329`), the cultist ice-mist/lightning (`:31832`/`:31943`, kinds
+464/465), the 490 nebula eye variant (`:32290`, style 89 unported), the
+117 explosion family (`:34504`/`:34539`, kinds 612/953/978/624/1044),
+the Glommer (`:35524`), the 654/670 sandnado family (`:35926`/`:36008`/
+`:36092`, styles 126/127/128), the Glacier Fang (`:36940`/`:36961`,
+style 208), the RC car (`:38108`, style 205 unported), the Digtoise
+(`:38517-38535`/`:38682`, style 204), the phaseblade whoosh family
+(`:39080-39393`, the `IsAPhaseblade` set unported), the storm lightning
+(`:39786`, style 203), the torch god (`:39931`, style 202), the petal
+(`:40481`, style 196), the Foxparks flame (`:41369`, kind 1106
+unported), the True Night's Edge (`:41656`/`:41968`, style 191 — the
+range's last two sites, d76's boundary neighbours).
+
+Bank: `Item_114`/`Item_115` join `SFX_CUES`, `sonar_potion` joins
+`ITEM_CUSTOM_CUES` (all three `.xnb` verified on disk); every other
+style the batch names was already registered.
+
+Witnesses (8 new, written NOT run): the spider-egg latch, the style-14
+Item13 family (the wet-kill negative + the 400 dead-gate negative), the
+crystal-shard lead/follower split, the yoyo dash's twin-stream roll
+witness (the common + rare arms, the three-draw order), the portal
+bolt's impact pair (the alpha-0 negative), the sonar bite's fold table,
+the Shatter/sonar façade contracts (draw-free, muted refusal) and the
+pass-stream witness (the Shatter drain draws nothing; the dash's
+Next(100) is the pass's only pre-drain draw).
+
+**Verification.** Code-only: every edited arm re-read against its C#
+block (the latch orders, the wet-kill precedence, the dead-gate
+re-derivation, the style-overload argument semantics at
+`SoundEngine.cs:88-108`), the three new bank assets confirmed on disk.
+No cargo/rustc/tests invoked — the witnesses are WRITTEN, NOT RUN.
+
 ## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
 
 Audit source: `docs/research/53-audit-pillars.md` (branch

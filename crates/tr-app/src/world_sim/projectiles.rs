@@ -471,6 +471,24 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // id-2 styles keep the wave-A façade.
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
+        } else if id == 13 {
+            // S1-E-21h d75 part 2 — the Crystal Shard's Shatter play
+            // (`Projectile.cs:25943`, `PlaySound(13, x, y, 0, 0.35f)`): case
+            // 13 draws NOTHING (`LegacySoundPlayer.cs:783-792`), attenuation
+            // gate first; the 0.35 volumeScale rides the façade arm.
+            app.audio.play_shatter_sound(x, y, 0.35);
+        } else if id == 15 {
+            // The yoyo-shot's rare roar (`:36821`, `PlaySound(15, …, 0,
+            // 0.35f, jitter)`): case 15 draws nothing (the slot guard is the
+            // whole decision); the arm already drew the Next(100)/Next(6)/
+            // NextFloat jitter inline — the jitter VALUE and the 0.35
+            // volumeScale are dropped here (the recorded deviation).
+            app.audio.play_roar(style, x, y);
+        } else if id == 36 {
+            // The dash-roar twin (`:36825`, `PlaySound(36, …, -1, 0.35f,
+            // jitter)`): case 36 draws nothing, style −1 → slot 0 at
+            // Pitch += 0.6.
+            app.audio.play_dash_roar(style, x, y);
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
         }
@@ -807,6 +825,94 @@ mod s1_e_21h_sound_stream_tests {
             witness,
             "the one-cue-per-life latch draws nothing on tick 2"
         );
+    }
+
+    /// S1-E-21h d75 part 2 — the new drain arms' stream contract: the
+    /// Crystal Shard's Shatter (id 13) and the yoyo dash's roar pair
+    /// (id 15/36) draw NOTHING from the pass stream at the drain (cases
+    /// 13/15/36 are draw-free in the legacy player) — the dash's own
+    /// `Next(100)` roll already drew inside the arm. The sonar trackable
+    /// (id 42) is draw-free too.
+    #[test]
+    fn s1_e_21h_d75_p2_the_shatter_and_roar_drains_are_draw_free() {
+        use crate::projectile::{CRYSTAL_SHARD_MELEE, EYE_OF_CTHULHU_DASH};
+        // The lead shard: one Next(100)-free Shatter intent — the whole
+        // pass draws nothing (the shard arm is RNG-free).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.audio.set_listener(listener(1.0));
+        app.projectiles.spawn_with_data_ai_owned(
+            CRYSTAL_SHARD_MELEE,
+            0,
+            32.0,
+            32.0,
+            0.0,
+            0.0,
+            10,
+            4.0,
+            0.0,
+            0.0,
+        );
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine: the Shatter drain draws nothing",
+                key.name()
+            );
+        }
+        // The dash: `extraUpdates = 3` — four sub-steps, but the cue
+        // block's gate reads `localAI[0] == 0` and the SAME arm call bumps
+        // the counter after it (`:36845`), so only the FIRST sub-step
+        // rolls Next(100); the drain then adds one case-2 pitch draw for
+        // the common Item20 intent (the roar drains draw nothing). The
+        // 100-px box would trip the out-of-world guard in the 8x8 fixture
+        // world — shrink it (the cue block reads no box state; Center
+        // reads pos + w/2).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .spawn_with_data_ai_owned(
+                EYE_OF_CTHULHU_DASH,
+                0,
+                32.0,
+                32.0,
+                0.0,
+                0.0,
+                10,
+                4.0,
+                0.0,
+                0.0,
+            )
+            .expect("a free slot");
+        app.projectiles.slots_mut()[slot].w = 8.0;
+        app.projectiles.slots_mut()[slot].h = 8.0;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        if witness.next_range(0, 100) == 0 {
+            let _ = witness.next_range(0, 6);
+            let _ = witness.next_float();
+            // The roar drain draws nothing.
+        } else {
+            let _ = witness.next_range(-6, 7);
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "the first sub-step's roll + the intent's drain draw"
+        );
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
     }
 }
 

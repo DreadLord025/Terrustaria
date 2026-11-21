@@ -348,6 +348,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_189", 2),
     ("Item_190", 2),
     ("Item_205", 2),
+    // S1-E-21h d75 part 2 — the portal bolt's impact pair
+    // (`Projectile.cs:18090`/:18094`, both `.xnb` verified on disk).
+    ("Item_114", 2),
+    ("Item_115", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
     // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
     // cue family).
@@ -518,6 +522,12 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
     "pal_summon",
     "deadcells_barrel_launcher_fire",
     "deadcells_mushroom_summon",
+    // S1-E-21h d75 part 2 — the bobber's sonar bite cue
+    // (`SoundID.SonarPotion = CreateTrackable("sonar_potion")
+    // .WithVolume(0.65f).WithPitchVariance(0.03f)`, `SoundID.cs:1740`;
+    // `Projectile.cs:20751`/:20765 — `Sounds/Custom/sonar_potion.xnb`,
+    // one variation).
+    "sonar_potion",
 ];
 
 /// S1-P-i41 — the `Sounds/Custom/` trackables the mount system plays:
@@ -1988,13 +1998,41 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
-        if id != 2 {
+        // S1-E-21h d75 part 2 — id 42 joins the drain's families: the
+        // bobber's sonar bite cue (`SoundID.SonarPotion`, style 311,
+        // `Projectile.cs:20751`/:20765) rides wave A's trackable façade —
+        // the `GetRandomPitch` NextFloat on the audio-only stream, case 42
+        // draws nothing from the pass stream.
+        if id != 2 && id != 42 {
             return None;
         }
         let idx = crate::soundid::SOUND_STYLES
             .iter()
-            .position(|s| s.sound_id == 2 && s.style == style)?;
+            .position(|s| s.sound_id == id as u8 && s.style == style)?;
         self.play_use_sound(idx as u16, x, y, pitch_offset, rng)
+    }
+
+    /// S1-E-21h d75 part 2 — one Shatter play with a volume scale (the
+    /// Crystal Shard's first-tick cue, `Projectile.cs:25943`:
+    /// `PlaySound(13, x, y, 0, 0.35f)` — the int overload, NO `GetRandomPitch`
+    /// draw). Case 13 (`LegacySoundPlayer.cs:783-792`): the previous
+    /// instance's Stop (the standing D4 deviation), a fresh instance at
+    /// `num2 * volumeScale` — NO pitch, NO draws. The attenuation gate runs
+    /// first (`:369-436`); the play runs on the `UpdateProjectiles` stream's
+    /// drain but draws nothing from it. Returns the cue; `None` when the
+    /// gate refused.
+    pub fn play_shatter_sound(
+        &mut self,
+        x: f32,
+        y: f32,
+        volume_scale: f32,
+    ) -> Option<&'static str> {
+        if sound::play_sound(13, x, y, self.listener, volume_scale).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("Shatter", x, y, volume_scale, 0.0);
+        Some("Shatter")
     }
 
     /// S1-E-21i — one wall-break cue (`tr_core::edit::kill_wall_sound`, the
@@ -3803,11 +3841,67 @@ mod tests {
                 .unwrap_or_else(|| panic!("style {style} resolves"));
             assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
         }
-        // A non-id-2 family (the deferred trackables) refuses draw-free.
+        // A non-id-2/42 family refuses draw-free.
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
         assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d75 part 2 — the Shatter play (`Projectile.cs:25943`,
+    /// `PlaySound(13, x, y, 0, 0.35f)`): case 13 draws NOTHING
+    /// (`LegacySoundPlayer.cs:783-792`), the gate precedes the play, the
+    /// muted/inaudible plays refuse draw-free.
+    #[test]
+    fn s1_e_21h_d75_p2_the_shatter_play_is_draw_free() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_shatter_sound(0.0, 0.0, 0.35), Some("Shatter"));
+        assert_eq!(rng.peek(), peek, "case 13 consumes no gameplay draw");
+        // Muted: the gate refuses.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        assert_eq!(audio.play_shatter_sound(0.0, 0.0, 0.35), None);
+        // Out of attenuation range: refuses.
+        let mut audio = Audio::new(None);
+        assert_eq!(audio.play_shatter_sound(5000.0, 0.0, 0.35), None);
+    }
+
+    /// S1-E-21h d75 part 2 — the sonar trackable joins the drain's families:
+    /// `(42, 311)` resolves to the pinned `sonar_potion` asset through wave
+    /// A's façade — the `GetRandomPitch` NextFloat is audio-only, case 42
+    /// draws nothing from the gameplay stream; the muted play refuses.
+    #[test]
+    fn s1_e_21h_d75_p2_the_sonar_trackable_rides_the_proj_drain() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((42, 311), 0.0, 0.0, 0.0, &mut rng),
+            Some("sonar_potion")
+        );
+        assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+        assert!(ITEM_CUSTOM_CUES.contains(&"sonar_potion"), "the bank carries it");
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((42, 311), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+        // The portal pair's bank gaps closed.
+        for style in [114, 115] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(3);
+            let cue = audio
+                .play_proj_sound((2, style), 0.0, 0.0, 0.0, &mut rng)
+                .unwrap_or_else(|| panic!("style {style} resolves"));
+            assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        }
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract

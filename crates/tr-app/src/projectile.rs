@@ -3461,12 +3461,42 @@ impl Projectile {
     /// `AI_210_YoyoShots` (`Projectile.cs:36809-36900`) — the two yoyo
     /// shots' fade-out lifecycles (no steering): the Eye-of-Cthulhu dash
     /// (1130) and the Kraken wave (1135). M4-PROJ-4b.
-    fn ai_yoyo_shot(&mut self, _world: &World) {
+    fn ai_yoyo_shot(&mut self, _world: &World, rng: &mut dyn tr_core::loot::DropRng) {
         if self.kind == EYE_OF_CTHULHU_DASH {
             self.rot = self.vel.y.atan2(self.vel.x) - std::f32::consts::FRAC_PI_2;
-            // The one-shot sound (`:36814-36828`) and the frame cycle
-            // (`:36834-36838`) are the render row's — the port's cue table
-            // does not carry `Item20`, so the AI models neither.
+            // S1-E-21h d75 part 2 — `:36814-36832`: the first-tick cue
+            // block. The `localAI[0] == 0f` gate is a READ (nothing in the
+            // C# arm latches it — the counter below bumps it off zero the
+            // same tick). The `Next(100)` roll ALWAYS draws on the pass's
+            // UpdateProjectiles stream; on the 1-in-100 tick the `Next(6)`
+            // pick AND the `0.1f - NextFloat() * 0.2f` pitch jitter draw
+            // too (all three are `Main.rand`, the C# argument order), and
+            // the Roar / dash-roar play rides the id-15/36 drain arms (both
+            // draw nothing in the legacy player). The jitter's draw is
+            // kept for stream order; its pitch value and the 0.35
+            // volumeScale are dropped at the roar façade (the recorded
+            // deviation — the slots play at their own pitch/volume, case
+            // 36's −1 → +0.6 stands). Every other tick queues the Item20
+            // whoosh at `base.Center` with the +0.08 pitchOffset (the style
+            // overload's third argument, `SoundEngine.cs:88`).
+            if self.local_ai[0] == 0.0 {
+                let (cx, cy) = self.center();
+                if rng.next_range(0, 100) == 0 {
+                    let roar = rng.next_range(0, 6) == 0;
+                    let _jitter = 0.1 - rng.next_float() * 0.2;
+                    if roar {
+                        // `:36821` — PlaySound(15, x, y, 0, 0.35f, jitter).
+                        self.wants_sound = Some((15, 0, self.pos.x, self.pos.y, 0.0));
+                    } else {
+                        // `:36825` — PlaySound(36, x, y, -1, 0.35f, jitter).
+                        self.wants_sound = Some((36, -1, self.pos.x, self.pos.y, 0.0));
+                    }
+                } else {
+                    // `:36830` — PlaySound(SoundID.Item20, Center, 0.08f).
+                    self.wants_sound = Some((2, 20, cx, cy, 0.08));
+                }
+            }
+            // The frame cycle (`:36834-36838`) is the render row's.
             self.vel *= 0.92;
             let num = 20.0;
             self.local_ai[0] += 1.0;
@@ -5332,6 +5362,16 @@ impl Projectile {
     /// ground-slide friction, `rotation += velocity.X * 0.1f`, and the
     /// center (+4, +8)-box vs solid-tile scan killing the projectile.
     fn ai_spear(&mut self, world: &World) {
+        // S1-E-21h d75 part 2 — the Spider Egg 378's one-shot latch
+        // (`:25062-25068`): the Item17 cue at `base.position` BEFORE the
+        // `localAI[0]++` latch bump (the C# statement order), at the head of
+        // the kind's own branch. The NPC-overlap scan (`:25069-25077`) and
+        // the 378's 10-tick flight branch (`:25078-25092`) keep the port's
+        // pre-existing generic-tail shape — only the cue lands.
+        if self.kind == SPIDER_EGG && self.local_ai[0] == 0.0 {
+            self.wants_sound = Some((2, 17, self.pos.x, self.pos.y, 0.0));
+            self.local_ai[0] += 1.0;
+        }
         self.ai[0] += 1.0;
         if self.ai[0] > 5.0 {
             self.ai[0] = 5.0;
@@ -5344,15 +5384,46 @@ impl Projectile {
             self.vel.y += 0.2;
         }
         self.rot += self.vel.x * 0.1;
+        // S1-E-21h d75 part 2 — `:25188-25194`: the Saucer Scrap 450's
+        // one-shot block, AFTER the default arm (the C# runs the per-kind
+        // `if` chain below the flight): the `ai[1]` latch THEN the Item13
+        // play at `base.position`. The 2× dust 228 gates (`:25195-25212`)
+        // stay skipped with their draws; the frame cycle / friction /
+        // rotation tail (`:25213-25225`) keeps the generic shape.
+        if self.kind == SAUCER_SCRAP && self.ai[1] == 0.0 {
+            self.ai[1] = 1.0;
+            self.wants_sound = Some((2, 13, self.pos.x, self.pos.y, 0.0));
+        }
+        // `:25246-25256` — the Greek fires 326-328: the wet kill runs FIRST
+        // (`:25248-25251` — a wet fire dies cue-less), then the `ai[1]`
+        // latch + Item13 play at `base.position`. The wet probe folds to
+        // the port's `is_wet` box-overlap convention (the 400-402 overlay
+        // below); the dust gate / friction / rotation tail
+        // (`:25257-25269`) keeps the generic shape.
+        if matches!(self.kind, GREEK_FIRE_1 | GREEK_FIRE_2 | GREEK_FIRE_3) {
+            if crate::npc::is_wet(world, self.pos.x, self.pos.y, self.w, self.h) {
+                self.kill_time_left = self.time_left;
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+            if self.ai[1] == 0.0 {
+                self.ai[1] = 1.0;
+                self.wants_sound = Some((2, 13, self.pos.x, self.pos.y, 0.0));
+            }
+        }
         // S1-P-i28 — the greek fires' (400-402) per-kind overlay
         // (`Projectile.cs:25271-25302`, inside the aiStyle-14 arm, AFTER the
         // default gravity/rotation above): a wet kill, a friction arm
         // (`0.15 < velocity.Y < 0.25 → velocity.X *= 0.8`), and the rotation
-        // REPLACED by `(0 - velocity.X) * 0.05`. The dust (`:25282-25296`) and
-        // the 326-328 sound gate (`:25277-25281`, a different kind) are skipped.
-        // The wet probe folds to the port's `is_wet` box-overlap convention
-        // (the molotov/bee wet folds, ANALYSIS); the 1107-1109 twins share the
-        // C# block but have no ported row.
+        // REPLACED by `(0 - velocity.X) * 0.05`. The dust (`:25282-25296`)
+        // stays skipped. The `:25277-25281` sound gate is DEAD CODE in the
+        // C# — its inner `type >= 326 && type <= 328` test can never hold
+        // inside the `(400..=402) || (1107..=1109)` outer gate, so the
+        // 1107-1109 swordfish-bone twins play NOTHING at `:25280`
+        // (S1-E-21h d75 part 2 re-read). The twins' own overlay half (the
+        // wet kill / friction / rotation) is a gameplay gap outside this
+        // sound lane — deferred (ANALYSIS).
         if matches!(self.kind, 400 | 401 | 402) {
             if crate::npc::is_wet(world, self.pos.x, self.pos.y, self.w, self.h) {
                 self.kill_time_left = self.time_left;
@@ -7817,10 +7888,20 @@ impl Projectile {
     /// kill at 0.2) — the generic kinds take ×0.96 and fade from 15. The
     /// per-type dust is SKIPPED.
     fn ai_crystal_storm(&mut self, world: &World) {
-        // `:25938-25952`'s 1134 first-tick sound/dust block is SKIPPED (the
-        // kind has a row, but the block only plays a cue and spawns dust —
-        // neither has a layer in the pool; the `localAI[0]` gate flag rides
-        // with it).
+        // `:25938-25952`'s 1134 first-tick sound/dust block (S1-E-21h d75
+        // part 2): the `localAI[0]` latch fires unconditionally; the cue is
+        // the int-13 Shatter play (`PlaySound(13, x, y, 0, 0.35f)` — the
+        // explicit Style 0, volumeScale 0.35, `LegacySoundPlayer.cs:783-792`:
+        // NO draws) gated on `ai[0] == 0f` — the Chik's four `ai0 = 1`
+        // followers latch silently, only the lead shard shatters. The 6×
+        // dust 70 burst stays skipped with its (draw-free) spawns. The
+        // intent rides the id-13 arm of the pool's sound drain.
+        if self.kind == CRYSTAL_SHARD_MELEE && self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            if self.ai[0] == 0.0 {
+                self.wants_sound = Some((13, 0, self.pos.x, self.pos.y, 0.0));
+            }
+        }
         // `:25953` — the light follows the CURRENT scale, before this tick's
         // fade below (`proj_lights.rs` reads it for the frame contribution).
         self.light = self.scale * 0.5;
@@ -17942,7 +18023,7 @@ impl ProjectilePool {
                         // the purged pair — the dead duplicate sat after the
                         // 62 arm, S1-D-4c).
                         115 => self.slots[i].ai_yoyo_beam(world),
-                        210 => self.slots[i].ai_yoyo_shot(world),
+                        210 => self.slots[i].ai_yoyo_shot(world, rng),
                         82 => {
                             // `AI_082`'s homing target: the owner's centre
                             // (`Player.FindClosest`'s single-player stand-in).
@@ -24279,6 +24360,179 @@ mod s1_e_21h_sound_tests {
             p.sentry_turret_step(&w);
             assert_eq!(p.wants_sound, None, "kind {kind}: one cue per stuck run");
         }
+    }
+
+    /// S1-E-21h d75 part 2 — the Spider Egg's one-shot latch
+    /// (`:25062-25068`): the Item17 cue at `base.position` BEFORE the
+    /// `localAI[0]++` bump, once per life, ahead of the flight counter.
+    #[test]
+    fn s1_e_21h_d75_p2_the_spider_egg_latches_item17() {
+        let w = air();
+        let mut p = Projectile {
+            active: true,
+            kind: SPIDER_EGG,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        p.ai_spear(&w);
+        assert_eq!(p.wants_sound, Some((2, 17, 64.0, 64.0, 0.0)));
+        assert_eq!(p.local_ai[0], 1.0, "the latch bumped after the cue");
+        assert_eq!(p.ai[0], 1.0, "the flight counter ran after the latch");
+        p.wants_sound = None;
+        p.ai_spear(&w);
+        assert_eq!(p.wants_sound, None, "one cue per life");
+    }
+
+    /// S1-E-21h d75 part 2 — the Saucer Scrap's `ai[1]` latch + Item13
+    /// (`:25188-25194`) and the Greek fires' wet-kill-then-latch pair
+    /// (`:25246-25256`): a wet fire dies cue-less; a dry one latches once.
+    /// The 400-402 molotov fires keep their pre-existing overlay (no cue —
+    /// the `:25277` gate is dead code in the C#).
+    #[test]
+    fn s1_e_21h_d75_p2_the_style14_latches_queue_item13() {
+        let w = air();
+        for kind in [SAUCER_SCRAP, GREEK_FIRE_1, GREEK_FIRE_2, GREEK_FIRE_3] {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                tile_collide: false,
+                ..Default::default()
+            };
+            p.ai_spear(&w);
+            assert_eq!(p.wants_sound, Some((2, 13, 64.0, 64.0, 0.0)), "kind {kind}");
+            assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
+            p.wants_sound = None;
+            p.ai_spear(&w);
+            assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
+        }
+        // The wet kill precedes the latch: a fire over liquid dies silent.
+        let mut w = air();
+        let i = w.index(4, 4);
+        w.tiles[i].liquid = 255;
+        let mut p = Projectile {
+            active: true,
+            kind: GREEK_FIRE_1,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            w: 14.0,
+            h: 14.0,
+            tile_collide: false,
+            ..Default::default()
+        };
+        p.ai_spear(&w);
+        assert!(!p.active, "the wet kill");
+        assert_eq!(p.ai[1], 0.0, "the latch never armed");
+        assert_eq!(p.wants_sound, None, "a wet fire dies cue-less");
+        // The molotov fires (400-402) never play at `:25280` — the C#'s
+        // inner 326-328 gate is unreachable inside the 400-402 branch.
+        let w = air();
+        let mut p = Projectile {
+            active: true,
+            kind: MOLOTOV_FIRE_1,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        p.ai_spear(&w);
+        assert_eq!(p.wants_sound, None, "the dead gate plays nothing");
+    }
+
+    /// S1-E-21h d75 part 2 — the Crystal Shard's first-tick block
+    /// (`:25938-25952`): the `localAI[0]` latch fires on every shard; the
+    /// int-13 Shatter play (style 0) only while `ai[0] == 0f` — the Chik's
+    /// four `ai0 = 1` followers latch silently.
+    #[test]
+    fn s1_e_21h_d75_p2_the_crystal_shard_lead_shatters_the_followers_latch_silent() {
+        let w = air();
+        for (ai0, plays) in [(0.0f32, true), (1.0, false)] {
+            let mut p = Projectile {
+                active: true,
+                kind: CRYSTAL_SHARD_MELEE,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                tile_collide: false,
+                ai: [ai0, 0.0, 0.0, 0.0],
+                ..Default::default()
+            };
+            p.ai_crystal_storm(&w);
+            assert_eq!(p.local_ai[0], 1.0, "the latch fires on both rows");
+            assert_eq!(
+                p.wants_sound,
+                if plays { Some((13, 0, 64.0, 64.0, 0.0)) } else { None },
+                "ai0 {ai0}"
+            );
+            p.wants_sound = None;
+            p.ai_crystal_storm(&w);
+            assert_eq!(p.wants_sound, None, "one cue per life");
+        }
+    }
+
+    /// S1-E-21h d75 part 2 — the yoyo dash's first-tick cue block
+    /// (`:36814-36832`): the `Next(100)` roll ALWAYS draws (the twin-stream
+    /// witness); the common tick queues Item20 at Center with the +0.08
+    /// pitchOffset; the rare tick draws the `Next(6)` pick AND the
+    /// `NextFloat` jitter in the C# argument order and queues the roar
+    /// pair. The counter bump makes it one cue per life.
+    #[test]
+    fn s1_e_21h_d75_p2_the_yoyo_dash_rolls_then_queues() {
+        let w = air();
+        let mk = || Projectile {
+            active: true,
+            kind: EYE_OF_CTHULHU_DASH,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            w: 100.0,
+            h: 100.0,
+            tile_collide: false,
+            ..Default::default()
+        };
+        // The common arm: one Next(100) draw, the Item20 Center cue. Find
+        // a seed whose first roll is non-zero (no hand-derived constants).
+        let mut common_seed = 0i32;
+        loop {
+            let mut probe = tr_core::UnifiedRandom::new(common_seed);
+            if probe.next_range(0, 100) != 0 {
+                break;
+            }
+            common_seed += 1;
+        }
+        let mut p = mk();
+        let mut rng = tr_core::UnifiedRandom::new(common_seed);
+        let mut witness = tr_core::UnifiedRandom::new(common_seed);
+        let _ = witness.next_range(0, 100);
+        p.ai_yoyo_shot(&w, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "exactly the one Next(100) draw");
+        assert_eq!(p.wants_sound, Some((2, 20, 114.0, 114.0, 0.08)), "Center = pos + 50");
+        assert_eq!(p.local_ai[0], 1.0, "the counter bumped off the gate");
+        p.wants_sound = None;
+        p.ai_yoyo_shot(&w, &mut rng);
+        assert_eq!(p.wants_sound, None, "one cue per life");
+        // The rare arm: find a seed whose first Next(100) is 0, then pin
+        // the three-draw order (Next(100), Next(6), NextFloat) and the
+        // id-15/36 pick.
+        let mut seed = 0i32;
+        let (pick, rare_seed) = loop {
+            let mut probe = tr_core::UnifiedRandom::new(seed);
+            if probe.next_range(0, 100) == 0 {
+                break (probe.next_range(0, 6), seed);
+            }
+            seed += 1;
+        };
+        let mut p = mk();
+        let mut rng = tr_core::UnifiedRandom::new(rare_seed);
+        let mut witness = tr_core::UnifiedRandom::new(rare_seed);
+        assert_eq!(witness.next_range(0, 100), 0);
+        assert_eq!(witness.next_range(0, 6), pick);
+        let _ = witness.next_float();
+        p.ai_yoyo_shot(&w, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "the rare arm's three draws in order");
+        let want = if pick == 0 { (15, 0) } else { (36, -1) };
+        assert_eq!(p.wants_sound, Some((want.0, want.1, 64.0, 64.0, 0.0)));
     }
 }
 
