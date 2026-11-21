@@ -13020,6 +13020,53 @@ surfaceIsMushrooms seed world has its own a == b witness. Out of scope
 (d105 lane 5), `PlaceCatTail`/`GrowCatTail` + the PlaceTile-71 cattail
 consumer (c33 pass 4).
 
+**The TAIL (W4-g42, code-only — `docs/research/12j-g42-biome-mushroom.md`
+phase 6 is the census of record)**: the G5 `GrowTree` rewrite is generic; the
+tail censuses every OTHER tree type riding `TryGrowingTreeByType`
+(`:30343-30386`) and the mushroom runtime/drop consumers. The dispatch table
+is COMPLETE (every C# case has a port arm); the deltas were in the bodies:
+
+- **`GrowTreeWithSettings`** (`:30388-30847`, `growth/trees.rs`): the profile
+  `WallTest` delegate (`GemTreeWallTest :30269-30302` for the seven gem
+  profiles — the old port ran `DefaultTreeWallTest` for all, refusing gem
+  saplings against the stone/dirt wall family {2,54-59,61,185,196-199,208-215});
+  the `nactive()` ground gate (`:30400`, was active-only); the INVERTED
+  side-ground flags (`:30688` `nactive()`, the old port read `!active()`); the
+  top-cap `Next(13)`-before-`Next(3)` draw order (`:30803`); the errorWorld
+  height arm (`:30420-30423`, `errorWorldAdjustment(2.0)`); the frame-important
+  boot bit. `profile_for_tree` (`TryGetFromTreeId :3890-3928`) now per-kind
+  (was all-RUBY).
+- **`AttemptToGrowTreeFromSapling`** (`:72810-72925`): the style-10 ash arm
+  returns the grow RESULT (`:72833`, was flat true); the default arm's
+  bees/remix underground exemption (`:72846`); the gem style ≥7 keeps the 587
+  ruby default (`:72891`, was amber 589). **`GrowPalmTree`** (`:27116-27202`):
+  the lean walk's `num5 != num4` gate (`:27185`, was missing — extra
+  Next(13)/Next(9)/Next(5) draws at the target lean).
+- **The glowing-mushroom drops** (`KillTile_GetItemDrops`; the dust half is
+  g14/d54's, the `KillTile` body `:63517-63921` carries ZERO gore calls): the
+  PLANT 71 records the same `Mushroom` drop as the tree 72 (`case 71/72
+  :65642-65652`, was 72-only and `by_tile(71)`=None so a broken plant dropped
+  nothing); the grass blocks drop the MUD 176 not the seed item (`case 70
+  :64702`, `case 59/60/661/662 :64936` — `tile_drop` 70/60/661/662→176); the
+  dye plants 227 drop by `frameX/34` style (`case 227 :65048-65055`, 1107+num,
+  styles 8-11→3385+num-8 — the ladder rides `cell_drops`, was `by_tile` 1107
+  flat).
+- **The mushroom runtime growth**: `Convert(3)` is GEN-ONLY (three call sites,
+  all `DoSurfaceIsMushrooms` — no runtime mushroom-spread Convert; the
+  MushroomSpray solution rides the type-0-only Clentaminator arm, S1-D-4). The
+  OVERWORLD `UpdateWorld_GrassGrowth` case-70 arm (`:74704-74750`) was missing
+  — the overground dispatcher routed kind 70 through the underground slice
+  (which returns at `:74508` before the overworld switch). Landed
+  (`growth.rs::overworld_mushroom_growth`): the `Next(10)` plant-71 roll +
+  `CopyPaintAndCoating`, the `Next(300)` giant-tree roll, the 3×3 mud→70 spread.
+  The underground case-70 (`:74497`, Next(250) + the c33 PlaceCatTail liquid
+  branch) and the other overworld case arms stay the shared dispatcher
+  follow-up.
+
+The TAIL changes are runtime-only (the tree-growth draw order, the drops, the
+overworld arm) — they touch NO worldgen pass stream, so both world-hash pins
+stay as G5 left them; 10 witnesses written not run.
+
 - **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
   velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
   `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at

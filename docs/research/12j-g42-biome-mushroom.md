@@ -80,7 +80,7 @@ written not run.
 | 3 | G1-G4 pass_mushroom/ShroomPatch verbatim + desert veto + tidy re-mud (biomes.rs + pipeline.rs) | 67040975 | landed |
 | 4 | G5 GrowTree verbatim rewrite + case-5 dispatch + WorldGenRand generic + GrowShroom + EmptyTileCheck (growth/trees.rs) | b44db327 | landed |
 | 5 | G5 plants-pass mushroom arm verbatim + PlaceTile-71 (biome_detail.rs) + witnesses + hash notes + docs/anchors | d4836bbd | landed |
-| 6 | TAIL census: the other tree types riding the generic rewrite (gem 583-589 / palm 323 / vanity / ash) + the mushroom runtime growth + the glowing-mushroom drops | (this pass) | landed |
+| 6 | TAIL census: the other tree types riding the generic rewrite (gem 583-589 / palm 323 / vanity / ash) + the mushroom runtime growth + the glowing-mushroom drops | d13d05a1 / 73a4e267 / a964730f | landed |
 
 All phases code-only (no cargo/tests/graphify invoked). 18 witnesses WRITTEN
 NOT RUN across spread.rs (2), micro_surface.rs (3 incl. the seed-world a==b),
@@ -164,3 +164,40 @@ i30 (`check_mushroom_tree`, `TreeDropEvent::Mushroom`, `mushroom_frame_rolls`);
 the trunk `TreeType::Mushroom` arm (`KillTile_GetTreeDrops :66241-66250`,
 Next(2)→183) is faithful (`trunk_tree_drops`). The gem-tree drops
 (`SetGemTreeDrops :66094-66108`) are faithful (`gem_tree_drops`, i30).
+
+### The mushroom runtime growth — the overworld case-70 arm (landed)
+
+`UpdateWorld_GrassGrowth` has TWO branches: the underground slice
+(`:74275-74508`, returns at `:74508`) and the overworld `switch (num10)`
+(`:74510-74868`). The port's `update_world_grass_growth` carries the
+underground slice; the overground dispatcher (`update_world_overground_tile`)
+routed kind 70 through it (passing `true`), so the OVERWORLD case-70 arm
+(`:74704-74750`) never ran on the surface. **Landed** (`growth.rs::
+overworld_mushroom_growth`): the `!inActive()` gate, the `Next(10)` plant-71
+roll + `CopyPaintAndCoating`, the `Next(300)` `TryGrowingTreeByType(5)` giant-
+tree roll (the `& flag10` PlayerLOS conjunction evaluates the grow regardless
+— the FX is unported), the 3×3 mud→mushroom-grass spread. The overground
+dispatcher routes kind 70 to this arm INSTEAD of the underground slice
+(routing through both would double the plant roll). The underground case-70
+(`:74497-74506`, the `Next(250)` tree roll + the `PlaceCatTail` liquid branch
+— c33's helper) and the other overworld case arms (the forest/evil/hallow/ash
+grasses `:74513`, the jungle case-60 `:74752`) stay the shared dispatcher
+follow-up (not mushroom-exclusive).
+
+### TAIL landing ledger (one phase per commit+push)
+
+| phase | scope | commit | status |
+| --- | --- | --- | --- |
+| T-1 | the tree-type riders: GrowTreeWithSettings WallTest/nactive/side-flags/draw-order/errorWorld/boot-bit, profile_for_tree per-kind, the sapling dispatch (ash return / bees-remix gate / gem style default), the palm lean gate (growth/trees.rs) | d13d05a1 | landed |
+| T-2 | the glowing-mushroom drops: 71 plant record, grass→mud 176, dye-plant style ladder (edit/kill.rs + registry.rs + editing.rs) | 73a4e267 | landed |
+| T-3 | the overworld mushroom runtime growth arm (growth.rs) | a964730f | landed |
+| T-4 | docs/anchors/ledger (this pass) | (this commit) | landed |
+
+All TAIL phases code-only (no cargo/tests/graphify). 10 witnesses WRITTEN NOT
+RUN: growth/trees.rs (4 — gem wall, gem style default, ash return, gem grow +
+boot bit), edit/kill.rs (1 — the 71 plant record), registry.rs (1 — grass→mud
++ 71/227 gates), editing.rs (2 — dye style ladder, grass→mud), growth.rs (2 —
+overworld tree grow, plant + mud spread). The runtime-only changes (the tree
+growth draw order, the drops, the overworld arm) touch NO worldgen pass stream
+— both world-hash pins stay as G5 left them (stale-by-design, re-pin deferred
+to the gate); the `a == b` determinism halves are untouched.
