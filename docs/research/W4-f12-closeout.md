@@ -173,3 +173,152 @@ same keep-one shape as the sweep's 321/nebula notes. After the rulings the
 merged set-diff is empty again: 63 stays DEBUFF_DISPATCH-only, the orb
 ladder stays g27-only, 321 stays booster-only, the nebula tier writer
 stays `nebula_buffs`-only (+ the item-1 bridge).
+
+## RETIRE phase (2026-11-21, after ee67786ec) — the receipts
+
+All tip reads below are from `git ls-remote` + `git fetch` at retire time
+(the branch list carries NO `f50b` branch — the f50 lane's only live ref
+is `task/W4-f50-hurt-reactions`, tip **ff56e6e51** dated 05:23, i.e. it
+predates our closeout rulings at 09:00-09:05 and NOTHING was retired in
+response). Line numbers are from each tip's own `player.rs` blob.
+
+### Receipt 1 — f50b-dup-rulings: NOT retired → re-flag with exact drop-hunks
+
+f50 tip **ff56e6e51** still carries BOTH dup hunks. Drop-hunks for the
+merger (all in `crates/tr-app/src/player.rs` at ff56e6e51):
+
+**DUP #1 — inline Panic-63 (canonical: the wiring's DEBUFF_DISPATCH arm,
+`buff_effects.rs:149`):**
+* DELETE **:7010-7013** — the 3-line W4-f50 comment + the
+  `63 => self.move_speed += 1.0,` match row (sits between the `3 =>`
+  Swiftness row :7009 and the `104 =>` Mining row :7017).
+* RETARGET **:16047-16063** — witness
+  `w4_f50_the_panic_buff_raises_the_move_speed` drives `p.update()`; on
+  the merged tree the +1 comes through `update_buff_frame`'s dispatch, so
+  it needs the wiring seam rig (or retire it in favour of our
+  `w4_f12_closeout_panic_63_grants_move_speed_once_through_the_wiring`).
+* KEEP: the hurt-head grant `add_buff(63, 480)` (:4774-4776), the `panic`
+  field/equip arms (:5957-5972), the ResetEffects clear (:6586-6588).
+
+**DUP #2 — the ladder re-derivation (canonical: g27 `apply_orb_arm`):**
+* DELETE **:4606-4708** — the 7-line doc comment + the whole
+  `pub fn rederive_beetle_solar_buffs` body (ends `}` :4708; `hurt_inner`
+  follows at :4710).
+* DELETE **:4582** — the `self.rederive_beetle_solar_buffs();` call inside
+  `update_beetle_solar_sets` (:4581-4594); the wrapper keeps ONLY the
+  machines: `apply_set_bonus_solar` (:4454-4487),
+  `apply_set_bonus_beetle_defense` (:4492-4512),
+  `apply_set_bonus_beetle_damage` (:4520-4561),
+  `update_armor_sets_always_beetle` (:4600-4604),
+  `update_armor_sets_always_solar` (:4565-4569).
+* REWORD **:4571-4580** (wrapper doc) + **:7444-7450** (call-site comment)
+  — the "idempotent per tick" claim is FALSE against the g27 module (the
+  Might stats + the delete/rescan walk double-apply); the new comment
+  cites the machines-only shape + the lift below.
+* LIFT **:7451** — `self.update_beetle_solar_sets();` moves out of
+  `update_with_grapple` to the wiring seam AFTER `update_buff_frame`
+  (`world_sim/player.rs:1230`, this tree) — C# order UpdateBuffs :25566 →
+  UpdateArmorSets :25685.
+* RETARGET **:16190-16227** — witness
+  `w4_f50_the_beetle_solar_buff_ladder_rederives_the_counts` calls the
+  deleted fn 4× (:16200/:16207/:16214/:16221); re-derive against g27
+  `apply_orb_arm` (the g27 module's 22 witnesses already pin these arms)
+  or retire it.
+* FLAG-LIFECYCLE FIX **:6203-6205** — their ResetEffects region clears
+  `beetle_defense/beetle_offense/set_solar` BEFORE the scan; C# clears at
+  `Player.Update` :25618-25620 AFTER UpdateBuffs. With the machines lifted
+  post-scan the wiring's `OrbContext::default()` stub
+  (`buff_frame_wiring.rs:153-155`, this tree) would read all-false and
+  delete every orb buff. Merge must (a) move the three clears post-scan
+  per :25618-25620 AND (b) replace the stub with the live flags.
+* KEEP: the hurt grants, the 3-lane drains, the solar/beetle hurt cuts,
+  the always-counter zeros, the dust request flags.
+
+### Receipt 2 — f49d-bridge monitor: R3-exec still NOT landed
+
+f49 tip **6c0ee2aa2** (unchanged since the closeout read): the three scan
+arms are STILL LIVE (:6864 mana / :6869 life / :6874 damage, arms
+:6862-6876 with the :6849-6861 comment), `update_buffs_nebula_buffs`
+still exists (:3519-3537 incl. doc), and `update_survival` is still
+called INSIDE `update_with_grapple` (:7766; the fn spans :5746+). The
+item-1 bridge hunk stands verbatim — the merger applies BOTH halves in
+one commit: (half A) the published `fold_orb` 2-line ASSIGN bridge above;
+(half B, their tree) delete :6849-6876 (comment + three arms) +
+:3519-3537 (helper + doc), lift the :7766 `update_survival` call to the
+wiring seam after `update_buff_frame` (same lift as f50's machines —
+C# scan :25566 → regen :25977/:25995), keep `NebulaLevelup` (:3507-3508),
+both ResetEffects zeros (incl. :6157) and their `items.rs` wholesale.
+
+### Receipt 3 — d73-wave-g co-lane: NO new dup since the sweep
+
+d73 tip **33c38000a** is UNCHANGED and is an ancestor of this branch
+(`git merge-base HEAD origin/task/W4-d73-buff-effects-wave-g` =
+33c38000a; `HEAD..d73` = empty). Its `buff_effects_boosters.rs` blob is
+IDENTICAL to ours (`9d737e57e` both; the on-disk CRLF delta is
+`core.autocrlf=true`, content byte-equal after newline normalisation).
+Its dispatch surface is exactly {62, 192, 321, 396} — the sweep's `d73
+non-orb` set. **Sweep re-run vs the d73-tip claims (this tree, run):**
+
+```
+C# heads: 270 ids, 6 range heads [(95, 97), (170, 172), (98, 100), (176, 178), (173, 175), (179, 181)]
+INLINE_OWNED: 62  ACCESSORY_OWNED: 78  SUMMON_OWNED: 32
+DEBUFF_DISPATCH: 24  MISC_DISPATCH: 11  wave-E status: 37
+d73 non-orb: 4  g27 orbs: 18  mount head: 66  other lanes: 4
+missing owners: []   extra owned ids (non-mount): []
+VERDICT: set-diff EMPTY, zero dup-grants — keep-one HOLDS
+```
+
+Also re-pinned: g27 `buff_effects_orbs.rs` blob `c6bcb017b` identical at
+g27 tip 1cd7ac367 and here; d115 tip **7c4fcb755** unchanged — its inline
+321 arm (:6632-6648) is still the KNOWN dup (drop-hunk: delete :6632-6648
+comment + arm; the wiring's booster 321 arm is canonical,
+`w4_f12_brain_buff_crits_and_minion_damage` pins the single grant); their
+`on_hit_dodge_grant` AddBuff(59, 1800) (:4289-4293) + the buffs.rs
+`add_buff_from_net_pvp` refactor (:200-228) still land clean (no 59 grant
+writer on this tree). f49's 94 drink stays the one-line resolution
+(`potions.rs:216` here = their items.rs consume arm).
+
+### Receipt 4 — the BUFF merger-instruction (ONE paragraph)
+
+**Merge BUFF as follows:** take `task/W4-f12-buff-frame-wiring` as the
+canonical buff frame — its `buff_frame_wiring.rs::update_buff_frame`
+(hooked `world_sim/player.rs:1230`) is the ONE slot-ordered UpdateBuffs
+dispatch, the g27 `buff_effects_orbs.rs::apply_orb_arm` (blob c6bcb017b,
+byte-identical at g27 tip 1cd7ac367) is the ONE writer for all 18 orb ids
+95-100/170-181, and the d73 boosters module (blob 9d737e57e) owns exactly
+{62, 192, 321, 396} — then apply four cross-tree folds in the SAME merge
+commit: (1) from d115 7c4fcb755 delete the inline 321 arm
+(player.rs :6632-6648, the booster arm is canonical) while KEEPING their
+`on_hit_dodge_grant` AddBuff(59,1800) + the :25705-25708 orphan-59 clear +
+the `add_buff_from_net_pvp` buffs.rs shape wholesale; (2) from f50
+ff56e6e51 delete the inline Panic-63 row (:7010-7013 — the wiring's
+DEBUFF_DISPATCH 63 arm is canonical, merged as-is it would grant
++2 moveSpeed/tick) and the whole `rederive_beetle_solar_buffs`
+(:4606-4708) + its call (:4582), keeping ONLY the machines
+(`apply_set_bonus_solar/beetle_defense/beetle_damage` +
+`update_armor_sets_always_*`) inside `update_beetle_solar_sets`, LIFT the
+:7451 call to the wiring seam AFTER `update_buff_frame` (C# :25566 →
+:25685), move their ResetEffects set-flag clears (:6203-6205) to the
+post-scan position (C# :25618-25620) and replace the wiring's
+`OrbContext::default()` stub (buff_frame_wiring.rs:153-155) with the live
+`set_solar/beetle_defense/beetle_offense` flags (without this the scan
+deletes every orb buff); retarget their two witnesses (:16047-16063
+panic-speed via `p.update`, :16190-16227 ladder via the deleted fn) onto
+the wiring/g27 paths; keep their hurt-head grants 63/205 and all hurt
+machinery; (3) from f49 6c0ee2aa2 delete the three nebula scan arms +
+comment (:6849-6876) and the `update_buffs_nebula_buffs` helper
+(:3519-3537), LIFT their :7766 `update_survival` call to the same
+post-wiring seam (repairs both the regen read order and f12's
+`buff_life_regen` feed), keep `NebulaLevelup` + both ResetEffects zeros +
+their items.rs wholesale (the 94-drink grant resolves to the ONE line,
+`potions.rs:216` shape), and apply the published `fold_orb` bridge
+(`p.nebula_level_mana = p.orb_scan.nebula_level_mana;` — ASSIGN per
+:12072, after the `beetle_buff |=` line, this branch :457-465) — bridge
+and deletions are ONE commit: bridge-without-delete double-writes the
+tier, delete-without-bridge strands the regen engine at 0; (4) verify
+post-merge with `python tools/w4_f12_closeout_sweep.py` (must print
+`set-diff EMPTY`) plus the anchors canary — the merged ownership census
+is then 63 DEBUFF-only, 95-100/170-172 g27-only, 173-181 `nebula_buffs`-
+only (+ the bridge), 321 booster-only, 59 grant d115-only, 94 drink one
+line, and every one of the 270 C# UpdateBuffs ids has exactly one live
+grant path.
