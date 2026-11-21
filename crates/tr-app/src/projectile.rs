@@ -21307,19 +21307,11 @@ impl ProjectilePool {
             // documented skip (its draws went with the layers).
             PARTY_BULLET => {
                 if let Some(g) = self.gore_pool.as_mut() {
-                    // `:75979-75986` — the 10-dust loop's explicit draws
-                    // precede the gore row on the stream (the dust bodies
-                    // are the dust lane's; the draws stay).
-                    for _ in 0..10 {
-                        let _ = rng.next_range(139, 143);
-                        let _ = rng.next_range(-50, 51);
-                        let _ = rng.next_range(-50, 51);
-                        let _ = rng.next_range(-50, 51);
-                        let _ = rng.next_range(-50, 51);
-                        let _ = rng.next_range(-50, 51);
-                        let _ = rng.next_range(-50, 51);
-                        let _ = rng.next_range(-30, 31);
-                    }
+                    // `:75988-75998` — the 5-gore confetti row at `-vel*0.3`.
+                    // The 10-dust loop before (`:75977-75987`) is the dust
+                    // lane's documented skip — its draws are NOT consumed
+                    // here (the dust lane owes the re-adds, the module RNG
+                    // contract); only the GORE draws ride this seam.
                     crate::projectile_gore_k::kill284_confetti(&self.slots[slot], g, rng, world);
                 }
             }
