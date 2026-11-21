@@ -26041,9 +26041,9 @@ Deliberate deviations:
 - The strip applies NO `GetFinalLight` actuation ghost (the C# reads
   `Lighting.GetColor` raw, `:9081`); fullbright -> White is ported (`:9084`).
 - The reverse-vine (549, `DrawRisingVineStrip` `:9134-9193`) pass landed with
-  W4-g83 (UNWIRED, below); the multi-tile vine (`DrawMultiTileVines`
-  `:8829-8888`) pass is the furniture lane (d57) and stays out. Until wired,
-  their cells keep the old inline draw.
+  W4-g83 and is WIRED into the fused pass (below, the wiring phase); the
+  multi-tile vine (`DrawMultiTileVines` `:8829-8888`) pass is the furniture
+  lane (d57) and stays out — its cells keep the old inline draw.
 - The dark-cell merge still covers unlit vine cells (the port's black-quad
   coverage shape); the C# `DrawBlackHelper` runs inside `DrawSingleTile`,
   which the vine cells never reach - a documented z-order/coverage
@@ -26141,6 +26141,65 @@ Verification: code-only, no compiler invoked; every arm re-read against the
 cited C# windows; 42 witnesses WRITTEN NOT RUN (10 + 16 + 16). The world-hash
 pins are unchanged (no wired behaviour change). Anchors: 3 rows
 (`draw_reverse_vines`, `check_vines`, `grow_overground_vines`).
+
+### Wiring phase — the wire contract + the uncontested small wires
+
+`docs/research/123-vine-wire-contract.md` is the per-fn attach script for the
+four groups, re-derived from the C# call sites and the pushed sibling tips
+(g31 union `c3027a38` §1-§8, d102 `29e8859b`/d106 `e2c2609c`/g42 `d4836bbd`,
+d109 `81894095`/d110 `054e3dc2`/g48 `9e037b7c`, d58/d59 WIRED hunk zones).
+Key corrections to the phase notes:
+
+- **`CheckVines`/`CheckUnderwaterPlant` are framing-dispatch arms, NOT tick
+  arms** — the only C# call sites are `TileFrame`'s non-solid `IsVine` arm
+  (`WorldGen.cs:81375-81378`) and `TileFrameImportant`'s `case 549`
+  (`:84972-84974`). The Rust seam is `edit/kill.rs::square_tile_frame`'s
+  check loop (after the cactus-80 arm), NOT `growth.rs`; the growth tick
+  reaches the checks through `SquareTileFrame` after each vine write. The
+  real wiring cost is threading the caller's rng through
+  `square_tile_frame` (the tip re-rolls consume the ACTIVE `genRand` —
+  contract §2.2). The d102/d106/g42 "contest" on `growth.rs` is three
+  one-line re-exports; the tick-driver insertions (contract §3.2:
+  `grow_overground_vines` at the overground fn tail,
+  `grow_underground_jungle_thorn` after `grow_vine_arm` + deleting the dead
+  overground 69 arm) are add-only, uncontested.
+- **The rising pass IS placeable in the g31-union step map** (contract §1.2):
+  g30's `ReverseVineCrawl` classify arm + g31's `DrainPass::ReverseVines`
+  post step already carry the order; the keep-one binds g30's crawl to
+  `vines::collect_reverse_vine_root` (the forward-arm delegation pattern)
+  and g31's strip maths to `vines::rising_vine_strip_segments`, with g31's
+  `show_invisible`/`IsVisible` shape winning at the d56 keep-one.
+- **The thorn down-merge wires as a 4-line insertion** into
+  `framing.rs::frame_of_variant` after the own-slope match (base `:879`),
+  not a call to `thorn_down_merge_frame` (which retires/rebinds — §4).
+
+LANDED on this branch (the uncontested wires, contract §5-§6):
+
+- The rising-vine pass into the fused tile pass's OWN seams: `tiles.rs`'s
+  case-549 crawl arm (after the live forward `collect_vine_root` caller,
+  before any light gate — the C# switch head `:546-548`), the
+  `vine_cell || reverse_vine_cell` inline skip, and `draw_reverse_vines` at
+  the `draw_vines` tail (`PostDrawTiles` `:429-430`). The 549 cell
+  previously drew inline through `DrawSingleTile` — wrong vs the C#
+  `continue`; now it draws as a rising strip. d58's `:586` chest-map hunk
+  is the only adjacent context (trivial union); d56/d57/d60 have empty
+  `tiles.rs` diffs. The g31-union merge replaces these hunks with the §1.2
+  binds; the 2 source-order witnesses retire with the fused pass.
+- `torch.rs`'s `top_edge_can_be_attached_to` doc made byte-identical to the
+  union-exec keep-one (blob `737d4cf4`) — zero-conflict merge.
+- The ROPE-interplay census (contract §7): natural vines are NOT climbable
+  — `IsVine`+549 and `Main.tileRope` are disjoint (the climbing movement
+  reads `IsRope`/`tileRope` only; `Player.cs`'s only `IsVine` read is the
+  placement-kill gate `:41309`, already ported). The climbing block
+  (`FindPulley` `:19644-19749` + `Update`'s rope block `:26116-26470`,
+  ~460 lines entangled with the movement core) is NOT self-contained
+  small — NOT ported; the census + the attach seam are recorded for the
+  movement family. 2 census witnesses.
+
+Wiring-phase verification: code-only; 4 new witnesses written not run
+(2 tiles.rs source-order + 2 vine_checks census); actual file counts
+vines.rs 20 / vine_checks.rs 17 / vine_growth.rs 16 / tiles.rs 14. The
+world-hash pins stay unchanged (draw-side only).
 
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
