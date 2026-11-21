@@ -39244,3 +39244,61 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The projectile aiStyles 201-210 (W4-d21, task/W4-d21-proj-ai-201-210, 2026-11-21, code-only mode)
+
+The census (`docs/research/26d-projectile-ai-201-210-census.md`) found seven
+MISSING styles on `a725acb0`: **201, 202, 203, 204, 205, 208, 209** (no rows,
+no dispatch arms). 210 was already ported (`ai_yoyo_shot`, M4-PROJ-4b); 206
+landed on the sibling a9 branch (`8c4fded8`, `forbidden_minion_step` —
+verify-only here, NOT re-ported); 207 is the C#'s EMPTY `AI_207_SnappingStone`
+(`Projectile.cs:37492-37494`) with NO rowed kinds (the Snapping Stone
+accessory's strike effects 1121/1131/1132 carry aiStyle 0 — the on-hit proc is
+the accessory seam's follow-up, not an AI machine).
+
+The new module `crates/tr-app/src/projectile_ai_201_210.rs` ports the seven
+machines verbatim (every block cited), with the rows in `projectile/data.rs`
+(the 11 kinds: 1082/1083/1084/1091/1117/1122/1098/1123/1105/1115/1129), the
+dispatch arms + the movement/death seams in `projectile.rs`, and the digtoise
+`PickTile` drain in `world_sim/editing.rs` (the hit-tile book + the
+best-pickaxe read the pool cannot borrow — the golf/bobber intent precedent).
+
+Deliberate folds (the no-behaviour-change freeze keeps every other arm
+byte-identical):
+
+- **gravDir == -1** (the 205's flipped-gravity input XOR, `:38098`): the port
+  is upright-only (`gravDir = 1`), so `flag4` is false — the golf precedent.
+- **player.petting** (the 204's state-5 joy, `:38508-38526`): no ported
+  petting layer — the state is unreachable, recorded not ported as dead code.
+  The else-if flag6 reset keeps a stray state-5 from sticking.
+- **Main.Difficulty >= Legendary** (the 203's num3/num4, `:39646-39647`): the
+  port is single-difficulty (below Legendary), so 14/5.
+- **the LightningGenerator bolt paths + MultiPointHitbox** (the 203's Kill
+  damage, `:70790-70840`): no ported generator — the bolt's collision folds
+  to the 64-px explosion rect at the centre (the `localAI[0] = 1` no-tile-
+  collision path); the `localAI[0]` state + the penetration open stay. The
+  Colliding-203 arm reads the same rect (`storm_explosion_hit`).
+- **SoundEngine.PlayTrackedLoopedSound** (the 205's engine loop,
+  `:38256-38267`/`:38288-38299`): no tracked-loop layer — the
+  `localAI[1]`/`localAI[2]` state machine runs, the sound body is the skip
+  (the volume/pitch math feeds only the skipped sound).
+- **the digtoise PickTile calls** (`:38769-38791`): ride the App drain
+  (`drain_digtoise_digs`) — the C#'s `PickTile_DetermineDamage`
+  (respectTransformingTiles: false) gate + the `dealDamageAsIfBaseNumberIs`
+  clamp (26/26 for the 1098, best-pickaxe/36 for the 1123) + the partially-
+  blocked-dig walk transition (`:38795-38800`).
+- **the dust/gore bodies, Lighting.AddLight, the ParticleOrchestrator requests,
+  DroneCameraTracker.Track, CheckSectionsInCaseOwnerIsWatching,
+  NetMessage.SendTileSquare/SendData**: no ported layers; their EXPLICIT
+  `Main.rand` gates stay on the `UpdateProjectiles` stream in C# order (the
+  `projectile_ai_misc`/`ai_style2` precedent). The `Gore.NewGore` internal
+  kicks (Next(10,31) Y then Next(-20,21) X) stay (the G3 standard).
+
+The 204/205 `correctSlopeCollision` movement IS ported (the TileCollision
+slide + the UpdatePosition slope pass, `:20447-20474`) — unlike the twins'
+documented slope skip, the slope ride is core to these two machines. The 205's
+`WalkDownSlope` (`Collision.cs:1686-1789`) is ported verbatim in the module.
+
+The 11 witness tests are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/
+dotnet/graphify invoked** (code-only mode). Verified by re-reading the cited C#
+blocks and hand arithmetic.
