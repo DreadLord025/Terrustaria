@@ -4521,7 +4521,9 @@ impl Player {
         let mut num = 0;
         self.beetle_offense = true;
         self.beetle_counter -= 3.0;
-        self.beetle_counter -= self.beetle_countdown as f32 / 20.0;
+        // `:16534`: `beetleCounter -= this.beetleCountdown / 20` — C# int/int
+        // division (the countdown is an int), truncated before the subtract.
+        self.beetle_counter -= (self.beetle_countdown / 20) as f32;
         self.beetle_countdown += 1;
         if self.beetle_counter < 0.0 {
             self.beetle_counter = 0.0;
@@ -4609,61 +4611,66 @@ impl Player {
     /// count zeroes and the buff is deleted). The 98-100 melee damage/speed
     /// rows (`0.1 * orbs`) fold here too.
     pub fn rederive_beetle_solar_buffs(&mut self) {
-        let mut j = 0usize;
-        while j < crate::buffs::MAX_BUFFS {
-            let buff = self.buffs.buff_type[j];
-            if buff <= 0 || self.buffs.buff_time[j] <= 0 {
+        // The C# `for (int j = 0; j < maxBuffs; j++)` chain with the
+        // `DelBuff(j); j--` rescan: a delete leaves the NET index unchanged
+        // (the compaction shifts the later buffs left, the `j--` cancels the
+        // loop's `j++`), so the shifted-in slot re-runs. The count assignment
+        // (`beetleOrbs = num8`) runs UNCONDITIONALLY — even after a mismatch
+        // delete — and the set-flag check may delete the (shifted) slot again.
+        let mut j = 0i32;
+        while (j as usize) < crate::buffs::MAX_BUFFS {
+            let ju = j as usize;
+            let buff = self.buffs.buff_type[ju];
+            if buff <= 0 || self.buffs.buff_time[ju] <= 0 {
                 j += 1;
                 continue;
             }
-            let mut deleted = false;
+            // Each `DelBuff(j); j--` decrements the loop index; the loop's
+            // `j++` at the tail nets one advance per non-deleted slot.
+            let mut deletes = 0i32;
             match buff {
                 // `:10342-10376` — the Beetle Defense ladder (95-97).
                 95..=97 => {
-                    self.buffs.buff_time[j] = 5;
+                    self.buffs.buff_time[ju] = 5;
                     let num8 = 1 + buff - 95;
                     if self.beetle_orbs > 0 && self.beetle_orbs != num8 {
                         if self.beetle_orbs > num8 {
-                            self.buffs.del_buff(j);
-                            deleted = true;
+                            self.buffs.del_buff(ju);
+                            deletes += 1;
                         } else {
                             for id in 95..=(95 + num8 - 1) {
                                 self.buffs.clear_buff(id);
                             }
                         }
                     }
-                    if !deleted {
-                        self.beetle_orbs = num8;
-                        if !self.beetle_defense {
-                            self.beetle_orbs = 0;
-                            self.buffs.del_buff(j);
-                            deleted = true;
-                        } else {
-                            self.beetle_buff = true;
-                        }
+                    self.beetle_orbs = num8;
+                    if !self.beetle_defense {
+                        self.beetle_orbs = 0;
+                        self.buffs.del_buff(ju);
+                        deletes += 1;
+                    } else {
+                        self.beetle_buff = true;
                     }
                 }
                 // `:10377-10407` — the Solar Flare ladder (170-172).
                 170..=172 => {
-                    self.buffs.buff_time[j] = 5;
+                    self.buffs.buff_time[ju] = 5;
                     let num9 = 1 + buff - 170;
                     if self.solar_shields > 0 && self.solar_shields != num9 {
                         if self.solar_shields > num9 {
-                            self.buffs.del_buff(j);
-                            deleted = true;
+                            self.buffs.del_buff(ju);
+                            deletes += 1;
                         } else {
                             for id in 170..=(170 + num9 - 1) {
                                 self.buffs.clear_buff(id);
                             }
                         }
                     }
-                    if !deleted {
-                        self.solar_shields = num9;
-                        if !self.set_solar {
-                            self.solar_shields = 0;
-                            self.buffs.del_buff(j);
-                            deleted = true;
-                        }
+                    self.solar_shields = num9;
+                    if !self.set_solar {
+                        self.solar_shields = 0;
+                        self.buffs.del_buff(ju);
+                        deletes += 1;
                     }
                 }
                 // `:10408-10443` — the Beetle Damage ladder (98-100).
@@ -4671,33 +4678,32 @@ impl Player {
                     let num10 = 1 + buff - 98;
                     if self.beetle_orbs > 0 && self.beetle_orbs != num10 {
                         if self.beetle_orbs > num10 {
-                            self.buffs.del_buff(j);
-                            deleted = true;
+                            self.buffs.del_buff(ju);
+                            deletes += 1;
                         } else {
                             for id in 98..=(98 + num10 - 1) {
                                 self.buffs.clear_buff(id);
                             }
                         }
                     }
-                    if !deleted {
-                        self.beetle_orbs = num10;
-                        self.melee_damage += 0.1 * self.beetle_orbs as f32;
-                        self.melee_speed_bonus += 0.1 * self.beetle_orbs as f32;
-                        if !self.beetle_offense {
-                            self.beetle_orbs = 0;
-                            self.buffs.del_buff(j);
-                            deleted = true;
-                        } else {
-                            self.beetle_buff = true;
-                        }
+                    self.beetle_orbs = num10;
+                    self.melee_damage += 0.1 * self.beetle_orbs as f32;
+                    self.melee_speed_bonus += 0.1 * self.beetle_orbs as f32;
+                    if !self.beetle_offense {
+                        self.beetle_orbs = 0;
+                        self.buffs.del_buff(ju);
+                        deletes += 1;
+                    } else {
+                        self.beetle_buff = true;
                     }
                 }
                 _ => {}
             }
-            if !deleted {
-                j += 1;
+            // The C# `for` tail: `j++` after the arm's `j--` per delete.
+            j += 1 - deletes;
+            if j < 0 {
+                j = 0;
             }
-            // else: `DelBuff(j); j--` — rescan the slot the compaction filled.
         }
     }
 

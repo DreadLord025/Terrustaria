@@ -286,9 +286,13 @@ pub fn drain_hurt_dust(
     let stoned = p.buffs.find_buff_index(156).is_some();
     let dust_type = if stoned { 1 } else { 5 };
     let num21 = 2.0 * hit_dir as f32;
-    let mut i = 0.0f32;
-    while (i as f64) < count {
-        let vx = num21 + hit_dir as f32 * i * rng.next_float();
+    // `:38531`: `num22 = 0f` — NEVER incremented in the loop, so the X
+    // velocity is just `num21`; the `NextFloat` draw is still consumed each
+    // iteration (the C# `num21 + hitDirection * num22 * NextFloat()`).
+    let num22 = 0.0f32;
+    let mut num23 = 0.0f64;
+    while num23 < count {
+        let vx = num21 + hit_dir as f32 * num22 * rng.next_float();
         let idx = dust.new_dust(
             rng,
             ctx,
@@ -304,7 +308,7 @@ pub fn drain_hurt_dust(
             1.0,
         );
         let _ = idx;
-        i += 1.0;
+        num23 += 1.0;
     }
 }
 
