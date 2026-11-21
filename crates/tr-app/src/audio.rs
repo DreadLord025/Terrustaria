@@ -2389,9 +2389,10 @@ pub struct MusicEnv {
     /// Scene centre below the world surface (`SceneMetrics.Center.Y >= worldSurface*16
     /// + screenHeight/2`), i.e. the `Main.cs:12815` branch.
     pub underground: bool,
-    /// `Main.cloudAlpha > 0` (raining/storming).
-    /// `Main.cloudAlpha` (the rain coverage the volume follows).
+    /// `Main.cloudAlpha` — RAW, unclamped (the rain cue's `num11` at
+    /// `Main.cs:11544` reads the static itself, not the sky-tint clamp).
     pub cloud_alpha: f32,
+    /// `Main.cloudAlpha > 0` (raining/storming) — the music ladder's gate.
     pub rain: bool,
     // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
     /// `SceneMetrics.ZoneRain`.
@@ -2604,6 +2605,13 @@ impl MusicSystem {
             if !self.wave_indices.contains_key(&(i as u32)) {
                 continue;
             }
+            // `Main.cs:11539-11605`: the switch's `case 28`/`case 45` arms
+            // are the AMBIENT cues below — the default `UpdateCommonTrack`
+            // path never touches them (the earlier port ran both, doubling
+            // the fade step; W4-d130 final).
+            if i == 28 || i == 45 {
+                continue;
+            }
             let mut volume = self.music_fade[i] * env.music_volume;
             if (62..=88).contains(&i) {
                 volume *= 0.9;
@@ -2620,27 +2628,27 @@ impl MusicSystem {
             }
         }
 
-        // `Main.cs:11527-11600`: the two ambience tracks ride the same pool —
-        // the rain loop (28) while ZoneRain and not ZoneSnow, the wind loop
-        // (45) while |windSpeed| >= 20/50 and SurfaceAtmospherics; the weather
-        // factor scales the system volume and shimmer mutes both.
-        if let Some(volume) = ambience_rain_volume(&env) {
-            self.update_common_track(true, 28, env.ambient_volume * volume);
+        // `Main.cs:11541-11594`: the two AMBIENT cues — the rain loop (28)
+        // while ZoneRain and not ZoneSnow, the wind loop (45) while
+        // |windSpeed| >= 20/50 and SurfaceAtmospherics. They ride
+        // `UpdateAmbientCueState`/`UpdateAmbientCueTowardStopping`
+        // (`LegacyAudioSystem.cs:216-277`), NOT the common-track pair: the
+        // system volume is `Main.ambientVolume * <weather factor>` and the
+        // fade is `Main.musicFade[i]` — the two multiply only at the sink
+        // (`SetVariable("Volume", trackVolume * systemVolume)`).
+        let rain_system = env.ambient_volume * ambience_rain_factor(&env);
+        if env.zone_rain && !env.zone_snow {
+            // `:11556-11558`: `UpdateAmbientCueState(i, allowMusic, ...)`.
+            self.update_ambient_cue_state(28, true, rain_system);
         } else {
-            self.update_common_track_toward_stopping(
-                28,
-                env.ambient_volume * ambience_rain_volume(&env).unwrap_or(0.0),
-                is_main_track_audible,
-            );
+            // `:11560-11562`: the 0.005 stopping speed.
+            self.update_ambient_cue_toward_stopping(28, 0.005, rain_system);
         }
-        if let Some(volume) = ambience_wind_volume(&env) {
-            self.update_common_track(true, 45, env.ambient_volume * volume);
+        let wind_system = env.ambient_volume * ambience_wind_factor(&env);
+        if ambience_wind_plays(&env) {
+            self.update_ambient_cue_state(45, true, wind_system);
         } else {
-            self.update_common_track_toward_stopping(
-                45,
-                env.ambient_volume * ambience_wind_volume(&env).unwrap_or(0.0),
-                is_main_track_audible,
-            );
+            self.update_ambient_cue_toward_stopping(45, 0.005, wind_system);
         }
     }
 
@@ -2940,6 +2948,78 @@ impl MusicSystem {
             self.stop_track(i);
         } else if let Some(Some(sink)) = self.tracks.get(i) {
             sink.set_volume(total_volume);
+        }
+    }
+
+    /// `LegacyAudioSystem.UpdateAmbientCueState` (`LegacyAudioSystem.cs:216-248`)
+    /// — the rain/wind ambient cues' play half (`Main.cs:11558`/`:11586`).
+    /// `system_volume` = `Main.ambientVolume * <weather factor>`; the fade is
+    /// `Main.musicFade[i]`, the two multiply only at the sink. The zero-volume
+    /// arm stops the cue WITHOUT touching the fade (`:222-229`); a fresh start
+    /// plays at the CURRENT fade with no increment (`:230-236`); only the
+    /// already-playing arm steps +0.005 (`:242-247`). The `IsPaused &
+    /// gameIsActive → Resume` arm (`:237-241`) folds — the port never pauses
+    /// music sinks (the focus-pause deviation, research/32 D12); `gameIsActive`
+    /// is `FocusHelper.AllowMusic`, pinned true like the common-track callers.
+    fn update_ambient_cue_state(&mut self, i: usize, game_is_active: bool, system_volume: f32) {
+        let _ = game_is_active; // the Resume arm's only reader (folded)
+        // `:218-221`: `!WaveBank.IsPrepared || AudioTracks[i] == null` — the
+        // port's stand-in is the loaded cue index (no sink without it).
+        let has_track = self.wave_indices.contains_key(&(i as u32));
+        let (fade, action) =
+            ambient_cue_state_step(has_track, self.is_track_playing(i), self.music_fade[i], system_volume);
+        self.music_fade[i] = fade;
+        match action {
+            AmbientCueAction::NoTrack => {}
+            // `:222-229`: the zero system volume stops the live cue at once
+            // and leaves the fade where it was.
+            AmbientCueAction::StopKeepFade => {
+                if self.is_track_playing(i) {
+                    self.stop_track(i);
+                }
+            }
+            // `:230-236`: Reuse + Play at `trackVolume * system` — NO fade
+            // increment on the start frame.
+            AmbientCueAction::Start => self.start_track(i, fade * system_volume),
+            // `:242-247`: the +0.005 step already landed on the fade.
+            AmbientCueAction::SetVolume => {
+                if let Some(Some(sink)) = self.tracks.get(i) {
+                    sink.set_volume(fade * system_volume);
+                }
+            }
+            AmbientCueAction::ZeroFade | AmbientCueAction::StopZeroFade => unreachable!(),
+        }
+    }
+
+    /// `LegacyAudioSystem.UpdateAmbientCueTowardStopping`
+    /// (`LegacyAudioSystem.cs:250-277`) — the ambient cues' stop half
+    /// (`Main.cs:11562`/`:11590`, `stoppingSpeed` 0.005). NOT the common-track
+    /// stop: the fade decays UNCONDITIONALLY while playing (no
+    /// `isMainTrackAudible`/`curMusic == 0` gate), and a stopped cue zeroes
+    /// the fade (`:256-260`).
+    fn update_ambient_cue_toward_stopping(
+        &mut self,
+        i: usize,
+        stopping_speed: f32,
+        system_volume: f32,
+    ) {
+        let has_track = self.wave_indices.contains_key(&(i as u32));
+        let (fade, action) = ambient_cue_stop_step(
+            has_track,
+            self.is_track_playing(i),
+            self.music_fade[i],
+            stopping_speed,
+        );
+        self.music_fade[i] = fade;
+        match action {
+            AmbientCueAction::NoTrack | AmbientCueAction::ZeroFade => {}
+            AmbientCueAction::StopZeroFade => self.stop_track(i),
+            AmbientCueAction::SetVolume => {
+                if let Some(Some(sink)) = self.tracks.get(i) {
+                    sink.set_volume(fade * system_volume);
+                }
+            }
+            AmbientCueAction::StopKeepFade | AmbientCueAction::Start => unreachable!(),
         }
     }
 
@@ -3462,6 +3542,148 @@ mod tests {
         let mut m = system();
         m.decide_new_music(env(true));
         assert!(matches!(m.new_music, 1 | 18));
+    }
+
+    /// W4-d130 final — the rain ambience cue's weather factor
+    /// (`Main.cs:11543-11553`): `cloudAlpha/9*10*0.5 + 0.5`, the shimmer
+    /// mute, the 1-cap THEN `atmo^4`. The raw cloudAlpha matters: at 1.5
+    /// the unclamped factor caps at 1 where the old `visual_alpha` feed
+    /// capped the input at 1 first (0.5 + 1/9*5 = 1.055… → also 1 here,
+    /// but at alpha 0.81 the raw value is 0.95 and the clamp is identity —
+    /// the OBSERVABLE split is the shimmer arm below).
+    #[test]
+    fn the_rain_ambience_factor_matches_the_csharp_maths() {
+        let mut e = env(true);
+        e.atmo = 1.0;
+        // Dry sky: the 0.5 floor (`num10`).
+        assert!((ambience_rain_factor(&e) - 0.5).abs() < 1e-6);
+        // cloudAlpha 0.9: 0.9/9*10*0.5 + 0.5 = 1.0 exactly (the cap edge).
+        e.cloud_alpha = 0.9;
+        assert!((ambience_rain_factor(&e) - 1.0).abs() < 1e-6);
+        // RAW alpha 1.5 (a TR_RAIN pin): 1.5/9*5 + 0.5 = 1.333… → cap 1.
+        // The clamped feed would read 1.0 → 1.055… → cap 1: same HERE,
+        // but the shimmer arm below splits them.
+        e.cloud_alpha = 1.5;
+        assert!((ambience_rain_factor(&e) - 1.0).abs() < 1e-6);
+        // Shimmer 0.5 on RAW alpha 1.5: 1.333…*0.5 = 0.666… (UNDER the
+        // cap — the raw value survives); the old clamped feed gave
+        // 1.055…*0.5 = 0.527… — the observable deviation this fold fixes.
+        e.shimmer_alpha = 0.5;
+        let want = (1.5f32 / 9.0 * 10.0 * 0.5 + 0.5) * 0.5;
+        assert!((ambience_rain_factor(&e) - want).abs() < 1e-6);
+        assert!(want > 0.6, "the raw-alpha shimmer arm: {want}");
+        // The atmo^4 depth factor applies AFTER the cap (`:11553`).
+        e.shimmer_alpha = 0.0;
+        e.cloud_alpha = 0.9;
+        e.atmo = 0.5;
+        assert!((ambience_rain_factor(&e) - 0.0625).abs() < 1e-6);
+        // The zone gate picks State vs TowardStopping — it does NOT zero
+        // the factor (the C# computes num11 unconditionally, `:11544`).
+        e.zone_rain = false;
+        assert!(ambience_rain_factor(&e) > 0.0);
+    }
+
+    /// W4-d130 final — `UpdateAmbientCueState`
+    /// (`LegacyAudioSystem.cs:216-248`): the start frame plays at the
+    /// CURRENT fade with NO increment; only the already-playing arm steps
+    /// +0.005 (cap 1); the zero system volume stops WITHOUT touching the
+    /// fade; a missing track moves nothing.
+    #[test]
+    fn the_ambient_cue_state_start_does_not_increment_the_fade() {
+        use AmbientCueAction::*;
+        // No track: nothing moves, fade included (`:218-221`).
+        assert_eq!(ambient_cue_state_step(false, false, 0.4, 1.0), (0.4, NoTrack));
+        // The start frame (`:230-236`): fade 0 stays 0 — the cue plays at
+        // volume 0 and ramps from the NEXT frame (the common-track pair
+        // incremented BEFORE the start: the retired deviation).
+        assert_eq!(ambient_cue_state_step(true, false, 0.0, 1.0), (0.0, Start));
+        assert_eq!(ambient_cue_state_step(true, false, 0.4, 1.0), (0.4, Start));
+        // Playing: +0.005 per frame, capped at 1 (`:242-247`).
+        let (f, a) = ambient_cue_state_step(true, true, 0.4, 1.0);
+        assert_eq!(a, SetVolume);
+        assert!((f - 0.405).abs() < 1e-6);
+        assert_eq!(ambient_cue_state_step(true, true, 0.999, 1.0), (1.0, SetVolume));
+        assert_eq!(ambient_cue_state_step(true, true, 1.0, 1.0), (1.0, SetVolume));
+        // Zero system volume (`:222-229`): stop, KEEP the fade — a muted
+        // ambient slider does not reset the ramp (it resumes at the same
+        // fade when the slider returns).
+        assert_eq!(
+            ambient_cue_state_step(true, true, 0.4, 0.0),
+            (0.4, StopKeepFade)
+        );
+        assert_eq!(
+            ambient_cue_state_step(true, false, 0.4, 0.0),
+            (0.4, StopKeepFade)
+        );
+    }
+
+    /// W4-d130 final — `UpdateAmbientCueTowardStopping`
+    /// (`LegacyAudioSystem.cs:250-277`): the fade decays UNCONDITIONALLY
+    /// while playing (the common-track stop's `isMainTrackAudible` gate is
+    /// NOT this arm's), a stopped cue zeroes the fade, and the fade-out
+    /// takes exactly 200 frames from 1 at the 0.005 speed.
+    #[test]
+    fn the_ambient_cue_stop_fades_without_the_main_track_gate() {
+        use AmbientCueAction::*;
+        // Not playing → the fade zeroes, no sink touch (`:256-260`).
+        assert_eq!(ambient_cue_stop_step(true, false, 0.4, 0.005), (0.0, ZeroFade));
+        // Playing: -0.005 per frame regardless of the main track's state.
+        let (f, a) = ambient_cue_stop_step(true, true, 0.4, 0.005);
+        assert_eq!(a, SetVolume);
+        assert!((f - 0.395).abs() < 1e-6);
+        // The floor: the last step lands exactly 0 and STOPS (`:269-272`).
+        assert_eq!(
+            ambient_cue_stop_step(true, true, 0.005, 0.005),
+            (0.0, StopZeroFade)
+        );
+        assert_eq!(
+            ambient_cue_stop_step(true, true, 0.002, 0.005),
+            (0.0, StopZeroFade)
+        );
+        // The full fade-out: 1 → 0 in 200 frames (the rain stops, the
+        // loop keeps sounding for 3⅓ s while the zone gate is down).
+        let mut fade = 1.0f32;
+        let mut frames = 0;
+        loop {
+            let (f, a) = ambient_cue_stop_step(true, true, fade, 0.005);
+            fade = f;
+            frames += 1;
+            if a == StopZeroFade {
+                break;
+            }
+            assert!(frames < 400, "the fade must terminate");
+        }
+        assert_eq!(frames, 200);
+        assert_eq!(fade, 0.0);
+        // No track: nothing moves (`:252-255`).
+        assert_eq!(ambient_cue_stop_step(false, true, 0.4, 0.005), (0.4, NoTrack));
+    }
+
+    /// W4-d130 final — the wind cue's gate + factor (`Main.cs:11569-11582`):
+    /// `|wind| >= 20/50 && SurfaceAtmospherics`, `|wind|*0.7 + 0.3` with the
+    /// shimmer mute, the 1-cap, the ×0.9 and `atmo^4`.
+    #[test]
+    fn the_wind_ambience_gate_and_factor() {
+        let mut e = env(true);
+        e.atmo = 1.0;
+        e.surface_atmospherics = true;
+        e.wind_speed = 0.4; // the 20/50 boundary — inclusive (`>=`).
+        assert!(ambience_wind_plays(&e));
+        e.wind_speed = 0.39;
+        assert!(!ambience_wind_plays(&e));
+        e.wind_speed = -0.4; // the abs() gate.
+        assert!(ambience_wind_plays(&e));
+        e.surface_atmospherics = false;
+        assert!(!ambience_wind_plays(&e));
+        // The factor at |wind| 0.4: 0.4*0.7 + 0.3 = 0.58, ×0.9 = 0.522.
+        e.wind_speed = 0.4;
+        assert!((ambience_wind_factor(&e) - 0.522).abs() < 1e-6);
+        // |wind| 1.0: 1.0 → cap 1 → ×0.9.
+        e.wind_speed = 1.0;
+        assert!((ambience_wind_factor(&e) - 0.9).abs() < 1e-6);
+        // Shimmer halves BEFORE the cap (`:11571-11578`).
+        e.shimmer_alpha = 0.5;
+        assert!((ambience_wind_factor(&e) - 0.45).abs() < 1e-6);
     }
 
     #[test]
@@ -4496,33 +4718,104 @@ mod tests {
     }
 }
 
-/// `Main.cs:11528-11546`: the rain track's weather factor — `Some` while the
-/// rain zone is active and snow isn't.
-fn ambience_rain_volume(env: &MusicEnv) -> Option<f32> {
-    if !(env.zone_rain && !env.zone_snow) {
-        return None;
-    }
+/// `Main.cs:11543-11553`: the rain cue's weather factor `num11` —
+/// `cloudAlpha / 9 * 10 * 0.5 + 0.5`, the shimmer mute, the 1-cap, then
+/// `atmo^4`. Computed UNCONDITIONALLY in the C# (the stopping arm passes it
+/// too, `:11562`); the zone gate only picks State vs TowardStopping.
+/// `env.cloud_alpha` is the RAW `Main.cloudAlpha` — the sky-tint clamp is
+/// NOT this reader's (the `visual_alpha` feed was a deviation, W4-d130
+/// final: observable above 1 under a TR_RAIN pin / heavy storm).
+fn ambience_rain_factor(env: &MusicEnv) -> f32 {
     let num10 = 0.5;
     let mut num11 = env.cloud_alpha / 9.0 * 10.0 * num10 + (1.0 - num10);
     if env.shimmer_alpha > 0.0 {
         num11 *= 1.0 - env.shimmer_alpha;
     }
-    let v = (num11.min(1.0)) * env.atmo.powi(4);
-    Some(v)
+    (num11.min(1.0)) * env.atmo.powi(4)
 }
 
-/// `Main.cs:11562-11595`: the wind track's weather factor — `Some` while
-/// `|windSpeedCurrent| >= 20/50` and `SurfaceAtmospherics`.
-fn ambience_wind_volume(env: &MusicEnv) -> Option<f32> {
+/// `Main.cs:11582`: the wind cue's zone gate —
+/// `|windSpeedCurrent| >= 20/50 && SurfaceAtmospherics`.
+fn ambience_wind_plays(env: &MusicEnv) -> bool {
     let num8 = 20.0f32;
-    if env.wind_speed.abs() < num8 / 50.0 || !env.surface_atmospherics {
-        return None;
-    }
+    env.wind_speed.abs() >= num8 / 50.0 && env.surface_atmospherics
+}
+
+/// `Main.cs:11569-11581`: the wind cue's weather factor `num7` —
+/// `|wind| * 0.7 + 0.3`, the shimmer mute, the 1-cap, `* 0.9`, then
+/// `atmo^4`. Computed unconditionally, like the rain factor.
+fn ambience_wind_factor(env: &MusicEnv) -> f32 {
     let num6 = 0.7;
     let mut num7 = env.wind_speed.abs() * num6 + (1.0 - num6);
     if env.shimmer_alpha > 0.0 {
         num7 *= 1.0 - env.shimmer_alpha;
     }
-    let v = (num7.min(1.0)) * 0.9 * env.atmo.powi(4);
-    Some(v)
+    (num7.min(1.0)) * 0.9 * env.atmo.powi(4)
+}
+
+/// One `UpdateAmbientCueState`/`TowardStopping` outcome — the pure fade
+/// state machine (`LegacyAudioSystem.cs:216-277`) the `MusicSystem` methods
+/// apply to the sink. `(fade, action)`: the new `Main.musicFade[i]` and what
+/// the engine does with the cue.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum AmbientCueAction {
+    /// `:218-221`: no track — nothing moves (the fade included).
+    NoTrack,
+    /// `:222-229`: zero system volume — stop the live cue, keep the fade.
+    StopKeepFade,
+    /// `:230-236`: start at `fade * system` — NO fade increment.
+    Start,
+    /// `:242-247` / `:273-276`: set the sink to `fade * system`.
+    SetVolume,
+    /// `:256-260`: not playing — the fade zeroes, no sink touch.
+    ZeroFade,
+    /// `:269-272`: the fade ran out — stop.
+    StopZeroFade,
+}
+
+/// `LegacyAudioSystem.UpdateAmbientCueState`'s decision half
+/// (`LegacyAudioSystem.cs:216-248`), pure: `has_track` =
+/// `WaveBank.IsPrepared && AudioTracks[i] != null`, `playing` =
+/// `AudioTracks[i].IsPlaying`. The `IsPaused & gameIsActive → Resume` arm
+/// (`:237-241`) folds (the port never pauses music sinks — research/32 D12).
+fn ambient_cue_state_step(
+    has_track: bool,
+    playing: bool,
+    fade: f32,
+    system_volume: f32,
+) -> (f32, AmbientCueAction) {
+    if !has_track {
+        return (fade, AmbientCueAction::NoTrack);
+    }
+    if system_volume == 0.0 {
+        return (fade, AmbientCueAction::StopKeepFade);
+    }
+    if !playing {
+        return (fade, AmbientCueAction::Start);
+    }
+    ((fade + 0.005).min(1.0), AmbientCueAction::SetVolume)
+}
+
+/// `LegacyAudioSystem.UpdateAmbientCueTowardStopping`'s decision half
+/// (`LegacyAudioSystem.cs:250-277`), pure. The fade decays UNCONDITIONALLY
+/// while playing — no `isMainTrackAudible`/`curMusic == 0` gate (that is the
+/// COMMON-track stop's shape, `:320-352`, not this one).
+fn ambient_cue_stop_step(
+    has_track: bool,
+    playing: bool,
+    fade: f32,
+    stopping_speed: f32,
+) -> (f32, AmbientCueAction) {
+    if !has_track {
+        return (fade, AmbientCueAction::NoTrack);
+    }
+    if !playing {
+        return (0.0, AmbientCueAction::ZeroFade);
+    }
+    let fade = if fade > 0.0 { (fade - stopping_speed).max(0.0) } else { fade };
+    if fade <= 0.0 {
+        (0.0, AmbientCueAction::StopZeroFade)
+    } else {
+        (fade, AmbientCueAction::SetVolume)
+    }
 }

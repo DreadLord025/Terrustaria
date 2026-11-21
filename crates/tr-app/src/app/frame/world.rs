@@ -194,7 +194,10 @@ impl App {
         shimmer: self.scene_metrics.zone_shimmer,
         town_npcs: self.scene_metrics.town_npc_count,
         // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
-        cloud_alpha: self.rain.visual_alpha(),
+        // The RAW `Main.cloudAlpha` (`:11544`'s `num11` reads the unclamped
+        // static; the sky-tint `visual_alpha` clamp was a deviation —
+        // observable above 1 under a heavy storm / TR_RAIN pin, W4-d130).
+        cloud_alpha: self.rain.cloud_alpha(),
         zone_rain: self.scene_metrics.zone_rain,
         zone_snow: self.scene_metrics.zone_snow,
         surface_atmospherics: self.scene_metrics.surface_atmospherics,
