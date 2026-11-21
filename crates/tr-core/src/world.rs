@@ -198,6 +198,13 @@ pub struct World {
     /// save rides the v15 tail (S1-F-16).
     pub downed_queen_slime: bool,
     pub downed_eoc: bool,
+    /// `NPC.EoCKilledToday` / `NPC.WoFKilledToday` (`NPC.cs:6611`/`:6613`):
+    /// the daily boss-death latches the Badger's Hat drop reads
+    /// (`DoDeathEvents_DropBossPotionsAndHearts`, `NPC.cs:79003-79015`);
+    /// both reset at dusk (`NPC.ResetBadgerHatTime`, `Main.cs:65221`).
+    /// Runtime-only, not saved.
+    pub eoc_killed_today: bool,
+    pub wof_killed_today: bool,
     pub downed_eow: bool,
     pub downed_skeletron: bool,
     pub downed_queen_bee: bool,
@@ -636,6 +643,8 @@ impl World {
             downed_slime_king: false,
             downed_queen_slime: false,
             downed_eoc: false,
+            eoc_killed_today: false,
+            wof_killed_today: false,
             downed_eow: false,
             downed_skeletron: false,
             downed_queen_bee: false,

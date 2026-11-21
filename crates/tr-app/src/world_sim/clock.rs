@@ -41,6 +41,11 @@ pub(crate) fn advance_time(
             // moon) — event rolls land with M4.
             world.fast_forward_to_dusk = false;
             world.moondial_cooldown = world.moondial_cooldown.saturating_sub(1);
+            // `NPC.ResetBadgerHatTime()` (`Main.cs:65221` → `NPC.cs:78939-
+            // 78943`): the daily EoC/WoF death latches clear at dusk (the
+            // Badger's Hat needs both in ONE day).
+            world.eoc_killed_today = false;
+            world.wof_killed_today = false;
             // `UpdateTime_StartNight`'s blood-moon roll (`Main.cs:65333-65352`):
             // one `Main.rand` draw at the boundary (`Next(maxValue)` in the C#;
             // the port's uniform-threshold form), through the named `UpdateTime`
