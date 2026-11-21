@@ -403,11 +403,7 @@ impl ApplicationHandler for App {
                     {
                         crate::ui::chest::scroll(self, ui_delta, self.mouse_pos);
                     }
-                    if step != 0
-                        && self.menu.is_none()
-                        && self.front.is_none()
-                        && !self.inventory_open
-                    {
+                    if step != 0 && self.hotbar_wheel_allowed() {
                         // S1-P-i54 — `HandleHotbarControls` (`Player.cs:
                         // 31766-31796`): `num += ScrollWheelDelta / -120`
                         // (`:31790`) — wheel-UP (+120) steps BACKWARD — and
@@ -686,6 +682,22 @@ impl App {
         self.map_binds[action.index()].as_str() == crate::input_map::key_name(code)
     }
 
+    /// S1-P-i54 + W4-g53 doc-sweep — the hotbar wheel arm's gate:
+    /// `Player.cs:25203-25212` routes the wheel to `HandleHotbarControls`
+    /// only with the inventory closed (and no map/capture/hair window — the
+    /// caller's branches), and `:31788-31791` gates the wheel delta itself
+    /// on `!Main.inFancyUI && !Main.ingameOptionsWindow`. The port's fancy
+    /// states are the bestiary/emotes overlays (the achievements overlay
+    /// consumes the wheel earlier in the handler) and the options window.
+    pub(crate) fn hotbar_wheel_allowed(&self) -> bool {
+        self.menu.is_none()
+            && self.front.is_none()
+            && !self.inventory_open
+            && !self.bestiary_open
+            && !self.emotes.menu_open
+            && !self.ingame_options.open
+    }
+
     /// S1-P-i54 — one hotbar digit press (`Player.cs:25095-25134` +
     /// `:25174-25177`): the digit latches `num7` and `Select` buffers the
     /// request; the apply + use-timer reset run on the player tick
@@ -822,6 +834,27 @@ mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::map::WorldMap;
+
+    /// W4-g53 doc-sweep — `Player.cs:31788-31791`: the wheel's hotbar arm
+    /// is gated on `!Main.inFancyUI && !Main.ingameOptionsWindow` — the
+    /// bestiary/emotes overlays and the options window eat the notch; the
+    /// plain closed-inventory world still cycles.
+    #[test]
+    fn g53_the_fancy_ui_and_options_window_eat_the_hotbar_wheel() {
+        let mut app = flow_app(None, vec![], vec![]);
+        assert!(app.hotbar_wheel_allowed(), "the plain world cycles");
+        app.bestiary_open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the bestiary is inFancyUI");
+        app.bestiary_open = false;
+        app.emotes.menu_open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the emotes wheel is inFancyUI");
+        app.emotes.menu_open = false;
+        app.ingame_options.open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the options window");
+        app.ingame_options.open = false;
+        app.inventory_open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the open inventory routes to DoScrollingInInventory (`:25205-25207`)");
+    }
 
     /// W4-g53 doc-sweep — `Main.DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`):
     /// the press latch flips `hideUI` once per press (never on held repeats),
