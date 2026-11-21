@@ -1213,6 +1213,18 @@ pub(crate) fn draw_sky(
     // Each active biome's row chain emits its own `DrawToDepth(1f/parallax)`
     // boundaries (`Main.cs:61304+`); the pass threads the tracker so a second
     // cross-fading biome's boundaries no-op like the original's.
+    //
+    // W4-g72 closeout SURFACE-OWNERSHIP cross-note (g71 owns the surface
+    // draw-tables): the five v16-owned variants below (corrupt/jungle/hallow/
+    // crimson/mushroom) read `world.*_bg()` → `surface_bg_texture_ids`
+    // (`WorldGen.setBG` slots 1/2/4/5/8) — the g71-shape style→ids expansion,
+    // already live. The forest/desert/snow/ocean chains are STYLE-0 PINNED
+    // here (`[50,51,52]` / `[21,20,-1]` / `[37,38,39]` / `Background_28`):
+    // their style tables (`SetForestBGSet` slots 0/10/11/12, `setBG` 3/6/7)
+    // are g70/g71's to port — g71's draw-side reads `world.forest_bg(n)` /
+    // `desert_bg_set()[0]` / `snow_bg()` / `ocean_bg()` (its sky.rs), so this
+    // lane does NOT re-port them; the pins lift to those reads at the merge.
+    // See docs/research/64c + ANALYSIS "The surface-bg draw ownership".
     let mut amb_pass = show_bg.then_some(crate::render::bg::AmbiencePass {
         entities: ambience,
         lookups,

@@ -2306,6 +2306,38 @@ mod surface_variant_bg_tests {
         assert_eq!(layer_y_offset(60), 0.0);
     }
 
+    /// W4-g72 closeout: the SURFACE-OWNERSHIP verification — the five
+    /// v16-owned variants read the g71-shape `setBG` style→ids expansion
+    /// (`surface_bg_texture_ids`, slots 1/2/4/5/8), while the forest/desert/
+    /// snow/ocean style tables are g70/g71's (this lane pins their style-0
+    /// rows and does NOT re-port the tables). Pins the five variants' default
+    /// (style 0) rows and one non-default row each, plus the slot-3/6/7/9
+    /// `None` verdicts that mark the g71-owned tables as unported HERE.
+    #[test]
+    fn w4_g72_the_surface_variants_read_the_g71_shape_set_bg_tables() {
+        use tr_core::world::surface_bg_texture_ids;
+        // The five v16-owned variants' style-0 (default) rows — the exact ids
+        // the sky.rs front-loop chains draw (`world.*_bg()` at style 0).
+        assert_eq!(surface_bg_texture_ids(1, 0), Some([12, 13, 14])); // corrupt
+        assert_eq!(surface_bg_texture_ids(2, 0), Some([15, 16, 17])); // jungle
+        assert_eq!(surface_bg_texture_ids(4, 0), Some([29, 30, 31])); // hallow
+        assert_eq!(surface_bg_texture_ids(5, 0), Some([43, 44, 45])); // crimson
+        assert_eq!(surface_bg_texture_ids(8, 0), Some([46, 47, 48])); // mushroom
+        // One non-default row each — the style→ids expansion is LIVE, not a
+        // style-0 pin (the g71-shape the surface chains read).
+        assert_eq!(surface_bg_texture_ids(1, 1), Some([56, 57, 58]));
+        assert_eq!(surface_bg_texture_ids(2, 1), Some([59, 60, 61]));
+        assert_eq!(surface_bg_texture_ids(4, 1), Some([102, 103, 104]));
+        assert_eq!(surface_bg_texture_ids(5, 1), Some([105, 106, 107]));
+        assert_eq!(surface_bg_texture_ids(8, 1), Some([231, 232, 233]));
+        // The g71-owned slots (snow 3, desert 6, ocean 7, underworld 9) and the
+        // g70 forest slots (0/10/11/12) are NOT in this lane's table — their
+        // style tables are g70/g71's to port (the sky.rs chains pin style 0).
+        for slot in [0, 3, 6, 7, 9, 10, 11, 12] {
+            assert_eq!(surface_bg_texture_ids(slot, 0), None, "slot {slot} is g70/g71's");
+        }
+    }
+
     #[test]
     fn background_frame_steps_match_get_background_rect() {
         // `Main.cs:61226-61258`.

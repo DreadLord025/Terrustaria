@@ -1599,6 +1599,27 @@ The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPa
 mean column height, which floated the dirt sheet ~60 tiles (в‰€1000 px) above the true layer
 boundary; the underground now begins where the original's does.
 
+### The surface-bg draw ownership (W4-g72 closeout)
+
+The live cave-chain's SURFACE arm (`render/sky.rs`'s `draw_sky` front-loop)
+was verified against the g71-shape style tables (research/64c): the five
+v16-owned variants (corrupt/jungle/hallow/crimson/mushroom) READ the
+`WorldGen.setBG` style→ids expansion through `world.*_bg()` →
+`tr_core::world::surface_bg_texture_ids` (slots 1/2/4/5/8) — NOT style-0
+pins, a non-default style byte expands to its variant rows. g71's own
+draw-side reads the SAME shape through the SAME function (its world.rs
+extends it with slot 3), so the five are already g71-compatible. The
+forest/desert/snow/ocean chains are STYLE-0 PINNED here (`[50,51,52]` /
+`[21,20,-1]` / `[37,38,39]` / `Background_28`): their style tables
+(`SetForestBGSet` slots 0/10/11/12 = g70; `setBG` 3/6/7 = g71) are those
+lanes' to port — this lane does NOT re-port them (the Lead's "SURFACE styles
+g71-owns draw-tables"); the pins lift to g70's `world.forest_bg(n)` / g71's
+`world.snow_bg()`/`desert_bg_set()[0]`/`ocean_bg()` at the merge. The
+underground-desert cavern style stays OURS (no separate desert arm in
+`PickUndergroundBackgroundStyle`, g71 research/92 §4). 1 witness WRITTEN NOT
+RUN (the five variants' style-0 + non-default rows + the g70/g71-owned-slot
+`None` verdicts).
+
 ## Sky and daylight
 
 `Main.SetBackColor` (day `0..54000`, night `0..32400`) is ported to `color_of_the_skies`:
