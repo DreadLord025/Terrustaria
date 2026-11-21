@@ -309,7 +309,10 @@ impl App {
             // `PlayerItemSlotID.CanRelay`).
             C2s::Inventory { slot, item } => {
                 let peer = id as u8;
-                server.set_slot_inventory(id, slot as u8, item);
+                // The full i16 slot id (`MessageBuffer.cs:402` `ReadInt16`):
+                // the u8 truncation collapsed bank3[0]/TRASH (179) and every
+                // bank4 slot onto a grid id.
+                server.set_slot_inventory(id, slot, item);
                 if player_item_slot::can_relay(slot) {
                     server.broadcast_except(
                         &S2c::Inventory {
@@ -1638,7 +1641,7 @@ impl App {
                         ..Default::default()
                     })
                     .inventory
-                    .insert(slot as u8, item);
+                    .insert(slot, item); // the full i16 wire slot (`:402`)
             }
             // `case 32` — one chest slot (`MessageBuffer.cs:1897-1918`): the
             // client writes it into its own chest store.
@@ -2258,15 +2261,10 @@ impl App {
             }
             for (b, vault) in p.banks.iter().enumerate() {
                 for (i, slot) in vault.iter().enumerate() {
+                    // W4-c28 id-lane fix: the trash sentinel reserves id 179
+                    // (`player_item_slot::TRASH`), bank3 starts at 180 — every
+                    // bank slot diffs, including bank3[0].
                     let ws = player_item_slot::bank_1_0(b) + i as i16;
-                    // The port's u8 wire layout collides bank3 slot 0 with
-                    // TRASH (both 179); `net_item_at_wire_slot` resolves 179
-                    // to the trash, so bank3[0] is unsendable — skip it here
-                    // or the two fight over clone key 179 every tick (the
-                    // join push already loses it). The id layout is c27's lane.
-                    if ws == player_item_slot::TRASH {
-                        continue;
-                    }
                     diff(ws, slot, false);
                 }
                 // The C# order is bank, bank2, TRASH, bank3, bank4
@@ -3544,22 +3542,38 @@ impl App {
 }
 
 /// `PlayerItemSlotID`'s M6-NET-1 subset (`Terraria/ID/PlayerItemSlotID.cs`) —
-/// the slot arithmetic the C# inventory messages use.
+/// the slot arithmetic the C# inventory messages use. W4-c28 id-lane fix: the
+/// TRASH sentinel reserves one id between bank2 and bank3 exactly like the
+/// C#'s `AllocateSlots(1)` (`PlayerItemSlotID.cs:183`) — the old compact
+/// layout collapsed bank3[0] onto TRASH (both 179) and lost the slot.
 mod player_item_slot {
     /// The 1:1 `PlayerItemSlotID` block arithmetic the inventory messages use
     /// (`Terraria/ID/PlayerItemSlotID.cs`); the 59 grid slots are sent as
-    /// plain `0..58` indices.
+    /// plain `0..58` indices. The banks carry the port's 40-slot stores
+    /// (`bank.rs`'s `BANK_SLOTS`), NOT the C#'s 200 — the bases derive from
+    /// the same walk, so the trash sits at 179 and bank3 starts at 180.
     pub const ARMOR_0: i16 = 59;
     pub const DYE_0: i16 = 59 + 20;
     pub const MISC_0: i16 = DYE_0 + 10;
     pub const MISC_DYE_0: i16 = MISC_0 + 5;
     pub const BANK_1_0: i16 = MISC_DYE_0 + 5;
     pub const BANK_2_0: i16 = BANK_1_0 + 40;
+    /// `PlayerItemSlotID.TrashItem` (`PlayerItemSlotID.cs:183`) — the one-slot
+    /// reservation between bank2 and bank3.
     pub const TRASH: i16 = BANK_2_0 + 40;
+    pub const BANK_3_0: i16 = TRASH + 1;
+    pub const BANK_4_0: i16 = BANK_3_0 + 40;
 
-    /// `PlayerItemSlotID.Bank1_0 + bank * 40` (the `Bank1_0..Bank4_39` block).
+    /// The bank block bases in the C#'s allocation order — the trash sentinel
+    /// breaks the uniform stride (`PlayerItemSlotID.cs:181-185`), so bank3/4
+    /// are NOT `BANK_1_0 + bank * 40`.
     pub const fn bank_1_0(bank: usize) -> i16 {
-        BANK_1_0 + (bank as i16) * 40
+        match bank {
+            0 => BANK_1_0,
+            1 => BANK_2_0,
+            2 => BANK_3_0,
+            _ => BANK_4_0,
+        }
     }
 
     /// `PlayerItemSlotID.CanRelay` (`PlayerItemSlotID.cs:168-186`): the
@@ -3574,7 +3588,7 @@ mod player_item_slot {
             return true;
         }
         // The fourth bank (`Bank4_0`, the only relayable bank).
-        (bank_1_0(3)..bank_1_0(3) + 40).contains(&slot)
+        (BANK_4_0..BANK_4_0 + 40).contains(&slot)
     }
 }
 
@@ -5931,6 +5945,107 @@ mod message_family_tests {
             Some(slot(7, 1)),
             "the unchanged slot sent nothing (the host keeps its own item)"
         );
+    }
+
+    // --- W4-c28: the id-lane bank3[0]/TRASH collision fix -------------------
+
+    /// The port's `PlayerItemSlotID` walk with the 40-slot banks
+    /// (`PlayerItemSlotID.cs:175-185`): the trash sentinel reserves ONE id
+    /// between bank2 and bank3 (`AllocateSlots(1)` `:183`), so bank3[0] is
+    /// 180 — NOT the trash's 179 (the old compact layout collapsed them).
+    #[test]
+    fn the_trash_sentinel_reserves_one_id_between_bank2_and_bank3() {
+        use player_item_slot as ps;
+        assert_eq!(ps::BANK_1_0, 99);
+        assert_eq!(ps::BANK_2_0, 139);
+        assert_eq!(ps::TRASH, 179, "TrashItem = Bank2_0 + 40 (the walk)");
+        assert_eq!(ps::BANK_3_0, 180, "Bank3_0 = TrashItem + 1 (:184)");
+        assert_eq!(ps::BANK_4_0, 220);
+        assert_ne!(ps::bank_1_0(2), ps::TRASH, "bank3[0] is not the trash");
+        // `CanRelay` (`:181-185`): banks 1-3 + trash false, bank4 true.
+        assert!(!ps::can_relay(ps::TRASH));
+        assert!(!ps::can_relay(ps::BANK_3_0));
+        assert!(!ps::can_relay(ps::BANK_3_0 + 39));
+        assert!(ps::can_relay(ps::BANK_4_0));
+        assert!(ps::can_relay(ps::BANK_4_0 + 39));
+        assert!(!ps::can_relay(ps::BANK_4_0 + 40));
+    }
+
+    /// The `5` diff now carries bank3[0]: a change there arms exactly one
+    /// `Inventory` for id 180, and the body reads bank3's store — while a
+    /// trash change arms id 179 with the trash's body. The two never fight
+    /// over one clone key (the old collision made bank3[0] unsendable).
+    #[test]
+    fn bank3_slot_zero_and_the_trash_diff_as_distinct_wire_slots() {
+        let item = |kind: u16, count: u32| crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count,
+            prefix: 0,
+        };
+        let mut app = cadence_client();
+        app.player_sync_cadence();
+        app.net_player_outbox.clear();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.banks[2][0] = item(9, 5); // bank3[0]
+            p.banks[3][0] = item(7, 2); // bank4[0] — the >179 id the u8 map lost
+        }
+        app.equip.trash = item(8, 1);
+        app.player_sync_cadence();
+        let inv: Vec<i16> = app
+            .net_player_outbox
+            .iter()
+            .filter_map(|s| match s {
+                PlayerSend::Inventory { slot } => Some(*slot),
+                _ => None,
+            })
+            .collect();
+        assert!(inv.contains(&179), "the trash diffs at its own id");
+        assert!(inv.contains(&180), "bank3[0] diffs — no longer skipped");
+        assert!(inv.contains(&220), "bank4[0] diffs at the full i16 id");
+        // The bodies resolve through the same layout the join push uses.
+        assert_eq!(app.net_item_at_wire_slot(179).map(|i| i.kind), Some(8));
+        assert_eq!(app.net_item_at_wire_slot(180).map(|i| i.kind), Some(9));
+        assert_eq!(app.net_item_at_wire_slot(220).map(|i| i.kind), Some(7));
+        // The clone absorbed all three: no re-send on the next pass.
+        app.net_player_outbox.clear();
+        app.player_sync_cadence();
+        assert!(
+            !app.net_player_outbox.iter().any(|s| matches!(s, PlayerSend::Inventory { .. })),
+            "the three ids hold distinct clone keys"
+        );
+    }
+
+    /// End-to-end: the client's bank3[0] / trash / bank4[0] changes ride the
+    /// `5` cadence over the wire, and the host's per-client copy keys the
+    /// FULL i16 ids (`MessageBuffer.cs:402` `ReadInt16`) — the old u8 key
+    /// truncated 220 and collapsed 179/180.
+    #[test]
+    fn the_server_inventory_copy_keeps_the_full_i16_slot_ids() {
+        let item = |kind: u16, count: u32| crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count,
+            prefix: 0,
+        };
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        pump(&mut host_app, &mut client_app, 12); // drain the join burst
+        {
+            let p = client_app.player.as_mut().unwrap();
+            p.banks[2][0] = item(9, 5); // bank3[0] → id 180
+            p.banks[3][0] = item(7, 2); // bank4[0] → id 220
+        }
+        client_app.equip.trash = item(8, 1); // → id 179
+        pump(&mut host_app, &mut client_app, 15);
+        let NetRole::Host(server) = &host_app.net else {
+            panic!("host lost its role");
+        };
+        let snap = server.slot_inventory(client_app.local_id);
+        assert_eq!(snap.get(&179).map(|i| i.kind), Some(8), "trash at 179");
+        assert_eq!(snap.get(&180).map(|i| i.kind), Some(9), "bank3[0] at 180");
+        assert_eq!(snap.get(&220).map(|i| i.kind), Some(7), "bank4[0] at 220");
     }
 
     // --- W4-c28: the tile-edit cadence is EVENT-driven (immediate) ----------

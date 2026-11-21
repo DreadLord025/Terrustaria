@@ -566,8 +566,10 @@ pub struct PlayerNet {
     pub off_x: f32,
     pub off_y: f32,
     /// `Main.player[id].inventory` - the peer's slot state, fed by the
-    /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`).
-    pub inventory: HashMap<u8, NetItem>,
+    /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`). Keyed by
+    /// the i16 `PlayerItemSlotID` wire slot (`MessageBuffer.cs:402` reads
+    /// `ReadInt16`) — W4-c28: a u8 key truncated bank4/loadout ids.
+    pub inventory: HashMap<i16, NetItem>,
     /// `Main.player[id].buffType[]`'s live ids, fed by `50 PlayerBuffs`
     /// (`MessageBuffer.cs:2454-2480` sets every listed buff's time to 60).
     pub buffs: Vec<u16>,
@@ -3407,8 +3409,9 @@ pub struct Slot {
     pub last_seen: Instant,
     /// `Main.player[id].inventory` — the peer's slot state, fed by the
     /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`). The C#'s
-    /// server keeps the same per-client copy of the inventory.
-    pub inventory: HashMap<u8, NetItem>,
+    /// server keeps the same per-client copy of the inventory; the key is
+    /// the i16 `PlayerItemSlotID` wire slot (`MessageBuffer.cs:402`).
+    pub inventory: HashMap<i16, NetItem>,
     /// `RemoteClient.TileSections` (`RemoteClient.cs:31`): the flattened
     /// `sections_w * sections_h` latch grid of the sections already streamed.
     pub sections: Vec<bool>,
@@ -3585,7 +3588,7 @@ impl Server {
 
     /// Stores one peer inventory slot — `Main.player[id].inventory[slot]`
     /// (`MessageBuffer.cs:399-462`'s `slot.Item = item`).
-    pub fn set_slot_inventory(&self, id: u32, slot: u8, item: NetItem) {
+    pub fn set_slot_inventory(&self, id: u32, slot: i16, item: NetItem) {
         if let Ok(mut s) = self.slots.lock() {
             if let Some(c) = s.get_mut(&id) {
                 c.inventory.insert(slot, item);
@@ -3594,7 +3597,7 @@ impl Server {
     }
 
     /// The peer's inventory slots (a snapshot).
-    pub fn slot_inventory(&self, id: u32) -> HashMap<u8, NetItem> {
+    pub fn slot_inventory(&self, id: u32) -> HashMap<i16, NetItem> {
         self.slots
             .lock()
             .ok()
