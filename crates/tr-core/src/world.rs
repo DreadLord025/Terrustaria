@@ -562,6 +562,17 @@ pub struct World {
     /// an empty one.
     pub travel_shop: [u16; 40],
 
+    /// `WorldGen.tGood/tEvil/tBlood` (`WorldGen.cs:4180-4184`): the dryad's
+    /// world-status percentages, recomputed by `CountTiles` (`:71156-71169`,
+    /// banker's `Math.Round` + the nonzero-total floor of 1) and pushed to
+    /// the clients by the join arm (`MessageBuffer.cs:867`) and the recount
+    /// (`WorldGen.cs:71173`) as `57 Unknown57`; the client stores the three
+    /// bytes (`MessageBuffer.cs:2631-2638`). The port's tile-count pass is
+    /// unported — the fields ride the wire store until it lands (W4-f21b).
+    pub t_good: u8,
+    pub t_evil: u8,
+    pub t_blood: u8,
+
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
     /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
@@ -797,6 +808,9 @@ impl World {
             angler_quest_turned_in: false,
             angler_swap_pending: false,
             travel_shop: [0; 40],
+            t_good: 0,
+            t_evil: 0,
+            t_blood: 0,
             butterfly_chance: 0,
             generator_version: 0,
             unique_id: [0u8; 16],

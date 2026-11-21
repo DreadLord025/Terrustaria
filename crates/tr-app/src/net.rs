@@ -869,6 +869,11 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Player.anglerQuestsFinished` / `Player.golferScoreAccumulated`
+    /// (`Player.cs:1910/:1912`), fed by `76 QuestsCountSync`
+    /// (`MessageBuffer.cs:3173-3175`). W4-f21b.
+    pub angler_quests_finished: i32,
+    pub golfer_score: i32,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four

@@ -826,11 +826,40 @@ impl App {
             // (`MessageBuffer.cs:2531-2564`) land with the apply-wiring
             // lanes (g48-g52) / S1-I-4 — bodies + codecs only.
             C2s::LockAndUnlock(_) => {}
-            // S1-I-1 W4-f21: `58`'s host id-force + relay and `76`'s
-            // own-echo skip + id-force + relay (`MessageBuffer.cs:2642-2650`,
-            // `:3167-3179`) land with the apply-wiring lanes (g48-g52) /
-            // S1-I-4 — bodies + codecs only.
-            C2s::InstrumentSound(_) | C2s::QuestsCountSync(_) => {}
+            // `case 58` — the instrument pitch (`MessageBuffer.cs:2639-2650`):
+            // the host forces the subject to the sender (`:2642-2645`) and
+            // relays to the OTHERS (`:2649`, `ignoreClient = whoAmI`); no
+            // host-side sound. The client's instrument switch
+            // (`:2652-2679`, PlayGuitarChord/PlayDrums/musicPitch) parks —
+            // those players are unported. W4-f21b.
+            C2s::InstrumentSound(s) => {
+                server.broadcast_except(
+                    &S2c::InstrumentSound(net::InstrumentSound {
+                        player_id: id as u8, // `:2644`
+                        pitch: s.pitch,
+                    }),
+                    id,
+                ); // `:2649`
+            }
+            // `case 76` — the quest/golf counts (`MessageBuffer.cs:3164-3182`):
+            // the host forces the subject to the sender (`:3169-3172`),
+            // stores both ints (`:3173-3175`) and relays to the OTHERS
+            // (`:3176-3179`, `ignoreClient = whoAmI`). The port's host is
+            // never `Main.myPlayer`, so the `:3167` own-echo skip is a
+            // client-only gate (the S2c arm below). W4-f21b.
+            C2s::QuestsCountSync(q) => {
+                let peer = self.remote_players.entry(id).or_default();
+                peer.angler_quests_finished = q.angler_quests_finished; // `:3174`
+                peer.golfer_score = q.golfer_score; // `:3175`
+                server.broadcast_except(
+                    &S2c::QuestsCountSync(net::QuestsCountSync {
+                        player_id: id as u8,
+                        angler_quests_finished: q.angler_quests_finished,
+                        golfer_score: q.golfer_score,
+                    }),
+                    id,
+                ); // `:3178`
+            }
             // S1-I-1 W4-f21: `79`'s host spam/InWorld/section gate +
             // WorldGen.PlaceObject + SendObjectPlacement relay
             // (`MessageBuffer.cs:3201-3213`) and `85`'s
@@ -925,6 +954,19 @@ impl App {
                 server.send(id, &S2c::TileBlock(Box::new(block)));
             }
         }
+        // `57 Unknown57` rides the join arm ahead of `49`
+        // (`MessageBuffer.cs:867` — `TrySendData(57, this.whoAmI)` between
+        // the banner module and the `103`/`101`/`136` pushes). The
+        // `CountTiles` recount re-push (`WorldGen.cs:71173`) parks with the
+        // tile-count pass. W4-f21b.
+        server.send(
+            id,
+            &S2c::WorldEvilBytes(net::WorldEvilBytes {
+                good: self.world.t_good,
+                evil: self.world.t_evil,
+                blood: self.world.t_blood,
+            }),
+        );
         server.send(id, &S2c::InitialSpawn);
     }
 
@@ -1950,15 +1992,34 @@ impl App {
             // (`:2428-2435`) land with the apply-wiring lanes (g48-g52) /
             // S1-I-4 — bodies + codecs only.
             S2c::ReleaseItemOwnership(_) | S2c::LiquidUpdate(_) => {}
-            // S1-I-1 W4-f21: `57`'s client WorldGen.tGood/tEvil/tBlood
-            // store (`MessageBuffer.cs:2631-2638`) lands with the
-            // apply-wiring lanes (g48-g52) / S1-I-4.
-            S2c::WorldEvilBytes(_) => {}
+            // `case 57` — the world-evil bytes (`MessageBuffer.cs:2631-2638`):
+            // the client stores `WorldGen.tGood/tEvil/tBlood`; the host arm
+            // is client-only (`netMode == 1`), the writer is the join push
+            // (`:867`) and the `CountTiles` recount (`WorldGen.cs:71173`).
+            // W4-f21b.
+            S2c::WorldEvilBytes(e) => {
+                self.world.t_good = e.good; // `:2634`
+                self.world.t_evil = e.evil; // `:2635`
+                self.world.t_blood = e.blood; // `:2636`
+            }
             // S1-I-1 W4-f21: `58`'s client instrument switch
-            // (`MessageBuffer.cs:2652-2679`) and `76`'s peer-count store
-            // (`:3173-3175`) land with the apply-wiring lanes (g48-g52) /
-            // S1-I-4.
-            S2c::InstrumentSound(_) | S2c::QuestsCountSync(_) => {}
+            // (`MessageBuffer.cs:2652-2679`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4. `76`'s client half is WIRED below
+            // (the f21b small-arm port).
+            S2c::InstrumentSound(_) => {}
+            // `case 76` — the quest/golf counts (`MessageBuffer.cs:3164-3182`):
+            // the own-echo skip (`:3167`, `Main.ServerSideCharacter` unported
+            // — the port never SSCs, so the skip always applies to self),
+            // then the peer store (`:3173-3175`). W4-f21b.
+            S2c::QuestsCountSync(q) => {
+                let peer = q.player_id as u32;
+                if peer != self.local_id {
+                    // `:3167` — own echo dropped (no SSC escape).
+                    let p = self.remote_players.entry(peer).or_default();
+                    p.angler_quests_finished = q.angler_quests_finished; // `:3174`
+                    p.golfer_score = q.golfer_score; // `:3175`
+                }
+            }
             // S1-I-1 W4-f21: `79`'s client WorldGen.PlaceObject
             // (`MessageBuffer.cs:3209`) and `85`'s IndicateBlockedChests
             // (`:3267-3270`) land with the apply-wiring lanes (g48-g52) /
@@ -5363,5 +5424,164 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+
+    /// W4-f21b — `57 Unknown57` (`MessageBuffer.cs:2631-2638`): the join
+    /// push (`:867`) carries the host's three world-evil bytes and the
+    /// client stores them into `WorldGen.tGood/tEvil/tBlood`'s port fields.
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_f21b_world_evil_bytes_join_push_stores_the_three_bytes() {
+        let (mut host_app, mut client_app) = connect_pair("", "");
+        host_app.world.t_good = 37;
+        host_app.world.t_evil = 12;
+        host_app.world.t_blood = 0;
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+        assert_eq!(client_app.world.t_good, 37, "tGood stored (:2634)");
+        assert_eq!(client_app.world.t_evil, 12, "tEvil stored (:2635)");
+        assert_eq!(client_app.world.t_blood, 0, "tBlood stored (:2636)");
+    }
+
+    /// W4-f21b — `76 QuestsCountSync` (`MessageBuffer.cs:3164-3182`): the
+    /// host forces the subject to the sender (`:3169-3172` — the wire's
+    /// bogus id 99 is ignored), stores both ints (`:3173-3175`) and relays
+    /// to the OTHERS (`:3178`); the second client's peer record carries the
+    /// sender-forced id. WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_f21b_quests_count_sync_host_forces_id_stores_and_relays() {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr.clone(), String::new()));
+        let mut second = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        let sender = client_app.local_id;
+        if let NetRole::Client(c) = &client_app.net {
+            c.send(&C2s::QuestsCountSync(net::QuestsCountSync {
+                player_id: 99, // the host must force this to the sender
+                angler_quests_finished: 42,
+                golfer_score: 1_000_000_000,
+            }));
+        }
+        let mut relayed = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            relayed = second
+                .remote_players
+                .get(&sender)
+                .is_some_and(|p| p.angler_quests_finished == 42);
+            if relayed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        // The host store (:3173-3175) under the FORCED id (:3171).
+        let host_peer = host_app
+            .remote_players
+            .get(&sender)
+            .expect("the sender's peer record");
+        assert_eq!(host_peer.angler_quests_finished, 42);
+        assert_eq!(host_peer.golfer_score, 1_000_000_000);
+        assert!(
+            !host_app.remote_players.contains_key(&99),
+            "the bogus wire id never created a record"
+        );
+        // The relay (:3178) reached the OTHER client under the forced id.
+        assert!(relayed, "the second client received the 76 relay");
+        let peer = second.remote_players.get(&sender).unwrap();
+        assert_eq!(peer.golfer_score, 1_000_000_000);
+    }
+
+    /// W4-f21b — `76`'s client own-echo skip (`MessageBuffer.cs:3167`): a
+    /// frame naming the local player is dropped (the port never SSCs, so
+    /// the `ServerSideCharacter` escape does not exist); a peer frame
+    /// stores. WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_f21b_quests_count_sync_client_skips_own_echo_stores_peer() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        if let NetRole::Host(server) = &host_app.net {
+            // The own-echo frame: dropped, no self record appears.
+            server.broadcast(&S2c::QuestsCountSync(net::QuestsCountSync {
+                player_id: me,
+                angler_quests_finished: 9,
+                golfer_score: 9,
+            }));
+            // A peer frame (the host, slot 0): stored.
+            server.broadcast(&S2c::QuestsCountSync(net::QuestsCountSync {
+                player_id: 0,
+                angler_quests_finished: 5,
+                golfer_score: 77,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 40);
+        assert!(
+            !client_app.remote_players.contains_key(&(me as u32)),
+            "the own echo (:3167) never stores a self record"
+        );
+    /// W4-f21b — `58 InstrumentSound`'s host half
+    /// (`MessageBuffer.cs:2642-2650`): the id is forced to the sender and
+    /// the pitch relays to the OTHERS; no host-side sound. WRITTEN NOT RUN
+    /// (code-only lane).
+    #[test]
+    fn w4_f21b_instrument_sound_host_forces_id_and_relays_pitch() {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr.clone(), String::new()));
+        let mut second = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        let sender = client_app.local_id;
+        if let NetRole::Client(c) = &client_app.net {
+            c.send(&C2s::InstrumentSound(net::InstrumentSound {
+                player_id: 99, // forced to the sender (:2644)
+                pitch: 0.75,
+            }));
+        }
+        // The relay is observable on the second client's inbox even though
+        // its client apply parks: drain the raw frames.
+        let mut got = None;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            if let NetRole::Client(c) = &second.net {
+                while let Ok(ev) = c.events.try_recv() {
+                    if let net::ClientEvent::Frame(S2c::InstrumentSound(s)) = ev {
+                        got = Some(s);
+                    }
+                }
+            }
+            if got.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let s = got.expect("the second client received the 58 relay (:2649)");
+        assert_eq!(s.player_id, sender as u8, "the id was forced (:2644)");
+        assert_eq!(s.pitch, 0.75, "the raw float pitch rides verbatim");
     }
 }
