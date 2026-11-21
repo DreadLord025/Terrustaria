@@ -2117,6 +2117,36 @@ mod tests {
         assert_eq!(rain.drop_count(), 0);
     }
 
+    /// W4-d130 final — the sandstorm interplay's downstream half
+    /// (`SceneMetrics.cs:698-703` → `Rain.cs:32`): a happening desert
+    /// sandstorm clears `ZoneRain`, so `MakeRain`'s early-out stops the
+    /// drop spawns — while `Main.raining` itself stays up (the event
+    /// keeps draining through the storm) and the intensity keeps ramping.
+    /// The zone gate is ONE-WAY: the rain never blocks the sandstorm.
+    #[test]
+    fn a_suppressed_rain_zone_spawns_no_drops_but_the_event_lives() {
+        let w = ground();
+        let mut i = inputs();
+        i.zone_rain = false; // the sandstorm suppression's output
+        let mut rain = Rain::with_forced(5, None, false);
+        rain.raining = true;
+        rain.target = 1.0;
+        rain.rain_time = 50_000;
+        for _ in 0..120 {
+            rain.update(&w, &i, 1.0 / 60.0, None);
+        }
+        assert_eq!(rain.drop_count(), 0, "the !ZoneRain early-out (`Rain.cs:32`)");
+        assert!(rain.is_raining(), "the event flag survives the storm zone");
+        assert!(rain.cloud_alpha() > 0.0, "the intensity ramp is zone-blind");
+        // The zone returns (the storm ended) — the same event resumes
+        // spawning without a restart.
+        i.zone_rain = true;
+        for _ in 0..120 {
+            rain.update(&w, &i, 1.0 / 60.0, None);
+        }
+        assert!(rain.drop_count() > 0, "the rain resumes when the zone returns");
+    }
+
     #[test]
     fn test_DW_1_1_thunder_arm_runs_once_per_tick_not_per_day_rate_iteration() {
         // `Main.UpdateWeather`'s lightning chain sits in the

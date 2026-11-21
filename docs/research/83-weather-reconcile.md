@@ -240,6 +240,43 @@ type-76 AI + tails + draw (g11 defers them to the dust lanes), the stored
 raw-cloudAlpha read (`rain.cloud_alpha()`, unclamped) was already d130's —
 g11's `intensity_value()` is the same raw field.
 
+## 5. Final-phase sandstorm interplay (c40 co-lane census + cross-note)
+
+The gate census: **the interplay is ONE-WAY — the sandstorm suppresses the
+rain ZONE, rain never gates the sandstorm.** `SceneMetrics.cs:698-703`:
+`ZoneRain = Main.raining && SurfaceAtmospherics`; `ZoneSandstorm = ZoneDesert
+&& SurfaceAtmospherics && Sandstorm.Happening`; then `if (ZoneSandstorm)
+ZoneRain = false`. `Sandstorm.UpdateTime` (`Sandstorm.cs:32-77`, c40's port in
+`tr-core/scene.rs::Sandstorm::update_time`) reads ONLY wind — no rain term
+anywhere in the storm's start/stop/severity machine. The task brief's "rain
+blocks sandstorm gate" phrasing resolves to this zone suppression, in the
+storm→rain direction.
+
+Already landed in this branch (`scene.rs::calculate_zones`, the
+`zone_sandstorm_suppresses_zone_rain` witness); the final phase re-pins the
+citations (the earlier `:701/:703/:704-707` numbers were the pre-fold
+numbering — the 1.4.5.8 lines are `:698-703`) and adds the one-way arm to the
+witness (a happening storm with `raining` false still sets ZoneSandstorm).
+
+The downstream chain, verified end-to-end:
+* `Rain.MakeRain`'s `!Main.SceneMetrics.ZoneRain` early-out (`Rain.cs:32`,
+  `rain.rs::spawn`) — no rain DROP spawns inside the storm zone; a new
+  witness pins the suppressed-zone arm (no drops, the event flag + intensity
+  ramp survive, the spawns resume when the zone returns).
+* The rain ambience cue's `ZoneRain && !ZoneSnow` gate (`Main.cs:11554`, §the
+  ambience commit) — track 28 fades out under the storm (the 200-frame
+  unconditional stop-fade).
+* The blizzard pair needs ZoneRain (`SceneState.cs:78`) — a desert storm
+  never co-zones with snow anyway.
+* `Main.raining` itself stays up: the event drains `rainTime` through the
+  storm (`Main.cs:64874`) and `cloudAlpha` keeps ramping — only the zone
+  consumers pause.
+
+c40 co-lane boundary: c40's `update_time` gains the `hard_mode` third
+argument (the `21600 * (hardMode ? 2 : 3)` start denominator) — THIS branch
+keeps the two-arg pinned-`*3` shape; the merger takes c40's sim half
+wholesale (its five gaps), the zone gate here is already identical in both.
+
 ## Verification
 
 Code-only mode (per the task brief): no cargo/tests/graphify run. The fix was

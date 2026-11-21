@@ -56,13 +56,14 @@ pub struct SceneMetrics {
     pub honey_block_count: i32,
     /// `metrics.SurfaceAtmospherics` (`SceneMetrics.cs:698`, `WorldGen.cs:10976`).
     pub surface_atmospherics: bool,
-    /// `metrics.ZoneRain` (`SceneMetrics.cs:701`).
+    /// `metrics.ZoneRain` (`SceneMetrics.cs:698`, cleared by the sandstorm
+    /// at `:700-703`).
     pub zone_rain: bool,
     /// `metrics.ZoneSnow` (`SceneMetrics.cs:675`).
     pub zone_snow: bool,
     /// `metrics.ZoneDesert` (`SceneMetrics.cs:676`).
     pub zone_desert: bool,
-    /// `metrics.ZoneSandstorm` (`SceneMetrics.cs:703-707`).
+    /// `metrics.ZoneSandstorm` (`SceneMetrics.cs:699-703`).
     pub zone_sandstorm: bool,
     /// `metrics.ZoneCorrupt` (`SceneMetrics.cs:671`).
     pub zone_corrupt: bool,
@@ -780,11 +781,24 @@ impl SceneMetrics {
         // `SceneMetrics.cs:698` via `WorldGen.IsSurfaceForAtmospherics`
         // (`WorldGen.cs:10976-10985`; the remix branch is not ported):
         self.surface_atmospherics = self.tile_center.1 as f64 <= world_surface;
-        // `SceneMetrics.cs:701`:
+        // `SceneMetrics.cs:698-703` (the 1.4.5.8 lines; the earlier
+        // :701/:703/:704-707 citations were the pre-fold numbering):
+        // `ZoneRain = raining && SurfaceAtmospherics`,
+        // `ZoneSandstorm = ZoneDesert && SurfaceAtmospherics && Happening`,
+        // then the ONE-WAY suppression — a sandstorm clears the rain zone
+        // (W4-d130 final cross-note: rain does NOT gate the sandstorm;
+        // `Sandstorm.UpdateTime` (`Sandstorm.cs:32-77`) reads only wind —
+        // the storms coexist as state, the sandstorm wins the ZONE). The
+        // downstream consumers: `Rain.MakeRain`'s `!ZoneRain` early-out
+        // (`Rain.cs:32`, `rain.rs::spawn`) stops rain DROP spawns in the
+        // storm zone, and the rain ambience cue's `ZoneRain && !ZoneSnow`
+        // gate (`Main.cs:11554`) fades track 28 out; the blizzard pair
+        // (`SceneState.cs:78`) needs ZoneRain too. `Main.raining` itself
+        // stays up — the event keeps draining its rainTime through the
+        // storm (`Main.cs:64874`), and the rain resumes when the storm's
+        // zone gate drops.
         self.zone_rain = raining && self.surface_atmospherics;
-        // `SceneMetrics.cs:703`:
         self.zone_sandstorm = self.zone_desert && self.surface_atmospherics && sandstorm_happening;
-        // `SceneMetrics.cs:704-707`: a sandstorm suppresses the rain zone.
         if self.zone_sandstorm {
             self.zone_rain = false;
         }
@@ -2624,7 +2638,9 @@ mod tests {
 
     #[test]
     fn zone_sandstorm_suppresses_zone_rain() {
-        // `SceneMetrics.cs:703-707`.
+        // `SceneMetrics.cs:698-703` — the ONE-WAY gate (W4-d130 final
+        // cross-note): the sandstorm clears ZoneRain; rain never gates
+        // ZoneSandstorm (`Sandstorm.cs:32-77` reads only wind).
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 10);
@@ -2646,6 +2662,18 @@ mod tests {
         m.tile_center = (0, 500);
         m.calculate_zones(100.0, 1000, 135.0, 4200, 400, false, true);
         assert!(!m.zone_sandstorm);
+
+        // The gate is ONE-WAY (W4-d130 final): a happening desert storm
+        // sets ZoneSandstorm even with `raining` FALSE — the sandstorm's
+        // own state machine never reads the rain (`Sandstorm.cs:32-77`
+        // gates on wind only), and the zone derivation's `:699` has no
+        // rain term. Only ZoneRain is suppressed, never the reverse.
+        let mut m = SceneMetrics::new();
+        m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
+        m.tile_center = (0, 10);
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, false, true);
+        assert!(m.zone_sandstorm, "the storm needs no rain");
+        assert!(!m.zone_rain);
     }
 
     // --- oceanDepths / isDesertBiomeSand (WorldGen.cs:4447, TileID.cs:501) ---
