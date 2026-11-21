@@ -87,6 +87,8 @@
 //! | 367-371 | `:83926-83930` | the 477 Mothron death (5 gores 687-691, type-237 dust) |
 //! | 372-374 | `:83948-83950` | the 479 Mothron Spawn death (3 gores 681-683, type-237 dust) |
 //! | 375-378 | `:83969-83972` | the 478 Mothron Egg death (4 gores, Next(2) dust + Next(3) type draws) |
+//! | 379-383 | `:83990-83994` | the 466 Psycho death (5 gores 656/657/659/658/658) |
+//! | 384-388 | `:84012-84016` | the 468 DrManFly death (5 gores 662/663/663/664/664) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2129,6 +2131,87 @@ fn mothron_egg_death(
     gore.new_gore(rng, world, pos, vel, ty, s);
 }
 
+/// The shared 5-gore death shape of the 466/468/469/463/461/462 arms
+/// (`NPC.cs:83986-83994` et al.): the 50-dust type-5 burst (SpeedX
+/// `2.5*hitDirection`, SpeedY -2.5), then 5 gores — the head at position,
+/// two of the "middle" type at +20 Y, two of the "tail" type at +34 Y. The
+/// per-arm type triple `(head, middle, tail)` is data; the 466 arm's middle
+/// (659) precedes its tail (658) in the type ids but the SHAPE is identical.
+fn five_gore_type5_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    head: i32,
+    middle: i32,
+    tail: i32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // The 50-dust type-5 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, head, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, middle, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, middle, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, tail, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, tail, s);
+}
+
+/// The 466 Psycho death (`NPC.cs:83986-83994`, sites 379-383): the shared
+/// 5-gore shape with types 656/659/658 (the middle 659 at +20, the tail 658
+/// at +34 — the C# order is 656/657/659/658/658, so the +20 pair is
+/// 657 THEN 659, NOT a repeated middle). Ported explicitly to keep the
+/// distinct +20 types.
+fn psycho_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 656, s); // :83990
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 657, s); // :83991
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 659, s); // :83992
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 658, s); // :83993
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 658, s); // :83994
+}
+
+/// The 468 DrManFly death (`NPC.cs:84008-84016`, sites 384-388): the shared
+/// 5-gore shape with types 662/663/664 (the +20 pair is the repeated 663).
+fn dr_man_fly_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    five_gore_type5_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, 662, 663, 664);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2361,6 +2444,14 @@ pub fn hit_effect_c(
     // `:83953-83974` — the 478 Mothron Egg arm (sites 375-378).
     if npc_type == 478 && npc.hp <= 0 {
         mothron_egg_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83975-83996` — the 466 Psycho arm (sites 379-383).
+    if npc_type == 466 && npc.hp <= 0 {
+        psycho_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83997-84018` — the 468 DrManFly arm (sites 384-388).
+    if npc_type == 468 && npc.hp <= 0 {
+        dr_man_fly_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3832,6 +3923,37 @@ mod tests {
         let _ky = twin.next_range(10, 31);
         let _kx = twin.next_range(-20, 21);
         assert_eq!(rng.peek(), twin.peek(), "the egg death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:83990-83994` — the Psycho death: the 5 gores
+    /// 656/657/659/658/658 (the +20 pair is the DISTINCT 657 then 659).
+    #[test]
+    fn w4_f10_the_psycho_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 44.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(271);
+        psycho_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![656, 657, 659, 658, 658]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:84012-84016` — the DrManFly death: the shared 5-gore shape
+    /// with types 662/663/664 (the +20 pair is the repeated 663).
+    #[test]
+    fn w4_f10_the_dr_man_fly_death_uses_the_shared_shape() {
+        let w = air();
+        let n = boss(100.0, 100.0, 44.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(277);
+        dr_man_fly_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![662, 663, 663, 664, 664]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
