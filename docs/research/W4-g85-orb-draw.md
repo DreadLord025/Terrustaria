@@ -500,3 +500,196 @@ deferral), c36 `6c8eb75dd` (the unconditional notify), g18
 NOT RUN — no cargo/rustc/rustfmt/tests/dotnet/graphify invoked. 20
 witnesses total on the branch (18 prior + 2 spelunker; the notify census
 extends an existing witness).
+
+## 8. The FINAL phase (2026-11-21, same branch, code-only) — the summon split, the meteor gates, the keep-one receipt
+
+### 8.1 The c36 progression-7 keep-one — FINAL VERDICT: the g85 case-31 gate is CANONICAL
+
+**Re-probe of the c36 lane at its LATEST pushed tip `4e124425c`** (the
+RE-PROBE doc-reconciliation commit; the three RE-PROBE commits
+`4a8d56d99`/`774902cfc`/`4e124425c` touch the real-estate roster, the
+20-row gap list and the docs — NONE touches `check_orb`). The
+`git grep` of the tip confirms:
+
+* `crates/tr-core/src/edit/kill.rs` (c36 tip): `check_orb` still rolls
+  the 5-way table for EVERY kind (its `crimson` branch feeds 12/639/696
+  too), still raises `shadow_orb_smashed`/`shadow_orb_count`
+  UNCONDITIONALLY, and still sets `world.orb_smash_notify_pending = true`
+  UNCONDITIONALLY (its `:1168-1170` block, outside any kind gate).
+* `crates/tr-app/src/world_sim/editing.rs` (c36 tip): the same
+  `break_tile` drain (`mem::take` → `notify_progression_net(7)`) at the
+  same slot as g85's — the drain halves are IDENTICAL.
+* The c36 tip's own witness (`kill.rs:5017-5025`) asserts the notify on
+  a generic orb smash — it does NOT pin the per-kind census.
+
+**Verdict: c36 did NOT fix the unconditional set in flight.** The g85
+round-2 reconciliation (§7.3) stands as the four-case-correct half:
+
+1. **Keep ONE `World.orb_smash_notify_pending` field** — the two
+   definitions are behaviourally identical (a `bool`, default false);
+   keep g85's doc comment (it records the case-31 position).
+2. **Keep ONE `break_tile` drain** — byte-identical logic; either copy.
+3. **Keep the g85 `check_orb` WHOLE** — the four-case drop switch AND
+   the `if kind == 31` flag block (the smash flags + the notify + the
+   final-phase `orb_smash_crimson` bit). c36's `check_orb` must be
+   DROPPED at merge, not merged line-by-line: its unconditional flag
+   block would re-break the 12/639/696 census the g85 witnesses pin
+   (`w4_g85_the_orb_drop_switch_is_four_cases_not_one_table` fails on
+   c36's copy — the 12 break asserts `!orb_smash_notify_pending`).
+4. The c36 lane's OTHER batch-5 sites (NOT_THE_BEES, GO_LAVA_FISHING,
+   TALK_TO_NPC_AT_MAX_HAPPINESS) are disjoint — keep them all.
+
+The merger's one-line rule: **g85's `check_orb` + either drain + either
+field; c36's `check_orb` is the stale pre-four-case base.**
+
+### 8.2 The SHADOW/CORRUPT smash differences — census + the summon split WIRED (`21e8eb1d7`)
+
+**The C# census (`WorldGen.cs:54169-54344`, re-read whole).** The orb
+family's smash behaviour splits on TWO axes:
+
+* **The KIND axis** (the four-case switch, §6 seam 3): 696 the replica
+  (5469/5470, no roll, no flags), 12 the Heart object (29), 639 the Mana
+  Crystal (109), 31 the real orb/heart (the 5-way roll + ALL the world
+  flags). Only 31 progresses the world.
+* **The CRIMSON axis** (`flag` = `frameX >= 36`, `:54175-54180` — a
+  per-SMASH bit, NOT the world evil): inside case 31 it selects the
+  drop table (crimson: Undertaker/Crimson Rod/Rotted Fork/pet/Panic
+  Necklace; corruption: Musket/Vilethorn/Ball O' Hurt/pet/Band of
+  Starpower) AND the summon half (`:54312-54318`):
+  - crimson → `NPC.SpawnOnPlayer(plr, 266)` — the **Brain of Cthulhu**;
+  - corruption → `NPC.SpawnOnPlayer(plr, 13)` — the **Eater of Worlds**.
+  The living-boss gate `:54296` `!(AnyNPCs(266) & flag) && (!AnyNPCs(13)
+  || flag)` reduces PER HALF: crimson → `!AnyNPCs(266)` (a living EoW
+  does NOT block the Brain), corruption → `!AnyNPCs(13)` (a living
+  Brain does NOT block the EoW). A drunk world's chasm holds both
+  halves; each summons its own boss.
+
+**The smash→boss-spawn chain, verified end to end.** The chain is NOT
+`world.downed*`-gated (the W-A2-3 T3c census already pinned the
+living-boss scan): case-31 smash → `shadowOrbCount++` (`:54293`) → the
+`>= 3` threshold (`:54294`, OR the FTW+DontStarve-not-remix override) →
+the living-boss gate → `shadowOrbCount = 0` + the nearest-player scan
+(`:54299-54311`, Manhattan distance over all 255 slots) →
+`SpawnOnPlayer(plr, 13|266)` (`NPC.cs:80475` — the `netMode == 1` entry
+refusal `:80477`, then the 500×50 spawn-area scan → `SpawnBoss`
+`:80631`). The port's count-poll (`npcs.rs`, the W-A2-3 site) keeps the
+threshold/gate/reset shape; the nearest-player scan folds to the port's
+single player and the spawn-area scan to the standing at-the-player
+deviation (`use_boss_summon_item`'s same reduction).
+
+**What was missing (now WIRED, `21e8eb1d7`):** the pre-fix poll summoned
+the EoW for BOTH halves ("the crimson-Brain arm rides the heart-
+detection wave" — a deferral that never landed). The fix:
+
+* `World.orb_smash_crimson` (new field): the core kill plan records the
+  smash's own `crimson` bit inside the `if kind == 31` block, beside the
+  smash flags — the poll reads the LAST completed smash's bit (the
+  vanilla summons synchronously inside that smash; the count-poll
+  deferral keeps the bit stable between the smash and the poll).
+* The poll's per-half gate + spawn: crimson → the Brain (`Npc::new`,
+  the `use_boss_summon_item` 1331 arm's shape — the Creepers' orbit is
+  the recorded follow-up), corruption → the worm head (unchanged).
+* The `:54294` FTW+DontStarve-not-remix override (every smash summons;
+  the `count >= 1` poll floor is the smash-edge stand-in — an idle
+  FTW world at count 0 never summons).
+* The `:54322-54330` chat arm (the else of the THRESHOLD, not of the
+  living-boss gate — a blocked third smash chats nothing): misc[10]
+  "A horrible chill...", the second misc[11] "Screams echo...",
+  `ChatColors.World`. The port broadcasts via a count watermark
+  (`World.orb_smash_chat_count`, port-only bookkeeping, resets with the
+  count on summon) — the poll cannot see per-smash edges.
+* The `SpawnOnPlayer` `netMode == 1` client guard (`app.is_client()`).
+
+**The f35 co-lane read (`b72cdfbfc`, the expert-drop-trees tip).** f35
+owns the DEATH side (NPCLoot/DoDeathEvents drop trees); its `npcs.rs`
+carries the SAME orb-boss death arm (`:5168-5186` at its tip — the
+meteor + downed_eow block, identical to main's pre-g85 shape) and the
+SAME pre-fix EoW-only summon poll (`:5699-5714`). f35 does NOT touch
+`check_orb` or the summon's crimson axis — no overlap to reconcile
+beyond the standard keep-one: at merge, g85's death-arm gates (the
+skyblock unlock + the surface gate, §8.3) wrap f35's identical
+meteor/downed block, and g85's summon poll replaces f35's stale copy.
+f35's drop-tree content (the 23-kind boss table, the potion chain) is
+disjoint — keep it all.
+
+### 8.3 The meteorite-landing gates — census + the missing gates WIRED (`21e8eb1d7`)
+
+**The contract question:** does the smash flag feed the meteor
+eligibility? **Verdict: NO — and that is the C# behaviour.** The full
+trigger census (three sites, all re-read):
+
+1. **The orb-boss DEATH** (`NPC.cs:79443-79458`, the 13/14/15/266 case
+   group): `this.boss` → the skyblock lowTiles `shadowOrbSmashed = true`
+   unlock (`:79449-79452`) → `isThereAWorldSurface && (!downedBoss2 ||
+   Next(2) == 0)` → `spawnMeteor = true` (`:79453-79456`) →
+   `SetEventFlagCleared(ref downedBoss2, 14)` (`:79457`). The smash
+   itself sets NO meteor flag — the summoned boss must DIE. LANDED
+   pre-g85 (`npcs.rs` boss_death_roll + the shared `downed_eow`); g85
+   final adds the TWO missing gates: the skyblock unlock (the seed-flag
+   lowTiles stand-in — the `loot.rs` LootFlags.skyblock convention; a
+   skyblock world past the 10% tile threshold keeps the flag down, the
+   recorded stand-in deviation) and the `worldSurface > 50.0` gate
+   (`Main.cs:2788` — the remix/FTW inversion never meteors).
+2. **The nightly bookend** (`Main.cs:65230`, `UpdateTime_StartNight`):
+   `Next(50) == 0 && netMode != 1 && downedBoss2` — the DRAW is the
+   leftmost operand (consumed every bookend regardless), the boss flag
+   is the DEATH flag (`downed_eow`), NOT `shadowOrbSmashed`. LANDED
+   pre-g85 (`weather.rs` night_roll); g85 final extracts
+   `meteor_night_bookend` with the client gate on the RAISE only and
+   the `:65234-65237` no-surface cancel (boundary-only — a mid-day
+   death flag survives to the next morning's `HandleMeteorFall`).
+   The crossing arm itself stays the recorded DEAD arm (ANALYSIS
+   S1-A-10's follow-up row: the clock advances in `time_phase` before
+   `update_world_tick`, so `dusk_pre && time >= 32400` never fires
+   there) — the helper keeps the gate faithful and directly
+   witnessable; re-homing the crossing is the clock lane's call.
+3. **The resolution** (`Main.cs:65469-65502`, `HandleMeteorFall`):
+   `time > 16200 && spawnMeteor` → clear + `dropMeteor` (the skyblock
+   `StartMeteorShower` + the `Next(3)` retry are the recorded
+   deviations). LANDED (`meteor.rs::resolve`, the 16200 gate, DW-2.2's
+   stream witness). LIVE in the port — the boss-death flag resolves on
+   the next morning tick.
+
+**The chain, end to end:** 3-orb smash → summon (g85 §8.2) → boss dies
+→ `downed_eow = true` + the guaranteed first `spawn_meteor` (surface-
+gated) → the next morning `resolve` lands the ore; afterwards the
+nightly 1/50 keeps the world meteor-eligible. The goblin unlock rides
+the SAME death flag's sibling (`shadowOrbSmashed`, set by the smash
+itself OR the skyblock death) → the dawn invasion roll
+(`world.rs::roll_morning_invasion`, landed) + the scout gate (§7.2's
+contract).
+
+### 8.4 FINAL verification + the g85-family-complete declaration
+
+Code-only: every ported line re-read against the cited C# windows
+(`WorldGen.cs:54169-54344` whole, `NPC.cs:79443-79458`/`:80475-80633`,
+`Main.cs:2788`/`:65135-65194`/`:65210-65246`/`:65469-65502`,
+`WorldGen.cs:3205-3234` the lowTiles census). Co-lane reads: c36
+`4e124425c` (the tip re-probe — the unconditional set UNFIXED, §8.1),
+f35 `b72cdfbfc` (the death-side drop trees — the identical death arm +
+the stale summon poll, §8.2). 4 new witnesses + the four-case witness
+extension WRITTEN NOT RUN — no cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked. 24 witnesses total on the branch (20 prior + 4 final; the
+crimson-bit census extends an existing witness).
+
+**G85-FAMILY-COMPLETE.** The shadow-orb/crimson-heart family's full
+behaviour surface is now ported or contract-published on this branch:
+
+| Half | State |
+| --- | --- |
+| The draw slice (ambient/shine/entry-gate/spelunker) | WIRED (§6 seam 1, §7.1) |
+| The hammer fail-tick dust + the 3-hit progression | WIRED (§6 seam 2) |
+| The four-case loot switch + the gun-pair | WIRED (§6 seam 3) |
+| The progression-7 notify (case-31-gated) | WIRED + the c36 keep-one receipt (§7.3, §8.1) |
+| The light emit | VERIFIED scanner-seeded, nothing to wire (§7.4) |
+| The Goblin Scout spawn gate | CONTRACT published (§7.2 — the ladder is the spawner lanes') |
+| The SHADOW/CORRUPT summon split + the chat arm + the FTW override | WIRED (§8.2) |
+| The orb-boss death gates (skyblock unlock, surface gate) | WIRED (§8.3) |
+| The meteorite trigger census (death/bookend/resolution) | VERIFIED + the missing gates WIRED (§8.3) |
+
+Remaining cross-lane deferrals (NOT g85 scope, all cited): the 10-dust
+break burst (d54's `tile_break_burst`), the fail sound (c14), the full
+tileSpelunker set (d9), the day-surface ladder (the spawner lanes), the
+meteor-crossing re-home (the clock lane), the Brain's Creeper orbit
+(the Boss AI wave), the `SpawnOnPlayer` spawn-area scan (the standing
+at-the-player deviation).

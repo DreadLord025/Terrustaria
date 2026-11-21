@@ -39430,3 +39430,67 @@ hook-chain arms (332/488, e8's lane), and "NO update-side or ambient
 AddLight — tile ambience is scanner-seeded". Nothing to wire; the g85
 dust wiring + the landed scanner arm are the complete draw/light picture.
 Census `docs/research/W4-g85-orb-draw.md` §7.4.
+
+### FINAL phase — the summon split, the meteor gates, the keep-one receipt (same branch)
+
+**G85-FAMILY-COMPLETE** (census + the family table:
+`docs/research/W4-g85-orb-draw.md` §8). Three code seams (`21e8eb1d7`):
+
+1. **The SHADOW/CORRUPT summon split.** The pre-fix third-orb poll
+   summoned the EoW for BOTH halves (the crimson-Brain arm was a
+   deferral that never landed). The C# selector is the smash's OWN
+   `frameX >= 36` bit (`WorldGen.cs:54175-54180`'s `flag`), NOT the world
+   evil — a drunk world's chasm holds both halves and each summons its
+   own boss (`:54312-54318`: crimson → `SpawnOnPlayer(plr, 266)` the
+   Brain, corruption → 13 the EoW). The core kill plan records the bit
+   in `World.orb_smash_crimson` inside the case-31 block; the poll reads
+   the last completed smash's bit. The per-half living-boss gate
+   (`:54296`) reduces to `!AnyNPCs(266)` (crimson) / `!AnyNPCs(13)`
+   (corruption) — a living boss of the OTHER half never blocks. Also
+   wired: the `:54294` FTW+DontStarve-not-remix every-smash override,
+   the `:54322-54330` chill/screams chat arm, the `SpawnOnPlayer`
+   `netMode == 1` client guard (`NPC.cs:80477`).
+   **Deviations:** (a) the count-poll deferral — the vanilla summons
+   synchronously inside CheckOrb; the port polls the count in the npcs
+   pass (the W-A2-3 shape, kept), so the nearest-player scan folds to
+   the single player and the 500×50 spawn-area scan to the standing
+   at-the-player reduction (`use_boss_summon_item`'s same); (b) the
+   chat arm rides a count watermark (`World.orb_smash_chat_count`,
+   port-only bookkeeping, no save byte, resets with the count) — the
+   poll cannot see per-smash edges; a blocked third smash chats nothing
+   (the `count < 3` pin — the chat is the else of the THRESHOLD, not of
+   the living-boss gate); (c) the FTW override's `count >= 1` poll floor
+   is the smash-edge stand-in (an idle FTW world at count 0 never
+   summons).
+2. **The orb-boss death gates.** The death arm (`NPC.cs:79443-79458`)
+   gains the skyblock lowTiles `shadowOrbSmashed` unlock (`:79449-79452`
+   — the sky islands have no orbs; the boss kill IS the goblin unlock)
+   and the `isThereAWorldSurface` meteor gate (`:79453`, `Main.cs:2788`:
+   `worldSurface > 50.0` — the remix/FTW inversion never meteors).
+   **Deviation:** the lowTiles stand-in is the SKYBLOCK seed flag (the
+   `loot.rs` LootFlags.skyblock convention) — the C# recomputes
+   `lowTiles` from the live active-tile ratio (< 10%, `WorldGen.cs:
+   3210-3218`); a skyblock world past the threshold keeps the flag down
+   in the port. The shared `downedBoss2` for EoW AND Brain was already
+   correct (the port's `downed_eow`).
+3. **The meteor bookend.** The smash flag does NOT feed the meteor —
+   the boss DEATH does (the guaranteed first, then the nightly 1/50 on
+   `downedBoss2`). `meteor_night_bookend` carries the full `:65230`
+   gate (the `Next(50)` draws unconditionally — leftmost operand;
+   `netMode != 1` gates the raise only) + the `:65234-65237` no-surface
+   cancel (boundary-only — a mid-day death flag survives to the next
+   morning's `HandleMeteorFall`). The crossing arm stays the recorded
+   DEAD arm (the S1-A-10 follow-up row above — the clock advances in
+   `time_phase` before `update_world_tick`); the helper keeps the gate
+   faithful and directly witnessable, the re-home is the clock lane's
+   call.
+
+**The c36 keep-one FINAL receipt (§8.1):** the c36 tip `4e124425c`
+re-probed — its RE-PROBE commits never touched `check_orb`; the
+unconditional notify set is UNFIXED in flight. Merger rule: keep g85's
+`check_orb` WHOLE (the four-case switch + the case-31 flag block),
+either drain/field (identical), DROP c36's `check_orb`; its other
+batch-5 sites are disjoint — keep them.
+
+4 new witnesses + the four-case crimson-bit extension WRITTEN NOT RUN;
+24 total on the branch.
