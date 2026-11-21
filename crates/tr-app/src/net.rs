@@ -199,6 +199,15 @@ pub mod id {
     /// team-spawn tail (`MessageBuffer.cs:2355-2363`). W4-g51 lifted the
     /// parked d97 codec and wired the shared team apply+relay.
     pub const TEAM_CHANGE_FROM_UI: u8 = 157;
+    /// `158 ExtraSpawnSectionLoaded` (`MessageID.cs:330`) — the team-swap
+    /// spawn point loaded (`NetMessage.cs:1659-1661`,
+    /// `MessageBuffer.cs:4450-4456`). W4-g51 lifted the parked d90 codec; the
+    /// client `Spawn(TeamSwap)` is parked (no team-based spawn seeds).
+    pub const EXTRA_SPAWN_LOADED: u8 = 158;
+    /// `159 RequestSection` (`MessageID.cs:332`) — a client asks for a
+    /// section (`NetMessage.cs:1662-1665`, `MessageBuffer.cs:4457-4462`).
+    /// W4-g51 lifted the parked d90 codec and wired the host `SendSection`.
+    pub const SECTION_REQUEST: u8 = 159;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -1934,6 +1943,13 @@ pub enum C2s {
     /// (`Main.cs:42766`); the shared reader arm relays as 45 and runs the
     /// team-spawn tail for 157 (`MessageBuffer.cs:2342`/`:2355-2363`).
     TeamChangeFromUi(TeamChange),
+    /// `159 RequestSection` - a client asks for a section
+    /// (`Player.cs:41534`, `WorldItem.cs:375`); the writer writes `short`s,
+    /// the reader reads `ushort`s (`MessageBuffer.cs:4460`).
+    SectionRequest {
+        section_x: u16,
+        section_y: u16,
+    },
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2090,6 +2106,12 @@ pub enum S2c {
     /// relayed (`MessageBuffer.cs:4408-4417`); the client applies
     /// `GetHurtByDebuff` (`NPC.cs:91864-91888`).
     NpcDebuffDamage(NpcDebuffDamage),
+    /// `158 ExtraSpawnSectionLoaded` — the team-swap respawn: the extra
+    /// spawn section is in, `Spawn(TeamSwap)` (`MessageBuffer.cs:4450-4456`,
+    /// sent by the `157` tail `:2361`).
+    ExtraSpawnLoaded {
+        player_id: u8,
+    },
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2187,6 +2209,7 @@ impl C2s {
             Self::CrystalInvasionSkip => id::CRYSTAL_INVASION_SKIP,
             Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
             Self::TeamChangeFromUi(_) => id::TEAM_CHANGE_FROM_UI,
+            Self::SectionRequest { .. } => id::SECTION_REQUEST,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2283,6 +2306,12 @@ impl C2s {
             Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
             // `NetMessage.cs:970-974` — 157 shares 45's case.
             Self::TeamChangeFromUi(t) => w.u8(t.player_id).u8(t.team),
+            // `NetMessage.cs:1662-1665`: two `(short)`s (the reader reads
+            // them as ushorts, `MessageBuffer.cs:4460` — same bytes).
+            Self::SectionRequest {
+                section_x,
+                section_y,
+            } => w.u16(*section_x).u16(*section_y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2458,6 +2487,12 @@ impl C2s {
                 player_id: r.u8()?,
                 team: r.u8()?,
             }),
+            // `MessageBuffer.cs:4460`: two ReadUInt16 (the writer wrote
+            // shorts — the non-negative section indices are the same bytes).
+            id::SECTION_REQUEST => Self::SectionRequest {
+                section_x: r.u16()?,
+                section_y: r.u16()?,
+            },
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2627,6 +2662,7 @@ impl S2c {
             Self::LucyPopup(_) => id::LUCY_POPUP,
             Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
             Self::NpcDebuffDamage(_) => id::NPC_DEBUFF_DAMAGE,
+            Self::ExtraSpawnLoaded { .. } => id::EXTRA_SPAWN_LOADED,
         }
     }
 
@@ -2814,6 +2850,8 @@ impl S2c {
             Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
             // `NetMessage.cs:1646-1649`: (byte)npc, (short)damage.
             Self::NpcDebuffDamage(d) => w.u8(d.npc).i16(d.damage),
+            // `NetMessage.cs:1659-1661`: one byte.
+            Self::ExtraSpawnLoaded { player_id } => w.u8(*player_id),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3082,6 +3120,10 @@ impl S2c {
                 npc: r.u8()?,
                 damage: r.i16()?,
             }),
+            // `MessageBuffer.cs:4453`: one byte, then Spawn(TeamSwap).
+            id::EXTRA_SPAWN_LOADED => Self::ExtraSpawnLoaded {
+                player_id: r.u8()?,
+            },
             _ => return None,
         })
     }
@@ -5459,6 +5501,43 @@ mod tests {
         // The 45 body is byte-identical.
         let f = C2s::TeamChange(t).encode();
         assert_eq!(&c[3..], &f[3..]);
+    }
+
+    /// W4-g51: the `158 ExtraSpawnLoaded` body is one byte
+    /// (`NetMessage.cs:1659-1661`); S2c-only.
+    #[test]
+    fn w4_g51_extra_spawn_loaded_round_trips() {
+        let f = S2c::ExtraSpawnLoaded { player_id: 4 }.encode();
+        assert_eq!(f[2], 158);
+        assert_eq!(&f[3..], &[4]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ExtraSpawnLoaded { player_id } => assert_eq!(player_id, 4),
+            other => panic!("expected 158, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `159 RequestSection` body byte-pins the two section
+    /// indices (`NetMessage.cs:1662-1665` writes shorts, the reader reads
+    /// ushorts — same bytes for non-negative indices); C2s-only.
+    #[test]
+    fn w4_g51_section_request_round_trips() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&21u16.to_le_bytes());
+        body.extend_from_slice(&7u16.to_le_bytes());
+        let c = C2s::SectionRequest {
+            section_x: 21,
+            section_y: 7,
+        }
+        .encode();
+        assert_eq!(c[2], 159);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::SectionRequest {
+                section_x,
+                section_y,
+            } => assert_eq!((section_x, section_y), (21, 7)),
+            other => panic!("expected 159, got {:?}", other.msg_id()),
+        }
     }
 
     #[test]

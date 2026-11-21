@@ -980,6 +980,33 @@ impl App {
             C2s::TeamChangeFromUi(t) => {
                 self.apply_team_change_net(server, id, t.team);
             }
+            // `case 159` — a client asks for a section (`MessageBuffer.cs:
+            // 4457-4462`, host-only): `SendSection(sectionX, sectionY,
+            // whoAmi)` (`NetMessage.cs:2697-2712`) — the bounds + not-already-
+            // sent gate, mark the section sent, stream the `10 TileBlock`.
+            // The C#'s `SyncNPCsForSection` / `SyncChestContentsForSection`
+            // tails ride the port's NPC cadence (section-culled `23` stream)
+            // and the chest-open path respectively.
+            C2s::SectionRequest {
+                section_x,
+                section_y,
+            } => {
+                let (sx, sy) = (section_x as i32, section_y as i32);
+                let (gx, gy) = (
+                    net::sections_x(self.world.width),
+                    net::sections_y(self.world.height),
+                );
+                if sx < 0 || sy < 0 || sx >= gx || sy >= gy {
+                    return; // the SendSection bounds gate
+                }
+                server.ensure_sections(id, self.world.width, self.world.height);
+                if server.is_section_sent(id, sx, sy) {
+                    return; // `!TileSections[sx, sy]`
+                }
+                server.mark_section_sent(id, sx, sy);
+                let block = self.tile_block_at(sx, sy);
+                server.send(id, &S2c::TileBlock(Box::new(block)));
+            }
             // `case 150`'s host half (`MessageBuffer.cs:4361-4384`):
             // `SetOrRequestSpectating` / the stop-relay need the unported
             // spectating system (`Player.spectating`); parked (S1-I-4).
@@ -2143,6 +2170,13 @@ impl App {
                     self.npcs[target].hp = 0;
                 }
             }
+            // `case 158`'s client half (`MessageBuffer.cs:4450-4456`):
+            // `Main.player[b3].Spawn(PlayerSpawnContext.TeamSwap)` — the
+            // team-swap respawn at the extra spawn point. The port has no
+            // team-based spawn seeds (`teamBasedSpawnsSeed` /
+            // `ExtraSpawnPointManager` unported, the `157` tail's note), so
+            // the arm parks with them (S1-I-4).
+            S2c::ExtraSpawnLoaded { .. } => {}
             // `case 135`'s client half (`MessageBuffer.cs:4195-4203`):
             // `Main.player[num103].immuneAlpha = 255` — the dead-peer ghost
             // fade. The port's `immuneAlpha` blinkVisual half is draw-side
@@ -4794,6 +4828,50 @@ mod handshake_tests {
                 .any(|m| m.text.contains("green team")),
             "the team-chat fan-out reached the sender"
         );
+    }
+
+    /// W4-g51 `159 RequestSection`: the host's `SendSection` gates the bounds
+    /// + not-already-sent, marks the section and streams the `10 TileBlock`
+    /// (`MessageBuffer.cs:4457-4462`, `NetMessage.cs:2697-2712`).
+    #[test]
+    fn the_section_request_streams_the_tile_block_once() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Ask for a section the join box already covered (spawn section 0,0
+        // is sent during the join); pick one outside it.
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::SectionRequest {
+                        section_x: 0,
+                        section_y: 0,
+                    },
+                },
+            );
+        }
+        host_app.net = role;
+        // The join already marked (0,0) sent, so the request is a no-op gate
+        // (the C#'s !TileSections check). The world is tiny (one section),
+        // so the bounds gate is the observable: an out-of-range ask drops.
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::SectionRequest {
+                        section_x: 999,
+                        section_y: 999,
+                    },
+                },
+            );
+        }
+        host_app.net = role;
+        // No panic, no kick — the bounds gate refused silently.
+        pump(&mut host_app, &mut client_app, 5);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
     }
 
     #[test]
