@@ -39244,3 +39244,127 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The projectile sound wave, part 3 (S1-E-21h d77, 2026-11-21, code-only mode)
+
+**Scope**: the line-order remainder of the 437-site `PlaySound` census in
+`Projectile.cs` — **d77** (`task/W4-d77-proj-sounds-3`, branched from
+`a725acb0`) owns sites 241-437 (lines `:70978`-the `Kill()` tail
+`:78505`), per the d76 range doc (sites 1-120 d75, 121-240 d76). The
+landed 24-site wave's `Kill_Bombs_DoUsualKillCode` bomb cues
+(`:78331`/`:78386`) are KEPT untouched (the `ai_bomb` detonation latch).
+
+**Code-only mode**: no cargo/rustc/rustfmt/tests/graphify invoked (the
+Lead's constraint); every `s1_e_21h_d77_*` witness test is WRITTEN NOT
+RUN. Verification = whole-block C# re-reads (the census table's arm gates
+re-derived against `Projectile.cs:70642-78533`), the position probes
+(which arms write `position`/`Resize` before their play) and the
+rowed-kind check against `proj_data` (all 121 mapped kinds rowed).
+
+### The seam: the kill_tail_cue death-hook map
+
+The C# plays these cues inside `Kill()` while the slot is STILL active
+(`active = false` lands at `:77262`, after every death arm). The port's
+death hook (`projectile.rs`'s `!active` block, after the sub-steps) is the
+same once-per-death seam: the new `ProjectilePool::kill_tail_cue` runs
+inside the `!died_out_of_world` gate (the out-of-world guard's direct
+deactivate never reaches `Kill()`, the S1-P-i23 precedent) and pushes
+straight into `pending_proj_sounds` — NOT the slot's `wants_sound` field,
+whose forward runs earlier (before the death hook). Every mapped arm
+plays before its own state writes or has none, so the hook's PRE-hook
+position read is the C#'s play position. The drain
+(`world_sim/projectiles.rs`) now routes id 13/6 to the wall-break facade
+(Shatter no-draws / Grass one `Next(-30, 31)`), id 4 to the case-4 int
+facade (`play_npc_death_int` gains style 19 — the Sharknado cry) and id 0
+to the case-0 Dig path (unchanged); id 2 keeps the wave-A style facade.
+Attenuation BEFORE any draw on every path (the E21e precedent); the
+gameplay draws ride the pass-tail `UpdateProjectiles` stream (the 21h
+batch convention — relative order among the tick's sound draws preserved,
+interleaving with gameplay draws not).
+
+### Ported sites (95, seven commits of ≤15)
+
+- **Batch 1** (`:71112`-`:73982`): 932 Item10 Center; 662/685/680 Dig;
+  634/635 Item14 pre-snap; 819 Dig; 405 Item54; 521 Item110; 444 Item96;
+  442 Item94; 448 Item14 pre-snap; 715-718 Item14; 385 case-4 style-19
+  Center; 399 Shatter; 507/598 Dig.
+- **Batch 2** (`:74014`-`:75214`): 1/81/98/980 Dig; 343/349/346 Item27;
+  323 Dig; 184 Dig; 275/276 Dig; 270 Dig-Style-27; 837 Dig-Style-27 gated
+  `penetrate != maxPenetrate` (`:74367`); 928 Dig; 206 (alpha<255 gate
+  `:74515`)/225 Grass; 120 Dig; 117 Dig; 166 Item51; 91/92 Item10.
+- **Batch 3** (`:75252`-`:75646`): 89 Dig; 967 Item45; 1026 Item167;
+  359/309/308/337 Item27; 80 Item27 gated `ai[0] >= 0` (`:75535`); 267
+  Dig; 2/82/474/172/103/278 Dig; 3/48/54 Dig.
+- **Batch 4** (`:75662`-`:76180`): 4 Dig; 5/9/955 Item10; 240 Item14
+  pre-snap; 282 Item10; 283 Item10 pre-burst; 286 Item14 pre-burst; the
+  common-bullet Item10 subset 14/20/36/83/84/88/100/104/110/180/207/242/
+  259/279/285/287/357/389/968 (`:76038`); 1006 Dig (Vector2 int overload);
+  660/638/15/253/95/96 Item10; 42 Dig.
+- **Batch 5** (`:76207`-`:77138`): 109 Dig; 27/44/45 Item10; 41 Item14
+  pre-blast; 183 Item14; 167-170 Item14 (aiStyle 34); 69/70/621 Shatter;
+  115/114/116/173/132/156 Item10.
+- **Batch 6** (`:75427`, `:77153`, `:77371`, `:77737`-`:77983`): the
+  gem bolts 121-126/597 Dig pre-resize (NOT feature-gated — the sound
+  precedes the `AoeExplosion` test); 157 Item10; the dungeon debris
+  736-738 Item127 in `debris_death_crack` (the `!noDropItem` gate
+  `:77367` + `Kill_ExplodeTiles`'s owner refusal `:77267` — the sound
+  is inside the owner-gated method); the rocket census' wet/lava/honey
+  trios (785/788/791 Item62, rest Item14, POST-resize), the dry family
+  (800 Item62), the Mini Nukes (794/797 Item62 at Center PRE-resize), the
+  shrapnel 779/783/862/863 Item62 POST-resize — all in
+  `rocket_kill_census` at the C# play points.
+- **Batch 7** (`:78025`-`:78150`): the cluster II pair 777/781 Item62
+  POST-resize (rest Item14); the plain rockets 133/136 Item62 PRE-recentre
+  (the inner `type == 30` test `:78090` is dead code — 30 takes the
+  `:78331` bomb arm); Rocket III 139 Item62 PRE-recentre (rest Item14).
+
+Bank: `Item_45/51/54/62/94/96/110/167` + `NPC_Killed_19` join
+`SFX_CUES` (all nine `.xnb` assets verified on disk); every other style
+was already registered.
+
+### Deviations (deliberate, recorded)
+
+- **The int-overload Style argument**: the skull arms' `PlaySound(0, x, y,
+  27)` (`:74352`/`:74369`) carries Style 27 on the queue payload, but
+  case 0 ignores Style (`LegacySoundPlayer.cs:440-452`) — the Dig facade
+  plays the same variation/pitch either way. Kept for the census mapping.
+- **Positions ride untruncated** in the queue (the landed 21h convention);
+  the id-4 facade truncates itself (`SoundEngine.cs:83-85`), the id-0/6/13
+  facades gate on the float position — the sub-pixel attenuation difference
+  is the standing 21h deviation, not re-opened here.
+- **State-bearing death bursts stay unported** (the cue alone lands where
+  it precedes every write): the 634/635 Nebula Blaze resize+Damage+dust
+  census (`:72016-72049`), the 448 Saucer Missile 112×112 burst
+  (`:73606-73630`), the 240 cannonball 96×96 burst (`:75887-75893`), the
+  521's 522 shard ring (`:73312-73325`), the 117's 1124 bone shards
+  (`:74741-74749`), the 80's gel-tile KillTile (`:75543-75552`). Their
+  cues land; the state halves are follow-up arms (each needs its own RNG
+  census — the `celeb2_death` shape).
+- **Deferred sites** (no ported arm, a non-id-2/0/6/13/4 facade, or a
+  pet/trackable family): the 949/931/1039/1047/1012/669/608/619/596/539/
+  585/590/587/501/410/467/468/483/523/522/520/616/510/868/869/996/424-426/
+  1037/1049/508/1073/589/335/318/195/1097/263/261/229/227/475/505/506/171/
+  1124/158-161 unrowed kinds (and the unrowed siblings of the ported
+  arms: 12/503, 31, 51, 118/119/128, 257/302/576/577/876, 321, 599/909);
+  the 710/661/617/659/681/16/34/79/452/454
+  resize+Damage death bursts (their cues sit AFTER or BETWEEN state writes
+  the port has no arm for — porting the cue alone would mis-order the
+  position read); the 681 DD2_GoblinBomb 0.5-volume style (the queue
+  carries no volume term — the style-facade volume plumbing is a follow-up);
+  the 452 case-29 zombie voice + 454 case-4 style-6 (int-style facades
+  exist but their arms are unported); the pet-gated families (`:74819`-
+  `:75187`, `Main.projPet` kinds unported); the 761/762/712/370/371/936/
+  981/303/930/903-906/773/588/1077/910/911/1023/312/246/249/281/162 unrowed
+  kinds; the 1088 acorn (`:78505`, unported); the DD2/Betsy/DeadCells
+  trackables (`:71637`/`:71641`/`:76868`, the D3 trackable pool).
+- **The 1006 Shimmer Arrow's `NextFloat` rotation** (`:76054`) is a
+  particle-orchestrator draw — skipped with the particle layer (the census
+  convention); the cue itself lands.
+
+**Verification.** Code-only: every mapped arm was re-read against its C#
+block (the gates `:74367`/`:74515`/`:75535`/`:77367`, the pre/post-resize
+position reads, the dead `type == 30` inner test), the 121-kind rowed
+check ran clean, and the nine new bank assets were confirmed on disk. The
+7 new `s1_e_21h_d77_*` witness tests are WRITTEN, NOT RUN — **no compiler
+invoked**. Commits `360bbb33`/`dcf54adc`/`13f29af5`/`1608360e`/`f5d8f263`/
+`0a74234a`/`ab859f19` on `task/W4-d77-proj-sounds-3` (pushed, unmerged).
