@@ -265,6 +265,7 @@ mod town_arrival;
 mod tracked_sound;
 mod touch_damage;
 mod ui;
+mod world_dust;
 mod world_sim;
 mod world_stepper;
 
