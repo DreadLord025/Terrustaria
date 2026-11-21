@@ -2349,6 +2349,165 @@ pub(crate) fn style117_guardian_explosion_624(p: &Projectile, world: &World, d: 
     }
 }
 
+/// `:35852-35859` — the aiStyle-126 state-0 rise (the 654 GeyserTrap + the
+/// 670 DD2OgreStomp; STAGED — the d13 `projectile_ai_geyser` machine keeps
+/// the explicit draws, bodies skipped; this REPLACES that census). THREE
+/// dust-31s, alpha 100; per dust the POST-spawn pair: scale = 0.1 +
+/// Next(5)·0.1, fadeIn = 1.5 + Next(5)·0.1 (the d13 census's TWO Next(5)
+/// per dust); noGravity, position = Centre + rot((0,−h/2), rotation)·1.1.
+pub(crate) fn style126_column_rise(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    // `:35858` — `-base.height / 2` is INTEGER division in the C# (the
+    // height is an int field); the 30-px rows are even, but the truncation
+    // is kept verbatim.
+    let at = Vec2::new(cx, cy)
+        + crate::bow_launch::rotated_by(
+            Vec2::new(0.0, -(p.h as i32 / 2) as f32),
+            p.rot as f64,
+        ) * 1.1;
+    for _ in 0..3 {
+        let idx = d.new_dust(world, p.pos, p.w as i32, p.h as i32, 31, 0.0, 0.0, 100, Color::default(), 1.0);
+        let dust = d.pool.slot_mut(idx);
+        dust.scale = 0.1 + d.rng.next_range(0, 5) as f32 * 0.1;
+        dust.fade_in = 1.5 + d.rng.next_range(0, 5) as f32 * 0.1;
+        dust.no_gravity = true;
+        dust.position = at;
+    }
+}
+
+/// ONE SelectRandom(6,259,158) column dust (`:35914-35924`/`:35932-35942`
+/// share the body): the type pick FIRST (one Next(3)), the spawn with
+/// SpeedY = −2.5·(−sign) = 2.5·sign, alpha 200 post-write, vel ×(0.3,2),
+/// vel.Y += 2·sign, scale += NextFloat, position pinned to the column
+/// base edge; the sign==−1-only Next(4)!=0 → vel.Y −0.2. `pin_edge`
+/// selects the burst/plume position rewrite (the :35986 tail keeps the
+/// spawn position); `vel_mul` is (0.3,2) for the burst/plume, (0.6,1.5)
+/// for the tail; `add_sign2` is the burst/plume's vel.Y += 2·sign (the
+/// tail omits it). customData = num939 dropped.
+#[allow(clippy::too_many_arguments)]
+fn column_select_dust(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    sign: i32,
+    pin_edge: bool,
+    vel_mul: Vec2,
+    add_sign2: bool,
+) {
+    let ty = select_random(d.rng, [6, 259, 158]);
+    let idx = d.new_dust(world, pos, w, h, ty, 0.0, 2.5 * sign as f32, 0, Color::default(), 1.0);
+    let dust = d.pool.slot_mut(idx);
+    dust.alpha = 200;
+    dust.velocity *= vel_mul;
+    if add_sign2 {
+        dust.velocity.y += (2 * sign) as f32;
+    }
+    dust.scale += d.rng.next_float();
+    if pin_edge {
+        let (cx, cy) = p.center();
+        dust.position = Vec2::new(cx, cy + p.h * 0.5 * (-sign) as f32);
+    }
+    if sign == -1 && d.rng.next_range(0, 4) != 0 {
+        dust.velocity.y -= 0.2;
+    }
+}
+
+/// `:35909-35927` — the aiStyle-126 first-solid 60-dust burst (the caller
+/// owns the localAI[0] latch; the Item34 cue at :35926 is the sound
+/// lane's). STAGED — the d13 geyser machine's skip.
+pub(crate) fn style126_column_burst(p: &Projectile, world: &World, d: &mut ProjDust, sign: i32) {
+    for _ in 0..60 {
+        column_select_dust(
+            p, world, d, p.pos, p.w as i32, p.h as i32, sign,
+            true, Vec2::new(0.3, 2.0), true,
+        );
+    }
+}
+
+/// `:35928-35944` — the aiStyle-126 sign==1 nine-dust plume (the caller
+/// gates `num938 == 1`). STAGED — the d13 machine's skip.
+pub(crate) fn style126_column_plume(p: &Projectile, world: &World, d: &mut ProjDust, sign: i32) {
+    for _ in 0..9 {
+        column_select_dust(
+            p, world, d, p.pos, p.w as i32, p.h as i32, sign,
+            true, Vec2::new(0.3, 2.0), true,
+        );
+    }
+}
+
+/// `:35945-35981` — the aiStyle-126 column's six 2-in-3 dust-6s. The
+/// caller computes `num951 = min((int)(ai[1]/60·h)·3, h)` and the two
+/// anchors (vector156 = position + the sign==−1 height offset, vector157
+/// = position + (0,h) when sign==−1). Per iteration: the Next(3)<2 gate;
+/// dust 6 alpha 90 scale 2.5 at (vector156, w, num951); noGravity,
+/// fadeIn 1; vel.Y>0 → ×−1; then the Next(6)<3 split — taken: position.Y
+/// lerps to vector157.Y at 0.5, vel ×5, vel.Y −3, position.X = Centre.X,
+/// noGravity FALSE, noLight, fadeIn 0.4, scale ×0.3; else: vel =
+/// DirectionFrom(dust.position)·|vel|·0.25 (the UNGUARDED normalize of
+/// Centre − dustpos); then vel.Y ×= −sign. customData dropped.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn style126_column_body(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    sign: i32,
+    anchor: Vec2,
+    edge_y: f32,
+    col_h: i32,
+) {
+    let (cx, cy) = p.center();
+    for _ in 0..6 {
+        if d.rng.next_range(0, 3) < 2 {
+            let idx = d.new_dust(world, anchor, p.w as i32, col_h, 6, 0.0, 0.0, 90, Color::default(), 2.5);
+            let dust = d.pool.slot_mut(idx);
+            dust.no_gravity = true;
+            dust.fade_in = 1.0;
+            if dust.velocity.y > 0.0 {
+                dust.velocity.y *= -1.0;
+            }
+            if d.rng.next_range(0, 6) < 3 {
+                dust.position.y += (edge_y - dust.position.y) * 0.5;
+                dust.velocity *= 5.0;
+                dust.velocity.y -= 3.0;
+                dust.position.x = cx;
+                dust.no_gravity = false;
+                dust.no_light = true;
+                dust.fade_in = 0.4;
+                dust.scale *= 0.3;
+            } else {
+                let dir = xna_normalize(Vec2::new(cx, cy) - dust.position);
+                dust.velocity = dir * dust.velocity.length() * 0.25;
+            }
+            dust.velocity.y *= (-sign) as f32;
+        }
+    }
+}
+
+/// `:35982-35996` — the aiStyle-126 column's six NextFloat()<0.5-gated
+/// SelectRandom tails (the gate is `!(NextFloat() < 0.5)` — the draw is
+/// consumed EVERY iteration). The (0.6,1.5) velocity mul, NO +2·sign,
+/// NO position pin (the spawn position stands). STAGED — the d13 skip.
+pub(crate) fn style126_column_tail(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    sign: i32,
+    anchor: Vec2,
+    col_h: i32,
+) {
+    for _ in 0..6 {
+        if !(d.rng.next_float() < 0.5) {
+            column_select_dust(
+                p, world, d, anchor, p.w as i32, col_h, sign,
+                false, Vec2::new(0.6, 1.5), false,
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
@@ -4558,6 +4717,149 @@ mod tests {
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
             assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
             assert_eq!(pool.slot(i).fade_in, mpool.slot(i).fade_in);
+        }
+    /// W4-e3 AI-inline window — `:35852-35944`: the rise's 3×31 (the TWO
+    /// Next(5) post-writes, the integer-half rotated pin) + the 60-burst /
+    /// 9-plume SelectRandom(6,259,158) shape (pick FIRST, alpha 200, the
+    /// (0.3,2) mul + 2·sign, NextFloat scale, the edge pin, the sign==−1
+    /// Next(4) kick). Mirrored both signs. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style126_rise_burst_plume_mirror() {
+        let w = world();
+        let c = ctx();
+        for sign in [1i32, -1] {
+            let mut p = proj(654);
+            p.w = 30.0;
+            p.h = 96.0;
+            p.rot = 0.3;
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(97);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(97);
+            {
+                let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+                style126_column_rise(&p, &w, &mut d);
+                style126_column_burst(&p, &w, &mut d, sign);
+                style126_column_plume(&p, &w, &mut d, sign);
+            }
+            let (cx, cy) = p.center();
+            let at = Vec2::new(cx, cy)
+                + crate::bow_launch::rotated_by(Vec2::new(0.0, -48.0), 0.3f64) * 1.1;
+            for _ in 0..3 {
+                let idx = mpool.new_dust(&mut mirror, &c, &w, p.pos, 30, 96, 31, 0.0, 0.0, 100, Color::default(), 1.0);
+                let md = mpool.slot_mut(idx);
+                md.scale = 0.1 + mirror.next_range(0, 5) as f32 * 0.1;
+                md.fade_in = 1.5 + mirror.next_range(0, 5) as f32 * 0.1;
+                md.no_gravity = true;
+                md.position = at;
+            }
+            for _ in 0..69 {
+                let ty = [6, 259, 158][mirror.next_range(0, 3) as usize];
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, p.pos, 30, 96, ty,
+                    0.0, 2.5 * sign as f32, 0, Color::default(), 1.0,
+                );
+                let md = mpool.slot_mut(idx);
+                md.alpha = 200;
+                md.velocity *= Vec2::new(0.3, 2.0);
+                md.velocity.y += (2 * sign) as f32;
+                md.scale += mirror.next_float();
+                md.position = Vec2::new(cx, cy + 96.0 * 0.5 * (-sign) as f32);
+                if sign == -1 && mirror.next_range(0, 4) != 0 {
+                    md.velocity.y -= 0.2;
+                }
+            }
+            assert_eq!(active(&pool).len(), 72, "3 + 60 + 9");
+            for j in 0..72 {
+                assert_eq!(pool.slot(j).position, mpool.slot(j).position);
+                assert_eq!(pool.slot(j).velocity, mpool.slot(j).velocity);
+                assert_eq!(pool.slot(j).scale, mpool.slot(j).scale);
+                assert_eq!(pool.slot(j).alpha, mpool.slot(j).alpha);
+            }
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        }
+    }
+
+    /// W4-e3 AI-inline window — `:35945-35996`: the column body's six
+    /// Next(3)<2 gates + the Next(6)<3 lerp/pull split (the pull's
+    /// UNGUARDED DirectionFrom normalize, the −sign Y flip) + the tail's
+    /// six NextFloat()<0.5 gates with the (0.6,1.5) mul and NO pin.
+    /// Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style126_column_body_and_tail_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(670);
+        p.w = 30.0;
+        p.h = 160.0;
+        let sign = -1i32;
+        let anchor = p.pos + Vec2::new(0.0, p.h - 96.0);
+        let edge_y = p.pos.y + p.h;
+        let col_h = 96i32;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(101);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(101);
+        {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style126_column_body(&p, &w, &mut d, sign, anchor, edge_y, col_h);
+            style126_column_tail(&p, &w, &mut d, sign, anchor, col_h);
+        }
+        let (cx, cy) = p.center();
+        let norm = |v: Vec2| {
+            let len = (v.x * v.x + v.y * v.y).sqrt();
+            Vec2::new(v.x / len, v.y / len)
+        };
+        for _ in 0..6 {
+            if mirror.next_range(0, 3) < 2 {
+                let idx = mpool.new_dust(&mut mirror, &c, &w, anchor, 30, col_h, 6, 0.0, 0.0, 90, Color::default(), 2.5);
+                let md = mpool.slot_mut(idx);
+                md.no_gravity = true;
+                md.fade_in = 1.0;
+                if md.velocity.y > 0.0 {
+                    md.velocity.y *= -1.0;
+                }
+                if mirror.next_range(0, 6) < 3 {
+                    md.position.y += (edge_y - md.position.y) * 0.5;
+                    md.velocity *= 5.0;
+                    md.velocity.y -= 3.0;
+                    md.position.x = cx;
+                    md.no_gravity = false;
+                    md.no_light = true;
+                    md.fade_in = 0.4;
+                    md.scale *= 0.3;
+                } else {
+                    let dir = norm(Vec2::new(cx, cy) - md.position);
+                    md.velocity = dir * md.velocity.length() * 0.25;
+                }
+                md.velocity.y *= (-sign) as f32;
+            }
+        }
+        for _ in 0..6 {
+            if !(mirror.next_float() < 0.5) {
+                let ty = [6, 259, 158][mirror.next_range(0, 3) as usize];
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, anchor, 30, col_h, ty,
+                    0.0, 2.5 * sign as f32, 0, Color::default(), 1.0,
+                );
+                let md = mpool.slot_mut(idx);
+                md.alpha = 200;
+                md.velocity *= Vec2::new(0.6, 1.5);
+                md.scale += mirror.next_float();
+                if sign == -1 && mirror.next_range(0, 4) != 0 {
+                    md.velocity.y -= 0.2;
+                }
+            }
+        }
+        let act = active(&pool);
+        assert_eq!(act.len(), active(&mpool).len());
+        assert!(!act.is_empty());
+        for &j in &act {
+            assert_eq!(pool.slot(j).position, mpool.slot(j).position);
+            assert_eq!(pool.slot(j).velocity, mpool.slot(j).velocity);
+            assert_eq!(pool.slot(j).scale, mpool.slot(j).scale);
+            assert_eq!(pool.slot(j).fade_in, mpool.slot(j).fade_in);
+            assert_eq!(pool.slot(j).no_gravity, mpool.slot(j).no_gravity);
         }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
