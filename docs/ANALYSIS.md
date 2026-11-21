@@ -19072,6 +19072,50 @@ double-count, truncating TileLoaded, quadrant pick), 3 `map::tests::w4_e18_*`
 on the empty pass, pending-refresh hold, refresh consume, paused skip, load
 gate, mapEnabled drain gate) — all written not run (code-only mode).
 
+**W4-f46 union note (2026-11-21, code-only, research/84 EXECUTED).** The
+e18/f46 dup-reconcile union landed on `task/W4-f46-minimap-reveal-2`: e18's
+skeleton stays (grid, statics, queues, driver state machine, 16-row debug
+tab) and six f46 salvages replace the deviations above —
+
+1. **Placement**: the driver call moved from `update_world_frame` to the
+   draw half (`frame/draw.rs`, ahead of `WorldMap::prepare` — the C# block
+   sits in `DoDraw`, `Main.cs:61863-61899`). The entry is
+   `frame/world.rs::map_reveal_draw` (a field-borrow fn — the draw region's
+   destructure holds `map`/`world`/`settings`); the update-half call is gone.
+2. **Paused else-arm**: the old `if paused { return }` skipped the C#'s
+   `else if (ChangesQueued)` fall-through (`:61896-61898`) — a paused frame
+   with queued changes never drained them. The consume now branches on
+   `updateMap.HasValue && !gamePaused` as one condition, so the else-arm
+   runs while paused (e18's real `changes_queued()` predicate kept).
+3. **`DrawToMap_Section` pixel paint**: the sweep's dirty-rect push is
+   replaced by the real port — `map.rs::section_pixels` (the world-clipped
+   row-major `GetMapTileXnaColor` cache, `MapRenderer.cs:328-335`) +
+   `draw_to_map_section` (one region blit), with `checkMap`'s on-demand
+   `ensure_map_texture` ahead of the walk (`:322` — the texture exists even
+   when `mapEnabled` is off). The deviation paragraph above ("the
+   `DrawToMap_Section` render-target blit is the dirty-rect push") is closed.
+   The sweep splits into a GPU-free state core (`map_reveal_sweep_core`,
+   `budget_ms` test parameter) + the paint wrapper.
+4. **`/map` verbatim flag path**: `WorldMap::unlock_map` is now the command
+   itself (`ToolkitDebugCommands.cs:480-494` — `clearMap` head, 1/2 + refresh
+   arming, toggle-off); the dead ceil-loop bulk sweep is deleted and the
+   debug row routes through the fn. The option stays `App.debug_unlock_map`
+   (the C# `DebugOptions.unlockMap` static's home), passed by `&mut i32`.
+5. **XNA empty intersect**: the export arms `Some([0,0,0,0])`
+   (`Rectangle.Empty`) on an empty overlap, not the inverted rect
+   (`LightingEngine.cs:269`).
+6. **Ctor `clear_map = true`**: `WorldMap::new` is the world-load
+   construction, so it arms the flag like `WorldGen.clearWorld`
+   (`WorldGen.cs:6982`) — a fresh world with no `.map` file now carries the
+   verbatim flag state (pixel-equivalent before, flag-faithful now).
+
+Also: `MapSections::sections_left()` accessor (f46's witness seam), the
+f46 duplicate module (`tr-core/map/sections.rs::MapDrawQueue`) dropped, the
+paused witness extended to assert the else-arm drains while paused, and 4
+f46 witnesses adapted (`/map` toggle, section pixels, empty intersect, ctor
+flag). All written not run (code-only mode); the merger keeps this union
+and drops the separate e18/f46 versions (research/84 §8).
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into

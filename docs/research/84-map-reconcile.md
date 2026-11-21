@@ -1,5 +1,38 @@
 # 84 — Map reveal dup-reconcile: W4-e18 vs W4-f46 (2026-11-21, code-only)
 
+> **STATUS: EXECUTED (2026-11-21, salvage-exec on `task/W4-f46-minimap-reveal-2`).**
+> The §8 union landed on this branch: e18 `c6cf86bf`'s skeleton adopted
+> verbatim (base commit `0bc3414d`), then the six f46 salvages + the
+> `sections_left()` accessor committed per piece. The merger keeps THIS
+> branch's union and drops the separate e18/f46 versions. Execution notes:
+>
+> - The driver entry is `frame/world.rs::map_reveal_draw` — a field-borrow
+>   associated fn (the draw region's 55-field destructure holds
+>   `map`/`world`/`settings` out of `&mut self` reach; `section_manager`/
+>   `debug_unlock_map` stay disjoint `self` fields). The §8 "adapted to
+>   `app.map_reveal_driver(paused)`" shape was not borrowable at the f46
+>   call site; same semantics, field-passing shape.
+> - The sweep splits into `map_reveal_sweep_core(budget_ms)` (GPU-free
+>   state half, the witnesses' seam) + the paint wrapper inside
+>   `map_reveal_draw` (`checkMap` ensure → walk → per-section
+>   `draw_to_map_section`). The consume splits the same way
+>   (`map_reveal_consume` → `map_reveal_consume_fields`).
+> - `unlock_map(&mut i32, bool)` takes the option by `&mut i32` (§4's
+>   recommendation); the debug row routes through it; the e18 inline
+>   arming is gone. The `WorldMap.sections`/`unlock_map_mode` fields never
+>   existed on the union (e18 base).
+> - The §7 clearMap-consume witness adaptation is covered by e18's
+>   `prepare` consume + the load/tail witnesses (the consume owner in the
+>   union is `prepare`, unchanged); f46's `consume_update_map`-shaped
+>   witnesses were dropped with that fn per §7's duplicate rulings.
+> - Two e18 witnesses had a latent `QueueChange`-after-`refreshMap` arming
+>   bug (`MapRenderer.cs:290` no-op) — fixed while re-homing them.
+> - Anchors: e18's 3 rows kept (the sweep row's marker follows the rename
+>   to `map_reveal_sweep_fields`); f46's 2 rows dropped with the base
+>   adoption; ONE new `draw_to_map_section` row added (§8).
+> - Compile-by-inspection only (no cargo/tests/graphify, as tasked); all
+>   witnesses written not run.
+
 > Reconcile-phase report. NO code changed on either branch by this pass — this
 > document is the only artifact. Inputs read directly from git objects:
 >
