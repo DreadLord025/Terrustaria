@@ -164,7 +164,7 @@ pub(crate) struct SettleAnchors {
 
 impl SettleAnchors {
     /// `WorldGen.oceanLevel` (`WorldGen.cs:4447`).
-    fn ocean_level(&self) -> f64 {
+    pub(crate) fn ocean_level(&self) -> f64 {
         (self.world_surface + self.rock_layer) / 2.0 + 40.0
     }
 }
@@ -173,7 +173,8 @@ impl SettleAnchors {
 /// liquid and deactivate breakable ice 162 inside the shimmer disc. The port
 /// has no shimmer position until d102's Shimmer pass writes it, so this is a
 /// `None`-guarded stand-in (the C# static is `(0,0)` → the disc is off-map).
-fn shimmer_remove_water(world: &mut World, shimmer_position: Option<(i32, i32)>) {
+/// Shared with `cleanup::shimmer_clean_up` (W4-d106 R6).
+pub(crate) fn shimmer_remove_water(world: &mut World, shimmer_position: Option<(i32, i32)>) {
     let Some((sx, sy)) = shimmer_position else {
         return;
     };
@@ -267,7 +268,9 @@ fn liquid_interactions_cleanup(world: &mut World) {
 /// liquid cell via `SettleWaterAt`. `verbose`/`minY`/`maxY` ride the C#
 /// defaults (the settle passes call `QuickWater(3)` / `QuickWater(-2)`; the
 /// verbose arg only drives progress text, no behaviour). W4-d106 R2.
-fn quick_water(
+/// Shared with `cleanup::finish_remix_world` (W4-d106 R6's `QuickWater(-2)`
+/// calls — the verbose arg is progress-only, the bounds are the defaults).
+pub(crate) fn quick_water(
     world: &mut World,
     sys: &mut LiquidSystem,
     anchors: &SettleAnchors,
@@ -365,8 +368,9 @@ fn settle_liquids_body(
 /// half, the remix bands, the wall-86 honey sweep) is a large seed-only body;
 /// this lane ports the gate + the skyblock/no-op guards and defers the
 /// conversion arms to the notTheBees lane (documented stand-in — the classic
-/// pipeline is untouched, the affected-seed witness rides a==b).
-fn not_the_bees(world: &mut World, opts: &super::GenOptions) {
+/// pipeline is untouched, the affected-seed witness rides a==b). Shared with
+/// `cleanup::final_cleanup`'s seed dispatch (W4-d106 R6).
+pub(crate) fn not_the_bees(world: &mut World, opts: &super::GenOptions) {
     if !opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES) {
         return;
     }

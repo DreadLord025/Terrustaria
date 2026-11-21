@@ -276,6 +276,18 @@ mod tests {
     // BFS strips broken trap circuits (the dungeon/temple/mining-explosives
     // wires), moving tile + wire bytes BY DESIGN. Draws no RNG; a == b
     // stays green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R6 (2026-11-21, code-only): the `Final Cleanup` pass
+    // (`WorldGen.cs:22141-22490`) lands between `remove broken traps` and
+    // `world tail` — the wall-hole fill, the sand-family fall columns, the
+    // boulder normalisation, the dungeon-wall/minecart liquid strips, the
+    // painting wall inheritance and the poo-668 scatter move tile bytes BY
+    // DESIGN, and the final `Liquid.LiquidCheck` merge sweep re-types/merges
+    // liquid cells. The classic body draws only the poo scatter's fresh
+    // `pass_rng("Final Cleanup")` stream (the sweep is RNG-free), so no other
+    // step's ledger shifts; a == b stays green. The seed `Finish*` arms are
+    // flag-gated (a classic world skips them). Re-pin DEFERRED to the merge
+    // gate. On the 512-wide pin world the poo scatter's `Next(50, w-50)` /
+    // `Next(50, h-200)` ranges stay valid (512 > 250), so the scatter runs.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -339,6 +351,11 @@ mod tests {
     // to the merge gate.
     // W4-d106 R5 (code-only): `Remove Broken Traps` (see SEED42_512 above)
     // — the broken-circuit strip moves this pin BY DESIGN (no RNG draw);
+    // a == b stays green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R6 (code-only): `Final Cleanup` (see SEED42_512 above) — the
+    // wall-hole fill, the sand fall columns, the boulder/liquid/painting
+    // sweeps, the poo scatter and the final LiquidCheck merge sweep move
+    // this pin BY DESIGN on the fresh `pass_rng("Final Cleanup")` stream;
     // a == b stays green. Re-pin DEFERRED to the merge gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw

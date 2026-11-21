@@ -746,8 +746,9 @@ fn update_stalagtite_style(
 // --- the Stalac pass (W4-d106 R4) ---------------------------------------------
 
 /// `WorldGen.oceanDepths` (`WorldGen.cs:10963-10973`) — the ±380 beach
-/// margins above the ocean level.
-fn ocean_depths(world: &World, x: i32, y: i32, ocean_level: f64) -> bool {
+/// margins above the ocean level. Shared with `cleanup::final_cleanup`
+/// (W4-d106 R6's sand-fall gate).
+pub(crate) fn ocean_depths(world: &World, x: i32, y: i32, ocean_level: f64) -> bool {
     if y as f64 > ocean_level {
         return false;
     }

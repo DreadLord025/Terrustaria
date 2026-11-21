@@ -466,10 +466,17 @@ impl GenVars {
             .expect("the terrain height-map step did not run")
     }
 
-    fn layers(&self) -> &Layers {
+    pub(crate) fn layers(&self) -> &Layers {
         self.layers
             .as_ref()
             .expect("the terrain fill step did not run")
+    }
+
+    /// Test-only: seed the layer anchors without running the terrain step
+    /// (the W4-d106 R6 witnesses construct a GenVars directly).
+    #[cfg(test)]
+    pub(crate) fn set_layers_for_test(&mut self, layers: Layers) {
+        self.layers = Some(layers);
     }
 
     fn spans(&self) -> &BiomeSpans {
@@ -1431,6 +1438,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // The pass draws no RNG (the wire-network BFS is deterministic over the
     // tile/wire state), so the insertion shifts no other step's ledger.
     step!("remove broken traps", "Remove Broken Traps", step_remove_broken_traps),
+    // The vanilla Final Cleanup slot (`WorldGen.cs:22141`): after Remove
+    // Broken Traps (`:22121`) and before the GenerateWorld tail (`:22431`) —
+    // W4-d106 R6. The classic body draws only the poo scatter's own
+    // `pass_rng("Final Cleanup")` stream (the sweep is RNG-free), so the
+    // insertion shifts no other step's ledger.
+    step!("final cleanup", "Final Cleanup", step_final_cleanup),
     step!("world tail", "", step_world_tail),
     // The vanilla `GenerateWorld` tail (`WorldGen.cs:22431-22444`): the
     // seed `Finish*` passes — M5-SEED-1's `step_seed_finish`, gated per
@@ -2818,6 +2831,20 @@ fn step_remove_broken_traps(
     cleanup::remove_broken_traps(world, opts);
 }
 
+/// The vanilla Final Cleanup slot (`WorldGen.cs:22141-22490`) — W4-d106 R6:
+/// the wall-hole fill, the whole-world sweep, the poo scatter, the seed
+/// Finish* dispatch, the shimmer clean-up and the final LiquidCheck sweep.
+fn step_final_cleanup(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    cleanup::final_cleanup(world, gv, streams, opts);
+}
+
 fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
@@ -3286,7 +3313,9 @@ mod tests {
         // after `water plants`.
         // W4-d106 R5: + `remove broken traps` (vanilla "Remove Broken
         // Traps", `WorldGen.cs:22121`) after `stalac`.
-        assert_eq!(names.len(), 71);
+        // W4-d106 R6: + `final cleanup` (vanilla "Final Cleanup",
+        // `WorldGen.cs:22141`) between `remove broken traps` and `world tail`.
+        assert_eq!(names.len(), 72);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3387,6 +3416,7 @@ mod tests {
                 "water plants",
                 "stalac",
                 "remove broken traps",
+                "final cleanup",
                 "world tail",
                 "seed finish",
             ]
@@ -3465,9 +3495,18 @@ mod tests {
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(names[pos("remove water") + 1], "shell piles");
         assert_eq!(names[pos("shell piles") + 1], "slopes");
-        assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
+        // W4-d106 R3: `tile cleanup` now sits between `cacti` and
+        // `lihzahrd altar` (the vanilla Tile Cleanup slot, `:21520`).
+        assert_eq!(names[pos("lihzahrd altar") - 1], "tile cleanup");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
-        assert_eq!(names[pos("water plants") + 1], "world tail");
+        // W4-d106 R4/R5: `stalac` + `remove broken traps` now sit between
+        // `water plants` and the world tail (the vanilla Stalac `:22038` →
+        // Remove Broken Traps `:22121` slots).
+        assert_eq!(names[pos("water plants") + 1], "stalac");
+        // W4-d106 R6: `final cleanup` sits between `remove broken traps` and
+        // the world tail (the vanilla Final Cleanup slot, `:22141`).
+        assert_eq!(names[pos("remove broken traps") + 1], "final cleanup");
+        assert_eq!(names[pos("final cleanup") + 1], "world tail");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()

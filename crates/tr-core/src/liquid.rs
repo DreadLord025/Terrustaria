@@ -152,6 +152,13 @@ impl LiquidSystem {
         self.gen_ignore_water = on;
     }
 
+    /// `Liquid.tilesIgnoreWater(ignoreSolids)` (`Liquid.cs:69-73`) — the
+    /// grate 546 + the boulder family lose solidity while the toggle is up.
+    /// `ShimmerCleanUp` arms it around its shimmer-fill walk (W4-d106 R6).
+    pub fn set_ignore_solids(&mut self, on: bool) {
+        self.ignore_solids = on;
+    }
+
     /// `WorldGen.isGeneratingOrLoadingWorld` (`Liquid.cs:69-73`'s merge
     /// selector, `:178`'s settle re-type gate) — the gen settle passes set
     /// it so `LiquidCheck` merges in generation mode and `SettleWaterAt`
