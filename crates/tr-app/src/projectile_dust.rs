@@ -2694,7 +2694,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(47);
         let mut mpool = DustPool::new();
         let mut mirror = UnifiedRandom::new(47);
-        let mut mp = p;
+        let mut mp = p.clone();
         let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
         scarab_bomb_dust(&mut p, &w, &mut d, snap);
         // Mirror block 1: the 60 smoke.
