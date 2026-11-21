@@ -321,6 +321,65 @@ merge-order, not coverage:
    rows + arm are correct; the missing piece is the item-use spawner,
    a different lane.
 
+## §7 — the 190 terra-chain compose-contract (PROJ-181 phase 3; d20c-T5 receipt)
+
+**The chain.** NightsEdge 273 → TrueNightsEdge 675 → TrueExcalibur 674 →
+TerraBlade 757 (the item ids; `Item.cs:4578/:9299/:9280/:10212`). Each
+use-path arm (`Player.cs:48870-48877/:48914-48921/:48922-48929/
+:48930-48937`, re-read WHOLE this round) spawns a PAIR at `MountedCenter`:
+
+| item | slash (kind, vel, dmg, ai0/ai1/ai2) | partner (kind, vel, dmg, ai0/ai1/ai2) |
+|---|---|---|
+| 273 | 972 `(dir,0)` Damage / `dir·gravDir` / `itemAnimMax` / scale | 972 beam `(num4,num5)` Damage / `dir·gravDir·0.1` / **30** / scale |
+| 675 | 972 `(dir,0)` Damage / `dir·gravDir` / `itemAnimMax` / scale | 973 beam `(num4,num5)` **Damage/2** / `dir·gravDir` / **32** / scale |
+| 674 | 983 `(dir,0)` Damage / `dir·gravDir` / `itemAnimMax` / scale | 982 ghost `(dir,0)` **0** / `dir·gravDir` / `itemAnimMax` / scale |
+| 757 | 984 `(dir,0)` Damage / `dir·gravDir` / `itemAnimMax` / scale | 985 beam `(num4,num5)·5` Damage / `dir·gravDir` / **18** / scale |
+
+(`num4,num5` = the aim normalized to shootSpeed; scale =
+`GetAdjustedItemScale`; `itemAnimMax` = the prefixed, melee-speed-
+adjusted `itemAnimationMax`.)
+
+**The d19 rows FEED the envelope — compose verified.** The 190 arm
+(`ai_nights_edge`, `…sword_styles.rs:1038`) reads `ai[1]` as the
+lifetime envelope (`num = local_ai[0] / ai[1]`, `:41992`, port `:1061`)
+and `ai[2]` as the spawn-scale multiplier (`scale *= ai[2]`, `:42222`,
+port `:1121`); the 191 arm (d20's `ai_true_nights_edge`) reads the SAME
+envelope (`num3 = ai[1]+50`, `fromValue = localAI[0]/ai[1]`,
+`:41644/:41675`). The spawn seam carries the payload verbatim:
+`spawn_with_data_ai_owned` writes `ai: [ai0, ai1, 0, 0]`
+(`projectile.rs:16010`) + `set_ai2` (`:15401`) — ai2 rides the third
+slot. **The rows are the gate:** the seam declines rowless kinds
+(`proj_data(kind)?`, `:15981`), so T5's paired slash spawns (972/982/
+983/984) REQUIRE d19's rows — they exist ONLY on d19 (`data.rs:3700–
+3736`), NOT on d20. T5 (the d20c item-use lane) ports the four arms into
+`editing.rs::fire_non_ammo_shot` ahead of the generic tail; it must NOT
+duplicate the rows. The generic tail today spawns ONE projectile with
+`ai0=ai1=0` → the envelope collapses (the 190 `num>=1` kill fires
+immediately on ∞, the 191 remaps read NaN) and the paired slash never
+spawns — r109 item 5's finding, re-confirmed.
+
+**The 1043 flint slash is the merge canary:** d20's 198 arm spawns it
+(`wants_dart_spawns`), its 190 AI arm lives on d19 — on d20 alone it
+flies inert (no 190 dispatch), on d19 alone the 198 spawner is absent.
+Both must merge for the chain member to play.
+
+**Compose-contract receipt (this round, WRITTEN NOT RUN):**
+`w4_d19_the_terra_chain_payload_feeds_the_190_envelope`
+(`projectile_ai_sword_styles.rs`): spawn 972 through the seam with the
+C# use-path payload (`ai0 = dir·gravDir = 1`, `ai1 = itemAnimMax = 20`,
+`ai2 = scale = 1` via `set_ai2`), run the arm — `local_ai[0]` accrues to
+1, `num = 1/20` (NOT ∞/NaN), the scale is `(1 + num·0.2)·ai2`, the slot
+stays ACTIVE (the envelope does not collapse); then drive to
+`local_ai[0] = ai[1]` and the progress-1 kill fires. The witness pins
+the row-gated spawn (972 exists), the ai1 envelope read, the ai2 scale
+multiplier and the kill — the exact contract T5's spawner must feed.
+The 984/982/983 rows are pinned by the existing rows witness
+(`w4_d19_the_rows_carry_their_styles_and_slices`, `:1289`).
+
+**Verdict: the 190 arm + rows are COMPLETE and FAITHFUL; the terra-chain
+is AI-complete, use-path-inert until d20c-T5 lands the four spawner arms
+against these rows. No d19 change needed — the contract holds.**
+
 ## Witnesses (this round, WRITTEN NOT RUN — code-only)
 
 - `projectile_ai_clouds.rs`: +2 new

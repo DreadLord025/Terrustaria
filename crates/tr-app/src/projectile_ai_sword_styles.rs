@@ -1614,4 +1614,37 @@ mod tests {
         assert_eq!(slam.4, 96.0, "ai2 = 96");
         assert_eq!(p.wants_sound, Some((2, 167, spawn_position.x, spawn_position.y, 0.0)));
     }
+
+    /// The terra-chain compose-contract receipt (research/26g §7, the
+    /// d20c-T5 dependency): the use-path payload (`Player.cs:48917` —
+    /// ai0 = dir·gravDir, ai1 = itemAnimationMax, ai2 =
+    /// GetAdjustedItemScale) feeds the 190 envelope through the spawn
+    /// seam. The row is the gate (the seam declines rowless kinds —
+    /// T5's paired 972/982/983/984 slashes need THIS branch's rows).
+    #[test]
+    fn w4_d19_the_terra_chain_payload_feeds_the_190_envelope() {
+        let w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        let mut pool = crate::projectile::ProjectilePool::new();
+        // The TrueNightsEdge slash spawn (`Player.cs:48917`): kind 972,
+        // MountedCenter, (dir, 0), Damage, ai0 = 1·1, ai1 = 20 (the
+        // itemAnimationMax stand-in), ai2 = 1.0 (the adjusted scale).
+        let slot = pool
+            .spawn_with_data_ai_owned(972, 0, 1600.0, 800.0, 1.0, 0.0, 50, 5.0, 1.0, 20.0)
+            .expect("the 972 row gates the spawn (d19's rows feed T5)");
+        pool.set_ai2(slot, 1.0);
+        assert_eq!(pool.slots()[slot].ai, [1.0, 20.0, 1.0, 0.0], "the payload rides");
+        let mut rng = census();
+        ai_nights_edge(&mut pool.slots_mut()[slot], &w, Some(&mut pl), 0, &mut rng);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "the envelope does NOT collapse (ai1 = 20, not 0)");
+        assert_eq!(p.local_ai[0], 1.0);
+        // num = 1/20 — finite; scale = (1 + num·0.2)·ai2 (`:42018/:42222`).
+        assert!((p.scale - (1.0 + (1.0 / 20.0) * 0.2)).abs() < 1e-5);
+        // Drive to localAI[0] = ai[1]: the progress-1 kill (`:42223-42225`).
+        for _ in 0..25 {
+            ai_nights_edge(&mut pool.slots_mut()[slot], &w, Some(&mut pl), 0, &mut rng);
+        }
+        assert!(!pool.slots()[slot].active, "num >= 1 kills at the envelope end");
+    }
 }
