@@ -104,6 +104,14 @@ pub struct LiquidSystem {
     cycles: usize,
     /// Set when any level changed during the current [`LiquidSystem::update`].
     dirty: bool,
+    /// `Liquid.skipCount` (`Liquid.cs:19`): the runtime tick divider the
+    /// `WorldGen.UpdateWorld` driver walks (`WorldGen.cs:71526-71534`) —
+    /// `skipCount++; if (skipCount > 1) { UpdateLiquid(); skipCount = 0; }`,
+    /// i.e. one pass per two world ticks (30 Hz). The counter belongs to the
+    /// DRIVER, not the pass: the gen settle loops and the load drain call
+    /// [`LiquidSystem::update`] directly and never touch it (the C# statics
+    /// keep it across those drains too). `ReInit` zeroes it (`:85`).
+    skip_count: i32,
     /// `Liquid.quickFall` (`Liquid.cs:33`): derived at the head of every
     /// pass from `quickSettle` (`:1056-1068`); the quick-settle mode forces
     /// every entry's `delay = 10` in the pass loop (`:1083-1090`), so
@@ -208,6 +216,13 @@ pub struct LiquidSystem {
     /// `:288`, `QuickWater` `:115`/`:135`, `WorldGen.cs:34767`/`:80417`)
     /// stay with the unported gen passes.
     ignore_solids: bool,
+    /// `Liquid.worldGenTilesIgnoreWater`'s state (`Liquid.cs:75-81`): the
+    /// doors 10/192 and the living-wood/leaf pair 191/190 lose solidity for
+    /// the whole `Settle Liquids` pass (`WorldGen.cs:16156`/`:16207`,
+    /// `:21263`/`:21306`). Gen-only — the runtime pass never arms it.
+    /// (f25's `gen_ignore_water` export, carried onto the g47 machinery for
+    /// the gen-module dedupe — research/70 step 6.)
+    gen_ignore_water: bool,
     /// `Main.tileSolid[379]` (`Liquid.cs:451` vs `Main.cs:17753`/`:17799`):
     /// the bubble is solid for the liquid pass itself and not solid for the
     /// entity half of the tick — the C# clears it in
@@ -302,6 +317,10 @@ impl LiquidSystem {
     /// leaves them on the tiles, but `WaterCheck` — the load tail — wipes
     /// them across the grid, so the combined load sequence matches).
     pub fn re_init(&mut self) {
+        // `Liquid.cs:85` — `skipCount = 0`: the driver divider resets with
+        // the world-load settle (the runtime tick starts a fresh 2-tick
+        // window after `ReInit`).
+        self.skip_count = 0;
         self.stuck_count = 0;
         self.stuck_amount = 0;
         self.cycles = CYCLES;
@@ -418,6 +437,7 @@ impl LiquidSystem {
             cur_max_liquid: MAX_ACTIVE,
             cycles: CYCLES,
             dirty: false,
+            skip_count: 0,
             quick_fall: false,
             quick_settle: false,
             reduced_max_liquids: false,
@@ -443,6 +463,7 @@ impl LiquidSystem {
             // The stock solidity: the grate and the boulders are solid and
             // the bubble is not (`Main.cs:10124`, `Main.cs:17753`).
             ignore_solids: false,
+            gen_ignore_water: false,
             bubble_solid: false,
             // `Main.UnderworldLayer = maxTilesY - 200` (`Main.cs:2790`).
             underworld_layer: world.height - 200,
@@ -621,6 +642,31 @@ impl LiquidSystem {
             for x in (cx - r).max(0)..=(cx + r).min(self.width - 1) {
                 self.add_water(world, x, y);
             }
+        }
+    }
+
+    /// One `WorldGen.UpdateWorld` liquid-driver tick (`WorldGen.cs:71526-
+    /// 71534`): `Liquid.skipCount++; if (skipCount > 1) { UpdateLiquid();
+    /// skipCount = 0; }` — the 30 Hz pump, VERBATIM. Returns whether the
+    /// pass ran this tick.
+    ///
+    /// The C# wraps the pass in `using (Main.SwapRandom("UpdateLiquid"))`
+    /// (`:71529`); the port's engine draws only the g46 254-nudge
+    /// `surface_rng` stream inside `update`, so the named-stream swap is
+    /// the CALLER's seam for the loot: `world_sim/liquids.rs` resolves the
+    /// drained `edit_kills` on `RngKey::UpdateLiquid`, exactly the stream
+    /// the C# `KillTile` drops draw under the swap. The
+    /// `isGeneratingOrLoadingWorld` early-return (`:71497-71500`) is the
+    /// caller's own — the port's frame loop never runs under generation
+    /// (worldgen completes before the loop starts).
+    pub fn update_world_tick(&mut self, world: &mut World) -> bool {
+        self.skip_count += 1;
+        if self.skip_count > 1 {
+            self.update(world);
+            self.skip_count = 0;
+            true
+        } else {
+            false
         }
     }
 
@@ -1701,6 +1747,121 @@ impl LiquidSystem {
         self.gen_dungeon = ctx;
     }
 
+    // ---- the f25 gen-module export surface (research/70 step 6) -----------
+    // f25's `worldgen/settle_liquids.rs` drives these on its per-pass
+    // LiquidSystem; carried onto the g47 machinery so the g46c graft dedupes
+    // the gen-local copies instead of keeping a second liquid engine.
+    // f25's `set_generating(remix)` maps onto [`Self::set_gen_settle_context`]
+    // above (which also arms the STRICT generatingWorld flag + the re-type
+    // lines — the fuller C# context).
+
+    /// `Liquid.tilesIgnoreWater` (`Liquid.cs:69-73`): the grate 546 and the
+    /// boulder family lose solidity while `ignore` is up. The runtime
+    /// `UpdateLiquid` wraps itself in it (`:986`/`:1157`); the gen callers
+    /// (`QuickWater`, `SettleWaterAt`, `WaterCheck`) drive it directly.
+    pub fn tiles_ignore_water(&mut self, ignore: bool) {
+        self.ignore_solids = ignore;
+    }
+
+    /// `Liquid.worldGenTilesIgnoreWater` (`Liquid.cs:75-81`): the doors
+    /// 10/192 and the living-wood/leaf pair 191/190 lose solidity for the
+    /// whole gen settle pass (`WorldGen.cs:16156`/`:16207`).
+    pub fn world_gen_tiles_ignore_water(&mut self, ignore: bool) {
+        self.gen_ignore_water = ignore;
+    }
+
+    /// `Main.tileSolid[379] = true` (`Liquid.cs:114`/`:451`) — the gen
+    /// `QuickWater` arms the bubble before its sweep; the runtime pass
+    /// re-arms it per update.
+    pub fn set_bubble_solid(&mut self, v: bool) {
+        self.bubble_solid = v;
+    }
+
+    /// `Liquid.numLiquid + LiquidBuffer.numLiquidBuffer` — the gen settle
+    /// loop's per-round budget base (`WorldGen.cs:16164`/`:21271`).
+    pub fn num_liquid_total(&self) -> usize {
+        self.active.len() + self.buffer.len()
+    }
+
+    /// `WorldGen.ClearPendingLiquid` (`WorldGen.cs:80496-80513`): drop
+    /// every active entry and buffered cell, clearing their
+    /// `checkingLiquid` bits. The gen settle tail (`:16205`/`:21304`) —
+    /// the `Invariant.Assert(numLiquid == 0)` (`WorldGenerator.cs:508`)
+    /// holds after it. The skip bits are NOT touched (the C# leaves them;
+    /// `AddWater` clears them on the next wake, `Liquid.cs:1173`).
+    pub fn clear_pending_liquid(&mut self) {
+        if self.active.is_empty() && self.buffer.is_empty() {
+            return;
+        }
+        for e in &self.active {
+            self.set_checking(e.x, e.y, false);
+        }
+        for &(x, y) in &self.buffer {
+            self.set_checking(x, y, false);
+        }
+        self.active.clear();
+        self.buffer.clear();
+    }
+
+    /// The reaction check the `SettleWaterAt` tail's `AttemptToMove*`
+    /// family calls (`Liquid.cs:284-286`): kind 1 → `LavaCheck`, 2 →
+    /// `HoneyCheck`, 3 → `ShimmerCheck` (`Liquid.cs:1445-1468`). The g47
+    /// `attempt_to_move_*` methods carry their own arms; this export is
+    /// for a gen-local `settle_water_at` copy that stays gen-local
+    /// (research/70 step 6's keep-both option).
+    pub fn liquid_reaction_check(&mut self, world: &mut World, x: i32, y: i32, kind: u8) {
+        match kind {
+            1 => self.lava_check(world, x, y),
+            2 => self.honey_check(world, x, y),
+            3 => self.shimmer_check(world, x, y),
+            _ => {}
+        }
+    }
+
+    /// The gen settle loop (`WorldGen.cs:16158-16206`, the
+    /// `SettleLiquidsPart2AndNotTheBees` twin `:21265-21305` is
+    /// classic-identical): `WaterCheck` re-registration, `quickSettle` up,
+    /// 10 outer rounds — each budgets `num3 * 5` `UpdateLiquid` calls
+    /// (`num3` = the active+buffer count at the round head, re-raised
+    /// whenever the live count exceeds it) and runs until `numLiquid == 0`
+    /// or the budget breaks — `WaterCheck` between the rounds, then
+    /// `ClearPendingLiquid` + `quickSettle` down.
+    ///
+    /// The caller arms the context first (`set_gen_settle_context` +
+    /// `world_gen_tiles_ignore_water(true)` + the `QuickWater(3)`
+    /// pre-settle); the `extraLiquid` round bump (`:16173-16176`) is the
+    /// special-seed arm (d107/c30) — classic breaks straight out. The
+    /// progress fractions (`:16179`/`:16184-16199`/`:16203`) drive the
+    /// loading bar only: no tile effect, no draw. The gen driver drains/
+    /// discards `edit_kills` at the pass tail (research/70 step 7 — the
+    /// records must not leak across the per-pass instance).
+    pub fn gen_settle_loop(&mut self, world: &mut World) {
+        self.water_check(world); // `:16158`
+        self.quick_settle = true; // `:16160`
+        let mut num = 0;
+        let num2 = 10; // `:16161`
+        while num < num2 {
+            let mut num3 = self.num_liquid_total() as i64; // `:16164`
+            num += 1;
+            let mut num5 = num3 * 5; // `:16167`
+            while self.active_len() > 0 {
+                // `:16168`
+                num5 -= 1;
+                if num5 < 0 {
+                    break; // `:16170-16178` (the extraLiquid bump is deferred)
+                }
+                let live = self.num_liquid_total() as i64;
+                if live > num3 {
+                    num3 = live; // `:16180-16183`
+                }
+                self.update(world); // `:16200`
+            }
+            self.water_check(world); // `:16202`
+        }
+        self.clear_pending_liquid(); // `:16205`
+        self.quick_settle = false; // `:16206`
+    }
+
     /// `Liquid.QuickWater` (`Liquid.cs:104-148`) — the bulk "settle this
     /// rectangle": walk the rows bottom-up and settle every wet cell.
     /// `verbose` is the progress-display parameter (no port consumer).
@@ -2118,6 +2279,13 @@ impl LiquidSystem {
             return false;
         }
         if self.ignore_solids && (kind == 546 || BOULDER_SOLIDS.contains(&kind)) {
+            return false;
+        }
+        // `Liquid.worldGenTilesIgnoreWater` (`Liquid.cs:75-81`): the doors
+        // 10/192 and the living-wood/leaf pair 191/190 lose solidity for
+        // the whole gen settle pass — the C# pokes `Main.tileSolid` itself,
+        // so the fold rides the raw-table read every consumer shares.
+        if self.gen_ignore_water && matches!(kind, 10 | 192 | 191 | 190) {
             return false;
         }
         if kind == 379 {
@@ -3280,6 +3448,82 @@ mod liquid_settle {
     }
 
     #[test]
+    fn the_promotion_budget_is_the_post_sweep_active_count_clamped_to_the_buffer() {
+        // R-12-5 driver census (`Liquid.cs:1120-1124`): `num8 =
+        // curMaxLiquid - (curMaxLiquid - numLiquid)` is numLiquid AFTER
+        // the retirement sweep (the C#'s own algebra), clamped to
+        // numLiquidBuffer — a buffer longer than the active list drains
+        // only numLiquid entries per cycle, the rest wait for the next.
+        // Five sealed 1-wide cups (x = 7,10,13,16,19 — the (+6,+6) embed)
+        // so every walked cell stays unchanged and no diffusion wakes
+        // pollute the counts.
+        let mut w = basin(15, 8);
+        for y in 0..14 {
+            for x in [6, 8, 9, 11, 12, 14, 15, 17, 18, 20] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in [7, 10, 13, 16, 19] {
+            put_as(&mut w, x, 13, 100, 0);
+        }
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        sys.set_cur_max_liquid(2);
+        sys.add_water(&mut w, 7, 13);
+        for x in [10, 13, 16, 19] {
+            sys.add_water(&mut w, x, 13); // active full -> all four buffer
+        }
+        assert_eq!((sys.active_len(), sys.buffered_len()), (1, 4));
+        sys.set_cur_max_liquid(MAX_ACTIVE);
+        sys.set_cycles(1);
+        sys.update(&mut w);
+        // num8 = min(numLiquid 1, buffer 4) = 1: ONE promotion this cycle;
+        // DelBuffer(0) moved the LAST entry (19,13) into slot 0.
+        assert_eq!(sys.buffered_len(), 3, "the budget clamps to numLiquid");
+        assert_eq!(sys.active_len(), 2);
+        assert_eq!(sys.buffer[0], (19, 13), "the swap-remove head");
+        // The next cycle walks both sealed cells unchanged (no retire),
+        // num8 = min(2, 3) = 2 — two more promote: (19,13) then (16,13).
+        sys.update(&mut w);
+        assert_eq!(sys.buffered_len(), 1, "the budget grew with the list");
+        assert_eq!(sys.active_len(), 4);
+        assert_eq!(sys.buffer[0], (13, 13), "the one still waiting");
+    }
+
+    #[test]
+    fn the_promotion_delbuffers_even_when_addwater_refuses_the_cell() {
+        // R-12-5 driver census (`Liquid.cs:1125-1130`): the promotion loop
+        // clears checkingLiquid, calls AddWater and DelBuffer(0)
+        // UNCONDITIONALLY — a buffered cell whose liquid drained away
+        // before its promotion is refused by AddWater (`:1163` liquid==0)
+        // but still leaves the buffer (no stuck slot).
+        let mut w = basin(9, 8);
+        for y in 0..14 {
+            for x in [7, 9, 11] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        put_as(&mut w, 10, 13, 100, 0);
+        put_as(&mut w, 8, 13, 100, 0);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        sys.set_cur_max_liquid(2);
+        sys.add_water(&mut w, 10, 13);
+        sys.add_water(&mut w, 8, 13); // -> buffer
+        // The buffered cell dries out before its promotion (an edit
+        // drained it; the buffer holds coordinates, not a mass snapshot).
+        w.tiles[w.index(8, 13)].liquid = 0;
+        sys.set_cur_max_liquid(MAX_ACTIVE);
+        sys.set_cycles(1);
+        sys.update(&mut w);
+        assert_eq!(sys.buffered_len(), 0, "DelBuffer ran despite the refusal");
+        assert_eq!(sys.active_len(), 1, "AddWater refused the dry cell");
+        assert!(!sys.is_checking(8, 13), ":1127 cleared the bit first");
+    }
+
+    #[test]
     fn the_stuck_band_self_clears_after_10000_cycles() {
         // `Liquid.cs:1131-1149`: an active count pinned inside ±50 of
         // stuckAmount for 10 000 consecutive cycles force-retires the
@@ -3602,6 +3846,54 @@ mod liquid_force_settle {
         assert!(!sys.quick_settle(), ":760 drops the flag");
         let total: i32 = w.tiles.iter().map(|t| t.liquid as i32).sum();
         assert_eq!(total, 200, "the load settle conserves the mass");
+    }
+
+    // ---- R-12-5 runtime driver witnesses (written, NOT run) ----------------
+
+    #[test]
+    fn the_update_world_driver_runs_the_pass_every_second_tick() {
+        // `WorldGen.cs:71526-71534`: `skipCount++; if (skipCount > 1)
+        // { UpdateLiquid(); skipCount = 0; }` — the first driver tick only
+        // counts, the second runs the pass and resets. The window phase
+        // matches calling `update` directly on every second tick.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 10, 16, 200, 0);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        sys.add_water(&mut w, 10, 16);
+        assert!(!sys.update_world_tick(&mut w), "tick 1 only counts");
+        assert_eq!(sys.skip_count, 1);
+        assert_eq!(w.tiles[w.index(10, 16)].liquid, 200, "no pass yet");
+        assert!(sys.update_world_tick(&mut w), "tick 2 runs the pass");
+        assert_eq!(sys.skip_count, 0, ":71533 resets the counter");
+        assert_eq!(w.tiles[w.index(10, 16)].liquid, 0, "the blob fell");
+
+        // A twin driven by direct `update` every second tick stays
+        // byte-identical across a longer run (the divider adds no phase).
+        let mut w2 = shaft(9, 60, 50, 4);
+        put_as(&mut w2, 10, 16, 200, 0);
+        let mut sys2 = LiquidSystem::new_flow_fixture(&w2);
+        sys2.add_water(&mut w2, 10, 16);
+        for tick in 1..=40 {
+            sys.update_world_tick(&mut w);
+            if tick % 2 == 0 {
+                sys2.update(&mut w2);
+            }
+        }
+        assert_eq!(w.tiles, w2.tiles, "the driver is a pure 2-tick divider");
+        assert_eq!(sys.active_len(), sys2.active_len());
+    }
+
+    #[test]
+    fn re_init_resets_the_driver_divider() {
+        // `Liquid.cs:85` — `ReInit` zeroes `skipCount`, so a world swap
+        // starts the runtime pump on a fresh window.
+        let mut w = shaft(9, 60, 50, 4);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        assert!(!sys.update_world_tick(&mut w));
+        assert_eq!(sys.skip_count, 1);
+        sys.re_init();
+        assert_eq!(sys.skip_count, 0, ":85");
+        assert!(!sys.update_world_tick(&mut w), "the fresh window counts again");
     }
 }
 
@@ -4892,5 +5184,140 @@ mod liquid_addwater_guards {
             before,
             "the isolated death's reframe has no active centre to re-roll"
         );
+    }
+}
+
+/// R-12-5 driver 3 witnesses: the f25 gen-module export surface carried onto
+/// the g47 machinery (research/70 step 6) + the shared gen settle-loop
+/// driver (`WorldGen.cs:16158-16206`). Union re-pin: the fixtures ride the
+/// (+6,+6) embed past AddWater's 5-tile border. Written, NOT run (code-only
+/// mode).
+#[cfg(test)]
+mod liquid_gen_driver {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    /// A walled shaft wide enough for the gen sweep's `x in [4, width-4)`
+    /// column range and deep enough for its `maxTilesY - 5` fall bound.
+    /// W4-g45: the (+6,+6) embed (world +12/+12, floor at `floor_y+6`).
+    fn shaft(width: i32, height: i32, floor_y: i32, cx: i32) -> World {
+        let mut w = World::new("liquid_gd".into(), width + 12, height + 12);
+        for y in 0..=floor_y + 6 {
+            for x in [cx + 5, cx + 7] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 0..width + 12 {
+            let i = w.index(x, floor_y + 6);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put_as(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    #[test]
+    fn world_gen_tiles_ignore_water_lifts_the_door_family() {
+        // `Liquid.cs:75-81`: the doors 10/192 + living wood/leaf 191/190
+        // lose solidity while the gen flag is up; the runtime toggles do
+        // NOT touch them (the two families are disjoint).
+        let mut w = shaft(9, 60, 50, 4);
+        let mut sys = LiquidSystem::new(&w);
+        for kind in [10u16, 192, 191, 190] {
+            let t = Tile { kind, flags: FLAG_ACTIVE, ..Default::default() };
+            assert!(sys.tile_is_solid(&t), "kind {kind} solid stock");
+        }
+        sys.world_gen_tiles_ignore_water(true);
+        for kind in [10u16, 192, 191, 190] {
+            let t = Tile { kind, flags: FLAG_ACTIVE, ..Default::default() };
+            assert!(!sys.tile_is_solid(&t), "kind {kind} lifted for the pass");
+        }
+        sys.world_gen_tiles_ignore_water(false);
+        let t = Tile { kind: 10, flags: FLAG_ACTIVE, ..Default::default() };
+        assert!(sys.tile_is_solid(&t), ":16207 restores the family");
+    }
+
+    #[test]
+    fn clear_pending_liquid_drops_both_lists_and_their_checking_bits() {
+        // `WorldGen.cs:80496-80513`: both lists drop, every entry's
+        // checkingLiquid clears; the skip bits stay (AddWater clears them
+        // on the next wake). An empty pair is a no-op.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 10, 16, 100, 0);
+        put_as(&mut w, 10, 26, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_cur_max_liquid(2);
+        sys.add_water(&mut w, 10, 16);
+        sys.add_water(&mut w, 10, 26); // overflow -> buffer
+        assert_eq!(sys.num_liquid_total(), 2);
+        sys.set_skip(10, 16, true);
+        sys.clear_pending_liquid();
+        assert_eq!(sys.num_liquid_total(), 0, ":80510-80511");
+        assert!(!sys.is_checking(10, 16), ":80503");
+        assert!(!sys.is_checking(10, 26), ":80508");
+        assert!(sys.is_skip(10, 16), "the C# leaves the skip bit");
+        assert_eq!(w.tiles[w.index(10, 16)].liquid, 100, "no tile mutation");
+        sys.clear_pending_liquid(); // the empty-pair early return
+    }
+
+    #[test]
+    fn the_gen_settle_loop_drains_the_lists_and_drops_quick_settle() {
+        // `WorldGen.cs:16158-16206`: WaterCheck re-registers, the 10-round
+        // budget loop drains numLiquid to 0, WaterCheck runs between the
+        // rounds, ClearPendingLiquid + quickSettle=false close it. The
+        // caller arms the gen context + QuickWater pre-settle first.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 10, 16, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_gen_settle_context(w.height, 0, false);
+        sys.world_gen_tiles_ignore_water(true);
+        sys.quick_water(&mut w, 9, -1);
+        sys.gen_settle_loop(&mut w);
+        assert!(!sys.quick_settle(), ":16206");
+        assert_eq!(sys.num_liquid_total(), 0, ":16205 + the exit invariant");
+        assert_eq!(w.tiles[w.index(10, 16)].liquid, 0, "the origin drained");
+        let total: i32 = w.tiles.iter().map(|t| t.liquid as i32).sum();
+        assert_eq!(total, 200, "the gen settle conserves the mass");
+        // The blob landed on the floor and settled to 255-or-less rows.
+        assert!(w.tiles[w.index(10, 55)].liquid > 0, "the floor holds the mass");
+    }
+
+    #[test]
+    fn the_gen_settle_loop_on_a_diffusing_film_still_clears_the_tail() {
+        // `WorldGen.cs:16162-16205`: whatever the rounds do — drain to 0
+        // or break on the `num3 * 5` budget (`:16167-16178`, ported
+        // verbatim; the extraLiquid bump is the special-seed arm) — the
+        // tail ALWAYS runs ClearPendingLiquid + quickSettle=false. A wide
+        // alternating film exercises the diffusion wakes between rounds.
+        // W4-g45: the film sits at x 10..42 in the widened 52x42 world.
+        let mut w = World::new("liquid_budget".into(), 52, 42);
+        for x in 0..52 {
+            let i = w.index(x, 31);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        for x in 10..42 {
+            let i = w.index(x, 30);
+            w.tiles[i].liquid = if x % 2 == 0 { 3 } else { 2 };
+        }
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_gen_settle_context(w.height, 0, false);
+        sys.gen_settle_loop(&mut w);
+        assert_eq!(sys.num_liquid_total(), 0, "the tail clears regardless");
+        assert!(!sys.quick_settle());
     }
 }

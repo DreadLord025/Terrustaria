@@ -7,10 +7,11 @@ use tr_core::TILE_PX;
 
 use crate::app::App;
 
-/// Fixed 60 Hz liquid stepping; `Liquid.UpdateLiquid` itself runs every second
-/// tick, matching the original 30 Hz rate.
+/// Fixed 60 Hz liquid stepping; the `WorldGen.UpdateWorld` driver
+/// (`WorldGen.cs:71526-71534`) runs `Liquid.UpdateLiquid` every second tick
+/// via `Liquid.skipCount` — the counter rides `LiquidSystem` itself (the C#
+/// static, `Liquid.cs:19`), so `ReInit` resets the window on a world swap.
 pub(crate) fn update_liquids(app: &mut App, dt: f32) {
-    let liquid_tick = &mut app.liquid_tick;
     let liquids = &mut app.liquids;
     let world = &mut app.world;
     let audio = &mut app.audio;
@@ -18,9 +19,12 @@ pub(crate) fn update_liquids(app: &mut App, dt: f32) {
     // and resolve after it (the `app` borrow) — the two cannot overlap.
     let mut pending_kills = Vec::new();
     app.liquid_step.tick(dt, |_| {
-        *liquid_tick = liquid_tick.wrapping_add(1);
-        if *liquid_tick % 2 == 0 {
-            liquids.update(world);
+        // `WorldGen.cs:71526-71533` — `skipCount++; if (skipCount > 1)
+        // { using (Main.SwapRandom("UpdateLiquid")) UpdateLiquid();
+        // skipCount = 0; }`, verbatim on the engine driver. The RNG swap is
+        // this caller's seam: the drained kills below resolve on
+        // `RngKey::UpdateLiquid` (the stream the C# `KillTile` drops draw).
+        if liquids.update_world_tick(world) {
             // `Liquid.cs:1345-1347`: the live merge plays its
             // `PlayLiquidChangeSound` inline — the port's engine is pure,
             // so it queues the events and the tick plays them here
