@@ -78,6 +78,7 @@ per `docs/superpowers` agreements).
 | 240 | Happiness final round (W4-g58: the buy/sell latch repoint + the report-UI census COMPLETE + the savings 3-way call-site census 142-input + the portrait-hop state port; code-only; renumbered 143→240 per registry-150, 143 stays with c4) | `240-happiness-final.md` | ✅ |
 | 241 | f37 latch-repoint hunks (W4-g58 retire: the five exact `shop_mood` → `shopping_settings.price_adjustment` hunks against f37 tip `908482d52` for the f37 lane/merger; prerequisite + apply-order + not-repointed census; code-only) | `241-f37-latch-repoint-hunks.md` | ✅ |
 | 242 | Chat-portrait system task-seed → f22 (the CloseUp/FullBodyRetro dummy-NPC contract + the unported provider rows) + the happiness-family SEALED bible (g58-latch canonical / f37-price-math / d122-shops, one paragraph; code-only) | `242-chat-portrait-seed-happiness-sealed.md` | ✅ |
+| 243 | Seal verification round (W4-g58: the 4 retire commits PUSHED `d0f6275a5`; fresh 358-tip 237–249 scan — 240 SOLE claimant, NO collision, the sibling 237/238 assignments SUPERSEDED (c8/d42/g61 TRIPLE-238, e23/g48 237, d120 still-143); no registry-150b at any tip; f37 hunks re-verified line-exact at still-parked `908482d52`; f22 retired `8c1b40a46` BEFORE the seed reached origin — the dummy-mode remainder UNCLAIMED for a successor; code-only) | `243-seal-verification.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

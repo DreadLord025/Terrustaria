@@ -39605,3 +39605,19 @@ port):
   portrait Detailed arm landed. The dummy-NPC portrait modes ride the
   f22 task-seed (research/242 §2 — the f22 lane is ALIVE, tip `a2fdf86fb`
   10:57:48).
+
+The SEAL-VERIFICATION round (2026-11-21 ~14:00, code-only; research/243):
+the four retire commits PUSHED (`2ff3b7062..d0f6275a5`, ls-remote
+confirmed). A fresh 358-tip 237–249 scan finds 240 g58's SOLE claim — NO
+collision, the rename stands; the sibling assignments in 240's renumber
+note are SUPERSEDED (c8/d42/g61 collide on 238, e23/g48 on 237, d120's
+chatter-retire is still 143; those lanes/the merger resolve — a
+correction is appended in research/240). No registry-150b refresh exists
+at any tip (d54 still `38bfd1d22`). The f37 hunks re-verified LINE-EXACT
+at the still-parked tip `908482d52` (~11.2 h) — research/241 is now at
+origin for the f37 lane/merger. f22 RETIRED at `8c1b40a46` (12:04:59,
+family COMPLETE) BEFORE the 242 seed reached origin and carries no
+portrait claim — the CloseUp/FullBodyRetro remainder is UNCLAIMED for a
+successor lane (the `draw_portrait` preference-1/2 replace site stands);
+d120 retired `2408233da`, no compose owed. f22's new 144 collides with
+c4's registry-144 (f22 renames on its own branch).

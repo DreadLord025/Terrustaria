@@ -27,6 +27,10 @@ branch (`d2943e4aa`):
 
 ## 2. The task-seed: the portrait-system remainder (f22 or successor)
 
+**UPDATE (research/243 §3):** f22 retired at `8c1b40a46` (12:04:59) BEFORE
+this seed reached origin — the remainder is UNCLAIMED; the seed addresses
+a SUCCESSOR lane. The contract below is unchanged.
+
 **Scope — the two dummy-NPC modes + the mode cycle + the unported rows:**
 
 1. **CloseUp** (`Main.cs:40379-40416`): `Main._portraitDummy`

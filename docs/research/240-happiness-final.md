@@ -24,6 +24,14 @@ tip; the 237/238/239 assignments are recorded here for those lanes/merger —
 each renames on its OWN branch. Content below is unchanged from the 143
 edition; refs updated (INDEX row, ANALYSIS §citations, the two code comments).
 
+**CORRECTION (research/243, ~14:00 re-scan): the sibling assignments above
+are SUPERSEDED.** The lanes chose differently: c8 took 238, d42 took
+238+239, g61 took 238 (a TRIPLE 238 collision), e23/g48 both took 237, and
+d120 never renamed (its chatter-retire doc is still 143 at its retired
+tip). 240 itself has NO collision — g58 is the sole 240 claimant at every
+tip; the rename stands. The 237/238 collisions belong to those lanes/the
+merger; full table in research/243 §1.
+
 Refs examined (origin tips at the round's start):
 
 | Lane | Tip | Scope |
