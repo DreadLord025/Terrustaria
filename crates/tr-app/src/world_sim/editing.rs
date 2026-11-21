@@ -1998,6 +1998,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
+    // W4-g88 — the Life Fruit permanent upgrade (`ItemCheck_UseLifeFruit`,
+    // `Player.cs:45290-45304`, the `:43596` permanent-item slot between the
+    // Life Crystal `:43595` and the Mana Crystal `:43597` — the a6 lane owns
+    // those two). Same machine shape as the recall cluster above: the press
+    // edge starts the HoldUp swing, the grant fires at ItemTimeIsZero inside
+    // it, one fruit per press (autoReuse false). A started use consumes the
+    // tick like the boss arms.
+    if crate::life_fruit::life_fruit_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
     // `Player.cs:43751-43900`) and the event items (`ItemCheck_UseEventItems`,
     // `:43921-44055`) fire MID-SWING: their gate is `ItemTimeIsZero &&

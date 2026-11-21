@@ -12,6 +12,11 @@ pub struct SavedPlayer {
     pub x: f32,
     pub y: f32,
     pub hp: i32,
+    /// `Player.statLifeMax` / `statLifeMax2` (`Player.cs:54773`'s write,
+    /// `:55220-55224`'s read) — version 7 of the sidecar (W4-g88: the Life
+    /// Fruit's permanent +5, `life_fruit.rs`). Older files load `None` and
+    /// the loader keeps the fresh-default maxima. `(permanent, effective)`.
+    pub life_max: Option<(i32, i32)>,
     pub inventory: [(u16, u32); 50],
     pub coins: u64,
     /// `Player.armor[0..3]` item ids — head, body, legs (0 = empty). Version 4
@@ -49,7 +54,7 @@ pub fn save(
     dye: &[u16; 10],
     kills: &[(String, i32)],
 ) -> std::io::Result<()> {
-    let mut s = format!("6\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("7\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -69,6 +74,11 @@ pub fn save(
         s.push_str(&format!("{kind} "));
     }
     s.push_str("\n");
+    // Version 7 (W4-g88): the life maxima — `statLifeMax` (the permanent
+    // cap, the Life Fruit's +5 ledger) then `statLifeMax2` (the effective
+    // max). Vanilla rides both in the .plr (`Player.cs:54773`); the port's
+    // live-session sidecar appends them after the dye line.
+    s.push_str(&format!("{} {}\n", player.life_max_base, player.max_hp));
     std::fs::write(player_path(world), s)
 }
 
@@ -78,9 +88,10 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let version = lines.next()?.trim();
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
-        // dye kinds; 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
-        // tile/wall/weapon/coin ranges and are converted on load.
-        "3" | "4" | "5" | "6" => false,
+        // dye kinds; 7 the life-maxima pair (W4-g88); 3 stores vanilla
+        // `ItemID`s; 1 and 2 stored the ad-hoc tile/wall/weapon/coin ranges
+        // and are converted on load.
+        "3" | "4" | "5" | "6" | "7" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -107,7 +118,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if version == "4" || version == "5" || version == "6" {
+    if matches!(version, "4" | "5" | "6" | "7") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -115,7 +126,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if version == "5" || version == "6" {
+    if matches!(version, "5" | "6" | "7") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -130,16 +141,29 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if version == "6" {
+    if matches!(version, "6" | "7") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
         }
     }
+    // Version 7 (W4-g88) adds the life-maxima pair after the dye line:
+    // `statLifeMax` (permanent) then `statLifeMax2` (effective). The
+    // permanent half clamps to 500 (`Player.cs:55221-55224`'s read clamp);
+    // older files carry None and the loader keeps the fresh defaults.
+    let life_max = if version == "7" {
+        let mut life_line = lines.next()?.split_whitespace();
+        let base: i32 = life_line.next()?.parse().ok()?;
+        let effective: i32 = life_line.next()?.parse().ok()?;
+        Some((base.min(500), effective))
+    } else {
+        None
+    };
     Some(SavedPlayer {
         x,
         y,
         hp,
+        life_max,
         inventory,
         coins,
         armor,
@@ -160,6 +184,9 @@ mod tests {
         p.x = 123.5;
         p.y = 45.25;
         p.hp = 73;
+        // W4-g88: a fruit-upgraded character's permanent + effective caps.
+        p.life_max_base = 405;
+        p.max_hp = 405;
         let dir = crate::test_world_helpers::test_scratch("persist-player-state");
         let path = dir.join("tr-persist-test.trwld");
         let mut inv = [(0u16, 0u32); 50];
@@ -183,6 +210,7 @@ mod tests {
         .unwrap();
         let s = load(&path).expect("sidecar");
         assert_eq!((s.x, s.y, s.hp), (123.5, 45.25, 73));
+        assert_eq!(s.life_max, Some((405, 405)), "the v7 life-maxima pair");
         assert_eq!(s.inventory[0], (2, 12));
         assert_eq!(s.inventory[3], (12, 1));
         assert_eq!(s.inventory[49], (0, 0));
@@ -221,6 +249,51 @@ mod tests {
         let s = load(&path).expect("v5 sidecar");
         assert_eq!(s.armor, [89, 80, 76]);
         assert_eq!(s.dye, [0; 10]);
+        assert_eq!(s.life_max, None, "pre-v7 files carry no life maxima");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g88: a v6 sidecar (dye, no life-maxima line) loads with `None` —
+    /// the loader keeps the fresh-default maxima for pre-fruit saves.
+    #[test]
+    fn version_6_loads_without_life_maxima() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v6");
+        let path = dir.join("tr-persist-v6.trwld");
+        let mut line = String::from("6\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push('\n');
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v6 sidecar");
+        assert_eq!(s.armor, [89, 80, 76]);
+        assert_eq!(s.dye, [0; 10]);
+        assert_eq!(s.life_max, None);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g88: the v7 read clamps the permanent cap at 500
+    /// (`Player.cs:55221-55224`'s `statLifeMax > 500` clamp).
+    #[test]
+    fn version_7_clamps_the_permanent_cap_at_five_hundred() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-clamp");
+        let path = dir.join("tr-persist-v7.trwld");
+        let mut line = String::from("7\n1.0 2.0 500\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n900 900\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v7 sidecar");
+        assert_eq!(s.life_max, Some((500, 900)), "the permanent half clamps");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

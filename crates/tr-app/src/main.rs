@@ -175,6 +175,9 @@ mod melee_on_hit;
 mod player;
 mod player_file;
 mod potions;
+// W4-g88: the Life Fruit permanent upgrade (Player.cs:45290-45304) — wired
+// at world_sim/editing.rs's permanent-item seam (the :43596 slot).
+mod life_fruit;
 mod prefix;
 pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;

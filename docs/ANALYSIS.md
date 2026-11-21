@@ -39244,3 +39244,53 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The Life Fruit use path (W4-g88)
+
+- **The use gate has no boss flag.** `Player.ItemCheck_UseLifeFruit`
+  (`Player.cs:45290-45304`) gates on `type == 1291 && itemAnimation > 0 &&
+  statLifeMax >= 400 && statLifeMax < 500 && ItemTimeIsZero` only. The task
+  brief's "Plantera-gated" is availability, not use: Life Fruit tiles grow
+  under `Main.hardMode && NPC.downedMechBossAny` (`WorldGen.cs:74449-74478`
+  — re-verified against the source; NOT downedPlantBoss). The port adds no
+  invented boss gate to the use; the growth pass and the 236-tile break
+  drop (`:48027-48030` → `Item.NewItem` 1291) stay the worldgen/framing
+  lanes' scope.
+- **Two maxima, one port field pair.** `statLifeMax` maps to the new
+  permanent `Player.life_max_base` (the `mana_max_base` precedent);
+  `statLifeMax2` maps to the existing effective `max_hp` (the
+  `player.rs:3597` convention — no per-tick rebase is wired yet,
+  `ResetEffects`' `statLifeMax2 = statLifeMax` `:18388` has no port
+  counterpart). The fruit raises BOTH by 5 and the life by 5 RAW (no
+  use-site clamp, `:45297`); the gate reads the permanent field so a
+  buff-inflated max can never widen the window.
+- **The achievement dispatch is named, not generic.**
+  `HandleSpecialEvent(2)` completes GET_A_LIFE's Use condition and checks
+  TOPPED_OFF at 500/200 (`AchievementsHelper.cs:298-305`). The port's
+  `notify_custom("Use")` fans out to EVERY Use-flag row (STAR_POWER,
+  NOT_THE_BEES …), so `achievements.rs` gains `complete_named(row, cond)`
+  — the `GetCondition(row, cond).Complete()` shape — and
+  `handle_special_event_life_mana` for cases 1/2 (case 1 is wired for the
+  a6 Mana Crystal lane to call; the other event ids stay their lanes').
+- **Persistence is the v7 sidecar line.** Vanilla writes `statLifeMax` in
+  the .plr (`:54773`; `player_file.rs` already round-trips it with the 500
+  read-clamp). The port's live-session save is the `.trplayer` sidecar, so
+  `persist.rs` v7 appends `life_max_base max_hp` after the dye line; v3-v6
+  files load `None` and keep the fresh defaults. `App::new` applies the
+  pair BEFORE the hp clamp so a saved 405-life character keeps its hp.
+  The permanent cap clamps at 500 on read (`:55221-55224`).
+- **Machine shape.** The press-edge start + per-tick grant is the
+  `recall_item_check` convention (the boss-spawner ItemTimeIsZero fold):
+  StartActualUse leaves itemTime 0, so the grant lands on the press tick
+  itself; autoReuse false means one fruit per press. The consume is the
+  generic `:43280-43326` tail with the drink seam's TurnToAir fold. The
+  wire sits at `update_editing`'s permanent-item seam right after the
+  recall cluster (the `:43595-43597` C# order; the a6 Life Crystal / Mana
+  Crystal arms slot in around it when that lane lands).
+- **Code-only mode.** No cargo/rustc/tests invoked (the swarm contract).
+  Witnesses: `life_fruit.rs` 9 (the 400 grant, the below-400 refusal, the
+  500 cap, the twenty-fruit ladder, the RAW life add, GET_A_LIFE +
+  TOPPED_OFF timing + the STAR_POWER sparing, the one-grant cadence, the
+  CCed refusal, the sidecar round-trip + reload gate) + `persist.rs` 3
+  (the v7 pair in the round-trip, the v6 back-compat None, the 500
+  read-clamp) — WRITTEN, NOT RUN.
+
