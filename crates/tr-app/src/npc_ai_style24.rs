@@ -1249,6 +1249,44 @@ mod tests {
         assert!(fbody.contains("self.old_vx = self.vx"));
     }
 
+    /// W4-d127 FINAL item 5 — the d38 RETIRE-HUNK publication pin: the
+    /// axis-24 arm carries the merger-facing retire contract naming the
+    /// exact d38-tip hunks to delete (the two BirdBlue/BirdRed kind arms
+    /// + the whole `fn update_bird`), and THIS lane's `ai_024_bird_family`
+    /// is the superset that survives (live luck, the sim stamps, the 317
+    /// drain, the gravity gate). The contract is a doc comment on the
+    /// arm; this pin keeps it present so a merge that drops it breaks
+    /// the witness. WRITTEN NOT RUN.
+    #[test]
+    fn the_d38_retire_hunk_is_published_on_the_axis_arm() {
+        let src = include_str!("npc.rs");
+        // The retire contract sits on the axis-24 arm.
+        let arm = src.find("24 => self.ai_024_bird_family").expect("the axis arm");
+        // Walk back to the arm's comment block head (the else-if cite).
+        let head = src[..arm].rfind("else if (this.aiStyle == 24)").expect("the arm's doc head");
+        let block = &src[head..arm];
+        assert!(block.contains("W4-d127 FINAL item 5"), "the retire-hunk header");
+        assert!(block.contains("the d38 RETIRE-HUNK"), "the contract title");
+        // Hunk (A): the two kind arms, named verbatim.
+        assert!(block.contains("NpcKind::BirdBlue => self.update_bird"));
+        assert!(block.contains("NpcKind::BirdRed => self.update_bird"));
+        assert!(block.contains("6530-6533"), "the d38 kind-arm line span");
+        // Hunk (B): the whole update_bird fn, named with its span.
+        assert!(block.contains("fn update_bird"), "the fn retire");
+        assert!(block.contains("12312-12376"), "the d38 fn line span");
+        // The superset rationale: live luck vs d38's hardcoded 0.0, the
+        // 317 drain d38 ignores, the gravity gate d38's tail lacks.
+        assert!(block.contains("player.luck()"), "the live-luck superset");
+        assert!(block.contains("out.transform"), "the 317 drain d38 ignores");
+        assert!(block.contains("out.no_gravity"), "the gravity gate d38 lacks");
+        // The merge order: kinds first, then retire (A)+(B) together.
+        assert!(block.contains("MERGE ORDER"), "the merge-order note");
+        assert!(block.contains("S1-D-4c"), "the one-live-arm rule");
+        // The surviving fn is THIS lane's superset (the axis-claim pin
+        // above already scans its body; here just confirm it exists).
+        assert!(src.contains("fn ai_024_bird_family"), "the surviving family fn");
+    }
+
     /// W4-d127 chain item 2 — the sim-stamp source pin: the pre-pass
     /// stamps `cloud_alpha` (Rain.visual_alpha) and the slot-order
     /// roost neighbours with the per-slot `is_self` flag for EVERY

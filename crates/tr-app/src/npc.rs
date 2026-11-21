@@ -4709,6 +4709,52 @@ impl Npc {
             // match arm) and the kind arm retires (one live arm per style,
             // S1-D-4c). RNG: the poop gate's RollOnlyBadLuckExtreme(50)
             // draws ONLY for a negative-luck player (the module census).
+            //
+            // =========================================================
+            // W4-d127 FINAL item 5 — the d38 RETIRE-HUNK (publish for the
+            // merger). At the d38 merge the axis arm above wins FIRST-
+            // match for ai_style 24, so d38's kind-keyed `update_bird`
+            // path is DEAD and must be RETIRED (not merged alongside).
+            // The exact d38-tip (6f9dd02db) hunks to DELETE in npc.rs:
+            //
+            // (A) the two kind arms in `update_kind_ai` (d38 npc.rs:
+            //     6530-6533, the `// W4-d38 b4 — aiStyle 24` comments +
+            //     the arms):
+            //         // W4-d38 b4 — aiStyle 24, NPC.cs:25313-25537.
+            //         NpcKind::BirdBlue => self.update_bird(world, player, rng),
+            //         // W4-d38 b4 — aiStyle 24.
+            //         NpcKind::BirdRed => self.update_bird(world, player, rng),
+            //     RETIRE both: BirdBlue/BirdRed carry ai_style 24 (d38
+            //     data.rs:2647-2648), so the axis arm routes them. Keep
+            //     the KINDS + their data rows (cs_id 297/298, size 14×14,
+            //     ai_style 24, the catch_item 2016/2017 rows) — only the
+            //     dispatch arms retire. The s1_d_4c one-arm-per-kind
+            //     witness (d38 npc.rs:20722) stays green: each kind keeps
+            //     exactly one arm (the axis), the kind arms are gone.
+            //
+            // (B) the whole `fn update_bird` (d38 npc.rs:12312-12376, the
+            //     doc comment + the fn body). RETIRE it: this lane's
+            //     `ai_024_bird_family` is the SUPERSET — same module call
+            //     (`npc_ai_style24::ai_style_24(self, self.kind.cs_id()...)`)
+            //     but feeding LIVE `player.luck()` (d38 hardcodes 0.0),
+            //     the sim-stamped `cloud_alpha` + `style24_neighbors`
+            //     (d38 passes 0.0 / &[]), the 317 transform completion
+            //     drain (d38 IGNORES out.transform), and the gravity gate
+            //     on out.no_gravity + the wet 0.2/7 row + the dead-band
+            //     snap (d38's tail has none of these). d38's tail is the
+            //     bare X-then-Y collision stand-in; this lane's tail is
+            //     the full C# UpdateNPC own. Nothing in d38's update_bird
+            //     survives the merge — delete the fn wholesale.
+            //
+            // MERGE ORDER: land d38's KINDS + data rows first (the axis
+            // arm is dormant until a kind carries ai_style 24), THEN
+            // retire hunks (A)+(B) in the same merge resolution so no
+            // tick dispatches the dead kind arm. The axis arm + the
+            // ai_024_bird_family fn + the sim pre-pass + the 317 drain
+            // are THIS lane's, already landed. Do NOT keep both arms
+            // (the FIRST-match would shadow the kind arm silently — the
+            // S1-D-4c duplicate-arm hazard the one-arm witness pins).
+            // =========================================================
             24 => self.ai_024_bird_family(world, player, rng),
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
