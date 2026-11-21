@@ -39432,3 +39432,121 @@ find_frame_kind_extra7 vanilla-id seam, no npc.rs hook this wave.
 Main.rand draw :74844 is 634-gated; the eye group's :74007 dust is
 23-gated - neither is 316/317/318). Frame counts vs Main.cs:67082
 entry-by-entry AND render/entities.rs NPC_FRAME_COUNT.
+
+### W4-f27 extra wave 7 — the per-case notes (slice complete, 15/15)
+
+`crates/tr-app/src/npc_findframe_extra7.rs` — the 15 arms landed in
+3 batches of 5 (b984ab0e / fc7a6671 / b062efbe), the
+`find_frame_kind_extra7` vanilla-id seam, the wave-B
+`humanoid_fighter_frame` pub(crate) lift (the extra-3 delegate
+precedent — the SAME one-line visibility change, keep-one at the
+merge). No `npc.rs` hook this wave (the f26/f27 shape, zero conflict
+surface with the in-flight g6/g7 wire hooks).
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 316 | Ghost | `:74834` (the floater group) | 4 (`:67115`) |
+| 317 | DemonEyeOwl | `:74003` (the eye group) | 2 (`:67115`) |
+| 318 | DemonEyeSpaceship | `:74004` (the same group) | 2 (`:67115`) |
+| 322 | SkeletonTopHat | `:68599` (the humanoid group) | 16 (`:67116`) |
+| 323 | SkeletonAstonaut | `:68600` (the same group) | **15** (`:67116` slot 3) |
+| 324 | SkeletonAlien | `:68601` (the same group) | 16 (`:67116`) |
+| 333 | SlimeRibbonWhite | `:70814` (the slime strip group) | 2 (`:67117`) |
+| 334 | SlimeRibbonYellow | `:70815` (the same group) | 2 (`:67117`) |
+| 335 | SlimeRibbonGreen | `:70816` (the same group) | 2 (`:67117`) |
+| 336 | SlimeRibbonRed | `:70817` (the same group) | 2 (`:67117`) |
+| 337 | BunnyXmas | `:76854` (the bunny hop group) | 7 (`:67117`) |
+| 437 | CultistTablet | `:71987-71996` | 4 (`:67127`) |
+| 438 | CultistDevote | `:71998-72015` | 4 (`:67127`) |
+| 440 | CultistBossClone | `:72018` (the 439/440 pose ladder) | 16 (`:67128`) |
+| 442 | GoldBird | `:73631` (the 74/297/298 bird group) | 5 (`:67128`) |
+
+Per-case notes (all verbatim, row-index convention — `num` cancels):
+
+* **316 the Ghost** (the floater group `:74823-74884`, shared with
+  48/49/51/60/82/93/137/182/210/211/253/634/662/664 — wave-B's Wraith
+  82 and extra-4's Reaper 253 are the SAME machine, keep-one at the
+  merge): the vx-sign flip (0 leaves it), the `vx * 0.1` tilt, the
+  6-tick strip over the FULL 4 rows. 316 is NOT in the `num292--`
+  list (49/51/60/634), not the type-48 `num291 = 5`, not the 210/211
+  double-increment. The group's only `Main.rand` draw (`:74844`) is
+  634-gated — the arm is RNG-free.
+* **317/318 the costume demon eyes** (the eye group `:73994-74059`,
+  shared with 2/23/121/169/190-194/660 — wave-A's five eye variants
+  keep-one): the FIRST aim branch (`:74019-74031`) carries 317/318 —
+  `spriteDirection` mirrors the flight sign, `rotation =
+  atan2(vy, vx)` with the literal `3.14f` (NOT PI) left offset; both
+  freeze at `vx == 0`. The 8-tick strip cycles the 2 rows. The
+  SECOND flip branch (`:74032-74043`) is unreachable for them (the
+  first branch's type list wins); the 23 dust and the 121/660
+  `localAI[0]` latch are other kinds'.
+* **322/323/324 the costume skeletons** (the humanoid group
+  `:68543-68634` → the fighter walk `:68647-69655`, the wave-B
+  `humanoid_fighter_frame` keep-one delegate): aiStyle-3 fighters
+  (`SetDefaults :13075-13114`, no townNPC), so `num57` = 0, the walk
+  wraps at the FULL count; the grounded ±1 flip, the idle row-0
+  snap, the lift-to-2 + `|vx| * 2 + 1` accumulator with the > 6
+  step, the air row 1 (NONE of the trio is in the `:69647` pin
+  list). The 323 astronaut is the ONE 15-row sheet (`Main.cs:67116`
+  slot 3) — its walk reaches row 14 before the wrap-to-2; the
+  322/324 16-row twins reach row 15.
+* **333-336 the ribbon slimes** (the slime strip group
+  `:70801-70846`, shared with 1/16/59/71/81/138/147/183/184/204/225/
+  302/304/535/537/658/659/667/676 — the port's Slime arm
+  `npc.rs:7772` + wave-A's slime roster keep-one): the num2-fed
+  counter (+1 always, +1 moving/air, +1 attack), the >= 8 step over
+  the FULL 2 rows. The 302/304 sprite snap (`:70824-70827`) is the
+  town slimes' — the ribbons never write spriteDirection.
+* **337 the Christmas bunny** (the bunny hop group `:76851-76904`,
+  shared with 46/47/303/443/464/540/614/646-652 — d44's 46/47
+  keep-one): the grounded ±1 flip (0 leaves it), the idle row-0
+  snap + counter zero, the `|vx| * 1 + 1` accumulator with the > 6
+  step over the FULL 7 rows (wrap to 0), the air pins row 4 rising
+  / row 6 falling (both zero the counter).
+* **437 the Cultist Tablet** (`:71987-71996`): counter++ then the
+  >= 20 reset runs BEFORE the band read — the row is
+  `(int)counter % 20 / 5`, four 5-tick bands over the 4 rows; tick
+  20 shows row 0. Velocity ignored, no sprite/rotation write.
+* **438 the Cultist Devote** (`:71998-72015`): the 49-tick MIRRORED
+  cycle — counter++ (+1 more while `ai[1] == 1`, the ritual chant),
+  the >= 49 reset, the band `(int)counter % 49 / 7` runs 0..6 and
+  the >= 4 tail mirrors (`6 - band`): rows 0/1/2/3/2/1/0, seven
+  ticks a band. The chant's +2/tick lands the 49 reset mid-cycle
+  (tick 25 from 0).
+* **440 the Cultist Boss Clone** (the 439/440 pose ladder
+  `:72017-72101`): `localAI[2]` (the AI_084 pose selector,
+  `:64616-64644`) picks the pose — 0/1/2 the idle poses (the
+  off-home-row bands 4-6 / 10-12 / 7-9, the >= 15 tail snaps the
+  home row 0/1/2 AND zeroes the counter), 10/11/12 the attack poses
+  (the SAME bands, the >= 15 tail only zeroes the counter — the row
+  keeps cycling), 13 the ritual (rows 13-15); any other selector
+  writes NO frame. The counter++ runs AFTER the switch (`:72100`).
+  The `IsABestiaryIconDummy` branch (`:72021-72032`) is a
+  display-only dummy path — skipped (the port has no bestiary-dummy
+  NPC entity). 439 itself is the port's AncientCultist (the
+  `npc.rs:7135` 1-frame stub — the wiring round's keep-one: the
+  stub is WRONG vs this ladder, recorded for the roster wave).
+* **442 the Gold Bird** (the bird group `:73628-73652`, shared with
+  74/297/298 — f26c's 297/298 keep-one): the UNCONDITIONAL
+  direction copy (0 included — NOT the humanoid ±1 gate), the
+  `vx * 0.1` tilt, the still-air (`vx == 0 && vy == 0`) snap to
+  row 4 + counter zero (the 5-row sheet's perch row), the 4-tick
+  strip over rows 0..count-2 (`num124` = count - 1 — row 4 is
+  perch-only on the flap; a perch-row state wraps to 0 on the
+  first moving tick).
+
+Witnesses: 12 tests WRITTEN NOT RUN (code-only mode) — the
+frame-count table cross-check (all 15 vs `NPC_FRAME_COUNT`), the
+Ghost full-4 flap + flip/tilt, the costume-eye atan2 aim + vx==0
+freeze, the skeleton fighter bands + the 15/16-row count-variant
+wrap, the ribbon num2 feed (idle 8 / moving 4 / attack 3 ticks a
+step), the bunny 7-row hop + air pins, the tablet 4-band cycle, the
+devote mirrored cycle + chant, the clone pose ladder (idle snap /
+attack cycle / ritual / unknown-selector no-write), the gold bird
+perch + unconditional copy, the 15-kind 5x3x3x3 strip sweep (40
+ticks, every row inside its sheet) and the exact-slice seam sweep.
+The strip/band expectation tables were re-derived by mechanical
+replay of the ported machines (a Python transcription of the C#
+order), not by hand alone. Frame counts cross-checked
+entry-by-entry: `Main.cs:67082`'s 697-entry initializer vs
+`render/entities.rs::NPC_FRAME_COUNT` — all 15 agree.
