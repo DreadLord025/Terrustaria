@@ -255,12 +255,18 @@ orb per tick rides `UpdatePlayers` (deviation 3).
 
 - The drain latency (the S1-E-21c batch convention, the `pending_retaliate`
   precedent): the reactions queue + drain at the hitting pass's tail.
-- The paladin share is single-player-unreachable (NOT ported).
-- The frost/bone armor dust keys + the shader post-arms are the visual lane.
-- The Solar shield-orbit + Beetle orb-orbit positions are cosmetic (unported).
-- The 608 blast's dust/gore burst bodies are the visual lane (the draw census
-  keeps the explicit `Main.rand` draws on the stream).
-- The stealth-decay machine is unported (the `stealth = 1f` hurt write is the seam).
+- The paladin share is single-player-unreachable (NOT ported); the MP
+  future-wire is d70 `ee4905939`'s `PlayerNet.team`/`dead`/`paladin_shield()`
+  + the remote-player life sim (deviation 5).
+- The frost/bone armor dust keys PORTED (deviation 4,
+  `apply_armor_sound_and_dust_changes`); the shader post-arms stay the dye lane.
+- The Solar shield-orbit positions stay cosmetic (unported); the Beetle
+  orb-orbit PORTED (deviation 3) + the `DrawPlayer_37_BeetleBuff` draw layer.
+- The 608 blast's dust/gore burst bodies PORTED (deviation 2,
+  `solar_flare_blast_bodies` through the g64-pattern `BlastRng` adapter); the
+  draw census stays as the stream-parity oracle.
+- The stealth-decay machine is f3-canonical (`4d820f7d`); this branch's
+  `stealth = 1f` hurt write composes 1:1, keep-one at merge (deviation 1).
 
 ### Witnesses (WRITTEN NOT RUN — code-only mode)
 
@@ -274,10 +280,16 @@ orb per tick rides `UpdatePlayers` (deviation 3).
   `w4_f50_the_beetle_defense_set_recharges_an_orb_every_180_ticks`,
   `w4_f50_the_beetle_solar_buff_ladder_rederives_the_counts`,
   `w4_f50_the_hurt_queues_the_combat_text_and_hit_dust`,
-  `w4_f50_the_football_and_golf_club_hurt_arms_queue`.
+  `w4_f50_the_football_and_golf_club_hurt_arms_queue`,
+  `w4_f50_the_beetle_orb_orbit_integrates_and_draws_the_jitter_pair` (dev 3).
 - `hurt_modifiers.rs`: `w4_f50_the_football_drain_spawns_the_return_and_clears_the_slot`,
   `w4_f50_the_golf_club_drain_kills_the_owned_lances`,
-  `w4_f50_the_hit_dust_drain_spawns_the_burst`.
+  `w4_f50_the_hit_dust_drain_spawns_the_burst`,
+  `w4_f50_the_hit_dust_keys_on_the_frost_and_bone_armor_sets` (dev 4),
+  `w4_f50_the_armor_dust_scan_derives_the_necro_and_frost_sets` (dev 4).
+- `projectile_ai_misc.rs`: `w4_f50_the_608_blast_bodies_spawn_the_census_counts_and_post_arms`,
+  `w4_f50_the_608_blast_bodies_keep_the_census_stream_order` (dev 2).
+- `render/player_layers.rs`: `w4_f50_the_beetle_orb_layer_draws_five_ghosts_and_a_body_per_orb` (dev 3).
 - **DONE re-verification verdicts:** M2-COMBAT-1 — PARTIAL (the math is exact, the
   plumbing is not: no cooldown counters, no floor-1, no dodge). M2-COMBAT-2 —
   PARTIAL (crit/class accessors and the roll are ported and used; the ranged split

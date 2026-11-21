@@ -39399,3 +39399,19 @@ signature). 14 witnesses WRITTEN NOT RUN (`player.rs` x11,
 cut + blast queue, the beetle cut, the set recharge machines, the buff
 ladder, the hurt text/dust queues, the football/golf drains, the hit-dust
 burst).
+
+### Deviations round 2 (2026-11-21) — verification
+
+The five deviation items above were ported/verified code-only (no
+cargo/rustc/tests invoked). Each re-read against its C# window:
+`Player.cs:25733-25899` (f3's `update_stealth`, compose check),
+`Projectile.cs:72183-72224` + `Dust.cs:75-256`/`Gore.cs:1286-1462` (the
+burst bodies + the pool internal draws), `Player.cs:16441-16497` +
+`PlayerDrawLayers.cs:4007-4031` (the orb-orbit + the draw layer),
+`Player.cs:38167-38186`/`:38534-38551`/`:18350-18352` (the frost/bone
+keys), `Player.cs:38338-38368`/`:38188-38195`/`:57100` +
+`ImmunityCooldownID.cs:51` (the paladin share). The cross-branch claims
+read from the pushed tips: f3 `4d820f7d`/`b9575da6`, g64 `77616a7d`, d70
+`ee4905939`. 6 new witnesses WRITTEN NOT RUN (`player.rs` x1 orb-orbit,
+`hurt_modifiers.rs` x2 frost/bone, `projectile_ai_misc.rs` x2 burst
+bodies, `render/player_layers.rs` x1 orb draw) — 20 total.
