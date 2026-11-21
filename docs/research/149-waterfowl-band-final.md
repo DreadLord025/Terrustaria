@@ -23,6 +23,32 @@ closing ledger: what landed, the cross-lane contracts, the witness
 index, the merge checklist. ANALYSIS "The waterfowl FINAL (W4-c10)"
 carries the same verdicts with the full prose.
 
+## The waterfowl bible (one paragraph, SEALED)
+
+The aiStyle-68 waterfowl band is the eight-kind duck/seagull/grebe
+family — walkers Duck 362 / DuckWhite 364 / Seagull 602 / Grebe 608
+(aiStyle 7) and their swimming "2" forms 363/365/603/609 (aiStyle 68,
+`NPC.cs:34623-34879`) — ported WHOLE onto the S1-D-3 pure module: the
+shared style-24 poop gate (the 1080 BirdDroppings drain), the perch's
+old-facing keep, the wet swim's 19/20 blend + SolidTile probes +
+dry-feet flip + inline water-line hover, the dry takeoff / grown-100
+flutter, the dead-target freeze, the 300-tick landing's dry
+`Transform(type-1, 0f, 200+Next(200))`, the oldVelocity bounces, the
+3f steering, the 15-row ground probe and the +3/−4 hover — with both
+takeoff paths live (the walker gate `:53180-53184` in-place AND inside
+`town_npc_ai` for the b3 seam), the Transform drain + TransformVisuals
+census (all eight pairs visually SILENT, zero draws, None cue), the
+sound census (ducks case 30 Next(200), seagulls case 44 Next(1200),
+grebes ambient-silent by census), and the 1080 drop as ONE full
+AI+movement+death module (`Projectile.cs:39985-40017` / `:18921-18928`
+/ `:70926-70954`: the Stinky 120/600 rect-gated buff, the int-centre
+Item177, the 90-draw 30-dust census, corpse drift) that supersedes
+BOTH the d20 `ai_bird_droppings` dup (agreed `e4eeae9b7`) and the d76
+`kill_tail_cue` 1080 arm (§2.6); 37 witnesses WRITTEN NOT RUN; the
+only standing skips are the dust/gore BODIES (draw streams kept) —
+the band is COMPLETE and this report is SEALED at the retire phase
+(renumber 145→149, roster-tail final status §2.5, d76 keep-one §2.6).
+
 ## 1. Band-complete declaration
 
 **The aiStyle-68 waterfowl band is COMPLETE on this branch.** All
@@ -205,3 +231,18 @@ final flips: 3, plus the S1-D-3 module's 16).
   axis claim (the published contract).
 - The grebes 608/609 are AMBIENT-SILENT by census (no case row) — not
   a gap.
+
+## 6. SEAL (retire phase, 2026-11-21)
+
+**This report is SEALED as research/149** (renumbered from 145 — the
+g89 first-push win, the scan evidence in the header note). All four
+retire items closed: (1) the renumber + every ref updated; (2) the
+roster-tail co-lane's final status + the d40/c8 keep-one (§2.5, the
+co-lane cross-note in ANALYSIS "The bug-net roster tail"); (3) the
+1080 superset vs d76's kill_tail_cue — the FINAL keep-one (§2.6,
+ANALYSIS Item 6, merge-checklist step 2); (4) the one-paragraph bible
+above. The band declaration (§1) stands unchanged; the merge
+checklist (§4) is the lane's complete hand-off. No further c10
+commits are planned on this branch — merge execution belongs to the
+merge wave per the checklist order. Code-only throughout: no
+compiler/tests/rustfmt/graphify invoked; witnesses WRITTEN NOT RUN.

@@ -39744,7 +39744,11 @@ transform-visuals + 2 ambient + 1 town-gate (8 sub-arms × 4 walkers)
 the retire phase — g89's rod doc pushed first, 149 the lowest free key
 per the origin scan + the d54 150 registry): the band ledger,
 the cross-lane contract table, the witness index and the merge
-checklist. INDEX row 149 added.
+checklist. INDEX row 149 added. The retire phase SEALED the report:
+the one-paragraph waterfowl bible (the band's whole shape in one
+paragraph) + the §6 seal block; all four retire items closed (the
+renumber, the roster-tail final status, the d76 keep-one below, the
+bible). No further c10 commits planned — the merge wave executes §4.
 
 ### Item 6 — the 1080 Kill superset vs d76's kill_tail_cue (retire phase, FINAL keep-one)
 
