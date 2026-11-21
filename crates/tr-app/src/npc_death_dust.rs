@@ -1,11 +1,12 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-14 (118 wired C#
-//! match types covering 120 census kinds — the 40/41 BoneSerpent
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-15 (128 wired C#
+//! match types covering 129 census kinds — the 40/41 BoneSerpent
 //! segments ride the head's cs_id 39 via d34's Hide-fold; every
 //! dust-first clean kind the port's kind set carries, plus the 24 d35
-//! row-gated activations of the DOC-SWEEP phase, the 23 d34/c4/d23/
-//! d37 row-gated activations of batches 11-13 and the 7 g8/d120/f42
-//! row-gated activations of batch 14).
+//! row-gated activations of the DOC-SWEEP phase (103's nested-row
+//! artifact included), the 23 d34/c4/d23/d37 row-gated activations of
+//! batches 11-13 and the 17 g8/d120/f42 row-gated activations of
+//! batches 14-15).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -235,6 +236,26 @@
 //! draw NO arguments (the antlion's 97/98, the town shimmer gates, the
 //! bat 164/165 + 175/176/176, the creeper 207/208×4 are constants /
 //! field reads).
+//!
+//! ## Scope — batch 15 (the g8/d120 tail, part 2 — the set COMPLETE)
+//!
+//! | C# type(s) | death arm | shape |
+//! | --- | --- | --- |
+//! | 158 VampireBat | `:88971` | 20× type-54 (the wraith arm, g8 row) |
+//! | 160 Truffle | `:88272-88275` | 50× type-26 town shape (d120 row) |
+//! | 169 IceElemental | `:88830-88836` | 100× type-92 scale=1.5 override, vel×2 noGrav, dust-only (g8 row) |
+//! | 174/182 Herpling/FloatyGross | `:86419-86422` | 50× type-5 `this.alpha` (g8 rows) |
+//! | 177 Derpling | `:85733-85736` | 15× type-5 (g8 row) |
+//! | 179 CrimsonAxe | `:87152-87163` | 20× type-31 + the 6 gore ARG draws (the cursed arm, g8 row) |
+//! | 195/196 LostGirl/Nymph | `:86797-86800` | 75× type-5 (g8 rows) |
+//! | 209 Cyborg | `:88438-88441` | 50× type-5 town shape (d120 row) |
+//!
+//! All batch-15 gore tails draw NO arguments beyond the cursed arm's
+//! 6 (the truffle/cyborg shimmer ladders, the herpling 225/226 +
+//! 238/239, the derpling 234/235/236/236, the nymph 254/255/256 ladder
+//! are constants / field reads). The ACTIVATIONS-2 newly-rowed set is
+//! COMPLETE: 17 kinds (g8 13 + d120 4, the Antlion 69 double-claimed
+//! by f42).
 //!
 //! ## The row-gated remainder after batches 11-13 (the census doc)
 //!
@@ -844,7 +865,10 @@ pub fn death_dust(
         // `NPC.cs:88971-88976` — the Wraith (82): 20 type-54 puffs at
         // (0,0), alpha 50, scale 1.5, velocity×2 + noGravity (the 99×3
         // gore tail `:88977-88982` is constant + hitDirection, no draws).
-        82 => {
+        // 158 VampireBat rides the SAME arm (batch 15, g8's row — the
+        // shared `:88959` 82/158/159/250/253 arm; 159 stays row-gated
+        // (d36's band), 250/253 are g60's).
+        82 | 158 => {
             for _ in 0..20 {
                 let idx = dust.new_dust(
                     rng, ctx, world, pos, w, h, 54, 0.0, 0.0, 50,
@@ -861,7 +885,9 @@ pub fn death_dust(
         // with a `Next(-2,3)` x/y velocity pair (`:87158`/`:87160`/
         // `:87162`, 6 draws). The bodies + kicks stay d55's (the g63
         // gore-sibling rule); the draws are consumed here in C# order.
-        83 | 84 => {
+        // 179 CrimsonAxe rides the SAME arm (batch 15, g8's row — the
+        // shared `:87141` 83/84/179 arm, the same 6 argument draws).
+        83 | 84 | 179 => {
             for _ in 0..20 {
                 let idx = dust.new_dust(
                     rng, ctx, world, pos, w, h, 31, 0.0, 0.0, 0,
@@ -1206,6 +1232,86 @@ pub fn death_dust(
             for _ in 0..50 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 18, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // ---- batch 15 (the g8/d120 row-gated activations, part 2 — the
+        // ACTIVATIONS-2 newly-rowed set COMPLETE at 17 kinds; 158 rides
+        // the extended 82 wraith arm above, 179 the extended 83/84
+        // cursed arm above — the same 6 gore-ARGUMENT draws).
+        // `NPC.cs:88272-88275` / `:88438-88441` — the Truffle (160) /
+        // Cyborg (209): 50 puffs at 2.5×dir/-2.5 (the town shape; d120's
+        // hand rows). 160's dust is type 26 (the mushroom spore), 209's
+        // type 5 — separate arms, the C# writes them separately. The
+        // shimmer gore ladders (`:88276-88280` 1366/188 + 1367/189×2 +
+        // 1368/190×2; `:88442-88446` 1294/289 + 1295/290×2 + 1296/291×2)
+        // are field reads + constants, no argument draws.
+        160 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 26, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        209 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:86419-86422` — the Herpling (174) / Floaty Gross (182):
+        // 50 type-5 puffs at 2×dir/-2, `this.alpha` (the shared `:86409`
+        // 173/174/181/182/268 arm; g8's rows; 173/181 stay row-gated —
+        // d36's band, 268 g60's). The 225/226 + 238/239 gore tails
+        // `:86428-86441` are constant types, no argument draws.
+        174 | 182 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0,
+                    npc.alpha as i32, Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:85733-85736` — the Derpling (177): 15 type-5 puffs at
+        // 2×dir/-2 (g8's row). The 234/235/236/236 gore tail
+        // `:85737-85740` is constant types, no argument draws.
+        177 => {
+            for _ in 0..15 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:88830-88836` — the Ice Elemental (169): 100 type-92
+        // frost puffs at (0,0), scale = 1.5 (the post-write OVERRIDES the
+        // pool jitter), velocity×2 + noGravity (g8's row). Dust-only,
+        // zero gore — the whole census.
+        169 => {
+            for _ in 0..100 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 92, 0.0, 0.0, 0,
+                    Color::default(), 1.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.scale = 1.5;
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+        }
+        // `NPC.cs:86797-86800` — the Lost Girl (195) / Nymph (196): 75
+        // type-5 puffs at 2×dir/-2 (g8's rows — the 195→196 Transform
+        // keeps both kinds rowed). The 254/255×2/256×2 gore ladder
+        // `:86801-86805` is constant types + `this.scale`, no argument
+        // draws.
+        195 | 196 => {
+            for _ in 0..75 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
                     Color::default(), 1.0,
                 );
             }
@@ -2642,5 +2748,131 @@ mod tests {
         assert!(death_dust(&n, 165, &mut dust_b, &ctx(), &mut rng_b, &w));
         assert_eq!(rng_b, rng);
         assert_eq!(dust.slots(), dust_b.slots());
+    }
+
+    // ---- batch 15 (the g8/d120 row-gated activations, part 2).
+
+    /// `NPC.cs:88272-88275` / `:88438-88441` — the Truffle (160) 50×26
+    /// (the mushroom spore) / Cyborg (209) 50×5, both at 2.5×dir/-2.5
+    /// (the town shape, d120's rows); the shimmer gore ladders are
+    /// field reads — zero argument draws.
+    #[test]
+    fn w4_g59_the_truffle_and_cyborg_town_counts() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        for (ty, dust_ty) in [(160, 26), (209, 5)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(271);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50, "type {ty}");
+            assert!(live.iter().all(|d| d.dust_type == dust_ty && d.alpha == 0));
+        }
+    }
+
+    /// `NPC.cs:86419-86422` — the Herpling (174) / Floaty Gross (182):
+    /// 50 type-5 puffs reading the LIVE `this.alpha` (the shared
+    /// `:86409` arm); both ids share the census exactly.
+    #[test]
+    fn w4_g59_the_herpling_and_floaty_gross_read_the_live_alpha() {
+        let w = air();
+        let mut n = corpse(NpcKind::Skeleton);
+        n.alpha = 60;
+        let mut states = Vec::new();
+        for ty in [174, 182] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(277);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50, "type {ty}");
+            for d in &live {
+                assert_eq!(d.dust_type, 5);
+                assert_eq!(d.alpha, 60);
+            }
+            states.push(rng.peek());
+        }
+        assert_eq!(states[0], states[1], "174 and 182 share the census");
+    }
+
+    /// `NPC.cs:85733-85736` / `:88830-88836` — the Derpling (177) 15×5
+    /// and the Ice Elemental (169) 100×92 (scale = 1.5 post-write
+    /// OVERRIDES the jitter, vel×2 + noGravity; dust-only).
+    #[test]
+    fn w4_g59_the_derpling_and_ice_elemental_counts() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(281);
+        assert!(death_dust(&n, 177, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 15);
+        assert!(live.iter().all(|d| d.dust_type == 5));
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(281);
+        assert!(death_dust(&n, 169, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 100);
+        for d in &live {
+            assert_eq!(d.dust_type, 92);
+            assert_eq!(d.scale, 1.5, "the post-write override, not a jitter");
+            assert!(d.no_gravity);
+            assert!(d.velocity.x.abs() <= 4.0 + 1e-6);
+            assert!(d.velocity.y.abs() <= 4.0 + 1e-6);
+        }
+    }
+
+    /// `NPC.cs:86797-86800` / `:88971-88976` / `:87152-87163` — the
+    /// Lost Girl (195) / Nymph (196) 75×5 pair, the Vampire Bat (158)
+    /// riding the 82 wraith census, and the Crimson Axe (179) riding
+    /// the 83 cursed census INCLUDING its 6 gore-ARGUMENT draws.
+    #[test]
+    fn w4_g59_the_nymph_pair_and_the_vampire_crimson_shared_arms() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut states = Vec::new();
+        for ty in [195, 196] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(283);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 75, "type {ty}");
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert_eq!(states[0], states[1]);
+        // 158 ≡ 82 (20×54, alpha 50, scale 1.5 jittered, vel×2 noGrav).
+        let mut dust_a = DustPool::new();
+        let mut rng_a = UnifiedRandom::new(283);
+        assert!(death_dust(&n, 82, &mut dust_a, &ctx(), &mut rng_a, &w));
+        let mut dust_b = DustPool::new();
+        let mut rng_b = UnifiedRandom::new(283);
+        assert!(death_dust(&n, 158, &mut dust_b, &ctx(), &mut rng_b, &w));
+        assert_eq!(rng_a, rng_b);
+        assert_eq!(dust_a.slots(), dust_b.slots());
+        // 179 ≡ 83 including the 6 Next(-2,3) gore argument draws.
+        let mut dust_a = DustPool::new();
+        let mut rng_a = UnifiedRandom::new(283);
+        assert!(death_dust(&n, 83, &mut dust_a, &ctx(), &mut rng_a, &w));
+        let mut dust_b = DustPool::new();
+        let mut rng_b = UnifiedRandom::new(283);
+        assert!(death_dust(&n, 179, &mut dust_b, &ctx(), &mut rng_b, &w));
+        assert_eq!(rng_a, rng_b);
+        assert_eq!(dust_a.slots(), dust_b.slots());
+        let (bw, bh) = n.size();
+        let (bw, bh) = (bw as i32, bh as i32);
+        let mut twin = UnifiedRandom::new(283);
+        for _ in 0..20 {
+            let _px = twin.next_max(bw.max(5) - 4);
+            let _py = twin.next_max(bh.max(5) - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..3 {
+            let _gx = twin.next_range(-2, 3);
+            let _gy = twin.next_range(-2, 3);
+        }
+        assert_eq!(rng_b, twin, "20×6 dust draws + 6 gore argument draws");
     }
 }
