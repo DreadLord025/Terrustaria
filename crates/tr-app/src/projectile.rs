@@ -19979,6 +19979,20 @@ impl ProjectilePool {
                     luck,
                     local_owner,
                 );
+                // W4-d78 batch 2 — `Kill()`'s hostile resize-blasts: the
+                // 452/454 arms (`:72987`/`:73014`) and the 448 shell
+                // (`:73603`) sit between the 661 arm (`:72226`) and the
+                // gem arm (`:75425`) in the C# body — the EVP half of
+                // `Damage()` hurts the local player through the blast box.
+                self.hostile_death_blast(
+                    i,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    player.as_deref_mut(),
+                    rng,
+                    luck,
+                    local_owner,
+                );
                 // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
                 // burst — the AoeExplosion damage rides the dying slot, so it
                 // runs at the same death hook the blast does.
@@ -21417,6 +21431,199 @@ impl ProjectilePool {
             p.h = old_h;
             p.pos = center - Vec2::new(old_w * 0.5, old_h * 0.5);
         }
+    }
+
+    /// W4-d78 batch 2 — `Kill()`'s HOSTILE resize-blast family: the Moon
+    /// Lord hand's eye volley / flood orb and the saucer cannon's shell
+    /// explode through a resized box whose `Damage()` rides the EVP
+    /// (enemy-vs-player) half, not the friendly PVE box. The C# arms, in
+    /// body order:
+    /// - 452 PhantasmalEye (`Projectile.cs:72987-73013`): `Resize(144,144)`
+    ///   (`:72990`, the centre-keep), the dust/gore bodies (SKIPPED — the
+    ///   g65/g16 lanes'), then `Resize(30,30)` (`:73011`) BEFORE `Damage()`
+    ///   (`:73012`) — the blast walks the SMALL 30-box, not the 144 ring.
+    /// - 454 PhantasmalSphere (`:73014-73045`): the manual recentre
+    ///   `position = Center; width = height = 208; position -= size/2`
+    ///   (`:73017-73020`), dust/gore SKIPPED, `Damage()` (`:73044`) — no
+    ///   restore, the corpse keeps the 208-box.
+    /// - 448 SaucerMissile (`:73603-73631`): the same manual recentre at
+    ///   112×112 (`:73606-73609`), dust/gore SKIPPED, `Damage()`
+    ///   (`:73630`) — no restore.
+    /// `Damage()` (`:12487-12516`) for these kinds: `Damage_CanDealDamage`
+    /// passes (none of the `:12448` refusal arms names 452/454/448 or their
+    /// aiStyles 82/83/80), `CutTiles` needs `friendly` (false), the powders
+    /// arm names 10/11/463 only, the PVE/PVP halves need
+    /// `owner == Main.myPlayer` (the port's hostile seam spawns owner 255,
+    /// `spawn_hostile_ai` — unreachable, kept kind-gated for the shape),
+    /// and `Damage_EVP` runs (`netMode != 2`, single-player). Kind-gated,
+    /// once per death (a dead slot never returns to active).
+    fn hostile_death_blast(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        // (the visual blast box, the box `Damage()` actually walks)
+        let (blast, walk) = match self.slots[slot].kind {
+            PHANTASMAL_EYE => (144.0, 30.0),
+            PHANTASMAL_SPHERE => (208.0, 208.0),
+            SAUCER_MISSILE => (112.0, 112.0),
+            _ => return,
+        };
+        {
+            let p = &self.slots[slot];
+            let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            let p = &mut self.slots[slot];
+            // `Resize(blast, blast)` / the manual recentre — both keep the
+            // centre (`:22353-22359`). The dust/gore bodies between the two
+            // 452 resizes read the 144-box; they are the g65/g16 lanes'.
+            p.w = blast;
+            p.h = blast;
+            p.pos = center - Vec2::splat(blast * 0.5);
+            // `:73011` — the 452's trailing `Resize(30,30)` runs BEFORE
+            // `Damage()`; the 454/448 walk their blast box unchanged.
+            p.w = walk;
+            p.h = walk;
+            p.pos = center - Vec2::splat(walk * 0.5);
+        }
+        // `Damage()`'s PVE half (`:12505-12510`): owner-gated. The port's
+        // hostile seam spawns these kinds at owner 255, so the walk is
+        // unreachable today — kept for the C# shape (an owned-hostile
+        // spawn site would hit NPCs first, EVP second, in this order).
+        if self.slots[slot].owner == local_owner {
+            self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        }
+        // `Damage_EVP` (`:12513`, `netMode != 2`).
+        self.damage_evp_boxed(slot, player, rng, local_owner);
+    }
+
+    /// W4-d78 batch 2 — `Projectile.Damage_EVP` (`Projectile.cs:14773-
+    /// 14900`) through the dying slot's resized box: the hostile shot's
+    /// death-blast hurts the LOCAL player. The gate chain in C# order:
+    /// - `:14775`: `!hostile || myPlayer >= 255 || damage <= 0 ||
+    ///   SkipDamage_EVP[type]` — the port's `hostile` is `!friendly` (the
+    ///   `spawn_hostile_ai` convention), `myPlayer` is always 0, and the
+    ///   skip set is {108, 164, 1002} (`ProjectileID.cs:423`).
+    /// - `:14779-14797`: the cooldown counter — 452/454/455/462 and the
+    ///   871-874/919/923/924 boss family ride `BossNoCheese` (1), every
+    ///   other kind `General` (−1, the port's collapsed lane).
+    /// - `:14799`: `player.active && !dead && (!immune || num != General)`
+    ///   — the BossNoCheese blast lands THROUGH the spawn i-frames; the
+    ///   General blast (448) refuses while immune. The 281/1073/1078
+    ///   overrides name unported kinds.
+    /// - `:14816`: `Colliding(projRectangle, player.getRect())` — the
+    ///   per-kind state gates (`:15406-15412` the 454's spawn-protection
+    ///   window `0 <= ai[0] < 60 && ai[1] != -1`, `:15447-15450` the 452's
+    ///   `ai[0] < 2` warm-up) then the plain rectangle overlap
+    ///   (`:15888` — no other `Colliding` arm names these kinds/styles).
+    /// - `:14820-14821`: the hit direction from the centre compare — the
+    ///   port's `hurt` derives it from `from_x` (the blast centre).
+    /// - `:14822`: `CanParryAgainst` — `shieldParryTimeLeft` is unported
+    ///   (no parry seam), so false; the 1091 heal arm names an unported
+    ///   kind. `SpawnHitVisuals` (`:14397-14430`) names 916/1091/1093/1112
+    ///   only — a no-op here, no draws.
+    /// - `:14831`: `DamageVar(damage, -Main.player[owner].luck)` — the
+    ///   owner-255 dummy player's luck is 0; an owned shot reads the local
+    ///   player's luck (the `damage_pve` convention).
+    /// - `:14832-14848`: the banner effect (`bannerIdToRespondTo` — no
+    ///   port field), `resistCold && coldDamage` (no port fields) and the
+    ///   `deadMansSweater && trap` cap (no port field; these kinds are not
+    ///   traps) are SKIPPED; `!reflected` (no port field, always true)
+    ///   scales by `hostileDamageScaling.Sample(Difficulty)`
+    ///   (`GameDifficultyData.cs:85`: Journey 0.5→0.5, Master 3→3 — the
+    ///   identity line on [0.5, 3], so the sample IS the difficulty; the
+    ///   port's difficulty mirror is `buffs.expert_mode` → 2, else 1 —
+    ///   journey/master/legendary unported, recorded), then `num3 *= 2`.
+    /// - `:14850-14861`: the 961 damage-decay arm names an unported kind.
+    /// - `:14862-14871`: `Hurt(ByProjectile(-1, whoAmI), num4, dir, pvp:
+    ///   false, Crit: false, num, dodgeable)` — the cooldown counter rides
+    ///   the port's `hurt_inner_cooldown` lane; `> 0 && !dead` gates
+    ///   `StatusPlayer`, which has NO arm for 452/454/448 (the `:12108-
+    ///   12400` census) — a no-op. The trap tail (`:14872-14879`) and the
+    ///   435/436/681/437/682 penetrate tail (`:14881-14899`) name other
+    ///   kinds.
+    /// RNG: the `DamageVar` roll fires only on a landed overlap, on the
+    /// pass's `UpdateProjectiles` stream; the hurt's dodge rolls ride the
+    /// same stream inside `hurt` (the `damage_player` convention). A
+    /// refused blast draws NOTHING.
+    fn damage_evp_boxed(
+        &mut self,
+        slot: usize,
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn DropRng,
+        local_owner: u8,
+    ) {
+        let p = &self.slots[slot];
+        // `:14775` — the hostile/damage/skip-set gate.
+        if p.friendly || p.damage <= 0 || matches!(p.kind, 108 | 164 | 1002) {
+            return;
+        }
+        // `:14779-14797` — the cooldown counter pick.
+        let cooldown = match p.kind {
+            452 | 454 | 455 | 462 | 871 | 872 | 873 | 874 | 919 | 923 | 924 => Some(1usize),
+            _ => None,
+        };
+        let Some(player) = player else {
+            return;
+        };
+        // `:14799` — active (the port's `Some` player) && !dead && the
+        // General-only immune gate.
+        if player.dead || (cooldown.is_none() && player.immune) {
+            return;
+        }
+        // `Colliding`'s per-kind state gates (`:15406-15412`/`:15447-15450`).
+        match p.kind {
+            PHANTASMAL_EYE if p.ai[0] < 2.0 => return,
+            PHANTASMAL_SPHERE if p.ai[0] >= 0.0 && p.ai[0] < 60.0 && p.ai[1] != -1.0 => return,
+            _ => {}
+        }
+        // `:14816` — the rectangle overlap with the player's live rect
+        // (the `damage_pve_boxed` float-overlap convention).
+        let hit = p.pos.x < player.x + player.width
+            && p.pos.x + p.w > player.x
+            && p.pos.y < player.y + player.height
+            && p.pos.y + p.h > player.y;
+        if !hit {
+            return;
+        }
+        // `:14820-14821` — the centre-compare hit direction rides `from_x`.
+        let from_x = p.pos.x + p.w * 0.5;
+        // `:14831` — the owner's luck (255 → the dummy player's 0).
+        let owner_luck = if p.owner == local_owner {
+            player.luck_state.luck
+        } else {
+            0.0
+        };
+        let mut dmg = tr_core::damage::damage_var(rng, p.damage as f32, -owner_luck);
+        // `:14842` — `hostileDamageScaling.Sample(Difficulty)`: the identity
+        // line on [0.5, 3] (`GameDifficultyData.cs:85`), the port's
+        // difficulty mirror is the expert flag (2) vs classic (1).
+        let difficulty = if player.buffs.expert_mode { 2.0 } else { 1.0 };
+        dmg = (dmg as f32 * difficulty) as i32;
+        // `:14844` — the EVP double.
+        dmg *= 2;
+        // `:14868` — the Hurt through the cooldown lane. `dodgeable` is
+        // `IsDamageDodgeable` (true for these kinds — the 9999 family is
+        // 871-874/919/923/924 only); `Crit: false`; the source kind rides
+        // the dismount gate; both General and BossNoCheese are Retaliate
+        // members (`ImmunityCooldownID.cs:49`).
+        let _landed = player.hurt_inner_cooldown(
+            dmg,
+            from_x,
+            true,
+            rng,
+            p.is_damage_dodgeable(),
+            false,
+            Some(p.kind),
+            true,
+            cooldown,
+        );
+        // `StatusPlayer` (`:14870`) has no arm for the blast kinds — the
+        // `landed && !dead` gate is a no-op here (the census above).
     }
 
     /// The dedupe scan (`:41428-41438`): every other slot of the same kind
@@ -25508,6 +25715,251 @@ mod w4_d78_magic_death_blast_tests {
         pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
         assert!(npc.hp < 10_000, "the blast lands");
         assert_eq!(npc.immune[0], 8, "the Magic Missile's per-type arm");
+    }
+}
+
+/// W4-d78 batch 2 — the hostile EVP death-blast witnesses (WRITTEN, NOT
+/// RUN — code-only mode). The 452/454/448 resize shapes, the BossNoCheese
+/// cooldown lane vs the General lane, the Colliding state gates and the
+/// zero-draw refusals.
+#[cfg(test)]
+mod w4_d78_hostile_death_blast_tests {
+    use super::*;
+
+    /// A hostile corpse of `kind` centred on the player, damage 30.
+    fn dead_hostile_at(pool: &mut ProjectilePool, kind: u16, player: &crate::player::Player) -> usize {
+        let row = proj_data(kind).unwrap();
+        let slot = pool
+            .spawn_hostile_ai(
+                kind,
+                Vec2::new(player.x + player.width * 0.5 - row.w * 0.5, player.y + 10.0),
+                Vec2::ZERO,
+                30,
+                0.0,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        pool.kill(slot);
+        slot
+    }
+
+    /// The scripted stream (the s1_d_4b_3 `Script` shape): every draw is
+    /// recorded as (min, max) or (−1, −1) for the floats.
+    struct Script {
+        rolls: Vec<f32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl Script {
+        fn new(rolls: &[f32]) -> Self {
+            Self { rolls: rolls.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() {
+                return 0;
+            }
+            self.rolls.remove(0) as i32
+        }
+        fn next_float(&mut self) -> f32 {
+            self.draws.push((-1, -1));
+            if self.rolls.is_empty() {
+                return 0.0;
+            }
+            self.rolls.remove(0)
+        }
+    }
+
+    /// The 452 arm (`:72990`/`:73011-73012`): `Resize(144,144)` then
+    /// `Resize(30,30)` BEFORE `Damage()` — the corpse keeps the SMALL
+    /// 30-box, centred; the blast hurts the player through it.
+    #[test]
+    fn w4_d78_b2_the_eye_blast_walks_the_small_thirty_box() {
+        let w = World::new("t".into(), 64, 64);
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.hp = 400;
+        player.max_hp = 400;
+        let slot = dead_hostile_at(&mut pool, PHANTASMAL_EYE, &player);
+        // Park past the `ai[0] < 2` warm-up (`:15447`) so Colliding passes.
+        pool.slots_mut()[slot].ai[0] = 2.0;
+        let center = {
+            let p = &pool.slots()[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(
+            slot,
+            &mut [],
+            (false, false),
+            Some(&mut player),
+            &mut rng,
+            0.0,
+            0,
+        );
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (30.0, 30.0), "the trailing Resize(30,30) wins");
+        let got = p.pos + Vec2::splat(15.0);
+        assert!((got - center).length() < 1e-4, "the centre kept");
+        assert!(player.hp < 400, "the EVP blast lands");
+        // DamageVar(damage 30, luck 0) = one Next(-15,16); the hurt's dodge
+        // block draws nothing (no dodge accessories armed).
+        assert_eq!(rng.draws, vec![(-15, 16)], "the hit's DamageVar only");
+        // The BossNoCheese lane arms hurtCooldowns[1], NOT the General pair.
+        assert!(!player.immune, "the General window stays untouched");
+        assert!(player.hurt_cooldowns[1] > 0, "the BossNoCheese window");
+    }
+
+    /// The 454/448 arms (`:73017-73020`/`:73606-73609`): the manual recentre
+    /// at 208/112, NO trailing restore — the corpse keeps the blast box.
+    #[test]
+    fn w4_d78_b2_the_sphere_and_shell_keep_their_blast_boxes() {
+        for (kind, blast) in [(PHANTASMAL_SPHERE, 208.0f32), (SAUCER_MISSILE, 112.0)] {
+            let w = World::new("t".into(), 64, 64);
+            let mut pool = ProjectilePool::new();
+            let mut player = crate::player::Player::spawn(&w);
+            player.hp = 400;
+            player.max_hp = 400;
+            let slot = dead_hostile_at(&mut pool, kind, &player);
+            // The 454's spawn-protection window (`:15408`): ai[0] starts 0
+            // — park it past 60 so the Colliding gate passes.
+            pool.slots_mut()[slot].ai[0] = 60.0;
+            let center = {
+                let p = &pool.slots()[slot];
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            };
+            let mut rng = Script::new(&[]);
+            pool.hostile_death_blast(
+                slot,
+                &mut [],
+                (false, false),
+                Some(&mut player),
+                &mut rng,
+                0.0,
+                0,
+            );
+            let p = &pool.slots()[slot];
+            assert_eq!((p.w, p.h), (blast, blast), "kind {kind}: no restore");
+            let got = p.pos + Vec2::splat(blast * 0.5);
+            assert!((got - center).length() < 1e-4, "kind {kind}: centre kept");
+            assert!(player.hp < 400, "kind {kind}: the blast lands");
+            if kind == SAUCER_MISSILE {
+                // 448 is NOT in the BossNoCheese set — the General lane.
+                assert!(player.immune, "the General window arms");
+                assert_eq!(player.hurt_cooldowns[1], 0, "no BossNoCheese write");
+            } else {
+                assert!(player.hurt_cooldowns[1] > 0, "the BossNoCheese window");
+            }
+        }
+    }
+
+    /// The BossNoCheese point (`:14799`): the 452/454 blast lands THROUGH
+    /// the spawn i-frames (`immune = true`), the 448 General blast refuses.
+    #[test]
+    fn w4_d78_b2_boss_no_cheese_lands_through_the_spawn_iframes() {
+        for kind in [PHANTASMAL_EYE, PHANTASMAL_SPHERE, SAUCER_MISSILE] {
+            let w = World::new("t".into(), 64, 64);
+            let mut pool = ProjectilePool::new();
+            let mut player = crate::player::Player::spawn(&w);
+            player.hp = 400;
+            player.max_hp = 400;
+            player.immune = true;
+            player.immune_time = 60;
+            let slot = dead_hostile_at(&mut pool, kind, &player);
+            pool.slots_mut()[slot].ai[0] = 60.0;
+            let mut rng = Script::new(&[]);
+            pool.hostile_death_blast(
+                slot,
+                &mut [],
+                (false, false),
+                Some(&mut player),
+                &mut rng,
+                0.0,
+                0,
+            );
+            if kind == SAUCER_MISSILE {
+                assert_eq!(player.hp, 400, "the General blast refuses while immune");
+                assert!(rng.draws.is_empty(), "the refusal draws nothing");
+            } else {
+                assert!(player.hp < 400, "kind {kind}: BossNoCheese bypasses immune");
+            }
+        }
+    }
+
+    /// The Colliding state gates: the 452's `ai[0] < 2` warm-up
+    /// (`:15447`) and the 454's `0 <= ai[0] < 60 && ai[1] != -1` spawn
+    /// protection (`:15408`) refuse the blast with ZERO draws — but the
+    /// 454's released orb (`ai[1] == -1`) blasts inside the window.
+    #[test]
+    fn w4_d78_b2_the_colliding_state_gates_refuse_with_zero_draws() {
+        // The 452 warm-up.
+        let w = World::new("t".into(), 64, 64);
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.hp = 400;
+        let slot = dead_hostile_at(&mut pool, PHANTASMAL_EYE, &player);
+        pool.slots_mut()[slot].ai[0] = 1.0;
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+        assert_eq!(player.hp, 400, "the ai[0] < 2 warm-up refuses");
+        assert!(rng.draws.is_empty());
+        // The 454 spawn protection.
+        let slot = dead_hostile_at(&mut pool, PHANTASMAL_SPHERE, &player);
+        pool.slots_mut()[slot].ai[0] = 30.0;
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+        assert_eq!(player.hp, 400, "the 0 <= ai[0] < 60 window refuses");
+        assert!(rng.draws.is_empty());
+        // The released orb (ai[1] == -1) blasts inside the window.
+        pool.slots_mut()[slot].ai[1] = -1.0;
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+        assert!(player.hp < 400, "the released orb's blast lands");
+    }
+
+    /// The kind gate: an unrelated hostile kind (the hostile wooden arrow)
+    /// passes through untouched — no resize, no hurt, no draws.
+    #[test]
+    fn w4_d78_b2_an_unrelated_hostile_kind_is_untouched() {
+        let w = World::new("t".into(), 64, 64);
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.hp = 400;
+        let slot = dead_hostile_at(&mut pool, WOODEN_ARROW_HOSTILE, &player);
+        let (w0, h0, pos0) = {
+            let p = &pool.slots()[slot];
+            (p.w, p.h, p.pos)
+        };
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+        assert_eq!(player.hp, 400, "the arrow has no death blast");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h, p.pos), (w0, h0, pos0), "untouched");
+        assert!(rng.draws.is_empty());
+    }
+
+    /// The EVP damage maths (`:14831-14844`): DamageVar ±15% then the
+    /// difficulty scale then ×2, BEFORE `Hurt`'s defense reduction. With
+    /// the scripted roll 0 (variance ×1.0), damage 30 → 30 × 1 × 2 = 60;
+    /// defense 10 cuts 5 → 55. Expert doubles the scale: 30 × 2 × 2 = 120
+    /// → 115 past defense.
+    #[test]
+    fn w4_d78_b2_the_evp_damage_scales_by_difficulty_then_doubles() {
+        for (expert, expected) in [(false, 400 - 55), (true, 400 - 115)] {
+            let w = World::new("t".into(), 64, 64);
+            let mut pool = ProjectilePool::new();
+            let mut player = crate::player::Player::spawn(&w);
+            player.hp = 400;
+            player.max_hp = 400;
+            player.stat_defense = 10;
+            player.buffs.expert_mode = expert;
+            let slot = dead_hostile_at(&mut pool, SAUCER_MISSILE, &player);
+            let mut rng = Script::new(&[0.0]); // DamageVar's Next(-15,16) = 0
+            pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+            assert_eq!(player.hp, expected, "expert {expert}: the EVP maths");
+        }
     }
 }
 

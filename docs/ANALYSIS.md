@@ -39316,3 +39316,62 @@ six rows confirmed on main. The 5 `w4_d78_*` witness tests (the resize+restore
 reach, the no-restore corpse box, the foreign-owner zero-draw refusal, the
 unrelated-kind no-op, the Magic Missile 8-tick immunity) are WRITTEN, NOT RUN
 вЂ” **no cargo/rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).
+
+## The projectile Kill death-effect wave, part 2a (W4-d78, 2026-11-21, code-only mode)
+
+**The hostile EVP resize-blasts** (3 kinds, all rowed on main, all verified
+MISSING - no existing Kill hook touched them):
+
+| kind | C# arm | blast box | Damage box | restore |
+| --- | --- | --- | --- | --- |
+| 452 PhantasmalEye | `:72987-73013` | Resize(144,144) | Resize(30,30) BEFORE Damage | corpse keeps 30 |
+| 454 PhantasmalSphere | `:73014-73045` | manual recentre 208x208 | 208 | NO |
+| 448 SaucerMissile | `:73603-73631` | manual recentre 112x112 | 112 | NO |
+
+`projectile.rs::hostile_death_blast` ports the resize shapes verbatim (the
+452's double-resize quirk kept: the 144 ring is dust-only - the g65 lane's -
+and `Damage()` walks the SMALL 30-box), then `Damage()`'s halves in C#
+order: the PVE box walk (owner-gated `:12505`, unreachable for the port's
+owner-255 hostile seam but kept for the shape) and the NEW
+`damage_evp_boxed` seam - `Damage_EVP` (`:14773-14900`) through the
+resized box: the hostile/damage/SkipDamage_EVP gate, the cooldown-counter
+pick (452/454 BossNoCheese, 448 General), the `!dead && (!immune || num !=
+General)` gate, `Colliding`'s per-kind state gates (the 452's `ai[0] < 2`
+warm-up `:15447`, the 454's `0 <= ai[0] < 60 && ai[1] != -1` spawn
+protection `:15408`), the rectangle overlap, `DamageVar(damage,
+-owner.luck)` (owner 255 reads 0), the hostileDamageScaling difficulty
+sample (the identity line on [0.5,3], `GameDifficultyData.cs:85` - the
+port's expert mirror is 2, classic 1; journey/master/legendary unported),
+the EVP x2, then `Hurt` through the cooldown lane. The call sits in the
+once-per-death hook right after `magic_death_blast` (C# body order:
+:72987/:73014/:73603 all precede the gem arm :75425).
+
+**The player cooldown lane** (`player.rs`): `hurtCooldowns[6]`
+(`Player.cs:3160`, Count 6 `ImmunityCooldownID.cs:81`) joins the Player;
+`hurt_inner` keeps its 8-arg signature as a General-lane wrapper over the
+new `hurt_inner_cooldown` (9th arg `Option<usize>`: None = the collapsed
+`immune`/`hurt_cd` lane - every pre-existing caller byte-identical;
+Some(1) = BossNoCheese, gated ONLY by its own array entry `:38208`, armed
+only when it reads 0 `:38391-38393`). `update_immunity` decays every
+positive entry (`:18887-18893`); `set_immune_time_for_all_types` writes
+the array too (`:38017-38020`). The M4-HAZARD-1 single-lane collapse stays
+for every OTHER lane - only BossNoCheese reads the array.
+
+**Deliberate skips (cited at the seam):** the dust/gore bodies (the g65/g16
+lanes', skipped WITH their draws - the `special_arrows` convention), every
+`PlaySound` (d75-d77), `CanParryAgainst` (no parry seam -
+`shieldParryTimeLeft` unported, reads false), the banner effect /
+resistCold / deadMansSweater / reflected multipliers (no port fields; the
+scaling sample stands for `!reflected`), `StatusPlayer` (NO arm names
+452/454/448 in the `:12108-12400` census - a no-op), the trap tail and the
+435/436/681/437/682 penetrate tail (other kinds). No gameplay draw added,
+removed or reordered: the blast's only draws are the landed hit's DamageVar
++ the hurt's dodge rolls, in C# order, on the pass's UpdateProjectiles
+stream; every refusal draws NOTHING.
+
+**Verification.** Code-only: every arm re-read against its C# block (the
+double-resize order, the cooldown sets, the Colliding gates, the DamageVar
+luck sign, the x2-after-scaling order), the hurt seam checked against every
+`hurt_inner` caller (all keep the None lane). The 6 `w4_d78_b2_*` witness
+tests are WRITTEN, NOT RUN - **no cargo/rustc/rustfmt/tests/graphify
+invoked** (the Lead's constraint).
