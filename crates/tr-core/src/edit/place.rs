@@ -609,6 +609,117 @@ mod tests {
         assert_eq!(w.tile(11, 19).unwrap().frame_x, 54);
     }
 
+    /// W4-f22 retire — the sign-TILE placement census: every sign-family kind
+    /// routes through the `TileObject` registry (`CustomPlace` true,
+    /// `TileObjectData.cs:3822-3947`), NOT the legacy `WorldGen.PlaceSign`
+    /// (`WorldGen.cs:43781`, reached only from the `PlaceTile` dispatcher
+    /// `:60166-60171` — the item-use path never enters it). The base def is
+    /// 2x2 `Style2x2` with `Origin (0,1)` + `AnchorBottom (SolidTile|
+    /// SolidWithTop|Table|SolidSide, 2, 0)` (`:3451-3460`), so a floor click
+    /// at (10, 19) fills rows 18-19 with frameX 0/18, frameY 0/18 — the exact
+    /// frames `Sign.ReadSign`'s origin decode reads (`Sign.cs:26-29`).
+    #[test]
+    fn the_sign_family_places_through_the_registry_route() {
+        for kind in [55u16, 85, 425, 573, 510, 511] {
+            assert!(
+                crate::tileobject::routes_through_tile_object(kind, 0),
+                "kind {kind} rides TileObject.CanPlace/Place"
+            );
+            let mut w = object_world();
+            assert!(place_item_tile(&mut w, 10, 19, kind, 0, 1), "place {kind}");
+            for x in [10, 11] {
+                for y in [18, 19] {
+                    let t = w.tile(x, y).unwrap();
+                    assert!(t.active() && t.kind == kind, "kind {kind} cell {x},{y}");
+                    assert_eq!(t.frame_x, if x == 10 { 0 } else { 18 });
+                    assert_eq!(t.frame_y, if y == 18 { 0 } else { 18 });
+                }
+            }
+            assert!(w.frame_important[kind as usize], "kind {kind} framed");
+        }
+    }
+
+    /// W4-f22 retire — the tombstone styles: items 321/1173-1177/3229-3233
+    /// all place tile 85 with `placeStyle` 0-10 (`Item.cs:5186-5195`,
+    /// `:14405-14459`, `:29791-29805` — the Rich Gravestones 3229-3233 are
+    /// the GOLD variants, `placeStyle = 6 + type - 3229`). Tile 85 has NO
+    /// alternates (`TileObjectData.cs:3942-3947` — floor-only, `LavaDeath
+    /// false`, `DrawYOffset 2`), so `CalculatePlacementStyle` = the style
+    /// itself and `StyleHorizontal` puts it on the frameX column: style s
+    /// writes frameX 36·s (+18 per column), frameY 0/18. The death-drop
+    /// projectiles pick the style the same way (`Projectile.cs:25339-25350`:
+    /// 201-205 → 1-5, 527-531 → 6-10, the 43 tombstone → 0).
+    #[test]
+    fn the_tombstone_style_shifts_the_frame_column() {
+        for style in [0i32, 1, 5, 6, 10] {
+            let mut w = object_world();
+            assert!(place_item_tile(&mut w, 10, 19, 85, style, 1), "style {style}");
+            let t = w.tile(10, 18).unwrap();
+            assert_eq!(t.frame_x, (36 * style) as i16, "style {style} column");
+            assert_eq!(t.frame_y, 0);
+            assert_eq!(w.tile(11, 18).unwrap().frame_x, (36 * style + 18) as i16);
+            assert_eq!(w.tile(10, 19).unwrap().frame_y, 18);
+        }
+        // No alternates: a ceiling-only world refuses the floor-only def
+        // (the 55/425/510/511/573 wall/ceiling alternates do not exist here).
+        let mut w = object_world();
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile::default(); // remove the floor
+        }
+        assert!(!place_item_tile(&mut w, 10, 19, 85, 0, 1));
+    }
+
+    /// W4-f22 retire — the sign mounting alternates (`TileObjectData.cs:
+    /// 3824-3844` for 55, the same block for 425/573/510/511): alt 1 hangs
+    /// from a ceiling (`AnchorTop`, origin (0,0), style 1 → frameX 36),
+    /// alt 4 mounts on a wall (`AnchorWall`, style 4 → frameX 144). The
+    /// frameY stays 0/18 in EVERY alternate — the mount rides frameX, which
+    /// is why `Sign.ReadSign`'s `frameY/18` origin decode (`Sign.cs:27-29`)
+    /// resolves all five mounts to the same top-left row.
+    #[test]
+    fn the_sign_mounts_ride_the_frame_x_alternates() {
+        // Ceiling mount: a stone ceiling at y = 16, no floor support.
+        let mut w = object_world();
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile::default();
+            set_active(&mut w, x, 16, 1);
+        }
+        assert!(place_item_tile(&mut w, 10, 17, 55, 0, 1));
+        for x in [10, 11] {
+            for y in [17, 18] {
+                let t = w.tile(x, y).unwrap();
+                assert!(t.active() && t.kind == 55, "ceiling cell {x},{y}");
+                assert_eq!(t.frame_x, if x == 10 { 36 } else { 54 }, "alt 1 style");
+                assert_eq!(t.frame_y, if y == 17 { 0 } else { 18 });
+            }
+        }
+        // Wall mount: no floor, no ceiling — walls behind the four cells.
+        // Alt 4 has origin (0,0), so the click (10,18) IS the top-left and
+        // the object fills rows 18-19 (the AnchorWall cells).
+        let mut w2 = object_world();
+        for x in 0..40 {
+            let i = w2.index(x, 20);
+            w2.tiles[i] = Tile::default();
+        }
+        for x in [10, 11] {
+            for y in [18, 19] {
+                let i = w2.index(x, y);
+                w2.tiles[i].wall = 1;
+            }
+        }
+        assert!(place_item_tile(&mut w2, 10, 18, 55, 0, 1));
+        for x in [10, 11] {
+            for y in [18, 19] {
+                let t = w2.tile(x, y).unwrap();
+                assert!(t.active() && t.kind == 55, "wall cell {x},{y}");
+                assert_eq!(t.frame_x, if x == 10 { 144 } else { 162 }, "alt 4 style");
+                assert_eq!(t.frame_y, if y == 18 { 0 } else { 18 });
+            }
+        }
+    }
+
     #[test]
     fn test_DW_1_1_seeds_plant_on_csharp_soil_sets() {
         // Every seed style plants on every soil of its C# set — the tile

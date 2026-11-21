@@ -26,8 +26,10 @@ use crate::ui::keyboard::{Context, Request};
 pub(crate) const MAX_SIGNS: i16 = 32_000;
 
 /// `Main.tileSign` (`Main.cs:10081-10084`): the tile kinds a sign text may sit
-/// on — 55 Sign, 85 Tattered Wood Sign, 425 Illuminant Hanging Sign, 573
-/// Sunplate Sign (the same set as `wld/sections/signs.rs`'s private copy).
+/// on — 55 Sign, 85 Tombstones, 425 Announcement Box, 573 Tattered Wood Sign
+/// (the same set as `wld/sections/signs.rs`'s private copy). The arrow signs
+/// 510/511 are NOT in the set (the C# never flags them) — they place through
+/// the same registry route but carry no sign record.
 fn is_sign_tile(kind: u16) -> bool {
     matches!(kind, 55 | 85 | 425 | 573)
 }
@@ -889,5 +891,62 @@ mod tests {
             panic!("the sign keyboard is live");
         };
         assert_eq!(s.request.initial, epitaph, "the prefill is the epitaph");
+    }
+
+    /// W4-f22 retire — the sign-item placement census: the sign item is
+    /// **171** (`ItemID.cs:2025` — NOT 177, which is Sapphire `:2037`),
+    /// `createTile 55` (`Item.cs:3477-3487`). The full place-item family:
+    /// 171→55, 321 Tombstone→85 style 0 (`:5186-5195`), 1173-1177→85 styles
+    /// 1-5 (`:14405-14459`), 3229-3233 Rich Gravestones (the GOLD variants)
+    /// →85 styles 6-10 (`:29791-29805`, `placeStyle = 6 + type - 3229`),
+    /// 3617 Announcement Box→425 (`:32574-32585`, `mech: true`), 4319/4320
+    /// Arrow Signs→510/511 (`:36997-37020` — NOT `tileSign` kinds, they
+    /// carry no record), 4710 Tattered Wood Sign→573 (`:38711-38721`).
+    /// There is NO wood/stone/metal sign-item family — the one Sign item
+    /// places the one tile 55; the "styles" are the tombstone variants and
+    /// the mounting alternates (the place-route witnesses in
+    /// `tr-core/edit/place.rs`).
+    #[test]
+    fn the_sign_item_rows_place_the_sign_tiles() {
+        let cases: &[(u16, u16, i32)] = &[
+            (171, 55, 0),
+            (321, 85, 0),
+            (1173, 85, 1),
+            (1174, 85, 2),
+            (1175, 85, 3),
+            (1176, 85, 4),
+            (1177, 85, 5),
+            (3229, 85, 6),
+            (3230, 85, 7),
+            (3231, 85, 8),
+            (3232, 85, 9),
+            (3233, 85, 10),
+            (3617, 425, 0),
+            (4319, 510, 0),
+            (4320, 511, 0),
+            (4710, 573, 0),
+        ];
+        for &(item, tile, style) in cases {
+            assert_eq!(
+                crate::registry::place_tile(item),
+                Some(tile),
+                "item {item} places tile {tile}"
+            );
+            assert_eq!(
+                crate::registry::place_style(item),
+                style,
+                "item {item} placeStyle {style}"
+            );
+        }
+        // The `tileSign` set is exactly 55/85/425/573 (`Main.cs:10081-10084`)
+        // — the arrow signs 510/511 place but never carry a sign record.
+        for kind in [55u16, 85, 425, 573] {
+            assert!(is_sign_tile(kind));
+        }
+        assert!(!is_sign_tile(510));
+        assert!(!is_sign_tile(511));
+        assert!(!is_sign_tile(395), "the item frame shares CheckSign, not tileSign");
+        // The Announcement Box is a wiring device (`mech`, `Item.cs:32584`).
+        assert!(crate::registry::get(3617).unwrap().mech);
     }
 }

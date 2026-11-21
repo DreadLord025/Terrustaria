@@ -6970,6 +6970,82 @@ census; the IME/clrInput/blockKey skip is final (input-system scope) and the
 1200-cap scroll census confirms the source carries no scroll (the dialog's
 10-line wrap is the display cap). See the deviation bullets below.
 
+**The sign-TILE placement + style census (W4-f22 retire, 2026-11-21,
+code-only)** — the place-arm and the sign-style text-store questions,
+answered against the source:
+
+- **The sign item is 171, NOT 177** (`ItemID.cs:2025` Sign = 171; 177 is
+  Sapphire `:2037`). The full place-item family (itemdata rows verified):
+  171 Sign → tile 55 (`Item.cs:3477-3487`), 321 Tombstone → 85 style 0
+  (`:5186-5195`), 1173-1177 Grave Marker/Cross/Headstone/Gravestone/Obelisk
+  → 85 styles 1-5 (`:14405-14459`), 3229-3233 Rich Gravestones → 85 styles
+  6-10 (`:29791-29805`, `placeStyle = 6 + type - 3229`), 3617 Announcement
+  Box → 425 (`:32574-32585`, `mech: true`), 4319/4320 Arrow Sign/Painted
+  Arrow Sign → 510/511 (`:36997-37020`), 4710 Tattered Wood Sign → 573
+  (`:38711-38721`). There is NO wood/stone/metal sign-item family and NO
+  "gold sign" item — the gold variants are the Rich Gravestones (tombstone
+  styles 6-10), and the one Sign item places the one tile 55.
+- **The place-route is the TileObject registry, complete**: all six kinds
+  (55/85/425/573/510/511) carry `UsesCustomCanPlace` defs
+  (`TileObjectData.cs:3822-3947`) and route through `TileObject.CanPlace`/
+  `Place` (`Player.cs:39771-39773` → the port's `place_item_tile` registry
+  arm). The legacy `WorldGen.PlaceSign` (`WorldGen.cs:43781-43861`) is
+  reached ONLY from the `PlaceTile` dispatcher (`:60166-60171`) — the
+  item-use path never enters it, so the port needs no `PlaceSign` port.
+  The base def is 2x2 `Style2x2` (`:3451-3460`: origin (0,1), AnchorBottom
+  SolidTile|SolidWithTop|Table|SolidSide ×2) + four mounting alternates
+  (alt 1 ceiling/AnchorTop, alt 2 left wall, alt 3 right wall, alt 4
+  AnchorWall — `:3824-3844`); tile 85 has NO alternates (floor-only,
+  `LavaDeath false`, `DrawYOffset 2`, `:3942-3947`) and tile 511 keeps the
+  four (`:3918-3941`). The port's generated `D_55/D_85/D_425/D_510/D_511/
+  D_573` defs match field-for-field (witnessed in `tr-core/edit/place.rs`).
+- **The frame census — the mount rides frameX, the style rides frameX,
+  frameY is always 0/18**: `TileObject.Place` writes `frameX =
+  CoordinateFullWidth(36) · CalculatePlacementStyle + 18·col`, `frameY =
+  18·row` (`TileObject.cs:60-109`; `CalculatePlacementStyle = style ·
+  StyleMultiplier + Style`, `TileObjectData.cs:1990-1998` — the alternates
+  carry Style 1-4, the tombstone styles 0-10 ride the base Style 0). So
+  `Sign.ReadSign`'s origin decode (`frameX/18 % 2`, `frameY/18`,
+  `Sign.cs:26-29`) resolves EVERY mount and EVERY style to the same 2x2
+  top-left — the record lookup is mount/style-agnostic by construction.
+  The death-drop projectiles pick the tombstone style the same way
+  (`Projectile.cs:25339-25350`: 201-205 → styles 1-5, 527-531 → 6-10, the
+  43 tombstone → 0; the `DropTombstone` coin gate `Player.cs:39116-39117`:
+  >10 gold → `Next(5)+527`, else `Next(6)` with 0 → the 43 plain tombstone).
+- **All sign styles read/write the SAME text-store**: `Main.sign[0..31999]`
+  keyed by the frame-decoded origin — `Sign.ReadSign`/`TextSign`/`KillSign`
+  (`Sign.cs`) never read the style or the mount; the tombstone epitaph
+  write (`Projectile.cs:25358-25363`, the d2 sweep), the editor
+  (`Main.SubmitSignText`), the hover tooltip and the wiring announcement
+  all ride the one store. VERIFIED — no per-style store exists.
+- **The announcement box (425) wiring arm** (`Wiring.cs:1177-1233`): the
+  2x2 SkipWire, the `-disableannouncementbox` guard, then
+  `Sign.ReadSign(num7, num8, CreateIfMissing: false)` — the SAME store,
+  printed pink via `NewTextMultiline(…, 460)` (SP) / message 107 (MP), with
+  the `-announcementboxrange` distance gate. The port's
+  `tr-core/wiring.rs` 425 arm carried a 2x2-BOX record scan instead of
+  ReadSign's EXACT-origin match — the retire census fixed it to the exact
+  (x, y) lookup + the `!tileSign` origin kill arm (`Sign.cs:30-34`), with
+  the off-origin-record and stale-origin witnesses.
+- **The `tileSign` set is exactly {55, 85, 425, 573}** (`Main.cs:10081-
+  10084`) — the arrow signs 510/511 place through the same registry route
+  but are NOT sign kinds (no record, no right-click editor, no hover). The
+  port's two `is_sign_tile` copies carried wrong tile NAMES in their doc
+  comments (85 "Tattered Wood Sign", 425 "Illuminant Hanging Sign", 573
+  "Sunplate Sign") — corrected to Tombstones/Announcement Box/Tattered
+  Wood Sign; the sets themselves were already right.
+- **The CheckSign break cascade** (`WorldGen.cs:43548-43779`, dispatch
+  `:85761-85768` — 55/85/395/425/510/511/573): the destroy tail's
+  `Sign.KillSign` (`:43686-43689`) is the lazy sweep already landed; the
+  drop arms (`:43690-43764`) map 85 → 321/1173+style-1/3229+style-6 by the
+  frameX style (`num12`), 425 → 3617, 573 → 4710, 511 → 4320, 510 → 4319,
+  default → 171, plus the 85 ghost roll (`genRand.Next(8/4/2)`, NPC 316,
+  `:43708-43742`). The port's `check_object` has no CheckSign arm (the
+  pre-existing lazy-sweep deviation) — the per-cell drops are suppressed
+  by `KILL_TILE_NO_CELL_DROP` (all six kinds true), so a broken sign
+  currently drops NO item; the cascade + drops stay the break-lane's
+  follow-up (recorded, not ported here).
+
 **The census pin: the sign text cap is 1200, NOT 500.** `IngameFancyUI.cs:145`
 passes `allowEmpty: false, 1200` to the `UIVirtualKeyboard` ctor (the ctor
 default `maxLength` is 20, `:159`); pinned as `signs::SIGN_MAX_TEXT_LENGTH`
