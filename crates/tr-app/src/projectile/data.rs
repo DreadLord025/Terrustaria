@@ -296,6 +296,14 @@ pub const MARTIAN_RAY: u16 = 438;
 /// hostile, penetrate -1).
 pub const STARDUST_MARK: u16 = 540;
 pub const NEBULA_EYE: u16 = 574;
+/// `ProjectileID.MedusaHeadRay` (536) — the Medusa head's gaze ray,
+/// aiStyle 101 (`Projectile.cs:6107-6119`: 10x10, friendly, penetrate
+/// -1, tileCollide false, magic, ignoreWater). W4-d11.
+pub const MEDUSA_HEAD_RAY: u16 = 536;
+/// `ProjectileID.MinecartMechLaser` (591) — the mechanical minecart's
+/// laser, aiStyle 101 (`Projectile.cs:6397-6408`: 8x8, friendly,
+/// penetrate -1, tileCollide false, ignoreWater). W4-d11.
+pub const MINECART_MECH_LASER: u16 = 591;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
@@ -2440,6 +2448,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:6239-6247`'s NebulaEye (the 574): 18x18, aiStyle 102,
             // timeLeft 600, tileCollide false.
             NEBULA_EYE => (18.0, 18.0, 102, -1, 600, 0, false, false, false, RESET_STATE),
+            // W4-d11 — `Projectile.cs:6107-6119` (536, the MedusaHeadRay):
+            // 10x10, aiStyle 101, penetrate -1, tileCollide false;
+            // drawLayer 7 / usesOwnerLight are render-side (dropped).
+            MEDUSA_HEAD_RAY => {
+                (10.0, 10.0, 101, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
+            // W4-d11 — `Projectile.cs:6397-6408` (591, the
+            // MinecartMechLaser): 8x8, aiStyle 101, penetrate -1,
+            // tileCollide false; drawLayer 7 / usesOwnerLight dropped.
+            MINECART_MECH_LASER => {
+                (8.0, 8.0, 101, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
             // `:6754-6766`'s TowerDamageBolt (the 629): 8x8, aiStyle 122,
             // ignoreWater, extraUpdates 2.
             TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true, RESET_STATE),
@@ -4209,6 +4229,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
             // `ignoreWater = true`.
             || kind == HIGH_VELOCITY_BULLET
+            // W4-d11 — the aiStyle-101 rays set `ignoreWater`
+            // (`Projectile.cs:6118` the 536, `:6407` the 591).
+            || matches!(kind, MEDUSA_HEAD_RAY | MINECART_MECH_LASER)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
@@ -4308,6 +4331,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+            // W4-d11 — the 536 MedusaHeadRay sets `magic = true`
+            // (`Projectile.cs:6117`); the 591 mech laser does NOT
+            // (`:6397-6408` has no such line).
+                | MEDUSA_HEAD_RAY
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the

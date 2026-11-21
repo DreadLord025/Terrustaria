@@ -17876,6 +17876,31 @@ impl ProjectilePool {
                                 self.slots[i].ai_moon_leech(&npcs[..], p);
                             }
                         }
+                        // W4-d11 — aiStyle 101 (`AI()` `:33165-33221`):
+                        // the 536 MedusaHeadRay (the key-linked 535 head
+                        // anchor — the 535 row is aiStyle 100, d10's
+                        // claim; the probe reads None until it lands and
+                        // the ray dies like the C#'s failed TryGetActive)
+                        // and the 591 MinecartMechLaser (the owner's
+                        // position-delta rider). The arm pins the centre;
+                        // `kill_step` is the generic `UpdatePosition` add
+                        // (`:20445` — 101 is not on the skip list).
+                        101 => {
+                            let parent = if self.slots[i].kind == MEDUSA_HEAD_RAY {
+                                self.key_parent(self.slots[i].ai[0], 535).map(|p| {
+                                    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+                                })
+                            } else {
+                                None
+                            };
+                            crate::projectile_ai_101_110::ai_medusa_ray(
+                                &mut self.slots[i],
+                                parent,
+                                player.as_deref(),
+                                local_owner,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
                         102 => {
                             let player = owner.unwrap_or((0.0, 0.0));
                             let npcs = &npcs[..];
