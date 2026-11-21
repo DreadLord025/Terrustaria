@@ -1729,17 +1729,22 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
             w.i32(buff_time);
         }
     }
-    // spawn points (`:54877-54888`): up to 200 (spX, spY, spI, spN) records
-    // then the -1 sentinel at the first null spN. A fresh spN[200] is all
-    // null (`Player.cs:2488`), so only the sentinel is written. W4-f44 ph3:
-    // the caller's records ride verbatim.
+    // spawn points (`:54877-54888`): up to 200 (spX, spY, spI, spN) records;
+    // the -1 sentinel is written at the first null spN and the loop breaks.
+    // With all 200 slots non-null the loop writes 200 records and NO sentinel
+    // (it exits on the bound, `:54877`). A fresh spN[200] is all null
+    // (`Player.cs:2488`), so only the sentinel is written. W4-f44 ph3: the
+    // caller's records ride verbatim.
+    let spawn_count = file.spawn_points.len().min(200);
     for (x, y, world_id, world_name) in file.spawn_points.iter().take(200) {
         w.i32(*x);
         w.i32(*y);
         w.i32(*world_id);
         w.cs_string(world_name);
     }
-    w.i32(-1);
+    if spawn_count < 200 {
+        w.i32(-1);
+    }
     // hbLocked (`:54889`): default false (`Player.cs:1436`).
     w.boolean(false);
     // hideInfo[13] (`:54890-54893`): a fresh `bool[13]` (`Player.cs:812`),
