@@ -137,6 +137,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:19902 (SunflowersPart2).
         "sunflowers" => PassMessage::Gen(39),
+        // WorldGen.cs:19973 (AlchemyHerbs).
+        "herbs" => PassMessage::Gen(41),
         // WorldGen.cs:20068.
         "surface flora" => PassMessage::Gen(42),
         // WorldGen.cs:21314.

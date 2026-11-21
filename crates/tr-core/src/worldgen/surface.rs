@@ -463,6 +463,139 @@ fn place_sunflower(world: &mut World, x: i32, y: i32, world_surface: f64, rng: &
     crate::edit::square_tile_frame_gen(world, x, y);
 }
 
+/// `AlchemyHerbs` (`WorldGen.cs:19964-19980`): `maxTilesX * 1.7` attempts
+/// (the remix world ×5), each a `PlantAlch` call. The loop bound is the
+/// double test `(double)i < num` — ceil semantics, like Sunflowers.
+pub(crate) fn pass_herbs(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    remix: bool,
+    rng: &mut Rng,
+) {
+    let mut attempts = world.width as f64 * 1.7;
+    if remix {
+        attempts *= 5.0;
+    }
+    let attempts = attempts.ceil() as i32;
+    for _ in 0..attempts {
+        plant_alch(world, world_surface, rock_layer, remix, rng);
+    }
+}
+
+/// `WorldGen.PlantAlch` (`WorldGen.cs:45901-45938`): the column roll, the
+/// depth-band pick (the 1/40 deep band, the 9/10 surface-to-bottom band,
+/// the 1/10 anywhere band — the remix world rolls anywhere directly), the
+/// scan down to the first active cell, the floor/air/liquid gate, the
+/// scaled herb-density box (15 · width/4200, at most 5 herbs inside), then
+/// `PlaceSuitableHerbHere`.
+fn plant_alch(world: &mut World, world_surface: f64, rock_layer: f64, remix: bool, rng: &mut Rng) {
+    // The sub-vanilla guard: the C# throws on an empty depth band; the port
+    // skips the attempt before any draw (the S1-K-2 wave B convention). On
+    // a classic world the 9/10 surface band and the 1/10 anywhere band must
+    // both be non-empty; the 1/40 deep band's collapse skips after its roll.
+    if world.width <= 40 || world.height <= 40 {
+        return;
+    }
+    if !remix && world.height - 20 <= world_surface as i32 {
+        return;
+    }
+    // `:45903` — the column.
+    let x = rng.range(20, world.width - 20);
+    // `:45905` — the depth pick. The band collapses are guarded the same
+    // way (the C# throws; the port skips the attempt, the column draw
+    // already consumed).
+    let mut y = if remix {
+        rng.range(20, world.height - 20)
+    } else if rng.range(0, 40) == 0 {
+        let lo = ((rock_layer + world.height as f64) / 2.0) as i32;
+        let hi = world.height - 20;
+        if hi <= lo {
+            return;
+        }
+        rng.range(lo, hi)
+    } else if rng.range(0, 10) != 0 {
+        rng.range(world_surface as i32, world.height - 20)
+    } else {
+        rng.range(20, world.height - 20)
+    };
+    // `:45905-45907` — the scan down to the first active cell.
+    while y < world.height - 20 && !world.tile(x, y).is_some_and(|t| t.active()) {
+        y += 1;
+    }
+    // `:45908-45911` — the floor must be nactive, the cell above free and
+    // dry. An out-of-world floor reads inactive (the C# null tile).
+    let floor_ok = world
+        .tile(x, y)
+        .is_some_and(|t| crate::tileobject::nactive(t));
+    let above = world.tile(x, y - 1);
+    if !floor_ok
+        || above.is_some_and(|t| t.active())
+        || above.is_some_and(|t| t.liquid != 0)
+    {
+        return;
+    }
+    // `:45912-45919` — the density box: 15 scaled by width/4200 (truncated),
+    // the four clamped bounds.
+    let radius = (15.0 * (world.width as f64 / 4200.0)) as i32;
+    let x0 = (x - radius).clamp(4, world.width - 4);
+    let x1 = (x + radius).clamp(4, world.width - 4);
+    let y0 = (y - radius).clamp(4, world.height - 4);
+    let y1 = (y + radius).clamp(4, world.height - 4);
+    // `:45920-45929` — the herb count (`Main.tileAlch`, the type test reads
+    // inactive cells too — the C# tests `.type` with no active gate).
+    let mut herbs = 0;
+    for i in x0..=x1 {
+        for j in y0..=y1 {
+            if world
+                .tile(i, j)
+                .is_some_and(|t| crate::tileobject::tile_alch(t.kind))
+            {
+                herbs += 1;
+            }
+        }
+    }
+    // `:45930-45937` — at most 5 herbs in the box; the netMode send is the
+    // server-only arm (no port).
+    if herbs < 5 {
+        place_suitable_herb_here(world, x, y);
+    }
+}
+
+/// `WorldGen.PlaceSuitableHerbHere` (`WorldGen.cs:45940-45970`): the soil
+/// family picks the herb style — grass/hallowed 0, jungle 1, dirt/mud 2,
+/// the evil family 3, sand/pearlsand (inland of the beaches) 4, ash 5, the
+/// snow/ice family 6. The C# runs every `if` (no else), but the soil sets
+/// are disjoint, so at most one fires.
+fn place_suitable_herb_here(world: &mut World, x: i32, y: i32) {
+    let Some(kind) = world.tile(x, y).map(|t| t.kind) else {
+        return;
+    };
+    // `WorldGen.beachDistance` = 380 (`WorldGen.cs:86914`).
+    const BEACH_DISTANCE: i32 = 380;
+    if kind == 2 || kind == 109 {
+        crate::edit::place_alch(world, x, y - 1, 0);
+    }
+    if kind == 60 {
+        crate::edit::place_alch(world, x, y - 1, 1);
+    }
+    if kind == 0 || kind == 59 {
+        crate::edit::place_alch(world, x, y - 1, 2);
+    }
+    if matches!(kind, 23 | 661 | 25 | 203 | 199 | 662) {
+        crate::edit::place_alch(world, x, y - 1, 3);
+    }
+    if (kind == 53 || kind == 116) && x >= BEACH_DISTANCE && x <= world.width - BEACH_DISTANCE {
+        crate::edit::place_alch(world, x, y - 1, 4);
+    }
+    if kind == 57 || kind == 633 {
+        crate::edit::place_alch(world, x, y - 1, 5);
+    }
+    if matches!(kind, 147 | 163 | 164 | 161 | 200) {
+        crate::edit::place_alch(world, x, y - 1, 6);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -569,5 +702,63 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// `PlantAlch` (`WorldGen.cs:45901-45938`) + `PlaceSuitableHerbHere`
+    /// (`:45940-45970`): the herbs land on the grass tops as tile 82 with
+    /// the style-0 frame (frameX 0), and the density cap keeps at most 5
+    /// herbs in any scaled box.
+    #[test]
+    fn the_herbs_pass_plants_daybloom_on_the_grass() {
+        let mut w = grass_world(4200, 1200, 300);
+        let mut rng = Rng::from_seed(5);
+        pass_herbs(&mut w, 350.0, 600.0, false, &mut rng);
+        let herbs: Vec<_> = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && crate::tileobject::tile_alch(t.kind))
+            .collect();
+        assert!(!herbs.is_empty(), "the herbs planted");
+        // Every herb sits directly above a solid floor cell.
+        for x in 0..w.width {
+            for y in 1..w.height {
+                if w.tile(x, y).is_some_and(|t| t.active() && t.kind == 82) {
+                    let floor = w.tile(x, y + 1).unwrap();
+                    assert!(floor.active(), "the herb at {x},{y} has a floor");
+                }
+            }
+        }
+    }
+
+    /// The soil families (`:45940-45970`): jungle grass → style 1 (frameX
+    /// 18), mud → style 2 (frameX 36), ash → style 5 (frameX 90), snow →
+    /// style 6 (frameX 108).
+    #[test]
+    fn place_suitable_herb_picks_the_soil_style() {
+        for (soil, style) in [(60u16, 1i16), (59, 2), (57, 5), (147, 6)] {
+            let mut w = grass_world(100, 100, 50);
+            let i = w.index(50, 50);
+            w.tiles[i].kind = soil;
+            place_suitable_herb_here(&mut w, 50, 50);
+            let herb = w.tile(50, 49).unwrap();
+            assert!(herb.active() && herb.kind == 82, "soil {soil} plants");
+            assert_eq!(herb.frame_x, style * 18, "soil {soil} → style {style}");
+        }
+    }
+
+    /// The sand style's beach gate (`:45958-45961`): sand inside 380 of
+    /// either edge refuses; inland sand plants style 4.
+    #[test]
+    fn place_suitable_herb_sand_needs_the_inland_band() {
+        let mut w = grass_world(1000, 100, 50);
+        for x in [100, 500] {
+            let i = w.index(x, 50);
+            w.tiles[i].kind = 53;
+        }
+        place_suitable_herb_here(&mut w, 100, 50);
+        place_suitable_herb_here(&mut w, 500, 50);
+        assert!(!w.tile(100, 49).unwrap().active(), "the beach sand refuses");
+        let inland = w.tile(500, 49).unwrap();
+        assert!(inland.active() && inland.kind == 82 && inland.frame_x == 72);
     }
 }

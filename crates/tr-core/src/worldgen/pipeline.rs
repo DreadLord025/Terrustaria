@@ -1419,6 +1419,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // insertion shifts no other step's ledger.
     step!("sunflowers", "Sunflowers", step_sunflowers),
     step!("trees", "Planting Trees", step_trees),
+    // The vanilla Herbs slot (`WorldGen.cs:19964`): immediately after
+    // Planting Trees (`:19940`), before Dye Plants (`:19981`) — W4-d105
+    // lane 5. The `PlantAlch` draws ride `pass_rng("Herbs")`.
+    step!("herbs", "Herbs", step_herbs),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
     // The vanilla Water Plants slot (`WorldGen.cs:21973`): after the
@@ -2296,6 +2300,35 @@ fn step_sunflowers(
     }
     let world_surface = gv.layers().world_surface;
     surface::pass_sunflowers(world, world_surface, &mut streams.pass_rng("Sunflowers"));
+}
+
+/// `Herbs` (`WorldGen.cs:19964-19980`, `GenPassNameID.AlchemyHerbs`) — the
+/// `maxTilesX * 1.7` `PlantAlch` attempts (remix ×5). The
+/// `Skyblock.denyAllGeneration` gate (`:19966`) rides the adapter; the
+/// column/depth/density draws ride `pass_rng("Herbs")`.
+fn step_herbs(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_all_generation(opts) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    surface::pass_herbs(
+        world,
+        world_surface,
+        rock_layer,
+        remix,
+        &mut streams.pass_rng("Herbs"),
+    );
 }
 
 /// `Webs And Honey` (`WorldGen.cs:19995`) — the wall-keyed sweep that hangs
@@ -3249,8 +3282,9 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-d105 lane 5: + `guide` (vanilla "Guide", `WorldGen.cs:19685`)
         // between `living trees` and `trees`, + `sunflowers` (vanilla
-        // "Sunflowers", `:19898`) between `guide` and `trees`.
-        assert_eq!(names.len(), 68);
+        // "Sunflowers", `:19898`) between `guide` and `trees`, + `herbs`
+        // (vanilla "Herbs", `:19964`) between `trees` and `surface flora`.
+        assert_eq!(names.len(), 69);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3344,6 +3378,7 @@ mod tests {
                 "guide",
                 "sunflowers",
                 "trees",
+                "herbs",
                 "surface flora",
                 "cacti",
                 "lihzahrd altar",
@@ -3593,6 +3628,28 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Guide") < cpos("Sunflowers"));
         assert!(cpos("Sunflowers") < cpos("Planting Trees"));
+    }
+
+    /// W4-d105 lane 5 (#39): `herbs` sits immediately after `trees` and
+    /// before `surface flora` — the vanilla Planting Trees
+    /// (`WorldGen.cs:19940`) → Herbs (`:19964`) → Dye Plants (`:19981`) →
+    /// Webs And Honey (`:19995`) → Weeds (`:20064`) chain (the port's
+    /// `surface flora` stands in for the Weeds slot).
+    #[test]
+    fn w4_d105_the_herbs_step_sits_after_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("herbs"), pos("trees") + 1);
+        assert_eq!(pos("herbs") + 1, pos("surface flora"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Planting Trees") < cpos("Herbs"));
+        assert!(cpos("Herbs") < cpos("Dye Plants"));
+        assert!(cpos("Herbs") < cpos("Weeds"));
     }
 
     #[test]

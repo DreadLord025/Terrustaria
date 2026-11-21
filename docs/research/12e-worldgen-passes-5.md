@@ -68,7 +68,12 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
       witness `w4_d105_the_sunflowers_step_sits_between_guide_and_trees`
       + 5 unit tests; the `Skyblock.denySomeGeneration` gate helper lands
       in `pipeline.rs`. Hash pins stale-by-design (tile 27 writes).
-- [ ] 39 Herbs
+- [x] 39 Herbs — `surface.rs::pass_herbs` + `plant_alch` +
+      `place_suitable_herb_here` (`:19964-19980` + `PlantAlch`
+      `:45901-45938` + `PlaceSuitableHerbHere` `:45940-45970`, reusing
+      `edit::place_alch`); step `herbs` between `trees` and
+      `surface flora`; witness
+      `w4_d105_the_herbs_step_sits_after_the_trees` + 3 unit tests.
 - [ ] 40 Dye Plants
 - [ ] 41 Flowers
 - [ ] 42 Mushrooms

@@ -250,7 +250,9 @@ mod tests {
     // Guide pass writes no tiles (the NPC ledger is not hashed), so its
     // commit alone moves neither pin. #38 Sunflowers writes tile 27 on the
     // grass tops (the band attempts + the PlaceSunflower style draws), so
-    // both pins move by design from that commit on.
+    // both pins move by design from that commit on. #39 Herbs plants tile
+    // 82 (the PlantAlch attempts, `WorldGen.cs:45901-45938`) — both pins
+    // move again by design.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
