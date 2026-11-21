@@ -1267,6 +1267,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 368 | f43 | 368-pet-arrival-family-final | DONE ffadc1f49 |
 | 369 | d34 | 369-band-211-280-seal-bible | DONE 2f7aed30b (worktree TR-W4-d34seal — cleanup-phase removal) |
 | 370 | d54j | 370-d54j-orch-dispatch-router | DONE 97c8c5180 (rename executed at landing) |
+| 382 | g81 | 283-wire-draw-seal (ad5899985, post-§10 self-pick into f26's 283) | NEW rename owed 283→382 |
 
 ### §9.3 — rules
 
@@ -1280,7 +1281,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 
 All §9.2 rename rows are EXECUTED and pushed (verified per-lane reports +
 zero-stale greps). The registry race is CLOSED. Remaining number-claim rule:
-new docs ≥370 require a Lead assignment appended here; NO self-picks.
+new docs ≥383 require a Lead assignment appended here; NO self-picks.
 Orch note: d54's orch_dust*.rs modules carry the e4-reserved first-40 +
 union steps; the 24-arm router remainder (orch_dispatch.rs, d54j catalog)
 is in flight as a separate dispatch.
