@@ -39580,6 +39580,22 @@ family, aiStyle 3). Grubby/Sluggy/Buggy are **485/486/487**, sharing the
 their VANILLA protocol ids (verified free in `npc/data.rs::to_u16` —
 no gate reassignment needed).
 
+**RETIRE-PHASE CROSS-NOTE (W4-c10 waterfowl lane, 2026-11-21, after this
+section was written):** the twelve-kind tree is COMMITTED (`d7f422049`)
+and structurally sound; batches 2-4 never landed on any ref. The d37
+roster reconcile (`a341daa12`, research/108 E8) read this branch's
+PRE-tail tip, so its c10 table does not know the tail: eleven of the
+twelve (442-448 + 484-487) are ALSO on d40's pushed band `8fe1d6d3`,
+and Worm 357 is also on c8 (E8: c8 Worm→737). Per E8's ownership rule
+(kinds-lane owns over wiring lane), d40 keeps those eleven rows at
+merge; the c10 tail drops its duplicate variant/to/from/ALL_KINDS/
+ENTRIES rows but KEEPS its wiring (the 24/65/66 axis claims — d40 has
+none — the critter/style65 modules, the five sim fields, the cs_id
+sound-key fix), re-keyed on the canonical kinds. One bestiary/sheet/
+portrait copy per kind. Full verdict: research/149 §2.5 (renumbered
+from 145). The co-lane's uncommitted ROADMAP phase-5 row was left
+UNSTAGED by every waterfowl commit — it is the co-lane's to commit.
+
 ## The waterfowl FINAL (W4-c10 final phase, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
 
 ### Item 1 — the co-lane roster-tail status (LIVE, coordinated by note)

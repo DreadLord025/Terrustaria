@@ -80,11 +80,51 @@ three mis-placed hunks, so HEAD is structurally sound.)
    the aiStyle-89 egg timer's `Transform(479)` (`NPC.cs:38380`) is
    their wiring step. Flip call: `transform_visuals(478, 479, 46, 30,
    rng)` — 219 draws, no cue.
-5. **The roster-tail co-lane (this branch)** — LIVE at this phase
-   (mtime probes 09:06:59/09:08:31, batch 1/4 committed `d7f422049`,
-   batches 2-4 doc-only per its ATOMICITY NOTE). No commit-rescue
-   needed. The final phase's three flip-site edits touch only the
-   pillar-kind fns — zero overlap with the twelve critters.
+5. **The roster-tail co-lane (this branch)** — FINAL STATUS at the
+   retire phase (was LIVE at the final phase). `d7f422049` ("phase 5
+   batch 1/4") carries the FULL twelve-kind tree per its ATOMICITY
+   NOTE; batches 2-4 never committed on any ref (`git log --all
+   --grep='batch [234]/4'` empty) — the census + doc slices live in
+   ANALYSIS "The bug-net roster tail (W4-c10 phase 5)" and the
+   co-lane's ROADMAP row (left UNSTAGED in the worktree, foreign hunk,
+   never committed by this lane). The twelve: **Worm 357, GoldBird
+   442, GoldBunny 443, GoldButterfly 444, GoldFrog 445,
+   GoldGrasshopper 446, GoldMouse 447, GoldWorm 448,
+   EnchantedNightcrawler 484, Grubby 485, Sluggy 486, Buggy 487**
+   (vanilla protocol ids; the brief's "582" corrected to 484 — 582 is
+   LarvaeAntlion). **ZERO overlap with the waterfowl eight** (362-365 /
+   602-603 / 608-609) — the two bands share only the style-24 poop
+   gate (GoldBird joins the walkers on `ai_024_bird`, the shared gate
+   reused UNMODIFIED).
+
+   **Dup-with-OTHER-lanes (the d37 E8 read, `a341daa12` 10:02:03 —
+   written against c10's PRE-tail tip `9641e20db`, its c10 row still
+   says "no new kinds"):** eleven of the twelve are ALSO rostered on
+   `origin/task/W4-d40-npc-kinds-421-490` (`8fe1d6d3`, band 430-488:
+   the gold septet 442-448 + the bait tail 484-487 — d40's
+   `npc/data.rs` to_u16 arms verified identical ids) and Worm 357 on
+   `origin/task/W4-c8-style66-crawling-critters`. d37's E8 already
+   drops c8's GoldWorm/EnchantedNightcrawler/Grubby/Sluggy/Buggy/Worm
+   copies to d40@448/484/485/486/487 + c8 Worm→737; the c10 tail is a
+   THIRD copy of the same eleven + Worm. **KEEP-ONE (this lane's
+   verdict, E8 ownership rule applied):** d40 is the kinds-lane owner
+   of 442-448/484-487 (a kinds-lane owns over a wiring lane) — at
+   merge DROP the c10 tail's duplicate `NpcKind` variants +
+   to_u16/from_u16/ALL_KINDS/ENTRIES/stat rows for those eleven, KEEP
+   d40's rows; the c10 tail's WIRING survives keyed on the canonical
+   kinds (E3's rule): the `24 => ai_024_bird` / `65 => ai_065_butterfly`
+   / `66 => ai_066_crawler` axis claims (d40 has NO axis claims — its
+   tip's npc.rs has no `24 =>`/`65 =>`/`66 =>` arms), the d38
+   `npc_ai_critter.rs` TownCritter subset + gold walk rows, the d30
+   `npc_ai_style65.rs` module, the five sim-stamped Npc fields + the
+   pre-stamps/light drain, the `critter_sound_cue` cs_id key fix.
+   Bestiary/sheet/portrait rows dedupe to ONE copy per kind (both
+   lanes carry them; keep the canonical owner's ENTRIES, this lane's
+   portrait arms are SetDefaults-box-verified). Worm 357: E8 moves
+   c8's copy to 737 — the c10 tail's Worm row drops with it (one Worm
+   port survives at 737, the c8/c10 style-66 wiring shared). The
+   co-lane's uncommitted ROADMAP row stays the co-lane's to commit;
+   this verdict is published here + in the co-lane cross-note below.
 
 ## 3. Witness index (37, all WRITTEN NOT RUN)
 
