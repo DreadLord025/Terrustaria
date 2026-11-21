@@ -3264,6 +3264,21 @@ pub(crate) fn draw_npcs(
             NpcKind::HallowBoss => {
                 pumpkin_moon_draw(assets.npc_sheet(636), npc_rows(636), n, w, h)
             }
+            NpcKind::TownCat => {
+                pumpkin_moon_draw(assets.npc_sheet(637), npc_rows(637), n, w, h)
+            }
+            NpcKind::TownDog => {
+                pumpkin_moon_draw(assets.npc_sheet(638), npc_rows(638), n, w, h)
+            }
+            NpcKind::GemSquirrelAmethyst => {
+                pumpkin_moon_draw(assets.npc_sheet(639), npc_rows(639), n, w, h)
+            }
+            NpcKind::GemSquirrelTopaz => {
+                pumpkin_moon_draw(assets.npc_sheet(640), npc_rows(640), n, w, h)
+            }
+            NpcKind::GemSquirrelSapphire => {
+                pumpkin_moon_draw(assets.npc_sheet(641), npc_rows(641), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }

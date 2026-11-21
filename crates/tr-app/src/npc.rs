@@ -1086,6 +1086,26 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.TownCat` (637) — Cat (`aiStyle 7`):
+    /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
+    /// value 0.0, townNPC (`NPC.cs:17207-17225`). W4-d43.
+    TownCat,
+    /// `NPCID.TownDog` (638) — Dog (`aiStyle 7`):
+    /// 18x28, dmg 10, def 15, 250 HP, kb 0.5,
+    /// value 0.0, townNPC (`NPC.cs:17207-17225`). W4-d43.
+    TownDog,
+    /// `NPCID.GemSquirrelAmethyst` (639) — Amethyst Squirrel (`aiStyle 7`):
+    /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
+    GemSquirrelAmethyst,
+    /// `NPCID.GemSquirrelTopaz` (640) — Topaz Squirrel (`aiStyle 7`):
+    /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
+    GemSquirrelTopaz,
+    /// `NPCID.GemSquirrelSapphire` (641) — Sapphire Squirrel (`aiStyle 7`):
+    /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
+    GemSquirrelSapphire,
     /// `NPCID.RockGolem` (631) — Rock Golem (`aiStyle 3`):
     /// 36x48, dmg 85, def 35, 1000 HP, kb 0.1,
     /// value 25000.0 (`NPC.cs:17120-17133`). W4-d43.
@@ -3552,6 +3572,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            NpcKind::TownCat => 0.5,
+            NpcKind::TownDog => 0.5,
+            NpcKind::GemSquirrelAmethyst => 1.0,
+            NpcKind::GemSquirrelTopaz => 1.0,
+            NpcKind::GemSquirrelSapphire => 1.0,
             NpcKind::RockGolem => 0.1,
             NpcKind::MaggotZombie => 0.5,
             NpcKind::SporeBat => 0.8,
@@ -3937,6 +3962,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            NpcKind::TownCat => 15,
+            NpcKind::TownDog => 15,
+            NpcKind::GemSquirrelAmethyst => 0,
+            NpcKind::GemSquirrelTopaz => 0,
+            NpcKind::GemSquirrelSapphire => 0,
             NpcKind::RockGolem => 35,
             NpcKind::MaggotZombie => 6,
             NpcKind::SporeBat => 2,
@@ -4314,6 +4344,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            NpcKind::TownCat => 0.0,
+            NpcKind::TownDog => 0.0,
+            NpcKind::GemSquirrelAmethyst => 0.0,
+            NpcKind::GemSquirrelTopaz => 0.0,
+            NpcKind::GemSquirrelSapphire => 0.0,
             NpcKind::RockGolem => 25000.0,
             NpcKind::MaggotZombie => 60.0,
             NpcKind::SporeBat => 90.0,
@@ -6325,6 +6360,11 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            NpcKind::TownCat => self.update_guide(world, dt),
+            NpcKind::TownDog => self.update_guide(world, dt),
+            NpcKind::GemSquirrelAmethyst => self.update_guide(world, dt),
+            NpcKind::GemSquirrelTopaz => self.update_guide(world, dt),
+            NpcKind::GemSquirrelSapphire => self.update_guide(world, dt),
             NpcKind::RockGolem => self.update_skeleton(world, player, dt),
             NpcKind::MaggotZombie => self.update_zombie(world, player, dt),
             NpcKind::SporeBat => self.update_cave_bat(world, player, rng),
@@ -9153,6 +9193,121 @@ impl Npc {
                 // rows — row 1 in phase 2 (`ai[3]` 1 or 3, `AI_120_HallowBoss_
                 // IsInPhase2`, `:45814-45821`), row 0 otherwise.
                 self.frame = if self.ai[3] == 1.0 || self.ai[3] == 3.0 { 1 } else { 0 };
+            }
+            // W4-d43: the town pet rides the humanoid-group case list
+            // (`NPC.cs:68622-68633`); the town machine keeps the walk band in
+            // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
+            // (the strip stays inside the sheet).
+            NpcKind::TownCat => {}
+            // W4-d43: the town pet rides the humanoid-group case list
+            // (`NPC.cs:68622-68633`); the town machine keeps the walk band in
+            // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
+            // (the strip stays inside the sheet).
+            NpcKind::TownDog => {}
+            NpcKind::GemSquirrelAmethyst => {
+                // `case 639 : .. : case 645` (`NPC.cs:76461-76509`): the gem
+                // squirrel — grounded the sprite follows the facing, the idle
+                // row 0, the `|vx|*0.5 + 1` accumulator >6 advances and wraps
+                // at `npcFrameCount - 1` back to row 1; rising holds row 2,
+                // falling row 4. (The aiStyle-3 turn reset is not this kind's
+                // aiStyle-7.)
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() * 0.5 + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() - 1 {
+                            self.frame = 1;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                }
+            }
+            NpcKind::GemSquirrelTopaz => {
+                // `case 639 : .. : case 645` (`NPC.cs:76461-76509`): the gem
+                // squirrel — grounded the sprite follows the facing, the idle
+                // row 0, the `|vx|*0.5 + 1` accumulator >6 advances and wraps
+                // at `npcFrameCount - 1` back to row 1; rising holds row 2,
+                // falling row 4. (The aiStyle-3 turn reset is not this kind's
+                // aiStyle-7.)
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() * 0.5 + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() - 1 {
+                            self.frame = 1;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                }
+            }
+            NpcKind::GemSquirrelSapphire => {
+                // `case 639 : .. : case 645` (`NPC.cs:76461-76509`): the gem
+                // squirrel — grounded the sprite follows the facing, the idle
+                // row 0, the `|vx|*0.5 + 1` accumulator >6 advances and wraps
+                // at `npcFrameCount - 1` back to row 1; rising holds row 2,
+                // falling row 4. (The aiStyle-3 turn reset is not this kind's
+                // aiStyle-7.)
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() * 0.5 + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() - 1 {
+                            self.frame = 1;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                }
             }
         }
     }
@@ -18745,6 +18900,11 @@ impl Npc {
             NpcKind::SporeBat => 634,
             NpcKind::SporeSkeleton => 635,
             NpcKind::HallowBoss => 636,
+            NpcKind::TownCat => 637,
+            NpcKind::TownDog => 638,
+            NpcKind::GemSquirrelAmethyst => 639,
+            NpcKind::GemSquirrelTopaz => 640,
+            NpcKind::GemSquirrelSapphire => 641,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23814,7 +23974,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 275] = [
+    pub(super) const ALL_KINDS: [NpcKind; 280] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24097,6 +24257,11 @@ mod tests {
         NpcKind::SporeBat,
         NpcKind::SporeSkeleton,
         NpcKind::HallowBoss,
+        NpcKind::TownCat,
+        NpcKind::TownDog,
+        NpcKind::GemSquirrelAmethyst,
+        NpcKind::GemSquirrelTopaz,
+        NpcKind::GemSquirrelSapphire,
         NpcKind::WyvernTail,
     ];
 
@@ -24160,6 +24325,37 @@ mod tests {
             (NpcKind::SporeBat, 634, 14u8, 22.0, 18.0, 13, 2, 16, 0.8, 90.0),
             (NpcKind::SporeSkeleton, 635, 3u8, 18.0, 40.0, 20, 8, 60, 0.5, 100.0),
             (NpcKind::HallowBoss, 636, 120u8, 100.0, 100.0, 80, 50, 70000, 0.0, 250000.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-d43 batch 2 — the new kinds' `SetDefaults` rows pin against the
+    /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
+    /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_batch2_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::TownCat, 637, 7u8, 18.0, 20.0, 10, 15, 250, 0.5, 0.0),
+            (NpcKind::TownDog, 638, 7u8, 18.0, 28.0, 10, 15, 250, 0.5, 0.0),
+            (NpcKind::GemSquirrelAmethyst, 639, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GemSquirrelTopaz, 640, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GemSquirrelSapphire, 641, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -27740,7 +27936,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            275,
+            280,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

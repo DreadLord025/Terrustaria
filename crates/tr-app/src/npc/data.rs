@@ -586,6 +586,11 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            NpcKind::TownCat => 637,
+            NpcKind::TownDog => 638,
+            NpcKind::GemSquirrelAmethyst => 639,
+            NpcKind::GemSquirrelTopaz => 640,
+            NpcKind::GemSquirrelSapphire => 641,
             NpcKind::RockGolem => 631,
             NpcKind::MaggotZombie => 632,
             NpcKind::SporeBat => 634,
@@ -921,6 +926,11 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            637 => NpcKind::TownCat,
+            638 => NpcKind::TownDog,
+            639 => NpcKind::GemSquirrelAmethyst,
+            640 => NpcKind::GemSquirrelTopaz,
+            641 => NpcKind::GemSquirrelSapphire,
             631 => NpcKind::RockGolem,
             632 => NpcKind::MaggotZombie,
             634 => NpcKind::SporeBat,
@@ -959,6 +969,8 @@ impl NpcKind {
                 | NpcKind::Zoologist
                 | NpcKind::Princess
                 | NpcKind::DyeTrader
+                | NpcKind::TownCat
+                | NpcKind::TownDog
                 | NpcKind::PartyGirl
         )
     }
@@ -1137,6 +1149,8 @@ impl NpcKind {
                 | NpcKind::Clothier
                 | NpcKind::GoblinTinkerer
                 | NpcKind::Painter
+                | NpcKind::TownCat
+                | NpcKind::TownDog
                 | NpcKind::WitchDoctor
         )
     }
@@ -1165,6 +1179,8 @@ impl NpcKind {
                     | NpcKind::DyeTrader
                     | NpcKind::PartyGirl
                     | NpcKind::Wizard
+                    | NpcKind::TownCat
+                | NpcKind::TownDog
                     | NpcKind::Mechanic
             )
     }
@@ -1806,6 +1822,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            NpcKind::TownCat => "NPC_Hit_1",
+            NpcKind::TownDog => "NPC_Hit_1",
+            NpcKind::GemSquirrelAmethyst => "NPC_Hit_1",
+            NpcKind::GemSquirrelTopaz => "NPC_Hit_1",
+            NpcKind::GemSquirrelSapphire => "NPC_Hit_1",
             NpcKind::RockGolem => "NPC_Hit_41",
             NpcKind::MaggotZombie => "NPC_Hit_1",
             NpcKind::SporeBat => "NPC_Hit_1",
@@ -2115,6 +2136,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            NpcKind::TownCat => "NPC_Killed_6",
+            NpcKind::TownDog => "NPC_Killed_6",
+            NpcKind::GemSquirrelAmethyst => "NPC_Killed_1",
+            NpcKind::GemSquirrelTopaz => "NPC_Killed_1",
+            NpcKind::GemSquirrelSapphire => "NPC_Killed_1",
             NpcKind::RockGolem => "NPC_Killed_43",
             NpcKind::MaggotZombie => "NPC_Killed_2",
             NpcKind::SporeBat => "NPC_Killed_4",
@@ -2473,6 +2499,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            NpcKind::TownCat => 7,
+            NpcKind::TownDog => 7,
+            NpcKind::GemSquirrelAmethyst => 7,
+            NpcKind::GemSquirrelTopaz => 7,
+            NpcKind::GemSquirrelSapphire => 7,
             NpcKind::RockGolem => 3,
             NpcKind::MaggotZombie => 3,
             NpcKind::SporeBat => 14,
@@ -3011,6 +3042,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            NpcKind::TownCat => (18.0, 20.0),
+            NpcKind::TownDog => (18.0, 28.0),
+            NpcKind::GemSquirrelAmethyst => (18.0, 20.0),
+            NpcKind::GemSquirrelTopaz => (18.0, 20.0),
+            NpcKind::GemSquirrelSapphire => (18.0, 20.0),
             NpcKind::RockGolem => (36.0, 48.0),
             NpcKind::MaggotZombie => (18.0, 40.0),
             NpcKind::SporeBat => (22.0, 18.0),
@@ -3092,6 +3128,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            NpcKind::TownCat => 637,
+            NpcKind::TownDog => 638,
+            NpcKind::GemSquirrelAmethyst => 639,
+            NpcKind::GemSquirrelTopaz => 640,
+            NpcKind::GemSquirrelSapphire => 641,
             NpcKind::RockGolem => 631,
             NpcKind::MaggotZombie => 632,
             NpcKind::SporeBat => 634,
@@ -3664,6 +3705,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            NpcKind::TownCat => 250,
+            NpcKind::TownDog => 250,
+            NpcKind::GemSquirrelAmethyst => 5,
+            NpcKind::GemSquirrelTopaz => 5,
+            NpcKind::GemSquirrelSapphire => 5,
             NpcKind::RockGolem => 1000,
             NpcKind::MaggotZombie => 45,
             NpcKind::SporeBat => 16,
@@ -4033,6 +4079,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            NpcKind::TownCat => 10,
+            NpcKind::TownDog => 10,
+            NpcKind::GemSquirrelAmethyst => 0,
+            NpcKind::GemSquirrelTopaz => 0,
+            NpcKind::GemSquirrelSapphire => 0,
             NpcKind::RockGolem => 85,
             NpcKind::MaggotZombie => 14,
             NpcKind::SporeBat => 13,
