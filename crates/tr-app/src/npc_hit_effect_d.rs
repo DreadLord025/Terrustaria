@@ -601,9 +601,11 @@ fn gem_squirrel_death(
 
 /// The 29-type critter arm's death (`NPC.cs:85942-86091`): the 10x dust-5
 /// burst, then the per-kind sub-branch. The branches land in source order
-/// — this batch ports the first two: 46/303/337/540 → 76/77 (+ the
-/// 303's extra 10x dust-193 AFTER the two gores, + the 540's extra gore
-/// 926, `:85956-85971`), 67 → 95/95/96 (`:85972-85977`). The remaining
+/// — the live sub-branches: 46/303/337/540 → 76/77 (+ the 303's extra 10x
+/// dust-193 AFTER the two gores, + the 540's extra gore 926,
+/// `:85956-85971`), 67 → 95/95/96 (`:85972-85977`), 55/230 → 553/554
+/// (`:85978-85982`), 615 → 1198/1199/1200/1200 (`:85983-85989`), 74 → 100
+/// (`:85992`), 297 → 431 (`:85996`), 298 → 432 (`:86000`). The remaining
 /// sub-branches land in later batches; an unported kind in the arm spawns
 /// the dust burst only (the census note — the gores follow in source
 /// order).
@@ -664,6 +666,20 @@ fn critter_arm_death(
         gore.new_gore(rng, world, pos, vel, 95, 1.0); // :85974
         gore.new_gore(rng, world, pos, vel, 95, 1.0); // :85975
         gore.new_gore(rng, world, pos, vel, 96, 1.0); // :85976
+    } else if npc_type == 55 || npc_type == 230 {
+        gore.new_gore(rng, world, pos, vel, 553, 1.0); // :85980
+        gore.new_gore(rng, world, pos, vel, 554, 1.0); // :85981
+    } else if npc_type == 615 {
+        gore.new_gore(rng, world, pos, vel, 1198, 1.0); // :85985
+        gore.new_gore(rng, world, pos, vel, 1199, 1.0); // :85986
+        gore.new_gore(rng, world, pos, vel, 1200, 1.0); // :85987
+        gore.new_gore(rng, world, pos, vel, 1200, 1.0); // :85988
+    } else if npc_type == 74 {
+        gore.new_gore(rng, world, pos, vel, 100, 1.0); // :85992
+    } else if npc_type == 297 {
+        gore.new_gore(rng, world, pos, vel, 431, 1.0); // :85996
+    } else if npc_type == 298 {
+        gore.new_gore(rng, world, pos, vel, 432, 1.0); // :86000
     }
 }
 
@@ -738,8 +754,9 @@ pub fn hit_effect_d(
     else if (639..=645).contains(&npc_type) {
         gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:85942-86091` — the 29-type critter arm; the 46/303/337/540 + 67
-    // sub-branches are live (sites 42-47), the rest land later.
+    // `:85942-86091` — the 29-type critter arm; the 46/303/337/540, 67,
+    // 55/230, 615, 74, 297, 298 sub-branches are live (sites 42-56), the
+    // rest land later.
     else if matches!(
         npc_type,
         46 | 55
@@ -1310,5 +1327,43 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the goldfish branch mirrors the C# draws");
+    }
+
+    /// `NPC.cs:85980-86000` — the critter singles/pairs: 55/230 → 553/554,
+    /// 615 → 1198/1199/1200/1200, 74 → 100, 297 → 431, 298 → 432; all
+    /// after the shared 10x dust-5 burst, draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_critter_singles_and_pairs_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (55, vec![553, 554]),
+            (230, vec![553, 554]),
+            (615, vec![1198, 1199, 1200, 1200]),
+            (74, vec![100]),
+            (297, vec![431]),
+            (298, vec![432]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(73);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "critter {kind}");
+            let mut twin = UnifiedRandom::new(73);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "critter {kind} mirrors the C# draws");
+        }
     }
 }
