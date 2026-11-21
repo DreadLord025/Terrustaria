@@ -1690,10 +1690,15 @@ pub fn kill_tile_make_tile_dust(
         return idx;
     }
     // `:69150-69155` — the torch-disco arm. The C# float ctor
-    // `new Color((float)R/255f, …)` truncates each [0,1] component to
-    // a byte — every channel lands 0 except a full-255 one (which
-    // lands 1). Ported as the truncation, not a re-scale.
+    // `new Color((float)R/255f, …)` goes through XNA/MonoGame's
+    // `(byte)(v*255f)` per channel — the disco bytes round-trip
+    // (modulo the C#'s own f32 divide/multiply rounding, kept
+    // verbatim). The repo convention agrees: `dust_table.rs:66`,
+    // `render/gore.rs:80-83`, e4's `color_f`, g61's pylon colour
+    // (research/66 §1 arm 11 — this replaces g14's direct [0,1]
+    // truncation, which landed every channel 0 except full-255).
     if kind == 4 && num == 66 {
+        let ch = |b: u8| (b as f32 / 255.0 * 255.0).clamp(0.0, 255.0) as u8;
         let idx = dust.new_dust(
             rng,
             ctx,
@@ -1705,12 +1710,7 @@ pub fn kill_tile_make_tile_dust(
             0.0,
             0.0,
             0,
-            Color::new(
-                (disco.0 as f32 / 255.0) as u8,
-                (disco.1 as f32 / 255.0) as u8,
-                (disco.2 as f32 / 255.0) as u8,
-                255,
-            ),
+            Color::new(ch(disco.0), ch(disco.1), ch(disco.2), 255),
             1.0,
         );
         dust.slot_mut(idx).no_gravity = true;
@@ -1963,11 +1963,14 @@ mod tests {
         streams_agree(&mut gen, &mut gtail); // the ladder drew nothing on gen
     }
 
-    /// W4-g14 — site 69152: the torch-disco arm's float-ctor colour
-    /// truncates every [0,1] component to a byte: (200,100,255) lands
-    /// (0,0,1), not a re-scale. The torch table resolves row 14 → 66.
+    /// W4-g14 (rewritten per research/66 §1 arm 11) — site 69152: the
+    /// torch-disco arm's float ctor round-trips the bytes: XNA's
+    /// `(byte)(v*255f)` undoes the `/255f`, so (200,100,255) lands
+    /// (200,100,255) modulo the f32 divide/multiply rounding — NOT the
+    /// direct [0,1] truncation this witness originally pinned. The
+    /// torch table resolves row 14 → 66.
     #[test]
-    fn w4_g14_tile_torch_disco_float_ctor_truncation() {
+    fn w4_g14_tile_torch_disco_float_ctor_round_trip() {
         let w = world();
         let c = ctx();
         let mut pool = DustPool::new();
@@ -1979,7 +1982,8 @@ mod tests {
         );
         let d = pool.slot(idx);
         assert_eq!(d.dust_type, 66);
-        assert_eq!(d.color, Color::new(0, 0, 1, 255));
+        let ch = |b: u8| (b as f32 / 255.0 * 255.0).clamp(0.0, 255.0) as u8;
+        assert_eq!(d.color, Color::new(ch(200), ch(100), ch(255), 255));
         assert!(d.no_gravity);
     }
 
