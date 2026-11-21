@@ -50,6 +50,17 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// The Party Hat vanity head (`ArmorIDs.Head.PartyHat = 195`,
+    /// `ArmorIDs.cs:437`; item 3732 `headSlot = 195`, `Item.cs:33061-33067`)
+    /// — `TextureAssets.ArmorHead[195]` = `Armor_Head_195`, outside the
+    /// 1..4 metal-set slice. W4-f41 final sweep.
+    pub(crate) party_hat: Option<BgTex>,
+    /// The hat-hair strip (`TextureAssets.PlayerHairAlt[hair]`,
+    /// `PlayerDrawLayers.cs:2104-2109`): head 195 is in `GetHairSettings`'
+    /// `hatHair` set (`Player.cs:16880/16902`), so the hair draws from the
+    /// ALT sheet UNDER the hat instead of being suppressed. Hair id 1 only
+    /// (the port's single-hair deviation, the `hair` field's).
+    pub(crate) hair_alt: Option<BgTex>,
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the ground + hover/flyer + cart sets.
@@ -76,6 +87,8 @@ impl Default for PlayerAssets {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            party_hat: None,
+            hair_alt: None,
             mount_back: [None; crate::mount::MOUNT_COUNT],
             mount_front: [None; crate::mount::MOUNT_COUNT],
         }
@@ -119,6 +132,11 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         shoes: sky_tex(atlas, "Player_0_12", None),
         hair: sky_tex(atlas, "Player_Hair_1", None),
         armor_head: armor_sheets("Armor_Head"),
+        // W4-f41 — the Party Hat head sheet + the hat-hair ALT strip
+        // (`Armor_Head_195`, `Player_HairAlt_1`; the assets.rs static list
+        // packs both).
+        party_hat: sky_tex(atlas, "Armor_Head_195", None),
+        hair_alt: sky_tex(atlas, "Player_HairAlt_1", None),
         armor_body: {
             let mut body: [Option<BgTex>; 5] = [None; 5];
             for (slot, tex) in body.iter_mut().enumerate().skip(1) {
@@ -1683,6 +1701,7 @@ pub(crate) fn draw_player(
         }),
         light: light_c,
         head_armor,
+        invis: player.invis,
         body_armor,
         leg_armor,
         // The live `Player.compositeFrontArm`/`compositeBackArm`
