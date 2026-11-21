@@ -612,3 +612,93 @@ itself still carries BOTH stale reads (down-arm pre-kill copy at
 g45 fixes (`c8908a55d` re-read, `8d581953b` `own_now`) are graft obligations
 on the NEW base too, not just on the union. The per-fn owner table of record
 is research/104 §5-final.
+
+### A8. g46d-NOW-LANDED receipt (W4-g45 LIQUID RETIRE, 2026-11-21) — A7 is STALE: the guards ARE restored; ONE stale read survives
+
+Re-read of `origin/task/W4-g46-liquid-evaporation` at the LIQUID-RETIRE
+phase: the tip is **`9bc722e5f`** — the g46d RE-FOLD LANDED as the 4-step
+chain `e7626b72d` (base swap onto g47 `95e9c1ef` wholesale) → `f588d53c5`
+(g47c `d3a30ebf` folded) → `16fd6ad78` (g45b `8e81814e` AddWater guards +
+the union carries) → `d95911ce1` (the g47d R-12-5 settle drivers) →
+`9bc722e5f` (docs). Line numbers below are fresh against
+`9bc722e5:crates/tr-core/src/liquid.rs` (5323 lines):
+
+| A7 flag | Re-fold evidence (`9bc722e5:liquid.rs`) | Status |
+| --- | --- | --- |
+| A1 border/grate/death guards | `add_water(&mut World)` :565; the 5-tile border :572; the `kind != 546` carve-out :582; the inline `check_lava_death`/`check_water_death` :624-628 → `kill_tile` :630 with the **`edit_kills` LOOT UPGRADE** :631 (`drain_edit_kills` :510) | **RESTORED** |
+| A1 `&mut World` ripple | `add_water` :565 + `wake_around` :640 both `&mut World` | **RESTORED** |
+| A2 widened fixtures | `basin` :2420 = (+6,+6) embed in a +12/+12 world WITH containment walls at x=5/x=width+6 (:2443-2448); the ~40 module fixtures widened (cadence :4404, evap pocket :4254, guards :4906, downarm-adjacent scenes); the `new_flow_fixture` `i32::MAX` evap sentinel :481-483 | **RESTORED** |
+| A3 down-arm stale read | `let down = …copied()` **:1414** BEFORE `kill_tile` :1422; the gate **:1426** still reads the pre-kill copy (`!down.active()` on the stale cell); no post-kill re-read anywhere in the arm | **STILL PRE-KILL — the ONE surviving stale read** |
+| A4 fall-arm `own_now` | :1112 `let own_now = world.tiles[i].liquid` after the evap block :1043-1051; the fall reads it :1119/:1123/:1126 | **IN the re-fold (keep)** |
+| A4 guards witness module | `liquid_addwater_guards` :4900 — all ×10 fns present, the inline-death witness asserts the queued `TileKill` on `edit_kills` (the research/70 re-pin) | **RESTORED** |
+| A4 bucket module | `editing/` tree = doors/sentry/wiring only — NO `buckets.rs`, no `use_buckets` in `editing.rs` | **ABSENT (by owner-table design — g45-unique, travels at the merge, NOT a g46e gap)** |
+| A4 downarm/fall-arm/shimmer-flow witness modules | zero hits for `liquid_downarm_live` / `the_fall_arm_moves_the_post_evaporation_level` / `shimmer_falls_every_visit_like_water` / `shimmer_falls_every_visit_ungated` | **ABSENT (g45-unique fold-source, same rule)** |
+
+Extra re-fold carries verified in passing: the g45 extra wakes ARE in
+(:1200-1212 7-arm / :1222-1229 5-arm, the centre-diff reduction intact);
+the `surface_rng` nudge :248/:470/:1259 (world-seeded, NOT g45's
+`frame_rng`); the evap block's immediate `KILL_DEAD` retire :1048-1050
+(g46 faithful form — g45's post-block zero-check is the dropped form);
+`update_world_tick` :662 (skipCount driver); the g47 machinery symbols
+(`reduced_max_liquids`, `gen_settle_loop`, `quick_water`,
+`settle_water_at`, `set_gen_dungeon_context`, `shimmer_remove_water`)
+all present.
+
+#### A8-graft. The EXACT graft-hunk for g46e-seal (the down-arm LIVE re-read)
+
+Target: `9bc722e5:crates/tr-core/src/liquid.rs`, `liquid_check`'s down arm
+(:1413-1428). The gate at :1426 and the merge-type reads at :1436-1441
+run AFTER the burn in C# (`tile4` is a live reference — `Liquid.cs:1286`/
+`:1303` follow `:1280`'s `KillTile`), so the seven cut kinds OUTSIDE
+`tileObsidianKill` (444/518/519/549/637/638/711) pass on `!tile4.active()`
+once the kill cleared them. The pre-kill copy wrongly refuses. Apply
+verbatim (the g45 `c8908a55d` form; `flag` stays the PRE-kill read — the
+C# computes it at `:1274`, before `:1278`'s burn; `remove_tile` keeps the
+liquid + type bits, `WorldGen.cs:63885`, so the amount/type reads below
+see the same liquid the C# does):
+
+```rust
+             if this_liquid_type != 0 && crate::tileobject::tile_cut(down.kind) {
+                 crate::edit::kill_tile(world, x, y + 1, false);
+                 // `Main.netMode == 2` → `NetMessage.SendData(17, …)` (`:1309`)
+                 // — no multiplayer in the port.
+             }
++            // W4-g45 doc-sweep: the C# `tile4` is a LIVE reference — the gate
++            // (`:1286`) and the merge-type reads (`:1303`) run AFTER the burn,
++            // so a `tileCut` kind the kill just cleared passes on
++            // `!tile4.active()` even when it is not `tileObsidianKill` (the
++            // seven cut kinds outside the set: 444/518/519/549/637/638/711).
++            // The pre-kill copy refused those; re-read the cell. The kill
++            // keeps the liquid + type bits (`remove_tile`, `WorldGen.cs:63885`
++            // clears everything but wall/liquid), so the amount/type reads
++            // below see the same liquid the C# does. `flag` stays the PRE-kill
++            // read — the C# computes it at `:1274`, before `:1278`'s burn.
++            let down = world.tile(x, y + 1).copied().unwrap_or_default();
+             if !((!down.active() || td::TILE_OBSIDIAN_KILL.has(down.kind)) || flag) {
+                 return;
+             }
+```
+
+Companion carries for the same seal (g45-unique, per the owner table
+research/104 §5-final — they postdate research/70's census scope):
+1. the `liquid_downarm_live` ×4 witness module (g45 tip `326808019:liquid.rs:3061-3165`
+   — `the_burned_non_obsidian_kill_plant_lets_the_sub_24_drain_run` /
+   `the_burned_lily_pad_lets_the_full_merge_land_below` /
+   `the_honey_arm_burns_and_merges_the_same_way` /
+   `the_water_arm_never_burns_the_non_obsidian_kill_plant`). The module's
+   `floor_world(9,120,8)` (+6,+6) fixture and the direct
+   `sys.liquid_check(&mut w, …)` calls are signature-identical on the
+   re-fold base (:1347) — graft as-is.
+2. `the_fall_arm_moves_the_post_evaporation_level` (g45 :2342-2361): the
+   re-fold base HAS the `own_now` behaviour but NO pin; the witness rides
+   the widened `shaft`/`floor_world` helpers the base already carries
+   (:4404/:4420) and `LiquidSystem::new` (the band is live there — no
+   sentinel wanted). Append into the base's `liquid_merge_cadence`.
+3. the shimmer-flow pin: keep ONE of g45 `shimmer_falls_every_visit_like_water`
+   (:2424-2441, the cadence-trace assertions) and g47 `shimmer_falls_every_visit_ungated`
+   (`4c81731bc:liquid.rs:3002-3021`, the shelf fixture + the `entry.delay == 0`
+   assert). NOTE the re-fold dropped BOTH (the g47 base `95e9c1ef` predates
+   the closeout commit that wrote the twin) — the merged pin is a g46e
+   obligation, not a dedupe of something already there. The g47 fixture
+   calls `sys.add_water(&w, …)` (pre-guard signature) — re-pin to
+   `&mut w` at the graft.
