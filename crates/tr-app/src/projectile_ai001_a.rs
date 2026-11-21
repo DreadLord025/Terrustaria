@@ -832,17 +832,20 @@ mod tests {
         assert!(d.ignore_water, "Projectile.cs:3903");
         assert!(handles(SHADOWFLAMES), "the slice-A gate claims 299");
         // The arm: the counter rests, the flight is straight, the Item8 cue
-        // fires once at localAI[0] == 6 (the 7th tick).
+        // fires once at localAI[0] == 6 (the 7th tick). The cue rides the
+        // PRE-move position (the C# plays inside AI(), before
+        // HandleMovement) — capture it before the step.
         let mut p = proj(SHADOWFLAMES, 6.0, 0.0);
         let w = world();
         let mut cues = 0;
         for tick in 0..10 {
             p.wants_sound = None;
+            let (px, py) = (p.pos.x, p.pos.y);
             ai001_slice_a(&mut p, &w, None);
             if p.wants_sound.is_some() {
                 cues += 1;
                 assert_eq!(tick, 6, "the cue fires on the 7th tick (localAI[0] == 6)");
-                assert_eq!(p.wants_sound, Some((2, 8, p.pos.x, p.pos.y, 0.0)));
+                assert_eq!(p.wants_sound, Some((2, 8, px, py, 0.0)));
             }
         }
         assert_eq!(cues, 1, "one Item8 cue per life (:56633-56635)");
