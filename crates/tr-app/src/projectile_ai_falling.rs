@@ -403,7 +403,11 @@ pub(crate) fn step(
 /// `HandleMovement`'s two tile-cut blocks (`Projectile.cs:17910-17947`
 /// the 484 rolling-cactus block, `:17948-17985` the cracked-brick block — the
 /// second-copy helper rule: one walk, the kind test is the parameter).
-/// W4-d1 retire — the cutting layer's falling-block slice.
+/// W4-d1 retire — the cutting layer's falling-block slice. W4-d1 SEAL:
+/// the 491 FlyingKnife's blocked move shares the walk (its `CanCutTiles`
+/// passes — aiStyle 9 is not on the refusal list, the 491 not on the type
+/// list — and `friendly || hostile` holds; the coin-pile fold is a no-op
+/// for it).
 ///
 /// The gate (both blocks): `owner == Main.myPlayer && CanCutTiles() &&
 /// (friendly || hostile) && damage > 0`. `CanCutTiles` (`:15323-15334`)
@@ -427,7 +431,7 @@ pub(crate) fn step(
 /// precedent; the `netMode` sends are MP-only). ZERO call-site rand —
 /// the cracked block's `Next(3)` is the caller's (the first `&&`
 /// operand, drawn on every blocked move).
-fn cut_tiles_in_flight_box(p: &Projectile, world: &mut World, local_owner: u8, cracked: bool) {
+pub(crate) fn cut_tiles_in_flight_box(p: &Projectile, world: &mut World, local_owner: u8, cracked: bool) {
     // The shared gate (module doc): `owner == Main.myPlayer` + the
     // `friendly || hostile` fold (the coin piles are the only served kinds
     // with both flags false) + `damage > 0`. `CanCutTiles` passes every

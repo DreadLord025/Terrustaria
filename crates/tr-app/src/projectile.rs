@@ -8436,6 +8436,205 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// W4-d1 SEAL — `AI_009_MagicMissiles_Old` (`Projectile.cs:43427-43653`),
+    /// the LIVE legacy machine the e3 RETIRE census task-seeded to d1
+    /// (research/125 §2): `AI_009_MagicMissiles`'s head (`:43197-43201`)
+    /// delegates here under `type == 491` and returns. The 491 FlyingKnife
+    /// is the ONLY reachable kind — the body's `type == 16` (`:43434`,
+    /// `:43601-43622`), `type == 79` (`:43584-43600`) and `type == 34`
+    /// (`:43623-43644`) branches are DEAD for it, kept as citations (the
+    /// census-F2 convention); the `!flag` rotation tail (`:43645-43648`)
+    /// never runs (the 491 sets `flag = true`, `:43555`).
+    ///
+    /// The machine, in the C#'s own order:
+    /// 1. The owner block (`:43429-43538`, `ai[0] <= 0`): the channel hold
+    ///    steers at speed 20 (`:43440` — the 16's 15 / the default 12 are
+    ///    dead for the 491). The close case (`num4 < 100f`, `:43452-43467`)
+    ///    boosts ×1.1 to the 20 cap and latches `ai[0] = -10` at 0; the far
+    ///    case (`> 20`, `:43468-43491`) blends `(v*4 + aim)/5` (`:43484`);
+    ///    the mid case sets the velocity outright (`:43502-43503`). The
+    ///    release (`:43506-43537`) skips the `type != 491` re-aim block
+    ///    (`:43509-43535`) and just latches `ai[0] = 1` (`:43536`).
+    /// 2. The 491 block (`:43540-43583`): `localAI[0]++`; from tick 16
+    ///    while released (`ai[0] > 0`) the knife flies home — tileCollide
+    ///    drops, the owner-distance < 20 kill, the `(v*5 + toOwner·25)/6`
+    ///    blend (`:43543-43554`); the rotation ladder (`:43556-43567`); the
+    ///    2000-px owner-distance kill (`:43568-43571`); the dust gate
+    ///    `Next(2) == 0` → the `Next(3)` type pick (15/57/58) — BOTH draws
+    ///    stay on the pass stream, the dust body skips (the W4-d1
+    ///    explicit-draw convention).
+    /// 3. The +16 fall clamp (`:43649-43652`).
+    /// 4. Movement (`HandleMovement`): the collision box is the 10×10
+    ///    centre resize (`GetCollisionParams` `:19957-19960` — the 491 is
+    ///    on the list); a blocked move runs the tile-cut chain FIRST
+    ///    (`:17910-17985`, the shared `cut_tiles_in_flight_box` — the
+    ///    `CanCutTiles` pass, aiStyle 9 not on the refusal list), THEN the
+    ///    491 bounce arm (`:18464-18478`): `ai[0] <= 0 → -10`, each blocked
+    ///    axis with a non-zero pre-collision component reflects at FULL
+    ///    strength (`lastVelocity * -1f`). The arm sits in the OUTER
+    ///    per-type chain — the style-9 kill (`:19325-19348`, nested under
+    ///    `:18635`) never reaches the 491. `UpdatePosition` (`:20445`)
+    ///    integrates the post-bounce velocity (the 491 is not on the skip
+    ///    list `:20435`).
+    ///
+    /// Skips (each noted): the `netUpdate` writes (`:43479`/`:43498`/
+    /// `:43508` — no MP layer), the dust bodies, the wet branch (the liquid
+    /// flags fold dry, the pool convention). The `LimitPointToPlayerReachableArea`
+    /// clamp rides the `channel_target` seam (S1-P-i23, the use path
+    /// pre-clamps). A `None` player folds the owner centre to the knife's
+    /// own centre (the zero-delta arm — the falling-arm convention).
+    fn ai_magic_missile_old(
+        &mut self,
+        world: &mut World,
+        rng: &mut dyn DropRng,
+        local_owner: u8,
+        player: Option<&crate::player::Player>,
+    ) {
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let owner_center = player
+            .map(|p| {
+                let (cx, cy) = p.center();
+                Vec2::new(cx, cy)
+            })
+            .unwrap_or(center);
+        // `:43429-43538` — the owner block.
+        if self.owner == local_owner && self.ai[0] <= 0.0 {
+            let channel_hold = player.is_some_and(|p| {
+                p.channel && crate::registry::projectile(p.channel_item) == Some(self.kind)
+            });
+            if channel_hold {
+                // `:43433-43441` — num = 20 for the 491 (the 16's 15 and
+                // the default 12 are dead branches).
+                let speed = 20.0f32;
+                // `:43443-43444` — the clamped mouse world point (the
+                // channel_target seam carries LimitPointToPlayerReachableArea).
+                let aim = player.map(|p| p.channel_target).unwrap_or(center);
+                let mut dx = aim.x - center.x;
+                let mut dy = aim.y - center.y;
+                let len = (dx * dx + dy * dy).sqrt();
+                // `:43448-43451` — the negative-latch recovery.
+                if self.ai[0] < 0.0 {
+                    self.ai[0] += 1.0;
+                }
+                if len < 100.0 {
+                    // `:43452-43467` — the close case: the ×1.1 boost to
+                    // the 20 cap, the ai[0] = -10 latch at 0.
+                    if self.vel.length() < speed {
+                        self.vel *= 1.1;
+                        if self.vel.length() > speed {
+                            let l = self.vel.length();
+                            if l > 0.0 {
+                                self.vel = self.vel / l * speed;
+                            }
+                        }
+                    }
+                    if self.ai[0] == 0.0 {
+                        self.ai[0] = -10.0;
+                    }
+                } else if len > speed {
+                    // `:43468-43491` — the far case: the capped approach,
+                    // the (v*4 + aim)/5 blend (`:43484`). The int-compare
+                    // netUpdate (`:43473-43480`) skips.
+                    let k = speed / len;
+                    dx *= k;
+                    dy *= k;
+                    self.vel = (self.vel * 4.0 + Vec2::new(dx, dy)) / 5.0;
+                } else {
+                    // `:43492-43504` — the mid case: the velocity outright
+                    // (the netUpdate skips).
+                    self.vel = Vec2::new(dx, dy);
+                }
+            } else if self.ai[0] <= 0.0 {
+                // `:43506-43537` — the release: the `type != 491` re-aim
+                // block (`:43509-43535`) skips for the only reachable
+                // kind; the latch stands (`:43536`).
+                self.ai[0] = 1.0;
+            }
+        }
+        // `:43540-43583` — the 491 block.
+        self.local_ai[0] += 1.0;
+        if self.ai[0] > 0.0 && self.local_ai[0] > 15.0 {
+            // `:43543-43554` — the fly-home: tileCollide drops, the
+            // owner-close kill, the (v*5 + toOwner·25)/6 blend.
+            self.tile_collide = false;
+            let mut to_owner = owner_center - center;
+            if to_owner.length() < 20.0 {
+                self.kill_time_left = self.time_left;
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+            let l = to_owner.length();
+            if l > 0.0 {
+                to_owner = to_owner / l * 25.0;
+            }
+            self.vel = (self.vel * 5.0 + to_owner) / 6.0;
+        }
+        // `:43556-43567` — the rotation ladder.
+        if self.ai[0] < 0.0 || self.vel == Vec2::ZERO {
+            self.rot += 0.3;
+        } else if self.ai[0] > 0.0 {
+            self.rot += 0.3 * self.direction as f32;
+        } else {
+            self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        }
+        // `:43568-43571` — the 2000-px owner-distance kill.
+        if center.distance(owner_center) > 2000.0 {
+            self.kill_time_left = self.time_left;
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        // `:43572-43582` — the dust gate: the Next(2) roll AND the Next(3)
+        // type pick (15/57/58) are explicit call-site draws — both stay;
+        // the dust-279-style body (velocity ×0.25, the position midpoint)
+        // skips with the dust layer.
+        if rng.next_range(0, 2) == 0 {
+            let _ = rng.next_range(0, 3);
+        }
+        // `:43649-43652` — the fall clamp (the !flag tail `:43645-43648`
+        // never runs — the 491 sets flag true).
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        // ---- The movement (HandleMovement + UpdatePosition) ---------------
+        if !self.tile_collide {
+            self.pos += self.vel;
+            return;
+        }
+        // `GetCollisionParams` (`:19957-19960`) — the 491's 10×10 centre
+        // resize (the resizeAnchor 0.5 default, `:19869`).
+        let col = Vec2::new(center.x - 5.0, center.y - 5.0);
+        let last = self.vel;
+        let nx = col.x + self.vel.x;
+        let ny = col.y + self.vel.y;
+        let hit_x = crate::player::collides_rect(world, nx, col.y, 10.0, 10.0);
+        let hit_y = crate::player::collides_rect(world, col.x, ny, 10.0, 10.0);
+        if hit_x || hit_y {
+            // The `flag` block (`:17904`): the tile-cut chain FIRST — the
+            // 484 walk, the Next(3) first-&&-operand draw, the cracked
+            // walk on == 0 (the shared helper, the falling-arm order).
+            crate::projectile_ai_falling::cut_tiles_in_flight_box(self, world, local_owner, false);
+            let cut_roll = rng.next_range(0, 3);
+            if cut_roll == 0 {
+                crate::projectile_ai_falling::cut_tiles_in_flight_box(self, world, local_owner, true);
+            }
+            // `:18464-18478` — the 491 bounce arm (the OUTER per-type
+            // chain — the style-9 kill `:19325` never reaches it).
+            if self.ai[0] <= 0.0 {
+                self.ai[0] = -10.0;
+            }
+            if hit_x && last.x.abs() > 0.0 {
+                self.vel.x = last.x * -1.0;
+            }
+            if hit_y && last.y.abs() > 0.0 {
+                self.vel.y = last.y * -1.0;
+            }
+        }
+        // `UpdatePosition` (`:20445`) — the post-bounce integration.
+        self.pos += self.vel;
+    }
+
     /// `AI_029_GemStaffs` (`Projectile.cs:37643-37827`) → the bolts'
     /// `AI_029_GemStaffs_ActuallyGemStaffs` (`:37829-38001`): the gem-staff
     /// family (kinds 121-126 and 597 — the C#'s `else` arm; the 521/522/619/
@@ -17157,6 +17356,10 @@ impl ProjectilePool {
                                     world,
                                     npcs,
                                     &self.local_immunity[i * 256..(i + 1) * 256],
+                                    // W4-d1 SEAL — the 981's Next(6) drip
+                                    // gate rides the pass stream (the
+                                    // other eleven kinds draw nothing).
+                                    rng,
                                 )
                             }
                             // S1-P-i28 — the Javelin (507, `AI_001`'s
@@ -18078,8 +18281,25 @@ impl ProjectilePool {
                         }
                         // The aiStyle-9 aimed spells (`:43195-43425`): the
                         // owner channel block reads the player's channel
-                        // state, hence the family signature.
-                        9 => self.slots[i].ai_magic_missile(world, npcs, owner, player.as_deref()),
+                        // state, hence the family signature. W4-d1 SEAL:
+                        // the type-491 head (`:43197-43201`) delegates to
+                        // the LIVE `_Old` machine and returns — the 491
+                        // FlyingKnife rides `ai_magic_missile_old` (the
+                        // e3 RETIRE census's d1 task seed, research/125).
+                        // The tile-cut chain reborrows `world` mutably at
+                        // this call site (the ai_ice_block carve-out).
+                        9 => {
+                            if self.slots[i].kind == FLYING_KNIFE {
+                                self.slots[i].ai_magic_missile_old(
+                                    world,
+                                    rng,
+                                    local_owner,
+                                    player.as_deref(),
+                                );
+                            } else {
+                                self.slots[i].ai_magic_missile(world, npcs, owner, player.as_deref())
+                            }
+                        }
                         // The aiStyle-47 magnet sphere (`:41403-41499`): the
                         // pool-side step — the dedupe walk and the bolt spawn
                         // need the whole pool, so it is not a slot arm.
@@ -23282,6 +23502,14 @@ impl ProjectilePool {
                         }
                     }
                 }
+            }
+            // W4-d1 SEAL — `Damage_PVE_Inner`'s SilverBullet Werewolf-bane
+            // (`Projectile.cs:13385-13388`): `type == 981 && targetNPC.type
+            // == 104` → `dmg *= 3`. The C# site sits AFTER the banner/expert
+            // arms (`:13345-13384`, unported layers) and BEFORE the yoyo
+            // doublings (`:13389`) — the port's pre-doubling position.
+            if self.slots[slot].kind == SILVER_BULLET && npcs[idx].kind == 104 {
+                dmg *= 3;
             }
             // `:13389-13396` — the yoyo damage doublings, evaluated BEFORE
             // the strike against the player's `yoyoHitCounter` with the peek
@@ -43079,6 +43307,190 @@ mod w4_d1_falling_block_tests {
         );
         assert!(!pool.slots()[slot].active, "the blocked move still kills");
         assert!(w.tile(9, 23).unwrap().active(), "the owner gate: no cut");
+        assert_eq!(rng.draws, vec![(0, 2), (0, 3)]);
+    }
+}
+
+/// W4-d1 SEAL — the 491 FlyingKnife (`AI_009_MagicMissiles_Old`,
+/// `Projectile.cs:43427-43653`, the type-491 head `:43197-43201`; the row
+/// `:5404-5412`). The e3 RETIRE census's d1 task seed (research/125 §2 —
+/// the LIVE legacy machine, the `AI_019_Spears_Old` sibling DEAD).
+/// WRITTEN NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d1_flying_knife_tests {
+    use super::*;
+
+    /// The scripted stream (the w4_d1_falling_block_tests shape).
+    struct Script {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl Script {
+        fn with_rolls(rolls: &[i32]) -> Self {
+            Self { rolls: rolls.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() { max - 1 } else { self.rolls.remove(0) }
+        }
+        fn next_float(&mut self) -> f32 { 0.5 }
+    }
+
+    fn world() -> World { World::new("t".into(), 512, 512) }
+
+    fn put_solid(w: &mut World, x: i32, y: i32) {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// A knife slot at the given position/velocity carrying its row.
+    fn knife(pool: &mut ProjectilePool, x: f32, y: f32, vx: f32, vy: f32) -> usize {
+        pool.spawn_with_data_ai(FLYING_KNIFE, x, y, vx, vy, 40, 4.5, 0.0, 0.0)
+            .expect("the 491 row spawns")
+    }
+
+    /// The 491 row (`Projectile.cs:5404-5412`): 26×26, aiStyle 9, friendly,
+    /// melee, penetrate −1; the stock 3600 life / tileCollide true /
+    /// extraUpdates 0 / alpha 0 / scale 1 stand. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_the_flying_knife_row_matches_set_defaults() {
+        let d = proj_data(FLYING_KNIFE).expect("the 491 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (26.0, 26.0, 9, -1));
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(d.extra_updates, 0);
+        assert!(d.tile_collide);
+        assert!(d.melee && !d.ranged && !d.magic, ":5410 melee only");
+        assert_eq!((d.alpha, d.scale), (0, 1.0));
+        assert!(!d.ignore_water, "the arm writes no ignoreWater");
+        // The item wire: the Flying Knife item 3030 shoots 491 (channel).
+        assert_eq!(crate::registry::projectile(3030), Some(FLYING_KNIFE));
+    }
+
+    /// The dispatch head (`:43197-43201`): the 491 rides the `_Old`
+    /// machine — the release latch `ai[0] = 1` (`:43536`), NOT the modern
+    /// arm's −1 release + homing. The owner centre folds to the knife's
+    /// own centre (no player) — the fly-home kill arms at tick 16.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_the_flying_knife_release_latches_the_old_machine() {
+        let mut pool = ProjectilePool::new();
+        let slot = knife(&mut pool, 160.0, 160.0, 4.0, 0.0);
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, true,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.ai[0], 1.0, "the release latch (:43536), not the modern -1");
+        assert_eq!(p.local_ai[0], 1.0, "the age counter (:43542)");
+        // The rotation: ai[0] > 0 → +0.3 * direction (`:43560-43563`).
+        assert!((p.rot - 0.3).abs() < 1e-6);
+        // The free move integrates the velocity.
+        assert_eq!(p.pos, Vec2::new(164.0, 160.0));
+        // The dust gate drew its Next(2) (exhausted reads 1 — no body).
+        assert_eq!(rng.draws, vec![(0, 2)]);
+    }
+
+    /// The channel close case (`:43452-43467`): the aim within 100 px of
+    /// the knife's centre boosts ×1.1 to the 20 cap and latches
+    /// `ai[0] = -10` at 0. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_the_flying_knife_channel_close_boosts_and_latches() {
+        let mut pool = ProjectilePool::new();
+        // The knife centre (173, 173); the player centre (173, 173) — the
+        // owner-close fold keeps the fly-home kill away (ai[0] stays < 0).
+        let slot = knife(&mut pool, 160.0, 160.0, 10.0, 0.0);
+        let mut w = world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 163.0; // centre 173 (width 20)
+        p.y = 152.0; // centre 173 (height 42)
+        p.channel = true;
+        p.channel_item = 3030; // the Flying Knife item, shoot 491
+        p.channel_target = Vec2::new(223.0, 173.0); // 50 px right — < 100
+        let mut rng = Script::with_rolls(&[]);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w, &mut npcs, None, None, Some(&mut p),
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, true,
+        );
+        let k = &pool.slots()[slot];
+        assert_eq!(k.ai[0], -10.0, "the close-case latch (:43463-43466)");
+        // 10 × 1.1 = 11 (< 20, no cap).
+        assert!((k.vel.x - 11.0).abs() < 1e-4, "the ×1.1 boost (:43456)");
+        // The rotation: ai[0] < 0 → +0.3 (`:43556-43559`).
+        assert!((k.rot - 0.3).abs() < 1e-6);
+    }
+
+    /// The fly-home kill (`:43543-43550`): from tick 16 while released the
+    /// knife homes; the owner-distance < 20 kill fires. The owner centre
+    /// folds to the spawn centre (no player) — the knife flies 4 px/tick,
+    /// so at tick 16 it is 64 px away… the kill needs the distance < 20:
+    /// spawn the knife ON the fold centre and let the boost stay zero.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_the_flying_knife_homes_and_dies_at_the_owner() {
+        let mut pool = ProjectilePool::new();
+        // Zero velocity: the knife stays on its own centre (the fold).
+        let slot = knife(&mut pool, 160.0, 160.0, 0.0, 0.0);
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..15 {
+            pool.update(
+                &mut w, &mut npcs, None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, true,
+            );
+            assert!(pool.slots()[slot].active, "the first 15 ticks live");
+        }
+        // Tick 16: localAI[0] = 16 > 15, ai[0] = 1 > 0 — the fly-home arms,
+        // the distance 0 < 20 kills.
+        pool.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, true,
+        );
+        assert!(!pool.slots()[slot].active, "the owner-close kill (:43547-43550)");
+        assert!(!pool.slots()[slot].tile_collide, "tileCollide dropped (:43545)");
+    }
+
+    /// The blocked-move bounce (`:18464-18478`): the 491 reflects the
+    /// blocked axis at FULL strength and latches `ai[0] = -10` (while
+    /// aiming, `ai[0] <= 0`); the tile-cut chain draws its Next(3) FIRST.
+    /// The style-9 kill (`:19325`) never reaches the 491 — it BOUNCES.
+    /// The channel is held so the knife stays in the aiming phase (the
+    /// close-case latch keeps `ai[0]` negative). WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_the_flying_knife_bounces_off_tiles() {
+        let mut pool = ProjectilePool::new();
+        // The knife centre (173, 173); the 10×10 collision box (168, 168).
+        // A solid cell at (11, 10) = x 176..192 blocks the +x move.
+        let slot = knife(&mut pool, 160.0, 160.0, 4.0, 0.0);
+        let mut w = world();
+        put_solid(&mut w, 11, 10);
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 163.0; // centre 173
+        p.y = 152.0; // centre 173
+        p.channel = true;
+        p.channel_item = 3030;
+        p.channel_target = Vec2::new(223.0, 173.0); // 50 px right — close case
+        let mut rng = Script::with_rolls(&[]);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w, &mut npcs, None, None, Some(&mut p),
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, true,
+        );
+        let k = &pool.slots()[slot];
+        assert!(k.active, "the 491 bounces, never the style-9 kill");
+        assert_eq!(k.ai[0], -10.0, "the bounce latch (:18466-18469)");
+        // The close case boosted 4 → 4.4, the bounce reflects it full.
+        assert!((k.vel.x + 4.4).abs() < 1e-4, "the full-strength reflect (:18472)");
+        // The draw order: the dust Next(2), THEN the tile-cut Next(3).
         assert_eq!(rng.draws, vec![(0, 2), (0, 3)]);
     }
 }

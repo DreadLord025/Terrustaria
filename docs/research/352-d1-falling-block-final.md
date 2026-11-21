@@ -297,7 +297,7 @@ resize (the `40 + 8*ai[0]` box, the pen −1 flash), the disco AddLight,
 the Kill dust trail, the Shimmer lift, the GetAlpha tint — the dust/
 effect layer's census, d75's lane.
 
-## 4. The falling-block-family declaration
+## 4. The falling-block-family declaration (the family bible)
 
 **FALLING-BLOCK FAMILY COMPLETE** (the aiStyle-10 lane, W4-d1):
 
@@ -329,7 +329,9 @@ effect layer's census, d75's lane.
   d18-shape rows.
 - The 502 row is d75's (§3) — no d1 action.
 - The cutting layer's other slices (the light-items/flare/melee families)
-  — their own lanes; the falling-block slice is done.
+  — their own lanes; the falling-block slice is done. W4-d1 SEAL (§6)
+  added the 491 FlyingKnife's blocked move as the walk's second caller
+  (`pub(crate)` — the second-copy helper rule, no duplicate walk).
 - The MP tails (the `netMode == 2` spawn variant, the `netUpdate` writes,
   the `ExploitDestroyQueue`) — the net lane's.
 
@@ -358,3 +360,146 @@ effect layer's census, d75's lane.
 - No cargo/tests/rustfmt/graphify run (the task's code-only mandate).
   The witnesses are written, not run; every expected value hand-derived
   from the cited C# lines.
+
+## 6. The SEAL round (W4-d1, 2026-11-21) — the 491 FlyingKnife + the 981 SilverBullet
+
+The lane's last two e3 task seeds (research/125's RETIRE phase: the
+`_Old` LIVE/DEAD caller census + the 345-branch unrowed scan) landed in
+this round. **No new research number is taken** — registry-150 §9.3
+("New docs require a registry check + Lead assignment; NO self-picks")
+folds this round into THIS doc; the falling-block-family bible stays §4
+(the declaration section), the SEAL receipts ride here. The two owed
+code-comment cites from the 246→352 rename (`projectile/data.rs` +
+`projectile_ai_misc.rs` ×2, §9 row 352's note) are PAID in this round's
+commit — `git grep 'research/246|246-d1-falling'` over crates/docs/
+anchors is empty (stale-zero re-verified).
+
+### 6a. The 491 FlyingKnife — row + the LIVE `_Old` machine (the e3 seed)
+
+The e3 census verdict (research/125 §RETIRE (2)): `AI_009_MagicMissiles_Old`
+(`Projectile.cs:43427-43653`) is LIVE — ONE caller, `AI_009_MagicMissiles`'s
+type-491 head (`:43197-43201`, delegate + return); the 491 row was UNROWED
+on every pushed tip; owner lane d1 (the aiStyle-6/9 band remainder). The
+`AI_019_Spears_Old` sibling is DEAD (zero callers — cite-drop, not d1's).
+
+- **Row** (`projectile/data.rs`, `FLYING_KNIFE => (26.0, 26.0, 9, -1,
+  TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)`): the
+  `SetDefaults` arm `:5404-5412` verbatim — 26×26, aiStyle 9, friendly,
+  `melee = true` (the melee-flag census extension), `penetrate = -1`;
+  the stock 3600 life / tileCollide true / extraUpdates 0 / alpha 0 /
+  scale 1 / no ignoreWater stand (the arm writes no override). The item
+  wire already exists: item 3030 Flying Knife (`itemdata.rs`, channel,
+  melee, shoot 491, shootSpeed 17).
+- **Machine** (`projectile.rs::ai_magic_missile_old`, the style-9
+  dispatch's `kind == FLYING_KNIFE` head branch — the C#'s own head
+  shape): the owner block `:43429-43538` (channel speed 20 — the 16's
+  15 / the default 12 are dead branches; the close case `num4 < 100f`
+  ×1.1 boost to the 20 cap + the `ai[0] = -10` latch at 0
+  `:43452-43467`; the far case `> 20` `(v*4 + aim)/5` blend `:43484`;
+  the mid case velocity outright `:43502-43503`; the release skips the
+  `type != 491` re-aim block `:43509-43535` and latches `ai[0] = 1`
+  `:43536`); the 491 block `:43540-43583` (`localAI[0]++`; from tick 16
+  while released the fly-home — tileCollide drops, the owner-distance
+  < 20 kill, the `(v*5 + toOwner·25)/6` blend; the rotation ladder
+  `:43556-43567`; the 2000-px kill `:43568-43571`; the dust gate
+  `Next(2) == 0` → the `Next(3)` type pick 15/57/58 — BOTH draws stay on
+  the pass stream, the dust body skips); the +16 fall clamp
+  `:43649-43652` (the `!flag` tail `:43645-43648` never runs — the 491
+  sets flag true). The body's 16/34/79 branches are DEAD for the only
+  reachable kind — kept as citations (the census-F2 convention the e3
+  seed pinned).
+- **Movement**: the `GetCollisionParams` 10×10 centre resize
+  (`:19957-19960` — the 491 is on the list, the resizeAnchor 0.5
+  default); a blocked move runs the tile-cut chain FIRST (the shared
+  `cut_tiles_in_flight_box`, now `pub(crate)` — the 484 walk, THEN the
+  `Next(3)`, THEN the cracked walk on `== 0`; `CanCutTiles` passes —
+  aiStyle 9 is not on the `:15323-15334` refusal list, the 491 not on
+  the type list), THEN the 491 bounce arm (`:18464-18478`): `ai[0] <= 0
+  → -10`, each blocked axis with a non-zero pre-collision component
+  reflects at FULL strength (`lastVelocity * -1f`). The arm sits in the
+  OUTER per-type chain — the style-9 kill (`:19325-19348`, nested under
+  `:18635`) NEVER reaches the 491: **it bounces, it does not die on
+  tiles**. `UpdatePosition` (`:20445`) integrates the post-bounce
+  velocity (the 491 is not on the skip list `:20435`).
+- **Skips** (each noted in the arm's doc): the `netUpdate` writes
+  (`:43479`/`:43498`/`:43508`), the dust bodies (the e3 emitter pattern
+  activates them in the dust follow-up — the 5 sites `:43574-43635`),
+  the wet branch (the liquid flags fold dry), the
+  `LimitPointToPlayerReachableArea` clamp rides the `channel_target`
+  seam (S1-P-i23, the use path pre-clamps). A `None` player folds the
+  owner centre to the knife's own centre (the falling-arm convention).
+- **Witnesses** (`w4_d1_flying_knife_tests`, 5, WRITTEN NOT RUN): the
+  row + item-3030 wire; the release latch (`ai[0] = 1`, NOT the modern
+  arm's −1; rot +0.3·direction; pos (164,160); draws `[(0,2)]`); the
+  channel close boost (10→11, the −10 latch); the fly-home kill at tick
+  16 (the zero-velocity fold — the first 15 ticks live, tick 16 the
+  distance-0 < 20 kill + tileCollide dropped); the bounce (the solid
+  cell (11,10) blocks the 10×10 box's +x probe, `ai[0] = -10`, vel.x
+  −4.4 full-strength, draws `[(0,2),(0,3)]` — the dust gate BEFORE the
+  cut chain's draw, the C# order).
+
+### 6b. The 981 SilverBullet — the special-bullets module's twelfth kind
+
+The e3/d75-flagged unrowed sibling (research/125: "981 SilverBullet —
+STILL unrowed", the full 345-branch remote scan; the
+`ai001_silver_bullet_drip_981` emitter STAGED at the fade-chain slot
+`:56746` between the 265/355 arms `:56728` and the 357 trail `:56753`).
+Routed through `projectile_special_bullets` (the S1-P-i18 module — the
+kind joins `SPECIAL_BULLET_KINDS` 11→12), NOT a new module:
+
+- **Row** (`SILVER_BULLET => (4.0, 4.0, 1, 1, 600, 1, true, false,
+  false, (false, -2, false, -1, 255, 1.2))`): `:9340-9353` verbatim —
+  4×4, aiStyle 1, friendly, penetrate 1, light 0.5 (the
+  `set_defaults_light` row), alpha 255, scale 1.2, timeLeft 600,
+  ranged (the census extension), extraUpdates 1; the stock tileCollide
+  true stands — the shot dies on tile contact.
+- **Arm** (`projectile_special_bullets::step`, widened with the pass's
+  rng): the 981 rests (`flag3 = false`, `:56030` — no gravity, the
+  generic `ai[0] >= 15` arm never fires); the drip gate `Next(6)`
+  (`:56746`) is an EXPLICIT call-site draw — it STAYS on the
+  `UpdateProjectiles` stream, one per sub-step (the W4-d1
+  falling/powder explicit-draw convention; the module's other eleven
+  kinds keep their zero-draw census, the parameter unread for them —
+  the test wrapper passes a fresh stream so every pre-existing witness
+  stays byte-identical); the dust-279 body (noLightEmittance +
+  noGravity ×0.2) SKIPS with the dust layer. The rotation tail
+  `atan2 + 1.57` (`:57748-57751`) + the +16 clamp + the probe stand-in
+  movement are the module's shared shape.
+- **Damage**: `damage_pve`'s Werewolf-bane ×3 (`:13385-13388` — `type
+  == 981 && targetNPC.type == 104`), at the C# site AFTER the
+  banner/expert arms (unported layers) and BEFORE the yoyo doublings
+  (`:13389`).
+- **Light**: `proj_lights.rs`'s own 981 arm (`:16343-16347` —
+  `num2 *= 0.7f; num3 *= 0.7f;` — the 14/110/180/242/302 sibling below
+  scales the blue by 0.1, the silver keeps 0.7 on both).
+- **Skips**: the Kill arm's `HitTiles` + Item10 (`:76040-76043`, the
+  common bullet arm `:76035-76039` precedent — the module's death-hook
+  sound convention) and the SilverBulletSparkle particle request
+  (`:76044-76048`, the particle layer).
+- **Witnesses** (3, WRITTEN NOT RUN): the row + light + covers; the
+  rest + the one `Next(6)` draw + rot 1.57 + the free step; the
+  tile-contact kill (the blocked-move default `:19849-19853`, the
+  module's probe stand-in).
+
+### 6c. The SEAL receipts
+
+- **e3 research/125 (the RETIRE phase)**: the 491 seed's row+machine
+  wave DONE (§6a — the `_Old` body's dead branches kept verbatim per
+  the seed's own instruction); the 981 row DONE (§6b — the
+  `ai001_silver_bullet_drip_981` emitter's staged slot is now cited by
+  the live arm; its dust body activates in the dust follow-up).
+- **d75's owed gate**: the 502 row census stands (§3 — d75 part 5
+  `d328fad8c` owns it, no d1 action).
+- **The 246→352 rename's owed cites**: PAID (`projectile/data.rs`'s
+  spray-compose comment + `projectile_ai_misc.rs`'s module doc + spray
+  witness doc, all now cite research/352 with the §9 chain note).
+- **Hand verification (code-only)**: the new witnesses' arithmetic
+  re-derived against the cited C# — the release test's pos (164,160)
+  (the free integrate of vel (4,0)); the close-case 10×1.1 = 11 < 20
+  (no cap); the fly-home kill's tick-16 gate (`localAI[0] = 16 > 15`);
+  the bounce test's collision cell (11,10) = x 176..192 vs the 10×10
+  box's +x probe 172.4..182.4 (overlap), the `lastVelocity.Y == 0`
+  guard keeping vel.y 0, vel.x = −(4×1.1) = −4.4; the draw orders
+  (`Next(2)` at `:43572` before the cut chain's `Next(3)` at `:17948`;
+  the 981's one `Next(6)` per sub-step). No mismatch found.
+- No cargo/tests/rustfmt/graphify run (the code-only mandate stands).

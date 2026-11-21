@@ -631,7 +631,22 @@ pub const GOLDEN_BULLET: u16 = 287;
 /// the riders and the moon-lord set. 90 CrystalShard is aiStyle 24 (the
 /// existing `ai_crystal_storm` arm) and 638 MoonlordBullet is S1-D-4's — both
 /// excluded here.
-pub const SPECIAL_BULLET_KINDS: [u16; 11] = [
+/// `ProjectileID.SilverBullet` (981, `ProjectileID.cs:2516`) — the Silver
+/// Bullet: the Werewolf-bane aiStyle-1 shot (`Projectile.cs:9340-9353`,
+/// the resting counter `:56030`, the `Next(6)` drip gate `:56746-56752`,
+/// the ×3 damage vs the Werewolf `Damage_PVE_Inner` `:13385-13388`, the
+/// ProjLight 0.7/0.7 tint `:16343-16347`). W4-d1 SEAL — the e3/d75-flagged
+/// unrowed kind (the e3 RETIRE census's 345-branch scan; the
+/// `ai001_silver_bullet_drip_981` emitter's fade-chain slot `:56746`
+/// between the 265/355 arms `:56728` and the 357 trail `:56753`).
+pub const SILVER_BULLET: u16 = 981;
+/// The special-bullet kind set S1-P-i18 owns (the aiStyle-1 arms in
+/// `projectile_special_bullets`). Disjoint from the ai001 A/B/C kind lists,
+/// the riders and the moon-lord set. 90 CrystalShard is aiStyle 24 (the
+/// existing `ai_crystal_storm` arm) and 638 MoonlordBullet is S1-D-4's — both
+/// excluded here. W4-d1 SEAL adds the 981 SilverBullet (the e3/d75-flagged
+/// unrowed sibling; the module's drip gate + Werewolf-bane arms).
+pub const SPECIAL_BULLET_KINDS: [u16; 12] = [
     METEOR_SHOT,
     CRYSTAL_BULLET,
     CURSED_BULLET,
@@ -643,7 +658,17 @@ pub const SPECIAL_BULLET_KINDS: [u16; 11] = [
     NANO_BULLET,
     EXPLODING_BULLET,
     GOLDEN_BULLET,
+    SILVER_BULLET,
 ];
+/// `ProjectileID.FlyingKnife` (491, `ProjectileID.cs:1536`) — the Flying
+/// Knife: the aiStyle-9 LEGACY spell (`Projectile.cs:5404-5412` —
+/// 26×26, melee, penetrate −1). `AI_009_MagicMissiles`'s type-491 head
+/// (`:43197-43201`) delegates to `AI_009_MagicMissiles_Old`
+/// (`:43427-43653`) — the LIVE legacy machine the e3 RETIRE census
+/// task-seeded to d1 (the `AI_019_Spears_Old` sibling is DEAD, zero
+/// callers). The `_Old` body's 16/34/79 branches are dead for the only
+/// reachable kind 491 — kept verbatim (the census-F2 convention).
+pub const FLYING_KNIFE: u16 = 491;
 /// `ProjectileID.PoisonDartBlowgun`-family dart the Dart Trap fires
 /// (`Projectile.cs:1823-1832` — the Wiring emission uses 98, `Wiring.cs:1785`).
 pub const TRAP_DART: u16 = 98;
@@ -1694,6 +1719,8 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         GLOWSTICK | STICKY_GLOWSTICK | SPELUNKER_GLOWSTICK | BOUNCY_GLOWSTICK
         | FAIRY_GLOWSTICK | RAINBOW_GLOWSTICK => 1.0,
         BULLET_SNOWMAN => 0.5,                 // `:1985`
+        // W4-d1 SEAL — `Projectile.cs:9347`: the SilverBullet's light.
+        SILVER_BULLET => 0.5,
         BALL_OF_FIRE => 0.8,                   // `:970`
         MAGIC_MISSILE => 0.8,                  // `:980`
         GREEN_LASER => 0.75,                   // `:1025`
@@ -2863,9 +2890,26 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `penetrate = 10` and `timeLeft /= 2` off the 3600 reset
             // (`:787`) — 1800.
             WATER_BOLT => (16.0, 16.0, 8, 10, 1800, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d1 SEAL — `Projectile.cs:9340-9353`: the SilverBullet
+            // (981): 4x4, aiStyle 1, friendly, `penetrate = 1`,
+            // `light = 0.5f` (the `set_defaults_light` row), `alpha = 255`,
+            // `scale = 1.2f`, `timeLeft = 600`, ranged, `extraUpdates = 1`.
+            // The stock `tileCollide = true` (`:775`) stands — the shot
+            // dies on tile contact (the blocked-move default, the
+            // `move_bullet` stand-in). The e3/d75-flagged unrowed sibling.
+            SILVER_BULLET => (4.0, 4.0, 1, 1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
             // `:1162-1173` — the flamelash: 32x32, aiStyle 9, `penetrate =
             // 2`, the local-NPC immunity with the 12-tick cooldown.
             FLAMELASH => (32.0, 32.0, 9, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 12, false, -1, 0, 1.0)),
+            // W4-d1 SEAL — `Projectile.cs:5404-5412`: the FlyingKnife
+            // (491): 26x26, aiStyle 9, friendly, melee, `penetrate = -1`.
+            // The stock 3600 life (`:787`) / tileCollide true (`:775`) /
+            // extraUpdates 0 / alpha 0 / scale 1 stand — the arm writes NO
+            // override. The `AI_009_MagicMissiles` type-491 head
+            // (`:43197-43201`) delegates to the LIVE `_Old` machine
+            // (`ai_magic_missile_old`); the e3 RETIRE census's d1 task
+            // seed (research/125 §2).
+            FLYING_KNIFE => (26.0, 26.0, 9, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `:1271-1282` — the demon sickle (the Demon/VoodooDemon's
             // hostile shot, `NPC.cs:23449`): 48x48, aiStyle 18, alpha 100,
             // `penetrate = -1`, `scale = 0.9f`; the spawn site overrides
@@ -3564,7 +3608,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             85 => (6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
             145 => (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE),
             // W4-d1 retire (the spray compose — the d18/f25 DUP keep-one,
-            // research/246): the seven solution sprays 146-149 /
+            // research/352, registry-150 §9 chain 246→352): the seven
+            // solution sprays 146-149 /
             // 1015-1017. `Projectile.cs:2350-2397` — the four 146-149
             // blocks are LINE-IDENTICAL copies of the 145 arm; `:9633-9636`
             // → `DefaultToSpray` (`:10691-10702`) for 1015-1017. Every
@@ -4585,6 +4630,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // `melee = true` (the Starfury 9's `:893` is the S1-P-i22
                     // row's documented drop — the 503 carries it verbatim).
                     | STAR_WRATH
+                    // W4-d1 SEAL — `Projectile.cs:5410`: the FlyingKnife's
+                    // `melee = true`.
+                    | FLYING_KNIFE
             ),
         ranged: matches!(
             kind,
@@ -4614,6 +4662,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-d1 SEAL — `Projectile.cs:9351`: the SilverBullet's
+            // `ranged = true`.
+                | SILVER_BULLET
         ),
         magic: matches!(
             kind,

@@ -75,7 +75,8 @@ use crate::projectile::{
 /// W4-f25's C3/C4 wiring (`convert_sized_hallow`/`convert_sized_spray`,
 /// its tip d587b128d), type 3 is W4-g42's mushroom cell
 /// (`convert_sized_mushroom`, its merger contract) — those arms land at
-/// the f25/g42 merges (research/246's compose table).
+/// the f25/g42 merges (research/352's compose table — registry-150 §9
+/// chain 246→352).
 ///
 /// The dust-scale ladder (`:26845-26879`: the 7/3 threshold, the
 /// 0.2/0.4/0.6/0.8 fade steps, the flag13 ×1.2 and the `(int)(12·scale)`
@@ -841,7 +842,8 @@ mod tests {
     /// size 2/3 — the grass 2 → 23/199, the stone 1 → 25/203, the sand 53
     /// → 112/234. The 146/148/1015-1017 kinds stay no-ops on this branch
     /// (types 2/5/6/7 = f25's C3/C4, type 3 = g42's mushroom — the merge
-    /// compose, research/246) but their counter/cap/spin run. WRITTEN NOT
+    /// compose, research/352 — registry-150 §9 chain 246→352) but their
+    /// counter/cap/spin run. WRITTEN NOT
     /// RUN (code-only retire round).
     #[test]
     fn w4_d1_retire_the_corrupt_and_red_sprays_convert_their_cells() {

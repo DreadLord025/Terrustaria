@@ -39265,7 +39265,7 @@ arm nor rows.
 | **6** | inline `:24100-24228` | **none on main** | **MISSING -> PORTED this round** (`projectile_ai_powder`). |
 | 7 | `AI_007_GrapplingHooks` `:24229` -> `:52567+` | `ai_hook` | PORTED (verify-only) — the dead/CCed kill gate, the MountedCenter pull, the attach-cap recycle, the blacklist rebuild, the Queen Slime teleport. |
 | 8 | inline `:24233-24362` | `ai_ball_of_fire` | PORTED (verify-only) — the gravity timer + the per-type bounce budget; the WaterBolt lava bounce, the 96/258 sound latches. |
-| 9 | `AI_009_MagicMissiles` `:24363` -> `:43195-43425` | `ai_magic_missile` | PORTED (verify-only) — the channel aim, the Flamelash drag-lift, the release homing. |
+| 9 | `AI_009_MagicMissiles` `:24363` -> `:43195-43425` | `ai_magic_missile` + the W4-d1 SEAL `kind == FLYING_KNIFE` head -> `ai_magic_missile_old` | PORTED — the channel aim, the Flamelash drag-lift, the release homing. W4-d1 SEAL: the type-491 head (`:43197-43201`) delegates to the LIVE `_Old` machine (`:43427-43653`) — the 491 FlyingKnife row + arm landed (the e3 RETIRE census's d1 task seed, research/125 → research/352 §6a). |
 | 10 | `AI_010` `:24367` -> `:57826-58100` | kind-gated 109/736-738 (`ai_snowball_hostile` / `ai_dungeon_debris`) + `projectile_ai_falling::step` | PORTED — W4-d1 wave 3 rowed the falling-block family 17/31/39/40/56/67/71/179/241/812/411-414/1081 (`a2dcdb15`/`e001d921`/`e4718179`) and armed the sandgun balls 42/65/68/354 through the same arm — the S1-D-5 "42-row gap" CLOSES (the rows existed but the dispatch no-op'd them; now the 60-tick straight flight + the 0.2 gravity + the death placement run). W4-d1 RETIRE (`dd7b6f32d`, research/352): the natural-fall spawner moved to the data path — the frozen-tail carve-out is RETIRED, every served kind rides the arm; the forced-PlaceTile bypass set + the tile-cut bodies ported. FAMILY COMPLETE. |
 
 **The missing style 6.** The powder/fertilizer cloud — five kinds, all
@@ -39531,3 +39531,67 @@ tip; no d1 action, no duplicate row (research/352 §3).
 falling_tests re-derivations) WRITTEN, NOT RUN — verified by re-reading
 the cited C# blocks whole and hand arithmetic (the PlaceTile gate census,
 the cut-box spans, the conversion targets, the landing cells).
+
+### The SEAL round (W4-d1, 2026-11-21 — research/352 §6)
+
+The lane's last two e3 task seeds landed: the 491 FlyingKnife (the LIVE
+`AI_009_MagicMissiles_Old` machine) and the 981 SilverBullet (the
+special-bullets module's twelfth kind). The full census + receipts live
+in `docs/research/352-d1-falling-block-final.md` §6 — no new research
+number taken (registry-150 §9.3: NO self-picks; the falling-block-family
+bible stays §4). The 246→352 rename's two owed code-comment cites
+(`projectile/data.rs` + `projectile_ai_misc.rs` ×2) are PAID — stale-zero
+re-verified (`git grep 'research/246|246-d1-falling'` over crates/docs/
+anchors = empty).
+
+**The 491 FlyingKnife (`ai_magic_missile_old`).** The row
+(`Projectile.cs:5404-5412`: 26×26, aiStyle 9, friendly, melee, pen −1,
+the stock 3600/tileCollide/alpha-0/scale-1) + the style-9 dispatch's
+`kind == FLYING_KNIFE` head branch (the C#'s own `:43197-43201`
+delegate-and-return shape). The machine ports the `_Old` body in the C#
+order: the channel block (speed 20, the close <100 ×1.1 boost + the
+−10 latch, the far `(v*4+aim)/5` blend, the mid outright velocity, the
+release `ai[0] = 1` latch — the `type != 491` re-aim block skips), the
+491 block (the tick-16 fly-home `(v*5+toOwner·25)/6` + the <20 kill +
+tileCollide drop, the rotation ladder, the 2000-px kill, the `Next(2)`
++ `Next(3)` dust draws BOTH staying on the pass stream), the +16 clamp.
+The 16/34/79 branches are DEAD for the only reachable kind — kept as
+citations (the census-F2 convention). Movement: the 10×10 centre
+collision resize (`GetCollisionParams` `:19957-19960`), the blocked
+move runs the tile-cut chain FIRST (the shared
+`cut_tiles_in_flight_box`, now `pub(crate)` — the second-copy helper
+rule, the falling arm's walk shared not duplicated), THEN the 491
+bounce arm (`:18464-18478`, the OUTER per-type chain): the −10 latch +
+the FULL-strength per-axis reflect. **The style-9 kill (`:19325`,
+nested under `:18635`) never reaches the 491 — it bounces.**
+Deliberate folds: the `netUpdate` writes (no MP layer), the dust bodies
+(the e3 emitter pattern's dust follow-up), the wet branch (dry fold),
+the `LimitPointToPlayerReachableArea` clamp rides the `channel_target`
+seam (S1-P-i23); a `None` player folds the owner centre to the knife's
+own centre. 5 witnesses WRITTEN NOT RUN (`w4_d1_flying_knife_tests`).
+
+**The 981 SilverBullet (`projectile_special_bullets`, kind 12 of 12).**
+The row (`:9340-9353`: 4×4, aiStyle 1, pen 1, light 0.5, alpha 255,
+scale 1.2, timeLeft 600, ranged, extraUpdates 1) joins
+`SPECIAL_BULLET_KINDS`; `step` widened with the pass's rng for the
+`Next(6)` drip gate (`:56746`, the e3
+`ai001_silver_bullet_drip_981` emitter's staged fade-chain slot) — ONE
+explicit draw per sub-step on the `UpdateProjectiles` stream (the W4-d1
+explicit-draw convention; the other eleven kinds draw nothing, their
+witnesses keep a fresh-stream wrapper, byte-identical). The 981 rests
+(`flag3 = false`, `:56030` — no gravity); the dust-279 body skips with
+the dust layer; the tile contact kills (the module's probe stand-in).
+The Werewolf-bane ×3 (`:13385-13388`, NPC kind 104) lands in
+`damage_pve` BEFORE the yoyo doublings (the C# site order); the
+`proj_lights` 0.7/0.7 arm (`:16343-16347`) is its OWN arm (the
+14/110/180/242/302 sibling scales blue 0.1). Skips: the Kill arm's
+`HitTiles` + Item10 (`:76040-76043`, the module's death-hook sound
+convention) + the SilverBulletSparkle particle request
+(`:76044-76048`). 3 witnesses WRITTEN NOT RUN.
+
+**Code-only round.** 8 new witnesses (5 knife + 3 silver) WRITTEN, NOT
+RUN — hand-verified against the cited C# (the release pos (164,160),
+the close boost 11, the tick-16 kill gate, the bounce cell (11,10) +
+vel.x −4.4 with the `lastVelocity.Y == 0` guard, the draw orders
+`[(0,2)]` / `[(0,2),(0,3)]` / `[(0,6)]`). No cargo/tests/rustfmt/
+graphify invoked.
