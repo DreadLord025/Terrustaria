@@ -908,8 +908,19 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         .as_ref()
         .map(|p| p.center())
         .unwrap_or((0.0, 0.0));
-    let mood =
-        crate::happiness::process_mood(&app.world, &app.npcs, &app.npcs[idx], (pcx, pcy), false);
+    // The Princess head draws the bare `Main.rand` stand-in
+    // (`NamedRngs::global()`) — the shop-open mood recompute rides the same
+    // stream the talk-open latch does (`Main.cs:43081`'s chain).
+    let rng = app.rngs.global();
+    let mut roll = |n: i32| rng.next_max(n);
+    let mood = crate::happiness::process_mood(
+        &app.world,
+        &app.npcs,
+        &app.npcs[idx],
+        (pcx, pcy),
+        false,
+        &mut roll,
+    );
     let flags = crate::shop::ShopFlags {
         hard_mode: app.world.hard_mode,
         downed_slime_king: app.world.downed_slime_king,

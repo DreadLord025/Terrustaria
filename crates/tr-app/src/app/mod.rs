@@ -1962,12 +1962,18 @@ impl App {
             Some(i) => {
                 let pc = self.player.as_ref().map(|p| p.center()).unwrap_or((0.0, 0.0));
                 let raining = self.world.raining;
+                // The Princess head draws the bare `Main.rand` stand-in
+                // (`NamedRngs::global()`) — the talk-open call chain runs
+                // outside every SwapRandom stage (`Main.cs:43081`).
+                let rng = self.rngs.global();
+                let mut roll = |n: i32| rng.next_max(n);
                 crate::happiness::shopping_settings(
                     &self.world,
                     &self.npcs,
                     &self.npcs[i],
                     pc,
                     raining,
+                    &mut roll,
                 )
             }
         };
@@ -2110,8 +2116,20 @@ impl App {
         let missing = player.max_hp - player.hp;
         let debuffs = player.remountable_debuff_count();
         let npc = &self.npcs[nurse_idx];
-        let mood =
-            crate::happiness::process_mood(&self.world, &self.npcs, npc, player.center(), false);
+        // The Nurse is never the Princess, so the random three-loves head
+        // never draws here — the closure is a no-draw stand-in (the C#
+        // `GetNurseHealCost` reads the LATCHED `currentShoppingSettings.
+        // PriceAdjustment`, `Main.cs:40100`; the port's recompute is the
+        // pre-existing nurse-lane deviation, unchanged by W4-g58).
+        let mut no_roll = |_n: i32| 0;
+        let mood = crate::happiness::process_mood(
+            &self.world,
+            &self.npcs,
+            npc,
+            player.center(),
+            false,
+            &mut no_roll,
+        );
         let w = &self.world;
         nurse_heal_cost_for(
             missing,

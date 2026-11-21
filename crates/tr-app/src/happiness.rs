@@ -304,9 +304,18 @@ pub enum MoodFlag {
     DislikeCrowded,
     HateCrowded,
     LoveSpace,
+    /// The Princess's loneliness sentinel (`ShopHelper.cs:126-130`): fewer
+    /// than 2 within-house AND fewer than 2 within-village neighbors →
+    /// `HateLonely` + the 1000 sentinel.
+    HateLonely,
     Content,
     BiomeAffection(AffectionLevel, BiomeKind),
     NpcAffection(AffectionLevel, NpcKind),
+    /// The Princess's random three-loves head (`AllPersonalitiesModifier.cs:
+    /// 15-36`): each pick is a Love ×0.88 whose report key is the dedicated
+    /// `LoveNPC_{NPCID.Search.GetName(npcType)}` (`ShopHelper.LoveNPCByTypeName`,
+    /// `:243-250`), NOT the plain `LoveNPC`. The kind carries the name.
+    PrincessLove(NpcKind),
 }
 
 /// The mood outcome — the multiplier rides the caller's shop math, the
@@ -320,14 +329,19 @@ pub struct Mood {
 /// `ShopHelper.ProcessMood` (`ShopHelper.cs:95-174`) + the personality
 /// traits. `raining`/`sandstorm_happening` ride the scene scan's zone
 /// calculation like the player-side scans. The loveStruck ×0.9 rides the
-/// buff pass (the port's buff 87 hook); the port's town set (the Guide)
-/// skips the 663 Princess branches.
+/// buff pass (the port's buff 87 hook). `roll` stands in for the bare
+/// `Main.rand.Next(n)` the Princess's random three-loves head draws
+/// (`AllPersonalitiesModifier.cs:31`) — the call chain runs outside every
+/// `SwapRandom` stage (`SetTalkNPC` ← `HoverOverNPCs` ← `DrawMouseOver` ←
+/// `DrawInterface_39_MouseOver`, `Main.cs:43081`/`:42939`/`:45150`), so the
+/// caller threads `NamedRngs::global()`. Non-Princess judges never draw.
 pub fn process_mood(
     world: &World,
     all_npcs: &[crate::npc::Npc],
     npc: &crate::npc::Npc,
     player_center: (f32, f32),
     raining: bool,
+    roll: &mut dyn FnMut(i32) -> i32,
 ) -> Mood {
     let mut flags: Vec<MoodFlag> = Vec::new();
     // `:97-98`: the reset.
@@ -433,9 +447,20 @@ pub fn process_mood(
             within_village += 1;
         }
     }
+    // `:120-131`: the Princess's crowd overrides — `flag = false` (no
+    // LoveSpace), `num = 1f` (the crowd multiply is inert), and the
+    // HateLonely sentinel when fewer than 2 within-house AND fewer than 2
+    // within-village neighbors.
+    let is_princess = npc.kind == NpcKind::Princess;
+    let love_space_ok = !is_princess;
+    let crowd_mult = if is_princess { 1.0 } else { 1.05 };
+    if is_princess && within_house < 2 && within_village < 2 {
+        flags.push(MoodFlag::HateLonely);
+        adjustment = 1000.0;
+    }
     if within_house > 3 {
         for _ in 3..within_house {
-            adjustment *= 1.05;
+            adjustment *= crowd_mult;
         }
         flags.push(if within_house > 6 {
             MoodFlag::HateCrowded
@@ -443,18 +468,19 @@ pub fn process_mood(
             MoodFlag::DislikeCrowded
         });
     }
-    if within_house <= 2 && within_village < 4 {
+    if love_space_ok && within_house <= 2 && within_village < 4 {
         flags.push(MoodFlag::LoveSpace);
         adjustment *= 0.95;
     }
 
-    // `:152-168`: the personality traits. `BiomePreferenceListTrait.
-    // ModifyShopPrice` (`:38-53`) tests the PLAYER's zones (`info.player`,
-    // `:44`) and picks the HIGHEST affection among the matching biomes,
-    // applying ONE row (`ApplyPreference`, `:55-73`) — NOT the home tile
-    // and NOT every matching row. The neighbor prefs + the universal
-    // LikePrincess row (`AllPersonalitiesModifier`, `:168`) follow.
-    if adjustment < 1000.0 {
+    // `:152-168`: the personality traits run UNCONDITIONALLY (the C# has
+    // no `< 1000` gate here — the sentinel rides the clamp at `:178`, but
+    // the report rows + the Princess's RNG draws still land).
+    // `BiomePreferenceListTrait.ModifyShopPrice` (`:38-53`) tests the
+    // PLAYER's zones (`info.player`, `:44`) and picks the HIGHEST affection
+    // among the matching biomes, applying ONE row (`ApplyPreference`,
+    // `:55-73`) — NOT the home tile and NOT every matching row.
+    {
         let pm = scan_scene_at(
             world,
             [player_center.0, player_center.1],
@@ -477,25 +503,45 @@ pub fn process_mood(
             flags.push(MoodFlag::BiomeAffection(pref.level, pref.biome));
             adjustment *= pref.level.multiplier();
         }
-        // The neighbor prefs (`AllPersonalitiesModifier`, `:168`): the
-        // full switch table; the NpcAffection flags feed the report UI
-        // (the row order is the C# `if` order).
+        // `AllPersonalitiesModifier.ModifyShopPrice_Relationships` (`:12-
+        // 505`): the Princess's random three-loves head FIRST (`:15-36`),
+        // then the universal LikePrincess row (`:37-40`), then the static
+        // switch (`:41-505`).
+        //
+        // The Princess head (`:15-36`): the list is the nearby resident
+        // TYPES in ascending NPCID order (`nearbyNPCsByType` is a
+        // `bool[NPCID.Count]`, `:152-156`, so the `for i` walk is ascending
+        // and deduped by type); three picks, each `Main.rand.Next(list.Count)`
+        // then `RemoveAt` (no replacement), each a Love ×0.88 whose report
+        // key is `LoveNPC_{name}` (`LoveNPCByTypeName`, `:243-250`).
+        if is_princess {
+            let mut list: Vec<NpcKind> = nearby_types.clone();
+            list.sort_by_key(|k| k.cs_id());
+            list.dedup();
+            for _ in 0..3 {
+                if list.is_empty() {
+                    break;
+                }
+                let index = roll(list.len() as i32) as usize;
+                let kind = list.remove(index);
+                flags.push(MoodFlag::PrincessLove(kind));
+                adjustment *= AffectionLevel::Love.multiplier();
+            }
+        }
+        // The universal LikePrincess row (`:37-40`): every NON-Princess
+        // town NPC likes a nearby Princess (×0.94).
+        if !is_princess && nearby_types.contains(&NpcKind::Princess) {
+            flags.push(MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Princess));
+            adjustment *= AffectionLevel::Like.multiplier();
+        }
+        // The static switch (`:41-505`): the NpcAffection flags feed the
+        // report UI (the row order is the C# `if` order). The Princess has
+        // no static rows (`neighbor_preferences_by_id(663)` is empty).
         for (level, other_kind) in neighbor_preferences(npc.kind) {
             if nearby_types.iter().any(|t| t == other_kind) {
                 flags.push(MoodFlag::NpcAffection(*level, *other_kind));
                 adjustment *= level.multiplier();
             }
-        }
-        // The universal LikePrincess row (`AllPersonalitiesModifier.cs:
-        // 37-40`): every NON-Princess town NPC likes a nearby Princess
-        // (×0.94). The Princess's own random three-loves head (`:15-36`,
-        // `Main.rand.Next(list.Count)` per pick) stays constants-off —
-        // it draws the global RNG and her crowd gate (`:122-130`'s
-        // HateLonely) rides her own AI lane (ANALYSIS "Shop happiness UI
-        // (W4-g58)").
-        if npc.kind != NpcKind::Princess && nearby_types.contains(&NpcKind::Princess) {
-            flags.push(MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Princess));
-            adjustment *= AffectionLevel::Like.multiplier();
         }
     }
 
@@ -689,6 +735,7 @@ pub fn happiness_report(
                 prepend_report(&mut report, kind, transformed, "HateCrowded", &[])
             }
             MoodFlag::LoveSpace => prepend_report(&mut report, kind, transformed, "LoveSpace", &[]),
+            MoodFlag::HateLonely => prepend_report(&mut report, kind, transformed, "HateLonely", &[]),
             MoodFlag::Content => prepend_report(&mut report, kind, transformed, "Content", &[]),
             MoodFlag::BiomeAffection(level, biome) => {
                 let key = match level {
@@ -730,6 +777,26 @@ pub fn happiness_report(
                     &[("NPCName", npc_full_name(all_npcs, name_kind))],
                 );
             }
+            MoodFlag::PrincessLove(other) => {
+                // `LoveNPCByTypeName` (`ShopHelper.cs:243-250`): the key is
+                // `LoveNPC_{NPCID.Search.GetName(npcType)}` with the picked
+                // neighbor's full name. The category is the Princess's own
+                // (`kind`), the key names the picked neighbor.
+                let Some(name) = crate::lang_tables::NPC_ID
+                    .iter()
+                    .find(|(id, _)| *id == other.cs_id() as i32)
+                    .map(|(_, n)| *n)
+                else {
+                    continue;
+                };
+                prepend_report(
+                    &mut report,
+                    kind,
+                    transformed,
+                    &format!("LoveNPC_{name}"),
+                    &[("NPCName", npc_full_name(all_npcs, *other))],
+                );
+            }
         }
     }
     report
@@ -741,15 +808,17 @@ pub fn happiness_report(
 /// folds them through `AddHappinessReportText`'s prepend. The Zoologist's
 /// `Transformed` category suffix reads her shapeshift form off the world
 /// clock (`ShouldBestiaryGirlBeLycantrope`, the predicate `UpdateAltTexture`
-/// writes `altTexture = 2` on — `NPC.cs:90225-90227`).
+/// writes `altTexture = 2` on — `NPC.cs:90225-90227`). `roll` is the bare
+/// `Main.rand` stand-in the Princess head draws (`NamedRngs::global()`).
 pub fn shopping_settings(
     world: &World,
     all_npcs: &[crate::npc::Npc],
     npc: &crate::npc::Npc,
     player_center: (f32, f32),
     raining: bool,
+    roll: &mut dyn FnMut(i32) -> i32,
 ) -> ShoppingSettings {
-    let mood = process_mood(world, all_npcs, npc, player_center, raining);
+    let mood = process_mood(world, all_npcs, npc, player_center, raining, roll);
     let transformed =
         should_bestiary_girl_be_lycantrope(world.blood_moon, world.day_time, world.moon_phase);
     ShoppingSettings {
@@ -764,6 +833,12 @@ mod tests {
     use crate::npc::{Npc, NpcKind};
     use tr_core::World;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// A no-draw `Main.rand` stand-in for the non-Princess judges — their
+    /// random three-loves head never runs, so the closure is never called.
+    fn no_roll() -> impl FnMut(i32) -> i32 {
+        |_n: i32| 0
+    }
 
     /// The forest test ground: dirt from y = 120 — no special zones (the
     /// home rows sit below the beach's ocean level, so the Forest
@@ -831,6 +906,7 @@ mod tests {
             &m,
             (60.0 * 16.0, 110.0 * 16.0),
             false,
+            &mut no_roll(),
         );
         assert_eq!(mood.multiplier, 1.0, "the plain multiplier");
         assert!(mood.flags.is_empty(), "no happiness report");
@@ -862,6 +938,7 @@ mod tests {
             &guide,
             (60.0 * 16.0, 110.0 * 16.0),
             false,
+            &mut no_roll(),
         );
         assert!(
             (mood.multiplier - 0.89).abs() < 0.001,
@@ -890,6 +967,7 @@ mod tests {
             &guide,
             (60.0 * 16.0, 110.0 * 16.0),
             false,
+            &mut no_roll(),
         );
         assert!((mood.multiplier - 1.5).abs() < 0.001);
         assert!(mood.flags.contains(&MoodFlag::NoHome));
@@ -923,6 +1001,7 @@ mod tests {
             &guide,
             (57.0 * 16.0, 112.0 * 16.0),
             false,
+            &mut no_roll(),
         );
         assert!((mood.multiplier - 1.5).abs() < 0.001);
         assert!(mood.flags.contains(&MoodFlag::HateBiomeNamed(BiomeKind::Corruption)));
@@ -941,7 +1020,7 @@ mod tests {
             other.hp = other.max_hp;
             all.push(other);
         }
-        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false);
+        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
         // 4 neighbors → 1 × 1.05; the forest Like ×0.94 → 0.987 → 0.99.
         assert!(
             (mood.multiplier - 0.99).abs() < 0.001,
@@ -965,7 +1044,7 @@ mod tests {
             other.hp = other.max_hp;
             all.push(other);
         }
-        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false);
+        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
         // within_house = 0, within_village = 4 → no LoveSpace; the forest
         // Like alone → 0.94.
         assert!(
@@ -1169,7 +1248,7 @@ mod tests {
             tk_npc.home = Some((64, 120));
             tk_npc.hp = tk_npc.max_hp;
             let all = vec![guide.clone(), tk_npc];
-            let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false);
+            let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
             // within_house = 1 (the Tavernkeep) → LoveSpace holds; the
             // forest Like ×0.94 × 0.95 = 0.893 → 0.89.
             assert!(mood.flags.contains(&MoodFlag::LoveSpace));
@@ -1199,6 +1278,7 @@ mod tests {
                 &guide,
                 (60.0 * 16.0, 110.0 * 16.0),
                 false,
+                &mut no_roll(),
             );
             // The player is in the hallow → no Forest Like, no Ocean
             // Dislike; the Guide has no hallow row. LoveSpace ×0.95 alone.
@@ -1233,6 +1313,7 @@ mod tests {
                 &guide,
                 (150.0 * 16.0, 110.0 * 16.0),
                 false,
+                &mut no_roll(),
             );
             assert!(mood.flags.contains(&MoodFlag::BiomeAffection(
                 AffectionLevel::Like,
@@ -1282,6 +1363,179 @@ mod tests {
             assert_eq!(pick.level, AffectionLevel::Love);
             assert_eq!(pick.biome, BiomeKind::Snow);
             assert_eq!(pick.level.multiplier(), 0.88, "ONE row, not 0.88×1.12");
+        }
+
+        /// A scripted `Main.rand.Next(n)` stand-in: each call pops the next
+        /// pre-seeded index (the C# `Main.rand.Next(list.Count)` draw) and
+        /// asserts the index is in range. The draw-count witness uses a
+        /// separate counting closure.
+        fn scripted_roll(indices: &[i32]) -> impl FnMut(i32) -> i32 + '_ {
+            let mut cursor = 0usize;
+            move |n: i32| {
+                let idx = indices.get(cursor).copied().unwrap_or(0);
+                cursor += 1;
+                assert!(idx < n, "the draw index {idx} must be < list.Count {n}");
+                idx
+            }
+        }
+
+        /// `ShopHelper.cs:122-130` — the Princess's HateLonely gate: fewer
+        /// than 2 within-house AND fewer than 2 within-village neighbors →
+        /// the 1000 sentinel (the 1.5 ceiling) + the HateLonely row. She
+        /// also gets NO LoveSpace (`flag = false`, `:124`) and the crowd
+        /// multiply is ×1 (`num = 1f`, `:125`).
+        #[test]
+        fn the_princess_hates_lonely() {
+            let w = forest_world();
+            // A housed Princess alone — 0 within-house, 0 within-village.
+            let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            princess.home = Some((60, 120));
+            princess.hp = princess.max_hp;
+            let mut roll = |_n: i32| 0;
+            let mood = process_mood(
+                &w,
+                std::slice::from_ref(&princess),
+                &princess,
+                (60.0 * 16.0, 110.0 * 16.0),
+                false,
+                &mut roll,
+            );
+            assert!(mood.flags.contains(&MoodFlag::HateLonely));
+            assert!(!mood.flags.contains(&MoodFlag::LoveSpace), "flag = false (`:124`)");
+            assert!((mood.multiplier - 1.5).abs() < 0.001, "the sentinel ceiling");
+        }
+
+        /// `AllPersonalitiesModifier.cs:15-36` — the Princess's random
+        /// three-loves head: the list is the nearby resident TYPES in
+        /// ascending NPCID order (deduped), three picks each
+        /// `Main.rand.Next(list.Count)` + `RemoveAt` (no replacement), each
+        /// a Love ×0.88. With 3 neighbors and draws [0,0,0] the picks are
+        /// the ascending list's first, then first-of-remainder, etc.
+        #[test]
+        fn the_princess_three_loves_head_draws_the_global_rng() {
+            let w = forest_world();
+            let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            princess.home = Some((60, 120));
+            princess.hp = princess.max_hp;
+            // Three housed neighbors within 25 tiles: the Nurse (18), the
+            // Merchant (17), the Guide (22). Ascending NPCID: 17, 18, 22.
+            let mut all = vec![princess.clone()];
+            for (kind, dx) in [
+                (NpcKind::Nurse, 4),
+                (NpcKind::Merchant, -4),
+                (NpcKind::Guide, 0),
+            ] {
+                let mut n = Npc::new(kind, (60 + dx) as f32 * 16.0, 118.0 * 16.0, 1, 0.0);
+                n.home = Some((60 + dx, 120));
+                n.hp = n.max_hp;
+                all.push(n);
+            }
+            // within_house = 3 → no HateLonely (needs < 2). Draws [0,0,0]:
+            // pick list[0]=17 (Merchant), then list[0]=18 (Nurse), then
+            // list[0]=22 (Guide).
+            let mut roll = scripted_roll(&[0, 0, 0]);
+            let mood = process_mood(
+                &w,
+                &all,
+                &all[0],
+                (60.0 * 16.0, 110.0 * 16.0),
+                false,
+                &mut roll,
+            );
+            let loves: Vec<NpcKind> = mood
+                .flags
+                .iter()
+                .filter_map(|f| match f {
+                    MoodFlag::PrincessLove(k) => Some(*k),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                loves,
+                vec![NpcKind::Merchant, NpcKind::Nurse, NpcKind::Guide],
+                "ascending NPCID list, no replacement"
+            );
+            // 3 Love ×0.88 = 0.681472; the Princess has no biome row and no
+            // LoveSpace; the clamp floor 0.75 binds → 0.75.
+            assert!(
+                (mood.multiplier - 0.75).abs() < 0.001,
+                "the multiplier {}",
+                mood.multiplier
+            );
+            // The crowd is ×1 for her: 3 within-house is NOT > 3, so no
+            // crowd row; even past 3 the ×1 keeps the price flat.
+            assert!(!mood.flags.contains(&MoodFlag::LoveSpace));
+        }
+
+        /// The head stops at the list's end (`:27-30` `list.Count <= 0`
+        /// break): a Princess with ONE neighbor draws once, not three times.
+        #[test]
+        fn the_princess_head_stops_at_the_list_end() {
+            let w = forest_world();
+            let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            princess.home = Some((60, 120));
+            princess.hp = princess.max_hp;
+            let mut nurse = Npc::new(NpcKind::Nurse, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            nurse.home = Some((64, 120));
+            nurse.hp = nurse.max_hp;
+            let all = vec![princess.clone(), nurse];
+            // within_house = 1 < 2 AND within_village = 0 < 2 → HateLonely
+            // sentinel, but the head STILL draws (the traits run
+            // unconditionally, `:164-168`). One neighbor → one pick.
+            let mut draws = 0i32;
+            let mut roll = |_n: i32| {
+                draws += 1;
+                0
+            };
+            let mood = process_mood(
+                &w,
+                &all,
+                &all[0],
+                (60.0 * 16.0, 110.0 * 16.0),
+                false,
+                &mut roll,
+            );
+            assert_eq!(draws, 1, "one neighbor → one draw, then the break");
+            let loves: Vec<NpcKind> = mood
+                .flags
+                .iter()
+                .filter_map(|f| match f {
+                    MoodFlag::PrincessLove(k) => Some(*k),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(loves, vec![NpcKind::Nurse]);
+            assert!(mood.flags.contains(&MoodFlag::HateLonely));
+        }
+
+        /// `LoveNPCByTypeName` (`ShopHelper.cs:243-250`): the Princess's
+        /// pick report key is `LoveNPC_{NPCID.Search.GetName(npcType)}` —
+        /// e.g. `TownNPCMood_Princess.LoveNPC_Guide` — NOT the plain
+        /// `LoveNPC`. The picked neighbor's full name substitutes.
+        #[test]
+        fn the_princess_love_report_uses_the_named_key() {
+            let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+            crate::lang::init(tr_core::localization::GameCulture::English);
+            let flags = [MoodFlag::PrincessLove(NpcKind::Guide)];
+            let report = happiness_report(NpcKind::Princess, false, &flags, &[]);
+            let expected = crate::lang::text_format_with(
+                "TownNPCMood_Princess.LoveNPC_Guide",
+                &[(
+                    "NPCName",
+                    tr_core::localization::Substitution::Text(crate::lang::npc_name(22)),
+                )],
+            );
+            assert_eq!(report, format!("{expected} "));
+            // The plain LoveNPC row is a DIFFERENT string ("I love {NPCName}.")
+            // — the named key is the dedicated "{NPCName} is a really nice guy!".
+            let plain = crate::lang::text_format_with(
+                "TownNPCMood_Princess.LoveNPC",
+                &[(
+                    "NPCName",
+                    tr_core::localization::Substitution::Text(crate::lang::npc_name(22)),
+                )],
+            );
+            assert_ne!(report, format!("{plain} "));
         }
 
         /// `AffectionLevel.cs:5-8` + `ShopHelper.cs:35-42` — the four
