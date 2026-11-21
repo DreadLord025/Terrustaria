@@ -4090,6 +4090,147 @@ fn fire_non_ammo_shot(
             fx_kb,
             false,
         );
+    } else if matches!(held.kind, 273 | 675 | 674 | 757) {
+        // W4-d20 T5 — `Player.ItemCheck_Shoot`'s terra-chain spawn arms
+        // (`Player.cs:48870-48937`): the Night's Edge 273 / True Night's
+        // Edge 675 / True Excalibur 674 / Terra Blade 757 each spawn a
+        // PAIRED slash + beam and `return` — the generic tail never runs
+        // for them. Both AI arms read `ai[1]` as the lifetime envelope
+        // (190 `localAI[0]/ai[1]` `:41992`; 191 `num3/num4` = 973
+        // `ai[1]+50/+65`, 985 `ai[1]/ai[1]+25`, `:41642-41653`) and `ai[2]`
+        // as the scale (`:42222` / `:41710`/`:41737`) — the generic tail's
+        // ai0/ai1 = 0 collapsed the envelope (divide-by-zero) and never
+        // spawned the slash.
+        // The d17b rapier precedent: the item-kind gate rides the
+        // if/else chain BEFORE the generic tail; the C# `return` folds
+        // to this arm owning the spawn (the shared sentry/consumable
+        // tail below still runs — neither is sentry nor consumable).
+        // The four arms share one shape: the slash at MountedCenter
+        // with velocity `(direction, 0)`, `ai0 = direction * gravDir`
+        // (gravDir = 1, the port's upright fold — `bow_launch.rs:47`),
+        // `ai1 = itemAnimationMax`, `ai2 = GetAdjustedItemScale`; the
+        // beam at MountedCenter with the aim velocity `(num4, num5)`
+        // (`:47277-47307`, the port's `shot`), its own ai1 envelope and
+        // the same scale. `GetWeaponDamage`'s epsilon rides the int
+        // (`:53421-53428`, the `whip_weapon_damage` helper).
+        let dmg = whip_weapon_damage(fx_dmg, p.weapon_damage_multiplier(class));
+        // `GetAdjustedItemScale` (`Player.cs:42566-42574`): the PREFIXED
+        // `item.scale`; the melee ×1.1 glove arm is unported
+        // (`accessory_combat.rs` documents `meleeScaleGlove` without an
+        // owner) so the flag folds false — scale passes through.
+        let scale = crate::melee_swing::adjusted_item_scale(
+            held_fx.map_or(def.scale, |s| s.scale),
+            def.melee,
+            false,
+        );
+        // `itemAnimationMax` (`SetItemAnimation` `:4449-4450`): the melee
+        // arm of `ApplyItemAnimation` (`:4470-4473`) — the PREFIXED
+        // useAnimation through the inverted held-kind meleeSpeed, int
+        // truncation floored at 1 (`scaled_anim_secs`, the same helper
+        // `apply_item_animation_secs`' melee branch reads; all four kinds
+        // are melee, none is the 3821 NoMeleeSpeedBonus exemption). The
+        // use-start caller arms the identical swing right after this shot.
+        let use_anim = held_fx.map_or(def.use_animation as i32, |s| s.use_animation);
+        let anim_max = ticks_of(scaled_anim_secs(use_anim, p.melee_speed(held.kind))) as f32;
+        // `base.direction` — the C# `ChangeDir` aim-dot flip
+        // (`:47213-47224`: `Dot(UnitX, aim) > 0` → 1 else −1) is the
+        // already-computed `boomerang_facing` (the i08 snapshot); the
+        // swords read it so the slash follows the aim even when the live
+        // facing has not turned yet (the pulley/solid refusal guard is the
+        // same edge case the boomerang arm folds out).
+        let dir_f = boomerang_facing as f32;
+        // (slash kind, beam kind, beam damage, beam ai0 factor, beam
+        // ai1, beam velocity scale) — the per-arm table:
+        // 273 `:48873-48874`: 972 slash + 972 beam, ai0 ×0.1, ai1 30;
+        // 675 `:48917-48918`: 972 slash + 973 beam, Damage/2 (C# int
+        //     division truncates), ai1 32;
+        // 674 `:48925-48926`: 983 slash + 982 ghost, damage 0, velocity
+        //     `(direction, 0)` (NOT the aim), ai1 = itemAnimationMax;
+        // 757 `:48933-48934`: 984 slash + 985 beam, velocity ×5, ai1 18.
+        let (slash_kind, beam_kind, beam_dmg, beam_ai0, beam_ai1, beam_vel) =
+            match held.kind {
+                273 => (
+                    crate::projectile::NIGHTS_EDGE,
+                    crate::projectile::NIGHTS_EDGE,
+                    dmg,
+                    dir_f * 0.1,
+                    30.0,
+                    shot,
+                ),
+                675 => (
+                    crate::projectile::NIGHTS_EDGE,
+                    crate::projectile::TRUE_NIGHTS_EDGE,
+                    dmg / 2,
+                    dir_f,
+                    32.0,
+                    shot,
+                ),
+                674 => (
+                    crate::projectile::TRUE_EXCALIBUR,
+                    crate::projectile::EXCALIBUR,
+                    0,
+                    dir_f,
+                    anim_max,
+                    Vec2::new(dir_f, 0.0),
+                ),
+                _ => (
+                    crate::projectile::TERRA_BLADE_2,
+                    crate::projectile::TERRA_BLADE_2_SHOT,
+                    dmg,
+                    dir_f,
+                    18.0,
+                    shot * 5.0,
+                ),
+            };
+        // `NewProjectile` centres the box on the point
+        // (`Projectile.cs:10876-10877`); the spawn seam takes the
+        // top-left, so each kind's half-box subtracts. The point is
+        // `this.MountedCenter` itself — NOT the generic tail's
+        // `pointPosition + dir*10` (the M4-PROJ-3 deviation).
+        let (mcx, mcy) = p.mounted_center();
+        let spawn_sword = |pool: &mut crate::projectile::ProjectilePool,
+                           kind: u16,
+                           vel: Vec2,
+                           damage: i32,
+                           ai0: f32,
+                           ai1: f32| {
+            let row = crate::projectile::proj_data(kind)?;
+            let slot = pool.spawn_with_data_ai(
+                kind,
+                mcx - row.w * 0.5,
+                mcy - row.h * 0.5,
+                vel.x,
+                vel.y,
+                damage,
+                fx_kb,
+                ai0,
+                ai1,
+            )?;
+            // `ai2` — the spawn seam carries ai0/ai1 only; the scale
+            // rides the `set_ai2` seam (the dual-flail sibling precedent).
+            pool.set_ai2(slot, scale);
+            Some(slot)
+        };
+        // The slash first, the beam second — the C#'s spawn order (the
+        // pool's slot order the AI walks reads it).
+        if let Some(slot) = spawn_sword(
+            &mut app.projectiles, slash_kind, Vec2::new(dir_f, 0.0), dmg, dir_f, anim_max,
+        ) {
+            // `ApplyStatsFromSource` (`Projectile.cs:11128`/`:11131`):
+            // the prefix arpen + the Revolver charge bonus ride every
+            // item-use spawn (the generic tail's stamps).
+            app.projectiles.set_armor_penetration(slot, arpen);
+            app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        }
+        if let Some(slot) = spawn_sword(
+            &mut app.projectiles, beam_kind, beam_vel, beam_dmg, beam_ai0, beam_ai1,
+        ) {
+            app.projectiles.set_armor_penetration(slot, arpen);
+            app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        }
+        // ZERO `Main.rand` draws — none of the four arms rolls (the
+        // generic tail's Crystal Storm / Leaf Blower / Aqua Scepter
+        // tweaks never run for these kinds; the C# `return`s first).
     } else {
         // The generic `Item.shoot` firing, with the two
         // per-item tweaks: the Crystal Storm's +/-0.04 spread
@@ -18735,6 +18876,178 @@ mod wall_placement_tests {
                 ),
                 None => assert!(app.items.is_empty(), "wall {wall} drops nothing"),
             }
+        }
+    }
+
+    // ---- W4-d20 T5: the terra-chain use-path arms — WRITTEN NOT RUN ----
+
+    /// The four copied d19 rows carry the aiStyle-190 census slice
+    /// (`Projectile.cs:9298-9314`/`:9354-9370`/`:9371-9387`/`:9388-9404`/
+    /// `:9466-9482`): 16x16, pen 2/3/6/3/3, LOCAL pair (-1), tileCollide
+    /// false, ignoreWater + melee overlays. The merge keep-one pin: the
+    /// tuples are d19's verbatim.
+    #[test]
+    fn w4_d20_t5_the_copied_slash_rows_carry_style_190() {
+        for (kind, pen) in [(972u16, 2), (982, 3), (983, 6), (984, 3), (997, 3)] {
+            let d = crate::projectile::proj_data(kind).unwrap();
+            assert_eq!(d.ai_style, 190, "kind {kind}");
+            assert_eq!((d.w, d.h), (16.0, 16.0), "kind {kind}");
+            assert_eq!(d.penetrate, pen, "kind {kind}");
+            assert!(!d.tile_collide, "kind {kind}");
+            assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
+            assert!(d.ignore_water, "kind {kind} overlay");
+            assert!(d.melee, "kind {kind} overlay");
+        }
+    }
+
+    /// The sword rig: `boomerang_app`'s shape with the given sword held —
+    /// the cursor 80 px right of the centre (the +x aim), the press edge
+    /// armed. All four are useStyle-1 melee `shootsEveryUse` items, so one
+    /// press fires one paired volley.
+    fn sword_app(item: u16, name: &'static str) -> App {
+        boomerang_app(item, name)
+    }
+
+    /// The active sword-chain slots in pool order (the spawn order).
+    fn sword_slots(app: &App) -> Vec<usize> {
+        app.projectiles
+            .slots()
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                p.active && matches!(p.kind, 972 | 973 | 982 | 983 | 984 | 985)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Night's Edge 273 (`Player.cs:48870-48877`): TWO 972s — the slash
+    /// `(dir,0)` ai0=dir ai1=itemAnimationMax(25) and the beam `(num4,num5)`
+    /// ai0=dir*0.1 ai1=30, both damage 40 (the ×1 melee multiplier), both
+    /// ai2 = GetAdjustedItemScale = 1 (no glove), both centred on
+    /// MountedCenter.
+    #[test]
+    fn w4_d20_t5_nights_edge_spawns_the_paired_972() {
+        let mut app = sword_app(273, "Nights Edge");
+        fire_once(&mut app);
+        let slots = sword_slots(&app);
+        assert_eq!(slots.len(), 2, "the paired slash + beam");
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let slash = &app.projectiles.slots()[slots[0]];
+        assert_eq!(slash.kind, 972, "the slash first");
+        assert_eq!(slash.pos + Vec2::new(8.0, 8.0), Vec2::new(cx, cy));
+        assert_eq!(slash.vel, Vec2::new(1.0, 0.0), "(direction, 0)");
+        assert_eq!(slash.damage, 40);
+        assert_eq!(slash.knock_back, 4.5);
+        assert_eq!(slash.ai[0], 1.0, "dir * gravDir");
+        assert_eq!(slash.ai[1], 25.0, "itemAnimationMax");
+        assert_eq!(slash.ai[2], 1.0, "GetAdjustedItemScale");
+        let beam = &app.projectiles.slots()[slots[1]];
+        assert_eq!(beam.kind, 972, "the beam is a 972 too");
+        assert_eq!(beam.vel, Vec2::new(5.0, 0.0), "shootSpeed 5 along the aim");
+        assert_eq!(beam.damage, 40, "full damage");
+        assert_eq!(beam.ai[0], 0.1, "dir * gravDir * 0.1");
+        assert_eq!(beam.ai[1], 30.0, "the beam envelope");
+        assert_eq!(beam.ai[2], 1.0);
+    }
+
+    /// True Night's Edge 675 (`Player.cs:48914-48921`): the 972 slash at
+    /// full damage + the 973 beam at Damage/2 (int division), ai1 32, the
+    /// aim velocity 14 (973 is NoMeleeSpeedVelocityScaling — no divide).
+    #[test]
+    fn w4_d20_t5_true_nights_edge_halves_the_beam() {
+        let mut app = sword_app(675, "True Nights Edge");
+        fire_once(&mut app);
+        let slots = sword_slots(&app);
+        assert_eq!(slots.len(), 2);
+        let slash = &app.projectiles.slots()[slots[0]];
+        assert_eq!(slash.kind, 972);
+        assert_eq!(slash.damage, 70);
+        assert_eq!(slash.ai[1], 32.0, "useAnimation 32");
+        let beam = &app.projectiles.slots()[slots[1]];
+        assert_eq!(beam.kind, 973);
+        assert_eq!(beam.damage, 35, "Damage / 2");
+        assert_eq!(beam.vel, Vec2::new(14.0, 0.0));
+        assert_eq!(beam.ai[0], 1.0, "no 0.1 factor");
+        assert_eq!(beam.ai[1], 32.0);
+        assert_eq!(beam.ai[2], 1.0);
+    }
+
+    /// True Excalibur 674 (`Player.cs:48922-48929`): the 983 slash + the
+    /// 982 ghost — damage 0, velocity `(direction, 0)` (NOT the aim),
+    /// ai1 = itemAnimationMax on BOTH.
+    #[test]
+    fn w4_d20_t5_true_excalibur_ghost_is_damage_zero() {
+        let mut app = sword_app(674, "True Excalibur");
+        fire_once(&mut app);
+        let slots = sword_slots(&app);
+        assert_eq!(slots.len(), 2);
+        let slash = &app.projectiles.slots()[slots[0]];
+        assert_eq!(slash.kind, 983);
+        assert_eq!(slash.damage, 72);
+        assert_eq!(slash.ai[1], 18.0, "useAnimation 18");
+        let ghost = &app.projectiles.slots()[slots[1]];
+        assert_eq!(ghost.kind, 982);
+        assert_eq!(ghost.damage, 0, "the ghost deals no damage");
+        assert_eq!(ghost.vel, Vec2::new(1.0, 0.0), "(direction, 0), not the aim");
+        assert_eq!(ghost.ai[0], 1.0);
+        assert_eq!(ghost.ai[1], 18.0, "itemAnimationMax, not 30/32/18");
+        assert_eq!(ghost.ai[2], 1.0);
+    }
+
+    /// Terra Blade 757 (`Player.cs:48930-48937`): the 984 slash + the 985
+    /// beam at velocity ×5 (12 × 5 = 60 along the aim — 985 is
+    /// NoMeleeSpeedVelocityScaling), ai1 18, full damage on both.
+    #[test]
+    fn w4_d20_t5_terra_blade_beam_is_times_five() {
+        let mut app = sword_app(757, "Terra Blade");
+        fire_once(&mut app);
+        let slots = sword_slots(&app);
+        assert_eq!(slots.len(), 2);
+        let slash = &app.projectiles.slots()[slots[0]];
+        assert_eq!(slash.kind, 984);
+        assert_eq!(slash.damage, 85);
+        assert_eq!(slash.ai[1], 18.0);
+        let beam = &app.projectiles.slots()[slots[1]];
+        assert_eq!(beam.kind, 985);
+        assert_eq!(beam.damage, 85);
+        assert_eq!(beam.vel, Vec2::new(60.0, 0.0), "(num4,num5) * 5");
+        assert_eq!(beam.ai[0], 1.0);
+        assert_eq!(beam.ai[1], 18.0);
+        assert_eq!(beam.ai[2], 1.0);
+    }
+
+    /// The four arms spend ZERO `Main.rand` draws (`Player.cs:48870-48937`
+    /// carries no roll; the generic tail's tweaks never run). The direct
+    /// `fire_non_ammo_shot` call isolates the shot from the use-start
+    /// UseSound (which DOES draw, `start_swing_extras`).
+    #[test]
+    fn w4_d20_t5_the_sword_arms_spend_no_draw() {
+        for (item, name) in [
+            (273u16, "Nights Edge"),
+            (675, "True Nights Edge"),
+            (674, "True Excalibur"),
+            (757, "Terra Blade"),
+        ] {
+            let mut app = sword_app(item, name);
+            seed_stream(&mut app, 99);
+            let before = stream_of(&mut app);
+            let held = app.inventory[app.selected];
+            let def = registry::get(held.kind).unwrap();
+            let proj = registry::projectile(held.kind).unwrap();
+            let (cx, cy) = app.player.as_ref().unwrap().center();
+            let (sw, sh) = app.screen_size();
+            assert!(fire_non_ammo_shot(
+                &mut app,
+                held,
+                None,
+                Vec2::new(cx + 80.0, cy),
+                proj,
+                def,
+                Vec2::new(sw, sh),
+            ));
+            assert_eq!(stream_of(&mut app), before, "{name}: zero draws");
+            assert_eq!(sword_slots(&app).len(), 2, "{name}: the pair spawned");
         }
     }
 }
