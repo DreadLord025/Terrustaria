@@ -36425,6 +36425,11 @@ the d79 refill capture) → the refill drain → projectiles (the prism
 flower pass-tail) → items (the consume arms → `nebula_levelup`). Full
 table: research/85 RETIRE RT3.
 
+**RT4 — research/85 SEALED.** The report is closed (the SEALED banner +
+RT4); the lane's code half was FINAL at cded6714, the retire phase is
+doc-only. The retire commits: RT1 12d9414d, RT2 b2c9a71f, RT3 fb771bfb,
+RT4 the seal. No further f49 commits touch research/85.
+
 ## The magic guns + tomes use arms (S1-P-i22)
 
 `Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:

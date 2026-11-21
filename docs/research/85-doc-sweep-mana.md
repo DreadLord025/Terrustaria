@@ -1,5 +1,11 @@
 # 85 — DOC-SWEEP lane 12: mana/magic (W4-f49 continuation, 2026-11-21)
 
+**SEALED (RETIRE phase, after cded6714).** This report is the lane's
+final record — no further edits. The retire receipts (RT1 the f12
+mutual bridge receipt + the merger-remainder-list FINAL, RT2 the d79
+three-way per-fn keep-one table, RT3 the MANA-FAMILY merger-bible
+declaration) live in the RETIRE section at the tail of this file.
+
 Code-only doc-sweep on `task/W4-f49-mana-regen-2` (branched on the f49 second
 half, 16415f2f). Mined `docs/ANALYSIS.md` + the regen/potion censuses
 (`62-ammo-potion-census.md`, the d117/f49 sections) for unported mana-lane
@@ -830,3 +836,26 @@ capture) → the d79 refill drain (world-sim, before the sticky-dust
 drain) → projectiles phase (the prism flower pass-tail) → items phase
 (GrabItems: the f49 consume arms on the d79 facades → `nebula_levelup`
 increments the bridged field — the next tick's scan re-derives it).
+
+## RT4. research/85 SEALED
+
+This report is closed. The lane's verdicts (F4) stand; the retire
+receipts above are the final merger-facing record. No further f49
+commits touch this file after the seal commit. The MANA-FAMILY table
+(RT3) is the merger-bible entry for every mana-lane conflict; the
+per-fn keep-one table (RT2) is the nebula three-way resolution; RT1 is
+the f12 mutual receipt + the remainder list.
+
+The retire commits on `task/W4-f49-mana-regen-2`: RT1 **12d9414d**,
+RT2 **b2c9a71f**, RT3 **fb771bfb**, RT4 (this seal) — the branch tip at
+seal time. The lane's code half was FINAL at cded6714; the retire phase
+is doc-only (no code change, no witness change, no compiler invoked).
+
+## RETIRE files touched
+
+| File | Change |
+| --- | --- |
+| `docs/research/85-doc-sweep-mana.md` | the SEALED banner + the RETIRE section (RT1-RT4) |
+| `docs/research/INDEX.md` | the 85 row → SEALED (the retire receipts) |
+| `docs/ANALYSIS.md` | the MANA RETIRE note (RT1 the mutual receipt + remainder list, RT2 the three-way keep-one, RT3 the family declaration) |
+| `docs/PORT_MAP.md` | the nebula row's d79 third-copy ruling + the mana row's MANA-FAMILY pointer |
