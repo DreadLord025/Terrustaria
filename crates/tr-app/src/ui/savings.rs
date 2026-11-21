@@ -26,7 +26,7 @@ use tr_render::SpriteRenderer;
 use crate::assets;
 use crate::item::ItemSlot;
 
-use super::coin_slot::{CoinDrawState, CoinSlotState};
+use super::coin_slot::{draw_item_coin, CoinDrawState, CoinSlotState};
 use super::text::{draw_border_string, hud_text_width, BorderFont};
 
 /// `Utils.CoinsCount` (`Utils.cs:1019-1046`): the copper total of one
@@ -165,38 +165,6 @@ pub(crate) fn money_text_pos(
     }
 }
 
-/// `CoinSlot.DrawItemCoin` (`CoinSlot.cs:240-254`): the coin strip's frame
-/// centred on `center`, the longest side clamped to `size_limit` before the
-/// scale, tinted by `GetAlpha(itemColor)` (coins 71-74 hit the default arm
-/// with `alpha = 0` — the tint passes through, `Item.cs:49324-49340`).
-fn draw_item_coin(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    center: (f32, f32),
-    coin_kind: usize,
-    frame: i32,
-    scale: f32,
-    size_limit: f32,
-) {
-    let Some((uv, w, h)) = lookups.coin_anim_uv(coin_kind, frame) else {
-        return;
-    };
-    // `:247-250`: the clamp picks the LONGER side's ratio.
-    let num = if w > size_limit || h > size_limit {
-        if w <= h { size_limit / h } else { size_limit / w }
-    } else {
-        1.0
-    };
-    let s = scale * num;
-    let (dw, dh) = (w * s, h * s);
-    r.push_ui_sprite(
-        [center.0 - dw * 0.5, center.1 - dh * 0.5],
-        [dw, dh],
-        uv,
-        [1.0; 4],
-    );
-}
-
 /// `ItemSlot.DrawMoney` (`ItemSlot.cs:3652-3702`): the "Savings" label at
 /// `(shopx, shopy + 40)` (`DrawBorderStringFourWay`, MouseText, white ×
 /// `mouseTextColor/255`), then the four coin cells (platinum first —
@@ -248,6 +216,8 @@ fn draw_money(
             d.coin_anim_frame,
             1.0,
             1024.0,
+            [1.0; 4],
+            1.0,
         );
         let scale = 0.75 * d.stack_text_scale;
         let (tx, ty) = money_text_pos(horizontal, i, raw, shopx, shopy, cx, cy, ls, scale);

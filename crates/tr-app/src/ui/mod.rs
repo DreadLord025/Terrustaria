@@ -848,6 +848,9 @@ pub fn draw_hud(
     // `Main.mouseItem.IsAir` (`Main.cs:41430`): every accessory tick draw and hit
     // is gated on the cursor holding nothing.
     let mouse_item_is_air = mouse_item.kind == 0 || mouse_item.count == 0;
+    // `Main.mouseItem.dye > 0` — the dye-slot dim gate (`GetDimSlotForMouseItem`,
+    // `ItemSlot.cs:1382`): a carried dye does not dim the dye slots.
+    let mouse_item_is_dye = crate::itemdata::ITEMS[mouse_item.kind as usize].dye > 0;
     // The housing page's cell hover (`Main.cs:42059-42065`), which the tooltip
     // layer prints instead of an item name.
     let mut open_housing: Option<(usize, Option<usize>)> = None;
@@ -879,6 +882,8 @@ pub fn draw_hud(
             // accessory visible/hidden ticks (`Main.cs:41425-41460`).
             hide_visible_accessory,
             mouse_item_is_air,
+            coin_slot,
+            mouse_item_is_dye,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;
@@ -959,6 +964,10 @@ pub fn draw_hud(
                         false,
                         inventory::SHOP_SCALE,
                         [220.0 / 255.0; 4],
+                        None,
+                        idx as i32,
+                        mouse_item_is_air,
+                        mouse_item_is_dye,
                     );
                 }
             }
@@ -1130,6 +1139,10 @@ pub fn draw_hud(
                 i == selected,
                 scale,
                 [1.0; 4],
+                None,
+                i as i32,
+                mouse_item_is_air,
+                mouse_item_is_dye,
             );
             x += advance;
         }
@@ -1164,6 +1177,10 @@ pub fn draw_hud(
             false,
             pulse.cursor_scale,
             [1.0; 4],
+            None,
+            0,
+            mouse_item_is_air,
+            mouse_item_is_dye,
         );
     } else if mouse_npc.carried() {
         // `DrawInterface_38_MouseCarriedObject`'s else arm

@@ -520,6 +520,10 @@ fn draw_detail_area(
             false,
             1.0,
             guide_tint,
+            None,
+            -1,
+            true,
+            false,
         );
         // The label at `vector + (52, 73)` (`:445`): `Main.guideItem.IsAir ?
         // Lang.inter[24] : ...` — the guide slot is always empty in the port, so
@@ -550,6 +554,10 @@ fn draw_detail_area(
         false,
         1.0,
         slot::craft_slot_tint(),
+        None,
+        -1,
+        true,
+        false,
     );
 
     // `Images/UI/Craft` at `vector + (47, 13)`, scale 0.8, White (`:460`).

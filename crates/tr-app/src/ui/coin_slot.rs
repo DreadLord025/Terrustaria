@@ -8,6 +8,43 @@
 //! coin; `UpdateDrawState` feeds each cell's draw (`ItemSlot.cs:2349`) and
 //! `UpdateSlotAnims` steps the clocks per frame (`Main.cs:44936`).
 
+use tr_render::SpriteRenderer;
+
+use crate::assets;
+
+/// `CoinSlot.DrawItemCoin` (`CoinSlot.cs:240-254`): one spin frame of the
+/// coin strip centred on `center`, the longest side clamped to `size_limit`
+/// before the scale (`:247-250`), tinted by `GetAlpha(itemColor)` (coins
+/// 71-74 hit the default arm with `alpha = 0` — the tint passes through,
+/// `Item.cs:49324-49340`) × `itemFade`. Shared by the savings draw
+/// (`ui/savings.rs`) and the slot draw's coin arm (`ui/slot.rs`,
+/// `ItemSlot.cs:2515`).
+pub(crate) fn draw_item_coin(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    center: (f32, f32),
+    coin_kind: usize,
+    frame: i32,
+    scale: f32,
+    size_limit: f32,
+    tint: [f32; 4],
+    item_fade: f32,
+) {
+    let Some((uv, w, h)) = lookups.coin_anim_uv(coin_kind, frame) else {
+        return;
+    };
+    // `:247-250`: the clamp picks the LONGER side's ratio.
+    let num = if w > size_limit || h > size_limit {
+        if w <= h { size_limit / h } else { size_limit / w }
+    } else {
+        1.0
+    };
+    let s = scale * num;
+    let (dw, dh) = (w * s, h * s);
+    let c = [tint[0] * item_fade, tint[1] * item_fade, tint[2] * item_fade, tint[3] * item_fade];
+    r.push_ui_sprite([center.0 - dw * 0.5, center.1 - dh * 0.5], [dw, dh], uv, c);
+}
+
 /// `ItemID.Sets.CommonCoin` (`ItemID.cs:1318`) — the copper..platinum coins.
 fn is_common_coin(kind: u16) -> bool {
     (71..=74).contains(&kind)
@@ -453,5 +490,45 @@ mod tests {
             inv.stack_text_draw_fade_overload, -1.0,
             "the grid entry stays neutral"
         );
+    }
+
+    /// The S1-H-9 follow-up: `draw_slot` now consumes `UpdateDrawState`
+    /// (`ItemSlot.cs:2349`). A coin-row cell (context 1, vanilla index 50)
+    /// that gains stack arms the text pulse and the jump, and a vacated coin
+    /// keeps a `fade_item` so the slot still draws the fading strip
+    /// (`ItemSlot.cs:2500`'s `flag4`).
+    #[test]
+    fn the_coin_row_draw_state_feeds_the_slot_consumption() {
+        let mut st = CoinSlotState::new();
+        let slot = crate::inv::coin_slot_index(0) as i32; // 50
+        // The first draw absorbs the stack (DrawActive == 0) — neutral.
+        let d = st.update_draw_state(slot, 1, 71, 5);
+        assert_eq!(d.stack_text_scale, 1.0);
+        assert_eq!(d.coin_y_offset, 0.0);
+        assert_eq!(d.fade_item, 0);
+        // A pickup raises the stack: the pulse arms at the tail key, then
+        // grows as UpdateSlotAnims drains the frame (the per-frame step the
+        // draw pass runs after the interface layers, `Main.cs:44936`).
+        let _ = st.update_draw_state(slot, 1, 71, 9);
+        st.update_slot_anims();
+        let d = st.update_draw_state(slot, 1, 71, 9);
+        assert!(d.stack_text_scale > 1.0, "the stack-count pulse grows");
+        // The jump fires once the text frame walks the 9..13 trigger window
+        // (`CoinSlot.cs:85-92`); stepping the clocks reaches it.
+        let mut jumped = false;
+        for _ in 0..16 {
+            st.update_slot_anims();
+            let d = st.update_draw_state(slot, 1, 71, 9);
+            if d.coin_y_offset > 0.0 {
+                jumped = true;
+                break;
+            }
+        }
+        assert!(jumped, "the coin jumps within the text-pulse window");
+        // Vacating the coin to air keeps the fade rank (the slot draws the
+        // fading strip even though the item is air).
+        let d = st.update_draw_state(slot, 1, 0, 0);
+        assert_eq!(d.fade_item, 71, "the copper fades out, not snaps");
+        assert!(d.fade_scale <= 1.0);
     }
 }

@@ -1728,6 +1728,7 @@ impl App {
                                 button_scales: &mut self.chest_button_scales,
                                 button_hovered: &mut self.chest_button_hovered,
                                 audio: &mut self.audio,
+                                coin_slot: &mut self.coin_slot,
                             },
                             self.in_reforge_menu.then(|| {
                                 let cost = self
