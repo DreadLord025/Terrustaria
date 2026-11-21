@@ -2074,6 +2074,16 @@ impl App {
                                         [1.0; 4],
                                     );
                                 }
+                                // `Main.cs:62160`: the fullscreen map's draw
+                                // tail runs `DrawPlayerChat` after `DrawMap`
+                                // — the chat log + input strip draw over the
+                                // map (the HUD is suppressed, the chat is
+                                // not). `DrawFPS` (`:62159`) rides
+                                // `showFrameRate` (F10, unported);
+                                // `DrawPendingMouseText` (`:62161`) is the
+                                // hover-text pass the map's own `MouseText`
+                                // (`:56046-56049`) already covers.
+                                ui::draw_chat(renderer, lookups, screen, &mut self.chat);
                             }
                             // The `else if self.map_style == 1` minimap branch
                             // (`Main.cs:55503-55547`) draws above `ui::draw_hud`
