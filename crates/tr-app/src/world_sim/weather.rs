@@ -291,8 +291,13 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         }
         crate::world_events::update_time_party(&mut app.world_events);
         // `LanternNight.UpdateTime`'s persistence gate: the lanterns ride
-        // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`).
-        let lantern_can_persist = !world.day_time;
+        // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`,
+        // `LanternNight.cs:49-56` — W4-c39 graft, research/114 §13: the full
+        // gate, not the bare `!dayTime`; the manual lanterns persist
+        // regardless — only `GenuineLanterns` reads it).
+        let lantern_gates = crate::world_events::LanternGates::from_world(world, &app.npcs);
+        let lantern_can_persist =
+            !world.day_time && crate::world_events::lanterns_can_start(&lantern_gates);
         let _ = crate::world_events::update_time_lanterns(
             &mut app.world_events,
             lantern_can_persist,
@@ -1451,6 +1456,43 @@ mod tests {
             app.wind.counter, counter_before,
             "the open walk decrements/resets the counter"
         );
+    }
+
+    /// W4-c39 (graft, research/114 §13 hunk 2) — the FULL
+    /// `LanternsCanPersist` gate (`LanternNight.cs:49-56`):
+    /// `!dayTime && LanternsCanStart()`, not the bare `!dayTime`. The
+    /// genuine lanterns clear at dawn AND when a `LanternsCanStart`
+    /// conjunct goes false mid-night (blood moon here); the manual
+    /// lanterns persist regardless (only `GenuineLanterns` reads the gate,
+    /// `LanternNight.cs:127-131`).
+    #[test]
+    fn w4_c39_the_lantern_persistence_gate_is_the_full_lanterns_can_persist() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.day_time = false; // night
+        app.world_events.genuine_lanterns = true;
+        update_world_tick(&mut app, STEP);
+        assert!(
+            app.world_events.genuine_lanterns,
+            "a calm night persists the genuine lanterns"
+        );
+        // The blood-moon conjunct (`LanternNight.cs:60`): the SAME night
+        // clears the genuine lanterns — the bare `!dayTime` gate kept them.
+        app.world.blood_moon = true;
+        update_world_tick(&mut app, STEP);
+        assert!(
+            !app.world_events.genuine_lanterns,
+            "LanternsCanStart false mid-night clears the genuine lanterns"
+        );
+        // The manual lanterns ride through both arms untouched.
+        app.world_events.manual_lanterns = true;
+        update_world_tick(&mut app, STEP);
+        assert!(app.world_events.manual_lanterns, "manual persists under the blood moon");
+        // Dawn clears the genuine lanterns even on a calm sky (`!dayTime`).
+        let mut dawn = flow_app(None, vec![], vec![]);
+        dawn.world.day_time = true;
+        dawn.world_events.genuine_lanterns = true;
+        update_world_tick(&mut dawn, STEP);
+        assert!(!dawn.world_events.genuine_lanterns, "dawn clears the genuine lanterns");
     }
 
     #[test]

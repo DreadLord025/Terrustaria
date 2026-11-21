@@ -683,7 +683,8 @@ impl Rain {
     /// 60 Hz world tick from `world_sim::weather::update_world_tick` — after the
     /// dayRate wind loop, before `Sandstorm.UpdateTime` (`Main.cs:64966`).
     ///
-    /// C# order: the `ladyBugRainBoost` drain (`:64833-64836`), the outer
+    /// C# order: the lanterns-up storm-deck head clamp (`:64825-64831`,
+    /// W4-c39 graft), the `ladyBugRainBoost` drain (`:64833-64836`), the outer
     /// `(netMode != 1 && !gameMenu) && (isThereAWorldSurface || remixWorld)` gate
     /// (`:64846` — netMode 0 and an in-game tick make the first conjunct true),
     /// the raining branch (`:64864-64888`), then the not-raining start arms
@@ -714,6 +715,16 @@ impl Rain {
         // skipped under it, and `start_calm` disabled that schedule too.
         if self.forced.is_some() || self.calm {
             return;
+        }
+        // W4-c39 (graft, research/114 §13): `Main.cs:64825-64831` —
+        // `UpdateTime`'s head, BEFORE the ladybug drain: while the lanterns
+        // are up `cloudBGActive = 0f` and `numClouds` caps at 30. The port's
+        // `numClouds` stand-in is pinned at 100 (`NUM_CLOUDS_STAND_IN`) and
+        // both `> 150`/`> 100` band arms are dead at 100 AND at 30, so the
+        // cap changes no outcome (recorded); the storm-deck clear is
+        // observable — the `:64916` second start arm reads `cloud_bg`.
+        if lanterns_up {
+            self.cloud_bg = 0.0;
         }
         // `Main.cs:64833-64836`.
         if self.lady_bug_rain_boost > 0 {
@@ -2596,6 +2607,30 @@ mod tests {
         assert_eq!(rain.max_raining(), 0.0);
         assert_eq!(rain.rain_time, 0, "StopRain pins rainTime, not the drain");
         assert_eq!(rain.rng, state, "no strength roll on the lantern arm");
+    }
+
+    /// W4-c39 (graft, research/114 §13) — the `:64825-64831` head clamp:
+    /// `UpdateTime`'s head clears `cloudBGActive` while the lanterns are up
+    /// — BEFORE the ladybug drain and the rain branches, draw-free. The
+    /// `numClouds` cap at 30 is outcome-neutral (the 100 stand-in's
+    /// `> 150`/`> 100` arms are dead at 100 AND at 30 — recorded at the
+    /// clamp). c39's witness body ports unchanged (same rig names).
+    #[test]
+    fn w4_c39_the_lantern_head_clamps_the_storm_deck_before_the_drain() {
+        let w = rain_world();
+        let mut rain = Rain::with_forced(7, None, false);
+        rain.cloud_bg = 0.8;
+        rain.lady_bug_rain_boost = 100;
+        let state = rain.rng;
+        rain.update_time(1, &w, true, false, 0.0, false, true, false);
+        assert_eq!(rain.cloud_bg(), 0.0, "the lantern head clears the deck");
+        assert_eq!(rain.lady_bug_rain_boost, 99, "the drain still runs");
+        assert_eq!(rain.rng, state, "the clamp draws nothing");
+        // The contrast arm: no lanterns, the deck keeps its value.
+        let mut plain = Rain::with_forced(7, None, false);
+        plain.cloud_bg = 0.8;
+        plain.update_time(1, &w, true, false, 0.0, false, false, false);
+        assert_eq!(plain.cloud_bg(), 0.8);
     }
 
     /// W4-f39 (folded, final phase) — the `:64890` gate on the start arms:

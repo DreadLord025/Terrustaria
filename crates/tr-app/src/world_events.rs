@@ -112,7 +112,10 @@ impl LanternGates {
 }
 
 /// `LanternNight.LanternsCanStart` (`LanternNight.cs:49-56`).
-fn lanterns_can_start(g: &LanternGates) -> bool {
+/// `pub(crate)` per the c39 graft rider (research/114 §13): the weather
+/// tick's `LanternsCanPersist` gate reads it (c39's module exports it with
+/// the identical body — one owner at merge).
+pub(crate) fn lanterns_can_start(g: &LanternGates) -> bool {
     !g.spawn_meteor
         && !g.blood_moon
         && !g.pumpkin_moon
