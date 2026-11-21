@@ -5651,10 +5651,13 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // W4-g24 — the `Check*`-level cue tails (`TileKill::check_cues`):
     // `Check2x1`'s piggy/bowl Shatter (`WorldGen.cs:47235`/:47255) and
     // `CheckOrb`'s crimson-4 / shadow-13 tail (`:54337`/:54341), at the
-    // TRIGGER cell the C# plays at. Same pinned-cue path as the sibling
-    // kill cues above (research D3 — no per-play variation/pitch draws);
-    // the tails are not `noItem`-gated (the C# plays them outside the drop
-    // gate), so they drain unconditionally.
+    // TRIGGER cell the C# plays at. The core records them AFTER the check's
+    // kill loop (the C# plays the tails at the check's end — the c14
+    // keep-one, research/106 §5), so they drain after the hit/pot cues above
+    // in the C# order. Same pinned-cue path as the sibling kill cues (the
+    // D3 convention — no per-play variation/pitch draws); the tails are not
+    // `noItem`-gated (the C# plays them outside the drop gate), so they
+    // drain unconditionally.
     for &(id, style, cx, cy) in &kill.check_cues {
         if let Some((name, volume)) = kill_cue((id, style)) {
             app.audio

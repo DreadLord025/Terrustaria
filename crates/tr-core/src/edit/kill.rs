@@ -167,10 +167,12 @@ pub struct TileKill {
     /// still stands), NOT the snapped origin `num`. `Check2x1`'s piggy/bowl
     /// Shatter (`WorldGen.cs:47235`/:47255, `PlaySound(13, i * 16, y * 16)`)
     /// and `CheckOrb`'s crimson-4 / shadow-13 tail (`:54337`/:54341, at
-    /// `(i, j)`). The tails sit OUTSIDE the `netMode != 1 &&
-    /// !generatingWorld` drop gate (`:54335` follows the gate's close at
-    /// `:54334`) and are not `noItem`-gated — the app plays them regardless
-    /// of the drop flags.
+    /// `(i, j)`). Recorded AFTER the check's kill loop — the C# plays the
+    /// tails at the check's end, so they land after the nested kills' own
+    /// cues in play order (the c14 keep-one, research/106 §5). The tails sit
+    /// OUTSIDE the `netMode != 1 && !generatingWorld` drop gate (`:54335`
+    /// follows the gate's close at `:54334`) and are not `noItem`-gated —
+    /// the app plays them regardless of the drop flags.
     pub check_cues: Vec<(u16, u16, i32, i32)>,
 }
 
@@ -493,11 +495,6 @@ fn square_tile_frame(
         if let Some(event) = plan.pot_event {
             kill.events.push(event);
         }
-        // The `Check*`-level cue tails (`WorldGen.cs:47235`/:47255/:54337/
-        // :54341) sit OUTSIDE the drop gates — the piggy/bowl Shatter plays
-        // even under `noItem` (the C# tail has no gate), and the orb tail
-        // follows the netMode/generatingWorld block. Not `no_item`-gated.
-        kill.check_cues.extend(plan.cues);
         // The guarded checks' shared tail: `destroyObject = true`, kill every
         // object cell of the type (`WorldGen.cs:57941-57952`, :86414-86428,
         // :86494-86502, :43466-43472, :47108-47115, :49416-49423),
@@ -517,6 +514,18 @@ fn square_tile_frame(
         } else {
             kill_plan_cells(world, &plan.cells, no_item, destroy_object, kill);
         }
+        // The `Check*`-level cue tails (`WorldGen.cs:47235`/:47255/:54337/
+        // :54341), recorded AFTER the kill loop — the C# plays them at the
+        // check's tail (`Check2x1`'s `:47235`/:47255 follow the `:47108-
+        // :47116` kill block; `CheckOrb`'s `:54335-54342` follows the
+        // `:54214-54223` loop), so the tail's cue lands after the nested
+        // kills' own cues in play order (W4-g24 doc-sweep — the c14
+        // keep-one: c14's `check_sounds` records at this same position,
+        // research/106 §5). OUTSIDE the drop gates — the piggy/bowl
+        // Shatter plays even under `noItem` (the C# tail has no gate), and
+        // the orb tail follows the netMode/generatingWorld block. Not
+        // `no_item`-gated.
+        kill.check_cues.extend(plan.cues);
         // The `Check*` tail's `TileFrame` ring (`WorldGen.cs:49841-49849`,
         // :50161-50168, :47499-47506): walked with `destroyObject` reset so a
         // neighbouring piece whose anchor died inside this sweep reaches its
@@ -5162,6 +5171,40 @@ mod tests {
         let kill = kill_tile(&mut w, 10, 20, true).unwrap();
         assert_eq!(kill.check_cues, vec![(13, 1, 11, 20)]);
         assert!(kill.object_drops.is_empty(), "noItem holds the drop");
+    }
+
+    /// W4-g24 doc-sweep (the c14 keep-one, research/106 §5) — the tail
+    /// records AFTER the check's kill loop: two adjacent piggy pairs on one
+    /// trigger break frame left-first (`SQUARE_FRAME_ORDER`'s (-1,0) precedes
+    /// (+1,0)), so the LEFT pair's Shatter tail (`:47235`, the C# plays it
+    /// after the `:47108-47116` kill block) lands BEFORE the RIGHT pair's
+    /// nested kill cues. The before-loop recording would have interleaved
+    /// them the other way — c14's `check_sounds` position is the faithful
+    /// one, kept.
+    #[test]
+    fn w4_g24_the_check_tail_records_after_the_kill_loop() {
+        let mut w = soil_world(2);
+        // The left pair (10/11, 20) and the right pair (12/13, 20).
+        set_object_cell(&mut w, 10, 20, 29, 0, 0);
+        set_object_cell(&mut w, 11, 20, 29, 18, 0);
+        set_object_cell(&mut w, 12, 20, 29, 0, 0);
+        set_object_cell(&mut w, 13, 20, 29, 18, 0);
+        // The trigger block between them: its 3x3 frames both pairs.
+        set_active(&mut w, 11, 19, 1);
+        let kill = trigger_at(&mut w, 11, 19);
+        assert_eq!(
+            kill.check_cues,
+            vec![(13, 1, 10, 20), (13, 1, 13, 20)],
+            "the left pair's tail first, the right pair's second"
+        );
+        // Both pairs died (their cells are gone), the drops rode the plan.
+        assert_all_gone(&w, &[(10, 20), (11, 20), (12, 20), (13, 20)]);
+        let piggy_drops = kill
+            .object_drops
+            .iter()
+            .filter(|d| d.tile_kind == 29)
+            .count();
+        assert_eq!(piggy_drops, 2, "one drop per pair");
     }
 
     /// W4-g24 — `Check2x1`'s case-103 bowl arm (`WorldGen.cs:47011-47023`,
