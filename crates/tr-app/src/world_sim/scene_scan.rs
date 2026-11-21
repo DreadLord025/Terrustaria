@@ -608,22 +608,29 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     }
     // `Main.tileColor` = the sky tint applied to tiles
     // (`Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`), with the rain dim
-    // the frame applies (`frame.rs`'s `rain_dim`). Only the Noir formula
-    // reads it (no M1 activation path).
+    // the frame applies (`frame/draw.rs`'s `rain_dim` — W4-g69 doc-sweep: the
+    // same `1 - cloudAlpha * 0.9 * atmo` byte-truncated formula,
+    // `Main.cs:63546-63552`). Only the Noir formula reads it (no M1
+    // activation path).
     let quantised = (world.time / 60.0).floor() * 60.0;
     let c = crate::render::sky::color_of_the_skies(quantised, world.day_time, world.moon_phase);
-    let rain_dim = (1.0 - rain.visual_alpha() * 0.9).max(0.1);
-    let mut c = [c[0] * rain_dim, c[1] * rain_dim, c[2] * rain_dim];
+    let rain_alpha = rain.raw_alpha();
+    let atmo = crate::render::sky::atmosphere_factor(camera.y, world.world_surface, world.width);
+    let mut c = crate::render::sky::rain_dim_sky(
+        c,
+        rain_alpha,
+        atmo,
+        world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+    );
     // `ModifyHorizonLight` (`Main.cs:63921`) — the same blend the frame's
     // light-map sky colour takes, so the filters see the tinted tileColor.
-    let atmo = crate::render::sky::atmosphere_factor(camera.y, world.world_surface, world.width);
     crate::render::sky::modify_horizon_light(
         &mut c,
         world.moon_phase,
         world.day_time,
         (world.time / 60.0).floor() * 60.0,
         atmo,
-        rain.visual_alpha(),
+        rain_alpha,
     );
     let tile_color = crate::render::sky::tile_color(c);
     let inputs = crate::app::filters::SceneVisualInputs {

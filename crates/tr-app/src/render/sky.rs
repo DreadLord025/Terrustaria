@@ -112,6 +112,27 @@ pub(crate) fn tile_color(sky: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+/// `SetBackColor`'s rain dim (`Main.cs:63546-63552`): while
+/// `cloudAlpha > 0 && !remixWorld`, every sky channel is multiplied by
+/// `1 - cloudAlpha * 0.9 * atmo` — byte-truncated (`(byte)((int)ch * num3)`).
+/// W4-g69 doc-sweep: the RAW cloudAlpha (the port's clamped `visual_alpha`
+/// was wrong for over-1 pins), the atmo factor and the remix exclusion were
+/// missing, and the retired 0.1 floor is not in the C#. The per-cloud
+/// darkening is NOT here: `Cloud.cloudColor` carries no rain tint
+/// (`Cloud.cs:227-235`); the dark storm TYPES 18-21 (`Cloud.cs:116-127`)
+/// plus this GLOBAL sky dim are the whole rain-cloud darkening.
+pub(crate) fn rain_dim_sky(sky: [f32; 3], cloud_alpha: f32, atmo: f32, remix: bool) -> [f32; 3] {
+    if cloud_alpha <= 0.0 || remix {
+        return sky;
+    }
+    let num3 = 1.0 - cloud_alpha * 0.9 * atmo;
+    [
+        ((sky[0] * 255.0) as i32 as f32 * num3) as i32 as f32 / 255.0,
+        ((sky[1] * 255.0) as i32 as f32 * num3) as i32 as f32 / 255.0,
+        ((sky[2] * 255.0) as i32 as f32 * num3) as i32 as f32 / 255.0,
+    ]
+}
+
 /// `SunGradients` (`GameContent/Drawing/SunGradients.cs:37-197`): the 15-entry
 /// gradient tables are hardcoded colours; only the middle entry
 /// (`gradient[gradient.Length / 2]`, `NextHorizonRenderer.cs:185`) feeds the
@@ -1665,6 +1686,39 @@ mod cloud_star_tests {
         // globalCloudAlpha 0 (atmo 0 deep underground) blacks the sprite out.
         let gone = draw_cloud_color(white, 1.0, 1.0, 3, 0.0, 0.0);
         assert_eq!(gone, [0.0; 4]);
+    }
+
+    /// W4-g69 doc-sweep — the rain-cloud darkening census: `Cloud.cloudColor`
+    /// (`Cloud.cs:227-235`) carries NO per-cloud rain tint; the darkening is
+    /// (a) the dark storm TYPES 18-21 spawned while raining/overcast
+    /// (`Cloud.cs:116-127`, the `rain_spawn_takes_the_dark_type_branch`
+    /// witness in `cloud.rs`) and (b) the GLOBAL `SetBackColor` dim
+    /// `1 - cloudAlpha * 0.9 * atmo` (`Main.cs:63546-63552`), byte-truncated,
+    /// gated on `cloudAlpha > 0 && !remixWorld` — no 0.1 floor.
+    #[test]
+    fn w4_g69_rain_dim_sky_is_the_global_byte_truncated_formula() {
+        let white = [1.0, 1.0, 1.0];
+        // cloudAlpha 1, atmo 1: (byte)(255 * 0.1) = 25.
+        assert_eq!(rain_dim_sky(white, 1.0, 1.0, false), [25.0 / 255.0; 3]);
+        // cloudAlpha 0.5: num3 = 0.55, (byte)(255 * 0.55) = 140 (140.25).
+        assert_eq!(rain_dim_sky(white, 0.5, 1.0, false), [140.0 / 255.0; 3]);
+        // atmo 0 (deep underground): num3 = 1 — no dim at all.
+        assert_eq!(rain_dim_sky(white, 1.0, 0.0, false), white);
+        // cloudAlpha 0: the gate skips the multiply entirely.
+        assert_eq!(rain_dim_sky(white, 0.0, 1.0, false), white);
+        // remixWorld: the C# never dims (`:63546`'s `!Main.remixWorld`).
+        assert_eq!(rain_dim_sky(white, 1.0, 1.0, true), white);
+        // The RAW alpha can exceed 1 (the port's TR_RAIN pin): num3 goes
+        // NEGATIVE and the byte cast saturates at 0 — the retired 0.1 floor
+        // would have kept 25; the C# blacks the sky out.
+        assert_eq!(rain_dim_sky(white, 1.5, 1.0, false), [0.0; 3]);
+        // A non-white channel truncates independently: (byte)(200 * 0.55)
+        // = 110, (byte)(100 * 0.55) = 55, (byte)(50 * 0.55) = 27.
+        let tinted = [200.0 / 255.0, 100.0 / 255.0, 50.0 / 255.0];
+        assert_eq!(
+            rain_dim_sky(tinted, 0.5, 1.0, false),
+            [110.0 / 255.0, 55.0 / 255.0, 27.0 / 255.0]
+        );
     }
 
     #[test]

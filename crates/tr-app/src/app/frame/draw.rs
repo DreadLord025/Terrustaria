@@ -299,23 +299,31 @@ impl App {
                     let quantised = (natural_time / 60.0).floor() * 60.0;
                     let sky_tint = color_of_the_skies(quantised, is_day, world.moon_phase);
                     let clock_time = natural_time;
-                    // `SetBackColor`: rain multiplies the sky (and therefore the surface
-                    // sunlight) by `1 - cloudAlpha * 0.9`.
-                    let rain_alpha = rain.visual_alpha();
-                    let rain_dim = (1.0 - rain_alpha * 0.9).max(0.1);
-                    let mut sky_tint = [
-                        sky_tint[0] * rain_dim,
-                        sky_tint[1] * rain_dim,
-                        sky_tint[2] * rain_dim,
-                    ];
-                    // `Main.instance.HorizonRenderer.ModifyHorizonLight`
-                    // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
-                    // into the sky colour before it becomes the tile light.
+                    // `SetBackColor`: rain multiplies the sky (and therefore
+                    // the surface sunlight) by `1 - cloudAlpha * 0.9 * atmo`
+                    // (`Main.cs:63546-63552`, byte-truncated per channel —
+                    // `rain_dim_sky`). W4-g69 doc-sweep: the RAW cloudAlpha,
+                    // the atmo factor and the remix exclusion replaced the
+                    // clamped-visual/no-atmo/0.1-floor stand-in. The atmo
+                    // here is the early atmosphere_factor estimate (the C#
+                    // reads last frame's Main.atmo at SetBackColor; the
+                    // refined self.atmo below re-derives the same value at
+                    // the surface).
+                    let rain_alpha = rain.raw_alpha();
                     let atmo = crate::render::sky::atmosphere_factor(
                         camera.y,
                         world.world_surface,
                         world.width,
                     );
+                    let mut sky_tint = crate::render::sky::rain_dim_sky(
+                        sky_tint,
+                        rain_alpha,
+                        atmo,
+                        world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+                    );
+                    // `Main.instance.HorizonRenderer.ModifyHorizonLight`
+                    // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
+                    // into the sky colour before it becomes the tile light.
                     crate::render::sky::modify_horizon_light(
                         &mut sky_tint,
                         world.moon_phase,
