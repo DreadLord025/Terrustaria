@@ -173,6 +173,24 @@
 //! 72/72 + 78/79 + 80/81 constants, the Old Man's shimmer field-read
 //! gates). The d34 kinds NOT activated: 46 Bunny (gore-first `:85942`).
 //!
+//! ## Scope — batch 12 (the d34 tail + c4/d23/d37 activations, 10 kinds)
+//!
+//! | C# type(s) | death arm | shape |
+//! | --- | --- | --- |
+//! | 57 CorruptGoldfish | `:86381` | 10× type-5 (the piranha arm, d34) |
+//! | 61 Vulture | `:86617-86620` | 50× type-5 2×dir (d34) |
+//! | 62 Demon | `:89803` | 50× type-5 (the voodoo arm, d34) |
+//! | 63 BlueJellyfish | `:85554-85557` | 25× type-4 tinted (50,120,255,100), dust-only (d34; the shared arm's DEFAULT color row — 64 stays row-gated) |
+//! | 157 Arapaima | `:86514-86517` | 50× type-5 2×dir (c4 `22cec16f`) |
+//! | 175 AngryTrapper | `:89769-89772` | 50× type-40 alpha/color scale-1.2 (d23 `19109424`, its own arm) |
+//! | 217/218/219 beetles | `:87462-87465` | 50× type-18 alpha/color/scale (d37 `750d8e44`) |
+//! | 226 FlyingSnake | `:85807` | 15× type-5 (the bat arm, d37) |
+//!
+//! All batch-12 gore tails draw NO arguments (the 84/86-88/93/94/94/
+//! 186/187/227/228 constants, the beetle ladder's `this.scale`, the
+//! snake's 317-319). The 64 PinkJellyfish tint (225,70,140) lands with
+//! its kind row (d36's band, unpushed).
+//!
 //! ## The lane's remainder (the census's absent kinds)
 //!
 //! The 173-kind dust-first clean census had 109 kinds with NO port kind
@@ -517,12 +535,12 @@ pub fn death_dust(
                 );
             }
         }
-        // `NPC.cs:86381-86384` — the Piranha (58) / Corrupt Bunny (47):
-        // 10 type-5 puffs at 2×dir/-2 (the shared `:86371` arm; 47 rides
-        // the d34 row — batch 11, the 78/79 gore tail `:86403-86407` is
-        // constant types, no argument draws; the 464/465 siblings are
-        // g60's band).
-        47 | 58 => {
+        // `NPC.cs:86381-86384` — the Piranha (58) / Corrupt Bunny (47) /
+        // Corrupt Goldfish (57): 10 type-5 puffs at 2×dir/-2 (the shared
+        // `:86371` arm; 47/57 ride the d34 rows — batches 11/12, the
+        // 78/79 + 84 gore tails `:86385-86407` are constant types, no
+        // argument draws; the 464/465 siblings are g60's band).
+        47 | 57 | 58 => {
             for _ in 0..10 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
@@ -540,11 +558,11 @@ pub fn death_dust(
                 );
             }
         }
-        // `NPC.cs:89803-89806` — the Voodoo Demon (66): 50 type-5 puffs
-        // at 2×dir/-2 (the 62 Demon sibling joins in batch 12 — the shared
-        // `:89793` arm; the 93/94/94 gore tail `:89807-89809` is constant
-        // types, no argument draws).
-        66 => {
+        // `NPC.cs:89803-89806` — the Voodoo Demon (66) / Demon (62): 50
+        // type-5 puffs at 2×dir/-2 (the shared `:89793` arm; 62 rides the
+        // d34 row — batch 12; the 93/94/94 gore tail `:89807-89809` is
+        // constant types, no argument draws).
+        62 | 66 => {
             for _ in 0..50 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
@@ -995,6 +1013,83 @@ pub fn death_dust(
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 40, dir, -2.0,
                     npc.alpha as i32, Color::default(), 1.2,
+                );
+            }
+        }
+        // ---- batch 12 (the d34 tail + c4/d23/d37 row-gated activations).
+        // d34's 57/61/62/63, c4 `22cec16f`'s Arapaima 157, d23 `19109424`'s
+        // AngryTrapper 175, d37 `750d8e44`'s beetle trio 217/218/219 +
+        // FlyingSnake 226. 57/62 ride the extended shared arms above.
+        // `NPC.cs:86617-86620` — the Vulture (61): 50 type-5 puffs at
+        // 2×dir/-2 (the 86/87/88 gore tail `:86621-86623` is constant
+        // types + a +14 X offset, no argument draws).
+        61 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:85554-85557` — the Blue Jellyfish (63): 25 type-4 puffs
+        // at 2×dir/-2, alpha 0, tinted (50,120,255,100) (the shared
+        // 63/64/103 arm's DEFAULT color row `:85536` — 63 rides the d34
+        // row; 64 stays row-gated, its 225,70,140 tint lands with it; 103
+        // wired in batch 10). Dust-only, zero gore.
+        63 => {
+            for _ in 0..25 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 4, 2.0 * dir, -2.0, 0,
+                    Color::new(50, 120, 255, 100), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:86514-86517` — the Arapaima (157): 50 type-5 puffs at
+        // 2×dir/-2 (c4's style-44 row; the 186/187 gore tail
+        // `:86518-86519` is constant types + a +14 X offset, no argument
+        // draws).
+        157 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:89769-89772` — the Angry Trapper (175): 50 type-40 puffs
+        // at dir/-2, `this.alpha`/`this.color`, scale 1.2 (the man-eater
+        // arm's shape, its OWN C# arm; d23's style-13 row). The 227/228
+        // gore tail `:89773-89774` is constant types, no argument draws.
+        175 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 40, dir, -2.0,
+                    npc.alpha as i32, Color::default(), 1.2,
+                );
+            }
+        }
+        // `NPC.cs:87462-87465` — the beetle trio (217 Cochineal / 218 Cyan
+        // / 219 Lac): 50 type-18 puffs at dir/-2, `this.alpha`/`this.color`
+        // /`this.scale` (the EoSouls arm; d37's rows). The per-kind gore
+        // ladder `:87466-87479` (292/293, 295/296, 294) is constant types
+        // + `this.scale`, no argument draws.
+        217 | 218 | 219 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 18, dir, -2.0,
+                    npc.alpha as i32, Color::default(), npc.scale,
+                );
+            }
+        }
+        // `NPC.cs:85807-85810` — the Flying Snake (226): 15 type-5 puffs
+        // at 2×dir/-2 (the bat arm, batch 4's shape; d37's row). The
+        // 317/318/318/319 gore tail `:85830-85836` is constant types, no
+        // argument draws.
+        226 => {
+            for _ in 0..15 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
                 );
             }
         }
@@ -2114,8 +2209,8 @@ mod tests {
     }
 
     /// `NPC.cs:86381-86384` / `:89786-89789` — the Corrupt Bunny (47)
-    /// 10×5 at 2×dir/-2 (the piranha arm) and the Harpy (48) 50×5 (the
-    /// voodoo arm); both gore tails are constant types.
+    /// 10×5 at 2×dir/-2 (the piranha arm) and the Harpy (48) 50×5 (its
+    /// own arm); both gore tails are constant types.
     #[test]
     fn w4_g59_the_corrupt_bunny_and_harpy_counts() {
         let w = air();
@@ -2128,5 +2223,105 @@ mod tests {
             assert_eq!(live.len(), count, "type {ty}");
             assert!(live.iter().all(|d| d.dust_type == 5));
         }
+    }
+
+    // ---- batch 12 (the d34 tail + c4/d23/d37 row-gated activations).
+    // The witnesses drive the RAW C# ids over a stand-in corpse shell
+    // (the batches-8-11 precedent).
+
+    /// `NPC.cs:86381-86384` / `:86617-86620` / `:89803-89806` — the
+    /// Corrupt Goldfish (57) 10×5 (the piranha arm), the Vulture (61)
+    /// 50×5 and the Demon (62) 50×5 (the voodoo arm); all gore tails
+    /// constant types.
+    #[test]
+    fn w4_g59_the_corrupt_goldfish_vulture_and_demon_counts() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        for (ty, count) in [(57, 10), (61, 50), (62, 50)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(223);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), count, "type {ty}");
+            assert!(live.iter().all(|d| d.dust_type == 5));
+        }
+    }
+
+    /// `NPC.cs:85554-85557` — the Blue Jellyfish (63): 25 type-4 puffs
+    /// at 2×dir/-2, alpha 0, tinted (50,120,255,100) — the shared arm's
+    /// DEFAULT color row (64 stays row-gated; 103's tint wired batch 10).
+    #[test]
+    fn w4_g59_the_blue_jellyfish_death_draws_the_default_tint() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(227);
+        assert!(death_dust(&n, 63, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 25);
+        for d in &live {
+            assert_eq!(d.dust_type, 4);
+            assert_eq!(d.alpha, 0);
+            assert_eq!(d.color, Color::new(50, 120, 255, 100));
+        }
+    }
+
+    /// `NPC.cs:86514-86517` / `:89769-89772` — the Arapaima (157) 50×5
+    /// at 2×dir/-2 and the Angry Trapper (175) 50×40 at dir/-2 reading
+    /// the live alpha, scale 1.2 (the man-eater shape, its own arm).
+    #[test]
+    fn w4_g59_the_arapaima_and_angry_trapper_counts() {
+        let w = air();
+        let mut n = corpse(NpcKind::Skeleton);
+        n.alpha = 70;
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(229);
+        assert!(death_dust(&n, 157, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 5));
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(229);
+        assert!(death_dust(&n, 175, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        for d in &live {
+            assert_eq!(d.dust_type, 40);
+            assert_eq!(d.alpha, 70);
+            assert!(d.scale >= 1.0 - 1e-6 && d.scale <= 1.4 + 1e-6);
+        }
+    }
+
+    /// `NPC.cs:87462-87465` / `:85807-85810` — the beetle trio
+    /// (217/218/219) 50×18 at dir/-2 reading the live alpha/scale, and
+    /// the Flying Snake (226) 15×5 (the bat arm); all gore tails
+    /// constant types + `this.scale`.
+    #[test]
+    fn w4_g59_the_beetle_trio_and_flying_snake_counts() {
+        let w = air();
+        let mut n = corpse(NpcKind::Skeleton);
+        n.alpha = 90;
+        n.scale = 1.1;
+        let mut states = Vec::new();
+        for ty in [217, 218, 219] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(233);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50, "type {ty}");
+            for d in &live {
+                assert_eq!(d.dust_type, 18);
+                assert_eq!(d.alpha, 90);
+                assert!((d.scale - 1.1).abs() <= 0.22 + 1e-6);
+            }
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(233);
+        assert!(death_dust(&n, 226, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 15);
+        assert!(live.iter().all(|d| d.dust_type == 5));
     }
 }
