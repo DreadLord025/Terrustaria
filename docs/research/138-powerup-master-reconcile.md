@@ -711,20 +711,21 @@ the rule IN CODE** — `persist.rs:463-479`'s positional six-line read +
 `f33s_torch_only_v7_loads_positionally` (`:1233`); the bounded-misread
 witness is retired. §6's flag is closed; the receipt is §11.1.
 
-### 10.7 a6's five fidelity fixes — LANDED, witnesses present (the Lead's item 4)
+### 10.7 a6's five fidelity fixes — LANDED, witnesses present (re-receipted §11.4)
 
-Re-verified on this branch (`d7de8bd53` + this pass), each fix's code AND
-witness present:
+Re-verified on this branch (`d7de8bd53` + the FINAL pass; the retire pass
+re-pins the shifted line cites in §11.4), each fix's code AND witness
+present:
 
 1. **Row-targeted dispatch:** `AchievementManager::complete_condition`
-   (`achievements.rs:445`) + the four call sites (`powerups.rs:177`/`:179`/
-   `:362`/`:516`/`:518` — GET_A_LIFE/TOPPED_OFF/GAIN_TORCH_GODS_FAVOR/
+   (`achievements.rs:445`) + the call sites (`powerups.rs:177`/`:179`/
+   `:362`/`:531`/`:533` — GET_A_LIFE/TOPPED_OFF/GAIN_TORCH_GODS_FAVOR/
    STAR_POWER). Witness `complete_condition_targets_one_row_not_the_flag_family`
    (`achievements.rs:634`). ✓
 2. **Pearl Player-field ownership:** `Player.used_galaxy_pearl`
    (`player.rs:2171`, ctor `:2978` false), the 5340 arm sets the Player
-   field (`powerups.rs:474`), `update_luck` mirrors
-   (`player.rs:10651`). Witness assertions `powerups.rs:1267-1269` (the
+   field (`powerups.rs:489`), `update_luck` mirrors
+   (`player.rs:10651`). Witness assertions `powerups.rs:1314-1316` (the
    Player field owner + the mirror seeds the state). ✓
 3. **Aegis-crystal regen slot:** `RegenInputs.aegis_crystal`
    (`regen.rs:117`), applied BETWEEN `+= 1.0` (`:190`) and `+= extra_time`
@@ -734,8 +735,8 @@ witness present:
 4. **Booster order:** fruit (`player.rs:6916`) → worm (`:6919`) → ambrosia
    (`:6922`) — the C# `UpdatePermanentBoosters` order. ✓
 5. **TRAINING_DAY hook:** `notify_progression_net(40)` when both world book
-   flags stand (`world_sim/player.rs:1621-1626`). Witness
-   `both_combat_books_fire_training_day` (`powerups.rs:1277`). ✓
+   flags stand (`world_sim/player.rs:1625-1627`). Witness
+   `both_combat_books_fire_training_day` (`powerups.rs:1324`). ✓
 
 No cargo/tests/rustfmt/graphify per the lane constraint — the witnesses
 are WRITTEN, NOT RUN; presence verified by direct file reads.
@@ -982,3 +983,76 @@ Success dispatch is the one remaining leg, flagged to the town-pet lane
 (`Main.cs:65900-65911` arrival + `TownNPCProfiles.RollVariation`). g87's
 `dh` sidecar DROP (§10.4) is untouched by the closeout (its
 `persist.rs` still writes v7 + `dh` at `26620538e` — verified).
+
+### 11.4 The FINAL-FINAL receipts — a6's five fidelity fixes + the g90 cross-note
+
+**The five §3 fixes re-verified at the retire tip** (direct file reads,
+the shifted line cites re-pinned in §10.7 above): row-targeted dispatch
+(`achievements.rs:445` + `powerups.rs:177/179/362/531/533`, witness
+`:634`), pearl Player-field ownership (`player.rs:2171/:2978/:10651`,
+the 5340 arm `powerups.rs:489`, witness `:1314-1316`), the aegis-crystal
+regen slot (`regen.rs:117/:194-196` between `:190` and `:197`, witness
+`:688`), the booster order (`player.rs:6916/6919/6922`), the TRAINING_DAY
+hook (`world_sim/player.rs:1625-1627`, witness `powerups.rs:1324`). All
+five PRESENT, code + witness. The retire pass's own code delta is the
+§11.3 exchange-fail fold + its twin witness — no other a6 behaviour
+changed.
+
+**g90's reconcile cross-note (`94d33f2ca`, research/135 §7) receipted:**
+it read a6 at `8ed96ee5` (138 not yet pushed) and proposed a keep-one
+split — "a6 keeps its exclusives 29/109/1291/3335/5289/5043/licenses/
+drones, g90 keeps the carriers + consumers + the town feeder". This
+doc's §1 verdicts SUPERSEDE that proposal on two rows: **29/109/1291 go
+to g88 keep-own** (103 §5a — the `.trplayer` carrier lives there) and
+**5326 goes to g90 keep-own** (the skeleton-merchant consumer); a6 keeps
+3335/5289/5043/licenses/drones + the shimmer machine + the combat-book/
+satchel cluster seam. g90's carrier/consumer/feeder ownership is
+UNCHANGED by §1 (the persist split §2 already routes every carrier to
+f44/g88/f45/g90). No conflict — the proposal predates the published
+adjudication; the merger takes §1 + §8.
+
+### 11.5 FINAL-FINAL verdict summary + verification performed
+
+**Verdicts (the a6 lane's final state):**
+- **Use arms:** a6's `powerups.rs` machine owns the cluster EXCEPT
+  29/109/1291 (g88) and 5326 (g90). a6 KEEPS 3335/5289/4829-30-4910 —
+  g87's closeout made its three arms shape-identical, so the merge dedup
+  is mechanical (§11.3). The exchange **Success** leg is the one shared
+  use-arm debt (town-pet lane).
+- **L1 `.plr`:** f44 base (`bdd1cc79a` lineage, the complete walk + the
+  slot-11 property fix `63204f852`); a6 contributes no writer.
+- **L2 `.trplayer`:** g88 **v11** base (`a9f1c29d8`); the six-line v7 rule
+  + the f33 lone-pair rule + the torch line all LANDED — **no reader debt
+  remains** (§11.1). g87's `dh` line DROPS (§10.4).
+- **L3 `.wld`:** f45 base; the five contested bytes dedup (§4).
+- **L3 `.trwld`:** the **UNIFIED 101-byte head + W×H dense** (§11.2) —
+  f44's 97 corrected to 98 by its own sum, + g87's 3 pets seated 51-53.
+  The underworldBG seat stays OPEN (102 if seated). The g71c/g72c roll
+  keep-one is the f44 map's owed adjudication, unchanged.
+- **Open merge actions remaining:** the unified-union landing (g71c
+  owner, §11.2's table), the f44 97→98 correction receipt (f44 lane),
+  the exchange Success leg (town-pet lane), the g71c/g72c roll keep-one
+  (f44 map §3-L3 step 2). The `.trplayer` reader gap is CLOSED.
+
+**Verification performed (retire pass):**
+- `git fetch origin --prune` + full `git branch -r` census (no g87b/f44f
+  refs); `git worktree list` + direct worktree status reads (g87's
+  closeout found local, then committed `26620538e` mid-probe).
+- Claimant reads at fetched tips: g88 `a9f1c29d8` `persist.rs` (the
+  v7/v11 reader + writer + witnesses, line-cited §11.1), f44 `bdd1cc79a`
+  research/132 §3-L3 (the 97-byte claim + its component sum), g90
+  `94d33f2ca` (the §7 cross-note), g87 `26620538e` (the full closeout
+  diff + committed file), g72 `4a75715ef` / g69 `20d0380f9` / d125
+  `d8047a109` / d109 `81894095e` / c43 `076970809` `save.rs` writers
+  (§11.2's claimant receipts), f45 `6352d3840` (unchanged).
+- C# re-reads (direct file paths, ≤100-line windows, no junction
+  recursion): `NPC.cs:80880-80979` (UnlockOrExchangePet +
+  RerollVariationForNPCType + RerollVariation), `Player.cs:45428-45452`
+  (LicenseOrExchangePet), `IO/WorldFile.cs:1200-1284` + `:1320-1419`
+  (the header/flags write order — the pets-before-empress seat).
+- a6 edits: `powerups.rs` (the fail-chat fold + the twin witness + the
+  deviation comment), ANALYSIS.md (the two bullets), this doc. No
+  cargo/tests/rustfmt/graphify per the lane constraint — witnesses
+  WRITTEN, NOT RUN; presence verified by direct file reads.
+
+This doc is FINAL-FINAL for the a6 lane.
