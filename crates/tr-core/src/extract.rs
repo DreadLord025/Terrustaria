@@ -526,6 +526,16 @@ pub fn chlorophyte_trade(held: u16, held_stack: u32) -> Option<(u16, u32)> {
     None
 }
 
+/// `Item.MakeUsableWithChlorophyteExtractinator` (`Item.cs:48505-48513`)
+/// sets `chlorophyteExtractinatorConsumable = true`; the three SetDefaults
+/// call sites are Shadow Scale 86 (`Item.cs:2405`), Tissue Sample 1329
+/// (`:16477`) and the junk trio 2337/2338/2339 (`:23497`). The flag gates
+/// the use (`Player.cs:52285-52292`: only over an extractinator tile) and
+/// suppresses the "Consumable" tooltip (`Main.cs:20932`).
+pub fn chlorophyte_extractinator_consumable(item: u16) -> bool {
+    matches!(item, 86 | 1329 | 2337 | 2338 | 2339)
+}
+
 /// A seeded replay stream for the tests: the port's `FastRandom`
 /// (`tile_light/palette.rs`) — the production roll takes the caller's
 /// `UnifiedRandom` (the `UpdatePlayers` stream since S1-A-11 P4); a fixed
@@ -715,6 +725,20 @@ mod tests {
         let a = mode(424, 219, false, 12345);
         let b = mode(424, 219, false, 12345);
         assert_eq!(a, b);
+    }
+
+    /// W4-f47 — `Item.MakeUsableWithChlorophyteExtractinator`'s three call
+    /// sites (`Item.cs:2405`/`:16477`/`:23497`): 86 / 1329 / 2337-2339.
+    #[test]
+    fn w4_f47_the_extractinator_consumable_set() {
+        for k in [86u16, 1329, 2337, 2338, 2339] {
+            assert!(chlorophyte_extractinator_consumable(k), "kind {k}");
+        }
+        // The ore/trade items are NOT extractinator-consumable (they ride
+        // the trader table, not the use gate).
+        assert!(!chlorophyte_extractinator_consumable(12));
+        assert!(!chlorophyte_extractinator_consumable(424));
+        assert!(!chlorophyte_extractinator_consumable(2));
     }
 
 }

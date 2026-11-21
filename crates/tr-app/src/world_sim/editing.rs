@@ -2216,6 +2216,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_timer = 0.0;
         return;
     }
+    // `Player.ItemCheck_CheckCanUse_Inner`'s chlorophyte-extractinator gate
+    // (`Player.cs:52285-52292`, W4-f47): a `chlorophyteExtractinatorConsumable`
+    // item (Shadow Scale 86 / Tissue Sample 1329 / the junk trio 2337-2339)
+    // only uses over an ACTIVE extractinator tile (219/642) — the cursor cell
+    // (`screenTargetTileX/Y`) is the gate. Anywhere else the use refuses.
+    if held.count > 0 && tr_core::extract::chlorophyte_extractinator_consumable(held.kind) {
+        let over_extractinator = app
+            .world
+            .tile(tx, ty)
+            .is_some_and(|t| t.active() && (t.kind == 642 || t.kind == 219));
+        if !over_extractinator {
+            app.mine_target = None;
+            app.mine_timer = 0.0;
+            return;
+        }
+    }
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
     // `Player.ItemCheck`'s Snake Band repeat swing (`Player.cs:42711-42731`):
     // with `accSnakeBand`, every third swing (`repeatWhipSwings % 3 == 0`)
@@ -18736,5 +18752,93 @@ mod wall_placement_tests {
                 None => assert!(app.items.is_empty(), "wall {wall} drops nothing"),
             }
         }
+    }
+}
+
+/// W4-f47 — the chlorophyte-extractinator use gate (`Player.cs:52285-52292`)
+/// witnesses (WRITTEN NOT RUN, code-only mode).
+#[cfg(test)]
+mod extractinator_use_gate_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+    use glam::Vec2;
+
+    /// A 64x800 world, floor at row 300, the player + camera near column 30,
+    /// the cursor at the screen centre (tile 30, 297). `tile_kind` plants a
+    /// tile at the cursor cell (None leaves it empty).
+    fn gate_app(held: u16, tile_kind: Option<u16>) -> crate::app::App {
+        let mut w = tr_core::World::new("gate".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        if let Some(kind) = tile_kind {
+            let i = w.index(30, 297);
+            w.tiles[i] = tr_core::tile::Tile { kind, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.local_id = 0;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 33.0 * 16.0;
+        player.y = 297.0 * 16.0;
+        app.player = Some(player);
+        app.camera = Vec2::new(30.0 * 16.0 + 8.0, 297.0 * 16.0 + 8.0);
+        app.mouse_pos = Vec2::new(400.0, 300.0);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: held,
+            name: crate::registry::name(held),
+            count: 5,
+            prefix: 0,
+        };
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 0.0,
+            ambient_volume: 0.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    /// Over an EMPTY cell the extractinator-consumable refuses the use: no
+    /// swing, the stack untouched.
+    #[test]
+    fn w4_f47_the_consumable_refuses_off_an_extractinator() {
+        let mut app = gate_app(86, None); // Shadow Scale, empty cursor cell
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert_eq!(app.swing, 0.0, "no swing started");
+        assert_eq!(app.inventory[app.selected].count, 5, "the stack untouched");
+    }
+
+    /// Over a STONE cell (not an extractinator) the same refusal.
+    #[test]
+    fn w4_f47_the_consumable_refuses_over_a_non_extractinator_tile() {
+        let mut app = gate_app(1329, Some(1)); // Tissue Sample over stone
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert_eq!(app.swing, 0.0, "no swing over stone");
+        assert_eq!(app.inventory[app.selected].count, 5);
+    }
+
+    /// Over the Chlorophyte Extractinator (642) the use passes the gate: the
+    /// trader arm fires (Shadow Scale → Tissue Sample), the swing starts and
+    /// the stack decrements.
+    #[test]
+    fn w4_f47_the_consumable_uses_over_the_extractinator() {
+        let mut app = gate_app(86, Some(642)); // Shadow Scale over 642
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(app.swing > 0.0, "the swing started over the extractinator");
+        assert_eq!(app.inventory[app.selected].count, 4, "one traded");
+        assert!(app.items.iter().any(|d| d.kind == 1329), "the Tissue Sample dropped");
     }
 }
