@@ -240,6 +240,7 @@
 //! | 1210-1219 | `:88480-88492` | the 214 PirateDeadeye + 215 PirateCrossbower death (5 gores each) |
 //! | 1220-1227 | `:88496-88524` | the 216 PirateCaptain (5 gores) + 220/221 SeaSnail/Squid death (type-151 dust) |
 //! | 1228-1233 | `:88543-88548` | the 167 UndeadViking death (6 gores, type-26 dust) |
+//! | 1234-1243 | `:88553-88566` | the 197 ArmoredViking (5 gores) + 481 GreekSkeleton (5 gores) death |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7139,6 +7140,68 @@ fn undead_viking_death(
     gore.new_gore(rng, world, low, vel, 212, s); // :88548
 }
 
+/// The 197 ArmoredViking death (`NPC.cs:88551-88557`, sites 1234-1238): the
+/// 20-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5 gores at `this.scale` — 257 at position, 43/43 at +20, 212/212 at +34.
+fn armored_viking_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 257, s); // :88553
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88554
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88555
+    gore.new_gore(rng, world, low, vel, 212, s); // :88556
+    gore.new_gore(rng, world, low, vel, 212, s); // :88557
+}
+
+/// The 481 GreekSkeleton death (`NPC.cs:88560-88566`, sites 1239-1243): the
+/// 20-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder at `this.scale` — 695 head, 696/696 at +20, 697/697 at +34.
+fn greek_skeleton_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 695, s); // :88562
+    gore.new_gore(rng, world, mid, vel, 696, s); // :88563
+    gore.new_gore(rng, world, mid, vel, 696, s); // :88564
+    gore.new_gore(rng, world, low, vel, 697, s); // :88565
+    gore.new_gore(rng, world, low, vel, 697, s); // :88566
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8003,10 +8066,17 @@ pub fn hit_effect_c(
     if (npc_type == 220 || npc_type == 221) && npc.hp <= 0 {
         squid_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:88527-88640` — the skeleton family arm; this commit owns the 167
-    // UndeadViking (sites 1228-1233); the rest lands with the next batches.
+    // `:88527-88640` — the skeleton family arm; the 167 UndeadViking
+    // (sites 1228-1233) + the 197 ArmoredViking / 481 GreekSkeleton (sites
+    // 1234-1243); the rest lands with the next batches.
     if npc_type == 167 && npc.hp <= 0 {
         undead_viking_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    if npc_type == 197 && npc.hp <= 0 {
+        armored_viking_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    if npc_type == 481 && npc.hp <= 0 {
+        greek_skeleton_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -12613,6 +12683,34 @@ mod tests {
         assert_eq!(types, vec![213, 214, 43, 43, 212, 212]);
         assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
         assert_eq!(gore.slot(4).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:88553-88557` — the ArmoredViking death: the 5 gores
+    /// 257/43/43/212/212.
+    #[test]
+    fn w4_f10_the_armored_viking_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1259);
+        armored_viking_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![257, 43, 43, 212, 212]);
+    }
+
+    /// `NPC.cs:88562-88566` — the GreekSkeleton death: the 5-gore ladder
+    /// 695/696/696/697/697.
+    #[test]
+    fn w4_f10_the_greek_skeleton_death_spawns_the_ladder() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1277);
+        greek_skeleton_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![695, 696, 696, 697, 697]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
