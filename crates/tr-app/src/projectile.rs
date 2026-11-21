@@ -22971,6 +22971,80 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // The slot scalars the post-DamageVar arms read (copied before any
+            // mutation so the `p` borrow ends — the stick-pin E0502 precedent).
+            let pkind = p.kind;
+            let (ppx, ppy, pw, ph) = (p.pos.x, p.pos.y, p.w, p.h);
+            let (ptime_left, pai0) = (p.time_left, p.ai[0]);
+            // W4-g3 DOC-SWEEP — `Damage_PVE_Inner`'s post-DamageVar pre-strike
+            // arms (`Projectile.cs:13001-13305`), in the C#'s body order. The
+            // 604/400-1107/710/954 state+damage writes (`:13001-13022`) and the
+            // 856 stellar cut (`:13302`). All RNG-free; the particle bodies skip.
+            // `:13001-13005` — the 604 Terrarian beam spends on its first NPC
+            // hit: `friendly = false` (no further NPC damage) + `ai[1] = 1000`
+            // (the `ai_yoyo_beam` arm's `ai[1] > 30` fade-out kills it next
+            // tick). The C# writes both unconditionally on every contact.
+            if pkind == TERRARIAN_BEAM {
+                let pj = &mut self.slots[slot];
+                pj.friendly = false;
+                pj.ai[1] = 1000.0;
+            }
+            // `:13006-13013` — the molotov/obsidian fires (400/401/402/1107/
+            // 1108/1109) vs the Eater of Worlds segments (NPC type 13-15):
+            // `dmg = (int)((double)dmg * 0.65)` and `penetrate--` when > 1.
+            // The port keys the target on the EoW NpcKind trio (the cs_id
+            // 31/32/33 fold onto the vanilla 13/14/15 via the bestiary net id).
+            if matches!(pkind, MOLOTOV_FIRE_1 | MOLOTOV_FIRE_2 | MOLOTOV_FIRE_3
+                | SWORDFISH_BONE_1 | SWORDFISH_BONE_2 | SWORDFISH_BONE_3)
+                && matches!(n.kind, NpcKind::EaterOfWorldsHead
+                    | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail)
+            {
+                dmg = (dmg as f64 * 0.65) as i32;
+                if self.slots[slot].penetrate > 1 {
+                    self.slots[slot].penetrate -= 1;
+                }
+            }
+            // `:13014-13017` — the 710 Betsy Arrow's air bonus: no solid tile
+            // within 12 below the centre (`WorldUtils.Find` Down(12) notNull+
+            // solid) → `dmg = (int)((float)dmg * 1.5f)`. The port walks the
+            // 12 cells below the centre tile with the aura's solid predicate
+            // (`Conditions.IsSolid` includes platforms, `aura_solid_at`).
+            if pkind == 710 {
+                let cx = (ppx + pw * 0.5) as i32 / 16;
+                let cy = (ppy + ph * 0.5) as i32 / 16;
+                let mut found_solid = false;
+                for dy in 1..=12 {
+                    if aura_solid_at(world, cx, cy + dy) {
+                        found_solid = true;
+                        break;
+                    }
+                }
+                if !found_solid {
+                    dmg = (dmg as f32 * 1.5) as i32;
+                }
+            }
+            // `:13018-13022` — the 954 Wand of Sparking spark's hit-age jump:
+            // `ai[0] += (60 - ai[0]) / 2` (the 504/979 siblings are unrowed).
+            // The spark's `ai_style2` arm reads `ai[0]` for its 20-tick fade.
+            if pkind == SPARK {
+                let pj = &mut self.slots[slot];
+                pj.ai[0] += (60.0 - pj.ai[0]) / 2.0;
+            }
+            // `:13302-13305` + `ModifyStellarTuneDamage` (`:15186-15192`) —
+            // the 856 Sparkle Guitar note: owned (`owner >= 0 && owner < 255`)
+            // and NO line of sight to the owner (`Collision.CanHit(this,
+            // player)`) → `dmg = (int)((double)dmg * 0.75)`. The port's
+            // `can_hit` walks the two centres' segment (the yoyo no-LOS
+            // precedent, `:13294`).
+            if pkind == SPARKLE_GUITAR && owner_idx < 255 {
+                if let Some(pl) = player.as_deref() {
+                    if !can_hit(world, ppx, ppy, pw, ph, pl.x, pl.y,
+                        crate::player::WIDTH, pl.height)
+                    {
+                        dmg = (dmg as f64 * 0.75) as i32;
+                    }
+                }
+            }
             // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
             // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
             // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
@@ -22979,10 +23053,8 @@ impl ProjectilePool {
             // (`:13252`) / StatusNPC / StrikeNPC, so the Daybroken gate
             // below reads the fresh pin. ALL scalars are copied before the
             // mutation so the `p` borrow ends here (E0502).
-            let pkind = p.kind;
-            let (ppx, ppy, pw, ph) = (p.pos.x, p.pos.y, p.w, p.h);
-            let hellfire_clamp = p.kind == HELLFIRE_ARROW && p.time_left > 1;
-            if p.kind == BONE_JAVELIN && p.ai[0] < 2.0 {
+            let hellfire_clamp = pkind == HELLFIRE_ARROW && ptime_left > 1;
+            if pkind == BONE_JAVELIN && pai0 < 2.0 {
                 let (ncx, ncy) = n.center();
                 let (pcx, pcy) = (ppx + pw * 0.5, ppy + ph * 0.5);
                 let pin_vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
