@@ -382,7 +382,7 @@ fn ai_180_sun_dance(p: &mut Projectile, npcs: &[EmpressNpcRef]) {
     // queue→drain batch plays at the style's own volume, no instance pool).
     if p.local_ai[0] == 0.0 {
         let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-        p.wants_sound = Some((2, 159, cx, cy, 0.0));
+        p.wants_sound = Some((2, 159, cx, cy, 0.0, 1.0));
     }
     // `:44990` — the age counter.
     p.local_ai[0] += 1.0;
@@ -739,7 +739,7 @@ mod tests {
         assert_eq!(p.local_ai[0], 1.0);
         assert_eq!(
             p.wants_sound,
-            Some((2, 159, pre_cx, pre_cy, 0.0)),
+            Some((2, 159, pre_cx, pre_cy, 0.0, 1.0)),
             "the sun dance's first-tick cue at the pre-snap center"
         );
         assert_eq!(p.alpha, 240); // 255 − 15

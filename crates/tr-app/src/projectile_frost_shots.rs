@@ -145,7 +145,7 @@ fn needle(p: &mut Projectile, world: &World) {
     // this reference copy keeps the same cue).
     if p.local_ai[0] == 0.0 {
         p.local_ai[0] = 1.0;
-        p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     // `:56038-56041` — `flag3` true: the counter runs.
     p.ai[0] += 1.0;
@@ -171,7 +171,7 @@ fn wave(p: &mut Projectile, world: &World) {
     // d76, `:56251`; the live dispatch routes 348 to projectile_ai_frostmoon).
     if p.local_ai[1] == 0.0 {
         p.local_ai[1] = 1.0;
-        p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     // `:56253-56272` — the pulse.
     if p.ai[0] == 0.0 || p.ai[0] == 2.0 {
@@ -235,7 +235,7 @@ fn missile(p: &mut Projectile, world: &World) {
     // routes 350 to projectile_ai_frostmoon).
     if p.ai[1] == 0.0 {
         p.ai[1] = 1.0;
-        p.wants_sound = Some((2, 42, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 42, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     finish_style1(p, world, false);
 }

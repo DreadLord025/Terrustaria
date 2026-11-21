@@ -339,7 +339,7 @@ fn move_bullet(p: &mut Projectile, world: &World, npcs: &[Npc], local_immunity: 
         // (`:19282-19283`) ride the cue queue (the dust is SKIPPED).
         METEOR_SHOT => {
             if p.penetrate > 1 {
-                p.wants_sound = Some((2, 10, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, 10, p.pos.x, p.pos.y, 0.0, 1.0));
                 p.penetrate -= 1;
                 if hit_x {
                     p.vel.x = -last.x;
@@ -714,7 +714,7 @@ mod tests {
         assert!(p.active, "the first bounce lives");
         assert_eq!(p.penetrate, 1, "one penetrate spent");
         assert_eq!(p.vel.x, -4.0, "the full-strength reflect");
-        assert_eq!(p.wants_sound, Some((2, 10, 186.0, 160.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 10, 186.0, 160.0, 0.0, 1.0)));
         // Fly back left into a second wall at tile x = 10 (px 160).
         for y in 8..14 {
             let i = w.index(10, y);

@@ -429,7 +429,7 @@ fn fairy_glowstick_hover(p: &mut Projectile, world: &World) {
     // base.position (S1-E-21h d76, `:45672` — BEFORE the X-zero/latch), then
     // zeroes X and latches 2.
     if p.ai[1] == 1.0 {
-        p.wants_sound = Some((2, 28, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 28, p.pos.x, p.pos.y, 0.0, 1.0));
         p.vel.x = 0.0;
         p.ai[1] = 2.0;
     }
@@ -823,7 +823,7 @@ mod tests {
         // S1-E-21h d76 (`:45672`): the one-shot queues Item28 at base.position.
         assert_eq!(
             p.wants_sound,
-            Some((2, 28, p.pos.x, p.pos.y, 0.0)),
+            Some((2, 28, p.pos.x, p.pos.y, 0.0, 1.0)),
             "the fairy's hover cue"
         );
     }

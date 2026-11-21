@@ -141,7 +141,7 @@ pub(crate) enum GolfEffect {
         hit_location: (i32, i32),
         chat: Option<String>,
         /// The explosion's `SoundID.Item129` cue (`GolfHelper.cs:156`).
-        cue: Option<(u16, i32, f32, f32, f32)>,
+        cue: Option<(u16, i32, f32, f32, f32, f32)>,
     },
     /// `Collision.SwitchTiles(..., 4)` (`Projectile.cs:20367`) — the
     /// moving owned ball's pressure-pad probe: `(pos, old_pos, w, h)`.
@@ -351,7 +351,7 @@ pub(crate) struct GolfClubTick {
     /// slot's `wants_sound` is a single Option — a multi-ball strike would
     /// lose every cue but the last — so the golf arm queues through this
     /// list and the dispatch drains it into the pool's sound queue.
-    pub sounds: Vec<(u16, i32, f32, f32, f32)>,
+    pub sounds: Vec<(u16, i32, f32, f32, f32, f32)>,
 }
 
 /// The per-tick player snapshot the helper reads (`Main.player[owner]`):
@@ -433,7 +433,7 @@ pub(crate) fn ai_golf_club_helper(
         let (cx, cy) = p.center();
         // `:52448` — SoundID.Item1 at PLAYER.Center (not the helper's own
         // center — the C# reads `player.Center`; S1-E-21h d76 fix).
-        tick.sounds.push((2, 1, player.center.x, player.center.y, 0.0));
+        tick.sounds.push((2, 1, player.center.x, player.center.y, 0.0, 1.0));
         for (j, q) in slots.iter().enumerate() {
             // `:52452` — the shot vector is computed for EVERY slot (even
             // inactive ones) but only consumed by the survivors.
@@ -462,7 +462,7 @@ pub(crate) fn ai_golf_club_helper(
             // `:52458-52466` — the 10-dust ring: no draws (the
             // `num2 % 0.2f == 0f` velocity scale is dust-body only).
             // `:52467` — SoundID.Item126 at the ball.
-            tick.sounds.push((2, 126, qcx, qcy, 0.0));
+            tick.sounds.push((2, 126, qcx, qcy, 0.0, 1.0));
             // `:52468-52473` — the local-owner strike: the strength off
             // the HELPER's centre and the owner's held club, the velocity
             // along the clamped shot vector. The projectile writes +
@@ -772,7 +772,7 @@ pub(crate) fn simple_tee_reach(
 pub(crate) fn emit_golf_ball_explosion_draws(
     center: Vec2,
     rng: &mut dyn DropRng,
-) -> (u16, i32, f32, f32, f32) {
+) -> (u16, i32, f32, f32, f32, f32) {
     // `:157-167` — the 0.085 ring: one NextFloat colour per dust.
     let mut num = 0.0f32;
     while num < 1.0 {
@@ -808,7 +808,7 @@ pub(crate) fn emit_golf_ball_explosion_draws(
         let _ = rng.next_float();
         num7 += 0.15;
     }
-    (2, 129, center.x, center.y, 0.0)
+    (2, 129, center.x, center.y, 0.0, 1.0)
 }
 
 /// `PutBallInCup_TextAndEffects` (`GolfHelper.cs:115-123`): the hole-in-one
@@ -821,7 +821,7 @@ pub(crate) fn put_ball_in_cup_text(
     proj_kind: u16,
     hit_location: (i32, i32),
     rng: &mut dyn DropRng,
-) -> (Option<String>, Option<(u16, i32, f32, f32, f32)>) {
+) -> (Option<String>, Option<(u16, i32, f32, f32, f32, f32)>) {
     if number_of_hits == 0 {
         return (None, None);
     }
@@ -860,7 +860,7 @@ pub(crate) fn put_ball_in_cup(
     player_name: &str,
     local_owner: u8,
     rng: &mut dyn DropRng,
-) -> (Option<String>, Option<(u16, i32, f32, f32, f32)>, Option<(i32, i32)>) {
+) -> (Option<String>, Option<(u16, i32, f32, f32, f32, f32)>, Option<(i32, i32)>) {
     let mut out = (None, None, None);
     // `:86` — the scoring gate: the local owner AND the 90-tick delay.
     if ball.owner == local_owner && golf_state.should_score_hole() {
@@ -1352,8 +1352,8 @@ mod tests {
         // PLAYER's center (500, 521), then one Item126 per struck ball at
         // its center (510, 540). The far ball is not struck → no cue.
         assert_eq!(tick.sounds.len(), 2, "Item1 + one Item126");
-        assert_eq!(tick.sounds[0], (2, 1, 500.0, 521.0, 0.0), "Item1 at player.Center");
-        assert_eq!(tick.sounds[1], (2, 126, 510.0, 540.0, 0.0), "Item126 at the ball");
+        assert_eq!(tick.sounds[0], (2, 1, 500.0, 521.0, 0.0, 1.0), "Item1 at player.Center");
+        assert_eq!(tick.sounds[1], (2, 126, 510.0, 540.0, 0.0, 1.0), "Item126 at the ball");
         // Exactly ONE NextFloatDirection on the stream (the near ball).
         let mut witness = UnifiedRandom::new(7);
         let _ = witness.next_float();

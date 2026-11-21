@@ -206,7 +206,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], num_updates:
 fn latch_ai1(p: &mut Projectile, style: i32) {
     if p.ai[1] == 0.0 {
         p.ai[1] = 1.0;
-        p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
     }
 }
 
@@ -250,7 +250,7 @@ fn blaze(p: &mut Projectile, world: &World, npcs: &[Npc]) {
         // (`localAI[0] = -Next(48)`) stays SKIPPED (dust-only reader), the
         // Item34 cue queues at base.position (S1-E-21h d76, `:54488`).
         p.ai[1] = 1.0;
-        p.wants_sound = Some((2, 34, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 34, p.pos.x, p.pos.y, 0.0, 1.0));
     } else if p.ai[1] == 1.0 {
         // `:54490-54518` — the acquisition scan. The `owner ==
         // Main.myPlayer` gate folds into the pool's locally-simulated
@@ -897,7 +897,7 @@ mod tests {
             assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
             assert_eq!(
                 p.wants_sound,
-                Some((2, style, 160.0, 160.0, 0.0)),
+                Some((2, style, 160.0, 160.0, 0.0, 1.0)),
                 "kind {kind}'s cue at base.position"
             );
             p.wants_sound = None;

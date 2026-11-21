@@ -141,7 +141,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             // Item42 IS a legacy id-2 style (`SoundID.cs:1425`,
             // `new LegacySoundStyle(2, 42)`) — the wave-A "trackable" label
             // was a misclassification; the cue rides the plain case-2 play.
-            p.wants_sound = Some((2, 42, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, 42, p.pos.x, p.pos.y, 0.0, 1.0));
         }
     }
 
@@ -183,7 +183,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
         if p.local_ai[1] == 0.0 {
             p.local_ai[1] = 1.0;
             // `:56251` — SoundID.Item8 at base.position (S1-E-21h d76).
-            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
         }
         if p.ai[0] == 0.0 || p.ai[0] == 2.0 {
             p.scale += 0.01;
@@ -217,7 +217,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
         if p.local_ai[0] == 0.0 {
             p.local_ai[0] = 1.0;
             // `:57121` — SoundID.Item1 at base.position (S1-E-21h d76).
-            p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0, 1.0));
         }
         if p.ai[0] >= 50.0 {
             p.ai[0] = 50.0;
@@ -703,7 +703,7 @@ mod tests {
             step(&mut p, &w);
             assert_eq!(
                 p.wants_sound,
-                Some((2, style, 1600.0, 800.0, 0.0)),
+                Some((2, style, 1600.0, 800.0, 0.0, 1.0)),
                 "kind {kind}'s cue at base.position"
             );
             p.wants_sound = None;

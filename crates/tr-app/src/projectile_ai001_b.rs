@@ -171,7 +171,7 @@ pub(crate) fn step(
         // holds (the C# has no latch here — the alpha fade closes it).
         if p.alpha > 0 && p.alpha <= 15 {
             let style = if p.ai[0] != 0.0 { 114 } else { 115 };
-            p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
         }
         p.alpha -= 15;
         if p.alpha < 0 {
@@ -278,11 +278,11 @@ pub(crate) fn step(
         match p.kind {
             GOLEM_EYE_BEAM => {
                 p.ai[1] = 1.0;
-                p.wants_sound = Some((2, 33, p.pos.x, p.pos.y, 0.0)); // :55242
+                p.wants_sound = Some((2, 33, p.pos.x, p.pos.y, 0.0, 1.0)); // :55242
             }
             RAY_GUNNER => {
                 p.ai[1] = 1.0;
-                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0)); // :55257
+                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0, 1.0)); // :55257
             }
             PHANTASMAL_BOLT => {
                 p.ai[1] = 1.0;
@@ -290,15 +290,15 @@ pub(crate) fn step(
                 // else Item125. The draw rides UpdateProjectiles; the dust
                 // count (`Next(5, 10)`) and the 229 loop stay skipped.
                 let style = if rng.next_range(0, 2) == 0 { 124 } else { 125 };
-                p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             MINI_RETINA_LASER => {
                 p.ai[1] = 1.0;
-                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0)); // :55299
+                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0, 1.0)); // :55299
             }
             TRAP_VENOM_DART => {
                 p.ai[1] = 1.0;
-                p.wants_sound = Some((2, 17, p.pos.x, p.pos.y, 0.0)); // :55329
+                p.wants_sound = Some((2, 17, p.pos.x, p.pos.y, 0.0, 1.0)); // :55329
             }
             _ => {}
         }
@@ -350,7 +350,7 @@ pub(crate) fn step(
             p.local_ai[0] = 1.0;
             // `:56078` — SoundID.Item8 at base.position (S1-E-21h d76); the
             // 10× dust 5 burst stays skipped (reference arm — slice A owns 270).
-            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
         }
     }
     // `:56165-56183` — the Blowup Smoke (622): the dust 229 roll
@@ -373,7 +373,7 @@ pub(crate) fn step(
     if p.kind == VORTEX_DART && p.local_ai[0] == 0.0 {
         p.local_ai[0] = 1.0;
         let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-        p.wants_sound = Some((2, 17, cx, cy, 0.0));
+        p.wants_sound = Some((2, 17, cx, cy, 0.0, 1.0));
     }
     // `:56504-56555` — Betsy's fireball (686): the localAI[0] one-shot —
     // when `ai[1] != 2f` the Item20 cue plays (`:56540`, S1-E-21h d76; the
@@ -386,7 +386,7 @@ pub(crate) fn step(
         if p.local_ai[0] == 0.0 {
             p.local_ai[0] = 1.0;
             if p.ai[1] != 2.0 {
-                p.wants_sound = Some((2, 20, p.pos.x, p.pos.y, 0.0)); // :56540
+                p.wants_sound = Some((2, 20, p.pos.x, p.pos.y, 0.0, 1.0)); // :56540
             }
         }
         if p.ai[0] >= 2.0 {
@@ -958,7 +958,7 @@ mod tests {
             assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
             assert_eq!(
                 p.wants_sound,
-                Some((2, style, 1600.0, 800.0, 0.0)),
+                Some((2, style, 1600.0, 800.0, 0.0, 1.0)),
                 "kind {kind}'s cue at base.position"
             );
             p.wants_sound = None;
@@ -985,13 +985,13 @@ mod tests {
         let mut p = shot(PHANTASMAL_BOLT);
         let mut seq = Seq(vec![0], 0);
         step(&mut p, &w, None, &mut seq);
-        assert_eq!(p.wants_sound, Some((2, 124, 1600.0, 800.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 124, 1600.0, 800.0, 0.0, 1.0)));
         assert_eq!(seq.1, 1, "exactly ONE Next(2) — the dust count is skipped");
         // Next(2) = 1 → Item125.
         let mut q = shot(PHANTASMAL_BOLT);
         let mut seq2 = Seq(vec![1], 0);
         step(&mut q, &w, None, &mut seq2);
-        assert_eq!(q.wants_sound, Some((2, 125, 1600.0, 800.0, 0.0)));
+        assert_eq!(q.wants_sound, Some((2, 125, 1600.0, 800.0, 0.0, 1.0)));
         // The latch holds: no second cue, no second draw.
         q.wants_sound = None;
         step(&mut q, &w, None, &mut seq2);
@@ -1007,7 +1007,7 @@ mod tests {
         let mut p = shot(CANNON_EXPLOSIVE);
         p.alpha = 10; // inside the 1..15 window
         step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
-        assert_eq!(p.wants_sound, Some((2, 115, 1600.0, 800.0, 0.0)), "ai[0]==0 → Item115");
+        assert_eq!(p.wants_sound, Some((2, 115, 1600.0, 800.0, 0.0, 1.0)), "ai[0]==0 → Item115");
         assert_eq!(p.alpha, 0); // 10 − 15 clamps
         // A second tick: alpha 0 is OUTSIDE the window — no cue.
         p.wants_sound = None;
@@ -1018,7 +1018,7 @@ mod tests {
         q.alpha = 10;
         q.ai[0] = 3.0;
         step(&mut q, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
-        assert_eq!(q.wants_sound, Some((2, 114, 1600.0, 800.0, 0.0)));
+        assert_eq!(q.wants_sound, Some((2, 114, 1600.0, 800.0, 0.0, 1.0)));
     }
 
     /// 581 (`:56314`): the vortex dart's Item17 at base.Center; 686
@@ -1029,11 +1029,11 @@ mod tests {
         let mut d = shot(VORTEX_DART);
         step(&mut d, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         let (cx, cy) = (1600.0 + d.w * 0.5, 800.0 + d.h * 0.5);
-        assert_eq!(d.wants_sound, Some((2, 17, cx, cy, 0.0)), "Item17 at Center");
+        assert_eq!(d.wants_sound, Some((2, 17, cx, cy, 0.0, 1.0)), "Item17 at Center");
         // Betsy: ai[1] == 0 (≠ 2) → Item20.
         let mut b = shot(BETSY_FIREBALL);
         step(&mut b, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
-        assert_eq!(b.wants_sound, Some((2, 20, 1600.0, 800.0, 0.0)));
+        assert_eq!(b.wants_sound, Some((2, 20, 1600.0, 800.0, 0.0, 1.0)));
         // Betsy with ai[1] == 2: the cue is gated OFF, the latch still rides.
         let mut c = shot(BETSY_FIREBALL);
         c.ai[1] = 2.0;

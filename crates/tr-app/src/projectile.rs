@@ -707,13 +707,16 @@ pub struct Projectile {
     /// S1-E-21h: the sound sites read and re-arm it.
     pub sound_delay: i32,
     /// S1-E-21h — one slot's queued cue for the pool's sound drain: the
-    /// `(sound id, style, x, y, pitchOffset)` the C# `SoundEngine.PlaySound`
-    /// overload carries (the int overload passes style 0 / no offset). The
-    /// slot arms cannot see the pool's queue, so they park the request here
-    /// and the dispatch forwards it into `pending_proj_sounds` on the same
-    /// tick — the `wants_mark_spawn` intent pattern. `None` for every slot
-    /// that played nothing this sub-step.
-    pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32)>,
+    /// `(sound id, style, x, y, pitchOffset, volumeScale)` the C#
+    /// `SoundEngine.PlaySound` overload carries (the int overload passes
+    /// style 0 / no offset; volumeScale 1 unless the site scales — the
+    /// Corrupt Whip's ×0.6 tip cue, `:47720`, and the Lights Bane slash's
+    /// `0.15 * ai[0]`, `:42237`, the d76 DOC-SWEEP port). The slot arms
+    /// cannot see the pool's queue, so they park the request here and the
+    /// dispatch forwards it into `pending_proj_sounds` on the same tick —
+    /// the `wants_mark_spawn` intent pattern. `None` for every slot that
+    /// played nothing this sub-step.
+    pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32, f32)>,
     /// `Projectile.melee`/`ranged`/`magic` (`:434-438`, reset false
     /// `:751-753`) — the damage-class flags the per-hit crit block reads
     /// (`Damage_PVE_Inner`, `Projectile.cs:12890-12898`). The data-carrying
@@ -4050,7 +4053,7 @@ impl Projectile {
         if self.ai[1] == 0.0 {
             self.ai[1] = 1.0;
             let style = if self.kind == TERRA_BEAM { 60 } else { 8 };
-            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         // `:26536-26544` — the rotation: the 157 spins on its `direction` (and
         // carries it into `spriteDirection`), every other kind faces the
@@ -4141,7 +4144,7 @@ impl Projectile {
             // `:28419-28423` — the 293's sound latch: `localAI[0] == 0f`
             // plays Item8 once at `base.position` (S1-E-21h) and increments.
             if self.local_ai[0] == 0.0 {
-                self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0));
+                self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0, 1.0));
                 self.local_ai[0] += 1.0;
             }
             // `:28448-28475` — the player hunt: `num362` resets to 200f and the
@@ -5000,7 +5003,7 @@ impl Projectile {
         if self.sound_delay <= 0 {
             self.sound_delay = 20;
             if self.ai[0] != 1.0 {
-                self.wants_sound = Some((2, 15, self.pos.x, self.pos.y, 0.0));
+                self.wants_sound = Some((2, 15, self.pos.x, self.pos.y, 0.0, 1.0));
             }
         }
         // `:66615-66636` — the fire window: the mana pays only on the
@@ -5089,7 +5092,7 @@ impl Projectile {
         // re-arm 23. The C# runs this at the TOP of the 445 arm, before the
         // channel gate — the cue plays even on the release tick.
         if self.sound_delay <= 0 {
-            self.wants_sound = Some((2, 132, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, 132, self.pos.x, self.pos.y, 0.0, 1.0));
             self.sound_delay = 23;
         }
         // `:25483` — the life pin.
@@ -5405,7 +5408,7 @@ impl Projectile {
         // machine, exactly as the C# orders it.
         if self.sound_delay == 0 {
             self.sound_delay = 8 * (self.extra_updates as i32 + 1);
-            self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         if self.ai[0] == 0.0 {
             // The outbound flight (`:39024-39034` + the generic tail
@@ -5563,7 +5566,7 @@ impl Projectile {
                 // drain's stream). The single intent slot keeps the whoosh
                 // when both land on one sub-step (the recorded deviation).
                 if self.wants_sound.is_none() {
-                    self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0));
+                    self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0, 1.0));
                 }
             } else {
                 self.pos.x = nx;
@@ -5625,9 +5628,10 @@ impl Projectile {
         }
         // `:47713-47734` — the mid-swing tip cue (S1-E-21h d76): at
         // `ai[0] == (int)(timeToFlyOut / 2)` the curve's LAST control point
-        // carries the per-type play — 1029 Corrupt → NPCDeath1 (id 4, the
-        // ×0.6 volumeScale DEFERRED, the batch plays at the style's volume),
-        // 1030 Crimson → NPCHit9 (id 3), 1033 Eel → Item193, else Item153.
+        // carries the per-type play — 1029 Corrupt → NPCDeath1 (id 4) at
+        // ×0.6 volumeScale (`:47720`, the DOC-SWEEP port: the queue's volume
+        // term rides the case-4 tail's post-tweak multiply), 1030 Crimson →
+        // NPCHit9 (id 3), 1033 Eel → Item193, else Item153.
         // The curve is `FillWhipControlPoints` with the default
         // `getActualCollisionPoints = false` (the spin seed rides `ai[1]`)
         // and `frameOffset = 0`; the arm anchor is the player center (the
@@ -5649,10 +5653,10 @@ impl Projectile {
             let points = tr_core::whip::fill_whip_control_points(&inputs, &settings);
             if let Some(&tip) = points.last() {
                 let req = match kind {
-                    CORRUPT_WHIP => (4, 1, tip.x, tip.y, 0.0), // :47720
-                    CRIMSON_WHIP => (3, 9, tip.x, tip.y, 0.0), // :47724
-                    EEL_WHIP => (2, 193, tip.x, tip.y, 0.0),   // :47728
-                    _ => (2, 153, tip.x, tip.y, 0.0),          // :47732
+                    CORRUPT_WHIP => (4, 1, tip.x, tip.y, 0.0, 0.6), // :47720
+                    CRIMSON_WHIP => (3, 9, tip.x, tip.y, 0.0, 1.0), // :47724
+                    EEL_WHIP => (2, 193, tip.x, tip.y, 0.0, 1.0),   // :47728
+                    _ => (2, 153, tip.x, tip.y, 0.0, 1.0),          // :47732
                 };
                 self.wants_sound = Some(req);
             }
@@ -6179,7 +6183,7 @@ impl Projectile {
         // (the tile damage) stays deferred — no projectile→tile seam.
         if loud {
             self.net_update = true;
-            self.wants_sound = Some((0, 0, self.pos.x.trunc(), self.pos.y.trunc(), 0.0));
+            self.wants_sound = Some((0, 0, self.pos.x.trunc(), self.pos.y.trunc(), 0.0, 1.0));
         }
         // `:43708-43712` — the repeated-bounce bail-out.
         if !matches!(self.ai[0], 3.0 | 0.0 | 5.0 | 6.0) && self.local_ai[0] >= 10.0 {
@@ -6506,7 +6510,7 @@ impl Projectile {
                 BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH | DYNAMITE
                     | GRENADE | STICKY_GRENADE | BOUNCY_GRENADE
             ) {
-                self.wants_sound = Some((2, 14, self.pos.x, self.pos.y, 0.0));
+                self.wants_sound = Some((2, 14, self.pos.x, self.pos.y, 0.0, 1.0));
             }
             self.detonated = true;
         }
@@ -6866,7 +6870,7 @@ impl Projectile {
         // convention); the cue itself draws nothing at queue time.
         if self.kind == SKY_FRACTURE && self.alpha > 0 {
             let (cx, cy) = (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
-            self.wants_sound = Some((2, 9, cx, cy, 0.0));
+            self.wants_sound = Some((2, 9, cx, cy, 0.0, 1.0));
             self.alpha = 0;
             self.scale = 1.1;
         }
@@ -6893,7 +6897,7 @@ impl Projectile {
         if self.kind == BULLET_SNOWMAN {
             if self.ai[1] == 0.0 {
                 self.ai[1] = 1.0;
-                self.wants_sound = Some((2, 11, self.pos.x, self.pos.y, 0.0));
+                self.wants_sound = Some((2, 11, self.pos.x, self.pos.y, 0.0, 1.0));
             }
             if self.alpha > 0 {
                 self.alpha -= 15;
@@ -7381,7 +7385,7 @@ impl Projectile {
         // intent rides out to the pool's sound drain).
         if matches!(self.kind, GOLEM_FIREBALL | CURSED_FLAME) && self.local_ai[0] == 0.0 {
             self.local_ai[0] = 1.0;
-            self.wants_sound = Some((2, 20, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, 20, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         // `:24245-24301`: the WaterBolt's own block — the `extraUpdates = 5`
         // remap first (read off the *previous* tick's `ai[1]`, as the C#
@@ -7923,7 +7927,7 @@ impl Projectile {
             // (`:26661`/`:26673`, S1-E-21h). The per-kind dust blocks
             // (`:26572-26609`) stay SKIPPED — noted for ANALYSIS.
             let style = if self.kind == HOUNDIUS_SHOOTIUS_FIREBALL { 60 } else { 28 };
-            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         self.kill_step(world);
     }
@@ -7951,7 +7955,7 @@ impl Projectile {
         if self.local_ai[0] == 0.0 {
             // `:28361-28365` — the first-tick `SoundID.Item74` blast cue at
             // `base.position` (S1-E-21h); the latch increments after it.
-            self.wants_sound = Some((2, 74, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, 74, self.pos.x, self.pos.y, 0.0, 1.0));
             self.local_ai[0] += 1.0;
         }
         self.ai[0] += 1.0;
@@ -8209,7 +8213,7 @@ impl Projectile {
             && self.vel.x.abs() + self.vel.y.abs() > 2.0
         {
             self.sound_delay = 10;
-            self.wants_sound = Some((2, 9, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, 9, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         // `:43390+`: the Flamelash's `Utils.GetLerpValue(0f, 10f, localAI[0])`
         // trail tint feeds its dust blocks only — no draw state on the slot.
@@ -10805,13 +10809,14 @@ impl Projectile {
         // `:42231-42239` — the one-shot slash cue: `soundDelay` latches −1
         // and `SoundID.Item60` queues at `base.Center` (S1-E-21h). The C#
         // scales the returned instance's Volume by `0.15f * ai[0]` AFTER
-        // the play — that post-gate scale is DEFERRED (the queue→drain
-        // batch plays at the style's own volume; ANALYSIS S1-E-21h).
+        // the play — the d76 DOC-SWEEP port carries that post-gate scale on
+        // the queue's volume term (`LegacySoundPlayer.cs:1411` applies it
+        // after the case-2 tweak; the gate reads the unscaled style volume).
         if self.sound_delay == 0 {
             self.sound_delay = -1;
             let cx = self.pos.x + self.w * 0.5;
             let cy = self.pos.y + self.h * 0.5;
-            self.wants_sound = Some((2, 60, cx, cy, 0.0));
+            self.wants_sound = Some((2, 60, cx, cy, 0.0, 0.15 * self.ai[0]));
         }
         // `:42240` — the scale is the spawn's `ai[0]`.
         self.scale = self.ai[0];
@@ -14552,12 +14557,14 @@ pub struct ProjectilePool {
     /// recorded deviation (ANALYSIS, S1-E-21c).
     pending_npc_hit_sounds: Vec<(&'static str, f32, f32)>,
     /// S1-E-21h — the projectile-family cues the AI arms and the bomb kill
-    /// path queued this tick: `(sound id, style, x, y, pitchOffset)` — the
-    /// `SoundEngine.PlaySound` overload payload (`SoundEngine.cs:93-108`).
-    /// The world-sim pass drains them on the `UpdateProjectiles` stream
-    /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
-    /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
-    pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// path queued this tick: `(sound id, style, x, y, pitchOffset,
+    /// volumeScale)` — the `SoundEngine.PlaySound` overload payload
+    /// (`SoundEngine.cs:93-108`; volumeScale 1 by default, the d76
+    /// DOC-SWEEP scale port). The world-sim pass drains them on the
+    /// `UpdateProjectiles` stream AFTER the attenuation gate, the
+    /// S1-E-21c queue→drain convention (`Main.cs:17775-17777` wraps the
+    /// whole `UpdateProjectiles` walk).
+    pending_proj_sounds: Vec<(u16, i32, f32, f32, f32, f32)>,
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
     /// the world-sim pass onto the player's `_channelShotCache` — the LAST
@@ -16206,7 +16213,7 @@ impl ProjectilePool {
     /// plays them through `Audio::play_proj_sound` on the
     /// `UpdateProjectiles` stream (`Main.cs:17775`), attenuation gate
     /// first — the wave-C drain convention.
-    pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
+    pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_proj_sounds)
     }
 
@@ -20773,7 +20780,7 @@ impl ProjectilePool {
             self.slots[slot].sound_delay = (5 - stage) * 2;
             if self.slots[slot].ai[0] != 1.0 {
                 let (x, y) = (self.slots[slot].pos.x, self.slots[slot].pos.y);
-                self.slots[slot].wants_sound = Some((2, 15, x, y, 0.0));
+                self.slots[slot].wants_sound = Some((2, 15, x, y, 0.0, 1.0));
             }
         }
         // `:66476-66537` — the fire window: the channel gate + the mana pay.
@@ -23579,7 +23586,7 @@ mod s1_e_21h_sound_tests {
             }
             assert_eq!(
                 p.wants_sound,
-                Some((2, style, 64.0, 64.0, 0.0)),
+                Some((2, style, 64.0, 64.0, 0.0, 1.0)),
                 "kind {kind}'s first-tick cue"
             );
             // The latch holds: a second tick queues nothing new.
@@ -23604,7 +23611,7 @@ mod s1_e_21h_sound_tests {
             ..Default::default()
         };
         p.ai_spectre_shot(&w, &[], None, None);
-        assert_eq!(p.wants_sound, Some((2, 8, 64.0, 64.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 8, 64.0, 64.0, 0.0, 1.0)));
         assert_eq!(p.local_ai[0], 1.0);
         p.wants_sound = None;
         p.ai_spectre_shot(&w, &[], None, None);
@@ -23645,7 +23652,7 @@ mod s1_e_21h_sound_tests {
             // the pre-movement position (48, 48).
             assert_eq!(
                 p.wants_sound,
-                Some((2, style, 48.0, 48.0, 0.0)),
+                Some((2, style, 48.0, 48.0, 0.0, 1.0)),
                 "kind {kind}'s cue at the play-time position"
             );
             p.wants_sound = None;
@@ -23685,7 +23692,7 @@ mod s1_e_21h_sound_tests {
             ..Default::default()
         };
         p.ai_boomerang(&w, None, 1.0, true);
-        assert_eq!(p.wants_sound, Some((2, 7, 64.0, 64.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 7, 64.0, 64.0, 0.0, 1.0)));
         assert_eq!(p.sound_delay, 8);
         // The pool decrements ahead of the AI (`:16768-16771`); while the
         // cooldown is positive the arm queues nothing.
@@ -23732,7 +23739,7 @@ mod s1_e_21h_sound_tests {
             ..Default::default()
         };
         s.ai_lights_bane(&w);
-        assert_eq!(s.wants_sound, Some((2, 60, 63.0, 63.0, 0.0)));
+        assert_eq!(s.wants_sound, Some((2, 60, 63.0, 63.0, 0.0, 0.15)));
         assert_eq!(s.sound_delay, -1);
         s.wants_sound = None;
         s.ai_lights_bane(&w);
@@ -23760,7 +23767,7 @@ mod s1_e_21h_sound_tests {
             assert!(p.detonated);
             assert_eq!(
                 p.wants_sound,
-                Some((2, 14, 80.0, 80.0, 0.0)),
+                Some((2, 14, 80.0, 80.0, 0.0, 1.0)),
                 "kind {kind}'s blast cue at the pre-PrepareBombToBlow position"
             );
             // The latch holds: a re-run queues nothing new.
@@ -29758,6 +29765,10 @@ mod whip_tests {
             assert_eq!((req.0, req.1), (id, style), "kind {kind}'s cue family");
             // The tip is the curve's last point — finite, off the arm anchor.
             assert!(req.2.is_finite() && req.3.is_finite());
+            // The Corrupt Whip's ×0.6 volumeScale (`:47720`); every other
+            // tip cue plays at the style's own volume (the d76 DOC-SWEEP).
+            let want_vol = if kind == CORRUPT_WHIP { 0.6 } else { 1.0 };
+            assert_eq!(req.5, want_vol, "kind {kind}'s tip volumeScale");
             // One cue per swing: the next sub-step (ai[0] = 31) is past the
             // gate, no re-queue.
             pool.slots[s].wants_sound = None;
