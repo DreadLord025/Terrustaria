@@ -39594,3 +39594,14 @@ port):
 - **The research renumber** — 143 → 240 per registry-150 §2 (143 stays
   with c4; the late-push scan assigns d120→237, d42→238, c8→239,
   g58→240; refs updated, zero `research/143` hits remain).
+- **The family SEALED** (research/242): the happiness family is closed
+  for porting — the bible paragraph pins the ONE canonical price path
+  (the `SetTalkNPC` talk-open latch, `Player.cs:4383-4390` the only write
+  site; every reader — buy/sell/reforge/nurse/tax/angler/chrome — reads
+  it), f37 keeps the pure price math + the merge-side `shop_mood` capture
+  (its five stale readers repoint per research/241), d122 owns the stock
+  rows + medal wallet + the KEEP-winning savings module (research/142);
+  the report UI is COMPLETE text, the legacy buttons dead code, the
+  portrait Detailed arm landed. The dummy-NPC portrait modes ride the
+  f22 task-seed (research/242 §2 — the f22 lane is ALIVE, tip `a2fdf86fb`
+  10:57:48).

@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 240 | Happiness final round (W4-g58: the buy/sell latch repoint + the report-UI census COMPLETE + the savings 3-way call-site census 142-input + the portrait-hop state port; code-only; renumbered 143→240 per registry-150, 143 stays with c4) | `240-happiness-final.md` | ✅ |
 | 241 | f37 latch-repoint hunks (W4-g58 retire: the five exact `shop_mood` → `shopping_settings.price_adjustment` hunks against f37 tip `908482d52` for the f37 lane/merger; prerequisite + apply-order + not-repointed census; code-only) | `241-f37-latch-repoint-hunks.md` | ✅ |
+| 242 | Chat-portrait system task-seed → f22 (the CloseUp/FullBodyRetro dummy-NPC contract + the unported provider rows) + the happiness-family SEALED bible (g58-latch canonical / f37-price-math / d122-shops, one paragraph; code-only) | `242-chat-portrait-seed-happiness-sealed.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

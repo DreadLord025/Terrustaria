@@ -1,5 +1,10 @@
 # 240 — The happiness final round (W4-g58): the buy/sell latch repoint, the report-UI census, the savings 3-way call-site census, the portrait-hop census
 
+**SEALED** (W4-g58 retire, 2026-11-21): the happiness family is closed for
+porting — the one-paragraph family bible (g58-latch canonical / f37-price-
+math / d122-shops) lives in research/242 §3; the f37 residual-reader hunks
+in research/241; the portrait-system remainder seed in research/242 §2.
+
 Date: 2026-11-21. Code-only — no cargo/tests run; every claim re-read from
 the C# (`decompiled/`) and the branch tips named below. This is g58's FINAL
 round: the four remaining items of the "Shop happiness UI (W4-g58)"
