@@ -626,9 +626,10 @@ pub(crate) fn pass_dye_plants(
 /// The dye-plant neighbour gate (`plantDye`'s three scans,
 /// `WorldGen.cs:71304-71313` / `:71388-71397` / `:71441-71450`): any active
 /// tile 227 in the box bails. The classic arm (`exoticPlant` false) only
-/// counts the pre-strange styles (`frameX < 272`); the box is half-open
-/// `[x - radius, x + radius)` for the first two scans, the third uses the
-/// unclamped bounds.
+/// counts the pre-strange styles (`frameX < 272`) in the two CLAMPED scans
+/// (`:71308` / `:71392`); the hanging-dirt tail's unclamped scan
+/// (`:71445`) counts ANY 227 (no frame split). The box is half-open
+/// `[x - radius, x + radius)`.
 fn dye_nearby(world: &World, x: i32, y: i32, radius: i32, clamp: bool) -> bool {
     let (x0, x1, y0, y1) = if clamp {
         (
@@ -642,10 +643,9 @@ fn dye_nearby(world: &World, x: i32, y: i32, radius: i32, clamp: bool) -> bool {
     };
     for i in x0..x1 {
         for j in y0..y1 {
-            if world
-                .tile(i, j)
-                .is_some_and(|t| t.active() && t.kind == 227 && t.frame_x < 272)
-            {
+            if world.tile(i, j).is_some_and(|t| {
+                t.active() && t.kind == 227 && (!clamp || t.frame_x < 272)
+            }) {
                 return true;
             }
         }
