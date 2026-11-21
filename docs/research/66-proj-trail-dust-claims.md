@@ -225,7 +225,22 @@ The unrowed-kind emitters' rows were checked against the pushed d-lane
 These rows live on UNMERGED d-lane branches; at this tip (main `a725acb0`)
 none is present, so every batch-6 emitter is correctly UNWIRED. They
 activate when the d-lanes merge (the wiring is a one-line dispatch gate
-per kind, cited at each emitter).
+per kind, cited at each emitter). The per-merge call sites + RNG-seam
+reconciliations are pinned in **research/67** (the activation checklist
+for the merger).
+
+### The 357 f20b cross-note (2026-11-21 re-probe)
+
+The f20 branch advanced to `5aa190e3` (slice E: the 435/576/709
+row-gated-inert overlays + the round-2 census, research/26f) — slice D
+(`4bd2f496`, the 357's fade-25 + NO-gravity flight arm, F7) is unchanged
+underneath and still UNMERGED. The 357 row is in main (`data.rs:3289`).
+The g63 `pulse_bolt_trail` emitter is READY for slice D's merge: one
+`step_dust` variant on `projectile_ai001_d` + the call gated
+`alpha < 170` BEFORE the fade-25 (`:56753` trail, `:56769` fade — the
+dust copies the PRE-fade alpha). No f20-side dust work is owed beyond
+that call; the seam row is in research/67. f20c: your slice-D merge
+unlocks this emitter as-is.
 
 ### AI_001 remainder census (the 20 kinds ≤400)
 

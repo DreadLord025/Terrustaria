@@ -1641,8 +1641,13 @@ pub(crate) fn chlorophyte_bullet_trail(
 /// Site 56761 — the Pulse Bolt 357's `alpha < 170` 10-point trail
 /// (`Projectile.cs:56753-56768`): the 207 twin with dust 206. UNWIRED on
 /// this branch — the 357's flight arm is W4-f20 slice D
-/// (`projectile_ai001_d`, 4bd2f496), not yet merged; the emitter is ready
-/// for the f20b dust seam (research/66). No explicit draws.
+/// (`projectile_ai001_d`, 4bd2f496; the f20 tip is now 5aa190e3, slice E
+/// added on top — D unchanged), not yet merged. CROSS-NOTE for f20c:
+/// this emitter is READY for slice D — the row is already in main
+/// (`data.rs:3289`); the wiring is one `step_dust` variant + this call
+/// gated `alpha < 170` BEFORE the fade-25 (`:56769`, the trail copies
+/// the PRE-fade alpha onto every dust). The full seam is research/67.
+/// No explicit draws.
 #[allow(dead_code)]
 pub(crate) fn pulse_bolt_trail(
     p: &TrailSlot,
