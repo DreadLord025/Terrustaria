@@ -39384,6 +39384,100 @@ velocity-halving carve-out, the dry-clear tail (`:16998-17003`) and the
 the queue→drain contract (`pending_dust_bursts` → `projectile_dust::drain`,
 the batch-1 convention). The g15 WorldItem precedent (`SplashKind` /
 `wet_edges` / `splash_edge`) is the shape mirror; the projectile constants
-differ (10 dust per arm, scale 1.3 flat, exit-water box keeps the `-8`
-asymmetry INVERTED vs the item's, `wetCount = 10` on EXIT only — the entry
-arm sets NO cooldown, `Projectile.cs:16843-16915` verbatim).
+differ (10 dust per arm, scale 1.3 flat, the exit-water box drops the `-8`
+— the SAME asymmetry as the item's `:1011` — `wetCount = 10` on EXIT only,
+the entry arm sets NO cooldown, `Projectile.cs:16843-16915` verbatim).
+
+### Batch 4 (the WET-SPLASH HOST — the claimed generic wet machine, WIRED)
+
+The WET-BLOCK CLAIM above is now landed. **The machine** lives in the new
+`crates/tr-app/src/projectile_wet.rs` (`wet_block`, verbatim
+`Projectile.cs:16786-17007`):
+
+* The `:16786-16789` preamble (242/302/638 clear `wet`), the `:16790`
+  `ignoreWater` gate.
+* The probes: `Collision.LavaCollision` (full box) →
+  `crate::player::lava_collision`; `Collision.WetCollision` (inset probe +
+  the `Collision.honey`/`shimmer` out-params + the sloped-tile arm, FIRST
+  overlapping cell wins) → `crate::npc_ai_slime::wet_collision` — both the
+  existing verbatim ports (keep-one). **The ≤40-tile dry fold:** the C#
+  `Utils.Clamp(v, 0, maxTilesY-40)` with a negative max folds the y-scan
+  empty (`Utils.cs` Clamp: `value > max → max`, then the loop `j < value4`
+  never runs); the port guards the slime probe (whose `.clamp(0, h-40)`
+  would panic on a negative max) with the same dry result — the 8×8
+  front-flow worlds probe dry, witness-pinned.
+* The flag LATCHING (`:16798-16809`, sticky until the dry-clear tail), the
+  `IsDestroyedByWater` kill (`ProjectileID.cs:429`: 85/15/188/34/1097/1106,
+  gated on the OLD `wet && !lavaWet`), the FireArrow 2→1 `TransformType`
+  (`:692-695` writes ONLY the type — no SetDefaults re-read) + light-0, the
+  type-34 lava dry-out (`:16828-16831`), the type-80 sandgun never-wet +
+  lava kill (`:16832-16840`, `ai[0] >= 0` gate).
+* The ENTRY edge (`:16843-16916`): `type != 155 && wetCount == 0 && !wet`,
+  the kind from the FRESH lava probe then shimmer/honey/water; **NO
+  cooldown write** (the C# entry arm has none — the exit-only asymmetry).
+  The EXIT edge (`:16917-16997`): the 155 halves `velocity.Y` instead;
+  every other kind arms `wetCount = 10` and resolves the kind from the OLD
+  flags. The dry-clear tail (`:16998-17003`) + `wetCount--`
+  (`:17004-17007`).
+* `wetCount` is a new `Projectile` field (reset 0, `:759`); the two
+  pre-existing wet substitutes STAY as documented pre-AI read-lag feeds
+  (the bobber's head `probe_wet` — the i35 one-tick-lag deviation — and the
+  aiStyle-16 dispatch's centre-cell write — the i16 stand-in): the machine
+  is the authoritative post-AI writer, the substitutes feed only their
+  arms' pre-AI reads (the lagged state the C# AI reads).
+
+**The wiring** (the `UpdateProjectiles` slot): the dispatch runs
+`wet_block` per sub-step AFTER the AI/wind tail, BEFORE the arrow-trail
+snapshot (the C# `:16790` position; the port's arms integrate movement
+inside the dispatch, so the machine reads the POST-move box — the recorded
+one-tick position lead, the queue→drain deviation family). A `Kill()`
+inside the block latches `kill_time_left` + drops `active` (the
+`bee_water_kill` convention); the end-of-tick death hook resolves it. The
+edge parks `wants_wet_splash = (entry, kind)`; the dispatch forwards the
+case-19 play into `pending_splashes` (shimmer entry style 4 `:16871` / exit
+style 5 `:16953`, every other arm the int overload's DEFAULT style 1 —
+`SoundEngine.cs:102`) and the dust into `pending_dust_bursts`
+(`DustBurst::WetSplash`). `Main.waterStyle` rides a new per-tick pool feed
+(`set_water_style`, the g15 items-pass `calculate_water_style` precedent).
+
+**The 8 sites** (`projectile_dust::wet_splash`): TEN dust per arm, box
+`(pos.X − 6, pos.Y + height/2 − 8)` × `(width + 12, 24)` — the exit WATER
+arm drops the `− 8` (`:16973`, the item `:1011` mirror). Shimmer 308 (vy −4,
+×2.5 vx, scale 1.3, noGravity, the `Next(6)` colour AFTER the spawn, NO
+alpha write); honey 152 (vy −1, alpha 100); water `dustWater(style)` (vy −4,
+alpha 100); lava 35 (vy −1.5, alpha 100). Types 308/152/35/33 draw NO extra
+tweak roll (the `Dust.cs:214-252` arms are deterministic — the 308/33
+vel-halve + vy+1 and the 35/152 ×0.1/vy−0.5 ride INSIDE `new_dust`).
+
+**Deviations (each cited at its site):**
+* The `try/catch` (`:16794-16815`) — the probes are infallible, the catch's
+  `active = false` arm unreachable, dropped.
+* `Shimmer()` (`:17009-17012`) — the transform lane (e19/f47), outside the
+  claimed window.
+* `HandleMovement(wetVelocity)`'s wet velocity scaling (`:17612-17655`) —
+  the movement lane, outside the window.
+* The shimmer loops play TEN times in C#; the case-19 playing guard
+  (`LegacySoundPlayer.cs:872-874`) refuses plays 2-10 before any draw (the
+  first instance is live within the tick) — the port queues ONE play,
+  stream-identical, the 9 guard-refused siblings cited.
+* The two-queue drain order: the C# draws the edge's dust THEN plays (the
+  shimmer arm plays inside the loop); the port's `pending_splashes` drains
+  ahead of `pending_dust_bursts`, inverting the within-edge order — the
+  per-tick draw COUNT is identical, the interleaving is not (the recorded
+  queue→drain deviation family).
+
+### Verification (batch 4)
+
+Code-only: the machine re-read line-by-line against `:16786-17007`; the
+probe seams checked by read/grep (`player::lava_collision`,
+`npc_ai_slime::wet_collision` signatures, `Utils.Clamp` semantics,
+`DustPool::new_dust`'s per-type tweaks, `Audio::play_splash_sound`'s
+case-19 guard). 9 machine witnesses (`projectile_wet.rs`: the entry
+no-cooldown asymmetry, the exit 10-tick cooldown + re-entry suppression,
+the four liquid-kind transitions, the water-kill + 2→1 transform, the
+34/80 arms, the 155 carve-out, the preamble + ignoreWater gate, the ≤40
+dry fold, the dry-clear tail) + 4 drain witnesses (`projectile_dust.rs`:
+the per-kind 10-dust census incl the shimmer `Next(6)`, the post-fields +
+`dustWater(7)` → 103, the exit-water box asymmetry, the queue half) —
+WRITTEN NOT RUN, **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**
+(user directive).

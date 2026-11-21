@@ -743,11 +743,14 @@ pub struct Projectile {
     /// them after the sub-steps. `time_left_delta` is subtracted from the
     /// spawned row's `timeLeft` (the cluster ring's `-= Next(30)`, `:78084`).
     pub(crate) wants_dart_spawns: Vec<(u16, f32, f32, f32, f32, i32, f32, f32, f32, i32)>,
-    // S1-P-i35 — the fishing bobber's liquid flags (`Projectile.cs:376-382`,
-    // reset false `:756-760`). The generic `Update` wet block
-    // (`:16790-17007`) writes them AFTER the AI; the port's bobber arm
-    // probes them at the tick head (the one-tick-lag deviation, ANALYSIS
-    // "Fishing rod (S1-P-i35)"). Only the aiStyle-61 arm reads them today.
+    // S1-P-i35 / W4-d53 — the liquid flags (`Projectile.cs:376-382`, reset
+    // false `:756-760`). The generic `Update` wet block (`:16790-17007`) is
+    // ported by `projectile_wet::wet_block` and runs at the C# position
+    // (post-AI, the dispatch tail). Two pre-AI read-lag feeds remain: the
+    // bobber arm's head `probe_wet` (the i35 one-tick-lag deviation) and the
+    // aiStyle-16 dispatch's centre-cell `wet` write (the i16 stand-in) —
+    // both feed only their arms' pre-AI reads, the lagged state the C# AI
+    // reads (the previous tick's wet block).
     /// `Projectile.wet` — any liquid overlaps the inset probe (S1-P-i35
     /// supersedes the i16 centre-cell stand-in; the i16 bomb kill arm
     /// `AI_016_Bombs` `Projectile.cs:46906-46911` reads it).
@@ -758,6 +761,16 @@ pub struct Projectile {
     pub honey_wet: bool,
     /// `Projectile.shimmerWet` — the wet probe hit shimmer.
     pub shimmer_wet: bool,
+    /// `Entity.wetCount` (`Entity.cs:32`, reset 0 `Projectile.cs:759`) — the
+    /// splash cooldown: the EXIT edge arms 10 (`:16926`), the entry edge
+    /// arms NONE (`:16843-16915`, the C# asymmetry), the wet-block tail
+    /// ticks it down (`:17004-17007`). Gates both splash edges (W4-d53).
+    pub wet_count: i32,
+    /// W4-d53 — the wet entry/exit splash intent (`Projectile.cs:16843-
+    /// 16996`): `(entry, kind)` captured by `projectile_wet::wet_block` at
+    /// the edge; the dispatch forwards it into `pending_dust_bursts` (the
+    /// `wants_sound` pattern). `None` when no edge fired.
+    pub(crate) wants_wet_splash: Option<(bool, crate::projectile_wet::SplashKind)>,
     /// S1-P-i35 — the bobber's `DoASplash` intent (`Projectile.cs:53893-
     /// 53905`): `(style, x, y)` the pool drains into the audio's splash play
     /// on the `UpdateProjectiles` stream (the `wants_sound` pattern).
@@ -869,6 +882,8 @@ impl Default for Projectile {
             lava_wet: false,
             honey_wet: false,
             shimmer_wet: false,
+            wet_count: 0,
+            wants_wet_splash: None,
             wants_splash: None,
             wants_stationary_trail: None,
             wants_sword_beam_burst: None,
@@ -14578,11 +14593,17 @@ pub struct ProjectilePool {
     /// W4-d53 — the tick's `Dust.NewDust` burst snapshots (the
     /// `pending_proj_sounds` queue convention): the enchantment-visuals lane
     /// (`Projectile.cs:16700-16703` → `:17320-17467`), the per-tick arrow
-    /// trail (`:17036-17077`) and the stationary Vortex-bolt puff
-    /// (`:17117-17125`). The world sim drains them through
+    /// trail (`:17036-17077`), the stationary Vortex-bolt puff
+    /// (`:17117-17125`) and the wet entry/exit splash (`:16843-16996`, the
+    /// generic wet machine). The world sim drains them through
     /// `projectile_dust::drain` on the `UpdateProjectiles` stream — the pass
     /// rolls a `dyn DropRng` and cannot borrow the App's live `DustPool`.
     pending_dust_bursts: Vec<crate::projectile_dust::DustBurst>,
+    /// W4-d53 — `Main.waterStyle` as the wet machine's `Dust.dustWater()`
+    /// reads it (`Projectile.cs:16891`/`:16973`). The world sim feeds it
+    /// before the pass (`calculate_water_style`, the g15 items-pass
+    /// precedent); the splash drain resolves the water dust type with it.
+    water_style: i32,
     /// S1-P-i35 — the bobber death hook's catch hand-offs
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
@@ -14986,6 +15007,7 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_dust_bursts: Vec::new(),
+            water_style: 0,
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
@@ -15062,6 +15084,18 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// W4-d53 — `Main.waterStyle` for the wet machine's `dustWater()` pick
+    /// (`Projectile.cs:16891`/`:16973`). The world sim feeds the draw-pass
+    /// value before the tick (the g15 `water_style` precedent).
+    pub fn set_water_style(&mut self, style: i32) {
+        self.water_style = style;
+    }
+
+    /// The per-tick `Main.waterStyle` feed's read side (the splash drain).
+    pub fn water_style(&self) -> i32 {
+        self.water_style
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -19920,6 +19954,46 @@ impl ProjectilePool {
                         (self.slots[i].vel.y + tr_core::falling::TILE_FALL_GRAVITY).min(10.0);
                     let vel = self.slots[i].vel;
                     self.slots[i].pos += vel;
+                }
+                // W4-d53 batch 4 — the generic wet machine (`Projectile.cs:
+                // 16786-17007`), at the C# position: post-AI/wind, pre-
+                // HandleMovement. The port's arms integrate movement inside
+                // the dispatch (the kill_step-in-arm convention), so the
+                // machine reads the POST-move box — the recorded one-tick
+                // position lead (projectile_wet module doc). A Kill() inside
+                // the block (IsDestroyedByWater :16820 / the 80 lava kill
+                // :16838) latches kill_time_left and drops active; the
+                // end-of-tick death hook resolves it (the bee_water_kill
+                // convention). The C# Kill does NOT return from Update —
+                // the machine already ran its tail on the dead slot.
+                if crate::projectile_wet::wet_block(&mut self.slots[i], world) {
+                    let p = &mut self.slots[i];
+                    p.kill_time_left = p.time_left;
+                    p.active = false;
+                    p.time_left = 0;
+                }
+                // The wet edge's two drains: the case-19 play rides the
+                // pool's splash queue (shimmer entry style 4 :16871 / exit
+                // style 5 :16953, every other arm the int overload's
+                // DEFAULT style 1 — SoundEngine.cs:102; the shimmer loops'
+                // 9 guard-refused siblings cited, projectile_wet doc), the
+                // dust burst rides pending_dust_bursts (the wants_sound
+                // pattern). Both at the edge's C# read moment.
+                if let Some((entry, kind)) = self.slots[i].wants_wet_splash.take() {
+                    let style = match (entry, kind) {
+                        (true, crate::projectile_wet::SplashKind::Shimmer) => 4,
+                        (false, crate::projectile_wet::SplashKind::Shimmer) => 5,
+                        _ => 1,
+                    };
+                    let p = &self.slots[i];
+                    self.pending_splashes.push((style, p.pos.x, p.pos.y));
+                    self.pending_dust_bursts.push(crate::projectile_dust::DustBurst::WetSplash {
+                        pos: p.pos,
+                        w: p.w as i32,
+                        h: p.h as i32,
+                        entry,
+                        kind,
+                    });
                 }
                 // W4-d53 — the per-tick arrow trail (`Projectile.cs:
                 // 17036-17077`): the post-movement, pre-`Damage()` dust,
@@ -30582,6 +30656,8 @@ mod phasmal_projectile_tests {
             lava_wet: false,
             honey_wet: false,
             shimmer_wet: false,
+            wet_count: 0,
+            wants_wet_splash: None,
             wants_splash: None,
             wants_stationary_trail: None,
             wants_sword_beam_burst: None,
@@ -30994,6 +31070,8 @@ mod ritual_projectile_tests {
             lava_wet: false,
             honey_wet: false,
             shimmer_wet: false,
+            wet_count: 0,
+            wants_wet_splash: None,
             wants_splash: None,
             wants_stationary_trail: None,
             wants_sword_beam_burst: None,

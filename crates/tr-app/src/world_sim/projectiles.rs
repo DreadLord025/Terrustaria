@@ -332,6 +332,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // W4-d53 batch 4 — `Main.waterStyle` as the wet machine's `dustWater()`
+    // pick reads it (`Projectile.cs:16891`/`:16973`): the draw-pass value
+    // (the g15 items-pass `calculate_water_style` precedent), fed before
+    // the tick so the splash drain resolves the water dust type.
+    let water_style = crate::biome::calculate_water_style(&app.world, app.camera) as i32;
+    app.projectiles.set_water_style(water_style);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -550,19 +556,27 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.net_update = true;
         app.npcs.push(n);
     }
-    // S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`):
-    // case 19's playing guard refuses BEFORE the one pitch draw, on the
-    // `UpdateProjectiles` stream (the C# plays inline mid-`AI_061`; the port
-    // drains at the pass tail, the S1-E-21c convention).
+    // S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`)
+    // + W4-d53 batch 4's wet-machine edge plays (`:16871`/`:16885`/`:16898`/
+    // `:16912` entry, `:16953`/`:16967`/`:16980`/`:16994` exit — shimmer
+    // styles 4/5, every other arm the default style 1): case 19's playing
+    // guard refuses BEFORE the one pitch draw, on the `UpdateProjectiles`
+    // stream (the C# plays inline mid-walk; the port drains at the pass
+    // tail, the S1-E-21c convention). The splash queue drains AHEAD of the
+    // dust queue: the C# draws the edge's dust THEN plays (the shimmer arm
+    // plays inside the loop), the port's two queues invert that within-edge
+    // order — the recorded queue→drain deviation family (ANALYSIS batch 4;
+    // the per-tick draw COUNT is identical, the interleaving is not).
     for (style, x, y) in app.projectiles.drain_splashes() {
         app.audio.play_splash_sound(style, x, y, rng);
     }
     // W4-d53 — the tick's `Dust.NewDust` bursts (`Projectile.cs:16700-16703`
     // enchantment visuals, `:17036-17077` the arrow trail, `:17117-17125` the
-    // stationary Vortex-bolt puff): the pass snapshotted each at the C# read
-    // moment; the drain replays the chain on the SAME `UpdateProjectiles`
-    // stream through the live `DustPool` (the `player_dust` / S1-E-21c
-    // queue→drain convention — the C# draws mid-walk, the port at the tail).
+    // stationary Vortex-bolt puff, `:16843-16996` the wet entry/exit splash):
+    // the pass snapshotted each at the C# read moment; the drain replays the
+    // chain on the SAME `UpdateProjectiles` stream through the live
+    // `DustPool` (the `player_dust` / S1-E-21c queue→drain convention — the
+    // C# draws mid-walk, the port at the tail).
     for burst in app.projectiles.drain_dust_bursts() {
         crate::projectile_dust::drain(app, burst);
     }

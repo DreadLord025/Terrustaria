@@ -78,7 +78,7 @@ disjoint by construction for d53's range:
 
 | # | C# line | host | disposition |
 | - | ------- | ---- | ----------- |
-| 1-8 | 16851/16878/16891/16905/16933/16960/16973/16987 | `Update` wet entry/exit splash (`:16843-16996`) | CITED SKIP — the generic wet block (`:16790-17007`) is unported (only the bobber's aiStyle-61 `probe_wet` exists, the i35 one-tick-lag deviation); lands with the generic wet subsystem |
+| 1-8 | 16851/16878/16891/16905/16933/16960/16973/16987 | `Update` wet entry/exit splash (`:16843-16996`) | **batch 4 WIRED** (ANALYSIS "Batch 4") — the generic wet machine (`projectile_wet::wet_block`, `:16786-17007` verbatim) + the 8-site `WetSplash` drain, the g15 WorldItem precedent |
 | 9-14 | 17038/17042/17046/17055/17066/17071 | per-tick arrow trail (`:17036-17077`, kinds 2/82/172/103/278/4/5) | **batch 1 WIRED** |
 | 15 | 17113 | stationary 466 trail (`:17108-17116`) | CITED SKIP — CultistBossLightningOrbArc has no ported row / TrailingMode entry |
 | 16 | 17122 | stationary Vortex-bolt 580 puff (`:17117-17125`) | **batch 1 WIRED** |
@@ -93,10 +93,11 @@ disjoint by construction for d53's range:
 | 39 | 22161 | SuperStar 728 trail (`AI_151` `:22157-22167`) | CITED SKIP — no row |
 | 40 | 22297 | SuperStarSlash 977 trail (`AI_152` `:22292-22301`) | CITED SKIP — no row |
 
-**Totals: 21 wired (batch 1 = 19, batch 2 = 2) + 19 cited unported-host
-skips = 40.** Every skip is a kind with no `proj_data` row (the S1-F-9b
-wiring gate) or the unported generic wet block; none is a wireable site left
-unwired.
+**Totals (after batch 4): 29 wired (batch 1 = 19, batch 2 = 2, batch 4 =
+the 8 wet sites) + 11 remaining cited unported-host skips = 40.** (The
+batch-3 re-census of the 11 skips — the 466 trail, the 190/191 ring, the
+728 emitter, the e3 keep-one — is the co-lane's in-flight work, recorded
+in its own commit.) The batch-4 wet machine is ANALYSIS "Batch 4".
 
 ### Commits
 
@@ -105,11 +106,23 @@ unwired.
   `pending_dust_bursts` queue + the tick snapshots.
 - `e5893283` — batch 2: Sword Beam 116 + Light Disc 106 (both callers), the
   remaining first-40 unported hosts cited skips.
+- batch 4 — the WET-SPLASH HOST: `projectile_wet.rs` (the generic wet
+  machine `:16786-17007` verbatim — wetCount, the liquid-flag latching, the
+  IsDestroyedByWater/2-transform/34-dryout/80-kill arms, the entry/exit
+  edges + the 155 carve-out) + the `WetSplash` drain (the 8 sites) + the
+  `wet_count`/`wants_wet_splash` slot fields + the `water_style` pool feed;
+  the dispatch runs the machine per sub-step at the C# `:16790` slot.
 
 ### Witnesses
 
-13 draw-mirror witnesses in `projectile_dust.rs` (the d52 `burst_block`
-oracle shape + the post-field writes + the queue half), **WRITTEN NOT RUN**
+17 draw-mirror witnesses in `projectile_dust.rs` (the d52 `burst_block`
+oracle shape + the post-field writes + the queue half; batch 4 adds the
+wet-splash per-kind census, the post-fields + `dustWater` style feed, the
+exit-water box asymmetry and the wet queue half) + 9 machine witnesses in
+`projectile_wet.rs` (the entry no-cooldown asymmetry, the exit 10-tick
+cooldown, the four liquid-kind transitions, the water-kill + 2→1
+transform, the 34/80 arms, the 155 carve-out, the preamble + ignoreWater
+gate, the ≤40 dry fold, the dry-clear tail), **WRITTEN NOT RUN**
 (code-only mode — no cargo/rustc/tests invoked). The stationary-580 witness
 pins the 0×0-box `+4` inset (`Dust.cs:155-171`: the box clamps to 5×5, so the
 default position is `anchor + Next(1) + 4`, NOT the exact anchor).

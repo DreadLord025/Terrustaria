@@ -234,6 +234,10 @@ mod projectile_ai_empress;
 // S1-P-i35: the fishing bobber's AI_061 flight/bite machine + the FishingCheck
 // orchestration (the pure roll engine is tr_core::fishing).
 mod projectile_bobber;
+// W4-d53 batch 4 — the generic Update wet machine (Projectile.cs:16786-17007):
+// the wetCount cooldown, the liquid-flag latching, the entry/exit splash edges
+// (the 8 census sites :16851-16987 ride projectile_dust's WetSplash drain).
+mod projectile_wet;
 // S1-P-i06 — the spear family (aiStyle 19, `AI_019_Spears`): the held-spear
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
