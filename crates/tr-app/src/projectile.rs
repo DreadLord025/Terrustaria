@@ -18113,6 +18113,22 @@ impl ProjectilePool {
                             crate::projectile_ai_91_100::ai_ichor_splash(&mut self.slots[i], rng);
                             crate::projectile_ai_91_100::ichor_splash_move(&mut self.slots[i], world);
                         }
+                        // W4-d10 — `AI()`'s `else if (this.aiStyle == 97)`
+                        // (`Projectile.cs:33029-33133`): the Money Trough's
+                        // flying piggy bank (525) — the frame ladder, the
+                        // same-type dedup (pool-side), the throw decay then
+                        // the owner-facing bob. tileCollide false
+                        // (`:5958`) — the free integrate.
+                        97 => {
+                            crate::projectile_ai_91_100::ai_flying_piggy(
+                                &mut self.slots,
+                                i,
+                                owner,
+                                local_owner,
+                            );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing
                             // machine. The Moon Lord whip's extra arms are

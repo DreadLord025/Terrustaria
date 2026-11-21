@@ -904,6 +904,111 @@ pub(crate) fn ichor_splash_move(p: &mut Projectile, world: &World) {
     p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
 }
 
+/// `AI()`'s aiStyle-97 arm (`Projectile.cs:33029-33133`) — the Money
+/// Trough's flying piggy bank (525). The 4-tick frame ladder
+/// (0,1,2,3,4,3,2,1 then the reset), the local-owner same-type dedup
+/// (the higher-timeLeft twin kills the other — the C# `>=` keeps the
+/// NEWER on a tie), the throw decay (0.94, the velocity-sign facing) then
+/// the rest state's owner-facing hover with the ±0.005 bob and the 90
+/// flip. `CurrentFrameFlags.HadAnActiveInteractableProjectile` (`:33070`)
+/// and the container UI (`TryGetContainerIndex` `:78815`) have no port
+/// consumer. ZERO draws. Pool-side: the dedup kills sibling slots.
+pub(crate) fn ai_flying_piggy(
+    slots: &mut [Projectile],
+    i: usize,
+    owner_center: Option<(f32, f32)>,
+    local_owner: u8,
+) {
+    let p = &mut slots[i];
+    // `:33031-33069` — the frame ladder.
+    p.frame_counter += 1;
+    let fc = p.frame_counter as f32;
+    let num777 = 4.0f32;
+    if fc < num777 {
+        p.frame = 0;
+    } else if fc < num777 * 2.0 {
+        p.frame = 1;
+    } else if fc < num777 * 3.0 {
+        p.frame = 2;
+    } else if fc < num777 * 4.0 {
+        p.frame = 3;
+    } else if fc < num777 * 5.0 {
+        p.frame = 4;
+    } else if fc < num777 * 6.0 {
+        p.frame = 3;
+    } else if fc < num777 * 7.0 {
+        p.frame = 2;
+    } else if fc < num777 * 8.0 {
+        p.frame = 1;
+    } else {
+        p.frame_counter = 0;
+        p.frame = 0;
+    }
+    // `:33071-33087` — the local-owner same-type dedup. The C# kills
+    // INLINE mid-scan: a self-kill zeroes `this.timeLeft`, so every later
+    // comparison reads 0 (no further sibling dies — the `>=` fails
+    // against a live sibling's positive timeLeft). The port keeps that
+    // order with the index loop.
+    if slots[i].owner == local_owner {
+        let (owner, kind) = (slots[i].owner, slots[i].kind);
+        for j in 0..slots.len() {
+            if j == i {
+                continue;
+            }
+            let (active, o_owner, o_kind, o_tl) = {
+                let o = &slots[j];
+                (o.active, o.owner, o.kind, o.time_left)
+            };
+            if active && o_owner == owner && o_kind == kind {
+                if slots[i].time_left >= o_tl {
+                    slots[j].kill_time_left = slots[j].time_left;
+                    slots[j].active = false;
+                    slots[j].time_left = 0;
+                } else if slots[i].active {
+                    // `Kill()`'s `!active` head (`:70644`): a second
+                    // self-kill is a no-op (the first zeroed timeLeft).
+                    let p = &mut slots[i];
+                    p.kill_time_left = p.time_left;
+                    p.active = false;
+                    p.time_left = 0;
+                }
+            }
+        }
+    }
+    let p = &mut slots[i];
+    // `:33088-33109` — the throw state: the 0.94 decay until the velocity
+    // dies below 0.1, then the rest latch (ai[0]=1, ai[1]=45).
+    if p.ai[0] == 0.0 {
+        if p.vel.length() < 0.1 {
+            p.vel = Vec2::ZERO;
+            p.ai[0] = 1.0;
+            p.ai[1] = 45.0;
+            return;
+        }
+        p.vel *= 0.94;
+        p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
+        p.sprite_direction = p.direction;
+        return;
+    }
+    // `:33110-33118` — the rest state faces the owner.
+    let (bcx, _) = p.center();
+    if let Some((ox, _)) = owner_center {
+        p.direction = if ox < bcx { -1 } else { 1 };
+    }
+    p.sprite_direction = p.direction;
+    // `:33119-33132` — the bob: ai[1] counts up, the sign picks the
+    // ±0.005 drift, the 90 boundary flips the counter negative.
+    p.ai[1] += 1.0;
+    if p.ai[1] > 0.0 {
+        p.vel.y -= 0.005;
+    } else {
+        p.vel.y += 0.005;
+    }
+    if p.ai[1] >= 90.0 {
+        p.ai[1] *= -1.0;
+    }
+}
+
 // Witnesses (W4-d10 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1520,5 +1625,103 @@ mod tests {
         ichor_splash_move(&mut q, &w2);
         assert_eq!(q.ai[0], 0.0);
         assert_eq!(q.pos, before + Vec2::new(6.0, 2.0));
+    }
+
+    /// The 525 row (`Projectile.cs:5953-5961`): 30×24, aiStyle 97,
+    /// tileCollide false, timeLeft 10800, the stock penetrate 1; the
+    /// 5-frame sheet (`Main.cs:8479`).
+    #[test]
+    fn w4_d10_s97_the_piggy_row_is_verbatim() {
+        let d = proj_data(525).unwrap();
+        assert_eq!((d.w, d.h), (30.0, 24.0));
+        assert_eq!(d.ai_style, 97);
+        assert!(!d.tile_collide);
+        assert_eq!(d.time_left, 10800);
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(crate::projectile::proj_frames(525), 5);
+    }
+
+    /// The frame ladder (`:33031-33069`): 4 ticks per frame, the
+    /// 0-1-2-3-4-3-2-1 palindrome then the reset at 32.
+    #[test]
+    fn w4_d10_s97_the_piggy_flaps_in_a_palindrome() {
+        let mut slots = vec![proj(525)];
+        let mut frames = Vec::new();
+        for _ in 0..32 {
+            ai_flying_piggy(&mut slots, 0, Some((1600.0, 800.0)), 0);
+            frames.push(slots[0].frame);
+        }
+        assert_eq!(&frames[0..4], &[0, 0, 0, 0]);
+        assert_eq!(&frames[4..8], &[1, 1, 1, 1]);
+        assert_eq!(&frames[16..20], &[4, 4, 4, 4]);
+        assert_eq!(&frames[20..24], &[3, 3, 3, 3]);
+        assert_eq!(&frames[28..32], &[1, 1, 1, 0], "the 32nd tick resets");
+        assert_eq!(slots[0].frame_counter, 0);
+    }
+
+    /// The throw decay + rest latch (`:33088-33109`): the 0.94 decay with
+    /// the velocity-sign facing; below 0.1 the velocity zeroes and the
+    /// rest state arms (ai[0]=1, ai[1]=45). The bob (`:33119-33132`):
+    /// ±0.005 with the 90 flip.
+    #[test]
+    fn w4_d10_s97_the_piggy_throws_then_hovers() {
+        let mut slots = vec![proj(525)];
+        slots[0].vel = Vec2::new(-4.0, 0.0);
+        ai_flying_piggy(&mut slots, 0, Some((1600.0, 800.0)), 0);
+        assert!((slots[0].vel.x - (-4.0 * 0.94)).abs() < 1e-5);
+        assert_eq!(slots[0].direction, -1);
+        assert_eq!(slots[0].sprite_direction, -1);
+        // The rest latch.
+        slots[0].vel = Vec2::new(0.05, 0.0);
+        ai_flying_piggy(&mut slots, 0, Some((1600.0, 800.0)), 0);
+        assert_eq!(slots[0].vel, Vec2::ZERO);
+        assert_eq!(slots[0].ai[0], 1.0);
+        assert_eq!(slots[0].ai[1], 45.0);
+        // The bob: the owner left of the bank → facing -1; ai[1] 46 > 0
+        // → the -0.005 rise.
+        ai_flying_piggy(&mut slots, 0, Some((1000.0, 800.0)), 0);
+        assert_eq!(slots[0].direction, -1);
+        assert!((slots[0].vel.y - (-0.005)).abs() < 1e-6);
+        assert_eq!(slots[0].ai[1], 46.0);
+        // The 90 flip.
+        slots[0].ai[1] = 89.0;
+        ai_flying_piggy(&mut slots, 0, Some((1000.0, 800.0)), 0);
+        assert_eq!(slots[0].ai[1], -90.0);
+        // The negative counter drifts down.
+        ai_flying_piggy(&mut slots, 0, Some((1000.0, 800.0)), 0);
+        assert_eq!(slots[0].ai[1], -89.0);
+        assert!((slots[0].vel.y - (-0.005 + 0.005)).abs() < 1e-6);
+    }
+
+    /// The dedup (`:33071-33087`): the higher-timeLeft twin kills the
+    /// older; a tie keeps the scanning slot (the C# `>=`); the lower
+    /// twin kills ITSELF. Foreign owners never dedup.
+    #[test]
+    fn w4_d10_s97_the_piggy_dedups_by_time_left() {
+        let mut slots = vec![proj(525), proj(525)];
+        slots[0].time_left = 100;
+        slots[1].time_left = 50;
+        ai_flying_piggy(&mut slots, 0, None, 0);
+        assert!(slots[0].active);
+        assert!(!slots[1].active, "the older twin dies");
+        // The reverse: the scanning slot is older → it dies.
+        let mut s2 = vec![proj(525), proj(525)];
+        s2[0].time_left = 50;
+        s2[1].time_left = 100;
+        ai_flying_piggy(&mut s2, 0, None, 0);
+        assert!(!s2[0].active);
+        assert!(s2[1].active);
+        // The tie: >= keeps the scanner.
+        let mut s3 = vec![proj(525), proj(525)];
+        s3[0].time_left = 100;
+        s3[1].time_left = 100;
+        ai_flying_piggy(&mut s3, 0, None, 0);
+        assert!(s3[0].active);
+        assert!(!s3[1].active);
+        // A foreign owner's bank never dedups.
+        let mut s4 = vec![proj(525), proj(525)];
+        s4[1].owner = 1;
+        ai_flying_piggy(&mut s4, 0, None, 0);
+        assert!(s4[0].active && s4[1].active);
     }
 }

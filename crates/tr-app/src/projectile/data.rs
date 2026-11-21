@@ -737,6 +737,10 @@ pub const TOXIC_BUBBLE: u16 = 523;
 /// `ProjectileID.IchorSplash` (524, `ProjectileID.cs:1602`) — the Ichor
 /// Flask's splash, aiStyle 96 (`Projectile.cs:5939-5952`). W4-d10.
 pub const ICHOR_SPLASH: u16 = 524;
+/// `ProjectileID.FlyingPiggyBank` (525, `ProjectileID.cs:1604`) — the
+/// Money Trough's flying piggy bank, aiStyle 97
+/// (`Projectile.cs:5953-5961`). W4-d10.
+pub const FLYING_PIGGY_BANK: u16 = 525;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1725,6 +1729,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ICHOR_SPLASH => (
                 10.0, 10.0, 96, 5, TIME_LEFT_DEFAULT, 5, true, false, false,
                 (false, -2, true, 10, 255, 1.0),
+            ),
+            // W4-d10 — the Money Trough's flying piggy bank
+            // (`Projectile.cs:5953-5961`): 30×24, aiStyle 97, tileCollide
+            // false, timeLeft 10800, drawLayer 3 (no port field); the
+            // stock penetrate 1, no damage-class flag (the bank is a
+            // friendly interactable, `IsInteractable` :78832).
+            FLYING_PIGGY_BANK => (
+                30.0, 24.0, 97, 1, 10800, 0, false, false, false, RESET_STATE,
             ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
@@ -4682,10 +4694,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         456 => 4,
         462 => 5,
         519 => 4,
-        // W4-d10 — the aiStyle-92/94/100 sheets: the Coin Portal's 4-frame
-        // spin (`Main.cs:8486`), the Medusa Head's 12-frame charge
-        // (`:8548`), the spore cloud's 5-frame first-tick roll (`:8726`).
+        // W4-d10 — the aiStyle-92/94/97/100 sheets: the Coin Portal's
+        // 4-frame spin (`Main.cs:8486`), the Flying Piggy Bank's 5-frame
+        // flap (`:8479`), the Medusa Head's 12-frame charge (`:8548`), the
+        // spore cloud's 5-frame first-tick roll (`:8726`).
         518 => 4,
+        525 => 5,
         535 => 12,
         1128 => 5,
         574 => 2,
