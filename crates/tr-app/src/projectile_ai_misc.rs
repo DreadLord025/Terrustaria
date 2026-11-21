@@ -63,6 +63,7 @@ use tr_core::loot::DropRng;
 use crate::npc::Npc;
 use crate::projectile::{
     Projectile, can_hit, chaseable, chaseable_held, get_lerp_value, rotate, safe_normalize,
+    DRILL_MOUNT_CROSSHAIR, SCUTLIX_LASER_CROSSHAIR, SCUTLIX_LASER_FRIENDLY,
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
@@ -697,21 +698,299 @@ fn create_ground_explosion(
 }
 
 // ---------------------------------------------------------------------------
+// W4-d8 — the aiStyle-72/73/74/76 census (the Bubble Gun, the firework
+// fountains, the Scutlix mount's laser and the two mount crosshairs). The
+// data rows + kind constants live in projectile/data.rs; the dispatch arms
+// are wired in projectile.rs::update. Code-only round — the witness tests
+// below are WRITTEN NOT RUN.
+//
+// C# sources read WHOLE (the golden rule):
+// - aiStyle 72: the inline `AI()` arm `Projectile.cs:30455-30479` (the
+//   Bubble 410's fade, the 0.96 drag, the one-shot scale roll, the
+//   centre-anchored box resize). `SetDefaults` `:4917-4932`.
+// - aiStyle 73: the inline `AI()` arm `:30480-30604` (the firework
+//   fountains 419-422's tile-338 anchor kill + the four per-kind dust
+//   choreographies). `SetDefaults` `:4951-4959`; the `NewProjectile`
+//   timeLeft-600 seed `:11033-11048`; the spawn `Player.cs:32374`.
+// - aiStyle 74: the inline `AI()` arm `:30605-30616` (the Scutlix laser
+//   434's charge-decay kill), the Update-tail charge latch `:17079-17086`,
+//   the on-hit `numUpdates = 0` `:13975-13978`, the blocked-move
+//   `numUpdates = 0` `:17991-17995`, the `Damage_CanDealDamage` refusal
+//   `:12448` (`type == 434 && localAI[0] != 0`). `SetDefaults` `:5047-5055`.
+// - aiStyle 76: the inline `AI()` arm `:30621-30670` (the mount crosshairs
+//   441/453's owner pin, the mount-type kill, the mouse aim + the channel
+//   release). `SetDefaults` `:5117-5125`/`:5250-5258`.
+//
+// RNG contract (the `UpdateProjectiles` stream, `Main.cs:17775-17777`):
+// every EXPLICIT `Main.rand` draw stays in the C#'s order; the dust BODIES
+// are skipped (no dust layer) and the `Dust.NewDust*` internal rolls go
+// with the dust pool (the module's convention). Per style:
+// - 72: one `Next(60, 121)` scale roll on the first tick (`:30469`).
+// - 73: the per-kind dust draws — see [`ai_fountain`]'s doc.
+// - 74: ZERO draws (the decay/latch are deterministic).
+// - 76: ZERO draws (the aim/pin are deterministic).
+
+/// `AI()`'s aiStyle-72 arm (`Projectile.cs:30455-30479`) — the Bubble Gun's
+/// bubble (410). The age counter, the post-3-tick alpha fade to its 50
+/// floor, the ×0.96 drag, the one-shot `Next(60, 121) / 100f` scale roll
+/// (`netUpdate` dirtied) and the centre-anchored `(int)(14 * ai[1])` box
+/// resize. The movement is the dispatch's `kill_step` (the row keeps
+/// `tileCollide = true`); the wind tail runs at the dispatch (style 72 is
+/// on `ShouldUseWindPhysics`'s list, `:22128`).
+pub(crate) fn ai_bubble(p: &mut Projectile, rng: &mut dyn DropRng) {
+    // `:30457-30465` — the age counter; past the 3rd tick the alpha fades
+    // 25/tick to its 50 floor.
+    p.local_ai[0] += 1.0;
+    if p.local_ai[0] > 3.0 {
+        p.alpha -= 25;
+        if p.alpha < 50 {
+            p.alpha = 50;
+        }
+    }
+    // `:30466` — the ×0.96 drag.
+    p.vel *= 0.96;
+    // `:30467-30471` — the one-shot scale roll (`netUpdate = true`).
+    if p.ai[1] == 0.0 {
+        p.ai[1] = rng.next_range(60, 121) as f32 / 100.0;
+        p.net_update = true;
+    }
+    // `:30472` — the scale follows the roll every tick.
+    p.scale = p.ai[1];
+    // `:30473-30478` — the centre-anchored box resize: `position = Center`,
+    // `width = height = (int)(14 * ai[1])`, then `position -= (width/2,
+    // height/2)`. The C# `width / 2` is INTEGER division (the box is an
+    // int), so the port truncates the half-box.
+    let cx = p.pos.x + p.w * 0.5;
+    let cy = p.pos.y + p.h * 0.5;
+    let size = (14.0 * p.ai[1]) as i32 as f32;
+    p.w = size;
+    p.h = size;
+    p.pos = Vec2::new(cx - (size as i32 / 2) as f32, cy - (size as i32 / 2) as f32);
+}
+
+/// `AI()`'s aiStyle-73 arm (`Projectile.cs:30480-30604`) — the firework
+/// fountains (419-422). The tile-338 anchor kill, then the four per-kind
+/// dust choreographies. The fountain never damages: the C# keeps
+/// `friendly = true` (`:4956`) but the tile-interaction spawn passes
+/// Damage 0 (`Player.cs:32374`), so `damage_pve` early-returns.
+///
+/// RNG (per tick, the C#'s order): the shared `num569 = 2f` jet speed
+/// scales by `timeLeft / 60f` below 1. Each kind's two-dust loop draws, per
+/// dust, a `NextDouble` jet speed-scale + a `NextDouble` jet rotation, the
+/// red 420 / rainbow 422 `Next(5)` colour pick, a `NextDouble` dust scale
+/// and a `Next(-2, 3)` position jitter; the blue 421's `timeLeft % 10 == 0`
+/// burst draws one shared `NextDouble` speed-scale + nine per-dust
+/// `NextDouble` scale + `Next(-2, 3)` jitter pairs. The dust BODIES skip;
+/// the `Dust.NewDust` internal rolls go with the dust pool.
+pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropRng) {
+    // `:30482-30489` — the tile anchor: `ai[0]`/`ai[1]` name the fountain
+    // tile; a missing / inactive / non-338 tile kills the projectile.
+    let tx = p.ai[0] as i32;
+    let ty = p.ai[1] as i32;
+    let anchored = world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && t.kind == 338);
+    if !anchored {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    // `:30490-30495` — the jet speed `num569 = 2f`, scaled by
+    // `timeLeft / 60f` below 1, feeds ONLY the skipped dust bodies (the
+    // jet vector's magnitude) — no slot state, so the computation folds
+    // out with the dust layer (the module's RNG note keeps the draws).
+    // The per-kind dust choreographies. Each two-dust loop draws, in the
+    // C#'s order: a `NextDouble` speed-scale + a `NextDouble` rotation
+    // (the jet vector, `:30500`), the red 420 / rainbow 422 `Next(5)`
+    // colour pick (`:30522`/`:30590`), a `NextDouble` dust scale
+    // (`:30503`) and a `Next(-2, 3)` position jitter (`:30509`). The dust
+    // BODIES skip; the `Dust.NewDust` internal rolls go with the dust pool
+    // (the module's RNG note).
+    match p.kind {
+        419 => {
+            // `:30496-30515` — the yellow: two dust-222, the ±π/2 rotation.
+            for _ in 0..2 {
+                let _ = rng.next_double(); // the jet speed scale
+                let _ = rng.next_double(); // the jet rotation
+                let _ = rng.next_double(); // the dust scale
+                let _ = rng.next_range(-2, 3); // the position jitter
+            }
+        }
+        420 => {
+            // `:30516-30541` — the red: two dust-219 (1-in-5 dust-222).
+            for _ in 0..2 {
+                let _ = rng.next_double(); // the jet speed scale
+                let _ = rng.next_double(); // the jet rotation
+                let _ = rng.next_range(0, 5); // the colour pick
+                let _ = rng.next_double(); // the dust scale
+                let _ = rng.next_range(-2, 3); // the position jitter
+            }
+        }
+        421 => {
+            // `:30542-30582` — the blue: two dust-221 (the ±π/4 rotation),
+            // then the timeLeft%10 burst's nine dust-222.
+            for _ in 0..2 {
+                let _ = rng.next_double(); // the jet speed scale
+                let _ = rng.next_double(); // the jet rotation
+                let _ = rng.next_double(); // the dust scale
+                let _ = rng.next_range(-2, 3); // the position jitter
+            }
+            if p.time_left % 10 == 0 {
+                // `:30563` — the burst's shared speed scale.
+                let _ = rng.next_double();
+                for _ in 0..9 {
+                    // `:30569`/`:30575` — per burst dust: the scale draw +
+                    // the position jitter (the velocity is the
+                    // deterministic spoke fan).
+                    let _ = rng.next_double();
+                    let _ = rng.next_range(-2, 3);
+                }
+            }
+        }
+        422 => {
+            // `:30583-30603` — the rainbow: two dust-(219 + Next(5)).
+            for _ in 0..2 {
+                let _ = rng.next_double(); // the jet speed scale
+                let _ = rng.next_double(); // the jet rotation
+                let _ = rng.next_range(0, 5); // the colour offset
+                let _ = rng.next_double(); // the dust scale
+                let _ = rng.next_range(-2, 3); // the position jitter
+            }
+        }
+        _ => {}
+    }
+    // The movement: the row keeps `tileCollide = true`, but the fountain
+    // sits still (velocity 0) on its anchor tile — the dispatch's
+    // `kill_step` integrates the zero velocity (no move, no kill).
+}
+
+/// `AI()`'s aiStyle-74 arm (`Projectile.cs:30605-30616`) — the Scutlix
+/// mount's laser (434). Once the charge latch flips `extraUpdates` to 1
+/// (the Update-tail `:17079-17086`), the decay arm runs: `localAI[0] *=
+/// localAI[1]`, `localAI[1] -= 0.001f`, and the kill below 0.01. The
+/// charge latch itself reads the slot's `num_updates` field at the
+/// dispatch (the Update tail, not this AI arm).
+pub(crate) fn ai_scutlix_laser(p: &mut Projectile) {
+    // `:30607-30615` — the decay arm, gated on the latched extraUpdates 1.
+    if p.extra_updates == 1 {
+        p.local_ai[0] *= p.local_ai[1];
+        p.local_ai[1] -= 0.001;
+        // `:30611-30614` — the `(double)localAI[0] < 0.01` kill.
+        if (p.local_ai[0] as f64) < 0.01 {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+        }
+    }
+}
+
+/// The Update-tail charge latch (`Projectile.cs:17079-17086`) — the Scutlix
+/// laser's first sub-step (`localAI[0] == 0 && numUpdates == 0`) flips
+/// `extraUpdates` to 1, zeroes the velocity, seeds `localAI[0] = 1` /
+/// `localAI[1] = 0.9999f` and dirties `netUpdate`. Runs at the dispatch
+/// AFTER the AI + movement + damage (the C# `:17078` `Damage()` precedes
+/// it), so the wire's last sub-step is the one that latches.
+pub(crate) fn scutlix_laser_charge_latch(p: &mut Projectile) {
+    if p.kind == SCUTLIX_LASER_FRIENDLY && p.local_ai[0] == 0.0 && p.num_updates == 0 {
+        p.extra_updates = 1;
+        p.vel = Vec2::ZERO;
+        p.local_ai[0] = 1.0;
+        p.local_ai[1] = 0.9999;
+        p.net_update = true;
+    }
+}
+
+/// `AI()`'s aiStyle-76 arm (`Projectile.cs:30621-30670`) — the mount
+/// crosshairs (441 Scutlix / 453 Drill). The owner pin (`heldProj`), the
+/// mount-type kill, the local-owner mouse aim + the channel release, and
+/// the remote-owner position follow. The crosshair is stock `friendly =
+/// false` (`:788`); the port's slot default is true, so the arm pins it
+/// per tick (the ai_dungeon_debris precedent). The mount ability calls
+/// (`AimAbility`/`UseAbility`/`StartAbilityCharge`) are M2-MOUNT-4 — the
+/// port folds them out (no ability layer); the `heldProj` write rides the
+/// mutable player.
+pub(crate) fn ai_mount_crosshair(
+    p: &mut Projectile,
+    i: usize,
+    aim: Option<(f32, f32)>,
+    player: Option<&mut crate::player::Player>,
+    local_owner: u8,
+) {
+    // The stock friendly = false (`:788`), held for the slot's whole life.
+    p.friendly = false;
+    let Some(pl) = player else {
+        // No owner resolved — the slot cannot track; kill it (the C# reads
+        // `Main.player[owner]` unconditionally, the ai_drill precedent).
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return;
+    };
+    // `:30624` — the owner pin (`player.heldProj = whoAmI`).
+    pl.held_proj = i as i32;
+    // `:30625-30637` — the mount-type kill: the 441 needs mount 9 (Scutlix),
+    // the 453 mount 8 (Drill).
+    let mount_ok = match p.kind {
+        SCUTLIX_LASER_CROSSHAIR => pl.mount.kind() == 9,
+        DRILL_MOUNT_CROSSHAIR => pl.mount.kind() == 8,
+        _ => false,
+    };
+    if !mount_ok {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    if p.owner == local_owner {
+        // `:30638-30654` — the local owner: the mouse-world aim, the
+        // owner-relative ai[0]/ai[1] pin (netUpdate on change), the
+        // channel-release kill. `Main.screenPosition + mouse` is the
+        // pass's aim snapshot.
+        if let Some((mx, my)) = aim {
+            p.pos = Vec2::new(mx, my);
+            let dx = p.pos.x - pl.x;
+            let dy = p.pos.y - pl.y;
+            if p.ai[0] != dx || p.ai[1] != dy {
+                p.net_update = true;
+            }
+            p.ai[0] = dx;
+            p.ai[1] = dy;
+        }
+        // `:30648` — `mount.AimAbility` (M2-MOUNT-4, folded out).
+        // `:30649-30653` — the channel release: `UseAbility` (folded out)
+        // then `Kill()`.
+        if !pl.channel {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+        }
+        return;
+    }
+    // `:30656-30669` — the remote owner: the position follows the stored
+    // owner-relative offset; the ability calls fold out (M2-MOUNT-4).
+    p.pos = Vec2::new(pl.x + p.ai[0], pl.y + p.ai[1]);
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::npc::NpcKind;
-    use crate::projectile::{FlailInputs, ProjectilePool, YoyoInputs, proj_data};
+    use crate::projectile::{FlailInputs, ProjectilePool, YoyoInputs, proj_data, BUBBLE};
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// A draw-recording `Main.rand` stand-in (the `projectile.rs`
     /// CensusRng shape): `next_range` returns `min`, `next_float` 0 — the
-    /// census proves count AND order.
+    /// census proves count AND order. `next_double` records its own count
+    /// (W4-d8's fountain census) and returns 0.0, the same stream step the
+    /// real `UnifiedRandom.NextDouble` takes (`loot.rs:17-25`).
     struct CensusRng {
         ranges: Vec<(i32, i32)>,
         floats: usize,
+        doubles: usize,
     }
 
     impl DropRng for CensusRng {
@@ -723,10 +1002,14 @@ mod tests {
             self.floats += 1;
             0.0
         }
+        fn next_double(&mut self) -> f64 {
+            self.doubles += 1;
+            0.0
+        }
     }
 
     fn census() -> CensusRng {
-        CensusRng { ranges: Vec::new(), floats: 0 }
+        CensusRng { ranges: Vec::new(), floats: 0, doubles: 0 }
     }
 
     /// A tile-free world (the flight witnesses run in open air).
@@ -1233,5 +1516,216 @@ mod tests {
                 pool.slots()[s].kind
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // W4-d8 — the aiStyle-72/73/74/76 witnesses (WRITTEN NOT RUN, code-only).
+    // Every expected value is hand-derived from the cited C# lines.
+    // -----------------------------------------------------------------------
+
+    /// Style 72 (`:30455-30479`): the age counter, the post-3-tick alpha
+    /// fade to its 50 floor, the ×0.96 drag, the one-shot scale roll
+    /// (CensusRng `Next(60,121)` returns 60 → 0.6) and the centre-anchored
+    /// `(int)(14 * 0.6) = 8` box resize.
+    #[test]
+    fn w4_d8_the_bubble_fades_drags_and_resizes() {
+        let mut p = proj(BUBBLE);
+        p.vel = Vec2::new(10.0, 0.0);
+        let mut rng = census();
+        // The first three ticks: the counter advances, no fade yet.
+        for _ in 0..3 {
+            ai_bubble(&mut p, &mut rng);
+        }
+        assert_eq!(p.local_ai[0], 3.0, "the age counter");
+        assert_eq!(p.alpha, 255, "no fade before the 4th tick (`:30458`)");
+        assert_eq!(p.ai[1], 0.6, "the one-shot scale roll (`:30469`)");
+        assert!(p.net_update, "the roll dirties netUpdate (`:30470`)");
+        assert_eq!(p.scale, 0.6, "the scale follows the roll (`:30472`)");
+        // The box: (int)(14 * 0.6) = 8, centre-anchored.
+        assert_eq!((p.w, p.h), (8.0, 8.0), "(int)(14 * 0.6) (`:30476-30477`)");
+        // The fourth tick: the fade starts (255 - 25 = 230).
+        ai_bubble(&mut p, &mut rng);
+        assert_eq!(p.alpha, 230, "the 4th tick fades 25 (`:30460`)");
+        // The drag: ×0.96 per tick, four ticks → 10 * 0.96^4.
+        let expect_v = 10.0f32 * 0.96 * 0.96 * 0.96 * 0.96;
+        assert!((p.vel.x - expect_v).abs() < 1e-4, "the ×0.96 drag (`:30466`)");
+        // The fade floor: run to the 50 floor (255 → 50 takes 9 fades).
+        for _ in 0..20 {
+            ai_bubble(&mut p, &mut rng);
+        }
+        assert_eq!(p.alpha, 50, "the fade floor (`:30461-30464`)");
+        // The scale roll is one-shot: a second call never re-rolls.
+        assert_eq!(rng.ranges.len(), 1, "one Next(60,121) for the life");
+    }
+
+    /// Style 73 (`:30482-30489`): the tile-338 anchor kill — a missing /
+    /// inactive / non-338 tile kills the fountain; the anchored tile keeps
+    /// it alive and rolls the per-kind dust census.
+    #[test]
+    fn w4_d8_the_fountain_kills_off_its_anchor_tile() {
+        let mut w = world();
+        // No tile at (100, 50): the fountain dies.
+        let mut p = proj(419);
+        p.ai[0] = 100.0;
+        p.ai[1] = 50.0;
+        let mut rng = census();
+        ai_fountain(&mut p, &w, &mut rng);
+        assert!(!p.active, "the missing tile kills (`:30485-30488`)");
+        assert_eq!(p.time_left, 0, "Kill zeroes timeLeft");
+        assert_eq!(rng.doubles, 0, "the kill precedes the dust draws");
+        // A non-338 tile: still dies.
+        put(&mut w, 100, 50, 1);
+        let mut p2 = proj(419);
+        p2.ai[0] = 100.0;
+        p2.ai[1] = 50.0;
+        ai_fountain(&mut p2, &w, &mut rng);
+        assert!(!p2.active, "the non-338 tile kills (`:30485`)");
+        // The 338 anchor: alive, the yellow's two-dust census runs.
+        put(&mut w, 100, 50, 338);
+        let mut p3 = proj(419);
+        p3.ai[0] = 100.0;
+        p3.ai[1] = 50.0;
+        let mut rng3 = census();
+        ai_fountain(&mut p3, &w, &mut rng3);
+        assert!(p3.active, "the 338 anchor keeps it alive");
+        // The yellow 419: two dusts × (3 NextDouble + 1 Next(-2,3)).
+        assert_eq!(rng3.doubles, 6, "two dusts × 3 doubles (`:30500/30503`)");
+        assert_eq!(rng3.ranges, vec![(-2, 3), (-2, 3)], "the position jitters");
+    }
+
+    /// Style 73 (`:30516-30603`): the red 420 / rainbow 422 add the
+    /// `Next(5)` colour pick; the blue 421's `timeLeft % 10 == 0` burst
+    /// draws the shared scale + nine per-dust pairs.
+    #[test]
+    fn w4_d8_the_fountain_per_kind_dust_census() {
+        let mut w = world();
+        put(&mut w, 100, 50, 338);
+        // The red 420: two dusts × (3 doubles + Next(5) + Next(-2,3)).
+        let mut red = proj(420);
+        red.ai[0] = 100.0;
+        red.ai[1] = 50.0;
+        let mut rng = census();
+        ai_fountain(&mut red, &w, &mut rng);
+        assert_eq!(rng.doubles, 6, "the red's two dusts × 3 doubles");
+        assert_eq!(rng.ranges, vec![(0, 5), (-2, 3), (0, 5), (-2, 3)],
+            "the colour pick + jitter per dust (`:30522/30534`)");
+        // The rainbow 422: the same shape (the colour offset).
+        let mut rain = proj(422);
+        rain.ai[0] = 100.0;
+        rain.ai[1] = 50.0;
+        let mut rng2 = census();
+        ai_fountain(&mut rain, &w, &mut rng2);
+        assert_eq!(rng2.doubles, 6, "the rainbow's two dusts × 3 doubles");
+        assert_eq!(rng2.ranges, vec![(0, 5), (-2, 3), (0, 5), (-2, 3)],
+            "the colour offset + jitter (`:30590/30598`)");
+        // The blue 421 at timeLeft 600 (% 10 == 0): the two-dust loop +
+        // the burst's shared scale + nine per-dust pairs.
+        let mut blue = proj(421);
+        blue.ai[0] = 100.0;
+        blue.ai[1] = 50.0;
+        assert_eq!(blue.time_left, 600, "the NewProjectile seed");
+        let mut rng3 = census();
+        ai_fountain(&mut blue, &w, &mut rng3);
+        // 2×3 + 1 (shared) + 9×1 = 16 doubles; 2 + 9 = 11 jitters.
+        assert_eq!(rng3.doubles, 16, "the blue's loop + burst (`:30546-30575`)");
+        assert_eq!(rng3.ranges.len(), 11, "2 loop + 9 burst jitters");
+        // The blue at timeLeft 601 (% 10 != 0): no burst.
+        let mut blue2 = proj(421);
+        blue2.ai[0] = 100.0;
+        blue2.ai[1] = 50.0;
+        blue2.time_left = 601;
+        let mut rng4 = census();
+        ai_fountain(&mut blue2, &w, &mut rng4);
+        assert_eq!(rng4.doubles, 6, "no burst off the %10 tick");
+        assert_eq!(rng4.ranges.len(), 2, "only the two loop jitters");
+    }
+
+    /// Style 74 (`:30605-30616` + `:17079-17086`): the charge latch seeds
+    /// the decay pair on the wire's last sub-step; the decay arm shrinks
+    /// `localAI[0]` by `localAI[1]` and kills below 0.01.
+    #[test]
+    fn w4_d8_the_scutlix_laser_latches_and_decays() {
+        let mut p = proj(SCUTLIX_LASER_FRIENDLY);
+        p.vel = Vec2::new(12.0, 0.0);
+        // The latch: localAI[0] == 0 && numUpdates == 0.
+        p.num_updates = 0;
+        scutlix_laser_charge_latch(&mut p);
+        assert_eq!(p.extra_updates, 1, "the latch flips extraUpdates (`:17081`)");
+        assert_eq!(p.vel, Vec2::ZERO, "the velocity zeroes (`:17082`)");
+        assert_eq!(p.local_ai[0], 1.0, "the decay seed (`:17083`)");
+        assert_eq!(p.local_ai[1], 0.9999, "the decay factor (`:17084`)");
+        assert!(p.net_update, "the latch dirties netUpdate (`:17085`)");
+        // The latch is one-shot: a re-run never re-seeds.
+        p.local_ai[0] = 0.5;
+        scutlix_laser_charge_latch(&mut p);
+        assert_eq!(p.local_ai[0], 0.5, "the latch holds (localAI[0] != 0)");
+        // The decay arm: localAI[0] *= localAI[1], localAI[1] -= 0.001.
+        let mut q = proj(SCUTLIX_LASER_FRIENDLY);
+        q.extra_updates = 1;
+        q.local_ai[0] = 1.0;
+        q.local_ai[1] = 0.9999;
+        ai_scutlix_laser(&mut q);
+        assert!((q.local_ai[0] - 0.9999).abs() < 1e-6, "1 * 0.9999 (`:30609`)");
+        assert!((q.local_ai[1] - 0.9989).abs() < 1e-6, "0.9999 - 0.001 (`:30610`)");
+        assert!(q.active, "still above the 0.01 kill floor");
+        // The kill: localAI[0] below 0.01.
+        let mut r = proj(SCUTLIX_LASER_FRIENDLY);
+        r.extra_updates = 1;
+        r.local_ai[0] = 0.005;
+        r.local_ai[1] = 0.5;
+        ai_scutlix_laser(&mut r);
+        assert!(!r.active, "the < 0.01 kill (`:30611-30614`)");
+        // The decay arm is gated on extraUpdates == 1: the wire's 100
+        // sub-steps never decay.
+        let mut s = proj(SCUTLIX_LASER_FRIENDLY);
+        s.local_ai[0] = 1.0;
+        s.local_ai[1] = 0.9999;
+        ai_scutlix_laser(&mut s);
+        assert_eq!(s.local_ai[0], 1.0, "no decay before the latch (`:30607`)");
+    }
+
+    /// Style 76 (`:30621-30670`): the owner pin, the mount-type kill, the
+    /// local-owner mouse aim + the channel release, the remote follow.
+    #[test]
+    fn w4_d8_the_crosshair_pins_aims_and_releases() {
+        let w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.x = 1000.0;
+        pl.y = 500.0;
+        pl.channel = true;
+        let _ = pl.mount.set_mount(9, false); // the Scutlix
+        // The local owner: the aim pins pos + the owner-relative ai pair.
+        let mut p = proj(SCUTLIX_LASER_CROSSHAIR);
+        ai_mount_crosshair(&mut p, 7, Some((1200.0, 600.0)), Some(&mut pl), 0);
+        assert!(p.active, "the channel holds");
+        assert!(!p.friendly, "the stock friendly false (`:788`)");
+        assert_eq!(pl.held_proj, 7, "the owner pin (`:30624`)");
+        assert_eq!(p.pos, Vec2::new(1200.0, 600.0), "the mouse aim (`:30640-30641`)");
+        assert_eq!((p.ai[0], p.ai[1]), (200.0, 100.0), "the owner-relative pin");
+        assert!(p.net_update, "the pin change dirties netUpdate (`:30644`)");
+        // The channel release kills.
+        pl.channel = false;
+        ai_mount_crosshair(&mut p, 7, Some((1200.0, 600.0)), Some(&mut pl), 0);
+        assert!(!p.active, "the release kills (`:30649-30653`)");
+        // The mount-type kill: a 441 on a non-Scutlix mount dies.
+        let _ = pl.mount.set_mount(8, false); // the Drill, not the Scutlix
+        pl.channel = true;
+        let mut q = proj(SCUTLIX_LASER_CROSSHAIR);
+        ai_mount_crosshair(&mut q, 3, Some((1200.0, 600.0)), Some(&mut pl), 0);
+        assert!(!q.active, "the 441 needs mount 9 (`:30627-30631`)");
+        assert_eq!(pl.held_proj, 3, "the pin precedes the mount kill");
+        // The 453 on the Drill mount lives.
+        let mut r = proj(DRILL_MOUNT_CROSSHAIR);
+        ai_mount_crosshair(&mut r, 4, Some((1300.0, 700.0)), Some(&mut pl), 0);
+        assert!(r.active, "the 453 needs mount 8 (`:30633`)");
+        // The remote owner: the position follows the stored offset.
+        let mut s = proj(SCUTLIX_LASER_CROSSHAIR);
+        let _ = pl.mount.set_mount(9, false);
+        s.owner = 1; // not the local owner (0)
+        s.ai[0] = 50.0;
+        s.ai[1] = 60.0;
+        ai_mount_crosshair(&mut s, 5, None, Some(&mut pl), 0);
+        assert!(s.active, "the remote follow never releases");
+        assert_eq!(s.pos, Vec2::new(1050.0, 560.0), "pl.pos + ai (`:30656-30657`)");
     }
 }

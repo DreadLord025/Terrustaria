@@ -1712,17 +1712,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d8 — the firework fountains (419-422,
             // `Projectile.cs:4951-4959`): 4x4, aiStyle 73, friendly,
             // usesIDStaticNPCImmunity with cooldown 3. The stock penetrate 1
-            // / timeLeft 3600 / tileCollide true stand; the arm pins
-            // `friendly = false` per tick (the C# never damages — the
-            // ai_dungeon_debris precedent). The spawn
-            // (`Player.cs:32374`) passes ai0 = tileX, ai1 = tileY.
+            // / tileCollide true stand; `timeLeft = 600` rides the
+            // `NewProjectile` seed (`:11033-11048`, the 443/779 row
+            // precedent). The C# keeps `friendly = true` (`:4956`); the
+            // fountain never damages because the tile-interaction spawn
+            // passes Damage 0 (`Player.cs:32374`) and `damage_pve`
+            // early-returns on `damage <= 0`. The spawn passes ai0 = tileX,
+            // ai1 = tileY.
             FIREWORK_FOUNTAIN_YELLOW | FIREWORK_FOUNTAIN_RED
             | FIREWORK_FOUNTAIN_BLUE | FIREWORK_FOUNTAIN_RAINBOW => (
                 4.0,
                 4.0,
                 73,
                 1,
-                TIME_LEFT_DEFAULT,
+                600,
                 0,
                 true,
                 false,
@@ -1732,7 +1735,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d8 — the Scutlix laser (434, `Projectile.cs:5047-5055`):
             // 1x1, aiStyle 74, friendly, extraUpdates 100, penetrate −1.
             // The Update-tail charge latch (`:17079-17086`) flips
-            // extraUpdates to 1 on the wire's last sub-step.
+            // extraUpdates to 1 on the wire's last sub-step. The
+            // `NewProjectile` ai[0]/ai[1] position pin (`:10927-10931`) is
+            // a spawn-seam concern (the mount ability spawner is M2-MOUNT-4,
+            // unported); the AI arm never reads ai[0]/ai[1], so the stock
+            // spawn arguments stand until the spawner lands.
             SCUTLIX_LASER_FRIENDLY => (
                 1.0,
                 1.0,
@@ -4932,14 +4939,15 @@ mod tests {
         assert!(b.magic);
         assert!(b.ignore_water);
         // The aiStyle-73 firework fountains (419-422, `:4951-4959`): 4x4,
-        // the idStatic-3 pair, the stock penetrate 1 / timeLeft 3600 /
-        // tileCollide true. NO class flag (`:4951-4959` sets none).
+        // the idStatic-3 pair, the stock penetrate 1 / tileCollide true,
+        // timeLeft 600 (the `NewProjectile` seed `:11033-11048`). NO class
+        // flag (`:4951-4959` sets none).
         for k in FIREWORK_FOUNTAINS {
             let d = proj_data(k).unwrap();
             assert_eq!((d.w, d.h), (4.0, 4.0), "kind {k}");
             assert_eq!(d.ai_style, 73, "kind {k}");
             assert_eq!(d.penetrate, 1, "kind {k}");
-            assert_eq!(d.time_left, 3600, "kind {k}");
+            assert_eq!(d.time_left, 600, "kind {k}");
             assert!(d.tile_collide, "kind {k}");
             assert!(d.uses_id_static_immunity, "kind {k}");
             assert_eq!(d.id_static_hit_cooldown, 3, "kind {k}");

@@ -512,6 +512,14 @@ pub struct Projectile {
     pub immunity_identity: u16,
     /// `extraUpdates`: the AI runs `1 + extraUpdates` times per tick (`:16668`).
     pub extra_updates: u32,
+    /// `Projectile.numUpdates` (`:16675-16678`): the sub-step countdown the
+    /// `Update` while-loop decrements BEFORE each body (`numUpdates =
+    /// extraUpdates; while (numUpdates >= 0) { numUpdates--; … }`). The pool
+    /// sets it per sub-step (`sub_steps - 2 - sub`, the ai001_c seam); the
+    /// aiStyle-74 Scutlix laser reads it for the charge latch (`:17079`,
+    /// `numUpdates == 0`) and the on-hit / blocked-move early exits
+    /// (`:13977`/`:17994` set it to 0, ending the loop after one more body).
+    pub num_updates: i32,
     /// The C# `ai[0..2]` scratch array — the aiStyle-1 flight counter lives
     /// in `ai[0]` (the generic arm `ai[0] >= 15f`, `Projectile.cs:57572`).
     pub ai: [f32; 4],
@@ -794,6 +802,7 @@ impl Default for Projectile {
             id_static_hit_cooldown: -1,
             immunity_identity: 0,
             extra_updates: 0,
+            num_updates: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
             alpha: 0,
@@ -13671,11 +13680,12 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
 /// The styles whose arms this port has are 2 (the thrown family, whose own
 /// branch head applies the same term), 8/24/28 (Phase 3), 29 (Phase 4a's gem
-/// bolts) and the styles that already had ported arms (1 the arrows, 16 the
+/// bolts), 72 (W4-d8's Bubble 410, `:22128` — not in `WindPhysicsImmunity`)
+/// and the styles that already had ported arms (1 the arrows, 16 the
 /// bombs) keep their pre-existing no-wind behaviour; the rest (10/14/…) port
 /// in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 2 | 8 | 24 | 28 | 29)
+    matches!(ai_style, 2 | 8 | 24 | 28 | 29 | 72)
 }
 
 /// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
@@ -15780,6 +15790,7 @@ impl ProjectilePool {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
+            num_updates: 0,
             ai: [1.0, 0.0, 0.0, 0.0],
             // The sand ball's `SetDefaults` arm (`:1131-1140`) touches neither
             // `alpha` nor `scale` — the reset values (`:779`, `:785`) hold.
@@ -16613,7 +16624,23 @@ impl ProjectilePool {
             if self.slots[i].sound_delay > 0 {
                 self.slots[i].sound_delay -= 1;
             }
+            // `Projectile.cs:16675` — `numUpdates = extraUpdates` once per
+            // update, ahead of the while-loop. The loop head decrements it
+            // BEFORE each body (`:16678`), so body `sub` reads
+            // `extraUpdates - 1 - sub` = `sub_steps - 2 - sub` (the ai001_c
+            // seam). A mid-body `numUpdates = 0` write (the 434 laser's
+            // on-hit `:13977` / blocked-move `:17994`) survives to the next
+            // head's decrement + while re-check, ending the loop early.
+            self.slots[i].num_updates = self.slots[i].extra_updates as i32;
             for sub in 0..sub_steps {
+                // `Projectile.cs:16676-16678` — the while-condition re-check
+                // THEN the pre-body decrement. A mid-body `numUpdates = 0`
+                // write decrements to −1 here and fails the re-check, so the
+                // port breaks (the C# `while (numUpdates >= 0)` exits).
+                if self.slots[i].num_updates < 0 {
+                    break;
+                }
+                self.slots[i].num_updates -= 1;
                 // `Projectile.cs:16766` — the sub-step's start velocity
                 // (the bee swarm's `oldVelocity` read, S1-P-i17).
                 old_velocity = self.slots[i].vel;
@@ -17562,6 +17589,76 @@ impl ProjectilePool {
                         // The aiStyle-71 Typhoon (`:30355-30454`): the lock,
                         // the turn, the accel and the full tile reflect.
                         71 => self.slots[i].ai_typhoon(world, &npcs[..]),
+                        // W4-d8 — the aiStyle-72 Bubble (410,
+                        // `Projectile.cs:30455-30479`): the fade, the ×0.96
+                        // drag, the one-shot scale roll and the centre-
+                        // anchored box resize. The movement is the shared
+                        // `kill_step` (the row keeps tileCollide true); the
+                        // wind tail runs below (style 72 is wind-eligible).
+                        72 => {
+                            crate::projectile_ai_misc::ai_bubble(&mut self.slots[i], rng);
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d8 — the aiStyle-73 firework fountains (419-422,
+                        // `:30480-30604`): the tile-338 anchor kill + the
+                        // four per-kind dust choreographies. The fountain
+                        // sits still on its anchor (velocity 0); the shared
+                        // `kill_step` integrates the zero velocity.
+                        73 => {
+                            crate::projectile_ai_misc::ai_fountain(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d8 — the aiStyle-74 Scutlix laser (434,
+                        // `:30605-30616`): the charge-decay kill. The
+                        // movement is the blocked-move arm (`:17991-17995`:
+                        // integrate + numUpdates = 0, no kill); the charge
+                        // latch (`:17079-17086`) runs at the Update tail
+                        // below (after the damage walk).
+                        74 => {
+                            crate::projectile_ai_misc::ai_scutlix_laser(&mut self.slots[i]);
+                            // `HandleMovement`'s 434 arm (`:17991-17995`):
+                            // a blocked move integrates the velocity and
+                            // ends the sub-step loop (numUpdates = 0) — it
+                            // does NOT kill (the laser sticks in the tile).
+                            // The port's per-axis destination-box probe
+                            // stands in for the swept TileCollision (the
+                            // ai_typhoon precedent).
+                            if self.slots[i].tile_collide {
+                                let nx = self.slots[i].pos.x + self.slots[i].vel.x;
+                                let ny = self.slots[i].pos.y + self.slots[i].vel.y;
+                                let hit_x = crate::player::collides_rect(
+                                    world, nx, self.slots[i].pos.y,
+                                    self.slots[i].w, self.slots[i].h,
+                                );
+                                let hit_y = crate::player::collides_rect(
+                                    world, self.slots[i].pos.x, ny,
+                                    self.slots[i].w, self.slots[i].h,
+                                );
+                                if hit_x || hit_y {
+                                    self.slots[i].num_updates = 0;
+                                }
+                            }
+                            let vel = self.slots[i].vel;
+                            self.slots[i].pos += vel;
+                        }
+                        // W4-d8 — the aiStyle-76 mount crosshairs (441/453,
+                        // `:30621-30670`): the owner pin, the mount-type
+                        // kill, the mouse aim + the channel release. The
+                        // crosshair is AI-set (the mouse pin), so no
+                        // kill_step runs (the ai_drill precedent).
+                        76 => {
+                            crate::projectile_ai_misc::ai_mount_crosshair(
+                                &mut self.slots[i],
+                                i,
+                                inputs.aim,
+                                player.as_deref_mut(),
+                                local_owner,
+                            );
+                        }
                         // The aiStyle-23 Eye Fire (101) / Flames Trap (188)
                         // (`:25861-25935`): the launch ramp, the 60-tick cap
                         // and the spin.
@@ -19856,6 +19953,14 @@ impl ProjectilePool {
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
+                // W4-d8 — `Projectile.cs:17079-17086`: the Scutlix laser's
+                // Update-tail charge latch, AFTER `Damage()` (`:17078`) and
+                // BEFORE the trailing/lifetime blocks. The wire's last
+                // sub-step (`numUpdates == 0`) with `localAI[0] == 0` flips
+                // extraUpdates to 1, zeroes the velocity and seeds the
+                // decay pair. The C# runs it even on a dying slot (no
+                // `active` gate), so the port matches.
+                crate::projectile_ai_misc::scutlix_laser_charge_latch(&mut self.slots[i]);
                 // `Projectile.cs:17197-17209` — the per-sub-step lifetime
                 // block (S1-A-9): the C# runs it inside the `numUpdates`
                 // while, so an `extraUpdates = n` projectile spends
@@ -22531,6 +22636,13 @@ impl ProjectilePool {
             if p.damage <= 0 {
                 return;
             }
+            // W4-d8 — `Damage_CanDealDamage` (`Projectile.cs:12448`): the
+            // Scutlix laser (434) deals nothing once its charge latch has
+            // fired (`localAI[0] != 0`). The C# gate refuses the WHOLE
+            // `Damage()` walk (`:12497`), so the port early-returns here.
+            if p.kind == SCUTLIX_LASER_FRIENDLY && p.local_ai[0] != 0.0 {
+                return;
+            }
             (
                 p.damage,
                 p.owner as usize,
@@ -23054,6 +23166,12 @@ impl ProjectilePool {
                             .wrapping_add(p.id_static_hit_cooldown as u32 as u64),
                     );
                 }
+            } else if p.kind == SCUTLIX_LASER_FRIENDLY {
+                // W4-d8 — `:13975-13978` — the Scutlix laser (434): the
+                // on-hit `numUpdates = 0` ends the sub-step loop after this
+                // body (the laser stops sub-stepping once it connects). No
+                // immunity window is written (the C# arm writes nothing).
+                self.slots[slot].num_updates = 0;
             } else if p.kind == LAST_PRISM_LASER {
                 // `:13992-13995` — the Last Prism laser (632):
                 // `GetSlowMagicUseTime(5)`; the `slowMagicUse` state is
@@ -30389,6 +30507,7 @@ mod phasmal_projectile_tests {
             id_static_hit_cooldown: -2,
             immunity_identity: 0,
             extra_updates: 0,
+            num_updates: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
             sprite_direction: 1,
@@ -30798,6 +30917,7 @@ mod ritual_projectile_tests {
             id_static_hit_cooldown: -2,
             immunity_identity: 0,
             extra_updates: 0,
+            num_updates: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
             sprite_direction: 1,
