@@ -1242,3 +1242,57 @@ close):
   (`_d38_retire_check.py` 41/41) stands unchanged. No cargo/tests/
   rustfmt (code-only); no game-code file touched — every hunk is the
   MERGER's or the d44f lane's edit, published exact.
+
+## 19. CENSUS: the ledger's "465/731/756 rows" owed-item — ALL THREE are OTHER lanes' kinds; the 290/291 projectile owed-item CLOSED (g2)
+
+The cross-lane ledger owes "465/731/756 rows" (NPC kinds lacking data
+rows). Census at this branch's tip `b888a9575` (code-only; direct-path
+git-grep, no junction recursion):
+
+- **d38 lane grep: ZERO ownership.** `git grep -n -E "=> (465|731|756)\b|\b(465|731|756) =>" -- crates/tr-app/src/npc/data.rs crates/tr-app/src/npc.rs`
+  returns NOTHING (exit 1); the only bare-number hits in `npc/data.rs`
+  are C#-citation comment fragments (`:9714-9731`, `:13465`, `NPC.cs:81465`,
+  `:10731`, `:9465` etc.), never kind arms. The three ids also sit
+  OUTSIDE d38's protocol corridor 281-337 (§9/§13b: 35 owned, 0
+  renumber, 0 drop) — they were never d38's to row.
+- **Owner adjudication per d37's FINAL v2 laggard tables**
+  (`git -C ..\TR-W4-d37 show 7bea5c835:docs/research/250-roster-laggard-exec.md`
+  §3 + `7bea5c835:tools/_d37_lag_tables2.md`, read-only probe):
+
+  | id | kind | OWNER lane | table row | owner-tip probe (this session) | owed-row verdict |
+  |---|---|---|---|---|---|
+  | 465 | CrimsonGoldfish | **c4** (keeper; d40's dup DROPS) | 250 §3 d40 row: "CrimsonGoldfish@465→c4 (research/143 exact hunk)"; tables2 d40 drop-table: keeper c4, final id 465, to_u16 :628 / from_u16 :1026 at d40 `8fe1d6d31` | c4 tip `8abf0f1d8` HAS the kind ROWED: `npc/data.rs:624` `CrimsonGoldfish => 465`, `:977` `465 => CrimsonGoldfish`, cs_id `:3245` 465, max_hp `:3709` 110, damage `:4085` 31, the `:3045` CorruptGoldfish/BloodFeeder group | NOT rowless on the keeper — c4's rows stand; the only debt is **d40's DROP** of its dup (`task/W4-d40-npc-kinds-421-490` data.rs:628/:1026 still carry it), owed on d40's own branch per the E8 dropped-lane rule |
+  | 731 | Duck (+732/733/734 Duck2/DuckWhite/DuckWhite2) | **c10** | tables2 c10 move-table: Duck 362→**731** (to_u16 :593 / from_u16 :948 at `15f93d134`); f18's Duck@244 drops onto c10@731 | c10 tip `15f93d134` (local == origin, probed) HAS the kind ROWED at the OLD proto: `npc/data.rs:593` `Duck => 362`, `:948` `362 => Duck`, ai_style `:2415` 7, size `:3127`, cs_id `:3232` 362, hp `:3825`, damage `:4215` | NOT rowless — c10's SetDefaults rows exist; the debt is the **362→731 MOVE** (to_u16/from_u16 arms only, cs/net keys stay), owed on c10's branch; 731 is not a free id for anyone else |
+  | 756 | Nymph | **g8** (E8-band) | tables2 g8 move-table: Nymph 374→**756** (to_u16 :615 / from_u16 :988 at `1752c70df`) | g8 tip `f1a23ab2e` (2026-11-21 17:44, PAST the pinned tip): move **EXECUTED** — `npc/data.rs:619` `Nymph => 756, // E8: 374 -> 756 (cs 196)`, `:997` `756 => Nymph`; rows present: cs_id `:3391` 196, size `:3239` (18,40) shared LostGirl, max_hp `:3991` 300, damage `:4408` 35, aiStyle `:2658` 3, Hit/DeathSound `:1915`/`:2264` | NOT rowless and the move is DONE — nothing owed; g8's own ALL_KINDS/pin debts are 250 §4's, not d38's |
+
+  **Verdict: NO PORT on d38.** All three kinds are owned by other
+  lanes per the laggard tables, all three already carry data rows on
+  their owners' tips, and none of the ids is inside d38's 281-337
+  corridor. Per the task rule (other-lane kind → record owner +
+  owed-row note, do NOT port): this section IS the record; zero code
+  diff, zero ALL_KINDS/s1_f_3 change, zero new witnesses (nothing
+  ported). The residual debts (d40's 465-dup drop, c10's duck-band
+  move) ride their OWN branches per 250 §3's move/drop mechanics.
+- **The 290/291 owed-item — CLOSED (g2 citation).** The ledger's
+  290/291 pair is the PROJECTILE kinds (d5's research/156 census F1:
+  290 ShadowBeamHostile style-48 rowless; F4: 291/292 InfernoHostile
+  bolt/blast style-50 rowless) — NOT d38's NPC 290 Paladin / 291
+  Sniper, which have been rowed+SEALED since `9c0e3bc54` (§18).
+  Verified at g2's pushed tip **`5900648e0`**
+  (`task/W4-g2-proj-ai-missing-b`, local == origin):
+  `crates/tr-app/src/projectile/data.rs:969` `SHADOWBEAM_HOSTILE: u16 = 290`,
+  `:976` `INFERNO_HOSTILE_BOLT: u16 = 291`, `:981` `INFERNO_HOSTILE_BLAST = 292`;
+  the SetDefaults rows `:2853` (290: 4×4, aiStyle 48, pen −1, timeLeft
+  100, extraUpdates 100), `:2843` (291: 12×12, aiStyle 50, alpha 255),
+  `:2848` (292: 130×130, aiStyle 50, alpha 255); the witness pins
+  `:4995/:4997/:4999` + the magic-class flag sweep `:5028-5032`.
+  d5's own FINAL (`fd69c1167:docs/research/360-projectile-ai-41-50-final.md`
+  §3, renamed 361 at `0a1e4daa8`) concurs: "g2's pushed tip `5900648e0`
+  carries all nine rows + arms … (F1-F6 all closed there)", its row
+  table citing 290/433 → g2 F1 and 291/292 → g2 F4. **The 290/291
+  owed-item is CLOSED with the g2 `5900648e0` citation; nothing owed
+  on d38.**
+- Verification: census greps only (git grep at named tips, exit codes
+  observed); no cargo/tests/rustfmt/graphify per lane constraint; the
+  only file touched is this doc (append-only §19, no new doc number —
+  the 293 key stands per the round-3 FINAL rename `b888a9575`).
