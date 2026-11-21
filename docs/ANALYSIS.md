@@ -39408,3 +39408,7 @@ research/131 §8.2 corrections landed in the same round: named machines
 87+36→79+36, Kill()-remainder-234 CLOSED (g65 406=399+7, 316-kind FINAL
 drain), e4 UNWIRED→WIRED (wiring batches 5-8 through SEAL `c38af30f3`).
 No cargo/tests/rustfmt/graphify invoked.
+
+Merger sequencing: the 4-wave merge DAG + gate flags + cleanup checklist
+live in research/367 (Lead-assigned per registry-150 §9; roster order per
+108 §X5, atlas lazy-load per 113 §17.5, doc dedupe per registry §9/§10).
