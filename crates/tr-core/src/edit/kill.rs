@@ -60,14 +60,18 @@ pub struct HerbEvent {
     pub y: i32,
 }
 
-/// One broken 2x1 pile's loot block — `Check2x1`'s `Item.NewItem` table for
-/// tile 185 (`WorldGen.cs:47130-47245`), keyed on the origin cell's `frameX`
-/// (the right cell's when the origin already died). The app resolves the
-/// `genRand` coin/ore counts (phase 3); a `Check*`-level `Item.NewItem`, so it
-/// is not `noItem`-gated. `kind` disambiguates the two pile loot blocks:
-/// 185's 2x1 coin/ore table (`Check2x1`, `WorldGen.cs:47130-47245`) and
-/// 187's sword-in-stone roll (`Check3x2`'s `case 187`,
-/// `WorldGen.cs:49828-49839`).
+/// One broken pile's loot block — a `Check*`-level `Item.NewItem` whose count
+/// or item needs an RNG roll the core defers to the app (phase 3). Not
+/// `noItem`-gated (the C# spawns it inside the check, not `KillTile_DropItems`).
+/// `kind` disambiguates the loot blocks:
+/// * 185 — the 2x1 coin/ore table (`Check2x1`, `WorldGen.cs:47130-47245`),
+///   keyed on the origin cell's `frameX` (the right cell's when the origin
+///   already died); the app rolls the `genRand` coin/ore counts.
+/// * 187 — the sword-in-stone roll (`Check3x2`'s `case 187`,
+///   `WorldGen.cs:49828-49839`); the app rolls `Main.rand.Next(30)`.
+/// * 488 — the fallen log's wood stack (`Check3x2`'s `case 488`,
+///   `WorldGen.cs:49553`): `Item.NewItem(…, 9, genRand.Next(10, 21))`; the app
+///   rolls the `genRand` stack count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct PileLootEvent {
     pub kind: u16,
@@ -664,6 +668,12 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // fallen log 488 and the sandcastle 552 ride their own arms below.
         17 | 26 | 77 | 86 | 89 | 114 | 133 | 215 | 217 | 218 | 237 | 244 | 377 | 405 | 469 | 486
         | 695 => check_3x2(world, x, y, kind),
+        // `Check3x2`'s echo piles / echo objects / fallen log / sandcastle
+        // (`WorldGen.cs:49252-49269` support, :49552-49678 drops): the
+        // rubblemaker/large-pile/plant-detritus echoes (647/648/651), the
+        // fallen log 488 + its echo 704, the oasis echo 705, the terragrim-
+        // shrine echo 706, and the sandcastle 552 (sweeps, drops nothing).
+        488 | 552 | 647 | 648 | 651 | 704 | 705 | 706 => check_3x2(world, x, y, kind),
         // `Check6x3` (`WorldGen.cs:50242`, dispatch :86019-86026 + the
         // :85278 type-guard fall-through): the 41 cage kinds — 275-281
         // listed at the case, the rest routed by the default's
@@ -1929,6 +1939,21 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
                     broken = true;
                 }
             }
+            // :49252-49269 — the fallen log (488) stands only on a grass
+            // family: dirt 2 / ash-grass 477 / hallowed-grass 109 / shimmer-
+            // grass 492 / snow 147 / sand 53 / jungle-grass 60 / mushroom-
+            // grass 70; the infected seed adds corrupt 23 / crimson 199.
+            488 => {
+                let g = world.tile(k, oy + rows).filter(|b| b.active()).map(|b| b.kind);
+                let grass = matches!(g, Some(2 | 477 | 109 | 492 | 147 | 53 | 60 | 70));
+                let infected = world
+                    .micro_seeds
+                    .contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)
+                    && matches!(g, Some(23 | 199));
+                if !grass && !infected {
+                    broken = true;
+                }
+            }
             186 => {
                 if !solid_tile_allow_bottom_slope(world, k, oy + rows)
                     || invalid_tile_for_piles(world, k, oy + rows)
@@ -2020,7 +2045,8 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
     // `registry::tile_drop`/`by_tile`). The piles' per-cell case group is
     // empty (:65759-65815) and `Check3x2`'s destroy switch carries the pile
     // specials — for 187 the sword-in-stone styles roll the Enchanted Sword
-    // (:49828-49839), resolved app-side like the 2x1 coin table.
+    // (:49828-49839), resolved app-side like the 2x1 coin table. The fallen
+    // log 488 (:49553) rolls its wood stack on `genRand` — also app-side.
     let pile_event = if kind == 187 {
         // `int frameX = Main.tile[i, j].frameX;` (:49443) — the CHECKED
         // cell's frameX (a survivor of the pile; the dispatch never runs on
@@ -2032,6 +2058,15 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
             frame_x,
             x: ox,
             y: oy,
+        })
+    } else if kind == 488 {
+        // :49553 — `Item.NewItem(…, 9, genRand.Next(10, 21))`: the wood stack
+        // count rides the app's genRand seam (the trigger cell's position).
+        Some(PileLootEvent {
+            kind: 488,
+            frame_x,
+            x,
+            y,
         })
     } else {
         None
@@ -2054,6 +2089,11 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         17 | 77 | 86 | 114 | 217 | 218 | 237 | 244 | 377 | 405 | 486
     );
     let furniture_style = matches!(kind, 89 | 133 | 215 | 469 | 695);
+    // The echo piles (647/648/651), the fallen-log echo (704), the oasis echo
+    // (705) and the terragrim-shrine echo (706) drop a style-keyed item
+    // (:49555-49678); the sandcastle 552 drops NOTHING (no C# arm). The
+    // fallen log 488's wood rides the pile event above.
+    let echo_drop = matches!(kind, 647 | 648 | 651 | 704 | 705 | 706);
     let drop = if kind == 14 || kind == 87 || kind == 88 || cage_drop || furniture_fixed {
         Some(ObjectDrop {
             tile_kind: kind,
@@ -2068,6 +2108,13 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
             y,
             item: Some(check_3x2_furniture_drop(kind, style, frame_x)),
         })
+    } else if echo_drop {
+        check_3x2_echo_drop(kind, style, style_row).map(|item| ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: Some(item),
+        })
     } else {
         None
     };
@@ -2079,6 +2126,101 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         pile_event,
         ring: Some(region_ring(&region)),
     })
+}
+
+/// The echo-pile / echo-object `Check3x2` drops (`WorldGen.cs:49555-49678`).
+/// `style` is the horizontal style index, `style_row` the vertical row
+/// (`frameY / 36`); 648 folds the row into the index (`num5 += num3 * 35`,
+/// :49611) and 705 into a 9-wide row (`num5 += num3 * 9`, :49452). Returns
+/// `None` when the C# arm spawns nothing (the `num != 0` gates).
+fn check_3x2_echo_drop(kind: u16, style: i32, style_row: i32) -> Option<i32> {
+    match kind {
+        // :49564-49607 — the rubblemaker echo's style-keyed debris.
+        647 => {
+            let item = if style < 7 {
+                154
+            } else if style < 16 {
+                3
+            } else if style < 18 {
+                71
+            } else if style < 20 {
+                72
+            } else if style < 22 {
+                73
+            } else if style < 26 {
+                9
+            } else if style < 32 {
+                593
+            } else if style < 35 {
+                183
+            } else {
+                0
+            };
+            (item != 0).then_some(item)
+        }
+        // :49609-49665 — the large-pile echo, row folded into the index.
+        648 => {
+            let s = style + style_row * 35;
+            let item = if s < 6 {
+                195
+            } else if s < 9 {
+                174
+            } else if s < 14 {
+                150
+            } else if s < 17 {
+                3
+            } else if s < 18 {
+                989
+            } else if s < 21 {
+                1101
+            } else if s < 29 {
+                9
+            } else if s < 35 {
+                3271
+            } else if s < 41 {
+                3086
+            } else if s < 47 {
+                3081
+            } else if s < 52 {
+                62
+            } else if s < 55 {
+                154
+            } else {
+                0
+            };
+            (item != 0).then_some(item)
+        }
+        // :49670-49678 — the plant-detritus echo.
+        651 => {
+            let item = if style < 3 {
+                195
+            } else if style >= 6 {
+                331
+            } else {
+                62
+            };
+            Some(item)
+        }
+        // :49555-49556 — the fallen-log echo drops a Fallen Star 501.
+        704 => Some(501),
+        // :49450-49455 — the oasis-plant echo, row folded into a 9-wide index.
+        705 => {
+            let s = style + style_row * 9;
+            let item = if (0..=8).contains(&s) {
+                276
+            } else if (9..=17).contains(&s) {
+                369
+            } else if (18..=26).contains(&s) {
+                2171
+            } else {
+                59
+            };
+            Some(item)
+        }
+        // :49667-49668 — the terragrim-shrine echo drops the Terragrim 4144.
+        706 => Some(4144),
+        _ => None,
+    }
 }
 
 /// The style-dependent `Check3x2` furniture drops (`WorldGen.cs:49432-49706`).
@@ -5624,5 +5766,79 @@ mod tests {
             "the altar records no drop"
         );
         assert!(!w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 26));
+    }
+
+    // ---- W4-g34: the Check3x2 echo piles / fallen log / sandcastle ----
+
+    #[test]
+    fn w4_g34_echo_piles_3x2_drop_style_keyed_items() {
+        // The echo piles (`WorldGen.cs:49564-49678`): the drop item is keyed
+        // on the style index (648/705 fold the row in). Style 0 pins the
+        // first arm of each table.
+        for (kind, item) in [
+            (647u16, 154i32), // rubblemaker echo, style 0 → bone 154
+            (648, 195),       // large-pile echo, style 0 → 195
+            (651, 195),       // plant-detritus echo, style 0 → 195
+            (704, 501),       // fallen-log echo → Fallen Star 501
+            (705, 276),       // oasis echo, style 0 → Cactus 276
+            (706, 4144),      // terragrim-shrine echo → Terragrim 4144
+        ] {
+            let mut w = cage_3x2_world(kind);
+            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            assert_eq!(kill.object_drops[0].item, Some(item), "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_fallen_log_488_records_the_wood_stack_event() {
+        // :49553 — the fallen log drops wood 9 with a genRand stack count;
+        // the core records the pile event (the app rolls the count). The log
+        // stands on a grass family (:49252-49269) — dirt 2 below carries it.
+        let mut w = object_world();
+        for dx in 0..3 {
+            for dy in 0..2 {
+                set_object_cell(&mut w, 9 + dx, 18 + dy, 488, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        for x in 9..=11 {
+            set_object_cell(&mut w, x, 20, 2, 0, 0); // dirt grass below
+        }
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert!(kill.object_drops.is_empty(), "the wood rides the pile event");
+        assert_eq!(
+            kill.pile_events,
+            vec![PileLootEvent { kind: 488, frame_x: 18, x: 10, y: 19 }]
+        );
+    }
+
+    #[test]
+    fn w4_g34_fallen_log_488_dies_off_the_grass_family() {
+        // :49252-49269 — the log stands only on the grass family; a stone
+        // floor (the object_world default) refuses it, so the cascade sweeps
+        // it when a nearby break re-frames it.
+        let mut w = cage_3x2_world(488); // stone floor below — not grass
+        let kill = kill_tile(&mut w, 12, 20, false).unwrap();
+        assert!(
+            kill.pile_events.iter().any(|p| p.kind == 488),
+            "the log dies off the grass and records its wood"
+        );
+        assert!(!w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 488));
+    }
+
+    #[test]
+    fn w4_g34_sandcastle_552_sweeps_but_drops_nothing() {
+        // The sandcastle 552 has NO C# drop arm in Check3x2's destroy switch
+        // (census: :49432-49836 carries no case 552) — the cascade sweeps the
+        // cells but records no item.
+        let mut w = cage_3x2_world(552);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let cells: Vec<(i32, i32)> = (9..=11)
+            .flat_map(|x| (18..=19).map(move |y| (x, y)))
+            .collect();
+        assert_all_gone(&w, &cells);
+        assert!(kill.object_drops.is_empty(), "the sandcastle drops nothing");
+        assert!(kill.pile_events.is_empty());
     }
 }

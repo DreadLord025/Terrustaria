@@ -6024,7 +6024,8 @@ fn break_drop_events(
     // The broken piles' loot blocks: 185's 2x1 coin/ore table on the seeded
     // stream (`genRand` counts, `WorldGen.cs:47142-47245`), 187's
     // sword-in-stone roll on the item stream (`Main.rand.Next(30)`,
-    // `:49828-49839`).
+    // `:49828-49839`), 488's fallen-log wood stack on the seeded stream
+    // (`genRand.Next(10, 21)`, `:49553`).
     for pile in &kill.pile_events {
         if pile.kind == 187 {
             if let Some(id) = sword_pile_roll(pile.frame_x, main_rng) {
@@ -6034,6 +6035,12 @@ fn break_drop_events(
         }
         let mut gen_stream =
             tr_core::tile_light::FastRandom::new(main_rng.next() as u64);
+        if pile.kind == 488 {
+            // `Item.NewItem(…, 9, WorldGen.genRand.Next(10, 21))` (:49553).
+            let count = gen_stream.next_range(10, 21).max(1) as u32;
+            events.push((9, count, pile.x, pile.y));
+            continue;
+        }
         for (id, count) in pile_loot(pile.frame_x, &mut gen_stream) {
             events.push((id, count.max(1) as u32, pile.x, pile.y));
         }
