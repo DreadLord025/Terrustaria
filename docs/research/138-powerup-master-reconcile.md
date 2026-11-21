@@ -1,12 +1,19 @@
-# 138 — POWERUP 4-WAY MASTER RECONCILE (a6 ⨉ g87/g88/g89/g90 ⨉ c36/f33 ⨉ f44/f45)
+# 138 — POWERUP MASTER RECONCILE (a6 ⨉ g87/g88/g89/g90 ⨉ c36/f33 ⨉ f44/f45)
 
-**Status: FINAL.** Written by W4-a6 reconcile (branch
-`task/W4-a6-crystals-powerups`, base `8ed96ee5`); the FINAL pass (§10)
-re-adjudicates the NOW-PUSHED g87 `dfbcaf94b` arm-by-arm, re-flags the g88
-v7 recognition gap, publishes the exact 68-byte v18 union byte table
-(§5a) and receipts a6's five fidelity fixes (§10.7). This doc sits BESIDE the
+**Status: FINAL-FINAL (retire pass, §11).** Written by W4-a6 reconcile
+(branch `task/W4-a6-crystals-powerups`, base `8ed96ee5`); the FINAL pass
+(§10) re-adjudicated the pushed g87 `dfbcaf94b` arm-by-arm. The RETIRE
+pass (§11, over `115ce655a`) receipts the NOW-LANDED g88 fold 7
+(`a9f1c29d8` — the six-line v7 rule IN CODE + the v11 torch line; §6's
+re-flag RETIRED), aligns §5a's union to the f44 FINAL master map
+(`bdd1cc79a`, research/132 §3-L3's 97-byte-head claim — corrected to
+**98 + g87's 3 = 101-byte head + W×H dense**, §11.2's delta), cross-
+receipts the g87 closeout (`26620538e`, local over `dfbcaf94b` — the
+"g87b-143" the Lead named exists as NO pushed ref and NO research/143
+doc; the closeout folds all three a6 deltas, §11.3) and lands a6's
+exchange-fail chat fold (§11.3). This doc sits BESIDE the
 persist contracts — research/99 + 132 (`.plr`, f44), research/103 v10 + 122
-(`.trplayer`, g88/g89), research/135 (`.trwld`/`.trplayer` fold-input, g90),
+(→ 103 FINAL v11, g88), research/135 (`.trwld`/`.trplayer` fold-input, g90),
 research/92 §1 (`.trwld` union, g70×g71) — and adjudicates the **use-arm /
 consumer keep-one** per item plus the **persist-layer split** and the exact
 **wld-offset collisions**. C# re-read is the tie-breaker (golden rule).
@@ -23,12 +30,12 @@ achievement dispatch, now closed.
 | --- | --- | --- |
 | `task/W4-a6-crystals-powerups` (this) | `8ed96ee5` + this reconcile | ALL use arms `powerups.rs` (29/109/1291/3335/5289/5326/4382/5336/5043/5343/4829-30-4910/5337-42/5451/5738) + consumers + `.wld` book2/satchel/bought-pets bytes; NO `.plr`/`.trplayer` writer |
 | `origin/task/W4-g87-demon-heart-use` | `dfbcaf94b` (FINAL probe, §10) | NOW PUSHED (was zero commits at the reconcile probe): 3335/5289/4829-30-4910 use arms (`editing/permanent_upgrades.rs`, 566 lines) + `.trplayer` v7 `dh` line + `.trwld` v18 3-byte pet tail + `.wld` bought-pet flips + `World.bought_*` fields. **No `g87b-143` branch exists on origin** (`git branch -r` census). Re-adjudicated §10 |
-| `origin/task/W4-g88-life-fruit-use` | `c8985b534` (fold 6, v10) | 29/109/1291 use arms (`crystals.rs`/`life_fruit.rs`) + `.trplayer` **v10 SUPERSET** writer/reader + research/103 v10 + 122; carries the crystal flags as tokens 4/5/6 |
+| `origin/task/W4-g88-life-fruit-use` | `a9f1c29d8` (fold 7 FINAL, v11 — retire probe §11.1; was `c8985b534` fold 6 at the FINAL probe) | 29/109/1291 use arms (`crystals.rs`/`life_fruit.rs`) + `.trplayer` **v11 SUPERSET** writer/reader + research/103 FINAL + 122; crystal flags tokens 4/5/6 (v10), the f33 torch pair as the LAST post-dye line (v11), the 135 §2 six-line v7 rule + the f33 lone-pair v7 rule LANDED |
 | `origin/task/W4-g89-aegis-fruit-use` | `598642563` (g89f) | 5338/5341/5342 use arms + 4382/5336 combat-book arms (g89e) + `.plr` fruit/gummy/ambrosia bools + `.wld` book2 byte + `.trplayer` v9 lineage + research/122; g89f adds Rod of Discord/Harmony (out of scope) |
-| `origin/task/W4-g90-artisan-bread-use` | `b3b82d071` (reconcile-input) | 5326 loaf + 5337/5339/5340/5341/5342 use arms + 4382/5336/5343 + consumers (regen `aegis_crystal`/`arcane_crystal` slots, pearl mirror, skeleton-merchant shop) + `.plr` bools 1/3/4/5/6 + bread + `.trwld` v18 2-byte tail + net sync + research/135 |
+| `origin/task/W4-g90-artisan-bread-use` | `94d33f2ca` (reconcile §7 addendum over `b3b82d071`; retire probe) | 5326 loaf + 5337/5339/5340/5341/5342 use arms + 4382/5336/5343 + consumers (regen `aegis_crystal`/`arcane_crystal` slots, pearl mirror, skeleton-merchant shop) + `.plr` bools 1/3/4/5/6 + bread + `.trwld` v18 2-byte tail + net sync + research/135; `94d33f2ca`'s §7 cross-note read a6 at `8ed96ee5` (138 NOT yet pushed then — its keep-one proposal predates this doc's §1 verdicts; §11.4 cross-receipts) |
 | `origin/task/W4-c36-achievement-notify-save` | `585fa0a84` | 5043 use-credit (`complete_condition` GAIN_TORCH_GODS_FAVOR) + 29/109/1291 `use_permanent_powerup` + the row-targeted `complete_condition` helper + research/30 |
 | `origin/task/W4-f33-torch-god-favor` | `333479e0b` | the Torch God EVENT machine (`torch_god.rs`) + the 5043 flag READS (`has_torch_gods_favor` scan, `ctx.unlocked_biome_torches`); completes NO achievement |
-| `origin/task/W4-f44-save-plr-2` | `05e4020bb` (over `d331ea7c`) | the COMPLETE `.plr` walk (research/99, 71 rows) incl. `used_upgrades[6]` array + `extra_accessory` + torch pair + bread + dd2 + counters; research/132 master map |
+| `origin/task/W4-f44-save-plr-2` | `bdd1cc79a` (FINAL docs; retire probe §11.2 — was `05e4020bb` at the reconcile probe, `63204f852` the slot-11 property fix between) | the COMPLETE `.plr` walk (research/99, 71 rows) incl. `used_upgrades[6]` array + `extra_accessory` + torch pair + bread + dd2 + counters; research/132 the persist MASTER INDEX (FINAL) — its §3-L3 publishes the seven-claimant **97-byte-head** `.trwld` union claim (§11.2 corrects the arithmetic to 98 and seats g87's pets → 101) |
 | `origin/task/W4-f45-wld-header-2` | `6352d3840` | the COMPLETE `.wld` flags block (pets 2021-23, book2 2036, satchel 2037, nurse, slime green/old, …) + a `.trwld` **v18 44-byte identity block** |
 | `origin/task/W4-g70-bg-layers-1` / `g71-bg-layers-2` | (92 §1) | `.trwld` v18 forest 16B / surface 3B → the 19-byte union |
 
@@ -82,18 +89,27 @@ Per research/132 §2's routing rule, three layers, one writer per file:
   array/fields (132 §3 L1 step 3). L1-only fields (no sidecar):
   `extraAccessory` `:54776`, torch pair `:54777-54778`, `downedDD2` `:54787`,
   super-cart, taxMoney, death counters.
-- **L2 `.trplayer`** (`persist.rs`, port text sidecar): **g88 v10** is the
-  base — the strict superset writer/reader (research/103 v10). a6 contributes
-  NO sidecar writer. The unlock line 8 carries tokens 1-6 (§6); life pair
-  line 9, mana pair line 10, bread line 11, loadout block lines 12-15. The
-  live `Player.used_*` fields restore at world load (`app/mod.rs`); the
-  pearl mirrors into `LuckState` via `update_luck` (g90 shape, a6 now matches).
+- **L2 `.trplayer`** (`persist.rs`, port text sidecar): **g88 v11** is the
+  base — the strict superset writer/reader (research/103 FINAL; was v10
+  at this doc's FINAL probe, fold 7 `a9f1c29d8` bumped it, §11.1). a6
+  contributes NO sidecar writer. The unlock line 8 carries tokens 1-6
+  (§6); life pair line 9, mana pair line 10, bread line 11, loadout block
+  lines 12-15; the **v11 torch pair rides line 16** — the LAST post-dye
+  line AFTER the loadout block (`unlockedBiomeTorches UsingBiomeTorches`,
+  writer `persist.rs:300-304`, reader `:500-524`), NOT an unlock token
+  (token 7 stays DD2-RESERVED, a DD2 lane bumps v12). The live
+  `Player.used_*` fields restore at world load (`app/mod.rs`); the
+  pearl mirrors into `LuckState` via `update_luck` (g90 shape, a6 now
+  matches); the torch restore rides `set_using_biome_torches` (the
+  slot-11 property setter, f33's exact spot after `luck()`).
 - **L3 world** (`.wld` flags + `.trwld`): **f45** is the `.wld` flags base
   (the complete block); a6/g89/g90/g87's five contested bytes dedup onto it
-  (§4). The `.trwld` v18 tail is the g70×g71×g90×g87×f45 **68-byte union**
-  (92 §1 + 135 §4 + f45's 44-byte identity block + g87's 3-byte pet block)
-  — the FIVE-way collision this doc surfaces (§5/§5a). World globals NEVER
-  ride L2 (122 §5).
+  (§4). The `.trwld` v18 tail: this doc's §5a published the **68-byte
+  five-way union** (g70×g71×g90×g87×f45); the retire probe aligns it to
+  the f44 FINAL master map's wider claimant set — the UNIFIED input is the
+  **101-byte fixed head + W×H dense** (§11.2: f44's 97-byte claim corrected
+  to 98 by its own component sum, + g87's 3 pets; g72 cave 31 + g69 1 +
+  d125 1 + d109 dense seated). World globals NEVER ride L2 (122 §5).
 
 **a6's net persist contribution:** the `.wld` book2/satchel/bought-pet bytes
 (now superseded by f45's superset, §4) and the live `Player`/`World` fields
@@ -199,7 +215,15 @@ is DUPLICATE WRITERS of the same byte, not different offsets:
 dedup. a6's `wld/mod.rs` gate-test extensions (v258/259/260, v216/217) and
 tail pins survive as witnesses re-pinned onto f45's block.
 
-## 5. The `.trwld` v18 union collision (FIVE-way — f45 identity + g87 pets)
+## 5. The `.trwld` v18 union collision (five-way at the FINAL probe — NINE claimants at the retire probe, §11.2)
+
+> **Retire-pass banner:** §5/§5a below are the FINAL-probe five-way table
+> (g70/g71/g90/g87/f45, 68 bytes). It EXCLUDED g72's 31-byte cave block,
+> g69's 1-byte crimson, d125's 1-byte downedEmpress and d109's dense
+> variants — all seated by the f44 FINAL master map (research/132 §3-L3,
+> `bdd1cc79a`). The UNIFIED merger input is §11.2's **101-byte head + W×H
+> dense** table; §5a's offsets survive as the g70/g71/g90/g87/f45-relative
+> sub-blocks with the moves §11.2 lists.
 
 research/92 §1 fixes the g70×g71 union at **19 bytes** (forest 16 + surface
 3); research/135 §4 extends it to **21** (book2/satchel at offsets 19/20).
@@ -225,12 +249,20 @@ every other's reader — same class 92 §1 documents for g70×g71, now
 ALL FIVE blocks at v18 in a fixed order, the 92 §1 "least-surprising C#
 field order" rationale extended.
 
-### 5a. THE EXACT BYTE-LAYOUT TABLE (the g71c/f44e/f45 merger input)
+### 5a. THE EXACT BYTE-LAYOUT TABLE (the FINAL-probe five-way sub-block — SUPERSEDED by §11.2's unified 101-byte head)
+
+> **Retire-pass banner:** the offsets below are the five-way (68-byte)
+> layout. In the UNIFIED head (§11.2) g70's forest stays 0..16; g72's cave
+> block inserts at 16..47; g71's surface moves 16..19 → 47..50; g69/d125
+> take 50/51; g87's pets move 19-21 → 52-54; g90's books move 22/23 →
+> 55/56; f45/c43's identity moves 24..68 → 57..101; d109's dense variants
+> append LAST at 101..101+W×H. The field ORDER inside every block is
+> unchanged; only the positions move.
 
 All offsets are from the START of the v18 block, i.e. the byte immediately
 after the v17 `downedFishron` u8. Every multi-byte field is little-endian
-(the port's `binio` convention, matching `BinaryWriter`). **v18 UNION tail =
-68 bytes** (16 forest + 3 surface + 3 pets + 2 books + 44 identity):
+(the port's `binio` convention, matching `BinaryWriter`). **v18 five-way
+tail = 68 bytes** (16 forest + 3 surface + 3 pets + 2 books + 44 identity):
 
 | Offset | Len | Field | Rust type | Owner block | C# anchor | Writer witness |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -276,8 +308,10 @@ NOT a Unix timestamp). The merger must keep the five fields in this order
 inside offsets 24..68; only the block's POSITION in the union moves
 (f45's own file has it at 0..44; the union shifts it +24).
 
-**VERSION stays 18.** Every truncation constant moves to **+68** (was +65
-in this doc's first pass, before g87's 3 bytes surfaced). The exact sites,
+**VERSION stays 18.** In the five-way layout every truncation constant
+moves to **+68**; in the UNIFIED head (§11.2) every constant moves to
+**+101 plus the dense-block term** (the fixed head alone is 101; the
+end-relative probes subtract `101 + width*height`). The exact sites,
 per lane (line numbers at each lane's own tip):
 
 - **g71 (`save.rs`)**: `:1188` v6-downgrade truncate `+16+3`→`+68`… the v6
@@ -296,14 +330,18 @@ per lane (line numbers at each lane's own tip):
   the v14 `- 1 - 5 - 1 - 3` probe, the pre-v18 `- 3` probe → all `68`.
 - **g70**: the `+16` sites (92 §1's list) → `+68`.
 
-Every lane's round-trip witness re-pins 16/3/3/2/44 → 68. **Merge action:**
-the g71c union extension (135 §4's owner) folds g87's pets at offsets 19-21
-and f45's identity block at offsets 24-67; g90's pair MOVES from 19/20 to
-22/23 (its writer/reader + witnesses re-pin); f45's `stamp_created_identity`
+Every lane's round-trip witness re-pins 16/3/3/2/44 → 68 (five-way) or →
+101 + W×H (unified, §11.2). **Merge action:**
+the g71c union extension (135 §4's owner) folds g87's pets and f45/c43's
+identity block per §11.2's unified table; g90's pair MOVES (19/20 → 22/23
+five-way → 55/56 unified); f45's `stamp_created_identity`
 + WorldId roll stay its scope; g87's `World.bought_*` fields dedup onto
 f45/a6's identical fields (same names — a clean field-level dedup). This
 doc surfaces BOTH the f45 and the g87 collisions — flag to the
-g71c/f44e/f45/g87 merger.
+g71c/f44e/f45/g87 merger. (Retire note: f45's 44-byte identity block and
+c43 `076970809`'s are the SAME block — c43 is in f45's lineage, verified
+byte-order-identical at both tips; the f44 FINAL map names it c43's. ONE
+44-byte seat, not two.)
 
 ## 6. The `.trplayer` token-order adjudication (g88 v10 WRITTEN order wins)
 
@@ -324,26 +362,43 @@ and emits them. **The written order is binding** (it matches 122 §3, not
 written 06:56 before fold 6 at 07:15) is STALE on this point.
 
 **Verdict:** line 8 = `aegisFruit gummyWorm ambrosia aegisCrystal
-arcaneCrystal galaxyPearl` (tokens 1-6), token 7 DD2 RESERVED→v11. This is
-g88 v10's actual writer/reader; the merger keeps it verbatim. 135 §3's
-mapping table column "UNION token (recommended)" must be corrected to
-crystal=4/arcane=5/pearl=6 at the fold (its "103 §2a wins" recommendation is
-overridden by the pushed writer).
+arcaneCrystal galaxyPearl` (tokens 1-6), token 7 DD2 RESERVED (a DD2 lane
+bumps **v12** — v11 is TAKEN by the torch-pair LINE, not a token; retire
+correction, §11.1). This is g88's actual writer/reader (v10 fold 6, kept
+verbatim by v11 fold 7); the merger keeps it. 135 §3's
+mapping table column "UNION token (recommended)" was corrected by g88's
+own 103 §8 alignment note (the v10 written order WINS; 135's
+no-pushed-writer premise means zero back-compat obligation either way).
 
-**The six-line v7 recognition rule (135 §2) is NOT yet in g88 v10 —
-RE-CONFIRMED at the FINAL probe.** `origin/task/W4-g88-life-fruit-use` tip
-is STILL `c8985b534` (fold 6; no g88f commit landed after it — `git log`
-census). The v7 walk (`persist.rs:409-418` at that tip) still collapses
+**The six-line v7 recognition rule (135 §2) LANDED in g88 fold 7
+(`a9f1c29d8`) — the FINAL-probe re-flag below is RETIRED (§11.1).** At the
+FINAL probe the tip was still `c8985b534` (fold 6) and the rule was missing;
+fold 7 landed it IN CODE: `persist.rs:463-465` computes
+`v7_six_line = v7_flags && nonempty.len() == 6 &&
+nonempty.iter().all(|t| t.len() == 1)` and `:470-479` reads the block
+POSITIONALLY — `ate_artisan_bread = nonempty[0][0]`,
+`used_aegis_crystal = nonempty[1][0]`, `used_arcane_crystal =
+nonempty[2][0]`, `used_galaxy_pearl = nonempty[3][0]`, `used_gummy_worm =
+nonempty[4][0]`, `used_ambrosia = nonempty[5][0]` — exactly 135 §2's
+`.plr` write order. The bounded-misread witness is RETIRED (zero
+`bounded_misread` matches in the tip's `persist.rs`), replaced by
+`g90bs_six_line_v7_loads_positionally` (`:1198`). Fold 7 ALSO lands the
+f33 lone-all-0/1-pair rule (`:466-469` + `:485-488`: a lone post-dye
+2-token line whose tokens are all "0"/"1" is the torch pair — no maxima
+pair can be all-0/1, the permanent halves start 100/20; witness
+`f33s_torch_only_v7_loads_positionally` `:1233`). The historical
+FINAL-probe flag text follows, kept as the record:
+
+<details>
+<summary>FINAL-probe flag (STALE — the rule landed in a9f1c29d8)</summary>
+
+The v7 walk (`persist.rs:409-418` at `c8985b534`) collapsed
 g90b's six 1-token lines into the aegis/bread slots: the `match toks.len()`
-`1 =>` arm reads the FIRST one-token line as `used_aegis_fruit`
+`1 =>` arm read the FIRST one-token line as `used_aegis_fruit`
 (`flag_seen` latch) and EVERY later one-token line as `ate_artisan_bread`
-(the last wins). No `post.len() == 6 && all(t.len() == 1)` guard exists
-anywhere in the file. The witness
-`g90bs_bread_plus_flags_v7_loads_with_the_bounded_misread` (`:1064`) still
-ACCEPTS the misread (bread→aegis, last line→bread, crystal/arcane/pearl/
-gummy/ambrosia lost — its own assert `!s.used_aegis_crystal, "no positional
-v7 crystal read"`). **The flag STANDS.** 135 §2 demands the unambiguous
-rule:
+(the last wins). No `post.len() == 6 && all(t.len() == 1)` guard existed.
+The witness `g90bs_bread_plus_flags_v7_loads_with_the_bounded_misread`
+ACCEPTED the misread. 135 §2 demanded the unambiguous rule:
 
 ```
 if version == "7" && post.len() == 6 && post.iter().all(|t| t.len() == 1) {
@@ -352,10 +407,12 @@ if version == "7" && post.len() == 6 && post.iter().all(|t| t.len() == 1) {
 }
 ```
 
-**Merge action:** g88's v7 legacy arm MUST gain 135 §2's six-line rule (the
-bounded-misread witness is replaced by a positional-read witness). Until
-then, a g90b lane-7 v7 file loads lossily on g88 v10. This is the one
-remaining `.trplayer` reader gap; flag to the g88 merger.
+</details>
+
+**Merge action: SATISFIED by the pushed writer — no reader debt remains.**
+g88's v7 legacy arm carries 135 §2's positional six-line rule; a g90b
+lane-7 v7 file now loads LOSSLESSLY on the superset. The one remaining
+`.trplayer` reader gap this doc flagged is CLOSED (§11.1's receipt).
 
 ## 7. Witness union (every lane's witnesses survive the merge)
 
@@ -377,8 +434,11 @@ The merger keeps ALL witnesses, re-pinned onto the surviving carriers:
   (`the_six_token_unlock_line_reads_under_v10`,
   `a_three_token_unlock_line_reads_under_v10`,
   `the_v9_superset_still_loads_without_the_crystals`). The
-  `g90bs_bread_plus_flags_v7_loads_with_the_bounded_misread` witness is
-  REPLACED by 135 §2's positional-read witness (§6 merge action).
+  bounded-misread witness was REPLACED by 135 §2's positional-read witness
+  — LANDED in fold 7 as `g90bs_six_line_v7_loads_positionally` (§11.1);
+  the v11 torch-line witnesses (`f33s_torch_only_v7_loads_positionally`,
+  `the_v10_superset_still_loads_without_the_torch_pair`, the v11
+  round-trip with the `1 1` torch line LAST) ride the same file.
 - **g89 `player_file.rs`/`editing.rs`/`npc_ai_town.rs`**: the `.plr`
   fruit/gummy/ambrosia round-trips (re-pin onto f44's `used_upgrades[6]`),
   the use-arm witnesses (dedup onto a6's machine), the vol-two town-ladder
@@ -411,20 +471,30 @@ Per-layer, the surviving base first, then the folds:
    loadout semantics. Dedup g89's 3 + g90's 5 named unlock bools + bread onto
    `used_upgrades[6]` / `ate_artisan_bread` (132 §3 L1). Hydrate a6's live
    `Player.used_*` at the save funnel (indices §2). Keep f44's timestamp fix.
-2. **L2 `.trplayer`** — base **g88 v10** (`c8985b534`, the superset). Add
-   135 §2's six-line v7 recognition rule (§6 merge action). Tokens 4/5/6 are
-   ALREADY live in the written crystal/arcane/pearl order (§6) — no
-   activation needed, just keep g88's writer/reader. Dedup g90's
+2. **L2 `.trplayer`** — base **g88 v11** (`a9f1c29d8`, the superset; was
+   `c8985b534` v10 at the FINAL probe). 135 §2's six-line v7 recognition
+   rule is ALREADY LANDED in code (§6/§11.1) — no reader action remains.
+   Tokens 4/5/6 are ALREADY live in the written crystal/arcane/pearl order
+   (§6) — no activation needed, just keep g88's writer/reader. The v11
+   torch pair (line 16, LAST) folds f33's transport — keep g88's
+   setter-restore (`set_using_biome_torches`, the slot-11 property; f44's
+   `63204f852` L1 byte rides the same property). Dedup g90's
    `SavedPlayer` flag fields + App restores onto the superset's. a6
-   contributes nothing (no writer).
+   contributes nothing (no writer). The g88 103 §2b CONDITIONAL DROP of
+   the torch sidecar line applies only when character-load hydration AND
+   the exit-save both land (132 §2c precedence: character first, sidecar
+   second, sidecar wins as newer state).
 3. **L3 `.wld` flags** — base **f45** (`6352d384`, the complete block). Dedup
    a6/g89e/g90/g87's book2 (2036) / satchel (2037) / bought-pets (2021-23)
    flips onto f45's fields (§4). a6's use arms write the same World fields.
-4. **L3 `.trwld`** — the **68-byte v18 union** (§5a's exact table): g70
-   forest 16 + g71 surface 3 + g87 pets 3 + g90 book2/satchel 2 + f45
-   identity 44. Move every truncation constant to +68. VERSION stays 18,
-   forward-only. The g71c union owner folds g87's pets at offsets 19-21
-   and f45's identity block at offsets 24-67; g90's pair moves 19/20→22/23.
+4. **L3 `.trwld`** — the **101-byte-head + W×H dense v18 union** (§11.2's
+   unified table, superseding §5a's five-way 68): g70 forest 16 + g72 cave
+   31 + g71 surface 3 + g69 crimson 1 + d125 empress 1 + g87 pets 3 + g90
+   book2/satchel 2 + f45/c43 identity 44 + d109 dense LAST. Move every
+   truncation constant to +101 (+ the dense term at the end-relative
+   sites). VERSION stays 18, forward-only. The g71c union owner seats
+   every block per §11.2; g90's pair lands at 55/56, g87's pets at 52-54,
+   the identity block at 57..101.
 5. **Use arms / consumers** — keep **a6's `powerups.rs` machine** for the
    cluster EXCEPT 29/109/1291 (g88 keep-own, 103 §5a) and 5326 (g90 keep-own,
    the skeleton-merchant consumer). Dedup g89's/g90's/c36's parallel shimmer
@@ -605,12 +675,13 @@ dye line; its reader tolerates a missing/non-`dh` line. **Two problems:**
    The sidecar carrier is redundant with f44's complete walk.
 
 **Verdict: g87's `persist.rs` changes (SavedPlayer fields, v7 writer bump,
-`dh` reader arm, both round-trip witnesses) DROP at merge; the g88 v10
+`dh` reader arm, both round-trip witnesses) DROP at merge; the g88 v11
 superset stays the sole L2 writer.** The App restore
 (`p.extra_accessory = saved.extra_accessory` etc.) dedups onto the f44
 hydration at the save funnel (§2 L1). If the merger ever wants a live-
-session carrier before f44 lands, the fields ride g88's NEXT version
-(v11+) as new tokens — never a parallel v7.
+session carrier before f44 lands, the fields ride g88's NEXT version as
+new tokens — never a parallel v7. (Retire-probe note: **v11 is TAKEN by
+the f33 torch pair** — such a carrier rides **v12+**, §11.1.)
 
 ### 10.5 g87's `.wld`/`.trwld` halves — dedup onto f45 / ride the union
 
@@ -625,16 +696,15 @@ session carrier before f44 lands, the fields ride g88's NEXT version
   (§5/§5a): offsets 19-21, ahead of g90's book pair (vanilla write order
   `:1392-1394` < `:1407-1408`). Its round-trip witness re-pins 3→68.
 
-### 10.6 g88 recognition-rule re-check (the Lead's item 2) — **RE-FLAGGED**
+### 10.6 g88 recognition-rule re-check — **RETIRED at the retire probe (§11.1)**
 
-`origin/task/W4-g88-life-fruit-use` tip is STILL `c8985b534` at this probe
-(no g88f commit; `git log -3` census: fold 6 / fold-5 docs / fold 5). The
-135 §2 six-line v7 recognition rule is STILL MISSING — §6's flag stands
-verbatim, now with the reader-line receipts (`persist.rs:409-418`'s
-`flag_seen` latch walk, no `post.len() == 6` guard, the bounded-misread
-witness still asserting the lossy read). **Merge action unchanged:** g88's
-v7 legacy arm gains the positional six-line rule; the bounded-misread
-witness is replaced.
+At the FINAL probe the tip was `c8985b534` and the 135 §2 six-line v7 rule
+was missing (re-flagged then). **g88 fold 7 (`a9f1c29d8`) has since landed
+the rule IN CODE** — `persist.rs:463-479`'s positional six-line read +
+`:466-488`'s f33 lone-pair read, witnesses
+`g90bs_six_line_v7_loads_positionally` (`:1198`) /
+`f33s_torch_only_v7_loads_positionally` (`:1233`); the bounded-misread
+witness is retired. §6's flag is closed; the receipt is §11.1.
 
 ### 10.7 a6's five fidelity fixes — LANDED, witnesses present (the Lead's item 4)
 
@@ -665,13 +735,87 @@ witness present:
 No cargo/tests/rustfmt/graphify per the lane constraint — the witnesses
 are WRITTEN, NOT RUN; presence verified by direct file reads.
 
-### 10.8 FINAL verdict summary
+### 10.8 FINAL verdict summary (as of the FINAL probe — the retire pass updates it in §11.5)
 
 The §1 table's keep-owns are UNCHANGED by g87's push: **a6 keeps
 3335/5289/4829-30-4910** (g87's three arms DROP — §10.1 start-refusal gap,
 §10.2 spawn-walk gaps, §10.3 the live-scan shape + the exchange debt),
 **g87's sidecar `dh` line DROPS** (§10.4), **g87's `.wld` flips dedup onto
-f45** (§10.5), **g87's `.trwld` pets ride the 68-byte union at offsets
-19-21** (§5a). The `.trplayer` reader gap (§6/§10.6) and the five-way v18
-collision (§5) remain the two open merge actions, both flagged to their
-owners. This doc is FINAL for the a6 lane.
+f45** (§10.5), **g87's `.trwld` pets ride the union** (§5a five-way /
+§11.2 unified). At the FINAL probe the `.trplayer` reader gap (§6/§10.6)
+and the five-way v18 collision (§5) were the two open merge actions; the
+retire pass CLOSES the reader gap (g88 fold 7 landed the rule, §11.1) and
+WIDENS the union to the unified 101-byte head (§11.2).
+
+## 11. RETIRE pass (2026-11-21, over `115ce655a`) — the landed-claimant receipts
+
+Probe inputs (fetched tips, `git fetch origin --prune`): g88
+**`a9f1c29d8`** (fold 7 FINAL — NEW since the FINAL probe), f44
+**`bdd1cc79a`** (FINAL docs — NEW), g90 **`94d33f2ca`** (reconcile §7 —
+NEW), g87 origin tip still `dfbcaf94b` but its worktree carries the
+closeout commit **`26620538e`** (local, unpushed at this probe). f45
+origin tip `6352d3840` unchanged. No `g87b`/`f44f` ref exists on origin
+(full `git branch -r` census) and no `research/143` doc exists on any
+read tip — the Lead's "g87b-143" and "f44f-active" names map to the g87
+closeout commit and the f44 FINAL docs respectively (§11.3/§11.2).
+
+### 11.1 g88-NOW-landed — the six-line rule IN CODE + the v11 torch line (receipts)
+
+**The FINAL-probe re-flag (§6/§10.6) is RETIRED.** g88 fold 7
+(`a9f1c29d8`, "persist fold 7 FINAL: the v11 TORCH FOLD + the 135/132
+reconciliation") landed BOTH reader rules this doc demanded, verified by
+direct reads of `crates/tr-app/src/persist.rs` at that tip:
+
+1. **135 §2's six-line v7 recognition — LANDED.** `:462-465`:
+   `let nonempty: Vec<&Vec<&str>> = post.iter().filter(|t| !t.is_empty())…;
+   let v7_six_line = v7_flags && nonempty.len() == 6 &&
+   nonempty.iter().all(|t| t.len() == 1);` — `:470-479` reads positionally
+   bread/crystal/arcane/pearl/gummy/ambrosia (the `.plr` `:54779` +
+   `:54781-54786` order minus g89's fruit), then `post.clear()`. Exactly
+   §6's demanded rule, on the non-empty projection (blank lines skipped —
+   strictly more tolerant than the raw `post.len() == 6` spelling, same
+   verdict on every pushed writer shape; the header comment enumerates
+   the disjointness: g89 flag-only 1×1, g90 bread-only 1×1, g88 life-only
+   1×2 with halves ≥100, the 3-line superset 1+2+2, g55 loadout-only
+   2+41+41+41).
+2. **The bounded-misread witness RETIRED.** Zero `bounded_misread`
+   matches in the tip's `persist.rs` (grep census); replaced by
+   `g90bs_six_line_v7_loads_positionally` (`:1198`, asserts the six flags
+   read + `!s.unlocked_biome_torches` "no torch pair either" `:1223`).
+3. **The f33 lone-all-0/1-pair rule — LANDED (a second recognition this
+   doc had not demanded).** `:466-469` + `:485-488`: a lone post-dye
+   2-token line with all-"0"/"1" tokens is the torch pair (no maxima pair
+   can be all-0/1 — the permanent halves start 100/20). Witness
+   `f33s_torch_only_v7_loads_positionally` (`:1233`, asserts both halves
+   read `:1247-1248`). This closes f44's 132 §2d v7-fork collision from
+   the READER side.
+4. **The v11 torch line — LANDED.** Writer `:290-304`: header `"11\n"`
+   (`:243`), the pair appended AFTER the loadout block as the LAST
+   post-dye line — `u8::from(player.unlocked_biome_torches)` +
+   `u8::from(player.using_biome_torches())` (the GETTER — the slot-11
+   property, f44 `63204f852`'s L1 semantics mirrored). Reader `:500-514`:
+   v11 takes the LAST non-empty 2-token line AFTER the last set line;
+   `:522-524` reads the pair. NOT unlock tokens — token 7 stays
+   DD2-RESERVED (a DD2 lane bumps v12). Back-read witness
+   `the_v10_superset_still_loads_without_the_torch_pair` (`:1261`,
+   `:1288-1289` assert the v10 block ends at the sets). The restore rides
+   `Player.using_biome_torches()`/`set_using_biome_torches` at f33's
+   exact spot after `luck()` (`player.rs`, +21 lines) + `app/mod.rs`
+   (+11 lines) — no second field.
+5. **103 marked FINAL** with §9 the full merger persist-checklist; its
+   §8 alignment note records the 135 §3 token-order reconciliation (the
+   v10 written crystal=4/arcane=5/pearl=6 order WINS — §6's verdict
+   cross-receipted from g88's side). 122 gains the v11 post-receipt note.
+   The f44c-G7 redundancy is adjudicated as a DELIBERATE dual-carrier
+   with a CONDITIONAL DROP (103 §2b: drop the sidecar torch line when
+   character-load hydration AND the exit-save both land; restore
+   precedence per 132 §2c — character first, sidecar second, sidecar
+   wins as newer state).
+
+**a6's §6 merge action is SATISFIED — no `.trplayer` reader debt remains
+on the powerup cluster.** The persist-split (§2 L2) and merge-order
+(§8 step 2) rows are re-pinned v10 → v11 above. g88's fold-7 commit
+message still records "a6b research/138 STILL unpushed (a6 tip
+8ed96ee5)" — true at ITS probe; 138 is pushed now (`d7de8bd53` +
+`115ce655a`), and this §11 is the cross-receipt g88's 103 §9 checklist
+can point at.
