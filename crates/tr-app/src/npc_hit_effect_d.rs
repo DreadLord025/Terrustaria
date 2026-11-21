@@ -3106,7 +3106,7 @@ fn eater_of_worlds_death(
     gore.new_gore(rng, world, pos, vel, b, 1.0);
 }
 
-/// The 17 Guide death (`NPC.cs:87652-87674`, sites 446-450): the 50x
+/// The 17 Guide death (`NPC.cs:87652-87674`, sites 445-449): the 50x
 /// dust-5 burst at (2.5·hd, −2.5), then the shimmer ladder — the head
 /// 30 (shimmer 1320) gated on `altTexture == 0` (the port's Npc has no
 /// altTexture field; the default-0 stand-in keeps the head — documented
@@ -3144,6 +3144,46 @@ fn guide_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87671
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87672
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87673
+}
+
+/// The 441 Tax Collector death (`NPC.cs:87675-87694`, sites 450-454):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then the five gores at the
+/// +0/+20/+20/+34/+34 Y ladder, scale 1f, with the shimmer split —
+/// normal 768/769/770/771x2 vs shimmer 1358/1359/1361/1360x2 (NOTE the
+/// shimmer mid/legs swap: 1361 at +20, 1360 at +34, `:87691-87693`).
+fn tax_collector_town_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87685-87688` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // The five types in source order (:87689-87693).
+    let (head, second, mid, legs) = if shimmer {
+        (1358, 1359, 1361, 1360)
+    } else {
+        (768, 769, 770, 771)
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :87689
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, second, 1.0); // :87690
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87691
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87692
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87693
 }
 
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
@@ -3508,10 +3548,15 @@ pub fn hit_effect_d(
     else if matches!(npc_type, 13 | 14 | 15) {
         eater_of_worlds_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:87652-87674` — the 17 Guide arm (sites 446-450, the shimmer
+    // `:87652-87674` — the 17 Guide arm (sites 445-449, the shimmer
     // ladder).
     else if npc_type == 17 {
         guide_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87675-87694` — the 441 Tax Collector arm (sites 450-454, the
+    // shimmer mid/legs swap).
+    else if npc_type == 441 {
+        tax_collector_town_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6189,6 +6234,42 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "guide shimmer={shimmer} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87689-87693` — the Tax Collector ladder: normal
+    /// 768/769/770/771x2 vs shimmer 1358/1359/1361/1360x2 (the mid/legs
+    /// swap: 1361 at +20, 1360 at +34).
+    #[test]
+    fn w4_f5d_the_tax_collector_town_ladder_swaps_the_shimmer_mid_legs() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![768, 769, 770, 771, 771]),
+            (true, vec![1358, 1359, 1361, 1360, 1360]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(487);
+            let _ = hit_effect_d(&n, 441, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "tax collector shimmer={shimmer}");
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(487);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(
+                rng.peek(),
+                twin.peek(),
+                "tax collector shimmer={shimmer} mirrors the C# draws"
+            );
         }
     }
 }
