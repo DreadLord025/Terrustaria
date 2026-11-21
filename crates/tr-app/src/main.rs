@@ -161,6 +161,9 @@ mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
+// W4-g10 lane 3: the town pets' FindFrame arm (the humanoid-group body
+// with the pet overrides, NPC.cs:68622-69655).
+mod npc_findframe_pet;
 mod persist;
 mod grapple;
 mod gore_seam;
