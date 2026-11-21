@@ -81,9 +81,11 @@
 //! - `Main.Difficulty >= Legendary` (the 203's `num3`/`num4`, `:39646-
 //!   39647`): the port is single-difficulty (below Legendary), so 14/5.
 //! - the `LightningGenerator` bolt paths + `MultiPointHitbox` (the 203's
-//!   `Kill()` damage, `:70790-70840`): no ported generator — the bolt's
-//!   collision folds to the 64-px explosion rect at the centre (the
-//!   `localAI[0] = 1` no-tile-collision path), recorded.
+//!   `Kill()` damage, `:70790-70840`): UNFOLDED (W4-d21 folds 3+4) — the
+//!   census proved the generator is NOT render-only (the tile truncation
+//!   re-centers the bolt and picks `localAI[0]`; the positions ARE the
+//!   damage hitbox). Ported verbatim in `lightning_generator.rs`; the
+//!   `CalcRotations` draw-angle tail stays the render-only skip.
 //! - `SoundEngine.PlayTrackedLoopedSound` (the 205's engine loop,
 //!   `:38256-38267`/`:38288-38299`): no tracked-loop layer — the
 //!   `localAI[1]`/`localAI[2]` state machine runs, the sound body is the
@@ -563,7 +565,7 @@ fn unpack_target_index(ai_value: f32) -> (i32, i32) {
 /// 255-player scan folds to that one slot (the empress precedent). The
 /// `Kill()` bolt-path damage (`:70771-70854`) rides the pool's death hook
 /// ([`storm_lightning_kill`]) — the `LightningGenerator`/`MultiPointHitbox`
-/// fold to the 64-px explosion rect (ANALYSIS).
+/// are ported for real (W4-d21 folds 3+4, `lightning_generator.rs`).
 pub(crate) fn ai_storm_lightning(
     p: &mut Projectile,
     world: &World,
@@ -1607,58 +1609,196 @@ fn do_pal_appear_effect(p: &mut Projectile, _master: &crate::player::Player, rng
 
 /// `Kill()`'s storm-lightning bolt arms (`Projectile.cs:70771-70854`) —
 /// the 1122 Arc Surge (`:70771-70798`) and the 1091/1117 (`:70799-70854`).
-/// The C# generates a `LightningGenerator` bolt path and damages through a
-/// `MultiPointHitbox`; the port folds the bolt to the 64-px explosion rect
-/// at the centre (the `localAI[0] = 1` no-tile-collision path, ANALYSIS).
-/// The state writes (`localAI[0]`, the penetration open) stay; the
-/// particle/orchestrator bodies are the skip. The 1091/1117's leafy-tree-top
-/// greek-fire spawn (`:70846-70853`) rides the returned spawn list.
+/// W4-d21 folds 3+4 UNFOLDED: the `LightningGenerator` bolt path is
+/// generated for real ([`crate::lightning_generator`]) and its positions
+/// ride out as the `MultiPointHitbox` the pool's boxed `Damage()` reads
+/// (the census proved the generator is NOT render-only — the tile
+/// truncation re-centers the 1091/1117 and picks `localAI[0]`).
 ///
-/// Returns the greek-fire spawns `(kind, x, y, vx, vy)` (the 400-402 trio,
-/// `timeLeft /= 3` applied by the caller). The boxed `Damage()` rides the
-/// pool's `damage_pve_boxed` seam at the caller.
+/// `arc_surge_start` is the 1122's `player.RotatedRelativePoint(pos)`
+/// hand anchor (`:70775-70788` — the caller resolves it off the owner
+/// snapshot; `None` = no owner link, the bolt starts at the centre).
+/// The particle/orchestrator bodies are the skip. The 1091/1117's leafy-
+/// tree-top greek-fire spawn (`:70846-70853`) rides the returned spawn
+/// list.
+///
+/// Returns `(hitbox, spawns)`: the bolt's `MultiPointHitbox` (the boxed
+/// `Damage()` seam reads it through `damage_pve_boxed`'s 203 arm) and the
+/// greek-fire spawns `(kind, x, y, vx, vy)` (the 400-402 trio,
+/// `timeLeft /= 3` applied by the caller). The liquid self-hurt
+/// (`:70836-70839`, the 1117's `localAI[0] == 3`) rides the pool's
+/// `SelfHurtPlayers` seam at the caller.
 pub(crate) fn storm_lightning_kill(
     p: &mut Projectile,
     world: &World,
+    arc_surge_start: Option<Vec2>,
     rng: &mut dyn DropRng,
-) -> Vec<(u16, f32, f32, f32, f32)> {
+) -> (crate::lightning_generator::MultiPointHitbox, Vec<(u16, f32, f32, f32, f32)>) {
+    use crate::lightning_generator::{LightningGenerator, MultiPointHitbox};
     let mut spawns = Vec::new();
     let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
     if p.kind == 1122 {
-        // `:70791-70797` — the Arc Surge: localAI[0] = 2, the penetration
-        // open, the bolt-path Damage() (the boxed fold).
+        // `:70788-70797` — the Arc Surge: the hand→centre bolt, then
+        // localAI[0] = 2, the penetration open, the bolt-path Damage().
+        // `GetArcSurgeWeaponGenerator(vector2, center)` seeds the config
+        // off the hand distance; `GenerateMainBoltPath((uint)ai[2],
+        // center, center - vector2)` walks it. No owner link → the hand
+        // IS the centre (the zero-length bolt, the documented fold).
+        let start = arc_surge_start.unwrap_or(center);
+        let bolt = LightningGenerator::arc_surge_weapon(start, center)
+            .generate_main_bolt_path(p.ai[2] as u32, center, Some(center - start), world);
         p.local_ai[0] = 2.0;
         p.max_penetrate = -1;
         p.penetrate = -1;
-        return spawns;
+        // `:70794` — `_lightningLastHitChainPos = null`: the chain anchor
+        // resets; the 1122 never reads it (the liquid arm is 1091-only),
+        // so the reset is the caller's local-chain clear (no field).
+        return (MultiPointHitbox::new((16, 16), bolt.positions), spawns);
     }
-    if p.kind == 1091 || p.kind == 1117 {
-        // `:70818-70835` — the bolt path: the port folds to the no-tile-
-        // collision centre (flag6 true → localAI[0] = 1), unless the centre
-        // tile carries liquid (localAI[0] = 3).
-        let tx = (center.x / 16.0) as i32;
-        let ty = (center.y / 16.0) as i32;
-        let tile = world.tile(tx, ty);
-        let liquid = tile.is_some_and(|t| t.liquid != 0);
-        p.local_ai[0] = if liquid { 3.0 } else { 1.0 };
-        p.max_penetrate = -1;
-        p.penetrate = -1;
-        // `:70836-70839` — the 1117's liquid self-hurt (the player-contact
-        // seam; the port's damage_player runs on the hostile pass — the
-        // 1117 is friendly, so the self-hurt is the recorded skip).
-        // `:70841-70853` — the leafy-tree-top greek-fire spawn (NOT the
-        // 1117): Next(2,6) fires, each NextVector2Circular(5,3) + Next(3).
-        let flag7 = p.kind != 1117;
-        if flag7 && p.owner == 0 && tile.is_some_and(is_tile_a_leafy_tree_top) {
-            let count = rng.next_range(2, 6);
-            for _ in 0..count {
-                let v = next_vector2_circular(rng, 5.0, 3.0);
-                let kind = 400 + rng.next_range(0, 3) as u16;
-                spawns.push((kind, center.x, center.y, v.x, v.y));
-            }
+    // `:70813-70835` — the 1091/1117 bolt: StormLightning vs
+    // LightningStrikeWeapon, the tile truncation re-centers the projectile
+    // (`flag6 = !collidedWithTile`; a collided bolt moves `base.Center` to
+    // its LAST position, `:70819-70823`), then localAI[0] = 1 (no tile hit)
+    // / 2 (tile hit) / 3 (the centre tile carries liquid).
+    let generator = if p.kind == 1117 {
+        LightningGenerator::lightning_strike_weapon()
+    } else {
+        LightningGenerator::storm_lightning()
+    };
+    let bolt = generator.generate_main_bolt_path(p.ai[2] as u32, center, None, world);
+    let flag6 = !bolt.collided_with_tile;
+    if !flag6 {
+        // `:70822` — the re-centre on the bolt's last position.
+        let last = *bolt.positions.last().expect("the bolt has >= 1 position");
+        p.pos = last - Vec2::new(p.w * 0.5, p.h * 0.5);
+    }
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let tx = (center.x / 16.0) as i32;
+    let ty = (center.y / 16.0) as i32;
+    let tile = world.tile(tx, ty);
+    let liquid = tile.is_some_and(|t| t.liquid != 0);
+    p.local_ai[0] = if liquid {
+        3.0
+    } else if flag6 {
+        1.0
+    } else {
+        2.0
+    };
+    if liquid {
+        // `:70829` — SpawnLightningLiquidElectrificationParticles
+        // (`:78535-78559`): the 39 radial PlotLine walks; every liquid
+        // cell plots `Next(4)` (the particle/light bodies are the skip,
+        // the draw stays — the G3 explicit-gate rule).
+        spawn_lightning_liquid_electrification_draws(p, world, rng);
+    }
+    p.max_penetrate = -1;
+    p.penetrate = -1;
+    // `:70836-70839` — the 1117's liquid self-hurt rides the pool's
+    // SelfHurtPlayers seam (the caller reads localAI[0] == 3).
+    // `:70841-70853` — the leafy-tree-top greek-fire spawn (NOT the
+    // 1117): Next(2,6) fires, each NextVector2Circular(5,3) + Next(3).
+    let flag7 = p.kind != 1117;
+    if flag7 && p.owner == 0 && tile.is_some_and(is_tile_a_leafy_tree_top) {
+        let count = rng.next_range(2, 6);
+        for _ in 0..count {
+            let v = next_vector2_circular(rng, 5.0, 3.0);
+            let kind = 400 + rng.next_range(0, 3) as u16;
+            spawns.push((kind, center.x, center.y, v.x, v.y));
         }
     }
-    spawns
+    (MultiPointHitbox::new((16, 16), bolt.positions), spawns)
+}
+
+/// `SpawnLightningLiquidElectrificationParticles` (`Projectile.cs:78535-
+/// 78559`): 39 radial `Utils.PlotLine` walks (i = 1..39, the endpoint at
+/// `centre + UnitX.RotatedBy(PI * i / 20) * 500`); each plotted cell that
+/// is in-world AND carries liquid rolls `Next(4)` (the particle request +
+/// `Lighting.AddLight` bodies are the skip — no ported layers; the
+/// explicit draw stays on the `UpdateProjectiles` stream). The plot
+/// returns false on a dry/out-of-world cell, aborting that walk.
+fn spawn_lightning_liquid_electrification_draws(p: &Projectile, world: &World, rng: &mut dyn DropRng) {
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let (x0, y0) = ((center.x as i32) / 16, (center.y as i32) / 16);
+    for i in 1..40 {
+        let angle = std::f32::consts::PI * i as f32 / 20.0;
+        let end = center + crate::bow_launch::rotated_by(Vec2::X, angle as f64) * 500.0;
+        let (x1, y1) = ((end.x as i32) / 16, (end.y as i32) / 16);
+        // `Utils.PlotLine(p0, p1, plot)` — jump defaults true (`:2233`).
+        plot_line(x0, y0, x1, y1, true, &mut |x, y| {
+            // `:78545-78548` — the in-world + liquid gate.
+            if !world.in_bounds(x, y) {
+                return false;
+            }
+            let Some(t) = world.tile(x, y) else {
+                return false;
+            };
+            if t.liquid == 0 {
+                return false;
+            }
+            // `:78549` — the Next(4) gate (the bodies are the skip).
+            let _ = rng.next_range(0, 4);
+            true
+        });
+    }
+}
+
+/// `Utils.PlotLine` (`Utils.cs:2238-2292`) — the Bresenham walk with the
+/// `jump: false` double-plot on the minor-axis step; `plot` returns false
+/// to abort (the `TileActionAttempt` convention). The `npc_ai_town` twin
+/// is private; this copy serves the lightning walks (the third-copy
+/// precedent: the town module's own is byte-identical). `pub(crate)`:
+/// the pool's `storm_lightning_collision_check` shares it.
+pub(crate) fn plot_line(
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    jump: bool,
+    plot: &mut dyn FnMut(i32, i32) -> bool,
+) -> bool {
+    if x0 == x1 && y0 == y1 {
+        return plot(x0, y0);
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (x0, y0, x1, y1);
+    let flag = (y1 - y0).abs() > (x1 - x0).abs();
+    if flag {
+        std::mem::swap(&mut x0, &mut y0);
+        std::mem::swap(&mut x1, &mut y1);
+    }
+    let num = (x1 - x0).abs();
+    let num2 = (y1 - y0).abs();
+    let mut num3 = num / 2;
+    let mut num4 = y0;
+    let num5 = if x0 < x1 { 1 } else { -1 };
+    let num6 = if y0 < y1 { 1 } else { -1 };
+    let mut i = x0;
+    while i != x1 {
+        if flag {
+            if !plot(num4, i) {
+                return false;
+            }
+        } else if !plot(i, num4) {
+            return false;
+        }
+        num3 -= num2;
+        if num3 >= 0 {
+            i += num5;
+            continue;
+        }
+        num4 += num6;
+        if !jump {
+            if flag {
+                if !plot(num4, i) {
+                    return false;
+                }
+            } else if !plot(i, num4) {
+                return false;
+            }
+        }
+        num3 += num;
+        i += num5;
+    }
+    true
 }
 
 /// `WorldGen.IsTileALeafyTreeTop` (`WorldGen.cs:29679-29693`): an active
@@ -1965,6 +2105,129 @@ mod tests {
             ai_digtoise(&mut p, &air(), Some(&pl), &mut rng);
         }
         assert_eq!(p.ai[0], 1.0, ":38560-38565");
+    }
+
+    /// Folds 3+4 — the 1091 kill in AIR: the storm bolt reaches the
+    /// centre untruncated (flag6 true → localAI[0] = 1, `:70825`), the
+    /// penetration opens, and the hitbox's points close on the centre.
+    /// The slot does NOT resize (the C# never resizes in this arm).
+    #[test]
+    fn w4_d21_the_storm_kill_generates_the_bolt_and_opens_penetration() {
+        let w = air();
+        let mut p = slot(STORM_LIGHTNING);
+        p.pos = Vec2::new(160.0, 160.0); // centre (168, 168)
+        p.ai[2] = 42.0; // the bolt seed
+        let mut rng = FastRandom::new(7);
+        let (hb, spawns) = storm_lightning_kill(&mut p, &w, None, &mut rng);
+        assert_eq!(p.local_ai[0], 1.0, ":70825 — no tile hit, no liquid");
+        assert_eq!((p.max_penetrate, p.penetrate), (-1, -1), ":70831-70832");
+        assert_eq!((p.w, p.h), (16.0, 16.0), "no resize in the C# arm");
+        assert!(spawns.is_empty(), "no leafy tree top under the centre");
+        assert_eq!(hb.point_size, (16, 16), ":70834");
+        assert!(!hb.points.is_empty());
+        let last = *hb.points.last().unwrap();
+        assert!(last.distance(Vec2::new(168.0, 168.0)) < 16.0);
+        // The same seed re-generates the same path (the LCG determinism).
+        let mut p2 = slot(STORM_LIGHTNING);
+        p2.pos = Vec2::new(160.0, 160.0);
+        p2.ai[2] = 42.0;
+        let (hb2, _) = storm_lightning_kill(&mut p2, &w, None, &mut rng);
+        assert_eq!(hb.points, hb2.points);
+    }
+
+    /// Folds 3+4 — the 1091 kill through a SOLID row: the bolt truncates
+    /// (flag6 false), the slot RE-CENTERS on the bolt's last position
+    /// (`:70822`), localAI[0] = 2 (`:70825`). The 1117's generator phases
+    /// through the same row (SolidTileCollision false) — localAI[0] = 1.
+    #[test]
+    fn w4_d21_the_storm_kill_recenters_on_the_truncated_bolt() {
+        let mut w = air();
+        for x in 0..w.width {
+            let i = w.index(x, 5);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut p = slot(STORM_LIGHTNING);
+        p.pos = Vec2::new(160.0, 160.0);
+        p.ai[2] = 42.0;
+        let mut rng = FastRandom::new(7);
+        let (hb, _) = storm_lightning_kill(&mut p, &w, None, &mut rng);
+        assert_eq!(p.local_ai[0], 2.0, ":70825 — the tile hit");
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let last = *hb.points.last().unwrap();
+        assert_eq!(center, last, ":70822 — base.Center = the last position");
+        assert!((64.0..112.0).contains(&center.y), "the re-centre sits at/above the row");
+        // The 1117 phases through (its generator has no tile collision).
+        let mut q = slot(LIGHTNING_STRIKE_SHOT);
+        q.pos = Vec2::new(160.0, 160.0);
+        q.ai[2] = 42.0;
+        let (hb2, _) = storm_lightning_kill(&mut q, &w, None, &mut rng);
+        assert_eq!(q.local_ai[0], 1.0, ":323 — the 1117 keeps the no-hit state");
+        let qc = Vec2::new(q.pos.x + q.w * 0.5, q.pos.y + q.h * 0.5);
+        assert_eq!(qc, Vec2::new(168.0, 168.0), "no re-centre for the 1117");
+        assert!(hb2.points.len() > hb.points.len(), "the phased bolt walks farther");
+    }
+
+    /// Folds 3+4 — the liquid centre: localAI[0] = 3 (`:70826-70830`)
+    /// and the electrification walks consume their Next(4) draws on the
+    /// stream (one per liquid cell plotted, `:78549`). The witness
+    /// mirrors the 39 radial walks over the same single-liquid-cell
+    /// world and replays one Next(4) per plotted liquid cell.
+    #[test]
+    fn w4_d21_the_liquid_kill_sets_state_three_and_draws_per_cell() {
+        let mut w = air();
+        let i = w.index(10, 10); // the centre cell (168/16 = 10)
+        w.tiles[i].liquid = 255;
+        let mut p = slot(STORM_LIGHTNING);
+        p.pos = Vec2::new(160.0, 160.0);
+        p.ai[2] = 42.0;
+        let mut rng = FastRandom::new(7);
+        let mut witness = FastRandom::new(7);
+        let (_, _) = storm_lightning_kill(&mut p, &w, None, &mut rng);
+        assert_eq!(p.local_ai[0], 3.0, ":70828");
+        // Mirror the walks (`:78537-78540`): the centre is (168, 168),
+        // each endpoint at centre + UnitX.RotatedBy(PI*i/20)*500.
+        let center = Vec2::new(168.0, 168.0);
+        let (x0, y0) = (10, 10);
+        let mut draws = 0;
+        for i in 1..40 {
+            let angle = std::f32::consts::PI * i as f32 / 20.0;
+            let end = center
+                + crate::bow_launch::rotated_by(Vec2::X, angle as f64) * 500.0;
+            let (x1, y1) = ((end.x as i32) / 16, (end.y as i32) / 16);
+            plot_line(x0, y0, x1, y1, true, &mut |x, y| {
+                let wet = w.in_bounds(x, y) && w.tile(x, y).is_some_and(|t| t.liquid != 0);
+                if wet {
+                    draws += 1;
+                    let _ = witness.next_range(0, 4);
+                }
+                wet
+            });
+        }
+        assert!(draws >= 39, "every walk plots the liquid centre cell");
+        assert_eq!(rng.seed, witness.seed, "one Next(4) per liquid cell, in walk order");
+    }
+
+    /// Folds 3+4 — the 1122 Arc Surge kill: localAI[0] = 2 (`:70791`),
+    /// the bolt walks from the hand anchor to the centre. The hand at
+    /// (168, 100) → the bolt's first position sits near the hand, the
+    /// last near the centre.
+    #[test]
+    fn w4_d21_the_arc_surge_kill_walks_hand_to_centre() {
+        let w = air();
+        let mut p = slot(ARC_SURGE);
+        p.pos = Vec2::new(160.0, 160.0);
+        p.ai[2] = 42.0;
+        let mut rng = FastRandom::new(7);
+        let hand = Vec2::new(168.0, 100.0);
+        let (hb, spawns) = storm_lightning_kill(&mut p, &w, Some(hand), &mut rng);
+        assert_eq!(p.local_ai[0], 2.0, ":70791");
+        assert_eq!((p.max_penetrate, p.penetrate), (-1, -1), ":70792-70793");
+        assert!(spawns.is_empty(), "the 1122 has no greek-fire arm");
+        let first = hb.points[0];
+        let last = *hb.points.last().unwrap();
+        assert!(first.distance(hand) < 16.0, "the bolt starts at the hand");
+        assert!(last.distance(Vec2::new(168.0, 168.0)) < 16.0);
     }
 
     /// The dispatch census: every new rowed style has exactly one live arm.
