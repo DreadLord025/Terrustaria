@@ -1704,6 +1704,14 @@ impl App {
                                     self.discount_available,
                                 )
                             }),
+                            // W4-f28 — the shop price row's session inputs:
+                            // `ItemSlot.ShiftInUse` (the pressed-codes set,
+                            // the clicks.rs:41 shape) + the sellback memo.
+                            self.shop_npc.map(|_| ui::ShopTooltipState {
+                                shift_in_use: self.keys.contains(&winit::keyboard::KeyCode::ShiftLeft)
+                                    || self.keys.contains(&winit::keyboard::KeyCode::ShiftRight),
+                                sellback: &self.shop_sellback,
+                            }),
                             // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
                             // + the statics) — the plan-amendment insertion
                             // (#10): the disjoint `App` fields the panel reads

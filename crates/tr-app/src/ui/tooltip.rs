@@ -230,6 +230,9 @@ pub struct TooltipContext<'a> {
     /// `Main.LocalPlayer.chest` (`Player.cs:2876`) — the favourite rows'
     /// bank-blocked notice (`Main.cs:20659`). −1 closed.
     pub open_chest: i32,
+    /// `Player.Settings.ShowLoadoutShareHint` (`Player.cs:372`, static
+    /// ctor true `:412`): the share-hint row's gate (`Main.cs:21312`).
+    pub show_loadout_share_hint: bool,
     /// W4-f28 — `NewCraftingUI._missingRequirementsTooltipText`
     /// (`NewCraftingUI.cs:526`): the hovered UNAVAILABLE recipe's reason,
     /// appended after the shop lines while the crafting panel is visible
@@ -258,6 +261,7 @@ impl Default for TooltipContext<'_> {
             inventory: None,
             held_kind: 0,
             open_chest: -1,
+            show_loadout_share_hint: true,
             crafting_missing_reason: None,
             shop_lines: None,
         }
@@ -327,10 +331,30 @@ pub fn item_tooltip_lines(
         hover_name(kind, ctx.prefix, ctx.stack),
         tooltip_lines2::tooltip_name_color(rare, d.expert, &ctx.world),
     )];
-    // `:20655-20663` — the favourite rows (the loadout arm is unported, so
-    // the plain-favourite branch is the live one).
-    for row in tooltip_lines2::favorite_rows(kind, ctx.flags.favorited, ctx.open_chest) {
-        lines.push((row, [1.0, 1.0, 1.0, 1.0]));
+    // `:20636-20663` — the favourite / loadout-share head (the e16 arm,
+    // research/128 §5-e16.4). `flag` latches the loadout-share arm (it
+    // suppresses the equipable row, `:20816`); `flag2` latches the
+    // unfavourited shareable slot (the share-hint row at the tail,
+    // `:21312`). `GetSharedLoadoutItem` is unported (`ItemSlot.cs:3171-3174`
+    // — the SharedFrom arm unreachable), so the favourited arm prints
+    // `UI.ItemLoadoutShared` directly.
+    let mut loadout_share_flag = false;
+    let mut share_hint_flag = false;
+    if ctx.flags.context >= 0 && tooltip_lines2::can_loadout_share_at(ctx.flags.context) {
+        if ctx.flags.favorited {
+            lines.push((
+                crate::lang::text("UI.ItemLoadoutShared"),
+                [1.0, 1.0, 1.0, 1.0],
+            ));
+        } else {
+            share_hint_flag = true;
+        }
+        loadout_share_flag = true;
+    } else {
+        // `:20655-20663` — the plain favourite rows.
+        for row in tooltip_lines2::favorite_rows(kind, ctx.flags.favorited, ctx.open_chest) {
+            lines.push((row, [1.0, 1.0, 1.0, 1.0]));
+        }
     }
     // `:20664-20668` — the social-slot row.
     if let Some(row) = tooltip_lines2::social_row(ctx.flags, d) {
@@ -444,18 +468,20 @@ pub fn item_tooltip_lines(
     // hook projectiles (`Main.projHook[item.shoot]`), the mounts
     // (`item.mountType != -1`) and the light / vanity pets; the shopping
     // arm swaps tip[23] for tip[60] on the Discount Card / Greedy Ring.
+    // `!flag` (`:20816`) — a loadout-shared slot never prints the row.
     let hook = d
         .projectile
         .map_or(false, |p| crate::projectile_id::is_hook_projectile(p as i32));
-    if d.head_slot > 0
-        || d.body_slot > 0
-        || d.leg_slot > 0
-        || d.accessory
-        || hook
-        || d.mount_type != -1
-        || (d.buff_type > 0
-            && (crate::buffs::is_light_pet(d.buff_type)
-                || crate::buffs::is_vanity_pet(d.buff_type)))
+    if !loadout_share_flag
+        && (d.head_slot > 0
+            || d.body_slot > 0
+            || d.leg_slot > 0
+            || d.accessory
+            || hook
+            || d.mount_type != -1
+            || (d.buff_type > 0
+                && (crate::buffs::is_light_pet(d.buff_type)
+                    || crate::buffs::is_vanity_pet(d.buff_type))))
     {
         lines.push((
             tooltip_lines2::equipable_row(kind, ctx.world.npc_shop),
@@ -582,6 +608,8 @@ pub fn item_tooltip_lines(
         d,
         ctx.prefix,
         old_kb,
+        share_hint_flag,
+        ctx.show_loadout_share_hint,
         ctx.flags,
         &ctx.world,
         ctx.player,

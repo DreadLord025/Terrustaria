@@ -686,6 +686,12 @@ pub fn draw_hud(
     emotes_state: &crate::emotes::EmoteSystem,
     ingame_options: Option<(&Settings, &ingame_options::IngameOptions)>,
     shop: Option<(&[crate::shop::ShopEntry], f32, bool)>,
+    // W4-f28 — the shop price row's session inputs
+    // (`Main.MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448-20555`):
+    // `ItemSlot.ShiftInUse` (the bulk-buy display stack) and the
+    // `Main.shopSellbackHelper` memo (the sell-row refund). `None` while no
+    // shop is open — the tooltip appends no price row then.
+    shop_tooltip: Option<ShopTooltipState<'_>>,
     chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
     bank: Option<(&[ItemSlot], i32)>,
@@ -839,6 +845,9 @@ pub fn draw_hud(
     }
 
     let mut open_hover: Option<inventory::HoverRef> = None;
+    // W4-f28 — the hovered shop stock row (`Main.cs:41811-41814`'s
+    // `ItemSlot.Handle` context-15 hover); set by the shop draw block.
+    let mut shop_hover: Option<&crate::shop::ShopEntry> = None;
     // `Main.LocalPlayer.chest` (`Player.cs:2876`) — the favourite rows'
     // bank-blocked notice (`Main.cs:20659`); captured before `chest::draw`
     // moves the panel state.
@@ -930,6 +939,16 @@ pub fn draw_hud(
                     );
                 }
             }
+            // W4-f28 — the shop cell hover (`Main.cs:41811-41814`):
+            // `ItemSlot.Handle(shop.item, 15, slot)` runs `MouseHover`,
+            // which stamps `Main.HoverItem` (context 15 sets `buy = true`,
+            // `ItemSlot.cs:3195-3197`). The port's tooltip layer reads the
+            // cell here — the same inclusive-edge hit the click path uses
+            // (`shop_slot_at_mouse`, clicks.rs:408).
+            let cell = lookups.ui_back.map_or(52.0, |b| b.width as f32);
+            shop_hover = inventory::shop_slot_at(mouse_pos, cell)
+                .and_then(|idx| stock.get(idx))
+                .filter(|e| e.stack > 0);
         }
         // The reforge menu (`Main.DrawInventory`'s inline block,
         // `Main.cs:41557-41685`): the (50, 270) input slot, the (120, 310)
@@ -1164,10 +1183,23 @@ pub fn draw_hud(
     // `mouseNPCType > -1` returns) + `DrawInterface_38`'s
     // `Main.mouseText = false` (`:45222`): no hover text while a housing
     // head rides the cursor.
+    // W4-f28 — the shop grid's hover wins over the inventory panels under
+    // it: the C# runs `ItemSlot.Handle(shop.item, 15, slot)` AFTER the grid
+    // passes (`Main.cs:41814`), so its `MouseHover` stamp is the last
+    // `Main.HoverItem` write. The shop cell's instance is the stock row
+    // (the kind default + the sold-in prefix/stack).
+    let shop_hover_slot = shop_hover.map(|e| ItemSlot {
+        kind: e.item,
+        name: crate::itemdata::ITEMS[e.item as usize].name,
+        count: e.stack,
+        prefix: e.prefix,
+    });
     let hover_item: Option<&ItemSlot> = if mouse_npc.carried() {
         None
     } else if pvp_hover_text.is_some() || housing_hover_text.is_some() {
         None
+    } else if shop_hover_slot.is_some() {
+        shop_hover_slot.as_ref()
     } else if inventory_open {
         match open_hover {
             // `Main.cs:41462-41465`: the hovered tick shows `Lang.inter[58 +
@@ -1222,6 +1254,31 @@ pub fn draw_hud(
         }
         f
     };
+    // W4-f28 — the shop price row's context (`AddShopLines`,
+    // `Main.cs:20448-20555`): every hover under an open shop appends the
+    // row; the shop grid's context-15 stamp sets `buy = true`
+    // (`ItemSlot.cs:3195-3197`), the stock row's buyOnce/isAShopItem flags
+    // ride the entry. The inventory hovers keep `buy = false` (the SELL
+    // row) and price their own instance (no shop flags, no override).
+    let shop_lines = shop_tooltip.map(|st| {
+        let entry = shop_hover;
+        crate::shop::ShopLineContext {
+            buy: entry.is_some(),
+            buy_once: entry.map_or(false, |e| e.buy_once),
+            is_a_shop_item: entry.map_or(false, |e| e.is_a_shop_item),
+            // Filled by `item_tooltip_lines` from the prefixed instance.
+            instance_value: 0,
+            shop_custom_price: entry.and_then(|e| e.shop_custom_price),
+            shift_in_use: st.shift_in_use,
+            discount_available: shop.map_or(false, |(_, _, d)| d),
+            price_adjustment: shop.map_or(1.0, |(_, m, _)| m),
+            sellback_amount: match (entry, hover_item) {
+                (Some(e), _) => st.sellback.get_amount(e.item, e.prefix),
+                (None, Some(h)) => st.sellback.get_amount(h.kind, h.prefix),
+                _ => 0,
+            },
+        }
+    });
     tooltip::draw_item_tooltip(
         r,
         lookups,
@@ -1242,6 +1299,7 @@ pub fn draw_hud(
             has_coin_gun: has_coin_gun(inventory, equip),
             held_kind: inventory[selected].kind,
             open_chest,
+            shop_lines,
             ..Default::default()
         },
         ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
@@ -1269,6 +1327,14 @@ fn has_coin_gun(inventory: &[ItemSlot; INV], equip: &inv::EquipSlots) -> bool {
     inventory.iter().any(carries)
         || equip.coins.iter().any(carries)
         || equip.ammo.iter().any(carries)
+}
+
+/// W4-f28 — the shop price row's session inputs (`draw_hud`'s
+/// `shop_tooltip` param): `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`)
+/// and the `Main.shopSellbackHelper` memo (`Main.cs:1775`).
+pub struct ShopTooltipState<'a> {
+    pub shift_in_use: bool,
+    pub sellback: &'a crate::shop::SellbackHelper,
 }
 
 /// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it

@@ -8,8 +8,10 @@
 //! line-kind after it plus the shared context the rows read.
 //!
 //! Deferred, cited (ANALYSIS "The tooltip lines' second half (W4-f28)"):
-//! the loadout-share rows (`:20638-20654`, `:21312-21317` — no loadout
-//! system), the Journey research rows (`:21318-21333` — no sacrifice tracker
+//! the loadout SharedFrom row (`:20640-20643` — `GetSharedLoadoutItem`
+//! unported; the rest of the loadout head IS live, the e16 salvage per
+//! research/128 §5-e16.4), the Journey research rows (`:21318-21333` — no
+//! sacrifice tracker
 //! wired into the session), the bestiary-notes rows (`:21334-21342` —
 //! `Item.BestiaryNotes` is only written by `UIBestiaryInfoItemLine.cs:155`,
 //! whose hover line is unported), the shop lines
@@ -79,8 +81,14 @@ impl TooltipWorld {
 /// `ItemSlot.MouseHover` stamps (`ItemSlot.cs:3183-3198`) and the inventory
 /// favourite flag. The kind defaults ride the `ItemDef`; a prefixed hover's
 /// stat deltas ride `prefix::prefixed_stats_of` through [`hover_stats`].
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct HoverFlags {
+    /// `Item.tooltipContext` (`ItemSlot.cs:3184`): the hovered slot's
+    /// `ItemSlot.Draw` context — 0 grid / 1 coin / 2 ammo / 8,10 worn
+    /// armour / 9,11 social vanity / 12 dye / 16-20 misc equips / 33 misc
+    /// dye / 6 trash / 4 bank / 13 hotbar / 22 craft. −1 = no slot context
+    /// (the e16 full HoverRef→ctx map, research/128 §4.3).
+    pub context: i32,
     /// `Item.favorited` (`Main.cs:20655`).
     pub favorited: bool,
     /// `Item.social` — context 9/11's stamp (`ItemSlot.cs:3191-3193`).
@@ -90,6 +98,25 @@ pub struct HoverFlags {
     /// `Item.BestiaryNotes` — the bestiary hover line's cache
     /// (`UIBestiaryInfoItemLine.cs:155`); unported (see the module doc).
     pub bestiary_notes: Option<&'static str>,
+}
+
+impl Default for HoverFlags {
+    fn default() -> Self {
+        Self {
+            context: -1,
+            favorited: false,
+            social: false,
+            worn_armor: false,
+            bestiary_notes: None,
+        }
+    }
+}
+
+/// `ItemSlot.canLoadoutShareAt` (`ItemSlot.cs:395-399`): contexts 8-12
+/// (the armour/vanity/accessory/dye columns) — the loadout-share arm of
+/// the tooltip head (`Main.cs:20638`).
+pub fn can_loadout_share_at(context: i32) -> bool {
+    matches!(context, 8..=12)
 }
 
 /// `ItemID.Sets.UsesCursedByPlanteraTooltip` (`ItemID.cs:410`): the five
@@ -380,15 +407,18 @@ pub fn advance_master_color(color: f32, dir: i32) -> (f32, i32) {
 ///
 /// `lines` arrives holding the first half's rows; `old_kb` is the instance
 /// knockback the first half captured at `Main.cs:20333` BEFORE the
-/// glove/buff/shroomite scales (research/128 §5-e16.3); `yoyo_logo` returns
-/// the row index the OneDropLogo draws over (`Main.cs:21019`'s `yoyoLogo`),
-/// or `None`.
+/// glove/buff/shroomite scales (research/128 §5-e16.3); `share_hint_flag`
+/// is the head's `flag2` latch (`Main.cs:20651` — the unfavourited
+/// shareable slot); `yoyo_logo` returns the row index the OneDropLogo
+/// draws over (`Main.cs:21019`'s `yoyoLogo`), or `None`.
 #[allow(clippy::too_many_arguments)]
 pub fn append_second_half(
     kind: u16,
     d: &ItemDef,
     prefix: u16,
     old_kb: f32,
+    share_hint_flag: bool,
+    show_loadout_share_hint: bool,
     flags: HoverFlags,
     world: &TooltipWorld,
     player: Option<&crate::player::Player>,
@@ -540,8 +570,16 @@ pub fn append_second_half(
             ));
         }
     }
-    // `:21312-21317` — the loadout-share hint (flag2): no loadout system,
-    // the row cannot fire (module doc).
+    // `:21312-21317` — the loadout-share hint (flag2 && the setting), in
+    // `Main.OurFavoriteColor` (255, 231, 69) at alpha 190 (`Main.cs:66748`).
+    // The e16 row (research/128 §5-e16.4): flag2 latches in the head when
+    // an UNfavourited shareable slot (ctx 8-12) is hovered.
+    if share_hint_flag && show_loadout_share_hint {
+        lines.push((
+            crate::lang::text("UI.ItemLoadoutShareHint"),
+            [255.0 / 255.0, 231.0 / 255.0, 69.0 / 255.0, 190.0 / 255.0],
+        ));
+    }
     // `:21318-21333` — the Journey research rows: no session sacrifice
     // tracker (module doc).
     // `:21334-21342` — the bestiary notes: the only writer is the unported
@@ -1117,7 +1155,8 @@ mod w4_f28_tests {
         assert!(idx > 1);
         let mut lines = Vec::new();
         let logo = append_second_half(
-            3262, def(3262), 0, def(3262).knock_back, HoverFlags::default(), &TooltipWorld::STOCK, None, &mut lines,
+            3262, def(3262), 0, def(3262).knock_back, false, true,
+            HoverFlags::default(), &TooltipWorld::STOCK, None, &mut lines,
         );
         assert_eq!(logo, Some(lines.len() - 1));
         let rows = item_tooltip_lines(1131, def(1131), TooltipContext::default());
