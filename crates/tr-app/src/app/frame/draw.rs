@@ -1087,6 +1087,34 @@ impl App {
                         cloud_field.reset_clouds(&env, lookups);
                         cloud_field.reset_pending = false;
                     }
+                    // `DrawSurfaceBG`'s `cloudBGAlpha` ramp
+                    // (`Main.cs:59358-59373`) — per draw, gated on
+                    // `!drunkWorldGen && ShouldDrawSurfaceBackground() &&
+                    // screenPosition.Y/16 <= worldSurface + 10` (`:59354`)
+                    // AND `BackgroundEnabled` (`:59356`); the same gate
+                    // chain `draw_sky`'s storm-bank block folds (W4-g69
+                    // deviation fix — the retired 10×-per-tick intensity
+                    // chase is gone). The C# runs it between the distant
+                    // and closer cloud passes; the port runs it at the draw
+                    // head — no pass before the storm banks reads the value.
+                    {
+                        let ramp_view_top = draw_cam.y - screen.y * 0.5;
+                        let ramp_should_draw = !world
+                            .seeds
+                            .contains(tr_core::seeds::SeedFlags::REMIX)
+                            && !(settings.map_enabled
+                                && map.as_ref().is_some_and(|m| m.open));
+                        if !world.seeds.contains(tr_core::seeds::SeedFlags::DRUNK)
+                            && ramp_should_draw
+                            && ramp_view_top <= surface_px + 10.0 * TILE_PX
+                            && settings.background
+                        {
+                            rain.cloud_bg_draw_step(
+                                cloud_field.cloud_bg_active,
+                                world.day_rate(),
+                            );
+                        }
+                    }
                     draw_sky(
                         renderer,
                         draw_cam,

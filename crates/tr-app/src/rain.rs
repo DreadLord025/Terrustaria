@@ -49,20 +49,12 @@ const MAX_SNOW: usize = 600;
 const TICKS_PER_SEC: f32 = 60.0;
 /// `cloudAlpha` change per tick while raining (vanilla `0.0005 * dayRate`).
 const RAMP_PER_TICK: f32 = 0.0005;
-/// The `cloudBGAlpha` clamp-step per tick — 10× the `cloudAlpha` ramp so the storm
-/// deck appears within it (kept from the retired session schedule), scaled by
-/// `max(1, dayRate)` like the `cloudBGActive` ramp it stands in for
-/// (`Main.cs:13187/13205`; the real `updateCloudLayer` state machine now lives on
-/// `CloudField` — W4-g69 — but this visual stand-in still drives `cloud_bg`).
-const CLOUD_BG_RAMP_PER_TICK: f32 = 0.005;
-/// The `numClouds` stand-in for `ChangeRain`'s strength bands (`Main.cs:64730`):
-/// pinned at 100 — the clear-weather steady state of the live pool's count walk
-/// (W4-g69 wired `Main.cs:58952-59036` onto `CloudField`, but `change_rain` still
-/// reads this constant, not the live `num_clouds`). With exactly 100 the
-/// `numClouds > 150` and `numClouds > 100` arms are both false, so only the storm
-/// gate (`cloudBGActive >= 1f` → `cloud_bg >= 1.0`) reaches the heavy bands;
-/// revisit with the weather-completion row.
-const NUM_CLOUDS_STAND_IN: i32 = 100;
+/// The `cloudBGAlpha` ramp step (`Main.cs:59360/59368`) — the C# moves it by
+/// `0.0005f * dayRate` per DRAW inside `DrawSurfaceBG`'s surface gate, toward
+/// 1 while `cloudBGActive > 0f` and toward 0 otherwise; the port runs it in
+/// [`Rain::cloud_bg_draw_step`] at the draw head (W4-g69 deviation fix — the
+/// retired session schedule's 10×-per-tick intensity chase is gone).
+const CLOUD_BG_RAMP_PER_DRAW: f32 = 0.0005;
 const DROP_W: f32 = 2.0;
 const DROP_H: f32 = 40.0;
 const SPLASH_LIFE: f32 = 0.32;
@@ -128,7 +120,8 @@ pub struct Rain {
     /// the retired session schedule was its last writer (`Main.cs:58830-58950`
     /// feeds `Wind` directly now).
     wind: f32,
-    /// `Main.cloudBGAlpha`: storm cloud-bank opacity, 0..1.
+    /// `Main.cloudBGAlpha`: storm cloud-bank opacity, 0..1 — ramped per draw
+    /// by [`Rain::cloud_bg_draw_step`] (`Main.cs:59358-59373`).
     cloud_bg: f32,
     /// `Main.lightning`: the flash brightness ramping up via `lightningSpeed`
     /// and decaying via `lightningDecay`, 0..1.
@@ -339,6 +332,32 @@ impl Rain {
         self.cloud_bg
     }
 
+    /// `DrawSurfaceBG`'s `cloudBGAlpha` ramp (`Main.cs:59358-59373`), verbatim:
+    /// `cloudBGActive > 0f` → `+= 0.0005f * dayRate` capped at 1, else
+    /// `-= 0.0005f * dayRate` floored at 0. Runs once per DRAW at the draw
+    /// head (`app/frame/draw.rs`), inside the C#'s own gate chain —
+    /// `!drunkWorldGen && ShouldDrawSurfaceBackground() && screenPosition.Y/16
+    /// <= worldSurface + 10` (`:59354`) AND `BackgroundEnabled` (`:59356`);
+    /// the caller evaluates the gates. `dayRate` is the RAW value (no
+    /// `max(1, …)` — the C# multiplies the unclamped static, so dayRate 0
+    /// freezes the deck). W4-g69 deviation fix: the retired session schedule
+    /// chased the rain intensity at 10× per tick instead.
+    pub(crate) fn cloud_bg_draw_step(&mut self, cloud_bg_active: f32, day_rate: i32) {
+        // `Main.cs:59358-59365`.
+        if cloud_bg_active > 0.0 {
+            self.cloud_bg += CLOUD_BG_RAMP_PER_DRAW * day_rate as f32;
+            if self.cloud_bg > 1.0 {
+                self.cloud_bg = 1.0;
+            }
+        } else {
+            // `Main.cs:59366-59373`.
+            self.cloud_bg -= CLOUD_BG_RAMP_PER_DRAW * day_rate as f32;
+            if self.cloud_bg < 0.0 {
+                self.cloud_bg = 0.0;
+            }
+        }
+    }
+
     fn next_u64(&mut self) -> u64 {
         self.rng = self.rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.rng;
@@ -453,19 +472,9 @@ impl Rain {
             self.intensity += delta;
         }
 
-        // `cloudBGAlpha` ramps toward the storm strength (kept at 10× the
-        // `cloudAlpha` ramp so the deck appears within it; scaled by
-        // `max(1, dayRate)` like the `cloudBGActive` ramp it stands in for,
-        // `Main.cs:13187/13205`). Runs under the pin too, as before.
-        let rate = day_rate.max(1) as f32;
-        let bg_ramp = CLOUD_BG_RAMP_PER_TICK * rate;
-        let target = if self.intensity > 0.05 {
-            self.intensity.min(1.0)
-        } else {
-            0.0
-        };
-        let delta = (target - self.cloud_bg).clamp(-bg_ramp, bg_ramp);
-        self.cloud_bg = (self.cloud_bg + delta).clamp(0.0, 1.0);
+        // `cloudBGAlpha` no longer ramps here: the C# walks it per DRAW inside
+        // `DrawSurfaceBG` (`Main.cs:59358-59373`), ported as
+        // `cloud_bg_draw_step` at the draw head (W4-g69 deviation fix).
 
         // The lightning chain (`Main.UpdateWeather`'s
         // `currentDayRateIteration == 0` arm) is stepped once per world tick —
@@ -1326,8 +1335,18 @@ mod tests {
                 0,
                 true,
             );
+            // The deck ramps per DRAW now (`Main.cs:59358-59373` via the
+            // draw head) — drive the step alongside the drop-sim tick with
+            // the overcast state active, exactly like the wired frame.
+            rain.cloud_bg_draw_step(1.0, 1);
         }
-        assert!(rain.cloud_bg() > 0.5, "cloud deck {}", rain.cloud_bg());
+        // 600 draws × 0.0005 = 0.3 at dayRate 1 (the C# rate — the retired
+        // stand-in reached 1.0 here at 10×).
+        assert!(
+            (rain.cloud_bg() - 0.3).abs() < 1e-4,
+            "cloud deck {}",
+            rain.cloud_bg()
+        );
         rain.flash = 1.0;
         rain.lightning_decay = 0.05; // `NewLightning`'s upper decay rate.
         // The flash rise/decay lives in the lightning chain — `thunder_step`,
@@ -1941,8 +1960,8 @@ mod tests {
     fn test_DW_2_3_cloud_alpha_ramp_moves_60x_at_day_rate_60() {
         // `Main.cs:61902-61924`: `num5 = 0.0005 * max(1, dayRate)` per step
         // toward `maxRaining` — one visual tick at dayRate 60 moves 60× the
-        // dry constant. The storm deck ramp scales the same way (the
-        // `Main.cs:13187/13205` shape at the port's 0.005 stand-in rate).
+        // dry constant. The storm deck's own ramp is per-draw now
+        // (`cloud_bg_draw_step`, `Main.cs:59358-59373`) — witnessed below.
         let w = ground();
         let step = 1.0 / 60.0;
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
@@ -1968,22 +1987,64 @@ mod tests {
             slow.visual_alpha()
         );
 
+        // The storm deck (`cloudBGAlpha`) no longer rides the drop-sim tick:
+        // `cloud_bg_draw_step` runs per DRAW at the C# rate —
+        // `0.0005 * dayRate` RAW (`Main.cs:59360/59368`), toward 1 while
+        // cloudBGActive > 0 and toward 0 otherwise (W4-g69 deviation fix).
         let mut deck = Rain::with_forced(11, None, false);
-        deck.intensity = 1.0; // above the 0.05 gate: the deck chases the intensity
         deck.update(&w, camera, screen, 1.0, step, false, 60, 0.0, 1.0, 0, true);
+        assert_eq!(deck.cloud_bg(), 0.0, "the tick no longer moves the deck");
+        deck.cloud_bg_draw_step(1.0, 60);
         assert!(
-            (deck.cloud_bg() - 0.3).abs() < 1e-6,
+            (deck.cloud_bg() - 0.03).abs() < 1e-6,
             "deck at FF: {}",
             deck.cloud_bg()
         );
         let mut dry = Rain::with_forced(11, None, false);
-        dry.intensity = 1.0;
-        dry.update(&w, camera, screen, 1.0, step, false, 1, 0.0, 1.0, 0, true);
+        dry.cloud_bg_draw_step(1.0, 1);
         assert!(
-            (dry.cloud_bg() - 0.005).abs() < 1e-9,
+            (dry.cloud_bg() - 0.0005).abs() < 1e-9,
             "deck dry: {}",
             dry.cloud_bg()
         );
+    }
+
+    #[test]
+    fn w4_g69_cloud_bg_draw_step_replays_the_csharp_ramp() {
+        // `Main.cs:59358-59373` verbatim: active > 0 climbs 0.0005*dayRate
+        // capped at 1; active <= 0 falls the same step floored at 0; the
+        // RAW dayRate 0 freezes it (no max(1, …) — the C# multiplies the
+        // unclamped static).
+        let mut r = Rain::with_forced(11, None, false);
+        // Climb: 100 draws at dayRate 1 = 0.05.
+        for _ in 0..100 {
+            r.cloud_bg_draw_step(0.5, 1);
+        }
+        assert!((r.cloud_bg() - 0.05).abs() < 1e-6, "{}", r.cloud_bg());
+        // The cap at 1 (2100 draws × 0.0005 = 1.05 -> clamped).
+        for _ in 0..2100 {
+            r.cloud_bg_draw_step(1.0, 1);
+        }
+        assert_eq!(r.cloud_bg(), 1.0, "the ramp caps at 1");
+        // The fall arm: active <= 0 (the cooldown climb is negative).
+        for _ in 0..100 {
+            r.cloud_bg_draw_step(-500.0, 1);
+        }
+        assert!((r.cloud_bg() - 0.95).abs() < 1e-5, "{}", r.cloud_bg());
+        // The floor at 0.
+        for _ in 0..2100 {
+            r.cloud_bg_draw_step(0.0, 1);
+        }
+        assert_eq!(r.cloud_bg(), 0.0, "the ramp floors at 0");
+        // dayRate 0 freezes both arms (the C# multiplies the raw static).
+        r.cloud_bg_draw_step(1.0, 0);
+        assert_eq!(r.cloud_bg(), 0.0);
+        r.cloud_bg = 0.5;
+        r.cloud_bg_draw_step(-1.0, 0);
+        assert_eq!(r.cloud_bg(), 0.5);
+        // The boundary: active exactly 0 takes the FALL arm (`> 0f` strict).
+        r.cloud_bg_draw_step(0.0, 60);
+        assert!((r.cloud_bg() - 0.47).abs() < 1e-6, "{}", r.cloud_bg());
     }
 
     #[test]
