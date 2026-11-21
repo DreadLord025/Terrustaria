@@ -19977,6 +19977,12 @@ impl ProjectilePool {
                 // restores the box, queues the Item10 cue and rolls the
                 // trail-death dust census. Kind-disjoint from the gem bolts.
                 self.aimed_spell_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                // W4-g3 — `Kill()`'s nebula/spirit/onyx blast arms
+                // (`Projectile.cs:71995-72050` / `:72503-72542` / `:72226-
+                // 72277`): the 634/635/659/661 death resizes to its blast box,
+                // runs `Damage()` through it and queues the Item14 cue + the
+                // death dust census. Kind-disjoint from the aimed spells.
+                self.nebula_spirit_onyx_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 // `Kill()`'s debris arm (`Kill_ExplodeTiles` `:77369-77385`,
                 // called from `Kill()` `:77258-77261`): the trio's death
                 // crack roll on the tile below its centre.
@@ -21830,6 +21836,65 @@ impl ProjectilePool {
             MAGIC_MISSILE => crate::projectile_ai_misc::magic_missile_death_draws(p, rng),
             FLAMELASH => crate::projectile_ai_misc::flamelash_death_draws(p, rng),
             RAINBOW_ROD_BULLET => crate::projectile_ai_misc::rainbow_rod_death_draws(p, rng),
+            _ => {}
+        }
+    }
+
+    /// W4-g3 — `Kill()`'s nebula/spirit/onyx blast arms
+    /// (`Projectile.cs:71995-72050` the 634/635 Nebula Blaze, `:72503-72542`
+    /// the 659 Spirit Flame, `:72226-72277` the 661 Onyx Black Bolt). Each
+    /// snaps the position to the centre, grows the box (50 / 80 / 160), runs
+    /// `Damage()` through it and queues `SoundID.Item14`; the blaze and onyx
+    /// also open `penetrate`/`maxPenetrate` to −1, the spirit flame gates on
+    /// `ai[0] >= 0` and leaves penetration alone. Unlike the aimed spells
+    /// these do NOT restore the box (the C# leaves it resized). Kind-gated,
+    /// one-shot per death. The dust bodies are SKIPPED, their explicit draws
+    /// kept (the `celeb2_death` convention).
+    fn nebula_spirit_onyx_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let kind = self.slots[slot].kind;
+        let side = match kind {
+            NEBULA_BLAZE_1 | NEBULA_BLAZE_2 => 50.0, // `:72000` num153
+            SPIRIT_FLAME => {
+                // `:72505` — the `ai[0] >= 0` gate (a spent flame bursts not).
+                if self.slots[slot].ai[0] < 0.0 {
+                    return;
+                }
+                80.0 // `:72507` num228
+            }
+            ONYX_BLACK_BOLT => 160.0, // `:72229`
+            _ => return,
+        };
+        // `position = Center; width = height = side; Center = position`.
+        crate::projectile_ai_misc::aimed_spell_kill_resize(&mut self.slots[slot], side);
+        // The blaze (`:72018-72019`) and onyx (`:72231-72232`) open penetration;
+        // the spirit flame does not.
+        if kind != SPIRIT_FLAME {
+            self.slots[slot].max_penetrate = -1;
+            self.slots[slot].penetrate = -1;
+        }
+        // `Damage()` (`:72020` / `:72510` / `:72233`).
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        // `SoundEngine.PlaySound(SoundID.Item14, base.position)` — the cue at
+        // the resized position (`:72017` / `:72511` / `:72234`).
+        let (sx, sy) = {
+            let p = &self.slots[slot];
+            (p.pos.x, p.pos.y)
+        };
+        self.pending_proj_sounds.push((2, 14, sx, sy, 0.0));
+        // The death dust census (bodies skipped, draws kept).
+        match kind {
+            NEBULA_BLAZE_1 | NEBULA_BLAZE_2 => {
+                crate::projectile_ai_misc::nebula_blaze_death_draws(kind, rng)
+            }
+            SPIRIT_FLAME => crate::projectile_ai_misc::spirit_flame_death_draws(rng),
+            ONYX_BLACK_BOLT => crate::projectile_ai_misc::onyx_bolt_death_draws(rng),
             _ => {}
         }
     }
@@ -44691,5 +44756,109 @@ mod w4_g3_aimed_spell_kill_tests {
         pool.aimed_spell_kill(slot, &mut [], (false, false), &mut rng, 0.0);
         assert_eq!(rng.floats, 1 + 14, "the lead hue + the 14 colour floats");
         assert!(rng.ranges.is_empty(), "the empty ring rolls no counts");
+    }
+}
+
+// --- W4-g3: the unclaimed nebula/spirit/onyx Kill arms (634/635/659/661) ---
+#[cfg(test)]
+mod w4_g3_nebula_spirit_onyx_kill_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 200, 200)
+    }
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+        doubles: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+        fn next_double(&mut self) -> f64 {
+            self.doubles += 1;
+            0.0
+        }
+    }
+
+    /// The Nebula Blaze (634) resizes to 50, opens penetration, bursts and
+    /// queues Item14. Census: 1 lead Next(5) + 40×(Next(5) + 8 floats + 2
+    /// doubles) + 20×3 floats.
+    #[test]
+    fn w4_g3_the_nebula_blaze_death_bursts_at_fifty() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_BLAZE_1, 500.0, 500.0, 0.0, 0.0, 20, 2.0)
+            .expect("the blaze row");
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0, doubles: 0 };
+        pool.nebula_spirit_onyx_kill(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (50.0, 50.0), "the 50 box (`:72000`)");
+        assert_eq!(p.penetrate, -1, "the penetration open (`:72019`)");
+        assert!(npc.hp < 500, "the box Damage lands");
+        assert_eq!(pool.pending_proj_sounds.last().map(|s| s.1), Some(14), "Item14");
+        assert_eq!(rng.ranges.len(), 1 + 40, "the lead + 40 type picks");
+        assert!(rng.ranges.iter().all(|&(a, b)| (a, b) == (0, 5)), "Next(5) for 634");
+        assert_eq!(rng.floats, 40 * 8 + 20 * 3, "the loop + tail floats");
+        assert_eq!(rng.doubles, 40 * 2, "the radius NextDoubles");
+    }
+
+    /// The Spirit Flame (659) gates on `ai[0] >= 0`: a spent flame (ai0 < 0)
+    /// never bursts; a live one resizes to 80 and keeps its penetration.
+    #[test]
+    fn w4_g3_the_spirit_flame_death_gates_on_ai0() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SPIRIT_FLAME, 500.0, 500.0, 0.0, 0.0, 20, 2.0)
+            .expect("the spirit flame row");
+        // Spent flame: no burst, no draws.
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0, doubles: 0 };
+        pool.nebula_spirit_onyx_kill(slot, &mut [], (false, false), &mut rng, 0.0);
+        assert_eq!(rng.floats, 0, "the ai0 < 0 gate refuses (`:72505`)");
+        assert!(pool.pending_proj_sounds.is_empty(), "no cue on the refused burst");
+        // Live flame: the 80 box, penetration kept, the 30+10 census.
+        pool.slots_mut()[slot].ai[0] = 0.0;
+        let pen0 = pool.slots()[slot].penetrate;
+        pool.nebula_spirit_onyx_kill(slot, &mut [], (false, false), &mut rng, 0.0);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (80.0, 80.0), "the 80 box (`:72507`)");
+        assert_eq!(p.penetrate, pen0, "the spirit flame keeps penetration");
+        // 30 scale + 15×2 + 15×4 + 10×3 = 150 floats.
+        assert_eq!(rng.floats, 30 + 15 * 2 + 15 * 4 + 10 * 3, "the spirit census");
+    }
+
+    /// The Onyx Black Bolt (661) resizes to 160 and opens penetration. Census:
+    /// 4×3 + 20×(2+1+2+1 doubles/floats mix) + 20×3 + 70×3 draws.
+    #[test]
+    fn w4_g3_the_onyx_bolt_death_bursts_at_160() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(ONYX_BLACK_BOLT, 500.0, 500.0, 0.0, 0.0, 20, 2.0)
+            .expect("the onyx bolt row");
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0, doubles: 0 };
+        pool.nebula_spirit_onyx_kill(slot, &mut [], (false, false), &mut rng, 0.0);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (160.0, 160.0), "the 160 box (`:72229`)");
+        assert_eq!(p.penetrate, -1, "the penetration open (`:72232`)");
+        assert_eq!(pool.pending_proj_sounds.last().map(|s| s.1), Some(14), "Item14");
+        // floats: 4×2 + 20×(2+1+2) + 20×2 + 70×2 = 8 + 100 + 40 + 140 = 288.
+        assert_eq!(rng.floats, 4 * 2 + 20 * 5 + 20 * 2 + 70 * 2, "the onyx floats");
+        // doubles: 4 + 20×2 + 20 + 70 = 134.
+        assert_eq!(rng.doubles, 4 + 20 * 2 + 20 + 70, "the onyx radius doubles");
+        assert!(rng.ranges.is_empty(), "the onyx census rolls no ranges");
     }
 }

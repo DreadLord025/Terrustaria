@@ -594,6 +594,94 @@ pub(crate) fn rainbow_rod_death_draws(p: &Projectile, rng: &mut dyn DropRng) {
     }
 }
 
+/// `Kill()`'s Nebula Blaze death census (`Projectile.cs:71995-72050`): one
+/// leading `SelectRandom` dust-type pick (`:71997`, `Next(5)` for 634 /
+/// `Next(3)` for 635 — `Utils.SelectRandom` draws `Next(choices.Length)`),
+/// then the 40-iteration loop (`:72021-72041`): per step a SECOND type pick
+/// (`:72023`/`:72026`), the first dust's `RotatedByRandom` pair (2 floats) +
+/// `NextDouble` radius + `NextFloat` velocity (`:72029-72032`), the second
+/// dust's `RotatedByRandom` pair + `NextDouble` + `NextFloat` (`:72034-72040`).
+/// Then the 20-iteration tail (`:72042-72049`): per step a `RotatedByRandom`
+/// pair + one `NextFloat` velocity. The `NewDust` internals go with the pool.
+pub(crate) fn nebula_blaze_death_draws(kind: u16, rng: &mut dyn DropRng) {
+    // `:71997`/`:72008` — the leading SelectRandom (5 choices for 634, 3 for 635).
+    let _ = rng.next_range(0, if kind == 635 { 3 } else { 5 });
+    for _ in 0..40 {
+        // `:72023`/`:72026` — the per-step type pick (same choice count).
+        let _ = rng.next_range(0, if kind == 635 { 3 } else { 5 });
+        // `:72029-72032` — first dust: RotatedByRandom(2) + NextDouble + NextFloat.
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+        let _ = rng.next_float();
+        // `:72034-72040` — second dust: same shape.
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+        let _ = rng.next_float();
+    }
+    for _ in 0..20 {
+        // `:72045-72048` — RotatedByRandom(2) + NextFloat velocity.
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_float();
+    }
+}
+
+/// `Kill()`'s Spirit Flame death census (`Projectile.cs:72512-72541`): the
+/// 30-iteration loop (`:72515-72531`) — per step one scale `NextFloat`
+/// (`:72517`); the first 15 steps add a fadeIn float + a velocity float
+/// (`:72521-72524`), the last 15 a `RotatedByRandom` pair + a radius float +
+/// a fadeIn float (`:72527-72529`). Then the 10-iteration tail
+/// (`:72532-72540`): per step a `RotatedByRandom` pair + a fadeIn float.
+pub(crate) fn spirit_flame_death_draws(rng: &mut dyn DropRng) {
+    for step in 0..30 {
+        let _ = rng.next_float(); // `:72517` scale
+        if step < 15 {
+            let _ = rng.next_float(); // `:72521` fadeIn
+            let _ = rng.next_float(); // `:72524` velocity
+        } else {
+            let _ = (rng.next_float(), rng.next_float()); // `:72527` RotatedByRandom
+            let _ = rng.next_float(); // `:72527` radius
+            let _ = rng.next_float(); // `:72528` fadeIn
+        }
+    }
+    for _ in 0..10 {
+        let _ = (rng.next_float(), rng.next_float()); // `:72535` RotatedByRandom
+        let _ = rng.next_float(); // `:72536` fadeIn
+    }
+}
+
+/// `Kill()`'s Onyx Black Bolt death census (`Projectile.cs:72236-72276`): the
+/// 4-iteration lead (`:72238-72241`) — per step a `RotatedByRandom` pair + a
+/// `NextDouble` radius. The 20-iteration loop (`:72242-72260`) — per step the
+/// first dust's `RotatedByRandom` pair + `NextDouble` + a `NextFloat` velocity
+/// boost (`:72248`), the second dust's `RotatedByRandom` pair + `NextDouble`
+/// (`:72251-72252`, its velocity boost is the fixed 8f). The 20-iteration
+/// (`:72261-72268`) and 70-iteration (`:72269-72276`) tails — per step a
+/// `RotatedByRandom` pair + `NextDouble` radius (the velocity boosts are
+/// fixed). The `NewDust` internals go with the pool.
+pub(crate) fn onyx_bolt_death_draws(rng: &mut dyn DropRng) {
+    for _ in 0..4 {
+        let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom
+        let _ = rng.next_double(); // radius
+    }
+    for _ in 0..20 {
+        // first dust: RotatedByRandom + NextDouble + NextFloat boost.
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+        let _ = rng.next_float(); // `:72248`
+        // second dust: RotatedByRandom + NextDouble (fixed 8f boost).
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..20 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..70 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+}
+
 /// `AI_147_Explosion` (`Projectile.cs:53130-53399`) — the per-state
 /// firework burst, as the DRAW CENSUS: every explicit `Main.rand` draw
 /// stays on the stream in the C#'s order, the dust/gore bodies are
