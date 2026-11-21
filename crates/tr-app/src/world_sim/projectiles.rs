@@ -836,6 +836,17 @@ mod w4_c19_ai_light_drain_tests {
     #[test]
     fn the_typhoon_intents_drain_into_the_entity_lights_pair() {
         let mut app = flow_app(None, vec![], vec![]);
+        // Muted: any spawn-cue play draws nothing (the s1_e_21h precedent),
+        // so the stream witness sees ONLY the gate + dust-ring draws.
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
         // Past the 10-sub-step gate: the 30x30 box at (32, 32) centres on
         // (47, 47) → tile (2, 2) inside the 8x8 fixture world.
         let slot = app
