@@ -4936,4 +4936,70 @@ mod tests {
         assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
     }
+
+    /// W4-d16 residual 5 — the aiStyle-161 shortsword census (the g4 G4
+    /// finding: styles 160/161 ride the `DefaultToKite`/`DefaultToShortsword`
+    /// helpers). `DefaultToShortsword` (`Projectile.cs:10773-10787`): 18x18,
+    /// aiStyle 161, friendly, penetrate −1, tileCollide FALSE, scale 1,
+    /// ownerHitCheck, melee, extraUpdates 1, drawLayer 7, usesOwnerLight.
+    /// The FOUR call sites cover exactly ELEVEN kinds: the Gladius 802
+    /// (`:7921-7924`), the Ruler 842 (`:8145-8148`), the eight ore
+    /// shortswords 938-945 (`:8917-8921`, + timeLeft 360) and the
+    /// Chlorophyte Saber 1127 (`:10559-10564`, + usesLocalNPCImmunity /
+    /// localNPCHitCooldown −1). The dispatch is `AI_161_RapierStabs`
+    /// (`:36607-36610` → `:47612-47665`). NO other `aiStyle = 161` write
+    /// exists in Projectile.cs (census). The port rows are UNROWED — the
+    /// 161-170 AI lane is d17's read claim; this witness pins the census
+    /// so the rowing pass lands the exact helper shape. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d16_161_the_shortsword_helper_census() {
+        // The eleven kinds the four DefaultToShortsword call sites cover.
+        const SHORTSWORD_KINDS: [u16; 11] =
+            [802, 842, 938, 939, 940, 941, 942, 943, 944, 945, 1127];
+        // The item rows shoot exactly these kinds (the useStyle-13 stab
+        // items — the generated itemdata census).
+        const SHORTSWORD_ITEMS: [(u16, u16); 11] = [
+            (4463, 802),  // Gladius
+            (486, 842),   // Ruler
+            (3507, 938),  // Copper Shortsword
+            (3501, 939),  // Tin Shortsword
+            (6, 940),     // Iron Shortsword
+            (3495, 941),  // Lead Shortsword
+            (3513, 942),  // Silver Shortsword
+            (3489, 943),  // Tungsten Shortsword
+            (3519, 944),  // Gold Shortsword
+            (3483, 945),  // Platinum Shortsword
+            (1227, 1127), // Chlorophyte Saber
+        ];
+        for (item, shoot) in SHORTSWORD_ITEMS {
+            let d = crate::registry::get(item).unwrap_or_else(|| panic!("item {item}"));
+            assert_eq!(d.projectile, Some(shoot), "item {item}");
+            assert_eq!(d.use_style, 13, "the stab useStyle");
+            assert!(SHORTSWORD_KINDS.contains(&shoot));
+        }
+        // The port rows are UNROWED today (d17 owns the 161-170 lane):
+        // when the rowing pass lands, every kind must carry the helper
+        // shape — 18x18, aiStyle 161, pen −1, tileCollide false,
+        // extraUpdates 1, melee. Until then `proj_data` is None and the
+        // dispatch's `_ => {}` keeps the slot inert (the census pin).
+        for k in SHORTSWORD_KINDS {
+            if let Some(d) = proj_data(k) {
+                assert_eq!((d.w, d.h, d.ai_style), (18.0, 18.0, 161), "kind {k}");
+                assert_eq!(d.penetrate, -1);
+                assert!(!d.tile_collide);
+                assert_eq!(d.extra_updates, 1);
+                assert!(d.melee);
+                assert_eq!(d.scale, 1.0);
+                // The per-site overrides: the ore eight's timeLeft 360,
+                // the saber's local-immunity pair.
+                if (938..=945).contains(&k) {
+                    assert_eq!(d.time_left, 360, "kind {k}");
+                }
+                if k == 1127 {
+                    assert!(d.uses_local_immunity);
+                    assert_eq!(d.local_hit_cooldown, -1);
+                }
+            }
+        }
+    }
 }

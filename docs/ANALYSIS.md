@@ -39244,3 +39244,90 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d16 kite residuals (the 151-160 lane's follow-up)
+
+The aiStyle-160 kite machine landed with the pool seams; the residuals close
+the item-use path, the draw and the census pins.
+
+- **The kite use-path** (`world_sim/editing/kites.rs`): the 24 `IsAKite`
+  item ids (`ID/ItemID.cs:411` — the SAME set as `PlaceTileOnAltUse`
+  `:412` and `HasAProjectileThatHasAUsabilityCheck`) launch on the LMB
+  press edge through `ItemCheck_Shoot`'s generic tail
+  (`Player.cs:49437` — the kite kinds carry no per-item arm): the spawn is
+  `RotatedRelativePoint(MountedCenter)` (`:47196`), the aim normalized
+  to `shootSpeed` 8, damage −1 (the marker rows). The RMB arms the
+  PARAMETERLESS `StartChanneling()` (`:43537-43541` → `:52952-52956` —
+  no cancel key; the item's `channel` flag stays false,
+  `Item.DefaultToKite` `Item.cs:47828-47838` →
+  `DefaultToThrownWeapon(projId, 15, 8f)`). The channel release reads
+  `controlUseTile` for kites (`ItemCheck`'s flag5 override
+  `:42792-42794`), NOT `controlUseItem` — the hoisted i23 head clear and
+  the aim-refresh else-if both exempt the kite latch. `CheckUsability`
+  (`Projectile.cs:53466-53472`) refuses EVERY new use while ANY same-owner
+  kite lives (the pulley gate `:52059-52062` refuses too); the RMB anchor
+  placement (`createTile` 723) rides the generic tile route when no kite
+  is out. The windy-day achievement (`Player.cs:49458-49461` →
+  `AchievementsHelper.cs:319-321`) fires on the spawn tick.
+  - Skips: the per-slot `holdStyle` mutation has no port item-instance
+    field — `kite_hold_out` derives the flag per tick from the pool (the
+    fishing-bobber hack's shape, `:52844-52856`); the hack's `ChangeDir`
+    is render-side (the `kite_step` facing write stands).
+    `TryInterruptingItemUsage` (`Player.cs:24162-24245`) +
+    `Projectile.Interrupt` (`:22179-22188`) have NO caller in the
+    decompiled tree (census) — the hotbar-switch kill rides the AI's
+    held-shoot mismatch gate (`:48431`) instead. The afk auto-kite
+    (`PickItemSelectionOverride` `:17421-17424`) keeps the hotbar.rs:67
+    afkCounter skip.
+- **The kite string DRAW** (`kite_string.rs` + `Projectile::draw_kite`):
+  `Main.DrawKite` (`Main.cs:37134-37569`), the `DrawProjDirect`
+  aiStyle-160 arm (`:28054-28058`). The pure geometry (the per-kind tail
+  parameter table `:37161-37341`, the 12-px FishingLine string walk with
+  the velocity-swap sag `:37356-37453`, the tail ribbon chains
+  `:37454-37534`) lives in `kite_string.rs` (the yoyo_string precedent);
+  the emission draws the string, the flag-gated tail links, the Extra-sheet
+  tail frames (103/104/132-148, packed in `assets.rs`) and the kite sprite
+  (`:37568`, the generic `GetAlpha` tail `Projectile.cs:79744-79757`).
+  The kites' mode-2 trailing (`ProjectileID.cs:521`) is wired so the tail
+  walk reads `oldPos`/`oldRot`/`oldSpriteDirection`.
+  - Deviation: the C# `TrailCacheLength` is 60/65/80 per kite
+    (`ProjectileID.cs:522`); the port's fixed 10-entry ring is the recorded
+    trail-density deviation (the 640 precedent) — ring indices past the
+    port's depth read as the unwritten zeros (the tail collapses to the
+    head, exactly like the C#'s first frames). The `num18` wind-remap's
+    first two assignments (`:37157-37158`) are dead stores — the final
+    `Remap(localAI[0], 0, 300, 0, 1)` is the live value; the no-tail five's
+    `num6` spin (`:37331`) is zeroed on the next line — both fold to
+    their final values.
+- **The 155 rope seams are LIVE**: the dispatch passes `&mut World`
+  straight into `ai_mystic_snake_coil` (the ai_ice_block carve-out);
+  `place_tile`/`kill_tile` bump `world.revision` (the `WorldFrameKey`
+  input, draw.rs's `world_revision`) so the frame cache invalidates. The
+  dispatch-level drain witness pins the attach column + the death removal.
+- **The 159 recovery-drop rows**: 4343/4344 match `Item.cs:37117-37129`
+  (22x16, sellPrice 5000, `DefaultToThrownWeapon(761/762, 17, 5f)` +
+  `SetWeaponValues(4, 2f)`); the Kill-arm gates (the foreign-owner and
+  `noDropItem` refusals, `Projectile.cs:76086`) are pinned.
+- **The 161 shortsword census** (the g4 G4 finding): `DefaultToShortsword`
+  (`Projectile.cs:10773-10787` — 18x18, aiStyle 161, friendly, pen −1,
+  tileCollide false, scale 1, ownerHitCheck, melee, extraUpdates 1,
+  drawLayer 7, usesOwnerLight) covers exactly ELEVEN kinds through four
+  call sites: the Gladius 802 (`:7923`), the Ruler 842 (`:8147`), the
+  eight ore shortswords 938-945 (`:8919`, + timeLeft 360) and the
+  Chlorophyte Saber 1127 (`:10561`, + the local-immunity pair). The
+  dispatch is `AI_161_RapierStabs` (`:36607-36610` → `:47612-47665`);
+  NO other `aiStyle = 161` write exists. The port rows are UNROWED — the
+  161-170 AI lane is d17's read claim; the census witness
+  (`projectile/data.rs`) pins the helper shape for the rowing pass.
+
+### Verification (W4-d16 residuals)
+
+Code-only: every port re-read against the cited C# windows; the seam call
+sites checked against the actual signatures by read/grep (`registry::get`,
+`Player::mounted_center/rotated_relative_point/weapon_knockback`,
+`ProjectilePool::spawn_with_data_ai_owned/slots_mut`,
+`assets::Lookups::proj_frame/uv_rect`, `tr_core::edit::place_tile/kill_tile`,
+`world.revision`). The witness tests (kites.rs 6 + kite_string.rs 4 +
+projectile_ai_misc.rs 3 + projectile/data.rs 1) are WRITTEN, NOT RUN —
+no cargo/rustc/rustfmt/tests/graphify invoked.
+
