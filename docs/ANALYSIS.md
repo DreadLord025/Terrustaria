@@ -39244,3 +39244,27 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC gore wave E remainder (W4-f4, 2026-11-21, code-only)
+
+The HitEffect gore REMAINDER census came back EMPTY: the HEAD gap
+`NPC.cs:81654-81659` is the signature + `!active` gate (zero gore),
+and every `Gore.NewGore*` inside `:81660-89834` is claimed by the
+pushed d55 (1-30) / e5 (31-86) / f10 (climbing) / f5 (wave D) lanes. The
+41 out-of-HitEffect sites were censused by method
+(research/71-npc-gore-wave-e-claims.md): 24 belong to the d52/e2-reserved
+AI-machine bodies or g61's spawn/transform family; the 17 UNCLAIMED
+sites landed as `npc_hit_effect_e.rs` (E1-E17, two 10-site-capped
+batches `007b5cb4`/`81c1c5a7`): the FungiSpore birth trio, the
+KingSlime/QueenSlime tick-60 crowns (INTEGER `-height/2`, default
+scale 1f NOT this.scale), the confetti-slime ambient, the Betsy
+sweep-cell Direct (literal num36=4, INTEGER num38), the kobold
+walker/glider explosion quintets (spin 2-NextDouble-then-radius), the
+567 skeleton walk-drip, the TownBunny ear-flick, the MoonLordCore open
+quad, the SantaNK1 half-hp strike (double-precision crossing gate) and
+the loveStruck heart (XNA unconditional normalize). Deviations: the
+hosts' interleaved DUST loops stay the dust lanes' (the wiring round
+runs them first on the same stream, the g59/g60 argument/body split);
+the modules are UNWIRED standalone machines; the Betsy sweep's tile
+probe + KillTile dust amounts are the caller's. 10 witnesses WRITTEN
+NOT RUN - no cargo/rustc/rustfmt/tests/dotnet/graphify invoked.

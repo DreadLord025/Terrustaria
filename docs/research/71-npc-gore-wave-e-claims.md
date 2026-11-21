@@ -80,3 +80,22 @@ spawn/transform family stays g61's.
 
 Witnesses: WRITTEN NOT RUN (code-only mode, no cargo per the lane
 directive).
+
+## 4. Landing status (WAVE E COMPLETE, 17/17)
+
+* claim+census: `b1430f33` (this doc)
+* batch 1 (E1-E10): `007b5cb4` — `npc_hit_effect_e.rs` standalone +
+  `main.rs` registration + anchor; 6 witnesses
+* batch 2 (E11-E17): `81c1c5a7` — the TownBunny ear-flick, the
+  MoonLordCore quad, the SantaNK1 half-hp strike, the loveStruck heart;
+  4 witnesses (lane total 10)
+
+All UNWIRED (`#![allow(dead_code)]`, the d55/g61 code-only precedent):
+the host machines' wiring is the follow-up round, and the wiring must
+run each host's interleaved dust draws BEFORE the gore arm on the same
+stream (the per-site host-gate notes in the module doc).
+
+Worktree note: an in-flight FOREIGN `npc.rs` edit (the KingSlime dust
+sites 43251/43278/43365, the f4 dust THIRD-batch continuation) appeared
+in this worktree mid-lane; it was left UNCOMMITTED and untouched — the
+dust-lane owner commits it.
