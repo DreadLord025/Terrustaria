@@ -3626,6 +3626,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // LOCAL pair (-1), ignoreWater, magic, stock tileCollide true
             // (the blocked-move bounce :18068-18078).
             PETALSTORM_SHOT => (18.0, 18.0, 196, 1, 120, 0, true, false, false, (true, -1, false, -1, 0, 1.0)),
+            // W4-d20 — `Projectile.cs:9446-9457` (995, the jumino stardrop
+            // animation): 240x104, aiStyle 192, penetrate -1, tileCollide
+            // false, ignoreWater, timeLeft = 3600 * 5 = 18000.
+            JUMINO_STARDROP_ANIMATION => (240.0, 104.0, 192, -1, 18000, 0, false, false, false, RESET_STATE),
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -4243,7 +4247,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == BIRD_DROPPINGS
             // W4-d20 — `Projectile.cs:9804`/`:10423`: the two aiStyle-196
             // petals set `ignoreWater = true`.
-            || matches!(kind, FLOWER_WHIP_PETAL | PETALSTORM_SHOT),
+            || matches!(kind, FLOWER_WHIP_PETAL | PETALSTORM_SHOT)
+            // W4-d20 — `Projectile.cs:9455`: the jumino animation (995) sets
+            // `ignoreWater = true`.
+            || kind == JUMINO_STARDROP_ANIMATION,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4505,6 +4512,9 @@ pub const FLOWER_WHIP_PETAL: u16 = 1038;
 /// `ProjectileID.PetalstormShot` (1116) — the Petalstorm's shot, aiStyle 196
 /// (`Projectile.cs:10413-10426`). W4-d20.
 pub const PETALSTORM_SHOT: u16 = 1116;
+/// `ProjectileID.JuminoStardropAnimation` (995) — the jumino stardrop
+/// animation, aiStyle 192 (`Projectile.cs:9446-9457`). W4-d20.
+pub const JUMINO_STARDROP_ANIMATION: u16 = 995;
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,
@@ -4653,6 +4663,9 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Main.cs:8555-8556`) — the 4-tick cycle wraps at 8
         // (`Projectile.cs:40492-40499`).
         FLOWER_WHIP_PETAL | PETALSTORM_SHOT => 8,
+        // W4-d20 — the jumino animation's 20-frame sheet (`Main.cs:8709`) —
+        // the fall machine wraps at 20 (`Projectile.cs:41547-41550`).
+        JUMINO_STARDROP_ANIMATION => 20,
         CRIMSON_HEART => 4,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the

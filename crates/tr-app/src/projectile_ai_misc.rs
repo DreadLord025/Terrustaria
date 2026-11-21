@@ -926,6 +926,145 @@ pub(crate) fn petal_storm_move(p: &mut Projectile, world: &World) {
     p.pos += p.vel;
 }
 
+/// `AI_192_GetJuminoFall` (`Projectile.cs:41501-41514`) — the jumino's fall
+/// offset: `timeSinceFall = max(ai[0] - 420, 0)`, `fall = -4*t + 0.2*t²/2`
+/// capped at 24. The two `out` params map to the returned pair.
+pub(crate) fn jumino_fall(ai0: f32) -> (f32, f32) {
+    let mut time_since_fall = ai0 - 420.0;
+    if time_since_fall < 0.0 {
+        time_since_fall = 0.0;
+    }
+    let mut fall = -4.0 * time_since_fall + 0.2 * (time_since_fall * time_since_fall) / 2.0;
+    if fall > 24.0 {
+        fall = 24.0;
+    }
+    (time_since_fall, fall)
+}
+
+/// `AI_192_JuminoAnimation` (`Projectile.cs:41516-41638`) — the jumino
+/// stardrop animation (995). The 20-frame sheet machine (the fall frames
+/// advance at `num4` = 4, or 60 while frame == 1), the opacity ramp, the
+/// five dust windows and the completion gift (`Item.NewItem` 5276).
+///
+/// RNG (the explicit call-site draws stay in order; the dust bodies skip):
+/// - the 60..130 window (`:41561-41581`): one `NextFloat` gate; on the taken
+///   branch the `NextVector2Circular(2,2)` pair; then TWO iterations each a
+///   `NextFloat` gate, on the taken branch a `NextFloatDirection` + two
+///   `NextFloat` (the speed `2 + NextFloat + NextFloat*3*num6`).
+/// - the <=60 window (`:41582-41603`): TWO iterations each a `NextFloat`
+///   gate, on the taken branch a `NextFloatDirection` + one `NextFloat`; at
+///   ai[0]==58 a 12-iteration ring each a `NextFloatDirection` + one
+///   `NextFloat`.
+/// - the >=num5-20 window (`:41604-41623`): FIVE dust each a `NextFloat`
+///   fadeIn; then ONE dust (no draw).
+/// - the 1-in-6 sparkle (`:41624-41631`): `Next(6)` while 90 <= ai[0] < num.
+/// `Lighting.AddLight` is absent here; the dust colour is a constant.
+///
+/// The completion (`:41632-41637`) queues the gift item and kills. The row
+/// keeps `tileCollide = false` (`:9454`) — the free integrate.
+pub(crate) fn ai_jumino(
+    p: &mut Projectile,
+    player: Option<&crate::player::Player>,
+    rng: &mut dyn DropRng,
+) {
+    let num = 420.0 + 120.0; // 540
+    let num2 = num - 150.0; // 390
+    // `:41520-41530` — the partial-opacity dust (one, no gate draw; the
+    // NewDustDirect body skips, so the opacity read feeds nothing here).
+    // `:41531-41556` — the frame machine. num3 = 20 frames, num4 = 4 (60
+    // while frame == 1).
+    let num3 = 20;
+    let mut num4 = 4;
+    if p.frame == 1 {
+        num4 = 60;
+    }
+    let (time_since_fall, fall) = jumino_fall(p.ai[0]);
+    if time_since_fall > 0.0 {
+        if fall < 20.0 {
+            p.frame = 0;
+        } else {
+            p.frame_counter += 1;
+            if p.frame_counter >= num4 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= num3 {
+                    p.frame = num3 - 1;
+                }
+            }
+        }
+    } else {
+        p.frame = 1;
+    }
+    // `:41557` — the sprite faces the owner (>= 0 → 1). The port's single
+    // player rides slot 0; no player keeps the own centre comparison.
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let owner_x = player.map(|pl| pl.center().0).unwrap_or(center.x);
+    let dir = if owner_x - center.x >= 0.0 { 1 } else { -1 };
+    p.direction = dir;
+    p.sprite_direction = dir;
+    // `:41558-41560` — the opacity ramp and the age counter. num5 = num +
+    // num3*num4 + 30 (num4 is the frame==1 ? 60 : 4 read above).
+    let num5 = num + (num3 * num4) as f32 + 30.0;
+    let op = remap(p.ai[0], num2, num2 + 20.0, 0.0, 1.0)
+        * remap(p.ai[0], num5 - 5.0, num5, 1.0, 0.5);
+    p.alpha = alpha_of(op);
+    p.ai[0] += 1.0;
+    // `:41561-41581` — the 60..130 gather window.
+    if p.ai[0] <= 130.0 && p.ai[0] >= 60.0 {
+        let num6 = remap(p.ai[0], 60.0, 130.0, 0.0, 1.0);
+        if rng.next_float() < num6 * 0.5 {
+            let _ = (rng.next_float(), rng.next_float()); // NextVector2Circular(2,2)
+        }
+        let mut num7 = 0.0f32;
+        while num7 < 1.0 {
+            if rng.next_float() < 0.5 {
+                let _ = rng.next_float(); // NextFloatDirection
+                let _ = rng.next_float(); // speed: 2 + NextFloat + ...
+                let _ = rng.next_float(); // ... + NextFloat * 3 * num6
+            }
+            num7 += 0.5;
+        }
+    }
+    // `:41582-41603` — the <=60 spawn window.
+    if p.ai[0] <= 60.0 {
+        let num8 = remap(p.ai[0], 0.0, 60.0, 0.0, 1.0);
+        let mut num9 = 0.0f32;
+        while num9 < 1.0 {
+            if rng.next_float() < 0.5 {
+                let _ = rng.next_float(); // NextFloatDirection
+                let _ = rng.next_float(); // speed: 2*num8 + NextFloat*num8
+            }
+            num9 += 0.5;
+        }
+        if p.ai[0] == 58.0 {
+            let mut num10 = 0.0f32;
+            while num10 < 1.0 {
+                let _ = rng.next_float(); // NextFloatDirection
+                let _ = rng.next_float(); // speed: 1*num8 + NextFloat*num8*2
+                num10 += 1.0 / 12.0;
+            }
+        }
+    }
+    // `:41604-41623` — the >=num5-20 landing window: five fadeIn draws then
+    // one no-draw dust.
+    if p.ai[0] >= num5 - 20.0 {
+        for _ in 0..5 {
+            let _ = rng.next_float(); // fadeIn = 0.6 + NextFloat * 0.3
+        }
+    }
+    // `:41624-41631` — the 1-in-6 sparkle gate.
+    if rng.next_range(0, 6) == 0 && p.ai[0] >= 90.0 && p.ai[0] < num {
+        // The dust body — SKIPPED (no draws beyond the gate).
+    }
+    // `:41632-41637` — the completion gift and kill.
+    if p.ai[0] >= num5 {
+        p.wants_gift_item = Some((5276, center.x, center.y + 12.0));
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
@@ -1771,5 +1910,86 @@ mod tests {
         assert_eq!(pool.slots()[b].ai[0], 1.0, "the 1116 counter");
         assert_ne!(pool.slots()[a].pos, Vec2::new(1600.0, 400.0));
         assert_ne!(pool.slots()[b].pos, Vec2::new(1600.0, 500.0));
+    }
+
+    // ---- W4-d20 aiStyle 192 (JuminoAnimation) — WRITTEN NOT RUN ----
+
+    /// The row carries the census slice (`Projectile.cs:9446-9457`):
+    /// 240x104, aiStyle 192, penetrate -1, tileCollide false, ignoreWater,
+    /// timeLeft 18000 (3600 * 5); the 20-frame sheet (`Main.cs:8709`).
+    #[test]
+    fn w4_d20_the_jumino_row_carries_style_192() {
+        let d = proj_data(995).unwrap();
+        assert_eq!(d.ai_style, 192);
+        assert_eq!((d.w, d.h), (240.0, 104.0), "`:9449-9450`");
+        assert_eq!(d.penetrate, -1, "`:9453`");
+        assert!(!d.tile_collide, "`:9454`");
+        assert!(d.ignore_water, "`:9455`");
+        assert_eq!(d.time_left, 18000, "`:9456` timeLeft *= 5");
+    }
+
+    /// The fall helper (`:41501-41514`): timeSinceFall = max(ai0 - 420, 0),
+    /// fall = -4t + 0.1t² capped at 24.
+    #[test]
+    fn w4_d20_the_jumino_fall_helper() {
+        let (t, f) = jumino_fall(400.0);
+        assert_eq!(t, 0.0, "before 420 the fall time is 0");
+        assert_eq!(f, 0.0);
+        let (t, f) = jumino_fall(421.0);
+        assert_eq!(t, 1.0);
+        assert!((f - (-4.0 + 0.1)).abs() < 1e-6, "-4*1 + 0.2*1/2");
+        // The cap: a large t clamps fall at 24.
+        let (_, f) = jumino_fall(500.0);
+        assert_eq!(f, 24.0, "the 24 cap (`:41510-41513`)");
+    }
+
+    /// The pre-fall frame pin (`:41553-41556`): while ai[0] < 420 the frame
+    /// is 1; the counter advances and the sprite faces the owner.
+    #[test]
+    fn w4_d20_the_jumino_pre_fall_pins_frame_one() {
+        let mut p = proj(995);
+        p.ai[0] = 10.0;
+        p.frame = 5;
+        ai_jumino(&mut p, None, &mut census());
+        assert_eq!(p.frame, 1, "the pre-fall pin (`:41555`)");
+        assert_eq!(p.ai[0], 11.0, "the counter advanced");
+        assert_eq!(p.sprite_direction, 1, "no owner → own centre, >= 0");
+    }
+
+    /// The completion gift (`:41632-41637`): at ai[0] >= num5 the arm queues
+    /// the 5276 gift at Center + (0, 12) and kills. num5 = 540 + 20*60 + 30
+    /// = 1770 when frame == 1 (num4 = 60).
+    #[test]
+    fn w4_d20_the_jumino_completion_queues_the_gift() {
+        let mut p = proj(995);
+        p.pos = Vec2::new(1000.0, 500.0);
+        p.frame = 1; // num4 = 60 → num5 = 1770
+        p.ai[0] = 1769.0; // advances to 1770 = num5
+        ai_jumino(&mut p, None, &mut census());
+        assert!(!p.active, "the completion kill");
+        let center = Vec2::new(1000.0 + 120.0, 500.0 + 52.0);
+        assert_eq!(p.wants_gift_item, Some((5276, center.x, center.y + 12.0)));
+    }
+
+    /// The dispatch wires style 192: one pool update advances the counter.
+    #[test]
+    fn w4_d20_the_dispatch_arms_style_192() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let s = pool.spawn_with_data(995, 1600.0, 400.0, 0.0, 0.0, 0, 0.0).unwrap();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        assert_eq!(pool.slots()[s].ai[0], 1.0, "the counter advanced");
     }
 }

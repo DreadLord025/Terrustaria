@@ -597,6 +597,33 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-d20 — the aiStyle-192 jumino's completion gift (`AI_192_JuminoAnimation`
+    // `Projectile.cs:41632-41637`): `Item.NewItem(EntitySource_Gift, Center +
+    // (0, 12), 5276)` then `velocity = (0, 0)`. The C# `NewItem` draws the
+    // velocity triplet on `Main.rand` (the `UpdateProjectiles` swap,
+    // `Main.cs:17775`) BEFORE the explicit zeroing overrides it; prefix 0
+    // rolls nothing (`Item.Prefix(0)`, `Item.cs:49730`). The port keeps the
+    // three draws for stream fidelity, then zeroes the velocity (the death
+    // drop's explicit-velocity precedent, `death.rs`). The drop centres on
+    // the gift point (`WorldItem.Center = center`, `Item.cs:49736`).
+    for (owner, item, x, y) in app.projectiles.drain_gift_items() {
+        if owner != app.local_id as u8 {
+            continue;
+        }
+        let _ = rng.next_float();
+        let _ = rng.next_float();
+        let _ = rng.next_float();
+        app.items.push(crate::item::ItemDrop::new(
+            item,
+            1,
+            0,
+            x - crate::item::SIZE * 0.5,
+            y - crate::item::SIZE * 0.5,
+            0.0,
+            0.0,
+            0.0,
+        ));
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's

@@ -769,6 +769,13 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
+    /// W4-d20 — the aiStyle-192 jumino's gift (`AI_192_JuminoAnimation`
+    /// `Projectile.cs:41632-41637`): the `(item, x, y)` the world sim resolves
+    /// into an item drop when the animation completes (`Item.NewItem` of the
+    /// JunimoPetItem 5276 at `Center + (0, 12)`, then `velocity = 0`). The
+    /// `wants_mark_spawn` intent pattern — the pool cannot borrow the App's
+    /// item vec mid-iteration.
+    pub(crate) wants_gift_item: Option<(u16, f32, f32)>,
 }
 
 impl Default for Projectile {
@@ -855,6 +862,7 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_gift_item: None,
         }
     }
 }
@@ -15016,6 +15024,21 @@ impl ProjectilePool {
         std::mem::take(&mut self.pending_catches)
     }
 
+    /// W4-d20 — the aiStyle-192 jumino's completion gift
+    /// (`AI_192_JuminoAnimation` `Projectile.cs:41632-41637`): the
+    /// `(owner, item, x, y)` the world sim resolves into an item drop
+    /// (`Item.NewItem` of the JunimoPetItem at `Center + (0, 12)`, then
+    /// `velocity = 0`). The `drain_mark_spawns` intent pattern.
+    pub fn drain_gift_items(&mut self) -> Vec<(u8, u16, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some((item, x, y)) = p.wants_gift_item.take() {
+                out.push((p.owner, item, x, y));
+            }
+        }
+        out
+    }
+
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
     /// kill every active bobber this owner controls (the sleep teardown,
     /// `PlayerSleepingHelper.cs:174`). The C# `Kill()`'s bobber arm
@@ -17389,6 +17412,20 @@ impl ProjectilePool {
                             } else {
                                 self.slots[i].kill_step(world);
                             }
+                        }
+                        // W4-d20 — aiStyle 192, the jumino stardrop animation
+                        // (`AI_192_JuminoAnimation` `:41516-41638`): the
+                        // 20-frame fall machine, the opacity ramp, the five
+                        // dust windows' draws and the completion gift. The
+                        // row keeps tileCollide false — the free integrate.
+                        192 => {
+                            crate::projectile_ai_misc::ai_jumino(
+                                &mut self.slots[i],
+                                player.as_deref(),
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
                         }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
@@ -30494,6 +30531,7 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_gift_item: None,
         }
     }
 
@@ -30903,6 +30941,7 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_gift_item: None,
         }
     }
 
