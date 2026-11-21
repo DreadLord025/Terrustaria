@@ -45,6 +45,23 @@
 //!   dust 18, alpha/color/scale ride the NPC.
 //! - 89708 — the hornet group (`:89702-89710`, 42/176/205/231-235):
 //!   ×100 dust 18, alpha/color/scale ride the NPC.
+//! Batch 2 (the slime-variant/jellyfish/lava/boss/sphere arms):
+//! - 85415 — Crimslime 183 (`:85409-85417`): ×100 dust 136, (0,0),
+//!   this.alpha/color.
+//! - 85433 — CorruptSlime 81/121 (`:85427-85435`): ×100 dust 14, (0,0).
+//! - 85484 — IlluminantSlime 120/137/138 (`:85478-85487`): ×50 dust 71,
+//!   (0,0), alpha 200, velocity ×1.5.
+//! - 85343/85345 — IceSlime 147/184 (`:85337-85347`): ×50 PAIRS — dust
+//!   76 noGravity + dust 4 (97,200,255,100) alpha 100.
+//! - 85549 — the jellyfish trio 63/64/103 (`:85534-85551`): ×50 dust 4,
+//!   the per-type tint.
+//! - 85568 — LavaSlime/Hellbat 59/60/151 (`:85562-85575`): ×80 dust 6,
+//!   (2·dir,-1), this.alpha, scale 1.5, per-dust Next(8)!=0 → noGravity.
+//! - 85676 — King Slime 50 (`:85670-85679`): ×300 dust 4, alpha 175,
+//!   (0,80,255,100).
+//! - 89531/89534 — the Burning Sphere 25 (`:89526-89537`): 20 PAIRS of
+//!   dust 6 at (-vx·0.2,-vy·0.2), alpha 100 — scale 2 noGravity ×2, then
+//!   scale 1 ×2 (the Item10 cue is c13's lane).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -186,12 +203,35 @@ pub fn replay_hit_dust(
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    // The LIVE lane's gate: every batch-1 arm sits under `if (this.life
+    let dir = s.hit_dir as f32;
+    // `:89526-89537` — the Burning Sphere: EVERY strike (live or dead —
+    // the arm carries NO life gate, so the killing blow's HitEffect
+    // still bursts; it is a strike arm, not a death-event arm). 20
+    // pairs of dust 6 at the reflected velocity; the Item10 cue
+    // (`:89528`) is c13's sound lane. The pair shape: scale-2 noGravity
+    // ×2, then scale-1 ×2.
+    if s.npc_type == 25 {
+        for _ in 0..20 {
+            let idx = live_dust(
+                s, 6, -s.vx * 0.2, -s.vy * 0.2, 100, Color::default(), 2.0,
+                rng, dust, ctx, world,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true; // `:89532`
+            d.velocity *= 2.0; // `:89533`
+            let idx = live_dust(
+                s, 6, -s.vx * 0.2, -s.vy * 0.2, 100, Color::default(), 1.0,
+                rng, dust, ctx, world,
+            ); // `:89534`
+            dust.slot_mut(idx).velocity *= 2.0; // `:89535`
+        }
+        return;
+    }
+    // The LIVE lane's gate: every remaining arm sits under `if (this.life
     // > 0)` and RETURNS; the death halves are g59/g60's.
     if s.life <= 0 {
         return;
     }
-    let dir = s.hit_dir as f32;
     match s.npc_type {
         // `:84721-84749` — the slime family (1/16/71/244/535). The
         // confetti-slime `ai[1] == 1345` prologue (`:84723-84742`) is a
@@ -275,6 +315,78 @@ pub fn replay_hit_dust(
                 live_dust(s, 18, dir, -1.0, s.alpha, s.color, s.scale, rng, dust, ctx, world);
             }
         }
+        // `:85409-85417` — the Crimslime's live crimson gel (the death
+        // half's ×2 velocity is g59/g60's).
+        183 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 136, 0.0, 0.0, s.alpha, s.color, 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:85427-85435` — the CorruptSlime pair (81/121).
+        81 | 121 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 14, 0.0, 0.0, s.alpha, s.color, 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:85478-85487` — the hallow trio (120/137/138): ×50 dust 71,
+        // alpha 200, post-spawn velocity ×1.5.
+        120 | 137 | 138 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 71, 0.0, 0.0, 200, Color::default(), 1.0, rng, dust, ctx, world);
+                dust.slot_mut(idx).velocity *= 1.5; // `:85485`
+            }
+        }
+        // `:85337-85347` — the IceSlime/UmbrellaSlime pair: ×50 PAIRS,
+        // dust 76 noGravity then dust 4 with the frost tint alpha 100.
+        147 | 184 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 76, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                dust.slot_mut(idx).no_gravity = true; // `:85344`
+                live_dust(
+                    s, 4, dir, -1.0, 100, Color::new(97, 200, 255, 100), 1.0,
+                    rng, dust, ctx, world,
+                ); // `:85345`
+            }
+        }
+        // `:85534-85551` — the jellyfish trio: ×50 dust 4, the per-type
+        // tint (`:85536-85544`).
+        63 | 64 | 103 => {
+            let tint = match s.npc_type {
+                64 => Color::new(225, 70, 140, 100),
+                103 => Color::new(70, 225, 140, 100),
+                _ => Color::new(50, 120, 255, 100),
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 4, dir, -1.0, 0, tint, 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:85562-85575` — LavaSlime/Hellbat/SpikedJungleSlime: ×80 dust
+        // 6 at (2·dir, -1), this.alpha, scale 1.5; the per-dust Next(8)
+        // rides AFTER the spawn internals (`:85569`), != 0 → noGravity.
+        // The death half's lava-tile write (`:85584-85668`) is g59/g60's.
+        59 | 60 | 151 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 80.0) {
+                let idx = live_dust(
+                    s, 6, 2.0 * dir, -1.0, s.alpha, Color::default(), 1.5,
+                    rng, dust, ctx, world,
+                );
+                if rng.next_max(8) != 0 {
+                    dust.slot_mut(idx).no_gravity = true; // `:85571`
+                }
+            }
+        }
+        // `:85670-85679` — King Slime's live gel: ×300 dust 4, alpha 175,
+        // the blue tint (the death half's minion batch is g60's).
+        50 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 300.0) {
+                live_dust(
+                    s, 4, dir, -1.0, 175, Color::new(0, 80, 255, 100), 1.0,
+                    rng, dust, ctx, world,
+                );
+            }
+        }
+        // `:89526-89537` — the Burning Sphere is handled ABOVE the life
+        // gate (the every-strike arm); this match never sees 25.
         _ => {}
     }
 }
@@ -547,5 +659,145 @@ mod tests {
         assert_eq!((s.vx, s.vy), (2.5, -3.0));
         assert_eq!(s.color, Color::new(0, 0, 0, 50), "the :8975 row");
         assert_eq!((s.w, s.h), (36, 24), "the MotherSlime box");
+    }
+
+    /// W4-g62 batch 2 — the jellyfish trio's per-type tint
+    /// (`NPC.cs:85536-85544`): ×50 dust 4, the blue/pink/green rows.
+    #[test]
+    fn w4_g62_the_jellyfish_tints_match_the_rows() {
+        let world = air();
+        let ctx = ctx();
+        for (t, tint) in [
+            (63, Color::new(50, 120, 255, 100)),
+            (64, Color::new(225, 70, 140, 100)),
+            (103, Color::new(70, 225, 140, 100)),
+        ] {
+            let s = snap(t, 60, 60, 3.0); // ×50 → 2 (3/60·50 = 2.5 → 3? no: 2.5 → 3)
+            let mut rng = UnifiedRandom::new(21);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let mut twin_rng = UnifiedRandom::new(21);
+            let mut twin = DustPool::new();
+            for _ in 0..hit_count(3.0, 60, 50.0) {
+                twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 4,
+                    1.0, -1.0, 0, tint, 1.0,
+                );
+            }
+            assert_eq!(rng, twin_rng, "type {t}");
+            assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 2 — the lava arm's per-dust Next(8) (`NPC.cs:85568-
+    /// 85572`): the roll rides AFTER the spawn internals, != 0 sets
+    /// noGravity; the whole ×80 sequence mirrors call-for-call.
+    #[test]
+    fn w4_g62_the_lava_arm_rolls_next8_after_each_spawn() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(59, 50, 50, 1.0); // ×80 → 1
+        s.alpha = 50;
+        let mut rng = UnifiedRandom::new(23);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(23);
+        let mut twin = DustPool::new();
+        for _ in 0..1 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 6,
+                2.0, -1.0, 50, Color::default(), 1.5,
+            );
+            if twin_rng.next_max(8) != 0 {
+                twin.slot_mut(idx).no_gravity = true;
+            }
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 2 — the IceSlime pair (`NPC.cs:85343-85345`): each
+    /// iteration spawns dust 76 (noGravity) THEN dust 4 (frost tint,
+    /// alpha 100) — the pair order is the stream order.
+    #[test]
+    fn w4_g62_the_ice_slime_pair_order_is_76_then_4() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(147, 30, 30, 1.0); // ×50 → 1 pair
+        let mut rng = UnifiedRandom::new(29);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 2);
+        assert_eq!(live[0].dust_type, 76);
+        assert!(live[0].no_gravity);
+        assert_eq!(live[1].dust_type, 4);
+        assert_eq!(live[1].alpha, 100);
+        assert_eq!(live[1].color, Color::new(97, 200, 255, 100));
+    }
+
+    /// W4-g62 batch 2 — the Burning Sphere's every-strike burst
+    /// (`NPC.cs:89529-89536`): 40 dusts even on the KILLING blow (no
+    /// life gate), the reflected-velocity pair shape, the stream
+    /// mirrors the 20 pairs exactly.
+    #[test]
+    fn w4_g62_the_burning_sphere_bursts_even_on_death() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(25, -3, 30, 33.0);
+        s.vx = 4.0;
+        s.vy = -2.0;
+        let mut rng = UnifiedRandom::new(31);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(31);
+        let mut twin = DustPool::new();
+        for _ in 0..20 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 6,
+                -0.8, 0.4, 100, Color::default(), 2.0,
+            );
+            let d = twin.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 2.0;
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 6,
+                -0.8, 0.4, 100, Color::default(), 1.0,
+            );
+            twin.slot_mut(idx).velocity *= 2.0;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        assert_eq!(dust.slots().iter().filter(|d| d.active).count(), 40);
+    }
+
+    /// W4-g62 batch 2 — King Slime's ×300 bound (`NPC.cs:85674-85677`)
+    /// and the hallow trio's velocity ×1.5 post-write (`:85484-85485`).
+    #[test]
+    fn w4_g62_king_slime_and_hallow_rows() {
+        let world = air();
+        let ctx = ctx();
+        let ks = snap(50, 2000, 2000, 20.0); // ×300 → 3
+        let mut rng = UnifiedRandom::new(37);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&ks, &mut rng, &mut dust, &ctx, &world);
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 3);
+        assert!(live.iter().all(|d| d.dust_type == 4 && d.alpha == 175));
+        let il = snap(138, 180, 180, 36.0); // ×50 → 10
+        let mut rng2 = UnifiedRandom::new(37);
+        let mut dust2 = DustPool::new();
+        replay_hit_dust(&il, &mut rng2, &mut dust2, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(37);
+        let mut twin = DustPool::new();
+        for _ in 0..10 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 71,
+                0.0, 0.0, 200, Color::default(), 1.0,
+            );
+            twin.slot_mut(idx).velocity *= 1.5;
+        }
+        assert_eq!(rng2, twin_rng);
+        assert_eq!(dust2.slots(), twin.slots());
     }
 }
