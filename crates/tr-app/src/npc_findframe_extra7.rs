@@ -54,7 +54,14 @@
 //!   `humanoid_fighter_frame` keep-one precedent;
 //! * the slime group's 302/304 town-slime sprite snap
 //!   (`NPC.cs:70824-70827`) — the ribbon slimes 333-336 are not in
-//!   that pair.
+//!   that pair;
+//! * the bunny group's air rows 4/6 (`NPC.cs:76894-76903`) — the
+//!   7-row sheet's rise/fall pins, shared with 46/47 (d44's) and
+//!   303/443/464/540/614/646-652 (later waves');
+//! * the 439/440 arm's `IsABestiaryIconDummy` branch
+//!   (`NPC.cs:72021-72032`) — a display-only dummy path, the port
+//!   has no bestiary-dummy NPC entity; the live `localAI[2]` pose
+//!   ladder is carried verbatim.
 
 // The wiring is a later round (the kinds are not in `NpcKind` yet) —
 // the `npc_findframe_a.rs`/`npc_findframe_b.rs` precedent.
@@ -95,6 +102,24 @@ pub enum FindFrameExtra7Kind {
     /// `NPCID.SlimeRibbonRed` = 336 (`NPCID.cs:11349`) — the same
     /// strip (`NPC.cs:70817`).
     SlimeRibbonRed,
+    /// `NPCID.BunnyXmas` = 337 (`NPCID.cs:11351`) — the bunny hop
+    /// group (`NPC.cs:76854`, shared with 46/47/303/443/464/540/
+    /// 614/646-652).
+    BunnyXmas,
+    /// `NPCID.CultistTablet` = 437 (`NPCID.cs:11549`) — `case 437`
+    /// (`NPC.cs:71987-71996`), the 20-tick 4-band cycle.
+    CultistTablet,
+    /// `NPCID.CultistDevote` = 438 (`NPCID.cs:11551`) — `case 438`
+    /// (`NPC.cs:71998-72015`), the 49-tick mirrored cycle.
+    CultistDevote,
+    /// `NPCID.CultistBossClone` = 440 (`NPCID.cs:11555`) — the
+    /// 439/440 pose ladder (`NPC.cs:72017-72101`), the clone rides
+    /// the SAME machine (the 439 boss's own arm is `npc.rs`'s
+    /// AncientCultist 1-frame stub — the wiring round's keep-one).
+    CultistBossClone,
+    /// `NPCID.GoldBird` = 442 (`NPCID.cs:11557`) — the bird group
+    /// (`NPC.cs:73631`, shared with 74/297/298).
+    GoldBird,
 }
 
 impl FindFrameExtra7Kind {
@@ -111,6 +136,11 @@ impl FindFrameExtra7Kind {
             Self::SlimeRibbonYellow => 334,
             Self::SlimeRibbonGreen => 335,
             Self::SlimeRibbonRed => 336,
+            Self::BunnyXmas => 337,
+            Self::CultistTablet => 437,
+            Self::CultistDevote => 438,
+            Self::CultistBossClone => 440,
+            Self::GoldBird => 442,
         }
     }
 
@@ -127,11 +157,17 @@ impl FindFrameExtra7Kind {
             Self::SkeletonTopHat => 16,
             Self::SkeletonAstonaut => 15,
             Self::SkeletonAlien => 16,
-            // Main.cs:67117 (333-336): 2, 2, 2, 2.
+            // Main.cs:67117 (333-336): 2, 2, 2, 2; (337): 7.
             Self::SlimeRibbonWhite => 2,
             Self::SlimeRibbonYellow => 2,
             Self::SlimeRibbonGreen => 2,
             Self::SlimeRibbonRed => 2,
+            Self::BunnyXmas => 7,
+            // Main.cs:67127 (437/438): 4, 4; :67128 (440): 16, (442): 5.
+            Self::CultistTablet => 4,
+            Self::CultistDevote => 4,
+            Self::CultistBossClone => 16,
+            Self::GoldBird => 5,
         }
     }
 }
@@ -150,6 +186,11 @@ pub fn find_frame_kind_extra7(vanilla_type: i16) -> Option<FindFrameExtra7Kind> 
         334 => FindFrameExtra7Kind::SlimeRibbonYellow,
         335 => FindFrameExtra7Kind::SlimeRibbonGreen,
         336 => FindFrameExtra7Kind::SlimeRibbonRed,
+        337 => FindFrameExtra7Kind::BunnyXmas,
+        437 => FindFrameExtra7Kind::CultistTablet,
+        438 => FindFrameExtra7Kind::CultistDevote,
+        440 => FindFrameExtra7Kind::CultistBossClone,
+        442 => FindFrameExtra7Kind::GoldBird,
         _ => return None,
     })
 }
@@ -165,30 +206,42 @@ pub struct FrameState {
     pub counter: f32,
     /// `NPC.spriteDirection` (±1).
     pub sprite_dir: i32,
-    /// `NPC.rotation` — the floater/eye arms write it; the
-    /// skeleton/slime arms never touch it.
+    /// `NPC.rotation` — the floater/eye/bird arms write it; the
+    /// skeleton/slime/bunny/cultist arms never touch it.
     pub rotation: f32,
 }
 
 /// The per-tick inputs the arms read: `velocity`, `direction`, the
-/// `ai` slots and `aiAction`. Batch 3 adds `localAI[2]` (the cultist
-/// pose ladder).
+/// `ai` slots, `aiAction` and `localAI[2]`. `wet` is not carried —
+/// none of these arms reads it.
 #[derive(Clone, Copy, Debug)]
 pub struct FrameInput {
     pub vx: f32,
     pub vy: f32,
     /// `Entity.direction` (±1; 0 leaves `spriteDirection` alone in
-    /// the arms that gate on `direction == 1` / `== -1`).
+    /// the arms that gate on `direction == 1` / `== -1`, but the
+    /// bird arm's unconditional copy writes it verbatim).
     pub direction: i32,
     pub ai: [f32; 4],
     /// `NPC.aiAction` — 0 the motion class, 1 the attack (`num2 = 4`,
     /// `NPC.cs:66696-66704`); only the ribbon slimes read it.
     pub ai_action: i32,
+    /// `NPC.localAI[2]` — the cultist pose selector (0/1/2 the idle
+    /// poses, 10/11/12 the attack poses, 13 the ritual;
+    /// `NPC.cs:64616-64644`'s AI_084 writes); only 440 reads it.
+    pub local_ai2: f32,
 }
 
 impl Default for FrameInput {
     fn default() -> Self {
-        Self { vx: 0.0, vy: 0.0, direction: 1, ai: [0.0; 4], ai_action: 0 }
+        Self {
+            vx: 0.0,
+            vy: 0.0,
+            direction: 1,
+            ai: [0.0; 4],
+            ai_action: 0,
+            local_ai2: 0.0,
+        }
     }
 }
 
@@ -347,6 +400,180 @@ pub fn find_frame_extra7(kind: FindFrameExtra7Kind, s: &mut FrameState, i: &Fram
                 s.row = 0;
             }
         }
+        // `case 337` in the bunny hop group (`NPC.cs:76851-76904`,
+        // shared with 46/47/303/443/464/540/614/646-652 — d44's
+        // 46/47 are the same machine, keep-one at the merge): the
+        // grounded ±1 flip (0 leaves it), the idle snaps row 0 +
+        // zeroes the counter (`:76876-76881`), the walk accumulates
+        // `|vx| * 1` PLUS 1 (`:76882-76883`), the > 6 step walks the
+        // FULL 7 rows with the >= count wrap to 0
+        // (`:76884-76892`); the air pins row 4 rising / row 6
+        // falling, both zeroing the counter (`:76894-76903`).
+        FindFrameExtra7Kind::BunnyXmas => {
+            if i.vy == 0.0 {
+                // `:76868-76875`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                if i.vx == 0.0 {
+                    // `:76876-76881`.
+                    s.row = 0;
+                    s.counter = 0.0;
+                    return;
+                }
+                // `:76882-76892`.
+                s.counter += i.vx.abs();
+                s.counter += 1.0;
+                if s.counter > 6.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                if s.row >= kind.frame_count() {
+                    s.row = 0;
+                }
+            } else if i.vy < 0.0 {
+                // `:76894-76898`.
+                s.counter = 0.0;
+                s.row = 4;
+            } else {
+                // `:76899-76903`.
+                s.counter = 0.0;
+                s.row = 6;
+            }
+        }
+        // `case 437` (`NPC.cs:71987-71996`): the Cultist Tablet's
+        // 20-tick cycle — counter++ then >= 20 resets to 0 FIRST,
+        // the row is `(int)counter % 20 / 5` (four 5-tick bands over
+        // the 4 rows). No sprite/rotation write, velocity ignored.
+        FindFrameExtra7Kind::CultistTablet => {
+            s.counter += 1.0;
+            if s.counter >= 20.0 {
+                s.counter = 0.0;
+            }
+            s.row = (s.counter as i32 % 20 / 5) as u32;
+        }
+        // `case 438` (`NPC.cs:71998-72015`): the Cultist Devote's
+        // 49-tick mirrored cycle — counter++ (+1 more while
+        // `ai[1] == 1`, the ritual chant), >= 49 resets to 0, the
+        // band `(int)counter % 49 / 7` runs 0..6 and the >= 4 tail
+        // MIRRORS it (`6 - band`: 0/1/2/3/2/1/0 over the 4 rows).
+        // No sprite/rotation write.
+        FindFrameExtra7Kind::CultistDevote => {
+            s.counter += 1.0;
+            if i.ai[1] == 1.0 {
+                s.counter += 1.0;
+            }
+            if s.counter >= 49.0 {
+                s.counter = 0.0;
+            }
+            let mut band = s.counter as i32 % 49 / 7;
+            if band >= 4 {
+                band = 6 - band;
+            }
+            s.row = band as u32;
+        }
+        // `case 439/440` (`NPC.cs:72017-72101`): the cultist pose
+        // ladder on `localAI[2]` (the AI_084 pose selector,
+        // `:64616-64644`): 0/1/2 the idle poses (rows 4-6 / 10-12 /
+        // 7-9 while the row is OFF the pose's home row, the >= 15
+        // tail snaps the home row 0/1/2), 10/11/12 the attack poses
+        // (the SAME bands but the >= 15 tail only zeroes the
+        // counter — the row keeps cycling), 13 the ritual (rows
+        // 13-15, the >= 15 tail zeroes the counter); any other
+        // selector writes NO frame. The counter++ runs AFTER the
+        // switch (`:72100`). The `IsABestiaryIconDummy` branch
+        // (`:72021-72032`) is the display-only skip (the header).
+        // No sprite/rotation write. 439 itself is the port's
+        // AncientCultist (the wiring round's keep-one note).
+        FindFrameExtra7Kind::CultistBossClone => {
+            // `:72020` — num195 = (int)localAI[2].
+            let pose = i.local_ai2 as i32;
+            // `:72035-72098` — the pose switch.
+            match pose {
+                0 => {
+                    if s.counter >= 15.0 {
+                        s.counter = 0.0;
+                        s.row = 0;
+                    } else if s.row != 0 {
+                        s.row = (s.counter as i32 / 5 + 4) as u32;
+                    }
+                }
+                10 => {
+                    if s.counter >= 15.0 {
+                        s.counter = 0.0;
+                    }
+                    s.row = (s.counter as i32 / 5 + 4) as u32;
+                }
+                1 => {
+                    if s.counter >= 15.0 {
+                        s.counter = 0.0;
+                        s.row = 1;
+                    } else if s.row != 1 {
+                        s.row = (s.counter as i32 / 5 + 10) as u32;
+                    }
+                }
+                11 => {
+                    if s.counter >= 15.0 {
+                        s.counter = 0.0;
+                    }
+                    s.row = (s.counter as i32 / 5 + 10) as u32;
+                }
+                2 => {
+                    if s.counter >= 15.0 {
+                        s.counter = 0.0;
+                        s.row = 2;
+                    } else if s.row != 2 {
+                        s.row = (s.counter as i32 / 5 + 7) as u32;
+                    }
+                }
+                12 => {
+                    if s.counter >= 15.0 {
+                        s.counter = 0.0;
+                    }
+                    s.row = (s.counter as i32 / 5 + 7) as u32;
+                }
+                13 => {
+                    if s.counter >= 15.0 {
+                        s.counter = 0.0;
+                    }
+                    s.row = (s.counter as i32 / 5 + 13) as u32;
+                }
+                _ => {}
+            }
+            // `:72100`.
+            s.counter += 1.0;
+        }
+        // `case 442` in the bird group (`NPC.cs:73628-73652`, shared
+        // with 74/297/298 — f26c's 297/298 are the same machine,
+        // keep-one at the merge): the UNCONDITIONAL direction copy
+        // (0 included, `:73633`), the `vx * 0.1` tilt (`:73634`),
+        // the still-air snap to row 4 + counter zero (`:73635-
+        // 73640` — the 5-row sheet's perch row), the 4-tick strip
+        // over rows 0..count-2 (`num124` = count - 1, `:73641-
+        // 73651` — row 4 is perch-only on the flap).
+        FindFrameExtra7Kind::GoldBird => {
+            // `:73633-73634`.
+            s.sprite_dir = i.direction;
+            s.rotation = i.vx * 0.1;
+            if i.vx == 0.0 && i.vy == 0.0 {
+                // `:73635-73640`.
+                s.row = 4;
+                s.counter = 0.0;
+                return;
+            }
+            // `:73641-73651` — num124 = count - 1.
+            s.counter += 1.0;
+            if s.counter >= 4.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= kind.frame_count() - 1 {
+                s.row = 0;
+            }
+        }
     }
 }
 
@@ -384,6 +611,11 @@ mod tests {
             FindFrameExtra7Kind::SlimeRibbonYellow,
             FindFrameExtra7Kind::SlimeRibbonGreen,
             FindFrameExtra7Kind::SlimeRibbonRed,
+            FindFrameExtra7Kind::BunnyXmas,
+            FindFrameExtra7Kind::CultistTablet,
+            FindFrameExtra7Kind::CultistDevote,
+            FindFrameExtra7Kind::CultistBossClone,
+            FindFrameExtra7Kind::GoldBird,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -495,12 +727,115 @@ mod tests {
         }
     }
 
-    /// The batch's 10-kind strip sweep: a 5x3x3 vx/vy/direction input
-    /// grid (plus the aiAction variant for the ribbons), 40 ticks
-    /// each — every row stays inside its sheet (the extra-4
-    /// precedent; the full 15-kind sweep lands with batch 3).
+    /// 337 BunnyXmas: the |vx|+1 accumulator with the > 6 step over
+    /// the FULL 7 rows, the idle row-0 snap, the air rows 4/6 and
+    /// the grounded-only ±1 flip (`NPC.cs:76866-76903`).
     #[test]
-    fn f27s7_batch_strip_sweep_stays_inside_the_sheets() {
+    fn f27s7_bunny_hops_the_seven_rows() {
+        // vx 2: +3 a tick, steps on ticks 3/6/9...
+        let rows = rows_over(FindFrameExtra7Kind::BunnyXmas, input(2.0, 0.0), 22);
+        assert_eq!(
+            rows,
+            vec![0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 0, 0]
+        );
+        let mut s = FrameState { row: 3, counter: 5.0, sprite_dir: -1, ..Default::default() };
+        let i = FrameInput { direction: 0, ..Default::default() };
+        find_frame_extra7(FindFrameExtra7Kind::BunnyXmas, &mut s, &i);
+        assert_eq!((s.row, s.counter, s.sprite_dir), (0, 0.0, -1), "idle snap, dir 0 holds");
+        find_frame_extra7(FindFrameExtra7Kind::BunnyXmas, &mut s, &input(2.0, -1.0));
+        assert_eq!((s.row, s.counter), (4, 0.0), "rising pins row 4");
+        find_frame_extra7(FindFrameExtra7Kind::BunnyXmas, &mut s, &input(2.0, 1.0));
+        assert_eq!((s.row, s.counter), (6, 0.0), "falling pins row 6");
+    }
+
+    /// 437 CultistTablet: the 20-tick 4-band cycle — the >= 20 reset
+    /// runs BEFORE the band read, so tick 20 shows row 0
+    /// (`NPC.cs:71989-71995`).
+    #[test]
+    fn f27s7_tablet_cycles_the_four_bands() {
+        let rows = rows_over(FindFrameExtra7Kind::CultistTablet, input(0.0, 0.0), 21);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 0, 0]
+        );
+    }
+
+    /// 438 CultistDevote: the 49-tick mirrored cycle 0/1/2/3/2/1/0,
+    /// the ai[1]==1 chant doubles the tick (`NPC.cs:72000-72014`).
+    #[test]
+    fn f27s7_devote_mirrors_the_seven_bands() {
+        let rows = rows_over(FindFrameExtra7Kind::CultistDevote, input(0.0, 0.0), 50);
+        let mut want = Vec::new();
+        for b in [0u32, 1, 2, 3, 2, 1, 0] {
+            want.extend(std::iter::repeat(b).take(7));
+        }
+        want.push(0); // tick 50: counter 49 resets to 0, band 0.
+        assert_eq!(rows, want);
+        // The chant: +2 a tick — tick 24 lands counter 48 (band 6,
+        // mirrored to 0), tick 25's 50 >= 49 resets to band 0.
+        let i = FrameInput { ai: [0.0, 1.0, 0.0, 0.0], ..Default::default() };
+        let rows = rows_over(FindFrameExtra7Kind::CultistDevote, i, 25);
+        assert_eq!(rows[23], 0, "counter 48 on tick 24 → band 6 → mirror 0");
+        assert_eq!(rows[24], 0, "tick 25: 50 >= 49 resets, band 0");
+    }
+
+    /// 440 CultistBossClone: the pose ladder — pose 0's off-home
+    /// bands 4/5/6 then the >= 15 home-row-0 snap; pose 10 keeps
+    /// cycling 4/5/6 through the reset; pose 13 rides rows 13-15;
+    /// an unknown selector writes no frame but still ticks
+    /// (`NPC.cs:72035-72100`).
+    #[test]
+    fn f27s7_clone_rides_the_pose_ladder() {
+        // Pose 0 from row 4 (off home): bands 4/5/6, then home 0.
+        let i = FrameInput { local_ai2: 0.0, ..Default::default() };
+        let mut s = FrameState { row: 4, ..Default::default() };
+        let mut rows = Vec::new();
+        for _ in 0..17 {
+            find_frame_extra7(FindFrameExtra7Kind::CultistBossClone, &mut s, &i);
+            rows.push(s.row);
+        }
+        assert_eq!(rows, vec![4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 0, 0]);
+        // Pose 10: the reset does NOT snap home — the cycle repeats.
+        let i = FrameInput { local_ai2: 10.0, ..Default::default() };
+        let rows = rows_over(FindFrameExtra7Kind::CultistBossClone, i, 17);
+        assert_eq!(rows, vec![4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 4, 4]);
+        // Pose 13: rows 13-15, the reset keeps cycling.
+        let i = FrameInput { local_ai2: 13.0, ..Default::default() };
+        let rows = rows_over(FindFrameExtra7Kind::CultistBossClone, i, 16);
+        assert_eq!(rows, vec![13, 13, 13, 13, 13, 14, 14, 14, 14, 14, 15, 15, 15, 15, 15, 13]);
+        // Unknown selector: no frame write, the counter still ticks.
+        let i = FrameInput { local_ai2: 7.0, ..Default::default() };
+        let mut s = FrameState { row: 3, counter: 2.0, ..Default::default() };
+        find_frame_extra7(FindFrameExtra7Kind::CultistBossClone, &mut s, &i);
+        assert_eq!((s.row, s.counter), (3, 3.0));
+    }
+
+    /// 442 GoldBird: the unconditional direction copy (0 included),
+    /// the vx*0.1 tilt, the still-air row-4 perch, the 4-tick strip
+    /// over rows 0..3 (row 4 is perch-only) (`NPC.cs:73633-73651`).
+    #[test]
+    fn f27s7_gold_bird_flaps_rows_zero_through_three() {
+        let rows = rows_over(FindFrameExtra7Kind::GoldBird, input(2.0, -1.0), 17);
+        assert_eq!(rows, vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 0, 0]);
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        find_frame_extra7(FindFrameExtra7Kind::GoldBird, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter, s.sprite_dir), (4, 0.0, 1), "perch + dir copy");
+        let i = FrameInput { direction: 0, ..input(1.0, 0.0) };
+        find_frame_extra7(FindFrameExtra7Kind::GoldBird, &mut s, &i);
+        assert_eq!(s.sprite_dir, 0, "the copy is unconditional");
+        assert_eq!(s.rotation, 0.1);
+        // The perch row falls into the flap strip on the first move.
+        let mut s = FrameState { row: 4, ..Default::default() };
+        find_frame_extra7(FindFrameExtra7Kind::GoldBird, &mut s, &input(1.0, 0.0));
+        assert_eq!(s.row, 0, "row 4 >= count-1 wraps immediately");
+    }
+
+    /// The 15-kind strip sweep: a 5x3x3 vx/vy/direction input grid
+    /// (plus the ai[1]/aiAction/localAI[2] variants for 438/333-336/
+    /// 440), 40 ticks each — every row stays inside its sheet (the
+    /// extra-4 precedent).
+    #[test]
+    fn f27s7_fifteen_kind_strip_sweep_stays_inside_the_sheets() {
         let kinds = [
             FindFrameExtra7Kind::Ghost,
             FindFrameExtra7Kind::DemonEyeOwl,
@@ -512,19 +847,29 @@ mod tests {
             FindFrameExtra7Kind::SlimeRibbonYellow,
             FindFrameExtra7Kind::SlimeRibbonGreen,
             FindFrameExtra7Kind::SlimeRibbonRed,
+            FindFrameExtra7Kind::BunnyXmas,
+            FindFrameExtra7Kind::CultistTablet,
+            FindFrameExtra7Kind::CultistDevote,
+            FindFrameExtra7Kind::CultistBossClone,
+            FindFrameExtra7Kind::GoldBird,
         ];
         for k in kinds {
             let count = k.frame_count();
             for vx in [-4.0f32, -1.0, 0.0, 1.0, 4.0] {
                 for vy in [-3.0f32, 0.0, 3.0] {
                     for direction in [-1i32, 0, 1] {
-                        for ai_action in [0i32, 1] {
+                        for &(ai1, ai_action, local_ai2) in &[
+                            (0.0, 0, 0.0),
+                            (1.0, 0, 10.0),
+                            (0.0, 1, 13.0),
+                        ] {
                             let i = FrameInput {
                                 vx,
                                 vy,
                                 direction,
+                                ai: [0.0, ai1, 0.0, 0.0],
                                 ai_action,
-                                ..Default::default()
+                                local_ai2,
                             };
                             let mut s = FrameState::default();
                             for tick in 0..40 {
@@ -543,13 +888,15 @@ mod tests {
         }
     }
 
-    /// The seam maps exactly the batch's vanilla types and nothing
+    /// The seam maps exactly the slice's vanilla types and nothing
     /// else.
     #[test]
     fn f27s7_seam_covers_exactly_the_slice() {
         for t in 0..697i16 {
             let k = find_frame_kind_extra7(t);
-            let claimed = [316, 317, 318, 322, 323, 324, 333, 334, 335, 336];
+            let claimed = [
+                316, 317, 318, 322, 323, 324, 333, 334, 335, 336, 337, 437, 438, 440, 442,
+            ];
             assert_eq!(k.is_some(), claimed.contains(&t), "type {t}");
             if let Some(k) = k {
                 assert_eq!(k.vanilla_type(), t);
