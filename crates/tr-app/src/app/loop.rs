@@ -677,6 +677,32 @@ impl App {
         }
     }
 
+    /// `Player.TryOpeningFullscreenMap` (`Player.cs:29103-29119`): the open
+    /// arm behind `Main.mapEnabled` — close the inventory, `CloseSign(quiet)`
+    /// (the sign editor has no port state, `chest.rs`'s precedent),
+    /// `SetTalkNPC(-1)` + `npcChatCornerItem = 0` (no port counterpart),
+    /// `PlaySound(10)`, scale 2.5 + `resetMapFull` (both ride `set_open`),
+    /// `Main.MapPylonTile = (-1,-1)` (f29's pylon-click state — cleared on
+    /// its seam), `buffString = ""` (no port counterpart). The key path
+    /// (`Player.cs:24976-24979`) and the inventory icon row
+    /// (`Main.cs:41095-41104`) both ride it.
+    pub(crate) fn try_open_fullscreen_map(&mut self) {
+        if !self.settings.map_enabled {
+            return; // `:29105`
+        }
+        self.inventory_open = false; // `:29107`
+        // `CloseSign(quiet: true)` (`:29108`) — no sign state in the port.
+        self.talk_npc = None; // `:29109` — `SetTalkNPC(-1)`
+        self.npc_chat_text.clear(); // the chat text the dialog leaves
+        // `SoundEngine.PlaySound(10)` (`:29111`).
+        self.audio.play("Menu_Open");
+        if let Some(m) = self.map.as_mut() {
+            // `set_open(true)` carries `:29112`/`:29114-29115` (scale 2.5,
+            // `mapFullscreen = true`, `resetMapFull = true`).
+            m.set_open(true);
+        }
+    }
+
     pub(crate) fn world_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Escape => {
@@ -701,6 +727,8 @@ impl App {
                     // `Player.ToggleInv`'s first arm: Escape closes the
                     // fullscreen map and consumes the press — no inventory
                     // toggle this frame, like the source's `return`.
+                    // `SoundEngine.PlaySound(11)` (`Player.cs:4976`).
+                    self.audio.play("Menu_Close");
                     if let Some(m) = self.map.as_mut() {
                         m.set_open(false);
                     }
@@ -729,14 +757,18 @@ impl App {
             }
             KeyCode::F9 => self.save_world(),
             _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
-                // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`) on
-                // `Main.cMapFull` (`Main.cs:67192`, default `M`): the key only
-                // toggles the map when `Main.mapEnabled`.
-                if self.settings.map_enabled {
+                // `Player.cs:24967-24986` (`cMapFull`, default `M`,
+                // `Main.cs:67192`): the close arm plays `PlaySound(11)`
+                // (`:24973`), the open arm rides `TryOpeningFullscreenMap`
+                // (`Player.cs:29103-29119`) behind `Main.mapEnabled`.
+                if self.map.as_ref().is_some_and(|m| m.open) {
+                    // `SoundEngine.PlaySound(11)` (`:24973`), the port's 11 cue.
+                    self.audio.play("Menu_Close");
                     if let Some(m) = self.map.as_mut() {
-                        let open = !m.open;
-                        m.set_open(open);
+                        m.set_open(false);
                     }
+                } else {
+                    self.try_open_fullscreen_map();
                 }
             }
             _ if self.is_bound(crate::input_map::Action::Smart, code) => {
@@ -871,6 +903,35 @@ mod tests {
         assert!(app.map.as_ref().is_some_and(|m| m.open), "M opens the map");
         app.world_key(KeyCode::KeyM);
         assert!(!app.map.as_ref().is_some_and(|m| m.open), "M closes it");
+    }
+
+    /// W4-e18 final sweep (written, not run - code-only):
+    /// `TryOpeningFullscreenMap` (`Player.cs:29103-29119`) — the open arm
+    /// closes the inventory (`:29107`), clears the talk-NPC latch (`:29109`,
+    /// `SetTalkNPC(-1)`) and opens at scale 2.5 with the recentre armed
+    /// (`:29112-29115`, both ride `set_open(true)`); `Main.mapEnabled` off
+    /// refuses the whole block (`:29105`).
+    #[test]
+    fn w4_e18_the_map_open_arm_closes_the_inventory_and_dialog() {
+        let mut app = map_app();
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(false);
+        }
+        app.inventory_open = true;
+        app.talk_npc = Some(0);
+        app.npc_chat_text = "hello".into();
+        app.world_key(KeyCode::KeyM);
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "M opens the map");
+        assert!(!app.inventory_open, "the open arm closes the inventory");
+        assert_eq!(app.talk_npc, None, "SetTalkNPC(-1)");
+        assert!(app.npc_chat_text.is_empty(), "the dialog text clears");
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.scale, crate::map::MAP_FULLSCREEN_SCALE_DEFAULT, "2.5");
+        // `mapEnabled` off: the key does nothing (`:29105`).
+        app.world_key(KeyCode::KeyM); // close first
+        app.settings.map_enabled = false;
+        app.world_key(KeyCode::KeyM);
+        assert!(!app.map.as_ref().unwrap().open, "mapEnabled gates the open");
     }
 
     #[test]
