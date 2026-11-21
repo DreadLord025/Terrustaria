@@ -39592,6 +39592,41 @@ membership/Crimson mids, the 645 12-count, the 661 134-count/type split,
 the 617 84-count/90-mids, the nebula spark counts/types (618 folds 86),
 the 601 centre/colour arms, the 596 34-count — WRITTEN NOT RUN.
 
+### Batch 15 (10 kinds, the mid-Kill bursts `:72565-73045`)
+
+539 (resize 80×80 centred; 4× dust-31 gravity + 20× dust-176 alpha 200
+scale 3.7 Y + 20× dust-180 X + 10× dust-31 X, all noGravity vel×3), 585
+(20 pairs dust-26 alpha 100 noGravity vel×1.2 scale 1.3 −= oldVel×0.3 +
+dust-27 at pos+(4,4) box (w−8)×(h−8) scale 2 noGravity vel×3), 590 (10×
+dust-165/31 by ai[2]==1 alpha 50 scale 1.5 vel×2 noGravity; ONE shared
+NextFloat gore scale then THREE gores 375-377/61-63 draws-only — the two
+kick draws each), 587 (hslToRgb(ai[1],1,0.5) A=200; the NPC slime-tint
+scan unported state no draws; 10 pairs dust-76 colour scale 0.9/1.1),
+676 (120× SelectRandom(4,256) alpha 100 scale 0.8+NextFloat×0.6 fadeIn
+0.5 vel×4.5 noLight, Y>0 → ×−0.5, type 4 → (80,170,40,120); 50
+gore-Direct rows 10×1024/1025/1026 + 20×1026 — NewGoreDirect wraps
+NewGore (`Gore.cs:1281-1284`) so the two kick draws per gore stay, plus
+the two velocity NextFloats), 405/410 (the chlorophyte ring: 20/10×
+dust-212 at Center−(r,r) box 2r, r=10 / (int)(10×ai[1]); dir =
+Normalize(own−Center), position = Center+dir×r×scale, vel = dir×|own
+vel| (the <30 branch always taken), colour Lerp(hsl((float)(0.4+
+NextDouble×0.2),0.9,0.5),White,0.3) — the hue sum stays FULL double
+before the f32 cast — noGravity scale 0.7; shared `chlorophyte_ring`
+helper), 501 (the box inflates +20/side BEFORE the dust; 20× dust-188
+alpha 100 scale 1.5 vel×0.5 gravity ON; 5 gores at pos+(Next(w),Next(h))
+Next(435,438) draws-only; the second +40 inflate + Damage unported), 452
+(Resize(144,144) centred — `Projectile.cs:22353-22359` the same
+centre-preserving shape; 4× dust-31 NO scatter gravity + 40 pairs
+dust-229; one gore; the Resize(30,30)+Damage AFTER unported), 454
+(resize 208×208 centred; 7× dust-31 gravity + 60 pairs dust-229 vel×1,
+each position = Center + (w/2,0).RotatedBy(τ×NextDouble)×NextDouble —
+the FULL double angle into cos/sin, radius draw AFTER the angle; 3
+gores). The `DeathSnapshot` gains `ai2` (the 590 gate). Witnesses: the
+539 54-count, the 585/587 pair splits, the 590 ai2 gate, the 676
+120-count/Y-flip invariant, the 405/410 radius (zero-normalize edge
+tolerated), the 501 20-count, the 452/454 84/127 counts — WRITTEN NOT
+RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
