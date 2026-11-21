@@ -157,6 +157,11 @@ impl App {
                 .world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
+            // `Main.cs:62150-62153`: the fullscreen map's draw head closes
+            // the inventory / NPC dialog / sign via `ToggleInv` when any is
+            // open — every drawn frame, BEFORE `DrawMap` (`:62155`), so the
+            // pylon scan below reads the post-close state like the C#.
+            self.close_dialog_behind_fullmap();
             // `Main.PylonSystem.Pylons` (`TeleportPylonsMapLayer.cs:32`): the map
             // layers read the live network. The scan walks the TE book, so it stays
             // off the per-frame path unless the map or the minimap is drawing.
@@ -168,10 +173,6 @@ impl App {
             } else {
                 Vec::new()
             };
-            // `Main.cs:62150-62153`: the fullscreen map's draw head closes
-            // the inventory / NPC dialog / sign via `ToggleInv` when any is
-            // open — every drawn frame, ahead of `DrawMap`.
-            self.close_dialog_behind_fullmap();
             // The buff bar's inputs (`Main.DrawInterface_Resources_Buffs`,
             // `Main.cs:43203`): the cancel gate is `Main.mouseRight &&
             // Main.mouseRightRelease` (`:43333`). The vanilla latch is
