@@ -308,6 +308,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_84", 2),
     ("Item_85", 2),
     ("Item_88", 2),
+    // W4-c14 M2-MOUNT-4 — the Santank gift-box drop cue
+    // (`Mount.cs:3300`, `SoundID.Item89` — `Sounds/Item_89.xnb`).
+    ("Item_89", 2),
     ("Item_90", 2),
     ("Item_92", 2),
     ("Item_95", 2),
@@ -1079,6 +1082,52 @@ impl Audio {
         let draw = self.sound_style_random.next_float();
         let pitch_offset =
             pitch_offset + sound::get_random_pitch(style.pitch_variance, draw);
+        // The façade's volumeScale is `type.Volume * 1` (`SoundEngine.cs:99`).
+        self.play_item_style(style_index, x, y, pitch_offset, style.volume, rng)
+    }
+
+    /// M2-MOUNT-4 (W4-c14) — the Santank ability cues (`Mount.cs:3300`
+    /// Item89 / `:3311` Item11): `SoundEngine.PlaySound(SoundID.ItemN.SoundId,
+    /// (int)x, (int)y, SoundID.ItemN.Style, 0.2f)` — the INT overload
+    /// (`SoundEngine.cs:102-108`), so NO `GetRandomPitch` NextFloat (the
+    /// style façade `:93-99` is NOT the caller here), pitchOffset 0, and
+    /// volumeScale 0.2 rides `LegacySoundPlayer.cs:1411` AFTER the case-2
+    /// tweak. The case-2 body is the shared [`Self::play_item_style`]: the
+    /// 11/89 default arm draws ONE `Next(-6, 7) * 0.01` (`:632`) on the
+    /// caller's stream (the fire runs inside `Player.Update` under the
+    /// `Main.cs:17754` `UpdatePlayers` swap), only after the attenuation
+    /// gate; the default instance arm stops + re-creates the style slot
+    /// (`:589-594` — neither style is on the stack-allowed list `:595-605`).
+    /// The positions are the C#'s truncated ints (the caller truncates).
+    pub fn play_mount_ability_sound(
+        &mut self,
+        style_num: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let idx = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.sound_id == 2 && s.style == style_num)?;
+        self.play_item_style(idx as u16, x, y, 0.0, 0.2, rng)
+    }
+
+    /// The shared `LegacySoundPlayer.PlaySound` case-2/case-42 body
+    /// (`LegacySoundPlayer.cs:360-1415`): the attenuation gate, the case
+    /// tweak + pitch draw, the bank resolve, the emit and the instance-slot
+    /// bookkeeping. `volume_scale` is the LegacySoundPlayer argument — the
+    /// style façade passes `type.Volume` (the `SoundEngine.cs:99` product),
+    /// the int overload passes the caller's raw scale (the mount cues' 0.2).
+    fn play_item_style(
+        &mut self,
+        style_index: u16,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        volume_scale: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let style = &crate::soundid::SOUND_STYLES[style_index as usize];
         // The attenuation gate first — the C# walks the position/volume
         // checks (`:369-436`) before the type switch draws anything.
         if sound::play_sound(
@@ -1086,7 +1135,7 @@ impl Audio {
             x,
             y,
             self.listener,
-            style.volume,
+            volume_scale,
         )
         .is_none()
         {
@@ -1101,7 +1150,7 @@ impl Audio {
             } else {
                 format!("{base}_0")
             };
-            (cue, style.volume, pitch_offset.clamp(-1.0, 1.0))
+            (cue, volume_scale, pitch_offset.clamp(-1.0, 1.0))
         } else {
             debug_assert_eq!(style.sound_id, 2, "item-use styles are the id-2 family");
             // W4-c14 doc-sweep — the 53/55/159 playing guards
@@ -1122,7 +1171,10 @@ impl Audio {
             let cue = format!("Item_{num}");
             (
                 cue,
-                style.volume * tweak,
+                // `:1411` — the case tweak rides num2, the volumeScale
+                // multiplies AFTER (the façade's scale is style.volume,
+                // the mount int-overload's is 0.2).
+                volume_scale * tweak,
                 (pitch + pitch_offset).clamp(-1.0, 1.0),
             )
         };
@@ -3741,6 +3793,61 @@ mod tests {
         let cue = audio.play_use_sound(idx("AbigailSummon"), 0.0, 0.0, 0.0, &mut rng);
         assert_eq!(cue, Some("abigail_summon"));
         assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+    }
+
+    /// M2-MOUNT-4 (W4-c14) — the Santank ability cues' RNG/volume contract
+    /// (`Mount.cs:3300` Item89 / `:3311` Item11): the INT overload
+    /// (`SoundEngine.cs:102`) consumes NO `GetRandomPitch` NextFloat (the
+    /// audio-only stream stays untouched), the attenuation gate precedes
+    /// the ONE case-2 `Next(-6, 7)` pitch draw (`LegacySoundPlayer.cs:632`),
+    /// and the 0.2 volumeScale rides `:1411` after the tweak (both styles
+    /// have tweak 1.0 and volume 1.0, so the final gain is 0.2× the gate's).
+    #[test]
+    fn m4_the_santank_cues_draw_one_pitch_roll_and_no_style_random() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The bank join: Item_89 was the gap (88/90 present, 89 absent).
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Item_89"));
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Item_11"));
+        // A muted play draws NOTHING (`:369-372` precedes the switch) and
+        // never touches the audio-only style stream.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(11);
+        let peek = rng.peek();
+        assert_eq!(audio.play_mount_ability_sound(89, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted play consumes no gameplay draw");
+        // An audible play: exactly ONE Next(-6, 7) on the passed stream —
+        // the same value a bare draw produces (the default case-2 window).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(11);
+        let mut witness = UnifiedRandom::new(11);
+        let want_pitch = witness.next_range(-6, 7) as f32 * 0.01;
+        let cue = audio.play_mount_ability_sound(89, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Item_89"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!(want_pitch.abs() <= 0.06, "the default window ±0.06");
+        // The missile cue rides the same shape.
+        let mut rng = UnifiedRandom::new(11);
+        let mut witness = UnifiedRandom::new(11);
+        let _ = witness.next_range(-6, 7);
+        let cue = audio.play_mount_ability_sound(11, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Item_11"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // The int overload consumes NO GetRandomPitch draw: two plays from
+        // a fresh Audio leave the audio-only stream at its seed (the style
+        // façade would advance it once per play).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(3);
+        let _ = audio.play_mount_ability_sound(89, 0.0, 0.0, &mut rng);
+        let _ = audio.play_mount_ability_sound(11, 0.0, 0.0, &mut rng);
+        let mut fresh = tr_core::unified_random::UnifiedRandom::new(1);
+        assert_eq!(
+            audio.sound_style_random.peek(),
+            fresh.peek(),
+            "the int overload never draws the style stream"
+        );
     }
 
     /// S1-E-21a — the NPC hit/death cue families: the sound id 3 (the hits)
