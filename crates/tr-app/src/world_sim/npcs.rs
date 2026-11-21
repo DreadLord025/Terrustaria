@@ -4430,6 +4430,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // borrow) — a second `app.spawn_ctx()` here would re-borrow `*app`
     // immutably while `npcs_rng` holds it mutable (E0502).
     let dust_ctx = dust_spawn_ctx;
+    // W4-f47 doc-sweep lane 36 — the state-25 emergence seam's inputs: the
+    // frame clock (the `Main.timeForVisualEffects` stand-in, ×60 in the
+    // closure) and the shared entity-light list; the progression-43 latch
+    // drains after the pass (the notify needs the app wholesale).
+    let app_anim_time = app.anim_time;
+    let mut shimmer_progression43 = false;
     // Limit the scope of borrows to just the tick closure
     {
         // S1-D-3 W-1: `&mut` — the WoF arm's band/index statics write back
@@ -4442,6 +4448,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
         let dust = &mut app.dust;
+        let entity_lights = &mut app.entity_lights;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
         // until the difficulty system lands — the module's `ctx.expert`).
@@ -4611,7 +4618,44 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // so the Everscream/Santa dust arms reach the live pool.
                     let is_style75 = npcs[i].kind.ai_style() == 75;
                     if !is_style75 {
-                        npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                        // W4-f47 doc-sweep lane 36 — the town state-25 shimmer
+                        // emergence seam (`NPC.cs:53187-53277`): the drain's
+                        // TownVariant arm set ai[0]=25; the emergence machine
+                        // runs at the NPC's slot turn INSTEAD of the dry walk
+                        // (the C# arm returns from AI() at `:53277`). The
+                        // visuals drain onto the shared pool/lights on the
+                        // UpdateNPCs stream; the generic slot tail below
+                        // (just_hit/sounds/look-for-home) still runs, exactly
+                        // the C# UpdateNPC tail after AI(). The b3 merge folds
+                        // this into its ai_007 adapter (ANALYSIS 121).
+                        let shimmer25 = npcs[i].kind.is_town_npc_like()
+                            && npcs[i].ai[0] == 25.0
+                            && npcs[i].hp > 0;
+                        if shimmer25 {
+                            npcs[i].update_preamble(step);
+                            // `Main.timeForVisualEffects` (`Main.cs:17162-
+                            // 17164`, the ++counter mod 216000): anim_time is
+                            // seconds — ×60 recovers the tick count (the
+                            // TR_SHOT 1/60 pin keeps it exact).
+                            let tve = (app_anim_time as f64 * 60.0) % 216000.0;
+                            let progression43 = crate::npc_ai_town::town_shimmer_step(
+                                &mut npcs[i],
+                                world,
+                                player,
+                                tve,
+                                npcs_rng,
+                                dust,
+                                &dust_spawn_ctx,
+                                entity_lights,
+                            );
+                            if progression43 {
+                                shimmer_progression43 = true;
+                            }
+                            npcs[i].find_frame();
+                            npcs[i].contact(player, npcs_rng);
+                        } else {
+                            npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                        }
                     } else {
                         npcs[i].update_preamble(step);
                         let ctx = crate::npc_ai_style75::Style75Ctx {
@@ -6315,6 +6359,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
+    }
+    // W4-f47 doc-sweep lane 36 — the state-25 completion's progression 43
+    // (`AchievementsHelper.NotifyProgressionEvent(43)`, `NPC.cs:53273`): the
+    // emergence seam latched it inside the pass; the notify needs the app
+    // wholesale, so it credits here (the notify is RNG-free).
+    if shimmer_progression43 {
+        let _ = app.notify_progression_net(43);
     }
     // W4-f47 — the NPC.GetShimmered drain (`NPC.cs:91517-91519`): the
     // transparency ramp's 0.9 crossings resolve after the pass (the arms
@@ -18547,5 +18598,51 @@ mod shimmer_transform_tests {
         assert_eq!(app.npcs[0].buffs.buff_time_of(353), 100);
         assert!(!app.npcs[1].shimmer_wet);
         assert_eq!(app.npcs[1].buffs.find_buff_index(353), None);
+    }
+
+    /// Doc-sweep lane 36 — the state-25 emergence seam is LIVE: a Guide
+    /// with ai[0]=25 rides `town_shimmer_step` inside `update_npcs` (the
+    /// dry `update_guide` walk never runs — the C# arm returns at
+    /// `:53277`), the ai[2] hold counts down on the UpdateNPCs stream,
+    /// and the completion credits progression 43 through the post-pass
+    /// latch. The witness drives the whole tick path, not the pure fn.
+    #[test]
+    fn w4_f47ds_the_state25_seam_runs_inside_update_npcs() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.home = Some((30, 120));
+        // The completion edge: ai1 74 → 75, transparency 1/60 → 0 dry.
+        n.ai = [25.0, 74.0, 0.0, 0.0];
+        n.shimmer_transparency = 1.0 / 60.0;
+        n.variation_index = 0;
+        app.npcs.push(n);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].ai, [0.0; 4], "the emergence completed");
+        assert_eq!(app.npcs[0].variation_index, 1, "the variant flipped");
+        assert_eq!(app.npcs[0].vy, -4.0, "the completion kick");
+        // The progression-43 latch drained post-pass (the achievement row).
+        let credited = app
+            .achievements
+            .list
+            .iter()
+            .flat_map(|a| a.conditions.iter())
+            .any(|c| c.name == "PROGRESSION_EVENT_43" && c.completed);
+        assert!(credited, "progression 43 credited through the seam");
+    }
+
+    /// The seam's gate: a DRY-walking Guide (ai[0]=0) never enters the
+    /// emergence machine — the tick rides the existing walk unchanged.
+    #[test]
+    fn w4_f47ds_the_seam_gate_leaves_the_dry_walk_alone() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.home = Some((30, 120));
+        app.npcs.push(n);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].ai[0], 0.0, "no emergence state");
+        // The old walk moved it (the 0.5 px/tick stand-in until b3 lands).
+        assert_ne!(app.npcs[0].x, 30.0 * TILE_PX, "the dry walk ran");
     }
 }

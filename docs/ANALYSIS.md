@@ -11731,9 +11731,30 @@ C# `:53257`), and `shimmer_teleport_to_landing_spot` — the four expanding scan
 (`:55563-55641`) over the core `find_spot_without_shimmer` with a faithful
 `IsSpotShimmerFree` (`SolidCollision` acceptTop + `PlatformProperTopFrame`,
 `WorldGen.cs:70153-70165`). `TownEnv` gains `time_for_visual_effects`. The
-module is still UNWIRED (the `update_guide` migration is its own lane); the
 `Teleport(pos, 12)` effect/teleportTime latch and the particle orchestrator are
 cited visual seams.
+
+Doc-sweep lane 36 (`docs/research/121-doc-sweep-shimmer.md`) WIRED the
+emergence seam without duplicating the b3 migration: the full aiStyle-7
+`update_guide` retirement is W4-b3's pushed phase 1
+(`task/W4-b3-npc-ai-town-wire` 96a5d88f — the axis claim, the door latch, the
+generic `UpdateNPC` tail); THIS branch adds `npc_ai_town::town_shimmer_step`,
+called from the `world_sim/npcs.rs` slot loop when a living town-like NPC
+carries `ai[0] == 25` (the state `drain_shimmer_transforms`' TownVariant arm
+sets). The seam runs the preamble + the emergence machine at the C# AI()
+position on the `UpdateNPCs` stream, drains `ShimmerFx` (the hue light onto
+`EntityLights` with the `(int)(v/16)` truncation, the 309 dust via
+`NewDustPerfect`), skips the dry walk for that tick (the C# returns at
+`:53277`), and credits progression 43 through a post-pass latch. Order
+deviation: the dust allocator's own six draws per `NewDustPerfect` land AFTER
+the same tick's particle-triple draws (the C# spawns inline between them) —
+the in-arm gate/direction draws keep their exact order; the pool-pass
+convention, same as the item splash drain. `timeForVisualEffects` rides
+`anim_time × 60 mod 216000` (`Main.cs:17162-17164`). MERGE CONTRACT: when b3
+lands, its `ai_007_town_family` reaches the same `:53187` arm — keep ONE
+driver (fold this seam into the adapter's `TownOutputs` drain or drop the
+adapter's state-25 call); the adapter's `shimmering: false` fold must become
+the live buff-353 flag either way.
 
 **Item fall-through physics.** `collision.rs` grows
 `tile_collision_opts`/`slope_collision_opts` with `ignoreAetheriumPlatforms`

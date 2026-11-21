@@ -9,17 +9,25 @@
 //! `npc.rs::update_guide` (`:7471`): a 240-tick fixed flip at a constant
 //! 0.5 px/tick with an invented −6.2 jump — a stand-in, not the C# arm.
 //!
-//! UNWIRED (code-only mode, the `npc_ai_caster.rs` precedent): the live
-//! dispatch still routes the town kinds through `update_guide`. The
-//! migration replaces that call with [`town_npc_ai`], drains
-//! [`TownShot`]/[`TownStrike`]/[`TownPartnerWrite`] through the NPC
-//! spawn/strike seams, implements the inline [`TownDoorOps`] trait over
-//! `tr_core::edit::{open_door, close_door}` (+ `ShiftTallGate` when it
-//! lands), registers the door latch fields on `Npc` (the C#'s
-//! `closeDoor`/`doorX`/`doorY`, `NPC.cs:6511-6513`) and applies
-//! [`HomeTileUpdate`] through `TownRooms` + message 60. The contested
-//! pieces stay untouched: the housing validation (`town.rs`), the chat
-//! selection (`npc_chat`), and the caster aiStyle-8 arm.
+//! WIRING SPLIT (doc-sweep lane 36, `docs/research/121-doc-sweep-shimmer.md`):
+//! the FULL aiStyle-7 migration (retire `update_guide`, the axis claim, the
+//! door latch, the generic `UpdateNPC` tail) is W4-b3's pushed phase 1
+//! (`task/W4-b3-npc-ai-town-wire` 96a5d88f) — this branch does NOT duplicate
+//! it. What THIS branch wires is the state-25 emergence seam only:
+//! [`town_shimmer_step`] (below) runs the W4-f47 emergence machine for a
+//! town NPC whose `ai[0] == 25` at its slot turn in `world_sim/npcs.rs`,
+//! draining [`ShimmerFx`] onto the dust pool / entity lights and crediting
+//! progression 43. The `drain_shimmer_transforms` TownVariant arm
+//! (`NPC.cs:91578-91591`) sets that state, so the shimmer→emergence chain is
+//! LIVE end-to-end on this branch while the dry walk stays `update_guide`
+//! until b3 lands. At the b3 merge the seam folds into b3's
+//! `ai_007_town_family` (its `town_npc_ai` call reaches the same
+//! `:53187` arm; the merge keeps ONE driver — the contract is documented
+//! in ANALYSIS 121). The rest of the migration (TownOutputs drain, real
+//! door ops, the live NPC list, `HomeTileUpdate` through `TownRooms` +
+//! message 60) stays b3's phase 2. The contested pieces stay untouched:
+//! the housing validation (`town.rs`), the chat selection (`npc_chat`),
+//! and the caster aiStyle-8 arm.
 //!
 //! SCOPE — the whole arm's STRUCTURE with the branches the port's town
 //! kinds take (the ten housed kinds + the eleven town-like sellers,
@@ -35,8 +43,9 @@
 //!   animation rolls ([`pet_idle_animation`], `:55750-55785`) and the
 //!   pet gates are ported as pure fns, unreachable until the pets land;
 //! * the SHIMMER state 25 (`:53187-53277`) + the shimmer teleport scan
-//!   (`:55563-55641`, `ShimmerHelper.FindSpotWithoutShimmer`): the state
-//!   is a cited skip (returns, draws shimmer dust — the dust task's);
+//!   (`:55563-55641`, `ShimmerHelper.FindSpotWithoutShimmer`): PORTED
+//!   (W4-f47 phase 2) and WIRED via [`town_shimmer_step`] (doc-sweep
+//!   lane 36) — the visuals drain onto the shared pool/lights;
 //! * the Old Man 37 / Clothier 54 / Santa 142 / the bound-NPC Transform
 //!   rows 362/364/602/608 (`:53158-53184`), the Mechanic's owned-proj
 //!   latch (`:53166-53179`) and the Angler's wet edge rescue
@@ -126,6 +135,7 @@
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::TargetCandidate;
+use glam::Vec2;
 use tr_core::tile::Tile;
 use tr_core::tiledata as td;
 use tr_core::{UnifiedRandom, World, TILE_PX};
@@ -1827,6 +1837,133 @@ fn town_shimmer_state25(
 fn shimmer_remap(v: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
     let t = ((v - from_min) / (from_max - from_min)).clamp(0.0, 1.0);
     to_min + (to_max - to_min) * t
+}
+
+/// The state-25 emergence SEAM (doc-sweep lane 36, W4-f47): the world-sim
+/// slot loop calls this for a living town NPC whose `ai[0] == 25` — the
+/// state `drain_shimmer_transforms`' TownVariant arm sets
+/// (`NPC.cs:91578-91591`). It builds the solo classic [`TownEnv`] (the
+/// b3 adapter's fold: one session player, empty NPC list, the unported
+/// statics false), runs [`town_shimmer_state25`] on the caller's
+/// `UpdateNpcs` stream, and drains the visuals: the hue light onto the
+/// shared `EntityLights` (the `(int)(v/16)` truncation, the
+/// `npc_lights.rs` convention), the 309 dust via `NewDustPerfect` (the
+/// draws already rode `rng` in-arm — the perfect spawn's own 6 draws ride
+/// the same stream here, the C# `:53235` order), the particle requests
+/// stay recorded (the orchestrator is unported). Progression 43 credits
+/// through the caller's returned flag. Returns `true` when the state ran
+/// (the caller then skips the dry walk for this tick — the C# arm RETURNS
+/// at `:53277`).
+///
+/// MERGE CONTRACT (b3): when `task/W4-b3-npc-ai-town-wire` lands, its
+/// `ai_007_town_family` adapter reaches the same `:53187` arm through
+/// `town_npc_ai`; the merger keeps ONE driver — either this seam folds
+/// into the adapter's `TownOutputs` drain or the adapter's state-25 call
+/// is dropped in favour of this pre-pass. The draws are identical either
+/// way (the same in-arm order on the same stream); the b3 adapter's
+/// `shimmering: false` fold must become the NPC's live buff-353 flag.
+pub fn town_shimmer_step(
+    npc: &mut Npc,
+    world: &World,
+    player: &crate::player::Player,
+    time_for_visual_effects: f64,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+    lights: &mut crate::entity_lights::EntityLights,
+) -> bool {
+    if npc.ai[0] != 25.0 || npc.hp <= 0 || !npc.kind.is_town_npc_like() {
+        return false;
+    }
+    let players = [TownPlayer {
+        candidate: crate::npc_target::session_candidate(player),
+        // `Player.talkNPC` lives on the App — the solo seam reads nobody
+        // talking (the b3 phase-1 fold).
+        talk_npc: -1,
+        stinky: player.buffs.buff_type.contains(&120),
+        sitting: player.sitting,
+        can_be_talked_to: !player.dead && player.stealth == 0.0,
+    }];
+    let env = TownEnv {
+        world,
+        day_time: world.day_time,
+        raining: world.raining,
+        eclipse: world.eclipse,
+        slime_rain: world.slime_rain,
+        storming: false, // the wind/storm scan unported (the b3 fold)
+        net_mode: 0,
+        expert_mode: player.buffs.expert_mode,
+        master_mode: false,
+        players: &players,
+        npcs: &[],
+        dungeon_x: 0,
+        dungeon_y: 0,
+        combat_book: world.combat_book_was_used,
+        combat_book_two: false,
+        party_up: false,
+        skyblock_low_tiles: false,
+        infected_seed: world.seeds.contains(tr_core::seeds::SeedFlags::ZENITH),
+        only_shimmer_ocean: false,
+        x_mas: false,
+        town_damage_multiplier: 1.0,
+        downed_slime_king: world.downed_slime_king,
+        downed_boss1: world.downed_eoc,
+        downed_deerclops: world.downed_deerclops,
+        downed_boss2: world.downed_eow,
+        downed_boss3: world.downed_skeletron,
+        downed_queen_bee: world.downed_queen_bee,
+        hard_mode: world.hard_mode,
+        downed_queen_slime: world.downed_queen_slime,
+        downed_mech1: world.downed_mech_boss1,
+        downed_mech2: world.downed_mech_boss2,
+        downed_mech3: world.downed_mech_boss3,
+        downed_plant: world.downed_plant_boss,
+        downed_empress: false,
+        downed_fishron: world.downed_fishron,
+        downed_golem: world.downed_golem,
+        downed_cultist: world.downed_ancient_cultist,
+        homeless: npc.home.is_none(),
+        breath: 200,
+        // `NPC.shimmering` — the live buff-353 flag (the f47 NPC wiring).
+        shimmering: npc.shimmering,
+        time_for_visual_effects,
+    };
+    let mut out = TownOutputs::default();
+    town_shimmer_state25(npc, &env, rng, &mut out);
+    // The visual drain (the draws already spent in-arm; the perfect
+    // spawn's own NewDust draws ride the same stream at the C# `:53235`
+    // position — after the gate draws, before the particle triple).
+    // ORDER NOTE: the C# spawns each dust INLINE between the light and
+    // the particle roll; the port drains the whole list after the arm,
+    // so the dusts' NewDust draws land AFTER the particle draws of the
+    // same tick. The in-arm gate/direction draws keep their exact order;
+    // only the allocator's own draws shift within the tick (documented,
+    // ANALYSIS 121 — the same pool-pass convention as the item splash).
+    for fx in out.shimmer_fx {
+        match fx {
+            ShimmerFx::Light { x, y, rgb } => {
+                lights.add((x / 16.0) as i32, (y / 16.0) as i32, rgb);
+            }
+            ShimmerFx::Dust { x, y, vx, vy, scale } => {
+                dust.new_dust_perfect(
+                    rng,
+                    dust_ctx,
+                    world,
+                    Vec2::new(x, y),
+                    309,
+                    Some(Vec2::new(vx, vy)),
+                    0,
+                    tr_core::particles::Color::default(),
+                    scale,
+                );
+            }
+            ShimmerFx::Particle { .. } => {
+                // The orchestrator is unported — the request was recorded
+                // (the draws spent); nothing to spawn.
+            }
+        }
+    }
+    out.shimmer_town_progression
 }
 
 pub fn town_npc_ai(
