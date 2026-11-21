@@ -215,6 +215,7 @@
 //! | 998-1006 | `:87518-87534` | the 6/94/166 EaterofSouls/Corruptor/SwampThing death (per-type gores) |
 //! | 1007-1010 | `:87551-87554` | the 101 Clinger death (4 gores 110/114/114/115) |
 //! | 1011-1016 | `:87570-87587` | the 7/8/9 Devourer + 98/99/100 Seeker death (1 gore each, per-type offset) |
+//! | 1017-1022 | `:87604-87620` | the 10/11/12 GiantWorm + 95/96/97 Digger death (1 gore each, per-type offset) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5832,6 +5833,58 @@ fn seeker_death(
     gore.new_gore(rng, world, pos, vel, 110, 1.0); // :87587
 }
 
+/// The 10/11/12 GiantWorm death (`NPC.cs:87600-87604`, sites 1017-1019):
+/// the 10-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then
+/// the single gore `type - 7 + 18` at position (10 → 21, 11 → 22, 12 → 23).
+/// Scale defaults to 1.
+fn giant_worm_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, npc_type - 7 + 18, 1.0); // :87604
+}
+
+/// The 95/96/97 Digger death (`NPC.cs:87616-87620`, sites 1020-1022): the
+/// 10-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// single gore `type - 95 + 111` at position (95 → 111, 96 → 112, 97 → 113).
+/// Scale defaults to 1.
+fn digger_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, npc_type - 95 + 111, 1.0); // :87620
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6540,6 +6593,14 @@ pub fn hit_effect_c(
     // `:87573-87589` — the 98/99/100 Seeker arm (sites 1014-1016).
     if (npc_type == 98 || npc_type == 99 || npc_type == 100) && npc.hp <= 0 {
         seeker_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87590-87605` — the 10/11/12 GiantWorm arm (sites 1017-1019).
+    if (npc_type == 10 || npc_type == 11 || npc_type == 12) && npc.hp <= 0 {
+        giant_worm_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87606-87621` — the 95/96/97 Digger arm (sites 1020-1022).
+    if (npc_type == 95 || npc_type == 96 || npc_type == 97) && npc.hp <= 0 {
+        digger_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10349,6 +10410,36 @@ mod tests {
         let mut rng = UnifiedRandom::new(977);
         seeker_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         assert_eq!(gore.slot(0).gore_type, 110);
+    }
+
+    /// `NPC.cs:87604` — the GiantWorm death: the single gore type-7+18
+    /// (10→21, 11→22, 12→23).
+    #[test]
+    fn w4_f10_the_giant_worm_death_uses_the_per_type_offset() {
+        let w = air();
+        for (ty, gore_ty) in [(10, 21), (11, 22), (12, 23)] {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(983);
+            giant_worm_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "worm {ty}");
+        }
+    }
+
+    /// `NPC.cs:87620` — the Digger death: the single gore type-95+111
+    /// (95→111, 96→112, 97→113).
+    #[test]
+    fn w4_f10_the_digger_death_uses_the_per_type_offset() {
+        let w = air();
+        for (ty, gore_ty) in [(95, 111), (96, 112), (97, 113)] {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(991);
+            digger_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "digger {ty}");
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
