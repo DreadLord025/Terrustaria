@@ -5128,6 +5128,35 @@ fn deadly_sphere_death(
     gore.new_gore(rng, world, pos, vel, 660, 1.0); // :89263
 }
 
+/// The 134-136 Destroyer death (`NPC.cs:89266-89323`, sites 782-786):
+/// ONE gore 156 at position (ungated), then the 1-in-2 gate
+/// (`Next(2) == 0`) wraps the 10x/5x mech smoke burst + the four
+/// quadrant smoke gores. The 135's hit-half probe-launch seam
+/// (`:89268-89285`, the ai[2] latch + Next(25/50) + NPC.NewNPC(139))
+/// is a HIT-half seam — g62's/wiring's, not ported here (the
+/// dispatcher's hp gate skips it; the `npc_ai_style37.rs`
+/// probe_launch_on_hit precedent owns the launch).
+fn destroyer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 156, 1.0); // :89290
+    // `:89291` — the 1-in-2 gate.
+    if rng.next_max(2) == 0 {
+        // `:89293-89305` — the 10x dust-31 + 5x paired dust-6 census.
+        mech_smoke_burst(npc, dust, dust_ctx, rng, world, 10, 5);
+        // `:89306-89321` — the four quadrant smoke gores.
+        mech_quadrant_smoke(npc, gore, rng, world);
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5741,6 +5770,11 @@ pub fn hit_effect_d(
     // `:89245-89265` — the 467 Deadly Sphere arm (sites 780-781).
     else if npc_type == 467 {
         deadly_sphere_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89266-89323` — the 134-136 Destroyer arm (sites 782-786; the
+    // 135 hit-half probe launch is the wiring seam).
+    else if (134..=136).contains(&npc_type) {
+        destroyer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9905,5 +9939,42 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the deadly sphere mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89290-89321` — the Destroyer: the ungated 156 then the
+    /// 1-in-2 gate wrapping the mech census + quadrants; the twin
+    /// replay pins both the taken and refused paths.
+    #[test]
+    fn w4_f5d_the_destroyer_gates_the_smoke_on_one_in_two() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(811);
+        let _ = hit_effect_d(&n, 134, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(gore.slot(0).gore_type, 156);
+        let mut twin = UnifiedRandom::new(811);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        let gate = twin.next_max(2);
+        let active = gore.slots().iter().take_while(|g| g.active).count();
+        if gate == 0 {
+            assert_eq!(active, 5, "the gate taken spawns the quadrants");
+            for _ in 0..10 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for _ in 0..5 {
+                twin_dust(&mut twin, 40, 40);
+                twin_dust(&mut twin, 40, 40);
+            }
+            for _ in 0..4 {
+                let _t = twin.next_range(61, 64);
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+        } else {
+            assert_eq!(active, 1, "the gate refused spawns only the 156");
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the destroyer mirrors the C# draws");
     }
 }
