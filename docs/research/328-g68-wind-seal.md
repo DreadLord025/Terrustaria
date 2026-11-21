@@ -494,3 +494,75 @@ C# sites, no reconciliation owed. The shake burst's leaves ride the
 same `update_leaf` physics (the wind drift applies to them too — the
 C# does not distinguish spawn source in Gore_UpdateLeaf).
 
+### 8.5 The g31 §8.5 receipt (item 5) — the keep-one recommendation
+
+Read at the g31 FINAL tip `36b5f2d78` (the §8.5 FINAL-phase update +
+§9 execution record; the drip order plan EXECUTED `10530fd88`,
+`tile_attach.rs::classify_and_draw_cell` plans `drip_plan` row-major,
+witnessed equal to `reg.liquid_drop_cells` —
+`w4_g31_attach_drip_plan_preserves_the_switch_arm_order`).
+
+**The two candidates:**
+* **g68's live seam** (wiring-1, `ea9e784f6`): `emit_liquid_drops_area`
+  rescans the draw view rect per frame beside tile_cracks
+  (`draw.rs:1250-1269`), gate stream the persistent
+  `App.tile_draw_rand`, spawn internals the bare global Main.rand.
+  WIRED on this branch; the rescan is g68's own documented stand-in.
+* **The union direct-bind** (g31 §8.5's published 2-line hunk): the
+  CAD LiquidDrops arm calls `foliage::emit_liquid_drops(world, y, x,
+  kind, water_style, zone_corrupt, zone_crimson, zone_hallow,
+  &mut self.rand, self.main_rand, self.gore)` DIRECTLY per classified
+  cell, the record push stays as the census input, and **g68's rescan
+  call DROPS**.
+
+**KEEP-ONE RECOMMENDATION: the union direct-bind WINS.** Reasons, in
+the contract's own terms:
+1. **Stream order is the pixel contract** (research/136 C5): the C#
+   emits INSIDE the `Draw` switch (:688-694) BEFORE the `continue`, so
+   the `Next(num*2)` gate draws on the ONE `_rand` interleaved with
+   every other switch-arm draw in row-major cell order. The rescan
+   rolls the same gates in the same row-major order but in a SEPARATE
+   pass — the drip gates land after ALL the tile-pass draws instead of
+   interleaved. Once the union's CAD owns the other `_rand` consumers
+   (the d60 battery, the g31 drains), the rescan's separate-pass order
+   diverges from the C# stream; the direct bind cannot.
+2. **The rescan is a stand-in by its own doc** — g68's wiring-1
+   comment and the ANALYSIS deferred-4 row both say "when g30 lands,
+   the wiring wave swaps the rescan for the recorded cells"; g31 §8.5
+   sharpens this to the DIRECT bind (not a drain — draining
+   `liquid_drop_cells` after the walk would re-order the stream the
+   same way). The g68 lane ACCEPTS the sharpening: the per-cell emit
+   is the C# shape, the rescan was always the approximation.
+3. **No double-roll**: keeping both would roll every drip gate twice
+   (the contract's own warning). The bind drops the rescan call —
+   ONE emission site.
+4. **The body is g68's wholesale either way** — the union binds
+   g68's `emit_liquid_drops` (the exact signature re-verified at this
+   tip, `foliage.rs:165-176`, matches g31's published signature
+   verbatim), no body dedupe owed; only the DRIVER keep-one is decided
+   here.
+
+**The g68-side obligations at the bind** (for the merger): drop the
+`emit_liquid_drops_area` call block (`draw.rs:1225-1269` incl the
+comment); the `emit_liquid_drops_area` fn (`foliage.rs:273`) + its
+area-driver witness
+(`w4_g68_the_area_driver_scans_drip_kinds_row_major`,
+`foliage.rs:1310`) retire with it (the row-major order it pins is
+preserved by the CAD walk + g31's `drip_plan` witness); the per-drip
+witnesses (the 706 vine, the type overrides, the wet/anti-cluster
+refusals) survive UNCHANGED — they test the body, not the driver. The
+persistent `App.tile_draw_rand` stays (the CAD's `self.rand` binds
+it). The `DrawnThisUpdate` gate reconciliation stays the d60 wiring
+wave's contract (the deferred-2 row) — the direct bind inherits it,
+the rescan's `!game_paused` stand-in retires with the call.
+
+**Final status (the research close):** the g68 lane is COMPLETE —
+the wind sim verified + its missing arms landed (the seal §2 + the
+§8.1 dead-player fix), the leaf cadence + physics + draw chain closed
+(§8.3), the emission seams wired with the keep-one recommendations
+published (the §8.3 passStyle table → g17, the §8.5 drip driver →
+the union direct-bind, the push chain → c40 per the seal §5). Every
+witness WRITTEN NOT RUN (32 on the lane, grep-verified); the merged
+tree's first full `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` run is the gate.
+

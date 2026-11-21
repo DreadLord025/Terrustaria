@@ -39642,3 +39642,23 @@ drifting corpse no longer stamps gust cells). The cloud-count tail
 creative-freeze fold + the sway-counter cadence split are pre-existing
 documented deviations. 32 witnesses on the lane (the seal's 33 was an
 arithmetic slip, corrected `08a4c3bb0`; +1 the dead-player pin).
+
+**The addendum's keep-one recommendations (§8.2-§8.5, for the merger):**
+* the wind-PARTICLE census is COMPLETE (§8.2) — all 8 families owned,
+  the one cross-family seam (leaf water-rest drift vs rain spawn)
+  shares the live flag but no stream;
+* the leaf GORE chain (emit → GorePool SpecialAI-3 → update_leaf →
+  front-pass draw) is CLOSED (§8.3); the passStyle TABLE keep-one =
+  **g17's `tr-core/tree.rs::tree_leaf`** (both hallow tables incl
+  style-20 + height_add 5; g68's `tree_leaf_pass_style` twin lacks
+  style-20 and its "unreachable today" comment is wrong — a loaded
+  `.wld` with `hallow_bg_style` 2/3 reaches it); the exact rebind for
+  `foliage.rs:526` is published;
+* the tree-shake interplay (§8.4) composes with the wind shed on
+  cadence/streams/types with NO conflict (g17's loot ladder owns the
+  loot, the FX tail is RNG-free in position);
+* the drip DRIVER keep-one = **the union direct-bind** (g31 §8.5 at
+  `36b5f2d78`, the per-cell CAD arm; g68's `emit_liquid_drops_area`
+  rescan call DROPS at the bind — keeping both double-rolls the gate;
+  the body stays g68's wholesale, the per-drip witnesses survive, the
+  area-driver witness retires with the fn).
