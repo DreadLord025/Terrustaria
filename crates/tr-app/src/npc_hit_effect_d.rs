@@ -1435,15 +1435,15 @@ fn vulture_death(
     gore.new_gore(rng, world, pos14, vel, 88, 1.0); // :86623
 }
 
-/// The antlion arm (`NPC.cs:86545-86606`, sites 182-204): the dust-250
+/// The antlion arm (`NPC.cs:86545-86606`, sites 182-203): the dust-250
 /// census — `num513 = 100` hit / `num514 = 50` death (the 582 Larvae's
 /// 30/10, `:86549-86553`), then the per-kind sub-branch: 69 Antlion →
 /// 97/98 (`:86568-86569`), 580 Walking Antlion → 1094/1095/1096/1097
 /// (`:86573-86576`), 581 Flying Antlion → 1098/1099/1100/1101/1101
 /// (`:86580-86584`), 508 Giant Walking Antlion → 811/812/813/814
 /// (`:86588-86591`), 509 Giant Flying Antlion → 815/816/817/818/818
-/// (`:86595-86599`); the 582 Larvae tail (1102/1103, the 10-dust count)
-/// lands next batch. All at position, scale 1f.
+/// (`:86595-86599`), 582 Larvae Antlion → 1102/1103 (`:86603-86604`,
+/// the 10-dust count). All at position, scale 1f.
 fn antlion_death(
     npc: &Npc,
     npc_type: i32,
@@ -1497,7 +1497,72 @@ fn antlion_death(
         gore.new_gore(rng, world, pos, vel, 817, 1.0); // :86597
         gore.new_gore(rng, world, pos, vel, 818, 1.0); // :86598
         gore.new_gore(rng, world, pos, vel, 818, 1.0); // :86599
+    } else if npc_type == 582 {
+        gore.new_gore(rng, world, pos, vel, 1102, 1.0); // :86603
+        gore.new_gore(rng, world, pos, vel, 1103, 1.0); // :86604
     }
+}
+
+/// The 301 Raven death (`NPC.cs:86625-86641`, sites 204-205): the 50x
+/// dust-5 burst, then 438 at position + 439 at +14 X, scale 1f.
+fn raven_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86635-86638` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 438, 1.0); // :86639
+    gore.new_gore(rng, world, Vec2::new(pos.x + 14.0, pos.y), vel, 439, 1.0); // :86640
+}
+
+/// The 252 Parrot death (`NPC.cs:86642-86658`, sites 206-207): the 50x
+/// dust-5 burst, then 373/374 at position, scale 1f.
+fn parrot_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86652-86655` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 373, 1.0); // :86656
+    gore.new_gore(rng, world, pos, vel, 374, 1.0); // :86657
 }
 
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
@@ -1683,14 +1748,21 @@ pub fn hit_effect_d(
     else if npc_type == 133 {
         wandering_eye_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86545-86606` — the antlion arm; the 69/580/581/508/509 branches
-    // are live (sites 182-201), the 582 Larvae tail lands next batch.
+    // `:86545-86606` — the antlion arm, COMPLETE (sites 182-203).
     else if matches!(npc_type, 69 | 580 | 581 | 508 | 509 | 582) {
         antlion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     // `:86607-86624` — the 61 Vulture arm (sites 179-181).
     else if npc_type == 61 {
         vulture_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86625-86641` — the 301 Raven arm (sites 204-205).
+    else if npc_type == 301 {
+        raven_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86642-86658` — the 252 Parrot arm (sites 206-207).
+    else if npc_type == 252 {
+        parrot_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2992,6 +3064,59 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "antlion {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86603-86604` — the 582 Larvae Antlion pair 1102/1103 with
+    /// the 10-dust count (num514 = 10, not 50).
+    #[test]
+    fn w4_f5d_the_larvae_antlion_drops_the_dust_count_to_ten() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 20.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(197);
+        let _ = hit_effect_d(&n, 582, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1102, 1103]);
+        assert!(!gore.slot(2).active, "exactly two gores");
+        let mut twin = UnifiedRandom::new(197);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 24, 20);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the larvae antlion mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86639-86640`/`:86656-86657` — the Raven pair 438/439
+    /// (+14 X) and the Parrot pair 373/374, both after the 50x dust-5
+    /// burst, scale 1f.
+    #[test]
+    fn w4_f5d_the_raven_and_parrot_pairs_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 28.0);
+        for (kind, want) in [(301, vec![438, 439]), (252, vec![373, 374])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(199);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "kind {kind}");
+            if kind == 301 {
+                assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+            }
+            let mut twin = UnifiedRandom::new(199);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 28);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
         }
     }
 }
