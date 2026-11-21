@@ -216,6 +216,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     // (`Main.cs:43083`); `SoundID.Chat = 24` (`SoundID.cs:70`), the
     // `Sounds/Chat` cue (`LegacySoundPlayer.cs:202`, case 24 `:957-962`).
     ("Chat", 24),
+    // W4-d79 — `SoundEngine.PlaySound(25)` — the full-mana refill chime
+    // (`Player.UpdateManaRegen`, `Player.cs:19552`); `SoundID.MaxMana = 25`
+    // (`SoundID.cs:72`), the `Sounds/MaxMana` cue
+    // (`LegacySoundPlayer.cs:239`, case 25 `:963-968`).
+    ("MaxMana", 25),
     // `SoundEngine.PlaySound(40)` — the capture camera's shutter
     // (`CaptureInterface.cs:1592`); `SoundID.Camera = 40` (`SoundID.cs:102`),
     // the `Sounds/Camera` cue (`LegacySoundPlayer.cs:210`, case 40 `:1359`).
@@ -694,16 +699,16 @@ pub struct Audio {
     coin_slots: [Option<rodio::Sink>; 5],
     /// The single-instance legacy slots (`LegacySoundPlayer.cs:96-141`),
     /// in [`SINGLE_SLOT_CUES`] order: cases 5/6/7/8/9/10/11/12/13/16/17/
-    /// 18/22/23/24/40 — every one but Coins (18) and Chat (24) stops the
-    /// old instance before the re-create (the per-case citations ride the
-    /// table).
-    single_slots: [Option<rodio::Sink>; 16],
+    /// 18/22/23/24/25/40 — every one but Coins (18), Chat (24) and MaxMana
+    /// (25) stops the old instance before the re-create (the per-case
+    /// citations ride the table).
+    single_slots: [Option<rodio::Sink>; 17],
 }
 
 /// The single-instance cues and their legacy case ids, in `single_slots`
 /// order (`LegacySoundPlayer.cs`'s `SoundInstance*` fields). The bool is
-/// the Stop-before-recreate flag: cases 18 (`:866`) and 24 (`:958`)
-/// overwrite WITHOUT a Stop; every other listed case stops first.
+/// the Stop-before-recreate flag: cases 18 (`:866`), 24 (`:958`) and 25
+/// (`:964`) overwrite WITHOUT a Stop; every other listed case stops first.
 const SINGLE_SLOT_CUES: &[(&str, bool)] = &[
     ("Player_Killed", true), // case 5 (`:697-701`)
     ("Grass", true),         // case 6 (`:707-711`)
@@ -720,6 +725,7 @@ const SINGLE_SLOT_CUES: &[(&str, bool)] = &[
     ("Unlock", true),        // case 22 (`:938-942`)
     ("Drown", true),         // case 23 (`:948-952`)
     ("Chat", false),         // case 24 (`:958` — no Stop)
+    ("MaxMana", false),      // case 25 (`:964` — no Stop)
     ("Camera", true),        // case 40 (`:1360-1364`)
 ];
 
@@ -4197,7 +4203,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
         let style_before = audio.sound_style_random.clone();
-        for cue in ["Menu_Open", "Menu_Close", "Menu_Tick", "Coins", "Unlock"] {
+        for cue in ["Menu_Open", "Menu_Close", "Menu_Tick", "Coins", "Unlock", "Chat", "MaxMana"] {
             assert_eq!(audio.play_single_voice(cue, -1.0, -1.0), Some(cue));
         }
         assert_eq!(rng.peek(), peek, "the single voices draw nothing");
@@ -4798,6 +4804,7 @@ mod tests {
         assert_eq!(sound_type("Player_Hit_1"), 1);
         assert_eq!(sound_type("Player_Hit_2"), 1);
         assert_eq!(sound_type("Drown"), 23);
+        assert_eq!(sound_type("MaxMana"), 25, "the case-25 full-bar chime");
         assert_eq!(sound_type("Coin_0"), 38, "the id-18 alias is retired");
         for n in 0..5 {
             let name = format!("Coin_{n}");

@@ -1874,6 +1874,15 @@ pub struct Player {
     /// arm, `Player.cs:23257`: `PlaySound(23)` — unpositioned). A bare flag:
     /// the case draws nothing, the drain plays `Drown` on no stream.
     pending_drown_sound: bool,
+    /// W4-d79 — the full-mana refill cue + dust burst
+    /// (`Player.UpdateManaRegen`, `Player.cs:19550-19560`): the unpositioned
+    /// `PlaySound(25)` (case 25 — Volume/Pan only, no draws, no Stop) plus
+    /// the 5× dust-45 loop, each rolling `Next(20, 26) * 0.1` as the
+    /// `NewDust` scale argument BEFORE the spawn. `(position.X, position.Y,
+    /// width, height)` — the C# reads `base.position`/`width`/`height` live
+    /// at the refill tick; the drain owns the pool + the `UpdatePlayers`
+    /// stream (the sticky-dust convention).
+    pending_mana_refill: Option<(f32, f32, i32, i32)>,
     /// S1-E-21f — the wing-flap latch `Player.flapSound` (`Player.cs:1128`):
     /// the `wingFrame == 3` edge plays `SoundID.Item32` once (`:26848-26852`),
     /// the off-frame clears it (`:26856`). The port's flap cadence is the
@@ -2869,6 +2878,7 @@ impl Player {
             pending_splash_sound: None,
             wet_count: 0,
             pending_drown_sound: false,
+            pending_mana_refill: None,
             flap_sound: false,
             wing_frame: 0,
             wing_frame_counter: 0,
@@ -3357,6 +3367,15 @@ impl Player {
         std::mem::take(&mut self.pending_drown_sound)
     }
 
+    /// W4-d79 — takes the full-mana refill cue + dust burst
+    /// (`Player.cs:19550-19560`) — `(position.X, position.Y, width, height)`
+    /// captured at the refill tick; the drain plays the unpositioned case-25
+    /// chime and rolls the 5× `Next(20, 26)` dust-scale draws + spawns on
+    /// `UpdatePlayers`.
+    pub(crate) fn take_mana_refill(&mut self) -> Option<(f32, f32, i32, i32)> {
+        self.pending_mana_refill.take()
+    }
+
     /// S1-E-21f — takes the wing-flap `SoundID.Item32` play
     /// (`Player.cs:26850`) — `(style_index, position.X, position.Y)`.
     pub(crate) fn take_flap_sound(&mut self) -> Option<(u16, f32, f32)> {
@@ -3650,6 +3669,7 @@ impl Player {
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
+        self.pending_mana_refill = None;
         self.pending_flap_sound = None;
         self.pending_dismount = false;
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
@@ -11176,7 +11196,7 @@ impl Player {
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
-            update_mana_regen(
+            let refilled = update_mana_regen(
                 &mut self.regen,
                 &in_,
                 &mut self.mana,
@@ -11184,6 +11204,19 @@ impl Player {
                     item_in_use: self.mana_regen_item_in_use,
                 },
             );
+            if refilled {
+                // W4-d79 — `Player.cs:19550-19560`: the local player's
+                // full-bar `PlaySound(25)` + the 5× dust-45 burst. The
+                // engine returns the flag4-gated trigger (the ManaV2
+                // animation gate already suppressed it mid-swing); the
+                // drain plays the unpositioned chime and rolls the dust
+                // draws on `UpdatePlayers` (the queue convention — the
+                // tick has no `Audio`/`DustPool` borrow). The C# reads
+                // `base.position`/`width`/`height` at THIS point in
+                // `Player.Update` (`:25995`), before the movement tail.
+                self.pending_mana_refill =
+                    Some((self.x, self.y, self.width as i32, self.height as i32));
+            }
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
@@ -20944,6 +20977,45 @@ mod s1_player_composite_tests {
         }
         assert_eq!(p.breath, 0);
         assert_eq!(gasps, 1, "the gasp is the 1->0 edge, not the damage loop");
+    }
+
+    /// W4-d79 — the full-mana refill trigger queues ONCE at the fill
+    /// (`Player.cs:19550-19560`): the payload is the live
+    /// `position`/`width`/`height` at the regen point (`:25995`), the
+    /// idling full bar never re-queues (flag4), and the ManaV2 animation
+    /// gate (`:19542-19545`) suppresses the queue while the point lands.
+    #[test]
+    fn w4_d79_the_mana_refill_queues_once_at_the_fill() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.mana = p.mana_max - 1;
+        p.regen.mana_regen_count = 119;
+        p.regen.mana_regen_delay = 0.0;
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana, p.mana_max, "the last point landed");
+        assert_eq!(
+            p.take_mana_refill(),
+            Some((p.x, p.y, p.width as i32, p.height as i32)),
+            "the cue + burst queued at the live box"
+        );
+        // The idling full bar: chunks still cross 120, flag4 stays false.
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+            assert!(p.take_mana_refill().is_none(), "no re-fire at full");
+        }
+        // The animation gate: the point lands, the queue stays empty.
+        let mut q = Player::spawn(&w);
+        q.mana = q.mana_max - 1;
+        q.regen.mana_regen_count = 119;
+        q.regen.mana_regen_delay = 0.0;
+        q.vx = 0.0;
+        q.vy = 0.0;
+        q.mana_regen_item_in_use = true;
+        q.update(&w, PlayerInput::default());
+        assert_eq!(q.mana, q.mana_max, "the grant precedes the gate");
+        assert!(q.take_mana_refill().is_none(), "flag4 = false mid-animation");
     }
 
     /// S1-E-21f — the wing flap's Item-32 play (`Player.cs:26835-26858`):

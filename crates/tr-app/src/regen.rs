@@ -349,7 +349,8 @@ pub fn check_mana(
 
 /// `Player.UpdateManaRegen` (`Player.cs:19418-19563`). Returns true when this
 /// tick refilled the last missing mana point (the full-bar sound + dust in the
-/// C# — M6-AUDIO polish). `manaRegenDelayBonus` has no grant source in the
+/// C# — W4-d79 wired the cue + burst through `Player::take_mana_refill`).
+/// `manaRegenDelayBonus` has no grant source in the
 /// source (`:18656` is its only write) and the arcane crystal is unported —
 /// both folded out (noted in ANALYSIS). `flags.item_in_use` is the C# `flag`
 /// (`:19420`) feeding the ManaV2 animation gate.
