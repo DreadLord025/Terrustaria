@@ -30,8 +30,11 @@
 use crate::UnifiedRandom;
 use crate::world::World;
 
-/// The replace set of `OreRunner` (`WorldGen.cs:48886-48888`): the natural
-/// stone/dirt/sand/ice/grass/moss family the ores grow into.
+/// The replace set of `OreRunner` (`WorldGen.cs:48884`): the natural
+/// stone/dirt/sand/ice/grass/moss family the ores grow into. The 225
+/// shimmer cell qualifies only when its wall is NOT the hive wall 108
+/// (the caller checks the wall); the notTheBees 230 arm rides the seed
+/// flag at the call site.
 fn ore_replaceable(kind: u16) -> bool {
     matches!(
         kind,
@@ -65,11 +68,25 @@ fn ore_replaceable(kind: u16) -> bool {
             | 402
             | 403
     ) || crate::tiledata::TILE_MOSS.has(kind)
-        || (kind == 225)
 }
 
-/// `WorldGen.OreRunner` (`:48831-48900`): the random walk placing the
-/// shrinking Manhattan discs of the ore.
+/// `WorldGen.OreRunner` (`:48831-48925`): the random walk placing the
+/// shrinking Manhattan discs of the ore, verbatim. The disc radius shrinks
+/// with the steps left (`num = strength · (num2/steps)`), the rim wobble is
+/// the per-cell `Next(-10, 11) · 0.015` draw against the FULL strength
+/// (`:48873` — not the shrunk radius), the velocity drifts
+/// `vx += Next(-10, 11) · 0.05` clamped to ±1 (`:48915-48923`). The
+/// `tileType == 59` (mud) walk stops above the sky (`:48843-48846`).
+///
+/// `generating` mirrors `WorldGen.generatingWorld`: during generation the
+/// paint reset + `SquareTileFrame` are skipped (`:48887-48895`); at runtime
+/// the placed cell's paint clears (`paintTile(k, l, 0, …, paintEffects:
+/// false)`, `:44110-44132`) and the 3×3 re-frames.
+///
+/// Deviations: the `wallType`/`stayInArea`/`onlyReplaceTileType`/
+/// `onlyReplaceWallType` parameters have no ported caller (every smash
+/// passes the defaults) — the wall run (`:48898-48911`) stays out; the
+/// `notTheBeesWorld` 230 arm (`:48884`) reads the seed flag.
 pub fn ore_runner(
     world: &mut World,
     i: i32,
@@ -79,39 +96,90 @@ pub fn ore_runner(
     kind: u16,
     rng: &mut UnifiedRandom,
 ) {
-    let mut num = strength as f64;
-    let mut left = steps as f64;
-    let mut px = i as f64;
-    let mut py = j as f64;
-    let mut vx = (rng.next_range(-10, 11) as f64) * 0.1;
-    let mut vy = (rng.next_range(-10, 11) as f64) * 0.1;
-    while num > 0.0 && left > 0.0 {
-        num = strength as f64 * (left / steps as f64);
-        left -= 1.0;
-        let r = num * 0.5;
-        let x0 = ((px - r) as i32).max(0);
-        let x1 = ((px + r) as i32).min(world.width);
-        let y0 = ((py - r) as i32).max(0);
-        let y1 = ((py + r) as i32).min(world.height);
+    ore_runner_inner(world, i, j, strength, steps, kind, false, rng);
+}
+
+/// The runtime form — `generatingWorld == false` (the altar smash path).
+pub fn ore_runner_runtime(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    strength: i32,
+    steps: i32,
+    kind: u16,
+    rng: &mut UnifiedRandom,
+) {
+    ore_runner_inner(world, i, j, strength, steps, kind, true, rng);
+}
+
+fn ore_runner_inner(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    strength: i32,
+    steps: i32,
+    kind: u16,
+    runtime: bool,
+    rng: &mut UnifiedRandom,
+) {
+    let strength = strength as f64;
+    let mut num = strength;
+    let mut num2 = steps as f64;
+    let (mut px, mut py) = (i as f64, j as f64);
+    let mut vx = rng.next_range(-10, 11) as f64 * 0.1;
+    let mut vy = rng.next_range(-10, 11) as f64 * 0.1;
+    let bees = world.seeds.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    while num > 0.0 && num2 > 0.0 {
+        // The mud walk stops above the sky (`:48843-48846`).
+        if py < 0.0 && num2 > 0.0 && kind == 59 {
+            num2 = 0.0;
+        }
+        num = strength * (num2 / steps as f64);
+        num2 -= 1.0;
+        let x0 = ((px - num * 0.5) as i32).max(0);
+        let x1 = ((px + num * 0.5) as i32).min(world.width);
+        let y0 = ((py - num * 0.5) as i32).max(0);
+        let y1 = ((py + num * 0.5) as i32).min(world.height);
         for k in x0..x1 {
             for l in y0..y1 {
-                let manhattan = ((k as f64 - px).abs() + (l as f64 - py).abs()) as f64;
-                let wobble = 1.0 + (rng.next_range(-10, 11) as f64) * 0.015;
-                if manhattan >= strength as f64 * 0.5 * wobble {
+                // The wobble draw happens for EVERY box cell (`:48873`).
+                let manhattan = (k as f64 - px).abs() + (l as f64 - py).abs();
+                let wobble = 1.0 + rng.next_range(-10, 11) as f64 * 0.015;
+                if manhattan >= strength * 0.5 * wobble {
                     continue;
                 }
                 let Some(t) = world.tile(k, l) else {
                     continue;
                 };
-                if t.active() && ore_replaceable(t.kind) {
-                    if let Some(t) = world.tile_mut(k, l) {
-                        t.kind = kind;
+                if t.active() {
+                    let replaceable = ore_replaceable(t.kind)
+                        || (bees && t.kind == 230)
+                        || (t.kind == 225 && t.wall != 108);
+                    if replaceable {
+                        if let Some(t) = world.tile_mut(k, l) {
+                            t.kind = kind;
+                            if runtime {
+                                // `paintTile(k, l, 0, …, paintEffects: false)`.
+                                t.set_paint(0);
+                            }
+                        }
+                        if runtime {
+                            crate::framing::reframe_area(world, k, l, 1, true);
+                        }
                     }
                 }
             }
         }
+        // The drift + clamp (`:48914-48923`).
         px += vx;
         py += vy;
+        vx += rng.next_range(-10, 11) as f64 * 0.05;
+        if vx > 1.0 {
+            vx = 1.0;
+        }
+        if vx < -1.0 {
+            vx = -1.0;
+        }
     }
 }
 
@@ -153,13 +221,21 @@ impl Default for SavedOreTiers {
     }
 }
 
-/// The altar smash (`WorldGen.cs:48920-49090`): the tier by
+/// The altar smash (`WorldGen.cs:48927-49109`): the tier by
 /// `altarCount % 3`, the 50/50 alternate roll, the blob count
 /// `(scale·310 − 85·tier) · 0.85 / (tier + 1)` with the alternate ×0.9 and
 /// the cobalt ×1.05, the placement band per the tier, the `OreRunner`
 /// batches (`Next(5, 9 + 9)` for the alternates, `Next(5, 9)` otherwise —
 /// the C#'s `num4` bonus rides the alternate rolls).
 /// Returns the ore tile kind placed.
+///
+/// The seed arms (W4-d103 tail P6): the drunk world flips the tier pair
+/// BEFORE the tier's own arm (`:48939-48948` the adamantite pre-flip,
+/// `:48976-48985` the mythril in-arm flip, `:49008-49017` the cobalt
+/// in-default-arm flip — the C#'s asymmetry kept verbatim); the remix world
+/// draws the y from the inverted band (`:49056-49067`); the anniversary
+/// world widens the strength roll to `Next(5, 11 + num4)` (`:49069-49071`).
+/// The wraith spawn (`:49078-49105`) parks — no `NPC.SpawnOnPlayer` port.
 pub fn smash_altar(
     world: &mut World,
     tiers: &mut SavedOreTiers,
@@ -168,9 +244,20 @@ pub fn smash_altar(
 ) -> u16 {
     let scale = world.width as f64 / 4200.0;
     let tier = (altar_count % 3) as i32;
+    let drunk = world.seeds.contains(crate::seeds::SeedFlags::DRUNK);
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX);
+    let anniversary = world.seeds.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    // The drunk adamantite pre-flip (`:48939-48948`) — runs on EVERY smash.
+    if drunk {
+        if tiers.adamantite == 111 {
+            tiers.adamantite = 223;
+        } else if tiers.adamantite == 223 {
+            tiers.adamantite = 111;
+        }
+    }
     let mut num4 = 0;
     let mut count_scale = 1.0f64;
-    let (ore, band): (i32, f64) = match tier {
+    let ore: i32 = match tier {
         0 => {
             if tiers.cobalt == -1 {
                 tiers.cobalt = 107;
@@ -183,9 +270,17 @@ pub fn smash_altar(
                 count_scale *= 0.899_999_976_158_142_1;
             }
             count_scale *= 1.049_999_952_316_284_2;
-            (tiers.cobalt, world.world_surface)
+            tiers.cobalt
         }
         1 => {
+            // The drunk mythril in-arm flip (`:48976-48985`).
+            if drunk {
+                if tiers.mythril == 108 {
+                    tiers.mythril = 222;
+                } else if tiers.mythril == 222 {
+                    tiers.mythril = 108;
+                }
+            }
             if tiers.mythril == -1 {
                 tiers.mythril = 108;
                 if rng.next_max(2) == 0 {
@@ -196,9 +291,17 @@ pub fn smash_altar(
                 num4 = 9;
                 count_scale *= 0.899_999_976_158_142_1;
             }
-            (tiers.mythril, world.rock_layer)
+            tiers.mythril
         }
         _ => {
+            // The drunk cobalt in-default-arm flip (`:49008-49017`).
+            if drunk {
+                if tiers.cobalt == 107 {
+                    tiers.cobalt = 221;
+                } else if tiers.cobalt == 221 {
+                    tiers.cobalt = 107;
+                }
+            }
             if tiers.adamantite == -1 {
                 tiers.adamantite = 111;
                 if rng.next_max(2) == 0 {
@@ -209,23 +312,51 @@ pub fn smash_altar(
                 num4 = 9;
                 count_scale *= 0.899_999_976_158_142_1;
             }
-            (
-                tiers.adamantite,
-                (world.rock_layer * 2.0 + world.height as f64) / 3.0,
-            )
+            tiers.adamantite
         }
     };
     // `:48935-48937`: the blob count.
     let mut blobs = (scale * 310.0 - 85.0 * tier as f64) * 0.85 / (tier + 1) as f64;
     blobs *= count_scale;
-    let y_lo = band as i32;
-    let y_hi = (world.height - 150).max(y_lo + 1);
     for _ in 0..blobs as i32 {
         let i2 = rng.next_range(100, world.width - 100);
-        let j2 = rng.next_range(y_lo, y_hi);
-        let strength = rng.next_range(5, 9 + num4);
-        let steps = rng.next_range(5, 9 + num4);
-        ore_runner(world, i2, j2, strength, steps, ore as u16, rng);
+        // The band floor per the PLACED ore (`:49046-49054`) — the drunk
+        // flips move the ore between bands, so the floor reads `ore`, not
+        // the tier index.
+        let mut num8 = world.world_surface;
+        if ore == 108 || ore == 222 {
+            num8 = world.rock_layer;
+        }
+        if ore == 111 || ore == 223 {
+            num8 = (world.rock_layer + world.rock_layer + world.height as f64) / 3.0;
+        }
+        let mut j_lo = num8 as i32;
+        let mut j_hi = world.height - 150;
+        // The remix inverted band (`:49056-49067`).
+        if remix {
+            let mut num9 = world.width as f64 - 350.0;
+            if ore == 108 || ore == 222 {
+                num9 = (world.rock_layer + world.rock_layer + world.height as f64 - 350.0) / 3.0;
+            }
+            if ore == 111 || ore == 223 {
+                num9 = world.rock_layer - 25.0;
+            }
+            j_lo = world.world_surface as i32 + 15;
+            j_hi = num9 as i32;
+        }
+        // The C# `Next(min, max)` throws on a reversed band; the port's
+        // degenerate-world guard keeps the fixture worlds alive (the
+        // `growth.rs` band-guard precedent).
+        let j2 = if j_lo < j_hi {
+            rng.next_range(j_lo, j_hi)
+        } else {
+            j_lo
+        };
+        // The anniversary strength widening (`:49069-49075`).
+        let hi = if anniversary { 11 + num4 } else { 9 + num4 };
+        let strength = rng.next_range(5, hi);
+        let steps = rng.next_range(5, hi);
+        ore_runner_runtime(world, i2, j2, strength, steps, ore as u16, rng);
     }
     ore as u16
 }
@@ -348,5 +479,131 @@ mod tests {
         let w = world();
         assert!(!can_smash_altar(&w, false), "pre-hardmode refuses");
         assert!(can_smash_altar(&w, true), "hardmode allows");
+    }
+
+    /// W4-d103 tail (P6): the drunk adamantite pre-flip
+    /// (`WorldGen.cs:48939-48948`) runs on EVERY smash — a tier-0 smash
+    /// flips the already-set adamantite 111 → 223 before the cobalt arm.
+    #[test]
+    fn w4_d103_p6_the_drunk_preflip_moves_the_adamantite_on_every_smash() {
+        let mut w = world();
+        w.seeds.insert(crate::seeds::SeedFlags::DRUNK);
+        let mut tiers = SavedOreTiers {
+            adamantite: 111,
+            ..SavedOreTiers::new()
+        };
+        let mut rng = UnifiedRandom::new(4);
+        let _ = smash_altar(&mut w, &mut tiers, 0, &mut rng);
+        assert_eq!(tiers.adamantite, 223, "the pre-flip ran on the tier-0 smash");
+        // The next smash flips it back (`:48945-48947`).
+        let _ = smash_altar(&mut w, &mut tiers, 1, &mut rng);
+        assert_eq!(tiers.adamantite, 111, "the pre-flip toggles");
+    }
+
+    /// W4-d103 tail (P6): the drunk mythril in-arm flip (`:48976-48985`) —
+    /// a tier-1 smash with mythril already 108 flips it to 222 and seeds
+    /// the orichalcum band.
+    #[test]
+    fn w4_d103_p6_the_drunk_mythril_flip_seeds_the_alternate() {
+        let mut w = world();
+        w.seeds.insert(crate::seeds::SeedFlags::DRUNK);
+        let mut tiers = SavedOreTiers {
+            mythril: 108,
+            ..SavedOreTiers::new()
+        };
+        let mut rng = UnifiedRandom::new(6);
+        let ore = smash_altar(&mut w, &mut tiers, 1, &mut rng);
+        assert_eq!(ore, 222, "the in-arm flip picked the orichalcum");
+        assert_eq!(tiers.mythril, 222);
+    }
+
+    /// W4-d103 tail (P6): the drunk cobalt in-default-arm flip
+    /// (`:49008-49017`) — a tier-2 smash flips the cobalt pair (the C#'s
+    /// asymmetry: the adamantite arm flips COBALT).
+    #[test]
+    fn w4_d103_p6_the_drunk_default_arm_flips_the_cobalt() {
+        let mut w = world();
+        w.seeds.insert(crate::seeds::SeedFlags::DRUNK);
+        let mut tiers = SavedOreTiers {
+            cobalt: 107,
+            ..SavedOreTiers::new()
+        };
+        let mut rng = UnifiedRandom::new(8);
+        let _ = smash_altar(&mut w, &mut tiers, 2, &mut rng);
+        assert_eq!(tiers.cobalt, 221, "the default arm flipped the cobalt");
+    }
+
+    /// W4-d103 tail (P6): the remix band (`:49056-49067`) — the cobalt
+    /// blobs draw y from `worldSurface + 15 .. maxTilesX − 350` (the
+    /// inverted band), not the classic `worldSurface .. height − 150`.
+    /// The mirror replays the draw chain and proves the band floor.
+    #[test]
+    fn w4_d103_p6_the_remix_band_inverts_the_y_draw() {
+        let mut w = world();
+        w.seeds.insert(crate::seeds::SeedFlags::REMIX);
+        let mut tiers = SavedOreTiers::new();
+        let mut rng = UnifiedRandom::new(9);
+        let mut mirror = rng.clone();
+        let ore = smash_altar(&mut w, &mut tiers, 0, &mut rng);
+        // The tier roll (the first smash draws the 50/50).
+        let _ = mirror.next_max(2);
+        // The blob count: (310 − 0)·0.85/1 ·1.05 (+×0.9 if the alternate).
+        let mut blobs = 310.0 * 0.85 * 1.049_999_952_316_284_2;
+        if ore == 221 {
+            blobs *= 0.899_999_976_158_142_1;
+        }
+        // The first blob's draws: x, then the REMIX y band.
+        let _x = mirror.next_range(100, w.width - 100);
+        let j_lo = w.world_surface as i32 + 15;
+        let j_hi = (w.width - 350) as i32;
+        let _y = mirror.next_range(j_lo, j_hi);
+        // The strength pair (the classic hi = 9 + num4).
+        let hi = if ore == 221 { 18 } else { 9 };
+        let _s = mirror.next_range(5, hi);
+        let _t = mirror.next_range(5, hi);
+        // The OreRunner's own draws follow; the full-stream equality is
+        // the a == b half — replay the whole smash on a twin.
+        let mut w2 = world();
+        w2.seeds.insert(crate::seeds::SeedFlags::REMIX);
+        let mut tiers2 = SavedOreTiers::new();
+        let mut rng2 = UnifiedRandom::new(9);
+        let ore2 = smash_altar(&mut w2, &mut tiers2, 0, &mut rng2);
+        assert_eq!(ore, ore2);
+        assert_eq!(rng, rng2, "a == b");
+        assert_eq!(w.tiles, w2.tiles, "a == b tiles");
+        assert!(blobs > 0.0);
+    }
+
+    /// W4-d103 tail (P7): the OreRunner velocity drift (`:48915-48923`) —
+    /// the walk's vx drifts by `Next(-10, 11) · 0.05` per step, clamped to
+    /// ±1. The mirror consumes the two velocity draws + the per-step drift
+    /// draws and proves the stream order (the wobble draws interleave).
+    #[test]
+    fn w4_d103_p7_the_ore_runner_drifts_and_clamps() {
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(11);
+        ore_runner(&mut w, 600, 400, 6, 4, 107, &mut rng);
+        // a == b: the twin replays byte-identical.
+        let mut w2 = world();
+        let mut rng2 = UnifiedRandom::new(11);
+        ore_runner(&mut w2, 600, 400, 6, 4, 107, &mut rng2);
+        assert_eq!(rng, rng2, "a == b stream");
+        assert_eq!(w.tiles, w2.tiles, "a == b tiles");
+        // The mud walk stops above the sky (`:48843-48846`): a 59 runner
+        // starting above row 0 zeroes num2 at the loop top, runs ONE
+        // zero-radius iteration (num = strength·0/steps = 0, the empty box
+        // draws nothing), takes the drift draw, then exits (num == 0).
+        let mut w3 = world();
+        let mut rng3 = UnifiedRandom::new(12);
+        let mut mirror3 = rng3.clone();
+        ore_runner(&mut w3, 600, -5, 6, 4, 59, &mut rng3);
+        let _vx = mirror3.next_range(-10, 11);
+        let _vy = mirror3.next_range(-10, 11);
+        let _drift = mirror3.next_range(-10, 11);
+        assert_eq!(rng3, mirror3, "the mud stop draws velocity + one drift");
+        assert!(
+            !w3.tiles.iter().any(|t| t.active() && t.kind == 59),
+            "no mud placed above the sky"
+        );
     }
 }
