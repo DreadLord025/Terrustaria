@@ -584,9 +584,10 @@ mod tests {
     /// W4-g42 D2: the overworld jungle case-60 draw ladder — the `Next(7)`
     /// plant roll, ELSE `Next(500)` tree, ELSE `Next(25)` rose (`:74754-
     /// 74791`). With the cell above OCCUPIED by a non-plant tile the first
-    /// arm's gate fails without a draw, the Next(500) draws and misses the
-    /// plant gate, the Next(25) draws — exactly two draws, in that order
-    /// (the rose placement refuses on the stone above without drawing).
+    /// arm's gate fails without a draw, the Next(500) draws (a hit still
+    /// misses the plant gate — the stone is no 61/74/69), the Next(25)
+    /// draws; a rose-gate hit draws Next(8) + Next(12) (both placements
+    /// refuse on the stone in the box — no further draws).
     #[test]
     fn w4_g42_d2_overworld_jungle_draw_order_when_the_above_is_blocked() {
         let mut w = world();
@@ -596,11 +597,16 @@ mod tests {
         let mut witness = UnifiedRandom::new(11);
         overworld_jungle_growth(&mut w, 100, 200, 99, 102, 199, 202, &mut rng);
         let _tree_roll = witness.next_max(500);
-        let _rose_roll = witness.next_max(25);
-        assert_eq!(rng, witness, "Next(500) then Next(25), nothing else");
+        let rose = witness.next_max(25);
+        if rose == 0 {
+            let _style3 = witness.next_max(8);
+            let _style2 = witness.next_max(12);
+        }
+        assert_eq!(rng, witness, "Next(500), Next(25), then the rose styles on a hit");
         // The free-above control: the Next(7) draws FIRST; on a miss the
         // Next(500) follows, and on its miss the Next(25) rose gate (the
-        // rose placement refuses — no jungle-grass ground under the box).
+        // rose placements refuse — no solid-60 ground under the side
+        // columns — so a rose hit draws Next(8) + Next(12) and no more).
         let mut saw_chain = false;
         for seed in 1i32..400 {
             let mut w2 = world();
@@ -612,8 +618,12 @@ mod tests {
             if plant != 0 {
                 let tree = witness.next_max(500);
                 if tree != 0 {
-                    let _rose = witness.next_max(25);
-                    assert_eq!(rng, witness, "seed {seed}: Next(7), Next(500), Next(25)");
+                    let rose = witness.next_max(25);
+                    if rose == 0 {
+                        let _s3 = witness.next_max(8);
+                        let _s2 = witness.next_max(12);
+                    }
+                    assert_eq!(rng, witness, "seed {seed}: Next(7), Next(500), Next(25) + rose styles");
                     saw_chain = true;
                 }
             }
