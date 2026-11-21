@@ -2,6 +2,15 @@
 
 Date: 2026-11-21. Author: W4-g46 (reconcile phase, code-only — no cargo/tests run).
 
+> **STALE-TIP WARNING (W4-g45 LIQUID RETIRE, 2026-11-21).** Everything below
+> through A7 is written against the PRE-RE-FOLD tips (union `f57d7bacd`,
+> graft-prep). The g46d RE-FOLD LANDED: `origin/task/W4-g46-liquid-evaporation`
+> is now **`9bc722e5`** (base-swapped onto g47 `95e9c1ef`). Read **A8** (the
+> NOW-LANDED receipt) + **A8-graft** (the exact down-arm hunk for g46e-seal)
+> at the tail FIRST; the A1-A7 flags are historical except where A8
+> re-marks them. The per-fn owner table of record is research/104 §5-final;
+> the family receipt is research/104 §7 (SEALED).
+
 > **UNION-CONTRACT (graft-prep phase, 2026-11-21).** The UNION `liquid.rs` is
 > now LANDED on `task/W4-g46-liquid-evaporation` (this branch). **The merger
 > keeps THIS branch's `crates/tr-core/src/liquid.rs` verbatim and DROPS the

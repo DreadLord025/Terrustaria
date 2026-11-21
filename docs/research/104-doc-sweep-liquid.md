@@ -1,4 +1,4 @@
-# 104 — DOC-SWEEP lane 24: the liquid census + the bucket port
+# 104 — DOC-SWEEP lane 24: the liquid census + the bucket port [SEALED]
 
 Date: 2026-11-21. Author: W4-g45 (DOC-SWEEP phase, code-only — no cargo/tests
 run, no compiler invoked; every witness WRITTEN NOT RUN). Branch
@@ -6,6 +6,14 @@ run, no compiler invoked; every witness WRITTEN NOT RUN). Branch
 `8e81814e`. This note is the lane's census verdicts + the four real gaps it
 ported, with C#/Rust citations. The cross-lane reconcile addendum lives in
 [research/69](69-liquid-reconcile.md) (the ADDENDUM section, g46c active reads).
+
+**SEALED (W4-g45 LIQUID RETIRE, 2026-11-21).** This note is closed to new
+census work: every question it opened has a verdict, every gap it found is
+ported or owner-assigned, and the final receipt (§7) hands the whole liquid
+family to the g46e-seal merger bible. Post-seal corrections ride research/69
+A8+ or the g46e landing record, not this file. The per-fn owner table of
+record is §5-final; the g46d-NOW-LANDED receipt + the exact down-arm
+graft-hunk are research/69 A8/A8-graft; the g15 compose contract is §6c-compose.
 
 ## 1. The census questions and their verdicts
 
@@ -478,3 +486,71 @@ no-consume is verified for the whole family (not just 5364), the
 empty-bucket hand-back covers last-bucket / stack-split / partial-merge,
 and the one unwitnessed edge (full-inventory overflow) rides the already
 witnessed `deposit_pickup` seam. Three new witnesses WRITTEN NOT RUN.
+
+## 7. SEALED — the liquid-family receipt (LIQUID RETIRE → the g46e-seal bible)
+
+The FINAL hand-off. The owner table (§5-final) is the single source of
+truth; this receipt collapses it into the g46e merger's landing checklist.
+Tips at sealing: **g45 `2984f56c1`** (this branch, post-retire banners),
+**g46 `9bc722e5`** (the RE-FOLD union — CANONICAL `liquid.rs`), **g47
+`5c09a68b8`** (closeout — the union's base is `95e9c1ef`, the three closeout
+commits `e420e351e`/`4c81731bc`/`5c09a68b8` are docs + 3 witnesses the union
+does NOT carry), **g15 local `7981aa5bf`** (remote `f8f35d799` is 20 behind
+— see §6c-compose), **f25** `task/W4-f25-worldgen-passes-8` (gen driver).
+
+### 7a. What the g46e-seal takes FROM the union (already there — no graft)
+
+| Surface | Union location (`9bc722e5:liquid.rs`) |
+| --- | --- |
+| g47 machinery wholesale (del_water canonical, end_pass/sweep, buffer, panic, stuck, reduced-liquids, dungeon re-type, ShimmerRemoveWater, load hook, drivers) | :662/:675/:780/:859 + the setters :1722-1912 |
+| g46 evap (field + sentinel + immediate KILL_DEAD) + `surface_rng` nudge | :1043-1051/:481-483 + :248/:470/:1259 |
+| g45 AddWater guards + the `edit_kills` LOOT UPGRADE + `&mut World` ripple | :565-636/:640 |
+| g45 fall-arm `own_now` LIVE read | :1112 |
+| g45 7/5-neighbour extra wakes | :1200-1212/:1222-1229 |
+| Widened (+6,+6) fixtures + containment walls | basin :2420, ~40 module fixtures |
+| Witness modules: guards ×10 (queued-TileKill re-pin), delwater (sharper asserts), nudge ×3 (`surface_rng` re-pin), evap ×4 + boundary re-pin, cadence delay pins, g47 settle/quick/force/wiring/gen-driver suites | :4900/:4610/:4781/:4247/:4395 + :3276/:3141/:3632/:3906/:5196 |
+
+### 7b. What the g46e-seal GRAFTS from g45 (the union does NOT carry these)
+
+| Carry | g45 source (`2984f56c1`) | Graft target |
+| --- | --- | --- |
+| **The down-arm LIVE post-burn re-read** (the ONE surviving stale read — union :1414 pre-kill copy, gate :1426) | `liquid.rs` `liquid_check` re-read block; EXACT hunk in research/69 A8-graft | union `liquid.rs` down arm, after `kill_tile` :1422, before the gate :1426 |
+| `liquid_downarm_live` ×4 | `liquid.rs` module (STAY-LIVE banner) — fixture + `liquid_check` signature identical on the union | append as a new module |
+| `the_fall_arm_moves_the_post_evaporation_level` | `liquid.rs` cadence module (union has the behaviour, no pin) | union `liquid_merge_cadence` :4395 |
+| The shimmer-flow keep-one pin (g45 `shimmer_falls_every_visit_like_water` × g47 `shimmer_falls_every_visit_ungated` `4c81731bc:3002` — the union dropped BOTH) | merged form: g47 shelf fixture + g45 cadence-trace asserts + `entry.delay == 0`; `add_water` re-pinned `&mut w` | union `liquid_sim` or cadence |
+| `editing/buckets.rs` + the `mod buckets`/`use_buckets` pre-melee wire + `bucket_use_tests` ×15 | `editing/buckets.rs` + `editing.rs:22-23/:4331` + the tail witness modules | union `editing/` tree (doors/sentry/wiring only today) |
+| The `square_tile_frame` bucket-wake consumers (`frame_and_wake`) | buckets.rs — rides the module | same |
+| anchors rows for the g45-unique surfaces (buckets wire, downarm-live, the two pins) | `anchors.txt` g45 rows | re-point at the union file locations post-graft |
+
+### 7c. What stays OUT of the liquid union (other lanes' landings)
+
+- **g15** `try_fill_bucket` + the wet-state machine + the enemy-delay clock
+  (`7981aa5bf`, unmerged) — the compose contract (§6c-compose) is the
+  merge-order note; the only shared file (`editing.rs`) has disjoint hunks.
+- **f25** gen pass body — calls the union's exported gen surface
+  (`gen_settle_loop`/setters); its private copies DELETE per research/70
+  step 6; the world-hash RE-DERIVE + the gen-side `edit_kills` drain choice
+  stand (research/70 witness table).
+- **e19/f47** item-side shimmer physics; **e11** tileobject seam (already
+  consumed by the guards); **c34** merge census (fed, §1d).
+
+### 7d. Gate obligations (unchanged, restated for the seal)
+
+1. `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`
+   green AFTER the grafts + re-pins (judge by `test result: ok` lines) —
+   every witness in this family is WRITTEN NOT RUN until that gate.
+2. The anchors canary: the union's g47 rows + the g45 rows re-pointed per
+   §7b; never delete a row to silence a failure.
+3. The runtime-inert gen-fields contract (research/69 §contract) +
+   `skip_count` resets + the dead `app.liquid_tick` (research/70 §12).
+4. The three sim deltas land as ONE semantic unit (guards + down-arm
+   re-read + fall-arm `own_now`): the union already has two of three; the
+   seal is not done until the down-arm hunk is in.
+
+**RECEIPT CLOSED.** The g45 lane's liquid work is fully accounted: 3 sim
+deltas (2 union-absorbed, 1 graft-pending), 4 witness modules (1
+union-absorbed-with-upgrade, 3 graft-pending), 1 buckets module + 15
+witnesses (graft-pending), the extra wakes + fixtures (union-absorbed), the
+census verdicts (§1/§6 — no open questions), the g15 compose contract
+(§6c-compose), and the g46d receipt + exact hunk (research/69 A8/A8-graft).
+Nothing else on this branch claims liquid ownership.
