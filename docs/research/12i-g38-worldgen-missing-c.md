@@ -77,8 +77,8 @@ reassigns; the merger reconciles per `12h`.
 | range claim (this doc) | d32b13cc | claimed |
 | C1 Place Fallen Log | 8c9b7b60 | landed (code-only, witnesses written NOT run) |
 | C2 Traps | 9a4deba8 | landed (code-only, witnesses written NOT run) |
-| C3 Piles | (this commit) | landed (code-only, witnesses written NOT run) |
-| C4 Spawn Point | — | pending |
+| C3 Piles | 53b57024 | landed (code-only, witnesses written NOT run) |
+| C4 Spawn Point | (this commit) | landed (code-only, witnesses written NOT run) |
 | C5 Guide | — | pending |
 | C6 Sunflowers | — | pending |
 | C7 Herbs | — | pending |
@@ -190,3 +190,43 @@ veto, the small-pile 1×1/2×1 arms + lava veto, the fall scan + bottom cap,
 the deny-gate no-draw schedule) + the pipeline positional witness
 `w4_g38_c3_the_piles_step_sits_after_the_traps`; the step-count/name-list
 tests updated 68→69.
+
+## C4 landing note (2026-11-21)
+
+C4 ports `WorldGen.cs:19460-19588` (the Spawn Point pass) +
+`Player.Spawn_IsAreaValidSpawn` (`Player.cs:37937-37985`) +
+`Player.Spawn_ForceClearArea` (`:37914-37935`) + `Collision.CanTileHurt`
+(`Collision.cs:3206-3225`) + `SolidTile3` (`WorldGen.cs:70465-70485`) +
+`IsTileNearby` (`:8862-8884`) verbatim into `pipeline.rs`
+(`pass_spawn_point` + `spawn_solid3`/`spawn_tile_hurts`/`spawn_area_valid`/
+`spawn_force_clear`/`spawn_bubble_nearby`/`spawn_remix_solid`). Slot: after
+`piles`, before `thin ice` (the vanilla `:19460` slot between Piles `:18788`
+and the grass-wall / vegetation family). Stream: `pass_rng("Spawn Point")`
+— no other step's ledger shifts. **Replaces the compact spawn** the world
+tail computed (`map.spawn_center`, `heights[center] - 6`) and the remix
+bottom-centre arm — both retired into the faithful pass (the remix arm is
+its `:19576-19585` tail). The classic arm scans the centre column with the
+widening ±num2 jitter, the liquid/bubble vetoes and the below-surface
+widening re-roll; the skyblock arm settles with SolidTile3; the noSurface
+arm searches the ±300×±200 box for a valid 3×4 area and force-clears the
+centre on failure. No GenVars output; the result rides
+`world.spawn_x/spawn_y` (`Main.spawnTileX/Y`). No progress message (the
+pass sets only `progress.Set(1.0)`). Deferred (flag-gated, documented):
+the tenth-anniversary `SpawnOnBeach` head (`SpecialSeedFeatures.cs:95-117`,
+the shimmer-ocean sub-arm needs `Main.onlyShimmerOceanWorlds`) and the
+dual-dungeons per-dungeon GenVars veto half inside the noSurface area test
+(the base `Main.tileDungeon`/`wallDungeon` half is ported).
+
+Hash pins: BOTH expected UNCHANGED — on a classic world the pass writes
+ONLY the spawn coordinates (no tiles), and the world hash covers tile
+fields only (the spawn is not hashed). The sole worldgen spawn consumer
+(`micro_finish`'s actually-no-traps spike rings) is gated behind ≥4 secret
+seeds. Secret-seed worlds that consume the spawn (noSurface force-clear,
+the ≥4-secret spike rings) move by design; no pin covers them. `a == b`
+halves untouched. Witnesses: 5 unit tests in `pipeline.rs` (the classic
+surface seat, the bubble-proximity re-roll, the skyblock SolidTile3 settle
++ no-draw, the remix bottom-centre tail, the area-valid vetoes) + the
+pipeline positional witness `w4_g38_c4_the_spawn_point_step_sits_after_the_piles`;
+the step-count/name-list tests updated 69→70. `SurfaceMap.spawn_center`
+gains `#[allow(dead_code)]` (no step reads it now; the height-map's own
+layout maths still uses the local).

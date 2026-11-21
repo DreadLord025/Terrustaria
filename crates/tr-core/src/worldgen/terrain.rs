@@ -22,6 +22,10 @@ use crate::world::World;
 pub(crate) struct SurfaceMap {
     /// Per-column surface row; the lake pass lowers its columns to the carved floor.
     pub(crate) heights: Vec<i32>,
+    /// The centre column (`width / 2`). W4-g38 C4: the faithful Spawn Point
+    /// pass computes its own centre, so no step reads this field anymore —
+    /// kept for the height-map's own layout maths (the desert/lake anchors).
+    #[allow(dead_code)]
     pub(crate) spawn_center: i32,
     pub(crate) desert_enabled: bool,
     pub(crate) desert_start: i32,

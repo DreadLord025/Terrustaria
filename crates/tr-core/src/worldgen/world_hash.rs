@@ -268,6 +268,18 @@ mod tests {
     // collapsed bands) — the seven ladders place 185/186/187 piles on its
     // cave floors and surface. Re-pin DEFERRED to the merge gate (no
     // compiler on this branch); a == b stays green (own fresh stream).
+    // W4-g38 C4 (2026-11-21, code-only): the `Spawn Point` pass
+    // (`WorldGen.cs:19460-19588`) lands after `piles` on a fresh
+    // `pass_rng("Spawn Point")` stream, replacing the compact spawn the
+    // world tail computed. This pin is EXPECTED UNCHANGED: on a classic
+    // world the pass writes ONLY `Main.spawnTileX/Y` (the port's
+    // `world.spawn_x/spawn_y`) — no tiles — and the world hash covers tile
+    // fields only. The sole worldgen spawn consumer (`micro_finish`'s
+    // actually-no-traps spike rings) is gated behind ≥4 secret seeds, so a
+    // classic world's tiles are untouched. The pass draws only its own
+    // fresh stream. a == b stays green. (Secret-seed worlds that DO consume
+    // the spawn — noSurface force-clear, the ≥4-secret spike rings — move
+    // by design; no pin covers them.)
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -334,6 +346,12 @@ mod tests {
     // across the surface and caves — this pin moves BY DESIGN. The pass
     // draws only its own fresh stream. Re-pin DEFERRED to the merge gate;
     // a == b stays green.
+    // W4-g38 C4 (2026-11-21, code-only): the Spawn Point pass (see
+    // SEED42_512 above) — on the classic default world the pass writes only
+    // the spawn coordinates, no tiles, so this pin is EXPECTED UNCHANGED
+    // (the world hash covers tile fields only; the spawn is not hashed).
+    // The compact height-map anchor the world tail used retired into the
+    // faithful pass. a == b stays green (own fresh stream).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

@@ -1354,6 +1354,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // The pass draws only its own `pass_rng("Piles")` stream, so the
     // insertion shifts no other step's ledger.
     step!("piles", "Piles", step_piles),
+    // The vanilla Spawn Point slot (`WorldGen.cs:19460`): after Piles
+    // (`:18788`, C3) and before the grass-wall / vegetation family — W4-g38
+    // C4. Replaces the compact spawn the world tail used to compute; the
+    // pass draws only its own `pass_rng("Spawn Point")` stream.
+    step!("spawn point", "Spawn Point", step_spawn_point),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2421,6 +2426,32 @@ fn step_piles(
     structures::pass_piles(world, &layers, &mut streams.pass_rng("Piles"), opts);
 }
 
+/// The vanilla Spawn Point slot (`WorldGen.cs:19460-19588`) — W4-g38 C4:
+/// the centre-column surface scan (the widening ±num2 jitter, the
+/// liquid/bubble vetoes, the below-surface widening re-roll), the skyblock
+/// SolidTile3 settle, the noSurface 1000-roll area search + force-clear,
+/// the tenth-anniversary beach spawn and the remix bottom-centre arm.
+/// Replaces the compact spawn the world tail computed; the result rides
+/// `world.spawn_x/spawn_y` (`Main.spawnTileX/Y`).
+fn step_spawn_point(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    let dungeon_x = gv.spans().dungeon_x;
+    pass_spawn_point(
+        world,
+        world_surface,
+        dungeon_x,
+        &mut streams.pass_rng("Spawn Point"),
+        opts,
+    );
+}
+
 fn step_campsites(
     world: &mut World,
     _gv: &mut GenVars,
@@ -2793,7 +2824,7 @@ fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -2801,31 +2832,12 @@ fn step_world_tail(
     // draws. They MUST stay the last rng-consuming step
     // (`worldgen_rolls_hell_back_style` pins the order).
     let layers = gv.layers();
-    let map = gv.map();
     world.world_surface = layers.world_surface;
     world.rock_layer = layers.rock_layer;
-    // `WorldGen.cs:19574-19584`'s remix spawn arm (M5-SEED-1): the bottom
-    // centre of the map instead of the surface anchor — the first air cell
-    // scanning up from `maxTilesY - 10` at the centre column.
-    let remix_spawn = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
-        let x = world.width / 2;
-        let mut y = world.height - 10;
-        while y > 0 && world.tile(x, y).is_some_and(|t| t.active()) {
-            y -= 1;
-        }
-        Some((x, (y + 1).max(1)))
-    } else {
-        None
-    };
-    let (spawn_x, spawn_y) = match remix_spawn {
-        Some((x, y)) => (x, y),
-        None => (
-            map.spawn_center,
-            (map.heights[map.spawn_center as usize] - 6).max(1),
-        ),
-    };
-    world.spawn_x = spawn_x;
-    world.spawn_y = spawn_y;
+    // W4-g38 C4: the spawn now comes from the faithful `Spawn Point` step
+    // (`WorldGen.cs:19460-19588`, `step_spawn_point`) — the compact
+    // height-map anchor and the remix bottom-centre arm that lived here
+    // retired into that pass (the remix arm is its `:19576-19585` tail).
     world.time = 27000.0; // noon
     world.day_time = true;
     // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
@@ -2835,6 +2847,317 @@ fn step_world_tail(
     // `Main.hellBackStyle = WorldGen.genRand.Next(3)` (`WorldGen.cs:8247`), drawn
     // from the same generator; it picks the animated magma/hell sheets at draw time.
     world.hell_back_style = (streams.rng.next_u32() % 3) as u8;
+}
+
+// --- W4-g38 C4: the Spawn Point pass (`WorldGen.cs:19460-19588`) -------------
+//
+// The classic arm scans the centre column (`num3 = maxTilesX / 2`) for the
+// first active non-bubble tile, jittering ±num2 (5, widening per retry) and
+// re-rolling while the seat sits below worldSurface, carries liquid in the
+// three cells above, or has a bubble 379 within 10 tiles. A below-surface
+// seat then re-rolls over a widening ±num12 (10+) band until it surfaces.
+// The skyblock arm settles the existing spawn with SolidTile3; the
+// noSurface arm searches a ±300×±200 box for a valid 3×4 spawn area
+// (`Player.Spawn_IsAreaValidSpawn`, generatingSpawn) and force-clears the
+// centre on failure (`Player.Spawn_ForceClearArea`). The remix tail moves
+// the spawn to the bottom-centre air cell.
+//
+// Deferred seed arms (documented, flag-gated — a classic world never enters
+// them): the tenth-anniversary `SpawnOnBeach` head (`:19527-19532`,
+// `SpecialSeedFeatures.cs:95-117` — the shimmer-ocean `SpawnOnBeachOnDungeonSide`
+// sub-arm needs `Main.onlyShimmerOceanWorlds`, not yet a port seed) and the
+// dual-dungeons `IsConsideredDungeonTile/Wall(allDungeons: true)` veto inside
+// the noSurface area test (`Player.cs:37978` — the per-dungeon GenVars sets
+// are not modelled; the base `Main.tileDungeon`/`wallDungeon` half is ported).
+//
+// The pass writes `world.spawn_x/spawn_y` (`Main.spawnTileX/Y`) and, on the
+// noSurface fallback, clears tiles. It draws only its own stream.
+
+/// `WorldGen.SolidTile3(int, int)` (`WorldGen.cs:70465-70485`): InWorld(1)
+/// then `nactive && tileSolid && !tileSolidTop` — no slope/half-brick test.
+fn spawn_solid3(world: &World, x: i32, y: i32) -> bool {
+    if !temple::in_world(world, x, y, 1) {
+        return false;
+    }
+    world.tile(x, y).is_some_and(|t| {
+        t.active()
+            && !t.inactive()
+            && td::TILE_SOLID.has(t.kind)
+            && !td::TILE_SOLID_TOP.has(t.kind)
+    })
+}
+
+/// `Collision.CanTileHurt(type, i, j, null)` (`Collision.cs:3206-3225`) at
+/// gen time (no player): the 230/80 seed exemptions, then the bleeding /
+/// suffocate / immediate / hot touch-damage sets.
+fn spawn_tile_hurts(kind: u16, opts: &GenOptions) -> bool {
+    if kind == 230 && !opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY) {
+        return false;
+    }
+    if kind == 80 && !opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE) {
+        return false;
+    }
+    td::SET_TOUCH_DAMAGE_BLEEDING.has(kind)
+        || td::SET_SUFFOCATE.has(kind)
+        || ((kind as usize) < td::TILE_COUNT && td::SET_TOUCH_DAMAGE_IMMEDIATE[kind as usize] > 0)
+        || td::SET_TOUCH_DAMAGE_HOT.has(kind)
+}
+
+/// `Player.Spawn_IsAreaValidSpawn(floorX, floorY, generatingSpawn: true)`
+/// (`Player.cs:37937-37985`): the 3×4 box `(x-1..x+1, y-3..y-1)` — no
+/// pressure plate 135, no hurtful floor tile under the feet row, no solid
+/// non-top tile, no liquid; the dual-dungeons dungeon veto is deferred (see
+/// the section note — the base dungeon tile/wall half is ported).
+fn spawn_area_valid(world: &World, x: i32, y: i32, opts: &GenOptions) -> bool {
+    let dual = opts
+        .micro_flags
+        .contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS);
+    for i in (x - 1)..(x + 2) {
+        for j in (y - 3)..y {
+            if !temple::in_world(world, i, j, 5) {
+                continue;
+            }
+            let Some(t) = world.tile(i, j).copied() else {
+                continue;
+            };
+            if j == y - 1 {
+                if let Some(below) = world.tile(i, j + 1) {
+                    if below.active() {
+                        if below.kind == 135 || spawn_tile_hurts(below.kind, opts) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if t.active() && !t.inactive() {
+                if t.kind == 135 {
+                    return false;
+                }
+                // The pass window (`:19483`): tileSolid[379] = false.
+                if t.kind != 379
+                    && td::TILE_SOLID.has(t.kind)
+                    && !td::TILE_SOLID_TOP.has(t.kind)
+                {
+                    return false;
+                }
+            }
+            if t.liquid > 0 {
+                return false;
+            }
+            // `:37978`: the generatingSpawn dual-dungeons veto — the base
+            // `Main.tileDungeon`/`wallDungeon` half (the per-dungeon GenVars
+            // sets are deferred, see the section note). The wall test carries
+            // the C# `wallType > 0` guard (`DungeonUtils.cs:1896`).
+            if dual
+                && ((t.active() && super::dungeon_features::is_dungeon_tile(t.kind))
+                    || (t.wall > 0 && super::dungeon_features::is_dungeon_wall(t.wall)))
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// `Player.Spawn_ForceClearArea(floorX, floorY)` (`Player.cs:37914-37935`):
+/// the 3×3 box `(x-1..x+1, y-3..y-1)` — kill solid non-top tiles, drain
+/// liquid. The gen-time KillTile strip (the `ocean.rs:1907` convention).
+fn spawn_force_clear(world: &mut World, x: i32, y: i32) {
+    for i in (x - 1)..(x + 2) {
+        for j in (y - 3)..y {
+            if !temple::in_world(world, i, j, 0) {
+                continue;
+            }
+            let idx = world.index(i, j);
+            let t = world.tiles[idx];
+            // The pass window (`:19483`): tileSolid[379] = false.
+            if t.active()
+                && !t.inactive()
+                && t.kind != 379
+                && td::TILE_SOLID.has(t.kind)
+                && !td::TILE_SOLID_TOP.has(t.kind)
+            {
+                let c = &mut world.tiles[idx];
+                c.flags &= !crate::tile::FLAG_ACTIVE;
+                c.kind = 0;
+                c.frame_x = 0;
+                c.frame_y = 0;
+            }
+            if world.tiles[idx].liquid > 0 {
+                let c = &mut world.tiles[idx];
+                c.liquid = 0;
+                c.clear_liquid_kind();
+            }
+        }
+    }
+}
+
+/// The Spawn Point pass (`GenPassNameID.SpawnPoint`,
+/// `WorldGen.cs:19460-19588`). Writes `world.spawn_x/spawn_y`.
+fn pass_spawn_point(
+    world: &mut World,
+    world_surface: f64,
+    dungeon_x: i32,
+    rng: &mut Rng,
+    opts: &GenOptions,
+) {
+    let skyblock = opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK);
+    if skyblock {
+        // `:19462-19480`: settle the existing spawn with SolidTile3 — drop
+        // to the first solid, rise back to the first air, accept if within
+        // 20 rows of the original.
+        let sx = world.spawn_x;
+        let mut i = world.spawn_y;
+        let num = 20;
+        while !spawn_solid3(world, sx, i) && i < world.height - 1 - num {
+            i += 1;
+        }
+        while spawn_solid3(world, sx, i) && i > num {
+            i -= 1;
+        }
+        i += 1;
+        if (i - world.spawn_y).abs() <= num {
+            world.spawn_x = sx;
+            world.spawn_y = i;
+        }
+        return;
+    }
+    // `:19483`: tileSolid[379] = false for the pass (the bubble reads
+    // non-solid); the scan below skips 379 explicitly, and the remix tail's
+    // SolidTile reads it non-solid — modelled by `spawn_remix_solid`.
+    let no_surface = opts
+        .micro_flags
+        .contains(crate::seeds::MicroSeedFlags::NO_SURFACE);
+    let mut num3 = world.width / 2;
+    if no_surface {
+        // `:19488-19524`: the centre-box area search.
+        let num4 = world.height / 2;
+        world.spawn_x = num3;
+        world.spawn_y = num4;
+        let (num5, num6) = (300, 200);
+        let mut found = false;
+        let mut num7 = 1000;
+        loop {
+            num7 -= 1;
+            if num7 <= 0 {
+                break;
+            }
+            let num8 = num3 - num5 + rng.range(0, num5 * 2);
+            let num9 = num4 - num6 + rng.range(0, num6 * 2);
+            if temple::in_world(world, num8, num9, 10) {
+                let t = world.tile(num8, num9).copied().unwrap_or_default();
+                if !t.active() && t.liquid == 0 && spawn_area_valid(world, num8, num9, opts) {
+                    world.spawn_x = num8;
+                    world.spawn_y = num9;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if !found {
+            world.spawn_x = num3;
+            world.spawn_y = num4;
+            spawn_force_clear(world, num3, num4);
+        }
+    } else {
+        // `:19527-19532`: the tenth-anniversary SpawnOnBeach head — deferred
+        // (see the section note); the classic path keeps num3 = width/2.
+        let _ = dungeon_x; // read only by the deferred beach sub-arm
+        // `:19533-19559`: the widening centre-column scan.
+        let mut num2 = 5;
+        let mut retry = true;
+        while retry {
+            let num11 = num3 + rng.range(-num2, num2 + 1);
+            for j in 0..world.height {
+                if world
+                    .tile(num11, j)
+                    .is_some_and(|t| t.active() && t.kind != 379)
+                {
+                    world.spawn_x = num11;
+                    world.spawn_y = j;
+                    break;
+                }
+            }
+            retry = false;
+            num2 += 1;
+            if (world.spawn_y as f64) > world_surface {
+                retry = true;
+            }
+            let liquid_above = (1..=3).any(|d| {
+                world
+                    .tile(world.spawn_x, world.spawn_y - d)
+                    .is_some_and(|t| t.liquid > 0)
+            });
+            if liquid_above {
+                retry = true;
+            }
+            if spawn_bubble_nearby(world, world.spawn_x, world.spawn_y, 10) {
+                retry = true;
+            }
+        }
+        // `:19560-19574`: the below-surface widening re-roll.
+        let mut num12 = 10;
+        while (world.spawn_y as f64) > world_surface {
+            let num13 = rng.range(num3 - num12, num3 + num12);
+            for k in 0..world.height {
+                if world
+                    .tile(num13, k)
+                    .is_some_and(|t| t.active() && t.kind != 379)
+                {
+                    world.spawn_x = num13;
+                    world.spawn_y = k;
+                    break;
+                }
+            }
+            num12 += 1;
+        }
+    }
+    // `:19576-19585`: the remix tail — the bottom-centre air cell. The
+    // SolidTile read runs under tileSolid[379]=false (the pass window).
+    if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+        world.spawn_x = world.width / 2;
+        let mut num14 = world.height - 10;
+        while spawn_remix_solid(world, world.spawn_x, num14) {
+            num14 -= 1;
+        }
+        world.spawn_y = num14 + 1;
+    }
+    // `:19586`: tileSolid[379] = true — pass-local state, no tile writes.
+}
+
+/// `WorldGen.IsTileNearby(x, y, 379, 10)` (`WorldGen.cs:8862-8884`) — the
+/// bubble proximity veto (step 1, the 379 kind is not 235).
+fn spawn_bubble_nearby(world: &World, x: i32, y: i32, distance: i32) -> bool {
+    for i in (x - distance)..=(x + distance) {
+        for j in (y - distance)..=(y + distance) {
+            if temple::in_world(world, i, j, 0)
+                && world.tile(i, j).is_some_and(|t| t.active() && t.kind == 379)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.SolidTile(int, int)` (`WorldGen.cs:70111-70131`) under the
+/// Spawn Point pass window (`tileSolid[379] = false`, `:19483`) — the remix
+/// tail's up-scan. Out-of-bounds reads FALSE: the C# array access throws
+/// and the catch returns false (the port's dense storage has no null
+/// cells), so the scan terminates at the world edge.
+fn spawn_remix_solid(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.kind == 379 {
+        return false;
+    }
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && !t.inactive()
 }
 
 // --- the runner -------------------------------------------------------------
@@ -3271,7 +3594,9 @@ mod tests {
         // `fallen log`.
         // W4-g38 C3: + `piles` (vanilla "Piles", `WorldGen.cs:18788`) after
         // `traps`.
-        assert_eq!(names.len(), 69);
+        // W4-g38 C4: + `spawn point` (vanilla "Spawn Point",
+        // `WorldGen.cs:19460`) after `piles`.
+        assert_eq!(names.len(), 70);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3349,6 +3674,7 @@ mod tests {
                 "fallen log",
                 "traps",
                 "piles",
+                "spawn point",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3567,7 +3893,7 @@ mod tests {
     fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("thin ice"), pos("piles") + 1);
+        assert_eq!(pos("thin ice"), pos("spawn point") + 1);
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
@@ -3628,7 +3954,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("piles"), pos("traps") + 1);
-        assert_eq!(pos("piles") + 1, pos("thin ice"));
+        assert_eq!(pos("piles") + 1, pos("spawn point"));
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3639,6 +3965,147 @@ mod tests {
         assert!(cpos("Traps") < cpos("Piles"));
         assert!(cpos("Piles") < cpos("Spawn Point"));
         assert!(cpos("Place Fallen Log") < cpos("Piles"));
+    }
+
+    /// W4-g38 C4: `spawn point` sits after `piles` and before the grouped
+    /// micro family — the vanilla chain's relative order Piles
+    /// (`WorldGen.cs:18788`) → Spawn Point (`:19460`) → the grass-wall /
+    /// vegetation family puts the pass ahead of the micro group.
+    #[test]
+    fn w4_g38_c4_the_spawn_point_step_sits_after_the_piles() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("spawn point"), pos("piles") + 1);
+        assert_eq!(pos("spawn point") + 1, pos("thin ice"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Piles") < cpos("Spawn Point"));
+        assert!(cpos("Traps") < cpos("Spawn Point"));
+    }
+
+    // --- W4-g38 C4: the Spawn Point pass unit witnesses ---------------------
+
+    /// A flat dirt-2 ground row at `ground` with air above — the spawn seat.
+    fn spawn_floor_world(ground: i32) -> World {
+        let mut w = World::new("spawn".into(), 120, 120);
+        boot_statics(&mut w);
+        for x in 0..120 {
+            for y in ground..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = crate::tile::Tile {
+                    kind: 2,
+                    flags: crate::tile::FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        w
+    }
+
+    /// W4-g38 C4: the classic scan seats the spawn on the first active
+    /// non-bubble tile of the jittered centre column, above worldSurface.
+    #[test]
+    fn w4_g38_c4_classic_scan_seats_on_the_surface() {
+        let mut w = spawn_floor_world(40);
+        let mut rng = Rng(3);
+        pass_spawn_point(&mut w, 60.0, 100, &mut rng, &GenOptions::default());
+        // The seat is the ground row (40) at a column within ±5 of centre.
+        assert_eq!(w.spawn_y, 40);
+        assert!((w.spawn_x - 60).abs() <= 5);
+        assert!(w.tile(w.spawn_x, w.spawn_y).is_some_and(|t| t.active()));
+    }
+
+    /// W4-g38 C4: a bubble 379 within 10 tiles of the seat forces a re-roll
+    /// (the widening jitter moves the column off the bubble).
+    #[test]
+    fn w4_g38_c4_bubble_proximity_forces_a_reroll() {
+        let mut w = spawn_floor_world(40);
+        // A bubble patch covering the centre seats (rows 39-40, x 55..65) so
+        // the first jittered seat lands inside it and the proximity veto
+        // fires; the widening re-roll eventually seats outside the patch.
+        for x in 55..66 {
+            for y in 39..41 {
+                let i = w.index(x, y);
+                w.tiles[i] = crate::tile::Tile {
+                    kind: 379,
+                    flags: crate::tile::FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        let mut rng = Rng(3);
+        pass_spawn_point(&mut w, 60.0, 100, &mut rng, &GenOptions::default());
+        // The spawn must not sit on a bubble, and must be a real seat.
+        assert!(w.tile(w.spawn_x, w.spawn_y).is_some_and(|t| t.active() && t.kind != 379));
+        // No bubble within 10 tiles of the final seat (the veto held).
+        assert!(!spawn_bubble_nearby(&w, w.spawn_x, w.spawn_y, 10));
+    }
+
+    /// W4-g38 C4: the skyblock arm settles the spawn with SolidTile3 — drop
+    /// to solid, rise to air, accept within 20 rows.
+    #[test]
+    fn w4_g38_c4_skyblock_settles_the_spawn() {
+        let mut w = spawn_floor_world(40);
+        w.spawn_x = 60;
+        w.spawn_y = 30; // air above the ground
+        let mut opts = GenOptions::default();
+        opts.flags.insert(crate::seeds::SeedFlags::SKYBLOCK);
+        let mut rng = Rng(3);
+        pass_spawn_point(&mut w, 60.0, 100, &mut rng, &opts);
+        // Drops from 30 to the first solid (40), rises back to 39, +1 = 40.
+        assert_eq!(w.spawn_y, 40);
+        assert_eq!(w.spawn_x, 60);
+        // The skyblock arm draws nothing.
+        assert_eq!(rng.next_u32(), Rng(3).next_u32(), "no draw");
+    }
+
+    /// W4-g38 C4: the remix tail moves the spawn to the bottom-centre air
+    /// cell (the first non-solid scanning up from height-10).
+    #[test]
+    fn w4_g38_c4_remix_tail_seats_at_the_bottom_centre() {
+        let mut w = spawn_floor_world(40);
+        // An air pocket at the bottom of the centre column (rows 105..111)
+        // so the up-scan from height-10 seats there, not on the surface.
+        for y in 105..111 {
+            let i = w.index(60, y);
+            w.tiles[i] = crate::tile::Tile::default();
+        }
+        let mut opts = GenOptions::default();
+        opts.flags.insert(crate::seeds::SeedFlags::REMIX);
+        let mut rng = Rng(3);
+        pass_spawn_point(&mut w, 60.0, 100, &mut rng, &opts);
+        // Scanning up from 110: 110..105 air → num14 = 104 (the first solid
+        // below the pocket), spawn_y = 105.
+        assert_eq!(w.spawn_x, 60);
+        assert_eq!(w.spawn_y, 105);
+    }
+
+    /// W4-g38 C4: `spawn_area_valid` refuses a pressure plate under the feet
+    /// and a solid tile in the box, accepts open air over a floor.
+    #[test]
+    fn w4_g38_c4_spawn_area_valid_vetoes() {
+        let mut w = spawn_floor_world(40);
+        let opts = GenOptions::default();
+        // Open air at (60, 39) over the row-40 floor: valid.
+        assert!(spawn_area_valid(&w, 60, 39, &opts));
+        // A pressure plate on the floor under the feet row: refused.
+        let i = w.index(60, 40);
+        w.tiles[i].kind = 135;
+        assert!(!spawn_area_valid(&w, 60, 39, &opts));
+        // A solid tile inside the box: refused.
+        let mut w2 = spawn_floor_world(40);
+        let j = w2.index(60, 38);
+        w2.tiles[j] = crate::tile::Tile {
+            kind: 1,
+            flags: crate::tile::FLAG_ACTIVE,
+            ..Default::default()
+        };
+        assert!(!spawn_area_valid(&w2, 60, 39, &opts));
     }
 
     #[test]
