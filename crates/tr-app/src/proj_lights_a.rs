@@ -26,8 +26,19 @@
 //! `proj_data` row is absent wholesale (no slot can carry it), and no ported
 //! arm draws `Main.rand` — the feed is pure, so its placement cannot move any
 //! stream. A light gated on a `Main.rand` draw is absent wholesale (the e6
-//! RNG rule): the 409 Typhoon (`:30378`, inside `Next(3) == 0`), the 849
+//! RNG rule): the 409 Typhoon (`:30378`, inside `Next(3) == 0`), the 590
+//! TruffleSpore (`:34226`, the `Next(28,42)` colour flicker), the 849
 //! ScytheWhip (`:47846`) and the 912 CoolWhip (`:48011`).
+//!
+//! **Round 2 (the 42-absent re-census):** the d-lane AI ports pushed since the
+//! first wave rowed ~20 of the absent kinds (W4-d12/d13/d17/d19/d20/d21); their
+//! light arms are activated here, each citing its source lane. The collector
+//! matches `p.kind` directly, so an arm is live as soon as its lane's row lets
+//! a slot carry the kind — the row itself stays the lane's to merge (the
+//! keep-one-dedupe convention; this branch copies no rows). Two first-wave
+//! misattributions are corrected: site 45 (`:41775`) is the 985 arm (not 973),
+//! site 46 (`:42181`) the 1126 arm (not 972). The tiger/601 state-driven
+//! deviations are unchanged (no lane ported their AI). See ANALYSIS.
 //!
 //! **The site register (all 67, in line order):**
 //!
@@ -94,27 +105,32 @@
 //!   `AddLight(Center, 0.5, 0.1, 0.3)` (aiStyle-107). Absent: 575 no row.
 //! * `:34226` — site 22, the 590 TruffleSpore's rand-flicker
 //!   `AddLight(Center, …)` (aiStyle-112, `alpha == 0` + `Next(28,42)`).
-//!   Absent: 590 no row (and rand-bearing).
+//!   Absent wholesale (the RNG rule): the colour's `num831` rides a
+//!   `Main.rand.Next(28,42)` draw the pure feed cannot take. (The 590 row
+//!   landed with W4-d12, but the rand gate keeps the light absent.)
 //! * `:34265` — site 23, the 644 RainbowCrystalExplosion's
 //!   `AddLight(Center, hslToRgb(ai[0],1,0.5).ToVector3()·0.5)` (aiStyle-112,
 //!   `alpha == 0`). PORTED.
 //! * `:34402` — site 24, the 602 PortalGunGate's
 //!   `AddLight(Center + velocity·3, portalColor·0.5)` (aiStyle-114,
-//!   `alpha == 0`). Absent: 602 no row.
+//!   `alpha == 0`). PORTED — rowed by W4-d12; the gate reads
+//!   `GetPortalColor(owner, ai[1])` (ai[1], the portal index, not ai[0]).
 //! * `:34416` — site 25, the 604 TerrarianBeam's
 //!   `AddLight(Center, 0.075, 0.3, 0.15)` (aiStyle-115 head, unconditional).
 //!   PORTED (604 is the style's only rowed kind).
 //! * `:34487` — site 26, the aiStyle-117 `flag58` trio 612/953/978's
-//!   `AddLight(Center, 0.9, 0.8, 0.6)`. Absent: none of 612/953/978 rowed.
+//!   `AddLight(Center, 0.9, 0.8, 0.6)`. PORTED for the 612/953 (rowed by
+//!   W4-d12); the 978 Volcano keeps no row (aiStyle 189, d19's decade), so
+//!   its term stays unreachable.
 //! * `:34802` — site 27, the 617 NebulaArcanum's
 //!   `AddLight(Center, 0.7, 0.2, 0.6)` (aiStyle-118 tail, `alpha < 150`).
 //!   PORTED.
 //! * `:36150` — site 28, the 658 SandnadoHostileMark's
-//!   `AddLight(Center, white·0.5)` (aiStyle-128, `alpha == 0`). Absent: 658
-//!   no row.
+//!   `AddLight(Center, white·0.5)` (aiStyle-128, `alpha == 0`). PORTED —
+//!   rowed by W4-d13.
 //! * `:37022` — site 29, the 1115 GlacierFangShot's
 //!   `AddLight(Center, (0.2,0.5,0.8)·Remap(ai[0],0,60,0.5,1))`
-//!   (AI_208 tail). Absent: 1115 no row.
+//!   (AI_208 tail). PORTED — rowed by W4-d21.
 //! * `:37070` — site 30, the 641 MoonlordTurret's
 //!   `AddLight(Center, (0.3,0.9,0.7)·Opacity)` (AI_123, the 641 arm).
 //!   PORTED.
@@ -128,43 +144,54 @@
 //!   597 amber (0.9,0.6,0.2). PORTED (the 7 rowed gems; the 1120
 //!   ForbiddenMinionShot's (1,1,1) default has no row).
 //! * `:38458` — site 33, the 1105 RemoteControlCar's
-//!   `AddLight(Center, One·0.3)` (AI_205 tail). Absent: 1105 no row.
-//! * `:38707` — site 34, the 1098 PalworldDigtoise's
-//!   `AddLight(Center, 0.3, 0.3, 0.1)` (AI_204). Absent: 1098 no row.
+//!   `AddLight(Center, One·0.3)` (AI_205 tail). PORTED — rowed by W4-d21.
+//! * `:38707` — site 34, the 1098 PalworldDigtoise's (and the 1123 Trusty
+//!   twin's) `AddLight(Center, 0.3, 0.3, 0.1)` (AI_204, the `ai[0] in {1,2,3}`
+//!   mining states). PORTED — rowed by W4-d21.
 //! * `:39020`/`:39021` — sites 35/36, the phaseblade/phaser pair
 //!   `AddLight((int)(Center/16), r,g,b)` + the tile above (AI_003's
 //!   `IsAPhaseblade` block, `Item.GetPhaseColor·0.5`). Absent: no
 //!   1059-1072/1074-1076/1101/1102 row.
 //! * `:39783` — site 37, the storm-lightning's
 //!   `AddLight(Center, GetLightningColor·num9)` (AI_203, types 1091/1117).
-//!   Absent: neither rowed.
+//!   PORTED — rowed by W4-d21; the 1091's `moreLightning && noLightning`
+//!   seed-green folds to the teal default (the feed carries no micro-seed
+//!   flags; ANALYSIS records the fold).
 //! * `:40038` — site 38, the 1078 MeteorOre's `AddLight(Center, 1,0,0)`
-//!   (AI_199). Absent: 1078 no row.
+//!   (AI_199). PORTED — rowed by W4-d20.
 //! * `:40046` — site 39, the 567/568 SporeTrap's
 //!   `AddLight(Center, 0.2·n, 0.275·n, 0.075·n)` (AI_105 head). Absent:
 //!   neither rowed.
 //! * `:40507` — site 40, the AI_196_Petal early-return
 //!   `AddLight(Center, vector)` (`ai[0] < 20 && ai[0] >= 10`). The reaching
 //!   kinds are 1038/1116 (aiStyle 196); the rowed 248 FlowerPowPetal is
-//!   aiStyle 1 and never reaches AI_196. Absent: 1038/1116 no row.
+//!   aiStyle 1 and never reaches AI_196. PORTED — 1038/1116 rowed by W4-d20.
 //! * `:40513` — site 41, the 1116 PetalstormShot's
-//!   `AddLight(Center, vector·Remap(timeLeft,120,0,1,0))` (AI_196). Absent:
-//!   1116 no row.
+//!   `AddLight(Center, vector·Remap(timeLeft,120,0,1,0))` (AI_196, the
+//!   `ai[0] >= 20` half). PORTED — rowed by W4-d20.
 //! * `:40892` — site 42, the 614 StardustCellMinionShot's
-//!   `AddLight(Center, 0.2, 0.6, 0.7)` (AI_113 tail). Absent: 614 no row.
+//!   `AddLight(Center, 0.2, 0.6, 0.7)` (AI_113 tail). PORTED — rowed by
+//!   W4-d12 F1.
 //! * `:40896` — site 43, the 636 Daybreak's
-//!   `AddLight(Center, 0.8, 0.7, 0.4)` (AI_113 tail). Absent: 636 no row.
+//!   `AddLight(Center, 0.8, 0.7, 0.4)` (AI_113 tail). PORTED — rowed by
+//!   W4-d12 F1.
 //! * `:41031` — site 44, the 1020 JimsDrone's `AddLight(Center, One·0.3)`
-//!   (AI_195 tail). Absent: 1020 no row.
-//! * `:41775` — site 45, the 973 TrueNightsEdge's lead-anchor
-//!   `AddLight(Center + rot·85·scale, (64,220,96))` (AI_191). Absent: 973 no
-//!   row.
-//! * `:42181` — site 46, the 972 NightsEdge's
-//!   `AddLight(Center, (0,96,0) [lerp])` (AI_190). Absent: 972 no row.
+//!   (AI_195 tail). PORTED — rowed by W4-d20.
+//! * `:41775` — site 45, the 985 TerraBlade2Shot's lead-anchor
+//!   `AddLight(Center + rot·85·scale, (64,220,96))` (AI_191's `type == 985`
+//!   arm, AFTER the `type != 985` return `:41726`). PORTED — rowed by
+//!   W4-d20. (The wave-1 register misattributed this to the 973, which
+//!   returns before the light and has none.)
+//! * `:42181` — site 46, the 1126 ChlorophyteClaymoreBlade's
+//!   `AddLight(Center, (0,96,0) [lerp toward (34,128,0) when localAI[2]==1])`
+//!   (AI_190's `type == 1126` arm). PORTED — rowed by W4-d19. (The wave-1
+//!   register misattributed this to the 972, which has no light arm.)
 //! * `:42206` — site 47, the 984 TerraBlade2's
-//!   `AddLight(Center, (15,84,125))` (AI_190's 984 arm). Absent: 984 no row.
+//!   `AddLight(Center, (15,84,125))` (AI_190's 984 arm). PORTED — rowed by
+//!   W4-d19.
 //! * `:43172`/`:43173` — sites 48/49, the 933/1100 FinalFractal's
-//!   trail + mounted-centre pair (AI_182). Absent: neither rowed.
+//!   trail + mounted-centre pair (AI_182, the profile `trailColor`, the
+//!   Opacity window). PORTED — rowed by W4-d19.
 //! * `:44612` — site 50, the 535 MedusaHead's
 //!   `AddLight(Center, 0.9, 0.75, 0.1)` (AI_100). Absent: 535 no row.
 //! * `:44662` — site 51, the 623 StardustGuardian's
@@ -174,10 +201,10 @@
 //! * `:46588` — site 53, the 856 SparkleGuitar's
 //!   `AddLight(Center, HotPink.ToVector3()·0.3)` (AI_167's 856 arm). PORTED.
 //! * `:47569` — site 54, the 855 ReleaseLantern's
-//!   `AddLight(Center, (1,0.6,0.1)·(1-alpha/255))` (AI_166). Absent: 855 no
-//!   row.
+//!   `AddLight(Center, (1,0.6,0.1)·(1-alpha/255))` (AI_166). PORTED — rowed
+//!   by W4-d17.
 //! * `:47649` — site 55, the 1127 ChlorophyteSaberStab's
-//!   `AddLight(Center, (32,108,0))` (AI_161). Absent: 1127 no row.
+//!   `AddLight(Center, (32,108,0))` (AI_161). PORTED — rowed by W4-d17.
 //! * `:47846` — site 56, the 849 ScytheWhip's
 //!   `AddLight(r2.Center, 0.2, 0, 0.4)` (AI_165's 849 arm), INSIDE the
 //!   `Next(9) != 0` rand gate. Absent wholesale (the RNG rule).
@@ -246,6 +273,14 @@ fn centre_tile(p: &Projectile) -> (i32, i32) {
         tile_x(p.pos, p.w, XAnchor::Center),
         tile_y(p.pos, p.h, XAnchor::Center),
     )
+}
+
+/// `Utils.Remap(fromValue, fromMin, fromMax, toMin, toMax)` (`Utils.cs:345-348`)
+/// in the clamped default — `Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax,
+/// fromValue, clamped: true))`. The glacier fang's charge scale (`:37022`)
+/// and the petalstorm's life fade (`:40513`) read it.
+fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    to_min + (to_max - to_min) * crate::projectile::get_lerp_value(from_min, from_max, from_value)
 }
 
 /// Site 3 (`:17343`) — `EmitEnchantmentVisualsAt`'s Chillet-mount light, the
@@ -383,15 +418,53 @@ pub(crate) fn proj_lights_a(
                 ],
             ));
         }
+    } else if p.kind == 602 {
+        // `:34394-34402` — aiStyle-114's gate (602 PortalGunGate): the GATE
+        // reads `GetPortalColor(owner, (int)ai[1])` (ai[1], not ai[0]), the
+        // −25 fade, then the light at `alpha == 0` anchored
+        // `Center + velocity*3`. Rowed by W4-d12 (`:6511-6520`); its
+        // `ai_portal_gate` runs the fade. The colour is the same single-player
+        // portal hue the 601 bolt reads.
+        if p.alpha == 0 {
+            let centre = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            let lead = centre + p.vel * 3.0;
+            let c = portal_color(p.ai[1] as i32);
+            out.push((
+                (lead.x / 16.0) as i32,
+                (lead.y / 16.0) as i32,
+                [
+                    c[0] as f32 / 255.0 * 0.5,
+                    c[1] as f32 / 255.0 * 0.5,
+                    c[2] as f32 / 255.0 * 0.5,
+                ],
+            ));
+        }
     } else if p.kind == TERRARIAN_BEAM {
         // `:34416` — aiStyle-115's head light, unconditional (the style's
         // only rowed kind is the 604).
         out.push((cx, cy, [0.075, 0.3, 0.15]));
+    } else if p.kind == 612 || p.kind == 953 {
+        // `:34461` + `:34485-34487` — aiStyle-117's `flag58` trio
+        // (612/953/978): (0.9, 0.8, 0.6) at the centre, unconditional inside
+        // the flag. The 612 SolarWhipSwordExplosion / 953 DaybreakExplosion
+        // are rowed by W4-d12; the 978 Volcano keeps no row (its aiStyle-189
+        // arm is d19's decade, still unported), so the third term stays
+        // unreachable. The d12 explosion arm runs the −63 fade; the light
+        // itself is ungated.
+        out.push((cx, cy, [0.9, 0.8, 0.6]));
     } else if p.kind == NEBULA_ARCANUM {
         // `:34800-34802` — aiStyle-118's tail: `alpha < 150` gates the
         // centre light (the sim's `ai_nebula_arcanum` runs the −15 fade).
         if p.alpha < 150 {
             out.push((cx, cy, [0.7, 0.2, 0.6]));
+        }
+    } else if p.kind == 658 {
+        // `:36088` + `:36148-36150` — aiStyle-128's SandnadoHostileMark:
+        // `newColor4 = new Color(255,255,255)` at the head, the light at
+        // `alpha == 0` = `white.ToVector3() * 0.5f`. Rowed by W4-d13
+        // (`:7071-7082`); its `ai_sandnado_mark` runs the −8/+16 fade.
+        if p.alpha == 0 {
+            out.push((cx, cy, [0.5, 0.5, 0.5]));
         }
     } else if p.kind == MOONLORD_TURRET {
         // `:37070` — AI_123's 641 arm: `(0.3, 0.9, 0.7) * this.Opacity`.
@@ -400,6 +473,13 @@ pub(crate) fn proj_lights_a(
         // pin before this read.
         let opacity = 1.0 - p.alpha as f32 / 255.0;
         out.push((cx, cy, [0.3 * opacity, 0.9 * opacity, 0.7 * opacity]));
+    } else if p.kind == 1115 {
+        // `:37022` — AI_208_GlacierFangShot's tail:
+        // `(0.2,0.5,0.8) * Utils.Remap(ai[0], 0, 60, 0.5, 1)`, unconditional.
+        // Rowed by W4-d21 (`:10401-10411`); its `ai_glacier_fang_shot` runs
+        // the channel charge that advances ai[0].
+        let n = remap(p.ai[0], 0.0, 60.0, 0.5, 1.0);
+        out.push((cx, cy, [0.2 * n, 0.5 * n, 0.8 * n]));
     } else if let Some(rgb) = gem_bolt_light(p.kind) {
         // `:37954-38000` — AI_029_GemStaffs_ActuallyGemStaffs' tail:
         // `num23 = 1f`, the per-gem switch on `num24 = (type - 121 + 86)
@@ -407,6 +487,153 @@ pub(crate) fn proj_lights_a(
         // then `AddLight(Center, num23·num25, num23·num26, num23·num27)`.
         // The 1120 ForbiddenMinionShot's default (1,1,1) has no row.
         out.push((cx, cy, rgb));
+    } else if p.kind == 1105 {
+        // `:38458` — AI_205_RemoteControlCar's tail: `Vector3.One * 0.3f`
+        // at the centre, unconditional (after the speed clamp). Rowed by
+        // W4-d21 (`:10294-10301`); its `ai_remote_control_car` runs the
+        // input-bit drive. The light is RNG-free.
+        out.push((cx, cy, [0.3, 0.3, 0.3]));
+    } else if p.kind == 1098 || p.kind == 1123 {
+        // `:38585-38589` + `:38707` — AI_204_Digtoise: the light lives in
+        // the `flag8 = ai[0] in {1,2,3}` block (the mining states); the
+        // appear (0) / despawn (4) / petting (5) states return before it.
+        // (0.3, 0.3, 0.1) at the centre. Rowed by W4-d21 (`:10241-10250` /
+        // `:10504-10513`); its `ai_digtoise` drives the ai[0] state machine.
+        if matches!(p.ai[0] as i32, 1 | 2 | 3) {
+            out.push((cx, cy, [0.3, 0.3, 0.1]));
+        }
+    } else if p.kind == 1091 || p.kind == 1117 {
+        // `:39780-39783` — AI_203_StormLightning's tail:
+        // `GetLightningColor(type).ToVector3() * num9`, where
+        // `num9 = sqrt(1 - (Remap(ai[1]/num, 0, 0.5, 0, 1) - 1)^2) * 0.3`
+        // and `num = 240` (1091 trap) / `30` (1117 weapon). Rowed by W4-d21
+        // (`:10175-10185` / `:10427-10436`); its `ai_storm_lightning` runs
+        // the ai[1] age counter. The 1091's `moreLightning && noLightning`
+        // green (`:39871-39874`) reads two micro-seed flags the feed does not
+        // carry — folded to the teal default (the colour is faithful for
+        // every classic world; ANALYSIS records the seed fold).
+        let num = if p.kind == 1117 { 30.0 } else { 240.0 };
+        let num7 = p.ai[1] / num;
+        let num8 = remap(num7, 0.0, 0.5, 0.0, 1.0);
+        let num9 = (1.0 - (num8 - 1.0) * (num8 - 1.0)).sqrt() * 0.3;
+        let c = lightning_color(p.kind);
+        out.push((
+            cx,
+            cy,
+            [
+                c[0] as f32 / 255.0 * num9,
+                c[1] as f32 / 255.0 * num9,
+                c[2] as f32 / 255.0 * num9,
+            ],
+        ));
+    } else if p.kind == 1078 {
+        // `:40038` — AI_199_MeteorOre's light: (1, 0, 0) at the centre,
+        // unconditional (the surrounding dust draws rand, the light does
+        // not). Rowed by W4-d20 (`:10067-10077`); its `ai_meteor_ore` runs
+        // the spin. The hostile+friendly trap keeps both flags.
+        out.push((cx, cy, [1.0, 0.0, 0.0]));
+    } else if p.kind == 1038 || p.kind == 1116 {
+        // `:40466-40513` — AI_196_Petal. `vector` = (0.5, 0, 0.2) for the
+        // 1038 FlowerWhipPetal, (0, 0.6, 0.6) for the 1116 PetalstormShot.
+        // Site 40 (`:40507`): the early-return branch `ai[0] < 20` lights
+        // once `ai[0] >= 10` (the pre-increment `flag`), full `vector`.
+        // Site 41 (`:40513`): the 1116's `ai[0] >= 20` half scales by
+        // `Remap(timeLeft, 120, 0, 1, 0)`. Rowed by W4-d20 (`:9793-9806` /
+        // `:10413-10425`); its `ai_petal` runs the age counter. The 248
+        // FlowerPowPetal is aiStyle 1 and never reaches this style.
+        let vector = if p.kind == 1116 {
+            [0.0, 0.6, 0.6]
+        } else {
+            [0.5, 0.0, 0.2]
+        };
+        if p.ai[0] < 20.0 {
+            if p.ai[0] >= 10.0 {
+                out.push((cx, cy, vector));
+            }
+        } else if p.kind == 1116 {
+            let n = remap(p.time_left as f32, 120.0, 0.0, 1.0, 0.0);
+            out.push((cx, cy, [vector[0] * n, vector[1] * n, vector[2] * n]));
+        }
+    } else if p.kind == 614 {
+        // `:40890-40892` — AI_113_TargetSticker's tail: (0.2, 0.6, 0.7) at
+        // the centre, unconditional (after the state machine). Rowed by
+        // W4-d12 F1 (`:6611-6619`).
+        out.push((cx, cy, [0.2, 0.6, 0.7]));
+    } else if p.kind == 636 {
+        // `:40894-40896` — AI_113's 636 Daybreak arm: (0.8, 0.7, 0.4) at
+        // the centre, unconditional. Rowed by W4-d12 F1 (`:6838-6849`).
+        out.push((cx, cy, [0.8, 0.7, 0.4]));
+    } else if p.kind == 1020 {
+        // `:41031` — AI_195_JimsDrone's tail: `Vector3.One * 0.3f` at the
+        // centre, unconditional (after the speed clamp). Rowed by W4-d20
+        // (`:9659-9665`); its `ai_jims_drone` runs the input-bit flight.
+        out.push((cx, cy, [0.3, 0.3, 0.3]));
+    } else if p.kind == 985 {
+        // `:41773-41775` — AI_191_TrueNightsEdge's 985 TerraBlade2Shot arm
+        // (AFTER the `type != 985` return at `:41726`): the lead anchor
+        // `Center + rotation.ToRotationVector2() * 85 * scale`, colour
+        // `new Color(64, 220, 96)`. Rowed by W4-d20 (`:9405-9421`); its
+        // `ai_true_nights_edge` runs the rot/scale choreography. The 973
+        // TrueNightsEdge returns before this light (it has none).
+        let centre = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let (s, c) = p.rot.sin_cos();
+        let lead = centre + Vec2::new(c, s) * 85.0 * p.scale;
+        out.push((
+            (lead.x / 16.0) as i32,
+            (lead.y / 16.0) as i32,
+            [64.0 / 255.0, 220.0 / 255.0, 96.0 / 255.0],
+        ));
+    } else if p.kind == 1126 {
+        // `:42176-42181` — AI_190_NightsEdge's 1126 ChlorophyteClaymoreBlade
+        // arm: `new Color(0, 96, 0)`, lerped toward (34, 128, 0) by
+        // `num = localAI[0] / ai[1]` when `localAI[2] == 1` (the ground-bloom
+        // latch the first-tick block sets at `vel.y == 0`). Rowed by W4-d19
+        // (`:10543-10558`); its `ai_nights_edge` runs the latch + age. The 972
+        // NightsEdge has no light arm (the wave-1 register misattributed it).
+        let mut rgb = [0.0, 96.0 / 255.0, 0.0];
+        if p.local_ai[2] == 1.0 {
+            let num = if p.ai[1] != 0.0 { p.local_ai[0] / p.ai[1] } else { 0.0 };
+            rgb = [
+                34.0 / 255.0 * num,
+                (96.0 + (128.0 - 96.0) * num) / 255.0,
+                0.0,
+            ];
+        }
+        out.push((cx, cy, rgb));
+    } else if p.kind == 984 {
+        // `:42204-42206` — AI_190's 984 TerraBlade2 arm: `new Color(15, 84,
+        // 125)` at the centre, unconditional. Rowed by W4-d19 (`:9388-9404`).
+        out.push((cx, cy, [15.0 / 255.0, 84.0 / 255.0, 125.0 / 255.0]));
+    } else if p.kind == 933 || p.kind == 1100 {
+        // `:43156-43173` — AI_182_FinalFractal's first-second trail: the
+        // profile colour `trailColor` (the `(int)ai[1]` sword-id lookup),
+        // `vector4 * 0.5 * Opacity` at the centre + `Lerp(One, vector4, 0.7)
+        // * Opacity * 0.15` at the owner's MountedCenter. Rowed by W4-d19
+        // (`:8857-8873` / `:10265-10281`); its `ai_final_fractal` runs the
+        // orbit + the opacity window. The light reads the slot's Opacity
+        // (`1 - alpha/255`); the mounted half needs the owner anchor.
+        if p.local_ai[0] < 60.0 {
+            let opacity = 1.0 - p.alpha as f32 / 255.0;
+            let tc = final_fractal_trail_color(p.ai[1] as i32);
+            let v4 = [
+                tc[0] as f32 / 255.0,
+                tc[1] as f32 / 255.0,
+                tc[2] as f32 / 255.0,
+            ];
+            out.push((cx, cy, [v4[0] * 0.5 * opacity, v4[1] * 0.5 * opacity, v4[2] * 0.5 * opacity]));
+            if let Some(mc) = mounted_center {
+                let v5 = [
+                    1.0 + (v4[0] - 1.0) * 0.7,
+                    1.0 + (v4[1] - 1.0) * 0.7,
+                    1.0 + (v4[2] - 1.0) * 0.7,
+                ];
+                out.push((
+                    (mc.x / 16.0) as i32,
+                    (mc.y / 16.0) as i32,
+                    [v5[0] * opacity * 0.15, v5[1] * opacity * 0.15, v5[2] * opacity * 0.15],
+                ));
+            }
+        }
     } else if p.kind == STARDUST_GUARDIAN {
         // `:44662` — AI_120's 623 arm: (0.9, 0.9, 0.7) at the centre,
         // unconditional inside the `flag` (623) block.
@@ -427,6 +654,19 @@ pub(crate) fn proj_lights_a(
                 180.0 / 255.0 * 0.3,
             ],
         ));
+    } else if p.kind == 855 {
+        // `:47566-47569` — AI_166_Dove's 855 ReleaseLantern arm:
+        // `(1, 0.6, 0.1) * (1 - alpha/255)` at the centre, unconditional
+        // inside the lantern flag. Rowed by W4-d17 (`:8197-8205`); its
+        // `ai_dove` runs the +3 fade after timeLeft < 90.
+        let num2 = 1.0 - p.alpha as f32 / 255.0;
+        out.push((cx, cy, [num2, 0.6 * num2, 0.1 * num2]));
+    } else if p.kind == 1127 {
+        // `:47646-47649` — AI_161_RapierStabs' 1127 ChlorophyteSaberStab
+        // arm: `new Color(32, 108, 0, 0)` at the centre (the A=0 does not
+        // touch ToVector3's RGB). Rowed by W4-d17 (`:10559-10564`,
+        // DefaultToShortsword); its `ai_rapier_stabs` runs the thrust.
+        out.push((cx, cy, [32.0 / 255.0, 108.0 / 255.0, 0.0]));
     } else if p.kind == STORM_TIGER_1 || p.kind == STORM_TIGER_2 || p.kind == STORM_TIGER_3 {
         // `:49271-49292` — AI_067's `flag3` block, gated on `ai[0] != 4f`
         // (the special-attack state). The tiger AI arm is deferred (the
@@ -551,6 +791,49 @@ fn portal_color(portal: i32) -> [u8; 3] {
         crate::ui::color::hsl_to_rgb(0.12, 1.0, 0.5, 255)
     };
     [c[0], c[1], c[2]]
+}
+
+/// `Projectile.GetLightningColor(type)` (`Projectile.cs:39862-39878`): the
+/// 1117 LightningStrikeShot is (60, 120, 255), the 1122 ArcSurge (255, 60, 60),
+/// the 1091 StormLightning trap (80, 220, 80) ONLY under
+/// `moreLightningSeed && noLightningSeed` else the (80, 220, 220) teal default.
+/// The feed carries no micro-seed flags, so the 1091's seed-green folds to the
+/// teal default (faithful for every classic world; ANALYSIS records the fold).
+fn lightning_color(kind: u16) -> [u8; 3] {
+    match kind {
+        1117 => [60, 120, 255],
+        1122 => [255, 60, 60],
+        _ => [80, 220, 220],
+    }
+}
+
+/// `FinalFractalHelper.GetFinalFractalProfile(usedSwordId).trailColor`
+/// (`Graphics/FinalFractalHelper.cs:104-111` + the static table `:128-215`):
+/// the per-sword trail colour the Zenith illusion's light reads (`:43170`).
+/// The 1123 key is `Main.OurFavoriteColor` (255, 231, 69, `Main.cs:66748`);
+/// unlisted ids return the default profile's `Color.White` (`:215`).
+fn final_fractal_trail_color(sword_id: i32) -> [u8; 3] {
+    match sword_id {
+        65 => [236, 62, 192],
+        1123 => [255, 231, 69], // Main.OurFavoriteColor
+        46 => [122, 66, 191],
+        121 => [254, 158, 35],
+        190 => [107, 203, 0],
+        368 | 674 => [236, 200, 19],
+        273 | 675 => [179, 54, 201],
+        2880 => [84, 234, 245],
+        989 => [91, 158, 232],
+        1826 => [252, 95, 4],
+        3063 => [254, 194, 250],
+        3065 => [237, 63, 133],
+        757 => [80, 222, 122],
+        155 => [56, 78, 210],
+        795 => [237, 28, 36],
+        3018 => [143, 215, 29],
+        4144 | 4956 => [178, 255, 180],
+        3507 => [235, 166, 135],
+        _ => [255, 255, 255], // _defaultProfile, Color.White
+    }
 }
 
 /// The gem bolts' per-kind light tint (`Projectile.cs:37959-38000`): the
@@ -877,6 +1160,25 @@ mod tests {
     }
 
     #[test]
+    fn the_chillet_sword_swings_emit_two_rotated_rects() {
+        // `:17299-17305` — aiStyle 190/191 emit at num = −π/4 then +π/4;
+        // each anchor = Center + (rot + num).ToRotationVector2()·70·scale.
+        // The 984 TerraBlade2 (aiStyle 190) at (160,176) 16x16, rot 0,
+        // scale 1: centre (168,184); the −π/4 anchor (217.497, 134.503) →
+        // tile (13,8); the +π/4 anchor (217.497, 233.497) → tile (13,14).
+        let mut p = slot(984);
+        p.melee = true;
+        p.rot = 0.0;
+        p.scale = 1.0;
+        let got = chillet_mount_light(&p, Some(62));
+        assert_eq!(got.len(), 2);
+        assert_eq!((got[0].0, got[0].1), (13, 8));
+        assert_eq!((got[1].0, got[1].1), (13, 14));
+        assert_eq!(got[0].2, [0.25, 0.05, 0.3]);
+        assert_eq!(got[1].2, got[0].2);
+    }
+
+    #[test]
     fn every_ported_kind_has_a_proj_data_row() {
         // The absent-wholesale rule's invariant: every kind this feed serves
         // resolves a `proj_data` row (the spawn gate).
@@ -923,32 +1225,220 @@ mod tests {
 
     #[test]
     fn an_unrowed_kind_contributes_nothing() {
-        // The 502 Meowmere (site 4), the 1092 book (site 7), the 451
-        // InfluxWaver (site 12), the 464/465/466 cultist orbs (sites 13-16),
-        // the 490 ritual (site 18), the 492 lantern (site 19), the 518
-        // coin portal (site 20), the 575 nebula sphere (site 21), the 590
-        // truffle spore (site 22), the 602 portal gate (site 24), the
-        // 612/953/978 trio (site 26), the 658 sandnado mark (site 28), the
-        // 1115 glacier fang (site 29), the 731 thunder staff (site 31), the
-        // 1105 RC car (site 33), the 1098 digtoise (site 34), the
-        // phaseblades (sites 35-36), the 1091/1117 storm lightning (site
-        // 37), the 1078 meteor ore (site 38), the 567/568 spore traps (site
-        // 39) have no rows; the rowed 248 FlowerPowPetal is aiStyle 1 and
-        // never reaches AI_196 (site 40). Sites 41-50 add the 1116
-        // petalstorm (41), the 614 cell shot (42), the 636 daybreak (43),
-        // the 1020 drone (44), the 973/972/984 sword beams (45-47), the
-        // 933/1100 fractals (48-49), the 535 medusa head (50), the 855
-        // release lantern (54), the 1127 saber stab (55) and the 756 sharp
-        // tears (62) have no rows; the 849/912 whip lights (56-57) are
-        // rand-gated absent. A slot carrying any of them feeds no light.
+        // Round 2: the d-lanes rowed ~20 of the first wave's absent kinds and
+        // their arms are now live (the activation witnesses below). What stays
+        // absent: the still-unrowed kinds — the 502 Meowmere (site 4), the
+        // 1092 book (7), the 451 InfluxWaver (12), the 464/465/466 cultist orbs
+        // (13-16), the 490 ritual (18), the 492 lantern (19), the 518 coin
+        // portal (20), the 575 nebula sphere (21), the 978 Volcano (the 26
+        // trio's third term), the 731 thunder staff (31), the phaseblades
+        // (35-36), the 567/568 spore traps (39), the 535 medusa head (50), the
+        // 756 sharp tears (62); the rand-gated 590 truffle spore (22), the
+        // 409 Typhoon (11), the 849/912 whips (56-57); and the 248
+        // FlowerPowPetal (aiStyle 1, never reaches AI_196) plus the 973/972
+        // sword beams (rowed by d19/d20 but with NO light arm — the wave-1
+        // register misattributed sites 45/46 to them). A slot carrying any of
+        // them feeds no light.
         for kind in [
-            502u16, 1092, 451, 464, 465, 466, 490, 492, 518, 575, 590, 602, 612, 953,
-            978, 658, 1115, 731, 1105, 1098, 1059, 1074, 1091, 1117, 1078, 567, 568,
-            248, 1038, 1116, 614, 636, 1020, 973, 972, 984, 933, 1100, 535, 855, 1127,
-            849, 912, 756,
+            502u16, 1092, 451, 464, 465, 466, 490, 492, 518, 575, 590, 978, 731,
+            1059, 1074, 567, 568, 248, 973, 972, 535, 849, 912, 756, 409,
         ] {
             let p = slot(kind);
+            assert!(proj_lights_a(&p, None).is_empty(), "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn the_d12_activated_arms_light_their_colours() {
+        // Site 24 (`:34402`) — the 602 gate: alpha==0, the ai[1] portal hue,
+        // the Center+vel*3 lead. Site 26 (`:34487`) — the 612/953 flag58 pair.
+        // Sites 42/43 (`:40892`/`:40896`) — the 614/636 AI_113 tail.
+        let mut p = slot(602);
+        p.alpha = 0;
+        p.ai[1] = 0.0; // portal 0 → orange hsl(0.12,1,0.5) = (255,184,0)
+        p.vel = Vec2::new(2.0, 0.0);
+        let got = proj_lights_a(&p, None);
+        assert_eq!(got[0].0, 10); // lead (174,184) → tile 10
+        assert_eq!(got[0].1, 11);
+        assert_eq!(got[0].2, [255.0 / 255.0 * 0.5, 184.0 / 255.0 * 0.5, 0.0]);
+        p.alpha = 25; // the fade gate → dark
+        assert!(proj_lights_a(&p, None).is_empty());
+        for k in [612u16, 953] {
+            assert_eq!(proj_lights_a(&slot(k), None), vec![(10, 11, [0.9, 0.8, 0.6])]);
+        }
+        assert_eq!(proj_lights_a(&slot(614), None), vec![(10, 11, [0.2, 0.6, 0.7])]);
+        assert_eq!(proj_lights_a(&slot(636), None), vec![(10, 11, [0.8, 0.7, 0.4])]);
+    }
+
+    #[test]
+    fn the_d13_d17_activated_arms_light_their_colours() {
+        // Site 28 (`:36150`) — the 658 mark: alpha==0 → white·0.5.
+        let mut p = slot(658);
+        p.alpha = 0;
+        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.5, 0.5, 0.5])]);
+        p.alpha = 8;
+        assert!(proj_lights_a(&p, None).is_empty());
+        // Site 54 (`:47569`) — the 855 lantern: (1,0.6,0.1)·(1-alpha/255).
+        let mut p = slot(855);
+        p.alpha = 0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [1.0, 0.6, 0.1]);
+        p.alpha = 255;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+        // Site 55 (`:47649`) — the 1127 saber: (32,108,0)/255.
+        assert_eq!(
+            proj_lights_a(&slot(1127), None)[0].2,
+            [32.0 / 255.0, 108.0 / 255.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn the_d19_sword_arms_light_their_colours() {
+        // Site 47 (`:42206`) — the 984 TerraBlade2: (15,84,125)/255.
+        assert_eq!(
+            proj_lights_a(&slot(984), None)[0].2,
+            [15.0 / 255.0, 84.0 / 255.0, 125.0 / 255.0]
+        );
+        // Site 46 (`:42181`) — the 1126 Claymore: (0,96,0)/255 base; the
+        // localAI[2]==1 ground-bloom lerps toward (34,128,0) by localAI[0]/ai[1].
+        let mut p = slot(1126);
+        p.local_ai[2] = 0.0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 96.0 / 255.0, 0.0]);
+        p.local_ai[2] = 1.0;
+        p.local_ai[0] = 5.0;
+        p.ai[1] = 10.0; // num = 0.5
+        assert_eq!(
+            proj_lights_a(&p, None)[0].2,
+            [34.0 / 255.0 * 0.5, (96.0 + 32.0 * 0.5) / 255.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn the_d19_fractal_pair_lights_the_profile_colour() {
+        // Sites 48/49 (`:43172`/`:43173`) — the 933/1100 fractal: the profile
+        // trailColor·0.5·Opacity at the centre + Lerp(One,trail,0.7)·Opacity·0.15
+        // at the mounted centre. ai[1]=65 → (236,62,192); alpha 0 → Opacity 1.
+        let mut p = slot(933);
+        p.local_ai[0] = 10.0; // < 60 → the first-second window
+        p.alpha = 0;
+        p.ai[1] = 65.0;
+        let got = proj_lights_a(&p, Some(Vec2::new(320.0, 480.0)));
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].0, 10);
+        assert_eq!(got[0].1, 11);
+        assert_eq!(
+            got[0].2,
+            [236.0 / 255.0 * 0.5, 62.0 / 255.0 * 0.5, 192.0 / 255.0 * 0.5]
+        );
+        assert_eq!(got[1].0, 20); // mounted (320,480) → tile (20,30)
+        assert_eq!(got[1].1, 30);
+        // The mounted half without an owner anchor: only the centre lands.
+        assert_eq!(proj_lights_a(&p, None).len(), 1);
+        // Past the first second (localAI[0] >= 60) → dark.
+        p.local_ai[0] = 60.0;
+        assert!(proj_lights_a(&p, None).is_empty());
+        // The unlisted sword id → the White default profile.
+        p.local_ai[0] = 10.0;
+        p.ai[1] = 99999.0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.5, 0.5]);
+    }
+
+    #[test]
+    fn the_d20_activated_arms_light_their_colours() {
+        // Site 38 (`:40038`) — the 1078 meteor ore: (1,0,0).
+        assert_eq!(proj_lights_a(&slot(1078), None), vec![(10, 11, [1.0, 0.0, 0.0])]);
+        // Site 44 (`:41031`) — the 1020 drone: One·0.3.
+        assert_eq!(proj_lights_a(&slot(1020), None), vec![(10, 11, [0.3, 0.3, 0.3])]);
+        // Site 45 (`:41775`) — the 985 TerraBlade2Shot: the rot·85·scale lead,
+        // (64,220,96)/255. rot 0, scale 1 → lead (168+85,184) = (253,184) → (15,11).
+        let mut p = slot(985);
+        p.rot = 0.0;
+        p.scale = 1.0;
+        let got = proj_lights_a(&p, None);
+        assert_eq!(got[0].0, 15);
+        assert_eq!(got[0].1, 11);
+        assert_eq!(got[0].2, [64.0 / 255.0, 220.0 / 255.0, 96.0 / 255.0]);
+    }
+
+    #[test]
+    fn the_d20_petal_arms_gate_on_the_age_counter() {
+        // Site 40 (`:40507`) — the 1038 petal: ai[0] in [10,20) → (0.5,0,0.2).
+        let mut p = slot(1038);
+        p.ai[0] = 9.0;
+        assert!(proj_lights_a(&p, None).is_empty());
+        p.ai[0] = 10.0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.0, 0.2]);
+        p.ai[0] = 20.0; // the 1038 has no >=20 light
+        assert!(proj_lights_a(&p, None).is_empty());
+        // Site 41 (`:40513`) — the 1116 petalstorm: ai[0]>=20 scales
+        // (0,0.6,0.6) by Remap(timeLeft,120,0,1,0). timeLeft 60 → 0.5.
+        let mut p = slot(1116);
+        p.ai[0] = 25.0;
+        p.time_left = 60;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.3, 0.3]);
+        p.ai[0] = 15.0; // the early-return half uses the 1116 colour
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.6, 0.6]);
+    }
+
+    #[test]
+    fn the_d21_activated_arms_light_their_colours() {
+        // Site 33 (`:38458`) — the 1105 RC car: One·0.3.
+        assert_eq!(proj_lights_a(&slot(1105), None), vec![(10, 11, [0.3, 0.3, 0.3])]);
+        // Site 34 (`:38707`) — the 1098/1123 digtoise: ai[0] in {1,2,3} only.
+        for k in [1098u16, 1123] {
+            let mut p = slot(k);
+            p.ai[0] = 0.0; // the appear state → dark
             assert!(proj_lights_a(&p, None).is_empty());
+            p.ai[0] = 2.0;
+            assert_eq!(proj_lights_a(&p, None)[0].2, [0.3, 0.3, 0.1]);
+            p.ai[0] = 4.0; // the despawn state → dark
+            assert!(proj_lights_a(&p, None).is_empty());
+        }
+        // Site 29 (`:37022`) — the 1115 glacier fang: (0.2,0.5,0.8)·Remap(ai0,0,60,0.5,1).
+        let mut p = slot(1115);
+        p.ai[0] = 0.0; // Remap → 0.5
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.1, 0.25, 0.4]);
+        p.ai[0] = 60.0; // Remap → 1
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.2, 0.5, 0.8]);
+    }
+
+    #[test]
+    fn the_d21_storm_lightning_scales_by_the_age_envelope() {
+        // Site 37 (`:39783`) — the 1091/1117: GetLightningColor·num9, where
+        // num9 = sqrt(1-(Remap(ai1/num,0,0.5,0,1)-1)^2)·0.3. At ai1=0 → num9=0
+        // (a zeroed light is still appended); at ai1=num/4 → num8=0.5 →
+        // num9 = sqrt(0.75)·0.3.
+        let mut p = slot(1117); // num = 30, colour (60,120,255)
+        p.ai[1] = 0.0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+        p.ai[1] = 7.5; // num7 = 0.25 → num8 = 0.5
+        let n9 = (0.75f32).sqrt() * 0.3;
+        assert_eq!(
+            proj_lights_a(&p, None)[0].2,
+            [60.0 / 255.0 * n9, 120.0 / 255.0 * n9, 255.0 / 255.0 * n9]
+        );
+        // The 1091 trap: num = 240, the teal default (80,220,220).
+        let mut p = slot(1091);
+        p.ai[1] = 60.0; // num7 = 0.25 → num8 = 0.5
+        assert_eq!(
+            proj_lights_a(&p, None)[0].2,
+            [80.0 / 255.0 * n9, 220.0 / 255.0 * n9, 220.0 / 255.0 * n9]
+        );
+    }
+
+    #[test]
+    fn the_d_lane_activated_kinds_resolve_rows_when_their_lanes_land() {
+        // The collector matches `p.kind` directly, so the arms above are live
+        // regardless; this pins the spawn-gate invariant conditionally (the
+        // W4-d12 `if let Some(d) = proj_data(978)` precedent): once a d-lane's
+        // row merges, the kind MUST resolve. On this branch the rows are the
+        // lanes' to merge, so the check is a no-op until then.
+        for kind in [
+            602u16, 612, 953, 614, 636, 658, 855, 1127, 984, 1126, 933, 1100,
+            1078, 1038, 1116, 1020, 985, 1115, 1105, 1098, 1123, 1091, 1117,
+        ] {
+            if let Some(d) = proj_data(kind) {
+                assert!(d.ai_style > 0, "kind {kind} rowed with a style");
+            }
         }
     }
 }
