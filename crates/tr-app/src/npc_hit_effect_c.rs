@@ -164,6 +164,7 @@
 //! | 695 | `:86330` | the 348/349 Nutcracker death: the 532 tail |
 //! | 696-700 | `:86346-86350` | the 351 Krampus death (5 gores 538-542) |
 //! | 701-704 | `:86366-86369` | the 350 death (4 gores 533-536) |
+//! | 705-712 | `:86387-86406` | the corrupt/crimson critter family 47/57/58/464/465 death (per-type) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4417,6 +4418,43 @@ fn elf_archer_death(
     gore.new_gore(rng, world, pos, vel, 536, 1.0); // :86369
 }
 
+/// The corrupt/crimson critter family death (`NPC.cs:86381-86407`, sites
+/// 705-712): the 10-dust type-5 burst, then the per-type gores at position —
+/// 57 CorruptGoldfish → [84], 58 Piranha → [85], 464 CrimsonBunny →
+/// [668,669], 465 CrimsonGoldfish → [670,671], and the `else` (47
+/// CorruptBunny) → [78,79]. Scale defaults to 1.
+fn corrupt_critter_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:86385-86407` — the per-type gore list.
+    let gores: &[i32] = match npc_type {
+        57 => &[84],
+        58 => &[85],
+        464 => &[668, 669],
+        465 => &[670, 671],
+        _ => &[78, 79], // 47 CorruptBunny (the else arm)
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for &ty in gores {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4948,6 +4986,13 @@ pub fn hit_effect_c(
     // `:86352-86370` — the 350 ElfArcher arm (sites 701-704).
     if npc_type == 350 && npc.hp <= 0 {
         elf_archer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86371-86408` — the corrupt/crimson critter family arm (sites
+    // 705-712).
+    if (npc_type == 47 || npc_type == 57 || npc_type == 58 || npc_type == 464 || npc_type == 465)
+        && npc.hp <= 0
+    {
+        corrupt_critter_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7823,6 +7868,29 @@ mod tests {
         elf_archer_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![533, 534, 535, 536]);
+    }
+
+    /// `NPC.cs:86387-86406` — the corrupt/crimson critter family:
+    /// 57→[84], 58→[85], 464→[668,669], 465→[670,671], 47 else→[78,79].
+    #[test]
+    fn w4_f10_the_corrupt_critter_death_uses_the_per_type_list() {
+        let w = air();
+        let cases: [(i32, &[i32]); 5] = [
+            (47, &[78, 79]),
+            (57, &[84]),
+            (58, &[85]),
+            (464, &[668, 669]),
+            (465, &[670, 671]),
+        ];
+        for (ty, gores) in cases {
+            let n = boss(100.0, 100.0, 30.0, 24.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(677);
+            corrupt_critter_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "corrupt critter {ty}");
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
