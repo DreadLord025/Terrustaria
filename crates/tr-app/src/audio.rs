@@ -482,6 +482,10 @@ const TRACKED_CUES: &[&str] = &[
     // `SoundID.AchievementComplete` (`SoundID.cs:1597`) — the unlock toast's
     // cue (`AchievementInitializer.cs:731-734`, S1-E-26 wave A).
     "achievement_complete",
+    // `SoundID.MenuAccept` (`SoundID.cs:1710`, `CreateTrackable("menu_accept")`)
+    // — the secret-seed unlock cue (`WorldGen.SecretSeed.Enable`,
+    // `WorldGen.cs:539`, W4-g24).
+    "menu_accept",
 ];
 
 /// The `Sounds/Custom/` trackables the item-use wave names
@@ -505,6 +509,22 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
     "deadcells_barrel_launcher_fire",
     "deadcells_mushroom_summon",
 ];
+
+/// `SoundID.MenuAccept` (`SoundID.cs:1068`/:1710,
+/// `CreateTrackable("menu_accept")` — one variation, volume 1, no pitch
+/// variance, `SoundType.Sound`, uncapped): the tracked style
+/// `WorldGen.SecretSeed.Enable` plays (`WorldGen.cs:537-540`, W4-g24) when
+/// a secret seed unlocks with `playSound: true`.
+pub fn menu_accept_style() -> crate::tracked_sound::TrackedStyle {
+    crate::tracked_sound::TrackedStyle {
+        cue: "menu_accept",
+        variations: 1,
+        volume: 1.0,
+        pitch_variance: 0.0,
+        sound_type: crate::tracked_sound::SoundType::Sound,
+        max_tracked_instances: 0,
+    }
+}
 
 /// S1-P-i41 — the `Sounds/Custom/` trackables the mount system plays:
 /// `SoundID.PalChillet = CreateTrackable("pal_chillet").WithVolume(0.35f)`
@@ -2323,6 +2343,23 @@ impl Audio {
     ) -> Option<&crate::tracked_sound::ActiveSound> {
         self.tracked.find_active_sound(style)
     }
+
+    /// The pool-entry count of one tracked style (no `IsPlaying` filter) —
+    /// the headless test seam: no output device drains an entry, so the
+    /// count is the number of plays landed (W4-g24's seed-submit witness).
+    pub fn tracked_count_for(&self, style: &crate::tracked_sound::TrackedStyle) -> usize {
+        self.tracked.count_style_entries(style)
+    }
+
+    /// The test seam: register a silent one-sample cue under `name` so the
+    /// tracked/slot paths can run headless (the real decode needs the
+    /// retail Content junction; `Audio::new(None)` loads nothing). The
+    /// vanilla `SoundEngine.IsAudioSupported` gate is the port's
+    /// always-true headless stand-in — a registered cue plays.
+    #[cfg(test)]
+    pub(crate) fn insert_test_cue(&mut self, name: &'static str) {
+        self.cues.insert(name, (1, 22050, vec![0]));
+    }
 }
 
 fn load_sound(path: &Path) -> anyhow::Result<tr_content::Sound> {
@@ -4081,6 +4118,25 @@ mod tests {
         ] {
             assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
         }
+    }
+
+    /// W4-g24 — `SoundID.MenuAccept` (`SoundID.cs:1710`,
+    /// `CreateTrackable("menu_accept")`): one variation, volume 1, no pitch
+    /// variance, Sound type, uncapped — the style `SecretSeed.Enable`
+    /// plays (`WorldGen.cs:539`). The asset rides the tracked-cue decode
+    /// list (`Sounds/Custom/menu_accept.xnb`).
+    #[test]
+    fn w4_g24_menu_accept_style_matches_the_trackable_registration() {
+        let style = menu_accept_style();
+        assert_eq!(style.cue, "menu_accept");
+        assert_eq!(style.variations, 1);
+        assert_eq!(style.volume, 1.0);
+        assert_eq!(style.pitch_variance, 0.0);
+        assert_eq!(style.max_tracked_instances, 0);
+        assert!(TRACKED_CUES.contains(&"menu_accept"), "the decode list");
+        // One variation keeps the base asset name (`LegacySoundStyle.cs:21-28`).
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(1);
+        assert_eq!(style.random_sound(&mut rng), "menu_accept");
     }
 
     /// S1-E-21i — the wall-break play's RNG contract

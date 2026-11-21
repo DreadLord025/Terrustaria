@@ -2721,19 +2721,7 @@ impl App {
                     }
                 }
             }
-            Action::Host { port, password } => match net::Server::start(port, password) {
-                Ok(server) => {
-                    log::info!("hosting on {}", server.addr());
-                    self.net = NetRole::Host(server);
-                    self.close_menu();
-                }
-                Err(e) => {
-                    if let Some(m) = self.menu.as_mut() {
-                        m.connecting = false;
-                        m.error = Some(format!("host failed: {e}"));
-                    }
-                }
-            },
+            Action::Host { port, password } => self.start_hosting(port, password),
             // `Lang.menu[131]`'s row (`Main.cs:48928-48935`): `menuMode = 888`
             // + `Main.MenuUI.SetState(Main.AchievementsMenu)`. The port keeps
             // the legacy menu live behind the overlay (the vanilla state
@@ -2766,6 +2754,32 @@ impl App {
     }
 
     /// Leaves the menu and applies the settings it edited (`Main.SaveSettings`).
+    /// The Host action's body (`Main.cs:52011`'s host row →
+    /// `Netplay.StartServer`): the server starts on the LIVE world and the
+    /// menu closes. W4-g24 — `serverLoadWorldCallBack`'s tail
+    /// (`WorldGen.cs:6921`): `SoundEngine.PlaySound(10)` after the world
+    /// load succeeds. The port hosts on the live world (no load ladder —
+    /// the retry/backup arms `:6876-6920` are the load-failure UI, out of
+    /// scope), so the successful Host start is the seam. Case 10 draws
+    /// NOTHING (`LegacySoundPlayer.cs:750-758`); the failure arm keeps the
+    /// menu with its error and plays nothing.
+    pub(crate) fn start_hosting(&mut self, port: u16, password: String) {
+        match net::Server::start(port, password) {
+            Ok(server) => {
+                log::info!("hosting on {}", server.addr());
+                self.net = NetRole::Host(server);
+                self.audio.play("Menu_Open"); // `WorldGen.cs:6921`
+                self.close_menu();
+            }
+            Err(e) => {
+                if let Some(m) = self.menu.as_mut() {
+                    m.connecting = false;
+                    m.error = Some(format!("host failed: {e}"));
+                }
+            }
+        }
+    }
+
     pub(crate) fn close_menu(&mut self) {
         if let Some(m) = self.menu.take() {
             self.settings = m.settings;
@@ -2974,6 +2988,40 @@ mod tests {
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::chest::{DEFAULT_MAX_ITEMS, WorldChest};
     use tr_core::World;
+
+    /// W4-g24 — `serverLoadWorldCallBack`'s tail (`WorldGen.cs:6921`): the
+    /// successful Host start plays the Menu_Open (10) once — the port hosts
+    /// on the live world, so the Host action is the load-success seam. The
+    /// failed start (the port is taken) keeps the menu and plays nothing.
+    #[test]
+    fn w4_g24_the_host_start_plays_the_menu_open_once() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let before = app.audio.played_count();
+        // Port 0 asks the OS for a free port (`net::Server::start`).
+        app.start_hosting(0, String::new());
+        assert!(matches!(app.net, crate::app::NetRole::Host(_)));
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the host-load cue (:6921)"
+        );
+        // A second server on the SAME port fails to bind: no cue, the
+        // menu error arm.
+        let port = match &app.net {
+            crate::app::NetRole::Host(s) => s
+                .addr()
+                .rsplit(':')
+                .next()
+                .and_then(|p| p.parse::<u16>().ok())
+                .expect("the addr carries a port"),
+            _ => unreachable!(),
+        };
+        let mut app2 = flow_app(None, vec![], vec![]);
+        let before2 = app2.audio.played_count();
+        app2.start_hosting(port, String::new());
+        assert!(matches!(app2.net, crate::app::NetRole::Off));
+        assert_eq!(app2.audio.played_count(), before2, "the failure is silent");
+    }
 
     /// Inside the chest grid's cell (0, 0) — the drawn 52·0.755 px cell at
     /// (73, 258) (`ui::chest::slot_at`).

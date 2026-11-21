@@ -694,6 +694,40 @@ fn dial_interaction(world: &mut World, sundial: bool) -> TileInteraction {
     TileInteraction::DialStarted { sundial }
 }
 
+/// `WorldGen.UnlockDoor` (`WorldGen.cs:37599-37628`): the locked golden
+/// door's column walks UP from `(i, j)` to the `frameY == 594` top cell;
+/// a `frameY < 594` cell or the world edge aborts BEFORE any write (the
+/// C# reads `Main.tile[i, num]` after the decrement — an out-of-world read
+/// throws; the port answers `false`, the fail-neutral guard). On the found
+/// top the three door rows shift `frameY += 54` (the locked sheet row to
+/// the unlocked one). The sound (`PlaySound(22, i * 16, num * 16 + 16)`
+/// `:37614` — the Unlock cue at the door's MIDDLE row), the 4-per-row dust
+/// 11 (:37622-37625) and the progression event 22 (:37627) are app-side;
+/// the returned `Some(top_y)` is the cue row's anchor. `None` = no locked
+/// top found (nothing written, no sound).
+pub fn unlock_door(world: &mut World, i: i32, j: i32) -> Option<i32> {
+    // `:37602-37605` — the clicked cell must exist.
+    world.tile(i, j)?;
+    let mut num = j;
+    // `:37606-37613` — walk up to the frameY-594 top; a lower frame or the
+    // edge aborts (the C#'s `num <= 0` guard rides the same read).
+    while world.tile(i, num)?.frame_y != 594 {
+        num -= 1;
+        let t = world.tile(i, num)?;
+        if t.frame_y < 594 || num <= 0 {
+            return None;
+        }
+    }
+    // `:37615-37626` — the three rows shift to the unlocked sheet row.
+    for k in num..=num + 2 {
+        if let Some(t) = world.tile_mut(i, k) {
+            t.frame_y += 54;
+            touch(world, i, k);
+        }
+    }
+    Some(num)
+}
+
 /// `WorldGen.OpenDoor` (`WorldGen.cs:37630-37784`): turns the closed door
 /// (tile 10) covering `(i, j)` into the open door (tile 11) leaning to
 /// `direction` (+1 right, -1 left). No `KillTile` on the door cells — the
@@ -988,9 +1022,17 @@ fn ensure_frame_important(world: &mut World, kind: u16) {
 
 /// `WorldGen.IsLockedDoor` (`WorldGen.cs:69191-69197`): the golden-door
 /// frames (tile 10, `frameY` 594-646, `frameX` < 54). The wooden door never
-/// matches; the guard is ported because `OpenDoor` calls it.
-fn is_locked_door(tile: &Tile) -> bool {
+/// matches; `OpenDoor` calls it, and the tile-use unlock arm reads the
+/// indexed overload (`:69186-69189`, W4-g24).
+pub fn is_locked_door(tile: &Tile) -> bool {
     tile.kind == 10 && (594..=646).contains(&tile.frame_y) && tile.frame_x < 54
+}
+
+/// The indexed `IsLockedDoor(x, y)` overload (`WorldGen.cs:69186-69189`):
+/// an out-of-world cell reads false (the C# `Main.tile` read would throw;
+/// the tile-use caller only reaches it with an active in-world cell).
+pub fn is_locked_door_at(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(is_locked_door)
 }
 
 fn liquid_flags(flags: u8) -> u8 {
@@ -1055,6 +1097,39 @@ mod tests {
         w.compute_column_surface();
         w.compute_chunks();
         w
+    }
+
+    /// W4-g24 — `WorldGen.UnlockDoor` (`WorldGen.cs:37599-37628`): the
+    /// column walk finds the frameY-594 top from ANY of the three rows and
+    /// shifts all three `+54`; a wooden door (frameY < 594) aborts with no
+    /// write, and the returned top anchors the app's middle-row Unlock cue.
+    #[test]
+    fn w4_g24_unlock_door_walks_to_the_locked_top_and_shifts() {
+        let mut w = object_world();
+        // The locked golden door at column 10, rows 17-19 (frameY 594/612/630).
+        set_object_cell(&mut w, 10, 17, 10, 0, 594);
+        set_object_cell(&mut w, 10, 18, 10, 0, 612);
+        set_object_cell(&mut w, 10, 19, 10, 0, 630);
+        assert!(is_locked_door(w.tile(10, 19).unwrap()));
+        // A click on the BOTTOM row walks up two cells to the 594 top.
+        assert_eq!(unlock_door(&mut w, 10, 19), Some(17));
+        assert_eq!(w.tile(10, 17).unwrap().frame_y, 648);
+        assert_eq!(w.tile(10, 18).unwrap().frame_y, 666);
+        assert_eq!(w.tile(10, 19).unwrap().frame_y, 684);
+        // The unlocked frames are no longer locked (`:69193`'s band).
+        assert!(!is_locked_door(w.tile(10, 17).unwrap()));
+        // A second call finds no 594 top — the walk aborts, nothing shifts.
+        assert_eq!(unlock_door(&mut w, 10, 17), None);
+        assert_eq!(w.tile(10, 17).unwrap().frame_y, 648);
+        // The wooden door (frameY 0-36) aborts on the first step down.
+        let mut w2 = object_world();
+        set_object_cell(&mut w2, 10, 17, 10, 0, 0);
+        set_object_cell(&mut w2, 10, 18, 10, 0, 18);
+        set_object_cell(&mut w2, 10, 19, 10, 0, 36);
+        assert_eq!(unlock_door(&mut w2, 10, 19), None);
+        assert_eq!(w2.tile(10, 19).unwrap().frame_y, 36);
+        // An empty cell answers None (`:37602-37605`).
+        assert_eq!(unlock_door(&mut w2, 20, 10), None);
     }
 
     #[test]

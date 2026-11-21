@@ -59,6 +59,74 @@ fn use_golem_altar(app: &mut App) -> bool {
     true
 }
 
+/// The golden-door key walk (`Player.cs:32798-32837`): the 58-slot
+/// inventory scan for the Golden Key 1141 (`:32800-32817`) — the first
+/// stack decrements, an emptied slot turns to air, `WorldGen.UnlockDoor`
+/// shifts the frames and the Unlock cue plays at the door's middle row
+/// (`WorldGen.cs:37614`, `PlaySound(22, i * 16, num * 16 + 16)` — case 22
+/// draws NOTHING, `LegacySoundPlayer.cs:937-946`), then the progression
+/// event 22 (`:37627`). The scan breaks on the first key (`:32815`). With
+/// no inventory key and the Void Bag open, the bank4 walk mirrors it
+/// (`:32818-32836`). The 4-per-row dust 11 (`:37622-37625`) is the visual
+/// seam (no dust engine on this path).
+fn unlock_golden_door(app: &mut App, tx: i32, ty: i32) {
+    const GOLDEN_KEY: u16 = 1141; // `Player.cs:32798`
+    let mut unlocked = false;
+    // `:32800` — `for (num48 = 0; num48 < 58; num48++)`: the inventory grid
+    // (0-49) + coins (50-53) + ammo (54-57); the trash slot 58 is outside.
+    for slot in app
+        .inventory
+        .iter_mut()
+        .chain(app.equip.coins.iter_mut())
+        .chain(app.equip.ammo.iter_mut())
+    {
+        if slot.kind != GOLDEN_KEY || slot.count == 0 {
+            continue;
+        }
+        slot.count -= 1;
+        if slot.count == 0 {
+            *slot = crate::item::EMPTY_SLOT;
+        }
+        fire_unlock_door(app, tx, ty);
+        unlocked = true;
+        break; // `:32815`
+    }
+    // `:32818-32836` — the void-bag fallback (`useVoidBag()`).
+    if !unlocked && crate::chest::use_void_bag(app) {
+        if let Some(p) = app.player.as_mut() {
+            for slot in p.banks[3].iter_mut() {
+                if slot.kind != GOLDEN_KEY || slot.count == 0 {
+                    continue;
+                }
+                slot.count -= 1;
+                if slot.count == 0 {
+                    *slot = crate::item::EMPTY_SLOT;
+                }
+                fire_unlock_door(app, tx, ty);
+                break;
+            }
+        }
+    }
+}
+
+/// One `WorldGen.UnlockDoor` call + its cue/progression tail
+/// (`WorldGen.cs:37614`/:37627). The Unlock play is draw-free (case 22)
+/// and 2D-attenuated at the door's middle row — the plain `play_at` path
+/// (the `Chest.Unlock` precedent, `chest.rs:1061`).
+fn fire_unlock_door(app: &mut App, tx: i32, ty: i32) {
+    let Some(top) = edit::unlock_door(&mut app.world, tx, ty) else {
+        return;
+    };
+    app.audio.play_at(
+        "Unlock",
+        tx as f32 * TILE_PX,
+        (top + 1) as f32 * TILE_PX,
+        1.0,
+    );
+    let _ = app.notify_progression_net(22); // `:37627`
+    app.world_key = None;
+}
+
 /// `NPC.SpawnOnPlayer`'s case-245 arm (`NPC.cs:80475-80531`): the
 /// ±20-tile scan around the player for the altar's origin cell
 /// (`type == 237 && frameX == 18 && frameY == 0`), the 50-tile solid
@@ -186,6 +254,22 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         return use_golem_altar(app);
     }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
+    // W4-g24 — the golden-door unlock arm (`TileInteractionsUse`'s locked
+    // type-10 branch, `Player.cs:32793-32835`): a locked door with a Golden
+    // Key 1141 in the 58-slot inventory scan consumes one key and runs
+    // `WorldGen.UnlockDoor` (`:32810`); the void-bag fallback (`:32818-32835`)
+    // scans bank4 when no inventory key fired. The arm consumes the click
+    // (`flag2 = true` at `:32795`) whether or not a key was found. The
+    // `SendData(52)` client mirror (`:32813`) has no port wire flavour —
+    // the local frame shift is the truth (the wire-tools precedent).
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && edit::is_locked_door(t))
+    {
+        unlock_golden_door(app, tx, ty);
+        return true;
+    }
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
     // closing column must be free of the player and NPCs. Disjoint field
     // borrows — the world write happens inside `interact_at`.
@@ -575,7 +659,7 @@ mod tests {
     use tr_core::tile::{FLAG_ACTIVE, Tile};
     use tr_core::World;
 
-    use super::super::tests::{object_world, set_tile};
+    use super::super::tests::{object_world, set_tile, slot};
 
     /// The bed rig: a floor row at y 60 with a style-0 bed placed at
     /// (40, 59) — columns 39-42, rows 58-59 (`place_item_tile`'s y is the
@@ -604,6 +688,67 @@ mod tests {
         player.y = 918.0;
         app.player = Some(player);
         app
+    }
+
+    /// W4-g24 — the golden-door unlock arm (`Player.cs:32793-32837`): a
+    /// locked door with a Golden Key 1141 consumes ONE key, shifts the
+    /// three rows +54 and plays the Unlock cue; the click is consumed
+    /// (`flag2 = true`) even with no key. The cue is draw-free (case 22).
+    #[test]
+    fn w4_g24_the_golden_key_unlocks_the_door_and_burns_one_key() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        // The locked golden door at column 10, rows 17-19.
+        for (row, fy) in [(17, 594i16), (18, 612), (19, 630)] {
+            let i = app.world.index(10, row);
+            app.world.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[10] = true;
+        app.player = Some(Player::spawn(&app.world));
+        app.inventory[0] = slot(1141, 2);
+        let before = app.audio.played_count();
+        // The click on the bottom row: consumed, one key burned, the frames
+        // shifted, one Unlock play.
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.inventory[0].count, 1, "one key consumed");
+        assert_eq!(app.world.tile(10, 17).unwrap().frame_y, 648);
+        assert_eq!(app.world.tile(10, 19).unwrap().frame_y, 684);
+        assert_eq!(app.audio.played_count(), before + 1, "the Unlock cue");
+        // The unlocked door now opens through the normal door arm (the
+        // unlock arm no longer claims it).
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.world.tile(10, 19).unwrap().kind, 11, "the door opened");
+    }
+
+    /// W4-g24 — no key: the locked-door click is still consumed
+    /// (`Player.cs:32795`'s `flag2 = true` before the scan), nothing shifts
+    /// and no cue plays.
+    #[test]
+    fn w4_g24_the_locked_door_without_a_key_consumes_silently() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        for (row, fy) in [(17, 594i16), (18, 612), (19, 630)] {
+            let i = app.world.index(10, row);
+            app.world.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[10] = true;
+        app.player = Some(Player::spawn(&app.world));
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
+        assert_eq!(app.world.tile(10, 17).unwrap().frame_y, 594, "no shift");
+        assert_eq!(app.audio.played_count(), before, "no cue");
     }
 
     #[test]

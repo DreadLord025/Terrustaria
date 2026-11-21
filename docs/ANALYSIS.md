@@ -39294,3 +39294,44 @@ no `Main.rand` draws вЂ” cases 10/11/13/22 draw NOTHING,
 draw; commits в‰¤10 sites; witnesses WRITTEN NOT RUN (no
 cargo/rustc/rustfmt/tests/graphify invoked).
 
+
+### W4-g24 batch 1 (2026-11-21) вЂ” the menu/world-flow cues + the Check tails (10 sites)
+
+Landed sites (C# line order): `SecretSeed.Enable` `WorldGen.cs:539` (the
+tracked `MenuAccept` вЂ” `audio::menu_accept_style`, the
+`KeyboardTail::WorldSeed` submit arm plays it once when the resolve finds
+a micro seed; `TryApplyingCopiedSeed`'s first-Enable-only semantics,
+`WorldFileData.cs:268-272`; the port is stateless so every submit with a
+micro seed plays once вЂ” the fresh-screen equivalence), `worldGenCallback`
+`:6593` (the generation-start 10 in `finish_creating_world`'s job-start
+arm), `playWorldCallBack` `:6843` (the world-enter 11 in `swap_world`'s
+`enter_loaded_world` tail вЂ” the net client install keeps its silence, it
+is the S2c path not `playWorld`), `serverLoadWorldCallBack` `:6921` (the
+host-load 10 вЂ” the port hosts on the live world, so the seam is the new
+`App::start_hosting` success arm; the retry/backup ladder `:6876-6920`
+stays out of scope), `UnlockDoor` `:37614` (the legacy 22 Unlock at the
+door's MIDDLE row вЂ” `edit::unlock_door` walks the column to the frameY-594
+top and shifts +54; the golden-key arm `Player.cs:32793-32837` consumes
+one 1141 from the 58-slot scan with the void-bag bank4 fallback, the
+progression 22 fires, the dust 11 is the visual seam), `Check2x1`'s piggy
+`:47235` + bowl `:47255` Shatter tails (the new `TileKill::check_cues`
+channel вЂ” the cue lands at the cell whose `TileFrame` ran the check, the
+SURVIVING pair cell: the C# clears the hit cell to type 0 before
+`SquareTileFrame`; the tails are not `noItem`-gated, the piggy drop now
+carries item 87), the bowl check itself (case-103 joins the dispatch вЂ”
+the plain-table OR Table-anchor support, the style drop 356/2235/2242/
+2243), `CheckOrb`'s tail `:54337`/`:54341` (crimson-4 / shadow-13 at the
+framed member cell, outside the netMode/generatingWorld gate), and
+`PlaceObject` `:51441` (COVERAGE ONLY вЂ” the landed `place_tile` cue switch
+already plays the plain 0 for every `routes_through_tile_object` kind;
+witness pins the equivalence). RNG: cases 10/11/13/22 draw NOTHING
+(`LegacySoundPlayer.cs:750-792`/`:937-946`), the tracked MenuAccept draws
+only the audio-only style streams; no gameplay stream touched. The
+`Check*` cue drain rides the pinned-cue `kill_cue` path (research D3 вЂ”
+no per-play variation/pitch, the sibling kill-cue convention). 8
+witnesses WRITTEN NOT RUN (edit.rs unlock walk, kill.rs piggy/bowl/orb
+tails, doors.rs key/no-key, flow.rs seed submit, session.rs gen-start,
+clicks.rs host start, audio.rs style, editing.rs PlaceObject coverage,
+mod.rs swap cue вЂ” 11 total). The `insert_test_cue`/`tracked_count_for`
+headless seams are test-only.
+

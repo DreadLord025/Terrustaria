@@ -5648,6 +5648,19 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             );
         }
     }
+    // W4-g24 — the `Check*`-level cue tails (`TileKill::check_cues`):
+    // `Check2x1`'s piggy/bowl Shatter (`WorldGen.cs:47235`/:47255) and
+    // `CheckOrb`'s crimson-4 / shadow-13 tail (`:54337`/:54341), at the
+    // TRIGGER cell the C# plays at. Same pinned-cue path as the sibling
+    // kill cues above (research D3 — no per-play variation/pitch draws);
+    // the tails are not `noItem`-gated (the C# plays them outside the drop
+    // gate), so they drain unconditionally.
+    for &(id, style, cx, cy) in &kill.check_cues {
+        if let Some((name, volume)) = kill_cue((id, style)) {
+            app.audio
+                .play_at(name, cx as f32 * TILE_PX, cy as f32 * TILE_PX, volume);
+        }
+    }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
     // path sets for held 213/5295): the port reads the held slot at the
@@ -8141,6 +8154,26 @@ fn thrust_stab_tick(
 mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// W4-g24 — `WorldGen.PlaceObject`'s plain-0 cue (`WorldGen.cs:51441`,
+    /// `PlaySound(0, x * 16, y * 16)` behind `!mute`): the port's
+    /// `TileObject`-routed placement plays through the SAME
+    /// `place_tile_sound` switch — the registry-route kinds are never the
+    /// special 127/314/330-333 arms (no `CustomPlace` def for those), so
+    /// the default (0, 1) covers both routes 1:1. Coverage witness: the
+    /// site is landed, not re-ported.
+    #[test]
+    fn w4_g24_place_object_route_plays_the_plain_dig_cue() {
+        // A representative registry-route kind (the chair 15): the route
+        // gate passes and the cue switch answers the plain Dig.
+        assert!(tr_core::tileobject::routes_through_tile_object(15, 0));
+        assert_eq!(edit::place_tile_sound(15), (0, 1));
+        // The special-cue kinds never route through TileObject — the
+        // switch's per-type arms cannot disagree with PlaceObject's 0.
+        for kind in [127u16, 314, 330, 331, 332, 333] {
+            assert!(!tr_core::tileobject::routes_through_tile_object(kind, 0));
+        }
+    }
 
     /// S1-E-21 wave B: the placement-sound switch (`WorldGen.cs:60263-60282`)
     /// — the per-type cue selection the play path

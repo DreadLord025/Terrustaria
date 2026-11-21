@@ -58,6 +58,12 @@ impl App {
         // has no such badge (save_list reads the disk), so nothing parks.
         match crate::app::worldgen_job::WorldGenJob::start(&draft) {
             Some(job) => {
+                // W4-g24 — `worldGenCallback`'s HEAD (`WorldGen.cs:6593`):
+                // `SoundEngine.PlaySound(10)` before `GenerateWorld` runs.
+                // Case 10 (`LegacySoundPlayer.cs:750-758`) draws NOTHING —
+                // the 2D menu play rides no RNG stream. The completion tail
+                // (`:6603`) already plays in `update_world_load`.
+                self.audio.play("Menu_Open");
                 let mut state = ui::world_load::WorldLoadState::new();
                 state.flags = job.flags;
                 state.evil_crimson = job.crimson;
@@ -281,4 +287,48 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
 /// `Color.R/G/B` — the writer stores the three bytes, the draft carries RGBA.
 fn rgb(c: [u8; 4]) -> [u8; 3] {
     [c[0], c[1], c[2]]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-g24 — `worldGenCallback`'s HEAD (`WorldGen.cs:6593`): the
+    /// generation-start `PlaySound(10)` plays when the job starts (before
+    /// `GenerateWorld` runs on the worker); the failure arm (no worlds dir)
+    /// plays nothing. Case 10 draws NOTHING — the 2D menu play rides no
+    /// RNG stream. The completion tail (`:6603`) is `update_world_load`'s
+    /// (already landed, S1-E-17).
+    #[test]
+    fn w4_g24_the_generation_start_plays_the_menu_open() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut draft = ui::world_creation::NewWorldDraft::new(0, 0);
+        draft.name = format!("g24start{}", std::process::id());
+        let before = app.audio.played_count();
+        app.finish_creating_world(draft);
+        if app.world_gen_job.is_some() {
+            assert_eq!(
+                app.audio.played_count(),
+                before + 1,
+                "the generation-start cue (:6593)"
+            );
+            // Tear the job down through the abort so no world file lands.
+            app.world_gen_job.as_ref().unwrap().queue_abort();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+            while app.world_gen_job.is_some() {
+                app.update_world_load();
+                assert!(std::time::Instant::now() < deadline, "the abort must finish");
+                std::thread::yield_now();
+            }
+            if let Some(dir) = tr_core::save::default_world_dir() {
+                let _ = std::fs::remove_file(dir.join(format!("g24start{}.trwld", std::process::id())));
+            }
+        } else {
+            // The worlds dir cannot resolve — no job, no cue.
+            assert_eq!(app.audio.played_count(), before);
+        }
+    }
 }
