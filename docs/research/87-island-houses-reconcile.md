@@ -669,3 +669,44 @@ witnesses, noted below, not a port gap.
   landings of the same item family, NOT a dedupe target (different
   streams, different gates: the chest's Next(6) is unconditional inside
   flag12, the crate's rides its own 1/2).
+
+## 87 FINAL-FINAL — the islands-family merger-bible (2026-11-21, retire 4/4)
+
+**One paragraph, the whole family:** The FloatingIslands (#26) +
+FloatingIslandHouses (#73) + skyLakes family merges onto **g44's
+`worldgen/islands.rs` + grafted `worldgen/buried_chest.rs` — FINAL, no
+salvage candidates** (87's four-way table: g44 is a superset of d103/d104/
+g37 on every arm after variant A + the #15 graft): DROP d103/d104's
+`island_houses.rs` + g37's §B5, dedupe the two `add_buried_chest` cores onto
+the kind-aware `place_chest_kind` survivor (keep d103's Surface Chests
+half), keep ONE `skyblock_gates::deny_floating_islands` helper (f24's),
+keep g44's ledger-y convention + its five anchors rows (repoint, never
+delete); the housing wall-table dedupes onto g44's
+`is_house_wall → edit::wall_house` FULL-279 delegation via the ONE verbatim
+hunk published per-branch in RETIRE §5 (d118 `91db266ea` / d119 `04d7f9fd2`,
+blob-identical narrow blocks, d119's `town_spawn.rs:463` gains the
+`WorldGen.cs:5411` correctness for free — never take g44's housing.rs
+wholesale, d118 rewrote `solid_tiles_in_box`); the harpy sky-band activates
+at merge with the ONE spawner hunk in RETIRE §6 (g8 `82c93cecf` protocol
+386 vs d34 `4012a7f3a` protocol 275 — keep ONE Harpy row, the conflict is
+loud; g8/d126 touch no spawner code, the wyvern gates + terminal default
+join cleanly; the feather shot stays a cited skip with its exact C# port
+spec published for the g8 machine round); the sky-lake fishing chain
+COMPOSES end-to-end with zero port work (RETIRE §7: g44's census-landed
+M7-FISH-2 catch rows + bowl/quest/crate witnesses × f35 `1abae9ade`'s
+26-crate open dispatch, f35 touches no tr-core fishing code, the
+`skyblock_low_tiles` FALSE seam is C#-correct on normal worlds); the desert
+boundary stays as closeout §1 ruled (d101 sand patches, g40 entrance/hive,
+g44's only desert surface is the buried-chest wall-probe arm); matrix-88's
+KEEP-g44 is CONFIRMED FINAL + its §6.3 checklist CLOSED, matrix-86's
+d104-vs-g37 verdict stands for that pair only — **after this merge the
+islands family has ONE owner (g44's files), ONE wall table
+(`edit::wall_house`), ONE harpy kind row, and every cross-lane join is a
+published hunk, not a re-derivation.**
+
+Retire-phase commit ledger (this branch, task/W4-g44-biome-sky-lakes):
+1/4 `2af46dec2` (the dedupe hunks + the comment refresh), 2/4 `8fcd151c0`
+(the spawn-band activation receipt), 3/4 `e968412bb` (the fishing
+compose-note), 4/4 = this note. All verdicts are direct tip reads
+(code-only mode; no cargo/tests run — the witnesses cited are
+written-not-run per the lane's standing mode).
