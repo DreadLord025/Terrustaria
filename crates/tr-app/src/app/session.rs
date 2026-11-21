@@ -264,9 +264,12 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // live `favorite_slots`, flattened (`App::favorite_bits`); a fresh
         // character has none.
         inv_favorites: favorites,
-        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the port tracks
-        // no save clock; 0 is the documented "unknown" stamp (ANALYSIS).
-        last_saved_binary: 0,
+        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the creation
+        // save stamps the real clock (the C# writes UtcNow on EVERY save,
+        // creation included); the port's fixture/golden writes still pass 0
+        // ("unknown"), and the reader's mtime fallback (`LoadPlayer:55096`)
+        // covers those (ANALYSIS "W4-f44 crosspersist").
+        last_saved_binary: crate::player_file::utc_now_binary(),
         // The per-player tail (loadouts / void vault / research): a fresh
         // character carries the vanilla defaults (`PlayerFileWrite::default`).
         ..Default::default()

@@ -208,7 +208,10 @@ pub struct PlayerFile {
     pub hb_locked: bool,
     /// `Player.lastTimePlayerWasSaved` (`Serialize:54909` writes
     /// `DateTime.UtcNow.ToBinary()` / `Deserialize:55687-55691`, gate 202,
-    /// 0 below) — the read side of the write's `last_saved_binary`.
+    /// 0 below) — the read side of the write's `last_saved_binary`. A zero
+    /// file stamp is replaced by the file's mtime on the DISK read
+    /// (`LoadPlayer:55096-55099`, [`read_player_file`]); the byte-level walk
+    /// keeps the raw value.
     pub last_saved_binary: i64,
     pub skin_variant: u8,
     pub hair: i32,
@@ -514,7 +517,48 @@ pub fn cbc_encrypt(data: &[u8]) -> Vec<u8> {
 pub fn read_player_file(path: &Path) -> Result<PlayerFile, PlayerFileError> {
     let raw = std::fs::read(path)?;
     let plain = cbc_decrypt(&raw);
-    read_player_bytes(&plain)
+    let mut file = read_player_bytes(&plain)?;
+    // `LoadPlayer:55096-55099`: a zero lastTimePlayerWasSaved falls back to
+    // the file's last-write time (`File.GetLastWriteTimeUtc(path).ToBinary()`,
+    // local files only — the port has no cloud saves). `PlayerFileData.LastPlayed`
+    // (`PlayerFileData.cs:38`) reads through it. The port's own writer stamps 0
+    // ("unknown"), so every port-written character rides this fallback.
+    if file.last_saved_binary == 0 {
+        if let Some(binary) = last_write_time_binary(path) {
+            file.last_saved_binary = binary;
+        }
+    }
+    Ok(file)
+}
+
+/// `File.GetLastWriteTimeUtc(path).ToBinary()` for the zero-stamp fallback
+/// above — the DateTime binary encoding: the UTC ticks in the low 62 bits,
+/// kind bits 62-63 = 01 (`DateTimeKind.Utc`). `None` on an unreadable clock.
+fn last_write_time_binary(path: &Path) -> Option<i64> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    let secs = modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    Some(unix_secs_to_utc_binary(secs)?)
+}
+
+/// `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) for the production save
+/// callers — the wall clock is the ONE field the byte-level writers keep
+/// caller-owned (the golden fixture pins its FixtureClock value), so this
+/// helper lives beside the codec, not inside it.
+pub fn utc_now_binary() -> i64 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    unix_secs_to_utc_binary(secs).unwrap_or(0)
+}
+
+/// Unix seconds → the DateTime binary encoding (UTC ticks low 62 bits,
+/// kind bits 01). 621355968000000000 = DateTime(1970-01-01).Ticks. Whole
+/// seconds only — the C# carries sub-second precision; the port's stamp and
+/// mtime fallback pin seconds (the field's consumers read dates, not ticks).
+fn unix_secs_to_utc_binary(secs: u64) -> Option<i64> {
+    let ticks = (secs as i64).checked_mul(10_000_000)?.checked_add(621_355_968_000_000_000)?;
+    Some(ticks | (1i64 << 62))
 }
 
 fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
@@ -3996,5 +4040,61 @@ mod tests {
         w.bytes(&plain[117..]);
         let file = read_player_bytes(&w.into_inner()).unwrap();
         assert_eq!(file.armor[0], (0, 0, true));
+    }
+
+    // --- W4-f44 crosspersist: the timestamp residuals -----------------------
+
+    /// The DateTime binary encoding pins: Unix epoch = ticks
+    /// 621355968000000000 with kind bits 01 (Utc); the golden fixture's
+    /// FixtureClock 2026-11-18T00:00:00Z encodes to 0x48DF4506E391C000
+    /// (independently derived via .NET `DateTime.ToBinary`).
+    #[test]
+    fn the_utc_binary_encoding_pins_the_epoch_and_the_fixture_clock() {
+        assert_eq!(unix_secs_to_utc_binary(0), Some(0x489F_7FF5_F7B5_8000u64 as i64));
+        // 2026-11-18T00:00:00Z = Unix 1794960000.
+        assert_eq!(
+            unix_secs_to_utc_binary(1_794_960_000),
+            Some(0x48DF_4506_E391_C000u64 as i64)
+        );
+        // utc_now_binary carries the Utc kind bits and a post-2026 stamp.
+        let now = utc_now_binary();
+        assert_eq!(now as u64 >> 62, 1, "kind bits 01 = DateTimeKind.Utc");
+        assert!(now > 0x48DF_4506_E391_C000u64 as i64, "after the fixture clock");
+    }
+
+    /// `LoadPlayer:55096-55099`: a zero lastTimePlayerWasSaved falls back to
+    /// the FILE's last-write time — the port's historical 0-stamp files
+    /// surface a real stamp on the disk read; a nonzero stamp rides verbatim
+    /// (the byte-level `read_player_bytes` keeps the raw 0 — the fallback is
+    /// the disk reader's, exactly like the C#'s placement inside LoadPlayer).
+    #[test]
+    fn a_zero_stamp_falls_back_to_the_file_mtime_on_the_disk_read() {
+        let dir = crate::test_world_helpers::test_scratch("plr-stamp-fallback");
+        let path = dir.join("Zero.plr");
+        write_player_file(&path, &sample()).unwrap(); // sample stamps 0
+        let file = read_player_file(&path).unwrap();
+        assert_ne!(file.last_saved_binary, 0, "the mtime fallback fills the zero stamp");
+        assert_eq!(file.last_saved_binary as u64 >> 62, 1, "kind Utc");
+        // The fallback matches the file's own mtime in whole seconds.
+        let secs = std::fs::metadata(&path)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(file.last_saved_binary, unix_secs_to_utc_binary(secs).unwrap());
+        // The raw byte walk keeps the file's 0 (no fallback below LoadPlayer).
+        let raw = read_player_bytes(&cbc_decrypt(&std::fs::read(&path).unwrap())).unwrap();
+        assert_eq!(raw.last_saved_binary, 0);
+        // A nonzero stamp rides verbatim through the disk read.
+        let stamped = PlayerFileWrite {
+            last_saved_binary: 0x48DF_4506_E391_C000,
+            ..sample()
+        };
+        write_player_file(&path, &stamped).unwrap();
+        let file = read_player_file(&path).unwrap();
+        assert_eq!(file.last_saved_binary, 0x48DF_4506_E391_C000);
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 }
