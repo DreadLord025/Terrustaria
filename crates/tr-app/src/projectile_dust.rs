@@ -808,6 +808,22 @@ pub(crate) fn style5_comet_tail(p: &Projectile, world: &World, d: &mut ProjDust)
 // emitters (`:22297-22345` — the machine is the pushed W4-d16 lane's
 // `projectile_ai_misc::ai_super_star_slash`; these emitters replace its
 // count-only skip blocks at the merge, the e2 "staged emitters" precedent).
+//
+// KEEP-ONE (1051 vs W4-d1, tip e271b5bc): d1's `projectile_ai_powder::step`
+// owns the FULL aiStyle-6 machine (the rows 10/11/463/1019/1051, the tile
+// scan / Convert, the sapling-growth defer, the free move) but its burst is
+// count-only — the 1051 keeps ONLY the 50 per-dust `Next(3)` picks on the
+// stream, the bodies + `NewDust` internals skip. This `style6_burst` is the
+// full-bodied twin: SAME explicit draw (`:24132` first, one per dust, loop
+// order) PLUS the pool internals + the flag2 post-arms. At the merge keep
+// d1's machine + rows and feed THIS emitter through its burst loop (replace
+// the count-only `for` body); retire the e3 `ai_style6` duplicate arm + its
+// `6 =>` kind gate (it would double-run the machine). The 1051 witness
+// below mirrors the FULL sequence — the pick, the internals, the post-arms
+// — so it stays the stream-parity pin after the swap; d1's
+// `w4_d1_the_super_fertilizer_burst_draws_50` (50 ranges, no floats) is the
+// count-only pin and must be re-derived at the swap (the internals add
+// floats/ranges per dust).
 // ---------------------------------------------------------------------------
 
 /// `:24110-24150` — the aiStyle-6 first-tick (`ai[1] == 0`) dust burst: the
@@ -1029,10 +1045,24 @@ pub(crate) fn style8_default(
 // ---------------------------------------------------------------------------
 // aiStyle 152 — the SuperStarSlash (`Projectile.cs:22230-22351`). STAGED:
 // the machine + dispatch + kind rows are the pushed W4-d16 lane's
-// (`projectile_ai_misc::ai_super_star_slash`); these emitters replace its
-// count-only dust skip blocks at the merge. The gate draws d16 keeps
-// (`Next(8)` / `Next(3)` + the `NextFloat` pairs) are exactly the emitters'
-// leading draws — the reconciliation is a drop-in.
+// (`projectile_ai_misc::ai_super_star_slash`, verified still count-only at
+// its tip e122a6b2 — the aiStyle-160 Kites commit); these emitters replace
+// its dust skip blocks at the merge. DROP-IN CONTRACT (three edits on the
+// d16 side, ANALYSIS "the W4-e3 window census"):
+// 1. thread `&mut DustPool` + `&SpawnCtx` into `ai_super_star_slash` and
+//    build the `ProjDust` bundle (the dispatch already carries both — the
+//    `ai_ball_of_fire` 8-arm precedent);
+// 2. REPLACE the `Next(8)` block (977/1045, `:22292-22313`) with ONE
+//    `star_slash_dust` call per kind arm — the emitter re-draws the gate
+//    itself; leaving d16's `(next_float, next_float)` pair beside the call
+//    DOUBLE-DRAWS the circular pair;
+// 3. REPLACE the `Next(3)` + `localAI[1]` blocks (`:22334-22347`) with ONE
+//    `star_slash_976` call, and MOVE d16's `local_ai[1] = 1.0` latch to
+//    AFTER the call (the emitter reads the pre-latch value; the C# latches
+//    before the loop but the loop is inside the emitter). The `NextFloat`
+//    pair loop must go — the emitter draws it per dust.
+// Draw order per dust: the `NewDustDirect` internals FIRST, then the
+// velocity overwrite's draws (`:22300` / `:22345` evaluate after the call).
 // ---------------------------------------------------------------------------
 
 /// `:22292-22312` — the 977/1045 Zenith slash's dust: the `Next(8)` gate,
@@ -1865,6 +1895,37 @@ mod tests {
             }
         }
         assert_eq!(qrng.next_range(0, 1000), qmirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 keep-one pin — the 1051 burst vs W4-d1's count-only twin
+    /// (`projectile_ai_powder::step`, tip e271b5bc): d1 keeps ONLY the 50
+    /// per-dust `Next(3)` picks (`:24132`); this emitter draws the SAME
+    /// pick FIRST per dust, then the `NewDust` internals + the flag2
+    /// post-arms. The pick sequence must be identical on a twin seed —
+    /// the merge swap (d1's machine + this burst) keeps the explicit-draw
+    /// order and only ADDS the pool-internal draws between picks.
+    #[test]
+    fn w4_e3_keep_one_1051_picks_match_d1_count_only() {
+        let w = world();
+        let c = ctx();
+        let p = proj(1051);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(271);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style6_burst(&p, &w, &mut d, 0, 50, true, true);
+        // d1's count-only stream: 50 bare Next(3) picks, nothing else.
+        let mut d1 = UnifiedRandom::new(271);
+        for i in 0..50 {
+            let pick = d1.next_range(0, 3);
+            let want = if pick == 0 { 309 } else { 0 };
+            assert_eq!(pool.slot(i).dust_type, want, "dust {i}: the pick order");
+        }
+        // The first pick is the FIRST draw on the emitter's stream too —
+        // replay it: seed 271's first Next(3) equals d1's first pick.
+        let mut probe = UnifiedRandom::new(271);
+        let first = if probe.next_range(0, 3) == 0 { 309 } else { 0 };
+        assert_eq!(pool.slot(0).dust_type, first);
+        assert_eq!(active(&pool).len(), 50);
     }
 
     /// W4-e3 batch 4 — `:24259-24300`: the WaterBolt's lava burst (4 dust-31

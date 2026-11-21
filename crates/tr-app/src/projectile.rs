@@ -7006,9 +7006,25 @@ impl Projectile {
     /// (`Projectile.cs:23830-24099`): the 503 Star Wrath, the 723-726/1133
     /// cloak stars and the 1037/1049 meteors. The 9/955 ride
     /// [`Self::ai_falling_star`] and the 92 rides `special_arrows::
-    /// falling_star_step`; this arm serves the rest. The kinds have no
-    /// `proj_data` rows yet — the dispatch kind-gates it so it stays a no-op
-    /// until they land (the aiStyle-6/152 precedent).
+    /// falling_star_step`; this arm serves the rest. The dispatch kind-gates
+    /// it so it stays a no-op until the rows land (the aiStyle-6/152
+    /// precedent). ROW CENSUS (this round): the five cloak stars
+    /// 723/724/725/726/1133 are ROWED on the pushed W4-f48 lane (bba610bb,
+    /// the shared `:7646-7658` row + `ai_cloak_star`); the 503/1037/1049
+    /// stay unrowed on every pushed tip — their gates keep the no-op.
+    ///
+    /// KEEP-ONE (cloak stars): f48's `ai_cloak_star` covers the same
+    /// `:23845-23953` head (latch + twinkle `Next(40)` + alpha ramp + spin)
+    /// but skips the dust block AND the twinkle draw order differs (f48
+    /// draws `Next(40)` inline; this arm leaves it to the sound lane). At
+    /// the merge keep ONE machine — f48's rowed arm is the natural survivor
+    /// (it owns the retaliate spawn seam) — and feed the cloak half of
+    /// `style5_shooting_star` (`:23988-24031`) through it; the
+    /// 503/1037/1049 halves keep THIS arm until their rows land. The g64
+    /// lane (bfd7e930) ALSO ports the 503/723/1133 dust bodies UNWIRED
+    /// (`proj_trail_dust::trail_503` etc.) — keep-one against
+    /// `style5_spark_503`/`style5_shooting_star` at the wiring wave (same
+    /// draws, different seams; ANALYSIS "the W4-e3 window census").
     ///
     /// W4-e3 — the dust sites spawn through the `projectile_dust` seam: the
     /// 503's `:23954-23968` spark, the 723-726/1133's `:23988-24031` block,
@@ -7120,8 +7136,11 @@ impl Projectile {
     /// life, the `ai[1] == 0` first-tick dust burst (W4-e3: the seam) and
     /// the 1019/1051's slow-kill. The `WorldGen.Convert` tile-spread block
     /// (`:24152-24223`) is the tile lane's documented skip (no rand draw).
-    /// The kinds (10/11/463/1019/1051) have no ported rows yet — the arm is
-    /// kind-gated at the dispatch so it stays a no-op until they land.
+    /// KEEP-ONE: the pushed W4-d1 lane (e271b5bc) ports the SAME arm as
+    /// `projectile_ai_powder::step` WITH the rows + the tile scan + the
+    /// sapling defer — at the merge that machine survives and this arm
+    /// retires; its count-only burst loop takes
+    /// `projectile_dust::style6_burst` (the keep-one note there).
     fn ai_style6(
         &mut self,
         world: &World,
@@ -17314,6 +17333,13 @@ impl ProjectilePool {
                         // their rows land (the aiStyle-6 precedent); the
                         // 723's manual fall-through gate reads the owner's
                         // Top.Y (`:23847`, the pass's player snapshot).
+                        // ROW CENSUS: the cloak five (723-726/1133) are
+                        // rowed on the pushed W4-f48 lane (bba610bb) with
+                        // their own `ai_cloak_star` arm — at the merge keep
+                        // ONE machine (f48's rowed arm survives, this
+                        // arm's cloak half feeds it the dust block; the
+                        // keep-one note on `ai_falling_star_family`). The
+                        // 503/1037/1049 stay unrowed on every pushed tip.
                         5 => {
                             if self.slots[i].kind == FALLING_STAR {
                                 crate::special_arrows::falling_star_step(
@@ -17901,10 +17927,13 @@ impl ProjectilePool {
                         4 => self.vilethorn_step(i, world, rng, dust, dust_ctx),
                         // W4-e3 — `AI()`'s `else if (this.aiStyle == 6)`
                         // (`Projectile.cs:24100-24228`): the purification
-                        // powder family's drag + first-tick dust burst. The
-                        // kinds (10/11/463/1019/1051) have no rows yet — the
-                        // arm is kind-gated so it stays a no-op until they
-                        // land (the aiStyle-5 precedent).
+                        // powder family's drag + first-tick dust burst.
+                        // KEEP-ONE: the pushed W4-d1 lane (e271b5bc) rows
+                        // the five kinds and ports the full machine as
+                        // `projectile_ai_powder::step` (count-only burst) —
+                        // at the merge d1's arm survives, this gate + arm
+                        // retire, and d1's burst loop takes
+                        // `projectile_dust::style6_burst` (the note there).
                         6 => {
                             if matches!(self.slots[i].kind, 10 | 11 | 463 | 1019 | 1051) {
                                 self.slots[i].ai_style6(world, rng, dust, dust_ctx);
