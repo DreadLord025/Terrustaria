@@ -2651,7 +2651,7 @@ impl Wiring {
                 }
             }
             // The fireplace (405, `:3044-3072`). The wire path passes the
-            // null forced state (`Wiring.cs:999`; research/151's unified
+            // null forced state (`Wiring.cs:999`; research/233's unified
             // family — d6's TryToggleLight caller passes the forced state).
             405 => self.toggle_fire_place(world, i, j, tile_frame_x, tile_frame_y, None),
             // The holiday light (149 → `ToggleHolidayLight`, `:2800-2815`).
@@ -3030,7 +3030,7 @@ impl Wiring {
     ) {
         // `:2801-2802` — the forced-state gate (W4-f11 seam 95 §4: the wire
         // path passes null; d6's `TryToggleLight` caller passes the forced
-        // state — the unified family's half, research/151).
+        // state — the unified family's half, research/233).
         let off = frame_x >= 54;
         if forced.is_some() && forced != Some(off) {
             return;
@@ -3055,7 +3055,7 @@ impl Wiring {
         forced: Option<bool>,
     ) {
         // `:2828-2829` — the forced gate on the CLICKED cell's OFF flag
-        // (the unified family's half, research/151; wire path = null).
+        // (the unified family's half, research/233; wire path = null).
         let off = frame_x > 0;
         if forced.is_some() && forced != Some(off) {
             return;
@@ -3094,7 +3094,7 @@ impl Wiring {
         }
         let num2 = i - num2;
         // `:2860-2861` — the forced gate reads the ANCHOR's OFF flag (the
-        // unified family's half, research/151; wire path = null).
+        // unified family's half, research/233; wire path = null).
         let off = world.tile_frame_x(num2, num) > 0;
         if forced.is_some() && forced != Some(off) {
             return;
@@ -3120,7 +3120,7 @@ impl Wiring {
         forced: Option<bool>,
     ) {
         // `:2886-2890` — the forced gate on the clicked cell's OFF flag
-        // (the unified family's half, research/151; wire path = null).
+        // (the unified family's half, research/233; wire path = null).
         let off = frame_x > 0;
         if forced.is_some() && forced != Some(off) {
             return;
@@ -3143,7 +3143,7 @@ impl Wiring {
         forced: Option<bool>,
     ) {
         // `:2925-2926` — the forced gate (the unified family's half,
-        // research/151; wire path = null). The candle has NO SkipWire in C#.
+        // research/233; wire path = null). The candle has NO SkipWire in C#.
         let off = frame_x > 0;
         if forced.is_some() && forced != Some(off) {
             return;
@@ -3164,7 +3164,7 @@ impl Wiring {
         forced: Option<bool>,
     ) {
         // `:2946-2947` — the forced gate on the clicked cell's OFF flag
-        // (the unified family's half, research/151; wire path = null).
+        // (the unified family's half, research/233; wire path = null).
         let off = frame_x > 0;
         if forced.is_some() && forced != Some(off) {
             return;
@@ -3204,7 +3204,7 @@ impl Wiring {
         }
         let num3 = i - num3;
         // `:2980-2984` — the forced gate reads the ANCHOR's `% 108` OFF
-        // flag (the unified family's half, research/151; wire path = null).
+        // flag (the unified family's half, research/233; wire path = null).
         let off = world.tile_frame_x(num3, num2) % 108 > 0;
         if forced.is_some() && forced != Some(off) {
             return;
@@ -3233,7 +3233,7 @@ impl Wiring {
         let num2 = i32::from(frame_y % 36 / 18);
         let (num3, num4) = (i - num, j - num2);
         // `:3049-3053` — the forced gate reads the ANCHOR's OFF flag (the
-        // unified family's half, research/151; wire path = null).
+        // unified family's half, research/233; wire path = null).
         let off = world.tile_frame_x(num3, num4) >= 54;
         if forced.is_some() && forced != Some(off) {
             return;
@@ -3321,12 +3321,12 @@ impl Wiring {
     /// `Wiring.cs:1420`; d6's `TryToggleLight` caller passes the forced
     /// state); `skips` collects the `doSkipWires` cells (the wire path
     /// inserts into `self.skip`, the `TryToggleLight` caller discards —
-    /// research/95 §4's unified shape, research/151).
+    /// research/95 §4's unified shape, research/233).
     ///
     /// **KEEP-ONE-BY-UNION (research/95 §4)**: line-for-line the same
     /// semantics as c42's `toggle_camp_fire` — the merger keeps ONE body
     /// (either) with this forced+skips signature; never three copies
-    /// (c42/f11 methods + d6 free fn). Research/133 §4d, research/151.
+    /// (c42/f11 methods + d6 free fn). Research/133 §4d, research/233.
     fn toggle_campfire(
         &mut self,
         world: &mut World,
@@ -6883,7 +6883,7 @@ mod w4_f11_light_pair_tests {
         }
     }
 
-    /// Research/95 §4 unification (research/151) — the forced-state half on
+    /// Research/95 §4 unification (research/233) — the forced-state half on
     /// the unified methods: `Some(off)` refuses (the C# `HasValue &&
     /// !Value == flag` early return), `Some(!off)` flips, `None` flips (the
     /// wire path). The campfire's validate-kill runs BEFORE the forced gate

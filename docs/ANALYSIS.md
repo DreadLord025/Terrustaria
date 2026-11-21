@@ -36221,10 +36221,10 @@ drains run at `world_sim/wiring.rs:362-367` inside the wiring tick
   (`Projectile.cs:72053-72066`) — d13 landed the aiStyle-125 arm + the
   Kill-hook request seam (`take_mass_wire_ops` →
   `app.pending_mass_wire_ops`); the APPLY drain onto this lane's
-  `mass_wire_operation` is the union-merge follow-up (research/153).
+  `mass_wire_operation` is the union-merge follow-up (research/235).
   The `WiresRadial` UI's LOGIC half landed W4-f11 (`ui/wires_radial.rs` —
   the flower/line state machine + the six-slot ToolMode toggles write
-  `wire_tool_mode`); the ~450-line draw passes are the research/152
+  `wire_tool_mode`); the ~450-line draw passes are the research/234
   contract remainder.
 - The `CanDoWireStuffHere` dual-dungeons temple arm
   (`Player.cs:46934-46937`) has no ported seed — the wall-87 gate alone

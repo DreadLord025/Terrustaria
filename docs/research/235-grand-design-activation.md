@@ -1,7 +1,8 @@
-# 153 — The Grand Design 3611 drag / proj-651: landed-verification + the apply activation (the kite seam)
+# 235 — The Grand Design 3611 drag / proj-651: landed-verification + the apply activation (the kite seam)
 
-> Renumbered 136 → 153 (2026-11-21, the INDEX-registry collision —
-> g31's `136-tilepass-d-hunks` was first-pushed; see research/151's
+> Renumbered 136 → 153 → **235** (2026-11-21, the INDEX-registry
+> collision — g31's `136-tilepass-d-hunks` was first-pushed; the
+> research/150 registry's key-136 row assigns 235; see research/233's
 > header for the full note).
 >
 > W4-f11 · 2026-11-21 · code-only (no cargo/tests/graphify run) · sources:
@@ -61,7 +62,7 @@ Contract pins (d13 `ed631370d`, re-verified against the C# here):
 - **RAW ToolMode** — `MassWireOperationInner` reads `Settings.ToolMode`
   unmasked (`Wiring.cs:3241`); the Actuator strip is the 3625 arm's own
   (`Player.cs:46908`), NOT the kite's. The WiresRadial logic half
-  (research/152) now makes the field reachable in-game.
+  (research/234) now makes the field reachable in-game.
 - **No cooldown gate** — the Kill hook has none; the
   `wire_operations_cooldown` throttle is `CanUseItem`'s (the use arm's).
 - **Tile coords both sides** — `(int)X >> 4` on the pool side, the core
@@ -117,7 +118,7 @@ the canonical 95 §8 indices.
 | 8.2 `SendData(19)` echoes | **CLOSED send-half on f11** (`11788ce9d5`): `num66`/`4+flag4`/`±num67` payloads → `door_toggles` → `send_door_toggle` (Off = the netMode-0 fold). **Apply-half LANDED on g48** (`net_apply.rs`) | **REMAINS: the union merge** — g48's `net.rs` id/struct/codec is byte-identical to f11's (keep-one, trivial dedupe); the netglue `C2s/S2c::DoorToggle(_)` no-op arms drop for g48's dispatch arms; f11's queue/drain folds onto c42 (research/133 §7.2). g48's 2/3 reader passes the REAL entity closure already — the 8.1 fold extends it to the wiring floods. |
 | 8.3 SkipWire inside the WorldGen bodies | closed (the §1 Option seam, c42-exec `f982f1d4`) | nothing remains |
 | 8.4 door-cue stage streams | closed (the c42 12-site `take_door_cues` drain union) | nothing remains; f11's single `door_sounds` drain is DEPRECATED-BY-UNION (133 §4b ruling stands) |
-| 8.5 `try_toggle_light` `skip_wires=true` | **CLOSED structurally BOTH sides**: c42-exec item 6 (`6381b52d`, the free-fn family collects + discards); f11 (`9ae0edc97`, the method-side forced gates + campfire collector, research/151) | the residual is the LIGHT-FAMILY DEDUPE itself (c42's unified free fns vs f11's gated methods — never ship both); research/151's §1a/§1b hunks are SUPERSEDED by the c42 shape (the §1 header note), the surviving f11 unique = the forced-gate witness (research/133 §7.3) |
+| 8.5 `try_toggle_light` `skip_wires=true` | **CLOSED structurally BOTH sides**: c42-exec item 6 (`6381b52d`, the free-fn family collects + discards); f11 (`9ae0edc97`, the method-side forced gates + campfire collector, research/233) | the residual is the LIGHT-FAMILY DEDUPE itself (c42's unified free fns vs f11's gated methods — never ship both); research/233's §1a/§1b hunks are SUPERSEDED by the c42 shape (the §1 header note), the surviving f11 unique = the forced-gate witness (research/133 §7.3) |
 | 8.6 `SendTileSquare` tails in the Toggle* statics | OPEN (MP-only, all lanes agree) | the net sync wave; unchanged |
 | 8.7 hopper `SyncItem`/`VisualizeChestTransfer` | OPEN (net/draw seams) | the particles/net tasks; unchanged |
 | 8.8 `FrameTrack` non-pound + `flag4`/`KillTile(fail)` | OPEN (the hammer-placement half) | `edit/hammer.rs` `Consumed` follow-up, e20 assert convention; unchanged |
@@ -132,12 +133,12 @@ open-seams-remaining shortlist):
    (`net_apply.rs`, LANDED); what remains is the KEEP-ONE codec dedupe
    + the f11 send-half fold onto c42 (research/133 §7.2). No new code
    is invented at merge — both halves exist, byte-identical wire shape.
-2. **Radial-draw @ the texture wave** — research/152 §2's ~450-line
+2. **Radial-draw @ the texture wave** — research/234 §2's ~450-line
    draw contract (`WireUi[12]` + `BuilderAcc` atlas loads, the centred
    two-sprite seam, `DrawCursorArea`, the gamepad folds). The LOGIC
    half is landed and reachable; the draw waits on the atlas-load
    wave (`Main.cs:31665-31692`'s cursor draws are the second consumer).
-3. **Kite-drain @ the d13 union** — research/153 §2's published hunk
+3. **Kite-drain @ the d13 union** — research/235 §2's published hunk
    at the projectiles pass tail (raw ToolMode, no Actuator strip, no
    cooldown gate, `owner == local_id`, `UpdateProjectiles` stream);
    one drain shape, never both (the buffer field drops if the direct

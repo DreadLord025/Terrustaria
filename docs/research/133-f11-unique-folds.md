@@ -169,7 +169,7 @@ the sixth, `wiring_devices.rs`, receives ONLY the mass-wire append.
 - Hunks: `app/mod.rs:878-882` (field + doc), `:4002` (ctor init
   `multi_tool_mode::RED`), `app/flow.rs:2420` (the test-ctor init).
   The WiresRadial UI owns the setting — its LOGIC half landed W4-f11
-  (`ui/wires_radial.rs`, research/152; the draw passes are the contract
+  (`ui/wires_radial.rs`, research/234; the draw passes are the contract
   remainder).
 
 ### 2b. `Player.wire_operations_cooldown` + ResetEffects decrement
@@ -383,7 +383,7 @@ per 95, but these uniques must survive the dedupe).
 | §3 KEEP-in-dup witnesses ×3 | items 1/6 + `e6169bd1` (the chest-130 pin landed last) | receipt §4 |
 | §4a/4b/4c/4d DEPRECATED halves | never existed on c42 (no `tr-core::minecart`, no `wiring_devices.rs`) — nothing to drop there; the f11-side banners stand | receipt §4 |
 | §5 OLD 144/421/422/506 cross-note | honoured — the fold touched no `hit_wire_single`/`de_active` arm | receipt §3 |
-| research/151 §1a (the 8 skips collectors) + §1b (the free-fn drop/re-point) | **SUPERSEDED by union-exec item 6 `6381b52d`**: c42 chose the FREE-FN family as the one copy (the methods are thin wrappers), not f11's method-centric shape. Do NOT apply 151 §1a/§1b — the surviving f11 unique is the forced-gate WITNESS (§7.3) | 95 §10 item 6 |
+| research/233 §1a (the 8 skips collectors) + §1b (the free-fn drop/re-point) | **SUPERSEDED by union-exec item 6 `6381b52d`**: c42 chose the FREE-FN family as the one copy (the methods are thin wrappers), not f11's method-centric shape. Do NOT apply 233 §1a/§1b — the surviving f11 unique is the forced-gate WITNESS (§7.3) | 95 §10 item 6 |
 
 ### 7.1 entity-gate (`b1b140979`, 95 §8.1 CLOSED) — 14 install sites
 
@@ -544,7 +544,7 @@ self-contained and lands verbatim:
   handlers — the DrawInterface_9 order).
 - Depends on `App.wire_tool_mode` — ALREADY on c42 (fold-133 `05ae5cc6`).
 - The ~450-line DRAW passes stay the texture-wave contract
-  (research/152 §2); nothing draw-side folds now.
+  (research/234 §2); nothing draw-side folds now.
 
 ### 7.5 kite-param (`84ed6342b`) — the stream param + the drain contract
 
@@ -556,7 +556,7 @@ self-contained and lands verbatim:
 - The 3625 use arm passes `RngKey::UpdatePlayers` (f11
   `editing/wiring.rs:207-213`) — c42 target `:207` (behaviour
   unchanged, the same stream as before).
-- The kite drain is the d13-union hunk (research/153 §2, published at
+- The kite drain is the d13-union hunk (research/235 §2, published at
   f11 `projectiles.rs:423-442`; c42's pass tail is `:418-421` after
   `take_spear_hold`) — executes at the d13×c42 merge, NOT on c42 alone
   (the pool seam is d13's). One drain shape, never both.

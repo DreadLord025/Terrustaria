@@ -422,7 +422,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     }
     // W4-f11 — the Grand Design's release-death mass-wire apply
     // (`Projectile.cs:72051-72067` → `Wiring.MassWireOperation`): the
-    // ACTIVATION CONTRACT for the d13 union (research/153). d13's pool
+    // ACTIVATION CONTRACT for the d13 union (research/235). d13's pool
     // Kill hook queues `(owner, ps, pe)` (`take_mass_wire_ops`) and parks
     // them on `app.pending_mass_wire_ops` at THIS seam; the merge wave
     // drains them right here through the f11 apply:
