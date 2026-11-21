@@ -2432,6 +2432,22 @@ impl App {
                 self.world.angler_quest = q.quest; // `:3150`
                 self.world.angler_quest_finished = q.finished; // `:3151`
             }
+            // `case 77` — a temporary tile animation
+            // (`MessageBuffer.cs:3183-3185`): `Animation.NewTemporaryAnimation`
+            // has no port target (the wiring/statue animation system is
+            // unported, ANALYSIS "Traps & statues") — the read is a no-op.
+            S2c::TemporaryAnimation(_) => {}
+            // `case 78` — the invasion/moon/DD2 progress bar
+            // (`MessageBuffer.cs:3186-3191`): `Main.ReportInvasionProgress`
+            // (`Main.cs:47687-47694`) stores the four fields and arms the
+            // 160-tick display window.
+            S2c::InvasionProgress(p) => {
+                self.invasion_progress = p.progress; // `:47689`
+                self.invasion_progress_max = p.progress_max; // `:47690`
+                self.invasion_progress_icon = p.icon as i32; // `:47691`
+                self.invasion_progress_wave = p.wave as i32; // `:47692`
+                self.invasion_progress_display_left = 160; // `:47693`
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2695-2739`, `:4043-4048`,
@@ -6291,5 +6307,45 @@ mod message_family_tests {
             vec!["AnglerFan".to_string()],
             "the sender's name added once (`:3157-3161`)"
         );
+    }
+
+    /// W4-g49 `77 SyncTilePicking` (`MessageBuffer.cs:3183-3185`): the
+    /// temporary animation has no port target — the read is a no-op and the
+    /// connection survives.
+    #[test]
+    fn w4_g49_temporary_animation_is_a_noop() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.send(client_app.local_id, &S2c::TemporaryAnimation(net::TemporaryAnimation {
+                animation_type: 3,
+                tile_type: 593,
+                x: 100,
+                y: 50,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(matches!(client_app.net, NetRole::Client(_)), "the animation did not kick the client");
+    }
+
+    /// W4-g49 `78 ReportInvasionProgress` (`MessageBuffer.cs:3186-3191`): the
+    /// client stores the four progress fields and arms the 160-tick window
+    /// (`Main.ReportInvasionProgress`, `Main.cs:47687-47694`).
+    #[test]
+    fn w4_g49_invasion_progress_stores_the_bar() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.send(client_app.local_id, &S2c::InvasionProgress(net::InvasionProgress {
+                progress: 120,
+                progress_max: 200,
+                icon: 3,
+                wave: 5,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(client_app.invasion_progress, 120, "progress stored (`:47689`)");
+        assert_eq!(client_app.invasion_progress_max, 200, "max stored (`:47690`)");
+        assert_eq!(client_app.invasion_progress_icon, 3, "icon stored (`:47691`)");
+        assert_eq!(client_app.invasion_progress_wave, 5, "wave stored (`:47692`)");
+        assert_eq!(client_app.invasion_progress_display_left, 160, "the display window armed (`:47693`)");
     }
 }

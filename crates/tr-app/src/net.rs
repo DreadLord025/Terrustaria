@@ -171,6 +171,14 @@ pub mod id {
     /// (`MessageBuffer.cs:3154-3163` adds the sender's name on the host).
     /// W4-g49 (transplanted from W4-d99).
     pub const ANGLER_QUEST_FINISHED: u8 = 75;
+    /// `77 TemporaryAnimation` (`MessageID.cs:167`) — a temporary tile
+    /// animation (`NetMessage.cs:1154-1159`, `MessageBuffer.cs:3183-3185`).
+    /// W4-g49 (transplanted from W4-d99).
+    pub const TEMPORARY_ANIMATION: u8 = 77;
+    /// `78 InvasionProgressReport` (`MessageID.cs:169`) — the invasion/moon/
+    /// DD2 progress bar (`NetMessage.cs:1160-1165`,
+    /// `MessageBuffer.cs:3186-3191`). W4-g49 (transplanted from W4-d99).
+    pub const INVASION_PROGRESS: u8 = 78;
     pub const TRAVEL_SHOP: u8 = 72; // MessageID.cs:157 / NetMessage.cs:1134-1141 / MessageBuffer.cs:3118-3126
     pub const ANGLER_QUEST: u8 = 74; // MessageID.cs:161 / NetMessage.cs:1145-1148 / MessageBuffer.cs:3147-3153
     pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
@@ -1603,6 +1611,33 @@ pub struct RequestTeleport {
     pub kind: u8,
 }
 
+/// `msg 77 SyncTilePicking`'s body (`NetMessage.cs:1154-1159`):
+/// `(short)` animationType, `(ushort)` tileType, `(short)` x, `(short)` y —
+/// `Animation.NewTemporaryAnimation`'s four args verbatim
+/// (`MessageBuffer.cs:3183-3185`). Sent only by the host's
+/// `SendTemporaryAnimation` (`NetMessage.cs:2590-2596`, `netMode == 2`) to
+/// one client; server→client only. W4-g49 (from W4-d99).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TemporaryAnimation {
+    pub animation_type: i16,
+    pub tile_type: u16,
+    pub x: i16,
+    pub y: i16,
+}
+
+/// `msg 78 ReportInvasionProgress`'s body (`NetMessage.cs:1160-1165`):
+/// `(int)` progress, `(int)` progressMax, `(sbyte)` icon, `(sbyte)` wave —
+/// `Main.ReportInvasionProgress`'s four args verbatim
+/// (`MessageBuffer.cs:3186-3191`, client-only read). Server→client only.
+/// W4-g49 (from W4-d99).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvasionProgress {
+    pub progress: i32,
+    pub progress_max: i32,
+    pub icon: i8,
+    pub wave: i8,
+}
+
 /// `msg 72 TravelMerchantItems`'s body (`NetMessage.cs:1134-1141`): the
 /// `Main.travelShop` array — `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`)
 /// `short` item types (`MessageBuffer.cs:3118-3126`).
@@ -1911,6 +1946,12 @@ pub enum S2c {
     TeleportEntity(TeleportEntity),
     /// `66 Unknown66` - a peer's Moon Leech heal, relayed by the host. W4-g49.
     HealPlayer(HealPlayer),
+    /// `77 SyncTilePicking` - a temporary tile animation for one client
+    /// (`Animation.NewTemporaryAnimation`). W4-g49.
+    TemporaryAnimation(TemporaryAnimation),
+    /// `78 ReportInvasionProgress` - the invasion/moon/DD2 progress bar
+    /// (`Main.ReportInvasionProgress`). W4-g49.
+    InvasionProgress(InvasionProgress),
     /// `59 HitSwitch` - the switch a peer tripped, relayed
     /// (`MessageBuffer.cs:2691`).
     HitSwitch(HitSwitch),
@@ -2502,6 +2543,8 @@ impl S2c {
             Self::WallPaint(_) => id::WALL_PAINT,
             Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
             Self::HealPlayer(_) => id::HEAL_PLAYER,
+            Self::TemporaryAnimation(_) => id::TEMPORARY_ANIMATION,
+            Self::InvasionProgress(_) => id::INVASION_PROGRESS,
             Self::HitSwitch(_) => id::HIT_SWITCH,
             Self::PlayerChestIndex(_) => id::PLAYER_CHEST_INDEX,
             Self::ChestSize(_) => id::CHEST_SIZE,
@@ -2653,6 +2696,20 @@ impl S2c {
             }
             // `NetMessage.cs:1110-1113`: (byte)player + (short)heal.
             Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
+            // `NetMessage.cs:1154-1159`: (short)animationType +
+            // (ushort)tileType + (short)x + (short)y.
+            Self::TemporaryAnimation(a) => w
+                .i16(a.animation_type)
+                .u16(a.tile_type)
+                .i16(a.x)
+                .i16(a.y),
+            // `NetMessage.cs:1160-1165`: (int)progress + (int)max +
+            // (sbyte)icon + (sbyte)wave.
+            Self::InvasionProgress(p) => w
+                .i32(p.progress)
+                .i32(p.progress_max)
+                .i8(p.icon)
+                .i8(p.wave),
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::PlayerChestIndex(c) => w.u8(c.player_id).i16(c.chest),
             Self::ChestSize(c) => w.i16(c.chest).i16(c.size),
@@ -2835,6 +2892,20 @@ impl S2c {
             id::HEAL_PLAYER => Self::HealPlayer(HealPlayer {
                 player_id: r.u8()?,
                 heal: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3184`: short, ushort, short, short.
+            id::TEMPORARY_ANIMATION => Self::TemporaryAnimation(TemporaryAnimation {
+                animation_type: r.i16()?,
+                tile_type: r.u16()?,
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3189`: int, int, sbyte, sbyte.
+            id::INVASION_PROGRESS => Self::InvasionProgress(InvasionProgress {
+                progress: r.i32()?,
+                progress_max: r.i32()?,
+                icon: r.i8()?,
+                wave: r.i8()?,
             }),
             id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
                 x: r.i16()?,
@@ -5174,6 +5245,68 @@ mod tests {
             other => panic!("expected 75, got {:?}", other.msg_id()),
         }
         assert_eq!(r.remaining(), 0);
+    }
+
+    /// W4-g49 `77 SyncTilePicking` (`NetMessage.cs:1154-1159`): (short)number
+    /// (animationType), (ushort)number2 (tileType), (short)number3 (x),
+    /// (short)number4 (y) — `SendTemporaryAnimation`'s argument order
+    /// (`:2594`); the reader feeds Animation.NewTemporaryAnimation
+    /// (`MessageBuffer.cs:3184`). Server→client. Byte-verbatim from W4-d99.
+    #[test]
+    fn w4_g49_temporary_animation_round_trips() {
+        let a = TemporaryAnimation {
+            animation_type: 3,
+            tile_type: 593, // the campfire toggle (`Wiring.cs:1704`)
+            x: 1234,
+            y: -56,
+        };
+        let f = S2c::TemporaryAnimation(a).encode();
+        assert_eq!(f[2], 77);
+        let mut body = Vec::new();
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&593u16.to_le_bytes());
+        body.extend_from_slice(&1234i16.to_le_bytes());
+        body.extend_from_slice(&(-56i16).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TemporaryAnimation(d) => assert_eq!(d, a),
+            other => panic!("expected 77, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g49 `78 ReportInvasionProgress` (`NetMessage.cs:1160-1165`):
+    /// (int)progress, (int)max, (sbyte)icon, (sbyte)wave. Pin the DD2 shape
+    /// (icon 3, wave 5, `DD2Event.cs:191`) and a negative sbyte so the sign
+    /// survives. Byte-verbatim from W4-d99.
+    #[test]
+    fn w4_g49_invasion_progress_round_trips() {
+        for p in [
+            InvasionProgress {
+                progress: 120,
+                progress_max: 200,
+                icon: 3,
+                wave: 5,
+            },
+            InvasionProgress {
+                progress: 0,
+                progress_max: 1,
+                icon: -1,
+                wave: -2,
+            },
+        ] {
+            let f = S2c::InvasionProgress(p).encode();
+            assert_eq!(f[2], 78);
+            let mut body = Vec::new();
+            body.extend_from_slice(&p.progress.to_le_bytes());
+            body.extend_from_slice(&p.progress_max.to_le_bytes());
+            body.push(p.icon as u8);
+            body.push(p.wave as u8);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::InvasionProgress(d) => assert_eq!(d, p),
+                other => panic!("expected 78, got {:?}", other.msg_id()),
+            }
+        }
     }
 
     #[test]
