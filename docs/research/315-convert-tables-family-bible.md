@@ -1,11 +1,21 @@
-# 281 — The CONVERT-TABLES FAMILY BIBLE (W4-c32-convert, FINAL, code-only)
+# 315 — The CONVERT-TABLES FAMILY BIBLE (W4-c32-convert, FINAL, code-only)
+
+> **Renumber chain: 281 → 315.** This seal originally took 281 (self-pick per
+> §6.3 round 2); research/150 §9 UNIFIED FINAL (W4-d54 `b243c7086`) adjudicated
+> the 281-block self-pick race — §7.2's owner keeps 281, the self-pickers take
+> 308–317 in claim order — and assigns c32 **315** (§9.2 row 315; claim 9 of
+> 10). Executed per §9: `git mv` + header + all refs (INDEX/ANALYSIS/PORT_MAP/
+> ROADMAP/anchors/dungeon_styles.rs + world_hash.rs comments); `git grep`
+> zero-stale outside this chain-history banner at the pushed tip.
 
 Branch `task/W4-c32-convert` @ base `d27fb00ae` (the W4-c32 tables-only tip),
-2026-11-21. Research number **281**: registry 150 (d54 tip `72226e500`, round-2
+2026-11-21. Research number **315** (chain 281→315 per registry 150 §9 UNIFIED
+FINAL, d54 `b243c7086`; the original 281 pick below is the seal-time history).
+Originally picked as 281: registry 150 (d54 tip `72226e500`, round-2
 refresh §6.3) declares **281+ FREE** after the 151–236 + 244–280 assignment
 blocks; a fresh all-tip sweep (`git ls-tree docs/research/` over all **362**
 `task/W4-*` remote tips, post-fetch) found **no 281/282/283 doc at any tip** —
-281 is taken per the registry's "next number ≥281 after a fresh sweep" rule
+281 was taken per the registry's "next number ≥281 after a fresh sweep" rule
 (NOT max-on-origin+1). This doc is the family's FINAL cross-lane declaration:
 what landed on THIS branch, the whole `WorldGen.Convert` switch census, the
 f25/g42/d1/d103 ownership map with tip hashes, the c32 room-body seam, and the

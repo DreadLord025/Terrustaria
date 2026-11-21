@@ -291,7 +291,8 @@ mod tests {
     // wiring round (the dual-dungeon list arms + the per-style feature
     // passes) re-pins when it lands.
     // W4-c32-convert (2026-11-21, code-only): the convert-tables family
-    // SEAL (research/281) — tests + docs only (3 table-pin witnesses in
+    // SEAL (research/315, chain 281→315 per registry 150 §9) — tests + docs
+    // only (3 table-pin witnesses in
     // dungeon_styles.rs; the BiomeDungeonRoom bodies use
     // DungeonUtils.ChangeTileType NOT WorldGen.Convert, f25's Convert
     // 15/16/18/19 cells stay zero-call-site UNWIRED on f25, g42's

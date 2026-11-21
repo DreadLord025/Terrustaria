@@ -39313,8 +39313,9 @@ rustfmt/tests/dotnet invoked.**
 ## The convert-tables family seal (W4-c32-convert, 2026-11-21, code-only mode)
 
 **Scope.** The cross-lane SEAL over the `WorldGen.Convert` family from the
-c32 side — research/281 (`281-convert-tables-family-bible.md`, number taken
-per registry 150's ≥281 free block after a fresh 362-tip sweep). No
+c32 side — research/315 (`315-convert-tables-family-bible.md`, number 315 per
+registry 150 §9 UNIFIED FINAL, d54 `b243c7086`, chain 281→315 — the original
+281 self-pick per the ≥281 free block after a fresh 362-tip sweep). No
 game-logic change: 3 table-pin witnesses appended to `dungeon_styles.rs`
 (13 total on the branch) + the bible + row updates.
 

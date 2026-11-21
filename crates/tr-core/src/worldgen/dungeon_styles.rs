@@ -822,7 +822,8 @@ mod tests {
         assert_eq!(CRYSTAL.platform_items, &[3903]);
     }
 
-    /// W4-c32-convert SEAL-1 (research/281 §1/§6): the tables' style ordinals
+    /// W4-c32-convert SEAL-1 (research/315 §1/§6, chain 281→315 per registry
+    /// 150 §9 UNIFIED FINAL, d54 b243c7086): the tables' style ordinals
     /// are exactly `BiomeRoom_FinishRoom`'s switch labels
     /// (`BiomeDungeonRoom.cs:160-218` — case 2 snow / 3 desert / 5 crimson /
     /// 6 hallow; case 4 corruption's static :434-473 is the cited skip), and
@@ -852,7 +853,7 @@ mod tests {
         assert_eq!(HALLOW.brick_tile, 117);
     }
 
-    /// W4-c32-convert SEAL-2 (research/281 §4): `DungeonGenerationStyleData.
+    /// W4-c32-convert SEAL-2 (research/315 §4): `DungeonGenerationStyleData.
     /// Style` ordinals and `WorldGen.Convert`'s conversionType are DISJOINT
     /// numberings — Crystal's Style 15 is not Convert type 15 (mushroom),
     /// Snow's Style 2 is not Convert type 2 (hallow), Desert 3 ≠ mushroom-3,
@@ -888,7 +889,7 @@ mod tests {
         }
     }
 
-    /// W4-c32-convert SEAL-2 cross-pin (research/281 §2/§6): f25's UNWIRED
+    /// W4-c32-convert SEAL-2 cross-pin (research/315 §2/§6): f25's UNWIRED
     /// Convert 15/16/18/19 cells (`spread::convert_biome_cell`, f25 tip
     /// d587b128d / 9fc704a15 — zero C# call sites) produce exactly the
     /// palette ids these tables carry. The cell bodies stay f25's; this
