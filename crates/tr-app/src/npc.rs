@@ -3142,6 +3142,15 @@ impl Npc {
                             // (`NPC.cs:11342`): the death dust feed's
                             // type-136 burst reads it (`:85422`).
                             NpcKind::Crimslime => 55,
+                            // W4-g59 DOC-SWEEP — the EoW family's
+                            // `alpha = 255` spawn-fade rows (`NPC.cs:8921`
+                            // head / `:8941` body / `:8961` tail): the
+                            // `AI_006` tail (`:52251-52271`) fades it 42
+                            // per moved tick; the death dust feed's
+                            // type-18 burst reads the live value.
+                            NpcKind::EaterOfWorldsHead
+                            | NpcKind::EaterOfWorldsBody
+                            | NpcKind::EaterOfWorldsTail => 255,
                             _ => 0,
                         }
                     }),

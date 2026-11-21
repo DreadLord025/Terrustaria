@@ -183,7 +183,13 @@
 //!
 //! * `hitDirection` rides [`Npc::last_hit_dir`] (recorded at the three
 //!   strike seams; 0 for an argument-less `HitEffect()` — the C# default,
-//!   `NPC.cs:81654`).
+//!   `NPC.cs:81654`). KEEP-ONE (c12/g60/g59): the SAME field is staged
+//!   independently on all three branches (`task/W4-c12-style74-martian-
+//!   drone`, `task/W4-g60-npc-death-effects-2`, this lane) — one
+//!   `pub last_hit_dir: i32` at `npc.rs` with the same three recording
+//!   seams (hurt/hurt_from_projectile/strike_pooled) + the c12 bubble-
+//!   fuse reset; the merge keeps ONE declaration, every feed reads it.
+//!   None of the three re-records it elsewhere.
 //! * 183's `this.color`: `default(Color)` — the SetDefaults reset
 //!   (`NPC.cs:8526`) is the ONLY write for 183 (the paint-blend ladder
 //!   `:60577-60692` is type-1-only, `AI_001_Slimes`). The port's `Npc`
@@ -192,10 +198,18 @@
 //! * 183's `this.alpha` reads [`Npc::alpha`] — the ctor carries the C#
 //!   `alpha = 55` row (`NPC.cs:11342`, added with batch 1).
 //! * Batch 2's type-18 trio (6/7/13) reads `this.alpha`/`this.scale` off
-//!   the ctor: the EoW head's `alpha = 255` SetDefaults row (`:8921`) is
-//!   the spawn-fade window (`AI_006_Worms` `:50998`'s `alpha -= 42`), which
-//!   the port has not ported — the ctor keeps the steady-state 0, so the
-//!   feed reads 0 (the fade window is the worm AI lane's remainder).
+//!   the NPC. The EoW head's `alpha = 255` SetDefaults row (`:8921`,
+//!   body/tail `:8941`/`:8961`) is the spawn-fade window — NOW PORTED
+//!   (the DOC-SWEEP): the ctor carries 255 for 13/14/15 and the worm
+//!   pass runs the `AI_006` tail (`NPC.cs:52251-52271`): the 14/15 gate
+//!   on the leader's `alpha < 85`, the 2× type-14 fade dust while
+//!   `alpha > 0 && life > 0`, the movement-gated `alpha -= 42` floor 0.
+//!   The feed reads the LIVE alpha (255 → 0 over the fade, then the
+//!   steady-state 0). NOTE: the module doc's old `:50998` citation was
+//!   the CultistDragon (454-459) arm — the EoW's own fade is `:52251-
+//!   52271` (re-derived in the sweep). The 6/7 pair writes no alpha row
+//!   (the Devourer's `scale *= 1.3` `:8784` is the only family tweak),
+//!   so their feed keeps reading the ctor 0.
 //! * The 143/144/145 trio shares ONE arm; the port's bestiary id rows for
 //!   SnowBalla/MysterySnowman (144/145 vs `NPCID.cs:10965-10967`'s
 //!   MisterStabby/SnowBalla naming) are dust-neutral — every id in the
@@ -340,8 +354,9 @@ pub fn death_dust(
         // Eater of Souls (6), Devourer head (7) and EoW head (13): 50
         // type-18 puffs at `this.alpha`/`this.color`/`this.scale`. The
         // color stand-in is default (none of the three writes a color);
-        // the alpha reads the ctor (the worm spawn-fade `AI_006` is the AI
-        // lane's remainder — the steady-state 0 the port carries).
+        // the alpha reads the LIVE field — the EoW's 255 spawn fade is
+        // ported (the ctor row + the worm pass's `:52251-52271` tail,
+        // the DOC-SWEEP), 6/7 keep the ctor 0.
         6 | 7 | 13 => {
             for _ in 0..50 {
                 dust.new_dust(
