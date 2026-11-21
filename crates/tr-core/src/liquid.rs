@@ -2956,6 +2956,100 @@ mod liquid_sim {
         }
         assert!(prev > 0, "the film survives (decayed to {prev})");
     }
+
+    /// W4-g47 closeout — the honey flow throttle (`Liquid.cs:511-522`).
+    /// The honey arm returns while `delay < 10` (ten throttled visits),
+    /// then resets and flows — one down-transfer per eleven visits, the
+    /// water cadence's slower sibling. The merge check (`HoneyCheck`,
+    /// `:513`) runs BEFORE the gate, exactly like the lava arm's
+    /// `LavaCheck`. Carried from the g45/g46 witness union
+    /// (`honey_falls_once_every_eleven_visits`); the g47 fixtures need no
+    /// evaporation sentinel (no evap block on this lane — g46d grafts it).
+    #[test]
+    fn honey_falls_once_every_eleven_visits() {
+        let mut w = shelf_world();
+        for y in 0..=30 {
+            stone_row(&mut w, 29, 29, y);
+            stone_row(&mut w, 31, 31, y);
+        }
+        stone_row(&mut w, 30, 30, 30);
+        let i = w.index(30, 0);
+        w.tiles[i].liquid = 255;
+        set_kind(&mut w.tiles[i], 2);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 30, 0);
+        for _ in 0..10 {
+            sys.update(&mut w);
+        }
+        assert_eq!(w.tiles[w.index(30, 0)].liquid, 255, "ten throttled visits");
+        sys.update(&mut w);
+        assert_eq!(w.tiles[w.index(30, 1)].liquid, 255, "the first fall on visit 11");
+        // Visit 12 clears the fall's skipLiquid flag (`:1096-1104`),
+        // visits 13-22 throttle, visit 23 flows — the second fall.
+        for _ in 0..12 {
+            sys.update(&mut w);
+        }
+        assert_eq!(w.tiles[w.index(30, 2)].liquid, 255, "the second fall on visit 23");
+    }
+
+    /// W4-g47 closeout — shimmer has NO delay gate (`Liquid.cs:542-545`:
+    /// the arm runs `ShimmerCheck` and falls straight through — no
+    /// `delay++`/return). A shimmer column falls one tile per two passes
+    /// like water (the down arm's `skipLiquid` pair, `:586-587`), and its
+    /// `delay` field stays 0 through every visit. The per-liquid census
+    /// verdict: water/shimmer ungated, lava 1-in-6, honey 1-in-11.
+    #[test]
+    fn shimmer_falls_every_visit_ungated() {
+        let mut w = shelf_world();
+        for y in 0..=30 {
+            stone_row(&mut w, 29, 29, y);
+            stone_row(&mut w, 31, 31, y);
+        }
+        stone_row(&mut w, 30, 30, 30);
+        let i = w.index(30, 0);
+        w.tiles[i].liquid = 255;
+        set_kind(&mut w.tiles[i], 3);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 30, 0);
+        for _ in 0..10 {
+            sys.update(&mut w);
+        }
+        assert_eq!(w.tiles[w.index(30, 5)].liquid, 255, "10 passes -> 5 tiles down");
+        assert_eq!(w.tiles[w.index(30, 0)].liquid, 0, "the source drained");
+        let entry = sys.active.iter().find(|e| (e.x, e.y) == (30, 5)).unwrap();
+        assert_eq!(entry.delay, 0, "no delay gate ever armed");
+    }
+
+    /// W4-g47 closeout — the quickFall bypass for BOTH throttled kinds
+    /// (`Liquid.cs:1083-1090`: the loop forces `delay = 10` before every
+    /// Update, so the lava `delay < 5` and honey `delay < 10` gates never
+    /// fire). Carried from the union's `quick_fall_bypasses_the_delay_gate`
+    /// (lava half) + the honey twin; `quick_settle` arms the pass-head
+    /// derivation (`:1056-1068`), not the derived field.
+    #[test]
+    fn quick_fall_bypasses_both_delay_gates() {
+        for kind in [1u8, 2u8] {
+            let mut w = shelf_world();
+            for y in 0..=30 {
+                stone_row(&mut w, 29, 29, y);
+                stone_row(&mut w, 31, 31, y);
+            }
+            stone_row(&mut w, 30, 30, 30);
+            let i = w.index(30, 0);
+            w.tiles[i].liquid = 255;
+            set_kind(&mut w.tiles[i], kind);
+            let mut sys = LiquidSystem::new(&w);
+            sys.set_quick_settle(true);
+            sys.add_water(&w, 30, 0);
+            for _ in 0..12 {
+                sys.update(&mut w);
+            }
+            assert_eq!(
+                w.tiles[w.index(30, 12)].liquid, 255,
+                "kind {kind}: quickFall flows every visit"
+            );
+        }
+    }
 }
 
 /// W4-g47 — the quick-settle witnesses: the two `Liquid.Update` arms
