@@ -689,7 +689,10 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
         219 | 642 => check_3x3_bottom(world, x, y, kind),
-        42 => check_lantern(world, x, y),
+        // `Check1x2Top` (`WorldGen.cs:46706`, dispatch :85752-85759): the
+        // hanging lantern 42, the critter bottles 270/271/581/660, the soul
+        // bottles 572 and the Dead-Cells display jar 698.
+        42 | 270 | 271 | 572 | 581 | 660 | 698 => check_1x2_top(world, x, y),
         79 | 90 => check_bed_bathtub(world, x, y),
         82 | 83 | 84 => check_alch(world, x, y),
         93 => check_lamp(world, x, y),
@@ -1426,10 +1429,17 @@ fn check_bookcase(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     })
 }
 
-/// `WorldGen.Check1x2Top` (`WorldGen.cs:46706-46776`) for the hanging lantern
-/// (42): the two cells carry the style-row frames and the tile ABOVE is a
-/// solid (or a platform — the placement alternate's anchor).
-fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+/// `WorldGen.Check1x2Top` (`WorldGen.cs:46706-46813`) for the hanging lantern
+/// (42), the firefly/lightning-bug/lavafly/shimmerfly bottles (270/271/581/
+/// 660), the soul bottles (572) and the Dead-Cells display jar (698): the two
+/// cells carry the style-row frames and the tile ABOVE anchors them. The
+/// anchor judge (:46760-46765): `flag2` (42/270/271/572/581/660) accepts a
+/// platform or planter-box 380; `flag3` (698 only) additionally accepts a
+/// rope; every kind accepts a solid non-solid-top above. The drop
+/// (:46787-46811): the lantern rides `GetItemDrop_Lanterns(style)` (style 0 →
+/// 136 via `by_tile`), the bottles drop their fixed bottle item, the soul
+/// bottles `4695 + style`, the jar 5472.
+fn check_1x2_top(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     let mut num2 = world.tile(x, y)?.frame_y as i32 / 18;
     let mut style_row = 0i32;
@@ -1440,7 +1450,7 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let oy = y - num2;
     let top_frame = (style_row * 36) as i16;
     let mut broken = false;
-    let mut region = vec![(x, oy), (x, oy + 1)];
+    let region = vec![(x, oy), (x, oy + 1)];
     let top = world.tile(x, oy);
     let bot = world.tile(x, oy + 1);
     if !top.is_some_and(|c| c.active() && c.kind == kind && c.frame_y == top_frame)
@@ -1448,36 +1458,51 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     {
         broken = true;
     }
-    // The anchor: solid above; the platform flag mirrors the placement
-    // alternate (`flag4`, `WorldGen.cs:46752-46756` — the rope branch is the
-    // Dead-Cells jar's, not the lantern's).
+    // The anchor judge (:46743-46765). `flag2` = the platform/380 group
+    // (42/270/271/572/581/660); `flag3` = the rope group (698 only).
+    let flag2 = matches!(kind, 42 | 270 | 271 | 572 | 581 | 660);
+    let flag3 = kind == 698;
     let above = world.tile(x, oy - 1);
     let platform_ok =
         above.is_some_and(|a| a.active() && (td::SET_PLATFORMS.has(a.kind) || a.kind == 380));
+    let rope_ok = above.is_some_and(|a| a.active() && td::TILE_ROPE.has(a.kind));
     let solid_ok = above.is_some_and(|a| {
-        (a.active() || a.has_any_liquid())
+        crate::tileobject::nactive(a)
             && td::TILE_SOLID.has(a.kind)
             && !td::TILE_SOLID_TOP.has(a.kind)
     });
-    if !platform_ok && !solid_ok {
+    // :46762 — `(!flag2 || !flag4) && (!flag3 || !flag5) && !solid`.
+    if (!flag2 || !platform_ok) && (!flag3 || !rope_ok) && !solid_ok {
         broken = true;
     }
     if !broken {
         return None;
     }
+    // The drop (:46787-46811). The lantern's style table resolves through
+    // `by_tile` (style 0 → 136); the bottles/jar carry fixed items, the soul
+    // bottles `4695 + style`.
+    let item = match kind {
+        270 => Some(1993), // FireflyinaBottle
+        271 => Some(2005), // LightningBuginaBottle
+        581 => Some(4848), // LavaflyinaBottle
+        660 => Some(5351), // ShimmerflyinaBottle
+        572 => Some(4695 + style_row), // SoulBottles
+        698 => Some(5472), // DeadCellsDisplayJar
+        _ => None,         // 42 lantern → by_tile (GetItemDrop_Lanterns)
+    };
     Some(CheckPlan {
         drop: Some(ObjectDrop {
             tile_kind: kind,
             x,
-            y,
-            item: None,
+            y: oy,
+            item,
         }),
         cells: killable_cells(world, &region, kind),
         pot_event: None,
         herb_event: None,
         pile_event: None,
         ring: None,
-        // floats until a later break (`WorldGen.cs`'s check_lantern).
+        // floats until a later break (`WorldGen.cs`'s Check1x2Top has no tail).
     })
 }
 
@@ -5840,5 +5865,70 @@ mod tests {
         assert_all_gone(&w, &cells);
         assert!(kill.object_drops.is_empty(), "the sandcastle drops nothing");
         assert!(kill.pile_events.is_empty());
+    }
+
+    // ---- W4-g34: the Check1x2Top bottle break-drop (research/68 §2) ----
+
+    /// A hanging 1x2 bottle under a stone ceiling: ceiling (10, 16), bottle
+    /// cells (10, 17)/(10, 18) with frames 0/18 (style 0).
+    fn bottle_world(kind: u16) -> World {
+        let mut w = object_world();
+        set_object_cell(&mut w, 10, 16, 1, 0, 0); // stone ceiling anchor
+        set_object_cell(&mut w, 10, 17, kind, 0, 0);
+        set_object_cell(&mut w, 10, 18, kind, 0, 18);
+        w
+    }
+
+    #[test]
+    fn w4_g34_bottle_1x2_top_break_drops_the_bottle_item() {
+        // `Check1x2Top` (`WorldGen.cs:46787-46811`): breaking a bottle cell
+        // sweeps both and drops the bottle item at (trigger x, origin y).
+        for (kind, item) in [
+            (270u16, Some(1993i32)), // FireflyinaBottle
+            (271, Some(2005)),       // LightningBuginaBottle
+            (581, Some(4848)),       // LavaflyinaBottle
+            (660, Some(5351)),       // ShimmerflyinaBottle
+            (572, Some(4695)),       // SoulBottles style 0 → 4695 + 0
+            (698, Some(5472)),       // DeadCellsDisplayJar
+        ] {
+            let mut w = bottle_world(kind);
+            let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+            assert_all_gone(&w, &[(10, 17), (10, 18)]);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            // The drop is at (trigger x, origin y) = (10, 17).
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 17));
+            assert_eq!(kill.object_drops[0].item, item, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_bottle_1x2_top_hangs_from_a_platform() {
+        // :46760-46762 — the flag2 group (the bottles) accepts a platform
+        // above as the anchor. The bottle survives on a platform ceiling.
+        let mut w = object_world();
+        set_object_cell(&mut w, 10, 16, 19, 0, 0); // platform anchor
+        set_object_cell(&mut w, 10, 17, 270, 0, 0);
+        set_object_cell(&mut w, 10, 18, 270, 0, 18);
+        // Break a far cell — the intact bottle on the platform survives.
+        let kill = kill_tile(&mut w, 12, 18, false).unwrap();
+        assert!(
+            !kill.object_drops.iter().any(|d| d.tile_kind == 270),
+            "the platform carries the bottle"
+        );
+        assert!(w.tile(10, 17).is_some_and(|t| t.active() && t.kind == 270));
+    }
+
+    #[test]
+    fn w4_g34_lantern_42_still_drops_via_by_tile() {
+        // The lantern 42 keeps its style-0 drop through `by_tile` (136, the
+        // Chain Lantern) — the rename to check_1x2_top preserves its record.
+        let mut w = bottle_world(42);
+        let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+        assert_all_gone(&w, &[(10, 17), (10, 18)]);
+        assert_eq!(kill.object_drops.len(), 1);
+        assert_eq!(kill.object_drops[0].tile_kind, 42);
+        assert_eq!(kill.object_drops[0].item, None, "the lantern resolves via by_tile");
+        assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 17));
     }
 }
