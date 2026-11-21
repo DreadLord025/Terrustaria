@@ -1984,11 +1984,24 @@ impl ItemDropRule for DropPerPlayerOnThePlayer {
                 };
             }
         }
-        // One `Next(min, max + 1)` roll per active player.
+        // `DropPerPlayerOnThePlayer.TryDroppingItem`
+        // (`DropPerPlayerOnThePlayer.cs:22-29`): the stack
+        // `info.rng.Next(min, max + 1)` is a CALL ARGUMENT to
+        // `CommonCode.DropItemForEachInteractingPlayerOnThePlayer` — it
+        // draws ONCE, BEFORE the per-player gate (the C# argument
+        // evaluation order), even when every gate misses. The gate is
+        // the PLAIN `rng.Next(chanceDenominator) < chanceNumerator`
+        // (`CommonCode.cs:45/:51` — NOT RollLuck), and the CommonCode
+        // tail zeroes `npc.value` unconditionally (`CommonCode.cs:55`).
+        let stack = info.rng.next_range(self.amount_min, self.amount_max + 1);
         for _ in 0..info.active_players {
-            if info.rng.next_range(0, self.chance_denominator.max(1)) == 0 {
-                let stack = info.rng.next_range(self.amount_min, self.amount_max + 1);
-                out.push(drop_request(self.item, stack, false));
+            if info.rng.next_range(0, self.chance_denominator.max(1)) < 1 {
+                out.push(DropRequest {
+                    item: self.item,
+                    stack,
+                    scattered: false,
+                    resets_money: true,
+                });
             }
         }
         DropAttemptResult {
@@ -2758,6 +2771,68 @@ mod tests {
             // would panic "script exhausted".
             assert_eq!(rng.ranges, [(0, 1), (1, 2)], "luck {luck}");
         }
+    }
+
+    /// W4-f35 doc-sweep: the master pet/mount rule
+    /// (`DropPerPlayerOnThePlayer.cs:22-29` → `CommonCode.cs:34-56`)
+    /// draws the stack ONCE as a call argument BEFORE the per-player
+    /// gate (the C# argument-evaluation order), the gate is the PLAIN
+    /// `rng.Next(denominator)` (no RollLuck), and the CommonCode tail
+    /// zeroes `npc.value` even when every gate misses. The denominator
+    /// is `_masterModeDropRng = 4` (`ItemDropDatabase.cs:15`).
+    #[test]
+    fn w4_f35_master_pet_draws_the_stack_before_the_gate() {
+        // Gate HIT: stack draw first (1,2), then the gate (0,4) = 0.
+        let mut rng = ScriptRng::new(&[], &[1, 0]);
+        let mut i = DropAttemptInfo {
+            is_master: true,
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(
+            master_mode_drop_on_all_players(4797, 4).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out.len(), 1);
+        assert_eq!((out[0].item, out[0].stack), (4797, 1));
+        assert!(out[0].resets_money, "CommonCode.cs:55 zeroes npc.value");
+        drop(i);
+        // The STACK draw precedes the gate draw (the argument order).
+        assert_eq!(rng.ranges, [(1, 2), (0, 4)]);
+
+        // Gate MISS: the stack STILL draws (the argument is evaluated
+        // before the call), the gate (0,4) = 3 misses, nothing drops —
+        // but the money reset still fires (the unconditional tail).
+        let mut rng = ScriptRng::new(&[], &[1, 3]);
+        let mut i = DropAttemptInfo {
+            is_master: true,
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        resolve_rule(
+            master_mode_drop_on_all_players(4797, 4).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert!(out.is_empty(), "the 1/4 gate missed");
+        drop(i);
+        assert_eq!(rng.ranges, [(1, 2), (0, 4)], "the stack drew anyway");
+
+        // NOT master: the DropBasedOnMasterMode normal arm is
+        // DropNothing — no draws at all.
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = info_npc(&mut rng, LootNpc::default());
+        let mut out = Vec::new();
+        resolve_rule(
+            master_mode_drop_on_all_players(4797, 4).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert!(out.is_empty());
+        drop(i);
+        assert!(rng.ranges.is_empty(), "the classic arm draws nothing");
     }
 
     #[test]
