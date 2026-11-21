@@ -125,6 +125,9 @@ pub struct PlayerFile {
     /// `Player.usedGummyWorm` (`Player.cs:2074`, load `:55259`, the 260+
     /// six-unlock block's FIFTH bool) — W4-g89. Same version gate.
     pub used_gummy_worm: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`, load `:55260`, the 260+
+    /// six-unlock block's SIXTH bool) — W4-g89c. Same version gate.
+    pub used_ambrosia: bool,
     pub is_favorite: bool,
     pub revision: u32,
 }
@@ -333,6 +336,7 @@ fn read_player_fields(
     // The unlock/seed bools (`:55235-55262`).
     let mut used_aegis_fruit = false; // W4-g89 — set by the 260+ block below
     let mut used_gummy_worm = false; // W4-g89 — same block, fifth bool
+    let mut used_ambrosia = false; // W4-g89c — same block, sixth bool
     let _extra = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
     if version >= 229 {
         r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
@@ -345,9 +349,11 @@ fn read_player_fields(
         }
         if version >= 260 {
             // The six shimmer/permanent unlocks (`:55255-55260`). W4-g89
-            // keeps the SECOND bool — `usedAegisFruit` (`:55256`) — and the
-            // FIFTH — `usedGummyWorm` (`:55259`); the other four stay
-            // consumed-and-dropped until their tasks land.
+            // keeps the SECOND bool — `usedAegisFruit` (`:55256`), the
+            // FIFTH — `usedGummyWorm` (`:55259`) — and the SIXTH —
+            // `usedAmbrosia` (`:55260`, W4-g89c); the first/third/fourth
+            // (a6's crystals + pearl) stay consumed-and-dropped until
+            // their task lands.
             r.boolean()
                 .ok_or(PlayerFileError::Truncated("unlock"))?; // usedAegisCrystal `:55255`
             used_aegis_fruit = r
@@ -359,8 +365,9 @@ fn read_player_fields(
             used_gummy_worm = r
                 .boolean()
                 .ok_or(PlayerFileError::Truncated("usedGummyWorm"))?; // `:55259`
-            r.boolean()
-                .ok_or(PlayerFileError::Truncated("unlock"))?; // usedAmbrosia `:55260`
+            used_ambrosia = r
+                .boolean()
+                .ok_or(PlayerFileError::Truncated("usedAmbrosia"))?; // `:55260`
         }
     }
     if version >= 182 {
@@ -459,6 +466,7 @@ fn read_player_fields(
             inv_favorites,
             used_aegis_fruit,
             used_gummy_worm,
+            used_ambrosia,
             is_favorite,
             revision,
         ));
@@ -520,6 +528,7 @@ fn read_player_fields(
             inv_favorites,
             used_aegis_fruit,
             used_gummy_worm,
+            used_ambrosia,
             is_favorite,
             revision,
         ));
@@ -674,6 +683,7 @@ fn read_player_fields(
         inv_favorites,
         used_aegis_fruit,
         used_gummy_worm,
+        used_ambrosia,
         is_favorite,
         revision,
     ))
@@ -696,6 +706,7 @@ fn finish_player_file(
     inv_favorites: u64,
     used_aegis_fruit: bool,
     used_gummy_worm: bool,
+    used_ambrosia: bool,
     is_favorite: bool,
     revision: u32,
 ) -> PlayerFile {
@@ -720,6 +731,7 @@ fn finish_player_file(
         inv_favorites,
         used_aegis_fruit,
         used_gummy_worm,
+        used_ambrosia,
         is_favorite,
         revision,
     }
@@ -819,6 +831,7 @@ fn read_legacy_port_subset(
         // reads it only on the full 326 walk).
         used_aegis_fruit: false,
         used_gummy_worm: false,
+        used_ambrosia: false,
         is_favorite,
         revision,
     })
@@ -854,6 +867,9 @@ pub struct PlayerFileWrite {
     /// `Player.usedGummyWorm` (`Player.cs:2074`, save `:54785`) — W4-g89.
     /// The 5341 permanent +3 fishing-skill unlock, same block.
     pub used_gummy_worm: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`, save `:54786`) — W4-g89c.
+    /// The 5342 permanent mining/placement-speed unlock, same block.
+    pub used_ambrosia: bool,
     /// `DateTime.UtcNow.ToBinary()` at save time (`Player.cs:54909`) — the
     /// one wall-clock field in `Serialize`. The port does not track a clock,
     /// so the caller stamps it (0 = the port's historical "unknown" stamp);
@@ -917,7 +933,7 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.boolean(false); // `:54783` usedArcaneCrystal (`:56080`)
     w.boolean(false); // `:54784` usedGalaxyPearl (`:56081`)
     w.boolean(file.used_gummy_worm); // `:54785` usedGummyWorm (`:56082`, W4-g89)
-    w.boolean(false); // `:54786` usedAmbrosia (`:56083`)
+    w.boolean(file.used_ambrosia); // `:54786` usedAmbrosia (`:56083`, W4-g89c)
     w.boolean(false); // `:54787` downedDD2EventAnyDifficulty
     w.i32(0); // `:54788` taxMoney
     w.i32(0); // `:54789` numberOfDeathsPVE
@@ -1193,6 +1209,7 @@ mod tests {
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
             used_aegis_fruit: false,
             used_gummy_worm: false,
+            used_ambrosia: false,
             last_saved_binary: 0,
         }
     }
@@ -1312,6 +1329,38 @@ mod tests {
         let plain_file =
             read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert!(!plain_file.used_gummy_worm);
+    }
+
+    /// W4-g89c — `usedAmbrosia` round-trips through its `Serialize` slot
+    /// (`Player.cs:54786` write / `:55260` read, the 260+ unlock block's
+    /// SIXTH and LAST bool). The walk stays aligned through the whole
+    /// block: the two kept bools before it and the inventory/favourites
+    /// after read unchanged.
+    #[test]
+    fn w4_g89c_the_ambrosia_unlock_round_trips_the_plr() {
+        let written = PlayerFileWrite {
+            used_ambrosia: true,
+            ..sample()
+        };
+        let bytes = write_player_bytes(&written);
+        let file = read_player_bytes(&cbc_decrypt(&bytes)).expect("the unlock file reads");
+        assert!(file.used_ambrosia, "the :54786 bool survived");
+        assert!(!file.used_aegis_fruit && !file.used_gummy_worm);
+        assert_eq!(file.inventory, sample().inventory);
+        assert_eq!(file.inv_favorites, sample().inv_favorites);
+        // All three kept flags together: independent bools in block order.
+        let all = PlayerFileWrite {
+            used_aegis_fruit: true,
+            used_gummy_worm: true,
+            used_ambrosia: true,
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&all))).unwrap();
+        assert!(file.used_aegis_fruit && file.used_gummy_worm && file.used_ambrosia);
+        // The fresh sample writes false and reads false.
+        let plain_file =
+            read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(!plain_file.used_ambrosia);
     }
 
     /// The 322+ armour/dye favourited bytes are version-gated on read: a
@@ -1553,6 +1602,7 @@ mod tests {
             inv_favorites: 1 << 3,
             used_aegis_fruit: false, // the harness player used no upgrade
             used_gummy_worm: false,
+            used_ambrosia: false,
             // FixtureClock.UtcNow.ToBinary() (Shims/FixtureClock.cs):
             // 2026-11-18T00:00:00Z, DateTimeKind.Utc → kind bits 01, no
             // offset: ticks 639305568000000000 | 0x4000000000000000.

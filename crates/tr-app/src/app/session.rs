@@ -267,6 +267,7 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // A fresh character has used no permanent upgrade (`Player.cs:56079`).
         used_aegis_fruit: false,
         used_gummy_worm: false, // `Player.cs:56082`
+        used_ambrosia: false,   // `Player.cs:56083`
         // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the port tracks
         // no save clock; 0 is the documented "unknown" stamp (ANALYSIS).
         last_saved_binary: 0,

@@ -39338,3 +39338,49 @@ WRITTEN, NOT RUN: `editing.rs` (unlock-once + consume + 45-tick cadence
 :54785/:55259 fifth-bool round-trip, both-flags independence, walk
 alignment), `persist.rs` (v8 round-trip + the v7 one-token back-read;
 the v6 witness extended with the worm-absent assert).
+
+## W4-g89c — the Ambrosia permanent upgrade (2026-11-21, code-only)
+
+The 5342 Ambrosia (shimmer-crafted) is a once-ever permanent
+mining/placement-speed unlock — `Player.usedAmbrosia` (`Player.cs:862`).
+This completes `UpdatePermanentBoosters` (`:12851-12867`): ALL THREE rows
+now ported (Aegis Fruit +4 defense, Gummy Worm +3 fishing, Ambrosia
+speeds), in the C#'s own order.
+
+- **Census correction**: Ambrosia is **5342**, not 5336. 5336 is the
+  Combat Book Volume Two ("Advanced Combat Techniques") — a WORLD-global
+  `NPC.combatBookVolumeTwoWasUsed` flag (`ItemCheck_UseCombatBook`
+  `:45337-45347`, persisted in the .wld flags block, NOT a .plr bool);
+  4383 is the Ultrabright Torch. The 5337 "Vital Crystal" is the Aegis
+  Crystal — its effect is `lifeRegenTime += 0.2f` (`:19113-19116`, the
+  regen RAMP clock, not flat life regen), a6's claim.
+- **The booster row VERBATIM** (`:12861-12866`): `pickSpeed -= 0.05f;
+  tileSpeed += 0.05f; wallSpeed += 0.05f`. The port's signed bonuses
+  mirror the C# fields minus their 1f base: the pick SUBTRACT maps to
+  `pick_speed_bonus += 0.05` (`pick_speed()` reads `1 - bonus`), the
+  tile/wall ADDs map to `+= 0.05` on the bonus accumulators
+  (`tile_speed_multiplier`'s `1/(1+bonus)` cap-3 invert,
+  `:25913-25922`). Re-added every tick after ResetEffects resets the
+  three (`:18690`, `:18531-18532`); the flag never clears.
+- **The use path**: `use_ambrosia` on the shared
+  `use_shimmer_permanent_item` core (`Player.cs:45417-45422`), the LAST
+  arm of the C# function; 45-tick cadence (`Item.cs:42386-42395`),
+  consumable pay + TurnToAir, once-ever gate, no net sync.
+- **The .plr slot**: the 260+ six-unlock block now keeps its SIXTH bool
+  (`usedAmbrosia`, write `:54786` / read `:55260`). Three remain
+  consumed-and-dropped — exactly a6's claimed 5337/5339/5340.
+- **The sidecar**: `.trplayer` version 9 appends the ambrosia as the
+  unlock line's THIRD token; v7/v8 short lines back-read, v3-v6 read
+  none. The App sidecar restore seeds all three flags.
+
+### Verification (W4-g89c)
+
+Code-only: re-read `Player.cs:45417-45422` / `:12861-12866` /
+`:18531-18532` / `:18690` / `:25913-25922` / `:54786` / `:55260` /
+`:56083` and `Item.cs:42386-42395`; **no cargo/rustc/rustfmt/tests/
+graphify invoked**. Four witness tests WRITTEN, NOT RUN: `player.rs`
+(the three speeds per tick, the 1/1.05 inverts, no compounding, flag
+survives ResetEffects), `editing.rs` (unlock-once + consume + cadence +
+TurnToAir + refusal), `player_file.rs` (the :54786/:55260 sixth-bool
+round-trip, all-three independence, walk alignment), `persist.rs` (v9
+round-trip + the v8 two-token back-read; the v6 witness extended).

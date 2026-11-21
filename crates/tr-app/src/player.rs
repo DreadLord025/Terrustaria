@@ -2133,6 +2133,13 @@ pub struct Player {
     /// cleared by ResetEffects — a permanent unlock (the player-file
     /// field, ctor `:56079` false, save `:54782` / load `:55256`).
     pub used_aegis_fruit: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia
+    /// permanent mining/placement speed (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45417-45422`, `UpdatePermanentBoosters` `:12861-12866` —
+    /// `pickSpeed -= 0.05f; tileSpeed += 0.05f; wallSpeed += 0.05f`). NOT
+    /// cleared by ResetEffects — a permanent unlock (the player-file
+    /// field, ctor `:56083` false, save `:54786` / load `:55260`).
+    pub used_ambrosia: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2935,6 +2942,7 @@ impl Player {
             override_fishing_bobber: -1,
             used_gummy_worm: false,
             used_aegis_fruit: false, // `Player.cs:56079`
+            used_ambrosia: false,    // `Player.cs:56083`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -6875,6 +6883,19 @@ impl Player {
         // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
         if self.used_gummy_worm {
             self.fishing_skill += 3;
+        }
+        // W4-g89c — `UpdatePermanentBoosters`' Ambrosia row
+        // (`Player.cs:12861-12866`): `pickSpeed -= 0.05f; tileSpeed +=
+        // 0.05f; wallSpeed += 0.05f` — the LAST row of the pass (the C#'s
+        // own order: fruit, worm, ambrosia). The port's signed
+        // `pick_speed_bonus` mirrors `1 - pickSpeed` (`pick_speed()`
+        // reads `1 - bonus`), so the C# SUBTRACT maps to an ADD here;
+        // the tile/wall bonuses are the C# fields minus their 1f base
+        // (`tile_speed_multiplier`'s `1/(1+bonus)` fold).
+        if self.used_ambrosia {
+            self.pick_speed_bonus += 0.05;
+            self.tile_speed_bonus += 0.05;
+            self.wall_speed_bonus += 0.05;
         }
         // S1-P-i35 — `UpdateEquips`' post-loop bobber row
         // (`Player.cs:12985-12988`): the glow-bobber accessory's +10 skill,
@@ -12352,6 +12373,47 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 4, "one +4 per tick, no compounding");
         assert!(p.used_aegis_fruit, "ResetEffects never clears the unlock");
+    }
+
+    /// W4-g89c — `UpdatePermanentBoosters`' Ambrosia row
+    /// (`Player.cs:12861-12866`, called at `:25644`): `pickSpeed -= 0.05f;
+    /// tileSpeed += 0.05f; wallSpeed += 0.05f`, re-added EVERY tick after
+    /// `ResetEffects` resets the three (`:18690` pickSpeed=1f, `:18531`
+    /// wallSpeed=1f, `:18532` tileSpeed=1f) — the flag itself is never cleared
+    /// (ctor `:56083` false). The port's signed bonuses mirror the C#
+    /// fields minus their 1f base (pick: `1 - bonus`; tile/wall:
+    /// `1/(1 + bonus)`).
+    #[test]
+    fn w4_g89c_the_ambrosia_speeds_apply_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_ambrosia, "ctor false (`Player.cs:56083`)");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.pick_speed(), 1.0, "no ambrosia, base pickSpeed 1f");
+        assert_eq!(p.tile_speed_multiplier(), 1.0);
+        assert_eq!(p.wall_speed_multiplier(), 1.0);
+        p.used_ambrosia = true;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            (p.pick_speed() - 0.95).abs() < 1e-6,
+            "pickSpeed -= 0.05 (`:12863`): {}",
+            p.pick_speed()
+        );
+        assert!(
+            (p.tile_speed_multiplier() - 1.0 / 1.05).abs() < 1e-6,
+            "tileSpeed += 0.05 (`:12864`), the :25913-25917 invert"
+        );
+        assert!(
+            (p.wall_speed_multiplier() - 1.0 / 1.05).abs() < 1e-6,
+            "wallSpeed += 0.05 (`:12865`), the :25918-25922 invert"
+        );
+        // The next tick's ResetEffects reset + re-add: same values, never
+        // compounding — the unlock is a bool, not a stack.
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed() - 0.95).abs() < 1e-6, "one row per tick");
+        assert!((p.tile_speed_bonus - 0.05).abs() < 1e-6);
+        assert!((p.wall_speed_bonus - 0.05).abs() < 1e-6);
+        assert!(p.used_ambrosia, "ResetEffects never clears the unlock");
     }
 
     /// M3-EQUIP-14 — the Celestial Stone bundle and the day/night stones.

@@ -1720,6 +1720,15 @@ fn use_gummy_worm(app: &mut App, held: ItemSlot) -> bool {
     use_shimmer_permanent_item(app, held, 5341, already, |p| p.used_gummy_worm = true)
 }
 
+/// W4-g89c — the 5342 Ambrosia arm (`Player.cs:45417-45422`): the
+/// permanent mining/placement speed (`UpdatePermanentBoosters`
+/// `:12861-12866` — `pickSpeed -= 0.05f; tileSpeed += 0.05f;
+/// wallSpeed += 0.05f`). The LAST arm of the C# function.
+fn use_ambrosia(app: &mut App, held: ItemSlot) -> bool {
+    let already = app.player.as_ref().is_some_and(|p| p.used_ambrosia);
+    use_shimmer_permanent_item(app, held, 5342, already, |p| p.used_ambrosia = true)
+}
+
 /// Refresh the crack overlay's `mine_timer`/`mine_hardness` from the
 /// `HitTile` book's damage at the cell — the port's projection of the C#
 /// `HitTile` damage onto the 0..100 crack ladder (`render/tile_cracks.rs`,
@@ -2427,6 +2436,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // permanent +3 fishing skill (the i35 booster row's MISSING use
         // path). Same fold, same once-ever gate.
         if use_gummy_worm(app, held) {
+            return;
+        }
+        // W4-g89c — the 5342 Ambrosia arm (`Player.cs:45417-45422`): the
+        // permanent mining/placement speed (`:12861-12866`), the LAST arm
+        // of `ItemCheck_UseShimmerPermanentItems`.
+        if use_ambrosia(app, held) {
             return;
         }
         // (Resync keep-one: the gate's i19 inline mana-potion arm was
@@ -16943,6 +16958,49 @@ mod use_loop_tests {
         let dirt = other.inventory[other.selected];
         assert!(!super::use_gummy_worm(&mut other, dirt));
         assert!(!other.player.as_ref().unwrap().used_gummy_worm);
+    }
+
+    /// W4-g89c — the 5342 Ambrosia use arm
+    /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45417-45422`):
+    /// ONE press unlocks `usedAmbrosia`, pays one and re-arms the 45-tick
+    /// cadence (`Item.cs:42386-42395`). A second Ambrosia is refused
+    /// (`!usedAmbrosia`, `:45417`) — the stack stays; the last one
+    /// TurnToAirs.
+    #[test]
+    fn w4_g89c_the_ambrosia_unlocks_once_and_consumes_one() {
+        let mut app = app_with_staff(5342);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.player.as_ref().unwrap().used_ambrosia,
+            "the unlock latched (`:45420`)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45419`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second Ambrosia: the once-ever gate refuses.
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_ambrosia(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+        // The last Ambrosia TurnToAirs; a non-Ambrosia never enters the arm.
+        let mut last = app_with_staff(5342);
+        let held = last.inventory[last.selected];
+        assert!(super::use_ambrosia(&mut last, held));
+        assert_eq!(last.inventory[last.selected].count, 0);
+        assert_eq!(last.inventory[last.selected].kind, 0, "TurnToAir folded");
+        let mut other = app_with_staff(2); // Dirt Block
+        let dirt = other.inventory[other.selected];
+        assert!(!super::use_ambrosia(&mut other, dirt));
+        assert!(!other.player.as_ref().unwrap().used_ambrosia);
     }
 
     /// W4-g89 — the last fruit in the stack TurnToAirs on the consume tick

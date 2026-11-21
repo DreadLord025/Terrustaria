@@ -2539,6 +2539,7 @@ pub(crate) mod front_flow_tests {
                 inv_favorites: 0,
                 used_aegis_fruit: false,
                 used_gummy_worm: false,
+                used_ambrosia: false,
                 last_saved_binary: 0,
             },
         )

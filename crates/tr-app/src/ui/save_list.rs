@@ -662,6 +662,7 @@ mod tests {
             inv_favorites: 0,
             used_aegis_fruit: false,
             used_gummy_worm: false,
+            used_ambrosia: false,
             last_saved_binary: 0,
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
@@ -729,6 +730,7 @@ mod tests {
             inv_favorites: 0,
             used_aegis_fruit: false,
             used_gummy_worm: false,
+            used_ambrosia: false,
             last_saved_binary: 0,
         };
         crate::player_file::write_player_file(path, &file).unwrap();
@@ -998,6 +1000,7 @@ mod tests {
                 inv_favorites: 1 << 0 | 1 << 4,
                 used_aegis_fruit: false,
                 used_gummy_worm: false,
+                used_ambrosia: false,
                 last_saved_binary: 0,
             },
         )

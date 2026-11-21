@@ -2945,6 +2945,9 @@ impl App {
                     // `:12857-12860`).
                     p.used_aegis_fruit = saved.used_aegis_fruit;
                     p.used_gummy_worm = saved.used_gummy_worm;
+                    // W4-g89c — the Ambrosia rides the third token (v9,
+                    // `:55260`; the speed row `:12861-12866`).
+                    p.used_ambrosia = saved.used_ambrosia;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;

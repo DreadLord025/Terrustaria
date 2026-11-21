@@ -36,6 +36,11 @@ pub struct SavedPlayer {
     /// `:55259`) — version 8 of the sidecar (W4-g89), the SECOND token on
     /// the unlock line. The permanent +3 fishing skill (`:12857-12860`).
     pub used_gummy_worm: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`, save `:54786` / load
+    /// `:55260`) — version 9 of the sidecar (W4-g89c), the THIRD token on
+    /// the unlock line. The permanent mining/placement speed
+    /// (`:12861-12866`).
+    pub used_ambrosia: bool,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
@@ -58,7 +63,7 @@ pub fn save(
     dye: &[u16; 10],
     kills: &[(String, i32)],
 ) -> std::io::Result<()> {
-    let mut s = format!("8\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("9\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -80,11 +85,13 @@ pub fn save(
     s.push_str("\n");
     // Version 7 (W4-g89): the permanent shimmer unlocks on their own line
     // — `Player.usedAegisFruit` (`Player.cs:54782`), 0/1. Version 8 appends
-    // `Player.usedGummyWorm` (`:54785`) as the line's second token.
+    // `Player.usedGummyWorm` (`:54785`); version 9 (W4-g89c) appends
+    // `Player.usedAmbrosia` (`:54786`) as the third token.
     s.push_str(&format!(
-        "{} {}\n",
+        "{} {} {}\n",
         u8::from(player.used_aegis_fruit),
-        u8::from(player.used_gummy_worm)
+        u8::from(player.used_gummy_worm),
+        u8::from(player.used_ambrosia)
     ));
     std::fs::write(player_path(world), s)
 }
@@ -96,10 +103,10 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
         // dye kinds; 7 the permanent shimmer unlocks (W4-g89); 8 the Gummy
-        // Worm token on that line; 3 stores vanilla `ItemID`s; 1 and 2
-        // stored the ad-hoc tile/wall/weapon/coin ranges and are converted
-        // on load.
-        "3" | "4" | "5" | "6" | "7" | "8" => false,
+        // Worm token on that line; 9 the Ambrosia token (W4-g89c); 3 stores
+        // vanilla `ItemID`s; 1 and 2 stored the ad-hoc tile/wall/weapon/coin
+        // ranges and are converted on load.
+        "3" | "4" | "5" | "6" | "7" | "8" | "9" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -126,7 +133,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if matches!(version, "4" | "5" | "6" | "7" | "8") {
+    if matches!(version, "4" | "5" | "6" | "7" | "8" | "9") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -134,7 +141,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if matches!(version, "5" | "6" | "7" | "8") {
+    if matches!(version, "5" | "6" | "7" | "8" | "9") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -149,7 +156,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if matches!(version, "6" | "7" | "8") {
+    if matches!(version, "6" | "7" | "8" | "9") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
@@ -157,17 +164,20 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 7 (W4-g89) adds the permanent shimmer unlock flags
     // (`Player.usedAegisFruit`, `Player.cs:55256`); version 8 appends
-    // `usedGummyWorm` (`:55259`) as the second token. Older files load with
-    // the unlocks absent; a v7 line has only the first token.
-    let (used_aegis_fruit, used_gummy_worm) = if matches!(version, "7" | "8") {
-        let line = lines.next()?;
-        let mut tokens = line.split_whitespace();
-        let fruit = tokens.next().is_some_and(|t| t == "1");
-        let worm = tokens.next().is_some_and(|t| t == "1");
-        (fruit, worm)
-    } else {
-        (false, false)
-    };
+    // `usedGummyWorm` (`:55259`), version 9 `usedAmbrosia` (`:55260`).
+    // Older files load with the unlocks absent; a v7 line has one token,
+    // a v8 line two.
+    let (used_aegis_fruit, used_gummy_worm, used_ambrosia) =
+        if matches!(version, "7" | "8" | "9") {
+            let line = lines.next()?;
+            let mut tokens = line.split_whitespace();
+            let fruit = tokens.next().is_some_and(|t| t == "1");
+            let worm = tokens.next().is_some_and(|t| t == "1");
+            let ambrosia = tokens.next().is_some_and(|t| t == "1");
+            (fruit, worm, ambrosia)
+        } else {
+            (false, false, false)
+        };
     Some(SavedPlayer {
         x,
         y,
@@ -179,6 +189,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         kills,
         used_aegis_fruit,
         used_gummy_worm,
+        used_ambrosia,
     })
 }
 
@@ -279,6 +290,40 @@ mod tests {
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
+    /// W4-g89c — the Ambrosia unlock rides the v9 unlock line's THIRD
+    /// token (`Player.usedAmbrosia`, save `Player.cs:54786` / load
+    /// `:55260`); a v8 two-token line loads with the ambrosia absent while
+    /// both earlier halves still read.
+    #[test]
+    fn w4_g89c_the_ambrosia_unlock_round_trips_and_v8_back_reads() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.used_ambrosia = true;
+        let dir = crate::test_world_helpers::test_scratch("persist-ambrosia");
+        let path = dir.join("tr-persist-ambrosia.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("the v9 sidecar");
+        assert!(s.used_ambrosia, "the unlock persisted");
+        assert!(!s.used_aegis_fruit && !s.used_gummy_worm);
+        // All three flags round-trip independently.
+        p.used_aegis_fruit = true;
+        p.used_gummy_worm = true;
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("the v9 sidecar");
+        assert!(s.used_aegis_fruit && s.used_gummy_worm && s.used_ambrosia);
+        // A v8 file: the unlock line carries two tokens.
+        let mut line = String::from("8\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n0 \n1007 0 0 0 0 1015 0 0 0 0 \n0 1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the v8 sidecar still reads");
+        assert!(!s.used_aegis_fruit && s.used_gummy_worm, "the v8 tokens read");
+        assert!(!s.used_ambrosia, "a v8 line carries no ambrosia token");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
     /// W4-g89 — a v6 sidecar (no unlock line) loads with the Aegis Fruit
     /// unlock absent; the version gate keeps the old files readable.
     #[test]
@@ -294,6 +339,7 @@ mod tests {
         let s = load(&path).expect("the v6 sidecar still reads");
         assert!(!s.used_aegis_fruit, "older files carry no unlock");
         assert!(!s.used_gummy_worm, "older files carry no worm either");
+        assert!(!s.used_ambrosia, "nor ambrosia");
         assert_eq!(s.dye[0], 1007, "the v6 dye line still parses");
         crate::test_world_helpers::remove_scratch(&dir);
     }
