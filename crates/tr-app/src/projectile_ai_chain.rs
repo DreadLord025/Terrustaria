@@ -49,8 +49,8 @@
 //!   19523`), every other kind keeps the collision velocity; all set
 //!   `ai[0] = 1` (the return — NO velocity reversal for style 13,
 //!   `:19561-19568`) + the Dig thud (`PlaySound(0)` `:19571`). The
-//!   world-edge flag feeds the same response (`:17900-17903`, the
-//!   boomerang precedent). `UpdatePosition` integrates the POST-bounce
+//!   world-edge flag (`:17900`) is aiStyle-3-ONLY — style 13 probes
+//!   tiles only. `UpdatePosition` integrates the POST-bounce
 //!   velocity (`:20445`); `AutomaticallyChangesDirection` (`:17283`)
 //!   excludes 13 at `ai[0] == 1` — the direction follows the X sign
 //!   only while outbound.
@@ -263,17 +263,16 @@ pub(crate) fn chain_step(
     // The movement half (`HandleMovement`'s 3/13/69/109 arm,
     // `:19512-19571`): the blocked-move probe (the port's
     // `collides_rect` stand-in for `Collision.TileCollision`, which
-    // zeroes the blocked axis — the M4-PROJ-3 deviation), the
-    // world-edge flag (`:17900-17903`), the 23's stick and the shared
-    // return arm. The RETURN state keeps `tileCollide = false` — no
-    // probe, the free move.
+    // zeroes the blocked axis — the M4-PROJ-3 deviation), the 23's
+    // stick and the shared return arm. The world-edge flag (`:17900`)
+    // is aiStyle-3-ONLY — style 13 probes tiles only (the out-of-world
+    // guard at the sub-step head handles the edge). The RETURN state
+    // keeps `tileCollide = false` — no probe, the free move.
     if p.tile_collide {
         let nx = p.pos.x + p.vel.x;
         let ny = p.pos.y + p.vel.y;
-        let mut hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
-        let mut hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
-        hit_x |= p.pos.x <= 0.0 || p.pos.x + p.w >= world.width as f32 * 16.0;
-        hit_y |= p.pos.y <= 0.0 || p.pos.y + p.h >= world.height as f32 * 16.0;
+        let hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
+        let hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
         if hit_x || hit_y {
             // `Collision.TileCollision` zeroes the blocked axis
             // (`Collision.cs:299-330`); the probe stand-in applies the

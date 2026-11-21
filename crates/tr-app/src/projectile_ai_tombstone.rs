@@ -403,9 +403,11 @@ mod tests {
         let mut p = tomb(203); // style 3
         p.misc_text = "Tester was slain...".into();
         // The probe cell: ((x+12)/16, (y+24−4)/16) = (20, 29) — the
-        // cell just above the floor row 30. Park so the probe lands
-        // there: x+12 ∈ [320,336) → x = 320; y+20 ∈ [464,480) → y = 460.
-        p.pos = Vec2::new(320.0, 460.0);
+        // AIR cell just above the floor row 30. Park so the probe lands
+        // there: x+12 ∈ [320,336) → x = 320; y+20 ∈ [464,480) → y = 450
+        // (470/16 = 29). The 2x2 object spans rows 28-29 (origin (0,1)),
+        // its bottom anchor row 30 = the solid floor.
+        p.pos = Vec2::new(320.0, 450.0);
         p.vel = Vec2::ZERO;
         let mut rng = Recorder { draws: Vec::new(), next: 1 };
         let rng_before = w.place_rng.clone();
@@ -432,7 +434,7 @@ mod tests {
         let mut w = floor_world();
         let mut p = tomb(43);
         p.owner = 1; // foreign
-        p.pos = Vec2::new(320.0, 460.0);
+        p.pos = Vec2::new(320.0, 450.0);
         p.vel = Vec2::ZERO;
         let mut rng = Recorder { draws: Vec::new(), next: 1 };
         tombstone_step(&mut p, &mut w, &mut rng, 0, false);
