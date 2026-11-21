@@ -22,6 +22,34 @@
 //! it), and no ported arm draws `Main.rand` — the feed is pure, so its
 //! placement cannot move any stream.
 //!
+//! **Seal round (2026-11-21, the g18 research/360 §2 row-absence re-probe):**
+//! the re-probe over every pushed lane tip found SIX of the 19 unrowed
+//! kinds NOW ROWED — 435 MartianTurretBolt (W4-c11 `data.rs:1924`,
+//! `Projectile.cs:5056-5063`), 576 NebulaLaser (W4-d11 `data.rs:2517`,
+//! `:6258-6269`), 606 ScutlixLaser (W4-d8 `data.rs:1772` / W4-c14 `:1987`,
+//! `:6530-6541`), 707 MonkStaffT3 (W4-d14 `data.rs:2664` / W4-d15 `:4066`,
+//! `:7474-7490`), 708 MonkStaffT3_Alt (W4-d15 `:4072`, `:7491-7507`),
+//! 709 MonkStaffT3_AltShot (W4-d15 `:4081`, `:7508-7520`). FOUR activate
+//! here as new sub-ifs (435/576/606/709 — the d8-606 research/226 §5
+//! contract template; e6's if-chain does not auto-activate like c19's
+//! collector): each light is an unconditional self-centre `AddLight`,
+//! RNG-free, so the feed stays pure and its signature unchanged. The
+//! 707/708 lights ride the OWNER's centre (`player.Center`, AI_140
+//! `:69507` / AI_142 `:69885` behind `!player.frozen`) — NOT the
+//! projectile's — so they stay absent as owner-centre-seam task seeds
+//! (the rows are cited; the feed carries no player slice). The rows stay
+//! the lanes' to merge (keep-one — this branch copies NO rows); the arms
+//! match `kind` directly, live the moment a slot can carry the kind.
+//! Accounting: **24 ported sites / 27 light contributions, 16 absent**
+//! (13 still-unrowed kinds + the 2 owner-centre seeds + the `:78556` rand
+//! gate). Family headline: c19's sealed 63 covered / 4 absent (its
+//! kind-group register; the phaseblade pair counts once there, twice in
+//! the line census) + e6's 24 covered / 16 absent → the g18 bible §2
+//! **86 covered / 21 absent of 107** merge-state census (63 + 20 + the
+//! 6 now-rowed kinds; the site-granularity reconciliation — the 978
+//! trio's unreachable third term and the 707/708 owner-centre seeds —
+//! is recorded in the seal note, research/367 §2).
+//!
 //! **The site register (all 40, in line order):**
 //!
 //! * `:54173` — 436 BrainScramblerBolt (`AI_001`): `(int)Center/16`,
@@ -35,7 +63,10 @@
 //!   (0.4, 0.85, 0.9). The `:54670-54673` box rewrite (`position = Center`,
 //!   `width = height = (int)(22*scale)`, `Center = position`) keeps the
 //!   centre invariant, so the slot's centre is the exact anchor. PORTED.
-//! * `:54714` — 709 MonkStaffT3_AltShot: no row. Absent.
+//! * `:54714` — 709 MonkStaffT3_AltShot: PORTED (seal round) — rowed by
+//!   W4-d15 (`data.rs:4081`, `Projectile.cs:7508-7520`). `(int)Center/16`,
+//!   (0.4, 0.85, 0.9), unconditional after the fade/frame machine (the
+//!   459 twin colour).
 //! * `:54755` — 442 ElectrosphereMissile (`AI_001`): `(int)Center/16`,
 //!   (0.3, 0.45, 0.8), inside `if (alpha == 0)` AFTER the `localAI[1] >= 120`
 //!   kill (`:54750-54754`) — the port's `ai_electrosphere_missile` runs that
@@ -43,12 +74,22 @@
 //! * `:54784` — 440 LaserMachinegunLaser: no row. Absent.
 //! * `:54788` — 449 SaucerLaser (`AI_001`'s 440/449/606 shared arm):
 //!   `(int)Center/16`, (0.7, 0.65, 0.3). PORTED.
-//! * `:54792` — 606 ScutlixLaser: no row. Absent.
+//! * `:54792` — 606 ScutlixLaser: PORTED (seal round) — rowed by W4-d8
+//!   (`data.rs:1772`) / W4-c14 (`:1987`), `Projectile.cs:6530-6541`. The
+//!   shared arm's 606 sub-if: `AddLight(Center, 0.7, 0.3, 0.3)` — the
+//!   Vector2 overload truncates the QUOTIENT (`XAnchor::Center`), NOT the
+//!   coordinate-first form the 440/449 sub-ifs use (the d8 research/226
+//!   §5 activation contract).
 //! * `:54831` — 438 RayGunnerLaser (`AI_001`): `(int)Center/16`,
 //!   (0.4, 0.1, 0.2). PORTED.
 //! * `:54835` — 593 AncientDoomProjectile: no row. Absent.
 //! * `:54858` — 592 MartianWalkerLaser: no row. Absent.
-//! * `:54932` — 435 MartianTurretBolt: no row. Absent.
+//! * `:54932` — 435 MartianTurretBolt: PORTED (seal round) — rowed by
+//!   W4-c11 (`data.rs:1924`, `Projectile.cs:5056-5063`; the c11
+//!   research/284 §2 four-owner compose table names this site the ONE
+//!   lights-family gap). `(int)Center/16`, (0.3, 0.8, 1.1),
+//!   unconditional after the ai[1] Item12 latch / fade-40 / 3-tick
+//!   4-frame machine (the f20 slice-E overlay owns those sim writes).
 //! * `:54968` — 682 DD2LightningBugZap: no row. Absent.
 //! * `:54992` — 684 DD2SquireSonicBoom: no row. Absent.
 //! * `:55137` — 350 Missile (`AI_001`): `(int)Center/16`, (0.9, 0.6, 0.2).
@@ -58,7 +99,10 @@
 //! * `:56126` — 585 ClothiersCurse: no row. Absent (the colour rides
 //!   `NPCID.Sets.MagicAuraColor[54]` = (100, 4, 227)/255, `NPCID.cs:10475`).
 //! * `:56294` — 577 VortexLaser: no row. Absent.
-//! * `:56298` — 576 NebulaLaser: no row. Absent.
+//! * `:56298` — 576 NebulaLaser: PORTED (seal round) — rowed by W4-d11
+//!   (`data.rs:2517`, `Projectile.cs:6258-6269`). `AddLight(Center,
+//!   0.4, 0.2, 0.4)` — quotient truncation; the 5-dust trail that
+//!   follows in the C# block is the dust lane's, skipped.
 //! * `:56421` — 819 BloodArrow (`AI_001`'s else-if chain): `Center`,
 //!   (0.3, 0.05, 0.05). PORTED.
 //! * `:57185` — 312 JackOLantern: no row. Absent.
@@ -92,10 +136,15 @@
 //! * `:69332` — 691/692/693 DD2ExplosiveTrapT1-3 (`AI_138`'s shared tail,
 //!   after the sentry-backpack reposition): `Center`, (0.6, 0.5, 0.3).
 //!   PORTED.
-//! * `:69507` — 707 MonkStaffT3 (`AI_140`): no row. Absent (the anchor is
-//!   the OWNER's centre, not the projectile's).
-//! * `:69885` — 708 MonkStaffT3_Alt (`AI_142`): no row. Absent (same
-//!   owner-centre anchor, behind `!player.frozen`).
+//! * `:69507` — 707 MonkStaffT3 (`AI_140`): rowed by W4-d14
+//!   (`data.rs:2664`) / W4-d15 (`:4066`), but the anchor is the OWNER's
+//!   centre (`player.Center`, `Main.player[this.owner]`), NOT the
+//!   projectile's — absent as an owner-centre-seam task seed (seal
+//!   round; the feed carries no player slice beyond the 445 hand).
+//! * `:69885` — 708 MonkStaffT3_Alt (`AI_142`): rowed by W4-d15
+//!   (`:4072`); same owner-centre anchor, behind `!player.frozen`
+//!   (`:69829`) — absent, same task seed (the frozen flag would ride
+//!   the owner snapshot when the seam lands).
 //! * `:78556` — the lightning-liquid electrification scan
 //!   (`SpawnLightningLiquidElectrificationParticles(int, int)`): the
 //!   `Main.rand.Next(4) == 0` gate (`:78549`) draws on the projectile
@@ -166,9 +215,12 @@ pub(crate) fn proj_ai_lights(
             tile_y(pos, h, XAnchor::Center),
             rgb,
         ));
-    } else if kind == CHARGED_BLASTER_ORB {
+    } else if kind == CHARGED_BLASTER_ORB || kind == 709 {
         // `:54674` — `(int)Center/16`, (0.4, 0.85, 0.9). The `:54670-54673`
         // box rewrite keeps the centre invariant (module docs).
+        // `:54714` — the 709 MonkStaffT3_AltShot twin (seal round, rowed
+        // by W4-d15 `data.rs:4081`): the same colour/anchor form,
+        // unconditional after its fade/frame machine (`:54697-54713`).
         out.push((
             tile_x(pos, w, XAnchor::CenterTruncated),
             tile_y(pos, h, XAnchor::CenterTruncated),
@@ -193,12 +245,35 @@ pub(crate) fn proj_ai_lights(
             tile_y(pos, h, XAnchor::CenterTruncated),
             [0.7, 0.65, 0.3],
         ));
+    } else if kind == 606 {
+        // `:54790-54793` — the same shared arm's 606 sub-if (seal round,
+        // rowed by W4-d8 `data.rs:1772` / W4-c14 `:1987`, the research/226
+        // §5 activation contract): `AddLight(base.Center, 0.7, 0.3, 0.3)`
+        // — the Vector2 overload truncates the QUOTIENT, unlike the
+        // 440/449 sub-ifs' coordinate-first form above.
+        out.push((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [0.7, 0.3, 0.3],
+        ));
     } else if kind == RAY_GUNNER {
         // `:54829-54832` — `(int)Center/16`, (0.4, 0.1, 0.2).
         out.push((
             tile_x(pos, w, XAnchor::CenterTruncated),
             tile_y(pos, h, XAnchor::CenterTruncated),
             [0.4, 0.1, 0.2],
+        ));
+    } else if kind == 435 {
+        // `:54909-54933` — the 435 MartianTurretBolt block (seal round,
+        // rowed by W4-c11 `data.rs:1924`, the research/284 §2 compose
+        // table): `(int)Center/16`, (0.3, 0.8, 1.1), unconditional after
+        // the ai[1] Item12 latch / fade-40 / 3-tick 4-frame machine (the
+        // f20 slice-E overlay owns those sim writes; the light reads none
+        // of them).
+        out.push((
+            tile_x(pos, w, XAnchor::CenterTruncated),
+            tile_y(pos, h, XAnchor::CenterTruncated),
+            [0.3, 0.8, 1.1],
         ));
     } else if kind == MISSILE || kind == FLAMING_WOOD {
         // `:55130-55137` (350) / `:55164-55171` (325) — the twin arms:
@@ -217,6 +292,17 @@ pub(crate) fn proj_ai_lights(
             tile_x(pos, w, XAnchor::Center),
             tile_y(pos, h, XAnchor::Center),
             [0.3, 0.05, 0.05],
+        ));
+    } else if kind == 576 {
+        // `:56292-56298` — the 577/576 else-if pair's 576 arm (seal
+        // round, rowed by W4-d11 `data.rs:2517`): `AddLight(base.Center,
+        // 0.4, 0.2, 0.4)` — quotient truncation. The 5-dust trail below
+        // it in the C# block is the dust lane's, skipped. The 577 stays
+        // absent (no row on any pushed lane).
+        out.push((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [0.4, 0.2, 0.4],
         ));
     }
     // `AI_026`'s foxsparks pair (`:58203-58227`): the light is
@@ -530,6 +616,74 @@ mod tests {
                 crate::projectile::proj_data(kind).is_some(),
                 "kind {kind} must have a row"
             );
+        }
+    }
+
+    #[test]
+    fn the_seal_round_435_bolt_lights_blue_at_the_truncated_centre() {
+        // `:54932` — the 435 MartianTurretBolt (seal round, rowed by
+        // W4-c11 `data.rs:1924`): `(int)Center/16`, (0.3, 0.8, 1.1),
+        // unconditional (the latch/fade/frame writes above it are the
+        // f20 overlay's sim state; the light reads none of them). The
+        // 16x16 box at (160, 176) centres on (168, 184) → (10, 11).
+        assert_eq!(at(435), vec![(10, 11, [0.3, 0.8, 1.1])]);
+    }
+
+    #[test]
+    fn the_seal_round_576_nebula_laser_lights_violet_at_the_quotient_centre() {
+        // `:56298` — the 576 NebulaLaser (seal round, rowed by W4-d11
+        // `data.rs:2517`): `AddLight(Center, 0.4, 0.2, 0.4)`, the Vector2
+        // quotient-truncation anchor. The 577 twin stays dark (no row).
+        assert_eq!(at(576), vec![(10, 11, [0.4, 0.2, 0.4])]);
+        assert!(at(577).is_empty());
+    }
+
+    #[test]
+    fn the_seal_round_606_scutlix_laser_lights_red_at_the_quotient_centre() {
+        // `:54792` — the 606 ScutlixLaser (seal round, rowed by W4-d8
+        // `data.rs:1772` / W4-c14 `:1987`, the research/226 §5 contract):
+        // `AddLight(Center, 0.7, 0.3, 0.3)` — QUOTIENT truncation, unlike
+        // the shared arm's 449 sub-if (`(int)Center/16`, orange). The 440
+        // stays dark (no row). The anchor forms agree for real coords
+        // (the sweep above), but the colour split is the arm's identity.
+        assert_eq!(at(606), vec![(10, 11, [0.7, 0.3, 0.3])]);
+        assert_eq!(at(SAUCER_LASER)[0].2, [0.7, 0.65, 0.3]);
+        assert!(at(440).is_empty());
+    }
+
+    #[test]
+    fn the_seal_round_709_alt_shot_shares_the_459_teal() {
+        // `:54714` — the 709 MonkStaffT3_AltShot (seal round, rowed by
+        // W4-d15 `data.rs:4081`): `(int)Center/16`, (0.4, 0.85, 0.9) —
+        // the 459 twin colour/anchor, unconditional after the fade/frame
+        // machine.
+        assert_eq!(at(709), vec![(10, 11, [0.4, 0.85, 0.9])]);
+        assert_eq!(at(709), at(CHARGED_BLASTER_ORB));
+    }
+
+    #[test]
+    fn the_seal_round_owner_centre_seeds_stay_dark() {
+        // `:69507` (707) / `:69885` (708) — rowed by W4-d14/W4-d15, but
+        // the light rides `player.Center` (the OWNER, AI_140/AI_142's
+        // `Main.player[this.owner]`; the 708 behind `!player.frozen`
+        // `:69829`), NOT the projectile centre. The feed carries no
+        // player slice beyond the 445 hand — both stay absent as
+        // owner-centre-seam task seeds (research/367 §2).
+        assert!(at(707).is_empty());
+        assert!(at(708).is_empty());
+    }
+
+    #[test]
+    fn the_seal_round_activated_kinds_resolve_rows_when_their_lanes_land() {
+        // The keep-one activation contract (the c19 round-2 precedent):
+        // the rows stay W4-c11/d11/d8/c14/d15's to merge — this branch
+        // copies NONE. Until then `proj_data` reads None here and the
+        // arms are inert by the spawn gate (no slot can carry the kind);
+        // once a lane's row lands the arm is live with no further edit.
+        for kind in [435u16, 576, 606, 709] {
+            if let Some(d) = crate::projectile::proj_data(kind) {
+                assert!(d.ai_style > 0, "kind {kind} rowed with a style");
+            }
         }
     }
 }
