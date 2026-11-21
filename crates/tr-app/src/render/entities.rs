@@ -1118,6 +1118,13 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // W4-d42 - the folded kinds keep their OWN draw sheets (the
         // ForceBubble precedent - the bestiary credit folds, the
         // sheet does not).
+        NpcKind::BlackDragonfly => 595,
+        NpcKind::BlueDragonfly => 596,
+        NpcKind::GreenDragonfly => 597,
+        NpcKind::OrangeDragonfly => 598,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
         NpcKind::ArmedTorchZombie => 591,
         NpcKind::GoldGoldfishWalker => 593,
         // W4-d42 - the folded kinds keep their OWN draw sheets (the
@@ -3180,6 +3187,25 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::BlackDragonfly => {
+                generic_anchor(assets.npc_sheet(595), npc_rows(595), n, w, h)
+            }
+            NpcKind::BlueDragonfly => {
+                generic_anchor(assets.npc_sheet(596), npc_rows(596), n, w, h)
+            }
+            NpcKind::GreenDragonfly => {
+                generic_anchor(assets.npc_sheet(597), npc_rows(597), n, w, h)
+            }
+            NpcKind::OrangeDragonfly => {
+                generic_anchor(assets.npc_sheet(598), npc_rows(598), n, w, h)
+            }
+            NpcKind::RedDragonfly => {
+                generic_anchor(assets.npc_sheet(599), npc_rows(599), n, w, h)
             }
             // W4-d42 - the roster's draw arms ride the generic anchor over
             // their own NPC_<id> sheets. The sheets are NOT packed yet

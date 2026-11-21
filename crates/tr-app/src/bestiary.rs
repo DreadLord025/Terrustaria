@@ -2273,6 +2273,16 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Windy Balloon",
     },
+    // W4-d42 - the NPCID 595-599 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "RedDragonfly",
+        net_id: 599,
+        kind: NpcKind::RedDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2472,6 +2482,12 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // one credit per family (the SleepingGolfer precedent).
         NpcKind::ArmedTorchZombie => NpcKind::TorchZombie,
         NpcKind::GoldGoldfishWalker => NpcKind::GoldGoldfish,
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::BlackDragonfly => NpcKind::RedDragonfly,
+        NpcKind::BlueDragonfly => NpcKind::RedDragonfly,
+        NpcKind::GreenDragonfly => NpcKind::RedDragonfly,
+        NpcKind::OrangeDragonfly => NpcKind::RedDragonfly,
         other => other,
     };
     ENTRIES

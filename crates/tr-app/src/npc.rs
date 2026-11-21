@@ -1159,6 +1159,26 @@ pub enum NpcKind {
     /// 20x20, aiStyle 113, dmg 0, def 0,
     /// 1 HP, kb 0.3, value 0.
     WindyBalloon,
+    /// `NPCID.BlackDragonfly` (595) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:
+    /// 10x10, aiStyle 114, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    BlackDragonfly,
+    /// `NPCID.BlueDragonfly` (596) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:
+    /// 10x10, aiStyle 114, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    BlueDragonfly,
+    /// `NPCID.GreenDragonfly` (597) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:
+    /// 10x10, aiStyle 114, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    GreenDragonfly,
+    /// `NPCID.OrangeDragonfly` (598) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:
+    /// 10x10, aiStyle 114, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    OrangeDragonfly,
+    /// `NPCID.RedDragonfly` (599) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:
+    /// 10x10, aiStyle 114, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    RedDragonfly,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3625,6 +3645,12 @@ impl Npc {
             NpcKind::GoldGoldfish => 0.5,
             NpcKind::GoldGoldfishWalker => 1.0,
             NpcKind::WindyBalloon => 0.3,
+            // W4-d42 - the NPCID 595-599 SetDefaults rows.
+            NpcKind::BlackDragonfly => 1.0,
+            NpcKind::BlueDragonfly => 1.0,
+            NpcKind::GreenDragonfly => 1.0,
+            NpcKind::OrangeDragonfly => 1.0,
+            NpcKind::RedDragonfly => 1.0,
             _ => 0.4,
         }
     }
@@ -4023,6 +4049,12 @@ impl Npc {
             NpcKind::GoldGoldfish => 0,
             NpcKind::GoldGoldfishWalker => 0,
             NpcKind::WindyBalloon => 0,
+            // W4-d42 - the NPCID 595-599 SetDefaults rows.
+            NpcKind::BlackDragonfly => 0,
+            NpcKind::BlueDragonfly => 0,
+            NpcKind::GreenDragonfly => 0,
+            NpcKind::OrangeDragonfly => 0,
+            NpcKind::RedDragonfly => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4413,6 +4445,12 @@ impl Npc {
             NpcKind::GoldGoldfish => 0.0,
             NpcKind::GoldGoldfishWalker => 0.0,
             NpcKind::WindyBalloon => 0.0,
+            // W4-d42 - the NPCID 595-599 SetDefaults rows.
+            NpcKind::BlackDragonfly => 0.0,
+            NpcKind::BlueDragonfly => 0.0,
+            NpcKind::GreenDragonfly => 0.0,
+            NpcKind::OrangeDragonfly => 0.0,
+            NpcKind::RedDragonfly => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6419,6 +6457,25 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // ---- W4-d42 batch 4: the NPCID 595-599 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)` - aiStyle 114 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::BlackDragonfly => {}
+            // `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)` - aiStyle 114 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::BlueDragonfly => {}
+            // `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)` - aiStyle 114 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GreenDragonfly => {}
+            // `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)` - aiStyle 114 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::OrangeDragonfly => {}
+            // `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)` - aiStyle 114 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::RedDragonfly => {}
             // ---- W4-d42 batch 3: the NPCID 590-594 roster
             // (data-only join). Unwired styles idle in place (the
             // wyvern precedent); walkers ride the aiStyle-3 family,
@@ -9479,6 +9536,17 @@ impl Npc {
             NpcKind::WindyBalloon => {
                 self.sprite_dir = 1;
                 self.frame = self.ai[2] as u32;
+            }
+            // W4-d42 - `FindFrame` case 595-601 (`NPC.cs:72722-72738`):
+            // the direction-locked flap, the row = counter/3 over the
+            // 4-frame strip (12-tick lap).
+            NpcKind::BlackDragonfly | NpcKind::BlueDragonfly | NpcKind::GreenDragonfly | NpcKind::OrangeDragonfly | NpcKind::RedDragonfly => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 12.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = self.frame_counter as u32 / 3;
             }
         }
     }
@@ -19059,6 +19127,12 @@ impl Npc {
             NpcKind::GoldGoldfish => 592,
             NpcKind::GoldGoldfishWalker => 593,
             NpcKind::WindyBalloon => 594,
+            // W4-d42 - the vanilla ids 595-599 are free render keys.
+            NpcKind::BlackDragonfly => 595,
+            NpcKind::BlueDragonfly => 596,
+            NpcKind::GreenDragonfly => 597,
+            NpcKind::OrangeDragonfly => 598,
+            NpcKind::RedDragonfly => 599,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24127,7 +24201,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 285] = [
+    pub(super) const ALL_KINDS: [NpcKind; 290] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24424,6 +24498,12 @@ mod tests {
         NpcKind::GoldGoldfish,
         NpcKind::GoldGoldfishWalker,
         NpcKind::WindyBalloon,
+        // W4-d42 - the NPCID 595-599 roster.
+        NpcKind::BlackDragonfly,
+        NpcKind::BlueDragonfly,
+        NpcKind::GreenDragonfly,
+        NpcKind::OrangeDragonfly,
+        NpcKind::RedDragonfly,
     ];
 
     #[test]
@@ -24626,6 +24706,42 @@ mod tests {
         assert_eq!(NpcKind::GoldGoldfishWalker.to_u16(), 367u16);
         assert_eq!(NpcKind::WindyBalloon.to_u16(), 368u16);
         assert_eq!(ALL_KINDS.len(), 285);
+    }
+
+    /// W4-d42 batch 4 - the NPCID 595-599 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16720-16738 (catchItem type-595+4334 :16737), NPC.cs:16720-16738 (catchItem type-595+4334 :16737), NPC.cs:16720-16738 (catchItem type-595+4334 :16737), NPC.cs:16720-16738 (catchItem type-595+4334 :16737), NPC.cs:16720-16738 (catchItem type-595+4334 :16737)), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b4_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BlackDragonfly, 595u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::BlueDragonfly, 596u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::GreenDragonfly, 597u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::OrangeDragonfly, 598u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::RedDragonfly, 599u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The port-local wire band (the vanilla types ride cs_id/net_id).
+        assert_eq!(NpcKind::BlackDragonfly.to_u16(), 369u16);
+        assert_eq!(NpcKind::BlueDragonfly.to_u16(), 370u16);
+        assert_eq!(NpcKind::GreenDragonfly.to_u16(), 371u16);
+        assert_eq!(NpcKind::OrangeDragonfly.to_u16(), 372u16);
+        assert_eq!(NpcKind::RedDragonfly.to_u16(), 373u16);
+        assert_eq!(ALL_KINDS.len(), 290);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -28143,7 +28259,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            285,
+            290,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

@@ -511,6 +511,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::GoldGoldfish
         | NpcKind::GoldGoldfishWalker
         | NpcKind::WindyBalloon => &[31],
+        // W4-d42 - the NPCID 595-599 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::BlackDragonfly
+        | NpcKind::BlueDragonfly
+        | NpcKind::GreenDragonfly
+        | NpcKind::OrangeDragonfly
+        | NpcKind::RedDragonfly => &[31],
     }
 }
 
