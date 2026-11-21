@@ -560,6 +560,67 @@ const TRACKED_CUES: &[&str] = &[
     "dd2_dark_mage_attack_0",
     "dd2_dark_mage_attack_1",
     "dd2_dark_mage_attack_2",
+    // W4-d80 final — the DD2 riders census round (research/64 final):
+    // Betsy's circle-attack / dash-scream one-shots (`NPC.cs:62109`/
+    // `:62136`), the ogre's attack/pound/spit (`:63082`/`:63100`/`:63114`),
+    // the drakin's shot/breath-in (`:63183`/`:63187`), the javelin
+    // thrower's attack (`:63441`), the goblin bomber's throw (`:63535`),
+    // the portal materialize cue (`:63765` and the `AI_108`/`AI_109`
+    // peers), the wyvern's dive-down + the 1-in-5 scream
+    // (`:65610`/`:65613`), the kobold glider's charge scream
+    // (`:65618`), the Dark Mage's summon/heal-cast windows
+    // (`:65842`/`:65860`) and the crystal's win scene (`:40764`).
+    "dd2_betsy_flying_circle_attack",
+    "dd2_betsy_scream",
+    "dd2_ogre_attack_0",
+    "dd2_ogre_attack_1",
+    "dd2_ogre_attack_2",
+    "dd2_ogre_ground_pound",
+    "dd2_ogre_spit",
+    "dd2_drakin_shot_0",
+    "dd2_drakin_shot_1",
+    "dd2_drakin_shot_2",
+    "dd2_drakin_breath_in_0",
+    "dd2_drakin_breath_in_1",
+    "dd2_drakin_breath_in_2",
+    "dd2_javelin_throwers_attack_0",
+    "dd2_javelin_throwers_attack_1",
+    "dd2_javelin_throwers_attack_2",
+    "dd2_goblin_bomber_throw_0",
+    "dd2_goblin_bomber_throw_1",
+    "dd2_goblin_bomber_throw_2",
+    "dd2_etherian_portal_spawn_enemy_0",
+    "dd2_etherian_portal_spawn_enemy_1",
+    "dd2_etherian_portal_spawn_enemy_2",
+    "dd2_wyvern_dive_down_0",
+    "dd2_wyvern_dive_down_1",
+    "dd2_wyvern_dive_down_2",
+    "dd2_wyvern_scream_0",
+    "dd2_wyvern_scream_1",
+    "dd2_wyvern_scream_2",
+    "dd2_kobold_flyer_charge_scream_0",
+    "dd2_kobold_flyer_charge_scream_1",
+    "dd2_kobold_flyer_charge_scream_2",
+    "dd2_dark_mage_summon_skeleton_0",
+    "dd2_dark_mage_summon_skeleton_1",
+    "dd2_dark_mage_summon_skeleton_2",
+    "dd2_dark_mage_cast_heal_0",
+    "dd2_dark_mage_cast_heal_1",
+    "dd2_dark_mage_cast_heal_2",
+    "dd2_win_scene",
+    // W4-d80 final — the 711 Betsy's Wrath impact (`Projectile.cs:71641`,
+    // `SoundID.DD2_BetsysWrathImpact = DD2_BetsyFireballImpact.WithVolume
+    // (0.4f)`, `SoundID.cs:1675`): the SAME three assets as the 686 impact,
+    // already banked above — only the style row differs (vol 0.4).
+    // W4-d80 final — the ParticleOrchestrator tracked plays
+    // (`ParticleOrchestrator.cs:1888`/`:2123`/`:2427`, research/64 final):
+    // the Monk Staff ground impact (3 variations) rides BOTH the flint
+    // spike burst and the down-dash explosion; the mushroom-boi explosion
+    // is a one-variation 0.15-volume cue behind the `Next(2)` coin gate.
+    "dd2_monk_staff_ground_impact_0",
+    "dd2_monk_staff_ground_impact_1",
+    "dd2_monk_staff_ground_impact_2",
+    "deadcells_mushroom_explode",
 ];
 
 /// The `Sounds/Custom/` trackables the item-use wave names

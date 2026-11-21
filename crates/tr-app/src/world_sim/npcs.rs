@@ -1285,6 +1285,84 @@ fn apply_npc_tracked_cue(
                 s.position = (x, y);
             }
         }
+        // W4-d80 final — the DD2 riders census round (research/64 final):
+        // the remaining AI_107/108/109/110 one-shots and handle plays.
+        NpcSoundCue::CrystalWinScene => {
+            // `NPC.cs:40764` — the win-scene one-shot, no slot storage.
+            let _ = play(audio, "DD2_WinScene");
+        }
+        NpcSoundCue::BetsyCircleAttack => {
+            // `NPC.cs:62109` — the circle flight's one-shot.
+            let _ = play(audio, "DD2_BetsyFlyingCircleAttack");
+        }
+        NpcSoundCue::BetsyDashScream => {
+            // `NPC.cs:62136` — the dash entry's one-shot.
+            let _ = play(audio, "DD2_BetsyScream");
+        }
+        NpcSoundCue::OgreAttack => {
+            // `NPC.cs:63082` — the club swing's one-shot.
+            let _ = play(audio, "DD2_OgreAttack");
+        }
+        NpcSoundCue::OgreGroundPound => {
+            // `NPC.cs:63100` — the pound's one-shot.
+            let _ = play(audio, "DD2_OgreGroundPound");
+        }
+        NpcSoundCue::OgreSpit => {
+            // `NPC.cs:63114` — the spit's one-shot.
+            let _ = play(audio, "DD2_OgreSpit");
+        }
+        NpcSoundCue::DrakinShot => {
+            // `NPC.cs:63183` — the burst's one-shot.
+            let _ = play(audio, "DD2_DrakinShot");
+        }
+        NpcSoundCue::DrakinBreathIn => {
+            // `NPC.cs:63187` — the engage's one-shot.
+            let _ = play(audio, "DD2_DrakinBreathIn");
+        }
+        NpcSoundCue::JavelinAttack => {
+            // `NPC.cs:63441` — the throw tick's one-shot.
+            let _ = play(audio, "DD2_JavelinThrowersAttack");
+        }
+        NpcSoundCue::GoblinBomberThrow => {
+            // `NPC.cs:63535` — the lob tick's one-shot.
+            let _ = play(audio, "DD2_GoblinBomberThrow");
+        }
+        NpcSoundCue::PortalSpawnEnemy => {
+            // `NPC.cs:63765`/`:65482`/`:65934` — the materialize one-shot.
+            let _ = play(audio, "DD2_EtherianPortalSpawnEnemy");
+        }
+        NpcSoundCue::WyvernDiveDown { scream } => {
+            // `NPC.cs:65610-65614` — the dive-down into `localAI[1]`, then
+            // the 1-in-5 scream into `localAI[2]` (the machine rolled the
+            // `Next(5)` on its own stream; the drain only plays).
+            n.local_ai[1] = play(audio, "DD2_WyvernDiveDown").to_float();
+            if scream {
+                n.local_ai[2] = play(audio, "DD2_WyvernScream").to_float();
+            }
+        }
+        NpcSoundCue::KoboldFlyerCharge => {
+            // `NPC.cs:65618-65619` — the charge scream into `localAI[1]`
+            // + the ignite one-shot (handle discarded).
+            n.local_ai[1] = play(audio, "DD2_KoboldFlyerChargeScream").to_float();
+            let _ = play(audio, "DD2_KoboldIgnite");
+        }
+        NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow => {
+            // `NPC.cs:65636-65644` — null → play into `localAI[2]`, else
+            // `Position = Center`.
+            if audio.get_active_sound(handle(n, 2)).is_none() {
+                n.local_ai[2] = play(audio, "DD2_KoboldIgniteLoop").to_float();
+            } else if let Some(s) = audio.get_active_sound_mut(handle(n, 2)) {
+                s.position = (x, y);
+            }
+        }
+        NpcSoundCue::DarkMageSummonSkeleton => {
+            // `NPC.cs:65842` — the summon window's one-shot.
+            let _ = play(audio, "DD2_DarkMageSummonSkeleton");
+        }
+        NpcSoundCue::DarkMageCastHeal => {
+            // `NPC.cs:65860` — the heal window's one-shot.
+            let _ = play(audio, "DD2_DarkMageCastHeal");
+        }
         _ => {}
     }
 }
