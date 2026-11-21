@@ -39249,7 +39249,7 @@ click buffers; the player tick applies).
 
 **Code-only mode**: implemented without invoking any compiler - no
 cargo/rustc/rustfmt, no test runs, no graphify refresh (the Lead's task
-constraint). The nine `w4_c14_*` witness tests are WRITTEN, NOT RUN; the
+constraint). The ten `w4_c14_*` witness tests are WRITTEN, NOT RUN; the
 branch `task/W4-c14-tile-break-footstep-sounds` is pushed unmerged for a
 verification pass. 33 C# `PlaySound` sites across 8 commits.
 
