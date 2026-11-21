@@ -36129,7 +36129,7 @@ Deviations:
   indices mirror g30's enum as constants (import-free); the merge binds
   `DrainBuckets` to `SpecialPoints::buckets`.
 
-20 witnesses (`tile_drains::tests::*`) WRITTEN, NOT RUN — **no
+22 witnesses (`tile_drains::tests::*`) WRITTEN, NOT RUN — **no
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
 
 ### Deliberate folds / gaps (recorded)
