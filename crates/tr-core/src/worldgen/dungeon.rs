@@ -132,6 +132,17 @@ impl HallSeed {
     pub fn range(&mut self, lo: u32, hi: u32) -> u32 {
         lo + self.next(hi - lo)
     }
+
+    /// `UnifiedRandom.NextDouble()` (`UnifiedRandom.cs:143-146` — one
+    /// `Sample()` draw). The splitmix stand-in's double: the SAME
+    /// `next_u32` stream step `next`/`range` consume (one draw, scaled to
+    /// [0, 1) by 2^32) — adding this method changes no existing
+    /// `next`/`range` output. The cracked-brick chance roll
+    /// (`LegacyDungeonHall.cs:79-82`) is the first consumer
+    /// (`dungeon_room_content::roll_cracked_brick`).
+    pub fn next_double(&mut self) -> f64 {
+        self.next_u32() as f64 / 4294967296.0
+    }
 }
 
 /// `DungeonData.hallStrengthScalar`/`roomStrengthScalar`/`hallStepScalar`

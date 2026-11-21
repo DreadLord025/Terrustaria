@@ -81,8 +81,10 @@ impl DungeonFootprint {
         })
     }
 
-    /// `DungeonData.CanGenerateFeatureAt`'s ported terms.
-    fn can_generate_at(&self, world: &World, x: i32, y: i32) -> bool {
+    /// `DungeonData.CanGenerateFeatureAt`'s ported terms. `pub(crate)`:
+    /// the room-content slice's Bookshelves pass reads the same gate
+    /// (`dungeon_room_content::bookshelves`).
+    pub(crate) fn can_generate_at(&self, world: &World, x: i32, y: i32) -> bool {
         if !in_world(world, x, y, 5) {
             return false;
         }

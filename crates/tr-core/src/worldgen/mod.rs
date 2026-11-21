@@ -30,6 +30,10 @@ mod desert_entrances;
 mod dungeon_bounds;
 mod dungeon_control_line;
 mod dungeon_genvars;
+// W4-f24 room-content slice — the unclaimed dual-dungeon furniture family
+// (cracked-brick patterns, the set clones, the Bookshelves pass). UNWIRED.
+#[allow(dead_code)] // consumed by the dual-content wiring round (d107 seam)
+mod dungeon_room_content;
 mod dither_snake;
 mod snake_math;
 pub mod evil;
