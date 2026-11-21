@@ -57,9 +57,14 @@ mod loot_db_gen;
 mod map;
 mod map_layers;
 // W4-g11: the Main.cs `Dust.NewDust*` sites, batch 1 of 3 — `snowing()`
-// (Main.cs:13088) + `TeleportEffect` styles 0-7 (:13243-13358), staged
-// per the claim doc (docs/research/64-dust-main-sites-claims.md).
+// (Main.cs:13088) + the `TeleportEffect` App-level dispatcher/seams,
+// per the claim doc (docs/research/64-dust-main-sites-claims.md) and the
+// union-exec (docs/research/116-teleport-reconcile.md).
 mod main_dust;
+// W4-g11 union-exec (research/116 keep-one): the surviving
+// `Main.TeleportEffect` body — g61's widest-11 arms adapted per-hunk +
+// the wired `NPC.UpdateNPC_TeleportVisuals` decay.
+mod teleport_dust;
 mod melee_swing;
 mod menu;
 mod minecart;

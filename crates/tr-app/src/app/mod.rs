@@ -891,6 +891,13 @@ pub(crate) struct App {
     /// (S1-E-1 phase 2); the `world_sim` drain feeds the cart's queued
     /// requests into it and the frame ticks/draws the client slots.
     pub(crate) dust: tr_core::particles::DustPool,
+    /// W4-g11 union-exec (research/116 gap 4) — `Main.waterStyle`
+    /// (`Main.cs:1105`): the STORED water style, written by `DrawWaters`
+    /// (`:57475`, the port's `frame/draw.rs` liquid-alpha block); the
+    /// `TeleportEffect` style-5 arm reads this static, NOT an inline
+    /// `CalculateWaterStyle` recompute (a mid-frame biome change would
+    /// flip the dust type).
+    pub(crate) water_style: i32,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
     /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
     pub(crate) ambient_waterfall: (f32, f32, f32),
@@ -3554,6 +3561,9 @@ impl App {
                 dust.set_wet_probe(Box::new(crate::player::wet_collision));
                 dust
             },
+            // `Main.waterStyle` starts 0 (`Main.cs:1105`'s static default);
+            // `DrawWaters` (`:57475`) writes it each foreground draw.
+            water_style: 0,
             water_mask: None,
             targets: None,
             scene_state: tr_core::scene::SceneState::new(),
