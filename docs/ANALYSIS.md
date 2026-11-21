@@ -39327,3 +39327,89 @@ remix flip), `drawdata_anim` (the 21-tick/4-row period), `drawdata`
 (the R/B 0.5 floor, G untouched, brighter channels kept), `map/colors`
 (the pink icon + the 655 share), `render/tiles` (the source-order pin:
 27 → 238 → generic raised, raw light + fullbright override, one site).
+
+## The MultiTileGrass / MultiTileVines roster (W4-g84 follow-up, 2026-11-21, code-only)
+
+The bulb draw's follow-up census compared the C# special-point registration
+(`TileDrawing.Draw`'s draw-area switch, `TileDrawing.cs:534-723`) against the
+port's `tiles.rs` kind arms. Before this pass the port dispatched only **27**
+(sunflower, per-cell) and **238** (bulb); every other MultiTileGrass /
+MultiTileVine kind drew through the static-generic raised arm — no wind lean,
+no platform lift, no jar glow / lid / item-icon specials.
+
+**TileID census.** 236 = `LifeFruit`, 702 = `LifeFruitReplica` (`TileID.cs:1101`
+/`:2033`) — the bulb's 2×2 siblings, NOT PlanteraBulb variants (238 is the only
+bulb). The full MultiTileGrass registration (`:600-687`): 27 sunflower,
+236/238/702, 233 PlantDetritus, 652/651 echo detritus, 530/705 oasis plants,
+485 AntlionLarva / 489 PinWheel / 490 WeatherVane, 521-527 dragonfly jars,
+493 GolfCupFlag, 519 Cattail. The MultiTileVine registration (`:549-599`):
+34 Chandeliers, 698 DeadCellsDisplayJar, 454 Pigronata, 42/270/271/572/581/660
+hanging bottles + jars, 91 Banners, 95/126/444 Chinese lanterns / DiscoBall /
+BeeHive, 465/591/592 WarTableBanner / PotsSuspended / BrazierSuspended. (549
+Seaweed is a ReverseVine, bucket 7; the VineThreads 52/62/115/205/382/528/636/638
+are the strip pass — neither is this bucket.)
+
+**MultiTileGrass (`render/multi_tile_grass.rs`).** `bulb_sway` generalized to
+`grass_sway_2x2` (a `num` factor + a `freeze` flag) and `grass_sway_3x2` (the
+54 px grid, +24 anchor); new `grass_sway_2x3` (489), `golf_flag_sway` (493 —
+the `:8983-8997` frameY==0 wind-sign FlipHorizontally + the resulting-flip
+∓6 px `vector2.X` shift, returned as `(sway, flip_xor, dx)`), `detritus_sway`
+(233 — the split 3×2 at frameY 0/18 / 2×2 at frameY 36/54, `:8765-8768`, the
+port's `place_jungle_plant_detritus` grid), `climb_cat_tail` + `cattail_sway`
+(519 — `:8807-8827` the >10 floor / non-519 break / frameX≥180 flame-top count,
+the anchor shifts up height−1 `:8799`, the TOP-ROW-ONLY wind gate `:8935`).
+The `tiles.rs` arm widens to the full roster; 236/702 carry `tileTop = 0` (no
+GetTileDrawData case) so their pivot sits 2 px lower than 238's; 485/490/489/493
+animation already rides the landed `drawdata_cases_b` arms, 530's biome row
+rides `drawdata`. `bulb_sway` stays `cfg(test)` as the witness entry point.
+
+**MultiTileVines (`render/multi_tile_vines.rs`, new).** Ports
+`DrawMultiTileVines(InWind)` (`:8829-9603`): the size table (`:8845-8884`), the
+top-left frame-grid reconstruction (`col = frameX/18 % sizeX`,
+`row = frameY/18 % sizeY` — the `CheckChand`/`Check2xX`/`CheckSuper` pattern),
+the TOP-centre anchor −2 (`:9243-9248`) + the 8 px non-hammered-platform lift
+(`:9250-9254` — 1-wide kinds vs the 465/591/592 both-columns family), the
+34/126 planter + 42 bottle style tables verbatim (the `:9404-9405`
+`num3 = 0; num3 = null` dead-write — the second write wins), the
+`GetHighestWindGridPushComplex(60, 1.26, 3, swapLoopDir)` push (`:9242`), the
+num7 ladder + the flag2 top-row zero, the 698 wind-cancel + 10 px left shift
+(`:9440-9445`/`:9453-9456`). `draw_vine_cell` does the sprite + the 592
+`Glow_294` + the 660 `Extra_260` white/HSL pair (`:9505-9519`) + the 698 jar
+lids (the rarity colour + `rgbToHsl`/`hslToRgb` + the rotated item icon,
+`:9520-9584`) + the shared-seed flame tail (`:9589-9600`). The `tiles.rs` arm
+sits before the generic raised draw and gates the inline `draw_tile_flames`
+off for the bucket (C# never calls `DrawSingleTile_Flames` for a special-pass
+tile — no double-draw). `assets.rs` adds `Extra_260` + `Glow_294`.
+
+Deviations (the recorded lanes, not new skips):
+- the deferred special-point ordering is approximated inline (the sunflower /
+  bulb precedent);
+- the `DrawAnimatedTile_AdjustForVisionChangers` / `DrawTiles_GetLightOverride`
+  vision-potion chain (`:8976-8977`/`:9487-9488`) is the d56 unwired lane —
+  identity outside the unported potions + the Glow coating (ported);
+- the `_rand.Next(4)` flag roll + dust (`:8974`/`:9485`) are the d60 unwired
+  lane — adding the roll would change the `_rand` stream order;
+- the shared flame seed latches the object's first cell in the C#'s
+  x-outer/y-inner walk (the top-left); the inline pass derives it from the
+  top-left cell directly (same value, the z-order approximation);
+- the 698 item icon's `ItemSlot.DrawItemIcon` colour chain
+  (`GetItemLight`/`GetAlpha`/glowMask, `:9580`) is the d57 furniture lane —
+  the icon draws with the environment-light tint only; the TeItem payload
+  carries no expert flag (fed false), the registry's `rare` feeds the colour;
+- the `SideFlags` seams feed only the unported LitNature shader.
+
+RNG: zero draws added — the transforms are pure world/wind state; the flame
+tail consumes the deterministic `tile_frame_seed_at` stream (the same seed the
+inline flame pass uses), no `_rand` consumption. The G6 key already covers the
+inputs (the sunflower counter rides the windy `anim` slot, the wind-grid push
+rides `wind_grid.key()` when vine strips are on screen).
+
+Verification: 19 witness tests WRITTEN, NOT RUN (no cargo/rustc invoked) —
+`multi_tile_grass::tests` (12: the original 4 bulb + the Life Fruit top-0
+pivot, the 2×2 family parity, the jar freeze, the 3×2 wider anchor, the 2×3
+pinwheel ladder, the golf flip/shift both wind signs, the detritus split
+width, the cattail climb + top-row gate), `multi_tile_vines::tests` (6: the
+size table + roster, the top-left reconstruction, the style tables + the
+dead-write, the platform lift, the jar cancel + shift, the num7 ladder +
+fairy row), `render/tiles` (2 source-order pins: grass → vine → generic
+raised, raw light + fullbright override, the flame-overlay gate).
