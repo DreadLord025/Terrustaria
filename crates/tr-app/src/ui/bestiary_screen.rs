@@ -14,7 +14,6 @@ use glam::Vec2;
 
 use tr_core::bestiary::WorldBestiary;
 
-use crate::bestiary::ENTRIES;
 use crate::bestiary_filter::{self as bf, EntryFilterer, EntrySorter, SortStep, SORT_STEPS};
 use crate::ui::search_bar::{SearchTheme, WrappedSearchBar};
 
@@ -362,6 +361,7 @@ pub fn step_of(index: usize) -> SortStep {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bestiary::ENTRIES;
 
     const SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
 

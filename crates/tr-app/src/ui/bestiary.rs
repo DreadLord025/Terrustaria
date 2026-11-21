@@ -17,7 +17,7 @@ use tr_core::bestiary::{UnlockState, WorldBestiary};
 use super::push_whole;
 use super::text;
 use super::uistate::{self, Style};
-use crate::assets::{self, Lookups};
+use crate::assets::Lookups;
 use crate::npc::{NpcKind, SlimeVariant};
 
 /// `UIBestiaryEntryButton`'s 72 px cell (`:27-28`).
