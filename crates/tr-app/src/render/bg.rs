@@ -1713,10 +1713,11 @@ mod underground_bg_tests {
 
     #[test]
     fn worldgen_rolls_hell_back_style() {
-        // `WorldGen.cs:8247`: one `Next(3)` draw. W4-g71 wiring: it is folded
-        // into `randomize_cave_backgrounds` on the `pass_rng("RandomizeCave-
-        // Backgrounds")` slot (the former standalone tail draw is gone). The
-        // value moves by design; the per-seed determinism + the `<3` bound hold.
+        // `WorldGen.cs:8247`: one `Next(3)` draw. W4-g71 FINAL keep-one: it is
+        // folded into `cave_bg::randomize_cave_backgrounds` on the SHARED
+        // `streams.rng` (g72's landed seat, ahead of the moon draw — the former
+        // standalone tail draw AND the g71 pass_rng duplicate are both gone).
+        // The value moves by design; the per-seed determinism + the `<3` bound hold.
         let opts = tr_core::worldgen::GenOptions {
             width: 512,
             height: 512,

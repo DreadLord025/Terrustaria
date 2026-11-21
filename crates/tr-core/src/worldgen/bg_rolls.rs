@@ -1,10 +1,16 @@
-//! The surface/cave background STYLE rolls — `WorldGen.RandomizeBackgrounds`
-//! (`WorldGen.cs:7947-8012`), `RandomizeTreeStyle` (`:8117-8190`) and
-//! `RandomizeCaveBackgrounds` (`:8192-8249`), ported verbatim. **WIRED** into
-//! `step_world_tail` by the W4-g71 wiring phase (this branch); the canonical
-//! keep-one copy — g72's cave-style machine (`render/bg_styles.rs`) consumes
-//! these rolls, it does not re-port them (see the seam contract in
-//! `docs/research/92-doc-sweep-bg.md` §2).
+//! The surface background STYLE rolls — `WorldGen.RandomizeBackgrounds`
+//! (`WorldGen.cs:7947-8012`) and `RandomizeTreeStyle` (`:8117-8190`), ported
+//! verbatim. **WIRED** into `step_world_tail` by the W4-g71 wiring phase (this
+//! branch) on isolated `pass_rng` slots.
+//!
+//! **KEEP-ONE (research/92 §2.1-FINAL):** `RandomizeCaveBackgrounds`
+//! (`:8192-8249`) lives in `worldgen/cave_bg.rs` — g72's canonical driver,
+//! adopted verbatim (tip `4a75715e`). The former duplicate here is DROPPED:
+//! draw-order-equivalent, but it zeroed the un-rolled style slots instead of
+//! carrying the previous `Main.caveBackStyle` values (the C# arm-A/B keep
+//! them, `WorldGen.cs:8195-8223`), returned `[i32; 3]` instead of the C#
+//! `new int[4]` shape, and g72's landed draw/persist/net trio consumes ITS
+//! outcome type. `boot_reroll_backgrounds` below calls THAT driver.
 //!
 //! Stream contract: every function draws ONLY from its `rng` argument through
 //! the [`RollRng`] seam, so the SAME code serves both callers —
@@ -14,12 +20,12 @@
 //!   stand-in ([`crate::unified_random::UnifiedRandom`]).
 //!
 //! No global state, no side effects: the `World` writes the vanilla does
-//! (`setBG`, `Main.treeX`/`caveBackX`/…) are the caller's job, kept out so the
-//! rolls stay witnessable in isolation. The rolls write only style/divider
-//! fields — never tiles — so wiring them moves no `world_hash` tile pin (the
-//! tail is the last `streams.rng` consumer and the rolls ride isolated
-//! `pass_rng` slots); only the folded `hell_back_style` value moves
-//! (stale-by-design, the `a == b` determinism witness stays green).
+//! (`setBG`, `Main.treeX`/…) are the caller's job, kept out so the rolls stay
+//! witnessable in isolation. The rolls write only style/divider fields —
+//! never tiles — so wiring them moves no `world_hash` tile pin (the tail is
+//! the last `streams.rng` consumer and these rolls ride isolated `pass_rng`
+//! slots); the cave block's shared-stream draw moves the moon/hell VALUES
+//! only (stale-by-design, the `a == b` determinism witnesses stay green).
 
 use super::noise::Rng;
 
@@ -234,78 +240,9 @@ pub fn randomize_tree_style(rng: &mut impl RollRng, max_tiles_x: i32) -> ([i32; 
     (tree_x, tree_style)
 }
 
-/// The `RandomizeCaveBackgrounds` outcome — `Main.caveBackX[0..3]`,
-/// `caveBackStyle[0..4]` and the three biome back styles. g72's
-/// `render/bg_styles.rs` consumes these (its `BgStylePickInput` /
-/// `background_style_sheets`); the W4-g71 wired tail rolls them into `World`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CaveBackgrounds {
-    pub cave_back_x: [i32; 3],
-    pub cave_back_style: [i32; 4],
-    pub ice_back_style: i32,
-    pub hell_back_style: i32,
-    pub jungle_back_style: i32,
-}
-
-/// `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8249`), verbatim:
-/// the size-banded `caveBackX` dividers + distinct `caveBackStyle` rolls
-/// (`Next(8)`), then the three trailing biome draws — `iceBackStyle`
-/// `Next(4)` (`:8246`), `hellBackStyle` `Next(3)` (`:8247`), `jungleBackStyle`
-/// `Next(2)` (`:8248`). The small/medium arms leave unused style slots at 0.
-pub fn randomize_cave_backgrounds(rng: &mut impl RollRng, max_tiles_x: i32) -> CaveBackgrounds {
-    let mut cave_back_x = [0i32; 3];
-    let mut cave_back_style = [0i32; 4];
-    let w = max_tiles_x as f64;
-    if max_tiles_x == 4200 {
-        cave_back_x[0] = rng.roll_range((w * 0.5 - w * 0.25) as i32, (w * 0.5 + w * 0.25) as i32);
-        cave_back_x[1] = max_tiles_x;
-        cave_back_x[2] = max_tiles_x;
-        cave_back_style[0] = rng.roll_range(0, 8);
-        cave_back_style[1] = rng.roll_range(0, 8);
-        while cave_back_style[1] == cave_back_style[0] {
-            cave_back_style[1] = rng.roll_range(0, 8);
-        }
-    } else if max_tiles_x == 6400 {
-        cave_back_x[0] = rng.roll_range((w * 0.334 - w * 0.2) as i32, (w * 0.334 + w * 0.2) as i32);
-        cave_back_x[1] = rng.roll_range((w * 0.667 - w * 0.2) as i32, (w * 0.667 + w * 0.2) as i32);
-        cave_back_x[2] = max_tiles_x;
-        cave_back_style[0] = rng.roll_range(0, 8);
-        cave_back_style[1] = rng.roll_range(0, 8);
-        cave_back_style[2] = rng.roll_range(0, 8);
-        while cave_back_style[1] == cave_back_style[0] {
-            cave_back_style[1] = rng.roll_range(0, 8);
-        }
-        while cave_back_style[2] == cave_back_style[0] || cave_back_style[2] == cave_back_style[1] {
-            cave_back_style[2] = rng.roll_range(0, 8);
-        }
-    } else {
-        cave_back_x[0] = rng.roll_range((w * 0.25 - w * 0.15) as i32, (w * 0.25 + w * 0.15) as i32);
-        cave_back_x[1] = rng.roll_range((w * 0.5 - w * 0.15) as i32, (w * 0.5 + w * 0.15) as i32);
-        cave_back_x[2] = rng.roll_range((w * 0.75 - w * 0.15) as i32, (w * 0.75 + w * 0.15) as i32);
-        for i in 0..4 {
-            cave_back_style[i] = rng.roll_range(0, 8);
-        }
-        while cave_back_style[1] == cave_back_style[0] {
-            cave_back_style[1] = rng.roll_range(0, 8);
-        }
-        while cave_back_style[2] == cave_back_style[0] || cave_back_style[2] == cave_back_style[1] {
-            cave_back_style[2] = rng.roll_range(0, 8);
-        }
-        while cave_back_style[3] == cave_back_style[0]
-            || cave_back_style[3] == cave_back_style[1]
-            || cave_back_style[3] == cave_back_style[2]
-        {
-            cave_back_style[3] = rng.roll_range(0, 8);
-        }
-    }
-    CaveBackgrounds {
-        cave_back_x,
-        cave_back_style,
-        ice_back_style: rng.roll_range(0, 4),
-        hell_back_style: rng.roll_range(0, 3),
-        jungle_back_style: rng.roll_range(0, 2),
-    }
-}
+// The `RandomizeCaveBackgrounds` driver + its `CaveBackgrounds` outcome live
+// in `worldgen/cave_bg.rs` (g72's canonical copy — the keep-one adjudication,
+// research/92 §2.1-FINAL). The former duplicate here is DROPPED.
 
 /// `WorldGen.IsBackgroundConsideredTheSame` (`WorldGen.cs:8061-8095`): the
 /// forest re-roll equivalence — 3≡31, 5≡51, 7≡71/72/73, else exact. Used by
@@ -333,15 +270,23 @@ pub fn is_background_considered_the_same(old_bg: i32, new_bg: i32) -> bool {
 /// therefore the menu-world seam, NOT the world-load path: this fn is the
 /// canonical roll-and-apply the menu caller invokes on the bare-`Main.rand`
 /// stand-in ([`crate::unified_random::UnifiedRandom`], the same `RollRng` the
-/// worldgen tail uses through its xorshift `pass_rng` slots). g72's cave-style
-/// machine consumes the resulting `cave_back_*` fields; it does not re-roll.
+/// worldgen tail uses through its xorshift `pass_rng` slots). The cave leg
+/// calls the CANONICAL `cave_bg::randomize_cave_backgrounds` driver (the
+/// keep-one, research/92 §2.1-FINAL) on the same stream — `UnifiedRandom`
+/// implements both seams (`RollRng` here, `CaveRoll` there); the previous-
+/// style carry passes the world's current array (the C# boot carries
+/// `Main.caveBackStyle`; a fresh `World::new` starts at zeros, and g72's
+/// `App::new` boot witness pins the width-0 dead-store arm).
 ///
 /// The 173 retry (`Main.cs:6595-6602`): `SetForestBGSet(6)` sets `treeSet[0]=173`
 /// (`WorldGen.cs:7691`), so a forest style 6 re-rolls the whole background set,
 /// up to two extra times. The port reads the rolled `forest_bg_styles[0]` and
 /// re-rolls while it is 6 (the `treeBGSet1[0] == 173` condition), matching the
 /// C#'s two `if` guards (at most three total rolls).
-pub fn boot_reroll_backgrounds(world: &mut crate::world::World, rng: &mut impl RollRng) {
+pub fn boot_reroll_backgrounds(
+    world: &mut crate::world::World,
+    rng: &mut crate::unified_random::UnifiedRandom,
+) {
     let width = world.width;
     let mut styles = randomize_backgrounds(rng);
     // The two 173 retries (`Main.cs:6595-6602`): style 6 → treeSet[0]=173.
@@ -365,13 +310,12 @@ pub fn boot_reroll_backgrounds(world: &mut crate::world::World, rng: &mut impl R
     world.set_surface_bg_style(8, styles.mushroom);
     world.set_surface_bg_style(9, styles.underworld);
     // `RandomizeCaveBackgrounds()` (`Main.cs:6603`) — the cave arrays + the
-    // ice/hell/jungle back styles, on the same stream.
-    let cave = randomize_cave_backgrounds(rng, width);
-    world.cave_back_x = cave.cave_back_x;
-    world.cave_back_style = cave.cave_back_style;
-    world.ice_back_style = cave.ice_back_style as u8;
-    world.hell_back_style = cave.hell_back_style as u8;
-    world.jungle_back_style = cave.jungle_back_style as u8;
+    // ice/hell/jungle back styles, on the same stream, through the CANONICAL
+    // `cave_bg` driver (keep-one). The previous-style carry passes the world's
+    // current array — the C# keeps un-rolled entries at their previous value.
+    let cave =
+        super::cave_bg::randomize_cave_backgrounds(rng, width, world.cave_back_style);
+    world.apply_cave_backgrounds(&cave);
 }
 
 #[cfg(test)]
@@ -451,9 +395,17 @@ mod tests {
 
     #[test]
     fn w4_g71_randomize_cave_backgrounds_seed42_large_matches_the_reference() {
-        // pass_rng("RandomizeCaveBackgrounds"), seed 42, width 8400 (else arm).
-        let c = randomize_cave_backgrounds(&mut stream(42, "RandomizeCaveBackgrounds"), 8400);
-        assert_eq!(c.cave_back_x, [846, 3324, 5930]);
+        // The canonical cave driver (cave_bg.rs, g72 keep-one) on the former
+        // pass_rng("RandomizeCaveBackgrounds") stream, seed 42, width 8400
+        // (else arm). Same draw order (bands → base styles → rejections →
+        // ice/hell/jungle), so the reference values carry; the outcome is now
+        // the [i32; 4] shape ([3] keeps its new int[4] zero, Main.cs:66696).
+        let c = super::super::cave_bg::randomize_cave_backgrounds(
+            &mut stream(42, "RandomizeCaveBackgrounds"),
+            8400,
+            [0; 4],
+        );
+        assert_eq!(c.cave_back_x, [846, 3324, 5930, 0]);
         assert_eq!(c.cave_back_style, [1, 4, 3, 0]);
         assert_eq!(c.ice_back_style, 3);
         assert_eq!(c.hell_back_style, 2);
@@ -470,8 +422,12 @@ mod tests {
     fn w4_g71_randomize_cave_backgrounds_sub_vanilla_else_arm() {
         // width 512 (the test worlds) takes the same else arm as 8400 — the
         // dividers scale with width, the style draws are identical (same stream).
-        let c = randomize_cave_backgrounds(&mut stream(42, "RandomizeCaveBackgrounds"), 512);
-        assert_eq!(c.cave_back_x, [156, 311, 414]);
+        let c = super::super::cave_bg::randomize_cave_backgrounds(
+            &mut stream(42, "RandomizeCaveBackgrounds"),
+            512,
+            [0; 4],
+        );
+        assert_eq!(c.cave_back_x, [156, 311, 414, 0]);
         assert_eq!(c.cave_back_style, [1, 4, 3, 0]);
         assert_eq!(c.ice_back_style, 3);
         assert_eq!(c.hell_back_style, 2);
@@ -480,9 +436,16 @@ mod tests {
 
     #[test]
     fn w4_g71_randomize_cave_backgrounds_small_arm() {
-        // width 4200: caveBackX[1]/[2] pin to maxTilesX, two styles roll.
-        let c = randomize_cave_backgrounds(&mut stream(42, "RandomizeCaveBackgrounds"), 4200);
-        assert_eq!(c.cave_back_x, [1056, 4200, 4200]);
+        // width 4200: caveBackX[1]/[2] pin to maxTilesX, two styles roll. The
+        // un-rolled slots KEEP the passed-in previous values (the C# arm never
+        // writes them — the canonical driver's carry, g72 keep-one); the
+        // previous [0; 4] here reproduces the old witness's zeros.
+        let c = super::super::cave_bg::randomize_cave_backgrounds(
+            &mut stream(42, "RandomizeCaveBackgrounds"),
+            4200,
+            [0; 4],
+        );
+        assert_eq!(c.cave_back_x, [1056, 4200, 4200, 0]);
         assert_eq!(c.cave_back_style[0], 0);
         assert_eq!(c.cave_back_style[1], 2);
         assert_eq!(c.cave_back_style[2], 0);
@@ -568,7 +531,7 @@ mod tests {
         assert_eq!(w.ocean_bg_style, 6);
         assert_eq!(w.mushroom_bg_style, 2);
         assert_eq!(w.underworld_bg_style, 1);
-        assert_eq!(w.cave_back_x, [74, 192, 414]);
+        assert_eq!(w.cave_back_x, [74, 192, 414, 0]);
         assert_eq!(w.cave_back_style, [6, 4, 0, 5]);
         assert_eq!(w.ice_back_style, 0);
         assert_eq!(w.hell_back_style, 2);
@@ -588,7 +551,7 @@ mod tests {
         let mut c = crate::world::World::new("boot".into(), 512, 512);
         boot_reroll_backgrounds(&mut c, &mut crate::unified_random::UnifiedRandom::new(43));
         assert_eq!(c.forest_bg_styles, [11, 10, 8, 4]);
-        assert_eq!(c.cave_back_x, [179, 326, 388]);
+        assert_eq!(c.cave_back_x, [179, 326, 388, 0]);
         assert_ne!(a.forest_bg_styles, c.forest_bg_styles);
     }
 
@@ -600,7 +563,7 @@ mod tests {
         let mut w = crate::world::World::new("boot".into(), 4200, 1200);
         boot_reroll_backgrounds(&mut w, &mut crate::unified_random::UnifiedRandom::new(42));
         assert_eq!(w.forest_bg_styles, [9, 71, 10, 73]);
-        assert_eq!(w.cave_back_x, [1369, 4200, 4200]);
+        assert_eq!(w.cave_back_x, [1369, 4200, 4200, 0]);
         assert_eq!(w.cave_back_style[0], 0);
         assert_eq!(w.cave_back_style[1], 5);
         assert_eq!(w.cave_back_style[2], 0);

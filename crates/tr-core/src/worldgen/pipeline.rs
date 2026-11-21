@@ -2694,17 +2694,22 @@ fn step_world_tail(
     // rolls and the final moon draw. They MUST stay the last rng-consuming step
     // (`worldgen_rolls_hell_back_style` pins the order).
     //
-    // W4-g71 WIRING: the vanilla `WorldGen.Reset` runs `RandomizeTreeStyle` /
-    // `RandomizeCaveBackgrounds` / `RandomizeBackgrounds` / `RandomizeMoonState`
-    // here on the shared `genRand` (`WorldGen.cs:11338-11341`). The port wires
-    // the three style rolls in that C# order, each on its OWN `pass_rng` slot
-    // (the documented per-pass-stream deviation, `Streams::pass_rng`) — so they
-    // shift no other pass's draws and move no `world_hash` TILE pin (the rolls
-    // write only style/divider fields, never tiles, and the tail is already the
-    // last `streams.rng` consumer). The `hell_back_style` `Next(3)`
-    // (`WorldGen.cs:8247`) folds into the cave block — its VALUE moves
-    // (stale-by-design; the `a == b` determinism witness stays green). The moon
-    // draw keeps its historical `streams.rng` slot (`Main.cs:10873` stand-in).
+    // W4-g71 FINAL keep-one (research/92 §2.1-FINAL): the vanilla
+    // `WorldGen.Reset` runs `RandomizeTreeStyle` / `RandomizeCaveBackgrounds` /
+    // `RandomizeBackgrounds` / `RandomizeMoonState` here on the shared `genRand`
+    // (`WorldGen.cs:11338-11341`), CONTIGUOUS — nothing else may draw between
+    // them. The port composes that order: tree + surface rolls ride their OWN
+    // `pass_rng` slots (the documented per-pass-stream deviation — they shift
+    // no other pass's draws and move no `world_hash` TILE pin; the rolls write
+    // only style/divider fields, never tiles), while the CAVE block rides the
+    // shared `streams.rng` AHEAD of the moon draw — g72's landed seat
+    // (`2184ba07`, order-contract `4a75715e`, research/64 §6), kept verbatim.
+    // The canonical cave driver is `cave_bg.rs` (adopted from g72; the former
+    // `bg_rolls` cave duplicate is DROPPED — never call both: a second cave
+    // draw here would double-consume the stream and re-roll the styles twice).
+    // The moon `Next(9)` shifts behind the cave block (stale-by-design VALUE,
+    // the established M5-BIOME / M5-ORES re-pin pattern; the tile hash is
+    // unmoved — the tail is the last `streams.rng` consumer).
     // A rolled non-default surface style can overflow the 8192 px atlas; the
     // app's pack-time budget guard (`assets::fit_bg_styles_to_atlas`) reverts the
     // overflowing biome styles to slot-0 and rebuilds — see research/92 §2.
@@ -2736,28 +2741,32 @@ fn step_world_tail(
     world.spawn_y = spawn_y;
     world.time = 27000.0; // noon
     world.day_time = true;
-    // The three background style rolls, in C# order (`WorldGen.cs:11338-11340`),
-    // each on its own `pass_rng` slot. `RandomizeTreeStyle` (`:8117-8190`): the
-    // treeX dividers + treeStyle variations.
+    // The three background style rolls, in C# order (`WorldGen.cs:11338-11340`).
+    // `RandomizeTreeStyle` (`:8117-8190`, the `:11338` seat): the treeX dividers
+    // + treeStyle variations, on its own `pass_rng` slot.
     let (tree_x, tree_style) =
         super::bg_rolls::randomize_tree_style(&mut streams.pass_rng("RandomizeTreeStyle"), world.width);
     world.tree_x = tree_x;
     world.tree_style = tree_style;
-    // `RandomizeCaveBackgrounds` (`:8192-8249`): caveBackX/caveBackStyle + the
-    // ice/hell/jungle back styles. The hell `Next(3)` (`:8247`) is folded here —
-    // the former standalone tail draw is gone (its value moves by design).
-    let cave = super::bg_rolls::randomize_cave_backgrounds(
-        &mut streams.pass_rng("RandomizeCaveBackgrounds"),
+    // `RandomizeCaveBackgrounds` (`:8192-8249`, the `:11339` seat) — g72's
+    // canonical `cave_bg` driver on the SHARED `streams.rng`, ahead of the moon
+    // draw (its landed seat + order-contract, research/64 §6). The whole block
+    // draws here ONCE: bands + distinct styles + the ice/hell/jungle tail (the
+    // hell `Next(3)` `:8247` is folded in — no standalone tail draw). The
+    // previous-style carry passes `world.cave_back_style` (the `World::new`
+    // zeros; the C# would carry the boot values, but the port's boot roll is a
+    // dead store — g72's documented deviation, the un-rolled entries are
+    // unreachable inside their arm).
+    let roll = super::cave_bg::randomize_cave_backgrounds(
+        &mut streams.rng,
         world.width,
+        world.cave_back_style,
     );
-    world.cave_back_x = cave.cave_back_x;
-    world.cave_back_style = cave.cave_back_style;
-    world.ice_back_style = cave.ice_back_style as u8;
-    world.hell_back_style = cave.hell_back_style as u8;
-    world.jungle_back_style = cave.jungle_back_style as u8;
-    // `RandomizeBackgrounds` (`:7947-8012`): the eleven setBG styles. The four
-    // forest styles + the eight surface variants + the underworld style write
-    // through `set_surface_bg_style` (the C#'s `setBG` calls, `:7965-8011`).
+    world.apply_cave_backgrounds(&roll);
+    // `RandomizeBackgrounds` (`:7947-8012`, the `:11340` seat): the eleven setBG
+    // styles, on its own `pass_rng` slot. The four forest styles + the eight
+    // surface variants + the underworld style write through
+    // `set_surface_bg_style` (the C#'s `setBG` calls, `:7965-8011`).
     let styles =
         super::bg_rolls::randomize_backgrounds(&mut streams.pass_rng("RandomizeBackgrounds"));
     world.set_surface_bg_style(0, styles.forest[0]);
@@ -2773,10 +2782,12 @@ fn step_world_tail(
     world.set_surface_bg_style(7, styles.ocean);
     world.set_surface_bg_style(8, styles.mushroom);
     world.set_surface_bg_style(9, styles.underworld);
-    // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
-    // generator here so it is fixed for the seed; the phase starts at 0. Kept on
-    // `streams.rng` (its historical slot) — the style rolls above ride isolated
-    // `pass_rng` slots, so this draw is unshifted.
+    // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873` boot / the worldgen
+    // `RandomizeMoonState` `WorldGen.cs:7787`), drawn from the same generator
+    // here so it is fixed for the seed; the phase starts at 0. The cave block
+    // above draws AHEAD of it on `streams.rng` (the C# `:11339→:11341` order) —
+    // the moon VALUE shifts behind the block (stale-by-design); the tree and
+    // surface rolls ride isolated `pass_rng` slots and shift nothing.
     world.moon_type = (streams.rng.next_u32() % 9) as u8;
     world.moon_phase = 0;
 }
@@ -3558,10 +3569,12 @@ mod tests {
         assert_eq!(direct.frame_important, via_pipeline.frame_important);
     }
 
-    /// W4-g71 wiring: the tail rolls land the style/divider fields, the rolls
-    /// are deterministic per seed, and — the load-bearing claim — they move NO
-    /// tile (the `world_hash` tile pins stay byte-identical; the rolls ride
-    /// isolated `pass_rng` slots and write only style fields).
+    /// W4-g71 FINAL keep-one: the tail rolls land the style/divider fields, the
+    /// rolls are deterministic per seed, and — the load-bearing claim — they
+    /// move NO tile (the `world_hash` tile pins stay byte-identical; the tree +
+    /// surface rolls ride isolated `pass_rng` slots, the cave block rides the
+    /// shared `streams.rng` at the tail's END ahead of the moon draw, and all
+    /// of them write only style fields).
     #[test]
     fn w4_g71_the_wired_tail_rolls_styles_without_moving_tiles() {
         let opts = GenOptions {

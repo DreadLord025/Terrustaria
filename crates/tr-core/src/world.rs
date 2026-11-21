@@ -108,16 +108,18 @@ pub struct World {
     /// `Main.hellBackStyle` (0..2): picks the animated magma sheet `Background_125..127`
     /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`). Vanilla
     /// rolls it in `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`); the port
-    /// draws it in the wired world tail (`bg_rolls::randomize_cave_backgrounds`, the
+    /// draws it in the wired world tail (`cave_bg::randomize_cave_backgrounds`, the
     /// `Next(3)` folded into the cave block) and persists it in the `.wld` flags block
     /// (`WorldFile.cs:1269`). Loaded worlds keep the file value.
     pub hell_back_style: u8,
-    /// `Main.caveBackX[0..3]` (`Main.cs:595`): the tile-x dividers between the four
-    /// cave background bands, rolled by `RandomizeCaveBackgrounds`
-    /// (`WorldGen.cs:8192-8249`) and consumed by g72's cave-style machine
-    /// (`render/bg_styles.rs::BgStylePickInput`). Persisted in the `.wld` flags block
-    /// (`WorldFile.cs:1260-1262`); the port owns them with the W4-g71 wiring.
-    pub cave_back_x: [i32; 3],
+    /// `Main.caveBackX[0..4]` (`Main.cs:595`, `new int[4]` `Main.cs:66696`): the
+    /// tile-x dividers between the four cave background bands, rolled by
+    /// `RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8249`) and consumed by g72's
+    /// cave-style machine (`render/bg_styles.rs::BgStylePickInput`). Only
+    /// `[0..3]` are rolled/persisted (`WorldFile.cs:1260-1262`) or sent
+    /// (`NetMessage.cs:258-278`); `[3]` keeps its C# initial 0 forever. The
+    /// FINAL keep-one (research/92 §2.1-FINAL) adopts g72's `[i32; 4]` shape.
+    pub cave_back_x: [i32; 4],
     /// `Main.caveBackStyle[0..4]` (`Main.cs:597`): the four pairwise-distinct cave
     /// band styles (`Next(8)` + rejection loops, `WorldGen.cs:8200-8244`). Persisted
     /// (`WorldFile.cs:1263-1266`).
@@ -739,7 +741,7 @@ impl World {
             fast_forward_to_dawn: false,
             fast_forward_to_dusk: false,
             hell_back_style: 0,
-            cave_back_x: [0; 3],
+            cave_back_x: [0; 4],
             cave_back_style: [0; 4],
             ice_back_style: 0,
             jungle_back_style: 0,

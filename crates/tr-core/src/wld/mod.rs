@@ -1693,7 +1693,7 @@ mod tests {
         // them; the round-trip must carry them).
         world.tree_x = [17, 33, 49];
         world.tree_style = [2, 3, 0, 5];
-        world.cave_back_x = [11, 22, 33];
+        world.cave_back_x = [11, 22, 33, 0];
         world.cave_back_style = [1, 4, 3, 0];
         world.ice_back_style = 3;
         world.jungle_back_style = 1;
@@ -2138,7 +2138,7 @@ mod tests {
         for s in world.tree_style {
             b.extend_from_slice(&s.to_le_bytes()); // treeStyle
         }
-        for x in world.cave_back_x {
+        for x in world.cave_back_x[..3] {
             b.extend_from_slice(&x.to_le_bytes()); // caveBackX
         }
         for s in world.cave_back_style {

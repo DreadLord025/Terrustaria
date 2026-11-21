@@ -43,8 +43,8 @@ pub fn write(w: &mut Writer, world: &World) {
     for s in world.tree_style {
         w.i32(s); // treeStyle (`:1256-1259`)
     }
-    for x in world.cave_back_x {
-        w.i32(x); // caveBackX (`:1260-1262`)
+    for x in world.cave_back_x[..3] {
+        w.i32(x); // caveBackX (`:1260-1262` — [3] is never persisted)
     }
     for s in world.cave_back_style {
         w.i32(s); // caveBackStyle (`:1263-1266`)
@@ -383,8 +383,8 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     for s in &mut world.tree_style {
         *s = r.i32()?; // treeStyle (`:2054-2057`)
     }
-    for x in &mut world.cave_back_x {
-        *x = r.i32()?; // caveBackX (`:2058-2060`)
+    for x in &mut world.cave_back_x[..3] {
+        *x = r.i32()?; // caveBackX (`:2058-2060` — [3] keeps its new int[4] zero)
     }
     for s in &mut world.cave_back_style {
         *s = r.i32()?; // caveBackStyle (`:2061-2064`)
