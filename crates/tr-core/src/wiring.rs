@@ -7811,6 +7811,32 @@ mod w4_f11_residual_tests {
         assert!(wiring.mechs.is_empty(), "the edge column is out of world");
     }
 
+    /// §3 KEEP-in-dup (research/133 §3 witness union, fold-133): the 130
+    /// gate (`Wiring.cs:1425`) — a `PreventsActuationUnder` kind directly
+    /// above refuses the swap (the chest 21 is in the set); an inactive
+    /// above tile passes the disjunction (`!above.active()`). The c42
+    /// combined pin (`c42_the_active_stone_block_swaps_and_wakes`) covers
+    /// the same ground; this f11-named pin survives the dedupe per the 95
+    /// §4 KEEP list (the CanKillTile gate pin).
+    #[test]
+    fn w4_f11_a_chest_above_refuses_the_130_swap() {
+        let mut w = world();
+        put(&mut w, 10, 20, 130, 0, 0);
+        put(&mut w, 10, 19, 21, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 130, "the swap refused");
+        // An inactive above tile passes the disjunction (`!above.active()`).
+        let i = w.index(10, 19);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(
+            w.tile(10, 20).unwrap().kind,
+            131,
+            "the inactive above passes"
+        );
+    }
+
     /// (1) The multi-tile seed set: a 2×2 device trip seeds every wired
     /// cell of its rect; each seed is SkipWire'd + counted 4 (`Wiring.cs:
     /// 840-847`), so the seeded device cells do NOT run their own
