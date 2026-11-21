@@ -1352,7 +1352,32 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 }
             }
             for cue in p.take_cart_sounds() {
-                app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                // W4-e10 — the cart cues are `SoundID.ItemNN` STYLE plays
+                // (`Player.cs:19870`/`:19928` Item55, `DelegateMethods.cs:
+                // 250`/`:255` Item53/56): the wave-A façade — the
+                // `GetRandomPitch` NextFloat audio-only, then case 2's
+                // per-style pitch draw (53: `Next(-20, -11) * 0.02`, 55:
+                // its negation, 56: `Next(-50, 51) * 0.002` + the 0.6
+                // volume, `LegacySoundPlayer.cs:610-634`) on
+                // `UpdatePlayers` after the gate — the cart tick runs in
+                // the player pass (`Main.cs:17754`). The unpositioned
+                // `play_at` stand-in is retired.
+                let style = match cue.cue {
+                    "Item_53" => 53,
+                    "Item_55" => 55,
+                    "Item_56" => 56,
+                    _ => {
+                        app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                        continue;
+                    }
+                };
+                app.audio.play_proj_sound(
+                    (2, style),
+                    cue.x,
+                    cue.y,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
             }
             // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
             // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs
@@ -2623,6 +2648,79 @@ mod tests {
             .find(|&s| braking_pool_count(s) == 3)
             .expect("a seed braking into 3 sparks");
         assert_eq!(braking_pool_count(seed), 3);
+    }
+
+    /// W4-e10 — the cart-cue drain rides the wave-A style façade
+    /// (`Player.cs:19870`/`:19928` Item55, `DelegateMethods.cs:250`/`:255`
+    /// Item53/56): the audible ride's Item55 plays spend ONE case-2
+    /// `Next(-20, -11)` pitch draw each on `UpdatePlayers` (style 55's
+    /// negated arm, `LegacySoundPlayer.cs:614-616`), AFTER the spark gate
+    /// rolls the producer queued; the silent twin plays nothing and the
+    /// stream sees the gate rolls only.
+    #[test]
+    fn w4_e10_the_cart_cues_ride_the_style_facade_on_update_players() {
+        let ride = |audible: bool| {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = World::new("cart".into(), 64, 32);
+            for x in 4..=56 {
+                let i = app.world.index(x, 12);
+                app.world.tiles[i] = Tile {
+                    kind: 314,
+                    frame_x: 1,
+                    frame_y: -1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            let mut p = Player::spawn(&app.world);
+            p.mount_cart();
+            p.x = 12.0 * 16.0 + 8.0 - 10.0;
+            p.y = 12.0 * 16.0 + 6.0 - 52.0;
+            p.prev_x = p.x;
+            p.prev_y = p.y;
+            p.vx = 12.0;
+            app.camera = Vec2::new(p.x + 10.0, p.y + 26.0);
+            app.player = Some(p);
+            app.audio.set_listener(crate::sound::Listener {
+                camera_center: (p.x + 10.0, p.y + 26.0),
+                sound_volume: if audible { 1.0 } else { 0.0 },
+                ambient_volume: 1.0,
+                quiet_ambient_sounds: false,
+                game_menu: false,
+                generating_or_loading: false,
+                server: false,
+            });
+            // Hold right so the rolling arm fires (`controlRight &&
+            // vx < maxRunSpeed`, `Player.cs:19905`); the settle tick brings
+            // `onTrack` up and drains its own cue.
+            app.keys.insert(KeyCode::KeyD);
+            update_player(&mut app, 1.0 / 60.0);
+            // Re-seed AFTER the settle so the twin starts clean. The
+            // producer's spark gate rolls ride the SEPARATE spark_rng
+            // (Splitmix, `player.rs`'s `rolling_wheel_sparks` call) — the
+            // UpdatePlayers stream sees ONLY the drain's pitch draws.
+            *app.rngs.stream(RngKey::UpdatePlayers) = UnifiedRandom::new(77);
+            let mut twin = UnifiedRandom::new(77);
+            let before = app.audio.played_count();
+            update_player(&mut app, 1.0 / 60.0);
+            let plays = app.audio.played_count() - before;
+            if audible {
+                assert!(plays >= 1, "the rolling Item55 plays");
+                // One case-2 style-55 pitch draw per play.
+                for _ in 0..plays {
+                    let _ = twin.next_range(-20, -11);
+                }
+            } else {
+                assert_eq!(plays, 0, "silent: the gate refuses before the draw");
+            }
+            assert_eq!(
+                *app.rngs.stream(RngKey::UpdatePlayers),
+                twin,
+                "one pitch per audible cue, nothing else"
+            );
+        };
+        ride(true);
+        ride(false);
     }
 
     /// Finds a stream seed where one rolling call at `|vx| = vel_x` queues
