@@ -6687,9 +6687,9 @@ impl Npc {
     /// W4-d44 wire — the wave-C claim set: the module mapper MINUS
     /// the 366 scorpion (g7's high2 hook owns the `366 | 367` group,
     /// `NPC.cs:76820-76850`; census research/68 §3.5), gated to the
-    /// batch-1 five 355-359 (360-365 ride the next wire batches).
+    /// wired band 355-364 (365 rides the next wire batch).
     fn find_frame_kind_c_claimed(cs_id: u16) -> Option<crate::npc_findframe_c::FindFrameKind> {
-        if !(355..=359).contains(&cs_id) {
+        if !(355..=364).contains(&cs_id) {
             return None;
         }
         crate::npc_findframe_c::find_frame_kind_c(cs_id as i16)
@@ -6698,16 +6698,16 @@ impl Npc {
     pub(crate) fn find_frame(&mut self) {
         // W4-d44 wire (d48 wave C) — the `cs_id`-keyed hook into the
         // wave-C pure machines (`npc_findframe_c.rs`) via
-        // `find_frame_kind_c_claimed`: batch 1 claims 355-359 (the
-        // firefly pair, butterfly, worm, snail); 360-365 ride the
-        // next batches; 366 NEVER (the g7 high2 scorpion fold owns
-        // `366 | 367`, `NPC.cs:76820-76850`; census research/68
-        // §3.5). NO current kind's `cs_id` lands in the set
-        // (verified over the hand rows + the bestiary net ids), so
-        // this is stream-inert today; the arms draw no RNG. The
-        // world-free lane passes slope 0 — the world-read entry
-        // `find_frame_world` resolves the worm probe. The d45 hook
-        // precedent.
+        // `find_frame_kind_c_claimed`: the wired band 355-364 (the
+        // firefly pair, butterfly, worm, snail pair, frog, the duck
+        // walkers + the Duck2 swimmer); 365 rides the next batch;
+        // 366 NEVER (the g7 high2 scorpion fold owns `366 | 367`,
+        // `NPC.cs:76820-76850`; census research/68 §3.5). NO current
+        // kind's `cs_id` lands in the set (verified over the hand
+        // rows + the bestiary net ids), so this is stream-inert
+        // today; the arms draw no RNG. The world-free lane passes
+        // slope 0 — the world-read entry `find_frame_world` resolves
+        // the worm probe. The d45 hook precedent.
         if let Some(kind) = Self::find_frame_kind_c_claimed(self.kind.cs_id()) {
             self.find_frame_wave_c(kind, 0);
             return;
@@ -33695,11 +33695,11 @@ mod w4_d44_wire_tests {
         }
     }
 
-    /// The claim set is the batch-1 five 355-359 — the module mapper
+    /// The claim set is the wired band 355-364 — the module mapper
     /// minus the 366 scorpion (the g7 high2 hook maps `366 | 367` to
     /// the one scorpion machine, `NPC.cs:76820-76850`; census
-    /// research/68 §3.5) and minus the not-yet-wired 360-365. The
-    /// band edges stay outside.
+    /// research/68 §3.5) and minus the not-yet-wired 365. The band
+    /// edges stay outside.
     #[test]
     fn w4_d44_the_wave_c_claim_set_is_355_to_365_only() {
         use crate::npc_findframe_c::FindFrameKind as K;
@@ -33709,14 +33709,17 @@ mod w4_d44_wire_tests {
             (357, K::Worm),
             (358, K::LightningBug),
             (359, K::Snail),
+            (360, K::GlowingSnail),
+            (361, K::Frog),
+            (362, K::Duck),
+            (363, K::Duck2),
+            (364, K::DuckWhite),
         ];
         for (id, k) in table {
             assert_eq!(Npc::find_frame_kind_c_claimed(id), Some(k), "{id}");
         }
-        // Batch 2 widens to 360-365; until then they stay unclaimed.
-        for id in 360u16..=365 {
-            assert_eq!(Npc::find_frame_kind_c_claimed(id), None, "{id} batch 2");
-        }
+        // The final batch widens to 365; until then it stays unclaimed.
+        assert_eq!(Npc::find_frame_kind_c_claimed(365), None, "the last batch");
         assert_eq!(Npc::find_frame_kind_c_claimed(366), None, "the g7 fold");
         assert_eq!(Npc::find_frame_kind_c_claimed(367), None);
         assert_eq!(Npc::find_frame_kind_c_claimed(354), None);
@@ -33791,6 +33794,42 @@ mod w4_d44_wire_tests {
         n.vy = 0.0;
         n.find_frame_wave_c(K::GlowingSnail, 0);
         assert_eq!((n.frame, n.frame_counter), (2, 17.0));
+        // Frog wet: the counter zeroes and the |vx| > 0.25 band pins
+        // row 10 (`NPC.cs:76618-76685`).
+        n.frame = 3;
+        n.frame_counter = 4.0;
+        n.wet = true;
+        n.vx = 1.0;
+        n.facing = -1;
+        n.find_frame_wave_c(K::Frog, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (10, 0.0, -1));
+        // Frog air: the fall row 9.
+        n.wet = false;
+        n.vy = 1.0;
+        n.find_frame_wave_c(K::Frog, 0);
+        assert_eq!(n.frame, 9);
+        // Duck walk: the idle snaps row 0 + zeroes the counter.
+        n.frame = 7;
+        n.frame_counter = 2.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.find_frame_wave_c(K::Duck, 0);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // Duck walk stride: counter 3 → 4 steps row 0 → 1, then the
+        // floor clamp lifts it to 3.
+        n.frame_counter = 3.0;
+        n.vx = 1.0;
+        n.find_frame_wave_c(K::DuckWhite, 0);
+        assert_eq!((n.frame, n.frame_counter), (3, 0.0));
+        // Duck2 swimmer wet: the 8-tick stride over rows 1/2, the
+        // rotation zeroed.
+        n.frame = 1;
+        n.frame_counter = 7.0;
+        n.wet = true;
+        n.rotation = 0.5;
+        n.find_frame_wave_c(K::Duck2, 0);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        assert_eq!(n.rotation, 0.0);
     }
 
     /// The worm slope probe reads `(int)Center.X/16, (int)position.Y/16`
