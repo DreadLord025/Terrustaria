@@ -1,4 +1,4 @@
-﻿//! The NPC `Lighting.AddLight` sources (`S1-E-5`).
+//! The NPC `Lighting.AddLight` sources (`S1-E-5`).
 //!
 //! C# `Lighting.AddLight` funnels every overload into
 //! `Lighting.AddLight(int i, int j, float r, float g, float b)`
@@ -6,30 +6,30 @@
 //! list behind `!Main.gamePaused && Main.netMode != 2`
 //! (`LightingEngine.cs:51-54`). The engine then max-merges that list onto the
 //! working light map (`LightingEngine.cs:208-235`), one frame late. There is
-//! ONE list pair per engine вЂ” [`crate::entity_lights::EntityLights`] вЂ” and
+//! ONE list pair per engine — [`crate::entity_lights::EntityLights`] — and
 //! this family feeds the same pair as the item family
 //! (`entity_lights.rs::item_light`); the tile-anchor vocabulary is shared
 //! from there too.
 //!
 //! Ported here: the aiStyle-8 light tail at the end of `NPC.AI`
-//! (`NPC.cs:21280-21373`) вЂ” the type chain after `base.position +=
+//! (`NPC.cs:21280-21373`) — the type chain after `base.position +=
 //! netOffset`. Of the ported aiStyle-8 kinds:
 //!
 //! * 29/45 (Goblin Sorcerer/Tim) and 32 (Dark Caster) take **dust-only**
-//!   arms (`:21280-21300`) вЂ” no `AddLight`, so they stay dark here;
+//!   arms (`:21280-21300`) — no `AddLight`, so they stay dark here;
 //! * 533 (Desert Djinn) lights `base.Top` with (0.6, 0.6, 0.3)
 //!   (`:21358-21361`);
 //! * the `else` arm (`:21362-21373`) lights `base.Center` with
-//!   `(0.6, 0.6*0.65, 0.6*0.4)` вЂ” the Fire Imp (24) is the port's only
+//!   `(0.6, 0.6*0.65, 0.6*0.4)` — the Fire Imp (24) is the port's only
 //!   remaining aiStyle-8 kind.
 //!
-//! Arms that draw `Main.rand` are **not** ported вЂ” the 29/45/32 dust arms
+//! Arms that draw `Main.rand` are **not** ported — the 29/45/32 dust arms
 //! and the `else` arm's `Next(6)` dust half belong to the NPC-visual dust
 //! pass, which needs the dust system (S1-E-2/S1-E-3, other branches).
 //! Skipping an arm wholesale leaves the `Main.rand` stream untouched, so
 //! the fixed-step order stays exact. The aiStyle-23 arms
 //! (`NPC.cs:25239-25250`, types 83 = CursedHammer / 179 = CrimsonAxe / the
-//! fallback) wait for those kinds вЂ” neither exists in the port's roster
+//! fallback) wait for those kinds — neither exists in the port's roster
 //! (`NPCID.cs:10843`/`:11035`; PrimeVice 130 rides aiStyle 34 and
 //! DD2KoboldFlyerT3 575 aiStyle 108, so they never reach that chain).
 
@@ -53,13 +53,13 @@ pub(crate) fn npc_light(
     ai0: f32,
 ) -> Option<(i32, i32, [f32; 3])> {
     let (anchor, rgb) = match kind {
-        // `:21280-21300` вЂ” the sorcerer/Tim (29/45) and Dark Caster (32)
+        // `:21280-21300` — the sorcerer/Tim (29/45) and Dark Caster (32)
         // arms spawn dust only; no light. The Rune Wizard (172) is the
         // same (its alpha dust `:21310-21325` carries no AddLight).
         NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::RuneWizard => {
             return None
         }
-        // `:21301-21308` вЂ” the Librarian Skeleton (693, W4-g5):
+        // `:21301-21308` — the Librarian Skeleton (693, W4-g5):
         // `num111 = Remap(ai[0], 0, 60, 0, 1)`, squared, then
         // `AddLight(base.Top, num111*0.91, num111*0.82, num111*0.57)`
         // while positive. The ai[0] cycle counter scales the light.
@@ -71,12 +71,12 @@ pub(crate) fn npc_light(
             }
             (XAnchor::Top, [t * 0.91, t * 0.82, t * 0.57])
         }
-        // `:21358-21361` вЂ” `Lighting.AddLight(base.Top, 0.6f, 0.6f, 0.3f)`.
+        // `:21358-21361` — `Lighting.AddLight(base.Top, 0.6f, 0.6f, 0.3f)`.
         // `base.Top` is `(position.X + width/2f, position.Y)`
         // (`Entity.cs:86-91`) and the Vector2 overload truncates the
         // quotient per axis (`Lighting.cs:140-143`).
         NpcKind::DesertDjinn => (XAnchor::Top, [0.6, 0.6, 0.3]),
-        // `:21362-21373` вЂ” the else arm: `num118 = 0.6f`,
+        // `:21362-21373` — the else arm: `num118 = 0.6f`,
         // `AddLight(base.Center, num118, num118 * 0.65f, num118 * 0.4f)`.
         // The `Main.rand.Next(6)` dust half is skipped (module docs). The
         // Fire Imp is the port's only other aiStyle-8 kind; the remaining
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn fire_imp_emits_the_else_arm_center_light() {
-        // `:21364-21365` вЂ” the else arm's (0.6, 0.39, 0.24) at
+        // `:21364-21365` — the else arm's (0.6, 0.39, 0.24) at
         // `base.Center`. The imp's 18x40 box at (160, 176) has center
         // (169, 196) -> tile (10, 12).
         let (x, y, rgb) = npc_light(NpcKind::FireImp, Vec2::new(160.0, 176.0), 18.0, 40.0, 0.0)
@@ -137,7 +137,8 @@ mod tests {
 
     #[test]
     fn the_dust_only_casters_stay_dark() {
-        // `:21280-21300` вЂ” 29/45/32 spawn dust, never light.
+        // `:21280-21300` — 29/45/32 spawn dust, never light. The Rune
+        // Wizard (172) is the same (its alpha dust carries no AddLight).
         for kind in [NpcKind::GoblinSorcerer, NpcKind::Tim, NpcKind::DarkCaster, NpcKind::RuneWizard] {
             assert!(npc_light(kind, Vec2::ZERO, 18.0, 40.0, 0.0).is_none());
         }
@@ -178,4 +179,3 @@ mod tests {
         assert!(npc_light(NpcKind::DD2KoboldFlyerT3, Vec2::ZERO, 38.0, 38.0, 0.0).is_none());
     }
 }
-
