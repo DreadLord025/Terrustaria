@@ -113,6 +113,8 @@
 //! | 469-476 | `:84575-84588` | the 392/393/394/395 Martian Saucer family death (395 core 6 gores, 393/394 one each; 392 none) |
 //! | 477-480 | `:84609-84612` | the 482 GraniteGolem death (4 gores 718-721; 483 in gate but none) |
 //! | 481-484 | `:84631-84634` | the 631 RockGolem death (4 gores 1210-1213, type-1 dust) |
+//! | 485-489+ | `:84738` | the party Blue Slime (type 1, ai[1]==1345) confetti: Next(276,283) loop (5 living / 15 dead) |
+//! | 490-494 | `:84810-84814` | the 305-314 Scarecrow death (5 gores 441-445, type-194 scale-1.1 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2963,6 +2965,83 @@ fn rock_golem_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 40.0), vel, 1213, s); // :84634
 }
 
+/// The party Blue Slime confetti (`NPC.cs:84723-84741`, sites 485-489+):
+/// gated on `type == 1 && ai[1] == 1345` (the party variant). `num314 = 5`,
+/// tripled to 15 when `life <= 0`. First the `num314*2`-dust confetti burst
+/// (type `Next(139,143)`, SpeedY -10, scale 1.2, then scale ×`1+Next(-30,31)*0.01`
+/// and velocity.X += `Next(-50,51)*0.05`), then the `num314`-gore loop: type
+/// `Next(276,283)` at position with velocity `(0,-10)`, then scale
+/// ×`1+Next(-20,21)*0.01` and velocity.X += `Next(-50,51)*0.05`. The per-gore
+/// draw order: the type draw, the NewGore kicks (pool), then the two
+/// post-write draws. This is a HIT-half arm too (the confetti fires on every
+/// hit of the party slime, not just death) — the `life <= 0` only triples
+/// the count.
+fn party_slime_confetti(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84725-84729` — num314 = 5, tripled on death.
+    let mut num314 = 5;
+    if npc.hp <= 0 {
+        num314 *= 3;
+    }
+    // `:84730-84735` — the num314*2 dust confetti.
+    for _ in 0..num314 * 2 {
+        let ty = rng.next_range(139, 143);
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, ty, 0.0, -10.0, 0,
+            Color::default(), 1.2,
+        );
+        let d = dust.slot_mut(idx);
+        d.scale *= 1.0 + rng.next_range(-30, 31) as f32 * 0.01;
+        d.velocity.x += rng.next_range(-50, 51) as f32 * 0.05;
+    }
+    // `:84736-84741` — the num314 gore confetti.
+    for _ in 0..num314 {
+        let ty = rng.next_range(276, 283);
+        let idx = gore.new_gore(rng, world, pos, Vec2::new(0.0, -10.0), ty, 1.0);
+        let g = gore.slot_mut(idx);
+        g.scale *= 1.0 + rng.next_range(-20, 21) as f32 * 0.01;
+        g.velocity.x += rng.next_range(-50, 51) as f32 * 0.05;
+    }
+}
+
+/// The 305-314 Scarecrow death (`NPC.cs:84806-84814`, sites 490-494): the
+/// 60-dust type-194 burst (SpeedX `2*hitDirection`, SpeedY -2, scale 1.1),
+/// then the 5 gores 441/442/443/444/445 at the +0/+20/+20/+34/+34 Y ladder.
+fn scarecrow_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84806-84809` — the 60-dust type-194 burst (scale 1.1).
+    for _ in 0..60 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 194, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.1,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 441, s); // :84810
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 442, s); // :84811
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 443, s); // :84812
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 444, s); // :84813
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 445, s); // :84814
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3304,6 +3383,16 @@ pub fn hit_effect_c(
     // `:84616-84636` — the 631 RockGolem arm (sites 481-484).
     if npc_type == 631 && npc.hp <= 0 {
         rock_golem_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84723-84742` — the party Blue Slime confetti (sites 485-489+); the
+    // gate is type==1 && ai[1]==1345, and it fires on EVERY hit (the count
+    // triples on death), so it is NOT life-gated here.
+    if npc_type == 1 && npc.ai[1] == 1345.0 {
+        party_slime_confetti(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:84795-84816` — the 305-314 Scarecrow arm (sites 490-494).
+    if (305..=314).contains(&npc_type) && npc.hp <= 0 {
+        scarecrow_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5275,6 +5364,69 @@ mod tests {
         assert_eq!(types, vec![1210, 1211, 1212, 1213]);
         assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
         assert_eq!(gore.slot(3).position, Vec2::new(100.0, 140.0));
+    }
+
+    /// `NPC.cs:84738-84740` — the party slime confetti: the gore loop draws
+    /// Next(276,283) per gore + 2 kicks + the scale Next(-20,21) + the
+    /// velocity.X Next(-50,51). The count is 5 living / 15 dead. The twin
+    /// replay pins the full dust+gore draw sequence for the death count.
+    #[test]
+    fn w4_f10_the_party_slime_confetti_draws_the_full_sequence() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 30.0);
+        n.ai[1] = 1345.0;
+        n.hp = 0; // death -> num314 = 15
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(401);
+        party_slime_confetti(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        // 15 gores of type 276-282.
+        let active = gore.slots()[..15].iter().filter(|g| g.active).count();
+        assert_eq!(active, 15);
+        for g in &gore.slots()[..15] {
+            assert!((276..283).contains(&g.gore_type), "confetti type {}", g.gore_type);
+        }
+        // The twin: 30 dusts x (Next(139,143) + 6-draw census + Next(-30,31)
+        // + Next(-50,51)), then 15 gores x (Next(276,283) + 2 kicks +
+        // Next(-20,21) + Next(-50,51)).
+        let mut twin = UnifiedRandom::new(401);
+        for _ in 0..30 {
+            let _ty = twin.next_range(139, 143);
+            let _px = twin.next_max(36);
+            let _py = twin.next_max(26);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+            let _sj = twin.next_range(-30, 31);
+            let _xj = twin.next_range(-50, 51);
+        }
+        for _ in 0..15 {
+            let _ty = twin.next_range(276, 283);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            let _sj = twin.next_range(-20, 21);
+            let _xj = twin.next_range(-50, 51);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the confetti mirrors the C# draws");
+    }
+
+    /// `NPC.cs:84810-84814` — the Scarecrow death: the 5 gores
+    /// 441/442/443/444/445 at +0/+20/+34 Y, after the 60-dust type-194
+    /// scale-1.1 burst.
+    #[test]
+    fn w4_f10_the_scarecrow_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 44.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(409);
+        scarecrow_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![441, 442, 443, 444, 445]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
