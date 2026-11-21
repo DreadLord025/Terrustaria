@@ -74,6 +74,7 @@
 //! | 275-284 | `:83680-83684` | the 491 Flying Dutchman death: the RandomVector2 fan, iterations -1/0 |
 //! | 285-289 | `:83680-83684` | the 491 Flying Dutchman death: the RandomVector2 fan, iteration 1 |
 //! | 290-293 | `:83688-83689` | the 491 Flying Dutchman death: the 855 loop (2x2 gores) |
+//! | 294-302 | `:83693-83695` | the 491 Flying Dutchman death: the 854/853/856 loop (3x3 gores) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1698,6 +1699,33 @@ fn dutchman_death_855(
     }
 }
 
+/// The 491 Flying Dutchman death's 854/853/856 loop (`NPC.cs:83691-83696`,
+/// sites 294-302): the `num186 = -1..1` loop, each spawning 3 gores — 854 at
+/// `width*(0.25 + num186*0.1)`, 853 at `width*(-0.45 + num186*0.1)`, 856 at
+/// `width*(0.05 + num186*0.1)`, all dropped by `(0, 20 + 40*num186)`. No
+/// arm-level draws.
+fn dutchman_death_854(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, _h) = npc.size();
+    let v15 = center(npc) - Vec2::new(60.0, 60.0);
+    let dir = if npc.sprite_dir != 1 { 1.0 } else { -1.0 };
+    let v16 = rotated_by(Vec2::new(dir, 0.0), npc.rotation as f64);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:83691` — num186 = -1..1.
+    for num186 in -1..2 {
+        let f = num186 as f32;
+        let drop = (20 + 40 * num186) as f32;
+        gore.new_gore(rng, world, v15 + v16 * (w * (0.25 + f * 0.1)) - Vec2::new(0.0, drop), vel, 854, s); // :83693
+        gore.new_gore(rng, world, v15 + v16 * (w * (-0.45 + f * 0.1)) - Vec2::new(0.0, drop), vel, 853, s); // :83694
+        gore.new_gore(rng, world, v15 + v16 * (w * (0.05 + f * 0.1)) - Vec2::new(0.0, drop), vel, 856, s); // :83695
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1885,11 +1913,13 @@ pub fn hit_effect_c(
     }
     // `:83664-83722` — the 491 Flying Dutchman arm; the HEAD block (sites
     // 264-274) + the full fan (sites 275-289) + the 855 loop (sites
-    // 290-293); the rest lands with the next batches.
+    // 290-293) + the 854/853/856 loop (sites 294-302); the rest lands with
+    // the next batches.
     if npc_type == 491 && npc.hp <= 0 {
         dutchman_death_head(npc, gore, rng, world);
         dutchman_death_fan(npc, gore, rng, world);
         dutchman_death_855(npc, gore, rng, world);
+        dutchman_death_854(npc, gore, rng, world);
     }
     outcome
 }
@@ -3032,6 +3062,30 @@ mod tests {
         // num185=1 drop 220 -> y=-120.
         assert_eq!(gore.slot(2).position, Vec2::new(215.0 + 52.5, 100.0 - 220.0));
         assert_eq!(gore.slot(3).position, Vec2::new(215.0 - 52.5, 100.0 - 220.0));
+    }
+
+    /// `NPC.cs:83693-83695` — the Dutchman 854/853/856 loop: 9 gores, the
+    /// per-iteration type order 854/853/856 at the width-fraction anchors
+    /// with drops 20 + 40*num186 (-20/20/60).
+    #[test]
+    fn w4_f10_the_dutchman_854_loop_spawns_the_nine_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 350.0, 120.0);
+        n.sprite_dir = -1;
+        n.rotation = 0.0;
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(197);
+        dutchman_death_854(&n, &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..9].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![854, 853, 856, 854, 853, 856, 854, 853, 856]);
+        // v15 = (215,100). num186=-1: 854 at width*0.15=52.5, drop -20 -> y=120.
+        assert_eq!(gore.slot(0).position, Vec2::new(215.0 + 350.0 * 0.15, 120.0));
+        // 853 at width*(-0.55)=-192.5, drop -20.
+        assert_eq!(gore.slot(1).position, Vec2::new(215.0 - 350.0 * 0.55, 120.0));
+        // num186=0: 854 at width*0.25=87.5, drop 20 -> y=80.
+        assert_eq!(gore.slot(3).position, Vec2::new(215.0 + 350.0 * 0.25, 80.0));
+        // num186=1: 856 at width*0.15=52.5, drop 60 -> y=40.
+        assert_eq!(gore.slot(8).position, Vec2::new(215.0 + 350.0 * 0.15, 40.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
