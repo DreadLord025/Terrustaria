@@ -17047,6 +17047,75 @@ mod use_loop_tests {
         assert_eq!(p.knock_back, base + 2.0, "the minionKB add rides the spawn");
     }
 
+    /// W4-d125 Terraprisma phase: the 5005 Empress Blade (Terraprisma) use
+    /// census — the item row (`Item.cs:40278-40296`), the
+    /// `MINION_STAFF_PET_BUFF_ITEMS` 3600-tick buff-322 grant
+    /// (`Player.cs:53268`), the `SpawnMinionOnCursor` arm (`:48556-48559`,
+    /// the 1309/4758/4269/5005 group — ai0/ai1 0/0, no special seed), the
+    /// 946 minion row (10x10, aiStyle 156, scale 0.75, a full slot), and
+    /// the buff-322 keep-alive arm (`Player.cs:10912`, the `empress_blade`
+    /// flag). The 946 AI machine (`AI_156_BatOfLight`) is the a9 co-lane's
+    /// claim (its `bat_of_light_step`, the UNARMED_ROWED 156 census row).
+    #[test]
+    fn w4_d125_the_terraprisma_use_spawns_the_blade_and_grants_its_buff() {
+        // The item row matches the C# SetDefaults verbatim.
+        let def = crate::registry::get(5005).expect("the 5005 row");
+        assert_eq!(def.damage, 90);
+        assert_eq!(def.projectile, Some(946));
+        assert_eq!(def.buff_type, 322);
+        assert_eq!(def.use_time, 36);
+        assert_eq!(def.use_animation, 36);
+        assert_eq!(def.use_style, 1);
+        assert_eq!(def.rare, 5);
+        assert_eq!(def.knock_back, 4.0);
+        assert_eq!(def.shoot_speed, 10.0);
+        assert_eq!((def.width, def.height), (26, 28));
+        assert!(def.summon && def.auto_reuse);
+        assert_eq!(def.reuse_delay, 2);
+        assert_eq!(def.value, 1000000, "sellPrice(0,20) = 20*10000*5");
+        // SoundID.Item82 is SOUND_STYLES index 207 (the ctor-order table).
+        assert_eq!(def.use_sound, Some(207));
+        assert_eq!(crate::soundid::SOUND_STYLES[207].name, "Item82");
+        assert_eq!(crate::soundid::SOUND_STYLES[207].style, 82);
+        // The staff is in the ApplyPetBuffs grant set.
+        assert!(crate::projectile::MINION_STAFF_PET_BUFF_ITEMS.contains(&5005));
+        // The 946 minion row.
+        let row = crate::projectile::proj_data(946).expect("the 946 row");
+        assert_eq!((row.w, row.h), (10.0, 10.0));
+        assert_eq!(row.ai_style, 156);
+        assert!(row.minion);
+        assert_eq!(row.minion_slots, 1.0);
+        assert_eq!(row.scale, 0.75);
+        // The full use: the blade spawns at the cursor, the buff grants.
+        let mut app = app_with_staff(5005);
+        app.player.as_mut().unwrap().minion_damage = 3.0;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 946)
+            .expect("the Empress Blade spawned");
+        let p = &app.projectiles.slots()[slot];
+        assert_eq!(p.damage, 90, "the UNSCALED item damage");
+        assert_eq!(p.original_damage, 90, "the SpawnMinionOnCursor override");
+        assert_eq!((p.vel.x, p.vel.y), (0.0, 0.0), "zero spawn velocity");
+        assert_eq!((p.ai[0], p.ai[1]), (0.0, 0.0), "no special ai seed (:49582-49598)");
+        assert!(p.minion, "the minion row");
+        assert_eq!(p.minion_slots, 1.0, "a full slot");
+        let pl = app.player.as_ref().unwrap();
+        let b = pl.buffs.find_buff_index(322).expect("buff 322 granted");
+        assert_eq!(pl.buffs.buff_time[b], 3600, "the ApplyPetBuffs 3600 grant");
+        // The keep-alive arm refreshes to 18000 while the blade lives.
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        let pl = app.player.as_ref().unwrap();
+        let b = pl.buffs.find_buff_index(322).expect("buff 322 kept");
+        assert_eq!(pl.buffs.buff_time[b], 18000, "the keep-alive refresh");
+        assert!(pl.empress_blade, "the arm's flag (`Player.cs:10912`)");
+    }
+
     /// A staged world for the sentry landing scan: 64 wide, a solid floor row
     /// at `floor_y`, the player + camera + cursor near column 30 (the reach
     /// gate passes). The cursor's world point is returned for the assertions.
