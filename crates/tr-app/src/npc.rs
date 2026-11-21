@@ -1086,6 +1086,26 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.OwlMimic` (689) — Owl (`aiStyle 24`):
+    /// 18x34, dmg 0, def 0, 5 HP, kb 0.8,
+    /// value 0.0 (`NPC.cs:17667-17679`). W4-d43.
+    OwlMimic,
+    /// `NPCID.StatueMimic` (690) — Statue (`aiStyle 126`):
+    /// 28x38, dmg 40, def 10, 400 HP, kb 0.0,
+    /// value 0.0, dontTakeDamage, immortal (`NPC.cs:17680-17695`). W4-d43.
+    StatueMimic,
+    /// `NPCID.MossZombie` (691) — Moss Zombie (`aiStyle 3`):
+    /// 18x40, dmg 18, def 10, 60 HP, kb 0.45,
+    /// value 80.0 (`NPC.cs:17696-17708`). W4-d43.
+    MossZombie,
+    /// `NPCID.Orca` (692) — Orca (`aiStyle 16`):
+    /// 120x34, dmg 50, def 20, 400 HP, kb 0.7,
+    /// value 10000.0, noGravity (`NPC.cs:17709-17722`). W4-d43.
+    Orca,
+    /// `NPCID.LibrarianSkeleton` (693) — Librarian Skeleton (`aiStyle 8`):
+    /// 18x40, dmg 18, def 2, 70 HP, kb 0.6,
+    /// value 160.0 (`NPC.cs:17723-17736`). W4-d43.
+    LibrarianSkeleton,
     /// `NPCID.TownSlimeCopper` (684) — Squire Slime (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
@@ -3255,7 +3275,7 @@ impl Npc {
             // the false default (`NPC.cs:8507`, the SetDefaults reset).
             dont_take_damage: matches!(
                 kind,
-                NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel | NpcKind::HallowBoss
+                NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel | NpcKind::HallowBoss | NpcKind::StatueMimic
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -3265,7 +3285,7 @@ impl Npc {
             // residents' `friendly = true` write (`NPC.cs:8983+`) plus the
             // Sleeping Angler's own arm (`:13798`).
             chaseable: true,
-            immortal: false,
+            immortal: matches!(kind, NpcKind::StatueMimic),
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
                 || kind == NpcKind::BoundTownSlimeOld
@@ -3755,6 +3775,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            NpcKind::OwlMimic => 0.8,
+            NpcKind::StatueMimic => 0.0,
+            NpcKind::MossZombie => 0.45,
+            NpcKind::Orca => 0.7,
+            NpcKind::LibrarianSkeleton => 0.6,
             NpcKind::TownSlimeCopper => 0.5,
             NpcKind::BoundTownSlimeOld => 0.3,
             NpcKind::BoundTownSlimePurple => 0.3,
@@ -4190,6 +4215,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            NpcKind::OwlMimic => 0,
+            NpcKind::StatueMimic => 10,
+            NpcKind::MossZombie => 10,
+            NpcKind::Orca => 20,
+            NpcKind::LibrarianSkeleton => 2,
             NpcKind::TownSlimeCopper => 15,
             NpcKind::BoundTownSlimeOld => 10,
             NpcKind::BoundTownSlimePurple => 0,
@@ -4617,6 +4647,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            NpcKind::OwlMimic => 0.0,
+            NpcKind::StatueMimic => 0.0,
+            NpcKind::MossZombie => 80.0,
+            NpcKind::Orca => 10000.0,
+            NpcKind::LibrarianSkeleton => 160.0,
             NpcKind::TownSlimeCopper => 0.0,
             NpcKind::BoundTownSlimeOld => 0.0,
             NpcKind::BoundTownSlimePurple => 0.0,
@@ -6678,6 +6713,15 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d43: the aiStyle-24 bird arm (NPC.cs:25313-25537, npc_ai_style24.rs ported unwired). The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::OwlMimic => {}
+            // W4-d43: AI_126_StatueMimic (NPC.cs:43439-43681) — the statue mimic machine is unported. The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::StatueMimic => {}
+            NpcKind::MossZombie => self.update_zombie(world, player, dt),
+            NpcKind::Orca => self.update_swimmer(world, player, rng),
+            NpcKind::LibrarianSkeleton => self.update_caster(world, player, rng),
             NpcKind::TownSlimeCopper => self.update_guide(world, dt),
             NpcKind::BoundTownSlimeOld => self.update_slime(world, player, dt),
             // W4-d43: AI_125_ClumsySlimeBalloon (NPC.cs:43688-43819) — the balloon machine is unported. The kind holds
@@ -10709,6 +10753,137 @@ impl Npc {
                     if self.frame > 3 {
                         self.frame = 0;
                     }
+                }
+            }
+            NpcKind::OwlMimic => {
+                // `case 689` (`NPC.cs:73682-73746`): the owl mimic — the sprite
+                // mirrors the facing, the rotation tilts `vx * 0.1`. Stationary
+                // the blink machine rides the 40-tick counter (the `Next(80)`
+                // skip and the `40 * Next(3)` reset are the C#'s rand draws —
+                // the port's FindFrame carries no stream, so the counter ticks
+                // deterministically; the row decode is verbatim). Moving the
+                // 5-tick counter steps rows 8..12 (wrap at the strip / below 8).
+                self.sprite_dir = -self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    if self.frame >= 8 {
+                        self.frame = 0;
+                    }
+                    // The C# blink counter advances on `counter % 40 != 0 ||
+                    // Main.rand.Next(80) == 0` and resets to `40 * Next(3)` at
+                    // the 39th tick (`:73690-73697`). FindFrame carries no rand
+                    // stream in the port, so the counter ticks deterministically
+                    // through the 3x40 cycle (the documented stand-in — the row
+                    // decode below is verbatim).
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 120.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    let phase = (self.frame_counter as i32) % 40 / 10;
+                    let group = (self.frame_counter as i32) / 40;
+                    let mut row = 0;
+                    match group {
+                        0 => {
+                            row = if phase == 3 { 1 } else { phase };
+                        }
+                        1 => {
+                            let p = if phase == 3 { 1 } else { phase };
+                            row = if p != 0 { 2 + p } else { 0 };
+                        }
+                        2 => {
+                            row = if phase != 0 { 4 + phase } else { 0 };
+                        }
+                        _ => {}
+                    }
+                    self.frame = row as u32;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= self.rows() || self.frame < 8 {
+                        self.frame = 8;
+                    }
+                }
+            }
+            NpcKind::StatueMimic => {
+                // No `FindFrame` case (`NPC.cs:66684-77370` carries none for this
+                // type) and `Main.npcFrameCount` = 1 — the single frame holds.
+                self.frame = 0;
+            }
+            // W4-d43: the plain walker strip (`case 691`, `NPC.cs:76346`).
+            NpcKind::MossZombie => self.walker_frame(),
+            NpcKind::Orca => {
+                // `case 692` (`NPC.cs:74693-74762`): the orca — the sprite mirrors
+                // the facing (the bestiary-dummy gate is false in the sim). The
+                // 16-row sheet splits into two 8-row halves (`num34`); the wet
+                // swim cycles the half at 5 ticks (idle `ai[0]==0`) or 7, the
+                // dry pose eases toward row 1/7/3 by the velocity sign at 4
+                // ticks. The idle half offsets by 8.
+                self.sprite_dir = -self.facing;
+                let half = self.rows() / 2;
+                let cur = self.frame;
+                let mut cell = cur % half;
+                let idle = self.ai[0] == 0.0;
+                let cadence = if idle { 5.0 } else { 7.0 };
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= cadence {
+                        cell += 1;
+                        if cell >= half {
+                            cell = 0;
+                        }
+                        self.frame_counter = 0.0;
+                    }
+                } else {
+                    let target = if self.vy > 0.0 {
+                        7
+                    } else if self.vy < 0.0 {
+                        3
+                    } else {
+                        1
+                    };
+                    if cell != target {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter >= 4.0 {
+                            if cell < target {
+                                cell += 1;
+                            } else if cell > target {
+                                cell -= 1;
+                            }
+                            if cell == half {
+                                cell = target;
+                            }
+                            self.frame_counter = 0.0;
+                        }
+                    }
+                }
+                if idle {
+                    cell += half;
+                }
+                if cell != cur {
+                    self.frame = cell;
+                }
+            }
+            NpcKind::LibrarianSkeleton => {
+                // `case 693` (`NPC.cs:77029-77054`): the librarian skeleton —
+                // grounded the sprite follows the facing; row 0 base, airborne
+                // +2, the cast wind-up (`ai[1] > 0`) +1. (The type-32 red-hat
+                // +3 is not this kind's.)
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 {
+                    self.frame += 2;
+                } else if self.ai[1] > 0.0 {
+                    self.frame += 1;
                 }
             }
         }
@@ -20352,6 +20527,11 @@ impl Npc {
             NpcKind::BoundTownSlimePurple => 686,
             NpcKind::BoundTownSlimeYellow => 687,
             NpcKind::Pufferfish => 688,
+            NpcKind::OwlMimic => 689,
+            NpcKind::StatueMimic => 690,
+            NpcKind::MossZombie => 691,
+            NpcKind::Orca => 692,
+            NpcKind::LibrarianSkeleton => 693,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -25421,7 +25601,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 325] = [
+    pub(super) const ALL_KINDS: [NpcKind; 330] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25754,6 +25934,11 @@ mod tests {
         NpcKind::BoundTownSlimePurple,
         NpcKind::BoundTownSlimeYellow,
         NpcKind::Pufferfish,
+        NpcKind::OwlMimic,
+        NpcKind::StatueMimic,
+        NpcKind::MossZombie,
+        NpcKind::Orca,
+        NpcKind::LibrarianSkeleton,
         NpcKind::WyvernTail,
     ];
 
@@ -26127,6 +26312,37 @@ mod tests {
             (NpcKind::BoundTownSlimePurple, 686, 125u8, 20.0, 20.0, 0, 0, 1, 0.3, 0.0),
             (NpcKind::BoundTownSlimeYellow, 687, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::Pufferfish, 688, 16u8, 32.0, 16.0, 0, 0, 5, 0.5, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-d43 batch 12 — the new kinds' `SetDefaults` rows pin against the
+    /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
+    /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_batch12_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::OwlMimic, 689, 24u8, 18.0, 34.0, 0, 0, 5, 0.8, 0.0),
+            (NpcKind::StatueMimic, 690, 126u8, 28.0, 38.0, 40, 10, 400, 0.0, 0.0),
+            (NpcKind::MossZombie, 691, 3u8, 18.0, 40.0, 18, 10, 60, 0.45, 80.0),
+            (NpcKind::Orca, 692, 16u8, 120.0, 34.0, 50, 20, 400, 0.7, 10000.0),
+            (NpcKind::LibrarianSkeleton, 693, 8u8, 18.0, 40.0, 18, 2, 70, 0.6, 160.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -29709,7 +29925,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            325,
+            330,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

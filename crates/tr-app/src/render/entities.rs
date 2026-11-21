@@ -3414,6 +3414,21 @@ pub(crate) fn draw_npcs(
             NpcKind::Pufferfish => {
                 pumpkin_moon_draw(assets.npc_sheet(688), npc_rows(688), n, w, h)
             }
+            NpcKind::OwlMimic => {
+                pumpkin_moon_draw(assets.npc_sheet(689), npc_rows(689), n, w, h)
+            }
+            NpcKind::StatueMimic => {
+                pumpkin_moon_draw(assets.npc_sheet(690), npc_rows(690), n, w, h)
+            }
+            NpcKind::MossZombie => {
+                pumpkin_moon_draw(assets.npc_sheet(691), npc_rows(691), n, w, h)
+            }
+            NpcKind::Orca => {
+                pumpkin_moon_draw(assets.npc_sheet(692), npc_rows(692), n, w, h)
+            }
+            NpcKind::LibrarianSkeleton => {
+                pumpkin_moon_draw(assets.npc_sheet(693), npc_rows(693), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3582,6 +3597,7 @@ pub(crate) fn draw_npcs(
                     | NpcKind::YellowCockatiel
                     | NpcKind::GrayCockatiel
                     | NpcKind::Shimmerfly
+                    | NpcKind::OwlMimic
                     | NpcKind::DungeonSpirit
             )
         {

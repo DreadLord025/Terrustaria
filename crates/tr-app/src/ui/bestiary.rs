@@ -1595,6 +1595,36 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        (NpcKind::OwlMimic, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::StatueMimic, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::MossZombie, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Orca, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 120.0, h, white)
+        }
+        (NpcKind::LibrarianSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
         (NpcKind::TownSlimeCopper, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 14.0)
