@@ -6034,13 +6034,16 @@ mod w4_e18_fullmap_close_tests {
 
     /// W4-e18 residual census (written, not run - code-only): the close
     /// button's press (`Main.cs:56024-56033`) closes the fullscreen map.
-    /// The box is `(10, screenHeight - 40)` 32x30 inclusive; the default
-    /// headless screen is 1600x900, so the centre is `(26, 875)`.
+    /// The box is `(10, screenHeight - 40)` 32x30 inclusive; the headless
+    /// `flow_app` has no gpu, so `screen_size` falls back to 1280x720
+    /// (`world_sim/camera.rs`) — the centre is `(26, 695)`. (The e18
+    /// original pinned a 1600x900 frame — re-derived per the f46 union's
+    /// `44749457` witness fix, applied to the fold-source too.)
     #[test]
     fn w4_e18_the_close_button_press_closes_the_map() {
         let mut app = close_app();
         app.ui_left_press = true;
-        app.mouse_pos = Vec2::new(26.0, 875.0);
+        app.mouse_pos = Vec2::new(26.0, 695.0);
         app.handle_fullmap_close();
         assert!(!app.map.as_ref().unwrap().open, "the press closed the map");
     }
@@ -6052,11 +6055,11 @@ mod w4_e18_fullmap_close_tests {
         let mut app = close_app();
         app.ui_left_press = true;
         // x = 42.01 is past the 10 + 32 right edge.
-        app.mouse_pos = Vec2::new(42.01, 875.0);
+        app.mouse_pos = Vec2::new(42.01, 695.0);
         app.handle_fullmap_close();
         assert!(app.map.as_ref().unwrap().open, "outside the box: no close");
         // And the corner itself IS inside (inclusive).
-        app.mouse_pos = Vec2::new(42.0, 890.0);
+        app.mouse_pos = Vec2::new(42.0, 710.0);
         app.handle_fullmap_close();
         assert!(!app.map.as_ref().unwrap().open, "the corner closes the map");
     }
@@ -6069,7 +6072,7 @@ mod w4_e18_fullmap_close_tests {
         let mut app = close_app();
         app.map.as_mut().unwrap().set_open(false);
         app.ui_left_press = true;
-        app.mouse_pos = Vec2::new(26.0, 875.0);
+        app.mouse_pos = Vec2::new(26.0, 695.0);
         app.handle_fullmap_close();
         assert!(!app.map.as_ref().unwrap().open);
     }
@@ -6084,9 +6087,12 @@ mod w4_e18_map_icon_row_tests {
     /// W4-e18 final sweep (written, not run - code-only): the inventory's
     /// map-icon row (`Main.cs:41087-41120`) — icon 0 opens the fullscreen map
     /// through the shared `TryOpeningFullscreenMap` block (close inventory,
-    /// `SetTalkNPC(-1)`, scale 2.5), icons 1/2/3 set `mapStyle` 0/1/2. At the
-    /// 1600x900 headless frame icon k sits at `(1160 + k*32, 40)`; the hit
-    /// box is the inclusive 32x30 (`:41087`).
+    /// `SetTalkNPC(-1)`, scale 2.5), icons 1/2/3 set `mapStyle` 0/1/2. The
+    /// headless `flow_app` has no gpu, so `screen_size` falls back to the
+    /// 1280x720 default (`world_sim/camera.rs`) — icon k sits at
+    /// `(840 + k*32, 40)` (the `>= 940` horizontal branch); the hit box is
+    /// the inclusive 32x30 (`:41087`). (The e18 original pinned the 1600x900
+    /// frame — re-derived per the f46 union's `44749457` witness fix.)
     #[test]
     fn w4_e18_the_map_icon_row_opens_the_map_and_sets_the_style() {
         let mut app = flow_app(None, vec![], vec![]);
@@ -6096,14 +6102,14 @@ mod w4_e18_map_icon_row_tests {
         app.talk_npc = Some(0);
         // Icon 2 (the minimap style, k == 2 -> mapStyle 1).
         app.ui_left_press = true;
-        app.mouse_pos = Vec2::new(1160.0 + 2.0 * 32.0 + 4.0, 44.0);
+        app.mouse_pos = Vec2::new(840.0 + 2.0 * 32.0 + 4.0, 44.0);
         app.handle_inventory_clicks();
         assert_eq!(app.map_style, 1, "k == 2 sets mapStyle 1");
         assert!(app.inventory_open, "a style icon keeps the inventory open");
         // Icon 0 opens the fullscreen map + closes the inventory + clears
         // the dialog (`Main.cs:41095-41104` = `Player.cs:29103-29119`).
         app.ui_left_press = true;
-        app.mouse_pos = Vec2::new(1164.0, 44.0);
+        app.mouse_pos = Vec2::new(844.0, 44.0);
         app.handle_inventory_clicks();
         assert!(app.map.as_ref().unwrap().open, "icon 0 opens the map");
         assert!(!app.inventory_open, "and closes the inventory");
