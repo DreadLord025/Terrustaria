@@ -115,6 +115,11 @@ pub(crate) struct App {
     /// `Sandstorm` — the event state machine; the storm machine ticks in
     /// `update_scene` and the storm filters read its severity.
     pub(crate) sandstorm: tr_core::scene::Sandstorm,
+    /// W4-c40: `SkyManager.Instance["Sandstorm"]` (`SandstormSky.cs`) — the
+    /// sky tint quad's fade state; the `SceneState.cs:97` edge flips it in
+    /// `update_scene`, `SkyManager.Update` fades it in `ambience_phase`,
+    /// the sky pass draws it at the `DrawRemainingDepth` flush.
+    pub(crate) sandstorm_sky: crate::render::sandstorm_sky::SandstormSky,
     /// M1.4-BG-18 phase 3: the `ApplyVisuals` driver (`app::filters`) — filter
     /// board, storm shader state and the winner uniform the post branch
     /// applies.
@@ -3558,6 +3563,7 @@ impl App {
             targets: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
+            sandstorm_sky: crate::render::sandstorm_sky::SandstormSky::default(),
             filter_driver: crate::app::filters::FilterDriver::new(),
             world,
             atlas: Some(atlas),

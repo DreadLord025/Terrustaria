@@ -650,6 +650,13 @@ pub(crate) fn draw_sky(
     counter: u32,
     // `Main.mouseTextColor` (`Main.cs:1683`): the Mushroom glow's pulse.
     mouse_text_color: u8,
+    // W4-c40: the `SkyManager` "Sandstorm" sky (`SandstormSky.cs`) — drawn
+    // at the `DrawRemainingDepth` flush slot (`Main.cs:59626`), the same
+    // boundary the shallowest ambience entities use. `None` when the sky
+    // is inactive (the manager only walks `_activeSkies`).
+    sandstorm_sky: Option<&crate::render::sandstorm_sky::SandstormSky>,
+    // `Sandstorm.Severity` — the tint quad's `min(1, Severity * 1.5)` term.
+    sandstorm_severity: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -1525,7 +1532,28 @@ pub(crate) fn draw_sky(
     // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
     // last front-row boundary) draw after every surface layer, before the
     // underground backdrop.
+    // W4-c40: the SandstormSky tint quad rides the SAME flush
+    // (`SkyManager.DrawDepthRange(float.MinValue, _lastDepth)`,
+    // `SkyManager.cs:70-74`): its `Draw` gate (`SandstormSky.cs:51`) passes
+    // for any band reaching below depth 1, so the quad paints here — after
+    // every surface layer, before the underground backdrop. The tracker
+    // value at the flush is the C#'s `_lastDepth` (the port's `amb_last`
+    // BEFORE the ambience flush consumes it); `float.MinValue` is the C#
+    // minDepth.
+    let sky_flush_max = amb_last;
     crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
+    if let Some(sky) = sandstorm_sky {
+        sky.draw(
+            r,
+            camera,
+            zoom,
+            [screen.x, screen.y],
+            sky_color,
+            sandstorm_severity,
+            f32::MIN,
+            sky_flush_max,
+        );
+    }
     // `Main.DrawBackground_SurfaceTransitionBackground`,
     // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
     // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured

@@ -2162,6 +2162,7 @@ pub(crate) mod front_flow_tests {
             targets: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(1),
+            sandstorm_sky: crate::render::sandstorm_sky::SandstormSky::default(),
             filter_driver: crate::app::filters::FilterDriver::new(),
             atlas: None,
             combat_texts: Vec::new(),

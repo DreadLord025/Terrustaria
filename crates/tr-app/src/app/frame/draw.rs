@@ -1091,6 +1091,12 @@ impl App {
                         self.atmo,
                         self.game_update_count,
                         self.mouse_text_color,
+                        // W4-c40: the SandstormSky tint — only the ACTIVE
+                        // sky draws (`SkyManager` walks `_activeSkies`).
+                        self.sandstorm_sky
+                            .is_active()
+                            .then_some(&self.sandstorm_sky),
+                        sandstorm.severity,
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.
