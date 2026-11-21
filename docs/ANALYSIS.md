@@ -39566,3 +39566,67 @@ resume 0.1/0/α+20 (then the same-tick fade point → 21), the 600+255 fade,
 + the lava five-puff seam census (30 stream draws, the 5×5 clamp, the
 −0.2 Y kick), the packed-sheet Width/Height/AABB math, the sheet-half
 fall probe), `sand.rs` 1 (the wind recipe bounds).
+
+## The wind seal (W4-g68, 2026-11-21, code-only) — research/247 SEALED
+
+The g68-side close of the d130 WEATHER-FAMILY bible (research/83 §9.4,
+`b8f655708`): **g68 is the SINGLE wind-flag owner** — `tr-core/wind.rs`'s
+`Wind` is the only integrator of `windSpeedCurrent`/`windSpeedTarget`,
+every family consumer read-only (d130 rain velocity `wind*18,14`, the
+folded g67 Eyebrella drip `wind*3,9`, c40's wind-only Sandstorm severity,
+g68's own leaf cadence `WindForVisuals == windSpeedCurrent`
+`Main.cs:2823`). The full receipts + the wind-family bible live in
+`docs/research/247-g68-wind-seal.md` (registry 247 = max-on-origin 246 +
+1 provisional, first-pushed-wins).
+
+**The final-phase missing arms (landed `32ee28ca5` + `2075c3aaa`):** the
+in-flight dirty state at resume was g68's OWN stale work (co-lane probe:
+no live writer, mtimes ~4.5 h old, every hunk cites W4-g68 — NOT an
+alive-advancing foreign co-lane). Adjudicated hunk-by-hunk:
+* **KEPT (wind.rs, g68-unique, hunk-disjoint from d130's `lanterns_up`
+  graft):** (1) the remix branch of `UpdateWindyDayState`
+  (`Main.cs:13021-13027` — remix clears the STORM flag, leaves windy-day
+  alone; non-remix clears windy-day; the old port cleared windy-day
+  unconditionally); (2) `Wind::windy_enough_for_kite_drops`
+  (`Main.cs:2907`, `|windSpeedTarget| >= _maxWind 0.4`, a distinct
+  property from the butterfly gate) **FED** into `spawn_loot`'s live
+  `LootFlags.windy` (was `Default::default()` false — the 8 kite rows
+  `loot_db_gen.rs` were dead); (3) `InAPlaceWithWind`'s `InWorld` skip
+  (`WorldGen.cs:86868` fluff 0 — an out-of-bounds cell is SKIPPED, not a
+  refusal; the old `return false` refused every map-edge probe, the
+  sunflower 2×5 window + the player `wind_here`). 3 witnesses WRITTEN
+  NOT RUN (33 total on the lane, grep-verified).
+* **RETIRED (player.rs, the push-chain copy): a c40-DUPLICATE.** c40
+  pushed the SAME `windPushed` chain FIRST (`fa3717be1`/`bdd039802`/
+  `7fc862c91`) as the STRICT SUPERSET (the `Auras.sandstorm_wind` →
+  `AddBuff(194,2)` grant `Player.cs:25556-25559`, the bottle-jump
+  lifecycle, 8 witnesses). The g68 copy had no grant and used
+  `f32::signum()` (±1.0 at ±0.0, never 0 — dead-calm would push +0.06
+  where C# `Math.Sign(0f)=0` pushes nothing; c40's explicit sign is
+  faithful). Keep-one = **c40 CANONICAL** (the `b46556b2d` precedent);
+  the g68 copy's three UNIQUE refinements survive as the exact graft
+  ledger (research/247 §5.1): **G1** the `isLockedToATile`
+  sitting/sleeping gate (`Player.cs:4020-4030`, c40 says "unported
+  constant false"), **G2** the `windPushed` term in BOTH
+  `GetIntendedGroundedFrame` copies (`Mount.cs:4550` — the `:36216`
+  Update site AND `try_landing`; the g68 dirty diff patched only the
+  first), **G3** the walk-cycle rest row (`Player.cs:36250`). Apply at
+  the c40 merge; the retired state is reconstructible from c40's tip +
+  the grafts, nothing lost.
+* **The c40 ONE-WAY gate confirmed** (`SceneMetrics.cs:698-703` re-read:
+  `ZoneSandstorm` clears `ZoneRain`, rain never gates the storm) —
+  already base-landed (`scene.rs:786-790`, the
+  `zone_sandstorm_suppresses_zone_rain` witness). One cite correction
+  for c40: the port comment says `:704-707`, the actual lines are
+  `:698-703` (comment-only). c40's `ResetEffects` cite `:16970` is
+  actually `UpdateDead`; the `ResetEffects` clear is `:18739` (both real
+  C# clears; the `UpdateDead` arm is a c40-lane remainder).
+
+The d130 `lanterns_up` wind.rs graft composes HUNK-DISJOINT (zero shared
+lines, both keep); g67 touches none of g68's four files (wind/foliage/
+gore/sand); the c40c bolt-geometry checkpoint (`5552a3266`, unregistered
+modules) is c40's own remainder, orthogonal to the wind flag. Gate
+command (the merger's verify): `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` — judge only by the `test result:
+ok` lines; every witness WRITTEN NOT RUN (code-only, no cargo/rustc
+invoked on this lane).
