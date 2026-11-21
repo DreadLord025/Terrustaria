@@ -737,6 +737,12 @@ pub(crate) struct App {
     /// The world-event schedulers' state (S1-F-14): `LanternNight`,
     /// `BirthdayParty` and `CultistRitual`'s delay machine.
     pub(crate) world_events: crate::world_events::WorldEvents,
+    /// W4-c39: the event skies (`LanternSky`/`PartySky`,
+    /// `GameContent/Skies/`) — the lantern-night lanterns and the party
+    /// balloons, activated/deactivated by the schedulers' UpdateTime edges.
+    pub(crate) event_skies: crate::event_skies::EventSkies,
+    /// The event skies' 60 Hz accumulator (the `SkyManager.Update` cadence).
+    pub(crate) event_skies_accumulator: f32,
     /// The C#'s draw-time camera state (`Main.cs:463`/`:477`/`:1097-1099`):
     /// the teleport lerp pair, the object-tracking pan and the vestigial
     /// `DebugCameraPan` accumulator. S1-B-4 moved the camera update to the
@@ -3927,6 +3933,8 @@ impl App {
             camera_state: Default::default(),
             gfx_quality: Default::default(),
             world_events: Default::default(),
+            event_skies: Default::default(),
+            event_skies_accumulator: 0.0,
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),

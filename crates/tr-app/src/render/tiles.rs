@@ -563,7 +563,8 @@ pub(crate) fn draw_tiles(
     }
 
     // Main.cs:22320,56951,63390 — behind-tiles NPCs draw before the tile layer
-    // so they appear inside/behind solid tiles (worms, WoF segments).
+    // so they appear inside/behind solid tiles (worms, WoF segments). Town
+    // NPCs never ride this pass, so the party-hat context is None here.
     draw_phase("npcs_behind_tiles");
     stats.quads += draw_npcs(
         r,
@@ -576,6 +577,7 @@ pub(crate) fn draw_tiles(
         zoom,
         screen,
         true,
+        None,
     );
 
     scratch.open.clear();
@@ -1184,7 +1186,9 @@ pub(crate) fn draw_tiles(
             &vine_roots,
         );
     }
-    // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
+    // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles). The party
+    // hats ride it (`Main.DrawNPCExtras`, W4-c39): the colour hash reads the
+    // moon phase + day flag, the strip rides the lookups.
     draw_phase("npcs");
     stats.quads += draw_npcs(
         r,
@@ -1197,6 +1201,7 @@ pub(crate) fn draw_tiles(
         zoom,
         screen,
         false,
+        Some((party_is_up, world.moon_phase, world.day_time, lookups)),
     );
     draw_phase("player");
     if let Some(p) = player {

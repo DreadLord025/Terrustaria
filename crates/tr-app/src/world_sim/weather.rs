@@ -214,7 +214,20 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             // The ritual window opened — the spawn rides the caller's
             // floor/LOS gates (S1-F-14's TrySpawning predicate contract).
         }
-        crate::world_events::update_time_party(&mut app.world_events);
+        // `BirthdayParty.UpdateTime` (`BirthdayParty.cs:183-219`): the
+        // `_wasCelebrating` edge + the celebrating-roster prune. The edge
+        // drives the party sky's activate/deactivate (the returned flag);
+        // an emptied roster drops the genuine party with the broadcast.
+        let partyable: Vec<bool> = app
+            .npcs
+            .iter()
+            .map(crate::world_events::can_npc_party)
+            .collect();
+        let party_edge = crate::world_events::update_time_party(
+            &mut app.world_events,
+            &partyable,
+            &mut app.chat,
+        );
         // `LanternNight.UpdateTime`'s persistence gate: the lanterns ride
         // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`,
         // `LanternNight.cs:42-48`). W4-c39: the `LanternsCanStart` half is
@@ -224,10 +237,36 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             crate::world_events::LanternGates::from_world(world, &app.npcs);
         let lantern_can_persist =
             !world.day_time && crate::world_events::lanterns_can_start(&lantern_gates);
-        let _ = crate::world_events::update_time_lanterns(
+        let lantern_edge = crate::world_events::update_time_lanterns(
             &mut app.world_events,
             lantern_can_persist,
         );
+        // W4-c39 — the `SkyManager.Activate/Deactivate` edges
+        // (`LanternNight.cs:133-150`, `BirthdayParty.cs:185-197`): the
+        // lanterns-up / party-up flip regenerates (or starts leaving) the
+        // matching sky. The per-tick sky update rides the frame's
+        // `event_skies_phase` (the `SkyManager.Update` slot).
+        let sky_ctx = crate::event_skies::SkyCtx {
+            screen_position_y: app.camera.y - app.screen_size().1 * 0.5 / app.zoom,
+            screen_height: app.screen_size().1,
+            max_tiles_x: world.width,
+            max_tiles_y: world.height,
+            world_surface: world.world_surface,
+        };
+        if let Some(up) = lantern_edge {
+            if up {
+                app.event_skies.activate_lanterns(&sky_ctx);
+            } else {
+                app.event_skies.deactivate_lanterns();
+            }
+        }
+        if let Some(up) = party_edge {
+            if up {
+                app.event_skies.activate_party(&sky_ctx);
+            } else {
+                app.event_skies.deactivate_party();
+            }
+        }
         if scene_state.forced_severity.is_none() {
             sandstorm.update_time(day_rate, wind.speed_current);
         }

@@ -45,6 +45,13 @@ pub(crate) struct WorldEvents {
     pub celebrating_npcs: Vec<usize>,
     /// `BirthdayParty._wasCelebrating`.
     was_celebrating: bool,
+    /// `NPC.freeCake` (`NPC.cs:6093`): the Party Girl's free-cake gift latch.
+    /// `NaturalAttempt` raises it on a fresh party (`BirthdayParty.cs:106`),
+    /// the dusk `UpdateTime_StartNight` clears it (`Main.cs:65222`), and the
+    /// `FreeCakeDialogue` consumes it on the next talk
+    /// (`ConditionalDialogue.cs:58-66`). The clear-world reset
+    /// (`WorldGen.cs:6945`, the `NPC` static ctor `:95165`) zeroes it too.
+    pub free_cake: bool,
     // --- CultistRitual (`CultistRitual.cs`) ---
     /// `CultistRitual.delay` (`CultistRitual.delayStart` = 86400).
     pub cultist_delay: i32,
@@ -184,20 +191,37 @@ pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
     }
 }
 
-/// `BirthdayParty.CheckMorning` → `NaturalAttempt` (`BirthdayParty.cs:69-117`):
+/// `BirthdayParty.CanNPCParty` (`BirthdayParty.cs:60-71`): an active town
+/// NPC with a non-zero aiStyle, excluding the bound old man (37), the
+/// skeleton merchant (453) and the tax collector (441), and every town pet.
+/// The port's `is_town_npc_like` is the `townNPC` flag set (the housing kinds
+/// plus the eleven sellers); the bound forms carry aiStyle 0 and no ported
+/// kind, so the 37/453 exclusions fold into the flag set and 441 is the only
+/// explicit exclusion the roster carries. No town pet has a ported kind.
+pub(crate) fn can_npc_party(n: &Npc) -> bool {
+    n.hp > 0
+        && n.kind.is_town_npc_like()
+        && n.kind != crate::npc::NpcKind::TaxCollector
+}
+
+/// `BirthdayParty.CheckMorning` → `NaturalAttempt` (`BirthdayParty.cs:73-143`):
 /// the party girl must be present (`AnyNPCs(208)`), the cooldown's
-/// decrement, the `Next(10) == 0` roll, the >= 5 partyable NPCs gather, and
-/// the `Next(5, 11)` cooldown + the 1/2/3-celebrating roll on a hit.
-/// `partyable` folds `CanNPCParty`'s gates (`:55-64`) over the port's
-/// compacted vec — the C#'s `OrderBy(Main.rand.Next())` pick indexes the
-/// port's vec slots (deviation recorded).
+/// decrement, the `Next(10) == 0` roll (`Next(7)` on the tenth-anniversary
+/// world, `:84-88`), the >= 5 partyable NPCs gather, and the `Next(5, 11)`
+/// cooldown + the 1/2/3-celebrating roll on a hit. `partyable` folds
+/// [`can_npc_party`] over the port's compacted vec — the C#'s
+/// `OrderBy(Main.rand.Next())` pick indexes the port's vec slots (deviation
+/// recorded). A fresh party raises `NPC.freeCake` (`:106`).
 ///
-/// Returns the `CheckForAchievement()` call the C# makes at `:142` — the
-/// party just came up, so THROW_A_PARTY (25) credits (S1-E-18f).
+/// Returns the `CheckForAchievement()` call the C# makes at `:141` — the
+/// party just came up, so THROW_A_PARTY (25) credits (S1-E-18f). The
+/// `Game.BirthdayParty_1/2/3` broadcast (`:127-139`) rides the caller (it
+/// needs the celebrants' names off the live roster).
 pub(crate) fn check_morning_party(
     ev: &mut WorldEvents,
     party_girl_present: bool,
     partyable: &[bool],
+    tenth_anniversary: bool,
     rng: &mut dyn FnMut(i32, i32) -> i32,
 ) -> bool {
     if !party_girl_present {
@@ -207,7 +231,9 @@ pub(crate) fn check_morning_party(
         ev.party_days_on_cooldown -= 1;
         return false;
     }
-    if rng(0, 10) != 0 {
+    // `:84-89` — the roll's maxValue is 10, or 7 on the anniversary world.
+    let max_value = if tenth_anniversary { 7 } else { 10 };
+    if rng(0, max_value) != 0 {
         return false;
     }
     let candidates: Vec<usize> = (0..partyable.len()).filter(|&i| partyable[i]).collect();
@@ -216,6 +242,8 @@ pub(crate) fn check_morning_party(
     }
     ev.genuine_party = true;
     ev.party_days_on_cooldown = rng(5, 11);
+    // `:106` — `NPC.freeCake = true`.
+    ev.free_cake = true;
     ev.celebrating_npcs.clear();
     // `Main.rand.Next(5) == 0 && list.Count > 12` → 3 celebrants, else the
     // `Next(3) == 0` → 2 arm — both draws consumed in the C#'s order.
@@ -257,12 +285,47 @@ pub(crate) fn update_time_lanterns(
     }
 }
 
-/// `BirthdayParty.UpdateTime` (`BirthdayParty.cs`'s per-tick walk — the
-/// `_wasCelebrating` edge bookkeeping; the dusk clear rides CheckNight).
-pub(crate) fn update_time_party(ev: &mut WorldEvents) {
+/// `BirthdayParty.UpdateTime` (`BirthdayParty.cs:183-219`): on the
+/// `_wasCelebrating` edge, the sky activates/deactivates (the returned
+/// `Option<bool>` — the port's party-sky layer owns it) and the celebrating
+/// roster prunes: every celebrant that no longer passes `CanNPCParty` is
+/// removed, and an emptied roster drops the genuine party with the
+/// "everyone has gone home" broadcast (unless a manual party holds it up).
+///
+/// The C#'s prune loop (`:200-206`) calls `RemoveAt(i)` WITHOUT decrementing
+/// `i` — the element after a removal is skipped that pass. The port keeps
+/// the quirk 1:1 (the index walk over the shifting vec).
+pub(crate) fn update_time_party(
+    ev: &mut WorldEvents,
+    partyable: &[bool],
+    chat: &mut ChatMonitor,
+) -> Option<bool> {
+    let mut edge = None;
     if ev.was_celebrating != party_is_up(ev) {
-        ev.was_celebrating = party_is_up(ev);
+        edge = Some(party_is_up(ev));
+        if !ev.celebrating_npcs.is_empty() {
+            // The C# `for (i = 0; i < Count; i++)` increments even after a
+            // `RemoveAt(i)` — the element that slides into `i` is SKIPPED
+            // this pass. The port's walk keeps the same stride.
+            let mut i = 0;
+            while i < ev.celebrating_npcs.len() {
+                let slot = ev.celebrating_npcs[i];
+                if !partyable.get(slot).copied().unwrap_or(false) {
+                    ev.celebrating_npcs.remove(i);
+                }
+                i += 1;
+            }
+            if ev.celebrating_npcs.is_empty() {
+                ev.genuine_party = false;
+                if !ev.manual_party {
+                    // `:212` — `Lang.misc[99]`, `new Color(255, 0, 160)`.
+                    chat::broadcast_death_text(chat, "Everyone has gone home!", [255, 0, 160]);
+                }
+            }
+        }
     }
+    ev.was_celebrating = party_is_up(ev);
+    edge
 }
 
 /// `CultistRitual.UpdateTime` (`CultistRitual.cs:23-45`): the delay/recheck
@@ -330,6 +393,9 @@ pub(crate) fn world_clear(ev: &mut WorldEvents) {
     ev.party_days_on_cooldown = 0;
     ev.celebrating_npcs.clear();
     ev.was_celebrating = false;
+    // `NPC.freeCake = false` rides the same clear-world pass
+    // (`WorldGen.cs:6945`, beside `Main.cs:52245-52247`'s event clears).
+    ev.free_cake = false;
     // The ritual's `delay`/`recheck` are NOT in the WorldClear family — they
     // ride the world-file load (`WorldFile.cs:163`'s `_tempCultistDelay`
     // restore), so this fn leaves them alone (the C#'s own scope).
@@ -440,15 +506,16 @@ mod tests {
         let partyable = [true; 5];
         let mut draws = 0;
         let mut rng = |_lo: i32, _hi: i32| { draws += 1; 0 };
-        check_morning_party(&mut ev, false, &partyable, &mut rng);
+        check_morning_party(&mut ev, false, &partyable, false, &mut rng);
         assert_eq!(draws, 0);
         let mut seq = [0i32, 6i32, 1i32, 1i32].into_iter();
-        // S1-E-18f — the return is `:142`'s `CheckForAchievement` call.
+        // S1-E-18f — the return is `:141`'s `CheckForAchievement` call.
         assert!(
-            check_morning_party(&mut ev, true, &partyable, &mut |lo, hi| seq.next().unwrap_or(lo)),
+            check_morning_party(&mut ev, true, &partyable, false, &mut |lo, hi| seq.next().unwrap_or(lo)),
             "a fresh party credits THROW_A_PARTY"
         );
         assert!(ev.genuine_party);
+        assert!(ev.free_cake, "`:106` — NPC.freeCake = true on a fresh party");
         assert_eq!(ev.party_days_on_cooldown, 6);
         assert_eq!(ev.celebrating_npcs.len(), 1);
         check_night_party(&mut ev, &mut chat);
@@ -457,7 +524,7 @@ mod tests {
         let mut ev2 = WorldEvents::default();
         let partyable12 = [true; 13];
         let mut seq2 = [0i32, 6i32, 0i32].into_iter();
-        check_morning_party(&mut ev2, true, &partyable12, &mut |lo, hi| seq2.next().unwrap_or(lo));
+        check_morning_party(&mut ev2, true, &partyable12, false, &mut |lo, hi| seq2.next().unwrap_or(lo));
         assert_eq!(ev2.celebrating_npcs.len(), 3);
     }
 
@@ -491,6 +558,7 @@ mod tests {
             party_days_on_cooldown: 5,
             celebrating_npcs: vec![1, 2, 3],
             was_celebrating: true,
+            free_cake: true,
             cultist_delay: 86400,
             cultist_recheck: 600,
         };
@@ -499,9 +567,93 @@ mod tests {
         assert_eq!(ev.lantern_nights_on_cooldown, 0);
         assert!(!ev.manual_party && !ev.genuine_party);
         assert!(ev.celebrating_npcs.is_empty());
+        assert!(!ev.free_cake, "`WorldGen.cs:6945` — freeCake clears too");
         // The ritual's delay survives the clear (the world-file restore owns
         // it — `WorldFile.cs:163`).
         assert_eq!(ev.cultist_delay, 86400);
         assert_eq!(ev.cultist_recheck, 600);
+    }
+
+    /// W4-c39 — the tenth-anniversary world rolls `Next(7)` instead of
+    /// `Next(10)` (`BirthdayParty.cs:84-89`): a roll of 7..9 that would miss
+    /// the classic party hits the anniversary one.
+    #[test]
+    fn w4_c39_the_anniversary_party_roll_uses_seven() {
+        let partyable = [true; 5];
+        // A first draw of 7 misses the classic Next(10) != 0 gate... no: 7
+        // is non-zero so BOTH miss. Use a draw of 0 for the hit and check
+        // the maxValue the roll consumes via a recording rng.
+        let mut ev = WorldEvents::default();
+        let mut ranges: Vec<(i32, i32)> = Vec::new();
+        let mut seq = [0i32, 6i32, 1i32, 1i32].into_iter();
+        check_morning_party(&mut ev, true, &partyable, true, &mut |lo, hi| {
+            ranges.push((lo, hi));
+            seq.next().unwrap_or(lo)
+        });
+        assert!(ev.genuine_party);
+        assert_eq!(ranges[0], (0, 7), "the anniversary roll is Next(7)");
+        // The classic world rolls Next(10).
+        let mut ev2 = WorldEvents::default();
+        let mut ranges2: Vec<(i32, i32)> = Vec::new();
+        let mut seq2 = [0i32, 6i32, 1i32, 1i32].into_iter();
+        check_morning_party(&mut ev2, true, &partyable, false, &mut |lo, hi| {
+            ranges2.push((lo, hi));
+            seq2.next().unwrap_or(lo)
+        });
+        assert_eq!(ranges2[0], (0, 10), "the classic roll is Next(10)");
+    }
+
+    /// W4-c39 — `BirthdayParty.UpdateTime`'s roster prune
+    /// (`BirthdayParty.cs:198-216`): on the celebrating edge, celebrants that
+    /// no longer pass `CanNPCParty` are removed; an emptied roster drops the
+    /// genuine party and broadcasts (unless a manual party holds it up). The
+    /// C#'s `RemoveAt(i)` loop increments `i` even after a removal, so the
+    /// element that slides into `i` is skipped that pass.
+    #[test]
+    fn w4_c39_the_party_roster_prune_drops_the_genuine_party_when_empty() {
+        let mut ev = WorldEvents::default();
+        let mut chat = ChatMonitor::default();
+        ev.genuine_party = true;
+        ev.celebrating_npcs = vec![0, 1];
+        // The edge: was_celebrating false -> PartyIsUp true.
+        // Both celebrants gone (partyable all false): the roster empties.
+        let partyable = [false, false];
+        let edge = update_time_party(&mut ev, &partyable, &mut chat);
+        assert_eq!(edge, Some(true), "the up-edge fires");
+        assert!(ev.celebrating_npcs.is_empty());
+        assert!(!ev.genuine_party, "an emptied roster drops the genuine party");
+        assert!(
+            chat.messages.iter().any(|m| m.text.contains("gone home")),
+            "the broadcast fires (no manual party)"
+        );
+        // The manual-party arm: no broadcast when ManualParty holds it up.
+        let mut ev2 = WorldEvents::default();
+        let mut chat2 = ChatMonitor::default();
+        ev2.genuine_party = true;
+        ev2.manual_party = true;
+        ev2.celebrating_npcs = vec![0];
+        let _ = update_time_party(&mut ev2, &[false], &mut chat2);
+        assert!(!ev2.genuine_party);
+        assert!(
+            !chat2.messages.iter().any(|m| m.text.contains("gone home")),
+            "the manual party suppresses the broadcast (`:210-214`)"
+        );
+    }
+
+    /// W4-c39 — the `RemoveAt(i)` skip quirk (`BirthdayParty.cs:200-206`):
+    /// with celebrants [0,1,2] all invalid, the loop removes index 0 (slot 0),
+    /// then i=1 removes the element now at index 1 (slot 2), skipping slot 1
+    /// — so slot 1 survives the pass.
+    #[test]
+    fn w4_c39_the_roster_prune_skips_the_slide_in_element() {
+        let mut ev = WorldEvents::default();
+        let mut chat = ChatMonitor::default();
+        ev.genuine_party = true;
+        ev.celebrating_npcs = vec![0, 1, 2];
+        let _ = update_time_party(&mut ev, &[false, false, false], &mut chat);
+        // i=0: remove slot 0 -> [1,2]; i=1: remove index 1 (slot 2) -> [1];
+        // i=2: past len, stop. Slot 1 survives.
+        assert_eq!(ev.celebrating_npcs, vec![1], "the C# RemoveAt stride skips slot 1");
+        assert!(ev.genuine_party, "the roster is non-empty, the party stands");
     }
 }

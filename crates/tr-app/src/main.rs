@@ -63,6 +63,8 @@ mod mount;
 mod net;
 mod npc;
 mod npc_chat;
+mod party_hat;
+mod event_skies;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;

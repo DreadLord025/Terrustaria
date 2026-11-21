@@ -514,6 +514,39 @@ impl App {
                     }
     }
 
+    /// W4-c39 — `SkyManager.Update` (`Main.cs:17139`, `SkyManager.cs:24-46`):
+    /// the two event skies step `max(1, dayRate)` times per 60 Hz tick. The
+    /// lantern sky reads `LanternNight.LanternsUp`; the party sky's opacity
+    /// ramps toward the town-NPC presence (`SceneState.cs:106`). The
+    /// activation edges ride the schedulers' UpdateTime (weather.rs).
+    fn event_skies_phase(&mut self, dt: f32) {
+        self.phase("event_skies");
+        let lanterns_up = crate::world_events::lanterns_up(&self.world_events);
+        let wind = self.wind.speed_current;
+        let day_rate = self.world.day_rate();
+        let town_present = self.scene_metrics.town_npc_count > 0;
+        let sh = self.screen_size().1;
+        let ctx = crate::event_skies::SkyCtx {
+            screen_position_y: self.camera.y - sh * 0.5 / self.zoom,
+            screen_height: sh,
+            max_tiles_x: self.world.width,
+            max_tiles_y: self.world.height,
+            world_surface: self.world.world_surface,
+        };
+        self.event_skies.ramp_party_opacity(town_present);
+        // The 60 Hz accumulator (the ambience precedent): the sky update is
+        // a per-tick walk, not a per-frame one.
+        self.event_skies_accumulator += dt;
+        const STEP: f32 = 1.0 / 60.0;
+        while self.event_skies_accumulator >= STEP {
+            self.event_skies_accumulator -= STEP;
+            for _ in 0..day_rate.max(1) {
+                self.event_skies.update_lanterns(lanterns_up, wind, &ctx);
+                self.event_skies.update_party(day_rate, wind, &ctx);
+            }
+        }
+    }
+
     /// S1-B-3 (batch review fix 1): the tile-edit and net halves ride the
     /// step gate — a stepper-blocked frame cannot mine, place or sync.
     fn editing_net_phase(&mut self, dt: f32, screen: Vec2) {
@@ -653,6 +686,7 @@ impl App {
         self.windy_day_phase();
         if !paused {
             self.ambience_phase(dt);
+            self.event_skies_phase(dt);
         }
         if step_allowed {
             self.editing_net_phase(dt, screen);

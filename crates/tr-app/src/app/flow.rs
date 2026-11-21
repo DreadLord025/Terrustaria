@@ -2363,6 +2363,8 @@ pub(crate) mod front_flow_tests {
             camera_state: Default::default(),
             gfx_quality: Default::default(),
             world_events: Default::default(),
+            event_skies: Default::default(),
+            event_skies_accumulator: 0.0,
             zoom: 1.0,
             zoom_pinned: false,
             debug: false,

@@ -1095,6 +1095,31 @@ impl App {
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.
                     crate::render::screen_fx::draw_darkness_back(renderer, screen, scene_state);
+                    // W4-c39 — the event skies (`LanternSky`/`PartySky`) draw
+                    // in the `SkyManager.DrawRemainingDepth` slot (after the
+                    // surface layers, before the underground backdrop — the
+                    // depth-sandwich interleave is the ambience pass's own
+                    // machinery, a recorded layering deviation).
+                    crate::event_skies::draw_lanterns(
+                        renderer,
+                        &self.event_skies,
+                        lookups,
+                        draw_cam,
+                        world_zoom,
+                        screen,
+                        anim_time % 3600.0,
+                        surface_px,
+                    );
+                    crate::event_skies::draw_balloons(
+                        renderer,
+                        &self.event_skies,
+                        lookups,
+                        draw_cam,
+                        world_zoom,
+                        screen,
+                        sky_tint,
+                        surface_px,
+                    );
                     draw_phase("world");
                     if !reuse_world {
                         tile_stats = draw_tiles(
