@@ -39354,9 +39354,12 @@ site stays deferred with its host (no cue is invented):
   (`recall_teleport.rs:36`/:88); the recall/mirror cluster uses `Spawn`,
   not `TeleportEffect`.
 - 19/20/21/23 `:18416`/`:18432`/`:18460`/`:18498` F11 hideUI / F7 drawDiag
-  / F8 netDiag / F10 FPS — no port state for these toggles.
-- 24-25 `:37716`/`:37733` `TryInteractingWithVoidLens` — no void-lens
-  open/close interaction (the `void_lens` tracked ref is net-only).
+  / F8 netDiag / F10 FPS — **WIRED batch 2 (`7858ba28`)**: `App::diag_key`
+  release-latch machines (`app/loop.rs`), the `hide_ui`/`draw_diag`/`net_diag`/
+  `show_frame_rate` state + the `DrawFPS` line; see "Batch 2" below.
+- 24-25 `:37716`/`:37733` `TryInteractingWithVoidLens` — **owned by the g56
+  co-lane** (`task/W4-g56-ui-void-vault`, `273814c5` ports the open/close +
+  Item130 + the `HandleBeingInChestRange` lens arm); this lane skips them.
 - 26-27 `:37988`/`:37991` `PlayInteractiveProjectileOpenCloseSound`
   (proj 525/960) — no interactive-projectile open/close.
 - 28 `:39820` `DrawNPCChatBottomRightItem` — the corner item is deferred
@@ -39369,15 +39372,102 @@ site stays deferred with its host (no cue is invented):
   chat interaction buttons are deferred (`app/clicks.rs:1073-1074`; the
   ported Close-button hover is `NPCChatPanel.cs:157-160`, a different site).
 - 52 `:40696` `SubmitSignText` — no sign editor (`app/mod.rs:2279`).
-- 53 `:40828` `DrawNPCHousesInWorld` kickOut — the world housing banners
-  are unported (only the UI housing page).
-- 58/59 `:41249`/`:41275` misc pet/light + super-cart toggles — no misc
-  tick click surface.
+- 53 `:40828` `DrawNPCHousesInWorld` kickOut — **WIRED batch 4 (`31e5595a`)**:
+  `house_banners.rs` ports the banner draw + the right-click kick-out
+  (`town::kick_out` + `PlaySound(12)`); see "Batch 4" below.
+- 58/59 `:41249`/`:41275` misc pet/light + super-cart toggles — **WIRED batch 2
+  (`7858ba28`)**: `Player::toggle_pet`/`toggle_light` + the misc-page tick
+  click surface (`ui::inventory::misc_tick_click`); see "Batch 2" below.
 - 62/63/64 `:41849`/`:41855`/`:41887` quick-stack-all / mode-cycle /
-  sort-inventory buttons — unported.
+  sort-inventory buttons — **WIRED batch 3 (`c07c1eb9`)**: `quick_stack.rs`
+  (the `QuickStacking.cs` engine) + `item_sorting.rs::sort_inventory`; see
+  "Batch 3" below.
 - 71/72/73 `:42506`/`:42544`/`:42584` hotbar-lock / block-replacement /
   torch-biome-swap icons — `draw_hotbar_lock` is a documented no-op
   (`ui/chrome.rs:679`), the other two icons unported.
 - 77 `:43041` elder-slime transform (22) — no elder slime.
 - 80-90 `:43663`-`:43936` the hair/stylist window (`OpenHairWindow` /
   `CancelHairWindow` / `BuyHairWindow` / `DrawHairWindow`) — unported.
+
+### Batch 2 (hosts 19/20/21/23/58/59) — landed `7858ba28`
+
+The F-key diagnostic toggles and the misc-page pet/light/super-cart ticks.
+Every cue is the `PlaySound(int)` façade (`SoundEngine.cs:102-108` draws NO
+gameplay RNG), so the toggles draw no gameplay stream.
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 19 | `:18416` | `DoUpdate_F11_ToggleUI` | 12 `Menu_Tick` | `app/loop.rs::diag_key` F11 arm |
+| 20 | `:18432` | `DoUpdate_F7_ToggleGraphicsDiagnostics` | 12 | `diag_key` F7 arm |
+| 21 | `:18460` | `DoUpdate_F8_ToggleNetDiagnostics` | 12 | `diag_key` F8 arm |
+| 23 | `:18498` | `DoUpdate_F10_ToggleFPS` | 12 | `diag_key` F10 arm |
+| 58 | `:41249` | misc pet/light tick click | 12 | `app/clicks.rs` misc-tick arm → `Player::toggle_pet`/`toggle_light` |
+| 59 | `:41275` | super-cart tick click | 12 | same arm → `enabled_super_cart` flip |
+
+The four toggles are release-latch machines (`Main.cs:18402-18514`): the
+toggle fires once per press while the latch holds, the key-up re-arms it.
+`App::diag_key(code, pressed)` models them headlessly (the winit press/release
+edges feed it). `hide_ui` gates the interface + minimap draw
+(`DrawInterface_8_CheckF11UIHideToggle`, `:46175-46183`); `show_frame_rate` /
+`draw_diag > 0` draw the `DrawFPS` line (`:21491-21526`). The misc ticks
+(`Main.cs:41226-41283`) flip `hideMisc[0/1]` / `enabledSuperCart` and clear the
+equipped buff on hide (`Player.cs:17342-17363`, the Fairy Bell 27 → 102/101
+arm). Deviations: `TimeLogger.ToggleLogging` (F7+Alt) is a no-op (the
+TimeLogger is unported), no MP `SendData(4)` for hideMisc/superCart, the
+DetailedFPS/TimeLogger draws (`:62485/:62494`) are unported. 8 witnesses
+WRITTEN NOT RUN (code-only).
+
+### Batch 3 (hosts 62/63/64) — landed `c07c1eb9`
+
+The quick-stack-all / mode-cycle / sort-inventory buttons
+(`Main.cs:41833-41897`).
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 62 | `:41849` | quick-stack-all left press | 12 | `app/clicks.rs::quick_stack_all_click` → `quick_stack.rs` |
+| 63 | `:41855` | quick-stack mode-cycle right press | 10 `Menu_Open` | `quick_stack_mode_click` → `cycle_quick_stack_mode` + `SaveSettings` |
+| 64 | `:41887` | sort-inventory left press | 12 | `sort_inventory_click` → `item_sorting::sort_inventory` |
+
+`quick_stack.rs` ports the `QuickStacking.cs` engine: `Transfer`
+(`:404-459`) with the `DestinationHelper` metrics (`:14-98`) and the
+`MatchingItemTypeDestinationList` first-free-slot lookup (`:100-185`),
+`PackQuickStackableItems` (`:377-402`), `RestoreToPlayer` (`:343-363`), the
+banks-then-chests entry (`:232-249`). The source slots snapshot into a Vec and
+write back (behaviour-identical to the C#'s live references). `item_sorting.rs`
+gains `SortInventory`/`SortCoins`/`SortAmmo`/`ClearAmmoSlotSpaces`/
+`FillAmmoFromInventory`/`RefillItemStack`/`TrySlidingUp`
+(`ItemSorting.cs:1616-1923`) over the port's split grid/coin/ammo model, the
+`sort_fav` favorite predicate and `sorting_layer_index` for `GetCategory`.
+`Settings.stack_to_chests_mode` persists (`Main.cs:4212/:4549`); the
+`ChestStack_0..3` + `Sort_0..1` sheets pack. The buttons' `DoStatefulTickSound`
+hover latches (`:41865/:41890`) play the hover-edge tick. RNG: the button cues
+are `PlaySound(int)` façades (no gameplay RNG); the bank `MoveCoins` pre-pass
+keeps its case-7 draw on the bare stream (i43); the coin-overflow drop rides
+`Item.NewItem`'s pinned triplet+prefix on the bare stream. Deviations: the
+ItemTransfer particle + `IndicateBlockedChest`/`IndicateBlockedSlot` pulses are
+no-ops, the net arms are SP no-ops, the projectile-bank range half is unported
+(hosts 24-27), `HasLockedInventory` reads the cursor only (the net slot-lock is
+unported). 10 witnesses WRITTEN NOT RUN (code-only).
+
+### Batch 4 (host 53) — landed `31e5595a`
+
+The world housing banners (`DrawNPCHousesInWorld`, `Main.cs:40711-40832`).
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 53 | `:40828` | `DrawNPCHousesInWorld` kickOut | 12 | `app/clicks.rs::handle_house_banner_clicks` → `town::kick_out` |
+
+`house_banners.rs` ports the banner NPC filter/sort (`NPCBannerSorter`
+descending `housingCategory`, `:40706-40721`), the solid-tile walk-up anchor
+(`:40755-40779`), the per-home 26 px stack (`:40741-40750`), the
+`House_Banner` `Frame(2,2)` cell (reserved column / category row,
+`:40783-40792`), the head icon scaled to 24 px (`:40801-40809`), the
+`Lighting.GetColor` tint and the inclusive hover box (`:40810-40821`). The
+draw runs while `EquipPage == 1` (`DrawInterface_7`, `:46214-46222`); the
+right-click kick-out runs `town::kick_out` (`WorldGen.cs:4869-4879`: homeless
++ the 3600-tick timer + the room drop) + `PlaySound(12)`, consuming the press
+before the chest/crafting/inventory handlers. RNG: the kick-out cue is the
+`PlaySound(int)` façade (no gameplay RNG); the banner draw draws nothing.
+Deviations: the variant head profiles are unported (the default head), the
+`gravDir == -1` flip is unported, the controller-housing-cursor arm is
+gamepad-only. 4 witnesses WRITTEN NOT RUN (code-only).
