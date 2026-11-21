@@ -776,3 +776,117 @@ cross-noted here, NOT applied on this branch (d41's kinds are not on
 f2's tree). The critter table is unaffected (none of 494-506 is a
 critter id; e9d's mechanical scan's single GolemHead-74 collision
 stands, now fixed on BOTH branches).
+
+## 14. The e9d cross-receipt (`4c515d47` research/141) + FINAL-FINAL
+
+The retire phase re-read e9's pushed tip `4c515d47` (research/141, the
+tail-activation re-probe) in full and re-verified its claims against
+the trees. Receipt:
+
+### 14.1 The §9b DROP list items 8-12 — e9d's reads CONFIRMED
+
+| item | e9d's read (research/141) | this phase's re-verification | verdict |
+|------|---------------------------|------------------------------|---------|
+| 8 (`npc_water_collision.rs` whole) | §5: e9's `collision_water_step` carries the never-wet head + the 116 pin + the exit halving + the dry-clear tail; the remaining exit-WATER 147-drop fixed by `712e3c54` | the module exists at `4c515d47` (488 lines: `wet_collision_probe` :45, `lava_collision_probe` :120, `never_wet` :147, `water_collision_kind` :167, `collision_water_step` :253, the `wet_prev` reads :297/:316/:322/:339); the decision it calls is `npc.rs::water_collision_splash` :106 with `water_splash_gate(npc_type, ai_style, no_gravity, exit_water)` :72 — the exit-water arm passes `true`, the other three `false`; **the exit-LAVA arm still calls `honey_splash_gate` (which keeps `type != 147`, :94) — the SECOND quirk (§2's exit-lava row) remains MISSED on e9's tip** (the C# `:93267` re-read: no 147 term) | DROP stands — f2's pass carries BOTH quirks (`water_exit_gate` + `lava_exit_gate`, ambient_sound.rs:1375/:1390 region); e9d's "the two e9 gaps closed" phrasing covers the never-wet/pin state, NOT the exit-lava gate |
+| 9 (the 4 water witnesses) | §6 lists them WRITTEN NOT RUN | all four present at `4c515d47` (`w4_e9_the_wet_probe_matches_the_centred_box_and_surface_inset`, `..._lava_probe_reads_the_full_box_lava_only`, `..._never_wet_kinds_and_the_116_pin`, `..._exit_edge_halves_velocity_and_the_churn_guard_holds`) | DROP stands (f2's adapted witnesses cover the same + the quirks/combat/jump) |
+| 10 (the 25 machine-owned tail helpers) | §1: ALL UNWIRED stands — every consumer seam an unwired d33 module / unmerged d40 row / unported machine | the module's 19 pub fns re-counted at `4c515d47` (the 27 sites' helpers, two sites share `balloon_pop_cue`); the d33 out-struct seams verified at `b08acf463` (§13's consumer map); the d41/d42 pushes since e9d's read add NO machine (§13's re-probe) | DROP stands — the 25 helpers duplicate the machines' gate maths; the 2 unclaimed re-landed in f2's own module |
+| 11 (the 10 tail witnesses) | §6: WRITTEN NOT RUN | exactly 10 `#[test]` fns at `4c515d47` (the antlion/apparition/sand-shark/pal/statue-mimic/balloon+pirate/queen-slime/blood-nautilus/fairy/medusa+reflect set) | DROP stands (f2's bank/cue witnesses + the d-band modules' own gate witnesses cover the contracts) |
+| 12 (the field/cue/bank duplicates) | §5: the wet-field quintet + the tail cues | e9's `npc.rs` carries `wet_count` :2014 / `lava_wet` :2021 (+ honey/shimmer/wet_prev) and the `NpcSoundCue` tail variants (`NpcDeath55` :1330, `NpcHit6` :1336, `NpcDeath63` :1341, `Splash(i32)` :1359, `SandSharkCry` :1363, …) — the same names f2 carries | DROP stands — the union keeps f2's spellings; e9's `Splash(i32)` retires with the decision fn (f2's pass plays inline) |
+
+**The one correction to e9d's §5 phrasing:** "the remaining exit-WATER
+147-drop is §2's fix" is right, but its §5 summary ("the two e9 gaps
+f2 named at 3793fef8 were closed by e9's own d7a61594") must not be
+read as closing the exit-LAVA quirk — `honey_splash_gate` still gates
+the exit-lava arm at `4c515d47` (verified above). f2's §2 table stands
+as written; the merger drops e9's decision for BOTH quirks, not one.
+
+### 14.2 The co-lane verdicts — RECEIVED, retargeted onto f2
+
+e9d's §5 co-lane reads are adopted with the keeper renamed (f2's pass,
+not e9's):
+
+* **d53 projectile-wet LIVE** (`88094c4c` current tip, the `fa7b331d`
+  batch-4 host): disjoint lane (the projectile side's own constants),
+  no keep-one conflict. RECEIVED as-is.
+* **g2 Shimmer() STAGED** (`81c4ab85`): the compose is one call at the
+  projectile wet-block tail (`:17009-17012` position) — g2's claimed
+  follow-up, NOT this family's. RECEIVED as-is.
+* **f47 shimmer-NPC** (`a2561d6d`): the keep-one fold retargets —
+  **f2's `water_collision_sounds` is the superset** (e9d's verdict
+  named e9's `collision_water_step`; the §9a re-adjudication makes f2
+  the keeper). The fold: lift f47's
+  `n.buffs.try_adding_repeated_buff(353, 100, 10)`
+  (`world_sim/npcs.rs:3520`, the `shimmer_wet_contact_pass` :3484)
+  into f2's shimmer-latch arm (`ambient_sound.rs:1334-1336`, the
+  `:93068-93074` position — the C# re-read this phase: the buff add
+  sits INSIDE the `Collision.shimmer` latch, behind `netMode != 1`,
+  the `TryAddingRepeatedBuff` default `lowThreshold = 10`
+  `NPC.cs:93303-93313`); drop `shimmer_wet_contact_pass` whole (its
+  probe duplicates the landed shared `npc_ai_slime::wet_collision`,
+  its exempt-list the never-wet head, its dry-clear the tail). The
+  `shimmering` flag derivation + the adder ride f47's
+  `npc_buffs.rs`/`npc.rs` hunks; the `shimmer_wet` field dedupes onto
+  f2's (keep both citations — the water writer + the gravity reader).
+* **b1 slime wet-gravity feed** (`f010b85b`): the carried-flag read
+  (`self.shimmer_wet`/`self.honey_wet` instead of the at-site probe)
+  is b1's one-line lane, cross-noted not touched. RECEIVED as-is.
+
+### 14.3 The critter-key fix — APPLIED to f2 this phase (`c3e5b814`)
+
+e9d's §3 cross-note ("f2's tip carries the same to_u16 bug at its
+:4732 — f2's critter wiring needs the same one-line re-key") is
+executed: `world_sim/npcs.rs`'s `UpdateNPC_CritterSounds` seam now
+keys `n.kind.cs_id()` (the wiring comment cites e9c `c7523984` + the
+MERGER-L7 class), the seam witness re-keyed, and e9's GolemHead-74
+census witness adapted as
+`w4_f2_the_critter_key_is_cs_id_not_the_protocol_golem_head_74`
+(WRITTEN NOT RUN). The mechanical facts re-verified on f2's tree:
+`GolemHead.to_u16() == 74` (data.rs:403), `GolemHead.cs_id() == 245`
+(the bestiary fold, bestiary.rs:2035-2036 + the cs_id fallthrough
+data.rs:3256-3260), the C# Bird arm `NPC.cs:92271` region (the
+`Next(400)` day gate + `Next(3)` slot pick). e9d's single-collision
+scan result stands (the 23-id critter table vs the to_u16 space: only
+GolemHead 74; the cs_id space: zero hits).
+
+### 14.4 The 232 count + the f2 probe — RECEIVED
+
+The 232 PlaySound count re-run independently this phase (§13). e9d's
+f2 probe ("bcf4c299 pushed clean, 0 unpushed — nothing to rescue") was
+accurate at its read; f2 has since pushed the closeout (`47738470`)
+and this retire phase — the probe's conclusion (no rescue needed)
+stands.
+
+### 14.5 FINAL-FINAL
+
+**research/94 is COMPLETE — FINAL-FINAL.** Every phase landed: the
+reconcile (§§1-6), the doc-sweep (§8), the e9b re-adjudication (§9),
+the tail-census union (§10), the activation reads (§11), the exact
+d38 repoint hunk (§12), the 232-site FINAL declaration + merger bible
+(§13), and this e9d cross-receipt (§14). The union branch is f2; the
+DROP list (§4 + §9b items 1-12) is exact and cross-receipted against
+e9's final tip; the two cross-lane fidelity fixes are applied BOTH
+ways (the exit-water 147 on e9 `712e3c54`, the critter cs_id key on f2
+`c3e5b814`); the three staged helpers' activation points are named
+and re-probed at the current d-band tips; the d41 cs_id-fold caveat
+(§13) is the one open merge-time feed fix, cross-noted to the merger.
+**No open questions remain for the NPC-sound family.**
+
+### 14.6 Verification (this retire phase)
+
+Code-only: **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+Every claim re-verified by direct read: the e9d full research/141 +
+its code deltas at `4c515d47` (the gate fns, the water module's fn
+list, the tail module's 19 fns + 10 tests, the cue enum), the d38
+ghost module + audio arms at `1ba0395c7` (the :67 push, the :1366 int
+player, the :1341 style player), the d33 consumer seams at
+`b08acf463` (style121 :717/:958, style127 :350/:356, style126
+:358-402, style125 :310, style113's DeathSound row), the d41/d42/d40/
+d34/g8 tips' kind rows + stand-in arms, the C# windows re-read ≤100
+lines (`NPC.cs:93262-93273` the exit-lava gate, `:24686-24697` the
+ghost cry, `:93063-93078` the shimmer latch, `:93303-93315`
+TryAddingRepeatedBuff, `:90083-90090`/`:90135-90142`/`:90155-90162`
+the idle arms, `:92244-92340` the critter table, `:24850-24858` the
+Pixie hum; `NPCID.cs:11843-11847`/`:11983-11987` the fairy/hell-critter
+ids; `ContentSamples.cs:1019-1025` the d41 folds). The 232 count ran
+as a read-only `Select-String`. The one code change (the critter
+re-key + the adapted witness) is WRITTEN NOT RUN.

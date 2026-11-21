@@ -39544,3 +39544,69 @@ the adapted splash stream; `npc_ai_slime.rs` 1 — the surface inset;
 bank overload split; `npc_sounds_tail.rs` 1 — the two staged
 helpers) are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/
 graphify invoked**.
+
+## The NPC-sound RETIRE (W4-f2, 2026-11-21, code-only mode) — FINAL-FINAL
+
+**Scope.** e9's final tip `4c515d47` (research/141, the tail-activation
+re-probe) cross-receipted; the one cross-lane code fix it named for f2
+applied; the d38 repoint hunk published; the 232-site FINAL declaration
+written. research/94 §§12-14 carry the detail — **research/94 is
+COMPLETE, FINAL-FINAL**. Summary:
+
+* **The critter-key fix APPLIED (`c3e5b814`):** e9c `c7523984`'s
+  census fix (research/141 §3's cross-note) — the
+  `UpdateNPC_CritterSounds` wiring keyed `to_u16()` (the protocol
+  space), so every attached Golem head (protocol 74 = the C# Bird's
+  critter id, `NPC.cs:92271`) rolled the bird's day `Next(400)` +
+  `Next(3)` on the `UpdateNPCs` stream — a live determinism drift in
+  every Golem fight (the MERGER-L7 mis-route class). Now keys
+  `cs_id()` (the head folds onto the body's bestiary 245, outside the
+  table — zero draws). The seam witness re-keyed + the GolemHead-74
+  census witness adapted
+  (`w4_f2_the_critter_key_is_cs_id_not_the_protocol_golem_head_74`,
+  WRITTEN NOT RUN). The fix is now on BOTH branches (e9 `c7523984`,
+  f2 `c3e5b814`) — the merger dedupes the identical hunks.
+* **The d38 NpcDeath55 gap — the exact hunk (research/94 §12):** d38's
+  `npc_ai_ghost.rs:67` queues `NpcDeath(55)` (the INT spelling) but
+  its `play_npc_death_int` has only the 6/22 arms — a silent bank gap.
+  The C# `:24693` is the SoundID façade (the NextFloat IS consumed),
+  so the one-line repoint to f2's `NpcDeath55` variant is published as
+  an exact diff for d38d/merger; f2's staged `ghost_flee_cry` retires
+  as the duplicate post-merge.
+* **The 232-site FINAL declaration (research/94 §13):** the count
+  re-verified mechanically (232); the site-family ledger
+  (163 landed + 32 idle + 8 water + 2 extras + 27 tail); the
+  NPC-sound-family merger-bible paragraph (f2 canonical, e9 wholesale
+  DROP, the d-band machines keep their sites as one-call consumers);
+  the d33 `out.sounds` consumer map verified against `b08acf463`
+  (incl. the `statuemimic_laugh` → `_0` pin); the activation re-probe
+  at the CURRENT tips (d41 `5d036721d` rows 494-506 only, d42
+  `2d7ac08c3` rows the tail kinds but ALL unwired stand-ins, d43 still
+  zero commits, d40 still data-only — every tail cue stays
+  staged/unwired).
+* **The e9d cross-receipt (research/94 §14):** the §9b DROP items 8-12
+  re-verified against `4c515d47`'s code (the water module's fn list,
+  the tail module's 19 fns + 10 tests, the cue/field duplicates) — all
+  stand, with ONE correction: e9's exit-LAVA gate still keeps
+  `type != 147` (`honey_splash_gate` reused) — the second quirk
+  remains missed on e9's tip, f2 carries both. The co-lane verdicts
+  received with the keeper retargeted (f47's buff-353 add folds into
+  f2's shimmer-latch arm, `shimmer_wet_contact_pass` drops whole).
+  The §10 fairy label corrected (583-585 FairyCritter, not 653-655 —
+  those are the hell critters, `NPCID.cs:11843-11847`/`:11983-11987`).
+* **The d41 cs_id-fold caveat (research/94 §13, merge-time):** d41's
+  bestiary-fold cs_id rows mis-route ONE idle arm — `Crawdad2.cs_id()`
+  folds to 494 (arm 15 plays; the C# 495 is silent). The
+  GiantShelly2→496 and Salamander3-9→499 folds are behaviour-correct
+  (the same arm / inside the range). The one-line feed fix is
+  cross-noted to the merger, NOT applied here (d41's kinds are not on
+  f2's tree).
+
+**Verification.** Code-only: the e9d/d38/d33/d41/d42/d40/d34/g8 tips
+re-fetched + read by direct git show/grep, the C# windows re-read
+≤100 lines (the exit-lava gate `:93262-93273`, the ghost cry
+`:24686-24697`, the shimmer latch `:93063-93078`,
+`TryAddingRepeatedBuff` `:93303-93315`, the idle arms, the critter
+table, the Pixie hum, the NPCID/ContentSamples rows), the 232 count
+re-run read-only. The 1 new witness + the re-keyed seam witness are
+WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/graphify invoked**.
