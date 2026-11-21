@@ -4837,13 +4837,16 @@ impl Player {
         let amount = ((1.0 - self.endurance) * amount as f32) as i32;
         // W4-f50 — the Solar Flare shield (`Player.cs:38305-38320`): the
         // Counter-set gate (`ImmunityCooldownID.Sets.Counter` = {General,
-        // BossNoCheese}, `ImmunityCooldownID.cs:50`) folds to the port's
-        // single General lane (every accepted hit reaches here). On a
-        // consumed charge `num2 = (int)(0.8 * num2)`; the 608 blast spawn +
-        // immediate Kill needs the projectile pool + NPC list, so it queues
-        // for the world-sim drain (the `pending_retaliate` convention).
+        // BossNoCheese}, `ImmunityCooldownID.cs:50`) — the port's
+        // `retaliate_lane` carries the membership (the contact/projectile/
+        // fall/petrify lanes pass true, the lava/tile lanes false; the
+        // PaladinsShield-only difference from the Retaliate set is
+        // unreachable single-player). On a consumed charge
+        // `num2 = (int)(0.8 * num2)`; the 608 blast spawn + immediate Kill
+        // needs the projectile pool + NPC list, so it queues for the
+        // world-sim drain (the `pending_retaliate` convention).
         let mut amount = amount;
-        if self.consume_solar_flare() {
+        if retaliate_lane && self.consume_solar_flare() {
             amount = (0.800000011920929f32 * amount as f32) as i32;
             self.pending_solar_blast = Some((self.center(), (150.0 * self.melee_damage) as i32));
         }
