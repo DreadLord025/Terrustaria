@@ -39399,3 +39399,15 @@ constant data / field reads).
 5 witnesses WRITTEN NOT RUN (code-only): the Wyvern gore-argument ladder,
 the Leech's -1 SpeedY, the town families' shared census, the eye pair's
 50-count.
+### W4-g59 batch 6 (the eye trio, the dye/party girls, the pirates, 10 kinds)
+
+192 DialatedEye / 193 GreenEye / 194 PurpleEye (`:86459-86462`, 50×
+type-5 2×dir/-2 — the demon-eye arm), 207 DyeTrader / 208 PartyGirl
+(`:88378`/`:88401`, 50× type-5 2.5×dir/-2.5), 212-216 the pirate family
+(`:88458-88461`, 50× type-5 2.5×dir/-2.5).
+
+All batch-6 gore tails draw NO arguments (the eye per-kind types and the
+pirate ladder `:88462-88501` are constant data).
+
+3 witnesses WRITTEN NOT RUN (code-only): the eye trio's 50-count, the
+pirate family's shared census, the Dye/Party girls' 50-count.

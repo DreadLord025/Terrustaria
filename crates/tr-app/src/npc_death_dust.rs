@@ -1,5 +1,5 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-5 (50 kinds).
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-6 (60 kinds).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -81,6 +81,17 @@
 //! (`:88927-88930`) are consumed in order here; the `NewGore` bodies +
 //! kicks stay d55's (the g63 claim's gore-sibling rule). The other
 //! batch-5 tails draw no arguments.
+//!
+//! ## Scope — batch 6 (the eye trio, the dye/party girls, the pirates)
+//!
+//! | C# type(s) | port kind(s) | death arm | shape |
+//! | --- | --- | --- | --- |
+//! | 192/193/194 | Dialated/Green/PurpleEye | `:86459-86462` | 50× type-5, 2×dir/-2 |
+//! | 207/208 | DyeTrader/PartyGirl | `:88378`/`:88401` | 50× type-5, 2.5×dir/-2.5 |
+//! | 212-216 | the pirate family | `:88458-88461` | 50× type-5, 2.5×dir/-2.5 |
+//!
+//! All batch-6 gore tails draw NO arguments (the eye per-kind types and
+//! the pirate ladder `:88462-88501` are constant data).
 //!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
@@ -495,6 +506,38 @@ pub fn death_dust(
             for _ in 0..50 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // ---- batch 6 (the eye trio, the dye/party girls, the pirates).
+        // `NPC.cs:86459-86462` — the Dialated/Green/Purple Eyes
+        // (192/193/194): 50 type-5 puffs at 2×dir/-2 (the demon-eye arm).
+        192 | 193 | 194 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:88378-88381` / `:88401-88404` — the Dye Trader (207) /
+        // Party Girl (208): 50 type-5 puffs at 2.5×dir/-2.5.
+        207 | 208 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:88458-88461` — the pirate family (212-216): 50 type-5
+        // puffs at 2.5×dir/-2.5 (the per-kind gore ladder `:88462-88501`
+        // is constant data).
+        212 | 213 | 214 | 215 | 216 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
                     Color::default(), 1.0,
                 );
             }
@@ -1139,5 +1182,60 @@ mod tests {
             states.push(rng.peek());
         }
         assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:86459-86462` — the eye trio (192/193/194): the demon-eye
+    /// arm's 50-count census on the remaining eye kinds.
+    #[test]
+    fn w4_g59_the_eye_trio_draws_fifty() {
+        let w = air();
+        let n = corpse(NpcKind::DialatedEye);
+        let mut states = Vec::new();
+        for ty in [192, 193, 194] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(107);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:88458-88461` — the pirate family (212-216): 50 type-5
+    /// puffs each; the per-kind gore ladder is constant data, so all five
+    /// ids share the census.
+    #[test]
+    fn w4_g59_the_pirate_family_shares_one_census() {
+        let w = air();
+        let n = corpse(NpcKind::PirateDeckhand);
+        let mut states = Vec::new();
+        for ty in [212, 213, 214, 215, 216] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(109);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:88378-88381` / `:88401-88404` — the Dye Trader / Party
+    /// Girl: 50 type-5 puffs at 2.5×dir/-2.5 each.
+    #[test]
+    fn w4_g59_the_dye_and_party_girls_draw_fifty() {
+        let w = air();
+        for (kind, ty) in [(NpcKind::DyeTrader, 207), (NpcKind::PartyGirl, 208)] {
+            let n = corpse(kind);
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(113);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+        }
     }
 }
