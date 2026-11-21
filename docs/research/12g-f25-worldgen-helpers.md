@@ -1,8 +1,11 @@
-# 12g (helpers) — W4-f25: the WorldGen helper census, round 2 — **FINAL**
+# 12g (helpers) — W4-f25: the WorldGen helper census, round 2 — **SEALED**
 
 > Wave 4 · lane `task/W4-f25-worldgen-passes-8` @ 0ed1f3cf (Settle Liquids landed)
 > · claimed 2026-11-21 · **CLOSED 2026-11-21 @ 9fc704a15 + the final-ledger
-> commit**. The pass ledger lives in `12g-f25-settle-liquids.md`;
+> commit d587b128d** · **SEALED 2026-11-21** (the f25e convert-retire +
+> g42e growth-seal park + g46 liquid-union contract rounds appended below;
+> no census/arm/row/wiring work owed on this lane). The pass ledger lives
+> in `12g-f25-settle-liquids.md`;
 > with the classic-pass census exhausted this lane takes the **missing
 > WorldGen.cs helper functions**, the g39 H1-H15 precedent (its `12j` doc).
 > Code-only mode: C# read in ≤100-line windows, ONE helper per commit+push,
@@ -557,3 +560,104 @@ the R-12-5 addendum's pin).
 
 1 witness written not run (the origin-wall pair). The driver's other
 witnesses stay as written (they test semantics the union preserves).
+
+## SEALED — the convert-family bible (2026-11-21)
+
+> **12g SEALED.** The Convert family (`WorldGen.cs:55067-56284` — the
+> sized walk `:55067-55083`, the single-cell switch `:55085-56284`) is
+> fully censused, ported and dispositioned across the wave's lanes. No
+> census/arm/row/wiring work is owed on f25. This section is the ONE
+> reference the merger reads.
+
+### The whole switch — one row per type (the bible)
+
+| type | semantic | cell fn (lane @ commit) | consumers wired | merge state |
+| --- | --- | --- | --- | --- |
+| 0 | cleanse | `spread::convert_cleanse` (f25, S1-D-4) | ai_spray 145, the GERunner/special-seed sites on their lanes | landed main-line |
+| 1 | corruption | d1 `convert_powder_cell`/`convert_sized` (78dc52720) | d1's powder aiStyle-6 machine (660e111fc); f25's ai_spray 147 arm = the one-arm contract | d1 unmerged |
+| 2 | hallow | `spread::convert_hallow_cell` + `convert_sized_hallow` (C3, 6c5dcea11) | ai_spray 146, water_death holy (:77635), spread_grass 109 (:75218 tiles-only), ConvertSkyIslands (:24701); DoHallowOnSurface keeps its map approximation; initializeHardMode/GERunner = d103 P2/P4 | landed, wired |
+| 3 | mushroom | g42 `convert_cell_mushroom` (G7) + `convert_sized_mushroom` (910cc9747) | the FOUR sites: DoSurfaceIsMushrooms + the two :2101/:2125-2129 gen arms (g42), the ai_spray 148 arm = the one-arm contract (parked here, g42e) | g42 unmerged |
+| 4 | crimson | d1 `convert_powder_cell` (78dc52720) | d1's powder machine; f25's ai_spray 149 arm = the one-arm contract | d1 unmerged |
+| 5/6/7 | desert/snow/purify sprays | `spread::convert_spray_cell` + `convert_sized_spray` (C4, 0e6bee9ef) | ai_spray 1015/1016/1017 | landed, wired |
+| 8/9/10 | chlorophyte/jungle-mud | `spread::convert_chlorophyte_cell` + `convert_sized_chlorophyte` (C5, a6b21b728) | UNWIRED — d103 P8 (014cf2937) owns hardUpdateWorld :69658/:69686/:69697 + ChlorophyteDefense :69460 with its own convert_purge_cell; the merger picks d103's verbatim arms, the C5 helpers remain available | landed, unwired by design |
+| 11 | purify powder | d1 `convert_powder_cell` (78dc52720) | d1's powder machine (66 → Convert 11) | d1 unmerged |
+| 12/13/14 | evil-II/paint | — | ZERO C# call sites (claim-time + f25e re-grep) | unclaimed, dead code |
+| 15/16/18/19 | dungeon-biome | `spread::convert_biome_cell` + `convert_sized_biome` (9fc704a15) | ZERO C# call sites (f25e re-grep: no call, no conversionType assignment); c32's BiomeDungeonRoom uses DungeonUtils.ChangeTileType — its room bodies call the f25 C1/C2 helpers when they land | landed, unwired by design |
+| 17 | snow-II | — | ZERO C# call sites | unclaimed, dead code |
+| 20 | temple | — | ZERO C# call sites | unclaimed, dead code |
+| 21 | dungeon | — | reads GenVars.CurrentDungeonGenVars — the c32/d107 seam | unclaimed, seam noted |
+
+### The helper ring (C1-C8) — the bible's dependency rows
+
+- **C1** `tile_is_exposed_to_air` (:54782-54800) — consumed by the C4
+  type-7 sand arm + the 15/18/19 catch-alls; c32's room bodies are the
+  remaining C# consumers.
+- **C2** `block_below_makes_sand_convert_into_hardened_sand`
+  (:86562-86583) — the C4 type-5 + the 16 sand arms; c32's rooms.
+- **C3/C4** — the wall halves ride the shared
+  `growth::convert_wall_by_case` (types 2/5/6/7; d1's 1/4/11 ride the
+  same ladder); the :55465 union pre-gate seams
+  (`conversion_hardened_sand_walls_contains`/`conversion_snow_walls_contains`).
+- **C5** — tiles-only, no wall/torch half (the C# has none).
+- **C6/C7** `is_tile_a_tree_branch`/`_root` + `convert_tree_and_ground`
+  — wired at `try_kill_invalid_tree_above` (the 596/616/5/323 arms);
+  the growth-tick kill-only copy is g17's lane;
+  ConsideredSolidTileForAnchor (:53903) unported (anchor lane).
+- **C8** `get_tile_moss_color` — wired at `check_long_moss` (the
+  TileFrame case-184 dispatch) + the 184 boot static.
+- The 16/18 wall-union seams: `conversion_dirt_walls_contains` +
+  `conversion_new_wall_set` (growth/grass.rs).
+
+### The item→proj→type chains (the bible's consumer rows)
+
+- **Solutions** (the eight): 780-784 shoot 0-4 → 145-149 → types
+  0/2/1/3/4; 5392-5394 DefaultToSolution 870-872 → 1015-1017 → types
+  5/6/7. Both guns 779 (speed 7) / 5134 (speed 11) resolve through
+  ammo.rs's additive arm. The seven proj rows: **keep-d18c** (the f25e
+  verdict — d18's alpha-255/ignoreWater superset; the f25 RESET_STATE
+  block drops at the merge). 5495 = the Shimmer Gun, NOT a solution gun.
+- **Powders** (the three): 66 shoot 10 → Convert 11; 67 shoot 11 →
+  Convert 1; 2886 shoot 463 → Convert 4. d1's aiStyle-6 machine whole;
+  the prompt's 194/195 are grass SEEDS (ItemID.cs:2071/:2073), not
+  powders. f25's cells are disjoint from the powder chain — correctly
+  uncalled.
+- **Holy/unholy water**: the holy death arm rides C3 (wired); the
+  unholy/blood arms keep convert_cell_flavor until d1's 1/4 land.
+- **ConvertSkyIslands**: the anniversary :24243 call → C3 single-cell
+  (wired, gen-time, anniversary-only — neither pinned world runs it).
+
+### The merger's ONE checklist (the hand-off, consolidated)
+
+1. **Spray rows**: keep-d18c 78ffe8e11, drop the f25 row block (the
+   f25e drop-hunk; all f25 witnesses pass on d18's rows).
+2. **ai_spray one-arm contracts**: `1|4 => d1 convert_sized`,
+   `3 => g42 convert_sized_mushroom` into the f25 match (the g42e park
+   + d1's dispatch note; the f25 park witness's tile pin flips 60→70).
+3. **CONV_THORN dedupe**: d1's duplicate onto the C3 constant.
+4. **C5 vs d103 P8**: the merger picks d103's verbatim hardUpdateWorld
+   arms; the C5 helpers stay available.
+5. **Liquid union**: the g46 DELETE-dedupe table above; the origin-wall
+   fix already agrees on both sides; edit_kills DISCARD recorded; the
+   pins RE-DERIVE at the gate.
+6. **g44 module note**: "ConvertSkyIslands not ported" superseded by
+   f0fe0f388 — keep the f25 body.
+7. **c32 room bodies**: call the f25 C1/C2 helpers +
+   DungeonUtils.ChangeTileType; the 15/16/18/19 cells stay unwired.
+8. **g42 c31 DUP-RECONCILE**: the 12j phase-9 drop-hunk set (no f25
+   file touched).
+
+### The seal ledger (the post-FINAL rounds)
+
+| round | commit | scope |
+| --- | --- | --- |
+| f25e CONVERT-RETIRE | 85b4a0f15 | the keep-d18c verdict + drop-hunk, the powder re-verify, the 15/16/18/19 zero-callsite re-grep |
+| g42e GROWTH-SEAL park | 8b91b761b | the fourth Convert(3) site's one-arm contract + the park witness |
+| g46 LIQUID-UNION | 00d4d2dca | the origin-wall fix + the DELETE table + the DISCARD choice + the RE-DERIVE note |
+| SEAL (this commit) | — | the SEALED banner + this bible + the anchors row |
+
+Witness total: 40 (the FINAL count) + 1 (g42e park) + 1 (g46 origin-wall
+pair) = **42 witnesses WRITTEN NOT RUN** on this lane (code-only; no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked). The f25e round added
+none (comment/doc-only). Both pins: the Settle Liquids + origin-wall
+moves are BY DESIGN, the RE-DERIVE is gate-side; every other round
+leaves them unchanged; a == b untouched throughout.
