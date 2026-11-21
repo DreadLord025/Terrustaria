@@ -39599,3 +39599,88 @@ sound, no gore). The pulley/carpet are deterministic velocity/position machines.
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
 (user directive). The 17 new witnesses (11 pulley + 6 carpet) are owed a compile
 window before merge.
+
+### The continuation close-out (0e332c61 / e011d3da / f017f239, re-verified 2026-11-21)
+
+The three continuation commits past `0b11548f` (carpet keep-one union, the
+`UpdateControlHolds` cited-fold, the rope-coil chain witness) were re-verified
+against the CURRENT sibling tips and the decompiled source; this section records
+the evidence and the merge-lane decisions.
+
+**(a) Carpet keep-one — for the e1b-141 merge lane.** The g66 branch tip is
+STILL `7213f3c7` (the tip `0e332c61` unioned against; no g66 carpet change since).
+The two `carpet_movement` bodies (this port `player.rs:10582-10635` vs g66
+`player.rs:10693-10744`) were byte-compared after normalising comments, the local
+name (`flag`/`glide`), `TILE_PX`→`16.0` and `1E-06`→`1e-6`: **IDENTICAL** — SHA256
+`69492c6bd052d307dbac9618fa110ac76df844dd7cef38ba9703e23b9be3f3ad` on both. The
+union's shadow-read (g66's `:26745-26752` pre-zero emulation) is already in both.
+**KEEP THIS PORT'S copy; drop g66's at the e1b-141 merge.** The machines are
+behaviour-identical, but the CALL SITES differ: this port gates the whole wall/
+carpet block on `!grappling && !self.tongued && !pulley_ride` (`player.rs:8089`),
+while g66 gates only `!grappling` (`player.rs:8016`) — g66 never ported the
+pulley, so its carpet would fire on a ride tick. This port's consumers
+(`:26613-26617` run boost, `:28066`/`:23537` step-up) have no g66 counterpart.
+The g66 `carpet`/`can_carpet`/`carpet_time`/`carpet_frame_counter` FIELDS are the
+same fields — one definition survives; the g66 wall-dust queue in its wallslide
+arm is the wallclimb escalation's `queue_wall_dust` sibling, deduped by the
+wall-machine keep-one, not by this note.
+
+**(b) portableStool census — NOT self-contained, note stands.** Verified against
+the decompiled source: the equip row is items **4341/5126** (`:14544-14546`,
+`SetStats(26, 26, 26)`), `Reset` at `:18783`, the usage machine
+`UpdatePortableStoolUsage` (`:29193-29205`: HasAStool + controlUp + !gravControl
++ !mount + zero velocity + !pulley + no grapple + `CanFitSpace(HeightBoost)` →
+`IsInUse = true` + `ResizeHitbox`), called at `:25647`. The machine is NOT
+portable alone: `ResizeHitbox` (`:29207-29222`) writes `height = 42 +
+HeightOffsetBoost`, and the offset family (`HeightOffsetVisual` `:3237-3249`,
+`HeightOffsetHitboxCenter` `:3253-3263`, `HeightOffsetBoost` `:3281-3291`,
+`HeightMapOffset` `:3297-3309`) is the SHARED mount hitbox-offset seam — the port's
+`mounted_center`/`mounted_top` fold it to 0. Every consumer needs that seam:
+`:19614` (`jumpHeight += 5`), `:19646` (the FindPulley stool gate — folded false
+in `find_pulley`, `player.rs:10191`), `:20768-20774` (the jump-off unboost +
+`StoolJump` camera modifier), the `Center`/`Bottom`/`Top` properties
+(`:3341-3367`) and the held-item draw offset (`:42604`/`:42846`). The
+`cPortableStool` dye slot (`:2976`/`:9735`) is a third seam. A small-port would
+need the offset family FIRST; deferred with the seam, not dropped.
+
+**(c) UpdateControlHolds — port verified, one init fix.** `release_up` +
+`update_control_holds` (`player.rs:12786-12789`, the pure `!controlUp` mirror
+`:29093-29100`), refreshed once at the tick end (`player.rs:8514`). The C#'s
+three call slots (`:26492`/`:26742`/`:27398`) all write the same mirror — one
+refresh per tick is behaviour-identical because no consumer runs between the
+slots with a changed `controlUp`. **Init corrected:** `e011d3da` seeded
+`release_up: true` citing "`:1756`, init true", but the C# field (`:1756`) has
+NO initializer — the default is `false`; the port now spawns `false` (the
+witness pins the spawn default). The pre-existing `release_down: true`
+(`723ac493`, the i27 lane) has the same C# mismatch (`:1780` default false) —
+left for that lane, noted here. The flexible-wand
+cycle head (`:29082-29092`) folds (no `GetFlexibleTileWand` row). ALL FIVE
+`releaseUp` readers verified in the source: `:25041` (up double-tap), `:25267`
+(hover-up latch), `:26696`/`:26716` (grav-flip toggles), `:26738` (hover-mount
+up-nudge) — each folded with its unported machine as cited in `e011d3da`.
+
+**(d) The rope-coil chain witness — contracts re-verified against the landed
+siblings.** `w4_f3_the_rope_coil_chain_place_attach_ride_refund`
+(`player.rs:24042-24096`) mirrors two sibling machines as contracts; both were
+checked against the ACTUAL landed code, not the commit messages:
+* Link 1 vs g82 `projectile_rope_coil.rs::coil_rope_kind` (`59139eb1`,
+  `:109-114`): 171→213 / 475→353 / 505→365 / 506→366 — the witness's `coil_rope`
+  closure matches arm-for-arm. The `ai[1]` placed-counter increment
+  (`:27283`) is the `p.ai[1] += 1.0` at the placement arm (`:275-276` of the
+  module) — the witness's `placed = 3.0` seats a 3-link column.
+* Link 4 vs g82 `coil_death_drop` (`:426-437`): the (coil, rope) pairs
+  171→(985,965) / 475→(3005,2996) / 505→(3079,3077) / 506→(3080,3078) and the
+  ladder (0 → 1 coil, <10 → 10−placed rope, 10 → none) match the witness's
+  `refund` closure exactly. d4 (`cafec722`) wires the drain at its
+  `projectile.rs:20403` — the refund rides the kill hook, as mirrored.
+* Links 2/3 are LIVE on this branch (`find_pulley`/`pulley_ride`); the g83 vine
+  disjoint pin holds (vine 52 never attaches, the sibling test above).
+The chain witness stays a CONTRACT mirror until the three branches merge — at
+the e1b merge it can be upgraded to call the real `coil_rope_kind` /
+`coil_death_drop` (both `pub(crate)`, same crate).
+
+**Witness ledger:** 29 `w4_f3_*` test fns total (10 wall/stealth + 11 pulley
+[incl. the chain] + 8 carpet [incl. the union-arm + the up-release latch]), all
+WRITTEN NOT RUN (code-only). The continuation added 3 new fns + reworked the
+carpet refusal witness to equip a wing tier. No behaviour change beyond the
+union shadow-read already recorded in `0e332c61`.

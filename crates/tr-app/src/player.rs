@@ -1955,7 +1955,9 @@ pub struct Player {
     release_down: bool,
     /// `Player.releaseUp` (`Player.cs:1756`) — the up-key release latch (true
     /// while the key is up), recomputed by `UpdateControlHolds`
-    /// (`:29093-29100`). W4-f3: the latch lands; its five C# consumers are
+    /// (`:29093-29100`). The C# field has NO initializer — the default is
+    /// `false` (the first `UpdateControlHolds` call arms it on an unheld key).
+    /// W4-f3: the latch lands; its five C# consumers are
     /// folded — the grav-flip toggles (`:26696`/`:26716`, no `gravControl2`/
     /// `forcedGravity` machine), the hover-up latch (`:25267`, `controlUp`
     /// merges into `control_jump`), the hover-mount up-nudge (`:26738`,
@@ -3185,7 +3187,8 @@ impl Player {
             double_tap_down_timer: 0,
             hold_down_timer: 0,
             release_down: true,
-            release_up: true,
+            // `:1756` — no C# initializer, the bool default is false.
+            release_up: false,
             has_jump_options: [false; 9],
             can_jump_again: [false; 9],
             performing_jump: None,
@@ -24273,6 +24276,7 @@ mod w4_f3_carpet_tests {
     fn w4_f3_the_up_release_latch_mirrors_control_up() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
+        assert!(!p.release_up, "the spawn default is false (:1756, no initializer)");
         p.control_up = true;
         p.update_control_holds();
         assert!(!p.release_up, "holding up clears the latch (:29095)");
