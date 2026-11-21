@@ -984,7 +984,8 @@ pub(crate) fn scutlix_laser_charge_latch(p: &mut Projectile) {
 /// `_abilityActive` clear). The `UseDrill` mining WRITE (`Mount.cs:3059-
 /// 3180` — `PickTile`/`PickWall`/`Tile.SmoothSlope`/`Hurt`/dust) stays
 /// M2-MOUNT-4 (the writes are App-level seams; the split-contract doc,
-/// `docs/research/97`). W4-d8 RETIRE (1): the `Tile.SmoothSlope` blocker is
+/// `docs/research/226`, renumbered from 97 per registry-150). W4-d8
+/// RETIRE (1): the `Tile.SmoothSlope` blocker is
 /// CLOSED — `tr_core::edit::smooth_slope` (`Tile.cs:792-865`) is ported.
 pub(crate) fn ai_mount_crosshair(
     p: &mut Projectile,

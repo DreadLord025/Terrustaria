@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 97 | FINAL-phase proj AI 71-80 (W4-d8: the Drill ability-half port + mining-write split-contract, the 434 legacy-keep verdict, the band 71-80 all-armed census, the g64 fountain-dust + e6 606-light activation cross-notes; SEALED with the retire addendum: Tile.SmoothSlope + the Player HeightOffset family ported, the 434 keep-one FINAL, the smooth-slope-family declaration; code-only) | `97-final-phase-proj-ai-71-80.md` | ✅ SEALED |
+| 226 | FINAL-phase proj AI 71-80 (W4-d8: the Drill ability-half port + mining-write split-contract, the 434 legacy-keep verdict, the band 71-80 all-armed census, the g64 fountain-dust + e6 606-light activation cross-notes; SEALED with the retire addendum: Tile.SmoothSlope + the Player HeightOffset family ported, the 434 keep-one FINAL, the smooth-slope-family declaration; renumbered 97→226 per registry-150, d115 keeps 97; code-only) | `226-final-phase-proj-ai-71-80.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

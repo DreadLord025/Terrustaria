@@ -35,7 +35,8 @@
 //! `UpdateEffects` no-crosshair clear (`:5010-5015`). The mining WRITE
 //! (`UseDrill` `:3059-3180` — `PickTile`/`PickWall`/`Tile.SmoothSlope`/
 //! `Hurt`/dust) stays M2-MOUNT-4: the writes are App-level seams (the
-//! split-contract doc, `docs/research/97`). W4-d8 RETIRE (1): the
+//! split-contract doc, `docs/research/226`, renumbered from 97 per
+//! registry-150). W4-d8 RETIRE (1): the
 //! `Tile.SmoothSlope` blocker is CLOSED — `edit::smooth_slope{,_one}`
 //! (`Tile.cs:792-865`) landed in `tr-core/src/edit/hammer.rs`; the write
 //! half now only owes the App seams + the press wiring. The Santank (46)
@@ -3626,7 +3627,7 @@ mod tests {
     /// target/wrap + crosshair pin, the `UseAbility` toggle + 453 spawn
     /// tuple, and the `UpdateEffects` no-crosshair clear. Every expected
     /// value is hand-derived from the cited C# lines. The `UseDrill` mining
-    /// WRITE stays M2-MOUNT-4 (the split-contract doc, research/97).
+    /// WRITE stays M2-MOUNT-4 (the split-contract doc, research/226).
     #[test]
     fn w4_d8_the_drill_ability_math() {
         use super::*;

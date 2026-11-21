@@ -1,4 +1,12 @@
-# 97 — FINAL-PHASE lane 18 (proj AI 71-80): the drill split, the 434 verdict, the band census, the fountain-dust + 606-light cross-notes
+# 226 — FINAL-PHASE lane 18 (proj AI 71-80): the drill split, the 434 verdict, the band census, the fountain-dust + 606-light cross-notes
+
+**Renumbered 97 → 226** per the d54 collision registry
+(`docs/research/150-research-number-registry.md` §1/§3, tip `38bfd1d22`):
+W4-d115's `97-doc-sweep-dodge.md` (first add 2026-11-21T05:18:36,
+`7c4fcb755`) wins key 97; this doc (first add 08:44:51, `e9de7168`) takes
+the assigned free number 226. Content-preserving rename — the body below
+is unchanged; refs updated in `INDEX.md`, `ANALYSIS.md`, `PORT_MAP.md`,
+`anchors.txt` + the two Rust doc comments (the g64 66→196 precedent).
 
 **STATUS: SEALED (2026-11-21, the retire round).** The (1)-(5) census below
 stands as landed; the RETIRE addendum at the tail closes the two owed
@@ -20,7 +28,8 @@ Commits (this phase):
 | --- | --- | --- |
 | (1) Drill ability half | `85e87499` | `DrillMountData`/`DrillBeam` + `UpdateDrill`/`AimAbility`/`UseAbility`/`UpdateEffects` gate + the 453 crosshair wiring + the player per-tick block + 2 witnesses |
 | (2)-(5) census | `e9de7168` | the 434 verdict, the band table, the g64/e6 cross-notes |
-| retire (1)-(3) | this round | `Tile.SmoothSlope` + the HeightOffset family ported, the 434 keep-one FINAL, this SEAL + the smooth-slope-family declaration |
+| retire (1)-(3) | `6d73aa37` | `Tile.SmoothSlope` + the HeightOffset family ported, the 434 keep-one FINAL, this SEAL + the smooth-slope-family declaration |
+| registry rename | this round | 97 → 226 per research/150 §3 (d115 wins key 97); refs updated, body unchanged |
 
 ---
 

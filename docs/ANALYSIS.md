@@ -7566,7 +7566,8 @@ repo code.
 **Code-only mode** — no compiler/test invocation; the port was re-read against
 `Mount.cs` line-by-line and the witnesses **written, not run** (2 new:
 `w4_d8_the_drill_ability_math` + the extended crosshair witness). The Drill (8)
-mining payload splits along the Scutlix precedent's line (research/97 §1):
+mining payload splits along the Scutlix precedent's line (research/226 §1,
+renumbered from 97 per registry-150):
 
 - **Ported (the self-contained ability half)**: `DrillMountData`/`DrillBeam`
   (`Mount.cs:20-58`), `UpdateDrill`'s cooldown tick + diode lerp (`:3036-3057`),
@@ -7590,9 +7591,9 @@ mining payload splits along the Scutlix precedent's line (research/97 §1):
 
 ### The SmoothSlope retire (W4-d8 retire round, 2026-11-21)
 
-**Code-only mode** — witnesses WRITTEN NOT RUN (6 new). research/97 is
+**Code-only mode** — witnesses WRITTEN NOT RUN (6 new). research/226 is
 SEALED with the retire addendum (the full family declaration lives there,
-R3). The two closes:
+R3; renumbered from 97 per registry-150). The two closes:
 
 - **`Tile.SmoothSlope` (`Tile.cs:792-865`) PORTED** as
   `tr_core::edit::smooth_slope{,_one}` (`edit/hammer.rs`, the tile-edit
@@ -7602,7 +7603,7 @@ R3). The two closes:
   threads like `slope_tile`; the `sync` net arm rides the caller's edit
   seam. The worldgen lane copies (g40's `biomes::tile_smooth_slope`) are
   arm-identical and DEDUPE onto this signature at the g40 ⨉ d8 merge —
-  ONE play-path SmoothSlope, the family table in research/97 R3. Zero
+  ONE play-path SmoothSlope, the family table in research/226 R3. Zero
   RNG. 3 witnesses (the mask arms, the flag2 veto + the actuated-above
   TileEmpty read, the gate + cascade).
 - **The Player mount HeightOffset family (`Player.cs:3237-3371`) PORTED
