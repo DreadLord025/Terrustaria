@@ -858,6 +858,11 @@ pub struct ItemDrop {
     /// `Entity.shimmerWet` (`Entity.cs:28`) — the drop's box overlaps shimmer
     /// liquid this tick.
     pub shimmer_wet: bool,
+    /// `Entity.wet` — the SpawnShimmeredItem modifier's `wet = true` write
+    /// (`WorldItem.cs:635`); the per-tick `MoveInWorld` wet probe is the
+    /// unported engine half (ANALYSIS W4-f47), so the flag carries the
+    /// spawn write only.
+    pub wet: bool,
     /// The natural roll's prefix (`Item.NewItem`'s `prefix` argument,
     /// `Item.cs:49730`); 0 = none.
     pub prefix: u16,
@@ -908,6 +913,7 @@ impl ItemDrop {
             shimmered: false,
             shimmer_pending: false,
             shimmer_wet: false,
+            wet: false,
             prefix,
             pos: Vec2::new(x, y),
             vel: Vec2::new(vx, vy),

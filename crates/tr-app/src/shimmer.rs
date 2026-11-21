@@ -317,6 +317,94 @@ pub fn decraft_ingredients(recipe_index: usize) -> Vec<DecraftIngredient> {
         .collect()
 }
 
+/// `WorldItem.ShimmerEffect` (`WorldItem.cs:1661-1689`): the Item176 cue at
+/// the truncated centre + 20 type-309 dusts, each `scale *= 1.2` and a
+/// `Next(6)` colour pick (0 → (255,255,210), 1 → (190,245,255), 2 →
+/// (255,150,255), default → (190,175,255)). The draws ride the caller's
+/// stream — the NPC drain passes `UpdateNpcs` (`Main.cs:17767`), the item
+/// chain passes `UpdateItems` (`Main.cs:18024`). The net-146 send is MP-only.
+pub(crate) fn shimmer_effect(app: &mut App, center: Vec2, rng_key: crate::app::RngKey) {
+    // `SoundID.Item176` (`SoundID.cs`'s style row) — the case-2 façade, the
+    // 0.9 volume tweak (`sound.rs::item_use_case2`), no pitch variance.
+    let idx = crate::soundid::SOUND_STYLES
+        .iter()
+        .position(|s| s.name == "Item176")
+        .expect("Item176 is in the generated style table") as u16;
+    let sx = center.x as i32 as f32;
+    let sy = center.y as i32 as f32;
+    let rng = app.rngs.stream(rng_key);
+    app.audio.play_use_sound(idx, sx, sy, 0.0, rng);
+    let ctx = app.spawn_ctx();
+    let rng = app.rngs.stream(rng_key);
+    for _ in 0..20 {
+        // `Dust.NewDust(shimmerPositon, 1, 1, 309)` — the 1x1 box.
+        let i = app.dust.new_dust(
+            rng,
+            &ctx,
+            &app.world,
+            center,
+            1,
+            1,
+            309,
+            0.0,
+            0.0,
+            0,
+            tr_core::particles::Color::default(),
+            1.0,
+        );
+        let d = app.dust.slot_mut(i);
+        d.scale *= 1.2;
+        d.color = match rng.next_max(6) {
+            0 => tr_core::particles::Color { r: 255, g: 255, b: 210, a: 255 },
+            1 => tr_core::particles::Color { r: 190, g: 245, b: 255, a: 255 },
+            2 => tr_core::particles::Color { r: 255, g: 150, b: 255, a: 255 },
+            _ => tr_core::particles::Color { r: 190, g: 175, b: 255, a: 255 },
+        };
+    }
+}
+
+/// `WorldItem.SpawnShimmeredItem` (static, `WorldItem.cs:628-637`):
+/// `Item.RequestNewItem(source, center, type, stack, prefix 0,
+/// ownership None, velocity (itemNumber * (itemNumber % 2 * 2 - 1), 0))`
+/// then the modifier writes `shimmerTime = 1, shimmered = true,
+/// shimmerWet = true, wet = true`. The explicit velocity REPLACES the
+/// scatter draws (`Item.cs:49738-49740` — `velocity.HasValue`), so the only
+/// stream draws are the prefix roll's (prefix 0 → none, `Item.cs:518`).
+/// `item_number` is the C#'s per-chain spawn counter (the decraft's num7,
+/// the NPC drop's 0).
+pub(crate) fn spawn_shimmered_item(
+    app: &mut App,
+    center: Vec2,
+    item_number: i32,
+    item_type: u16,
+    stack: u32,
+    rng_key: crate::app::RngKey,
+) {
+    let vx = (item_number * (item_number % 2 * 2 - 1)) as f32;
+    let rng = app.rngs.stream(rng_key);
+    // prefix 0 — `roll_prefix`'s early return, no draws.
+    let prefix = crate::prefix::roll_prefix(item_type, 0, rng);
+    let mut drop = crate::item::ItemDrop::new(
+        item_type,
+        stack.max(1),
+        prefix,
+        center.x - crate::item::SIZE * 0.5,
+        center.y - crate::item::SIZE * 0.5,
+        vx,
+        0.0,
+        0.0,
+    );
+    // The modifier (`:632-635`).
+    drop.shimmer_time = 1.0;
+    drop.shimmered = true;
+    drop.shimmer_wet = true;
+    drop.wet = true;
+    app.items.push(drop);
+    if app.items.len() > 300 {
+        app.items.remove(0);
+    }
+}
+
 /// The app-side apply of [`ShimmerOutcome`] — `WorldItem.GetShimmered`'s
 /// chain tail (`WorldItem.cs:1691-1849`): the coin merge's luck, the transform
 /// replace, the two special events, the release spawn and the decraft's

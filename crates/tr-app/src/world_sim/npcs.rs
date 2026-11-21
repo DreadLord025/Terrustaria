@@ -3472,6 +3472,153 @@ pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32
     true
 }
 
+/// `NPC.Collision_WaterCollision`'s shimmer/honey contact
+/// (`NPC.cs:93052-93076`, W4-f47): the faithful `WetCollision` probe sets
+/// `shimmerWet`/`honeyWet` and, on shimmer, `TryAddingRepeatedBuff(353,
+/// 100)` (the Shimmering buff that drives the transparency ramp). Runs as
+/// a post-pass after the per-NPC AI step — timing-equivalent to the C#'s
+/// `UpdateCollision` position, because `UpdateNPC_BuffSetFlags` (which
+/// reads the buff into `shimmering`) and `UpdateNPC_UpdateGravity` (which
+/// reads `shimmerWet`) both run at the NEXT tick's head, ahead of the
+/// contact. The `!wet` clear (`:92527-92532`) folds in.
+pub(crate) fn shimmer_wet_contact_pass(app: &mut App) {
+    for n in app.npcs.iter_mut() {
+        if n.hp <= 0 {
+            continue;
+        }
+        let net_id = n.kind.net_id();
+        let style = n.kind.ai_style();
+        // `:93055` — the no-wet exemption list (the probe is skipped,
+        // wetCount zeroed, lava false). The port has no wetCount/lava
+        // fields on Npc; the skip just leaves the wet flags cleared.
+        let exempt = (net_id == 690 && n.ai[0] == 0.0)
+            || net_id == 72
+            || style == 21
+            || style == 67
+            || net_id == 376
+            || net_id == 579
+            || net_id == 541
+            || (style == 7 && n.ai[0] == 25.0);
+        if exempt {
+            // The C# skips the probe and zeroes wetCount/lava only — it
+            // does NOT write base.wet/shimmerWet/honeyWet here. The port
+            // leaves the per-arm wet cache and clears the kind flags (the
+            // shimmer contact must not fire for the exempt kinds).
+            n.shimmer_wet = false;
+            n.honey_wet = false;
+            continue;
+        }
+        let (w, h) = n.size();
+        let (wet, honey, shimmer) =
+            crate::npc_ai_slime::wet_collision(&app.world, n.x, n.y, w as i32, h as i32);
+        if honey {
+            n.honey_wet = true; // :93064-93067
+        }
+        if shimmer {
+            n.shimmer_wet = true; // :93068-93070
+            // :93071-93074 — netMode != 1 → TryAddingRepeatedBuff(353,100).
+            n.buffs.try_adding_repeated_buff(353, 100, 10);
+        }
+        if wet {
+            n.wet = true;
+        } else {
+            // :92527-92532 — !wet clears all three.
+            n.wet = false;
+            n.shimmer_wet = false;
+            n.honey_wet = false;
+        }
+    }
+}
+
+/// The `NPC.GetShimmered` drain (`NPC.cs:91517-91519` → `:91548-91592`,
+/// W4-f47): every NPC whose transparency ramp crossed 0.9 this tick
+/// (`wants_shimmer_transform`, armed in `update_preamble`) resolves its arm
+/// HERE, after the per-NPC pass — the arms transform / spawn / deactivate,
+/// they need the app wholesale (the shimmer item-chain's post-pass
+/// convention). Slot order = the C#'s `Main.npc[]` walk; the draws ride
+/// `UpdateNpcs` (`Main.cs:17767`).
+pub(crate) fn drain_shimmer_transforms(app: &mut App) {
+    let due: Vec<usize> = app
+        .npcs
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.wants_shimmer_transform && n.hp > 0)
+        .map(|(i, _)| i)
+        .collect();
+    if due.is_empty() {
+        return;
+    }
+    for i in due {
+        app.npcs[i].wants_shimmer_transform = false;
+        let net_id = app.npcs[i].kind.net_id();
+        let outcome = tr_core::shimmer::resolve_npc_shimmer(
+            net_id as u16,
+            app.npcs[i].spawned_from_statue,
+        );
+        let (cx, cy) = app.npcs[i].center();
+        let center = Vec2::new(cx, cy);
+        match outcome {
+            tr_core::shimmer::NpcShimmerOutcome::Nothing => {}
+            tr_core::shimmer::NpcShimmerOutcome::StatuePoof => {
+                // `:91550-91560` — ShimmerEffect + noSpawnCycle + the
+                // active=false poof (no loot, no death events: the port's
+                // despawn_timer 0 removal, the `:77993` convention).
+                crate::shimmer::shimmer_effect(app, center, RngKey::UpdateNpcs);
+                app.npc_no_spawn_cycle = true;
+                app.npcs[i].despawn_timer = 0;
+            }
+            tr_core::shimmer::NpcShimmerOutcome::TransformNpc { new_type } => {
+                // `:91561-91565` — Transform(target) THEN ShimmerEffect at
+                // the POST-transform Center (the bottom-anchored reposition
+                // moves it). The roster gap (676/677 etc.) leaves the NPC
+                // untouched but the effect still plays.
+                if let (Some((kind, slime)), Some(player)) = (
+                    crate::npc::kind_from_net_id(new_type as i32),
+                    app.player.as_ref(),
+                ) {
+                    app.npcs[i].transform_to_kind(&app.world, player, kind);
+                    app.npcs[i].slime = slime;
+                }
+                let (cx, cy) = app.npcs[i].center();
+                crate::shimmer::shimmer_effect(
+                    app,
+                    Vec2::new(cx, cy),
+                    RngKey::UpdateNpcs,
+                );
+            }
+            tr_core::shimmer::NpcShimmerOutcome::DropItem { item_type } => {
+                // `:91566-91577` — SpawnShimmeredItem(source, Center, 0,
+                // target) (stack defaults to 1) + ShimmerEffect +
+                // noSpawnCycle + active=false.
+                crate::shimmer::spawn_shimmered_item(
+                    app,
+                    center,
+                    0,
+                    item_type,
+                    1,
+                    RngKey::UpdateNpcs,
+                );
+                crate::shimmer::shimmer_effect(app, center, RngKey::UpdateNpcs);
+                app.npc_no_spawn_cycle = true;
+                app.npcs[i].despawn_timer = 0;
+            }
+            tr_core::shimmer::NpcShimmerOutcome::TownVariant => {
+                // `:91578-91591` — ai[0]=25, ai[1..3]=0, netUpdate,
+                // transparency 0.89, FindBuffIndex(353) → DelBuff. The
+                // state-25 emergence machine (npc_ai_town) takes over.
+                let n = &mut app.npcs[i];
+                n.ai = [25.0, 0.0, 0.0, 0.0];
+                n.net_update = true;
+                n.shimmer_transparency = 0.89;
+                n.buffs.remove_buff(353);
+            }
+        }
+    }
+    // The poof removals (`active = false` — no death events, the despawn
+    // retain's convention).
+    app.npcs.retain(|n| !n.despawn_expired());
+}
+
 /// The saucer/scutlix/dutchman carrier write-through PRE-pass (S1-D-8b's
 /// migrated scan family, re-wired by S1-D-3-wire-saucer): the `AI_075`
 /// rider/mount host links + the shell's crew slots, and the `AI_093`
@@ -6169,6 +6316,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-f47 — the NPC.GetShimmered drain (`NPC.cs:91517-91519`): the
+    // transparency ramp's 0.9 crossings resolve after the pass (the arms
+    // transform/spawn/poof — the shimmer item-chain's post-pass convention).
+    drain_shimmer_transforms(app);
+    // W4-f47 — the shimmer/honey wet contact (`NPC.cs:93052-93076`): the
+    // faithful probe + the buff-353 add, timing-equivalent at the post-pass
+    // (the flag/gravity readers run at the next tick's head).
+    shimmer_wet_contact_pass(app);
     // The saucer core's crew (`AI`'s aiStyle-76 init arm): the 2 turrets
     // 393, the 2 cannons 394 and the shell 392, each `ai[0]`-linked (the
     // port's link rides the write-through) with the seat `ai[1]`.
@@ -6498,7 +6653,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the first draw is the `Next(spawnRate)` gate (`NPC.cs:312-318`), so the
     // per-call LCG advance the splitmix bridge needed dies outright.
     let mut spawned = None;
-    if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
+    // `NPC.SpawnNPC`'s noSpawnCycle head (`NPC.cs:80171-80175`, W4-f47):
+    // the shimmer statue-poof / item-drop arms set the flag; ONE spawn
+    // cycle is skipped (the flag clears even when the timer/crowd gates
+    // would have refused anyway — the C# consumes it unconditionally).
+    let spawn_cycle_skipped = std::mem::replace(&mut app.npc_no_spawn_cycle, false);
+    if !spawn_cycle_skipped && app.npcs.len() < 200 && app.npc_timer <= 0.0 {
         let mut rng = app.rngs.stream(RngKey::SpawnNpc);
         // The Slime Rain sky spawns (`SlimeRainSpawns`, `NPC.cs:5892-5960`)
         // — the pre-roll before the regular spawner (`:296-302`'s call
@@ -18274,5 +18434,118 @@ mod king_slime_audit_tests {
             "the finder picks the witnessed candidate"
         );
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
+    }
+}
+
+/// W4-f47 — the NPC shimmer-transform drain + the wet-contact pass
+/// witnesses (WRITTEN NOT RUN, code-only mode).
+#[cfg(test)]
+mod shimmer_transform_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use tr_core::tile::{Tile, FLAG_ACTIVE, LiquidKind};
+
+    /// A 64x200 world, dirt ground at y=120, a shimmer pool at x 28..32 /
+    /// y 118..119 (the contact fixture).
+    fn shimmer_world() -> tr_core::World {
+        let mut w = tr_core::World::new("shim".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 28..32 {
+            for y in 118..120 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = shimmer_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        app
+    }
+
+    /// `NPC.cs:91561-91565` — the NPC-set arm transforms in place (the
+    /// blue slime 1 → the shimmer slime 676 is a roster gap, so the
+    /// zombie 3 → the skeleton 21 is the live witness).
+    #[test]
+    fn w4_f47_the_npc_set_arm_transforms_in_place() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.wants_shimmer_transform = true;
+        app.npcs.push(n);
+        drain_shimmer_transforms(&mut app);
+        // Zombie net_id 3 → ShimmerTransformToNPC[3] = 21 (Skeleton).
+        assert_eq!(app.npcs[0].kind, NpcKind::Skeleton);
+        assert!(!app.npcs[0].wants_shimmer_transform, "the request drained");
+        assert!(!app.npc_no_spawn_cycle, "the transform arm does not skip spawns");
+    }
+
+    /// `NPC.cs:91550-91560` — the statue poof deactivates + skips one
+    /// spawn cycle, no loot.
+    #[test]
+    fn w4_f47_the_statue_poof_deactivates_and_skips_the_cycle() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.spawned_from_statue = true;
+        n.wants_shimmer_transform = true;
+        app.npcs.push(n);
+        drain_shimmer_transforms(&mut app);
+        assert!(app.npcs.is_empty(), "the poof removed the NPC");
+        assert!(app.npc_no_spawn_cycle, "one spawn cycle skipped");
+        assert!(app.items.is_empty(), "no loot");
+    }
+
+    /// `NPC.cs:91578-91591` — the town arm zeroes the ai, sets 0.89 and
+    /// deletes buff 353 (the Guide 22 is in ShimmerTownTransform).
+    #[test]
+    fn w4_f47_the_town_arm_arms_state25_and_strips_the_buff() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.buffs.add_buff(353, 100);
+        n.ai = [1.0, 2.0, 3.0, 4.0];
+        n.wants_shimmer_transform = true;
+        app.npcs.push(n);
+        drain_shimmer_transforms(&mut app);
+        assert_eq!(app.npcs[0].ai, [25.0, 0.0, 0.0, 0.0]);
+        assert_eq!(app.npcs[0].shimmer_transparency, 0.89);
+        assert_eq!(app.npcs[0].buffs.find_buff_index(353), None);
+        assert!(app.npcs[0].net_update);
+    }
+
+    /// `NPC.cs:93068-93074` — the shimmer contact sets shimmerWet and
+    /// adds buff 353 (100 ticks); a dry NPC keeps neither.
+    #[test]
+    fn w4_f47_the_shimmer_contact_adds_buff_353() {
+        let mut app = app();
+        // In the pool (x 30 tiles, y 118).
+        let mut wet = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        wet.hp = wet.max_hp;
+        // Dry, far from the pool.
+        let mut dry = Npc::new(NpcKind::Zombie, 50.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        dry.hp = dry.max_hp;
+        app.npcs.push(wet);
+        app.npcs.push(dry);
+        shimmer_wet_contact_pass(&mut app);
+        assert!(app.npcs[0].shimmer_wet, "the pool contact");
+        assert_eq!(app.npcs[0].buffs.buff_time_of(353), 100);
+        assert!(!app.npcs[1].shimmer_wet);
+        assert_eq!(app.npcs[1].buffs.find_buff_index(353), None);
     }
 }

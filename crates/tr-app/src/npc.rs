@@ -1197,8 +1197,26 @@ pub struct Npc {
     /// `NPC.shimmerTransparency` (`NPC.cs`'s field) — the 1.0 of a
     /// shimmer-released NPC (`WorldItem.GetShimmered`'s makeNPC arm,
     /// `WorldItem.cs:1768`, and 4986's `:1732`) or the 0.89 of the shimmered
-    /// variant (`NPC.GetShimmered`, `NPC.cs:91548`). Render layer only.
+    /// variant (`NPC.GetShimmered`, `NPC.cs:91548`). The transparency ramp
+    /// (`NPC.cs:91514-91544`, W4-f47) drives it live; the render layer
+    /// multiplies the tint by `1 - transparency` (`Main.cs:26282-26286`).
     pub shimmer_transparency: f32,
+    /// `NPC.shimmering` (`NPC.cs:6245`) — buff 353 active this tick
+    /// (`UpdateNPC_BuffSetFlags` `:92141`, reset `:92191`). The transparency
+    /// ramp's rise gate (`:91514`); the town arm's home-stamp gate
+    /// (`:53296`).
+    pub shimmering: bool,
+    /// `Entity.shimmerWet` — the shimmer-contact flag
+    /// (`Collision_WaterCollision`, `NPC.cs:93068-93075`); the wet gravity
+    /// override reads it first (`:90939`). Cleared with `wet` (`:92531`).
+    pub shimmer_wet: bool,
+    /// `Entity.honeyWet` (`NPC.cs:93064-93067`) — the honey gravity arm
+    /// (`:90944`).
+    pub honey_wet: bool,
+    /// The `GetShimmered` request (`NPC.cs:91517-91519`): the transparency
+    /// ramp crossed 0.9 this tick; the sim drains it after the NPC pass
+    /// (the arms transform/spawn/kill — they need the app wholesale).
+    pub wants_shimmer_transform: bool,
     /// `NPC.extraValue` (`WorldItem.cs:1125-1200`'s carrier): the coins a
     /// revenge enemy picked up, dropped on kill via `NPCLoot_DropMoney`'s
     /// `+= extraValue` (:79680).
@@ -2909,6 +2927,10 @@ impl Npc {
         Self {
             kind,
             shimmer_transparency: 0.0,
+            shimmering: false,
+            shimmer_wet: false,
+            honey_wet: false,
+            wants_shimmer_transform: false,
             extra_value: 0,
             slime: SlimeVariant::Blue,
             x,
@@ -4995,7 +5017,25 @@ impl Npc {
         // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
         // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
         // the frame's movement, exactly like the original.
-        self.buffs.update_buffs_tick(&mut self.hp, self.max_hp);
+        let flags = self.buffs.update_buffs_tick(&mut self.hp, self.max_hp);
+        // `UpdateNPC_BuffFlagsReset` (`:92191`) + `BuffSetFlags` (`:92141`):
+        // the shimmering flag is derived fresh each tick (W4-f47).
+        self.shimmering = flags.shimmering;
+        // `UpdateNPC_BuffApplyVFX`'s shimmer tail (`NPC.cs:91514-91544`):
+        // the transparency ramp runs at the buff block's position (the C#
+        // VFX pass `:90378`, before the AI). The crossing REQUEST rides
+        // `wants_shimmer_transform` — the sim drains it after the pass (the
+        // GetShimmered arms spawn/kill, they need the app wholesale).
+        let (t, crossed) = tr_core::shimmer::npc_shimmer_transparency_tick(
+            self.shimmering,
+            self.shimmer_transparency,
+            self.just_hit,
+            self.buffs.buff_immune[353],
+        );
+        self.shimmer_transparency = t;
+        if crossed {
+            self.wants_shimmer_transform = true;
+        }
         self.hurt_cd = (self.hurt_cd - dt).max(0.0);
         // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`).
         for v in self.immune.iter_mut() {
