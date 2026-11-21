@@ -1374,12 +1374,14 @@ impl App {
     /// `Player.TrySwitchingLoadout` (`Player.cs:5661-5682`) over the live App
     /// state: the swap core runs on `Player` + `App.equip`, then the local
     /// tails fire — `Main.mouseLeftRelease = false` (`:5671`),
-    /// `ItemSlot.RecordLoadoutChange` (`:5672`) and `SoundEngine.PlaySound(12)`
-    /// (`:5673`). `UsingOrReusingItem` (`:4068-4078`) is summarised from the
-    /// port's swing/reuse/channel timers (`App.swing` = itemAnimation > 0,
-    /// `App.reuse_delay` = reuseDelay > 0, `Player.channel`); the
-    /// `pendingItemReuse` half has no port state (ANALYSIS). The
-    /// `clientCloneLoadouts`/`TrySendData(147)`/particle tails are MP/visual.
+    /// `ItemSlot.RecordLoadoutChange` (`:5672`), `SoundEngine.PlaySound(12)`
+    /// (`:5673`) and `NetMessage.TrySendData(147)` (`:5674`, the
+    /// `send_sync_loadout` MP push). `UsingOrReusingItem` (`:4068-4078`) is
+    /// summarised from the port's swing/reuse/channel timers (`App.swing` =
+    /// itemAnimation > 0, `App.reuse_delay` = reuseDelay > 0, `Player.channel`);
+    /// the `pendingItemReuse` half lands with its own gate pass. The
+    /// `clientCloneLoadouts` (`:5670`) and particle (`:5675-5679`) tails are
+    /// the clone/visual systems'.
     pub(crate) fn try_switching_loadout(&mut self, index: usize) -> bool {
         let using_or_reusing = self.swing > 0.0
             || self.reuse_delay > 0.0
@@ -1399,6 +1401,9 @@ impl App {
             // `RecordLoadoutChange` (`:5672`): stamp the visual clock.
             self.loadout_change_time = (self.anim_time * 60.0) % 216000.0;
             self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:5673`)
+            // `NetMessage.TrySendData(147, -1, -1, null, whoAmI, loadoutIndex)`
+            // (`:5674`): the MP push (no-op while `NetRole::Off`).
+            self.send_sync_loadout(index);
         }
         ok
     }
