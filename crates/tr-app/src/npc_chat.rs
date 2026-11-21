@@ -169,8 +169,62 @@ impl Flags {
     }
 }
 
+/// `NPC.CheckDialogue` (`NPC.cs:90519-90532`, called at `:90510` inside
+/// `UpdateNPC`): every 10th tick (`(GameUpdateCount + whoAmI) % 10 == 0`)
+/// re-probe the registry (`ConditionalDialogue.TryGetPendingDialogue`,
+/// `ConditionalDialogue.cs:85-102` — the probe REPLACES the pending row,
+/// clearing it when no condition holds); on the other nine ticks a pending
+/// row whose condition failed clears immediately. The `netMode != 2` gate
+/// is the port's single-player constant-on.
+///
+/// `who` is the port's stable `Npc::uid` standing in for `whoAmI` (the
+/// compaction deviation — the cadence is identical, the phase rides the
+/// stable id instead of the shifting slot index). The "is alive" gate is
+/// the CALLER's (`UpdateNPC` never runs for an inactive NPC — the port's
+/// `update_npcs` loop gates `hp > 0`); the predicate itself is freeCake only.
+pub fn check_dialogue(npc: &mut Npc, update_count: u32, who: u32, free_cake: bool) {
+    if update_count.wrapping_add(who) % 10 == 0 {
+        npc.next_dialogue = pending_dialogue(npc.kind, free_cake);
+    } else if npc.next_dialogue && !conditions_met(npc.kind, free_cake) {
+        npc.next_dialogue = false;
+    }
+}
+
+/// `ConditionalDialogue.TryGetPendingDialogue`'s registry scan: `Init`
+/// (`ConditionalDialogue.cs:122-125`) registers exactly one row —
+/// `FreeCakeDialogue` on type 208 (the Party Girl), condition `NPC.freeCake`
+/// (`:51-56`). Every other type answers `false` (a null registry list).
+fn pending_dialogue(kind: NpcKind, free_cake: bool) -> bool {
+    kind == NpcKind::PartyGirl && free_cake
+}
+
+/// The pending row's `ConditionsMet` — the same single predicate.
+fn conditions_met(kind: NpcKind, free_cake: bool) -> bool {
+    pending_dialogue(kind, free_cake)
+}
+
+/// `FreeCakeDialogue.GetChatAndClearCondition`
+/// (`ConditionalDialogue.cs:58-66`): the text half —
+/// `PartyGirlSpecialText.Cake{Main.rand.Next(1, 4)}` (the draw rides the
+/// caller's `Main.rand` stream, the `GetChat` contract). The side effects
+/// (`NPC.freeCake = false` `:60`, the `SendData(51)` net sync `:61`, the
+/// `QuickSpawnItem(3750, GiftRecieved)` cake gift `:62-64`) run BEFORE this
+/// draw in the C# — the port's talk seam
+/// (`world_sim::npcs::talk_to_npc`) drains them ahead of `get_chat` so the
+/// overflow drop's draws precede the Cake text draw on the pinned stream
+/// (the research/70 §3 reconciled order).
+fn cake_chat(ctx: &mut ChatContext) -> String {
+    let n = ctx.next_range(1, 4);
+    crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"))
+}
+
 /// `NPC.GetChat` (`NPC.cs:93766-94800`): the NPC's line.
 pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
+    // `:93768-93771`: the pending conditional dialogue wins BEFORE the
+    // Joja-cola/Dryad re-roll resets and the per-kind ladder.
+    if npc.next_dialogue {
+        return cake_chat(ctx);
+    }
     let flags = Flags::scan(ctx.npcs);
     // `NPC.homeless` — the port's `Npc` keeps the home as `Option`, so
     // "homeless" is "no home assigned" (`NPC.cs:6551-6553`).
@@ -1086,6 +1140,76 @@ mod tests {
         assert!(app.npc_chat_text.is_empty());
     }
 
+    // ---- W4-f38: the conditional dialogue (S1-E-10's remaining half) ----
+
+    /// `NPC.CheckDialogue` (`NPC.cs:90519-90532`): the 10th-tick probe
+    /// REPLACES the pending row; the other nine ticks clear a failed
+    /// condition immediately. Only the Party Girl carries a registry row
+    /// (`ConditionalDialogue.Init`, `:122-125`).
+    #[test]
+    fn the_dialogue_probe_walks_the_ten_tick_cadence() {
+        let mut girl = npc(NpcKind::PartyGirl);
+        // (count + who) % 10 == 0 with the cake up: the row arms.
+        check_dialogue(&mut girl, 100, 0, true);
+        assert!(girl.next_dialogue, "the probe arms the cake row");
+        // A non-probe tick with the condition still up keeps it.
+        check_dialogue(&mut girl, 101, 0, true);
+        assert!(girl.next_dialogue);
+        // A non-probe tick with the condition DOWN clears it at once
+        // (`:90527-90530` — the dusk clear needs no probe tick).
+        check_dialogue(&mut girl, 102, 0, false);
+        assert!(
+            !girl.next_dialogue,
+            "the failed condition clears immediately"
+        );
+        // The probe tick REPLACES: a re-armed cake re-arms the row.
+        check_dialogue(&mut girl, 110, 0, true);
+        assert!(girl.next_dialogue);
+        // The probe tick with the cake down clears a pending row too
+        // (`TryGetPendingDialogue` answers null, `:90525`).
+        check_dialogue(&mut girl, 120, 0, false);
+        assert!(!girl.next_dialogue);
+        // Another kind never arms — the registry has no row for it.
+        let mut guide = npc(NpcKind::Guide);
+        check_dialogue(&mut guide, 100, 0, true);
+        assert!(!guide.next_dialogue, "only type 208 registers a dialogue");
+    }
+
+    /// `NPC.GetChat`'s head (`NPC.cs:93768-93771`): the pending row wins
+    /// BEFORE the ladder — `PartyGirlSpecialText.Cake{Next(1, 4)}`
+    /// (`ConditionalDialogue.cs:65`), the draw on the caller's stream.
+    #[test]
+    fn the_pending_cake_dialogue_wins_over_the_ladder() {
+        init_lang();
+        let mut girl = npc(NpcKind::PartyGirl);
+        girl.next_dialogue = true;
+        let npcs = [girl];
+        // Next(1, 4) = 1 + Next(3); the pinned 0 answers Cake1.
+        let mut rng = draws(&[0]);
+        let mut ctx = context(&npcs, &mut rng);
+        let chat = get_chat(&npcs[0], &mut ctx);
+        assert_eq!(
+            chat,
+            "Where ya been!? There's a total party going on! Here, take the cake!"
+        );
+        // The pinned 2 answers Cake3 — the {PlayerName} substitution stays
+        // unresolved without a player (the manager's bare-token form).
+        let mut rng = draws(&[2]);
+        let mut ctx = context(&npcs, &mut rng);
+        let chat = get_chat(&npcs[0], &mut ctx);
+        assert!(
+            chat.starts_with("Party up! You're like, in charge of the cake"),
+            "{chat}"
+        );
+        // Without the pending row the ladder answers (the party_girl arm).
+        let plain = npc(NpcKind::PartyGirl);
+        let npcs = [plain];
+        let mut rng = draws(&[0]);
+        let mut ctx = context(&npcs, &mut rng);
+        let chat = get_chat(&npcs[0], &mut ctx);
+        assert!(!chat.contains("take the cake"), "the ladder, not the cake");
+    }
+
     /// W4-f41 — the party girl's cake gift (`ConditionalDialogue.cs:51-67`
     /// via `GetChat`'s head `NPC.cs:93768-93771`): a latched
     /// `nextDialogue` fires BEFORE the chatter ladder — the talk clears
@@ -1101,7 +1225,7 @@ mod tests {
         let mut girl = npc(NpcKind::PartyGirl);
         girl.x = p.x + 16.0;
         girl.y = p.y;
-        girl.next_dialogue_free_cake = true;
+        girl.next_dialogue = true;
         app.npcs.push(girl);
         app.world_events.free_cake = true;
         app.place_down = true;
@@ -1114,7 +1238,7 @@ mod tests {
             "one of the three Cake lines, got {text}"
         );
         assert!(!app.world_events.free_cake, "the gift clears the flag");
-        assert!(!app.npcs[0].next_dialogue_free_cake, "the latch cleared");
+        assert!(!app.npcs[0].next_dialogue, "the latch cleared");
         let cake = app
             .inventory
             .iter()
@@ -1144,11 +1268,139 @@ mod tests {
         assert_eq!(total, 1);
     }
 
+    /// The talk seam's gift half (`ConditionalDialogue.cs:58-66` →
+    /// `Player.QuickSpawnItem`, `Player.cs:7187-7200`): the cake text, the
+    /// condition + pending-row clears, and the Slice Of Cake (3750) in the
+    /// inventory.
+    #[test]
+    fn the_talk_action_hands_over_the_cake_and_clears_the_condition() {
+        init_lang();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_ref().unwrap();
+        let mut girl = npc(NpcKind::PartyGirl);
+        girl.x = p.x + 16.0;
+        girl.y = p.y;
+        girl.next_dialogue = true;
+        app.npcs.push(girl);
+        app.world_events.free_cake = true;
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false)
+            .expect("the Party Girl answers the cake line");
+        assert!(text.contains("cake"), "the cake line: {text}");
+        assert!(!app.world_events.free_cake, "NPC.freeCake = false (`:60`)");
+        assert!(!app.npcs[0].next_dialogue, "the row is consumed");
+        assert!(
+            app.inventory.iter().any(|s| s.kind == 3750 && s.count >= 1),
+            "the QuickSpawnItem gift fills the inventory (`:64`)"
+        );
+        // A second talk answers the ladder — the cake is one-shot.
+        app.talk_npc = None;
+        app.place_down = true;
+        let text2 =
+            crate::world_sim::npcs::talk_to_npc(&mut app, false).expect("the second talk answers");
+        assert!(
+            !text2.contains("take the cake"),
+            "the ladder after the gift"
+        );
+    }
+
+    /// `ConditionalDialogue.cs:51-66` — the FreeCakeDialogue talk arm: the
+    /// latch clears, the cake (3750) rides `QuickSpawnItem` → the inventory
+    /// slot walk (useStyle 1 → the hotbar forward pass), and the text's
+    /// `Next(1, 4)` draw fires AFTER the gift. The draw rides the bare
+    /// `Main.rand` stream — the flow app's world-seed-0 global.
+    /// RE-DERIVED (research/70 §4): the row is LATCHED first — the kept
+    /// chain fires on `next_dialogue` (the `CheckDialogue` poll's product),
+    /// not on `kind && free_cake` at talk time. The pinned draws are
+    /// unchanged (the inventory fill is draw-free).
+    #[test]
+    fn the_party_girl_gifts_the_cake_then_draws_the_text() {
+        init_lang();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_ref().unwrap();
+        let mut pg = npc(NpcKind::PartyGirl);
+        pg.x = p.x + 16.0;
+        pg.y = p.y;
+        pg.next_dialogue = true; // the latched row (`NPC.cs:90519-90532`'s product)
+        app.npcs.push(pg);
+        app.world_events.free_cake = true;
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false)
+            .expect("the cake dialogue answers");
+        let n = tr_core::UnifiedRandom::new(0).next_range(1, 4);
+        assert_eq!(
+            text,
+            crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}")),
+            "the Next(1, 4) text draw rides the seed-0 global stream"
+        );
+        assert!(!app.world_events.free_cake, "`:60` clears the latch");
+        assert_eq!(app.inventory[0].kind, 3750, "the hotbar forward pass");
+        assert_eq!(app.inventory[0].count, 1);
+        assert_eq!(app.npc_chat_text, text, "`Main.cs:43082`");
+        // The same NPC re-clicked falls through (`Main.cs:43077`).
+        assert!(crate::world_sim::npcs::talk_to_npc(&mut app, false).is_none());
+    }
+
+    /// `Player.cs:7193-7199` — `GetOrDropItem`: a full inventory overflows
+    /// to `Item.RequestNewItem` at the player centre (the bobber-catch
+    /// shape); the gift still clears the latch and answers the text.
+    /// RE-DERIVED (research/70 §4): the row is LATCHED first; the
+    /// triplet-then-text pinned order is the canonical overflow witness —
+    /// the gift's draws precede the Cake draw on the same global stream.
+    #[test]
+    fn a_full_inventory_overflows_the_cake_to_a_world_drop() {
+        init_lang();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        for slot in app.inventory.iter_mut() {
+            *slot = crate::item::ItemSlot {
+                kind: 2, // Dirt Block — a full 9999 stack never merges
+                name: crate::registry::name(2),
+                count: 9999,
+                prefix: 0,
+            };
+        }
+        let mut pg = npc(NpcKind::PartyGirl);
+        pg.x = cx + 16.0;
+        pg.y = cy;
+        pg.next_dialogue = true; // the latched row (`NPC.cs:90519-90532`'s product)
+        app.npcs.push(pg);
+        app.world_events.free_cake = true;
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false)
+            .expect("the overflow still answers the cake text");
+        // The overflow drop pays the velocity/phase triplet first (the cake
+        // is not prefixable — `roll_prefix` draws nothing), THEN the text's
+        // Next(1, 4) — all on the same seed-0 global stream.
+        let mut expect = tr_core::UnifiedRandom::new(0);
+        expect.next_float();
+        expect.next_float();
+        expect.next_float();
+        let n = expect.next_range(1, 4);
+        assert_eq!(
+            text,
+            crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"))
+        );
+        assert!(!app.world_events.free_cake);
+        assert_eq!(app.items.len(), 1, "the overflow drop");
+        assert_eq!(app.items[0].kind, 3750);
+        assert_eq!(app.items[0].count, 1);
+        assert_eq!(app.items[0].prefix, 0, "the gift carries no prefix roll");
+        // The port's pinned spawn shape: top-left = centre + (1, 0) — the
+        // same offset every `spawn_item_drop_px` site uses (the C# centres
+        // the 14x14 box on the player centre; the 1-px x-shift is the
+        // recorded port convention, `world_sim/items.rs`).
+        assert_eq!(app.items[0].pos, glam::Vec2::new(cx + 1.0, cy));
+    }
+
     /// W4-f41 — `NPC.CheckDialogue` (`NPC.cs:90519-90532`): the 10-tick
     /// poll latches the gift only for a live party girl while
     /// `NPC.freeCake` is up; a condition fall between polls clears the
-    /// latch. (The dead-girl gate rides the `hp > 0` term — the poll
-    /// never latches for a corpse.)
+    /// latch. (The dead-girl gate rides the caller's `hp > 0` check —
+    /// the poll never latches for a corpse, research/70 §1c.)
     #[test]
     fn w4_f41_the_dialogue_poll_latches_and_clears() {
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
@@ -1163,7 +1415,7 @@ mod tests {
             .npcs
             .iter()
             .find(|n| n.kind == NpcKind::PartyGirl)
-            .map(|n| n.next_dialogue_free_cake)
+            .map(|n| n.next_dialogue)
             .unwrap_or(false);
         assert!(latched, "the poll latched");
         // A non-poll tick with the flag fallen clears the latch.
@@ -1174,7 +1426,7 @@ mod tests {
             .npcs
             .iter()
             .find(|n| n.kind == NpcKind::PartyGirl)
-            .map(|n| n.next_dialogue_free_cake)
+            .map(|n| n.next_dialogue)
             .unwrap_or(false);
         assert!(!latched, "the fall cleared it");
         // The flag back up on a poll tick re-latches.
@@ -1185,7 +1437,7 @@ mod tests {
             .npcs
             .iter()
             .find(|n| n.kind == NpcKind::PartyGirl)
-            .map(|n| n.next_dialogue_free_cake)
+            .map(|n| n.next_dialogue)
             .unwrap_or(false);
         assert!(latched, "the re-poll latched again");
     }

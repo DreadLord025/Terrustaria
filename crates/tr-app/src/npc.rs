@@ -1244,14 +1244,6 @@ pub struct Npc {
     /// only reader is `AnyBossHindersRespawnTime` (`Player.cs:39100`), which
     /// the port has not ported yet; add it with that gate.
     pub player_interaction: [bool; 256],
-    /// `NPC.nextDialogue` (`NPC.cs:6539`) — the pending conditional
-    /// dialogue. The C#'s registry (`ConditionalDialogue.Init`,
-    /// `ConditionalDialogue.cs:122-125`) registers exactly ONE dialogue:
-    /// the party girl's `FreeCakeDialogue` (208), so the port keeps the
-    /// one flag instead of the trait object. `CheckDialogue`
-    /// (`NPC.cs:90519-90532`) polls it every 10th tick; `GetChat`'s head
-    /// (`:93768-93771`) fires it ahead of the chatter ladder. W4-f41.
-    pub next_dialogue_free_cake: bool,
     /// `NPC.SpawnedFromStatue` (`NPC.cs:6061`): set by the wire-triggered
     /// statue spawns; gates the loot (`NPCLoot`'s StatueSpawnedDropRarity
     /// check, `NPC.cs:78849`).
@@ -1315,6 +1307,13 @@ pub struct Npc {
     /// display name — empty carries the kind's static name, exactly the
     /// vanilla's "give it a name at the first world-file save" convention.
     pub given_name: String,
+    /// `NPC.nextDialogue` (`NPC.cs:6539`): the pending conditional dialogue
+    /// — the port's registry carries one row (`FreeCakeDialogue`,
+    /// `ConditionalDialogue.cs:51-67`), so `true` = the cake is pending.
+    /// `CheckDialogue` (`NPC.cs:90519-90532`) re-probes every 10th tick and
+    /// clears it the moment the condition fails; `GetChat` consumes it
+    /// (`:93768-93771`). Transient — never saved (the C# saves no field).
+    pub next_dialogue: bool,
     /// `NPC.townNpcVariationIndex` (`SaveNPCs:1731`): the selected variation
     /// of the town NPC's looks — 0 the default, 1 the shimmer variant
     /// (`NPC.cs:80850`), rolled from the profile otherwise.
@@ -2926,6 +2925,7 @@ impl Npc {
             vx: 0.0,
             vy: 0.0,
             given_name: String::new(),
+            next_dialogue: false,
             hp: kind.max_hp(),
             max_hp: kind.max_hp(),
             on_ground: false,
@@ -2942,7 +2942,6 @@ impl Npc {
             immune: [0; 256],
             player_interaction: [false; 256],
             spawned_from_statue: false,
-            next_dialogue_free_cake: false,
             buffs: NpcBuffs::for_kind(kind),
             frame: 0,
             frame_counter: 0.0,
