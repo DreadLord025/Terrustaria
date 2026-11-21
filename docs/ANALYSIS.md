@@ -39498,7 +39498,7 @@ ids are unique; `BESTIARY_NPC_SHEET_IDS` (192) matches the
 are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify
 invoked**.
 
-## Pet-arrival SPLICE (W4-f43b, research/352)
+## Pet-arrival SPLICE (W4-f43b, research/368)
 
 The f43 census tail (`town_arrival_pets.rs`, UNWIRED) is SPLICED to the
 live machine — the a6f Success-leg activation contract's legs 2+3

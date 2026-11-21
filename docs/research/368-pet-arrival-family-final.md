@@ -1,7 +1,14 @@
-# 352 — Pet-arrival family FINAL + the f43b splice (W4-f43, a6f Success-leg contract)
+# 368 — Pet-arrival family FINAL + the f43b splice (W4-f43, a6f Success-leg contract)
 
-Registry-150 §8.7 AMENDMENT-3 free-floor take (352+; 352 verified free across
-the recent all-tip sweep + the commit-message census). Chain: the f43 census
+> CHAIN-BANNER (registry-150 §9 rename): this report's post-§9 self-pick of
+> **352 was CONTESTED** — 352 is d1's §9 assignment, EXECUTED at `194c66ce6`
+> (`352-d1-falling-block-final`). Per the Lead amendment the f43 FINAL carries
+> row **368**; every reference (INDEX/ANALYSIS/PORT_MAP/anchors/census-64)
+> now points here. The pre-rename chain-history mentions of 352 stay as history.
+
+Registry-150 §8.7 AMENDMENT-3 free-floor take (368, per the registry §9 Lead
+amendment; the original 352 self-pick was contested — see the chain-banner
+above). Chain: the f43 census
 `64-town-spawn-census.md` (UNWIRED) → this FINAL (the SPLICE, leg 2+3 of the
 research/138 §12.2 activation contract). Code-only wave: witnesses WRITTEN NOT
 RUN — no cargo/rustc/rustfmt/tests/dotnet/graphify invoked.
