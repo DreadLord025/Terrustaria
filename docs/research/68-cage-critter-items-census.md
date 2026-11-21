@@ -1,8 +1,13 @@
 # 68 — Cage critter items: place / release / light census (W4-g34-drawdata-wire-2)
 
-Worker: code-only subagent on `task/W4-g34-drawdata-wire-2` (tip `5bd63950`).
-Read-only census + ONE wiring fix; no builds/tests run. All C# cites are
-`decompiled/Terraria/…`; Rust cites are `crates/…` at the branch tip.
+Worker: code-only subagent on `task/W4-g34-drawdata-wire-2`. Read-only census +
+wiring fixes; no builds/tests run. All C# cites are `decompiled/Terraria/…`;
+Rust cites are `crates/…` at the branch tip.
+
+**Update (break-drop cascade pass):** §2's task seed is now IMPLEMENTED — the
+full 92-kind cage union's break-drop cascade (`Check6x3`/`Check3x2`/`Check2x2`/
+`Check1x2Top`) plus the `Check3x2` furniture/echo/log family. See §2's table
+and §6 below.
 
 ## 0. The brief's pointers corrected against the source
 
@@ -52,15 +57,34 @@ following reconciliation:
   `Check6x3` (`WorldGen.cs:50242-50463`, dispatch `:86019-86026` for 275-281)
   and `Check3x2` (`:49187-49849`, dispatch `:85976-85989` for the small cages)
   drop the cage item (`Item.NewItem(…, 2162)` etc., `:50291-50454` /
-  `:49460-49524`). The port's kill cascade (`edit/kill.rs::check_object`) has
-  **no cage arms** — `check_3x2` covers only 14/87/88/186/187, and there is no
-  `check_6x3`. All cage kinds ARE in `KILL_TILE_NO_CELL_DROP` (census: every
+  `:49460-49524`). All cage kinds ARE in `KILL_TILE_NO_CELL_DROP` (census: every
   cage id true), so the per-cell drop is correctly suppressed; the missing
-  piece is the object-level `Check*` record that returns the cage item.
-  **This is a real, sizeable gap — but it is the break-drop lane, not the
-  "right-click release" the brief asked for, and porting `Check6x3`/the
-  `Check3x2` cage arms is a multi-object cascade task outside this wire's
-  scope.** Recorded here as a task seed; NOT implemented (no invention).
+  piece WAS the object-level `Check*` record that returns the cage item.
+  **NOW IMPLEMENTED (W4-g34 break-drop cascade, this branch).** The census
+  below was re-verified against the source by interpreting the
+  `TileFrameImportant` nested-switch dispatch (the ILSpy goto-fallthrough
+  structure) statement-by-statement:
+
+  | Check routine | Kinds | Drop |
+  | --- | --- | --- |
+  | `Check6x3` (`:50242`) | **41 big cages** (275-281, 296/297, 309, 358/359, 413/414, 542, 550/551, 553/554, 558/559, 599-612, 632, 640, 643-645, 710) | the cage item (`CAGE_6X3_DROP`, `:50291-50454`) — **the critter stays INSIDE the dropped cage item; there is NO release arm in Check6x3** |
+  | `Check3x2` (`:49187`) small cages | **23** (285/286, 298/299, 310, 339, 361-364, 391-394, 532/533, 538, 544, 555/556, 582, 619, 629) | the cage item (`:49460-49524`; 361-364→3073+type-361, 391-394→3254+type-391) |
+  | `Check2x2` (`:48397`) water cages | **28** (fish bowls 282/505/543/598, fairy jars 568-570, butterflies 288-295/360/580/620, dragonflies 521-527, jellyfish 316-318) | the jar/bowl item (`:48570-48751`; all equal the placing item) |
+  | `Check1x2Top` (`:46706`) bottles | 270/271/581/660 (+ soul bottles 572, jar 698, lantern 42) | the bottle item (`:46787-46811`) |
+
+  41 + 23 + 28 = **92** — the full cage union (`drawdata_furniture::is_cage_kind`).
+  The `Check3x2` furniture family (17/26/77/86/89/114/133/215/217/218/237/244/
+  377/405/469/486/695), the echo piles (647/648/651), the fallen log (488/704),
+  the oasis echo (705), the terragrim-shrine echo (706) and the sandcastle (552)
+  were ported in the same pass (the brief's "port ALL missing arms"). The
+  support judges were ported verbatim (the cage/platform group `:49234`, the
+  altar boulder-refusal `:49270`, the fallen-log grass family `:49252`, the
+  Check6x3 table-top arm `:50271`, the Check1x2Top anchor `:46760`). The
+  fallen-log wood stack (`genRand.Next(10,21)`, `:49553`) rides a
+  `PileLootEvent` resolved app-side. **Deviations recorded:** the
+  `MysticLogFairiesEvent.FallenLogDestroyed` fairy-spawn event (`:49851`) is
+  unported; the Check2x2 boulder/ceiling/chandelier arms (95/126/132/138/484/
+  664/665/711-716) are separate lanes. Witnesses WRITTEN NOT RUN (code-only).
 
 ## 3. Light census — constants ported; ONE animated feed was unwired (FIXED)
 
@@ -104,5 +128,43 @@ following reconciliation:
 Code-only mode: no cargo/tests/rustfmt invoked. The wiring is a field-to-field
 copy of matching types (`[[u8; CAGE_FRAMES]; 3]` both sides, `CAGE_FRAMES = 25`
 in `tile_light/palette.rs:11` and `drawdata_furniture.rs:32`). The two witnesses
-follow the existing `scanner.rs` test harness (`lit`/`close`/`tile`). The
-break-drop cascade gap (§2) is recorded, not implemented.
+follow the existing `scanner.rs` test harness (`lit`/`close`/`tile`).
+
+## 6. Break-drop cascade pass (W4-g34, this branch)
+
+The §2 task seed is implemented across six commits (one per object-family):
+
+1. `check_6x3` + `CAGE_6X3_DROP` — the 41 big cages (`WorldGen.cs:50242-50463`).
+   Breaking any cell sweeps all 18 and drops the cage item at the trigger cell;
+   the critter stays inside (no release arm). Support = `SolidTileAllowBottomSlope`
+   OR active solid-top `frameY==0` (table top, `:50271`); tail ring `:50456`.
+2. `check_3x2` small cages — the 23 kinds (`:49460-49524`); the `:49234`
+   cage/platform support group; drop = the placing item (`item: None` → `by_tile`).
+3. `check_3x2` furniture — 17 kinds (`:49432-49706`); fixed drops via `by_tile`,
+   style-dependent drops via `check_3x2_furniture_drop` (benches/forge/campfire/
+   Tables2/altar-replica); altar 26 sweeps but drops nothing (SmashAltar app-wired);
+   the `:49270` boulder-refusal support arm.
+4. `check_3x2` echo/log — 647/648/651/488/704/705/706/552 (`:49552-49678`);
+   `check_3x2_echo_drop` style-keyed items; fallen-log wood stack rides a
+   `PileLootEvent` (app rolls `genRand.Next(10,21)`); the `:49252` grass-family
+   support arm (infected-seed via `MicroSeedFlags::WORLD_IS_INFECTED`); sandcastle
+   552 sweeps but drops nothing.
+5. `check_1x2_top` (was `check_lantern`) — 42/270/271/572/581/660/698
+   (`:46706-46813`); the `:46760` anchor judge (flag2 platform/380, flag3 rope);
+   bottle drops fixed, soul bottles `4695+style`, lantern via `by_tile`; drop
+   position corrected to (trigger x, origin y).
+6. `check_2x2` (was `check_candelabra_sink`) — 100/172 + the 28 water cages
+   (`:48397-48799` default branch); all water-cage drops equal the placing item.
+
+All dispatch arms verified by interpreting the `TileFrameImportant` nested-switch
+(the ILSpy goto-fallthrough) statement-by-statement. `KILL_TILE_NO_CELL_DROP`
+verified == the C# `KillTile_GetItemDrops` empty group (342 kinds). The drop-arms
+compose at the shared `square_tile_frame` cascade position (the d54
+`kill_tile_make_tile_dust` co-lane wires dust at the same `KillTile` site — no
+overlap: this lane records `ObjectDrop`/`PileLootEvent`, the dust lane records
+particles). 19 witness tests WRITTEN NOT RUN across the six families.
+
+**Deviations:** `MysticLogFairiesEvent.FallenLogDestroyed` (`:49851`, the fairy-
+spawn event) unported; the Check2x2 boulder/ceiling/chandelier arms (95/126/132/
+138/484/664/665/711-716) and the Check3x3/Check4x2/Check3x4 extra kinds are
+separate lanes (the brief scoped Check6x3/Check3x2 + the cage union).

@@ -632,18 +632,24 @@ struct CheckPlan {
 /// `Check*` routine for the cell's registry kind and returns its destruction
 /// plan. Cell routines: 10 → `CheckDoorClosed` (:86432), 11 →
 /// `CheckDoorOpen` (:86339), 13/33/49/78 → `CheckOnTable1x1` (:43503, the
-/// 13/33/49/50/78/174/372/646/707 group at :85604-85614), 14/87/88/186/187 →
-/// `Check3x2` (:49187, dispatch :85980-85989), 15 → `Check1x2` (:43335),
-/// 18 → `Check2x1` (:46973), 21 → `CheckChest` (:57923, via
+/// 13/33/49/50/78/174/372/646/707 group at :85604-85614), 15 → `Check1x2`
+/// (:43335), 18 → `Check2x1` (:46973), 21 → `CheckChest` (:57923, via
 /// `TileID.Sets.BasicChest` :85616-85619), 27 → `CheckSunflower` (:85639),
-/// 28 → `CheckPot` (:85643), 34 → `Check3x3` (:53059), 42 → `Check1x2Top`
-/// (:46706), 79/90 → `Check4x2` (:47408), 82/83/84 → `CheckAlch` (the
-/// `Main.tileAlch` default arm, :85830-85832), 93 → `Check1xX` (:37788),
-/// 100/172 → `Check2x2`'s default (:48397), 101 → `Check3x4` (:50076),
+/// 28 → `CheckPot` (:85643), 34 → `Check3x3` (:53059), 79/90 → `Check4x2`
+/// (:47408), 82/83/84 → `CheckAlch` (the `Main.tileAlch` default arm,
+/// :85830-85832), 93 → `Check1xX` (:37788), 101 → `Check3x4` (:50076),
 /// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275), 219/642 →
 /// `Check3x3`'s bottom-support arm (:53059, the `:53114` support group — the
 /// M7-EXTRACT-1 extractinators; tile 34's is the ceiling arm, the `else` at
 /// `:53129-53139`).
+///
+/// W4-g34 (the cage break-drop cascade, research/68 §2): `Check3x2` (:49187)
+/// now covers all 53 kinds — the table family 14/87/88/186/187, the 23 small
+/// cages, the 17 furniture kinds and the echo piles / fallen log / sandcastle;
+/// `Check6x3` (:50242) covers the 41 big cages; `Check1x2Top` (:46706) covers
+/// the lantern + bottles + soul bottles + jar (42/270/271/572/581/660/698);
+/// `Check2x2`'s default (:48397) covers the candelabra/sink + the 28 water
+/// cages. Together these wire the full 92-kind cage union's break-drop.
 fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     match kind {
