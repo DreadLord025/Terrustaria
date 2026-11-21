@@ -91,8 +91,8 @@ Shared data: `tr-core` tile/light maps, `world_sim::World` (liquid flags), `app:
 | Life regen engine | PORTED | `regen.rs` | ramp tiers 300..3000, moving ×0.5, still ×1.25, sitting ×1.3, campfire ×1.1, `round(ramp*(maxLife/400*0.85+0.15))`, accumulator 120 (`Player.cs:18942-19262`) |
 | Mana regen engine | PORTED | `regen.rs` | delay `((1−mana/max)*240+45)*0.7`, base `maxMana/3 + bonus`, still/grappling/buff ×2, accumulator 120 (`Player.cs:19398-19560`) |
 | DoT debuffs | PORTED | `regen.rs` | poison −4, venom −30, OnFire −8, cursed inferno −24, frostburn −16, hellfire −60, suffocation −40, electrified −8 (−40 moving); drain caps 4 HP/120-chunk |
-| Drowning / breath | **PARTIAL** | `player.rs:2484-2493`, `BREATH_MAX` :53, `BREATH_CD` :55 | Gate derives `in_water` from the **centre tile**; C# uses `CheckDrowning` `Player.cs:23191-23282` → `Collision.DrownCollision` :1383-1431 (10×12 head box, liquid-level aware, honey included, lava/shimmer excluded) |
-| `breathCDMax` item scaling | MISSING | `player.rs:55` | C# `breathCDMax` is a property: 7, ×2 Breathing Reed, ×6 Diving Helm (`Player.cs:3855-3869`) |
+| Drowning / breath | ✅ W4-c46 | `player.rs::check_drowning` → `collision::drown_collision` | The C# `CheckDrowning` gate (`Player.cs:23191-23317` → `Collision.DrownCollision` :1383-1432, 10×12 head box, liquid-level aware, honey included, lava/shimmer excluded) with the vanilla `gravDir = 1f` probe (`position.Y − 2`); fish-bowl 250/4275, reed snorkel, Gills/FTW, mount-4 and accMerman arms ported. The `shimmering` absorbed-state clear awaits S1-E-16 (comment in place) |
+| `breathCDMax` item scaling | ✅ W4-c46 | `player.rs::breath_cd_max` | The property: 7 base, ×2 held Breathing Reed while no item animation, ×6 Diving Helm (`Player.cs:3855-3869`); grants 268/394/1860/1861 + ResetEffects clear landed |
 | Death — drops, tombstone, text | PORTED | `death.rs` | softcore gems only, mediumcore inventory, coins `stack/2` (expert /4), tombstone RNG (`Player.cs:38863`, 54261, 39091-39115) |
 | Death — `KillMe` entry from NPC | **PARTIAL** | `world_sim/npcs.rs:3160-3183` | `expert = false` hardcoded at :3180, so expert ×1.5 in `GetRespawnTime` (`Player.cs:39060-39082`) is unreachable |
 | `UpdateDead` countdown + revive | PORTED | `player.rs` `update_dead`, tests `update_dead_counts_down_and_revives_at_zero` | respawn timer `3600` matches `Player.cs:57108` |
@@ -180,6 +180,15 @@ mirroring `Player.cs:24366-24367`.) The wet jump statics do survive C#'s own `Up
 `self.vy = -2.0` (`player.rs:3240-3241`) has no C# counterpart I could locate as written — the
 C# wet ascent comes from the `jumpSpeed` 6.01 branch (`Player.cs:20752-20754`); the 2.0 is a
 **behavioural approximation** (flagged for verification, not proven against source).
+**✅ W4-c46 (S9 resolved)**: the −2.0 stand-in is REPLACED by the C# `flag2 & flag3` branch
+(`Player.cs:20637-20638`/`:20670`/`:20681-20688`/`:20760-20767`) — on the jump release edge,
+`wet && accFlipper && !cart` arms `swimTime = 30` once and assigns the FULL wet statics
+(−6.01 / 30); the merman's held jump refreshes `swimTime <= 10 → 30` instead of burning `jump`
+(`:20656-20667`). The invented `-(MAX_FALL/3)` upward clamp in liquid is REMOVED (the C#
+gravDir-1 arm caps only the descent, `:27363-27376`). Witnesses:
+`w4_c46_the_flipper_swim_uses_the_wet_jump_statics`,
+`w4_c46_the_merman_held_jump_refreshes_the_swim_window`. (The statics-rebase half landed
+earlier with S1-M-1.)
 
 **High (behavioural)** — `MAX_FALL` misses `+0.01f`. `player.rs:30` `MAX_FALL = 10.0` vs
 `Player.cs:24437` `this.maxFallSpeed += 0.01f` (and `PortalPhysicsEnabled` → 35 at :24380).
@@ -192,21 +201,40 @@ derives `in_water` from the tile under the player's centre; C# `CheckDrowning`
 head box that excludes lava/shimmer, includes honey, and is level-aware. Already admitted in
 ANALYSIS:1220-1223. Consequence: shallow dipping and standing in a 1-tile-deep puddle behave
 differently, and honey drowns in C# but not in the port's centre test.
+**✅ W4-c46**: `check_drowning` now calls `collision::drown_collision` with the vanilla
+`gravDir = 1f` (`Player.cs:1956` — the old `-1` call misread the probe's default as the
+player's gravity). Witnesses: `the_breath_drains_only_while_the_head_is_under`,
+`w4_c46_the_fish_bowl_drowns_on_land`, `w4_c46_the_reed_snorkel_reaches_the_air`.
 
 **High (behavioural)** — drowning damage ignores iframes. `player.rs:2375` `lose_health` forces
 `hurt_cd = max(…, 0.8)` (48 ticks); C# drowning is `statLife -= 2` on its own
 `breathCD` clock (`Player.cs:23263`) with **no** `immuneTime` set — the 2 HP lands exactly once
 per 7 frames. Combined with `breathCDMax = 7` hardcoded (`player.rs:55`) the port's DoT rate
 is right by accident and the immunity interaction is wrong.
+**✅ W4-c46**: the −2 is a direct `hp -= 2` with `life_regen_time = 0` and NO `hurt_cd` write;
+`lose_health` deleted (drowning was its only caller); the kill records `DotDeath::Drowned`
+(`ByOther(1)`, 7 `DeathText.Drowned_*` variants). Witnesses:
+`w4_c46_the_drown_damage_writes_no_iframes`, `drowning_drains_breath_and_damages`,
+`w4_c46_the_helm_slows_the_breath_drain`.
 
 **High (behavioural)** — respawn life & spawn iframes. `player.rs:1820` `self.hp =
 self.max_hp` vs C# `statLife = max(statLifeMax, statLifeMax2)/2` (`Player.cs:37596-37611`);
 `player.rs:1821` `hurt_cd = 0.0` vs C# `immuneTime = 180` / 60 (`Player.cs:37661-37668`).
 Players spawn at full health and can be hit on respawn frame 1.
+**✅ W4-c46** (life/i-frames): the revive is `max(max_hp/2, 100)` gated on `hp <= 0`
+(`:37596` — a living spawn keeps its life), breath refills on the same arm, `lavaTime =
+lavaMax` unconditional (`:37589`), `immuneTime = 180` with `immuneNoBlink = !hostile`
+(`:37669`). Witnesses: `respawn_life_is_half_the_pool_floored_at_100`,
+`w4_c46_the_living_spawn_keeps_its_life`, `spawn_iframes_swallow_hits_and_expire`.
 
 **Medium (behavioural)** — expert death scaling is unreachable. `world_sim/npcs.rs:3180`
 hardcodes `expert = false`, so `GetRespawnTime`'s ×1.5 (`Player.cs:39060-39082`) never runs;
 `respawn_time_base_boss_and_expert` cannot cover it.
+**✅ W4-c46**: the death pass reads the `buffs.expert_mode` mirror into `start_death` (×1.5)
+and `drop_coins` (expert keeps stack/4); the boss +600 gates on `netMode != 0`
+(`Player.cs:39064-39067` — SP keeps the 600 base). Witnesses:
+`w4_c46_the_expert_respawn_timer_and_the_sp_boss_gate`,
+`w4_c46_the_expert_death_drops_three_quarters`.
 
 **Medium (behavioural)** — live grappling never reaches the regen engine.
 `RegenInputs.grappling` is left at its neutral default everywhere outside
@@ -252,13 +280,13 @@ sit between dash and the wing arm and must stay in that slot.
 | --- | --- | --- | --- |
 | S1 | Move the wet/shimmer statics into `update_with_grapple` before the movement defaults: add `wet_gravity_and_cap()` returning the `(gravity, maxFallSpeed, jumpHeight, jumpSpeed)` tuple from `Player.cs:24382-24437`, consume at `player.rs:3189-3198` and `player.rs:2516-2517`, and replace the `liquid_gravity`/`liquid_fall_cap` call sites. Keep the mount/wings `÷3` arms (`Player.cs:27008`, :27339) as separate, correctly-gated branches. | M | — |
 | S2 | `maxFallSpeed += 0.01f` + `PortalPhysicsEnabled = 35` (`Player.cs:24437`, :24380) and `vortexDebuff` gravity = 0 (:24433-24436). | S | — |
-| S3 | Port `breathCDMax` as a property: 7 base, ×2 Breathing Reed, ×6 Diving Helm (`Player.cs:3855-3869`); feeds `player.rs:55`. | S | item registry access |
-| S4 | Port `Collision.DrownCollision` (`Collision.cs:1383-1431`) + `CheckDrowning` (`Player.cs:23191-23282`) as the drowning gate, and stop `lose_health` forcing `hurt_cd = 0.8` on the `-2` path (`player.rs:2375`). | M | — |
-| S5 | Respawn fidelity: `statLife = max(statLifeMax, statLifeMax2)/2` and `immuneTime = 180`/`60` (`Player.cs:37596-37611`, :37661-37668) at `player.rs:1820-1821`; add the snowMoon/pumpkinMoon/DD2Event refusal to `allows_respawn_timer_skip` (`Player.cs:38984-38987`). | M | — |
-| S6 | Remove the `expert = false` hardcode at `world_sim/npcs.rs:3180` and thread expert through the respawn path, so `GetRespawnTime` ×1.5 (`Player.cs:39060-39082`) is reachable. | M | world-gen/difficulty plumbing |
+| S3 | ✅ W4-c46 — `breath_cd_max()` property: 7 base, ×2 held Breathing Reed while no item animation (`has_breathing_reed`, DontHoldItems 55/56/61), ×6 Diving Helm (`Player.cs:3855-3869`); the 268/394/1860/1861 grants + `item_animation_active` feed landed. | S | item registry access |
+| S4 | ✅ W4-c46 — `check_drowning` walks `collision::drown_collision` (`Collision.cs:1383-1432`) with the vanilla `gravDir = 1f`; the −2 is direct with NO `hurt_cd` write, `lose_health` deleted, `DotDeath::Drowned` kill attribution + 7-variant death text. Remaining: the `shimmering` absorbed-state clear (S1-E-16). | M | — |
+| S5 | ✅ W4-c46 (life/i-frames) — revive `max(max_hp/2, 100)` gated on `hp <= 0` (`Player.cs:37596`), breath on the same arm, `lavaTime = lavaMax` (`:37589`), 180 i-frames + `immuneNoBlink = !hostile` (`:37669`). The snowMoon/pumpkinMoon/DD2Event refusal rides the existing `moon_event_live` seam (`allows_respawn_timer_skip`). | M | — |
+| S6 | ✅ W4-c46 — the death pass reads `buffs.expert_mode` into `start_death` (×1.5) and `drop_coins` (expert keeps /4); the boss +600 gates on `netMode != 0` (`Player.cs:39064-39067`). | M | world-gen/difficulty plumbing |
 | S7 | Feed `RegenInputs.grappling` from the live hook state (`grapple.rs` → `player.rs` regen call), so `Player.cs:19241`, :19426, :19449 apply. Update `grapple_counts_as_still_for_mana` to construct its input the same way the tick does. | M | — |
 | S8 | Finish `UpdateDead`: non-persistent buff purge (`Player.cs:16995-17002`), `chest = -1` (:17020), `headPosition`/`headVelocity` death animation (:17029-17040). | M | buffs module boundary |
-| S9 | Verify the in-water ascent: decide whether C# supports `self.vy = -2.0` (`player.rs:3240-3241`) or whether the wet jump should reuse `jumpSpeed` 6.01; the paragraph above is marked **UNVERIFIED** deliberately. | S | S1 |
+| S9 | ✅ W4-c46 — the −2.0 stand-in replaced by the C# `flag2 & flag3` swim branch (full wet statics −6.01/30 + `swimTime = 30`, merman held-jump refresh); the invented `-(MAX_FALL/3)` liquid upward clamp removed (the gravDir-1 arm caps only the descent). See the resolved finding above. | S | S1 |
 | S10 | Replace the `whoAmI = 0` stand-in (`player.rs:2001-2003`) with the real index once multi-player netsession ids land. | M | net |
 | S11 | Correct ROADMAP §8's stale "Rust ⬜ (none yet)" header (`ROADMAP.md:401`) and reconcile its task rows with the 2026-11-12 reality. | S | — |
 | S12 | Derive the `leg_frame`/`body_frame` → C# `PlayerFrame` slot-id table before any head/body/leg slot work (module 06 territory; the table itself belongs to this module). | M | framing module |

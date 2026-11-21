@@ -18244,9 +18244,12 @@ Scope notes, none of which change the ported numbers:
   while the port derives them earlier in its tick. The rebase formula is
   exact; the dryв†’wet frame boundary is the swim-ascent seed's (research/03
   S9) territory and is left unverified there.
-- The upward velocity clamp (`-(MAX_FALL/3)` in liquid) is pre-existing
-  port structure, untouched вЂ” the C# plain arm (gravDir 1) caps only the
-  descent; the swim-ascent verification belongs to the S9 seed.
+- The upward velocity clamp (`-(MAX_FALL/3)` in liquid) was pre-existing
+  port structure with NO C# counterpart — **removed by W4-c46** (research/03
+  S9): the C# plain arm (gravDir 1, `Player.cs:27363-27376`) caps only the
+  descent at `maxFallSpeed`; the ascent cap lives in the flipped-gravity
+  mirror (`:27378-27391`), which the port has no gravity flip for. The clamp
+  had capped the flipper/merman swim ascent (−6.01) to −3.33.
 
 ## The liquid reactions (R-11-5, 2026-11-13)
 
@@ -39244,3 +39247,85 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The respawn / breath / drowning / swim wave (W4-c46, task/W4-c46-respawn-breath-drown, 2026-11-21, code-only mode)
+
+research/03 seeds S3/S4/S5/S6/S9 landed in one wave; the per-block C#
+citations ride the code (`player.rs::respawn`/`check_drowning`/
+`breath_cd_max`/the jump block, `death.rs::drop_coins`,
+`world_sim/npcs.rs`'s death pass).
+
+- **Respawn (S5)**: the revive life is `max(max_hp/2, 100)` gated on
+  `hp <= 0` (`Player.cs:37596-37611` — a LIVING spawn keeps its life; the
+  old unconditional refill over-healed every recall). Breath rides the
+  same arm; `lavaTime = lavaMax` is unconditional (`:37589`); the 180
+  i-frames carry `immuneNoBlink = !hostile` (`:37669-37672`). The 60-frame
+  non-death spawn contexts ride `recall_teleport::spawn_recall`.
+- **Expert (S6)**: the death pass's `expert = false` hardcode is gone —
+  `buffs.expert_mode` (the `world_sim/items.rs:176` mirror convention)
+  feeds `start_death` (×1.5 timer) and `drop_coins` (expert keeps stack/4,
+  `Player.cs:54271-54274`). The boss +600 gates on `Main.netMode != 0`
+  (`:39064-39067`): the port's `NetRole::Off` ⇔ SP keeps the 600 base.
+  Master (keeps 0) stays with the unported difficulty.
+- **breathCDMax (S3)**: the property (`Player.cs:3855-3869`) — 7 base,
+  ×2 held Breathing Reed while `itemAnimation == 0`, ×6 Diving Helm, both
+  stack (42/84). `has_breathing_reed` (`:4136-4150`) refuses the reed on
+  the DontHoldItems mounts 55/56/61 (`MountID.cs:46`). Grants: helm 268
+  (head), 394/1860/1861 (flipper+helm accessories), frog 3994/3995, buff
+  109 (Flipper: ignoreWater+accFlipper), the wet-float grant
+  (`:13016-13019`). `item_animation_active` feeds from the tick's
+  `item_in_use` (`world_sim/player.rs`).
+- **Drowning (S4)**: `check_drowning` (`Player.cs:23191-23317`) walks
+  `collision::drown_collision` with the vanilla `gravDir = 1f`
+  (`Player.cs:1956`) — the old `-1` call misread the probe's default as
+  the player's gravity and probed mid-body. Fish-bowl 250/4275 forces the
+  flag; the reed snorkel tip (`x + width/2 + 6*facing`, `y − 44`) clears
+  it on dry non-solid air while no item animation runs; Gills/FTW invert;
+  mount 4 clears; accMerman hands off to merman. The −2 is a DIRECT
+  `hp -= 2` with `lifeRegenTime = 0` and NO immuneTime write
+  (`:23261-23263`) — `lose_health` (whose `hurt_cd = max(…, 0.8)` forcing
+  was the deviation) is deleted; drowning was its only caller. The kill
+  records `DotDeath::Drowned` (`ByOther(1)`), resolved to
+  `DeathText.Drowned_1..7` (`Lang.cs:1060`). The bubble tail draws
+  `Next(20)` ONLY while drowning (the C# `||` short-circuit, `:23283`);
+  the type-34 bubble carries Scale 1.2 through the new `StickyDust.scale`
+  field (the drain in `world_sim/player.rs` passes it to
+  `DustPool::new_dust`). The `shimmering` absorbed-state clear
+  (`:23230-23233`) reads the existing default-false field — the
+  absorbed-state WRITERS stay with the shimmer-emergence work (S1-E-16);
+  the mount-mouth bubble arms (52/54) have no ported mouth seam.
+- **Swim (S9)**: the invented `vy = -2.0` in-water ascent is replaced by
+  the C# `flag2 & flag3` branch (`Player.cs:20637-20638`/`:20670`/
+  `:20681-20688`/`:20760-20767`): on the jump release edge,
+  `wet && accFlipper && !cart` arms `swimTime = 30` once and assigns the
+  FULL wet statics (−6.01 / 30). The merman's held jump refreshes
+  `swimTime <= 10 → 30` instead of burning `jump` (`:20656-20667` — the
+  infinite ascent). The transformation siblings landed (`:25580-25584`):
+  `releaseJump = true`, wings cleared, `accFlipper = true`,
+  `AddBuff(34, 2)`. The invented `-(MAX_FALL/3)` upward clamp in liquid
+  is REMOVED (see the rebase note above — the gravDir-1 arm caps only the
+  descent).
+
+### RNG order (S1-A-10 contract)
+
+- The bubble tail's `Next(20)` (`Player.cs:23283`) now draws ONLY while
+  the drowning flag survives every clear — the dry tick draws NOTHING
+  (the old port had no bubble at all); lavaWet/honeyWet cull the dust
+  AFTER the draw. Stream: the caller's survival rng (UpdatePlayers).
+- The death-text variant roll (`Lang.cs:1057-1127`): the single-variant
+  rows (Poisoned/Slain/Spored) draw NOTHING — the C# switch has no
+  `Main.rand` call for them; the old port drew `Next(1)` anyway (one
+  wasted stream step per poison/spore death). Drowned rolls one
+  `Next(7) + 1` on UpdatePlayers.
+
+### Verification
+
+Code-only: every block re-read against the cited C# windows
+(`Player.cs:3855-3869/4136-4150/23191-23317/37534-37710/38807-38960/
+39060-39093/20630-20767/24380-24437/25577-25598/27330-27404`,
+`Collision.cs:1383-1432`, `Lang.cs:1045-1127`, `MountID.cs:46`). The 13
+new `w4_c46_*` witness tests (player.rs 10, death.rs 1, world_sim/npcs.rs
+2) plus the two rewritten drowning tests are WRITTEN, NOT RUN — no
+cargo/rustc/rustfmt/tests/graphify invoked. (The phase-1 commit message's
+"12 witnesses" predates the shimmering/turtle witness — 13 is the count
+at landing.)
