@@ -718,6 +718,10 @@ pub(crate) struct App {
     /// the port seeds the world seed (the `mine_crack_rng` determinism
     /// convention). NOT a `SwapRandom` key.
     pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
+    /// W4-f6 wiring — `LiquidRenderer._random` (`LiquidRenderer.cs:132`):
+    /// the lava-bubble PRIVATE stream (`InternalPrepareDraw` :558/:562).
+    /// Same clock-seed → world-seed deviation; NOT a `SwapRandom` key.
+    pub(crate) liquid_rand: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -3917,6 +3921,7 @@ impl App {
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
             tile_draw_rand: tr_core::UnifiedRandom::new(world_seed as i32),
+            liquid_rand: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,

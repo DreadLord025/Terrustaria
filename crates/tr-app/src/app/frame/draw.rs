@@ -1183,6 +1183,11 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-f6 wiring: the lava-bubble private stream +
+                            // the pool/ctx (`LiquidRenderer._random`, :132).
+                            &mut self.liquid_rand,
+                            dust,
+                            &self.spawn_ctx(),
                         );
                         *world_key = Some(key);
                     }
