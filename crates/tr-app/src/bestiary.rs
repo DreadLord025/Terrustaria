@@ -2219,6 +2219,26 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dragonfly",
     },
+    // The Yellow 600 is Hide=true too (`NPCID.cs:538-543`) — its credit
+    // folds onto 599; the Gold 601 keeps its OWN visible card
+    // ("Gold Dragonfly", `NPCs.json:639` — no Hide row, no
+    // `ContentSamples` fold, the GoldLadyBug precedent).
+    BestiaryEntryDef {
+        credit_id: "YellowDragonfly",
+        net_id: 600,
+        kind: NpcKind::YellowDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldDragonfly",
+        net_id: 601,
+        kind: NpcKind::GoldDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Dragonfly",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2411,14 +2431,15 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
-        // The dragonflies (W4-d33): the four Hide=true colours fold onto
+        // The dragonflies (W4-d33): the five Hide=true colours fold onto
         // the visible RedDragonfly 599 card — the kill credit
         // `ContentSamples.cs:1043-1047` (`NpcBestiaryCreditIdsByNpcNetIds`
         // [595/596/597/598/600] = [599]). The Gold 601 keeps its own card.
         NpcKind::BlackDragonfly
         | NpcKind::BlueDragonfly
         | NpcKind::GreenDragonfly
-        | NpcKind::OrangeDragonfly => NpcKind::RedDragonfly,
+        | NpcKind::OrangeDragonfly
+        | NpcKind::YellowDragonfly => NpcKind::RedDragonfly,
         other => other,
     };
     ENTRIES

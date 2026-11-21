@@ -586,15 +586,17 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
-            // The dragonflies (W4-d33): the vanilla ids 595-599 are free
+            // The dragonflies (W4-d33): the vanilla ids 595-601 are free
             // protocol slots (the to_u16 scan: no arm above rides them),
             // so they keep their vanilla ids — the W4-e26 ladybug
-            // precedent. The 600/601 pair lands with its own commit.
+            // precedent. The c10 swim-forms 603/609 stay clear.
             NpcKind::BlackDragonfly => 595,
             NpcKind::BlueDragonfly => 596,
             NpcKind::GreenDragonfly => 597,
             NpcKind::OrangeDragonfly => 598,
             NpcKind::RedDragonfly => 599,
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
         }
     }
 
@@ -932,6 +934,8 @@ impl NpcKind {
             597 => NpcKind::GreenDragonfly,
             598 => NpcKind::OrangeDragonfly,
             599 => NpcKind::RedDragonfly,
+            600 => NpcKind::YellowDragonfly,
+            601 => NpcKind::GoldDragonfly,
             _ => return None,
         })
     }
@@ -1818,7 +1822,9 @@ impl NpcKind {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => "NPC_Hit_1",
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2128,7 +2134,9 @@ impl NpcKind {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => "NPC_Killed_1",
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2237,7 +2245,9 @@ impl NpcKind {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => true,
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => true,
             _ => false,
         }
     }
@@ -2496,7 +2506,9 @@ impl NpcKind {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => 114,
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 114,
         }
     }
 
@@ -3033,7 +3045,9 @@ impl NpcKind {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => (10.0, 10.0),
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => (10.0, 10.0),
         }
     }
 
@@ -3148,6 +3162,8 @@ impl NpcKind {
             NpcKind::GreenDragonfly => 597,
             NpcKind::OrangeDragonfly => 598,
             NpcKind::RedDragonfly => 599,
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3692,7 +3708,9 @@ impl NpcKind {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => 5,
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 5,
         }
     }
 
@@ -4062,7 +4080,9 @@ impl NpcKind {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => 0,
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 0,
         }
     }
 }

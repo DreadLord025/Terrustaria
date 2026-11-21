@@ -1281,6 +1281,8 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_597",
         "NPC_598",
         "NPC_599",
+        "NPC_600",
+        "NPC_601",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1866,7 +1868,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 182] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1901,10 +1903,11 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 182] = [
         // The small-kinds wiring wave (S1-D-3-wire-smallkinds) - appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
-        // W4-d33 — the dragonfly family's ONE visible bestiary card: the
-        // Red 599 "Dragonfly" (the four Hide=true colours fold onto it,
-        // `ContentSamples.cs:1043-1047`). Appended last for the same reason.
-        599,
+        // W4-d33 — the dragonfly family's TWO visible bestiary cards: the
+        // Red 599 "Dragonfly" (the five Hide=true colours fold onto it,
+        // `ContentSamples.cs:1043-1047`) + the Gold 601 "Gold Dragonfly".
+        // Appended last for the same reason.
+        599, 601,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2667,13 +2670,13 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
-                // W4-d33 — the dragonfly family's ONE visible bestiary
-                // card: the Red 599 strip. The four Hide=true colours
-                // fold onto it (no grid card of their own — the c8
-                // TruffleWormDigger precedent), so only 599 takes a
-                // bestiary sheet slot. Appended last so the earlier
-                // slots keep their indexes.
+                // W4-d33 — the dragonfly family's TWO visible bestiary
+                // cards: the Red 599 + Gold 601 strips. The five Hide=true
+                // colours fold onto 599 (no grid card of their own — the
+                // c8 TruffleWormDigger precedent). Appended last so the
+                // earlier slots keep their indexes.
                 atlas.sheet("NPC_599").copied(),
+                atlas.sheet("NPC_601").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

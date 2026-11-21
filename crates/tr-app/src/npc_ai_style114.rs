@@ -9,8 +9,8 @@
 //! Red/Yellow/Gold Dragonflies 595-601 (`ID/NPCID.cs:11867-11879`; the
 //! shared `SetDefaults` row `NPC.cs:16720-16738`). The census of
 //! `this.aiStyle = 114;` returns exactly that one row (`:16725`) — no
-//! projectile-space user. WIRED by W4-d33 (the 595-599 kinds + the
-//! axis' 114 arm; the Yellow 600 / Gold 601 land with their commit):
+//! projectile-space user. WIRED by W4-d33 (all seven kinds 595-601 +
+//! the axis' 114 arm):
 //! `Npc::ai_114_dragonfly` feeds the session player + the sim-stamped
 //! `dragonfly_neighbors` pool, the integration tail is the no-gravity
 //! `integrate_flyer_collision` (the row is noGravity but tile-collide).

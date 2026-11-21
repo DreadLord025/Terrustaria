@@ -1122,6 +1122,7 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::BlueDragonfly => 596,
         NpcKind::GreenDragonfly => 597,
         NpcKind::OrangeDragonfly => 598,
+        NpcKind::YellowDragonfly => 600,
         _ => kind.net_id() as u16,
     }
 }
@@ -1258,11 +1259,10 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 
 /// W4-d33 — the dragonfly sheets: one sheet per colour, exactly as the
 /// vanilla's `TextureAssets.Npc[type]` — the Black (595), Blue (596),
-/// Green (597), Orange (598) and Red (599) Dragonflies each draw their
-/// own `NPC_<id>` art (the Yellow 600 / Gold 601 land with their commit).
-/// Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
-/// [`NpcAssets::npc_sheet`].
-pub(crate) const DRAGONFLY_SHEETS: &[u32] = &[595, 596, 597, 598, 599];
+/// Green (597), Orange (598), Red (599), Yellow (600) and Gold (601)
+/// Dragonflies each draw their own `NPC_<id>` art. Keyed by the vanilla
+/// net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const DRAGONFLY_SHEETS: &[u32] = &[595, 596, 597, 598, 599, 600, 601];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3207,6 +3207,12 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::RedDragonfly => {
                 pumpkin_moon_draw(assets.npc_sheet(599), npc_rows(599), n, w, h)
+            }
+            NpcKind::YellowDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(600), npc_rows(600), n, w, h)
+            }
+            NpcKind::GoldDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(601), npc_rows(601), n, w, h)
             }
         };
         let Some(tex) = tex else {

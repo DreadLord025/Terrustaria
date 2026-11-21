@@ -1599,7 +1599,15 @@ fn portrait_data(
         (NpcKind::BlackDragonfly, _)
         | (NpcKind::BlueDragonfly, _)
         | (NpcKind::GreenDragonfly, _)
-        | (NpcKind::OrangeDragonfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        | (NpcKind::OrangeDragonfly, _)
+        | (NpcKind::YellowDragonfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        // The Gold 601's own visible card: the same 4-row strip shape.
+        (NpcKind::GoldDragonfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
         // S1-D-3z — the holiday zombies' portrait rests the same 18x40
         // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).
         (NpcKind::ZombieDoctor

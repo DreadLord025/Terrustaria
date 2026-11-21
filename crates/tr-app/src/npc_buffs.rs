@@ -492,7 +492,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::BlueDragonfly
         | NpcKind::GreenDragonfly
         | NpcKind::OrangeDragonfly
-        | NpcKind::RedDragonfly => &[31],
+        | NpcKind::RedDragonfly
+        | NpcKind::YellowDragonfly
+        | NpcKind::GoldDragonfly => &[31],
     }
 }
 

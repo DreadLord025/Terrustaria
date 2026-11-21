@@ -1110,6 +1110,16 @@ pub enum NpcKind {
     /// (`ContentSamples.cs:1043-1047`); 599's own entry is the visible
     /// "Dragonfly" card (`NPCs.json:637`).
     RedDragonfly,
+    /// `NPCID.YellowDragonfly` (600, `NPCID.cs:11877`) — the 595 row,
+    /// catchItem 4339; the same 599 credit fold (Hide=true,
+    /// `NPCID.cs:538-543`) + 31 immunity.
+    YellowDragonfly,
+    /// `NPCID.GoldDragonfly` (601, `NPCID.cs:11879`) — the gold critter
+    /// (the same `NPC.cs:16720-16738` row): the 595 stats + rarity 3
+    /// (`:16733-16736`), catchItem 4340. `NPCID.Sets.IsGoldCritter`
+    /// member (`NPCID.cs:10126`); its OWN visible bestiary card
+    /// "Gold Dragonfly" (`NPCs.json:639` — no Hide row, no credit fold).
+    GoldDragonfly,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3587,7 +3597,9 @@ impl Npc {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => 1.0,
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 1.0,
             _ => 0.4,
         }
     }
@@ -3973,7 +3985,9 @@ impl Npc {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => 0,
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4352,7 +4366,9 @@ impl Npc {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => 0.0,
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6422,7 +6438,9 @@ impl Npc {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => self.ai_114_dragonfly(world, player, rng),
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => self.ai_114_dragonfly(world, player, rng),
         }
     }
 
@@ -6795,7 +6813,9 @@ impl Npc {
             | NpcKind::BlueDragonfly
             | NpcKind::GreenDragonfly
             | NpcKind::OrangeDragonfly
-            | NpcKind::RedDragonfly => {
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => {
                 self.sprite_dir = self.facing;
                 let (row, counter) = crate::npc_ai_style114::dragonfly_find_frame(
                     self.frame,
@@ -18752,6 +18772,8 @@ impl Npc {
             NpcKind::GreenDragonfly => 597,
             NpcKind::OrangeDragonfly => 598,
             NpcKind::RedDragonfly => 599,
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -23830,7 +23852,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 275] = [
+    pub(super) const ALL_KINDS: [NpcKind; 277] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24115,6 +24137,8 @@ mod tests {
         NpcKind::GreenDragonfly,
         NpcKind::OrangeDragonfly,
         NpcKind::RedDragonfly,
+        NpcKind::YellowDragonfly,
+        NpcKind::GoldDragonfly,
     ];
 
     #[test]
@@ -27726,8 +27750,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            275,
-            "every decodable kind resolves (the wire roster's size - 275 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's five dragonflies, L-B gate)"
+            277,
+            "every decodable kind resolves (the wire roster's size - 277 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies, L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31376,6 +31400,8 @@ mod s1_d_2_tests {
         (NpcKind::GreenDragonfly, 114),
         (NpcKind::OrangeDragonfly, 114),
         (NpcKind::RedDragonfly, 114),
+        (NpcKind::YellowDragonfly, 114),
+        (NpcKind::GoldDragonfly, 114),
     ];
 
     #[test]
@@ -33844,14 +33870,14 @@ mod w4_d33_axis_census_tests {
 
 #[cfg(test)]
 mod w4_d33_dragonfly_tests {
-    //! W4-d33 — the dragonfly roster wiring (595-599). Every row pins
+    //! W4-d33 — the dragonfly roster wiring (595-601). Every row pins
     //! verbatim to the C# (`NPC.cs:16720-16738`, the shared 595-601
     //! `SetDefaults` row). WRITTEN, NOT RUN (code-only mode); the W4-e26
     //! luck-critter stat-pin precedent.
     use super::*;
     use super::tests::ground;
 
-    /// The five kinds' `SetDefaults` row through the port's tables.
+    /// The seven kinds' `SetDefaults` row through the port's tables.
     #[test]
     fn w4_d33_the_dragonfly_setdefaults_rows_match_the_csharp() {
         // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value)
@@ -33861,6 +33887,8 @@ mod w4_d33_dragonfly_tests {
             (NpcKind::GreenDragonfly, 597, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::OrangeDragonfly, 598, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::RedDragonfly, 599, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::YellowDragonfly, 600, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GoldDragonfly, 601, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -33887,6 +33915,8 @@ mod w4_d33_dragonfly_tests {
             NpcKind::GreenDragonfly,
             NpcKind::OrangeDragonfly,
             NpcKind::RedDragonfly,
+            NpcKind::YellowDragonfly,
+            NpcKind::GoldDragonfly,
         ] {
             assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
             assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
@@ -33903,6 +33933,8 @@ mod w4_d33_dragonfly_tests {
             (NpcKind::GreenDragonfly, 597),
             (NpcKind::OrangeDragonfly, 598),
             (NpcKind::RedDragonfly, 599),
+            (NpcKind::YellowDragonfly, 600),
+            (NpcKind::GoldDragonfly, 601),
         ] {
             assert_eq!(kind.to_u16(), id, "{kind:?} proto");
             assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decode");
@@ -33919,18 +33951,18 @@ mod w4_d33_dragonfly_tests {
         }
     }
 
-    /// The catch/convert chain: the baits 4334-4338 (`NPC.cs:16737`'s
+    /// The catch/convert chain: the baits 4334-4340 (`NPC.cs:16737`'s
     /// `type - 595 + 4334`) and the makeNPC release items resolve back
     /// to the kinds; the release plan keeps the type (no variant roll).
     #[test]
     fn w4_d33_the_dragonfly_catch_and_release_chain_resolves() {
-        for ty in 595..=599 {
+        for ty in 595..=601 {
             assert_eq!(crate::bug_net::catch_item(ty, 0.0), ty - 595 + 4334, "{ty}");
             assert!(crate::bug_net::npc_catchable(ty), "{ty} catchable");
             assert_eq!(crate::registry::make_npc((ty - 595 + 4334) as u16), ty as u16);
         }
         let mut rng = UnifiedRandom::new(7);
-        for ty in 595..=599 {
+        for ty in 595..=601 {
             let plan = crate::bug_net::release_plan(ty, 0, 1, &mut rng);
             assert_eq!(plan.spawn_type, ty, "{ty} release keeps its type");
         }
@@ -33942,10 +33974,10 @@ mod w4_d33_dragonfly_tests {
         assert_eq!(n.release_owner, 255);
     }
 
-    /// The bestiary: the four Hide=true colours fold their kill credit
+    /// The bestiary: the five Hide=true colours fold their kill credit
     /// onto the visible Red 599 "Dragonfly" card
     /// (`ContentSamples.cs:1043-1047`); each keeps its own net id for
-    /// the catch/release chain.
+    /// the catch/release chain. The Gold 601 keeps its OWN visible card.
     #[test]
     fn w4_d33_the_dragonfly_bestiary_credits_fold_onto_599() {
         for kind in [
@@ -33954,6 +33986,7 @@ mod w4_d33_dragonfly_tests {
             NpcKind::GreenDragonfly,
             NpcKind::OrangeDragonfly,
             NpcKind::RedDragonfly,
+            NpcKind::YellowDragonfly,
         ] {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.credit_id, "RedDragonfly", "{kind:?} credit");
@@ -33961,16 +33994,22 @@ mod w4_d33_dragonfly_tests {
             assert_eq!(e.name, "Dragonfly", "{kind:?} display name");
             assert!(!e.quick_unlock, "{kind:?} rides the kill ladder");
         }
-        // The visible card's sheet slot exists (the 599 strip).
+        // The Gold 601's own card (no fold — the GoldLadyBug precedent).
+        let gold = crate::bestiary::entry_for_npc(NpcKind::GoldDragonfly, SlimeVariant::Blue);
+        assert_eq!(gold.credit_id, "GoldDragonfly");
+        assert_eq!(gold.net_id, 601);
+        assert_eq!(gold.name, "Gold Dragonfly");
+        // The two visible cards' sheet slots exist (the 599/601 strips).
         assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&599));
+        assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&601));
         // The hidden colours take NO grid sheet slot of their own.
-        for id in [595u16, 596, 597, 598] {
+        for id in [595u16, 596, 597, 598, 600] {
             assert!(!crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
         }
     }
 
-    /// The debuff-immunity rows: all five carry the Confused-31
-    /// immunity (`NPCID.cs:9473-9507`), nothing else.
+    /// The debuff-immunity rows: all seven carry the Confused-31
+    /// immunity (`NPCID.cs:9473-9521`), nothing else.
     #[test]
     fn w4_d33_the_dragonflies_are_confused_immune_only() {
         for kind in [
@@ -33979,6 +34018,8 @@ mod w4_d33_dragonfly_tests {
             NpcKind::GreenDragonfly,
             NpcKind::OrangeDragonfly,
             NpcKind::RedDragonfly,
+            NpcKind::YellowDragonfly,
+            NpcKind::GoldDragonfly,
         ] {
             let buffs = crate::npc_buffs::NpcBuffs::for_kind(kind);
             assert!(buffs.buff_immune[31], "{kind:?} Confused-immune");
@@ -34001,6 +34042,8 @@ mod w4_d33_dragonfly_tests {
             NpcKind::GreenDragonfly,
             NpcKind::OrangeDragonfly,
             NpcKind::RedDragonfly,
+            NpcKind::YellowDragonfly,
+            NpcKind::GoldDragonfly,
         ] {
             let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
             // The session player is far (>150 px) — no threat flee on

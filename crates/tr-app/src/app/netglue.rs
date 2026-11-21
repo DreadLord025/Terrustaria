@@ -3573,7 +3573,9 @@ fn npc_seed(
         | crate::npc::NpcKind::BlueDragonfly
         | crate::npc::NpcKind::GreenDragonfly
         | crate::npc::NpcKind::OrangeDragonfly
-        | crate::npc::NpcKind::RedDragonfly => {
+        | crate::npc::NpcKind::RedDragonfly
+        | crate::npc::NpcKind::YellowDragonfly
+        | crate::npc::NpcKind::GoldDragonfly => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
