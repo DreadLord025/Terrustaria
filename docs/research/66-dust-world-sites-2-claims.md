@@ -1,9 +1,12 @@
 # 66 — World dust sites SECOND batch (W4-e4): claims + census
 
-Status: CLAIM doc (W4-e4, the world lane's second batch). Written early per
-the lane's coordination rule — the branch list is the live claim record;
-this doc pins the census + the line-order split so the batches never
-overlap.
+Status: **SEALED** (W4-e4, the world lane's second batch, 2026-11-21, tip
+`eacaeb456`). The lane is complete: 40/40 emitter sites (orch 41-61 +
+mount 1-19), the wiring wave (batches 5-8), the RainbowRodHit/BestReforge
+keep-one reconciliation, and the orch-family bible below. Written early
+as a CLAIM doc per the lane's coordination rule — the branch list is the
+live claim record; this doc pins the census + the line-order split so the
+batches never overlap. Code-only mode: witnesses WRITTEN NOT RUN.
 
 ## In-flight probe (2026-11-20, `git fetch origin --prune` + branch scan)
 
@@ -177,3 +180,55 @@ caller-pass streams. The seams landed:
   (`Mount.cs:4623`, a private static with no caller). Their emitters
   (`paladins_hammer`, `golf_cart_smoke`) stay ported + reachable via
   `spawn_orchestra`/the module, but no call site is invented.
+
+## SEAL — the orch-family bible (2026-11-21, tip `eacaeb456`)
+
+The per-family ownership table for the second world dust batch. Every
+family row states WHO owns the emitter body, WHO owns the call site(s),
+and WHICH stream the draws ride. Zero unowned emitters in the lane; zero
+invented call sites. Sibling lanes (d54 orch 1-40, g14 WorldGen,
+g11-g13 Main, d51 player-dust, d55/g17 gore) are untouched here.
+
+| Family | Emitter (owner: e4) | Call sites | Stream | State |
+| ------ | ------------------- | ---------- | ------ | ----- |
+| ShimmerArrow (25) | `orchestrator_dust.rs::shimmer_arrow` (:2653/:2658 pair) | 1006 Kill (`projectile.rs`, `Projectile.cs:76050-76066`, head NextFloat×2π inline) | UpdateProjectiles | WIRED; the 677 NPC death caller deferred (kind unrowed) |
+| TerraBlade (15) | `terra_blade` (:2775/:2778) | 984/985 `damage_pve` hit switch (`Projectile.cs:12955-13000`) | UpdateProjectiles | WIRED |
+| Excalibur (13) | `excalibur` (:2837/:2840) | 982 hit switch | UpdateProjectiles | WIRED |
+| ClassyCane (55) | `classy_cane` (:2893 loop + the gore-sibling ARGUMENT split) | `editing.rs::resolve_melee_strike` (`Player.cs:44367-44375`, item 3351; coin draws inline BEFORE the emitter, editing has direct app access) | UpdatePlayers | WIRED (inline, no queue) |
+| TrueExcalibur (14) | `true_excalibur` (:2997/:3000/:3058/:3061, WHOLE 4-site method) | 983 hit switch + SwordWhip MegaSlash `tag_damage_for` (rectangle draw, tagged && proc gate) | UpdateProjectiles | WIRED |
+| TrueNightsEdge (12) | `true_nights_edge` (:3195/:3198 double pair, dead num==1f arms cited) | 973 hit switch | UpdateProjectiles | WIRED |
+| PaladinsHammer (9) | `paladins_hammer` (:3324, `sparkle_267_tail`) | NONE — DEAD in C# (zero `RequestParticleSpawn` callers) | — | REACHABLE via `spawn_orchestra`, never wired |
+| PrincessWeapon (8) | `princess_weapon` (:3378, `sparkle_267_tail`) | deferred: AI_186 (kind 950 unrowed/unarmed) + useStyle-5 hold arm (item 5065) | — | REACHABLE, callers wait on their machines (task seeds) |
+| StardustPunch (7) | `stardust_punch` (:3428, `sparkle_267_tail`) | 1039/623 post-strike chain (`Projectile.cs:14227-14271`, 3 argument draws inline, runs on the penetrate-zero hit) | UpdateProjectiles | WIRED |
+| RainbowRodHit (5) | `rainbow_rod_hit` (:3478, `sparkle_267_tail`, 272-draw contract) | IN-WORLD ONLY: 79 hit `:14234` + 79 death `:71314-71321` (2 rotated) + Kaleidoscope `tag_on_hit` (`CanRunHitEffects` gate); the `:71244` loop is the 1047 RainbowBoulder arm — DEFERRED with the boulder machine | UpdateProjectiles | WIRED; KEEP-ONE: the reforge tail's ONE path stays `prefix.rs::reforge_rainbow_rod_hit_draws` count-only (disjoint by call site, exact under empty-pool/on-screen; a pool-aware fold would re-pin the frozen 602 witness) |
+| LightningSmall (37/77) | `lightning_small` (:3641; Blue AND Red route here, Red info = `GetLightningColor(1122)`) | deferred: NPC buff-VFX pass (`NPC.cs:91150-91182`) + draw-pass lightning (`PlayerDrawSet.cs:1217-1233`) unported | — | REACHABLE, callers wait on the passes (task seeds) |
+| FormatC (72) | `format_c` (:3723, 12 type-213 sparks) | 562 hit switch (crit-gated, +25% dmg) | UpdateProjectiles | WIRED |
+| FlameWaders (1) | `flame_waders` (:3882, `flame_mount_arm` Next(16) gate) | `apply_equip_functional` 4822/4874 (`DoBootsEffect` gates + tile-below probe) → `pending_flame_waders` → `world_sim/player.rs` drain | UpdatePlayers | WIRED |
+| WoFGoatMountFlames (3) | `wof_goat_mount_flames` (:3920, `flame_mount_arm` Next(8) gate) | `MountState::update_frame_extras` WoF goat arm → `MountDustRequest::WofGoatFlames` → drain re-probes the tile (`Mount.cs:3907-3908`) | UpdatePlayers | WIRED |
+| Mount drill sparks | `mount_dust.rs::drill_sparks` (:3113/:3170) | deferred: `UpdateDrill` mining arm (M2-MOUNT-4) unported | — | REACHABLE, caller waits on the drill machine |
+| Mount dash rings/puffs | `unicorn_dash_ring`/`unicorn_dash_body` (:3878/:3896), `wolf_dash_ring`/`wolf_ground_puff` (:3939/:3970), `witch_dash_ring`/`witch_gated_puff` (:4000/:4023), `basilisk_charge_puffs`/`basilisk_charge_trail` (:4103/:4123, SPLIT for d51's FloorVisuals sandwich) | `MountState::update_frame_extras` state machines → `MountDustRequest` → `mount_dust::drain_mount_request` (new state: `dash_ring_latch`, `Player.basilisk_charge`, dashing frame arm case 5) | UpdatePlayers | WIRED |
+| GolfCartSmoke | `mount_dust.rs::golf_cart_smoke` (:4626) | NONE — DEAD in C# (`Mount.EmitGolfCartSmoke` :4623, private static, zero callers) | — | REACHABLE, never wired |
+| Minecart effects | `gem_minecart_effect`/`steam_minecart_effect`/`exhaust_minecart_effect`/`confetti_minecart_effect` (:4703/:4719/:4750/:4782) | `Player::update_mount` UpdateEffects cases 25-31/36/32/34 → queue → drain (`rotated_relative_point` anchors) | UpdatePlayers | WIRED |
+| Witch-broom trinket | `witch_broom_trinket` + RNG-free `witch_broom_trinket_rotation` (:4824/:4849) | UpdateEffects case 23 → queue → drain | UpdatePlayers | WIRED |
+| Drill-mount trail | `drill_mount_trail` (:5061/:5071 lerp trail) | UpdateEffects case 11 → queue → drain (rides the mount tick, NOT mining) | UpdatePlayers | WIRED |
+
+Dispatch + drain shape (the S1-E-21c convention): settings ARGUMENT draws
+stay INLINE at the queue site (C# evaluates the initializer first); only
+the emitter bodies defer — `ProjectilePool::pending_orchestra` →
+`drain_orchestra` on the `world_sim/projectiles.rs` UpdateProjectiles pass
+tail; `MountDustRequest` + `pending_flame_waders` drain on the
+`world_sim/player.rs` UpdatePlayers tick; ClassyCane runs fully inline
+(editing has direct app access). `spawn_orchestra`
+(`orchestrator_dust.rs:775`) routes the 15 lane-owned
+`ParticleOrchestraType` bytes; every other byte drops at the lane
+boundary (d54/unported bodies). The `:71267-71313` 79-trail chain + the
+14 type-66 dusts are the projectile-dust lane's (the 932 count-only
+census precedent), NOT orchestrator sites.
+
+Batch receipts (the branch's landed commits): claim `060636857`, emitters
+`fc2f64a22` (orch 41-51) / `e0d6d870c` (orch 52-61) / `0b9ad2695` (mount
+1-10) / `9eb72737c` (mount 11-19) + witness-comment fix `2a79551ab`;
+wiring `ed7fff13e` (dispatch + keep-one) / `1ac20a4c7` (projectile seams)
+/ `95d1a036d` (ClassyCane) / `e7bb2ff1d` (mount + FlameWaders);
+reconciliation `eacaeb456`. All witnesses WRITTEN NOT RUN (code-only
+mode); the merge-verify wave compiles and runs them.
