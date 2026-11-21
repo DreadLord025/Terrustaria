@@ -204,6 +204,7 @@
 //! | 949-951 | `:87158-87162` | the 83/84/179 cursed weapon death (3 gores 61, Next(-2,3) velocity x0.5) |
 //! | 952-960 | `:87199-87207` | the 262 Plantera death (9 random-position gores 381-387) |
 //! | 961-964 | `:87211-87217` | the 263/264 Plantera's Hook/Tentacle death (2 random-position gores each) |
+//! | 965-970 | `:87252-87257` | the 266 Brain of Cthulhu death (6 gores 396-401, Next(-30,31)*0.2 velocity) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5442,6 +5443,37 @@ fn plantera_part_death(
     }
 }
 
+/// The 266 Brain of Cthulhu death (`NPC.cs:87248-87257`, sites 965-970):
+/// the 150-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then 6
+/// gores 396/397/398/399/400/401 at position, each with velocity
+/// `(Next(-30,31)*0.2, Next(-30,31)*0.2)` (the two draws fire before the
+/// spawn). Scale defaults to 1.
+fn brain_of_cthulhu_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:87248-87251` — the 150-dust type-5 burst.
+    for _ in 0..150 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:87252-87257` — the 6 gores with random velocity.
+    for ty in 396..=401 {
+        let vx = rng.next_range(-30, 31) as f32 * 0.2;
+        let vy = rng.next_range(-30, 31) as f32 * 0.2;
+        gore.new_gore(rng, world, pos, Vec2::new(vx, vy), ty, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6101,6 +6133,10 @@ pub fn hit_effect_c(
     }
     if (npc_type == 263 || npc_type == 264) && npc.hp <= 0 {
         plantera_part_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87238-87258` — the 266 Brain of Cthulhu arm (sites 965-970).
+    if npc_type == 266 && npc.hp <= 0 {
+        brain_of_cthulhu_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9692,6 +9728,38 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "plantera part {ty}");
         }
+    }
+
+    /// `NPC.cs:87252-87257` — the Brain of Cthulhu death: the 6 gores
+    /// 396-401, each velocity (Next(-30,31)*0.2, Next(-30,31)*0.2). The twin
+    /// replay pins the per-gore velocity draws + kicks.
+    #[test]
+    fn w4_f10_the_brain_of_cthulhu_death_draws_the_velocity() {
+        let w = air();
+        let n = boss(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(887);
+        brain_of_cthulhu_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![396, 397, 398, 399, 400, 401]);
+        // The twin: 150 type-5 dusts, then 6 x (Next(-30,31) x2 + 2 kicks).
+        let mut twin = UnifiedRandom::new(887);
+        for _ in 0..150 {
+            let _px = twin.next_max(56);
+            let _py = twin.next_max(56);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..6 {
+            let _vx = twin.next_range(-30, 31);
+            let _vy = twin.next_range(-30, 31);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the brain mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
