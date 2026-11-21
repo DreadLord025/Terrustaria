@@ -219,15 +219,36 @@ pub(crate) fn death_layout(
     }
 }
 
-/// The death screen's text block — `Main.DrawDeathText`'s shape
-/// (`Main.cs:45324-45341`): the death broadcast (the big `DeathText` font,
+/// `Player.GetDeathAlpha` (`Player.cs:54198-54213`): the death-screen text
+/// colour lifted by the death fade — `newColor` is `Color.Transparent`
+/// (0,0,0,0) at every `DrawInterface_35_YouDied` call site, so the result is
+/// `(immuneAlpha*0.9, *0.5, *0.5, *0.4)` as bytes (the C# `(int)` truncates
+/// the double products), the alpha clamped 0..=255. The fade rides
+/// `UpdateDead`'s `immuneAlpha += 2` per tick (`Player.cs:17024-17028`).
+pub(crate) fn death_alpha(immune_alpha: i32) -> [f32; 4] {
+    let a = immune_alpha as f64;
+    let r = (a * 0.9) as i32;
+    let g = (a * 0.5) as i32;
+    let b = (a * 0.5) as i32;
+    let alpha = ((a * 0.4) as i32).clamp(0, 255);
+    [
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+        alpha as f32 / 255.0,
+    ]
+}
+
+/// The death screen's text block — `Main.DrawInterface_35_YouDied`'s shape
+/// (`Main.cs:45322-45390`): the death broadcast (the big `DeathText` font,
 /// centered 60 px above the screen's midpoint), the softcore
 /// "Dropped coins: X" line 50 px lower (the small `MouseText` font), and
 /// the respawn countdown 70 px below the broadcast (`Game.RespawnInSuffix`
 /// — the vanilla's "Respawn in {0} seconds" key resolves to "{0}" so the
-/// port draws the seconds with the prefix the same way; BUG-06). The
-/// alpha rides the death-screen fade — the port draws at the fixed
-/// full-bright (the respawn timer's fade lands with the death-screen pass).
+/// port draws the seconds with the prefix the same way; BUG-06). Every line
+/// rides `GetDeathAlpha(Color.Transparent)` — the `immuneAlpha` death fade
+/// (the W4-c46 residual; the old fixed full-bright drew the text before the
+/// fade-in). The countdown draws at the C#'s `num2 = 0.7` scale (`:45384`).
 pub(crate) fn draw_death_screen(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -237,8 +258,9 @@ pub(crate) fn draw_death_screen(
     lost_coin_string: &str,
     respawn_timer: i32,
     skip_frames: i32,
+    immune_alpha: i32,
 ) {
-    let color = [1.0, 1.0, 1.0, 1.0];
+    let color = death_alpha(immune_alpha);
     let layout = death_layout(screen.y, lost_coins, respawn_timer, skip_frames);
     text::draw_death_string(r, lookups, screen.x, layout.broadcast_y, color, death_text);
     if let Some(y) = layout.coins_y {
@@ -248,7 +270,9 @@ pub(crate) fn draw_death_screen(
     }
     // `if (Main.LocalPlayer.AllowsRespawnTimerSkip())` (`Main.cs:45348-45378`):
     // the "{InputTrigger_Jump} to skip" prompt, ramped in by
-    // `_framesWithRespawnSkipAvailable` (see [`respawn_skip_ramp`]).
+    // `_framesWithRespawnSkipAvailable` (see [`respawn_skip_ramp`]). The C#
+    // tints the parsed snippets by `GetDeathAlpha(...) * num4` — the port's
+    // plain label multiplies the fade's alpha by the ramp.
     if let Some(y) = layout.prompt_y {
         let label = respawn_skip_text();
         let y = y + text::death_line_height(lookups) * 0.5 * 0.7;
@@ -258,17 +282,18 @@ pub(crate) fn draw_death_screen(
             screen.x,
             y,
             layout.prompt_scale,
-            [1.0, 1.0, 1.0, layout.prompt_alpha],
+            [color[0], color[1], color[2], color[3] * layout.prompt_alpha],
             &label,
         );
     }
     // `if (Main.player[Main.myPlayer].respawnTimer > 1)` (`Main.cs:45380`):
-    // the ceil'ed seconds through the suffix key, drawn at the 0.7 scale.
+    // the ceil'ed seconds through the suffix key, drawn at the `num2 = 0.7`
+    // scale (`:45384` — the old port drew it full-size).
     if let Some(y) = layout.countdown_y {
         let seconds = (1 + respawn_timer / 60).to_string();
         let suffix = crate::lang::text_args("Game.RespawnInSuffix", &[seconds]);
         let line = format!("Respawn in {suffix}");
-        text::draw_death_string(r, lookups, screen.x, y, color, &line);
+        text::draw_death_string_scaled(r, lookups, screen.x, y, 0.7, color, &line);
     }
 }
 
@@ -719,8 +744,23 @@ pub fn draw_hud(
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
-    // hotbar (30).
-    resources::draw(r, lookups, screen, player, camera, zoom, pulse);
+    // hotbar (30). The breath meter's anchor walk reads the inventory / options /
+    // fancy-UI state (`Main.DrawInterface_Resources_Breath`, `Main.cs:43422-43438`).
+    resources::draw(
+        r,
+        lookups,
+        screen,
+        player,
+        camera,
+        zoom,
+        pulse,
+        inventory_open,
+        // `Main.ingameOptionsWindow` — the options panel's open flag.
+        ingame_options.is_some_and(|(_, o)| o.open),
+        // `Main.InGameUI.IsVisible` — the port's only fancy-UI state is the
+        // bestiary (`IngameFancyUI.OpenUIState(Main.BestiaryUI)`).
+        bestiary_open,
+    );
     if let Some(p) = player {
         let hovered = resources::draw_buffs(
             r,
@@ -1312,6 +1352,32 @@ mod tests {
             countdown_line(600).map(|l| l.contains("Respawn in")),
             Some(true),
             "the line rides the builder"
+        );
+    }
+
+    /// W4-c46 — `Player.GetDeathAlpha` (`Player.cs:54198-54213`): the death
+    /// text's fade colour from `immuneAlpha` (the `Color.Transparent` base —
+    /// every `DrawInterface_35_YouDied` call passes it). The `(int)` casts
+    /// truncate the double products; the alpha clamps 0..=255. Written NOT
+    /// run (code-only mode).
+    #[test]
+    fn w4_c46_the_death_alpha_truncates_the_immune_fade() {
+        // The death moment: immuneAlpha 0 → fully transparent.
+        assert_eq!(death_alpha(0), [0.0, 0.0, 0.0, 0.0]);
+        // One UpdateDead tick (+2): r=(int)1.8=1, g=b=(int)1.0=1, a=(int)0.8=0.
+        assert_eq!(
+            death_alpha(2),
+            [1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0]
+        );
+        // The full fade (255): r=(int)229.5=229, g=b=127, a=(int)102.0=102.
+        assert_eq!(
+            death_alpha(255),
+            [229.0 / 255.0, 127.0 / 255.0, 127.0 / 255.0, 102.0 / 255.0]
+        );
+        // Mid-fade (128): r=(int)115.2=115, g=b=64, a=(int)51.2=51.
+        assert_eq!(
+            death_alpha(128),
+            [115.0 / 255.0, 64.0 / 255.0, 64.0 / 255.0, 51.0 / 255.0]
         );
     }
 
