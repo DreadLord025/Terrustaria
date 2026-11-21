@@ -957,6 +957,55 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   `waterfall_scan_sums_strength_and_tracks_the_nearest_cell`,
   `waterfall_scan_y_arm_keeps_the_num3_equals_num38_quirk` (written, not run вЂ”
   code-only).
+- FALLS RESIDUALS census (W4-g75 residuals, code-only): the full-file
+  `WaterfallManager.cs` census against the branch found and ported the
+  remaining arms. The `DrawWaterfall(int, ...)` overload's TYPE-25 arm
+  (`WaterfallManager.cs:969-985`) was missing: every quad now carries the
+  walked cell `(num13, num14)` and `GetAlpha`'s opacity (the overload's
+  `(x, y, opacity)` arguments), and `render/liquids.rs::draw_shimmer_fall`
+  draws the shimmer fall twice вЂ” the base with `SetShimmerVertexColors`
+  (`LiquidRenderer.cs:738-752`: white Г— opacity Г— `GetShimmerBaseColor` per
+  corner; the `GetCornerColors` result is DISCARDED, so the fall is
+  self-luminous like the liquid surface) and the sparkle at `sourceRect.Y +=
+  42` with `SetShimmerVertexColors_Sparkle(top: true)` (`:725-736`, the flat
+  0.5 glitter opacity of the `top` arm `:768-770`), through the same 3Г—3
+  bilinear split and premultiplied-glitter encoding as the liquid pass. This
+  is DISTINCT from the g76 liquid-surface lane (`fb7a8df1`, not in this
+  branch): the falls sample the wave at the walked cell, not the liquid
+  record. `GetAlpha`'s default arm regains the verbatim `:1037`
+  `invisibleWall()`/wall-318 test plus the `:1120`
+  `_shouldShowInvisibleBlocksAndWalls` latch (`set_show_invisible`, fed from
+  `LightParams::draw_invisible_walls`); `solid_tile` regains `nactive()`
+  (`WorldGen.cs:69965` вЂ” an actuated tile is not solid, both in the spout
+  scan and the walk's solid-break); the `:749` `color5 = Color.White`
+  mutation now sticks for the rest of the step (it feeds the later arms and
+  `color4`). The `App::Ambience` loop's triple consumers ride the pure
+  `sound::liquid_ambience`: the `(int)` casts of `Main.cs:13477`/`:13500`,
+  the zero-strength camera-centre stop arm (`:13484`/`:13506`), the FIXED
+  `MaxWorldViewSize.X * 0.5 = 960` pan denominator (`Main.cs:66714`, was the
+  window width), and the out-of-range arm that leaves the live loop at its
+  last volume (`LegacySoundPlayer.cs:392-397` вЂ” the old port stopped it);
+  `audio.rs` re-pitches the waterfall loop at `2^-0.2` (`:1268`). Census
+  negatives: `FindWaterfalls` has NO entry/exit foam code (the file's only
+  spawn arms are the half-brick spout and the 196/460/717 fountains), and
+  the sand/rain arms (11/12/22/26, `:364-525`) plus the `:708` exclusion
+  list were already verbatim. Witnesses:
+  `shimmer_spout_uses_type_twenty_five_and_honey_outranks_it`,
+  `shimmer_frames_ride_the_slow_counter`,
+  `shimmer_alpha_is_flat_point_seven_five`,
+  `shimmer_quads_carry_the_walked_cell_and_opacity`,
+  `shimmer_falls_emit_light_but_feed_neither_ambience_scan`,
+  `sand_fountain_tile_460_drops_below`,
+  `sand_fall_draws_one_sheet_with_the_even_column_lead_and_fade`,
+  `echo_and_glass_walls_skip_the_get_alpha_damp_until_the_latch`,
+  `an_actuated_dry_side_still_admits_the_spout`,
+  `an_actuated_stone_in_the_column_does_not_stop_the_walk`,
+  `liquid_ambience_plays_the_triple_with_int_truncation`,
+  `liquid_ambience_pan_rides_the_fixed_1920_view`,
+  `liquid_ambience_zero_strength_stops_at_the_camera`,
+  `liquid_ambience_out_of_range_leaves_the_loop_untouched`,
+  `liquid_ambience_scales_with_the_slider_menu_and_shimmer` (written, not
+  run вЂ” code-only).
 - `LiquidRenderer.DrawShimmer` (`LiquidRenderer.cs:675-723`): shimmer liquid never
   takes the normal liquid path вЂ” every type-3 cell draws twice, the base quad with
   per-corner `GetShimmerBaseColor` wave colours (self-luminous: the light map is
