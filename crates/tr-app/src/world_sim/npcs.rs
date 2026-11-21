@@ -5024,10 +5024,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // the port batches deaths into the NPC pass, so the draw rides
         // the `UpdateNPCs` stream (`Main.cs:17767`) — the recorded
         // deviation (ANALYSIS, S1-E-21c). The C#'s `null` guard: the
-        // kinds with no row play nothing.
-        if let Some(cue) = npc.kind.death_sound() {
-            let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
-            app.audio.play_npc_death_sound(cue, npc.x, npc.y, rng);
+        // kinds with no row play nothing. W4-e2 batch 6: the
+        // `moon_despawn_kill` flag marks the `active = false` kills that
+        // BYPASS checkDead (the Moon Lord despawn sweeps + the Nebula
+        // Floater's fade-out `:39533`) — those play NO death sound (the
+        // C# deactivates directly, never reaching `:78186`).
+        if !npc.moon_despawn_kill {
+            if let Some(cue) = npc.kind.death_sound() {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
+                app.audio.play_npc_death_sound(cue, npc.x, npc.y, rng);
+            }
         }
         // S1-E-21g — `NPC.HitEffect`'s EoC death arm (`NPC.cs:87275-87297`):
         // the type-4 kill plays the case-15 roar TWICE — the play sits

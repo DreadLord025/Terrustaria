@@ -70,6 +70,12 @@
 //! - 43251/43278/43365 — the King Slime's shrink 10×4 ring / grow-back
 //!   10×4 ring / every-tick body 4 (`:43249-43254`/`:43276-43281`/
 //!   `:43365-43367`, `update_king_slime` — WIRED, the live DustPool).
+//! - 39524 — the Nebula Floater's fade-entry 20×242 burst
+//!   (`:39522-39528`, the faithful aiStyle-97 machine's `localAI[3]`
+//!   one-shot in the `ai[1]==1` fade-out — WIRED, `update_nebula_floater`;
+//!   the stand-in's invented `ai[1]--` countdown + scatter teleport pick
+//!   are retired for the C#'s `AI_AttemptToFindTeleportSpot` (range 20,
+//!   telefrag 12, centred, in-air) + the strike-hook latch `:81347`).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -795,18 +801,19 @@ fn catmull_rom(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2, t: f32) -> Vec2 {
     )
 }
 
-/// Sites 39524/39559/39571 — the Nebula Floater (423)'s three 20×242
+/// Sites 39524/39559/39571 — the Nebula Floater (420)'s three 20×242
 /// teleport bursts (`NPC.cs:39522-39528`/`:39557-39563`/`:39569-39575`,
 /// aiStyle 97). All three are the IDENTICAL body: 20 type-242
 /// NewDust(position, width, height) with default speeds/alpha/colour/
 /// scale; post-writes velocity *= 3, noGravity, scale 2.5. The C# fires
 /// them at the `localAI[3]` one-shot (the ai[1]==1 fade entry), the
 /// `ai[2]!=0 && ai[3]!=0` teleport departure (OLD position) and arrival
-/// (NEW position). The port's `update_nebula_floater` is a documented
-/// stand-in (its teleport structure folds the vanilla's fade/hop into a
-/// single 480-tick cycle); this emitter is armed at the stand-in's
-/// teleport hop with the verbatim body — the departure/arrival split
-/// and the fade-entry burst arrive with the faithful-machine wiring.
+/// (NEW position). W4-e2 batch 6: `update_nebula_floater` is now the
+/// FAITHFUL aiStyle-97 machine (the stand-in's invented `ai[1]--`
+/// countdown + scatter pick retired for `AI_AttemptToFindTeleportSpot`),
+/// so all three sites are armed at their C# positions — the fade-entry
+/// 39524 in the fade-out's one-shot, the departure/arrival 39559/39571
+/// bracketing the Centre placement.
 pub fn nebula_floater_teleport_burst(
     x: f32,
     y: f32,

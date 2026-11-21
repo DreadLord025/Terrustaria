@@ -2480,6 +2480,87 @@ pub(crate) fn king_slime_find_teleport_spot(
     player_bottom
 }
 
+/// `NPC.AI_AttemptToFindTeleportSpot` (`NPC.cs:18937-19007`) at the
+/// Nebula Floater's aiStyle-97 call (`:39584`): range 20, telefrag 12
+/// tiles, fluff 1, `solidTileCheckCentered: true`, `teleportInAir: true`.
+/// W4-e2 batch 6 — the faithful replacement for the stand-in's scatter
+/// pick. The in-air flag drops the `!nactive()` + `tileSolid` floor gates
+/// (`:18955`/`:18971`); the centred flag checks the body box
+/// `SolidTiles(x-1, x+1, i-1, i+1)` (`:18976`). Two draws per attempt
+/// (X column, then Y start, `:18952-18953`); the >2000-px Manhattan bail
+/// (`:18944`) draws NOTHING; the column ABORT (`:19003`) ends the column
+/// on the first floor+body pass even when the telefrag union rejects it.
+/// `self_center`/`target_tile` are the truncated `ToTileCoordinates`
+/// points (`(int)v >> 4`). The solo session player is slot 0.
+fn floater_teleport_spot(
+    world: &World,
+    player: &Player,
+    self_center: (i32, i32),
+    target_tile: (i32, i32),
+    rng: &mut UnifiedRandom,
+) -> Option<(i32, i32)> {
+    let (num, num2) = self_center;
+    let (ttx, tty) = target_tile;
+    let radius = 20;
+    // `:18944-18948` — the Manhattan bail (tile coords × 16).
+    if (num * 16 - ttx * 16).abs() + (num2 * 16 - tty * 16).abs() > 2000 {
+        return None;
+    }
+    for _ in 0..100 {
+        // `:18952-18953` — X first, then the Y start; one draw each.
+        let x = rng.next_range(ttx - radius, ttx + radius + 1);
+        let y_start = rng.next_range(tty - radius, tty + radius + 1);
+        for i in y_start..tty + radius {
+            // `:18955` — the floater's own ±1 box; teleportInAir drops the
+            // `!nactive()` term, so only the self-box skip remains.
+            if i >= num2 - 1 && i <= num2 + 1 && x >= num - 1 && x <= num + 1 {
+                continue;
+            }
+            // `:18960-18970` — the dungeon gate is 32/281-286/693 only
+            // (the floater is 420), so the ELSE-IF lava check runs: the
+            // tile ABOVE must not be lava.
+            let lava_above = world.tile(x, i - 1).is_some_and(|t| {
+                t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava
+            });
+            if lava_above {
+                continue;
+            }
+            // `:18971` — teleportInAir drops the `tileSolid` floor gate.
+            // `:18976` — centred body box: SolidTiles(x-1, x+1, i-1, i+1).
+            if crate::npc_ai_caster::solid_tiles(world, x - 1, x + 1, i - 1, i + 1) {
+                continue;
+            }
+            // `:18980-18997` — the telefrag union: the 16×16 spot rect
+            // inflated 12 tiles (192 px) vs the live player's hitbox
+            // unioned with its `(int)(velocity*20)` offset copy.
+            let (rx, ry, rw, rh) = (x * 16 - 192, i * 16 - 192, 16 + 384, 16 + 384);
+            let mut ok = true;
+            if !player.dead {
+                let ox = (player.vx * 20.0) as i32;
+                let oy = (player.vy * 20.0) as i32;
+                let px = player.x as i32;
+                let py = player.y as i32;
+                let pw = crate::player::WIDTH as i32;
+                let ph = crate::player::HEIGHT as i32;
+                let ux0 = px.min(px + ox);
+                let uy0 = py.min(py + oy);
+                let ux1 = (px + pw).max(px + ox + pw);
+                let uy1 = (py + ph).max(py + oy + ph);
+                if rx < ux1 && rx + rw > ux0 && ry < uy1 && ry + rh > uy0 {
+                    ok = false;
+                }
+            }
+            if ok {
+                return Some((x, i));
+            }
+            // `:19003` — the unconditional break: telefrag failure ends
+            // the COLUMN; the next attempt draws a fresh X/Y pair.
+            break;
+        }
+    }
+    None
+}
+
 /// `AI`'s aiStyle-76 ground scan (`NPC.cs:36244-36263`, replicated at
 /// `:36288-36307`/`:36325-36344`/`:36459-36478`; the same probe shape in
 /// `AI_093`, `:38905-38924`): the air-row count under the given tile
@@ -4428,6 +4509,14 @@ impl Npc {
         if self.kind == NpcKind::DetonatingBubble && self.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(self);
         }
+        // W4-e2 batch 6 — the aiStyle-97 strike hook (`NPC.cs:81347-81351`):
+        // `localAI[1] = 1` arms the floater's Next(6) teleport-reset latch
+        // (the machine consumes it next tick). The TargetClosest half is
+        // RNG-free and re-runs in the machine (`:39500`); the solo strike
+        // path has no world borrow, so the latch is the state half here.
+        if self.kind.ai_style() == 97 {
+            self.local_ai[1] = 1.0;
+        }
         true
     }
 
@@ -4475,6 +4564,11 @@ impl Npc {
         // S1-D-3 W-9: the checkDead 371 re-arm (the `hurt` twin above).
         if self.kind == NpcKind::DetonatingBubble && self.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(self);
+        }
+        // W4-e2 batch 6 — the aiStyle-97 strike hook (`NPC.cs:81347`, the
+        // `hurt` twin): localAI[1]=1 arms the floater's teleport-reset latch.
+        if self.kind.ai_style() == 97 {
+            self.local_ai[1] = 1.0;
         }
         true
     }
@@ -4590,6 +4684,11 @@ impl Npc {
         // (`PrepareForDeathAnimation`, `:78032-78038`). RNG-free.
         if n.kind == NpcKind::DetonatingBubble && n.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(n);
+        }
+        // W4-e2 batch 6 — the aiStyle-97 strike hook (`NPC.cs:81347`, the
+        // pooled twin): localAI[1]=1 arms the floater's teleport-reset latch.
+        if n.kind.ai_style() == 97 {
+            n.local_ai[1] = 1.0;
         }
         true
     }
@@ -15196,6 +15295,16 @@ impl Npc {
         self.y += self.vy;
     }
 
+    /// The Nebula Floater (420)'s aiStyle-97 machine (`NPC.cs:39473-
+    /// 39618`), W4-e2 batch 6 faithful re-port. The stand-in's invented
+    /// `ai[1]--` countdown + scatter teleport pick are retired: the C#
+    /// arm sets `ai[1] = 20` as a visual-only flag (never decremented in
+    /// the arm) and teleports through `AI_AttemptToFindTeleportSpot`
+    /// (range 20, telefrag 12, fluff 1, centred, in-air). The three dust
+    /// sites are WIRED: the fade-entry 39524 (`ai[1]==1` + `localAI[3]`
+    /// one-shot), the teleport departure 39559 (OLD position) and arrival
+    /// 39571 (NEW position). The strike hook (`:81347`, `localAI[1]=1` +
+    /// TargetClosest) rides the strike paths.
     fn update_nebula_floater(
         &mut self,
         world: &World,
@@ -15207,100 +15316,163 @@ impl Npc {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
-        // `:39485-39496`'s emission window: the first 180 ticks throw the
-        // 574 (0 damage) every 60 from the resampled ring.
-        if self.caster_counter < 180 {
-            self.caster_counter += 1;
-            if self.caster_counter % 60 == 0 {
+        // `:39475-39478` — the constants. num1328 (30, the eye release
+        // backstep) is the 574 lane's cited zero-draw seam below.
+        let num1326 = 7.0f32;
+        let num1327 = 480.0f32;
+        let max_value6 = 6;
+        // `:39479-39491` — the 574 emission window: localAI[2] climbs to
+        // 180, throwing the 0-damage Nebula Eye every 60 ticks from the
+        // resampled UnitY ring (|X| >= 1.5).
+        if self.local_ai[2] < 180.0 {
+            self.local_ai[2] += 1.0;
+            if self.local_ai[2] % 60.0 == 0.0 {
                 let (mut sx, mut sy) = (0.0f32, 0.0f32);
-                let mut guard = 0;
-                while sx.abs() < 1.5 && guard < 64 {
-                    // `RotatedByRandom(1.5707963705062866)` — the
-                    // `NextDouble * 2 - 1` times pi/2 sample (`:39466`).
-                    let ang = rng.next_float_direction() * std::f32::consts::FRAC_PI_2;
-                    sx = -ang.sin() * 4.0;
-                    sy = ang.cos() * 2.5;
-                    guard += 1;
+                while sx.abs() < 1.5 {
+                    // `RotatedByRandom(1.5707963705062866)` — the widened
+                    // f32 pi/2 literal, TWO NextDouble draws (Utils.cs:1697).
+                    let ang = rng.next_double() * 1.5707963705062866
+                        - rng.next_double() * 1.5707963705062866;
+                    sx = -(ang.sin() as f32) * 4.0;
+                    sy = (ang.cos() as f32) * 2.5;
                 }
-                self.wants_hostile_shot.push((574u16, cx, cy, sx, sy, 0));
+                // `ai[1] = whoAmI` links the eye to its host (the port's
+                // slot index; the eye AI's host_by_kind stand-in reads it).
+                self.wants_hostile_shot_ai.push(HostileShotAi {
+                    kind: crate::projectile::NEBULA_EYE,
+                    x: cx, y: cy, vx: sx, vy: sy, damage: 0,
+                    ai0: 0.0, ai1: self.slot as f32, scale: None,
+                });
             }
         }
-        // `:39513-39521`'s aim + the flight decision.
-        let aim = (self.facing as f32 * 20.0, 6.0);
-        let (ax, ay) = (cx + aim.0, cy + aim.1);
-        let (dx, dy) = (pcx - ax, pcy - ay);
-        // `:39513`: `flag104 = CanHit(base.Center, 1, 1, player.Center, 1, 1)`.
-        let sight = crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
-        let far = (dx * dx + dy * dy).sqrt() > 400.0 || !sight;
-        if far {
-            // `:39580-39620`'s cruise: the 7-px cap toward the aim.
-            let d = (dx * dx + dy * dy).sqrt().max(0.001);
-            self.vx += (dx / d * 7.0 - self.vx) * 0.2;
-            self.vy += (dy / d * 7.0 - self.vy) * 0.2;
-        } else {
-            // The hover (`:39625-39680`'s idle band).
-            self.vx *= 0.95;
-            self.vy *= 0.95;
+        // `:39492-39499` — the strike hook's latch: localAI[1]==1 rolls
+        // Next(6); on 0 the teleport counter resets to 480 (fires next tick).
+        if self.local_ai[1] == 1.0 {
+            self.local_ai[1] = 0.0;
+            if rng.next_max(max_value6) == 0 {
+                self.ai[0] = num1327;
+            }
         }
-        self.x += self.vx;
-        self.y += self.vy;
-        // `:39537-39539`'s roll + the sprite flip.
-        self.rotation = self.vx.abs() * self.facing as f32 * 0.1;
-        // The teleport cycle (`:39566-39575`'s counter).
-        self.ai[0] += 1.0;
-        if self.ai[0] >= 480.0 {
+        // `:39500` — TargetClosest (RNG-free).
+        let cand = crate::npc_target::session_candidate(player);
+        crate::npc_target::target_closest(self, world, &[cand], true, 97, 0);
+        // `:39501-39508` — a dead/absent target arms the fade-out.
+        if player.dead {
             self.ai[0] = 0.0;
-            self.ai[1] = 20.0;
-            // The tile pick: a non-solid tile near the aim point.
-            let (tx, ty) = ((ax / TILE_PX) as i32, (ay / TILE_PX) as i32);
-            let mut spot = None;
-            for _ in 0..24 {
-                // The port's scatter pick (the C# floater teleports
-                // without a rand scatter — the stream stands in).
-                let bx = tx + (rng.next_float() * 40.0 - 20.0) as i32;
-                let by = ty + (rng.next_float() * 24.0 - 12.0) as i32;
-                if !(0..world.width).contains(&bx) || !(0..world.height).contains(&by) {
-                    continue;
-                }
-                let solid = world
-                    .tile(bx, by)
-                    .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
-                if !solid {
-                    spot = Some((bx, by));
-                    break;
-                }
-            }
-            if let Some((sx, sy)) = spot {
-                self.ai[2] = sx as f32;
-                self.ai[3] = sy as f32;
-            }
+            self.ai[1] = 1.0;
+            self.ai[2] = 0.0;
+            self.ai[3] = 0.0;
+            self.net_update = true;
         }
-        // `:39541-39564`'s fade + the hop: `ai[1]` counts down from 20.
-        if self.ai[1] > 0.0 {
-            self.ai[1] -= 1.0;
-            if self.ai[1] <= 1.0 && self.ai[2] != 0.0 {
-                // W4-e2 sites 39559/39571 — the teleport departure burst
-                // at the OLD position (the C# `:39557-39563` fires before
-                // the `base.Center = (ai[2]*16, ai[3]*16)` placement).
-                // The stand-in folds the fade/hop into this single point;
-                // the verbatim 20×242 body rides the live pool here.
-                crate::npc_dust::nebula_floater_teleport_burst(
-                    self.x, self.y, w as i32, h as i32, rng, dust, dust_ctx, world,
-                );
-                // `:39597-39615`'s teleport hop.
-                self.x = self.ai[2] * TILE_PX - w * 0.5;
-                self.y = self.ai[3] * TILE_PX - h * 0.5;
-                self.vx = 0.0;
-                self.vy = 0.0;
-                self.ai[2] = 0.0;
-                self.ai[3] = 0.0;
-                // W4-e2 site 39571 — the arrival burst at the NEW position
-                // (the C# `:39569-39575` fires after the placement).
+        // `:39509-39510` — the roll + the sprite flip.
+        self.rotation = self.vx.abs() * self.facing as f32 * 0.1;
+        self.sprite_dir = -self.facing;
+        // `:39511-39513` — the aim point + the sight gate.
+        let (ax, ay) = (cx + self.facing as f32 * 20.0, cy + 6.0);
+        let (dx, dy) = (pcx - ax, pcy - ay);
+        let flag104 = crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
+        let mut flag105 = false;
+        // `:39515-39537` — the fade-out (ai[1]==1): the localAI[3] one-shot
+        // plays Item8 + the 20×242 fade-entry burst (site 39524), then
+        // ai[3] counts down 3 ticks to the silent deactivation.
+        if self.ai[1] == 1.0 {
+            if self.local_ai[3] == 0.0 {
+                self.local_ai[3] = 1.0;
+                self.ai[3] = 3.0;
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::Item8, x: cx, y: cy,
+                });
+                // W4-e2 site 39524 — the fade-entry burst (`:39522-39528`):
+                // 20×242 at (position, width, height), velocity *= 3,
+                // noGravity, scale 2.5.
                 crate::npc_dust::nebula_floater_teleport_burst(
                     self.x, self.y, w as i32, h as i32, rng, dust, dust_ctx, world,
                 );
             }
+            self.ai[3] -= 1.0;
+            if self.ai[3] <= 0.0 {
+                // `:39533` — `active = false` directly (no checkDead): the
+                // moon_despawn_kill flag keeps the death pass from playing
+                // the death sound / loot (the Moon Lord parts' convention).
+                self.hp = 0;
+                self.moon_despawn_kill = true;
+                self.net_update = true;
+            }
+            return;
         }
+        // `:39538-39553` — the cruise / hover decision.
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist > 400.0 || !flag104 {
+            // The 7-px cap toward the aim, then the 30:1 blend.
+            let (mut vx2, mut vy2) = (dx, dy);
+            if dist > num1326 {
+                let inv = 1.0 / dist;
+                vx2 *= inv;
+                vy2 *= inv;
+                vx2 *= num1326;
+                vy2 *= num1326;
+            }
+            self.vx = (self.vx * 29.0 + vx2) / 30.0;
+            self.vy = (self.vy * 29.0 + vy2) / 30.0;
+        } else {
+            self.vx *= 0.98;
+            self.vy *= 0.98;
+            flag105 = true;
+        }
+        // `:39554-39576` — the teleport hop: the departure burst at the OLD
+        // position (site 39559), the Centre placement, the arrival burst at
+        // the NEW position (site 39571). The two Item8 plays bracket it.
+        if self.ai[2] != 0.0 && self.ai[3] != 0.0 {
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::Item8, x: cx, y: cy,
+            });
+            crate::npc_dust::nebula_floater_teleport_burst(
+                self.x, self.y, w as i32, h as i32, rng, dust, dust_ctx, world,
+            );
+            // `base.Center = (ai[2]*16, ai[3]*16)` — the top-left recentres.
+            self.x = self.ai[2] * TILE_PX - w * 0.5;
+            self.y = self.ai[3] * TILE_PX - h * 0.5;
+            self.vx = 0.0;
+            self.vy = 0.0;
+            self.ai[2] = 0.0;
+            self.ai[3] = 0.0;
+            let (ncx, ncy) = (self.x + w * 0.5, self.y + h * 0.5);
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::Item8, x: ncx, y: ncy,
+            });
+            crate::npc_dust::nebula_floater_teleport_burst(
+                self.x, self.y, w as i32, h as i32, rng, dust, dust_ctx, world,
+            );
+        }
+        // `:39577-39612` — the teleport counter + the spot search.
+        self.ai[0] += 1.0;
+        if self.ai[0] >= num1327 {
+            self.ai[0] = 0.0;
+            // `ToTileCoordinates` — `(int)v >> 4` (truncate, then shift).
+            let p9 = ((cx as i32) >> 4, (cy as i32) >> 4);
+            let p10 = ((pcx as i32) >> 4, (pcy as i32) >> 4);
+            if let Some((tx, ty)) =
+                floater_teleport_spot(world, player, p9, p10, rng)
+            {
+                self.ai[1] = 20.0;
+                self.ai[2] = tx as f32;
+                self.ai[3] = ty as f32;
+                // `:39589-39609` — the owned 574 eyes' release-delay
+                // backstep (if none is still arming, ai[0] -= 30 on each
+                // armed eye). A projectile-pool scan with ZERO Main.rand
+                // draws — the dust stream is unaffected; the eye AI's
+                // host_by_kind stand-in owns the release (the 574 lane).
+            }
+            self.net_update = true;
+        }
+        // `:39613-39618` — the hover counter (localAI[0] climbs while
+        // flag105 && |v| < 2; the C# discards the read, the write stays).
+        if flag105 && (self.vx * self.vx + self.vy * self.vy).sqrt() < 2.0 {
+            self.local_ai[0] += 1.0;
+        }
+        // `UpdateNPC`'s noTileCollide integration (`NPC.cs:90490-90498`):
+        // the floater flies through tiles (SetDefaults `:15168-15169`).
+        self.integrate_no_tile_collide();
     }
 
     /// The shared aiStyle-85 hoverer for the Brain Suckler (421):
@@ -19625,6 +19797,98 @@ mod s1_d_3_moonlord_rng_witnesses {
             + std::f32::consts::PI / 180.0 * -1.0;
         assert_eq!(shot.ai1, want, "the ai1 draw");
         assert_eq!(rng.peek(), mirror.peek(), "one draw per shot");
+    }
+
+    /// W4-e2 batch 6 — the Nebula Floater's fade-entry burst (site 39524,
+    /// `NPC.cs:39515-39536`): the `ai[1]==1` fade-out's `localAI[3]`
+    /// one-shot plays Item8 + the 20×242 burst, then ai[3] counts down 3
+    /// ticks to the silent deactivation. The witness pre-arms the fade
+    /// (ai[1]=1, localAI[3]=0, localAI[2]=180 so the emission window is
+    /// closed), ticks once, and mirrors the 20 pool internals. The
+    /// strike-hook latch (localAI[1]) is 0, so no Next(6) draw rides.
+    #[test]
+    fn w4_e2_the_floater_fade_entry_bursts_twenty_242_then_counts_down() {
+        let w = world();
+        let p = player(&w);
+        let mut f = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        f.hp = f.max_hp;
+        f.ai[1] = 1.0; // the fade-out state
+        f.local_ai[2] = 180.0; // the emission window closed
+        f.local_ai[3] = 0.0; // the one-shot armed
+        let mut rng = UnifiedRandom::new(53);
+        let mut mirror = UnifiedRandom::new(53);
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mpool = tr_core::particles::DustPool::new();
+        let dctx = permissive_dust_ctx(&w);
+        f.update_nebula_floater(&w, &p, &mut rng, &mut dust, &dctx);
+        // The one-shot fired: localAI[3]=1, ai[3] counted 3 -> 2.
+        assert_eq!(f.local_ai[3], 1.0, "the one-shot latched");
+        assert_eq!(f.ai[3], 2.0, "ai[3] counted down once");
+        assert!(f.hp > 0, "not yet deactivated (ai[3] > 0)");
+        // The Item8 play queued at the centre.
+        assert_eq!(f.wants_sound.len(), 1);
+        assert!(matches!(f.wants_sound[0].cue, NpcSoundCue::Item8));
+        // The 20×242 burst: mirror the pool internals (velocity *= 3,
+        // noGravity, scale 2.5).
+        let (fw, fh) = f.size();
+        for _ in 0..20 {
+            let idx = mpool.new_dust(
+                &mut mirror, &dctx, &w, glam::Vec2::new(f.x, f.y),
+                fw as i32, fh as i32, 242, 0.0, 0.0, 0,
+                tr_core::particles::Color::default(), 1.0,
+            );
+            let d = mpool.slot_mut(idx);
+            d.velocity *= 3.0;
+            d.no_gravity = true;
+            d.scale = 2.5;
+        }
+        assert_eq!(rng.peek(), mirror.peek(), "the fade-entry burst census");
+        let live: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(live.len(), 20);
+        for &i in &live {
+            assert_eq!(dust.slot(i).dust_type, 242);
+            assert!(dust.slot(i).no_gravity);
+            assert_eq!(dust.slot(i).scale, 2.5);
+        }
+        // Two more ticks: ai[3] 2 -> 1 -> 0, the deactivation on the third.
+        f.update_nebula_floater(&w, &p, &mut rng, &mut dust, &dctx);
+        assert_eq!(f.ai[3], 1.0);
+        assert!(f.hp > 0, "still alive at ai[3]=1");
+        f.update_nebula_floater(&w, &p, &mut rng, &mut dust, &dctx);
+        assert_eq!(f.ai[3], 0.0);
+        assert_eq!(f.hp, 0, "deactivated at ai[3]=0");
+        assert!(f.moon_despawn_kill, "the silent active=false kill flag");
+        // The one-shot did NOT re-fire (localAI[3] stays 1): no new burst.
+        let live2: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(live2.len(), 20, "no second burst on the countdown ticks");
+    }
+
+    /// W4-e2 batch 6 — the floater's strike-hook latch (`NPC.cs:81347`):
+    /// an accepted strike sets localAI[1]=1; the next machine tick rolls
+    /// Next(6) and on 0 resets ai[0] to 480 (the teleport fires next tick).
+    /// The witness pins the latch + the Next(6) draw position.
+    #[test]
+    fn w4_e2_the_floater_strike_hook_arms_the_teleport_reset() {
+        let w = world();
+        let p = player(&w);
+        let mut f = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        f.hp = f.max_hp;
+        f.local_ai[2] = 180.0; // emission window closed
+        // The strike hook (the `hurt` path's aiStyle-97 arm).
+        assert!(f.hurt(5, f.x - 10.0, 0.0, false, false));
+        assert_eq!(f.local_ai[1], 1.0, "the strike armed the latch");
+        let mut rng = UnifiedRandom::new(61);
+        let mut mirror = UnifiedRandom::new(61);
+        let mut dust = tr_core::particles::DustPool::new();
+        let dctx = permissive_dust_ctx(&w);
+        f.update_nebula_floater(&w, &p, &mut rng, &mut dust, &dctx);
+        // The latch consumed: localAI[1]=0, one Next(6) draw rode.
+        assert_eq!(f.local_ai[1], 0.0, "the latch consumed");
+        let roll = mirror.next_max(6);
+        if roll == 0 {
+            assert_eq!(f.ai[0], 0.0, "ai[0] reset to 480 then ++ wraps to 0");
+        }
+        assert_eq!(rng.peek(), mirror.peek(), "the Next(6) latch draw");
     }
 }
 
