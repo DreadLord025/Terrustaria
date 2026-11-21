@@ -1805,6 +1805,23 @@ mod tests {
         let mut planted = 0;
         for seed in 11..16u32 {
             let mut w = grass_world(4200, 1200, 300);
+            // Carve air pockets so the glow-tulip / chillet-egg tails find
+            // free cells above valid ground quickly (on a cave-less world
+            // their 10000-attempt budgets would exhaust scanning the large
+            // neighbour boxes). The tulip band is x 100..300, y 350..1000;
+            // the egg band is x 100..4100, y 600..1000.
+            for x in 150..260 {
+                for y in 400..460 {
+                    let i = w.index(x, y);
+                    w.tiles[i].flags &= !FLAG_ACTIVE;
+                }
+            }
+            for x in 2000..2120 {
+                for y in 700..760 {
+                    let i = w.index(x, y);
+                    w.tiles[i].flags &= !FLAG_ACTIVE;
+                }
+            }
             let mut rng = Rng::from_seed(seed);
             pass_dye_plants(&mut w, 350.0, 600.0, false, &mut rng);
             let dye = w

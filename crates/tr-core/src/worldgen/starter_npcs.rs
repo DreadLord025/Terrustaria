@@ -474,7 +474,7 @@ mod tests {
     fn the_infected_world_spawns_the_dryad() {
         let mut w = flat_world(200, 200, 100);
         let mut o = opts(0);
-        o.micro_flags = MicroSeedFlags::WORLD_IS_INFECTED;
+        o.micro_flags = MicroSeedFlags::from_sum(MicroSeedFlags::WORLD_IS_INFECTED);
         pass_starter_npcs(&mut w, &o, 100, 94, &mut Rng::from_seed(7));
         assert_eq!(w.gen_npcs.len(), 1);
         assert_eq!(w.gen_npcs[0].kind, 20);
