@@ -496,7 +496,14 @@ impl WorldMap {
             // `MapRenderer.cs:62-77`: 5x2 targets, one change list each.
             change_queues: vec![Vec::new(); 5 * 2],
             load_map: false,
-            clear_map: false,
+            // `WorldGen.clearWorld` (`WorldGen.cs:6982`): every world load
+            // arms `Main.clearMap = true` (the texture wipe the first
+            // `DrawToMap` consumes). `WorldMap::new` is the port's
+            // world-load construction (boot / swap / net install), so the
+            // flag arms here (W4-f46 salvage, research/84 §6.6);
+            // `mapTime = 0` / `updateMap = null` / `mapReady = false` /
+            // `refreshMap = false` (`:6983-6986`) are the defaults above.
+            clear_map: true,
             map_ready: false,
             load_map_lock: false,
             load_map_last_x: 0,
@@ -586,13 +593,17 @@ impl WorldMap {
         y0 = y0.max(cy - zh / 2);
         x1 = x1.min(cx - zw / 2 + zw);
         y1 = y1.min(cy - zh / 2 + zh);
-        // `Rectangle.Intersect`: an empty overlap has Left >= Right — the
-        // C# still assigns it (`:269` runs after the walk, unconditionally),
-        // so the slot arms with the empty rect and the consume nulls it.
-        if x0 < x1 && y0 < y1 {
-            let changed = reveal_rect(world, &mut self.tiles, light, x0, y0, x1, y1);
-            self.dirty.extend(changed);
+        // `Rectangle.Intersect`: an empty overlap has Left >= Right — XNA
+        // returns `Rectangle.Empty` (0, 0, 0, 0), not the inverted rect
+        // (W4-f46 salvage, research/84 §6.5). `LightingEngine.cs:269` arms
+        // `Main.updateMap = area` even when the intersect came back empty —
+        // the driver still runs its consumer (`Main.cs:61886-61894`).
+        if x0 >= x1 || y0 >= y1 {
+            self.update_map = Some([0, 0, 0, 0]);
+            return;
         }
+        let changed = reveal_rect(world, &mut self.tiles, light, x0, y0, x1, y1);
+        self.dirty.extend(changed);
         // `LightingEngine.cs:269`: `Main.updateMap = area` — the revealed
         // rect rides the `Main.cs:61886-61894` consume arm (the port's
         // texture sync already ran through `dirty`; the slot drives the
@@ -643,18 +654,91 @@ impl WorldMap {
         }
     }
 
-    /// The `/map` chat command's reveal (`ToolkitDebugCommands.cs:480-494`):
-    /// every section of the world, as the C# does by walking
-    /// `Main.sectionManager`'s draw queue. `pretty` selects
-    /// `UnlockMapTilePretty` (the 11x11 Manhattan falloff) over the flat 255.
-    pub fn unlock_map(&mut self, world: &World, pretty: bool) {
-        let sx = (world.width as f32 / 200.0).ceil() as i32;
-        let sy = (world.height as f32 / 150.0).ceil() as i32;
-        for y in 0..sy {
-            for x in 0..sx {
-                self.unlock_section(world, x, y, pretty);
+    /// The `/map` chat command (`ToolkitDebugCommands.cs:480-494`): the
+    /// command only arms flags — `Main.clearMap = true`, then
+    /// `DebugOptions.unlockMap = 1` (flat) or `2` (pretty) plus
+    /// `Main.refreshMap = true` when off, or `unlockMap = 0` when already
+    /// on. The reveal itself rides the section sweep
+    /// (`App::map_reveal_sweep`, `Main.cs:61871-61883`): the `refreshMap`
+    /// re-walk (`:61888-61892`) clears the drawn bits and the spiral
+    /// re-visits every section, unlocking each as it draws.
+    /// W4-f46 salvage (research/84 §4) replaces the old dead bulk ceil-loop
+    /// sweep; the option is `App.debug_unlock_map` in the union (the C#
+    /// `DebugOptions.unlockMap` static), so it rides in by `&mut i32`.
+    pub fn unlock_map(&mut self, debug_unlock_map: &mut i32, pretty: bool) {
+        self.clear_map = true; // `:483`, both arms
+        if *debug_unlock_map == 0 {
+            // `:484-488`.
+            *debug_unlock_map = if pretty { 2 } else { 1 };
+            self.refresh_map = true; // `:487`
+        } else {
+            // `:489-492`: a second `/map` turns the reveal off.
+            *debug_unlock_map = 0;
+        }
+    }
+
+    /// `MapRenderer.DrawToMap_Section` (`MapRenderer.cs:306-355`): paint
+    /// one 200x150 section into the map texture. The C# walks the section
+    /// row-major (`i` = y outer, `j` = x inner, `:328-335`) through
+    /// `GetMapTileXnaColor` and blits the 200x150 cache at the target
+    /// offset; the port writes the same pixels as one region upload. The
+    /// section rect is NOT inset-clamped here (that clamp is
+    /// `UnlockMapSection`'s, `WorldMap.cs:111-119`) — the draw covers the
+    /// full section, clipped to the world bounds (the C# target grid
+    /// covers every vanilla world size exactly, `MapRenderer.cs:93-102`).
+    /// W4-f46 salvage, research/84 §6.2.
+    pub fn draw_to_map_section(
+        &mut self,
+        r: &mut SpriteRenderer,
+        gpu: &tr_render::Gpu,
+        world: &World,
+        sx: i32,
+        sy: i32,
+    ) {
+        let Some((x0, y0, w, h, rgba)) = self.section_pixels(world, sx, sy) else {
+            return;
+        };
+        r.write_map_region(gpu, x0 as u32, y0 as u32, w, h, &rgba);
+    }
+
+    /// The GPU-free pixel half of [`Self::draw_to_map_section`]
+    /// (`MapRenderer.cs:314-335`): the section's clamped rect and its
+    /// row-major colour cache. Returns `None` for an off-world section.
+    /// The witnesses exercise this directly (no renderer needed).
+    pub fn section_pixels(
+        &self,
+        world: &World,
+        sx: i32,
+        sy: i32,
+    ) -> Option<(i32, i32, u32, u32, Vec<[u8; 4]>)> {
+        let x0 = sx * 200;
+        let y0 = sy * 150;
+        let x1 = (x0 + 200).min(world.width);
+        let y1 = (y0 + 150).min(world.height);
+        if x0 >= x1 || y0 >= y1 {
+            return None;
+        }
+        let w = (x1 - x0) as u32;
+        let h = (y1 - y0) as u32;
+        let mut rgba = vec![[0u8; 4]; (w * h) as usize];
+        // `:328-335`: row-major over the section, `GetMapTileXnaColor` per
+        // tile. The C# blits the colour unconditionally (`:350`) and the
+        // alpha rides `colorLookup[0] = Color.Transparent`
+        // (`MapHelper.cs:1714`); the port's alpha convention is the
+        // reveal's (`prepare`'s two upload paths): a revealed tile
+        // (`light > 0`) is opaque, an unrevealed one transparent — a dark
+        // tile never carries a non-zero type in practice (every
+        // `CreateMapTile` arm that sets a type forces light > 0).
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let t = self.tiles[world.index(x, y)];
+                if t.light > 0 {
+                    let [cr, cg, cb] = get_map_tile_color(t, x, y);
+                    rgba[((y - y0) as u32 * w + (x - x0) as u32) as usize] = [cr, cg, cb, 255];
+                }
             }
         }
+        Some((x0, y0, w, h, rgba))
     }
 
     /// `MapRenderer.QueueChange` (`MapRenderer.cs:288-304`): the changed
@@ -1903,6 +1987,97 @@ mod tests {
         assert!(m.tiles.iter().all(|t| {
             t.ty == 0 && t.light == 0 && !t.is_changed() && !t.update_queued() && t.color() == 0
         }));
+    }
+
+    /// W4-f46 witness (written, not run — code-only), adapted to the union
+    /// (research/84 §7): the `/map` command (`ToolkitDebugCommands.cs:480-494`)
+    /// only arms flags — `clearMap`, `DebugOptions.unlockMap` (1 flat /
+    /// 2 pretty) and `refreshMap` when off, or `unlockMap = 0` when already
+    /// on. The union's option home is `App.debug_unlock_map` (the C#
+    /// static), so the fn takes it by `&mut i32`.
+    #[test]
+    fn w4_f46_map_command_arms_the_flags_and_toggles_off() {
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let mut unlock = 0;
+        m.clear_map = false; // isolate the command's own arming
+        m.unlock_map(&mut unlock, true); // `/map pretty`
+        assert!(m.clear_map, "`:483`");
+        assert_eq!(unlock, 2, "`:486` pretty");
+        assert!(m.refresh_map, "`:487`");
+        // A second `/map` turns the reveal off (`:489-492`).
+        m.unlock_map(&mut unlock, true);
+        assert_eq!(unlock, 0, "the toggle off");
+        assert!(m.clear_map, "`:483` runs on both arms");
+        // The flat mode arms 1 (`:486`'s non-pretty arm).
+        m.unlock_map(&mut unlock, false);
+        assert_eq!(unlock, 1, "flat");
+    }
+
+    /// W4-f46 witness (written, not run — code-only): `DrawToMap_Section`'s
+    /// pixel cache (`MapRenderer.cs:328-335`) — the section's clamped rect,
+    /// row-major, revealed tiles opaque and unrevealed transparent. The
+    /// 200x150 section at (0, 0) on the 200x128 world clips to 200x128.
+    #[test]
+    fn w4_f46_section_pixels_paint_revealed_opaque_and_dark_transparent() {
+        let world = ground_world(); // 200x128
+        let mut m = WorldMap::new(&world);
+        // Reveal one interior tile; the rest stay dark.
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 200));
+        let (x0, y0, w, h, rgba) = m.section_pixels(&world, 0, 0).unwrap();
+        assert_eq!((x0, y0, w, h), (0, 0, 200, 128), "the section clips to the world");
+        assert_eq!(rgba.len(), 200 * 128);
+        // The revealed tile is opaque; a dark tile is transparent.
+        let lit = rgba[70 * 200 + 100];
+        assert_eq!(lit[3], 255, "the revealed tile is opaque");
+        assert_ne!(&lit[..3], &[0, 0, 0], "the revealed tile carries colour");
+        assert_eq!(rgba[0], [0, 0, 0, 0], "a dark tile is transparent");
+        // An off-world section paints nothing.
+        assert!(m.section_pixels(&world, 5, 5).is_none());
+    }
+
+    /// W4-f46 witness (written, not run — code-only): the light export arms
+    /// `Main.updateMap` (`LightingEngine.cs:269`) on every export — even an
+    /// empty intersect (`Rectangle.Empty`, XNA returns (0,0,0,0)) — so the
+    /// driver's consumer always has a rect to consume.
+    #[test]
+    fn w4_f46_the_export_arms_update_map_even_on_an_empty_intersect() {
+        // A 30x30 processed area at (28, 28): the 28-per-side shrink
+        // (`LightingEngine.cs:252`) inverts it — x0 = 56 > x1 = 30 — so the
+        // intersect with the world/scene rects is empty.
+        let world = World::new("empty".into(), 400, 120);
+        let mut p = Player::spawn(&world);
+        p.x = 100.0 * TILE_PX;
+        p.y = 40.0 * TILE_PX;
+        let light = LightMap::compute(
+            &world,
+            28,
+            28,
+            58,
+            58,
+            &LightParams::default(),
+        );
+        let mut m = WorldMap::new(&world);
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert_eq!(
+            m.update_map,
+            Some([0, 0, 0, 0]),
+            "`Rectangle.Empty`, not the inverted rect"
+        );
+    }
+
+    /// W4-f46 witness (written, not run — code-only): the world-load
+    /// construction arms `Main.clearMap = true` (`WorldGen.cs:6982`); the
+    /// rest of the `clearWorld` map reset (`:6983-6986`) is the defaults.
+    #[test]
+    fn w4_f46_the_constructor_arms_clear_map_like_the_world_clear() {
+        let world = test_world();
+        let m = WorldMap::new(&world);
+        assert!(m.clear_map, "`WorldGen.cs:6982`");
+        assert_eq!(m.map_time(), 0, "`:6983`");
+        assert!(m.update_map.is_none(), "`:6984`");
+        assert!(!m.map_ready, "`:6985`");
+        assert!(!m.refresh_map, "`:6986`");
     }
 
     // ---- Task 6b: fullscreen zoom / pan / minimap geometry ----
