@@ -666,6 +666,14 @@ impl App {
                         // default arm reads (`:1037`) — the same value the light
                         // params carry (`Main.cs:58023-58030`).
                         waterfall.set_show_invisible(params.draw_invisible_walls);
+                        // `Main.DiscoR/G/B` (`Main.cs:959-963`): the disco fall
+                        // (tile 160 → type 2) reads the SHARED statics the
+                        // lighting scanner reads (`StylizeColor` case 2,
+                        // `WaterfallManager.cs:1010-1012`; `AddLight` case 2,
+                        // `:1084`). The cycle is `DoUpdate_AnimateDiscoRGB`
+                        // (`Main.cs:19591-19648`), stepped by `advance_disco`;
+                        // latch the same values the `LightParams` carry.
+                        waterfall.set_disco_rgb(params.disco);
                         let (lights, waterfall_scan, lavafall_scan) = waterfall.draw(
                             world,
                             light,
@@ -2235,5 +2243,28 @@ mod s1_p_i53_tests {
         // The next press fires again.
         app.place_down = true;
         assert!(app.buff_cancel_gate());
+    }
+}
+
+#[cfg(test)]
+mod w4_g75_final_sweep_tests {
+    /// W4-g75 final sweep — the waterfall block feeds the manager the SAME
+    /// `Main.DiscoR/G/B` the `LightParams` carry: the disco fall (tile 160 →
+    /// type 2) reads the shared statics (`StylizeColor` case 2,
+    /// `WaterfallManager.cs:1010-1012`; `AddLight` case 2, `:1084`), and the
+    /// cycle is `Main.DoUpdate_AnimateDiscoRGB` (`Main.cs:19591-19648`),
+    /// stepped by `advance_disco` — the manager has no cycle of its own.
+    /// Without this feed the fall tinted from a stale private copy.
+    #[test]
+    fn the_waterfall_block_latches_the_shared_disco_statics() {
+        let src = include_str!("draw.rs");
+        assert!(
+            src.contains("waterfall.set_disco_rgb(params.disco)"),
+            "the waterfall block must latch the shared disco statics"
+        );
+        assert!(
+            src.contains("waterfall.set_show_invisible(params.draw_invisible_walls)"),
+            "the invisible latch stays fed too"
+        );
     }
 }

@@ -141,11 +141,17 @@ pub struct WaterfallManager {
     snow_frame_counter: i32,
     snow_frame_foreground: i32,
 
-    /// `Main.DiscoR/G/B/Style` for the disco waterfall (tile 160).
+    /// `Main.DiscoR/G/B` (`Main.cs:959-963`) for the disco waterfall (tile
+    /// 160). The cycle itself is `Main.DoUpdate_AnimateDiscoRGB`
+    /// (`Main.cs:19591-19648`), owned by the app's shared disco state
+    /// (`world_sim::clock::advance_disco`); the manager only READS the
+    /// statics — `StylizeColor` case 2 (`WaterfallManager.cs:1010-1012`) and
+    /// `AddLight` case 2 (`:1084`) — so the app feeds them through
+    /// [`Self::set_disco_rgb`] before every `draw`, exactly like the
+    /// `set_show_invisible` latch.
     disco_r: i32,
     disco_g: i32,
     disco_b: i32,
-    disco_style: i32,
 
     /// `TrySparkling` spawns accumulated by the last `draw` — the caller drains
     /// them into its dust particles after the frame.
@@ -190,10 +196,11 @@ impl WaterfallManager {
             lava_rain_frame_background: 0,
             snow_frame_counter: 0,
             snow_frame_foreground: 0,
-            disco_r: 0,
+            // `Main.Initialize` (`Main.cs:66780`): `DiscoR = 255`, G/B 0.
+            // The app's shared cycle feeds the live values via `set_disco_rgb`.
+            disco_r: 255,
             disco_g: 0,
             disco_b: 0,
-            disco_style: 0,
             pending_sparkles: Vec::new(),
             pending_quads: Vec::new(),
             show_invisible_blocks_and_walls: false,
@@ -212,6 +219,19 @@ impl WaterfallManager {
             self.disco_g.clamp(0, 255) as u8,
             self.disco_b.clamp(0, 255) as u8,
         ]
+    }
+
+    /// Feed the shared `Main.DiscoR/G/B` statics the disco fall reads
+    /// (`StylizeColor` case 2, `WaterfallManager.cs:1010-1012`; `AddLight`
+    /// case 2, `:1084`). The C# manager has NO cycle of its own —
+    /// `Main.DoUpdate_AnimateDiscoRGB` (`Main.cs:19591-19648`) steps the
+    /// statics once per update; the app owns that cycle
+    /// (`world_sim::clock::advance_disco`) and latches the values here
+    /// before every `draw`, the `set_show_invisible` pattern.
+    pub fn set_disco_rgb(&mut self, disco: [u8; 3]) {
+        self.disco_r = disco[0] as i32;
+        self.disco_g = disco[1] as i32;
+        self.disco_b = disco[2] as i32;
     }
 
     /// `WaterfallManager.CheckForWaterfall`.
@@ -237,9 +257,11 @@ impl WaterfallManager {
             | self.list_revision << 32
     }
 
-    /// `WaterfallManager.UpdateFrame` + `DoUpdate_AnimateDiscoRGB` — both advance
-    /// once per 60 Hz tick. `Main.mouseTextColor` (the light flicker) lives in
-    /// `crate::lighting`, and `AddLight` for falls is a documented follow-up.
+    /// `WaterfallManager.UpdateFrame` (`WaterfallManager.cs:257-323`) — advances
+    /// once per 60 Hz tick. The disco cycle is NOT here: the C# manager has no
+    /// `DiscoR/G/B` state, `Main.DoUpdate_AnimateDiscoRGB` (`Main.cs:19591-19648`)
+    /// steps the shared statics and the app latches them via `set_disco_rgb`.
+    /// `Main.mouseTextColor` (the light flicker) lives in `crate::lighting`.
     pub fn update_tick(&mut self) {
         self.w_fall_fr_counter += 1;
         if self.w_fall_fr_counter > 2 {
@@ -294,54 +316,6 @@ impl WaterfallManager {
             self.snow_frame_foreground += 1;
             if self.snow_frame_foreground > 7 {
                 self.snow_frame_foreground = 0;
-            }
-        }
-
-        self.update_disco_rgb();
-    }
-
-    fn update_disco_rgb(&mut self) {
-        let step = 7;
-        if self.disco_style == 0 {
-            self.disco_g += step;
-            if self.disco_g >= 255 {
-                self.disco_g = 255;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 1 {
-            self.disco_r -= step;
-            if self.disco_r <= 0 {
-                self.disco_r = 0;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 2 {
-            self.disco_b += step;
-            if self.disco_b >= 255 {
-                self.disco_b = 255;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 3 {
-            self.disco_g -= step;
-            if self.disco_g <= 0 {
-                self.disco_g = 0;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 4 {
-            self.disco_r += step;
-            if self.disco_r >= 255 {
-                self.disco_r = 255;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 5 {
-            self.disco_b -= step;
-            if self.disco_b <= 0 {
-                self.disco_b = 0;
-                self.disco_style = 0;
             }
         }
     }
@@ -1863,5 +1837,79 @@ mod tests {
             out.iter().any(|d| d.cell == [9, 25]),
             "the walk continues past the actuated stone"
         );
+    }
+
+    /// The disco fall (tile 160 → type 2, `WaterfallManager.cs:665-666`)
+    /// reads the SHARED `Main.DiscoR/G/B` statics, not a manager-local cycle:
+    /// `StylizeColor` case 2 (`:1010-1012`) and `AddLight` case 2 (`:1084`).
+    /// The app latches them via `set_disco_rgb` (the `set_show_invisible`
+    /// pattern); the fixture puts the disco ball under the bent column so
+    /// the cell above it converts (`num34 = tile5.type`, `:654-661`).
+    #[test]
+    fn the_disco_fall_reads_the_shared_disco_latch() {
+        let mut w = world_with_air(); // world_surface = 10
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        put_liquid(&mut w, 11, 9, 255);
+        put_liquid(&mut w, 11, 10, 255);
+        // The bent column is x = 9; the ball at (9, 12) converts cell (9, 11).
+        put(&mut w, 9, 12, stone(160));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.set_disco_rgb([255, 0, 0]);
+        let light = LightMap::new(); // unlit: StylizeColor case 2 replaces RGB
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let (lights, _, _) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false,
+        );
+        let out = mgr.take_quads();
+        let disco = out
+            .iter()
+            .find(|d| d.texture == 2 && d.cell == [9, 11])
+            .expect("the cell above the disco ball converts to type 2");
+        // GetAlpha's default arm: y = 11 >= worldSurface 10 → 0.6 damp;
+        // StylizeColor case 2: (int)(255 * 0.6) = 153 on the latched red.
+        assert!((disco.color[0] - 153.0 / 255.0).abs() < 1e-6);
+        assert_eq!(disco.color[1], 0.0);
+        assert_eq!(disco.color[2], 0.0);
+        // AddLight case 2 (`:1084`): DiscoR/255 * 0.2 on the converted cell.
+        assert!(
+            lights.iter().any(|l| l.x == 9 && l.y == 11
+                && (l.rgb[0] - 0.2).abs() < 1e-6 && l.rgb[1] == 0.0 && l.rgb[2] == 0.0),
+            "the disco cell lights with the latched colour"
+        );
+        // A new latch re-tints the next pass (the cycle lives in the app).
+        // `draw`'s head re-arms stop_at_step for every fall (:1121-1123), so
+        // the second pass walks the same cells without a rescan.
+        mgr.set_disco_rgb([0, 255, 0]);
+        mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+        let out = mgr.take_quads();
+        let disco = out
+            .iter()
+            .find(|d| d.texture == 2 && d.cell == [9, 11])
+            .expect("the disco cell still converts");
+        assert_eq!(disco.color[0], 0.0);
+        assert!((disco.color[1] - 153.0 / 255.0).abs() < 1e-6);
+    }
+
+    /// `WaterfallManager.UpdateFrame` (`WaterfallManager.cs:257-323`) has NO
+    /// disco arm — the C# manager carries no `DiscoR/G/B` state at all;
+    /// `Main.DoUpdate_AnimateDiscoRGB` (`Main.cs:19591-19648`) owns the cycle
+    /// and the manager only reads the statics. The port's `update_tick` must
+    /// not advance a private cycle (the old port did, out of phase with the
+    /// app's shared one); the init value is `Main.Initialize`'s `DiscoR = 255`
+    /// (`Main.cs:66780`).
+    #[test]
+    fn update_tick_does_not_cycle_the_disco_rgb() {
+        let mut mgr = WaterfallManager::new();
+        assert_eq!(mgr.disco_rgb(), [255, 0, 0], "Main.Initialize's DiscoR");
+        for _ in 0..300 {
+            mgr.update_tick();
+        }
+        assert_eq!(mgr.disco_rgb(), [255, 0, 0], "no manager-local cycle");
+        // Only the app's latch moves the values.
+        mgr.set_disco_rgb([10, 20, 30]);
+        assert_eq!(mgr.disco_rgb(), [10, 20, 30]);
     }
 }
