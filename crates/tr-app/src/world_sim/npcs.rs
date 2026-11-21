@@ -4576,6 +4576,50 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                                 n.hurt_cd > 0.0,
                                 player_intersects,
                             );
+                            // W4-d22 retire (the S1-E-21e moan-position
+                            // remainder CLOSED) — `AI_003_Fighters`' ambient
+                            // moan arms (`NPC.cs:57336-57367`) run at the
+                            // C# HEAD position: after the idle counter
+                            // (`:57120-57149`), BEFORE the chase arm's
+                            // TargetClosest (`:57369`) and every machine
+                            // draw — the scan's graveyard bash Next(60)
+                            // (`:59997`) included. The gate is the full
+                            // `DespawnEncouragement_AIStyle3_Fighters_
+                            // NotDiscouraged` (`NPC.cs:60300-60330`); the
+                            // kind gate keeps the counter-only walkers (the
+                            // scarecrows 305-314, Splinterling 326, the
+                            // renumbered goblins/pirates — none sits in a
+                            // moan type list) draw-free. The plays gate
+                            // attenuation BEFORE any case draw (the E21e
+                            // convention), on the UpdateNPCs stream.
+                            let npc_type = n.kind.cs_id() as i32;
+                            let not_discouraged = crate::ambient_sound::fighter_not_discouraged(
+                                npc_type,
+                                n.y as f64,
+                                world.world_surface * 16.0,
+                                world.eclipse,
+                                world.day_time,
+                                n.spawned_from_statue,
+                                zone_graveyard,
+                                world.snow_moon,
+                                world.invasion_type,
+                                world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+                                n.ai[1],
+                                n.ai[2],
+                            );
+                            let (nx, ny) = (n.x, n.y);
+                            crate::ambient_sound::fighter_ambient_moans(
+                                npc_type,
+                                n.ai[3],
+                                not_discouraged,
+                                n.shimmer_transparency,
+                                npcs_rng,
+                                &mut |legacy_case, style, rng| {
+                                    audio.play_fighter_moan(legacy_case, style, nx, ny, rng);
+                                },
+                            );
                         }
                     }
                     // The DungeonSpirit's arm (`NPC.AI()`'s aiStyle-56
@@ -4689,11 +4733,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     n.just_hit = false;
                     // S1-E-21g — the AI machine's queued sound plays
                     // (the `wants_hostile_shot` shape): drained right
-                    // after the machine's draws, BEFORE the moan/critter
-                    // emitters — the C#'s plays sit inside `AI()` which
-                    // precedes both (`NPC.cs:90323`). Each play gates
-                    // attenuation BEFORE any case draw (the E21e
-                    // precedent); the draws ride the UpdateNPCs stream.
+                    // after the machine's draws, BEFORE the critter
+                    // emitter — the C#'s plays sit inside `AI()` which
+                    // precedes it (`NPC.cs:90323`). The fighter moans ran
+                    // at the AI HEAD (the pre-slot block above, the W4-d22
+                    // retire fold — the C# `:57338-57367` position). Each
+                    // play gates attenuation BEFORE any case draw (the
+                    // E21e precedent); the draws ride the UpdateNPCs stream.
                     for req in n.wants_sound.drain(..) {
                         play_npc_sound_request(audio, req, npcs_rng);
                     }
@@ -4703,50 +4749,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     if n.look_for_home_timeout > 0 {
                         n.look_for_home_timeout -= 1;
                     }
-                    // S1-E-21e — `AI_003_Fighters`' ambient moan arms
-                    // (`NPC.cs:57336-57367`) ride the AI's tail, after its
-                    // draws and before `UpdateNPC_CritterSounds`
-                    // (`NPC.cs:90323`) — all on the `UpdateNPCs` stream
-                    // (`Main.cs:17767`). The gate is the full
-                    // `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
-                    // (`NPC.cs:60300-60330`, `fighter_not_discouraged`):
-                    // the event/exclusion terms and the switch's critter-set
-                    // default all ride along — the excluded moan types (the
-                    // mummies, the face monster, …) are not discouraged even
-                    // by day above the surface. The kind gate keeps the
-                    // counter-only walkers (the scarecrows 305-314,
-                    // Splinterling 326, the renumbered goblins/pirates)
-                    // draw-free.
-                    if crate::ambient_sound::fighter_walker_kind(n.kind) {
-                        let npc_type = n.kind.cs_id() as i32;
-                        let not_discouraged = crate::ambient_sound::fighter_not_discouraged(
-                            npc_type,
-                            n.y as f64,
-                            world.world_surface * 16.0,
-                            world.eclipse,
-                            world.day_time,
-                            n.spawned_from_statue,
-                            zone_graveyard,
-                            world.snow_moon,
-                            world.invasion_type,
-                            world
-                                .seeds
-                                .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
-                            n.ai[1],
-                            n.ai[2],
-                        );
-                        let (nx, ny) = (n.x, n.y);
-                        crate::ambient_sound::fighter_ambient_moans(
-                            npc_type,
-                            n.ai[3],
-                            not_discouraged,
-                            n.shimmer_transparency,
-                            npcs_rng,
-                            &mut |legacy_case, style, rng| {
-                                audio.play_fighter_moan(legacy_case, style, nx, ny, rng);
-                            },
-                        );
-                    }
+                    // S1-E-21e — the fighter ambient moans MOVED to the
+                    // pre-slot head block (the W4-d22 retire fold: the C#
+                    // rolls them at `:57338-57367` BEFORE the machine's
+                    // draws; the old sim-tail position put the graveyard
+                    // bash Next(60) ahead of the moan Next(1000) — the
+                    // documented remainder, now closed).
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
                     // sounds ride the same per-NPC stream after the AI's
                     // draws — the table's rolls, then the legacy family's
@@ -17390,12 +17398,12 @@ mod dw3_tests {
         let mut twin = Npc::new(NpcKind::Zombie, 21.0 * 16.0, 70.0 * 16.0, 1, 0.0);
         twin.hp = twin.max_hp;
         let mut twin_rng = UnifiedRandom::new(a.world.seed as i32);
-        twin.update_rng(&twin_world, &mut twin_player, 1.0 / 60.0, &mut twin_rng);
-        // S1-E-21e: `AI_003_Fighters`' ambient-moan arms (`NPC.cs:57336-57367`)
-        // ride the SAME `UpdateNPCs` stream after the AI's draws — the C#
-        // `UpdateNPC` includes them, so the twin replays the gate + arms too
-        // (the fixture's default world opens the NotDiscouraged gate; the
-        // type-3 arm spends its `Next(1000)` roll every tick).
+        // S1-E-21e (the W4-d22 retire position): `AI_003_Fighters`' ambient-
+        // moan arms (`NPC.cs:57338-57367`) roll at the AI HEAD — BEFORE the
+        // machine's own draws — on the SAME `UpdateNPCs` stream. The twin
+        // replays the gate + arms FIRST (the fixture's default world opens
+        // the NotDiscouraged gate; the type-3 arm spends its `Next(1000)`
+        // roll every tick), then the AI's draws (zero here: no graveyard).
         let twin_not_discouraged = crate::ambient_sound::fighter_not_discouraged(
             twin.kind.cs_id() as i32,
             twin.y as f64,
@@ -17420,6 +17428,9 @@ mod dw3_tests {
             &mut twin_rng,
             &mut |_, _, _| {},
         );
+        // Then the machine's own draws (the zombie fold draws zero outside
+        // a graveyard — the call keeps the replay's shape honest).
+        twin.update_rng(&twin_world, &mut twin_player, 1.0 / 60.0, &mut twin_rng);
         assert_eq!(after, twin_rng, "one AI tick == one update_rng draw shape");
 
         // No other stage stream moved (the AI group's isolation).
@@ -17647,8 +17658,10 @@ mod dw3_tests {
     /// S1-E-21e — the fighter-moan wiring's stream contract: the idle counter
     /// ticks BEFORE `update_rng` (the `old_x` still holds the prior-tick
     /// stamp, `NPC.cs:57126`'s `oldPosition.X` read) and the moan arms run
-    /// AFTER the AI's draws, BEFORE the critter emitter (`NPC.cs:57336` vs
-    /// `:90323`), all on the `UpdateNPCs` stream (`Main.cs:17767`). A lone
+    /// at the AI HEAD — after the counter, BEFORE the machine's draws
+    /// (`NPC.cs:57338-57367`; the W4-d22 retire fold closed the old
+    /// sim-tail position), all on the `UpdateNPCs` stream (`Main.cs:17767`).
+    /// A lone
     /// stuck zombie above the surface: by day the `NotDiscouraged` gate is
     /// closed (`NPC.cs:60302`) and the pass is draw-free; by night the gate
     /// opens and the type-3 arm spends exactly one `Next(1000)` roll plus the
@@ -17969,10 +17982,12 @@ mod dw3_tests {
     /// wiring end to end: the sim pre-stamps `target_zone_graveyard` from
     /// `scene_metrics.zone_graveyard` (the d120 biome pass), and a 60-tick
     /// bash inside the zone spends exactly one `Next(60)` on the
-    /// `UpdateNPCs` stream (`NPC.cs:59997`). The twin replays the scan
-    /// draw + the sim-tail moan roll (the S1-E-21e position convention);
-    /// outside the zone the same fixture is draw-free apart from the moan
-    /// (the legacy census). WRITTEN NOT RUN.
+    /// `UpdateNPCs` stream (`NPC.cs:59997`). W4-d22 retire: the twin
+    /// replays the C# DRAW ORDER — the moan head (`:57338-57367`) rolls
+    /// BEFORE the scan's bash draw (the S1-E-21e position remainder
+    /// CLOSED; the pre-retire port rolled them bash-first at the sim
+    /// tail); outside the zone the same fixture is draw-free apart from
+    /// the moan (the legacy census). WRITTEN NOT RUN.
     #[test]
     fn w4_g4_the_graveyard_bash_draws_on_the_update_npcs_stream() {
         use tr_core::tile::{Tile, FLAG_ACTIVE};
@@ -18007,25 +18022,29 @@ mod dw3_tests {
             app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
             app
         };
-        // Inside the graveyard: one Next(60) ahead of the moan roll.
+        // Inside the graveyard: the moan head's Next(1000) FIRST, then
+        // the scan's one Next(60) — the C# order (`:57340` before `:59997`).
         let mut a = build(true);
         update_npcs(&mut a, 1.0 / 60.0);
         assert!(a.npcs[0].target_zone_graveyard, "the pre-stamp landed");
         assert!(a.npcs[0].wants_door_bash.is_none(), "the bash drained");
         let after = a.rngs.stream(RngKey::UpdateNpcs).clone();
         let mut twin_rng = UnifiedRandom::new(a.world.seed as i32);
-        let _bash = twin_rng.next_max(60); // the scan's ONE draw (:59997)
-        // The sim-tail moan (the DW-3.1 replay shape): the night gate
-        // passes, the type-3 arm spends its Next(1000).
+        // The moan head (the W4-d22 retire position): the night gate
+        // passes, the type-3 arm spends its Next(1000) BEFORE any machine
+        // draw. The bash resets ai[3] to 0 (`:59993`) AFTER the moan gate
+        // read it; the twin replays with 0 — the gate only tests `< 60`,
+        // so the pre-bash counter's exact value (0 or 1) is draw-neutral.
         crate::ambient_sound::fighter_ambient_moans(
             3,
-            a.npcs[0].ai[3],
+            0.0,
             true,
             a.npcs[0].shimmer_transparency,
             &mut twin_rng,
             &mut |_, _, _| {},
         );
-        assert_eq!(after, twin_rng, "bash Next(60) + moan Next(1000), in order");
+        let _bash = twin_rng.next_max(60); // the scan's ONE draw (:59997)
+        assert_eq!(after, twin_rng, "moan Next(1000) + bash Next(60), in order");
         // Outside the graveyard: the zone guard short-circuits — the
         // stream carries ONLY the moan roll (the legacy zero-draw bash).
         let mut b = build(false);

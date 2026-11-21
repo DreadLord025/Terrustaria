@@ -26385,8 +26385,11 @@ whose `ai[3]` is free) + `Audio::play_fighter_moan` (gate first, then
 вЂ” detach-not-stop on the slot overwrite). Wiring in `world_sim/npcs.rs`'s
 per-NPC loop: the counter BEFORE `update_rng` (the port's `old_x` still
 holds the prior tick's pre-integration stamp вЂ” `update_rng` re-stamps it
-first, `npc.rs:3237`, matching `NPC.cs:92605`'s order), the moans AFTER
-the AI's draws and BEFORE the critter emitter (`NPC.cs:90323`). The
+first, `npc.rs:3237`, matching `NPC.cs:92605`'s order), the moans right
+after the counter in the SAME pre-slot head block — the C# `:57338`
+position, BEFORE the machine's draws (the W4-d22 retire fold; the
+original wave-E wiring ran them after the AI's draws, before the critter
+emitter — that position deviation is CLOSED). The
 graveyard term pre-extracts from `scene_metrics.zone_graveyard`.
 `Zombie_0..8`, `Zombie_21..23`, `Zombie_109` join `SFX_CUES`; case 45's
 duck arm lands table-complete (the `NPC.cs:23678-23681` call site awaits
@@ -33481,9 +33484,11 @@ the worm dig cadence — 19 call sites across 10 machines.
 **The queue seam.** The AI machines run without the `Audio` borrow, so
 the sites queue `NpcSoundRequest` on `Npc::wants_sound` (the
 `wants_hostile_shot` shape). `world_sim/npcs.rs` drains per NPC right
-after `update_rng` — BEFORE the moan/critter emitters (the C#'s plays
+after `update_rng` — BEFORE the critter emitter (the C#'s plays
 sit inside `AI()`, which precedes `UpdateNPC_CritterSounds`,
-`NPC.cs:90323`) — and the worm pass drains its own queue after the
+`NPC.cs:90323`; the fighter moans ran here too until the W4-d22 retire
+fold moved them to the pre-slot head position, the C# `:57338` order) —
+and the worm pass drains its own queue after the
 chain walk. Every play method gates attenuation BEFORE any case draw
 (the E21e precedent, `LegacySoundPlayer.cs:369-436` precedes the type
 switch); the draws ride the `UpdateNPCs` stream (`Main.cs:17767`).
@@ -39264,10 +39269,11 @@ Deliberate folds (documented):
   holds the prior-tick stamp there, `update_preamble` overwrites it before
   the core runs). `fighter_walker_kind` extended to the newly claimed
   kinds; none sits in the moan type lists, so the emitter stays draw-free.
-- The ambient moans (`:57338-57367`) ride the sim's post-AI emitter on the
-  UpdateNPCs stream — the core draws ZERO rand for the claimed set OUTSIDE
-  a graveyard; the W4-g4 reconcile (below) threads the ONE conditional
-  bash draw inside one.
+- The ambient moans (`:57338-57367`) ride the sim's PRE-SLOT head emitter on
+  the UpdateNPCs stream (the W4-d22 retire fold — the C# head position,
+  the old post-AI position retired) — the core draws ZERO rand for the
+  claimed set OUTSIDE a graveyard; the W4-g4 reconcile (below) threads the
+  ONE conditional bash draw inside one.
 - The zombie family keeps its byte-identical `update_zombie` fold; the
   frost siblings 338-352 keep `npc_ai_frost_mob`; the shooters and the
   martian head-arm kinds (386 turret-spawn / 389 zap / 383 bubble / 520
@@ -39313,8 +39319,11 @@ reconcile folds the keep-both contract (g4's `research/91` +
    the chain term through `fighters_not_discouraged` (no local re-fold).
    Outside a graveyard the `&&` short-circuits — the claimed set stays
    draw-free (the legacy census); inside, one `Next(60)` per 60-tick
-   bash, ahead of the sim-tail moan (the S1-E-21e position remainder
-   extended by one conditional draw). Witnesses: the four P5 pins +
+   bash. (Position note: at reconcile time the moans still rode the sim
+   tail, so the bash draw preceded the moan — the W4-d22 retire phase
+   CLOSED that remainder: the moan emitter moved to the pre-slot head
+   position, the C# order, see "The fighter retire" below.) Witnesses:
+   the four P5 pins +
    `w4_d22_the_axis_scan_g_carries_the_same_graveyard_gate` +
    `w4_d22_the_core_threads_the_graveyard_bash_draw` (written not run).
 2. **The tall-gate bash (P4 `53063dd1`).** `tr_core::edit::shift_tall_gate`
@@ -39398,6 +39407,47 @@ census fixes in `c1d26278`/`204e0651`/`b24977d9` (this branch).
 Verification: code-only — the folds re-read against the cited C# windows
 and the g4 diffs; brace-balance delta-checked per file; the witnesses
 WRITTEN, NOT RUN.
+## W4-d22 retire — the fighter retire (code-only)
+
+### The moan-position remainder CLOSED (S1-E-21e)
+
+The C# `AI_003_Fighters` rolls its seven ambient-moan arms at the AI HEAD
+(`NPC.cs:57336-57367`): after the idle counter (`:57120-57149`), under
+the `ai[3] < num57 && NotDiscouraged` gate, BEFORE `TargetClosest`
+(`:57369`), the velocity ladder, and every draw the machine makes — the
+scan's graveyard bash `Next(60)` (`:59997`) included. The wave-E wiring
+ran the moans at the SIM TAIL (after `update_rng_dust_gore`, before the
+critter emitter): the draw count per tick was exact, but in a graveyard
+the bash draw preceded the moan roll — the documented S1-E-21e position
+remainder, extended by the W4-g4 P5 reconcile's one conditional draw.
+
+The retire fold moves the emitter to the C# position: the moan gate +
+arms now run in the sim's PRE-SLOT head block (`world_sim/npcs.rs`,
+right after `fighter_idle_counter`, inside the same
+`fighter_walker_kind` gate), on the same `UpdateNPCs` stream. The
+`wants_sound` drain keeps its post-machine position (the C#'s machine
+plays sit inside `AI()`, AFTER the moan rolls — unchanged); the critter
+emitter keeps the tail (the C# `:90323` order — unchanged). The moan
+inputs (`y`, `spawned_from_statue`, `ai[1]`, `ai[2]`, `shimmer`) are all
+pre-AI values in the C# too — the head block reads the same ones the
+tail read, so the gate's value is unchanged; only the DRAW POSITION
+moves. For the axis-claimed 22 (no moan-list id) the emitter stays
+draw-free; for the zombie family the one `Next(1000)`/`Next(800)` now
+lands BEFORE the machine's draws, exactly the C# order. The graveyard
+end-to-end witness (`w4_g4_the_graveyard_bash_draws_on_the_update_npcs_stream`)
+replays moan-then-bash; the DW-3.1 twin replays the moan head first
+(the zombie fold draws zero outside a graveyard, so the equality is
+order-agnostic there, but the replay mirrors the C#).
+
+Witnesses re-derived (written not run): the graveyard end-to-end pair +
+the DW-3.1 replay; `s1_e_21e_the_moan_wiring_draws_on_the_npc_stream`
+holds unchanged (its fixture is draw-free apart from the moan). The
+module headers (`npc_ai_style3.rs`, `npc_ai_fighter_scan.rs`) + the
+wave-E/wave-G/reconcile ANALYSIS notes carry the new position.
+
+Verification: code-only — the C# head window re-read (`:57030-57401`),
+the sim block moved wholesale (no gate/arm change); brace-balance
+delta-checked (0/0 on all three touched .rs files).
 ## W4-d22 — the aiStyle-4 EoC RNG census + fix (code-only)
 
 The Eye of Cthulhu (`NPC.cs:19960-20801`) rode the kind-match arm

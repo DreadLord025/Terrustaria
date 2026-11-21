@@ -18,16 +18,19 @@
 //! runs `ambient_sound::fighter_idle_counter` pre-AI for every
 //! `fighter_walker_kind` (S1-E-21e — `old_x` holds the prior-tick stamp
 //! there; `update_preamble` overwrites it before this core runs). The
-//! ambient moans (`:57338-57367`) likewise ride the sim's post-AI emitter
-//! on the `UpdateNPCs` stream. RNG census (the W4-d22/g4 reconcile): the
+//! ambient moans (`:57338-57367`) ride the sim's PRE-SLOT head emitter on
+//! the `UpdateNPCs` stream (the W4-d22 retire fold — the C# rolls them at
+//! the AI head BEFORE the machine's draws; the old sim-tail position is
+//! retired). RNG census (the W4-d22/g4 reconcile): the
 //! core draws ZERO rand for every claimed kind OUTSIDE a graveyard (the
 //! moan type lists name none of them; the ladder/scan are draw-free); the
 //! ONE possible draw is the bash's graveyard gate `Next(60)`
 //! (`NPC.cs:59997`, W4-g4 lane 15) — the sim pre-stamps
 //! `Npc::target_zone_graveyard` and the core threads the caller's
 //! `UpdateNPCs` stream into the scan (the signature union). In a
-//! graveyard the bash draw precedes the sim-tail moan draw (the S1-E-21e
-//! moan-position remainder, extended by one conditional draw).
+//! graveyard the moan head draws first (none for the claimed set), then
+//! the bash's conditional draw — the C# order, the S1-E-21e
+//! moan-position remainder CLOSED.
 //!
 //! Deferred per-type HEAD machines (documented, they sit BEFORE the core
 //! in the C# and are out of this lane's scope): the GigaZapper 389's
@@ -111,7 +114,7 @@ pub(crate) fn fighter_core_step(
     // `:57120-57149` — the idle counter: the sim's pre-pass ticked it
     // (S1-E-21e); no re-tick here (the module header).
     // `:57336` — the chase gate; `:57338-57367` the moan arms ride the
-    // sim's post-AI emitter (zero draws for the claimed set).
+    // sim's PRE-SLOT head emitter (zero draws for the claimed set).
     if npc.ai[3] < num57 && crate::npc_ai::fighters_not_discouraged(npc, world) {
         // `:57369` — the shared selection (the S1-D-3p candidate seam).
         let cand = crate::npc_target::session_candidate_for(player, npc.kind);

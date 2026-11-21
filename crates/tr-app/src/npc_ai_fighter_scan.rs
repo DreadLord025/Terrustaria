@@ -38,12 +38,12 @@
 //! and ZERO draws are consumed (the legacy census holds for every
 //! non-graveyard tick — the axis core stays draw-free there); inside one,
 //! each 60-tick bash spends exactly one `Next(60)`. The ladder, the
-//! step-up and the ground probe draw nothing. NOTE the draw position: the
-//! C# rolls it inside `AI_003_Fighters`' scan tail, AFTER the head's moan
-//! rolls (`:57340-57367`); the port's moans ride the sim tail after
-//! `update_rng` (the S1-E-21e deviation), so in a graveyard the bash draw
-//! precedes the moan draw — the same documented moan-position remainder,
-//! extended by one conditional draw. The bash's world mutation
+//! step-up and the ground probe draw nothing. Draw position (the W4-d22
+//! retire fold): the C# rolls the moans at the head (`:57340-57367`)
+//! BEFORE this scan's bash draw (`:59997`); the port's moan emitter now
+//! runs at the sim's PRE-SLOT head position (the C# order — the old
+//! sim-tail position that put the bash draw first is retired, the
+//! S1-E-21e moan-position remainder CLOSED). The bash's world mutation
 //! (`WorldGen.OpenDoor`) rides the
 //! `Npc::wants_door_bash` request drained in `world_sim/npcs.rs` (the
 //! `wants_sphere` borrow-safe shape); the `KillTile(fail: true)` thud and
