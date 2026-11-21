@@ -152,6 +152,18 @@
 //!   g60's).
 //! - 83895 — 460 (`:83889-83896`): ×100 dust 5.
 //! - 83917/83939 — 477/479 (`:83911-83940`): ×100 dust 237.
+//! Batch 11 (the critter/zombie-variant live arms):
+//! - 86648 — 252 (`:86642-86650`): ×100 dust 5.
+//! - 86665 — 489/586 (`:86659-86667`): ×100 dust 5.
+//! - 86696 — 534 (`:86690-86698`): ×100 dust 5.
+//! - 86716 — 490 (`:86710-86718`): ×100 dust 5.
+//! - 86736 — the shark group 65/542-545/692 (`:86730-86738`): ×150
+//!   dust 5.
+//! - 86793 — 195/196 (`:86787-86795`): ×150 dust 5.
+//! - 86811 — 198/199 (`:86807-86815`): ×150 dust 5.
+//! - 86834 — 206 (`:86828-86836`): ×150 dust 137.
+//! - 86854 — 342 (`:86848-86856`): ×100 dust 0.
+//! - 86874 — the Zombie Elf trio 338-340 (`:86868-86876`): ×100 dust 5.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -816,6 +828,38 @@ pub fn replay_hit_dust(
         477 | 479 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 237, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86642-86718` — the ×100 dust-5 critter/zombie arms (252,
+        // 489/586, 534, 490): the death halves' gore batches are g60/d55's.
+        252 | 489 | 586 | 534 | 490 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86730-86815` — the ×150 dust-5 groups: the shark family
+        // (65/542-545/692) and the blood-zombie pairs (195/196, 198/199).
+        65 | 542..=545 | 692 | 195 | 196 | 198 | 199 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 150.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86828-86836` — 206: ×150 dust 137.
+        206 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 150.0) {
+                live_dust(s, 137, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86848-86856` — 342: ×100 dust 0 (the plain smoke).
+        342 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 0, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86868-86876` — the Zombie Elf trio: ×100 dust 5.
+        338..=340 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -1777,6 +1821,29 @@ mod tests {
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt && d.alpha == alpha), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 11 — the ×150 groups and the dust-137/0 rows
+    /// (`NPC.cs:86734`/`:86791`/`:86811`/`:86832`/`:86852`/`:86872`).
+    #[test]
+    fn w4_g62_the_batch11_rows() {
+        let world = air();
+        let ctx = ctx();
+        for (t, dt, mult) in [
+            (252, 5, 100.0), (489, 5, 100.0), (534, 5, 100.0), (490, 5, 100.0),
+            (65, 5, 150.0), (542, 5, 150.0), (692, 5, 150.0),
+            (195, 5, 150.0), (198, 5, 150.0),
+            (206, 137, 150.0), (342, 0, 100.0), (338, 5, 100.0), (340, 5, 100.0),
+        ] {
+            let s = snap(t, 100, 100, 10.0);
+            let want = hit_count(10.0, 100, mult);
+            let mut r = UnifiedRandom::new(113);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
         }
     }
 }
