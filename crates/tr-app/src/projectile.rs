@@ -20219,6 +20219,48 @@ impl ProjectilePool {
             // `:75646` — the Shuriken / Throwing Knife / Poisoned Knife's
             // Dig thud (the unrowed 599/909 siblings stay out).
             3 | 48 | 54 => Some((0, 0, pos.x, pos.y)),
+            // `:75662` — the Unholy Arrow's Dig thud.
+            4 => Some((0, 0, pos.x, pos.y)),
+            // `:75670` — the Jester's Arrow's Item10.
+            5 => Some((2, 10, pos.x, pos.y)),
+            // `:75683` — the Starfury / Star Cannon star's Item10 (the
+            // unrowed 12/503 siblings stay out; the 12/955 dust rings are
+            // the visual skip).
+            9 | 955 => Some((2, 10, pos.x, pos.y)),
+            // `:75857` — the hostile Cannonball's Item14 BEFORE the 96×96
+            // centre-snap (`:75887`); the resize/Damage burst is the
+            // unported state remainder (the cue precedes every write).
+            240 => Some((2, 14, pos.x, pos.y)),
+            // `:75901` — the Venom Arrow's Item10.
+            282 => Some((2, 10, pos.x, pos.y)),
+            // `:75913` — the Venom Bullet's Item10 BEFORE the debuff-spread
+            // resize (`venom_burst_spread` runs below the hook).
+            283 => Some((2, 10, pos.x, pos.y)),
+            // `:76002` — the Exploding Bullet's Item14 BEFORE the AoE
+            // resize (`exploding_bullet_burst` runs below the hook).
+            286 => Some((2, 14, pos.x, pos.y)),
+            // `:76038` — the common bullet arm's Item10 (the ported subset
+            // of the C#'s 24-kind list; the unrowed 257/302/576/577/876
+            // siblings stay out).
+            14 | 20 | 36 | 83 | 84 | 88 | 100 | 104 | 110 | 180 | 207 | 242 | 259
+            | 279 | 285 | 287 | 357 | 389 | 968 => Some((2, 10, pos.x, pos.y)),
+            // `:76053` — the Shimmer Arrow's Dig thud (the Vector2 int
+            // overload `PlaySound(0, base.position)`).
+            1006 => Some((0, 0, pos.x, pos.y)),
+            // `:76070` — the Sky Fracture's Item10.
+            660 => Some((2, 10, pos.x, pos.y)),
+            // `:76122` — the Moonlord Bullet's Item10.
+            638 => Some((2, 10, pos.x, pos.y)),
+            // `:76136` — the Ball of Fire's Item10 (the unrowed 321
+            // sibling stays out).
+            15 => Some((2, 10, pos.x, pos.y)),
+            // `:76148` — the Ball of Frost's Item10.
+            253 => Some((2, 10, pos.x, pos.y)),
+            // `:76160` — the friendly/hostile Cursed Flame's Item10.
+            95 | 96 => Some((2, 10, pos.x, pos.y)),
+            // `:76180` — the Sand Ball (gun)'s Dig thud (the unrowed 31
+            // falling sibling stays out).
+            42 => Some((0, 0, pos.x, pos.y)),
             _ => None,
         };
         if let Some((id, style, x, y)) = cue {
@@ -24090,6 +24132,61 @@ mod s1_e_21h_sound_tests {
             }
             pool.kill(slot);
         }
+    }
+
+    /// S1-E-21h d77 — the cue map batch 4 (sites `:75662`-`:76180`): the
+    /// star/bullet/caster Item10 family, the cannonball/venom/exploding
+    /// cue-before-resize arms and the Shimmer Arrow / sand-ball Dig thuds.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn s1_e_21h_d77_the_kill_tail_cue_map_batch4() {
+        let mut pool = ProjectilePool::new();
+        let cases: [(u16, (u16, i32)); 15] = [
+            (4, (0, 0)),
+            (5, (2, 10)),
+            (9, (2, 10)),
+            (955, (2, 10)),
+            (240, (2, 14)),
+            (282, (2, 10)),
+            (283, (2, 10)),
+            (286, (2, 14)),
+            (14, (2, 10)),
+            (1006, (0, 0)),
+            (660, (2, 10)),
+            (638, (2, 10)),
+            (15, (2, 10)),
+            (253, (2, 10)),
+            (42, (0, 0)),
+        ];
+        for (kind, want) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue");
+            assert_eq!((queued[0].0, queued[0].1), want, "kind {kind}'s payload");
+            pool.kill(slot);
+        }
+        // The common-bullet arm's full ported subset shares :76038.
+        for kind in [20u16, 36, 83, 84, 88, 100, 104, 110, 180, 207, 242, 259, 279, 285, 287, 357, 389, 968] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the bullet row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue");
+            assert_eq!((queued[0].0, queued[0].1), (2, 10), "kind {kind}'s Item10");
+            pool.kill(slot);
+        }
+        // The cursed-flame pair shares :76160.
+        let slot = pool
+            .spawn_with_data_ai_owned(96, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the flame row spawns");
+        pool.kill_tail_cue(slot);
+        let queued = pool.drain_proj_sounds();
+        assert_eq!(queued.len(), 1);
+        assert_eq!((queued[0].0, queued[0].1), (2, 10));
     }
 }
 
