@@ -864,7 +864,11 @@ impl App {
                         wind.wind_grid.set_size(vx1 - vx0, vy1 - vy0);
                         wind.wind_grid.update();
                         if wind.sway_enabled {
-                            if let Some(p) = player.as_ref() {
+                            // `WindGrid.cs:91`: the `!player.active || player.dead`
+                            // head gates — a dead player's corpse drift must not
+                            // stamp gusts (W4-g68 final-phase census fix; the
+                            // active half is the `Some(p)` itself).
+                            if let Some(p) = player.as_ref().filter(|p| !p.dead) {
                                 wind.scan_player(
                                     world,
                                     (p.x, p.y),
@@ -2282,5 +2286,29 @@ mod s1_p_i53_tests {
         // The next press fires again.
         app.place_down = true;
         assert!(app.buff_cancel_gate());
+    }
+
+    /// W4-g68 final-phase census: the WindGrid scan call site carries the
+    /// `WindGrid.cs:91` dead-player gate — `!player.active || player.dead`
+    /// refuses the stamp (a drifting corpse must not push grass/vines).
+    /// The `active` half is the `Option` itself; the `dead` half is the
+    /// `.filter(|p| !p.dead)` on the scan's player borrow. Source pin (the
+    /// `tiles.rs` include_str convention — the draw pass needs a GPU).
+    #[test]
+    fn w4_g68_the_wind_grid_scan_gates_the_dead_player() {
+        let src = include_str!("draw.rs");
+        let scan = &src[src.find("wind.scan_player(").unwrap()..];
+        let head = &src[..src.find("wind.scan_player(").unwrap()];
+        let borrow = &head[head.rfind("if let Some(p) = player.as_ref()").unwrap()..];
+        assert!(
+            borrow.contains(".filter(|p| !p.dead)"),
+            "the scan's player borrow filters the dead (WindGrid.cs:91)"
+        );
+        // The gate sits INSIDE the sway-enabled arm (the C# ScanPlayers
+        // runs under SettingsEnabled_TilesSwayInWind, WindGrid.cs:35-38).
+        let sway = head.rfind("if wind.sway_enabled").unwrap();
+        let filt = head.rfind(".filter(|p| !p.dead)").unwrap();
+        assert!(sway < filt && filt < head.len(), "the gate order");
+        assert!(scan.starts_with("wind.scan_player("));
     }
 }
