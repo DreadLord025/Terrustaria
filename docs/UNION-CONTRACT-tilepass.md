@@ -1,11 +1,13 @@
 # UNION-CONTRACT — the tile-draw pass family (g28/g29/g30/g31/g32) + the d56–d60 seam census
 
-**STATUS: EXECUTED** (union-exec phase, same branch
-`task/W4-g31-tile-draw-pass-4`, code-only). The §1–§3 keep/drop/rebind
-prescription below was carried out IN-LANE on this branch — see §7 for
-the execution record (commit hashes, per-file outcomes, the census
-delta). §4 (the tiles.rs bind order) and §5 (the d-lane seams) remain
-the wiring wave's script: `render/tiles.rs` is UNTOUCHED (contested).
+**STATUS: EXECUTED + ATTACHED (shadow)** (union-exec + attach phases,
+same branch `task/W4-g31-tile-draw-pass-4`, code-only). The §1–§3
+keep/drop/rebind prescription was carried out IN-LANE — see §7 for the
+execution record. The attach phase censused the d-lane tips against
+the union driver shape and wired the union into `render/tiles.rs`
+behind `TR_TILEPASS` (default OFF, PLAN-ONLY) — see §8 for the verdict,
+the exact seam signatures and the pixel-merge script (§4 made
+concrete). The ctor-draw residual is CLOSED (`render/tile_ctor.rs`).
 
 Merger assist for the TILE-PASS 5-WAY UNION. Written on `task/W4-g31-tile-draw-pass-4`
 (reconcile phase, code-only — NO code changes to any lane; this document is the
@@ -488,4 +490,199 @@ and 8 g32-dup witnesses fold into the named survivors (§3 tables).
 `render/tiles.rs::draw_tiles` untouched. The §4 checklist is the wiring
 script; the §5 d-lane census (d58/d59 WIRED hunk zones, the
 special_tiles.rs doc/chest-deletion resolution) applies at the family
-merge with the d-lanes.
+merge with the d-lanes. *(Superseded by the attach phase below: the
+shadow attach landed behind `TR_TILEPASS`, §8.)*
+
+---
+
+## 8. ATTACH-CONTRACT ADDENDUM (attach phase, this branch)
+
+Executed on `task/W4-g31-tile-draw-pass-4` on top of the union-exec
+(`c3027a38`), code-only. Two commits: `8d7a3532` (F1, the ctor-draw
+residual) + `2f5e0698`/`a584eb57` (F2, the gated shadow attach). This
+section is the census verdict, the exact seam signatures each d-lane
+must call, and the merger wiring instructions for the PIXEL binding.
+
+### 8.1 Census verdict — compatible for a SHADOW attach, not for a gate-flip pixel swap
+
+Re-read the pushed tips (§5 census confirmed, d56 `5d80b38a` / d57
+`70f43aa7` / d58 `a13635dc` / d59 `f70498be` / d60 `77429fe1`):
+
+* **d56/d57/d60 UNWIRED** — module-only payloads (`animated_tiles.rs`,
+  `te_furniture.rs`, `tile_draw_particles.rs`); their attach claims are
+  REPLACEMENTS of fused-loop regions (d56: the dark-cell merge +
+  `IsVisible` gates `tiles.rs:786-848` and the actuation-ghost `l`
+  `:610-619`; d60: the inline 192-leaf arm `:1078-1122`; d57: the
+  `DrawSpecialTilesLegacy` arms + the two TE post passes). None of them
+  can bind until the fused loop is split — they are the
+  `classify_and_draw_cell` / `post_draw_pass(TE)` seam IMPLEMENTATIONS.
+* **d58/d59 WIRED** — unconditional per-cell hunks INSIDE the fused
+  loop (d58: the `chests` parameter + the per-draw `_chestPositions`
+  HashMap + the BasicChest rewrite after the drawdata dispatch; d59:
+  the slope family inside the per-cell dispatch). No env gate — the
+  "gate pattern the lanes use" is the `env.rs` named-accessor
+  convention (`TR_NO_FOLIAGE`/`TR_SHOW_INVISIBLE`/…), which the shadow
+  attach follows (`env::tilepass_shadow`, `TR_TILEPASS`, default OFF).
+* **The union driver shape** (`draw_layer` + `TilePassSeams`, the
+  12-step `post_draw_tiles` → `drain_pass_for_post_step` →
+  `drain_one_pass` map) is a STRUCTURAL replacement of the whole fused
+  walk: its `classify_and_draw_cell` seam must own the per-cell
+  `DrawSingleTile` body — which exists ONLY as the fused loop itself
+  (no standalone port). A pixel-binding attach therefore cannot be a
+  drop-in call beside the fused loop; it is the §4 split, done at the
+  family merge WITH the d-lane hunks folded into the seam impl.
+
+**Consequence (executed):** the union is wired into `tiles.rs` as a
+PLAN-ONLY shadow (`render/tile_attach.rs`, `TR_TILEPASS` default OFF)
+at the C# `PostDrawTiles` position — the real orchestration, registry
+and drain binds run over the live world every rebuild, proving the
+seam shapes compile and the plans are frame-deterministic, while zero
+pixels/streams/shared state move. The pixel binding is §8.3's script.
+
+### 8.2 Exact seam signatures (the attach contract each lane binds)
+
+All paths `crates/tr-app/src/render/` unless noted. These are the
+EXECUTED union signatures (post-fold, this branch) — a d-lane binding
+against any other shape is stale.
+
+**The driver calls (g29 `tile_pass.rs`):**
+
+```rust
+pub(crate) fn draw_layer(
+    world: &World,
+    inputs: &DrawLayerInputs,
+    is_tile_draw_layer_solid: fn(u16) -> bool,   // = special_points::is_tile_draw_layer_solid
+    seams: &mut impl TilePassSeams,
+) -> ScreenDrawArea;
+pub(crate) fn draw_liquid_behind_tiles(world: &World, inputs: &DrawLayerInputs, seams: &mut impl TilePassSeams);
+pub(crate) fn post_draw_tiles(solid_layer: bool, seams: &mut impl TilePassSeams);
+```
+
+`DrawLayerInputs` fields (all `pub`): `solid_layer`,
+`into_render_targets`, `gfx_quality: f32`, `dev_light_tiles_cheat`,
+`martian_light: f32`, `draw_to_screen`, `off_screen_range: i32`,
+`scaled_position/scaled_size/screen_position: [f32; 2]`,
+`allow_emit_effects`, `sway_enabled`, `any_unfinished_sections`,
+`any_need_refresh`, `preview_gate: PlacementPreviewGate`,
+`preview_is_kite`, `preview_hold_style: i32`,
+`preview_frames_in_movement: i32`.
+
+**`TilePassSeams` — every method is one C# call; the d-lane bind column
+is the merger's obligation:**
+
+| Method (exact signature) | C# site | Pixel-merge bind |
+|---|---|---|
+| `ensure_wind_grid_size(&mut self, width: i32, height: i32)` | `:476`/`:7773-7777` | g32 `tile_draw_pass::ensure_wind_grid_size(&fresh_area, &mut wind.wind_grid)` — the SHARED grid (the S1-G-8 update-site sizing `app/frame/draw.rs:862` then drops; the draw-site probe is C#'s) |
+| `clear_legacy_cache(&mut self, step: LegacyCacheClear)` | `:477`/`:6613-6622` | g32 `LegacyCaches::clear_legacy_step(step)`; the `ChestPositions` step ALSO clears d58's per-draw HashMap (its wired implementation is the storage; §5 d58) |
+| `clear_layer_cache(&mut self, step: LayerCacheClear)` | `:478`/`:6588-6599` | g32 `LegacyCaches::clear_layer_step(step)`; the returned `true` (`SpecialBlockCounts`) chains g30 `SpecialPoints::clear_special_block_counts()` |
+| `rebuild_quality_light_tiers(&mut self, gfx_quality: f32, dev_cheat: bool)` | `:479-495` | g28 `tr_render::quality_light::quality_light_tiers(q, false)` → the impl stores `QualityLightTiers`; the per-cell sliced arm reads `tiers.slice_arm(tr_render::quality_light::tile_light_bytes(raw_l, style.brightness))` (replaces the fused loop's float `HIGH_LIGHT`/`MEDIUM_LIGHT` compares — research/09 deviation 11) |
+| `reset_critter_cage(&mut self)` | `:472-475` | `Main.critterCage = false` — no port global yet; the special_tiles.rs:375 consumer binds when the critter family lands |
+| `set_martian_glow(&mut self, b: u8)` | `:498-499` | store `[b, b, b, 0]` (the g28 quad fold); `martianLight` has no port global — fed 0.0 until the event lands |
+| `reset_paint_lookup_key(&mut self)` | `:500-503` | the paint family's `_lastPaintLookupKey.TileType = -1` |
+| `draw_tile_liquid_behind(&mut self, x: i32, y: i32)` | `:521-525` (solid), `:457` (pre-pass) | `liquids.rs::draw_tile_liquid_behind(r, world, lookups, light, style, anim_time, x, y, tile, water_style)` (the fused loop's existing call, moved into the seam) |
+| `classify_and_draw_cell(&mut self, x: i32, y: i32, black: &mut DrawBlackHelper)` | `:526-724` | g30 `classify_tile(kind, fx, fy, sway_enabled)` + `apply_cell_class(world, x, y, kind, class, &mut reg)`; on `true` run the DrawSingleTile body = the fused loop's per-cell pipeline WITH d58's chest rewrite (after dispatch, before rect), d59's slope family, d56's `tile_draw_gate`/`final_light` (gate decides the black feed: `black.draw_black(x, y, screen_position)` → flush via `draw_black_strip`), d60's gated emission; `cache_tree_point(x, y, kind, dd-corrected fx, fy, &mut reg)` at `:992` |
+| `draw_black_strip(&mut self, strip: BlackStrip)` | `DrawBlackHelper.cs:36` | push `strip.position/size` black on `strip.layer` (replaces the greedy `merge_dark_row` — §2.2: gate = d56, coalescer = g29) |
+| `restart_layered_batch(&mut self)` | `:729` | the layered-batch restart (`TileDrawingBase.cs:34-40`) |
+| `draw_tile_cracks(&mut self, site: CrackSite)` | `:732-733` | `tile_cracks.rs::draw_tile_cracks` — hitReplace THEN hitTile; the per-frame `draw_mining_cracks` overlay (S1-G-1 wave C) folds into this site |
+| `restart_sprite_batch(&mut self)` | `:734` | `TileDrawingBase.cs:42-50` |
+| `draw_special_tiles_legacy(&mut self)` | `:736` | `special_tiles.rs` + d57's 395/520/471 arms over `LegacyCaches.legacy_points` (d58's chest section already moved to `tr-render::chest_frames`) |
+| `draw_object_preview(&mut self, opacity: f32)` | `:740` | `TileObject.DrawPreview` — the placement-preview family |
+| `post_draw_pass(&mut self, step: PostDrawStep)` | `:421-439` | `tile_drains::drain_pass_for_post_step(step)` → `Some(pass)` ⇒ `drain_one_pass(...)` (below); `None` arms: `EndBatch`/`NatureAfterAllObjects` = the batch/nature seam, `DrawEntitiesHatRacks`/`DrawEntitiesDisplayDolls` = d57 `te_furniture` doll/hat-rack passes |
+
+**The drain dispatch (g31 `tile_drains.rs`):**
+
+```rust
+pub(crate) fn drain_pass_for_post_step(step: tile_pass::PostDrawStep) -> Option<DrainPass>;
+pub(crate) fn drain_one_pass(
+    pass: DrainPass, world: &World, wind: &Wind, light: &LightMap,
+    grass_counter: f32, sunflower_counter: f32, vine_counter: f32,
+    rng: &mut UnifiedRandom,              // ONE stream across all ten passes
+    seam: &mut impl DrainCellLight,       // d56 bind below
+    ported: &mut impl PortedBodyDrain,    // foliage/vines/pylons bind below
+    show_invisible: bool, disco: [u8; 3], master_color: f32,
+    tile_frame_seed: u64, global_time: f32,
+    buckets: &[Vec<(i32, i32)>; 11],      // = &reg.buckets (g30), NO second registry
+    sprites: &mut Vec<DrainSprite>, fairy_jars: &mut Vec<DrainFairyJar>,
+    rising: &mut Vec<RisingVineSegment>, jar_items: &mut Vec<DrainJarItem>,
+    flames: &mut Vec<DrainFlame>,
+);
+```
+
+* `DrainCellLight::cell_light(&mut self, world, x, y, kind, frame_x,
+  frame_y, base: [f32;3], can_do_dust: bool) -> [f32;3]` — d56 binds
+  `tr_render::animated_tiles::vision_changer_light` → `light_override`;
+  `can_do_dust` is the drain's ALREADY-CONSUMED `_rand.Next(4)==0` flag
+  (the binding must NOT re-roll); gated emission → d60.
+* `PortedBodyDrain::{tree_point, vine_root, void_lens_point,
+  pylon_point, trophy_point}(&mut self, world: &World, x: i32, y: i32)`
+  — bind to `foliage.rs` per-marker, `vines.rs` per-root,
+  `pylons.rs::{pylon,trophy,void_lens}_sprites` per-anchor (they need
+  the renderer + `SpecialEnv`; the impl holds them).
+* `is_visible` keep-one: d56's `tr_render` copy at the merge (§1.4);
+  g31/d60/pylons rebind.
+
+**The ctor residual (F1, closed):** `tile_ctor.rs` —
+`noise_table() -> &'static [f32; 256]`, `linear_noise(x: f32) -> f32`,
+`hash/hash2(u32) -> u32`, `dist_to_wandering_circle(pos: (i32,i32),
+grid_size: i32, wander_dist: f32, cycles_per_tick: f32, seed: u32,
+time_for_visual_effects: f32) -> f32`, `lava_light_a(world, tile_x,
+tile_y, time_for_visual_effects) -> f32`. The 717 glowmask arm
+(`:1193-1197`) binds `Color(v, v, v, v/2)` from `lava_light_a` at the
+f15 glow-seam merge. Census: the static ctor's other draws were
+already covered (layer constants = `tile_pass::LAYER_*`, `_zero` = the
+origin literal, the instance-ctor registry/`_rand` = g30 + caller
+streams).
+
+### 8.3 Merger wiring instructions (the PIXEL binding — §4 made concrete)
+
+Order of operations at the family merge (after d56-d60 + the g-union
+are all on main):
+
+1. **Split the fused walk.** `tiles.rs::draw_tiles` keeps its head
+   (light compute, liquid pre-pass, walls, behind-tiles NPCs) and its
+   tail (NPCs/player/items/UI); the tile walk becomes
+   `draw_layer(non_solid)` → `post_draw_tiles(false)` →
+   `draw_layer(solid)` → `post_draw_tiles(true)` driven by
+   `walls_tiles_npcs_order(detect_creature)`; the render-target capture
+   path uses g32 `render_target_tile_order` (SOLID-first, NO post
+   passes). The G6 cached-range key is UNTOUCHED (the +4/-2 margins
+   are C#'s; the cached range feeds the same inputs).
+2. **One `TilePassSeams` impl** (the `ShadowSeams` shape in
+   `tile_attach.rs` is the template — replace the counters with the
+   real calls per §8.2's bind column). It owns: the g30 registry, g32
+   `LegacyCaches` + d58's per-draw chest HashMap, the tiers, the ONE
+   `_rand` (the fused pass's `leaf_rng` folds into it — the leaf rolls
+   and the drain rolls share the C# `_rand` stream in call order),
+   the renderer handles + `SpecialEnv` for the ported drain bodies.
+3. **Fold the d-lane hunks into `classify_and_draw_cell`** in C# order:
+   the `:517` gate (driver-owned) → d58 chest rewrite (after the
+   drawdata dispatch, before the source rect) → d56 gate/light →
+   the black feed → d59 slope family → d60 emission → the sprite push.
+   The inline grass/vine/sunflower arms DROP (the drains own them);
+   the inline 192-leaf arm reconciles with d60 (`:1078-1122`).
+4. **Stream order is the hard invariant**: ONE `UnifiedRandom` through
+   classify (the per-cell `Next(4)` dust rolls) then the ten nature
+   passes in `POST_DRAW_NON_SOLID` order; `can_do_dust` flags are
+   passed, never re-rolled. Prove byte-equality of the drain plans
+   against the pre-split witnesses (the g31 rand-stream witness is
+   the template).
+5. **A/B the gate**: `TR_TILEPASS` flips from shadow (plans only) to
+   the pixel path; unset keeps the fused loop until the split is
+   proven. Deterministic screenshots (`TR_SHOT`, zoom 1.0/1.5/2.0)
+   must be SHA256-equal across two runs of each arm; the shadow's
+   `TILEPASS shadow:` log line is the plan-count baseline.
+6. **Drop the shadow** once the pixel path is proven (the
+   `tile_attach.rs` module + the env pin + the tiles.rs block are the
+   scaffolding; the witnesses' seam-order assertions rebind to the
+   real impl).
+
+### 8.4 Attach-phase witness census
+
+F1 `tile_ctor.rs`: 6 `#[test]` (the seed-0 noise table golden bits,
+LinearNoise floor/wrap + golden bits, the hash vectors, the
+wandering-circle golden distances + the 24-bit mask, the cubic
+SmoothStep, the LavaLightA bands). F2 `tile_attach.rs`: 4 `#[test]`
+(the four-call frame order over the real binds, the registry→drain
+dispatch, plan determinism, the gated attach-site position + RNG
+separation). All WRITTEN NOT RUN (code-only). Union g-family total
+70 (§7) + 10 attach = 80 on this branch.

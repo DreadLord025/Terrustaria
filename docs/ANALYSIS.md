@@ -39588,6 +39588,85 @@ now reads EXECUTED). What changed versus the five lane tips:
   attach is contested by d56/d57/d58/d59/d60 (contract §5 census; d58/d59
   are WIRED on their branches). The bind-order checklist (contract §4:
   tiers → area → classify → drains → post) is the wiring wave's script.
+  *(Superseded by the attach phase below — the shadow attach landed.)*
 
 Code-only: **no cargo/rustc/tests/graphify invoked** — every seam was
 compiled by inspection (imports, signatures, enum arms, borrow shapes).
+
+## The TR_TILEPASS shadow attach + the ctor-draw residual (W4-g31 attach phase)
+
+The attach phase (same branch, on top of the union-exec `c3027a38`)
+censused the five d-lane tips against the union driver shape and wired
+what is safely wireable. Verdict + the exact seam signatures + the
+pixel-merge script: `docs/UNION-CONTRACT-tilepass.md` §8. Summary:
+
+* **Census verdict**: d56/d57/d60 are UNWIRED module payloads whose
+  attach claims REPLACE fused-loop regions (they are the
+  `classify_and_draw_cell`/TE-post seam implementations); d58/d59 are
+  WIRED unconditional per-cell hunks INSIDE the fused loop. The
+  union's `draw_layer` is a structural replacement of that loop, and
+  its per-cell seam needs a standalone `DrawSingleTile` body that
+  exists only AS the fused loop — so a pixel-binding attach is the
+  family-merge split (§8.3), not a call beside the loop.
+* **The shadow attach** (`render/tile_attach.rs`, commit `2f5e0698` +
+  fixup `a584eb57`): behind `TR_TILEPASS` (default OFF, the `env.rs`
+  named-accessor convention — the same gate pattern family as
+  `TR_NO_FOLIAGE`/`TR_SHOW_INVISIBLE`), the four C# calls run in frame
+  order at the `PostDrawTiles` position in `draw_tiles` (after the
+  fused walk + the inline foliage/vine passes, before the NPC pass)
+  with the REAL binds: g32 `LegacyCaches` per-step clears (the
+  `SpecialBlockCounts` flag chains g30's registry clear), g28
+  `quality_light_tiers`, g30 `classify_tile`/`apply_cell_class` per
+  cell, g29 `post_draw_tiles` → g31 `drain_pass_for_post_step` →
+  `drain_one_pass` over `&reg.buckets` with ONE shadow `UnifiedRandom`
+  across the ten nature passes. PLAN-ONLY: no sprites pushed, no
+  shared state mutated, the G6 key untouched.
+* **A/B**: unset = zero union code in the frame path (the gate
+  short-circuits before any allocation). Set = identical pixels; one
+  `TILEPASS shadow:` log line per world-range rebuild carries the
+  per-pass plan counts (cells/buckets/sprites/jars/rising/porteds/
+  steps/tiers). The shadow rides the `!reuse_world` arm — a G6 hit
+  skips it (`TR_NOCACHE=1` or a moving camera for a per-frame A/B).
+* **Recorded deviations** (deliberate, all in the module doc):
+  the drain RNG is a SEPARATE stream seeded from `sparkle_seed`
+  (`leaf_rng` never moves — at the pixel merge the two fold into the
+  ONE C# `_rand` in call order, §8.3 step 4); `gfx_quality` fed the
+  fused pass's pinned 0.5 (the adaptive `App.gfx_quality.quality`
+  threads in at the pixel merge — a `draw_tiles` signature change is
+  d58-contested); `martianLight`/`masterColor` fed 0.0 (no port
+  globals, the `resources.rs:499` convention); the wind grid is
+  shadow-owned (the shared `Wind::wind_grid` is borrowed immutably;
+  its S1-G-8 update-site sizing stays until the merge moves it to the
+  draw-site probe); `cache_tree_point` deferred (needs the
+  `GetTileDrawData`-corrected frames the fused loop owns — the shadow's
+  Tree bucket stays empty); the black helper stays empty (the FEED
+  decision is d56's gate, not on this branch); cracks counted
+  (`draw_mining_cracks` owns the per-frame site); the ported drain
+  bodies (foliage/vines/pylons) counted per-point (they need the
+  renderer + `SpecialEnv`).
+* **The ctor-draw residual CLOSED** (`render/tile_ctor.rs`, commit
+  `8d7a3532`): the `TileDrawing` static ctor (`TileDrawing.cs:789-802`)
+  census — the four layer constants are `tile_pass::LAYER_*`, `_zero`
+  is the origin literal the sprite pushes pass, the instance ctor's
+  registry/`_rand` are g30 + the caller streams; the LAST draw was the
+  `noise[256]` table (`System.Random(0)`, 256 `NextDouble()*2-1`
+  draws) + its consumer chain. Ported: the table through the
+  oracle-pinned `UnifiedRandom` seed-0 stream (`OnceLock` = the static
+  ctor's run-once), `LinearNoise` (the floor-arm `num--`, `&0xFF`
+  wrap), `Hash`/`Hash2`, `DistToWanderingCircle` (the 24-bit seed
+  mask, the f32 add-then-multiply order), the CUBIC `SmoothStep`
+  (`x*x*(3-2x)` — NOT `Utils.SmoothStep`'s inverse lerp) and
+  `LavaLightA` (the four wandering circles, the `SolidTile`-above
+  `[0.8,1]` band) for the type-717 lava glowmask arm (`:1193-1197`,
+  bind deferred to the f15 glow seam). Golden f32 bit patterns
+  independently re-derived from the .NET Framework Knuth subtractive
+  algorithm (the same oracle `unified_random.rs`'s golden tests pin).
+* **Witnesses**: 6 (tile_ctor) + 4 (tile_attach) written NOT run;
+  union g-family 70 + attach 10 = 80 on this branch. Anchors rows for
+  both modules; the attach-site witness pins the gated call's position
+  (after the fused walk, before the NPC pass) and the RNG separation.
+
+Code-only: **no cargo/rustc/tests/graphify invoked** — every seam was
+compiled by inspection; the golden literals were re-derived with an
+independent Python evaluation of the .NET algorithms (not the Rust
+bodies).
