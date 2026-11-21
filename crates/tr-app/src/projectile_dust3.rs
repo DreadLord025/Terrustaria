@@ -540,6 +540,91 @@ pub(crate) fn style21_note_puff(p: &Projectile, world: &World, d: &mut ProjDust3
 }
 
 // ---------------------------------------------------------------------------
+// aiStyle 22 — the Ice Rod block (`Projectile.cs:25607-25860`).
+// ---------------------------------------------------------------------------
+
+/// `:25665-25667` — the standing phase's dust-67 (noGravity, ×0.3 velocity).
+/// The caller owns the probe kill scan ahead of this; the C# `Kill()` does
+/// NOT return, so the dust still spawns on the dying tick.
+pub(crate) fn style22_standing(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    let idx = d.new_dust(
+        world,
+        p.pos,
+        p.w as i32,
+        p.h as i32,
+        67,
+        0.0,
+        0.0,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let dust = d.pool.slot_mut(idx);
+    dust.no_gravity = true;
+    dust.velocity *= 0.3;
+}
+
+/// `:25672-25685` — the placed phase's dust: the `ai[0] == -1f` placement
+/// tick's 10× dust-67 burst (alpha 0, scale 1.1, noGravity, ×1.3 velocity),
+/// else the 1-in-30 dust-67 puff (alpha 100, ×0.2 velocity). The caller owns
+/// the `ai[0] < 0f` gate ahead of this.
+pub(crate) fn style22_placed(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    if p.ai[0] == -1.0 {
+        for _ in 0..10 {
+            let idx = d.new_dust(
+                world,
+                p.pos,
+                p.w as i32,
+                p.h as i32,
+                67,
+                0.0,
+                0.0,
+                0,
+                Color::default(),
+                1.1,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.no_gravity = true;
+            dust.velocity *= 1.3;
+        }
+    } else if d.rng.next_range(0, 30) == 0 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            67,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            1.0,
+        );
+        d.pool.slot_mut(idx).velocity *= 0.2;
+    }
+}
+
+/// `:25756-25758` — the flying phase's dust-67 (noGravity, ×0.3 velocity).
+/// The caller owns the probe kill scan + the `!active` return ahead of this.
+pub(crate) fn style22_flying(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    let idx = d.new_dust(
+        world,
+        p.pos,
+        p.w as i32,
+        p.h as i32,
+        67,
+        0.0,
+        0.0,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let dust = d.pool.slot_mut(idx);
+    dust.no_gravity = true;
+    dust.velocity *= 0.3;
+}
+
+// ---------------------------------------------------------------------------
 // aiStyle 23 — the Eye Fire / Flames Trap (`Projectile.cs:25861-25935`).
 // ---------------------------------------------------------------------------
 
@@ -603,6 +688,57 @@ pub(crate) fn style23_eye_fire(
                 dust.velocity *= 0.5;
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 24 — the Crystal Storm / Crystal Shard (`Projectile.cs:25936-26014`).
+// ---------------------------------------------------------------------------
+
+/// `:25945-25951` — the 1134 Crystal Shard's first-tick 6× dust-70 burst
+/// (noGravity, ×2.5 velocity, ×0.9 scale). The caller owns the `localAI[0]`
+/// latch + the sound cue ahead of this.
+pub(crate) fn style24_shard_burst(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    for _ in 0..6 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            70,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity *= 2.5;
+        dust.scale *= 0.9;
+    }
+}
+
+/// `:25958-25964` — the 94 Crystal Storm's 1-in-4 dust-70 puff (noGravity,
+/// ×0.5 velocity, ×0.9 scale). The caller owns the `ai[1]++` ahead of this.
+pub(crate) fn style24_storm_puff(p: &Projectile, world: &World, d: &mut ProjDust3) {
+    if d.rng.next_range(0, 4) == 0 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            70,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity *= 0.5;
+        dust.scale *= 0.9;
     }
 }
 

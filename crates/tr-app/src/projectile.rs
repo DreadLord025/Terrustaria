@@ -7617,23 +7617,35 @@ impl Projectile {
     }
 
     /// `AI()`'s aiStyle-22 arm (`Projectile.cs:25607-25860`): the Ice Rod
-    /// block's three phases on the `ai` signs, all dust SKIPPED.
+    /// block's three phases on the `ai` signs, the dust-67 spawns wired
+    /// through the `projectile_dust3` seam (W4-f5).
     ///
     /// - **standing** (`ai[1] < 0`, `:25612-25680`): the failed placement's
     ///   fall — the 60-tick `timeLeft` cap, the ±0.3 rotation and the probe
-    ///   kill scan.
+    ///   kill scan, then the dust-67.
     /// - **placed** (`ai[0] < 0`, `:25681-25703`): the block stands in the
     ///   tile, drains `ai[0]` until `-900` and is `KillTile`d away (owner
-    ///   branch).
-    /// - **flying** (`:25704-25860`): the probe kill scan, the spawn tile
-    ///   target's walk to the nearest adjacent non-solid cell and the
-    ///   `WorldGen.PlaceTile(127)` that stands the block down.
+    ///   branch); the placement tick's 10× burst / the 1-in-30 puff.
+    /// - **flying** (`:25704-25860`): the probe kill scan, the dust-67, the
+    ///   spawn tile target's walk to the nearest adjacent non-solid cell and
+    ///   the `WorldGen.PlaceTile(127)` that stands the block down.
     ///
     /// The tile writes need `&mut World` — the one carve-out of the
     /// arm-signature doc block over the dispatch — and run only on the
     /// owner branch (`Main.myPlayer == this.owner`; the port's local player
     /// is slot `owner == 0`).
-    fn ai_ice_block(&mut self, world: &mut World) {
+    fn ai_ice_block(
+        &mut self,
+        world: &mut World,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust3::ProjDust3 {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         // `:25611`: a stopped block is fully opaque — the write runs against
         // the pre-place velocity, so the standing phase keeps its own alpha.
         if self.vel.x == 0.0 && self.vel.y == 0.0 {
@@ -7653,13 +7665,16 @@ impl Projectile {
             // counts an actuated tile as blocking (`active()`, not
             // `nactive()`).
             self.ice_block_probe_kill(world, true);
-            // The dust 67 (`:25677-25679`) is SKIPPED.
+            // `:25665-25667` — the dust-67 (W4-f5). The C# `Kill()` does not
+            // return, so the dust spawns even on the dying tick.
+            crate::projectile_dust3::style22_standing(self, world, &mut d);
             return;
         }
         // The placed phase (`:25681-25703`).
         if self.ai[0] < 0.0 {
-            // `:25702-25710`: the 10× dust 67 burst on the placement tick and
-            // the 1-in-30 puff afterwards are SKIPPED.
+            // `:25672-25685` — the placement tick's 10× dust-67 burst / the
+            // 1-in-30 puff (W4-f5), ahead of the tile probe.
+            crate::projectile_dust3::style22_placed(self, world, &mut d);
             let tx = (self.pos.x / TILE_PX) as i32;
             let ty = (self.pos.y / TILE_PX) as i32;
             let standing = world.tile(tx, ty).is_some_and(|t| t.active());
@@ -7690,9 +7705,11 @@ impl Projectile {
         }
         // The lava (`:25742-25744`) and shimmer (`:25746-25751`) kills are
         // SKIPPED — the slot carries no liquid-wet flags in this port.
-        // `:25755-25759`: the spawn tile target, `ai[0]`/`ai[1]` — the Ice
+        // `:25756-25758` — the dust-67 (W4-f5), ahead of the target walk.
+        crate::projectile_dust3::style22_flying(self, world, &mut d);
+        // `:25759-25798`: the spawn tile target, `ai[0]`/`ai[1]` — the Ice
         // Rod's `Player.tileTargetX/Y` (`Player.cs:49383-49387`) — walked to
-        // the nearest adjacent non-solid cell (`:25760-25798`).
+        // the nearest adjacent non-solid cell.
         let mut tx = self.ai[0] as i32;
         let mut ty = self.ai[1] as i32;
         if world.in_bounds(tx, ty) && solid_tile(world, tx, ty) {
@@ -7807,27 +7824,55 @@ impl Projectile {
     /// `+= velocity.X * 0.2f`, the counter `ai[1]++`, the CrystalStorm 94's
     /// ×0.985 drag and its fade from `ai[1] > 130f` (`scale -= 0.05f`, the
     /// kill at 0.2) — the generic kinds take ×0.96 and fade from 15. The
-    /// per-type dust is SKIPPED.
-    fn ai_crystal_storm(&mut self, world: &World) {
-        // `:25938-25952`'s 1134 first-tick sound/dust block is SKIPPED (the
-        // kind has a row, but the block only plays a cue and spawns dust —
-        // neither has a layer in the pool; the `localAI[0]` gate flag rides
-        // with it).
+    /// 1134 first-tick burst and the 94's 1-in-4 puff spawn through the
+    /// `projectile_dust3` seam (W4-f5); the 1114 Daybloom Staff's dust-57
+    /// (`:25985`) is unrowed (latent).
+    fn ai_crystal_storm(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust3::ProjDust3 {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
+        // `:25938-25952` — the 1134 Crystal Shard's first-tick block: the
+        // `localAI[0]` latch, the `ai[0] == 0f` sound cue (the sound lane's
+        // skip) and the 6× dust-70 burst (W4-f5).
+        if self.kind == CRYSTAL_SHARD_MELEE && self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            crate::projectile_dust3::style24_shard_burst(self, world, &mut d);
+        }
         // `:25953` — the light follows the CURRENT scale, before this tick's
         // fade below (`proj_lights.rs` reads it for the frame contribution).
         self.light = self.scale * 0.5;
         self.rot += self.vel.x * 0.2;
         self.ai[1] += 1.0;
-        // `:25944-25966` (the 94 shard) and `:25967-26013` (the generic; the
-        // 1114 branch differs only by the wet kill, which no ported row
-        // reaches).
-        let (drag, fade_at) = if self.kind == CRYSTAL_STORM {
-            (0.985, 130.0)
-        } else {
-            (0.96, 15.0)
-        };
-        self.vel *= drag;
-        if self.ai[1] > fade_at {
+        // `:25956-25976` — the 94 shard: the 1-in-4 dust-70 puff (W4-f5),
+        // the ×0.985 drag and the fade from 130.
+        if self.kind == CRYSTAL_STORM {
+            crate::projectile_dust3::style24_storm_puff(self, world, &mut d);
+            self.vel *= 0.985;
+            if self.ai[1] > 130.0 {
+                self.scale -= 0.05;
+                if self.scale <= 0.2 {
+                    self.scale = 0.2;
+                    self.active = false;
+                    self.time_left = 0;
+                    return;
+                }
+            }
+            self.kill_step(world);
+            return;
+        }
+        // `:25977-26003` — the 1114 Daybloom Staff branch is unrowed (its
+        // wet kill + dust-57 stay latent, W4-f5); the generic kinds take
+        // ×0.96 and fade from 15 (`:26004-26013`).
+        self.vel *= 0.96;
+        if self.ai[1] > 15.0 {
             self.scale -= 0.05;
             if self.scale <= 0.2 {
                 self.scale = 0.2;
@@ -17659,7 +17704,7 @@ impl ProjectilePool {
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
-                        22 => self.slots[i].ai_ice_block(world),
+                        22 => self.slots[i].ai_ice_block(world, rng, dust, dust_ctx),
                         // S1-P-i29/i30 — the drill AND chainsaw families'
                         // aiStyle 20 (`Projectile.cs:25481-25584`,
                         // `DefaultToDrillOrChainsaw` `:10732-10742`): the
@@ -17669,7 +17714,7 @@ impl ProjectilePool {
                         // `kill_step` runs.
                         20 => self.slots[i].ai_drill(world, owner, inputs.aim, player.as_deref(), rng, dust, dust_ctx),
                         8 => self.slots[i].ai_ball_of_fire(world),
-                        24 => self.slots[i].ai_crystal_storm(world),
+                        24 => self.slots[i].ai_crystal_storm(world, rng, dust, dust_ctx),
                         // S1-P-i14 (V5 gate) — `AI_078`
                         // (`Projectile.cs:30762-30790`): the Xenopopper
                         // bubble 444's steer-toward-`ai[0]` flight — the
