@@ -421,15 +421,15 @@ pub fn item_tooltip_lines(
         };
         lines.push((crate::lang::tip(kb), [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20805-20812` — the fishing rows (`GameUI.PrecentFishingPower` /
-    // `BaitRequired` / `GameUI.BaitPower`).
+    // `:20804-20815` — the fishing rows (`GameUI.PrecentFishingPower` —
+    // the vanilla's own typo'd key — / `BaitRequired` / `BaitPower`).
     if d.fishing_pole > 0 {
         lines.push((
-            crate::lang::game_ui_fmt("RecentFishingPower", d.fishing_pole),
+            crate::lang::game_ui_fmt("PrecentFishingPower", d.fishing_pole),
             [1.0, 1.0, 1.0, 1.0],
         ));
         lines.push((
-            crate::lang::game_ui_fmt("BaitRequired", 0),
+            crate::lang::game_ui("BaitRequired"),
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
