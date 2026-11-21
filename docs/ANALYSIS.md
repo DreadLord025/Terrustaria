@@ -19104,6 +19104,54 @@ the meteor-shower witness (`worldgen/meteor.rs`), the coin-rain store witness
 (`rain.rs::test_DW_2_4`), and the extended `owned_world`/`assert_owned_fields`
 round-trip sweep. The compile window runs them.
 
+### Final phase: the full walk audit + the VERSION-gate census
+
+`task/W4-f45-wld-header-2` final phase (`2e13cfafc` + `ad153feb3`, code-only)
+publishes **research/137-wld-final-audit.md** — the complete
+`SaveWorldFlags:1238-1430` / `LoadWorldFlags:1981-2517` ownership table
+(every field, write/read line, gate, owner), the g90 booster-pair keep-one
+(the `.wld` halves byte-identical; the `.trwld` v18 tails ride the g71 §1-FULL
+107-byte union), the g71 cross-read boundary (the disjoint setBG seats, the
+byte-identical dedups, the g70 treeStyle conflation flagged, the Ph6 gen-roll
+copies defer to the g71/g72 canonical), and the gate census. **Four gate
+fixes landed:**
+
+- **The >326 later-version reject** (`WorldFile.cs:712`/`:197`): the port
+  walked a v327+ file as v326; `SectionTable::open` now bails it.
+- **The <88 lower boundary** (the off-by-one): the C# dispatch is `> 87 ->
+  Version2`, so v87 routes to the unported old loader; the `< 87` bail let it
+  into the Version2 walk. Now `< 88` bails the whole 1..87 range.
+- **The `flags_tail` legacy-u32 window** (299..312, `LoadWorldFlags:2512-2515`):
+  the test table lacked the 4 bytes, mis-aligning a v304 synthetic at the
+  manifest; the table carries the window, the Ph2 v304 witness re-pinned
+  `len-1` → `len-6`.
+- **`FixEndlessRainWorlds`** (`WorldFile.cs:3284-3298` via `:2130`): the v≤317
+  year-long-rain (≥5184000 ticks) clear unless the seed text carries
+  rainsForAYear. The header seed text is now retained for the
+  `GetSecretSeedCodes` '|' split; the check rides the golden-verified
+  `seeds::check_input_for_secret_seed`. The plaintext "bring a towel" was
+  verified against the registered code through an independent Python mirror
+  of the game's non-NUL BCrypt walk (controls pumpkinseason/arachnophobia +
+  the target all match). The post-walk placement is byte-equivalent (nothing
+  after `:2130` touches the rain triple).
+
+**Recorded observations (research/137 §5, not byte-walk defects):** the
+pre-267 zenith inference's `EVERYTHING_DEPS` widening (pre-existing, the C#
+sets zenithWorld only); `downedMechBossAny` derived vs stored (equivalent for
+C# files); the moonType/moonPhase read guards (no-ops for valid files); the
+pre-196 treeBG2-4 else-arm copy (g70 lane); TreeTops' min(count,13) vs the
+full-count skip (equivalent for C# files); `UpdateTimeRate`'s creative-fold
+ordering (the clock seam, a no-byte side-effect); the manifest empty-string
+write (the C# writes the null-field JSON even when empty — c44 fixture owns
+the payload).
+
+**The remaining-unowned census answer (research/137 §1.5):** five families —
+claimableBanners (no claim queue; the item spawns at the death spot), the
+TreeTops variation table (a derived mirror; the sources are owned), the
+world-gen manifest (no gen metadata), forceSeasonsForToday (f39), and the
+eight setBG seats (g70 forest four / g71 surface three + underworld). Every
+other flags field is owned. Witnesses written NOT run (code-only).
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
