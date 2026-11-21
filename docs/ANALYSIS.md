@@ -36134,7 +36134,7 @@ halves.
 ## World-item entity mechanics (DOC-SWEEP lane 5, W4-g15, code-only 2026-11-21)
 
 The full-method sweep of `WorldItem.cs` + `Main.DrawItem` beyond the dust
-half: research/77 pins the per-mechanic census (the six lane verdicts +
+half: research/358 (renumbered from 77 per registry-150 §9.2) pins the per-mechanic census (the six lane verdicts +
 the extra ports + the gap list). The ports: the treasureMagnet grants
 (`player.rs`), the DrawItem family (`item.rs` `shimmer_fade_color` /
 `aura_echo_offsets` / `mana_crystal_pulse` + the `render_key` coverage),
@@ -36179,7 +36179,7 @@ client reservation-hold expiry.
 `wiring.rs`, `netglue.rs`, `player.rs`, `item.rs`, `wld/mod.rs` — NOT RUN
 (code-only lane). 15 `anchors.txt` canary rows added (`527904546`).
 
-**SEAL (2026-11-21, code-only).** research/77 is SEALED (the S1-S5
+**SEAL (2026-11-21, code-only).** research/358 (renumbered from 77 per registry-150 §9.2) is SEALED (the S1-S5
 receipts there; the family bible is research/347 — the 309 self-pick
 renumbered per registry-150 §8.7). The seal round
 executed the research/145 SHIMMER-SEAL 16-box repin on this branch

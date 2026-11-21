@@ -1,4 +1,15 @@
-# 77 — DOC-SWEEP lane 5: WorldItem / world-drop items census + port
+# 358 — DOC-SWEEP lane 5: WorldItem / world-drop items census + port
+
+> **RENAME CHAIN: 77 (original) → 284 (§7.3 target, VOIDED — 284=g52,
+> executed `0224fff80` pre-§8, g52 KEEPS per registry-150 §8.7/§9.1) →
+> 358 (registry-150 §9.2 UNIFIED FINAL ASSIGNMENT, THE SINGLE AUTHORITY,
+> read at d54 tip `b4c94432c`).** The §7.3 284 target was never executed
+> on this branch; §9.2 row 358 assigns g15's `77-doc-sweep-items` →
+> **358-doc-sweep-items**. All refs re-pointed this commit (INDEX row,
+> ANALYSIS/PORT_MAP cites, the research/347 S5 cites); NO SELF-PICKS —
+> §9 assignments only. NOTE: research/347 (the item-dust-family bible,
+> chain 309→347 per §8.7) is a DIFFERENT doc, already renamed — untouched
+> by this chain.
 
 Status: **SEALED** (W4-g15 lane 5, `task/W4-g15-dust-item-sites`,
 code-only 2026-11-21; seal round appended below — re-probe citations
@@ -492,4 +503,4 @@ records; 347 is the merger's single page.
 | Hash | What |
 | ---- | ---- |
 | `8f04df01b` | the 145 SHIMMER-SEAL 16-box repin (shared block only) |
-| (this doc's commit) | research/77 SEALED + research/347 family bible (309 self-pick → 347 per registry-150 §8.7) + INDEX/PORT_MAP/ANALYSIS receipts |
+| (this doc's commit) | this census (then numbered 77, now 358 per §9.2) SEALED + research/347 family bible (309 self-pick → 347 per registry-150 §8.7) + INDEX/PORT_MAP/ANALYSIS receipts |
