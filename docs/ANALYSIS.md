@@ -39842,3 +39842,45 @@ disjoint site lanes + the falling-flag capture + the drain execution order;
 e1's wall machines, wall-cling drain, vortex machine/rings and `stealth: 0.0`
 spawn are dropped. 1 new witness (odd-hitbox corner) WRITTEN NOT RUN
 (code-only).
+
+### The retire pass — item 4: the PLAYER-MOVE-FAMILY declaration
+
+**Canonical owner: THIS branch (`task/W4-f3-dust-player-3`).** The four
+player movement machines below are f3-canonical at the e1b-141 merge; the
+sibling copies are dropped per the verdicts above. This declaration is the
+merge lane's single lookup table.
+
+| Machine | C# | f3 canonical (this branch) | g66 drop | e1 drop |
+| --- | --- | --- | --- | --- |
+| **Pulley** (FindPulley / CanMoveForwardOnRope / the Update rope block) | `Player.cs:19644-19749` / `:24247-24266` / `:26116-26493` | `find_pulley` (`player.rs:10198`) / `tile_rope_kind` (`:10180`) / the ride block (`:7868` `update_pulley_direction` + `pulley_ride`, the `:26135` cancel host, the `:26483` canCarpet refill, the releaseLeft/Right 7-tick latches) | never ported (its carpet/wall lack the `!pulley_ride` gate) | never ported |
+| **Carpet** (CarpetMovement + the 934 grant + re-arms) | `:21842-21890` / `:15034-15037` / `:26100-26115` / `:22624` | `carpet_movement` (`player.rs:10585-10638`, the union shadow-read), grant `:5941`, call gate `:8092` (`!grappling && !tongued && !pulley_ride`), the `:26613-26617` run boost + `:28066`/`:23537` step-up consumers | `carpet_movement` (origin `:10693`, local `248f0ff4d` `:10705`) + grant `:5941` + the local consumer copies (`:7727`/`:12895`) — byte-identical, dedupe to f3 | no machine, no grant (`carpet_frame` rest-pin reader only — that field is shared, one definition survives) |
+| **WallClimb / Wallslide** (+ the 5 type-31 dust sites + the climbing grants) | `:21607-21840` / `:15038-15066` / `:14426-14444` / `Mount.cs:3002` | `wall_climb_movement` / `wallslide_movement` / `wall_probe` / `wall_dust_suppressed` / `queue_wall_dust` (`player.rs:9998-10171`), `WallDust` + `player_dust::drain_wall_dust` (integer halves, this pass), grants `:5922-5941`/`:5653-5670`/`:5448`, the sliding consumers (`:20670`/`:20778`/`:20632`/`:26057`) | `wall_climb_movement` / `wallslide_movement` / `queue_wall_dust` (origin `:10536-10687`) + `player_trail_dust::drain_wall_dust` + grants — machines byte-identical, the corner form adopted INTO f3 | `wall_climb_movement` / `wallslide_movement` / `climb_probe_solid` (`:10041-10197`) + `player_dust2::wall_cling_puff` + `WallClingDust` — 5 verified C# deviations (verdict (d)) |
+| **Stealth** (Shroomite + Vortex chain + the 2 ring sites + the toggle + set-loss) | `:25733-25899` / `:56775-56778` / `:16315-16321` | `update_stealth` (the full else-if chain, `player.rs:9856-9976`), `stealth: 1.0` spawn (`:3306`, C# `:1562`), `key_double_tap_down` toggle (`:12709`), the Always_Vortex disarm (`:7056`), `VortexStealthDust` + `player_dust::drain_vortex_stealth` | no stealth machine | `update_vortex_stealth` (`:10290-10331`, vortex-arm-only, reset deferred) + `stealth: 0.0` spawn (WRONG vs `:1562`) + `player_dust2::vortex_stealth_rings` + `VortexRingDust` — chain-identical drain, dedupe to f3 |
+
+**Shared fields (one definition survives, f3's):** `carpet` / `can_carpet` /
+`carpet_time` / `carpet_frame` / `carpet_frame_counter`, `spiked_boots`,
+`sliding` / `slide_dir`, `stealth` / `shroomite_stealth` / `stealth_timer` /
+`set_vortex` / `vortex_stealth_active`, `pulley` / `pulley_dir`,
+`release_up` / `release_down` (both spawn false — the retire item-1 fix).
+
+**g66 keeps its own lanes** (no f3 overlap, NOT dropped): the wing dust
+(33/38/47/49/50 + WingAirVisuals/WingFrame), the boot flames + Item13/Item24
+cues, the Rudolph trail, its DoubleJumpVisuals/FloorDust drains (deduped to
+f3's per verdict (f), with e1's falling-flag capture adopted).
+
+**e1 keeps its own lanes** (no f3/g66 overlap, NOT dropped): the pre-21654
+equip/vanity dust lanes + hair-dye + manaHeat + stoned + drowning + splash,
+the falling-flag head capture, the drain execution order, the Hair Dye
+Remover / Vortex set-loss fidelity fixes (the latter already f3's).
+
+**Deferred with the seam (NOT part of the family's merge):** portableStool +
+the HeightOffset family — `docs/research/65-heightoffset-stool-seam.md` (the
+movement-lane task seed, retire item 3). The FindPulley stool gate stays
+folded false until that seam lands.
+
+**Witness ledger after the retire pass:** 54 `w4_f3_*` test fns across
+`player.rs` (30) + `player_dust.rs` (24) — the retire pass added 2 (the
+down-release spawn default + the odd-hitbox corner; the close-out's "29"
+counted the `player.rs` machine fns only, pre-retire). All WRITTEN NOT RUN
+(code-only). The i27 window witness gained a leading idle tick (the
+C#-faithful first-press swallow).
