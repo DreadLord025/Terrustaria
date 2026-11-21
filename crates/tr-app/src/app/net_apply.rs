@@ -931,6 +931,80 @@ fn heal_effect_at_peer(app: &mut App, peer: u32, amount: i16) {
     );
 }
 
+/// The `36 SyncPlayerZone` reader (`MessageBuffer.cs:2178-2201`): the host
+/// forces the id to the sender (`:2180-2184`), stores the six bytes
+/// (`:2187-2192`), latches the `zone5[0]` rising edge into
+/// `NPC.Spawner.SpawnFaelings` (`:2195-2198` — unported: the port has no
+/// faeling NPC/spawner, the edge is detected and cited-skipped) and relays
+/// (`:2199`).
+pub(crate) fn host_player_zone(app: &mut App, server: &net::Server, id: u32, z: net::PlayerZone) {
+    let was_faeling = app
+        .remote_players
+        .get(&id)
+        .is_some_and(|p| p.zones[4] & 1 != 0);
+    if let Some(p) = app.remote_players.get_mut(&id) {
+        p.zones = [z.zone1.0, z.zone2.0, z.zone3.0, z.zone4.0, z.zone5.0];
+        p.town_npcs = z.town_npcs;
+    }
+    // `:2195-2198` — the faeling edge. `NPC.Spawner.SpawnFaelings` is
+    // unported (no faeling NPC kind / spawner in the port); the edge is
+    // detected here so the gate is 1:1 when the spawner lands (ANALYSIS).
+    let now_faeling = z.zone5.0 & 1 != 0;
+    if !was_faeling && now_faeling {
+        log::debug!("36: faeling edge for slot {id} (SpawnFaelings unported)");
+    }
+    server.broadcast_except(
+        &S2c::PlayerZone(net::PlayerZone {
+            player_id: id as u8,
+            ..z
+        }),
+        id,
+    ); // `:2199`
+}
+
+/// The `36` client half: a peer's zone words land in the snapshot store.
+pub(crate) fn client_player_zone(app: &mut App, z: net::PlayerZone) {
+    if let Some(p) = app.remote_players.get_mut(&(z.player_id as u32)) {
+        p.zones = [z.zone1.0, z.zone2.0, z.zone3.0, z.zone4.0, z.zone5.0];
+        p.town_npcs = z.town_npcs;
+    }
+}
+
+/// The `40 SyncTalkNPC` reader (`MessageBuffer.cs:2256-2270`): the host
+/// forces the id to the sender (`:2258-2262`), applies `SetTalkNPC`
+/// (`Player.cs:4375-4390` — the talk index + the host-side bestiary chat
+/// registration, `:4379-4382`) and relays (`:2267`).
+pub(crate) fn host_talk_npc(app: &mut App, server: &net::Server, id: u32, npc: i16) {
+    if let Some(p) = app.remote_players.get_mut(&id) {
+        p.talk_npc = if npc >= 0 { Some(npc) } else { None };
+    }
+    // `Player.SetTalkNPC`'s `netMode != 1` bestiary arm (`Player.cs:4379-
+    // 4382`): the host registers the chat start with the NPC's credit.
+    if npc >= 0 {
+        if let Some(n) = app.npcs.get(npc as usize) {
+            let entry = crate::bestiary::try_entry_for_npc(n.kind, n.slime);
+            if let Some(entry) = entry {
+                app.bestiary.set_was_chat_with_directly(entry.credit_id);
+            }
+        }
+    }
+    server.broadcast_except(
+        &S2c::TalkNpc(net::TalkNpc {
+            player_id: id as u8,
+            npc,
+        }),
+        id,
+    ); // `:2267`
+}
+
+/// The `40` client half: a peer's talk index lands in the snapshot store
+/// (the client's `SetTalkNPC` bestiary arm is `netMode != 1`-gated off).
+pub(crate) fn client_talk_npc(app: &mut App, player_id: u8, npc: i16) {
+    if let Some(p) = app.remote_players.get_mut(&(player_id as u32)) {
+        p.talk_npc = if npc >= 0 { Some(npc) } else { None };
+    }
+}
+
 /// The `20 SectionRange` body for a `SendTileSquare(whoAmi, x, y, w, h)`
 /// (`NetMessage.cs:2627-2630`) — the live tiles read back out.
 pub(crate) fn tile_square(app: &App, x: i32, y: i32, w: i32, h: i32) -> net::SectionRange {

@@ -947,14 +947,23 @@ impl App {
             C2s::PlayerHeal(h) => {
                 crate::app::net_apply::host_player_heal(self, server, id, h.amount);
             }
+            // `case 36` — a client's zone words (`MessageBuffer.cs:2178-
+            // 2201`): the store + the faeling-edge latch + the relay —
+            // W4-g48 (`net_apply`).
+            C2s::PlayerZone(z) => {
+                crate::app::net_apply::host_player_zone(self, server, id, z);
+            }
+            // `case 40` — a client's talk NPC (`MessageBuffer.cs:2256-2270`):
+            // SetTalkNPC + the bestiary chat registration + the relay —
+            // W4-g48 (`net_apply`).
+            C2s::TalkNpc(t) => {
+                crate::app::net_apply::host_talk_npc(self, server, id, t.npc);
+            }
             // W4-d96 (S1-I-1 player-family first half): the remaining bodies +
             // codecs in `net.rs`; the host apply/relay arms
-            // (`MessageBuffer.cs:2178-2201`, `:2256-2270`, `:2271-2289`,
-            // `:2307-2324`) land with the send-path pass (S1-I-4) — 36's
-            // faeling edge (`:2195-2198`) rides there too.
-            C2s::TalkNpc(_)
-            | C2s::PlayerZone(_)
-            | C2s::ItemAnim(_)
+            // (`MessageBuffer.cs:2271-2289`, `:2307-2324`) land with the
+            // send-path pass (S1-I-4).
+            C2s::ItemAnim(_)
             | C2s::ManaEffect(_) => {}
             // (d98's 35/36 parked pair is folded into the d96 list above —
             // keep-one dedupe at the g48 merge.)
@@ -2179,14 +2188,21 @@ impl App {
             S2c::PlayerHeal(h) => {
                 crate::app::net_apply::client_player_heal(self, h.player_id, h.amount);
             }
+            // `case 36` on a client — a peer's zone words
+            // (`MessageBuffer.cs:2187-2192`) — W4-g48 (`net_apply`).
+            S2c::PlayerZone(z) => {
+                crate::app::net_apply::client_player_zone(self, z);
+            }
+            // `case 40` on a client — a peer's talk index
+            // (`MessageBuffer.cs:2264`) — W4-g48 (`net_apply`).
+            S2c::TalkNpc(t) => {
+                crate::app::net_apply::client_talk_npc(self, t.player_id, t.npc);
+            }
             // W4-d96 (S1-I-1 player-family first half): the remaining bodies +
             // codecs in `net.rs`; the client read sites
-            // (`MessageBuffer.cs:2178-2201`, `:2256-2270`, `:2271-2289`,
-            // `:2307-2324`) land with the send-path pass (S1-I-4) — nothing
-            // sends them yet.
-            S2c::TalkNpc(_)
-            | S2c::PlayerZone(_)
-            | S2c::ItemAnim(_)
+            // (`MessageBuffer.cs:2271-2289`, `:2307-2324`) land with the
+            // send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::ItemAnim(_)
             | S2c::ManaEffect(_) => {}
             // (d98's 35/36 parked pair is folded into the d96 list above —
             // keep-one dedupe at the g48 merge.)
@@ -6322,5 +6338,82 @@ mod g48_apply_tests {
         assert!(spawned, "the host spawned the peer's heal text");
         let t = host_app.combat_texts.iter().find(|t| t.active).unwrap();
         assert_eq!(t.color, crate::combat_text::HEAL_LIFE, "the HealLife colour");
+    }
+
+    /// `case 36` (`MessageBuffer.cs:2178-2201`): a client's zone words store
+    /// on the host's peer copy and relay; the receiving client stores them.
+    /// The faeling edge (`zone5[0]` rising) is detected (the spawner is
+    /// cited-unported).
+    #[test]
+    fn g48_36_player_zone_stores_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let z = net::PlayerZone {
+            player_id: 255, // the host forces the sender (`:2180-2184`)
+            zone1: net::BitsByte(0b0000_0010), // jungle
+            zone2: net::BitsByte(0),
+            zone3: net::BitsByte(0),
+            zone4: net::BitsByte(0),
+            zone5: net::BitsByte(0b0000_0001), // the faeling edge bit
+            town_npcs: 3,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerZone(z));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.zones[0] == 0b10 && p.town_npcs == 3);
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 36 arm stored the zone words");
+        let peer = &host_app.remote_players[&client_app.local_id];
+        assert_eq!(peer.zones[4] & 1, 1, "the faeling edge bit stored");
+    }
+
+    /// `case 40` (`MessageBuffer.cs:2256-2270`): a client's talk-NPC index
+    /// stores on the host's peer copy, registers the bestiary chat start
+    /// (`Player.cs:4379-4382`) and relays.
+    #[test]
+    fn g48_40_talk_npc_stores_and_registers_the_chat() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A Guide (town NPC) in slot 0 — the bestiary credit "Guide".
+        let guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        host_app.npcs.clear();
+        host_app.npcs.push(guide);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TalkNpc(net::TalkNpc {
+                player_id: 255, // the host forces the sender (`:2258-2262`)
+                npc: 0,
+            }));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.talk_npc == Some(0));
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 40 arm stored the talk index");
+        assert!(
+            host_app.bestiary.was_chat_with("Guide"),
+            "the bestiary chat start registered (Player.cs:4381)"
+        );
     }
 }
