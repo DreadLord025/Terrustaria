@@ -79,7 +79,9 @@ impl MapOverlayContext<'_> {
     }
 
     /// `GetUnclampedDrawRegion`'s centre (`MapOverlayDrawContext.cs:60-70`) —
-    /// the pylon line's endpoints.
+    /// the pylon line's endpoints. The rect ctor TRUNCATES the top-left AND
+    /// the size to int (`:64` `new Rectangle((int)vector2.X, …)`), so the
+    /// `Center` read is integer halves — W4-f29 fix F1 (research/140 §3).
     pub fn unclamped_center(
         &self,
         size: [f32; 2],
@@ -87,16 +89,15 @@ impl MapOverlayContext<'_> {
         scale: f32,
         alignment: [f32; 2],
     ) -> [f32; 2] {
-        let pos = [
-            (position[0] - self.map_position[0]) * self.map_scale + self.map_offset[0],
-            (position[1] - self.map_position[1]) * self.map_scale + self.map_offset[1],
-        ];
-        let origin = [size[0] * alignment[0], size[1] * alignment[1]];
-        let num = self.draw_scale * scale;
-        [
-            pos[0] - origin[0] * num + size[0] * num * 0.5,
-            pos[1] - origin[1] * num + size[1] * num * 0.5,
-        ]
+        unclamped_center_int(
+            position,
+            size,
+            self.map_position,
+            self.map_offset,
+            self.map_scale,
+            self.draw_scale * scale,
+            alignment,
+        )
     }
 
     /// `Draw`'s scaled form (`MapOverlayDrawContext.cs:218-242`): the pylon
@@ -244,6 +245,35 @@ impl MapOverlayContext<'_> {
         );
         (hover, on_screen)
     }
+}
+
+/// `GetUnclampedDrawRegion` (`MapOverlayDrawContext.cs:60-70`), pure — the
+/// rect ctor truncates the top-left AND the size to int (`:64`) BEFORE the
+/// `Rectangle.Center` read (`X + Width/2`, integer halves). `num` is
+/// `drawScale * scale`. The pylon line endpoints ride this centre
+/// (`TeleportPylonsMapLayer.cs:47-59`). W4-f29 fix F1 (research/140 §3):
+/// the float centre drifts up to 1 px per endpoint at fractional scales.
+pub(crate) fn unclamped_center_int(
+    position: [f32; 2],
+    size: [f32; 2],
+    map_position: [f32; 2],
+    map_offset: [f32; 2],
+    map_scale: f32,
+    num: f32,
+    alignment: [f32; 2],
+) -> [f32; 2] {
+    let pos = [
+        (position[0] - map_position[0]) * map_scale + map_offset[0],
+        (position[1] - map_position[1]) * map_scale + map_offset[1],
+    ];
+    let origin = [size[0] * alignment[0], size[1] * alignment[1]];
+    let top_left = [pos[0] - origin[0] * num, pos[1] - origin[1] * num];
+    let w = (size[0] * num) as i32;
+    let h = (size[1] * num) as i32;
+    [
+        (top_left[0] as i32 + w / 2) as f32,
+        (top_left[1] as i32 + h / 2) as f32,
+    ]
 }
 
 /// `DrawClamped`'s rect pull-back (`MapOverlayDrawContext.cs:132-184`), pure:
@@ -863,6 +893,44 @@ mod tests {
         // The white pass is 2 px thick.
         let (_, _, _, sy) = pylon_line_segments([0.0, 0.0], [100.0, 0.0], 2.0);
         assert_eq!(sy, 2.0 / 16.0);
+    }
+
+    /// W4-f29 fix F1 — `MapOverlayDrawContext.cs:57-65`: the line endpoint is
+    /// the rect centre of the aligned, scaled marker, with the rect ctor's
+    /// `(int)` truncations on the top-left AND the size, then integer halves.
+    #[test]
+    fn w4_f29_pylon_line_endpoint_is_the_rect_centre() {
+        // pylon (40, 30): position = (41.5, 32); map_position 0, offset
+        // (100,50), scale 2, num = 1, frame (22, 40).
+        // pos = (83, 64) + (100,50) = (183, 114); origin = (11, 20);
+        // top_left = (172, 94); w = 22, h = 40; centre = (183, 114).
+        let got = unclamped_center_int(
+            [41.5, 32.0],
+            [22.0, 40.0],
+            [0.0, 0.0],
+            [100.0, 50.0],
+            2.0,
+            1.0,
+            ALIGN_CENTER,
+        );
+        assert_eq!(got, [183.0, 114.0]);
+        // The fractional case the float centre got wrong: pylon (40.2,
+        // 30.4) -> position (41.7, 32.4); offset (100.7, 50.9), scale 2 ->
+        // pos = (184.1, 115.7); frame (28, 38), num = draw_scale 0.7 * 1.5
+        // = 1.05; origin = (14, 19); top_left = (169.4, 95.75) truncates to
+        // (169, 95); w = (28*1.05) = 29 (int), h = (38*1.05) = 39 (int);
+        // centre = (169 + 14, 95 + 19) = (183, 114). The float centre would
+        // answer (184.1, 115.65) — up to 1 px of drift per endpoint.
+        let got = unclamped_center_int(
+            [41.7, 32.4],
+            [28.0, 38.0],
+            [0.0, 0.0],
+            [100.7, 50.9],
+            2.0,
+            1.05,
+            ALIGN_CENTER,
+        );
+        assert_eq!(got, [183.0, 114.0]);
     }
 
     /// W4-e17 — `DrawClamped`'s rect pull-back
