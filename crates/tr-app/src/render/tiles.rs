@@ -975,21 +975,24 @@ pub(crate) fn draw_tiles(
                             stats.quads += 1;
                         }
                     }
-                } else if tile.kind == 238 {
-                    // W4-g84: the Plantera bulb never draws through
-                    // `DrawSingleTile` — C# registers the 2×2 object's
-                    // top-left as a MultiTileGrass special
-                    // (`TileDrawing.cs:606-613`) and
-                    // `DrawMultiTileGrass`/`DrawMultiTileGrassInWind`
-                    // (`:8760-8764`, `:8916-9032`) draw it about the
+                } else if matches!(tile.kind, 236 | 238 | 702) {
+                    // W4-g84: the Plantera bulb (238) and its Life Fruit
+                    // siblings (236 LifeFruit, 702 LifeFruitReplica) never
+                    // draw through `DrawSingleTile` — C# registers the 2×2
+                    // object's top-left as a MultiTileGrass special
+                    // (`TileDrawing.cs:606-613`, the shared `236/238/702`
+                    // arm) and `DrawMultiTileGrass`/`DrawMultiTileGrassInWind`
+                    // (`:8760-8764` size 2×2, `:8916-9032`) draw it about the
                     // bottom-centre anchor with the default-arm factor
                     // `num = 0.15`. The row-major loop draws each cell
                     // inline with the same per-cell transform (the
                     // sunflower's documented z-order approximation);
                     // `windCycle = 0` (underground / calm) degenerates to
-                    // the static draw. The animation row rides the landed
-                    // case-238 `addFrY = tileFrame * 36`
-                    // (`TileDrawing.cs:5441-5444`, `Main.cs:18709-18718`).
+                    // the static draw. Only 238 animates (the landed
+                    // case-238 `addFrY = tileFrame * 36`,
+                    // `TileDrawing.cs:5441-5444`, `Main.cs:18709-18718`) and
+                    // carries `tileTop = 2`; 236/702 have no GetTileDrawData
+                    // case, so `dd.top = 0` and the pivot sits 2 px lower.
                     let sw = crate::render::multi_tile_grass::bulb_sway(
                         wind,
                         world,
@@ -1905,16 +1908,20 @@ mod tests {
     /// first, 236/238/702 next). The transform rides the sunflower counter
     /// (`_sunflowerWindCounter`, `:8918`) and the RAW cell light (`:8975`,
     /// never the actuation-ghosted `l`), with the Glow-coating White
-    /// override (`DrawTiles_GetLightOverride :6626-6629`).
+    /// override (`DrawTiles_GetLightOverride :6626-6629`). The follow-up
+    /// folds the Life Fruit siblings 236/702 into the same arm (the shared
+    /// `236/238/702` registration `:606-613` and size arm `:8760-8764`).
     #[test]
     fn w4_g84_the_bulb_arm_draws_before_the_generic_raised_arm() {
         let src = include_str!("tiles.rs");
         let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
         let body = &body[..body.find("#[cfg(test)]").unwrap()];
         let sunflower = body.find("} else if tile.kind == 27 {").expect("sunflower arm");
-        let bulb = body.find("} else if tile.kind == 238 {").expect("bulb arm");
+        let bulb = body
+            .find("} else if matches!(tile.kind, 236 | 238 | 702) {")
+            .expect("bulb arm");
         let raised = body.find("} else if dd.top != 0").expect("generic raised arm");
-        assert!(sunflower < bulb && bulb < raised, "roster order 27 → 238 → generic");
+        assert!(sunflower < bulb && bulb < raised, "roster order 27 → 236/238/702 → generic");
         let arm = &body[bulb..raised];
         assert!(
             arm.contains("multi_tile_grass::bulb_sway"),
@@ -1932,8 +1939,9 @@ mod tests {
             arm.contains("push_sprite_origin_rot_paint"),
             "the painted DrawNature call (:9000/:9024)"
         );
-        // Exactly one bulb dispatch site.
-        assert_eq!(body.matches("tile.kind == 238").count(), 1);
+        // Exactly one bulb-family dispatch site, covering all three siblings.
+        assert_eq!(body.matches("matches!(tile.kind, 236 | 238 | 702)").count(), 1);
+        assert_eq!(body.matches("tile.kind == 238").count(), 0);
     }
 
     /// S1-G-1f draw-feed witness: the animator's rows/counters feed the

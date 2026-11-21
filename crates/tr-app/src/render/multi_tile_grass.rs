@@ -17,10 +17,12 @@
 //! through the normal `resolve_tile_frame` path; this module adds the wind
 //! transform that was missing.
 //!
-//! Scope: tile 238 only. The sibling MultiTileGrass kinds 236/702 (jungle
-//! roses / Life Fruit, same 2×2 shape) and the rest of the pass's roster
-//! (27 sunflower — landed per-cell; 233, 530, 651, 485…, 519 cattail) keep
-//! their existing draws; porting them is the general-pass follow-up.
+//! Scope: the 2×2 bulb family — 238 (Plantera bulb), 236 (Life Fruit) and
+//! 702 (Life Fruit Replica), the shared `TileDrawing.cs:606-613` /
+//! `:8760-8764` arms. Only 238 animates and carries `tileTop = 2`; 236/702
+//! have no `GetTileDrawData` case (`tileTop = 0`). The rest of the pass's
+//! roster (27 sunflower — landed per-cell; 233, 530, 651, 485…, 519 cattail)
+//! is the general-pass follow-up.
 //!
 //! Deviations (ANALYSIS "The Plantera bulb wind draw (W4-g84)"):
 //! - the deferred special-point ordering is approximated inline (the
@@ -258,5 +260,30 @@ mod tests {
         wind.remix_world = true; // remix: below-surface sways
         let sw = bulb_sway(&wind, &world, 10, 20, 0, 0, 2, 0.0);
         assert!(sw.rot != 0.0);
+    }
+
+    // W4-g84 follow-up witness 5 — the Life Fruit siblings 236/702 share the
+    // bulb's 2×2 grid and 0.15 factor but carry NO `GetTileDrawData` case, so
+    // `tileTop = 0` (vs 238's 2): the bottom-centre anchor is the same
+    // `(tlx*16+16, tly*16+32)` but the pivot's Y is 2 px LARGER (the cell's
+    // `vector2` has no +2). The shared registration `:606-613` and size arm
+    // `:8760-8764` cover all three; only 238 animates (`:5441-5444`).
+    #[test]
+    fn w4_g84_life_fruit_siblings_use_top_zero() {
+        let wind = windy();
+        let world = bulb_world(10, 20, 0);
+        // 238 (tileTop 2) vs 236/702 (tileTop 0), same cell, same object.
+        let bulb = bulb_sway(&wind, &world, 10, 20, 0, 0, 2, 0.0);
+        let fruit = bulb_sway(&wind, &world, 10, 20, 0, 0, 0, 0.0);
+        assert_eq!(bulb.pivot, [16.0, 30.0]);
+        assert_eq!(fruit.pivot, [16.0, 32.0]);
+        // dy/rot are tileTop-independent (they ride num3 + the cycle only).
+        assert_eq!(bulb.dy, fruit.dy);
+        assert_eq!(bulb.rot, fruit.rot);
+        // The bottom row's pivot: 238 → 14, fruit → 16.
+        let bulb_b = bulb_sway(&wind, &world, 10, 21, 0, 18, 2, 0.0);
+        let fruit_b = bulb_sway(&wind, &world, 10, 21, 0, 18, 0, 0.0);
+        assert_eq!(bulb_b.pivot, [16.0, 14.0]);
+        assert_eq!(fruit_b.pivot, [16.0, 16.0]);
     }
 }
