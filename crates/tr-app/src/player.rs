@@ -6629,6 +6629,23 @@ impl Player {
                 // the tick. The buff is granted by the Hallowed set's
                 // `OnHit` arm (`:6938-6941`, W4-d115 — `on_hit_dodge_grant`).
                 59 => self.shadow_dodge = true,
+                // W4-d115 lane 19 — `Player.cs:9940-9947`: buff 321
+                // (BrainOfConfusionBuff, the brain dodge's own 240-tick
+                // cooldown) grants +10 crit to all three non-summon
+                // classes and +0.10 minion damage (`int num = 10;
+                // meleeCrit/rangedCrit/magicCrit += num; minionDamage +=
+                // num / 100f`). Per-slot adds like the C# chain (the
+                // dodge gate keeps one live slot, but the scan matches
+                // the source). The aura's NPC-confuse half is the
+                // RETALIATE block (`:38403-38431`, `hurt_modifiers::
+                // drain_retaliate` — Confused 31 on nearby hostiles +
+                // the dart 565), NOT this buff.
+                321 => {
+                    self.melee_crit += 10;
+                    self.ranged_crit += 10;
+                    self.magic_crit += 10;
+                    self.minion_damage += 0.1;
+                }
                 // `:10138-10141` — Heartreach (105): `lifeMagnet = true`
                 // (S1-P-i52 — the heart grab-range bonus + the 15/5 pull).
                 105 => self.life_magnet = true,
@@ -19472,6 +19489,37 @@ mod tests {
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 299);
         p.respawn();
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 0);
+    }
+
+    /// W4-d115 lane 19 — the buff-321 scan arm (`Player.cs:9940-9947`):
+    /// a brain dodge's own cooldown buff grants +10 crit ×3 + 0.10
+    /// minion damage every tick it lives, and the per-tick reset drops
+    /// them when it expires. The NPC-confuse aura is the RETALIATE
+    /// block's job (`:38403-38431`, `drain_retaliate`), not this buff's.
+    #[test]
+    fn w4_d115_lane19_the_brain_dodge_buff_grants_crit_and_minion_damage() {
+        let mut p = dodge_player_with(&[3223]);
+        // Baseline after the equip fold: crit 4, minion 1.0.
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.minion_damage - 1.0).abs() < 1e-6);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the brain dodges");
+        assert!(p.buffs.find_buff_index(321).is_some(), "the dodge armed 321");
+        // The next tick's scan grants the stats on top of the reset.
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.melee_crit, 14, "+10 (:9943)");
+        assert_eq!(p.ranged_crit, 14, "+10 (:9944)");
+        assert_eq!(p.magic_crit, 14, "+10 (:9945)");
+        assert!((p.minion_damage - 1.1).abs() < 1e-6, "+0.10 (:9946)");
+        // The buff expires: the reset drops the grants back to base.
+        p.buffs.clear_buff(321);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.minion_damage - 1.0).abs() < 1e-6);
     }
 
     /// W4-d115 lane 19 — `shadowDodgeCount` is DRAW-owned
