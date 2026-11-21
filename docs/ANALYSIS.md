@@ -33173,28 +33173,38 @@ census (`tools/_w4c4_proto_census.js`, 354 tips). "Merge action" is the
 contract the merger/d40b/d42b lanes execute; every row's AI/FindFrame/
 draw implementation in c4 is the keeper unless noted.
 
+**RETIRE-PHASE SUPERSESSION (2026-11-21, research/145):** d42 pushed its
+reconcile `49346dba6` AFTER this table — renumbered to vanilla-free
+578-630 and DROPPED FlyingAntlion/EyeballFlyingFish/GoldGoldfish/Pupfish/
+Dolphin, ceding them to c4. The five "retire c4's row at merge" actions
+below are WITHDRAWN — those c4 rows STAND outright. CorruptGoldfish's
+"STANDS at 405" is corrected to the dup-kind verdict keep-d34@277 /
+retire-c4@405-at-merge (d34 phase-3 `5f3435a87`, research/145 §flags —
+d37d-E3 owns the final call). The claims-table addendum for d37d:
+`docs/research/145-d42-keep-d42-verdicts-addendum.md`.
+
 ### aiStyle 44 — the flying swimmers (4 kinds, phases 1-2 DONE `5c4c8311`/`377660223`)
 
 | Kind | cs_id | c4 proto (final) | Pushed rival | Merge action |
 |---|---|---|---|---|
 | FlyingFish | 224 | **359** (was 354) | d37 FlyingFish 359 + CochinealBeetle 354; d23/d42/g8 also claim 354 | c4 ADOPTED 359 (`91293a3d2`) — identical-arm dedupe; keep c4's world-sim pre-pass wiring, drop d37's solo `update_flying_fish` wrapper |
 | GiantFlyingAntlion | 509 | **509** | none (d41 claim-only, 270 base arms) | STANDS |
-| FlyingAntlion | 581 | **581** | d42 FlyingAntlion **357** (pushed `9b22c091a`) | dup-kind: keep d42's 357, retire c4's 581 row AT MERGE; c4's `style44_find_frame` + the 581 `num46=-6` nudge are the keepers |
-| EyeballFlyingFish | 587 | **587** | d42 EyeballFlyingFish **363** | dup-kind: keep d42's 363, retire c4's 587 row AT MERGE; c4's 587 materialize pre-pass (the shared-pool dust) is the keeper |
+| FlyingAntlion | 581 | **581** | d42 FlyingAntlion 357 @`9b22c091a` — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 581 STANDS; the `style44_find_frame` + the 581 `num46=-6` nudge merge with no dedupe partner |
+| EyeballFlyingFish | 587 | **587** | d42 EyeballFlyingFish 363 — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 587 STANDS; the 587 materialize pre-pass (the shared-pool dust) merges outright |
 
 ### aiStyle 16 — the fish family (9 new kinds, phases 3-4 DONE `22cec16f7`; base 55/58/65 behaviour-frozen)
 
 | Kind | cs_id | c4 proto (final) | Pushed rival | Merge action |
 |---|---|---|---|---|
-| CorruptGoldfish | 57 | **405** (was 229) | d125 EmpressOfLight 229 (the hole is HARD-claimed now) | renumber EXECUTED `91293a3d2`; STANDS at 405 |
+| CorruptGoldfish | 57 | 405 (until merge) | d125 EmpressOfLight 229 (the vacated hole); **d34 CorruptGoldfish 277** (phase-3 `5f3435a87`) | renumber EXECUTED `91293a3d2`; ~~STANDS at 405~~ CORRECTED (research/145): dup-kind — keep d34@277 per E3's kinds-lane rule, retire c4@405 AT MERGE (d37d-E3 final call); c4's `style16_find_frame` group is the FindFrame keeper |
 | Arapaima | 157 | **406** (was 237) | d125 PrismaticLacewing 237 | renumber EXECUTED; STANDS at 406 |
 | BloodFeeder | 241 | 241 (until merge) | d37 BloodFeeder **373**; d120 SantaClaus 241 | keep d37's 373, RETIRE c4's 241 row at merge (the dup-check verdict; the row stays on-branch so c4's exhaustive matches compile) |
 | CrimsonGoldfish | 465 | **465** | d40 CrimsonGoldfish 465 (kb-0.4 + vanilla_type-missing defects) | KEEP c4, RETIRE d40's row — the exact drop-lines: **research/143** |
-| GoldGoldfish | 592 | 592 (until merge) | d42 GoldGoldfish **366** | dup-kind: keep d42's 366, retire c4's 592 row at merge; c4's `style16_find_frame` + catchItem 4274 wiring are the keepers |
-| Pupfish | 607 | 607 (until merge) | d42 Pupfish **381** | dup-kind: keep d42's 381, retire c4's 607 row; catchItem 4373 keeper |
-| Dolphin | 615 | 615 (until merge) | d42 Dolphin **389** | dup-kind: keep d42's 389, retire c4's 615 row; the leap-tilt + idle-timer RNG census keeper |
-| Pufferfish | 688 | **688** | none (d43 tip == base) | STANDS; the puff-flag fix (`17a241f6a`) + catchItem 5511 |
-| Orca | 692 | **692** | none | STANDS; the NPC_692 sheet atlas-deferred (136×992, the full-set overflow 8226) — the census-input for d35e: **research/144** |
+| GoldGoldfish | 592 | **592** | d42 GoldGoldfish 366 — **DROPPED by d42 `49346dba6`** (ceded to c4) | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 592 STANDS; catchItem 4274 + the entry merge outright; d42's GoldGoldfishWalker 593 interim bestiary entry re-points its fold onto this row at merge |
+| Pupfish | 607 | **607** | d42 Pupfish 381 — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 607 STANDS; catchItem 4373 keeper |
+| Dolphin | 615 | **615** | d42 Dolphin 389 — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 615 STANDS; the leap-tilt + idle-timer RNG census keeper |
+| Pufferfish | 688 | **688** | none (d43 tip == base `a725acb04`, worktree clean — re-verified retire phase) | STANDS; the puff-flag fix (`17a241f6a`) + catchItem 5511; **d43-band conditional**: if d43r row 688 before merge, c4's row retires AT MERGE (research/148) |
+| Orca | 692 | **692** | none | STANDS; the NPC_692 sheet atlas-deferred (136×992, the full-set overflow 8226) — the census-input for d35e: **research/144**; **d43-band conditional** as 688 (research/148) |
 
 ### The lane's skipped/deferred surfaces (unchanged)
 
