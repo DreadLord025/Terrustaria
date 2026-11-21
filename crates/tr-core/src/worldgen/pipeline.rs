@@ -3301,6 +3301,7 @@ mod tests {
                 "vines",
                 "muds walls in jungle",
                 "floating islands",
+                "floating island houses",
                 "remove water",
                 "shell piles",
                 "slopes",
@@ -3496,6 +3497,26 @@ mod tests {
         assert_eq!(pos("mining explosives"), pos("sword shrines") + 1);
         assert_eq!(pos("mahogany trees"), pos("mining explosives") + 1);
         assert_eq!(pos("mahogany trees") + 1, pos("webs and honey"));
+    }
+
+    /// W4-g44: `floating island houses` sits immediately after `floating
+    /// islands` — the house build reads the islands ledger, so the
+    /// relative islands→houses order is the C#'s (`FloatingIslands`
+    /// `:12927` → `FloatingIslandHouses` `:17859`). The port's discs place
+    /// late in the grouped chain, so the pair rides together there.
+    #[test]
+    fn w4_g44_the_island_houses_step_follows_the_islands() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("floating island houses"), pos("floating islands") + 1);
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Floating Islands") < cpos("Floating Island Houses"));
     }
 
     /// S1-K-2 wave C: `thin ice` sits in the Micro Biomes pass's vanilla

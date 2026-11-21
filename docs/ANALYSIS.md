@@ -9654,6 +9654,12 @@ re-derives the list per frame and keeps `focus_recipe` as a raw index).
 
 ## Floating islands (M1.4-WGEN-4)
 
+> **Superseded by W4-g44** (ANALYSIS "Sky lakes / floating-island
+> residuals"): the pass mechanics (count, skyLakes, y-band, spacing,
+> gates, house split) and the classic `IslandHouse` are now verbatim;
+> the disc bodies below remain the compact shape. This entry is the
+> historical M1.4-WGEN-4 record.
+
 The `FloatingIslands` pass (`WorldGen.cs:12924-13133`) вЂ” the classic sky
 islands over the 10-90 % band:
 
