@@ -882,6 +882,11 @@ pub const WEB_SPIT: u16 = 472;
 /// (`NPC.cs:23449`), the aiStyle-18 twin of the friendly DemonScythe 45
 /// (`Projectile.cs:1271-1282`: hostile, penetrate −1).
 pub const DEMON_SICKLE: u16 = 44;
+/// `ProjectileID.HarpyFeather` (38) — the Harpy's hostile feather shot
+/// (`NPC.cs:23428`), the aiStyle-1 bullet (`Projectile.cs:1207-1216`:
+/// 14x14, hostile, penetrate −1, tileCollide; the arm writes aiStyle 0
+/// then 1 — the final 1 stands). W4-g8 machine round.
+pub const HARPY_FEATHER: u16 = 38;
 /// `ProjectileID.DemonScythe` (45) — the Demon Scythe's shot.
 pub const DEMON_SCYTHE: u16 = 45;
 /// `ProjectileID.RainbowRodBullet` (79) — the Rainbow Rod's channeled shot.
@@ -2676,6 +2681,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:1162-1173` — the flamelash: 32x32, aiStyle 9, `penetrate =
             // 2`, the local-NPC immunity with the 12-tick cooldown.
             FLAMELASH => (32.0, 32.0, 9, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 12, false, -1, 0, 1.0)),
+            // `:1207-1216` — the harpy feather (the Harpy 48's hostile shot,
+            // `NPC.cs:23428`): 14x14, aiStyle 1 (the arm writes 0 then 1 —
+            // the final 1 stands), hostile, `penetrate = -1`, tileCollide;
+            // the spawn site overrides `timeLeft = 300` (`NPC.cs:23429`).
+            HARPY_FEATHER => (14.0, 14.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `:1271-1282` — the demon sickle (the Demon/VoodooDemon's
             // hostile shot, `NPC.cs:23449`): 48x48, aiStyle 18, alpha 100,
             // `penetrate = -1`, `scale = 0.9f`; the spawn site overrides

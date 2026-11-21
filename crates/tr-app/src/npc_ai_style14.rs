@@ -11,16 +11,18 @@
 //! unported types' own branches (226's velocity-sign facing `:22876-22894`,
 //! 158's surface flee + 7-cap approach `:22899-22970` + Transform(159)
 //! `:23346-23355` + double `ai[1]++` `:23357-23360`, 226's 4/2.5 approach
-//! `:22971-23037`, 660's 0.35/0.3/6/5 approach `:23038-23115`, 48's wet arm
-//! `:23333-23345` + feather shot `:23416-23436`, 156's trident shot
-//! `:23458-23484`) are cited skips — they land with their kinds.
+//! `:22971-23037`, 660's 0.35/0.3/6/5 approach `:23038-23115`, 156's trident
+//! shot `:23458-23484`) are cited skips — they land with their kinds.
+//! 48's wet arm `:23333-23345` + feather shot `:23416-23436` landed with the
+//! W4-g8 machine round (the Harpy wiring).
 //!
 //! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
 //! `npc.rs::update_cave_bat` routes the four kinds through [`bat_ai`],
 //! feeds `Entity.wet` via the `is_wet` pass + the session-player
-//! `TargetCandidate`/`players_wet` slices, drains [`DemonSickleShot`] into
-//! `wants_hostile_shot` (type 44, damage 21; the sim's timed-shot pass
-//! applies the `timeLeft = 300` write, `NPC.cs:23450`), and integrates
+//! `TargetCandidate`/`players_wet` slices, drains [`Style14Shot`] into
+//! `wants_hostile_shot` (the Demon/VoodooDemon sickle: type 44, damage 21;
+//! the Harpy feather: type 38, damage 15 — W4-g8; the sim's timed-shot pass
+//! applies the `timeLeft = 300` write, `NPC.cs:23429`/`:23450`), and integrates
 //! through the no-gravity `integrate_flyer_collision` stand-in
 //! (`UpdateCollision`, `NPC.cs:92523-92580`). The distrust-verbatim audit
 //! re-read the whole arm against `NPC.cs:22849-23486` at the wiring —
@@ -30,11 +32,14 @@
 //! byte-identical.
 //!
 //! RNG by construction: the ONLY `Main.rand` draws on the ported paths are
-//! the VoodooDemon/Demon (62/66) shot arm's — two `Next(-100, 101)` aim
+//! the shot arms'. VoodooDemon/Demon (62/66): two `Next(-100, 101)` aim
 //! jitters, X first then Y (`NPC.cs:23446-23447`), on the shot ticks
 //! `ai[0] == 20/40/60/80` with `Collision.CanHit`; otherwise ONE
 //! `Next(300)` reset roll per tick, drawn only when the firing-distance
-//! flag holds (the C# `&&` short-circuits, `:23453`). The bat kinds
+//! flag holds (the C# `&&` short-circuits, `:23453`). Harpy (48, W4-g8):
+//! the same two `Next(-100, 101)` jitters on `ai[0] == 30/60/90`
+//! (`:23425-23426`), else ONE `Next(400)` reset roll behind flag24
+//! (`:23432`). The bat kinds
 //! (49/51/60) draw nothing. `TargetClosest` is RNG-free (the Manhattan
 //! scan, `NPC.cs:77652-77781`). The witness tests below pin the stream
 //! position for each case (written, NOT run — code-only mode).
@@ -62,13 +67,17 @@ pub struct Style14Env<'a> {
     pub ticker: u64,
 }
 
-/// The type-62/66 shot request — `Projectile.NewProjectile` at
-/// `NPC.cs:23449-23450`: type 44 (`ProjectileID.DemonSickle`,
-/// `ProjectileID.cs`), damage 21, knockback 0, owner `Main.myPlayer`,
-/// spawned at the NPC centre with the jittered aim; the caller sets
-/// `timeLeft = 300` (`:23450`). The pure module never touches the pool.
+/// The type-48/62/66 shot request — `Projectile.NewProjectile` at
+/// `NPC.cs:23428-23429` (the Harpy feather: type 38, damage 15, W4-g8) /
+/// `:23449-23450` (the Demon/VoodooDemon sickle: type 44, damage 21):
+/// knockback 0, owner `Main.myPlayer`, spawned at the NPC centre with the
+/// jittered aim; the caller sets `timeLeft = 300`. The pure module never
+/// touches the pool. (`DemonSickleShot` pre-W4-g8 — generalized when the
+/// Harpy's feather landed on the same seam.)
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DemonSickleShot {
+pub struct Style14Shot {
+    pub kind: u16,
+    pub damage: i32,
     pub x: f32,
     pub y: f32,
     pub vx: f32,
@@ -82,8 +91,9 @@ const WATER_GROUP: [i32; 11] = [49, 51, 60, 62, 66, 93, 137, 150, 151, 152, 634]
 /// `this.noGravity = true` (`:22851`) is structural: the port's flyer
 /// callers integrate without gravity (the `Npc` struct has no
 /// `no_gravity` field; `update_hover`'s convention). Returns the
-/// VoodooDemon's shot request on the shoot tick, else `None`.
-pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> Option<DemonSickleShot> {
+/// Harpy's feather / the VoodooDemon's sickle shot request on the shoot
+/// tick, else `None`.
+pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> Option<Style14Shot> {
     let net_id = npc.kind.net_id();
     // `:22852-22875` — the tile-bounce clamps.
     bounce(npc);
@@ -118,7 +128,20 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
             generic_approach(npc);
         }
     }
-    // `:23333-23345` — type 48's wet arm (Harpy unported, skip).
+    // `:23333-23345` — type 48's wet arm (W4-g8: the Harpy landed). NOT in
+    // WATER_GROUP — the Harpy gets ONE generic approach pass above, then
+    // this lift (the 0.95 down-damp, the −0.5 ascent, the −4 cap, the
+    // second TargetClosest — the water-group shape verbatim).
+    if net_id == 48 && npc.wet {
+        if npc.vy > 0.0 {
+            npc.vy *= 0.95;
+        }
+        npc.vy -= 0.5;
+        if npc.vy < -4.0 {
+            npc.vy = -4.0;
+        }
+        target_closest(npc, env.world, env.players, true, 14, env.ticker);
+    }
     // `:23346-23355` — type 158's Transform(159) (VampireBat unported).
     // `:23356-23409` — the drift cycle (`ai[1]`/`ai[2]`).
     drift(npc, env);
@@ -132,7 +155,39 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     let pcx = p.x + p.width as f32 / 2.0;
     let pcy = p.y + p.height as f32 / 2.0;
     let flag24 = global_firing_distance_check(cx, cy, pcx, pcy);
-    // `:23416-23436` — type 48's feather shot (Harpy unported, skip).
+    // `:23416-23436` — type 48's feather shot (W4-g8: the Harpy landed).
+    // The 30/60/90 cadence, the 6f aim speed, the two `Next(-100, 101)`
+    // jitters (X first), and the 400 + Next(400) reset gate.
+    if net_id == 48 {
+        npc.ai[0] += 1.0;
+        if npc.ai[0] == 30.0 || npc.ai[0] == 60.0 || npc.ai[0] == 90.0 {
+            let (w, h) = npc.size();
+            if crate::projectile::can_hit(
+                env.world, npc.x, npc.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+            ) {
+                // `:23423-23427` — the 6f-normalised jittered aim; the X
+                // jitter draws BEFORE the Y jitter (`:23425-23426`).
+                let num235 = 6f32;
+                let num236 = pcx - cx + rng.next_range(-100, 101) as f32;
+                let num237 = pcy - cy + rng.next_range(-100, 101) as f32;
+                let num238 = num235 / (num236 * num236 + num237 * num237).sqrt();
+                // `:23428-23429` — NewProjectile(38, 15, 0f) at the
+                // centre; timeLeft 300 is the caller's write.
+                return Some(Style14Shot {
+                    kind: crate::projectile::HARPY_FEATHER,
+                    damage: 15,
+                    x: cx,
+                    y: cy,
+                    vx: num236 * num238,
+                    vy: num237 * num238,
+                });
+            }
+        } else if flag24 && npc.ai[0] >= (400 + rng.next_max(400)) as f32 {
+            // `:23432-23435` — the reset roll; the `&&` short-circuit
+            // keeps the draw out of the out-of-view ticks.
+            npc.ai[0] = 0.0;
+        }
+    }
     // `:23437-23457` — the Demon/VoodooDemon sickle shot.
     if net_id == 62 || net_id == 66 {
         npc.ai[0] += 1.0;
@@ -151,7 +206,9 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
                 let num243 = num240 / (num241 * num241 + num242 * num242).sqrt();
                 // `:23449-23450` — NewProjectile(44, 21, 0f) at the
                 // centre; timeLeft 300 is the caller's write.
-                return Some(DemonSickleShot {
+                return Some(Style14Shot {
+                    kind: crate::projectile::DEMON_SICKLE,
+                    damage: 21,
                     x: cx,
                     y: cy,
                     vx: num241 * num243,
@@ -722,5 +779,133 @@ mod tests {
         );
         // The truncation: a .9 centre floors before the rect is built.
         assert!(global_firing_distance_check(1909.0, 1000.0, 1000.9, 1000.0));
+    }
+
+    /// W4-g8 machine round — `NPC.cs:23425-23428`: the Harpy's feather
+    /// shot tick (ai[0] 29 → 30) draws exactly two `Next(-100, 101)`
+    /// jitters, X FIRST then Y, and the aim is the 6f-normalised jittered
+    /// vector; the request is type 38 / damage 15 at the centre.
+    #[test]
+    fn w4_g8_s14_the_harpy_feather_draws_x_then_y() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 29.0; // ++ → 30, the first feather tick.
+        let mut rng = UnifiedRandom::new(12345);
+        let mut witness = UnifiedRandom::new(12345);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).expect("the feather tick fires");
+        let (cx, cy) = n.center();
+        let pcx = 1100.0 + 10.0;
+        let pcy = 1000.0 + 21.0;
+        let dx = pcx - cx + witness.next_range(-100, 101) as f32;
+        let dy = pcy - cy + witness.next_range(-100, 101) as f32;
+        let s = 6f32 / (dx * dx + dy * dy).sqrt();
+        assert_eq!(shot.kind, crate::projectile::HARPY_FEATHER, "type 38 (:23428)");
+        assert_eq!(shot.damage, 15, "damage 15 (:23428)");
+        assert_eq!((shot.x, shot.y), (cx, cy));
+        assert_eq!(shot.vx, dx * s, "the X jitter draws first");
+        assert_eq!(shot.vy, dy * s);
+        assert_eq!(rng.peek(), witness.peek(), "exactly two draws, X then Y");
+        assert_eq!(n.ai[0], 30.0);
+    }
+
+    /// `NPC.cs:23432` — the Harpy's reset roll: ONE `Next(400)` per tick
+    /// when the firing-distance flag holds and the tick is not a feather
+    /// value. ai[0] 350 → 351 < 400 + roll, so no reset, but the draw lands.
+    #[test]
+    fn w4_g8_s14_the_harpy_reset_roll_draws_once_in_range() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 350.0;
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_max(400);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_none());
+        assert_eq!(n.ai[0], 351.0, "351 < 400 + {} — no reset", roll);
+        assert_eq!(rng.peek(), witness.peek(), "exactly one Next(400)");
+    }
+
+    /// `NPC.cs:23432`'s `&&` short-circuit — out of the firing window the
+    /// Harpy's roll is never drawn: the stream does not move.
+    #[test]
+    fn w4_g8_s14_the_harpy_out_of_view_draws_nothing() {
+        let w = air();
+        let players = [cand(6000.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 350.0;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.ai[0], 351.0);
+        assert_eq!(rng.peek(), before, "flag24 false → no draw");
+    }
+
+    /// `NPC.cs:23419-23421` — a feather-value tick with a blocked line of
+    /// sight draws NOTHING (the else-if reset roll is not evaluated).
+    #[test]
+    fn w4_g8_s14_the_harpy_blocked_feather_tick_draws_nothing() {
+        let w = walled();
+        let players = [cand(1300.0, 979.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 29.0; // → 30, but the wall blocks CanHit.
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_none(), "no line of sight, no feather");
+        assert_eq!(n.ai[0], 30.0);
+        assert_eq!(rng.peek(), before, "the shot set skips the reset roll");
+    }
+
+    /// `NPC.cs:23333-23345` — the Harpy's wet lift: the 0.95 down-damp,
+    /// the −0.5 ascent, the −4 cap, the second TargetClosest. The Harpy
+    /// is NOT in WATER_GROUP — ONE generic approach pass, then the lift
+    /// (the bat's two-pass shape does not apply).
+    #[test]
+    fn w4_g8_s14_the_harpy_wet_arm_lifts_once() {
+        let w = air();
+        // Player left + above → facing −1, directionY −1; vy ≤ −1.5 keeps
+        // the approach passes silent so the cap is directly observable.
+        let players = [cand(900.0, 900.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.wet = true;
+        n.vy = -3.9; // −0.5 → −4.4 → cap −4.
+        let mut rng = UnifiedRandom::new(1);
+        assert!(bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).is_none());
+        assert_eq!(n.vy, -4.0, "the −4 ascent cap");
+        assert_eq!(n.target_rect, (900, 900, 20, 42), "the wet arm re-runs TargetClosest (:23344)");
+        // The descending case: ONE generic pass (−0.04, then the >1.5
+        // opposite-side −0.05), then the damp + lift: 2 − 0.04 − 0.05 =
+        // 1.91; ×0.95 = 1.8145, −0.5 = 1.3145. No second pass (the Harpy
+        // is outside WATER_GROUP — the bat's 1.3045 does not apply).
+        let mut n2 = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n2.wet = true;
+        n2.vy = 2.0;
+        bat_ai(&mut n2, &env(&w, &players, &wet), &mut rng);
+        assert!(near(n2.vy, 1.3145), "one pass + damp/lift, not two passes: {}", n2.vy);
+    }
+
+    /// `NPC.cs:23418` — the client (netMode 1) returns before the feather
+    /// arm: ai[0] never increments on the Harpy either.
+    #[test]
+    fn w4_g8_s14_the_harpy_client_returns_before_the_feather() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 29.0;
+        let mut e = env(&w, &players, &wet);
+        e.net_mode = 1;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert!(bat_ai(&mut n, &e, &mut rng).is_none());
+        assert_eq!(n.ai[0], 29.0, "the client never counts the feather timer");
+        assert_eq!(rng.peek(), before);
     }
 }

@@ -1262,7 +1262,8 @@ pub enum NpcKind {
     /// `NPCID.Harpy` (48, `NPCID.cs:10773`) — the sky harpy
     /// (`NPC.cs:9360-9372`): 24x34, aiStyle 14, dmg 25, def 8, 100 HP,
     /// kb 0.6, NPCHit1/NPCDeath1, value 300. WIRED: the axis' 14 arm rides
-    /// `npc_ai_style14::bat_ai`; the wet arm + feather shot are cited skips.
+    /// `npc_ai_style14::bat_ai` — the wet arm + feather shot landed with
+    /// the W4-g8 machine round.
     Harpy,
     /// `NPCID.RedDevil` (156, `NPCID.cs:10987`) — the underworld devil
     /// (`NPC.cs:10974-10988`): 28x48, aiStyle 14, dmg 50, def 40, 600 HP,
@@ -12005,14 +12006,16 @@ impl Npc {
     /// only the seams the pure arm cannot: this tick's `Entity.wet` (the
     /// `is_wet` pass, the `update_swimmer` shape), the session-player
     /// `TargetCandidate` slice + the parallel `wet` flag (`Style14Env`),
-    /// the DemonSickle shot drain (`Projectile.NewProjectile(44, 21, 0f)`
-    /// + `timeLeft = 300`, `:23449-23450` — the sim's hostile-shot pass
-    /// applies the 300 override) and the no-gravity `UpdateCollision`
-    /// integration (`integrate_flyer_collision`; `this.noGravity = true`,
-    /// `:22851`). The flap/tilt live in `find_frame`'s case-49 group
-    /// (`NPC.cs:74824-74881`), not here. RNG: the arm draws only on the
-    /// VoodooDemon's shot/reset ticks (the module's witnesses pin the
-    /// order); the three bat kinds draw nothing.
+    /// the [`crate::npc_ai_style14::Style14Shot`] drain (the Demon sickle
+    /// `Projectile.NewProjectile(44, 21, 0f)` `:23449-23450`, the Harpy
+    /// feather `(38, 15, 0f)` `:23428-23429` — W4-g8; the sim's hostile-
+    /// shot pass applies the 300 override) and the no-gravity
+    /// `UpdateCollision` integration (`integrate_flyer_collision`;
+    /// `this.noGravity = true`, `:22851`). The flap/tilt live in
+    /// `find_frame`'s case-49 group (`NPC.cs:74824-74881`), not here.
+    /// RNG: the arm draws only on the Harpy/VoodooDemon's shot/reset
+    /// ticks (the module's witnesses pin the order); the three bat kinds
+    /// draw nothing.
     fn update_cave_bat(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         self.wet = is_wet(world, self.x, self.y, w, h);
@@ -12029,11 +12032,12 @@ impl Npc {
             ticker: 0,
         };
         if let Some(shot) = crate::npc_ai_style14::bat_ai(self, &env, rng) {
-            // `:23449-23450` — type 44 (`ProjectileID.DemonSickle`),
-            // damage 21, knockback 0; the `timeLeft = 300` write rides the
-            // sim's timed-shot list (`world_sim/npcs.rs`).
+            // `:23428-23429` / `:23449-23450` — the feather (type 38,
+            // damage 15) / the sickle (type 44, damage 21), knockback 0;
+            // the `timeLeft = 300` write rides the sim's timed-shot list
+            // (`world_sim/npcs.rs`).
             self.wants_hostile_shot
-                .push((crate::projectile::DEMON_SICKLE, shot.x, shot.y, shot.vx, shot.vy, 21));
+                .push((shot.kind, shot.x, shot.y, shot.vx, shot.vy, shot.damage));
         }
         self.integrate_flyer_collision(world);
     }
@@ -36742,5 +36746,42 @@ mod w4_g8_kind_wire_1_tests {
         let src = include_str!("npc.rs");
         assert!(src.contains("NpcKind::Squid => {\n                unreachable!(\"aiStyle 18 rides the style axis (W4-g8)\")"));
         assert!(src.contains("aiStyle 14 rides the style axis (W4-g8)"));
+    }
+
+    /// W4-g8 machine round — the Harpy's feather wiring pin (WRITTEN NOT
+    /// RUN): `update_cave_bat` drains the type-38 / damage-15 request into
+    /// `wants_hostile_shot` on the ai[0] 29 → 30 tick (`NPC.cs:23418-23428`),
+    /// exactly two `Next(-100, 101)` draws X-then-Y, and the HarpyFeather
+    /// proj_data row exists (14x14, aiStyle 1, penetrate −1).
+    #[test]
+    fn w4_g8_machine_the_harpy_feather_drains_through_the_wrapper() {
+        let w = World::new("t".into(), 200, 120);
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 1100.0;
+        player.y = 1000.0;
+        player.dead = false;
+        let mut harpy = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        harpy.ai[0] = 29.0;
+        let (cx, cy) = harpy.center();
+        let mut rng = UnifiedRandom::new(12345);
+        let mut witness = UnifiedRandom::new(12345);
+        harpy.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(harpy.wants_hostile_shot.len(), 1, "the feather drained");
+        let (kind, sx, sy, svx, svy, dmg) = harpy.wants_hostile_shot[0];
+        assert_eq!(kind, crate::projectile::HARPY_FEATHER, "type 38 (:23428)");
+        assert_eq!(dmg, 15, "damage 15 (:23428)");
+        assert_eq!((sx, sy), (cx, cy), "spawned at the AI-time centre");
+        let dx = 1100.0 + 10.0 - cx + witness.next_range(-100, 101) as f32;
+        let dy = 1000.0 + 21.0 - cy + witness.next_range(-100, 101) as f32;
+        let s = 6f32 / (dx * dx + dy * dy).sqrt();
+        assert_eq!((svx, svy), (dx * s, dy * s), "the 6f-normalised jittered aim");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two draws, X then Y");
+        // The proj_data row (`Projectile.cs:1207-1216`).
+        let feather = crate::projectile::proj_data(crate::projectile::HARPY_FEATHER)
+            .expect("the HarpyFeather 38 row");
+        assert_eq!(feather.ai_style, 1);
+        assert_eq!(feather.penetrate, -1);
+        assert_eq!((feather.w, feather.h), (14.0, 14.0));
+        assert!(feather.tile_collide);
     }
 }
