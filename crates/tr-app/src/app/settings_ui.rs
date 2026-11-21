@@ -72,6 +72,15 @@ impl App {
                 self.front = None;
                 self.enter_front(FrontScreen::WorldLoad(Box::new(state)));
             }
+            TrUiPreset::Reports => {
+                // The reports-page screenshot (`TR_UI=reports`): the empty
+                // log (the port has no issue-report pipeline — the
+                // `Workshop.ReportLogsInitialMessage` row draws), Back
+                // returning to the world select like the Workshop hub's
+                // entry (`UIWorkshopHub.cs:298`).
+                self.enter_front(FrontScreen::WorldSelect);
+                self.open_reports();
+            }
             TrUiPreset::Credits => {
                 self.front = None;
                 self.front_backup = None;

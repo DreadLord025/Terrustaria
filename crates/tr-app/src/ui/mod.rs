@@ -28,6 +28,7 @@ pub mod notifications;
 pub(crate) mod npc_chat;
 pub mod panel;
 pub mod pointer;
+pub mod reports;
 pub mod resources;
 pub mod save_list;
 pub mod sliders;

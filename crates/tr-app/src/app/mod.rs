@@ -2448,6 +2448,11 @@ impl App {
             // The generation job is started by `finish_creating_world`
             // before the hop (`WorldGen.CreateNewWorld`, `:6607-6625`).
             FrontScreen::WorldLoad(_) => {}
+            // `UIReportsPage.OnInitialize` builds the page (`:43-46`);
+            // the scroll's `GoToBottom` is set by the opener
+            // (`open_reports`), not here — the Back hop re-enters the
+            // parked screen, never the reports page itself.
+            FrontScreen::Reports(_) => {}
         }
         self.park_menu();
         self.front = Some(front);

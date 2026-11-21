@@ -39307,3 +39307,29 @@ half):
   split arrays only partially mirror).
 - Code-only mode: the witness tests (`loadout.rs` 3 +
   `debug_loadouts.rs` 5 + `clicks.rs` 2) are WRITTEN, NOT RUN.
+
+## Reports page (W4-d85, 2026-11-20, code-only)
+
+The `UIReportsPage` port (`ui/reports.rs`, table row 10):
+
+- **Geometry**: `BuildPage` (`UIReportsPage.cs:48-136`) — the 0.8-wide
+  container (MaxWidth 500 / MinWidth 300) at Top 230, the -110 panel,
+  the 28 px header, the log area (VAlign 1, Height -40, Top -2), the
+  list at -10 (detached) / -25 (attached) with PaddingRight 20 and
+  ListPadding 40, the fat Back panel.
+- **Scrollbar**: attaches only on overflow (`Recalculate`, `:186-204`)
+  and opens at the bottom (`GoToBottom`, `:124`); the wheel path
+  re-derives the content height through the renderer-free
+  `wrap_line_count` (the detached-list wrap width — the C# re-wraps on
+  the attach flip, a 15 px difference the port approximates).
+- **Deviations**: (1) the port has no `IProvideReports` pipeline — the
+  log is always empty and the `Workshop.ReportLogsInitialMessage` row
+  draws (`PopulateLogs`'s empty arm, `:147-160`); (2) the entry is the
+  `TR_UI=reports` preset (the vanilla entry is the Workshop hub's
+  Reports button, `UIWorkshopHub.cs:298` — d84's lane); (3) the gamepad
+  snap points (`SetupGamepadPoints`, `:232-247`) are out of scope (§J.3).
+- **Back**: `GoBackClick` (`:206-211`) returns the parked
+  `_previousUIState` / `_menuIdToGoBackTo` — the flow table's
+  `FlowClick::ReportsBack` row carries both.
+- Code-only mode: the witness tests (`reports.rs` 4 + `flow.rs` 2) are
+  WRITTEN, NOT RUN.

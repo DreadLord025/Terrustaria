@@ -53,6 +53,28 @@ pub(crate) enum FrontScreen {
     /// (`worldGenCallback`'s `menuMode = 6`, `WorldGen.cs:6599-6602` →
     /// `Main.cs:49468-49472`).
     WorldLoad(Box<ui::world_load::WorldLoadState>),
+    /// W4-d85's `UIReportsPage` (`UIReportsPage.cs:16`) — the Workshop
+    /// issue-log screen `Main.OpenReportsMenu` opens (`Main.cs:52352-
+    /// 52363`). The payload carries the reporters' log (empty in the
+    /// port — no issue-report pipeline), the live scroll (the ctor's
+    /// `GoToBottom`, `:124`) and the Back target (`_previousUIState` +
+    /// `_menuIdToGoBackTo`, `:36-41`).
+    Reports(Box<ReportsState>),
+}
+
+/// The `UIReportsPage` payload — the screen's own state
+/// (`UIReportsPage.cs:18-34`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ReportsState {
+    /// The merged reporter log (`PopulateLogs`'s time-ordered rows).
+    pub(crate) reports: Vec<ui::reports::Report>,
+    /// `UIScrollbar.ViewPosition` — `GoToBottom` at the open.
+    pub(crate) scroll: f32,
+    /// `_previousUIState` — the front screen Back returns to.
+    pub(crate) back_front: Option<FrontScreen>,
+    /// `_menuIdToGoBackTo` — the legacy page Back returns to when the
+    /// reports opened over a menu page (`Main.menuMode` at the open).
+    pub(crate) back_page: Option<menu::Page>,
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -162,6 +184,10 @@ pub(crate) enum FlowClick {
     /// world select takes over (the vanilla tail is the out-of-scope
     /// `UIWorldLoad` flow, spec §9.4).
     WorldCreate,
+    /// `UIReportsPage.GoBackClick` (`UIReportsPage.cs:206-211`):
+    /// `MenuUI.SetState(_previousUIState)` + sound 11 + `menuMode =
+    /// _menuIdToGoBackTo` — the parked front screen or legacy page returns.
+    ReportsBack,
     /// The confirm pages' Yes row (`selectedMenu == 1`, `Main.cs:49431`,
     /// `:49681`, `:49454`).
     ConfirmYes,
@@ -236,6 +262,16 @@ pub(crate) fn next_flow_state(
         // Mode 40 No: `menuMode = 888` + `SetState(BackupConfirmationState)`
         // (`:49460-49467`) — the exact parked screen returns.
         FlowClick::ConfirmNo if page == Some(P::ConfirmDiscard) => (backup, None, None),
+        // `UIReportsPage.GoBackClick` (`:206-211`): the parked state
+        // returns — the front screen when one was live, else the legacy
+        // page id (`_menuIdToGoBackTo`; the port parks the `menu::Page`).
+        FlowClick::ReportsBack => {
+            if let Some(FrontScreen::Reports(state)) = front {
+                (state.back_front, backup, state.back_page)
+            } else {
+                (front, backup, page)
+            }
+        }
         // Any other combination is a no-op (a click kind its screen never
         // sends); the state passes through unchanged.
         _ => (front, backup, page),
@@ -256,6 +292,8 @@ pub(crate) enum TrUiPreset {
     Keyboard,
     /// S1-E-17's loading screen (`UIWorldLoad`).
     WorldLoad,
+    /// W4-d85's reports page (`UIReportsPage`).
+    Reports,
     /// menuMode 3000.
     Credits,
     /// menuMode 5.
@@ -277,6 +315,7 @@ pub(crate) fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
         "worldnew" => TrUiPreset::WorldNew,
         "vk" => TrUiPreset::Keyboard,
         "worldload" => TrUiPreset::WorldLoad,
+        "reports" => TrUiPreset::Reports,
         "credits" => TrUiPreset::Credits,
         "delplayer" => TrUiPreset::DelPlayer,
         "delworld" => TrUiPreset::DelWorld,
@@ -497,6 +536,19 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.lookups,
                     state,
                     d.screen,
+                );
+            }
+            FrontScreen::Reports(state) => {
+                // `UIReportsPage.Draw` (`:226-230`, minus the gamepad snap
+                // points): the panel, the header, the log rows + the
+                // attach-on-overflow scrollbar, Back.
+                ui::reports::draw_screen(
+                    d.renderer,
+                    d.lookups,
+                    d.screen,
+                    &state.reports,
+                    state.scroll,
+                    d.mouse,
                 );
             }
         }
@@ -1066,6 +1118,15 @@ impl FrontScreenBehaviours for FrontScreen {
             // `Click_*`); the abort rides the Inventory trigger in Update
             // (`:54-58`), the port's key path below.
             FrontScreen::WorldLoad(_) => None,
+            // `UIReportsPage`'s one handler: the Back panel
+            // (`GoBackClick`, `:206-211`). The log rows are read-only.
+            FrontScreen::Reports(_) => {
+                if ui::reports::back_hit(screen, mouse) {
+                    Some(FlowClick::ReportsBack)
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -1126,6 +1187,73 @@ impl App {
             FrontScreen::WorldSelect => Some((self.worlds.len(), front.header())),
             _ => None,
         }
+    }
+
+    /// `Main.OpenReportsMenu` (`Main.cs:52352-52363`): the reporters'
+    /// log (empty in the port), the current front/menu state parked as
+    /// the Back target, `menuMode = 888` + `SetState(state)`. The
+    /// scrollbar starts at the bottom (`GoToBottom`, `UIReportsPage.
+    /// cs:124`).
+    pub(crate) fn open_reports(&mut self) {
+        let back_front = self.front.clone();
+        let back_page = self.menu.as_ref().map(|m| m.page);
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let container = ui::reports::container_rect(screen);
+        let panel = ui::reports::panel_rect(&container);
+        let log = ui::reports::log_rect(&panel);
+        // The empty log: one initial-message row between the spacers.
+        let line_h = ui::text::line_height(&self.lookups);
+        let content = ui::reports::content_height(&[line_h]);
+        let scroll = ui::reports::go_to_bottom(log[3], content);
+        self.enter_front(FrontScreen::Reports(Box::new(ReportsState {
+            reports: Vec::new(),
+            scroll,
+            back_front,
+            back_page,
+        })));
+    }
+
+    /// `UIReportsPage`'s wheel (`UIList.ScrollWheel` through
+    /// `UserInterface.Update`'s arm): the log's scrollbar owns the notch
+    /// while the page is live; the accumulator is consumed whatever the
+    /// hit (`:222`). The scroll lives on the screen payload, not
+    /// `front_scroll` (the reports list's `SetView` is the log height).
+    pub(crate) fn reports_wheel(&mut self, delta: i32) -> bool {
+        let Some(FrontScreen::Reports(state)) = self.front.as_mut() else {
+            return false;
+        };
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let container = ui::reports::container_rect(screen);
+        let panel = ui::reports::panel_rect(&container);
+        let log = ui::reports::log_rect(&panel);
+        // The content height needs the wrapped line counts — the draw's
+        // wrap runs at the list's inner width; the bitmap fallback's 8 px
+        // line height keeps the headless math font-free. The wrap width
+        // uses the detached list (the attach flip changes it by 15 px —
+        // the C# re-wraps on Recalculate; the port approximates with the
+        // detached width, documented).
+        let list = ui::reports::list_rect(&log, false);
+        let wrap_w = list[2] - 20.0;
+        let line_h = ui::text::line_height(&self.lookups);
+        let heights: Vec<f32> = if state.reports.is_empty() {
+            vec![line_h]
+        } else {
+            state
+                .reports
+                .iter()
+                .map(|rep| {
+                    let lines = ui::reports::wrap_line_count(&rep.text, wrap_w, &self.lookups);
+                    ui::reports::row_height(lines, &self.lookups)
+                })
+                .collect()
+        };
+        let content = ui::reports::content_height(&heights);
+        if ui::reports::wheel_target(screen, self.mouse_pos, log[3], content) {
+            state.scroll = ui::char_select::scroll_wheel(state.scroll, delta, log[3], content);
+        }
+        true
     }
 
     /// The two list screens' live layout: `Recalculate`'s result plus the
@@ -1272,6 +1400,7 @@ impl App {
                 FlowClick::CharBack
                     | FlowClick::WorldBack
                     | FlowClick::WorldCreateBack
+                    | FlowClick::ReportsBack
                     | FlowClick::ConfirmNo
             ) {
                 self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
@@ -1438,6 +1567,62 @@ pub(crate) mod front_flow_tests {
     use tr_core::liquid::LiquidSystem;
 
     use crate::menu::Page as P;
+
+    /// W4-d85 row 10 — `UIReportsPage.GoBackClick` (`:206-211`): the
+    /// parked front screen returns; a legacy-page open returns the page.
+    #[test]
+    fn w4_d85_the_reports_back_returns_the_parked_state() {
+        let state = ReportsState {
+            reports: Vec::new(),
+            scroll: 0.0,
+            back_front: Some(FrontScreen::WorldSelect),
+            back_page: None,
+        };
+        let (front, backup, page) = next_flow_state(
+            Some(FrontScreen::Reports(Box::new(state))),
+            None,
+            None,
+            FlowClick::ReportsBack,
+        );
+        assert_eq!(front, Some(FrontScreen::WorldSelect));
+        assert!(backup.is_none());
+        assert!(page.is_none());
+        // The legacy-page arm (`_menuIdToGoBackTo`).
+        let state = ReportsState {
+            reports: Vec::new(),
+            scroll: 0.0,
+            back_front: None,
+            back_page: Some(P::Main),
+        };
+        let (front, _, page) = next_flow_state(
+            Some(FrontScreen::Reports(Box::new(state))),
+            None,
+            None,
+            FlowClick::ReportsBack,
+        );
+        assert!(front.is_none());
+        assert_eq!(page, Some(P::Main));
+    }
+
+    /// W4-d85 row 10 — the Back panel's hit box at 1600x900
+    /// (`UIReportsPage.cs:125-130`: W 240 centred, y 805..855).
+    #[test]
+    fn w4_d85_the_reports_back_click_routes() {
+        let state = ReportsState {
+            reports: Vec::new(),
+            scroll: 0.0,
+            back_front: Some(FrontScreen::WorldSelect),
+            back_page: None,
+        };
+        let front = FrontScreen::Reports(Box::new(state));
+        let mut app = flow_app(Some(front.clone()), vec![], vec![]);
+        let screen = Vec2::new(1600.0, 900.0);
+        assert_eq!(
+            front.click(&mut app, screen, Vec2::new(800.0, 820.0), false),
+            Some(FlowClick::ReportsBack)
+        );
+        assert_eq!(front.click(&mut app, screen, Vec2::new(800.0, 400.0), false), None);
+    }
 
     #[test]
     fn the_flow_table_routes_every_front_hop() {
