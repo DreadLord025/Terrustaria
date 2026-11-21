@@ -39309,3 +39309,111 @@ head); every other arm reads the raw position.
 
 **Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked;
 the 17 witness tests are WRITTEN, NOT RUN.**
+
+## The remaining-files AddLight census (W4-e7 close, S1-E-5, 2026-11-21, code-only)
+
+**Scope.** The AddLight family's file census was closed for NPC.cs (c20/e7/f8,
+80 sites), Projectile.cs (c19/e6/f7, 107 sites), Main.cs (e8/f9, 5 tile sites)
+and Item.cs/WorldItem.cs (g20, the item family). This round censuses the five
+files the dispatch named as REMAINING — `Player.cs`, `TileObject.cs`,
+`Wiring.cs`, `WorldGen.cs`, `NetMessage.cs` — against the landed feeds, ports
+the gaps, and closes the census (the W4-f9 `c2740784` precedent).
+
+**Full-file census (direct paths, no junction recursion).** Case-sensitive
+`Lighting.AddLight` grep plus the `PlotTileLine|CastLight|SpreadLight|
+FloodFillTile` delegate cross-check:
+
+| File | `AddLight` | light-delegate forms | verdict |
+| ---- | ---------- | -------------------- | ------- |
+| `TileObject.cs` | 0 | 0 | EMPTY |
+| `Wiring.cs` | 0 | 0 | EMPTY |
+| `NetMessage.cs` | 0 | 0 | EMPTY |
+| `WorldGen.cs` | 0 | 1 `PlotTileLine` (`:72966`) | EMPTY of lights — the one `PlotTileLine` uses `DelegateMethods.CheckStopForSolids` (a solid-probe walk, NOT a light delegate) |
+| `Player.cs` | 46 | 4 `CastLightOpen` PlotTileLine (`:12555/:12559/:14561/:14562`) + 1 `FloodFillTile` (`:50135`) | 32 landed + 10 ported here + 4 cited |
+
+The Player delegate lane is the **light-map-direct** family (the f7
+`proj_addlight_census.rs` skip lane): `CastLightOpen`/`SpreadLight` write the
+light map through `Utils.PlotTileLine`/`FloodFillTile`, not the `EntityLights`
+per-frame list. The yoraiz0r-eye trail (`:12555/:12559`) and the
+Magiluminescence accessory (`:14561/:14562`) are `CastLightOpen` walks; 4776's
+fairy-glowstick spread (`:50135`) is `FloodFillTile` — its `AddLight(pos2, rgb)`
+line (`:50136`) already lands in `player_lights.rs::held_item_lights`. None is
+an `EntityLights` site; all stay in the documented delegate skip lane.
+
+**The Player gap batch.** `player_lights.rs` (S1-E-5, 2026-11-18) landed 32 of
+the 46 sites and listed 14 as dropped ("each needs a mount/armor/stealth system
+the port does not carry yet"). Re-censusing those 14 against the CURRENT port:
+the mount roster (`mount.rs`, Rudolph 0 + the Chillet 62-65), the armor-slot
+registry resolution (`ItemDef.head_slot/body_slot/leg_slot`, the draw's
+`render/entities.rs:1616` convention), `melee_swing.rs`'s hitbox/placement, the
+wing-slot table (`Player::wing_slot`) and `Item.GetPhaseColor`'s inputs
+(`ItemDef.projectile` + `misc_counter`) have ALL since landed. **10 of the 14
+are now unblocked** and ported verbatim in `crates/tr-app/src/player_lights_b.rs`
+(740 lines), declared in `main.rs`, fed in `app/frame/draw.rs` after the
+held-light family into the ONE `EntityLights` pair:
+
+| Site | Arm | Colour | Anchor / gate |
+| ---- | --- | ------ | ------------- |
+| `:24495-24497` | Rudolph's three-tile trail (`Update`, mount 0) | `(0.5, 0.2, 0.05)` ×3 | int-division centre `num`, `num+dir`, `num+2dir`; live mounted height (62) |
+| `:31279` | armor HEAD light (`UpdateArmorLights`) | head triplet ×(1+0.5/match) | `(w/2+8dir, 2)` spun by fullRotation |
+| `:31297` | armor BODY light | body triplet ×bonus | `(w/2+8, h/2)` spun |
+| `:31315` | armor LEGS light | legs triplet ×bonus | `(w/2+8dir, h*0.75)` spun |
+| `:21354` | Chillet dash light (`DashMovement` dash-6) | Ignis 63/65 `(0.6,0.3,0.1)` else `(0.5,0.1,0.6)` | `base.Center`, quotient-truncating |
+| `:29547` | Kazzymodus wing (`WingFrame` wings 28) | `(0.3, 0.1, 0.4)` | `base.Bottom`, airborne + ShouldDrawWingsThatAreAlwaysAnimated |
+| `:44916` | phase-blade held light (`ItemCheck_EmitUseVisuals`) | `GetPhaseColor(shoot)*0.5f` bytes | `(itemLocation.X+6+vx, itemLocation.Y-14)` |
+| `:45032` | Chillet melee-swing light (same fn tail) | dash colour ×0.5 (Vector3 float) | `itemRectangle.Center` (melee_hitbox) |
+
+(10 sites: the Rudolph trail is 3 `AddLight` lines, the armor block 3, the
+other four arms 1 each.)
+
+**Kept C# quirks (re-derived from the source windows):**
+1. `UpdateArmorLights` body case 190 (`:31226-31230`) and legs case 130
+   (`:31257-31261`) write the HEAD triplet (`num`/`num2`/`num3`), NOT their own
+   — the Stardust breastplate/leggings light the head colour. Both kept.
+2. The +0.5 match bonus is per-triplet-equality (`num10 += 0.5` for body match
+   AND legs match, `:31266-31273`), so a full matching set lights ×2.
+3. The phase-blade `Color * 0.5f` is the truncating BYTE operator (25→12,
+   127→63, 255→127), then `(float)(int)R / 255f`; the Chillet swing's
+   `Vector3 * 0.5f` is FLOAT (0.5→0.25), NOT byte — the two halves differ.
+4. The rainbow 1101/1102 `GetPhaseColor` arm rides `Utils.MultiLerp`
+   (`Utils.cs:292-303`) over the 9-entry palette at `miscCounterNormalized`;
+   the port's `misc_counter` wraps without the C# 300 reset, so `% 300`
+   recovers the C# value (both tick once per update).
+5. The swing `itemLocation`'s `mountOffset` IS carried
+   (`HeightOffsetHitboxCenter` = `mount.PlayerOffsetHitbox`, `:42846` →
+   `:3253-3267`) — the Chillet swing light runs mounted. This is distinct from
+   the held-light family's `ApplyItemPositionOffsetFromMount` `+ pos` (not
+   present on these two sites).
+
+**Deliberate folds:** `vortexStealthActive` (`:31151`) has no port field —
+folds false (the Vortex stealth toggle is unported), so the armor lights are
+never suppressed. `isDisplayDollOrInanimate` folds false. `wings`/`wingsLogic`
+are the SAME port field (`player.rs:5156-5161`), so `WingFrame`'s
+`flag = wingsLogic != wings` (`:29470`) folds false and the wing-28 `!flag`
+gate is always open; the merman `wings = 0` clear (`:25581`) is an unported
+swim-visual sibling. `noMelee`/`noUseGraphic` have no `ItemDef` fields — the
+phase-blade gate reduces to the 18-kind list (all 18 verified
+`noMelee = noUseGraphic = false` per-case in `Item.cs`) and the Chillet swing
+gate reads the `melee` class flag + useStyle 1. `gravDir` is 1.
+`should_float_in_water` widened `pub(crate)` for the wing gate.
+
+**What stays dropped (the other 4 of the 14):** the wing-27 Shroomite light
+(`:36026`, `0.4f * stealth` — the port's `stealth` has NO producer, it is only
+ever set in a knockback witness `player.rs:20160`) and the Snapping Stone trio
+(`:24575-24583`, gated on `accSnappingStoneLightUp` = `cooldown == 0` with
+`accSnappingStone`/`accPyroclast`/`accArmletOfRuin` — none of those flags, the
+360-tick cooldown setter `Projectile.cs:14316`, nor
+`TryMakingSnappingStoneStrike` `:14283` is ported). The light pets are
+Projectile.AI sites (projectile family); NightOwl sets `nightVision` only.
+
+**RNG argument.** No ported arm draws `Main.rand`: the Chillet dash's 8-dust
+loop (`:21355-21371`), the phase-blade region's dust branches and the
+use-visual dust are all skipped wholesale (the `player_lights.rs` precedent),
+so the UpdatePlayers stream is untouched. The feed collects after the fixed
+step like the item/NPC/player feeds; the `EntityLights` max-merge is
+commutative, so the intra-family order only documents the C# layout.
+
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked; the
+15 witness tests in `player_lights_b.rs` are WRITTEN, NOT RUN.** The first
+build after the merge must run `cargo test -p tr-app player_lights_b` plus the
+catalog command.
