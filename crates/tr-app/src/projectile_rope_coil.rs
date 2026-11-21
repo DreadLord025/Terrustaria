@@ -8,11 +8,14 @@
 //!
 //! * [`coil_death_drop`] — `Kill()`'s refund ladder
 //!   (`Projectile.cs:77572-77615`). WIRED: the pool's once-per-death hook
-//!   (`projectile.rs`, the bobber-arm seam) queues `(item, stack, centre)`
-//!   into `pending_death_drops`; the world sim drains it at the pass tail
+//!   (`projectile.rs`, the bobber-arm seam) queues `(item, stack, centre,
+//!   zero_velocity)` into `pending_death_drops` (the ladder passes no
+//!   velocity — `false`); the world sim drains it at the pass tail
 //!   (`world_sim/projectiles.rs`) as an `Item.NewItem` world drop on the
-//!   `UpdateItems` stream. d4's coil killed with NO refund — the one
-//!   behavioural gap the 26e comparison found, closed here.
+//!   `UpdateItems` stream (the two-integer scatter pair; the beach ball's
+//!   `Vector2.Zero` sibling arm draws nothing). d4's coil killed with NO
+//!   refund — the one behavioural gap the 26e comparison found, closed
+//!   here.
 //! * [`coil_chain_sheets`]/[`coil_chain_segments`]/[`draw_coil_chain`] —
 //!   the trailing-chain placement preview (`Main.DrawProjDirect`,
 //!   `Main.cs:28499-28669`). The coil items have NO `createTile`

@@ -14741,14 +14741,19 @@ pub struct ProjectilePool {
     /// W4-d4 — `Kill()`'s `Item.RequestNewItem` death drops that are NOT
     /// bobber catches (`Projectile.cs:77572-77615` the coil refund ladder,
     /// `:77620-77623` the beach ball's return): `(item, stack, centre_x,
-    /// centre_y)`. Unlike a catch these spawn a WORLD drop at the dead
-    /// projectile's `base.Center` (`Item.NewItem`, `Item.cs:49654+` — the
-    /// velocity pair `:49749-49750`, `prefix: 0` draws nothing); the world
-    /// sim drains them on the `UpdateItems` stream (`Main.cs:17779` — the
-    /// C# `Kill()` runs inline under `UpdateProjectiles`, the port defers
-    /// the spawn to the pass tail, the S1-E-21c convention; the bobber
-    /// overflow's stream precedent, `world_sim/projectiles.rs`).
-    pending_death_drops: Vec<(u16, i32, f32, f32)>,
+    /// centre_y, zero_velocity)`. Unlike a catch these spawn a WORLD drop
+    /// at the dead projectile's `base.Center` (`Item.NewItem`,
+    /// `Item.cs:49654+`). `zero_velocity` records whether the C# call
+    /// passed an explicit velocity: the coil ladder passes NONE
+    /// (`velocity = null` → the `:49749-49750` scatter pair draws), the
+    /// ball passes `Vector2.Zero` (`:77622` → the `velocity.HasValue` arm
+    /// `:49738-49741` sets (0,0) and draws NOTHING — the SEAL-VERIFY fix).
+    /// `prefix: 0` draws nothing either way; the world sim drains them on
+    /// the `UpdateItems` stream (`Main.cs:17779` — the C# `Kill()` runs
+    /// inline under `UpdateProjectiles`, the port defers the spawn to the
+    /// pass tail, the S1-E-21c convention; the bobber overflow's stream
+    /// precedent, `world_sim/projectiles.rs`).
+    pending_death_drops: Vec<(u16, i32, f32, f32, bool)>,
     /// W4-d4 — the beach ball's `Game.BallBounceResult` broadcasts
     /// (`Projectile.cs:18605-18608`, the type-155 movement arm): the chat
     /// lines the bounce chain queued this tick. The world sim drains them
@@ -15265,9 +15270,11 @@ impl ProjectilePool {
 
     /// W4-d4 — `Kill()`'s world-drop drain (`Projectile.cs:77572-77615` the
     /// coil refund ladder, `:77620-77623` the beach ball): `(item, stack,
-    /// cx, cy)` — the world sim spawns each as an `Item.NewItem` world drop
-    /// at the recorded `base.Center` on the `UpdateItems` stream.
-    pub fn drain_death_drops(&mut self) -> Vec<(u16, i32, f32, f32)> {
+    /// cx, cy, zero_velocity)` — the world sim spawns each as an
+    /// `Item.NewItem` world drop at the recorded `base.Center` on the
+    /// `UpdateItems` stream (the scatter pair only when the C# call passed
+    /// no velocity — the ball's `Vector2.Zero` draws nothing).
+    pub fn drain_death_drops(&mut self) -> Vec<(u16, i32, f32, f32, bool)> {
         std::mem::take(&mut self.pending_death_drops)
     }
 
@@ -20432,15 +20439,22 @@ impl ProjectilePool {
                             self.slots[i].ai[1],
                         ) {
                             let (cx, cy) = self.slots[i].center();
-                            self.pending_death_drops.push((item, stack, cx, cy));
+                            // The ladder's `RequestNewItem` calls pass NO
+                            // velocity (`:77576` etc.) — the drain draws
+                            // the scatter pair.
+                            self.pending_death_drops.push((item, stack, cx, cy, false));
                         }
                         // `Kill()`'s beach-ball return (`:77620-77623`): the
                         // 155's death drops ONE Beach Ball item (859) at
                         // `base.Center`, `NewItemOwnership.None` (no grab
-                        // reservation in netMode 0) — the same gates.
+                        // reservation in netMode 0) — the same gates. The
+                        // call passes `Vector2.Zero` (`:77622`, the 861
+                        // arm's `:77626` pattern): `velocity.HasValue`
+                        // (`Item.cs:49738-49741`) sets (0,0) and SKIPS the
+                        // scatter draws (the SEAL-VERIFY fix).
                         if self.slots[i].kind == BEACH_BALL {
                             let (cx, cy) = self.slots[i].center();
-                            self.pending_death_drops.push((859, 1, cx, cy));
+                            self.pending_death_drops.push((859, 1, cx, cy, true));
                         }
                     }
                 }
@@ -27100,8 +27114,9 @@ mod arrow_tests {
         assert!(!pool.slots()[ball].active, "the zero-velocity kill (`:27004`)");
         let drops = pool.drain_death_drops();
         assert_eq!(drops.len(), 1, "one return request");
-        let (item, stack, cx, cy) = drops[0];
+        let (item, stack, cx, cy, zero_velocity) = drops[0];
         assert_eq!((item, stack), (859, 1), "the Beach Ball back (`:77622`)");
+        assert!(zero_velocity, "the call passes Vector2.Zero (`:77622`)");
         // base.Center of the 44×44 box — the port's death hook reads the
         // slot AFTER the sub-step's dead-tick integrate (the C# `Kill()`
         // captures the centre pre-`UpdatePosition`; the pool-wide hook
@@ -27141,7 +27156,7 @@ mod arrow_tests {
             .unwrap();
         pool.slots_mut()[s].time_left = 1;
         tick(&mut pool, &mut w);
-        assert_eq!(pool.drain_death_drops(), vec![(985, 1, 167.5, 107.25)]);
+        assert_eq!(pool.drain_death_drops(), vec![(985, 1, 167.5, 107.25, false)]);
         assert_eq!(
             pool.drain_proj_sounds(),
             vec![(0, 0, 160.0, 100.0, 0.0)],

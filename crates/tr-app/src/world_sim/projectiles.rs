@@ -619,24 +619,33 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     }
     // W4-d4 — `Kill()`'s world-drop drain (`Projectile.cs:77572-77615` the
     // rope-coil refund ladder, `:77620-77623` the beach ball's return): the
-    // pool's death hook queued `(item, stack, base.Center)`; each spawns an
-    // `Item.NewItem` WORLD drop at the recorded centre (NOT a bobber catch
-    // — no inventory hand-off). The C# draws the velocity pair inline under
-    // `Kill()` (`Item.cs:49749-49750`: X = Next(-30,31)*0.1, Y =
-    // Next(-40,-15)*0.1 — none of the kinds is `ItemNoGravity`,
-    // `ItemID.cs:1320`); `prefix: 0` draws nothing. The port defers the
-    // spawn to the pass tail on the `UpdateItems` stream (`Main.cs:17779`
-    // — the bobber overflow's recorded stream deviation). The
-    // `ReserveForLocalPlayer` ownership sets only `enemyGrabDelayTime` in
-    // netMode 0 (`WorldItem.cs:295-305`), unported — the drop is
-    // player-grabbable immediately (the lucky-coin precedent).
-    for (item, stack, cx, cy) in app.projectiles.drain_death_drops() {
+    // pool's death hook queued `(item, stack, base.Center, zero_velocity)`;
+    // each spawns an `Item.NewItem` WORLD drop at the recorded centre (NOT
+    // a bobber catch — no inventory hand-off). The COIL calls pass no
+    // velocity, so the C# draws the pair inline under `Kill()`
+    // (`Item.cs:49749-49750`: X = Next(-30,31)*0.1, Y = Next(-40,-15)*0.1 —
+    // none of the kinds is `ItemNoGravity`, `ItemID.cs:1320`); the BALL
+    // call passes `Vector2.Zero` (`:77622`) — the `velocity.HasValue` arm
+    // (`Item.cs:49738-49741`) sets (0,0) and draws NOTHING (the SEAL-VERIFY
+    // fix). `prefix: 0` draws nothing. The port defers the spawn to the
+    // pass tail on the `UpdateItems` stream (`Main.cs:17779` — the bobber
+    // overflow's recorded stream deviation). The `ReserveForLocalPlayer`
+    // ownership sets only `enemyGrabDelayTime` in netMode 0
+    // (`WorldItem.cs:295-305`), unported — the drop is player-grabbable
+    // immediately (the lucky-coin precedent).
+    for (item, stack, cx, cy, zero_velocity) in app.projectiles.drain_death_drops() {
         if stack <= 0 {
             continue;
         }
-        let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
-        let vx = rng.next_range(-30, 31) as f32 * 0.1;
-        let vy = rng.next_range(-40, -15) as f32 * 0.1;
+        let (vx, vy) = if zero_velocity {
+            (0.0, 0.0)
+        } else {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
+            (
+                rng.next_range(-30, 31) as f32 * 0.1,
+                rng.next_range(-40, -15) as f32 * 0.1,
+            )
+        };
         // `WorldItem.Center = center` (`Item.cs:49736`) — the port's 14×14
         // drop box centred on the dead projectile's centre (the universal
         // `ItemDrop` box deviation, the bug-net catch precedent).
@@ -774,10 +783,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
 
 /// W4-d4 union — the `Kill()` world-drop drain's wire + stream contract
 /// (written, NOT run — code-only): the coil refund ladder
-/// (`Projectile.cs:77572-77615`) and the beach ball's return (`:77620-
-/// 77623`) spawn `Item.NewItem` world drops at the recorded centre, TWO
-/// integer draws on the `UpdateItems` stream per drop (`Item.cs:49749-
-/// 49750`), every other stage stream pristine.
+/// (`Projectile.cs:77572-77615`) spawns `Item.NewItem` world drops at the
+/// recorded centre, TWO integer draws on the `UpdateItems` stream per drop
+/// (`Item.cs:49749-49750`); the beach ball's return (`:77620-77623`) passes
+/// `Vector2.Zero` — the `HasValue` arm draws NOTHING (the SEAL-VERIFY
+/// fix). Every other stage stream pristine.
 #[cfg(test)]
 mod w4_d4_death_drop_tests {
     use super::*;
@@ -846,8 +856,10 @@ mod w4_d4_death_drop_tests {
     }
 
     /// The beach ball's zero-velocity death returns ONE Beach Ball (859)
-    /// at `base.Center` (`:77620-77623`) — the same drain, one pair of
-    /// draws.
+    /// at `base.Center` (`:77620-77623`) — the same drain, but the call
+    /// passes `Vector2.Zero` (`:77622`): the `velocity.HasValue` arm
+    /// (`Item.cs:49738-49741`) sets (0,0) and draws NOTHING (the
+    /// SEAL-VERIFY fix — the earlier two-draw pin misread the call).
     #[test]
     fn w4_d4_union_the_beach_ball_return_drains_on_the_items_stream() {
         let mut app = flow_app(None, vec![], vec![]);
@@ -861,10 +873,18 @@ mod w4_d4_death_drop_tests {
         // post-integrate slot (the dry gravity tail's 0.1 dead-tick move,
         // the pool-wide hook timing deviation).
         assert!((d.center().x - 54.0).abs() < 1e-3 && (d.center().y - 54.1).abs() < 1e-3);
-        let mut expect = UnifiedRandom::new(0);
-        let _ = expect.next_range(-30, 31);
-        let _ = expect.next_range(-40, -15);
-        assert_eq!(*app.rngs.stream(RngKey::UpdateItems), expect, "exactly two draws");
+        assert!(
+            d.vel.x == 0.0 && d.vel.y == 0.0,
+            "Vector2.Zero — the HasValue arm sets (0,0)"
+        );
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine — the explicit velocity draws nothing",
+                key.name()
+            );
+        }
     }
 }
 

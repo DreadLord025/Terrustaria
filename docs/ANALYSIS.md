@@ -39380,7 +39380,13 @@ the bobber arm) queues `(item, stack, base.Center)` into the new
 as an `Item.NewItem` WORLD drop (NOT a `drain_catches` inventory hand-off —
 the C# `RequestNewItem` spawns a world item, the player picks it up through
 the ordinary magnet). The beach ball's return (`:77620-77623`, 859×1) rides
-the same queue. Both arms sit behind `!died_out_of_world`: the C#
+the same queue — but its call passes `Vector2.Zero` (`:77622`), so the
+`velocity.HasValue` arm (`Item.cs:49738-49741`) sets (0,0) and draws
+NOTHING; only the coil ladder (no velocity argument) draws the scatter
+pair. The queue carries the flag (`zero_velocity`, the SEAL-VERIFY fix —
+the earlier drain drew the pair for the ball too, a misread of `:77622`;
+the 861 arm `:77626` shows the same explicit-Zero pattern). Both arms sit
+behind `!died_out_of_world`: the C#
 out-of-world guard (`:16696`) deactivates WITHOUT `Kill()`, so those deaths
 never refund. **RETIRE fix (`954824d0`, 26e FINAL-FINAL):** the ladder AND
 the ball return sit INSIDE `Kill_ExplodeTiles`, behind its `:77267` owner
@@ -39397,11 +39403,12 @@ and drained through the existing `play_place_sound` id-0 facade ahead of
 the refund (the C# cue-before-refund order).
 
 Deviations (recorded):
-* **Stream**: the C# draws the `Item.NewItem` velocity pair inline mid-`Kill()`
-  under the `UpdateProjectiles` swap (`Item.cs:49749-49750`: X =
-  `Next(-30,31)*0.1`, Y = `Next(-40,-15)*0.1`; `prefix: 0` draws nothing; none
-  of the kinds is `ItemNoGravity`, `ItemID.cs:1320`); the port defers the
-  spawn to the pass tail's `UpdateItems` stream — the bobber overflow's
+* **Stream**: the C# draws the COIL `Item.NewItem` velocity pair inline
+  mid-`Kill()` under the `UpdateProjectiles` swap (`Item.cs:49749-49750`:
+  X = `Next(-30,31)*0.1`, Y = `Next(-40,-15)*0.1`; `prefix: 0` draws nothing;
+  none of the kinds is `ItemNoGravity`, `ItemID.cs:1320`; the ball's
+  explicit `Vector2.Zero` draws nothing at all — see above); the port defers
+  the spawn to the pass tail's `UpdateItems` stream — the bobber overflow's
   recorded stream deviation, extended to world drops.
 * **Ownership**: `ReserveForLocalPlayer` in netMode 0 sets only
   `enemyGrabDelayTime` (`Item.cs:49757-49760`, `WorldItem.cs:295-305`) — the
@@ -39449,7 +39456,8 @@ reverse-order walk + ramps, the draw-index sheet parity, the NaN pin
 (`w4_d4_retire_the_refund_gates_and_the_dig_cue`: local cue+refund, foreign
 cue-without-refund, noDropItem silence, foreign ball no-return); the drain's
 world-drop shape + the two-draw `UpdateItems` contract with every other
-stream pristine (`world_sim/projectiles.rs`).
+stream pristine (the coil) and the ball's zero-velocity draw-free drain
+with EVERY stream pristine (`world_sim/projectiles.rs`).
 
 **The usability walk — WIRED (union item 2).** `check_rope_usability`
 (`world_sim/editing.rs`, ported verbatim from g82's `67c9a740`): the
