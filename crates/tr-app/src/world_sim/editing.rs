@@ -6229,8 +6229,8 @@ fn cell_drops(
         // fallback would leak 2340 for every frame (the first placing item).
         // Research-71 §6 census.
         314 => match crate::minecart::track_item(hit.frame_x) {
-            0 => None,
-            id => Some(id),
+            0 => Vec::new(),
+            id => vec![(id, 1)],
         },
         // S1-P-i30: the tree/cactus kinds drop through their per-cell kill
         // records (`TreeDropEvent`, resolved in `break_drop_events`) — the
