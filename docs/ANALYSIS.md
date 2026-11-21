@@ -39244,3 +39244,81 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The projectile dust sites (W4-d53, task/W4-d53-dust-sites-projectile, 2026-11-21, code-only mode)
+
+The dust foundation is on main (`DustPool` + the verbatim `NewDust` family,
+`particles.rs`; the colour/fade table `dust_table.rs`). The d50 physics
+chain and the d51/d52 player/NPC site lanes live on their own branches; this
+task ports the **projectile** half of the d51-54 wiring wave.
+
+**The drain convention.** `ProjectilePool::update` rolls a
+`&mut dyn DropRng` and cannot borrow the App's live `DustPool`, so each site
+SNAPSHOTS its box/velocity/owner flags at the C# read moment into
+`pending_dust_bursts` (the `wants_sound` / `pending_proj_sounds` pattern) and
+the new `projectile_dust.rs` replays the `Dust.NewDust` chain at the pass
+tail on the `UpdateProjectiles` stream (`Main.cs:17775-17777`) through the
+live pool — the d51 `player_dust` drain-half precedent. One draw = one
+stream step; the pool's pressure bands / default block / ChildSafety /
+per-type tweaks ride `DustPool::new_dust` verbatim. **Deviation:** the C#
+draws mid-walk; the port drains at the tail (the S1-E-21c queue→drain
+convention, stream-neutral per tick).
+
+### Batch 1 (19 sites)
+
+* **The per-tick arrow trail** (`Projectile.cs:17036-17077`, sites
+  17038/17042/17046/17055/17066/17071): the post-movement, pre-`Damage()`
+  dust, gated on `active` (`:17027`). 2/82 type 6, 172 type 135, 103 type 75
+  + the `Next(2)` noGravity/scale×2 arm, 278 type 169 + the `Next(2)`
+  noGravity/scale×1.5 arm, 4 the `Next(5)`-gated type 14 (alpha 150, scale
+  1.1), 5 the `Next(3)` type pick (15/57/58) at half velocity. Queued in the
+  sub-step loop just before `damage_pve`.
+* **The stationary Vortex-bolt trail** (`:17117-17125`, site 17122): the
+  mode-1 history shift's `velocity == Zero` arm — one type-229 puff at the
+  OLDEST ring entry, the `Next(2)` sign + `NextDouble` radius draws, then
+  noGravity + scale 1.7. Captured inside `shift_trailing_history` as
+  `wants_stationary_trail`, forwarded by the dispatch.
+* **The enchantment-visuals lane** (`UpdateEnchantmentVisuals`
+  `:17290-17318` → `EmitEnchantmentVisualsAt` `:17320-17467`, sites
+  17325/17332/17346/17368/17377/17387/17397/17408/17418/17428/17443/17462):
+  the PRE-AI visuals call (`:16700-16703`), gated on `!noEnchantmentVisuals`.
+  The frostBurn trail (`Next(2*(1+extraUpdates))`), the magmaStone `Next(3)`
+  gate + `Next(2)` scale arm, the bee/hornet mount (62-65) `Next(5)` gate +
+  the `NextFloat`-cubed white lerp (63/65 orange), and the melee-imbue ladder
+  1-8. **Imbue 1 draws TWO independent `Next(3)` gates** (`:17366` AND
+  `:17375`) — both ride the stream every tick. The whip arm fills
+  `FillWhipControlPoints` (DEFAULT args: getActualCollisionPoints false) and
+  centres the emit box on the curve's TIP (`:17311-17312`).
+
+**Folds / drops (each cited at its site):**
+* `npcProj` (`:17292`) folds to `owner == 255` (the hostile-shot proxy, the
+  `damage_pve` `ownedBySomeone` convention); a slot with no player link
+  draws nothing (the C# reads an inactive `Main.player[owner]`).
+* `noEnchantmentVisuals` / `noEnchantments` are the SetDefaults kind sets
+  (the writers censused: 181/228/229/344/399/401/504/566/611/669/697/698/
+  709/732/933/954/979/1100/1108/1128/1129 and 480/1121/1131/1132).
+* **The wet entry/exit splash lane** (`:16843-16996`, sites 16851-16987) —
+  the generic `Update` wet block (`:16790-17007`) is unported (the bobber's
+  `probe_wet` is aiStyle-61-only, the i35 one-tick-lag deviation); the lane
+  lands with the generic wet subsystem.
+* **The 466 stationary trail** (`:17108-17116`, site 17113) — the
+  CultistBossLightningOrbArc has no ported row / TrailingMode entry.
+* **The aiStyle-190/191 enchantment ring** (`:17299-17306`) — no ported
+  aiStyle-190/191 row; the plain-box and whip-tip arms cover the ported kinds.
+* **The enchantment-7 gore sibling** (`:17450-17458`) — the gore VISUAL is
+  W4-d55's; only its `Main.rand` draws stay on the stream (the d52
+  `body_landing_burst` precedent). Types 276-282 are `SafeGore`, so the
+  ChildSafety re-type arm draws nothing.
+* `Lighting.AddLight` (the mount arm `:17343`) — the S1-E-5 light-feed
+  column (`proj_lights.rs`), no RNG.
+
+### Verification
+
+Code-only: every site re-read against the cited C# windows; the seam call
+sites checked against the actual signatures by read/grep (`Projectile`
+fields, `Player` fields, `MountState::is_active/kind`,
+`tr_core::whip::fill_whip_control_points`, `DustPool::new_dust`,
+`App::spawn_ctx`, `NamedRngs::stream`). The 8 witness tests
+(`projectile_dust.rs`) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (user directive). The
+witnesses pin the per-site draw census against a scripted-RNG oracle (the
+d52 `burst_block` shape) plus the post-field writes and the queue half.

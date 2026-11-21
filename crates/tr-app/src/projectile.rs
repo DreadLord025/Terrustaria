@@ -762,6 +762,12 @@ pub struct Projectile {
     /// 53905`): `(style, x, y)` the pool drains into the audio's splash play
     /// on the `UpdateProjectiles` stream (the `wants_sound` pattern).
     pub(crate) wants_splash: Option<(i32, f32, f32)>,
+    /// W4-d53 — the stationary Vortex-bolt trail intent (`Projectile.cs:
+    /// 17117-17125`): `(oldest-ring-entry, rotation)` captured inside
+    /// `shift_trailing_history` when the mode-1 bolt sits at zero velocity;
+    /// the dispatch forwards it into `pending_dust_bursts` (the
+    /// `wants_sound` pattern). `None` for every slot that drew nothing.
+    pub(crate) wants_stationary_trail: Option<(Vec2, f32)>,
     /// S1-P-i35 — the pull's enemy spawn (`Player.cs:52415-52437`):
     /// `(npc_type, x, y)` the world sim resolves into the NPC vec (the
     /// `wants_mark_spawn` pattern). The Blood Nautilus 618 drops 64 px lower.
@@ -853,6 +859,7 @@ impl Default for Projectile {
             honey_wet: false,
             shimmer_wet: false,
             wants_splash: None,
+            wants_stationary_trail: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
         }
@@ -10096,8 +10103,10 @@ impl Projectile {
         if mode < 0 {
             return;
         }
-        // `:17101`: mode 1's animation-boundary gate. The 466/580 dust spawns
-        // that share the branch (`:17108-17125`) are SKIPPED (no dust layer).
+        // `:17101`: mode 1's animation-boundary gate. The 580 dust spawn that
+        // shares the branch (`:17117-17125`) is captured below as a drain
+        // intent (W4-d53); the 466 twin (`:17108-17116`) stays the cited
+        // unported skip (no row / TrailingMode entry).
         if mode == 1 && self.frame_counter != 0 && self.old_pos[0] != Vec2::ZERO {
             return;
         }
@@ -10113,6 +10122,14 @@ impl Projectile {
         if with_rotations {
             self.old_rot[0] = self.rot;
             self.old_sprite_direction[0] = self.sprite_direction;
+        }
+        // W4-d53 — `:17117-17125`: the stationary Vortex-bolt (580) puff.
+        // After the ring shift, `velocity == Zero` opens one type-229 dust at
+        // the OLDEST ring entry (`oldPos[len-1]`), the angle/radius draws ride
+        // the drain. The 466 twin is the unported skip.
+        if mode == 1 && self.kind == VORTEX_RITUAL_BOLT && self.vel == Vec2::ZERO {
+            self.wants_stationary_trail =
+                Some((self.old_pos[self.old_pos.len() - 1], self.rot));
         }
         if mode == 3 {
             // `:17151-17166`: the 0.65 smoothing pass — every filled entry
@@ -14516,6 +14533,14 @@ pub struct ProjectilePool {
     /// `(style, x, y)` drained by the world sim into the audio's splash play
     /// on the `UpdateProjectiles` stream.
     pending_splashes: Vec<(i32, f32, f32)>,
+    /// W4-d53 — the tick's `Dust.NewDust` burst snapshots (the
+    /// `pending_proj_sounds` queue convention): the enchantment-visuals lane
+    /// (`Projectile.cs:16700-16703` → `:17320-17467`), the per-tick arrow
+    /// trail (`:17036-17077`) and the stationary Vortex-bolt puff
+    /// (`:17117-17125`). The world sim drains them through
+    /// `projectile_dust::drain` on the `UpdateProjectiles` stream — the pass
+    /// rolls a `dyn DropRng` and cannot borrow the App's live `DustPool`.
+    pending_dust_bursts: Vec<crate::projectile_dust::DustBurst>,
     /// S1-P-i35 — the bobber death hook's catch hand-offs
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
@@ -14918,6 +14943,7 @@ impl ProjectilePool {
             pending_spear_hold: None,
             bobber_inputs: None,
             pending_splashes: Vec::new(),
+            pending_dust_bursts: Vec::new(),
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
@@ -15007,6 +15033,13 @@ impl ProjectilePool {
     /// the world sim plays each on the `UpdateProjectiles` stream.
     pub fn drain_splashes(&mut self) -> Vec<(i32, f32, f32)> {
         std::mem::take(&mut self.pending_splashes)
+    }
+
+    /// W4-d53 — the tick's dust-burst snapshots (`projectile_dust::DustBurst`):
+    /// the world sim replays each through `projectile_dust::drain` on the
+    /// `UpdateProjectiles` stream (the `drain_proj_sounds` convention).
+    pub fn drain_dust_bursts(&mut self) -> Vec<crate::projectile_dust::DustBurst> {
+        std::mem::take(&mut self.pending_dust_bursts)
     }
 
     /// S1-P-i35 — the bobber death hook's catch drain
@@ -16653,6 +16686,25 @@ impl ProjectilePool {
                         self.slots[i].time_left = 0;
                         died_out_of_world = true;
                         continue;
+                    }
+                }
+                // W4-d53 — `UpdateEnchantmentVisuals` (`Projectile.cs:
+                // 16700-16703`): the PRE-AI visuals call, gated on
+                // `!noEnchantmentVisuals`. The pass cannot borrow the live
+                // dust pool, so the burst is snapshotted here (the box /
+                // velocity / owner flags at the C# read moment) and drained
+                // at the pass tail on the `UpdateProjectiles` stream (the
+                // `pending_proj_sounds` convention). The `npcProj` gate
+                // (`:17292`) folds to the owner-255 hostile proxy; a slot
+                // with no player link draws nothing (the C# reads an
+                // inactive `Main.player[owner]` — every flag false).
+                if !crate::projectile_dust::no_enchantment_visuals(self.slots[i].kind)
+                    && self.slots[i].owner != 255
+                {
+                    if let Some(pl) = player.as_deref() {
+                        self.pending_dust_bursts.push(
+                            crate::projectile_dust::enchantment_burst(&self.slots[i], pl, owner),
+                        );
                     }
                 }
                 // `Projectile.cs:16704-16740` — the minion/sentry block: on the
@@ -19827,6 +19879,23 @@ impl ProjectilePool {
                     let vel = self.slots[i].vel;
                     self.slots[i].pos += vel;
                 }
+                // W4-d53 — the per-tick arrow trail (`Projectile.cs:
+                // 17036-17077`): the post-movement, pre-`Damage()` dust,
+                // gated on `active` (`:17027-17030`). The box/velocity are
+                // snapshotted at the C# read moment; the drain replays the
+                // per-kind chain on the `UpdateProjectiles` stream.
+                if self.slots[i].active
+                    && crate::projectile_dust::arrow_trail_kind(self.slots[i].kind)
+                {
+                    let p = &self.slots[i];
+                    self.pending_dust_bursts.push(crate::projectile_dust::DustBurst::ArrowTrail {
+                        kind: p.kind,
+                        pos: p.pos,
+                        w: p.w as i32,
+                        h: p.h as i32,
+                        vel: p.vel,
+                    });
+                }
                 // `Projectile.cs:17078` — `this.Damage()` runs per sub-step
                 // inside `Update` (it calls `Damage_PVP` internally,
                 // `:12509`), between the AI and the lifetime block: the hit
@@ -19937,6 +20006,12 @@ impl ProjectilePool {
             // (The C# shifts per sub-step inside the while — a trail-density
             // divergence, recorded in ANALYSIS, left to the trail work.)
             self.slots[i].shift_trailing_history();
+            // W4-d53 — forward the stationary-trail intent into the pool's
+            // dust queue (the `wants_sound` → `pending_proj_sounds` pattern).
+            if let Some((at, rot)) = self.slots[i].wants_stationary_trail.take() {
+                self.pending_dust_bursts
+                    .push(crate::projectile_dust::DustBurst::StationaryTrail { at, rot });
+            }
             // The lifetime block (`:17197-17209`) moved inside the sub-step
             // loop (S1-A-9) — see the block at the loop body's end.
             // `Kill()`'s type-295 arm (`:74341-74350`): the Inferno Fork
@@ -30443,6 +30518,7 @@ mod phasmal_projectile_tests {
             honey_wet: false,
             shimmer_wet: false,
             wants_splash: None,
+            wants_stationary_trail: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
         }
@@ -30852,6 +30928,7 @@ mod ritual_projectile_tests {
             honey_wet: false,
             shimmer_wet: false,
             wants_splash: None,
+            wants_stationary_trail: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
         }

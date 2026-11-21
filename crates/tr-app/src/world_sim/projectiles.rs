@@ -557,6 +557,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     for (style, x, y) in app.projectiles.drain_splashes() {
         app.audio.play_splash_sound(style, x, y, rng);
     }
+    // W4-d53 — the tick's `Dust.NewDust` bursts (`Projectile.cs:16700-16703`
+    // enchantment visuals, `:17036-17077` the arrow trail, `:17117-17125` the
+    // stationary Vortex-bolt puff): the pass snapshotted each at the C# read
+    // moment; the drain replays the chain on the SAME `UpdateProjectiles`
+    // stream through the live `DustPool` (the `player_dust` / S1-E-21c
+    // queue→drain convention — the C# draws mid-walk, the port at the tail).
+    for burst in app.projectiles.drain_dust_bursts() {
+        crate::projectile_dust::drain(app, burst);
+    }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
     // item fills the owner's inventory first (`Player.GetItem`'s slot walk),

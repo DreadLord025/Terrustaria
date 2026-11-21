@@ -181,6 +181,12 @@ pub(crate) mod projectile_id;
 pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
+// W4-d53: the projectile-tick `Dust.NewDust` drain lanes — the per-tick arrow
+// trail (Projectile.cs:17036-17077), the stationary Vortex-bolt trail
+// (:17117-17125) and the enchantment-visuals lane (:17290-17467). The tick
+// snapshots the box/velocity/owner flags, this module replays on the
+// UpdateProjectiles stream (the player_dust / pending_proj_sounds convention).
+mod projectile_dust;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
 mod projectile_ai_moonlord;
