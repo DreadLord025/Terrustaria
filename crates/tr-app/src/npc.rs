@@ -7542,7 +7542,12 @@ impl Npc {
                 }
                 // `:72768-72771` — the 356-only colour offset (the C#'s
                 // `(int)((float)(num * 3) * (ai[2] - 1f))` in row units).
-                self.frame += (3.0 * (self.ai[2] - 1.0)) as u32;
+                // The live style is 1..8 (the AI_065 colour roll latches
+                // it, `:44968-44969`); the saturating sub keeps the
+                // unreachable ai[2] = 0 grid state at offset 0 (the C#'s
+                // negative pixel offset clamps to the sheet top — the
+                // PresentMimic colour-bound precedent).
+                self.frame += (3.0 * (self.ai[2] - 1.0).max(0.0)) as u32;
             }
             // `case 357` (`NPC.cs:72774-72827`, shared with the unported
             // 448/484/606): the localAI[0] -2 marker, the 12-tick 2-row
