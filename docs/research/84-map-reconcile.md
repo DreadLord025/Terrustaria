@@ -542,3 +542,48 @@ objects, `git show 08b749bd`/`a9774d2a`/`249a0c1b` read in full,
 `git log 670c948d..75289a2d` (the 10-commit list), and the C# windows
 cited in §10.7 re-read directly. All witnesses cited are
 written-not-run (code-only mode).
+
+### 10.9 FINAL — W4-e18 RETIRED (2026-11-21, retire phase)
+
+**STATUS: RETIRED. Fold-source tip = `75289a2d`. Merger-keep =
+`task/W4-f46-minimap-reveal-2` (union).** This branch
+(`task/W4-e18-minimap-reveal-queue`) takes no further port work. The
+retire-phase commits after `75289a2d` are docs/comments-only (this
+record, the DEPRECATED-BY-UNION banners, the research/14 census closes)
+and carry no code-fold obligation — their rulings ride this document.
+
+The merger's contract, in order:
+
+1. **Keep the f46 union only** (its §10 FINAL, `c50e1b00`) — never a
+   plain e18 or f46 merge.
+2. **Fold the 10 e18 commits past `670c948d` per §10.6's exact list**
+   before merging (f46's `cc17880a` "tip unmoved" claim is stale; its
+   own checklist step 2 fires). The fold-source is `75289a2d` —
+   `git cherry-pick 670c948d..75289a2d` in order, per-hunk resolution
+   per the list's notes.
+3. **The 3-way zoom keep-one is §10.7** — e18 `249a0c1b` vs f46e
+   `08b749bd` vs g53c `a9774d2a`. The e18-arm fidelity notes are
+   published there; g53c's style-2 overlay-state hunk is the D18
+   salvage regardless of the input-fn winner.
+4. **The dup-halves on this branch are banner-marked, not deleted**
+   (`f0453a63`): `map_reveal_driver`/`map_reveal_sweep`'s dirty push/
+   `unlock_map`'s bulk sweep. The unique post-base pieces (the §10.6
+   list's rows 2/4/5/6/7/8 + row 1's alpha half) stay live here until
+   folded — they are the union's missing content, not dups.
+5. **Anchors:** 13 rows after the fold (§10.6 accounting); the dropped
+   zoom-dup's rows go only with the §10.7 ruling. Never delete rows to
+   silence the canary.
+6. **D18/D22 remaining halves are censused + closed small on the e18
+   side** (research/14's retire census): D18's style-0 "retro layout"
+   is a PHANTOM (no style-0 arm exists in `DrawMap`'s branch chain —
+   `Main.cs:45778`/`:62231` gate the CALLERS on style 1/2), its real
+   remainder is the style-2 overlay draw (`Main.cs:55548-55578` +
+   `:55615-55694`, g53c holds the state half); D22's content-lost
+   refresh is a structural no-op in wgpu (no `IsContentLost`; the
+   `targets.rs:451-455` precedent — device loss recreates everything,
+   the port's `uploaded`/`needs_full_upload` pair is the equivalent).
+   Both rows close as recorded deviations, not port work.
+7. **Verification on the merged state** (f46 §10 step 5's catalog run)
+   — every witness on both branches is written-not-run; the e18 sets
+   to watch are §10.6's per-commit witnesses plus the re-pinned five
+   (`map_delay = 0`).
