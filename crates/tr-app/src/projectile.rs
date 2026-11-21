@@ -23856,6 +23856,29 @@ impl ProjectilePool {
             if tag_type > 0 {
                 if let Some(p) = player.as_deref_mut() {
                     p.tag_effects.try_apply_tag_to_npc(tag_type, idx, npcs[idx].kind);
+                    // W4-d17 doc-sweep — `WhipTagEffect.OnTagAppliedToNPC`
+                    // (`WhipTagEffect.cs:45-59`): the tag application grants
+                    // the effect's PlayerBuffId for
+                    // `(int)(PlayerBuffTime * tagEffectDuration)` ticks —
+                    // the summoner-speed buffs (308 SwordWhip +0.25, 311
+                    // DarkHarvest +0.35, 314 ThornWhip +0.12,
+                    // `Player.cs:10110-10121`) the port's buff pass already
+                    // reads. The `PlayerBuffAppliedManually` rows (365
+                    // CobWhip, 312 CoolWhip) skip — their per-type switch
+                    // arms grant them (`:13923`/`:13934`). The immune-kind
+                    // refusal (`CanApplyTagToNPC`) gates the grant too —
+                    // the mark write above is the same gate.
+                    if let Some(e) = tr_core::whip::tag_effect(tag_type) {
+                        if !e.player_buff_applied_manually
+                            && e.player_buff_id > 0
+                            && !crate::npc_buffs::whip_immune(npcs[idx].kind)
+                        {
+                            let time = (e.player_buff_time as f32
+                                * p.tag_effects.tag_effect_duration())
+                                as i32;
+                            p.buffs.add_buff(e.player_buff_id, time);
+                        }
+                    }
                 }
             }
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
@@ -30703,6 +30726,48 @@ mod whip_tests {
             player.tag_effects.is_npc_tagged(4911, npc_idx),
             "the whip tags the NPC for the summoners"
         );
+    }
+
+    /// W4-d17 doc-sweep — `WhipTagEffect.OnTagAppliedToNPC`
+    /// (`WhipTagEffect.cs:45-59`): the tag application grants the effect's
+    /// PlayerBuffId for `(int)(PlayerBuffTime * tagEffectDuration)` ticks.
+    /// The SwordWhip (4678) grants buff 308 (+0.25 summoner speed,
+    /// `Player.cs:10114-10117`); the CoolWhip's 312 is MANUAL (the per-type
+    /// switch grants it, `:13923`), so the tag path never double-grants.
+    #[test]
+    fn w4_d17_the_tag_application_grants_the_summoner_speed_buff() {
+        let mut w = ground();
+        let center = (300.0, 200.0);
+        let mut player = crate::player::Player::spawn(&w);
+        let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+        npcs[0].x = center.0 + 20.0;
+        npcs[0].y = center.1 - 12.0;
+        let mut pool = whip_at(center, SWORD_WHIP, 55);
+        pool.slots[0].tag_effect_type = 4678; // SwordWhip
+        let mut rng = tr_core::tile_light::FastRandom::new(3);
+        for _ in 0..60 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some(center),
+                Some(Vec2::new(1.0, 0.0)),
+                Some(&mut player),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            if !pool.slots[0].active {
+                break;
+            }
+        }
+        assert!(player.tag_effects.is_npc_tagged(4678, 0));
+        let i = player
+            .buffs
+            .find_buff_index(308)
+            .expect("the SwordWhip tag grants buff 308");
+        assert_eq!(player.buffs.buff_time[i], 180, "180 * 1.0 duration");
     }
 
     #[test]
