@@ -39788,6 +39788,23 @@ World/SpawnCtx) stay DEFERRED. Witnesses: the 1098/1123 colour, the
 1020/1105 28-count/Transparent/gravity split + determinism, the 1085/
 1080 counts, the Perfect-ring counts/flags — WRITTEN NOT RUN.
 
+### Batch 23 (10 kinds, the gem bolts + sparkle bursts `:75425-75532`)
+
+121-126/597 (the gem bolts: dust type kind−121+86, 597 → 262; dir =
+vel.SafeNormalize(Zero) zeroed when |vel|<1; 15× that dust speed dir
+alpha 50 scale 1.2 noGravity scale×1.25 vel×2.2 += dir×1.5 vel×=NextFloat;
+the AoeExplosion feature (ai[0] bit 3, `GemStaffFeatures::from_ai`) adds
+30× more — noGravity=Next(5)!=0, scale×=1+NextFloat, vel×4.2, the gravity
+ones scale×0.6 fadeIn 0 noLight, vel×=NextFloat. The AoE DAMAGE half —
+the 160/22 resizes + Damage — is `gem_bolt_aoe`'s (projectile.rs), the
+dust here reads the ORIGINAL box since the C# dust precedes the resize;
+the gem module's dust-skip is RECLAIMED here), 1115 (count = 10+(int)(20×
+Remap(ai0,0,60,0,1)); count× dust-197 vel×=1+t×2 += baseVel×NextFloat×t
+noGravity), 379/377 (5× dust-171 alpha 100 scale Next(1,10)×0.1 noGravity
+fadeIn 1.5 vel×0.75). Witnesses: the gem 15/45 counts + type ladder + AoE
+gate, the 1115 ai0 count ladder, the 379/377 scale range — WRITTEN NOT
+RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,

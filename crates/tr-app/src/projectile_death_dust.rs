@@ -3210,6 +3210,72 @@ fn death_bursts(
                 num += 0.25;
             }
         }
+        // `:75425-75485` — the gem bolts (121-126/597): the dust type is
+        // kind−121+86 (597 → 262); dir = vel.SafeNormalize(Zero), zeroed
+        // when |vel| < 1. 15× that dust speed dir alpha 50 scale 1.2
+        // noGravity scale×1.25 vel×2.2 += dir×1.5 vel×= NextFloat. The
+        // AoeExplosion feature (ai[0] bit 3) adds 30× more (noGravity =
+        // Next(5)!=0, scale×=1+NextFloat, vel×4.2, the gravity ones
+        // scale×0.6 fadeIn 0 noLight, vel×=NextFloat). The AoE DAMAGE half
+        // (the 160/22 resizes + Damage) is `gem_bolt_aoe`'s — the dust
+        // here reads the ORIGINAL box (the C# dust precedes the resize).
+        121..=126 | 597 => {
+            let dust_type = if s.kind == 597 { 262 } else { s.kind as i32 - 121 + 86 };
+            let mut dir = safe_normalize(s.vel);
+            if s.vel.length() < 1.0 {
+                dir = Vec2::ZERO;
+            }
+            for _ in 0..15 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, dir.x, dir.y, 50, Color::default(), 1.2);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.scale *= 1.25;
+                d.velocity *= 2.2;
+                d.velocity += dir * 1.5;
+                d.velocity *= rng.next_float();
+            }
+            if crate::projectile::GemStaffFeatures::from_ai(s.ai0).aoe_explosion() {
+                for _ in 0..30 {
+                    let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, dir.x, dir.y, 50, Color::default(), 1.2);
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = rng.next_max(5) != 0;
+                    d.scale *= 1.0 + rng.next_float();
+                    d.velocity *= 4.2;
+                    if !d.no_gravity {
+                        d.scale *= 0.6;
+                        d.fade_in = 0.0;
+                        d.no_light = true;
+                    }
+                    d.velocity *= rng.next_float();
+                }
+            }
+        }
+        // `:75500-75512` — the 1115: num690 = Remap(ai[0],0,60,0,1), count
+        // = 10+(int)(20×num690); count× dust-197 defaults vel×=1+num690×2
+        // += baseVel×NextFloat×num690 noGravity.
+        1115 => {
+            let t = remap_f32(s.ai0, 0.0, 60.0, 0.0, 1.0);
+            let count = 10 + (20.0 * t) as i32;
+            for _ in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 197, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.0 + t * 2.0;
+                d.velocity += s.vel * rng.next_float() * t;
+                d.no_gravity = true;
+            }
+        }
+        // `:75522-75532` — the 379/377: 5× dust-171 alpha 100 defaults,
+        // scale = Next(1,10)×0.1 noGravity fadeIn 1.5 vel×0.75.
+        379 | 377 => {
+            for _ in 0..5 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 171, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale = rng.next_range(1, 10) as f32 * 0.1;
+                d.no_gravity = true;
+                d.fade_in = 1.5;
+                d.velocity *= 0.75;
+            }
+        }
         _ => {}
     }
 }
@@ -5640,6 +5706,57 @@ mod tests {
             } else {
                 assert!(active.iter().all(|d| d.alpha == 100 && d.scale == 1.0), "kind {kind}");
             }
+        }
+    }
+
+    /// The gem bolts: 15 dust of kind−121+86 (597 → 262); the AoE feature
+    /// (ai0 bit 3 = 8.0) adds 30 more = 45. All noGravity in the base 15.
+    #[test]
+    fn w4_g65_the_gem_bolts() {
+        let w = world();
+        for kind in [121u16, 122, 123, 124, 125, 126, 597] {
+            let dust_type = if kind == 597 { 262 } else { kind as i32 - 121 + 86 };
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 15, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity), "kind {kind}");
+            let mut s = snap(kind);
+            s.ai0 = 8.0; // the AoeExplosion bit
+            let mut dust = DustPool::new();
+            drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 45, "kind {kind} aoe");
+        }
+    }
+
+    /// The 1115: count = 10+(int)(20×Remap(ai0,0,60,0,1)); ai0=0 → 10,
+    /// ai0=60 → 30; all dust-197 noGravity.
+    #[test]
+    fn w4_g65_the_1115_burst() {
+        let w = world();
+        for (ai0, count) in [(0.0f32, 10), (60.0, 30), (30.0, 20)] {
+            let mut s = snap(1115);
+            s.ai0 = ai0;
+            let mut dust = DustPool::new();
+            drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "ai0 {ai0}");
+            assert!(active.iter().all(|d| d.dust_type == 197 && d.no_gravity));
+        }
+    }
+
+    /// The 379/377: 5 dust-171, noGravity fadeIn 1.5, scale in [0.1,0.9].
+    #[test]
+    fn w4_g65_the_379_377_bursts() {
+        let w = world();
+        for kind in [379u16, 377] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 5, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == 171 && d.no_gravity && d.fade_in == 1.5));
+            assert!(active.iter().all(|d| d.scale >= 0.09 && d.scale <= 0.91));
         }
     }
 }
