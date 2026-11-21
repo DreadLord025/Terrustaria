@@ -273,6 +273,18 @@
 //! - 89613 — Goblin Summoner 471 (`:89607-89614`): ×100 dust 5.
 //! - 89633 — 472 (`:89627-89639`): ×100 dust 5 + per-dust Next(3)!=0 →
 //!   noGravity, then alpha 100 ALWAYS.
+//! Batch 19 (the bound-NPC/corruption misc live arms):
+//! - 87799 — 239/240 (`:87793-87800`): ×100 dust 5.
+//! - 87819 — 236/237 (`:87813-87820`): ×100 dust 18, plain.
+//! - 87839 — 241 (`:87833-87840`): ×100 dust 5.
+//! - 87859 — 242 (`:87850-87857`): ×100 dust 5.
+//! - 87876 — the bound trio + Wizard 105-108 (`:87870-87877`): ×100
+//!   dust 5.
+//! - 87908 — 123/124 (`:87902-87909`): ×100 dust 5.
+//! - 87948 — 550 (`:87942-87949`): ×100 dust 5.
+//! - 87968 — the Golfers 588/589 (`:87962-87969`): ×100 dust 5.
+//! - 88125 — 229 (`:88119-88126`): ×100 dust 5.
+//! - 88159 — 142 (`:88153-88160`): ×100 dust 5.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1373,6 +1385,21 @@ pub fn replay_hit_dust(
                     d.no_gravity = true; // `:89636`
                 }
                 d.alpha = 100; // `:89638`
+            }
+        }
+        // `:87793-87969`/`:88119-88160` — the ×100 dust-5 group: the
+        // corruption misc (239/240, 241, 242), the bound trio + Wizard
+        // (105-108), the bound Mechanic (123/124), 550, the Golfers
+        // (588/589), 229, 142.
+        239 | 240 | 241 | 242 | 105..=108 | 123 | 124 | 550 | 588 | 589 | 229 | 142 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87813-87820` — 236/237: ×100 dust 18, plain.
+        236 | 237 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 18, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -2738,5 +2765,31 @@ mod tests {
         }
         assert_eq!(r2, t2);
         assert_eq!(p2.slots(), q2.slots());
+    }
+
+    /// W4-g62 batch 19 — the bound-NPC/misc rows are the ×100 dust-5
+    /// shape; 236/237 are the plain dust-18 shape.
+    #[test]
+    fn w4_g62_the_batch19_rows() {
+        let world = air();
+        let ctx = ctx();
+        for t in [239, 240, 241, 242, 105, 106, 107, 108, 123, 124, 550, 588, 589, 229, 142] {
+            let s = snap(t, 250, 250, 25.0);
+            let mut r = UnifiedRandom::new(179);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 10, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == 5), "type {t}");
+        }
+        for t in [236, 237] {
+            let s = snap(t, 250, 250, 25.0);
+            let mut r = UnifiedRandom::new(179);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 10, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == 18 && d.alpha == 0), "type {t}");
+        }
     }
 }
