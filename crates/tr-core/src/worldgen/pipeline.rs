@@ -2693,6 +2693,19 @@ fn step_world_tail(
     // Not a vanilla pass — the generate() tail writes plus the final two rng
     // draws. They MUST stay the last rng-consuming step
     // (`worldgen_rolls_hell_back_style` pins the order).
+    //
+    // W4-g71 DOC-SWEEP pin-move note: the vanilla `WorldGen.Reset` runs
+    // `RandomizeTreeStyle` / `RandomizeCaveBackgrounds` / `RandomizeBackgrounds`
+    // / `RandomizeMoonState` here on the shared `genRand` (`WorldGen.cs:11338-
+    // 11341`), between the `WorldId` draw (`:11337`) and the dungeon-side +
+    // jungle-origin rolls (`:11344-11374`). The port's two tail draws below
+    // (moon type, hell back style) stand in for `RandomizeMoonState` +
+    // `RandomizeCaveBackgrounds`'s hell roll only. The full style rolls are
+    // ported UNWIRED in `bg_rolls.rs` (their own future `pass_rng` slots):
+    // inserting them here would shift every later `streams.rng` draw and move
+    // the frozen `world_hash` pins, and a rolled non-default surface style
+    // overflows the 8192 px atlas (style-0 baseline 7847 px, measured). Wiring
+    // is a worldgen lane's call — re-pin the tail + the atlas budget in one move.
     let layers = gv.layers();
     let map = gv.map();
     world.world_surface = layers.world_surface;
