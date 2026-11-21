@@ -1460,15 +1460,14 @@ pub struct Player {
     pub brain_of_confusion: bool,
     pub shadow_dodge: bool,
     pub long_invince: bool,
-    /// `Player.panic` (`Player.cs:1154`): the Panic Necklace 1290
-    /// (`ApplyEquipFunctional` `:14892-14895`), the Sweetheart Necklace
-    /// 1578 (`:15076-15080`, + the honeycomb) and the Crossed Heart
-    /// Necklace 6187 (`:14625-14628`, + `longInvince`) arm it per tick;
-    /// `ResetEffects` clears it (`:18616`). `Hurt` (`:38237-38240`) grants
-    /// the Panic buff 63 (480 ticks) on every accepted hit — the buff's
-    /// `moveSpeed++` (`UpdateBuffs` `:10130-10133`) doubles the base run
-    /// speed for its duration (W4-f48).
-    pub panic: bool,
+    // `Player.panic` (`Player.cs:1154`) — the field + the hurt grant
+    // (`:38237-38240`) + the 1290/1578/6187 equip arms + the `ResetEffects`
+    // clear (`:18616`) are f50-canonical (SHIELDS RETIRE keep-one, receipt
+    // 51eefdf84, `task/W4-f50-hurt-reactions`); the buff-63 `moveSpeed++`
+    // reader (`:10130-10133`) is f12-canonical (`DEBUFF_DISPATCH`,
+    // `buff_frame_wiring.rs`). This branch keeps its dodge block + the
+    // 1578 `honey_comb` / 6187 `long_invince` fold halves + the DD2
+    // crystal-lane `add_buff(205, 3600)` only.
     /// `Player.magicCuffs` (`Player.cs:2248`): the Magic Cuffs (1595,
     /// `ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
     /// `:14949-14953`) arm it per tick; `ResetEffects` clears it (`:18599`).
@@ -2815,7 +2814,6 @@ impl Player {
             mystic_sash_dodge: false,
             brain_of_confusion: false,
             shadow_dodge: false,
-            panic: false,
             long_invince: false,
             magic_cuffs: false,
             gold_ring: false,
@@ -4525,24 +4523,15 @@ impl Player {
                 return false;
             }
         }
-        // `Player.Hurt`'s panic grant (`Player.cs:38237-38240`): AFTER the
-        // dodge block's early returns (a dodged hit grants nothing) and
-        // BEFORE the defense reduction — `AddBuff(63, 480)` whenever the
-        // necklace armed `panic` (W4-f48). The `whoAmI == Main.myPlayer`
-        // gate collapses single-player. `AddBuff` draws nothing (the
-        // `buffs.rs` port).
-        if self.panic {
-            self.buffs.add_buff(63, 480);
-        }
-        // The `setSquireT2` twin (`Player.cs:38241-38244`): the Squire
-        // armor's accepted hit grants Ballista Panic `AddBuff(205, 300)`
-        // — the Ballista reload caps read the flag (`Projectile.cs:
-        // 68563-68570`). Same slot: after the panic grant, before the
-        // defense reduction; a dodged hit grants nothing. The d123/f36
-        // DD2 lanes carried no copy (censused) — this is the one grant.
-        if self.set_squire_t2 {
-            self.buffs.add_buff(205, 300);
-        }
+        // `Player.Hurt`'s reaction head (`Player.cs:38237-38244`) is
+        // f50-canonical (SHIELDS RETIRE keep-one, receipt 51eefdf84):
+        // BOTH the panic-63 grant (`:38237-38240`) and the squire twin
+        // `AddBuff(205, 300)` (`setSquireT2`, `:38241-38244`) land in
+        // task/W4-f50-hurt-reactions' `hurt_inner` after the dodge block
+        // — this branch keeps only the dodge block above (its own lane)
+        // and the separate DD2 crystal-lane `add_buff(205, 3600)` below.
+        // A dodged hit grants nothing (the early returns); the d123/f36
+        // DD2 lanes carried no hurt-grant copy (censused).
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
         // incoming raw damage stays the C# `num` (`Player.cs:38246`) — the
@@ -5660,22 +5649,16 @@ impl Player {
             6183 => self.acc_silver_bracer = true,
             // Honey Comb 1132 (`:15072-15075`).
             1132 => self.honey_comb = true,
-            // Sweetheart Necklace 1578 (`:15076-15080`): the honeycomb +
-            // `panic` (W4-f48 — the hurt buff `AddBuff(63, 480)`
-            // `:38237-38240` lands in `hurt_inner`).
-            1578 => {
-                self.honey_comb = true;
-                self.panic = true;
-            }
-            // Panic Necklace 1290 (`:14892-14895`): the bare `panic` flag.
-            1290 => self.panic = true,
-            // Crossed Heart Necklace 6187 (`:14625-14628`): panic +
-            // longInvince — the Cross Necklace's window doubling AND the
-            // panic speed on one accessory.
-            6187 => {
-                self.panic = true;
-                self.long_invince = true;
-            }
+            // Sweetheart Necklace 1578 (`:15076-15080`): the honeycomb.
+            // SHIELDS RETIRE keep-one: the `panic` half of this arm (and
+            // the whole 1290/6187 panic arms) is f50-canonical — f50's
+            // receipt (51eefdf84) keeps f48's 1578 `honey_comb` + 6187
+            // `long_invince` halves and drops the panic writes here.
+            1578 => self.honey_comb = true,
+            // Crossed Heart Necklace 6187 (`:14625-14628`): longInvince
+            // — the Cross Necklace's window doubling; the `panic` half
+            // is f50's (keep-one, receipt 51eefdf84).
+            6187 => self.long_invince = true,
             // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
             // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
             6184 => self.honey_comb = true,
@@ -6408,8 +6391,8 @@ impl Player {
         self.black_belt = false;
         self.mystic_sash_dodge = false;
         self.long_invince = false;
-        // `:18616`: `panic = false` — the necklace rows re-arm (W4-f48).
-        self.panic = false;
+        // `:18616`: `panic = false` is f50-canonical (SHIELDS RETIRE
+        // keep-one, receipt 51eefdf84) — the clear rides f50's field.
         // `ResetEffects`' parry-machine clears (W4-f48 parry wave):
         // `hasRaisableShield = false` (`:18611`) — the shield-slot rows and
         // the held-4760 arm re-derive; `parryDamageBuff = false` (`:18698`)
@@ -6826,12 +6809,11 @@ impl Player {
                 // one snowflake/spark; the buff re-affirms the flag per tick.
                 312 => self.cool_whip_buff = true,
                 365 => self.cob_whip_buff = true,
-                // W4-f48 — `:10130-10133`: Panic (63) `moveSpeed++` — the
-                // necklace hurt-grant's speed half: +1.0 on the base-1
-                // multiplier doubles the run speed while the 480-tick buff
-                // lives (the `buff_effects.rs` pure-table row's wired twin,
-                // the Swiftness-3 convention).
-                63 => self.move_speed += 1.0,
+                // `:10130-10133`: Panic (63) `moveSpeed++` — RETIRED here
+                // (SHIELDS RETIRE keep-one): f12-canonical, the
+                // `DEBUFF_DISPATCH` 63 arm (`buff_frame_wiring.rs` /
+                // `buff_effects.rs`, task/W4-f12-buff-frame-wiring). Two
+                // dispatches would grant +2 moveSpeed/tick (f12's ruling).
                 // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
                 // `lifeRegen += 6` (the regen half has no consumer yet) and
                 // `thorns += 0.5` while under 1.
@@ -15810,75 +15792,30 @@ mod tests {
     }
 
     #[test]
-    fn w4_f48_the_panic_necklaces_arm_the_flag_and_clear() {
-        // `ApplyEquipFunctional`: 1290 the bare panic (`Player.cs:14892-
-        // 14895`), 1578 panic + honeycomb (`:15076-15080`), 6187 panic +
-        // longInvince (`:14625-14628`); `ResetEffects` `:18616` clears.
-        let p = player_with_accessory(1290);
-        assert!(p.panic && !p.honey_comb && !p.long_invince);
+    fn w4_f48_the_necklace_fold_halves_survive_the_panic_keep_one() {
+        // `ApplyEquipFunctional`: 1578 honeycomb + panic (`Player.cs:
+        // 15076-15080`), 6187 longInvince + panic (`:14625-14628`).
+        // SHIELDS RETIRE keep-one (receipt 51eefdf84): the `panic` halves
+        // + the 1290 arm + the `ResetEffects` clear are f50-canonical —
+        // this witness pins THIS branch's surviving fold halves only
+        // (1578 honey_comb / 6187 long_invince). f50's three-source
+        // witness (`w4_f50_the_panic_necklace_grants_the_hurt_buff_and_
+        // arms_from_all_three_sources`) owns the panic assertions.
         let p = player_with_accessory(1578);
-        assert!(p.panic && p.honey_comb, "the Sweetheart keeps the bees");
+        assert!(p.honey_comb, "the Sweetheart keeps the bees (f48's half)");
         let p = player_with_accessory(6187);
-        assert!(p.panic && p.long_invince, "the Crossed Heart pairs both");
-        let w = ground_world();
-        let mut p = Player::spawn(&w);
-        p.equipped[3] = 1290;
-        p.update(&w, PlayerInput::default());
-        assert!(p.panic);
-        p.equipped[3] = 0;
-        p.update(&w, PlayerInput::default());
-        assert!(!p.panic, "the clear re-folds without the source");
+        assert!(p.long_invince, "the Crossed Heart's window half (f48's)");
     }
 
     #[test]
-    fn w4_f48_the_accepted_hit_grants_panic_63_for_480_ticks() {
-        // `Hurt` `:38237-38240`: `AddBuff(63, 480)` after the dodge block,
-        // before the defense reduction. 63 is no debuff (the extension
-        // list omits it) — the classic time lands verbatim.
-        let mut p = player_with_accessory(1290);
-        assert!(p.buffs.find_buff_index(63).is_none());
-        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
-        let i = p.buffs.find_buff_index(63).expect("the panic grant");
-        assert_eq!(p.buffs.buff_time[i], 480);
-        // Without the necklace: no grant.
-        let w = ground_world();
-        let mut q = Player::spawn(&w);
-        assert!(q.hurt(20, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
-        assert!(q.buffs.find_buff_index(63).is_none());
-    }
-
-    #[test]
-    fn w4_f48_parry_the_squire_set_grants_ballista_panic_205_on_the_accepted_hit() {
-        // `Hurt` `:38241-38244`: the `setSquireT2` twin — `AddBuff(205,
-        // 300)` right after the panic grant, before the defense
-        // reduction. A dodged hit grants nothing (the early returns).
-        let w = ground_world();
-        let mut p = Player::spawn(&w);
-        p.equipped[0] = 3800;
-        p.equipped[1] = 3801;
-        p.equipped[2] = 3802;
-        p.update(&w, PlayerInput::default());
-        assert!(p.set_squire_t2, "the Squire T2 set arms");
-        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
-        let i = p.buffs.find_buff_index(205).expect("the ballista-panic grant");
-        assert_eq!(p.buffs.buff_time[i], 300);
-        // A dodged hit skips it: the belt dodges the next one.
-        expire_dodge_window(&mut p);
-        p.equipped[3] = 963;
-        p.update(&w, PlayerInput::default());
-        let i = p.buffs.find_buff_index(205).unwrap();
-        p.buffs.buff_time[i] = 1;
-        p.buffs.del_buff(i);
-        let mut rng = DodgeRng::with_rolls(&[0]);
-        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true), "the belt dodges");
-        assert!(p.buffs.find_buff_index(205).is_none(), "the dodge skips the grant");
-    }
-
-    #[test]
-    fn w4_f48_a_dodged_hit_grants_no_panic_and_draws_no_extra_roll() {
-        // The grant sits AFTER the dodge block's early returns
-        // (`Player.cs:38231-38240`) — a belt dodge skips it; the necklace
-        // adds no RNG draw of its own.
+    fn w4_f48_a_dodged_hit_draws_only_the_belt_roll() {
+        // The dodge block's early returns (`Player.cs:38214-38241`): a
+        // belt dodge skips everything after it — the f50-canonical
+        // reaction head (panic 63 / squire 205 grants, receipt 51eefdf84)
+        // sits AFTER the returns, so a dodged hit grants nothing and the
+        // necklace adds no RNG draw of its own. RETARGETED (SHIELDS
+        // RETIRE): the old grant assertions ride f50's head witness; this
+        // keeps f48's own lane — the roll order + the draw census.
         let w = ground_world();
         let mut p = Player::spawn(&w);
         p.equipped[3] = 1290;
@@ -15886,34 +15823,12 @@ mod tests {
         p.update(&w, PlayerInput::default());
         let mut rng = DodgeRng::with_rolls(&[0]);
         assert!(!p.hurt(50, p.x + 100.0, &mut rng, true), "the belt dodges");
-        assert_eq!(rng.draws, vec![(0, 10)]);
-        assert!(p.buffs.find_buff_index(63).is_none(), "the dodge skips the grant");
-        // The next accepted hit grants it (the window expired).
+        assert_eq!(rng.draws, vec![(0, 10)], "one belt draw, nothing else");
+        // The next accepted hit takes the belt's failed roll and lands.
         expire_dodge_window(&mut p);
         let mut rng = DodgeRng::with_rolls(&[5]);
         assert!(p.hurt(50, p.x + 100.0, &mut rng, true));
-        assert!(p.buffs.find_buff_index(63).is_some());
-    }
-
-    #[test]
-    fn w4_f48_the_panic_buff_doubles_the_move_speed_until_expiry() {
-        // `UpdateBuffs` `:10130-10133`: `moveSpeed++` per live slot — +1.0
-        // on the base-1 multiplier. The fold order: the reset (`:25491`'s
-        // stand-in) → the buff scan → the run-speed merge (`:26004`).
-        let w = ground_world();
-        let mut p = Player::spawn(&w);
-        p.update(&w, PlayerInput::default());
-        assert!((p.move_speed - 1.0).abs() < 1e-6, "the base multiplier");
-        p.buffs.add_buff(63, 480);
-        p.update(&w, PlayerInput::default());
-        assert!((p.move_speed - 2.0).abs() < 1e-6, "the doubled speed");
-        // Expiry: the next fold returns to base.
-        let i = p.buffs.find_buff_index(63).unwrap();
-        p.buffs.buff_time[i] = 1;
-        p.update(&w, PlayerInput::default()); // ticks 1 → 0, purged
-        p.update(&w, PlayerInput::default());
-        assert!(p.buffs.find_buff_index(63).is_none());
-        assert!((p.move_speed - 1.0).abs() < 1e-6, "the speed folds back");
+        assert_eq!(rng.draws, vec![(0, 10)]);
     }
 
     #[test]
@@ -16178,16 +16093,20 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert!((p.strongest_move_speed_debuff - 1.0 / 3.0).abs() < 1e-6);
         assert!((p.move_speed - 1.0 / 3.0).abs() < 1e-6);
-        // Panic! (63) doubles moveSpeed BEFORE the merge — the shield cap
-        // rides the doubled value (`2 × 1/3`), it does not replace it.
-        p.buffs.add_buff(63, 480);
+        // A moveSpeed buff adds BEFORE the merge — the shield cap rides
+        // the raised value, it does not replace it. RETARGETED (SHIELDS
+        // RETIRE): the old Panic-63 doubling rides f12's wiring witness
+        // (`w4_f12_closeout_panic_63_grants_move_speed_once_through_the_
+        // wiring`) — the inline 63 arm is dropped here (f12-canonical);
+        // Swiftness 3 (+0.25, `:10049-10052`) proves the same multiply.
+        p.buffs.add_buff(3, 480);
         p.update(&w, PlayerInput::default());
-        assert!((p.move_speed - 2.0 / 3.0).abs() < 1e-6, "the cap multiplies");
-        // The lower restores the full panic speed.
+        assert!((p.move_speed - 1.25 / 3.0).abs() < 1e-6, "the cap multiplies");
+        // The lower restores the full buffed speed.
         p.shield_raised = false;
         p.update(&w, PlayerInput::default());
         assert!((p.strongest_move_speed_debuff - 1.0).abs() < 1e-6);
-        assert!((p.move_speed - 2.0).abs() < 1e-6);
+        assert!((p.move_speed - 1.25).abs() < 1e-6);
     }
 
     #[test]
