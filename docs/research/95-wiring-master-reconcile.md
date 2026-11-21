@@ -375,3 +375,35 @@ reference), §8.2 SendData(19), §8.5 (collector landed, sink pending),
 the injected slice). The §9.6 doc rows (PORT_MAP D8-residual → e20
 modules) landed with `12cc46a2`; no f11/g4-shift rows ever existed on this
 branch to delete.
+
+### 10.1 EXECUTED — the fold-133 phase (f11 unique folds, on top of `fadaa4bd`)
+
+Consumes **research/133** (`dda240ee` on `task/W4-f11-wiring-arms-4` — the
+f11-side union-sync contract). Every §1/§2 hunk verified absent on the
+union tree before landing (no `clear_all` on `Wiring`, no `mechs.pop`, no
+`mass_wire_operation*`, no gate-pass teleport clear, no
+`wire_tool_mode`/`wire_operations_cooldown`/3625 arm); applied per-hunk
+from `ad80daaa`/`24fa39f1`, adapted to the union shapes. Receipt:
+`docs/research/133-fold-receipt.md` (this branch). One commit per
+fix-family:
+
+| Fold | Commit | What landed (union adaptation) |
+| --- | --- | --- |
+| 1 — clear_all + world-load hook (133 §1a/§2e) | `e5569c2a` | `Wiring::clear_all` after `check_mech`; the `enter_loaded_world` tail call after `reset_map_delay`; the `w4_f11_residual_tests` module opened with the clear-all witness (the other nine landed with the module up-front). |
+| 2 — UpdateMech pop + fluff-1 (133 §1b, D16) | `90c4fb12` | `Vec::pop` replaces `remove` in the out-of-world branch ONLY (the expiry-branch remove stays — f11 kept it too); the fluff-1 `in_world` test + null-tile disjunct replace `in_bounds`. |
+| 3 — gate-pass teleport unlatch (133 §1c) | `2458b596` | The `logic_gate_pass` tail clears `block_player_teleportation`; the base plate witness re-pinned (FALSE after the poke; the no-poke arm arms the flag manually). |
+| 4 — HitWire entry clears (133 §1d, D1/D2 tail) | `4e23f31e` | Entry `skip.clear()`/`to_process.clear()` deleted (the exit clears stay); the Add-site absence comment. The nested gate-trip map-wipe quirk recorded, NOT reproduced. |
+| 5 — 216/fireworks skips (133 §1e/§1f) | `b048c1b5` | `launch_rocket` inserts `(i,j)` AFTER the launch (hit cell only); `launch_rocket_small` skips all FOUR box cells; the fountain's 1×2 comment corrected (no code change). |
+| 6a — anchor-helper KEEP shape (133 §3 item-6 finish) | `a4b8a602` | `shift.rs` adopts f11's `pub(crate) top_left_and_styles` name/placement + the `.max(1)` divisor guard (c42 body kept; both callers pass inc 18 — behaviour unchanged). The other three §3 KEEP shapes verified PRESENT, no edit: doors Option seam (`f982f1d4`), `only_close_or_open` (`ed88ec3d`), `SET_TORCHES` guard (`6381b52d`). |
+| 6 — mass-wire core + app (133 §1g/§2a-2d, D17) | `05ae5cc6` | Core `MassStepOutcome`/`mass_wire_operation_step`/`_inner` after `dx_y_to_dir` (before the light-toggle family). **App-half module move**: f11's `world_sim/wiring_devices.rs` never existed on this branch (the e20 halves live in `world_sim/wiring.rs` per §10 item 4) — `can_do_wire_stuff_here_world` + `consume_one` + `mass_wire_operation` append THERE after `spawn_device_kind`; the 3625 arm calls `crate::world_sim::wiring::mass_wire_operation`. `WiringTool::MulticolorWrench` + decode + cooldown-gated Actuator-strip use arm; `Player.wire_operations_cooldown` (field/spawn/ResetEffects) + `App.wire_tool_mode` (field + BOTH ctor inits RED). Canary: core row verbatim; app row re-pointed at `world_sim/wiring.rs` (the §1h move clause). |
+| witness-union finish (133 §3/§6) | `e6169bd1` | `w4_f11_a_chest_above_refuses_the_130_swap` lands under its f11 name (the third KEEP-in-dup pin; the other two verified present from items 1/6). |
+
+**Witness state**: all 16 KEEP-unique pins (11 core residual + 3 use-arm +
+2 mass-wire unit — 133 §6's "15" undercounts the core module by one, the
+receipt §4 has the row-for-row ledger) + the re-pinned base plate witness
++ the 3 KEEP-in-dup pins present. All WRITTEN NOT RUN (code-only). The §5
+cross-note honoured throughout: every
+`hit_wire_single`/`de_active` conflict region untouched — the c42 fix
+round (144 wake, 421/422 actuator guard + wake, 235/226 Plant-boss
+conjuncts, 506 validator) stays canonical; the f11 multi-tile witness
+flips a NON-actuated 422 lamp and survives unchanged.
