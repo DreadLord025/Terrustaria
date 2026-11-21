@@ -726,6 +726,11 @@ pub(crate) struct App {
     /// (`Main.cSmartCursorModeIsToggleAndNotHold`, `Main.cs:67178`), **not**
     /// this state.
     pub(crate) smart_cursor_used: bool,
+    /// W4-g86: `Main.SmartInteractTileCoords`/`…Selected` + the interaction
+    /// rect (`Main.cs:2035-2045`) — the smart-interact lookup's output
+    /// (`world_sim/smart_interact.rs`, `Player.SmartInteractLookup`
+    /// `Player.cs:17374`), the feed of the tile-outline overlay.
+    pub(crate) smart_interact: crate::world_sim::smart_interact::SmartInteractState,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
@@ -3913,6 +3918,7 @@ impl App {
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
+            smart_interact: Default::default(),
             ingame_options: {
                 // `TR_OPTIONS` (the M7-UI-4 screenshot fixture): the window opens
                 // at boot so `TR_SHOT` captures the panel.

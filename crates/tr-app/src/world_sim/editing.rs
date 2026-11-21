@@ -2160,6 +2160,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
         None => (tx, ty),
     };
+    // `Player.cs:25447` — `SmartInteractLookup` runs right after the
+    // smart-cursor lookup (W4-g86): the interactable-object scan fills
+    // `Main.SmartInteractTileCoords`/`…Selected` + the interaction rect,
+    // the feed of the tile-outline overlay (`render/tile_outlines.rs`).
+    // The tile target it reads is the POST-re-point cell (the C# pair
+    // runs back-to-back inside `Player.Update`).
+    super::smart_interact::smart_interact_lookup(app, (world_pos.x, world_pos.y), (tx, ty));
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace] past the reach gate");

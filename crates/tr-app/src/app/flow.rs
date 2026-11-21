@@ -2355,6 +2355,7 @@ pub(crate) mod front_flow_tests {
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
+            smart_interact: Default::default(),
             ingame_options: crate::ui::ingame_options::IngameOptions::new(),
             world_path: PathBuf::new(),
             dev_break: None,

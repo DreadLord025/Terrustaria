@@ -22,6 +22,9 @@ pub(crate) mod player;
 pub(crate) mod projectiles;
 pub(crate) mod scene_scan;
 pub(crate) mod smart_cursor;
+// W4-g86: the smart-interact tile-targeting lookup (Player.SmartInteractLookup,
+// Player.cs:17374-17398) — the SmartInteractTileCoords feed of the outline pass.
+pub(crate) mod smart_interact;
 pub(crate) mod tile_entities;
 pub(crate) mod step;
 pub(crate) mod weather;
