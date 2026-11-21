@@ -1066,6 +1066,21 @@ pin_bool! {
     "TR_SHOW_INVISIBLE"
 }
 
+pin_bool! {
+    /// `TR_TILEPASS=1`: the g31 tile-pass union SHADOW attach
+    /// (`render/tile_attach.rs`, UNION-CONTRACT-tilepass §8). Default OFF:
+    /// the union's `draw_layer`/`post_draw_tiles` drivers + the g30
+    /// registry + the g31 drains run over the SAME camera rect the fused
+    /// pass draws, as PLANS ONLY (no extra pixels; the drain RNG stream
+    /// is separate from `leaf_rng`, so the fused pass's rolls are
+    /// untouched). The plans log per-pass counts under `TR_STATS`-style
+    /// `log::info!` for the A/B; the pixel-binding merge (the fused loop
+    /// split into the two `draw_layer` calls) is §8's script, NOT this
+    /// gate. Unset = zero union code runs in the frame path.
+    tilepass_shadow,
+    "TR_TILEPASS"
+}
+
 /// `TR_NET_EDIT=tx,ty`: one client edit request at frame 90 (the round-trip
 /// verification fixture).
 pub(crate) fn net_edit() -> Option<(i32, i32)> {

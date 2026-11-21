@@ -31,6 +31,11 @@ pub(crate) mod special_tiles;
 // arm :1193-1197). The layer constants/_zero/registry halves of the ctor
 // are covered by tile_pass/special_points; this closes the last draw.
 pub(crate) mod tile_ctor;
+// W4-g31 attach phase: the TR_TILEPASS shadow attach (default OFF) — the
+// g29 draw_layer/post_draw_tiles drivers + the g30 registry + the g31
+// drains run PLAN-ONLY at the C# PostDrawTiles position in tiles.rs
+// (UNION-CONTRACT-tilepass §8); the pixel-binding merge is §8's script.
+pub(crate) mod tile_attach;
 pub(crate) mod tile_cracks;
 // W4-g31 pass 4: UNWIRED deferred bucket drains (TileDrawing.cs PostDrawTiles
 // :414-442 bodies — DrawMultiTileVines(InWind)/DrawMultiTileGrass(InWind)/
