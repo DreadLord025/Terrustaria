@@ -481,9 +481,11 @@ mod tests {
         // fires for them — the verbatim quirk).
         let mut p = chain(GOLEM_FIST);
         let pl = owner();
-        // The fist centre (335, 335) sits 8 px from the owner centre
-        // (330, 341) — no distance flip fires, the outbound state keeps
-        // flying straight (the alpha-0 facing flip is a player write).
+        // Zero velocity: the test targets the ai[1] counter / fade / cap,
+        // not the flight — a moving fist would cross the 500-px distance
+        // flip mid-loop and switch to the return state. Parked at the
+        // spawn (centre (335, 335), 8 px from the owner) it stays outbound.
+        p.vel = Vec2::ZERO;
         for tick in 1..=12 {
             chain_step(&mut p, &air_world(), Some(&pl), true, None, false);
             let expect = tick.min(8) as f32;
@@ -648,12 +650,13 @@ mod tests {
         assert_eq!(t.item_rotation, None, "the held shoot must match");
         let t = chain_step(&mut p, &air_world(), Some(&pl), true, Some(CHAIN_KNIFE), false);
         assert!(t.item_rotation.is_some(), "the matching held item aims");
-        // The harpoon's 50-px dead zone: the proj centre 11 px from the
-        // owner centre stays unaimed while outbound.
+        // The harpoon's 50-px dead zone: the proj centre (322, 322) is
+        // |dx|+|dy| = 8+19 = 27 px (Manhattan) from the owner centre
+        // (330, 341) — inside the 50-px zone, so no aim while outbound.
         let mut h = chain(HARPOON);
         h.alpha = 0;
         let t = chain_step(&mut h, &air_world(), Some(&pl), true, Some(HARPOON), false);
-        assert_eq!(t.item_rotation, None, "|x|+|y| = 11 ≤ 50");
+        assert_eq!(t.item_rotation, None, "|x|+|y| = 27 ≤ 50");
     }
 
     #[test]
