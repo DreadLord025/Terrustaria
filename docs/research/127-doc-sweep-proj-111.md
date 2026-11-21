@@ -324,7 +324,7 @@ Tips re-fetched this pass:
 | --- | --- | --- |
 | d12 (this) | `task/W4-d12-proj-ai-111-120` | `c98bd8937` |
 | d19 | `task/W4-d19-proj-ai-181-190` | `61f7638a5` (26g SEALED) |
-| d18 | `task/W4-d18-proj-ai-171-180` | `8248a54be` |
+| d18 | `task/W4-d18-proj-ai-171-180` | `6e8083751` (26h SEALED; the 978 drop EXECUTED `f53de9c71`, the pre-drop receipt tip `8248a54be`) |
 | a9 | `task/W4-a9-minion-four-machines` | `8c4fded81` |
 | d77 | `task/W4-d77-proj-sounds-3` | `5f10560b2` |
 | base | wave-3-complete main | `a725acb04` |
@@ -352,14 +352,33 @@ drop-hunks V1–V5. Re-verified this pass:
   61f7638a5 --stat` = ANALYSIS +26 / 26g +47 / INDEX +1 — zero code. d19
   still has NO 978 row (grep at `61f7638a5`: only the `:1978`
   BulletSnowman cite).
-- **The d18 V1–V5 drop-hunks re-read at `8248a54be` (unchanged tip):**
-  V1 const `data.rs:825-828`; V2 row+comment `:3964-3973` (the SAME
-  tuple); V3 ignoreWater edit `:4409-4411` (drop `| VOLCANO`, KEEP
+- **The d18 V1–V5 drop-hunks re-read at `8248a54be` — and ALREADY EXECUTED
+  at the sealed tip.** The pre-drop receipt (26g §6a) published: V1 const
+  `data.rs:825-828`; V2 row+comment `:3964-3973` (the SAME tuple); V3
+  ignoreWater edit `:4409-4411` (drop `| VOLCANO`, KEEP
   `INSANITY_SHADOW_FRIENDLY`); V4 melee edit `:4482-4484`; V5 the row
-  witness's 978 block `projectile.rs:40702-40709` (d12's census covers
-  every field + frames — repoint the doc sentence, keep 964/1106). d18's
-  `proj_frames` has NO 978 entry (grep: only the row match) — no
-  frames-row loss.
+  witness's 978 block `projectile.rs:40702-40709`. d18's PROJ-171 retire
+  (`f53de9c71`, sealed by `6e8083751` with the EXACT D1–D5 publish in
+  research/26h) **executed all five drops**: at `6e8083751` the const/row/
+  melee sites carry only "DROPPED — keep-d12c" tombstone comments (grep
+  `VOLCANO` = comments only, `| VOLCANO` = no match), the ignoreWater
+  overlay is `|| kind == INSANITY_SHADOW_FRIENDLY` (the 964 half KEPT, not
+  a dup), and the residual-row witness is re-pointed to
+  `assert!(proj_data(978).is_none(), "the 978 row rides d12c, not d18")`
+  (`projectile.rs:40979`; the 964/1106 halves stay). d18's `proj_frames`
+  has NO 978 entry at either tip — no frames-row loss. The drop-hunk is
+  consumed; the merger owes NOTHING on the d18 side beyond taking the
+  dropped tip.
+- **The d18 retire work past `8248a54be` adds no d12 overlap.** The
+  `8248a54be..6e8083751` crates delta (+321/−44) = the 978 drop + the
+  Damage-switch rowless-conditionals arm-total + the projPet
+  `:12480` block (`83600da0a`) + the 601 cross-note witness. `PROJ_PET`
+  (`data.rs:4719`) contains NONE of the six sticker kinds (598/614/636/
+  971/975/1024) nor the 978; the one 111-120-band kind in it, the 623
+  guardian, is the `ai[0] == 2` attack-state exception
+  (`proj_pet_contact_refuses`, d18 `projectile.rs:300`) — its attack
+  window keeps biting under d12's 120 arm (`projectile.rs:17939`), the
+  gate composes.
 - **The item-121 spawn proc is d12-ONLY.** `spawn_volcano_proc`
   (`projectile.rs:22217`, `Player.cs:44150-44158` re-read: the
   `HittableForOnHitRewards` gate, ai0=0/ai1=2, vel `(0, -gravDir)`, the
@@ -368,8 +387,9 @@ drop-hunks V1–V5. Re-verified this pass:
   pushed tip. d18/d19 have no Volcano proc claim. The 978 row census
   across all pushed branches: d12 + d18 only (the adjudicated dup).
 
-**Verdict: keep-d12c STANDS at the sealed tips; the merger drops the d18
-copy per 26g §6a V1–V5 and keeps this branch's row + frames + proc whole.**
+**Verdict: keep-d12c STANDS at the sealed tips; d18's copy is ALREADY
+dropped (`f53de9c71`, D1–D5 executed per 26h) — the merger keeps this
+branch's row + frames + proc whole and owes no further d18 drop.**
 
 ### §R2 — the 1024 recall: the item lane is d12's own; the cap interplay is FINAL
 
@@ -449,8 +469,8 @@ by whole-diff census (`git diff a725acb0..8c4fded81`):
   (`projectile.rs:18303-18345`) and the stuck-gate copies in
   `damage_pve` (`:23556-23560`) + `damage_pve_boxed` (`:24350-24354`)
   all ride HEAD.
-- **d18c (`5e51c66e3`, tip `8248a54be`) cross-notes the claim and EXCLUDES
-  it.** `damage_kind_gate_refuses`'s doc (d18 `projectile.rs:152-153`):
+- **d18c (`5e51c66e3`, sealed tip `6e8083751`) cross-notes the claim and
+  EXCLUDES it.** `damage_kind_gate_refuses`'s doc (d18 `projectile.rs:152-153`):
   "the aiStyle-113 sticker family 598/636/614/971/975/1024 `ai[0] == 1` —
   W4-d12's census (tip 719ffb76c, the whole-arm stuck gate)". The function
   body carries NO sticker term — the two gates are complementary, not
@@ -491,9 +511,11 @@ census) plus the 978 row keep-d12c (26g §6a: the d18 copy drops V1–V5,
 d12's frames superset `VOLCANO => 5` survives, d19 never had the row) —
 merges as ONE family in this order: (1) d12 lands its band + the sticker
 arm + the item lanes whole (the 614 ai1 seating is the 62 dispatch's
-per-kind branch, `projectile.rs:20207-20211`); (2) the d18 978 copy drops
-per 26g §6a V1–V5 at `8248a54be` (the 964/1106 rows are d18-only and
-survive); (3) d18's `damage_kind_gate_refuses` lands WITHOUT a sticker
+per-kind branch, `projectile.rs:20207-20211`); (2) the d18 978 copy is
+ALREADY dropped (`f53de9c71`, D1–D5 executed, 26h SEALED at `6e8083751`;
+the 964/1106 rows are d18-only and survive — the merger just takes the
+dropped tip, no drop work owed); (3) d18's `damage_kind_gate_refuses`
+lands WITHOUT a sticker
 term (its own cross-note defers to d12 `719ffb76c`; d12's walk-head
 sticker gates in `damage_pve`/`damage_pve_boxed` are the single copy —
 never duplicate the term into d18's function); (4) a9's four machines
@@ -523,13 +545,18 @@ merger executes those instructions and nothing else.
   chase), `:37575-37604` (the 1120 fire), `:10476-10493` (the 1120 row).
 - Drift censuses: `git diff 4ba56e660..HEAD -- projectile/data.rs` =
   one comment-only hunk; `git diff e19990685..61f7638a5 --stat` =
-  docs-only; d18/a9/d77 tips unchanged since their receipts.
+  docs-only; a9/d77 tips unchanged since their receipts; d18 MOVED
+  `8248a54be` → `6e8083751` (+3 retire commits — the 978 D1–D5 drop
+  EXECUTED + the Damage-switch/projPet arm-total + the 601 cross-note,
+  re-censused this pass: no d12 symbol overlap, §R1/§R4).
 - Ownership census: all 357 pushed branches grepped for `5461`
   (editing.rs), `killing_card_fire_type` (player.rs),
   `recall_killing_deck_cards`, `spawn_volcano_proc`, `shot_ai1`,
   `target_sticker_step|TARGET_STICKERS`, `VOLCANO =>` (data.rs),
   `damage_kind_gate_refuses` — every d12 symbol is d12-only; the 978 row
-  is d12+d18 (adjudicated); the damage gate is d18-only.
+  is d12-only at the sealed tips (d18's copy dropped `f53de9c71`; the
+  `-S 'VOLCANO =>'` pickaxe census names exactly `9e668d0f0` + d18's
+  `18916087b` add/drop pair); the damage gate is d18-only.
 - Zero code change this phase; no cargo/rustc/rustfmt/tests/graphify
   invoked; no new witnesses (the lane's 13 DOC-SWEEP+FINAL witnesses and
   the F1 census witnesses stand WRITTEN NOT RUN).

@@ -38065,9 +38065,17 @@ retire pass adds:
   only `projectile/data.rs` delta is a comment (the const doc's spawn-proc
   pointer); the row/frames/gate tuples are byte-identical to d19's 26g §6a
   receipt. d19's SEALED tip `61f7638a5` drifted docs-only since that
-  receipt; the d18 978-copy drop-hunks V1–V5 stand at `8248a54be`
-  unchanged. The item-121 proc (`spawn_volcano_proc`) is d12-only across
-  all 357 pushed branches.
+  receipt; d18 MOVED `8248a54be` → `6e8083751` (26h SEALED) and its 978
+  copy drop-hunks are ALREADY EXECUTED (`f53de9c71`, D1–D5: the const/row/
+  melee sites are tombstone comments, the ignoreWater overlay keeps only
+  the d18-unique 964 half, the residual witness re-pointed to
+  `proj_data(978).is_none()` at d18 `projectile.rs:40979`) — the merger
+  owes no further d18 drop. d18's retire arm-total (`damage_kind_gate_
+  refuses` rowless terms + `proj_pet_contact_refuses`) adds no d12
+  overlap: `PROJ_PET` names none of the six stickers nor the 978, and its
+  one band kind (the 623 guardian) is the ai0==2 attack-state exception
+  that composes with d12's 120 arm. The item-121 proc
+  (`spawn_volcano_proc`) is d12-only across all 357 pushed branches.
 - **The 1024 item lane is single-owner.** The 5461 cycle + the recall +
   the `killing_card_fire_type` field exist on this branch only (the
   all-branch census); the cap interplay is closed — recalled ai0=2 cards
