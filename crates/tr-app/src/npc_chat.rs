@@ -248,6 +248,10 @@ pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
         NpcKind::Truffle => truffle(ctx, &flags),
         NpcKind::Steampunker => steampunker(ctx, &flags),
         NpcKind::Cyborg => cyborg(ctx, &flags),
+        NpcKind::BartenderUnconscious => {
+            // `:94780-94783` (579) — the fixed first-meeting line, no draw.
+            crate::lang::text("BartenderSpecialText.FirstMeeting")
+        }
         // W4-d120 — the sibling lanes' kinds (OldMan 37 = d34, Pirate 229
         // = d37, SkeletonMerchant 453 = d40): the arms key on the VANILLA
         // type so they compile before the kinds merge and go live the
@@ -255,6 +259,7 @@ pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
         _ => match ty {
             37 => old_man(ctx),
             229 => pirate(ctx),
+            453 => skeleton_merchant(ctx),
             _ => String::new(),
         },
     }
@@ -1181,6 +1186,27 @@ fn pirate(ctx: &mut ChatContext) -> String {
     }
 }
 
+/// 453 — the Skeleton Merchant (`NPC.cs:94762-94775`): the event text
+/// first, then the mixed arm — `Next(8 + GetCategorySize)`; indices >= 8
+/// answer `Language.RandomFromCategory("SkeletonMerchantChatter")` — a
+/// SECOND draw, the FORWARD `keys[Next(count)]` index over the JSON's
+/// category order (`LanguageManager.cs:413-419`), NOT the reverse
+/// SelectRandom the plain chatter arms use. The low eight answer
+/// `Lang.dialog(356 + index)`. The kind rides the d40 lane (protocol 453
+/// vanilla); this arm keys on the vanilla type until it merges.
+fn skeleton_merchant(ctx: &mut ChatContext) -> String {
+    if let Some(text) = special_event_text(ctx, "SkeletonMerchant", 453) {
+        return text;
+    }
+    let count = crate::lang::category_size("SkeletonMerchantChatter");
+    let num19 = ctx.next(8 + count as i32);
+    if num19 >= 8 {
+        let index = ctx.next(count as i32);
+        return crate::lang::random_from_category("SkeletonMerchantChatter", index as usize);
+    }
+    crate::lang::dialog(356 + num19)
+}
+
 // ---- the chat dialog's minimal renderer (task wire-npc-chat) -----------
 
 /// The chat dialog's screen box — `NPCChatPanel.Draw`'s rectangle
@@ -2067,5 +2093,62 @@ mod tests {
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(pirate(&mut ctx), crate::lang::dialog(277), "arm 3");
         assert_eq!(log, vec![6 + count]);
+    }
+
+    // ---- W4-d120: the claimed kinds' arms (batch 3: 453/579) -----------
+
+    /// `NPC.cs:94762-94775` — the Skeleton Merchant: the event text, then
+    /// `Next(8 + GetCategorySize)`; a high index pays a SECOND
+    /// `Next(count)` and answers the FORWARD category row
+    /// (`LanguageManager.cs:413-419`), a low one `Lang.dialog(356 + n)`.
+    /// `HasNoPartyText` (`NPCID.cs:10461`: 441/453) — the party roll fires
+    /// but never its category draw.
+    #[test]
+    fn the_skeleton_merchant_pays_two_draws_for_the_category_row() {
+        init_lang();
+        let guide = npc(NpcKind::Guide); // any live shell — the arm is type-keyed
+        let npcs = [guide];
+        let count = crate::lang::category_size("SkeletonMerchantChatter") as i32;
+        assert!(count >= 1, "the shipped category carries its row");
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![8, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(
+            skeleton_merchant(&mut ctx),
+            crate::lang::random_from_category("SkeletonMerchantChatter", 0),
+            "index 8 answers the FIRST category row (forward)"
+        );
+        assert_eq!(log, vec![8 + count, count], "the mixed draw + the pick draw");
+        // A low index answers the fixed band 356..363.
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![7], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(skeleton_merchant(&mut ctx), crate::lang::dialog(363));
+        assert_eq!(log, vec![8 + count], "one draw only");
+        // The party roll fires but the HasNoPartyText gate declines the
+        // category draw — the mixed arm runs instead.
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.party_is_up = true;
+        assert_eq!(skeleton_merchant(&mut ctx), crate::lang::dialog(356));
+        assert_eq!(log, vec![3, 8 + count], "the party roll, then the mixed draw");
+    }
+
+    /// `NPC.cs:94780-94783` — the unconscious Bartender answers the fixed
+    /// `BartenderSpecialText.FirstMeeting` line with NO draw at all.
+    #[test]
+    fn the_unconscious_bartender_answers_the_fixed_line() {
+        init_lang();
+        let bound = npc(NpcKind::BartenderUnconscious);
+        let npcs = [bound];
+        let mut log = Vec::new();
+        let mut rng = census(&[0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            crate::lang::text("BartenderSpecialText.FirstMeeting")
+        );
+        assert!(log.is_empty(), "the arm draws nothing");
     }
 }
