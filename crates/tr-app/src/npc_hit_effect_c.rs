@@ -117,6 +117,7 @@
 //! | 490-494 | `:84810-84814` | the 305-314 Scarecrow death (5 gores 441-445, type-194 scale-1.1 dust) |
 //! | 495-503 | `:84834` | the 327 Pumpking death (9-gore loop 476-484, vel x0, type-189 scale-1.1 dust) |
 //! | 504-508 | `:84861-84865` | the 345 IceQueen death (5 gores 513/514/514/515/516, vel x0) |
+//! | 509-515 | `:84855` | the 325 MourningWood death (7-gore loop 469-475, vel x0, type-191 scale-1.1 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3090,6 +3091,34 @@ fn ice_queen_death(
     gore.new_gore(rng, world, pos, Vec2::ZERO, 516, s); // :84865
 }
 
+/// The 325 MourningWood death (`NPC.cs:84849-84856`, sites 509-515): the
+/// 60-dust type-191 burst (SpeedX `2*hitDirection`, SpeedY -2, scale 1.1),
+/// then the 7-gore loop `num335 = 469..=475` at position with velocity ×0.
+fn mourning_wood_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84849-84852` — the 60-dust type-191 burst (scale 1.1).
+    for _ in 0..60 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 191, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.1,
+        );
+    }
+    let s = npc.scale;
+    // `:84853-84856` — the 469..=475 loop, velocity x0.
+    for num335 in 469..=475 {
+        gore.new_gore(rng, world, pos, Vec2::ZERO, num335, s);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3449,6 +3478,10 @@ pub fn hit_effect_c(
     // `:84859-84866` — the 345 IceQueen arm (sites 504-508).
     if npc_type == 345 && npc.hp <= 0 {
         ice_queen_death(npc, gore, rng, world);
+    }
+    // `:84838-84858` — the 325 MourningWood arm (sites 509-515).
+    if npc_type == 325 && npc.hp <= 0 {
+        mourning_wood_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5515,6 +5548,24 @@ mod tests {
         let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![513, 514, 514, 515, 516]);
         for i in 0..5 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+    }
+
+    /// `NPC.cs:84855` — the MourningWood death: the 7-gore loop 469-475 at
+    /// position with velocity x0, after the 60-dust type-191 scale-1.1
+    /// burst.
+    #[test]
+    fn w4_f10_the_mourning_wood_death_spawns_the_seven_gore_loop() {
+        let w = air();
+        let n = boss(100.0, 100.0, 60.0, 80.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(431);
+        mourning_wood_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..7].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![469, 470, 471, 472, 473, 474, 475]);
+        for i in 0..7 {
             assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
         }
     }
