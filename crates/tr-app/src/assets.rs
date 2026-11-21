@@ -1270,6 +1270,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_529",
         "NPC_530",
         "NPC_531",
+        // W4-d41 — the basilisk + the tortured soul + the slimes + the
+        // bride (BASILISK_SOUL_SHEETS).
+        "NPC_532",
+        "NPC_534",
+        "NPC_535",
+        "NPC_536",
+        "NPC_537",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in

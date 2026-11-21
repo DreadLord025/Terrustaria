@@ -537,6 +537,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::DesertLamiaLight
         | NpcKind::DesertLamiaDark => &[],
         NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => &[20],
+        // W4-d41 — the basilisk: `{ 532, null }` (`NPCID.cs:9084`); the
+        // tortured soul: `{ 534, null }` (`:9096`); the spiked slime:
+        // `{ 535, [20] }` (`:9097-9103`); the bride: `{ 536, null }`
+        // (`:9104`); the sand slime: `{ 537, [20] }` (`:9105-9111`).
+        NpcKind::DesertBeast | NpcKind::DemonTaxCollector | NpcKind::TheBride => &[],
+        NpcKind::SlimeSpiked | NpcKind::SandSlime => &[20],
     }
 }
 

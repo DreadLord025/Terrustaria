@@ -1712,6 +1712,39 @@ fn portrait_data(
                 .unwrap_or(20.0);
             (sheet_i, h, 50.0, h, white)
         }
+        // W4-d41 — the basilisk's portrait: the 8-row strip.
+        (NpcKind::DesertBeast, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(31.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        // W4-d41 — the tortured soul's portrait: the 8-row humanoid
+        // strip.
+        (NpcKind::DemonTaxCollector, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // W4-d41 — the bride's portrait: the 3-row walker strip.
+        (NpcKind::TheBride, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // W4-d41 — the sand slime's portrait: the 3-row hop strip.
+        (NpcKind::SandSlime, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(24.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        // W4-d41 — the spiked slime has no bestiary entry (the catalog
+        // never shows it); the arm exists for the match's
+        // exhaustiveness — the SetDefaults box.
+        (NpcKind::SlimeSpiked, _) => (sheet_i, 18.0, 24.0, 18.0, white),
     }
 }
 

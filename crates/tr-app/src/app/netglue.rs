@@ -3648,6 +3648,16 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d41 — the basilisk + the tortured soul + the bride (aiStyle
+        // 3) + the slimes (aiStyle 1): the ground walkers plant their
+        // feet.
+        crate::npc::NpcKind::DesertBeast
+        | crate::npc::NpcKind::DemonTaxCollector
+        | crate::npc::NpcKind::TheBride
+        | crate::npc::NpcKind::SlimeSpiked
+        | crate::npc::NpcKind::SandSlime => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

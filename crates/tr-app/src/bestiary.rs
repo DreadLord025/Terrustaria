@@ -779,6 +779,44 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Sand Poacher",
     },
+    // W4-d41 — the basilisk + the tortured soul + the slimes + the bride
+    // (`BestiaryEntry.Enemy`, the automated populator; the
+    // UndergroundDesert tag `:1257`, the TheUnderworld tag `:1444`, the
+    // BloodMoon tag `:1424`, the UndergroundDesert tag `:1106`).
+    BestiaryEntryDef {
+        credit_id: "DesertBeast",
+        net_id: 532,
+        kind: NpcKind::DesertBeast,
+        variant: None,
+        quick_unlock: false,
+        name: "Basilisk",
+    },
+    BestiaryEntryDef {
+        credit_id: "DemonTaxCollector",
+        net_id: 534,
+        kind: NpcKind::DemonTaxCollector,
+        variant: None,
+        quick_unlock: false,
+        name: "Tortured Soul",
+    },
+    BestiaryEntryDef {
+        credit_id: "TheBride",
+        net_id: 536,
+        kind: NpcKind::TheBride,
+        variant: None,
+        quick_unlock: false,
+        name: "The Bride",
+    },
+    BestiaryEntryDef {
+        credit_id: "SandSlime",
+        net_id: 537,
+        kind: NpcKind::SandSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Sand Slime",
+    },
+    // W4-d41 — the spiked slime (535) has NO bestiary entry: its draw
+    // modifiers hide it (the redigit dictionary's `Hide = true`).
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {

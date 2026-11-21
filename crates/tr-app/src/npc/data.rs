@@ -636,6 +636,14 @@ impl NpcKind {
             NpcKind::DesertLamiaDark => 529,
             NpcKind::DesertScorpionWalk => 530,
             NpcKind::DesertScorpionWall => 531,
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride keep their vanilla ids (532/534-537 free in the
+            // wire space). `NPCID.cs:11741-11751`.
+            NpcKind::DesertBeast => 532,
+            NpcKind::DemonTaxCollector => 534,
+            NpcKind::SlimeSpiked => 535,
+            NpcKind::TheBride => 536,
+            NpcKind::SandSlime => 537,
         }
     }
 
@@ -1005,6 +1013,13 @@ impl NpcKind {
             529 => NpcKind::DesertLamiaDark,
             530 => NpcKind::DesertScorpionWalk,
             531 => NpcKind::DesertScorpionWall,
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride.
+            532 => NpcKind::DesertBeast,
+            534 => NpcKind::DemonTaxCollector,
+            535 => NpcKind::SlimeSpiked,
+            536 => NpcKind::TheBride,
+            537 => NpcKind::SandSlime,
             _ => return None,
         })
     }
@@ -1986,6 +2001,14 @@ impl NpcKind {
             NpcKind::DesertGhoulHallow => "NPC_Hit_37",
             NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => "NPC_Hit_1",
             NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => "NPC_Hit_13",
+            // W4-d41 — the basilisk's + the tortured soul's + the
+            // slimes' + the bride's `NPCHit1` (`NPC.cs:14968`/`:15821`/
+            // `:15838`/`:15851`/`:15866`).
+            NpcKind::DesertBeast
+            | NpcKind::DemonTaxCollector
+            | NpcKind::SlimeSpiked
+            | NpcKind::TheBride
+            | NpcKind::SandSlime => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2335,6 +2358,14 @@ impl NpcKind {
             NpcKind::DesertGhoulHallow => "NPC_Killed_40",
             NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => "NPC_Killed_1",
             NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => "NPC_Killed_19",
+            // W4-d41 — the basilisk's + the tortured soul's + the
+            // slimes' `NPCDeath1` (`NPC.cs:14969`/`:15822`/`:15839`/
+            // `:15867`), the bride's `NPCDeath2` (`:15852`).
+            NpcKind::DesertBeast
+            | NpcKind::DemonTaxCollector
+            | NpcKind::SlimeSpiked
+            | NpcKind::SandSlime => "NPC_Killed_1",
+            NpcKind::TheBride => "NPC_Killed_2",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2764,6 +2795,11 @@ impl NpcKind {
             // (`NPC.cs:14937`); aiStyle 40, the wall form (`:14951`).
             NpcKind::DesertScorpionWalk => 3,
             NpcKind::DesertScorpionWall => 40,
+            // W4-d41 — aiStyle 3, the basilisk + the tortured soul + the
+            // bride (`NPC.cs:14964`/`:15817`/`:15847`); aiStyle 1, the
+            // slimes (`:15833`/`:15862`).
+            NpcKind::DesertBeast | NpcKind::DemonTaxCollector | NpcKind::TheBride => 3,
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => 1,
             // W4-d41 — aiStyle 39, the shelly pair (`NPC.cs:14682`).
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 39,
         }
@@ -2895,6 +2931,11 @@ impl NpcKind {
             NpcKind::DesertGhoulHallow => 2.0,
             NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 3.0,
             NpcKind::DesertScorpionWalk => 2.0,
+            // W4-d41 — the basilisk's carrier-group cap
+            // (`NPC.cs:58232-58237`: the 5/0.15/0.98 row), the tortured
+            // soul's + the bride's num107 default 1f (`:58322`).
+            NpcKind::DesertBeast => 5.0,
+            NpcKind::DemonTaxCollector | NpcKind::TheBride => 1.0,
             NpcKind::Salamander
             | NpcKind::Salamander2
             | NpcKind::Salamander3
@@ -3374,6 +3415,15 @@ impl NpcKind {
             | NpcKind::DesertLamiaDark => (24.0, 44.0),
             NpcKind::DesertScorpionWalk => (50.0, 20.0),
             NpcKind::DesertScorpionWall => (36.0, 36.0),
+            // W4-d41 — the basilisk's 32x31 box (`NPC.cs:14962-14963`),
+            // the tortured soul's + the bride's 18x40
+            // (`:15815-15816`/`:15845-15846`), the spiked slime's 24x18
+            // (`:15831-15832`), the sand slime's 30x24
+            // (`:15860-15861`).
+            NpcKind::DesertBeast => (32.0, 31.0),
+            NpcKind::DemonTaxCollector | NpcKind::TheBride => (18.0, 40.0),
+            NpcKind::SlimeSpiked => (24.0, 18.0),
+            NpcKind::SandSlime => (30.0, 24.0),
         }
     }
 
@@ -3511,6 +3561,13 @@ impl NpcKind {
             NpcKind::DesertLamiaLight => 528,
             NpcKind::DesertLamiaDark => 529,
             NpcKind::DesertScorpionWalk => 530,
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride keep their vanilla types (`NPCID.cs:11741-11751`).
+            NpcKind::DesertBeast => 532,
+            NpcKind::DemonTaxCollector => 534,
+            NpcKind::SlimeSpiked => 535,
+            NpcKind::TheBride => 536,
+            NpcKind::SandSlime => 537,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -4130,6 +4187,13 @@ impl NpcKind {
             NpcKind::DesertGhoulHallow => 300,
             NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 350,
             NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 320,
+            // W4-d41 — the basilisk's lifeMax 270 (`NPC.cs:14967`), the
+            // tortured soul's 400 (`:15820`), the slimes' 50
+            // (`:15836`/`:15865`), the bride's 200 (`:15850`).
+            NpcKind::DesertBeast => 270,
+            NpcKind::DemonTaxCollector => 400,
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => 50,
+            NpcKind::TheBride => 200,
         }
     }
 
@@ -4538,6 +4602,14 @@ impl NpcKind {
             NpcKind::DesertGhoulHallow => 54,
             NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 52,
             NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 66,
+            // W4-d41 — the basilisk's damage 65 (`NPC.cs:14965`), the
+            // tortured soul's + the bride's 14 (`:15818`/`:15848`), the
+            // spiked slime's 14 (`:15834`), the sand slime's 15
+            // (`:15863`).
+            NpcKind::DesertBeast => 65,
+            NpcKind::DemonTaxCollector | NpcKind::TheBride => 14,
+            NpcKind::SlimeSpiked => 14,
+            NpcKind::SandSlime => 15,
         }
     }
 }

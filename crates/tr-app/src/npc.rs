@@ -1282,6 +1282,35 @@ pub enum NpcKind {
     /// credit folds onto 530 (`ContentSamples.cs:1038`); the draw sheet
     /// stays NPC_531. W4-d41.
     DesertScorpionWall,
+    /// `NPCID.DesertBeast` (532, `NPCID.cs:11741`) — the basilisk
+    /// (`aiStyle 3`, `NPC.cs:14960-14973`): 32x31, dmg 65, def 34,
+    /// 270 HP, kb 0.3, value 800, npcSlots 0.75, NPCHit1/NPCDeath1.
+    /// The `AI_003_Fighters` carrier group (`NPC.cs:58232-58237`:
+    /// the 5/0.15/0.98 row). W4-d41.
+    DesertBeast,
+    /// `NPCID.DemonTaxCollector` (534, `NPCID.cs:11745`) — the tortured
+    /// soul (`aiStyle 3`, `NPC.cs:15813-15828`): 18x40, dmg 14, def 20,
+    /// 400 HP, kb 0.3, value 0, lavaImmune, netAlways, rarity 2,
+    /// NPCHit1/NPCDeath1. The humanoid FindFrame group
+    /// (`NPC.cs:68615`); the purification-powder transform into the
+    /// Tax Collector 441 (`Projectile.cs:14728-14733`). W4-d41.
+    DemonTaxCollector,
+    /// `NPCID.SlimeSpiked` (535, `NPCID.cs:11747`) — the spiked slime
+    /// (`aiStyle 1`, `NPC.cs:15829-15842`): 24x18, dmg 14, def 5,
+    /// 50 HP, scale 1.1, value 40, NPCHit1/NPCDeath1. The slime hop
+    /// machine + the 2-row hop strip (`NPC.cs:70818-70846`). W4-d41.
+    SlimeSpiked,
+    /// `NPCID.TheBride` (536, `NPCID.cs:11749`) — the blood-moon bride
+    /// (`aiStyle 3`, `NPC.cs:15843-15856`): 18x40, dmg 14, def 8,
+    /// 200 HP, kb 0.5, value 1000, rarity 2, NPCHit1/NPCDeath2. The
+    /// walker FindFrame group (`NPC.cs:76344-76391`). W4-d41.
+    TheBride,
+    /// `NPCID.SandSlime` (537, `NPCID.cs:11751`) — the sand slime
+    /// (`aiStyle 1`, `NPC.cs:15857-15872`): 30x24, dmg 15, def 5,
+    /// 50 HP, kb 0.7, value 75, alpha 50, color (255,250,0,0)*0.2,
+    /// npcSlots 2, NPCHit1/NPCDeath1. The slime hop machine + the
+    /// 3-row hop strip (`NPC.cs:70818-70846`). W4-d41.
+    SandSlime,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3159,7 +3188,13 @@ impl Npc {
                 .or_else(|| kind.holiday_zombie_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
-                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
+                // W4-d41 — the spiked slime's `scale = 1.1f` row
+                // (`NPC.cs:15837`).
+                .unwrap_or(match kind {
+                    NpcKind::BlazingWheel => 1.2,
+                    NpcKind::SlimeSpiked => 1.1,
+                    _ => 1.0,
+                }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -3349,6 +3384,9 @@ impl Npc {
                             // row (`NPC.cs:15810` — the second write
                             // overrides the `:15807` 0).
                             NpcKind::AncientDoom => 255,
+                            // W4-d41 — the sand slime's `alpha = 50` row
+                            // (`NPC.cs:15868`).
+                            NpcKind::SandSlime => 50,
                             _ => 0,
                         }
                     }),
@@ -3793,6 +3831,16 @@ impl Npc {
             NpcKind::DesertGhoulHallow => 0.4,
             NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 0.35,
             NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 0.5,
+            // W4-d41 — the basilisk's kb 0.3 (`NPC.cs:14970`), the
+            // tortured soul's 0.3 (`:15823`), the bride's 0.5
+            // (`:15853`), the sand slime's 0.7 (`:15871`); the spiked
+            // slime keeps the head's 1 (`:8533` — the branch writes no
+            // kb row).
+            NpcKind::DesertBeast => 0.3,
+            NpcKind::DemonTaxCollector => 0.3,
+            NpcKind::TheBride => 0.5,
+            NpcKind::SandSlime => 0.7,
+            NpcKind::SlimeSpiked => 1.0,
             _ => 0.4,
         }
     }
@@ -4215,6 +4263,13 @@ impl Npc {
             NpcKind::DesertGhoulHallow => 32,
             NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 28,
             NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 24,
+            // W4-d41 — the basilisk's defense 34 (`NPC.cs:14966`), the
+            // tortured soul's 20 (`:15819`), the slimes' 5
+            // (`:15835`/`:15864`), the bride's 8 (`:15849`).
+            NpcKind::DesertBeast => 34,
+            NpcKind::DemonTaxCollector => 20,
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => 5,
+            NpcKind::TheBride => 8,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4628,6 +4683,15 @@ impl Npc {
             NpcKind::DesertGhoulHallow => 750.0,
             NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 600.0,
             NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 600.0,
+            // W4-d41 — the basilisk's value 800 (`NPC.cs:14971`), the
+            // tortured soul's 0 (`:15824`), the spiked slime's 40
+            // (`:15841`), the bride's 1000 (`:15854`), the sand slime's
+            // 75 (`:15870`).
+            NpcKind::DesertBeast => 800.0,
+            NpcKind::DemonTaxCollector => 0.0,
+            NpcKind::SlimeSpiked => 40.0,
+            NpcKind::TheBride => 1000.0,
+            NpcKind::SandSlime => 75.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6279,6 +6343,23 @@ impl Npc {
             // the wall-crawler (`NPC.cs:29666-29898`) + the no-wall
             // transform back into 530.
             NpcKind::DesertScorpionWall => self.update_sand_poacher_wall(world, player),
+            // W4-d41 — the basilisk (532, aiStyle 3): the walker family;
+            // the `AI_003_Fighters` carrier group's 532 row
+            // (`NPC.cs:58232-58237`, the 5/0.15/0.98) rides
+            // `npc_ai3_speeds::apply_ladder` through `run_ai3_ladder`.
+            NpcKind::DesertBeast => self.update_skeleton(world, player, dt),
+            // W4-d41 — the tortured soul (534, aiStyle 3): the walker
+            // family (the num107 default 1f cap). The purification-
+            // powder transform into the Tax Collector 441
+            // (`Projectile.cs:14728-14733`) rides the projectile's hit
+            // seam (the follow-up).
+            NpcKind::DemonTaxCollector => self.update_skeleton(world, player, dt),
+            // W4-d41 — the bride (536, aiStyle 3): the walker family
+            // (the num107 default 1f cap).
+            NpcKind::TheBride => self.update_skeleton(world, player, dt),
+            // W4-d41 — the slimes (535/537, aiStyle 1): the slime hop
+            // machine on their OWN SetDefaults boxes.
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => self.update_slime(world, player, dt),
             // W4-d41 — the salamanders (498-506, aiStyle 3): the
             // `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
             // 498-506 terms) — the 70-tick cadence, the 7-speed spit 572
@@ -7921,6 +8002,100 @@ impl Npc {
             // advances.
             NpcKind::AncientLight => {
                 self.frame = 0;
+            }
+            // W4-d41 — the basilisk rides the SAME case-508 arm
+            // (`NPC.cs:70067-70103` lists 508/532/580/582): the grounded
+            // walk climbs from row 2 at the `1 + |vx|/2` >6 step,
+            // wrapping at the 8-row strip back to 2; the air row 1, the
+            // idle row 0.
+            NpcKind::DesertBeast => {
+                if self.vy != 0.0 {
+                    self.frame = 1;
+                    return;
+                }
+                if self.vx == 0.0 {
+                    self.frame = 0;
+                    return;
+                }
+                if self.facing < 0 && self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                if self.facing > 0 && self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.frame < 2 {
+                    self.frame = 2;
+                }
+                self.frame_counter += 1.0 + self.vx.abs() / 2.0;
+                if self.frame_counter > 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 8 {
+                    self.frame = 2;
+                }
+            }
+            // W4-d41 — the tortured soul rides the humanoid FindFrame
+            // group (`NPC.cs:68615`): the 8-row strip, the num108 = 12
+            // walk clock (`:69528-69531`), the idle row 1, the air row 0
+            // (the blood-zombie shape, the 12-step instead of the 8).
+            NpcKind::DemonTaxCollector => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 1;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        self.frame_counter += 0.5;
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        if self.frame_counter > 12.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 8 {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                }
+            }
+            // W4-d41 — the bride rides the walker FindFrame group
+            // (`NPC.cs:76344-76391` lists 536/590/691): the 3-row strip,
+            // the |vx| accumulator's 8/16/24/32 bands stepping rows
+            // 0/1/2/1, the air/turn row 2, the idle row 0.
+            NpcKind::TheBride => {
+                self.walker_frame();
+            }
+            // W4-d41 — the slimes ride the slime-group FindFrame arm
+            // (`NPC.cs:70818-70846` lists 535/537): the 8-tick hop strip
+            // over the 2/3-row sheet, doubled while moving/airborne and
+            // tripled while attacking (the num2 motion class).
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => {
+                let count = self.rows();
+                self.frame_counter += 1.0;
+                if num2 > 0 {
+                    self.frame_counter += 1.0;
+                }
+                if num2 == 4 {
+                    self.frame_counter += 1.0;
+                }
+                if self.frame_counter >= 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= count {
+                    self.frame = 0;
+                }
             }
             // W4-d41 — `case 528 : case 529` (`NPC.cs:69946-69977`): the
             // lamias' grounded walk climbs from row 1 at the `|vx| + 1`
@@ -20231,6 +20406,15 @@ impl Npc {
             NpcKind::DesertLamiaDark => 529,
             NpcKind::DesertScorpionWalk => 530,
             NpcKind::DesertScorpionWall => 531,
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride's vanilla type ids (the same values `to_u16`
+            // rides) — unused by every arm above, so the G6 key stays
+            // injective.
+            NpcKind::DesertBeast => 532,
+            NpcKind::DemonTaxCollector => 534,
+            NpcKind::SlimeSpiked => 535,
+            NpcKind::TheBride => 536,
+            NpcKind::SandSlime => 537,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25299,7 +25483,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 303] = [
+    pub(super) const ALL_KINDS: [NpcKind; 308] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25617,6 +25801,13 @@ mod tests {
         NpcKind::DesertLamiaDark,
         NpcKind::DesertScorpionWalk,
         NpcKind::DesertScorpionWall,
+        // W4-d41 — the basilisk + the tortured soul + the slimes + the
+        // bride.
+        NpcKind::DesertBeast,
+        NpcKind::DemonTaxCollector,
+        NpcKind::SlimeSpiked,
+        NpcKind::TheBride,
+        NpcKind::SandSlime,
     ];
 
     #[test]
@@ -26693,6 +26884,182 @@ mod tests {
         // The no-wall probe: a walker in the open air finds no walls.
         let open = Npc::new(NpcKind::DesertScorpionWalk, 10.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
         assert!(!open.can_stick_to_walls(&w, NpcKind::DesertScorpionWall), "the open air");
+    }
+
+    /// The basilisk's + the tortured soul's + the slimes' + the bride's
+    /// `SetDefaults` rows (`NPC.cs:14960-14973` for 532, `:15813-15872`
+    /// for 534-537).
+    #[test]
+    fn w4_d41_the_basilisk_soul_slime_bride_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::DesertBeast, 532u16, 32.0, 31.0, 3u8, 270, 65, 34, 800.0, 0.3f32),
+            (NpcKind::DemonTaxCollector, 534, 18.0, 40.0, 3, 400, 14, 20, 0.0, 0.3),
+            (NpcKind::SlimeSpiked, 535, 24.0, 18.0, 1, 50, 14, 5, 40.0, 1.0),
+            (NpcKind::TheBride, 536, 18.0, 40.0, 3, 200, 14, 8, 1000.0, 0.5),
+            (NpcKind::SandSlime, 537, 30.0, 24.0, 1, 50, 15, 5, 75.0, 0.7),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The spiked slime's 1.1 scale + the sand slime's alpha 50.
+        assert_eq!(bare(NpcKind::SlimeSpiked).scale, 1.1, "the spiked slime's scale");
+        assert_eq!(bare(NpcKind::SandSlime).alpha, 50, "the sand slime's alpha");
+        // The sound rows.
+        for kind in [NpcKind::DesertBeast, NpcKind::DemonTaxCollector, NpcKind::SlimeSpiked, NpcKind::SandSlime] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        assert_eq!(NpcKind::TheBride.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::TheBride.death_sound(), Some("NPC_Killed_2"));
+        // The immunity rows: the basilisk/soul/bride null
+        // (`NPCID.cs:9084`/`:9096`/`:9104`), the slimes [20]
+        // (`:9097-9103`/`:9105-9111`).
+        for kind in [NpcKind::DesertBeast, NpcKind::DemonTaxCollector, NpcKind::TheBride] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+        }
+        for kind in [NpcKind::SlimeSpiked, NpcKind::SandSlime] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} OnFire-immune");
+        }
+    }
+
+    /// The bestiary rows: the basilisk/soul/bride/sand slime carry their
+    /// own entries; the spiked slime is entry-less (Hide=true). The draw
+    /// sheets + row counts.
+    #[test]
+    fn w4_d41_the_basilisk_soul_slime_bride_bestiary_and_sheets() {
+        for (kind, net, credit, name) in [
+            (NpcKind::DesertBeast, 532, "DesertBeast", "Basilisk"),
+            (NpcKind::DemonTaxCollector, 534, "DemonTaxCollector", "Tortured Soul"),
+            (NpcKind::TheBride, 536, "TheBride", "The Bride"),
+            (NpcKind::SandSlime, 537, "SandSlime", "Sand Slime"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} name");
+        }
+        assert!(!crate::bestiary::has_entry(NpcKind::SlimeSpiked, SlimeVariant::Blue));
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 532 eight, 534 eight, 535 two, 536 three,
+        // 537 three).
+        for (kind, net, rows) in [
+            (NpcKind::DesertBeast, 532u16, 8u32),
+            (NpcKind::DemonTaxCollector, 534, 8),
+            (NpcKind::SlimeSpiked, 535, 2),
+            (NpcKind::TheBride, 536, 3),
+            (NpcKind::SandSlime, 537, 3),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The basilisk's `FindFrame` case (`NPC.cs:70067-70103`, shared
+    /// with 508): the grounded walk climbs from row 2 at the `1 + |vx|/2`
+    /// >6 step. The tortured soul's humanoid arm (`:68615`): the
+    /// num108 = 12 walk clock. The bride's walker arm (`:76344-76391`):
+    /// the 3-row strip. The slimes' hop arm (`:70818-70846`): the 8-tick
+    /// strip over the 2/3-row sheet.
+    #[test]
+    fn w4_d41_the_basilisk_soul_slime_bride_find_frame_bands() {
+        // The basilisk: 4 px/tick → 3/tick, a row every 3 ticks (>6).
+        let mut b = bare(NpcKind::DesertBeast);
+        b.vx = 4.0;
+        b.vy = 0.0;
+        b.facing = 1;
+        b.frame = 0;
+        b.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..18 {
+            b.find_frame();
+            rows.push(b.frame);
+        }
+        assert_eq!(&rows[..], &[2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 2], "the 2..7 cycle");
+        // The tortured soul: the 12-step walk clock.
+        let mut t = bare(NpcKind::DemonTaxCollector);
+        t.vx = 4.0;
+        t.vy = 0.0;
+        t.facing = 1;
+        t.frame = 0;
+        t.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..9 {
+            t.find_frame();
+            rows.push(t.frame);
+        }
+        assert_eq!(&rows[..], &[2, 2, 2, 3, 3, 3, 4, 4, 4], "the 12-step cycle");
+        // The bride: the 3-row walker strip.
+        let mut br = bare(NpcKind::TheBride);
+        br.vx = 4.0;
+        br.vy = 0.0;
+        br.facing = 1;
+        br.frame = 0;
+        br.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..7 {
+            br.find_frame();
+            rows.push(br.frame);
+        }
+        assert_eq!(&rows[..], &[0, 1, 1, 2, 2, 1, 1], "the four bands");
+        // The slimes: the 8-tick hop strip.
+        let mut s = bare(NpcKind::SlimeSpiked);
+        s.frame = 0;
+        s.frame_counter = 0.0;
+        for _ in 0..7 {
+            s.find_frame();
+        }
+        assert_eq!(s.frame, 0, "the stride holds for 7 ticks");
+        s.find_frame();
+        assert_eq!(s.frame, 1, "the eighth tick advances");
+        s.frame = 1;
+        s.frame_counter = 7.5;
+        s.find_frame();
+        assert_eq!(s.frame, 0, "the wrap at 2");
+        // The sand slime's 3-row strip.
+        let mut ss = bare(NpcKind::SandSlime);
+        ss.frame = 2;
+        ss.frame_counter = 7.5;
+        ss.find_frame();
+        assert_eq!(ss.frame, 0, "the wrap at 3");
+    }
+
+    /// The basilisk's + the soul's + the slimes' + the bride's AI
+    /// routing: each kind steps without panicking, stays inside its own
+    /// strip, and keeps its `SetDefaults` HP.
+    #[test]
+    fn w4_d41_the_basilisk_soul_slime_bride_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::DesertBeast,
+            NpcKind::DemonTaxCollector,
+            NpcKind::SlimeSpiked,
+            NpcKind::TheBride,
+            NpcKind::SandSlime,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -30258,8 +30625,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            303,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five + the ancient orbs/ghouls five + the hallowed ghoul/lamias/sand poachers five)"
+            308,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five + the ancient orbs/ghouls five + the hallowed ghoul/lamias/sand poachers five + the basilisk/soul/slimes/bride five)"
         );
         assert!(
             covered > 43,

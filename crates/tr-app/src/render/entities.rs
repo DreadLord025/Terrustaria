@@ -520,6 +520,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(TOMB_SOLAR_SHEETS)
             .chain(ANCIENT_GHOUL_SHEETS)
             .chain(LAMIA_SCORPION_SHEETS)
+            .chain(BASILISK_SOUL_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1315,6 +1316,12 @@ pub(crate) const ANCIENT_GHOUL_SHEETS: &[u32] = &[522, 523, 524, 525, 526];
 /// sheets (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla
 /// net id in `NpcAssets::npc_sheets` exactly like `ANCIENT_GHOUL_SHEETS`.
 pub(crate) const LAMIA_SCORPION_SHEETS: &[u32] = &[527, 528, 529, 530, 531];
+
+/// W4-d41 — the basilisk's + the tortured soul's + the slimes' + the
+/// bride's own sheets (the vanilla's `TextureAssets.Npc[type]`), keyed by
+/// the vanilla net id in `NpcAssets::npc_sheets` exactly like
+/// `LAMIA_SCORPION_SHEETS`.
+pub(crate) const BASILISK_SOUL_SHEETS: &[u32] = &[532, 534, 535, 536, 537];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3313,6 +3320,23 @@ pub(crate) fn draw_npcs(
             | NpcKind::DesertScorpionWall => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride draw their OWN sheets (`BASILISK_SOUL_SHEETS`)
+            // at `Main.npcFrameCount` rows (`Main.cs:67082`: 532 eight,
+            // 534 eight, 535 two, 536 three, 537 three) with the generic
+            // centred anchor. The spiked slime's 1.1 scale rides
+            // `scaled_anchor` (the BlazingWheel convention).
+            NpcKind::DesertBeast
+            | NpcKind::DemonTaxCollector
+            | NpcKind::TheBride
+            | NpcKind::SandSlime => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            NpcKind::SlimeSpiked => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
         };
         let Some(tex) = tex else {
