@@ -414,6 +414,10 @@ pub const SKY_DRAGONS_FURY_SHOT: u16 = 709;
 /// (`Projectile.cs:10294-10302`, `AI_205_RemoteControlCar` `:38076-38461`;
 /// the `SoundID.RCCar` engine loop, W4-d80).
 pub const REMOTE_CONTROL_CAR: u16 = 1105;
+/// `ProjectileID.JimsDrone` (1020) — Jim's RC drone, aiStyle 195
+/// (`Projectile.cs:9659-9666`, `AI_195_JimsDrone` `:40923-41067`; the
+/// `SoundID.JimsDrone` engine loop, W4-d80).
+pub const JIMS_DRONE: u16 = 1020;
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -2679,6 +2683,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 205, friendly, tileCollide true (the slope-collision
             // move). The stock penetrate 1.
             REMOTE_CONTROL_CAR => (26.0, 26.0, 205, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d80 — Jim's drone (1020, `Projectile.cs:9659-9666`): 12x12,
+            // aiStyle 195, friendly, penetrate -1, stock tileCollide true
+            // (the speed-gated bounce `:18057-18067`).
+            JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // --- The magic (caster) families (M4-PROJ-6, in `ProjectileID`
             // order) --- the aiStyle declaration is what Phases 3-4 need; the
             // AI arms land beside the arrow/boomerang/bomb arms in those

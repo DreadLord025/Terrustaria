@@ -1,8 +1,8 @@
-//! W4-d80 — the RC-car (1105, aiStyle 205) engine loop: the full AI
-//! machine (verbatim from the W4-d21 census port) plus the tracked-sound
-//! ensure/follow the deferred census (research/64) left unwired. The
-//! `SoundID.RCCar` loop is a continuous volume/pitch tracker: the
-//! `localAI[0]` steer-age
+//! W4-d80 — the RC-car (1105, aiStyle 205) and Jim's-drone (1020, aiStyle 195)
+//! engine loops: the full AI machines (verbatim from the W4-d21 / W4-d20
+//! census ports) plus the tracked-sound ensure/follow the deferred census
+//! (research/64) left unwired. The `SoundID.RCCar` / `SoundID.JimsDrone`
+//! loops are continuous volume/pitch trackers: the `localAI[0]` steer-age
 //! and `localAI[1]` engine-speed lerp feed the envelope, the ensure plays
 //! the loop into `localAI[2]` and the per-tick follow re-points it.
 //!
@@ -11,12 +11,12 @@
 //! ensure+follow every tick; the sim drain owns the pool dance. The
 //! `ProjectileAudioTracker` condition folds to the shared atomic (the
 //! census fold 4, the bomb-fuse precedent) — the slot's death flips it false.
-//! The RC car's `Kill()` has no explicit stop (`:70855-70864` — only
-//! the 1020 drone arm stops); the atomic flip alone ends the loop.
+//! The drone's `Kill()` also stops the loop explicitly (`:70863`); the
+//! RC car's does not (`:70855-70864` — only the 1020 arm stops).
 //!
 //! ZERO gameplay draws on the sound path — the variation/pitch picks ride the
-//! two audio-only statics. The AI machine's own dust draws stay on the
-//! `UpdateProjectiles` stream (the d21 census).
+//! two audio-only statics. The AI machines' own dust draws stay on the
+//! `UpdateProjectiles` stream (the d21/d20 census).
 //!
 //! CODE-ONLY MODE (W4-d80): the witness tests at the bottom are WRITTEN NOT
 //! RUN (no compiler invoked).
@@ -26,11 +26,12 @@ use tr_core::loot::DropRng;
 use tr_core::World;
 
 use crate::projectile::{
-    remap, wrap_angle, ProjTrackedCue, Projectile, REMOTE_CONTROL_CAR,
+    remap, rotation_vector, wrap_angle, ProjTrackedCue, Projectile, JIMS_DRONE,
+    REMOTE_CONTROL_CAR,
 };
 
 /// The engine-loop volume/pitch envelope (`Projectile.cs:38254-38266` /
-/// `:38286-38298` — the two sites share the formula):
+/// `:38286-38298` / `:40984-40996` — the three sites share the formula):
 /// `num = Remap(lai0, 0, 5, 0, 1) * Remap(lai0, 5, 15, 1, 0)` (the steer-age
 /// ramp), `vol = Clamp(Max(Remap(lai1, 0, 100, 0, 25), num * 12), 0, 100)`
 /// (the engine-speed floor), `pitch = Clamp(Remap(lai1, 0, 100, -1, 1) +
@@ -41,7 +42,6 @@ fn engine_envelope(lai0: f32, lai1: f32) -> (f32, f32) {
     let pitch = (remap(lai1, 0.0, 100.0, -1.0, 1.0) + num).clamp(-1.0, 1.0);
     (vol, pitch)
 }
-
 /// `AI_205_RemoteControlCar` (`Projectile.cs:38076-38461`) — the RC car
 /// (1105): the owner's input bits pack into `ai[0]`, the car drives on the
 /// ground (the slope-tilt + the left/right accel + the jump) or flies on a
@@ -366,6 +366,205 @@ pub(crate) fn ai_remote_control_car(
     p.time_left = 2;
 }
 
+/// `AI_195_JimsDrone` (`Projectile.cs:40923-41067`) — Jim's Drone (1020),
+/// the RC drone the player steers with the run/up/down keys. The owner block
+/// packs the input bits into `ai[0]` (the grav-flip XOR on left/right), the
+/// altitude/held-item kill gates, the tilt machine (`ai[1]` = rotation), the
+/// thrust/drag/cap physics, the `timeLeft = 2` keep-alive and the ground-probe
+/// dust.
+///
+/// The port keeps `gravDir = 1` (no gravity-flip system — the `mounted_top`
+/// precedent), so `flag2` is false and the input XOR folds to the raw keys.
+/// `Main.DroneCameraTracker.Track` (`:40955`) and
+/// `CheckSectionsInCaseOwnerIsWatching` (`:41066`) are camera/section
+/// bookkeeping — skipped. The tracked-loop sound (`SoundID.JimsDrone`,
+/// `:40986-40997`) rides the `EngineLoop` cue (W4-d80): the volume/pitch
+/// envelope from the `localAI[0]`/`[1]` engine-speed state, the ensure into
+/// `localAI[2]` and the per-tick follow.
+///
+/// RNG: the ground-probe dust (`:41050-41063`) runs only when airborne
+/// (`!flag6`) and the 3-step probe found a floor within 48 px (`num7 != 48`).
+/// TWO iterations, each a `NextFloat` gate; on the taken branch
+/// (`!(NextFloat < 0.66)`) a `NextVector2CircularEdge(2.5, 1)` (one float,
+/// `Utils.cs:1271-1273`) then a `Next(2)` dust-type pick. The dust body skips.
+///
+/// The row keeps stock `tileCollide = true`; the blocked-move arm
+/// (`:18057-18067`) reverses the blocked axis at ×0.25 when |last| > 1 —
+/// [`drone_move`] ports that (the `ai_music_note` per-axis probe stand-in).
+pub(crate) fn ai_jims_drone(
+    p: &mut Projectile,
+    world: &World,
+    player: Option<&crate::player::Player>,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+) {
+    // `:40925-40930` — the dead-owner kill flag.
+    let mut flag = player.map(|pl| pl.dead).unwrap_or(false);
+    // `:40931-40956` — the owner-only block: the altitude kill, the held-item
+    // gate and the input-bit pack. The port's single player rides slot 0.
+    if p.owner == local_owner {
+        // `position.Y - height <= 640` → kill (the drone flew too high).
+        if p.pos.y - p.h <= 640.0 {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+            return;
+        }
+        // `HeldItem.type != 5451` (the RC transmitter) → the kill flag.
+        if player.map(|pl| pl.held_item_kind).unwrap_or(0) != 5451 {
+            flag = true;
+        }
+        // `gravDir == -1` folds false (the port keeps gravDir = 1).
+        let flag2 = false;
+        let (cl, cr, cu, cd) = player
+            .map(|pl| (pl.control_left, pl.control_right, pl.control_up, pl.control_down))
+            .unwrap_or((false, false, false, false));
+        // BitsByte: bit0 = left ^ flag2, bit1 = right ^ flag2, bit2 = up,
+        // bit3 = down.
+        let mut bits = 0u8;
+        if cl ^ flag2 {
+            bits |= 1;
+        }
+        if cr ^ flag2 {
+            bits |= 2;
+        }
+        if cu {
+            bits |= 4;
+        }
+        if cd {
+            bits |= 8;
+        }
+        let num = bits as f32;
+        if p.ai[0] != num {
+            p.ai[0] = num;
+            p.net_update = true;
+        }
+        // Main.DroneCameraTracker.Track — skipped (camera bookkeeping).
+    }
+    // `:40957-40961` — the kill flag (dead owner / wrong held item).
+    if flag {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    // `:40962-40967` — unpack the input bits; rotation = ai[1].
+    let bits = p.ai[0] as u8;
+    p.rot = p.ai[1];
+    let flag3 = bits & 1 != 0; // left
+    let flag4 = bits & 2 != 0; // right
+    let flag5 = bits & 4 != 0; // up (thrust)
+    // `:40968-40972` — the steer-age counter (resets when neither left/right).
+    p.local_ai[0] += 1.0;
+    if !flag3 && !flag4 {
+        p.local_ai[0] = 0.0;
+    }
+    // `:40973-40983` — the throttle target: 0 grounded, 10 airborne, 100
+    // thrusting; localAI[1] lerps toward it at 0.2.
+    let flag6 = p.vel.y == 0.0;
+    let mut num2 = if flag6 { 0.0f32 } else { 10.0 };
+    if flag5 {
+        num2 = 100.0;
+    }
+    p.local_ai[1] += (num2 - p.local_ai[1]) * 0.2;
+    // W4-d80 `:40984-40997`: the engine-loop envelope + the tracked
+    // ensure/follow (`SoundID.JimsDrone`).
+    let (vol, pitch) = engine_envelope(p.local_ai[0], p.local_ai[1]);
+    p.wants_tracked = Some(ProjTrackedCue::EngineLoop { style: "JimsDrone", vol, pitch });
+    // `:40984-40997` — the sound volume/pitch envelope feeds the EngineLoop
+    // cue (W4-d80, draw-free).
+    // `:40998-41020` — the tilt/thrust machine.
+    let mut num5 = 0.15f32;
+    if flag6 {
+        // Grounded: damp the tilt ×0.7, drag X ×0.97; thrust adds the
+        // rotation-vector kick at 0.5 and lowers gravity to 0.05.
+        p.rot = wrap_angle(p.rot) * 0.7;
+        p.vel.x *= 0.97;
+        if flag5 {
+            p.vel += rotation_vector(p.rot - std::f32::consts::FRAC_PI_2) * 0.5;
+            num5 = 0.05;
+        }
+    } else {
+        // Airborne: the turn rate ramps 0.1×→1× over the first 10 steer ticks.
+        let mut num6 = std::f32::consts::PI / 15.0;
+        num6 = remap(p.local_ai[0], 0.0, 10.0, num6 * 0.1, num6);
+        p.rot += (flag4 as i32 - flag3 as i32) as f32 * num6;
+        if flag5 {
+            let vector = rotation_vector(p.rot - std::f32::consts::FRAC_PI_2);
+            p.vel.x *= 0.97;
+            p.vel += vector * 0.5;
+        }
+    }
+    // `:41021-41030` — gravity, the ai[1] rotation latch, the fall drag and
+    // the 16 speed cap.
+    p.vel.y += num5;
+    p.ai[1] = p.rot;
+    if !flag5 && p.vel.y > 12.0 {
+        p.vel.y *= 0.95;
+    }
+    let len = p.vel.length();
+    if len > 16.0 {
+        p.vel *= 16.0 / len;
+    }
+    // `:41031-41032` — AddLight skipped; the timeLeft = 2 keep-alive.
+    p.time_left = 2;
+    // `:41033-41065` — the airborne ground-probe dust. The 3-step (16 px)
+    // TileCollision probe accumulates the free-fall distance; a floor within
+    // 48 px opens the two-dust window.
+    if !flag6 {
+        let vector2 = p.pos;
+        let mut num7 = 0.0f32;
+        let num8 = 3;
+        let num9 = 16 * num8;
+        for i in 0..num8 {
+            let vector3 = Vec2::new(0.0, 16.0);
+            let probe_pos = vector2 + vector3 * i as f32;
+            let tc = crate::collision::tile_collision(
+                world,
+                [probe_pos.x, probe_pos.y],
+                [vector3.x, vector3.y],
+                p.w,
+                p.h,
+                false,
+                false,
+            );
+            num7 += tc.vel[1];
+            if tc.vel != [vector3.x, vector3.y] {
+                break;
+            }
+        }
+        if num7 != num9 as f32 {
+            for _ in 0..2 {
+                if !(rng.next_float() < 0.66) {
+                    let _ = rng.next_float(); // NextVector2CircularEdge(2.5, 1)
+                    let _ = rng.next_range(0, 2); // the dust-type pick (31 / 16)
+                }
+            }
+        }
+    }
+    // CheckSectionsInCaseOwnerIsWatching — skipped (section bookkeeping).
+}
+
+/// The 1020 drone's blocked-move arm (`HandleMovement`
+/// `Projectile.cs:18057-18067`): the blocked axis reverses at ×0.25 of the
+/// pre-collision velocity, but ONLY when |last axis| > 1 (the speed gate the
+/// 1116 petal lacks). The port's per-axis destination-box probe stands in for
+/// the swept `TileCollision` (the `ai_music_note` precedent).
+pub(crate) fn drone_move(p: &mut Projectile, world: &World) {
+    let last = p.vel;
+    let nx = p.pos.x + p.vel.x;
+    let ny = p.pos.y + p.vel.y;
+    let hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
+    let hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
+    if hit_x && last.x.abs() > 1.0 {
+        p.vel.x = -last.x * 0.25;
+    }
+    if hit_y && last.y.abs() > 1.0 {
+        p.vel.y = -last.y * 0.25;
+    }
+    p.pos += p.vel;
+}
+
 /// `Utils.NextVector2Circular(hw, hh)` (`Utils.cs:1266-1269`):
 /// `NextVector2Unit() * (hw, hh) * NextFloat()` — the unit-angle float
 /// (`:1261-1264`, one `NextFloat` → `rotationRange * NextFloat()` →
@@ -574,13 +773,18 @@ mod tests {
         pl
     }
 
-    /// The row carries the census slice (`Projectile.cs:10294-10302`).
+    /// The rows carry the census slices (`Projectile.cs:10294-10302` /
+    /// `:9659-9666`).
     #[test]
-    fn w4_d80_the_rc_car_row() {
+    fn w4_d80_the_rc_drone_rows() {
         let d = proj_data(REMOTE_CONTROL_CAR).unwrap();
         assert_eq!(d.ai_style, 205);
         assert_eq!((d.w, d.h), (26.0, 26.0), "`:10296-10297`");
         assert!(d.tile_collide, "`:10300`");
+        let d = proj_data(JIMS_DRONE).unwrap();
+        assert_eq!(d.ai_style, 195);
+        assert_eq!((d.w, d.h), (12.0, 12.0), "`:9661-9662`");
+        assert_eq!(d.penetrate, -1, "`:9665`");
     }
 
     /// The engine envelope (`:38254-38266`): the steer-age ramp × the
@@ -652,10 +856,52 @@ mod tests {
         assert!(!p.active, "the wrong-item kill");
     }
 
+    /// The drone queues the engine-loop cue; the altitude / held-item kill
+    /// gates fire first (`:40933-40941`).
+    #[test]
+    fn w4_d80_the_drone_queues_the_engine_loop() {
+        let w = world();
+        let pl = player(&w, 5451); // the Jim's Drone item
+        let mut p = proj(JIMS_DRONE);
+        p.pos = Vec2::new(1600.0, 2000.0);
+        let mut rng = FastRandom::new(7);
+        ai_jims_drone(&mut p, &w, Some(&pl), 0, &mut rng);
+        assert!(p.active);
+        assert!(
+            matches!(p.wants_tracked, Some(ProjTrackedCue::EngineLoop { style: "JimsDrone", .. })),
+            "the engine-loop cue queued"
+        );
+        assert_eq!(p.time_left, 2, "the keep-alive (`:41032`)");
+    }
+
+    /// The drone altitude kill (`:40933-40937`).
+    #[test]
+    fn w4_d80_the_drone_altitude_kill() {
+        let w = world();
+        let pl = player(&w, 5451);
+        let mut p = proj(JIMS_DRONE);
+        p.pos = Vec2::new(1600.0, 600.0); // 600 - 12 = 588 <= 640
+        let mut rng = FastRandom::new(7);
+        ai_jims_drone(&mut p, &w, Some(&pl), 0, &mut rng);
+        assert!(!p.active, "the altitude kill");
+    }
+
+    /// The drone wrong-held-item kill (`:40938-40941`).
+    #[test]
+    fn w4_d80_the_drone_wrong_item_kills() {
+        let w = world();
+        let pl = player(&w, 0);
+        let mut p = proj(JIMS_DRONE);
+        p.pos = Vec2::new(1600.0, 2000.0);
+        let mut rng = FastRandom::new(7);
+        ai_jims_drone(&mut p, &w, Some(&pl), 0, &mut rng);
+        assert!(!p.active, "the wrong-item kill");
+    }
+
     /// The RNG contract: the engine-loop cue path draws nothing on the
     /// gameplay stream (the envelope is pure math; the tracked play's
     /// variation/pitch picks ride the audio-only statics at the drain).
-    /// The AI machine's dust draws DO ride the stream (the d21 census) —
+    /// The AI machines' dust draws DO ride the stream (the d21/d20 census) —
     /// this witness pins the envelope alone.
     #[test]
     fn w4_d80_the_engine_envelope_is_draw_free() {

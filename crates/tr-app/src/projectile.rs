@@ -509,8 +509,9 @@ pub enum ProjTrackedCue {
     /// position, `SoundEngine.cs:142-149`): the Explosive Trap's explode
     /// (`Projectile.cs:69362`). The handle is discarded. ZERO gameplay draws.
     GlobalOneShot(&'static str),
-    /// The RC-car engine loop (`Projectile.cs:38253-38267` / `:38285-38299`):
-    /// the ensure-play (`GetActiveSound(localAI[2]) == null && vol != 0` →
+    /// The RC-car / Jim's-drone engine loop (`Projectile.cs:38253-38267` /
+    /// `:38285-38299` / `:40983-40997`): the ensure-play
+    /// (`GetActiveSound(localAI[2]) == null && vol != 0` →
     /// `PlayTrackedLoopedSound(style, Center, tracker)` into `localAI[2]`)
     /// then the per-tick follow (`Volume = vol`, `Position = Center`,
     /// `Pitch = pitch`). The arm computes the volume/pitch envelope from
@@ -518,6 +519,11 @@ pub enum ProjTrackedCue {
     /// The `ProjectileAudioTracker` condition folds to the shared atomic
     /// (the census fold 4, the bomb-fuse precedent). ZERO gameplay draws.
     EngineLoop { style: &'static str, vol: f32, pitch: f32 },
+    /// `GetActiveSound(localAI[2])?.Stop()` — the Jim's-drone `Kill()` tail
+    /// (`Projectile.cs:70863`): the explicit stop + the condition atomic
+    /// flip. The RC car (1105) has NO explicit stop — its loop dies via the
+    /// condition atomic alone (the death-hook flip). ZERO gameplay draws.
+    EngineLoopStop,
 }
 
 /// One pool slot (`Projectile.cs:296-470`, the engine-relevant subset).
@@ -13302,7 +13308,7 @@ fn alpha_of(opacity: f32) -> i32 {
 
 /// `Vector2.ToRotationVector2()` (XNA): the unit vector at the angle —
 /// `(cos, sin)`.
-fn rotation_vector(angle: f32) -> Vec2 {
+pub(crate) fn rotation_vector(angle: f32) -> Vec2 {
     let (s, c) = angle.sin_cos();
     Vec2::new(c, s)
 }
@@ -17526,6 +17532,24 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d80 — aiStyle 195, Jim's drone
+                        // (`AI_195_JimsDrone` `:40923-41067`): the input-bit
+                        // pack, the altitude/held-item kill gates, the
+                        // tilt/thrust physics, the engine-loop sound, the
+                        // timeLeft=2 keep-alive and the ground-probe dust.
+                        // The blocked-move arm (`:18057-18067`) reverses the
+                        // blocked axis ×0.25 when |last| > 1.
+                        195 => {
+                            crate::projectile_ai_rc_drone::ai_jims_drone(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                local_owner,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            crate::projectile_ai_rc_drone::drone_move(&mut self.slots[i], world);
+                        }
                         // W4-d80 — aiStyle 205, the RC car
                         // (`AI_205_RemoteControlCar` `:38076-38461`): the
                         // input-bit pack, the wall-flight / ground drive, the
@@ -20282,14 +20306,26 @@ impl ProjectilePool {
                     ));
                 }
                 // W4-d80 — the engine-loop condition fold (the census fold
-                // 4): the RC car's (1105) loop's `ProjectileAudioTracker`
-                // reads `active && type == expected` — the slot's death
-                // flips the shared atomic false so the loop stops. The RC
-                // car has NO explicit `Kill()` stop (`:70855-70864` — only
-                // the 1020 drone arm stops); the atomic flip covers it.
-                if self.slots[i].kind == REMOTE_CONTROL_CAR {
+                // 4): the RC car (1105) / Jim's drone (1020) loop's
+                // `ProjectileAudioTracker` reads `active && type == expected`
+                // — the slot's death flips the shared atomic false so the
+                // loop stops. The drone ALSO has an explicit `Kill()` stop
+                // (`:70863`); the RC car does not (`:70855-70864` — only the
+                // 1020 arm stops). The atomic flip covers both; the drone's
+                // explicit stop rides `EngineLoopStop`.
+                if matches!(self.slots[i].kind, REMOTE_CONTROL_CAR | JIMS_DRONE) {
                     if let Some(alive) = self.slots[i].fuse_alive.take() {
                         alive.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    if self.slots[i].kind == JIMS_DRONE {
+                        let pos = self.slots[i].pos;
+                        let (w, h) = (self.slots[i].w, self.slots[i].h);
+                        self.pending_proj_tracked.push((
+                            i,
+                            ProjTrackedCue::EngineLoopStop,
+                            pos.x + w * 0.5,
+                            pos.y + h * 0.5,
+                        ));
                     }
                 }
                 self.spawn_inferno_blast(i);

@@ -111,7 +111,7 @@ fn apply_proj_tracked_cue(
             }
         }
         ProjTrackedCue::EngineLoop { style, vol, pitch } => {
-            // `:38256-38267` / `:38288-38299`: the ensure
+            // `:38256-38267` / `:38288-38299` / `:40986-40997`: the ensure
             // (`GetActiveSound(localAI[2]) == null && vol != 0`) then the
             // follow (`Volume = vol`, `Position = Center`, `Pitch = pitch`).
             // The `ProjectileAudioTracker` condition folds to the shared
@@ -140,6 +140,16 @@ fn apply_proj_tracked_cue(
                 s.volume = vol;
                 s.position = (x, y);
                 s.pitch = pitch;
+            }
+        }
+        ProjTrackedCue::EngineLoopStop => {
+            // `:70863`: `GetActiveSound(localAI[2])?.Stop()` — the drone's
+            // explicit Kill stop. The condition atomic flips false too.
+            if let Some(s) = audio.get_active_sound_mut(handle) {
+                s.stop();
+            }
+            if let Some(alive) = p.fuse_alive.take() {
+                alive.store(false, std::sync::atomic::Ordering::Relaxed);
             }
         }
     }
@@ -1567,20 +1577,22 @@ mod w4_d80_dd2_one_shot_tests {
     }
 }
 
-/// W4-d80 — the RC-car engine loop (research/64 deferred): the ensure-play
-/// into `localAI[2]`, the per-tick volume/position/pitch follow and the RNG
-/// contract (zero gameplay draws). WRITTEN NOT RUN (code-only mode).
+/// W4-d80 — the RC-car / Jim's-drone engine loops (research/64 deferred):
+/// the ensure-play into `localAI[2]`, the per-tick volume/position/pitch
+/// follow, the drone's explicit Kill stop and the RNG contract (zero
+/// gameplay draws). WRITTEN NOT RUN (code-only mode).
 #[cfg(test)]
 mod w4_d80_engine_loop_tests {
     use super::*;
     use crate::projectile::ProjTrackedCue;
     use tr_core::slot::SlotId;
 
-    /// The headless rig: the engine cue seeded silent so the looped play
-    /// resolves its asset and adds a slot (no output device).
+    /// The headless rig: the two engine cues seeded silent so the looped
+    /// plays resolve their assets and add slots (no output device).
     fn rig() -> (crate::audio::Audio, Vec<Projectile>) {
         let mut audio = crate::audio::Audio::new(None);
         audio.test_seed_tracked_cue("rccar");
+        audio.test_seed_tracked_cue("Drone");
         let p = Projectile {
             active: true,
             kind: crate::projectile::REMOTE_CONTROL_CAR,
@@ -1623,8 +1635,26 @@ mod w4_d80_engine_loop_tests {
         assert!(slots[0].fuse_alive.is_none(), "no atomic armed");
     }
 
+    /// The drone's Kill stop (`:70863`): `GetActiveSound(localAI[2])?.Stop()`
+    /// — the explicit stop + the atomic flip. The C# does NOT zero
+    /// `localAI[2]` here (contrast the bomb fuse's `:70677`).
+    #[test]
+    fn w4_d80_the_engine_loop_stop() {
+        let (mut audio, mut slots) = rig();
+        slots[0].kind = crate::projectile::JIMS_DRONE;
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "JimsDrone", vol: 12.0, pitch: 0.0 }, 100.0, 100.0);
+        let id = SlotId::from_float(slots[0].local_ai[2]);
+        assert!(id.is_active());
+        audio.test_keep_tracked_alive(id);
+        let alive = slots[0].fuse_alive.clone().unwrap();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoopStop, 100.0, 100.0);
+        assert!(!alive.load(std::sync::atomic::Ordering::Relaxed), "the condition flipped false");
+        assert!(slots[0].fuse_alive.is_none(), "the atomic released");
+        assert_eq!(SlotId::from_float(slots[0].local_ai[2]), id, "the C# keeps the handle (`:70863` has no zero write)");
+    }
+
     /// The RNG contract: the engine-loop drain leaves the gameplay stream
-    /// pristine; the style is one variation (`soundid.rs` row) so the
+    /// pristine; both styles are one variation (`soundid.rs` rows) so the
     /// variation pick draws NOTHING — only the always-drawn pitch roll moves.
     #[test]
     fn w4_d80_the_engine_loop_drain_is_gameplay_draw_free() {
@@ -1633,21 +1663,27 @@ mod w4_d80_engine_loop_tests {
         let peek = rng.peek();
         let (style_before, pitch_before) = audio.test_audio_streams();
         apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 12.0, pitch: 0.0 }, 100.0, 100.0);
-        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 25.0, pitch: 0.5 }, 100.0, 100.0);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoopStop, 100.0, 100.0);
         assert_eq!(rng.peek(), peek, "zero Main.rand draws on the engine-loop path");
         let (style_after, pitch_after) = audio.test_audio_streams();
         assert_eq!(style_after, style_before, "one variation: no variation pick");
         assert_ne!(pitch_after, pitch_before, "the pitch roll moved");
     }
 
-    /// The style row (`soundid.rs`, the `SoundID.cs` static-ctor port):
-    /// `RCCar` → "rccar" vol 0.015, one variation, uncapped.
+    /// The style rows (`soundid.rs`, the `SoundID.cs` static-ctor port):
+    /// `RCCar` → "rccar" vol 0.015, `JimsDrone` → "Drone" vol 0.1, one
+    /// variation each, uncapped.
     #[test]
     fn w4_d80_the_engine_loop_styles_resolve() {
         let style = crate::tracked_sound::TrackedStyle::by_name("RCCar").expect("RCCar");
         assert_eq!(style.cue, "rccar");
         assert_eq!(style.variations, 1);
         assert!((style.volume - 0.015).abs() < 1e-6, "the 0.015 volume");
+        assert_eq!(style.max_tracked_instances, 0);
+        let style = crate::tracked_sound::TrackedStyle::by_name("JimsDrone").expect("JimsDrone");
+        assert_eq!(style.cue, "Drone");
+        assert_eq!(style.variations, 1);
+        assert!((style.volume - 0.1).abs() < 1e-6, "the 0.1 volume");
         assert_eq!(style.max_tracked_instances, 0);
     }
 }

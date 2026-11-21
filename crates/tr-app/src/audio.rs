@@ -516,10 +516,12 @@ const TRACKED_CUES: &[&str] = &[
     // W4-d80 — the vampire sun-scorch sizzle (`SoundID.cs:1708`, vol 1;
     // `Player.cs:28590-28603`).
     "sizzle",
-    // W4-d80 — the RC-car engine loop (`SoundID.cs` style 272 `RCCar`,
-    // vol 0.015, one variation): the aiStyle-205 volume/pitch tracker
-    // (`Projectile.cs:38253-38267`/`:38285-38299`).
+    // W4-d80 — the RC-car / Jim's-drone engine loops (`SoundID.cs` style
+    // 272 `RCCar` vol 0.015 / style 271 `JimsDrone` vol 0.1, one variation
+    // each): the aiStyle-205 (`Projectile.cs:38253-38267`/`:38285-38299`)
+    // and aiStyle-195 (`:40983-40997`) volume/pitch trackers.
     "rccar",
+    "Drone",
     // W4-d80 — the DD2 projectile one-shots (research/64 deferred): the
     // tower shots (`SoundID.cs:1604`/`:1607`/`:1610`), the trap explode
     // (`:1605`), the summon marker (`:1663`), the ghastly glaive ghost
