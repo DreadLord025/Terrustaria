@@ -563,6 +563,21 @@ impl HoverParams {
         bounce: 0.7,
         rotation: HoverRotation::SpriteAim,
     };
+    /// W4-d42 - the Blood Squid (type 619; `NPC.cs:50323-50327`:
+    /// num 6, num2 0.1). `flag5` is false for it (`:50447` lists
+    /// 619 in the excluded set), it COLLIDES with the tiles
+    /// (`SetDefaults` 619 writes noGravity only, `:16945`) so it
+    /// takes the x0.7 bounce (`:50658`), and its rotation is the
+    /// aim tilt (`:50643-50646` lists 619).
+    pub const BLOOD_SQUID: Self = Self {
+        max_speed: 6.0,
+        accel: 0.1,
+        surface_damped: false,
+        double_add: false,
+        no_tile_collide: false,
+        bounce: 0.7,
+        rotation: HoverRotation::Aim,
+    };
 }
 
 /// The hover AI's aim (`NPC.GetTargetData`): the centre drives the desired

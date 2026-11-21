@@ -1239,6 +1239,26 @@ pub enum NpcKind {
     /// 18x20, aiStyle 7, dmg 0, def 0,
     /// 5 HP, kb 1.0, value 0.
     ExplosiveBunny,
+    /// `NPCID.Dolphin` (615) - `NPC.cs:16892-16904`:
+    /// 20x18, aiStyle 16, dmg 0, def 0,
+    /// 5 HP, kb 0.5, value 0.
+    Dolphin,
+    /// `NPCID.Turtle` (616) - `NPC.cs:16905-16917 (catchItem type-616+4464 :16916)`:
+    /// 22x20, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 0.5, value 0.
+    Turtle,
+    /// `NPCID.TurtleJungle` (617) - `NPC.cs:16905-16917`:
+    /// 22x20, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 0.5, value 0.
+    TurtleJungle,
+    /// `NPCID.BloodNautilus` (618) - `NPC.cs:16918-16933 (value Item.buyPrice(0,2)=20000 :16930)`:
+    /// 100x100, aiStyle 117, dmg 55, def 24,
+    /// 7000 HP, kb 0.0, value 20000.
+    BloodNautilus,
+    /// `NPCID.BloodSquid` (619) - `NPC.cs:16934-16949`:
+    /// 44x44, aiStyle 5, dmg 60, def 16,
+    /// 750 HP, kb 0.0, value 500.
+    BloodSquid,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3286,6 +3306,8 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2
                             | NpcKind::ZombieMerman
                             | NpcKind::EyeballFlyingFish
+                           
+                            | NpcKind::BloodSquid
                             => {
                                 255
                             }
@@ -3731,6 +3753,12 @@ impl Npc {
             NpcKind::WaterStrider => 1.0,
             NpcKind::GoldWaterStrider => 1.0,
             NpcKind::ExplosiveBunny => 1.0,
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Dolphin => 0.5,
+            NpcKind::Turtle => 0.5,
+            NpcKind::TurtleJungle => 0.5,
+            NpcKind::BloodNautilus => 0.0,
+            NpcKind::BloodSquid => 0.0,
             _ => 0.4,
         }
     }
@@ -4153,6 +4181,12 @@ impl Npc {
             NpcKind::WaterStrider => 0,
             NpcKind::GoldWaterStrider => 0,
             NpcKind::ExplosiveBunny => 0,
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Dolphin => 0,
+            NpcKind::Turtle => 0,
+            NpcKind::TurtleJungle => 0,
+            NpcKind::BloodNautilus => 24,
+            NpcKind::BloodSquid => 16,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4567,6 +4601,12 @@ impl Npc {
             NpcKind::WaterStrider => 0.0,
             NpcKind::GoldWaterStrider => 0.0,
             NpcKind::ExplosiveBunny => 0.0,
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Dolphin => 0.0,
+            NpcKind::Turtle => 0.0,
+            NpcKind::TurtleJungle => 0.0,
+            NpcKind::BloodNautilus => 20000.0,
+            NpcKind::BloodSquid => 500.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5433,6 +5473,14 @@ impl Npc {
             // shot needs the hostile-shot seam); the per-NPC step is the
             // family no-op (the Destroyer precedent).
             NpcKind::Probe => {}
+            // W4-d42 - the Blood Squid (619): `AI_005`'s type-619
+            // pair (`NPC.cs:50323-50327`: num 6, num2 0.1), the
+            // flag4 bob family (`:50446`), no flag5 double-add
+            // (`:50447`), tile collision with the 0.7 bounce and
+            // the aim tilt (`:50643-50646` lists 619).
+            NpcKind::BloodSquid => {
+                self.update_hover(world, player, HoverParams::BLOOD_SQUID)
+            }
             _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
         }
     }
@@ -6573,6 +6621,28 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // ---- W4-d42 batch 8: the NPCID 615-619 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            NpcKind::Dolphin => self.update_swimmer(world, player, rng),
+            // `NPC.cs:16905-16917 (catchItem type-616+4464 :16916)` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Turtle => {}
+            // `NPC.cs:16905-16917` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::TurtleJungle => {}
+            // `NPC.cs:16918-16933 (value Item.buyPrice(0,2)=20000 :16930)` - aiStyle 117 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::BloodNautilus => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:16934-16949` - aiStyle 5 rides the style axis
+            // (`ai_005_hover_family`'s BloodSquid arm); this kind
+            // arm is the direct-call route (the bee precedent).
+            NpcKind::BloodSquid => self.ai_005_hover_family(world, player),
             // ---- W4-d42 batch 7: the NPCID 610-614 roster
             // (data-only join). Unwired styles idle in place (the
             // wyvern precedent); walkers ride the aiStyle-3 family,
@@ -10047,6 +10117,82 @@ impl Npc {
                 } else {
                     self.frame_counter = 0.0;
                     self.frame = 6;
+                }
+            }
+            // W4-d42 - `FindFrame` case 615 (`NPC.cs:74227-74243`): the
+            // dry ai[2]==1 flop pins row 4; else the dry double-tick
+            // counter, the row = counter/7 over 4 (28-tick lap).
+            NpcKind::Dolphin => {
+                self.sprite_dir = self.facing;
+                if !self.wet && self.ai[2] == 1.0 {
+                    self.frame = 4;
+                } else {
+                    if !self.wet {
+                        self.frame_counter += 1.0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 28.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame = self.frame_counter as u32 / 7;
+                }
+            }
+            // W4-d42 - `FindFrame` case 616/617 (`NPC.cs:76686-76731`):
+            // the wet paddle rows 8..13 (>5, >10 idle), the dry walk
+            // rows 0..7 (>8), the stand pin and the air row 8.
+            NpcKind::Turtle | NpcKind::TurtleJungle => {
+                let num193 = if self.vx == 0.0 { 10.0 } else { 5.0 };
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > num193 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 13 {
+                            self.frame = 8;
+                        }
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 7 {
+                            self.frame = 0;
+                        }
+                    }
+                    if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    }
+                    if self.vy != 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 8;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 618 (`NPC.cs:67000-67010`): the 5-tick counter over
+            // the 4-frame strip.
+            NpcKind::BloodNautilus => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 619 (`NPC.cs:67011-67021`): the 6-tick counter over
+            // the 6-frame strip.
+            NpcKind::BloodSquid => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 6 {
+                        self.frame = 0;
+                    }
                 }
             }
         }
@@ -19652,6 +19798,12 @@ impl Npc {
             NpcKind::WaterStrider => 612,
             NpcKind::GoldWaterStrider => 613,
             NpcKind::ExplosiveBunny => 614,
+            // W4-d42 - the vanilla ids 615-619 are free render keys.
+            NpcKind::Dolphin => 615,
+            NpcKind::Turtle => 616,
+            NpcKind::TurtleJungle => 617,
+            NpcKind::BloodNautilus => 618,
+            NpcKind::BloodSquid => 619,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24720,7 +24872,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 305] = [
+    pub(super) const ALL_KINDS: [NpcKind; 310] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25041,6 +25193,12 @@ mod tests {
         NpcKind::WaterStrider,
         NpcKind::GoldWaterStrider,
         NpcKind::ExplosiveBunny,
+        // W4-d42 - the NPCID 615-619 roster.
+        NpcKind::Dolphin,
+        NpcKind::Turtle,
+        NpcKind::TurtleJungle,
+        NpcKind::BloodNautilus,
+        NpcKind::BloodSquid,
     ];
 
     #[test]
@@ -25387,6 +25545,42 @@ mod tests {
         assert_eq!(NpcKind::GoldWaterStrider.to_u16(), 387u16);
         assert_eq!(NpcKind::ExplosiveBunny.to_u16(), 388u16);
         assert_eq!(ALL_KINDS.len(), 305);
+    }
+
+    /// W4-d42 batch 8 - the NPCID 615-619 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16892-16904, NPC.cs:16905-16917 (catchItem type-616+4464 :16916), NPC.cs:16905-16917, NPC.cs:16918-16933 (value Item.buyPrice(0,2)=20000 :16930), NPC.cs:16934-16949), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b8_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Dolphin, 615u16, 16u8, 20.0, 18.0, 0, 0, 5, 0.5f32, 0.0f32),
+            (NpcKind::Turtle, 616u16, 7u8, 22.0, 20.0, 0, 0, 5, 0.5f32, 0.0f32),
+            (NpcKind::TurtleJungle, 617u16, 7u8, 22.0, 20.0, 0, 0, 5, 0.5f32, 0.0f32),
+            (NpcKind::BloodNautilus, 618u16, 117u8, 100.0, 100.0, 55, 24, 7000, 0.0f32, 20000.0f32),
+            (NpcKind::BloodSquid, 619u16, 5u8, 44.0, 44.0, 60, 16, 750, 0.0f32, 500.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The port-local wire band (the vanilla types ride cs_id/net_id).
+        assert_eq!(NpcKind::Dolphin.to_u16(), 389u16);
+        assert_eq!(NpcKind::Turtle.to_u16(), 390u16);
+        assert_eq!(NpcKind::TurtleJungle.to_u16(), 391u16);
+        assert_eq!(NpcKind::BloodNautilus.to_u16(), 392u16);
+        assert_eq!(NpcKind::BloodSquid.to_u16(), 393u16);
+        assert_eq!(ALL_KINDS.len(), 310);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -28904,7 +29098,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            305,
+            310,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

@@ -104,6 +104,8 @@ fn vanilla_type(kind: NpcKind) -> i32 {
         NpcKind::Piranha => 58,
         NpcKind::Shark => 65,
         // W4-d42 - the roster's aiStyle-16 kinds.
+        NpcKind::Dolphin => 615,
+        // W4-d42 - the roster's aiStyle-16 kinds.
         NpcKind::Pupfish => 607,
         // W4-d42 - the roster's aiStyle-16 kinds.
         NpcKind::GoldGoldfish => 592,

@@ -535,6 +535,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::WaterStrider
         | NpcKind::GoldWaterStrider
         | NpcKind::ExplosiveBunny => &[31],
+        // W4-d42 - the NPCID 615-619 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::Dolphin
+        | NpcKind::Turtle
+        | NpcKind::TurtleJungle
+        | NpcKind::BloodNautilus
+        | NpcKind::BloodSquid => &[31],
     }
 }
 

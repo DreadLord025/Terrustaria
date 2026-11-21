@@ -2385,6 +2385,48 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Explosive Bunny",
     },
+    // W4-d42 - the NPCID 615-619 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "Dolphin",
+        net_id: 615,
+        kind: NpcKind::Dolphin,
+        variant: None,
+        quick_unlock: false,
+        name: "Dolphin",
+    },
+    BestiaryEntryDef {
+        credit_id: "Turtle",
+        net_id: 616,
+        kind: NpcKind::Turtle,
+        variant: None,
+        quick_unlock: false,
+        name: "Turtle",
+    },
+    BestiaryEntryDef {
+        credit_id: "TurtleJungle",
+        net_id: 617,
+        kind: NpcKind::TurtleJungle,
+        variant: None,
+        quick_unlock: false,
+        name: "Jungle Turtle",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodNautilus",
+        net_id: 618,
+        kind: NpcKind::BloodNautilus,
+        variant: None,
+        quick_unlock: false,
+        name: "Dreadnautilus",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodSquid",
+        net_id: 619,
+        kind: NpcKind::BloodSquid,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Squid",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

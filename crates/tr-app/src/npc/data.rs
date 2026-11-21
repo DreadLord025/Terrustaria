@@ -626,6 +626,11 @@ impl NpcKind {
             NpcKind::WaterStrider => 386,
             NpcKind::GoldWaterStrider => 387,
             NpcKind::ExplosiveBunny => 388,
+            NpcKind::Dolphin => 389,
+            NpcKind::Turtle => 390,
+            NpcKind::TurtleJungle => 391,
+            NpcKind::BloodNautilus => 392,
+            NpcKind::BloodSquid => 393,
         }
     }
 
@@ -993,6 +998,11 @@ impl NpcKind {
             386 => NpcKind::WaterStrider,
             387 => NpcKind::GoldWaterStrider,
             388 => NpcKind::ExplosiveBunny,
+            389 => NpcKind::Dolphin,
+            390 => NpcKind::Turtle,
+            391 => NpcKind::TurtleJungle,
+            392 => NpcKind::BloodNautilus,
+            393 => NpcKind::BloodSquid,
             _ => return None,
         })
     }
@@ -1914,6 +1924,12 @@ impl NpcKind {
             NpcKind::WaterStrider => "NPC_Hit_1",
             NpcKind::GoldWaterStrider => "NPC_Hit_1",
             NpcKind::ExplosiveBunny => "NPC_Hit_1",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::Dolphin => "NPC_Hit_1",
+            NpcKind::Turtle => "NPC_Hit_1",
+            NpcKind::TurtleJungle => "NPC_Hit_1",
+            NpcKind::BloodNautilus => "NPC_Hit_1",
+            NpcKind::BloodSquid => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2266,6 +2282,13 @@ impl NpcKind {
             NpcKind::Owl => "NPC_Killed_1",
             NpcKind::WaterStrider => "NPC_Killed_1",
             NpcKind::GoldWaterStrider => "NPC_Killed_1",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::Dolphin => "NPC_Killed_1",
+            NpcKind::Turtle => "NPC_Killed_1",
+            NpcKind::TurtleJungle => "NPC_Killed_1",
+            NpcKind::BloodNautilus => "NPC_Killed_1",
+            NpcKind::BloodSquid => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2392,6 +2415,11 @@ impl NpcKind {
             // W4-d42 - the noGravity rows.
             NpcKind::GoldLadyBug
             | NpcKind::Pupfish
+            => true,
+            // W4-d42 - the noGravity rows.
+            NpcKind::Dolphin
+            | NpcKind::BloodNautilus
+            | NpcKind::BloodSquid
             => true,
             NpcKind::AngryNimbus => true,
             _ => false,
@@ -2687,6 +2715,12 @@ impl NpcKind {
             NpcKind::WaterStrider => 116,
             NpcKind::GoldWaterStrider => 116,
             NpcKind::ExplosiveBunny => 7,
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Dolphin => 16,
+            NpcKind::Turtle => 7,
+            NpcKind::TurtleJungle => 7,
+            NpcKind::BloodNautilus => 117,
+            NpcKind::BloodSquid => 5,
         }
     }
 
@@ -3270,6 +3304,12 @@ impl NpcKind {
             NpcKind::WaterStrider => (10.0, 10.0),
             NpcKind::GoldWaterStrider => (10.0, 10.0),
             NpcKind::ExplosiveBunny => (18.0, 20.0),
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Dolphin => (20.0, 18.0),
+            NpcKind::Turtle => (22.0, 20.0),
+            NpcKind::TurtleJungle => (22.0, 20.0),
+            NpcKind::BloodNautilus => (100.0, 100.0),
+            NpcKind::BloodSquid => (44.0, 44.0),
         }
     }
 
@@ -3428,6 +3468,14 @@ impl NpcKind {
             NpcKind::WaterStrider => 612,
             NpcKind::GoldWaterStrider => 613,
             NpcKind::ExplosiveBunny => 614,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::Dolphin => 615,
+            NpcKind::Turtle => 616,
+            NpcKind::TurtleJungle => 617,
+            NpcKind::BloodNautilus => 618,
+            NpcKind::BloodSquid => 619,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -4009,6 +4057,12 @@ impl NpcKind {
             NpcKind::WaterStrider => 5,
             NpcKind::GoldWaterStrider => 5,
             NpcKind::ExplosiveBunny => 5,
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Dolphin => 5,
+            NpcKind::Turtle => 5,
+            NpcKind::TurtleJungle => 5,
+            NpcKind::BloodNautilus => 7000,
+            NpcKind::BloodSquid => 750,
         }
     }
 
@@ -4415,6 +4469,12 @@ impl NpcKind {
             NpcKind::WaterStrider => 0,
             NpcKind::GoldWaterStrider => 0,
             NpcKind::ExplosiveBunny => 0,
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Dolphin => 0,
+            NpcKind::Turtle => 0,
+            NpcKind::TurtleJungle => 0,
+            NpcKind::BloodNautilus => 55,
+            NpcKind::BloodSquid => 60,
         }
     }
 }

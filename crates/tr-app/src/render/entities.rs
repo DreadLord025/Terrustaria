@@ -3205,6 +3205,25 @@ pub(crate) fn draw_npcs(
             // their own NPC_<id> sheets. The sheets are NOT packed yet
             // (the atlas headroom - the wyvern deferral precedent), so
             // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::Dolphin => {
+                generic_anchor(assets.npc_sheet(615), npc_rows(615), n, w, h)
+            }
+            NpcKind::Turtle => {
+                generic_anchor(assets.npc_sheet(616), npc_rows(616), n, w, h)
+            }
+            NpcKind::TurtleJungle => {
+                generic_anchor(assets.npc_sheet(617), npc_rows(617), n, w, h)
+            }
+            NpcKind::BloodNautilus => {
+                generic_anchor(assets.npc_sheet(618), npc_rows(618), n, w, h)
+            }
+            NpcKind::BloodSquid => {
+                generic_anchor(assets.npc_sheet(619), npc_rows(619), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
             NpcKind::Rat => {
                 generic_anchor(assets.npc_sheet(610), npc_rows(610), n, w, h)
             }
