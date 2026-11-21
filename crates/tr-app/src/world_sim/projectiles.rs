@@ -332,6 +332,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // `Player.SceneMetrics.NPCBannerBuff` as the hostile shots' `Damage_EVP`
+    // banner arm reads it (`Projectile.cs:14832` → `Player.cs:44197`); the
+    // per-tick scene-scan snapshot (the `set_disco` precedent). W4-g4 P1
+    // (the W4-d22 reconcile fold).
+    app.projectiles
+        .set_npc_banner_buff(app.scene_metrics.npc_banner_buff.clone());
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
