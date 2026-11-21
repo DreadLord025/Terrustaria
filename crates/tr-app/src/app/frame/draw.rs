@@ -1690,6 +1690,10 @@ impl App {
                                         if crate::map_player_icons::minimap_death_gate(dp, mm_panel)
                                             && crate::map_player_icons::draw_death_marker(
                                                 renderer, lookups, dp, mm_hs, 1.0, self.mouse_pos,
+                                                // `:55755-55758`: the minimap
+                                                // inline copy's extra -4/-4
+                                                // hover shift (W4-f29 F5).
+                                                true,
                                             )
                                         {
                                             death_hovered = true;
@@ -2386,6 +2390,10 @@ impl App {
                                             );
                                             if crate::map_player_icons::draw_death_marker(
                                                 renderer, lookups, dp, num77, 1.0, self.mouse_pos,
+                                                // `DrawPlayerDeathMarker`
+                                                // (`:56455-56462`): NO -4
+                                                // shift (W4-f29 F5).
+                                                false,
                                             ) {
                                                 death_hovered = true;
                                                 if let Some(t) = p.last_death_time {

@@ -210,8 +210,11 @@ pub(crate) fn death_marker_pos(
 
 /// `Main.DrawPlayerDeathMarker`'s draw (`Main.cs:56454`): the whole
 /// `MapDeath` sheet centred on `pos` at `head_scale`, `White * alpha`.
-/// Returns the hover answer (`:56455-56463` — the 28×28 box shifted
-/// `(4, 2) - 14*headScale`, then `-4` on both axes: net `(0, -2)`).
+/// Returns the hover answer — the 28×28 box at `(4, 2) - 14*headScale`
+/// (`:56455-56462`, NO further shift). The minimap's INLINE copy
+/// (`:55755-55758`) additionally subtracts 4 on both axes (net `(0, -2)`);
+/// `minimap` selects that arm. W4-f29 fix F5 (research/140 §3): the
+/// fullscreen box must NOT ride the minimap's −4/−4.
 pub(crate) fn draw_death_marker(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -219,6 +222,7 @@ pub(crate) fn draw_death_marker(
     head_scale: f32,
     alpha: f32,
     mouse: Vec2,
+    minimap: bool,
 ) -> bool {
     let Some(sheet) = lookups.map_death else {
         return false;
@@ -233,15 +237,23 @@ pub(crate) fn draw_death_marker(
         uv,
         [1.0, 1.0, 1.0, alpha],
     );
-    // `:56455-56458`: num3 = num + 4 - 14*s, num4 = num2 + 2 - 14*s, then
-    // `num3 -= 4; num4 -= 4` — the box origin is pos + (0, -2) - 14*s.
-    let rect = [
-        pos[0] - 14.0 * head_scale,
-        pos[1] - 2.0 - 14.0 * head_scale,
+    // `:56455-56456`: num3 = num + 4 - 14*s, num4 = num2 + 2 - 14*s. The
+    // `num3 -= 4; num4 -= 4` pair exists ONLY in the minimap inline copy
+    // (`:55757-55758`) — the fullscreen fn has no such lines (W4-f29 F5).
+    hover_inclusive(death_hover_rect(pos, head_scale, minimap), mouse)
+}
+
+/// The death-marker hover box: fullscreen `pos + (4, 2) - 14*s`
+/// (`Main.cs:56455-56456`), minimap the same minus 4 on both axes
+/// (`:55757-55758`). W4-f29 fix F5.
+pub(crate) fn death_hover_rect(pos: [f32; 2], head_scale: f32, minimap: bool) -> [f32; 4] {
+    let shift = if minimap { 4.0 } else { 0.0 };
+    [
+        pos[0] + 4.0 - 14.0 * head_scale - shift,
+        pos[1] + 2.0 - 14.0 * head_scale - shift,
         28.0 * head_scale,
         28.0 * head_scale,
-    ];
-    hover_inclusive(rect, mouse)
+    ]
 }
 
 /// `Game.PlayerDeathTime` ("{0} died {1} ago", `Main.cs:55986`): the
@@ -677,17 +689,46 @@ mod tests {
         assert!(!rect_contains_point(r, [7.9, 17.0]));
     }
 
-    /// `Main.cs:56455-56458`: the death hover box is the head box shifted
-    /// (-4, -4) — net origin pos + (0, -2) - 14*s.
+    /// W4-f29 fix F5 — `Main.cs:56455-56462` (`DrawPlayerDeathMarker`, read
+    /// in full): the FULLSCREEN hover box is the head box `(4, 2) - 14*s`
+    /// with NO further shift. The `-4/-4` pair exists only in the minimap
+    /// inline copy (`:55757-55758`) — the e17 first pass wrongly applied
+    /// the minimap's net `(0, -2)` box to both branches.
     #[test]
     fn w4_e17_death_hover_box_is_the_shifted_head_box() {
         let pos = [200.0, 300.0];
         let s = 0.5;
         let head = head_hover_rect(pos, s);
-        // The death box: (pos.x - 14s, pos.y - 2 - 14s, 28s, 28s).
-        assert_eq!(head[0] - 4.0, pos[0] - 14.0 * s);
-        assert_eq!(head[1] - 4.0, pos[1] - 2.0 - 14.0 * s);
-        assert_eq!(head[2], 28.0 * s);
+        // Fullscreen: identical to the head box (no -4).
+        let full = death_hover_rect(pos, s, false);
+        assert_eq!(full, head);
+        assert_eq!(full, [pos[0] + 4.0 - 14.0 * s, pos[1] + 2.0 - 14.0 * s, 28.0 * s, 28.0 * s]);
+        // Minimap: the extra -4 on both axes — net pos + (0, -2) - 14*s.
+        let mini = death_hover_rect(pos, s, true);
+        assert_eq!(mini[0], head[0] - 4.0);
+        assert_eq!(mini[1], head[1] - 4.0);
+        assert_eq!(mini[2], 28.0 * s);
+        assert_eq!(mini[3], 28.0 * s);
+    }
+
+    /// W4-f29 fix F5 — `Main.cs:56448-56453` (fullscreen transform) vs
+    /// `:55746-55751` (the minimap inline copy): the sub-tile offsets add
+    /// and there is no `-10*scale` inset; the y-offset is
+    /// `-(2 - scale/5*2)` = -1.2 at scale 2, NOT the head's `-2*scale/5`.
+    #[test]
+    fn w4_f29_death_marker_transform() {
+        // Fullscreen: origin (200,300), left_top 0, scale 4, inset 10*scale.
+        // x = 160/16*4 + 200 - 40 = 200; y = 320/16*4 + 300 - (2-1.6) - 40.
+        let last = [160.0, 320.0];
+        let p = death_marker_pos(last, [0.0, 0.0], [200.0, 300.0], 4.0, [40.0, 40.0]);
+        assert_eq!(p[0], 200.0);
+        assert!((p[1] - 339.6).abs() < 1e-4, "{}", p[1]);
+        // Minimap: origin (500,90), left_top (5,10), sub (-0.5,-0.25),
+        // scale 2 — the inset pair is the NEGATED sub (the caller passes
+        // `[-sub.x, -sub.y]`, draw.rs). y = (320/16-10)*2 + 90 - 1.2 - 0.25.
+        let got = death_marker_pos(last, [5.0, 10.0], [500.0, 90.0], 2.0, [0.5, 0.25]);
+        assert_eq!(got[0], 509.5);
+        assert_eq!(got[1], 108.55);
     }
 
     /// W4-f29 fix F3 — `Main.cs:56480`: the misc icon's `Utils.Floor`
