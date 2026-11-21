@@ -749,15 +749,13 @@ pub const CULTIST_BOSS_PARTICLE: u16 = 526;
 /// Head's held channel marker, aiStyle 100 (`Projectile.cs:6094-6106`).
 /// W4-d10.
 pub const MEDUSA_HEAD: u16 = 535;
-/// `ProjectileID.MedusaHeadRay` (536, `ProjectileID.cs:1626`) — the head's
-/// petrifying ray, aiStyle 101 (`Projectile.cs:6107-6119`). The row + AI
-/// are d11's claim (`6aca9b7f`, the 101 arm) — until they land the 535's
-/// ray spawns decline (`spawn_with_data`'s no-row no-op) and the head
-/// deals no damage. KEEP-ONE at merge: d11 adds the SAME const with its
-/// row — drop this duplicate, keep d11's (the composition verdict +
-/// the conflict note: `docs/research/26d-projectile-ai-91-100-crosschecks.md`).
-/// W4-d10.
-pub const MEDUSA_HEAD_RAY: u16 = 536;
+// `ProjectileID.MedusaHeadRay` (536) — the ray kind is d11's claim
+// (`6aca9b7f`: the row + `ai_medusa_ray` + the `MEDUSA_HEAD_RAY` const).
+// The keep-one drop-hunk EXECUTED (W4-d10, the crosschecks doc §2): d10's
+// duplicate const is REMOVED; the 535 dispatch spawns the rays through
+// the LITERAL 536 (`spawn_with_data_ai_owned(536, …)`) so this branch
+// compiles standalone (the no-row spawn declines) AND merges without a
+// const collision — d11's const is the one definition.
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;

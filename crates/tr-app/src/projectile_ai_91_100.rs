@@ -95,8 +95,11 @@
 //!   landed the row + arm); until the merge the ray spawns decline
 //!   (`spawn_with_data`'s no-row no-op) and the Medusa Head deals no damage.
 //!   The composition is verified (the key link + the strike walk + the
-//!   scatter rolls); the shared `MEDUSA_HEAD_RAY` const is a keep-one merge
-//!   conflict (`docs/research/26d-projectile-ai-91-100-crosschecks.md`).
+//!   scatter rolls); the keep-one drop-hunk is EXECUTED (W4-d10): d10's
+//!   duplicate `MEDUSA_HEAD_RAY` const is removed, the dispatch spawns
+//!   through the LITERAL 536 and the s100 row witness is re-pinned to
+//!   d11's landed shape (the post-merge pin, WRITTEN NOT RUN —
+//!   `docs/research/26d-projectile-ai-91-100-crosschecks.md` §2).
 //! - `hide` (1007) / `drawLayer` / `usesOwnerLight` (535) have no port
 //!   slot fields — draw-layer state, the module doc convention.
 //!
@@ -3062,10 +3065,23 @@ mod tests {
         assert!(d.magic);
         assert!(d.ignore_water);
         assert_eq!(proj_frames(535), 12);
-        // The ray kind has NO row on THIS branch — d11's claim (the spawn
-        // declines). At merge d11's row lands and this flips to is_some()
-        // (the keep-one const + the re-pin: the crosschecks doc).
-        assert!(proj_data(536).is_none());
+        // The ray kind 536 — the LITERAL (d11's `MEDUSA_HEAD_RAY` const
+        // is the one definition at merge; d10's duplicate is dropped,
+        // the keep-one hunk executed). RE-PINNED to d11's landed row
+        // shape (`6aca9b7f`, `Projectile.cs:6107-6119`): 10×10, aiStyle
+        // 101, penetrate −1, tileCollide false, magic, ignoreWater, the
+        // stock timeLeft. On THIS branch the row is absent (the spawn
+        // declines) — the assertions below are the POST-MERGE pin
+        // (code-only mode: WRITTEN NOT RUN until the d11 merge lands
+        // the row; the crosschecks doc §2).
+        let ray = proj_data(536).expect("d11's 536 row (the post-merge pin)");
+        assert_eq!((ray.w, ray.h), (10.0, 10.0));
+        assert_eq!(ray.ai_style, 101);
+        assert_eq!(ray.penetrate, -1);
+        assert!(!ray.tile_collide);
+        assert!(ray.magic);
+        assert!(ray.ignore_water);
+        assert_eq!(ray.time_left, 3600);
     }
 
     /// The head ticks (`:44482-44543`): the cadence 15 (the slow-magic

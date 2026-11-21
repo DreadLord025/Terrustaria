@@ -71,15 +71,21 @@ One merge conflict to reconcile: the shared `MEDUSA_HEAD_RAY` const.**
     same way. The rolls stay in d10's arm (the C# evaluates the velocity
     expression BEFORE `NewProjectile`), so the stream position holds
     regardless of the row's presence.
-- **The merge conflict (keep-one):** BOTH branches add
-  `pub const MEDUSA_HEAD_RAY: u16 = 536` to `projectile/data.rs` — d10 at
-  `:757` (the dependency note, no row), d11 in its 101 commit (with the
-  row). Neither base (`a725acb0`) had the const. At merge the two const
-  definitions collide; **keep ONE** (d11's, adjacent to its row) and drop
-  d10's duplicate. d10's dispatch reads the const through `pub use data::*`
-  so either definition serves it; the row itself is d11's alone (d10's
-  `proj_data(536).is_none()` witness flips to `is_some()` once d11's row
-  lands — re-pin that witness at merge).
+- **The merge conflict (keep-one) — EXECUTED on d10:** BOTH branches
+  added `pub const MEDUSA_HEAD_RAY: u16 = 536` to `projectile/data.rs` —
+  d10 (the dependency note, no row), d11 in its 101 commit (with the
+  row). Neither base (`a725acb0`) had the const. The drop-hunk has now
+  RUN on d10: the duplicate const is REMOVED, the 535 dispatch spawns
+  through the **literal 536** (`spawn_with_data_ai_owned(536, …)` — both
+  the strike and the scatter arms), so d10 compiles standalone (the
+  no-row spawn still declines) and the merge takes d11's const as the
+  one definition with NO conflict. The s100 row witness
+  (`w4_d10_s100_the_medusa_row_is_verbatim`) is RE-PINNED to d11's landed
+  row shape via the literal: 10×10, aiStyle 101, penetrate −1,
+  tileCollide false, magic, ignoreWater, timeLeft 3600 — a POST-MERGE
+  pin (WRITTEN NOT RUN in code-only mode; it reads `is_none()`-shaped
+  failure on this branch until d11's row lands, which is the documented
+  state).
 - **Cross-note:** d10's module doc + the `MEDUSA_HEAD_RAY` const doc record
   the dependency ("the row + AI are d11's claim — until they land the
   spawns decline"). After the merge the spawns resolve and the 535 deals
@@ -88,7 +94,8 @@ One merge conflict to reconcile: the shared `MEDUSA_HEAD_RAY` const.**
 ## Witnesses
 
 These are census/composition verdicts, not new behaviour — no new witness
-tests. The existing d10 witnesses (`w4_d10_s100_the_medusa_row_is_verbatim`
-asserts `proj_data(536).is_none()`, the rowless-child decline) and d11's
-101 witnesses cover the two sides; the merge re-pins the d10 no-row
-assertion to the landed row.
+tests. The d10 s100 row witness
+(`w4_d10_s100_the_medusa_row_is_verbatim`) is re-pinned to d11's landed
+536 row shape via the literal (the drop-hunk above); d11's 101 witnesses
+cover the ray arm. The pin is WRITTEN NOT RUN (code-only) and asserts
+the post-merge state.

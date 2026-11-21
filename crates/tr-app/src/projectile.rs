@@ -18367,7 +18367,11 @@ impl ProjectilePool {
                                 let (nw, nh) = npcs[j].size();
                                 let v = Vec2::new(ncx, ncy) - Vec2::new(hx, hy);
                                 if let Some(s) = self.spawn_with_data_ai_owned(
-                                    MEDUSA_HEAD_RAY,
+                                    // The literal 536 — d11's
+                                    // `MEDUSA_HEAD_RAY` const is the one
+                                    // definition at merge (the keep-one
+                                    // drop-hunk executed, data.rs).
+                                    536,
                                     owner_id,
                                     hx - 5.0,
                                     hy - 5.0,
@@ -18401,7 +18405,9 @@ impl ProjectilePool {
                             if let Some(scatter) = tick.scatter {
                                 for (vx, vy) in scatter {
                                     let _ = self.spawn_with_data_ai_owned(
-                                        MEDUSA_HEAD_RAY,
+                                        // The literal 536 (the keep-one
+                                        // drop-hunk, the strike arm above).
+                                        536,
                                         owner_id,
                                         hx - 5.0,
                                         hy - 5.0,
