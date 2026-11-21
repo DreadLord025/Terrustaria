@@ -5,7 +5,7 @@
 //! PURE machines (code-only mode: no compiler/tests were run on this
 //! branch; the witness tests below are written, not executed).
 //!
-//! ## Census (research/26d row 49, finding F2)
+//! ## Census (research/156 row 49, finding F2 — was 26d, registry §3)
 //!
 //! ONE vanilla member: ExplosiveBunny 281 (`ProjectileID.cs:1116`,
 //! `SetDefaults` `Projectile.cs:3676-3687`: 28×28, friendly, `alpha = 255`,
@@ -53,13 +53,33 @@
 //!
 //! ## Skips (documented)
 //!
-//! The dust/gore BODIES (no draw layer) — every call-site draw and the
+//! The gore BODIES (no draw layer) — every call-site draw and the
 //! NewGore internal kicks STAY (the `projectile_ai_misc` G3 convention).
 //! The ChildSafety replacement draws (`Gore.cs:1334-1339`) are the standing
 //! port scope-out (ChildSafety off). The `Damage()` walk is the wiring
 //! caller's (the resized box rides the slot; [`BunnyKill`] reports the
 //! intent). The sounds ride `wants_sound` (single slot — the last cue
 //! wins on a multi-cue tick, the boomerang precedent).
+//!
+//! ## The g65-Kill-309 compose (research/360 §3)
+//!
+//! The dust BODIES of BOTH 281 blocks are W4-g65/g63's, superseded here
+//! (the g65-Kill-309 owed pool, `Kill-remainder-309-distinct-kinds-ALL-
+//! 406-Dust.NewDust-sites-ported-or-accounted`, g65 FINAL research/346):
+//!
+//! * The Kill hook's 20× dust-31 + 10×2 dust-6 (`:75759-75771`) ride
+//!   g65's `projectile_death_dust.rs` 281 drain arm (`:3295` at
+//!   `b0842907c`) — the SAME 20-draw gore census kept in the SAME order
+//!   (g65 keeps the interleaved gore draws per its bible §5; g16's
+//!   `tombstone_head_gores`/`corner_gores` bodies are the gore lane's).
+//!   This module keeps the cues + the gore-draw census + the resize/Damage
+//!   state; at the merge the gore census drops from ONE side only
+//!   (research/360's drop-hunk), never both.
+//! * The tick-3 fuse spark's 10× dust-31 + 5×2 dust-6 (`:28290-28305`)
+//!   ride g63's `projectile_trail_dust.rs::bunny_burst` (STAGED, its
+//!   activation contract cites this module). The ONE gore
+//!   `Next(61,64)` + kicks stay HERE until the g16 `tombstone_landing_gore`
+//!   seam activates (g63's emitter keeps only the argument draw).
 #![allow(dead_code)] // UNWIRED (W4-d5): the 281 row + the dispatch arm are the wiring step
 
 use crate::projectile::Projectile;
@@ -128,8 +148,10 @@ pub fn bunny_step(p: &mut Projectile, rng: &mut dyn DropRng) {
             return;
         }
         p.alpha = 0;
-        // `:28288-28314` — the tick-3 fuse spark: the dust loops roll
-        // nothing; the ONE gore draws Next(61,64) + its kicks.
+        // `:28288-28314` — the tick-3 fuse spark: the dust loops' bodies
+        // are g63's STAGED `bunny_burst` (research/360 §3 — activation
+        // adds the pool internals, no explicit dust draws exist here);
+        // the ONE gore draws Next(61,64) + its kicks (g16's body seam).
         if p.ai[0] == 3.0 {
             let _ = rng.next_range(61, 64);
             gore_kicks(rng);
@@ -218,7 +240,9 @@ pub fn bunny_kill(p: &mut Projectile, rng: &mut dyn DropRng) -> BunnyKill {
         }
         // `:75758` — the explosion blast (the last cue wins the slot).
         p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
-        // `:75759-75771` — the dust loops roll nothing (skipped bodies).
+        // `:75759-75771` — the dust loops: bodies + internals are the g65
+        // drain's 281 arm (research/360 §3, the g65-Kill-309 compose); the
+        // loops roll no explicit draws, so nothing stays on this stream.
         // `:75772-75787` — the 4 cardinal gibs.
         for _ in 0..4 {
             let _ = rng.next_range(61, 64);
@@ -412,5 +436,39 @@ mod tests {
         assert!(!out.damage);
         assert_eq!((p.w, p.h), (28.0, 28.0));
         assert_eq!(rng.next_range(0, 999), oracle.next_range(0, 999));
+    }
+
+    /// The g65-Kill-309 compose (research/360 §3): g65's 281 drain arm
+    /// (`projectile_death_dust.rs:3295` @ b0842907c) keeps the SAME 20-draw
+    /// gore census this hook keeps — replaying its census shape (2×
+    /// [(-20,21),(-20,21),(10,31),(-20,21)] then 4× [(61,64),(10,31),
+    /// (-20,21)], the −3 gate drawing nothing) on a cloned stream lands
+    /// EXACTLY where `bunny_kill` lands. The dust internals between the
+    /// census blocks are g65's pool-side draws (not replayed here); at the
+    /// merge the census drops from ONE side only. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d5_s49_the_g65_compose_census_is_stream_identical() {
+        let mut rng = UnifiedRandom::new(7);
+        let mut g65 = UnifiedRandom::new(7);
+        let mut p = bunny();
+        let _ = bunny_kill(&mut p, &mut rng);
+        // The g65 arm's kept gore draws, verbatim order (its :3297-3319).
+        for _ in 0..2 {
+            let _ = g65.next_range(-20, 21);
+            let _ = g65.next_range(-20, 21);
+            let _ = g65.next_range(10, 31);
+            let _ = g65.next_range(-20, 21);
+        }
+        for _ in 0..4 {
+            let _ = g65.next_range(61, 64);
+            let _ = g65.next_range(10, 31);
+            let _ = g65.next_range(-20, 21);
+        }
+        assert_eq!(rng.next_range(0, 999), g65.next_range(0, 999), "census-aligned");
+        // The −3 gate: neither side draws.
+        let mut p = bunny();
+        p.ai[0] = -3.0;
+        let _ = bunny_kill(&mut p, &mut rng);
+        assert_eq!(rng.next_range(0, 999), g65.next_range(0, 999), "−3 inert both sides");
     }
 }
