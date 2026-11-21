@@ -14486,7 +14486,12 @@ pub struct ProjectilePool {
     /// The world-sim pass drains them on the `UpdateProjectiles` stream
     /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
     /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
-    pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// S1-E-21h d77 adds the sixth term — the style façade's `volumeScale`
+    /// (`SoundEngine.cs:93`'s fourth argument / `type.Volume`,
+    /// `LegacySoundPlayer.cs:1411`'s post-gate multiply): the DD2 Goblin
+    /// Bomb's 0.5-volume death cue (`Projectile.cs:71906`); every other
+    /// intent carries 1.0.
+    pending_proj_sounds: Vec<(u16, i32, f32, f32, f32, f32)>,
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
     /// the world-sim pass onto the player's `_channelShotCache` — the LAST
@@ -16130,12 +16135,14 @@ impl ProjectilePool {
     }
 
     /// S1-E-21h — the projectile-family cue intents the AI arms and the
-    /// bomb kill path queued: `(sound id, style, x, y, pitchOffset)` — the
-    /// `SoundEngine.PlaySound` overload payload. The world sim drains and
-    /// plays them through `Audio::play_proj_sound` on the
+    /// bomb kill path queued: `(sound id, style, x, y, pitchOffset,
+    /// volumeScale)` — the `SoundEngine.PlaySound` overload payload (the
+    /// d77 sixth term: the style's `type.Volume` / call scale, 1.0 for
+    /// every non-quiet cue). The world sim drains and
+    /// plays them through `Audio::play_proj_sound_scaled` on the
     /// `UpdateProjectiles` stream (`Main.cs:17775`), attenuation gate
     /// first — the wave-C drain convention.
-    pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
+    pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_proj_sounds)
     }
 
@@ -19759,7 +19766,8 @@ impl ProjectilePool {
                                 // The strike arm's cue list (Item1 +
                                 // N×Item126) — the pool's sound queue.
                                 for req in tick.sounds {
-                                    self.pending_proj_sounds.push(req);
+                                    self.pending_proj_sounds
+                                        .push((req.0, req.1, req.2, req.3, req.4, 1.0));
                                 }
                                 self.golf_effects.push(
                                     crate::projectile_ai_golf::GolfEffect::PlayerWrites {
@@ -19784,7 +19792,9 @@ impl ProjectilePool {
                     // pass tail on the same `UpdateProjectiles` stream
                     // (the S1-E-21c batch convention, ANALYSIS).
                     if let Some(req) = self.slots[i].wants_sound.take() {
-                        self.pending_proj_sounds.push(req);
+                        // The slot field carries no volume term (every
+                        // `wants_sound` arm is a stock-scale play) — 1.0.
+                        self.pending_proj_sounds.push((req.0, req.1, req.2, req.3, req.4, 1.0));
                     }
                     // S1-P-i55 — `base.oldPosition = base.position`
                     // (`Projectile.cs:17013`) latches between the AI and
@@ -20295,7 +20305,7 @@ impl ProjectilePool {
             _ => None,
         };
         if let Some((id, style, x, y)) = cue {
-            self.pending_proj_sounds.push((id, style, x, y, 0.0));
+            self.pending_proj_sounds.push((id, style, x, y, 0.0, 1.0));
         }
     }
 
@@ -20524,7 +20534,7 @@ impl ProjectilePool {
         // refusal, which gates the whole arm including the sound).
         if !p.no_drop_item {
             self.pending_proj_sounds
-                .push((2, 127, p.pos.x, p.pos.y, 0.0));
+                .push((2, 127, p.pos.x, p.pos.y, 0.0, 1.0));
         }
         // `:77376-77377` — the tile below the centre: `(int)(Center.X / 16)`,
         // `(int)(Center.Y / 16) + 1`.
@@ -22428,7 +22438,7 @@ impl ProjectilePool {
             // the rest Item14 — at the POST-resize `base.position`.
             let style = if matches!(kind, 785 | 788 | 791) { 62 } else { 14 };
             let p = &self.slots[slot];
-            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             for _ in 0..8 {
                 gore(rng);
             }
@@ -22438,7 +22448,7 @@ impl ProjectilePool {
             // S1-E-21h d77 — `:77859`: 800 plays Item62, the rest Item14.
             let style = if kind == 800 { 62 } else { 14 };
             let p = &self.slots[slot];
-            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             for _ in 0..8 {
                 gore(rng);
             }
@@ -22451,7 +22461,7 @@ impl ProjectilePool {
                 let style = if matches!(kind, 794 | 797) { 62 } else { 14 };
                 let p = &self.slots[slot];
                 let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-                self.pending_proj_sounds.push((2, style, cx, cy, 0.0));
+                self.pending_proj_sounds.push((2, style, cx, cy, 0.0, 1.0));
             }
             // `:77893-77979` — the Mini Nuke family: the 50×50 resize, the
             // 50 smoke dust with a `Next(5)` scale + a `Next(2)` gate (one
@@ -22498,7 +22508,7 @@ impl ProjectilePool {
             // S1-E-21h d77 — `:77983`: every shrapnel plays Item62 at the
             // POST-resize `base.position`.
             let p = &self.slots[slot];
-            self.pending_proj_sounds.push((2, 62, p.pos.x, p.pos.y, 0.0));
+            self.pending_proj_sounds.push((2, 62, p.pos.x, p.pos.y, 0.0, 1.0));
             for _ in 0..4 {
                 if rng.next_range(0, 5) == 0 {
                     gore(rng);
@@ -22519,7 +22529,7 @@ impl ProjectilePool {
             {
                 let style = if matches!(kind, 777 | 781) { 62 } else { 14 };
                 let p = &self.slots[slot];
-                self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+                self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             for _ in 0..4 {
                 gore(rng);
@@ -22584,7 +22594,7 @@ impl ProjectilePool {
             {
                 let style = if matches!(kind, 133 | 136) { 62 } else { 14 };
                 let p = &self.slots[slot];
-                self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+                self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             resize(&mut self.slots[slot], 22.0);
             for _ in 0..8 {
@@ -22600,7 +22610,7 @@ impl ProjectilePool {
             {
                 let style = if kind == 139 { 62 } else { 14 };
                 let p = &self.slots[slot];
-                self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+                self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             resize(&mut self.slots[slot], 80.0);
             for _ in 0..40 {

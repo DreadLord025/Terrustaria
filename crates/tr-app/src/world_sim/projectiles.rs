@@ -457,7 +457,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // passed. The C# plays inline mid-walk; the port drains at the pass
     // tail (the wave-C batch convention, ANALYSIS "The projectile sound
     // wave").
-    for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
+    for (id, style, x, y, pitch_offset, volume_scale) in app.projectiles.drain_proj_sounds() {
         // S1-P-i08 + W3-i39 — the aiStyle-3 wall thud (`Projectile.cs:19571`)
         // and `AI_007`'s latch dig cue (`Projectile.cs:52757`:
         // `PlaySound(0, i*16, j*16)`) are the int-id Dig play: case 0's
@@ -482,8 +482,18 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // int-overload case-4 façade (one `Next(-10, 11)` pitch after
             // the gate, the 10 playing guard).
             app.audio.play_npc_death_int(style, x, y, rng);
+        } else if id == 29 {
+            // S1-E-21h d77 deferred-arm wave — the Phantasmal Eye's death
+            // moan (`Projectile.cs:72989`, `PlaySound(29, x, y, 103)`): the
+            // int-overload case-29 façade (`LegacySoundPlayer.cs:1008-1050`
+            // — the Style IS the zombie slot, the 103 ×0.4 arm, the playing
+            // guard before the one `Next(-10, 11)` pitch draw), the
+            // fighter-moan seam (S1-E-21e). The C# site truncates the
+            // position (`(int)base.position.X/Y`).
+            app.audio.play_fighter_moan(29, style, x.trunc(), y.trunc(), rng);
         } else {
-            app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+            app.audio
+                .play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, rng);
         }
     }
     // `NewProjectile`'s `TryUpdateChannel` (`Projectile.cs:11097-11100`):
