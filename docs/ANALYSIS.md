@@ -36131,6 +36131,54 @@ lane). The two `world_sim/wiring.rs` `ItemDrop` struct literals gained the new
 fields; `item_lights.rs` / `entity_lights.rs` docs repointed to the landed dust
 halves.
 
+## World-item entity mechanics (DOC-SWEEP lane 5, W4-g15, code-only 2026-11-21)
+
+The full-method sweep of `WorldItem.cs` + `Main.DrawItem` beyond the dust
+half: research/77 pins the per-mechanic census (the six lane verdicts +
+the extra ports + the gap list). The ports: the treasureMagnet grants
+(`player.rs`), the DrawItem family (`item.rs` `shimmer_fade_color` /
+`aura_echo_offsets` / `mana_crystal_pulse` + the `render_key` coverage),
+the reservation gates (lava/combine/monster grabs via `net_reserved`),
+the client live GrabFlags, MakeAWish, CheckInWorld, TryFillBucket, the
+`ItemNoGravity` arm, the copper-slime unlock (flag + scan + save byte),
+the `enemyGrabDelayTime` clock + wire byte, `IsHopperInRangeOf`, and the
+client reservation-hold expiry.
+
+**Deliberate deviations (lane 5).**
+- The post-tick scan stand-ins: `TryGrantingMakeAWishSet` (the C# runs it
+  per-drop at `:414`) and the copper-slime flag write (the C# writes
+  in-loop at `NPC.cs:19171`) resolve AFTER the items closure — the
+  closure holds `world = &app.world`, so no helper may take `app`
+  wholesale inside it. The wish grant is draw-free (no stream moves) and
+  runs AFTER `apply_due_transforms` (the C#'s `UpdateShimmer :403`
+  precedes the grant `:414`; the grant's `swap_remove` would invalidate
+  the `shimmer_due` indices). The `copper_unlocked` latch makes a second
+  coin this tick see the lock the C#'s in-loop write would show.
+- `CheckInWorld` runs after the despawn burns (the C# order is `:419`
+  lava → `:422` in-world): the kinds are disjoint (a burning rare-0 drop
+  is never a boss bag), so the outcome is identical.
+- The client reservation hold decays 6 per 10 Hz cadence tick (the C#'s
+  `timeToKeepReservation` decrements 1 per 60 Hz update) — the batched
+  stand-in, the `net_play_counter` precedent.
+- The copper-slime pickup raises the flag but leaves the NPC: the
+  `Transform(684)` target (TownSlimeCopper) has no `NpcKind` row — the
+  town-slime roster gap, the `spawn_shimmer_release` precedent. The
+  `TownSlimeTransform` particle broadcast is the orchestrator lane's.
+- The revenge coin-suck keeps its pickup-time position (the i50 standing
+  coin-wallet deviation) but now reads the `:405` `enemyGrabDelayTime`
+  gate, so a freshly-dropped revenge coin is not re-sucked for 100 ticks.
+- `IsHopperInRangeOf` lands as a predicate only: the MP `FindOwner`
+  (`WorldItem.cs:243`) that consumes it is unported (the SP host owns
+  every drop), so nothing calls it in SP yet — the seam awaits the MP
+  lane.
+- Draw gaps (recorded, not ported): the glowmask pass, `GetItemLight`'s
+  draw-side call, the ground `frameCounter` frame-animation; the
+  `:38637` rand500 sparkle is g13's landed-but-unwired site.
+
+**Witnesses.** ~15 written across `world_sim/items.rs` (5 new test mods),
+`wiring.rs`, `netglue.rs`, `player.rs`, `item.rs`, `wld/mod.rs` — NOT RUN
+(code-only lane). 15 `anchors.txt` canary rows added (`527904546`).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
