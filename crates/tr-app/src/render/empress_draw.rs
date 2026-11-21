@@ -23,7 +23,7 @@
 //!   `Extra_158/160` the arms, `Extra_159` the 11-frame wing strip,
 //!   `Extra_187` the 8-frame phase-2 wings) are NOT packed — each overflows
 //!   the solo atlas headroom (+64..+214 px, `tools/_d125_sheets_measure.js`);
-//!   their draws skip until the repack wave (research/125 §2). The halo
+//!   their draws skip until the repack wave (research/281 §2). The halo
 //!   ring `Extra_188` (166×174) IS packed (+25 px, 8141/8141).
 //! * The `GameShaders.Misc["HallowBoss"]` body pass (`:26599-26610`) is a
 //!   compiled HLSL effect not in the decompile — the port draws the body

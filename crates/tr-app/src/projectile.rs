@@ -19900,7 +19900,7 @@ impl ProjectilePool {
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
                 {
-                    self.damage_player(i, player.as_deref_mut(), rng);
+                    self.damage_player(i, player.as_deref_mut(), rng, local_owner);
                 }
                 // `Projectile.cs:17197-17209` — the per-sub-step lifetime
                 // block (S1-A-9): the C# runs it inside the `numUpdates`
@@ -23455,6 +23455,7 @@ impl ProjectilePool {
         slot: usize,
         player: Option<&mut crate::player::Player>,
         rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
     ) {
         let Some(player) = player else {
             return;
@@ -23588,6 +23589,25 @@ impl ProjectilePool {
         // the BossNoCheese shots land THROUGH the General i-frames (their
         // own `hurtCooldowns[1]` window gates them, not `immune`).
         let boss_no_cheese = matches!(p.kind, 452 | 454 | 455 | 462 | 871 | 872 | 873 | 874 | 919 | 923 | 924);
+        // The RETIRE compose (research/282 §3): d78's `damage_evp_boxed`
+        // damage chain lands HERE on the live-contact path — the same
+        // C# body (`Projectile.cs:14831-14844`), one keeper. g1's
+        // raw-damage `death_burst_player_hit` stays dropped (26f §1).
+        // `:14831` — `DamageVar(damage, -owner.luck)`; the local owner's
+        // luck, 0 for a foreign/255 owner (the dummy player).
+        let owner_luck = if p.owner == local_owner {
+            player.luck_state.luck
+        } else {
+            0.0
+        };
+        let mut dmg = tr_core::damage::damage_var(rng, p.damage as f32, -owner_luck);
+        // `:14842` — `hostileDamageScaling.Sample(Difficulty)`: the
+        // identity line on [0.5, 3] (`GameDifficultyData.cs:85`), the
+        // port's difficulty mirror is the expert flag (2) vs classic (1).
+        let difficulty = if player.buffs.expert_mode { 2.0 } else { 1.0 };
+        dmg = (dmg as f32 * difficulty) as i32;
+        // `:14844` — the EVP double.
+        dmg *= 2;
         // `Projectile.cs:14862-14870` — `bool dodgeable =
         // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`
         // with `Crit: false` and `PlayerDeathReason.ByProjectile` — the port
@@ -23597,12 +23617,12 @@ impl ProjectilePool {
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
         if boss_no_cheese {
             player.hurt_inner_cooldown(
-                p.damage, cx, true, rng, p.is_damage_dodgeable(),
+                dmg, cx, true, rng, p.is_damage_dodgeable(),
                 false, Some(p.kind), true,
                 crate::player::COOLDOWN_BOSS_NO_CHEESE,
             );
         } else {
-            player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+            player.hurt_with_source(dmg, cx, rng, p.is_damage_dodgeable(), p.kind);
         }
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
@@ -24474,7 +24494,7 @@ mod tests {
             )
             .expect("the hostile shot spawns");
         let mut rng = DodgeScript::with_rolls(&[0]);
-        pool.damage_player(slot, Some(&mut player), &mut rng);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
         assert_eq!(player.hp, player.max_hp, "the belt dodged the shot");
         assert!(!pool.slots()[slot].active, "the single-hit kill still fires");
         assert_eq!(rng.draws, vec![(0, 10)], "exactly the belt roll was drawn");
@@ -24502,7 +24522,7 @@ mod tests {
         let slot = 0;
         let hp0 = player.hp;
         let mut rng = DodgeScript::with_rolls(&[0]);
-        pool.damage_player(slot, Some(&mut player), &mut rng);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
         assert!(player.hp < hp0, "the 9999 shot lands through the belt");
         assert!(rng.draws.is_empty(), "no dodge roll ran");
     }
@@ -24533,12 +24553,12 @@ mod tests {
             pool.slots[slot].local_ai[0] = 60.0;
             let hp0 = player.hp;
             let mut rng = tr_core::UnifiedRandom::new(3);
-            pool.damage_player(slot, Some(&mut player), &mut rng);
+            pool.damage_player(slot, Some(&mut player), &mut rng, 0);
             assert_eq!(player.hp, hp0, "kind {kind}: the telegraph refuses");
             assert!(pool.slots()[slot].active, "kind {kind}: no kill on refusal");
             // Past the window the hit lands (and the single-hit kill fires).
             pool.slots[slot].local_ai[0] = 61.0;
-            pool.damage_player(slot, Some(&mut player), &mut rng);
+            pool.damage_player(slot, Some(&mut player), &mut rng, 0);
             assert!(player.hp < hp0, "kind {kind}: past 60 the shot lands");
             assert!(!pool.slots()[slot].active, "kind {kind}: the hit kill");
         }
@@ -24570,7 +24590,7 @@ mod tests {
         pool.slots[slot].local_ai[0] = 61.0; // past the telegraph
         pool.slots[slot].rot = 0.0;
         let hp0 = player.hp;
-        pool.damage_player(slot, Some(&mut player), &mut rng);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
         assert!(player.hp < hp0, "the lance's line reaches 30 px out");
         assert!(!pool.slots()[slot].active, "the hit kill");
         // The 923 sun dance: a shot 400 px to the RIGHT of the player,
@@ -24590,7 +24610,7 @@ mod tests {
         pool.slots[slot].local_ai[0] = 61.0;
         pool.slots[slot].rot = std::f32::consts::PI;
         let hp0 = player.hp;
-        pool.damage_player(slot, Some(&mut player), &mut rng);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
         assert!(player.hp < hp0, "the beam's 510 px segment reaches");
         // The 872 lasting rainbow: the CURRENT position misses (far away)
         // but a trail entry sits on the player — the ring hits.
@@ -24608,7 +24628,7 @@ mod tests {
         // Entry 4 (even, < 10) at the player's top-left.
         pool.slots[slot].old_pos[4] = Vec2::new(player.x, player.y);
         let hp0 = player.hp;
-        pool.damage_player(slot, Some(&mut player), &mut rng);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
         assert!(player.hp < hp0, "the ring's entry 4 hits");
         // An ODD entry (3) is never read — the every-2nd walk skips it.
         let mut player = crate::player::Player::spawn(&w);
@@ -24623,7 +24643,7 @@ mod tests {
             .expect("the rainbow spawns");
         pool.slots[slot].old_pos[3] = Vec2::new(player.x, player.y);
         let hp0 = player.hp;
-        pool.damage_player(slot, Some(&mut player), &mut rng);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
         assert_eq!(player.hp, hp0, "the odd entry 3 is skipped");
         assert!(pool.slots()[slot].active, "no hit, no kill");
         // An extension entry (l = 12 → extra[2]) also hits.
@@ -24639,7 +24659,7 @@ mod tests {
         pool.slots[slot].trail_extra.as_mut().unwrap()[2] =
             Vec2::new(player.x, player.y);
         let hp0 = player.hp;
-        pool.damage_player(slot, Some(&mut player), &mut rng);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
         assert!(player.hp < hp0, "the extension entry 12 hits");
     }
 
@@ -24705,7 +24725,7 @@ mod tests {
         player.hurt_cd = 40.0 / 60.0;
         let hp0 = player.hp;
         let mut rng = tr_core::UnifiedRandom::new(3);
-        pool.damage_player(slot, Some(&mut player), &mut rng);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
         assert!(player.hp < hp0, "the aurora lands through General i-frames");
         assert!(
             player.hurt_cooldowns[crate::player::COOLDOWN_BOSS_NO_CHEESE as usize] > 0,
@@ -24722,9 +24742,61 @@ mod tests {
             )
             .expect("the second aurora spawns");
         let hp1 = player.hp;
-        pool.damage_player(slot2, Some(&mut player), &mut rng);
+        pool.damage_player(slot2, Some(&mut player), &mut rng, 0);
         assert_eq!(player.hp, hp1, "the BossNoCheese window blocks the repeat");
         assert!(!pool.slots()[slot2].active, "the single-hit kill still fires");
+    }
+
+    /// W4-d125 RETIRE compose (research/282 §3): the live-contact
+    /// `damage_player` carries d78's verbatim `Damage_EVP` damage chain
+    /// (`Projectile.cs:14831-14844`) — `DamageVar(damage, -owner.luck)`,
+    /// the difficulty sample, the EVP ×2 — onto BOTH lanes. The scripted
+    /// rng pins the draws: DamageVar's `Next(-15,16)` roll 0 (×1.00), the
+    /// luck-0 path draws no float; classic difficulty ×1, then ×2. A
+    /// 60-damage aurora takes 120 pre-defense (the pre-compose shape took
+    /// the RAW 60 — the g1-class deviation, now retired on this path).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d125_retire_the_live_evp_hit_carries_the_damage_chain() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        player.stat_defense = 0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai_owned(
+                HALLOW_BOSS_DEATH_AURORA, 0,
+                Vec2::new(pcx - 15.0, pcy - 15.0),
+                Vec2::ZERO, 60, 0.0, 0.0, 0.0,
+            )
+            .expect("the aurora spawns");
+        let hp0 = player.hp;
+        let mut rng = DodgeScript::with_rolls(&[0]);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
+        // 60 ×1.00 (roll 0) ×1 (classic) ×2 = 120; defense 0, endurance 0.
+        assert_eq!(hp0 - player.hp, 120, "DamageVar × difficulty × EVP-double");
+        assert_eq!(rng.draws, vec![(-15, 16)], "exactly the DamageVar roll");
+        assert!(
+            player.hurt_cooldowns[crate::player::COOLDOWN_BOSS_NO_CHEESE as usize] > 0,
+            "the BossNoCheese counter armed"
+        );
+        // Expert difficulty doubles again (`:14842`'s sample at 2).
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        player.stat_defense = 0;
+        player.buffs.expert_mode = true;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai_owned(
+                HALLOW_BOSS_DEATH_AURORA, 0,
+                Vec2::new(pcx - 15.0, pcy - 15.0),
+                Vec2::ZERO, 60, 0.0, 0.0, 0.0,
+            )
+            .expect("the aurora spawns");
+        let hp0 = player.hp;
+        let mut rng = DodgeScript::with_rolls(&[0]);
+        pool.damage_player(slot, Some(&mut player), &mut rng, 0);
+        assert_eq!(hp0 - player.hp, 240, "expert ×2 then EVP ×2");
     }
 
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate

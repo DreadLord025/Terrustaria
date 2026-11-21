@@ -18481,10 +18481,10 @@ mod empress_wiring_tests {
         assert_eq!(NpcKind::EmpressOfLight.max_hp(), 70000);
         assert_eq!(NpcKind::EmpressOfLight.contact_damage(), 80);
         assert_eq!(NpcKind::EmpressOfLight.cs_id(), 636);
-        assert_eq!(NpcKind::EmpressOfLight.to_u16(), 229);
-        assert_eq!(NpcKind::from_u16(229), Some(NpcKind::EmpressOfLight));
-        assert_eq!(NpcKind::PrismaticLacewing.to_u16(), 237);
-        assert_eq!(NpcKind::from_u16(237), Some(NpcKind::PrismaticLacewing));
+        assert_eq!(NpcKind::EmpressOfLight.to_u16(), 636);
+        assert_eq!(NpcKind::from_u16(636), Some(NpcKind::EmpressOfLight));
+        assert_eq!(NpcKind::PrismaticLacewing.to_u16(), 742);
+        assert_eq!(NpcKind::from_u16(742), Some(NpcKind::PrismaticLacewing));
         assert_eq!(
             crate::npc::kind_from_net_id(636),
             Some((NpcKind::EmpressOfLight, crate::npc::SlimeVariant::Blue)),

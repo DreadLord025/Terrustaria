@@ -1,4 +1,4 @@
-# 125 — W4-d125 sheet additions: the empress overflow-ledger entry
+# 281 — W4-d125 sheet additions: the empress overflow-ledger entry
 
 Status: ✅ measured + packed SOLO; the cumulative reconciliation belongs to
 the atlas-repack wave. Branch: `task/W4-d125-empress-r7-drain` (remainder 1).

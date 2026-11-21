@@ -586,12 +586,14 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
-            // W4-d125 empress wiring — the next-free protocol band above
-            // the wyvern 223-228 (229/237.. the free holes; 230-236 are
-            // the holiday-zombie/wave bands). The vanilla types ride the
-            // bestiary entries (636/661), `cs_id` below.
-            NpcKind::EmpressOfLight => 229,
-            NpcKind::PrismaticLacewing => 237,
+            // W4-d125 empress wiring — research/108 R4/E8 renumber EXECUTED
+            // (the d37 roster-master reconcile): 229/237 were reserved-cs
+            // hole squats (229 Pirate — d37-owned; 237 JungleCreeperWall).
+            // EmpressOfLight 229→636 RESTORES protocol==cs (its OWN vanilla
+            // id, `NPCID.cs:11949`); PrismaticLacewing 237→742 keeps the
+            // small-lane block contiguous (cs 661 rides `cs_id`/ENTRIES).
+            NpcKind::EmpressOfLight => 636,
+            NpcKind::PrismaticLacewing => 742,
         }
     }
 
@@ -922,9 +924,10 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
-            // W4-d125 empress wiring (`to_u16` above).
-            229 => NpcKind::EmpressOfLight,
-            237 => NpcKind::PrismaticLacewing,
+            // W4-d125 empress wiring (`to_u16` above — the 108 R4/E8
+            // renumber: 636 protocol==cs, 742 the small-lane block).
+            636 => NpcKind::EmpressOfLight,
+            742 => NpcKind::PrismaticLacewing,
             _ => return None,
         })
     }

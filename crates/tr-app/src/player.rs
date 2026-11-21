@@ -4217,8 +4217,10 @@ impl Player {
     /// `Player.SetImmuneTimeForAllTypes` (`Player.cs:38013-38021`): the whole
     /// write rides the port's fields — `immune = true` + `immuneTime = time`
     /// (the fields R-03-5 ported; `immuneNoBlink` stays untouched, like the
-    /// C#) and the per-cooldown array collapsed onto the one `hurt_cd` (the
-    /// M4-HAZARD-1 admission). The dodge handlers pass the 120/80 pair
+    /// C#) and EVERY `hurtCooldowns` slot (the `:38017-38020` loop — the
+    /// RETIRE compose keeps d78's verbatim array write; the BossNoCheese
+    /// lane is live, so a cross-dodge arms its window too). The dodge
+    /// handlers pass the 120/80 pair
     /// directly; `iframes_for` (the normal-hurt window) is not involved.
     /// `pub(crate)`: the Strange Brew's bonus i-frames (`ApplyLifeAndOrMana`,
     /// `Player.cs:51912-51915`) call it from `potions.rs` (S1-P-i37).
@@ -4226,6 +4228,13 @@ impl Player {
         self.immune = true;
         self.immune_time = time;
         self.hurt_cd = time as f32 / 60.0;
+        // `Player.cs:38017-38020` — the per-cooldown array rides the same
+        // write (the RETIRE compose: d78's verbatim loop — the array is
+        // live for the BossNoCheese lane, a cross-dodge DOES arm its
+        // window; the M4-HAZARD-1 collapse note above is retired).
+        for cd in &mut self.hurt_cooldowns {
+            *cd = time;
+        }
     }
 
     /// `Player.ShadowDodge` (`Player.cs:38023-38042`) minus the NetMessage:
@@ -4462,11 +4471,17 @@ impl Player {
             self.hurt_cd = iframes as f32 / 60.0;
         } else {
             // `Player.cs:38391-38394`: the non-General lane writes its OWN
-            // counter (`hurtCooldowns[cooldownCounter] = num7`) — the
-            // General `immune` flag stays untouched (the BossNoCheese
-            // window neither reads nor blocks it). The `| flag2` arm is
-            // the remote-player override (unreachable single-player).
-            self.hurt_cooldowns[cooldown_counter as usize] = iframes;
+            // counter, and ONLY when it reads exactly 0
+            // (`hurtCooldowns[cooldownCounter] == 0` — the RETIRE compose
+            // keeps d78's verbatim guard; the gate above already refused
+            // a positive slot, so the guard is the C# shape, not a new
+            // behaviour). The General `immune` flag stays untouched (the
+            // BossNoCheese window neither reads nor blocks it). The
+            // `| flag2` arm is the remote-player override (unreachable
+            // single-player).
+            if self.hurt_cooldowns[cooldown_counter as usize] == 0 {
+                self.hurt_cooldowns[cooldown_counter as usize] = iframes;
+            }
         }
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
@@ -12969,6 +12984,51 @@ mod tests {
         p.stat_defense = 400;
         p.hurt(20, 0.0, &mut tr_core::UnifiedRandom::default(), true);
         assert_eq!(p.hp, 99);
+    }
+
+    /// W4-d125 RETIRE compose (research/282 §3): the d78-kept
+    /// `SetImmuneTimeForAllTypes` array write (`Player.cs:38013-38021`)
+    /// is live on this branch's BossNoCheese lane — a cross-dodge arms
+    /// EVERY counter, so the boss hit refuses inside the dodge window
+    /// (the C# semantics; the pre-compose d125 shape left the array at 0
+    /// and the boss hit landed through the dodge — a fidelity bug).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d125_retire_the_dodge_arms_every_cooldown_counter() {
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.set_immune_time_for_all_types(80);
+        assert!(p.immune);
+        assert_eq!(p.immune_time, 80);
+        assert_eq!(p.hurt_cd, 80.0 / 60.0);
+        // `:38017-38020` — every slot rides the same write.
+        assert_eq!(p.hurt_cooldowns, [80; 6]);
+        // The BossNoCheese hit refuses inside the dodge window.
+        let hp0 = p.hp;
+        let landed = p.hurt_inner_cooldown(
+            40, 0.0, true, &mut tr_core::UnifiedRandom::default(),
+            false, false, None, true, COOLDOWN_BOSS_NO_CHEESE,
+        );
+        assert!(!landed, "the dodge window gates the BossNoCheese lane");
+        assert_eq!(p.hp, hp0);
+        // The per-counter tail (`:18887-18893`) drains all six slots.
+        p.update_immunity();
+        assert_eq!(p.hurt_cooldowns, [79; 6]);
+        assert_eq!(p.immune_time, 79);
+        // Once the window drains, the boss hit lands and arms ONLY its
+        // own counter (`:38391-38394`'s ==0 guard) — General stays clean.
+        p.hurt_cooldowns = [0; 6];
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        let landed = p.hurt_inner_cooldown(
+            40, 0.0, true, &mut tr_core::UnifiedRandom::default(),
+            false, false, None, true, COOLDOWN_BOSS_NO_CHEESE,
+        );
+        assert!(landed);
+        assert!(p.hp < hp0);
+        assert_eq!(p.hurt_cooldowns[COOLDOWN_BOSS_NO_CHEESE as usize], 40);
+        assert!(!p.immune, "the General flag stays untouched");
+        assert_eq!(p.hurt_cooldowns[0], 0, "the other slots stay untouched");
     }
 
     #[test]
