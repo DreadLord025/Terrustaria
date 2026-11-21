@@ -28738,6 +28738,56 @@ runs were made вЂ” the 15 witness tests are WRITTEN NOT RUN; verification
 is the C# re-read (the whole arm `:21572-21918` re-compared line by
 line) plus hand-traced test arithmetic (the wobble-on-flee-tick
 nudge, the dash-chase drift re-parks, the oracle-gated RNG witness).
+### W4-c3 wiring (2026-11-20, code-only mode)
+The three kinds landed (`NpcKind::CursedSkull` protocol **355** — the
+vanilla 34 slot is the Merchant's; `GiantCursedSkull` 289 /
+`WaterBoltMimic` 694 keep their vanilla ids) and the style axis' **10**
+arm (`npc.rs::update_rng_dust`) now calls `style10_ai` with
+`npc_type = kind.cs_id()`, `just_hit = self.just_hit`, `net_mode = 0`
+(the single-player host fold — the module's client gate is inert).
+The drains: `Style10Out::knock_back_resist` → `kb_resist_override`;
+`play_item8_sound` → `wants_sound` (`NpcSoundCue::Item8` at
+`base.position`, the S1-E-21g queue); `spawn_water_sphere` →
+`wants_sphere` (`WaterSphere`, the truncated centre+10 point, the sim's
+sphere drain Bottom-places it — `NPC.NewNPC` `NPC.cs:80770`, the ai3
+argument 0). The 289's bolt already rode `wants_hostile_shot`; the
+**299 Shadowflames row** landed in `projectile/data.rs`
+(`Projectile.cs:3893-3905`: 6x6, aiStyle 1, penetrate −1, extraUpdates
+2, alpha 255, magic, ignoreWater, tileCollide false) with its `AI_001`
+arm in `projectile_ai001_a.rs` (`:56631-56656` — the `localAI[0]`
+counter, the Item8 cue at 6, the flag3-rest straight flight; the dust
+arms are the documented cosmetic skip) and the on-hit **Cursed 23 /
+240** debuff in `damage_player` (`StatusPlayer` `:12280-12283`, gated
+on the accepted hit). The axis arm stamps `oldPosition`/`oldDirection`
+(`NPC.cs:90496-90497`) and the module's tail carries the dead-band X
+snap (`:90473-90476`) before the integration.
+FindFrame: 34/289 reuse the faithful wave-B arms
+(`npc_findframe_b::find_frame_b` — the case-34 4-tick strip
+`NPC.cs:77055-77066`, the case-289 8-tick cycle + the ai[3]==1 spin
+bank `:72652-72675`); the 694 book strip (`:77202-77289`, 30 rows) is
+ported inline in `npc.rs::find_frame`. The bestiary entries
+(`BestiaryDatabaseNPCsPopulator.cs:1112`/`:1559`/`:1561`), the sheets
+(NPC_34/289/694, atlas + bestiary tables), the portraits and the
+`NPC_Killed_52`/`dd2_book_staff_cast_0` cue registrations landed with
+the wiring. **Deliberate deviations** (the draw pass): the C#'s
+`GetAlpha` overrides — 34 white (`Main.cs:23120`), 289
+(250,250,250,50) (`NPC.cs:93609-93611`), the 694 book-state
+white/lerp (`:93417-93427`) — are NOT carried; the port's
+light-multiplied tint stands (the house draw-tint fold). The 694's
+`num45`/`num46` anchor terms (`Main.cs:23100-23114`) ARE carried
+(`npc_anchor_nudge` + the new `npc_anchor_nudge_x`). The 299 bolt's
+base sprite stays alpha-255 invisible exactly as the C# (its
+`GetAlpha` falls to the generic fade, `Projectile.cs:79744-79757`);
+the C# glowmask/dust visual is the documented cosmetic skip. The
+dungeon spawn tables (`NPC.cs:2685`/`:2737`/`:2751` — the 289
+hardmode roll, the 34 1/7 roll, the 694 book-find with ai3=3) are NOT
+wired — the port has no dungeon spawn pass yet; the kinds arrive via
+the net seed / debug spawn (the 694's closed-book ai[3]=3 spawn arg is
+the caller's to set, pinned by the axis witness). **Code-only mode**:
+no cargo/rustc runs; the 3 wiring witnesses
+(`w4_c3_the_style10_defaults_match_the_csharp_rows`,
+`w4_c3_the_style10_axis_claims_the_three_kinds`,
+`w4_c3_the_shadowflames_bolt_row_and_arm`) are WRITTEN NOT RUN.
 ## The aiStyle-14 flyer family (S1-D-3 aiStyle-14 slice, 2026-11-18, code-only mode)
 `npc_ai_style14.rs::bat_ai` ports `NPC.AI()`'s `if (this.aiStyle == 14)`
 arm (`NPC.cs:22849-23486`) with the branches the port's four style-14 kinds
