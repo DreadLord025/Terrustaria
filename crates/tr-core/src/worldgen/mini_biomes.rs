@@ -1256,6 +1256,22 @@ fn blotched_gen(
     }
 }
 
+/// The shared `Modifiers.Blotches(scale = 2)` seam (W4-g40 entrance
+/// residual): the desert entrances' five Blotches sites
+/// (`AnthillEntrance.cs:26`, `LarvaHoleEntrance.cs:27`,
+/// `ChambersEntrance.cs:29,44,49`) draw on the same chain semantics —
+/// a thin `pub(crate)` wrapper over [`blotched_gen`], no behaviour change.
+pub(crate) fn blotched_gen_shared(
+    world: &mut World,
+    rng: &mut super::Rng,
+    cx: i32,
+    cy: i32,
+    scale: i32,
+    apply: &mut impl FnMut(&mut World, i32, i32),
+) {
+    blotched_gen(world, rng, cx, cy, scale, apply);
+}
+
 /// `Modifiers.OnlyTiles` (`Modifiers.cs:233-257`): the cell must be
 /// active AND of a listed kind (unlike `SkipTiles`, inactive cells FAIL).
 fn only_tiles(world: &World, x: i32, y: i32, kinds: &[u16]) -> bool {

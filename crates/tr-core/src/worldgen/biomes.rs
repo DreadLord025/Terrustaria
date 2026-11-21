@@ -1499,7 +1499,9 @@ fn solid_tile(world: &World, x: i32, y: i32) -> bool {
 /// `WorldGen.SolidOrSlopedTile` (`WorldGen.cs:69985-70009`,
 /// `includePlatforms: false`): active, `tileSolid`, not `tileSolidTop`, not
 /// wired-inactive — the slope/half-brick states stay solid.
-fn solid_or_sloped(world: &World, x: i32, y: i32) -> bool {
+/// `pub(crate)` since the W4-g40 entrance residual (`Modifiers.IsSolid`,
+/// `Modifiers.cs:561-571`).
+pub(crate) fn solid_or_sloped(world: &World, x: i32, y: i32) -> bool {
     world.tile(x, y).is_some_and(|t| {
         t.active() && TILE_SOLID.has(t.kind) && !TILE_SOLID_TOP.has(t.kind) && !t.inactive()
     })
@@ -1514,7 +1516,9 @@ fn tile_empty(world: &World, x: i32, y: i32) -> bool {
 /// `Tile.SmoothSlope(x, y)` (`Tile.cs:792-865`, `applyToNeighbors: true`):
 /// the four neighbours smooth first (each with `applyToNeighbors: false`),
 /// then the cell itself. No RNG. The `sync` net arm never fires in worldgen.
-fn tile_smooth_slope(world: &mut World, x: i32, y: i32) {
+/// `pub(crate)` since the W4-g40 entrance residual (`Actions.Smooth`,
+/// `Actions.cs:608-622`, the anthill tail + the larva mouth).
+pub(crate) fn tile_smooth_slope(world: &mut World, x: i32, y: i32) {
     for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
         tile_smooth_slope_one(world, nx, ny);
     }
@@ -1523,8 +1527,9 @@ fn tile_smooth_slope(world: &mut World, x: i32, y: i32) {
 
 /// The single-cell `Tile.SmoothSlope` body (`Tile.cs:801-846`): the
 /// `CanPoundTile` + `SolidOrSlopedTile` gate, then the neighbour-mask
-/// slope/half-brick map.
-fn tile_smooth_slope_one(world: &mut World, x: i32, y: i32) {
+/// slope/half-brick map. `pub(crate)` since the W4-g40 entrance residual
+/// (the anthill's `Smooth()` default `applyToNeighbors: false`).
+pub(crate) fn tile_smooth_slope_one(world: &mut World, x: i32, y: i32) {
     if !crate::edit::can_pound_tile(world, x, y, true, |_, _| false)
         || !solid_or_sloped(world, x, y)
     {
