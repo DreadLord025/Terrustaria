@@ -40259,3 +40259,143 @@ phase-2 row pin, `NPC.cs:67022-67024`), 637/638 the town cat/dog,
 639-645 the gem squirrels (the f27 squirrel-group twins), 646-652
 the gem bunnies — re-check at the next census.
 
+## W4-f26 FindFrame extra wave 7h (slice 7h, 2026-11-21, code-only mode)
+
+Slice 7h ports the NEXT 8 TRULY-unclaimed `NPC.FindFrame` case ids
+after 7g: **636/639-645** — HallowBoss (the Empress of Light) + the
+seven gem squirrels (`NPCID.cs:11949` + `:11955-11967`). Module
+`crates/tr-app/src/npc_findframe_extra7h.rs` (the 7g shape: pure
+machines over `FrameState`/`FrameInput`, the
+`find_frame_kind_extra7h` vanilla-id seam, wiring deferred — the
+kinds are not in `NpcKind` yet, the d43 roster wave owns them).
+Code commit `89cef0b4`.
+
+**The window re-probe (at the CURRENT tips).** The brief's pool: 55
+(the 7g post-state). The mechanical re-derivation against the d44
+master refresh 3 (`c863a7a5`, UNCHANGED — the 130-kind UNCLAIMED
+worklist): − 15 (the f26 7d/7e/7f pushed claims) − 9 (f27 slice 10,
+tip `1a24a133` UNCHANGED) − 38 (the d42 tip `2d7ac08c` UNCHANGED)
+− 8 (the c4 `0df6964b` / c8 / e26 `048cca6c` inline arms — **c8
+ADVANCED `3705670d` → `708522fc`**, the five new commits are the
+crawler finals/docs, the 606 arm UNCHANGED) = 60; then the NEW
+subtraction **− 11 the g10 tip `5dee2865`'s LANDED town-pet arm**:
+its `npc_findframe_pet.rs` `town_pet_find_frame` + the
+`npc.rs::find_frame` routing cover TownCat/TownDog/TownBunny + the
+eight town slimes = **637/638/656/670/678-684** (the 7g
+next-window note's "637/638 the town cat/dog" is superseded;
+**687 BoundTownSlimeYellow is NOT in the arm's match** — it stays
+unclaimed, its own case `NPC.cs:76620`); − 5 (the f26 7g pushed
+claims 435/436/631/632/635) = **44 unclaimed before this slice**;
+− 8 = **36 unclaimed** after. The d41 tip `5d036721` (the
+salamanders) greps ZERO for the eight ids + kind names; d40 stops
+at 490; d43 IS the wave-3 base; every pushed findframe module seam
++ the g8/g9/g10/f17/f18 wire lanes grep ZERO (the ONLY kind-name
+hits are the `creative_sacrifices.rs` sacrifice-count data rows —
+the c8 `npc.rs:4435` dodge comment itself notes the Empress's kind
+is unported); no `NpcKind` for any of the eight on this branch.
+The eight picked ids are the ascending head of the 44: 636, then
+639-645. **634 SporeBat stays EXCLUDED** (the `Main.rand.Next(10)`
+draw at `NPC.cs:74844` — the zero-RNG rule); its RNG-seam contract
+is published below.
+
+Per-case notes:
+
+* **636 HallowBoss** (its own case, `NPC.cs:67022-67024`) — the
+  one-line phase pin `frame.Y = AI_120_HallowBoss_IsInPhase2() ?
+  num : 0`: row 1 in phase 2, row 0 otherwise, on the 2-row sheet
+  (`Main.cs:67147` entry 6). The phase read itself
+  (`NPC.cs:45814-45821`) is PURE `ai[3]`: `ai[3] == 1f || ai[3] ==
+  3f` — **2 is the `IsGenuinelyEnraged` slot (`:45823-45827`), NOT
+  phase 2**; no world read, no RNG. It rides [`FrameInput::ai3`]
+  (the extra-7b resolved-input precedent — the wiring bridge
+  copies `ai[3]`, nothing to probe). The counter AND sprite are
+  UNTOUCHED (the arm writes only `frame.Y`).
+* **639-645 the gem squirrels** (the `case 299/538/539/639-645`
+  group, `NPC.cs:76458-76512`, labels `:76461-76467`) — the
+  VERBATIM machine copy of the f27 slice-10 squirrel arm (the 7g
+  ONE-group precedent — 538/539 are f27-claimed, the wiring merge
+  keeps one): the grounded ±1 flip (`:76468-76477` — 0 leaves the
+  sprite), the idle row-0 zero (`:76484-76489`), the `|vx| * 0.5`
+  THEN `++` accumulator with the STRICT >6 step (`:76490-76496`),
+  the `>= count - 1` wrap back to row **1** (`:76497-76500` — NOT
+  row 0: rows 1..4 walkable on the 6-row sheet, row 5 never); NO
+  lift-to-start-row (a row-0 start walks 0 → 1 — the 7e lamia
+  shape); the air row 2 rising (`:76502-76506`) / row 4 falling
+  (`:76507-76511`), both counter-zeroed with the sprite UNTOUCHED.
+  The aiStyle-3 backpedal branch (`:76478-76483`) is DEAD: all
+  seven aiStyle 7 (`NPC.cs:17226-17236`, the `type >= 639 && type
+  <= 645` SetDefaults block) — the documented dead branch, the f27
+  538/539 precedent (`:15877`/`:15889`). The pinned cadences are
+  exact in f32 and the C# double alike: vx 2 → 2.0f*0.5f == 1.0f
+  exactly, ++ → +2.0/tick, the >6 step every 3rd tick; vx 1 →
+  1.5/tick, the step every 4th tick (counter 6.0 NOT > 6.0 — the
+  strict half-step edge).
+
+**The 634 SporeBat RNG-seam contract (published for the d44f
+seam-fed wave — NOT ported here).** 634 rides the floater group
+`case 182/210/211/253/316/634/662/664` (`NPC.cs:74830-74885`, label
+`:74835`). The arm's ONLY RNG draw is `:74844`:
+`if (this.type == 634 && Main.rand.Next(10) == 0)` — a per-tick
+1-in-10 spore-dust spawn. Contract: the wiring bridge draws
+`Main.rand.Next(10)` EVERY tick for type 634 ONLY (the `&&`
+short-circuits for every other group member — zero draws; the draw
+rides `UpdateNPC`'s AI → FindFrame order, `:90423` → `:90511`,
+after the AI's own draws) and feeds the RESOLVED boolean
+`spore_dust_draw_is_zero` into FrameInput (the 7d SolarFlare
+resolved-draw precedent — there row-first/counter-second on the
+latch tick; here ONE draw per tick). The dust spawn itself
+(`Dust.NewDust` type 165 + `velocity *= 0.1f` + `noGravity`,
+`:74846-74848`) is a bridge-side effect keyed on the same boolean
+— the frame machine never touches dust. The post-seam frame
+machine is zero-RNG: the vx-SIGN sprite gates (`:74850-74857` —
+NOT direction, the 7c antlion shape), `rotation = vx * 0.1f`
+(`:74858`, the 7d squidhead rotation-write precedent), the bare
+`++frameCounter` (`:74864` — the 210/211 second ++ does NOT apply),
+the >= 6 step (`:74875-74879`, num291 = 6 — the type-48 5 override
+does NOT apply), the wrap at `num292 = count − 1` (`:74867-74870`
+— the 49/51/60/634 decrement DOES apply: rows 0..3 flap on the
+5-row sheet, row 4 never; `Main.cs:67147` entry 4 = 5;
+`:74880-74883` wraps to 0). The `type == 60` dust block
+(`:74839-74843`) is NOT 634's.
+
+RNG: NONE — the mechanical grep over the three cited ranges (each
+≤ 80 lines: `:67022-67024`, `:45814-45821`, `:76468-76512`) = ZERO
+`Main.rand`/`.Next(`/`NextFloat`/`NextDouble`. World reads: NONE —
+the phase read is pure `ai[3]`; the squirrel body reads only
+velocity/direction (the dead branch's aiStyle rides the
+SetDefaults fact, not a seam). `FrameInput` carries vx/vy +
+direction + `ai3`; the squirrels never read `ai3`.
+
+Frame counts counted entry-by-entry off `Main.cs:67082` (636 = 2
+`:67147` entry 6, 639-645 = 6 `:67148` entries 1-7) and re-diffed
+against `render/entities.rs::NPC_FRAME_COUNT` — all 697 slots
+agree, ZERO mismatches (a mechanical text-parse diff, not a test
+run).
+
+Verification (code-only): 7 module witnesses written not run —
+the frame-count table cross-check, the Hallow Boss phase pin (the
+7 ai3 values incl. the 2-is-NOT-phase-2 and 1.5 pins, counter/
+sprite held), the squirrel walk's wrap-to-1 + the vx-2 every-3rd-
+tick cadence (× all seven kinds), the vx-1 half-step cadence + the
+strict 6.0-NOT->6.0 edge, the squirrel idle/air pins + the ±1-gated
+flip, the seam-exactness witness, the 8-kind 27-combo 40-tick
+strip sweep and the Hallow Boss 108-phase purity sweep. The Python
+replay (`tools/_f26_7h_replay.py` — the pinned vectors + the
+216-combo sweep + the 108-phase sweep) and the JS sweep twin
+(`tools/_f26_7h_sweep.js`) written not run; every vector
+hand-re-derived against line-for-line C# transcriptions.
+
+The census addendum: `docs/research/68-findframe-census-addendum-7h.md`
+(the 130 − 15 − 9 − 38 − 8 − 11 − 5 − 8 = 36 derivation + the
+re-probe evidence + the enumerated 36-id worklist). The next
+ascending unclaimed ids: 634 (the SporeBat — the seam contract
+above), 646-652 the gem bunnies (the `case
+46/47/303/337/443/464/540/614/646-652` hop group,
+`NPC.cs:76851-76904` — the f27 540 twin: the `|vx| + 1` >6 walk
+over the FULL 7 rows with the >= count wrap to 0, the air rows 4
+rising / 6 falling; all seven aiStyle 7 `:17238-17248`), 653/661
+the butterflies, 654 Lavafly, 655 MagmaSnail, 657 QueenSlimeBoss,
+658-660 the minions, 662/664 the floater siblings, 667/676 the
+slimes, 669 Stinkbug, 671-675 the birds, 677 Shimmerfly, 687-689,
+691-696 — re-check at the next census.
+
