@@ -119,6 +119,19 @@ pub struct HitEffectOutcomeD {
     /// (the king_slime_spawns precedent). The `netMode == 1` guard drops
     /// in SP.
     pub maggot_zombie_spawns: Option<(f32, f32)>,
+    /// The 113 Wall of Flesh's underworld screen-sweep seam
+    /// (`NPC.cs:87384-87408`): when the local player is below
+    /// `maxTilesY - 250` tiles, a 50-step screen grid (X from
+    /// `pos.X - (direction > 0 ? 80 : 0)` over 140px in 46px steps, Y
+    /// from `screenPosition.Y` over `screenWidth` in 50px steps) spawns
+    /// 5x dust-5 (`Next(-60,61)*0.1` X/Y args) + ONE
+    /// `Next(140,143)` gore per cell (Velocity
+    /// `(Next(-80,81)*0.1, Next(-60,21)*0.1)` args drawn in the
+    /// source-written Velocity/Position/Type order). `Some((x,y))` =
+    /// the NPC position; the player-depth gate, the screen reads and
+    /// the per-cell draws ride the wiring wave (the f10
+    /// `nebula_predictor_shot` precedent).
+    pub wof_screen_sweep: Option<(f32, f32)>,
 }
 
 /// The death-half dust loop shared by the classic rows (`NPC.cs` per-arm
@@ -2586,6 +2599,98 @@ fn eye_family_death(
     }
 }
 
+/// The 5 Servant of Cthulhu death (`NPC.cs:87341-87357`, sites 399-400):
+/// the 20x dust-5 burst, then 6/7 at position, scale 1f.
+fn servant_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87351-87354` — the 20x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        20,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 6, 1.0); // :87355
+    gore.new_gore(rng, world, pos, vel, 7, 1.0); // :87356
+}
+
+/// The 113/114 Wall of Flesh death (`NPC.cs:87358-...`): the 50x dust-5
+/// burst at (2·hd, −1) — NOTE the −1 speedY, not −2 — then the quadrant
+/// gores carrying `this.scale`: the 114 Eye → 137 at top-left, 139 at
+/// bottom-left, 139 at top-right, 137 at bottom-right + return
+/// (`:87374-87378`, sites 401-404); the 113 Wall → 137/138/138/137
+/// (`:87380-87383`, sites 405-408) + the underworld screen-sweep seam
+/// (the `player.Y/16 > maxTilesY-250` gate + the 50-step grid of 5x
+/// dust-5 + Next(140,143) gores, `:87384-87408`) — the sweep is the
+/// wiring wave's screen/player seam, returned as `wof_screen_sweep`.
+fn wall_of_flesh_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeD,
+) {
+    // `:87368-87371` — the 50x dust-5 burst at (2*hd, -1).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.0 * hit_direction,
+            -1.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let bl = Vec2::new(npc.x, npc.y + h / 2.0);
+    let tr = Vec2::new(npc.x + w / 2.0, npc.y);
+    let br = Vec2::new(npc.x + w / 2.0, npc.y + h / 2.0);
+    if npc_type == 114 {
+        gore.new_gore(rng, world, pos, vel, 137, s); // :87374
+        gore.new_gore(rng, world, bl, vel, 139, s); // :87375
+        gore.new_gore(rng, world, tr, vel, 139, s); // :87376
+        gore.new_gore(rng, world, br, vel, 137, s); // :87377
+        return;
+    }
+    gore.new_gore(rng, world, pos, vel, 137, s); // :87380
+    gore.new_gore(rng, world, bl, vel, 138, s); // :87381
+    gore.new_gore(rng, world, tr, vel, 138, s); // :87382
+    gore.new_gore(rng, world, br, vel, 137, s); // :87383
+    // `:87384-87408` — the underworld screen sweep: the player-depth
+    // gate, the screen-position read and the per-cell draws are the
+    // wiring wave's seam (the f10 nebula_predictor_shot precedent).
+    outcome.wof_screen_sweep = Some((npc.x, npc.y));
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -2874,6 +2979,25 @@ pub fn hit_effect_d(
     // 385-398).
     else if matches!(npc_type, 4 | 125 | 126) {
         eye_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87341-87357` — the 5 Servant of Cthulhu arm (sites 399-400).
+    else if npc_type == 5 {
+        servant_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87358-...` — the 113/114 Wall of Flesh arm (sites 401-408; the
+    // underworld screen sweep is the wiring seam).
+    else if npc_type == 113 || npc_type == 114 {
+        wall_of_flesh_death(
+            npc,
+            npc_type,
+            dust,
+            dust_ctx,
+            gore,
+            rng,
+            world,
+            hit_direction,
+            &mut outcome,
+        );
     }
     outcome
 }
@@ -5204,5 +5328,66 @@ mod tests {
             assert_eq!(gore.slot(8 + i).velocity.y, -ky * 0.4 + dy);
         }
         assert_eq!(rng.peek(), twin.peek(), "the sparkle tail mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87355-87356` — the Servant pair 6/7 after the 20x dust-5
+    /// burst.
+    #[test]
+    fn w4_f5d_the_servant_spawns_the_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 26.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(419);
+        let _ = hit_effect_d(&n, 5, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![6, 7]);
+        let mut twin = UnifiedRandom::new(419);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 26, 26);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the servant mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87374-87383` — the WoF quadrants: the 114 Eye
+    /// 137/139/139/137 vs the 113 Wall 137/138/138/137 at the four
+    /// half-box corners, this.scale carried; the 50x dust census at
+    /// (2hd, -1) — the -1 speedY, NOT -2; the 113 returns the sweep seam.
+    #[test]
+    fn w4_f5d_the_wall_of_flesh_quadrants_and_the_sweep_seam() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 60.0, 80.0);
+        n.scale = 1.0;
+        for (kind, want) in [(114, vec![137, 139, 139, 137]), (113, vec![137, 138, 138, 137])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(421);
+            let out = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "wof {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 140.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(130.0, 100.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(130.0, 140.0));
+            assert!(!gore.slot(4).active, "exactly four gores");
+            if kind == 113 {
+                assert_eq!(out.wof_screen_sweep, Some((100.0, 100.0)));
+            } else {
+                assert_eq!(out.wof_screen_sweep, None);
+            }
+            let mut twin = UnifiedRandom::new(421);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 60, 80);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "wof {kind} mirrors the C# draws");
+        }
     }
 }
