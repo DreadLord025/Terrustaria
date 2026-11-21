@@ -403,6 +403,9 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // separate). The budget reads the previous tick's `Main.snowDust`
     // (`pool.snow_dust`, the shared tick's count). W4-d130.
     let snow_inputs = crate::snow::SnowInputs {
+        // `Main.gamePaused` (`Main.cs:13040`) — g11's env field folded: the
+        // check is snowing's own first disjunct, the cluster gate redundant.
+        game_paused: app.game_paused,
         scaled_position: *camera - screen * 0.5 / *zoom,
         scaled_size: screen / *zoom,
         cloud_alpha: rain.cloud_alpha(),
@@ -410,8 +413,11 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         wind_speed_current: wind.speed_current,
         player_vy,
         gfx_quality: app.gfx_quality.quality,
-        // `NPC.IsADeerclopsNearScreen()` (`NPC.cs:44534-44537`): the active
-        // 668 scan (`npcsFoundForCheckActive[668]`) — the destructure's npcs.
+        // `NPC.IsADeerclopsNearScreen()` (`NPC.cs:44534-44537`): the
+        // `npcsFoundForCheckActive[668]` read — `UpdateFoundActiveNPCs`
+        // (`NPC.cs:7229-7239`) sets it for any ACTIVE npc of type 668 (no
+        // near-screen filter despite the name; the port's `hp > 0` is the
+        // active flag, g11's census wording).
         deerclops_near: npcs
             .iter()
             .any(|n| n.hp > 0 && n.kind == crate::npc::NpcKind::Deerclops),

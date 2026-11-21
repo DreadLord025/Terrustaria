@@ -1288,8 +1288,11 @@ easing, already ported). W4-d130 landed the verbatim rain fall/draw core and
 `DrawRain` per drawn frame (`Main.cs:38819-38822`) and `MakeRain`/`snowing` per
 `Main.Update`; the port keeps the drop/snow sim on the 60 Hz accumulator and the spawn
 on the frame's scene slot — the recorded cadence fold, same as the rest of the weather
-rig. (b) `Main.maxScreenW` is pinned at its Reach value 1920 (`Main.cs:66715`/`:3715`);
-the HiDef 4096 arm (`:3709`) is dropped. (c) the impact splash is g67's REAL
+rig. (b) `Main.maxScreenW` in `snow.rs` is the HiDef 4096 (`Main.cs:3709` — the port
+runs HiDef; g11 `13a1c48e`'s pin, folded by the final-phase census). The earlier
+Reach-1920 pin retired FOR THE SNOW BUDGET ONLY — `sand.rs`'s emit budget keeps its
+own recorded 1920 deviation, and `rain.rs`'s spawn rate reads `MaxWorldViewSize.X`
+(`Rain.cs:36`), a different static that IS 1920. (c) the impact splash is g67's REAL
 `Dust.NewDust(..., dustWater())` lane (weather-rain-splash, `40128e5d`/`006bc04d`),
 TRANSPLANTED onto this core by the union-exec (`docs/research/83-weather-reconcile.md`
 §3 EXECUTED): d130's verbatim fall/draw core (fixed 750-slot pool, slot order, the remix

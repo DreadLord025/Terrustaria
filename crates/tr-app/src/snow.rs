@@ -12,10 +12,10 @@
 //! * `Main.Camera.ScaledSize`/`ScaledPosition` are the world-space view
 //!   (`screen / zoom`, the view's top-left) — the same fold the scene scan
 //!   uses (`scene_scan.rs`'s `visual_area`);
-//! * `Main.maxScreenW` is pinned at its Reach value 1920
-//!   (`Main.cs:66715`/`:3715` — the port's `MaxWorldViewSize.X` convention,
-//!   `rain.rs`'s spawn rate uses the same pin; HiDef's 4096 arm is a
-//!   documented drop);
+//! * `Main.maxScreenW` is the HiDef 4096 (`Main.cs:3709` — the port runs
+//!   HiDef, `app/frame/draw.rs`; g11 `13a1c48e`'s pin, folded). The earlier
+//!   Reach-1920 pin (`:66715`/`:3715`) retired with the g11 census —
+//!   `sand.rs`'s 1920 emit-budget pin stays its own recorded deviation;
 //! * `NPC.IsADeerclopsNearScreen()` (`NPC.cs:44534-44537`) folds to the
 //!   active-Deerclops scan (`npcsFoundForCheckActive[668]` — the per-frame
 //!   found-active table, `NPC.cs:7229-7239`);
@@ -39,14 +39,18 @@ use crate::assets;
 use crate::rain::light_at;
 use tr_core::lighting::LightMap;
 
-/// `Main.maxScreenW` — the Reach pin (see the module doc).
-const MAX_SCREEN_W: f32 = 1920.0;
+/// `Main.maxScreenW` — the HiDef pin (see the module doc).
+const MAX_SCREEN_W: f32 = 4096.0;
 /// `SceneMetrics.SnowTileMax` (`SceneMetrics.cs:932`).
 const SNOW_TILE_MAX: i32 = 6000;
 
 /// The snowfall's per-call inputs — the `Main` statics `snowing()` reads.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SnowInputs {
+    /// `Main.gamePaused` (`Main.cs:13040`) — g11 `13a1c48e`'s env field,
+    /// folded: the check runs INSIDE `snowing` (the C# shape), not only in
+    /// the caller's cluster gate.
+    pub game_paused: bool,
     /// `Main.Camera.ScaledPosition` — the view's world-px top-left.
     pub scaled_position: Vec2,
     /// `Main.Camera.ScaledSize` — the world-space view size.
@@ -99,9 +103,8 @@ impl Snow {
     /// `Main.snowing()` (`Main.cs:13032-13116`). `metrics` is the stored
     /// `Main.SceneMetrics` (the last scan), `snow_dust` the live type-76
     /// population the previous `UpdateDust` head counted (`Main.snowDust`),
-    /// `ctx` the pool's spawn statics. The `gamePaused` early-out
-    /// (`:13040`) folds into the caller's pause gate; `netMode != 2`
-    /// (`:17234`) is the single-player fold.
+    /// `ctx` the pool's spawn statics. `netMode != 2` (`:17234`) is the
+    /// single-player fold.
     pub(crate) fn snowing(
         &mut self,
         metrics: &SceneMetrics,
@@ -115,8 +118,11 @@ impl Snow {
         if i.remix_world {
             return;
         }
-        // `:13040-13043`: no snow tiles / below the surface — nothing.
-        if metrics.snow_tile_count <= 0 || !metrics.surface_atmospherics {
+        // `:13040-13043`: paused / no snow tiles / below the surface —
+        // nothing. The `gamePaused` disjunct is the C#'s own first term
+        // (g11's env carried it; the caller's cluster gate is redundant,
+        // not the check's home).
+        if i.game_paused || metrics.snow_tile_count <= 0 || !metrics.surface_atmospherics {
             return;
         }
         // `:13044`: the intensity `pow(count/6000, 4 - 3*cloudAlpha)`.
@@ -385,6 +391,7 @@ mod tests {
 
     fn inputs() -> SnowInputs {
         SnowInputs {
+            game_paused: false,
             scaled_position: CAMERA - SCREEN * 0.5,
             scaled_size: SCREEN,
             cloud_alpha: 0.0,
@@ -410,7 +417,9 @@ mod tests {
 
     #[test]
     fn the_gates_need_snow_tiles_at_the_surface_and_no_remix() {
-        // `Main.cs:13034-13043`: the three early returns.
+        // `Main.cs:13034-13043`: the four early returns — remix, then the
+        // `gamePaused || SnowTileCount <= 0 || !SurfaceAtmospherics` triple
+        // (the pause disjunct is g11's env field, folded in-body).
         let w = snow_world();
         let mut s = Snow::new(7);
         let mut pool = DustPool::new();
@@ -422,6 +431,10 @@ mod tests {
         i.remix_world = true;
         s.snowing(&metrics(3000, true), &i, 0, &ctx(), &w, &mut pool);
         assert_eq!(live_type(&pool, 76), 0, "the remix world");
+        i.remix_world = false;
+        i.game_paused = true;
+        s.snowing(&metrics(3000, true), &i, 0, &ctx(), &w, &mut pool);
+        assert_eq!(live_type(&pool, 76), 0, "the pause gate");
     }
 
     #[test]
@@ -456,33 +469,34 @@ mod tests {
     #[test]
     fn the_budget_gate_breaks_the_loop() {
         // `Main.cs:13057`: at quality 1 the budget is num2 * 1.1; the dry
-        // 1600-px num2 is `(int)(500*1600/1920) = 416` → 457.6. A snowDust
-        // already at 458 spawns NOTHING (the break, not a skip).
+        // 1600-px num2 at the HiDef maxScreenW 4096 is
+        // `(int)(500*1600/4096) = 195` → 214.5. A snowDust already at 215
+        // spawns NOTHING (the break, not a skip).
         let w = snow_world();
         let m = metrics(6000, true); // intensity 1: every attempt passes
         let mut s = Snow::new(13);
         let mut pool = DustPool::new();
         let i = inputs();
-        s.snowing(&m, &i, 458, &ctx(), &w, &mut pool);
+        s.snowing(&m, &i, 215, &ctx(), &w, &mut pool);
         assert_eq!(live_type(&pool, 76), 0, "the budget break");
         // One under the budget the loop runs (and the pool fills).
         for _ in 0..30 {
-            s.snowing(&m, &i, 457, &ctx(), &w, &mut pool);
+            s.snowing(&m, &i, 214, &ctx(), &w, &mut pool);
         }
         assert!(live_type(&pool, 76) > 0);
-        // The gfxQuality scale: at 0.5 the budget is 416*0.75 + 41.6 = 353.6.
+        // The gfxQuality scale: at 0.5 the budget is 195*0.75 + 19.5 = 165.75.
         let mut q = Snow::new(13);
         let mut q_pool = DustPool::new();
         let mut qi = inputs();
         qi.gfx_quality = 0.5;
-        q.snowing(&m, &qi, 354, &ctx(), &w, &mut q_pool);
+        q.snowing(&m, &qi, 166, &ctx(), &w, &mut q_pool);
         assert_eq!(live_type(&q_pool, 76), 0, "the quality-scaled budget");
     }
 
     #[test]
     fn the_deerclops_fades_the_intensity_and_budget() {
         // `Main.cs:13047-13052`: num /= 20, num2 /= 3 — at count 6000 the
-        // dry intensity 1 → 0.05 and the budget 457.6 → 152*1.1 = 167.2.
+        // dry intensity 1 → 0.05 and the budget 214.5 → 65*1.1 = 71.5.
         // The per-flake scale also drops 0.5 (`:13104-13107`).
         let w = snow_world();
         let m = metrics(6000, true);

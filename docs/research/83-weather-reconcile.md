@@ -207,6 +207,39 @@ Everything above landed as written, with these adaptations recorded:
   re-pinned to the union's shapes), the PORT_MAP splash row, and the
   anchors.txt row (the marker `fn spawn_splash` survives the transplant).
 
+## 4. Final-phase g11 snowing fold (arm-by-arm vs Main.cs:13032-13116)
+
+Re-read g11 `13a1c48e`'s `main_dust.rs::snowing` + its `scene_scan` wiring
+against this branch's `snow.rs`, arm by arm against the C#. The maths rows of
+§2's table hold (identical intensity/budget/attempt/recipe bodies). The g11
+details MISSING from d130, now folded:
+
+* **The in-body `gamePaused` disjunct** (`:13040`): g11's `SnowingEnv` carries
+  `game_paused` and checks it inside `snowing`; d130 folded it into the
+  caller's pause gate only. `SnowInputs.game_paused` lands, the check is the
+  C#'s own first disjunct, `update_scene` feeds `app.game_paused`; the gate
+  witness gains the pause arm.
+* **The HiDef `maxScreenW` pin** (`Main.cs:3709` — 4096): g11 budgets
+  `500*view/4096`; d130 pinned Reach 1920. The port runs HiDef
+  (`app/frame/draw.rs`), so g11 is right — `MAX_SCREEN_W` 4096, the budget
+  witnesses re-derived (1600-px dry num2 = 195, budget 214.5; q0.5 → 165.75;
+  Deerclops → 65/71.5). `sand.rs`'s 1920 emit-budget pin is a DIFFERENT
+  static's deviation and stays (ANALYSIS re-pinned).
+* **The Deerclops census wording**: `IsADeerclopsNearScreen`
+  (`NPC.cs:44534-44537`) reads `npcsFoundForCheckActive[668]`, which
+  `UpdateFoundActiveNPCs` (`NPC.cs:7229-7239`) sets for any ACTIVE type-668
+  npc — no near-screen filter despite the name. Both ports' `hp > 0` scans
+  are observation-equal; the citation now names the table walk (g11's
+  wording).
+
+KEPT from d130 (g11 lacks or stands in): the real `DustPool.snow_dust` counter
+(g11 re-scans `live_type(pool,76)` per attempt — O(6000) inside the loop), the
+type-76 AI + tails + draw (g11 defers them to the dust lanes), the stored
+`SceneMetrics` parameter shape, the per-consumer splitmix stream (g11 rides
+`NamedRngs::global()` — the WEATHER-2 convention decision of §2 stands). The
+raw-cloudAlpha read (`rain.cloud_alpha()`, unclamped) was already d130's —
+g11's `intensity_value()` is the same raw field.
+
 ## Verification
 
 Code-only mode (per the task brief): no cargo/tests/graphify run. The fix was
