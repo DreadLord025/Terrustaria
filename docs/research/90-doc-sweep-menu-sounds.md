@@ -312,3 +312,92 @@ list, hot-file map and the g23d-wakes-up contingency:
 — zero menu overlap. After the fold: MAIN-RULES verification, ref-update
 merge to main, then delete both lane branches (each only after
 `git log main..<branch>` is empty).
+
+## SEAL-VERIFY receipt (2026-11-21) — all five items VERIFIED
+
+Code-only verification pass: `git ls-remote origin` per lane (tips below
+match origin exactly), targeted doc/code reads in each lane's worktree,
+C# re-reads in ≤25-line windows (`Main.cs:3237-3260`, `:47405-47429`).
+No cargo/tests/rustfmt/graphify invoked.
+
+1. **menu-sounds g22-canonical-direction-B — SEALED.** Tip
+   `250488c34efc3da1d7957c6e1ce22f58d5f72470` == origin. The 151/151
+   menu-region census landed `647ff8694` (this doc, union-coverage
+   table: 70 g22-window + 75 g23-census + 2 g23-wired chrome + 1
+   dead-arm + 1 pre-lane hover + 2 g23-wired submit/cancel = 151); the
+   direction-B merger instruction landed `250488c34` (this doc's
+   close-out + `91-g23-branch-deprecated.md` §3).
+2. **d79-pitch-rewire §F4 — SEALED.** Tip
+   `03ebefad78a87fc2db26e582d4c3deb8d048e357` ==
+   origin/task/W4-d79-sound-pitch-pool. `W4-d79-pitch-final.md` §F4 g22
+   row: **+12 raw = 9 prod + 3 test** (:340-355 — clicks.rs:2832/:2843,
+   flow.rs:466/:1067, frame.rs:209, loop.rs:278/:294/:481, mod.rs:2596
+   prod; clicks.rs:3372 + flow.rs:1789/:1967 the doc-sweep test rigs),
+   superseding e0f811358's +3 (the FINAL-4 brace-depth correction,
+   `03ebefad7`). **RETIRE-direction-B-compose-kept**: F4 :359-365 "g22
+   RETIRE R3's direction-B instruction stands … the d79 rewire applies
+   to the UNION's drain sites". **MaxMana-d79-pool-wins**: :402-414
+   "KEEP d79's pool path" (`play_single_voice("MaxMana")` +
+   `pending_mana_refill`; e10's emit-only twin + `take_mana_full` queue
+   deleted; e10's mana-blade expiry PRODUCER kept, re-pointed).
+   **Hungry-BOTH-producers-ONE-façade**: :415-429 — KEEP BOTH producers
+   (e10's three drink callers + f12's 333-expiry wiring arm), the play
+   is ONE façade `play_voice_style("Hungry", …)`; "The bare
+   `play("hungry")` … delete it." **f12-bare-play-hungry-deletes**:
+   f12 tip `22ce2a41f1cec3e9204190f3c7b6fb4a69c80a84` ==
+   origin/task/W4-f12-buff-effects still CARRIES the bare play
+   (`world_sim/player.rs:1243 app.audio.play("hungry")`, producer
+   `buff_frame_wiring.rs:314 p.pending_hungry_sounds += …`) — the
+   deletion is the MERGER's move per F4's re-point recipe (:427), not
+   an f12-side landing; recorded here so no one expects it pre-merge.
+3. **g21-batch5 — SEALED.** Tip
+   `ad3282ec6e9fdf49ea5e026f523ddad37a4b4f63` ==
+   origin/task/W4-g21-sounds-main-1; batch 5 (hosts 71/72/73,
+   `:42506`/`:42544`/`:42584`) landed `7596fb262`. g21 ANALYSIS
+   :39557-39562 records **g22's menu-region 151/151 incl. the
+   `:47413-:47556` builder-toggle click cues** (C# `:47413`
+   `PlaySound(12)` re-verified). **`:3244`/`:3256` hover ticks are
+   g21's** (`DoStatefulTickSound` ref-bool/ref-int helpers, C#
+   `:3237-3259` re-verified; g21 ANALYSIS :39325-39336 + :39508-39512 —
+   the `:47588` `toggleAccMouseOver` latch tick stays g21's even though
+   its host is a g22-line icon). **No overlap**: g21's window
+   `:3244-:43936` vs g22's menu region `:48201-52062`; the only shared
+   surface is the helper-tick split, explicitly adjudicated both ways.
+4. **g24d-wg-sound-family — SEALED.** Tip
+   `eca0c73685ced11b020fe812629f4525c736b70e` ==
+   origin/task/W4-g24-sounds-worldgen. `research/146-wg-sounds-final.md`
+   §5 declaration table row: "g22 sounds-main-2 | `250488c3` | Main.cs
+   legacy menus `:48489-49727` | none — the g23 union owns the legacy
+   queues"; FINAL-FINAL verdict DONE (79/79 WorldGen sites, 22
+   `w4_g24_*` witnesses written-not-run).
+5. **This receipt + the bible below — the FINAL record.**
+
+## The menu-sounds-family bible (FINAL)
+
+| lane | sealed tip | scope | merger ruling |
+| --- | --- | --- | --- |
+| g22 sounds-main-2 | `250488c34` | Main.cs `:44118-49727` window + 57-site 888 doc-sweep + menu-music arms | **CANONICAL BASE** (direction B) |
+| g23 sounds-main-3 | `945391e33` | `:49734-51052` census + 5 wired sites, `pending_cue` union | fold INTO g22 (4 commits, keep-g22/take-g23-unique, `91-g23-branch-deprecated.md` §3) |
+| g21 sounds-main-1 | `ad3282ec6` | `:3244-:43936` window incl. the two hover helpers + `:47588` latch | independent fold; its 2 Chat sites DELETE (d79's phase-7 seams win) |
+| g24 sounds-worldgen | `eca0c7368` | WorldGen.cs 79/79 + quit paths + secret-seed tails | independent fold, zero menu/queue overlap |
+| d79 sound-pitch-pool | `03ebefad7` | the pitch/pool façades + the 43-target rewire table (§F4) | rewire applies AFTER the g22+g23 fold: every sibling bare `play`/`play_at` menu site → `play_menu`/`play_single_voice` (40 prod + 3 g22 test rigs) |
+| f12 buff-effects | `22ce2a41f` | the 333-expiry Hungry producer | keep producer; merger deletes the bare `play("hungry")` drain, re-points at `play_voice_style` |
+
+**The disjoint-queue contract (must survive every fold):**
+`pending_cue` = activation only; `pending_ticks` = draw-time legacy
+chrome only (`:51276`, `:51575`); the doc-sweep's HSL/front cues ride
+`FrontDraw.audio`, not either menu queue.
+
+**The three façade keep-one rulings (d79 §F4, verbatim intent):**
+MaxMana → d79's pool path wins (e10's producer kept, re-pointed);
+Hungry → BOTH producers, ONE `play_voice_style` façade (f12's bare
+play deleted); the voice picker → e10's wholesale (d79's
+default-variant stand-in superseded).
+
+**Fold order:** g22 base ← g23 (direction B) ← g21/g24 independent ←
+d79 rewire pass last (its table keys on the merged tree's line
+positions). After each fold: MAIN-RULES verification, anchors canary,
+ref-update merge; delete a lane branch only when
+`git log main..<branch>` is empty. All witnesses across the family
+are WRITTEN NOT RUN (code-only lanes) — the merged branch's cargo
+suite is the first execution.
