@@ -58,7 +58,7 @@ Batch plan (5 arms per commit):
   `WorldGen.cs:51723-51775` — the def decode always reads kind 388's
   registry entry, the padding-free row walk kept verbatim).
   `Wiring::can_kill_tile` went `pub(crate)` — the trapdoor close guard
-  reuses the flood's slice (the i34 keep-one). 9 witnesses written not run.
+  reuses the flood's slice (the i34 keep-one). 8 witnesses written not run.
 - The `Collision.EmptyTile` entity half stays the always-free closure in
   the wiring arms (tr-core has no entity store — the `smart_cursor.rs:312`
   precedent); the app-side `cell_blocked` wiring is a follow-up seam, the

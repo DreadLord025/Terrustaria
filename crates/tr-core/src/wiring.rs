@@ -6546,7 +6546,10 @@ mod w4_c42_batch2_tests {
         let mut wiring = Wiring::new();
         wiring.hit_wire_single(&mut w, 10, 20);
         assert!(w.tile(10, 20).is_some_and(|t| t.active() && t.kind == 386), "closed");
-        assert!(!w.tile_active(10, 21), "the cut tile died");
+        // The swept cell dies, then the closed body OVERWRITES it (the
+        // close writes rows y..y+1, `:51577`) — the sweep's observable is
+        // that the close proceeded past a cut tile at all.
+        assert!(w.tile(10, 21).is_some_and(|t| t.active() && t.kind == 386), "body row 1");
     }
 
     #[test]
