@@ -442,9 +442,126 @@ pub fn find_frame_extra8(kind: FindFrameExtra8Kind, s: &mut FrameState, i: &Fram
                 s.row = 2;
             }
         }
-        // The batch-2/3 kinds land in the next commits (the 5-kinds-
+        // `case 448` in the worm group (`NPC.cs:72774-72828`, shared
+        // with 357/484/606 — d48 wave-C's 357 is the same machine,
+        // keep-one at the merge): the `localAI[0] = -2` pin EVERY
+        // tick (`:72779`); the grounded tick zeroes the rotation, the
+        // idle pins row 1 + zeroes the counter (`:72783-72787`), the
+        // crawl's > 12 step alternates rows 1/0 (the `> num` wrap,
+        // `:72788-72800`); the airborne tick pins row 1 and
+        // accumulates the `direction * 0.1` spin (`:72802-72806`).
+        // The slope override (`:72807-72826`) rides the caller-
+        // resolved [`FrameInput::slope`] (the d48 precedent): slope 1
+        // → +0.785 rad, slope 2 → −0.785, both lifting `localAI[0]`
+        // to 0.
+        FindFrameExtra8Kind::GoldWorm => {
+            // `:72779`.
+            s.local_ai0 = -2.0;
+            if i.vy == 0.0 {
+                // `:72782`.
+                s.rotation = 0.0;
+                if i.vx == 0.0 {
+                    // `:72783-72787`.
+                    s.row = 1;
+                    s.counter = 0.0;
+                } else {
+                    // `:72788-72800`.
+                    s.counter += 1.0;
+                    if s.counter > 12.0 {
+                        s.counter = 0.0;
+                        s.row += 1;
+                        if s.row > 1 {
+                            s.row = 0;
+                        }
+                    }
+                }
+            } else {
+                // `:72802-72806`.
+                s.rotation += i.direction as f32 * 0.1;
+                s.row = 1;
+            }
+            // `:72816-72825` — the resolved slope override.
+            if i.slope == 1 {
+                s.rotation = 0.785;
+                s.local_ai0 = 0.0;
+            } else if i.slope == 2 {
+                s.rotation = -0.785;
+                s.local_ai0 = 0.0;
+            }
+        }
+        // `case 449/450/451/452` (`NPC.cs:71398-71453`): the
+        // bone-throwing skeletons' toss ladder. The grounded ±1 flip
+        // (`:71404-71411`); the `ai[2] > 0` toss pose copies
+        // `direction` UNCONDITIONALLY (0 included, `:71414`) and
+        // picks row `count - 5 + band` off the `ai[1]` wind-up
+        // countdown — >= 50 band 1, >= 43 band 2, >= 36 band 3,
+        // >= 29 band 4, else 0 (`:71415-71420` — the C#'s
+        // `50 - num55 * k` with num55 = 7), zeroing the counter and
+        // BREAKING. The idle snaps row 0 with the counter UNTOUCHED
+        // (`:71424-71428`). The walk lifts any row < 2 to 2 (the
+        // doubled `if` at `:71429-71436` is idempotent — carried
+        // once), accumulates `|vx| * 2` with NO +1 (`:71437` — unlike
+        // the humanoid walkers), the > 6 step, and the wrap at the
+        // LITERAL 15 back to row 2 (`:71443-71446` — rows 15..19 are
+        // the toss poses on the 19-row sheets; 452's 20-row sheet
+        // adds one more toss row, the walk band is the SAME). The
+        // air zeroes the counter and pins row 1 (`:71448-71452`).
+        FindFrameExtra8Kind::BoneThrowingSkeleton
+        | FindFrameExtra8Kind::BoneThrowingSkeleton2
+        | FindFrameExtra8Kind::BoneThrowingSkeleton3
+        | FindFrameExtra8Kind::BoneThrowingSkeleton4 => {
+            if i.vy == 0.0 {
+                // `:71404-71411`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                if i.ai[2] > 0.0 {
+                    // `:71412-71422` — num53 = count - 5, num55 = 7.
+                    s.sprite_dir = i.direction;
+                    let band = if i.ai[1] >= 50.0 {
+                        1
+                    } else if i.ai[1] >= 43.0 {
+                        2
+                    } else if i.ai[1] >= 36.0 {
+                        3
+                    } else if i.ai[1] >= 29.0 {
+                        4
+                    } else {
+                        0
+                    };
+                    s.row = kind.frame_count() - 5 + band;
+                    s.counter = 0.0;
+                    return;
+                }
+                if i.vx == 0.0 {
+                    // `:71424-71428` — the counter is NOT zeroed.
+                    s.row = 0;
+                    return;
+                }
+                // `:71429-71446` — the doubled lift is idempotent.
+                if s.row < 2 {
+                    s.row = 2;
+                }
+                s.counter += i.vx.abs() * 2.0;
+                if s.counter > 6.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                if s.row >= 15 {
+                    s.row = 2;
+                }
+            } else {
+                // `:71448-71452`.
+                s.counter = 0.0;
+                s.row = 1;
+            }
+        }
+        // The batch-3 kinds land in the next commit (the 5-kinds-
         // per-commit rule).
-        _ => unimplemented!("extra-8 batch 2/3"),
+        _ => unimplemented!("extra-8 batch 3"),
     }
 }
 
@@ -609,6 +726,86 @@ mod tests {
         find_frame_extra8(FindFrameExtra8Kind::GoldMouse, &mut s, &input(1.0, 2.0));
         assert_eq!(s.sprite_dir, -1, "the air branch does not flip");
         assert_eq!(s.counter, 1.5);
+    }
+
+    /// 448 GoldWorm: the localAI[0] = -2 pin, the idle row 1, the
+    /// > 12 two-row crawl (1/0 alternation), the air spin
+    /// accumulation, the slope override (`NPC.cs:72779-72826`).
+    #[test]
+    fn f27s8_gold_worm_crawls_and_pins() {
+        // The crawl: the 13th tick steps row 0 → 1, the 26th wraps
+        // back to 0 (the > num wrap, rows alternate).
+        let rows = rows_over(FindFrameExtra8Kind::GoldWorm, input(1.0, 0.0), 28);
+        assert_eq!(rows[11], 0);
+        assert_eq!(rows[12], 1, "the 13th tick steps");
+        assert_eq!(rows[24], 1);
+        assert_eq!(rows[25], 0, "the 26th tick wraps");
+        // The idle pin + the localAI[0] = -2 write.
+        let mut s = FrameState { row: 0, counter: 5.0, ..Default::default() };
+        find_frame_extra8(FindFrameExtra8Kind::GoldWorm, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter, s.local_ai0), (1, 0.0, -2.0));
+        assert_eq!(s.rotation, 0.0, "the grounded tick zeroes the tilt");
+        // The air spin accumulates direction * 0.1, the row pins 1.
+        let mut s = FrameState { rotation: 0.2, ..Default::default() };
+        let i = FrameInput { direction: -1, ..input(1.0, -2.0) };
+        find_frame_extra8(FindFrameExtra8Kind::GoldWorm, &mut s, &i);
+        assert_eq!(s.row, 1);
+        assert!((s.rotation - 0.1).abs() < 1e-6);
+        // The slope override: both slopes lift localAI[0] to 0.
+        for (slope, rot) in [(1i32, 0.785f32), (2, -0.785)] {
+            let i = FrameInput { slope, ..input(1.0, 0.0) };
+            let mut s = FrameState::default();
+            find_frame_extra8(FindFrameExtra8Kind::GoldWorm, &mut s, &i);
+            assert_eq!((s.rotation, s.local_ai0), (rot, 0.0), "slope {slope}");
+        }
+    }
+
+    /// 449-452 the bone throwers: the ai[1] wind-up toss ladder rows
+    /// count-5..count-1, the idle row-0 snap with the counter
+    /// UNTOUCHED, the |vx|*2 NO-+1 walk wrapping at the literal 15,
+    /// the air row 1 (`NPC.cs:71402-71452`). The 452 is the ONE
+    /// 20-row sheet — its toss band reaches row 19.
+    #[test]
+    fn f27s8_bone_throwers_toss_and_stride() {
+        for k in [
+            FindFrameExtra8Kind::BoneThrowingSkeleton,
+            FindFrameExtra8Kind::BoneThrowingSkeleton2,
+            FindFrameExtra8Kind::BoneThrowingSkeleton3,
+            FindFrameExtra8Kind::BoneThrowingSkeleton4,
+        ] {
+            let base = k.frame_count() - 5;
+            // The toss ladder: ai[1] 50/43/36/29/0 → bands 1/2/3/4/0.
+            for (ai1, band) in [(50.0f32, 1u32), (43.0, 2), (36.0, 3), (29.0, 4), (28.9, 0), (0.0, 0)] {
+                let i = FrameInput { ai: [0.0, ai1, 1.0, 0.0], direction: 0, ..input(0.0, 0.0) };
+                let mut s = FrameState { counter: 4.0, sprite_dir: 1, ..Default::default() };
+                find_frame_extra8(k, &mut s, &i);
+                assert_eq!(s.row, base + band, "{k:?} ai1 {ai1}");
+                assert_eq!(s.counter, 0.0);
+                assert_eq!(s.sprite_dir, 0, "the toss copies direction verbatim");
+            }
+            // The idle snap keeps the counter.
+            let mut s = FrameState { row: 7, counter: 3.0, ..Default::default() };
+            find_frame_extra8(k, &mut s, &input(0.0, 0.0));
+            assert_eq!((s.row, s.counter), (0, 3.0));
+            // The walk: vx 1 → +2 a tick, the > 6 step every 4th tick.
+            let rows = rows_over(k, input(1.0, 0.0), 10);
+            assert_eq!(rows, vec![2, 2, 2, 3, 3, 3, 3, 4, 4, 4]);
+            // The wrap at the LITERAL 15 (not the sheet count).
+            let mut s = FrameState { row: 14, counter: 5.0, ..Default::default() };
+            find_frame_extra8(k, &mut s, &input(1.0, 0.0));
+            assert_eq!(s.row, 2, "row 15 wraps to 2 on every sheet");
+            // The air pin.
+            find_frame_extra8(k, &mut s, &input(1.0, -2.0));
+            assert_eq!((s.row, s.counter), (1, 0.0));
+        }
+        // The 452's one-extra toss row: band 1 lands row 19 (the
+        // 19-row trio lands 15).
+        let i = FrameInput { ai: [0.0, 50.0, 1.0, 0.0], ..input(0.0, 0.0) };
+        let mut s = FrameState::default();
+        find_frame_extra8(FindFrameExtra8Kind::BoneThrowingSkeleton4, &mut s, &i);
+        assert_eq!(s.row, 19);
+        find_frame_extra8(FindFrameExtra8Kind::BoneThrowingSkeleton, &mut s, &i);
+        assert_eq!(s.row, 15);
     }
 
     /// The seam maps exactly the slice's vanilla types and nothing
