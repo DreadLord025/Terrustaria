@@ -2149,6 +2149,7 @@ pub(crate) mod front_flow_tests {
             achievements_categories: [true; 4],
             achievements_scroll_drag: None,
             achievements_back_sounded: false,
+            achievements_handle_hover: false,
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),

@@ -1844,6 +1844,7 @@ impl App {
                             self.mouse_pos,
                             menu.is_some(),
                             self.mouse_text_color,
+                            self.achievements_scroll_drag.is_some(),
                         );
                     }
                     // `DrawInterface_13_AchievementCompletePopups`

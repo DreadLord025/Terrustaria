@@ -1235,6 +1235,7 @@ impl App {
                 self.achievements_categories = [true; 4];
                 self.achievements_scroll = 0.0;
                 self.achievements_scroll_drag = None;
+                self.achievements_handle_hover = false;
                 self.ui_left_press = false;
                 return;
             }
@@ -1274,9 +1275,14 @@ impl App {
     /// The achievements overlay's hover edge (`FadedMouseOver`,
     /// `UIAchievementsMenu.cs:150-155`): sound 12 fires once when the
     /// pointer enters the Back panel; the latch clears on mouse-out.
+    /// The scrollbar handle's own hover update rides the same tick
+    /// (`UIScrollbar.DrawSelf`, `UIScrollbar.cs:113-120`): the handle rect
+    /// hit-tests the truncated pointer, sound 12 fires on the false→true
+    /// edge, and the latch feeds the handle tint (`:122`).
     pub(crate) fn achievements_hover_tick(&mut self) {
         if !self.achievements_open {
             self.achievements_back_sounded = false;
+            self.achievements_handle_hover = false;
             return;
         }
         let (sw, sh) = self.screen_size();
@@ -1287,6 +1293,20 @@ impl App {
             &mut self.achievements_back_sounded,
         ) {
             self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:152`)
+        }
+        // `UIScrollbar.cs:113-120` — the handle rect at the current view.
+        let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
+        let (hover, edge) = ui::panel::scrollbar_hover_tick(
+            ui::achievements::scrollbar_rect(&panel),
+            ui::achievements::list_rect(&panel)[3],
+            ui::achievements::list_content_height(rows.len()),
+            self.achievements_scroll,
+            self.mouse_pos,
+            self.achievements_handle_hover,
+        );
+        self.achievements_handle_hover = hover;
+        if edge {
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:119`)
         }
     }
 
@@ -1301,6 +1321,7 @@ impl App {
         self.achievements_categories = [true; 4];
         self.achievements_scroll_drag = None;
         self.achievements_back_sounded = false;
+        self.achievements_handle_hover = false;
         let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
         let idx = rows
             .iter()
@@ -2807,6 +2828,7 @@ impl App {
                 self.achievements_categories = [true; 4];
                 self.achievements_scroll_drag = None;
                 self.achievements_back_sounded = false;
+                self.achievements_handle_hover = false;
                 // The menu row's `SoundEngine.PlaySound(10)` already fired in
                 // `Menu::click`.
             }
@@ -2988,7 +3010,8 @@ mod tests {
         app.handle_achievements_clicks();
         assert!(!app.achievements_categories[0], "the Slayer toggle flipped");
         assert_eq!(app.audio.played_count(), before + 1, "sound 12 (`:165`)");
-        // 31 Slayer rows + the kept None row survive; the scroll clamps to
+        // 32 Slayer rows survive (31 registered + the torch row, whose
+        // unset C# `_category` defaults to Slayer); the scroll clamps to
         // THEIR range instead of resetting to zero.
         let rows = ui::achievements::visible_rows(&app.achievements, &app.achievements_categories);
         let max = ui::achievements::max_scroll(rows.len(), &list);
@@ -3038,6 +3061,42 @@ mod tests {
         app.mouse_pos = Vec2::new(5.0, 5.0);
         app.achievements_hover_tick();
         app.mouse_pos = Vec2::new(back[0] + 10.0, back[1] + 10.0);
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 2);
+    }
+
+    /// W4-g53 witness: the scrollbar handle's own hover edge
+    /// (`UIScrollbar.DrawSelf`, `UIScrollbar.cs:113-120`) sounds 12 once on
+    /// entry, latches while hovered, and re-arms on mouse-out — the latch
+    /// also feeds the draw's `dragging || hovering` handle tint (`:122`).
+    #[test]
+    fn g53_the_handle_hover_sounds_once_and_latches() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let bar = ui::achievements::scrollbar_rect(&panel);
+        let list = ui::achievements::list_rect(&panel);
+        let content = ui::achievements::list_content_height(137);
+        let handle = ui::panel::scrollbar_handle_at(bar, list[3], content, 0.0);
+        // Off the handle: no hover.
+        app.mouse_pos = Vec2::new(5.0, 5.0);
+        app.achievements_hover_tick();
+        assert!(!app.achievements_handle_hover);
+        // Entry: sound 12 once, latch set.
+        app.mouse_pos = Vec2::new(handle[0] + 10.0, handle[1] + 10.0);
+        let before = app.audio.played_count();
+        app.achievements_hover_tick();
+        assert!(app.achievements_handle_hover);
+        assert_eq!(app.audio.played_count(), before + 1);
+        // Still hovering: the latch holds, no second sound.
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 1);
+        // Mouse-out re-arms; re-entry sounds again.
+        app.mouse_pos = Vec2::new(5.0, 5.0);
+        app.achievements_hover_tick();
+        assert!(!app.achievements_handle_hover);
+        app.mouse_pos = Vec2::new(handle[0] + 10.0, handle[1] + 10.0);
         app.achievements_hover_tick();
         assert_eq!(app.audio.played_count(), before + 2);
     }

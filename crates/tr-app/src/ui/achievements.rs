@@ -459,7 +459,10 @@ pub fn visible_rows(manager: &AchievementManager, categories: &[bool; 4]) -> Vec
 
 /// `UIAchievementsMenu.Draw`, with the port's overlay treatment.
 /// `mouse_text_color` is `Main.mouseTextColor` (the cycling 225±30 grey the
-/// category tooltip draws with, `UIAchievementsMenu.cs:132`).
+/// category tooltip draws with, `UIAchievementsMenu.cs:132`); `dragging` is
+/// the scrollbar's `_isDragging` latch (`UIScrollbar.cs:122`'s handle-tint
+/// gate — the hover half is re-derived from the pointer here, the sound
+/// edge ticks in `App::achievements_hover_tick`).
 #[allow(clippy::too_many_arguments)]
 pub fn draw_screen(
     r: &mut SpriteRenderer,
@@ -471,6 +474,7 @@ pub fn draw_screen(
     mouse: Vec2,
     game_menu: bool,
     mouse_text_color: u8,
+    dragging: bool,
 ) {
     let panel = panel_rect(screen, game_menu);
     r.push_ui_sprite([0.0, 0.0], [screen.x, screen.y], r.white_uv(), BACKDROP);
@@ -499,14 +503,22 @@ pub fn draw_screen(
     // is overwritten by `SetScrollbar`'s `UpdateScrollbar`, `UIList.cs:139-143`:
     // view = the list height, max = the content height). `AutoHide` stays
     // false (`UIScrollbar.cs:29`), so the bar draws even on a short list.
-    super::panel::draw_scrollbar(
+    // The handle tint is the live `dragging || hovering` pair
+    // (`UIScrollbar.cs:122`); the hover latch + sound-12 edge tick in
+    // `App::achievements_hover_tick` (`:113-120`).
+    let bar = scrollbar_rect(&panel);
+    let view = list_rect(&panel)[3];
+    let content = list_content_height(rows.len());
+    let handle_hover = super::panel::scrollbar_hover_tick(bar, view, content, scroll, mouse, false).0;
+    super::panel::draw_scrollbar_handle_tint(
         r,
         lookups,
-        scrollbar_rect(&panel),
-        list_rect(&panel)[3],
-        list_content_height(rows.len()),
+        bar,
+        view,
+        content,
         scroll,
         false,
+        super::panel::scrollbar_handle_tint(dragging, handle_hover),
     );
     draw_category_tooltip(r, lookups, screen, &panel, mouse, mouse_text_color);
 }

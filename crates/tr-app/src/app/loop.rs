@@ -258,6 +258,7 @@ impl ApplicationHandler for App {
                             self.achievements_scroll = 0.0;
                             self.achievements_scroll_drag = None;
                             self.achievements_back_sounded = false;
+                            self.achievements_handle_hover = false;
                             return;
                         }
                         if self.menu.is_some() {

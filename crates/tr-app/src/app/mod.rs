@@ -326,6 +326,10 @@ pub(crate) struct App {
     /// The Back panel's hover-sound latch (`FadedMouseOver` fires sound 12
     /// once per hover edge, `UIAchievementsMenu.cs:150-155`).
     pub(crate) achievements_back_sounded: bool,
+    /// The scrollbar handle's hover latch (`UIScrollbar._isHoveringOverHandle`,
+    /// `UIScrollbar.cs:25`/`:113-120`): sound 12 fires on the false→true edge,
+    /// and `DrawSelf`'s handle tint reads `dragging || hovering` (`:122`).
+    pub(crate) achievements_handle_hover: bool,
     /// `InGameNotificationsTracker._notifications`
     /// (`UI/InGameNotificationsTracker.cs:13`) — the achievement-unlock
     /// popups (S1-E-26 wave A). The `OnAchievementCompleted` subscriber
@@ -3759,6 +3763,7 @@ impl App {
             },
             achievements_scroll_drag: None,
             achievements_back_sounded: false,
+            achievements_handle_hover: false,
             // `InGameNotificationsTracker`'s static list starts empty
             // (`InGameNotificationsTracker.cs:109-112`).
             notifications: ui::notifications::NotificationsTracker::default(),
