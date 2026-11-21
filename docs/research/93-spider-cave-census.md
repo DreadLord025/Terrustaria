@@ -195,3 +195,64 @@ When d36 lands 163/164 (+ the wall forms 165/238): replace the two
 type)` Bottom placement); the `SetDefaults` rows + the `FindFrame` cases +
 the wall-stick transform + the expert web-shot are d36's census above.
 The arm's gates/draws are ALREADY faithful — d36 only swaps the outcome.
+
+## FINAL STATUS (W4-g41 closeout) — the egg-sac re-pin deferral + the merger checklist
+
+### All-landed check (research/93 + 95)
+
+Every MISSING row of this census is now LANDED on this branch (verified
+against the code, not the docs): the egg-sac validator chain
+(`check_stalactite`/`update_stalagtite_style`/`get_stalagtite_style`/
+`get_desired_stalagtite_style`/`invalid_tile_for_piles_or_speleothems`,
+`spider_gem_moss.rs:440-660`, wired through `place_tight`'s tail `:422`);
+the hanging granite/marble + rising hive arms + `tileMoss[627]`
+(`:679-757`); the `PlacePot` halfBrick clear (`:815-816`) + the remix
+centre veto (W4-g41 FINAL, `:788-802`); the `PlaceSmallPile` boulder-seat
+veto + `anyLava` guard (`:827-850`); the webs pass DST row-50 + `ILied`
+honey arm (`:1561` region); the spider pass shroom veto + `ILied` dispatch
++ remix y-bands (`:1268-1311`); `SpiderWallRemover` (`:1610`, WIRED via
+`not_the_bees.rs::spider_wall_search` `:1111`). Research/95's two hosts
+(`finish_no_traps.rs`/`finish_remix.rs`) are wired at their C# slots
+(`pipeline.rs:1441-1463`); the QuickWater ×3 activation contract is pinned
+(research/95 §addendum). The FINAL phase adds the ambience census
+(NOTHING-TO-PORT), the spawn pool (the wall-62 arm), and the PlacePot veto.
+
+### Which pins move when (the standing deferral, final form)
+
+| Pin | Current value | Moves when | By what |
+| --- | --- | --- | --- |
+| `SEED42_512` (`world_hash.rs:258`) | `124297949` (stale-by-design) | the g41 merge gate | the egg-sac validator pops/restyles sacs on the 512 world's spider caves + the new decor arms + the pile veto (classic, BY DESIGN) |
+| `DEFAULT_WORLD` (`world_hash.rs:333`) | `3647283075` (stale-by-design) | the g41 merge gate | the same classic-world changes |
+| both pins | — | NOT by the NTB host / the two Finish hosts / the PlacePot veto / the spawn pool | all flag-gated (NOT_THE_BEES / NO_TRAPS / REMIX) or runtime-only — a classic world draws nothing new |
+| the REMIX a==b witnesses' pinned values | written NOT run | the g47d settle-driver activation | the QuickWater settles move REMIX liquid (research/95 §addendum item 5); classic pins untouched |
+| the deep-cavern SPAWN stream | shifted by design | already (this branch) | the spawnSpider flag's Next(3)[+Next(5,15)] draws — a RUNTIME stream, not a worldgen pin; the surface/invasion streams are unchanged (witnessed) |
+
+### Merger checklist (the gate runs these in order)
+
+1. **Keep-one the stalactite chain** (g36 research/88 §3.2): KEEP g41's
+   chain body (the widest anchor range + the spider override + 14
+   witnesses) + d106 R4's `WorldGenRand` generalisation + `pass_unified`
+   stream (d106 proved spider output byte-identical under it); g40 P0's
+   table arms dedupe onto g41's table; DROP g36's local
+   `shimmer.rs` chain (rewire its PlaceTight tail onto the canonical one;
+   if the draw schedule differs, keep the local copy + record the
+   exception). Single home: `spider_gem_moss.rs`.
+2. **Re-pin sequentially** at the gate with the other world-changing
+   lanes (the S1-K-2 wave B precedent): d106 R1-R5 (Grass Wall / Settle
+   Liquids Again / Tile Cleanup / Stalac / Remove Broken Traps), g36/g37/
+   g38/g40/g42/g43/g44, f24/f25, d103/d104 — each lane's `a == b`
+   determinism witness must stay green on the failing run before its
+   re-pin is recorded (the gate-log convention, `TR-LD-gate-*.log`).
+3. **Run the written-NOT-run witnesses**: g41's 14 (egg-sac) + 17 (NTB) +
+   7 (no-traps) + 11 (remix) + 1 (PlacePot veto) + 9 (spawn pool) — the
+   full-pipeline flag-world a==b halves included.
+4. **The QuickWater activation** (when g47d lands, research/70's graft
+   order): arm the gen context at the driver head, swap the three no-op
+   seams for `quick_water(world, -1, -1)`, restore the spawn-box
+   `while flag` shape, re-derive the REMIX pins (research/95 §addendum).
+5. **The d36 hand-off** (when the kinds land): swap the two
+   consume-and-None arms for the walker ctors (the §SPAWN cross-note).
+6. **The anchors canary**: the g41 rows (`fn check_stalactite`,
+   `finish_not_the_bees`, `finish_no_traps`, `finish_remix_world`,
+   `fn set_spawn_spider_flag`) must all survive the merge — a failed
+   marker means a lossy merge; recover the arm, never delete the row.
