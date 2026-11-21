@@ -711,6 +711,31 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-e4 — the orchestra request drain (`ParticleOrchestrator.
+    // RequestParticleSpawn` → `SpawnParticlesDirect`,
+    // `ParticleOrchestrator.cs:52-59`/`:162`): the damage/death/tag arms
+    // queued `(kind byte, settings)` this tick; the emitter bodies run
+    // here on the SAME `UpdateProjectiles` stream (`Main.cs:17775`), the
+    // S1-E-21c queue→drain convention (the pool cannot borrow the App's
+    // dust pool mid-walk). The settings' argument draws were consumed
+    // inline at the queue sites; only the emitter internals roll here.
+    // The spawn ctx is the pass-moment one (the cull/pressure gates read
+    // the live camera + quality cap, `App::spawn_ctx`).
+    let orchestra = app.projectiles.drain_orchestra();
+    if !orchestra.is_empty() {
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+        for (kind, settings) in orchestra {
+            crate::orchestrator_dust::spawn_orchestra(
+                kind,
+                &settings,
+                rng,
+                &mut app.dust,
+                &ctx,
+                &app.world,
+            );
+        }
+    }
 }
 
 /// S1-E-21h — the pass-tail sound drain's stream contract (written, NOT

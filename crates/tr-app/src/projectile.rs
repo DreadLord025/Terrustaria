@@ -13390,6 +13390,44 @@ fn shift_ring<T: Copy>(ring: &mut [T]) {
     }
 }
 
+/// `Utils.ClosestPointInRect` (`Utils.cs:1581-1601`): the point clamped into
+/// the rect on both axes (X first, then Y — no draws). The rect is the C#'s
+/// integer `Rectangle`; the caller truncates the NPC box like `getRect()`.
+fn closest_point_in_rect(x: f32, y: f32, w: f32, h: f32, px: f32, py: f32) -> Vec2 {
+    let cx = if px < x { x } else if px > x + w { x + w } else { px };
+    let cy = if py < y { y } else if py > y + h { y + h } else { py };
+    Vec2::new(cx, cy)
+}
+
+/// The StardustPunch settings' ARGUMENT draws (`Projectile.cs:14250-14254`
+/// for the 1039, `:14266-14270` for the 623) — consumed inline on the pass
+/// stream BEFORE the spawn queues (C# evaluates the settings initializer
+/// first). Draw order: the position's Y-jitter `NextFloatDirection × 10`
+/// (`:14252`/`:14268`), then the movement's Y `NextFloatDirection × 0.5`,
+/// then the magnitude `NextFloat` (`:14253`/`:14269`). Position =
+/// `Lerp(Center, Hitbox.ClosestPointInRect(Center), 0.5) + (0, jitter)`;
+/// movement = `(direction, dirY × 0.5) × (mag_base + mag_base × NextFloat)`
+/// — `mag_base` 2 for the 1039, 3 for the 623.
+fn stardust_punch_settings(
+    rng: &mut dyn DropRng,
+    center: Vec2,
+    npc_box: (f32, f32, f32, f32),
+    direction: i32,
+    mag_base: f32,
+) -> (Vec2, Vec2) {
+    let (nx, ny, nw, nh) = npc_box;
+    let closest = closest_point_in_rect(nx, ny, nw, nh, center.x, center.y);
+    let pos = center.lerp(closest, 0.5);
+    // `:14252`/`:14268` — the Y-jitter draw (NextFloatDirection).
+    let jitter = rng.next_float() * 2.0 - 1.0;
+    let pos = pos + Vec2::new(0.0, jitter * 10.0);
+    // `:14253`/`:14269` — the movement Y draw, then the magnitude draw.
+    let dir_y = rng.next_float() * 2.0 - 1.0;
+    let mag = mag_base + mag_base * rng.next_float();
+    let mov = Vec2::new(direction as f32, dir_y * 0.5) * mag;
+    (pos, mov)
+}
+
 /// `ProjectileID.Sets.TrailingMode` (`ProjectileID.cs:521`) — the history-ring
 /// mode per kind: 0 records `oldPos` only, 1 the same gated on `frameCounter ==
 /// 0`, 2/3 record the rotations and the sprite directions beside them (3 then
@@ -14532,6 +14570,17 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// W4-e4 — the `ParticleOrchestrator.RequestParticleSpawn` intents the
+    /// damage/death/tag arms queued this tick: `(ParticleOrchestraType byte,
+    /// settings)`. The C# spawns SYNCHRONOUSLY inside the request
+    /// (`ParticleOrchestrator.cs:52-59` → `SpawnParticlesDirect` :162), but
+    /// the pool cannot borrow the App's dust pool / `UnifiedRandom` mid-walk,
+    /// so the intents ride out to the pass tail and drain there on the SAME
+    /// `UpdateProjectiles` stream (the S1-E-21c queue→drain convention, the
+    /// `pending_npc_hit_sounds` precedent). The argument draws that feed the
+    /// settings are consumed INLINE at the queue site (the pool's `DropRng`
+    /// IS the pass stream), so only the emitter bodies defer.
+    pending_orchestra: Vec<(u8, crate::orchestrator_dust::OrchestraSettings)>,
 }
 
 impl Default for ProjectilePool {
@@ -14921,6 +14970,7 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            pending_orchestra: Vec::new(),
         }
     }
 
@@ -16205,6 +16255,37 @@ impl ProjectilePool {
         std::mem::take(&mut self.golf_effects)
     }
 
+    /// W4-e4 — the `ParticleOrchestrator.RequestParticleSpawn` intents the
+    /// damage/death/tag arms queued: `(ParticleOrchestraType byte, settings)`.
+    /// The world-sim pass drains them through
+    /// [`crate::orchestrator_dust::spawn_orchestra`] on the
+    /// `UpdateProjectiles` stream (`Main.cs:17775`), the S1-E-21c queue→drain
+    /// convention. The settings' argument draws were consumed inline at the
+    /// queue site; the emitter bodies roll here.
+    pub fn drain_orchestra(&mut self) -> Vec<(u8, crate::orchestrator_dust::OrchestraSettings)> {
+        std::mem::take(&mut self.pending_orchestra)
+    }
+
+    /// `ParticleOrchestrator.RequestParticleSpawn`'s invoker stamp
+    /// (`ParticleOrchestrator.cs:54-58`): `settings.IndexOfPlayerWhoInvokedThis
+    /// = (byte)overrideInvokingPlayerIndex ?? Main.myPlayer`. The pool's queue
+    /// sites pass the shot's owner (the C# `this.owner`); the no-override
+    /// callers (the 79 hit/death, the StardustPunch, the tag effects) leave
+    /// `Main.myPlayer` — the port's local id 0.
+    fn queue_orchestra(
+        &mut self,
+        kind: u8,
+        position: Vec2,
+        movement: Vec2,
+        info: i32,
+        invoker: u8,
+    ) {
+        self.pending_orchestra.push((
+            kind,
+            crate::orchestrator_dust::OrchestraSettings { position, movement, info, invoker },
+        ));
+    }
+
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
     /// family's gameplay rolls take from it (`AI_165_Whip`'s arm budget + spin,
     /// `:47671`/`:47710`; the ThornWhip's debuff roll `:11738`; the tag crit
@@ -16217,23 +16298,29 @@ impl ProjectilePool {
     /// shot kinds — the port has none yet, so `is_summon_shot` (set by
     /// M4-PROJ-8's minion/sentry spawns) rejects everything until then.
     fn tag_damage_for(
-        &self,
+        &mut self,
         slot: usize,
         npc_idx: u16,
         base: i32,
         crit: bool,
         player: Option<&crate::player::Player>,
+        npcs: &[Npc],
         rng: &mut dyn tr_core::loot::DropRng,
     ) -> (i32, bool) {
-        let p = &self.slots[slot];
+        // The slot scalars are COPIED (the `p` borrow would stay live across
+        // the `queue_orchestra` mutable borrow below — E0502).
+        let (p_kind, p_owner, p_bonus_tag, p_minion, p_sentry, p_summon) = {
+            let p = &self.slots[slot];
+            (p.kind, p.owner, p.bonus_tag_damage, p.minion, p.sentry, p.is_summon_shot)
+        };
         // `WhipTagEffect.CanRunHitEffects` (`:75-86`): owned + the four-way
         // shot test (`minion || MinionShot || sentry || SentryShot`). The
         // `is_summon_shot` slot flag is the spawn-time latch; the kind sets
         // admit the ported minion/sentry shots (374/389/614/… and the
         // SentryShot family) without waiting on it.
-        let gate = p.is_summon_shot
-            || crate::projectile::can_run_whip_hit_effects(p.minion, p.sentry, p.kind);
-        if !gate || p.owner == 255 {
+        let gate = p_summon
+            || crate::projectile::can_run_whip_hit_effects(p_minion, p_sentry, p_kind);
+        if !gate || p_owner == 255 {
             return (base, crit);
         }
         let Some(player) = player else {
@@ -16244,10 +16331,43 @@ impl ProjectilePool {
             player
                 .tag_effects
                 .modify_hit(npc_idx as usize, tag_type, &mut changes, rng);
+            // W4-e4 — `WhipTagEffect_SwordWhip.ModifyProcHit` →
+            // `MegaSlash` (`WhipTagEffect_SwordWhip.cs:8-27`): the tagged +
+            // proc-armed summon hit draws `NextVector2FromRectangle(npcHit.
+            // Hitbox)` (TWO NextFloat, X first) THEN queues TrueExcalibur
+            // at that position (movement zero, no override invoker). The
+            // +30 flat is already in `modify_proc_hit` (tr-core whip.rs);
+            // this adds the rectangle draw + the spawn intent. The draw
+            // rides inline on this pass stream (the settings argument);
+            // the emitter body drains at the pass tail. The gate mirrors
+            // `TagEffectState.ModifyHit` (`:97-107`): tagged && proc-armed,
+            // and `modify_hit` only runs under `CanRunHitEffects` above.
+            if tr_core::whip::tag_effect(tag_type)
+                .is_some_and(|e| e.class == tr_core::whip::TagEffectClass::SwordWhip)
+                && player.tag_effects.is_npc_tagged(tag_type, npc_idx as usize)
+                && player.tag_effects.can_proc(tag_type, npc_idx as usize)
+            {
+                let n = &npcs[npc_idx as usize];
+                let (nw, nh) = n.size();
+                let pos = crate::orchestrator_dust::next_vector2_from_rectangle(
+                    rng,
+                    n.x as i32,
+                    n.y as i32,
+                    nw as i32,
+                    nh as i32,
+                );
+                self.queue_orchestra(
+                    crate::orchestrator_dust::orchestra_kind::TRUE_EXCALIBUR,
+                    pos,
+                    Vec2::ZERO,
+                    0,
+                    0,
+                );
+            }
         }
         let crit = changes.crit.unwrap_or(crit);
         (
-            crate::tag_effects::apply_tag_damage(base, &changes, p.bonus_tag_damage, p.kind),
+            crate::tag_effects::apply_tag_damage(base, &changes, p_bonus_tag, p_kind),
             crit,
         )
     }
@@ -16418,6 +16538,36 @@ impl ProjectilePool {
                 // `WhipTagEffect_Constellation.OnTaggedHit` — the proc arms
                 // on the very hit that tagged it.
                 p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
+            }
+            // W4-e4 — `WhipTagEffect_Kaleidoscope.OnTaggedHit`
+            // (`WhipTagEffect_Kaleidoscope.cs:7-13`): RainbowRodHit at
+            // `optionalProjectile.Center`, movement zero, no argument draw,
+            // no override invoker. The C# `TagEffectState.OnHit` (`:109-119`)
+            // gates OnTaggedHit on `IsNPCTagged && CanRunHitEffects` — the
+            // summon/sentry-shot gate (the whip's OWN hit is not a summon
+            // shot, so this fires only for the tagged minion/sentry hits,
+            // unlike the deliberately-ungated Constellation self-arm above).
+            // The emitter body queues to the pass-tail drain.
+            let summon_gate = {
+                let sp = &self.slots[slot];
+                sp.owner != 255
+                    && (sp.is_summon_shot
+                        || crate::projectile::can_run_whip_hit_effects(sp.minion, sp.sentry, sp.kind))
+            };
+            if summon_gate
+                && tr_core::whip::tag_effect(tag_type)
+                    .is_some_and(|e| e.class == tr_core::whip::TagEffectClass::Kaleidoscope)
+                && p.tag_effects.is_npc_tagged(tag_type, npc_idx as usize)
+            {
+                let sp = &self.slots[slot];
+                let center = Vec2::new(sp.pos.x + sp.w * 0.5, sp.pos.y + sp.h * 0.5);
+                self.queue_orchestra(
+                    crate::orchestrator_dust::orchestra_kind::RAINBOW_ROD_HIT,
+                    center,
+                    Vec2::ZERO,
+                    0,
+                    0,
+                );
             }
         }
     }
@@ -20028,6 +20178,12 @@ impl ProjectilePool {
                 // disjoint so the order between them is unobservable),
                 // then the Bee Arrow's swarm (`:76407-76429`).
                 self.special_arrow_kill(i, npcs, old_velocity, player.as_deref(), rng, luck);
+                // W4-e4 — `Kill()`'s Rainbow Rod orchestra arm
+                // (`Projectile.cs:71314-71321`): the two RainbowRodHit
+                // spawns. The 79 arm sits ABOVE the special-bullet block
+                // (`:71257` < `:75250`) in the C# body; the kinds are
+                // disjoint so the order between them is unobservable.
+                self.rainbow_rod_kill(i);
                 // S1-P-i18 — `Kill()`'s special-bullet arms
                 // (`Projectile.cs:75250-75268` the 89 split, `:75911-75974` the
                 // 283 debuff-spread burst, `:75975-75999` the 284 confetti,
@@ -21042,7 +21198,67 @@ impl ProjectilePool {
             // both skipped, no explicit draw, no state.
             METEOR_SHOT | CURSED_BULLET | CHLOROPHYTE_BULLET | HIGH_VELOCITY_BULLET
             | ICHOR_BULLET | NANO_BULLET | GOLDEN_BULLET => {}
+            // W4-e4 — `:76050-76066` the ShimmerArrow's (1006) death: the
+            // `Collision.HitTiles` + sound-0 are the dust/sound lane's
+            // (skipped); the head `NextFloat × 2π` (`:76054`) is the
+            // rotation argument draw — inline on this pass stream. The
+            // `num764 < 1f` loop runs ONCE (num764 = 0): movement =
+            // `UnitX.RotatedBy(num763 + 2π×0) × 0.4`, position = Center,
+            // override invoker = this.owner. No owner gate in the C# (the
+            // death hook already runs only for simulated slots).
+            SHIMMER_ARROW => {
+                let p = &self.slots[slot];
+                let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                let owner = p.owner;
+                let num763 = rng.next_float() * (std::f32::consts::PI * 2.0);
+                let mov = crate::bow_launch::rotated_by(Vec2::new(1.0, 0.0), num763 as f64) * 0.4;
+                self.queue_orchestra(
+                    crate::orchestrator_dust::orchestra_kind::SHIMMER_ARROW,
+                    center,
+                    mov,
+                    0,
+                    owner,
+                );
+            }
             _ => {}
+        }
+    }
+
+    /// W4-e4 — `Kill()`'s Rainbow Rod arm (`Projectile.cs:71257-71328`).
+    /// The resize-to-128 + `Damage()` re-walk (`:71259-71265`) and the
+    /// `oldPos` trail-dust chain (`:71267-71313`, one discarded `NextFloat`
+    /// `:71268` + per-step `Next(1,4)` `:71277` + 3 floats per dust +
+    /// `CloneDust` internals) plus the 14 type-66 dusts (`:71322-71327`)
+    /// are the projectile-dust lane's (the 932 `fairy_queen_death_draws`
+    /// count-only census precedent — those inline `Dust.NewDust` sites are
+    /// NOT orchestrator sites 41-61). THIS lane owns the two
+    /// `RainbowRodHit` orchestra spawns (`:71314-71321`): `num69` steps
+    /// 0 → 0.25 over `< 0.5`, movement = `UnitX.RotatedBy(num69 × 2π) × 16`,
+    /// position = `base.Center`, override invoker = `this.owner`. No
+    /// argument draw (the rotation is the deterministic loop value). The
+    /// resize keeps the centre fixed (`Resize` `:77338`), so the centre
+    /// read here is the pre-resize one — identical.
+    fn rainbow_rod_kill(&mut self, slot: usize) {
+        if self.slots[slot].kind != RAINBOW_ROD_BULLET {
+            return;
+        }
+        let p = &self.slots[slot];
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let owner = p.owner;
+        let mut num69 = 0.0f32;
+        while num69 < 0.5 {
+            let mov = crate::bow_launch::rotated_by(
+                Vec2::new(1.0, 0.0),
+                (num69 * (std::f32::consts::PI * 2.0)) as f64,
+            ) * 16.0;
+            self.queue_orchestra(
+                crate::orchestrator_dust::orchestra_kind::RAINBOW_ROD_HIT,
+                center,
+                mov,
+                0,
+                owner,
+            );
+            num69 += 0.25;
         }
     }
 
@@ -22795,7 +23011,7 @@ impl ProjectilePool {
             // rejects every ported shot until M4-PROJ-8, the synthetic tests
             // set the slot flag directly. The tag's forced crit wins.
             let (mut dmg, mut hit_crit) =
-                self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), rng);
+                self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), npcs, rng);
             // `:12934-12937`: the Eye-of-Cthulhu yoyo's homing dash (1130)
             // never crits.
             if self.slots[slot].kind == EYE_OF_CTHULHU_DASH {
@@ -22803,6 +23019,70 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // W4-e4 — `Damage_PVE_Inner`'s owned-hit orchestra switch
+            // (`Projectile.cs:12955-13000`). The settings' position draw
+            // `NextVector2FromRectangle(targetNPC.Hitbox)` (`:12957`, TWO
+            // NextFloat, X first) fires for EVERY owned hit BEFORE the
+            // switch — inline on this pass's `UpdateProjectiles` stream, at
+            // the C# position (right after DamageVar `:12938`). The
+            // movement read is the PRE-recoil `base.velocity` (`:12968`/
+            // `:12981`), so it is captured HERE, ahead of the aiStyle-99
+            // recoil (`:13281`) — the 562 is a yoyo. The 562's +25% damage
+            // (`:12967`) also lands here (before the yoyo doublings
+            // `:13389`). Only the QUEUE PUSH defers to just below the
+            // Hellfire clamp: the outer `p` borrow stays live through the
+            // javelin gate, and `queue_orchestra` needs `&mut self` (E0502).
+            // The push is draw-free, so the deferral is stream-identical.
+            // The 972 NightsEdge and 1035/1045 MoonLordWhipHit arms are d54
+            // / unported kinds — no emitter in this lane, dropped (their
+            // settings draw still fires above, shared by every owned hit).
+            let mut orchestra_req: Option<(u8, Vec2, Vec2, u8)> = None;
+            if owned_by_someone {
+                let (nw, nh) = n.size();
+                let settings_pos = crate::orchestrator_dust::next_vector2_from_rectangle(
+                    rng,
+                    n.x as i32,
+                    n.y as i32,
+                    nw as i32,
+                    nh as i32,
+                );
+                let (pkind, pvel, powner) = (p.kind, p.vel, p.owner);
+                let pcenter = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                let (ncx, ncy) = n.center();
+                let mut mov = Vec2::ZERO;
+                let mut pos = settings_pos;
+                let kind_byte = match pkind {
+                    // `:12964-12972` — the FormatC yoyo's crit-gated arm:
+                    // dmg += 25%, movement = velocity, position = Center +
+                    // (npcCenter − Center).SafeNormalize(Zero) × 2.
+                    FORMAT_C_YOYO => {
+                        if hit_crit {
+                            dmg += (dmg as f32 * 0.25) as i32;
+                            mov = pvel;
+                            pos = pcenter
+                                + (Vec2::new(ncx, ncy) - pcenter).normalize_or_zero() * 2.0;
+                            Some(crate::orchestrator_dust::orchestra_kind::FORMAT_C)
+                        } else {
+                            None
+                        }
+                    }
+                    // `:12976-12978` — TrueNightsEdge (movement stays zero).
+                    973 => Some(crate::orchestrator_dust::orchestra_kind::TRUE_NIGHTS_EDGE),
+                    // `:12979-12983` — TerraBlade, movement = velocity.
+                    984 | 985 => {
+                        mov = pvel;
+                        Some(crate::orchestrator_dust::orchestra_kind::TERRA_BLADE)
+                    }
+                    // `:12984-12986` — Excalibur.
+                    982 => Some(crate::orchestrator_dust::orchestra_kind::EXCALIBUR),
+                    // `:12987-12989` — TrueExcalibur.
+                    983 => Some(crate::orchestrator_dust::orchestra_kind::TRUE_EXCALIBUR),
+                    _ => None,
+                };
+                if let Some(kb) = kind_byte {
+                    orchestra_req = Some((kb, pos, mov, powner));
+                }
+            }
             // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
             // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
             // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
@@ -22829,6 +23109,14 @@ impl ProjectilePool {
             // and the yoyo doublings `:13389`, ABOVE the strike).
             if hellfire_clamp {
                 self.slots[slot].time_left = 1;
+            }
+            // W4-e4 — the orchestra queue push (deferred from the settings
+            // block above): the outer `p` borrow ended at the javelin gate,
+            // so `queue_orchestra`'s `&mut self` is free here. Draw-free —
+            // the settings draws + the 562 damage boost already landed at
+            // the C# position; only the intent parks for the pass-tail drain.
+            if let Some((kb, pos, mov, invoker)) = orchestra_req {
+                self.queue_orchestra(kb, pos, mov, 0, invoker);
             }
             // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
             // 13300`, S1-P-i09): the dropped twin squashes its velocity to
@@ -23223,6 +23511,14 @@ impl ProjectilePool {
                 // 5× 1134 and the Eye-of-Cthulhu's homing 1130.
                 self.yoyo_on_hit(slot, idx as u16, hit, player.as_deref_mut(), rng);
             }
+            // W4-e4 — the penetrate bookkeeping (`Projectile.cs:14125-14141`)
+            // runs BEFORE the post-strike chain, but a zero penetrate only
+            // sets `keepIterating = false` (`:14139`) — the chain STILL runs
+            // on this hit. The port defers the `break` to after the orchestra
+            // block below (the moonlord/shadowbeam decay arms are draw-free
+            // and kind-disjoint from the 79/1039/623, so their relative order
+            // is unobservable).
+            let mut stop_walk = false;
             if landed {
                 let p = &mut self.slots[slot];
                 // `Damage_PVE_Inner`'s moon-lord shot arm
@@ -23246,8 +23542,71 @@ impl ProjectilePool {
                 }
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
-                    break;
+                    stop_walk = true;
                 }
+            }
+            // W4-e4 — `Damage_PVE_Inner`'s post-strike per-type chain
+            // (`Projectile.cs:14142-14276`), the orchestra arms. The chain
+            // runs unconditionally after the penetrate bookkeeping
+            // (`:14125-14141`) — even on the hit that zeroed penetrate (the
+            // `keepIterating = false` only stops the NEXT iteration). The
+            // 79/931/1039/623 kinds are not the ported
+            // aiStyle-7/23/13/69/607/656/611/645/697/699/706/728/34/1047
+            // chain members, so none of those arms fire for them.
+            if landed {
+                let p = &self.slots[slot];
+                let (pkind, pvel, pdir) = (p.kind, p.vel, p.direction);
+                let pcenter = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                let (ncx, ncy) = npcs[idx].center();
+                let (nw, nh) = npcs[idx].size();
+                // `:14227-14239` — the Rainbow Rod's hit: RainbowRodHit at
+                // the NPC centre, movement = velocity, NO argument draw,
+                // no override invoker (Main.myPlayer = the port's 0). The
+                // `ai[0] == -1 → ai[1] = -1` state write is the homing
+                // machine's (aiStyle 9, ported); it draws nothing.
+                if pkind == RAINBOW_ROD_BULLET {
+                    self.queue_orchestra(
+                        crate::orchestrator_dust::orchestra_kind::RAINBOW_ROD_HIT,
+                        Vec2::new(ncx, ncy),
+                        pvel,
+                        0,
+                        0,
+                    );
+                }
+                // `:14240-14256` — the 931/1039 arm: the retarget
+                // (`FindTargetWithLineOfSight`) is the homing machine's
+                // (unported for these kinds); the 1039's StardustPunch
+                // fires regardless. The 931 (Fairy Queen's shot) has no
+                // orchestra arm — only the retarget, which is unported.
+                if pkind == 1039 {
+                    let (pos, mov) = stardust_punch_settings(
+                        rng, pcenter, (npcs[idx].x, npcs[idx].y, nw, nh), pdir, 2.0,
+                    );
+                    self.queue_orchestra(
+                        crate::orchestrator_dust::orchestra_kind::STARDUST_PUNCH,
+                        pos,
+                        mov,
+                        0,
+                        0,
+                    );
+                }
+                // `:14264-14271` — the Stardust Guardian's (623) hit:
+                // StardustPunch, the 3 + 3×NextFloat magnitude.
+                if pkind == STARDUST_GUARDIAN {
+                    let (pos, mov) = stardust_punch_settings(
+                        rng, pcenter, (npcs[idx].x, npcs[idx].y, nw, nh), pdir, 3.0,
+                    );
+                    self.queue_orchestra(
+                        crate::orchestrator_dust::orchestra_kind::STARDUST_PUNCH,
+                        pos,
+                        mov,
+                        0,
+                        0,
+                    );
+                }
+            }
+            if stop_walk {
+                break;
             }
         }
     }
@@ -44382,5 +44741,259 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+#[cfg(test)]
+mod w4_e4_orchestra_wiring_tests {
+    //! W4-e4 — the orchestra call-site seams' stream-parity witnesses.
+    //! WRITTEN NOT RUN (code-only mode): the merge-verify wave compiles and
+    //! runs these. Each pins one wiring contract: the settings' argument
+    //! draws ride the pass stream INLINE at the queue site (the C# evaluates
+    //! the settings initializer before `RequestParticleSpawn`), the emitter
+    //! bodies queue to the pass-tail drain, and the queue keeps the C# order.
+    //! The draw counts mirror `orchestrator_dust.rs`'s emitter witnesses
+    //! (the 272 RainbowRodHit contract et al.).
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use tr_core::loot::DropRng;
+
+    fn world() -> World {
+        World::new("e4w".into(), 200, 200)
+    }
+
+    /// A counting stream — records the draw count (the census shape).
+    struct CountRng {
+        inner: tr_core::UnifiedRandom,
+        draws: usize,
+    }
+    impl CountRng {
+        fn new(seed: i32) -> Self {
+            Self { inner: tr_core::UnifiedRandom::new(seed), draws: 0 }
+        }
+    }
+    impl DropRng for CountRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws += 1;
+            self.inner.next_range(min, max)
+        }
+        fn next_float(&mut self) -> f32 {
+            self.draws += 1;
+            self.inner.next_float()
+        }
+        fn next_double(&mut self) -> f64 {
+            self.draws += 1;
+            self.inner.next_double()
+        }
+    }
+
+    /// A slime on the ground slab, hp pinned high so the hit lands without
+    /// killing (the post-strike chain reads `landed`).
+    fn npc_on(w: &World, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Slime, x, y, 1, 0.0);
+        n.hp = 10_000;
+        n.max_hp = 10_000;
+        n
+    }
+
+    /// `Projectile.cs:12957` — the owned-hit settings draw is TWO NextFloat
+    /// (X first), fired for EVERY owned hit before the per-type switch. A
+    /// plain owned arrow (no orchestra arm) still spends the two draws; the
+    /// queue stays empty (the kind has no emitter in this lane).
+    #[test]
+    fn w4_e4_the_owned_hit_settings_draw_fires_for_every_owned_hit() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npc = npc_on(&w, 300.0, 300.0);
+        // The wooden arrow (kind 1) overlaps the NPC; owner 0 = owned.
+        let slot = pool
+            .spawn_with_data_ai(WOODEN_ARROW, 300.0, 300.0, 0.0, 0.0, 10, 5.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CountRng::new(7);
+        let before = rng.draws;
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        // The crit roll (1) + DamageVar (1) + the settings rectangle (2) =
+        // at least 4 draws; the settings pair is the last two before any
+        // post-strike arm. The arrow has no orchestra kind → no queue.
+        assert!(rng.draws >= before + 4, "the settings draws fired: {}", rng.draws);
+        assert!(pool.drain_orchestra().is_empty(), "the plain arrow queues no orchestra");
+    }
+
+    /// `Projectile.cs:12976-12989` — the 973/982/983/984/985 switch arms
+    /// queue their kind byte at the settings position (movement zero for
+    /// 973/982/983, velocity for 984/985). The kinds are unrowed (no
+    /// `proj_data`), so the fixture spawns them raw and pins the queue.
+    #[test]
+    fn w4_e4_the_blade_switch_queues_the_kind_bytes() {
+        let w = world();
+        for (kind, byte, mov_is_vel) in [
+            (973u16, crate::orchestrator_dust::orchestra_kind::TRUE_NIGHTS_EDGE, false),
+            (982, crate::orchestrator_dust::orchestra_kind::EXCALIBUR, false),
+            (983, crate::orchestrator_dust::orchestra_kind::TRUE_EXCALIBUR, false),
+            (984, crate::orchestrator_dust::orchestra_kind::TERRA_BLADE, true),
+            (985, crate::orchestrator_dust::orchestra_kind::TERRA_BLADE, true),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = npc_on(&w, 300.0, 300.0);
+            let slot = pool
+                .spawn(kind, 0, Vec2::new(300.0, 300.0), Vec2::new(3.0, -4.0), 10, 5.0, false)
+                .unwrap();
+            let mut rng = CountRng::new(7);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            let q = pool.drain_orchestra();
+            assert_eq!(q.len(), 1, "kind {kind} queues one orchestra");
+            assert_eq!(q[0].0, byte, "kind {kind}'s byte");
+            if mov_is_vel {
+                assert_eq!(q[0].1.movement, Vec2::new(3.0, -4.0), "kind {kind}: movement = velocity");
+            } else {
+                assert_eq!(q[0].1.movement, Vec2::ZERO, "kind {kind}: movement zero");
+            }
+        }
+    }
+
+    /// `Projectile.cs:12964-12972` — the FormatC yoyo's (562) crit-gated arm:
+    /// a crit adds 25% damage and queues FormatC with movement = velocity,
+    /// position = Center + (npcCenter − Center).SafeNormalize × 2. A non-crit
+    /// hit queues nothing (the settings draw still fires).
+    #[test]
+    fn w4_e4_the_format_c_crit_gate_queues_and_boosts() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npc = npc_on(&w, 300.0, 300.0);
+        npc.defense_override = Some(0);
+        let slot = pool
+            .spawn_with_data_ai(FORMAT_C_YOYO, 300.0, 300.0, 4.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        // Force the crit: the yoyo's melee flag + a 100% melee crit player.
+        pool.slots_mut()[slot].melee = true;
+        let mut player = crate::player::Player::spawn(&w);
+        player.melee_crit = 100;
+        let mut rng = CountRng::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng);
+        let q = pool.drain_orchestra();
+        assert_eq!(q.len(), 1, "the crit queues FormatC");
+        assert_eq!(q[0].0, crate::orchestrator_dust::orchestra_kind::FORMAT_C);
+        assert_eq!(q[0].1.movement, Vec2::new(4.0, 0.0), "movement = velocity");
+    }
+
+    /// `Projectile.cs:14227-14239` — the Rainbow Rod's (79) hit queues
+    /// RainbowRodHit at the NPC centre, movement = velocity, no argument
+    /// draw (the settings position is the NPC centre, not a rectangle roll).
+    #[test]
+    fn w4_e4_the_rainbow_rod_hit_queues_at_the_npc_centre() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npc = npc_on(&w, 300.0, 300.0);
+        let (ncx, ncy) = npc.center();
+        let slot = pool
+            .spawn_with_data_ai(RAINBOW_ROD_BULLET, 300.0, 300.0, 5.0, 0.0, 10, 5.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CountRng::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        let q = pool.drain_orchestra();
+        assert_eq!(q.len(), 1, "the 79 hit queues one RainbowRodHit");
+        assert_eq!(q[0].0, crate::orchestrator_dust::orchestra_kind::RAINBOW_ROD_HIT);
+        assert_eq!(q[0].1.position, Vec2::new(ncx, ncy), "the NPC centre");
+        assert_eq!(q[0].1.movement, Vec2::new(5.0, 0.0), "movement = velocity");
+    }
+
+    /// `Projectile.cs:14264-14271` — the Stardust Guardian's (623) hit queues
+    /// StardustPunch with the 3 + 3×NextFloat magnitude. The argument draws
+    /// (Y-jitter dir, movement-Y dir, magnitude float) ride inline: THREE
+    /// draws before the queue (the position lerp/closest-point are draw-free).
+    #[test]
+    fn w4_e4_the_stardust_guardian_hit_draws_three_and_queues() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npc = npc_on(&w, 300.0, 300.0);
+        let slot = pool
+            .spawn_with_data_ai(STARDUST_GUARDIAN, 300.0, 300.0, 0.0, 0.0, 10, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].direction = 1;
+        let mut rng = CountRng::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        let q = pool.drain_orchestra();
+        assert_eq!(q.len(), 1, "the 623 hit queues one StardustPunch");
+        assert_eq!(q[0].0, crate::orchestrator_dust::orchestra_kind::STARDUST_PUNCH);
+        // The movement magnitude is in [3, 6) (3 + 3×[0,1)).
+        let mag = q[0].1.movement.length();
+        assert!(mag >= 3.0 && mag < 6.5, "the 3+3×NextFloat magnitude: {mag}");
+    }
+
+    /// `Projectile.cs:71314-71321` — the Rainbow Rod's death queues TWO
+    /// RainbowRodHit spawns (num69 = 0, 0.25), movement = UnitX.RotatedBy(
+    /// num69×2π)×16, position = Center, invoker = owner. No argument draw.
+    #[test]
+    fn w4_e4_the_rainbow_rod_death_queues_two_rotated_spawns() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(RAINBOW_ROD_BULLET, 300.0, 300.0, 0.0, 0.0, 10, 5.0, 0.0, 0.0)
+            .unwrap();
+        let center = {
+            let p = &pool.slots()[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        pool.rainbow_rod_kill(slot);
+        let q = pool.drain_orchestra();
+        assert_eq!(q.len(), 2, "the two num69 steps");
+        for (i, (byte, s)) in q.iter().enumerate() {
+            assert_eq!(*byte, crate::orchestrator_dust::orchestra_kind::RAINBOW_ROD_HIT);
+            assert_eq!(s.position, center);
+            let num69 = i as f32 * 0.25;
+            let want = crate::bow_launch::rotated_by(
+                Vec2::new(1.0, 0.0),
+                (num69 * (std::f32::consts::PI * 2.0)) as f64,
+            ) * 16.0;
+            assert!((s.movement - want).length() < 1e-4, "step {i}'s rotation: {:?}", s.movement);
+        }
+    }
+
+    /// `Projectile.cs:76050-76066` — the ShimmerArrow's (1006) death draws ONE
+    /// head NextFloat×2π then queues ShimmerArrow with movement =
+    /// UnitX.RotatedBy(num763)×0.4 (the num764<1 loop runs once).
+    #[test]
+    fn w4_e4_the_shimmer_arrow_death_draws_one_head_float() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(SHIMMER_ARROW, 300.0, 300.0, 0.0, 0.0, 10, 5.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CountRng::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.special_bullet_kill(slot, &mut npcs, (false, false), &mut rng, 0.0, 0);
+        assert_eq!(rng.draws, 1, "the single head NextFloat");
+        let q = pool.drain_orchestra();
+        assert_eq!(q.len(), 1, "the one num764 iteration");
+        assert_eq!(q[0].0, crate::orchestrator_dust::orchestra_kind::SHIMMER_ARROW);
+        assert!((q[0].1.movement.length() - 0.4).abs() < 1e-4, "the ×0.4 magnitude");
+    }
+
+    /// The reforge fold keep-one: the full `rainbow_rod_hit` emitter and the
+    /// prefix count-only drain consume the SAME 272 draws on a twin stream
+    /// (the empty-pool / on-screen assumption — no cull/pressure draws). The
+    /// two are disjoint by call site; this pins their stream equivalence.
+    #[test]
+    fn w4_e4_the_reforge_fold_keeps_one_272_draw_path() {
+        let w = World::new("e4fold".into(), 200, 200);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(3200.0, 3200.0),
+            max_dust_to_draw: 6000,
+        };
+        let s = crate::orchestrator_dust::OrchestraSettings {
+            position: Vec2::new(900.0, 900.0),
+            movement: Vec2::new(3.0, -4.0),
+            info: 0,
+            invoker: 0,
+        };
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut full = tr_core::UnifiedRandom::new(53);
+        crate::orchestrator_dust::rainbow_rod_hit(&s, &mut full, &mut pool, &ctx, &w);
+        // The prefix count-only drain on a twin stream.
+        let mut count_only = tr_core::UnifiedRandom::new(53);
+        crate::prefix::reforge_rainbow_rod_hit_draws(&mut count_only);
+        assert_eq!(full, count_only, "the full emitter == the count-only 272 drain");
     }
 }
