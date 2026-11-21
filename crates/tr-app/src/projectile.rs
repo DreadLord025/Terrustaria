@@ -195,14 +195,34 @@ pub(crate) struct YoyoBeamRequest {
 
 /// What one yoyo AI tick hands back to the pool: the owner-wide lifetime
 /// sweep (`Projectile.cs:67764-67771`), the Terrarian's beam request —
-/// both write across the pool's slot array — and the pose block's
-/// `player.ChangeDir` facing (`:67840`/`:67845`, the `FlailTick.facing`
-/// precedent).
+/// both write across the pool's slot array — the Magic String's dropped
+/// twin (`:68029`, W4-d10) and the pose block's `player.ChangeDir` facing
+/// (`:67840`/`:67845`, the `FlailTick.facing` precedent).
 #[derive(Default)]
 struct YoyoTick {
     sweep: bool,
     beam: Option<YoyoBeamRequest>,
+    /// The magicString ghost split's 0.75-damage dropped twin (`:68029`):
+    /// `NewProjectile(Center, velocity, this.type, (int)(damage*0.75),
+    /// (int)(knockBack*0.75), owner, -2f)` — the request carries the
+    /// Centre anchor + the ai0 = −2 seed (the `FlailSpawnRequest` shape).
+    ghost: Option<GhostTwinRequest>,
     facing: Option<i32>,
+}
+
+/// The Magic String's dropped-twin spawn (`Projectile.cs:67641`
+/// counterweight / `:68029` yoyo — the same `NewProjectile` call shape).
+/// The AI only sees its own slot, so the request rides out to the
+/// dispatch (the `YoyoBeamRequest` precedent); `x`/`y` is the parent's
+/// Centre (`NewProjectile` re-centres the child's box, `:10876-10877`).
+pub(crate) struct GhostTwinRequest {
+    pub kind: u16,
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub damage: i32,
+    pub knock_back: f32,
 }
 
 /// One flail helper spawn — the family's `Projectile.NewProjectile` calls
@@ -3047,15 +3067,18 @@ impl Projectile {
         // `:67745-67774` — the lifetime clock: `localAI[0]++` (the double
         // yoyo's jitter draws from the seeded stream), the seconds
         // (`/ 60f / ((1 + meleeSpeed) / 2f)`, `:67750` — the meleeSpeed
-        // divisor is live, S1-P-i09; the yoyoString ×1.5 boost
-        // `:67752-67755` stays with M3-EQUIP-3's unported grant) against
-        // the per-yoyo table.
+        // divisor is live, S1-P-i09) against the per-yoyo table.
         self.local_ai[0] += 1.0;
         if flag {
             // `:67746-67749`.
             self.local_ai[0] += rng.next_range(10, 31) as f32 * 0.1;
         }
         let mut lifetime = yoyo_lifetime(self.kind);
+        // `:67752-67755` — the yoyoString ×1.5 boost (W4-d10: the grant is
+        // live; the `num2 > 0f` gate keeps the −1 no-timeout kinds out).
+        if inputs.yoyo_string && lifetime > 0.0 {
+            lifetime *= 1.5;
+        }
         // `:67756-67759` — the dropped twin and the Magic String ghost
         // never expire (`ai[0] <= -2f` forces the -1 no-timeout).
         if self.ai[0] <= -2.0 {
@@ -3215,9 +3238,12 @@ impl Projectile {
         if self.kind == KRAKEN_YOYO && flag {
             speed *= 0.75;
         }
-        // The yoyoString range boost (`num11 * 1.25f + 30f`, `:67882-67885`)
-        // stays with M3-EQUIP-3's unported grant. The meleeSpeed division
+        // `:67882-67885` — the yoyoString range boost (W4-d10: live, BEFORE
+        // the meleeSpeed division — the C# order). The meleeSpeed division
         // (`(1 + meleeSpeed * 3f) / 4f`, `:67886-67887`) is live (S1-P-i09).
+        if inputs.yoyo_string {
+            range = range * 1.25 + 30.0;
+        }
         let melee_div = (1.0 + inputs.melee_speed * 3.0) / 4.0;
         range /= melee_div;
         speed /= melee_div;
@@ -3351,11 +3377,28 @@ impl Projectile {
             }
         }
 
-        // `:68023-68031` — the Magic String's `-1 → -3` transition and the
-        // 0.75-damage dropped-twin spawn ride M3-EQUIP-3's magicString
-        // grant (the flag is never set in the port, so the arm is dead
-        // until then — the ghost STATE below is carried). `:68032-68036`
-        // — the ghost itself: no damage, full alpha.
+        // `:68023-68031` — the Magic String's `-1 → -3` transition + the
+        // 0.75-damage dropped-twin spawn (W4-d10: the grant is live; the
+        // local-owner gate rides the dispatch's `local_owner`). The twin
+        // seeds ai0 = −2 (the dropped state) at the parent's Centre with
+        // the parent's velocity. `:68032-68036` — the ghost itself: no
+        // damage, full alpha.
+        if self.ai[0] == -1.0 && inputs.magic_string {
+            self.ai[0] = -3.0;
+            // `:68026-68030` — the netUpdate + the twin are local-owner
+            // only (the dispatch gates the request on `local_owner`).
+            tick.ghost = Some(GhostTwinRequest {
+                kind: self.kind,
+                x: cx,
+                y: cy,
+                vx: self.vel.x,
+                vy: self.vel.y,
+                // `(int)((double)damage * 0.75)` / `(int)((double)knockBack
+                // * 0.75)` — the f64 multiply then the int truncation.
+                damage: (self.damage as f64 * 0.75) as i32,
+                knock_back: (self.knock_back as f64 * 0.75) as f32,
+            });
+        }
         if self.ai[0] == -3.0 {
             self.damage = 0;
             self.alpha = 255;
@@ -14565,8 +14608,11 @@ impl Default for ProjectilePool {
 /// division `:67886-67887` — S1-P-i09 wires the ported `Player.melee_speed()`).
 /// The counterweight sub-arm's channel mouse delta (`:67521`) rides here too
 /// (W4-d10 — `App.mouse_tick_delta`, the frame-head `UpdateMainMouse` snapshot).
-/// The accessory flags (yoyoString / magicString) stay with M3-EQUIP-3 — their
-/// terms (`:67752-67755`, `:67882-67885`, `:68023-68031`) are unported grants.
+/// The yoyoString/magicString accessory flags are LIVE (W4-d10 — the
+/// M3-EQUIP-3 yoyo lane: `Player.yoyo_string`/`magic_string`, the
+/// `ApplyEquipFunctional` grants `Player.cs:14710-14754`); their terms
+/// (`:67752-67755`, `:67882-67885`, `:68023-68031` + the counterweight's
+/// `:67408-67411`/`:67635-67643`) read them.
 #[derive(Clone, Copy, Debug)]
 pub struct YoyoInputs {
     /// The aim point in world pixels; `None` = no player link — the orphan
@@ -14589,6 +14635,16 @@ pub struct YoyoInputs {
     /// (`App.mouse_tick_delta`) feeds it; the default `(0, 0)` keeps the
     /// push inert (the pool-only tests).
     pub mouse_delta: (f32, f32),
+    /// `Main.player[owner].yoyoString` (`Player.cs:882`) — the string
+    /// accessories' grant (`:14710-14754`): the lifetime ×1.5 (`:67752-
+    /// 67755`), the range ×1.25+30 (`:67882-67885`) and the counterweight
+    /// radius +25%+10 (`:67408-67411`). W4-d10.
+    pub yoyo_string: bool,
+    /// `Main.player[owner].magicString` (`Player.cs:880`) — the Magic
+    /// String's grant (`:14734-14754`): the `-1 → -3` ghost split + the
+    /// 0.75-damage dropped twin (`:68023-68031` yoyo / `:67635-67643`
+    /// counterweight). W4-d10.
+    pub magic_string: bool,
 }
 
 impl Default for YoyoInputs {
@@ -14602,6 +14658,8 @@ impl Default for YoyoInputs {
             player_cced: false,
             melee_speed: 1.0,
             mouse_delta: (0.0, 0.0),
+            yoyo_string: false,
+            magic_string: false,
         }
     }
 }
@@ -18003,7 +18061,7 @@ impl ProjectilePool {
                             // `AI_099_1_Counterweights`). The kind gate
                             // keeps the yoyo half byte-identical.
                             if is_counterweight(self.slots[i].kind) {
-                                crate::projectile_ai_91_100::ai_counterweight(
+                                let cw_tick = crate::projectile_ai_91_100::ai_counterweight(
                                     &mut self.slots,
                                     i,
                                     world,
@@ -18021,7 +18079,30 @@ impl ProjectilePool {
                                     // `PlayerInput.cs:2528-2542`).
                                     inputs.mouse_delta,
                                     local_owner,
+                                    inputs,
                                 );
+                                // `:67638-67642` — the magicString dropped
+                                // twin (W4-d10): local-owner only, the
+                                // parent's Centre anchor, ai0 = −2.
+                                if let Some(g) = cw_tick.ghost {
+                                    if self.slots[i].owner == local_owner {
+                                        self.slots[i].net_update = true; // `:67640`
+                                        let (hw, hh) = proj_data(g.kind)
+                                            .map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                                        self.spawn_with_data_ai_owned(
+                                            g.kind,
+                                            self.slots[i].owner,
+                                            g.x - hw,
+                                            g.y - hh,
+                                            g.vx,
+                                            g.vy,
+                                            g.damage,
+                                            g.knock_back,
+                                            -2.0,
+                                            0.0,
+                                        );
+                                    }
+                                }
                                 crate::projectile_ai_91_100::counterweight_move(
                                     &mut self.slots[i],
                                     world,
@@ -18070,6 +18151,30 @@ impl ProjectilePool {
                                     b.damage,
                                     b.knock_back,
                                 );
+                            }
+                            // `:68026-68030` — the Magic String's dropped
+                            // twin (W4-d10): local-owner only, the parent's
+                            // Centre anchor (`NewProjectile` re-centres the
+                            // child's box, `:10876-10877` — the beenade
+                            // precedent), ai0 = −2, the parent's owner.
+                            if let Some(g) = tick.ghost {
+                                if slot_owner == local_owner {
+                                    self.slots[i].net_update = true; // `:68028`
+                                    let (hw, hh) = proj_data(g.kind)
+                                        .map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                                    self.spawn_with_data_ai_owned(
+                                        g.kind,
+                                        slot_owner,
+                                        g.x - hw,
+                                        g.y - hh,
+                                        g.vx,
+                                        g.vy,
+                                        g.damage,
+                                        g.knock_back,
+                                        -2.0,
+                                        0.0,
+                                    );
+                                }
                             }
                             // `:67840`/`:67845` — the pose block's
                             // `player.ChangeDir` facing (the flail precedent).
@@ -29662,6 +29767,89 @@ mod s1_p_i09_yoyo_tests {
         assert!(pushed_net, "the push latched netUpdate");
         assert!((control.x - 9.0).abs() < 1e-4, "the control floors: {control:?}");
         assert!(!control_net, "no push, no netUpdate");
+    }
+
+    /// W4-d10 — the yoyoString lifetime ×1.5 (`:67752-67755`): the Wood
+    /// Yoyo's 3 s budget becomes 4.5 s (540 ticks at meleeSpeed 1). Tick
+    /// 540 reads exactly 4.5 (not > 4.5, still out); tick 541 returns.
+    /// The plain 3 s control expired at 361 (the i09 divisor witness).
+    #[test]
+    fn w4_d10_the_yoyo_string_extends_the_lifetime() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        pool.slots[slot].local_ai[0] = 539.0;
+        let mut w = world();
+        let ins = YoyoInputs {
+            yoyo_string: true,
+            ..inputs(Some((380.0, 320.0)), true)
+        };
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert_eq!(pool.slots[slot].local_ai[0], 540.0);
+        assert!(pool.slots[slot].ai[0] >= 0.0, "540/60 == 4.5 is not > 4.5");
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert_eq!(pool.slots[slot].ai[0], -1.0, "tick 541 expires at the boosted 4.5 s");
+    }
+
+    /// W4-d10 — the yoyoString range ×1.25+30 (`:67882-67885`): the Wood
+    /// Yoyo's 130 px range becomes 192.5, THEN the meleeSpeed division
+    /// (the C# order). At meleeSpeed 3 the divisor 2.5 yields 77: the aim
+    /// 300 px out clamps to 77 then re-clamps to 76 (`:67943-67950`),
+    /// landing at owner + 76 = 396. The plain grant-free control clamps to
+    /// 52 → 51 (the i09 range witness).
+    #[test]
+    fn w4_d10_the_yoyo_string_extends_the_range() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let mut w = world();
+        let ins = YoyoInputs {
+            melee_speed: 3.0,
+            yoyo_string: true,
+            ..inputs(Some((620.0, 320.0)), true)
+        };
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert!(
+            (pool.slots[0].ai[0] - 396.0).abs() < 1e-3 && pool.slots[0].ai[1] == 320.0,
+            "the 192.5/2.5 = 77 range's 76-px re-clamp: {:?}",
+            (pool.slots[0].ai[0], pool.slots[0].ai[1])
+        );
+    }
+
+    /// W4-d10 — the magicString ghost split (`:68023-68031`): the −1
+    /// return flips to −3 (alpha 255, damage 0) and the 0.75-damage
+    /// dropped twin spawns at the parent's Centre with ai0 = −2, the
+    /// parent's velocity, `(int)(damage*0.75)` / `(knockBack*0.75)`. The
+    /// twin's own −2 state runs the dropped-twin fall the same pass.
+    #[test]
+    fn w4_d10_the_magic_string_yoyo_splits_the_ghost() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(WOOD_YOYO, 100.0, 100.0, 4.0, -2.0, 20, 6.0, -1.0, 0.0)
+            .unwrap();
+        let mut w = world();
+        let ins = YoyoInputs {
+            magic_string: true,
+            ..YoyoInputs::default()
+        };
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert_eq!(pool.slots[slot].ai[0], -3.0, "the ghost transition");
+        assert_eq!(pool.slots[slot].alpha, 255);
+        assert_eq!(pool.slots[slot].damage, 0);
+        assert!(pool.slots[slot].net_update, "`:68028`");
+        let twin = (0..MAX_PROJECTILES)
+            .find(|&i| i != slot && pool.slots[i].active && pool.slots[i].kind == WOOD_YOYO)
+            .expect("the dropped twin spawned");
+        assert_eq!(pool.slots[twin].ai[0], -2.0, "the twin seeds the dropped state");
+        assert_eq!(pool.slots[twin].damage, 15, "(int)(20*0.75)");
+        assert_eq!(pool.slots[twin].knock_back, 4.5, "6*0.75");
+        // The Centre anchor: the parent's centre (108, 108) minus the
+        // yoyo's half-box (the 16x16 row → 8) = (100, 100); the twin's own
+        // −2 fall adds the 0.3 gravity then integrates (4, −1.7) the same
+        // pass (the later slot index rides the same update).
+        assert_eq!(pool.slots[twin].pos, Vec2::new(104.0, 98.6), "the anchor + the fall integrate");
+        assert!((pool.slots[twin].vel.y - (-1.7)).abs() < 1e-5, "the 0.3 gravity");
     }
 
     /// `Damage_PVE_Inner`'s aiStyle-99 arm (`:13273-13298`): the flying

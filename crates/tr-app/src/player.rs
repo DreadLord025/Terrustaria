@@ -2118,6 +2118,21 @@ pub struct Player {
     /// 14683`) — the lava-fishing gate (`Projectile.cs:20637`).
     /// `ResetEffects` clears it (`:18513`).
     pub acc_lava_fishing: bool,
+    /// `Player.yoyoString` (`Player.cs:882`): the string-colour accessories
+    /// (`currentItem.stringColor > 0`, `:14710-14713`), the Yoyo Bag 3366
+    /// (`:14728`) and the Magic Yoyo Bag 5541 (`:14752`) — the yoyo range
+    /// ×1.25+30 (`Projectile.cs:67882-67885`), the lifetime ×1.5 (`:67752-
+    /// 67755`) and the counterweight radius +25%+10 (`:67408-67411`).
+    /// `ResetEffects` clears it (`:18439`). W4-d10 (the M3-EQUIP-3 yoyo
+    /// lane — the flag + the AI reads; the equip-gate spawn lane stays
+    /// with the `Player.Counterweight` port).
+    pub yoyo_string: bool,
+    /// `Player.magicString` (`Player.cs:880`): the Magic String 5540
+    /// (`:14734-14737`) and the Magic Yoyo Bag 5541 (`:14753`) — the
+    /// `-1 → -3` ghost split + the 0.75-damage dropped twin
+    /// (`Projectile.cs:67635-67643` counterweight / `:68023-68031` yoyo).
+    /// `ResetEffects` clears it (`:18435`). W4-d10.
+    pub magic_string: bool,
     /// `Player.overrideFishingBobber` (`Player.cs:1106`): the glow-bobber
     /// accessory's projectile override (`UpdateFishingBobber`, `:36673-
     /// 36702`: items 5139-5146 → 986-993), read by `ItemCheck_Shoot`
@@ -2926,6 +2941,10 @@ impl Player {
             acc_fishing_bobber: false,
             acc_fishing_line: false,
             acc_lava_fishing: false,
+            // W4-d10 — the yoyo-string family's spawn defaults (the C#
+            // bool fields default false; ResetEffects re-clears per tick).
+            yoyo_string: false,
+            magic_string: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
             acc_sentry_backpack: false,
@@ -5030,6 +5049,28 @@ impl Player {
                 self.fishing_skill += 10;
                 self.acc_lava_fishing = true;
             }
+            // W4-d10 — `ApplyEquipFunctional`'s yoyo-string rows
+            // (`Player.cs:14710-14754`), in the C#'s order: the
+            // string-colour accessories (`currentItem.stringColor > 0` —
+            // the 3293-3308 strings + the 43716, the `yoyo_string` module's
+            // `string_color_for_item` table `Item.cs:30220-30255`), the
+            // Yoyo Bag 3366 (`yoyoString` + the `yoyoGlove`/`counterWeight`
+            // halves), the Magic String 5540 (`magicString`) and the Magic
+            // Yoyo Bag 5541 (all three). The `counterWeight` kind roll
+            // (`:14716-14726`/`:14740-14750`: `Next(7)` → 1079 else
+            // `556 + Next(6)`) and the `yoyoGlove` flag stay with the
+            // equip-gate spawn lane (`Player.Counterweight` `:12356-12415`,
+            // unported — the roll is NOT consumed here, the lane owns its
+            // stream position when it lands).
+            k if crate::yoyo_string::string_color_for_item(k).is_some_and(|c| c > 0) => {
+                self.yoyo_string = true;
+            }
+            3366 => self.yoyo_string = true,
+            5540 => self.magic_string = true,
+            5541 => {
+                self.yoyo_string = true;
+                self.magic_string = true;
+            }
             // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
             53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
             857 => self.has_jump_options[ExtraJump::Sandstorm.index()] = true,
@@ -6132,6 +6173,13 @@ impl Player {
         self.acc_fishing_bobber = false;
         self.acc_fishing_line = false;
         self.acc_lava_fishing = false;
+        // W4-d10 — `ResetEffects`' yoyo-string clears (`Player.cs:18435`/
+        // `:18439`): the equip grants below re-derive both per tick. The
+        // `yoyoGlove`/`counterWeight`/`vanityCounterWeight`/`stringColor`
+        // siblings (`:18434`/`:18436-18438`) stay with the equip-gate
+        // spawn lane (`Player.Counterweight`, unported).
+        self.magic_string = false;
+        self.yoyo_string = false;
         self.override_fishing_bobber = -1;
         // (Gate merge i35 ⨉ i41: the `canFloatInWater`/`noItems` clears run
         // ONCE, in the i41 mount-flag block above — `Player.cs:18332`/`:18687`.)
@@ -19663,6 +19711,42 @@ mod tests {
             p.has_jump_options[ExtraJump::Santank.index()],
             "the Santank jump armed"
         );
+    }
+
+    /// W4-d10 — `ApplyEquipFunctional`'s yoyo-string grants (`Player.cs:
+    /// 14710-14754`): the string-colour accessories set `yoyoString`
+    /// (`currentItem.stringColor > 0`), the Yoyo Bag 3366 adds it, the
+    /// Magic String 5540 sets `magicString`, the Magic Yoyo Bag 5541 sets
+    /// both. `ResetEffects` (`:18435`/`:18439`) clears them every tick —
+    /// an unequipped slot drops the flags on the next update.
+    #[test]
+    fn w4_d10_the_yoyo_string_grants_and_the_tick_clears_them() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The Red String 3293 (stringColor 1) grants yoyoString only.
+        p.equipped[3] = 3293;
+        p.update(&w, PlayerInput::default());
+        assert!(p.yoyo_string, "the string accessory grants");
+        assert!(!p.magic_string, "no magicString from a plain string");
+        // The Magic String 5540 grants magicString only.
+        p.equipped[3] = 5540;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.yoyo_string, "the plain string's grant cleared");
+        assert!(p.magic_string, "the Magic String grants");
+        // The Magic Yoyo Bag 5541 grants both.
+        p.equipped[3] = 5541;
+        p.update(&w, PlayerInput::default());
+        assert!(p.yoyo_string && p.magic_string, "the bag grants both");
+        // The Yoyo Bag 3366 grants yoyoString (the counterWeight/yoyoGlove
+        // halves stay with the unported spawn lane).
+        p.equipped[3] = 3366;
+        p.update(&w, PlayerInput::default());
+        assert!(p.yoyo_string, "the Yoyo Bag grants yoyoString");
+        assert!(!p.magic_string, "the Yoyo Bag has no magicString");
+        // Unequipped: ResetEffects clears both.
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.yoyo_string && !p.magic_string, "the tick clears");
     }
 
     #[test]

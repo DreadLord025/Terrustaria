@@ -50,7 +50,8 @@
 //! - 97: ZERO draws.
 //! - 98: the 2-dust loop's `NextFloat` scale per dust (`:33150`).
 //! - 99 counterweight: ZERO draws (the machine is pure maths; the
-//!   magicString clone spawn `:67641` is an unported accessory grant).
+//!   magicString clone spawn `:67641` is a `NewProjectile` — stream-neutral
+//!   like every spawn, the ghost twin's ai0 = −2 seeds no roll).
 //! - 100: the fire window's per-scatter-ray `Next(4)` +
 //!   `RotatedByRandom` pair + `NextFloat` (`:44603`), in the C#'s order
 //!   BEFORE the ray spawns' damage walks (the pool-side step keeps the
@@ -59,9 +60,13 @@
 //! Documented deviations (the module-wide folds, ANALYSIS "W4-d10"):
 //! - `Lighting.AddLight` (`:32962`, `:44612`) — no per-tick AI light layer
 //!   (the `proj_lights.rs` frame feed is the SetDefaults `light` slice).
-//! - the yoyoString/magicString/counterWeight accessory grants stay with
-//!   M3-EQUIP-3 (the `ai_yoyo` precedent) — their terms fold to the
-//!   no-accessory branch.
+//! - the yoyoString/magicString accessory grants are LIVE (W4-d10 — the
+//!   M3-EQUIP-3 yoyo lane: `Player.yoyo_string`/`magic_string` ride
+//!   `YoyoInputs`; the counterweight radius +25%+10 `:67408-67411` and the
+//!   ghost split `:67635-67643` read them). The `counterWeight`/`yoyoGlove`
+//!   equip-gate SPAWN lane (`Player.Counterweight` `Player.cs:12356-12415`,
+//!   the bag's kind roll `:14716-14726`) stays unported — the roll's stream
+//!   position belongs to that lane.
 //! - `Main.player[owner].deadMansSweater` (`ApplyBuffTo` `:12393-12396`)
 //!   is unported — the gas trap's buff time never halves.
 //! - `CurrentFrameFlags.HadAnActiveInteractableProjectile` (`:33070`) and
@@ -1035,14 +1040,24 @@ pub(crate) fn ai_cultist_particle(p: &mut Projectile, rng: &mut dyn DropRng) {
     }
 }
 
+/// The counterweight tick's pool-side effect: the magicString ghost
+/// split's dropped twin (`Projectile.cs:67641`, W4-d10) — the same
+/// `NewProjectile` shape as the yoyo arm's `:68029` (the shared
+/// [`crate::projectile::GhostTwinRequest`]). The local-owner gate + the
+/// `netUpdate` ride the dispatch.
+#[derive(Default)]
+pub(crate) struct CounterweightTick {
+    pub ghost: Option<crate::projectile::GhostTwinRequest>,
+}
+
 /// `AI_099_1_Counterweights` (`Projectile.cs:67380-67731`) — the yoyo
 /// accessory counterweights (556-561/1079), the aiStyle-99 SUB-arm the
 /// C# `AI()` chain gates AHEAD of the yoyo arm (`:33153-33156`). The f19
 /// F1 census finding: the port had only the yoyo half.
 ///
 /// The machine: the `timeLeft = 6` refresh, the 250→125 string radius
-/// (the yoyoString +25%+10 grant is M3-EQUIP-3's unported term), the 0.5
-/// spin, the owner-death kill, the local-owner no-yoyo sweep (the
+/// (the yoyoString +25%+10 grant is LIVE — W4-d10, `inputs.yoyo_string`),
+/// the 0.5 spin, the owner-death kill, the local-owner no-yoyo sweep (the
 /// sibling scan over the pool's style-99 NON-counterweight kinds with
 /// `ai[0] >= -1`), the flight states 0/1's string-cap orbit (the
 /// perpendicular tangent blend), the channel mouse-delta push (the
@@ -1050,8 +1065,9 @@ pub(crate) fn ai_cultist_particle(p: &mut Projectile, rng: &mut dyn DropRng) {
 /// W4-d10: the frame-head `UpdateMainMouse` snapshot rides
 /// `YoyoInputs.mouse_delta` in the `SetZoom_MouseInWorld` basis), the
 /// NPC chase (the 800-Manhattan acquire, the per-type blends), the
-/// 12/9 speed floor/cap pair, the magicString ghost split (unported
-/// grant — the −3 state stays reachable only via the spawn ai0), the
+/// 12/9 speed floor/cap pair, the magicString ghost split (LIVE — W4-d10:
+/// the −1 → −3 transition + the 0.75-damage dropped twin ride the
+/// returned [`CounterweightTick`]), the −3 ghost's alpha/damage pins, the
 /// dropped state −2's gravity fall + the owner-side drift, and the
 /// return state's 18-speed owner seek with the 40/2000 kill gates.
 ///
@@ -1069,7 +1085,9 @@ pub(crate) fn ai_counterweight(
     channel: bool,
     mouse_delta: (f32, f32),
     local_owner: u8,
-) {
+    inputs: crate::projectile::YoyoInputs,
+) -> CounterweightTick {
+    let mut tick = CounterweightTick::default();
     // `:67382` — the lifetime refresh.
     slots[i].time_left = 6;
     // `:67383-67391` — the constants (flag = true, the C# literal).
@@ -1102,8 +1120,11 @@ pub(crate) fn ai_counterweight(
             slots[i].net_update = true;
         }
     }
-    // `:67408-67411` — the yoyoString grant (M3-EQUIP-3, unported — the
-    // `num += num * 0.25 + 10` term folds out).
+    // `:67408-67411` — the yoyoString grant (W4-d10: live — the radius
+    // grows +25%+10 BEFORE the flight states' 0.75 shrink).
+    if inputs.yoyo_string {
+        num += num * 0.25 + 10.0;
+    }
     // `:67412` — the spin.
     slots[i].rot += 0.5;
     // `:67413-67417` — the owner-death kill.
@@ -1112,7 +1133,7 @@ pub(crate) fn ai_counterweight(
         p.kill_time_left = p.time_left;
         p.active = false;
         p.time_left = 0;
-        return;
+        return tick;
     }
     // `:67418-67432` — the `!flag` pose block: DEAD CODE (flag is the
     // `:67383` literal true).
@@ -1124,7 +1145,7 @@ pub(crate) fn ai_counterweight(
         }
         num4 *= 0.5;
         let mut flag3 = false;
-        let Some(pc) = center else { return };
+        let Some(pc) = center else { return tick };
         let mut vector = pc - Vec2::from(slots[i].center());
         if vector.length() > num * 0.9 && slots[i].ai[0] != -2.0 {
             flag3 = true;
@@ -1262,10 +1283,24 @@ pub(crate) fn ai_counterweight(
             p.vel = safe_normalize(p.vel) * num4;
         }
     }
-    // `:67635-67643` — the magicString ghost split: the accessory grant
-    // is M3-EQUIP-3's unported term — the −1 → −3 transition and the
-    // 0.75-damage clone spawn fold out (the −3 state stays reachable
-    // only via a spawn ai0, the yoyo ghost precedent).
+    // `:67635-67643` — the magicString ghost split (W4-d10: live): the
+    // −1 → −3 transition + the 0.75-damage dropped twin (the same
+    // `NewProjectile` shape as the yoyo arm's `:68029` — the request rides
+    // the tick out; the local-owner gate + netUpdate ride the dispatch).
+    if slots[i].ai[0] == -1.0 && inputs.magic_string {
+        slots[i].ai[0] = -3.0;
+        let p = &slots[i];
+        let (cx, cy) = p.center();
+        tick.ghost = Some(crate::projectile::GhostTwinRequest {
+            kind: p.kind,
+            x: cx,
+            y: cy,
+            vx: p.vel.x,
+            vy: p.vel.y,
+            damage: (p.damage as f64 * 0.75) as i32,
+            knock_back: (p.knock_back as f64 * 0.75) as f32,
+        });
+    }
     // `:67644-67648` — the ghost state: invisible, harmless.
     if slots[i].ai[0] == -3.0 {
         slots[i].alpha = 255;
@@ -1308,10 +1343,10 @@ pub(crate) fn ai_counterweight(
         // `:67695-67730` — the return: only the negative states seek;
         // the 40/2000/NaN gates kill, the 18-speed owner blend steers.
         if slots[i].ai[0] >= 0.0 {
-            return;
+            return tick;
         }
         slots[i].tile_collide = false;
-        let Some(pc) = center else { return };
+        let Some(pc) = center else { return tick };
         let mut vector7 = pc - Vec2::from(slots[i].center());
         let num12 = vector7.length();
         if num12 < 40.0 || vector7.is_nan() || num12 > 2000.0 {
@@ -1319,7 +1354,7 @@ pub(crate) fn ai_counterweight(
             p.kill_time_left = p.time_left;
             p.active = false;
             p.time_left = 0;
-            return;
+            return tick;
         }
         // `:67709-67725` — the per-type speed multipliers (the
         // counterweight kinds match none — 18 stands).
@@ -1329,6 +1364,7 @@ pub(crate) fn ai_counterweight(
         let p = &mut slots[i];
         p.vel = (p.vel * (num14 - 1.0) + vector7) / num14;
     }
+    tick
 }
 
 /// The counterweight's `HandleMovement` blocked-move arm
@@ -2458,7 +2494,7 @@ mod tests {
         let mut slots = vec![proj(556)];
         slots[0].time_left = 100;
         ai_counterweight(
-            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0,
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         assert_eq!(slots[0].time_left, 6, "the refresh");
         assert_eq!(slots[0].rot, 0.5, "the spin");
@@ -2468,13 +2504,13 @@ mod tests {
         let mut s2 = vec![proj(556), proj(541)];
         s2[1].ai[0] = 0.0;
         ai_counterweight(
-            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0,
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         assert_eq!(s2[0].ai[0], 0.0, "the yoyo holds the string");
         // The owner-death kill.
         let mut s3 = vec![proj(556)];
         ai_counterweight(
-            &mut s3, 0, &w, &[], Some((1600.0, 800.0)), true, true, (0.0, 0.0), 0,
+            &mut s3, 0, &w, &[], Some((1600.0, 800.0)), true, true, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         assert!(!s3[0].active);
     }
@@ -2494,7 +2530,7 @@ mod tests {
         slots[0].pos = Vec2::new(1595.0, 795.0); // centre (1600, 800)
         slots[0].vel = Vec2::new(5.0, 0.0);
         ai_counterweight(
-            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (20.0, 0.0), 0,
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (20.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         // (5,0) + (-20,0)*0.1 = (3,0); the 9 floor lifts it back to 9.
         assert!((slots[0].vel.x - 9.0).abs() < 1e-4, "the inverted push + the floor");
@@ -2505,7 +2541,7 @@ mod tests {
         s2[0].pos = Vec2::new(1595.0, 795.0);
         s2[0].vel = Vec2::ZERO;
         ai_counterweight(
-            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, true, (20.0, 0.0), 0,
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, true, (20.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         // The floor still arms (the push skipped): SafeNormalize(0)*9 = 0.
         assert_eq!(s2[0].vel, Vec2::ZERO, "the zero-velocity gate");
@@ -2526,7 +2562,7 @@ mod tests {
         slots[0].pos = Vec2::new(1715.0, 795.0); // centre (1720, 800)
         slots[0].vel = Vec2::new(12.0, 0.0);
         ai_counterweight(
-            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (-30.0, 0.0), 0,
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (-30.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         // Inverted (+30,0): c.x > pc.x && v5.x > 0 → clamped; the 12 cap
         // keeps the velocity (12 > 9 floor, 12 == 12 cap).
@@ -2537,7 +2573,7 @@ mod tests {
         s2[0].pos = Vec2::new(1715.0, 795.0);
         s2[0].vel = Vec2::new(12.0, 0.0);
         ai_counterweight(
-            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, true, (30.0, 0.0), 0,
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, true, (30.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         // Inverted (-30,0)*0.1 = -3 → 12 - 3 = 9 (the floor boundary).
         assert!((s2[0].vel.x - 9.0).abs() < 1e-4, "the inward push lands");
@@ -2555,7 +2591,7 @@ mod tests {
         slots[0].pos = Vec2::new(1795.0, 795.0); // centre (1800, 800)
         slots[0].vel = Vec2::new(10.0, 0.0);
         ai_counterweight(
-            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0,
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         let c = Vec2::from(slots[0].center());
         assert!((c.distance(Vec2::new(1600.0, 800.0)) - 125.0).abs() < 1.0, "the 125 radius");
@@ -2573,7 +2609,7 @@ mod tests {
         slots[0].pos = Vec2::new(1795.0, 795.0);
         slots[0].vel = Vec2::ZERO;
         ai_counterweight(
-            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         assert!(!slots[0].tile_collide, "the return flies through tiles");
         // (0*11 + (-18,0))/12 = -1.5.
@@ -2583,7 +2619,7 @@ mod tests {
         s2[0].ai[0] = -1.0;
         s2[0].pos = Vec2::new(1615.0, 795.0); // centre 20 px off
         ai_counterweight(
-            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         assert!(!s2[0].active, "the arrival kill");
         // The 2000-px leash kill.
@@ -2591,7 +2627,7 @@ mod tests {
         s3[0].ai[0] = -1.0;
         s3[0].pos = Vec2::new(4000.0, 795.0);
         ai_counterweight(
-            &mut s3, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+            &mut s3, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         assert!(!s3[0].active, "the leash kill");
     }
@@ -2606,7 +2642,7 @@ mod tests {
         slots[0].extra_updates = 1;
         slots[0].penetrate = -1;
         ai_counterweight(
-            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         assert_eq!(slots[0].extra_updates, 0);
         assert_eq!(slots[0].penetrate, 1);
@@ -2617,10 +2653,80 @@ mod tests {
         s2[0].damage = 20;
         s2[0].pos = Vec2::new(1795.0, 795.0);
         ai_counterweight(
-            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
         assert_eq!(s2[0].alpha, 255);
         assert_eq!(s2[0].damage, 0);
+    }
+
+    /// The yoyoString radius grant (`:67408-67411`, W4-d10 live): the
+    /// 125-px string grows +25%+10 → 166.25 BEFORE the flight states. A
+    /// counterweight 150 px out caps to 125 without the grant and flies
+    /// free (inside 166.25) with it.
+    #[test]
+    fn w4_d10_s99_the_yoyo_string_grows_the_radius() {
+        let w = World::new("t".into(), 300, 200);
+        let run = |yoyo_string: bool| {
+            let mut slots = vec![proj(556), proj(541)];
+            slots[1].ai[0] = 0.0;
+            // 150 px right of the owner, flying right at 10.
+            slots[0].pos = Vec2::new(1745.0, 795.0); // centre (1750, 800)
+            slots[0].vel = Vec2::new(10.0, 0.0);
+            let ins = crate::projectile::YoyoInputs {
+                yoyo_string,
+                ..crate::projectile::YoyoInputs::default()
+            };
+            ai_counterweight(
+                &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0, ins,
+            );
+            Vec2::from(slots[0].center()).distance(Vec2::new(1600.0, 800.0))
+        };
+        let plain = run(false);
+        let boosted = run(true);
+        assert!((plain - 125.0).abs() < 1.0, "the plain 125 cap: {plain}");
+        assert!(boosted > 140.0, "the grant frees the 150-px orbit: {boosted}");
+    }
+
+    /// The magicString ghost split (`:67635-67643`, W4-d10 live): the −1
+    /// return state flips to −3 (the ghost: alpha 255, damage 0) and the
+    /// 0.75-damage dropped twin rides the tick out — the parent's Centre
+    /// anchor, the parent's velocity, `(int)(damage*0.75)` /
+    /// `(int)(knockBack*0.75)`, ai0 = −2 at the dispatch.
+    #[test]
+    fn w4_d10_s99_the_magic_string_splits_the_ghost() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![proj(556)];
+        slots[0].ai[0] = -1.0;
+        slots[0].pos = Vec2::new(1795.0, 795.0); // centre (1800, 800)
+        slots[0].vel = Vec2::new(4.0, -2.0);
+        slots[0].damage = 20;
+        slots[0].knock_back = 6.0;
+        let ins = crate::projectile::YoyoInputs {
+            magic_string: true,
+            ..crate::projectile::YoyoInputs::default()
+        };
+        let tick = ai_counterweight(
+            &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0, ins,
+        );
+        assert_eq!(slots[0].ai[0], -3.0, "the ghost transition");
+        assert_eq!(slots[0].alpha, 255);
+        assert_eq!(slots[0].damage, 0, "the ghost is harmless");
+        let g = tick.ghost.expect("the dropped twin request");
+        assert_eq!(g.kind, 556);
+        assert_eq!((g.x, g.y), (1800.0, 800.0), "the Centre anchor");
+        assert_eq!((g.vx, g.vy), (4.0, -2.0), "the parent's velocity");
+        assert_eq!(g.damage, 15, "(int)(20*0.75)");
+        assert_eq!(g.knock_back, 4.5, "(int)(6*0.75) as f32");
+        // Without the grant the −1 state stays (the return seek runs).
+        let mut s2 = vec![proj(556)];
+        s2[0].ai[0] = -1.0;
+        s2[0].pos = Vec2::new(1795.0, 795.0);
+        let t2 = ai_counterweight(
+            &mut s2, 0, &w, &[], Some((1600.0, 800.0)), false, false, (0.0, 0.0), 0,
+            crate::projectile::YoyoInputs::default(),
+        );
+        assert_eq!(s2[0].ai[0], -1.0, "no grant, no split");
+        assert!(t2.ghost.is_none());
     }
 
     /// The bounce (`:18415-18440`): a blocked move reverses the axis and

@@ -176,6 +176,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // tick — every sub-step reads the same per-tick delta, exactly
         // like the C# reads the same `Main.mouseX/lastMouseX` pair.
         mouse_delta: (app.mouse_tick_delta.x, app.mouse_tick_delta.y),
+        // W4-d10 — the yoyo-string accessory grants (`Player.cs:14710-
+        // 14754`, the `ApplyEquipFunctional` rows; `ResetEffects` clears
+        // per tick `:18435`/`:18439`). The yoyo arm's lifetime/range terms
+        // and the counterweight's radius/ghost split read them.
+        yoyo_string: app.player.as_ref().is_some_and(|p| p.yoyo_string),
+        magic_string: app.player.as_ref().is_some_and(|p| p.magic_string),
     };
     // The whips anchor their curve on the player center and aim the Moon
     // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)
