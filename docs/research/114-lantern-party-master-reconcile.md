@@ -751,3 +751,71 @@ here); the rain signature is re-pinned to the landed order; the two
 KEEP-c39 pieces d130's body lacks (the head clamp, the full persistence
 gate) are cross-receipted for the merge. All witnesses WRITTEN NOT RUN
 (code-only).
+
+---
+
+## 11. MERGE-SCOPE FINAL CHECKLIST (the complete c39-side hand-off)
+
+The definitive list of what the merger must do with this branch. Items
+1–5 are §7's remaining scope (unchanged); 6–10 are the final-phase
+additions (§8/§9/§10). Every item names its canonical winner and its
+evidence — nothing here is a guess.
+
+| # | Item | Canonical / action | Evidence |
+| --- | --- | --- | --- |
+| 1 | **LanternSky module** | f40's `render/lantern_sky.rs` wholesale (c39's `event_skies.rs` lantern STATE fns are interim; the colour fix `4d184569` already matches f40's `:224` ladder). The world-seed RNG graft + the shop wish row ride f40. | §1b/§2; f40/105 §4 (the wind-drift witness `522d92bd` reads `speed_current` live — agnostic to which wind flag name survives) |
+| 2 | **World-load reset order** | f40's clear-then-restore sites (`5a19073e`: the clear in `swap_world`/`client_install_world`, NOT `enter_loaded_world` — the tail clear would clobber f45's restored lantern quad). The PartySky reset (§1e follow-up-2) extends the SAME seam. c39's `world_clear` (`world_events.rs:398`) already leaves `next_night_is_lantern_night` alone — matches `LanternNight.WorldClear` (`:119-125`) and f40/105 §5's survival note. | f40/105 §5; f45 `31996439` (the quad: `SetTempToOngoing` `WorldFile.cs:1060-1063` → tail 1940..1946 → `SetOngoingToTemps` `:173-176`; the `WorldEvents` field names match c39's) |
+| 3 | **Gore table wire** | d55's `npc_hit_effect_a.rs::party_hat_block` + its `hit_effect` strike-path wire (its lane's declared follow-up). c39's death-site block is DROPPED (`912f0ae2`); the hat DRAW layer + colour hash stay c39. | §1g/§7 row 3 |
+| 4 | **Cake/buff route** | f34's StationBuff dispatch + app arm + the single `192 =>` SugarRush arm; f41's pitched case-2 cue (`b4ca66e9`). c39's third copies are DROPPED (`a493e8f1`). | §1h/§7 row 4; f41/70 §8a |
+| 5 | **Party chatter chain** | d120's GetChat re-pin + superset ctx + the FreeCake gift chain (70 §3's ONE recipe); f38's naming layer + broadcast-before-achievement order + the keyed dawn/dusk rows. c39's talk arm DROPPED; the `free_cake` field + writers stay; the `lang::misc(99)` fix is landed in BOTH c39 sites (`b5ab90db`). | §1f/§7; f41/70 §1i/§3/§8e |
+| 6 | **TRWLD v18 union** | §8's 9-way contract: ONE 106-byte fixed head in C# field order + d109 dense LAST; c43≡f45 identity keep-ONE; every truncation constant → 106 (+W×H end-relative); VERSION stays 18. c39's quintet rides at [95..100] in `WorldFile.cs:1347-1351` row order. | §8 (this note) + g71/92 §1 (five-branch base, `f08e8d41e`) |
+| 7 | **Empress death arm** | d125's `NpcKind::EmpressOfLight` arm must route through `on_game_event_cleared(ev, 23, !was_down)` — its landed arm writes the flag directly (no lantern edge). Id 23 is a default row: the first kill ARMS. | §9 census row 23 (d125 tip `d8047a10` read) |
+| 8 | **QueenSlime** | NO action — the kind is unported on every W4 branch; when it lands, its death arm calls id 24 (default row, ARMS). The v15 flag byte + consumers already live. | §9 census row 24 (branch-wide grep) |
+| 9 | **d130 weather compose** | Keep ONE wind flag (mechanical rename, §10a — the split returns + compose witness landed here `9ac39893`); the rain signature is ALREADY re-pinned to d130's order (§10b). **Graft c39's storm-deck head clamp + the full `LanternsCanPersist` gate into d130's body** (its landed tick lacks both). d130's slime-clock restructure + `StartSlimeRain` fix are ITS keep. | §10; d130/83 FINAL (`560a02ea`); f40/105 §3 KEEP-c39 rows |
+| 10 | **Anchors** | the 7 c39 rows (`7aff2857`) all still resolve on this tip — incl. `wind.rs\|pub lantern_night` (the field survives the §10a split; only the return shape changed). No row names a dropped piece. | §4/§7 row 6 |
+
+### Cross-receipts — f40 research/105 (`a06b16e4b`) and f41 research/70 (`f21028f56`)
+
+**105 (read in full, final phase):** its §3 gate table's four KEEP-c39
+rows (persistence gate, wind freeze, rain stop/start gates, storm-deck
+clamp) are confirmed against this tip — rows 1/3/4 unchanged, row 2's
+flag now split-return (§10a). Its §4 wind-drift verification (the freeze
+does NOT stop the drift; the sky reads `speed_current` live) matches
+c39's `update_rain` structure exactly. Its §5 clear-then-restore order +
+the `NextNightIsLanternNight` WorldClear survival match c39's
+`world_clear` body (item 2 above). Its case-4 label fix (`8b4f87e9`)
+matches c39's §0.1 — both sides now agree Mourning Wood 325 → 4 skip,
+Pumpking 327 → 5 arm. Its invasion-clear wires (`a5547cfc`) and c39's
+(`b5ab90db`) call the SAME helper signature with the SAME ids — the
+merge keeps one set of call sites, not two. **Receipt: no open conflict
+between c39 and f40/105.**
+
+**70 (read §7/§8, final phase):** its §8f claims "c39's tip carries NO
+docs/research/114" — STALE: 114 landed at `8ecb288a` (the exec record)
+and this final phase extends it (§8–§11). The §8f keep-one verdicts
+themselves are CONFIRMED EXECUTED on c39: the CakeEat variant/dispatch/
+app arm/TR_TOGGLE arm dropped, the duplicate 192 arm dropped, the
+collapsed FreeCake talk arm dropped (`a493e8f1` = §7 row 4); the
+KEEP-ones it names (anniversary roll, `can_npc_party`, roster prune,
+`party_hat.rs`, `event_skies.rs`, the lantern lanes) all survive on this
+tip. Its §8e census (every natural-start arm claimed: c39's
+anniversary/prune/`can_npc_party`, f38's broadcasts) matches §1f here.
+**Receipt: 70 §8f's stale-existence claim is superseded by this note;
+its verdicts and c39's exec agree item-for-item.**
+
+### Final witness union delta (this phase)
+
+ADDED: `w4_c39_the_creative_and_lantern_freezes_compose_like_the_csharp_
+nest` (wind.rs). RE-PINNED (assertions unchanged): the two lantern rain
+witnesses' call sites (d130 arg order). Everything else per §7's union
+record. **All WRITTEN NOT RUN** — code-only lane contract; no
+cargo/rustc/tests/rustfmt/graphify invoked in any phase.
+
+### Final-phase commits (this branch)
+
+| Hash | Phase |
+| --- | --- |
+| `5cdf6da6` | 1 — §8 the v18 9-way union input (moon-boss byte layout, C# order) |
+| `96b13e3b` | 2 — §9 the event-flag census (26 sites, ids 0–25, two kind-gaps) |
+| `9ac39893` | 3 — §10 wind/rain compose-verify (split returns + compose witness + arg re-pin) |
+| (this commit) | 4 — §11 the FINAL checklist + 105/70 cross-receipts |
