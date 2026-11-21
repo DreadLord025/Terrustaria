@@ -175,6 +175,12 @@ pub struct HitEffectOutcomeC {
     /// target-player read, the tile probes and the per-try draws are the
     /// wiring wave's (the roster/projectile seams).
     pub nebula_predictor_shot: Option<(f32, f32)>,
+    /// The 491 Flying Dutchman's projectile-spawn seam (`NPC.cs:83713-83720`):
+    /// 4 projectile-594s at Center, each velocity
+    /// `RotatedBy((num191<2 ? +1 : -1) * (π/8 + π/4*NextFloat), (0, -NextFloat*0.5 - 0.5)) * 6`.
+    /// `Some((cx,cy))` = the Center; the per-spawn NextFloat draws + the
+    /// projectile spawns are the wiring wave's.
+    pub dutchman_death_shots: Option<(f32, f32)>,
 }
 
 /// `Utils.RotatedBy` (`Utils.cs:1675-1684`), centre default (0,0): the
@@ -1770,6 +1776,47 @@ fn dutchman_death_scatter(
     }
 }
 
+/// The 491 Flying Dutchman death's TAIL (`NPC.cs:83704-83720`): the
+/// 120-iteration dust burst, each a type-6 dust (alpha 100, scale 2.5,
+/// noGravity, velocity ×5) then a type-6 dust (alpha 100, scale 1.5,
+/// velocity ×4, noGravity) — the post-writes draw nothing; then the
+/// projectile-594 spawn seam (`:83713-83720`) is RETURNED
+/// ([`HitEffectOutcomeC::dutchman_death_shots`]) — the per-spawn NextFloat
+/// draws + the spawns are the wiring wave's. No gore sites here; this
+/// completes the 491 arm's strike-stream census.
+fn dutchman_death_tail(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    outcome: &mut HitEffectOutcomeC,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83704-83712` — 120 iterations x 2 type-6 dusts.
+    for _ in 0..120 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 2.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 5.0;
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 4.0;
+        d.no_gravity = true;
+    }
+    // `:83713-83720` — the projectile-spawn seam (netMode != 1, single-player
+    // runs); the per-spawn draws + the spawns are the caller's.
+    let c = center(npc);
+    outcome.dutchman_death_shots = Some((c.x, c.y));
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1955,17 +2002,17 @@ pub fn hit_effect_c(
     if npc_type == 411 && npc.hp <= 0 {
         stardust_dragon_body_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:83664-83722` — the 491 Flying Dutchman arm; the HEAD block (sites
-    // 264-274) + the full fan (sites 275-289) + the 855 loop (sites
+    // `:83664-83722` — the 491 Flying Dutchman arm, COMPLETE: the HEAD block
+    // (sites 264-274) + the full fan (sites 275-289) + the 855 loop (sites
     // 290-293) + the 854/853/856 loop (sites 294-302) + the full scatter
-    // (sites 303-332); the 120-dust burst + the projectile seam land with
-    // the next batch.
+    // (sites 303-332) + the 120-dust tail + the projectile seam.
     if npc_type == 491 && npc.hp <= 0 {
         dutchman_death_head(npc, gore, rng, world);
         dutchman_death_fan(npc, gore, rng, world);
         dutchman_death_855(npc, gore, rng, world);
         dutchman_death_854(npc, gore, rng, world);
         dutchman_death_scatter(npc, gore, rng, world);
+        dutchman_death_tail(npc, dust, dust_ctx, rng, world, &mut outcome);
     }
     outcome
 }
@@ -3167,6 +3214,34 @@ mod tests {
             let _py = twin.next_float();
         }
         assert_eq!(rng.peek(), twin.peek(), "the scatter mirrors the C# draw order");
+    }
+
+    /// `NPC.cs:83704-83712` — the Dutchman tail: the 120x2 type-6 dust
+    /// burst (alpha 100, scales 2.5/1.5, velocity x5/x4, noGravity) then the
+    /// projectile seam returned. The twin replay pins the 240 dust censuses
+    /// (type 6 hits the tweak draw, Dust.cs:216).
+    #[test]
+    fn w4_f10_the_dutchman_tail_runs_the_dust_burst_and_returns_the_seam() {
+        let w = air();
+        let n = boss(100.0, 100.0, 350.0, 120.0);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(211);
+        let mut out = HitEffectOutcomeC::default();
+        dutchman_death_tail(&n, &mut dust, &ctx(), &mut rng, &w, &mut out);
+        // Center = (275,160).
+        assert_eq!(out.dutchman_death_shots, Some((275.0, 160.0)));
+        // The twin: 240 type-6 dusts, each the 6-draw census + the tweak draw.
+        let mut twin = UnifiedRandom::new(211);
+        for _ in 0..240 {
+            let _px = twin.next_max(346);
+            let _py = twin.next_max(116);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+            let _tweak = twin.next_range(-10, 6); // type-6 tweak
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the tail mirrors the C# dust draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
