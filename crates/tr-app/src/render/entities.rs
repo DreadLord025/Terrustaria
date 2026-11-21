@@ -1245,6 +1245,9 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+    // W4-d103 WG-POST RETIRE — the Wraith's own sheet (the g8
+    // constants-copy, `80f7e7486`'s KIND_WIRE_1_SHEETS row).
+    82, // the Wraith
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3170,6 +3173,15 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-d103 WG-POST RETIRE — the Wraith draws its own NPC_82
+            // sheet at `SetFrameSize`'s integer-division row height over
+            // `Main.npcFrameCount[82]` = 4 (`Main.cs:67092`) with the
+            // generic centred anchor — the small-kinds wave's shape (the
+            // g8 constants-copy). The vx*0.1 tilt rides the rotation
+            // whitelist below.
+            NpcKind::Wraith => {
+                pumpkin_moon_draw(assets.npc_sheet(82), npc_rows(82), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3331,9 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-d103 WG-POST RETIRE — the Wraith's vx*0.1 tilt
+                    // (`NPC.cs:74858`, the FindFrame floater group).
+                    | NpcKind::Wraith
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

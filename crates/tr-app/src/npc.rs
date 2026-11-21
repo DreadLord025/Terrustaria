@@ -1086,6 +1086,16 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.Wraith` (82, `NPCID.cs:10841`) — the hardmode ghost
+    /// (`NPC.cs:9852-9878`): 24x44, aiStyle 22, dmg 65, def 16, 160 HP,
+    /// kb 0.7, NPCHit54/NPCDeath52, value 500, alpha 100, noGravity +
+    /// noTileCollide; the remix x1.2 scale arm (`:9867-9877`) parks
+    /// (the `SetDefaults` remix reads ride the g8 merge). WIRED
+    /// (W4-d103 WG-POST RETIRE): the axis' 22 arm rides
+    /// `npc_ai_style22::ai_022_arm` — the SmashAltar wraith spawn
+    /// (`WorldGen.cs:49078-49105`) activates over it. The g8-kind-shape
+    /// constants-copy: protocol id 360 (g8 batch 1's port-local slot).
+    Wraith,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3129,6 +3139,10 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-d103 WG-POST RETIRE — the Wraith's
+                            // `alpha = 100` row (`NPC.cs:9864`; the g8
+                            // constants-copy).
+                            NpcKind::Wraith => 100,
                             _ => 0,
                         }
                     }),
@@ -3529,6 +3543,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d103 WG-POST RETIRE — the Wraith's kb 0.7
+            // (`NPC.cs:9866`; the g8 constants-copy).
+            NpcKind::Wraith => 0.7,
             _ => 0.4,
         }
     }
@@ -3909,6 +3926,9 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d103 WG-POST RETIRE — the Wraith's defense
+            // (`NPC.cs:9860`; the g8 constants-copy).
+            NpcKind::Wraith => 16,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4301,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d103 WG-POST RETIRE — the Wraith's value 500 copper
+            // (`NPC.cs:9865`; the g8 constants-copy).
+            NpcKind::Wraith => 500.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4671,6 +4694,44 @@ impl Npc {
                 // pulsing `mouse_text_color`).
                 let _ = crate::npc_ai_style21::ai_style21(self, world, &[cand], 0, 255);
                 crate::npc_ai_style21::collision_move_blazing_wheel(self, world);
+            }
+            // `else if (this.aiStyle == 22)` (`NPC.cs:24666-25234`) — the
+            // ghost/hover family. W4-d103 WG-POST RETIRE: the Wraith 82
+            // rides the g8/d24 verbatim arm (`npc_ai_style22::ai_022_arm`
+            // — the SmashAltar wraith-spawn activation, g8 batch-1's
+            // wiring shape `80f7e7486`). The machine writes velocity +
+            // the dwell/dash state; the Wraith draws NO RNG (the module's
+            // census witness). noGravity + noTileCollide (`NPC.cs:9854-
+            // 9855`) — the raw integration mirrors the flag. The
+            // Poltergeist/Drippler keep their landed kind arms below
+            // (the g8 merge widens this arm to the ten-member family).
+            22 if self.kind == NpcKind::Wraith => {
+                let (w, h) = self.size();
+                self.wet = is_wet(world, self.x, self.y, w, h);
+                let cand = crate::npc_target::session_candidate(player);
+                let ctx = crate::npc_ai_style22::Ai22Ctx {
+                    players: &[cand],
+                    just_hit: self.just_hit,
+                    confused: self.buffs.find_buff_index(31).is_some(),
+                    ticker: 0,
+                };
+                // The Ghost's `Opacity` seam — only the 316 arm reads it;
+                // the Wraith keeps a parked 1.0 (the module doc).
+                let mut opacity = 1.0f32;
+                let fx = crate::npc_ai_style22::ai_022_arm(
+                    self.kind.cs_id() as i32, self, world, &ctx, rng, dust, dust_ctx, &mut opacity,
+                );
+                self.wants_hostile_shot_ai.extend(fx.shots);
+                // The Wraith produces no shots/sounds/lights (the 82 path
+                // has no offence arm); the despawn request still rides.
+                if let Some(t) = fx.encourage_despawn {
+                    self.encourage_despawn(t);
+                }
+                if fx.deactivate {
+                    self.hp = 0;
+                }
+                // noTileCollide (`NPC.cs:9855`) — raw integration.
+                self.integrate_no_tile_collide();
             }
             // `if (this.aiStyle == 9) { ... }` (`NPC.cs:21377-21571`) -
             // S1-D-3: the caster-sphere family (25/30+665/33) rides the
@@ -6202,6 +6263,13 @@ impl Npc {
             // collision (no `noTileCollide`), so its integration differs.
             NpcKind::Drippler => {
                 crate::npc_ai_drippler::drippler_ai(self, world, player, rng)
+            }
+            // W4-d103 WG-POST RETIRE: the Wraith (82) rides the style
+            // axis' 22 arm above (`npc_ai_style22::ai_022_arm`, the g8
+            // constants-copy activation) — unreachable through
+            // `update_rng` (the axis claims style 22 for the kind first).
+            NpcKind::Wraith => {
+                unreachable!("aiStyle 22's Wraith rides the style axis (W4-d103 WG-POST)")
             }
             // The Mourning Wood (325, aiStyle 57) and the Pumpking (327,
             // aiStyle 58): S1-F-13b2 slice B landed their named machines
@@ -8640,6 +8708,36 @@ impl Npc {
             // The Poltergeist rides its own `FindFrame` arm (S1-F-13b2 slice
             // C) — the case-330 strip, not the walker stand-in.
             NpcKind::Poltergeist => self.poltergeist_frame(),
+            // W4-d103 WG-POST RETIRE — the Wraith's `case 82` in the
+            // floater group (`NPC.cs:74823-74884`): the waited frame code
+            // (`npc_findframe_b.rs::FindFrameKind::Wraith`) activates —
+            // the vx-sign flip, the vx*0.1 tilt, the 6-tick counter over
+            // the full 4 rows. The bridge copies the four FindFrame
+            // fields out/in (the `find_frame_wave_a` shape).
+            NpcKind::Wraith => {
+                let mut s = crate::npc_findframe_b::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                };
+                let i = crate::npc_findframe_b::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    wet: self.wet,
+                    ai: self.ai,
+                };
+                crate::npc_findframe_b::find_frame_b(
+                    crate::npc_findframe_b::FindFrameKind::Wraith,
+                    &mut s,
+                    &i,
+                );
+                self.frame = s.row;
+                self.frame_counter = s.counter;
+                self.sprite_dir = s.sprite_dir;
+                self.rotation = s.rotation;
+            }
             // The Frost Moon family (`S1-F-13c` slice A). The Zombie Elf
             // trio rides `FindFrame`'s humanoid-group case list
             // (`NPC.cs:68603-68605`) — the same arm the cave walkers ride,
@@ -18601,6 +18699,11 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d103 WG-POST RETIRE — the Wraith's port-local protocol
+            // slot 360 (the vanilla 82 is the PrimeSaw's/PirateCaptain's
+            // hash arms above; the pirate renumber's precedent —
+            // injective either way).
+            NpcKind::Wraith => 360,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23669,7 +23772,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 271] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24051,8 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d103 WG-POST RETIRE — the SmashAltar wraith activation.
+        NpcKind::Wraith,
     ];
 
     #[test]
@@ -27559,8 +27664,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            271,
+            "every decodable kind resolves (the wire roster's size - 271 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d103 WG-POST RETIRE's Wraith)"
         );
         assert!(
             covered > 43,

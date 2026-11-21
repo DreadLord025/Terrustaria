@@ -484,6 +484,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d103 WG-POST RETIRE — the Wraith 82's row is
+        // `ImmuneToAllBuffsThatAreNotWhips = true` (`NPCID.cs`'s
+        // DebuffImmunitySets) — the mask loop is unmodelled, so it rides
+        // `&[]` (the Poltergeist/ForceBubble documented gap above; the
+        // g8 constants-copy).
+        NpcKind::Wraith => &[],
     }
 }
 

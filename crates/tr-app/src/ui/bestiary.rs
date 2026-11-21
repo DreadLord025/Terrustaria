@@ -1595,6 +1595,13 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d103 WG-POST RETIRE — the Wraith's portrait: the sheet's own
+        // row height over `Main.npcFrameCount[82]` = 4, the frame width
+        // the sheet's own (the g8 constants-copy, `80f7e7486`).
+        (NpcKind::Wraith, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(50.0);
+            (sheet_i, h, 26.0, h, white)
+        }
     }
 }
 

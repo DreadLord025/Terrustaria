@@ -609,6 +609,17 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Drippler",
     },
+    // W4-d103 WG-POST RETIRE — the Wraith's own bestiary credit (the g8
+    // constants-copy, `80f7e7486`; en-US NPCs.json `NPCID.cs:10841`'s
+    // name row).
+    BestiaryEntryDef {
+        credit_id: "Wraith",
+        net_id: 82,
+        kind: NpcKind::Wraith,
+        variant: None,
+        quick_unlock: false,
+        name: "Wraith",
+    },
     // S1-D-3ff wave A — `BestiaryEntry.Enemy(225)` (the automated
     // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
     // name rides `Lang.GetNPCName` (en-US NPCs.json).

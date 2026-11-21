@@ -3491,7 +3491,10 @@ fn npc_seed(
         | crate::npc::NpcKind::Poltergeist
         // S1-D-3z — the Drippler (490, noGravity aiStyle 22) rides the
         // hover ctor like the Poltergeist.
-        | crate::npc::NpcKind::Drippler => {
+        | crate::npc::NpcKind::Drippler
+        // W4-d103 WG-POST RETIRE — the Wraith (82, noGravity aiStyle 22)
+        // rides the hover ctor too (the g8 constants-copy, `80f7e7486`).
+        | crate::npc::NpcKind::Wraith => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

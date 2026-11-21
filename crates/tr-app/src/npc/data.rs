@@ -586,6 +586,13 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d103 WG-POST RETIRE — the SmashAltar wraith activation.
+            // The g8-kind-shape constants-copy: g8 batch 1's port-local
+            // slot 360 (`80f7e7486`; the vanilla 82 is the PrimeSaw's
+            // protocol slot above — `to_u16`'s bijection guard). The
+            // vanilla `NPC.type` rides `cs_id`/the bestiary `net_id`
+            // (the BlazingWheel precedent).
+            NpcKind::Wraith => 360,
         }
     }
 
@@ -916,6 +923,10 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-d103 WG-POST RETIRE — the g8-kind-shape constants-copy:
+            // the Wraith's port-local slot 360 (`to_u16` above; the
+            // vanilla 82 decodes to the PrimeSaw). `NPCID.cs:10841`.
+            360 => NpcKind::Wraith,
             _ => return None,
         })
     }
@@ -1796,6 +1807,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d103 WG-POST RETIRE — the Wraith's `SoundID.NPCHit54`
+            // (`NPC.cs:9862`; the g8 constants-copy).
+            NpcKind::Wraith => "NPC_Hit_54",
             _ => return None,
         })
     }
@@ -2100,6 +2114,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d103 WG-POST RETIRE — the Wraith's `SoundID.NPCDeath52`
+            // (`NPC.cs:9863`; the g8 constants-copy).
+            NpcKind::Wraith => "NPC_Killed_52",
             _ => return None,
         })
     }
@@ -2164,6 +2181,9 @@ impl NpcKind {
             | NpcKind::DungeonSpirit
             | NpcKind::Piranha
             | NpcKind::Shark => true,
+            // W4-d103 WG-POST RETIRE — the Wraith's `noGravity = true`
+            // (`NPC.cs:9854`; the g8 constants-copy).
+            NpcKind::Wraith => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
             // noGravity matters to the knockback (the leeches are resist 0).
             NpcKind::Hungry => true,
@@ -2451,6 +2471,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d103 WG-POST RETIRE — the Wraith 82's `SetDefaults`
+            // aiStyle row (`NPC.cs:9858`; the g8 constants-copy).
+            NpcKind::Wraith => 22,
         }
     }
 
@@ -2981,6 +3004,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d103 WG-POST RETIRE — the Wraith's `SetDefaults` box
+            // (`NPC.cs:9856-9857`; the g8 constants-copy).
+            NpcKind::Wraith => (24.0, 44.0),
         }
     }
 
@@ -3083,6 +3109,10 @@ impl NpcKind {
             // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
             NpcKind::Sharkron => 372,
+            // W4-d103 WG-POST RETIRE — the Wraith's vanilla `NPC.type`
+            // (`NPCID.cs:10841`; the g8 constants-copy — the protocol id
+            // is the port-local 360, the BlazingWheel precedent).
+            NpcKind::Wraith => 82,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3622,6 +3652,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d103 WG-POST RETIRE — the Wraith's `lifeMax`
+            // (`NPC.cs:9861`; the g8 constants-copy).
+            NpcKind::Wraith => 160,
         }
     }
 
@@ -3986,6 +4019,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d103 WG-POST RETIRE — the Wraith's `damage`
+            // (`NPC.cs:9859`; the g8 constants-copy).
+            NpcKind::Wraith => 65,
         }
     }
 }

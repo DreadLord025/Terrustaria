@@ -220,14 +220,21 @@ pub struct SpawnRate {
 /// extension of the range (selected-item 1254/1299, `player.scope`) is not
 /// ported — the app has no scopes yet.
 pub fn get_spawn_area(ctx: &SpawnContext) -> (SpawnArea, SpawnArea) {
+    spawn_area_rects(ctx.world, ctx.player_pos)
+}
+
+/// The `GetSpawnArea` rect pair off the raw inputs — the shared body of
+/// [`get_spawn_area`] and `NPC.SpawnOnPlayer`'s scan
+/// (`NPC.cs:80576` calls the same `Spawner.GetSpawnArea`).
+fn spawn_area_rects(world: &World, player_pos: (f32, f32)) -> (SpawnArea, SpawnArea) {
     let num = (S_WIDTH / 16 * 7) / 10; // (int)(0.7 * (sWidth/16))
     let num2 = (S_HEIGHT / 16 * 7) / 10;
     let safe_range_x = (S_WIDTH / 16 * 52) / 100;
     let safe_range_y = (S_HEIGHT / 16 * 52) / 100;
-    let px = (ctx.player_pos.0 / TILE_PX).floor() as i32;
-    let py = (ctx.player_pos.1 / TILE_PX).floor() as i32;
-    let clamp_x = |x: i32| x.clamp(0, ctx.world.width - 1);
-    let clamp_y = |y: i32| y.clamp(0, ctx.world.height - 1);
+    let px = (player_pos.0 / TILE_PX).floor() as i32;
+    let py = (player_pos.1 / TILE_PX).floor() as i32;
+    let clamp_x = |x: i32| x.clamp(0, world.width - 1);
+    let clamp_y = |y: i32| y.clamp(0, world.height - 1);
     let spawn = SpawnArea {
         left: clamp_x(px - num),
         right: clamp_x(px + num),
@@ -586,18 +593,24 @@ fn has_tile_spawn_space(world: &World, x: i32, y: i32) -> bool {
 
 /// `Spawner.CheckNotSpawningOnScreen` (NPC.cs:5436-5450): the tile must lie
 /// outside every player's spawn-screen rect.
-fn check_not_spawning_on_screen(ctx: &SpawnContext, safe: &SpawnArea, x: i32, y: i32) -> bool {
+fn check_not_spawning_on_screen(ctx: &SpawnContext, _safe: &SpawnArea, x: i32, y: i32) -> bool {
+    check_not_spawning_on_screen_at(ctx.player_center, x, y)
+}
+
+/// The `CheckNotSpawningOnScreen` body off the raw player centre — the
+/// shared helper of the spawn pipeline and `NPC.SpawnOnPlayer`'s scan
+/// (`NPC.cs:80624` calls the same `Spawner.CheckNotSpawningOnScreen`).
+fn check_not_spawning_on_screen_at(player_center: (f32, f32), x: i32, y: i32) -> bool {
     let num = S_WIDTH / 2;
     let num2 = S_HEIGHT / 2;
     let safe_range_x = (S_WIDTH / 16 * 52) / 100;
     let safe_range_y = (S_HEIGHT / 16 * 52) / 100;
-    let (cx, cy) = ctx.player_center;
+    let (cx, cy) = player_center;
     let rect_x = cx - num as f32 - safe_range_x as f32 * TILE_PX;
     let rect_y = cy - num2 as f32 - safe_range_y as f32 * TILE_PX;
     let tile_px = x as f32 * TILE_PX;
     let tile_py = y as f32 * TILE_PX;
     // Rectangle.Intersects between the 16×16 tile and the inflated screen rect.
-    let _ = safe;
     !(tile_px + TILE_PX > rect_x
         && tile_px < rect_x + (S_WIDTH + safe_range_x * 2) as f32
         && tile_py + TILE_PX > rect_y
@@ -869,6 +882,147 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<N
         return spawn_npc_at(ctx, rng, num, j * 16, sky_mob, no_worms, spawn_friendly);
     }
     None
+}
+
+/// `NPC.SpawnOnPlayer(plr, npcType)`'s generic scan
+/// (`NPC.cs:80565-80633`, W4-d103 WG-POST RETIRE — the SmashAltar wraith
+/// activation): the 500×50 candidate scan, the 200×30 band for the
+/// ghosts 316/82 (`:80570-80574`), the `GetSpawnArea` rects, the
+/// per-candidate solid/house-wall veto, the down-column ground walk, the
+/// safe-area + `HasTileSpawnSpace` + `CheckNotSpawningOnScreen` gates,
+/// the last-attempt (`flag2`) bypasses. Returns the spawn tile
+/// `(num10, num11)` — the caller feeds `SpawnBoss(num10*16+8, num11*16,
+/// …)` (`:80631`).
+///
+/// The boss cases 245/370/398 (`:80483-80564`) are the callers' own arms
+/// (the door/lunar seams carry theirs); this is the generic tail only.
+/// Deviations (documented): the type-50 King-Slime arms (`:80589`'s
+/// `Main.tile[num16, num16]` quirk kept verbatim, `:80604-80614`'s
+/// CanHit headroom probe) are IN — the C# runs them for every type
+/// check; the skyblock midair arm (`:80581-80584`) parks (82 is not in
+/// `NPCID.Sets.SpawnOnPlayerCanSpawnInMidairOnSkyblock`, `NPCID.cs:
+/// 10114`, so `flag3` is structurally false for the ported callers);
+/// the `netMode == 1` head folds out (the single-player port).
+pub fn spawn_on_player_tile(
+    world: &World,
+    player_pos: (f32, f32),
+    player_center: (f32, f32),
+    npc_type: i32,
+    rng: &mut UnifiedRandom,
+) -> Option<(i32, i32)> {
+    let mut flag = false;
+    let mut num10 = 0;
+    let mut num11 = 0;
+    let mut num12 = 500;
+    let mut num13 = 50;
+    // `:80570-80574` — the ghosts' tighter band.
+    if npc_type == 316 || npc_type == 82 {
+        num12 = 200;
+        num13 = 30;
+    }
+    let num14 = num12 / 2;
+    let (spawn_area, safe_area) = spawn_area_rects(world, player_pos);
+    for m in 0..num12 {
+        let flag2 = m == num12 - 1;
+        // `:80581-80584` — the skyblock midair arm: 82/316 are not in the
+        // set, so flag3 stays false (the parked arm, the doc above).
+        let flag3 = false;
+        for _ in 0..num13 {
+            // `:80587-80588` — `Main.rand.Next(Left, Right)` pairs. The
+            // degenerate-band guard keeps the fixture worlds alive (the
+            // growth.rs band-guard precedent); a clamped-flat band picks
+            // its single column/row.
+            let num15 = if spawn_area.left < spawn_area.right {
+                rng.next_range(spawn_area.left, spawn_area.right)
+            } else {
+                spawn_area.left
+            };
+            let num16 = if spawn_area.top < spawn_area.bottom {
+                rng.next_range(spawn_area.top, spawn_area.bottom)
+            } else {
+                spawn_area.top
+            };
+            // `:80589-80592` — the candidate veto: solid ground, a house
+            // wall before the last attempt, the King-Slime wall quirk
+            // (`Main.tile[num16, num16]` — the C#'s own index reuse).
+            let t = world.tile(num15, num16);
+            let solid =
+                t.is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+            let house_wall =
+                t.is_some_and(|t| tr_core::edit::wall_house(t.wall)) && m < num12 - 1;
+            let king_wall = npc_type == 50
+                && m < num14
+                && world.tile(num16, num16).is_some_and(|t| t.wall > 0);
+            if solid || house_wall || king_wall {
+                continue;
+            }
+            // `:80593-80603` — the down-column ground walk.
+            for num17 in num16..spawn_area.bottom {
+                let ground = world.tile(num15, num17).is_some_and(|t| {
+                    t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                });
+                if (flag3 || ground) && (flag2 || !safe_area.contains(num15, num16)) {
+                    num10 = num15;
+                    num11 = num17;
+                    flag = true;
+                    break;
+                }
+            }
+            // `:80604-80614` — the King-Slime headroom probe (the two
+            // CanHit lines, 20 tiles up + the player line-of-sight).
+            if flag && npc_type == 50 && m < num12 - 100 {
+                let num18 = 20;
+                let up = crate::projectile::can_hit(
+                    world,
+                    num10 as f32 * TILE_PX,
+                    (num11 - 1) as f32 * TILE_PX,
+                    TILE_PX,
+                    TILE_PX,
+                    num10 as f32 * TILE_PX,
+                    (num11 - 1 - num18) as f32 * TILE_PX,
+                    TILE_PX,
+                    TILE_PX,
+                );
+                let los = crate::projectile::can_hit(
+                    world,
+                    num10 as f32 * TILE_PX,
+                    (num11 - 1 - num18) as f32 * TILE_PX,
+                    TILE_PX,
+                    TILE_PX,
+                    player_center.0,
+                    player_center.1,
+                    0.0,
+                    0.0,
+                );
+                if !up || !los {
+                    num10 = 0;
+                    num11 = 0;
+                    flag = false;
+                    continue;
+                }
+            }
+            // `:80615-80618` — the free-space gate (the last attempt
+            // bypasses it).
+            if flag && !flag2 && !has_tile_spawn_space(world, num10, num11) {
+                flag = false;
+            }
+            if flag {
+                break;
+            }
+        }
+        // `:80624-80627` — accept a found tile when it is off-screen, or
+        // on the last attempt regardless.
+        if (!flag || flag2 || check_not_spawning_on_screen_at(player_center, num10, num11))
+            && flag
+        {
+            break;
+        }
+    }
+    if flag {
+        Some((num10, num11))
+    } else {
+        None
+    }
 }
 
 /// `Spawner.SpawnAnNPC`'s selection ladders (`NPC.cs:4348-4870`) for the
@@ -4647,5 +4801,49 @@ mod tests {
         assert_eq!((rate.spawn_rate, rate.max_spawns), (360, 6));
         let rate = get_spawn_rate(&day, &mut UnifiedRandom::new(1));
         assert_eq!((rate.spawn_rate, rate.max_spawns), (600, 5));
+    }
+
+    /// W4-d103 WG-POST RETIRE — `SpawnOnPlayer`'s generic scan
+    /// (`NPC.cs:80565-80633`): the 82 band is 200×30, the found tile sits
+    /// on the ground column inside the spawn band, and the twin-stream
+    /// replay proves the draw schedule (one Next pair per candidate, the
+    /// gates draw nothing). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d103_retire_spawn_on_player_scans_the_82_band() {
+        let w = ground_tall();
+        let pos = (200.0 * TILE_PX, 295.0 * TILE_PX);
+        let center = (200.0 * TILE_PX + 10.0, 295.0 * TILE_PX + 21.0);
+        let mut rng = UnifiedRandom::new(7);
+        let spot = spawn_on_player_tile(&w, pos, center, 82, &mut rng);
+        let Some((sx, sy)) = spot else {
+            panic!("the open ground band finds a tile in 200 attempts");
+        };
+        // The found tile is the first solid at/below the picked air cell
+        // (`:80593-80603`) — the fixture's ground starts at row 300.
+        assert!(sy >= 300, "the ground walk lands on the floor");
+        assert!(
+            w.tile(sx, sy)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)),
+            "the spawn tile is solid ground"
+        );
+        let (spawn_area, _) = spawn_area_rects(&w, pos);
+        assert!(
+            sx >= spawn_area.left && sx < spawn_area.right,
+            "the pick stays inside the spawn band"
+        );
+        // The last-attempt bypass may seat inside the safe area; every
+        // earlier acceptance must clear it (`:80595`).
+        // Twin replay: the same seed walks the identical draw schedule.
+        let mut twin = UnifiedRandom::new(7);
+        let spot2 = spawn_on_player_tile(&w, pos, center, 82, &mut twin);
+        assert_eq!(spot2, spot, "the scan is deterministic per seed");
+        assert_eq!(twin, rng, "the twin consumed the identical prefix");
+        // The all-air world finds nothing (no ground column in the band).
+        let air = World::new("air".into(), 400, 700);
+        assert_eq!(
+            spawn_on_player_tile(&air, pos, center, 82, &mut UnifiedRandom::new(7)),
+            None,
+            "no floor, no spawn"
+        );
     }
 }
