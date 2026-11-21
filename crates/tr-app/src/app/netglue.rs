@@ -1979,6 +1979,9 @@ impl App {
         );
         world.spawn_x = info.spawn_tile_x as i32;
         world.spawn_y = info.spawn_tile_y as i32;
+        // `Main.dungeonX/Y` (`MessageBuffer.cs:653-654`).
+        world.dungeon_x = info.dungeon_x as i32;
+        world.dungeon_y = info.dungeon_y as i32;
         world.time = info.time as f64;
         world.day_time = info.day_time;
         world.moon_phase = info.moon_phase;
@@ -2078,8 +2081,10 @@ impl App {
             lobby_id: 0,
             sandstorm_severity: 0.0,
             extra_spawn_points: Vec::new(),
-            dungeon_x: 0,
-            dungeon_y: 0,
+            // `Main.dungeonX/Y` (`MessageBuffer.cs:653-654`) — owned since
+            // the W4-d103 tail (the hardmode anchor bias).
+            dungeon_x: w.dungeon_x as i16,
+            dungeon_y: w.dungeon_y as i16,
         }
     }
 

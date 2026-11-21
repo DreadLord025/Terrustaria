@@ -2093,6 +2093,11 @@ fn step_dungeon(
     let surface_row = gv.map().heights[dungeon_x as usize];
     let mut hall = dungeon::HallSeed::new(streams.pass_rng("Dungeon").0);
     dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
+    // `Main.dungeonX/Y` (`WorldGen.cs:72486-72487`'s discovery writes — the
+    // crawler's hall anchor is the port's equivalent): the hardmode anchor
+    // bias (`initializeHardMode` `:31593`) and the `.wld` header read it.
+    world.dungeon_x = dungeon_x;
+    world.dungeon_y = surface_row;
 }
 
 fn step_ocean_caves(

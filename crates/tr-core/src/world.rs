@@ -79,6 +79,15 @@ pub struct World {
     pub bed_spawn: Option<(i32, i32)>,
     /// Spawn point from the save header (tile coordinates).
     pub spawn_x: i32,
+    /// `Main.dungeonX` (`Main.cs:1115`) — the dungeon anchor column. Reset
+    /// clears it to 0 (`WorldGen.cs:7047`); the skyblock noDungeon arm sets
+    /// −1 (`:3229`); the dungeon-brick discovery scans write it
+    /// (`:72486`/`:73796`). `initializeHardMode`'s anchor bias reads it
+    /// (`:31593`). The `.wld` header field (`WorldFile.cs:1281`).
+    pub dungeon_x: i32,
+    /// `Main.dungeonY` (`Main.cs:1117`) — the dungeon anchor row (the same
+    /// reset/discovery sites as [`Self::dungeon_x`]).
+    pub dungeon_y: i32,
     /// `Main.worldSurface`: below this row the sun does not reach the surface.
     pub world_surface: f64,
     /// `Main.rockLayer`: top of the underground rock layer.
@@ -627,6 +636,10 @@ impl World {
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,
+            // `WorldGen.Reset` (`WorldGen.cs:7047-7048`): both 0 until the
+            // dungeon pass publishes the anchor.
+            dungeon_x: 0,
+            dungeon_y: 0,
             world_surface: height as f64 * 0.25,
             rock_layer: height as f64 * 0.45,
             time: 0.0,

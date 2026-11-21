@@ -585,101 +585,308 @@ fn try_kill_invalid_tree_above(world: &mut World, x: i32, y: i32, new_floor: u16
     }
 }
 
-/// `GERunner`'s wall arms (`:76244-76260`): the sandstone wall 187 → the
-/// hallowed sandstone wall 222; the ebonstone/crimstone walls 3/83 → the
-/// hallowed stone wall 28.
+/// `GERunner`'s wall arms (`:76237-76252`): the grass-wall family
+/// {63, 65, 66, 68, 69, 81} → the hallowed grass wall 70, the hardened-sand
+/// wall 216 → 219, the sandstone wall 187 → 222, the ebonstone/crimstone
+/// walls 3/83 → the hallowed stone wall 28. (The pre-tail port carried only
+/// the 187/3/83 slice; the family arms landed with the GERunner rewrite.)
 pub(crate) fn convert_wall_hallow(wall: u16) -> Option<u16> {
     Some(match wall {
+        63 | 65 | 66 | 68 | 69 | 81 => 70,
+        216 => 219,
         187 => 222,
         3 | 83 => 28,
         _ => return None,
     })
 }
 
-/// `WorldGen.GERunner` (`WorldGen.cs:76169-76330`): the V-shaped strip
-/// walker — the position starts at the sky `(i, 0)`, moves with the
-/// velocity `(speedX, 5f)` per step, converting the Manhattan disc of the
-/// radius `num2 · 0.5` (`num2 = Next(200, 250) · maxTilesX/4200`, the rim
-/// wobble `Next(-10, 11) · 0.015`) around it. `good` runs the hallow map,
-/// the evil side runs `Convert`'s map by the world's flavour.
+/// `WorldGen.GERunner` (`WorldGen.cs:76169-76441`): the V-shaped strip
+/// walker, verbatim. The shimmer pre-scan (`:76175-76190`) counts the
+/// active shimmer 225 tiles in the 20-margin box — over 200000 the `flag`
+/// arms convert the shimmer/honey family too. The disc radius
+/// `num2 = (int)(Next(200, 250) · maxTilesX/4200)` (`:76191`), the position
+/// starts at `(i, j)` and the velocity at the two `Next(-10, 11) · 0.1`
+/// draws UNLESS a speed was passed (`:76197-76203`). Each step converts the
+/// Manhattan disc (the per-cell `Next(-10, 11) · 0.015` rim wobble,
+/// `:76231`), then drifts `vx += Next(-10, 11) · 0.05` clamped to
+/// `speedX ± 1` (`:76427-76435`); the walk ends when the position leaves
+/// the `±num2` band around the world (`:76436-76439`).
+///
+/// Deviations: `Skyblock.lowTiles` (`:76171-76174`) has no ported runtime
+/// state on this branch (the f24 skyblock lane owns it) — a classic world
+/// always enters. The per-conversion `SquareTileFrame` rides the port's
+/// `framing::reframe_area` convention (the `grow_moss_arm` precedent).
 pub fn gerunner(
     world: &mut World,
-    x: i32,
+    i: i32,
+    j: i32,
     speed_x: f64,
+    speed_y: f64,
     good: bool,
     corruption: bool,
     rng: &mut UnifiedRandom,
 ) {
-    let scale = world.width as f64 / 4200.0;
-    let num2 = (rng.next_range(200, 250) as f64) * scale;
-    let mut px = x as f64;
-    let mut py = 0.0;
-    let mut vx = speed_x;
-    let vy = 5.0;
-    let bottom = world.height - 10;
-    let mut steps = 0;
-    while py < bottom as f64 && steps < world.height * 2 {
-        steps += 1;
-        let radius = num2 * 0.5;
-        for m in (px - radius) as i32..=(px + radius) as i32 {
-            for n in (py - radius) as i32..=(py + radius) as i32 {
-                if m < 2 || n < 2 || m >= world.width - 2 || n >= world.height - 5 {
+    // The shimmer pre-scan (`:76175-76190`).
+    let mut shimmer_count = 0;
+    for k in 20..world.width - 20 {
+        for l in 20..world.height - 20 {
+            if world.tile(k, l).is_some_and(|t| t.active() && t.kind == 225) {
+                shimmer_count += 1;
+            }
+        }
+    }
+    let flag = shimmer_count > 200000;
+    // `:76191-76203`.
+    let num2 = (rng.next_range(200, 250) as f64 * (world.width as f64 / 4200.0)) as i32;
+    let num3 = num2 as f64;
+    let (mut px, mut py) = (i as f64, j as f64);
+    let (mut vx, mut vy) = (
+        rng.next_range(-10, 11) as f64 * 0.1,
+        rng.next_range(-10, 11) as f64 * 0.1,
+    );
+    if speed_x != 0.0 || speed_y != 0.0 {
+        vx = speed_x;
+        vy = speed_y;
+    }
+    loop {
+        // The clamped box (`:76207-76226`).
+        let x0 = ((px - num3 * 0.5) as i32).max(0);
+        let x1 = ((px + num3 * 0.5) as i32).min(world.width);
+        let y0 = ((py - num3 * 0.5) as i32).max(0);
+        let y1 = ((py + num3 * 0.5) as i32).min(world.height - 5);
+        for m in x0..x1 {
+            for n in y0..y1 {
+                // The Manhattan gate with the per-cell wobble draw
+                // (`:76231`) — the draw happens for EVERY box cell.
+                let manhattan = (m as f64 - px).abs() + (n as f64 - py).abs();
+                let wobble = 1.0 + rng.next_range(-10, 11) as f64 * 0.015;
+                if manhattan >= num2 as f64 * 0.5 * wobble {
                     continue;
                 }
-                let manhattan = ((m as f64 - px).abs() + (n as f64 - py).abs()) as f64;
-                let wobble = 1.0 + (rng.next_range(-10, 11) as f64) * 0.015;
-                if manhattan >= radius * wobble {
+                let Some(t) = world.tile(m, n) else {
                     continue;
-                }
-                let (kind, wall) = match world.tile(m, n) {
-                    Some(t) => (t.kind, t.wall),
-                    None => continue,
                 };
+                let (kind, wall) = (t.kind, t.wall);
                 if good {
-                    if let Some(new_kind) = convert_tile_hallow(kind) {
+                    // The hallow wall ladder (`:76237-76252`).
+                    let new_wall = match wall {
+                        63 | 65 | 66 | 68 | 69 | 81 => Some(70),
+                        216 => Some(219),
+                        187 => Some(222),
+                        3 | 83 => Some(28),
+                        _ => None,
+                    };
+                    if let Some(w) = new_wall {
                         if let Some(t) = world.tile_mut(m, n) {
-                            t.kind = new_kind;
+                            t.wall = w;
                         }
                     }
-                    if let Some(new_wall) = convert_wall_hallow(wall) {
-                        if let Some(t) = world.tile_mut(m, n) {
-                            t.wall = new_wall;
+                    // The hallow tile ladder (`:76253-76302`).
+                    let new_kind = if flag && kind == 225 {
+                        Some(117)
+                    } else if flag && kind == 230 {
+                        Some(402)
+                    } else {
+                        match kind {
+                            2 => Some(109),
+                            1 | 25 | 203 => Some(117),
+                            53 | 123 | 112 | 234 => Some(116),
+                            661 | 662 => Some(60),
+                            23 | 199 => Some(109),
+                            161 | 163 | 200 => Some(164),
+                            396 => Some(403),
+                            397 => Some(402),
+                            _ => None,
                         }
+                    };
+                    if let Some(k) = new_kind {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.kind = k;
+                        }
+                        crate::framing::reframe_area(world, m, n, 1, true);
+                    }
+                } else if !corruption {
+                    // The crimson ladder (`:76304-76362`).
+                    let new_wall = match wall {
+                        63 | 65 | 66 | 68 => Some(81),
+                        216 => Some(218),
+                        187 => Some(221),
+                        _ => None,
+                    };
+                    if let Some(w) = new_wall {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.wall = w;
+                        }
+                    }
+                    let new_kind = if flag && kind == 225 {
+                        Some(203)
+                    } else if flag && kind == 230 {
+                        Some(399)
+                    } else {
+                        match kind {
+                            60 | 661 => Some(662),
+                            2 | 109 => Some(199),
+                            1 | 117 => Some(203),
+                            53 | 123 | 116 => Some(234),
+                            161 | 164 => Some(200),
+                            396 => Some(401),
+                            397 => Some(399),
+                            _ => None,
+                        }
+                    };
+                    if let Some(k) = new_kind {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.kind = k;
+                        }
+                        crate::framing::reframe_area(world, m, n, 1, true);
                     }
                 } else {
-                    if let Some(new_kind) = convert_tile(kind, corruption) {
+                    // The corruption ladder (`:76364-76423`).
+                    let new_wall = match wall {
+                        63 | 65 | 66 | 68 => Some(69),
+                        216 => Some(217),
+                        187 => Some(220),
+                        _ => None,
+                    };
+                    if let Some(w) = new_wall {
                         if let Some(t) = world.tile_mut(m, n) {
-                            t.kind = new_kind;
-                            t.frame_x = 0;
-                            t.frame_y = 0;
+                            t.wall = w;
                         }
                     }
-                    if let Some(new_wall) = convert_wall(wall, corruption) {
-                        if let Some(t) = world.tile_mut(m, n) {
-                            t.wall = new_wall;
+                    let new_kind = if flag && kind == 225 {
+                        Some(25)
+                    } else if flag && kind == 230 {
+                        Some(398)
+                    } else {
+                        match kind {
+                            60 | 662 => Some(661),
+                            2 | 109 => Some(23),
+                            1 | 117 => Some(25),
+                            53 | 123 | 116 => Some(112),
+                            161 | 164 => Some(163),
+                            396 => Some(400),
+                            397 => Some(398),
+                            _ => None,
                         }
+                    };
+                    if let Some(k) = new_kind {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.kind = k;
+                        }
+                        crate::framing::reframe_area(world, m, n, 1, true);
                     }
                 }
             }
         }
+        // The drift + clamp (`:76426-76435`).
         px += vx;
         py += vy;
+        vx += rng.next_range(-10, 11) as f64 * 0.05;
+        if vx > speed_x + 1.0 {
+            vx = speed_x + 1.0;
+        }
+        if vx < speed_x - 1.0 {
+            vx = speed_x - 1.0;
+        }
+        // The exit band (`:76436-76439`).
+        if px < -(num2 as f64)
+            || py < -(num2 as f64)
+            || px > (world.width + num2) as f64
+            || py > (world.height + num2) as f64
+        {
+            break;
+        }
     }
 }
 
-/// `WorldGen.initializeHardMode`'s runner half (`WorldGen.cs:31660-31666`):
-/// the hallow V on one side and the evil V on the other (the C# `GERunner(
-/// num3, 0, 3·num5, 5f)` good + `GERunner(num4, 0, −3·num5, 5f, good:
-/// false)`); the start xs sit ±`maxTilesX/7` off the middle.
+/// `WorldGen.initializeHardMode` (`WorldGen.cs:31570-31699`): the hardmode
+/// transform. The head draws (`:31581-31591`): the two band fractions
+/// `Next(300, 400) · 0.001` / `Next(200, 300) · 0.001`, the `Next(2)` side
+/// flip (`num5 = ±1`), then the dungeon-side bias (`:31592-31615`) pulls
+/// the dungeon-opposite anchor toward the `num2` fraction. The dual
+/// dungeons seed skips the V runners entirely (`:31576-31580`).
+///
+/// The remix arm (`:31618-31656`) paints a hallow band `width/7` wide plus
+/// a `width/14` evil-recruit fringe on the dungeon-OPPOSITE edge, each
+/// column starting at `worldSurface + Next(-1, 2)`; the classic arm runs
+/// the two `GERunner` Vs (`:31659-31660`). The moss-wall tail
+/// (`:31663-31698`) lands in the next slice.
+///
+/// Deviations: the `Main.rand == null` re-seed (`:31572-31575`) has no port
+/// equivalent (the caller always supplies the stream); the remix arm's
+/// `Convert(i, j, 2)` rides the port's `convert_cell_flavor` hallow seam
+/// (the `micro_surface.rs` documented approximation).
 pub fn initialize_hard_mode(world: &mut World, corruption: bool, rng: &mut UnifiedRandom) {
-    let offset = world.width / 7;
-    // `num5 = ±1` (`WorldGen.cs:31585-31590`) — the velocity `3·num5` gives
-    // the 3:5 V slope verbatim.
-    let speed = 3.0;
-    // The hallow runner: the east side heading further east.
-    gerunner(world, world.width / 2 + offset, speed, true, corruption, rng);
-    // The evil runner: the west side heading further west.
-    gerunner(world, world.width / 2 - offset, -speed, false, corruption, rng);
+    let flag = !world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS);
+    // `:31581-31591`.
+    let num = rng.next_range(300, 400) as f64 * 0.001;
+    let num2 = rng.next_range(200, 300) as f64 * 0.001;
+    let width = world.width as f64;
+    let mut num3 = (width * num) as i32;
+    let mut num4 = (width * (1.0 - num)) as i32;
+    let mut num5 = 1;
+    if rng.next_max(2) == 0 {
+        num4 = (width * num) as i32;
+        num3 = (width * (1.0 - num)) as i32;
+        num5 = -1;
+    }
+    // The dungeon-side bias (`:31592-31615`).
+    let num6 = if world.dungeon_x < world.width / 2 { -1 } else { 1 };
+    if num6 < 0 {
+        if num4 < num3 {
+            num4 = (width * num2) as i32;
+        } else {
+            num3 = (width * num2) as i32;
+        }
+    } else if num4 > num3 {
+        num4 = (width * (1.0 - num2)) as i32;
+    } else {
+        num3 = (width * (1.0 - num2)) as i32;
+    }
+    if flag {
+        if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+            // The remix hallow band (`:31618-31656`).
+            let num7 = world.width / 7;
+            let num8 = world.width / 14;
+            let surface = world.world_surface as i32;
+            if world.dungeon_x < world.width / 2 {
+                for i in (world.width - num7 - num8)..world.width {
+                    let start = surface + rng.next_range(-1, 2);
+                    for j in start..world.height - 10 {
+                        let recruit = i > world.width - num7
+                            || world.tile(i, j).is_some_and(|t| {
+                                crate::tiledata::sets::SET_CRIMSON.has(t.kind)
+                                    || crate::tiledata::sets::SET_CORRUPT.has(t.kind)
+                            });
+                        if recruit {
+                            convert_cell_flavor(world, i, j, ConversionFlavor::Hallow, true);
+                        }
+                    }
+                }
+            } else {
+                for k in 0..(num7 + num8) {
+                    let start = surface + rng.next_range(-1, 2);
+                    for l in start..world.height - 10 {
+                        let recruit = k < num7
+                            || world.tile(k, l).is_some_and(|t| {
+                                crate::tiledata::sets::SET_CRIMSON.has(t.kind)
+                                    || crate::tiledata::sets::SET_CORRUPT.has(t.kind)
+                            });
+                        if recruit {
+                            convert_cell_flavor(world, k, l, ConversionFlavor::Hallow, true);
+                        }
+                    }
+                }
+            }
+        } else {
+            // The classic V pair (`:31659-31660`).
+            gerunner(world, num3, 0, 3.0 * num5 as f64, 5.0, true, corruption, rng);
+            gerunner(world, num4, 0, -3.0 * num5 as f64, 5.0, false, corruption, rng);
+        }
+    }
+    // The moss-wall tail (`:31663-31698`) — the next slice (P5).
 }
 
 #[cfg(test)]
@@ -732,7 +939,12 @@ mod runner_tests {
         assert_eq!(convert_tile_hallow(661), Some(60), "the purify arm");
         assert_eq!(convert_tile_hallow(662), Some(60));
         assert_eq!(convert_tile_hallow(211), None);
-        // The walls: 187 → 222, 3/83 → 28.
+        // The walls (`:76237-76252`): the grass family → 70, 216 → 219,
+        // 187 → 222, 3/83 → 28.
+        assert_eq!(convert_wall_hallow(63), Some(70));
+        assert_eq!(convert_wall_hallow(69), Some(70));
+        assert_eq!(convert_wall_hallow(81), Some(70));
+        assert_eq!(convert_wall_hallow(216), Some(219));
         assert_eq!(convert_wall_hallow(187), Some(222));
         assert_eq!(convert_wall_hallow(3), Some(28));
         assert_eq!(convert_wall_hallow(83), Some(28));
@@ -742,7 +954,7 @@ mod runner_tests {
     fn the_gerunner_carves_the_v_strip() {
         let mut w = world();
         let mut rng = UnifiedRandom::new(9);
-        gerunner(&mut w, 400, 2.0, true, false, &mut rng);
+        gerunner(&mut w, 400, 0, 2.0, 5.0, true, false, &mut rng);
         // The strip: the hallowed grass/pearlstone along the V from the
         // sky to the bottom.
         let hallowed = w
@@ -775,7 +987,7 @@ mod runner_tests {
         // grass 23, the stone → the ebonstone 25.
         let mut w = world();
         let mut rng = UnifiedRandom::new(10);
-        gerunner(&mut w, 400, -2.0, false, true, &mut rng);
+        gerunner(&mut w, 400, 0, -2.0, 5.0, false, true, &mut rng);
         let corrupt = w
             .tiles
             .iter()
@@ -812,6 +1024,111 @@ mod runner_tests {
             .filter(|t| t.active() && matches!(t.kind, 199 | 203 | 234))
             .count();
         assert!(crimson > 200, "the crimson V ({crimson})");
+    }
+
+    /// W4-d103 tail (P2): `initializeHardMode`'s head draws
+    /// (`WorldGen.cs:31581-31591`) — `Next(300, 400)`, `Next(200, 300)`,
+    /// `Next(2)` — precede the runners' draws. The mirror consumes exactly
+    /// the three head draws, then a twin world runs ONLY the two GERunner
+    /// calls from that state: equal streams prove the head drew exactly
+    /// three words in the cited order (the runners are deterministic given
+    /// the same anchors, which the twin re-derives from the same draws).
+    #[test]
+    fn w4_d103_p2_the_hardmode_head_draws_three_before_the_runners() {
+        let mut w = World::new("t".into(), 60, 60);
+        w.dungeon_x = 45; // the right side: num6 = +1
+        let mut rng = UnifiedRandom::new(7);
+        initialize_hard_mode(&mut w, true, &mut rng);
+        // The three head draws, verbatim order, then the anchor maths.
+        let mut mirror = UnifiedRandom::new(7);
+        let num = mirror.next_range(300, 400) as f64 * 0.001;
+        let num2 = mirror.next_range(200, 300) as f64 * 0.001;
+        let width = 60.0;
+        let (mut num3, mut num4, mut num5) =
+            ((width * num) as i32, (width * (1.0 - num)) as i32, 1);
+        if mirror.next_max(2) == 0 {
+            num4 = (width * num) as i32;
+            num3 = (width * (1.0 - num)) as i32;
+            num5 = -1;
+        }
+        // num6 = +1 (dungeon right): the `else if num4 > num3` arm.
+        if num4 > num3 {
+            num4 = (width * (1.0 - num2)) as i32;
+        } else {
+            num3 = (width * (1.0 - num2)) as i32;
+        }
+        // The runners from the post-head state.
+        let mut twin = World::new("t".into(), 60, 60);
+        twin.dungeon_x = 45;
+        gerunner(&mut twin, num3, 0, 3.0 * num5 as f64, 5.0, true, true, &mut mirror);
+        gerunner(&mut twin, num4, 0, -3.0 * num5 as f64, 5.0, false, true, &mut mirror);
+        assert_eq!(rng, mirror, "exactly the three head draws + the runners");
+        assert_eq!(w.tiles, twin.tiles, "the same conversions landed");
+    }
+
+    /// W4-d103 tail (P2): the dungeon-side bias (`:31592-31615`) — a LEFT
+    /// dungeon pulls the dungeon-opposite anchor to the `num2` fraction.
+    /// The two worlds differ ONLY in `dungeon_x`; the head draws are the
+    /// same stream prefix, so the divergence proves the bias reads it.
+    #[test]
+    fn w4_d103_p2_the_dungeon_side_biases_the_anchors() {
+        let mut left = world();
+        left.dungeon_x = 100; // < 400: num6 = -1
+        let mut right = world();
+        right.dungeon_x = 700; // >= 400: num6 = +1
+        let mut rng_a = UnifiedRandom::new(21);
+        let mut rng_b = UnifiedRandom::new(21);
+        initialize_hard_mode(&mut left, true, &mut rng_a);
+        initialize_hard_mode(&mut right, true, &mut rng_b);
+        assert_ne!(
+            left.tiles, right.tiles,
+            "the dungeon side moves the V anchors"
+        );
+    }
+
+    /// W4-d103 tail (P3): the remix arm (`:31618-31656`) paints the hallow
+    /// band on the dungeon-opposite edge — a RIGHT dungeon puts the band
+    /// on the LEFT `width/7 + width/14` columns, each column's start
+    /// jittered by `Next(-1, 2)`.
+    #[test]
+    fn w4_d103_p3_the_remix_band_hallows_the_opposite_edge() {
+        let mut w = world();
+        w.seeds = crate::seeds::SeedFlags::none();
+        w.seeds.insert(crate::seeds::SeedFlags::REMIX);
+        w.dungeon_x = 700; // the right side: the band lands left
+        let mut rng = UnifiedRandom::new(5);
+        initialize_hard_mode(&mut w, true, &mut rng);
+        // The left band (0..width/7 = 0..114) carries hallowed stone.
+        let left_hallow = (0..114).any(|x| {
+            (300..590).any(|y| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && matches!(t.kind, 109 | 117))
+            })
+        });
+        assert!(left_hallow, "the remix hallow band on the left edge");
+        // The far right (past width - width/7 - width/14) stays untouched
+        // by the band arm (no evil tiles there to recruit).
+        let right_hallow = (700..800).any(|x| {
+            (300..590).any(|y| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && matches!(t.kind, 109 | 117))
+            })
+        });
+        assert!(!right_hallow, "the band stays on the dungeon-opposite edge");
+    }
+
+    /// W4-d103 tail (P2): the dual-dungeons seed skips the V runners
+    /// (`:31576-31580`) — the head still draws, the tiles stay untouched.
+    #[test]
+    fn w4_d103_p2_dual_dungeons_skips_the_runners() {
+        let mut w = world();
+        w.micro_seeds = crate::seeds::MicroSeedFlags::from(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS);
+        let before = w.tiles.clone();
+        let mut rng = UnifiedRandom::new(3);
+        let pristine = rng.clone();
+        initialize_hard_mode(&mut w, true, &mut rng);
+        assert_eq!(w.tiles, before, "no V conversions");
+        assert_ne!(rng, pristine, "the head still drew");
     }
 }
 

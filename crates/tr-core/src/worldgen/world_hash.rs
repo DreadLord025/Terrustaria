@@ -314,6 +314,11 @@ mod tests {
     // retired for the faithful sunplate house). The 512 fixture's islands
     // pass skips (the sky band is too thin), so the ledger is empty and
     // this pin is UNCHANGED by the split itself. a == b stays.
+    // W4-d103 tail P2/P3/P4 (2026-11-21, code-only): the hardmode transform
+    // rewrite (the initializeHardMode head draws + the dungeon-side bias +
+    // the remix band + GERunner verbatim) runs only on the hardmode switch
+    // / the start_in_hardmode micro-seed — no classic pipeline step calls
+    // it. This pin is UNCHANGED. a == b stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -412,6 +417,13 @@ mod tests {
     // DESIGN on the 4200-wide default. The re-pin is DEFERRED to the merge
     // gate (no compiler on this branch); a == b stays green — the pass
     // draws only its own fresh stream.
+    // W4-d103 tail P2/P3/P4 (2026-11-21, code-only): the hardmode transform
+    // (`initializeHardMode` head + remix band + the verbatim GERunner) is a
+    // POST-pipeline runtime function — no executed step calls it on a
+    // classic world, so this pin is UNCHANGED by the rewrite. The
+    // `start_in_hardmode` micro-seed world changes by design (it has no
+    // pin). `World.dungeon_x/y` became owned state (the dungeon step
+    // publishes the anchor); neither field is hashed. a == b stays.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
