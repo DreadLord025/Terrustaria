@@ -39318,12 +39318,23 @@ verification pass. 33 C# `PlaySound` sites across 8 commits.
 
 - **The fail-tick dust stays skipped** (the recorded visual seam); only
   the sound closes.
-- **The vanity-rocket producer is unported**: the cue arm reads the
-  gameplay tier (the equip rows set `rocketBoots == vanityRocketBoots`,
-  `Player.cs:14420`/`:15023`/`:15222`/`:15380-15400`); tier 6 (the
-  Bee costume `:13090`) awaits its producer.
-- **The 53/55 playing guards stay the standing D4 deviation** (wave A):
-  a fresh source per play, no refusal while live.
+- **The vanity-rocket producer — CLOSED (DOC-SWEEP lane 11, `4cbd37bf`)**:
+  `vanity_rocket_boots` lands (`Player.cs:2760`) - the equip rows set both
+  tiers equal (`:14420`/`:15023`/`:15222`/`:15380-15400`), the visible-boot
+  half + the social loop re-derive the visual tier
+  (`UpdateBootVisualEffects` `:36704-36751`), the Red's Leggings 668 sets
+  tier 6 (`:13088-13091` - NOT a "Bee costume"; the bee rocket is the
+  `RocketBootVisuals` dust `:29330`). The cue arm reads the vanity tier
+  (`:26886`/`:26891`). The `CancelAllBootRunVisualEffects` dash flags stay
+  run-particle visual seams. Census: research/82 §1.
+- **The 53/55/159 playing guards — CLOSED (DOC-SWEEP lane 11, `4cbd37bf`)**:
+  `sound.rs::item_case2_playing_guard` + `audio.rs::item_slots` model the
+  refusal-before-the-pitch-draw (`LegacySoundPlayer.cs:559-562`/`:583-586`)
+  and the per-style Stop/re-create pool (`:580-607`, the stack-allowed
+  styles `:595-605` keep the old source). Headless no slot fills, so the
+  guard never trips (the case-28 precedent). The per-frame re-pan + the
+  garbage collector stay the standing tracked-sound D4 (S1-E-23). Census:
+  research/82 §2.
 - **The fart clouds / the Meowcart dust / the wing frame tables are
   visual seams** - the cues play, the particles wait for their waves.
 - **The `check_sounds` drain uses the pinned `kill_cue` map** (the
@@ -39346,3 +39357,11 @@ verification pass. 33 C# `PlaySound` sites across 8 commits.
 - `minecart.rs::w4_c14_the_fart_delegates_play_their_cue_pairs_in_order`
   + `w4_c14_the_meowcart_delegates_queue_the_case37_cues`
 - `audio.rs::w4_c14_the_meowcart_case37_draws_the_slot_then_the_pitch`
+
+DOC-SWEEP lane 11 (research/82, `4cbd37bf`) adds two witnesses (written, NOT
+run): `player.rs::w4_c14_the_vanity_rocket_tier_produces_the_cue` (the
+vanity-tier producer + the divergent cue) and
+`audio.rs::w4_c14_the_cart_rattle_guard_refuses_while_the_slot_is_live` (the
+53/55/159 playing-guard refusal). The movement-sound census verdicts (swim
+strokes none, landing thud = the hurt sound, grapple fire/reel ported, no
+mount ambient loop beyond d80b) live in research/82 §3-4.
