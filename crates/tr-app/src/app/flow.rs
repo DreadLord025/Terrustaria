@@ -2402,6 +2402,8 @@ pub(crate) mod front_flow_tests {
             legacy_light: None,
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
+            // `Main.invAlpha = 1f; Main.invDir = 1f` (`Main.cs:66846-66847`).
+            inv_pulse: crate::ui::inv_pulse::InvPulse::default(),
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
             disco: [255, 0, 0],

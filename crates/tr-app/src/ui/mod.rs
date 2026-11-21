@@ -20,6 +20,7 @@ pub mod crafting_grid;
 pub mod cursor;
 pub mod ingame_options;
 pub mod housing;
+pub mod inv_pulse;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
@@ -679,7 +680,11 @@ pub fn draw_hud(
     mouse_item: &ItemSlot,
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
-    craft: &[usize],
+    // The RAW `Main.availableRecipe` list (`Recipe.UpdateRecipeList`) and
+    // its `_filteredRecipes` narrowing (`NewCraftingUI.UpdateContents`
+    // `:596-611`); with no filter tab the two are equal.
+    craft_raw: &[usize],
+    craft_shown: &[usize],
     // `NewCraftingUI._selectedRecipeIndex` (`:196`): the raw recipe index the
     // grid's selection overlay marks (`OnActivate` `:904` derives it from
     // `Main.availableRecipe[Main.focusRecipe]`; W4-f23 wiring).
@@ -999,7 +1004,8 @@ pub fn draw_hud(
                 lookups,
                 screen,
                 mouse_pos,
-                craft,
+                craft_raw,
+                craft_shown,
                 false,
                 false,
                 craft_filter_flags,
@@ -1023,7 +1029,7 @@ pub fn draw_hud(
             }
             // Hovering a recipe shows the crafted item's tooltip
             // (`Main.HoverOverCraftingItemButton`, `Main.cs:42250`).
-            if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft) {
+            if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft_shown) {
                 let (kind, count) = crate::craft::RECIPES[idx].create;
                 let hover = crate::item::ItemSlot {
                     kind,

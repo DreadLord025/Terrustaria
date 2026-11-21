@@ -332,24 +332,38 @@ fn title_width(lookups: &assets::Lookups) -> f32 {
     }
 }
 
-/// The `i`-th recipe cell's origin and 40x40 hover/click rect, laid out
-/// left-to-right on a fixed 44 px pitch from the grid's top-left
-/// (`UIDynamicItemCollection.cs:75-79` `GetItemSlotHitbox`:
-/// `startX + num % _itemsPerLine * 44, startY + num / _itemsPerLine * 44` —
-/// **integer** division, so every recipe in a row shares one Y and the row
-/// pitch is constant; `:21-23` `sizePerEntryX/Y = 44`, `:162`
-/// `_itemsPerLine = Width / 44`). The shared geometry for the draw pass and
-/// `hit_test` — a fractional `i / cols` here drifts each icon 44/cols px down.
+/// The `i`-th recipe cell's origin and 44x44 hover/click rect —
+/// `UIDynamicItemCollection.GetGridParameters` (`:81-97`) +
+/// `GetItemSlotHitbox` (`:75-79`): the grid element fills the `UIList`'s
+/// inner list (`UIList.cs:57` Width/Height fill, `:122-123` single item at
+/// Top 0), so its rect is [`Layout::list`]; `startX = Center.X -
+/// (int)(44 * _itemsPerLine * 0.5f)` (the rows are centred, int-truncated),
+/// `startY = rect.Top`; each cell is `startX + num % cols * 44, startY +
+/// num / cols * 44` — **integer** division, 44x44 hitboxes (`:78`).
+/// `_itemsPerLine = Width / 44` (`:162`, int division). The shared geometry
+/// for the draw pass and `hit_test`.
 pub fn recipe_cell(l: &Layout, i: usize) -> [f32; 4] {
-    let cols = (((l.grid[2] - 4.0) / 44.0).floor() as usize).max(1);
-    let col = (i % cols) as f32;
-    let row = (i / cols) as f32;
-    [l.grid[0] + col * 44.0, l.grid[1] + row * 44.0, 40.0, 40.0]
+    // `GetDimensions().ToRectangle()` (`CalculatedStyle.cs:15-18`) truncates
+    // X/Width to ints before `Center.X` (`:25-28`).
+    let (rx, rw) = (l.list[0] as i32, l.list[2] as i32);
+    let cols = (rw / 44).max(1);
+    // `startX = rectangle.Center.X - (int)(44 * _itemsPerLine * 0.5f)` (`:85`).
+    let start_x = rx as f32 + rw as f32 * 0.5 - (44 * cols) as f32 * 0.5;
+    let col = (i % cols as usize) as f32;
+    let row = (i / cols as usize) as f32;
+    [start_x + col * 44.0, l.list[1] + row * 44.0, 44.0, 44.0]
 }
 
+/// `UIDynamicItemCollection.DrawSelf` (`UIDynamicItemCollection.cs:40`):
+/// `Main.inventoryScale = 3465f / 4095f` — the grid's slot scale for the
+/// whole walk. 3465/4095 = 11/13 exactly, so the 52 px `Inventory_Back*`
+/// sheets draw at 52 * 11/13 = 44 px — the cell background fills the 44x44
+/// hitbox with no stretch (`ItemSlot.cs:2355`).
+pub const GRID_INVENTORY_SCALE: f32 = 3465.0 / 4095.0;
+
 /// The recipe grid cell the mouse is over, mapped back to the available
-/// recipe list (`NewCraftingUI`'s clickable recipe slots). Cells are 40x40 on
-/// a 44 px pitch from the grid's top-left ([`recipe_cell`]).
+/// recipe list (`NewCraftingUI`'s clickable recipe slots). Cells are 44x44 on
+/// a 44 px pitch, centred on the list rect ([`recipe_cell`]).
 pub(crate) fn hit_test(
     screen: Vec2,
     lookups: &assets::Lookups,
@@ -360,7 +374,7 @@ pub(crate) fn hit_test(
     for (i, recipe) in available.iter().enumerate() {
         // The base walk's hover gate (`UIDynamicItemCollection.cs:52` via
         // `crafting_grid::slot_hovering`): int-truncated mouse, exclusive
-        // right/bottom, on the same 40x40 cell rect the draw hovers.
+        // right/bottom, on the same 44x44 cell rect the draw hovers.
         if super::crafting_grid::slot_hovering(
             true,
             recipe_cell(&l, i).map(|v| v as i32),
@@ -377,8 +391,11 @@ pub(crate) fn hit_test(
 /// frames; `guide_mode` selects the `Main.InGuideCraftMenu` variants;
 /// `filter_flags` is `EntryFilterer.ActiveFilters` as the strip's eleven slots
 /// (`UICreativeItemsInfiniteFilteringOptions.cs:104-110`).
-/// `selected_recipe_index` is `NewCraftingUI._selectedRecipeIndex` (`:196`,
-/// `int?` — the port derives it from `Main.focusRecipe` via
+/// `craft_raw` is `Main.availableRecipe[..numAvailableRecipes]` (the RAW list,
+/// `Recipe.UpdateRecipeList`), `craft_shown` its `_filteredRecipes` narrowing
+/// (`NewCraftingUI.UpdateContents` `:596-611`); with no filter the two are
+/// equal. `selected_recipe_index` is `NewCraftingUI._selectedRecipeIndex`
+/// (`:196`, `int?` — the port derives it from `Main.focusRecipe` via
 /// `availableRecipe[focusRecipe]`, `OnActivate` `:904`) and `inventory_back`
 /// is `Main.inventoryBack`, the selected-cell overlay's tint
 /// (`ItemSlot.cs:2373`).
@@ -388,7 +405,8 @@ pub fn draw(
     lookups: &assets::Lookups,
     screen: Vec2,
     mouse_pos: Vec2,
-    available: &[usize],
+    craft_raw: &[usize],
+    craft_shown: &[usize],
     guide_mode: bool,
     difficulty_3_and_creative_unblocked: bool,
     filter_flags: [bool; 11],
@@ -443,24 +461,25 @@ pub fn draw(
     );
 
     // 5. The grid area (`UIDynamicItemCollection.cs:38-71`): the shown recipes
-    //    as 40x40 icon cells on a fixed 44 px row pitch (`GetItemSlotHitbox`,
-    //    `:75-79` — integer `num / _itemsPerLine`) — the same cells `hit_test`
-    //    maps clicks back to ([`recipe_cell`]). Each cell runs the nested
-    //    `ItemGrid.DrawSlot` machine (`NewCraftingUI.cs:55-75`, W4-f23 wiring):
-    //    `RecipeEntry` carries the raw index + the `availableRecipe` position
-    //    (`ResetRecipes` `:596-611`), the base walk's hover gate decides the
-    //    hover, and the machine picks the selection overlay + the White-vs-
-    //    DisabledSlotColor tint. The port is mouse-only (`using_gamepad =
-    //    false`, `current_point = 0` — gamepad unported, research/18 dev. 10).
-    for (i, recipe_idx) in available.iter().enumerate() {
+    //    (`_filteredRecipes`) as 44x44 cells centred on the list rect
+    //    (`GetGridParameters` `:85-86` + `GetItemSlotHitbox` `:75-79` — integer
+    //    `num / _itemsPerLine`) — the same cells `hit_test` maps clicks back to
+    //    ([`recipe_cell`]). Each cell runs the nested `ItemGrid.DrawSlot`
+    //    machine (`NewCraftingUI.cs:55-75`, W4-f23 wiring): `RecipeEntry`
+    //    carries the raw index + the RAW `availableRecipe` position
+    //    (`UpdateContents` `:610` — the shown position only with no filter),
+    //    the base walk's hover gate decides the hover, and the machine picks
+    //    the selection overlay + the White-vs-DisabledSlotColor tint. The port
+    //    is mouse-only (`using_gamepad = false`, `current_point = 0` — gamepad
+    //    unported, research/18 dev. 10).
+    for (i, recipe_idx) in craft_shown.iter().enumerate() {
         let cell = recipe_cell(&l, i);
         let mut entry = super::crafting_grid::RecipeEntry::new(*recipe_idx);
-        // `ResetRecipes` `:610` sets `availableIndex = i` on the RAW
-        // available list; the port's `available` is the SHOWN list, so `i`
-        // is a stand-in position — only the `>= 0` Available gate is
-        // observable here (the tint), and every shown entry is available.
-        entry.available_index = i as i32;
-        entry.grid_index = i as i32; // `:605` (the shown list is `_filteredRecipes`)
+        // `UpdateContents` `:610`: `availableIndex = i` walks the RAW
+        // `Main.availableRecipe` list — with a filter active the shown
+        // position diverges from it (W4-f23 deviation fix).
+        entry.available_index = super::crafting_grid::available_position(craft_raw, *recipe_idx);
+        entry.grid_index = i as i32; // `:606` (the shown list is `_filteredRecipes`)
         let hovering = super::crafting_grid::slot_hovering(
             true,
             cell.map(|v| v as i32),
@@ -468,17 +487,39 @@ pub fn draw(
             false,
         );
         let d = super::crafting_grid::draw_slot(&entry, selected_recipe_index, false, 0, hovering);
-        if d.hovered {
-            // The hovered cell's cyan frame — the port's `ItemSlot` hover
-            // stand-in (ANALYSIS "Crafting panel"), now gated by the C# walk.
-            r.push_ui_sprite([cell[0], cell[1]], [40.0, 40.0], r.white_uv(), [0.35, 0.55, 0.85, 0.55]);
-        }
+        // `ItemSlot.Draw`'s context-41 background (`ItemSlot.cs:2298-2302`,
+        // `:2340-2343`, `:2355`): `Inventory_Back18` at the hitbox's TopLeft,
+        // tint `ShiftBlueToCyanTheme((16,36,56,180)*0.9f)` × lightColor — the
+        // DrawSlot lightColor is `entry.Available ? White : DisabledSlotColor`
+        // (`NewCraftingUI.cs:74`), multiplied per-channel `(a*b)>>8` (XNA
+        // `Color.MultiplyRGBA`). `Main.inventoryScale = 3465/4095`
+        // (`UIDynamicItemCollection.cs:40`) makes the 52 px sheet exactly
+        // 44 px — the cell fills its hitbox, no stretch.
+        let back_tint = color::tint(crate::render::special_tiles::xna_multiply_rgba(
+            color::shift_blue_to_cyan(color::mul([16, 36, 56, 180], 0.9)),
+            d.tint,
+        ));
+        slot::draw_slot(
+            r,
+            lookups,
+            &empty_slot(),
+            cell[0],
+            cell[1],
+            41,
+            0,
+            false,
+            GRID_INVENTORY_SCALE,
+            back_tint,
+        );
         // `DrawSelectionHighlightForGridSlot` (`:66`) → the context-41
         // `Inventory_Back24` overlay in `Main.inventoryBack`
-        // (`ItemSlot.cs:2371-2374`), over the cell's background position.
+        // (`ItemSlot.cs:2371-2374`), at the slot position × inventoryScale.
         if d.grid_selection_highlight {
             draw_grid_selection_overlay(r, lookups, cell, inventory_back);
         }
+        // `HandleCraftSlot` (`:72`) fires on the hover edge; the port's hover
+        // cue is the item tooltip (`draw_hud`'s `hit_test`), so the hover
+        // itself draws nothing extra.
         let recipe = entry.recipe();
         // No `Item_*` sheets are extracted yet: placeable items fall back to
         // the tile's plain 16x16 frame, the same fallback the world drops use
@@ -490,15 +531,24 @@ pub fn draw(
                 Some((lookups.plain_tex(t)?.uv, 16.0, 16.0))
             });
         if let Some((uv, w, h)) = icon {
-            // The icon fits inside the cell, centred (`ItemSlot.Draw`: scale
-            // to the slot with the texture's own aspect kept). The tint is
-            // `DrawSlot`'s `entry.Available ? White : DisabledSlotColor`
-            // (`NewCraftingUI.cs:74`) — shown entries are available, so this
-            // stays White in practice; the grey arm rides the machine.
-            let scale = (32.0 / w).min(32.0 / h).min(1.0);
-            let (dw, dh) = (w * scale, h * scale);
+            // `ItemSlot.DrawItemIcon` (`ItemSlot.cs:2515`, `:2880-2881`) via
+            // `DrawItem_GetColorAndScale` (`:2966-2975`): the icon centres on
+            // `position + value.Size()/2 * inventoryScale` (`:2499`, `:2515`)
+            // — the cell's centre — at `inventoryScale * fit`. The fit runs
+            // only when width OR height exceeds the 32 px sizeLimit, and the
+            // denominator is the height when `Width <= Height`, else the
+            // width (`:2967-2969`). The tint is `DrawSlot`'s lightColor
+            // (`NewCraftingUI.cs:74`), which context 41 multiplies into the
+            // icon (`ItemSlot.cs:2340-2343`).
+            let fit = if w > 32.0 || h > 32.0 {
+                if w <= h { 32.0 / h } else { 32.0 / w }
+            } else {
+                1.0
+            };
+            let s = GRID_INVENTORY_SCALE * fit;
+            let (dw, dh) = (w * s, h * s);
             r.push_ui_sprite(
-                [cell[0] + (40.0 - dw) * 0.5, cell[1] + (40.0 - dh) * 0.5],
+                [cell[0] + cell[2] * 0.5 - dw * 0.5, cell[1] + cell[3] * 0.5 - dh * 0.5],
                 [dw, dh],
                 uv,
                 super::crafting_grid::slot_tint(&entry),
@@ -507,7 +557,7 @@ pub fn draw(
             // Items without an extracted sprite (the atlas carries only the
             // world's used tile frames): a grey placeholder box — documented
             // in docs/ANALYSIS.md.
-            r.push_ui_sprite([cell[0] + 4.0, cell[1] + 4.0], [32.0, 32.0], r.white_uv(), [0.5; 4]);
+            r.push_ui_sprite([cell[0] + 6.0, cell[1] + 6.0], [32.0, 32.0], r.white_uv(), [0.5; 4]);
         }
     }
 
@@ -533,10 +583,9 @@ pub fn draw(
 /// The selected-recipe cell's `Inventory_Back24` overlay
 /// (`ItemSlot.cs:2371-2374`): `context == 41 &&
 /// ItemSlot.DrawSelectionHighlightForGridSlot` draws the sheet at the slot
-/// position in `Main.inventoryBack`. The port's grid cell is the 40x40
-/// `recipe_cell` rect (the immediate-grid deviation — the C# background is
-/// the 52 px sheet × `inventoryScale` 3465/4095, `UIDynamicItemCollection.cs:40`),
-/// so the overlay stretches over the cell like the hover frame does.
+/// position in `Main.inventoryBack` at `Main.inventoryScale`. The grid's
+/// scale is 3465/4095 = 11/13 (`UIDynamicItemCollection.cs:40`), so the 52 px
+/// sheet draws at exactly the 44x44 cell — no stretch.
 fn draw_grid_selection_overlay(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -1074,10 +1123,10 @@ mod tests {
     fn recipe_cells_share_a_row_y_on_a_constant_44px_pitch() {
         // `UIDynamicItemCollection.cs:75-79`: integer `num / _itemsPerLine`
         // gives every recipe in a row the same Y; `:21-23` the pitch is 44;
-        // `:162` `_itemsPerLine = Width / 44` — the port's list width is
-        // grid.w - 20 = 450, and floor((470 - 4) / 44) = 10 columns, the same
-        // 450 / 44 = 10. The grid origin at 1600x900 is (32, 439)
-        // (`layout_matches_the_source_table_at_1600x900`).
+        // `:162` `_itemsPerLine = Width / 44` — the grid fills the UIList's
+        // inner list (450 wide at 1600x900), so 450 / 44 = 10 columns.
+        // `GetGridParameters` (`:85-86`): startX = Center.X - 44*cols/2 =
+        // (32 + 225) - 220 = 37, startY = the list's Top = 446.
         let l = layout(Vec2::new(1600.0, 900.0), W, false);
         let cols = 10usize; // 450 / 44, integer division (C# `:162`)
         let n = 25usize; // two full rows plus a partial third
@@ -1086,23 +1135,26 @@ mod tests {
             let row = i / cols;
             let col = i % cols;
             // Y is a pure function of the row index: top + row * 44.
-            assert_eq!(cell[1], 439.0 + row as f32 * 44.0, "recipe {i}");
-            // X wraps left-to-right on the same pitch.
-            assert_eq!(cell[0], 32.0 + col as f32 * 44.0, "recipe {i}");
-            assert_eq!([cell[2], cell[3]], [40.0, 40.0]);
-            // (y[i] - y[0]) divides evenly by the row index times the pitch.
-            assert_eq!(cell[1] - 439.0, row as f32 * 44.0);
+            assert_eq!(cell[1], 446.0 + row as f32 * 44.0, "recipe {i}");
+            // X wraps left-to-right on the same pitch from the centred start.
+            assert_eq!(cell[0], 37.0 + col as f32 * 44.0, "recipe {i}");
+            // The hitbox is the full 44x44 cell (`:78`), not a 40x40 inset.
+            assert_eq!([cell[2], cell[3]], [44.0, 44.0]);
+            assert_eq!(cell[1] - 446.0, row as f32 * 44.0);
         }
         // Every recipe of the first row shares one Y, the second row the
         // next pitch — no per-iteration accumulation (the old float
         // `i as f32 / cols` drifted each icon by 44/cols = 4.4 px).
         for i in 0..cols {
-            assert_eq!(recipe_cell(&l, i)[1], 439.0);
+            assert_eq!(recipe_cell(&l, i)[1], 446.0);
         }
         for i in cols..2 * cols {
-            assert_eq!(recipe_cell(&l, i)[1], 483.0);
+            assert_eq!(recipe_cell(&l, i)[1], 490.0);
         }
-        assert_eq!(recipe_cell(&l, 2 * cols)[1], 527.0);
+        assert_eq!(recipe_cell(&l, 2 * cols)[1], 534.0);
+        // The centred rows leave a 5 px margin each side: 37 + 10*44 = 477,
+        // and the list spans [32, 482] (`:85`'s integer-halved centre).
+        assert_eq!(recipe_cell(&l, 9)[0] + 44.0, 477.0);
     }
 
     #[test]
@@ -1116,18 +1168,24 @@ mod tests {
         let available: Vec<usize> = (0..25).collect();
         for (i, &recipe) in available.iter().enumerate() {
             let [x, y, _, _] = recipe_cell(&l, i);
-            let centre = Vec2::new(x + 20.0, y + 20.0);
+            let centre = Vec2::new(x + 22.0, y + 22.0);
             assert_eq!(
                 hit_test(screen, &lookups, centre, &available),
                 Some(recipe),
                 "cell {i}"
             );
         }
-        // A point in the 4 px gap between cells hits nothing.
+        // The 44x44 hitboxes tile the row with no gap (`:78` pitch == size):
+        // one px left of the centred start hits nothing, and the boundary
+        // between cells 0 and 1 belongs to cell 1 (exclusive left of it).
         let [x, y, _, _] = recipe_cell(&l, 0);
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x + 42.0, y + 20.0), &available),
+            hit_test(screen, &lookups, Vec2::new(x - 1.0, y + 20.0), &available),
             None
+        );
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(x + 44.0, y + 20.0), &available),
+            Some(available[1])
         );
     }
 
@@ -1144,47 +1202,60 @@ mod tests {
         let [x, y, _, _] = recipe_cell(&l, 0);
         // Just inside the right/bottom edges: still cell 0 (truncation).
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x + 39.9, y + 39.9), &available),
+            hit_test(screen, &lookups, Vec2::new(x + 43.9, y + 43.9), &available),
             Some(available[0])
         );
-        // Exactly ON the right edge (x+40): outside — but the next cell
-        // starts at x+44, so the point hits nothing.
+        // Exactly ON the right edge (x+44): outside cell 0 — the next cell
+        // starts there, so the point lands on cell 1 (`Rectangle.Contains`).
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x + 40.0, y + 20.0), &available),
-            None
+            hit_test(screen, &lookups, Vec2::new(x + 44.0, y + 20.0), &available),
+            Some(available[1])
         );
-        // Exactly ON the bottom edge (y+40): the row below starts at y+44.
+        // Exactly ON the bottom edge (y+44): the row below starts there.
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(x + 20.0, y + 40.0), &available),
+            hit_test(screen, &lookups, Vec2::new(x + 20.0, y + 44.0), &available),
+            Some(available[10])
+        );
+        // Below the last shown row: nothing (the shown list ends at row 2).
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(x + 20.0, y + 3.0 * 44.0), &available),
             None
         );
     }
 
     /// W4-f23 wiring: the grid loop's per-cell machine
     /// (`NewCraftingUI.cs:55-75` via `crafting_grid::draw_slot`): a shown
-    /// entry is available (`availableIndex = i >= 0`, `:610`) so the tint is
-    /// White; the selection overlay marks ONLY the focused raw index
-    /// (`OnActivate` `:904`'s `availableRecipe[focusRecipe]`), and the
-    /// gamepad arm stays off (mouse-only port).
+    /// entry is available (`availableIndex` = its RAW `availableRecipe`
+    /// position `>= 0`, `:610`) so the tint is White; the selection overlay
+    /// marks ONLY the focused raw index (`OnActivate` `:904`'s
+    /// `availableRecipe[focusRecipe]`), and the gamepad arm stays off
+    /// (mouse-only port).
     #[test]
     fn the_grid_machine_marks_only_the_focused_recipe() {
-        use super::super::crafting_grid::{RecipeEntry, draw_slot, slot_tint};
-        let shown = [7usize, 3, 12];
-        // focus_recipe = 1 → availableRecipe[1] = 3 (the second shown row).
-        let selected = Some(shown[1]);
+        use super::super::crafting_grid::{RecipeEntry, available_position, draw_slot, slot_tint};
+        // Raw availableRecipe = [7, 3, 12]; a filter shows only [7, 12].
+        let raw = [7usize, 3, 12];
+        let shown = [7usize, 12];
+        // focus_recipe = 1 → availableRecipe[1] = 3 — filtered OUT of the
+        // grid, so no shown cell carries the overlay (`:66` compares the
+        // entry's raw recipe index against _selectedRecipeIndex).
+        let selected = Some(raw[1]);
         for (i, &idx) in shown.iter().enumerate() {
             let mut e = RecipeEntry::new(idx);
-            e.available_index = i as i32;
+            e.available_index = available_position(&raw, idx);
             e.grid_index = i as i32;
             assert!(e.available());
+            assert_eq!(e.available_index, if idx == 7 { 0 } else { 2 });
             assert_eq!(slot_tint(&e), [1.0; 4], "shown entries draw White");
             let d = draw_slot(&e, selected, false, 0, false);
-            assert_eq!(d.grid_selection_highlight, idx == 3, "recipe {idx}");
+            assert!(!d.grid_selection_highlight, "recipe {idx} not selected");
             assert!(!d.gamepad_selected_highlight, "mouse-only");
             assert!(!d.hovered);
         }
+        // With no filter shown == raw and the focused cell marks itself.
+        let e = RecipeEntry::new(3);
+        assert!(draw_slot(&e, Some(3), false, 0, false).grid_selection_highlight);
         // No focus (focusRecipe out of range → null, `:904`/`:614`): no overlay.
-        let e = RecipeEntry::new(7);
         assert!(!draw_slot(&e, None, false, 0, false).grid_selection_highlight);
     }
 

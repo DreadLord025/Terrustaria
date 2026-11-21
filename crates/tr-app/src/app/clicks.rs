@@ -949,7 +949,7 @@ impl App {
         );
         // `:42250`'s `Main.availableRecipe[recipeIndex]` indexes the RAW list, so
         // the grid narrows only what is shown (`NewCraftingUI.cs:596-611`).
-        let available = self.craft_filters.shown(craft::available_with_gates(
+        let raw_available = craft::available_with_gates(
             &self.inventory,
             &self.equip,
             &self.world_chests,
@@ -959,19 +959,27 @@ impl App {
             self.craft_filter.as_ref(),
             None,
             &gates,
-        ));
+        );
+        let available = self.craft_filters.shown(raw_available.clone());
         let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
         else {
             return false;
         };
         let recipe = &craft::RECIPES[idx];
+        // `HandleCraftSlot` (`NewCraftingUI.cs:499-528`): the click on an
+        // unfocused cell selects it — `_selectedRecipeIndex = entry.index`
+        // (`:507`) and `Main.focusRecipe = entry.availableIndex` (`:510`),
+        // the RAW `availableRecipe` position (`UpdateContents` `:610`), NOT
+        // the recipe-table index (the W4-f23 index-space fix: with a filter
+        // active the shown position and the raw position diverge).
+        let available_index =
+            ui::crafting_grid::available_position(&raw_available, idx);
         // `Main.cs:42256-42262` + `:42295-42299`: the first click on an
-        // unfocused row selects it (`focusRecipe = recipeIndex`,
-        // `stackSplit = 15`, the click-consumed lock, the MenuTick sound);
-        // the craft runs only on the focused row.
-        if self.focus_recipe != idx as i32 {
+        // unfocused row selects it (`stackSplit = 15`, the click-consumed
+        // lock, the MenuTick sound); the craft runs only on the focused row.
+        if self.focus_recipe != available_index {
             if self.ui_left_press {
-                self.focus_recipe = idx as i32;
+                self.focus_recipe = available_index;
                 self.stack_split = 15;
                 self.prevent_craft_click = true;
                 self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
@@ -5258,7 +5266,7 @@ mod s1_h_7_tests {
             .expect("the torch recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
         let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
-        Vec2::new(x + 20.0, y + 20.0)
+        Vec2::new(x + 22.0, y + 22.0)
     }
 
     #[test]
@@ -5482,6 +5490,69 @@ mod s1_h_7_tests {
         assert_eq!(app.focus_recipe, 0, "the focus index space is preserved");
     }
 
+    /// W4-f23 deviation fix: with a filter active the shown position and
+    /// the RAW available position diverge (`NewCraftingUI.cs:596-611`) —
+    /// the focus click stores `entry.availableIndex` (`:510`), the raw
+    /// position, NOT the recipe-table index nor the grid position.
+    #[test]
+    fn a_filtered_focus_click_stores_the_raw_available_position() {
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 30,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 30,
+            prefix: 0,
+        };
+        // The BuildingBlock tab hides the torch (a Consumable), so the raw
+        // and shown lists differ from row 0 on. A work bench beside the
+        // player opens the wooden-furniture rows too.
+        let p = app.player.as_ref().unwrap();
+        let (bx, by) = ((p.x / 16.0) as i32 + 2, (p.y / 16.0) as i32);
+        let ti = app.world.index(bx, by);
+        app.world.tiles[ti].kind = 18;
+        app.world.tiles[ti].flags |= tr_core::tile::FLAG_ACTIVE;
+        app.craft_filters.click(3);
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), (5, 3));
+        let raw = craft::available(
+            &app.inventory,
+            &app.equip,
+            &app.world_chests,
+            &[],
+            &adj,
+            &craft::Zones::default(),
+            None,
+            None,
+        );
+        let grid = shown(&app);
+        assert!(!grid.is_empty(), "some blocks are craftable from wood");
+        assert!(grid.len() < raw.len(), "the torch rows are filtered out");
+        assert_ne!(grid[0], raw[0], "the shown list starts past the torch");
+        // Click the FIRST SHOWN cell: the focus must land on its RAW
+        // position, not 0 (the grid position) nor the recipe-table index.
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, 0);
+        app.mouse_pos = Vec2::new(x + 22.0, y + 22.0);
+        app.focus_recipe = -1; // nothing focused
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks(), "the focus click is consumed");
+        let expected = raw.iter().position(|&r| r == grid[0]).unwrap() as i32;
+        assert_eq!(app.focus_recipe, expected, "the RAW available position");
+        assert_ne!(app.focus_recipe, grid[0] as i32, "not the recipe index");
+        assert_eq!(app.stack_split, 15);
+        assert!(app.prevent_craft_click);
+        // The draw-side derivation agrees: available[focus] is the clicked
+        // recipe (`OnActivate` `:904`'s index space).
+        assert_eq!(raw[app.focus_recipe as usize], grid[0]);
+    }
+
     /// The mouse over a recipe's cell (the grid origin + the 44 px pitch —
     /// `ui::crafting::hit_test`'s geometry) for the given created item.
     fn recipe_mouse(app: &App, create: u16) -> Vec2 {
@@ -5511,7 +5582,7 @@ mod s1_h_7_tests {
             .expect("the recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
         let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
-        Vec2::new(x + 20.0, y + 20.0)
+        Vec2::new(x + 22.0, y + 22.0)
     }
 
     #[test]

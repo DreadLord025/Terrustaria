@@ -336,6 +336,11 @@ impl App {
                     if self.mouse_text_color <= 190 {
                         self.mouse_text_color_dir = 1;
                     }
+                    // `Main.DrawInterface_24_InterfaceLogic2`
+                    // (`Main.cs:45697-45708`): the invAlpha pulse runs once
+                    // per draw-interface pass — the crafting selection
+                    // overlay's `Main.inventoryBack` tint.
+                    self.inv_pulse.tick();
                     // `Main.mouseColor = Main.selColor` runs every frame the colour
                     // screen is open (`Main.cs:50324`), and `CursorColor`
                     // (`Main.cs:52490`) reads that static, so the tint follows the
@@ -1622,9 +1627,11 @@ impl App {
                                         .seeds
                                         .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
                             };
-                            // `NewCraftingUI.cs:596-611`: the grid shows only the
-                            // recipes whose product passes the filterer.
-                            self.craft_filters.shown(craft::available_with_gates(
+                            // `Recipe.UpdateRecipeList`'s raw availableRecipe
+                            // list — `Main.focusRecipe` indexes THIS list
+                            // (`NewCraftingUI.cs:610`, `:622`, `:904`), not
+                            // the filter-narrowed grid.
+                            craft::available_with_gates(
                                 inventory,
                                 &self.equip,
                                 &self.world_chests,
@@ -1634,10 +1641,15 @@ impl App {
                                 self.craft_filter.as_ref(),
                                 None,
                                 &gates,
-                            ))
+                            )
                         } else {
                             Vec::new()
                         };
+                        // `NewCraftingUI.UpdateContents` (`:596-611`): the
+                        // grid shows only the recipes whose product passes
+                        // the filterer (`_filteredRecipes`); the raw list
+                        // above stays the focus/available index space.
+                        let craft_shown = self.craft_filters.shown(craft_available.clone());
                         // The unified open-container state (`Player.chest`,
                         // `Player.cs:2876`/`:2878`/:2880) — the panel reads the
                         // player's fields now that one field covers every kind.
@@ -1650,11 +1662,11 @@ impl App {
                         // `_selectedRecipeIndex = Main.numAvailableRecipes < 0
                         // ? null : Main.availableRecipe[Main.focusRecipe]` —
                         // the raw recipe index the grid's selection overlay
-                        // marks (`ResetRecipes` `:612-622` clears it once the
-                        // focused recipe leaves the available list). The
-                        // port indexes the SHOWN list (the filter deviation,
-                        // ANALYSIS "Crafting panel"): with no filter active
-                        // shown == available and the two agree exactly.
+                        // marks (`UpdateContents` `:612-622` clears it once
+                        // the focused recipe leaves the available list).
+                        // `focus_recipe` is a RAW availableRecipe position
+                        // (W4-f23 deviation fix — the click path stores the
+                        // position, `HandleCraftSlot` `:510`).
                         let craft_selected = (self.focus_recipe >= 0)
                             .then(|| craft_available.get(self.focus_recipe as usize).copied())
                             .flatten();
@@ -1684,15 +1696,14 @@ impl App {
                             self.mouse_pos,
                             &self.cursor,
                             &craft_available,
+                            &craft_shown,
                             craft_selected,
                             // `Main.inventoryBack` when the crafting grid
                             // draws: Interface Logic 2 pulses `invAlpha`
-                            // 180..240 by 0.2/tick (`Main.cs:45697-45708`)
-                            // and `DrawInventory` restores it after the
-                            // equipment loops (`:41392`/`:41525`). The port
-                            // has no invAlpha oscillation yet — the midpoint
-                            // 210 stands in (ANALYSIS "Crafting panel").
-                            [210.0 / 255.0; 4],
+                            // 180..240 by 0.2/tick (`Main.cs:45697-45708`,
+                            // ticked in the per-frame animation block above)
+                            // — the byte colour, no more midpoint stand-in.
+                            self.inv_pulse.inventory_back(),
                             ui::UiPulse {
                                 // `Main.mouseTextColor / 255` (`Main.cs:20355`).
                                 text: self.mouse_text_color as f32 / 255.0,

@@ -658,8 +658,11 @@ pub(crate) struct App {
     /// The buff bar's right-click removal requests — the C# removes in the
     /// draw pass (`Main.cs:43348`); the port drains them in the tick.
     pub(crate) buff_removals: Vec<usize>,
-    /// `Main.focusRecipe` (`Main.cs:1729`): the selected recipe row's index
-    /// into the available list — the first click focuses, the next crafts.
+    /// `Main.focusRecipe` (`Main.cs:1729`): the selected recipe's position
+    /// in the RAW `Main.availableRecipe` list (`HandleCraftSlot`
+    /// `NewCraftingUI.cs:510`, `UpdateContents` `:610`/`:622`) — the first
+    /// click focuses, the next crafts. NOT a recipe-table index and NOT a
+    /// shown-grid position (the W4-f23 index-space fix).
     pub(crate) focus_recipe: i32,
     /// `Main._currentRecipeBeingCrafted` (`Main.cs:2352`): the held-repeat's
     /// recipe lock — a different recipe or a maxStack-1 product resets it.
@@ -833,6 +836,12 @@ pub(crate) struct App {
     /// crystal-wall flicker (`DoUpdate_AnimateCursorColors` in Main.cs).
     pub(crate) mouse_text_color: u8,
     pub(crate) mouse_text_color_dir: i8,
+    /// `Main.invAlpha` / `Main.invDir` (`Main.cs:1287-1289`): the Interface
+    /// Logic 2 pulse (`DrawInterface_24_InterfaceLogic2`, `:45695-45711`) —
+    /// the crafting grid's selection-overlay tint `Main.inventoryBack`
+    /// (`ItemSlot.cs:2373`). W4-f23 deviation fix: was the midpoint-210
+    /// constant.
+    pub(crate) inv_pulse: crate::ui::inv_pulse::InvPulse,
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
@@ -3972,6 +3981,8 @@ impl App {
             // `Main.mouseTextColor` starts at 225 and drifts toward 255.
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
+            // `Main.invAlpha = 1f; Main.invDir = 1f` (`Main.cs:66846-66847`).
+            inv_pulse: crate::ui::inv_pulse::InvPulse::default(),
             // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
