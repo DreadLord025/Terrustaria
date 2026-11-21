@@ -163,6 +163,10 @@ pub mod id {
     /// (`NetMessage.cs:1114-1116`, `MessageBuffer.cs:3056-3058`). W4-g49
     /// (transplanted from W4-d95).
     pub const CLIENT_UUID: u8 = 68;
+    /// `73 RequestTeleportationByServer` (`MessageID.cs:159`) — a conch/potion/
+    /// shellphone teleport request (`NetMessage.cs:1142-1144`,
+    /// `MessageBuffer.cs:3127-3146`). W4-g49 (transplanted from W4-d99).
+    pub const REQUEST_TELEPORT: u8 = 73;
     pub const TRAVEL_SHOP: u8 = 72; // MessageID.cs:157 / NetMessage.cs:1134-1141 / MessageBuffer.cs:3118-3126
     pub const ANGLER_QUEST: u8 = 74; // MessageID.cs:161 / NetMessage.cs:1145-1148 / MessageBuffer.cs:3147-3153
     pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
@@ -1584,6 +1588,17 @@ pub struct ClientUuid {
     pub uuid: String,
 }
 
+/// `msg 73 RequestTeleport`'s body (`NetMessage.cs:1142-1144`): one byte —
+/// the teleport item kind: 0 teleportation potion, 1 magic conch
+/// (`Player.cs:43029`), 2 demon conch (`:43062`), 3 shellphone home
+/// (`:43103`), 4 no-space fallback (`:6069`). The host runs the matching
+/// `Player` method on the sender (`MessageBuffer.cs:3127-3146`), which
+/// answers with a `65`. Client→server only. W4-g49 (from W4-d99).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RequestTeleport {
+    pub kind: u8,
+}
+
 /// `msg 72 TravelMerchantItems`'s body (`NetMessage.cs:1134-1141`): the
 /// `Main.travelShop` array — `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`)
 /// `short` item types (`MessageBuffer.cs:3118-3126`).
@@ -1785,6 +1800,9 @@ pub enum C2s {
     /// `68 Unknown68` — the client's UUID string, pushed right after
     /// `4 PlayerInfo` in the `3 PlayerId` join arm. W4-g49.
     ClientUuid(ClientUuid),
+    /// `73 RequestTeleport` - a client used a conch/potion/shellphone
+    /// (`Player.cs:43029`/`:43062`/`:43103`/`:6069`). W4-g49.
+    RequestTeleport(RequestTeleport),
     /// `30 TogglePVP` - a client flipped its PvP flag
     /// (`Main.cs`'s PvP toggle; `MessageBuffer.cs:1851-1867` relays it).
     TogglePvp(TogglePvp),
@@ -2021,6 +2039,7 @@ impl C2s {
             Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
             Self::HealPlayer(_) => id::HEAL_PLAYER,
             Self::ClientUuid(_) => id::CLIENT_UUID,
+            Self::RequestTeleport(_) => id::REQUEST_TELEPORT,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
@@ -2120,6 +2139,8 @@ impl C2s {
             Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
             // `NetMessage.cs:1114-1116`: the UUID string.
             Self::ClientUuid(u) => w.str(&u.uuid),
+            // `NetMessage.cs:1142-1144`: (byte)kind.
+            Self::RequestTeleport(q) => w.u8(q.kind),
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
             Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
@@ -2259,6 +2280,8 @@ impl C2s {
             }),
             // `MessageBuffer.cs:3057`: the UUID string.
             id::CLIENT_UUID => Self::ClientUuid(ClientUuid { uuid: r.str()? }),
+            // `MessageBuffer.cs:3128`: (byte)kind.
+            id::REQUEST_TELEPORT => Self::RequestTeleport(RequestTeleport { kind: r.u8()? }),
             id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
                 player_id: r.u8()?,
                 hostile: r.bool()?,
@@ -5105,6 +5128,24 @@ mod tests {
         .encode();
         assert_eq!(&empty[3..], &[0]);
         assert!(C2s::decode(68, &mut NetReader::new(&[36, b'a'])).is_none());
+    }
+
+    /// W4-g49 `73 RequestTeleport` (`NetMessage.cs:1142-1144`): one (byte)kind
+    /// — the reader's ladder 0..4 (`MessageBuffer.cs:3128-3145`:
+    /// potion/magic conch/demon conch/shellphone/no-space). Byte-verbatim
+    /// from W4-d99.
+    #[test]
+    fn w4_g49_request_teleport_round_trips() {
+        for kind in 0u8..=4 {
+            let q = RequestTeleport { kind };
+            let f = C2s::RequestTeleport(q).encode();
+            assert_eq!(f[2], 73);
+            assert_eq!(&f[3..], &[kind]);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::RequestTeleport(d) => assert_eq!(d, q),
+                other => panic!("expected 73, got {:?}", other.msg_id()),
+            }
+        }
     }
 
     #[test]

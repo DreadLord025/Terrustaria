@@ -1235,6 +1235,34 @@ impl App {
             // the host reads the string and drops it — the codec's read IS
             // the whole arm; nothing to apply or relay.
             C2s::ClientUuid(_) => {}
+            // `case 73` — a conch/potion/shellphone teleport request
+            // (`MessageBuffer.cs:3127-3146`): the host runs the matching
+            // `Player` method on the sender, which answers with a `65`. The
+            // potion/conch spot-scans (`Utils.CheckForGoodTeleportationSpot`)
+            // are unported — those kinds fall back to the shellphone spawn
+            // (ANALYSIS); the `65` answer is the send path's (S1-I-4).
+            C2s::RequestTeleport(q) => {
+                if id == 0 {
+                    // The host's own player: the disjoint player/world borrow.
+                    let world = &self.world;
+                    if let Some(p) = self.player.as_mut() {
+                        match q.kind {
+                            3 => p.shellphone_spawn(world), // `:3140`
+                            4 => p.player_no_space_teleport(world), // `:3143`
+                            // 0/1/2: the spot-scan is unported — the shellphone
+                            // fallback keeps the teleport observable.
+                            _ => p.shellphone_spawn(world),
+                        }
+                    }
+                } else if let Some(p) = self.remote_players.get_mut(&id) {
+                    // A peer: the port keeps no per-peer sim, so the record
+                    // takes the world-spawn position (the shellphone target).
+                    p.x = self.world.spawn_x as f32 * TILE_PX;
+                    p.y = self.world.spawn_y as f32 * TILE_PX;
+                    p.off_x = 0.0;
+                    p.off_y = 0.0;
+                }
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:4282-4297`, `:4328-4343`) land
@@ -2375,14 +2403,22 @@ impl App {
                 let peer = self.remote_players.entry(tc.player_id as u32).or_default();
                 peer.team = tc.team as i32; // `:2336`
             }
+            // `case 72` — the travel shop's stock (`MessageBuffer.cs:3118-3126`):
+            // the client stores the 40 shorts into `Main.travelShop`
+            // (`:3121-3124`). The shop index 19 reads them back.
+            S2c::TravelShop(s) => {
+                for (i, item) in s.items.iter().enumerate() {
+                    if i < self.world.travel_shop.len() {
+                        self.world.travel_shop[i] = (*item).max(0) as u16;
+                    }
+                }
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:1851-1867`, `:2695-2739`, `:3118-3126`,
-            // `:3147-3153`, `:4043-4048`, `:4195-4203`, `:4238-4249`,
-            // `:4282-4297`, `:4328-4343`) land
-            // with the send-path pass (S1-I-4) — nothing sends them yet.
+            // (`MessageBuffer.cs:1851-1867`, `:2695-2739`, `:3147-3153`,
+            // `:4043-4048`, `:4195-4203`, `:4238-4249`, `:4282-4297`,
+            // `:4328-4343`) land with the send-path pass (S1-I-4).
             S2c::TogglePvp(_)
-            | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
             | S2c::RevengeMarker(_)
             | S2c::DeadPlayer { .. }
@@ -6170,5 +6206,39 @@ mod message_family_tests {
         }
         pump(&mut host_app, &mut client_app, 20);
         assert!(matches!(client_app.net, NetRole::Client(_)), "the UUID did not kick the client");
+    }
+
+    /// W4-g49 `72 TravelMerchantItems` (`MessageBuffer.cs:3118-3126`): the
+    /// client stores the 40 shorts into `Main.travelShop`.
+    #[test]
+    fn w4_g49_travel_shop_stores_the_stock() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let items: Vec<i16> = (0..net::TRAVEL_SHOP_MAX_SLOTS as i16).map(|i| i * 3 + 1).collect();
+        if let NetRole::Host(server) = &host_app.net {
+            server.send(client_app.local_id, &S2c::TravelShop(net::TravelShop { items: items.clone() }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        for (i, item) in items.iter().enumerate() {
+            assert_eq!(
+                client_app.world.travel_shop[i],
+                (*item).max(0) as u16,
+                "slot {i} stored (`:3123`)"
+            );
+        }
+    }
+
+    /// W4-g49 `73 RequestTeleport` (`MessageBuffer.cs:3127-3146`): the kind-3
+    /// shellphone request teleports the sender to the world spawn.
+    #[test]
+    fn w4_g49_request_teleport_shellphone_moves_the_sender() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let (sx, sy) = (host_app.world.spawn_x, host_app.world.spawn_y);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::RequestTeleport(net::RequestTeleport { kind: 3 }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let peer = host_app.remote_players.get(&client_app.local_id).expect("host peer");
+        assert_eq!(peer.x, sx as f32 * TILE_PX, "the shellphone moved the peer to spawn X");
+        assert_eq!(peer.y, sy as f32 * TILE_PX, "the shellphone moved the peer to spawn Y");
     }
 }
