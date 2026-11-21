@@ -3463,6 +3463,49 @@ fn town_ladder_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
 }
 
+/// The town five-ladder death shape with the per-kind dust type + the
+/// altTexture head gate: the 37 Old Man → dust-5 + 58/59x2/60x2
+/// (shimmer 1328/1329x2/1330x2, `:88236-88240`, sites 570-574, NO head
+/// gate); the 54 Clothier → dust-5 + 58/59x2/60x2 (shimmer
+/// 1291/1292x2/1293x2, `:88256-88260`, sites 575-579, NO head gate —
+/// the SAME normal types as the Old Man, different shimmer).
+fn old_man_clothier_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // The 50x dust-5 burst at the wider velocity (:88232-88235 /
+    // :88252-88255).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if npc_type == 37 {
+        if shimmer { (1328, 1329, 1330) } else { (58, 59, 60) }
+    } else if shimmer {
+        (1291, 1292, 1293)
+    } else {
+        (58, 59, 60)
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
 /// The 550 DD2 Bartender death (`NPC.cs:87942-87961`, sites 515-519):
 /// the 50x dust-5 burst at (2.5·hd, −2.5), then the shimmer ladder with
 /// the +8 X second-column offsets — 967 at +0, 968 at (+0,+20) and
@@ -4351,6 +4394,11 @@ pub fn hit_effect_d(
     // `:88198-88221` — the 353/354 Stylist arm (sites 564-569).
     else if npc_type == 353 || npc_type == 354 {
         stylist_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88222-88261` — the 37 Old Man + 54 Clothier arms (sites 570-579,
+    // the same normal types, different shimmer).
+    else if npc_type == 37 || npc_type == 54 {
+        old_man_clothier_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7580,6 +7628,38 @@ mod tests {
                 twin_dust(&mut twin, 30, 44);
             }
             for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88236-88240`/`:88256-88260` — the Old Man and Clothier
+    /// share the normal 58/59x2/60x2 row but split the shimmer
+    /// (1328/1329x2/1330x2 vs 1291/1292x2/1293x2).
+    #[test]
+    fn w4_f5d_the_old_man_and_clothier_share_normal_split_shimmer() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (37, false, vec![58, 59, 59, 60, 60]),
+            (37, true, vec![1328, 1329, 1329, 1330, 1330]),
+            (54, false, vec![58, 59, 59, 60, 60]),
+            (54, true, vec![1291, 1292, 1292, 1293, 1293]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(599);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(599);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
                 let _ky = twin.next_range(10, 31);
                 let _kx = twin.next_range(-20, 21);
             }
