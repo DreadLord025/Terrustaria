@@ -40426,3 +40426,57 @@ accumulators exact in f32; the wyvern rotation the one f32
 transcendental, the sweep checks rows only) + the 15-kind
 5x3x3x3x5x5 strip sweep (40 ticks per combo, every row asserted inside
 its own sheet — the Python sweep's 0 violations mirrored).
+
+### W4-f27 extra wave 13 (slice 13) — the 4-kind micro + the census note
+
+`crates/tr-app/src/npc_findframe_extra13.rs` — the slice-11 DEFERRED
+tail's next pick-ups after slice 12's Betsy (551): **566/567 the DD2
+skeletons + 570/571 the DD2 drakins**, ported verbatim as pure machines
+(the extra-12 pattern) with the npc.rs v1-arm delegation (the 549-fix
+bridge shape, the new `find_frame_extra13` helper).
+
+* **566/567 the skeletons** (`NPC.cs:67559-67583`): the goblin-shape
+  WALK ONLY — no attack ladder, no ai reads at all. The vy == 0
+  UNCONDITIONAL sprite copy (`:67561-67564`), the air-OR-backpedal
+  row-8 pin (`:67565-67570`), the idle row-0 snap (`:67571-67576` —
+  NOT the goblins' row 9), the |vx| accumulator with the >= 64 (or
+  negative) reset (`:67577-67581`) and the `(int)(counter/8)` row
+  (`:67582`) over rows 0-7. The slice-11 "materialize-cycle seam"
+  deferral was the AI's spawn cycle, NOT this arm — the FindFrame body
+  is pure. The v1 `(vx != 0) + 0.6 >= 8` free strip was WRONG TWICE:
+  the strip AND the `% 14` count — the sheet is **9** rows
+  (`Main.cs:67140` slots 6/7), not the goblins' 14.
+* **570/571 the drakins** (`NPC.cs:67711-67755`): the ai[1] > 0 &&
+  ai[0] > 0 attack ladder rows 10-15 — the UNCONDITIONAL sprite copy
+  (`:67715`), the row outside 10..15 OR ai[1] == 59 reset (`:67716-
+  67720`), num188 = 5 EXCEPT row 14 where num188 = 35 (`:67721-67725`,
+  the long hold), the ++counter >= num188 step gated on row < 15
+  (`:67726-67730` — the row-15 counter-keep-growing quirk, the bomber
+  row-16 shape); else the walk: air row 1 (`:67737-67742`), idle
+  row 9 (`:67743-67748`), the |vx| >= 64 reset (`:67749-67753`) +
+  `(int)(counter/8 + 2)` row 2-9 (`:67754` — the +2 INSIDE the int
+  cast; for the non-negative post-reset counter it equals the bombers'
+  outside-+2). The 16-row sheet (`Main.cs:67141` slots 0/1). The v1
+  `% 16` free strip had the right count but the WRONG machine.
+
+Zero RNG: the mechanical grep over both cited ranges (70 lines) =
+ZERO Main.rand hits. Frame counts cross-checked against
+`render/entities.rs::NPC_FRAME_COUNT` (566/567 = 9, 570/571 = 16 — the
+697-slot table the slice-11 wave re-diffed with ZERO mismatches).
+2 module + 2 wiring witnesses WRITTEN NOT RUN (code-only), every
+replay vector re-derived by mechanical replay of the line-for-line
+C# transcription (integer accumulators exact in f32) + the 4-kind
+3x2x2x4 strip sweep (60 ticks per combo, every row asserted inside
+its own sheet). cs_id 566/567/570/571 via the bestiary net_id rows
+(`bestiary.rs:1545`/`:1553`/`:1651`/`:1659`).
+
+**Census count update:** 73 (the slice-11 post-state) − 1 (slice 12's
+551 Betsy, the DEFERRED tail's first pick-up) − 4 (this slice's
+566/567/570/571) = **68 unclaimed after**. The DEFERRED DD2 tail
+shrinks 14 → **10 ids**: 564/565 the dark mages (the 41-row 80px
+sheet, `:67998-68421`), 568/569 the wither beasts (the aura ladder,
+`:67025-67257`), 572/573 the kobold walkers (the emote seam,
+`:67493-67558`), 574/575 the kobold flyers (the RNG dust,
+`:67887-67978`), 576/577 the ogres (the variable strides,
+`:67584-67709`). This lane's next ascending window starts at 564
+(the dark mage) — the remaining DEFERRED tail.
