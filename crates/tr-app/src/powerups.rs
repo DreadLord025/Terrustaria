@@ -3,7 +3,9 @@
 //! `UseDemonHeart` / `UseMinecartPowerUp` / `UseArtisanLoaf` /
 //! `UseCombatBook` / `UseTorchGodsFavor` / `UsePeddlersSatchel` /
 //! `UsePetLicenses` / `UseShimmerPermanentItems`
-//! (`Player.cs:45192-45423`) — the full power-up cluster.
+//! (`Player.cs:45192-45423`) — the full power-up cluster — plus the
+//! `ItemCheck_TryDestroyingDrones` remote arms (`:45245-45272`, the
+//! 5451/5738 weapons' mid-swing kill).
 //!
 //! Every arm rides the C# mid-swing gate `itemAnimation > 0 &&
 //! ItemTimeIsZero` (`:4064`): the use START (`ApplyItemAnimation`) ran on
@@ -507,6 +509,57 @@ fn use_mana_crystal(app: &mut App) -> bool {
         let _ = app.achievements.notify_custom("Use");
     }
     true
+}
+
+/// `Player.ItemCheck_TryDestroyingDrones` (`Player.cs:45245-45272`): the
+/// Jim's Drone 5451 / Remote Control Car 5738 remotes KILL their owner's
+/// live 1020/1105 projectiles mid-swing. The gate is `ownedProjectileCounts
+/// [proj] > 0 && controlUseItem && ItemTimeIsZero && !mouseInterface` — NO
+/// `itemAnimation > 0` leg (unlike the consumable arms), and the kill does
+/// NOT `ApplyItemTime` (the drones are not consumable). `releaseUseItem =
+/// false` (`:45257`/`:45271`) keeps the held button from re-arming a use
+/// while the remote is held. The use START is refused while the projectile
+/// is out (`ItemCheck_CheckCanUse_Inner`, `:52067-52074`) and the shot is
+/// suppressed the same way (`:43519-43526`) — so the kill only ever runs
+/// inside a swing that started with NO drone out.
+///
+/// Deviation (ANALYSIS "W4-a6 drones"): the 1020/1105 projectile AI is
+/// unported (no `proj_data` row — the spawn seam returns `None`), so in
+/// live play the counts never rise and the arm is dormant; the machine is
+/// ported 1:1 against the pool state for when the drone AI lands. The
+/// `mouseInterface` leg folds to `!inventory_open` (the port's standing-in
+/// — the UI-hover flag has no field).
+pub(crate) fn drone_destroy_check(app: &mut App) {
+    let held = app.inventory[app.selected];
+    let proj = match held.kind {
+        5451 => 1020u16,
+        5738 => 1105u16,
+        _ => return,
+    };
+    if held.count == 0 {
+        return;
+    }
+    // `:42598-42603` — the dead/CCed player runs UpdateDead, not ItemCheck.
+    if app.player.as_ref().is_some_and(|p| p.dead || p.cced()) {
+        return;
+    }
+    let owned = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.owned_projectile_counts[usize::from(proj)] > 0);
+    if !owned || !app.mine_down || ticks_of(app.item_time) != 0 || app.inventory_open {
+        return;
+    }
+    // `:45249-45256`/`:45263-45270` — the 1000-slot scan: every ACTIVE
+    // same-kind projectile of this owner dies.
+    let owner = app.local_id as u8;
+    for i in 0..app.projectiles.slots().len() {
+        let p = &app.projectiles.slots()[i];
+        if p.active && p.owner == owner && p.kind == proj {
+            app.projectiles.kill(i);
+        }
+    }
+    app.mine_released = false; // `releaseUseItem = false`, `:45257`/`:45271`
 }
 
 /// The power-up `ItemCheck` machine — called once per tick from
@@ -1204,5 +1257,131 @@ mod tests {
         assert!(p.luck_state.used_galaxy_pearl);
         p.luck_state.recalculate_luck();
         assert!((p.luck_state.luck - 0.03).abs() < 1e-6, "the +0.03 row");
+    }
+
+    /// Plant a live owned projectile of `kind` in the pool + arm the count
+    /// cache (the 1020/1105 drone AI is unported — the spawn seam returns
+    /// None, so the witnesses drive the pool state directly).
+    fn plant_drone(app: &mut App, kind: u16) {
+        let slot = app
+            .projectiles
+            .slots_mut()
+            .iter_mut()
+            .find(|p| !p.active)
+            .expect("a free slot");
+        slot.active = true;
+        slot.kind = kind;
+        slot.owner = app.local_id as u8;
+        slot.time_left = 3600;
+        app.player.as_mut().unwrap().owned_projectile_counts[usize::from(kind)] = 1;
+    }
+
+    /// Jim's Drone 5451 with a live 1020: the mid-swing kill fires
+    /// (`:45247-45257`) — the projectile dies, `mine_released` clears, the
+    /// stack is untouched (the remote is not consumable).
+    #[test]
+    fn jims_drone_kills_the_live_drone_mid_swing() {
+        let mut app = rig(5451, 1);
+        plant_drone(&mut app, 1020);
+        app.mine_down = true;
+        app.item_time = 0.0;
+        tick(&mut app);
+        assert!(
+            !app.projectiles.slots().iter().any(|p| p.active && p.kind == 1020),
+            "the drone dies"
+        );
+        assert!(!app.mine_released, "releaseUseItem = false");
+        assert_eq!(app.inventory[app.selected].count, 1, "no consume");
+    }
+
+    /// Remote Control Car 5738 with a live 1105: the same kill
+    /// (`:45259-45271`).
+    #[test]
+    fn remote_control_car_kills_the_live_car_mid_swing() {
+        let mut app = rig(5738, 1);
+        plant_drone(&mut app, 1105);
+        app.mine_down = true;
+        app.item_time = 0.0;
+        tick(&mut app);
+        assert!(
+            !app.projectiles.slots().iter().any(|p| p.active && p.kind == 1105),
+            "the car dies"
+        );
+        assert!(!app.mine_released);
+        assert_eq!(app.inventory[app.selected].count, 1, "no consume");
+    }
+
+    /// The kill gate needs `controlUseItem` — a released button does not
+    /// destroy (`:45247`).
+    #[test]
+    fn the_drone_kill_needs_the_button_held() {
+        let mut app = rig(5451, 1);
+        plant_drone(&mut app, 1020);
+        app.mine_down = false;
+        app.item_time = 0.0;
+        tick(&mut app);
+        assert!(
+            app.projectiles.slots().iter().any(|p| p.active && p.kind == 1020),
+            "no kill without controlUseItem"
+        );
+    }
+
+    /// The kill gate needs `ItemTimeIsZero` — a live action cadence does
+    /// not destroy (`:45247`).
+    #[test]
+    fn the_drone_kill_waits_for_item_time_zero() {
+        let mut app = rig(5451, 1);
+        plant_drone(&mut app, 1020);
+        app.mine_down = true;
+        app.item_time = 0.5; // 30 ticks of cadence left
+        tick(&mut app);
+        assert!(
+            app.projectiles.slots().iter().any(|p| p.active && p.kind == 1020),
+            "no kill while itemTime > 0"
+        );
+    }
+
+    /// Another owner's drone survives — the scan is `owner == whoAmI`
+    /// (`:45252`).
+    #[test]
+    fn the_drone_kill_spares_other_owners() {
+        let mut app = rig(5451, 1);
+        plant_drone(&mut app, 1020);
+        // A second 1020 owned by player 1.
+        let slot = app
+            .projectiles
+            .slots_mut()
+            .iter_mut()
+            .find(|p| !p.active)
+            .expect("a free slot");
+        slot.active = true;
+        slot.kind = 1020;
+        slot.owner = 1;
+        slot.time_left = 3600;
+        app.mine_down = true;
+        app.item_time = 0.0;
+        tick(&mut app);
+        assert!(
+            app.projectiles
+                .slots()
+                .iter()
+                .any(|p| p.active && p.kind == 1020 && p.owner == 1),
+            "the other owner's drone lives"
+        );
+    }
+
+    /// The use START is refused while the drone is out
+    /// (`ItemCheck_CheckCanUse_Inner`, `:52067-52070`) — no swing arms.
+    #[test]
+    fn jims_drone_use_start_refuses_while_the_drone_is_out() {
+        let mut app = rig(5451, 1);
+        plant_drone(&mut app, 1020);
+        tick(&mut app); // idle: the press edge arms
+        app.mine_down = true;
+        tick(&mut app);
+        // The destroy arm kills the drone (mine_down + item_time 0), but
+        // the use START never armed a swing — the refusal ran first.
+        assert_eq!(app.swing, 0.0, "no swing on the refused start");
+        assert_eq!(app.inventory[app.selected].count, 1, "no consume");
     }
 }

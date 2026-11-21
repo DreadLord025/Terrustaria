@@ -36097,6 +36097,15 @@ never consume.
 - All `NetMessage.SendData(4/51/61)` sync rows are MP-only — the port is
   single-player (netMode 0), so they fold out; the `Main.netMode == 0`
   chat/flag arms are the ones ported.
+- **Drones (5451/5738)**: `ItemCheck_TryDestroyingDrones` is ported 1:1
+  (the mid-swing `controlUseItem && ItemTimeIsZero && !mouseInterface`
+  kill of the owner's 1020/1105 projectiles, `releaseUseItem = false`,
+  the `CheckCanUse_Inner` use-start refusal and the shoot suppression).
+  The 1020/1105 projectile AI is unported (no `proj_data` row — the spawn
+  seam returns `None`), so in live play the counts never rise and the arm
+  is dormant; the machine is ported against the pool state for when the
+  drone AI lands. `mouseInterface` folds to `!inventory_open` (the port's
+  standing-in — the UI-hover flag has no field).
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
