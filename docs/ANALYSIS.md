@@ -39524,7 +39524,8 @@ recorded, not invented. The 888 `UICharacterCreation`/`UIWorldCreation`
 inline cues are a SEPARATE census (not re-ported here).
 
 **Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
-3 `main_sounds` witnesses WRITTEN NOT RUN. Total g22 witnesses: 15 (batch 1)
-+ 7 (batch 2 menu) + 6 (batch 3) + 3 (batch 4) + 4 (batch 5) + 3 (batch 6)
-= 38 written, not run.
+3 `main_sounds` witnesses WRITTEN NOT RUN. Total g22 witnesses: 13 (batch 1)
++ 7 (batch 2 menu) + 6 (batch 3: 5 main_sounds + 1 audio) + 3 (batch 4)
++ 4 (batch 5) + 3 (batch 6) = 36 written, not run (28 main_sounds + 7 menu
++ 1 audio).
 
