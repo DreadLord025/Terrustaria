@@ -7403,8 +7403,9 @@ Landed sites (C# → Rust):
   (`:5246`, the 667 Golden Slime kind unported — the roll consumes, the
   pick stands); the bound Goblin/Wizard `RollLuck(20)` (`:2084`/`:2088`);
   the blood-moon `RollOnlyBadLuck(300)` pair (`:4618`/`:4623`).
-- **NPC loot** (`world_sim/npcs.rs`, `spawn_heals_and_death_events` on the
-  `UpdateNPCs` stream): `NPCLoot_DropCommonLifeAndMana` `RollLuck(6)` +
+- **NPC loot** (`world_sim/npcs.rs`, the re-ordered death loop's
+  `spawn_heals` / `summon_dungeon_spirit` on the `UpdateNPCs` stream):
+  `NPCLoot_DropCommonLifeAndMana` `RollLuck(6)` +
   `RollLuck(2)` (`NPC.cs:79531-79557`, the 16/121/81 `num = 1` skip draws
   NOTHING, the star-first `Next(2)` + the else-if re-roll); the
   `NPCLoot_DropHeals` per-type hearts `RollLuck(4/6/5)` (`:79098-79195`);
@@ -7432,17 +7433,34 @@ Landed sites (C# → Rust):
   start a swing in the port's use path).
 
 Deliberate deviations:
-- **The death tail is appended after the coins/loot batch.** The C#
-  `NPCLoot` order is DropItems → DoDeathEvents → DropMoney → DropHeals
-  (`NPC.cs:78855-78898`); the port's pre-existing batched death pass runs
-  coins → loot, and the new heals/spirit tail appends after it. The
-  coin/loot stream stays byte-identical to the landed port; the new draws
-  ride the same `UpdateNPCs` stream at the tail (the DW-3.2 twin replay
-  extends to cover it). A full NPCLoot re-order is a separate task.
-- **The heart/star scatter uses the port's ItemDrop triplet**, not the
-  C#'s `Next(-30,31)*0.1` / `Next(-40,-15)*0.1` defaults — the same
-  documented stand-in `spawn_loot` uses (the velocity model is the
-  port's, the COUNT and the luck rolls are verbatim).
+- **The death path is re-ordered to the C# `NPCLoot` sequence** (W4-f32
+  DOC-SWEEP, research/74). The earlier "death tail appended after the
+  coins/loot batch" deviation is RETIRED: `update_npcs` now runs one per-NPC
+  loop in the C# order — death sound → bestiary/banner → `spawn_loot`
+  (DropItems) → `advance_slime_rain`/`summon_dungeon_spirit`/
+  `do_death_events_switch`/boss tail (DoDeathEvents) → `spawn_coins`
+  (DropMoney) → `spawn_heals` (DropHeals) → the draw-free invasion/moon
+  reports (`NPC.cs:78830-78899` + the `checkDead` tail `:78230-78275`). The
+  DW-3.2 twin replay and the King-death witness are re-pinned to the order.
+- **The heart/star scatter now uses the real C# draws** (W4-f32 DOC-SWEEP).
+  The earlier "ItemDrop triplet stand-in" deviation is RETIRED for the heals
+  tail: `spawn_heals` draws `Next(-30,31)*0.1` / `Next(-40,-15)*0.1`
+  (`Item.cs:49749-49750`), two integer draws, prefix-first (draw-free for
+  hearts), phase pinned 0. The triplet stand-in REMAINS in `spawn_loot`,
+  `spawn_coins`, the banner drop and the boss potions/hearts (the per-item
+  `Item.NewItem` velocity model is a separate follow-up).
+- **The Twins surviving-half demotion is unported.** `DoDeathEvents_BeforeLoot`
+  (`NPC.cs:78916-78923`) zeroes `value`/`boss` on a Twin whose other half
+  lives; the port's read-only death clone keeps the static boss flag (the
+  first eye still drops money + the boss tail). Needs a per-NPC value/boss
+  override threaded through the loot/coins/tail seams.
+- **The EoW last-segment boss latch is unported.** `DropEoWLoot`
+  (`NPC.cs:78414-78430`) sets `boss = true` on the last EoW segment; the
+  port's `is_boss_kind` is a static kind read, so the EoW head's trophy/tail
+  stay gated off. The faithful static roster (19 ported kinds incl. the
+  Martian Saucer Core 395 + the Moon parts 396/397) IS landed.
+- **The statue rarity gate is unported** (`NPC.cs:78849-78852`, the
+  `StatueSpawnedDropRarity` `NextFloat` early-return).
 - **The goldCritterChance arms stay constants-off.** The ~40
   `RollLuck(NPC.goldCritterChance)` sites (`NPC.cs:1588-4447`, the
   `ShakeTree` critters `WorldGen.cs:63270/63306/63346`, the tile-break
