@@ -53,12 +53,14 @@
 //! order, the recorded deviation), then the golden/fireproof tile cut's
 //! `KillTile` draws (the port's `break_tile` seam, its own pinned order).
 //! The release's 148 penguin variant roll (`NPC.cs:80133`, `Next(2)`) draws
-//! on the same stream. The statue-poof/frog `Utils.PoofOfSmoke` draws
-//! (`Utils.cs:1078-1093`) are skipped with the standing gore/dust gap.
+//! on the same stream. W4-f6 wiring: the statue-poof/frog
+//! `Utils.PoofOfSmoke` draws (`Utils.cs:1078-1093`, site 1089) now ride the
+//! same stream via `world_dust::poof_of_smoke` (the gore ARGUMENT draws +
+//! the 10-dust tail; the `NewGore` bodies stay d55's).
 //!
-//! Deviations (docs/ANALYSIS.md "The bug net (S1-P-i36)"): the gore/dust
-//! `Utils.PoofOfSmoke` visuals are skipped (the standing gore/dust gap, the
-//! statue-poof and frog arms lose their draws with it); the mystic frog's
+//! Deviations (docs/ANALYSIS.md "The bug net (S1-P-i36)"): the
+//! `Utils.PoofOfSmoke` gore BODIES are d55's lane (the argument draws are
+//! consumed in order, the e2 split); the mystic frog's
 //! `AI_AttemptToFindTeleportSpot` is unported (kind 687 has no roster row);
 //! the `WrongBugNet` immunity counter collapses onto the port's single
 //! damage lane (the M4-HAZARD-1 admission); `gravDir` is the normal 1f;
@@ -769,10 +771,21 @@ pub(crate) fn catch_npc(app: &mut App, i: usize, who: u8) -> bool {
             // `NPC.cs:79906-79917`: the frog teleports when a spot is
             // found (`AI_AttemptToFindTeleportSpot` is unported — kind
             // 687 has no roster row), else both arms poof + deactivate
-            // with NO item. The `Utils.PoofOfSmoke` visuals are the
-            // standing gore/dust gap (ANALYSIS); the `23` despawn rides
-            // the net cadence's gone-diff, the `106` smoke broadcast has
-            // no port message.
+            // with NO item. W4-f6 wiring: `Utils.PoofOfSmoke(Center -
+            // (20, 20))` (`NPC.cs:79912-79913`, site 1089) — the gore
+            // ARGUMENT draws + the 10-dust tail ride the same
+            // `UpdatePlayers` stream as the catch (the `NewGore` bodies
+            // stay d55's). The `23` despawn rides the net cadence's
+            // gone-diff, the `106` smoke broadcast has no port message.
+            let (ncx, ncy) = n.center();
+            let ctx = app.spawn_ctx();
+            crate::world_dust::poof_of_smoke(
+                Vec2::new(ncx - 20.0, ncy - 20.0),
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &mut app.dust,
+                &ctx,
+                &app.world,
+            );
             true
         }
         CatchOutcome::Convert => {

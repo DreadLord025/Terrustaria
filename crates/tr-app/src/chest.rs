@@ -849,6 +849,35 @@ fn unlock_progression(kind: u16, style: i16) -> Option<u32> {
     }
 }
 
+/// W4-f6 wiring — `Chest.Unlock`'s 4-per-tile dust (`Chest.cs:418-421`,
+/// site 420): the unlock click runs inside `Player.ItemCheck` →
+/// `TileInteractionsUse` (`Player.cs:33178`/:33204), under the
+/// `UpdatePlayers` swap (`Main.cs:17754`) — NOT the bare global the staged
+/// doc guessed. The match flags read the PRE-shift frames (the C# reads
+/// `tileSafely2.type == type2` inside the same loop that shifts). ZERO
+/// explicit rand — only the pool internals roll.
+fn unlock_dust(app: &mut App, ox: i32, oy: i32) {
+    let Some(origin) = app.world.tile(ox, oy) else {
+        return;
+    };
+    let kind = origin.kind;
+    let matched = [
+        app.world.tile(ox, oy).is_some_and(|t| t.kind == kind),
+        app.world.tile(ox, oy + 1).is_some_and(|t| t.kind == kind),
+        app.world.tile(ox + 1, oy).is_some_and(|t| t.kind == kind),
+        app.world.tile(ox + 1, oy + 1).is_some_and(|t| t.kind == kind),
+    ];
+    let ctx = app.spawn_ctx();
+    crate::world_dust::chest_unlock_dust(
+        (ox, oy),
+        matched,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        &mut app.dust,
+        &ctx,
+        &app.world,
+    );
+}
+
 /// The shared `Unlock`/`Lock` frame pass (`Chest.cs:409-424`/:483-494): the
 /// shift applies to every 2×2 tile whose type matches the chest's.
 fn shift_chest_frames(world: &mut World, x: i32, y: i32, kind: u16, shift: i16) {
@@ -1060,6 +1089,8 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             // `SoundID.Unlock` cue (`SoundID.cs:66`), banked as "Unlock".
             app.audio
                 .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
+            // `:418-421` — the 4-per-tile dust (W4-f6 wiring, site 420).
+            unlock_dust(app, ox, oy);
             if consumes {
                 // `:33183-33189` — the consumed key's stack decrements; an
                 // emptied slot turns to air.
@@ -1102,6 +1133,8 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 }
                 app.audio
                     .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
+                // `:418-421` — the 4-per-tile dust (W4-f6 wiring, site 420).
+                unlock_dust(app, ox, oy);
                 if consumes {
                     slot.count -= 1; // `:33210-33214`
                     if slot.count == 0 {
