@@ -1,9 +1,9 @@
 //! W4-a6 — the permanent power-up consumables: `Player.ItemCheck`'s
 //! `ItemCheck_UseLifeCrystal` / `UseLifeFruit` / `UseManaCrystal` /
 //! `UseDemonHeart` / `UseMinecartPowerUp` / `UseArtisanLoaf` /
-//! `UseCombatBook` / `UseTorchGodsFavor` / `UsePeddlersSatchel`
-//! (`Player.cs:45192-45383`) and their sibling `ItemCheck_Use*` arms
-//! (`:45352-45423`, later commits).
+//! `UseCombatBook` / `UseTorchGodsFavor` / `UsePeddlersSatchel` /
+//! `UsePetLicenses` (`Player.cs:45192-45383`) and their sibling
+//! `ItemCheck_Use*` arms (`:45385-45423`, later commits).
 //!
 //! Every arm rides the C# mid-swing gate `itemAnimation > 0 &&
 //! ItemTimeIsZero` (`:4064`): the use START (`ApplyItemAnimation`) ran on
@@ -61,7 +61,11 @@ fn use_time_secs(held: ItemSlot) -> f32 {
 /// The power-up kinds this machine owns — the `ItemCheck_Use*` cluster's
 /// ids (`Player.cs:43595-43601`'s call row).
 pub(crate) fn is_powerup(kind: u16) -> bool {
-    matches!(kind, 29 | 109 | 1291 | 3335 | 5289 | 5326 | 4382 | 5336 | 5043 | 5343)
+    matches!(
+        kind,
+        29 | 109 | 1291 | 3335 | 5289 | 5326 | 4382 | 5336 | 5043 | 5343
+            | 4829 | 4830 | 4910
+    )
 }
 
 /// `Player.ItemCheck_CheckCanUse_Inner`'s Demon Heart refusal
@@ -96,6 +100,7 @@ fn run_powerup_arm(app: &mut App, held: ItemSlot) -> bool {
         5326 => use_artisan_loaf(app),
         4382 | 5336 => use_combat_book(app, held.kind),
         5343 => use_peddlers_satchel(app),
+        4829 | 4830 | 4910 => use_pet_license(app, held.kind),
         _ => false,
     };
     if fired {
@@ -364,6 +369,58 @@ fn use_peddlers_satchel(app: &mut App) -> bool {
         crate::lang::text("Misc.PeddlersSatchelUsed"),
         crate::chat::COLOR_WORLD,
     );
+    true
+}
+
+/// `Player.ItemCheck_UsePetLicenses` → `LicenseOrExchangePet` →
+/// `NPC.UnlockOrExchangePet` (`Player.cs:45352-45365`, `:45438-45445`,
+/// `NPC.cs:80894-80918`): the mid-swing gate is `ItemTimeIsZero &&
+/// (!petBoughtFlag || NPC.AnyNPCs(npcType))` — a bought license only
+/// re-fires while its pet is resident (the EXCHANGE path). The SP
+/// (`netMode != 1`) purchase arm (`:80904-80909`) raises the bought flag
+/// and prints the `Misc.License*Used` line in the World colour; the
+/// `TrySendData(7)` world sync is MP-only.
+///
+/// Deviation (ANALYSIS "W4-a6 pet licenses"): the port ships no
+/// TownCat/TownDog/TownBunny `NpcKind` (637/638/656) and no
+/// `TownNPCProfiles.RollVariation`, so `AnyNPCs(npcType)` is always false
+/// and the exchange legs (`RerollVariationForNPCType` → the
+/// PetExchangeSuccess/Fail chats, `NPC.cs:80910-80917`) are unreachable —
+/// a bought license's use is refused (no `ApplyItemTime`, no consume),
+/// exactly the C# verdict with no resident pet. The bought flags are
+/// World fields (the `combat_book_was_used` standing-in); the town
+/// arrival gates (`Main.cs:65900-65911`) are the deferred consumer.
+fn use_pet_license(app: &mut App, kind: u16) -> bool {
+    let (npc_type, key) = match kind {
+        4829 => (637, "Misc.LicenseCatUsed"),
+        4830 => (638, "Misc.LicenseDogUsed"),
+        4910 => (656, "Misc.LicenseBunnyUsed"),
+        _ => return false,
+    };
+    let bought = match kind {
+        4829 => app.world.bought_cat,
+        4830 => app.world.bought_dog,
+        _ => app.world.bought_bunny,
+    };
+    // `NPC.AnyNPCs(npcType)` (`NPC.cs:89873-89883`): active && type match.
+    // No ported kind carries these net ids, so the scan never answers —
+    // kept for the shape (the exchange gate above).
+    let any = app
+        .npcs
+        .iter()
+        .any(|n| n.hp > 0 && n.kind.net_id() == npc_type);
+    if bought && !any {
+        return false; // `:45440` — no resident pet, no exchange
+    }
+    if !bought {
+        match kind {
+            4829 => app.world.bought_cat = true,
+            4830 => app.world.bought_dog = true,
+            _ => app.world.bought_bunny = true,
+        }
+        app.chat
+            .new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
+    }
     true
 }
 
@@ -952,5 +1009,56 @@ mod tests {
         tick(&mut app);
         assert_eq!(app.inventory[app.selected].count, 2, "no consume on refusal");
         assert!(app.chat.messages.is_empty());
+    }
+
+    /// Cat License 4829: boughtCat flips, the World-colour chat line
+    /// prints, one consumed (`:45354-45357`, `NPC.cs:80904-80909`).
+    #[test]
+    fn cat_license_sets_bought_cat_and_chats() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = rig(4829, 2);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.world.bought_cat);
+        assert!(!app.world.bought_dog);
+        assert!(!app.world.bought_bunny);
+        assert_eq!(app.inventory[app.selected].count, 1);
+        let line = app.chat.messages.first().expect("the chat line");
+        assert_eq!(line.text, crate::lang::text("Misc.LicenseCatUsed"));
+        assert_eq!(line.color, crate::chat::COLOR_WORLD);
+    }
+
+    /// Dog License 4830 and Bunny License 4910 set their OWN flags.
+    #[test]
+    fn dog_and_bunny_licenses_set_their_own_flags() {
+        let mut app = rig(4830, 1);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.world.bought_dog);
+        assert!(!app.world.bought_cat);
+        let mut app = rig(4910, 1);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.world.bought_bunny);
+        assert!(!app.world.bought_cat);
+        assert!(!app.world.bought_dog);
+    }
+
+    /// A bought license with no resident pet refuses (`:45440`'s
+    /// `!petBoughtFlag || AnyNPCs(npcType)` gate — the port ships no town
+    /// pets, so the exchange is unreachable): no consume, no chat.
+    #[test]
+    fn a_bought_license_without_a_resident_pet_refuses() {
+        let mut app = rig(4829, 2);
+        app.world.bought_cat = true;
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "no consume on refusal");
+        assert!(app.chat.messages.is_empty(), "no exchange chat");
     }
 }

@@ -209,9 +209,9 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(world.ore_tiers.iron); // Iron
     w.i32(world.ore_tiers.silver); // Silver
     w.i32(world.ore_tiers.gold); // Gold
-    w.boolean(false); // boughtCat
-    w.boolean(false); // boughtDog
-    w.boolean(false); // boughtBunny
+    w.boolean(world.bought_cat); // boughtCat
+    w.boolean(world.bought_dog); // boughtDog
+    w.boolean(world.bought_bunny); // boughtBunny
     // WorldFile.cs:1392-1397: the two post-1.4 bosses; `downedQueenSlime` and
     // `downedDeerclops` are owned, the Empress has no port state.
     w.boolean(false); // downedEmpressOfLight — unowned
@@ -605,7 +605,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.ore_tiers.gold = -1;
     }
     if version >= 217 {
-        r.skip(3)?; // boughtCat/Dog/Bunny
+        world.bought_cat = r.bool()?; // boughtCat
+        world.bought_dog = r.bool()?; // boughtDog
+        world.bought_bunny = r.bool()?; // boughtBunny
     }
     if version >= 223 {
         r.skip(1)?; // downedEmpressOfLight — unowned

@@ -1688,6 +1688,10 @@ mod tests {
         // the peddler's satchel byte (`:1408`, v260).
         world.combat_book_volume_two_was_used = true;
         world.peddlers_satchel_was_used = true;
+        // W4-a6: the three bought-pet bytes (WorldFile.cs:1392-1394, v217).
+        world.bought_cat = true;
+        world.bought_dog = true;
+        world.bought_bunny = true;
         world
     }
 
@@ -1924,6 +1928,10 @@ mod tests {
             got.peddlers_satchel_was_used, want.peddlers_satchel_was_used,
             "{context}: peddlersSatchelWasUsed"
         );
+        // W4-a6: the three bought-pet bytes.
+        assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
+        assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
+        assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
     }
 
     #[test]
@@ -2062,6 +2070,10 @@ mod tests {
         tail[1905] = u8::from(world.tower_active_stardust); // (`:1359`)
         tail[1906] = u8::from(world.lunar_apocalypse_is_up); // (`:1360`)
         // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
+        // The pets (WorldFile.cs:1392-1394) sit at 2021/2022/2023 (W4-a6).
+        tail[2021] = u8::from(world.bought_cat);
+        tail[2022] = u8::from(world.bought_dog);
+        tail[2023] = u8::from(world.bought_bunny);
         tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
         // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
@@ -3664,6 +3676,21 @@ mod tests {
         assert!(w.peddlers_satchel_was_used, "peddlersSatchelWasUsed reads from 260 (W4-a6)");
         let w = parse(&synthetic_file(259, &[2, 144], 160, 11)).expect("v259 loads");
         assert!(!w.peddlers_satchel_was_used, "below 260: the satchel stays false");
+        // W4-a6: the bought-pet trio reads from v217 (WorldFile.cs:2358-
+        // 2363) — the LAST three tail bytes at 217 (the post-1.4 bosses
+        // need 223). Below the gate they stay false.
+        let w = parse(&synthetic_file(216, &[2, 144], 160, 10)).expect("v216 loads");
+        assert!(!w.bought_cat, "below 217: boughtCat stays false");
+        let mut data = synthetic_file(217, &[2, 144], 160, 10);
+        let tail_at = tail_offset_in_synthetic(&data, 217);
+        let end = flags_tail(217).len();
+        data[tail_at + end - 3] = 1; // boughtCat
+        data[tail_at + end - 2] = 1; // boughtDog
+        data[tail_at + end - 1] = 1; // boughtBunny
+        let w = parse(&data).expect("v217 loads");
+        assert!(w.bought_cat, "boughtCat reads from 217");
+        assert!(w.bought_dog, "boughtDog reads from 217");
+        assert!(w.bought_bunny, "boughtBunny reads from 217");
         // W4-a6: combatBookVolumeTwoWasUsed reads from v259 — below the gate
         // it stays false; at 259 it is the LAST tail byte (the satchel needs
         // 260, the slime run 261).
@@ -3694,6 +3721,9 @@ mod tests {
         assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
         assert_eq!(buf[tail_at + 2036], 1, "combatBookVolumeTwoWasUsed at tail 2036 (W4-a6)");
         assert_eq!(buf[tail_at + 2037], 1, "peddlersSatchelWasUsed at tail 2037 (W4-a6)");
+        assert_eq!(buf[tail_at + 2021], 1, "boughtCat at tail 2021 (W4-a6)");
+        assert_eq!(buf[tail_at + 2022], 1, "boughtDog at tail 2022 (W4-a6)");
+        assert_eq!(buf[tail_at + 2023], 1, "boughtBunny at tail 2023 (W4-a6)");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

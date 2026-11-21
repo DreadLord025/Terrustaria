@@ -36055,6 +36055,49 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## W4-a6 — the permanent power-up consumables (Player.cs:45192-45423)
+
+The `powerups.rs` machine rides the boss-spawner/recall press-edge shape:
+the use START arms the swing on the press edge, the grant fires at
+`ItemTimeIsZero && itemAnimation > 0` mid-swing, `ApplyItemTime` re-arms
+the cadence and the generic consume tail (`:43280-43326`) pays ONE only
+when the grant fired. Refused arms keep re-checking each action tick and
+never consume.
+
+- **Achievement targeting**: the C# `HandleSpecialEvent` completes ONE
+  row's condition (`GetCondition("STAR_POWER", "Use").Complete()`); the
+  port's `notify_custom("Use")` completes every `Flag("Use")` row at
+  once (the existing `potions.rs` drowning convention — the registry has
+  no per-row targeting). Life crystal's event 0 is a NO-OP in the C# (no
+  case 0, `AchievementsHelper.cs:288-379`).
+- **NPC statics as World fields**: `combatBookWasUsed` /
+  `combatBookVolumeTwoWasUsed` / `peddlersSatchelWasUsed` /
+  `boughtCat/Dog/Bunny` are `Main`-global statics in the C#; the port
+  stores them on `World` (the S1-P-i35 `combat_book_was_used`
+  standing-in) and persists them in the wld flags block at their C# tail
+  offsets (1939 / 2036 / 2037 / 2021-2023) behind their version gates
+  (204 / 259 / 260 / 217). The golden fixture's bytes there are all 0, so
+  the pinned divergence set stays exactly killCount[1]/claimable[1]/
+  treeTop[0]/manifest.
+- **Pet licenses (4829/4830/4910)**: the port ships no TownCat/TownDog/
+  TownBunny `NpcKind` (637/638/656) and no `TownNPCProfiles.RollVariation`,
+  so `NPC.AnyNPCs(npcType)` is always false and the EXCHANGE legs
+  (`RerollVariationForNPCType` → the PetExchangeSuccess/Fail chats,
+  `NPC.cs:80910-80917`) are unreachable — a bought license's use is
+  refused (no `ApplyItemTime`, no consume), exactly the C# verdict with
+  no resident pet. The purchase arm (flag + `Misc.License*Used` chat)
+  is ported; the town arrival gates (`Main.cs:65900-65911`) are the
+  deferred consumer of the bought flags.
+- **QuickSpawnItem (the minecart powerup's 3353 grant)**: the `GetItem`
+  deposit walk with the per-slot chime + `NotifyItemPickup`, the void
+  vault as the LAST resort and the overflow world drop at the player
+  centre with the prefix preserved (the reforge-return overflow
+  precedent). `newAndShiny`/`enemyGrabDelayTime` are UI/MP-only (the
+  SP `ApplySpawnOwnership` arm is a no-op, `WorldItem.cs:296-305`).
+- All `NetMessage.SendData(4/51/61)` sync rows are MP-only — the port is
+  single-player (netMode 0), so they fold out; the `Main.netMode == 0`
+  chat/flag arms are the ones ported.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
