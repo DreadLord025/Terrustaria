@@ -19173,6 +19173,36 @@ lookup, not a drawn legend). One more unclaimed arm recorded as a seed: the
 Unity-potion teleport block (`Main.cs:55960-55975`, `:55998-56010`) — MP-client-
 only (`netMode == 1`), the netcode ladder's territory, f29's head-loop seam.
 
+### The retire census: D18/D22 closed + the map dup-reconcile retirement (W4-e18 retire, 2026-11-21, code-only)
+
+Two recorded-deviation closes (research/14 "W4-e18 retire census"), no code:
+
+- **D18's style-0 half is a PHANTOM.** `Main.DrawMap`'s branch chain
+  (`mapFullscreen` `:55340` / `mapStyle == 1` `:55503` / `mapStyle == 2`
+  `:55548`) has no style-0 arm, and both callers gate on style 1/2 before
+  calling (`Main.cs:45778`, `:62231`) — style 0 draws nothing in vanilla, and
+  the port's `map_style == 1`-only gate matches. The real remainder is the
+  style-2 overlay DRAW (`:55548-55578` + `:55615-55694`), seeded as an M task
+  riding the f29/e17 overlay keep-one; g53's `a9774d2a` holds its state half
+  (`overlay_scale`/`overlay_alpha` + keys + clamps) for salvage.
+- **D22's content-lost refresh is a structural no-op in wgpu**
+  (`MapRenderer.cs:365-374`): no `IsContentLost` — a texture never silently
+  loses content in a live session, and device loss ends the session (no
+  recovery path: `Gpu::new` once at boot). Same precedent as the
+  `EnsureRenderTargetContent` note above (`targets.rs:451-455`). The map
+  texture's absence/size-change recreation (`sprite.rs:654-656`) pairs with
+  `needs_full_upload`'s full sweep — the creation-time equivalent; no
+  `mapWasContentLost` latch (no per-target grid).
+
+The branch is RETIRED as fold-source (`docs/research/84-map-reconcile.md`
+§10.9): the merger keeps the `task/W4-f46-minimap-reveal-2` union and folds
+the 10 e18 commits past `670c948d` per §10.6's exact list; the 3-way zoom
+keep-one (e18 `249a0c1b` vs f46 `08b749bd` vs g53 `a9774d2a`) is adjudicated
+in §10.7 with this arm's C#-fidelity notes. The dup-halves
+(`map_reveal_driver`'s update-half shape, the sweep's dirty-rect push,
+`unlock_map`'s bulk ceil-loop) carry DEPRECATED-BY-UNION comment banners —
+nothing deleted; the unique post-base pieces stay live until folded.
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into

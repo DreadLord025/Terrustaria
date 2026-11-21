@@ -133,7 +133,7 @@ full-screen zoom/pan view — with the colour of each tile derived from the orig
 | Minimap alpha (`mapMinimapAlpha`) | PORTED | `map.rs::WorldMap::minimap_alpha` + `minimap_alpha_step` + `clamp_minimap_axes`, `app/mod.rs::update_minimap_keys`, `frame/draw.rs` (backdrop + tile + layer alpha) | `Main.cs:55523-55532` (the clamp + `b` byte), `Player.cs:24921-24928` (the ±0.015 keys); W4-e18 final sweep — D17 closed. |
 | Minimap frame chrome + zoom buttons | PORTED | `ui/minimap.rs` (whole file) | Nine styles, hitboxes, hover sheets, `DEFAULT_ZOOM 1.05`, ×1.025/×0.975, clamp 0.2..3 (`MinimapFrame.cs:59-63`, `:107-136`, `:138-208`). |
 | Frame-style selection UI | PORTED | `menu/pages.rs:268-284`, `menu/actions.rs:332-333`, `settings.rs:113-115` | `MinimapFrame` config key + `CycleSelection` order. |
-| Map style switcher (`mapStyle` 0/1/2) | PARTIAL | `map_style == 1` only | `mapStyle == 2`'s screen-overlay map (`Main.cs:55548-55578`, `mapOverlayScale`) and `mapStyle == 0`'s retro HUD are absent. The Tab key cycle (`Player.cs:24949-24965`) landed W4-e18 final sweep (`update_minimap_keys`); the style-icon clicks (`Main.cs:41106-41120`) play `PlaySound(12)`. |
+| Map style switcher (`mapStyle` 0/1/2) | PARTIAL | `map_style == 1` only | `mapStyle == 2`'s screen-overlay map (`Main.cs:55548-55578` + the `:55615-55694` icon block, `mapOverlayScale`) is absent; `mapStyle == 0` correctly draws NOTHING — the callers gate on style 1/2 (`Main.cs:45778`/`:62231`), no style-0 arm exists in `DrawMap`'s chain (retire census: the old "retro HUD" wording was a phantom). The Tab key cycle (`Player.cs:24949-24965`) landed W4-e18 final sweep (`update_minimap_keys`); the style-icon clicks (`Main.cs:41106-41120`) play `PlaySound(12)`. |
 | Player head icon | PORTED | `map.rs::head_icon_pos` (76) + `render/entities.rs::draw_player_map_icon` | Position ported (`Main.cs:55937-55954`); the 84×84 `MapHeadRenderer` render target is replaced by a hand-drawn head (ANALYSIS.md:1584-1593). |
 | Other players' head icons | PARTIAL | same draw path | `Main.cs:55931-55954` loops all 255 players; single-player only here. |
 | NPC / chest / pylon / ping / boss-bag icons | PORTED (f29) | `map_layers.rs` (S1-L-4) + `map_overlay.rs`/`map_pylons.rs` (W4-f29) | The six `Map/*Layer*.cs` layers landed S1-L-4; the nine `Main.DrawMap` overlay pieces (pylon lines/click/pan, boss/town heads, death markers, revenge coins, misc portals+golf, minimap heads, hover names) landed W4-f29 (`e1ffdefc` census, `09f71b61`/`9320326c`/`1de1ad19`/`a920b704`/`a0516edf` ports). The ping detector (`Main.cs:55486-55495`) is `clicks.rs::handle_fullmap_ping` (S1-L-4). |
@@ -302,11 +302,22 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   and the tile pass tints `(byte)(255*alpha)` (`:55532` → `MapRenderer.cs:438`) with the
   backdrop + layer walk reading the same alpha. No config key (the C# has none either —
   the value is runtime-only, reset to 1 on world load).
-- **D18 — `mapStyle` switcher absent.** behavioural · *partial (W4-e18 final sweep)*. The
-  Tab key cycle (`Player.cs:24949-24965`) and the style-icon clicks (`Main.cs:41106-41120`)
-  now switch `mapStyle` 0/1/2 with `PlaySound(12)`; only `mapStyle == 1`'s minimap DRAWS —
-  the `mapStyle == 2` screen-overlay map and its `mapOverlayScale`
-  (`Main.cs:55548-55578`) and `mapStyle == 0`'s retro layout have no counterpart.
+- **D18 — `mapStyle` switcher absent.** behavioural · **closed as recorded (W4-e18 retire
+  census, 2026-11-21)** — the switcher landed, the style-0 half is a PHANTOM, the style-2
+  draw half is a seeded remainder. The Tab key cycle (`Player.cs:24949-24965`) and the
+  style-icon clicks (`Main.cs:41106-41120`) switch `mapStyle` 0/1/2 with `PlaySound(12)`.
+  The old "style-0 retro layout" claim is WRONG: `DrawMap`'s branch chain is
+  `mapFullscreen` (`Main.cs:55340`) / `mapStyle == 1` (`:55503`) / `mapStyle == 2`
+  (`:55548`) — there is NO style-0 arm, and both callers gate on style 1/2
+  (`DrawInterface_16_MapOrMinimap` `:45778`, the overlay pass `:62231`), so style 0
+  correctly draws nothing; the port's `map_style == 1`-only gate is the same behaviour.
+  The REAL remainder is `mapStyle == 2`'s screen-overlay draw (`Main.cs:55548-55578`
+  clamps + geometry, the shared `MapRenderer.DrawMap` blit `:55609`, the
+  `:55615-55694` overlay icon block at `num37` draw scale) — M-sized, rides the f29/e17
+  overlay keep-one's seam (the icon block is the siblings' nine pieces at a different
+  transform). g53's `a9774d2a` already carries the style-2 STATE half
+  (`overlay_scale` 2.5 / `overlay_alpha` 0.35, the `:24930-24947` keys + the
+  `:55550-55566` clamps) — salvage it with the draw half (research/84 §10.7 row 10).
 - **D19 — map icon overlays entirely missing.** behavioural · **closed (S1-L-4 + W4-f29)**.
   The six `Map/*Layer*.cs` layers landed S1-L-4 (`map_layers.rs`); the nine `Main.DrawMap`
   overlay pieces (pylon lines/click/pan, boss/town heads, death markers, revenge coins,
@@ -322,14 +333,25 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   (cactus/biome-influence tiles) always resolve to option 0, so those tiles show their base colour
   in every biome.
 - **D22 — `Main.mapDelay` and `Main.refreshMap`/`Main.clearMap` not modelled.** behavioural ·
-  *partial (W4-e18 residual census + final sweep)*. The `refreshMap`/`clearMap` statics landed
-  the residual census (`WorldMap::refresh_map`/`clear_map`, the `DrawToMap` tail + the
-  `clearMap` consume in `prepare`); the `mapDelay` first-frames skip
-  (`LightingEngine.cs:82-89`) landed the final sweep (`WorldMap::map_delay`, ctor 2
-  `Main.cs:66504`, world-load re-arm `WorldGen.cs:6947`, gating `update`'s head). The
-  content-lost-triggered full refresh (`MapRenderer.cs:363-377`) stays unmodelled — the port's
-  `uploaded`/`needs_full_upload` pair is equivalent for a correct upload but never re-runs a
-  full sweep after a GPU reset.
+  **closed (W4-e18 residual census + final sweep + retire census, 2026-11-21)**. The
+  `refreshMap`/`clearMap` statics landed the residual census (`WorldMap::refresh_map`/
+  `clear_map`, the `DrawToMap` tail + the `clearMap` consume in `prepare`); the `mapDelay`
+  first-frames skip (`LightingEngine.cs:82-89`) landed the final sweep
+  (`WorldMap::map_delay`, ctor 2 `Main.cs:66504`, world-load re-arm `WorldGen.cs:6947`,
+  gating `update`'s head). The last half — `CheckMapTargets`' content-lost arm
+  (`MapRenderer.cs:365-374`: `IsContentLost` rising edge → `mapWasContentLost[i,j] = true;
+  refreshMap = true; clearMap = true`, falling edge resets the latch) — is a STRUCTURAL
+  NO-OP in the port, closed as a recorded deviation (the `targets.rs:451-455`
+  `EnsureRenderTargetContent` precedent): wgpu has no `IsContentLost` — a lost device
+  recreates EVERYTHING (the port has no device-lost recovery path at all:
+  `Gpu::new` runs once at boot, `loop.rs:54`; a surface-acquire failure skips the frame,
+  `frame/draw.rs:2195-2201`), so the XNA per-target content-loss state cannot arise
+  within a live session — a wgpu texture never silently loses content, and a lost
+  device ends the session rather than blanking one target. The port's single map
+  texture is (re)created by `ensure_map_texture` on absence / world-size change
+  (`sprite.rs:654-656`), each creation paired with a `needs_full_upload` full sweep
+  (`prepare`) — the creation-time equivalent of the C# arm's clear+refresh.
+  No `mapWasContentLost` latch is modelled (no per-target grid to latch).
 - **D23 — the `.map` deflate stream is not byte-identical to vanilla's (S1-L-5).** determinism ·
   *admitted* (map.rs:706-711, `tools/MapDeflateHarness`, ANALYSIS.md "The `.map` deflate stream").
   The wrapper semantics are faithful (raw deflate, no zlib wrapper, at the `CompressionMode.Compress`
@@ -343,10 +365,13 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   chunk-invariant on the vanilla runtime (the `fw48/` generator reports "chunked == single: yes";
   modern .NET's is not).
 
-Risk summary (updated W4-e18 final sweep): D14 (map invalidation) closed W4-c35, D19 (icon
-layers) closed S1-L-4 + W4-f29, D17 (minimap alpha) closed the final sweep. The remaining
-behavioural gaps are D18's `mapStyle == 0/2` draw halves (the switcher itself landed) and
-D22's content-lost refresh (no GPU-reset path in the port).
+Risk summary (updated W4-e18 retire census): D14 (map invalidation) closed W4-c35, D19 (icon
+layers) closed S1-L-4 + W4-f29, D17 (minimap alpha) closed the final sweep, D18 closed as
+recorded (switcher landed; style-0 half PHANTOM — no such arm exists; the style-2 overlay
+draw is a seeded M remainder riding the overlay keep-one, g53c holds its state half), D22
+closed (statics + mapDelay landed; the content-lost arm is a structural no-op in wgpu —
+recorded deviation). No open behavioural gap remains in this module's register; the
+style-2 overlay draw + the f29/e17 overlay keep-one are the seeded remainders.
 
 ## Task seeds
 
@@ -378,7 +403,17 @@ D22's content-lost refresh (no GPU-reset path in the port).
   framework research row 18 for the in-game options rows.~~ **PARTIAL (W4-e18)** — the `mapStyle`
   cycling (Tab key + icon clicks), the minimap zoom/alpha keys and `DebugOptions.unlockMap` landed
   the first half + final sweep; the `mapOverlayScale` screen-overlay map (`mapStyle == 2`) stays
-  unported (D18's draw half).
+  unported (D18's draw half — the retire census narrowed it to the overlay DRAW: g53c `a9774d2a`
+  holds the state/keys/clamps half, salvage per research/84 §10.7; the style-0 half is a phantom,
+  no such arm exists).
+- **M — The style-2 overlay draw** (seeded by the W4-e18 retire census, D18's remainder):
+  `Main.cs:55548-55578` (the clamps + `num34-36` screen-centred geometry, `b = (byte)(255 *
+  mapOverlayAlpha)`), the shared `MapRenderer.DrawMap` blit (`:55609`) and the `:55615-55694`
+  overlay icon block (`num37 = min((scale*0.2*2+1)/3, 1) * UIScale`, the revenge/misc/NPC-head/
+  255-player/death passes at that scale). Rides the f29/e17 overlay keep-one's seam — the icon
+  block is the siblings' nine pieces at a different transform, port it with the overlay pick,
+  not twice. State half: g53c's `overlay_scale`/`overlay_alpha` + keys + clamps (research/84
+  §10.7 row 10). Depends on the overlay keep-one decision (f46's merger checklist step 3).
 - **L — Replace the four substituted `GetTileBaseOption` cases**: `461` needs `SceneMetrics`
   ZoneCorrupt/Crimson/Hallow (blocks on row 16), `80` needs `WorldGen.GetCactusType`, `529`/`530`
   need `WorldGen.GetBiomeInfluence` (blocks on row 12, worldgen). Fixes D21.
@@ -456,7 +491,8 @@ overlap this census.
   the record; the MP consumers are unported.
 - **`CheckMapTargets`' content-lost arm** (`MapRenderer.cs:365-374`, `refreshMap` +
   `clearMap` on GPU content loss) stays unmodelled - the port has no render-target grid to
-  lose (D22, unchanged).
+  lose (D22, unchanged). *(Superseded by the retire census below: D22 closed — the arm is
+  a structural no-op in wgpu, recorded deviation.)*
 
 ### Verify-only / phantom rows
 
@@ -630,3 +666,19 @@ cycle), 1 `app::loop::tests::w4_e18_the_map_open_arm_closes_the_inventory_and_di
 `frame::draw::w4_e18_fullmap_draw_head_tests::*` (dialog/inventory close + capture gate).
 Five existing `map::tests` witnesses re-pinned with `map_delay = 0` (the mapTime/scene-box/
 updateMap witnesses pin their own gates, not the delay).
+
+## W4-e18 retire census (2026-11-21, code-only) — D18/D22 remaining halves closed
+
+The retire phase's last census: the two partial rows' remaining halves, adjudicated
+against the C# and closed small (docs-only; the branch is RETIRED — research/84 §10.9,
+fold-source `75289a2d`, merger-keep = the f46 union).
+
+| Remaining half | Verdict | Evidence |
+| --- | --- | --- |
+| D18 — `mapStyle == 0`'s "retro layout" draw | **PHANTOM** (the claim was wrong) | `DrawMap`'s branch chain has NO style-0 arm: `mapFullscreen` (`Main.cs:55340`), `else if mapStyle == 1` (`:55503`), `else if mapStyle == 2` (`:55548`). Both callers gate on style 1/2 BEFORE calling: `DrawInterface_16_MapOrMinimap` (`:45774-45783`, `!mapFullscreen && mapStyle == 1`) and the overlay pass (`:62231-62235`, `!mapFullscreen && mapStyle == 2`). Style 0 draws nothing in vanilla; the port's `map_style == 1`-only gate is the same behaviour. Nothing to port. |
+| D18 — `mapStyle == 2`'s screen-overlay draw | **SEEDED M remainder** (not ported — overlay keep-one territory) | `Main.cs:55548-55578` (the `screenWidth/maxTilesX .. 16*RenderZoom` scale clamp, the `0.01..1` alpha clamp, `b = (byte)(255*mapOverlayAlpha)`, the screen-centred `num34-36` geometry), the shared `MapRenderer.DrawMap` blit (`:55609`), the `:55615-55694` overlay icon block at `num37` scale. The icon block is the f29/e17 siblings' nine pieces at a different transform — port with the overlay pick, never twice. The STATE half (keys `:24930-24947` + `overlay_scale`/`overlay_alpha` `Main.cs:66754-66755` + clamps) is already ported on g53 (`a9774d2a`) — the salvage note is research/84 §10.7 row 10. New task seed above. |
+| D22 — `CheckMapTargets`' content-lost refresh (`MapRenderer.cs:357-378`) | **CLOSED as recorded deviation** (structural no-op in wgpu) | The C# arm latches `mapWasContentLost[i,j]` per render target and arms `refreshMap + clearMap` on the rising edge (`:365-370`). wgpu has no `IsContentLost` — a texture never silently loses content within a live session; a lost device ends the session (the port has no recovery path: `Gpu::new` once at boot `loop.rs:54`, surface-acquire failure skips the frame `frame/draw.rs:2195-2201`). The `targets.rs:451-455` `EnsureRenderTargetContent` note is the same precedent. The map texture's absence/size-change recreation (`sprite.rs:654-656`) pairs with `needs_full_upload`'s full sweep in `prepare` — the creation-time equivalent. No per-target grid, no latch to model. |
+
+D18/D22 row updates + the risk summary above carry the closes. No code changed, no new
+witnesses (both closes are census rulings, not ports). The 3-way zoom keep-one facts are
+research/84 §10.7; the exact re-fold list for the merger is §10.6.
