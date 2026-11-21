@@ -14738,6 +14738,17 @@ pub struct ProjectilePool {
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
     pending_catches: Vec<(u8, u16, i32)>,
+    /// W4-d4 — `Kill()`'s `Item.RequestNewItem` death drops that are NOT
+    /// bobber catches (`Projectile.cs:77572-77615` the coil refund ladder,
+    /// `:77620-77623` the beach ball's return): `(item, stack, centre_x,
+    /// centre_y)`. Unlike a catch these spawn a WORLD drop at the dead
+    /// projectile's `base.Center` (`Item.NewItem`, `Item.cs:49654+` — the
+    /// velocity pair `:49749-49750`, `prefix: 0` draws nothing); the world
+    /// sim drains them on the `UpdateItems` stream (`Main.cs:17779` — the
+    /// C# `Kill()` runs inline under `UpdateProjectiles`, the port defers
+    /// the spawn to the pass tail, the S1-E-21c convention; the bobber
+    /// overflow's stream precedent, `world_sim/projectiles.rs`).
+    pending_death_drops: Vec<(u16, i32, f32, f32)>,
     /// W4-d4 — the beach ball's `Game.BallBounceResult` broadcasts
     /// (`Projectile.cs:18605-18608`, the type-155 movement arm): the chat
     /// lines the bounce chain queued this tick. The world sim drains them
@@ -15152,6 +15163,7 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
+            pending_death_drops: Vec::new(),
             pending_ball_chats: Vec::new(),
             pending_piranha_dummy: false,
             golf_ctx: None,
@@ -15249,6 +15261,14 @@ impl ProjectilePool {
     /// hands to the owner's inventory (the `QuickSpawnItem` overflow drop).
     pub fn drain_catches(&mut self) -> Vec<(u8, u16, i32)> {
         std::mem::take(&mut self.pending_catches)
+    }
+
+    /// W4-d4 — `Kill()`'s world-drop drain (`Projectile.cs:77572-77615` the
+    /// coil refund ladder, `:77620-77623` the beach ball): `(item, stack,
+    /// cx, cy)` — the world sim spawns each as an `Item.NewItem` world drop
+    /// at the recorded `base.Center` on the `UpdateItems` stream.
+    pub fn drain_death_drops(&mut self) -> Vec<(u16, i32, f32, f32)> {
+        std::mem::take(&mut self.pending_death_drops)
     }
 
     /// W4-d4 — the beach ball's bounce-result chat drain
@@ -20364,6 +20384,37 @@ impl ProjectilePool {
                         crate::projectile_bobber::kill_hook(&mut self.slots[i], level, rng)
                     {
                         self.pending_catches.push((self.slots[i].owner, item, stack));
+                    }
+                }
+                // W4-d4 — `Kill()`'s rope-coil refund ladder
+                // (`Projectile.cs:77572-77615`): ai[1]==0 drops ONE coil
+                // item back (985/3005/3079/3080); 0 < ai[1] < 10 drops
+                // `10−ai[1]` ROPE items (965/2996/3077/3078) — the placed
+                // links stay in the world; ai[1] >= 10 drops nothing. The
+                // g82-extras union (research/26e): the ladder itself is
+                // g82's `coil_death_drop` (`67c9a740`), drained here at the
+                // pool's once-per-death seam (every kill path — placement
+                // `:27290`, expiry, penetrate — reaches it). NO owner gate:
+                // the C# `Item.RequestNewItem` runs for every coil death
+                // (`ReserveForLocalPlayer` is a grab reservation, not a
+                // spawn gate). The out-of-world guard (`:16696`) returns
+                // WITHOUT `Kill()` — its deaths never refund.
+                if !died_out_of_world {
+                    if let Some((item, stack)) = crate::projectile_rope_coil::coil_death_drop(
+                        self.slots[i].kind,
+                        self.slots[i].ai[1],
+                    ) {
+                        let (cx, cy) = self.slots[i].center();
+                        self.pending_death_drops.push((item, stack, cx, cy));
+                    }
+                    // `Kill()`'s beach-ball return (`:77620-77623`): the
+                    // 155's death drops ONE Beach Ball item (859) at
+                    // `base.Center` — same ladder block, no owner gate,
+                    // `NewItemOwnership.None` (no grab reservation either
+                    // way in netMode 0).
+                    if self.slots[i].kind == BEACH_BALL {
+                        let (cx, cy) = self.slots[i].center();
+                        self.pending_death_drops.push((859, 1, cx, cy));
                     }
                 }
             }
@@ -26909,6 +26960,124 @@ mod arrow_tests {
             assert!(placed.active(), "kind {kind}: the rope is active");
             assert_eq!(placed.kind, rope, "kind {kind}: the per-kind rope (`:27227-27239`)");
         }
+    }
+
+    /// W4-d4 union — `Kill()`'s refund ladder wire (`Projectile.cs:77572-
+    /// 77615`, the g82-extras union per research/26e): the placement kill
+    /// queues `10−ai[1]` rope items at the death hook, ONE coil item for an
+    /// unplaced expiry, NOTHING at the full 10-link budget. Written NOT
+    /// run (code-only).
+    #[test]
+    fn w4_d4_union_the_coil_death_queues_the_refund_ladder() {
+        // A floor at row 20 under the coil's column — the same rig as the
+        // placement witness above; the third tick places one link + kills.
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 8..14 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(ROPE_COIL, 160.0, 296.0, 0.0, 4.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..3 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        }
+        assert!(!pool.slots()[slot].active, "the placement kills");
+        assert_eq!(pool.slots()[slot].ai[1], 1.0, "one link placed");
+        let drops = pool.drain_death_drops();
+        assert_eq!(drops.len(), 1, "one refund request");
+        let (item, stack, ..) = drops[0];
+        assert_eq!((item, stack), (965, 9), "10−1 rope items (`:77580`)");
+        // The unplaced expiry: ai[1] == 0 → ONE coil item back (`:77576`).
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data_ai(VINE_ROPE_COIL, 1600.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool2.slots_mut()[s2].time_left = 1;
+        let mut w2 = World::new("t".into(), 300, 200);
+        pool2.update(
+            &mut w2,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(!pool2.slots()[s2].active, "the expiry kills");
+        let drops2 = pool2.drain_death_drops();
+        assert_eq!(drops2.len(), 1);
+        assert_eq!((drops2[0].0, drops2[0].1), (3005, 1), "the vine coil back (`:77587`)");
+        // The full budget: ai[1] == 10 → nothing (`:77578`'s `< 10f`).
+        let mut pool3 = ProjectilePool::new();
+        let s3 = pool3
+            .spawn_with_data_ai(SILK_ROPE_COIL, 1600.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 10.0)
+            .unwrap();
+        pool3.slots_mut()[s3].time_left = 1;
+        pool3.update(
+            &mut w2,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(!pool3.slots()[s3].active);
+        assert!(pool3.drain_death_drops().is_empty(), "10 placed → no refund");
+    }
+
+    /// W4-d4 union — `Kill()`'s beach-ball return (`Projectile.cs:77620-
+    /// 77623`): the 155's zero-velocity death queues ONE Beach Ball (859)
+    /// at `base.Center`, no owner gate. Written NOT run (code-only).
+    #[test]
+    fn w4_d4_union_the_beach_ball_death_returns_the_item() {
+        let mut pool = ProjectilePool::new();
+        let ball = pool
+            .spawn_with_data(BEACH_BALL, 1600.0, 400.0, 0.0, 0.0, 0, 0.0)
+            .unwrap();
+        let mut w = World::new("t".into(), 300, 200);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(!pool.slots()[ball].active, "the zero-velocity kill (`:27004`)");
+        let drops = pool.drain_death_drops();
+        assert_eq!(drops.len(), 1, "one return request");
+        let (item, stack, cx, cy) = drops[0];
+        assert_eq!((item, stack), (859, 1), "the Beach Ball back (`:77622`)");
+        // base.Center of the 44×44 box at (1600, 400) — the kill precedes
+        // the dead-tick integrate, so the centre is the pre-move one.
+        assert!((cx - 1622.0).abs() < 1e-3 && (cy - 422.0).abs() < 1e-3);
     }
 
     /// The owner gate (`:27202-27205`): a foreign coil flies through the

@@ -39363,3 +39363,69 @@ The proj 31-40 residuals sweep (Lane 27), five items:
 
 All new witnesses WRITTEN, NOT RUN (code-only). The item-use ports (3) and
 the flame damage gate (4) are the behavioural changes; 1/2/5 are census/doc.
+
+### The rope-coil lane extras (W4-d4 union, 2026-11-21, code-only)
+
+The g82-extras union per `docs/research/26e-rope-coil-keep-one.md` — d4's
+`ai_rope_coil` + rows + wind-list stay the single aiStyle-35 machine; the
+g82 pieces d4 never claimed land in `crates/tr-app/src/projectile_rope_coil.rs`
+(ported from g82's `67c9a740`, minus the four duplicate fns).
+
+**The refund ladder — WIRED (the one behavioural gap 26e found).**
+`coil_death_drop` (`Projectile.cs:77572-77615`): ai[1]==0 → one coil item
+(985/3005/3079/3080); 0<ai[1]<10 → `10−ai[1]` rope items (965/2996/3077/3078);
+ai[1]>=10 → nothing. The pool's once-per-death hook (`projectile.rs`, beside
+the bobber arm) queues `(item, stack, base.Center)` into the new
+`pending_death_drops`; `world_sim/projectiles.rs` drains it at the pass tail
+as an `Item.NewItem` WORLD drop (NOT a `drain_catches` inventory hand-off —
+the C# `RequestNewItem` spawns a world item, the player picks it up through
+the ordinary magnet). The beach ball's return (`:77620-77623`, 859×1) rides
+the same queue. Both arms sit behind `!died_out_of_world`: the C#
+out-of-world guard (`:16696`) deactivates WITHOUT `Kill()`, so those deaths
+never refund. NO owner gate — `ReserveForLocalPlayer` is a grab reservation,
+not a spawn gate.
+
+Deviations (recorded):
+* **Stream**: the C# draws the `Item.NewItem` velocity pair inline mid-`Kill()`
+  under the `UpdateProjectiles` swap (`Item.cs:49749-49750`: X =
+  `Next(-30,31)*0.1`, Y = `Next(-40,-15)*0.1`; `prefix: 0` draws nothing; none
+  of the kinds is `ItemNoGravity`, `ItemID.cs:1320`); the port defers the
+  spawn to the pass tail's `UpdateItems` stream — the bobber overflow's
+  recorded stream deviation, extended to world drops.
+* **Ownership**: `ReserveForLocalPlayer` in netMode 0 sets only
+  `enemyGrabDelayTime` (`Item.cs:49757-49760`, `WorldItem.cs:295-305`) — the
+  port's enemy-grab clock is unported, so the refund is player-grabbable
+  immediately (the lucky-coin precedent, `world_sim/editing.rs`).
+* **Drop box**: the port's universal 14×14 `ItemDrop` centred on the death
+  centre stands in for the per-texture `WorldItem` box (the bug-net catch
+  deviation).
+
+**The chain placement preview — geometry landed, EMIT deferred (g82b).**
+`is_coil`/`coil_chain_sheets`/`coil_chain_segments`/`draw_coil_chain`
+(`Main.cs:28499-28669`, the three per-kind bodies term-identical bar the
+sheet pick): the 17-tick count ramp `(int)(30*min(ai[0]/17,1))`, the 30-tick
+sag ramp `0.4*min(ai[0]/30,1)` accumulating per link, the 5.6-px normalize
+with the manhattan-<1 shrink quirk (`num52 *= |dx|+|dy|/1f`) incl. the kept
+0/0 NaN pin (when −velocity cancels the sag the C# divides 0/0 and every
+later link is NaN — the port keeps it, witness-pinned), `atan2(dy,dx)−1.57`
+rotation, REVERSE draw order (far end first), the sheet alternation counting
+the DRAW index (Chain16 / Chain38+39 / Chains_4+5 / Chains_6+7). The coil
+items have NO `createTile` (`Item.cs:12697-12711`/`:27730-27743`/
+`:28530-28558`), so this chain IS the placement preview.
+
+**The g82b wiring contract** (the emit half is `#[allow(dead_code)]` until
+then): `projectile.rs::draw_with_hand` must call `draw_coil_chain` gated on
+`is_coil(kind)` INSTEAD of the generic sprite light tint — each link carries
+its own `Lighting.GetColor((int)x/16, (int)(y/16f))` at the LINK's position,
+scale 0.8, origin half-sheet, `snap_to_screen_pub` for the pixel snap; the
+`Chain16`/`Chain38`/`Chain39`/`Chains_4..7` sheets join the `assets.rs`
+static list (the `FishingLine` precedent, `assets.rs:709`) and `sheet_uv`
+resolves them by name. The dust walks sharing the geometry
+(`Projectile.cs:74615-74731`) skip with the dust layer; the `ai[1]==0` sound
+cue (`:74617-74620`/`:74681-74684`, Item1) rides the wiring's `wants_sound`.
+
+Witnesses WRITTEN NOT RUN: the ladder (11 rows + the is_coil gate), the
+reverse-order walk + ramps, the draw-index sheet parity, the NaN pin
+(module); the placement-kill/expiry/full-budget queue arms + the ball return
+(`projectile.rs`); the drain's world-drop shape + the two-draw `UpdateItems`
+contract with every other stream pristine (`world_sim/projectiles.rs`).

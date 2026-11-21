@@ -617,6 +617,45 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-d4 — `Kill()`'s world-drop drain (`Projectile.cs:77572-77615` the
+    // rope-coil refund ladder, `:77620-77623` the beach ball's return): the
+    // pool's death hook queued `(item, stack, base.Center)`; each spawns an
+    // `Item.NewItem` WORLD drop at the recorded centre (NOT a bobber catch
+    // — no inventory hand-off). The C# draws the velocity pair inline under
+    // `Kill()` (`Item.cs:49749-49750`: X = Next(-30,31)*0.1, Y =
+    // Next(-40,-15)*0.1 — none of the kinds is `ItemNoGravity`,
+    // `ItemID.cs:1320`); `prefix: 0` draws nothing. The port defers the
+    // spawn to the pass tail on the `UpdateItems` stream (`Main.cs:17779`
+    // — the bobber overflow's recorded stream deviation). The
+    // `ReserveForLocalPlayer` ownership sets only `enemyGrabDelayTime` in
+    // netMode 0 (`WorldItem.cs:295-305`), unported — the drop is
+    // player-grabbable immediately (the lucky-coin precedent).
+    for (item, stack, cx, cy) in app.projectiles.drain_death_drops() {
+        if stack <= 0 {
+            continue;
+        }
+        let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
+        let vx = rng.next_range(-30, 31) as f32 * 0.1;
+        let vy = rng.next_range(-40, -15) as f32 * 0.1;
+        // `WorldItem.Center = center` (`Item.cs:49736`) — the port's 14×14
+        // drop box centred on the dead projectile's centre (the universal
+        // `ItemDrop` box deviation, the bug-net catch precedent).
+        let half = crate::item::SIZE * 0.5;
+        let drop = crate::item::ItemDrop::new(
+            item,
+            stack as u32,
+            0,
+            cx - half,
+            cy - half,
+            vx,
+            vy,
+            0.0,
+        );
+        app.items.push(drop);
+        if app.items.len() > 300 {
+            app.items.remove(0);
+        }
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's
@@ -730,6 +769,100 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 }
             }
         }
+    }
+}
+
+/// W4-d4 union — the `Kill()` world-drop drain's wire + stream contract
+/// (written, NOT run — code-only): the coil refund ladder
+/// (`Projectile.cs:77572-77615`) and the beach ball's return (`:77620-
+/// 77623`) spawn `Item.NewItem` world drops at the recorded centre, TWO
+/// integer draws on the `UpdateItems` stream per drop (`Item.cs:49749-
+/// 49750`), every other stage stream pristine.
+#[cfg(test)]
+mod w4_d4_death_drop_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::projectile::{ROPE_COIL, VINE_ROPE_COIL};
+    use tr_core::UnifiedRandom;
+
+    /// A coil hovering inside the 8×8-tile fixture world with the given
+    /// placed-count. `time_left = 1` expires it on the first pass tick
+    /// (the lifetime block) without any placement contact.
+    fn coil_app(kind: u16, placed: f32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let s = app
+            .projectiles
+            .spawn_with_data_ai(kind, 32.0, 32.0, 0.0, 0.0, 0, 0.0, 0.0, placed)
+            .unwrap();
+        app.projectiles.slots_mut()[s].time_left = 1;
+        app
+    }
+
+    /// The unplaced coil returns ONE coil item; the partially placed one
+    /// returns `10−ai[1]` rope items — both as WORLD drops at the coil's
+    /// centre, not inventory hand-offs (the C# `RequestNewItem`, not the
+    /// bobber's `GiveItemToPlayer`).
+    #[test]
+    fn w4_d4_union_the_coil_expiry_drains_the_refund_as_a_world_drop() {
+        let mut app = coil_app(ROPE_COIL, 0.0);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "one refund drop");
+        let d = &app.items[0];
+        assert_eq!((d.kind, d.count), (985, 1), "the coil item back (`:77576`)");
+        // The 14×14 box centred on (39, 39) — the coil's centre at death.
+        assert!((d.center().x - 39.0).abs() < 1e-3 && (d.center().y - 39.0).abs() < 1e-3);
+        assert_eq!(d.prefix, 0, "prefix: 0 (`:77576`)");
+        assert_eq!(d.grab_delay_time, 0, "netMode 0 sets no player delay");
+        // The velocity pair on the UpdateItems stream: X = Next(-30,31)*0.1,
+        // Y = Next(-40,-15)*0.1 (`Item.cs:49749-49750`), seed 0.
+        let mut expect = UnifiedRandom::new(0);
+        let vx = expect.next_range(-30, 31) as f32 * 0.1;
+        let vy = expect.next_range(-40, -15) as f32 * 0.1;
+        assert!((d.vel.x - vx).abs() < 1e-6 && (d.vel.y - vy).abs() < 1e-6);
+        assert_eq!(*app.rngs.stream(RngKey::UpdateItems), expect, "exactly two draws");
+        for key in RngKey::ALL {
+            if key != RngKey::UpdateItems {
+                assert_eq!(
+                    *app.rngs.stream(key),
+                    UnifiedRandom::new(0),
+                    "{} pristine",
+                    key.name()
+                );
+            }
+        }
+        // The partial refund: ai[1] = 4 → 6 vine-rope items (`:77591`).
+        let mut app2 = coil_app(VINE_ROPE_COIL, 4.0);
+        update_projectiles(&mut app2, 1.0 / 60.0);
+        assert_eq!(app2.items.len(), 1);
+        assert_eq!((app2.items[0].kind, app2.items[0].count), (2996, 6));
+        // The full budget drops nothing — the drain never runs.
+        let mut app3 = coil_app(ROPE_COIL, 10.0);
+        update_projectiles(&mut app3, 1.0 / 60.0);
+        assert!(app3.items.is_empty(), "10 placed → no refund");
+        for key in RngKey::ALL {
+            assert_eq!(*app3.rngs.stream(key), UnifiedRandom::new(0), "{} pristine", key.name());
+        }
+    }
+
+    /// The beach ball's zero-velocity death returns ONE Beach Ball (859)
+    /// at `base.Center` (`:77620-77623`) — the same drain, one pair of
+    /// draws.
+    #[test]
+    fn w4_d4_union_the_beach_ball_return_drains_on_the_items_stream() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.projectiles
+            .spawn_with_data(crate::projectile::BEACH_BALL, 32.0, 32.0, 0.0, 0.0, 0, 0.0);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "the ball returns");
+        let d = &app.items[0];
+        assert_eq!((d.kind, d.count), (859, 1), "`:77622`");
+        // The 44×44 ball's centre: (54, 54).
+        assert!((d.center().x - 54.0).abs() < 1e-3 && (d.center().y - 54.0).abs() < 1e-3);
+        let mut expect = UnifiedRandom::new(0);
+        let _ = expect.next_range(-30, 31);
+        let _ = expect.next_range(-40, -15);
+        assert_eq!(*app.rngs.stream(RngKey::UpdateItems), expect, "exactly two draws");
     }
 }
 
