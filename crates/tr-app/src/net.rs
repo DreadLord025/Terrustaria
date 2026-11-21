@@ -164,6 +164,16 @@ pub mod id {
     /// factors (`NetMessage.cs:1555-1567`, `MessageBuffer.cs:4164-4193`).
     /// W4-g51 lifted the parked d97 codec and wired the apply+relay arms.
     pub const UPDATE_PLAYER_LUCK_FACTORS: u8 = 134;
+    /// `136 SyncCavernMonsterType` (`MessageID.cs:286`) — the cavern spawn
+    /// grid (`NetMessage.cs:1572-1582`, `MessageBuffer.cs:4204-4217`).
+    /// W4-g51 lifted the parked d92 codec; the client store is parked (the
+    /// port has no cavern-monster grid yet).
+    pub const CAVERN_MONSTER_TYPES: u8 = 136;
+    /// `137 RequestNPCBuffRemoval` (`MessageID.cs:288`) — a client asks the
+    /// host to drop an NPC buff (`NetMessage.cs:1583-1586`,
+    /// `MessageBuffer.cs:4219-4228`). W4-g51 lifted the parked d92 codec and
+    /// wired the host gate (the `CanBeRemovedByNetMessage` set is empty).
+    pub const NPC_BUFF_REMOVAL_REQUEST: u8 = 137;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -1681,6 +1691,29 @@ impl UpdatePlayerLuckFactors {
     }
 }
 
+/// `msg 136 SyncCavernMonsterType`'s body (`NetMessage.cs:1572-1582`): the
+/// 2×3 `NPC.cavernMonsterType` grid (`NPC.cs:6585`, allocated `new int[2, 3]`
+/// at `:95268`) written row-major as six `(ushort)`s — outer loop `i < 2`,
+/// inner `j < 3`. The client stores them verbatim (`MessageBuffer.cs:4210-4216`);
+/// the join push is `MessageBuffer.cs:870`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CavernMonsterTypes {
+    /// `[i][j]`, row-major — the C#'s `int[2, 3]` narrowed to the wire's
+    /// `ushort` (the values are npc types, `NPC.cs:18123-18129`).
+    pub types: [[u16; 3]; 2],
+}
+
+/// `msg 137 RequestNPCBuffRemoval`'s body (`NetMessage.cs:1583-1586`):
+/// `(short)` npc slot + `(ushort)` buff type. The host gates the slot to
+/// `0..Main.maxNPCs` then runs `RequestBuffRemoval` (`MessageBuffer.cs:4222-4227`);
+/// the client sends it from `NPC.RequestBuffRemoval` behind the
+/// `BuffID.Sets.CanBeRemovedByNetMessage` gate (`NPC.cs:89987-89998`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcBuffRemovalRequest {
+    pub npc: i16,
+    pub buff_type: u16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1807,6 +1840,9 @@ pub enum C2s {
     /// (`Player.UpdateLuck`'s `luckNeedsSync` send, `Player.cs:29048`; the
     /// host applies + relays, `MessageBuffer.cs:4164-4193`).
     UpdatePlayerLuckFactors(UpdatePlayerLuckFactors),
+    /// `137 RequestNPCBuffRemoval` - a client asks the host to drop an NPC
+    /// buff (`NPC.cs:89995-89998`; `MessageBuffer.cs:4219-4229`).
+    NpcBuffRemovalRequest(NpcBuffRemovalRequest),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1948,6 +1984,9 @@ pub enum S2c {
     /// host (`MessageBuffer.cs:4191`); the client applies the eight fields +
     /// `RecalculateLuck` (`:4180-4188`).
     UpdatePlayerLuckFactors(UpdatePlayerLuckFactors),
+    /// `136 SyncCavernMonsterType` - the cavern spawn grid, the join push
+    /// (`MessageBuffer.cs:870`, read `:4204-4218`).
+    CavernMonsterTypes(CavernMonsterTypes),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2040,6 +2079,7 @@ impl C2s {
             Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
             Self::FishOutNpc(_) => id::FISH_OUT_NPC,
             Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
+            Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2119,6 +2159,8 @@ impl C2s {
             Self::FishOutNpc(f) => w.u16(f.tile_x).u16(f.tile_y).i16(f.npc_type),
             // `NetMessage.cs:1555-1567`: the eight luck fields in writer order.
             Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
+            // `NetMessage.cs:1583-1586`: (short)npc, (ushort)buff type.
+            Self::NpcBuffRemovalRequest(q) => w.i16(q.npc).u16(q.buff_type),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2267,6 +2309,11 @@ impl C2s {
             id::UPDATE_PLAYER_LUCK_FACTORS => {
                 Self::UpdatePlayerLuckFactors(UpdatePlayerLuckFactors::read_from(r)?)
             }
+            // `MessageBuffer.cs:4222-4223`: (short)npc, (ushort)buff type.
+            id::NPC_BUFF_REMOVAL_REQUEST => Self::NpcBuffRemovalRequest(NpcBuffRemovalRequest {
+                npc: r.i16()?,
+                buff_type: r.u16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2432,6 +2479,7 @@ impl S2c {
             Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
             Self::TamperWithNpc(_) => id::TAMPER_WITH_NPC,
             Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
+            Self::CavernMonsterTypes(_) => id::CAVERN_MONSTER_TYPES,
         }
     }
 
@@ -2594,6 +2642,16 @@ impl S2c {
             // `NetMessage.cs:1555-1567`: the eight luck fields (the relay
             // reuses the writer case).
             Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
+            // `NetMessage.cs:1572-1582`: the 2×3 grid, row-major (ushort)s.
+            Self::CavernMonsterTypes(c) => {
+                let mut w = w;
+                for row in &c.types {
+                    for ty in row {
+                        w = w.u16(*ty);
+                    }
+                }
+                w
+            }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2831,6 +2889,16 @@ impl S2c {
             // `MessageBuffer.cs:4166-4174`: the eight luck fields.
             id::UPDATE_PLAYER_LUCK_FACTORS => {
                 Self::UpdatePlayerLuckFactors(UpdatePlayerLuckFactors::read_from(r)?)
+            }
+            // `MessageBuffer.cs:4210-4216`: exactly six (ushort)s, row-major.
+            id::CAVERN_MONSTER_TYPES => {
+                let mut types = [[0u16; 3]; 2];
+                for row in &mut types {
+                    for ty in row {
+                        *ty = r.u16()?;
+                    }
+                }
+                Self::CavernMonsterTypes(CavernMonsterTypes { types })
             }
             _ => return None,
         })
@@ -5054,6 +5122,50 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::UpdatePlayerLuckFactors(d) => assert_eq!(d, l),
             other => panic!("expected 134, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `136 SyncCavernMonsterType` body byte-pins the 2×3 grid
+    /// row-major (`NetMessage.cs:1572-1582`: six ushorts, outer i<2 inner
+    /// j<3); S2c-only.
+    #[test]
+    fn w4_g51_cavern_monster_types_round_trips() {
+        let c = CavernMonsterTypes {
+            types: [[1, 2, 3], [4, 5, 6]],
+        };
+        let mut body = Vec::new();
+        for row in &c.types {
+            for ty in row {
+                body.extend_from_slice(&ty.to_le_bytes());
+            }
+        }
+        let f = S2c::CavernMonsterTypes(c).encode();
+        assert_eq!(f[2], 136);
+        assert_eq!(&f[3..], &body);
+        assert_eq!(body.len(), 12, "six ushorts");
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CavernMonsterTypes(d) => assert_eq!(d, c),
+            other => panic!("expected 136, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `137 RequestNPCBuffRemoval` body byte-pins the slot+buff
+    /// pair (`NetMessage.cs:1583-1586`: short npc, ushort buff); C2s-only.
+    #[test]
+    fn w4_g51_npc_buff_removal_request_round_trips() {
+        let q = NpcBuffRemovalRequest {
+            npc: 7,
+            buff_type: 20,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&7i16.to_le_bytes());
+        body.extend_from_slice(&20u16.to_le_bytes());
+        let c = C2s::NpcBuffRemovalRequest(q).encode();
+        assert_eq!(c[2], 137);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NpcBuffRemovalRequest(d) => assert_eq!(d, q),
+            other => panic!("expected 137, got {:?}", other.msg_id()),
         }
     }
 

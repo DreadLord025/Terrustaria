@@ -598,7 +598,7 @@ impl NpcBuffs {
     /// tail left by one per empty slot, scanned left to right without
     /// rescanning: `[empty, empty, C]` compacts to `[empty, C, 0]`, not
     /// `[C, 0, 0]`. The quiet/net tail (`NPC.cs:90019-90022`) is dead code.
-    fn del_buff(&mut self, buff_index: usize) {
+    pub(crate) fn del_buff(&mut self, buff_index: usize) {
         self.buff_time[buff_index] = 0;
         self.buff_type[buff_index] = 0;
         for i in 0..NPC_MAX_BUFFS - 1 {

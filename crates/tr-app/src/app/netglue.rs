@@ -878,6 +878,50 @@ impl App {
                 self.remote_players.entry(id).or_default().luck = Some(l);
                 server.broadcast_except(&S2c::UpdatePlayerLuckFactors(l), id);
             }
+            // `case 137` — a client asks the host to drop an NPC buff
+            // (`MessageBuffer.cs:4219-4228`, host-only): the slot gates to
+            // `0..Main.maxNPCs` (`:4224`) then `RequestBuffRemoval`
+            // (`NPC.cs:89985-90000`). The `BuffID.Sets.CanBeRemovedByNetMessage`
+            // set is created EMPTY (`BuffID.cs:48`), so the gate refuses every
+            // buff id — the seam is wired through `request_buff_removal` and
+            // stays live for when the set is filled. The `54` push the helper
+            // would emit on a successful removal rides the outbox drain.
+            C2s::NpcBuffRemovalRequest(q) => {
+                if q.npc < 0 || q.npc as usize >= self.npcs.len() {
+                    return; // `:4224`
+                }
+                let slot = q.npc as usize;
+                let found = self.npcs[slot]
+                    .buffs
+                    .find_buff_index(q.buff_type as i32)
+                    .is_some();
+                let mut out = Vec::new();
+                let buffs = &mut self.npcs[slot].buffs;
+                let idx = buffs.find_buff_index(q.buff_type as i32);
+                crate::app::net_npc_sync::request_buff_removal(
+                    q.npc,
+                    q.buff_type,
+                    2,
+                    found,
+                    &mut out,
+                    || {
+                        if let Some(i) = idx {
+                            buffs.del_buff(i); // NPC.cs:89994
+                        }
+                    },
+                );
+                // A successful removal pushes the full `54` list
+                // (`NPC.cs:90019-90022`); the empty gate keeps `out` empty.
+                for send in out {
+                    if let crate::app::net_npc_sync::NpcSend::BuffList { slot } = send {
+                        let buffs = npc_buffs_of(&self.npcs[slot as usize]);
+                        server.broadcast(&S2c::NpcBuffs(net::NpcBuffs {
+                            npc: slot,
+                            buffs,
+                        }));
+                    }
+                }
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1978,6 +2022,12 @@ impl App {
             // so there is no field to write; the arm is parked with the
             // render-side ghost fade (S1-I-4).
             S2c::DeadPlayer { .. } => {}
+            // `case 136`'s client half (`MessageBuffer.cs:4204-4217`): the
+            // 2×3 `NPC.cavernMonsterType` grid stores verbatim. The port has
+            // no cavern-monster spawn grid yet (the deep-cavern spawn pass
+            // reads a fixed roster), so there is no field to write; the arm
+            // is parked with the cavern spawn system (S1-I-4).
+            S2c::CavernMonsterTypes(_) => {}
             // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
             // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
             // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
@@ -4318,6 +4368,37 @@ mod handshake_tests {
             (p.luck_state.luck - 0.5).abs() < 1e-5,
             "the recalculated luck is 0.5, got {}",
             p.luck_state.luck
+        );
+    }
+
+    /// W4-g51 `137 RequestNPCBuffRemoval`: the host gates the slot then runs
+    /// `RequestBuffRemoval` (`MessageBuffer.cs:4219-4228`). The
+    /// `CanBeRemovedByNetMessage` set is EMPTY (`BuffID.cs:48`), so the buff
+    /// survives — the seam is wired but refuses every id.
+    #[test]
+    fn the_npc_buff_removal_request_is_gated_off_by_the_empty_set() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 0.0, 0.0, 1, 0.0);
+        npc.buffs.add_buff(20, 600); // Poisoned
+        host_app.npcs.push(npc);
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::NpcBuffRemovalRequest(net::NpcBuffRemovalRequest {
+                        npc: 0,
+                        buff_type: 20,
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert!(
+            host_app.npcs[0].buffs.has_buff(20),
+            "the empty CanBeRemovedByNetMessage set refuses the removal"
         );
     }
 
