@@ -125,6 +125,37 @@ three mis-placed hunks, so HEAD is structurally sound.)
    port survives at 737, the c8/c10 style-66 wiring shared). The
    co-lane's uncommitted ROADMAP row stays the co-lane's to commit;
    this verdict is published here + in the co-lane cross-note below.
+6. **W4-d76 (proj-sounds-2) — the 1080 Kill superset, FINAL keep-one**
+   (retire phase). `origin/task/W4-d76-proj-sounds-2` is LIVE, NOT in
+   main (`ede24bb4f`/`dd90f1629` both non-ancestors of origin/main).
+   Its `dd90f1629` ports `kill_tail_cue` — the four-site cue-only map
+   (`Projectile.cs:70865` Jim's Drone/RC Car Item62, `:70904` Pretty
+   Mirror Item106, `:70936` **BirdDroppings Item177**, `:70958` Torch
+   God helper Item10) + five census rows (1020/1105/1085/1080/1084)
+   + the `BIRD_DROPPINGS` const + UNARMED_ROWED +195/200/202/205.
+   **The c10 hook (`8bd6afeb3`) is the STRICT SUPERSET of d76's 1080
+   arm:** Stinky 120/600 on the living-local-player rect intersect
+   (`:70928-70934`, d76 explicitly defers this as "the state
+   follow-up"), the SAME Item177 cue at the int-truncated centre
+   (`:70936`; d76 queues untruncated and relies on the id-2 façade —
+   c10 truncates at the hook, identical drain), PLUS the 90-draw
+   30-dust census (`:70937-70951`, d76 skips the bodies AND the draws
+   — a stream deviation the superset closes) and the
+   died_out_of_world skip. **KEEP-ONE at merge:** keep c10's
+   `projectile_bird_droppings.rs` + the pool hook + the c10 row/const;
+   from d76 keep `kill_tail_cue` for the OTHER four kinds
+   (1020/1105/1085/1084) but **DROP its `BIRD_DROPPINGS =>` arm** —
+   both hooks fire on the same death seam, so leaving the arm queues
+   Item177 TWICE; drop d76's duplicate 1080 row + `BIRD_DROPPINGS`
+   const (identical values, one definition survives — E0428/E0592
+   otherwise) + its UNARMED_ROWED `200` entry (c10's style-200 is
+   ARMED by the module; the census pin would misreport) + the 1080
+   case row in its `s1_e_21h_d76_sweep_the_kill_tail_cue_map`
+   witness (the c10 pool-hook witness covers the cue). The other
+   four kinds' rows/arms/witness stay untouched — zero c10 overlap.
+   This composes with §2.2: d20's `ai_bird_droppings` ALSO drops; the
+   ONE surviving 1080 machine is c10's module + hook. Cross-note
+   published in ANALYSIS "The waterfowl FINAL" Item 6.
 
 ## 3. Witness index (37, all WRITTEN NOT RUN)
 
@@ -151,6 +182,10 @@ final flips: 3, plus the S1-D-3 module's 16).
    mechanical fixes (the code-only convention).
 2. d20 dedupe FIRST (a double `200 =>` arm is E0004-adjacent hard
    error): keep c10's module/dispatch/row, drop d20's five pieces (§2.2).
+   THEN the d76 dedupe (§2.6): drop its `kill_tail_cue` BIRD_DROPPINGS
+   arm (double Item177 otherwise), its duplicate 1080 row/const, its
+   UNARMED_ROWED `200` entry + its witness's 1080 case; keep its other
+   four kinds whole.
 3. b3's drain line (§2.1) — one line, then retire the in-place gate.
 4. The anchors canary: five c10 rows (`ai_068_waterfowl`,
    `bird_droppings_step`, `bird_droppings_kill_draws`,

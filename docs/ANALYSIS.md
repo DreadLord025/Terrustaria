@@ -39746,3 +39746,32 @@ per the origin scan + the d54 150 registry): the band ledger,
 the cross-lane contract table, the witness index and the merge
 checklist. INDEX row 149 added.
 
+### Item 6 — the 1080 Kill superset vs d76's kill_tail_cue (retire phase, FINAL keep-one)
+
+The retire-phase origin read found a SECOND 1080 Kill()-site claimant
+besides d20: `origin/task/W4-d76-proj-sounds-2` (LIVE, not in main —
+`ede24bb4f` + `dd90f1629` are non-ancestors of origin/main). Its
+`dd90f1629` lands `ProjectilePool::kill_tail_cue`, the cue-only map
+for the d76 range's four PlaySound sites (`Projectile.cs:70865`
+Item62 Jim's Drone 1020 / RC Car 1105, `:70904` Item106 Pretty Mirror
+1085, `:70936` Item177 BirdDroppings 1080, `:70958` Item10 Torch God
+helper 1084), rows the five kinds, and explicitly defers the 1080
+arm's Stinky write (`:70933`) as "the state follow-up" while skipping
+the dust census entirely. This lane's `8bd6afeb3` hook is the STRICT
+SUPERSET: Stinky 120/600 gated on the living local player's rect
+intersect, the same Item177 at the int-truncated centre (d76 queues
+untruncated and lets the id-2 façade truncate — identical drain
+payload), the full 90-draw 30-dust census in C# order (d76's skip
+would shift the shared Main.rand stream — the superset closes that
+deviation), and the died_out_of_world skip. KEEP-ONE (published in
+research/149 §2.6 + merge-checklist step 2): keep c10's module + hook
++ row + const; keep d76's map for its OTHER four kinds; DROP d76's
+`BIRD_DROPPINGS =>` arm (both hooks fire on the same death seam —
+leaving it queues Item177 twice), its duplicate 1080 row + const
+(E0428/E0592 at merge otherwise), its UNARMED_ROWED `200` entry
+(c10's style-200 is armed) and its witness's 1080 case row. Composes
+with the d20b-agreed dedupe (Item 2): ONE surviving 1080 machine.
+**Cross-note to d76:** your map's shape is kept; only the 1080 arm
+moves into the c10 hook — the cue payload your witness pins is
+byte-identical to the c10 hook's queue entry.
+
