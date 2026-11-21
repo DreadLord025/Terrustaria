@@ -475,6 +475,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // id-2 styles keep the wave-A façade.
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
+        } else if id == 18 {
+            // W4-d1 retire — the falling-block forced placement's coin-pile
+            // tail (`WorldGen.cs:60273-60278`: the legacy Coins 18, the int
+            // overload — no draws, no pitch, `LegacySoundPlayer.cs:865-869`;
+            // the `place_tile_sound` table's 330-333 arm).
+            app.audio.play_place_sound((18, 1), x, y, rng);
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
         }

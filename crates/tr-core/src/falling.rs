@@ -8,8 +8,9 @@
 //! 116 sandstone, 224, 123 silt, 330-333 the snow variants, 495 — verbatim.
 //!
 //! The trigger runs from the tile-change path (the C# `TileFrame`'s
-//! `:81380` check); the spawned projectile is the app pool's
-//! `Behavior::FallingTile`.
+//! `:81380` check); the spawned projectile rides the app pool's data path
+//! (`spawn_falling` → `spawn_with_data_ai`, W4-d1 retire) and the
+//! `projectile_ai_falling` arm owns the flight + the landing.
 
 use crate::tile::Tile;
 use crate::world::World;
@@ -119,40 +120,14 @@ pub fn check_falling(world: &World, x: i32, y: i32) -> Option<FallSpawn> {
     })
 }
 
-/// The tile-fall flight: `AI_010`'s `ai[0] == 1f` mode — `velocity.Y +=
-/// 0.41f` per tick, the landing when the tile below is solid.
-pub const TILE_FALL_GRAVITY: f32 = 0.41;
-
-/// 's SetDefaults value ().
-pub const TIME_LEFT_DEFAULT: i32 = 3600;
-
-/// Whether the falling block at the pixel position has landed (the tile
-/// below its bottom edge is solid).
-pub fn landed(world: &World, x: f32, y: f32) -> bool {
-    // The 10×10 sand ball box; the bottom edge's tile row.
-    let bottom = y + 10.0;
-    let tx = (x / 16.0) as i32;
-    let ty = (bottom / 16.0) as i32;
-    world
-        .tile(tx, ty)
-        .is_some_and(|t| t.active() && crate::tiledata::TILE_SOLID.has(t.kind))
-}
-
-/// Whether the tile can be placed back at the landing position (the C#
-/// `WorldGen.PlaceTile`'s occupied check).
-pub fn can_place_back(world: &World, x: f32, y: f32, tile_kind: u16) -> bool {
-    let tx = (x / 16.0) as i32;
-    let ty = (y / 16.0) as i32;
-    if !world.in_bounds(tx, ty) {
-        return false;
-    }
-    let Some(t) = world.tile(tx, ty) else {
-        return false;
-    };
-    // The landing spot must be free (or hold the liquid the block sinks
-    // into) and not solid.
-    !t.active() || (!crate::tiledata::TILE_SOLID.has(t.kind) && t.kind != tile_kind)
-}
+// W4-d1 RETIRE — the frozen-tail flight helpers are RETIRED: the
+// natural-fall spawner moved to the data path, the `projectile_ai_falling`
+// arm owns the gravity ladder (`AI_010`'s 0.41 at `:58019`, the 10-cap at
+// `:58097`) and `death_place` owns the landing (the blocked-move kill +
+// the centre-cell forced place). The old `TILE_FALL_GRAVITY` /
+// `TIME_LEFT_DEFAULT` constants + the `landed` / `can_place_back`
+// bottom-edge probes served only the frozen `falling_tile` tail — removed
+// with it (the ANALYSIS W4-d1 retire entry).
 
 #[cfg(test)]
 mod tests {
@@ -217,25 +192,6 @@ mod tests {
         put(&mut w, 10, 20, 53);
         put(&mut w, 10, 19, 21); // a chest above blocks the fall
         assert!(check_falling(&w, 10, 20).is_none(), "`AllowsSandfall`");
-    }
-
-    #[test]
-    fn the_landing_check_uses_the_solid_below() {
-        let mut w = world();
-        put(&mut w, 10, 24, 1);
-        // The falling block's bottom edge at y px 394 sits inside the solid
-        // tile row 24 → landed.
-        assert!(landed(&w, 160.0, 384.0));
-        // Higher up: not landed.
-        assert!(!landed(&w, 160.0, 300.0));
-    }
-
-    #[test]
-    fn the_placement_needs_a_free_spot() {
-        let mut w = world();
-        put(&mut w, 10, 25, 1);
-        assert!(!can_place_back(&w, 160.0, 400.0, 53), "the solid spot");
-        assert!(can_place_back(&w, 160.0, 300.0, 53), "the air spot");
     }
 
     #[test]

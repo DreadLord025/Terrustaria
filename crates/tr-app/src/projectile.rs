@@ -597,9 +597,12 @@ pub struct Projectile {
     /// block writes it from the owner-relative X comparison (`:67841`/`:67846`).
     pub direction: i32,
     pub(crate) bounces: u8,
-    /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
-    /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
-    /// per tick and places the tile on landing.
+    /// The retired tile-fall mode marker (`AI_010`'s `ai[0] == 1f`).
+    /// W4-d1 RETIRE: the natural-fall spawner moved to the data path —
+    /// NO spawn writes this field anymore (the `projectile_ai_falling`
+    /// arm owns the flight + the `death_place` landing). The field stays
+    /// `None` on every slot (the save/net shape keeps it; the frozen
+    /// tail's readers are retired — ANALYSIS W4-d1 retire).
     pub falling_tile: Option<u16>,
     /// `AI_016`'s `timeLeft <= 3` trigger: the bomb waits for the pool's
     /// end-of-tick explosion pass (`Kill()`'s bomb path).
@@ -7453,8 +7456,8 @@ impl Projectile {
     /// `NPC.cs:29087`), the breakable-tile loop (`:58038-58072`) and
     /// `Kill_ExplodeTiles`' snow-block placement (`:77267`'s owner gate +
     /// `:77393-77397`/`:77503-77510`'s 109 arms) stay unported for the
-    /// hostile shot. The falling-tile kinds (42/65/68/354) keep their
-    /// `falling_tile` movement — this arm gates on kind 109 only.
+    /// hostile shot. The falling-tile kinds (42/65/68/354) ride the
+    /// `projectile_ai_falling` arm — this arm gates on kind 109 only.
     fn ai_snowball_hostile(&mut self, world: &World) {
         // `:57951-57952`: the latch runs every tick, ahead of the gates.
         self.tile_collide = true;
@@ -16003,9 +16006,27 @@ impl ProjectilePool {
     }
 
     /// The tile-fall spawn (`SpawnFallingBlockProjectile`'s
-    /// `Projectile.NewProjectile(..., 0f, 0.41f, projType, dmg, ...)` +
-    /// `ai[0] = 1f`, `WorldGen.cs:86071-86073`): the 10×10 sand ball falls
-    /// with the tile-fall gravity and places its tile on landing.
+    /// `Projectile.NewProjectile(GetProjectileSource_TileBreak, i*16+8,
+    /// j*16+8, 0f, 0.41f, projType, dmg, 0f, Main.myPlayer)` +
+    /// `ai[0] = 1f`, `WorldGen.cs:86061-86064`).
+    ///
+    /// W4-d1 RETIRE — the data-path move (the documented wiring follow-up):
+    /// the spawn resolves through `spawn_with_data_ai` — the rowed
+    /// `SetDefaults` stats (the 31's `:1131-1140` shape: 10×10, aiStyle 10,
+    /// friendly+hostile, `penetrate = -1`, the stock 3600 life) instead of
+    /// the frozen tail's hardcoded pen-1 slot. The slot carries NO
+    /// `falling_tile` — the `projectile_ai_falling::step` arm owns the
+    /// flight (the `ai[0] = 1` gravity ladder + the blocked-move kill) and
+    /// `death_place` owns the landing (the centre-cell forced place). The
+    /// `ai0 = 1` argument lands the C#'s post-spawn `ai[0] = 1f` write
+    /// BEFORE the first tick, so the arm's `ai[0] == 0` owner latch never
+    /// fires (the channel aim-steer stays the weapon spawns' own). The
+    /// `tile_kind` parameter is kept for the call-site shape — the place
+    /// map derives the tile from the projectile kind
+    /// (`GetSandfallProjData`'s inverse, `Kill_ExplodeTiles` `:77398+`).
+    /// The `netMode == 1` refusal + the `netMode == 2` dedupe/2.5-velocity
+    /// variant (`:86041-86044`/`:86069-86091`) are MP-only — the port's
+    /// single-player fold (the `break_tile` precedent).
     pub fn spawn_falling(
         &mut self,
         tile_kind: u16,
@@ -16014,54 +16035,10 @@ impl ProjectilePool {
         x: f32,
         y: f32,
     ) -> Option<usize> {
-        let mut slot = None;
-        for (i, p) in self.slots.iter().enumerate() {
-            if !p.active {
-                slot = Some(i);
-                break;
-            }
-        }
-        let slot = slot?;
-        self.slots[slot] = Projectile {
-            active: true,
-            kind: proj_kind,
-            owner: 0,
-            pos: Vec2::new(x, y),
-            rot: 0.0,
-            vel: Vec2::new(0.0, 0.41),
-            damage,
-            knock_back: 0.0,
-            crit: false,
-            time_left: tr_core::falling::TIME_LEFT_DEFAULT,
-            max_penetrate: 1,
-            penetrate: 1,
-            uses_local_immunity: false,
-            local_hit_cooldown: -2,
-            uses_id_static_immunity: false,
-            id_static_hit_cooldown: -1,
-            extra_updates: 0,
-            ai: [1.0, 0.0, 0.0, 0.0],
-            // The sand ball's `SetDefaults` arm (`:1131-1140`) touches neither
-            // `alpha` nor `scale` — the reset values (`:779`, `:785`) hold.
-            local_ai: [0.0; 3],
-            alpha: 0,
-            scale: 1.0,
-            light: 0.0,
-            // The sand-ball box (`GetSandfallProjData`'s 10×10 family); the
-            // flight is the custom falling-tile mode, not an aiStyle arm.
-            w: 10.0,
-            h: 10.0,
-            tile_collide: false,
-            arrow: false,
-            trap: false,
-            bounces: 0,
-            falling_tile: Some(tile_kind),
-            detonated: false,
-            ..Default::default()
-        };
-        let base = slot * 256;
-        self.local_immunity[base..base + 256].fill(0);
-        Some(slot)
+        let _ = tile_kind;
+        // `:86063` — the knockBack argument is `0f`, the owner the local
+        // player; `:86064` — `ai[0] = 1f` (the fall mode, not the latch).
+        self.spawn_with_data_ai(proj_kind, x, y, 0.0, 0.41, damage, 0.0, 1.0, 0.0)
     }
 
     /// The whip's spawn completion — `DefaultToWhip()`'s immunity pair
@@ -17252,18 +17229,16 @@ impl ProjectilePool {
                         // falling-block family (the sandfall kinds + the
                         // DirtBall 17 + the 1081 + the sandgun balls
                         // 42/65/68/354 — the S1-D-5 "42-row gap" closes)
-                        // rides `projectile_ai_falling::step`, gated on
-                        // `falling_tile.is_none()` — the `spawn_falling`
-                        // slots keep their frozen custom tail below (the
-                        // recorded carve-out, ANALYSIS W4-d1).
+                        // rides `projectile_ai_falling::step`. W4-d1
+                        // retire: the natural-fall spawner moved to the
+                        // data path — the carve-out is retired, every
+                        // served kind rides the arm.
                         10 => {
                             if self.slots[i].kind == SNOW_BALL_HOSTILE {
                                 self.slots[i].ai_snowball_hostile(world);
                             } else if DUNGEON_DEBRIS.contains(&self.slots[i].kind) {
                                 self.slots[i].ai_dungeon_debris(world, rng, local_owner);
-                            } else if FALLING_BLOCK_KINDS.contains(&self.slots[i].kind)
-                                && self.slots[i].falling_tile.is_none()
-                            {
+                            } else if FALLING_BLOCK_KINDS.contains(&self.slots[i].kind) {
                                 // The channel latch + the mouse WORLD
                                 // point (`Main.mouseX + screenPosition`,
                                 // the `YoyoInputs.aim` snapshot the pass
@@ -20157,16 +20132,16 @@ impl ProjectilePool {
                         self.slots[i].wind_tail(world, self.wind_speed);
                     }
                 }
-                // `AI_010`'s tile-fall mode (`ai[0] == 1f`): `velocity.Y +=
-                // 0.41f` per tick, the position integrates the velocity (the
-                // generic `position += velocity` of `Update`), and the
-                // landing places the tile back.
-                if self.slots[i].falling_tile.is_some() {
-                    self.slots[i].vel.y =
-                        (self.slots[i].vel.y + tr_core::falling::TILE_FALL_GRAVITY).min(10.0);
-                    let vel = self.slots[i].vel;
-                    self.slots[i].pos += vel;
-                }
+                // W4-d1 RETIRE — the frozen tile-fall tail is RETIRED: the
+                // natural-fall spawner (`spawn_falling`) moved to the data
+                // path (the rowed `SetDefaults` stats, `ai[0] = 1`), so the
+                // `projectile_ai_falling::step` arm owns the gravity +
+                // integration (the C#'s own `AI_010` + `HandleMovement`
+                // shape) and `death_place` owns the landing. No slot
+                // carries `falling_tile` anymore (the field stays for the
+                // save/net shape; the tail's per-sub-step 0.41 gravity +
+                // the post-loop bottom-edge placement are gone — the
+                // ANALYSIS W4-d1 retire entry records the deltas).
                 // `Projectile.cs:17078` — `this.Damage()` runs per sub-step
                 // inside `Update` (it calls `Damage_PVP` internally,
                 // `:12509`), between the AI and the lifetime block: the hit
@@ -20204,10 +20179,10 @@ impl ProjectilePool {
                         // them beside the PVE pass. The `!friendly` proxy
                         // alone would skip them (the arm holds friendly
                         // true); the set reads the hostile flag instead.
-                        // The frozen `spawn_falling` slots keep their
-                        // no-player-damage tail (the carve-out).
-                        || (FALLING_HOSTILE_KINDS.contains(&self.slots[i].kind)
-                            && self.slots[i].falling_tile.is_none()))
+                        // W4-d1 retire: the natural-fall spawner rides the
+                        // data path now — the falls hurt the player like
+                        // every other served kind (the carve-out retired).
+                        || FALLING_HOSTILE_KINDS.contains(&self.slots[i].kind))
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -20239,27 +20214,10 @@ impl ProjectilePool {
                     }
                 }
             }
-            if let Some(tile_kind) = self.slots[i].falling_tile {
-                // The landing: the bottom edge inside a solid tile → place
-                // the tile back and kill the projectile. A slot the sub-steps
-                // killed mid-loop never lands — the C#'s landing is AI-side
-                // (`if (active) AI()`), skipped for the dead.
-                let p = &self.slots[i];
-                if p.active
-                    && tr_core::falling::landed(world, p.pos.x, p.pos.y)
-                    && tr_core::falling::can_place_back(world, p.pos.x, p.pos.y, tile_kind)
-                {
-                    let tx = (p.pos.x / 16.0) as i32;
-                    let ty = (p.pos.y / 16.0) as i32;
-                    if let Some(t) = world.tile_mut(tx, ty) {
-                        t.kind = tile_kind;
-                        t.flags |= tr_core::tile::FLAG_ACTIVE;
-                        t.liquid = 0;
-                    }
-                    self.slots[i].active = false;
-                    self.slots[i].time_left = 0;
-                }
-            }
+            // W4-d1 RETIRE — the frozen tail's post-loop landing is gone
+            // (the `death_place` hook above owns the placement now — the
+            // blocked-move kill runs `Kill()` → `Kill_ExplodeTiles`, the
+            // C#'s own shape). No slot carries `falling_tile`.
             // `Kill()`'s bomb path (`:70662-70690`): `PrepareBombToBlow`
             // resizes and re-arms the damage, the PVE walk hits through the
             // resized box, `Kill_ExplodeTiles` digs the crater, then the
@@ -20335,18 +20293,35 @@ impl ProjectilePool {
                 // `Projectile.cs:77387-77570`, called from `Kill()`
                 // `:77258-77261`): the centre-cell tile place + the
                 // refused-placement item drop. The owner gate is the C#'s
-                // `:77267`; the `falling_tile.is_none()` carve-out keeps
-                // the frozen `spawn_falling` tail's own landing (the
-                // post-loop placement) — no double place (ANALYSIS W4-d1).
+                // `:77267`. W4-d1 retire: the natural-fall spawner rides
+                // the data path now (`spawn_falling` is the rowed spawn —
+                // no `falling_tile`), so the carve-out is retired with
+                // it; the field stays for the save/net shape.
                 if FALLING_BLOCK_KINDS.contains(&self.slots[i].kind)
-                    && self.slots[i].falling_tile.is_none()
                     && self.slots[i].owner == local_owner
                 {
-                    if let Some((item, x, y)) = crate::projectile_ai_falling::death_place(
+                    let (drop, place_cue) = crate::projectile_ai_falling::death_place(
                         &self.slots[i],
                         world,
-                    ) {
+                    );
+                    if let Some((item, x, y)) = drop {
                         self.pending_block_drops.push((item, x, y));
+                    }
+                    if let Some(((id, style), tx, ty)) = place_cue {
+                        // The forced `PlaceTile`'s `mute: false` tail
+                        // (`WorldGen.cs:60263-60282`): the Dig 0 / Coins
+                        // 18 plays at `(i*16, j*16)` — the pool's sound
+                        // intent (the `drain_proj_sounds` seam; the
+                        // drain routes 0 → `play_place_sound`, 18 →
+                        // `play_place_sound`, the id-2 styles →
+                        // `play_proj_sound`).
+                        self.pending_proj_sounds.push((
+                            id,
+                            style as i32,
+                            (tx * 16) as f32,
+                            (ty * 16) as f32,
+                            0.0,
+                        ));
                     }
                 }
                 // `Kill()`'s floating-turret arms (`Projectile.cs:72068-72093`/
@@ -25643,6 +25618,20 @@ mod falling_tests {
     fn the_falling_block_falls_at_the_tile_fall_gravity() {
         let mut pool = ProjectilePool::new();
         let slot = pool.spawn_falling(53, 31, 10, 160.0, 200.0).unwrap();
+        // W4-d1 retire — the natural-fall spawner rides the DATA path: the
+        // rowed `SetDefaults` stats (`:1131-1140` — pen −1, the stock 3600
+        // life), the C#'s post-spawn `ai[0] = 1f` (`WorldGen.cs:86064`), NO
+        // `falling_tile` (the frozen-tail carve-out is retired). The
+        // `friendly` flag lands on the first step (the arm holds the C#
+        // state — the `ai_dungeon_debris` precedent), not at the spawn.
+        {
+            let p = &pool.slots()[slot];
+            assert_eq!(p.penetrate, -1, "the row's penetrate (`:1137`)");
+            assert_eq!(p.max_penetrate, -1);
+            assert_eq!(p.time_left, 3600, "the stock life");
+            assert_eq!(p.ai[0], 1.0, "the fall mode, not the owner latch");
+            assert!(p.falling_tile.is_none(), "the data path");
+        }
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
         pool.update(
@@ -25657,13 +25646,19 @@ mod falling_tests {
             0,
             true,
         );
-        // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
+        // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82 — the
+        // arm's `ai[0] == 1` ladder (`AI_010` `:58017-58020`), the same
+        // first-tick value the frozen tail carried.
         assert!(
             (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
             "the tile-fall gravity (`AI_010`'s `velocity.Y += 0.41f`)"
         );
         assert!(pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].kind, 31, "the sand ball projectile");
+        assert!(pool.slots()[slot].friendly, "the arm holds the C# friendly true");
+        // The dust-gate draw stays on the stream (the 31's `Next(2)`,
+        // `:57828-57835`) — the arm's own convention.
+        assert!(pool.slots()[slot].tile_collide, "the per-tick reset (`:57951`)");
     }
 
     #[test]
@@ -25689,12 +25684,26 @@ mod falling_tests {
             true,
         );
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
-        // The placement resolves through the box center → the tile row 23
-        // (the last free row above the solid).
+        // W4-d1 retire — the landing is the C#'s own shape now: the
+        // blocked-move kill (`HandleMovement` `:19849-19853`) + the
+        // `Kill_ExplodeTiles` centre-cell place (`:77516-77547`, the
+        // forced `PlaceTile`). The collision resolves the blocked velocity
+        // to rest ON the solid (bottom 384), the centre cell is (10, 23) —
+        // the same cell the frozen tail placed, the C# way.
         let placed = w.tile(10, 23).unwrap();
         assert_eq!(placed.kind, 53, "the sand placed back");
         assert!(placed.active());
         assert_eq!(placed.liquid, 0);
+        // The forced placement's `mute: false` tail queued the Dig cue
+        // (`WorldGen.cs:60280` — the default arm, `(i*16, j*16)`).
+        let cues = pool.drain_proj_sounds();
+        assert!(
+            cues.iter().any(|&(id, _, x, y, _)| id == 0 && x == 160.0 && y == 368.0),
+            "the place cue at (10*16, 23*16): {cues:?}"
+        );
+        // The placement stood — no item drop (the 31's item 169 only drops
+        // on a refusal, `:77562-77565`).
+        assert!(pool.drain_block_drops().is_empty());
     }
 
     #[test]
@@ -42621,7 +42630,8 @@ mod w4_d1_falling_block_tests {
 
     /// The spawn-with-data copies the row (no decline): the 31's 10×10
     /// box, penetrate −1 and the stock 3600 life land on the slot; the
-    /// data path carries NO `falling_tile` (the frozen-tail carve-out).
+    /// data path carries NO `falling_tile` (W4-d1 retire: the natural-fall
+    /// spawner moved onto this path — the frozen-tail carve-out retired).
     #[test]
     fn w4_d1_the_sand_ball_spawn_carries_the_row() {
         let mut pool = ProjectilePool::new();
@@ -42633,7 +42643,43 @@ mod w4_d1_falling_block_tests {
         assert_eq!(p.penetrate, -1);
         assert_eq!(p.time_left, TIME_LEFT_DEFAULT);
         assert!(p.tile_collide);
-        assert!(p.falling_tile.is_none(), "the data path, not spawn_falling");
+        assert!(p.falling_tile.is_none(), "the data path");
+    }
+
+    /// W4-d1 retire — the natural-fall spawner (`spawn_falling`) resolves
+    /// through the SAME data path: the rowed stats, the C#'s post-spawn
+    /// `ai[0] = 1f` (`WorldGen.cs:86064`), vel (0, 0.41) (`:86063`), NO
+    /// `falling_tile`. The `ai0 = 1` lands BEFORE the first tick, so the
+    /// arm's `ai[0] == 0` owner latch never fires for a natural fall (the
+    /// channel aim-steer stays the weapon spawns' own). WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_retire_spawn_falling_rides_the_data_path() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_falling(53, SAND_BALL_FALLING, 10, 168.0, 360.0)
+            .expect("the 31 row spawns");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (10.0, 10.0));
+        assert_eq!(p.penetrate, -1, "the row, not the frozen pen 1");
+        assert_eq!(p.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(p.ai, [1.0, 0.0, 0.0, 0.0], "the fall mode (`:86064`)");
+        assert_eq!(p.vel, Vec2::new(0.0, 0.41), "the spawn velocity (`:86063`)");
+        assert_eq!((p.pos.x, p.pos.y), (168.0, 360.0));
+        assert!(p.falling_tile.is_none(), "no frozen tail");
+        assert_eq!(p.owner, 0, "Main.myPlayer (`:86063`)");
+        assert_eq!(p.knock_back, 0.0, "the 0f argument");
+        // Every GetSandfallProjData kind resolves (the rows landed wave 3).
+        for &(tile, proj) in &[
+            (53u16, 31u16), (112, 56), (59, 39), (116, 67), (123, 71),
+            (224, 179), (234, 241), (330, 411), (331, 412), (332, 413),
+            (333, 414), (495, 812),
+        ] {
+            let mut pool = ProjectilePool::new();
+            assert!(
+                pool.spawn_falling(tile, proj, 10, 168.0, 360.0).is_some(),
+                "tile {tile} → proj {proj}"
+            );
+        }
     }
 
     /// The first-tick latch (`:57953-57995`): the owner's `ai[0] == 0`
@@ -42929,6 +42975,111 @@ mod w4_d1_falling_block_tests {
         assert_eq!(placed.kind, 59, "the 1081 → tile 59 map (:77444), slid left");
         assert!(placed.active());
         assert!(pool.drain_block_drops().is_empty(), "the placement stood");
+    }
+
+    /// W4-d1 retire — the tile-cut BODIES (`HandleMovement`'s `flag` block,
+    /// `Projectile.cs:17910-17985`): on a blocked move the 484 rolling-cactus
+    /// block runs FIRST (every blocked move, no call-site rand), THEN the
+    /// `Next(3)` (the first `&&` operand), THEN the cracked-brick block on
+    /// the `== 0` roll. The box is `position + velocity` pre-integration
+    /// (`:17912-17915`): the resting ball (160, 374) with the resolved
+    /// vel (0, 0) scans x 9..11, y 23..25. The 484 at (9, 23) and the
+    /// cracked brick 481 at (9, 24) both sit inside; the roll list feeds
+    /// the dust gate 1 (no body) then the cut roll 0 → BOTH cut. The
+    /// landing still places the sand at the centre cell (10, 23).
+    /// WRITTEN NOT RUN (code-only retire round).
+    #[test]
+    fn w4_d1_retire_the_blocked_move_cuts_rolling_cactus_and_cracked_bricks() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(SAND_BALL_FALLING, 160.0, 374.0, 0.0, 0.41, 10, 0.0, 1.0, 0.0)
+            .expect("the 31 row spawns");
+        let mut w = world();
+        put_solid(&mut w, 10, 24);
+        // The rolling cactus 484 + the cracked brick 481 inside the flight box.
+        let i = w.index(9, 23);
+        w.tiles[i] = tr_core::tile::Tile { kind: 484, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let i = w.index(9, 24);
+        w.tiles[i] = tr_core::tile::Tile { kind: 481, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut rng = Script::with_rolls(&[1, 0]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(!pool.slots()[slot].active, "the blocked-move kill");
+        assert!(!w.tile(9, 23).unwrap().active(), "the 484 cactus cut (:17937-17939)");
+        assert!(!w.tile(9, 24).unwrap().active(), "the cracked brick cut (:17975-17977)");
+        assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the landing still places");
+        assert_eq!(rng.draws, vec![(0, 2), (0, 3)], "the dust gate THEN the cut roll");
+    }
+
+    /// The cracked-brick block is roll-gated: a non-zero `Next(3)` keeps
+    /// the brick, but the 484 rolling-cactus block still runs (it precedes the draw
+    /// — the C# order). The exhausted Script reads `max - 1` = 2.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_retire_the_cracked_cut_is_roll_gated_the_cactus_cut_is_not() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(SAND_BALL_FALLING, 160.0, 374.0, 0.0, 0.41, 10, 0.0, 1.0, 0.0)
+            .expect("the 31 row spawns");
+        let mut w = world();
+        put_solid(&mut w, 10, 24);
+        let i = w.index(9, 23);
+        w.tiles[i] = tr_core::tile::Tile { kind: 484, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let i = w.index(9, 24);
+        w.tiles[i] = tr_core::tile::Tile { kind: 481, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(!pool.slots()[slot].active);
+        assert!(!w.tile(9, 23).unwrap().active(), "the cactus cut runs regardless");
+        assert!(w.tile(9, 24).unwrap().active(), "the brick keeps on the 2 roll");
+    }
+
+    /// The cut gate (`:17910`): `owner == Main.myPlayer && CanCutTiles()
+    /// && (friendly || hostile) && damage > 0`. A zero-damage ball (the
+    /// snow variants' falls) cuts nothing; a non-owner ball cuts nothing
+    /// either (the arm-level gate — the pool never simulates a non-local
+    /// slot, so the witness calls `step` directly). The cut roll stays on
+    /// the stream regardless (the first `&&` operand). WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_retire_the_cut_gate_is_owner_and_damage() {
+        // The zero-damage fall: simulated, blocked, killed — no cut.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(SAND_BALL_FALLING, 160.0, 374.0, 0.0, 0.41, 0, 0.0, 1.0, 0.0)
+            .expect("the 31 row spawns");
+        let mut w = world();
+        put_solid(&mut w, 10, 24);
+        let i = w.index(9, 23);
+        w.tiles[i] = tr_core::tile::Tile { kind: 484, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut rng = Script::with_rolls(&[1, 0]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(!pool.slots()[slot].active, "the blocked move still kills");
+        assert!(w.tile(9, 23).unwrap().active(), "the damage-0 gate: no cut");
+        assert_eq!(rng.draws, vec![(0, 2), (0, 3)]);
+        // The non-owner fall: the arm-level gate (step called directly —
+        // the pool's `simulated` filter would skip the slot entirely).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                SAND_BALL_FALLING, 1, 160.0, 374.0, 0.0, 0.41, 10, 0.0, 1.0, 0.0,
+            )
+            .expect("the 31 row spawns");
+        let mut w = world();
+        put_solid(&mut w, 10, 24);
+        let i = w.index(9, 23);
+        w.tiles[i] = tr_core::tile::Tile { kind: 484, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut rng = Script::with_rolls(&[1, 0]);
+        crate::projectile_ai_falling::step(
+            &mut pool.slots_mut()[slot], &mut w, &mut rng, 0, false, None,
+        );
+        assert!(!pool.slots()[slot].active, "the blocked move still kills");
+        assert!(w.tile(9, 23).unwrap().active(), "the owner gate: no cut");
+        assert_eq!(rng.draws, vec![(0, 2), (0, 3)]);
     }
 }
 

@@ -11,13 +11,17 @@
 //! trio (`ai_dungeon_debris`) keep their own arms — the dispatch gates this
 //! one on [`FALLING_BLOCK_KINDS`].
 //!
-//! FROZEN-TAIL CARVE-OUT (recorded deviation, ANALYSIS W4-d1): the pool's
-//! pre-existing `spawn_falling` path hardcodes the slot fields and rides
-//! the custom `falling_tile` tail (gravity + integrate per sub-step, the
-//! post-loop `landed`/`can_place_back` placement). Slots with
-//! `falling_tile.is_some()` keep that frozen flight — the dispatch and the
-//! death hook both gate on `falling_tile.is_none()`, so this arm serves
-//! the data-carrying spawns only and no gravity double-applies.
+//! FROZEN-TAIL CARVE-OUT — RETIRED (W4-d1 retire, the documented wiring
+//! follow-up): the pool's `spawn_falling` path moved to the data spawn
+//! (`spawn_with_data_ai` — the rowed `SetDefaults` stats, `ai[0] = 1`,
+//! vel (0, 0.41), NO `falling_tile`), so EVERY natural fall rides this
+//! arm's flight + the `death_place` landing. The frozen tail (the
+//! per-sub-step 0.41 gravity + the post-loop bottom-edge
+//! `landed`/`can_place_back` placement) is removed; the `falling_tile`
+//! field stays `None` on every slot (the save/net shape). The deltas
+//! over the frozen tail are recorded in ANALYSIS W4-d1 retire (the pen
+//! −1 rows, the blocked-move kill + centre-cell place, the player-damage
+//! pass, the tile-cut chain, the dust-gate draws).
 //!
 //! C# sources read WHOLE (the golden rule): `AI_010` (`:57826-58100`),
 //! `HandleMovement`'s aiStyle-10 block (`:17592-17610`) + the blocked-move
@@ -52,11 +56,12 @@
 //! `FallingBlockDoesNotFallThroughPlatforms` set (`:17544-17547`), the
 //! plain `TileCollision(pos, vel, w, h, flag6, flag6)` (`:17609`); the
 //! 411-414 chain the `AnyCollisionWithSpecificTiles(TileID.Sets.Falling,
-//! evenActuated: true)` pass after it (`:17601`). A blocked move draws the
-//! tile-cut `Next(3)` FIRST (`:17948` — the draw is the first `&&`
-//! operand, the ai026_c precedent); the cut bodies (the 484 vine block
-//! `:17910-17947` + the cracked-brick block `:17948-17985`) SKIP with the
-//! unported cutting layer (the `projectile_ai_light_items` precedent).
+//! evenActuated: true)` pass after it (`:17601`). A blocked move runs the
+//! tile-cut chain in the C#'s order (W4-d1 retire — the bodies PORTED,
+//! `cut_tiles_in_flight_box`): the 484 rolling-cactus block (`:17910-17947`) on
+//! every blocked move, THEN the tile-cut `Next(3)` (`:17948` — the draw
+//! is the first `&&` operand, the ai026_c precedent), THEN the
+//! cracked-brick block (`:17948-17985`) on the `== 0` roll.
 //! The 1081's blocked arm (`:19829-19847`): a Y-block while falling steps
 //! and kills; any other block zeroes a negative vy and latches
 //! `localAI[0]` with the one-shot Dig cue (`PlaySound(0)`). Every other
@@ -70,8 +75,11 @@
 //! centre-cell tile place map (proj → (tile, item)), the 1081 side-slide
 //! probe (`:77492-77502`), the half-brick up-shift (`:77512`), the
 //! below-tile 314/421/422 + `BlockBelowMakesSandFall` refusal
-//! (`:77520-77542`), the forced `PlaceTile` (`:77545`) + the below-slope
-//! flatten (`:77549-77556`), else the `Item.RequestNewItem` drop
+//! (`:77520-77542`), the forced `PlaceTile` (`:77545` — W4-d1 retire: the
+//! forced flag's exact bypass set is censused + ported,
+//! `tr_core::edit::place_tile_forced`; the `mute: false` tail's Dig/Coins
+//! cue rides the pool's sound intent) + the below-slope flatten
+//! (`:77549-77556`), else the `Item.RequestNewItem` drop
 //! (`:77562-77569`). The drop rides the pool's `pending_block_drops`
 //! intent (the `pending_catches` seam) — the pass drains it on the
 //! `UpdateItems` stream (`spawn_item_drop_px`).
@@ -344,12 +352,20 @@ pub(crate) fn step(
         p.vel = Vec2::new(v[0], v[1]);
     }
     if p.vel != last {
-        // `:17948` — the tile-cut `Next(3)` is the FIRST `&&` operand:
-        // consumed on EVERY blocked move regardless of the trailing gates
-        // (the ai026_c precedent). The cut bodies (the 484 vine block
-        // `:17910-17947`, the cracked-brick block `:17948-17985`) skip
-        // with the unported cutting layer (the light-items precedent).
-        let _ = rng.next_range(0, 3);
+        // `HandleMovement`'s `flag` block, in the C#'s own order: the 484
+        // rolling-cactus cut (`:17910-17947`) runs on EVERY blocked move FIRST (no
+        // call-site rand), THEN the tile-cut `Next(3)` (`:17948` — the
+        // FIRST `&&` operand, consumed regardless of the trailing gates,
+        // the ai026_c precedent), THEN the cracked-brick cut
+        // (`:17948-17985`) on the `== 0` roll. W4-d1 retire: the cut
+        // BODIES are ported now (the shared `cut_tiles_in_flight_box`
+        // walk — the box is `position + velocity`, pre-integration, the
+        // C#'s HandleMovement-before-UpdatePosition shape).
+        cut_tiles_in_flight_box(p, world, local_owner, false);
+        let cut_roll = rng.next_range(0, 3);
+        if cut_roll == 0 {
+            cut_tiles_in_flight_box(p, world, local_owner, true);
+        }
         if p.kind == MUD_BALL_PLAYER {
             // `:19829-19847` — the 1081's blocked arm.
             if last.y != p.vel.y && last.y > 0.0 {
@@ -384,6 +400,62 @@ pub(crate) fn step(
     p.pos += p.vel;
 }
 
+/// `HandleMovement`'s two tile-cut blocks (`Projectile.cs:17910-17947`
+/// the 484 rolling-cactus block, `:17948-17985` the cracked-brick block — the
+/// second-copy helper rule: one walk, the kind test is the parameter).
+/// W4-d1 retire — the cutting layer's falling-block slice.
+///
+/// The gate (both blocks): `owner == Main.myPlayer && CanCutTiles() &&
+/// (friendly || hostile) && damage > 0`. `CanCutTiles` (`:15323-15334`)
+/// passes every served kind (aiStyle 10 is not on the style refusal list,
+/// no served kind is on the type list); `friendly || hostile` holds for
+/// every served kind EXCEPT the coin piles (stock both-false — the arm
+/// holds `friendly = false`, the rows touch neither flag); `damage > 0`
+/// excludes the zero-damage snow variants' falls (`GetSandfallProjData`'s
+/// 330-333 dmg 0 — the coin piles again). `GetTileCutIgnorance(false,
+/// trap)` (`Player.cs:44632-44644`): `trap` is false for every served row
+/// and `dontHurtNature` has no ported granter (the `bug_net` precedent) —
+/// the ignore set is `TileCutIgnore.None` (all-false).
+///
+/// The box (`:17912-17931`): `(int)(pos + vel - 1) / 16` ..
+/// `(int)((pos + size + vel + 1) / 16) + 1`, clamped to `[0, maxTiles]`
+/// — the position + velocity box BEFORE the integration (HandleMovement
+/// runs ahead of `UpdatePosition` `:20445`). Each matching cell through
+/// `WorldGen.CanCutTile` (`:86828-86839`, the port's
+/// `tileobject::can_cut_tile` — the context does not reach the body) and
+/// `WorldGen.KillTile` (the port's full `kill_tile`, the tile-walk
+/// precedent; the `netMode` sends are MP-only). ZERO call-site rand —
+/// the cracked block's `Next(3)` is the caller's (the first `&&`
+/// operand, drawn on every blocked move).
+fn cut_tiles_in_flight_box(p: &Projectile, world: &mut World, local_owner: u8, cracked: bool) {
+    // The shared gate (module doc): `owner == Main.myPlayer` + the
+    // `friendly || hostile` fold (the coin piles are the only served kinds
+    // with both flags false) + `damage > 0`. `CanCutTiles` passes every
+    // served kind (the module doc's fold).
+    if p.owner != local_owner || COIN_PILE_KINDS.contains(&p.kind) || p.damage <= 0 {
+        return;
+    }
+    let x0 = ((p.pos.x + p.vel.x - 1.0) as i32 / 16).max(0);
+    let x1 = (((p.pos.x + p.w + p.vel.x + 1.0) as i32) / 16 + 1).min(world.width);
+    let y0 = ((p.pos.y + p.vel.y - 1.0) as i32 / 16).max(0);
+    let y1 = (((p.pos.y + p.h + p.vel.y + 1.0) as i32) / 16 + 1).min(world.height);
+    for tx in x0..x1 {
+        for ty in y0..y1 {
+            let Some(t) = world.tile(tx, ty) else {
+                continue;
+            };
+            let matches_kind = if cracked {
+                tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind)
+            } else {
+                t.kind == 484
+            };
+            if matches_kind && tr_core::tileobject::can_cut_tile(world, tx, ty) {
+                let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+            }
+        }
+    }
+}
+
 /// `WorldGen.SolidTile3(i, j)` (`WorldGen.cs:70465-70485`): in-world
 /// (fluff 1) + `nactive() && tileSolid && !tileSolidTop`. An out-of-world
 /// probe reads false (the C#'s `InWorld` guard).
@@ -401,15 +473,18 @@ fn solid_tile3(world: &World, x: i32, y: i32) -> bool {
 
 /// `Kill_ExplodeTiles`'s aiStyle-10 death placement
 /// (`Projectile.cs:77387-77570`): the centre-cell tile place + the item
-/// drop when the cell refuses. Returns the `Item.RequestNewItem` intent
-/// `(item, x, y)` — the pool parks it on `pending_block_drops` and the
-/// pass drains it on the `UpdateItems` stream. The owner gate is the
-/// caller's (`:77267`); the `!noDropItem` gate (`:77367`) folds true (the
-/// stock false, no served row sets it).
+/// drop when the cell refuses. Returns `(drop, place_cue)` — `drop` is
+/// the `Item.RequestNewItem` intent `(item, x, y)` (the pool parks it on
+/// `pending_block_drops`, the pass drains it on the `UpdateItems`
+/// stream); `place_cue` is the successful forced placement's
+/// `PlaceTile` tail sound `(cue, tx, ty)` (`:60263-60282`, the pool
+/// queues it on the sound intent). The owner gate is the caller's
+/// (`:77267`); the `!noDropItem` gate (`:77367`) folds true (the stock
+/// false, no served row sets it).
 pub(crate) fn death_place(
     p: &Projectile,
     world: &mut World,
-) -> Option<(u16, f32, f32)> {
+) -> (Option<(u16, f32, f32)>, Option<(tr_core::edit::SoundCue, i32, i32)>) {
     // `:77389-77392` — the centre cell, the default (tile 0, item 2): the
     // DirtBall 17 has NO map entry, so it places dirt and drops the dirt
     // block item — verbatim.
@@ -543,12 +618,23 @@ pub(crate) fn death_place(
             }
         }
         let mut placed = false;
+        let mut place_cue = None;
         if !skip_place {
             // `:77545` — `WorldGen.PlaceTile(..., mute: false, forced:
-            // true)`. The port's `place_tile` keeps its wall-unbreakable
-            // refusal (a recorded micro-deviation — the forced flag's
-            // exact bypass set is unported).
-            placed = tr_core::edit::place_tile(world, tx, ty, tile);
+            // true)`. W4-d1 retire: the forced flag's exact bypass set is
+            // censused + ported (`tr_core::edit::place_tile_forced` — the
+            // EmptyTile overlap scan AND the port's wall-unbreakable
+            // refusal both bypassed; the served kinds match none of the
+            // grass/moss/liquid/drip gates, `WorldGen.cs:59342-60295`).
+            placed = tr_core::edit::place_tile_forced(world, tx, ty, tile);
+            if placed {
+                // `:60263-60282` — the `mute: false` tail switch rides the
+                // `place_tile_sound` table: 330-333 → the legacy Coins 18,
+                // every other served kind → the Dig 0. The intent rides
+                // the pool's sound drain (the `wants_sound` seam); the
+                // C# plays at `(i*16, j*16)`.
+                place_cue = Some((tr_core::edit::place_tile_sound(tile), tx, ty));
+            }
         }
         // `:77547-77556` — the placement stood: flatten a half-brick /
         // slope below (`WorldGen.SlopeTile`, the debris flatten shape).
@@ -567,13 +653,13 @@ pub(crate) fn death_place(
         } else if !placed && item > 0 {
             // `:77562-77565` — the refused placement drops the item at
             // `Center + (0, -2)`.
-            return Some((item, center.x, center.y - 2.0));
+            return (Some((item, center.x, center.y - 2.0)), place_cue);
         }
-        None
+        (None, place_cue)
     } else if item > 0 {
         // `:77567-77570` — the occupied cell drops the item at `Center`.
-        Some((item, center.x, center.y))
+        (Some((item, center.x, center.y)), None)
     } else {
-        None
+        (None, None)
     }
 }

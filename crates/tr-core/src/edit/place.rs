@@ -53,6 +53,85 @@ pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
     kept
 }
 
+/// The FORCED-placement route — `WorldGen.PlaceTile(i, j, Type, mute,
+/// forced: true, plr: -1, style: 0)` (`WorldGen.cs:59342-60295`) for the
+/// falling-block family's death placement (`Projectile.cs:77545`, W4-d1
+/// retire — the forced flag's exact bypass set, censused whole).
+///
+/// The forced flag is the FIRST disjunct of the `:59373` gate, so it
+/// bypasses `Collision.EmptyTile` (`Collision.cs:1359-1381` — the active
+/// occupant AND the player/NPC rectangle overlap scan) and the port's
+/// wall-unbreakable refusal (the `place_tile` head's `CanKillTile`-derived
+/// gate — the C# `PlaceTile` carries no such refusal at all). The
+/// `:59375-59430` grass-on-dirt/moss rewrites never match a served kind
+/// (53/112/116/123/224/234/59/57/330-333/495/0 — no 2/23/60/70/109/199/
+/// 633/661/662, no `Main.tileMoss` member); the `:59450` drip gate and the
+/// `:59454-59472` liquid refusals never match either (no torch, no
+/// 3/20/24/27/32/51/69/72/201/352/529/624/637/656/697/700/701). The cell
+/// gate is the caller's (`Kill_ExplodeTiles`'s `!Main.tile[..].active()`
+/// `:77516` — the forced route itself does NOT re-check occupancy). The
+/// port serves the free-cell shape (the only caller today); an occupied
+/// cell would keep its wall/liquid but reset paint/frames ahead of the
+/// re-frame — the C# keeps the occupant's paint (no Clear on the active
+/// branch, and the `:59477` `ResetsHalfBrickPlacementAttempt` reset never
+/// matches a served kind), a recorded micro-deviation for a path no
+/// caller reaches.
+///
+/// The write is the legacy default arm (`:60234-60250`: `active = true`,
+/// `type = num`): the `:59473-59476` `Clear(Tile | TilePaint | Slope)` on
+/// the free cell (the stale frames/paint/slope wipe — the liquid and wall
+/// survive, the `place_tile` precedent), then the type write with the
+/// frames left for the tail's `SquareTileFrame` (`:60261`, the
+/// `after_edit` re-frame — the `TruncatesWalls` `SquareWallFrame`
+/// `:60257-60260` never fires for a served kind). The 53/396/397 paint
+/// arms (`:60237-60247`) ride the world's seed flags: the rainbow paint
+/// needs `SpecialSeedFeatures.RainbowSandAndBlackSandWalls` (the shimmer
+/// ocean mode the port does not generate — folds off, the `convert_sized`
+/// precedent); the anniversary `color(7)` needs `tenthAnniversaryWorld &&
+/// !remixWorld && !notTheBeesWorld && !dontStarveWorld` — ported verbatim
+/// over `world.seeds`. The `:60263-60290` sound/dust tail is the caller's
+/// (the falling arm queues the `place_tile_sound` cue on the pool's sound
+/// intent — the `mute: false` arm; the 22/140 dust never matches).
+pub fn place_tile_forced(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
+    // `:59349-59352` — `num >= TileID.Count` refuses; `:59354` the bounds.
+    if kind as usize >= crate::tiledata::TILE_COUNT || !world.in_bounds(x, y) {
+        return false;
+    }
+    // `:59345-59348` — the gen-time 488 refusal (`isGeneratingOrLoadingWorld`)
+    // never fires at runtime (the flag folds false).
+    let i = world.index(x, y);
+    let prev = world.tiles[i];
+    // `:59473-59476` — the free cell's Clear: wall + liquid survive.
+    let mut tile = Tile {
+        kind,
+        wall: prev.wall,
+        liquid: prev.liquid,
+        frame_x: -1,
+        frame_y: -1,
+        flags: liquid_flags(prev.flags),
+        ..Default::default()
+    };
+    tile.flags |= crate::tile::FLAG_ACTIVE;
+    // `:60237-60247` — the sand paint arms (53 is the only served member).
+    if kind == 53
+        && world.seeds.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY)
+        && !world.seeds.intersects(
+            crate::seeds::SeedFlags::REMIX
+                | crate::seeds::SeedFlags::NOT_THE_BEES
+                | crate::seeds::SeedFlags::DONT_STARVE,
+        )
+    {
+        tile.set_paint(7);
+    }
+    world.tiles[i] = tile;
+    touch(world, x, y);
+    // `:60255-60262` — the tile is active: the SquareTileFrame re-frame
+    // (the served kinds are not frame-important — the generic block chain
+    // assigns the merge frames). `result = true` (`:60262`).
+    after_edit(world, x, y);
+    true
+}
+
 /// The item-use placement route (`Player.PlaceThing_Tiles_TryPlacing`,
 /// `Player.cs:39746-39788`, entering `PlaceThing_Tiles_PlaceIt` :40108): a tile
 /// with registered `TileObjectData` (`TileObjectData.CustomPlace`,
@@ -996,5 +1075,80 @@ mod tests {
         let before: Vec<Tile> = w.tiles.clone();
         assert!(!place_item_tile(&mut w, 10, 19, 4, 0, 1));
         assert_eq!(before, w.tiles, "the occupied cell is untouched");
+    }
+
+    // ---- W4-d1 retire: the forced-placement route (WorldGen.cs:59342) ----
+
+    /// `WorldGen.PlaceTile(forced: true)` (`:59373` — the forced flag is
+    /// the FIRST disjunct): the unbreakable-wall refusal the plain
+    /// `place_tile` carries is BYPASSED — the C# `PlaceTile` has no such
+    /// gate at all. The wall survives the write (`:59473-59476`'s Clear
+    /// excludes walls), the frames re-frame through the tail's
+    /// `SquareTileFrame`. WRITTEN NOT RUN (code-only retire round).
+    #[test]
+    fn w4_d1_the_forced_place_bypasses_the_unbreakable_wall_refusal() {
+        let mut w = object_world();
+        let i = w.index(10, 19);
+        w.tiles[i].wall = WALL_UNBREAKABLE;
+        // The plain route refuses (the port's CanKillTile-derived gate).
+        assert!(!place_tile(&mut w, 10, 19, 53));
+        assert!(!w.tile(10, 19).unwrap().active());
+        // The forced route places — the wall-350 cell takes the sand.
+        assert!(place_tile_forced(&mut w, 10, 19, 53));
+        let t = *w.tile(10, 19).unwrap();
+        assert!(t.active() && t.kind == 53);
+        assert_eq!(t.wall, WALL_UNBREAKABLE, "the wall survives the Clear");
+        assert!(t.frame_x >= 0 && t.frame_y >= 0, "the SquareTileFrame tail");
+    }
+
+    /// The forced route keeps the cell's liquid (the Clear is
+    /// `Tile | TilePaint | Slope` — `TileDataType.Liquid` excluded,
+    /// `:59475`), wipes the stale paint/slope of a broken occupant and
+    /// re-frames. The served kinds are on none of the `:59454-59472`
+    /// liquid-refusal lists, so a wet cell places. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_the_forced_place_keeps_liquid_and_clears_the_stale_state() {
+        let mut w = object_world();
+        let i = w.index(10, 19);
+        w.tiles[i].liquid = 200;
+        w.tiles[i].set_paint(5);
+        w.tiles[i].set_slope(2);
+        assert!(place_tile_forced(&mut w, 10, 19, 123));
+        let t = *w.tile(10, 19).unwrap();
+        assert!(t.active() && t.kind == 123);
+        assert_eq!(t.liquid, 200, "the liquid survives");
+        assert_eq!(t.paint(), 0, "the stale paint wiped");
+        assert_eq!(t.slope(), 0, "the stale slope wiped");
+        // The bounds + TileID.Count gates (`:59349-59354`).
+        assert!(!place_tile_forced(&mut w, 999, 19, 53));
+        assert!(!place_tile_forced(&mut w, 10, 19, crate::tiledata::TILE_COUNT as u16));
+    }
+
+    /// The 53's anniversary paint arm (`:60243-60246`: `color(7)` when
+    /// `tenthAnniversaryWorld && !remixWorld && !notTheBeesWorld &&
+    /// !dontStarveWorld`); a classic world keeps the paint 0, and each
+    /// exclusion flag folds the arm off. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_the_forced_sand_paint_is_the_anniversary_arm() {
+        use crate::seeds::SeedFlags;
+        let mut w = object_world();
+        assert!(place_tile_forced(&mut w, 10, 19, 53));
+        assert_eq!(w.tile(10, 19).unwrap().paint(), 0, "classic world");
+        let mut w = object_world();
+        w.seeds.insert(SeedFlags::TENTH_ANNIVERSARY);
+        assert!(place_tile_forced(&mut w, 10, 19, 53));
+        assert_eq!(w.tile(10, 19).unwrap().paint(), 7, "the anniversary 7");
+        for excl in [SeedFlags::REMIX, SeedFlags::NOT_THE_BEES, SeedFlags::DONT_STARVE] {
+            let mut w = object_world();
+            w.seeds.insert(SeedFlags::TENTH_ANNIVERSARY);
+            w.seeds.insert(excl);
+            assert!(place_tile_forced(&mut w, 10, 19, 53));
+            assert_eq!(w.tile(10, 19).unwrap().paint(), 0, "the exclusion folds off");
+        }
+        // A non-sand kind never paints (the arm is 53/396/397 only).
+        let mut w = object_world();
+        w.seeds.insert(SeedFlags::TENTH_ANNIVERSARY);
+        assert!(place_tile_forced(&mut w, 10, 19, 59));
+        assert_eq!(w.tile(10, 19).unwrap().paint(), 0);
     }
 }

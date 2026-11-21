@@ -221,8 +221,9 @@ mod projectile_ai_powder;
 // balls 42/65/68/354, closing the S1-D-5 "42-row gap"). The dust-gate
 // draws stay, the channel aim-steer + gravity ladder + tile walk + the
 // HandleMovement blocked arms + the Kill_ExplodeTiles death placement
-// (item drops ride pending_block_drops → UpdateItems). The frozen
-// spawn_falling tail keeps its carve-out (falling_tile.is_some()).
+// (item drops ride pending_block_drops → UpdateItems). W4-d1 retire: the
+// natural-fall spawner rides the data path (the frozen-tail carve-out is
+// retired — every served kind runs the arm + the death hook).
 mod projectile_ai_falling;
 // S1-P-i18 special bullets: the 11 aiStyle-1 bullet specials' per-type AI_001
 // arms + HandleMovement bounces + Kill() death effects (36/89/104/207/242/
