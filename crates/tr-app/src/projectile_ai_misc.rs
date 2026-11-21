@@ -3080,4 +3080,68 @@ mod w4_d16_159_tests {
         assert!(!pool2.slots()[s2].active);
         assert_eq!(pool2.drain_item_drops()[0].0, 4344, "762 → 4344");
     }
+
+    /// The recovery-drop ITEM rows census (residual 4): 4343/4344
+    /// (`Item.cs:37117-37129`) — 22x16, sellPrice(0,0,10) = 5000,
+    /// `DefaultToThrownWeapon(761/762, 17, 5f)` (`:48455-48466`:
+    /// useStyle 1, useTime/useAnimation 17, shoot, shootSpeed 5,
+    /// noMelee, ranged, consumable, autoReuse false) +
+    /// `SetWeaponValues(4, 2f)` (damage 4, knockback 2). The generated
+    /// rows must carry the drop's re-throw shape exactly.
+    #[test]
+    fn w4_d16_159_the_recovery_item_rows_match_set_defaults() {
+        for (item, shoot) in [(4343u16, 761u16), (4344, 762)] {
+            let d = crate::registry::get(item).unwrap_or_else(|| panic!("item {item}"));
+            assert_eq!((d.width, d.height), (22, 16), "item {item}");
+            assert_eq!(d.value, 5000, "sellPrice(0,0,10) × 5");
+            assert_eq!(d.projectile, Some(shoot));
+            assert_eq!(d.use_style, 1);
+            assert_eq!((d.use_time, d.use_animation), (17, 17));
+            assert_eq!(d.shoot_speed, 5.0);
+            assert_eq!(d.damage, 4);
+            assert_eq!(d.knock_back, 2.0);
+            assert!(d.ranged && d.consumable);
+            assert!(!d.auto_reuse && !d.channel);
+            assert_eq!(d.class, crate::registry::DamageClass::Ranged);
+        }
+    }
+
+    /// The recovery-drop gates (`Projectile.cs:76086`): a FOREIGN
+    /// owner's plane queues the cue but NO drop; the local owner's
+    /// `noDropItem` flag refuses it too.
+    #[test]
+    fn w4_d16_159_the_recovery_drop_gates() {
+        let mut w = world();
+        let i = w.index(101, 50);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut npcs: Vec<Npc> = Vec::new();
+        // The foreign owner (1 ≠ local 0).
+        let mut pool = ProjectilePool::new();
+        let s = pool
+            .spawn_with_data_ai_owned(PAPER_AIRPLANE_A, 1, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(!pool.slots()[s].active);
+        assert!(pool.drain_item_drops().is_empty(), "the owner gate");
+        assert!(
+            pool.drain_proj_sounds().iter().any(|&(id, style, _, _, _)| id == 2 && style == 10),
+            "the cue plays regardless"
+        );
+        // The local owner's noDropItem flag.
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data_ai(PAPER_AIRPLANE_A, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
+            .unwrap();
+        pool2.slots_mut()[s2].no_drop_item = true;
+        pool2.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(!pool2.slots()[s2].active);
+        assert!(pool2.drain_item_drops().is_empty(), "the noDropItem gate");
+    }
 }
