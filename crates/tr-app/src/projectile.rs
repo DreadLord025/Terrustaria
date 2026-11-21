@@ -17019,6 +17019,10 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
         crate::projectile_special_bullets::bullet_on_hit_debuffs(self.slots[slot].kind, npc, rng);
+        // W4-d12 F1 — `StatusNPC`'s explosion terms (`:11355-11366`): the
+        // 612/953 Daybroken grants ride BOTH walks (the tick-1 boxed burst
+        // and the persisting resized box's contact pass). Unconditional.
+        crate::projectile_ai_explosions::explosion_status_npc(self.slots[slot].kind, npc);
     }
 
     /// The aiStyle-165 on-hit arms inside `Damage_PVE_Inner`
@@ -20837,6 +20841,40 @@ impl ProjectilePool {
                 // bursts spawn through the pool (the arm cannot see the slot
                 // array); the water conversion writes tiles directly.
                 self.thrown_consumable_death(i, world, player.as_deref(), rng);
+                // W4-d12 F1 — `Kill()`'s target-sticker arms: the 636
+                // Daybreak's 953 explosion spawn (`Projectile.cs:72126-
+                // 72145` — the spear's damage payload), the 614/971 dust
+                // puffs (zero draws) and the 1024 card's Item8 + ring
+                // (`:74817-74829`). The spawn resolves through the pool
+                // (the beenade burst precedent); the C# `NewProjectile`
+                // takes the CENTRE — the port's seam takes the top-left,
+                // so the 953's 8×8 box is re-centred.
+                if let Some(blast) = crate::projectile_ai_thrown::sticker_death(
+                    &mut self.slots[i],
+                    self.slots[i].owner == local_owner,
+                    rng,
+                ) {
+                    if let Some(row) = proj_data(DAYBREAK_EXPLOSION) {
+                        self.spawn_with_data_ai_owned(
+                            DAYBREAK_EXPLOSION,
+                            self.slots[i].owner,
+                            blast.x - row.w * 0.5,
+                            blast.y - row.h * 0.5,
+                            0.0,
+                            0.0,
+                            blast.damage,
+                            10.0,
+                            0.0,
+                            blast.ai1,
+                        );
+                    }
+                }
+                // The dead slot's parked cue (the card's Item8) — the
+                // sub-step drain only runs for live slots, so the death
+                // hook forwards it here (the S1-E-21h convention).
+                if let Some(req) = self.slots[i].wants_sound.take() {
+                    self.pending_proj_sounds.push(req);
+                }
 
                 // S1-P-i35 — `Kill()`'s bobber arm (`Projectile.cs:71986-
                 // 71994`): a reeled catch (`0 < ai[1] < ItemID.Count`) rides

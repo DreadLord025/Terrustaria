@@ -208,6 +208,20 @@ pub(crate) fn explosion_tick1_draws(p: &Projectile, rng: &mut dyn DropRng) {
     }
 }
 
+/// W4-d12 F1 — `StatusNPC`'s explosion debuffs (`Projectile.cs:11355-11366`):
+/// the 612 Solar Whip explosion and the 953 Daybreak explosion grant
+/// Daybroken (189) for 300 ticks, unconditional. The 978 Volcano term
+/// (OnFire 24/180, `:11359-11362`) stays verbatim — its row is aiStyle 189
+/// (d19's decade), so it never reaches the 117 walks on this branch.
+pub(crate) fn explosion_status_npc(kind: u16, npc: &mut crate::npc::Npc) {
+    if kind == SOLAR_WHIP_SWORD_EXPLOSION || kind == DAYBREAK_EXPLOSION {
+        npc.buffs.add_buff(189, 300);
+    }
+    if kind == 978 {
+        npc.buffs.add_buff(24, 180);
+    }
+}
+
 /// `Kill()`'s type-608 arm (`Projectile.cs:72177-72225`) — the Solar
 /// Counter's death burst. The spawn sites `Kill()` the 608 immediately
 /// (`Player.cs:21171`/`:38318`), so this is the ONLY path the 608's
@@ -500,6 +514,28 @@ mod tests {
         assert_eq!(rng.draws[3], (10, 31), "the NewGore Y kick (Gore.cs:1327)");
         assert_eq!(rng.draws[4], (-20, 21), "the NewGore X kick (Gore.cs:1328)");
         assert_eq!(rng.floats, 0);
+    }
+
+    /// W4-d12 F1 — the explosion StatusNPC terms (`:11355-11366`): the
+    /// 612/953 grant Daybroken 189/300 unconditionally; the 978 term stays
+    /// verbatim (OnFire 24/180) though its 189 row is d19's.
+    #[test]
+    fn w4_d12_f1_explosion_daybroken_grants() {
+        for kind in [SOLAR_WHIP_SWORD_EXPLOSION, DAYBREAK_EXPLOSION] {
+            let mut n = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 0, 0.0);
+            explosion_status_npc(kind, &mut n);
+            assert!(n.buffs.find_buff_index(189).is_some(), "kind {kind}: Daybroken");
+        }
+        // The other explosion kinds grant nothing (624/1044 have no
+        // StatusNPC term; the 608 dies before any contact).
+        for kind in [STARDUST_GUARDIAN_EXPLOSION, DEAD_CELLS_MUSHROOM_BOI_EXPLOSION, SOLAR_COUNTER] {
+            let mut n = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 0, 0.0);
+            explosion_status_npc(kind, &mut n);
+            assert!(n.buffs.find_buff_index(189).is_none(), "kind {kind}: no grant");
+        }
+        let mut n = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 0, 0.0);
+        explosion_status_npc(978, &mut n);
+        assert!(n.buffs.find_buff_index(24).is_some(), "the 978 OnFire term (:11361)");
     }
 
     /// The dispatch integration: a spawned 612 runs the arm through the

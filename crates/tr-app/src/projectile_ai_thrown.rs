@@ -874,6 +874,80 @@ pub(crate) fn molotov_death(p: &Projectile, rng: &mut dyn DropRng) -> Vec<FireSp
     out
 }
 
+/// W4-d12 F1 — the 636 Daybreak's `Kill()` spawn request: the 953 explosion
+/// at the spear's centre (`Projectile.cs:72143`), damage carried, kb 10,
+/// `ai1 = 0.85 + NextFloat * 1.15` (the explosion's scale seed).
+pub(crate) struct DaybreakBlast {
+    pub x: f32,
+    pub y: f32,
+    pub damage: i32,
+    pub ai1: f32,
+}
+
+/// W4-d12 F1 — the target-sticker census' `Kill()` arms, in C# body order:
+/// the Daybreak's dust + 953 spawn (`Projectile.cs:72126-72145`), the
+/// Stardust Cell shot's 10-dust puff (`:72146-72154`, ZERO explicit draws),
+/// the Tentacle Spike's 6-dust trail (`:73996-74010`, ZERO explicit draws)
+/// and the Killing Deck card's Item8 + 12-dust ring (`:74817-74829`).
+/// `local` is the C#'s `Main.myPlayer == this.owner` spawn gate (`:72141`).
+/// Returns the 953 spawn request (the pool resolves it) and parks the
+/// card's Item8 cue on `wants_sound`. The 636 dust census: 2 trail points
+/// (`oldPos[0]`/`oldPos[3]`, `:72129`) × 5 dust, each a `SelectRandom`
+/// `Next(3)` type pick + a `NextFloat` scale bump (`:72135-72138`); then
+/// the spawn's `NextFloat` scale seed INSIDE the owner gate.
+pub(crate) fn sticker_death(
+    p: &mut Projectile,
+    local: bool,
+    rng: &mut dyn DropRng,
+) -> Option<DaybreakBlast> {
+    use crate::projectile::{
+        DAYBREAK, DEAD_CELLS_KILLING_DECK_CARD, STARDUST_CELL_MINION_SHOT, TENTACLE_SPIKE,
+    };
+    match p.kind {
+        DAYBREAK => {
+            // `:72129-72140` — the two trail points × five dust.
+            for _ in 0..2 {
+                for _ in 0..5 {
+                    let _ = rng.next_range(0, 3); // SelectRandom(6, 259, 158)
+                    let _ = rng.next_float(); // scale += NextFloat
+                }
+            }
+            if !local {
+                return None;
+            }
+            // `:72143` — the 953 spawn: ai0 = 0, ai1 = 0.85 + NextFloat * 1.15.
+            let ai1 = 0.85 + rng.next_float() * 1.15;
+            Some(DaybreakBlast {
+                x: p.pos.x + p.w * 0.5,
+                y: p.pos.y + p.h * 0.5,
+                damage: p.damage,
+                ai1,
+            })
+        }
+        STARDUST_CELL_MINION_SHOT => {
+            // `:72148-72153` — 10× dust-229: the NewDust internal rolls go
+            // with the dust layer (the module contract). ZERO draws.
+            None
+        }
+        TENTACLE_SPIKE => {
+            // `:73998-74009` — 6× dust-4: same skip. ZERO draws.
+            None
+        }
+        DEAD_CELLS_KILLING_DECK_CARD => {
+            // `:74819` — the Item8 cue (the pool drains `wants_sound`).
+            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+            // `:74820-74827` — the 12-dust ring: per dust the scale
+            // argument's NextFloat + the velocity magnitude's NextFloat.
+            for _ in 0..12 {
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 // =====================================================================
 // Witness tests — WRITTEN, NOT RUN (code-only mode: no cargo/rustc).
 // Every expected value below is hand-derived from the cited C# lines.
@@ -1454,6 +1528,48 @@ mod tests {
             let mut n2 = Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 0, 0.0);
             thrown_on_hit(&p, &mut n2, 3, &mut rng);
             assert!(n2.buffs.find_buff_index(buff).is_none(), "kind {kind}: mismatch → none");
+        }
+    }
+
+    /// W4-d12 F1 — the Daybreak's Kill census (`:72129-72143`): 2×5 dust
+    /// (Next(3) type + NextFloat scale each = 10 ints + 10 floats), then the
+    /// owner-gated spawn's NextFloat scale seed; ai1 = 0.85 + 0.5·1.15.
+    #[test]
+    fn w4_d12_f1_daybreak_death_spawns_the_953() {
+        let mut p = proj(crate::projectile::DAYBREAK);
+        p.damage = 40;
+        p.pos = Vec2::new(500.0, 300.0);
+        let mut rng = census();
+        let blast = sticker_death(&mut p, true, &mut rng).expect("the 953 request");
+        assert_eq!(rng.ints, 10, "2 trail points × 5 type picks");
+        assert_eq!(rng.floats, 11, "10 scale bumps + the spawn seed");
+        assert_eq!(blast.damage, 40, "the damage carries");
+        assert!((blast.ai1 - (0.85 + 0.5 * 1.15)).abs() < 1e-6, ":72143");
+        assert!((blast.x - 508.0).abs() < 1e-6, "the centre X");
+        assert!((blast.y - 308.0).abs() < 1e-6, "the centre Y");
+        // A foreign owner: the dust census still runs, NO spawn (`:72141`).
+        let mut p2 = proj(crate::projectile::DAYBREAK);
+        let mut rng2 = census();
+        assert!(sticker_death(&mut p2, false, &mut rng2).is_none());
+        assert_eq!(rng2.ints, 10);
+        assert_eq!(rng2.floats, 10, "no spawn seed for a foreign owner");
+    }
+
+    /// W4-d12 F1 — the card's Kill census (`:74817-74829`): the Item8 cue +
+    /// 12×2 NextFloat; the 614/971 puffs draw ZERO.
+    #[test]
+    fn w4_d12_f1_card_and_puff_death_censuses() {
+        let mut p = proj(crate::projectile::DEAD_CELLS_KILLING_DECK_CARD);
+        p.pos = Vec2::new(500.0, 300.0);
+        let mut rng = census();
+        assert!(sticker_death(&mut p, true, &mut rng).is_none());
+        assert_eq!(rng.floats, 24, "the 12-dust ring × 2");
+        assert_eq!(p.wants_sound, Some((2, 8, 500.0, 300.0, 0.0)), "the Item8 cue");
+        for kind in [crate::projectile::STARDUST_CELL_MINION_SHOT, crate::projectile::TENTACLE_SPIKE] {
+            let mut q = proj(kind);
+            let mut r = census();
+            assert!(sticker_death(&mut q, true, &mut r).is_none());
+            assert_eq!(r.ints + r.floats + r.doubles, 0, "kind {kind}: zero draws");
         }
     }
 
