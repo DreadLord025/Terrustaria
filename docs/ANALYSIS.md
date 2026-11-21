@@ -39362,7 +39362,92 @@ ported across waves A-O (15 modules, `projectile_gore_a.rs` .. `_o.rs`),
 verified by the coverage check against the direct grep of the decompiled
 file (the junction never recursed). Two gaps found and filled mid-run
 (`:24037` type-9 trail, `:36331` crystal burst + `:75871-75883` 240
-corners). Remainder: the `UpdateProjectiles` slot dispatch (the wiring
-wave — which arm runs for which slot, the `npc_hit_effect_a.rs`
-precedent) and the census→pool upgrades of the landed lava/firework
-censuses in `projectile.rs` / `projectile_ai_misc.rs`.
+corners).
+
+**WIRING (the `UpdateProjectiles` dispatch)** — landed in five batches on
+`task/W4-g16-gore-projectile-sites`, code-only (witnesses written not run):
+
+* Batch 1 (`1deeb8ca`): the GorePool seam — `DropRng` gained stream-exact
+  `next_max`/`next_float_direction` defaults, `GoreRng for dyn DropRng` +
+  `?Sized` pool ctors (tr-core); the 15 site modules generalized
+  `&mut UnifiedRandom` → `&mut dyn DropRng`; `ProjectilePool` gained
+  `gore_pool: Option<GorePool>` (set/take, the `golf_ctx` precedent),
+  `trail_screen` + `anniversary`, and the `trail_on_screen`/`trail_ctx`
+  helpers (the int-truncated `CenteredRectangle`, pad 400, `Utils.cs:947-950`);
+  `world_sim/projectiles.rs` moves `app.gore` in/out around the step and feeds
+  the padded screen + the anniversary flag. The lava/firework census→pool
+  upgrades: `ai_aqua_scepter` :24581 + the WaterBolt twin :24265 →
+  `lava_bounce_gore`; `celeb2_explosion`'s 7 rows → `celeb2_gore` (+ the
+  `gore_census_one` None-path helper); `create_ground_explosion`'s taken
+  branch → `ground_explosion_tile_gore`; `rocket_kill_census`'s 6 families →
+  the wave-M/N keep-ones; the 284/286/41/91-92/183 kill rows → wave-K/I/J
+  spawns. Census paths kept as draw-count pins when `gore=None`.
+* Batch 2 (`36e03444`): the AI-side landing/trail/burst sites at their C#
+  call positions — `ai_style2` 162/281 + `ai_dutchman_shell` 240 `ai[0]==3`
+  landings (`tombstone_landing_gore` 1.5/1.25), `ai_falling_star` 9/955 trails
+  (site 7 + site 10, `TrailCtx` screen gate) + the 92 `ai_style2_gore` site 11
+  at the dispatch, `ai_volcano` `ai[0]==1` caller-draw `num7=Next(3,7)` +
+  `volcano_gores`, `ai_freaking_pirates` jump `Next(4)` branch + idle
+  `Next(900,1200)`.
+* Batch 3 (`69eaf77f`): the Kill-side gore death arms (`gore_death_arms`,
+  kind-gated once-per-death, below the gem arm :75425 / above the
+  floating-turret arms :72068) — 856 stellar (screen-gated, 128 resize + pen
+  −1 + Damage), 664/666/668 DD2 (`setApprenticeT3` count 4/8 + 16·num129
+  resize + Damage BEFORE the loop), 681 goblin bomb (22 → corners → 80 +
+  Damage, the type-arm chain), 645 Lunar Flare (NO resize/Damage — reads the
+  current 140/10 box; the wave-F doc's "Resize(144)" error corrected against
+  :72094-72125), 617 Nebula (176 resize + pen −1 + Damage → pair → owner-gated
+  618 key sweep; the 620 burst deferred no-row), 452/454 phantasmal (144→gore
+  →Resize(30)+Damage / 208→×3+Damage), 459 blaster orb (scale≥1 gate), 448
+  saucer missile (112→gore+Damage).
+* Batch 4 (`a05959ec`): the wave-H/J Kill rows — 178 confetti ×40 (ADD-then-
+  MULTIPLY postlude), 955 star ×7 screen-gated, 9 star ×3, 240 Dutchman
+  corners ×4 + 96 resize + Damage.
+* Batch 5 (`43a99ff1`): the 1025 barnacle tile-collision burst
+  (`AI_197_HandleTileCollision`, `ai[0]==0` gate BEFORE `sentry_turret_step`
+  latches it, type==1025 gate, 9 gores) + the wave-O bomb family —
+  `explode_bomb` threads the pass's rng + gore pool and adds ONLY the
+  `Kill_Bombs_DoUsualKillCode` gore rows on the PASS stream (bomb-corner
+  family 22 recentre + ×4; dynamite 200 recentre + ×8 boulders) AFTER the
+  frozen zero-rng `Damage()` walk (KEPT untouched — the M4-PROJ-9 deviation,
+  no double-feed) and BEFORE `Kill_ExplodeTiles`.
+
+**The bomb-family stream decision (batch 5)**: the C# `Kill()` runs
+`PrepareBombToBlow` → `Damage()` → `Kill_Bombs_DoUsualKillCode` (the gore
+rows) → `Kill_ExplodeTiles`, all on `Main.rand`. The port's `explode_bomb`
+`Damage()` walk is the frozen zero-rng `FastRandom::new(0)` (the documented
+M4-PROJ-9 deviation). The gore rows are a SEPARATE stream consumer: they ride
+the pass's `UpdateProjectiles` rng (the C# `Main.rand` the `Kill_Bombs` draws
+on), threaded into `explode_bomb` alongside the gore pool. The frozen damage
+walk is NOT changed — the gore draws do not feed it (the module RNG contract:
+no double-feed). `None` pool spawns nothing (the bomb family had no landed
+census, so there is no draw pin to keep).
+
+**Cited deferrals (unrowed hosts)**: the wiring rides a host's `proj_data`
+row — a kind with no row never spawns, so its arm cannot fire. The site fns
+stay landed; the wiring rides the host's row/path when it lands (the
+`npc_hit_effect_a.rs` precedent). Deferred Kill hosts: 1020/1105 rocket
+corners (:70888), 1085 mirror (:70912), 608 Solar Counter (:72219), 590
+Truffle Spore (:72634), 676 Ogre Spit coin pile (:72758), 501 cursed flame
+(:72890), 467/468/483 (:73086/:73133/:73242), 709 Sky Dragon's Fury
+(:73367's twin), 616/424-426 (:73668/:73843), 510 Star Cannon (:73691), 408
+phoenix (:73754), 1037/1049 nebula bolts (:73895), 289 confetti (:74605),
+191-194 tombstones (:74812), 1053 lava boulder (:74898), 1078 (:75030), 728
+star (:75145), 723 shadow (:75172), 724/725/726/907/1133 falling stars
+(:75204), 12 star (:75709/:75744), 503 (:75734), 281/162 Kill corners
+(:75754/:75831 — the AI landing gores ARE wired in `ai_style2`), 712
+(:76116), 1023 barrel (:76881), 312 (:76919), 246/249 (:76960/:77003),
+370/371 ducks (:77172/:77189), the 617's 620 burst (:72336-72371), and the
+bomb-family 102/75/588/773/108/164 (not in `explode_bomb`'s
+`PrepareBombToBlow` set / no rows). Deferred AI hosts (unported arms):
+enchant-7 melee swing (:17452, the melee-lane seam), super_star_trail
+(:22155, AI_151), ai503_trail (:23965), shadowflare/ai723 trails
+(:23995/:24018, kinds 723-726/1133 — the dispatch's :23990 inner gate lists
+726 twice and omits 724, reproduced when those kinds get rows), drill_unit
+(:25438, 1092), ai49 tombstone landing (:28306, style 49), crystal
+destruction (:36331, style 132), chum (:53560-53583, style 163), the ai026_c
+ground machine 881/934/854/875/860 (:60816-62889, census-only
+`ground_machine_census`), betsy_breath (:68828, AI_136), book_storm
+(:70444-70466, AI_145), ogre_stomp (:68780, AI_135). The d78 magic-death-
+blasts lane (`5fe6d940`, kinds 79/16/34/634/635/661) is a co-lane — read-only,
+no overlap with these gore rows, no double-feed.
