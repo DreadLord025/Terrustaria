@@ -310,6 +310,18 @@
 //! - 82353 — 566/567 (`:82347-82354`): dust 236.
 //! (the same commit also lands 576/577 :82395 dust 273 + 564/565
 //! :82432 + 578 :82461 dust 5 — the ×20 group's tail rows.)
+//! Batch 22 (the DD2 boss/critter live arms):
+//! - 82569/82575 — the Ogre 541 (`:82562-82581`): ×200 PAIRS of dust
+//!   268, colour (222,108,48)×0.7 (XNA byte truncation → 155,75,33,178),
+//!   noGravity, scale 1.5, fadeIn 0.7, velocity ×3.
+//! - 82613/82619 — the Dark Mage 546 (`:82606-82625`): ×50 PAIRS, the
+//!   (150,108,78)×0.7 tint (105,75,54,178), same writes.
+//! - 81889 — 668 (`:81883-81890`): ×100 dust 5, scale 1.2.
+//! - 81919/81923 — the Empress 636 (`:81911-81925`): ×100, the Next(2)
+//!   selector BEFORE the spawn (0 → 67 else 69).
+//! - 81786 — 690 (`:81782-81787`): EVERY strike, FLAT 10 dust 1, scale
+//!   1.2.
+//! - 82661 — 378 (`:82655-82662`): ×50 dust 7 at (0,0).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -504,6 +516,14 @@ pub fn replay_hit_dust(
             let d = dust.slot_mut(idx);
             d.velocity *= 2.0;
             d.no_gravity = true;
+        }
+        return;
+    }
+    // `:81782-81787` — 690: EVERY strike, FLAT 10 dust 1, (dir,-1),
+    // scale 1.2.
+    if s.npc_type == 690 {
+        for _ in 0..10 {
+            live_dust(s, 1, dir, -1.0, 0, Color::default(), 1.2, rng, dust, ctx, world);
         }
         return;
     }
@@ -1468,6 +1488,49 @@ pub fn replay_hit_dust(
         576 | 577 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
                 live_dust(s, 273, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:82562-82625` — the Ogre/Dark Mage PAIRS: dust 268 twice per
+        // iteration, the XNA `new Color(r,g,b) * 0.7f` byte truncation
+        // ((222,108,48,255)·0.7 → 155,75,33,178; (150,108,78,255)·0.7 →
+        // 105,75,54,178), noGravity, scale 1.5, fadeIn 0.7, velocity ×3.
+        // The 268 spawn is the 4-arg NewDust (speeds 0, alpha 0, scale 1).
+        541 | 546 => {
+            let (mult, tint) = if s.npc_type == 541 {
+                (200.0, Color::new(155, 75, 33, 178))
+            } else {
+                (50.0, Color::new(105, 75, 54, 178))
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, mult) {
+                for _ in 0..2 {
+                    let idx = live_dust(s, 268, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                    let d = dust.slot_mut(idx);
+                    d.color = tint;
+                    d.no_gravity = true;
+                    d.scale = 1.5;
+                    d.fade_in = 0.7;
+                    d.velocity *= 3.0;
+                }
+            }
+        }
+        // `:81883-81890` — 668: ×100 dust 5, scale 1.2.
+        668 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.2, rng, dust, ctx, world);
+            }
+        }
+        // `:81911-81925` — the Empress: ×100, the Next(2) selector BEFORE
+        // the spawn (0 → dust 67, else 69).
+        636 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let t = if rng.next_max(2) == 0 { 67 } else { 69 };
+                live_dust(s, t, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:82655-82662` — 378: ×50 dust 7 at (0,0) (the 4-arg NewDust).
+        378 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 7, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -2914,5 +2977,59 @@ mod tests {
             assert_eq!(live.len(), 5, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
         }
+    }
+
+    /// W4-g62 batch 22 — the Ogre pair (`NPC.cs:82569-82580`): two 268
+    /// spawns per iteration, the ×0.7 byte-truncated tint, the five
+    /// post-writes; the Empress's Next(2) rides BEFORE the spawn; 690
+    /// bursts FLAT 10 even on death.
+    #[test]
+    fn w4_g62_the_ogre_pairs_and_the_empress_selector() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(541, 100, 100, 0.5); // ×200 → 1 iteration = 2 dusts
+        let mut rng = UnifiedRandom::new(193);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(193);
+        let mut twin = DustPool::new();
+        for _ in 0..2 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 268,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = twin.slot_mut(idx);
+            d.color = Color::new(155, 75, 33, 178);
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 0.7;
+            d.velocity *= 3.0;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        // The Empress: the selector draw precedes each spawn.
+        let e = snap(636, 100, 100, 5.0); // ×100 → 5
+        let mut r2 = UnifiedRandom::new(193);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&e, &mut r2, &mut p2, &ctx, &world);
+        let mut t2 = UnifiedRandom::new(193);
+        let mut q2 = DustPool::new();
+        for _ in 0..5 {
+            let t = if t2.next_max(2) == 0 { 67 } else { 69 };
+            q2.new_dust(
+                &mut t2, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, t,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+        }
+        assert_eq!(r2, t2);
+        assert_eq!(p2.slots(), q2.slots());
+        // 690: FLAT 10 dust 1 scale 1.2, even on a dead snapshot.
+        let d690 = snap(690, -1, 10, 1.0);
+        let mut r3 = UnifiedRandom::new(193);
+        let mut p3 = DustPool::new();
+        replay_hit_dust(&d690, &mut r3, &mut p3, &ctx, &world);
+        let live: Vec<_> = p3.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10);
+        assert!(live.iter().all(|d| d.dust_type == 1));
     }
 }
