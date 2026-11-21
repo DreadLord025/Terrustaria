@@ -36110,7 +36110,23 @@ never consume.
   refused (no `ApplyItemTime`, no consume), exactly the C# verdict with
   no resident pet. The purchase arm (flag + `Misc.License*Used` chat)
   is ported; the town arrival gates (`Main.cs:65900-65911`) are the
-  deferred consumer of the bought flags.
+  deferred consumer of the bought flags. **Merge debt (research/138
+  §10.3, FINAL):** a6 keeps the LIVE `AnyNPCs` scan — when the town-pet
+  kinds land, the gate will pass and the arm would consume with NO chat;
+  the `RerollVariationForNPCType` dispatch + the Success/Fail chats must
+  land WITH the pets (g87's hardcoded `any_npcs = false` avoids the leg
+  but closes the exchange path — a6's live-scan shape is the keep-one).
+- **g87 re-adjudication (research/138 §10, FINAL)**: g87 `dfbcaf94b`
+  pushed the same three families (3335/5289/licenses). a6 keeps all
+  three arms: g87 lacks the Demon Heart `CheckCanUse` start refusal
+  (`:52051-52054` — its classic-mode use swings), its QuickSpawnItem twin
+  is the bobber-catch simplification (no void vault / chime / notify,
+  the prefix roll mis-pinned to UpdateItems), and its `.trplayer` v7
+  `dh` line collides with the g88 superset's v7 (DROP — the fields are
+  f44's L1-only `.plr` lane). Both minecart ports are NO-flag-gate
+  ALWAYS-spawn (`:45204` has no `!unlockedSuperCart` leg). g87's `.wld`
+  pet flips dedup onto f45; its `.trwld` 3-byte pet tail rides the
+  68-byte five-way v18 union at offsets 19-21 (138 §5a's exact table).
 - **QuickSpawnItem (the minecart powerup's 3353 grant)**: the `GetItem`
   deposit walk with the per-slot chime + `NotifyItemPickup`, the void
   vault as the LAST resort and the overflow world drop at the player
