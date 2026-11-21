@@ -1,13 +1,21 @@
 # 125 — d38 crossnote ADDENDUM to the atlas-repack plan (research/113)
 
-Status: ✅ FINAL (2026-11-21) — published INPUT for
+Status: 🔒 SEALED (2026-11-21, RETIRE phase — §§11-13) — the d38 lane is
+COMPLETE: 35 kinds + 35 sheets + 35 portraits, protocol==vanilla in the
+281-337 corridor; the merger hand-off is §13. Previously ✅ FINAL
+(2026-11-21) — published INPUT for
 `task/W4-d35-npc-kinds-71-140`'s ATLAS-REPACK phase, read through d35's
 FINAL tip `e5558b0a9` (research/113 §10-12 + Appendix B). §§1-5 below
 stand as the eager-form record (both-agree supersession, §6 aligns them
 with the lazy-load FINAL contract); §§6-10 are the FINAL phase (the
 lazy-load re-projection, the FindFrame status census, the bestiary
-unlock census, the 108-extend roster cross-ref, the FINAL witnesses). Branch:
-`task/W4-d38-npc-kinds-281-350` (FINAL phase, base `6f9dd02d`).
+unlock census, the 108-extend roster cross-ref, the FINAL witnesses);
+§§11-13 are the RETIRE phase (the stand-in drop-hunks + the residual
+list re-probed at d44 `c863a7a5`, the 328 extra-card exact drop-hunk,
+the GAP-1 closure receipt against c8's generic critter gate, the SEAL
+declaration). Branch:
+`task/W4-d38-npc-kinds-281-350` (FINAL phase base `6f9dd02d`, FINAL tip
+`1ba0395c7`; RETIRE continues the SAME branch).
 Original crossnote status: 📣 published INPUT (d35c, tips
 `519c8035`/`7d131be3` read 2026-11-21) and the d40b sheets
 phase (`task/W4-d40-npc-kinds-421-490`, data-only tip `8fe1d6d3` read same
@@ -396,3 +404,233 @@ d38's corridor at the CURRENT tip `6f9dd02d`:
   =50 — the 6 critters' ladder values are what the port computes today,
   the GAP-1 provider difference is documented not asserted away), the
   6 critter rows + the 328 Hide row cited; WRITTEN, NOT RUN (code-only).
+
+## 11. RETIRE: the 7-town-stand-in drop-hunks + the residual at d44 `c863a7a5`
+
+The FINAL §7 gap list (7 `humanoid_town_frame` stand-ins) re-probed
+against d44's CURRENT tip **`c863a7a5`** (wire round 3 — past the §7
+census's `7c430def6`): the extra7 hook is NOW WIRED (`5568fabf`, the
+68 refresh-3 cells), so 5 of the 7 resolve on the d44 tip itself and
+the **residual stand-in list is exactly 2 ids: 294/296** (wave-B
+module — `npc_findframe_b.rs` has NO `find_frame_kind_*` mapper and NO
+cs_id hook on ANY pushed tip, mechanically re-verified by
+`tools/_d38_retire_check.py` R1, RUN, ALL PASS).
+
+| id | kind | our stand-in arm (`npc.rs` @ `1ba0395c`) | d44-tip state | wiring-round action |
+|---|---|---|---|---|
+| 287 | BoneLee | `:9531-9532` (comment + arm) | **WIRED** extra6 (`c863a7a5` hook `:6987`, mapper 287→BoneLee) | DROP the arm — the extra6 hook claims cs_id 287 before the body match; the fighter delegate carries the grounded flip + air row 1 (NOT in the `:69647` pin list) |
+| 294 | AngryBonesBig | `:9514-9515` | **RESIDUAL** — wave-B module arm exists (`npc_findframe_b.rs:239/:252` fighter group, air pin 0), NO hook anywhere | KEEP the stand-in until the wave-B wiring batch lands a cs_id hook (or the wiring round delegates the arm directly to `humanoid_fighter_frame`, air_row0=true) |
+| 295 | AngryBonesBigMuscle | `:9516-9517` | **WIRED** extra6 (mapper 295; `let air_row0 = kind == FindFrameExtra6Kind::AngryBonesBigMuscle;`) | DROP — extra6 fighter delegate, air row 0 (the `:69647` pin) |
+| 296 | AngryBonesBigHelmet | `:9518-9519` | **RESIDUAL** — same as 294 (`npc_findframe_b.rs:240/:253`, air pin 0) | KEEP until wave-B wiring |
+| 322 | SkeletonTopHat | `:9326-9327` | **WIRED** extra7 (`c863a7a5` hook `:7003`, mapper 322) | DROP — extra7 fighter delegate (`humanoid_fighter_frame(…, false, false)`: air row 1, idle row 0) |
+| 323 | SkeletonAstonaut | `:9328-9329` | **WIRED** extra7 (mapper 323) | DROP — same delegate; the ONE 15-row sheet (walk wraps at 14) |
+| 324 | SkeletonAlien | `:9330-9331` | **WIRED** extra7 (mapper 324) | DROP — same delegate, 16 rows |
+
+Mechanics of the drop (the merger's edit, NOT d38's — d38's branch has
+no extra6/extra7 modules; the arms stay as the parity references until
+the merge): the d44 `find_frame` hook order (`find_frame_kind_c` →
+`extra5` → `extra6` → `extra7` → `extra7b`, all `return`-early) precedes
+the body match, so once both branches merge the five WIRED ids never
+reach the stand-in arms. The keep-one edit deletes the five
+comment+arm pairs above; the `humanoid_town_frame` helper itself STAYS
+(the town kinds + 294/296 still ride it until wave-B wires). The
+FINAL witness `w4_d38_final_the_seven_town_standins_are_the_wiring_gap`
+(`npc.rs:35137-35178`) re-pins at the same edit: the five dropped kinds
+leave its list (their no-flip/no-air assertions would fail against the
+module machines — deliberately), 294/296 keep the stand-in assertions,
+the 328 row-0 pin stays. The b2/b3 walk witnesses
+(`w4_d38_b2_the_bone_lee_humanoid_frame` `:34747`,
+`w4_d38_b3_the_frames` `:34832`) keep passing either way (the walk band
+is identical in both forms — the module adds the flip/air tail the
+witnesses don't assert against).
+
+**The §7 table's 303 correction**: the FINAL §7 row "303/337 bunnies …
+MODULE-LANDED(f27) extra7" was half-stale — at `c863a7a5` the extra7
+mapper carries **337 but NOT 303** (the 15-id set is
+316/317/318/322/323/324/333/334/335/336/337/437/438/440/442, R1
+mechanical). The 68 master table at `c863a7a5` §2 agrees: 303 is
+`INLINE-ARM d38:BunnySlimed(npc.rs:9349)` — **303 keeps the d38 inline
+arm** (faithful twin of `NPC.cs:76853`, no module claim to resolve).
+337 rides extra7 (keep-one at merge, both faithful).
+
+The keep-one dedupes for the 10 WIRED faithful twins (the §7 "either
+side faithful" rows — no behavior change, the merger picks one):
+281-286 casters (our `:9520-9530` + `:9579-9633` pose groups vs
+extra6's caster group), 290 Paladin (`:9542-9560`), 291/292
+Sniper/Tactical (`:9561-9578`/`:9478-9495`), 293 Commando
+(`:9496-9513`), 316/317/318/333-336/337 (the floater/eye/slime/bunny
+inline arms vs extra7). 289 GiantCursedSkull keeps the d38 inline arm
+(`:9533-9541`) per the E3 dedupe (the wave-B module arm is the dropped
+twin). None of these arms draws RNG in either form — the dedupe cannot
+move a stream.
+
+## 12. RETIRE: the 328 extra-card drop-hunk (GAP-3, exact)
+
+Vanilla facts re-verified at source this phase:
+`BestiaryDatabaseNPCsPopulator.GetExclusions`
+(`BestiaryDatabaseNPCsPopulator.cs:870-886`) collects every
+`NPCBestiaryDrawOffset` row with `Hide = true`; 328's row is Hide
+(our verbatim port `bestiary_draw_offsets.rs:384`), so
+`AddEmptyEntries_CrittersAndEnemies_Automated` (`:851-868`) never
+registers a 328 entry. The kill credit itself is faithful:
+`IsNPCValidForBestiaryKillCredit` (`NPC.cs:78901-78912`) excludes only
+121 + the non-boss EoW heads — 328 passes, and
+`NPCKillsTracker.RegisterKill` (`NPCKillsTracker.cs:23-33`) counts the
+"PumpkingBlade" credit id with no entry requirement. **The card is the
+only delta.** The wiring-round merger applies this exact hunk set
+(all anchors verified unique at `1ba0395c` by
+`tools/_d38_retire_check.py` R2, RUN):
+
+1. **`crates/tr-app/src/bestiary.rs:2256-2265`** — DELETE the ENTRIES
+   row (the `// W4-d38 b6 — BestiaryEntry.Enemy(328)` comment + the
+   `BestiaryEntryDef { credit_id: "PumpkingBlade", net_id: 328, … }`
+   block). 284→283 entries on this branch (the union E4 pin 489→488).
+2. **`crates/tr-app/src/bestiary.rs` `entry_for_npc` (`:2656-2728`)** —
+   ADD the credit-preserving guard: the kill-credit loop
+   (`world_sim/npcs.rs:5283`) calls `entry_for_npc` for EVERY dead NPC
+   and the blade's silent despawn sets `hp = 0`
+   (`npc_ai_style59.rs:255`), so a bare delete PANICS the death pass.
+   The faithful shape is the `try_entry_for_npc` split: the sim's
+   kill-credit + module-4 broadcast keep registering the
+   "PumpkingBlade" credit (vanilla does), so EITHER (a) the death loop
+   moves to `try_entry_for_npc` with a name-row fallback for the
+   credit (the `ContentSamples` idiom), OR (b) `entry_for_npc` keeps a
+   static stand-in row for 328 outside ENTRIES. Option (a) is the
+   cleaner seam — `netmodules.rs:457-460` already tolerates a missing
+   kind via `kind_from_net_id` (which reads ENTRIES — after the drop
+   it returns None for 328 and the client's kill-count arm
+   early-returns; the vanilla client also has no 328 entry, but its
+   tracker still counts — the (a) fallback must cover this arm too).
+   **The merger owns this choice; both are witnessed edits.**
+3. **`crates/tr-app/src/assets.rs:1943`** — drop `328,` from the
+   `BESTIARY_NPC_SHEET_IDS` d38 append row; `:1905` declared
+   `[u16; 216]` → `[u16; 215]`.
+4. **`crates/tr-app/src/assets.rs:2720`** — drop the parallel
+   `atlas.sheet("NPC_328").copied(),` vec row (216→215 rows; the
+   first 181 + the other 34 d38 rows keep their indexes — 328 is the
+   10th of the 35-row append, so the 25 later d38 slots shift by one;
+   no literal slot reads exist, every read rides
+   `Lookups::bestiary_sheet_index`).
+5. **`crates/tr-app/src/ui/bestiary.rs:1647-1652`** — DELETE the
+   `(NpcKind::PumpkingBlade, _)` portrait arm (no entry can reach it
+   after 1; the exhaustive-match wildcard absorbs the kind).
+6. **Witness re-pins (same commit)**:
+   `bestiary.rs:2851` — remove `K::PumpkingBlade` from the 35-kind
+   ladder list (`:2855` `assert_eq!(d38.len(), 35)` → 34) and
+   `:2889-2896` — the GAP-3 pin flips: keep the
+   `bestiary_draw_offsets::get(328).unwrap().hide` assertion, replace
+   the `ENTRIES.iter().any(|e| e.net_id == 328)` positive pin with
+   `!ENTRIES.iter().any(…)` (the drop landed);
+   `ui/bestiary.rs:2255` — remove the `(328, 106, 86, 1)` strips row
+   (`:2259` len 35→34).
+7. **NOT dropped** (the in-world kind stays — only the bestiary card
+   goes): the `STATIC_SHEET_NAMES` "NPC_328" row (`assets.rs:1289`),
+   `D38_B6_SHEETS` (`render/entities.rs:1363`), the draw arm
+   (`entities.rs:3371`), the rotation-whitelist membership (8-IN
+   unchanged — the blade's style-59 rotation writer is in-world), the
+   `w4_d38_b6_*` SetDefaults/frame witnesses, the kill-credit census
+   (§8's "credit faithful" finding stands), the 108-E3 dedupe (keep
+   d38@328 drop c6@328 — the KIND ownership, independent of the card).
+
+Post-drop arithmetic (R4 verified): this branch 283 entries / 215
+slots; the merger pins move 216→215 and the §4b union 323→322 (**the
+108-E "323 final" pin is SUPERSEDED by this drop — the wiring-round
+merger must re-pin 108's §5 target to 322**, or equivalently record
+the -1 against the E4 count pins: 489→488 entries, ≤357→≤356 slots).
+The 35-kinds/35-sheets pins are UNCHANGED (the kind + its in-world
+sheet stay).
+
+## 13. RETIRE: GAP-1 closure receipt + the d38-band SEAL declaration
+
+### 13a. GAP-1 (the critter sight provider) — CLOSED by c8, d38's six auto-covered
+
+The §8 GAP-1 wiring-round item is ALREADY LANDED on
+`task/W4-c8-style66-crawling-critters`: the sweep's
+`scan_world_for_critter_sights` (`a17cd75b8`, at the `update_npcs`
+head — `Main.cs:17914` before the UpdateNPC loop, the 300×200-inflated
+player box) and the FINAL generalization (`af2a06880`, local FINAL
+tip **`af1f8ba1d`** — the pushed origin tip `3705670d3` carries the
+nine-kind-list form; the generic gate is on the local final commits,
+the merger reads the branch tip). Receipt
+(`tools/_d38_retire_check.py` R3, RUN, ALL PASS):
+
+- The c8 FINAL dispatch is the GENERIC C# gate, not a kind list:
+  `counts_as_a_critter(kind)` = `kind.max_hp() <= 5 &&
+  kind.contact_damage() == 0 && kind.cs_id() != 594 && kind.cs_id() !=
+  686` (`bestiary.rs:2280-2285` @ `af1f8ba1d`, the
+  `NPC.CountsAsACritter` port `NPC.cs:6887-6897`);
+  `is_critter_entry` = the gate + the one 549 Hide exclusion
+  (`:2303-2305`); `unlock_state_world` dispatches critter entries to
+  `critter_unlock_state` (sight → tier 4,
+  `CritterUICollectionInfoProvider.cs:14-20`).
+- **All six d38 critters pass the gate on their SetDefaults rows**
+  (mechanically extracted from `npc/data.rs` `max_hp`/`contact_damage`):
+  297 BirdBlue 5/0, 298 BirdRed 5/0, 299 Squirrel 5/0, 300 Mouse 5/0,
+  303 BunnySlimed 5/0, 337 BunnyXmas 5/0 — none is 594/686. **No other
+  d38 kind passes** (the 29 non-critters' rows are all >5 HP or >0
+  damage; the full 35-row table in the R3 output). The live-NPC scan
+  gate (`n.max_hp > 5 || n.kind.contact_damage() != 0`) is the same
+  predicate on the spawned rows — `Npc::new` copies the kind's
+  `max_hp` (`npc.rs:2998-2999`), no d38 kind overrides damage.
+- The six credit ids ("BirdBlue"/"BirdRed"/"Squirrel"/"Mouse"/
+  "BunnySlimed"/"BunnyXmas") are ENTRIES rows on this branch with no
+  `entry_for_npc` fold — the scan's
+  `entry_for_npc(n.kind, n.slime).credit_id` lands in the same sights
+  set the dispatch reads. None of the six is a `GOLD_PEER_TABLE` key
+  (the gold arm is irrelevant to them; the vanilla peer registrations
+  for 442 GoldBird→"Bird" / 443 GoldBunny→"Bunny" / 447 GoldMouse→
+  "Mouse" / 539 SquirrelGold→{"Squirrel","SquirrelRed"} reference the
+  BASE Bird/Bunny kinds + our 299 Squirrel as PEERS — d40's gold rows
+  read our sightings for free, the cross-lane contract works in both
+  directions).
+- **d38 wiring-round action: NONE.** The c8 branch's own FINAL census
+  (research/143 §1) states the contract: "do NOT add per-lane sight
+  scans or provider arms". At merge, the six entries auto-ride the
+  sight provider. The merge-time edit is on the UI side only: this
+  branch's three kill-only `unlock_state(entry, tracker)` call sites
+  (`ui/bestiary.rs:510/:537/:1803`) fold onto c8's
+  `unlock_state_world` (the same fold c8 did for its own UI rows —
+  the 143 §1 merge note); the §8 witness's critter block
+  (`bestiary.rs:2879-2888`, the kill-ladder pins) re-pins to the
+  sight form at that edit. GAP-1's "pre-existing base-wide" scope
+  also closes for the base Goldfish 55 (the c8 FINAL lifted the
+  freeze).
+- GAP-2 (rarity stars, 5 kinds) stays OPEN — display-only, no lane
+  has claimed it; the wiring-round item stands as §8 recorded.
+
+### 13b. The SEAL declaration
+
+**The d38 band is COMPLETE and SEALED** (this doc's status row; the
+RETIRE receipts above close every d38-owned wiring item):
+
+- **35 kinds** — `NpcKind` + SetDefaults + AI + cs_id/to_u16 rows,
+  protocol==vanilla in the 281-337 corridor (§9, the 108-E
+  confirmation; the 22 holes are base-owned, the two E3 dedupes
+  recorded).
+- **35 sheets** — the real-dims strips packed (`c096bac9`), the
+  draw arms wired with no None-skip (§4a), the eager→lazy migration
+  is d35's 113 §10.6 step-7 (no d38 code change, §6).
+- **35 portraits** — ENTRIES rows + `portrait_data` arms + the
+  181→216 slot close (§4b); the ONE vanilla-exclusion delta (328) is
+  the §12 exact drop-hunk, owned by the wiring-round merger.
+- **Merger hand-off** (the complete list, per 108-E + 113-lazy):
+  1. the §11 five stand-in drop-hunks + the witness re-pin (the
+     residual 294/296 wait on the wave-B wiring batch — NOT d38's
+     work);
+  2. the §11 keep-one dedupes (10 faithful twins + the 303
+     correction: 303 KEEPS the d38 inline arm);
+  3. the §12 328 card drop (7-part hunk, the credit-preserving guard
+     choice owned by the merger, the 323→322 / 489→488 re-pins);
+  4. the §13a UI fold onto `unlock_state_world` (GAP-1 closed by c8,
+     zero d38 provider work);
+  5. the 113 §10.6 step-7 lazy migration (d35's seam, d38's rows ride
+     `texture_net_id` unchanged);
+  6. GAP-2 rarity stars (unclaimed, display-only).
+- **Verification record (RETIRE)**: `tools/_d38_retire_check.py` RUN,
+  **44/44 PASS** (R1 the claim sets/hooks/residual at `c863a7a5`, R2
+  the six unique drop anchors + the panic-path proof, R3 the generic
+  gate + the six-critter coverage + the credit rows, R4 the census
+  pins 284/216/216/216 + the post-drop arithmetic); output
+  `tools/_d38_retire_check.txt` committed. No cargo/tests/rustfmt
+  (code-only); no game-code change this phase — the drop-hunks are
+  the MERGER's edits, published exact so they are mechanical.
