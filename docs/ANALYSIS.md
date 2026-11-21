@@ -36156,6 +36156,49 @@ in-flight edits; their census wiring is that lane's or the merge's
 5 witnesses (the eight-pair silence, the vampire cue+kicks, the 219
 order, the drawn-count stardust replay, the two vortex rings).
 
+### The waterfowl sounds (item 4 — CENSUSED, ambient already wired)
+
+The full sound census for the eight kinds (362-365 / 602 / 603 / 608 /
+609), every `SoundEngine.PlaySound` site that names them:
+
+* **Hit/death** — `SetDefaults` `HitSound = SoundID.NPCHit1`,
+  `DeathSound = SoundID.NPCDeath1` on all eight rows (`NPC.cs:13621-
+  13622`/`:13633-13634`/`:13645-13646`/`:13657-13658`/`:16745-16746`/
+  `:16757-16758`/`:16815-16816`/`:16827-16828`) — LANDED phase 1 (the
+  `hit_sound`/`death_sound` tables' `NPC_Hit_1`/`NPC_Killed_1` arms).
+* **Ambient** — `UpdateNPC_CritterSounds` (`NPC.cs:92243-92341`): the
+  ducks 362-365 quack **case 30** by day behind `Next(200) == 0`
+  (`:92257-92262`); the seagulls 602/603 cry **case 44** by day behind
+  `Next(1200) == 0` (`:92253-92256`, an INDEPENDENT if above the duck
+  row); the grebes **608/609 match NO row — silent, zero draws** (the
+  else-if ladder's other arms name 361/445/687, 74/297/298/442/671-675,
+  300/447/610 — none is a grebe). All three rows were ALREADY ported in
+  `ambient_sound.rs::critter_sound_cue` (S1-E-21e, table-complete
+  before the kinds existed) and the sim's emitter feeds them
+  (`world_sim/npcs.rs`'s per-NPC tail; the roster-tail co-lane fixed
+  the key to `cs_id` — the waterfowl ids coincide in both spaces, so
+  the rows fired correctly either way). The voice arms (case 30's
+  `Next(10,12)` + rare `Next(300)` re-target behind the slot-12 playing
+  guard + the split pitch range; case 44's `Next(106,109)` + pitch, no
+  guard) are ported in `critter_legacy_voice`.
+* **Takeoff/landing** — NO cue: `TransformVisuals`' only sound is the
+  158↔159 vampire Item8 (item 3's census); the waterfowl pairs are
+  silent.
+* **The 1080 drop's splat** — Item177 at the drop's centre (item 2,
+  LANDED) — the waterfowl's only OTHER sound, played by the projectile.
+* **Census fix** — the case-45 comment in `critter_legacy_voice`
+  attributed the `NPC.cs:23678-23681` quack site to "the duck"; the
+  site actually sits inside the aiStyle-16 arm's `this.type == 615`
+  block (`:23572`) — the **Dolphin** (`NPCID.cs:11907`, unported). The
+  comment is corrected; the arm itself was already right (slot 109,
+  the guard before the pitch, ×0.3, `Next(-10,11)`).
+
+2 new witnesses: the eight-kind ambient census (the duck/seagull rows'
+gates + draws, the grebe silence day AND night, the failing-roll stream
+contract) and the quack/cry voice draw orders (case 30 plain /
+re-target / guard-blocked, case 44). No behaviour change — the rows
+were already live; this item pins them and fixes the attribution.
+
 ## The mana machinery (S1-P-i19)
 
 **Headline finding — `DebugOptions.ManaV2` is the SHIPPED mana machine.** The
