@@ -3147,6 +3147,14 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-f4: the EoW family's `alpha = 255` rows
+                            // (`NPC.cs:8921`/`:8941`/`:8961`) — the spawn
+                            // fade (`:52255-52270`) starts invisible and
+                            // steps 42/tick while moving (the fade tail in
+                            // the worm pass).
+                            NpcKind::EaterOfWorldsHead
+                            | NpcKind::EaterOfWorldsBody
+                            | NpcKind::EaterOfWorldsTail => 255,
                             _ => 0,
                         }
                     }),
@@ -5112,7 +5120,16 @@ impl Npc {
         self.size_override = None; // the kind's own box
         self.max_hp = new_kind.max_hp();
         self.scale = 1.0;
-        self.alpha = 0;
+        // W4-f4: SetDefaults' alpha reset (`NPC.cs:8525`) is 0, but the
+        // EoW rows override it to 255 (`:8921`/`:8941`/`:8961`) — the
+        // split head/tail re-fades (the `:52251` tail's own gate: the new
+        // head always fades, the new tail behind a half-visible leader).
+        self.alpha = match new_kind {
+            NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => 255,
+            _ => 0,
+        };
         self.net_update = true;
         self.ai = [0.0; 4];
         self.local_ai = [0.0; 4];

@@ -1090,7 +1090,13 @@ pub(crate) fn update_worms(app: &mut App) {
         zone_corrupt: app.scene_metrics.zone_corrupt,
         zone_crimson: app.scene_metrics.zone_crimson,
     });
-    update_worms_ctx(world, ctx, &mut app.npcs, rng, &mut app.next_worm_id);
+    // W4-f4: the worm pass's dust sites (the Crawltipede head's twin
+    // type-6 trail `NPC.cs:51656/51662`, the EoW fade burst `:52259`) roll
+    // the live pool on the UpdateNPCs stream — the permissive ctx (the
+    // whole world on-screen) matches the solo/test path (the d52/e2
+    // convention, the destroyer precedent).
+    let dust_ctx = crate::npc::permissive_dust_ctx(&app.world);
+    update_worms_ctx(world, ctx, &mut app.npcs, rng, &mut app.next_worm_id, &mut app.dust, &dust_ctx);
     // S1-E-21g — the worm pass's queued plays (the leech entry burst,
     // the dig roars): the same drain as the per-NPC loop, after the
     // pass's draws on the same UpdateNPCs stream.
@@ -1176,6 +1182,28 @@ pub(crate) fn update_worms_in(
     rng: &mut UnifiedRandom,
     next_worm_id: &mut u32,
 ) {
+    // W4-f4: the dust-free seam keeps its signature (the worm-ledger
+    // witnesses drive it) — it runs a SCRATCH pool on the permissive ctx,
+    // so the dust draws still ride the caller's stream (the `update_rng`
+    // convention); the live sim threads `app.dust` through
+    // `update_worms_in_dust`.
+    let mut dust = tr_core::particles::DustPool::new();
+    let dust_ctx = crate::npc::permissive_dust_ctx(world);
+    update_worms_in_dust(world, player, npcs, rng, next_worm_id, &mut dust, &dust_ctx);
+}
+
+/// W4-f4 — the dust-aware seam: the Crawltipede head's twin trail
+/// (`NPC.cs:51656/51662`) and the EoW fade burst (`:52259`) roll the
+/// passed pool on the caller's stream (the d52/e2 convention).
+pub(crate) fn update_worms_in_dust(
+    world: &tr_core::World,
+    player: Option<(f32, f32)>,
+    npcs: &mut Vec<Npc>,
+    rng: &mut UnifiedRandom,
+    next_worm_id: &mut u32,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     let ctx = player.map(|(pcx, pcy)| WormHeadCtx {
         pcx,
         pcy,
@@ -1185,7 +1213,7 @@ pub(crate) fn update_worms_in(
         zone_corrupt: false,
         zone_crimson: false,
     });
-    update_worms_ctx(world, ctx, npcs, rng, next_worm_id);
+    update_worms_ctx(world, ctx, npcs, rng, next_worm_id, dust, dust_ctx);
 }
 
 fn update_worms_ctx(
@@ -1194,6 +1222,8 @@ fn update_worms_ctx(
     npcs: &mut Vec<Npc>,
     mut rng: &mut UnifiedRandom,
     next_worm_id: &mut u32,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
 ) {
     // The init loop: the links spawn their children (the chain assembles
     // front to back — the Vec order visits the head, then each child as it
@@ -1357,7 +1387,7 @@ fn update_worms_ctx(
             continue;
         }
         let Some(ctx) = head_ctx else { continue };
-        if worm_head_step(&mut npcs[i], world, &ctx, rng) {
+        if worm_head_step(&mut npcs[i], world, &ctx, rng, dust, dust_ctx) {
             despawn_chains.push((npcs[i].worm_id, npcs[i].seg_index));
         }
     }
@@ -1441,6 +1471,9 @@ fn update_worms_ctx(
                 } else {
                     1
                 };
+                // W4-f4: `SetDefaults`' alpha row (`NPC.cs:8921`) — the
+                // split head re-fades from 255 (the `:52251` head arm).
+                npcs[i].alpha = 255;
             } else {
                 npcs[i].hp = 0;
             }
@@ -1453,6 +1486,12 @@ fn update_worms_ctx(
         let num62 = (len - lw) / len;
         npcs[i].vx = 0.0;
         npcs[i].vy = 0.0;
+        // W4-f4: the pre-snap stamp — the C#'s oldPosition at `:52264`
+        // holds the tick's start position (the follower's velocity is
+        // zeroed at `:51908`, so `:90496`'s integration moves nothing);
+        // the EoW fade tail's displacement gate reads the snap delta.
+        npcs[i].old_x = npcs[i].x;
+        npcs[i].old_y = npcs[i].y;
         npcs[i].x += dx * num62;
         npcs[i].y += dy * num62;
         npcs[i].rotation = dy.atan2(dx) + 1.57;
@@ -1490,6 +1529,9 @@ fn update_worms_ctx(
                 } else {
                     1
                 };
+                // W4-f4: `SetDefaults`' alpha row (`NPC.cs:8961`) — the
+                // new tail re-fades from 255 behind a half-visible leader.
+                npcs[i].alpha = 255;
             } else {
                 npcs[i].hp = 0;
             }
@@ -1510,6 +1552,17 @@ fn update_worms_ctx(
         if !follower_alive {
             npcs[i].hp = 0;
         }
+    }
+    // W4-f4 — the EoW spawn-fade tail (`NPC.cs:52251-52271`): the fade
+    // block + the 2× type-14 burst (site 52259) run per 13/14/15 link in
+    // slot order. The C# runs the tail inside each NPC's AI_006 (the
+    // head's own tail after its move, the follower's after its snap);
+    // the pass's split is stream-identical — no other UpdateNPCs draw
+    // interleaves between the trail and the tail (the death arms above
+    // draw nothing), and each link's displacement reads its own
+    // pre-move stamp.
+    for i in 0..npcs.len() {
+        eow_fade_tail(npcs, i, dust, dust_ctx, world, rng);
     }
 }
 
@@ -1660,6 +1713,8 @@ fn worm_head_step(
     world: &tr_core::World,
     ctx: &WormHeadCtx,
     rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
 ) -> bool {
     let (w, h) = npc.size();
     // The surface gate (`NPC.cs:51110-51148`): `flag = true` for types
@@ -1756,6 +1811,41 @@ fn worm_head_step(
             flag3 = true; // `flag5` stayed true (`:51611-51614`)
         }
     }
+    // W4-f4 — the Crawltipede head's twin type-6 trail (`NPC.cs:51651-51669`,
+    // sites 51656/51662): EVERY tick, ahead of the tunables/steer. The
+    // netOffset round trip (`:51653`/`:51668`) is zero single-player —
+    // dropped. `vector3` = centre + (rotation − π/2).ToRotationVector2()*8,
+    // `vector4` = rotation.ToRotationVector2()*16; each dust spawns at
+    // vector3 ± vector4 over a 0×0 box, type 6, the head's velocity,
+    // alpha 100, Color.Transparent, scale `1f + NextFloat()*3f` (ONE
+    // explicit NextFloat per dust, evaluated as the argument BEFORE the
+    // pool's internals — type 6 then rolls its own per-type tweak
+    // `Dust.cs:216-221` INSIDE new_dust). Posts: noGravity + noLight,
+    // position -= (4,4), fadeIn 1, velocity zeroed. The rotation is the
+    // PREVIOUS tick's (`:52201` writes it at the tail — the C# order).
+    if npc.kind == NpcKind::SolarCrawltipedeHead {
+        let cx = npc.x + w * 0.5;
+        let cy = npc.y + h * 0.5;
+        let (r3x, r3y) = worm_rot_vec(npc.rotation - std::f32::consts::FRAC_PI_2);
+        let (v3x, v3y) = (cx + r3x * 8.0, cy + r3y * 8.0);
+        let (v4x, v4y) = worm_rot_vec(npc.rotation);
+        let (v4x, v4y) = (v4x * 16.0, v4y * 16.0);
+        for sign in [1.0f32, -1.0] {
+            let pos = Vec2::new(v3x + sign * v4x, v3y + sign * v4y);
+            let scale = 1.0 + rng.next_float() * 3.0;
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, 0, 0, 6,
+                npc.vx, npc.vy, 100,
+                tr_core::particles::Color::TRANSPARENT, scale,
+            );
+            let dd = dust.slot_mut(idx);
+            dd.no_gravity = true;
+            dd.no_light = true;
+            dd.position -= Vec2::new(4.0, 4.0);
+            dd.fade_in = 1.0;
+            dd.velocity = Vec2::ZERO;
+        }
+    }
     let (num45, num46) = npc.kind.worm_tunables();
     let mut despawn_chain = false;
     if !flag3 {
@@ -1846,6 +1936,12 @@ fn worm_head_step(
     // constants distinct.
     npc.rotation = npc.vy.atan2(npc.vx) + std::f32::consts::FRAC_PI_2;
     // `noTileCollide` — the direct integration (`NPC.cs:90495-90498`).
+    // W4-f4: the `:90496` oldPosition stamp rides HERE (the pre-move box)
+    // — the EoW fade tail's displacement gate (`:52264`) reads it, and
+    // the worm pass never runs update_preamble (the per-NPC step skips
+    // the worm kinds).
+    npc.old_x = npc.x;
+    npc.old_y = npc.y;
     npc.x += npc.vx;
     npc.y += npc.vy;
     // The off-world guard (the framework shape).
@@ -1853,6 +1949,102 @@ fn worm_head_step(
         npc.hp = 0;
     }
     despawn_chain
+}
+
+/// `Utils.ToRotationVector2` (`Utils.cs:1665-1668`): `((float)Math.Cos(f),
+/// (float)Math.Sin(f))` — the f64 trig over the f32 angle (the style74/75
+/// precedent, one home per module).
+fn worm_rot_vec(f: f32) -> (f32, f32) {
+    ((f as f64).cos() as f32, (f as f64).sin() as f32)
+}
+
+/// W4-f4 — the EoW family's spawn-fade tail (`NPC.cs:52251-52271`, the
+/// AI_006 method tail AFTER the head/follower branches — every 13/14/15
+/// link runs it, heads included). The `:52251-52253` guard returns unless
+/// the type is 13..15 AND (the head, OR the leader `ai[1]`'s alpha < 85).
+/// The fade block (`:52255-52263`): while `alpha > 0 && life > 0`, 2×
+/// dust 14 over the FULL pre-move box, velocity 0/0, alpha 100,
+/// default(Color), scale 2f, noGravity + noLight posts (site 52259 — ZERO
+/// explicit rand draws, type 14 hits no per-type tweak). The fade
+/// (`:52264-52270`): when the tick's displacement > 2 px, `alpha -= 42`
+/// floored at 0.
+///
+/// The displacement reads `(position − oldPosition).Length()`. C#
+/// timing: `oldPosition` is stamped by `UpdateNPC`'s integration tail
+/// (`:90496`) AFTER the AI, so at `:52264` it holds the PREVIOUS tick's
+/// pre-move position; the head branch never moves position inside
+/// AI_006 (only velocity), so the head's gate reads LAST tick's move,
+/// while a follower's gate reads THIS tick's trail snap (`:51909-51910`
+/// precedes the tail; its zeroed velocity makes `:90498` a no-op).
+/// DEVIATION (the worm pass's integrated-head shape, audit T1b's wave):
+/// the port's head integrates INSIDE `worm_head_step`, so its stamp
+/// holds this tick's pre-move box and the head's gate reads THIS tick's
+/// move — a one-tick phase shift of the head's fade only (the burst
+/// itself, site 52259, is gated on `alpha > 0 && life > 0` alone and is
+/// exact). The follower stamp is the pre-snap box — exact. The
+/// leader-alpha read resolves the chain's `seg_index − 1` link (the
+/// port's `ai[1]` stand-in); an absent leader reads alpha 255 (the C#'s
+/// inactive-slot stock — the orphan arms above already killed the link).
+fn eow_fade_tail(
+    npcs: &mut [Npc],
+    i: usize,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+    world: &tr_core::World,
+    rng: &mut UnifiedRandom,
+) {
+    let kind = npcs[i].kind;
+    if !matches!(
+        kind,
+        NpcKind::EaterOfWorldsHead | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail
+    ) || npcs[i].hp <= 0
+    {
+        return;
+    }
+    // `:52251` — `type != 13 && Main.npc[(int)ai[1]].alpha >= 85` returns:
+    // the head always fades; a link fades only behind a half-visible
+    // leader (alpha < 85).
+    if kind != NpcKind::EaterOfWorldsHead {
+        let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
+        let leader_alpha = npcs
+            .iter()
+            .find(|n| n.worm_id == wid && n.seg_index == seg.saturating_sub(1) && n.hp > 0)
+            .map_or(255, |n| n.alpha as i32);
+        if leader_alpha >= 85 {
+            return;
+        }
+    }
+    // `:52255-52263` — the fade burst (site 52259). The box: the C# head
+    // has NOT moved inside AI_006 (integration is `:90498`, after the
+    // tail), so its burst reads the tick-start position — the port's
+    // pre-move stamp (`old_x/old_y`) holds exactly that. The follower's
+    // burst reads the POST-snap position (`:51909-51910` precedes the
+    // tail) — the current box.
+    if npcs[i].alpha > 0 && npcs[i].hp > 0 {
+        let (fw, fh) = npcs[i].size();
+        let (bx, by) = if kind == NpcKind::EaterOfWorldsHead {
+            (npcs[i].old_x, npcs[i].old_y)
+        } else {
+            (npcs[i].x, npcs[i].y)
+        };
+        for _ in 0..2 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world,
+                Vec2::new(bx, by),
+                fw as i32, fh as i32, 14, 0.0, 0.0, 100,
+                tr_core::particles::Color::default(), 2.0,
+            );
+            let dd = dust.slot_mut(idx);
+            dd.no_gravity = true;
+            dd.no_light = true;
+        }
+    }
+    // `:52264-52270` — the displacement-gated fade.
+    let dx = npcs[i].x - npcs[i].old_x;
+    let dy = npcs[i].y - npcs[i].old_y;
+    if (dx * dx + dy * dy).sqrt() > 2.0 {
+        npcs[i].alpha = npcs[i].alpha.saturating_sub(42);
+    }
 }
 
 /// S1-D-3-wire-destroyer: the Destroyer family's sim pass — `AI_037`
@@ -13960,8 +14152,31 @@ mod worm_tests {
             }
             let mut next_id = 1u32;
             // No player: the head machine is skipped, only the chain
-            // init draws — the budget ledger is isolated.
+            // init draws — the budget ledger is isolated. W4-f4: the EoW
+            // head's spawn fade (`:52255-52263`, alpha 255 ctor row) still
+            // runs its 2× type-14 burst — 12 pool-internal draws (6 per
+            // NewDust on the empty scratch pool: the position pair, the
+            // velocity pair, the frame row, the scale jitter; type 14
+            // hits no per-type tweak). The links behind the opaque head
+            // (alpha 255 >= 85) spawn nothing; the stationary head's
+            // displacement is 0, so the alpha holds 255.
             update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
+            if kind == NpcKind::EaterOfWorldsHead {
+                for _ in 0..2 {
+                    let _ = oracle.next_max(34); // width 38 - 4
+                    let _ = oracle.next_max(34); // height 38 - 4
+                    let _ = oracle.next_range(-20, 21);
+                    let _ = oracle.next_range(-20, 21);
+                    let _ = oracle.next_max(3);
+                    let _ = oracle.next_range(-20, 21);
+                }
+                assert_eq!(npcs[0].alpha, 255, "the stationary head keeps its alpha");
+                assert_eq!(npcs.len(), 67, "head + 65 bodies + tail");
+                assert!(
+                    npcs.iter().skip(1).all(|n| n.alpha == 255),
+                    "the links behind the opaque head spawn nothing, alpha untouched"
+                );
+            }
             assert_eq!(npcs[0].worm_left, expected, "{kind:?} budget value");
             assert!(
                 npcs[0].worm_left >= lo && npcs[0].worm_left <= hi,
@@ -14535,6 +14750,221 @@ mod worm_tests {
             .count();
         assert_eq!(heads_after, heads_before, "AnyNPCs(13) blocks the second summon");
         assert_eq!(app.world.shadow_orb_count, 3, "the blocked gate leaves the count");
+    }
+
+    // ---- W4-f4 witnesses: the worm-pass dust seam ----
+    // WRITTEN NOT RUN (code-only). Each mirror replays the exact C# draw
+    // ledger: the explicit argument draws first, then the pool internals
+    // (the verbatim `new_dust`), then the per-type tweak.
+
+    /// W4-f4 — sites 51656/51662 (`NPC.cs:51651-51669`): the Crawltipede
+    /// head's twin type-6 trail rolls ONE NextFloat per dust (the scale
+    /// argument) + the pool's 6 internals + the type-6 tweak's
+    /// Next(-10,6) — 8 draws per dust, 16 per tick, draw-for-draw.
+    #[test]
+    fn w4_f4_the_crawltipede_trail_mirrors_sites_51656_51662() {
+        let w = World::new("t".into(), 300, 200); // air: the scan draws nothing
+        let mut head = Npc::new(NpcKind::SolarCrawltipedeHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 9;
+        head.rotation = 0.7; // a non-trivial angle — the trig rides f64
+        head.vx = 3.0;
+        head.vy = -2.0;
+        let mut npcs = vec![head];
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(31);
+        let mut witness = rng.clone();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::particles::DustPool::new();
+        // The mirror: the C# argument order — the scale NextFloat BEFORE
+        // new_dust, the box centre + the two rotation vectors.
+        let rot_vec = |f: f32| ((f as f64).cos() as f32, (f as f64).sin() as f32);
+        let (r3x, r3y) = rot_vec(0.7 - std::f32::consts::FRAC_PI_2);
+        let (v3x, v3y) = (160.0 + 10.0 + r3x * 8.0, 160.0 + 10.0 + r3y * 8.0);
+        let (r4x, r4y) = rot_vec(0.7);
+        for sign in [1.0f32, -1.0] {
+            let pos = Vec2::new(v3x + sign * r4x * 16.0, v3y + sign * r4y * 16.0);
+            let scale = 1.0 + witness.next_float() * 3.0;
+            let idx = mirror.new_dust(
+                &mut witness, &dctx, &w, pos, 0, 0, 6, 3.0, -2.0, 100,
+                tr_core::particles::Color::TRANSPARENT, scale,
+            );
+            let dd = mirror.slot_mut(idx);
+            dd.no_gravity = true;
+            dd.no_light = true;
+            dd.position -= Vec2::new(4.0, 4.0);
+            dd.fade_in = 1.0;
+            dd.velocity = Vec2::ZERO;
+        }
+        update_worms_in_dust(
+            &w, Some((2000.0, 160.0)), &mut npcs, &mut rng, &mut 1u32,
+            &mut dust, &dctx,
+        );
+        assert_eq!(rng, witness, "2 NextFloat + 2x(6 internals + 1 tweak), in order");
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(act.len(), 2, "the twin trail");
+        for (j, &i) in act.iter().enumerate() {
+            let d = dust.slot(i);
+            let m = mirror.slot(j);
+            assert_eq!(d.dust_type, 6);
+            assert_eq!(d.position, m.position, "the ±vector4 anchors, −(4,4) post");
+            assert_eq!(d.velocity, Vec2::ZERO, "the velocity post zeroes");
+            assert_eq!(d.scale, m.scale, "the 1+NextFloat*3 scale, ×0.7 tweak");
+            assert_eq!(d.fade_in, 1.0);
+            assert!(d.no_gravity && d.no_light);
+            assert_eq!(d.color, tr_core::particles::Color::TRANSPARENT);
+            assert_eq!(d.alpha, 100);
+        }
+        // The rotation the trail read is the PREVIOUS tick's — the tail
+        // (`:52201`) rewrote it after the burst.
+        assert_ne!(npcs[0].rotation, 0.7, "the tail rotation lands after the dust");
+    }
+
+    /// W4-f4 — site 52259 (`NPC.cs:52251-52271`): the EoW fade block
+    /// verbatim. The 255-alpha ctor row fades 42/tick while the head
+    /// moves >2 px; each fading tick spawns 2× type-14 (12 pool draws,
+    /// ZERO explicit); the links behind the opaque head (alpha >= 85)
+    /// spawn nothing until the head crosses 85, then ride the same fade.
+    #[test]
+    fn w4_f4_the_eow_fade_mirrors_site_52259() {
+        let w = World::new("t".into(), 300, 200); // air: no scan draws
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        assert_eq!(head.alpha, 255, "the SetDefaults 255 row (:8921)");
+        head.worm_inited = true;
+        head.worm_id = 4;
+        // The follower keeps the head alive (`:51502-51509` kills a
+        // followerless EoW head). Its alpha is 0 — already faded — so its
+        // own tail spawns nothing and the ledger isolates the head's.
+        let mut body = Npc::new(NpcKind::EaterOfWorldsBody, 160.0, 198.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.alpha = 0;
+        body.worm_inited = true;
+        body.worm_id = 4;
+        body.seg_index = 1;
+        let mut npcs = vec![head, body];
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(17);
+        let mut witness = rng.clone();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::particles::DustPool::new();
+        // Tick 1: the player far right in OPEN AIR — the 1000-px dig
+        // override fires (`:51598-51615`, type 13 is listed), the head
+        // digs at num45 = 10 (>2 px): the burst fires AND the alpha
+        // steps. The burst box is the pre-move stamp (160,160).
+        for _ in 0..2 {
+            let idx = mirror.new_dust(
+                &mut witness, &dctx, &w, Vec2::new(160.0, 160.0),
+                38, 38, 14, 0.0, 0.0, 100,
+                tr_core::particles::Color::default(), 2.0,
+            );
+            let dd = mirror.slot_mut(idx);
+            dd.no_gravity = true;
+            dd.no_light = true;
+        }
+        update_worms_in_dust(
+            &w, Some((20000.0, 160.0)), &mut npcs, &mut rng, &mut 1u32,
+            &mut dust, &dctx,
+        );
+        assert_eq!(rng, witness, "tick 1: the burst's 12 internals, no explicit draw");
+        assert_eq!(npcs[0].alpha, 213, "the >2px dig steps 42");
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(act.len(), 2);
+        for (j, &i) in act.iter().enumerate() {
+            let d = dust.slot(i);
+            let m = mirror.slot(j);
+            assert_eq!(d.dust_type, 14);
+            assert_eq!(d.position, m.position);
+            assert_eq!(d.velocity, m.velocity);
+            assert_eq!(d.scale, m.scale, "the 2f scale");
+            assert!(d.no_gravity && d.no_light);
+            assert_eq!(d.alpha, 100);
+            assert_eq!(d.color, tr_core::particles::Color::default());
+        }
+        // The dig keeps moving 10 px/tick — the fade steps 42 per tick.
+        // 213 → 171 → 129 → 87 → 45 → 3 → 0 (6 more moving ticks).
+        let mut alphas = vec![];
+        for _ in 0..6 {
+            // The head's burst box is its pre-move stamp = the CURRENT
+            // position at call time (worm_head_step stamps it inside).
+            let bx = npcs[0].x;
+            let by = npcs[0].y;
+            for _ in 0..2 {
+                let idx = mirror.new_dust(
+                    &mut witness, &dctx, &w, Vec2::new(bx, by),
+                    38, 38, 14, 0.0, 0.0, 100,
+                    tr_core::particles::Color::default(), 2.0,
+                );
+                let dd = mirror.slot_mut(idx);
+                dd.no_gravity = true;
+                dd.no_light = true;
+            }
+            update_worms_in_dust(
+                &w, Some((20000.0, 160.0)), &mut npcs, &mut rng, &mut 1u32,
+                &mut dust, &dctx,
+            );
+            alphas.push(npcs[0].alpha);
+        }
+        assert_eq!(alphas, vec![171, 129, 87, 45, 3, 0], "the 42 ladder");
+        assert_eq!(rng, witness, "the whole fade's draw ledger");
+        // The opaque head: alpha 0 now — no burst, no draws.
+        let before = rng.peek();
+        update_worms_in_dust(
+            &w, Some((20000.0, 160.0)), &mut npcs, &mut rng, &mut 1u32,
+            &mut dust, &dctx,
+        );
+        assert_eq!(rng.peek(), before, "alpha 0: the fade block is silent");
+    }
+
+    /// W4-f4 — the `:52251` leader gate: a body behind an opaque head
+    /// (alpha >= 85) neither bursts nor fades; once the head drops below
+    /// 85 the body rides its own fade (the C#'s `ai[1]` parent read).
+    #[test]
+    fn w4_f4_the_eow_link_fade_gates_on_the_leader_alpha() {
+        let w = World::new("t".into(), 300, 200);
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.alpha = 100; // still >= 85: the link stays parked
+        head.worm_inited = true;
+        head.worm_id = 4;
+        let mut body = Npc::new(NpcKind::EaterOfWorldsBody, 160.0, 198.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.worm_inited = true;
+        body.worm_id = 4;
+        body.seg_index = 1;
+        let mut npcs = vec![head, body];
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(5);
+        let mut dust = tr_core::particles::DustPool::new();
+        // The head's own burst fires (alpha 100 > 0); the body's gate
+        // reads 100 >= 85 — nothing. The trail snap moves the body
+        // (spacing 38), but the gated tail never runs.
+        let head_bursts_before = (0..6000).filter(|&i| dust.slot(i).active).count();
+        update_worms_in_dust(
+            &w, None, &mut npcs, &mut rng, &mut 1u32, &mut dust, &dctx,
+        );
+        let act = (0..6000).filter(|&i| dust.slot(i).active).count();
+        assert_eq!(act - head_bursts_before, 2, "only the head's pair");
+        assert_eq!(npcs[1].alpha, 255, "the gated link keeps its alpha");
+        // A settling tick: the body spawns at exactly the 38-px spacing,
+        // so the trail's (len−lw)/len snap is a zero delta — no fade even
+        // ungated. The head's alpha 100 still gates the tail regardless.
+        update_worms_in_dust(
+            &w, None, &mut npcs, &mut rng, &mut 1u32, &mut dust, &dctx,
+        );
+        assert_eq!(npcs[1].alpha, 255, "still gated at 100");
+        // Park the body off-spacing so the NEXT snap moves it >2 px,
+        // then drop the head below 85: the link's tail opens.
+        npcs[1].y += 30.0;
+        npcs[0].alpha = 84;
+        let before = (0..6000).filter(|&i| dust.slot(i).active).count();
+        update_worms_in_dust(
+            &w, None, &mut npcs, &mut rng, &mut 1u32, &mut dust, &dctx,
+        );
+        let after = (0..6000).filter(|&i| dust.slot(i).active).count();
+        assert_eq!(after - before, 4, "the head pair + the link pair");
+        assert_eq!(npcs[1].alpha, 213, "the link fades 42 behind the visible head");
     }
 }
 
