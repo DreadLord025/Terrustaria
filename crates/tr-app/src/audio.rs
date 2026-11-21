@@ -341,12 +341,19 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_117", 2),
     ("Item_128", 2),
     ("Item_130", 2),
+    // W4-e10 — the buff-station family's cues (`Player.cs:32616`/:32634):
+    // the Dead Cells Potion Station 699 plays `SoundID.Item179`, the Ammo
+    // Box 287 plays `SoundID.Item149` (`Sounds/Item_179.xnb`/:`Item_149.xnb`).
+    ("Item_149", 2),
     ("Item_151", 2),
     ("Item_152", 2),
     ("Item_156", 2),
     ("Item_157", 2),
     ("Item_158", 2),
     ("Item_174", 2),
+    // W4-e10 — the Dead Cells Potion Station 699's cue (`Player.cs:32616`,
+    // `SoundID.Item179`; `Sounds/Item_179.xnb`, volume 0.6).
+    ("Item_179", 2),
     ("Item_181", 2),
     ("Item_183", 2),
     ("Item_184", 2),
