@@ -101,3 +101,13 @@ flag is set; the MP relay is the net task's), the beach-ball chat's
 `SetDummyItemTime(5)` rides the pool's player-write intent (the App-level item
 timers are not reachable from the slot loop — the golf `PlayerWrites`
 precedent).
+
+## DOC-SWEEP follow-ups (2026-11-21, same branch)
+
+- **Rope-coil duplicate vs W4-g82 (`de797f45`)**: the arm-by-arm keep-one
+  comparison + the union recommendation (keep d4's machine; keep g82's
+  chain preview / Kill-refund ladder / usability walk / framing arm; drop
+  g82's duplicate `coil_step` half) lives in
+  `26e-rope-coil-keep-one.md`. The one behavioural gap found: the coil's
+  `Kill()` refund (`Projectile.cs:77572-77615`) is unported on this branch
+  — g82's `coil_death_drop` is the ladder to wire at the death drain.
