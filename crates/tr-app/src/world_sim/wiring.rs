@@ -1823,6 +1823,44 @@ mod tests {
         assert_eq!(dirt, 12, "both drops landed");
     }
 
+    /// W4-e20 research-71 §6 census — the hopper INPUT side is COMPLETE as
+    /// the ground-item scan: C# `Wiring.Hopper` (`Wiring.cs:2638-2678`) has
+    /// NO chest-above / container-input arm — its only input is the
+    /// `Main.item[400]` walk inside the 192×192 grab box (`:2663-2673`),
+    /// which `hopper_pull` ports verbatim. A drop resting ABOVE the chest
+    /// (outside the tile, inside the box) is pulled exactly like one at the
+    /// centre — the input is the box, not chest adjacency. The
+    /// `IsHopperInRangeOf` helper (`:2610-2636`, the `WireState::any`
+    /// consumer) is the MP-only reservation gate (`WorldItem.cs:237-247`:
+    /// `Main.netMode != 0` guards the whole arm) — SP-discarded, recorded.
+    #[test]
+    fn dw_e20_the_hopper_input_is_the_grab_box_not_chest_adjacency() {
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        // A drop one tile ABOVE the chest's top edge — y = 20*16 − 14 = 306,
+        // box rows [240, 432): well inside, no chest contact.
+        app.items.push(crate::item::ItemDrop::new(
+            2, 4, 0, 10.0 * 16.0 + 8.0, 20.0 * 16.0 - 14.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 0, "the above-chest drop was grabbed");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 4));
+        // A second chest stacked directly ABOVE the hopper chest contributes
+        // NOTHING — there is no container-input arm in the C# (the scan reads
+        // only `Main.item`, never another chest's slots).
+        let above = chest_at(&mut app, 10, 18, vec![slot(3, 50)]);
+        for _ in 0..60 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, above).unwrap();
+        assert_eq!(slots[0].count, 50, "the chest above is untouched — no input arm");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        let stone: u32 = slots.iter().filter(|s| s.kind == 3).map(|s| s.count).sum();
+        assert_eq!(stone, 0, "nothing transferred chest-to-chest");
+    }
+
     /// W4-f11 port (research-71 §3b.3), re-pointed at `extractinator_roll`'s
     /// drain gate: `CheckMech(60)` (`Wiring.cs:2561`) refuses an immediate
     /// re-hit; after 60 ticks the roll runs again. Poop Block (mode 4) always
