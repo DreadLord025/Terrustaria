@@ -89,6 +89,8 @@
 //! | 375-378 | `:83969-83972` | the 478 Mothron Egg death (4 gores, Next(2) dust + Next(3) type draws) |
 //! | 379-383 | `:83990-83994` | the 466 Psycho death (5 gores 656/657/659/658/658) |
 //! | 384-388 | `:84012-84016` | the 468 DrManFly death (5 gores 662/663/663/664/664) |
+//! | 389-393 | `:84034-84038` | the 469 ThePossessed death (5 gores 665/666/666/667/667) |
+//! | 394-398 | `:84056-84060` | the 463 Nailhead death (5 gores 653/654/654/655/655) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2212,6 +2214,34 @@ fn dr_man_fly_death(
     five_gore_type5_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, 662, 663, 664);
 }
 
+/// The 469 ThePossessed death (`NPC.cs:84030-84038`, sites 389-393): the
+/// shared 5-gore shape with types 665/666/667.
+fn the_possessed_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    five_gore_type5_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, 665, 666, 667);
+}
+
+/// The 463 Nailhead death (`NPC.cs:84052-84060`, sites 394-398): the shared
+/// 5-gore shape with types 653/654/655.
+fn nailhead_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    five_gore_type5_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, 653, 654, 655);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2452,6 +2482,14 @@ pub fn hit_effect_c(
     // `:83997-84018` — the 468 DrManFly arm (sites 384-388).
     if npc_type == 468 && npc.hp <= 0 {
         dr_man_fly_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84019-84040` — the 469 ThePossessed arm (sites 389-393).
+    if npc_type == 469 && npc.hp <= 0 {
+        the_possessed_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84041-84062` — the 463 Nailhead arm (sites 394-398).
+    if npc_type == 463 && npc.hp <= 0 {
+        nailhead_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3954,6 +3992,29 @@ mod tests {
         dr_man_fly_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![662, 663, 663, 664, 664]);
+    }
+
+    /// `NPC.cs:84034-84038` / `:84056-84060` — the ThePossessed / Nailhead
+    /// deaths: the shared 5-gore shape with types 665/666/667 and
+    /// 653/654/655 respectively.
+    #[test]
+    fn w4_f10_the_possessed_and_nailhead_deaths_use_the_shared_shape() {
+        let w = air();
+        for (f, gores) in [
+            (the_possessed_death as fn(&Npc, &mut DustPool, &SpawnCtx, &mut GorePool, &mut UnifiedRandom, &World, f32), [665, 666, 666, 667, 667]),
+            (nailhead_death, [653, 654, 654, 655, 655]),
+        ] {
+            let n = boss(100.0, 100.0, 44.0, 56.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(281);
+            f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores);
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
