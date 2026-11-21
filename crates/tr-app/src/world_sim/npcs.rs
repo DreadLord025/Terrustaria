@@ -4887,6 +4887,56 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // called `:65153`).
         let party_roll = app.town_arrival.check_for_spawns + 1 >= 7200
             && app.rngs.stream(RngKey::UpdateTime).next_max(40) == 0;
+        // W4-d119 — the home-LOSS half of mid-game relocation: on the same
+        // 7200-tick check boundary, `Main.UpdateTime_SpawnTownNPCs` runs
+        // `WorldGen.QuickFindHome(k)` on every housed resident that is not the
+        // Travelling Merchant (368) / Old Man (37) / Skeleton Merchant (453)
+        // and not already homeless (`Main.cs:65607-65614`). A destroyed room
+        // re-scans: QuickFindHome either re-homes the NPC at a new scored spot
+        // or sets `homeless = true` (`WorldGen.cs:5785`/`:5790`). The port's
+        // `home` Option models homeless as `None`, so a failed scan clears it.
+        let mut rehomed = 0;
+        if app.town_arrival.check_for_spawns + 1 >= 7200 {
+            let world = &app.world;
+            let npcs = &mut app.npcs;
+            // Snapshot the asking set first: the room scan reads the whole NPC
+            // list (occupancy), so the mutable writes run after the reads.
+            let mut asking: Vec<(usize, i32, i32, i32)> = Vec::new();
+            for (i, n) in npcs.iter().enumerate() {
+                let id = n.kind.net_id();
+                if !n.kind.is_town_npc() || n.home.is_none() || matches!(id, 368 | 37 | 453) {
+                    continue;
+                }
+                let (hx, hy) = n.home.unwrap();
+                // `QuickFindHome`'s outer guard (`WorldGen.cs:5736`): an
+                // out-of-range home tile makes the whole call a NO-OP — the
+                // NPC keeps its home, it does NOT go homeless. Only an
+                // in-range home whose scan fails unhouses (`:5785`/`:5790`).
+                if hx <= 10 || hy <= 10 || hx >= world.width - 10 || hy >= world.height {
+                    continue;
+                }
+                asking.push((i, hx, hy, id));
+            }
+            for (i, hx, hy, id) in asking {
+                // `QuickFindHome(k)` scans around the NPC's own home tile.
+                match crate::town::quick_find_home(world, npcs, hx, hy, Some(i), id, false) {
+                    Some((nx, ny)) => {
+                        npcs[i].home = Some((nx, ny));
+                        npcs[i].homeless_despawn = false;
+                        rehomed += 1;
+                    }
+                    None => {
+                        // `:5785`/`:5790`: the room is gone — homeless.
+                        npcs[i].home = None;
+                    }
+                }
+            }
+        }
+        // NO_HOBO per re-home (`WorldGen.cs:5780`), after the mutable pass
+        // releases the `npcs` borrow (`notify_progression_net` needs `&mut App`).
+        for _ in 0..rehomed {
+            let _ = app.notify_progression_net(8);
+        }
         let max_hp = app.player.as_ref().map_or(0, |p| p.max_hp);
         let residents = app
             .npcs

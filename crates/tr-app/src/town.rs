@@ -155,7 +155,7 @@ fn scan_spot(
 /// `WorldGen.ScoreRoom_IsThisRoomOccupiedBySomeone` (`WorldGen.cs:5814-5829`):
 /// the room's occupancy and the C#'s `WorldGen.sharedRoomX` (the home of a
 /// NPC the room may be shared with).
-fn room_occupancy(
+pub(crate) fn room_occupancy(
     scan: &tr_core::housing::RoomScan,
     npcs: &[Npc],
     ignore: Option<usize>,
@@ -1495,5 +1495,65 @@ mod tests {
             assert!(!out.ok);
             assert_eq!(chat.messages[0].text, "This housing is already occupied.");
         });
+    }
+
+    /// W4-d119 — the home-LOSS half of mid-game relocation, driven through the
+    /// real sim: `Main.UpdateTime_SpawnTownNPCs` runs `QuickFindHome(k)` on
+    /// every housed resident at the 7200-tick check (`Main.cs:65607-65614`).
+    /// A destroyed room unhouses the NPC (`WorldGen.cs:5785`/`:5790`); an
+    /// intact room keeps it housed.
+    #[test]
+    fn a_destroyed_house_unhouses_the_resident_at_the_check() {
+        let mut world = ground();
+        build_furnished_room(&mut world, 60, 100, 12, 9);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = world;
+        // The Guide lives in the room; the player is far away so the arrival
+        // ladder finds no room and cannot re-home him the same tick.
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 180.0 * 16.0;
+        player.y = 108.0 * 16.0;
+        app.player = Some(player);
+        let mut guide = town_npc(crate::npc::NpcKind::Guide, 65.0 * 16.0, 106.0 * 16.0, Some((65, 106)));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // Arm the 7200-tick check boundary.
+        app.town_arrival.check_for_spawns = 7199;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].home.is_some(), "the intact room keeps the Guide housed");
+        // Destroy the room: strip the walls and the furniture so no scan in
+        // the ±10 passes furnishes.
+        for x in 55..80 {
+            for y in 95..115 {
+                let i = app.world.index(x, y);
+                app.world.tiles[i].wall = 0;
+                if app.world.tiles[i].kind != 1 && app.world.tiles[i].kind != 9 {
+                    app.world.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
+                }
+            }
+        }
+        app.town_arrival.check_for_spawns = 7199;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].home.is_none(), "the destroyed room unhouses the Guide");
+    }
+
+    /// An out-of-range home tile makes `QuickFindHome` a NO-OP
+    /// (`WorldGen.cs:5736`): the resident keeps its home, it does NOT go
+    /// homeless — only an in-range home whose scan fails unhouses.
+    #[test]
+    fn an_out_of_range_home_is_left_alone_by_the_check() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = ground();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 180.0 * 16.0;
+        player.y = 108.0 * 16.0;
+        app.player = Some(player);
+        // Home at x = 5 (<= 10): the outer guard skips the whole scan.
+        let mut guide = town_npc(crate::npc::NpcKind::Guide, 65.0 * 16.0, 106.0 * 16.0, Some((5, 106)));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        app.town_arrival.check_for_spawns = 7199;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].home, Some((5, 106)), "the out-of-range home survives");
     }
 }

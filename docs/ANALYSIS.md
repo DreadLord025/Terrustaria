@@ -7059,6 +7059,104 @@ Deviations:
   runs the chain twice on identical inputs (identical state) and proves a
   seeded stream is untouched.
 
+## Mid-game housing relocation (W4-d119, 2026-11-21, code-only — tests written NOT run)
+
+The mid-game relocation driver — a town NPC re-homes when its house is lost,
+is evicted, or a free room appears near the player. Stacked on W4-d118's
+`QuickFindHome`/occupancy seams (`task/W4-d118-housing-scoreroom`); relocation
+only — the NEW-NPC homeless arrival/departure pair is out of scope.
+
+- **Home loss** (`Main.UpdateTime_SpawnTownNPCs`, `Main.cs:65607-65614`): at the
+  7200-tick check, every housed resident that is not the Travelling Merchant
+  (368) / Old Man (37) / Skeleton Merchant (453) and not already homeless runs
+  `WorldGen.QuickFindHome(k)` around its own home tile. A destroyed room
+  re-scans: `QuickFindHome` either re-homes at a new scored spot or sets
+  `homeless = true` (`WorldGen.cs:5785`/`:5790`). Wired in
+  `world_sim/npcs.rs`'s arrival block on the same `check_for_spawns + 1 >= 7200`
+  boundary the party roll predicts. The port's `home: Option` models homeless
+  as `None`, so a failed scan clears it. **The outer-guard quirk is kept**:
+  `QuickFindHome`'s `homeTileX > 10 && … && homeTileY < maxTilesY` guard
+  (`:5736`) makes an out-of-range home a NO-OP — the NPC keeps its home, it does
+  NOT go homeless; only an in-range home whose scan fails unhouses. Each
+  re-home fires NO_HOBO (8, `:5780`).
+- **The prioritized type** (`WorldGen.UpdatePrioritizedTownNPC`,
+  `WorldGen.cs:71627-71641` → `town_rehome::update_prioritized_town_npc`): the
+  first live homeless town NPC with `lookForHomeTimeout == 0` and a type other
+  than 368/160 becomes `WorldGen.prioritizedTownNPCType` (the port parks the
+  kind on `ArrivalState::prioritized`). The Old-Man (37) early return is
+  vacuous — no ported kind. RNG-free.
+- **The house probe** (`WorldGen.CheckForHousesNearAPlayer`,
+  `WorldGen.cs:71643-71674` → `town_rehome::check_for_houses_near_a_player`):
+  the view rectangle around the player's centre tile (`ToTileCoordinates` is
+  `(int)x >> 4`, an arithmetic shift — `Utils.cs:1809`), inflated by
+  `MaxWorldViewSize / 32` = (60, 37) (`Main.cs:66714`), clamped to
+  `[10, max − 10]` (`WorldUtils.ClampToWorld`, `WorldBuilding/WorldUtils.cs:9-14`),
+  then 300 random picks. The first house-wall pick runs the relocation-only
+  `SpawnTownNPC(x, y, canSpawnNewTownNPC: false)` (`:5409-5463`): the room
+  check + furniture + stinkbug + score gates, then
+  `FindNPCLookingForHomeThatCanMoveIn` moves an existing homeless NPC of the
+  prioritized type into the scored spot (`:5453-5463`), registers the room and
+  zeroes the prioritized slot. With `canSpawnNewTownNPC: false` the new-spawn
+  tail (`:5468-5611`) is unreachable — this arm NEVER spawns a new NPC. Wired
+  in `world_sim/growth.rs`'s `UpdateWorld` head (after the liquid pass, before
+  the growth loops), on the `UpdateWorldGen` stream; each relocation fires
+  NO_HOBO (8) once the borrow releases.
+- **The eviction predicate** (`WorldGen.IsNPCEvictable`,
+  `WorldGen.cs:4857-4867` → `town_rehome::is_npc_evictable`): the local
+  player's hitbox inflated by half the max world view size (±960/±600) must
+  intersect the NPC's 16×16 home tile; a negative index / missing player /
+  missing home is never evictable. RNG-free. **The predicate has NO caller in
+  this decompile** (grep of the whole tree finds only the definition); the
+  real eviction triggers are the house-banner right-click (`Main.cs:40827`),
+  the controller path (`UILinksInitializer.cs:908`) and net message 60
+  (`MessageBuffer.cs:2723`/`:2732`), all of which call the already-ported
+  `town::kick_out` (`WorldGen.cs:4869-4879`: homeless + 3600-tick
+  `lookForHomeTimeout` + `TownManager.KickOut`). The banner-draw surface
+  (`DrawNPCHousesInWorld`, `Main.cs:40711-40832`) is unported, so the predicate
+  lands as the faithful gate for when it arrives; the kick-out primitive and
+  the timeout decay (`NPC.cs:90324-90327`) are already live.
+
+### RNG census (the whole driver)
+
+| Site | Stream | Draws | Cite |
+| --- | --- | --- | --- |
+| `UpdatePrioritizedTownNPC` | — | 0 | `WorldGen.cs:71627-71641` |
+| `CheckForHousesNearAPlayer` picks | `UpdateWorldGen` (`Main.rand` under the swap, `Main.cs:17802`) | 2 per pick (`Next(Left,Right)` + `Next(Top,Bottom)`), ≤ 300 picks | `Utils.NextFromRectangle`, `Utils.cs:1246-1249`; loop `WorldGen.cs:71661-71672` |
+| `SpawnTownNPC` relocation arm | — | 0 (`canSpawnNewTownNPC: false` short-circuits the spawn tail) | `WorldGen.cs:5409-5463` |
+| `QuickFindHome` home-loss re-scan | — | 0 (the housing chain is RNG-free, S1-E-11d) | `WorldGen.cs:5732-5794` |
+| `IsNPCEvictable` / `kickOut` | — | 0 | `WorldGen.cs:4857-4879` |
+
+The house probe draws on the SAME `UpdateWorldGen` stream the growth loops
+read, BEFORE them — exactly the C# `UpdateWorld` order (`:71551` ahead of the
+`:71552+` growth loops). The no-house arm draws exactly 600 (300 × 2); a
+house-wall pick stops the loop early (the C# `break`, `:71670`). The
+`SpawnHomelessNPC`/`UnspawnHomelessNPC` pair (`Main.cs:65043-65062`,
+`WorldGen.cs:5036-5249`) — the NEW-NPC homeless arrival (`Main.rand.Next(27000/
+dayRate)` gate + the random-resident home pick) and the night departure — is
+the arrival lane's, NOT this relocation-only lane.
+
+Deviations:
+- **The single-player fold**: the C# selects one active player per tick via
+  `GameUpdateCount % ActivePlayersCount` (`:71650`); the port has one player,
+  so the probe runs every tick (the modulo is 0). The multi-player rotation
+  lands with the net player roster.
+- **The `is_town_npc` subset**: the prioritized scan and the home-loss re-scan
+  read the port's ten-kind housing set (`NpcKind::is_town_npc`), narrower than
+  the C#'s `townNPC` flag; the excluded sellers (Angler, Wizard, …) are not
+  homeless-relocatable until their own housing arms land, so the narrower set
+  is the reachable one. The 368/37/453/160 exclusions are kept verbatim.
+- **The Truffle unlock** passes `false` (no ported field/kind, the S1-E-11d
+  precedent) — the special-conditions arm is vacuous for the ported roster.
+
+Verification: code-only — every function re-read against the cited C#
+windows; the seam call sites checked against the actual signatures by
+read/grep (`check_room`/`room_needs`/`score_room_report`/`room_occupancy`,
+`find_npc_looking_for_home_that_can_move_in`, `TownRooms::set_room/has_room`,
+`ArrivalState::prioritized`, `NpcKind::net_id`, `Player::center`,
+`tr_core::edit::wall_house`, `UnifiedRandom::next_range`). 8 witness tests
+(`town_rehome.rs` 6 + `town.rs` 2) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
 

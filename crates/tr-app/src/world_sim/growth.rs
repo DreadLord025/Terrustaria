@@ -69,7 +69,32 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
     }
     let raining = app.rain.is_raining();
     let day_time = app.world.day_time;
+    // W4-d119 — the mid-game relocation driver rides `WorldGen.UpdateWorld`'s
+    // head (`WorldGen.cs:71550-71551`), AFTER the liquid pass and BEFORE the
+    // growth loops, on the same `UpdateWorldGen` stream. Each relocated NPC
+    // fires NO_HOBO (8) once the borrow releases (`SpawnTownNPC:5460`).
+    let mut relocated = 0u32;
     app.growth_step.tick(dt.min(0.25), |_| {
+        // `WorldGen.UpdatePrioritizedTownNPC` (`:71627-71641`): the first
+        // homeless town NPC with an expired timer becomes the prioritized type.
+        crate::town_rehome::update_prioritized_town_npc(&app.npcs, &mut app.town_arrival);
+        // `WorldGen.CheckForHousesNearAPlayer` (`:71643-71674`): 300 house-wall
+        // picks around the player; the first runs the relocation-only
+        // `SpawnTownNPC(x, y, canSpawnNewTownNPC: false)`.
+        let player_center = app.player.as_ref().map(|p| p.center());
+        if crate::town_rehome::check_for_houses_near_a_player(
+            &app.world,
+            &mut app.npcs,
+            &mut app.town_rooms,
+            &mut app.town_arrival,
+            player_center,
+            false,
+            rng,
+        )
+        .is_some()
+        {
+            relocated += 1;
+        }
         let world = &mut app.world;
         // The port has no freeze-time power and runs at the day rate 1
         // (`Main.desiredWorldTilesUpdateRate` = `dayRate`).
@@ -112,6 +137,12 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         }
     });
     app.growth_step.cap_backlog();
+    // The relocation NO_HOBO notifications after the mutable pass (the borrow
+    // seam — `notify_progression_net` needs `&mut App`; one per move-in,
+    // `WorldGen.cs:5460`).
+    for _ in 0..relocated {
+        let _ = app.notify_progression_net(8);
+    }
 }
 
 #[cfg(test)]
