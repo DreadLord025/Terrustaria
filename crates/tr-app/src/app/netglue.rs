@@ -1092,13 +1092,17 @@ impl App {
                 self.toggle_gem_lock(server, g.x as i32, g.y as i32, g.on);
             }
             // `case 109` — MassWireOperation (W4-g50,
-            // `MessageBuffer.cs:3774-3788`): the host would run
-            // `Wiring.MassWireOperation` under a temporary ToolMode swap
-            // (`:3783-3786`). The mass operation is unported
-            // (`world_sim/editing/wiring.rs:27-29` — the Multicolor Wrench /
-            // Grand Design multi-tool needs the `WiresUI` tool modes), so
-            // the apply is parked; the codec is byte-verbatim (`net.rs`).
-            C2s::MassWireOperation(_) => {}
+            // `MessageBuffer.cs:3774-3788`): the host runs
+            // `Wiring.MassWireOperation(ps, pe, Main.player[whoAmI])` under a
+            // temporary ToolMode swap (`:3783-3786`). WIRED via the W4-c42
+            // fold-133 core (`tr_core::wiring::mass_wire_operation_inner`,
+            // the constants-copy keep-one): the mode rides the fn parameter
+            // (the port has no `WiresUI.Settings.ToolMode` global on this
+            // base, so the swap/restore pair folds into the argument — no
+            // shared state is touched), the subject is the SENDER.
+            C2s::MassWireOperation(m) => {
+                self.host_mass_wire_operation(server, id, &m);
+            }
             // `case 111` — ToggleParty (W4-g50, `MessageBuffer.cs:3809-3814`
             // → `BirthdayParty.ToggleManualParty`, `BirthdayParty.cs:145-164`):
             // the host flips `ManualParty`, re-pushes the world header on a
@@ -1551,6 +1555,175 @@ impl App {
             x: (i - num3) as i16,
             y: (j - num4) as i16,
         }));
+    }
+
+    /// `case 109`'s host body (`MessageBuffer.cs:3774-3788` →
+    /// `Wiring.MassWireOperation`, `Wiring.cs:419-453`, W4-g50 re-probe):
+    /// the 58-slot stock census runs over the SENDER's inventory copy
+    /// (the `5` messages keep it, `Main.player[whoAmI]`), the W4-c42
+    /// constants-copy core walks the L-rectangle, and the `netMode == 2`
+    /// bill leg sends the two `110`s to the master (`:441-442`,
+    /// `SendData(110, master.whoAmI, -1, null, 530/849, count, whoAmI)` —
+    /// the count is sent even at zero) and RETURNS: no host-side
+    /// `ConsumeItem` loops. The per-edit `SendData(17)` calls inside
+    /// `MassWireOperationStep` (`Wiring.cs:3353` etc.) ride the port's
+    /// `20 SectionRange` convention (one 1×1 per changed cell, the
+    /// `tile_record_at` read-back — the wire bits ride the record).
+    /// The subject's `Center`/`direction` come from the `13` snapshot
+    /// (`PlayerNet`); the cut-cache drops spawn at that centre on the
+    /// `UpdatePlayers` stream (the use-path convention).
+    fn host_mass_wire_operation(
+        &mut self,
+        server: &net::Server,
+        id: u32,
+        m: &net::MassWireOperation,
+    ) {
+        // `Wiring.cs:423-433` — the stock census over the sender's 58 slots.
+        let inv = server.slot_inventory(id);
+        let mut wire_count = 0i32;
+        let mut actuator_count = 0i32;
+        for slot in 0u8..58 {
+            let Some(it) = inv.get(&slot) else { continue };
+            if it.kind == 530 {
+                wire_count += it.stack as i32;
+            }
+            if it.kind == 849 {
+                actuator_count += it.stack as i32;
+            }
+        }
+        let (num, num2) = (wire_count, actuator_count);
+        // `:436` — `master.Center` + `master.direction == 1`.
+        let master = self.remote_players.get(&id);
+        let drop_point = master
+            .map(|p| (p.x + crate::player::WIDTH * 0.5, p.y + crate::player::HEIGHT * 0.5))
+            .unwrap_or((0.0, 0.0));
+        let dir = master.is_some_and(|p| p.facing == 1);
+        let ps = (m.start_x as i32, m.start_y as i32);
+        let pe = (m.end_x as i32, m.end_y as i32);
+        // The changed-cell collector: the C# sends one `17` per successful
+        // Place*/Kill*; the port diffs the L-walk's bounding box (the core
+        // only ever edits cells inside it) and sends one `20` per change.
+        let (lx, hx) = (ps.0.min(pe.0), ps.0.max(pe.0));
+        let (ly, hy) = (ps.1.min(pe.1), ps.1.max(pe.1));
+        let snap: Vec<(u8, bool)> = (ly..=hy)
+            .flat_map(|y| (lx..=hx).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                let t = self.world.tile(x, y);
+                let act = t.is_some_and(|t| t.flags & tr_core::tile::FLAG_ACTUATOR != 0);
+                let mut bits = 0u8;
+                for (i, c) in [
+                    tr_core::wiring::WireColor::Red,
+                    tr_core::wiring::WireColor::Green,
+                    tr_core::wiring::WireColor::Blue,
+                    tr_core::wiring::WireColor::Yellow,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    if self.world.wires.get(x, y, c) {
+                        bits |= 1 << i;
+                    }
+                }
+                (bits, act)
+            })
+            .collect();
+        let mut cut_cache = (0i32, 0i32);
+        tr_core::wiring::mass_wire_operation_inner(
+            &mut self.world,
+            ps,
+            pe,
+            dir,
+            m.tool_mode,
+            &mut wire_count,
+            &mut actuator_count,
+            &Self::mass_wire_can_place,
+            &mut cut_cache,
+        );
+        // The per-edit replication (the `SendData(17)` seams).
+        let mut i = 0usize;
+        for y in ly..=hy {
+            for x in lx..=hx {
+                let t = self.world.tile(x, y);
+                let act = t.is_some_and(|t| t.flags & tr_core::tile::FLAG_ACTUATOR != 0);
+                let mut bits = 0u8;
+                for (j, c) in [
+                    tr_core::wiring::WireColor::Red,
+                    tr_core::wiring::WireColor::Green,
+                    tr_core::wiring::WireColor::Blue,
+                    tr_core::wiring::WireColor::Yellow,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    if self.world.wires.get(x, y, c) {
+                        bits |= 1 << j;
+                    }
+                }
+                if snap[i] != (bits, act) {
+                    let rec = self.tile_record_at(x, y);
+                    server.broadcast(&S2c::SectionRange(Box::new(net::SectionRange {
+                        x: x as i16,
+                        y: y as i16,
+                        w: 1,
+                        h: 1,
+                        change_type: 0,
+                        records: vec![rec],
+                    })));
+                }
+                i += 1;
+            }
+        }
+        self.world_key = None;
+        // The cut half's cached drops (`Item.DropCache`, `:3325-3326`) —
+        // the host is `netMode != 1`, so the kills' items really spawn.
+        for (kind, total) in [(530u16, cut_cache.0), (849u16, cut_cache.1)] {
+            let mut left = total;
+            while left > 0 {
+                let chunk = left.min(crate::registry::max_stack(kind) as i32);
+                left -= chunk;
+                crate::world_sim::items::spawn_item_drop_px(
+                    &mut self.items,
+                    self.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    kind,
+                    chunk as u32,
+                    Vec2::new(drop_point.0, drop_point.1),
+                );
+            }
+        }
+        // `:441-442` — the two bills to the master, then RETURN (the host
+        // never runs the ConsumeItem loops; the client's `110` reader does).
+        server.send(
+            id,
+            &S2c::MassWireOperationPay(net::MassWireOperationPay {
+                item_type: 530,
+                count: (num - wire_count) as i16,
+                player: id as u8,
+            }),
+        );
+        server.send(
+            id,
+            &S2c::MassWireOperationPay(net::MassWireOperationPay {
+                item_type: 849,
+                count: (num2 - actuator_count) as i16,
+                player: id as u8,
+            }),
+        );
+    }
+
+    /// The mass-wire core's `can_place` predicate — the world-resolved
+    /// `Player.CanDoWireStuffHere` (the same gate as the c42 copy's
+    /// `can_do_wire_stuff_here_world`, `Player.cs:46921-46943`).
+    fn mass_wire_can_place(world: &World, x: i32, y: i32) -> bool {
+        let Some(t) = world.tile(x, y) else {
+            return false;
+        };
+        if t.wall == 350 {
+            return false;
+        }
+        if !world.downed_golem && t.wall == 87 {
+            return false;
+        }
+        true
     }
 
     /// `Player.ConsumeItem(type)`'s forward scan (`Player.cs:9269-9308`,
@@ -7829,5 +8002,68 @@ mod message_family_tests {
         }
         pump(&mut host_app, &mut client_app, 10);
         assert_eq!(host_app.emotes.bubbles.len(), before, "the over-range id refused");
+    }
+
+    /// `case 109` (`MessageBuffer.cs:3774-3788`, `Wiring.cs:419-453`): the
+    /// host walks the sender's L-rectangle over the sender's wire stock,
+    /// replicates the changed cells and bills the master with the two 110s;
+    /// the client pays and clears `wireOperationsCooldown`. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g50_the_109_mass_wire_walks_the_senders_stock_and_bills() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id;
+        // The sender stands right-facing next to the drag rectangle.
+        let entry = host_app.remote_players.entry(me).or_default();
+        entry.id = me;
+        entry.x = 8.0 * 16.0;
+        entry.y = 2.0 * 16.0;
+        entry.facing = 1;
+        // 20 wire in the sender's host-side inventory copy (the 5 feed).
+        if let NetRole::Host(server) = &host_app.net {
+            server.set_slot_inventory(
+                me,
+                0,
+                net::NetItem { kind: 530, stack: 20, prefix: 0, favorited: false },
+            );
+        }
+        // The client carries the same stock (the bill consumes from it).
+        client_app.inventory[0] = crate::item::ItemSlot {
+            kind: 530,
+            name: crate::registry::name(530),
+            count: 20,
+            prefix: 0,
+        };
+        client_app.player.as_mut().unwrap().wire_operations_cooldown = 60;
+        // A single-cell Red drag at (10, 2): one wire placed, one billed.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MassWireOperation(net::MassWireOperation {
+                start_x: 10,
+                start_y: 2,
+                end_x: 10,
+                end_y: 2,
+                tool_mode: tr_core::smart_cursor::multi_tool_mode::RED,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(
+            host_app
+                .world
+                .wires
+                .get(10, 2, tr_core::wiring::WireColor::Red),
+            "the host placed the red wire"
+        );
+        assert!(
+            client_app
+                .world
+                .wires
+                .get(10, 2, tr_core::wiring::WireColor::Red),
+            "the 20 replication carried the wire bit to the client"
+        );
+        assert_eq!(client_app.inventory[0].count, 19, "the 110 bill consumed one wire");
+        assert_eq!(
+            client_app.player.as_ref().unwrap().wire_operations_cooldown,
+            0,
+            "the bill cleared the cooldown"
+        );
     }
 }
