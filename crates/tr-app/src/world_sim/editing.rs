@@ -2768,7 +2768,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // W4-d13 — the SAME `ItemCheck_ApplyPetBuffs` grant for the
                 // PET items (`Player.cs:53117-53120`'s 3577 arm + the
                 // `:53286-53341` 54-case vanity-pet switch + the classic
-                // single-item arms, the retire census research/304 §3):
+                // single-item arms, the retire census research/336 §3):
                 // the six aiStyle-124 pet items (4798/4804/4811/4812/
                 // 4814/5089), the 3577 tentacle and the classic pets all
                 // carry `buffTime = 0`, so without this 3600 grant the
@@ -17019,7 +17019,7 @@ mod use_loop_tests {
         }
     }
 
-    /// W4-d13 retire (research/304 §3) — the classic single-item arms join
+    /// W4-d13 retire (research/336 §3) — the classic single-item arms join
     /// the grant: the Shadow Orb (115, `Player.cs:53101-53104`) use grants
     /// buff 19 at 3600 and the keep-alive (`buff_effects_accessory.rs`'s
     /// 19 → 18 arm, `:11005-11018`) pins 18000 + spawns the 18 light pet.
@@ -17042,7 +17042,7 @@ mod use_loop_tests {
         assert!(p.pet_flags[18], "the Shadow Orb pet flag");
     }
 
-    /// W4-d13 retire census (research/304 §3) — the grant table's boundary:
+    /// W4-d13 retire census (research/336 §3) — the grant table's boundary:
     /// every classic arm's registry row agrees (buffType > 0, buffTime 0,
     /// the shoot), and the FOUR exclusions stay out: 603 (the Carrot —
     /// the `:53093` CE-gated arm, no CE flag in the port), 425 (the Fairy

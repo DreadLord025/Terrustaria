@@ -1,18 +1,24 @@
-# 304 — W4-d13 PET-LIGHT RETIRE: the FINAL activation census + the pet-light-family declaration
+# 336 — W4-d13 PET-LIGHT RETIRE: the FINAL activation census + the pet-light-family declaration
 
 > W4-d13 · 2026-11-21 · code-only (no cargo/tests/rustfmt/graphify run) ·
 > branch `task/W4-d13-proj-ai-121-130`, base tip `462c86097` (activation
 > 5/5, the pet item-use 3600 grant gap FOUND + FIXED).
-> Renumbered **243 → 304** (2026-11-21, the SEAL round): the doc was
+> **CHAIN 243 → 304 → 336** (registry-150 §9 UNIFIED FINAL, `b243c7086`):
+> 336 is the FINAL number — §9.2 assigns d13's pet-light FINAL **336**
+> (304 belongs to d50 per §7.4, d50 KEEPS; the band bible → **353**,
+> f4 KEEPS 305 per §7.4.3). Chain history: the doc was
 > first pushed as 243 (`1e915e254`, 15:20:29) — g58's
 > `243-seal-verification.md` first-add `c9af393dd` (14:08:18) PREDATES
 > it, and registry-150 round 3 (`51a28d09e`) confirms **243 = g58
 > winner** (the g58 240–243 block), 246–303 are the round-2/3 assignment
-> blocks, **304+ FREE** ("Do NOT pick max-on-origin+1; check this
-> registry AND a fresh all-tip sweep first"). Fresh sweep executed:
-> per-tip `git ls-tree docs/research/` over ALL origin + local refs AND
-> the full-history `git log --all --name-only` scan — zero 304+ docs
-> anywhere; 304 is the first free number per the registry's rule.
+> blocks, 304+ read as FREE at that round ("Do NOT pick max-on-origin+1;
+> check this registry AND a fresh all-tip sweep first"). Fresh sweep
+> executed then: per-tip `git ls-tree docs/research/` over ALL origin +
+> local refs AND the full-history `git log --all --name-only` scan —
+> zero 304+ docs anywhere; 304 was the first free number per the
+> registry's rule AT THAT ROUND. The SEAL round executed 243 → 304
+> (`e310bd6e7`); §8/§9 later assigned 304 to d50, so this rename
+> executes **304 → 336** per §9.2 on THIS branch only.
 >
 > This is the lane's FINAL research note: it composes the three
 > activation cross-notes (3/5 wire-kite `ed631370d`, 4/5 PET-light
@@ -253,13 +259,16 @@ CLOSED for the light lanes, with the one standing deferral named:
   `a160ad9ff`, e6 `c8b072b69`, f11 `14ca0a8d5`, g10 `5dee28650`, d43
   `0253bde90`, d54's registry-150); every C# anchor re-read in this
   worktree's `decompiled/Terraria/` at the cited lines.
-* Number freeness (the SEAL round re-scan): 243 LOST to g58
+* Number freeness (the SEAL round re-scan, CHAIN-HISTORY — superseded by
+  the §9 assignment, see the header's 243→304→336 chain): 243 LOST to g58
   (`c9af393dd` 14:08:18 < this lane's `1e915e254` 15:20:29; registry-150
-  round 3 `51a28d09e` confirms 243 = g58 winner, 304+ FREE). Fresh
-  per-tip `git ls-tree docs/research/` over ALL `refs/remotes/origin/*`
-  + `refs/heads/*` AND the full-history `git log --all --name-only`
-  scan — zero 304/305 docs anywhere; the rename 243→304 + the band
-  bible's 305 execute on THIS branch only.
+  round 3 `51a28d09e` confirms 243 = g58 winner, 304+ read FREE at that
+  round). Fresh per-tip `git ls-tree docs/research/` over ALL
+  `refs/remotes/origin/*` + `refs/heads/*` AND the full-history
+  `git log --all --name-only` scan — zero 304/305 docs anywhere then;
+  the SEAL round executed 243→304 + the band bible's 305 on THIS branch
+  only (`e310bd6e7`). §9 UNIFIED FINAL supersedes: this doc → **336**,
+  the band bible → **353** (304=d50, 305=f4 KEEPS).
 * This commit's code changes: the drain-contract doc trio (projectiles
   pass tail, app field, kite module), the kite witness's stream pin,
   `PET_ITEM_BUFF_GRANTS` + the grant-site comment, 2 new witnesses.
@@ -307,9 +316,12 @@ call path becomes `crate::world_sim::wiring::mass_wire_operation`, NOT
 `wiring_devices::` (f11's module drops per 133 §4a). Nothing on this
 branch calls either; the one-drain-shape rule stands.
 
-**(c) The registry renumber EXECUTED** (243→304, this commit): the doc
+**(c) The registry renumber EXECUTED** (243→304 at the SEAL commit
+`e310bd6e7`, CHAIN-HISTORY; NOW 304→336 per registry-150 §9.2 UNIFIED
+FINAL `b243c7086` — 304 belongs to d50 §7.4): the doc
 file + header, `anchors.txt` (2 rows), ANALYSIS (2 refs), PORT_MAP
 (2 refs), `data.rs`/`projectile_ai_pets124.rs`/`editing.rs` doc comments
-(5 refs), the INDEX row. The band bible takes **305**
-(`305-projectile-ai-121-130-band-final.md`, the next free number, the
-same fresh-sweep receipt).
+(5 refs), the INDEX row — all re-pointed to **336** in this rename
+commit. The band bible takes **353** per the same §9.2 table
+(`353-projectile-ai-121-130-band-final.md`; 305 belongs to f4, §7.4.3
+f4-KEEPS-305; its interim number 305 was the same fresh-sweep receipt).
