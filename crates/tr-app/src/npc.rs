@@ -1238,7 +1238,7 @@ pub struct Npc {
     /// (`NPC.cs:81654`, the default `hitDirection = 0`). The W4-c12
     /// branch adds the same field — the merge keeps one.
     pub last_hit_dir: i32,
-    /// `NPC.oldPos` (`NPC.cs:6119`): the 10-slot position trail
+    /// `NPC.oldPos` (`NPC.cs:6119`): the position trail
     /// `UpdateNPC_UpdateTrails` shifts once per NPC update (`:90779-
     /// 90875`, called at `:90512` after `FindFrame`). Only the 402
     /// Stardust Worm Head's TrailingMode-7 arm rides it so far
@@ -1246,10 +1246,32 @@ pub struct Npc {
     /// tick); the death dust feed's trail loop reads it
     /// (`npc_death_dust.rs`, the W4-g60 wiring wave replaces the
     /// all-zero stand-in). `netOffset` is 0 in the single-player port.
-    pub old_pos: [Vec2; 10],
+    /// W4-g62: the SAME mode-7 census row maps 519 → 7 (the SolarGoop's
+    /// hit arm reads it, `npc_hit_dust.rs` `:83008-83022`).
+    /// TRAILCACHE WIDENING (the one-widening-at-merge item, landed on
+    /// this branch): the C# `SetDefaults` RESIZES both rings to
+    /// `NPCID.Sets.TrailCacheLength[type]` (`NPC.cs:8453-8468`) — full
+    /// census `NPCID.cs:10450`: default 10, 402→36, 519→20, 522→20,
+    /// 620→20, 677→60 (the MAX), 685→10. The port carries the max-size
+    /// storage `[Vec2; 60]` + the per-kind logical length `trail_len`
+    /// (`Npc::trail_cache_length`); every loop that walked
+    /// `oldPos.Length` walks `..trail_len` instead. Slots ≥ trail_len
+    /// stay ZERO — the C#'s `Array.Resize` zero-fills grown slots and
+    /// `:8463-8468` zeroes the whole array. The g60 lane must adopt
+    /// the SAME widening hunks byte-identically (ANALYSIS contract).
+    pub old_pos: [Vec2; 60],
     /// `NPC.oldRot` (`NPC.cs:6121`): the trail's rotation twin — the
-    /// mode-7 shift copies `rotation` alongside the position.
-    pub old_rot: [f32; 10],
+    /// mode-7 shift copies `rotation` alongside the position; resized
+    /// together with `oldPos` (`NPC.cs:8461`).
+    pub old_rot: [f32; 60],
+    /// `this.oldPos.Length` after the `SetDefaults` resize
+    /// (`NPC.cs:8453-8462`): `NPCID.Sets.TrailCacheLength[type]`
+    /// (`NPCID.cs:10450`) — the logical ring length every trail loop
+    /// bounds on (the HitEffect arms, the mode shift, g60's death
+    /// loop). Set at spawn (`Npc::new` ≈ `SetDefaults`) and on
+    /// Transform (`transform_to_kind`). NOT part of the render key —
+    /// it is a pure function of `kind`.
+    pub trail_len: usize,
     /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
@@ -2953,9 +2975,13 @@ impl Npc {
             just_hit: false,
             last_hit_dir: 0,
             // `NPC.oldPos`'s field init (`NPC.cs:6119`: `new Vector2[10]`)
-            // — all-zero until the first `UpdateNPC_UpdateTrails` shift.
-            old_pos: [Vec2::ZERO; 10],
-            old_rot: [0.0; 10],
+            // widened to the max-size storage (`TrailCacheLength` max 60,
+            // 677's row `NPCID.cs:10450`) — `SetDefaults`' resize
+            // (`NPC.cs:8453-8468`) picks the logical length per kind and
+            // zeroes the array; slots ≥ trail_len stay ZERO forever.
+            old_pos: [Vec2::ZERO; 60],
+            old_rot: [0.0; 60],
+            trail_len: kind.trail_cache_length(),
             immune: [0; 256],
             player_interaction: [false; 256],
             spawned_from_statue: false,
@@ -4975,6 +5001,7 @@ impl Npc {
         // `UpdateNPC_UpdateTrails`, `:90779-90875`), AFTER `FindFrame`:
         // the W4-g60 wiring wave — the 402 arm's mode-7 ring so the death
         // dust feed reads the LIVE trail (the all-zero stand-in retired).
+        // W4-g62 adopts the SAME call + fn shape (keep-one at merge).
         self.update_trails();
         self.contact(player, rng);
     }
@@ -4986,13 +5013,33 @@ impl Npc {
     /// `oldPos[0] = position + netOffset` (0 in single-player),
     /// `oldRot[0] = rotation`); every other kind's modes wait on their
     /// wiring lanes (the -1 default draws/shifts nothing).
+    /// W4-g62 mode census: the SAME row maps 519 → 7 (SolarGoop) — when
+    /// the goop KIND lands (`npc_ai_pillar.rs`'s spawn request today),
+    /// the gate below widens to it; the shift body is shared verbatim.
+    /// KEEP-ONE: W4-g60 landed this fn identically (0e0fbd6c7) — the
+    /// merge keeps ONE copy (identical shape; ANALYSIS contract).
+    /// TRAILCACHE WIDENING: the shift walks `..trail_len` — the C#'s
+    /// `oldPos.Length - 1` down to 1 (`:90866`), the RESIZED length
+    /// (`NPC.cs:8453-8462`), NOT the 60-slot storage: 402 shifts 36
+    /// slots, a default-10 kind shifts 10 exactly like before.
+    /// GATE WIDENING (the outside-sites census): the DD2 Kobold Flyers
+    /// 574/575 ARE rowed + wired (`update_diving_flyer`) and map mode 7
+    /// (`NPCID.cs:10430`) — the C# shifts their rings every tick, so
+    /// the port does too (default-10 rings; their FindFrame spark
+    /// `:67939` reads `oldPos[3]`, the DD2 FindFrame lane's arm — the
+    /// shift fills the anchor it will need; NO reader today, zero
+    /// draw/stream change). The Chaos Elemental 120 is NOT rowed on
+    /// this base (the g8 ≤230 wiring lane's; mode 4, default-10 ring).
     pub fn update_trails(&mut self) {
-        // `NPCID.Sets.TrailingMode[402] == 7` — the `case 7` arm
-        // (`NPC.cs:90863-90872`).
-        if self.kind != NpcKind::StardustWormHead {
+        // `NPCID.Sets.TrailingMode` == 7 — the `case 7` arm
+        // (`NPC.cs:90863-90872`): 402, 574, 575 today (`NPCID.cs:10430`).
+        if !matches!(
+            self.kind,
+            NpcKind::StardustWormHead | NpcKind::DD2KoboldFlyerT2 | NpcKind::DD2KoboldFlyerT3
+        ) {
             return;
         }
-        for i in (1..self.old_pos.len()).rev() {
+        for i in (1..self.trail_len).rev() {
             self.old_pos[i] = self.old_pos[i - 1];
             self.old_rot[i] = self.old_rot[i - 1];
         }
@@ -5149,6 +5196,13 @@ impl Npc {
         // and the frame reset.
         self.kind = new_kind;
         self.size_override = None; // the kind's own box
+        // `SetDefaults`' trail resize + zero loop (`NPC.cs:8453-8468`):
+        // the logical length follows the NEW kind's TrailCacheLength
+        // row and the whole ring re-zeroes (the C# `Array.Resize`
+        // zero-fills growth; `:8463-8468` zeroes every slot).
+        self.trail_len = new_kind.trail_cache_length();
+        self.old_pos = [Vec2::ZERO; 60];
+        self.old_rot = [0.0; 60];
         self.max_hp = new_kind.max_hp();
         self.scale = 1.0;
         self.alpha = 0;
@@ -20510,13 +20564,18 @@ mod tests {
     /// (`NPC.cs:90863-90872`): each call shifts both rings down and
     /// stamps `oldPos[0] = position` / `oldRot[0] = rotation`
     /// (`netOffset` 0, single-player). The fresh ring is all-zero
-    /// (`NPC.cs:6119`'s `new Vector2[10]`); after 10 shifts every slot
+    /// (`NPC.cs:6119`'s `new Vector2[10]`, resized to 36 by
+    /// `SetDefaults` `:8453-8468`); after 36 shifts every slot
     /// carries a recorded position — the death feed's trail loop then
     /// reads a FULL ring instead of breaking at slot 0.
+    /// W4-g62 adopts this witness (g60 0e0fbd6c7 owns the original)
+    /// with the TRAILCACHE WIDENING: the 402 ring is 36 logical slots
+    /// (`NPCID.cs:10450`), storage 60 — g60 must adopt the SAME hunk.
     #[test]
     fn w4_g60_the_worm_head_trail_shifts_mode_7() {
         let mut n = bare(NpcKind::StardustWormHead);
-        assert_eq!(n.old_pos, [Vec2::ZERO; 10], "the field init");
+        assert_eq!(n.trail_len, 36, "the 402 TrailCacheLength row");
+        assert_eq!(n.old_pos, [Vec2::ZERO; 60], "the field init");
         n.rotation = 0.25;
         n.update_trails();
         assert_eq!(n.old_pos[0], Vec2::new(100.0, 100.0));
@@ -20531,21 +20590,79 @@ mod tests {
         assert_eq!(n.old_pos[1], Vec2::new(100.0, 100.0));
         assert_eq!(n.old_rot[1], 0.25);
         assert_eq!(n.old_pos[2], Vec2::ZERO);
-        // Eight more shifts fill the ring — no zero slot remains.
-        for _ in 0..8 {
+        // 34 more shifts fill the LOGICAL ring — no zero slot remains
+        // below trail_len; slots 36..60 are storage the C# never has.
+        for _ in 0..34 {
             n.update_trails();
         }
-        assert!(n.old_pos.iter().all(|&p| p != Vec2::ZERO));
+        assert!(n.old_pos[..n.trail_len].iter().all(|&p| p != Vec2::ZERO));
+        assert_eq!(n.old_pos[36], Vec2::ZERO, "storage past trail_len stays zero");
+        assert_eq!(n.old_rot[36], 0.0);
     }
 
     /// The other kinds' TrailingMode arms are unwired: their rings stay
-    /// all-zero (the -1 default shifts nothing, `NPCID.cs:10430`).
+    /// all-zero (the -1 default shifts nothing, `NPCID.cs:10430`) — and
+    /// their logical length is the TrailCacheLength default 10.
     #[test]
     fn w4_g60_other_kinds_do_not_shift_the_trail() {
         let mut n = bare(NpcKind::Zombie);
+        assert_eq!(n.trail_len, 10, "the default row");
         n.update_trails();
-        assert_eq!(n.old_pos, [Vec2::ZERO; 10]);
-        assert_eq!(n.old_rot, [0.0; 10]);
+        assert_eq!(n.old_pos, [Vec2::ZERO; 60]);
+        assert_eq!(n.old_rot, [0.0; 60]);
+    }
+
+    /// W4-g62 TRAILCACHE WIDENING — the full-table census
+    /// (`NPCID.cs:10450`) + the `SetDefaults` resize semantics
+    /// (`NPC.cs:8453-8468`): the storage is the max row (677's 60),
+    /// the logical length is the kind's row, Transform re-zeroes and
+    /// re-lengths (the C# resizes on every `SetDefaults`, Transform
+    /// included — `NPC.cs:81096`).
+    #[test]
+    fn w4_g62_the_trail_cache_census_and_resize() {
+        // The full table: only four kinds deviate from 10 (685's
+        // explicit 10 IS the default — not a deviation).
+        assert_eq!(NpcKind::StardustWormHead.trail_cache_length(), 36);
+        assert_eq!(NpcKind::Zombie.trail_cache_length(), 10);
+        // A Transform onto the worm head re-lengths + re-zeroes even a
+        // dirty ring (the SetDefaults :8463-8468 zero loop).
+        let world = World::new("t".into(), 200, 200);
+        let player = Player::spawn(&world);
+        let mut n = bare(NpcKind::Zombie);
+        n.old_pos[0] = Vec2::new(7.0, 7.0);
+        n.old_rot[0] = 1.0;
+        n.transform_to_kind(&world, &player, NpcKind::StardustWormHead);
+        assert_eq!(n.trail_len, 36);
+        assert_eq!(n.old_pos, [Vec2::ZERO; 60], "the resize zero loop");
+        assert_eq!(n.old_rot, [0.0; 60]);
+    }
+
+    /// W4-g62 outside-sites arm — the DD2 Kobold Flyers 574/575 are
+    /// rowed + wired (`update_diving_flyer`) and map TrailingMode 7
+    /// (`NPCID.cs:10430`): the C# shifts their default-10 rings every
+    /// tick (`NPC.cs:90863-90872`), so the widened gate does too. The
+    /// FindFrame spark (`:67939` reads `oldPos[3]`) is the DD2
+    /// FindFrame lane's arm — this witness pins the SHIFT only: slot 3
+    /// carries the 4-ticks-ago position the spark will anchor on, and
+    /// no draw/stream rides the shift (pure state, zero RNG).
+    #[test]
+    fn w4_g62_the_kobold_flyers_shift_the_mode_7_ring() {
+        for kind in [NpcKind::DD2KoboldFlyerT2, NpcKind::DD2KoboldFlyerT3] {
+            let mut n = bare(kind);
+            assert_eq!(n.trail_len, 10, "574/575 keep the default row");
+            n.rotation = 0.125;
+            for tick in 0..4 {
+                n.x = 100.0 + tick as f32;
+                n.update_trails();
+            }
+            // After 4 shifts slot 3 holds the FIRST stamp (100,100) —
+            // the spark's `oldPos[3] - position` aim anchor (`:67939`).
+            assert_eq!(n.old_pos[0], Vec2::new(103.0, 100.0));
+            assert_eq!(n.old_pos[3], Vec2::new(100.0, 100.0));
+            assert_eq!(n.old_rot[3], 0.125, "the rotation twin rides");
+            assert_eq!(n.old_pos[4], Vec2::ZERO, "the 10-ring's tail");
+            assert_eq!(n.old_pos[10], Vec2::ZERO, "storage past 10");
+        }
     }
 
     pub(super) fn bare(kind: NpcKind) -> Npc {

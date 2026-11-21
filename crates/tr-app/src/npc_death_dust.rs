@@ -28,7 +28,8 @@
 //! arm (`NPC.cs:88411`) is DEAD CODE: the else-if chain's town arm
 //! (`:88046`) matches 663 first, so only the 25-dust smoke burst fires.
 //! The 402 Stardust Worm Head's `oldPos` trail loop (`:83611-83631`)
-//! reads the LIVE 10-slot trail ring (`Npc.old_pos`, `NPC.cs:6119`):
+//! reads the LIVE trail ring (`Npc.old_pos`, `NPC.cs:6119`; TRAILCACHE
+//! WIDENING — 36 logical slots for 402, `NPCID.cs:10450`, g62's contract):
 //! `Npc::update_trails` ports `UpdateNPC_UpdateTrails`'s mode-7 shift
 //! (`NPC.cs:90863-90872`, called at `:90512` after `FindFrame`) — the
 //! W4-g60 wiring wave retired the all-zero stand-in. Only a
@@ -125,7 +126,15 @@ pub(crate) struct DeathFx<'a> {
     /// arm's loop reads (`:83611-83631`); `Npc::update_trails` shifts it
     /// per NPC update (the W4-g60 wiring wave — the all-zero stand-in is
     /// retired, only a never-updated corpse still reads all-zero).
-    pub old_pos: [Vec2; 10],
+    /// TRAILCACHE WIDENING (g62's contract, the g60e half): the max-size
+    /// `[Vec2; 60]` storage — the loop bounds on `trail_len` (the C#'s
+    /// `this.oldPos.Length` AFTER the `SetDefaults` resize,
+    /// `NPC.cs:8453-8468`; 402 → 36, `NPCID.cs:10450`).
+    pub old_pos: [Vec2; 60],
+    /// The resized `oldPos.Length` captured at strike — the death loop's
+    /// bound (`:83611`'s `num179 < this.oldPos.Length`, NO min). Same
+    /// widening as `Npc.trail_len` (pure function of kind).
+    pub trail_len: usize,
     pub rng: &'a mut UnifiedRandom,
     pub dust: &'a mut DustPool,
     pub ctx: &'a SpawnCtx,
@@ -267,6 +276,7 @@ pub(crate) fn death_dust_feed(app: &mut crate::app::App, npc: &Npc) {
         vel: Vec2::new(npc.vx, npc.vy),
         hit_dir: npc.last_hit_dir,
         old_pos: npc.old_pos,
+        trail_len: npc.trail_len,
         rng,
         dust: &mut app.dust,
         ctx: &ctx,
@@ -799,15 +809,19 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
         }
         // `NPC.cs:83599-83632` — the Stardust Worm Head: 5 ×
         // (`Next(3)==0`-gated 17 + ALWAYS 229 noGravity/×3), then the
-        // oldPos trail loop over the LIVE 10-slot ring (`Npc.old_pos`,
+        // oldPos trail loop over the LIVE ring (`Npc.old_pos`,
         // `Npc::update_trails`'s mode-7 shift — the W4-g60 wiring wave):
-        // each slot draws `Next(4)` FIRST (`:83613`), `!= 0` continues;
+        // TRAILCACHE WIDENING — the bound is `num179 < this.oldPos.Length`
+        // (`:83611`, NO min), the RESIZED length: 402 walks up to 36
+        // slots (`trail_len`, `NPCID.cs:10450`), NOT the 60-slot storage.
+        // Each slot draws `Next(4)` FIRST (`:83613`), `!= 0` continues;
         // on `== 0` a zero slot breaks (`:83617-83620`), else TWO gated
         // pairs spawn at `oldPos[i]` (`:83621-83630`, the same 17/229
         // shape as the head burst).
         402 => {
             fx.stardust_loop(5, 3, false);
-            for &slot in &fx.old_pos {
+            for i in 0..fx.trail_len {
+                let slot = fx.old_pos[i];
                 if fx.rng.next_max(4) != 0 {
                     continue; // `:83613-83616`
                 }
@@ -890,7 +904,8 @@ mod tests {
             h: 38,
             vel: Vec2::new(2.0, -1.0),
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -932,7 +947,8 @@ mod tests {
             h: 120,
             vel: Vec2::ZERO,
             hit_dir: -1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -985,7 +1001,8 @@ mod tests {
             h: 44,
             vel: Vec2::ZERO,
             hit_dir: -1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1023,7 +1040,8 @@ mod tests {
             h: 84,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1057,7 +1075,8 @@ mod tests {
             h: 40,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1101,7 +1120,8 @@ mod tests {
             h: 26,
             vel: Vec2::ZERO,
             hit_dir: -1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1135,7 +1155,8 @@ mod tests {
             h: 46,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1175,7 +1196,8 @@ mod tests {
             h: 20,
             vel: Vec2::new(3.0, -1.0),
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1215,7 +1237,8 @@ mod tests {
             h: 30,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1249,7 +1272,8 @@ mod tests {
             h: 100,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1285,7 +1309,8 @@ mod tests {
             h: 22,
             vel: Vec2::ZERO,
             hit_dir: -1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1321,7 +1346,8 @@ mod tests {
             h: 50,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1366,7 +1392,8 @@ mod tests {
             h: 40,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1411,7 +1438,8 @@ mod tests {
             h: 34,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1457,7 +1485,8 @@ mod tests {
             h: 30,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1487,6 +1516,9 @@ mod tests {
     /// + 229) then the oldPos loop's `Next(4)` gates until the first
     /// `== 0` breaks — an ALL-ZERO ring (a never-updated corpse; the
     /// live ring rides `Npc::update_trails`, the next witness).
+    /// TRAILCACHE WIDENING: the gate walk bounds on `trail_len` (the
+    /// resized `oldPos.Length`, `:83611` NO min) — up to 36 gates for
+    /// 402 (`NPCID.cs:10450`), was 10.
     #[test]
     fn w4_g60_the_worm_head_trail_gates_until_the_zero_break() {
         let w = air();
@@ -1501,7 +1533,8 @@ mod tests {
             h: 32,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 36,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1519,9 +1552,10 @@ mod tests {
             replay_spawn(&mut r, 32, 32); // the always-229
             spawned += 1;
         }
-        // The trail gates: draw until the first == 0 (max 10).
+        // The trail gates: draw until the first == 0 (max 36 — the
+        // resized length, `:83611`'s `num179 < this.oldPos.Length`).
         let mut gates = 0;
-        for _ in 0..10 {
+        for _ in 0..36 {
             gates += 1;
             if r.next_max(4) == 0 {
                 break;
@@ -1536,7 +1570,9 @@ mod tests {
     /// slots 0-2 carry positions, slot 3 is zero. Every slot draws its
     /// `Next(4)` gate; a `== 0` gate on a filled slot spawns TWO gated
     /// pairs AT THE SLOT (not the head position); the zero slot breaks
-    /// AFTER its gate draw — slots 4-9 draw nothing.
+    /// AFTER its gate draw — slots 4-35 draw nothing (TRAILCACHE
+    /// WIDENING: the 402 ring is 36 logical slots, storage 60 — the
+    /// walk bounds on `trail_len`, `:83611` NO min).
     #[test]
     fn w4_g60_the_worm_head_trail_spawns_at_the_live_slots() {
         let w = air();
@@ -1544,18 +1580,10 @@ mod tests {
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(4242);
         let peek = rng.clone();
-        let ring = [
-            Vec2::new(100.0, 100.0),
-            Vec2::new(94.0, 101.0),
-            Vec2::new(88.0, 103.0),
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-        ];
+        let mut ring = [Vec2::ZERO; 60];
+        ring[0] = Vec2::new(100.0, 100.0);
+        ring[1] = Vec2::new(94.0, 101.0);
+        ring[2] = Vec2::new(88.0, 103.0);
         let mut fx = DeathFx {
             ty: 402,
             pos: Vec2::new(106.0, 100.0),
@@ -1564,6 +1592,7 @@ mod tests {
             vel: Vec2::ZERO,
             hit_dir: -1,
             old_pos: ring,
+            trail_len: 36,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1581,7 +1610,7 @@ mod tests {
             replay_spawn(&mut r, 32, 32);
             spawned += 1;
         }
-        for &slot in &ring {
+        for &slot in &ring[..36] {
             if r.next_max(4) != 0 {
                 continue;
             }
@@ -1641,7 +1670,8 @@ mod tests {
             h: 20,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1699,7 +1729,8 @@ mod tests {
                 h,
                 vel: Vec2::ZERO,
                 hit_dir: 1,
-                old_pos: [Vec2::ZERO; 10],
+                old_pos: [Vec2::ZERO; 60],
+                trail_len: 10,
                 rng: &mut rng,
                 dust: &mut pool,
                 ctx: &c,
@@ -1773,7 +1804,8 @@ mod tests {
                 h,
                 vel: Vec2::ZERO,
                 hit_dir: -1,
-                old_pos: [Vec2::ZERO; 10],
+                old_pos: [Vec2::ZERO; 60],
+                trail_len: 10,
                 rng: &mut rng,
                 dust: &mut pool,
                 ctx: &c,
@@ -1830,7 +1862,8 @@ mod tests {
             h: 16,
             vel: Vec2::ZERO,
             hit_dir: 1,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            trail_len: 10,
             rng: &mut rng,
             dust: &mut pool,
             ctx: &c,
@@ -1872,7 +1905,8 @@ mod tests {
                 h: 48,
                 vel: Vec2::ZERO,
                 hit_dir: 1,
-                old_pos: [Vec2::ZERO; 10],
+                old_pos: [Vec2::ZERO; 60],
+                trail_len: 10,
                 rng: &mut rng,
                 dust: &mut pool,
                 ctx: &c,
@@ -1915,7 +1949,8 @@ mod tests {
                 h: 40,
                 vel: Vec2::ZERO,
                 hit_dir: 1,
-                old_pos: [Vec2::ZERO; 10],
+                old_pos: [Vec2::ZERO; 60],
+                trail_len: 10,
                 rng: &mut rng,
                 dust: &mut pool,
                 ctx: &c,
@@ -1967,7 +2002,8 @@ mod tests {
                 h,
                 vel: Vec2::ZERO,
                 hit_dir: 1,
-                old_pos: [Vec2::ZERO; 10],
+                old_pos: [Vec2::ZERO; 60],
+                trail_len: 10,
                 rng: &mut rng,
                 dust: &mut pool,
                 ctx: &c,
