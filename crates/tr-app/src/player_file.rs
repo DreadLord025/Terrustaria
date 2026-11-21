@@ -29,16 +29,18 @@
 //!
 //! **Default-value policy.** The port models the character-card state
 //! (name, difficulty, appearance, life/mana, the 58-slot inventory and its
-//! favourited bits) plus, since W4-f44, the three per-player payloads the
-//! `.plr` carries: the equipment loadouts (`CurrentLoadoutIndex` +
-//! `Loadouts[3]`, `:54919-54923`), the void vault (`bank4[40]` +
-//! `voidVaultInfo`, `:54856-54863`) and the Journey research pairs
-//! (`creativeTracker`, `:54911`). Every other field is emitted with the
-//! value a *fresh vanilla player* carries — the `Player` ctor
-//! (`Player.cs:56036-56096`) and the field initializers — never omitted:
-//! omission shifts every later section and breaks byte-comparability. The
-//! reader walks the same span with the C# `Deserialize` version gates
-//! (`Player.cs:55134-55764`), consuming (and dropping) unmodelled fields.
+//! favourited bits) plus, since W4-f44, EVERY per-player payload the `.plr`
+//! carries: phases 1-2 added the loadouts, the void vault, the research
+//! pairs, the equip/dye tails, the hide flags and the creative powers;
+//! phase 3 completes the set — playtime/hairDye/team, the three banks, the
+//! buffs, the spawn points, the quest/death counters, the temp slots, the
+//! super-cart byte, the voice pair, the refunds and the dialogues. The
+//! writer's `Default` still emits the value a *fresh vanilla player*
+//! carries — the `Player` ctor (`Player.cs:56036-56096`) and the field
+//! initializers — never omitted: omission shifts every later section and
+//! breaks byte-comparability (the golden.plr parity pins it). The reader
+//! walks the same span with the C# `Deserialize` version gates
+//! (`Player.cs:55134-55764`), capturing every field verbatim.
 //!
 //! **W4-f44 phase 2: the equip/dye tails + the Journey unlocks.** The three
 //! equipment tails the reader used to drop are captured verbatim on BOTH
@@ -52,6 +54,17 @@
 //! per-player creative powers `CreativePowerManager.SaveToPlayer` writes
 //! (`:54913` / `:55706-55709`, ids 5/11/14 — `CreativePowers.cs:705-707`/
 //! `:744-746`/`:1717-1719`), completing the research payload phase 1 started.
+//!
+//! **W4-f44 phase 3: the remainder.** Every field the writer used to emit
+//! at fresh defaults now rides both models verbatim: playtime/hairDye/team
+//! (`:54754-54757`), bank/bank2/bank3 (`:54838-54855`), the compacted buffs
+//! with the full `Main.buffNoSave` table (`:54864-54876`), the spawn points
+//! (`:54877-54888`), angler/dpad/builderAcc (with the < 210 / < 249 fixups)
+//! /bartender/dead+respawnTimer/golfer (`:54894-54910`), the temp slots
+//! (`:54912`), the super-cart byte with the < 253 cart-derive (`:54914-54918`),
+//! the voice pair with the 1..4 clamp + the < 280 Male-derive
+//! (`:54924-54925`), the refunds (`:54926`) and the deduped dialogues
+//! (`:54927-54932`). See `docs/ANALYSIS.md` "W4-f44 phase 3".
 //!
 //! **Backward compat.** The port's own pre-S1-J-5 files were a *subset* mirror
 //! stamped release 279 (truncated after the inventory, missing `team` /
@@ -304,6 +317,12 @@ pub struct PlayerFile {
     /// (`Item.Serialize`/`DeserializeFrom`, no favourited). A fresh queue is
     /// empty → count 0.
     pub refunds: Vec<(i32, i32, u8)>,
+    /// `Player.oneTimeDialoguesSeen` (`Player.cs:3209`, a `HashSet<string>`)
+    /// — `Serialize:54927-54932` writes count + the strings /
+    /// `Deserialize:55755-55762` (gate 310) reads count + strings, `.Add`
+    /// deduping. The port keeps first-occurrence order (the HashSet's
+    /// practical enumeration order for an add-only set).
+    pub dialogues: Vec<String>,
 }
 
 /// The three `IPersistentPerPlayerContent` powers the `.plr` carries
@@ -511,17 +530,7 @@ fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
     }
 }
 
-/// One `Item.DeserializeFrom(reader, readFavorite: false)` record
-/// (`Item.cs:49921-49934`): `i32 type, i32 stack, u8 prefix`. Used for the
-/// temporary-slot / refund items the port consumes and drops.
-fn read_item_triple(r: &mut Reader, what: &'static str) -> Result<(), PlayerFileError> {
-    r.i32().ok_or(PlayerFileError::Truncated(what))?;
-    r.i32().ok_or(PlayerFileError::Truncated(what))?;
-    r.u8().ok_or(PlayerFileError::Truncated(what))?;
-    Ok(())
-}
-
-/// The same triple, captured as `(type, stack, prefix)` — the bank slots
+/// The bank-slot triple, captured as `(type, stack, prefix)` — the bank slots
 /// (`Deserialize:55449-55487`'s `netDefaults(id); stack; Prefix(byte)` read
 /// order). For an out-of-range id `netDefaults`→`SetDefaults` airs the item
 /// (`Item.cs:48670-48688`: type 0, stack 0, prefix 0); the read then overwrites
@@ -1039,11 +1048,15 @@ fn read_player_fields(
         }
     }
     if version >= 310 {
-        // oneTimeDialoguesSeen (`:55755-55762`): count + strings.
+        // oneTimeDialoguesSeen (`:55755-55762`): count + strings. W4-f44
+        // ph3: the strings ride; `.Add` on the HashSet dedupes, so the port
+        // keeps first occurrences only.
         let n = r.i32().ok_or(PlayerFileError::Truncated("dialogueCount"))?;
         for _ in 0..n {
-            r.cs_string()
-                .ok_or(PlayerFileError::Truncated("dialogue"))?;
+            let key = r.cs_string().ok_or(PlayerFileError::Truncated("dialogue"))?;
+            if !tail.dialogues.contains(&key) {
+                tail.dialogues.push(key);
+            }
         }
     }
     // `LoadPlayer_LastMinuteFixes` (`:55830`) clamps skinVariant to the
@@ -1104,6 +1117,7 @@ struct PlayerTail {
     voice_variant: u8,
     voice_pitch_offset: f32,
     refunds: Vec<(i32, i32, u8)>,
+    dialogues: Vec<String>,
 }
 
 impl Default for PlayerTail {
@@ -1146,6 +1160,7 @@ impl Default for PlayerTail {
             voice_variant: 1, // the ctor (`Player.cs:56045`)
             voice_pitch_offset: 0.0,
             refunds: Vec::new(),
+            dialogues: Vec::new(),
         }
     }
 }
@@ -1230,6 +1245,7 @@ fn finish_player_file(
         voice_variant,
         voice_pitch_offset: tail.voice_pitch_offset,
         refunds: tail.refunds,
+        dialogues: tail.dialogues,
     }
 }
 
@@ -1377,6 +1393,7 @@ fn read_legacy_port_subset(
         voice_variant: 1,
         voice_pitch_offset: 0.0,
         refunds: Vec::new(),
+        dialogues: Vec::new(),
     })
 }
 
@@ -1491,6 +1508,9 @@ pub struct PlayerFileWrite {
     /// `CraftingRequests.cs:353-362`): the consumed-item triples over the
     /// pending crafts. A fresh queue is empty → count 0, no payloads.
     pub refunds: Vec<(i32, i32, u8)>,
+    /// `Player.oneTimeDialoguesSeen` (`:54927-54932`): count + the strings.
+    /// A fresh HashSet is empty → count 0. The write dedupes like the set.
+    pub dialogues: Vec<String>,
 }
 
 impl Default for PlayerFileWrite {
@@ -1548,6 +1568,7 @@ impl Default for PlayerFileWrite {
             voice_variant: 1, // the ctor (`Player.cs:56045`)
             voice_pitch_offset: 0.0,
             refunds: Vec::new(),
+            dialogues: Vec::new(),
         }
     }
 }
@@ -1832,9 +1853,19 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
         w.i32(*stack);
         w.u8(*prefix);
     }
-    // `:54927-54932` oneTimeDialoguesSeen (`Player.cs:3209`): a fresh empty
-    // HashSet → count 0, no strings.
-    w.i32(0);
+    // `:54927-54932` oneTimeDialoguesSeen (`Player.cs:3209`): a HashSet →
+    // count + the strings. W4-f44 ph3: the caller's strings ride, deduped
+    // first-occurrence like the set; a fresh HashSet is empty → count 0.
+    let mut seen: Vec<&str> = Vec::new();
+    for key in &file.dialogues {
+        if !seen.contains(&key.as_str()) {
+            seen.push(key);
+        }
+    }
+    w.i32(seen.len() as i32);
+    for key in seen {
+        w.cs_string(key);
+    }
     w.into_inner()
 }
 
@@ -2032,6 +2063,49 @@ mod tests {
         // A fresh write keeps the golden zeros (`:54754-54757`).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: the one-time dialogues round-trip as count + strings,
+    /// deduped first-occurrence on both sides (the HashSet `.Add`); a fresh
+    /// set is count 0.
+    #[test]
+    fn the_dialogues_round_trip_deduped() {
+        let dialogues = vec!["First".to_string(), "Second".to_string(), "Third".to_string()];
+        let written = PlayerFileWrite { dialogues: dialogues.clone(), ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The dialogue count is the 4 bytes before the strings, at the end.
+        let mut total = 4usize;
+        for key in &dialogues {
+            total += 1 + key.len(); // the 7-bit length prefix + ASCII bytes
+        }
+        let count_at = plain.len() - total;
+        assert_eq!(
+            i32::from_le_bytes(plain[count_at..count_at + 4].try_into().unwrap()),
+            3
+        );
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.dialogues, dialogues);
+        // Duplicates collapse on write (the HashSet cannot hold them).
+        let written = PlayerFileWrite {
+            dialogues: vec!["A".into(), "B".into(), "A".into(), "C".into(), "B".into()],
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.dialogues, vec!["A", "B", "C"]);
+        // A file that somehow carries duplicates: the read `.Add` dedupes.
+        let mut w = Writer::new();
+        let base = serialize_plaintext(&sample());
+        // Replace the trailing dialogue count 0 with 3 + "A","A","B".
+        w.bytes(&base[..base.len() - 4]);
+        w.i32(3);
+        w.cs_string("A");
+        w.cs_string("A");
+        w.cs_string("B");
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.dialogues, vec!["A", "B"]);
+        // Fresh: count 0 (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(fresh.dialogues.is_empty());
     }
 
     /// W4-f44 ph3: the crafting refunds round-trip as count + triples; an
@@ -2516,12 +2590,10 @@ mod tests {
         bank3[12] = (3507, 1, 57);
         let written = PlayerFileWrite { bank, bank2, bank3, ..sample() };
         let plain = serialize_plaintext(&written);
-        // The bank span: 24 prologue + 8 name + 1 difficulty + 8 playtime +
-        // 4 hair + 1 hairDye + 1 team + 2 hide + 1 hideMisc + 1 skin +
-        // 16 stats + 12 bools + 12 deaths/tax + 21 colors + 120 armor +
-        // 60 dye + 580 inventory + 50 misc = 1322; 3 x 40 x 9 = 1080 bytes.
+        // The bank span: 24 prologue + 87 header + 120 armor + 60 dye +
+        // 580 inventory + 50 misc = 921; 3 x 40 x 9 = 1080 bytes.
         let mut r = Reader::new(&plain);
-        r.skip(1322).unwrap();
+        r.skip(921).unwrap();
         for (id, stack, prefix) in bank.iter().chain(bank2.iter()).chain(bank3.iter()) {
             assert_eq!(r.i32().unwrap(), *id);
             assert_eq!(r.i32().unwrap(), *stack);
