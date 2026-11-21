@@ -249,6 +249,7 @@
 //! | 1282-1289 | `:88654-88657` | the 694 WaterBoltMimic death (5x1008 + 3x1007 random-Center gores) |
 //! | 1290-1293 | `:88058-88070` | the town-pet block (25-dust type-31 burst + 4 random 61-63 gores, velocity post-writes) |
 //! | 1294-1298 | `:88677-88682` | the 453 SkeletonMerchant death (5 gores, distinct pairs, shimmer) |
+//! | 1299-1308 | `:88698-88721` | the 269-276/281-286 armored-bones block (5 shared gores + 5 per-type +20 extras) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7565,6 +7566,54 @@ fn skeleton_merchant_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1347 } else { 642 }, s); // :88682
 }
 
+/// The 269-276/281-286 armored-bones block death (`NPC.cs:88694-88722`,
+/// sites 1299-1308): the 20-dust type-26 burst (SpeedX `2.5*hitDirection`,
+/// SpeedY -2.5), then the shared 5-gore ladder at `this.scale` — 42 head,
+/// 43/43 at +20, 44/44 at +34 — THEN the per-type +20 extra: 269
+/// RustyArmoredBonesAxe → 406, 270 Flail → 407, 271/272 Sword/NoArmor → 408,
+/// 274 BlueArmoredBonesMace → 409, 276 BlueArmoredBonesSword → 410 (273/275/
+/// 281-286 get no extra).
+fn armored_bones_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 42, s); // :88698
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88699
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88700
+    gore.new_gore(rng, world, low, vel, 44, s); // :88701
+    gore.new_gore(rng, world, low, vel, 44, s); // :88702
+    // `:88703-88722` — the per-type +20 extra, AFTER the shared ladder.
+    let extra = match npc_type {
+        269 => Some(406), // :88705
+        270 => Some(407), // :88709
+        271 | 272 => Some(408), // :88713
+        274 => Some(409), // :88717
+        276 => Some(410), // :88721
+        _ => None,
+    };
+    if let Some(ty) = extra {
+        gore.new_gore(rng, world, mid, vel, ty, s);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8493,6 +8542,11 @@ pub fn hit_effect_c(
     // `:88661-88683` — the 453 SkeletonMerchant arm (sites 1294-1298).
     if npc_type == 453 && npc.hp <= 0 {
         skeleton_merchant_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88684-88723` — the 269-276/281-286 armored-bones block arm (sites
+    // 1299-1308).
+    if ((269..=276).contains(&npc_type) || (281..=286).contains(&npc_type)) && npc.hp <= 0 {
+        armored_bones_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -13336,6 +13390,34 @@ mod tests {
         skeleton_merchant_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1342, 1346, 1345, 1344, 1347]);
+    }
+
+    /// `NPC.cs:88698-88721` — the armored-bones block: the shared ladder
+    /// 42/43/43/44/44 then the per-type +20 extra (269→406, 270→407,
+    /// 271/272→408, 274→409, 276→410; 273/275/281-286 none).
+    #[test]
+    fn w4_f10_the_armored_bones_death_appends_the_per_type_extra() {
+        let w = air();
+        let cases: [(i32, Vec<i32>); 6] = [
+            (269, vec![42, 43, 43, 44, 44, 406]),
+            (270, vec![42, 43, 43, 44, 44, 407]),
+            (272, vec![42, 43, 43, 44, 44, 408]),
+            (274, vec![42, 43, 43, 44, 44, 409]),
+            (276, vec![42, 43, 43, 44, 44, 410]),
+            (273, vec![42, 43, 43, 44, 44]),
+        ];
+        for (ty, gores) in cases {
+            let n = boss(100.0, 100.0, 40.0, 56.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(1327);
+            armored_bones_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "armored bones {ty}");
+            if gores.len() == 6 {
+                assert_eq!(gore.slot(5).position, Vec2::new(100.0, 120.0));
+            }
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
