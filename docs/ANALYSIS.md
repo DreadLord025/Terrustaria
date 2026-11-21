@@ -39384,7 +39384,17 @@ missing, and where each landed:
    `fire_non_ammo_shot` arms landed; the 707 row (`Projectile.cs:7474-
    7490`, aiStyle 140 — OUTSIDE the 141-150 slice, the free integrate
    holds it until the 140 port) lands verbatim so the normal arm spawns.
-   4 witnesses in `world_sim/editing.rs`.
+   4 witnesses in `world_sim/editing.rs`. Recorded fold: the C#
+   `controlUseItem` is re-derived from the physical button EVERY tick
+   (the manage block re-forces it only on the `altFunctionUse == 0`
+   arm tick); the port's `mine_down` is event-driven, so the forced
+   `true` persists until a left-button event. A right-RELEASE mid-swing
+   (alt == 2, no re-arm) leaves it stale — the autoReuse restart can
+   fire one extra NORMAL 707 swing after the alt ends (the C# returns
+   to the physical up-state and does not restart). The right-HELD
+   repeat cadence is exact (the animation-zero clear re-arms 1 each
+   cycle); the fold is the release edge only (the `bug_net`
+   `!place_down` stand-in class).
 3. **The 1050 tree-shake DropItems was a recorded skip** — now wired.
    The arm queues a `Dd2Shake` (the scanned cell + the taken `Next(5)`
    gate; the three `Main.rand` draws stay inline on the
