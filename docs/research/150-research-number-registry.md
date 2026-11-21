@@ -1126,3 +1126,83 @@ self-pick any number again — execute §8/§8.7 assignments ONLY. New docs take
 - 308: g13 KEEPS (§8.5); d21→340 (§8.6); c24→344; g65→346.
 - **FROZEN live set: {151..236}∪{246..280}∪{281..303}∪{304..307}∪{308..337}∪{338..351} = 191 assignments. Free floor 352+ (new docs ≥360 after round-5 re-scan).**
 - **ENFORCEMENT: any future self-pick outside this table is INVALID; the lane must renumber to the §8/§8.7 assignment or request round 5. Merger dedupes by this table.**
+
+## §9 — UNIFIED FINAL TABLE (Lead, post-06aea22e0) — THE SINGLE AUTHORITY
+
+The dispatched round-4 draft (a15cb634b, 308–333 scheme) was marked ⛔ SUPERSEDED
+by its own writer in `06aea22e0`. This §9 consolidates §8/§8.5/§8.6/§8.7 + the
+e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
+**Where any earlier section disagrees with §9, §9 wins. NO SELF-PICKS.**
+
+### §9.1 — KEEPS (winners / executed assignments, no action)
+
+240+243=g58 · 244+245=g48 · 246=e23 · 247=d10 (EXECUTED 72431e61f) ·
+248=g82 (§6.3 reservation; rename still owed at g82 tip) · 249=d15 · 250=d37 ·
+281/282/283=f26 (§7.3 7h/7i/7j) · 284=g52 (0224fff80 pre-§8) · 285/286=§7.2 owners ·
+299 FREE (f39 chain superseded) · 300=c31 (EXECUTED a0211b94a, §7.3 re-issue) ·
+301=d81+g53 · 302=d83 · 303=f3 · 304=d50 · 305=f4 (331b29858) · 306=g86 ·
+307=g43 · 308=g13 (§8.5) · 115=d17 (uncontested).
+
+### §9.2 — FINAL assignment table (308–358)
+
+| # | Lane | Doc (current name at lane tip) | Status |
+|---|---|---|---|
+| 308 | g13 | 308-dust-main-family-bible | KEEP |
+| 309 | d125 | 309-empress-sheets-ledger | DONE 5f8569945 |
+| 310 | g48 | 281-c28-18-send-switch (244→281) | rename owed |
+| 311 | — | FREE (c9 moved to 349) | free |
+| 312 | d106 | 281-d106-worldgen-6-retire-final | rename owed |
+| 313 | d9 | 313-projectile-ai-81-90-final | DONE c1cd16f79 |
+| 314 | c25 | 281-c25-keyboard-text-field-final | rename in flight |
+| 315 | c32 | 281-convert-tables-family-bible | rename owed |
+| 316 | f39 | 281-f39-v18-claim-input (244→281) | rename owed |
+| 317 | g8 | 281-g8-kind-wire-final | rename owed |
+| 318 | g48 | 282-39-item-ownership-seed (245→282) | rename owed |
+| 319 | d125 | 319-d125-retire-final | DONE 5f8569945 |
+| 320 | f39 | 282-f39-seal | rename owed |
+| 321 | g59 | 283-g59-death-bible | rename owed |
+| 322 | g5 | 322-caster-family-declaration | DONE 39170deae (executed pre-reconcile, honored; no collision) |
+| 323 | — | FREE (g5 took 322 executed) | free |
+| 324 | — | FREE (g65 moved to 346) | free |
+| 325 | g40 | 246-w4g40-desert-marble-final | rename owed |
+| 326 | d16 | 246-d16-research-final | rename owed |
+| 327 | d16 | 247-kite-family-bible | rename owed |
+| 328 | g68 | 247-g68-wind-seal | rename owed |
+| 329 | c3 | 247-cursed-skull-family-bible | rename owed |
+| 330 | d6 | 247-projectile-ai-51-60-band-bible | rename owed |
+| 331 | d3 | 248-d3-boulder-family-seal | rename owed |
+| 332 | c27 | 248-c27-set-time-final | rename owed |
+| 333 | d119 | 304-d119-housing-bible | rename owed |
+| 334 | g62 | 240-g62-hit-dust | rename owed |
+| 335 | f30 | 240-f30-systems | rename owed |
+| 336 | d13 | 304-…-final (executed 243→304 e310bd6e7) | rename owed 304→336 |
+| 337 | f24 | 243-f24-room-content | rename owed |
+| 338 | d30 | 338-band-65-72-retire | DONE ee73eff97 |
+| 339 | g17 | 304-g17-gore-world-final | rename owed |
+| 340 | d21 | 308-projectile-ai-201-210-final | rename owed |
+| 341 | e2 | 341-npc-dust-window-coverage | DONE 0f830c2e6 |
+| 342 | e2 | 342-npc-dust-family-bible | DONE 0f830c2e6 |
+| 343 | d43 | 343-d43-kinds-631-697-final | DONE 715cf5f91 |
+| 344 | c24 | 344-journey-family-final | DONE d510d6dc7 |
+| 345 | d40 | 345-d40-band-421-490-seal | DONE 1e81f38a0 |
+| 346 | g65 | 346-g65-kill-death-dust-family-final | DONE 37ec2f3aa |
+| 347 | g15 | 347-item-dust-family-bible | DONE 648d2abb7 |
+| 348 | d32 | 348-band-85-93-retire | DONE cb1fa4c56 |
+| 349 | c9 | 349-snail-family-final | DONE 2267c93e8 |
+| 350 | c7 | 350-c7-critter-family-final | DONE 90abc1edf |
+| 351 | e5 | 351-gore-sites-family-bible | DONE 74ae9b085 |
+| 352 | d1 | 246-d1-falling-block-final (47482bdeb) | NEW rename owed |
+| 353 | d13 | 305-projectile-ai-121-130-band-final (e310bd6e7) | NEW rename owed |
+| 354 | d2 | 283-proj-ai-11-20-retire (a3b364350) | NEW rename owed |
+| 355 | d11 | 245-w4-d11-retire-final (8691a0f33) | NEW rename owed |
+| 356 | c11 | 284-c11-martian-turret-final (9a9c2625e) | NEW rename owed |
+| 357 | e26 | 248-e26-luck-final-census (cbaea2864) | NEW — CORRECTION: the §8-banner e26→333 collided with d119→333; e26 takes 357 |
+| 358 | g15 | 77-doc-sweep-items (§7.3's 284 target voided: 284=g52) | NEW rename owed |
+
+### §9.3 — rules
+
+- Free floor: **359+**. New docs require a registry check + Lead assignment; NO self-picks.
+- 311/322/324/299 are FREE holes — do NOT take them without a Lead assignment.
+- e26's 248 doc: g82's reservation wins (§6.3); e26→357 (not 333).
+- d13 has TWO docs: pet-light FINAL→336, band-final→353.
+- Merger dedupes filenames by THIS table. Chain-banners must cite §9.
