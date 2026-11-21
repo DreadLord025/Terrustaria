@@ -16,7 +16,7 @@
 
 use crate::app::App;
 use crate::player::{WingAirDust, WingGlideDust};
-use crate::player_dust::nd;
+use crate::player_dust::{lerp_color, nd};
 use glam::Vec2;
 use tr_core::particles::Color;
 
@@ -355,6 +355,65 @@ pub(crate) fn drain_wing_glide(app: &mut App, b: WingGlideDust) {
         d.velocity.y += 10.0;
         d.no_gravity = true;
         d.no_light_emittance = false;
+    } else if b.wings == 26 {
+        // `:27240-27273`: the Beetle glide pair (the WingAirVisuals shape).
+        beetle_trail(app, &glide_as_air(&b));
+    } else if b.wings == 37 {
+        // `:27274-27316`: the Festive glide pair — the colour roll runs
+        // FIRST (`Lerp(Black, White, NextFloat)`), scale 0.7, second alpha
+        // 140; the `type == 55` re-tint is dead (the list is all 31).
+        festive_glide(app, &b);
+    }
+}
+
+/// The glide snapshot re-viewed as a `WingAirDust` (the shared 26 pair).
+fn glide_as_air(b: &WingGlideDust) -> WingAirDust {
+    WingAirDust {
+        wings: b.wings,
+        x: b.x,
+        y: b.y,
+        width: b.width,
+        height: b.height,
+        vx: b.vx,
+        vy: b.vy,
+        facing: b.facing,
+    }
+}
+
+/// `:27274-27316` — the Festive glide pair with the shared HSL colour roll.
+/// The colour applies only on the dead `type == 55` arms, but the
+/// `NextFloat` draw rides the stream FIRST regardless.
+fn festive_glide(app: &mut App, b: &WingGlideDust) {
+    let cx = b.x + (b.width as i32 / 2) as f32;
+    let t = app
+        .rngs
+        .stream(crate::app::RngKey::UpdatePlayers)
+        .next_float();
+    let _color = lerp_color(Color::new(0, 0, 0, 255), Color::WHITE, t);
+    let ty = {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        [31, 31, 31][rng.next_max(3) as usize]
+    };
+    let idx = nd(app, Vec2::new(cx + low_off(b.facing), b.y), 24, b.height as i32, ty, 0.0, 0.0, 100, Color::default(), 0.7);
+    {
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.no_light = true;
+        d.velocity /= 4.0;
+        d.velocity -= Vec2::new(b.vx, b.vy);
+        // The dead `type == 55` re-tint (`:27288-27291`).
+    }
+    if roll(app, 3) {
+        let ty = {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            [31, 31, 31][rng.next_max(3) as usize]
+        };
+        let idx = nd(app, Vec2::new(cx + second_off(b.facing), b.y), 12, b.height as i32 / 2, ty, 0.0, 0.0, 140, Color::default(), 0.7);
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.no_light = true;
+        d.velocity /= 4.0;
+        d.velocity -= Vec2::new(b.vx, b.vy);
     }
 }#[cfg(test)]
 mod tests {
@@ -831,5 +890,56 @@ mod tests {
         assert_eq!(g.wings, 26);
         assert!(g.vy > 0.0, "the pre-integration velocity");
         assert_eq!(p.wing_frame, 2, "the Beetle glide pin");
+    }
+    /// `:27240-27316` вЂ” the glide Beetle/Festive pairs: the Beetle reuses
+    /// the WingAirVisuals shape; the Festive draws the colour NextFloat
+    /// FIRST, then the SelectRandom, scale 0.7, second alpha 140.
+    #[test]
+    fn w4_g66_the_glide_beetle_and_festive_pairs() {
+        // Beetle: the shared pair mirror.
+        let mut app = rig(0x5EED);
+        drain_wing_glide(&mut app, glide(26));
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let vel = Vec2::new(3.0, 2.0);
+        let slots = live(&app);
+        let mut expect = 1;
+        let (pos, v, sc) = default_block(&mut rng, Vec2::new(310.0 - 30.0, 600.0), 18, 42, 1.4);
+        assert_eq!(slots[0].dust_type, 217);
+        assert_eq!(slots[0].position, pos);
+        assert_eq!(slots[0].velocity, v / 4.0 - vel);
+        assert_eq!(slots[0].scale, sc);
+        if rng.next_max(2) == 0 {
+            expect += 1;
+            let (pos, v, sc) = default_block(&mut rng, Vec2::new(310.0 + 12.0, 600.0), 12, 21, 1.4);
+            assert_eq!(slots[1].position, pos);
+            assert_eq!(slots[1].velocity, v / 4.0 - vel);
+            assert_eq!(slots[1].scale, sc);
+        }
+        assert_eq!(slots.len(), expect);
+        assert_eq!(stream_of(&mut app), rng);
+        // Festive: the colour float, then the type roll, then the spawn.
+        let mut app = rig(0x5EED);
+        drain_wing_glide(&mut app, glide(37));
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let _ = rng.next_float(); // the dead-arm colour roll
+        let slots = live(&app);
+        let mut expect = 1;
+        let _ = rng.next_max(3); // SelectRandom
+        let (pos, v, sc) = default_block(&mut rng, Vec2::new(310.0 - 30.0, 600.0), 24, 42, 0.7);
+        assert_eq!(slots[0].dust_type, 31);
+        assert_eq!(slots[0].position, pos);
+        assert_eq!(slots[0].velocity, v / 4.0 - vel);
+        assert_eq!(slots[0].scale, sc);
+        if rng.next_max(3) == 0 {
+            expect += 1;
+            let _ = rng.next_max(3);
+            let (pos, v, sc) = default_block(&mut rng, Vec2::new(310.0 + 12.0, 600.0), 12, 21, 0.7);
+            assert_eq!(slots[1].position, pos);
+            assert_eq!(slots[1].velocity, v / 4.0 - vel);
+            assert_eq!(slots[1].scale, sc);
+            assert_eq!(slots[1].alpha, 140);
+        }
+        assert_eq!(slots.len(), expect);
+        assert_eq!(stream_of(&mut app), rng);
     }
 }
