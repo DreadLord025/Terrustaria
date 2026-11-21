@@ -3,7 +3,7 @@
 //! (finding, frame counters, cadence) stays readable; the walk is a faithful
 //! port and keeps the original local numbering (`num11`..`num34`).
 
-use super::{ScreenInfo, WaterfallDraw, WaterfallManager, GFX_QUALITY};
+use super::{AmbientScan, ScreenInfo, WaterfallDraw, WaterfallManager, GFX_QUALITY};
 use crate::lighting::{DynamicLight, LightMap, LightStyle};
 use crate::tile::Tile;
 use crate::tile_light::FastRandom;
@@ -18,8 +18,8 @@ fn blocks_water_drawing_behind_self(kind: u16) -> bool {
 
 impl WaterfallManager {
     /// `WaterfallManager.DrawWaterfall`. Returns the pass's
-    /// `Main.ambientWaterfallX/Y/Strength` store (`WaterfallManager.cs:960-962`);
-    /// the lavafall triple (`:963-965`) is the g74 co-lane's scan.
+    /// `Main.ambientWaterfallX/Y/Strength` + `Main.ambientLavafallX/Y/Strength`
+    /// stores (`WaterfallManager.cs:960-965`), in that order.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_waterfall(
         &mut self,
@@ -33,9 +33,10 @@ impl WaterfallManager {
         sparkle_rng: &mut FastRandom,
         screen: ScreenInfo,
         show_invisible: bool,
+        drew_lava: bool,
         out: &mut Vec<WaterfallDraw>,
         lights: &mut Vec<DynamicLight>,
-    ) -> [f32; 3] {
+    ) -> (AmbientScan, AmbientScan) {
         // The water-style ambience locals (`WaterfallManager.cs:328-332`): num
         // strength, num2/num3 nearest distances (99999 sentinels), num4/num5
         // the nearest segment's cell-centre world pixels (-1 until visited).
@@ -44,6 +45,14 @@ impl WaterfallManager {
         let mut num3 = 99999.0f32;
         let mut num4 = -1i32;
         let mut num5 = -1i32;
+        // The lavafall ambience locals (`WaterfallManager.cs:333-337`): num6
+        // strength, num7/num8 nearest distances (99999 sentinels), num9/num10
+        // the nearest segment's cell-centre world pixels (-1 until visited).
+        let mut num6 = 0.0f32;
+        let mut num7 = 99999.0f32;
+        let mut num8 = 99999.0f32;
+        let mut num9 = -1i32;
+        let mut num10 = -1i32;
         for index in 0..self.current_max {
             let mut wf = self.waterfalls[index];
             let mut num13 = wf.x;
@@ -61,12 +70,16 @@ impl WaterfallManager {
             let mut num12 = wf.kind;
             let num21;
             if num12 == 1 || num12 == 14 || num12 == 25 {
-                // `Main.drewLava` is always false in our draw order.
-                if wf.stop_at_step == 0 {
+                // `WaterfallManager.cs:354`: `Main.drewLava || stopAtStep == 0`.
+                if drew_lava || wf.stop_at_step == 0 {
                     continue;
                 }
                 num21 = 32 * self.slow_frame;
             } else if num12 == 11 || num12 == 22 || num12 == 26 {
+                // `WaterfallManager.cs:368`: the rain arms skip on drewLava.
+                if drew_lava {
+                    continue;
+                }
                 let mut num22 = self.waterfall_dist / 4;
                 if num12 == 22 {
                     num22 = self.waterfall_dist / 2;
@@ -164,7 +177,12 @@ impl WaterfallManager {
             } else {
                 match num12 {
                     0 => num12 = draw_style,
-                    2 => {}
+                    // `WaterfallManager.cs:531`: the disco fall skips on drewLava.
+                    2 => {
+                        if drew_lava {
+                            continue;
+                        }
+                    }
                     _ => {}
                 }
                 num21 = 32 * self.regular_frame;
@@ -321,20 +339,45 @@ impl WaterfallManager {
                     self.disco_b,
                 );
 
-                // `Main.ambientWaterfall*` scan (`WaterfallManager.cs:708-730`):
-                // every non-lava/honey/shimmer/rain kind (26 included — the
-                // exclusion list only names 1/14/25/11/12/22) contributes
-                // `1 - dist/(screenWidth*0.75)` inside the 2x-screen box, and
-                // the nearest cell-centre world pixel rides per axis. The Y
-                // arm keeps the original's verbatim quirk (`:725-728`): it
-                // tests num39 but stores num38 (the X distance) into num3.
-                if num12 != 1
+                // `Main.ambientLavafall*` scan (`WaterfallManager.cs:685-707`):
+                // per lava segment inside the 2x-screen box, sum
+                // `1 - dist/(screenWidth*0.75)` when positive; track the
+                // nearest cell-centre world pixel per axis. The Y arm keeps
+                // the original's verbatim quirk (`:702-705`): it tests num36
+                // but stores num35 (the X distance) into num8.
+                if num12 == 1 {
+                    let centre = screen.centre();
+                    let num35 = ((num13 * 16 + 8) as f32 - centre[0]).abs();
+                    let num36 = ((num14 * 16 + 8) as f32 - centre[1]).abs();
+                    if num35 < screen.width * 2.0 && num36 < screen.height * 2.0 {
+                        let num37 = 1.0
+                            - (num35 * num35 + num36 * num36).sqrt() / (screen.width * 0.75);
+                        if num37 > 0.0 {
+                            num6 += num37;
+                        }
+                    }
+                    if num35 < num7 {
+                        num7 = num35;
+                        num9 = num13 * 16 + 8;
+                    }
+                    if num36 < num8 {
+                        num8 = num35;
+                        num10 = num14 * 16 + 8;
+                    }
+                } else if num12 != 1
                     && num12 != 14
                     && num12 != 25
                     && num12 != 11
                     && num12 != 12
                     && num12 != 22
                 {
+                    // `Main.ambientWaterfall*` scan (`WaterfallManager.cs:708-729`):
+                    // the same near-screen strength sum for every fall type
+                    // EXCEPT the lava (1), honey (14), shimmer (25) and the
+                    // rain arms (11/12/22) — 26 (the fountain) IS included, the
+                    // exclusion list only names 1/14/25/11/12/22. The Y arm
+                    // keeps the original's verbatim quirk (`:725-728`): it
+                    // tests num39 but stores num38 (the X distance) into num3.
                     let centre = screen.centre();
                     let num38 = ((num13 * 16 + 8) as f32 - centre[0]).abs();
                     let num39 = ((num14 * 16 + 8) as f32 - centre[1]).abs();
@@ -698,9 +741,20 @@ impl WaterfallManager {
                 k += 1;
             }
         }
-        // `WaterfallManager.cs:960-962`: the water-style triple store (the
-        // lavafall triple `:963-965` belongs to the g74 co-lane's scan).
-        [num4 as f32, num5 as f32, num]
+        // `WaterfallManager.cs:960-965`: the water-style then lavafall triple
+        // stores, verbatim order.
+        (
+            AmbientScan {
+                x: num4 as f32,
+                y: num5 as f32,
+                strength: num,
+            },
+            AmbientScan {
+                x: num9 as f32,
+                y: num10 as f32,
+                strength: num6,
+            },
+        )
     }
 }
 
