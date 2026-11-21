@@ -1,4 +1,12 @@
-# 130 — DOC-SWEEP lane 40: the gem/moss residuals (W4-c29 sweep phase)
+# 260 — DOC-SWEEP lane 40: the gem/moss residuals (W4-c29 sweep phase) — SEALED
+
+> **Renumber chain: 130 → 260.** The d54 research-number registry
+> (`docs/research/150-research-number-registry.md`, tip `72226e500`, §6.2
+> row `c29-deadmans-chest-biome`) adjudicated the key-130 collision:
+> f28's `130-f28-retire.md` was first-pushed (09:45:35 `922e4fd25`), this
+> doc (12:04:03 `29c3ff2b5`) takes **260**. Executed at the SEAL commit;
+> 260 verified free on every origin tip at the seal fetch. The sibling
+> census renamed 95 → **224** in the same pass (registry §3 row).
 
 Code-only doc-sweep of the five gem/moss residual items the lane brief
 named, against `decompiled/Terraria/` (read in ≤100-line windows) and the
@@ -185,6 +193,96 @@ stream order change, no world-hash pin movement (runtime-only). The
 `drop_events` harness). Each pins the C# line it restores and the
 `by_tile` fallback it displaces.
 
+## SEAL — the gem-family bible (c29d retire executed)
+
+**Sealed 2026-11-21 at the c29 SEAL commit** (doc-only; code stands at
+`55555fb9b` + the fidelity `12a1fc973` + the biome port `dbc93e9bc`).
+The c29d-retire dispatch: **verified NOT executed at dispatch time** —
+no c29d commit existed on any ref (`git log --all --grep` census) and
+neither renumber assignment was consumed (224/260 free on every origin
+tip); this section executes it. Retire = this sweep doc SEALED under its
+registry number (260), the sibling census SEALED under 224, every stale
+"UNWIRED"/"unported" cross-note corrected with its owner receipt, the
+family keep-one table below published for the merger.
+
+**The gem-family bible** — every gem/moss surface, its owner, its state:
+
+| Surface | C# anchor | Owner / state |
+| --- | --- | --- |
+| Gem/moss cave GEN (`Spread.Gem`/`Gemmable`, `gemCave`, `randGem(Tile)`, `randMoss`, `setMoss`, `neonMossBiome`, moss arms A-F) | `WorldGen.cs:3526-3798`/`:9719-9884`/`:17472-17700` | M5-STRUCT-5 base + c29 fidelity `12a1fc973` (census `224-gem-moss-census.md`); d105 owns the whole Random-Gems/Moss-Grass PASSES (`:20729`/`:20769`), d103 owns the underground growth twin (`:73699-73755`) |
+| The 178 `PlaceTile` anchor gate + frame-row draw | `:59691-59701` + `:60297-60366` | c29 fidelity `12a1fc973` (`place_exposed_gem`, the four-face anchor chain, the three slope-allowing predicates in `edit/kill.rs`) |
+| Gem/moss break-drop per-cell arms | `:63999-64024`/`:64945-64955`/`:65493-65518` | **c29 sweep `55555fb9b`** (this doc's REAL gap; `registry::tile_drop` ×4 arms + `editing::cell_drops` 178 `hit.frame_x` arm) |
+| Gemsparkle DRAW (dust-43 shine arm) | `TileDrawing.cs:7413-7529`, `Main.cs:7516`/`:7523-7529` | d60 claimed (`tile_draw_particles.rs`, tip `77429fe1`), UNWIRED pending the wiring wave (g85's `:965-968` entry-gate precedent); gems NEVER emit light — REFUTED premise (no `tileLighted[63..68/178/566]`, no scanner case, no Lighting AddLight) |
+| Moss PAINT colour pick (`GetTileMossColor`) | `:81215-81255`, consumer `:85176-85202` | f25 C8 claimed + **WIRED at tip** (`framing::get_tile_moss_color` + `edit/kill.rs::check_long_moss`); the brief's UNWIRED cross-note is stale |
+| Gem EXTRACTION (extractinator gems arm) | `ExtractinatorHelper.cs:297-344` | M7-EXTRACT-1 base faithful (`extract::roll_extractinator_drop`); e19/f47 residuals disjoint |
+| Neon moss CONVERT (growth tick) | `:72371-72429` + `MossConversion :71457-71493` | base `growth/grass.rs` faithful + d103 underground arm (`1c844cbb`); the 184-spray bare-write deviation stands until the growth-wiring wave |
+| Rainbow moss 627 (TileObjectData / framing / light / map) | no `addTile(627)`; `Main.cs:7029-7031`; `WorldGen.cs:82131-82201`; `TileLightScanner.cs:604-610` | premise REFUTED (solid block, no def); framing/light/map halves landed; the glow-mask RECORD (313) is g35's table; the TABLE-pass colour switch (`TileDrawing.cs:1235-1239`) deferred-with-owner g31 (`:1178-1342`, research/136 row 14 — g31 KEEPS 136 per registry §3, the f11 grand-design doc took 235) |
+| Dead-man's-chest BIOME (this branch's namesake) | `DeadMansChestBiome.cs:10-625` + `WorldGen.cs:20916-20938` | c29 port `dbc93e9bc`; the seal-phase re-census below found it FAITHFUL line-for-line, no co-lane claimant (the all-361-tip grep for `pass_dead_mans_chests`/`place_dead_mans_chest`/`turn_gold_into_dead_mans` returns only this branch) |
+
+**Merger keep-one**: the four `tile_drop` arms + the 178 `cell_drops`
+arm are c29's exclusive write-set in `registry.rs`/`editing.rs` (no
+sibling W4 branch carries the `:63999`/`:64945`/`:65493` anchors); the
+gem-cave/moss-pass hunks ride `spider_gem_moss.rs` + `edit/kill.rs`
+beside d103's `moss_arm_body` extraction — KEEP-BOTH (disjoint bodies,
+the d105 R1 world_hash comment-block precedent). The `world_hash.rs`
+c29 comment blocks are stale-by-design notes; gate re-pins sequential.
+
+## The dead-man's-chest re-census (seal-phase, vs the `dbc93e9bc` port)
+
+Re-read whole against `DeadMansChestBiome.cs` (≤100-line windows) +
+the block's helpers. **Verdict: FAITHFUL, no fix needed.** Spot proofs:
+
+- `Place` `:102-136` → `place_dead_mans_chest` (`mini_biomes.rs:2425`):
+  good-spot → ClearCaches (fresh `DeadMansCaches`) → boulder/dart/
+  explosive finders in that draw order → enough-traps → retype → the
+  four placement loops darts/wires/boulders/explosives → explosive
+  wires. Verbatim.
+- The finder ledger: boulder `Next(2,5)` count + `Next(2,5)` step, the
+  `num/2*step` left shift, the `Y-6` scan line, the min/max-x wire at
+  `line_y-1` + the 7-step drop wire (`:180-220` → `:2081-2104`); dart
+  `Next(3,7)` + `Next(2)` direction, the alternating walk, the
+  last-success wire with the -1 sentinel (`:298-314` → `:2183-2197`);
+  explosive centre pair → `list.Clear()` ONLY after the centre pick
+  (`:355`) → the right/left 4-bands ACCUMULATE → append left/centre/
+  right (`:336-395` → `:2240-2277`). The `CheckSpot` 2×5 histogram,
+  4×4 ceiling ring, floor pair, 6×6 exclusion, first-max dominant pick
+  (`:236-296` → `:2122-2177`): the `num6=-1` sentinel folds to best=0
+  (the C# `num6==-1 ||` first-iteration arm) — equivalent.
+- `IsAGoodSpot` `:450-482` → `:1967-1999`: the no-active-check anchor
+  read, the `frameX/36==1` gold gate carried as the port's
+  `frame_x/18==1` convention (`structures.rs::place_chest` writes
+  `18*style`; the retype writes `144+i*18` = the C#'s literal, and
+  `IsChestRigged` `WorldGen.cs:35746-35753` `frameX/36==4` reads it
+  correctly at `netglue.rs:57-58`/`wiring.rs:644` — the two conventions
+  compose: generation writes/reads 18-based, the rigged check reads
+  the C#-literal 144). `oceanDepths` (`:10963-10974`, oceanLevel
+  `:4447` `(surface+rock)/2+40`, beachDistance 380 `:86914`),
+  `countWires` (`:9515-9544`, four colours per cell), `countTiles`
+  (`:9546-9635` via the shared `spider_gem_moss::count_tiles`, the
+  3500 maxTileCount from `:19593`), `CanBeClearedDuringGeneration`
+  (`:80168-80175`, the dualDungeons veto deferred-with-seed).
+- `TurnGoldChestIntoDeadMansChest` `:484-519` → `:2287-2314`: the 2×2
+  467 retype `144+i*18`/`j*18`, the `Next(3)!=0` early return BEFORE
+  FindChest (draw consumed either way), the `len-2..=1` DeepClone
+  down-shift (stale sources survive), slot-1 sweater 5007.
+- The block `:20916-20938` → `pass_dead_mans_chests` `:2548-2581` +
+  `pipeline.rs:2332-2358`: the actuallyNoTraps veto (no notTheBees
+  gate), scan FIRST → config roll AFTER (`:20923-20924`), the 3000
+  budget decremented BEFORE the break (2999 picks), the counter
+  advances on failed Place (`:20936`), `Remove(num6)` removes the
+  picked VALUE = the index (list identity) — the port's
+  `candidates.remove(pick)` matches. `Place2x2`'s `nactive()` floor
+  gate (`Tile.cs:240-247`) + `tileTable` arm (`:51371-51378`) +
+  `SolidTile2(Tile)` (`:70134-70151`) all present in
+  `place_2x2_floor_tile`; the boulder wrapper's `Collision.EmptyTile`
+  origin gate (`:59373`, 138 tileSolid not forced) in
+  `place_boulder_2x2`. `StructureMap.CanPlace` (`StructureMap.cs:24-52`)
+  bounds-on-unpadded + padding-10 scans verbatim.
+- Pins: both UNCHANGED stands (the no-hook `generate()` path has no
+  chest records — the scan is inert, only the config roll draws on the
+  fresh `pass_rng("Micro Biomes")` copy). The 8 witnesses stay WRITTEN
+  NOT RUN (code-only lane).
+
 ## Status
 
 - [x] Co-lane claims read (g18/f25/e19/f47/d102/d103/d106/e12/d60/g35/f15/g31/d105)
@@ -195,4 +293,6 @@ stream order change, no world-hash pin movement (runtime-only). The
 - [x] Item 5 627 row: premise refuted (no def); framing/light/map/sweep landed; the glow table pass deferred-with-owner (g31)
 - [x] The REAL gap ported: the gem/moss per-cell break-drop slice (`55555fb9b`)
 - [x] 6 witnesses written (NOT run — code-only)
-- [ ] The tileGlowMask table pass (`TileDrawing.cs:1178-1342`) — the table-pass lane's bind contract (g31 research/136), NOT this lane
+- [x] c29d-retire executed: registry-150 renumbers consumed (130→260 here, 95→224 sibling), SEALED + the gem-family bible published
+- [x] The dead-man's-chest re-census: FAITHFUL line-for-line at `dbc93e9bc`, no co-lane claimant, no fix needed
+- [ ] The tileGlowMask table pass (`TileDrawing.cs:1178-1342`) — the table-pass lane's bind contract (g31 research/136, g31 keeps the number per registry §3), NOT this lane

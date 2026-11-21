@@ -39420,7 +39420,8 @@ click buffers; the player tick applies).
 
 Branch `task/W4-c29-deadmans-chest-biome` (sweep phase, stacked on the
 gem-moss fidelity DONE `bf90f6e7`). The five-item gem/moss residual
-census lives in `docs/research/130-doc-sweep-gem-moss.md`; four items
+census lives in `docs/research/260-doc-sweep-gem-moss.md` (renumbered
+130 → 260 per the d54 registry 150); four items
 resolved as claimed-and-faithful (d60 gemsparkle dust, f25 C8 moss
 colour + its WIRED case-184 consumer, the extractinator gems arm, the
 growth-tick moss conversion + d103's underground twin) or refuted
@@ -39464,3 +39465,34 @@ invoked. 6 witnesses WRITTEN NOT RUN (`registry.rs::test_w4_c29_*` ×4,
 and the `by_tile` fallback it displaces; the existing drop suites
 (`test_DW_3_1_tile_drop_map`, `test_DW_3_2_*`) untouched — the new arms
 only displace fallback rows no existing test pins.
+
+### SEAL (c29d retire executed, 2026-11-21)
+
+The sweep doc is SEALED under its registry number: **research/130 →
+research/260** and the fidelity census **research/95 → research/224**,
+both per the d54 research-number registry 150 (tip `72226e500`, §3/§6.2
+c29 rows — c42 keeps 95, f28 keeps 130; both assigned numbers verified
+free on every origin tip at the seal fetch). The c29d-retire dispatch
+was verified NOT executed at dispatch time (no c29d commit on any ref,
+neither number consumed) and is executed by this seal. research/260
+gains the **gem-family bible** (the nine-surface owner table: gen =
+M5-STRUCT-5 + c29 fidelity `12a1fc973`; break-drop = c29 sweep
+`55555fb9b`; sparkle DRAW = d60 UNWIRED-pending-wiring-wave; moss paint
+= f25 C8 WIRED; extraction = M7-EXTRACT-1 base; growth convert = base +
+d103; 627 = no-def refuted, glow TABLE pass deferred-with-owner g31
+research/136) and the merger keep-one notes (the four `tile_drop` arms
++ the 178 `cell_drops` arm are c29's exclusive write-set; the
+`world_hash.rs` comment blocks resolve KEEP-BOTH per the d105 R1
+precedent). The **dead-man's-chest re-census** re-read the whole class
+(`DeadMansChestBiome.cs:10-625` + the block `WorldGen.cs:20916-20938` +
+`countWires :9515-9544` / `oceanDepths :10963-10974` / `countTiles
+:9546-9635` / `CanBeClearedDuringGeneration :80168-80175` / `Place2x2
+:51330-51423` / `nactive Tile.cs:240-247` / `SolidTile2 :70134-70151` /
+`IsChestRigged :35746-35753` / `StructureMap.CanPlace :24-52`) against
+`dbc93e9bc`: **FAITHFUL line-for-line, no fix needed**; the two chest
+frame conventions compose (generation `place_chest` writes 18·style
+and `dead_mans_good_spot` reads /18; the retype writes the C#-literal
+`144+i*18` and `is_rigged` reads /36==4); no co-lane claimant (the
+all-361-tip grep for `pass_dead_mans_chests`/`place_dead_mans_chest`/
+`turn_gold_into_dead_mans` returns only this branch). Doc-only seal —
+no code change, the witnesses stay WRITTEN NOT RUN (code-only lane).

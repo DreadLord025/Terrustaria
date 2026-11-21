@@ -1,4 +1,13 @@
-# 95 — Gem-moss biome gen census + fidelity port (W4-c29)
+# 224 — Gem-moss biome gen census + fidelity port (W4-c29)
+
+> **Renumber chain: 95 → 224.** The d54 research-number registry
+> (`docs/research/150-research-number-registry.md`, tip `72226e500`, §3
+> key-95 row) adjudicated the collision: c42's
+> `95-wiring-master-reconcile.md` was first-pushed (04:18:15 `ec568b3ea`),
+> this doc (05:10:30) takes **224** (g41's finish census takes 225).
+> Executed at the SEAL commit; 224 verified free on every origin tip at
+> the seal fetch. The sweep-phase residuals live in
+> `260-doc-sweep-gem-moss.md` (renumbered 130 → 260 in the same pass).
 
 Code-only census of the gem-moss worldgen residuals against
 `decompiled/Terraria/WorldGen.cs`, scoped to the task brief: **gem-moss
