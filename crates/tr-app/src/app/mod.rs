@@ -2323,11 +2323,13 @@ impl App {
         // `weatherVaneBobframe = 0` at `:67242`).
         self.tile_anim.reset();
         self.tile_anim_step = FixedStepper::new(1.0 / 60.0, 8);
-        // W4-g34: the cage tables reset with the tile animator on world load
-        // (the C# re-allocates them zeroed in `Initialize_TileAndNPCData`,
-        // `Main.cs:66902-66972`); the proximity flag clears too.
-        self.cage_anim.reset();
-        self.critter_cage = false;
+        // W4-g34 union (research/67 §2.5/§3): the cage tables are PROCESS
+        // state — NO world-entry reset. The `:8387-8395` zero loop above
+        // covers `tileFrame`/`tileFrameCounter` ONLY; the cage arrays are
+        // allocated zeroed once in the STATIC ctor `static Main()`
+        // (`Main.cs:66502`, `:66901-66972`) and never re-zeroed per world.
+        // The old `cage_anim.reset()` here mis-cited that allocation as
+        // `Initialize_TileAndNPCData` — dropped (f14/g33 lifetime).
         // `Main.mapDelay = 2` (`WorldGen.cs:6947`, the world-load reset):
         // the legacy engine owns the counter in the port (S1-E-19 wave B,
         // `LegacyLighting.cs:345-348`).
