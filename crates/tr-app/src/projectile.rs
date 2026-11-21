@@ -22114,6 +22114,94 @@ impl ProjectilePool {
         }
     }
 
+    /// W4-d12 DOC-SWEEP items 3/4 — the melee on-hit sticker procs:
+    /// `Player.TentacleSpike_TrySpiking` (`Player.cs:44160-44172`, item 5094)
+    /// and `Player.BloodButcherer_TryButchering` (`:44174-44186`, item 795).
+    /// Both spawn their aiStyle-113 sticker PRE-PINNED (`ai0 = 1f, ai1 =
+    /// npc.whoAmI`) at the NPC hitbox's closest point to the player's mounted
+    /// centre plus the aim unit, velocity `(npc.Center - spawnPoint) * 0.8`
+    /// (the 975 rotates that by `NextFloatDirection() * π/4` — ONE
+    /// `NextDouble` draw, `Utils.cs:1203-1206`), then `StatusNPC` (the
+    /// pin-gated 337/540 or 344/540 debuff) and `KillOldestJavelin` at the
+    /// per-NPC cap 5 (`_tentacleSpikesMax5`/`_bloodButchererMax5`,
+    /// `Player.cs:57136-57137`). The C#'s `Main.myPlayer == whoAmI` gate folds
+    /// true (single-player), the `CanBeChasedBy` gate is the caller's. The
+    /// `NewProjectile` centre→top-left recenter (`Projectile.cs:10876-10877`)
+    /// subtracts the half-box. `damage` is `ProcessHitAgainstNPC`'s `dmg`
+    /// (the class-multiplied, pre-DamageVar value, `Player.cs:44291`/`:44404`).
+    /// Returns the spawned slot (the caller reads it for the witness).
+    pub(crate) fn spawn_melee_sticker_proc(
+        &mut self,
+        kind: u16,
+        owner: u8,
+        mounted: Vec2,
+        npc_idx: usize,
+        npcs: &mut [Npc],
+        damage: i32,
+        knock_back: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<usize> {
+        let (ncx, ncy) = npcs[npc_idx].center();
+        let npc_center = Vec2::new(ncx, ncy);
+        let (nw, nh) = npcs[npc_idx].size();
+        // `Entity.Hitbox` (`Entity.cs:175`): `(int)position.X/Y` — the int
+        // truncation, the width/height whole.
+        let npc_hitbox = (
+            npcs[npc_idx].x as i32 as f32,
+            npcs[npc_idx].y as i32 as f32,
+            nw,
+            nh,
+        );
+        // `:44164`/`:44178` — the aim unit from the mounted centre to the NPC.
+        let aim = (npc_center - mounted).normalize_or_zero();
+        // `:44165`/`:44179` — `Hitbox.ClosestPointInRect(MountedCenter) + aim`
+        // (`Utils.cs:1581-1600`: clamp each axis into the rect).
+        let (hx, hy, hw, hh) = npc_hitbox;
+        let closest = Vec2::new(
+            mounted.x.clamp(hx, hx + hw),
+            mounted.y.clamp(hy, hy + hh),
+        );
+        let point = closest + aim;
+        // `:44166`/`:44180` — the velocity toward the NPC centre, ×0.8.
+        let mut vel = (npc_center - point) * 0.8;
+        if kind == BLOOD_BUTCHERER {
+            // `:44180` — `.RotatedBy(NextFloatDirection() * π * 0.25)`: ONE
+            // `NextDouble` (the direction roll), the 971 draws nothing.
+            let angle = (rng.next_double() as f32 * 2.0 - 1.0)
+                * std::f32::consts::PI
+                * 0.25;
+            vel = vel.rotate(Vec2::from_angle(angle));
+        }
+        // `NewProjectile` centres the box on the point (`:10876-10877`).
+        let (w, h) = proj_data(kind).map_or((16.0, 16.0), |d| (d.w, d.h));
+        let slot = self.spawn_with_data_ai_owned(
+            kind,
+            owner,
+            point.x - w * 0.5,
+            point.y - h * 0.5,
+            vel.x,
+            vel.y,
+            damage,
+            knock_back,
+            1.0,
+            npc_idx as f32,
+        )?;
+        // `:44168`/`:44182` — `Main.projectile[num].StatusNPC(npc.whoAmI)`:
+        // the pin-gated debuff applied AT SPAWN (the sticker is already
+        // ai0=1/ai1=victim, so `thrown_on_hit`'s gate passes). The 971 grants
+        // TentacleSpike 337/540, the 975 BloodButcherer 344/540
+        // (`Projectile.cs:11343-11350`).
+        crate::projectile_ai_thrown::thrown_on_hit(
+            &self.slots[slot],
+            &mut npcs[npc_idx],
+            npc_idx as u16,
+            rng,
+        );
+        // `:44169`/`:44183` — `KillOldestJavelin(num, kind, npc.whoAmI, max5)`.
+        self.kill_oldest_javelin(slot, npc_idx as u16, kind, 5);
+        Some(slot)
+    }
+
     /// `Kill()`'s gem arm (`Projectile.cs:75425-75484`): the gem bolts' death
     /// burst. The sound and the 15 (+30) dust spawns are SKIPPED (no sound or
     /// dust layer in the pool), and the `AoeExplosion` feature's damage half

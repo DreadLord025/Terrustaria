@@ -2035,6 +2035,17 @@ pub struct Player {
     /// `Player.meleeEnchant` (`Player.cs:1068`, arms `:12013-12044`): the
     /// weapon-imbuement id 1..8 (0 = none).
     pub melee_enchant: u8,
+    /// `Player._spawnTentacleSpikes` (`Player.cs:2896`): the Tentacle Spike
+    /// (item 5094) melee on-hit proc latch — armed on the use start
+    /// (`ItemCheck_OwnerOnlyCode` `:43468-43471`, `ItemAnimationJustStarted`),
+    /// consumed by the first landed melee hit (`TentacleSpike_TrySpiking`
+    /// `:44160-44172`). W4-d12 DOC-SWEEP item 3.
+    pub spawn_tentacle_spikes: bool,
+    /// `Player._spawnBloodButcherer` (`Player.cs:2898`): the Blood Butcherer
+    /// (item 795) melee on-hit proc latch — armed on the use start
+    /// (`:43472-43475`), consumed by `BloodButcherer_TryButchering`
+    /// (`:44174-44186`). W4-d12 DOC-SWEEP item 4.
+    pub spawn_blood_butcherer: bool,
     /// The `petFlag*`/light-pet bools (`Player.cs:18413-18600`'s clears),
     /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
     /// sets the 881 and 934 flags shared with buffs 284/317).
@@ -2913,6 +2924,10 @@ impl Player {
             sunflower: false,
             rabid: false,
             melee_enchant: 0,
+            // W4-d12 DOC-SWEEP items 3/4 — the melee on-hit proc latches
+            // (`Player.cs:2896`/`:2898`'s bool field defaults).
+            spawn_tentacle_spikes: false,
+            spawn_blood_butcherer: false,
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,

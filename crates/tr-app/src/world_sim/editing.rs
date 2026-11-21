@@ -498,6 +498,25 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
     }
+    // W4-d12 DOC-SWEEP items 3/4 — `Player.ItemCheck_OwnerOnlyCode`'s
+    // use-start proc latches (`Player.cs:43468-43475`): the Tentacle Spike
+    // (5094) and the Blood Butcherer (795) arm their on-hit spawn flag on
+    // `ItemAnimationJustStarted` — the swing's first tick, which this seam
+    // is (every swing/shot/consume start calls it). The flag is consumed by
+    // the first landed melee hit (`resolve_melee_strike`'s
+    // `ApplyNPCOnHitEffects` tail). The 121 Volcano / 155 Muramasa /
+    // 5097 BatBat latches are the other `ItemCheck_OwnerOnlyCode` arms —
+    // their procs are the player-lane follow-ups, not this lane.
+    if held_kind == 5094 {
+        if let Some(p) = app.player.as_mut() {
+            p.spawn_tentacle_spikes = true;
+        }
+    }
+    if held_kind == 795 {
+        if let Some(p) = app.player.as_mut() {
+            p.spawn_blood_butcherer = true;
+        }
+    }
 }
 
 /// The gem-bolt kinds the gem-staff shoot fires (`Player.cs:49262`'s kind
@@ -7731,6 +7750,14 @@ fn resolve_melee_strike(
                 // `UpdatePlayers` swap (`Main.cs:17754`).
                 let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
+                // W4-d12 DOC-SWEEP items 3/4 — `ProcessHitAgainstNPC`'s `dmg`
+                // local (`Player.cs:44291`, `ApplyRapidAttackBonus`'s result;
+                // the 5094/795 are NOT in `RapidAttackBonusDamage` so it is the
+                // class-multiplied `raw`). `ApplyNPCOnHitEffects` receives THIS
+                // pre-DamageVar value as its `damage` arg (`:44404`), and the
+                // Tentacle Spike / Blood Butcherer procs spawn their sticker at
+                // it (`:44167`/`:44181`). Captured before DamageVar mutates it.
+                let proc_damage = dmg;
                 let mut dmg = tr_core::damage::damage_var(loot_rng, raw, luck);
                 // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
                 // (`Player.cs:44344-44353`): the Flymeal takes full armour
@@ -7826,6 +7853,68 @@ fn resolve_melee_strike(
                 let landed = crate::npc::Npc::strike_melee(
                     &mut app.npcs, idx, dmg, pcx, kb, crit, Some(me), expert,
                 );
+                // W4-d12 DOC-SWEEP items 3/4 — `ApplyNPCOnHitEffects`' sticker
+                // procs (`Player.cs:44404` calls it right after `StrikeNPC`
+                // `:44403`, BEFORE the cooldown/DPS tail): the Tentacle Spike
+                // (5094, `:44477-44480`) and the Blood Butcherer (795,
+                // `:44481-44484`) spawn their pre-pinned sticker on the FIRST
+                // landed hit of the swing that armed the latch. The C# runs
+                // the proc regardless of the kill (`:44404` precedes the
+                // `DidNPCDie` check `:44415`) but gates on `CanBeChasedBy`
+                // (`:44162`/`:44176`) — a killing blow deactivated the victim,
+                // so the post-strike chaseable read refuses it (the port's
+                // `hp > 0` liveness, the S1-P-i27 precedent). The latch is
+                // consumed ONLY when the spawn fires (`:44170`/`:44184` set
+                // the flag false INSIDE the gate). The draws ride the
+                // `UpdatePlayers` stream (`Main.cs:17754`): the 971 draws
+                // nothing, the 975 one `NextDouble` (the rotation).
+                if landed {
+                    let proc_kind = match held.kind {
+                        5094 => Some(crate::projectile::TENTACLE_SPIKE),
+                        795 => Some(crate::projectile::BLOOD_BUTCHERER),
+                        _ => None,
+                    };
+                    if let Some(pk) = proc_kind {
+                        let armed = app.player.as_ref().is_some_and(|p| {
+                            if pk == crate::projectile::TENTACLE_SPIKE {
+                                p.spawn_tentacle_spikes
+                            } else {
+                                p.spawn_blood_butcherer
+                            }
+                        });
+                        if armed && app.npcs[idx].can_be_chased_by() {
+                            let mounted = app
+                                .player
+                                .as_ref()
+                                .map(|p| {
+                                    let (mx, my) = p.mounted_center();
+                                    Vec2::new(mx, my)
+                                })
+                                .unwrap_or(Vec2::new(pcx, 0.0));
+                            let proc_rng =
+                                app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                            let spawned = app.projectiles.spawn_melee_sticker_proc(
+                                pk,
+                                me,
+                                mounted,
+                                idx,
+                                &mut app.npcs,
+                                proc_damage,
+                                kb,
+                                proc_rng,
+                            );
+                            if spawned.is_some() {
+                                if let Some(p) = app.player.as_mut() {
+                                    if pk == crate::projectile::TENTACLE_SPIKE {
+                                        p.spawn_tentacle_spikes = false;
+                                    } else {
+                                        p.spawn_blood_butcherer = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 // S1-P-i05: `ProcessHitAgainstNPC`'s tail
                 // (`Player.cs:44414/:44419`) — the landed hit re-arms the
                 // per-NPC melee lock to the CURRENT `itemAnimation` ticks
@@ -8433,6 +8522,85 @@ mod tests {
         let n = &a.npcs[0];
         let slot = n.buffs.find_buff_index(31).expect("Confused lands");
         assert_eq!(n.buffs.buff_time[slot], 120, "the fixed 120 (:6614)");
+    }
+
+    /// W4-d12 DOC-SWEEP item 3 — the Tentacle Spike (5094) melee on-hit proc:
+    /// the use start arms `_spawnTentacleSpikes` (`Player.cs:43468-43471`),
+    /// the first landed hit of the NEXT swing spawns the pre-pinned 971
+    /// (`TentacleSpike_TrySpiking` `:44160-44172`): ai0=1, ai1=victim, the
+    /// StatusNPC TentacleSpike debuff 337/540 (`Projectile.cs:11343-11346`),
+    /// and the latch consumes. The 971 draws NOTHING (the 975's rotation is
+    /// the only draw in the pair). The rig's first swing lands the strike and
+    /// arms the latch; the second swing's hit fires the proc.
+    #[test]
+    fn w4_d12_doc_sweep_the_tentacle_spike_procs_a_pinned_971() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 5094; // Tentacle Spike (melee, no shoot)
+        a.inventory[a.selected].count = 1;
+        // Swing 1: the strike lands, the use start arms the latch.
+        mine_frames(&mut a, 1);
+        assert!(
+            a.player.as_ref().unwrap().spawn_tentacle_spikes,
+            "the use start arms the latch (:43470)"
+        );
+        assert_eq!(
+            a.projectiles.slots().iter().filter(|p| p.active && p.kind == 971).count(),
+            0,
+            "the first swing's strike precedes the latch arming — no proc yet"
+        );
+        // Run the swing out so the next press starts a fresh use.
+        mine_frames(&mut a, 30);
+        // Swing 2: the armed latch fires the proc on the landed hit.
+        mine_frames(&mut a, 1);
+        let spike = a
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 971)
+            .expect("the second swing's hit spawns the 971 sticker");
+        assert_eq!(spike.ai[0], 1.0, "pre-pinned ai0 = 1 (:44167)");
+        assert_eq!(spike.ai[1], 0.0, "ai1 = the victim's slot (:44167)");
+        assert!(
+            !a.player.as_ref().unwrap().spawn_tentacle_spikes,
+            "the proc consumes the latch (:44170)"
+        );
+        // The StatusNPC at spawn grants TentacleSpike 337 for 540.
+        let n = &a.npcs[0];
+        let slot = n.buffs.find_buff_index(337).expect("the 337 debuff lands at spawn");
+        assert_eq!(n.buffs.buff_time[slot], 540, "the fixed 540 (:11345)");
+    }
+
+    /// W4-d12 DOC-SWEEP item 4 — the Blood Butcherer (795) melee on-hit proc:
+    /// the same shape as the 971 but the velocity rotates by
+    /// `NextFloatDirection() * π/4` (ONE `NextDouble`, `Player.cs:44180`) and
+    /// the StatusNPC grants BloodButcherer 344/540 (`Projectile.cs:11347-11350`).
+    #[test]
+    fn w4_d12_doc_sweep_the_blood_butcherer_procs_a_pinned_975() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 795; // Blood Butcherer (melee, no shoot)
+        a.inventory[a.selected].count = 1;
+        mine_frames(&mut a, 1);
+        assert!(
+            a.player.as_ref().unwrap().spawn_blood_butcherer,
+            "the use start arms the latch (:43474)"
+        );
+        mine_frames(&mut a, 30);
+        mine_frames(&mut a, 1);
+        let butcher = a
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 975)
+            .expect("the second swing's hit spawns the 975 sticker");
+        assert_eq!(butcher.ai[0], 1.0, "pre-pinned ai0 = 1 (:44181)");
+        assert_eq!(butcher.ai[1], 0.0, "ai1 = the victim's slot (:44181)");
+        assert!(
+            !a.player.as_ref().unwrap().spawn_blood_butcherer,
+            "the proc consumes the latch (:44184)"
+        );
+        let n = &a.npcs[0];
+        let slot = n.buffs.find_buff_index(344).expect("the 344 debuff lands at spawn");
+        assert_eq!(n.buffs.buff_time[slot], 540, "the fixed 540 (:11349)");
     }
 
     /// S1-P-i10 — the Magma Stone's OnFire3 ALWAYS lands (the 360/240/120
