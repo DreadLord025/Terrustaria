@@ -385,3 +385,30 @@ NextFloat()<maxRaining`). **Owned by g15** (`d43b490f3`,
 duplication. It is the only other C# site that touches the bucket family's
 item state; the smart-cursor re-point (`Step_EmptyBuckets`,
 `SmartCursorHelper.cs:622-676`) was already in main (`smart_cursor.rs`).
+
+### 6d. The bucket STACK-consume edge census — COMPLETE after this phase
+
+The consume sites are exactly six `sItem.stack--` reads
+(`Player.cs:46356/:46361/:46370` pickup conversions,
+`:46441/:46461/:46481` placement hand-backs); 5364's placement arm
+(`:46491-46502`) has NO consume, and the four sponges never consume
+(`:46352` gate). The port's `consume_one` (`buckets.rs:322-325`) keeps the
+kind through the swing (the C# `TurnToAir` runs only at swing end,
+`:42824-42828`) — a zero count reads as air to `IsAir`
+(`Item.cs:385-395`: `type > 0 → stack <= 0`), exactly the C# shape.
+
+| Edge | C# | Port | Witness |
+| --- | --- | --- | --- |
+| LAST bucket: hand-back fills the now-air selected slot | `:42152-42156` (`selectedItem >= 0 && IsAir`) | `put_item_from_usage` selected arm (`buckets.rs:348-357`), count 1 | `…draws_water_into_a_water_bucket` + `…pours_and_hands_back_an_empty` (the `6f5bd2a2` rig fix) |
+| STACK split: surviving stack keeps the slot, hand-back rides GetOrDropItem | `:46461` then `:42143-42159` — the scan finds no partial 205, the selected slot is NOT air, `deposit_pickup`'s empty-hotbar arm lands slot 1 | `consume_one` + `deposit_pickup` (`item.rs:466`, useStyle-1 hotbar arm `:527-535`) | **NEW** `…stack_splits_the_hand_back_into_another_slot` (pour + pickup mirrors, 3 → 2 + 1) |
+| PARTIAL same-type stack anywhere in the 58 slots takes the hand-back FIRST | `:42143-42151` (type + stack + maxStack only, no prefix — buckets unprefixable) | the inventory→coins→ammo chained scan (`buckets.rs:336-346`; 50+4+4 = 58, `inv.rs:13-15`) | **NEW** `…hand_back_merges_a_partial_stack_first` (slot 7: 5 → 6, no split) |
+| BOTTOMLESS no-consume, all four kinds | `:46439/:46459/:46479` skip for 4820/3031/5302; 5364 no consume at all | the `(pour, bottomless, give)` table (`buckets.rs:283-292`) | `…bottomless_shimmer_bucket…` (5364) + **NEW** `…all_four_bottomless_buckets_keep_their_stack` (3031/4820/5302/5364, count 2 stays 2, no hand-back anywhere) |
+| SPONGE no-consume + box-min exemption | `:46347/:46352` | `is_sponge` gates both | `…box_minimum…` + §6b's two new pins |
+| maxStack 9999 (the scan's `stack < maxStack` never refuses a bucket merge in practice) | `Item.cs:49017/:49966` stock | `registry::max_stack` reads the generated row | row census §6a |
+| Overflow: inventory full → world drop at `base.Center` | `GetOrDropItem` `:7193-7200`, `ItemCreatedFromItemUsage` = default (`GetItemSettings.cs:61` — no void vault, sound on) | `deposit_pickup` remainder → `spawn_item_drop_px` at the player centre (`buckets.rs:362-401`) | ported; no dedicated full-inventory witness (the deposit walk itself is i47-witnessed) — recorded, not a gap |
+
+**Verdict: the stack-consume census is COMPLETE.** The bottomless
+no-consume is verified for the whole family (not just 5364), the
+empty-bucket hand-back covers last-bucket / stack-split / partial-merge,
+and the one unwitnessed edge (full-inventory overflow) rides the already
+witnessed `deposit_pickup` seam. Three new witnesses WRITTEN NOT RUN.

@@ -168,7 +168,10 @@ twelve bucket/sponge kinds, research/104 §1b).
   conversion, the shimmer refusal, the box-min + sponge exemption, the
   partial top-up, the pour + hand-back, the >=200/solid refusals, the
   bottomless-shimmer no-consume, the empty-or-same-type gate, the typed
-  sponges. research/104 §1b.
+  sponges. research/104 §1b. LIQUID FINAL adds ×5: the 3032
+  water+shimmer/refusal + shimmer-bit survival, the 5304 all-kinds draw,
+  the stack-split hand-back, the partial-stack-first merge, the
+  all-four-bottomless no-consume (research/104 §6b/§6d).
 
 ## Deviations & risks
 

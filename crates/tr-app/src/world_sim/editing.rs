@@ -19058,4 +19058,85 @@ mod bucket_use_tests {
             assert_eq!(app.inventory[app.selected].count, 1, "no consumption");
         }
     }
+
+    /// LIQUID FINAL stack-consume census — a FULL bucket stack splits: the
+    /// pour burns one (`:46461`), the selected slot keeps the surviving
+    /// stack (NOT IsAir), so the Empty-Bucket hand-back skips the
+    /// selected-slot arm (`:42152`) and rides GetOrDropItem's deposit walk
+    /// — the empty-hotbar arm lands it in slot 1 (`Player.cs:39365-39374`,
+    /// buckets are useStyle 1). The pickup side mirrors it: a 205 stack
+    /// burns one and the filled 206 lands in another slot.
+    #[test]
+    fn w4_g45_the_bucket_stack_splits_the_hand_back_into_another_slot() {
+        let mut app = bucket_app(30, 120);
+        hold(&mut app, 206, 3);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 255);
+        assert_eq!(app.inventory[0].kind, 206, "the surviving stack stays selected");
+        assert_eq!(app.inventory[0].count, 2, "one burned");
+        assert_eq!(app.inventory[1].kind, 205, "the hand-back split into slot 1");
+        assert_eq!(app.inventory[1].count, 1);
+        // The pickup mirror: 3 empties over a full water cell.
+        let mut app = bucket_app(30, 120);
+        wet(&mut app.world, 30, 120, 255, LiquidKind::Water);
+        hold(&mut app, 205, 3);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0);
+        assert_eq!(app.inventory[0].kind, 205);
+        assert_eq!(app.inventory[0].count, 2, "one empty burned");
+        assert_eq!(app.inventory[1].kind, 206, "the filled bucket split off");
+        assert_eq!(app.inventory[1].count, 1);
+    }
+
+    /// LIQUID FINAL stack-consume census — the hand-back's 58-slot partial
+    /// scan (`:42143-42151`) runs BEFORE the selected-slot/GetOrDropItem
+    /// arms: an existing partial 205 stack in slot 7 takes the hand-back
+    /// (5 → 6), no new slot appears.
+    #[test]
+    fn w4_g45_the_hand_back_merges_a_partial_stack_first() {
+        let mut app = bucket_app(30, 120);
+        app.inventory[7] = crate::item::ItemSlot {
+            kind: 205,
+            name: registry::name(205),
+            count: 5,
+            prefix: 0,
+        };
+        hold(&mut app, 206, 2);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        assert_eq!(app.inventory[7].count, 6, "the partial stack took the hand-back");
+        assert_eq!(app.inventory[0].kind, 206);
+        assert_eq!(app.inventory[0].count, 1);
+        assert_eq!(app.inventory[1].kind, 0, "no split slot");
+    }
+
+    /// LIQUID FINAL stack-consume census — ALL FOUR bottomless kinds keep
+    /// their stack and hand back nothing (`:46439/:46459/:46479` skip the
+    /// consume for 4820/3031/5302; 5364's arm has no consume at all). The
+    /// pre-existing witness pinned 5364 only; this closes the family.
+    #[test]
+    fn w4_g45_all_four_bottomless_buckets_keep_their_stack() {
+        for (kind, pour) in [
+            (3031u16, LiquidKind::Water),
+            (4820, LiquidKind::Lava),
+            (5302, LiquidKind::Honey),
+            (5364, LiquidKind::Shimmer),
+        ] {
+            let mut app = bucket_app(30, 120);
+            hold(&mut app, kind, 2);
+            app.mine_down = true;
+            ticks(&mut app, 2);
+            let t = app.world.tile(30, 120).unwrap();
+            assert_eq!(t.liquid, 255, "{kind} poured");
+            assert_eq!(t.liquid_kind(), pour, "{kind} type");
+            assert_eq!(app.inventory[0].kind, kind);
+            assert_eq!(app.inventory[0].count, 2, "{kind} consumed nothing");
+            assert!(
+                app.inventory[1..].iter().all(|s| s.kind == 0),
+                "{kind} handed nothing back"
+            );
+        }
+    }
 }
