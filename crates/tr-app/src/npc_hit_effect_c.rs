@@ -201,6 +201,7 @@
 //! | 928-937 | `:87122-87131` | the zombie fall-through: 251 Eyezor + the generic else-head (3) (head + shared tails) |
 //! | 938-944 | `:87114-87138` | the zombie fall-through: 186/432 PincushionZombie (head 241 + tails + 242 + Next(2)-gated 242) |
 //! | 945-948 | `:87128-87131` | the zombie fall-through: 187/433 SlimedZombie (headless, 25-dust blue burst + shared tails) |
+//! | 949-951 | `:87158-87162` | the 83/84/179 cursed weapon death (3 gores 61, Next(-2,3) velocity x0.5) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5330,6 +5331,43 @@ fn zombie_block_death(
     gore.new_gore(rng, world, low, vel, 5, 1.0); // :87131
 }
 
+/// The 83/84/179 cursed weapon death (`NPC.cs:87152-87163`, sites
+/// 949-951): the 20-dust type-31 burst (scale 1.5, velocity ×2, noGravity
+/// post-writes), then 3 gores of type 61 at `(pos.X, pos.Y + height/2 - 10)`
+/// (the C# integer height/2), each with velocity `(Next(-2,3), Next(-2,3))`
+/// (the two draws fire before the spawn) then `velocity *= 0.5` post-write,
+/// at `this.scale`.
+fn cursed_weapon_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:87152-87157` — the 20-dust type-31 burst.
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 0,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:87158-87163` — the 3 gores of type 61.
+    let anchor = Vec2::new(npc.x, npc.y + (h as i32 / 2) as f32 - 10.0);
+    let s = npc.scale;
+    for _ in 0..3 {
+        let vx = rng.next_range(-2, 3) as f32;
+        let vy = rng.next_range(-2, 3) as f32;
+        let idx = gore.new_gore(rng, world, anchor, Vec2::new(vx, vy), 61, s);
+        gore.slot_mut(idx).velocity *= 0.5;
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5978,6 +6016,10 @@ pub fn hit_effect_c(
         && npc.hp <= 0
     {
         zombie_block_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
+    }
+    // `:87141-87164` — the 83/84/179 cursed weapon arm (sites 949-951).
+    if (npc_type == 83 || npc_type == 84 || npc_type == 179) && npc.hp <= 0 {
+        cursed_weapon_death(npc, dust, dust_ctx, gore, rng, world);
     }
     outcome
 }
@@ -9484,6 +9526,42 @@ mod tests {
             assert!(blue.is_some(), "the blue burst ran");
             assert_eq!(blue.unwrap().alpha, 125);
         }
+    }
+
+    /// `NPC.cs:87158-87163` — the cursed weapon death: 3 gores of type 61
+    /// at (pos.X, pos.Y+height/2-10), each velocity (Next(-2,3),Next(-2,3))
+    /// then x0.5. The twin replay pins the per-gore velocity draws + kicks.
+    #[test]
+    fn w4_f10_the_cursed_weapon_death_draws_the_velocity() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(877);
+        cursed_weapon_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![61, 61, 61]);
+        // height/2 = 15 -> anchor (100, 105).
+        for i in 0..3 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 105.0));
+        }
+        // The twin: 20 type-31 dusts, then 3 x (Next(-2,3) x2 + 2 kicks).
+        let mut twin = UnifiedRandom::new(877);
+        for _ in 0..20 {
+            let _px = twin.next_max(26);
+            let _py = twin.next_max(26);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..3 {
+            let _vx = twin.next_range(-2, 3);
+            let _vy = twin.next_range(-2, 3);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the cursed weapon mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
