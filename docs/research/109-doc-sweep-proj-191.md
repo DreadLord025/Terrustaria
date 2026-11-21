@@ -602,3 +602,82 @@ is a legacy case-42 one-shot d80 wires through `play_use_sound` (d20's doc
 calling it "a tracked sound" is imprecise — it is a trackable-*asset* played via
 the legacy one-shot path, ZERO gameplay RNG draws; **T6b note**). Neither is a
 d20 port. **Task seeds T6a/T6b** below, owned by d80.
+
+---
+
+## Task seeds (prioritized, with owning lane + dependencies)
+
+| Seed | Size | Lane | Task | C# anchor | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| **T5** | M | item-use (`editing.rs`) | Port the terra-chain use-path spawn arms: NightsEdge 273 / TrueNightsEdge 675 / TrueExcalibur 674 / TerraBlade 757 — paired slash+beam with `ai0=dir·gravDir`, `ai1=itemAnimMax`(slash)/`30/32/18`(beam), `ai2=GetAdjustedItemScale`; TrueNightsEdge beam dmg/2, TrueExcalibur ghost dmg 0, TerraBlade beam vel×5; spawn at MountedCenter | `Player.cs:48870-48937` | d19's 972/982/983/984 rows landing; `adjusted_item_scale` (`melee_swing.rs:132`) exists |
+| **T4b** | M | pet-equip | Port `UpdatePet`/`UpdatePetLight` — per-tick `miscEquips[0..1].buffType` re-grant `AddBuff(num,3600)` + UseSound when `FindBuffIndex==-1 && !hideMisc`, the vanity/light-pet persistence mechanism (fixes ALL pet items, not just 5276) | `Player.cs:17298-17340` (call `:25573-25574`) | `is_vanity_pet`/`is_light_pet` (`buffs.rs:106/102`) exist |
+| **T4a** | S | item-use (`editing.rs`) | Port the pet-buff shoot arm: kill owner's same-kind pets, then `NewProjectile(point, aim, projToShoot, 0, 0f, owner)` (damage 0, kb 0) for `projPet[shoot] && !summon` | `Player.cs:48561-48583` | `PROJ_PET` (`data.rs:4588`) exists |
+| **T4c** | M | pet-AI | Add the 994 JunimoPet `proj_data` row (20×20, aiStyle 26, friendly, pen −1, netImportant, timeLeft×5) + extend the aiStyle-26 pet slice to cover 994 (keep-alive `petFlagJunimoPet`) | `Projectile.cs:9436-9445`, `:58845-58855` | T4b (the buff must persist for the keep-alive to matter) |
+| **T6a** | S | d80 tracked-sound | Wire the JimsDrone loop: `ProjTrackedCue::Drone*` ensure+follow, re-derive num3/num4 from `local_ai[0]/[1]` (d20 maintains both), shared-atomic condition, handle in `local_ai[2]`; ZERO gameplay draws | `Projectile.cs:40983-40997` | d20's `ai_jims_drone` (landed); d80's `ProjTrackedCue` drain |
+| **T6b** | S | d80 tracked-sound | Wire the FlintCharge case-42 one-shot at `ai[1]==30` via `play_use_sound` (style 296), id-42-aware drain (NOT the id-2 `wants_sound` façade); ZERO gameplay draws | `Projectile.cs:52303-52306` | d20's `ai_flint` (landed); `play_use_sound` case-42 (`audio.rs:1080`) exists |
+| **T1** | M | camera (`world_sim/camera.rs`) | Port `GetObjectTrackingCameraPan`'s three sources (spectate/drone/golf, priority order) + `DroneCameraTracker` + `remoteVisionForDrone` (visor 5452 equip grant); the drone Track call-site is already in d20's arm (skipped) | `Main.cs:62722-62746`, `DroneCameraTracker.cs:1-34`, `Player.cs:14213/15461/18712` | golf/spectate camera state; d69 render targets are unrelated |
+| **T3** | S | merge (c10+d20) | Keep-one: keep c10's `projectile_bird_droppings.rs` + dispatch/row; drop d20's `ai_bird_droppings` + `200 =>` arm + duplicate row/overlay/witnesses (or repoint d20's dispatch to c10's module) | `Projectile.cs:39985-40017` | c10 + d20 both landing |
+
+**Priority rationale.** T5 is the highest-impact behavioural gap (the entire
+terra-chain — a core progression weapon line — fires inert single shots with a
+collapsed envelope). T4b is the highest-leverage pet fix (one arm repairs every
+vanity/light pet's persistence). T4a/T4c complete the 5276 gift chain. T6a/T6b
+are small d80 follow-ups now unblocked by d20's AI arms. T1 is camera-lane scope
+(the drone view). T3 is a merge-time dedupe, no new code.
+
+**Cross-lane dependency canary.** The 1043 DeadCellsFlintSlash is the merge
+canary: d20's 198 arm spawns it (`projectile.rs:17485`) but its 190 AI arm is
+d19's; d19 has the 1043 row + 190 arm but not the 198 spawner. **Both must land
+for the flint slash to fly correctly** — a lossy merge that drops either side
+leaves the slash inert (spawned but no AI) or unspawned (AI but no source). The
+`anchors.txt` canary should pin both the 198 spawn and the 190 dispatch.
+
+---
+
+## Verification performed
+
+Code-only DOC-SWEEP (no cargo/tests/graphify per the lane constraint and
+`MODULE-TEMPLATE.md`). Static cross-reading of:
+
+- C#: `Projectile.cs` (AI_190/191/192/195/198/199/200, SetDefaults rows,
+  HandleMovement tails), `Player.cs` (ItemCheck_Shoot use-path arms, UpdatePet,
+  AddBuff, GetAdjustedItemScale, itemLocation readers), `Item.cs` (5276/273/675/
+  674/757/5462 SetDefaults, DefaultToVanitypet, buyPrice), `Main.cs`
+  (GetObjectTrackingCameraPan), `DroneCameraTracker.cs`, `SoundEngine.cs`,
+  `SoundID.cs`, `BuffID.cs`, `ProjectileID.cs`, `ItemID.cs`.
+- Rust (this branch): `projectile_ai_misc.rs`, `projectile.rs`,
+  `projectile/data.rs`, `world_sim/projectiles.rs`, `world_sim/editing.rs`,
+  `world_sim/camera.rs`, `world_sim/player.rs`, `player.rs`, `buffs.rs`,
+  `buff_effects_accessory.rs`, `buff_effects_misc.rs`, `potions.rs`,
+  `itemdata.rs`, `item.rs`, `audio.rs`, `soundid.rs`, `tracked_sound.rs`,
+  `melee_swing.rs`, `projectile_ai_golf.rs`, `projectile_ai026_*.rs`,
+  `registry.rs`, `prefix.rs`.
+- Sibling lanes (git show, read-only): d19 `projectile_ai_sword_styles.rs` +
+  `projectile/data.rs` + dispatch; d69 `tr-render/targets.rs`; d80
+  `tracked_sound.rs` + `projectile.rs` + `world_sim/projectiles.rs` +
+  `docs/research/64-tracked-sound-census.md` + `docs/ANALYSIS.md`; c10
+  `projectile_bird_droppings.rs` + `projectile/data.rs` + dispatch.
+
+All six d20 AI arms re-verify FAITHFUL against their C# sources. The six skips
+resolve as tabulated above. No repo code was modified (research-only, per
+`MODULE-TEMPLATE.md`); the real gaps are cross-lane and recorded as seeds.
+
+## Deviations & risks
+
+- **d20 doc imprecision (cosmetic):** `ai_flint`'s doc (`:1384`) calls the
+  FlintCharge cue "a tracked sound"; it is a legacy case-42 one-shot (T6b note).
+  `ai_jims_drone`'s doc (`:1078-1081`) correctly calls the drone loop a tracked
+  loop. No behaviour impact (both skipped).
+- **d80 census staleness (doc):** the 64-census deferred table claims the drone
+  AI is unported; d20 has since landed it. The deferral *reason* is resolved;
+  the wiring remains d80's (T6a).
+- **T5 envelope-collapse risk (behavioural, determinism-adjacent):** until T5
+  lands, the terra-chain swords spawn `ai[1]=0` projectiles whose 190/191 arms
+  divide by zero — the NaN/∞ propagates into rotation/scale/opacity. This is
+  inert-but-not-crashing (the num4/num≥1 kills still fire), but it is a real
+  behavioural deviation from the C# paired slash+beam. NOT a d20 regression
+  (the use-path was never ported on any branch).
+- **T3 double-arm risk (compile):** if c10 and d20 both land without the
+  keep-one resolution, the two `200 =>` dispatch arms are a duplicate-match
+  compile error and the two `BIRD_DROPPINGS` rows a duplicate definition. The
+  merge MUST resolve to one (T3).
