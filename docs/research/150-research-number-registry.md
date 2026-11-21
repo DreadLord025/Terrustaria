@@ -1205,9 +1205,9 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 356 | c11 | 284-c11-martian-turret-final (9a9c2625e) | NEW rename owed |
 | 357 | e26 | 357-e26-luck-final-census | DONE 35de96a5e |
 | 358 | g15 | 77-doc-sweep-items (§7.3's 284 target voided: 284=g52) | NEW rename owed |
-| 359 | g51 | 309-g51-net-te-family-seal (6c4ec70d7, post-§9 self-pick) | NEW rename owed 309→359 |
+| 359 | g51 | 359-g51-net-te-family-seal | DONE 77db84121 |
 | 360 | g10 | 360-g10-pets-final (7414ba339) | KEEP (first-add wins the ≥360 rule) |
-| 361 | d5 | 360-…-final (fd69c1167, collided with g10-360) | NEW rename owed 360→361 |
+| 361 | d5 | 361-projectile-ai-41-50-final | DONE 0a1e4daa8 |
 | 362 | g55 | 362-g55-loadout-family-final | DONE f97f510eb |
 | 363 | d31 | 363-d31-style83-wiring-retire-final | DONE 3cd6d880c |
 | 364 | g16 | 360-proj-gore-family-final (1254ff5e0 17:40:42, third 360 claimant; g10 17:31 first) | NEW rename owed 360→364 |
