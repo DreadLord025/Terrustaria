@@ -1728,6 +1728,7 @@ impl App {
                     is_a_shop_item: false,
                     prefix: 0,
                     stack: 0,
+                    value: None,
                 };
             }
         }
@@ -5776,6 +5777,7 @@ mod s1_p_i44_tests {
             is_a_shop_item: false,
             prefix: 0,
             stack: 2,
+            value: None,
         });
         let slot = app.shop_stock.len() - 1;
         assert!(app.buy_shop_item(slot));

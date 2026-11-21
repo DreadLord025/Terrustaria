@@ -2011,6 +2011,7 @@ impl App {
             is_a_shop_item: false,
             prefix: 0,
             stack: 0,
+            value: None,
         });
         if slot >= 40 {
             return; // past the chest's slot window
@@ -5973,6 +5974,7 @@ mod s1_p_i44_shop_click_tests {
             is_a_shop_item: false,
             prefix: 0,
             stack: 12,
+            value: None,
         }];
         app.mouse_pos = SHOP_SLOT_0;
         app.keys.insert(KeyCode::ShiftLeft);

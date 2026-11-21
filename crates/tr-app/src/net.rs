@@ -185,6 +185,15 @@ pub mod id {
     /// `NetMessage.cs:1383-1386`, `MessageBuffer.cs:3708-3714`,
     /// host→client only).
     pub const MOONLORD_COUNTDOWN: u8 = 103;
+    /// `104 ShopOverride` (W4-g50, S1-I-4): `(byte)` slot, `(short)` type,
+    /// `(short)` stack, `(byte)` prefix, `(int)` value, BitsByte buyOnce
+    /// (`MessageID.cs:222`, `NetMessage.cs:1387-1394`,
+    /// `MessageBuffer.cs:3715-3735`, host→client only).
+    pub const SHOP_OVERRIDE: u8 = 104;
+    /// `105 GemLockToggle` (W4-g50, S1-I-4): `(short)x, (short)y, (bool)on`
+    /// (`MessageID.cs:224`, `NetMessage.cs:1395-1399`,
+    /// `MessageBuffer.cs:3736-3741`, client→host only).
+    pub const GEM_LOCK_TOGGLE: u8 = 105;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -2083,6 +2092,35 @@ pub struct MoonlordCountdown {
     pub countdown: i32,
 }
 
+/// `msg 104 ShopOverride`'s body (`NetMessage.cs:1387-1394`): `(byte)number`
+/// the shop slot, `(short)number2` the item type, `(short)number3` the stack
+/// (the writer floors a negative at 0, `:1390`), `(byte)number4` the prefix,
+/// `(int)number5` the value, `(byte)number6` the `BitsByte{bit0 buyOnce}`.
+/// The client rebuilds the open shop's slot (`SetDefaults(type)`, stack,
+/// `Prefix(prefix)`, value, buyOnce) when a shop is open and the slot is in
+/// range (`MessageBuffer.cs:3715-3735`). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShopOverride {
+    pub slot: u8,
+    pub kind: i16,
+    pub stack: i16,
+    pub prefix: u8,
+    pub value: i32,
+    pub buy_once: bool,
+}
+
+/// `msg 105 GemLockToggle`'s body (`NetMessage.cs:1395-1399`): `(short)number`
+/// x, `(short)number2` y, `(bool)(number3 == 1f)` on. The host runs
+/// `WorldGen.ToggleGemLock(x, y, on)` (`MessageBuffer.cs:3736-3741`, the
+/// reader is `netMode != 1`-gated); the client sends it after consuming the
+/// gem (`Player.cs:32547`/`:32559`). Client→host only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GemLockToggle {
+    pub x: i16,
+    pub y: i16,
+    pub on: bool,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2231,6 +2269,10 @@ pub enum C2s {
     /// `102 NebulaLevelupRequest` - this client picked up a nebula booster
     /// (`Player.cs:35052`; `MessageBuffer.cs:3654-3660` relays; W4-g50).
     NebulaLevelupRequest(NebulaLevelupRequest),
+    /// `105 GemLockToggle` - this client toggled a gem lock
+    /// (`Player.cs:32547`/`:32559`; `MessageBuffer.cs:3736-3741` runs
+    /// `WorldGen.ToggleGemLock`; W4-g50).
+    GemLockToggle(GemLockToggle),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2405,6 +2447,9 @@ pub enum S2c {
     /// `103 MoonlordHorror` - the Moon Lord countdown statics
     /// (`NetMessage.cs:1383-1386`; `MessageBuffer.cs:3708-3714`; W4-g50).
     MoonlordCountdown(MoonlordCountdown),
+    /// `104 ShopOverride` - one open-shop slot's rebuilt item
+    /// (`NetMessage.cs:1387-1394`; `MessageBuffer.cs:3715-3735`; W4-g50).
+    ShopOverride(ShopOverride),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2502,6 +2547,7 @@ impl C2s {
             Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
             Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
             Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
+            Self::GemLockToggle(_) => id::GEM_LOCK_TOGGLE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2601,6 +2647,8 @@ impl C2s {
             Self::NebulaLevelupRequest(n) => {
                 w.u8(n.player_id).u16(n.buff_type).f32(n.x).f32(n.y)
             }
+            // `NetMessage.cs:1395-1399`: short x, short y, bool on.
+            Self::GemLockToggle(g) => w.i16(g.x).i16(g.y).bool(g.on),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2785,6 +2833,12 @@ impl C2s {
                 x: r.f32()?,
                 y: r.f32()?,
             }),
+            // `MessageBuffer.cs:3739` — short x, short y, bool on.
+            id::GEM_LOCK_TOGGLE => Self::GemLockToggle(GemLockToggle {
+                x: r.i16()?,
+                y: r.i16()?,
+                on: r.bool()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2960,6 +3014,7 @@ impl S2c {
             Self::TowerShields(_) => id::TOWER_SHIELDS,
             Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
             Self::MoonlordCountdown(_) => id::MOONLORD_COUNTDOWN,
+            Self::ShopOverride(_) => id::SHOP_OVERRIDE,
         }
     }
 
@@ -3174,6 +3229,15 @@ impl S2c {
             // `NetMessage.cs:1383-1386`: the two NPC statics as raw ints,
             // MaxMoonLordCountdown first.
             Self::MoonlordCountdown(m) => w.i32(m.max).i32(m.countdown),
+            // `NetMessage.cs:1387-1394`: byte slot, short type, short stack
+            // (negative floored at 0), byte prefix, int value, buyOnce byte.
+            Self::ShopOverride(s) => w
+                .u8(s.slot)
+                .i16(s.kind)
+                .i16(s.stack.max(0))
+                .u8(s.prefix)
+                .i32(s.value)
+                .u8(u8::from(s.buy_once)),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3492,6 +3556,24 @@ impl S2c {
                 max: r.i32()?,
                 countdown: r.i32()?,
             }),
+            // `MessageBuffer.cs:3719-3724` — byte slot, short type, short
+            // stack, byte prefix, int value, the buyOnce BitsByte.
+            id::SHOP_OVERRIDE => {
+                let slot = r.u8()?;
+                let kind = r.i16()?;
+                let stack = r.i16()?;
+                let prefix = r.u8()?;
+                let value = r.i32()?;
+                let flags = r.bitsbyte()?;
+                Self::ShopOverride(ShopOverride {
+                    slot,
+                    kind,
+                    stack,
+                    prefix,
+                    value,
+                    buy_once: flags.get(0),
+                })
+            }
             _ => return None,
         })
     }
@@ -6269,6 +6351,60 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::MoonlordCountdown(d) => assert_eq!(d, m),
             other => panic!("expected 103, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `104 ShopOverride` (`NetMessage.cs:1387-1394`): byte slot, short
+    /// type, short stack (negative floored at 0), byte prefix, int value,
+    /// the buyOnce BitsByte. Host→client only (`MessageBuffer.cs:3715-3735`).
+    #[test]
+    fn w4_g50_shop_override_round_trips() {
+        let s = ShopOverride {
+            slot: 3,
+            kind: 88,
+            stack: 5,
+            prefix: 81,
+            value: 40000,
+            buy_once: true,
+        };
+        let f = S2c::ShopOverride(s).encode();
+        assert_eq!(f[2], 104);
+        let mut body = vec![3u8];
+        body.extend_from_slice(&88i16.to_le_bytes());
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&40000i32.to_le_bytes());
+        body.push(1); // buyOnce bit 0
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ShopOverride(d) => assert_eq!(d, s),
+            other => panic!("expected 104, got {:?}", other.msg_id()),
+        }
+        // The writer floors a negative stack at 0 (`:1390`).
+        let neg = ShopOverride { stack: -3, ..s };
+        let f = S2c::ShopOverride(neg).encode();
+        assert_eq!(&f[5..7], &0i16.to_le_bytes());
+    }
+
+    /// `105 GemLockToggle` (`NetMessage.cs:1395-1399`): short x, short y,
+    /// bool on. Client→host only (`MessageBuffer.cs:3736-3741`).
+    #[test]
+    fn w4_g50_gem_lock_toggle_round_trips() {
+        let g = GemLockToggle {
+            x: 120,
+            y: 340,
+            on: true,
+        };
+        let c = C2s::GemLockToggle(g).encode();
+        assert_eq!(c[2], 105);
+        let mut body = Vec::new();
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.extend_from_slice(&340i16.to_le_bytes());
+        body.push(1);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::GemLockToggle(d) => assert_eq!(d, g),
+            other => panic!("expected 105, got {:?}", other.msg_id()),
         }
     }
 }

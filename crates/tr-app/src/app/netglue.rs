@@ -1085,7 +1085,110 @@ impl App {
                     y: n.y,
                 }));
             }
+            // `case 105` — the gem-lock toggle (W4-g50,
+            // `MessageBuffer.cs:3736-3741`): the host runs
+            // `WorldGen.ToggleGemLock(x, y, on)` (`WorldGen.cs:46469-46524`).
+            C2s::GemLockToggle(g) => {
+                self.toggle_gem_lock(server, g.x as i32, g.y as i32, g.on);
+            }
         }
+    }
+
+    /// `WorldGen.ToggleGemLock` (`WorldGen.cs:46469-46524`, W4-g50): the
+    /// gem lock (tile 440) flips its 3×3 frame between the off (0) and on
+    /// (54) rows; turning an ON lock off drops its gem. The framing refresh,
+    /// the 3×3 tile-square relay and the `HitSwitch` + `59` follow.
+    fn toggle_gem_lock(&mut self, server: &net::Server, i: i32, j: i32, on: bool) {
+        // `:46471-46475` — the active-440 gate; an off toggle on an already
+        // off lock (frameY < 54) refuses.
+        let Some(tile) = self.world.tile(i, j) else {
+            return;
+        };
+        if !tile.active() || tile.kind != 440 || (tile.frame_y < 54 && !on) {
+            return;
+        }
+        let was_on = tile.frame_y >= 54; // `flag` (`:46478-46481`)
+        let (frame_x, frame_y) = (tile.frame_x as i32, tile.frame_y as i32);
+        let gem_col = frame_x / 54; // `num2`
+        let num3 = frame_x % 54 / 18;
+        let num4 = frame_y % 54 / 18;
+        // `:46485-46508` — the gem item the lock holds.
+        let gem = match gem_col {
+            0 => Some(1526u16),
+            1 => Some(1524),
+            2 => Some(1525),
+            3 => Some(1523),
+            4 => Some(1522),
+            5 => Some(1527),
+            6 => Some(3643),
+            _ => None,
+        };
+        // `:46509-46515` — the 3×3 frameY rewrite.
+        for k in (i - num3)..(i - num3 + 3) {
+            for l in (j - num4)..(j - num4 + 3) {
+                let fy = (if on { 54 } else { 0 }) + (l - j + num4) * 18;
+                self.world.set_tile_frame_y(k, l, fy);
+            }
+        }
+        // `:46516-46519` — turning an ON lock off drops the gem.
+        if let Some(gem) = gem {
+            if was_on && !on {
+                crate::world_sim::items::spawn_item_drop(
+                    &mut self.items,
+                    self.rngs.global(),
+                    gem,
+                    1,
+                    i,
+                    j,
+                );
+            }
+        }
+        // `:46520` — `SquareTileFrame(i, j)`; the object drops it may pop
+        // ride the edit chain's resolution.
+        let drops = tr_core::edit::square_tile_frame_default(&mut self.world, i, j);
+        for drop in drops {
+            let id = drop
+                .item
+                .map(|item| item as u16)
+                .or_else(|| crate::registry::tile_drop(drop.tile_kind, 0));
+            if let Some(id) = id {
+                crate::world_sim::items::spawn_item_drop(
+                    &mut self.items,
+                    self.rngs.global(),
+                    id,
+                    1,
+                    drop.x,
+                    drop.y,
+                );
+            }
+        }
+        self.world_key = None;
+        // `:46521` — `SendTileSquare(-1, i - num3, j - num4, 3, 3)`.
+        let mut records = Vec::with_capacity(9);
+        for l in (j - num4)..(j - num4 + 3) {
+            for k in (i - num3)..(i - num3 + 3) {
+                records.push(self.tile_record_at(k, l));
+            }
+        }
+        server.broadcast(&S2c::SectionRange(Box::new(net::SectionRange {
+            x: (i - num3) as i16,
+            y: (j - num4) as i16,
+            w: 3,
+            h: 3,
+            change_type: 0,
+            records,
+        })));
+        // `:46522-46523` — `Wiring.HitSwitch(i - num3, j - num4)` + the `59`.
+        self.wiring
+            .hit_switch(&mut self.world, i - num3, j - num4);
+        for (px, py) in self.wiring.take_switch_clicks() {
+            self.audio
+                .play_switch_click(px as f32, py as f32, self.rngs.global());
+        }
+        server.broadcast(&S2c::HitSwitch(net::HitSwitch {
+            x: (i - num3) as i16,
+            y: (j - num4) as i16,
+        }));
     }
 
     /// The `102` client fan (`MessageBuffer.cs:3662-3705`): the picker's
@@ -2175,6 +2278,36 @@ impl App {
             S2c::MoonlordCountdown(m) => {
                 self.world.max_moon_lord_countdown = m.max;
                 self.world.moon_lord_countdown = m.countdown;
+            }
+            // `case 104` — one open-shop slot's rebuilt item (W4-g50,
+            // `MessageBuffer.cs:3715-3735`): only while a shop is open
+            // (`Main.npcShop > 0`) and the slot is in range; the row is a
+            // fresh `SetDefaults(type)` with the wire's stack/prefix/value/
+            // buyOnce (`:3727-3732`).
+            S2c::ShopOverride(s) => {
+                if self.shop_npc.is_none() {
+                    return; // `Main.npcShop > 0` (`:3716`)
+                }
+                if (s.slot as usize) >= self.shop_stock.len() {
+                    return; // `num99 < item4.Length` (`:3725`)
+                }
+                // `SetDefaults(type)` — the fresh row; the exact prefix
+                // applies directly (`Item.Prefix(prefixWeWant)`).
+                let prefix = crate::prefix::roll_prefix(
+                    s.kind.max(0) as u16,
+                    s.prefix as i32,
+                    self.rngs.global(),
+                );
+                self.shop_stock[s.slot as usize] = crate::shop::ShopEntry {
+                    item: s.kind.max(0) as u16,
+                    when: crate::shop::StockWhen::Always,
+                    shop_custom_price: None,
+                    buy_once: s.buy_once,
+                    is_a_shop_item: false,
+                    prefix,
+                    stack: s.stack.max(0) as u32,
+                    value: Some(s.value),
+                };
             }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
@@ -6489,5 +6622,88 @@ mod message_family_tests {
         pump(&mut host_app, &mut client_app, 10);
         assert_eq!(client_app.world.max_moon_lord_countdown, 3600);
         assert_eq!(client_app.world.moon_lord_countdown, 1800);
+    }
+
+    /// `case 104` (`MessageBuffer.cs:3715-3735`): the open shop's slot is
+    /// rebuilt with the wire's type/stack/prefix/value/buyOnce.
+    #[test]
+    fn w4_g50_the_104_shop_override_rebuilds_the_open_slot() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Open a shop on the client with a two-row stock.
+        client_app.shop_npc = Some(0);
+        client_app.shop_stock = vec![
+            crate::shop::ShopEntry {
+                item: 88,
+                when: crate::shop::StockWhen::Always,
+                shop_custom_price: None,
+                buy_once: false,
+                is_a_shop_item: false,
+                prefix: 0,
+                stack: 1,
+                value: None,
+            },
+            crate::shop::ShopEntry {
+                item: 87,
+                when: crate::shop::StockWhen::Always,
+                shop_custom_price: None,
+                buy_once: false,
+                is_a_shop_item: false,
+                prefix: 0,
+                stack: 1,
+                value: None,
+            },
+        ];
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::ShopOverride(net::ShopOverride {
+                slot: 1,
+                kind: 29,
+                stack: 5,
+                prefix: 0,
+                value: 12345,
+                buy_once: true,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        let row = &client_app.shop_stock[1];
+        assert_eq!(row.item, 29);
+        assert_eq!(row.stack, 5);
+        assert_eq!(row.value, Some(12345));
+        assert!(row.buy_once);
+        // The untouched row keeps its stock.
+        assert_eq!(client_app.shop_stock[0].item, 88);
+    }
+
+    /// `case 105` (`MessageBuffer.cs:3736-3741`, `WorldGen.cs:46469-46524`):
+    /// the host flips the gem lock's 3×3 frame to the on row and trips it.
+    #[test]
+    fn w4_g50_the_105_gem_lock_flips_the_frame_and_trips() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A gem lock (440) at (10,4), off row (frameY 0), amethyst column 0.
+        for app in [&mut host_app, &mut client_app] {
+            for k in 10..13 {
+                for l in 4..7 {
+                    let i = app.world.index(k, l);
+                    app.world.tiles[i] = tr_core::Tile {
+                        kind: 440,
+                        frame_x: ((k - 10) * 18) as i16,
+                        frame_y: ((l - 4) * 18) as i16,
+                        ..Default::default()
+                    };
+                    app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+                }
+            }
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::GemLockToggle(net::GemLockToggle {
+                x: 10,
+                y: 4,
+                on: true,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        // The host's lock flipped to the on row (frameY 54+).
+        assert!(host_app.world.tile(10, 4).unwrap().frame_y >= 54);
+        // The 3×3 relay carried the flip to the client.
+        assert!(client_app.world.tile(10, 4).unwrap().frame_y >= 54);
     }
 }
