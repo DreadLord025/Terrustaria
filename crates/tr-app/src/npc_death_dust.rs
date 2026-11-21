@@ -1,7 +1,7 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-9 (84 kinds — every
-//! dust-first clean kind the port's kind set carries, plus the first 20
-//! d35 row-gated activations of the DOC-SWEEP phase).
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-10 (88 kinds — every
+//! dust-first clean kind the port's kind set carries, plus the 24 d35
+//! row-gated activations of the DOC-SWEEP phase).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -107,15 +107,16 @@
 //! ladder `:87495-87500`, the Umbrella's 314 and the painter/witch
 //! shimmer gates are constant data / field reads).
 //!
-//! ## Scope — batches 8-9 (the DOC-SWEEP: the d35 row-gated activations)
+//! ## Scope — batches 8-10 (the DOC-SWEEP: the d35 row-gated activations)
 //!
 //! W4-d35's 33-kind SetDefaults wave (`eb0f1005`, kinds 73-140) landed 24
 //! kinds inside this lane's 107-kind UNWIRED remainder; 120/137 were
 //! ALREADY wired (batch 1's illuminant arm + batch 5's — their arms fire
 //! once d35's cs_id rows merge). 112 VileSpit's whole-arm burst
 //! (`:85395-85408`) fires on EVERY hit — g62 owns it (`npc_hit_dust.rs`,
-//! the `:85399` site). The sweep activates them in three batches; these
-//! are the first 20:
+//! the `:85399` site). The remaining 24 activate here (103 rides the
+//! shared jellyfish arm's own color row — the census's nested-row
+//! artifact re-checked against the C#):
 //!
 //! | batch | C# type(s) | death arm | shape |
 //! | --- | --- | --- | --- |
@@ -131,24 +132,31 @@
 //! | 9 | 94 Corruptor | `:87512` | 50× type-18 alpha/color/scale |
 //! | 9 | 95/96/97 the digger trio | `:87616` | 10× type-5 2.5×dir |
 //! | 9 | 98/99/100 the seeker trio | `:87583` | 50× type-18 alpha/color/scale |
+//! | 10 | 101 Clinger | `:87547` | 50× type-18 alpha/color/scale |
+//! | 10 | 103 GreenJellyfish | `:85554-85557` | 25× type-4 tinted (70,225,140,100), dust-only |
+//! | 10 | 122 Gastropod | `:85509-85513` | 50× type-72 alpha 200 vel×1.5, dust-only |
+//! | 10 | 140 PossessedArmor | `:89085-89090` | 20× type-54 alpha 50 (death-only gate) |
 //!
 //! The 83/84 pair is the SECOND gore-ARGUMENT arm: each of the 3 gores
 //! draws a `Next(-2, 3)` x/y velocity pair (`:87158`/`:87160`/`:87162`) —
 //! 6 draws consumed here in C# order, the bodies stay d55's (the g63
-//! rule). Every other batch-8/9 tail draws NO arguments (verified against
-//! the C#: constant types / `this.type` arithmetic / hitDirection / ai-field reads — the Mimic's
-//! ai[3] selector is a field read, not a draw).
+//! rule). Every other batch-8-10 tail draws NO arguments (verified
+//! against the C#: constant types / `this.type` arithmetic / hitDirection
+//! / ai-field reads). The d35 kinds NOT activated: 74/102 (gore-first
+//! `:85942`), 104/109 (the zombie arm's NewNPC), 116 (NewNPC), 121
+//! (NewNPC), 112 (g62's every-hit).
 //!
 //! ## The lane's remainder (the census's absent kinds)
 //!
 //! The 173-kind dust-first clean census had 109 kinds with NO port kind
-//! row at batch 7's close; the DOC-SWEEP re-census counts 107 UNWIRED
-//! (the 66 landed C# types cover 66 of the 173). Batches 8-9 activate 20 of
-//! the d35-rowed kinds; 87 stay row-gated UNWIRED until their kinds land
-//! (the S1-F-9b row-gate convention); the census rows + arm citations
-//! live in docs/ANALYSIS.md. The 20 dust-only kinds' still-absent members
-//! (34/63/112/141/169/204) are the same remainder (75/120/137 activated
-//! or already wired; 112 re-owned g62).
+//! row at batch 7's close (the worm segments 8/9/11/12/14/15, the casters
+//! 31/37/39-41/43, the frost/martian/dd2 families, the 195-206/209/
+//! 217-221/226/229 bands, …); the DOC-SWEEP re-census counts 107 UNWIRED
+//! (the 66 landed C# types cover 66 of the 173). After batches 8-10, 83
+//! stay row-gated UNWIRED until their kinds land (the S1-F-9b row-gate
+//! convention); the census rows + arm citations live in docs/ANALYSIS.md.
+//! The 20 dust-only kinds' still-absent members (34/63/141/169/204) are
+//! the same remainder (75/120/122/137 activated above, 112 re-owned g62).
 //!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
@@ -801,6 +809,64 @@ pub fn death_dust(
                     rng, ctx, world, pos, w, h, 18, dir, -2.0,
                     npc.alpha as i32, Color::default(), npc.scale,
                 );
+            }
+        }
+        // ---- batch 10 (the d35 row-gated activations: the clinger /
+        // gastropod / possessed armor — the lane's final d35 kinds).
+        // `NPC.cs:87547-87550` — the Clinger (101): 50 type-18 puffs at
+        // dir/-2, `this.alpha`/`this.color`/`this.scale` (the EoSouls arm;
+        // the color stand-in is default — 101 writes no color). The
+        // 110/114/114/115 gore tail `:87551-87554` is constant types, no
+        // argument draws.
+        101 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 18, dir, -2.0,
+                    npc.alpha as i32, Color::default(), npc.scale,
+                );
+            }
+        }
+        // `NPC.cs:85554-85557` — the Green Jellyfish (103): 25 type-4
+        // puffs at 2×dir/-2, alpha 0, tinted (70,225,140,100) (the shared
+        // 63/64/103 arm `:85534-85558`'s 103 color row `:85541-85544`;
+        // 63/64 stay row-gated — their kinds are absent, the 50,120,255 /
+        // 225,70,140 tints land with them). Dust-only, zero gore. The
+        // census's `:85541` color-only nested row is a selection, not a
+        // second death arm (the g59_order dust>0 artifact).
+        103 => {
+            for _ in 0..25 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 4, 2.0 * dir, -2.0, 0,
+                    Color::new(70, 225, 140, 100), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:85509-85513` — the Gastropod (122): 50 type-72 puffs at
+        // dir/0, alpha 200, velocity×1.5 (the Illuminant arm's shape with
+        // type 72, NOT 71 — the gastropod's own row). Dust-only, zero gore.
+        122 => {
+            for _ in 0..50 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 72, dir, 0.0, 200,
+                    Color::default(), 1.0,
+                );
+                dust.slot_mut(idx).velocity *= 1.5;
+            }
+        }
+        // `NPC.cs:89085-89090` — the Possessed Armor (140): 20 type-54
+        // puffs at (0,0), alpha 50, scale 1.5, velocity×2 + noGravity (the
+        // Wraith arm's shape, a DEATH-ONLY `life <= 0` gate with no hit
+        // half). The 99×3 gore tail `:89091-89096` is constant +
+        // hitDirection, no argument draws.
+        140 => {
+            for _ in 0..20 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 54, 0.0, 0.0, 50,
+                    Color::default(), 1.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
             }
         }
         _ => return false,
@@ -1548,7 +1614,7 @@ mod tests {
         }
     }
 
-    // ---- batches 8-9 (the d35 row-gated activations). The d35 kinds
+    // ---- batches 8-10 (the d35 row-gated activations). The d35 kinds
     // (GoblinScout 73 … PossessedArmor 140) land with the d35 merge; the
     // witnesses drive the RAW C# ids over a stand-in corpse shell (the
     // batch-1 snowman-trio precedent — `death_dust` matches on the type
@@ -1718,4 +1784,89 @@ mod tests {
     }
 
 
+    /// `NPC.cs:87547-87550` — the Clinger (101): 50 type-18 puffs at
+    /// dir/-2 reading the live alpha/scale (the EoSouls arm).
+    #[test]
+    fn w4_g59_the_clinger_death_reads_alpha_and_scale() {
+        let w = air();
+        let mut n = corpse(NpcKind::Skeleton);
+        n.alpha = 90;
+        n.scale = 1.1;
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(173);
+        assert!(death_dust(&n, 101, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        for d in &live {
+            assert_eq!(d.dust_type, 18);
+            assert_eq!(d.alpha, 90);
+            assert!((d.scale - 1.1).abs() <= 0.22 + 1e-6);
+        }
+    }
+
+    /// `NPC.cs:85509-85513` — the Gastropod (122): 50 type-72 puffs,
+    /// alpha 200, velocity×1.5 (dust-only; the twin pool pins the ×1.5).
+    #[test]
+    fn w4_g59_the_gastropod_death_draws_fifty_type_seventy_twos() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(179);
+        assert!(death_dust(&n, 122, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        let mut twin = DustPool::new();
+        let mut twin_rng = UnifiedRandom::new(179);
+        let (bw, bh) = n.size();
+        let pos = Vec2::new(n.x, n.y);
+        for _ in 0..50 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx(), &w, pos, bw as i32, bh as i32,
+                72, -1.0, 0.0, 200, Color::default(), 1.0,
+            );
+            twin.slot_mut(idx).velocity *= 1.5;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        assert!(live.iter().all(|d| d.dust_type == 72 && d.alpha == 200));
+    }
+
+    /// `NPC.cs:89085-89090` — the Possessed Armor (140): 20 type-54
+    /// puffs, alpha 50, scale 1.5, velocity×2 + noGravity (the death-only
+    /// `life <= 0` gate, the wraith's shape).
+    #[test]
+    fn w4_g59_the_possessed_armor_death_draws_twenty_type_fifty_fours() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(181);
+        assert!(death_dust(&n, 140, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 20);
+        for d in &live {
+            assert_eq!(d.dust_type, 54);
+            assert_eq!(d.alpha, 50);
+            assert!(d.no_gravity);
+            assert!(d.scale >= 1.2 - 1e-6 && d.scale <= 1.8 + 1e-6);
+        }
+    }
+
+    /// `NPC.cs:85554-85557` — the Green Jellyfish (103): 25 type-4 puffs
+    /// at 2×dir/-2, alpha 0, tinted (70,225,140,100) — the shared arm's
+    /// 103 color row (63/64 stay row-gated).
+    #[test]
+    fn w4_g59_the_green_jellyfish_death_draws_tinted_fours() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(167);
+        assert!(death_dust(&n, 103, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 25);
+        for d in &live {
+            assert_eq!(d.dust_type, 4);
+            assert_eq!(d.alpha, 0);
+            assert_eq!(d.color, Color::new(70, 225, 140, 100));
+        }
+    }
 }
