@@ -36171,19 +36171,34 @@ Deliberate deviations:
   render dependency — the d56 inlined-table convention; both copies are
   verbatim `WorldGen.cs:70026-70104` incl. the no-top-end down-scan
   degeneration.
-* **FINAL keep-one (2026-11-21, final phase)**: `coil_step` is the
+* **FINAL keep-one (2026-11-21, final phase; SEALED same day)**:
+  `coil_step` is the
   CANONICAL style-35 machine — the d4 branch's `ai_rope_coil` + its four
   named-const data rows + its four witnesses are the DROP half
   (the re-adjudication of d4's 26e doc, which ruled the other way while
   g82 was still unwired; g82 then wired the full lane — refund/cue/
-  usability/chain draw/friendly pin/PVP exemption/direction write, none
-  of which d4 carries). The two faithfulness deltas 26e credited to d4
+  usability/chain draw/friendly pin/PVP exemption/direction write).
+  The two faithfulness deltas 26e credited to d4
   are FIXED here (c2b7507a0): the null-tile abort integrates and the
   placement kill tick adds the dead-tick integrate (the C# returns from
   AI only — HandleMovement :17015 → UpdatePosition :20445 still runs,
-  the :17027 !active return sits AFTER). Exact drop-hunks, the row
+  the :17027 !active return sits AFTER). **SEAL**: d4 tip `cafec7222`
+  then pushed the extras union (refund/usability/preview copies of
+  g82 `67c9a740` — normalized byte-compare IDENTICAL, dedupe trivial)
+  with three wiring deltas that all favour g82 against the re-read C#:
+  d4's refund hook drops the `:77267` owner + `:77367` noDropItem
+  gates (the ladder sits INSIDE Kill_ExplodeTiles — d4's "NO owner
+  gate" is a misread of the orthogonal ReserveForLocalPlayer grab
+  reservation), d4's drain rides `UpdateItems` (the C# NewItem draws
+  run inside Kill() under the `Main.cs:17775` UpdateProjectiles swap),
+  and the death-centre post-integrate timing is a POOL-WIDE deviation
+  both ports share (d4's ANALYSIS paragraph is the better write-up —
+  keep its text). Verdict stands; the UPDATED ten-row drop-hunks
+  table (`cafec7222` lines), the d4d-retire cross-receipt and the
+  ROPE-FAMILY merger bible: `docs/research/26e-f-rope-union-final.md`.
+  Exact drop-hunks, the row
   dedupe, the f3-pulley compose chain and the pool-wide TileKill census
-  + task seed: `docs/research/26e-f-rope-union-final.md`.
+  + task seed: same doc.
 * **The f3-pulley compose** (origin/task/W4-f3-dust-player-3 0b11548f):
   the pulley machine attaches to the SAME td::TILE_ROPE set the coil
   placement writes — place→attach→ride→coil-refund runs end-to-end on
