@@ -886,8 +886,8 @@ pub(crate) struct App {
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
     pub(crate) sand: crate::sand::Sand,
-    /// The ambient snowfall (`Main.snowing()`, W4-d130).
-    pub(crate) snow: crate::snow::Snow,
+    // W4-d130 F1: no `snow` field — `Main.snowing()` is a static on the bare
+    // `Main.rand` (the port's `rngs.global()`), not a per-consumer stream.
     /// `Main.dust` (`Main.cs:66985`): the 6001-slot pressure-gated pool —
     /// the wheel sparks and the sandstorm spawn/tick/draw through it
     /// (S1-E-1 phase 2); the `world_sim` drain feeds the cart's queued
@@ -3547,7 +3547,6 @@ impl App {
             post: None,
             noise_tex: None,
             sand: crate::sand::Sand::new(1),
-            snow: crate::snow::Snow::new(1),
             dust: {
                 // The `Main.dust[6001]` init (`Main.cs:66985`) with the type-34
                 // wet probe injected once: `Collision.WetCollision`'s port is

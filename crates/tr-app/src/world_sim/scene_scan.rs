@@ -399,9 +399,9 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // `Main.snowing()` (`Main.cs:17238`, body `:13032-13116`): the ambient
     // snowfall spawns right BEFORE `Sandstorm.EmitDust` in the C# — the port
     // runs both in this slot (the spawn order between the two dust families
-    // only matters for the shared pool's slot scan; the snow's own stream is
-    // separate). The budget reads the previous tick's `Main.snowDust`
-    // (`pool.snow_dust`, the shared tick's count). W4-d130.
+    // only matters for the shared pool's slot scan). The budget reads the
+    // previous tick's `Main.snowDust` (`pool.snow_dust`, the shared tick's
+    // count). W4-d130.
     let snow_inputs = crate::snow::SnowInputs {
         // `Main.gamePaused` (`Main.cs:13040`) — g11's env field folded: the
         // check is snowing's own first disjunct, the cluster gate redundant.
@@ -425,10 +425,15 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     };
     let snow_dust = app.dust.snow_dust;
     let snow_metrics = app.scene_metrics.clone();
-    app.snow.snowing(
+    // F1 (g11 research/83-addendum, adjudicated): the bare-`Main.rand`
+    // stand-in — `:17238` precedes every `SwapRandom` (they all live inside
+    // `DoUpdateInWorld`, `Main.cs:17280`→`:17732`), so the draws ride the
+    // shared global stream, not a private snow splitmix.
+    crate::snow::snowing(
         &snow_metrics,
         &snow_inputs,
         snow_dust,
+        app.rngs.global(),
         &ctx,
         world,
         &mut app.dust,

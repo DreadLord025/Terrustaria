@@ -6,7 +6,7 @@
 //! pair), `LegacyLighting.RenderPhases` (`:17085-17101` — the field rides
 //! for S1-E-19's legacy engine) and `Main.mapTimeMax` (`:16995-17000`). The
 //! snow-dust budget gate (`:13057`) lives on the snowfall's spawn
-//! (`crate::snow::Snow::snowing`, W4-d130).
+//! (`crate::snow::snowing`, W4-d130).
 
 use crate::app::App;
 
@@ -222,7 +222,7 @@ fn int_ceil(v: f32) -> i32 {
 
     /// S1-B-6 — the snow budget formula (`Main.cs:13057`): the witness of
     /// the arithmetic the snowfall's spawn gate now applies verbatim
-    /// (`crate::snow::Snow::snowing`, W4-d130 — the retired rain-rig cap).
+    /// (`crate::snow::snowing`, W4-d130 — the retired rain-rig cap).
     #[test]
     fn s1_b_6_the_snow_cap_scales_with_quality() {
         let cap = |num2: f32, q: f32| (num2 * (q / 2.0 + 0.5) + num2 * 0.1) as usize;

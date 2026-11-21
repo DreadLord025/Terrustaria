@@ -6,9 +6,18 @@
 //! tiles at the surface, storm or no storm.
 //!
 //! Port notes:
-//! * the RNG is this module's own splitmix stream (the per-consumer-stream
-//!   convention — vanilla rolls `Main.rand`); the pool's `NewDust` rolls ride
-//!   the same stream via `SplitmixRand`, exactly like `sand.rs`;
+//! * the RNG is the bare-`Main.rand` stand-in, `NamedRngs::global()` (g11
+//!   research/83-addendum F1, adjudicated W4-d130): `:17238` sits in
+//!   `Main.Update` BEFORE `DoUpdateInWorld` (`:17280` → the `SwapRandom`
+//!   wrapper `:17732`) — every swap scope in the game (`:17732-17809`,
+//!   `:17887`, `WorldGen.cs:71529`) is nested inside that block, so no swap
+//!   is live at the call and `RandomSwap.Dispose` (`Main.cs:116-119`) has
+//!   restored the bare instance seeded at `Initialize` (`:6463`). The
+//!   earlier private splitmix (the WEATHER-2 per-consumer convention) was
+//!   WRONG for this site — snowing's draws must interleave with the global
+//!   stream's other pre-swap consumers (the ambience scheduler, the
+//!   chest-eat cues). The pool's `NewDust` rolls ride the same
+//!   `UnifiedRandom` (`DustRng`);
 //! * `Main.Camera.ScaledSize`/`ScaledPosition` are the world-space view
 //!   (`screen / zoom`, the view's top-left) — the same fold the scene scan
 //!   uses (`scene_scan.rs`'s `visual_area`);
@@ -33,6 +42,7 @@ use glam::Vec2;
 use tr_core::World;
 use tr_core::particles::{Color, DUST_SENTINEL, Dust, DustPool, SpawnCtx};
 use tr_core::scene::SceneMetrics;
+use tr_core::UnifiedRandom;
 use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
@@ -72,177 +82,154 @@ pub(crate) struct SnowInputs {
     pub remix_world: bool,
 }
 
-pub(crate) struct Snow {
-    rng: u64,
-}
-
-impl Snow {
-    pub(crate) fn new(seed: u64) -> Self {
-        Self {
-            rng: (seed ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1,
-        }
+/// `Main.snowing()` (`Main.cs:13032-13116`). `rng` is the bare-`Main.rand`
+/// stand-in — the caller passes `app.rngs.global()` (F1: `:17238` precedes
+/// every `SwapRandom`, see the module doc). `metrics` is the stored
+/// `Main.SceneMetrics` (the last scan), `snow_dust` the live type-76
+/// population the previous `UpdateDust` head counted (`Main.snowDust`,
+/// read ONCE per call — F4), `ctx` the pool's spawn statics.
+/// `netMode != 2` (`:17234`) is the single-player fold.
+pub(crate) fn snowing(
+    metrics: &SceneMetrics,
+    i: &SnowInputs,
+    snow_dust: i32,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    pool: &mut DustPool,
+) {
+    // `:13034-13037`: the remix world has no ambient snowfall.
+    if i.remix_world {
+        return;
     }
-
-    fn next_u64(&mut self) -> u64 {
-        self.rng = self.rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.rng;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
+    // `:13040-13043`: paused / no snow tiles / below the surface —
+    // nothing. The `gamePaused` disjunct is the C#'s own first term
+    // (g11's env carried it; the caller's cluster gate is redundant,
+    // not the check's home).
+    if i.game_paused || metrics.snow_tile_count <= 0 || !metrics.surface_atmospherics {
+        return;
     }
-
-    fn rand01(&mut self) -> f32 {
-        (self.next_u64() >> 40) as f32 / (1u32 << 24) as f32
+    // `:13044`: the intensity `pow(count/6000, 4 - 3*cloudAlpha)`.
+    let mut num = ((metrics.snow_tile_count as f32 / SNOW_TILE_MAX as f32) as f64)
+        .powf((4.0 - i.cloud_alpha * 3.0) as f64) as f32;
+    // `:13045`: the per-screen budget — the inner `(int)` truncates the
+    // 500*view-width factor BEFORE the cloud multiply, then `(int)` again.
+    let mut num2 =
+        ((500.0 * (i.scaled_size.x / MAX_SCREEN_W)) as i32 as f32 * (1.0 + 2.0 * i.cloud_alpha))
+            as i32;
+    // `:13046`: the attempt count `1 + 50*cloudAlpha`.
+    let num3 = 1.0 + 50.0 * i.cloud_alpha;
+    // `:13047-13052`: the Deerclops fades.
+    let flag = i.deerclops_near;
+    if flag {
+        num /= 20.0;
+        num2 /= 3;
     }
-
-    /// `Main.rand.Next(max)` — `Next(0)` rolls 0 (XNA), the sand.rs convention.
-    fn next_int(&mut self, max: u32) -> u32 {
-        (self.next_u64() % max.max(1) as u64) as u32
-    }
-
-    /// `Main.snowing()` (`Main.cs:13032-13116`). `metrics` is the stored
-    /// `Main.SceneMetrics` (the last scan), `snow_dust` the live type-76
-    /// population the previous `UpdateDust` head counted (`Main.snowDust`),
-    /// `ctx` the pool's spawn statics. `netMode != 2` (`:17234`) is the
-    /// single-player fold.
-    pub(crate) fn snowing(
-        &mut self,
-        metrics: &SceneMetrics,
-        i: &SnowInputs,
-        snow_dust: i32,
-        ctx: &SpawnCtx,
-        world: &World,
-        pool: &mut DustPool,
-    ) {
-        // `:13034-13037`: the remix world has no ambient snowfall.
-        if i.remix_world {
-            return;
+    // `:13053`: `for (int i = 0; (float)i < num3; i++)` — the int counter
+    // shape (g11 F5; the earlier float accumulator was observation-equal).
+    let mut attempt = 0;
+    while (attempt as f32) < num3 {
+        attempt += 1;
+        // `:13057-13060`: the budget gate — `snowDust < num2*(q/2+0.5) +
+        // num2*0.1` — BREAKS the loop (not a per-attempt skip). The counter
+        // is the call's frozen `Main.snowDust` snapshot (F4), constant
+        // across the attempts — the C# reads the static once per attempt
+        // but `UpdateDust` only refreshes it next tick.
+        if !((snow_dust as f32) < num2 as f32 * (i.gfx_quality / 2.0 + 0.5)
+            + num2 as f32 * 0.1)
+        {
+            break;
         }
-        // `:13040-13043`: paused / no snow tiles / below the surface —
-        // nothing. The `gamePaused` disjunct is the C#'s own first term
-        // (g11's env carried it; the caller's cluster gate is redundant,
-        // not the check's home).
-        if i.game_paused || metrics.snow_tile_count <= 0 || !metrics.surface_atmospherics {
-            return;
+        // `:13061-13064`: the intensity roll.
+        if !(rng.next_float() < num) {
+            continue;
         }
-        // `:13044`: the intensity `pow(count/6000, 4 - 3*cloudAlpha)`.
-        let mut num = ((metrics.snow_tile_count as f32 / SNOW_TILE_MAX as f32) as f64)
-            .powf((4.0 - i.cloud_alpha * 3.0) as f64) as f32;
-        // `:13045`: the per-screen budget — the inner `(int)` truncates the
-        // 500*view-width factor BEFORE the cloud multiply, then `(int)` again.
-        let mut num2 =
-            ((500.0 * (i.scaled_size.x / MAX_SCREEN_W)) as i32 as f32 * (1.0 + 2.0 * i.cloud_alpha))
-                as i32;
-        // `:13046`: the attempt count `1 + 50*cloudAlpha`.
-        let num3 = 1.0 + 50.0 * i.cloud_alpha;
-        // `:13047-13052`: the Deerclops fades.
-        let flag = i.deerclops_near;
-        if flag {
-            num /= 20.0;
-            num2 /= 3;
+        // `:13065-13066`: the spawn window — x across the view +750 each
+        // side, y up to 50 px above the view top.
+        let mut num4 = rng.next_max(i.scaled_size.x as i32 + 1500) - 750;
+        let mut num5 = i.scaled_position.y as i32 - rng.next_max(50);
+        // `:13067-13070`: a falling player pulls the window up.
+        if i.player_vy > 0.0 {
+            num5 -= i.player_vy as i32;
         }
-        let mut attempt = 0.0_f32;
-        while attempt < num3 {
-            attempt += 1.0;
-            // `:13057-13060`: the budget gate — `snowDust < num2*(q/2+0.5) +
-            // num2*0.1` — BREAKS the loop (not a per-attempt skip).
-            if !((snow_dust as f32) < num2 as f32 * (i.gfx_quality / 2.0 + 0.5)
-                + num2 as f32 * 0.1)
-            {
-                break;
-            }
-            // `:13061-13064`: the intensity roll.
-            if !(self.rand01() < num) {
-                continue;
-            }
-            // `:13065-13066`: the spawn window — x across the view +750 each
-            // side, y up to 50 px above the view top.
-            let mut num4 = self.next_int(i.scaled_size.x as u32 + 1500) as i32 - 750;
-            let mut num5 = i.scaled_position.y as i32 - self.next_int(50) as i32;
-            // `:13067-13070`: a falling player pulls the window up.
-            if i.player_vy > 0.0 {
-                num5 -= i.player_vy as i32;
-            }
-            // `:13071-13078`: the edge pushes — the second `Next(5)` rolls
-            // ONLY when the first missed (the else-if).
-            if self.next_int(5) == 0 {
-                num4 = self.next_int(500) as i32 - 500;
-            } else if self.next_int(5) == 0 {
-                num4 = self.next_int(500) as i32 + i.scaled_size.x as i32;
-            }
-            // `:13079-13082`: off-screen x spreads y over the view.
-            if num4 < 0 || num4 as f32 > i.scaled_size.x {
-                num5 += self.next_int((i.scaled_size.y as f64 * 0.8) as u32) as i32
-                    + (i.scaled_size.y as f64 * 0.1) as i32;
-            }
-            // `:13083-13086`: into world space; the open-sky gate —
-            // `!tile.nactive() && wall == 0` (`nactive` = active && !actuated,
-            // `Tile.cs:240-247`).
-            num4 += i.scaled_position.x as i32;
-            let num6 = num4 / 16;
-            let num7 = num5 / 16;
-            let Some(t) = world.tile(num6, num7) else {
-                continue;
-            };
-            if (t.active() && !t.inactive()) || t.wall != 0 {
-                continue;
-            }
-            // `:13088`: `Dust.NewDust(new Vector2(num4, num5), 10, 10, 76)` —
-            // the pool's verbatim spawn; its rolls ride this stream. A
-            // refused slot still takes the recipe writes below (the C#
-            // writes `Main.dust[6000]` blindly).
-            let idx = pool.new_dust(
-                &mut crate::app::SplitmixRand(&mut self.rng),
-                ctx,
-                world,
-                Vec2::new(num4 as f32, num5 as f32),
-                10,
-                10,
-                76,
-                0.0,
-                0.0,
-                0,
-                Color::default(),
-                1.0,
-            );
-            // `:13089-13108`: the flake recipe, verbatim order.
-            let d = pool.slot_mut(idx);
-            d.scale += i.cloud_alpha * 0.2;
-            d.velocity.y = 3.0 + self.next_int(30) as f32 * 0.1;
-            d.velocity.y *= d.scale;
-            if !i.raining {
-                // `:13094-13095`: the dry drift — wind + Next(-10,10)*0.1
-                // (exclusive upper: -10..9), then the 15× wind lead.
-                d.velocity.x = i.wind_speed_current
-                    + (self.next_int(20) as i32 - 10) as f32 * 0.1;
-                d.velocity.x += i.wind_speed_current * 15.0;
+        // `:13071-13078`: the edge pushes — the second `Next(5)` rolls
+        // ONLY when the first missed (the else-if).
+        if rng.next_max(5) == 0 {
+            num4 = rng.next_max(500) - 500;
+        } else if rng.next_max(5) == 0 {
+            num4 = rng.next_max(500) + i.scaled_size.x as i32;
+        }
+        // `:13079-13082`: off-screen x spreads y over the view.
+        if num4 < 0 || num4 as f32 > i.scaled_size.x {
+            num5 += rng.next_max((i.scaled_size.y as f64 * 0.8) as i32)
+                + (i.scaled_size.y as f64 * 0.1) as i32;
+        }
+        // `:13083-13086`: into world space; the open-sky gate —
+        // `!tile.nactive() && wall == 0` (`nactive` = active && !actuated,
+        // `Tile.cs:240-247`).
+        num4 += i.scaled_position.x as i32;
+        let num6 = num4 / 16;
+        let num7 = num5 / 16;
+        let Some(t) = world.tile(num6, num7) else {
+            continue;
+        };
+        if (t.active() && !t.inactive()) || t.wall != 0 {
+            continue;
+        }
+        // `:13088`: `Dust.NewDust(new Vector2(num4, num5), 10, 10, 76)` —
+        // the pool's verbatim spawn; its rolls ride the caller's global
+        // stream (`DustRng for UnifiedRandom`). A refused slot still takes
+        // the recipe writes below (the C# writes `Main.dust[6000]` blindly).
+        let idx = pool.new_dust(
+            rng,
+            ctx,
+            world,
+            Vec2::new(num4 as f32, num5 as f32),
+            10,
+            10,
+            76,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+        // `:13089-13108`: the flake recipe, verbatim order.
+        let d = pool.slot_mut(idx);
+        d.scale += i.cloud_alpha * 0.2;
+        d.velocity.y = 3.0 + rng.next_max(30) as f32 * 0.1;
+        d.velocity.y *= d.scale;
+        if !i.raining {
+            // `:13094-13095`: the dry drift — wind + Next(-10,10)*0.1
+            // (exclusive upper: -10..9), then the 15× wind lead.
+            d.velocity.x = i.wind_speed_current + rng.next_range(-10, 10) as f32 * 0.1;
+            d.velocity.x += i.wind_speed_current * 15.0;
+        } else {
+            // `:13099-13100`: the storm drift — sqrt(|wind|)*sign(wind)*
+            // (cloudAlpha+0.5)*10 + NextFloat()*0.2 - 0.1; the fall halves.
+            // `Math.Sign(float)` returns 0 at exactly 0 (Rust's signum
+            // returns 1 — the C# shape is mirrored).
+            let sign = if i.wind_speed_current > 0.0 {
+                1.0
+            } else if i.wind_speed_current < 0.0 {
+                -1.0
             } else {
-                // `:13099-13100`: the storm drift — sqrt(|wind|)*sign(wind)*
-                // (cloudAlpha+0.5)*10 + NextFloat()*0.2 - 0.1; the fall halves.
-                // `Math.Sign(float)` returns 0 at exactly 0 (Rust's signum
-                // returns 1 — the C# shape is mirrored).
-                let sign = if i.wind_speed_current > 0.0 {
-                    1.0
-                } else if i.wind_speed_current < 0.0 {
-                    -1.0
-                } else {
-                    0.0
-                };
-                d.velocity.x = (i.wind_speed_current.abs() as f64).sqrt() as f32
-                    * sign
-                    * (i.cloud_alpha + 0.5)
-                    * 10.0
-                    + self.rand01() * 0.2
-                    - 0.1;
-                d.velocity.y *= 0.5;
-            }
-            d.velocity.y *= 1.0 + 0.3 * i.cloud_alpha;
-            d.scale += i.cloud_alpha * 0.2;
-            if flag {
-                d.scale -= 0.5;
-            }
-            d.velocity *= 1.0 + i.cloud_alpha * 0.5;
+                0.0
+            };
+            d.velocity.x = (i.wind_speed_current.abs() as f64).sqrt() as f32
+                * sign
+                * (i.cloud_alpha + 0.5)
+                * 10.0
+                + rng.next_float() * 0.2
+                - 0.1;
+            d.velocity.y *= 0.5;
         }
+        d.velocity.y *= 1.0 + 0.3 * i.cloud_alpha;
+        d.scale += i.cloud_alpha * 0.2;
+        if flag {
+            d.scale -= 0.5;
+        }
+        d.velocity *= 1.0 + i.cloud_alpha * 0.5;
     }
 }
 
@@ -419,22 +406,25 @@ mod tests {
     fn the_gates_need_snow_tiles_at_the_surface_and_no_remix() {
         // `Main.cs:13034-13043`: the four early returns — remix, then the
         // `gamePaused || SnowTileCount <= 0 || !SurfaceAtmospherics` triple
-        // (the pause disjunct is g11's env field, folded in-body).
+        // (the pause disjunct is g11's env field, folded in-body). F7
+        // re-pin (g11 `w4_g11_snowing_gates_before_any_draw`): every gate
+        // draws NOTHING on the global stream.
         let w = snow_world();
-        let mut s = Snow::new(7);
+        let mut rng = UnifiedRandom::new(7);
         let mut pool = DustPool::new();
         let mut i = inputs();
-        s.snowing(&metrics(0, true), &i, 0, &ctx(), &w, &mut pool);
+        snowing(&metrics(0, true), &i, 0, &mut rng, &ctx(), &w, &mut pool);
         assert_eq!(live_type(&pool, 76), 0, "no snow tiles");
-        s.snowing(&metrics(3000, false), &i, 0, &ctx(), &w, &mut pool);
+        snowing(&metrics(3000, false), &i, 0, &mut rng, &ctx(), &w, &mut pool);
         assert_eq!(live_type(&pool, 76), 0, "below the surface");
         i.remix_world = true;
-        s.snowing(&metrics(3000, true), &i, 0, &ctx(), &w, &mut pool);
+        snowing(&metrics(3000, true), &i, 0, &mut rng, &ctx(), &w, &mut pool);
         assert_eq!(live_type(&pool, 76), 0, "the remix world");
         i.remix_world = false;
         i.game_paused = true;
-        s.snowing(&metrics(3000, true), &i, 0, &ctx(), &w, &mut pool);
+        snowing(&metrics(3000, true), &i, 0, &mut rng, &ctx(), &w, &mut pool);
         assert_eq!(live_type(&pool, 76), 0, "the pause gate");
+        assert_eq!(rng, UnifiedRandom::new(7), "the gates precede any draw");
     }
 
     #[test]
@@ -444,18 +434,18 @@ mod tests {
         // The attempt count (`:13046`) climbs 1 → 51 with the same alpha.
         let w = snow_world();
         let m = metrics(3000, true);
-        let mut dry = Snow::new(11);
+        let mut dry = UnifiedRandom::new(11);
         let mut dry_pool = DustPool::new();
         let mut i = inputs();
         for _ in 0..600 {
-            dry.snowing(&m, &i, 0, &ctx(), &w, &mut dry_pool);
+            snowing(&m, &i, 0, &mut dry, &ctx(), &w, &mut dry_pool);
         }
-        let mut storm = Snow::new(11);
+        let mut storm = UnifiedRandom::new(11);
         let mut storm_pool = DustPool::new();
         i.cloud_alpha = 1.0;
         i.raining = true;
         for _ in 0..600 {
-            storm.snowing(&m, &i, 0, &ctx(), &w, &mut storm_pool);
+            snowing(&m, &i, 0, &mut storm, &ctx(), &w, &mut storm_pool);
         }
         let dry_n = live_type(&dry_pool, 76);
         let storm_n = live_type(&storm_pool, 76);
@@ -474,23 +464,25 @@ mod tests {
         // spawns NOTHING (the break, not a skip).
         let w = snow_world();
         let m = metrics(6000, true); // intensity 1: every attempt passes
-        let mut s = Snow::new(13);
+        let mut s = UnifiedRandom::new(13);
         let mut pool = DustPool::new();
         let i = inputs();
-        s.snowing(&m, &i, 215, &ctx(), &w, &mut pool);
+        snowing(&m, &i, 215, &mut s, &ctx(), &w, &mut pool);
         assert_eq!(live_type(&pool, 76), 0, "the budget break");
+        assert_eq!(s, UnifiedRandom::new(13), "the break precedes any draw");
         // One under the budget the loop runs (and the pool fills).
         for _ in 0..30 {
-            s.snowing(&m, &i, 214, &ctx(), &w, &mut pool);
+            snowing(&m, &i, 214, &mut s, &ctx(), &w, &mut pool);
         }
         assert!(live_type(&pool, 76) > 0);
         // The gfxQuality scale: at 0.5 the budget is 195*0.75 + 19.5 = 165.75.
-        let mut q = Snow::new(13);
+        let mut q = UnifiedRandom::new(13);
         let mut q_pool = DustPool::new();
         let mut qi = inputs();
         qi.gfx_quality = 0.5;
-        q.snowing(&m, &qi, 166, &ctx(), &w, &mut q_pool);
+        snowing(&m, &qi, 166, &mut q, &ctx(), &w, &mut q_pool);
         assert_eq!(live_type(&q_pool, 76), 0, "the quality-scaled budget");
+        assert_eq!(q, UnifiedRandom::new(13), "the quality break draws nothing");
     }
 
     #[test]
@@ -500,18 +492,18 @@ mod tests {
         // The per-flake scale also drops 0.5 (`:13104-13107`).
         let w = snow_world();
         let m = metrics(6000, true);
-        let mut near = Snow::new(17);
+        let mut near = UnifiedRandom::new(17);
         let mut near_pool = DustPool::new();
         let mut i = inputs();
         i.deerclops_near = true;
         for _ in 0..600 {
-            near.snowing(&m, &i, 0, &ctx(), &w, &mut near_pool);
+            snowing(&m, &i, 0, &mut near, &ctx(), &w, &mut near_pool);
         }
-        let mut far = Snow::new(17);
+        let mut far = UnifiedRandom::new(17);
         let mut far_pool = DustPool::new();
         i.deerclops_near = false;
         for _ in 0..600 {
-            far.snowing(&m, &i, 0, &ctx(), &w, &mut far_pool);
+            snowing(&m, &i, 0, &mut far, &ctx(), &w, &mut far_pool);
         }
         let near_n = live_type(&near_pool, 76);
         let far_n = live_type(&far_pool, 76);
@@ -538,16 +530,16 @@ mod tests {
         let m = metrics(6000, true);
         let mut i = inputs();
         i.wind_speed_current = 0.4;
-        let mut dry = Snow::new(19);
+        let mut dry = UnifiedRandom::new(19);
         let mut dry_pool = DustPool::new();
         for _ in 0..30 {
-            dry.snowing(&m, &i, 0, &ctx(), &w, &mut dry_pool);
+            snowing(&m, &i, 0, &mut dry, &ctx(), &w, &mut dry_pool);
         }
         i.raining = true;
-        let mut storm = Snow::new(19);
+        let mut storm = UnifiedRandom::new(19);
         let mut storm_pool = DustPool::new();
         for _ in 0..30 {
-            storm.snowing(&m, &i, 0, &ctx(), &w, &mut storm_pool);
+            snowing(&m, &i, 0, &mut storm, &ctx(), &w, &mut storm_pool);
         }
         let dry_d = dry_pool
             .slots()
@@ -583,10 +575,10 @@ mod tests {
         let m = metrics(4000, true);
         let i = inputs();
         let play = || {
-            let mut s = Snow::new(23);
+            let mut s = UnifiedRandom::new(23);
             let mut pool = DustPool::new();
             for _ in 0..30 {
-                s.snowing(&m, &i, 0, &ctx(), &w, &mut pool);
+                snowing(&m, &i, 0, &mut s, &ctx(), &w, &mut pool);
             }
             pool.slots()[..DUST_SENTINEL]
                 .iter()
@@ -650,10 +642,10 @@ mod tests {
         let w = snow_world();
         let m = metrics(6000, true);
         let i = inputs();
-        let mut s = Snow::new(29);
+        let mut s = UnifiedRandom::new(29);
         let mut pool = DustPool::new();
         for _ in 0..30 {
-            s.snowing(&m, &i, 0, &ctx(), &w, &mut pool);
+            snowing(&m, &i, 0, &mut s, &ctx(), &w, &mut pool);
         }
         let n = live_type(&pool, 76);
         assert!(n > 0, "the pinned spawn flakes");
@@ -674,5 +666,225 @@ mod tests {
                 assert!(d.velocity.y <= 5.9 * d.scale + 1e-4);
             }
         }
+    }
+
+    // --- F7: the g11 draw-sequence mirrors, re-pinned to the global
+    // `UnifiedRandom` stream (research/83-addendum; the `Snow` splitmix
+    // retired). The rig mirrors g11's `snow_rig`: a big open world, the view
+    // parked far inside it, the stream pinned to the seed.
+
+    /// The g11 snow rig's inputs: view (4096,4096)-(5376,4816) inside a
+    /// 512×512 all-air world, full snow count, gfx 0, player falling 5.
+    fn g11_env() -> SnowInputs {
+        SnowInputs {
+            game_paused: false,
+            scaled_position: Vec2::new(4096.0, 4096.0),
+            scaled_size: Vec2::new(1280.0, 720.0),
+            cloud_alpha: 0.0,
+            raining: false,
+            wind_speed_current: 0.3,
+            player_vy: 5.0,
+            gfx_quality: 0.0,
+            deerclops_near: false,
+            remix_world: false,
+        }
+    }
+
+    fn g11_world() -> World {
+        let w = World::new("snow".into(), 512, 512);
+        w
+    }
+
+    fn g11_ctx() -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::new(4096.0, 4096.0),
+            screen_size: Vec2::new(1280.0, 720.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// The six `NewDust` default-block draws (`Dust.cs:153-193`) for the
+    /// 10×10 box — type 76 rolls no per-type tweak draw.
+    fn default_block(rng: &mut UnifiedRandom, pos: Vec2) -> (Vec2, Vec2, f32) {
+        let px = pos.x + rng.next_max(10 - 4) as f32 + 4.0;
+        let py = pos.y + rng.next_max(10 - 4) as f32 + 4.0;
+        let vx = rng.next_range(-20, 21) as f32 * 0.1;
+        let vy = rng.next_range(-20, 21) as f32 * 0.1;
+        let _ = rng.next_max(3); // frame row
+        let scale = 1.0 + rng.next_range(-20, 21) as f32 * 0.01;
+        (Vec2::new(px, py), Vec2::new(vx, vy), scale)
+    }
+
+    /// The `NewDust` off-screen cull (`Dust.cs:97-101`) for the g11 rig:
+    /// screen_position (4096,4096), screen 1280×720, dCount 0 → margin 400,
+    /// rect (3696,3696,2080,1520); XNA `Intersects` is strict `<`.
+    fn snow_cull_passes(x: i32, y: i32) -> bool {
+        3696 < x + 10 && x < 3696 + 2080 && 3696 < y + 10 && y < 3696 + 1520
+    }
+
+    /// F7 mirror 1 (g11 `w4_g11_snowing_mirrors_the_dry_arm_draw_sequence`):
+    /// cloudAlpha 0 → ONE attempt, full snow count → the NextFloat gate
+    /// always passes; the mirror walks every draw in C# order on the global
+    /// stream and pins position/velocity/scale — including the `wind*15`
+    /// dry tail. A culled spawn draws NO internals but the post-writes
+    /// still roll onto the sentinel.
+    #[test]
+    fn w4_g11_snowing_mirrors_the_dry_arm_draw_sequence() {
+        let w = g11_world();
+        let m = metrics(6000, true);
+        let i = g11_env();
+        let mut pool = DustPool::new();
+        let mut global = UnifiedRandom::new(0x5EED);
+        snowing(&m, &i, 0, &mut global, &g11_ctx(), &w, &mut pool);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let _ = rng.next_float(); // the spawn gate (`:13061`)
+        let mut num4 = rng.next_max(1280 + 1500) - 750;
+        let mut num5 = 4096 - rng.next_max(50);
+        num5 -= 5; // player_vy > 0 (`:13067-13070`)
+        if rng.next_max(5) == 0 {
+            num4 = rng.next_max(500) - 500;
+        } else if rng.next_max(5) == 0 {
+            num4 = rng.next_max(500) + 1280;
+        }
+        if num4 < 0 || num4 as f32 > 1280.0 {
+            num5 += rng.next_max((720.0f64 * 0.8) as i32) + (720.0f64 * 0.1) as i32;
+        }
+        num4 += 4096;
+        let passes = snow_cull_passes(num4, num5);
+        let mut v = Vec2::ZERO;
+        let mut s = 0.0;
+        if passes {
+            let (p, vel, scale) = default_block(&mut rng, Vec2::new(num4 as f32, num5 as f32));
+            let d = pool.slot(0);
+            assert!(d.active);
+            assert_eq!(d.dust_type, 76);
+            assert_eq!(d.position, p);
+            v = vel;
+            s = scale;
+        } else {
+            assert_eq!(live_type(&pool, 76), 0, "the cull refuses the spawn");
+        }
+        // `:13089-13091`: scale += 0 (cloudAlpha 0), the vy re-roll.
+        v.y = 3.0 + rng.next_max(30) as f32 * 0.1;
+        v.y *= s;
+        // `:13094-13095`: the dry wind arm.
+        v.x = 0.3 + rng.next_range(-10, 10) as f32 * 0.1;
+        v.x += 0.3 * 15.0;
+        // `:13102-13108`: the shared tail at cloudAlpha 0.
+        v.y *= 1.0;
+        if passes {
+            let d = pool.slot(0);
+            assert_eq!(d.velocity, v);
+            assert_eq!(d.scale, s);
+        } else {
+            // The sentinel took the writes; its scale is the pool default
+            // (0), so only the scale-independent x write is pinned.
+            assert_eq!(pool.slot(DUST_SENTINEL).velocity.x, v.x);
+        }
+        assert_eq!(global, rng, "the whole sequence rides the global stream");
+    }
+
+    /// F7 mirror 2 (g11 `…_the_storm_arm_with_deerclops`): the sqrt/sign
+    /// wind formula (negative wind → negative carry), the vy ×0.5, the
+    /// cloudAlpha double scale bump + the ×(1+0.3a)/×(1+0.5a) tails, and
+    /// the Deerclops −0.5 scale cut. cloudAlpha 0.5 → num3 = 26 attempts;
+    /// the mirror walks them with the FROZEN counter input (F4 — the
+    /// budget reads the call's snapshot, so the mirror's local spawned
+    /// count only tracks the pool slots, not the gate). The 0.05 gate is
+    /// seed-swept to guarantee at least one spawn.
+    #[test]
+    fn w4_g11_snowing_mirrors_the_storm_arm_with_deerclops() {
+        let mut any_spawn = false;
+        for seed in [99i32, 7, 0x5EED, 12345] {
+            let w = g11_world();
+            let m = metrics(6000, true);
+            let mut i = g11_env();
+            i.cloud_alpha = 0.5;
+            i.raining = true;
+            i.wind_speed_current = -0.4;
+            i.deerclops_near = true;
+            let mut pool = DustPool::new();
+            let mut global = UnifiedRandom::new(seed);
+            // F4: the counter is frozen per call — the budget never breaks
+            // in this rig (cap 104*0.6 = 62.4 > 26 attempts).
+            snowing(&m, &i, 0, &mut global, &g11_ctx(), &w, &mut pool);
+            let mut rng = UnifiedRandom::new(seed);
+            // num = 1/20 = 0.05; num2 = (int)(156*2)/3 = 104.
+            let num = 1.0f32 / 20.0;
+            let mut spawned = 0usize;
+            let mut attempt = 0;
+            while (attempt as f32) < 1.0 + 50.0 * 0.5 {
+                attempt += 1;
+                if !(rng.next_float() < num) {
+                    continue;
+                }
+                let mut num4 = rng.next_max(1280 + 1500) - 750;
+                let mut num5 = 4096 - rng.next_max(50) - 5;
+                if rng.next_max(5) == 0 {
+                    num4 = rng.next_max(500) - 500;
+                } else if rng.next_max(5) == 0 {
+                    num4 = rng.next_max(500) + 1280;
+                }
+                if num4 < 0 || num4 as f32 > 1280.0 {
+                    num5 += rng.next_max((720.0f64 * 0.8) as i32) + (720.0f64 * 0.1) as i32;
+                }
+                num4 += 4096;
+                let mut v = Vec2::ZERO;
+                let mut s = 0.0;
+                let in_view = snow_cull_passes(num4, num5);
+                if in_view {
+                    let (p, vel, scale) =
+                        default_block(&mut rng, Vec2::new(num4 as f32, num5 as f32));
+                    let d = pool.slot(spawned);
+                    assert!(d.active);
+                    assert_eq!(d.dust_type, 76);
+                    assert_eq!(d.position, p);
+                    v = vel;
+                    s = scale;
+                    spawned += 1;
+                }
+                s += 0.5 * 0.2;
+                v.y = 3.0 + rng.next_max(30) as f32 * 0.1;
+                v.y *= s;
+                v.x = (0.4f64.sqrt() as f32) * -1.0 * (0.5 + 0.5) * 10.0
+                    + rng.next_float() * 0.2
+                    - 0.1;
+                v.y *= 0.5;
+                v.y *= 1.0 + 0.3 * 0.5;
+                s += 0.5 * 0.2;
+                s -= 0.5; // the Deerclops cut
+                v *= 1.0 + 0.5 * 0.5;
+                if in_view {
+                    let d = pool.slot(spawned - 1);
+                    assert_eq!(d.velocity, v);
+                    assert_eq!(d.scale, s);
+                }
+            }
+            assert_eq!(live_type(&pool, 76), spawned);
+            assert_eq!(global, rng, "the storm sequence rides the global stream");
+            any_spawn |= spawned > 0;
+        }
+        assert!(any_spawn, "the seed sweep must pass the 0.05 gate");
+    }
+
+    /// F7 mirror 3 (g11 `…_breaks_on_the_live_76_budget`, re-pinned to the
+    /// counter input per F4): with the Deerclops throttle at cloudAlpha 0,
+    /// num2 = 156/3 = 52 → cap 52×0.5 + 52×0.1 = 31.2; a `snowDust` counter
+    /// of 40 breaks before any draw. The 4096 HiDef pin (F2) is what makes
+    /// the 1280-px fixture's num2 156.
+    #[test]
+    fn w4_g11_snowing_breaks_on_the_counter_budget() {
+        let w = g11_world();
+        let m = metrics(6000, true);
+        let mut i = g11_env();
+        i.deerclops_near = true; // num2 = 156/3 = 52 → cap 31.2
+        let mut pool = DustPool::new();
+        let mut global = UnifiedRandom::new(1);
+        snowing(&m, &i, 40, &mut global, &g11_ctx(), &w, &mut pool);
+        assert_eq!(live_type(&pool, 76), 0);
+        assert_eq!(global, UnifiedRandom::new(1), "the budget break draws nothing");
     }
 }
