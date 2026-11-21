@@ -263,6 +263,113 @@ fn derpling_death(
     gore.new_gore(rng, world, pos, vel, 236, 1.0); // :85740
 }
 
+/// The 494/495 Crawdad death (`NPC.cs:85742-85759`, sites 10-11): the
+/// 15x dust-5 burst, then `num454 = (type - 494) * 2` picks the pair —
+/// `736 + num454` then `735 + num454` (the HIGHER type first, 495→738/737),
+/// at position, scale 1f.
+fn crawdad_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85752-85755` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    // `:85756` — the per-variant offset.
+    let num454 = (npc_type - 494) * 2;
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 736 + num454, 1.0); // :85757
+    gore.new_gore(rng, world, pos, vel, 735 + num454, 1.0); // :85758
+}
+
+/// The 496/497 Giant Shelly death (`NPC.cs:85760-85777`, site 12): the
+/// 15x dust-5 burst, then ONE gore `739 + (type - 496)`. NOTE the C# hit
+/// half here has NO `return` (`:85762-85768` — the if/else shape, not the
+/// early-return shape); the dispatcher's `hp <= 0` gate covers the death
+/// half either way, the hit half stays g62's.
+fn shelly_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85771-85774` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 739 + (npc_type - 496), 1.0); // :85775
+}
+
+/// The 498-506 Salamander death (`NPC.cs:85778-85796`, sites 13-15 per
+/// variant, 27 across the nine): the 15x dust-5 burst, then
+/// `num459 = type - 498` picks the triple — `750 + num459` at position,
+/// `741 + num459` at +16 Y, `759 + num459` at +18 Y, scale 1f.
+fn salamander_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85788-85791` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    // `:85792` — the per-variant offset.
+    let num459 = npc_type - 498;
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 750 + num459, 1.0); // :85793
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 16.0), vel, 741 + num459, 1.0); // :85794
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 18.0), vel, 759 + num459, 1.0); // :85795
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -296,6 +403,18 @@ pub fn hit_effect_d(
     // `:85723-85741` — the 177 Derpling arm (sites 6-9).
     else if npc_type == 177 {
         derpling_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85742-85759` — the 494/495 Crawdad arm (sites 10-11).
+    else if (494..=495).contains(&npc_type) {
+        crawdad_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85760-85777` — the 496/497 Giant Shelly arm (site 12).
+    else if (496..=497).contains(&npc_type) {
+        shelly_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85778-85796` — the 498-506 Salamander arm (sites 13-15 per variant).
+    else if (498..=506).contains(&npc_type) {
+        salamander_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -469,5 +588,83 @@ mod tests {
         assert!(!gore.slot(0).active, "no gore on the hit half");
         assert!(!dust.slots()[0].active, "no dust on the hit half");
         assert_eq!(rng.peek(), UnifiedRandom::new(11).peek(), "no draws on the hit half");
+    }
+
+    /// `NPC.cs:85757-85758` — both Crawdad variants: the per-variant pair
+    /// with the HIGHER type first (494→736/735, 495→738/737).
+    #[test]
+    fn w4_f5d_the_crawdad_deaths_pick_the_variant_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 44.0, 30.0);
+        for (kind, want) in [(494, vec![736, 735]), (495, vec![738, 737])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(17);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "crawdad {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+        }
+    }
+
+    /// `NPC.cs:85775` — both Shelly variants: ONE gore 739/740.
+    #[test]
+    fn w4_f5d_the_shelly_deaths_spawn_one_gore() {
+        let w = air();
+        let n = mob(100.0, 100.0, 44.0, 30.0);
+        for (kind, want) in [(496, 739), (497, 740)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(19);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "shelly {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+        }
+    }
+
+    /// `NPC.cs:85793-85795` — the Salamander triple: 750+n at position,
+    /// 741+n at +16 Y, 759+n at +18 Y (n = type - 498); the 498 and 506
+    /// ends pinned.
+    #[test]
+    fn w4_f5d_the_salamander_deaths_spawn_the_variant_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 34.0);
+        for (kind, base) in [(498, 0), (506, 8)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(23);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![750 + base, 741 + base, 759 + base], "salamander {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 116.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(100.0, 118.0));
+            assert!(!gore.slot(3).active, "exactly three gores");
+        }
+    }
+
+    /// `NPC.cs:85742-85796` — the crawdad/shelly/salamander deaths all draw
+    /// the 15x6 dust census then only their gores' two kicks each; the twin
+    /// replay pins the stream (the named-argument :85775 draws no arm-level
+    /// randoms — Type is arithmetic, Position/Velocity are data).
+    #[test]
+    fn w4_f5d_the_underground_deaths_mirror_the_csharp_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 44.0, 30.0);
+        for (kind, gores) in [(494, 2), (497, 1), (502, 3)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(29);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let mut twin = UnifiedRandom::new(29);
+            for _ in 0..15 {
+                twin_dust(&mut twin, 44, 30);
+            }
+            for _ in 0..gores {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
     }
 }
