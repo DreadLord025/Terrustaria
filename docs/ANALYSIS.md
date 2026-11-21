@@ -40117,3 +40117,145 @@ replay (`tools/_f26_7f_replay.py` — the pinned vectors + the
 written not run; every vector hand-re-derived against line-for-line
 C# transcriptions.
 
+## W4-f26 FindFrame extra wave 7g (slice 7g, 2026-11-21, code-only mode)
+
+Slice 7g ports the NEXT 5 TRULY-unclaimed `NPC.FindFrame` case ids
+after 7f: **435/436/631/632/635** — ArmedZombieTwiggy,
+ArmedZombieCenx, RockGolem, MaggotZombie, SporeSkeleton
+(`NPCID.cs:11545-11547` + `:11939-11947`). Module
+`crates/tr-app/src/npc_findframe_extra7g.rs` (the 7f shape: pure
+machines over `FrameState`/`FrameInput`, the
+`find_frame_kind_extra7g` vanilla-id seam, wiring deferred — the
+kinds are not in `NpcKind` yet, the d43 roster wave owns them).
+Code commit `969144ca`.
+
+**The window re-probe (the brief's 537-541 window is CLOSED).** The
+f27 pushed tip `1a24a133` NOW carries the slice-10 claim band (the
+7f census's `findstr /C:"slice 10"` no-match is stale): 531..545 +
+the 549 fix, ALL 15 arms LIVE in `npc_findframe_extra10.rs` (the
+batch-2/3 catch-all gone). 531-536 dedupe against our own 7f;
+537-545 are f27's 9 NEW claims; 549 changes no count; 533 stays
+port-covered EXCLUDED; 546-548 no-case. The census re-derived
+mechanically against the d44 master refresh 3 (`c863a7a5`, the
+130-kind UNCLAIMED worklist): − 15 (the f26 7d/7e/7f pushed claims,
+the refresh-3 stale rows) − 9 (f27 slice 10) − 38 (the d42 tip
+`2d7ac08c`'s LANDED find_frame arms: 578/580/582-586/590/591/
+593-603/608-614/616-620/624-629) − 8 (the c4 `0df6964b` style-44
+581/587 + style-16 592/607/615, the c8 `3705670d` crawler 606, the
+e26 `048cca6c` ladybugs 604/605 — the d42 roster comment
+`npc.rs:1094-1095` names exactly these lanes) = 60 unclaimed before
+this slice; − 5 = **55 unclaimed**. The 7f post-state 112 was the
+7c-method compatible count; the master re-derivation is the new
+base (the addendum reconciles both). The d41 tip `5d036721` (batch
+2 salamanders) greps ZERO for the five; d40 stops at 490; d43 IS
+the wave-3 base; every pushed findframe module seam greps ZERO for
+the five ids; no `NpcKind` for any of the five on this branch. The
+five picked ids are the ascending head of the 60: the
+d49-deferred 435/436 (its ANALYSIS "435/436/591 ride the next wave"
+— 591 since landed on d42; the high2 witness itself pins
+`find_frame_kind_high2(435) == None`), then 631/632/635. **634
+SporeBat EXCLUDED from this wave**: its flutter arm draws
+`Main.rand.Next(10)` (`NPC.cs:74844`) — the zero-RNG rule; it stays
+unclaimed for a seam-fed wave. 633 BestiaryGirl is port-covered
+(`npc.rs:Zoologist`).
+
+Per-case notes:
+
+* **435/436 the armed-zombie pair** (`case 430..436/591`,
+  `NPC.cs:70879-70951`, labels `:70884-70885`) — the machine copied
+  VERBATIM from the d49 high2 module (the 7e ghoul ONE-group
+  precedent; the wiring merge keeps one). The `ai[2] > 0` attack
+  ladder (`:70887-70906`) pins rows 3/4/5/6 off the <5/<10/<15
+  bands with the counter AND sprite UNTOUCHED (the attack pose
+  never feeds the walk clock); the walk is the wave-A zombie
+  machine: the grounded ±1 flip (`:70907-70917` — 0 leaves the
+  sprite), the air OR turn-around row-2 pin (`:70918-70923`), the
+  stand row-0 zero (`:70924-70929`), the |vx| NO-+1 accumulator
+  with the <8/<16/<24/<32 bands rows 0/1/2/1 (`:70930-70946`), the
+  final else counter-zero WITHOUT a row write (`:70947-70950` —
+  the lap HOLDS row 1, the 7f bride quirk). 7-row sheets
+  (`Main.cs:67127` entries 5/6).
+* **631 RockGolem** (its own case, `:75259-75313`) — the grounded
+  sprite copy is UNCONDITIONAL (`:75266` — direction 0 rides
+  verbatim, NOT the ±1-gated fighter shape). The windup pose zone
+  (`:75267-75286`, `0 < ai[2] < 100`): `amount = (ai[2] - 68) / 32`
+  (`:75269`, NOT clamped — the AI keeps ai[2] in 68..100 here,
+  `:56326`/`:56351`); the facing+can-hit branch
+  `(int)MathHelper.Lerp(15, count, amount)` (`:75275` — rows
+  15..20 on the 21-row sheet), the overlap branch
+  `(int)Lerp(10, 15, amount)` (`:75279`), the else row 0
+  (`:75283`); the counter UNTOUCHED in the whole zone. The walk
+  (`:75287-75306`): the idle zeroes BOTH, the `0.2 + |vx|`
+  accumulator with the STRICT >8 step (the counter RESETS on the
+  step), the LITERAL `num31 = 8` cap wrapping to row 1
+  (`:75299-75302` — NOT the 21-row count; rows 8..20 are the pose
+  zone's, never walkable) and the row-<1 lift to 1. The air zeroes
+  BOTH to row 0 (`:75308-75312`). **The pose zone's world reads**
+  (`:75270-75273` — `Main.player[target]`, the hitbox intersect,
+  `Collision.CanHit`) ride [`FrameInput`] as three RESOLVED
+  booleans (`golem_facing_player`/`golem_overlapping`/
+  `golem_can_hit`) — the extra-7b slope/frame_x36 seam precedent;
+  the bridge owns the probe. The pinned cadence vx 0.8: 0.2f +
+  0.8f rounds to EXACTLY 1.0f, so the >8 step edges are exact in
+  both the f32 port and the C# double accumulator (the step every
+  9th tick).
+* **632 MaggotZombie / 635 SporeSkeleton** (the humanoid-group case
+  list, `:68619`/`:68621`) — the shared fighter walk
+  (`:68647-69655`) with the 632-ONLY `num108 = 12` stride override
+  (`:69524-69527` — the 7f tax-collector twin; the wave-B helper
+  hard-codes >6 so the override lands as a verbatim inline copy);
+  635 keeps the group default >6 (`:69523`) — the ONE-override
+  difference on the same 16-row sheet. `num57 = 0` (both aiStyle 3,
+  `:17138`/`:17179`, no townNPC — `NPC.cs:6856-6866`), the FULL-16
+  wrap; `num109` = row 2 (not town slimes); idle row 0 (not the
+  140/489 pair, `:69510`); air row 1 (neither in the `:69647` pin
+  list); the |vx|*2 THEN ++ group accumulator (`:69552-69553`).
+  The ai[0] pose zones (`:68662-69488`, the `Main.rand` draws at
+  `:68944`/`:68951`/`:68953`/`:68959`/`:69003`/`:69007`/`:69412`/
+  `:69436`) are the documented skip (the 7f tax-collector
+  precedent): AI_003 writes `ai[0]` ONLY 0/1 for these kinds (the
+  stand-turn `:57385-57396` — the >=2 branch flips direction and
+  zeroes the SAME tick; the 1000+ confused writes are
+  379/380/111-gated), so no zone condition can hold at FindFrame
+  time (`UpdateNPC` order `:90423` AI → `:90511` FindFrame).
+
+RNG: NONE — the mechanical grep over the five cited ranges (each
+≤ 80 lines: `:70887-70951`, `:75259-75313`, `:68647-68661`,
+`:69515-69585`, `:69642-69655`) = ZERO `Main.rand`/`.Next(`/
+`NextFloat`/`NextDouble`; the ONLY world reads are the golem pose
+zone's four lines (seam-fed above). `FrameInput` carries vx/vy +
+direction + `ai2` (the armed-zombie attack clock / the golem windup
+timer) + the three golem booleans; the humanoid pair never reads
+`ai2` in the ported zones.
+
+Frame counts counted entry-by-entry off `Main.cs:67082` (435/436 =
+7 `:67127` entries 5/6, 631 = 21 `:67147` entry 1, 632 = 16 entry
+2, 635 = 16 entry 5) and re-diffed against
+`render/entities.rs::NPC_FRAME_COUNT` — all 697 slots agree, ZERO
+mismatches (a mechanical text-parse diff, not a test run).
+
+Verification (code-only): 11 module witnesses written not run —
+the frame-count table cross-check, the armed-zombie attack ladder
+(the 8 band-edge pins × both kinds, counter/sprite held), the
+zombie walk bands + lap-hold + air/turn/stand pins (the 7f bride
+twin vectors), the golem windup lerps (ai2 68/84/99 × the flag
+combos — (int)20.8125 = 20 at 99, the ai2-100 zone exit), the golem
+walk's literal-8 cap + every-9th-tick cadence + the UNCONDITIONAL
+direction-0 sprite copy, the maggot's >12 stride vs the spore
+skeleton's >6 (the same vx-1 feed steps every 5th vs 3rd tick),
+the humanoid idle/air pins, the seam-exactness witness, the 5-kind
+27-combo 40-tick strip sweep and the golem 24-pose sweep (every
+row in-sheet, the pose counter never touched). The Python replay
+(`tools/_f26_7g_replay.py` — the pinned vectors + the 135-combo
+sweep + the 24-pose sweep) and the JS sweep twin
+(`tools/_f26_7g_sweep.js`) written not run; every vector
+hand-re-derived against line-for-line C# transcriptions.
+
+The census addendum: `docs/research/68-findframe-census-addendum-7g.md`
+(the 130 − 15 − 9 − 38 − 8 − 5 = 55 derivation + the re-probe
+evidence). The next ascending unclaimed ids: 634 (the RNG-drawing
+SporeBat — needs the dust seam), 636 HallowBoss (the one-line
+phase-2 row pin, `NPC.cs:67022-67024`), 637/638 the town cat/dog,
+639-645 the gem squirrels (the f27 squirrel-group twins), 646-652
+the gem bunnies — re-check at the next census.
+
