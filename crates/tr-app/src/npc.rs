@@ -1086,6 +1086,64 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+
+    // ---- W4-d42: the NPCID 578-630 SetDefaults roster (data-only join;
+    // the protocol ids ride the port-local 354..404 band, the vanilla
+    // types ride `cs_id`/`net_id`/the bestiary). ----
+    /// `NPCID.DD2LightningBugT3` (578) — the Old One's Army's tier-3
+    /// lightning bug (`NPC.cs:16536-16553`: 30×24, aiStyle 111, dmg 80,
+    /// def 36, 500 HP, kb 0.8, noGravity/noTileCollide, npcSlots 0,
+    /// lavaImmune, netAlways; no value row — the head's 0f `:8544`).
+    /// The aiStyle-111 zap machine is UNWIRED (the wyvern precedent).
+    DD2LightningBug,
+    /// `NPCID.BartenderUnconscious` (579) — the fallen tavernkeeper
+    /// (`NPC.cs:16554-16568`: 34×8, aiStyle 0 the bound stand, friendly,
+    /// dmg 10, def 15, 250 HP, kb 0.5, scale 1, rarity 1). The bestiary
+    /// hides it (`NPCID.cs` GetLeinforsEntries `Hide = true`) — the
+    /// credit folds onto the Bartender (the SleepingAngler precedent).
+    BartenderUnconscious,
+    /// `NPCID.WalkingAntlion` (580) — the underground-desert charger
+    /// (`NPC.cs:14854-14867`: 26×26, aiStyle 3, dmg 25, def 10, 80 HP,
+    /// kb 0.5, value 80, npcSlots 0.8). The walk rides `AI_003_Fighters`'
+    /// 508/580/582 lerp machine (`NPC.cs:58139-58202`, ported in
+    /// `npc_ai3_speeds.rs`).
+    WalkingAntlion,
+    /// `NPCID.FlyingAntlion` (581) — the desert swarmer (`NPC.cs:
+    /// 14868-14881`: 30×22, aiStyle 44, dmg 29, def 8, 60 HP, kb 0.5,
+    /// value 90, npcSlots 0.8). The aiStyle-44 machine is ported
+    /// (`npc_ai_style44.rs`) but UNWIRED — the family merge step owns
+    /// the dispatch claim (the wyvern precedent).
+    FlyingAntlion,
+    /// `NPCID.LarvaeAntlion` (582) — the desert larva (`NPC.cs:
+    /// 16569-16582`: 18×18, aiStyle 3, dmg 10, def 2, 30 HP, kb 0.75,
+    /// value 40, npcSlots 0.4). The 582 lerp arm (`NPC.cs:58144-58150`:
+    /// the 2.25/7 pair, the >2.5 sprint to 3) is ported.
+    LarvaeAntlion,
+    /// `NPCID.FairyCritterPink` (583) — the pink fairy (`NPC.cs:
+    /// 16583-16607`, the 583/584/585 group: 18×20, aiStyle 112, dmg 0,
+    /// def 0, 5 HP, noGravity, rarity 2, catchItem 4068; no kb row —
+    /// the class default 1f `:8533`). The aiStyle-112 flutter is
+    /// UNWIRED. `DebuffImmunitySets` 583: ImmuneToAllBuffsThatAreNotWhips
+    /// + ImmuneToWhips (the `whip_immune` seam).
+    FairyCritterPink,
+    /// `NPCID.FairyCritterGreen` (584) — the green fairy (the 583 group
+    /// row, catchItem 4069, `NPC.cs:16598-16600`).
+    FairyCritterGreen,
+    /// `NPCID.FairyCritterBlue` (585) — the blue fairy (the 583 group
+    /// row, catchItem 4070, `NPC.cs:16601-16603`).
+    FairyCritterBlue,
+    /// `NPCID.ZombieMerman` (586) — the blood-moon merman (`NPC.cs:
+    /// 16608-16622`: 18×40, aiStyle 3, dmg 40, def 20, 400 HP, kb 0,
+    /// value 1000, alpha 255, rarity 1). The walk rides `AI_003`'s 586
+    /// life-scaled cap (`NPC.cs:57689-57692`: 1.5 + (1−life/lifeMax)·3.5,
+    /// ported) + the wet swim (`FindFrame` case 586, `:75411`).
+    ZombieMerman,
+    /// `NPCID.EyeballFlyingFish` (587) — the blood-moon eye fish
+    /// (`NPC.cs:16623-16637`: 32×18, aiStyle 44, dmg 35, def 18, 300 HP,
+    /// kb 0, value 1000, alpha 255, rarity 1). The aiStyle-44 machine's
+    /// 587 materialize/flee branches are ported (`npc_ai_style44.rs`)
+    /// but UNWIRED (the FlyingAntlion note).
+    EyeballFlyingFish,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the

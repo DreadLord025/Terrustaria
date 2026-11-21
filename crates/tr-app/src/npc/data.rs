@@ -586,6 +586,21 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d42 — the NPCID 578-630 roster: the port-local 354..404
+            // band, one id per kind in vanilla-type order (the pirate
+            // renumber's precedent — the vanilla 578-630 slots are NOT
+            // the wire ids; the real types ride `cs_id`/`net_id`). 354
+            // is the next free slot above the BlazingWheel's 353.
+            NpcKind::DD2LightningBug => 354,
+            NpcKind::BartenderUnconscious => 355,
+            NpcKind::WalkingAntlion => 356,
+            NpcKind::FlyingAntlion => 357,
+            NpcKind::LarvaeAntlion => 358,
+            NpcKind::FairyCritterPink => 359,
+            NpcKind::FairyCritterGreen => 360,
+            NpcKind::FairyCritterBlue => 361,
+            NpcKind::ZombieMerman => 362,
+            NpcKind::EyeballFlyingFish => 363,
         }
     }
 
@@ -916,6 +931,18 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-d42 — the NPCID 578-630 roster's port-local 354..404
+            // band (`to_u16` above).
+            354 => NpcKind::DD2LightningBug,
+            355 => NpcKind::BartenderUnconscious,
+            356 => NpcKind::WalkingAntlion,
+            357 => NpcKind::FlyingAntlion,
+            358 => NpcKind::LarvaeAntlion,
+            359 => NpcKind::FairyCritterPink,
+            360 => NpcKind::FairyCritterGreen,
+            361 => NpcKind::FairyCritterBlue,
+            362 => NpcKind::ZombieMerman,
+            363 => NpcKind::EyeballFlyingFish,
             _ => return None,
         })
     }
