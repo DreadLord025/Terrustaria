@@ -2767,15 +2767,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
                 // W4-d13 — the SAME `ItemCheck_ApplyPetBuffs` grant for the
                 // PET items (`Player.cs:53117-53120`'s 3577 arm + the
-                // `:53286-53341` 54-case vanity-pet switch): the six
-                // aiStyle-124 pet items (4798/4804/4811/4812/4814/5089) and
-                // the 3577 tentacle all carry `buffTime = 0`, so without
-                // this 3600 grant the `:42880` ghost below is swept and the
-                // keep-alive arm never pins — the pet despawns. The C#
-                // order composes: ApplyPetBuffs (`:42766`) runs BEFORE
-                // StartActualUse's `item.buffTime` grant (`:42880`), whose
-                // 0-time `AddBuff_TryUpdatingExistingBuffTime` keeps the
-                // 3600 (`buff_time < time` is false).
+                // `:53286-53341` 54-case vanity-pet switch + the classic
+                // single-item arms, the retire census research/243 §3):
+                // the six aiStyle-124 pet items (4798/4804/4811/4812/
+                // 4814/5089), the 3577 tentacle and the classic pets all
+                // carry `buffTime = 0`, so without this 3600 grant the
+                // `:42880` ghost below is swept and the keep-alive arm
+                // never pins — the pet despawns. The C# order composes:
+                // ApplyPetBuffs (`:42766`) runs BEFORE StartActualUse's
+                // `item.buffTime` grant (`:42880`), whose 0-time
+                // `AddBuff_TryUpdatingExistingBuffTime` keeps the 3600
+                // (`buff_time < time` is false). The table excludes 603
+                // (the CE-gated arm — no CE flag in the port) and 425
+                // (d2's `Next(3)` fairy lane); the licenses 4829/4830/
+                // 4910 ride UsePetLicenses, NOT this function.
                 if crate::projectile::PET_ITEM_BUFF_GRANTS.contains(&held.kind)
                     && def.buff_type > 0
                 {
@@ -17011,6 +17016,85 @@ mod use_loop_tests {
             assert_eq!(def.buff_type, buff, "item {item}'s buffType");
             assert_eq!(def.buff_time, 0, "item {item}: the :42880 grant is a ghost");
             assert_eq!(def.projectile, Some(pet), "item {item}'s shoot");
+        }
+    }
+
+    /// W4-d13 retire (research/243 §3) — the classic single-item arms join
+    /// the grant: the Shadow Orb (115, `Player.cs:53101-53104`) use grants
+    /// buff 19 at 3600 and the keep-alive (`buff_effects_accessory.rs`'s
+    /// 19 → 18 arm, `:11005-11018`) pins 18000 + spawns the 18 light pet.
+    /// The rival-light-pet eviction drops the tentacle's 190 first.
+    #[test]
+    fn w4_d13_the_shadow_orb_use_grants_the_3600_light_pet_buff() {
+        let mut app = app_with_staff(115); // buff 19 → the 18 light pet
+        app.player.as_mut().unwrap().buffs.add_buff(190, 18000);
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.buffs.find_buff_index(190), None, "the light-pet eviction");
+        let b = p.buffs.find_buff_index(19).expect("buff 19 granted");
+        assert_eq!(p.buffs.buff_time[b], 3600, "the :53103 3600 grant");
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        let b = p.buffs.find_buff_index(19).expect("buff 19 kept");
+        assert_eq!(p.buffs.buff_time[b], 18000, "the keep-alive refresh");
+        assert!(p.pet_flags[18], "the Shadow Orb pet flag");
+    }
+
+    /// W4-d13 retire census (research/243 §3) — the grant table's boundary:
+    /// every classic arm's registry row agrees (buffType > 0, buffTime 0,
+    /// the shoot), and the FOUR exclusions stay out: 603 (the Carrot —
+    /// the `:53093` CE-gated arm, no CE flag in the port), 425 (the Fairy
+    /// Bell — d2's `Next(3)` lane), the g10 licenses 4829/4830/4910
+    /// (`ItemCheck_UsePetLicenses` `Player.cs:45352-45366`, buff_type 0 /
+    /// no projectile — the town pets spawn through the town machine, NOT
+    /// a buff), and the d43 Chillet mounts 5665/5666 (`Item.cs:44509-
+    /// 44532`, mountType 62/63). The pal staves 5663/5664 stay on the i25
+    /// MINION_STAFF table, not this one.
+    #[test]
+    fn w4_d13_the_classic_grant_rows_and_the_exclusions() {
+        let grants = crate::projectile::PET_ITEM_BUFF_GRANTS;
+        // (item, buff, pet projectile) — the classic arms' Item.cs rows.
+        for (item, buff, pet) in [
+            (669u16, 41i32, 112u16),
+            (115, 19, 18),
+            (3060, 154, 499),
+            (3628, 191, 653),
+            (3062, 155, 500),
+            (753, 42, 127),
+            (994, 45, 175),
+            (1242, 61, 236),
+            (1311, 65, 268),
+            (1312, 66, 269),
+            (1810, 84, 319),
+            (1837, 85, 324),
+            (1927, 91, 334),
+            (1959, 92, 353),
+            (3043, 152, 492),
+            (2420, 127, 380),
+        ] {
+            assert!(grants.contains(&item), "item {item} in the grant rows");
+            let def = crate::registry::get(item).expect("the item row");
+            assert_eq!(def.buff_type, buff, "item {item}'s buffType");
+            assert_eq!(def.buff_time, 0, "item {item}: the ghost grant");
+            assert_eq!(def.projectile, Some(pet), "item {item}'s shoot");
+        }
+        for kind in [603u16, 425, 4829, 4830, 4910, 5665, 5666, 5663, 5664] {
+            assert!(!grants.contains(&kind), "item {kind} stays OUT of the table");
+        }
+        // The licenses carry no buff and no shoot (the town-machine lane).
+        for kind in [4829u16, 4830, 4910] {
+            let def = crate::registry::get(kind).expect("the license row");
+            assert_eq!(def.buff_type, 0, "license {kind}: no buff");
+            assert_eq!(def.projectile, None, "license {kind}: no shoot");
+        }
+        // The pal staves ride the i25 summon-staff table instead.
+        for kind in [5663u16, 5664, 6148, 6149] {
+            assert!(
+                crate::projectile::MINION_STAFF_PET_BUFF_ITEMS.contains(&kind),
+                "pal staff {kind} on the i25 table"
+            );
         }
     }
 

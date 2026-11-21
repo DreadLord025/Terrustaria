@@ -39531,6 +39531,44 @@ witnesses (the 5089 use → 3600 → 18000 + the 957 spawn, the 3577 use →
 the eviction + 3600 → 18000 + the 650 flag, the grant-row/registry
 agreement incl. the 5117 exclusion) WRITTEN NOT RUN.
 
+**(6) PET-LIGHT RETIRE (research/243, the FINAL census).** The three
+activation cross-notes composed against the consumed lanes' landed
+tips: **(a)** c19 (`a160ad9ff`, research/65→189 per registry-150)
+CONFIRMS the zero-pet-site claim from its own register — no pet kind in
+the ported-44 or absent-21 columns, e6's 40 likewise; d13's 658 row
+ACTIVATED c19's site 28 (`:36150`, the round-2 blocker-3 list cites
+"d13 (658)"); the pets' PlotTileLine casts are the SAME light-map-write
+deferral c19 records for the hooks' rope spreads. **(b)** f11's retire
+(`14ca0a8d`, research/235 §2 — renumbered 136→153→235) CLOSED the
+stream note: `mass_wire_operation` gained `drop_rng: RngKey`, the kite
+drain passes `UpdateProjectiles`; the drain-contract doc trio + the
+composition witness re-pinned to the five-param shape (the one-drain-
+shape rule: direct drain OR buffer, never both). **(c)** The g10 town
+pets (11 kinds, `5dee28650`) do NOT consume the 3600 grant — the
+licenses 4829/4830/4910 ride `ItemCheck_UsePetLicenses`
+(`Player.cs:45352-45366` → `NPC.UnlockOrExchangePet` `NPC.cs:80894-
+80918`), no buff/projectile, the town machine spawns the NPCs; the d43
+distressed pals 695/696 spawn wild (`NPC.cs:4371-4384`) and their
+rescue drops are the i25-already-granted staves 5663/5664; the Chillets
+5665/5666 are mounts 62/63. **(d) ONE NEW GAP FOUND + FIXED:** the 5/5
+fix missed `ApplyPetBuffs`' CLASSIC single-item arms (`:53097-53116`,
+`:53146-53189`, `:53198-53233`, `:53242-53249` — the Shadow Orb 115,
+the Companion Cube 3628, the Bone Key 1169 … the Zephyr Fish 2420, 26
+items): all buffTime=0 ghosts, all keep-alives already ported
+(`buff_effects_misc.rs`'s pet table + the accessory arms) — the same
+despawn failure. They join `PET_ITEM_BUFF_GRANTS` verbatim; TWO
+exclusions: 603 (the `:53093` `runningCollectorsEdition` gate — no CE
+flag in the port) and 425 (d2's `Next(3)` fairy arm, not a plain
+grant). The equip-arm `UpdatePet`/`UpdatePetLight` (`:17298-17340`)
+deferral is UNCHANGED (the i53 note's seam). The pet-light-family
+declaration (research/243 §4): the seven kinds contribute ZERO
+AddLight sites + ZERO `this.light`; the 650/895/896 PlotTileLine rows
+(colours/retro gate/widths/anchors) are censused for the standing
+light-map-write layer; 882/888/898/957 are dark in C# too. 2 new
+witnesses (the Shadow Orb use → eviction + 3600 → 18000 + the 18 flag,
+the classic-row/registry agreement + the nine exclusions) WRITTEN NOT
+RUN.
+
 ### Verification
 
 Code-only: every change re-read against the cited C# windows; the seam

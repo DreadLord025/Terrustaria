@@ -268,11 +268,13 @@ pub(crate) struct App {
     /// requests (`Projectile.cs:72051-72067`): `(owner, ps_x, ps_y, pe_x,
     /// pe_y)` drained from the projectile pool's kill hook — TILE coords
     /// (`(int)X >> 4`). UNCONSUMED on this branch: f11's apply
-    /// (`wiring_devices::mass_wire_operation(app, ps, pe, mode)`) landed on
-    /// ITS branch (`6bc1547d`/`24fa39f1`), unmerged; the drain-site
-    /// activation contract lives at `world_sim/projectiles.rs`'s
-    /// `take_mass_wire_ops` seam (the raw ToolMode, no Actuator strip, no
-    /// cooldown gate, the UpdateProjectiles stream note).
+    /// (`wiring_devices::mass_wire_operation(app, ps, pe, mode, drop_rng)`)
+    /// landed on ITS branch (`24fa39f1` + the `84ed6342b` stream close,
+    /// retire tip `14ca0a8d`), unmerged; the drain-site activation
+    /// contract lives at `world_sim/projectiles.rs`'s `take_mass_wire_ops`
+    /// seam (the raw ToolMode, no Actuator strip, no cooldown gate, the
+    /// `RngKey::UpdateProjectiles` stream param — the note CLOSED on f11,
+    /// research/235 §2).
     pub(crate) pending_mass_wire_ops: Vec<(u8, i32, i32, i32, i32)>,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],

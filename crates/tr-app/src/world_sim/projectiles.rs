@@ -449,14 +449,18 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // (`Projectile.cs:72051-72067`): the release-latch deaths queued their
     // `(owner, ps, pe)` anchors; the app slot holds THIS tick's requests
     // (a per-tick buffer — the C# applies synchronously inside Kill).
-    // ACTIVATION CONTRACT (f11's apply landed on ITS branch, `6bc1547d`/
-    // `24fa39f1` — `wiring_devices::mass_wire_operation(app, ps, pe, mode)`,
-    // unmerged here): the merge wave drains THIS buffer at THIS seam,
-    // before the next pass replaces it —
+    // ACTIVATION CONTRACT — SEALED against f11's retire (tip `14ca0a8d`,
+    // research/235 §2; renumbered 136→153→235 per the registry-150 key-136
+    // row). f11's apply landed on ITS branch (`24fa39f1` + the `84ed6342b`
+    // stream close): `wiring_devices::mass_wire_operation(app, ps, pe,
+    // mode, drop_rng)`, unmerged here. The merge wave drains THIS buffer
+    // at THIS seam (after `take_spear_hold`), before the next pass
+    // replaces it —
     //   for (owner, psx, psy, pex, pey) in take_mass_wire_ops() {
     //       if owner as u32 != app.local_id { continue; } // the Kill gate
     //       mass_wire_operation(app, (psx, psy), (pex, pey),
-    //                           app.wire_tool_mode); // :3241 ToolMode, UNMASKED
+    //                           app.wire_tool_mode, // :3241 ToolMode, UNMASKED
+    //                           crate::app::RngKey::UpdateProjectiles);
     //   }
     // The shapes compose verbatim: ps/pe are TILE coords on both sides
     // (`(int)X >> 4`, `Utils.cs:1807-1810`); the mode is the RAW
@@ -464,13 +468,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // strip the Actuator bit; only the 3625 click arm masks, f11's
     // `Player.cs:46908`). No `wire_operations_cooldown` gate on this path
     // (the C# Kill hook has none — the throttle is CanUseItem's, the use
-    // arm's). STREAM NOTE: f11's `mass_wire_operation` rolls its cut-cache
-    // drops on `RngKey::UpdatePlayers` (the 3625 use path's stage); the
-    // kite's Kill runs INSIDE `UpdateProjectiles` (`Main.cs:17775`'s swap)
-    // — the merge wave must thread the caller's stage stream (the
-    // `spawn_item_drop_px_fields` field-wise precedent) or record the
-    // fold as a deviation. Until f11 merges, the requests drop tick-end
-    // (the documented deferral).
+    // arm's). STREAM NOTE CLOSED (f11 `84ed6342b`): the fn rolls its
+    // cut-cache `Item.DropCache` drops on the CALLER's stage stream —
+    // the 3625 use arm passes `RngKey::UpdatePlayers` (unchanged), THIS
+    // drain passes `RngKey::UpdateProjectiles` (the Kill runs inside
+    // `Main.cs:17775`'s swap); no deviation to record. ONE drain shape
+    // (research/235 §2): the merger keeps EITHER this direct drain OR
+    // the buffer + a second-pass drain, never both (the buffer field
+    // drops if the direct drain wins). Until f11 merges, the requests
+    // drop tick-end (the documented deferral).
     app.pending_mass_wire_ops = app.projectiles.take_mass_wire_ops();
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the

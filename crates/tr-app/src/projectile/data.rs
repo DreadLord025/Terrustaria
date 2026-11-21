@@ -4619,6 +4619,21 @@ pub const MINION_STAFF_PET_BUFF_ITEMS: &[u16] = &[
 /// (Twins), 4811 (Fairy Queen), 4812 (Pumpking), 4814 (Ice Queen), 5089
 /// (Glommer — `Item.cs:40791-40795` `DefaultToVanitypet(957, 328)`; NOT
 /// 5117, the Xenopopper gun `:40997-41013`).
+/// RETIRE census (research/243 §3): the function's remaining single-item
+/// arms — the CLASSIC pets/light pets (`:53097-53116`, `:53146-53189`,
+/// `:53198-53233`, `:53242-53249`) — carry the SAME buffTime=0 ghost and
+/// their keep-alives are ALL ported (`buff_effects_misc.rs`'s pet table +
+/// `buff_effects_accessory.rs`), so they join the grant verbatim. TWO
+/// exclusions: 603 (the Carrot — the `:53093` arm gates on
+/// `Main.runningCollectorsEdition`, a flag the port does not carry; the
+/// non-CE default false keeps the arm dead) and 425 (the Fairy Bell —
+/// the `:53121-53145` `Next(3)` 27/101/102 buff pick is d2's light-pets
+/// lane, a different arm shape). The g10 town pets do NOT consume this
+/// table: the licenses 4829/4830/4910 ride `ItemCheck_UsePetLicenses`
+/// (`Player.cs:45352-45366` → `NPC.UnlockOrExchangePet` `NPC.cs:80894-
+/// 80918`), no buff, no projectile. The d43 pal reward staves 5663/5664/
+/// 6148/6149 are the i25 `MINION_STAFF_PET_BUFF_ITEMS` rows; 5665/5666
+/// are Chillet MOUNTS (`Item.cs:44509-44532`, mountType 62/63), no buff.
 pub const PET_ITEM_BUFF_GRANTS: &[u16] = &[
     3577, // :53117 — the Suspicious Looking Tentacle (buff 190 → 650)
     // :53286-53341 — the vanity-pet switch, verbatim order.
@@ -4626,6 +4641,25 @@ pub const PET_ITEM_BUFF_GRANTS: &[u16] = &[
     4777, 4797, 4798, 4799, 4800, 4801, 4802, 4803, 4804, 4805, 4806, 4807, 4808, 4809, 4810,
     4811, 4812, 4813, 4814, 4815, 4816, 4817, 4960, 5088, 5089, 5090, 5091, 5098, 5131, 5276,
     5297, 5332, 5333, 5400, 5466, 5513, 5517, 5523, 5654,
+    // The classic single-item arms, verbatim C# order (the retire census).
+    669,  // :53097 — Fish (buff 41 → the 112 Penguin)
+    115,  // :53101 — Shadow Orb (buff 19 → 18, light pet)
+    3060, // :53105 — Bone Rattle (buff 154 → the 499 Baby Face Monster)
+    3628, // :53109 — Companion Cube (buff 191 → 653)
+    3062, // :53113 — Crimson Heart (buff 155 → 500, light pet)
+    753,  // :53146 — Seaweed (buff 42 → the 127 Turtle)
+    994,  // :53150 — Eater's Bone (buff 45 → the 175 Baby Eater)
+    1169, 1170, 1171, 1172, // :53154-53169 — Bone Key/Nectar/Tiki Totem/Lizard Egg (50-53)
+    1180, 1181, 1182, 1183, // :53170-53185 — Parrot Cracker/Mushroom/Seedling/Wisp (54-57)
+    1242, // :53186 — Amber Mosquito (buff 61 → the 236 Dino)
+    1311, // :53198 — Eye Spring (buff 65 → 268)
+    1837, // :53202 — Cursed Sapling (buff 85 → 324)
+    1312, // :53206 — Toy Sled (buff 66 → the 269 Snowman)
+    1798, 1799, // :53210/:53214 — Spider Egg/Magical Pumpkin Seed (81/82)
+    1810, // :53222 — Unlucky Yarn (buff 84 → the 319 Black Cat)
+    1927, 1959, // :53226/:53230 — Dog Whistle/Grinch Whistle (91/92)
+    3043, // :53242 — Magic Lantern (buff 152 → 492, light pet)
+    2420, // :53246 — Zephyr Fish (buff 127 → 380)
 ];
 
 /// `ProjectileID.Sets.MinionShot` (`ProjectileID.cs:431`): the minion attack
