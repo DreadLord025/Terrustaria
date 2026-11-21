@@ -4347,6 +4347,60 @@ impl Npc {
         self.kind.shares_carrier_life() && self.worm_id != 0 && self.seg_index > 0
     }
 
+    /// `NPC.boss` (`NPC.cs:6513`'s per-type `SetDefaults` rows) for the
+    /// ported boss roster — the `NPCLoot` soul gate's `info.npc.boss`
+    /// (`Conditions.cs:1581`), the `LegacyHack_IsABoss` trophy rows
+    /// (`ItemDropDatabase.cs:878-908`) and `DoDeathEvents`' boss tail
+    /// (`NPC.cs:79505-79513`) all read it. W4-f32 DOC-SWEEP census: the
+    /// C#'s 23 `this.boss = true` sites are 21 `SetDefaults` kinds —
+    /// 4 (:8716), 35 (:9180), 50 (:9389), 113 (:10358), 125 (:10535),
+    /// 126 (:10552), 127 (:10570), 134 (:10676), 222 (:11868),
+    /// 245 (:12176), 262 (:12393), 266 (:12452), 370 (:13716),
+    /// 395 (:14061 — the MARTIAN SAUCER CORE is a boss), 396 (:14097),
+    /// 397 (:14116), 398 (:14136), 439 (:14227), 636 (:17202),
+    /// 657 (:17323), 664 (:17401, the Torch God — unported),
+    /// 668 (:17460) — plus the DYNAMIC `DropEoWLoot` latch (:78425-78428:
+    /// the last EoW segment sets `boss = true` before `NPCLoot`, so the
+    /// head's row is NOT a static `SetDefaults` boss). The DD2 bosses
+    /// (551/564/565/576/577) and the Dutchman (491) do NOT set it (their
+    /// trophies are unconditional `Common` rows,
+    /// `ItemDropDatabase.cs:903-908`). The port's `boss` field is only
+    /// wired for Duke Fishron / King Slime today, so this helper is the
+    /// faithful per-kind read the loot/death paths use (the field's
+    /// general migration is the S1-D-3p follow-up). The dynamic arms are
+    /// NOT kind reads: the Twins' surviving-half demotion
+    /// (`DoDeathEvents_BeforeLoot`, `NPC.cs:78916-78923`) and the EoW
+    /// last-segment latch are documented gaps (research/74). The Moon
+    /// parts (396/397) are bosses in `SetDefaults` but their ported
+    /// deaths are ALL bypass kills (`moon_despawn_kill` — the strike
+    /// death restores the hover, the orphan/despawn kills skip
+    /// `NPCLoot`), so the death loop's tail refuses them on that flag
+    /// and no boss-tail draw ever fires for a part.
+    pub fn is_boss_kind(&self) -> bool {
+        matches!(
+            self.kind,
+            NpcKind::KingSlime
+                | NpcKind::EyeOfCthulhu
+                | NpcKind::BrainOfCthulhu
+                | NpcKind::QueenBee
+                | NpcKind::SkeletronHead
+                | NpcKind::WallOfFlesh
+                | NpcKind::TheDestroyer
+                | NpcKind::SkeletronPrime
+                | NpcKind::Retinazer
+                | NpcKind::Spazmatism
+                | NpcKind::Plantera
+                | NpcKind::Golem
+                | NpcKind::DukeFishron
+                | NpcKind::MartianSaucerCore
+                | NpcKind::AncientCultist
+                | NpcKind::MoonLordCore
+                | NpcKind::MoonLordHead
+                | NpcKind::MoonLordHand
+                | NpcKind::Deerclops
+        )
+    }
+
     /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81387-81475`): the
     /// soft-capped impulse applied by `tr_core::damage::knock_back_npc`.
     /// `hit_direction` is the knockback side (+1 = pushed right) and
