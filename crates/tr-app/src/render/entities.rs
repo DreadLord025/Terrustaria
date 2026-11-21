@@ -837,6 +837,10 @@ fn npc_add_height(n: &Npc) -> f32 {
         // `:22083` 62/66/156 (the Demon Eye's 62 is a charm id; 66 the
         // Voodoo Demon, 156 the Wandering Eye — no port kind for 156).
         VoodooDemon => 14.0,
+        // W4-d34: `Main.cs:22069` 48 → 32; `:22125` 39/40/41 → 26.
+        Harpy => 32.0,
+        BoneSerpentHead | BoneSerpentBody | BoneSerpentTail => 26.0,
+
         // `:22087` 63/64/103 (the goblin townsfolk + the javelin T3) — the
         // Golem Head's 64 is resolved out by the town test above.
         BoundGoblin | GoblinTinkerer | DD2JavelinT3 => 4.0,
@@ -1108,6 +1112,12 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // sheets are their own `TextureAssets.Npc[type]` (371/373).
         NpcKind::DetonatingBubble => 371,
         NpcKind::Sharkron2 => 373,
+        // W4-d34: the Bone Serpent's body/tail bestiary credits fold onto the
+        // head, but their DRAW sheets are their own NPC_40/41 (the Destroyer
+        // precedent).
+        NpcKind::BoneSerpentBody => 40,
+        NpcKind::BoneSerpentTail => 41,
+
         // S1-F-13d: the Force Bubble's bestiary credit folds onto the
         // Officer (Hide=true), but its DRAW sheet is its own NPC_384
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
@@ -3188,6 +3198,18 @@ pub(crate) fn draw_npcs(
             NpcKind::Bunny => {
                 pumpkin_moon_draw(assets.npc_sheet(46), npc_rows(46), n, w, h)
             }
+            // W4-d34: the Bone Serpent's single-frame segments at the generic
+            // anchor (the wyvern shape); the CorruptBunny + Harpy their strips.
+            NpcKind::BoneSerpentHead => generic_anchor(assets.npc_sheet(39), 1, n, w, h),
+            NpcKind::BoneSerpentBody => generic_anchor(assets.npc_sheet(40), 1, n, w, h),
+            NpcKind::BoneSerpentTail => generic_anchor(assets.npc_sheet(41), 1, n, w, h),
+            NpcKind::CorruptBunny => {
+                pumpkin_moon_draw(assets.npc_sheet(47), npc_rows(47), n, w, h)
+            }
+            NpcKind::Harpy => {
+                pumpkin_moon_draw(assets.npc_sheet(48), npc_rows(48), n, w, h)
+            }
+
         };
         let Some(tex) = tex else {
             continue;
@@ -3337,11 +3359,14 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
-            )
-                    | NpcKind::BlazingWheel
-                    | NpcKind::DungeonSpirit
                     // W4-d34: the Cursed Skull's aim rotation (`NPC.cs:21750-21766`).
                     | NpcKind::CursedSkull
+                    // W4-d34: the Bone Serpent's chain rotation (`NPC.cs:51878`/
+                    // `:52201`) and the Harpy's velocity tilt (`:74858`).
+                    | NpcKind::BoneSerpentHead
+                    | NpcKind::BoneSerpentBody
+                    | NpcKind::BoneSerpentTail
+                    | NpcKind::Harpy
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

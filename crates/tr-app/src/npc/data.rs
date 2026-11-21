@@ -594,6 +594,11 @@ impl NpcKind {
             NpcKind::OldMan => 268,
             NpcKind::ManEater => 269,
             NpcKind::Bunny => 270,
+            NpcKind::BoneSerpentHead => 271,
+            NpcKind::BoneSerpentBody => 272,
+            NpcKind::BoneSerpentTail => 273,
+            NpcKind::CorruptBunny => 274,
+            NpcKind::Harpy => 275,
         }
     }
 
@@ -929,6 +934,11 @@ impl NpcKind {
             268 => NpcKind::OldMan,
             269 => NpcKind::ManEater,
             270 => NpcKind::Bunny,
+            271 => NpcKind::BoneSerpentHead,
+            272 => NpcKind::BoneSerpentBody,
+            273 => NpcKind::BoneSerpentTail,
+            274 => NpcKind::CorruptBunny,
+            275 => NpcKind::Harpy,
             _ => return None,
         })
     }
@@ -993,6 +1003,11 @@ impl NpcKind {
                 // outside the `:51301` spawn lists, so `is_worm_head`
                 // stays false and the init never grows links).
                 | NpcKind::StardustWormHead
+                // W4-d34: the Bone Serpent chain (`NPC.cs:51301`/`:51350`/
+                // `:51436`'s type-39/40 lists).
+                | NpcKind::BoneSerpentHead
+                | NpcKind::BoneSerpentBody
+                | NpcKind::BoneSerpentTail
         )
     }
 
@@ -1033,6 +1048,11 @@ impl NpcKind {
                 | NpcKind::WyvernBody2
                 | NpcKind::WyvernBody3
                 | NpcKind::WyvernTail
+                // W4-d34: the Bone Serpent shares the head's life pool
+                // (`NPC.cs:51307-51308`: ai[3]/realLife = whoAmI).
+                | NpcKind::BoneSerpentHead
+                | NpcKind::BoneSerpentBody
+                | NpcKind::BoneSerpentTail
         )
     }
 
@@ -1059,6 +1079,7 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
                 | NpcKind::SolarCrawltipedeHead
+                | NpcKind::BoneSerpentHead
         )
     }
 
@@ -1073,6 +1094,7 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::LeechBody
                 | NpcKind::SolarCrawltipedeBody
+                | NpcKind::BoneSerpentBody
         )
     }
 
@@ -1086,6 +1108,9 @@ impl NpcKind {
             NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormTail,
             NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
             NpcKind::LeechHead => NpcKind::LeechBody,
+            NpcKind::BoneSerpentHead => NpcKind::BoneSerpentBody,
+            NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => NpcKind::BoneSerpentTail,
+
             // W-A2-3 (T3e): the budget-exhausted body spawns `type + 1`
             // = the 119 tail (`NPC.cs:51357`); the tail closes the chain
             // (it sits outside both spawn lists, `:51301`/`:51350`).
@@ -1112,6 +1137,10 @@ impl NpcKind {
             | NpcKind::SolarCrawltipedeTail => (10.0, 0.3),
             NpcKind::DevourerHead => (9.0, 0.1),
             NpcKind::GiantWormHead => (6.0, 0.05),
+            // W4-d34: the Bone Serpent head's 9/0.1 (`NPC.cs:51764-51767`;
+            // the getGood 10/0.12 is unported — single-difficulty).
+            NpcKind::BoneSerpentHead => (9.0, 0.1),
+
             NpcKind::EaterOfWorldsHead => (10.0, 0.07),
             // The wyvern head's 11/0.25 (`:51720-51724`). The kind stays
             // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
@@ -1814,6 +1843,9 @@ impl NpcKind {
             NpcKind::OldMan => "NPC_Hit_1",       // :9207
             NpcKind::ManEater => "NPC_Hit_1",     // :9303
             NpcKind::Bunny => "NPC_Hit_1",        // :9344
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => "NPC_Hit_2", // :9235/:9252/:9270
+            NpcKind::CorruptBunny => "NPC_Hit_1",  // :9356
+            NpcKind::Harpy => "NPC_Hit_1",         // :9368
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2124,6 +2156,9 @@ impl NpcKind {
             NpcKind::OldMan => "NPC_Killed_1",       // :9208
             NpcKind::ManEater => "NPC_Killed_1",     // :9305
             NpcKind::Bunny => "NPC_Killed_1",        // :9345
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => "NPC_Killed_5", // :9236/:9253/:9271
+            NpcKind::CorruptBunny => "NPC_Killed_1",  // :9357
+            NpcKind::Harpy => "NPC_Killed_1",         // :9370
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2236,6 +2271,10 @@ impl NpcKind {
             // kb 0.2 `:9163`). The ManEater (43) writes noGravity but kb 0
             // (`:9304`) — the Y-pop selector never reaches it (leech precedent).
             NpcKind::CursedSkull => true,
+            // W4-d34: the Harpy's aiStyle-14 head write (`NPC.cs:22851`, kb 0.6
+            // `:9369`). The Bone Serpent writes noGravity but kb 0 (`:9239`) —
+            // the Y-pop selector never reaches it (the leech precedent).
+            NpcKind::Harpy => true,
             _ => false,
         }
     }
@@ -2493,6 +2532,9 @@ impl NpcKind {
             NpcKind::OldMan => 7,       // :9203
             NpcKind::ManEater => 13,    // :9299
             NpcKind::Bunny => 7,        // :9340
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 6, // :9230/:9247/:9265
+            NpcKind::CorruptBunny => 3,  // :9352
+            NpcKind::Harpy => 14,        // :9364
         }
     }
 
@@ -2515,6 +2557,7 @@ impl NpcKind {
             NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
             NpcKind::Skeleton => 1.5,           // the num83 group (`:57606`)
             NpcKind::AngryBones => 1.5,        // the num83 group (`:57606`)
+            NpcKind::CorruptBunny => 1.5,      // the num83 group (`:57606`)
             NpcKind::UndeadMiner => 1.0,        // the num107 default
             NpcKind::GoblinPeon => 1.5,         // the num83 group
             NpcKind::GoblinThief => 2.0,        // the cap-2 group (`:57554`)
@@ -3030,6 +3073,9 @@ impl NpcKind {
             NpcKind::OldMan => (18.0, 40.0),      // :9201-9202
             NpcKind::ManEater => (30.0, 30.0),    // :9297-9298
             NpcKind::Bunny => (18.0, 20.0),       // :9338-9339
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => (22.0, 22.0), // :9228/:9245/:9263
+            NpcKind::CorruptBunny => (18.0, 20.0),  // :9350-9351
+            NpcKind::Harpy => (24.0, 34.0),         // :9362-9363
         }
     }
 
@@ -3113,6 +3159,13 @@ impl NpcKind {
             NpcKind::OldMan => 37,
             NpcKind::ManEater => 43,
             NpcKind::Bunny => 46,
+            NpcKind::BoneSerpentHead => 39,
+            // The Bone Serpent's body/tail keep NO hand row — like every
+            // folded segment family they fall through to the bestiary net id
+            // (the head's 39; the s1_f_3 cs_id==net_id invariant, the
+            // Destroyer precedent).
+            NpcKind::CorruptBunny => 47,
+            NpcKind::Harpy => 48,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3263,6 +3316,11 @@ impl NpcKind {
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
                 | NpcKind::BlazingWheel
+                // W4-d34: the Bone Serpent's `behindTiles = true` rows
+                // (`NPC.cs:9240`/`:9257`/`:9275`).
+                | NpcKind::BoneSerpentHead
+                | NpcKind::BoneSerpentBody
+                | NpcKind::BoneSerpentTail
         )
     }
 
@@ -3690,6 +3748,9 @@ impl NpcKind {
             NpcKind::OldMan => 250,      // :9206
             NpcKind::ManEater => 110,    // :9302
             NpcKind::Bunny => 5,         // :9343
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 300, // :9234/:9251/:9269
+            NpcKind::CorruptBunny => 70,   // :9355
+            NpcKind::Harpy => 100,         // :9367
         }
     }
 
@@ -4060,6 +4121,11 @@ impl NpcKind {
             NpcKind::OldMan => 10,       // :9204
             NpcKind::ManEater => 34,     // :9300
             NpcKind::Bunny => 0,         // :9341
+            NpcKind::BoneSerpentHead => 36,   // :9232
+            NpcKind::BoneSerpentBody => 20,   // :9249
+            NpcKind::BoneSerpentTail => 16,   // :9267
+            NpcKind::CorruptBunny => 20,      // :9353
+            NpcKind::Harpy => 25,             // :9365
         }
     }
 }

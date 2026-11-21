@@ -2197,6 +2197,33 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Man Eater",
     },
+    // W4-d34 kinds 1-70 (phase 2): the Bone Serpent's ONE entry on the head's
+    // id 39 — the body/tail Hide=true (`NPCID.cs:1527-1539`) fold onto it (the
+    // Devourer precedent). The CorruptBunny + Harpy register by their ids.
+    BestiaryEntryDef {
+        credit_id: "BoneSerpentHead",
+        net_id: 39,
+        kind: NpcKind::BoneSerpentHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Bone Serpent",
+    },
+    BestiaryEntryDef {
+        credit_id: "CorruptBunny",
+        net_id: 47,
+        kind: NpcKind::CorruptBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "Harpy",
+        net_id: 48,
+        kind: NpcKind::Harpy,
+        variant: None,
+        quick_unlock: false,
+        name: "Harpy",
+    },
     BestiaryEntryDef {
         credit_id: "Bunny",
         net_id: 46,
@@ -2305,6 +2332,7 @@ pub fn try_entry_for_npc(
     let kind = match kind {
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
+        NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => NpcKind::BoneSerpentHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
         // The Destroyer's segments + the Probe fold onto the head
         // (`BestiaryDatabaseNPCsPopulator.cs:688-690`: {135,134},{136,134},
@@ -2350,6 +2378,7 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
     // whole worm to the head's bestiary id — one entry per credit).
     let kind = match kind {
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
+        NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => NpcKind::BoneSerpentHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
         // The Destroyer's segments (Hide=true, `NPCID.cs:2192-2205`) and

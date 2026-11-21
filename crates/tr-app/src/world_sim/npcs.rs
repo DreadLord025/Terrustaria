@@ -1261,6 +1261,10 @@ fn update_worms_ctx(
                         NpcKind::GiantWormHead => rng.next_range(4, 7) as u32,
                         // Type 117: a SECOND draw overrides (`:51341`).
                         NpcKind::LeechHead => rng.next_range(3, 6) as u32,
+                        // Type 39: a SECOND draw overrides (`NPC.cs:51319-51321`;
+                        // the getGood +3 / remix +4 are unported).
+                        NpcKind::BoneSerpentHead => rng.next_range(14, 23) as u32,
+
                         // Type 13: `GetEaterOfWorldsSegmentsCount()`
                         // (`:51317`) overrides with NO extra draw — the
                         // `Next(8, 13)` above was still consumed. 65
@@ -1668,7 +1672,12 @@ fn worm_head_step(
     // `EncourageDespawn(300)` and `velocity.Y += 0.2` while gated. The
     // `TargetClosest()` retarget has no seam in the single-player port
     // (the target IS the one player) — documented.
-    let surface_flag = matches!(npc.kind, NpcKind::GiantWormHead | NpcKind::LeechHead);
+    // W4-d34: the Bone Serpent head (39) joins the surface-gate flag list
+    // (`NPC.cs:51118-51124`: types 10/39/95/117/510).
+    let surface_flag = matches!(
+        npc.kind,
+        NpcKind::GiantWormHead | NpcKind::LeechHead | NpcKind::BoneSerpentHead
+    );
     if ctx.dead || (surface_flag && (ctx.py as f64) < world.world_surface * 16.0) {
         npc.encourage_despawn(300);
         if surface_flag {
@@ -1746,6 +1755,7 @@ fn worm_head_step(
                 | NpcKind::GiantWormHead
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
+                | NpcKind::BoneSerpentHead
         )
     {
         let (nx, ny) = (npc.x as i32, npc.y as i32);

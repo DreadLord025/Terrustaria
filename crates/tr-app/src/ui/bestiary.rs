@@ -1611,6 +1611,23 @@ fn portrait_data(
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
         }
+        // W4-d34: the Bone Serpent's square 22x22 segments (the Devourer
+        // precedent); the CorruptBunny the 7-row hop strip; the Harpy the
+        // 6-row bat strip.
+        (NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail, _) =>
+            (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::CorruptBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Harpy, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 24.0, h, white)
+        }
         (NpcKind::Bunny, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 7.0)

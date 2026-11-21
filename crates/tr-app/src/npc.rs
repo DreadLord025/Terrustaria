@@ -1110,6 +1110,35 @@ pub enum NpcKind {
     /// (`NPC.cs:9336-9347`). The catchable arm spawns it friendly with the
     /// 90-tick window (`bug_net::npc_catchable`).
     Bunny,
+    /// `NPCID.BoneSerpentHead` (39) — the underworld worm head (`aiStyle 6`):
+    /// 22x22, dmg 36, def 12, 300 HP, kb 0, value 1200, npcSlots 6, netAlways,
+    /// noGravity + noTileCollide, behindTiles, NPCHit2/NPCDeath5
+    /// (`NPC.cs:9225-9242`). WIRED: the chain rides the world-sim worm pass
+    /// (`AI_006`, the Devourer precedent); the head's 9/0.1 dig tunables
+    /// (`NPC.cs:51764-51767`) and the 14..23 budget (`:51319-51321`).
+    BoneSerpentHead,
+    /// `NPCID.BoneSerpentBody` (40) — the Bone Serpent's mid link (`aiStyle 6`):
+    /// 22x22, dmg 20, def 18, 300 HP, kb 0, value 1200, netAlways, noGravity +
+    /// noTileCollide, behindTiles, dontCountMe, NPCHit2/NPCDeath5
+    /// (`NPC.cs:9243-9260`). Hide=true bestiary fold onto the head
+    /// (`NPCID.cs:1527-1532`).
+    BoneSerpentBody,
+    /// `NPCID.BoneSerpentTail` (41) — the Bone Serpent's tail (`aiStyle 6`):
+    /// 22x22, dmg 16, def 18, 300 HP, kb 0, value 1200, netAlways, noGravity +
+    /// noTileCollide, behindTiles, dontCountMe, NPCHit2/NPCDeath5
+    /// (`NPC.cs:9261-9278`). Hide=true bestiary fold onto the head
+    /// (`NPCID.cs:1533-1539`).
+    BoneSerpentTail,
+    /// `NPCID.CorruptBunny` (47) — the corruption's bunny fighter (`aiStyle 3`):
+    /// 18x20, dmg 20, def 4, 70 HP, value 500, NPCHit1/NPCDeath1
+    /// (`NPC.cs:9348-9359`). The `num83` walk group (`NPC.cs:57606`); the
+    /// FindFrame case-46 hop (`:76852`).
+    CorruptBunny,
+    /// `NPCID.Harpy` (48) — the sky flyer (`aiStyle 14`): 24x34, dmg 25, def 8,
+    /// 100 HP, kb 0.6, value 300, NPCHit1/NPCDeath1 (`NPC.cs:9360-9372`).
+    /// WIRED: the kind arm rides the faithful `npc_ai_style14::bat_ai`; the
+    /// feather shot (`:23416-23436`) is UNWIRED (the module's documented skip).
+    Harpy,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3561,6 +3590,9 @@ impl Npc {
             NpcKind::OldMan => 0.5,       // :9209
             NpcKind::ManEater => 0.0,     // :9304
             NpcKind::Bunny => 1.0,
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 0.0, // :9239/:9256/:9274
+            NpcKind::CorruptBunny => 1.0,     // no row — the class default 1f (`:8533`)
+            NpcKind::Harpy => 0.6,            // :9369
             _ => 0.4,
         }
     }
@@ -3947,6 +3979,10 @@ impl Npc {
             NpcKind::OldMan => 15,      // :9205
             NpcKind::ManEater => 10,    // :9301
             NpcKind::Bunny => 0,        // :9342
+            NpcKind::BoneSerpentHead => 12,   // :9233
+            NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 18, // :9250/:9268
+            NpcKind::CorruptBunny => 4,       // :9354
+            NpcKind::Harpy => 8,              // :9366
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4325,6 +4361,9 @@ impl Npc {
             NpcKind::OldMan => 0.0,
             NpcKind::ManEater => 350.0,    // :9306
             NpcKind::Bunny => 0.0,
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 1200.0, // :9241/:9258/:9276
+            NpcKind::CorruptBunny => 500.0,   // :9358
+            NpcKind::Harpy => 300.0,          // :9371
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6340,6 +6379,14 @@ impl Npc {
             NpcKind::OldMan | NpcKind::Bunny => self.update_guide(world, dt),
             NpcKind::CursedSkull => self.update_cursed_skull(world, player, rng),
             NpcKind::ManEater => {}
+            // W4-d34: the Bone Serpent chain rides the world-sim worm pass
+            // (the Devourer precedent — the per-NPC step is a no-op); the
+            // CorruptBunny rides the aiStyle-3 walker; the Harpy rides the
+            // faithful aiStyle-14 bat machine.
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => {}
+            NpcKind::CorruptBunny => self.update_skeleton(world, player, dt),
+            NpcKind::Harpy => self.update_cave_bat(world, player, rng),
+
         }
     }
 
@@ -6739,6 +6786,32 @@ impl Npc {
             NpcKind::Bunny => {
                 self.bunny_frame();
             }
+            // W4-d34: the Bone Serpent segments are single-frame
+            // (`Main.npcFrameCount` 39..41 = 1, no FindFrame case — the worm
+            // precedent); the CorruptBunny rides the case-46 hop (`:76852`);
+            // the Harpy the case-48 bat group (`:74823`, the 5-tick cadence).
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => {}
+            NpcKind::CorruptBunny => {
+                self.bunny_frame();
+            }
+            NpcKind::Harpy => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= crate::render::entities::npc_rows(48) {
+                    self.frame = 0;
+                }
+            }
+
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
             // only, `:77292`) — `Main.npcFrameCount[384]` = 1
@@ -9448,7 +9521,7 @@ impl Npc {
     /// accumulator `|vx| + 1` steps one row every >6 over the 7-row strip
     /// (`Main.npcFrameCount[46] = 7`); airborne row 4 rising / row 6 falling.
     fn bunny_frame(&mut self) {
-        let rows = crate::render::entities::npc_rows(46);
+        let rows = crate::render::entities::npc_rows(self.kind.cs_id());
         if self.vy == 0.0 {
             if self.facing == 1 {
                 self.sprite_dir = 1;
@@ -18756,6 +18829,11 @@ impl Npc {
             NpcKind::OldMan => 268,
             NpcKind::ManEater => 269,
             NpcKind::Bunny => 270,
+            NpcKind::BoneSerpentHead => 271,
+            NpcKind::BoneSerpentBody => 272,
+            NpcKind::BoneSerpentTail => 273,
+            NpcKind::CorruptBunny => 274,
+            NpcKind::Harpy => 275,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23824,7 +23902,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 275] = [
+    pub(super) const ALL_KINDS: [NpcKind; 280] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24109,7 +24187,14 @@ mod tests {
         NpcKind::OldMan,
         NpcKind::ManEater,
         NpcKind::Bunny,
+        // W4-d34 kinds 1-70 coverage wave (phase 2).
+        NpcKind::BoneSerpentHead,
+        NpcKind::BoneSerpentBody,
+        NpcKind::BoneSerpentTail,
+        NpcKind::CorruptBunny,
+        NpcKind::Harpy,
     ];
+
 
     #[test]
     fn the_protocol_id_space_round_trips_every_kind() {
@@ -24210,6 +24295,74 @@ mod tests {
         assert_eq!(NpcKind::AngryBones.death_sound(), Some("NPC_Killed_2"));
         assert_eq!(NpcKind::Bunny.hit_sound(), Some("NPC_Hit_1"));
         assert_eq!(NpcKind::Bunny.death_sound(), Some("NPC_Killed_1"));
+    }
+
+    /// W4-d34 kinds 1-70 coverage wave (phase 2) — the Bone Serpent trio +
+    /// CorruptBunny + Harpy `SetDefaults` rows pin against the C#
+    /// (`NPC.cs:9225-9278` BoneSerpent, `:9348-9359` CorruptBunny,
+    /// `:9360-9372` Harpy). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d34_phase2_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BoneSerpentHead, 39u16, 6u8, 22.0, 22.0, 36, 12, 300, 0.0f32, 1200.0f32),
+            (NpcKind::BoneSerpentBody, 40, 6, 22.0, 22.0, 20, 18, 300, 0.0, 1200.0),
+            (NpcKind::BoneSerpentTail, 41, 6, 22.0, 22.0, 16, 18, 300, 0.0, 1200.0),
+            (NpcKind::CorruptBunny, 47, 3, 18.0, 20.0, 20, 4, 70, 1.0, 500.0),
+            (NpcKind::Harpy, 48, 14, 24.0, 34.0, 25, 8, 100, 0.6, 300.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The head keeps its vanilla cs_id 39; the body/tail fold onto the
+        // head's bestiary net id (the s1_f_3 cs_id==net_id invariant).
+        assert_eq!(NpcKind::BoneSerpentHead.cs_id(), 39);
+        assert_eq!(NpcKind::BoneSerpentHead.net_id(), 39);
+        assert_eq!(NpcKind::BoneSerpentBody.net_id(), 39);
+        assert_eq!(NpcKind::BoneSerpentTail.net_id(), 39);
+        assert_eq!(NpcKind::CorruptBunny.cs_id(), 47);
+        assert_eq!(NpcKind::Harpy.cs_id(), 48);
+        // The protocol ids ride the port-local 271..275 band.
+        assert_eq!(NpcKind::BoneSerpentHead.to_u16(), 271);
+        assert_eq!(NpcKind::BoneSerpentBody.to_u16(), 272);
+        assert_eq!(NpcKind::BoneSerpentTail.to_u16(), 273);
+        assert_eq!(NpcKind::CorruptBunny.to_u16(), 274);
+        assert_eq!(NpcKind::Harpy.to_u16(), 275);
+        // The worm-family wiring: the chain roles + the head's dig tunables.
+        assert!(NpcKind::BoneSerpentHead.is_worm());
+        assert!(NpcKind::BoneSerpentHead.is_worm_head());
+        assert!(NpcKind::BoneSerpentBody.is_worm_mid());
+        assert!(!NpcKind::BoneSerpentTail.is_worm_head());
+        assert!(NpcKind::BoneSerpentHead.shares_carrier_life());
+        assert_eq!(NpcKind::BoneSerpentHead.worm_next(), NpcKind::BoneSerpentBody);
+        assert_eq!(NpcKind::BoneSerpentBody.worm_next(), NpcKind::BoneSerpentTail);
+        assert_eq!(NpcKind::BoneSerpentTail.worm_next(), NpcKind::BoneSerpentTail);
+        assert_eq!(NpcKind::BoneSerpentHead.worm_tunables(), (9.0, 0.1));
+        assert!(NpcKind::BoneSerpentHead.behind_tiles());
+        // The Harpy's noGravity (the aiStyle-14 head write); the Bone Serpent
+        // writes noGravity but kb 0, so the strike-time selector keeps it out.
+        assert!(NpcKind::Harpy.no_gravity());
+        assert!(!NpcKind::BoneSerpentHead.no_gravity());
+        // The bestiary fold: the body/tail credit the head's entry.
+        let head = crate::bestiary::entry_for_npc(NpcKind::BoneSerpentHead, SlimeVariant::Blue);
+        assert_eq!(head.credit_id, "BoneSerpentHead");
+        let body = crate::bestiary::entry_for_npc(NpcKind::BoneSerpentBody, SlimeVariant::Blue);
+        assert_eq!(body.credit_id, "BoneSerpentHead");
+        // The hit/death cues.
+        assert_eq!(NpcKind::BoneSerpentHead.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::BoneSerpentHead.death_sound(), Some("NPC_Killed_5"));
+        assert_eq!(NpcKind::Harpy.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::CorruptBunny.death_sound(), Some("NPC_Killed_1"));
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -27775,7 +27928,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            275,
+            280,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

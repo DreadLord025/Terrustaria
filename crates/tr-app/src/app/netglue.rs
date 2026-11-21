@@ -3577,6 +3577,20 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d34: the Bone Serpent links seed standalone (the chain rebuilds
+        // through the worm pass — the leech net shape); the CorruptBunny plants
+        // on the surface; the Harpy hangs in the air (the bat net shape).
+        crate::npc::NpcKind::BoneSerpentHead
+        | crate::npc::NpcKind::BoneSerpentBody
+        | crate::npc::NpcKind::BoneSerpentTail
+        | crate::npc::NpcKind::Harpy => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::CorruptBunny => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+
     })
 }
 
