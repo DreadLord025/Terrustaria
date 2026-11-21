@@ -167,6 +167,16 @@ pub(crate) struct App {
     /// interaction index; the hover-change edge plays sound 12 (`:157-160`)
     /// and `Close` resets it to −1 (`:267`).
     pub(crate) npc_chat_last_hovered: i32,
+    /// W4-f30 — `NPC.PreventJojaColaDialog` (`NPC.cs:6629`): the Dryad's
+    /// Stardew bit latches it after the gift so the cola reminder does not
+    /// re-print over the thank-you line. Cleared on the chat close
+    /// (`NPC.cs:93772`/`:95303`).
+    pub(crate) prevent_joja_cola_dialog: bool,
+    /// W4-f30 — `NPC.RerollDryadText` (`NPC.cs:6631`): the Stardew bit's
+    /// text-reroll state machine (`NPCChatPanel.cs:199-208`): 2 right after
+    /// the gift, 1 once the Dryad enters the animation state 24, 0 once she
+    /// leaves it (the chat re-rolls to `GetChat()`).
+    pub(crate) reroll_dryad_text: i32,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
@@ -3540,6 +3550,8 @@ impl App {
             talk_npc: None,
             npc_chat_text: String::new(),
             npc_chat_last_hovered: -1,
+            prevent_joja_cola_dialog: false,
+            reroll_dryad_text: 0,
             gpu: None,
             renderer: None,
             post: None,

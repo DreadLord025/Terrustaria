@@ -32,6 +32,12 @@ impl App {
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.
     self.handle_npc_chat_clicks();
+    // W4-f30 — the Dryad's Stardew text override (`NPCChatPanel.
+    // OverrideChatTextWithShenanigans`, `NPCChatPanel.cs:195-213`): the
+    // holding-cola reminder + the post-gift reroll state machine. The C#
+    // runs it in the panel's draw (`PrepareText`); the port folds it into
+    // the per-frame update (the text is state, the draw reads it).
+    self.update_dryad_chat_override();
     // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
     // and inventory handlers and consumes the press when a chest
@@ -57,6 +63,76 @@ impl App {
     // `if (CanPauseGame()) { DoUpdate_WhilePaused(); gamePaused = true;
     // return; } gamePaused = false;`. The click cluster above it is the
     // pre-gate interface pass (DW-1.3: the UI stays live while paused).
+    }
+
+    /// W4-f30 — `NPCChatPanel.OverrideChatTextWithShenanigans`
+    /// (`NPCChatPanel.cs:195-213`): the Dryad's cola reminder + the post-gift
+    /// reroll state machine. The C# runs it in the panel's `PrepareText`
+    /// (per draw); the port folds it into the per-frame update. The reroll
+    /// arm (`:206`) re-rolls `GetChat()` — the full chat context is rebuilt
+    /// here (the `talk_to_npc` open arm's shape).
+    fn update_dryad_chat_override(&mut self) {
+        if self.talk_npc.is_none() {
+            return;
+        }
+        let held = self.inventory.get(self.selected).map_or(0, |s| s.kind);
+        match crate::dryad_stardew::override_dryad_chat_text(self, held) {
+            Some(text) if text.is_empty() => {
+                // The reroll sentinel: re-roll GetChat() for the talk NPC.
+                if let Some(i) = self.talk_npc {
+                    if let Some(npc) = self.npcs.get(i) {
+                        let has_cola = self.inventory.iter().any(|s| s.kind == 5275);
+                        let rng = self.rngs.global();
+                        let mut draw = |n: i32| rng.next_max(n);
+                        let mut ctx = crate::npc_chat::ChatContext {
+                            npcs: &self.npcs,
+                            rng: &mut draw,
+                            day_time: self.world.day_time,
+                            time: self.world.time,
+                            blood_moon: self.world.blood_moon,
+                            eclipse: self.world.eclipse,
+                            slime_rain: self.world.slime_rain,
+                            hard_mode: self.world.hard_mode,
+                            moon_phase: self.world.moon_phase,
+                            remix_world: false,
+                            raining: self.world.raining,
+                            storming: false,
+                            windy_day: false,
+                            zone_graveyard: false,
+                            party_is_up: false,
+                            crimson: false,
+                            downed_boss1: self.world.downed_eoc,
+                            downed_boss2: self.world.downed_eow,
+                            downed_boss3: self.world.downed_skeletron,
+                            downed_moonlord: false,
+                            dd2_downed_t1: self.world.dd2_downed_t1,
+                            dd2_downed_t2: self.world.dd2_downed_t2,
+                            dd2_ongoing: self.world.dd2_event_ongoing,
+                            lanterns_up: false,
+                            player_life: self.player.as_ref().map_or(0, |p| p.hp),
+                            player_life_max: self.player.as_ref().map_or(0, |p| p.max_hp),
+                            player_base_life_max: self.player.as_ref().map_or(0, |p| p.max_hp),
+                            player_defense: 0,
+                            player_male: true,
+                            player_head: 0,
+                            player_deaths_pve: self.player.as_ref().map_or(0, |p| p.deaths_pve as i32),
+                            player_luck: 0.0,
+                            player_has_cola: has_cola,
+                            angler_quest_finished: false,
+                            angler_quests_finished: self.player.as_ref().map_or(0, |p| p.angler_quests_finished),
+                            golfer_score: self.player.as_ref().map_or(0, |p| p.golfer_score),
+                        };
+                        let text = crate::npc_chat::get_chat(npc, &mut ctx);
+                        self.npc_chat_text = text;
+                    }
+                }
+            }
+            Some(text) => {
+                // The holding-cola reminder (`:211`).
+                self.npc_chat_text = text;
+            }
+            None => {}
+        }
     }
 
     /// S1-B-3 — the in-game pause gate (`Main.cs:17194-17201`). Yields the

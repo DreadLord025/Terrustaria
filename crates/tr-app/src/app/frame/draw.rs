@@ -1780,6 +1780,11 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // W4-f30 — the Dryad's Purify button gate.
+                            crate::dryad_stardew::can_dryad_play_stardew_animation(
+                                self.inventory.get(self.selected).map_or(0, |s| s.kind),
+                                self.talk_npc.and_then(|i| self.npcs.get(i)),
+                            ),
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

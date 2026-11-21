@@ -1081,24 +1081,53 @@ impl App {
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
-        let rect = ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text);
-        let hovered = if ui::in_rect(self.mouse_pos, rect) { 0 } else { -1 };
+        // W4-f30 — the Dryad's Stardew bit (`NPCInteractions.cs:79-103`): the
+        // "Purify" button shows while the cola is held (`CanDryadPlayStardew-
+        // Animation`). It rides the interaction row BEFORE Close (the
+        // `NPCInteractions.All` order, `:515-517`); the port models the two
+        // buttons the panel owns (the shop/happiness/… rows stay deferred).
+        let held = self.inventory.get(self.selected).map_or(0, |s| s.kind);
+        let stardew = crate::dryad_stardew::can_dryad_play_stardew_animation(
+            held,
+            self.talk_npc.and_then(|i| self.npcs.get(i)),
+        );
+        let (stardew_rect, close_rect) =
+            ui::npc_chat::button_rects(&self.lookups, screen, &self.npc_chat_text, stardew);
+        // The hover pick: the Stardew button (index 0) when shown, else Close.
+        let hovered = if stardew && ui::in_rect(self.mouse_pos, stardew_rect) {
+            0
+        } else if ui::in_rect(self.mouse_pos, close_rect) {
+            if stardew { 1 } else { 0 }
+        } else {
+            -1
+        };
         // `:157-160` — the hover-change tick (no gamepad in the port, so
         // the `!UsingGamepad || num2 != -1` gate always passes).
         if self.npc_chat_last_hovered != hovered {
             crate::chest::play_menu_sound(self, 12);
         }
         self.npc_chat_last_hovered = hovered;
-        if hovered == 0 && self.ui_left_press {
-            self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
-            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
-            // half is unported; `SetTalkNPC(-1)` + the text clear + sound
-            // 11 + the panel's `Close` reset.
-            self.talk_npc = None;
-            self.npc_chat_text.clear();
-            crate::chest::play_menu_sound(self, 11);
-            self.npc_chat_last_hovered = -1;
+        if hovered == -1 || !self.ui_left_press {
+            return;
         }
+        self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
+        if stardew && hovered == 0 {
+            // `StardewValleyBit.Interact` (`NPCInteractions.cs:97-102`): the
+            // portrait hop + sound 12, then the gift. The hop is the deferred
+            // portrait system; the sound plays here.
+            crate::chest::play_menu_sound(self, 12);
+            crate::dryad_stardew::dryad_do_stardew_valley_bit(self);
+            return;
+        }
+        // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
+        // half is unported; `SetTalkNPC(-1)` + the text clear + sound
+        // 11 + the panel's `Close` reset.
+        self.talk_npc = None;
+        self.npc_chat_text.clear();
+        crate::chest::play_menu_sound(self, 11);
+        self.npc_chat_last_hovered = -1;
+        // W4-f30 — the Joja latches clear on the close (`NPC.cs:93772`).
+        crate::dryad_stardew::reset_joja_latches(self);
     }
 
     /// The bestiary screen's clicks: the inventory button that opens it

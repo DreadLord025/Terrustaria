@@ -3969,6 +3969,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // `Projectile.cs:9446-9457` — the Junimo: 240x104, aiStyle 192
+            // (the AI_192 fall/opacity animation), friendly, penetrate -1,
+            // tileCollide false, ignoreWater, `timeLeft *= 5` (3600 → 18000).
+            // The AI_192 arm is unported (the dispatch no-ops until it lands);
+            // the row carries the box/flight so the spawn is faithful.
+            995 => {
+                (240.0, 104.0, 192, -1, TIME_LEFT_DEFAULT * 5, 0, false, false, false, RESET_STATE)
+            }
             // W4-f30 — the gravestone family (aiStyle 17, the falling
             // tombstone): 24x24, knockBack 12, penetrate -1, the stock
             // tileCollide/timeLeft (`Projectile.cs:1258-1270` the plain 43,

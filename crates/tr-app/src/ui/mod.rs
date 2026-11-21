@@ -716,6 +716,10 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // W4-f30 — the Dryad's Stardew bit (`NPCInteractions.cs:79-103`): the
+    // "Purify" button shows while the cola is held + the Dryad is the talk
+    // NPC (the caller folds `CanDryadPlayStardewAnimation`).
+    stardew_button: bool,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -789,7 +793,7 @@ pub fn draw_hud(
     // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
     // `:276-283`; the sign half is unported).
     if talk_npc.is_some() {
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos);
+        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos, stardew_button);
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides

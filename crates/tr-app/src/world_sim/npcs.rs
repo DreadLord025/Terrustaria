@@ -181,6 +181,8 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
             }
             app.talk_npc = None;
             app.npc_chat_text.clear();
+            // W4-f30 — the Joja latches clear on the close (`NPC.cs:93772`).
+            crate::dryad_stardew::reset_joja_latches(app);
         }
     }
     // The open arm's gates: a fresh press, no inventory panel over the world.
