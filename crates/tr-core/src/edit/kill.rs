@@ -1649,8 +1649,10 @@ fn check_2x2(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
-        ring: None,
-        // floats until a later break (`WorldGen.cs`'s check_2x2).
+        // :48792-48798 — Check2x2 closes with a 4x4 TileFrame ring around
+        // the 2x2 (the old candelabra/sink slice carried None — the ring is
+        // the C# tail, ported with the W4-g34 generalization).
+        ring: Some(region_ring(&region)),
     })
 }
 
@@ -5649,13 +5651,17 @@ mod tests {
                 set_object_cell(&mut w, 8 + dx, 17 + dy, 275, (dx * 18) as i16, (dy * 18) as i16);
             }
         }
-        // Two 3x2 tables (14) at x 8..10 and 11..13, y 20..21, over the floor.
+        // Two 3x2 tables (14) at x 8..10 and 11..13, y 20..21, over a floor
+        // row at y 22 (the tables need their own support or they cascade too).
         for base in [8i32, 11] {
             for dx in 0..3 {
                 for dy in 0..2 {
                     set_object_cell(&mut w, base + dx, 20 + dy, 14, (dx * 18) as i16, (dy * 18) as i16);
                 }
             }
+        }
+        for x in 8..=13 {
+            set_object_cell(&mut w, x, 22, 1, 0, 0);
         }
         // Break the floor cell (14, 20): its 3x3 reaches the cage's bottom-
         // right cell (13, 19), so check_6x3 runs — the table tops carry it.
@@ -5852,7 +5858,7 @@ mod tests {
         assert!(kill.object_drops.is_empty(), "the wood rides the pile event");
         assert_eq!(
             kill.pile_events,
-            vec![PileLootEvent { kind: 488, frame_x: 18, x: 10, y: 19 }]
+            vec![PileLootEvent { kind: 488, frame_x: 0, x: 9, y: 18 }]
         );
     }
 
@@ -5928,8 +5934,10 @@ mod tests {
         set_object_cell(&mut w, 10, 16, 19, 0, 0); // platform anchor
         set_object_cell(&mut w, 10, 17, 270, 0, 0);
         set_object_cell(&mut w, 10, 18, 270, 0, 18);
-        // Break a far cell — the intact bottle on the platform survives.
-        let kill = kill_tile(&mut w, 12, 18, false).unwrap();
+        // A stone block beside the bottle's top cell: breaking it runs
+        // check_1x2_top on the bottle (the 3x3 reaches (10, 17)).
+        set_object_cell(&mut w, 11, 17, 1, 0, 0);
+        let kill = kill_tile(&mut w, 11, 17, false).unwrap();
         assert!(
             !kill.object_drops.iter().any(|d| d.tile_kind == 270),
             "the platform carries the bottle"
@@ -5983,8 +5991,8 @@ mod tests {
             assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
             assert_eq!(kill.object_drops[0].tile_kind, kind);
             // The trigger is the first surviving cell in SquareTileFrame
-            // order around the hit (10, 19): (11, 18).
-            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (11, 18));
+            // order around the hit (10, 19): (10, 18).
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 18));
             assert_eq!(kill.object_drops[0].item, None, "kind {kind}");
         }
     }
