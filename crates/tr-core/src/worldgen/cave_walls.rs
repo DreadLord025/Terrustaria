@@ -377,8 +377,10 @@ mod tests {
     use super::*;
     use crate::tile::FLAG_ACTIVE;
 
-    /// A stone world with a 12×10 air pocket (rows 61-70, cols 10-21)
-    /// with NO walls — the pocket counts clean.
+    /// A stone world with a 12×10 air pocket (rows 61-70, cols 10-21).
+    /// Underground cells carry the baseline stone wall 1 (the port's
+    /// terrain pre-lay — `carve_caves` keeps the wall), so the pocket
+    /// counts clean under the baseline-wall adaptation.
     fn pocket_world() -> World {
         let mut world = World::new("cw".into(), 600, 500);
         for y in 0..500 {
@@ -386,13 +388,14 @@ mod tests {
                 let i = world.index(x, y);
                 world.tiles[i].kind = 1;
                 world.tiles[i].flags |= FLAG_ACTIVE;
+                world.tiles[i].wall = 1; // the baseline stone wall
             }
         }
         for y in 61..71 {
             for x in 10..22 {
                 let i = world.index(x, y);
                 world.tiles[i].flags &= !FLAG_ACTIVE;
-                world.tiles[i].wall = 0;
+                // The cave air keeps the baseline wall (the carve).
             }
         }
         world
@@ -424,11 +427,16 @@ mod tests {
         spread_wall(&mut world, 15, 65, 59);
         // The open cells take the wall.
         assert_eq!(world.tile(15, 65).unwrap().wall, 59);
-        // The active unwalled rim cells take it too (the pocket rim has
-        // wall 0 in this fixture).
-        assert_eq!(world.tile(9, 65).unwrap().wall, 59);
+        // The active rim carries the baseline wall — it keeps it (the C#
+        // `tile.wall != 0` arm takes the wall only when active AND unwalled).
+        assert_eq!(world.tile(9, 65).unwrap().wall, 1, "the baseline rim keeps its wall");
+        // An active cell with NO wall takes the spread wall.
+        let u = world.index(30, 65);
+        world.tiles[u].wall = 0;
+        spread_wall(&mut world, 15, 65, 61);
+        assert_eq!(world.tiles[u].wall, 61, "the unwalled active cell takes it");
         // A walled solid cell keeps its wall.
-        let i = world.index(30, 65);
+        let i = world.index(31, 65);
         world.tiles[i].wall = 1; // the baseline stone wall
         spread_wall(&mut world, 15, 65, 61);
         assert_eq!(world.tiles[i].wall, 1, "the baseline wall survives");

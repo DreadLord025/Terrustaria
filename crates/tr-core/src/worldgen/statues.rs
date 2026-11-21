@@ -16,7 +16,7 @@
 //! `:7721` — the framer keeps the stored frames).
 
 use super::noise::Rng;
-use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_INACTIVE, LiquidKind};
+use crate::tile::{FLAG_ACTIVE, FLAG_INACTIVE, LiquidKind};
 use crate::tiledata::TILE_SOLID;
 use crate::world::World;
 
