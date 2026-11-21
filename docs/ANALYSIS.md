@@ -40669,6 +40669,29 @@ ceded to c4, 604/605 to e26, 606 to c8, 588/589 base-reserved, the
 UNCHANGED (the 11 town pets). The f26 tip `b89812bf` (7j) — the
 650-655 claims above; 7k/7l NOT yet pushed at census time.
 
+**The post-push re-probe (the tips advanced DURING this slice — the
+push-time census):** after this slice's push (`fa82efb28`), the
+re-fetch shows f26 ADVANCED `b89812bf7` → `a2e43ef77` (**7k landed**:
+`fc4e2aaad` claims **657-662** the QueenSlime batch + EmpressButterfly
++ PirateGhost, `npc_findframe_extra7k.rs`'s seam grep-verified;
+`2ba235a17` the 661-on-653 butterfly-arm claim row; `808f57f9f` +
+`a2e43ef77` the frame-count/witness FIXes, no new ids; **7l NOT yet
+pushed**), d41 ADVANCED `1a1b07ff2` → `065efdf97` (batch 7: the
+532/534-537 basilisk/tortured-soul/slimes/bride — its new FindFrame
+arms DesertBeast 532 / DemonTaxCollector 534 / TheBride 536 /
+SlimeSpiked+SandSlime 535/537 are ALL twins inside our e10 claim set,
+NO new subtraction), d42 ADVANCED `bac408be0` → `adb304ab8` (the
+SEAL + SEAL-VERIFY doc receipts, no code delta), g10 ADVANCED
+`5dee28650` → `7414ba339` (the FINAL/SEAL docs + the mut lint-fix,
+the npc.rs/pet-module diff ZERO — no new ids). The 7k six subtract
+from the 26: **20 unclaimed at the push-time tips** — the worklist:
+**634** (the RNG SporeBat seam contract), **664** (1), **667** (1),
+**669** (1), **671-677** (7), **687-689** (3), **691-696** (6) =
+1+1+1+1+7+3+6 = **20**. This lane's next ascending window starts at
+664 (TorchGod — the floater group, the 662 twin f26 7k just claimed)
+after the 634 seam-contract kind; the 572-575 DD2 seam kinds stay
+port-covered-DEFERRED (not in the pool).
+
 Zero RNG: the mechanical grep over the 10 ported ranges
 (`:67258-67451`, `:67559-67583`, `:67025-67257`, `:67711-67755`,
 `:67998-68421`, `:67584-67709`) = ZERO Main.rand/.Next(/NextFloat/
