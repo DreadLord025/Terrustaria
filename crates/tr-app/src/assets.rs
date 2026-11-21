@@ -1284,6 +1284,20 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_603",
         "NPC_608",
         "NPC_609",
+        // W4-c10 roster tail — the twelve critters' own sheets
+        // (`CRITTER_TAIL_SHEETS`).
+        "NPC_357",
+        "NPC_442",
+        "NPC_443",
+        "NPC_444",
+        "NPC_445",
+        "NPC_446",
+        "NPC_447",
+        "NPC_448",
+        "NPC_484",
+        "NPC_485",
+        "NPC_486",
+        "NPC_487",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1869,7 +1883,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 189] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 201] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1907,6 +1921,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 189] = [
         // W4-c10 — the waterfowl family's eight sheets, appended last in
         // `bestiary_npc_sheets`'s exact order (the vec grew 181 → 189).
         362, 363, 364, 365, 602, 603, 608, 609,
+        // W4-c10 roster tail — the twelve critters' sheets, appended
+        // last for the same reason (the vec grows 189 → 201).
+        357, 442, 443, 444, 445, 446, 447, 448, 484, 485, 486, 487,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2678,6 +2695,20 @@ impl Lookups {
                 atlas.sheet("NPC_603").copied(),
                 atlas.sheet("NPC_608").copied(),
                 atlas.sheet("NPC_609").copied(),
+                // W4-c10 roster tail — the twelve critters' strips
+                // (2/5/7/3/13/2/6/2/2/4/4/4 rows, `Main.cs:67082`).
+                atlas.sheet("NPC_357").copied(),
+                atlas.sheet("NPC_442").copied(),
+                atlas.sheet("NPC_443").copied(),
+                atlas.sheet("NPC_444").copied(),
+                atlas.sheet("NPC_445").copied(),
+                atlas.sheet("NPC_446").copied(),
+                atlas.sheet("NPC_447").copied(),
+                atlas.sheet("NPC_448").copied(),
+                atlas.sheet("NPC_484").copied(),
+                atlas.sheet("NPC_485").copied(),
+                atlas.sheet("NPC_486").copied(),
+                atlas.sheet("NPC_487").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

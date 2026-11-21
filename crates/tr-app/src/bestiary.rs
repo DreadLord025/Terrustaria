@@ -2242,6 +2242,107 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Grebe",
     },
+    // W4-c10 roster tail — the twelve critters' own entries (the
+    // populator registers all twelve: `FindEntryByNPCID(357/442-448/
+    // 484-487).Info`, `BestiaryDatabaseNPCsPopulator.cs:890-1886`;
+    // `NPCID.Search.GetName` credits). The display names ride the
+    // en-US NPCs.json rows ("Gold Bird" … "Enchanted Nightcrawler").
+    BestiaryEntryDef {
+        credit_id: "Worm",
+        net_id: 357,
+        kind: NpcKind::Worm,
+        variant: None,
+        quick_unlock: false,
+        name: "Worm",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldBird",
+        net_id: 442,
+        kind: NpcKind::GoldBird,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bird",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldBunny",
+        net_id: 443,
+        kind: NpcKind::GoldBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldButterfly",
+        net_id: 444,
+        kind: NpcKind::GoldButterfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Butterfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldFrog",
+        net_id: 445,
+        kind: NpcKind::GoldFrog,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Frog",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldGrasshopper",
+        net_id: 446,
+        kind: NpcKind::GoldGrasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Grasshopper",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldMouse",
+        net_id: 447,
+        kind: NpcKind::GoldMouse,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Mouse",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldWorm",
+        net_id: 448,
+        kind: NpcKind::GoldWorm,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Worm",
+    },
+    BestiaryEntryDef {
+        credit_id: "EnchantedNightcrawler",
+        net_id: 484,
+        kind: NpcKind::EnchantedNightcrawler,
+        variant: None,
+        quick_unlock: false,
+        name: "Enchanted Nightcrawler",
+    },
+    BestiaryEntryDef {
+        credit_id: "Grubby",
+        net_id: 485,
+        kind: NpcKind::Grubby,
+        variant: None,
+        quick_unlock: false,
+        name: "Grubby",
+    },
+    BestiaryEntryDef {
+        credit_id: "Sluggy",
+        net_id: 486,
+        kind: NpcKind::Sluggy,
+        variant: None,
+        quick_unlock: false,
+        name: "Sluggy",
+    },
+    BestiaryEntryDef {
+        credit_id: "Buggy",
+        net_id: 487,
+        kind: NpcKind::Buggy,
+        variant: None,
+        quick_unlock: false,
+        name: "Buggy",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

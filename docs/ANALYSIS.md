@@ -39549,3 +39549,31 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The bug-net roster tail (W4-c10 phase 5, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
+
+**Scope.** The i36 census's roster gap ("only Goldfish 55 is a ported
+catchable `NpcKind` today", ANALYSIS "The bug net (S1-P-i36)"): the
+catch rows whose kinds had no roster entry. This round ports the LAST
+TWELVE unrostered catchable kinds — Worm 357, the gold band GoldBird 442
+/ GoldBunny 443 / GoldButterfly 444 / GoldFrog 445 / GoldGrasshopper 446
+/ GoldMouse 447 / GoldWorm 448, and the fishing-bait tail
+EnchantedNightcrawler 484 / Grubby 485 / Sluggy 486 / Buggy 487 — onto
+the LANDED pure machines (`npc_ai_critter.rs` from
+`origin/task/W4-d38-npc-kinds-281-350`, `npc_ai_style65.rs` from
+`origin/task/W4-d30-npc-ai-styles-65-72`, `npc_ai_style66.rs` +
+`npc_ai_style24.rs` already on this branch), with the catchable flags,
+bestiary entries, sheets, portraits and the release ladder live. The
+c9 co-lane picks (Snail 359 / GlowingSnail 360 / MagmaSnail 655 /
+Shimmerfly 677, `origin/task/W4-c9-style67-snails`) were read FIRST and
+skipped — not touched here.
+
+**The id corrections (the brief's cites vs the decompile).** The brief
+said "enchanted nightcrawler 582" — WRONG: 582 is `LarvaeAntlion`
+(`ID/NPCID.cs`, aiStyle 3); `EnchantedNightcrawler` is **484**. The gold
+critter band is **442-448** (449-452 are the BoneThrowingSkeleton
+family, aiStyle 3). Grubby/Sluggy/Buggy are **485/486/487**, sharing the
+484-487 `SetDefaults` range row (`NPC.cs:14576-14598`). All twelve keep
+their VANILLA protocol ids (verified free in `npc/data.rs::to_u16` —
+no gate reassignment needed).
+

@@ -3578,6 +3578,21 @@ fn npc_seed(
         | crate::npc::NpcKind::Seagull2
         | crate::npc::NpcKind::Grebe
         | crate::npc::NpcKind::Grebe2 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-c10 roster tail — the twelve critters (357/442-448/484-487):
+        // the same bare stats seed (the net state overwrites the position
+        // below; the machines take over on the first tick).
+        crate::npc::NpcKind::Worm
+        | crate::npc::NpcKind::GoldBird
+        | crate::npc::NpcKind::GoldBunny
+        | crate::npc::NpcKind::GoldButterfly
+        | crate::npc::NpcKind::GoldFrog
+        | crate::npc::NpcKind::GoldGrasshopper
+        | crate::npc::NpcKind::GoldMouse
+        | crate::npc::NpcKind::GoldWorm
+        | crate::npc::NpcKind::EnchantedNightcrawler
+        | crate::npc::NpcKind::Grubby
+        | crate::npc::NpcKind::Sluggy
+        | crate::npc::NpcKind::Buggy => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
     })
 }
 

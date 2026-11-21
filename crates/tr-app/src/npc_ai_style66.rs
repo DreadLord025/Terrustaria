@@ -129,12 +129,18 @@
 //! CastLights arms (160, 254..=261/634/635, 209, 44) matches a family
 //! kind.
 //!
-//! ## Wiring deferred (the BlazingWheel / style72 precedent)
+//! ## Wiring (W4-c10 roster tail — six of the eight kinds landed)
 //!
-//! The roster has NO `NpcKind` for any of the eight kinds (only the
-//! lang/sacrifice tables name them), so `update_rng`'s aiStyle axis
-//! (`npc.rs:3651`) has no style-66 arm to claim. This module is the pure
-//! port + the minimal seams:
+//! W4-c10's roster tail wired Worm 357 / GoldWorm 448 / the 484..=487
+//! crawler band: the style axis' 66 arm (`npc.rs::ai_066_crawler`) runs
+//! this module at the kind's slot turn, the sim pre-stamps `ess_scale`
+//! and drains the 484 flicker light into `EntityLights`, and the
+//! GoldWorm's [`gold_worm_sparkle`] gate runs in the sim's pre-AI
+//! CastLights position (the dust-43 spawn is the standing visual skip,
+//! the draw kept). The TruffleWorm 374 (+ its 375 dig target) and the
+//! Maggot 606 stay unported — the d39/d43 roster lanes. The FindFrame
+//! cases (`:72774-72883`) landed in `npc.rs::find_frame` (the slope
+//! probe rides the sim-stamped `frame_slope`). The original seams:
 //! * `Main.essScale` is the caller's `App::ess_scale`
 //!   (`item_lights.rs::update_ess_scale`, S1-E-5) — passed in.
 //! * `Main.netMode != 1` folds to true (single-player port, the
@@ -160,7 +166,7 @@
 //!
 //! See docs/ANALYSIS.md "The crawling critters (S1-D-3 aiStyle-66,
 //! code-only)".
-#![allow(dead_code)] // wiring deferred — the kinds + dispatch arm land with the roster wave
+#![allow(dead_code)] // the 374/375/606 rows + the Transform seam stay unwired (the d39/d43 lanes)
 
 use glam::Vec2;
 

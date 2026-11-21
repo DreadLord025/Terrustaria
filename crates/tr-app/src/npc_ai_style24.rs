@@ -6,13 +6,14 @@
 //! 672 / Toucan 673 / YellowCockatiel 674 / GrayCockatiel 675
 //! (`:17496-17565`) and OwlMimic 689 (`:17667-17679`).
 //!
-//! **UNWIRED module (code-only mode, 2026-11-18).** None of the 11 types has
-//! a `NpcKind` yet (`npc/data.rs::ai_style` carries no style-24 row), so the
-//! arm lands as pure functions over the port's `Npc` slot + a context seam;
-//! the wiring (new kinds, the `update_rng` style-axis arm, the
-//! `size_override` rows from [`STYLE24_BIRDS`], the 1080 BirdDroppings
-//! projectile and the full `NPC.Transform`) is the family's merge step —
-//! the `drawdata_anim.rs` (S1-F-9b) / `special_tiles.rs` (S1-G-1e) pattern.
+//! **WIRED for the GoldBird 442 (W4-c10 roster tail, code-only mode).**
+//! The style-axis `24 =>` claim (`npc.rs::ai_024_bird`) runs this arm;
+//! the poop gate's player seam reads the sim-stamped `player_is_cenx`
+//! and the 1080 BirdDroppings request drains through `wants_hostile_shot`
+//! (the c10 phase-2 projectile). The other 10 types (the 74/297/298
+//! trio, the Owl 611, the five jungle birds, the OwlMimic 689) stay the
+//! roster lanes — the owl/mimic block's `neighbors` scan runs over the
+//! empty slice until they land (the documented solo fold).
 //!
 //! The three `TargetClosest()` call sites (`NPC.cs:25338`, `:25377`,
 //! `:25535`) ride the shared selection helper
@@ -28,7 +29,7 @@
 //! under `-luck`; a non-negative-luck player draws NOTHING and the roll
 //! returns −1 (never 0 — only a Cenx-named player poops then, and the `||`
 //! still evaluates the roll FIRST, `:25319`).
-#![allow(dead_code)] // UNWIRED — see the module doc; the wiring is the S1-D-3 merge step.
+#![allow(dead_code)] // the 611/689 owl arms + the 10 unported types keep their seams.
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

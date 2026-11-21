@@ -598,6 +598,22 @@ impl NpcKind {
             NpcKind::Seagull2 => 603,
             NpcKind::Grebe => 608,
             NpcKind::Grebe2 => 609,
+            // W4-c10 roster tail — the twelve critters keep their vanilla
+            // ids (357/442-448/484-487 are free in the protocol space — a
+            // to_u16 scan of the tree shows no arm on them).
+            // `NPCID.cs:11391`/`:11557-11569`/`:11641-11647`.
+            NpcKind::Worm => 357,
+            NpcKind::GoldBird => 442,
+            NpcKind::GoldBunny => 443,
+            NpcKind::GoldButterfly => 444,
+            NpcKind::GoldFrog => 445,
+            NpcKind::GoldGrasshopper => 446,
+            NpcKind::GoldMouse => 447,
+            NpcKind::GoldWorm => 448,
+            NpcKind::EnchantedNightcrawler => 484,
+            NpcKind::Grubby => 485,
+            NpcKind::Sluggy => 486,
+            NpcKind::Buggy => 487,
         }
     }
 
@@ -937,6 +953,20 @@ impl NpcKind {
             603 => NpcKind::Seagull2,
             608 => NpcKind::Grebe,
             609 => NpcKind::Grebe2,
+            // W4-c10 roster tail — the twelve critters' vanilla ids
+            // (`to_u16` above).
+            357 => NpcKind::Worm,
+            442 => NpcKind::GoldBird,
+            443 => NpcKind::GoldBunny,
+            444 => NpcKind::GoldButterfly,
+            445 => NpcKind::GoldFrog,
+            446 => NpcKind::GoldGrasshopper,
+            447 => NpcKind::GoldMouse,
+            448 => NpcKind::GoldWorm,
+            484 => NpcKind::EnchantedNightcrawler,
+            485 => NpcKind::Grubby,
+            486 => NpcKind::Sluggy,
+            487 => NpcKind::Buggy,
             _ => return None,
         })
     }
@@ -1820,6 +1850,21 @@ impl NpcKind {
             | NpcKind::Seagull2
             | NpcKind::Grebe
             | NpcKind::Grebe2 => "NPC_Hit_1",
+            // W4-c10 roster tail — the twelve critters' `SoundID.NPCHit1`
+            // rows (`NPC.cs:13553`, `:14255`/`:14270`/`:14283`/`:14298`/
+            // `:14311`/`:14326`/`:14340`, the `:14584` range row).
+            NpcKind::Worm
+            | NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper
+            | NpcKind::GoldMouse
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2135,6 +2180,23 @@ impl NpcKind {
             | NpcKind::Seagull2
             | NpcKind::Grebe
             | NpcKind::Grebe2 => "NPC_Killed_1",
+            // W4-c10 roster tail — the GoldMouse's `SoundID.NPCDeath4`
+            // (`NPC.cs:14327`, (4, 4) `ID/SoundID.cs:1318`) — the mouse
+            // squeak; every other critter `NPCDeath1`.
+            NpcKind::GoldMouse => "NPC_Killed_4",
+            // `NPC.cs:13554`, `:14257`/`:14271`/`:14284`/`:14299`/`:14312`/
+            // `:14341`, the `:14585` range row.
+            NpcKind::Worm
+            | NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2243,6 +2305,12 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-c10 roster tail — the GoldButterfly's `noGravity = true`
+            // row (`NPC.cs:14286`); the GoldBird's flag is the aiStyle-24
+            // head's per-tick write (`:25325`, the AngryNimbus precedent —
+            // the perch arm clears it, the knockback read sees the flyer
+            // default). Every other critter keeps the false default.
+            NpcKind::GoldButterfly | NpcKind::GoldBird => true,
             _ => false,
         }
     }
@@ -2269,6 +2337,9 @@ impl NpcKind {
             | NpcKind::Crimslime
             | NpcKind::SpikedIceSlime
             | NpcKind::UmbrellaSlime => 1,
+            // aiStyle 1 — W4-c10 roster tail: the GoldGrasshopper 446
+            // (`NPC.cs:14307`).
+            NpcKind::GoldGrasshopper => 1,
             // aiStyle 2 - NPC.cs:8590, :10650
             NpcKind::DemonEye
             | NpcKind::WanderingEye
@@ -2342,6 +2413,23 @@ impl NpcKind {
             // (362), `:13641` (364), `:16743` (602), `:16813` (608). The
             // swimming "2" forms ride aiStyle 68 below.
             NpcKind::Duck | NpcKind::DuckWhite | NpcKind::Seagull | NpcKind::Grebe => 7,
+            // aiStyle 7 — W4-c10 roster tail, the TownCritter golds:
+            // `NPC.cs:14266` (443), `:14294` (445), `:14322` (447).
+            NpcKind::GoldBunny | NpcKind::GoldFrog | NpcKind::GoldMouse => 7,
+            // aiStyle 24 — W4-c10 roster tail: the GoldBird 442
+            // (`NPC.cs:14251`).
+            NpcKind::GoldBird => 24,
+            // aiStyle 65 — W4-c10 roster tail: the GoldButterfly 444
+            // (`NPC.cs:14279`).
+            NpcKind::GoldButterfly => 65,
+            // aiStyle 66 — W4-c10 roster tail, the crawlers: `NPC.cs:13549`
+            // (357), `:14336` (448), the `:14580` range row (484-487).
+            NpcKind::Worm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => 66,
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
@@ -3042,6 +3130,25 @@ impl NpcKind {
             NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Seagull2 | NpcKind::Grebe2 => {
                 (28.0, 22.0)
             }
+            // W4-c10 roster tail — the critter boxes: the crawlers 10x4
+            // (`NPC.cs:13547-13548`/`:14334-14335`/`:14578-14579`), the
+            // GoldBird 14x14 (`:14249-14250`), the GoldBunny 18x20
+            // (`:14264-14265`), the GoldButterfly 10x10 (`:14277-14278`),
+            // the GoldFrog 12x10 (`:14292-14293`), the GoldGrasshopper
+            // 14x10 (`:14305-14306`), the GoldMouse 14x12
+            // (`:14320-14321`).
+            NpcKind::Worm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => (10.0, 4.0),
+            NpcKind::GoldBird => (14.0, 14.0),
+            NpcKind::GoldBunny => (18.0, 20.0),
+            NpcKind::GoldButterfly => (10.0, 10.0),
+            NpcKind::GoldFrog => (12.0, 10.0),
+            NpcKind::GoldGrasshopper => (14.0, 10.0),
+            NpcKind::GoldMouse => (14.0, 12.0),
         }
     }
 
@@ -3130,6 +3237,23 @@ impl NpcKind {
             NpcKind::Seagull2 => 603,
             NpcKind::Grebe => 608,
             NpcKind::Grebe2 => 609,
+            // W4-c10 roster tail — the twelve critters' own bestiary
+            // credits (the populator registers all twelve:
+            // `FindEntryByNPCID(357/442-448/484-487)`,
+            // `BestiaryDatabaseNPCsPopulator.cs:890-1886`) — no fold
+            // needed, the vanilla ids ride.
+            NpcKind::Worm => 357,
+            NpcKind::GoldBird => 442,
+            NpcKind::GoldBunny => 443,
+            NpcKind::GoldButterfly => 444,
+            NpcKind::GoldFrog => 445,
+            NpcKind::GoldGrasshopper => 446,
+            NpcKind::GoldMouse => 447,
+            NpcKind::GoldWorm => 448,
+            NpcKind::EnchantedNightcrawler => 484,
+            NpcKind::Grubby => 485,
+            NpcKind::Sluggy => 486,
+            NpcKind::Buggy => 487,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3706,6 +3830,21 @@ impl NpcKind {
             | NpcKind::Seagull2
             | NpcKind::Grebe
             | NpcKind::Grebe2 => 5,
+            // W4-c10 roster tail — the twelve critters' `lifeMax = 5` rows
+            // (`NPC.cs:13552`, `:14254`/`:14269`/`:14282`/`:14297`/
+            // `:14310`/`:14325`/`:14339`, the `:14583` range row).
+            NpcKind::Worm
+            | NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper
+            | NpcKind::GoldMouse
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => 5,
         }
     }
 
@@ -4081,6 +4220,21 @@ impl NpcKind {
             | NpcKind::Seagull2
             | NpcKind::Grebe
             | NpcKind::Grebe2 => 0,
+            // W4-c10 roster tail — the twelve critters' `damage = 0` rows
+            // (`NPC.cs:13550`, `:14252`/`:14267`/`:14280`/`:14295`/
+            // `:14308`/`:14323`/`:14337`, the `:14581` range row).
+            NpcKind::Worm
+            | NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper
+            | NpcKind::GoldMouse
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => 0,
         }
     }
 }

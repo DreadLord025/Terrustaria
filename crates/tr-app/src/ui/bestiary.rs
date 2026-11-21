@@ -1614,6 +1614,61 @@ fn portrait_data(
                 .unwrap_or(22.0);
             (sheet_i, h, 28.0, 22.0, white)
         }
+        // W4-c10 roster tail — the twelve critters' portraits: the sheet's
+        // own row height over each kind's `Main.npcFrameCount`
+        // (`Main.cs:67082`: 357→2, 442→5, 443→7, 444→3, 445→13, 446→2,
+        // 447→6, 448→2, 484→2, 485/486/487→4), the `SetDefaults` box the
+        // anchor rests on (`NPC.cs:13547-13548`/`:14249-14346`/
+        // `:14578-14579`). The waterfowl precedent: the frame height
+        // rides the sheet, the box is the unscaled size.
+        (NpcKind::Worm | NpcKind::GoldWorm | NpcKind::EnchantedNightcrawler, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(4.0);
+            (sheet_i, h, 10.0, 4.0, white)
+        }
+        (NpcKind::Grubby | NpcKind::Sluggy | NpcKind::Buggy, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(4.0);
+            (sheet_i, h, 10.0, 4.0, white)
+        }
+        (NpcKind::GoldBird, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, 14.0, white)
+        }
+        (NpcKind::GoldBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, 20.0, white)
+        }
+        (NpcKind::GoldButterfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, 10.0, white)
+        }
+        (NpcKind::GoldFrog, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 12.0, 10.0, white)
+        }
+        (NpcKind::GoldGrasshopper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 14.0, 10.0, white)
+        }
+        (NpcKind::GoldMouse, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(12.0);
+            (sheet_i, h, 14.0, 12.0, white)
+        }
     }
 }
 
@@ -2079,6 +2134,51 @@ mod tests {
             assert!(tint.iter().all(|c| c.is_finite()), "net {net_id} tint");
         }
         // The table and the vec stay the same length (the drift guard).
+        assert_eq!(
+            lk.bestiary_npc_sheets.len(),
+            crate::assets::BESTIARY_NPC_SHEET_IDS.len()
+        );
+    }
+
+    /// W4-c10 roster tail — the twelve critters' portrait arms: each
+    /// entry resolves its own sheet slot (the table grew 189 → 201), the
+    /// frame height rides the kind's own strip (2/5/7/3/13/2/6/2/2/4/4/4
+    /// rows, `Main.cs:67082`) and the anchor box is the `SetDefaults`
+    /// size. The fixture sheet is 448 px tall (8×56). WRITTEN, NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_c10_tail_the_critter_portraits_rest_their_set_defaults_boxes() {
+        let lk = full_bestiary_lookups();
+        // (net id, rows, box w, box h).
+        let rows = [
+            (357, 2.0, 10.0, 4.0),
+            (442, 5.0, 14.0, 14.0),
+            (443, 7.0, 18.0, 20.0),
+            (444, 3.0, 10.0, 10.0),
+            (445, 13.0, 12.0, 10.0),
+            (446, 2.0, 14.0, 10.0),
+            (447, 6.0, 14.0, 12.0),
+            (448, 2.0, 10.0, 4.0),
+            (484, 2.0, 10.0, 4.0),
+            (485, 4.0, 10.0, 4.0),
+            (486, 4.0, 10.0, 4.0),
+            (487, 4.0, 10.0, 4.0),
+        ];
+        for (net_id, count, bw, bh) in rows {
+            let entry = crate::bestiary::ENTRIES
+                .iter()
+                .find(|e| e.net_id == net_id)
+                .unwrap_or_else(|| panic!("net {net_id} critter entry"));
+            let slot = lk
+                .bestiary_sheet_index(net_id as u16)
+                .unwrap_or_else(|| panic!("net {net_id} sheet slot"));
+            assert!(slot < crate::assets::BESTIARY_NPC_SHEET_IDS.len());
+            assert!(entry_sheet(&lk, entry).is_some(), "net {net_id} sheet");
+            let (_sheet_i, frame_h, w, h, tint) = portrait_data(entry, &lk);
+            assert_eq!((w, h), (bw, bh), "net {net_id} box");
+            assert_eq!(frame_h, 448.0 / count, "net {net_id} the {count}-row frame");
+            assert!(tint.iter().all(|c| c.is_finite()), "net {net_id} tint");
+        }
         assert_eq!(
             lk.bestiary_npc_sheets.len(),
             crate::assets::BESTIARY_NPC_SHEET_IDS.len()

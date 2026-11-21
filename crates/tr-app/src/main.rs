@@ -133,6 +133,11 @@ mod npc_ai_style67;
 // TruffleWorm 374 / GoldWorm 448 / 484-487 / Maggot 606) - the kind rows
 // + style-axis arm are the family's merge step (see the module doc).
 mod npc_ai_style66;
+// W4-c10 roster tail — the d30 butterfly module (aiStyle 65, the
+// GoldButterfly 444 wiring) + the d38 TownCritter wander/hop subset
+// (the GoldBunny/GoldFrog/GoldMouse 443/445/447).
+mod npc_ai_style65;
+mod npc_ai_critter;
 mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
@@ -157,15 +162,15 @@ mod npc_ai_cultist;
 mod npc_ai_pillar;
 mod npc_ai_style71;
 mod npc_target;
+// W4-c10 sweep — NPC.TransformVisuals (NPC.cs:80963-81033): the
+// transform-visuals draw census + the Item8 cue intent; the eight
+// waterfowl pairs are VISUALLY SILENT (the census verdict, witnessed).
+mod npc_transform_visuals;
 mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
 mod persist;
-// W4-c10 sweep — NPC.TransformVisuals (NPC.cs:80963-81033): the
-// transform-visuals draw census + the Item8 cue intent; the eight
-// waterfowl pairs are VISUALLY SILENT (the census verdict, witnessed).
-mod npc_transform_visuals;
 mod grapple;
 mod gore_seam;
 mod creative;
