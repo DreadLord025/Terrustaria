@@ -1,14 +1,24 @@
-# 154 — g52c cross-input: research/40's DONE statuses × the g50 net lane (81-120)
+# 271 — g52c cross-input: research/40's DONE statuses × the g50 net lane (81-120)
+
+> RENUMBERED 154 → 271 per the research/150 registry §6.3 (origin/task/W4-d54
+> `72226e500`): 154 was registry-reserved for W4-c33 (round-1 §3 assignment,
+> reservation `38bfd1d22`); this note's "max-on-origin 153 + 1" pick raced
+> f11's INTERIM wave while the 151–236 block was already reserved. The
+> registry's round-2 assignment for this doc is 271.
 
 Status: CROSS-NOTE (code-only, W4-g50 re-probe round, branch
 `task/W4-g50-net-apply-arms-3`). Input A: `docs/research/40-port-done-verification.md`
 (the 34-row DONE hot-rows re-verification, 2026-11-12 — read at this branch's
 base, byte-identical to `origin/task/W4-g52-net-relay-host`'s copy). Input B:
 the g50 lane's 40 ids (81-120, batches 1-19 `ee28e7aef..549819cbb` + the
-re-probe round `f8bacbc18/1c023f0ad/950f71a7e/31e33a81e`). Numbering: 154 =
-max-on-origin 153 (f11's renumber wave `b03d53f1d`) + 1; 139 is RESERVED for
+re-probe round `f8bacbc18/1c023f0ad/950f71a7e/31e33a81e`). Numbering: **271**
+per the research/150 registry §6.3 rename instruction (`72226e500`); the
+original 154 pick ("max-on-origin 153 + 1", f11's interim renumber wave
+`b03d53f1d`) collided with the registry's reservation of 154 for c33 — see
+the renumber banner above. 139 is RESERVED for
 g52c-net-master (the g89h note renamed itself 139→145 for exactly this,
-`41dabfbc8`) — this note does NOT take 139.
+`41dabfbc8`) — this note does NOT take 139 (the registry honors that
+reservation).
 
 ## 1. The 40-statuses census (input A, verbatim verdicts)
 
