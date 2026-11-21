@@ -23,6 +23,9 @@ mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;
+// W4-d16 — the kite items' use-path (the IsAKite 24): the LMB launch, the
+// RMB channel arm/release, the holdStyle hack + the use refusals.
+mod kites;
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
@@ -1884,9 +1887,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             || app.inventory_open
             || app.map.as_ref().is_some_and(|m| m.open)
             || app.minimap_hover.is_some();
+        // W4-d16 — the kite override (`Player.cs:42792-42794`): while the
+        // held item is a kite, flag5 reads `controlUseTile` — the RMB
+        // holds the channel, the LMB release does NOT drop it.
+        let kite_release = kites::kite_channel_release(&app, held);
+        let kite_hold = kites::is_kite(held.kind) && held.count > 0 && !kite_release;
         if let Some(p) = app.player.as_mut() {
             if p.channel
-                && (use_suppressed || !holding_channel_item || held.kind != p.channel_item)
+                && ((use_suppressed && !kite_hold)
+                    || kite_release
+                    || (!holding_channel_item && !kite_hold)
+                    || (held.kind != p.channel_item && !kite_hold))
             {
                 // `:42804-42807` — `if (!flag5) channel = false`; the empty
                 // hand drops the held channel item the same way
@@ -2417,11 +2428,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 p.channel_item = held.kind;
                 p.channel_proj_expected = 0;
                 p.channel_index_expected = 0;
-            } else if p.channel {
+            } else if p.channel && !kites::is_kite(held.kind) {
                 // Gate-merge keep-both: HEAD's release/switch clear (i20's
                 // seam — `channel_shoot` zeroes with the rest) stays for the
                 // weapon family; i23's hoisted tick-head clear owns the
-                // canonical release path.
+                // canonical release path. W4-d16: the kite channel is
+                // RMB-owned (`Player.cs:42792-42794`'s flag5 override) — the
+                // LMB-shaped `holding` gate above never sees it; the kite
+                // arm + the hoisted head clear own its whole lifecycle.
                 p.channel = false;
                 p.channel_item = 0;
                 p.channel_shoot = 0;
@@ -2439,6 +2453,41 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if held_pole > 0 && app.mine_down && !app.inventory_open {
         let pulley = app.player.as_ref().is_some_and(|p| p.pulley);
         if !pulley && fishing_use(app, held, world_pos, prev_mine_released && !prev_mine_down) {
+            return;
+        }
+    }
+    // W4-d16 — the kite use-path (`ItemID.Sets.IsAKite`, the module doc in
+    // `kites.rs`): the LMB launch fires ONCE per press edge (the generic
+    // `ItemCheck_Shoot` tail — the kite kinds carry no per-item arm), the
+    // RMB arms the channel while a kite is out (`ItemCheck_OwnerOnlyCode`
+    // `Player.cs:43537-43541`) and otherwise falls through to the anchor
+    // placement below. `CheckUsability` (`Projectile.cs:53468-53471`)
+    // refuses EVERY new use while a kite lives — the launch gate reads it.
+    if held.count > 0 && kites::is_kite(held.kind) && !app.inventory_open {
+        let hold_out = kites::kite_hold_out(app, held);
+        // The RMB channel arm — the port's alt-2 stand-in is the right
+        // press edge (the M4-PROJ-8 convention); the latch then holds via
+        // the flag5 override at the hoisted head clear. NO swing starts:
+        // holdStyle 1 implies a live kite, which trips `CheckUsability`
+        // (`Player.cs:52293-52296`) — `ItemCheck_TryStartUse` refuses, so
+        // `StartActualUse` never runs; the `:43537` channel block is
+        // outside that gate (it runs inside `ItemCheck_OwnerOnlyCode`
+        // every tick, `:42854`).
+        if app.place_down && !prev_place_down
+            && kites::kite_channel_arm(app, held, hold_out)
+        {
+            return;
+        }
+        // The LMB launch (`Player.cs:42733`'s use-start gate).
+        if app.mine_down
+            && prev_mine_released
+            && !prev_mine_down
+            && app.attack_cd <= 0.0
+            && app.reuse_delay <= 0.0
+            && kites::kite_launch(app, held, world_pos)
+        {
+            start_use_timers(app, held);
+            app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
             return;
         }
     }
@@ -2537,11 +2586,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // starts while held).
         let drill_tool =
             registry::get(held.kind).is_some_and(|d| d.channel && (d.pick > 0 || d.axe > 0));
+        // W4-d16 — the kite arm above owns the launch (the IsAKite use
+        // path); `CheckUsability` (`Projectile.cs:53468-53471`) refuses a
+        // second spawn while any kite lives, so the generic throw never
+        // re-fires one.
         if app.attack_cd <= 0.0
             && app.reuse_delay <= 0.0
             && throw_ready
             && held_use_ammo == 0
             && !drill_tool
+            && !kites::is_kite(held.kind)
         {
             // S1-P-i26 — the DD2 sentry use gates (`ItemCheck_CheckCanUse_Inner`,
             // `Player.cs:52079-52111`): the crystal-payment lock, the
@@ -5184,6 +5238,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         // keeps their `itemTime` armed via the channel/mining cadence, so they
         // never reach a mid-swing re-fire. The port skips them here.
         && !registry::get(held.kind).is_some_and(|d| d.channel)
+        // W4-d16 — the kite arm owns the launch; `CheckUsability` refuses
+        // every re-fire while a kite lives (`Projectile.cs:53468-53471`).
+        && !kites::is_kite(held.kind)
     {
         // The per-item animation-window limits (`Player.cs:43491`/`:43502`/
         // `:43506`/`:43514`): the shot fires only while the swing is inside
@@ -5226,11 +5283,13 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             // arm, the plain place and the fill-empty-space tail — the route
             // owns the success re-read and the stack consumption.
             place_wall_route(app, tx, ty)
-        } else if !held_weapon {
+        } else if !held_weapon || kites::is_kite(held.kind) {
             // `Player.ItemCheck_UseWiringTools` (`Player.cs:43572`): the
             // wrench family, the cutter and the actuator answer before the
             // tile-placement route — they place no tile, so the two never
-            // compete.
+            // compete. W4-d16: the kite items take the RMB anchor placement
+            // (`PlaceThing_Tiles` `:39743` — `createTile = 723`); the
+            // channel arm above consumed the tick when a kite was out.
             if use_wiring_tool(app, tx, ty) {
                 true
             } else {
@@ -7111,7 +7170,12 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
 /// (80, `ItemID.Cactus`) never places. Free of `App` so the decision is
 /// unit-testable without the app harness.
 fn item_gate_blocks(kind: u16, count: u32) -> bool {
-    count == 0 || registry::is_weapon(kind) || kind == 80
+    // W4-d16 — the kite items carry `shoot > 0` (the port's is_weapon
+    // shape) but their RMB places the anchor (`PlaceThing_Tiles`
+    // `Player.cs:39743` — `createTile = 723`, `Item.DefaultToKite`
+    // `Item.cs:47837`); the C# gate is `item.createTile >= 0`, never the
+    // shoot flag, so the kites pass (the launch is LMB-only, above).
+    count == 0 || (registry::is_weapon(kind) && !kites::is_kite(kind)) || kind == 80
 }
 
 /// `Player.PlaceThing_Tiles_IsBlockedByLava` (`Player.cs:41489-41504`): a
