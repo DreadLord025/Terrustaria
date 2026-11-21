@@ -3779,10 +3779,17 @@ impl Projectile {
             };
         }
         self.ai[0] += 1.0;
+        // W4-d13 fix: the wind-up arm (`:33714-33783`) writes NO scale —
+        // the C# keeps the stock spawn 1 through it (only the charge
+        // `:33797`, the full `:33891` and the dissolve `:33944` write).
+        // The old tail wrote 0.0 unconditionally — invisible while the
+        // bodies were skipped, wrong for g64c's emitters (the drip's
+        // `scale = this.scale` and the dissolve's `vector * this.scale`
+        // read it) and for the generic draw.
         let scale;
         if self.ai[0] <= 50.0 {
             // The wind-up: the 578/579 dust arms (unmodelled, g64 batch 2).
-            scale = 0.0;
+            scale = self.scale;
             if self.kind == BLOOD_NAUTILUS_TEARS {
                 // `:33760-33782` — two independent Next(4) gates: the
                 // type-5 ring (the Next(10,21) radius draw) and the
@@ -31602,7 +31609,7 @@ mod ritual_projectile_tests {
         };
         p.ai_vortex_ritual((300.0, 300.0), &mut rng);
         assert_eq!(p.ai[0], 1.0);
-        assert_eq!(p.scale, 0.0, "the wind-up scale");
+        assert_eq!(p.scale, 1.0, "the wind-up writes NO scale — the stock 1 holds");
         assert_eq!(
             rng.log,
             [

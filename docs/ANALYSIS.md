@@ -39354,6 +39354,54 @@ origin is the Extra sheet's own half). 1 witness
 (`w4_d13_the_pointer_quad_places_the_pivot_on_the_pose_anchor`) WRITTEN
 NOT RUN.
 
+**(2) The 813 dust bodies — g64's lane, the g64c activation cross-note.**
+g64's wiring wave (`77616a7d`, read) keeps 813 in its "Still deferred"
+ledger with "no row on any pushed branch" — STALE: the row + the
+four-phase machine landed on THIS branch (`21a222d9`,
+`projectile/data.rs`'s `BLOOD_NAUTILUS_TEARS` row + `projectile.rs::ai_vortex_ritual`'s
+813 arms). g64c's brief item-2 reads THIS row now. The activation
+contract for g64c's emitters (the 13 sites, C# `Projectile.cs`):
+
+| phase | C# window | sites | per-pass draws (in order) |
+| --- | --- | --- | --- |
+| wind-up `ai[0]<=50` | `:33760-33782` | 2 (dust 5 @ `:33765`, 240 @ `:33775`) | two INDEPENDENT `Next(4)` gates; a pass → RotatedByRandom (2×NextDouble), the 5-arm's `Next(10,21)` radius (the 240-arm none), the NextFloat scale |
+| charge `<=90` | `:33858-33881` | 2 (5 @ `:33863`, 240 @ `:33874`) | two INDEPENDENT `Next(2)` gates; the same per-pass shape |
+| full `<=120` | `:33894-33918` | 2 (5 @ `:33899`, 240 @ `:33910`) | ONE `Next(2)` pick: 0 → the 5-arm (radius), else the 240-arm; rotation pair + scale float on both |
+| dissolve `>120` | `:33951-33983` | 4 (2× switch: 5 @ `:33960`, 240 @ `:33972`) | TWO `Next(3)` picks: case 0 the 5-arm (radius), case 1 the 240-arm, case 2 NOTHING; the rotation vector is ×`this.scale` (the phase's shrinking scale) |
+| drip (every phase) | `:34018-34024` | 1 (`NewDustPerfect` 90 @ `:34020`) | `NextFloat() < Opacity` gate; a pass → `NextVector2Circular(3,20)` = unit-angle NextFloat + radius NextFloat; body velocity UnitY, noGravity, `scale = this.scale` |
+
+The machine's census sites (`projectile.rs`'s `ai_vortex_ritual` 813
+blocks) hold these draws on the UpdateProjectiles stream TODAY — g64c's
+wiring REPLACES each `let _ = …` block with the emitter at the same site
+(the 642/509 draws-kept-skip replacement pattern); it must NOT add draws
+beside them. Body specifics the C# pins: the 5-arms' velocity
+`vector.RotatedBy(+π/2) * 6` (wind-up `* 4`), the 240-arms'
+`vector.RotatedBy(−π/2) * 3` (wind-up `* 2`); position `Center − vector *
+Next(10,21)` (5-arms) / `Center − vector * 30` (240-arms); `scale = 0.5 +
+NextFloat`, `fadeIn = 0.5`, `noGravity = true`; `customData = Center` on
+every site EXCEPT the wind-up pair (`:33765-33780` set none — the pool's
+dropped field either way). The tick-90 payloads (the Item8 cue + the
+BloodSquid 619 `wants_mark_spawn`) are d13's, already wired — g64c
+touches dust only. The kill tick keeps drawing (the C# `:33949` Kill has
+no return; the dissolve loops + drip run post-kill).
+
+**The wind-up scale fix (this wave).** Re-reading `:33714-33783` for the
+cross-note exposed a machine deviation: the wind-up arm writes NO scale
+in the C# (only the charge `:33797`, the full `:33891` and the dissolve
+`:33944` do) — the stock spawn 1 holds through the first 50 ticks. The
+port's shared tail wrote `scale = 0.0` unconditionally in that arm:
+invisible while the bodies were skipped and alpha stays 255, but wrong
+for g64c's emitters (the drip's `scale = this.scale`, the dissolve's
+`vector * this.scale`) and for the generic sprite draw. Fixed: the
+wind-up holds `self.scale`; the wind-up witness re-pinned to 1.0.
+
+The 957/670 ledger rows stay as g64 wrote them with one correction: the
+957's tile-scan dust sits behind `SolidTileAllowBottomSlope` which
+`ai_pets_style124` DOES model (the scan landed — the `:35571-35601` dust
+bodies are the skipped part), so g64c can read the scan's tile hits off
+the machine; the 670 style-126 sites are style-generic (no 670-gated
+dust).
+
 ### Verification
 
 Code-only: every change re-read against the cited C# windows; the seam
