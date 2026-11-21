@@ -112,6 +112,18 @@ pub struct UiPulse {
     pub text: f32,
     /// `Main.cursorScale` = `cursorAlpha * 0.3 + 0.7 + 0.1` (`Main.cs:52491`).
     pub cursor_scale: f32,
+    /// W4-g35 item-slot glow clocks: `Main.LocalPlayer.miscCounter`
+    /// (`Player.cs:3389`'s `miscCounterNormalized = miscCounter / 300f`
+    /// derives from it) — the 5669 wrapped lerp (`ItemSlot.cs:2908`), the
+    /// 3858 3-row rect (`:2913`) and the 5670/5671 phase MultiLerp
+    /// (`Item.cs:49099`).
+    pub misc_counter: u32,
+    /// `Main.DiscoR/G/B` — the 5146 rainbow bobber's glow tint
+    /// (`ItemSlot.cs:2902`).
+    pub disco: [u8; 3],
+    /// `Main.GlobalTimeWrappedHourly` — the trusty-pal glow hue
+    /// (`ItemSlot.GetTrustyPalGlowColor`, `ItemSlot.cs:2956`).
+    pub global_time: f32,
 }
 
 impl Default for UiPulse {
@@ -119,6 +131,10 @@ impl Default for UiPulse {
         Self {
             text: 1.0,
             cursor_scale: 1.0,
+            misc_counter: 0,
+            // `Main.Initialize`'s stock (`Main.cs:959-961`): R 255, G/B 0.
+            disco: [255, 0, 0],
+            global_time: 0.0,
         }
     }
 }
@@ -867,6 +883,7 @@ pub fn draw_hud(
             // accessory visible/hidden ticks (`Main.cs:41425-41460`).
             hide_visible_accessory,
             mouse_item_is_air,
+            pulse,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;
@@ -917,6 +934,7 @@ pub fn draw_hud(
                         false,
                         inventory::SHOP_SCALE,
                         [220.0 / 255.0; 4],
+                        pulse,
                     );
                 }
             }
@@ -992,6 +1010,7 @@ pub fn draw_hud(
                 false,
                 false,
                 craft_filter_flags,
+                pulse,
             );
             // The hovered filter tab's label — `ShowButtonName`
             // (`UICreativeItemsInfiniteFilteringOptions.cs:125-132`):
@@ -1058,6 +1077,7 @@ pub fn draw_hud(
                 i == selected,
                 scale,
                 [1.0; 4],
+                pulse,
             );
             x += advance;
         }
@@ -1092,6 +1112,7 @@ pub fn draw_hud(
             false,
             pulse.cursor_scale,
             [1.0; 4],
+            pulse,
         );
     } else if mouse_npc.carried() {
         // `DrawInterface_38_MouseCarriedObject`'s else arm

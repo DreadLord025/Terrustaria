@@ -145,7 +145,7 @@ pub(crate) fn draw(
     if panel_visible(p.chest, p.crafting_open) {
         draw_name(r, lookups, &mut p, pulse);
         draw_buttons(r, lookups, &mut p, pulse, mouse);
-        draw_slots(r, lookups, &mut p);
+        draw_slots(r, lookups, &mut p, pulse);
     } else {
         // `ChestUI.cs:99-104` — the closed reset.
         for i in 0..BUTTON_COUNT {
@@ -323,7 +323,12 @@ fn draw_button(
 /// per-frame scroll clamp (`:368-370`) and the `num4 < item.Length` bound
 /// (`:377`; the array length is [`DEFAULT_MAX_ITEMS`] until M6-SAVE-2's
 /// `Resize`, decision #3).
-fn draw_slots(r: &mut SpriteRenderer, lookups: &assets::Lookups, p: &mut PanelState<'_>) {
+fn draw_slots(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    p: &mut PanelState<'_>,
+    pulse: super::UiPulse,
+) {
     // The bank slots (`chest == -2..-5`) are M3-STORE-1's — the port never
     // carries their `slots` yet.
     let Some(slots) = p.slots else {
@@ -357,6 +362,7 @@ fn draw_slots(r: &mut SpriteRenderer, lookups: &assets::Lookups, p: &mut PanelSt
                 false,
                 CHEST_SCALE,
                 SLOT_TINT,
+                pulse,
             );
         }
     }

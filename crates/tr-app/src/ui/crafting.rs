@@ -378,6 +378,8 @@ pub fn draw(
     guide_mode: bool,
     difficulty_3_and_creative_unblocked: bool,
     filter_flags: [bool; 11],
+    // W4-g35: the item-slot glow clocks (`ItemSlot.cs:2891-2929`).
+    pulse: super::UiPulse,
 ) {
     // `UpdateText` (`:417-427`): the search bar's width is inset by the title's
     // measured outer width, so measure it before building the layout.
@@ -483,7 +485,7 @@ pub fn draw(
 
     // 8. The detail area (`DrawChildren`, `:438-482`), drawn after the base pass so
     //    it sits on top of everything.
-    draw_detail_area(r, lookups, &l, guide_mode);
+    draw_detail_area(r, lookups, &l, guide_mode, pulse);
 
     // 9. The toggles (`:484-495`).
     draw_toggles(r, lookups, &l, mouse_pos, guide_mode);
@@ -500,6 +502,7 @@ fn draw_detail_area(
     lookups: &assets::Lookups,
     l: &Layout,
     guide_mode: bool,
+    pulse: super::UiPulse,
 ) {
     let (dx, dy) = (l.detail[0], l.detail[1]);
 
@@ -520,6 +523,7 @@ fn draw_detail_area(
             false,
             1.0,
             guide_tint,
+            pulse,
         );
         // The label at `vector + (52, 73)` (`:445`): `Main.guideItem.IsAir ?
         // Lang.inter[24] : ...` — the guide slot is always empty in the port, so
@@ -550,6 +554,7 @@ fn draw_detail_area(
         false,
         1.0,
         slot::craft_slot_tint(),
+        pulse,
     );
 
     // `Images/UI/Craft` at `vector + (47, 13)`, scale 0.8, White (`:460`).

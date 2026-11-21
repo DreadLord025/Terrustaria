@@ -1676,6 +1676,13 @@ impl App {
                                 // `Main.mouseTextColor / 255` (`Main.cs:20355`).
                                 text: self.mouse_text_color as f32 / 255.0,
                                 cursor_scale: self.cursor.scale(),
+                                // W4-g35: the item-slot glow clocks
+                                // (`ItemSlot.cs:2891-2929`).
+                                misc_counter: player
+                                    .as_ref()
+                                    .map_or(0, |p| p.misc_counter),
+                                disco: self.disco,
+                                global_time: anim_time % 3600.0,
                             },
                             m_h,
                             self.map_style,
