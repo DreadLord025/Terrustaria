@@ -6,19 +6,33 @@
 //! `AddSpotToCheck` call as a skip ("no ore-highlight layer"); this module
 //! ports the helper itself so the wiring lane has the real seam.
 //!
-//! **PORTED-UNWIRED (code-only, W4-g78).** Intended call sites:
-//! * `Main.PreUpdateAllProjectiles` (`Main.cs:17535-17539`) →
+//! **PORTED, ATTACH-CONTRACT PUBLISHED (code-only, W4-g78 wiring phase).**
+//! The live dispatch seams (`projectile.rs`'s aiStyle-14/33 arms, the
+//! `ProjectilePool` struct, `world_sim/projectiles.rs`'s pass head/tail) are
+//! contested by the d9/d13/d16/g4/f5/g11/g16/g63/g64/g65 lanes — the exact
+//! attach hunks (C# positions + the DropRng-stream verdict) are published in
+//! **research/77 §1** for the c42d/95-union merge. Intended call sites:
+//! * `Main.PreUpdateAllProjectiles` (`Main.cs:17535-17539`, called from
+//!   `UpdateWorld_Projectiles` `:18001` BEFORE the 1000-slot walk) →
 //!   [`SpelunkerProjectileHelper::on_pre_update_all_projectiles`] once per
 //!   projectile-update pass (the 10-tick dedupe-clear cadence);
-//! * the 473 head's counter wrap (`Projectile.cs:24841-24845`) →
-//!   [`SpelunkerProjectileHelper::add_spot_to_check`] with `base.Center`,
-//!   gated on `(Center - Main.player[myPlayer].Center).Length() <
-//!   (screenWidth + 30*16)` — the distance gate stays with the caller (the
-//!   C# keeps it outside the helper).
-//! The helper's `Main.rand` is the caller's projectile-stage stream (the
-//! `DropRng` seam, the d60 particles convention); the dust spawns are
-//! returned as [`SpelunkerDust`] requests — the port's dust layer is
-//! app-side, this module never spawns.
+//! * the 473 head's counter wrap (`Projectile.cs:24841-24845`) AND the 1008
+//!   Spelunker Flare's STUCK arm (`:27124-27127` — every stuck tick, NO
+//!   counter) → [`SpelunkerProjectileHelper::add_spot_to_check`] with
+//!   `base.Center`, gated on [`SpelunkerProjectileHelper::spot_in_range`] —
+//!   the distance gate stays with the caller (the C# keeps it outside the
+//!   helper);
+//! * the HELD Spelunker Glowstick 3002 (`Player.cs:50094-50099`, the
+//!   `spelunkerTimer` 10-tick counter inside `ItemCheck_EmitHeldItemLight`,
+//!   NO distance gate, `!pulley`-gated) — the THIRD C# caller research/76
+//!   missed; contract in research/77 §1.3.
+//! The helper's `Main.rand` is the caller's stage stream (the `DropRng`
+//! seam, the d60 particles convention): `UpdateProjectiles` for the two
+//! projectile callers, `UpdatePlayers` for the held 3002. The dust spawns
+//! are returned as [`SpelunkerDust`] requests the caller drains into
+//! `app.dust` via `DustPool::new_dust_direct` (16×16 box, speed 0/0, alpha
+//! 150, scale 0.3) + the fadeIn 0.75 / velocity ×0.1 / noLight post-arms;
+//! this module never spawns.
 //!
 //! RNG census: ONE `Main.rand.Next(4)` per NEWLY-checked spelunkable tile
 //! (`:54` — `_tilesChecked.Add(item) && Main.rand.Next(4) == 0`, the `&&`
@@ -27,33 +41,58 @@
 //! glowstick re-rolls its whole window every 10 ticks.
 //!
 //! The `Main.IsTileSpelunkable(Tile)` overload (`Main.cs:21778-21781`) reads
-//! `t.type/frameX/frameY` — the same predicate d56 landed in
-//! `tr_render::animated_tiles::is_tile_spelunkable` (UNWIRED, contested
-//! crate); the table is re-inlined here verbatim (the tr-app crate cannot
-//! read tr-render's private copy, the d9/d13 precedent) and the census
-//! witness pins every row against `Main.cs:9420-9467` + `:9651`.
+//! `t.type/frameX/frameY` — the same predicate d9 landed canonically in
+//! `projectile_ai_style90::is_tile_spelunkable` (the `TileSet` bitset) and
+//! d56 in `tr_render::animated_tiles`; this module now carries the d9
+//! bitset VERBATIM (the keep-one intermediate — at the merge this copy
+//! deletes and re-exports d9's, research/77 §4) and the census witness pins
+//! every row against `Main.cs:9420-9467` + `:9651`.
 
 use std::collections::HashSet;
 
 use glam::Vec2;
+use tr_core::tiledata::TileSet;
 use tr_core::World;
 
 /// `Main.tileSpelunker[type]` (`Main.cs:9420-9467` + `:9651`): the 49 true
-/// rows, in source order (the order is immaterial to the lookup; kept for
-/// the census witness).
-const TILE_SPELUNKER: [u16; 49] = [
+/// rows as a bitset. **Keep-one (d9 canonical):** these words are VERBATIM
+/// d9's `projectile_ai_style90::TILE_SPELUNKER` (`TileSet::from_words`, the
+/// `SWAYS_IN_WIND_BASIC` hand-transcription precedent) — at the wiring merge
+/// this copy and d9's collapse to one (delete this, re-export d9's; the
+/// d13 `projectile_ai_pets124` inline `[u16]` table and d56's tr-render copy
+/// fold onto the same bitset, research/77 §4). The id list is kept below for
+/// the census witness only.
+static TILE_SPELUNKER: TileSet = TileSet::from_words(&[
+    0x8000_0020_1020_13C0, // 6,7,8,9,12,21,28,37,63
+    0x0000_9A00_0018_001F, // 64,65,66,67,68,83,84,105,107,108,111
+    0x0004_03C0_0000_0000, // 166,167,168,169,178
+    0x0065_1008_E008_0000, // 211,221,222,223,227,236,240,242,245,246
+    0x0000_0000_0000_0000,
+    0x0000_0000_2002_0000, // 337,349
+    0x0200_0000_0090_0000, // 404,407,441
+    0x0400_0000_0018_0000, // 467,468,506
+    0x0040_0000_0008_0000, // 531,566
+    0x8000_0000_0000_0000, // 639
+    0x4000_0000_0000_0000, // 702
+    0x0001_8000_0000_0000, // 751,752
+]);
+
+/// The 49 `tileSpelunker` ids in source order — the census witness's list
+/// (the live lookup is the [`TILE_SPELUNKER`] bitset above).
+const TILE_SPELUNKER_IDS: [u16; 49] = [
     6, 7, 8, 9, 12, 21, 467, 441, 468, 28, 107, 108, 111, 63, 64, 65, 66, 67, 68, 566, 166, 167,
     168, 169, 178, 211, 221, 222, 223, 236, 702, 37, 407, 227, 84, 83, 404, 242, 240, 246, 245,
     105, 349, 337, 531, 506, 751, 752, 639,
 ];
 
 /// `Main.IsTileSpelunkable(ushort, short, short)` (`Main.cs:21783-21798`):
-/// the `tileSpelunker` table plus the two 185/186 frame windows (the
-/// grave-marker and statue treasure rows). Keep-one note: d56's
-/// `tr_render::animated_tiles::is_tile_spelunkable` is the same predicate —
-/// at the wiring merge the two should share one copy (research/76).
+/// the `tileSpelunker` bitset plus the two 185/186 frame windows (the
+/// grave-marker and statue treasure rows). Keep-one: d9's
+/// `projectile_ai_style90::is_tile_spelunkable` is the canonical copy (the
+/// same bitset + windows); d56's tr-render copy and d13's inline table fold
+/// onto it at the wiring merges (research/77 §4).
 pub fn is_tile_spelunkable(type_cache: u16, frame_x: i16, frame_y: i16) -> bool {
-    if TILE_SPELUNKER.contains(&type_cache) {
+    if TILE_SPELUNKER.has(type_cache) {
         return true;
     }
     if type_cache == 185 && frame_y == 18 && (576..=882).contains(&frame_x) {
@@ -135,6 +174,24 @@ impl SpelunkerProjectileHelper {
         if self.positions_checked.insert((spot.x.to_bits(), spot.y.to_bits())) {
             self.check_spot(world, spot, rng, out);
         }
+    }
+
+    /// The CALLER-side distance gate the 473 glowstick head
+    /// (`Projectile.cs:24842`) and the 1008 flare's stuck arm (`:27124`)
+    /// both apply BEFORE `AddSpotToCheck`:
+    /// `(Center - Main.player[myPlayer].Center).Length() <
+    /// (float)(screenWidth + 30 * 16)`. The C# keeps it OUTSIDE the helper
+    /// (the helper itself has no player read), so the port keeps it here as
+    /// a free function the wiring lane calls at the dispatch — the
+    /// `SpelunkerProjectileHelper` never sees the player. `screen_width` is
+    /// `Main.screenWidth` (the swapchain pixel width, the d13
+    /// `set_screen_width` seam); `player_center` is `None` when no local
+    /// player exists (the gate fails closed — no scan).
+    pub fn spot_in_range(spot: Vec2, player_center: Option<Vec2>, screen_width: f32) -> bool {
+        let Some(pc) = player_center else {
+            return false;
+        };
+        (spot - pc).length() < screen_width + 30.0 * 16.0
     }
 
     /// `CheckSpot` (`:35-66`): the ±30-tile window around the spot's tile
@@ -229,17 +286,57 @@ mod tests {
     }
 
     /// `Main.cs:9420-9467` + `:9651`: every listed id is spelunkable; the
-    /// unlisted dirt/stone are not. The 49-row census pins the table.
+    /// unlisted dirt/stone are not. The 49-row census pins the id list AND
+    /// that the d9-canonical bitset agrees with it exactly (the keep-one
+    /// dedupe's equivalence proof, research/77 §4).
     #[test]
     fn w4_g78_the_spelunker_table_census() {
-        assert_eq!(TILE_SPELUNKER.len(), 49);
-        for k in TILE_SPELUNKER {
+        assert_eq!(TILE_SPELUNKER_IDS.len(), 49);
+        for k in TILE_SPELUNKER_IDS {
             assert!(is_tile_spelunkable(k, 0, 0), "spelunker {k}");
+            assert!(TILE_SPELUNKER.has(k), "the bitset carries {k}");
+        }
+        // The bitset holds EXACTLY the 49 ids (no stray bits): every id in
+        // 0..TILE_COUNT is in the set iff it is in the census list.
+        for k in 0..tr_core::tiledata::TILE_COUNT as u16 {
+            assert_eq!(
+                TILE_SPELUNKER.has(k),
+                TILE_SPELUNKER_IDS.contains(&k),
+                "bitset vs census at {k}"
+            );
         }
         assert!(!is_tile_spelunkable(0, 0, 0));
         assert!(!is_tile_spelunkable(1, 0, 0));
         assert!(!is_tile_spelunkable(185, 0, 0));
         assert!(!is_tile_spelunkable(186, 0, 0));
+    }
+
+    /// `Projectile.cs:24842` / `:27124` — the caller-side distance gate:
+    /// strictly `< screenWidth + 480`; exactly-at-the-boundary fails; no
+    /// player fails closed. screenWidth 1280 → the boundary is 1760 px.
+    #[test]
+    fn w4_g78_the_caller_distance_gate_is_strict() {
+        let pc = Vec2::new(1000.0, 1000.0);
+        // 1759 px east: inside.
+        assert!(SpelunkerProjectileHelper::spot_in_range(
+            Vec2::new(2759.0, 1000.0),
+            Some(pc),
+            1280.0
+        ));
+        // Exactly 1760: the C# `<` refuses.
+        assert!(!SpelunkerProjectileHelper::spot_in_range(
+            Vec2::new(2760.0, 1000.0),
+            Some(pc),
+            1280.0
+        ));
+        // Euclidean, not per-axis: (1200 east, 1300 south) ≈ 1769.2 > 1760.
+        assert!(!SpelunkerProjectileHelper::spot_in_range(
+            Vec2::new(2200.0, 2300.0),
+            Some(pc),
+            1280.0
+        ));
+        // No player: no scan.
+        assert!(!SpelunkerProjectileHelper::spot_in_range(pc, None, 1280.0));
     }
 
     /// `Main.cs:21789-21796`: the 185 window needs frameY 18 AND frameX
