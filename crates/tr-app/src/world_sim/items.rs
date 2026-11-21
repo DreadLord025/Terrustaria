@@ -1315,17 +1315,18 @@ mod shimmer_tests {
         app
     }
 
-    /// A drop resting on the pool's floor, the 14x14 box overlapping the
-    /// shimmer row (pos y = 19*16 + 2), parked at x = 30 tiles — outside the
-    /// 42 px pickup magnet of the player at x = 9 (`ItemUpdate`'s magnet,
-    /// `item.rs:176-188`) but inside the coin-luck 1000 px window.
+    /// A drop resting on the pool's floor, the 16x16 box overlapping the
+    /// shimmer row (pos y = 19*16, flush on the 20-row floor), parked at
+    /// x = 30 tiles — outside the 42 px pickup magnet of the player at x = 9
+    /// (`ItemUpdate`'s magnet, `item.rs:176-188`) but inside the coin-luck
+    /// 1000 px window.
     fn resting_drop(kind: u16, count: u32) -> ItemDrop {
         let mut d = ItemDrop::new(
             kind,
             count,
             0,
             30.0 * TILE_PX,
-            19.0 * TILE_PX + 2.0,
+            19.0 * TILE_PX,
             0.0,
             0.0,
             0.0,
@@ -1675,7 +1676,7 @@ mod shimmer_tests {
         // Out and back in within the cooldown window.
         app.items[0].pos.y = 10.0 * TILE_PX;
         update_items(&mut app, 1.0 / 60.0); // exit edge, wetCount > 0 → no burst
-        app.items[0].pos.y = 19.0 * TILE_PX + 2.0;
+        app.items[0].pos.y = 19.0 * TILE_PX;
         update_items(&mut app, 1.0 / 60.0); // re-entry, wetCount > 0 → no burst
         let n1 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
         assert_eq!(n1, n0, "the cooldown suppressed both edges");
@@ -1750,7 +1751,7 @@ mod rand_light_witness {
     }
 
     fn resting(kind: u16, tx: f32) -> ItemDrop {
-        let mut d = ItemDrop::new(kind, 1, 0, tx * TILE_PX, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        let mut d = ItemDrop::new(kind, 1, 0, tx * TILE_PX, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
         d.vel = Vec2::ZERO;
         d
     }
@@ -2303,9 +2304,9 @@ mod pickup_tests {
     fn nearby_world_drops_merge_in_the_items_pass() {
         let mut app = pickup_world();
         // Park the player far away (x = 10 tiles); the drops at x = 30.
-        let mut a = ItemDrop::new(9, 10, 0, 30.0 * TILE_PX, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        let mut a = ItemDrop::new(9, 10, 0, 30.0 * TILE_PX, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
         a.vel = Vec2::ZERO;
-        let mut b = ItemDrop::new(9, 7, 0, 30.0 * TILE_PX + 10.0, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        let mut b = ItemDrop::new(9, 7, 0, 30.0 * TILE_PX + 10.0, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
         b.vel = Vec2::ZERO;
         app.items.push(a);
         app.items.push(b);
@@ -2864,7 +2865,7 @@ mod drop_witness_tests {
         assert_eq!(d.grab_delay_time, crate::item::DEFAULT_GRAB_DELAY);
         assert_eq!(d.grab_delay_player, crate::item::GRAB_DELAY_LOCAL);
         // Rest the drop on the ground (floor y = 120 tiles = 1920 px, the
-        // 14 px box sits at 1906) with zero velocity, aged past the 0.35 s
+        // 16 px box sits at 1904) with zero velocity, aged past the 0.35 s
         // stand-in, and park the player's centre ON it — so only the
         // grab-delay gates the pickup, not range or age.
         {

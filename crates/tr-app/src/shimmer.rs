@@ -580,7 +580,7 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
     app.items.retain(|d| !(d.kind == 0 && d.count == 0));
 }
 
-/// The 14x14 item box in pixels (`ItemDrop::SIZE`).
+/// The 16x16 item box in pixels (`ItemDrop::SIZE`).
 const SIZE_PX: f32 = crate::item::SIZE;
 
 /// `WorldItem.GetShimmered`'s shared tail (`WorldItem.cs:1835-1852`): the

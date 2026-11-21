@@ -11733,8 +11733,14 @@ code-only — witnesses WRITTEN NOT RUN):
   velocities nudged in list order. The items pass runs it before the drop's
   update (the C# runs it inside `MoveInWorld` before the gravity add); the
   `flag` rides `ItemDrop::repulsed` into the ×0.8 tail (`:859-862`, after the
-  friction/snap). The span is the port's 14 px box (C# `WorldItem.width = 16`,
-  `:138` — the standing box-size deviation).
+  friction/snap). The span is the drop box (C# `WorldItem.width = 16`,
+  `:138`) — W4-e19 round 3 retired the old 14 px stand-in: `ItemDrop::SIZE`
+  is now 16 everywhere (grab rect, wet/lava probes, conveyor, TileCollision,
+  the repulsion span, the splash `width + 12`); the DRAW quad keeps the 14 px
+  visual centred in the box (`pos + 1`, `SIZE - 2`) so the pixels are
+  unchanged. The witnesses re-pinned at the 16 geometry (the wet-probe
+  parking, the repulsion 8 px pair, the flush landing 303→304, the magnet
+  centre-8 spawns, the grab-rect 42/43 edge, the light anchors).
 - **The `ItemNoGravity` float** (`:774-786`): the 16-row `ItemID.cs:1320` set
   (`item_no_gravity`), the `!shimmered` gate, both-axis ×0.95 + the 0.1 snap,
   no gravity add — the whole else arm skipped.
