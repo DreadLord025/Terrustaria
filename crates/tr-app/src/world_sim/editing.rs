@@ -4146,6 +4146,27 @@ fn fire_non_ammo_shot(
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
             }
         }
+    } else if held.kind == 4682 {
+        // W4-d17 DOC-SWEEP — `ItemCheck_Shoot`'s Release Doves arm
+        // (`Player.cs:48383-48392`): THREE doves per use, each at the aim
+        // velocity plus `Next(-20, 21) * 0.1` per axis (X draw then Y draw,
+        // six `UpdatePlayers` draws total). The C# `return`s — the generic
+        // tail's tweaks never run. The item is `noUseGraphic` + consumable
+        // (`Item.cs:38555-38562`, DefaultToThrownWeapon(851, 25, 4)); the
+        // damage −1 stock rides `weaponDamage` like every thrown item.
+        // The Release Lantern 4702 has NO special arm — it keeps the
+        // generic single shot (the census: only 4682 is named).
+        for _ in 0..3 {
+            let vx = shot.x + loot_rng.next_range(-20, 21) as f32 * 0.1;
+            let vy = shot.y + loot_rng.next_range(-20, 21) as f32 * 0.1;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if tr_core::whip::is_whip(proj) {
         // S1-P-i24 — `Player.ItemCheck_Shoot`'s whip arm
         // (`Player.cs:48655-48690`): the 18 whip items fire
@@ -18069,6 +18090,47 @@ mod item_mechanics {
         assert!(shot.vel.x > 0.0, "the throw flies toward the cursor");
         assert!((shot.vel.length() - 7.0).abs() < 1e-3, "shootSpeed 7");
         assert_eq!(app.inventory[app.selected].count, 4, "one consumed");
+    }
+
+    /// W4-d17 doc-sweep — the Release Doves 4682 (`Item.cs:38555-38562`,
+    /// DefaultToThrownWeapon(851, 25, 4), noUseGraphic, consumable) fires
+    /// THREE doves per use (`Player.cs:48383-48392`), each jittered by
+    /// `Next(-20,21)*0.1` per axis — six `UpdatePlayers` draws. ONE bucket
+    /// is consumed (the consumable tail runs once per use, not per dove).
+    /// The Release Lantern 4702 keeps the generic single shot.
+    #[test]
+    fn w4_d17_the_doves_release_three_and_the_lantern_one() {
+        let mut app = thrown_app(4682, 5);
+        let screen = MINE_SCREEN;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let doves: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 851)
+            .collect();
+        assert_eq!(doves.len(), 3, "three doves per use (:48385)");
+        // Each dove's velocity sits inside the ±2 px jitter band around
+        // the aim-normalized shootSpeed 4.
+        for d in &doves {
+            assert!(d.vel.x > 0.0, "the flock flies toward the cursor");
+            assert!(
+                (d.vel.length() - 4.0).abs() < 2.9,
+                "shootSpeed 4 ± the jitter band"
+            );
+        }
+        assert_eq!(app.inventory[app.selected].count, 4, "ONE consumed per use");
+        // The lantern: one 855, no special arm.
+        let mut app = thrown_app(4702, 5);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let lanterns: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 855)
+            .collect();
+        assert_eq!(lanterns.len(), 1, "the lantern is a single generic shot");
+        assert_eq!(app.inventory[app.selected].count, 4);
     }
 
     /// The bone javelin throws from the upper third of the hitbox
