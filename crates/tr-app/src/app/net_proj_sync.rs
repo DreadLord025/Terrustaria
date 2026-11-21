@@ -133,8 +133,9 @@ fn state_of(pool: &ProjectilePool, slot: usize) -> net::ProjectileState {
 
 /// `flag3` (`NetMessage.cs:1777`): the section-culling exemption —
 /// `type == 12 || Main.projPet[type] || aiStyle == 11 || netImportant`.
-/// `proj_pet` is a parameter because `Main.projPet` has no port table yet;
-/// the caller passes the pet flag once it lands (false today).
+/// `proj_pet` is a parameter so the pure tests can pin each leg; the live
+/// callers pass `crate::projectile::proj_pet(kind)` (the verbatim
+/// `Main.projPet` table, `Main.cs:8728-8852` — W4-g52).
 pub(crate) fn sync_ignores_sections(
     kind: u16,
     proj_pet: bool,
@@ -171,9 +172,10 @@ impl ProjSync {
         // A flag3 projectile clears its skipped flags on every broadcast
         // (`NetMessage.cs:1779-1781`); a fresh slot has none set, but the
         // recycled index may carry stale flags from its previous occupant.
+        // W4-g52: the `projPet` table landed (`Main.cs:8728-8852`).
         let p = &pool.slots()[slot];
         let ai_style = proj_data(p.kind).map_or(255, |d| d.ai_style);
-        if sync_ignores_sections(p.kind, false, ai_style, p.net_important) {
+        if sync_ignores_sections(p.kind, crate::projectile::proj_pet(p.kind), ai_style, p.net_important) {
             self.slots[slot].sync_skipped = [false; 255];
         }
         Some(ProjSend::Sync(state_of(pool, slot)))
@@ -330,7 +332,8 @@ impl ProjSync {
     ) {
         let p = &pool.slots()[slot];
         let ai_style = proj_data(p.kind).map_or(255, |d| d.ai_style);
-        if sync_ignores_sections(p.kind, false, ai_style, p.net_important) {
+        // W4-g52: the `projPet` table landed (`Main.cs:8728-8852`).
+        if sync_ignores_sections(p.kind, crate::projectile::proj_pet(p.kind), ai_style, p.net_important) {
             self.slots[slot].sync_skipped = [false; 255];
             return;
         }

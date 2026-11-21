@@ -5116,14 +5116,17 @@ mod tests {
     #[test]
     fn w4_g52_tile_square_relays_only_to_slots_holding_a_corner_section() {
         let (server, mut socks) = relay_server_with_peers(3);
-        for i in 1..=3 {
+        for i in 1..=2 {
             server.set_state(i, slot_state::IN_WORLD);
             server.ensure_sections(i, 900, 600); // 5x4 grid
         }
-        server.set_state(3, slot_state::SPAWN_REQUESTED); // no broadcast flag
+        // Slot 3 never reaches State 10 — its broadcast flag stays closed
+        // (the C# State never lowers; `Reset` clears on reuse only).
+        server.set_state(3, slot_state::SPAWN_REQUESTED);
+        server.ensure_sections(3, 900, 600);
         server.mark_section_sent(1, 0, 0);
         server.mark_section_sent(2, 2, 1);
-        server.mark_section_sent(3, 0, 0); // latched, but State 3
+        server.mark_section_sent(3, 0, 0); // latched, but no broadcast flag
         // A check-time stamp alone does NOT satisfy the 20 arm.
         server.mark_section_checked(2, 0, 0, 1000);
         // 1x1 at (10,10): every corner in section (0,0) — slot 1 only.

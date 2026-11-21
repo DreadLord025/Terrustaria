@@ -39289,10 +39289,11 @@ kept; the missing arms landed on top.
   (`TileSections`), NOT the check-time grid. The port refuses
   out-of-grid corners (the C# throws inside `SendData`'s try;
   `TrySendData` swallows it).
-* `Main.projPet` (`Main.cs:8728-8852`): all 126 write sites landed
+* `Main.projPet` (`Main.cs:8728-8852`): all 125 `= true` write sites landed
   verbatim as `projectile/data.rs::proj_pet` — the `flag3` table the
   `net_proj_sync::sync_ignores_sections` parameter was waiting for
-  (hardcoded `false` before).
+  (hardcoded `false` before). The `spawn_sync`/`note_broadcast` flag3
+  reads now pass the table too.
 
 **The netglue wiring (this round):**
 
@@ -39338,7 +39339,7 @@ kept; the missing arms landed on top.
 (`NetMessage.cs:1692-1826`, `RemoteClient.cs:126-224`,
 `ActiveSections.cs:15-66`, `MessageBuffer.cs:915-934`/`:1766-1850`,
 `Main.cs:64606-64624`/`:8728-8852`); the `projPet` census grep-diffed
-(126 rows). 13 witness tests WRITTEN NOT RUN (6 `net.rs::w4_g52_*`
+(125 `= true` rows). 13 witness tests WRITTEN NOT RUN (6 `net.rs::w4_g52_*`
 relay-arm tests over raw sockets, 6 `netglue.rs::w4_g52_relay_tests`
 end-to-end, 1 `projectile/data.rs` census pin) — **no compiler
 invoked**.

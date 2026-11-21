@@ -5583,7 +5583,11 @@ mod w4_g52_relay_tests {
             "the far peer's live strike was section-culled (NetMessage.cs:1756)"
         );
         let _ = peer2;
-        // The killing strike: the death bypass relays it everywhere.
+        // The killing strike: the death bypass relays it everywhere. The
+        // first strike armed the 0.18 s hurt_cd immunity
+        // (`NPC.cs:81204-81210`); the witness clears it so the killing
+        // blow lands (the sim's own decay would do the same over 11 ticks).
+        host_app.npcs[0].hurt_cd = 0.0;
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::NpcStrike(net::NpcStrike {
                 npc: 0,
@@ -5720,6 +5724,7 @@ mod w4_g52_relay_tests {
             .get_mut(&1)
             .expect("the peer")
             .y = 100.0 * TILE_PX;
+        host_app.host_check_sections();
         // The recheck helper is event-site parity (its live caller is the
         // projectile update tail); drive it directly with the C# reads.
         let mut player_active = [false; 255];

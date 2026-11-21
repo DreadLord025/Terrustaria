@@ -4709,7 +4709,7 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
 
 /// `Main.projPet` (`Main.cs:8728-8852`) — the pet/light-pet projectile set.
 /// The `SendData(27)` relay's flag3 section-cull exemption reads it
-/// (`NetMessage.cs:1777`); the whole 126-row census lands verbatim (the
+/// (`NetMessage.cs:1777`); the whole 125-row census lands verbatim (the
 /// array is zero-initialised and only these writes set it true — the other
 /// `Main.projPet[` reads in Player/Projectile/MessageBuffer are consumers).
 pub const fn proj_pet(kind: u16) -> bool {
@@ -4846,10 +4846,10 @@ pub const fn proj_pet(kind: u16) -> bool {
 mod tests {
     use super::*;
 
-    /// W4-g52 — the `Main.projPet` census (`Main.cs:8728-8852`): all 126
-    /// write sites, and nothing else. The boundary kinds pin the gaps
-    /// (12 is flag3 by its own type test, NOT a pet; 72/18/500/650 are the
-    /// `Player.cs:48561` companion special-cases, not `projPet` rows).
+    /// W4-g52 — the `Main.projPet` census (`Main.cs:8728-8852`): all 125
+    /// `= true` write sites, and nothing else. The boundary kinds pin the
+    /// gaps (12 is flag3 by its own type test, NOT a pet; 72/18/500/650 are
+    /// the `Player.cs:48561` companion special-cases, not `projPet` rows).
     #[test]
     fn w4_g52_proj_pet_matches_the_main_census() {
         const ROWS: &[u16] = &[
@@ -4862,7 +4862,7 @@ mod tests {
             959, 960, 963, 970, 994, 998, 1003, 1004, 1018, 1022, 1027, 1046, 1050, 1056, 1090,
             1093, 1094, 1095, 1096, 1112, 1113, 1118, 1119,
         ];
-        assert_eq!(ROWS.len(), 126, "the census grep count (Main.cs)");
+        assert_eq!(ROWS.len(), 125, "the census grep count (Main.cs)");
         for k in 0..=1200u16 {
             assert_eq!(
                 proj_pet(k),
