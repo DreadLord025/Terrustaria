@@ -659,7 +659,9 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         34 => check_chandelier(world, x, y),
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
-        219 | 642 => check_3x3_bottom(world, x, y, kind),
+        // W4-g17 wiring: the larva 231 joins the same arm — its break fires
+        // the gore burst + the Queen Bee spawn claim (`:53230-53257`).
+        219 | 642 | 231 => check_3x3_bottom(world, x, y, kind),
         42 => check_lantern(world, x, y),
         79 | 90 => check_bed_bathtub(world, x, y),
         82 | 83 | 84 => check_alch(world, x, y),
@@ -1639,8 +1641,15 @@ fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Chec
             tile_kind: kind,
             x,
             y,
-            // `:53170-53175` — the item per tile kind (219 → 997, 642 → 5296).
-            item: Some(if kind == 219 { 997 } else { 5296 }),
+            // `:53170-53175` — the item per tile kind (219 → 997, 642 →
+            // 5296). The larva 231 (`:53230-53257`) drops NO item — its
+            // tail is the gore burst + the Queen Bee spawn, which the
+            // app resolves from this record (W4-g17 wiring).
+            item: match kind {
+                219 => Some(997),
+                231 => None,
+                _ => Some(5296),
+            },
         }),
         cells: killable_cells(world, &region, kind),
         pot_event: None,

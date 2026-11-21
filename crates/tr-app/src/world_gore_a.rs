@@ -1,9 +1,13 @@
 //! World-side `Gore.NewGore*` sites, wave A: the tree-fall FX and the
-//! larva burst (`WorldGen.cs`). W4-g17 (code-only mode): the module +
-//! witnesses land first; the dispatch claims (`TreeGrowFXCheck`
-//! `:29345-29382`, the axe-hit `:63416` call, `MessageBuffer.cs:3828`,
-//! and `Check3x3`'s `case 231` arm) are the wiring wave — the
-//! `npc_hit_effect_a.rs` (W4-d55) precedent.
+//! larva burst (`WorldGen.cs`). W4-g17 wiring wave: the larva burst is
+//! LIVE — the edit lane's `check_3x3_bottom` covers kind 231, and
+//! `world_sim::editing::break_tile` drains the record through
+//! [`larva_gores`] + `spawn_queen_bee_on_player` (the `NPC.SpawnOnPlayer`
+//! claim). The tree-FX dispatch claims (`TreeGrowFXCheck`
+//! `:29345-29382`, the axe-hit `:63416` call, `MessageBuffer.cs:3828`)
+//! stay unwired — the growth pass has no FX channel yet and the
+//! single-player port drops the net arm — the `npc_hit_effect_a.rs`
+//! (W4-d55) precedent.
 //!
 //! ## Scope — this module's sites (source order)
 //!
@@ -68,7 +72,7 @@
 //!   returns `paint`); the port reads `Tile::paint()`.
 //!
 //! See docs/ANALYSIS.md "The world gore sites (W4-g17, wave A)".
-#![allow(dead_code)] // wiring deferred (code-only mode) — the TreeGrowFXCheck/Check3x3 claims are the follow-up round
+#![allow(dead_code)] // the tree-FX arms wait for the growth/axe dispatch; the larva burst is live
 
 use glam::Vec2;
 use tr_core::gore::GorePool;

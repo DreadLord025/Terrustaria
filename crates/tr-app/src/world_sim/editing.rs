@@ -5652,6 +5652,37 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // `world_gore_b::pot_break_gores`): AFTER the kill loop + break sound,
     // BEFORE `SpawnThingsFromPot` (the loot below).
     pot_gore_drain(app, &kill);
+    // W4-g17 wiring — `Check3x3` case 231's larva burst (`WorldGen.cs:
+    // 53230-53257`, `world_gore_a::larva_gores`): the 3x3 cascade killed
+    // the larva; the three body gores (300/301/302, NO arm-level draws —
+    // the kicks ride the pool) spawn at the trigger cell, then the
+    // nearest-live-player probe decides the Queen Bee claim. The C#
+    // runs this INSIDE the Check3x3 tail, after the kill loop — the
+    // break's `UpdatePlayers` stream (the `Main.cs:17754` swap).
+    for drop in &kill.object_drops {
+        if drop.tile_kind == 231 {
+            let roster = app
+                .player
+                .as_ref()
+                .map(|p| vec![(true, p.dead, p.x, p.y)])
+                .unwrap_or_default();
+            let game_menu = app.spawn_ctx().game_menu;
+            let claim = crate::world_gore_a::larva_gores(
+                drop.x,
+                drop.y,
+                &mut app.gore,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+                &roster,
+                game_menu,
+            );
+            // `NPC.SpawnOnPlayer(plr, 222)` (`:53253-53256`) — the boss
+            // spawn claim. The port's single player is slot 0.
+            if claim.is_some() {
+                crate::world_sim::npcs::spawn_queen_bee_on_player(app);
+            }
+        }
+    }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
     // path sets for held 213/5295): the port reads the held slot at the
@@ -13028,6 +13059,55 @@ mod tests {
                 "event {i} (style {style}): the drain matches the C# draw ledger"
             );
         }
+    }
+
+    // W4-g17 wiring — `Check3x3` case 231 (`WorldGen.cs:53230-53257`):
+    // breaking the larva's support spawns the 300/301/302 body-gore trio
+    // through `world_gore_a::larva_gores` and the Queen Bee claim fires
+    // (`NPC.SpawnOnPlayer(plr, 222)`). The larva is a 3x3 kind-231 object
+    // on the stone floor; the break kills the floor cell under it.
+    #[test]
+    fn w4_g17_breaking_the_larva_spawns_the_gores_and_the_bee() {
+        let mut w = object_world();
+        // The 3x3 larva at (10..13, 17..20), sitting on the floor row 20.
+        for dx in 0..3i32 {
+            for dy in 0..3i32 {
+                let i = w.index(10 + dx, 17 + dy);
+                w.tiles[i] = Tile {
+                    kind: 231,
+                    frame_x: (dx * 18) as i16,
+                    frame_y: (dy * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        if w.frame_important.len() <= 231 {
+            w.frame_important.resize(td::TILE_COUNT, false);
+        }
+        w.frame_important[231] = true;
+        let mut app = break_app(w, 0xBEE);
+        // Break the middle floor cell — the larva loses its support.
+        break_tile(&mut app, 11, 20);
+        let live: Vec<i32> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active)
+            .map(|g| g.gore_type)
+            .collect();
+        assert_eq!(live, vec![300, 301, 302], "the larva trio (:53234-53236)");
+        let bees = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == crate::npc::NpcKind::QueenBee && n.hp > 0)
+            .count();
+        assert_eq!(bees, 1, "the Queen Bee claim (:53253-53256)");
+        // The larva drops NO item (the C# case 231 has no Item.NewItem).
+        assert!(
+            !app.items.iter().any(|it| it.kind == 997 || it.kind == 5296),
+            "no extractinator item leaked"
+        );
     }
 
     // DW-3.3 (merge fix): `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`)

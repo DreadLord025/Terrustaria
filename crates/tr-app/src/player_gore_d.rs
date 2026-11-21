@@ -1,8 +1,11 @@
 //! Player-side `Gore.NewGore*` sites, wave D: the death confetti + the
-//! item-use visuals (`Player.cs:38869-45027`). W4-g17 (code-only mode):
-//! the module + witnesses land first; the dispatch claims (the
-//! `death.rs` KillMe port / the `ItemCheck_EmitUseVisuals` lane) are
-//! the wiring wave — the `npc_hit_effect_a.rs` (W4-d55) precedent.
+//! item-use visuals (`Player.cs:38869-45027`). W4-g17 wiring wave: the
+//! KillMe confetti is LIVE — `world_sim::npcs`' death seam runs
+//! [`death_confetti_gores`] after `on_player_death` (the PlayDeathSound
+//! half) and before `start_death`, gated on the tenth-anniversary seed,
+//! on the `UpdatePlayers` stream. The `ItemCheck_EmitUseVisuals` arms
+//! stay unwired (the port's ItemCheck has no per-item visual dispatch
+//! yet — the item lane's claim), the `npc_hit_effect_a.rs` precedent.
 //!
 //! ## Scope — this commit's sites (source order)
 //!
@@ -56,7 +59,7 @@
 //!   convention). netMode: single-player port.
 //!
 //! See docs/ANALYSIS.md "The player gore sites (W4-g17, wave D)".
-#![allow(dead_code)] // wiring deferred (code-only mode) — the KillMe/ItemCheck claims are the follow-up round
+#![allow(dead_code)] // the ItemCheck arms wait for the item lane's dispatch; the confetti is live
 
 use glam::Vec2;
 use tr_core::gore::GorePool;
