@@ -39357,6 +39357,15 @@ The `UIReportsPage` port (`ui/reports.rs`, table row 10):
   ring (`WorkshopIssueReporter.cs:10/:18-26`) is pinned as
   `workshop_add_report` + `WORKSHOP_MAX_REPORTS` (Steam-only, never
   constructed — the port's `SocialAPI.Workshop == null` state).
+  **Doc-final 2026-11-21 (FINAL phase)**: the ring's ONLY construction
+  site is `Steam.WorkshopSocialModule`'s ctor (`WorkshopSocialModule.cs:
+  35-38`), and a live Steam module implies a running Steam client
+  (`CoreSocialModule.cs:34-38` hard-exits when `SteamAPI.Init()` fails) —
+  the port has no Steamworks runtime, so the ring never exists; the
+  pinned rule is the whole port scope. Its six `Report*Problem`
+  producers are all Steam-gated (the full call-site table:
+  docs/research/112 §3b); the non-Steam report surface (general
+  reporter + page + indicator) is fully ported.
 - **No report SUBMIT exists** (census, docs/research/112 §3):
   `UIReportsPage` is a read-only log viewer — the only "send" in the C#
   is the SteamUGC publish (`WorkshopHelper.cs:247-318`,

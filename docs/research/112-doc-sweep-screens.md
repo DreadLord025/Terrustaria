@@ -138,6 +138,48 @@ the report flow:
   Steam-API-only (module 38 out-of-scope), NOT multiplayer netcode —
   there is no MP packet for reports either.
 
+### 3b. The Workshop 1000-ring — Steam-only doc-final (FINAL phase)
+
+`WorkshopIssueReporter` (`Social/Base/WorkshopIssueReporter.cs:8-91`) is
+the capped reporter: `_maxReports = 1000` (`:10`), `AddReport` appends
+then `RemoveAt(0)` while over the cap (`:18-26`). **It is constructed in
+exactly ONE place**: `Steam.WorkshopSocialModule`'s ctor
+(`WorkshopSocialModule.cs:35-38`), which also wires its two events —
+`OnNeedToOpenUI` → `Main.OpenReportsMenu` (`:48-51`) and
+`OnNeedToNotifyUI` → `IssueReporterIndicator.AttemptLettingPlayerKnow` +
+`WorkshopPublishingIndicator.Hide` (`:42-46`). The module itself loads
+only under `SocialMode.Steam` (`SocialAPI.cs:59-61/:109`), and the
+client's Steam mode is unconditional (`SocialAPI.cs:48-51`) with
+`CoreSocialModule.Initialize` hard-exiting when `SteamAPI.Init()` fails
+(`CoreSocialModule.cs:34-38`) — **a live Workshop reporter implies a
+running Steam client**. The port has no Steamworks runtime, so
+`SocialAPI.Workshop == null` is the port's permanent state: the merge's
+second slot (`Main.cs:52356-52359`) never fills and the ring never
+exists. The port pins the ring RULE only (`workshop_add_report` +
+`WORKSHOP_MAX_REPORTS`, `ui/reports.rs`) so a future social seam plugs
+in without re-deriving the cap; no Steam I/O is ported.
+
+The ring's six producer methods (`WorkshopIssueReporter.cs:49-90`) and
+their call sites — ALL Steam-gated, none reachable in the port:
+
+| Method | Call site | Trigger |
+| --- | --- | --- |
+| `ReportInstantUploadProblem(key)` | `WorkshopSocialModule.cs:142` | publishing a compressed (zip) pack |
+| `ReportInstantUploadProblem(key, subs)` | `AWorkshopPublishInfoState.cs:736` | preview image >512 px (the `SocialAPI.Workshop != null` guard at `:734`) |
+| `ReportDelayedUploadProblem(key)` | `WorkshopSocialModule.cs:169`; `WorkshopHelper.cs:275/:331/:342/:345/:348/:351/:354` | temp-folder failure; the publish-result arms (ToS not accepted ×2, no license, invalid params, folder missing, file lock, limit exceeded) |
+| `ReportDelayedUploadProblem(key, subs)` | `WorkshopHelper.cs:261/:336` | `CreateItem`/`SubmitItemUpdate` IO failure / unknown `EResult` |
+| `ReportDownloadProblem` | `WorkshopHelper.cs:103` | a subscribed item's header read throws |
+| `ReportManifestCreationProblem` | `WorkshopHelper.cs:370` | `workshop.json` write throws |
+
+**Port-scope note (no-Steam-runtime)**: the general reporter
+(`Main.IssueReporter`) + the reports page + the indicator are the WHOLE
+non-Steam report surface, and all three are ported (the indicator in
+this FINAL phase). The Workshop ring, its six producers, the SteamUGC
+publish chain and the `WorkshopPublishingIndicator` stay excluded with
+`Social/**` (research/38:106/:111) — the port's behaviour on a
+Steam-less machine is byte-identical to vanilla's `SocialAPI.Workshop ==
+null` branch, which is every non-Steam install.
+
 **Ported this sweep** (`ecbde4c4`): the `GeneralIssueReporter` data layer
 on the App (`App.issue_reporter`), `open_reports` running the merge +
 `GoToBottom` over the merged rows, and the Workshop ring rule pinned
