@@ -6056,6 +6056,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut shots = Vec::new();
     let mut ai_shots = Vec::new();
     let mut gallop_dust = Vec::new();
+    // W4-f47 keep-one 144 — the ShimmerSlime 676's dust requests carry the
+    // requester's netOffset (`NPC.cs:61148` adds it to the rolled position
+    // at the spawn).
+    let mut shimmer_slime_dust = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
         for shot in n.wants_hostile_shot.drain(..) {
             shots.push((i, shot));
@@ -6065,6 +6069,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         for d in n.wants_gallop_dust.drain(..) {
             gallop_dust.push(d);
+        }
+        for d in n.wants_shimmer_slime_dust.drain(..) {
+            shimmer_slime_dust.push((d, n.net_offset));
         }
     }
     for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
@@ -6179,6 +6186,48 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             slot.fade_in = 1.1;
             slot.no_gravity = true;
             slot.no_light = true;
+        }
+    }
+    // W4-f47 keep-one 144 — the ShimmerSlime 676's shimmer dust
+    // (`NPC.cs:61133-61148`): the arm-level gate + the 4 NextFloat rolls
+    // already rode the UpdateNPCs stream in-step (`ai_001_slimes`);
+    // `Dust.NewDustPerfect(pos, 306)` and its post-spawn writes run here
+    // on the SAME stream (the gallop-dust seam — the pool-internal draw
+    // placement after the tick's AI is the recorded deviation).
+    if !shimmer_slime_dust.is_empty() {
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        // `Main.timeForVisualEffects` (`Main.cs:17162-17164`): anim_time
+        // is seconds — ×60 recovers the tick count, mod 216000 (the
+        // town state-25 seam's convention).
+        let tve = ((app.anim_time as f64 * 60.0) % 216000.0) as f32;
+        for (d, net_offset) in shimmer_slime_dust {
+            let idx = app.dust.new_dust_perfect(
+                rng,
+                &ctx,
+                &app.world,
+                Vec2::new(d.x, d.y),
+                306,
+                Some(Vec2::new(d.vx, d.vy)),
+                0,
+                tr_core::particles::Color::default(),
+                1.0,
+            );
+            // `:61134-61148` — the post-spawn writes, sentinel included.
+            let slot = app.dust.slot_mut(idx);
+            slot.no_gravity = true;
+            slot.no_light_emittance = true;
+            slot.alpha = 127;
+            // `:61137-61138` — the hue: (tve/300 + jitter*0.1) mod 1,
+            // saturation 1, luminosity 0.65, then A = 0 (all f32 in C#).
+            let hue = ((tve / 300.0 + d.hue_jitter * 0.1) % 1.0) as f64;
+            let rgb = crate::ui::color::hsl_to_rgb(hue, 1.0, 0.65, 255);
+            slot.color = tr_core::particles::Color { r: rgb[0], g: rgb[1], b: rgb[2], a: 0 };
+            slot.scale = d.scale;
+            slot.fade_in = 0.9;
+            // `:61148` — the netOffset applies to the POSITION only (the
+            // velocity was derived pre-offset in-arm).
+            slot.position += net_offset;
         }
     }
     // S1-D-3 W-1 — the WoF's `NPC.NewNPC` drain (`NPC.cs:25712`,
@@ -18644,5 +18693,90 @@ mod shimmer_transform_tests {
         assert_eq!(app.npcs[0].ai[0], 0.0, "no emergence state");
         // The old walk moved it (the 0.5 px/tick stand-in until b3 lands).
         assert_ne!(app.npcs[0].x, 30.0 * TILE_PX, "the dry walk ran");
+    }
+
+    /// W4-f47 keep-one 144 — the 676 dust drain end-to-end
+    /// (`NPC.cs:61133-61148`): a queued `ShimmerSlimeDust` request spawns
+    /// ONE dust 306 through the shared pool on the UpdateNPCs stream, with
+    /// the C# post-writes verbatim — noGravity, noLightEmittance, alpha
+    /// 127, the hue colour with A=0, the rolled scale, fadeIn 0.9 — and
+    /// the netOffset lands on the POSITION only. The allocator's own 6
+    /// draws (pos pair, vel pair, frame, scale) ride the stream after the
+    /// in-arm rolls (the gallop-dust placement convention).
+    #[test]
+    fn w4_f47_the_shimmer_slime_dust_drain_spawns_306_with_the_post_writes() {
+        use crate::app::RngKey;
+        use crate::npc::ShimmerSlimeDust;
+        let mut app = app();
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let mut n = Npc::new(NpcKind::ShimmerSlime, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.net_offset = Vec2::new(2.0, -3.0);
+        n.wants_shimmer_slime_dust.push(ShimmerSlimeDust {
+            x: 484.0,
+            y: 1602.0,
+            vx: 0.3,
+            vy: -0.7,
+            hue_jitter: 0.5,
+            scale: 0.65,
+        });
+        app.npcs.push(n);
+        *app.rngs.stream(RngKey::UpdateNpcs) = UnifiedRandom::new(4242);
+        app.anim_time = 1.0; // tve = 60 → hue base 60/300 = 0.2
+        // Park the camera on the dust so the NewDust cull passes (the
+        // flow_app default camera sits at the origin).
+        app.camera = Vec2::new(484.0, 1602.0);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].wants_shimmer_slime_dust.is_empty(), "the queue drained");
+        let hits: Vec<_> = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 306)
+            .collect();
+        assert_eq!(hits.len(), 1, "one 306 spawned");
+        let d = hits[0];
+        assert!(d.no_gravity);
+        assert!(d.no_light_emittance);
+        assert_eq!(d.alpha, 127);
+        assert_eq!(d.scale, 0.65);
+        assert_eq!(d.fade_in, 0.9);
+        assert_eq!(d.velocity, Vec2::new(0.3, -0.7));
+        // The position: the rolled point + the netOffset (`:61148`).
+        assert_eq!(d.position, Vec2::new(486.0, 1599.0));
+        // The hue: (60/300 + 0.5*0.1) mod 1, sat 1, lum 0.65, A 0 — the
+        // same f32 arithmetic the drain runs (the f64 widening is inside
+        // hsl_to_rgb).
+        let hue = ((60.0f32 / 300.0 + 0.5f32 * 0.1) % 1.0) as f64;
+        let rgb = crate::ui::color::hsl_to_rgb(hue, 1.0, 0.65, 255);
+        assert_eq!((d.color.r, d.color.g, d.color.b, d.color.a), (rgb[0], rgb[1], rgb[2], 0));
+        // The allocator contract: a perfect spawn of the same inputs
+        // draws exactly 6 (the 0x0 box clamps to 5x5 → Next(1) twice, the
+        // velocity pair, the frame Next(3), the scale roll) — the in-arm
+        // gate draws are pinned by the npc_ai_slime witnesses; the drain
+        // adds only this shape on top of the tick's AI draws.
+        let mut probe_pool = tr_core::particles::DustPool::new();
+        let ctx = app.spawn_ctx();
+        let mut probe_rng = UnifiedRandom::new(7);
+        let mut probe_twin = UnifiedRandom::new(7);
+        probe_pool.new_dust_perfect(
+            &mut probe_rng,
+            &ctx,
+            &app.world,
+            Vec2::new(484.0, 1602.0),
+            306,
+            Some(Vec2::new(0.3, -0.7)),
+            0,
+            tr_core::particles::Color::default(),
+            1.0,
+        );
+        for _ in 0..2 {
+            let _ = probe_twin.next_max(1); // the 5x5 clamp: Next(5-4)
+        }
+        let _ = probe_twin.next_range(-20, 21);
+        let _ = probe_twin.next_range(-20, 21);
+        let _ = probe_twin.next_max(3);
+        let _ = probe_twin.next_range(-20, 21);
+        assert_eq!(probe_rng, probe_twin, "the perfect spawn draws exactly 6");
     }
 }

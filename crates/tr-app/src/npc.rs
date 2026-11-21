@@ -1147,6 +1147,28 @@ pub struct GallopDustAi {
     pub vy: f32,
 }
 
+/// The ShimmerSlime's per-tick shimmer dust (`NPC.cs:61128-61150`, W4-f47
+/// keep-one 144). The arm-level draws (the `Next(3)`/`Next(5)` gate + the
+/// 4 `NextFloat` rolls) are consumed IN-STEP by `ai_001_slimes`; this
+/// carries the fully-rolled `NewDustPerfect(pos, 306)` request to the sim
+/// drain, which feeds `DustPool` on the same UpdateNPCs stream at the
+/// NPC's slot turn (the gallop-dust seam). The hue colour needs
+/// `Main.timeForVisualEffects` (the drain computes it); the position
+/// carries the PRE-netOffset roll (`:61148` adds the offset at the
+/// drain). Velocity is the pre-offset `(pos - Center) * 0.1`, X ×0.25,
+/// positive Y flipped (`:61139-61145`).
+#[derive(Clone, Copy, Debug)]
+pub struct ShimmerSlimeDust {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    /// The `NextFloat() * 0.1` hue jitter (`:61137`).
+    pub hue_jitter: f32,
+    /// The `NextFloat() * 0.3 + 0.5` scale (`:61146`).
+    pub scale: f32,
+}
+
 /// S1-E-21g — one queued NPC-side sound play (the `wants_hostile_shot`
 /// shape): the AI machines run without the `Audio` borrow, so the
 /// `SoundEngine.PlaySound` sites queue their (case, style, position)
@@ -1690,6 +1712,10 @@ pub struct Npc {
     /// 62437`): fully-rolled at the AI site, drained into the DustPool
     /// post-tick (`world_sim/npcs.rs`).
     pub wants_gallop_dust: Vec<GallopDustAi>,
+    /// The ShimmerSlime 676's shimmer-dust spawns (`NPC.cs:61133-61148`,
+    /// W4-f47 keep-one 144): fully-rolled at the AI site, drained into the
+    /// DustPool at the NPC's slot turn (`world_sim/npcs.rs`).
+    pub wants_shimmer_slime_dust: Vec<ShimmerSlimeDust>,
     /// S1-E-21g — the NPC-side sound requests (`SoundEngine.PlaySound`
     /// sites inside the AI machines): the sim drains them after the
     /// machine's draws on the `UpdateNPCs` stream (the
@@ -3112,6 +3138,7 @@ impl Npc {
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
             wants_gallop_dust: Vec::new(),
+            wants_shimmer_slime_dust: Vec::new(),
             wants_sound: Vec::new(),
             wants_plantera_hooks: 0,
             wants_plantera_tentacles: 0,
@@ -5763,7 +5790,9 @@ impl Npc {
             | NpcKind::UmbrellaSlime
             // Doc-sweep lane 36 — the ShimmerSlime 676 rides the shared
             // aiStyle-1 stand-in (the b1 wiring's family arm claims it
-            // at merge; the 676 light/dust arm stays the censused skip).
+            // at merge; keep-one 144 wired the 676 light/dust arm on the
+            // faithful `npc_ai_slime` core — the stand-in route draws
+            // nothing until b1 lands, the documented merge seam).
             | NpcKind::ShimmerSlime => self.update_slime(world, player, dt),
             NpcKind::DemonEye
             | NpcKind::WanderingEye

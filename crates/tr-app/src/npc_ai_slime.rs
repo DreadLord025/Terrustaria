@@ -69,10 +69,13 @@
 //! * The 244 rainbow colour (`:61053-61059`, `AI_001_SetRainbowSlimeColor`
 //!   `:61725-61732`), the 535/658/659/204 shooter blocks
 //!   (`:61212-61439`), the 377/446 friendly latch (`:61440-61450`), the
-//!   59/667/676 lights (`:61451-61458`, `:61109-61150` — the
+//!   59/667 lights (`:61451-61458`, `:61109-61127` — the
 //!   `npc_lights.rs` seam) and every `Dust.NewDust` INTERNAL draw (the
-//!   `DustRng` seam). The 676 shimmer-dust arm's gate draws are censused
-//!   below for its future port.
+//!   `DustRng` seam). The 676 light/dust arm (`:61128-61150`) is PORTED
+//!   (W4-f47 keep-one 144): the gate + the 4-NextFloat body roll in-arm,
+//!   the `NewDustPerfect(306)` spawn rides `wants_shimmer_slime_dust` to
+//!   the sim drain; the torch-23 light is the draw-side
+//!   `npc_lights::shimmer_slime_light` feed.
 //! * The generic `UpdateNPC` tail stays the caller's: gravity application
 //!   `vy += NPC.gravity` + cap (`:90465-90472`), the ±0.005 vx snap
 //!   (`:90473-90476`), `UpdateCollision`/integration (`:90490-90503`).
@@ -147,12 +150,17 @@
 //!    `Next(-50,51)` Y-jitter, `Next(-50,51)` speed) = **15 draws**;
 //!    classic lob = **1 draw** (`Next(0, 200)` Y-jitter, `:61202`).
 //! 5. **685** hop (`:61674`): `Next(2)` per hop (direction flip).
+//! 6. **676** (`:61131-61146`, W4-f47 keep-one 144 — PORTED):
+//!    `(speed > 1 && Next(3) == 0) || Next(5) == 0` — speed <= 1 draws
+//!    ONLY the `Next(5)`; speed > 1 draws `Next(3)` first and the `||`
+//!    short-circuits on its hit. On a gate hit:
+//!    `NextVector2FromRectangle` (2 NextFloat over the integer-truncated
+//!    Hitbox) + `NextFloat` hue jitter + `NextFloat` scale = 4 draws; the
+//!    allocator's own 6 ride the sim drain (the gallop-dust seam).
 //! Everything else — the cadence, tiers, wet tail, gravity, stuck-flips,
 //! air steer, `TargetClosest` (`NPC.cs:77652-77781`) — draws NOTHING.
-//! Unported-kind gates censused for their waves: 676 (`:61131-61146`):
-//! `(speed > 1 && Next(3) == 0) || Next(5) == 0`, on a hit
-//! `NextVector2FromRectangle` (2 NextFloat) + `NextFloat` hue +
-//! `NextFloat` scale; 535/658/659/204 shooters mirror the 184 shape with
+//! Unported-kind gates censused for their waves:
+//! 535/658/659/204 shooters mirror the 184 shape with
 //! their own jitter ranges (`:61232-61435`); the 75-lantern
 //! (`:60347-60349`): `Next(12)` gate, on a hit `NextVector2CircularEdge`
 //! (1 NextFloat via `NextVector2Unit`, `Utils.cs:1261-1274`) + `NextFloat`
@@ -163,7 +171,7 @@
 
 #![allow(dead_code)] // the update_slime wiring swap is the merge step (S1-D-3)
 
-use crate::npc::{Npc, NpcKind};
+use crate::npc::{Npc, NpcKind, ShimmerSlimeDust};
 use crate::npc_target::{target_closest, TargetCandidate};
 use tr_core::tile::LiquidKind;
 use tr_core::{UnifiedRandom, World};
@@ -527,8 +535,47 @@ pub fn ai_001_slimes(
     if t == 667 && (sqrt_f32(npc.vx, npc.vy) > 1.0 || rng.next_max(4) != 0) {
         // dust body — the DustRng skip.
     }
-    // :61128-61150 — the 676 ShimmerSlime light/dust: unported kind
-    // (census in the module header).
+    // :61128-61150 — the 676 ShimmerSlime light/dust (W4-f47 keep-one 144:
+    // the kind landed, the censused skip retired). The LIGHT half is the
+    // RNG-free draw-side feed (`npc_lights.rs`, torch 23 = the shimmer
+    // torch's mouseTextColor pulse). The dust gate keeps the EXACT C#
+    // short-circuit: `(speed > 1 && Next(3) == 0) || Next(5) == 0` —
+    // speed > 1 draws Next(3) first; only on its failure (or speed <= 1,
+    // which draws NOTHING for the first term) does Next(5) run.
+    if t == 676 {
+        let gate = (sqrt_f32(npc.vx, npc.vy) > 1.0 && rng.next_max(3) == 0)
+            || rng.next_max(5) == 0;
+        if gate {
+            // :61133-61148 — the roll census (4 NextFloat + the allocator's
+            // own 6): NextVector2FromRectangle(Hitbox) = 2 NextFloat
+            // (Utils.cs:1256-1258, the INTEGER-truncated top-left), the
+            // hue NextFloat, the scale NextFloat. The velocity derives
+            // from the PRE-netOffset position vs base.Center (`:61139-
+            // 61145`); the colour needs `Main.timeForVisualEffects` and
+            // the pool — the request rides `wants_shimmer_slime_dust` to
+            // the sim drain (the gallop-dust seam; the allocator draws
+            // land post-tick, the recorded pool-pass deviation).
+            let px = npc.x as i32 as f32 + rng.next_float() * wi as f32;
+            let py = npc.y as i32 as f32 + rng.next_float() * hi as f32;
+            let hue_jitter = rng.next_float();
+            let scale = rng.next_float() * 0.3 + 0.5;
+            let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
+            let mut vx = (px - cx) * 0.1;
+            let mut vy = (py - cy) * 0.1;
+            vx *= 0.25;
+            if vy > 0.0 {
+                vy *= -1.0;
+            }
+            npc.wants_shimmer_slime_dust.push(ShimmerSlimeDust {
+                x: px,
+                y: py,
+                vx,
+                vy,
+                hue_jitter,
+                scale,
+            });
+        }
+    }
 
     // :61151-61211 — the WHOLE SpikedIceSlime block.
     if t == 184 {
@@ -1163,6 +1210,115 @@ mod tests {
         ai_001_slimes(&mut n, &w, &ctx, &mut rng);
         let _ = mirror.next_max(10); // the ONE cited draw (:61101)
         assert_eq!(rng, mirror, "exactly one Next(10)");
+    }
+
+    /// W4-f47 keep-one 144 — `NPC.cs:61131`: the 676 gate is
+    /// `(speed > 1 && Next(3) == 0) || Next(5) == 0`. A SLOW slime
+    /// (speed <= 1) draws NOTHING for the first term — exactly ONE
+    /// Next(5); on a hit the body rolls 4 NextFloat (the hitbox pair, the
+    /// hue jitter, the scale) and queues the request. The mirror replays
+    /// the cited draws in order and compares the full stream state.
+    #[test]
+    fn w4_f47_the_shimmer_slime_slow_gate_draws_one_next5_then_the_quad() {
+        let w = day_world();
+        let players = [cand(10000.0, 16.0)];
+        let ctx = ctx_classic(&players);
+        // Find a seed whose Next(5) hits 0 (a 1-in-5 gate) with the slime
+        // at rest (speed 0 — the first term draws nothing).
+        let mut seed = 0u64;
+        loop {
+            let mut probe = UnifiedRandom::new(seed);
+            if probe.next_max(5) == 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut n = slime(NpcKind::ShimmerSlime);
+        n.ai[0] = -50.0; // mid-cadence: no hop this tick
+        let mut rng = UnifiedRandom::new(seed);
+        let mut mirror = rng.clone();
+        ai_001_slimes(&mut n, &w, &ctx, &mut rng);
+        assert_eq!(mirror.next_max(5), 0, "the gate hit");
+        // The body: NextVector2FromRectangle(Hitbox) = 2 NextFloat over
+        // the INTEGER-truncated top-left (160, 16) 24x18 (`Utils.cs:1258`),
+        // then the hue jitter + the scale NextFloat.
+        let fx = mirror.next_float();
+        let fy = mirror.next_float();
+        let hue = mirror.next_float();
+        let sc = mirror.next_float();
+        assert_eq!(rng, mirror, "Next(5) + 4 NextFloat, nothing else");
+        assert_eq!(n.wants_shimmer_slime_dust.len(), 1);
+        let d = n.wants_shimmer_slime_dust[0];
+        assert_eq!(d.x, 160.0 + fx * 24.0);
+        assert_eq!(d.y, 16.0 + fy * 18.0);
+        assert_eq!(d.hue_jitter, hue);
+        assert_eq!(d.scale, sc * 0.3 + 0.5);
+        // The velocity: (pos - Center) * 0.1, X ×0.25, positive Y flipped
+        // (`:61139-61145`); Center = (172, 25) for the 24x18 box at (160,16).
+        let vx = (d.x - 172.0) * 0.1 * 0.25;
+        let mut vy = (d.y - 25.0) * 0.1;
+        if vy > 0.0 {
+            vy *= -1.0;
+        }
+        assert_eq!(d.vx, vx);
+        assert_eq!(d.vy, vy);
+    }
+
+    /// `NPC.cs:61131` — a FAST slime (speed > 1) draws Next(3) FIRST; when
+    /// it hits 0 the `||` short-circuits — NO Next(5). The stream twin
+    /// pins the order: Next(3) then the 4-NextFloat body.
+    #[test]
+    fn w4_f47_the_shimmer_slime_fast_gate_short_circuits_the_next5() {
+        let w = day_world();
+        let players = [cand(10000.0, 16.0)];
+        let ctx = ctx_classic(&players);
+        let mut seed = 0u64;
+        loop {
+            let mut probe = UnifiedRandom::new(seed);
+            if probe.next_max(3) == 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut n = slime(NpcKind::ShimmerSlime);
+        n.ai[0] = -50.0;
+        n.vx = 2.0; // speed 2 > 1 — the first term draws
+        let mut rng = UnifiedRandom::new(seed);
+        let mut mirror = rng.clone();
+        ai_001_slimes(&mut n, &w, &ctx, &mut rng);
+        assert_eq!(mirror.next_max(3), 0, "the speed gate hit");
+        for _ in 0..4 {
+            let _ = mirror.next_float();
+        }
+        assert_eq!(rng, mirror, "Next(3) + 4 NextFloat — the Next(5) never ran");
+        assert_eq!(n.wants_shimmer_slime_dust.len(), 1);
+    }
+
+    /// `NPC.cs:61131` — both gates failing: the fast slime draws Next(3)
+    /// (non-zero) THEN Next(5) (non-zero) — two draws, no body, no request.
+    #[test]
+    fn w4_f47_the_shimmer_slime_double_miss_draws_both_gates_only() {
+        let w = day_world();
+        let players = [cand(10000.0, 16.0)];
+        let ctx = ctx_classic(&players);
+        let mut seed = 0u64;
+        loop {
+            let mut probe = UnifiedRandom::new(seed);
+            if probe.next_max(3) != 0 && probe.next_max(5) != 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut n = slime(NpcKind::ShimmerSlime);
+        n.ai[0] = -50.0;
+        n.vx = 2.0;
+        let mut rng = UnifiedRandom::new(seed);
+        let mut mirror = rng.clone();
+        ai_001_slimes(&mut n, &w, &ctx, &mut rng);
+        assert_ne!(mirror.next_max(3), 0);
+        assert_ne!(mirror.next_max(5), 0);
+        assert_eq!(rng, mirror, "exactly the two gate draws");
+        assert!(n.wants_shimmer_slime_dust.is_empty());
     }
 
     /// `NPC.cs:61193-61208` — the classic 184 lob: ai[0] = -40, vx ×0.9,
