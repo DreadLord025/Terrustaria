@@ -61,6 +61,23 @@
 //!   (`buff_effects.rs:46`) but has no live wiring; the slot scan is the
 //!   canonical `Player.chaosState` equivalent (`Player.cs:10090-10093`
 //!   sets it from the buff every tick).
+//! * W4-g89g chaos-state CONSUMER census (C# `chaosState` has exactly four
+//!   sites: the field `Player.cs:1986`, the buff-88 latch `:10090-10093`,
+//!   the `ResetEffects` clear `:18442`, and this rod block `:45518` — no
+//!   other reader). There is NO chaos-specific UI/draw: buff 88 rides the
+//!   generic buff-icon loop (`Main.cs:43215+`; the port's
+//!   `ui/resources.rs::draw_buffs` + `Buff_88.xnb` + the
+//!   `(88, "ChaosState")` lang row), `Main.debuff[88] = true`
+//!   (`Main.cs:8895`) makes the right-click cancel a no-op
+//!   (`TryRemovingBuff`'s `!Main.debuff[b]` gate — the port's
+//!   `Player::try_removing_buff` + `buffs::DEBUFF_IDS`), and 88 is NOT in
+//!   `BuffID.Sets.NurseCannotRemoveDebuff` (`BuffID.cs` CreateBoolSet —
+//!   the port's `buffs::NURSE_CANNOT_REMOVE_DEBUFF`), so the Nurse heals
+//!   it away and it counts in `GetNurseHealCost` (the port's
+//!   `remountable_debuff_count` / `clear_nurse_removable_debuffs`).
+//!   The `ResetEffects` clear is observation-free in the port: the latch
+//!   re-derives from the buff slots every tick, so a per-tick bool would
+//!   read the same value the slot scan reads here.
 //! * RNG: the ONE `Main.rand.Next(2)` draw (`:45522`) rides the
 //!   `UpdatePlayers` stream (ItemCheck runs under the `Main.cs:17754`
 //!   swap) and fires ONLY when the chaos damage lands (buff 88 up).
@@ -480,5 +497,49 @@ mod tests {
         assert!(rod_item_check(&mut app, true));
         let p = app.player.as_ref().unwrap();
         assert_ne!((p.x, p.y), (old_x, old_y), "the downed boss opens the temple");
+    }
+
+    /// W4-g89g — the chaos-state CONSUMER census, pinned: buff 88 is a
+    /// debuff (`Main.debuff[88] = true`, `Main.cs:8895`), so the buff-icon
+    /// right-click cancel is a NO-OP (`TryRemovingBuff`'s `!Main.debuff[b]`
+    /// gate, `Main.cs:43371` — the port's `Player::try_removing_buff`), and
+    /// 88 is NOT in `NurseCannotRemoveDebuff` (`BuffID.cs`'s CreateBoolSet),
+    /// so it counts in `GetNurseHealCost` (`Main.cs:40059`) and clears at
+    /// the Nurse heal (`:40133`). The C# `chaosState` bool has no other
+    /// consumer (`Player.cs:1986`/`:10092`/`:18442`/`:45518` — the rod
+    /// block is the ONLY reader); there is no chaos-specific draw.
+    #[test]
+    fn w4_g89g_the_chaos_state_buff_is_nurse_removable_but_not_cancel_clickable() {
+        let mut app = rig(ROD_OF_DISCORD);
+        press(&mut app);
+        assert!(rod_item_check(&mut app, true));
+        let p = app.player.as_mut().unwrap();
+        let slot = p.buffs.find_buff_index(88).expect("the rod armed 88");
+        // The debuff table refuses the right-click cancel (`Main.cs:8895`
+        // + `:43371` — the port's `try_removing_buff` returns false and
+        // leaves the slot alone).
+        assert!(crate::buffs::is_debuff(88), "`Main.debuff[88] = true`");
+        let world = app.world.clone();
+        let cancelled = app.player.as_mut().unwrap().try_removing_buff(&world, slot, 88, [0, 0]);
+        assert!(!cancelled, "the cancel click is a no-op on a debuff");
+        let p = app.player.as_mut().unwrap();
+        assert!(p.buffs.find_buff_index(88).is_some(), "the buff stayed");
+        // The Nurse CAN remove it (88 is absent from the protected set) —
+        // it counts while buffTime > 60 and clears at the heal.
+        assert!(!crate::buffs::nurse_cannot_remove(88), "88 is nurse-removable");
+        assert_eq!(p.remountable_debuff_count(), 1, "the 360-tick window counts");
+        p.clear_nurse_removable_debuffs();
+        assert!(p.buffs.find_buff_index(88).is_none(), "the heal cleared it");
+        // With the window gone the next discord teleport pays NO tax
+        // (the slot scan reads the same state the C# chaosState latch
+        // would — `Player.cs:10090-10093`).
+        let max_hp = p.max_hp;
+        app.swing = 0.0;
+        app.item_time = 0.0;
+        press(&mut app);
+        assert!(rod_item_check(&mut app, true));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.hp, max_hp, "no window, no tax — the buff re-arms fresh");
+        assert!(p.buffs.find_buff_index(88).is_some());
     }
 }

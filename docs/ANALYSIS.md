@@ -39513,3 +39513,80 @@ Next(2) draw on a cloned stream; the wall-350 line refusal keeps the
 cadence; the solid + temple refusals + the downed-boss opening),
 `collision.rs` (the wall-line walk: on-line hit, parallel/diagonal miss,
 zero-length never, the y-clamp endpoint).
+
+## W4-g89g — the RoD chaos-state consumer census + the 1326/5335 row/shimmer cross-checks (2026-11-21, code-only)
+
+Continuation of W4-g89f on the same branch (59864256). Three census items,
+one witness each; no behaviour change to the landed use path.
+
+**(1) The chaos-state consumer census.** The C# `Player.chaosState` bool
+has exactly FOUR sites: the field (`Player.cs:1986`), the buff-88 latch
+(`:10090-10093`, set from `buffType[j] == 88` every `UpdateBuffs` tick),
+the `ResetEffects` clear (`:18442`), and the rod block (`:45518`, the ONLY
+reader). The tax-arm re-verified 1:1 against `:45518-45533`: the buff-up
+gate, `statLife -= statLifeMax2 / 7` INTEGER, the `ByOther(13)` reason with
+the `Main.rand.Next(2) == 0` → `ByOther(Male ? 14 : 15)` roll BEFORE the
+death test, `KillMe(reason, 1.0, 0)` at `statLife <= 0`, the unconditional
+`lifeRegenCount = 0; lifeRegenTime = 0f`, then `AddBuff(88, 360)` outside
+the gate. **There is NO chaos-specific UI/draw**: buff 88 rides the generic
+buff-icon loop (`Main.cs:43215+`; the port's `ui/resources.rs::draw_buffs`,
+the `Buff_88.xnb` icon exists in `assets/Content/Images`, and the
+`(88, "ChaosState")` lang row `lang_tables.rs:865` feeds
+`BuffName.ChaosState`/`BuffDescription.ChaosState`). The two debuff-table
+consumers: `Main.debuff[88] = true` (`Main.cs:8895`) → the buff-icon
+right-click cancel is a no-op (`TryRemovingBuff`'s `!Main.debuff[b]` gate;
+the port's `Player::try_removing_buff` + `buffs::DEBUFF_IDS` already carry
+88), and 88 is ABSENT from `BuffID.Sets.NurseCannotRemoveDebuff` (the
+20-id CreateBoolSet; the port's `buffs::NURSE_CANNOT_REMOVE_DEBUFF`) → it
+counts in `GetNurseHealCost` (`Main.cs:40059`, `buffTime > 60`) and clears
+at the Nurse heal (`:40133`) — the port's `remountable_debuff_count` /
+`clear_nurse_removable_debuffs` cover both. The `ResetEffects` clear is
+observation-free in the port: the slot scan re-derives the latch every
+read, so a per-tick bool would read the same value (the `DebuffEffects.
+chaos_state` table row `buff_effects.rs:46` stays unwired — no consumer
+needs the bool form). New witness
+`w4_g89g_the_chaos_state_buff_is_nurse_removable_but_not_cancel_clickable`
+pins all three consumers + the no-window-no-tax re-arm.
+
+**(3) The 1326/5335 item-row census.** Both generated rows
+(`itemdata.rs:1492`/`:5501`) re-verified field-by-field against the C#
+cases (`Item.cs:16438-16447` / `:42316-42325`): `useStyle 1`,
+`useAnimation 20`, `useTime 20`, `autoReuse false`, `width/height 20`,
+`UseSound Item8` (the SOUND_STYLES index 133 — re-derived through the
+generator's own `parse_soundid`, NOT the legacy (2,8) pair), 1326 `rare 7`
++ `value sellPrice(0,10) = 500000`, 5335 `SetShopValues(StrongRed10,
+sellPrice(0,10))` → `rare 10` + the same value. Neither case sets
+`maxStack`/`consumable`/`useTurn` — the `ResetStats` defaults stand
+(`CommonMaxStack = 9999`, `Item.cs:49017`/`:49966`; `consumable false`),
+so the rows' `max_stack: 9999` is the C# default, not a drift.
+`python tools/GenItemData/gen.py --check` → `check ok (6196 rows,
+5977098 bytes)` — the table is generator-faithful, no hand edit.
+
+**(4) The shimmer 1326→5335 transform.** The entry EXISTS on main AND on
+`origin/task/W4-e19-liquid-quicksell-shimmer` (tip 0570e713): the
+machine-extracted `SHIMMER_TRANSFORM_TO_ITEM` table
+(`tr-core/src/shimmer_tables.rs:14`, the `(1326, 5335)` pair from
+`ItemID.cs:353`'s `ShimmerTransformToItem` CreateIntSet) plus the
+post-Moonlord lock set (`:35`, `SHIMMER_POST_MOONLORD` from
+`ItemID.cs:356` — 1326 is in it, so the transform is LOCKED until
+`downedMoonlord`). The consumers are wired on main:
+`tr-core/src/shimmer.rs::transform_to_item` (the set-first resolution) +
+`is_transform_locked`, called from `tr-app/src/shimmer.rs:96/:104` (the
+`WorldItem.GetShimmered` chain). e19's diff touches only
+`tr-app/src/shimmer.rs` (the decraft half) — the tables are identical on
+both refs, nothing to add. This is a TRANSFORM, not a decraft: 1326 has no
+recipe, so `GetDecraftingRecipeIndex` never sees it; the rod shimmers to
+5335 whole (the `Item.GetShimmerEquivalentType` fallback reads its own
+type). New witness `w4_g89g_the_rod_shimmers_to_harmony_after_the_moon_lord`
+in `tr-core/src/shimmer.rs` pins the pair + the lock both ways.
+
+### Verification (W4-g89g)
+
+Code-only: re-read `Player.cs:45476-45534` / `:1986` / `:10090-10093` /
+`:18442` / `Main.cs:8895` / `:43371+` / `BuffID.cs` NurseCannotRemoveDebuff /
+`Item.cs:16438-16447` / `:42316-42325` / `:49017` / `:49966` /
+`ItemID.cs:353` / `:356`; **no cargo/rustc/rustfmt/tests/graphify invoked**
+(the `gen.py --check` above is the generator's own drift check, not a
+cargo run). Two witness tests WRITTEN, NOT RUN: `rod_teleport.rs` (the
+chaos-state consumer census) and `tr-core/src/shimmer.rs` (the rod
+transform + the Moon-Lord lock).
