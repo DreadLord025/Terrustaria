@@ -227,3 +227,17 @@ Visibility/borrow checks done by inspection (the `pub(crate)` seams, the
 `AppTownDoors` disjoint-field borrows, the `enter_front`/`FrontScreen`/`NetRole`
 paths). Anchors added: `stop_waterfall_ambience`, `just_quit`, `AppTownDoors`;
 the `check_cues` row updated for the order fix.
+
+---
+
+## Retire-phase addendum: the quit-stop DUP cross-receipt (2026-11-21)
+
+g73's closeout `4e7e3f58` wired the same `:6704` quit stop as this lane's
+`c3eccb77`. g73's OWN retire adjudication `bce01ece8`
+(`task/W4-g73-waterfall-draw` tip) rules THIS lane's shape the superset
+(the direct sink kill + the `liquid_ambience_stops` counter +
+`stop_tracked_sounds` + the full `JustQuit` + the F3 row) and folds it
+onto g73; the merger keeps ONE fn + ONE call site (g73's folded copies,
+identical semantics). The stale fifteen-rows witness g73 caught on this
+branch is fixed here (`s1_e_29_the_world_tab_keeps_its_sixteen_rows`,
+16/16 + the Quit tail row). Full verdict: ANALYSIS lane-26 §6.

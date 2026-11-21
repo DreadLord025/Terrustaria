@@ -39442,3 +39442,28 @@ DROP c14's `check_sounds` (functionally identical once the order matches; the bo
 arm is the only behavioural delta). Never keep both (a double play of every
 piggy/orb tail). 5 witnesses WRITTEN NOT RUN.
 
+**§6 the quit-stop DUP — cross-receipt with g73 (RETIRE phase, 2026-11-21)** —
+g73's closeout `4e7e3f58` wired the same `:6704` `save_and_quit` stop as g24's
+doc-sweep `c3eccb77` (+ the `7ca8b087` dead_code allows). **g73's own retire
+adjudication `bce01ece8` (`task/W4-g73-waterfall-draw` tip, read fresh) rules
+g24's shape the SUPERSET**: g24 carries the direct sink-kill body (g73's
+route-through-`set_liquid_loop(ch, 0.0)` no-ops headless — the cue/output-handle
+gates precede its stop arm), the `liquid_ambience_stops` counter seam,
+`stop_tracked_sounds` (`:6715`/:6646`), the full `JustQuit` port (`:6627-6662`)
+and the F3 World row 15. **Keep-one verdict (both sides now agree): ONE
+`stop_waterfall_ambience` fn + ONE `:6704` call site; at the family merge the
+g73 branch's folded copies are kept (g73 already absorbed g24's shape in
+`bce01ece8`), g24's identical hunks dedupe onto them; g24's
+`SecretSeed.Enable` → `menu_accept_style` production caller stays on the g24
+branch (g73 carries the fn under a dead_code allow until that merge).**
+The one correction g73 found on g24's side is ADOPTED here: the
+`s1_e_29_the_world_tab_keeps_its_fifteen_rows` witness was left STALE by the
+doc-sweep's 15→16 row bump (`row_count`/`world_rows` return 16, the witness
+pinned 15 — it would fail); now renamed `..._sixteen_rows`, pins 16/16 + the
+`Quit (no save)` tail row — the same pins as `bce01ece8`'s corrected copy.
+g73's closeout witness `the_quit_stop_kills_both_liquid_loop_channels` is
+retired on ITS side into g24's
+`w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain` (its dead-slot/
+idempotence assertions carried over) — no witness dup survives the merge.
+Cross-receipt hashes: g24 `c3eccb77`/`7ca8b087` ⇄ g73 `4e7e3f58` → `bce01ece8`.
+

@@ -336,7 +336,7 @@ fn row_bg(r: &mut SpriteRenderer, l: &Layout, panel: &Panel, vi: usize) {
     }
 }
 
-/// The World tab's 15 rows. The order is the click dispatch's (`world_click`).
+/// The World tab's 16 rows. The order is the click dispatch's (`world_click`).
 fn world_rows(
     world: &tr_core::World,
     stepper_paused: bool,
@@ -1124,19 +1124,22 @@ mod tests {
     }
 
     #[test]
-    fn s1_e_29_the_world_tab_keeps_its_fifteen_rows() {
+    fn s1_e_29_the_world_tab_keeps_its_sixteen_rows() {
         let app = flow_app();
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 15);
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 16);
         let rows = world_rows(&app.world, false, false, false, false);
-        assert_eq!(rows.len(), 15, "the draw and the dispatch agree");
+        assert_eq!(rows.len(), 16, "the draw and the dispatch agree");
         assert_eq!(rows[10].0, "Pause World: OFF");
         // S1-E-34 — the god-mode toggle rides row 11.
         assert_eq!(rows[11].0, "God Mode: OFF");
         // S1-L-3 — the `/map pretty` reveal rides the tail row.
         assert_eq!(rows[12].0, "Reveal Map (pretty)");
-        // S1-E-35 — the weather toggles ride the last two rows.
+        // S1-E-35 — the weather toggles ride rows 13/14.
         assert_eq!(rows[13].0, "Rain: OFF");
         assert_eq!(rows[14].0, "Sandstorm: OFF");
+        // The quit-stop keep-one (g73 retire bce01ece8's C#-verified fix,
+        // adopted on g24) — the `/quit` row is the new tail row 15.
+        assert_eq!(rows[15].0, "Quit (no save)");
     }
 
     /// S1-E-34 — the F3 god-mode row flips the debug flag.
