@@ -229,6 +229,68 @@ Witnesses: `net.rs::tests::w4_d96_*` — one byte-pinned round trip per id
 `w4_d96_player_info_difficulty_bit_three`. Code-only mode: WRITTEN NOT RUN
 (no compiler invoked); verification = whole-arm C# re-reads.
 
+## The g48 net-apply-status table (ids 1-40, 2026-11-21) — the f21 cross-note
+
+The task's cross-note asked for `research/107 net-apply-status` on
+`origin/task/W4-f21-net-ids-verify-tail`; **no research/107 file exists on
+any pushed branch** (checked at exec time — f21's census lives in THIS
+file's "W4-f21 tail census" section, `5274a097`, ids 43-162). This section
+is the update-compatible ids 1-40 apply-status table for the g48 lane
+(`task/W4-g48-net-apply-arms-1`): every id's host/client apply state on the
+g48 tip, with the C# reader cite. Status vocabulary: **WIRED** = the apply
+arm runs the C# body (deviations noted); **PARKED** = body/codec ported,
+dispatcher arm still a no-op (the owning lane named); **DEAD** = no live
+reader/writer (the f21 census verdicts); **N/A** = the id is not a
+`GetData` apply case in the port's flow (the join FSM owns it).
+
+| id | C# name | reader (`MessageBuffer.cs`) | g48 apply status |
+| --- | --- | --- | --- |
+| 1 | Connect | :184-214 | N/A — the join FSM (`netglue` C2s::Connect, version gate + slot assign) |
+| 2 | Disconnect | :215-222 | WIRED — S2c::Disconnect → `net_disconnect` (pre-g48) |
+| 3 | PlayerId | :225-283 | N/A — the join FSM (slot id + the State-1 tail) |
+| 4 | SyncPlayer | :284-397 | WIRED — `PlayerInfo` store (pre-g48; d96 read clamps in the codec) |
+| 5 | SyncEquipment | :399-462 | WIRED — the inventory slot store + relay (pre-g48) |
+| 6 | RequestWorld | :462-472 | WIRED — the WorldInfo + section stream answer (pre-g48) |
+| 7 | WorldInfo | :473-658 | WIRED — `client_install_world` (pre-g48) |
+| 8 | SpawnRequest | :671-806 | WIRED — the section burst + InitialSpawn (pre-g48) |
+| 9 | Status | :877-888 | WIRED — the load-status line (pre-g48) |
+| 10 | TileBlock | :889-894 | WIRED — `apply_tile_block` (pre-g48) |
+| 11 | TileFrameSection | :895-899 | WIRED g48 — `framing::section_tile_frame` verbatim + map burst (`3e551bb3`) |
+| 12 | PlayerSpawn | :901-950 | WIRED g48 — host store/relay + client Spawn_SetPosition (`3e551bb3`) |
+| 13 | PlayerControls | :952-1059 | WIRED — the state store + relay (pre-g48); the mount/potion/camera SIMULATION tails parked (c27/d96 note) |
+| 14 | PlayerActive | :1061-1088 | WIRED — the join/leave fan-out (pre-g48) |
+| 15 | Unknown15 | :4483-4490 | DEAD — the reader ignore group (d89) |
+| 16 | PlayerLifeMana | :1095-1117 | WIRED g48 — hp store + dead derivation + relay (`e50c2919`) |
+| 17 | TileManipulation | :1119-1288 | WIRED g48 — the full kind dispatch (`e50c2919`); kind 15 FrameTrack (`3a310ccc`) + kind 21 ReplaceTile (`cafd7f2f`) closed the last two cited kinds; kinds 18/19 SetCurrentUser attribution stays the M7-WIRE-2 gap |
+| 18 | SetTime | :1289-1297 | PARKED — the port's clock rides internal 205 (ANALYSIS); no 18 reader arm |
+| 19 | ToggleDoorState | :1299-1334 | WIRED g48 — doors 0/1 (`0e6fd9c2`) + trapdoors 2/3 / tall gates 4/5 via the c42 canonical `edit/shift.rs` (`a714f106`; the wiring-lane SendData(19) echoes stay research/95 §8.2) |
+| 20 | SectionRange | :1335-1443 | WIRED — `apply_section_range` (pre-g48); the g52 latch filter is that lane's |
+| 21 | ItemDrop | :1445-1535 | WIRED — the item store (pre-g48, d98 grab-delay tail) |
+| 22 | ItemOwner | :1552-1562 | WIRED — the reservation store (pre-g48) |
+| 23 | NPCInfo | :1563-1704 | WIRED — the NPC store/spawn (pre-g48, d91 body) |
+| 24 | UnusedMeleeStrike | :1706-1708 | DEAD — zero send sites, reader asserts (f21 census) |
+| 25 | Unused25 | :4483-4490 | DEAD — the ignore group (f21) |
+| 26 | Unused26 | :4483-4490 | DEAD — the ignore group (f21) |
+| 27 | Projectile | :1711-1763 | WIRED — the projectile store (pre-g48, d93 body) |
+| 28 | NPCStrike | :1766-1817 | WIRED — the strike apply + relay (pre-g48, g52 cascade) |
+| 29 | ProjectileDead | :1825-1850 | WIRED — the kill apply (pre-g48) |
+| 30 | TogglePVP | :1851-1867 | WIRED g48 — store/relay + team-coloured chat (`0e6fd9c2`) |
+| 31 | RequestChestOpen | :1868-1895 | WIRED — the chest contents answer + rigged 59 (S1-E-27) |
+| 32 | SyncChestItem | :1897-1918 | WIRED — the slot store + relay (S1-E-27) |
+| 33 | SyncPlayerChest | :1920-1982 | WIRED — the open-index store (S1-E-27) |
+| 34 | ChestUpdates | :1984-2158 | WIRED g48 — host place/destroy + relays, client direct pass (`f086297b`) |
+| 35 | PlayerHeal | :2160-2177 | WIRED g48 — peer HealEffect text + relay (`f086297b`) |
+| 36 | SyncPlayerZone | :2178-2201 | WIRED g48 — six-byte store + relay (`9e037b7c`) + the faeling edge → `spawner::spawn_faelings` (`9c7646e0`; the Shimmerfly 677 spawn roster-gated, the scan draws verbatim) |
+| 37 | PasswordRequest | :2203-2216 | N/A — the join FSM (pre-g48) |
+| 38 | Password | :2218-2231 | N/A — the join FSM (pre-g48) |
+| 39 | ReleaseItemOwnership | :2232-2255 | PARKED — f21 codec (`e1d90bcd`), the FindOwner/22 re-announce arm is the item lane's (M6-NET-5) |
+| 40 | SyncTalkNPC | :2256-2270 | WIRED g48 — SetTalkNPC store + bestiary chat registration + relay (`9e037b7c`) |
+
+The g48 witnesses: `netglue::g48_apply_tests::g48_*` — one loopback pair
+per wired family (`in_world_pair`), WRITTEN NOT RUN (code-only mode). The
+remaining PARKED rows' owners: 18 (the clock lane), 39 (M6-NET-5); the
+1-40 region has no other missing apply arm on this tip.
+
 ## SendData call-site census (subsystems calling the writer)
 
 `grep -c "NetMessage.SendData("` over `decompiled/` — **774 sites in 68 files**:

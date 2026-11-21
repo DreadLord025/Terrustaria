@@ -39523,3 +39523,75 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The g48 cited-skip closures (W4-g48 round 2, 2026-11-21, code-only)
+
+The five cited skips the g48 lane-1 round-1 commits recorded are closed or
+re-scoped on this tip (the ids 1-40 apply-status table lives in
+`research/17-netcode.md` "The g48 net-apply-status table" — the task's
+`research/107` cross-note target does not exist on any pushed branch; f21's
+census is research/17's tail section, `5274a097`):
+
+- **id-19 actions 2-5 (trapdoor/tall gate).** The c42 canonical
+  `tr-core/src/edit/shift.rs` landed BYTE-IDENTICAL (blob `41a9056d`, the
+  research/95 union-exec tip `fadaa4bd` — `only_close_or_open` param, the
+  Option `wire_skips` seam, paint+fullbright coating, in-body per-site cues
+  incl. the double-thud, alternate-0 tall-gate decode, radius-4 reframe).
+  The net-19 reader calls it with the C# reader arguments
+  (`MessageBuffer.cs:1316-1325`): action 2/3 → `onlyCloseOrOpen` 1/0,
+  action 4/5 → `closing` false/true + `forced: true`; the entity half is
+  the REAL player/peer/NPC box overlap (the §8.1 seam, injected closure),
+  the close guard the FULL `CanKillTile` with the chest-store scan;
+  `wire_skips: None` (no flood on the message handler — the C#
+  `Main.netMode != 1 && Wiring.running` gate is false). The NPC-bash drain
+  re-point stays g4's merge work (the `npc_ai_town.rs` trait doc updated).
+  The wiring-lane `SendData(19)` echoes remain research/95 §8.2.
+- **id-17 kind 15 (Minecart.FrameTrack).** The f11 canonical
+  `tr-core/src/minecart.rs` landed (blob `5efef353`) with ONE fidelity fix:
+  the `(pound & flag4) && !mute` tail called `kill_tile(no_item: true)` —
+  a KILL — but the C# `KillTile(fail: true)` never removes the tile
+  (`WorldGen.cs:63709-63737`: grass/moss conversions + SquareTileFrame,
+  dust/sound only). f11's callers all pass `mute: true` so the branch never
+  fired there; the net-17 reader passes the DEFAULT `mute: false`, so the
+  port now no-ops the branch (the kind-0 fail-tick precedent). The
+  host/client arms call `frame_track(pound: true, mute: false)`.
+- **id-17 kind 21 (ReplaceTile).** Ported verbatim into
+  `tr-core/src/edit/replace.rs` (`WorldGen.cs:62558-62775`): the
+  five-validity AND chain + rope exceptions, the above-gates, the anchor
+  move, the natural-extras kills, the single/area replacement, the
+  rainbow/tenth sand paints (`GetRainbowPaintIDForPosition` verbatim incl.
+  the truncate-before-minus-5 cast). A prepare/commit split lets the app
+  run the C# tails in order: dust count (derived, not spawned — the visual
+  seam) → `kill_tile_sound` → large-object drops (the new
+  `chest::campfire_item_drop` ladder) → the fossil-404 genRand chain with
+  its `17` relays → the rigged-chest `HitSwitch` + `59` → the swap. The
+  `liquid.rs:709` cited skip is closed. Deliberate deviations: the
+  `SquareTileFrame`/`SquareWallFrame` walks ride `reframe_area` (the
+  documented radius superset); the fossil chain's `fossilBreak`
+  re-entrancy guard never binds (the port's `replicated_break` has no
+  fossil recursion).
+- **id-36 SpawnFaelings.** Census correction: the faeling is
+  `NPCID.Shimmerfly = 677` (`NPCID.cs:12031`), NOT 570 (`DD2DrakinT2`,
+  `:11817`). The kind is NOT rowed (`kind_from_net_id(677)` → None, no
+  bestiary entry — the M4-NPC roster). `NPC.Spawner.SpawnFaelings`
+  (`NPC.cs:5957-5995`) is ported VERBATIM as `spawner::spawn_faelings` and
+  the 36 host rising-edge calls it on the peer snapshot; the scan's draws
+  run exactly as the C# would (the RNG census stays whole) while only the
+  `NPC.NewNPC` spawn is roster-gated (the `spawn_shimmer_release`
+  precedent) — it activates with zero changes when the kind lands. The
+  degenerate-rect empty-range draw is the recorded stand-in (the
+  `try_spawn_an_npc` convention).
+- **The f21 cross-note.** research/17 gains the update-compatible ids 1-40
+  apply-status table (WIRED/PARKED/DEAD/N/A per id with the reader cite);
+  the remaining PARKED rows are 18 (the clock lane's internal-205) and 39
+  (M6-NET-5's FindOwner arm).
+
+Verification: code-only — no cargo/rustc/tests/rustfmt/graphify invoked.
+Every seam signature checked by read/grep against the actual branch code;
+the two landed modules hash-verified byte-identical to their source blobs
+(`git hash-object` == `git rev-parse <branch>:<path>`). 5 new loopback
+witnesses (`g48_19_trapdoor_open_toggle_replicates`,
+`g48_19_tall_gate_open_toggle_replicates`,
+`g48_17_track_pound_edit_frames_and_replicates`,
+`g48_17_replace_tile_edit_swaps_and_replicates`,
+`g48_36_faeling_edge_fires_once_and_roster_gates`) WRITTEN NOT RUN.
