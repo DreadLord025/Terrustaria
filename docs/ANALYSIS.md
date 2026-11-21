@@ -39494,3 +39494,56 @@ vs the broadcast), `app/flow.rs` x1 (the reforge charge reads the talk
 latch, not the shop capture), `world_sim/npcs.rs` x1 (the tax payout
 divides by the latch — 300/1.5=200, 300/0.75=400 — and spawns at the
 player centre).
+
+The FINAL round (2026-11-21, code-only mode, `468db5928` + the census
+docs; research/143):
+
+- **The buy/sell-lane latch repoint** — LANDED. `Player.
+  GetItemExpectedPrice` (`Player.cs:35382-35388`) reads the TALK-OPEN
+  LATCH (`currentShoppingSettings.PriceAdjustment`, the only write site
+  `SetTalkNPC` `:4389`); the shop button's Condition (`TalkNPCType ==
+  type`, `NPCInteractions.cs:59-62`) keeps it live at every transaction.
+  `buy_shop_item`/`sell_item` + the shop chrome tuple (`Main.cs:41793`)
+  switch `shop_mood` → `shopping_settings.price_adjustment`; the
+  shop-open capture gates `talk_npc != Some(idx)` (the f37 capture-once
+  contract, research/68 — no second Princess draw) and builds the FULL
+  settings (report included) at the collapsed entry. The Angler reward
+  rarity (`Player.cs:56306`) reads the latch too — his Like-Ocean/
+  Dislike-Desert + neighbor rows ARE ported, the constants-off 1.0 was
+  stale. `shop_mood` stays as the f37 merge-side capture (the buy/sell
+  TRANSACTION halves are g58's S1-P-i44 files; f37's tip still fed the
+  capture — unclaimed, so g58 repointed its own call sites). Witness:
+  the_buy_and_sell_read_the_talk_latch_not_the_shop_capture (homeless
+  Merchant 1.5: buy 60000, sell 26667/5=5333, memo round trip 60000;
+  post-latch housing inert; re-latch 0.95 → 38000).
+- **The happiness REPORT UI** — CENSUSED COMPLETE (research/143 §2).
+  There is NO price-slider/neighbor-list widget in the C# (a full
+  sweep returns zero hits); the report is TEXT in the chat panel. The
+  eight-site surface (the Shop label/savings pile/mood icon/P0 percent,
+  the ReportHappiness button, the report builder, the panel display) is
+  fully ported; the legacy `Main.DrawNPCChatButtons` (`:40474`, the
+  `:40635` HappinessReport gate inside it) is DEAD CODE — no callers in
+  the whole decompilation — correctly unported. No missing halves.
+- **The savings 3-way input** — the g58 CALL-SITE census published as
+  the 142-input (research/143 §3): g58 wires ONE call (the shop-panel
+  (504, invBottom) vertical, through the chrome); d122 wires the reforge
+  (180, 258) horizontal + the shop-panel; g12 wires the shop-panel
+  direct. The C# has exactly three `DrawSavings` callers (`:41637`/
+  `:41791`/`:43862`, the hair window unported). g58 votes KEEP d122's
+  both-arms + medal module (research/142's decision); the merge keeps
+  g58's report-lane chrome gate + d122's chrome body/savings signature.
+- **The portrait hop** — the STATE landed, the DRAW deferred
+  (research/143 §4). `DoNPCPortraitHop` (`Main.cs:40675-40678`) +
+  `npcChatPortraitFrameCounter` + `EaseOutBounce` (`Utils.cs:355-363`) +
+  the `DrawNPCPortrait` lift (`:40355-40359`, `-56·0.25·(1−ease)`, the
+  `num4 == 0` gate — no repeat past frame 119) port; the counter ticks
+  per drawn frame (`:40335`), the hop fires at the talk open
+  (`Player.cs:4401`), the ReportHappiness button (`NPCInteractions.cs:
+  310`), the nurse (`:40177`, unconditional), tax (`:40224`) and angler
+  (`:40262`) tails. The portrait DRAW (the `NpcPortraitBackground` + the
+  Detailed/CloseUp/FullBodyRetro modes + the `DialoguePortraitPreference`
+  setting + the `NPCPortraits` provider dictionaries) stays deferred —
+  no portrait system (S1-E-10b); the d85/g53 co-lanes carry only the
+  BESTIARY portraits, a different system, so the chat-portrait lane is
+  unclaimed. Witnesses: the_portrait_hop_lift_matches_the_bounce +
+  the_portrait_hop_resets_on_the_talk_and_the_report.

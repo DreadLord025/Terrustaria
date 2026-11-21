@@ -6121,12 +6121,14 @@ mod s1_p_i44_tests {
             coins - 60000,
             "the post-latch housing change is inert (the latched 1.5 prices)"
         );
-        // A re-latch picks the new mood up: the housed Merchant's biome
-        // rows are Like Forest / Dislike Desert (`PersonalityDatabase
-        // Populator.cs:32-36`); the 8×8 flow world is beach-width (every
-        // column within BEACH_DISTANCE 380 of an edge → Ocean, no Forest
-        // row), so the housed-alone mood is LoveSpace ×0.95
-        // (`ShopHelper.cs:147-151`) → the buy charges 40000 × 0.95 = 38000.
+        // A re-latch picks the new mood up: the housed Merchant alone is
+        // LoveSpace ×0.95 (`ShopHelper.cs:147-151`). His biome rows are
+        // Like Forest / Dislike Desert (`PersonalityDatabasePopulator.cs:
+        // 32-36`) — neither matches the flow world's player centre (tile
+        // 4,3): the beach band holds (x=4 < 380, y=3 ≤ the ocean level
+        // (2+3.6)/2+40 = 42.8) so Forest fails via `zone_beach`, and the
+        // Merchant carries no Ocean row. The mood is 0.95 → the buy
+        // charges 40000 × 0.95 = 38000.
         app.set_talk_npc(Some(0));
         assert_eq!(app.shopping_settings.price_adjustment, 0.95);
         app.mouse_item = crate::item::EMPTY_SLOT;
