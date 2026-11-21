@@ -68,12 +68,15 @@
 //!   `accSnappingStoneLightUp`), and the phase-blade held light
 //!   (`:44916`, needs `Item.GetPhaseColor`). The gemspark `essScale`
 //!   rows are WorldItem's (already documented).
-//! * `happyFunTorchTime` (the Torch God's favor burn) has no port field
-//!   — it folds to false. `Player.UsingBiomeTorches`
+//! * `happyFunTorchTime` (the Torch God event, W4-f33) now has a port field
+//!   (`p.torch_god.happy_fun_torch_time`): the held-torch light gate
+//!   (`Player.cs:49817`) reads it — during the event the held torch emits
+//!   no light. `Player.UsingBiomeTorches`
 //!   (`Player.cs:3950-3959`) is `unlockedBiomeTorches &&
-//!   builderAccStatus[11] == 0`; the port carries
-//!   `p.unlocked_biome_torches` and reads it, while the builder toggle
-//!   folds to 0 (on) — documented deviation.
+//!   builderAccStatus[11] == 0`; the port reads the property
+//!   (`p.using_biome_torches()`, W4-f33 — the 5043 use arms both halves).
+//!   The builder-toggle CLICK is unported (`Main.cs:42532-42585`), so the
+//!   slot stays at the ctor's 0 (on) in play — documented deviation.
 
 use glam::Vec2;
 use tr_core::lighting::LightParams;
@@ -94,8 +97,9 @@ const HELD_LIGHT_ALLOWED: bool = true;
 /// `Player.BiomeTorchHoldStyle` (`Player.cs:40291-40346`): the plain torch
 /// (8) becomes the biome torch while `UsingBiomeTorches`
 /// (`:3950-3959` — `unlockedBiomeTorches && builderAccStatus[11] == 0`;
-/// the port reads `p.unlocked_biome_torches`, the builder toggle folds
-/// to 0/on, ANALYSIS deviation). The arm order is the C#'s verbatim;
+/// the caller passes `p.using_biome_torches()`, W4-f33 — the builder
+/// toggle click is unported so the slot stays 0/on, ANALYSIS deviation).
+/// The arm order is the C#'s verbatim;
 /// `ZoneShimmer` (`:40297`) and `ZoneUndergroundDesert` (`:40337`) read
 /// fields the port's `Zones` does not carry and are skipped in place (the
 /// remaining arms keep their order). `ZoneLihzhardTemple` (`:40305`) rides
@@ -370,11 +374,13 @@ pub(crate) fn held_item_lights(
     };
 
     // `:49817-49940` — the torch family: `(Torches[type] && !wet) ||
-    // WaterTorches[type]`, `!happyFunTorchTime` (unported, folds false).
+    // WaterTorches[type]`, `!pulley && !happyFunTorchTime` (W4-f33: the
+    // event flag now exists — during the Torch God event the held torch
+    // emits no light, the favor burn).
     let torch = crate::entity_lights::TORCHES.contains(&kind);
     let water_torch = crate::entity_lights::WATER_TORCHES.contains(&kind);
-    if (torch && !p.wet) || water_torch {
-        let style = biome_torch_hold_style(kind, p.unlocked_biome_torches, zones, p.y, world);
+    if ((torch && !p.wet) || water_torch) && !p.torch_god.happy_fun_torch_time {
+        let style = biome_torch_hold_style(kind, p.using_biome_torches(), zones, p.y, world);
         let id = torch_id_for_hold_style(style);
         let rgb = tr_core::tile_light::torch_color(id, params);
         // `:49918` / `:49938` — the light rides `velocity` (the dust
@@ -754,6 +760,66 @@ mod tests {
         z.snow = true;
         let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
         assert_eq!(lights[0].2, tr_core::tile_light::torch_color(0, &params()));
+    }
+
+    /// W4-f33 — the builder-toggle half of `UsingBiomeTorches`
+    /// (`Player.cs:3958`): the unlock alone is not enough —
+    /// `builderAccStatus[11] == 1` (the toggle OFF) keeps the plain torch
+    /// plain even with the favor used. The 5043 use sets the slot to 0
+    /// (`:45232` → the setter `:3960-3963`); the toggle click
+    /// (`Main.cs:42532-42585`) is unported, so this pins the property's
+    /// gate shape for when it lands. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f33_the_builder_toggle_gates_the_hold_conversion() {
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        p.unlocked_biome_torches = true;
+        let w = World::new("t".into(), 64, 800);
+        let mut z = zones();
+        z.snow = true;
+        // The ctor slot 0 (on): the snow conversion fires.
+        assert!(p.using_biome_torches());
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(9, &params()));
+        // Toggle OFF (`builderAccStatus[11] = 1`): the property reads
+        // false (`:3958`) and the torch stays plain (`:40293`).
+        p.builder_acc_status[11] = 1;
+        assert!(!p.using_biome_torches());
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(0, &params()));
+        // The setter pair (`:3960-3963`): true → 0, false → 1.
+        p.set_using_biome_torches(true);
+        assert_eq!(p.builder_acc_status[11], 0);
+        p.set_using_biome_torches(false);
+        assert_eq!(p.builder_acc_status[11], 1);
+        // The unlock gates the property regardless of the slot.
+        p.builder_acc_status[11] = 0;
+        p.unlocked_biome_torches = false;
+        assert!(!p.using_biome_torches());
+    }
+
+    #[test]
+    fn w4_f33_the_torch_god_event_kills_the_held_torch_light() {
+        // `Player.cs:49817` — `!happyFunTorchTime`: during the Torch God
+        // event the held torch (plain OR water) emits no light. The candle
+        // family is unaffected (the gate is torch-only).
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        let w = World::new("t".into(), 64, 800);
+        // Baseline: the plain torch lights.
+        assert_eq!(held_item_lights(&p, 8, 20.0, zones(), &w, &params()).len(), 1);
+        // The event runs → the torch goes dark.
+        p.torch_god.happy_fun_torch_time = true;
+        assert!(held_item_lights(&p, 8, 20.0, zones(), &w, &params()).is_empty());
+        // The water torch (523) too — the gate covers the whole family.
+        assert!(held_item_lights(&p, 523, 20.0, zones(), &w, &params()).is_empty());
+        // The candle (105) keeps its light — the gate is torch-only.
+        assert_eq!(held_item_lights(&p, 105, 20.0, zones(), &w, &params()).len(), 1);
+        // The event ends → the torch lights again.
+        p.torch_god.happy_fun_torch_time = false;
+        assert_eq!(held_item_lights(&p, 8, 20.0, zones(), &w, &params()).len(), 1);
     }
 
     #[test]

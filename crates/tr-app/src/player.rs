@@ -1106,9 +1106,12 @@ pub struct Player {
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes
-    /// (`Recipe.cs:353-356`). The grant rides the Torch God event's favor
-    /// item (W4-f33 owns the grant; a6 owns the 5043 use arm,
-    /// `Player.cs:45226-45243`).
+    /// (`Recipe.cs:353-356`). PERMANENT — set once by the 5043 use
+    /// (`ItemCheck_UseTorchGodsFavor`, `Player.cs:45228-45231`, W4-f33:
+    /// `torch_god_favor_use::torch_gods_favor_item_check`; a6's claim died,
+    /// the use arm landed here). Persisted in the `.plr` (`:54777`/`:55241`)
+    /// and the `.trplayer` v7 line. The builder toggle half rides
+    /// `builder_acc_status[11]` — read through [`Self::using_biome_torches`].
     pub unlocked_biome_torches: bool,
     /// The Torch God event state (`Player.cs:3066-3080`, W4-f33) — the
     /// `happyFunTorchTime` machine; see `torch_god.rs`.
@@ -10580,6 +10583,24 @@ impl Player {
         self.luck_state.luck
     }
 
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3964`): the getter is
+    /// `unlockedBiomeTorches && builderAccStatus[11] == 0`; the setter writes
+    /// `builderAccStatus[11] = !value ? 1 : 0` and NOTHING else. The 5043
+    /// use (`ItemCheck_UseTorchGodsFavor`, `:45231-45232`) sets the unlock
+    /// flag THEN this property — the pair arms the conversion in one use
+    /// (W4-f33). The builder-toggle UI (`Main.cs:42532-42585`) flips
+    /// `builder_acc_status[11]` between 0 (on) and 1 (off); the port's
+    /// toggle click is unported, so play reads the ctor's 0 (`:814`).
+    pub fn using_biome_torches(&self) -> bool {
+        self.unlocked_biome_torches && self.builder_acc_status[11] == 0
+    }
+
+    /// The `UsingBiomeTorches` setter half (`Player.cs:3960-3963`) — the
+    /// 5043 use's `this.UsingBiomeTorches = true` (`:45232`).
+    pub fn set_using_biome_torches(&mut self, value: bool) {
+        self.builder_acc_status[11] = if value { 0 } else { 1 };
+    }
+
     /// `Player.UpdateLuck` → `UpdateLuckFactors` (`Player.cs:29041-29135`),
     /// called from the post-buff-effects position (`:25645`): the ladybug and
     /// coin decays run for every player, the torch scan + the broken-mirror
@@ -15781,6 +15802,35 @@ mod tests {
         p.vx = 0.0;
         p.update_frames(&w);
         assert_eq!(p.body_frame, 0);
+    }
+
+    #[test]
+    fn w4_f33_the_torch_god_event_drops_the_torch_hold_body_row() {
+        // `Player.cs:36455` — the torch-hold row 3 gates on
+        // `!happyFunTorchTime || createTile != 4`. The world_sim fills
+        // `torch_hold_ok` from the event flag + the held item's createTile;
+        // here the gate is driven directly (the FrameInputs convention).
+        let (w, mut p) = settled();
+        p.vx = 0.0;
+        p.frame_inputs = FrameInputs {
+            hold_style: 1,
+            can_visually_hold: true,
+            hold_style_dry: true,
+            torch_hold_ok: true,
+            use_style_blocks_frames: true,
+            ..FrameInputs::default()
+        };
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 3, "the torch hold at rest");
+        // The event runs + a torch held → torch_hold_ok false → the row
+        // falls through to the rest row 0 (no walk, no other hold).
+        p.frame_inputs.torch_hold_ok = false;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 0, "the event drops the torch-hold row");
+        // The gate open again → row 3 returns.
+        p.frame_inputs.torch_hold_ok = true;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 3);
     }
 
     #[test]

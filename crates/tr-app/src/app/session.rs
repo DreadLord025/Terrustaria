@@ -267,6 +267,9 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the port tracks
         // no save clock; 0 is the documented "unknown" stamp (ANALYSIS).
         last_saved_binary: 0,
+        // A fresh character has not earned the Torch God's Favor (W4-f33).
+        unlocked_biome_torches: false,
+        using_biome_torches: false,
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

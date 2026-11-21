@@ -2940,6 +2940,13 @@ impl App {
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;
+                    // W4-f33 — the Torch God's Favor permanent unlock rides
+                    // the v7 sidecar line (`Player.cs:55241-55242`): the
+                    // biome torches resume with the character. The builder
+                    // toggle half restores through the UsingBiomeTorches
+                    // setter (`builderAccStatus[11]`, `:3960-3963`).
+                    p.unlocked_biome_torches = saved.unlocked_biome_torches;
+                    p.set_using_biome_torches(saved.using_biome_torches);
                     for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                         inventory[i] = ItemSlot {
                             kind: *kind,

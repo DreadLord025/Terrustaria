@@ -459,6 +459,10 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         if let Some(p) = player.as_ref() {
             // `Player.headcovered` (`Player.cs:11826-11829`): buff 163.
             metrics.headcovered = p.buffs.find_buff_index(163).is_some();
+            // `SceneMetrics.AddPlayerEffects` (`SceneMetrics.cs:770-773`,
+            // W4-f33): `player.happyFunTorchTime` → InTorchGodMinigame (the
+            // music ladder's track-101 gate, `Main.cs:12542`).
+            metrics.in_torch_god_minigame = p.torch_god.happy_fun_torch_time;
             // `Player.DoUnbreakableWallScan` (`Player.cs:28606-28619`) behind
             // the `Main.dualDungeonsSeed` gate (`:28608`).
             metrics.inside_unbreakable_walls = world

@@ -163,6 +163,13 @@ pub(crate) struct PlayerCompositeState {
     /// `Item.holdStyle` of the held kind: 1 draws the item in the hand at rest
     /// (`PlayerDrawLayers.cs:3086` `flag2 = holdStyle != 0`).
     pub(crate) hold_style: u8,
+    /// `Player.happyFunTorchTime` (`PlayerDrawLayers.cs:3089`, W4-f33): during
+    /// the Torch God event a held torch (`createTile == 4`) at rest
+    /// (`itemAnimation == 0`) draws nothing — the favor burn hides the sprite.
+    pub(crate) happy_fun_torch_time: bool,
+    /// The held item's `createTile` (`Item.createTile`, −1 = none) — the
+    /// draw-hide gate's torch test (`PlayerDrawLayers.cs:3089`).
+    pub(crate) held_create_tile: i32,
     /// Vanilla `useStyle` stand-in: 1 = swing (default), 8 = thrust, 9 = bow.
     pub(crate) use_style: u8,
     /// `Player.itemRotation` — the shooting styles' aim rotation
@@ -1371,6 +1378,12 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
     if s.item_size[0] <= 0.0 || (resting && s.hold_style == 0) {
         return Vec::new();
     }
+    // `PlayerDrawLayers.cs:3089` (W4-f33): the Torch God event hides a held
+    // torch at rest — `happyFunTorchTime && createTile == 4 &&
+    // itemAnimation == 0`. The swing (`itemAnimation > 0`) keeps the sprite.
+    if s.happy_fun_torch_time && s.held_create_tile == 4 && resting {
+        return Vec::new();
+    }
     let dir = if s.facing < 0.0 { -1.0 } else { 1.0 };
     let (w, h) = (s.item_size[0], s.item_size[1]);
     let mut rotation;
@@ -2180,6 +2193,8 @@ mod tests {
             seat_y_offset: 0,
             sleeping: false,
             full_rotation: 0.0,
+            happy_fun_torch_time: false,
+            held_create_tile: -1,
         }
     }
 
@@ -2495,6 +2510,34 @@ mod tests {
         sn.swing = 0.0;
         sn.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
         assert!(held_item_layers(&sn).is_empty());
+    }
+
+    #[test]
+    fn w4_f33_the_torch_god_event_hides_the_resting_torch_sprite() {
+        // `PlayerDrawLayers.cs:3089` — `happyFunTorchTime && createTile == 4
+        // && itemAnimation == 0`: during the event a held torch at rest
+        // draws nothing; the swing keeps the sprite, and a non-torch item
+        // is unaffected.
+        let mut s = state();
+        s.swing = 0.0; // at rest (itemAnimation == 0)
+        s.hold_style = 1;
+        s.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
+        s.item_size = [20.0, 28.0];
+        s.held_create_tile = 4; // a torch
+        // Baseline: the resting torch draws.
+        assert_eq!(held_item_layers(&s).len(), 1);
+        // The event runs → the sprite hides.
+        s.happy_fun_torch_time = true;
+        assert!(held_item_layers(&s).is_empty());
+        // Mid-swing (itemAnimation > 0) the sprite stays even in the event.
+        s.swing = 1.0;
+        s.swing_anim_ticks = 20.0;
+        s.swing_max_ticks = 20.0;
+        assert_eq!(held_item_layers(&s).len(), 1);
+        // A non-torch item (createTile != 4) is unaffected at rest.
+        s.swing = 0.0;
+        s.held_create_tile = -1;
+        assert_eq!(held_item_layers(&s).len(), 1);
     }
 
     #[test]
@@ -3014,6 +3057,8 @@ mod player_draw_tests {
             seat_y_offset: 0,
             sleeping: false,
             full_rotation: 0.0,
+            happy_fun_torch_time: false,
+            held_create_tile: -1,
         }
     }
 

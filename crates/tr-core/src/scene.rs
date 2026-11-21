@@ -156,6 +156,10 @@ pub struct SceneMetrics {
     pub zone_peace_candle: bool,
     /// `metrics.ZoneShadowCandle` (`:708`).
     pub zone_shadow_candle: bool,
+    /// `metrics.InTorchGodMinigame` (`SceneMetrics.cs:770-773`, W4-f33): the
+    /// perspective player's `happyFunTorchTime` — the Torch God event runs.
+    /// The music ladder reads it (`Main.cs:12542` → track 101).
+    pub in_torch_god_minigame: bool,
     // — the M6-AUDIO-2 music-box fields (`SceneMetrics.cs:4489-4501`) —
     /// `ActiveMusicBox`: the box id playing in the window (`frameY / 36`),
     /// -1 = none.
@@ -393,6 +397,7 @@ impl SceneMetrics {
             zone_water_candle: false,
             zone_peace_candle: false,
             zone_shadow_candle: false,
+            in_torch_god_minigame: false,
             active_music_box: -1,
             music_box_silence: false,
             inside_unbreakable_walls: false,

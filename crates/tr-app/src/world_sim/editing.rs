@@ -1998,6 +1998,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
+    // W4-f33 — the Torch God's Favor permanent upgrade
+    // (`ItemCheck_UseTorchGodsFavor`, `Player.cs:45226-45243`, the `:43600`
+    // permanent-item seam — after the recall arms, BEFORE the boss spawners
+    // `:43603`, the C# `ItemCheck_OwnerOnlyCode` order). The mid-swing
+    // `ItemTimeIsZero && itemAnimation > 0 && !unlockedBiomeTorches` machine
+    // (the recall/boss-spawner shape); a started use consumes the tick.
+    if crate::torch_god_favor_use::torch_gods_favor_item_check(
+        app,
+        prev_mine_released && !prev_mine_down,
+    ) {
+        return;
+    }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
     // `Player.cs:43751-43900`) and the event items (`ItemCheck_UseEventItems`,
     // `:43921-44055`) fire MID-SWING: their gate is `ItemTimeIsZero &&
@@ -2355,6 +2367,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // `UndoSlowMagicUse` half (`Player.cs:51946-51948`/`:51954-51966`,
         // folded into `potions::use_potion_item` — the i37 coordination
         // note's deferred i19 fold).)
+        // (W4-f33: the 5043 favor use is NOT a press-edge consumable arm —
+        // it rides the mid-swing permanent-item machine above,
+        // `torch_god_favor_use::torch_gods_favor_item_check`, the C#
+        // `ItemCheck_OwnerOnlyCode` seam `Player.cs:43600`.)
     }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
@@ -7516,10 +7532,14 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     // this is the placement half. The ZoneShimmer / ZoneUndergroundDesert
     // arms read fields the port's `Zones` does not carry — skipped in place,
     // the remaining arms (incl. temple + remix) keep their C# order (the
-    // player_lights `biome_torch_hold_style` precedent).
+    // player_lights `biome_torch_hold_style` precedent). W4-f33: the gate
+    // reads the `UsingBiomeTorches` PROPERTY (`:3950-3959` — the unlock AND
+    // the builder toggle `builderAccStatus[11] == 0`), not the raw unlock
+    // flag; with the toggle unported the two agree, but the property is
+    // the C# gate (the 5043 use sets both, `:45231-45232`).
     if kind == 4 && style == 0 {
         if let Some(p) = app.player.as_ref() {
-            if p.unlocked_biome_torches {
+            if p.using_biome_torches() {
                 style = biome_torch_place_style(p, &app.world);
             }
         }
@@ -7572,7 +7592,11 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
 /// (`:40248`) rides `Zones.temple`; the remix desert arm (`:40284-40287`)
 /// reads the world's REMIX seed flag. The underworld arm reads
 /// `Main.UnderworldLayer * 16` = `(height - 200) * 16` (`Main.cs:2790`).
-fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
+/// `pub(crate)`: the aiStyle-60 Shimmer stream's torch conversion calls it
+/// with `useWithoutTorchGodsFavor: true` (`Projectile.cs:29142`) — the same
+/// unconditional body (W4-d6 `5d81f2de`; the visibility lifted here so the
+/// d6 branch merges without a conflict, W4-f33).
+pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
     let z = p.zones;
     // `:40244-40247` — the dungeon arm comes before the underworld one.
     if z.dungeon {

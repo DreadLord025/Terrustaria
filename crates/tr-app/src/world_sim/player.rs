@@ -1075,11 +1075,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 item_rotation,
                 // `num21 = itemRotation * direction` (`Player.cs:36423`).
                 aim_relative: item_rotation * dir,
-                // `!wet || !item.noWet` and `!happyFunTorchTime ||
-                // createTile != 4` — the port has neither item field, so both
-                // gates are open (documented in ANALYSIS).
+                // `!wet || !item.noWet` (`Player.cs:36455`): the port has no
+                // `Item.noWet` field, so the gate stays open (ANALYSIS).
                 hold_style_dry: true,
-                torch_hold_ok: true,
+                // `!happyFunTorchTime || createTile != 4` (`Player.cs:36455`,
+                // W4-f33): during the Torch God event a held torch
+                // (`createTile == 4`) drops the torch-hold body row. The
+                // event flag now exists (`torch_god.happy_fun_torch_time`);
+                // `createTile` rides the registry's `tile` field.
+                torch_hold_ok: !p.torch_god.happy_fun_torch_time
+                    || crate::registry::get(kind).is_none_or(|d| d.tile != Some(4)),
                 grapple_dx: dx,
                 grapple_dy: dy,
             };
