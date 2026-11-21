@@ -32,6 +32,12 @@ pub struct ResearchTracker {
     /// (`_unlockedByTeammate`/`AnyNewUnlocksFromTeammates`) is single-player
     /// inert and stays unported.
     newly: Vec<u16>,
+    /// `LastEditId` (`ItemsSacrificedUnlocksTracker.cs:23`,
+    /// `MarkContentsDirty` `:222-225`): bumps on every successful
+    /// registration / reset — the `CheckResearchAchievement` version gate
+    /// (`AchievementsHelper.cs:389-392`). Not persisted (the C# save carries
+    /// only the count pairs).
+    last_edit_id: u32,
 }
 
 impl ResearchTracker {
@@ -60,6 +66,7 @@ impl ResearchTracker {
         if !found {
             self.counts.push((item_id, total));
         }
+        self.last_edit_id = self.last_edit_id.wrapping_add(1); // `MarkContentsDirty` (`:134`)
         if total >= cap && !self.newly.contains(&item_id) {
             self.newly.push(item_id); // `:135-137`
         }
@@ -117,6 +124,34 @@ impl ResearchTracker {
     pub fn reset(&mut self) {
         self.counts.clear();
         self.newly.clear(); // `Reset` (`:208-216`)
+        self.last_edit_id = self.last_edit_id.wrapping_add(1); // `MarkContentsDirty` (`:215`)
+    }
+
+    /// `LastEditId` (`ItemsSacrificedUnlocksTracker.cs:23`): the edit version
+    /// the research-achievement gate compares (`AchievementsHelper.cs:389`).
+    pub fn last_edit_id(&self) -> u32 {
+        self.last_edit_id
+    }
+
+    /// `CountFullyResearchedItems` (`ItemsSacrificedUnlocksTracker.cs:60-75`):
+    /// `(fullyResearchedItems, allItems)` over the whole `ItemID.Count` walk —
+    /// every catalog-capped kind counts toward `allItems` (the capless kinds
+    /// answer `TryGetSacrificeNumbers` false), the ones at the cap toward the
+    /// fully set. The port walks its `NAMES` id space (the same `ItemID.Count`
+    /// 6196 rows); the `CreativeResearchItemPersistentIdOverride` alias remap
+    /// is the documented unported table (the names map 1:1).
+    pub fn count_fully_researched(&self) -> (u32, u32) {
+        let mut full = 0u32;
+        let mut all = 0u32;
+        for id in 0..crate::itemdata::NAMES.len() as u16 {
+            if let Some((have, cap)) = self.sacrifice_numbers(id) {
+                all += 1;
+                if have >= cap {
+                    full += 1;
+                }
+            }
+        }
+        (full, all)
     }
 
     /// `ItemsSacrificedUnlocksTracker.Save` (`ItemsSacrificedUnlocksTracker.cs:
@@ -263,5 +298,53 @@ mod tests {
         let mut neg = ResearchTracker::default();
         neg.load_pairs(&[("Torch".to_string(), -5)]);
         assert_eq!(neg.sacrificed(8), 0);
+    }
+
+    /// W4-c24c — `MarkContentsDirty` (`ItemsSacrificedUnlocksTracker.cs:
+    /// 222-225`): every successful registration bumps `LastEditId`; the
+    /// refused arms (capless `:122-125`, already-full `:127-130`) do not.
+    /// `Reset` bumps too (`:215`); the load does NOT (the C# `Load` writes
+    /// the dictionaries directly, `:171-196`).
+    #[test]
+    fn the_edit_version_bumps_only_on_registered_changes() {
+        let mut t = ResearchTracker::default();
+        assert_eq!(t.last_edit_id(), 0);
+        t.register_sacrifice(6196, 5); // capless — no registration, no bump
+        assert_eq!(t.last_edit_id(), 0);
+        t.register_sacrifice(8, 50);
+        assert_eq!(t.last_edit_id(), 1);
+        t.register_sacrifice(8, 50); // completes the research
+        assert_eq!(t.last_edit_id(), 2);
+        t.register_sacrifice(8, 50); // already-full — the early return (:127)
+        assert_eq!(t.last_edit_id(), 2);
+        t.reset();
+        assert_eq!(t.last_edit_id(), 3, "Reset marks dirty (:215)");
+        let mut loaded = ResearchTracker::default();
+        loaded.load_pairs(&[("Torch".to_string(), 100)]);
+        assert_eq!(loaded.last_edit_id(), 0, "Load never marks dirty");
+        // The save does not carry the version (only the count pairs).
+        assert_eq!(t.save_pairs().len(), 0);
+    }
+
+    /// W4-c24c — `CountFullyResearchedItems` (`:60-75`): the denominator is
+    /// the catalog-capped id space (the port's generated SACRIFICES rows over
+    /// NAMES), the numerator the kinds at their cap. The Torch reaching 100
+    /// moves it into the fully set; the partial Dirt does not.
+    #[test]
+    fn the_fully_researched_count_walks_the_capped_space() {
+        let mut t = ResearchTracker::default();
+        let (full0, all) = t.count_fully_researched();
+        assert_eq!(full0, 0, "a fresh tracker has researched nothing");
+        assert!(all > 6000, "the catalog's capped rows: {all}");
+        t.register_sacrifice(8, 100); // Torch, fully
+        t.register_sacrifice(2, 5); // DirtBlock, partial
+        let (full1, all1) = t.count_fully_researched();
+        assert_eq!(all1, all, "the denominator is the catalog, not the tracker");
+        assert_eq!(full1, 1);
+        t.register_sacrifice(2, 100); // DirtBlock cap 100 — completes
+        let (full2, _) = t.count_fully_researched();
+        assert_eq!(full2, 2);
+        t.reset();
+        assert_eq!(t.count_fully_researched().0, 0);
     }
 }

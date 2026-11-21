@@ -1617,6 +1617,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
         });
         app.player_step.drop_backlog();
+        // W4-c24c — `Player.Update`'s local-player armor tail
+        // (`Player.cs:25703`): `AchievementsHelper.CheckResearchAchievement()`
+        // every tick. The port drains it after the player borrow like the
+        // HandleRunning float below (the C# fires both inside `Player.Update`);
+        // the version gate inside skips the recount while the tracker is
+        // unchanged; at half the catalog it fires progression 45
+        // (TRASH_COMPACTOR).
+        let _ = app.achievements.check_research(&app.research, false);
         if run_pixels > 0.0 {
             // `Player.cs:28233-28236` -> `AchievementsHelper.HandleRunning`
             // (`AchievementsHelper.cs:420-423`): grounded, unmounted running

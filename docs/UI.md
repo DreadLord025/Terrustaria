@@ -656,6 +656,23 @@ difficulty slider.
   W4-f44 seam (`player_file.rs`'s research/powers tail,
   `research.rs::save_pairs`/`load_pairs`, `app/saveglue.rs::
   save_player_plr`); CharPlay hydrates them (`app/flow.rs`).
+* **Sacrifice tooltip row** (c24c, `Main.cs:21318-21333`): every
+  whitelisted slot hover (grid/coins/ammo/bank/trash/shop/crafting/
+  journey-grid, the 17-context set) on a difficulty-3 session appends
+  "Research {N} more to unlock duplication" in the Journey pink while
+  the kind is partial (`ui/tooltip.rs`, `TooltipContext.slot_context/
+  journey_difficulty/research`; `ui/mod.rs::hover_context`). The
+  duplication search scan keeps context -1, so the row never matches a
+  search.
+* **TRASH_COMPACTOR** (c24c, `AchievementsHelper.cs:387-399`): at half
+  the catalog fully researched, progression 45 fires — the tracker's
+  `LastEditId` version gate skips unchanged recounts; the world-enter
+  check is forced, the player tick re-checks every step
+  (`achievements.rs::check_research`).
+* **Growth freeze/rate** (c24c, `WorldGen.cs:72020-72028`): FreezeTime
+  stops the growth loops entirely (rate 0 returns before every pick);
+  ModifyTimeRate scales them (the dial keeps the tiles at 1, the
+  all-asleep ×5 rides the target).
 
 Deviations (docs/ANALYSIS.md): the `ByCreativeSortingId` middle sort step
 falls through to alphabetical (no generated group table); the

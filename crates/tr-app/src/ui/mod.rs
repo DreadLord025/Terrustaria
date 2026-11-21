@@ -1040,6 +1040,12 @@ pub fn draw_hud(
                     pulse,
                     tooltip::TooltipContext {
                         player,
+                        // `ItemSlot.MouseHover(22)` (`Main.cs:42258`): the
+                        // crafting hover's context — whitelisted by the
+                        // Journey sacrifice row (`Main.cs:21318`).
+                        slot_context: 22,
+                        journey_difficulty: journey.map_or(0, |_| 3),
+                        research: journey.map(|(_, t, _, _)| t),
                         ..Default::default()
                     },
                     // `Main.SettingsEnabled_OpaqueBoxBehindTooltips` — the
@@ -1185,7 +1191,7 @@ pub fn draw_hud(
     // `mouseNPCType > -1` returns) + `DrawInterface_38`'s
     // `Main.mouseText = false` (`:45222`): no hover text while a housing
     // head rides the cursor.
-    let hover_item: Option<&ItemSlot> = if mouse_npc.carried() {
+    let hover_item: Option<(i32, &ItemSlot)> = if mouse_npc.carried() {
         None
     } else if pvp_hover_text.is_some() || housing_hover_text.is_some() {
         None
@@ -1207,11 +1213,16 @@ pub fn draw_hud(
                 tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
                 None
             }
-            other => other.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0))),
+            other => other.and_then(|h| {
+                hover_item_for(equip, inventory, h, bank.map(|b| b.0))
+                    .map(|item| (hover_context(h), item))
+            }),
         }
     } else {
         tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
-            .map(|i| &inventory[i])
+            // The closed hotbar draws context 13 (`GUIHotbarDrawInner`) —
+            // outside the sacrifice row's whitelist (`Main.cs:21318`).
+            .map(|i| (13, &inventory[i]))
     };
     // `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
     // held item's own crit, which the tooltip's crit row subtracts
@@ -1219,20 +1230,33 @@ pub fn draw_hud(
     let held_crit = crate::registry::get(inventory[selected].kind).map_or(0, |d| d.crit);
     // The journey grid's hovered cell (`UICreativeItemGrid.cs:22-29`): the
     // freshly-defaulted item becomes `Main.HoverItem` — it beats the panel
-    // hover (the grid draws after the inventory).
+    // hover (the grid draws after the inventory). Its tooltip context is the
+    // grid's own (`DrawSlot`, `:21`): 29 fully researched, 34 partial.
     let journey_item = journey_hover.as_ref().and_then(|h| h.item);
-    let hover_item = journey_item.as_ref().or(hover_item);
+    let hover_item = journey_item
+        .as_ref()
+        .map(|item| {
+            let ctx = journey_hover.as_ref().map_or(34, |h| h.context);
+            (ctx, item)
+        })
+        .or(hover_item);
     tooltip::draw_item_tooltip(
         r,
         lookups,
         mouse_pos,
-        hover_item,
+        hover_item.map(|(_, item)| item),
         screen,
         pulse,
         tooltip::TooltipContext {
-            prefix: hover_item.map_or(0, |h| h.prefix),
+            prefix: hover_item.map_or(0, |(_, h)| h.prefix),
             player,
             held_crit,
+            // W4-c24c — the Journey sacrifice row's gates (`Main.cs:21318`):
+            // the hovered slot's context, the session difficulty and the
+            // research tracker (None outside a Journey session).
+            slot_context: hover_item.map_or(-1, |(ctx, _)| ctx),
+            journey_difficulty: journey.map_or(0, |_| 3),
+            research: journey.map(|(_, t, _, _)| t),
             ..Default::default()
         },
         ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
@@ -1248,6 +1272,40 @@ pub fn draw_hud(
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
     // hidden while the vanilla `Cursor_0` is on screen.
     cursor::draw(r, lookups, cursor_state, mouse_pos);
+}
+
+/// The hovered panel's `ItemSlot.Draw` context (`ItemSlot.MouseHover`,
+/// `ItemSlot.cs:3184`) — the Journey sacrifice row's whitelist gate reads it
+/// (`Main.cs:21318`). The contexts are the port's draw-site numbers
+/// (`ui/slot.rs`'s covered set): grid/hotbar 0, coins 1, ammo 2, bank 4,
+/// trash 6, armour 8/10, vanity 9/11, dye 12, misc equips 16-20, misc dyes
+/// 33. The button/tick hovers never reach here (their tooltip arms return
+/// before the item pick).
+fn hover_context(hit: inventory::HoverRef) -> i32 {
+    use inventory::HoverRef as H;
+    match hit {
+        H::Grid(_) => 0,
+        H::Coin(_) => 1,
+        H::Ammo(_) => 2,
+        H::Bank(_) => 4,
+        H::Trash => 6,
+        H::Armor(i) => {
+            // The draw-site picks (`inventory.rs:716`/`:767`, `Main.cs:
+            // 41409-41414`/`:41482-41485`): head/body/legs 0..2 → 8, the
+            // accessories 3..9 → 10; vanity 10..12 → 9, 13..19 → 11. None
+            // of 8..11 is whitelisted by the sacrifice row (`:21318`).
+            match i {
+                0..=2 => 8,
+                3..=9 => 10,
+                10..=12 => 9,
+                _ => 11,
+            }
+        }
+        H::Dye(_) => 12,
+        H::MiscEquip(i) => 16 + i as i32,
+        H::MiscDye(_) => 33,
+        H::BankButton(_) | H::HideAccessory(_) => -1,
+    }
 }
 
 /// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it

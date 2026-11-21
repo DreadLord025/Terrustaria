@@ -2333,6 +2333,11 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
+        // W4-c24c — `Player.OnEnterWorld`'s tail (`Player.cs:325`): the
+        // research-achievement recount runs forced on the world-enter, so a
+        // loaded tracker already past half the catalog grants TRASH_COMPACTOR
+        // without waiting for a new sacrifice.
+        let _ = self.achievements.check_research(&self.research, true);
     }
 
     pub(crate) fn is_client(&self) -> bool {

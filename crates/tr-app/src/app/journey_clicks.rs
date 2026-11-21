@@ -174,6 +174,7 @@ impl App {
                 &self.journey.filters,
                 &self.journey.search,
                 self.player.as_ref(),
+                self.active_player_difficulty(),
             );
             if let Some(i) = j::grid_hit(l.list, self.journey.scroll, items.len(), self.mouse_pos) {
                 self.research.clear_newly_researched(items[i]);
@@ -518,6 +519,7 @@ impl App {
             &self.journey.filters,
             &self.journey.search,
             self.player.as_ref(),
+            self.active_player_difficulty(),
         );
         let cols = j::grid_cols(l.list);
         let view = l.list[3];
@@ -906,6 +908,7 @@ impl App {
             &self.journey.filters,
             &self.journey.search,
             self.player.as_ref(),
+            self.active_player_difficulty(),
         );
         let cols = j::grid_cols(l.list);
         let view = l.list[3];
@@ -1046,7 +1049,7 @@ mod tests {
         app.research.register_sacrifice(8, 100); // Torch, fully
         app.research.register_sacrifice(2, 5); // Dirt, partial
         let l = lay(&app);
-        let items = j::grid_items(&app.research, &app.journey.filters, "", None);
+        let items = j::grid_items(&app.research, &app.journey.filters, "", None, 3);
         // Torch sorts first (fully researched beats partial).
         assert_eq!(items[0], 8);
         app.mouse_pos = centre(j::grid_cell(l.list, 0.0, 0));

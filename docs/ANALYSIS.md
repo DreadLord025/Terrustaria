@@ -39361,3 +39361,52 @@ tests are WRITTEN, NOT RUN.** Deliberate deviations:
   (`UICreativeInfiniteItemsDisplay.cs:351-364`, `Utils.cs:1261-1269`), then
   the thunk's `Next(1, 4)` bank pick (`LegacySoundPlayer.cs:482`) — the
   C#'s draw-then-play order kept. No existing stream reordered.
+
+### The c24c final pass (2026-11-21, same branch, code-only — witnesses WRITTEN NOT RUN)
+
+- **The Journey sacrifice tooltip row is WIRED** (`Main.cs:21318-21333`,
+  the f28 seam): `ui/tooltip.rs::item_tooltip_lines` appends
+  `CommonItemTooltip.CreativeSacrificeNeeded` ("{0} more needed") in
+  `Colors.JourneyMode` (= `CREATIVE_MODE_COLOR`, Lerp(HotPink, White, 0.1))
+  while the hovered kind is catalog-capped and partial, behind the C#'s
+  exact gates: the 17-context whitelist (0-7, 15, 22, 29, 32, 34, 35,
+  41-43) + `LocalPlayer.difficulty == 3` + `TryGetSacrificeNumbers`.
+  `TooltipContext` grows `slot_context`/`journey_difficulty`/`research`;
+  `ui/mod.rs::hover_context` maps the port's `HoverRef` panels to their
+  `ItemSlot.Draw` contexts (grid 0, coins 1, ammo 2, bank 4, trash 6,
+  armour 8/10, vanity 9/11, dye 12, misc 16-20/33, closed hotbar 13 —
+  outside the whitelist), the crafting hover rides 22
+  (`Main.cs:42258`), the journey grid's hover carries its own 29/34
+  (`journey::Hover.context`, `UICreativeItemGrid.cs:21`). The
+  teammate-credit arm (`:21327-21331`) stays unported (single-player
+  inert, the tracker's teammate half above); the bestiary-notes tail
+  (`:21334-21342`) rides the bestiary data port.
+- **The search scan keeps context -1**: `ItemFilters.BySearch` builds a
+  fresh `new Item()` whose `tooltipContext` stays -1 (`Item.cs:117`) —
+  the sacrifice row is OUTSIDE the whitelist there, so "more needed"
+  never matches a search (`search_fits` passes `slot_context: -1`; the
+  difficulty + tracker ride for the row set's other gates).
+- **TRASH_COMPACTOR is WIRED** (the c36-45 f30b seam,
+  `AchievementsHelper.CheckResearchAchievement`, `:387-399`):
+  `ResearchTracker` grows `LastEditId` (`MarkContentsDirty`,
+  `ItemsSacrificedUnlocksTracker.cs:222-225` — bumps on every successful
+  registration + `Reset`, NOT on `Load`/the refused arms) and
+  `count_fully_researched` (`:60-75`, the `ItemID.Count` walk over the
+  port's NAMES id space; the `CreativeResearchItemPersistentIdOverride`
+  alias remap is the documented unported table).
+  `AchievementManager::check_research` carries the `_lastResearchVersion`
+  gate (a static in the C#, an instance field here — one manager per App)
+  and fires progression 45 at `fully >= all / 2` (integer divide). The
+  callers: `enter_loaded_world` forced (`Player.cs:325`) + the player
+  tick's post-borrow drain (`Player.cs:25703`, the HandleRunning
+  precedent — the C# fires both inside `Player.Update`).
+- **FreezeTime/ModifyTimeRate now gate the growth loops**
+  (`WorldGen.GetWorldUpdateRate`, `:72020-72028` + `UpdateTimeRate`,
+  `Main.cs:6199-6226`): `world_sim/growth.rs` fed the hardcoded
+  `(1, false)` before; it now derives the desired rate from the powers
+  (the dial arm keeps the tiles at 1 `:6204`, the all-asleep ×5 `:6213`,
+  else the ModifyTimeRate target) and passes the FreezeTime toggle —
+  rate 0 returns before EVERY loop (`:71536-71540`), the port's
+  hardUpdateWorld surrogate picks ride the same gate. The default
+  registry (TimeRate 1.0, FreezeTime off) keeps the DW-1.4 draw-count
+  pins byte-identical.

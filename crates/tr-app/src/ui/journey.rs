@@ -620,10 +620,13 @@ pub fn grid_items(
     filters: &FilterBoard,
     search: &str,
     player: Option<&crate::player::Player>,
+    journey_difficulty: u8,
 ) -> Vec<u16> {
     let mut items: Vec<u16> = tracker
         .items_with_progress()
-        .filter(|&id| search_fits(id, search, player) && filters.fits(id))
+        .filter(|&id| {
+            search_fits(id, search, player, journey_difficulty, tracker) && filters.fits(id)
+        })
         .collect();
     items.sort_by(|&a, &b| {
         let rank = |id: u16| {
@@ -646,7 +649,13 @@ pub fn grid_items(
 /// scanned case-insensitively for the substring. The port's tooltip seam is
 /// `ui::tooltip::item_tooltip_lines` (the same rows, the player's layers
 /// folded in); the 30-line cap is the C#'s `_toolTipLines` buffer.
-pub fn search_fits(kind: u16, search: &str, player: Option<&crate::player::Player>) -> bool {
+pub fn search_fits(
+    kind: u16,
+    search: &str,
+    player: Option<&crate::player::Player>,
+    journey_difficulty: u8,
+    tracker: &ResearchTracker,
+) -> bool {
     if search.trim().is_empty() {
         return true; // `SetSearchFilter`'s IsNullOrWhiteSpace arm
     }
@@ -661,6 +670,14 @@ pub fn search_fits(kind: u16, search: &str, player: Option<&crate::player::Playe
             stack: 1, // `entry.stack = 1` (`ItemFilters.cs:37`)
             player,
             held_crit: 0,
+            // W4-c24c: the search entry is a fresh `new Item()` whose
+            // `tooltipContext` stays -1 (`Item.cs:117`, `UICreativeItemGrid`
+            // never sets it on the filter entries) — the Journey sacrifice
+            // row (`Main.cs:21318`) is OUTSIDE the whitelist here, but the
+            // difficulty + tracker ride for the row set's other gates.
+            slot_context: -1,
+            journey_difficulty,
+            research: Some(tracker),
         },
     );
     let needle = search.to_lowercase();
@@ -1115,8 +1132,10 @@ fn draw_duplication_page(
     }
 
     // The grid (`UIDynamicItemCollection.DrawSelf`, `:38-71`): the items at
-    // GRID_SCALE on the 44 px lattice, clipped to the list.
-    let items = grid_items(tracker, &m.filters, &m.search, player);
+    // GRID_SCALE on the 44 px lattice, clipped to the list. The draw gate is
+    // difficulty 3 (`CreativeUI.cs:98-101`) — the search scan's tooltip rows
+    // read the same session difficulty.
+    let items = grid_items(tracker, &m.filters, &m.search, player, 3);
     let cols = grid_cols(l.list);
     let view = l.list[3];
     let max_view = grid_height(items.len(), cols).max(view);
@@ -1188,6 +1207,10 @@ pub struct Hover {
     /// The grid cell's item (`ItemSlot.Handle` on hover,
     /// `UICreativeItemGrid.cs:22-29`).
     pub item: Option<ItemSlot>,
+    /// The grid cell's `ItemSlot.Draw` context (`UICreativeItemGrid.cs:21`):
+    /// 29 fully researched, 34 partial — the tooltip's Journey sacrifice
+    /// row reads it (`Main.cs:21318`'s whitelist).
+    pub context: i32,
     /// A `MouseTextNoOverride` line was drawn — the HUD's own item tooltip
     /// stands down (`Main.mouseText` already set).
     pub text_drawn: bool,
@@ -1220,7 +1243,7 @@ pub fn draw(
 ) -> Hover {
     let (toggle_size, plate_size) = sheet_sizes(lookups);
     let l = layout(screen, m.enabled, toggle_size, plate_size);
-    let mut hover = Hover { item: None, text_drawn: false };
+    let mut hover = Hover { item: None, context: 34, text_drawn: false };
     let toggle_hover = in_rect(mouse, l.toggle);
     draw_toggle(r, lookups, &l, toggle_hover);
     if toggle_hover {
@@ -1278,7 +1301,7 @@ pub fn draw(
         }
         CATEGORY_DUPLICATION => {
             draw_duplication_page(r, lookups, &l, m, tracker, mouse, player);
-            let items = grid_items(tracker, &m.filters, &m.search, player);
+            let items = grid_items(tracker, &m.filters, &m.search, player, 3);
             if let Some(i) = grid_hit(l.list, m.scroll, items.len(), mouse) {
                 let kind = items[i];
                 hover.item = Some(ItemSlot {
@@ -1287,6 +1310,8 @@ pub fn draw(
                     count: 1,
                     prefix: 0,
                 });
+                // `DrawSlot`'s context pick (`UICreativeItemGrid.cs:21`).
+                hover.context = grid_context(tracker, kind);
             } else if let Some(i) = filter_hit(&l, mouse) {
                 // `ShowButtonName` (`UICreativeItemsInfiniteFilteringOptions.cs:125-132`).
                 super::tooltip::draw_mouse_text(
@@ -2112,13 +2137,13 @@ mod tests {
         t.clear_newly_researched(8);
         t.register_sacrifice(97, 99); // Musket Ball, fully + newly
         t.register_sacrifice(2, 5); // Dirt Block, partial
-        let items = grid_items(&t, &FilterBoard::default(), "", None);
+        let items = grid_items(&t, &FilterBoard::default(), "", None, 3);
         // Newly first (Musket Ball), then fully (Torch), then partial.
         assert_eq!(items, vec![97, 8, 2]);
         // The filter narrows (`UpdateContents`' FitsFilter, `:542`).
         let mut f = FilterBoard::default();
         f.click(0); // Weapon — none of the three
-        assert!(grid_items(&t, &f, "", None).is_empty());
+        assert!(grid_items(&t, &f, "", None, 3).is_empty());
     }
 
     /// `ItemFilters.BySearch` (`ItemFilters.cs:28-48`): the tooltip-line
@@ -2129,22 +2154,28 @@ mod tests {
         t.register_sacrifice(8, 100); // Torch
         t.register_sacrifice(2, 5); // Dirt Block
         // The name row matches case-insensitively.
-        let items = grid_items(&t, &FilterBoard::default(), "torch", None);
+        let items = grid_items(&t, &FilterBoard::default(), "torch", None, 3);
         assert_eq!(items, vec![8]);
-        let items = grid_items(&t, &FilterBoard::default(), "DIRT", None);
+        let items = grid_items(&t, &FilterBoard::default(), "DIRT", None, 3);
         assert_eq!(items, vec![2]);
         // A whitespace search passes everything (`SetSearchFilter`,
         // `EntryFilterer.cs:87-91`).
-        assert_eq!(grid_items(&t, &FilterBoard::default(), "   ", None).len(), 2);
+        assert_eq!(grid_items(&t, &FilterBoard::default(), "   ", None, 3).len(), 2);
         // A miss narrows to nothing.
-        assert!(grid_items(&t, &FilterBoard::default(), "zzz", None).is_empty());
+        assert!(grid_items(&t, &FilterBoard::default(), "zzz", None, 3).is_empty());
         // The tooltip rows scan too: the Torch's "Provides light when..." —
         // the ItemTooltip row (`Lang._itemTooltipCache`).
         let torch_tip = crate::lang::item_tooltip(8);
         if !torch_tip.is_empty() && torch_tip != "ItemTooltip.Torch" {
             let word = torch_tip.split_whitespace().next().unwrap();
-            assert!(search_fits(8, word, None), "the tooltip row scans: {word}");
+            assert!(search_fits(8, word, None, 3, &t), "the tooltip row scans: {word}");
         }
+        // W4-c24c: the search entry's context stays -1 (`Item.cs:117`) — the
+        // Journey sacrifice row is outside the whitelist, so its text never
+        // matches even for a partial kind in a Journey session.
+        let mut partial = ResearchTracker::default();
+        partial.register_sacrifice(2, 5);
+        assert!(!search_fits(2, "more to unlock", None, 3, &partial));
     }
 
     /// The new sliders' panel geometry (`ProvideSlider` widths + the
