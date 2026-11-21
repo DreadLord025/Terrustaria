@@ -14486,7 +14486,14 @@ pub struct ProjectilePool {
     /// The world-sim pass drains them on the `UpdateProjectiles` stream
     /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
     /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
-    pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// S1-E-21h d77 adds the sixth term — the style façade's `volumeScale`
+    /// (`SoundEngine.cs:93`'s fourth argument / `type.Volume`,
+    /// `LegacySoundPlayer.cs:1411`'s post-gate multiply): the DD2 Goblin
+    /// Bomb's 0.5-volume death cue (`Projectile.cs:71906`); every other
+    /// intent carries 1.0. f1 adopts the shape VERBATIM from d77's pushed
+    /// seam (`9d35874a`) — every f1 queue site pushes 1.0 (no f1 arm plays
+    /// a `WithVolume` style).
+    pending_proj_sounds: Vec<(u16, i32, f32, f32, f32, f32)>,
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
     /// the world-sim pass onto the player's `_channelShotCache` — the LAST
@@ -16130,12 +16137,14 @@ impl ProjectilePool {
     }
 
     /// S1-E-21h — the projectile-family cue intents the AI arms and the
-    /// bomb kill path queued: `(sound id, style, x, y, pitchOffset)` — the
-    /// `SoundEngine.PlaySound` overload payload. The world sim drains and
-    /// plays them through `Audio::play_proj_sound` on the
+    /// bomb kill path queued: `(sound id, style, x, y, pitchOffset,
+    /// volumeScale)` — the `SoundEngine.PlaySound` overload payload (the
+    /// d77 sixth term: the style's `type.Volume` / call scale, 1.0 for
+    /// every non-quiet cue). The world sim drains and
+    /// plays them through `Audio::play_proj_sound_scaled` on the
     /// `UpdateProjectiles` stream (`Main.cs:17775`), attenuation gate
     /// first — the wave-C drain convention.
-    pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
+    pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_proj_sounds)
     }
 
@@ -19759,7 +19768,8 @@ impl ProjectilePool {
                                 // The strike arm's cue list (Item1 +
                                 // N×Item126) — the pool's sound queue.
                                 for req in tick.sounds {
-                                    self.pending_proj_sounds.push(req);
+                                    self.pending_proj_sounds
+                                        .push((req.0, req.1, req.2, req.3, req.4, 1.0));
                                 }
                                 self.golf_effects.push(
                                     crate::projectile_ai_golf::GolfEffect::PlayerWrites {
@@ -19784,7 +19794,9 @@ impl ProjectilePool {
                     // pass tail on the same `UpdateProjectiles` stream
                     // (the S1-E-21c batch convention, ANALYSIS).
                     if let Some(req) = self.slots[i].wants_sound.take() {
-                        self.pending_proj_sounds.push(req);
+                        // The slot field carries no volume term (every
+                        // `wants_sound` arm is a stock-scale play) — 1.0.
+                        self.pending_proj_sounds.push((req.0, req.1, req.2, req.3, req.4, 1.0));
                     }
                     // S1-P-i55 — `base.oldPosition = base.position`
                     // (`Projectile.cs:17013`) latches between the AI and
@@ -21528,8 +21540,10 @@ impl ProjectilePool {
             576 => Some((2, 10, x, y, 0.0)),
             _ => None,
         };
-        if let Some(req) = cue {
-            self.pending_proj_sounds.push(req);
+        if let Some((id, style, x, y, pitch)) = cue {
+            // The sixth queue term (d77's volumeScale seam) — every f1
+            // death arm plays a stock-scale style, so 1.0.
+            self.pending_proj_sounds.push((id, style, x, y, pitch, 1.0));
         }
     }
 
@@ -22478,7 +22492,7 @@ impl ProjectilePool {
             // post-resize top-left), so the cue reads the resized box.
             let style = if matches!(kind, 785 | 788 | 791) { 62 } else { 14 };
             let p = &self.slots[slot];
-            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             for _ in 0..8 {
                 gore(rng);
             }
@@ -22491,7 +22505,7 @@ impl ProjectilePool {
             resize(&mut self.slots[slot], 22.0);
             let style = if kind == 800 { 62 } else { 14 };
             let p = &self.slots[slot];
-            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             for _ in 0..8 {
                 gore(rng);
             }
@@ -22516,6 +22530,7 @@ impl ProjectilePool {
                 p.pos.x + p.w * 0.5,
                 p.pos.y + p.h * 0.5,
                 0.0,
+                1.0,
             ));
             resize(&mut self.slots[slot], 50.0);
             for _ in 0..50 {
@@ -22555,7 +22570,7 @@ impl ProjectilePool {
             // for ALL four kinds — no Item14 sibling), post-`Resize(22)`
             // `base.position`.
             let p = &self.slots[slot];
-            self.pending_proj_sounds.push((2, 62, p.pos.x, p.pos.y, 0.0));
+            self.pending_proj_sounds.push((2, 62, p.pos.x, p.pos.y, 0.0, 1.0));
             for _ in 0..4 {
                 if rng.next_range(0, 5) == 0 {
                     gore(rng);
@@ -22577,7 +22592,7 @@ impl ProjectilePool {
             // the `:78063` owner gate).
             let style = if matches!(kind, 777 | 781) { 62 } else { 14 };
             let p = &self.slots[slot];
-            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             for _ in 0..4 {
                 gore(rng);
             }
@@ -22640,7 +22655,7 @@ impl ProjectilePool {
             // cue stays kind-disjoint from d77's selection.
             if !matches!(kind, 133 | 136) {
                 let p = &self.slots[slot];
-                self.pending_proj_sounds.push((2, 14, p.pos.x, p.pos.y, 0.0));
+                self.pending_proj_sounds.push((2, 14, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             resize(&mut self.slots[slot], 22.0);
             for _ in 0..8 {
@@ -22658,7 +22673,7 @@ impl ProjectilePool {
             // scarab-773 arm's dead 794/797 clause, NOT this arm.
             let style = if kind == 139 { 62 } else { 14 };
             let p = &self.slots[slot];
-            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             resize(&mut self.slots[slot], 80.0);
             for _ in 0..40 {
                 if rng.next_range(0, 2) == 0 {
@@ -24163,7 +24178,7 @@ mod s1_e_21h_sound_tests {
             };
             assert_eq!(
                 queued[0],
-                (id, style, qx, qy, 0.0),
+                (id, style, qx, qy, 0.0, 1.0),
                 "kind {kind}'s cue payload"
             );
             assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
@@ -24202,7 +24217,7 @@ mod s1_e_21h_sound_tests {
             pool.kill_sound_cue(slot);
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
-            assert_eq!(queued[0], (id, style, 80.0, 80.0, 0.0), "kind {kind}");
+            assert_eq!(queued[0], (id, style, 80.0, 80.0, 0.0, 1.0), "kind {kind}");
             pool.kill(slot);
         }
         // The Ice Block (`:75535-75537`): the cue fires only on `ai[0] >= 0`.
@@ -24215,7 +24230,7 @@ mod s1_e_21h_sound_tests {
         pool.slots_mut()[slot].ai[0] = 0.0;
         pool.kill_sound_cue(slot);
         let queued = pool.drain_proj_sounds();
-        assert_eq!(queued, vec![(2, 27, 96.0, 96.0, 0.0)], "the zero latch plays");
+        assert_eq!(queued, vec![(2, 27, 96.0, 96.0, 0.0, 1.0)], "the zero latch plays");
         pool.kill(slot);
     }
 
@@ -24251,7 +24266,7 @@ mod s1_e_21h_sound_tests {
             pool.kill_sound_cue(slot);
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
-            assert_eq!(queued[0], (id, style, 64.0, 64.0, 0.0), "kind {kind}'s payload");
+            assert_eq!(queued[0], (id, style, 64.0, 64.0, 0.0, 1.0), "kind {kind}'s payload");
             assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
             pool.kill(slot);
         }
@@ -24303,7 +24318,7 @@ mod s1_e_21h_sound_tests {
                 // pre-family-resize top-left: (43,43).
                 _ => (43.0, 43.0),
             };
-            assert_eq!(queued[0], (2, style, qx, qy, 0.0), "kind {kind}'s play point");
+            assert_eq!(queued[0], (2, style, qx, qy, 0.0, 1.0), "kind {kind}'s play point");
         }
         // The plain arm's 133/136 are d77's Item62 pick — the port queues
         // NOTHING for them (the else-branch Item14 covers 134/135/137/138).
@@ -24320,7 +24335,7 @@ mod s1_e_21h_sound_tests {
         let mut rng = tr_core::tile_light::FastRandom::new(7);
         pool.rocket_kill_census(slot, &mut rng, 0);
         let queued = pool.drain_proj_sounds();
-        assert_eq!(queued, vec![(2, 14, 100.0, 100.0, 0.0)], ":78096 the 134 else-branch");
+        assert_eq!(queued, vec![(2, 14, 100.0, 100.0, 0.0, 1.0)], ":78096 the 134 else-branch");
     }
 
     /// S1-E-21h f1 owed-arm phase — the NONE-site kinds whose `proj_data`
@@ -24371,7 +24386,7 @@ mod s1_e_21h_sound_tests {
                 2 => (64.0 + w * 0.5 - 40.0, 64.0 + h * 0.5 - 40.0),
                 _ => (64.0, 64.0),
             };
-            assert_eq!(queued[0], (id, style, qx, qy, 0.0), "kind {kind}'s payload");
+            assert_eq!(queued[0], (id, style, qx, qy, 0.0, 1.0), "kind {kind}'s payload");
             assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
         }
     }
@@ -24402,7 +24417,7 @@ mod s1_e_21h_sound_tests {
             pool.slots_mut()[0].ai[1] = 0.0;
             pool.kill_sound_cue(0);
             let queued = pool.drain_proj_sounds();
-            assert_eq!(queued, vec![(0, 0, 64.0, 64.0, 0.0)], "kind {kind}'s Dig thud");
+            assert_eq!(queued, vec![(0, 0, 64.0, 64.0, 0.0, 1.0)], "kind {kind}'s Dig thud");
         }
     }
 

@@ -1079,6 +1079,31 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        self.play_use_sound_scaled(style_index, x, y, pitch_offset, 1.0, rng)
+    }
+
+    /// S1-E-21h d77 — the `volumeScale`-carrying peer of
+    /// [`Audio::play_use_sound`]: the style façade's fourth argument
+    /// (`SoundEngine.cs:93-99` — `type.Volume * volumeScale` rides the
+    /// legacy player's `volumeScale` parameter, applied at
+    /// `LegacySoundPlayer.cs:1411` AFTER the attenuation gate and the
+    /// case-2 volume tweaks, so a quiet scale never changes the gate's
+    /// refusal nor the RNG census). The DD2 Goblin Bomb's death cue
+    /// (`SoundID.DD2_GoblinBomb = new LegacySoundStyle(2, 14).WithVolume(0.5f)`,
+    /// `SoundID.cs:1596`, played at `Projectile.cs:71906`) is the first
+    /// caller; every other style play keeps the 1.0 default through
+    /// [`Audio::play_use_sound`]. f1 adopts the seam VERBATIM from d77's
+    /// pushed tip (`9d35874a`, `task/W4-d77-proj-sounds-3`) so the merge's
+    /// queue shape is the 6-tuple on both sides.
+    pub fn play_use_sound_scaled(
+        &mut self,
+        style_index: u16,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        volume_scale: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
         let style = &crate::soundid::SOUND_STYLES[style_index as usize];
         // `SoundEngine.cs:99` — `pitchOffset + type.GetRandomPitch()`; the
         // NextFloat draw is consumed even at variance 0 (`SoundStyle.cs:42`).
@@ -1086,19 +1111,22 @@ impl Audio {
         let pitch_offset =
             pitch_offset + sound::get_random_pitch(style.pitch_variance, draw);
         // The attenuation gate first — the C# walks the position/volume
-        // checks (`:369-436`) before the type switch draws anything.
+        // checks (`:369-436`) before the type switch draws anything. The
+        // caller's `volumeScale` rides `:1411` AFTER the gate, so folding it
+        // into the probe's scale cannot change a refusal (the gate never
+        // reads the scale).
         if sound::play_sound(
             u32::from(style.sound_id),
             x,
             y,
             self.listener,
-            style.volume,
+            style.volume * volume_scale,
         )
         .is_none()
         {
             return None;
         }
-        let (cue, volume_scale, pitch) = if style.sound_id == 42 {
+        let (cue, cue_volume, pitch) = if style.sound_id == 42 {
             // Case 42 (`:1376-1381`): no volume tweak, no pitch switch —
             // only the caller's offset, clamped at `:1410`.
             let base = style.trackable.expect("trackable style carries an asset");
@@ -1128,7 +1156,9 @@ impl Audio {
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
-        self.emit(name, x, y, volume_scale, pitch);
+        // `:1411` — `soundEffectInstance.Volume *= volumeScale`: the caller's
+        // scale multiplies the case's own volume AFTER the tweaks.
+        self.emit(name, x, y, cue_volume * volume_scale, pitch);
         Some(name)
     }
 
@@ -1999,6 +2029,31 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        self.play_proj_sound_scaled((id, style), x, y, pitch_offset, 1.0, rng)
+    }
+
+    /// S1-E-21h f1 — the `volumeScale`-carrying peer of
+    /// [`Audio::play_proj_sound`]: the queue's sixth term (d77's seam,
+    /// `9d35874a`, adopted so both branches push the 6-tuple). The DD2
+    /// Goblin Bomb's `Kill()` cue (`Projectile.cs:71906`) plays
+    /// `SoundID.DD2_GoblinBomb = new LegacySoundStyle(2, 14).WithVolume(0.5f)`
+    /// (`SoundID.cs:1596`) — the SAME case-2 style-14 asset as `Item14`,
+    /// but the style object carries `type.Volume = 0.5`; the queue
+    /// reproduces that as `volume_scale = 0.5` (`SoundEngine.cs:99`'s
+    /// `type.Volume * volumeScale` with the call's own scale 1). Every
+    /// f1 queued cue keeps 1.0. KEEP-ONE at merge: d77's drain routes the
+    /// int ids 0/13/6/4/29 BEFORE this call, so its copy of this fn drops
+    /// the int match below — f1 keeps it here (its drain special-cases
+    /// only id 0), and at scale 1.0 both shapes play identically.
+    pub fn play_proj_sound_scaled(
+        &mut self,
+        (id, style): (u16, i32),
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        volume_scale: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
         // S1-E-21h f1 — the `Kill()` tail's int-overload families ride the
         // same queue: id 0 (the Dig thud, `PlaySound(0, pos)` — the int
         // overload's default Style 1 is unused by case 0), id 13 (the
@@ -2006,7 +2061,9 @@ impl Audio {
         // `PlaySound(4, pos, style)`). Each delegates to its landed façade —
         // attenuation BEFORE the case draws, the gameplay draws on the
         // caller's (`UpdateProjectiles`) stream. The int overload draws NO
-        // `GetRandomPitch` NextFloat (`SoundEngine.cs:102-108`).
+        // `GetRandomPitch` NextFloat (`SoundEngine.cs:102-108`) and every
+        // f1 int site passes the stock scale 1 — `volume_scale` is unused
+        // on these arms.
         match id {
             0 => return self.play_place_sound((0, 0), x, y, rng),
             13 => return self.play_wall_break_sound((13, 0), x, y, rng),
@@ -2019,7 +2076,7 @@ impl Audio {
         let idx = crate::soundid::SOUND_STYLES
             .iter()
             .position(|s| s.sound_id == 2 && s.style == style)?;
-        self.play_use_sound(idx as u16, x, y, pitch_offset, rng)
+        self.play_use_sound_scaled(idx as u16, x, y, pitch_offset, volume_scale, rng)
     }
 
     /// S1-E-21i — one wall-break cue (`tr_core::edit::kill_wall_sound`, the
@@ -3942,6 +3999,52 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_proj_sound((4, 7), 0.0, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted NPCDeath7 play is draw-free");
+    }
+
+    /// S1-E-21h f1 final phase — the queue's sixth term (`volumeScale`,
+    /// `SoundEngine.cs:93`'s fourth argument) adopted from d77's pushed
+    /// seam (`9d35874a`). The DD2 Goblin Bomb's `Kill()` cue
+    /// (`Projectile.cs:71906`) plays the case-2 style-14 asset at
+    /// `type.Volume = 0.5` (`SoundID.cs:1596`'s `.WithVolume(0.5f)`); the
+    /// scale rides `LegacySoundPlayer.cs:1411` AFTER the gate and the
+    /// case-2 tweaks — the RNG census and the refusal shape stay the
+    /// stock-scale play's. f1's int-overload arms (0/13/4) keep their
+    /// routes at any scale (every f1 int site passes 1.0). Written, NOT
+    /// run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_final_the_volume_scale_rides_after_the_gate_draw_free_census() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The 0.5-scale play draws the SAME one Next(-6, 7) as the stock
+        // play (the scale is not an RNG input) and resolves Item_14.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        let cue = audio.play_proj_sound_scaled((2, 14), 0.0, 0.0, 0.0, 0.5, &mut rng);
+        assert_eq!(cue, Some("Item_14"), "the goblin bomb is the Item14 asset");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Muted: the gate refuses BEFORE the switch regardless of scale.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound_scaled((2, 14), 0.0, 0.0, 0.0, 0.5, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the muted 0.5-scale play is draw-free");
+        // The int arms keep their façades under the scaled peer (f1's
+        // drain shape): the id-4 cry still draws its ONE case-4 pitch.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound_scaled((4, 7), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("NPC_Killed_7")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "the int arm ignores the scale");
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract

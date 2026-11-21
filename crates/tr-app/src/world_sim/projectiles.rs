@@ -457,7 +457,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // passed. The C# plays inline mid-walk; the port drains at the pass
     // tail (the wave-C batch convention, ANALYSIS "The projectile sound
     // wave").
-    for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
+    for (id, style, x, y, pitch_offset, volume_scale) in app.projectiles.drain_proj_sounds() {
         // S1-P-i08 + W3-i39 — the aiStyle-3 wall thud (`Projectile.cs:19571`)
         // and `AI_007`'s latch dig cue (`Projectile.cs:52757`:
         // `PlaySound(0, i*16, j*16)`) are the int-id Dig play: case 0's
@@ -468,7 +468,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
         } else {
-            app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+            // S1-E-21h f1 — the queue's sixth term (d77's `volumeScale`
+            // seam, adopted from `9d35874a`): the id-0/13/4 int-overload
+            // routes ride INSIDE `play_proj_sound_scaled`'s int match (f1's
+            // part-4 shape) and ignore the scale (the int overload's own
+            // volume is 1 at every f1 site); the id-2 styles fold it into
+            // `play_use_sound_scaled`'s post-gate multiply
+            // (`LegacySoundPlayer.cs:1411`).
+            app.audio
+                .play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, rng);
         }
     }
     // `NewProjectile`'s `TryUpdateChannel` (`Projectile.cs:11097-11100`):
