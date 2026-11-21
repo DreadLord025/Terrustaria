@@ -208,6 +208,9 @@
 //! | 971 | `:87273` | the 267 Creeper death (1 gore 402) |
 //! | 972-973 | `:87355-87356` | the 5 Servant of Cthulhu death (2 gores 6/7) |
 //! | 974-981 | `:87374-87383` | the 113/114 Wall of Flesh/Eye death (4 quadrant gores each) |
+//! | 982-983 | `:87433-87434` | the 115/116 TheHungry death (2 gores 132/133) |
+//! | 984-986 | `:87450` | the 117-119 Leech death (1 gore each, 134+(type-117)) |
+//! | 987-991 | `:87468-87478` | the 217/218/219 beetle death (per-type gores, type-18 alpha dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5562,6 +5565,100 @@ fn wall_of_flesh_death(
     gore.new_gore(rng, world, Vec2::new(pos.x + hw, pos.y + hh), vel, 137, s);
 }
 
+/// The 115/116 TheHungry death (`NPC.cs:87429-87434`, sites 982-983): the
+/// 20-dust type-5 burst (SpeedX `hitDirection`, SpeedY -1), then the 2
+/// gores 132/133 at position at `this.scale`. (The 115's `netMode != 1`
+/// early-return branch is the single-player port's — it returns before the
+/// gores in multiplayer; single-player runs the gores.)
+fn the_hungry_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 132, s); // :87433
+    gore.new_gore(rng, world, pos, vel, 133, s); // :87434
+}
+
+/// The 117-119 Leech death (`NPC.cs:87446-87450`, sites 984-986): the
+/// 10-dust type-5 burst (SpeedX `hitDirection`, SpeedY -1), then the single
+/// gore `134 + (type-117)` at position at `this.scale` (117 → 134, 118 →
+/// 135, 119 → 136).
+fn leech_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 134 + (npc_type - 117), npc.scale); // :87450
+}
+
+/// The 217/218/219 beetle death (`NPC.cs:87462-87478`, sites 987-991): the
+/// 50-dust type-18 burst (SpeedX `hitDirection`, SpeedY -2, alpha/color/
+/// scale from the NPC), then the per-type gores at position at `this.scale`
+/// — 217 CochinealBeetle → [292,293], 218 CyanBeetle → [295,296], 219
+/// LacBeetle → [294].
+///
+/// `this.color` stand-in: the beetles set NO color in `SetDefaults`, so the
+/// dust color is `Color::default()`; alpha rides `npc.alpha`.
+fn beetle_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    // `:87462-87465` — the 50-dust type-18 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    // `:87466-87479` — the per-type gore list.
+    let gores: &[i32] = match npc_type {
+        217 => &[292, 293],
+        218 => &[295, 296],
+        _ => &[294], // 219 LacBeetle
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for &ty in gores {
+        gore.new_gore(rng, world, pos, vel, ty, npc.scale);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6237,6 +6334,18 @@ pub fn hit_effect_c(
     // `:87358-87386` — the 113/114 Wall of Flesh/Eye arm (sites 974-981).
     if (npc_type == 113 || npc_type == 114) && npc.hp <= 0 {
         wall_of_flesh_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87410-87435` — the 115/116 TheHungry arm (sites 982-983).
+    if (npc_type == 115 || npc_type == 116) && npc.hp <= 0 {
+        the_hungry_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87436-87451` — the 117-119 Leech arm (sites 984-986).
+    if (117..=119).contains(&npc_type) && npc.hp <= 0 {
+        leech_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87452-87480` — the 217/218/219 beetle arm (sites 987-991).
+    if (npc_type == 217 || npc_type == 218 || npc_type == 219) && npc.hp <= 0 {
+        beetle_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9907,6 +10016,50 @@ mod tests {
             assert_eq!(gore.slot(1).position, Vec2::new(100.0, 130.0));
             assert_eq!(gore.slot(2).position, Vec2::new(125.0, 100.0));
             assert_eq!(gore.slot(3).position, Vec2::new(125.0, 130.0));
+        }
+    }
+
+    /// `NPC.cs:87433-87434` — the TheHungry death: the 2 gores 132/133.
+    #[test]
+    fn w4_f10_the_hungry_death_spawns_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(929);
+        the_hungry_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![132, 133]);
+    }
+
+    /// `NPC.cs:87450` — the Leech death: the single gore 134+(type-117).
+    #[test]
+    fn w4_f10_the_leech_death_uses_the_per_type_offset() {
+        let w = air();
+        for (ty, gore_ty) in [(117, 134), (118, 135), (119, 136)] {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(937);
+            leech_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "leech {ty}");
+        }
+    }
+
+    /// `NPC.cs:87468-87478` — the beetle death: 217→[292,293],
+    /// 218→[295,296], 219→[294], after the 50-dust type-18 alpha burst.
+    #[test]
+    fn w4_f10_the_beetle_death_uses_the_per_type_list() {
+        let w = air();
+        for (ty, gores) in [(217, [292, 293]), (218, [295, 296]), (219, [294])] {
+            let mut n = boss(100.0, 100.0, 30.0, 24.0);
+            n.alpha = 20;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(941);
+            beetle_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "beetle {ty}");
         }
     }
 
