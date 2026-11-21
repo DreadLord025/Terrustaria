@@ -862,6 +862,11 @@ pub struct ItemDrop {
     /// `Entity.shimmerWet` (`Entity.cs:28`) — the drop's box overlaps shimmer
     /// liquid this tick.
     pub shimmer_wet: bool,
+    /// The shimmered-item repulsion scan's `flag` (`WorldItem.cs:789-862`):
+    /// the items pass runs the slice-level scan before the drop's update and
+    /// parks the result here; `move_in_world` consumes it (the
+    /// `velocity.X *= 0.8f` tail, `:859-862`) and clears it. Transient.
+    pub repulsed: bool,
     /// The natural roll's prefix (`Item.NewItem`'s `prefix` argument,
     /// `Item.cs:49730`); 0 = none.
     pub prefix: u16,
@@ -912,6 +917,7 @@ impl ItemDrop {
             shimmered: false,
             shimmer_pending: false,
             shimmer_wet: false,
+            repulsed: false,
             prefix,
             pos: Vec2::new(x, y),
             vel: Vec2::new(vx, vy),
@@ -1085,6 +1091,89 @@ impl ItemDrop {
         drained
     }
 
+    /// `WorldItem.MoveInWorld`'s shimmered-item repulsion scan
+    /// (`WorldItem.cs:790-847`): a shimmered drop pushes apart from every other
+    /// shimmered drop whose centre lies within the half-width span on BOTH
+    /// axes, up to a 50-neighbour budget. The push scales by `span / distance`
+    /// (capped at 10) and nudges each side's `velocity.X` by `0.1 * span` toward
+    /// separation, bounded at `±3 * span` for self and `±3` for the neighbour
+    /// (the equal-centre tie-break uses `±3 * span` for both and only fires for
+    /// the lower slot). Returns the C#'s `flag` (any neighbour touched), which
+    /// the caller parks in [`Self::repulsed`] for the `velocity.X *= 0.8f` tail
+    /// (`:859-862`). Runs on the live slice so neighbours feel the push this
+    /// tick; the port's list order stands in for `Main.item` slot order (the
+    /// `combine_nearby` deviation). The span is the port's drop box [`SIZE`]
+    /// (C# `WorldItem.width = 16`, `:138`; the port models the box at 14).
+    pub(crate) fn repel_shimmered(items: &mut [ItemDrop], i: usize) -> bool {
+        if !items[i].shimmered {
+            return false;
+        }
+        let mut flag = false;
+        let mut budget = 50i32;
+        let self_center = items[i].center();
+        for j in 0..items.len() {
+            // `:795` — skip self and non-shimmered slots (every port drop is
+            // active, so the C# `!Main.item[i].active` term is vacuous).
+            if j == i || !items[j].shimmered {
+                continue;
+            }
+            // `:799-802` — `if (num-- <= 0) break`: the budget counts only
+            // shimmered candidates, 50 of them.
+            if budget <= 0 {
+                break;
+            }
+            budget -= 1;
+            let other_center = items[j].center();
+            // `:803` — `num2 = (width + item[i].width) / 2`.
+            let mut span = SIZE;
+            let dx = self_center.x - other_center.x;
+            let dy = self_center.y - other_center.y;
+            // `:804` — both axes must lie within the span.
+            if !(dx.abs() <= span) || !(dy.abs() <= span) {
+                continue;
+            }
+            flag = true;
+            // `:809-813` — `num2 /= Distance`, capped at 10. A zero distance
+            // (coincident centres) divides to +inf and caps to 10, like the C#.
+            let dist = (dx * dx + dy * dy).sqrt();
+            span /= dist;
+            if span > 10.0 {
+                span = 10.0;
+            }
+            let (mut svx, mut ovx) = (items[i].vel.x, items[j].vel.x);
+            if self_center.x < other_center.x {
+                // `:814-824` — self is left of the neighbour: push self left,
+                // neighbour right.
+                if svx > -3.0 * span {
+                    svx -= 0.1 * span;
+                }
+                if ovx < 3.0 {
+                    ovx += 0.1 * span;
+                }
+            } else if self_center.x > other_center.x {
+                // `:825-835` — self is right: push self right, neighbour left.
+                if svx < 3.0 * span {
+                    svx += 0.1 * span;
+                }
+                if ovx > -3.0 {
+                    ovx -= 0.1 * span;
+                }
+            } else if i < j {
+                // `:836-846` — coincident X: the lower slot pushes left, the
+                // higher right (both bounded at `±3 * span`).
+                if svx > -3.0 * span {
+                    svx -= 0.1 * span;
+                }
+                if ovx < 3.0 * span {
+                    ovx += 0.1 * span;
+                }
+            }
+            items[i].vel.x = svx;
+            items[j].vel.x = ovx;
+        }
+        flag
+    }
+
     /// One fixed 60 Hz step of `WorldItem.UpdateItem`'s physics half
     /// (`WorldItem.cs:338-453`): the shimmer update, the ground movement and
     /// the grab-delay decrement. The pickup pull/pick lives in the
@@ -1137,8 +1226,10 @@ impl ItemDrop {
     /// The non-grabbed movement half: `MoveInWorld`'s gravity/friction head
     /// (`WorldItem.cs:849-864`) and the tile-collision pass. `gravity`/
     /// `max_fall` are the caller's resolved pair (the shimmer-wet override or
-    /// the shimmered 0). The shimmered-item repulsion scan (`:790-847`) and
-    /// the `ItemNoGravity` float (`:774-786`) are deferred (ANALYSIS W4-e19).
+    /// the shimmered 0). The repulsion scan itself (`:790-847`) is the
+    /// slice-level [`Self::repel_shimmered`] the items pass runs before this
+    /// update; its `flag` rides [`Self::repulsed`]. The `ItemNoGravity` float
+    /// (`:774-786`) is deferred (ANALYSIS W4-e19).
     fn move_in_world(&mut self, world: &World, gravity: f32, max_fall: f32) {
         // `WorldItem.cs:849-853` — the gravity add and the fall cap.
         self.vel.y = (self.vel.y + gravity).min(max_fall);
@@ -1148,6 +1239,12 @@ impl ItemDrop {
         if self.vel.x.abs() < FRICTION_EPSILON {
             self.vel.x = 0.0;
         }
+        // `WorldItem.cs:859-862` — the repulsion flag's damp, AFTER the
+        // friction/snap and BEFORE the conveyor pass.
+        if self.repulsed {
+            self.vel.x *= 0.8;
+        }
+        self.repulsed = false;
         // `WorldItem.cs:864`: the belt contacts bend the velocity before the
         // AABB pass. The C# stores the bool in `item.onConveyor`, which
         // suppresses the draw-side velocity spin (`Main.cs:38613`).
@@ -2129,5 +2226,92 @@ mod s1_p_i47_tests {
         // A full cell (liquid 255, surface at +0.06) IS wet at the same spot.
         w.tiles[j].liquid = 255;
         assert!(d.box_is_wet(&w), "the full cell wets the box");
+    }
+
+    /// W4-e19 — the shimmered-item repulsion scan (`WorldItem.cs:790-847`).
+    /// Two shimmered drops 7 px apart (within the 14 span): the left one is
+    /// pushed left, the right one right, by `0.1 * span/distance` capped at
+    /// 10 — here distance 7, span 14/7 = 2 → each nudge 0.2.
+    #[test]
+    fn w4_e19_shimmered_drops_push_apart() {
+        let mut a = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        let mut b = ItemDrop::new(2, 1, 0, 107.0, 100.0, 0.0, 0.0, 0.0);
+        a.shimmered = true;
+        b.shimmered = true;
+        let mut items = vec![a, b];
+        let flag = ItemDrop::repel_shimmered(&mut items, 0);
+        assert!(flag, "the neighbour was touched");
+        // distance 7 → num2 = 14/7 = 2 (≤ 10); the left drop: vx -= 0.1*2.
+        assert!((items[0].vel.x - -0.2).abs() < 1e-5, "self pushed left: {}", items[0].vel.x);
+        // The neighbour (right): vx += 0.1*2 (`:820-823`, bound < 3).
+        assert!((items[1].vel.x - 0.2).abs() < 1e-5, "neighbour pushed right: {}", items[1].vel.x);
+        // Running from slot 1 mirrors the pushes (self right, neighbour left).
+        let flag1 = ItemDrop::repel_shimmered(&mut items, 1);
+        assert!(flag1);
+        assert!((items[1].vel.x - 0.4).abs() < 1e-5);
+        assert!((items[0].vel.x - -0.4).abs() < 1e-5);
+    }
+
+    /// The scan's gates: non-shimmered drops never repel (`:790`/`:795`), and
+    /// a neighbour beyond the span on either axis is skipped (`:804`).
+    #[test]
+    fn w4_e19_the_repulsion_gates() {
+        // Plain drops: no scan at all.
+        let mut items = vec![
+            ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
+            ItemDrop::new(2, 1, 0, 101.0, 100.0, 0.0, 0.0, 0.0),
+        ];
+        assert!(!ItemDrop::repel_shimmered(&mut items, 0));
+        assert_eq!(items[0].vel.x, 0.0);
+        assert_eq!(items[1].vel.x, 0.0);
+        // A shimmered self with a NON-shimmered neighbour: skipped.
+        items[0].shimmered = true;
+        assert!(!ItemDrop::repel_shimmered(&mut items, 0));
+        assert_eq!(items[1].vel.x, 0.0, "the plain neighbour is not pushed");
+        // Both shimmered but 20 px apart on Y (> the 14 span): skipped.
+        items[1].shimmered = true;
+        items[1].pos.y = 120.0;
+        assert!(!ItemDrop::repel_shimmered(&mut items, 0));
+        assert_eq!(items[0].vel.x, 0.0);
+        assert_eq!(items[1].vel.x, 0.0);
+    }
+
+    /// The `span / distance` cap at 10 (`:810-813`): coincident centres give
+    /// +inf → 10, and the equal-X tie-break (`:836-846`) pushes the lower slot
+    /// left / the higher right, both bounded at `±3 * 10`.
+    #[test]
+    fn w4_e19_the_repulsion_caps_the_span_at_10_and_breaks_ties_by_slot() {
+        let mut a = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        let mut b = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        a.shimmered = true;
+        b.shimmered = true;
+        let mut items = vec![a, b];
+        let flag = ItemDrop::repel_shimmered(&mut items, 0);
+        assert!(flag);
+        // distance 0 → num2 capped 10 → the tie-break nudge 0.1*10 = 1.0.
+        assert!((items[0].vel.x - -1.0).abs() < 1e-5, "lower slot left: {}", items[0].vel.x);
+        assert!((items[1].vel.x - 1.0).abs() < 1e-5, "higher slot right: {}", items[1].vel.x);
+        // From the higher slot the tie-break refuses (`whoAmI < i` false).
+        let flag1 = ItemDrop::repel_shimmered(&mut items, 1);
+        assert!(flag1, "flag set even when the tie-break declines the push");
+        assert!((items[0].vel.x - -1.0).abs() < 1e-5, "no second push");
+        assert!((items[1].vel.x - 1.0).abs() < 1e-5);
+    }
+
+    /// The ×0.8 damp tail (`:859-862`): `move_in_world` applies friction THEN
+    /// the repulsion damp. A repulsed drop with vx 1.0: ×0.95 → 0.95, ×0.8 →
+    /// 0.76. The flag clears after the tick.
+    #[test]
+    fn w4_e19_the_repulsion_flag_damps_x_by_08_after_friction() {
+        let w = ground();
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 0.0);
+        d.repulsed = true;
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.vel.x - 0.76).abs() < 1e-5, "0.95 then 0.8: {}", d.vel.x);
+        assert!(!d.repulsed, "the flag cleared");
+        // Without the flag: plain friction only.
+        let mut plain = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 0.0);
+        plain.update(&w, 1.0 / 60.0);
+        assert!((plain.vel.x - 0.95).abs() < 1e-5);
     }
 }

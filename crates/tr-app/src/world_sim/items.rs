@@ -668,6 +668,16 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 continue;
             }
             let was_grabbed = drop.being_grabbed;
+            // `MoveInWorld`'s repulsion scan (`WorldItem.cs:790-847`) runs at
+            // the head of the movement half, BEFORE the gravity add — the
+            // slice-level pass nudges the neighbours' live velocities (and
+            // this drop's own X) and parks the `flag` for the ×0.8 tail. A
+            // grabbed drop skips MoveInWorld entirely (`:425-435`), no scan.
+            // The clone re-reads its X afterwards — the scan wrote the slot.
+            if !was_grabbed && drop.shimmered {
+                drop.repulsed = crate::item::ItemDrop::repel_shimmered(items, i);
+                drop.vel.x = items[i].vel.x;
+            }
             drop.update(world, step);
             // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
             // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
