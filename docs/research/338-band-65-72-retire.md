@@ -1,12 +1,20 @@
-# 281 — W4-d30 RETIRE/SEAL: the NPC aiStyle band 65–72 FINAL census + keep-one bible
+# 338 — W4-d30 RETIRE/SEAL: the NPC aiStyle band 65–72 FINAL census + keep-one bible
+
+> **Renumber chain: 281 → 308 (§8.1) → 338 (§8.5).** Originally self-picked
+> **281** under research/150 §4-REFRESH ("281+ FREE"); registry §8.1 assigned
+> d30 **308**; §8.5 (AMENDMENT, registry tip `9dddb32b4`) HONORS g13's
+> pre-§8 executed push of 308 — **g13 KEEPS 308; d30 shifts to 338**. This
+> file is the renamed `281-band-65-72-retire.md`; all references updated.
 
 Branch `task/W4-d30-npc-ai-styles-65-72`, code tip `f23b43fde1acdd3b4fd612837e74e4faa6eb8f4b`
 (base `a725acb04`, wave-3 complete). Scan date 2026-11-21, fetched
 `origin/main = 051600da81339c7cb026b9a8190f71cbb47f738a`. Code-only lane: no
-cargo/tests/rustfmt/graphify; witnesses WRITTEN NOT RUN. Registry number **281**
-per research/150 §4-REFRESH ("Numbers 281+ are FREE"; tree census across all
-origin tips: max used 245, 244–280 are §6 loser assignments; no tree or
-commit-message claim on 281).
+cargo/tests/rustfmt/graphify; witnesses WRITTEN NOT RUN. Registry number **338**
+per research/150 §8.5 (was self-picked **281** under §4-REFRESH "Numbers 281+
+are FREE" — tree census across all origin tips: max used 245, 244–280 are §6
+loser assignments, no tree or commit-message claim on 281 at seal time; §8.1
+reassigned d30 to 308, then §8.5 honored g13-308-executed-pre-§8 and shifted
+d30 to 338 — see the chain banner above).
 
 ## 1. Git-log census — what landed in the band
 

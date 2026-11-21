@@ -1224,7 +1224,7 @@ mod tests {
         assert_eq!(rng, untouched, "five idle ticks, zero draws");
     }
 
-    /// SEAL (research/281 §4): the 444 catch row rides the gold range —
+    /// SEAL (research/338 §4, renumbered 281→338 per §8.5): the 444 catch row rides the gold range —
     /// `NPC.cs:14287` writes catchItem 2891, `bug_net.rs:152`'s
     /// `442..=448 => 2889 + type - 442` covers it (2889 + 2).
     #[test]
@@ -1234,7 +1234,7 @@ mod tests {
         assert_eq!(crate::bug_net::catch_item(GOLD_BUTTERFLY, 7.0), 2891);
     }
 
-    /// SEAL (research/281 §4): the HellButterfly's item is lava bait
+    /// SEAL (research/338 §4, renumbered 281→338 per §8.5): the HellButterfly's item is lava bait
     /// (`ItemID.cs:1306`), the GoldButterfly's is not — the plain net
     /// burns on 653's catch, never on 444's.
     #[test]
@@ -1245,7 +1245,7 @@ mod tests {
         assert!(!crate::bug_net::is_lava_bait(gold_item), "2891");
     }
 
-    /// SEAL (research/281 §3c/§3d): the g65 "Kill-309" arm is projectile
+    /// SEAL (research/338 §3c/§3d, renumbered 281→338 per §8.5): the g65 "Kill-309" arm is projectile
     /// 309 (FrostBlastFriendly) and d77's 661 cue is the Onyx Black Bolt —
     /// neither shares an id space with this module's NPC kinds. Pin the
     /// projectile const so a future census cannot fold the axes.

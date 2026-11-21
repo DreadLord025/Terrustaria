@@ -39313,7 +39313,7 @@ claim + the FindFrame 356/444/653/661 flap cycle (`NPC.cs:72739-72772`)
 are the roster lanes (W4-d39/d40/d43); the 661 death's Empress-of-Light
 spawn is `DoDeathEvents` case 661 (`:79493-79503`), not this arm.
 
-**W4-d30 RETIRE/SEAL (research/281).** The band 65-72 census is FINAL:
+**W4-d30 RETIRE/SEAL (research/338).** The band 65-72 census is FINAL:
 69/70/71/72 landed AND wired on main (`0cb14db09` Fishron chain +
 `e2de964e2`/`29be1002f` ForceBubble); 66/67/68 landed-unwired on main
 (S1-D-3) with full wiring on c8 `7c2de9c06` / c9 `2042d77f1` /
@@ -39329,6 +39329,7 @@ despawn gate and case-661 SpawnBoss drain map 1:1 onto
 (`f6e07bb90`, `Projectile.cs:75347-75361`) - no overlap with the NPC
 267/6 dust; d77's `kill_tail_cue` 661 arm is the Onyx Black Bolt
 projectile, not the Lacewing - this module pushes zero cues, no drop
-owed. 3 seal witnesses WRITTEN NOT RUN (18 total). Registry number 281
-per research/150 ("281+ FREE"). No style/kind/dust/cue in the band is
+owed. 3 seal witnesses WRITTEN NOT RUN (18 total). Registry number 338
+per research/150 §8.5 (281 self-pick → §8.1 308 → §8.5 338; g13 KEEPS 308,
+executed pre-§8). No style/kind/dust/cue in the band is
 unclaimed; d30 owes nothing further.
