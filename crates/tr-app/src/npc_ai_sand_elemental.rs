@@ -240,10 +240,6 @@ fn probe_blocks(world: &World, x: i32, y: i32) -> bool {
     (nactive(&t) && solid_kind(t.kind)) || t.liquid > 0
 }
 
-/// `Collision.CanHit` (`Collision.cs:381-478`) — the tile-corner walk
-/// the 541 machine does NOT use (it has no CanHit gate; the census's
-/// aiStyle-85 sibling does). Kept out — the module's only LOS-free
-/// gates are the distance checks. (Placeholder removed: no CanHit.)
 /// `Utils.RandomVector2(random, min, max)` (`Utils.cs:2431-2434`): TWO
 /// NextDouble, X then Y, `(max - min) * double + min` cast to f32.
 fn random_vector2(rng: &mut UnifiedRandom, min: f32, max: f32) -> (f32, f32) {
@@ -263,24 +259,17 @@ fn catmull_rom(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f32) -> Vec2 {
         + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
 }
 
-/// `StrayMethods.CanSpawnSandstormHostile`'s tile-span gate over the
-/// port's `tr_core::stray` walk — the sandnado column validation
-/// (`NPC.cs:40249`). The `Collision.ExpandVertically(col, point.Y - 20,
-/// 1, 51)` bottom find rides the same core (the stray module's
-/// `expand_vertically` is private; the public gate re-walks it — the
-/// column's bottom is re-derived here through the same SolidTile3
-/// semantics via the public `can_spawn_sandstorm_hostile` at the
-/// `(col, bottomY - 15)` point; the bottom find itself is the C#'s
-/// 1-up/51-down expansion, ported through `stray`'s public surface).
-///
-/// NOTE: the C# derives `bottomY` FIRST (`ExpandVertically(col,
-/// point.Y - 20, 1, 51)`) then validates at `(col, bottomY - 15)`. The
-/// port's `tr_core::stray::expand_vertically` is module-private; the
-/// wiring caller passes the live world and this helper re-derives the
-/// bottom through the SAME walk by calling the public gate at the
-/// candidate point — the two-step shape is preserved by computing the
-/// bottom here with a local copy of the expansion (the SolidTile3 test
-/// is `stray`'s, duplicated minimally to keep the core untouched).
+/// The sandnado column validation (`NPC.cs:40248-40252`): the C# derives
+/// `bottomY` FIRST (`Collision.ExpandVertically(col, point.Y - 20, 1,
+/// 51)`) then validates at `(col, bottomY - 15)` through
+/// `CanSpawnSandstormHostile(…, 15, 15)`. The bottom find is the C#'s
+/// 1-up/51-down expansion (the down walk stops ON the first SolidTile3
+/// cell, inclusive); `tr_core::stray::expand_vertically` is
+/// module-private, so the down walk is re-derived here with the same
+/// SolidTile3 test (`nactive() && tileSolid && !tileSolidTop`,
+/// `WorldGen.cs:70474-70483`), then the public
+/// `can_spawn_sandstorm_hostile` gate runs at the candidate point.
+/// Returns the spawn row (`bottomY - 15`) on a pass.
 fn sandnado_column_ok(world: &World, col: i32, point_y: i32) -> Option<i32> {
     // `Collision.ExpandVertically(col, point.Y - 20, out _, out bottomY,
     // 1, 51)` (`Collision.cs:4372-4416`) — the down walk stops ON the
@@ -864,15 +853,15 @@ mod tests {
         assert_eq!(n.ai[0], 0.0);
     }
 
-    /// The ai[0]==54 volley: the column scan draws one
-    /// Next(point.X−30, point.X+31) per iteration, stops at 3 picks,
-    /// and the ≥10-apart check rejects duplicates. The stream replay
-    /// pins the draw count against the C# reference.
+    /// The ai[0]==54 volley's SHAPE: at most 3 spawns, columns ≥10 tiles
+    /// apart, every spawn on the C#'s (col*16, row*16) grid. (The exact
+    /// stream replay is the foot-dust witness's job — the volley's draw
+    /// count depends on the span-gate hits, which the shape pins cover.)
     #[test]
-    fn w4_c40_the_sandnado_volley_replays_the_column_scan() {
+    fn w4_c40_the_sandnado_volley_shape() {
         let w = desert();
-        // The player far below the floor would fail the span gate; put
-        // the target in the open air above the sand (row 100).
+        // The target in the open air above the sand (row 100) — the
+        // span gate passes on the flat floor.
         let p = player_at(150.0 * 16.0, 100.0 * 16.0);
         let mut n = elemental(&w);
         n.x = 140.0 * 16.0;
@@ -880,12 +869,6 @@ mod tests {
         n.ai[0] = 53.0; // increments to 54 this tick
         let mut rng = UnifiedRandom::new(42);
         let out = sand_elemental_step(&mut n, &w, &p, &mut rng, &[]);
-        // The reference: the same stream, the same scan.
-        let mut r#ref = UnifiedRandom::new(42);
-        // The foot-dust gates fire first (two Next(2) + the taken
-        // branches' draws) — replay them by mirroring the machine's
-        // own draw order through a second run is circular; instead pin
-        // the volley's SHAPE: at most 3 spawns, columns ≥10 apart.
         assert!(out.sandnados.len() <= 3);
         for i in 0..out.sandnados.len() {
             for j in i + 1..out.sandnados.len() {
@@ -898,7 +881,6 @@ mod tests {
             assert_eq!(s.x % 16.0, 0.0);
             assert_eq!(s.y % 16.0, 0.0);
         }
-        let _ = r#ref.next_max(2); // keep the reference alive (shape pin)
     }
 
     /// The out-of-range abort: the player beyond 900 px at ai[0]==54

@@ -21601,8 +21601,10 @@ mod s1_p_i05_thrust_tests {
     /// `Player.cs:19813-19816`: facing against the push lowers the fast-run
     /// threshold by |num2|×40 — the Hermes footstep arm (`:19987-19990`,
     /// the port's `spawn_fast_run_particles` step-sound request) fires
-    /// earlier. With vx between the lowered and the normal threshold, the
-    /// request fires only when the facing opposes the push.
+    /// earlier. The arm lives in the over-max refine band, so the player
+    /// needs boots (`acc_run_speed > max_run_speed`); with vx between the
+    /// lowered and the normal threshold the request fires only when the
+    /// facing opposes the push.
     #[test]
     fn w4_c40_the_facing_penalty_lowers_the_fast_run_threshold() {
         let w = ground_world();
@@ -21610,25 +21612,34 @@ mod s1_p_i05_thrust_tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
+        // The Hermes-boot shape: the over-max band exists only when
+        // acc_run_speed > max_run_speed (the default 3/3 has no band).
+        p.max_run_speed = 3.0;
+        p.acc_run_speed = 6.0;
+        p.run_acceleration = 0.1;
+        p.run_slowdown = 0.2;
         p.wind_pushed = true;
         p.vy = 0.0;
         p.control_left = true;
         p.control_right = false;
-        let normal = (p.acc_run_speed + p.max_run_speed) / 2.0;
+        let normal = (p.acc_run_speed + p.max_run_speed) / 2.0; // 4.5
         let num2 = (0.06f32 * 1.37f32 * 0.8f32).clamp(-0.072, 0.072); // steering
-        let lowered = normal - num2.abs() * 40.0;
+        let lowered = normal - num2.abs() * 40.0; // 4.5 - 2.88 = 1.62
         assert!(lowered < normal, "the penalty is real when opposed");
         // vx in the band (lowered, normal), running left (negative): the
         // arm reads `vx < -threshold`. Facing +1 vs push +1: no penalty,
         // no step request. Facing -1 vs push +1: penalty, request fires.
-        // (The C# reads `direction`, not the keys.)
-        p.vx = -(lowered + normal) / 2.0;
+        // (The C# reads `direction`, not the keys.) The input arm decays
+        // vx by runSlowdown+accel*0.2 first — start mid-band so the
+        // post-decay value still straddles the two thresholds.
+        let mid = -(lowered + normal) / 2.0; // -3.06
+        p.vx = mid;
         p.facing = 1;
         p.run_sound_delay = 0;
         p.pending_step_sound = None;
         p.horizontal_movement(PlayerInput { left: true, ..Default::default() }, 0.7);
         let same_dir = p.pending_step_sound.is_some();
-        p.vx = -(lowered + normal) / 2.0;
+        p.vx = mid;
         p.facing = -1;
         p.run_sound_delay = 0;
         p.pending_step_sound = None;
@@ -21669,20 +21680,11 @@ mod s1_p_i05_thrust_tests {
     #[test]
     fn w4_c40_the_sandstorm_dash_boosts_the_run_stats() {
         let w = ground_world();
-        let mut p = Player::spawn(&w);
-        for _ in 0..120 {
-            p.update(&w, PlayerInput::default());
-        }
-        // The full tick applies the boost before horizontal_movement reads
-        // the stats. Pin the stat values through a tick with the flag
-        // armed at the START (the :26743 clear runs AFTER the boost block
-        // in the C# order — the boost reads the previous tick's state).
-        p.sand_storm = true;
-        let (accel0, max0) = (p.run_acceleration, p.max_run_speed);
-        p.update(&w, PlayerInput::default());
-        // The tick re-derives the stats from the base each frame; the
-        // observable is the VELOCITY gain: grounded right-key accel is
-        // runAcceleration (boosted ×1.5) while under maxRunSpeed (×2).
+        // The observable is the VELOCITY gain: grounded right-key accel
+        // is runAcceleration (boosted ×1.5) while under maxRunSpeed (×2).
+        // The boost reads the flag set BEFORE the tick — the :26743 clear
+        // fires after the stat block, so this tick's movement sees the
+        // boosted stats (the C#'s :26573-before-:26743 order).
         let mut q = Player::spawn(&w);
         for _ in 0..120 {
             q.update(&w, PlayerInput::default());
@@ -21696,16 +21698,13 @@ mod s1_p_i05_thrust_tests {
         }
         r.control_right = true;
         r.update(&w, PlayerInput { right: true, ..Default::default() });
-        // Both start from vx 0; the boosted accel is 1.5x (the boost reads
-        // the flag set BEFORE the tick — the :26743 clear fires after the
-        // stat block, so this tick's movement sees the boosted stats).
+        // Both start from vx 0; the boosted accel is 1.5x.
         assert!(
             (q.vx - r.vx * 1.5).abs() < 1e-4,
             "the dash accel is ×1.5 ({} vs {})",
             q.vx,
             r.vx
         );
-        let _ = (accel0, max0);
     }
 
     /// W4-c40 — the i12 field's live lifecycle: the bottle jump's ascent
