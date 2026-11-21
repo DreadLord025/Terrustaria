@@ -1290,6 +1290,23 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_112",
         "NPC_666",
         "NPC_516",
+        // The aiStyle-14 flyer family (W4-d23): the fourteen kinds' own
+        // sheets, keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s FLYER14_SHEETS).
+        "NPC_48",
+        "NPC_62",
+        "NPC_93",
+        "NPC_121",
+        "NPC_137",
+        "NPC_150",
+        "NPC_151",
+        "NPC_152",
+        "NPC_156",
+        "NPC_158",
+        "NPC_159",
+        "NPC_226",
+        "NPC_634",
+        "NPC_660",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1875,7 +1892,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 204] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1916,6 +1933,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
         // The aiStyle-9 spit/flare family (W4-d23) — appended last so the
         // earlier slots keep their indexes.
         112, 666, 516,
+        // The aiStyle-14 flyer family (W4-d23) — appended last so the
+        // earlier slots keep their indexes.
+        48, 62, 93, 121, 137, 150, 151, 152, 156, 158, 159, 226, 634, 660,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2691,6 +2711,23 @@ impl Lookups {
                 atlas.sheet("NPC_112").copied(),
                 atlas.sheet("NPC_666").copied(),
                 atlas.sheet("NPC_516").copied(),
+                // The aiStyle-14 flyer family (W4-d23) — the fourteen
+                // new strips (48/62/93/121/137/150/151/152/156/158/159/
+                // 226/634/660).
+                atlas.sheet("NPC_48").copied(),
+                atlas.sheet("NPC_62").copied(),
+                atlas.sheet("NPC_93").copied(),
+                atlas.sheet("NPC_121").copied(),
+                atlas.sheet("NPC_137").copied(),
+                atlas.sheet("NPC_150").copied(),
+                atlas.sheet("NPC_151").copied(),
+                atlas.sheet("NPC_152").copied(),
+                atlas.sheet("NPC_156").copied(),
+                atlas.sheet("NPC_158").copied(),
+                atlas.sheet("NPC_159").copied(),
+                atlas.sheet("NPC_226").copied(),
+                atlas.sheet("NPC_634").copied(),
+                atlas.sheet("NPC_660").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

@@ -5913,8 +5913,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
         // ball), the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3),
         // the VoodooDemon's DemonSickle (`NPC.cs:23450` — the S1-D-3 bat
-        // reconcile's `bat_ai` shot drain) and the Skeletron head's
-        // spin-shot Skull (`NPC.cs:22013` - B-1).
+        // reconcile's `bat_ai` shot drain), the Harpy's feather
+        // (`NPC.cs:23429`) + the RedDevil's trident (`:23478` — the
+        // W4-d23 style-14 wiring's `Style14Shot` drain) and the
+        // Skeletron head's spin-shot Skull (`NPC.cs:22013` - B-1).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
@@ -5923,6 +5925,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::POISON_SEED_PLANTERA
             || kind == crate::projectile::QUEEN_BEE_STINGER
             || kind == crate::projectile::DEMON_SICKLE
+            || kind == crate::projectile::HARPY_FEATHER
+            || kind == crate::projectile::UNHOLY_TRIDENT_HOSTILE
             || kind == crate::projectile::SKULL
         {
             300
@@ -6212,6 +6216,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
+                        // The VampireBat/Vampire pair (W4-d23): the bat's
+                        // close-range Transform(159) (`NPC.cs:23346-23355`,
+                        // the aiStyle-14 axis arm) and the walker's
+                        // >300px Transform(158) back (`:58843-58851`,
+                        // the update tail).
+                        159 => NpcKind::Vampire,
+                        158 => NpcKind::VampireBat,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);

@@ -122,6 +122,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_18", 3),
     ("NPC_Hit_19", 3),
     ("NPC_Hit_21", 3),
+    // W4-d23 — the Flying Snake's hit cue (`NPC.cs:11920`'s NPCHit23):
+    // the S1-E-21 wave-C bank-gap close.
+    ("NPC_Hit_23", 3),
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
     // Nimbus' NPCHit30 (`NPC.cs:12229`), the Dungeon Spirit's NPCHit36
     // (`:12747`) and the Force Bubble's NPCHit43 (`:13889`) — the
@@ -163,6 +166,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_21", 4),
     ("NPC_Killed_22", 4),
     ("NPC_Killed_24", 4),
+    // W4-d23 — the Flying Snake's death cue (`NPC.cs:11922`'s NPCDeath26).
+    ("NPC_Killed_26", 4),
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
     // Nimbus' NPCDeath33 (`NPC.cs:12230`), the Dungeon Spirit's NPCDeath39
     // (`:12748`) and the Force Bubble's NPCDeath45 (`:13890`) — the

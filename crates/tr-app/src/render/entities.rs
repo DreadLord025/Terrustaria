@@ -517,6 +517,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(SMALL_KIND_SHEETS)
             .chain(MANEATER_SHEETS)
             .chain(SPIT_FLARE_SHEETS)
+            .chain(FLYER14_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -832,13 +833,21 @@ fn npc_add_height(n: &Npc) -> f32 {
         // ids 564/565 are the mage, 551 the Betsy; the C# range is the
         // mage trio's ORIGINAL ids 562-564, see `NPCID`).
         DD2DarkMage | DD2DarkMageT3 => 18.0,
+        // `:22069-22072` 48 (the Harpy — W4-d23).
+        Harpy => 32.0,
         // `:22075` 49/51 (the cave/jungle bats — not the hellbat's 60).
         CaveBat | JungleBat => 4.0,
         // `:22079` 60 (the Hellbat).
         Hellbat => 10.0,
-        // `:22083` 62/66/156 (the Demon Eye's 62 is a charm id; 66 the
-        // Voodoo Demon, 156 the Wandering Eye — no port kind for 156).
-        VoodooDemon => 14.0,
+        // `:22081-22084` 62/66/156 (the Demon, the Voodoo Demon, the Red
+        // Devil — W4-d23 landed the 62/156 kinds; the old comment's
+        // charm/Wandering-Eye ids were stale).
+        Demon | VoodooDemon | RedDevil => 14.0,
+        // `:22109-22112` 150/151/158 (the Ice/Lava/Vampire bats — W4-d23;
+        // the old comment's fish ids were stale).
+        IceBat | Lavabat | VampireBat => 10.0,
+        // `:22113-22116` 152 (the Giant Flying Fox — W4-d23).
+        GiantFlyingFox => 6.0,
         // `:22087` 63/64/103 (the goblin townsfolk + the javelin T3) — the
         // Golem Head's 64 is resolved out by the town test above.
         BoundGoblin | GoblinTinkerer | DD2JavelinT3 => 4.0,
@@ -851,9 +860,9 @@ fn npc_add_height(n: &Npc) -> f32 {
         WallOfFlesh => -2.0,
         // `:22107` 83/84 (the Skeletron's hands + the other hand id).
         SkeletronHand => 20.0,
-        // `:22111` 150/151/158 (the Blue/Goldfish variants — the port's
-        // single 55 Goldfish keeps the vanilla 65 row), `:22125` 87-92 (the
-        // Goldfish school) 56.
+        // `:22129-22132` 87-92 (the C#'s wyvern-band ids — the port's
+        // Goldfish/Piranha keep their pre-existing 56 row, the BUG-07
+        // sweep's claim; the bat trio's real 150/151/158 row is above).
         Goldfish | Piranha => 56.0,
         // `:22133-22136` 134-136 (the Destroyer's segments).
         TheDestroyer | TheDestroyerBody | TheDestroyerTail => 30.0,
@@ -1270,6 +1279,27 @@ pub(crate) const SPIT_FLARE_SHEETS: &[u32] = &[
     112, // the Vile Spit
     666, // the Vile Spit (Eater of Worlds)
     516, // the Solar Flare
+];
+
+/// The aiStyle-14 flyer family's sheets (W4-d23): the thirteen wired
+/// kinds + the Vampire transform target each draw their own `NPC_<id>`
+/// art. Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
+/// [`NpcAssets::npc_sheet`].
+pub(crate) const FLYER14_SHEETS: &[u32] = &[
+    48,  // the Harpy
+    62,  // the Demon
+    93,  // the Giant Bat
+    121, // the Slimer
+    137, // the Illuminant Bat
+    150, // the Ice Bat
+    151, // the Lava Bat
+    152, // the Giant Flying Fox
+    156, // the Red Devil
+    158, // the Vampire Bat
+    159, // the Vampire (the Transform target, aiStyle 3)
+    226, // the Flying Snake
+    634, // the Spore Bat
+    660, // the Queen Slime minion
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3221,6 +3251,30 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // The aiStyle-14 flyer family (W4-d23): each kind draws its
+            // own `NPC_<id>` sheet at `Main.npcFrameCount[type]` rows
+            // (48 six, 62/156 five, 93/121/137/150/151/152/158/226/660
+            // four, 634 five, 159 fifteen — `Main.cs:67082`) with the
+            // generic centred anchor — the pumpkin arm's shape. The
+            // FindFrame machines animate the flap/counter strips; all
+            // fourteen tilt (the vx×0.1 writes, the whitelist below).
+            NpcKind::Harpy
+            | NpcKind::Demon
+            | NpcKind::GiantBat
+            | NpcKind::Slimer
+            | NpcKind::IlluminantBat
+            | NpcKind::IceBat
+            | NpcKind::Lavabat
+            | NpcKind::GiantFlyingFox
+            | NpcKind::RedDevil
+            | NpcKind::VampireBat
+            | NpcKind::Vampire
+            | NpcKind::FlyingSnake
+            | NpcKind::SporeBat
+            | NpcKind::QueenSlimeMinionPurple => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3382,6 +3436,25 @@ pub(crate) fn draw_npcs(
                     // The Solar Flare's homing steer writes `rotation +=
                     // 0.1 * direction` every tick (`NPC.cs:21499`, W4-d23).
                     | NpcKind::SolarFlare
+                    // The aiStyle-14 flyer family (W4-d23): the FindFrame
+                    // machines write the vx×0.1 tilt every tick
+                    // (`NPC.cs:74858`/`:73891`/`:73906`/`:74811`). The
+                    // Slimer/QueenSlimeMinion pair's rotation branches
+                    // are DEAD in the C# (`:74019-74043` — neither list
+                    // holds 121/660 after the shadowed second if), so
+                    // they stay OFF the whitelist; the Vampire is a
+                    // walker (no rotation write).
+                    | NpcKind::Harpy
+                    | NpcKind::Demon
+                    | NpcKind::GiantBat
+                    | NpcKind::IlluminantBat
+                    | NpcKind::IceBat
+                    | NpcKind::Lavabat
+                    | NpcKind::GiantFlyingFox
+                    | NpcKind::RedDevil
+                    | NpcKind::VampireBat
+                    | NpcKind::FlyingSnake
+                    | NpcKind::SporeBat
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
