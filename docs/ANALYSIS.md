@@ -36232,6 +36232,47 @@ re-pinned for the gate-pass clear: the block now reads false after the
 poke (the C# truth), and the no-poke arm arms the flag manually to prove
 the unpressed plate leaves it untouched.
 
+## The wiring union-sync (W4-f11 → c42c canonical, code-only)
+
+The union-sync pass over research/95 (the wiring MASTER reconcile,
+`ec568b3e` on the c42 branch) + research/71 (**EXECUTED** on e20
+`cf0b8f9c` — the full canonical device superset). Deliverable:
+`docs/research/133-f11-unique-folds.md` — the per-fix cherry-pick hunks
+for the f11 UNIQUES (none exists on c42: `clear_all`, the UpdateMech
+pop-not-remove + fluff-1, the LogicGatePass teleport-block clear, the
+HitWire entry/exit lifecycle, the case-216/fireworks-box SkipWire fixes,
+the mass-wire core + app + the 3625 use arm + the cooldown/ToolMode
+fields), the 95-ruled KEEP shapes inside the dup arms (the doors Option
+skip seam, `only_close_or_open`, `top_left_and_styles` pub(crate), the
+torch set-guard, the three unique dup-arm witnesses), and the
+DEPRECATED-BY-UNION inventory.
+
+**Deprecation banners (this pass, comments only — NO code deleted; the
+merger drops per the 95 playbook, deleting breaks the pushed-history
+consumers):** `tr-core/src/minecart.rs` (whole module → e20
+TRACK_FRAMES), `world_sim/wiring_devices.rs` (the hopper/extractinator
+halves → e20; the mass-wire append KEEPS), `edit.rs` `shift_trapdoor`/
+`shift_tall_gate` (→ c42 `edit/shift.rs`), `wiring.rs` `wire_trapdoor`'s
+cue fold + the tall-gate arm cue (→ c42 in-body cues) + `toggle_campfire`
+(KEEP-ONE + d6's forced gate), `world_sim/wiring.rs`'s single door-cue
+drain (→ c42's drain-site union).
+
+**OLD-shape flags (95 §9.1 — c42 fix round `de176ccd` FIRST):** f11's
+144/421/422 (no SquareTileFrame wakes, no actuator guard), 235/226 (no
+`downed_plant_boss` conjunct) and 506 (inline validator, no kill-cascade)
+carry inline OLD-SHAPE comments pointing at the c42 side; a merge taking
+f11's arm region wholesale would silently revert the fixes. Verified
+against both tips (f11 `wiring.rs:2304/:2306-2307/:2347/:3346/:2863-2869`
+old vs c42 `:2226/:2270/:3223/:2781` fixed). No f11 witness pins the old
+behaviour of these arms (the multi-tile seed witness flips a non-actuated
+422 — identical under the fix).
+
+Nothing to cherry-pick device-side: the f11 must-merge wins (PlaySound(7)
++ the pitch draw, the OnceLock 64-mask cache, the six rebased witnesses)
+are ALREADY on e20 (`f167082e`/`6336e3b4`/`b0d0836f`/`5272cd52`), plus
+e20's slot-Vec fix (`a2d6cdad`). The `frame_track` non-pound/hammer half
+stays the 95 §8.8 follow-up salvage note.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
