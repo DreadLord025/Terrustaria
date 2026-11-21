@@ -566,3 +566,15 @@ Contract for any further e18 commits (zoom-keys/pan-inertia etc.):
   update-half reveal driver call — the S1-B-8 orchestrator pin
   (`frame.rs::s1_b_8_phase2_the_world_branch_calls_the_named_phase_fns`)
   walks the frozen phase list and the driver is deliberately absent from it.
+
+**Closeout re-fetch (2026-11-21, second pass):** `git ls-remote origin` +
+`git fetch` re-read the e18 tip at closeout time: **still `670c948d`** — zero
+commits past the folded base, nothing to re-fold. The zoom-key half of the
+e18d brief turned out to be ALREADY LANDED on the shared base (`a725acb0`:
+`map.rs::map_key_scale` `Player.cs:24898-24908` + the held-key wiring in
+`app/mod.rs::update_map_input` `:1427-1438` against the rebindable
+`MapAction::ZoomIn/ZoomOut` rows, defaults `Add`/`Subtract`
+`Main.cs:67190-67191`); the pan-inertia half is a PHANTOM (see the closeout
+census below). If e18d still lands commits later, the re-fold recipe above
+stands unchanged (fetch tip → cherry-pick each commit past `670c948d` →
+per-hunk resolve onto the union seams).
