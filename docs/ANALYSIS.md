@@ -7408,9 +7408,10 @@ compiler invoked — witnesses written, not run):
 - **Ladybug/town writers**: `checkDead`'s town-NPC arm (`NPC.cs:78138-
   78143`) runs `on_town_npc_death` in the death pass (host path skips like
   the C# `netMode != 2`); the `CheckActive` 604/605 window (`:77930-77938`)
-  runs `on_lady_bug_nearby` over the screen-size rect intersect — inert
-  until the critter kinds land (roster gap, the wiring is the seam). The
-  fishing-bait kill writer (S1-P-i35) already feeds `rain.rs`.
+  runs `on_lady_bug_nearby` over the screen-size rect intersect — LIVE
+  since the roster wiring landed (see "The W4-e26 luck-critter roster
+  wiring" below). The fishing-bait kill writer (S1-P-i35) already feeds
+  `rain.rs`.
 - **Potion factor**: the 4477/4478/4479 drink rows (buff 257 at
   18000/36000/54000) ride the i37 `use_potion_item` seam unchanged; the
   tier boundaries (>36000 → 3, >18000 → 2, else 1) are witnessed after the
@@ -7420,6 +7421,107 @@ compiler invoked — witnesses written, not run):
 - RNG: every added path is draw-free (bool flags, f32 adds, i32 timers) —
   no stream moves, no world-hash change. The f32 accumulation order is
   pinned bit-for-bit by `w4_e26_the_luck_tail_accumulates_in_the_csharp_order`.
+
+### The W4-e26 luck-critter roster wiring (the ladybug seams go live)
+
+The phase-2 ladybug seams were roster-gated inert: the port had no
+`NpcKind` for 604/605, so `kind_from_net_id` resolved nothing and the
+`CheckActive`/`checkDead` windows never fired. This phase lands the four
+critter rows the census named (361/362 + 604/605) and wires the luck
+seams to them. Code-only mode (no compiler invoked; witnesses written,
+not run).
+
+**Census correction.** The task brief labelled 361/362 "LadyBug/
+GoldLadyBug"; the decompile says otherwise — `NPCID.Frog = 361`
+(`NPCID.cs:11399`), `NPCID.Duck = 362` (`:11401`), `NPCID.LadyBug = 604`
+(`:11885`), `NPCID.GoldLadyBug = 605` (`:11887`). The luck critters are
+604/605; 361/362 are the waterfowl neighbours the same census band
+covers. All four were missing on main (no kind, no `SetDefaults` row, no
+bestiary entry).
+
+**Claim boundaries (pushed branches read first).** c8/c9/c10/d39 are all
+0 commits ahead of `origin/main` (local-only). c9's local phase-1 claims
+the snail family 359/360/655 + Shimmerfly 677; d35's local batch A claims
+73/74/75/77/78; c10's `npc_ai_style68.rs` is UNWIRED and names Duck 362
+only as a `Transform(type-1)` landing target (its swim-forms 363/365/
+603/609 are its territory). aiStyle 115 (`AI_115_LadyBugs`) was unclaimed
+— d33's local census flagged it MISSING but never wrote the module. This
+phase takes 361/362/604/605 + aiStyle 115, clear of every in-flight lane.
+
+**The rows (verbatim `SetDefaults`).** Frog 361 (`NPC.cs:13601-13612`):
+12×10, aiStyle 7, dmg 0, def 0, 5 HP, catchItem 2121. Duck 362
+(`:13613-13624`): 22×26, aiStyle 7, the same stats, catchItem 2122. The
+ladybug pair 604/605 (`:16763-16780`): 10×10, aiStyle 115, dmg 0, def 0,
+5 HP, npcSlots 0.25, noGravity, catchItem `type-604+4361` (4361/4362);
+605 adds rarity 3. All four: kb 1 / value 0 / scale 1 / alpha 0 (the
+`SetDefaults` head defaults, `:8533`/`:8544` — the rows write none),
+NPCHit1/NPCDeath1, no `DebuffImmunitySets` entry (the null-row
+else-branch, `:17822-17828`).
+
+**Protocol-id separation.** The vanilla ids 361/362/604/605 are free
+slots in the port-local `to_u16` space (no arm rode them), so the kinds
+keep their vanilla ids — the AngryNimbus/DungeonSpirit + W4-c9 snail
+precedent. `cs_id`/`net_id`/`render_key` all ride the vanilla id; the
+bestiary entries (credit ids `Frog`/`Duck`/`LadyBug`/`GoldLadyBug`, the
+`NPCID.Search.GetName` field names via `IdDictionary.Create`'s
+reflection) make `kind_from_net_id` resolve, so the catch/release chain
+(`bug_net.rs`'s `catch_item`/`release_plan` + the items' `make_npc`
+2121→361 / 2122→362 / 4361→604 / 4362→605) closes end to end.
+
+**The aiStyle-115 machine.** `npc_ai_style115.rs` ports `AI_115_LadyBugs`
+(`NPC.cs:47580-47714`) verbatim: the rearm block (the one-time scale
+latch `NextFloat()*0.2+0.7`, the `Next(60,181)` timer, the `Next(5)`
+perch toggle whose perch→fly roll is OVERWRITTEN by the unconditional
+tail roll — the C# draws both), the wind-drifted 1/80 flight blend
+(`value.X += windSpeedTarget*0.8`), the 4-tile fall / 30-tile rise scans
+(solid OR liquid), the `collideX` bounce (`ai[0] = -ai[0]+π`, `vx*=-0.2`),
+the perch water-launch (liquid in the direction-offset down-scan →
+`vy=-1`, `ai[2]=0`, the π/4−π/2 roll, RETURN before the direction tail),
+and the `direction = (vx>0)?1:-1` tail. The wind reads `App.wind.
+speed_target` through a per-tick stamp (`Npc::ladybug_wind`, the WoF
+write-through convention — the `update_rng` signature cannot carry it).
+The ladybugs are noGravity but tile-collide, so the integration tail is
+`integrate_flyer_collision` (the Goldfish/bat convention). The axis' 115
+arm claims the style; the kind arms route direct callers to the same
+machine (the fishron precedent).
+
+**The luck seams go live.** `checkDead`'s ladybug kill arm
+(`NPC.cs:78056-78059` → `LadyBugKilled` `:81566-81598`) now fires in the
+death pass: a 604/605 death grants the bad-luck window (radius 400,
+linear weight, gold ×2, keep the most negative) AND feeds
+`ladyBugRainBoost` (+1800, capped by `rain.rs`, before the dead-player
+bail). The `CheckActive` 604/605 window (`:77930-77938` → `LadyBugLuck`
+`:81600-81626`) grants the good-luck window for a WILD ladybug near the
+player (radius 800, weight (1−d/800)^6, gold ×2, keep the largest, never
+over bad luck; the `releaseOwner != 255` gate excludes released ones).
+
+**Frog/Duck are DATA-ONLY.** The aiStyle-7 town machine (~2600 lines,
+research/25 row 7 APPROXIMATE) is its own wave; the kinds + stats +
+FindFrame cases (361 `:76618-76685`, 362 `:73747-73771`) land so the
+catch/release chain resolves and the c10 swim-form `Transform(type-1)`
+landing has its walker target. The kind arms are no-ops until the town
+machine lands (the W4-d35 data-wave precedent).
+
+**Garden gnome (tile 567).** The census finding: the placement is
+ALREADY generic — item 4609 (`tile: Some(567)`, `place_style: 0`) routes
+through `place_item_tile` → `TileObject.CanPlace`/`Place` because the
+registry's `D_567` def carries `uses_custom_can_place: true` (1×2,
+bottom anchor, `coordinate_heights [18,18]`, `coordinate_width 26`). No
+missing gate; `w4_e26_gnome_placement_tests` pins the end-to-end item
+use (the 1×2 object writes both cells, consumes one item, mirrors
+`frame_important[567]`) + the mid-air refusal. The luck sensor
+(`SceneMetrics.HasGardenGnome`, phase 1) reads the placed tile.
+
+**Deviations.** The sheets NPC_361/362/604/605 are packed
+(`LUCK_CRITTER_SHEETS` + `STATIC_SHEET_NAMES` + the bestiary sheet
+table, appended last so the earlier slots keep their indexes); the
+atlas stands at the 8192 strict-GPU bound, so the packing rides the
+atlas-repack wave if it overflows (the wyvern/d35 deferral precedent —
+`npc_sheet` returns None and the draw skips, no panic). The Frog/Duck
+AI is the documented data-only deferral. RNG: the aiStyle-115 rearm
+draws ride the caller's `UpdateNPCs` stream in C# order (the witnesses
+mirror the cited `Next`/`NextFloat` calls on a cloned `UnifiedRandom`);
+the luck setters stay draw-free.
 
 ## Mounts framework (M2-MOUNT-1)
 

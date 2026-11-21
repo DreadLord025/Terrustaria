@@ -586,6 +586,16 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // The luck critters + their waterfowl neighbours (W4-e26):
+            // the vanilla ids 361/362/604/605 are free protocol slots
+            // (the to_u16 scan: no arm above rides them), so they keep
+            // their vanilla ids — the AngryNimbus/DungeonSpirit and
+            // W4-c9 snail precedent. The c10 swim-forms 363/365/603/609
+            // and the d35 walkers stay clear of this band.
+            NpcKind::Frog => 361,
+            NpcKind::Duck => 362,
+            NpcKind::LadyBug => 604,
+            NpcKind::GoldLadyBug => 605,
         }
     }
 
@@ -916,6 +926,12 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // The luck critters + waterfowl (W4-e26): the vanilla ids
+            // kept (`to_u16` above).
+            361 => NpcKind::Frog,
+            362 => NpcKind::Duck,
+            604 => NpcKind::LadyBug,
+            605 => NpcKind::GoldLadyBug,
             _ => return None,
         })
     }
@@ -1796,6 +1812,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // The luck critters + waterfowl (W4-e26): NPCHit1 each
+            // (`NPC.cs:13608` / `:13620` / `:16771`).
+            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2119,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // The luck critters + waterfowl (W4-e26): NPCDeath1 each
+            // (`NPC.cs:13609` / `:13621` / `:16772`).
+            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2200,6 +2222,13 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // The luck critters (W4-e26): the `SetDefaults` noGravity
+            // rows (`NPC.cs:16774`). kb 1 (the head default — the rows
+            // write none), so a strike can push them; the aiStyle-115
+            // arm owns the flight. Frog 361 / Duck 362 write NO
+            // noGravity row (the aiStyle-7 walkers fall) — they stay
+            // false here.
+            NpcKind::LadyBug | NpcKind::GoldLadyBug => true,
             _ => false,
         }
     }
@@ -2451,6 +2480,15 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // The waterfowl walkers (W4-e26) — aiStyle 7: the Frog
+            // (`NPC.cs:13605`) and the Duck (`:13617`). DATA-ONLY: the
+            // town machine is its own wave; the rows land for the
+            // catch/release chain + the c10 swim-form Transform target.
+            NpcKind::Frog | NpcKind::Duck => 7,
+            // The luck critters (W4-e26) — aiStyle 115 (`NPC.cs:16767`,
+            // the shared 604/605 row): `AI_115_LadyBugs`
+            // (`NPC.cs:47580-47714`).
+            NpcKind::LadyBug | NpcKind::GoldLadyBug => 115,
         }
     }
 
@@ -2981,6 +3019,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // The luck critters + waterfowl (W4-e26): Frog 12x10
+            // (`NPC.cs:13603-13604`), Duck 22x26 (`:13615-13616`),
+            // the ladybug pair 10x10 (`:16765-16766`).
+            NpcKind::Frog => (12.0, 10.0),
+            NpcKind::Duck => (22.0, 26.0),
+            NpcKind::LadyBug | NpcKind::GoldLadyBug => (10.0, 10.0),
         }
     }
 
@@ -3083,6 +3127,16 @@ impl NpcKind {
             // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
             NpcKind::Sharkron => 372,
+            // The luck critters + waterfowl (W4-e26): the vanilla
+            // `NPC.type` ids — the AI arms' type gates (the 115 flight,
+            // the 604/605 luck windows' gold flag) and the catch/convert
+            // tables read them (`NPCID.cs:11399`/`:11401`/`:11885`/
+            // `:11887`). All four have their own bestiary entries (the
+            // populator's `CountsAsACritter` automated rows), so no fold.
+            NpcKind::Frog => 361,
+            NpcKind::Duck => 362,
+            NpcKind::LadyBug => 604,
+            NpcKind::GoldLadyBug => 605,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3622,6 +3676,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // The luck critters + waterfowl (W4-e26): lifeMax 5 each
+            // (`NPC.cs:13607` / `:13619` / `:16770`).
+            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => 5,
         }
     }
 
@@ -3986,6 +4043,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // The luck critters + waterfowl (W4-e26): damage 0 each
+            // (`NPC.cs:13606` / `:13618` / `:16768`).
+            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0,
         }
     }
 }

@@ -4300,6 +4300,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // until the difficulty system lands — the module's `ctx.expert`).
         let style75_difficulty = 1.0f32;
         let style75_expert = false;
+        // W4-e26 — `Main.windSpeedTarget` for the aiStyle-115 ladybug
+        // drift (`NPC.cs:47625`). Captured ONCE per tick before the
+        // closure (the wind walk runs in the weather pass, not here); the
+        // scoped slot block stamps it onto each ladybug so the
+        // `Npc::update_rng` signature need not carry the App's wind (the
+        // WoF `world.wof_*` write-through convention).
+        let ladybug_wind = app.wind.speed_target;
         app.npc_step.tick(dt.min(0.25), |step| {
             if let Some(player) = player {
                 // The small-kinds wiring wave — the ForceBubble's rider
@@ -4410,6 +4417,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // `:90534-90556`): the wild critter's 90-tick
                         // friendly window ticks down pre-AI, in slot order.
                         crate::bug_net::tick_catchable_immunity(n);
+                        // W4-e26 — stamp `Main.windSpeedTarget` for the
+                        // aiStyle-115 ladybug drift (`NPC.cs:47625`); the
+                        // step reads it via `Npc::ladybug_wind`.
+                        if matches!(n.kind, NpcKind::LadyBug | NpcKind::GoldLadyBug) {
+                            n.ladybug_wind = ladybug_wind;
+                        }
                         if crate::ambient_sound::fighter_walker_kind(n.kind) {
                             let (nw, nh) = n.size();
                             let player_intersects = n.x < player.x + crate::player::WIDTH
@@ -4808,13 +4821,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // player's hitbox AND the type is 604/605, `LadyBugLuck` runs
     // (`:81600-81626` — the good-luck window; the `releaseOwner != 255`
     // wild-only gate rides `luck::on_lady_bug_nearby`'s caller note). The
-    // port's roster carries no kind 604/605 row yet (M4 critter gap — the
-    // catch/release items 4361/4362 exist, the released NPC spawns nothing
-    // through `kind_from_net_id`), so the pass is gated by the cs-id test
-    // and inert until the critter kinds land; the wiring is the seam.
-    // Draw-free (the timer math only), so no stream choice arises. The
-    // C# has NO dead-player gate here (`:81600-81626` tests only the
-    // release owner + the bad-luck timer).
+    // ladybug kinds LANDED with W4-e26 (the roster row + the aiStyle-115
+    // flight + the catch/release chain), so the window is live: a wild
+    // ladybug near the player grants the good-luck timer. Draw-free (the
+    // timer math only), so no stream choice arises. The C# has NO
+    // dead-player gate here (`:81600-81626` tests only the release owner
+    // + the bad-luck timer).
     if let Some(p) = app.player.as_mut() {
         for n in app.npcs.iter() {
             let ty = n.kind.cs_id() as i32;
@@ -5050,6 +5062,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if npc.kind.is_town_npc_like() && !matches!(app.net, crate::app::NetRole::Host(_)) {
             if let Some(p) = app.player.as_mut() {
                 p.on_town_npc_death(npc.kind.cs_id() as i32);
+            }
+        }
+        // W4-e26 — `NPC.checkDead`'s ladybug kill arm (`NPC.cs:78056-
+        // 78059`): `type == 604 || type == 605` runs `LadyBugKilled
+        // (Center, type == 605)` (`:81566-81598`) — the bad-luck window
+        // (radius 400, linear weight, gold ×2, keep the most negative)
+        // PLUS the `ladyBugRainBoost += ladyBugRainTime` add (clamped at
+        // the cap by `rain.rs`, which owns that field). The C# runs the
+        // boost add BEFORE the dead-player bail (`:81568-81577`), so the
+        // rain writer fires even for a dead player; the luck setter's
+        // own dead gate lives in `luck::on_lady_bug_killed`. Draw-free
+        // (the f32 weight + the i32 timers), so no stream choice arises.
+        // The kind gate keeps the arm scoped to the two luck critters.
+        if matches!(npc.kind, NpcKind::LadyBug | NpcKind::GoldLadyBug) {
+            let (ncx, ncy) = npc.center();
+            let gold = npc.kind == NpcKind::GoldLadyBug;
+            if let Some(p) = app.player.as_mut() {
+                let add = p.on_lady_bug_killed((ncx, ncy), gold);
+                app.rain.add_lady_bug_rain_boost(add);
             }
         }
         // `NPC.checkDead`'s DD2 crystal arms (`NPC.cs:79240-79278`,
@@ -7315,6 +7346,102 @@ mod tests {
             app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
             -3_600,
             "a hostile death is not NPCLuck's caller"
+        );
+    }
+
+    /// W4-e26 — `NPC.checkDead`'s ladybug kill arm (`NPC.cs:78056-78059`
+    /// → `LadyBugKilled` `:81566-81598`): a 604/605 death grants the bad-
+    /// luck window (radius 400, linear weight, gold ×2, keep the most
+    /// negative) AND feeds `ladyBugRainBoost` (+1800, capped). The arm
+    /// rides the port's death pass; the boost add fires before the dead-
+    /// player bail (`:81568-81577`). Draw-free.
+    #[test]
+    fn w4_e26_the_ladybug_death_grants_bad_luck_and_rain_boost() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let (pcx, pcy) = app.player.as_ref().unwrap().center();
+        // A wild ladybug dies ON the player centre → full weight (<100px
+        // → vector zeroed, `:81582-81585`): time = -10800.
+        let mut bug = Npc::new(NpcKind::LadyBug, pcx - 5.0, pcy - 5.0, 1, 0.0);
+        bug.hp = 0;
+        app.npcs.push(bug);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            -10_800,
+            "the full-weight bad window (`:81587`)"
+        );
+        // A gold ladybug death doubles the bad time (`:81588-81591`),
+        // keeping the most negative: -21600 < -10800 → overwrite.
+        let mut gold = Npc::new(NpcKind::GoldLadyBug, pcx - 5.0, pcy - 5.0, 1, 0.0);
+        gold.hp = 0;
+        app.npcs.push(gold);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            -21_600,
+            "the gold double overwrites (`:81590`)"
+        );
+        // A non-ladybug critter death moves nothing (the 604/605 gate).
+        let mut frog = Npc::new(NpcKind::Frog, pcx - 5.0, pcy - 5.0, 1, 0.0);
+        frog.hp = 0;
+        app.npcs.push(frog);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            -21_600,
+            "the Frog is not LadyBugKilled's caller"
+        );
+    }
+
+    /// W4-e26 — `NPC.CheckActive`'s ladybug window (`NPC.cs:77930-77938`
+    /// → `LadyBugLuck` `:81600-81626`): a WILD (releaseOwner 255) 604/605
+    /// near the player grants the good-luck window (radius 800, weight
+    /// (1−d/800)^6, gold ×2, keep the largest, never over bad luck). A
+    /// RELEASED ladybug (releaseOwner != 255) grants nothing.
+    #[test]
+    fn w4_e26_the_wild_ladybug_nearby_grants_good_luck() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let (pcx, pcy) = app.player.as_ref().unwrap().center();
+        // A wild ladybug ON the player centre → full weight (<30px →
+        // vector zeroed, `:81610-81613`): time = +43200.
+        let mut bug = Npc::new(NpcKind::LadyBug, pcx - 5.0, pcy - 5.0, 1, 0.0);
+        bug.release_owner = 255;
+        app.npcs.push(bug);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            43_200,
+            "the full-weight good window (`:81615`)"
+        );
+        // A RELEASED ladybug grants nothing (`:81602`'s releaseOwner gate).
+        let mut app2 = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app2.player = Some(crate::player::Player::spawn(&app2.world));
+        let (pcx2, pcy2) = app2.player.as_ref().unwrap().center();
+        let mut released = Npc::new(NpcKind::GoldLadyBug, pcx2 - 5.0, pcy2 - 5.0, 1, 0.0);
+        released.release_owner = 0;
+        app2.npcs.push(released);
+        update_npcs(&mut app2, 1.0 / 60.0);
+        assert_eq!(
+            app2.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            0,
+            "the released ladybug is not LadyBugLuck's caller"
+        );
+        // Bad luck is never overwritten by a nearby good ladybug
+        // (`:81602`'s ladyBugLuckTimeLeft < 0 bail).
+        let mut app3 = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app3.player = Some(crate::player::Player::spawn(&app3.world));
+        app3.player.as_mut().unwrap().luck_state.lady_bug_luck_time_left = -500;
+        let (pcx3, pcy3) = app3.player.as_ref().unwrap().center();
+        let mut bug3 = Npc::new(NpcKind::LadyBug, pcx3 - 5.0, pcy3 - 5.0, 1, 0.0);
+        bug3.release_owner = 255;
+        app3.npcs.push(bug3);
+        update_npcs(&mut app3, 1.0 / 60.0);
+        assert_eq!(
+            app3.player.as_ref().unwrap().luck_state.lady_bug_luck_time_left,
+            -500,
+            "the bad-luck bail (`:81602`)"
         );
     }
 

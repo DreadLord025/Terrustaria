@@ -1275,6 +1275,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-e26 — the luck critters + waterfowl sheets
+        // (`LUCK_CRITTER_SHEETS`).
+        "NPC_361",
+        "NPC_362",
+        "NPC_604",
+        "NPC_605",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1860,7 +1866,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 185] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1895,6 +1901,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
         // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
+        // W4-e26 — the luck critters + waterfowl, appended last for the
+        // same reason.
+        361, 362, 604, 605,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2657,6 +2666,13 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
+                // W4-e26 — the luck critters + waterfowl strips
+                // (361/362/604/605), appended last so the earlier slots
+                // keep their indexes.
+                atlas.sheet("NPC_361").copied(),
+                atlas.sheet("NPC_362").copied(),
+                atlas.sheet("NPC_604").copied(),
+                atlas.sheet("NPC_605").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

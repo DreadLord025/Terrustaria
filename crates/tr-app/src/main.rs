@@ -93,6 +93,8 @@ mod npc_ai_style33;
 mod npc_ai_style37;
 mod npc_ai_style39;
 mod npc_ai_style68;
+// W4-e26: the aiStyle-115 ladybug flight (AI_115_LadyBugs, kinds 604/605).
+mod npc_ai_style115;
 mod npc_ai_unicorn_b;
 mod npc_ai_style27;
 mod npc_ai_fishron;

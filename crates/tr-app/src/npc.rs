@@ -1086,6 +1086,33 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.Frog` (361, `NPCID.cs:11399`) — the hopping critter
+    /// (`NPC.cs:13601-13612`): 12x10, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default — the row writes none), value 0,
+    /// catchItem 2121. DATA-ONLY (W4-e26): the aiStyle-7 town machine
+    /// (~2600 lines, research/25 row 7 APPROXIMATE) is its own wave;
+    /// the kind + stats land so the catch/release chain resolves.
+    Frog,
+    /// `NPCID.Duck` (362, `NPCID.cs:11401`) — the walking waterfowl
+    /// (`NPC.cs:13613-13624`): 22x26, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1, value 0, catchItem 2122. DATA-ONLY (W4-e26): the swim
+    /// form Duck2 (363, aiStyle 68) + the `Transform(type+1)` landing
+    /// cycle are the style-68 family's merge step (`npc_ai_style68.rs`,
+    /// W4-c10); this walker kind is the roster row that chain needs.
+    Duck,
+    /// `NPCID.LadyBug` (604, `NPCID.cs:11885`) — the luck critter
+    /// (`NPC.cs:16763-16780`): 10x10, aiStyle 115, dmg 0, def 0, 5 HP,
+    /// kb 1, npcSlots 0.25, noGravity, catchItem 4361. WIRED (W4-e26):
+    /// the axis' 115 arm rides `npc_ai_style115::ai_115_step`; the
+    /// `CheckActive` 604/605 window (`NPC.cs:77930-77938`) and the
+    /// `checkDead` kill (`:78056-78059`) feed the luck seams.
+    LadyBug,
+    /// `NPCID.GoldLadyBug` (605, `NPCID.cs:11887`) — the gold luck
+    /// critter (the same `NPC.cs:16763-16780` row): 10x10, aiStyle 115,
+    /// the 604 stats + rarity 3, catchItem 4362; the gold flag doubles
+    /// the luck windows (`LadyBugKilled`/`LadyBugLuck`'s `type == 605`).
+    /// `NPCID.Sets.IsGoldCritter` member (`NPCID.cs:10126`).
+    GoldLadyBug,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1562,6 +1589,13 @@ pub struct Npc {
     /// Invulnerability` (`NPC.cs:90534-90556`) decrements it per update and
     /// zeroes it for released/statue spawns (S1-P-i36).
     pub catchable_immunity: i32,
+    /// `Main.windSpeedTarget` stamped for the aiStyle-115 ladybug drift
+    /// (`NPC.cs:47625`, `value.X += Main.windSpeedTarget * 0.8f`). The
+    /// `Npc::update_rng` signature cannot carry the App's wind, so the
+    /// sim's tick closure stamps it per ladybug before the step (the
+    /// WoF `world.wof_*` write-through convention); the solo `update_rng`
+    /// path reads the stock 0. W4-e26.
+    pub ladybug_wind: f32,
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
@@ -3058,6 +3092,9 @@ impl Npc {
             } else {
                 0
             },
+            // `Main.windSpeedTarget` — stamped by the sim for the ladybug
+            // drift; stock 0 until then (W4-e26).
+            ladybug_wind: 0.0,
             swarm_done: false,
             king_slime_local: [0.0; 4],
             size_override: None,
@@ -3529,6 +3566,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // The luck critters + waterfowl (W4-e26): the `SetDefaults`
+            // rows write no knockBackResist — the head's 1f
+            // (`NPC.cs:8533`) stands (the ForceBubble / W4-c9 precedent).
+            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => 1.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3950,9 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // The luck critters + waterfowl (W4-e26): defense 0 each
+            // (`NPC.cs:13607` / `:13619` / `:16769`).
+            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4325,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // The luck critters + waterfowl (W4-e26): the rows write no
+            // value — the head's 0f (`NPC.cs:8544`) stands.
+            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4930,6 +4977,16 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
+            // `else if (this.aiStyle == 115) { this.AI_115_LadyBugs(); }`
+            // (`NPC.cs:41081-41083`; the machine `:47580-47714`) — the
+            // ladybug pair 604/605, the style's only users. W4-e26: the
+            // faithful `npc_ai_style115::ai_115_step` claims the arm; the
+            // wind drift reads `App.wind.speed_target` through the sim's
+            // pre-pass (the `Npc::update_rng` signature cannot carry it —
+            // the solo path uses the stamped `ladybug_wind` field). The
+            // noGravity + tile-collide integration tail rides
+            // `integrate_flyer_collision` (the Goldfish convention).
+            115 => self.ai_115_ladybug(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5461,6 +5518,36 @@ impl Npc {
                 self.y = ny;
             }
         }
+    }
+
+    /// W4-e26 — the aiStyle-115 adapter: the ladybug pair (604/605) rides
+    /// the faithful `npc_ai_style115::ai_115_step` (`AI_115_LadyBugs`,
+    /// `NPC.cs:47580-47714`). The session player is the one
+    /// `TargetCandidate` (the port is single-player,
+    /// `npc_target::session_candidate`); the wind drift reads the
+    /// sim-stamped `ladybug_wind` (`Main.windSpeedTarget`, stock 0 on the
+    /// solo path); ticker 0 (the `EverLastingTicker` is not plumbed — the
+    /// S1-D-3p precedent). The arm draws `Main.rand` on the caller's
+    /// `UpdateNPCs` stream (the rearm block, `:47584-47618`).
+    ///
+    /// The ladybugs are noGravity (`NPC.cs:16774`) but tile-collide (the
+    /// row writes no noTileCollide), so the integration tail is the
+    /// no-gravity `UpdateCollision` (`integrate_flyer_collision`, the
+    /// Goldfish/bat convention) — NOT the raw noTileCollide add.
+    fn ai_115_ladybug(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        crate::npc_ai_style115::ai_115_step(
+            self,
+            world,
+            &players,
+            self.ladybug_wind,
+            0,
+            rng,
+        );
+        self.integrate_flyer_collision(world);
     }
 
     /// S1-D-3 W-9 wiring — the aiStyle-69 adapter: the live `Npc` fields
@@ -6287,6 +6374,17 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // The waterfowl walkers (W4-e26): DATA-ONLY — the aiStyle-7
+            // town machine (~2600 lines, research/25 row 7) is its own
+            // wave; the kinds + stats land for the catch/release chain
+            // and the c10 swim-form Transform target. No-op until then
+            // (the W4-d35 data-wave precedent).
+            NpcKind::Frog | NpcKind::Duck => {}
+            // The luck critters (W4-e26): claimed by the aiStyle-115 axis
+            // above — these arms keep the kind match exhaustive and route
+            // direct-kind callers to the same machine (the fishron /
+            // W4-c9 snail precedent).
+            NpcKind::LadyBug | NpcKind::GoldLadyBug => self.ai_115_ladybug(world, player, rng),
         }
     }
 
@@ -6648,6 +6746,94 @@ impl Npc {
                 }
                 if self.frame >= 3 {
                     self.frame = 0;
+                }
+            }
+            // The luck critters' `case 604/605` (`NPC.cs:66961-66980`):
+            // spriteDirection = direction; the counter advances only while
+            // moving (velocity != Zero), wrapping at num139*num138 = 8;
+            // grounded (vy == 0) → row counter/2 (0..3), airborne → row
+            // 4 + counter/2 (4..7). `Main.npcFrameCount[604/605]` = 8.
+            NpcKind::LadyBug | NpcKind::GoldLadyBug => {
+                self.sprite_dir = self.facing;
+                if (self.vx != 0.0 || self.vy != 0.0) {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame_counter = 0.0;
+                    }
+                }
+                let cell = (self.frame_counter as i32 / 2) as u32;
+                self.frame = if self.vy == 0.0 { cell } else { 4 + cell };
+            }
+            // The Duck's `case 362` (`NPC.cs:73747-73771`, shared with
+            // 364/608): spriteDirection = direction; idle (vx == 0) →
+            // row 0 + counter reset; else the 4-tick advance over rows
+            // 3..9 (wrap at 10 back to 3, floor at 3).
+            // `Main.npcFrameCount[362]` = 15. DATA-ONLY kind (the aiStyle-7
+            // machine is its own wave) — the frame rests until then.
+            NpcKind::Duck => {
+                self.sprite_dir = self.facing;
+                if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 10 {
+                        self.frame = 3;
+                    }
+                    if self.frame < 3 {
+                        self.frame = 3;
+                    }
+                }
+            }
+            // The Frog's `case 361` (`NPC.cs:76618-76685`, shared with
+            // 445/687): the wet swim rows 10/11/12 by |vx| band; the
+            // grounded idle 6-tick cycle over rows 0..5; the grounded
+            // walk the 0/6/8/9 hop bands; airborne row 9 (fall) / 8
+            // (rise). `Main.npcFrameCount[361]` = 13. DATA-ONLY kind.
+            NpcKind::Frog => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.vx > 0.25 || self.vx < -0.25 {
+                        10
+                    } else if self.vx > 0.15 || self.vx < -0.15 {
+                        11
+                    } else {
+                        12
+                    };
+                } else if self.vy == 0.0 {
+                    if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                        }
+                        if self.frame > 5 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame_counter += 1.0;
+                        self.frame = if self.frame_counter < 6.0 {
+                            0
+                        } else if self.frame_counter < 12.0 {
+                            6
+                        } else if self.frame_counter < 18.0 {
+                            8
+                        } else {
+                            if self.frame_counter >= 23.0 {
+                                self.frame_counter = 0.0;
+                            }
+                            9
+                        };
+                    }
+                } else if self.vy > 0.0 {
+                    self.frame = 9;
+                } else {
+                    self.frame = 8;
                 }
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
@@ -18591,6 +18777,12 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // The luck critters + waterfowl (W4-e26): the vanilla ids —
+            // unused by every arm above (the G6 key stays injective).
+            NpcKind::Frog => 361,
+            NpcKind::Duck => 362,
+            NpcKind::LadyBug => 604,
+            NpcKind::GoldLadyBug => 605,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -23669,7 +23861,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 274] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24140,11 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // The luck critters + waterfowl (W4-e26).
+        NpcKind::Frog,
+        NpcKind::Duck,
+        NpcKind::LadyBug,
+        NpcKind::GoldLadyBug,
     ];
 
     #[test]
@@ -27559,8 +27756,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            274,
+            "every decodable kind resolves (the wire roster's size - 274 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-e26's four luck critters/waterfowl, L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31202,6 +31399,13 @@ mod s1_d_2_tests {
         (NpcKind::WyvernBody2, 6),
         (NpcKind::WyvernBody3, 6),
         (NpcKind::WyvernTail, 6),
+        // The luck critters + waterfowl (W4-e26): Frog/Duck aiStyle 7
+        // (`NPC.cs:13605`/`:13617`), the ladybug pair aiStyle 115
+        // (`:16767`).
+        (NpcKind::Frog, 7),
+        (NpcKind::Duck, 7),
+        (NpcKind::LadyBug, 115),
+        (NpcKind::GoldLadyBug, 115),
     ];
 
     #[test]
@@ -33543,6 +33747,156 @@ mod s1_f_13d_tests {
             assert_eq!(n.vx, 0.0);
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
+        }
+    }
+}
+
+#[cfg(test)]
+mod w4_e26_luck_critter_tests {
+    //! W4-e26 — the luck critters + waterfowl roster wiring. Every row
+    //! pins verbatim to the C# (`NPC.cs:13601-13612` Frog, `:13613-13624`
+    //! Duck, `:16763-16780` the ladybug pair). WRITTEN, NOT RUN
+    //! (code-only mode); the W4-d35 / W4-c9 stat-pin precedent.
+    use super::*;
+    use super::tests::ground;
+
+    /// The four kinds' `SetDefaults` rows through the port's tables.
+    #[test]
+    fn w4_e26_the_luck_critter_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Frog, 361u16, 7u8, 12.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::Duck, 362, 7, 22.0, 26.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::LadyBug, 604, 115, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GoldLadyBug, 605, 115, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb (head 1f)");
+            assert_eq!(shell.value(), value, "{kind:?} value (head 0f)");
+            assert_eq!(shell.scale, 1.0, "{kind:?} scale (no row)");
+            assert_eq!(shell.alpha, 0, "{kind:?} alpha (no row)");
+        }
+        // The sounds: NPCHit1 / NPCDeath1 each.
+        for kind in [NpcKind::Frog, NpcKind::Duck, NpcKind::LadyBug, NpcKind::GoldLadyBug] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        // noGravity: the ladybug pair only (`NPC.cs:16774`); the Frog/Duck
+        // rows write none (the aiStyle-7 walkers fall).
+        assert!(NpcKind::LadyBug.no_gravity());
+        assert!(NpcKind::GoldLadyBug.no_gravity());
+        assert!(!NpcKind::Frog.no_gravity());
+        assert!(!NpcKind::Duck.no_gravity());
+    }
+
+    /// The protocol ids keep their vanilla slots (free in the port-local
+    /// space) and round-trip; the render key stays injective.
+    #[test]
+    fn w4_e26_the_luck_critter_protocol_ids_round_trip() {
+        for (kind, id) in [
+            (NpcKind::Frog, 361u16),
+            (NpcKind::Duck, 362),
+            (NpcKind::LadyBug, 604),
+            (NpcKind::GoldLadyBug, 605),
+        ] {
+            assert_eq!(kind.to_u16(), id, "{kind:?} proto");
+            assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decode");
+            assert_eq!(
+                crate::npc::kind_from_net_id(id as i32).map(|(k, _)| k),
+                Some(kind),
+                "{kind:?} net-id resolution (the catch/release chain)"
+            );
+        }
+    }
+
+    /// The catch/convert tables: the ladybug baits 4361/4362 and the
+    /// waterfowl items 2121/2122 (`NPC.cs:13611`/`:13623`/`:16779`), and
+    /// the makeNPC release items resolve back to the kinds.
+    #[test]
+    fn w4_e26_the_luck_critter_catch_and_release_chain_resolves() {
+        assert_eq!(crate::bug_net::catch_item(361, 0.0), 2121, "Frog");
+        assert_eq!(crate::bug_net::catch_item(362, 0.0), 2122, "Duck");
+        assert_eq!(crate::bug_net::catch_item(604, 0.0), 4361, "LadyBug");
+        assert_eq!(crate::bug_net::catch_item(605, 0.0), 4362, "GoldLadyBug");
+        for ty in [361, 362, 604, 605] {
+            assert!(crate::bug_net::npc_catchable(ty), "{ty} catchable");
+        }
+        // The release items' makeNPC fields ride the generated registry.
+        assert_eq!(crate::registry::make_npc(2121), 361);
+        assert_eq!(crate::registry::make_npc(2122), 362);
+        assert_eq!(crate::registry::make_npc(4361), 604);
+        assert_eq!(crate::registry::make_npc(4362), 605);
+        // The release plan keeps the type (no variant roll for these).
+        let mut rng = UnifiedRandom::new(7);
+        for ty in [361, 362, 604, 605] {
+            let plan = crate::bug_net::release_plan(ty, 0, 1, &mut rng);
+            assert_eq!(plan.spawn_type, ty, "{ty} release keeps its type");
+        }
+    }
+
+    /// The bestiary entries: distinct credits, the vanilla net ids, the
+    /// localized display names, no quick-unlock (the critter kill ladder).
+    #[test]
+    fn w4_e26_the_luck_critter_bestiary_entries() {
+        for (kind, net, credit, name) in [
+            (NpcKind::Frog, 361, "Frog", "Frog"),
+            (NpcKind::Duck, 362, "Duck", "Duck"),
+            (NpcKind::LadyBug, 604, "LadyBug", "Ladybug"),
+            (NpcKind::GoldLadyBug, 605, "GoldLadyBug", "Gold Ladybug"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} display name");
+            assert!(!e.quick_unlock, "{kind:?} rides the kill ladder");
+        }
+    }
+
+    /// The debuff-immunity null-rows: none of the four has a
+    /// `DebuffImmunitySets` entry (`NPCID.cs:6075+`).
+    #[test]
+    fn w4_e26_the_luck_critters_have_no_debuff_immunity() {
+        for kind in [NpcKind::Frog, NpcKind::Duck, NpcKind::LadyBug, NpcKind::GoldLadyBug] {
+            let buffs = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!buffs.buff_immune[20], "{kind:?} not poison-immune");
+            assert!(!buffs.buff_immune[31], "{kind:?} not on-fire-immune");
+        }
+    }
+
+    /// The Frog/Duck data-only kind arms hold still (the aiStyle-7 town
+    /// machine is its own wave); the ladybugs ride the wired aiStyle-115
+    /// axis (a full tick steps without panicking, inside the 8-row strip).
+    #[test]
+    fn w4_e26_the_waterfowl_hold_still_and_the_ladybugs_fly() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(7);
+        for kind in [NpcKind::Frog, NpcKind::Duck] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let (x0, y0) = (n.x, n.y);
+            for _ in 0..60 {
+                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng);
+            }
+            assert_eq!((n.x, n.y), (x0, y0), "{kind:?} data-only holds still");
+        }
+        for kind in [NpcKind::LadyBug, NpcKind::GoldLadyBug] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < 8, "{kind:?} row {} of 8", n.frame);
+            }
+            // The scale latch armed (0.7..0.9, `NPC.cs:47586`).
+            assert!(n.ai[1] >= 0.7 && n.ai[1] < 0.9, "{kind:?} scale latch");
         }
     }
 }

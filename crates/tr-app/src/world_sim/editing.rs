@@ -18738,3 +18738,65 @@ mod wall_placement_tests {
         }
     }
 }
+
+/// W4-e26 — the garden-gnome tile-567 placement witness. The census
+/// finding: the placement is ALREADY generic — item 4609 (`tile:
+/// Some(567)`, `place_style: 0`) routes through `place_item_tile` →
+/// `TileObject.CanPlace`/`Place` because the registry's `D_567` def
+/// carries `uses_custom_can_place: true` (1×2, bottom anchor,
+/// `coordinate_heights [18, 18]`, `coordinate_width 26`). No missing
+/// gate; this pins the end-to-end item use + the luck sensor's tile.
+/// WRITTEN, NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_e26_gnome_placement_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use super::tests::{object_world, slot};
+
+    /// The registry route: tile 567 is a registered custom-place object,
+    /// so the gnome item rides `TileObject.CanPlace`/`Place` (NOT the
+    /// legacy single-tile write). `Player.cs:39771-39772`.
+    #[test]
+    fn w4_e26_the_gnome_routes_through_tile_object() {
+        assert!(tr_core::tileobject::routes_through_tile_object(567, 0));
+        assert!(!legacy_precheck_applies(567, 0), "no legacy pre-check");
+        assert!(!assorted_placement_route(567, 0), "no plant cut rule");
+        let def = tr_core::tileobject::def_for_tile(567).expect("D_567 registered");
+        assert_eq!((def.width, def.height), (1, 2), "1×2");
+        assert!(def.uses_custom_can_place);
+        assert_eq!(def.coordinate_width, 26);
+        assert_eq!(def.coordinate_heights, &[18, 18]);
+        // The item registry: 4609 → tile 567, style 0.
+        assert_eq!(registry::place_tile(4609), Some(567));
+        assert_eq!(registry::place_style(4609), 0);
+    }
+
+    /// The full item use: a Garden Gnome held over a floor cell places
+    /// the 1×2 object (bottom row clicked), consumes one item, and the
+    /// tile-567 marker the luck sensor reads (`SceneMetrics.cs:590-593`)
+    /// is present. `object_world`'s floor is row 20; the gnome's bottom
+    /// cell is (10, 19), top (10, 18).
+    #[test]
+    fn w4_e26_the_gnome_item_places_the_luck_tile() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.inventory[app.selected] = slot(4609, 3);
+        assert!(use_tile_item(&mut app, 10, 19), "the gnome places");
+        assert_eq!(app.inventory[app.selected].count, 2, "one consumed");
+        // Both cells carry tile 567, frame_important, style-0 frames.
+        let bottom = *app.world.tile(10, 19).unwrap();
+        let top = *app.world.tile(10, 18).unwrap();
+        assert!(bottom.active() && bottom.kind == 567, "bottom cell");
+        assert!(top.active() && top.kind == 567, "top cell");
+        assert_eq!((bottom.frame_x, bottom.frame_y), (0, 18), "bottom row frameY 18");
+        assert_eq!((top.frame_x, top.frame_y), (0, 0), "top row frameY 0");
+        assert!(app.world.frame_important[567], "frame_important mirrored");
+        // A refused placement (no floor under the anchor) keeps the item.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = object_world();
+        app2.inventory[app2.selected] = slot(4609, 3);
+        // (30, 10) is mid-air: the bottom anchor finds no solid support.
+        assert!(!use_tile_item(&mut app2, 30, 10), "mid-air refuses");
+        assert_eq!(app2.inventory[app2.selected].count, 3, "the item is kept");
+    }
+}
