@@ -1326,7 +1326,8 @@ fn replace_tile_apply(
         rainbow_sand,
         tenth_plain,
     );
-    // The EliminateNaturalExtras kills' cascade records (the single arm).
+    // The EliminateNaturalExtras kills' records — always empty (the C#
+    // `_Single` discards them); the resolution shape stays uniform.
     if host {
         spawn_object_drops(app, std::mem::take(&mut plan.drops));
     }

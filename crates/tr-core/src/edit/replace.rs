@@ -38,7 +38,9 @@ pub struct ReplaceOutcome {
     /// The ORIGINAL cell (the C# `tileSafely` reference — kind/frames for
     /// the dust/sound/drop tails and the campfire frameY offset).
     pub old: Tile,
-    /// The `EliminateNaturalExtras` kills' object-drop records.
+    /// The `EliminateNaturalExtras` kills' object-drop records — always
+    /// empty on the live path (the C# `_Single` discards them, `:62655`/
+    /// `:62659`); kept for the caller's uniform resolution shape.
     pub drops: Vec<ObjectDrop>,
 }
 
@@ -388,8 +390,9 @@ pub fn replace_tile_prepare(
 /// `HitSwitch` + `SendData(59)` (`:62586-62590`) is app-side: the caller
 /// probes `IsChestRigged(plan.x, plan.y)` BEFORE this call (the frame
 /// check reads the OLD tiles). The `EliminateNaturalExtras` kills'
-/// cascade records append to `plan.drops` (the single arm only — the C#
-/// calls it inside `_Single`).
+/// drops are DISCARDED (the C# `_Single` calls plain `KillTile` with no
+/// collection — `:62655`/`:62659`); `plan.drops` stays empty, kept on the
+/// struct for the caller's uniform resolution shape.
 pub fn replace_tile_commit(
     world: &mut World,
     plan: &mut ReplaceOutcome,
@@ -408,9 +411,12 @@ pub fn replace_tile_commit(
         let offset_y = if plan.old.frame_y >= 36 { 36 } else { 0 };
         do_actual_replacement_area(world, target, style, ax, ay, 3, 2, 0, offset_y);
     } else {
-        // The extras clear runs FIRST inside `_Single` (`:62609`) — its
-        // records collect into the plan (the caller resolves the drops).
-        eliminate_natural_extras(world, ax, ay, &mut plan.drops);
+        // The extras clear runs FIRST inside `_Single` (`:62609`) — the
+        // C# `KillTile(x, y±1)` there discards its drops (no collection at
+        // the call site, `:62655`/`:62659`); the port mirrors that (the
+        // records drop on the floor — the plan's `drops` stays empty).
+        let mut discarded = Vec::new();
+        eliminate_natural_extras(world, ax, ay, &mut discarded);
         do_actual_replacement_single(
             world,
             target,
