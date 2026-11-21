@@ -36179,6 +36179,22 @@ client reservation-hold expiry.
 `wiring.rs`, `netglue.rs`, `player.rs`, `item.rs`, `wld/mod.rs` — NOT RUN
 (code-only lane). 15 `anchors.txt` canary rows added (`527904546`).
 
+**SEAL (2026-11-21, code-only).** research/77 is SEALED (the S1-S5
+receipts there; the family bible is research/309). The seal round
+executed the research/145 SHIMMER-SEAL 16-box repin on this branch
+(`8f04df01b` — the shared inherited i47/i52 witness block ONLY: grab
+edge 42/43, magnet spawns 292/192, x-pin 289, y-pin 192; the explicit
+14×14 helper probes stay). Two merge-facing facts recorded: (1) the
+g15 `item_dust::splash_edge` + `splash_edge` marker are a THIRD form
+of the `WorldItem.cs:879-1035` window — the e19 keep-one (research/144
+SHIMMER SEAL) wins at the three-way merge, the g15 splash form
+retires with f47's dup-half (the other 16 dust sites are g15-unique
+and stay); (2) the copper-slime roster gap NARROWED — d43 `fd6a544fc`
+lands the `TownSlimeCopper` NpcKind row but no `TransformCopperSlime`
+consumer, so the post-merge seed is the pickup→`transform_to_kind`
+call + the town-arrival flag gates (`Main.cs:65940/:66070`) + msg
+140, NOT a roster port (research/309 §4).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

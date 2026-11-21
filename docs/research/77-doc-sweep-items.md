@@ -1,7 +1,9 @@
 # 77 — DOC-SWEEP lane 5: WorldItem / world-drop items census + port
 
-Status: CENSUS + PORT doc (W4-g15 lane 5, `task/W4-g15-dust-item-sites`,
-code-only 2026-11-21). Scope: the item-ENTITY mechanics of `WorldItem.cs`
+Status: **SEALED** (W4-g15 lane 5, `task/W4-g15-dust-item-sites`,
+code-only 2026-11-21; seal round appended below — re-probe citations
+only, the census scope never re-opens). Scope: the item-ENTITY mechanics
+of `WorldItem.cs`
 (the `Main.item[400]` world drop) + `Main.DrawItem` that the dust half
 (research/65, a2911366) did not cover. Every mechanic below carries a C#
 citation, a verdict (already-landed / ported-this-lane / documented gap /
@@ -295,4 +297,198 @@ await the code-only swarm's test phase.
 | `67cf45768` | mana_crystal_pulse integer-division precision |
 | `527904546` | anchors — 15 canary rows |
 
-Plus this census doc's commit (see the branch tip).
+Plus this census doc's commit (`af7d97534` — the 24-commit lane:
+`291fdac09^..af7d97534`, `git rev-list --count` = 24).
+
+---
+
+## SEAL (2026-11-21, code-only — re-probe citations only, scope frozen)
+
+The lane is COMPLETE for its scope and SEALED. All probes below ran
+fresh at the seal round (direct file paths / `git show <tip>:<file>`
+only, no junction recursion; no cargo/rustc/tests/graphify invoked).
+
+### S1 — the 24-commit lane landed + pushed
+
+- Tip `af7d97534` (census doc) == `origin/task/W4-g15-dust-item-sites`
+  (`git rev-parse` both = `af7d97534e0e6015a73c9ba1a4e78e94e652c000`);
+  working tree clean at seal entry. The 24 lane commits
+  (`git rev-list --count 291fdac09^..HEAD` = 24) sit on base
+  `a725acb04` (the 26-commit `origin/main..HEAD` span includes the two
+  dust-half commits `a29113669`/`f8f35d799` beneath the lane's first).
+- The borrow repair (`652f08753`), the mana-pulse integer division
+  (`67cf45768` — `item.rs::mana_crystal_pulse` reads
+  `(mouse_text_color / 2) as f32` BEFORE the fade, `Main.cs:38724`),
+  the 15 canary rows (`527904546`) and this census (`af7d97534`) are
+  all in remote history (`d43b490f3` ancestor-of-remote exit 0).
+- **Canary re-probe**: all 16 `W4-g15` rows in `anchors.txt`
+  (15 lane-5 + 1 dust-half) verified marker-present by substring at
+  the seal — 16/16 OK, 0 missing.
+
+### S2 — g45 buckets compose (the g45f-A9 push-owed debt DISCHARGED)
+
+- **Your TryFillBucket `d43b490f3` is PUSHED** — the exact probe g45's
+  A9.4 owed: `git merge-base --is-ancestor d43b490f3
+  origin/task/W4-g15-dust-item-sites` exit **0**. g45 monitor pass 2
+  (`695e1ec5e`, research/69 A10) already recorded the discharge at the
+  then-tip `7981aa5bf`; the tip has since advanced to `af7d97534`
+  (same lineage), so the A9 fold-list needs NO re-pin — the merger
+  takes the remote tip directly.
+- **Rain-fill gate verified** (`world_sim/items.rs:768`):
+  `!was_grabbed && drop.kind == 205 && !reserved_elsewhere` guards
+  `try_fill_bucket` — the C# `:397` `!beingGrabbed` head + `:399`
+  `type == 205` + `:550` `playerIndexTheItemIsReservedFor !=
+  Main.myPlayer` refusal, arm-for-arm. Inside the helper the `:550`
+  raining/surface row, the `IsSurfaceForAtmospherics` top-left probe
+  (the remix `rockLayer`/`height-350` branch), the centre-tile
+  `AllowsWind` wall and the `Next(600/dayRate)==0 &&
+  NextFloat()<maxRaining` pair all re-read faithful (`:548-571`
+  re-read this round, window ≤100 lines).
+- **Disjoint-union editing**: g15's ONLY `world_sim/editing.rs` hunk
+  is the lucky-coin `coin.apply_enemy_grab_delay()` in
+  `resolve_melee_strike` (`@@ -7964` region, comment + one call);
+  g45's hunks are `@@ -19` (the buckets mod), `@@ -1931`
+  (`wake_around(&mut …)`), `@@ -4317` (the `use_buckets` arm) —
+  **zero overlap**, exactly as g45's 104 §6c-compose axis 4 pinned.
+  The union re-fold `9bc722e5f`'s editing hunks (`:1931/:5729/:5810/
+  :6947/:7541`) also miss g15's hunk. The compose loop holds: g45's
+  full-inventory hand-back spawns a world 205 via
+  `spawn_item_drop_px` (buckets.rs `:394`), g15's gate admits it,
+  rain can fill it back; the spawn signatures are byte-identical at
+  both tips (re-diffed this round — `spawn_item_drop_px` body equal),
+  and buckets.rs carries ZERO `ItemDrop` literals (grep exit 1), so
+  the +7 ctor-initialized fields need no buckets re-pin.
+- **Compose pins** (`tr-core/wiring.rs` `:3922` +
+  `world_sim/wiring.rs` `:670`, g45 research/69 A9.3): re-probed on
+  the union `9bc722e5f` — `the_pump_moves_water_and_adopts_the_type`
+  at core `:3922` and
+  `r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows` at
+  app `:670` both present. g15's wiring adds are DISJOINT from both:
+  core `WireState::any_at` inserts at `:114` (the union's core hunks
+  start `:250`), the app-side `is_hopper_in_range_of` + its witness
+  insert at `:26-66`/`:238`/`:652`/`:863` (the union's app hunks are
+  `:241`/`:647` — adjacent, not overlapping; the merger keeps both
+  families, the pin line-numbers shift by the g15 insertions, the
+  markers survive).
+
+### S3 — gaps → task seeds (the census gap rows now have owners)
+
+- **`FindOwner`/`ReserveFor` → the 39 item-lane seed is PUBLISHED**:
+  g48's research/245 (`245-39-item-ownership-seed.md`, tip
+  `2b61530b4`) adjudicates the 39 ReleaseItemOwnership row to the
+  ITEM lane — the d98 region (`task/W4-d98-net-ids-items-chests`,
+  tip `8c948e0e2`, the 21/22/30-34/80/81 census scope) owns it, NOT
+  g48/g49/g50/g51 (grep-empty at their tips) and NOT the landed
+  M6-NET-5 row (27/28/29, a ROADMAP forward-reference). The
+  `WorldItem.cs:188-285` FindOwner/ReserveFor scope pin + the
+  unrowed reservation-fields census ride that seed. g15's
+  `is_hopper_in_range_of` (`a4b560389`) is the landed input seam the
+  seed's `:243` call reads. The gap row in the table above stands as
+  g15's census record; the WORK is d98-region's per 245.
+- **Messages 90/151/159** stay g52b's pre-switch lane — re-probed:
+  the pushed g52 tip `856edb86c` (net-relay-host) carries NO
+  `MakeInstanced` port (only the `npcs.rs:2729` constants-off note)
+  and no 151/159 codec arms in net.rs/netglue.rs (grep empty). The
+  g15 `enemyGrabDelayTime` byte (`dbfbbec48`) is the item-side
+  census contribution, NOT the switch. d98's `662c884cc` landed the
+  SAME 21 bit-3 byte independently (net.rs `:818` field, writer/
+  reader flag-3 arms byte-equivalent to g15's `:800` forms — both
+  re-read this round); the merger dedupes keep-one (either side
+  faithful, the `ItemState` shapes match field-for-field). d98 does
+  NOT carry the named-player 100-arm (`apply_enemy_grab_delay` grep
+  empty on its tip) — that half is g15-unique (`e8e1080ab`).
+- **Glowmask / GetItemLight draw-side / frame-anim** stay render-lane
+  gaps — re-probed empty on both g15 HEAD and the e19 tip (no item
+  glowmask pass, no `frame_counter` in item.rs). The light HALF
+  lives in `entity_lights::item_light` (`:153`, S1-E-5) +
+  `item_lights::rand_light`; the draw-side call shape is the gap.
+- **NPC 684 roster → d43 LANDED the row; the transform itself does
+  NOT activate** (the brief's question answered): d43's batch 11
+  `fd6a544fc` (tip `0253bde90`) lands `NpcKind::TownSlimeCopper`
+  (npc.rs `:1124`, the SetDefaults row, the netglue spawn arm
+  `:3600` `spawn_cave_walker`, bestiary/sheet/lang rows). BUT a
+  full-tip grep for `TransformCopperSlime`/`transform_copper`/
+  `unlocked_slime_copper` on d43 answers EMPTY — no consumer reads
+  g15's flag, and `NPC.TransformCopperSlime` (`NPC.cs:19160-19182`:
+  the netMode-1 SendData(140) arm, the flag raise + SendData(7),
+  `nPC.Transform(684)`, the TownSlimeTransform broadcast) is
+  unported. The flag's OTHER C# consumers are the town-arrival
+  gates (`Main.cs:65940` `townNPCCanSpawn[684]` + `:66070` the
+  spawn-pool pick) — g15's `town_arrival.rs` has no slime gates
+  either. So the roster gap NARROWS to a wiring gap: the flag +
+  save byte (g15) and the NpcKind row (d43) both exist post-merge;
+  the missing halves are (a) the pickup's `Transform(684)` call
+  (g15's scan deliberately leaves the NPC — the
+  `spawn_shimmer_release` precedent), (b) the town-arrival
+  flag→canSpawn gates, (c) msg 140 + the particle broadcast
+  (orchestrator lane). The `transform_to_kind` method exists
+  (`npc.rs:5080`) as the seam (a) reads. Recorded as the post-merge
+  seed, NOT ported here (the seal freezes scope).
+
+### S4 — e19b shimmer-repulsion / g52b instanced-loot skip receipts
+
+- **e19b repulsion CONFIRMED LANDED on its branch**: the e19 tip
+  `c7a38bea5` carries `ItemDrop::repel_shimmered`
+  (`item.rs:1187`, the `WorldItem.cs:790-847` slice-level 50-budget
+  centre-span push, the ±3 bounds + equal-X tie-break, the `flag`
+  → `repulsed` field → `velocity.X *= 0.8` tail `:859-862`), wired
+  at `world_sim/items.rs:689` BEFORE `drop.update` (the C#'s
+  MoveInWorld-head position). g15's skip stands — no repulsion code
+  on this branch (`repulsed` grep empty). **Merge notes**: e19's
+  round-2/3 also ports the ItemNoGravity float (`item.rs:1325`,
+  the SAME 16-kind set as g15's `:683` — byte-equal lists) and the
+  wet-gravity heads (`wet_step` 0.5/0.375/0.25, the `:379-396`
+  window) which g15 does NOT carry; the merger keeps e19's
+  `move_in_world(world, gravity, max_fall, wet_step)` signature and
+  folds g15's disjoint adds (the draw family, the enemy clock,
+  `tick_age`, the reservation gates) onto it. The splash keep-one
+  is RULED (e19 research/144, SHIMMER SEAL consumed): e19's
+  `ItemSplash`/`pending_splash`/`take_splash` + free-fn
+  `item_splash` (`world_sim/items.rs:777`) survive; f47's
+  `Splash`/`splash_due`/`ItemDrop::splash` retire. **g15's
+  `item_dust::splash_edge` + the `splash_edge: Option<(bool,
+  SplashKind)>` marker are a THIRD form of the same window** — at
+  the three-way merge the e19 keeper wins per 144's ruling; g15's
+  drain site (`world_sim/items.rs:827-837`) and marker field
+  retire with the f47 dup-half, the OTHER 16 dust sites
+  (sparkle/burns/visuals/ShimmerEffect) are g15-unique and stay.
+  The g15 splash form's known deltas vs the keeper: the sticky
+  entry-lava read (behaviourally void per 144), the box-union
+  honey/shimmer probes (the standing deviation), the un-truncated
+  sound-position floats (e19 truncates `as i32 as f32` per the C#
+  `(int)` casts — the keeper's form wins).
+- **The 16-box repin EXECUTED on this branch** (`8f04df01b`, this
+  seal round): the research/145 SHIMMER SEAL g15 row — shared
+  inherited i47/i52 block ONLY: grab-rect edge 44/45 → 42/43,
+  magnet spawns 293/193 → 292/192, moved-x 290 → 289, y-pin 193 →
+  192; the explicit 14×14 helper probes stay (rule 1 tail); the
+  `44.0, 100.0`/`293.0, 193.0` greps answer EMPTY after the edit.
+  The lane-unique geometry (the `resting_drop`/`resting` fixtures'
+  `19*16+2` spawns, the `item_dust` splash box) is SIZE-relative
+  or overlap-tolerant — the seal's g15 row lists NO lane-unique
+  repin, confirmed by re-read (the +2 spawns still overlap the
+  shimmer row at SIZE 16; the wall-flush pins follow the constant).
+- **g52b instanced loot CONFIRMED SKIPPED**: `MakeInstanced`
+  (`WorldItem.cs:321-336`), the 90 instanced variant
+  (`MessageBuffer.cs:1489-1493`) and 151/159 are absent from g52's
+  pushed tip `856edb86c` (grep: only the npcs.rs constants-off
+  note) — the pre-switch lane owns them; g15's census rows stand.
+
+### S5 — the item-dust-family bible
+
+The cross-lane family fold-table (who owns which half of the
+WorldItem/Item dust+entity surface, the keep-one rulings, the
+merge order) lives in **research/309** (`309-item-dust-family-bible.md`,
+this seal round — number 309 per the research/150 free-block rule:
+a fresh full-remote `ls-tree` scan at the seal found the highest
+claimed key 308, 309+ unclaimed; 78 was NOT used — two prior forks
+already carry it, g78-sight + c40-weather). research/65 (the
+dust-half census correction) and this doc stay the per-lane
+records; 309 is the merger's single page.
+
+### Seal-round commits
+
+| Hash | What |
+| ---- | ---- |
+| `8f04df01b` | the 145 SHIMMER-SEAL 16-box repin (shared block only) |
+| (this doc's commit) | research/77 SEALED + research/309 family bible + INDEX/PORT_MAP/ANALYSIS receipts |
