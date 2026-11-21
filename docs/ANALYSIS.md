@@ -13142,6 +13142,11 @@ re-frames and netMode sends are the framer's/MP's job; expertMode folds to
 normal (the life-fruit Next(40)/radius-60); the `AllowedToSpreadInfections`
 flag rides a new runtime-only `World` field (the overground dispatcher has
 no flag parameter; `update_world` sets it per tick from the journey power).
+Residual (pre-existing structure, out of the case-routing scope): the C#
+wall arms (`:72499`/`:73809`) run for INACTIVE cells too (they sit outside
+the active/inactive if-else); both port dispatchers return early on the
+inactive path (the beach-shells / hard-update-world arms), so an actuated
+evil-wall cell does not spread its wall — the active-path arms landed here.
 The changes are runtime-only — no worldgen pass stream touched, both
 world-hash pins stay; 14 witnesses written not run (5 overworld, 4
 underground-tail, 3 underground-slice, 2 dispatcher/gemcorn).
