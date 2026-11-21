@@ -1349,6 +1349,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // C2. The pass draws only its own `pass_rng("Traps")` stream, so the
     // insertion shifts no other step's ledger.
     step!("traps", "Traps", step_traps),
+    // The vanilla Piles slot (`WorldGen.cs:18788`): after Traps (`:18657`,
+    // C2) and before Spawn Point (`:19460`, this lane's C4) — W4-g38 C3.
+    // The pass draws only its own `pass_rng("Piles")` stream, so the
+    // insertion shifts no other step's ledger.
+    step!("piles", "Piles", step_piles),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2400,6 +2405,22 @@ fn step_traps(
     gv.boulder_pets_placed = pets;
 }
 
+/// The vanilla Piles slot (`WorldGen.cs:18788-19459`) — W4-g38 C3: the
+/// seven pile ladders (the 186/187 3×2 cave/hell/surface/house piles and
+/// the 185 small-pile scatters), on the pass's own stream. No GenVars
+/// output — the pass publishes nothing.
+fn step_piles(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    structures::pass_piles(world, &layers, &mut streams.pass_rng("Piles"), opts);
+}
+
 fn step_campsites(
     world: &mut World,
     _gv: &mut GenVars,
@@ -3248,7 +3269,9 @@ mod tests {
         // `WorldGen.cs:18513`) after `cave houses`.
         // W4-g38 C2: + `traps` (vanilla "Traps", `WorldGen.cs:18657`) after
         // `fallen log`.
-        assert_eq!(names.len(), 68);
+        // W4-g38 C3: + `piles` (vanilla "Piles", `WorldGen.cs:18788`) after
+        // `traps`.
+        assert_eq!(names.len(), 69);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3325,6 +3348,7 @@ mod tests {
                 "cave houses",
                 "fallen log",
                 "traps",
+                "piles",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3543,7 +3567,7 @@ mod tests {
     fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("thin ice"), pos("traps") + 1);
+        assert_eq!(pos("thin ice"), pos("piles") + 1);
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
@@ -3573,16 +3597,16 @@ mod tests {
         assert!(cpos("Place Fallen Log") < cpos("Spawn Point"));
     }
 
-    /// W4-g38 C2: `traps` sits after `fallen log` and before the grouped
-    /// micro family — the vanilla chain's relative order Place Fallen Log
-    /// (`WorldGen.cs:18513`) → Traps (`:18657`) → Piles (`:18788`, C3) →
-    /// Spawn Point (`:19460`) puts the pass ahead of the micro group.
+    /// W4-g38 C2: `traps` sits after `fallen log` and before `piles` — the
+    /// vanilla chain's relative order Place Fallen Log (`WorldGen.cs:18513`)
+    /// → Traps (`:18657`) → Piles (`:18788`, C3) → Spawn Point (`:19460`)
+    /// puts the pass ahead of the micro group.
     #[test]
     fn w4_g38_c2_the_traps_step_sits_after_the_fallen_log() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("traps"), pos("fallen log") + 1);
-        assert_eq!(pos("traps") + 1, pos("thin ice"));
+        assert_eq!(pos("traps") + 1, pos("piles"));
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3593,6 +3617,28 @@ mod tests {
         assert!(cpos("Place Fallen Log") < cpos("Traps"));
         assert!(cpos("Traps") < cpos("Piles"));
         assert!(cpos("Traps") < cpos("Spawn Point"));
+    }
+
+    /// W4-g38 C3: `piles` sits after `traps` and before the grouped micro
+    /// family — the vanilla chain's relative order Traps (`WorldGen.cs:
+    /// 18657`) → Piles (`:18788`) → Spawn Point (`:19460`, C4) puts the pass
+    /// ahead of the micro group.
+    #[test]
+    fn w4_g38_c3_the_piles_step_sits_after_the_traps() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("piles"), pos("traps") + 1);
+        assert_eq!(pos("piles") + 1, pos("thin ice"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Traps") < cpos("Piles"));
+        assert!(cpos("Piles") < cpos("Spawn Point"));
+        assert!(cpos("Place Fallen Log") < cpos("Piles"));
     }
 
     #[test]

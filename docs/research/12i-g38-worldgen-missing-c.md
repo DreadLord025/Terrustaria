@@ -76,8 +76,8 @@ reassigns; the merger reconciles per `12h`.
 | --- | --- | --- |
 | range claim (this doc) | d32b13cc | claimed |
 | C1 Place Fallen Log | 8c9b7b60 | landed (code-only, witnesses written NOT run) |
-| C2 Traps | (this commit) | landed (code-only, witnesses written NOT run) |
-| C3 Piles | — | pending |
+| C2 Traps | 9a4deba8 | landed (code-only, witnesses written NOT run) |
+| C3 Piles | (this commit) | landed (code-only, witnesses written NOT run) |
 | C4 Spawn Point | — | pending |
 | C5 Guide | — | pending |
 | C6 Sunflowers | — | pending |
@@ -146,10 +146,47 @@ section note): `placingTraps` (UI-only), `starGame` (runtime joke seed),
 the drunk `Thread.Sleep` delay loop (draws/writes nothing). Hash pins:
 SEED42_512 expected UNCHANGED (the 512 terrain rejects every trap attempt
 + no wall-187 desert); DEFAULT_WORLD moves BY DESIGN (210 trap attempts +
-12 sand-trap attempts place on the 4200-wide world). Re-pins deferred to
+13 sand-trap attempts place on the 4200-wide world). Re-pins deferred to
 the gate; `a == b` halves untouched. Witnesses: 5 unit tests in
 `structures.rs` (bubble/boulder solidity windows, Place1x1 plate frames +
 floor veto, Place2x2 boulder frames + floor veto, the dart trap
 plate+dart+wire, the pass gates' no-draw schedule) + the pipeline
 positional witness `w4_g38_c2_the_traps_step_sits_after_the_fallen_log`;
 the step-count/name-list tests updated 67→68.
+
+## C3 landing note (2026-11-21)
+
+C3 ports `WorldGen.cs:18788-19459` (the Piles pass) + `PlaceSmallPile`
+(`:46815-46873`) + `GetPileGenerationAttempts` (`:23647-23655`) +
+`InvalidTileForPilesOrSpeleothems` (`:38979-38994`) + the `Place3x2`
+(`:52066-52196`) and `PlaceTile` 186/187 slices verbatim into
+`structures.rs` (`pass_piles` + `pile_place_3x2`/`pile_place_small`/
+`pile_place_tile`/`pile_solid2`/`pile_invalid_below`/`pile_any_shimmer`/
+`pile_fall`/`pile_satellites`). Slot: after `traps`, before `thin ice` (the
+vanilla `:18788` slot between Traps `:18657` and Spawn Point `:19460`).
+Stream: `pass_rng("Piles")` — no other step's ledger shifts. No GenVars
+output. The seven ladders run in C# order with the float-product ceil loop
+counts (`(float)maxTilesX * 0.06f` etc. — the f32 walk reproduces the C#
+`(float)i < num2` comparison exactly). The pass-local `tileSolid` window
+(`:18794-18808`, the 11 cleared kinds + the no-traps boulder family) rides
+`pile_solid2`; the restores (`:19446-19457`) are pass-local state. Progress
+message `Lang.gen[89]` (`:18792`). Boot statics 185/186/187 were already
+present (`Main.cs:7415-7417`).
+
+**C2 loop-count fidelity fix folded into this commit:** the C# ladder
+bounds are `for (int i = 0; (double)i < num; i++)` — **ceil** semantics,
+the established port convention (biomes.rs/evil.rs/wavy.rs `.ceil()`). C2's
+first draft truncated (`as i32`); corrected to `.ceil()` for the trap
+ladder (512-wide: 25→26 attempts), the TNT barrels and the sand traps
+(default: 12→13 sand chambers). The witnesses' no-draw gates are
+unaffected; the pin notes now carry the corrected counts.
+
+Hash pins: BOTH move BY DESIGN — unlike C1/C2, the pile point band
+`[25, w−25)` is LIVE on the 512-wide world, so the ladders place
+185/186/187 piles there too (SEED42_512 no longer expected unchanged).
+Re-pins deferred to the gate; `a == b` halves untouched. Witnesses: 5 unit
+tests in `structures.rs` (the solidity window, the 3×2 frames + boulder
+veto, the small-pile 1×1/2×1 arms + lava veto, the fall scan + bottom cap,
+the deny-gate no-draw schedule) + the pipeline positional witness
+`w4_g38_c3_the_piles_step_sits_after_the_traps`; the step-count/name-list
+tests updated 68→69.

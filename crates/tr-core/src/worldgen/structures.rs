@@ -25,7 +25,7 @@ use super::biomes::{TILE_JUNGLE_GRASS, TILE_MUD};
 use super::terrain::Layers;
 use crate::seeds::{MicroSeedFlags, SeedFlags};
 use crate::tile::{
-    FLAG_ACTIVE, FLAG_ACTUATOR, FLAG_HALF_BRICK, FLAG_INACTIVE, FLAG_LIQUID_LAVA, Tile,
+    FLAG_ACTIVE, FLAG_ACTUATOR, FLAG_HALF_BRICK, FLAG_INACTIVE, FLAG_LIQUID_LAVA, LiquidKind, Tile,
 };
 use crate::tiledata as td;
 use crate::world::World;
@@ -1999,7 +1999,10 @@ pub(crate) fn pass_traps(
     let beach = super::ocean::ZONE_MARGIN;
     // The x band must be non-empty (sub-vanilla guard).
     let band_ok = 200 < world.width - 200;
-    let trap_count = count as i32;
+    // `:18688`: `for (int i = 0; (double)i < num; i++)` — the loop runs
+    // ceil(num) times (the biomes.rs/evil.rs `.ceil()` convention), NOT the
+    // truncated count.
+    let trap_count = count.ceil() as i32;
     if band_ok {
         for _ in 0..trap_count {
             for _ in 0..attempts_per {
@@ -2047,7 +2050,7 @@ pub(crate) fn pass_traps(
         if seeds.tenth {
             barrel_count = (world.width / 3) as f64;
         }
-        let barrels = barrel_count as i32;
+        let barrels = barrel_count.ceil() as i32; // `:18733` `(double)k < num`
         if 50 < world.width - 50 {
             for _ in 0..barrels {
                 let x = rng.range(50, world.width - 50);
@@ -2070,7 +2073,7 @@ pub(crate) fn pass_traps(
     } else if seeds.get_good {
         sand_count *= 1.5;
     }
-    let sand_traps = sand_count as i32;
+    let sand_traps = sand_count.ceil() as i32; // `:18754` `(double)l < num`
     let sand_x_lo = (world.width as f64 * 0.15) as i32;
     let sand_x_hi = (world.width as f64 * 0.85) as i32;
     if sand_x_lo < sand_x_hi {
@@ -2087,6 +2090,923 @@ pub(crate) fn pass_traps(
     }
     // `:18780-18785`: restore boulder solidity + placingTraps=false +
     // tileSolid[379]=true — all pass-local/UI state, no tile writes.
+}
+
+// ============================================================================
+// W4-g38 C3 — the Piles pass (`GenPassNameID.Piles`, `WorldGen.cs:18788-19459`)
+// ============================================================================
+//
+// Seven attempt ladders in C# order (cave piles 0.06w `:18811`, hell piles
+// 0.01w `:18932`, surface 3×2 piles 0.03w `:18996`, house-interior 3×2 piles
+// 0.0035w `:19058`, the big small-pile scatter 0.6w `:19130`, surface small
+// piles 0.02w `:19291`, house-wall small piles 0.15w `:19371`), each attempt
+// budgeted by `GetPileGenerationAttempts` (`:23647-23655`, width/2). The
+// 186/187 large piles are 3×2 objects (`PlaceTile` → `Place3x2`); the 185
+// small piles ride `PlaceSmallPile` (1×1 at `pileSize` 0, the 2×1 arm at 1).
+//
+// Pass-local solidity windows (modelled, no tile writes):
+// * `:18794-18804` clears `tileSolid` for {379, 229, 190, 196, 189, 717, 718,
+//   719, 202, 460, 484}; `:18805-18808` also clears the boulder family on
+//   the no-traps seed (`SetBoulderSolidity(false)`, `:11009-11020`).
+// * `pile_solid2` is the `SolidTile2(int,int)` read under that window — the
+//   floor tests in `Place3x2`/`PlaceSmallPile`/`InvalidTileForPiles...`.
+// * `:19446-19457` restores everything (and sets 192/225 solid — they were
+//   never cleared; pass-local state, the port's TILE_SOLID is static).
+//
+// The float ladder counts (`:18810-18811` etc.): `(float)maxTilesX * 0.06f`
+// with `for (int i = 0; (float)i < num2; i++)` — a float product and a ceil
+// loop. The port computes the product in f32 and walks the same comparison
+// (the biomes.rs/evil.rs `.ceil()` convention, here exact in f32).
+//
+// Sub-vanilla guard: the point bands `[25, w-25)` and the y bands need
+// non-empty ranges — the C# `Next` throws on a collapsed band; the port
+// skips the ladder after the count (the mining-explosives precedent).
+
+/// The pass-window non-solid kinds (`:18794-18804`).
+const PILE_NONSOLID: [u16; 11] = [379, 229, 190, 196, 189, 717, 718, 719, 202, 460, 484];
+
+/// `WorldGen.SolidTile2(int, int)` (`WorldGen.cs:70492-70509`) under the
+/// Piles pass's tileSolid window: the cleared kinds (plus the no-traps
+/// boulder family) read non-solid; everything else is the static set.
+fn pile_solid2(world: &World, x: i32, y: i32, no_traps: bool) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if PILE_NONSOLID.contains(&t.kind) {
+        return false;
+    }
+    if no_traps && TRAP_BOULDERS.contains(&t.kind) && t.kind != 665 {
+        // `SetBoulderSolidity` (`:11011-11019`) touches 138/484/664/711-716
+        // — 665 is in `Sets.Boulders` but not in the solidity toggle, and
+        // 484 is already in PILE_NONSOLID.
+        return false;
+    }
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && ((td::SET_PLATFORMS.has(t.kind) && (t.half_brick() || t.top_slope()))
+            || t.slope() == 0)
+        && !t.half_brick()
+        && !t.inactive()
+}
+
+/// `WorldGen.InvalidTileForPilesOrSpeleothems` (`WorldGen.cs:38979-38994`):
+/// `InWorld(x, y, 2)` and an active `Sets.Boulders` tile below.
+fn pile_invalid_below(world: &World, x: i32, y: i32) -> bool {
+    if !trap_in_world(world, x, y, 2) {
+        return false;
+    }
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && TRAP_BOULDERS.contains(&t.kind))
+}
+
+/// `WorldGen.Place3x2` (`WorldGen.cs:52066-52196`), the 186/187 path the
+/// Piles pass runs — no RNG: the 5-tile bounds guard, the 3×2 clear scan,
+/// the per-column default-case floor (`SolidTile2` under the pass window +
+/// the 186/187 `InvalidTileForPilesOrSpeleothems` boulder veto `:52110`),
+/// then the row-major frame write (`frameX = 54*style + dx*18`,
+/// `frameY = dy*18`). The campfire liquid veto is dead for 186/187
+/// (`Sets.Campfires`), the 26 altar veto and the 88 chest ledger are other
+/// kinds' paths.
+fn pile_place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32, no_traps: bool) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let mut ok = true;
+    for i in (x - 1)..(x + 2) {
+        for j in (y - 1)..(y + 1) {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                ok = false;
+            }
+        }
+        if pile_invalid_below(world, i, y + 1) {
+            ok = false;
+        }
+        if !pile_solid2(world, i, y + 1, no_traps) {
+            ok = false;
+        }
+    }
+    if !ok {
+        return;
+    }
+    let num2 = (54 * style) as i16;
+    // The 3×2 write (`:52171-52194`), C# row-major order.
+    for (dx, dy) in [(0i32, 0i32), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)] {
+        if let Some(t) = world.tile_mut(x - 1 + dx, y - 1 + dy) {
+            t.flags |= FLAG_ACTIVE;
+            t.frame_y = (dy * 18) as i16;
+            t.frame_x = num2 + (dx * 18) as i16;
+            t.kind = kind;
+        }
+    }
+}
+
+/// `WorldGen.PlaceSmallPile(i, j, pileStyle, pileSize, 185)`
+/// (`WorldGen.cs:46815-46873`): the `anyLava` veto (`Tile.cs:410-417`), the
+/// 2×1 `pileSize == 1` arm (the scatter ladders roll it; the satellites
+/// always pass 0) with its type-185 boulder-below veto (`:46847`), and the
+/// 1×1 write (`frameX = 18*style`, `frameY = 18*size`).
+fn pile_place_small(world: &mut World, x: i32, y: i32, style: i32, size: i32, no_traps: bool) -> bool {
+    let frame_y = (size * 18) as i16;
+    let mut frame_x = (style * 18) as i16;
+    // `:46835`: anyLava (`Tile.cs:410-417` + `:345-348`) — the port's
+    // canonical liquid decode (`liquid_kind()`, the C2 convention).
+    let lava = world
+        .tile(x, y)
+        .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == LiquidKind::Lava);
+    if lava {
+        return false;
+    }
+    if size == 1 {
+        frame_x = (style * 36) as i16;
+        let mut ok = pile_solid2(world, x, y + 1, no_traps)
+            && pile_solid2(world, x + 1, y + 1, no_traps)
+            && !world.tile(x, y).is_some_and(|t| t.active())
+            && !world.tile(x + 1, y).is_some_and(|t| t.active());
+        // `:46847`: the type-185 boulder-below veto on both floor columns.
+        if ok && (pile_invalid_below(world, x, y + 1) || pile_invalid_below(world, x + 1, y + 1)) {
+            ok = false;
+        }
+        if ok {
+            for (i, fx) in [(x, frame_x), (x + 1, frame_x + 18)] {
+                if let Some(t) = world.tile_mut(i, y) {
+                    t.flags |= FLAG_ACTIVE;
+                    t.frame_y = frame_y;
+                    t.frame_x = fx;
+                    t.kind = 185;
+                }
+            }
+            return true;
+        }
+    } else if pile_solid2(world, x, y + 1, no_traps)
+        && !world.tile(x, y).is_some_and(|t| t.active())
+    {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags |= FLAG_ACTIVE;
+            t.frame_y = frame_y;
+            t.frame_x = frame_x;
+            t.kind = 185;
+        }
+        return true;
+    }
+    false
+}
+
+/// `WorldGen.PlaceTile(i, j, {186,187}, mute: true, forced: false, -1, style)`
+/// (`WorldGen.cs:59342-60295`), the slice the Piles pass runs: the
+/// empty/non-solid entry (`:59373` — `tileSolid[186/187]` is false, so the
+/// entry always admits), the inactive-cell clear (`:59473-59476`), the
+/// `Place3x2(i, j, kind, style)` dispatch (`:59994-60002`) and the
+/// `result = tile.active()` tail (`:60255-60262`). The `SquareTileFrame`
+/// re-frame rides the post-pipeline seam (the d106 convention).
+fn pile_place_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32, no_traps: bool) {
+    if !trap_in_world(world, x, y, 0) {
+        return;
+    }
+    let active = world.tile(x, y).is_some_and(|t| t.active());
+    if !active {
+        let i = world.index(x, y);
+        let t = &mut world.tiles[i];
+        t.kind = 0;
+        t.flags &= !FLAG_ACTIVE;
+        t.frame_x = 0;
+        t.frame_y = 0;
+        t.set_paint(0);
+        t.flags &= !crate::tile::FLAG_FULLBRIGHT;
+        t.set_slope(0);
+        t.flags &= !FLAG_HALF_BRICK;
+        world.set_invisible_block(x, y, false);
+    }
+    pile_place_3x2(world, x, y, kind, style, no_traps);
+}
+
+/// `Tile.anyShimmer()` (`Tile.cs:428-435` + `:379-382`) — the port's
+/// canonical liquid decode (`liquid_kind()`, the C2 geyser convention).
+fn pile_any_shimmer(world: &World, x: i32, y: i32) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == LiquidKind::Shimmer)
+}
+
+/// The fall-to-ground scan every ladder runs (`:18829-18831` etc.): walk
+/// down while the cell below is inactive, stopping at `maxTilesY - 5`.
+fn pile_fall(world: &World, x: i32, mut y: i32) -> i32 {
+    while !world.tile(x, y + 1).is_some_and(|t| t.active()) && y < world.height - 5 {
+        y += 1;
+    }
+    y
+}
+
+/// The scattered small-pile tail the ladders share (`:18910-18925` etc.):
+/// `Next(1, 5)` satellites, each an (x ± 10, y − Next(5)) point fallen to
+/// ground, then `PlaceSmallPile(_, _, Next(12, 36), 0, 185)`.
+fn pile_satellites(world: &mut World, x: i32, y: i32, rng: &mut super::Rng, no_traps: bool) {
+    let n = rng.range(1, 5);
+    for _ in 0..n {
+        let sx = x + rng.range(-10, 11);
+        let sy = y - rng.range(0, 5);
+        if !world.tile(sx, sy).is_some_and(|t| t.active()) {
+            let sy = pile_fall(world, sx, sy);
+            pile_place_small(world, sx, sy, rng.range(12, 36), 0, no_traps);
+        }
+    }
+}
+
+/// The Piles pass (`GenPassNameID.Piles`, `WorldGen.cs:18788-19459`).
+/// Draws, in C# order on the pass's own stream, the seven ladders below;
+/// the skyblock budget divide (`GetPileGenerationAttempts` `/10`) rides the
+/// attempt counter. The `denySomeGeneration` gate (`:18790`) skips the
+/// whole pass without draws.
+pub(crate) fn pass_piles(world: &mut World, layers: &Layers, rng: &mut super::Rng, opts: &GenOptions) {
+    if trap_deny_some_generation(opts) {
+        return;
+    }
+    let no_traps = opts.flags.contains(SeedFlags::NO_TRAPS);
+    let skyblock = opts.flags.contains(SeedFlags::SKYBLOCK);
+    let world_surface = layers.world_surface;
+    // oceanLevel (`WorldGen.cs:10963-10974` reads `WorldGen.oceanLevel` =
+    // `(worldSurface + rockLayer)/2 + 40`, the C2/evil.rs convention).
+    let ocean_level = (world_surface + layers.rock_layer) / 2.0 + 40.0;
+    let beach = super::ocean::ZONE_MARGIN;
+    // `GetPileGenerationAttempts` (`:23647-23655`).
+    let attempts = if skyblock { world.width / 2 / 10 } else { world.width / 2 };
+    // The float ladder count (`:18810`): the C# float product + the
+    // `(float)i < num2` ceil loop, exact in f32. Captures the width only —
+    // the loop bodies mutate the world.
+    let width = world.width;
+    let ladder = |coeff: f32| -> i32 {
+        let num2 = width as f32 * coeff;
+        let mut i = 0i32;
+        while (i as f32) < num2 {
+            i += 1;
+        }
+        i
+    };
+    let band_ok = 25 < world.width - 25;
+
+    // ---- Ladder 1: the cave piles (`:18809-18930`), 0.06w -----------------
+    if band_ok && (world_surface as i32) < world.height - 300 {
+        for _ in 0..ladder(0.06) {
+            let mut tries = attempts;
+            let mut placed = false;
+            while !placed && tries > 0 {
+                tries -= 1;
+                let mut x = rng.range(25, world.width - 25);
+                let mut y = rng.range(world_surface as i32, world.height - 300);
+                while (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
+                    x = rng.range(25, world.width - 25);
+                    y = rng.range(world_surface as i32, world.height - 300);
+                }
+                if world.tile(x, y).is_some_and(|t| t.active()) {
+                    continue;
+                }
+                let mut kind = 186u16;
+                y = pile_fall(world, x, y);
+                let wall = world.tile(x, y).map(|t| t.wall).unwrap_or(0);
+                let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                if !below.active() {
+                    continue;
+                }
+                // The style ladder (`:18836-18895`), C# if-chain order.
+                let mut style = rng.range(0, 22);
+                if (16..=22).contains(&style) {
+                    style = rng.range(0, 22);
+                }
+                if (below.kind == 0 || below.kind == 1 || td::TILE_MOSS.has(below.kind))
+                    && rng.range(0, 5) == 0
+                {
+                    style = rng.range(23, 29);
+                    kind = 187;
+                }
+                if y > world.height - 300
+                    || TRAP_DUNGEON_WALLS.contains(&wall)
+                    || matches!(below.kind, 30 | 19 | 25 | 203)
+                {
+                    style = rng.range(0, 7);
+                    kind = 186;
+                }
+                if matches!(below.kind, 147 | 161 | 162) {
+                    style = rng.range(26, 32);
+                    kind = 186;
+                }
+                if below.kind == 60 {
+                    kind = 187;
+                    style = rng.range(0, 6);
+                }
+                if matches!(below.kind, 57 | 58) && rng.range(0, 3) < 2 {
+                    kind = 187;
+                    style = rng.range(6, 9);
+                }
+                if below.kind == 226 {
+                    kind = 187;
+                    style = rng.range(18, 23);
+                }
+                if below.kind == 70 {
+                    style = rng.range(32, 35);
+                    kind = 186;
+                }
+                if matches!(below.kind, 396 | 397 | 404) {
+                    style = rng.range(29, 35);
+                    kind = 187;
+                }
+                if below.kind == 368 {
+                    style = rng.range(35, 41);
+                    kind = 187;
+                }
+                if below.kind == 367 {
+                    style = rng.range(41, 47);
+                    kind = 187;
+                }
+                if kind == 186 && (7..=15).contains(&style) && rng.range(0, 75) == 0 {
+                    kind = 187;
+                    style = 17;
+                }
+                // `:18896-18909`: the dungeon-wall 2/3 skip, the shimmer
+                // veto, then the placement + success test.
+                if TRAP_DUNGEON_WALLS.contains(&wall) && rng.range(0, 3) != 0 {
+                    placed = true;
+                } else {
+                    if !pile_any_shimmer(world, x, y) {
+                        pile_place_tile(world, x, y, kind, style, no_traps);
+                    }
+                    if world.tile(x, y).is_some_and(|t| matches!(t.kind, 186 | 187)) {
+                        placed = true;
+                    }
+                    if placed && kind == 186 && style <= 7 {
+                        pile_satellites(world, x, y, rng, no_traps);
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- Ladder 2: the hell piles (`:18931-18994`), 0.01w -----------------
+    if band_ok && world.height - 300 < world.height - 10 {
+        for _ in 0..ladder(0.01) {
+            let mut tries = attempts;
+            let mut placed = false;
+            while !placed && tries > 0 {
+                tries -= 1;
+                let x = rng.range(25, world.width - 25);
+                let mut y = rng.range(world.height - 300, world.height - 10);
+                if world.tile(x, y).is_some_and(|t| t.active()) {
+                    continue;
+                }
+                let mut kind = 186u16;
+                y = pile_fall(world, x, y);
+                let wall = world.tile(x, y).map(|t| t.wall).unwrap_or(0);
+                let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                if !below.active() {
+                    continue;
+                }
+                // The style ladder (`:18952-18969`).
+                let mut style = rng.range(0, 22);
+                if (16..=22).contains(&style) {
+                    style = rng.range(0, 22);
+                }
+                if y > world.height - 300
+                    || TRAP_DUNGEON_WALLS.contains(&wall)
+                    || matches!(below.kind, 30 | 19)
+                {
+                    style = rng.range(0, 7);
+                }
+                if matches!(below.kind, 57 | 58) && rng.range(0, 3) < 2 {
+                    kind = 187;
+                    style = rng.range(6, 9);
+                }
+                if matches!(below.kind, 147 | 161 | 162) {
+                    style = rng.range(26, 32);
+                }
+                pile_place_tile(world, x, y, kind, style, no_traps);
+                if world.tile(x, y).is_some_and(|t| matches!(t.kind, 186 | 187)) {
+                    placed = true;
+                }
+                if placed && kind == 186 && style <= 7 {
+                    pile_satellites(world, x, y, rng, no_traps);
+                }
+            }
+        }
+    }
+
+    // ---- Ladder 3: the surface 3×2 piles (`:18995-19056`), 0.03w ----------
+    if band_ok && 10 < world_surface as i32 {
+        for _ in 0..ladder(0.03) {
+            let mut tries = attempts;
+            let mut placed = false;
+            while !placed && tries > 0 {
+                tries -= 1;
+                let mut kind = 186u16;
+                let mut x = rng.range(25, world.width - 25);
+                let mut y = rng.range(10, world_surface as i32);
+                while (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
+                    x = rng.range(25, world.width - 25);
+                    y = rng.range(10, world_surface as i32);
+                }
+                if world.tile(x, y).is_some_and(|t| t.active()) {
+                    continue;
+                }
+                y = pile_fall(world, x, y);
+                let wall = world.tile(x, y).map(|t| t.wall).unwrap_or(0);
+                let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                if !below.active() {
+                    continue;
+                }
+                // The style ladder (`:19021-19044`).
+                let mut style = rng.range(7, 13);
+                if y > world.height - 300
+                    || TRAP_DUNGEON_WALLS.contains(&wall)
+                    || matches!(below.kind, 30 | 19 | 25 | 204 | 234 | 112)
+                    || TRAP_DUNGEON_TILES.contains(&below.kind)
+                {
+                    style = -1;
+                }
+                if matches!(below.kind, 147 | 161 | 162) {
+                    style = rng.range(26, 32);
+                }
+                if below.kind == 53 {
+                    kind = 187;
+                    style = rng.range(52, 55);
+                }
+                let grass_side = |w: &World, sx: i32| {
+                    w.tile(sx, y + 1).is_some_and(|t| t.active() && t.kind == 2)
+                };
+                if below.kind == 2 || grass_side(world, x - 1) || grass_side(world, x + 1) {
+                    kind = 187;
+                    style = rng.range(14, 17);
+                }
+                if matches!(below.kind, 151 | 274) {
+                    kind = 186;
+                    style = rng.range(0, 7);
+                }
+                if style >= 0 {
+                    pile_place_tile(world, x, y, kind, style, no_traps);
+                }
+                // `:19049-19052`: `type == num19` — no active() test; the
+                // seat's stale kind can match and end the attempt.
+                if world.tile(x, y).is_some_and(|t| t.kind == kind) {
+                    placed = true;
+                }
+            }
+        }
+    }
+
+    // ---- Ladder 4: the house-interior piles (`:19057-19128`), 0.0035w -----
+    if band_ok && 10 < world_surface as i32 {
+        for _ in 0..ladder(0.0035) {
+            let mut tries = attempts;
+            let mut placed = false;
+            while !placed && tries > 0 {
+                tries -= 1;
+                let x = rng.range(25, world.width - 25);
+                let mut y = rng.range(10, world_surface as i32);
+                let cell = world.tile(x, y).copied().unwrap_or_default();
+                if cell.active() || cell.wall == 0 {
+                    continue;
+                }
+                let mut kind = 186u16;
+                y = pile_fall(world, x, y);
+                let wall = world.tile(x, y).map(|t| t.wall).unwrap_or(0);
+                let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                if !below.active() {
+                    continue;
+                }
+                // The style ladder (`:19078-19100`).
+                let mut style = rng.range(7, 13);
+                if y > world.height - 300
+                    || TRAP_DUNGEON_WALLS.contains(&wall)
+                    || matches!(below.kind, 30 | 19)
+                    || TRAP_DUNGEON_TILES.contains(&below.kind)
+                {
+                    style = -1;
+                }
+                if below.kind == 25 {
+                    style = rng.range(0, 7);
+                }
+                if matches!(below.kind, 147 | 161 | 162) {
+                    style = rng.range(26, 32);
+                }
+                let grass_side = |w: &World, sx: i32| {
+                    w.tile(sx, y + 1).is_some_and(|t| t.active() && t.kind == 2)
+                };
+                if below.kind == 2 || grass_side(world, x - 1) || grass_side(world, x + 1) {
+                    kind = 187;
+                    style = rng.range(14, 17);
+                }
+                if matches!(below.kind, 151 | 274) {
+                    kind = 186;
+                    style = rng.range(0, 7);
+                }
+                if style >= 0 {
+                    pile_place_tile(world, x, y, kind, style, no_traps);
+                }
+                if world.tile(x, y).is_some_and(|t| t.kind == kind) {
+                    placed = true;
+                }
+                if placed && style <= 7 {
+                    pile_satellites(world, x, y, rng, no_traps);
+                }
+            }
+        }
+    }
+
+    // ---- Ladder 5: the big small-pile scatter (`:19129-19289`), 0.6w ------
+    if band_ok && (world_surface as i32) < world.height - 20 {
+        for _ in 0..ladder(0.6) {
+            let mut tries = attempts;
+            let mut placed = false;
+            while !placed && tries > 0 {
+                tries -= 1;
+                let mut x = rng.range(25, world.width - 25);
+                let mut y = rng.range(world_surface as i32, world.height - 20);
+                // `:19140-19144`: the wall-87 (spider) half re-roll.
+                if world.tile(x, y).is_some_and(|t| t.wall == 87) && rng.range(0, 2) == 0 {
+                    x = rng.range(25, world.width - 25);
+                    y = rng.range(world_surface as i32, world.height - 20);
+                }
+                while (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
+                    x = rng.range(25, world.width - 25);
+                    y = rng.range(world_surface as i32, world.height - 20);
+                }
+                if world.tile(x, y).is_some_and(|t| t.active()) {
+                    continue;
+                }
+                y = pile_fall(world, x, y);
+                let cell = world.tile(x, y).copied().unwrap_or_default();
+                let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                if !below.active() {
+                    continue;
+                }
+                // The size/style ladder (`:19159-19257`).
+                let size = rng.range(0, 2);
+                let mut style = rng.range(0, 36);
+                if (28..=35).contains(&style) {
+                    style = rng.range(0, 36);
+                }
+                if size == 1 {
+                    style = rng.range(0, 25);
+                    if (16..=24).contains(&style) {
+                        style = rng.range(0, 25);
+                    }
+                }
+                if y > world.height - 300 {
+                    if size == 0 {
+                        style = rng.range(12, 28);
+                    }
+                    if size == 1 {
+                        style = rng.range(6, 16);
+                    }
+                }
+                if TRAP_DUNGEON_WALLS.contains(&cell.wall)
+                    || cell.wall == 87
+                    || matches!(below.kind, 30 | 19 | 25 | 203)
+                {
+                    if size == 0 && style < 12 {
+                        style += 12;
+                    }
+                    if size == 1 && style < 6 {
+                        style += 6;
+                    }
+                    if size == 1 && style >= 17 {
+                        style -= 10;
+                    }
+                }
+                if matches!(below.kind, 147 | 161 | 162) {
+                    if size == 0 && style < 12 {
+                        style += 36;
+                    }
+                    if size == 1 && style >= 20 {
+                        style += 6;
+                    }
+                    if size == 1 && style < 6 {
+                        style += 25;
+                    }
+                }
+                if cell.liquid == 0 && matches!(below.kind, 53 | 397 | 396) {
+                    if size == 0 {
+                        style = rng.range(73, 78);
+                    }
+                    if size == 1 {
+                        style = rng.range(62, 65);
+                    }
+                }
+                if matches!(below.kind, 151 | 274) {
+                    if size == 0 {
+                        style = rng.range(12, 28);
+                    }
+                    if size == 1 {
+                        style = rng.range(12, 19);
+                    }
+                }
+                if below.kind == 368 {
+                    if size == 0 {
+                        style = rng.range(60, 66);
+                    }
+                    if size == 1 {
+                        style = rng.range(47, 53);
+                    }
+                }
+                if below.kind == 367 {
+                    if size == 0 {
+                        style = rng.range(66, 72);
+                    }
+                    if size == 1 {
+                        style = rng.range(53, 59);
+                    }
+                }
+                // `:19258-19269`: the dungeon-tile skip, the dungeon-wall
+                // 2/3 skip, the shimmer veto, then PlaceSmallPile.
+                if TRAP_DUNGEON_TILES.contains(&below.kind) {
+                    placed = false;
+                } else if TRAP_DUNGEON_WALLS.contains(&cell.wall) && rng.range(0, 3) != 0 {
+                    placed = true;
+                } else if !pile_any_shimmer(world, x, y) {
+                    placed = pile_place_small(world, x, y, style, size, no_traps);
+                }
+                if placed && size == 1 && (6..=15).contains(&style) {
+                    pile_satellites(world, x, y, rng, no_traps);
+                }
+            }
+        }
+    }
+
+    // ---- Ladder 6: the surface small piles (`:19290-19369`), 0.02w --------
+    if band_ok && 15 < world_surface as i32 {
+        for _ in 0..ladder(0.02) {
+            let mut tries = attempts;
+            let mut placed = false;
+            while !placed && tries > 0 {
+                tries -= 1;
+                let mut x = rng.range(25, world.width - 25);
+                let mut y = rng.range(15, world_surface as i32);
+                while (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
+                    x = rng.range(25, world.width - 25);
+                    y = rng.range(15, world_surface as i32);
+                }
+                if world.tile(x, y).is_some_and(|t| t.active()) {
+                    continue;
+                }
+                y = pile_fall(world, x, y);
+                let cell = world.tile(x, y).copied().unwrap_or_default();
+                let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                if !below.active() {
+                    continue;
+                }
+                // The size/style ladder (`:19315-19361`).
+                let size = rng.range(0, 2);
+                let mut style = rng.range(0, 11);
+                if size == 1 {
+                    style = rng.range(0, 5);
+                }
+                if matches!(below.kind, 147 | 161 | 162) {
+                    if size == 0 && style < 12 {
+                        style += 36;
+                    }
+                    if size == 1 && style >= 20 {
+                        style += 6;
+                    }
+                    if size == 1 && style < 6 {
+                        style += 25;
+                    }
+                }
+                if cell.liquid == 0 && matches!(below.kind, 53 | 397 | 396) {
+                    if size == 0 {
+                        style = rng.range(73, 77);
+                    }
+                    if size == 1 {
+                        style = rng.range(62, 65);
+                    }
+                }
+                if below.kind == 2 && size == 1 {
+                    style = rng.range(38, 41);
+                }
+                if matches!(below.kind, 151 | 274) {
+                    if size == 0 {
+                        style = rng.range(12, 28);
+                    }
+                    if size == 1 {
+                        style = rng.range(12, 19);
+                    }
+                }
+                // `:19362`: the long veto chain — the dungeon wall, the
+                // wood/ebonstone/shadewood/pearlwood family, the ore bars,
+                // the cracked bricks, the dungeon tiles.
+                if !TRAP_DUNGEON_WALLS.contains(&cell.wall)
+                    && !matches!(
+                        below.kind,
+                        30 | 19 | 41 | 43 | 44 | 481 | 482 | 483 | 45 | 46 | 47 | 175 | 176
+                            | 177 | 25 | 203
+                    )
+                    && !TRAP_DUNGEON_TILES.contains(&below.kind)
+                {
+                    placed = pile_place_small(world, x, y, style, size, no_traps);
+                }
+            }
+        }
+    }
+
+    // ---- Ladder 7: the house-wall small piles (`:19370-19444`), 0.15w -----
+    if band_ok && 15 < world_surface as i32 {
+        for _ in 0..ladder(0.15) {
+            let mut tries = attempts;
+            let mut placed = false;
+            while !placed && tries > 0 {
+                tries -= 1;
+                let x = rng.range(25, world.width - 25);
+                let mut y = rng.range(15, world_surface as i32);
+                let cell0 = world.tile(x, y).copied().unwrap_or_default();
+                if cell0.active() || !matches!(cell0.wall, 2 | 40) {
+                    continue;
+                }
+                y = pile_fall(world, x, y);
+                let cell = world.tile(x, y).copied().unwrap_or_default();
+                let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                if !below.active() {
+                    continue;
+                }
+                // The size/style ladder (`:19390-19436`) — ladder 6's with
+                // the same constants.
+                let size = rng.range(0, 2);
+                let mut style = rng.range(0, 11);
+                if size == 1 {
+                    style = rng.range(0, 5);
+                }
+                if matches!(below.kind, 147 | 161 | 162) {
+                    if size == 0 && style < 12 {
+                        style += 36;
+                    }
+                    if size == 1 && style >= 20 {
+                        style += 6;
+                    }
+                    if size == 1 && style < 6 {
+                        style += 25;
+                    }
+                }
+                if cell.liquid == 0 && matches!(below.kind, 53 | 397 | 396) {
+                    if size == 0 {
+                        style = rng.range(73, 77);
+                    }
+                    if size == 1 {
+                        style = rng.range(62, 65);
+                    }
+                }
+                if below.kind == 2 && size == 1 {
+                    style = rng.range(38, 41);
+                }
+                if matches!(below.kind, 151 | 274) {
+                    if size == 0 {
+                        style = rng.range(12, 28);
+                    }
+                    if size == 1 {
+                        style = rng.range(12, 19);
+                    }
+                }
+                // `:19437`: ladder 6's veto chain plus the full-sand-water
+                // head `(liquid != 255 || below != 53 || wall != 0)`.
+                if (cell.liquid != u8::MAX || below.kind != 53 || cell.wall != 0)
+                    && !TRAP_DUNGEON_WALLS.contains(&cell.wall)
+                    && !matches!(
+                        below.kind,
+                        30 | 19 | 41 | 43 | 44 | 481 | 482 | 483 | 45 | 46 | 47 | 175 | 176
+                            | 177 | 25 | 203
+                    )
+                    && !TRAP_DUNGEON_TILES.contains(&below.kind)
+                {
+                    placed = pile_place_small(world, x, y, style, size, no_traps);
+                }
+            }
+        }
+    }
+    // `:19446-19457`: the solidity restores (190/192/196/189/717-719/202/
+    // 225/460/379 + SetBoulderSolidity(true)) — pass-local state, no tile
+    // writes; the port's TILE_SOLID is static.
+}
+
+#[cfg(test)]
+mod pile_tests {
+    use super::*;
+    use crate::tiledata::TILE_COUNT;
+
+    /// A flat stone floor at row 40 with air above — the pile seat.
+    fn floor_world() -> World {
+        let mut w = World::new("piles".into(), 120, 120);
+        w.frame_important = vec![false; TILE_COUNT];
+        for x in 0..120 {
+            for y in 40..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        w
+    }
+
+    /// W4-g38 C3: `pile_solid2` honours the pass window — the cleared kinds
+    /// (379/229/190/…) read non-solid, and on the no-traps seed the boulder
+    /// family goes too (but not 665 — `SetBoulderSolidity` never touches it,
+    /// and 665 is not solid in the static table anyway).
+    #[test]
+    fn w4_g38_c3_pile_solid2_window() {
+        let mut w = floor_world();
+        assert!(pile_solid2(&w, 60, 40, false));
+        let i = w.index(60, 40);
+        // A cleared kind: non-solid in both seed arms.
+        w.tiles[i].kind = 379;
+        assert!(!pile_solid2(&w, 60, 40, false));
+        assert!(!pile_solid2(&w, 60, 40, true));
+        // A boulder: solid on the classic seed, non-solid on no-traps.
+        w.tiles[i].kind = 138;
+        assert!(pile_solid2(&w, 60, 40, false));
+        assert!(!pile_solid2(&w, 60, 40, true));
+    }
+
+    /// W4-g38 C3: `pile_place_3x2` writes the 3×2 frames
+    /// (`frameX = 54*style + dx*18`) and vetoes a boulder floor
+    /// (`InvalidTileForPilesOrSpeleothems`, `:52110`).
+    #[test]
+    fn w4_g38_c3_pile_place_3x2_frames_and_boulder_veto() {
+        let mut w = floor_world();
+        pile_place_3x2(&mut w, 60, 39, 186, 3, false);
+        for dx in 0..3 {
+            for dy in 0..2 {
+                let t = w.tile(59 + dx, 38 + dy).unwrap();
+                assert!(t.active());
+                assert_eq!(t.kind, 186);
+                assert_eq!(t.frame_x, (54 * 3 + dx * 18) as i16);
+                assert_eq!(t.frame_y, (dy * 18) as i16);
+            }
+        }
+        // A boulder under one column vetoes the whole write.
+        let mut w2 = floor_world();
+        let i = w2.index(60, 40);
+        w2.tiles[i].kind = 138;
+        pile_place_3x2(&mut w2, 60, 39, 186, 3, false);
+        assert!(!w2.tile(59, 38).unwrap().active());
+    }
+
+    /// W4-g38 C3: `pile_place_small` — the 1×1 arm writes
+    /// `frameX = 18*style` / `frameY = 18*size`, the lava veto refuses, and
+    /// the 2×1 arm needs both floor columns.
+    #[test]
+    fn w4_g38_c3_pile_place_small_arms() {
+        let mut w = floor_world();
+        assert!(pile_place_small(&mut w, 60, 39, 12, 0, false));
+        let t = w.tile(60, 39).unwrap();
+        assert!(t.active());
+        assert_eq!(t.kind, 185);
+        assert_eq!(t.frame_x, 12 * 18);
+        assert_eq!(t.frame_y, 0);
+        // The 2×1 arm at (62, 39): both columns at row 40 are stone.
+        assert!(pile_place_small(&mut w, 62, 39, 5, 1, false));
+        assert_eq!(w.tile(62, 39).unwrap().frame_x, 5 * 36);
+        assert_eq!(w.tile(63, 39).unwrap().frame_x, 5 * 36 + 18);
+        // Lava refuses.
+        let i = w.index(66, 39);
+        w.tiles[i].liquid = 200;
+        w.tiles[i].set_liquid_kind(LiquidKind::Lava);
+        assert!(!pile_place_small(&mut w, 66, 39, 12, 0, false));
+        assert!(!w.tile(66, 39).unwrap().active());
+    }
+
+    /// W4-g38 C3: `pile_fall` walks to the first active cell below, capped
+    /// at `height - 5`.
+    #[test]
+    fn w4_g38_c3_pile_fall_walks_to_the_floor() {
+        let w = floor_world();
+        assert_eq!(pile_fall(&w, 60, 10), 39);
+        // An already-seated point does not move.
+        assert_eq!(pile_fall(&w, 60, 39), 39);
+        // The bottom cap: an all-air column stops at height-5.
+        let mut w2 = World::new("air".into(), 120, 120);
+        w2.frame_important = vec![false; TILE_COUNT];
+        assert_eq!(pile_fall(&w2, 60, 10), 115);
+    }
+
+    /// W4-g38 C3: the `denySomeGeneration` gate skips the whole pass without
+    /// draws (the skyblock-without-rebuild arm).
+    #[test]
+    fn w4_g38_c3_pass_gate_skips_without_draws() {
+        let layers = Layers {
+            avg_surface: 40.0,
+            world_surface: 40.0,
+            rock_layer: 60.0,
+            hell_top: 100,
+            surface_low: 40.0,
+            surface_high: 40.0,
+            rock_low: 56.0,
+            rock_high: 64.0,
+        };
+        let mut opts = GenOptions::default();
+        opts.flags.insert(SeedFlags::SKYBLOCK);
+        let mut w = floor_world();
+        let before = w.tiles.clone();
+        let mut rng = super::super::Rng(9);
+        pass_piles(&mut w, &layers, &mut rng, &opts);
+        assert_eq!(w.tiles, before);
+        assert_eq!(rng.next_u32(), super::super::Rng(9).next_u32(), "no draw");
+    }
 }
 
 #[cfg(test)]

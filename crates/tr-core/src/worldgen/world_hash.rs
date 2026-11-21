@@ -260,6 +260,14 @@ mod tests {
     // `[0.15w, 0.85w)` needs wall 187 the 512 world's desert never paints.
     // If a trap does place on some seed, the pin moves BY DESIGN; re-pin
     // DEFERRED to the merge gate. a == b stays green (own fresh stream).
+    // W4-g38 C3 (2026-11-21, code-only): the `Piles` pass
+    // (`WorldGen.cs:18788-19459` + `PlaceSmallPile` `:46815-46873` + the
+    // `Place3x2`/`PlaceTile` 186/187 slices) lands after `traps` on a fresh
+    // `pass_rng("Piles")` stream. This pin MOVES BY DESIGN: the pile point
+    // band `[25, width−25)` is LIVE on the 512-wide world (unlike C1/C2's
+    // collapsed bands) — the seven ladders place 185/186/187 piles on its
+    // cave floors and surface. Re-pin DEFERRED to the merge gate (no
+    // compiler on this branch); a == b stays green (own fresh stream).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -315,10 +323,17 @@ mod tests {
     // trap attempts place dart/boulder/explosive/geyser traps on the cave
     // floors (the 135 plates, 137 darts, 138-family boulders, 141
     // explosives, 443 geysers + the red wires), and the `width * 0.003` =
-    // 12 sand-trap attempts carve the underground-desert chambers — this
+    // 13 sand-trap attempts carve the underground-desert chambers — this
     // pin moves BY DESIGN. The pass draws only its own fresh stream; the
     // downstream tile-dependent passes legitimately re-roll around the
     // new traps. Re-pin DEFERRED to the merge gate; a == b stays green.
+    // W4-g38 C3 (2026-11-21, code-only): the Piles pass (see SEED42_512
+    // above) — on the 4200-wide default world the seven ladders (0.06w cave
+    // piles, 0.01w hell piles, 0.03w + 0.0035w surface/house 3×2 piles,
+    // 0.6w + 0.02w + 0.15w small-pile scatters) place the 185/186/187 piles
+    // across the surface and caves — this pin moves BY DESIGN. The pass
+    // draws only its own fresh stream. Re-pin DEFERRED to the merge gate;
+    // a == b stays green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
