@@ -2744,6 +2744,14 @@ fn step_world_tail(
         world.cave_back_style,
     );
     world.apply_cave_backgrounds(&roll);
+    // W4-g72 final ORDER-CONTRACT (research/64 §6, input to the g71c
+    // bg-roll-wire lane): `RandomizeBackgrounds` (`WorldGen.cs:7947-8012`,
+    // called at `:11340`) inserts HERE — after the cave block, before the
+    // moon draw. The C# `:11339→:11340→:11341` sequence is contiguous on
+    // genRand; nothing else may draw between them. g71c's insert shifts the
+    // moon draw again (the same stale-by-design re-pin pattern); the
+    // ahead-of-cave seats (`WorldId` `:11337`, `RandomizeTreeStyle` `:11338`)
+    // remain unported and would shift the cave values if wired.
     // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873` boot / the worldgen
     // `RandomizeMoonState` `WorldGen.cs:7787` `Next(9)`), drawn from the same
     // generator here so it is fixed for the seed; the phase starts at 0.

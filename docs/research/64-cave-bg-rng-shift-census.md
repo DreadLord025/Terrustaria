@@ -207,3 +207,67 @@ no per-load re-roll exists in C# and none is ported.
   test extended) + 1 extended in `bg.rs` + 1 in `save.rs` + the `wld`
   owned-field sweep extended + 1 in `netglue.rs` — all WRITTEN NOT RUN
   (code-only lane).
+
+---
+
+## 6. The `:11340` ORDER-CONTRACT (W4-g72 final, input to the g71c bg-roll-wire)
+
+The g71c lane wires `RandomizeBackgrounds` (`WorldGen.cs:7947-8012`, called
+at `:11340`) on the gen side. **Answer to the boundary question: YES — g71's
+forest/surface rolls insert BETWEEN our cave block and the moon draw.** The
+exact C# tail order (read verbatim, `WorldGen.cs:11337-11344`):
+
+```
+:11337  WorldId = genRand.Next(int.MaxValue)     — UNPORTED (no World.world_id draw)
+:11338  RandomizeTreeStyle()                     — UNPORTED (g70's roll, g71c candidate)
+:11339  RandomizeCaveBackgrounds()               — PORTED (our cave block, phases 7-8)
+:11340  RandomizeBackgrounds(genRand)            — UNPORTED (g71c's insert seat)
+:11341  RandomizeMoonState(genRand)              — PORTED (moon_type Next(9))
+:11344  dungeonSide = Next(2) …                  — later passes
+```
+
+The port's `step_world_tail` (`pipeline.rs:2685-2752`) draws, in order:
+
+```
+1. the cave block   — randomize_cave_backgrounds(&mut streams.rng, width, styles)
+                      (:2741-2746; bands + styles + rejections + ice/hell/jungle)
+2. moon_type        — streams.rng.next_u32() % 9 (:2750)
+```
+
+**The contract for g71c:**
+
+1. **Insert seat:** g71c's `RandomizeBackgrounds` draws go AFTER
+   `world.apply_cave_backgrounds(&roll)` (`pipeline.rs:2746`) and BEFORE the
+   `moon_type` draw (`:2750`). Nothing else may draw between them — the C#
+   `:11339→:11340→:11341` sequence is contiguous on `genRand`.
+2. **Draw order inside the insert** (g71's `bg_rolls.rs::randomize_backgrounds`
+   already ports it): four pairwise-distinct forest rolls
+   (`RollRandomForestBGStyle` with its while re-rolls), corrupt
+   (`Next(6)` + the 5→51/52 promotion), jungle `Next(7)`, snow `Next(9)` +
+   the three 2/3/4 promotion ladders, hallow `Next(6)`, crimson `Next(7)`,
+   desert (`Next(6)` + 5→51+`Next(5)/2`), ocean `Next(8)`, mushroom `Next(5)`,
+   underworld `Next(3)` — all on `streams.rng`, in that order.
+3. **The moon draw shifts again** — the same re-pin pattern our phases 7-8
+   documented: `SEED42_512`/`DEFAULT_WORLD` carry stale-by-design notes; the
+   tail writes no tiles so the tile hash is expected unchanged, the gate
+   re-pins if measured otherwise, `a == b` stays green.
+4. **`RandomizeTreeStyle` (`:11338`) and the `WorldId` draw (`:11337`)** are
+   still unported. If g71c wires them too, they insert AHEAD of our cave
+   block (the C# order) — our block's position relative to the moon is
+   unchanged, but every cave value shifts. Our witnesses
+   (`w4_g72_the_cave_block_draws_before_the_moon_roll`,
+   `pipeline.rs:3529`) assert ranges/distinctness/determinism, NOT absolute
+   values, so they survive any ahead-of-cave insert; the runner parity test
+   survives because both paths draw identically.
+5. **The boot side is NOT part of this contract** — `Main.cs:6603`'s boot
+   roll is a once-per-process dead store (§2 correction); g71c's insert is
+   gen-side only. The `.wld`/`.trwld`/net persistence of the surface styles
+   is g70/g71's owned territory (the v18 union, research/64a); our cave
+   fields are already persisted and the draw side reads them live
+   (W4-g72 final item 3).
+6. **The underworld `Next(3)`** (`:8011`, the last draw of
+   `RandomizeBackgrounds`) feeds `underworldBG` (`WorldFile.cs:1376`,
+   still skip-read at `flags.rs:573`). If g71c owns that byte, its v18 seat
+   is flagged in research/64a §3 (between g71's surface group and g69's
+   crimson); the underworld DRAW stack stays ours (UNWIRED, the d35 §9.1
+   screenTarget escape).
