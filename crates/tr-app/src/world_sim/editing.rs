@@ -7191,6 +7191,17 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     let Some(kind) = registry::place_tile(held.kind) else {
         return false;
     };
+    // W4-g82 — `PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-
+    // 41545`, the `:39726` gate chain): a rope item clicked onto a rope
+    // column walks DOWN through ropes/track/platforms/planters (the
+    // 5-consecutive-platform cap, the 214 chain lava exemption, the
+    // header-bit lava test) and retargets `Player.tileTargetY` onto the
+    // first free/cuttable cell — every gate below reads the NEW target,
+    // exactly like the C#'s static write. The chain's wand/gamepad-torch
+    // halves have no port state (canUse rides in true; the rope gate
+    // returns it unchanged either way).
+    let (_, ty) =
+        crate::projectile_rope_coil::check_rope_usability(&app.world, kind, true, tx, ty);
     // `Item.placeStyle` — the `CustomPlace(type, placeStyle)` gate reads it
     // (`Player.cs:39771`); the style-resolved sub-tile flag decides the route.
     let style = registry::place_style(held.kind);
@@ -12587,6 +12598,53 @@ mod tests {
         app2.inventory[app2.selected] = slot(3222, 1);
         assert!(use_tile_item(&mut app2, 12, 19));
         assert_eq!(app2.world.tile(12, 19).unwrap().frame_y, 126);
+    }
+
+    // ---- W4-g82: the CheckRopeUsability retarget through the item route ----
+
+    /// `PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-41545`) wired
+    /// into `use_tile_item`: a Rope item (965 → tile 213) clicked onto a
+    /// rope column walks DOWN to the first free cell and places THERE —
+    /// the clicked cells stay untouched, one item consumed. The gate's
+    /// own maths witnesses (the platform cap, the lava exemption) live in
+    /// `projectile_rope_coil.rs`. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g82_the_rope_item_retargets_down_the_column() {
+        // object_world's stone floor is row 20; rope at (10,17)/(10,18),
+        // row 19 free. Clicking the column TOP places at the free bottom.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = object_world();
+        set_tile(&mut w, 10, 17, 213);
+        set_tile(&mut w, 10, 18, 213);
+        app.world = w;
+        app.inventory[app.selected] = slot(965, 5);
+        assert!(use_tile_item(&mut app, 10, 17));
+        assert_eq!(app.inventory[app.selected].count, 4, "one rope consumed");
+        let t = *app.world.tile(10, 19).unwrap();
+        assert!(t.active() && t.kind == 213, "the link lands at the free cell");
+        assert_eq!(app.world.tile(10, 17).unwrap().kind, 213, "the clicked cell untouched");
+        // A column with NO free landing keeps the target: the walk stops
+        // at the stone floor (row 20), the landing is not free/cuttable,
+        // the target stays on the active rope → the placement refuses.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        let mut w2 = object_world();
+        set_tile(&mut w2, 10, 18, 213);
+        set_tile(&mut w2, 10, 19, 213);
+        app2.world = w2;
+        app2.inventory[app2.selected] = slot(965, 5);
+        assert!(!use_tile_item(&mut app2, 10, 18));
+        assert_eq!(app2.inventory[app2.selected].count, 5, "the rope is kept");
+        // A NON-rope item never walks: dirt clicked beside the column
+        // places at the clicked cell, not below the rope.
+        let mut app3 = flow_app(None, vec![], vec![]);
+        let mut w3 = object_world();
+        set_tile(&mut w3, 10, 17, 213);
+        set_tile(&mut w3, 10, 18, 213);
+        app3.world = w3;
+        app3.inventory[app3.selected] = slot(2, 5); // DirtBlock
+        let dirt_tile = registry::place_tile(2).unwrap();
+        assert!(use_tile_item(&mut app3, 11, 19));
+        assert_eq!(app3.world.tile(11, 19).unwrap().kind, dirt_tile);
     }
 
     // ---- Phase 3 (M1.4-TO-4): drops + RNG streams ---------------------------
