@@ -483,12 +483,18 @@ pub(crate) fn pass_floating_island_houses(
 ) {
     for idx in 0..gv.num_island_houses as usize {
         if !gv.sky_lake[idx] {
-            island_house(
-                world,
-                gv,
+            // Copy the ledger entry before the mutable gv borrow.
+            let (hx, hy, style) = (
                 gv.floating_island_house_x[idx],
                 gv.floating_island_house_y[idx],
                 gv.floating_island_style[idx],
+            );
+            island_house(
+                world,
+                gv,
+                hx,
+                hy,
+                style,
                 world_surface,
                 rock_layer,
                 flags,
