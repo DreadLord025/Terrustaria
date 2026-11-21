@@ -112,6 +112,7 @@
 //! | 466-468 | `:84549-84551` | the 391 Scutlix death (3 gores 607/608/609, width/2 X offset) |
 //! | 469-476 | `:84575-84588` | the 392/393/394/395 Martian Saucer family death (395 core 6 gores, 393/394 one each; 392 none) |
 //! | 477-480 | `:84609-84612` | the 482 GraniteGolem death (4 gores 718-721; 483 in gate but none) |
+//! | 481-484 | `:84631-84634` | the 631 RockGolem death (4 gores 1210-1213, type-1 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2932,6 +2933,36 @@ fn granite_golem_death(
     }
 }
 
+/// The 631 RockGolem death (`NPC.cs:84627-84634`, sites 481-484): the
+/// 30-dust type-1 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 4 gores 1210/1211/1212/1213 at the +0/+10/+20/+40 Y ladder (the same
+/// shape as the GraniteGolem, different dust/types).
+fn rock_golem_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84627-84630` — the 30-dust type-1 burst.
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 1, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 1210, s); // :84631
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, 1211, s); // :84632
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1212, s); // :84633
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 40.0), vel, 1213, s); // :84634
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3269,6 +3300,10 @@ pub fn hit_effect_c(
     // the 483 flyer spawns no gore).
     if (npc_type == 482 || npc_type == 483) && npc.hp <= 0 {
         granite_golem_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84616-84636` — the 631 RockGolem arm (sites 481-484).
+    if npc_type == 631 && npc.hp <= 0 {
+        rock_golem_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5223,6 +5258,23 @@ mod tests {
         let mut rng2 = UnifiedRandom::new(389);
         granite_golem_death(&n, 483, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 0);
+    }
+
+    /// `NPC.cs:84631-84634` — the RockGolem death: the 4 gores
+    /// 1210/1211/1212/1213 at +0/+10/+20/+40 Y, after the 30-dust type-1
+    /// burst.
+    #[test]
+    fn w4_f10_the_rock_golem_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(397);
+        rock_golem_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1210, 1211, 1212, 1213]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 140.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
