@@ -255,6 +255,7 @@
 //! | 1326-1334 | `:88901-88956` | the 290 Paladin (3 random gores) + 87-92 Wyvern (N random gores) + 78-80/630 Mummy (smoke trio) |
 //! | 1335-1344 | `:88977-89077` | the 82-family Wraith trio + 315 HeadlessHorseman (+446) + 254-family spore 375/376/377 |
 //! | 1345-1354 | `:89091-89263` | the 140 PossessedArmor trio + 39/40/41 BoneSerpent head + 139 Probe quadrants + 467 DeadlySphere pair |
+//! | 1355-1359 | `:89185-89192` | the 35/68 SkeletronHead/DungeonGuardian death (RedHat 1398/1399/1400 or normal 54/55) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8179,6 +8180,53 @@ fn deadly_sphere_death(
     gore.new_gore(rng, world, pos, vel, 660, 1.0);
 }
 
+/// `NPC.RedHatSkeletronAdjustmentsEnabled()` (`NPC.cs:66671-66682`) — the
+/// red-hat variant gate: 35 with `ai[3]==1`, 36/32 with `localAI[3]==1`,
+/// 33 with `ai[3]==1`; false otherwise.
+fn red_hat_skeletron_adjustments_enabled(npc: &Npc, npc_type: i32) -> bool {
+    match npc_type {
+        35 | 33 => npc.ai[3] == 1.0,
+        36 | 32 => npc.local_ai[3] == 1.0,
+        _ => false,
+    }
+}
+
+/// The 35/68 SkeletronHead/DungeonGuardian death (`NPC.cs:89177-89193`,
+/// sites 1355-1359): the 150-dust type-26 burst (SpeedX `2.5*hitDirection`,
+/// SpeedY -2.5), then at position with `base.velocity` — the RedHat variant
+/// (`ai[3]==1` on the 35) spawns 1398/1399/1400, else 54/55. Scale defaults
+/// to 1. The 36 SkeletronHand branch lands with the next batch.
+fn skeletron_head_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..150 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if red_hat_skeletron_adjustments_enabled(npc, npc_type) {
+        // `:89185-89187` — the RedHat trio.
+        gore.new_gore(rng, world, pos, vel, 1398, 1.0);
+        gore.new_gore(rng, world, pos, vel, 1399, 1.0);
+        gore.new_gore(rng, world, pos, vel, 1400, 1.0);
+    } else {
+        // `:89191-89192` — the normal pair.
+        gore.new_gore(rng, world, pos, vel, 54, 1.0);
+        gore.new_gore(rng, world, pos, vel, 55, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9176,6 +9224,11 @@ pub fn hit_effect_c(
     // `:89245-89265` — the 467 DeadlySphere arm (sites 1353-1354).
     if npc_type == 467 && npc.hp <= 0 {
         deadly_sphere_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:89167-89209` — the 35/36/68 Skeletron block; this commit owns the
+    // 35/68 branch (sites 1355-1359); the 36 lands with the next batch.
+    if (npc_type == 35 || npc_type == 68) && npc.hp <= 0 {
+        skeletron_head_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -14412,6 +14465,40 @@ mod tests {
         assert_eq!(types, vec![660, 660]);
         let dust_active = dust.slots().iter().filter(|d| d.active).count();
         assert!(dust_active >= 10, "7 + 6 dusts spawned: {dust_active}");
+    }
+
+    /// `NPC.cs:89185-89192` — the SkeletronHead death: the RedHat variant
+    /// (ai[3]==1) spawns 1398/1399/1400, else 54/55; the 68 DungeonGuardian
+    /// always takes the normal pair (the gate is type-35-only).
+    #[test]
+    fn w4_f10_the_skeletron_head_death_uses_the_red_hat_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.ai[3] = 0.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1459);
+        skeletron_head_death(&n, 35, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![54, 55]);
+        // The RedHat variant.
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.ai[3] = 1.0;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1459);
+        skeletron_head_death(&n2, 35, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1398, 1399, 1400]);
+        // The 68: the gate reads ai[3] only for type 35 — always normal.
+        let mut n3 = boss(100.0, 100.0, 40.0, 56.0);
+        n3.ai[3] = 1.0;
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(1459);
+        skeletron_head_death(&n3, 68, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        let types3: Vec<i32> = gore3.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types3, vec![54, 55]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
