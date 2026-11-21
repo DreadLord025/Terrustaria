@@ -24,11 +24,11 @@
 //! The gore siblings (`:871` PaladinsHammerShockwave) are g16/g17's lane;
 //! their argument draws are consumed here in order (the e2/e4 split).
 //!
-//! The tile sweeps delegate to this branch's own
-//! `world_dust_tile::make_tile_dust` (batch 3, 886764c4 — the same
-//! `KillTile_MakeTileDust` g14 landed in tr-core; the merger keeps one
-//! copy, research/67); the counts come from `world_dust_tile::
-//! tile_dust_amount` (`WorldGen.cs:66597-66685`).
+//! The tile sweeps delegate to the canonical tr-core body
+//! `tr_core::worldgen_dust_tile::kill_tile_make_tile_dust` (g14's port,
+//! re-pointed in the research/66 union exec); the counts come from
+//! `collision::tile_dust_amount` (`WorldGen.cs:66597-66685` — the
+//! main-branch copy, kind FIRST then fail).
 //!
 //! WRITTEN NOT RUN (code-only mode).
 
@@ -342,9 +342,9 @@ pub(crate) fn paladins_hammer_shockwave(
             let Some(t) = world.tile(j, k).filter(|t| t.active()) else {
                 continue;
             };
-            let num6 = crate::world_dust_tile::tile_dust_amount(true, t.kind, t.frame_x);
+            let num6 = crate::collision::tile_dust_amount(t.kind, true, t.frame_x);
             for _ in 0..num6 {
-                let idx = crate::world_dust_tile::make_tile_dust(rng, gen, disco, dust, ctx, world, j, k, t);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(j, k, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
                 let obj = dust.slot_mut(idx);
                 obj.velocity.y -= 3.0 + num5 as f32 * 1.5;
                 obj.velocity.y *= rng.next_float();
@@ -352,7 +352,7 @@ pub(crate) fn paladins_hammer_shockwave(
                 obj.scale += num5 as f32 * 0.03;
             }
             for _ in 0..num6 - 1 {
-                let idx = crate::world_dust_tile::make_tile_dust(rng, gen, disco, dust, ctx, world, j, k, t);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(j, k, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
                 let obj2 = dust.slot_mut(idx);
                 obj2.velocity.y -= 1.0 + num5 as f32;
                 obj2.velocity.y *= rng.next_float();

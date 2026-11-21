@@ -124,12 +124,13 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                 // `WorldGen.cs:58030`) — the cutter runs in `Player.ItemCheck`
                 // (`Player.cs:46857`), so the drop rides `UpdatePlayers`. The
                 // five dust 50 (`:58032-58035`) drain AFTER the drop on the
-                // same stream (W4-d54, `world_dust::cutter_burst`).
+                // same stream (W4-d54; body `tr_core::worldgen_dust::
+                // kill_actuator_dust`, the research/66 union re-point).
                 let ctx = app.spawn_ctx();
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 spawn_item_drop(&mut app.items, rng, ACTUATOR_ITEM, 1, tx, ty);
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                crate::world_dust::cutter_burst(rng, &mut app.dust, &ctx, &app.world, tx, ty);
+                tr_core::worldgen_dust::kill_actuator_dust(tx, ty, rng, &mut app.dust, &ctx, &app.world);
                 wire_placed_feedback(app, tx, ty);
                 return true;
             }
@@ -146,12 +147,14 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                     // in `Player.ItemCheck` (`Player.cs:46862-46880`), so the
                     // drop rides the `UpdatePlayers` stream. The five dust 50
                     // (`:58132-58135` and the 2/3/4 twins) drain after it
-                    // (W4-d54, `world_dust::cutter_burst`).
+                    // (W4-d54; body `tr_core::worldgen_dust::kill_wire_dust`,
+                    // the research/66 union re-point — the identical
+                    // five-type-50 loop, colour-parameterised callers).
                     let ctx = app.spawn_ctx();
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     spawn_item_drop(&mut app.items, rng, WIRE_ITEM, 1, tx, ty);
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    crate::world_dust::cutter_burst(rng, &mut app.dust, &ctx, &app.world, tx, ty);
+                    tr_core::worldgen_dust::kill_wire_dust(tx, ty, rng, &mut app.dust, &ctx, &app.world);
                     wire_placed_feedback(app, tx, ty);
                     return true;
                 }

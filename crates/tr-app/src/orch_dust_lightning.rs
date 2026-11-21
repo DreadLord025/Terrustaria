@@ -94,8 +94,8 @@ pub(crate) fn paladins_shield_hit(
 /// `end_position` is the bolt's resolved end (the renderer seam, module
 /// doc); `white` is the settings colour (`Color.White` unless
 /// `UniqueInfoPiece != 0` packs it). The 3×3 tile sweep mirrors the
-/// PaladinsHammerShockwave shape with `num2 = 3`: the g14-equivalent
-/// `make_tile_dust` delegation + lift arms, then the tree-5 arms — six
+/// PaladinsHammerShockwave shape with `num2 = 3`: the tr-core
+/// `kill_tile_make_tile_dust` delegation + lift arms, then the tree-5 arms — six
 /// type-6 Directs (`velocity *= 2`, `fadeIn += NextFloat`,
 /// noLightEmittance) and three type-31 Directs (`velocity *= 3`,
 /// noGravity, `fadeIn += 1 + NextFloat`). Then
@@ -122,9 +122,9 @@ pub(crate) fn storm_lightning_dust(
             let Some(t) = world.tile(i, j).filter(|t| t.active()) else {
                 continue;
             };
-            let num3 = crate::world_dust_tile::tile_dust_amount(true, t.kind, t.frame_x);
+            let num3 = crate::collision::tile_dust_amount(t.kind, true, t.frame_x);
             for _ in 0..num3 {
-                let idx = crate::world_dust_tile::make_tile_dust(rng, gen, disco, dust, ctx, world, i, j, t);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
                 let obj = dust.slot_mut(idx);
                 obj.velocity.y -= 3.0 + num2 as f32 * 1.5;
                 obj.velocity.y *= rng.next_float();
@@ -132,7 +132,7 @@ pub(crate) fn storm_lightning_dust(
                 obj.scale += num2 as f32 * 0.03;
             }
             for _ in 0..num3 - 1 {
-                let idx = crate::world_dust_tile::make_tile_dust(rng, gen, disco, dust, ctx, world, i, j, t);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
                 let obj2 = dust.slot_mut(idx);
                 obj2.velocity.y -= 1.0 + num2 as f32;
                 obj2.velocity.y *= rng.next_float();
@@ -406,7 +406,7 @@ mod tests {
     /// `:1080-1096` — the tree-5 arms on a lone tree tile: the tile sweep
     /// delegates (type-5 ladder draws), then 6×(type-6 block + NextFloat)
     /// + 3×(type-31 block + NextFloat). Verified via the port's own
-    /// make_tile_dust on both sides (the delegation is the oracle).
+    /// kill_tile_make_tile_dust on both sides (the delegation is the oracle).
     #[test]
     fn w4_d54_storm_lightning_tree_arms_spawn_nine_dusts() {
         let mut w = World::new("t".into(), 200, 200);

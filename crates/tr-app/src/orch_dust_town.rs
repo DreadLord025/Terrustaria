@@ -118,9 +118,9 @@ pub(crate) fn dead_cells_down_dash_explosion(
             if above_solid {
                 continue;
             }
-            let num8 = crate::world_dust_tile::tile_dust_amount(true, t.kind, t.frame_x);
+            let num8 = crate::collision::tile_dust_amount(t.kind, true, t.frame_x);
             for _ in 0..num8 {
-                let idx = crate::world_dust_tile::make_tile_dust(rng, gen, disco, dust, ctx, world, j, k, t);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(j, k, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
                 let obj = dust.slot_mut(idx);
                 obj.velocity.y -= 3.0 + num7 as f32 * 1.5;
                 obj.velocity.y *= rng.next_float();
@@ -129,7 +129,7 @@ pub(crate) fn dead_cells_down_dash_explosion(
             }
             if num7 >= 2 {
                 for _ in 0..num8 - 1 {
-                    let idx = crate::world_dust_tile::make_tile_dust(rng, gen, disco, dust, ctx, world, j, k, t);
+                    let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(j, k, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
                     let obj2 = dust.slot_mut(idx);
                     obj2.velocity.y -= 1.0 + num7 as f32;
                     obj2.velocity.y *= rng.next_float();
