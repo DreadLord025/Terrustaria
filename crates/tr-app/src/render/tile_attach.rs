@@ -345,7 +345,7 @@ impl ShadowSeams<'_> {
         let buckets: usize = self.reg.buckets.iter().map(Vec::len).sum();
         format!(
             "cells={} buckets={} sprites={} jars={} rising={} jar_items={} flames={} \
-             ported(t/v/l/p/tr)={}/{}/{}/{}/{} strips={} steps={} tiers={:?}",
+             ported(t/v/l/p/tr)={}/{}/{}/{}/{} strips={} steps={} legacy={} martian={} tiers={:?}",
             self.reg.single_tiles,
             buckets,
             self.sprites.len(),
@@ -360,6 +360,8 @@ impl ShadowSeams<'_> {
             self.ported.trophies,
             self.strips.len(),
             self.log.len(),
+            self.caches.legacy_points.len(),
+            self.martian_glow[0],
             self.tiers.map(|t| (t.high, t.medium)),
         )
     }
