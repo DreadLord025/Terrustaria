@@ -253,29 +253,6 @@ pub(crate) fn death_hover_text(name: &str, last_death: std::time::SystemTime) ->
     )
 }
 
-/// One remote peer's map pin: the `PlayerNet` snapshot resolved to the
-/// fields the head loop reads (the `render/tiles.rs:1218` convention —
-/// the peer draws through a default `Player` with the snapshot's
-/// position/facing; `gfxOffY` is 0, team/hostile unsynced → 0/false).
-pub(crate) struct RemotePin<'a> {
-    pub net: &'a PlayerNet,
-    /// The peer's display `Player` (position + facing from the snapshot).
-    pub player: Player,
-}
-
-impl RemotePin<'_> {
-    /// `Main.player[i].Center` + `gfxOffY` for the head anchor
-    /// (`Main.cs:55937-55938`): the snapshot position plus the decaying
-    /// `netOffset` (`LegacyPlayerRenderer.cs:304`).
-    pub fn center_px(&self) -> [f32; 2] {
-        let p = &self.player;
-        [
-            p.x + p.width * 0.5,
-            p.y + p.gfx_off_y + p.height * 0.5,
-        ]
-    }
-}
-
 /// Build a peer's display player from its snapshot — the map twin of
 /// `render/tiles.rs`'s remote draw (position + netOffset, facing, frames).
 pub(crate) fn remote_pin_player(world: &tr_core::World, rp: &PlayerNet) -> Player {
