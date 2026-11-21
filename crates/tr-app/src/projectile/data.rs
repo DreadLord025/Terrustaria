@@ -235,6 +235,45 @@ pub const HOLY_ARROW: u16 = 91;
 /// `ProjectileID.FallingStar` (92) — the Holy Arrow's death spawn
 /// (`Projectile.cs:75212-75248`, aiStyle 5).
 pub const FALLING_STAR: u16 = 92;
+/// `ProjectileID.FallingStar` (12, `ProjectileID.cs:578`) — the natural
+/// night-sky falling star (aiStyle 5, `Projectile.cs:924-938`): 18×18,
+/// penetrate −1, alpha 50, light 1, trap; the remix seed turns it hostile
+/// (`:929-932`). Distinct from the Holy Arrow's death spawn 92.
+pub const FALLING_STAR_NATURAL: u16 = 12;
+/// `ProjectileID.StarWrath` (503, `ProjectileID.cs:1560`) — the Star Wrath's
+/// falling star (aiStyle 5, `Projectile.cs:5743-5756`): 24×24, penetrate 2,
+/// alpha 255, tileCollide false, melee, extraUpdates 1, local immunity 15.
+pub const STAR_WRATH: u16 = 503;
+/// `ProjectileID.ManaCloakStar` (723, `ProjectileID.cs:2000`) — the Mana
+/// Cloak's retaliatory star (aiStyle 5, `Projectile.cs:7646-7658` shares the
+/// 724/725/726/1133 row): 24×24, penetrate 2, alpha 50, tileCollide false,
+/// local immunity 10, armorPenetration 25.
+pub const MANA_CLOAK_STAR: u16 = 723;
+/// `ProjectileID.BeeCloakStar` (724, `ProjectileID.cs:2002`) — the Bee Cloak's
+/// star (the shared `:7646-7658` row).
+pub const BEE_CLOAK_STAR: u16 = 724;
+/// `ProjectileID.StarVeilStar` (725, `ProjectileID.cs:2004`) — the Star Veil's
+/// star (the shared `:7646-7658` row).
+pub const STAR_VEIL_STAR: u16 = 725;
+/// `ProjectileID.StarCloakStar` (726, `ProjectileID.cs:2006`) — the Star
+/// Cloak's star (the shared `:7646-7658` row).
+pub const STAR_CLOAK_STAR: u16 = 726;
+/// `ProjectileID.MeteorWhipMeteor` (1037, `ProjectileID.cs:2628`) — the
+/// Meteor Whip's meteor (aiStyle 5, `Projectile.cs:9780-9792`): 24×24,
+/// scale 0.8, extraUpdates 1, alpha 254, tileCollide false, local immunity −1.
+pub const METEOR_WHIP_METEOR: u16 = 1037;
+/// `ProjectileID.MeteorStormMeteor` (1049, `ProjectileID.cs:2652`) — the
+/// Meteor Staff's meteor (aiStyle 5, `Projectile.cs:9938-9952`): 24×24,
+/// hostile + friendly, scale 0.8, timeLeft 1200, extraUpdates 1, alpha 254,
+/// penetrate −1, tileCollide false, trap.
+pub const METEOR_STORM_METEOR: u16 = 1049;
+/// `ProjectileID.SnakeBandStarCloakTinkerStar` (1133, `ProjectileID.cs:2820`)
+/// — the Snake Band + Star Cloak tinker's star (the shared `:7646-7658` row).
+pub const SNAKE_BAND_STAR: u16 = 1133;
+/// The aiStyle-5 cloak-star family — the five kinds that share the
+/// `Projectile.cs:7646-7658` `SetDefaults` arm (W4-d1).
+pub const CLOAK_STAR_KINDS: [u16; 5] =
+    [MANA_CLOAK_STAR, BEE_CLOAK_STAR, STAR_VEIL_STAR, STAR_CLOAK_STAR, SNAKE_BAND_STAR];
 /// `ProjectileID.CursedArrow` (`ProjectileID.cs:760`).
 pub const CURSED_ARROW: u16 = 103;
 /// `ProjectileID.BoneArrow` (`ProjectileID.cs:788`) — the Bone Bow's 117
@@ -1607,6 +1646,8 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         GOLDEN_BULLET => 0.5,                  // `:3765`
         // W4-d1 — `Projectile.cs:5678`: the Crystal Vile Shard pair's light.
         CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT => 0.2,
+        // W4-d1 — `Projectile.cs:936`: the natural FallingStar's `light = 1f`.
+        FALLING_STAR_NATURAL => 1.0,
         // S1-P-i35 — the glow bobbers 987-993 (`Projectile.cs:9430-9434`):
         // `light = 1f` (the 986 plain override keeps the stock 0).
         987..=993 => 1.0,
@@ -3854,6 +3895,35 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:886-896` — the Starfury star (9): 24x24, aiStyle 5,
             // `penetrate = 2`, `scale = 0.8f`, `tileCollide = false`, melee.
             STARFURY => (24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.8)),
+            // W4-d1 — the aiStyle-5 falling-star family's unrowed kinds.
+            // `Projectile.cs:924-938` — the natural FallingStar (12): 18×18,
+            // aiStyle 5, penetrate −1, alpha 50, light 1 (the light slice),
+            // trap; the remix seed's `hostile = true` (`:929-932`) is a world
+            // flag, not a row constant (the stock friendly stands; the
+            // `Main.remixWorld` read rides the arm, ANALYSIS). The stock
+            // tileCollide true (`:775`) stands — the AI_005 arm arms it below
+            // the `ai[1]` floor.
+            FALLING_STAR_NATURAL => (
+                18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
+                (false, -2, false, -1, 50, 1.0),
+            ),
+            // `Projectile.cs:5743-5756` — the Star Wrath star (503): 24×24,
+            // aiStyle 5, penetrate 2, alpha 255, tileCollide false, melee,
+            // extraUpdates 1, local immunity 15.
+            STAR_WRATH => (
+                24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 1, false, false, false,
+                (true, 15, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7646-7658` — the cloak-star family (723/724/725/
+            // 726/1133): 24×24, aiStyle 5, penetrate 2, alpha 50, tileCollide
+            // false, local immunity 10; `armorPenetration = 25` (`:7657`) has
+            // no row consumer (the NETTLE_BURST precedent).
+            MANA_CLOAK_STAR | BEE_CLOAK_STAR | STAR_VEIL_STAR => (
+                24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 10, false, -1, 50, 1.0),
+            ),
+            // (W4-d1 wave 2b — the 726/1133 cloak twins + the 1037/1049
+            // meteor rows land next commit.)
             // `Projectile.cs:1556-1593` — the harp notes (76/77/78): aiStyle 21,
             // `alpha = 100`, `penetrate = 5`, `timeLeft = 180`, ignoreWater; the
             // per-kind box (76: 10x22, 77: 18x24, 78: 22x24). The `switch (2)`
@@ -4323,6 +4393,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d1 — `Projectile.cs:5752`: the Star Wrath star's
+                    // `melee = true` (the Starfury 9's `:893` is the S1-P-i22
+                    // row's documented drop — the 503 carries it verbatim).
+                    | STAR_WRATH
             ),
         ranged: matches!(
             kind,

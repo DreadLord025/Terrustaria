@@ -6992,6 +6992,203 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// W4-d1 — `AI()`'s aiStyle-5 arm (`Projectile.cs:23830-24099`) for the
+    /// unrowed-on-main falling-star family: the natural star 12, the Star
+    /// Wrath 503, the cloak stars 723/724/725/726/1133, the Meteor Whip 1037
+    /// and the Meteor Staff 1049. The 9/955 keep the S1-P-i22
+    /// [`ai_falling_star`] arm and the 92 the i17 `falling_star_step` (their
+    /// behaviour is frozen); this arm serves the new kinds only.
+    ///
+    /// The machine, in the C#'s own block order:
+    /// 1. The 12's remix/daytime/1000-damage kill (`:23841-23844`).
+    /// 2. The `tileCollide` latch ladder (`:23845-23880`): the cloak/503
+    ///    group's `Center.Y > ai[1]` (+ the 723's owner-top gate), the 9/1037
+    ///    `Bottom.Y >= ai[1]`, the generic `ai[1]` solid-box latch.
+    /// 3. The soundDelay roll (`:23881-23885`) — SKIPPED (sound + RNG, the
+    ///    `ai_falling_star` precedent; the 1037/1049 are excluded anyway).
+    /// 4. The alpha ladder (`:23886-23945`): the 1037/1049 −10 floor 0, the
+    ///    503/9 −15 floor 150/0, the cloak group −15 floor 100/0, the generic
+    ///    ±25 bounce.
+    /// 5. The rotation (`:23946-23953`): the 503/1037/1049 velocity-pointing
+    ///    `ToRotation − π/2`, the generic `(|vx|+|vy|)·0.01·direction` spin.
+    /// 6. The dust/gore gates (`:23954-24098`) — the explicit call-site draws
+    ///    STAY on the `UpdateProjectiles` stream (the `projectile_ai_misc`
+    ///    convention), the dust/gore BODIES and their internal rolls are
+    ///    SKIPPED. The 12's `light = 0.9` write (`:23982`) rides.
+    /// 7. The movement: `HandleMovement`'s default tile arm (`:19849-19853`)
+    ///    — the blocked hit kills ([`kill_step`]).
+    ///
+    /// `owner_top` is `Main.player[owner].Top.Y` (the 723's gate, `:23847`);
+    /// `None` = no player resolved (the gate folds false). `remix`/`day_time`
+    /// are the 12's kill-gate world flags (`:23841`).
+    fn ai_falling_star_family(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        owner_top: Option<f32>,
+        remix: bool,
+        day_time: bool,
+    ) {
+        let kind = self.kind;
+        let cloak = CLOAK_STAR_KINDS.contains(&kind);
+        // `:23841-23844` — the natural star's daytime kill (remix exempt).
+        if !remix && kind == FALLING_STAR_NATURAL && day_time && self.damage == 1000 {
+            self.kill_time_left = self.time_left;
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        // `:23845-23880` — the tileCollide latch ladder.
+        if kind == STAR_WRATH || cloak {
+            // `:23847-23852` — the 723's owner-top gate: below the owner's
+            // top with `ai[2] == 1` it collides and stops falling through
+            // platforms. The C# sets `decidesManualFallThrough = true` +
+            // `shouldFallThrough = false`; the port's effective flag6 rides
+            // `should_fall_through` directly (the aiStyle-67 convention,
+            // `:17583-17586` folds to the slot field).
+            if kind == MANA_CLOAK_STAR
+                && self.pos.y + self.h > owner_top.unwrap_or(f32::INFINITY)
+                && self.ai[2] == 1.0
+            {
+                self.tile_collide = true;
+                self.should_fall_through = false;
+            }
+            // `:23853-23856` — `Center.Y > ai[1]` arms tileCollide.
+            if self.pos.y + self.h * 0.5 > self.ai[1] {
+                self.tile_collide = true;
+            }
+        } else if kind == STARFURY || kind == METEOR_WHIP_METEOR {
+            // `:23865-23868` — `tileCollide = Bottom.Y >= ai[1]`.
+            self.tile_collide = self.pos.y + self.h >= self.ai[1];
+        } else {
+            // `:23871-23879` — the generic latch (the 12/1049): the first
+            // non-solid tick arms `ai[1] = 1` and tileCollide.
+            if self.ai[1] == 0.0 && !solid_collision(world, self.pos, self.w, self.h) {
+                self.ai[1] = 1.0;
+                self.net_update = true;
+            }
+            if self.ai[1] != 0.0 {
+                self.tile_collide = true;
+            }
+        }
+        // `:23881-23885` — the soundDelay roll is SKIPPED (sound + RNG, the
+        // `ai_falling_star` precedent). The 1037/1049 are excluded anyway.
+        // `:23886-23945` — the alpha ladder.
+        let center_y = self.pos.y + self.h * 0.5;
+        if kind == METEOR_WHIP_METEOR || kind == METEOR_STORM_METEOR {
+            // `:23886-23899` — alpha −10, floor 0 (num42 is always 0).
+            self.alpha -= 10;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            self.local_ai[0] +=
+                (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        } else if kind == STAR_WRATH || kind == STARFURY {
+            // `:23900-23913` — alpha −15, floor 150 above the target / 0 at it.
+            self.alpha -= 15;
+            let floor = if center_y >= self.ai[1] { 0 } else { 150 };
+            if self.alpha < floor {
+                self.alpha = floor;
+            }
+            self.local_ai[0] +=
+                (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        } else if cloak {
+            // `:23914-23927` — alpha −15, floor 100 above the target / 0 at it.
+            self.alpha -= 15;
+            let floor = if center_y >= self.ai[1] { 0 } else { 100 };
+            if self.alpha < floor {
+                self.alpha = floor;
+            }
+            self.local_ai[0] +=
+                (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        } else {
+            // `:23928-23945` — the generic alpha bounce (the 12's arm).
+            if self.local_ai[0] == 0.0 {
+                self.local_ai[0] = 1.0;
+            }
+            self.alpha += (25.0 * self.local_ai[0]) as i32;
+            if self.alpha > 200 {
+                self.alpha = 200;
+                self.local_ai[0] = -1.0;
+            }
+            if self.alpha < 0 {
+                self.alpha = 0;
+                self.local_ai[0] = 1.0;
+            }
+        }
+        // `:23946-23953` — the rotation. `base.direction` is the velocity-sign
+        // stand-in (the C# updates it after movement, `:17016-17026` +
+        // `AutomaticallyChangesDirection` `:17281-17288`, true for aiStyle 5).
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        if kind == STAR_WRATH || kind == METEOR_WHIP_METEOR || kind == METEOR_STORM_METEOR {
+            // `:23948` — `rotation = velocity.ToRotation() − π/2`.
+            self.rot = self.vel.y.atan2(self.vel.x) - std::f32::consts::FRAC_PI_2;
+        } else {
+            // `:23952` — the generic spin.
+            self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        }
+        // `:23954-24098` — the dust/gore gates. The explicit call-site draws
+        // stay; the bodies and their internal rolls are the dust-layer skip.
+        // The screen-intersection gates (`:23973/:23993/:24016/:24035`) read
+        // `Main.screenPosition`/`screenWidth` — the pool carries no camera, so
+        // they fold TRUE (the offscreen-cull is a draw-side optimisation; the
+        // gate draw stays on the stream either way, ANALYSIS).
+        if kind == STAR_WRATH {
+            // `:23956-23962` — the 1-in-16 dust gate; the taken branch's
+            // `RotatedByRandom(π/2)` is TWO NextDouble draws (`Utils.cs:1697`).
+            if rng.next_range(0, 16) == 0 {
+                let _ = (rng.next_double(), rng.next_double());
+            }
+            // `:23963-23968` — the 1-in-48 gore gate (no internal draw).
+            let _ = rng.next_range(0, 48);
+        } else if kind == FALLING_STAR_NATURAL || kind == STAR_CANNON_STAR {
+            // `:23970-23987` — the 12's gore/dust gates. The gore gate's
+            // `Next(6)` + `SelectRandom(16,17,17,17)` (one `Next(4)`); the
+            // dust gate's `Next(20)` (+ the anniversary `Next(15)`).
+            if rng.next_range(0, 6) == 0 {
+                let _ = rng.next_range(0, 4); // SelectRandom's pick
+            }
+            self.light = 0.9; // `:23982`
+            let _ = rng.next_range(0, 20);
+        } else if cloak {
+            // `:23988-24031` — the cloak group's gates. The 725/726/1133
+            // sub-group (`:23990`'s `726 || 725 || 726 || 1133` — the C#'s
+            // verbatim duplicate) rolls the gore `Next(24)` + SelectRandom
+            // `Next(2)`, the 1133's `Next(6)` dust, and the `Next(3)` dust.
+            if matches!(kind, STAR_VEIL_STAR | STAR_CLOAK_STAR | SNAKE_BAND_STAR) {
+                if rng.next_range(0, 24) == 0 {
+                    let _ = rng.next_range(0, 2); // SelectRandom(16,17)
+                }
+                if kind == SNAKE_BAND_STAR && rng.next_range(0, 6) == 0 {
+                    // the 89 dust body — skipped
+                }
+                let _ = rng.next_range(0, 3);
+            }
+            if kind == MANA_CLOAK_STAR {
+                // `:24013-24030` — the 723's gore `Next(6)` + the 3-iteration
+                // dust loop (the NewDustPerfect bodies draw nothing explicit).
+                let _ = rng.next_range(0, 6);
+            }
+        }
+        // `:24063-24098` — the 1037/1049 trail dust: two `Next(2)` gates, each
+        // taken branch rolls `Next(4)` (the type pick) + two NextFloat (the
+        // scale/velocity wobble); the wet-gate `NextVector2Circular(25,25)`
+        // is two NextFloat. The bodies are skipped.
+        if kind == METEOR_WHIP_METEOR || kind == METEOR_STORM_METEOR {
+            for _ in 0..2 {
+                if rng.next_range(0, 2) == 0 {
+                    let _ = rng.next_range(0, 4);
+                    let _ = (rng.next_float(), rng.next_float());
+                }
+            }
+            if !self.wet {
+                let _ = (rng.next_float(), rng.next_float()); // NextVector2Circular
+            }
+        }
+        // The movement: `HandleMovement`'s default tile arm (`:19849-19853`).
+        self.kill_step(world);
+    }
+
     /// `AI()`'s aiStyle-21 music-note arm (`Projectile.cs:25585-25606`): the
     /// Magical Harp's 76/77/78. The rotation clamps `vx·0.1` to ±0.6; the
     /// speed decays by `ai[2]` per tick toward the `3·|ai[0]/2+0.5|` floor
@@ -17051,9 +17248,8 @@ impl ProjectilePool {
                         // i17 slice; the Starfury star 9 + the Star Cannon
                         // star 955 (S1-P-i22) ride the fuller i22 arm (the
                         // tileCollide latches + the alpha ramps + the spin).
-                        // The other aiStyle-5 kinds (12/503/723-726/1037/
-                        // 1049/1133) have no rows yet — the arm stays
-                        // kind-gated so they keep the no-op fall-through.
+                        // W4-d1: the unrowed-on-main kinds (12/503/723-726/
+                        // 1037/1049/1133) now ride `ai_falling_star_family`.
                         5 => {
                             if self.slots[i].kind == FALLING_STAR {
                                 crate::special_arrows::falling_star_step(
@@ -17062,6 +17258,21 @@ impl ProjectilePool {
                                 );
                             } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR) {
                                 self.slots[i].ai_falling_star(world);
+                            } else {
+                                // W4-d1 — the 723's owner-top gate reads
+                                // `Main.player[owner].Top.Y`; the 12's kill
+                                // gate reads the remix/daytime world flags.
+                                let owner_top = player.as_deref().map(|p| p.y);
+                                let remix = world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::REMIX);
+                                self.slots[i].ai_falling_star_family(
+                                    world,
+                                    rng,
+                                    owner_top,
+                                    remix,
+                                    world.day_time,
+                                );
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 10)`
@@ -42120,6 +42331,158 @@ mod w4_d1_crystal_vile_tests {
         // The latch holds: a second tick plays nothing new.
         tick(&mut pool, &mut w, &mut rng);
         assert!(pool.drain_proj_sounds().is_empty(), "the one-shot latch");
+    }
+}
+
+/// W4-d1 — the aiStyle-5 falling-star family's unrowed kinds (12/503/723-726/
+/// 1037/1049/1133, `Projectile.cs:23830-24099`). Tests-as-code: WRITTEN NOT
+/// RUN (the task's code-only mode); every expected value is hand-derived from
+/// the cited C#. The dust/gore gate draws stay on the stream (the bodies are
+/// the dust-layer skip), so the witnesses script the rolls.
+#[cfg(test)]
+mod w4_d1_falling_star_family_tests {
+    use super::*;
+
+    /// The scripted stream (the `DebrisScript` shape): records every
+    /// `(min, max)` draw, replays the roll list, exhausted reads `max - 1`.
+    struct Script {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl Script {
+        fn with_rolls(rolls: &[i32]) -> Self {
+            Self { rolls: rolls.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() { max - 1 } else { self.rolls.remove(0) }
+        }
+        fn next_float(&mut self) -> f32 { 0.5 }
+    }
+
+    fn world() -> World { World::new("t".into(), 128, 128) }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, rng: &mut dyn tr_core::loot::DropRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), rng, 0, true,
+        );
+    }
+
+    /// The nine new rows carry their verbatim `SetDefaults` slices.
+    #[test]
+    fn w4_d1_the_falling_star_rows_match_set_defaults() {
+        // 12 (`:924-938`): 18×18, aiStyle 5, pen −1, alpha 50, light 1, trap,
+        // tileCollide true (the stock, the arm arms it below the floor).
+        let d = proj_data(FALLING_STAR_NATURAL).expect("the 12 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (18.0, 18.0, 5, -1));
+        assert_eq!(d.alpha, 50);
+        assert_eq!(d.light, 1.0);
+        assert!(d.trap);
+        assert!(d.tile_collide);
+        // 503 (`:5743-5756`): 24×24, pen 2, alpha 255, tileCollide false,
+        // melee, extraUpdates 1, local immunity 15.
+        let d = proj_data(STAR_WRATH).expect("the 503 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.extra_updates), (24.0, 24.0, 5, 2, 1));
+        assert_eq!(d.alpha, 255);
+        assert!(!d.tile_collide);
+        assert!(d.melee);
+        assert!(d.uses_local_immunity);
+        assert_eq!(d.local_hit_cooldown, 15);
+        // 723-725 (`:7646-7658`): 24×24, pen 2, alpha 50, tileCollide
+        // false, local immunity 10. (The 726/1133 twins land next commit.)
+        for k in [MANA_CLOAK_STAR, BEE_CLOAK_STAR, STAR_VEIL_STAR] {
+            let d = proj_data(k).expect("the cloak row");
+            assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (24.0, 24.0, 5, 2), "kind {k}");
+            assert_eq!(d.alpha, 50, "kind {k}");
+            assert!(!d.tile_collide, "kind {k}");
+            assert!(d.uses_local_immunity, "kind {k}");
+            assert_eq!(d.local_hit_cooldown, 10, "kind {k}");
+        }
+    }
+
+    /// The spawn-with-data copies the row (no decline): the cloak star's
+    /// 24×24 box, alpha 50, local immunity 10 land on the slot.
+    #[test]
+    fn w4_d1_the_cloak_star_spawn_carries_the_row() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(MANA_CLOAK_STAR, 0, 100.0, 100.0, 0.0, 8.0, 30, 2.0, 0.0, 500.0)
+            .expect("the 723 row spawns");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (24.0, 24.0));
+        assert_eq!(p.alpha, 50);
+        assert!(p.uses_local_immunity);
+        assert_eq!(p.local_hit_cooldown, 10);
+        assert_eq!(p.penetrate, 2);
+        assert_eq!(p.ai[1], 500.0, "the spawn floor rides ai[1]");
+    }
+
+    /// The cloak star's alpha ramps −15 to the 100 floor above the target
+    /// (`:23914-23927`): 50 → 35 → … → 100 is the floor, so from 50 it drops
+    /// to 0 once past the target. Above the target (center_y < ai[1]) the
+    /// floor is 100, so 50 − 15 = 35 < 100 clamps to 100.
+    #[test]
+    fn w4_d1_the_cloak_star_alpha_floor() {
+        let mut pool = ProjectilePool::new();
+        // ai[1] = 5000 (far below): center_y 112 < 5000 → floor 100.
+        let slot = pool
+            .spawn_with_data_ai_owned(BEE_CLOAK_STAR, 0, 100.0, 100.0, 0.0, 0.0, 30, 2.0, 0.0, 5000.0)
+            .expect("the 724 row spawns");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert_eq!(pool.slots()[slot].alpha, 100, "50 − 15 = 35 < 100 clamps to the floor");
+        // The tileCollide latch: center_y 112 > ai[1]? No (112 < 5000), so
+        // tileCollide stays false above the target.
+        assert!(!pool.slots()[slot].tile_collide, "above the target, no collide");
+    }
+
+    /// The Star Wrath's alpha ramps −15 to the 150 floor above the target
+    /// (`:23900-23913`); the rotation points along the velocity
+    /// (`:23948`, `ToRotation − π/2`). With extraUpdates 1 that is 2
+    /// sub-steps per update.
+    #[test]
+    fn w4_d1_the_star_wrath_alpha_and_rotation() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(STAR_WRATH, 0, 100.0, 100.0, 0.0, 8.0, 50, 3.0, 0.0, 5000.0)
+            .expect("the 503 row spawns");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        // 2 sub-steps × −15 off 255 = 225, both above the 150 floor.
+        assert_eq!(pool.slots()[slot].alpha, 225, "255 − 2·15");
+        // The velocity points straight down (0, 8): ToRotation = π/2, minus
+        // π/2 = 0.
+        assert!(pool.slots()[slot].rot.abs() < 1e-4, "the velocity-pointing rotation");
+    }
+
+    /// The natural star's daytime kill (`:23841-23844`): a 1000-damage star
+    /// in daytime on a non-remix world dies on its first tick. The remix
+    /// world exempts it.
+    #[test]
+    fn w4_d1_the_natural_star_daytime_kill() {
+        // Non-remix daytime: the 1000-damage star dies.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(FALLING_STAR_NATURAL, 0, 100.0, 100.0, 0.0, 8.0, 1000, 0.0, 0.0, 0.0)
+            .expect("the 12 row spawns");
+        let mut w = world();
+        w.day_time = true;
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(!pool.slots()[slot].active, "the daytime 1000-damage kill");
+        // A sub-1000-damage star survives the gate.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(FALLING_STAR_NATURAL, 0, 100.0, 100.0, 0.0, 8.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 12 row spawns");
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(pool.slots()[slot].active, "the 50-damage star survives");
     }
 }
 
