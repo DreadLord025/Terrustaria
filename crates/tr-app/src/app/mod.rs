@@ -235,6 +235,36 @@ pub(crate) struct App {
     /// hover animation scale — +0.02/frame toward 1 while hovered, −0.02
     /// toward 1 while not (`:41561-41572`).
     pub(crate) reforge_scale: f32,
+    /// `Main.hairWindow` (`Main.cs:2089`): the Stylist's hair-restyle window
+    /// is open (`OpenHairWindow`, `:43653-43664`). W4-f37: the state machine
+    /// lands here; the panel DRAW is the recorded M4-TOWN-17 deviation.
+    pub(crate) hair_window: bool,
+    /// `Main.oldHairStyle` (`Main.cs:43660`): the hair index latched at the
+    /// window open — Cancel restores it (`:43670`), the price reads the
+    /// change (`:43787`).
+    pub(crate) old_hair_style: i32,
+    /// `Main.oldHairColor` (`Main.cs:43661`): the hair tint latched at the
+    /// open — Cancel restores it (`:43671`), the price reads the change
+    /// (`:43791`).
+    pub(crate) old_hair_color: [u8; 3],
+    /// `Main.hairStart` (`Main.cs:43734`/`:43758`/`:43772`): the style grid's
+    /// first visible index, scrolled ±5 per wheel notch / ±15 per arrow
+    /// click, clamped to `0..=count-15` (`:43778-43785`).
+    pub(crate) hair_start: i32,
+    /// `Main.hBar`/`sBar`/`lBar` (`Main.cs:43655-43657`, reset −1 at the
+    /// open): the HSL slider positions, −1 = "seed from the current colour
+    /// on the first draw" (`:44001-44007`).
+    pub(crate) hair_h_bar: f32,
+    pub(crate) hair_s_bar: f32,
+    pub(crate) hair_l_bar: f32,
+    /// `Main.npcChatFocus1`/`npcChatFocus2` (`Main.cs:43868`/`:43925`): the
+    /// Buy/Cancel labels' hover latches — the hover-edge sound 12 fires on
+    /// the transition (`:43870`/`:43879`/`:43927`/`:43936`).
+    pub(crate) hair_buy_hover: bool,
+    pub(crate) hair_cancel_hover: bool,
+    /// `Main.grabColorSlider` (`Main.cs:43992`): 0 none, 1 hue, 2 saturation,
+    /// 3 lightness — the dragged slider keeps its grab while the mouse holds.
+    pub(crate) hair_grab_slider: i32,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
     pub(crate) spawn_no_cycle: bool,
@@ -1961,6 +1991,10 @@ impl App {
         self.shop_mood = 1.0;
         self.in_reforge_menu = false;
         self.return_reforge_slot();
+        // W4-f37 — `Main.DrawHairWindow`'s force-close gate (`:43711`):
+        // `npcShop != 0` cancels the window. The port's shop-close is the
+        // same seam (the reforge menu's force-close rides it too).
+        crate::hair_window::cancel(self, false);
     }
 
     /// `Player.dropItemCheck`'s reforge arm (`Player.cs:5123-5127`): with the
@@ -3641,6 +3675,19 @@ impl App {
             reforge_cooldown: 0,
             mouse_reforge: false,
             reforge_scale: 0.8, // `Main.cs:67157`
+            // W4-f37 — the hair window's boot state: closed, the latches
+            // empty, the sliders at the −1 "seed on first draw" sentinel
+            // (`Main.cs:43655-43657`), the grid at 0.
+            hair_window: false,
+            old_hair_style: 0,
+            old_hair_color: [0, 0, 0],
+            hair_start: 0,
+            hair_h_bar: -1.0,
+            hair_s_bar: -1.0,
+            hair_l_bar: -1.0,
+            hair_buy_hover: false,
+            hair_cancel_hover: false,
+            hair_grab_slider: 0,
             shop_mood: 1.0,
             discount_available: false,
             shop_closed_flag: false,

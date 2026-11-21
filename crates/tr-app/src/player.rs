@@ -586,6 +586,20 @@ pub(crate) struct StickyDust {
 
 #[derive(Clone, Debug)]
 pub struct Player {
+    /// `Player.hair` (`Player.cs:2568`, default 0): the hairstyle index the
+    /// hair window picks (`Main.DrawHairWindow`, `Main.cs:44117`) and the
+    /// `Player_Hair_*` sheet draw reads. W4-f37: the field lands with the
+    /// hair-window state machine; the world draw still renders the one
+    /// decoded `Player_Hair_1` strip (the 213-sheet decode is the
+    /// char-creation lane's, `ui/char_creation.rs:1701`), so the index is
+    /// state-only until the sheets land. The `.trplayer` sidecar carries
+    /// no hair row (the recorded M6-SAVE deviation) — a bought style does
+    /// not survive a world swap.
+    pub hair: i32,
+    /// `Player.hairColor` (`Player.cs:2554`, `new Color(215, 90, 55)`):
+    /// the hair tint the window's HSL sliders write (`Main.cs:44091-44092`)
+    /// and the hair layer reads. RGB bytes, XNA `Color` order.
+    pub hair_color: [u8; 3],
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
     // crit 4 and a 1.0 damage multiplier; the equipment modifies them
     // (M3-EQUIP).
@@ -2506,6 +2520,10 @@ impl Player {
         };
         Self {
             dead: false,
+            // `Player.cs:2568`/`:2554` — the hairstyle index 0 and the
+            // default hair tint (215, 90, 55).
+            hair: 0,
+            hair_color: [215, 90, 55],
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -11465,6 +11483,17 @@ impl Player {
         // (`LegacyPlayerRenderer.cs:457,468`), so its ease after a step must
         // invalidate the cached range or the offset animation freezes.
         h ^= self.gfx_off_y.to_bits().wrapping_mul(0x27D4_EB2F);
+        // W4-f37: the hair tint feeds the hair layer's pixels
+        // (`player_layers.rs`'s `hair_color` tint) — a slider drag inside
+        // the hair window must invalidate the cached world range. Gated on
+        // a NON-default tint so the default-hair frames keep their
+        // pre-wiring key values bit-for-bit (the G6 rule: a new pixel input
+        // rides the key, but an unchanged input must not shift the cache).
+        if self.hair_color != [215, 90, 55] {
+            h ^= (self.hair_color[0] as u32) << 24;
+            h ^= (self.hair_color[1] as u32) << 12;
+            h ^= (self.hair_color[2] as u32) << 4;
+        }
         // The mount's animator state feeds the mount sprites' pixels
         // (`Mount.Draw`'s frame rect + the per-frame player offset).
         if self.mount.is_active() {
