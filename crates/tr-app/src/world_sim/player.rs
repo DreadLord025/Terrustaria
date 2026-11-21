@@ -1200,13 +1200,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // W4-c36 — `Player.cs:25567-25572` (`UpdateBuffs`' tail, the
             // myPlayer arm): with neither OnFire (24) nor Poisoned (20)
             // running, the trap-debuff source clears — a trap death only
-            // counts while its debuff lingers.
+            // counts while its debuff lingers. The `hp > 0` gate keeps the
+            // flag for the death seam: the port latches `dead` in the LATER
+            // npcs pass (`on_player_death` reads the flag), so a lethal
+            // trap hit this tick must survive the clear (the C# `KillMe`
+            // runs synchronously inside the hit, before any clear).
             let burning_or_poisoned = p
                 .buffs
                 .active_types()
                 .iter()
                 .any(|&b| b == 20 || b == 24);
-            if !burning_or_poisoned {
+            if !burning_or_poisoned && p.hp > 0 {
                 p.trap_debuff_source = false;
             }
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`

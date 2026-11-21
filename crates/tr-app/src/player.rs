@@ -7616,8 +7616,9 @@ impl Player {
                     // W4-c36 — `:25354-25357`: alive at ≤ statLifeMax2/10
                     // after the hit → LUCKY_BREAK ("Hit"). The port's
                     // `max_hp` is the statLifeMax2 stand-in (the per-tick
-                    // rebase convention).
-                    if !self.dead && self.hp <= self.max_hp / 10 {
+                    // rebase convention); `hp > 0` is the `!dead` test (the
+                    // port latches `dead` in the later death seam).
+                    if self.hp > 0 && self.hp <= self.max_hp / 10 {
                         self.pending_lucky_break = true;
                     }
                 }
@@ -7635,8 +7636,9 @@ impl Player {
                 };
                 self.hurt_fall(dmg, rng);
                 // W4-c36 — `:25371-25374`: the same LUCKY_BREAK test on the
-                // normal fall arm.
-                if !self.dead && self.hp <= self.max_hp / 10 {
+                // normal fall arm (`hp > 0` = the `!dead` test, the port
+                // latches `dead` in the later death seam).
+                if self.hp > 0 && self.hp <= self.max_hp / 10 {
                     self.pending_lucky_break = true;
                 }
             }

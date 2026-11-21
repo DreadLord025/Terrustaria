@@ -191,7 +191,10 @@ pub(crate) fn reach_check(
     zone_graveyard: bool,
 ) -> Vec<(&'static str, &'static str)> {
     let mut out = Vec::new();
-    if p.dead {
+    // The C# gates on `!this.dead`; the port latches `dead` in the later
+    // npcs-pass death seam, so `hp <= 0` stands in for the synchronous
+    // `KillMe` death on the lethal tick itself.
+    if p.dead || p.hp <= 0 {
         // `:16773-16776`: the dead arm re-arms the cooldown.
         p.funkytown_achievement_check_cooldown = 100;
         return out;
