@@ -505,6 +505,41 @@ come from d19's merge, and the envelope witness must pass against the
 merged pool. No-row-duplication is a HARD gate (a second 972/982/983/
 984 row set on d20 would shadow d19's at merge).**
 
+## §8 — THE SWORD-FAMILY declaration (the merger-bible, one paragraph)
+
+The sword family — d19's 181–190 band (all TEN ARMED+ROWED, §6: the
+182/183/184/185/186/190 arms + 13 rows in `projectile_ai_sword_styles.rs`,
+the 181/187/188/189 arms on main, the 964 row on d18 `8248a54be`, the
+978 row keep-d12c `9e668d0f0` on d12d `4ba56e660` with the d18 copy
+dropping per §6a V1–V5) plus d20's 191–200 band (`243f81672`: the
+191/192/195/196/198/199/200 arms + rows — the sword-relevant set
+973/985 (191) and 1040/1041/1043 (198); the 200-droppings keep-c10)
+plus the terra-chain T5 use-path lane (the
+four `Player.cs:48870–48937` spawner arms, seeded NOT landed, §7/§7a)
+plus f33's 949 torch-god machine (`83387628b`, keep-f33 per §3 with the
+exact d19 drop-hunks §3a/93a §2) — merges as ONE family in this order:
+(1) d19 lands its band + the cloud keep-one (§4's D1–D13 drop the d10
+twins at `732d3480b`, d19's `projectile_ai_clouds` + the shared
+collision probe survive); (2) f33 lands the 949 event + machine, d19's
+184 slice drops per §3a (A–L, pin I at :17399–17411), the dodge
+contract + the 949 row survive as ONE copy; (3) d18/d12c land their
+rows, the d18 978 copy drops per §6a, d12c's frames superset is the
+survivor; (4) d20 lands its band, the 1043 row dedupes to ONE copy
+(values identical, §7a), the 190 dispatch (d19) × the 198 spawner
+(d20) compose — the flint slash is the family's merge canary; (5) T5
+lands LAST against the merged rows: the four use-path arms spawn the
+paired slash+beam with `ai0=dir·gravDir, ai1=itemAnimMax|30|32|18,
+ai2=GetAdjustedItemScale` through the row-gated seam, NEVER
+duplicating the 972/982/983/984 rows (slashes-ONLY-d19), and the §7
+envelope witness
+(`w4_d19_the_terra_chain_payload_feeds_the_190_envelope`) must pass
+against the merged pool — until then the chain is AI-complete but
+use-path-inert, the ONE documented residual. No other branch owns a
+sword-family arm, row or spawner; every dup is adjudicated in this
+note (§1–§4 clouds/d10, §3/§3a 949/f33, §5 1129/d21, §6/§6a 978/d12c,
+§7/§7a terra-chain/d20-T5) — the merger executes those instructions
+and nothing else.
+
 ## Witnesses — the FINAL round (WRITTEN NOT RUN — code-only)
 
 - `projectile_ai_sword_styles.rs`: +1 new

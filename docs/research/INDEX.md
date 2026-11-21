@@ -75,6 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 26g | The aiStyle-92 cloud keep-one + the W4-d19 SWORD RETIRE closeout (the d10 drop-hunks §4 at 732d3480b; the f33 949 keep-one §3 + the 93a §2 re-pin receipt §3a; the 1129/d21 contract §5; the 181–190 band FINAL table §6 + the 978 keep-d12c receipt §6a; the terra-chain compose-contract §7 + the d20c-T5 monitor §7a; the SWORD-FAMILY merger-bible §8) | `26g-clouds-keep-one.md` | ✅ SEALED (retire) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
