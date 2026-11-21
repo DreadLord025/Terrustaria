@@ -126,6 +126,9 @@ exist nowhere else. Attach points (§4 bind order):
   `tile_draw_gate` internal, d60's `is_visible`, plus the private `pylons.rs`
   one. **Keep-one: d56's `tr_render` copy** (lowest crate, already pub);
   g31/d60/pylons rebind at wiring. Until then all copies stay (code-only).
+  *(CORRECTION, research/136 §4: d56's tip has NO standalone fn — the
+  logic is inlined in `tile_draw_gate`. The mechanical keep-one is
+  d60's `is_visible` PROMOTED to tr-render; d56's gate calls it.)*
 * `post_draw_drain_order` driver: at merge, FOLD into a per-pass dispatch
   (`drain_one_pass(pass, ...)`) so g29's `post_draw_tiles` can bind each of
   its ten nature steps individually (§2.3). KEEP `POST_DRAW_DRAIN_ORDER` +
@@ -654,12 +657,25 @@ are all on main):
    `_rand` (the fused pass's `leaf_rng` folds into it — the leaf rolls
    and the drain rolls share the C# `_rand` stream in call order),
    the renderer handles + `SpecialEnv` for the ported drain bodies.
-3. **Fold the d-lane hunks into `classify_and_draw_cell`** in C# order:
-   the `:517` gate (driver-owned) → d58 chest rewrite (after the
-   drawdata dispatch, before the source rect) → d56 gate/light →
-   the black feed → d59 slope family → d60 emission → the sprite push.
-   The inline grass/vine/sunflower arms DROP (the drains own them);
-   the inline 192-leaf arm reconciles with d60 (`:1078-1122`).
+3. **Fold the d-lane hunks into `classify_and_draw_cell`** — the
+   mechanical per-hunk script is `docs/research/136-tilepass-d-hunks.md`
+   (the d-hunk fold prep: per-lane per-hunk tables, the F0-F4 fold
+   order, the C1-C7 conflict pairs, the per-witness re-pin map). Its
+   §0 CORRECTS this step's original sketch against the C# re-read:
+   the real per-cell order is the `:517` gate (driver-owned) → the
+   dd dispatch (`:876`) → d56 vision floors (`:897-963`) → d60
+   emission (`:965-968`, BEFORE the gate — it reads the post-vision
+   light) → d56 `light_override` (`:969`) → d56 gate + black feed
+   (`:970-991`) → d57 Part1 anchors (`:992`) → d58 chest rewrite
+   (`:993`, AFTER the gate, not right after the dispatch) → the
+   rect/anchor (`:1007-1013`) → d56 `final_light` (`:1019`) → d59
+   slope family inside DrawBasicTile (`:1020-1176`) → the glowmask
+   table pass (`:1178-1342`, the 717 bind = research/136 §3) → f15's
+   record bind (`:1343-1403`). d58/d59's WIRED hunks MOVE verbatim at
+   the split (F0) — never re-derived. The inline grass/vine/sunflower
+   arms DROP (the drains own them); the inline 192-leaf arm DROPS
+   onto d60's battery arm with g68's foliage.rs leaf body as the
+   keep-one (research/136 C2).
 4. **Stream order is the hard invariant**: ONE `UnifiedRandom` through
    classify (the per-cell `Next(4)` dust rolls) then the ten nature
    passes in `POST_DRAW_NON_SOLID` order; `can_do_dust` flags are
@@ -686,3 +702,27 @@ SmoothStep, the LavaLightA bands). F2 `tile_attach.rs`: 4 `#[test]`
 dispatch, plan determinism, the gated attach-site position + RNG
 separation). All WRITTEN NOT RUN (code-only). Union g-family total
 70 (§7) + 10 attach = 80 on this branch.
+
+### 8.5 The drip seam (the g68 co-lane, requested)
+
+g68's deferred-4 (`07396db1c`, tip `b20480d72`) ported the ONE
+unclaimed emission body — `EmitLiquidDrops` (`TileDrawing.cs:7594-7674`,
+the vine-tip/stalactite/shimmer-candle drips) — as
+`foliage.rs::emit_liquid_drops`, UNWIRED with 3 witnesses. The call
+site is the `Draw` switch `:688-694` (kinds 373/374/375/461/709 →
+emit then `continue`), which g30 records as
+`CellClass::LiquidDrops`/`liquid_drop_cells`. **The pixel bind:**
+`classify_and_draw_cell`'s LiquidDrops arm calls
+`foliage::emit_liquid_drops(world, y, x, kind, water_style,
+zone_corrupt, zone_crimson, zone_hallow, rand, main_rand, gore)`
+DIRECTLY per cell — the C# emits INSIDE the switch, so the
+`Next(num*2)` gate draws on the ONE `_rand` in row-major cell order
+BEFORE the `continue`; draining the recorded cells later would
+re-order the stream (research/136 C5). The wet-tile refusal precedes
+the roll (no draw); the anti-cluster box scans the 600 gore slots;
+the type pick is water-style then the kind/zone overrides (last zone
+wins). The recorded cells stay as the shadow-plan census input. The
+g68 deferred-2 cadence contract binds this seam too (emission out of
+the cached range, the persistent `_rand`, the `DrawnThisUpdate`
+mechanism — never widen G6). Full tables + the 717 glowmask
+bind-contract (f15 co-lane): `docs/research/136-tilepass-d-hunks.md`.
