@@ -1396,6 +1396,55 @@ ids plus the animated families and the 173 frames, so a style change needs no re
 within a session. TRWLD grew a v18 tail (3 i32 dividers + 4 style bytes); pre-v18 files
 load the reset defaults.
 
+**The sky chain (W4-g70 lane 8).** The doc-sweep's background/sky lane ported the
+celestial half of `DrawSurfaceBG` in three phases (`6b3049e19`/`752655914`/`9d8478278`,
+research `79-doc-sweep-sky.md`). `tr-core/sky_color.rs` carries the whole
+`SetBackColor` modifier chain (`Main.cs:63452-63924`) in XNA byte space — the
+blood-moon double-write (`:63513-63515`), the crimson G-read (`:63627`), the
+mushroom moon cross-reads (`:63773-63774`), the unconditional moon-phase floor,
+the eclipse light step (`:63845-63898`), the DontStarve hooks — and the
+`ApplyColorOfTheSkiesToTiles` integer 7/10 BEFORE the atmo colour dim
+(`:61982-61983` order). `render/sky.rs` carries `DrawSunAndMoon`'s event bodies
+(eclipse Sun3, the Sunglasses head==12 Sun2/Extra_280, the Smiley/Pumpkin/Snow
+moons), the byte-exact num12/num13 chain with the real `cloudAlpha` (the base used
+`cloudBGAlpha`), and `NextHorizonRenderer.DrawSun`'s five flare quads.
+`tr-app/star_field.rs` carries the whole `Star.cs` — the live 200..400-slot pool
+replacing the static `make_stars`/`StarSprite` stand-in — and the starfall chain
+lands end to end (`WorldGen.cs:71828-71856` roll → aiStyle-148 spawner 720 →
+natural star 12 → `Star.StarFall`). Deliberate deviations:
+
+- **Star spawn RNG pin.** The C# `SpawnStars` seeds a fresh OS-random `FastRandom`
+  per call (`Star.cs:88`); the port pins each call's stream to
+  `world.seed ^ counter × 0xA076_1D64_78BD_642F` so screenshots stay deterministic
+  (the make_stars deviation, kept).
+- **Smiley moon gate.** The C# reads `WorldGen.drunkWorldGen`, which is
+  gen-time-only (set `WorldGen.cs:11115`, cleared in the finally `:11097`) — in-game
+  it is always false, so the Smiley moon never draws in vanilla after generation.
+  The port reads the in-game DRUNK seed flag instead, so a drunk-seed world actually
+  shows the Smiley moon. The port's seed flags are the persistent in-game
+  representation of the gen-time flags.
+- **AFK gate always open.** The starfall target scan's `afkCounter < 10800` gate
+  (`Player.cs:57103`) has no port AFK counter, so the gate is always open.
+- **Flare blend.** The DrawSun flares draw at colour `(255,255,255,0) × strength` —
+  alpha 0. Under the port's premultiplied blend an alpha-0 tint leaves the
+  destination alpha untouched while the tinted rgb ADDS, matching vanilla's
+  additive glow.
+- **Star draw alpha.** The decompile builds the star colour from `default` and
+  assigns only R/G/B (`Main.cs:63083-63086`) — a zero alpha would make every star
+  invisible under the port's blend, so the port draws them at the computed
+  brightness with the byte alpha the `color *=` chain produces.
+- **Sound/dust/gore bodies skipped.** The starfall chain's dust/gore BODIES are the
+  pool-wide skip (the draws stay on the stream); the `SoundID.Item10` cue is the
+  sound skip. The gore types 16/17 carry no SpecialAI (`GoreID.cs:20`).
+- **The menu gravity block.** `Star.UpdateStars`' secret-seed menu gravity block
+  (`Star.cs:261-316`) needs `gameMenu && generatingWorld` — unreachable in the
+  port's frame loop, documented out. The `dayCheck` never-true quirk (the decompile
+  only writes `false`, `:245`/`:321`) is kept verbatim: every day tick past 27000
+  respawns the hidden slots.
+
+Remainders (research 79 §5): the artificial shimmer star pass (`Main.cs:62203`),
+the starGame minigame, the AFK counter, the menu flat-35 night, the AuroraSky tint.
+
 Also not ported: the per-biome **animated screen effects**. In particular the day-time
 desert **heat shimmer** вЂ” `SceneState.ApplyVisuals` enables the `HeatDistortion` filter
 (`FilterHeatDistortion`, `Images/Misc/noise`, `UseIntensity(4)`, registered in
