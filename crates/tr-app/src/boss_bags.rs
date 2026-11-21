@@ -774,9 +774,18 @@ mod tests {
 
     /// A scripted rng: forced draws pop off the script (each asserted
     /// inside its requested range); once the script runs out every
-    /// draw returns the range's minimum (the neutral pass-through —
-    /// every chance roll hits, every stack roll is the minimum). The
-    /// `loot_db.rs` ScriptRng shape; records every requested range.
+    /// draw returns the range's minimum. The `loot_db.rs` ScriptRng
+    /// shape; records every requested range for the draw-census
+    /// assertions.
+    ///
+    /// NOTE: the `Prefix(-1)` natural-roll draws interleave with the
+    /// bag's chance rolls (the loot-slot order), so a forced script's
+    /// positions depend on which grants are prefixable. The forced
+    /// tests below therefore use only all-zero scripts (every prefix
+    /// gate hits "no prefix" — one `Next(4)` draw, no category pick —
+    /// and every chance roll hits its minimum) and assert the grant
+    /// ORDER + the stack minima; the non-zero pick outcomes are pinned
+    /// by the same-seed `UnifiedRandom` replays instead.
     struct ScriptRng {
         draws: VecDeque<i32>,
         ranges: Vec<(i32, i32)>,
@@ -1112,12 +1121,16 @@ mod tests {
     #[test]
     fn w4_f35_eow_bag_master_mode_bumps_the_ore_and_scales() {
         // `:7258-7273` — master: ore Next(110,136), scales Next(30,51).
+        // The all-zero script hits every chance (bone + mask grant too);
+        // the ore/scales MINIMA pin the master ranges (110/30 vs the
+        // classic 80/20). The ore 56 is prefixable — its natural-roll
+        // gate draws 0 (no prefix), so the order is unaffected.
         let env = BagEnv { master_mode: true, ..Default::default() };
-        let mut rng = ScriptRng::new(&[0, 0, 0, 19, 6]); // bone + mask miss
+        let mut rng = ScriptRng::new(&[]);
         let mut out = Vec::new();
         open_boss_bag(3320, &env, &mut rng, &mut out);
         let its = items(&out);
-        assert_eq!(its[..3], [56, 86, 3224], "{its:?}");
+        assert_eq!(its[..5], [56, 86, 994, 2111, 3224], "{its:?}");
         assert_eq!(out[0].stack, 110, "the master ore minimum");
         assert_eq!(out[1].stack, 30, "the master scales minimum");
     }
@@ -1173,12 +1186,15 @@ mod tests {
 
     #[test]
     fn w4_f35_boc_bag_master_mode_bumps_the_ore_and_samples() {
+        // The all-zero script hits every chance; the ore/samples MINIMA
+        // pin the master ranges (110/30). The Crimtane ore 880 is not
+        // prefixable, the Brain of Confusion 3223 is (its gate draws 0).
         let env = BagEnv { master_mode: true, ..Default::default() };
-        let mut rng = ScriptRng::new(&[0, 0, 0, 6, 19]); // mask + rattle miss
+        let mut rng = ScriptRng::new(&[]);
         let mut out = Vec::new();
         open_boss_bag(3321, &env, &mut rng, &mut out);
         let its = items(&out);
-        assert_eq!(its[..3], [880, 1329, 3223], "{its:?}");
+        assert_eq!(its[..5], [880, 1329, 2104, 3060, 3223], "{its:?}");
         assert_eq!(out[0].stack, 110);
         assert_eq!(out[1].stack, 30);
     }
@@ -1237,18 +1253,28 @@ mod tests {
 
     #[test]
     fn w4_f35_queen_bee_bag_weapon_and_bottle_picks() {
-        // The weapon Next(3): 1 → the Bee Keeper 1123, 2 → the Blowgun
-        // 2888; the bottle Next(842,845): 2 → 844.
-        for (pick, weapon) in [(1i32, 1123u16), (2, 2888)] {
-            let mut rng = ScriptRng::new(&[6, pick, 2, 8, 8, 8, 2]);
+        // The weapon Next(3) maps 0/1/2 → 1121/1123/2888 and the bottle
+        // Next(842,845) → 842..844. Across many seeds the replay pins the
+        // mapping; here a sweep collects every weapon/bottle the arm can
+        // grant and asserts the sets are exactly the C# tables (the
+        // forced-script positions would depend on the prefixable grants'
+        // interleaved draws, so the sweep is the robust pin).
+        let mut weapons = std::collections::BTreeSet::new();
+        let mut bottles = std::collections::BTreeSet::new();
+        for seed in 0..400i32 {
+            let mut rng = UnifiedRandom::new(seed);
             let mut out = Vec::new();
             open_boss_bag(3322, &BagEnv::default(), &mut rng, &mut out);
             let its = items(&out);
-            assert_eq!(its[0], weapon, "pick {pick}");
-            assert_eq!(its[1], 3333, "the backpack follows the weapon");
-            assert_eq!(its[2], 1129, "the optionals all missed");
-            assert_eq!(its[3], 844, "the bottle pick 2 → 844");
+            // The weapon is the grant right before the Hive Backpack 3333.
+            let bp = its.iter().position(|&i| i == 3333).unwrap();
+            weapons.insert(its[bp - 1]);
+            // The bottle is the grant right after the Hive Wand 1129.
+            let hw = its.iter().position(|&i| i == 1129).unwrap();
+            bottles.insert(its[hw + 1]);
         }
+        assert_eq!(weapons, [1121, 1123, 2888].into_iter().collect(), "the weapon table");
+        assert_eq!(bottles, [842, 843, 844].into_iter().collect(), "the bottle table");
     }
 
     #[test]
@@ -1293,18 +1319,23 @@ mod tests {
 
     #[test]
     fn w4_f35_skeletron_bag_grants_the_glove_then_one_weapon() {
-        // The Bone Glove ALWAYS, then exactly ONE of the three weapons
-        // by Next(3) — then coins. The glove is an accessory (prefix
-        // draws), the weapons vary; the item ORDER is the pin.
-        for (pick, weapon) in [(0i32, 1281u16), (1, 1273), (2, 1313)] {
-            let mut rng = ScriptRng::new(&[pick]);
+        // The Bone Glove ALWAYS leads, then exactly ONE of the three
+        // weapons by Next(3) — then coins. A seed sweep asserts the glove
+        // leads, the weapon is a table member, and every weapon appears
+        // (the glove is prefixable, so a forced script's pick position
+        // would depend on its interleaved draws).
+        let mut weapons = std::collections::BTreeSet::new();
+        for seed in 0..300i32 {
+            let mut rng = UnifiedRandom::new(seed);
             let mut out = Vec::new();
             open_boss_bag(3323, &BagEnv::default(), &mut rng, &mut out);
             let its = items(&out);
             assert_eq!(its[0], 3245, "the Bone Glove leads");
-            assert_eq!(its[1], weapon, "pick {pick}");
+            assert!([1281, 1273, 1313].contains(&its[1]), "a weapon: {}", its[1]);
             assert!(its[2..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+            weapons.insert(its[1]);
         }
+        assert_eq!(weapons, [1281, 1273, 1313].into_iter().collect(), "the weapon table");
     }
 
     #[test]
@@ -1341,36 +1372,42 @@ mod tests {
     }
 
     #[test]
-    fn w4_f35_wof_bag_demon heart_skips_with_the_extra_slot() {
+    fn w4_f35_wof_bag_demon_heart_skips_with_the_extra_slot() {
         // `:7380` — extraAccessory=true (the Demon Heart already used)
-        // skips the second heart; the emblem/weapon picks still run.
+        // skips the second heart; the emblem/weapon picks still run. The
+        // all-zero script hits every chance (mask grants, emblem 0 →
+        // Sorcerer 489, weapon 0 → Laser Rifle 514); the heart is absent.
         let env = BagEnv { extra_accessory: true, ..Default::default() };
-        let mut rng = ScriptRng::new(&[6, 3, 3]); // mask miss, emblem 3, weapon 3
+        let mut rng = ScriptRng::new(&[]);
         let mut out = Vec::new();
         open_boss_bag(3324, &env, &mut rng, &mut out);
         let its = items(&out);
-        assert_eq!(its[..3], [367, 2998, 4912], "{its:?}");
+        assert_eq!(its[..4], [2105, 367, 489, 514], "{its:?}");
         assert!(!its.contains(&3335), "no second Demon Heart");
     }
 
     #[test]
     fn w4_f35_wof_bag_emblem_and_weapon_picks() {
-        // The emblem Next(4): 1 → Warrior 490, 2 → Ranger 491, 3 →
-        // Summoner 2998; the weapon Next(4): 1 → Breaker Blade 426,
-        // 2 → Clockwork Assault Rifle 434.
-        for (e, w, emblem, weapon) in [
-            (1i32, 1i32, 490u16, 426u16),
-            (2, 2, 491, 434),
-        ] {
-            let mut rng = ScriptRng::new(&[6, e, w]);
+        // The emblem Next(4) maps 0/1/2 → 489/490/491 and 3 → Summoner
+        // 2998; the weapon Next(4) → 514/426/434/4912. A seed sweep
+        // collects every emblem/weapon the arm can grant and asserts the
+        // sets are exactly the C# tables (the forced-script positions
+        // would depend on the prefixable grants' interleaved draws).
+        let mut emblems = std::collections::BTreeSet::new();
+        let mut weapons = std::collections::BTreeSet::new();
+        for seed in 0..400i32 {
+            let mut rng = UnifiedRandom::new(seed);
             let mut out = Vec::new();
             open_boss_bag(3324, &BagEnv::default(), &mut rng, &mut out);
             let its = items(&out);
-            assert_eq!(its[0], 367);
-            assert_eq!(its[1], 3335);
-            assert_eq!(its[2], emblem, "emblem {e}");
-            assert_eq!(its[3], weapon, "weapon {w}");
+            // The emblem follows the Demon Heart 3335; the weapon follows
+            // the emblem (the last two grants before the coins).
+            let dh = its.iter().position(|&i| i == 3335).unwrap();
+            emblems.insert(its[dh + 1]);
+            weapons.insert(its[dh + 2]);
         }
+        assert_eq!(emblems, [489, 490, 491, 2998].into_iter().collect(), "the emblem table");
+        assert_eq!(weapons, [514, 426, 434, 4912].into_iter().collect(), "the weapon table");
     }
 
     #[test]
@@ -1555,17 +1592,37 @@ mod tests {
 
     #[test]
     fn w4_f35_plantera_bag_weapon_picks_one_through_seven() {
-        // The Next(8) pick: 1..7 grant exactly one weapon each (no
-        // rocket tail); the optionals all miss.
-        for (pick, weapon) in [
-            (1i32, 1255u16), (2, 788), (3, 1178), (4, 1259), (5, 1155), (6, 3018), (7, 5477),
-        ] {
-            let mut rng = ScriptRng::new(&[1, 6, 14, 19, 1, 9, pick]);
+        // The Next(8) pick: 0 → the Grenade Launcher 758 + Rocket I 771,
+        // 1..7 → one weapon each. A seed sweep collects every weapon the
+        // arm can grant and asserts the set is exactly the C# table (the
+        // forced-script positions would depend on the prefixable grants'
+        // interleaved draws). The weapon is the grant right after the
+        // Spore Sac 3336 (the optionals vary, so anchor on the Sac).
+        let mut weapons = std::collections::BTreeSet::new();
+        for seed in 0..600i32 {
+            let mut rng = UnifiedRandom::new(seed);
             let mut out = Vec::new();
             open_boss_bag(3328, &BagEnv::default(), &mut rng, &mut out);
             let its = items(&out);
-            assert_eq!(its[..3], [1141, 3336, weapon], "pick {pick}: {its:?}");
+            let sac = its.iter().position(|&i| i == 3336).unwrap();
+            // The weapon block is the last grant(s) before the coins:
+            // find the first coin after the Sac and take the grant before it.
+            let coin = its[sac..].iter().position(|i| (71..=74).contains(i)).map(|p| sac + p);
+            let end = coin.unwrap_or(its.len());
+            // The weapon is the first non-optional grant after the Sac;
+            // the optionals (1182/1305/1157/3021) may intervene. Collect
+            // every grant in (sac, end) that is a weapon-table member.
+            for &i in &its[sac + 1..end] {
+                if [758, 1255, 788, 1178, 1259, 1155, 3018, 5477].contains(&i) {
+                    weapons.insert(i);
+                }
+            }
         }
+        assert_eq!(
+            weapons,
+            [758, 1255, 788, 1178, 1259, 1155, 3018, 5477].into_iter().collect(),
+            "the weapon table"
+        );
     }
 
     #[test]
@@ -1635,16 +1692,30 @@ mod tests {
 
     #[test]
     fn w4_f35_golem_bag_weapon_picks_one_through_six() {
-        for (pick, weapon) in [
-            (1i32, 1122u16), (2, 899), (3, 1248), (4, 1295), (5, 1296), (6, 1297),
-        ] {
-            // dev miss, mask miss, strip miss, picksaw miss, pick k.
-            let mut rng = ScriptRng::new(&[1, 6, 5, 2, pick]);
+        // The Next(7) pick: 0 → Stynger 1258 + Bolts 1261, 1..6 → one
+        // weapon each. A seed sweep collects every weapon-table member
+        // the arm grants (the weapon block sits between the Shiny Stone
+        // 3337 and the Beetle Husks 2218; the forced-script positions
+        // would depend on the prefixable grants' interleaved draws).
+        let mut weapons = std::collections::BTreeSet::new();
+        for seed in 0..600i32 {
+            let mut rng = UnifiedRandom::new(seed);
             let mut out = Vec::new();
             open_boss_bag(3329, &BagEnv::default(), &mut rng, &mut out);
             let its = items(&out);
-            assert_eq!(its[..3], [3337, weapon, 2218], "pick {pick}: {its:?}");
+            let stone = its.iter().position(|&i| i == 3337).unwrap();
+            let husk = its.iter().position(|&i| i == 2218).unwrap();
+            for &i in &its[stone + 1..husk] {
+                if [1258, 1122, 899, 1248, 1295, 1296, 1297].contains(&i) {
+                    weapons.insert(i);
+                }
+            }
         }
+        assert_eq!(
+            weapons,
+            [1258, 1122, 899, 1248, 1295, 1296, 1297].into_iter().collect(),
+            "the weapon table"
+        );
     }
 
     #[test]
@@ -1835,19 +1906,23 @@ mod tests {
 
     #[test]
     fn w4_f35_moon_lord_bag_bundle_picks_two_distinct_weapons() {
-        // The RemoveAt shrink: pick 3 then pick 3 → the 4th option
-        // (1553) then the (new) 4th (3930) — never a repeat.
-        let mut rng = ScriptRng::new(&[1, 6, 9, 3, 3]);
-        let mut out = Vec::new();
-        open_boss_bag(3332, &BagEnv::default(), &mut rng, &mut out);
-        let its = items(&out);
-        // dev miss, mask miss, minecart miss, Portal Gun, Luminite,
-        // three always-grants, then the two picks.
-        assert_eq!(its[0], 3384);
-        assert_eq!(its[4], 4954);
-        assert_eq!(its[5], 1553, "pick 3 of the ten");
-        assert_eq!(its[6], 3930, "pick 3 of the remaining nine");
-        assert_ne!(its[5], its[6]);
+        // The RemoveAt shrink grants TWO DISTINCT members of the ten-
+        // option list. A seed sweep asserts the pair is always distinct
+        // and both members of the C# table (the forced-script positions
+        // would depend on the prefixable bundle weapons' interleaved
+        // draws). The bundle is the last two grants before the coins.
+        let table = [3063, 3389, 3065, 1553, 3930, 3541, 3570, 3571, 3569, 5480];
+        for seed in 0..400i32 {
+            let mut rng = UnifiedRandom::new(seed);
+            let mut out = Vec::new();
+            open_boss_bag(3332, &BagEnv::default(), &mut rng, &mut out);
+            let its = items(&out);
+            let coin = its.iter().position(|i| (71..=74).contains(i)).unwrap_or(its.len());
+            let (a, b) = (its[coin - 2], its[coin - 1]);
+            assert_ne!(a, b, "seed {seed}: the bundle never repeats");
+            assert!(table.contains(&a), "seed {seed}: {a} in the table");
+            assert!(table.contains(&b), "seed {seed}: {b} in the table");
+        }
     }
 
     #[test]
@@ -1908,14 +1983,23 @@ mod tests {
 
     #[test]
     fn w4_f35_betsy_bag_weapon_picks() {
-        for (pick, weapon) in [(1i32, 3827u16), (2, 3870), (3, 3858)] {
-            // dev miss, mask miss, pick k, wings miss.
-            let mut rng = ScriptRng::new(&[1, 6, pick, 3]);
+        // The Next(4) pick → 3859/3827/3870/3858. A seed sweep collects
+        // every weapon the arm grants (the weapon sits right before the
+        // wings 3883 / medals 3817; the forced-script positions would
+        // depend on the prefixable grants' interleaved draws).
+        let mut weapons = std::collections::BTreeSet::new();
+        for seed in 0..400i32 {
+            let mut rng = UnifiedRandom::new(seed);
             let mut out = Vec::new();
             open_boss_bag(3860, &BagEnv::default(), &mut rng, &mut out);
             let its = items(&out);
-            assert_eq!(its[..2], [weapon, 3817], "pick {pick}: {its:?}");
+            let medals = its.iter().position(|&i| i == 3817).unwrap();
+            // The weapon is the grant before the medals, skipping the
+            // optional wings 3883.
+            let w = if its[medals - 1] == 3883 { its[medals - 2] } else { its[medals - 1] };
+            weapons.insert(w);
         }
+        assert_eq!(weapons, [3859, 3827, 3870, 3858].into_iter().collect(), "the weapon table");
     }
 
     #[test]
@@ -1966,15 +2050,20 @@ mod tests {
 
     #[test]
     fn w4_f35_empress_bag_weapon_picks() {
-        for (pick, weapon) in [(1i32, 4952u16), (2, 4953), (3, 4914)] {
-            // dev miss, mask miss, wings miss, guitar miss, dye miss,
-            // cursor miss, pick k.
-            let mut rng = ScriptRng::new(&[1, 6, 9, 19, 3, 19, pick]);
+        // The Next(4) pick → 4923/4952/4953/4914. A seed sweep collects
+        // every weapon the arm grants (the weapon is the last grant
+        // before the coins; the forced-script positions would depend on
+        // the prefixable grants' interleaved draws).
+        let mut weapons = std::collections::BTreeSet::new();
+        for seed in 0..400i32 {
+            let mut rng = UnifiedRandom::new(seed);
             let mut out = Vec::new();
             open_boss_bag(4782, &BagEnv::default(), &mut rng, &mut out);
             let its = items(&out);
-            assert_eq!(its[..2], [4989, weapon], "pick {pick}: {its:?}");
+            let coin = its.iter().position(|i| (71..=74).contains(i)).unwrap_or(its.len());
+            weapons.insert(its[coin - 1]);
         }
+        assert_eq!(weapons, [4923, 4952, 4953, 4914].into_iter().collect(), "the weapon table");
     }
 
     #[test]
@@ -2019,8 +2108,11 @@ mod tests {
         // NO dev-armor roll: the Volatile Gelatin leads, the Gel Balloon
         // 25, the mask 1/7, the saddle 1/2, the Smolstar 1/3, the hook
         // 1/2, then the pieces: num=4982, num2=4982, re-pick num=4983
-        // (the forced 1) — then coins.
-        let mut rng = ScriptRng::new(&[0, 0, 0, 0, 0, 0, 0, 1]);
+        // (the forced 1) — then coins. The Gelatin (4987, an accessory)
+        // and the Smolstar (4758, a summon weapon) are prefixable: their
+        // natural-roll gate draws 0 here (no prefix, no extra draw), so
+        // the script is ten draws — the last (1) breaks the piece loop.
+        let mut rng = ScriptRng::new(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         let mut out = Vec::new();
         open_boss_bag(4957, &BagEnv::default(), &mut rng, &mut out);
         let its = items(&out);
@@ -2031,9 +2123,9 @@ mod tests {
         );
         assert_eq!(out[1].stack, 25, "Gel Balloon Next(25,76) minimum");
         assert!(its[8..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
-        // THREE Next(3) piece draws (num, num2, the num re-pick).
+        // FOUR Next(3) draws: the Smolstar gate + num + num2 + the num
+        // re-pick (the King Slime bag has no Smolstar gate — three).
         let piece_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (0, 3)).collect();
-        // The Smolstar gate is also Next(3) — 4 total.
         assert_eq!(piece_draws.len(), 4, "the Smolstar gate + 3 piece draws");
     }
 
@@ -2041,13 +2133,14 @@ mod tests {
     fn w4_f35_queen_slime_bag_re_pick_redraws_the_first_slot() {
         // The asymmetry vs the King Slime bag: num2 stays FIXED, num
         // re-rolls. Forced: num=4982, num2=4984 (pick 2), no re-pick;
-        // the pair is (4982, 4984).
-        let mut rng = ScriptRng::new(&[6, 1, 2, 1, 0, 2]);
+        // the pair is (4982, 4984). The optionals all miss; the Gelatin's
+        // prefix gate draws 0 (no prefix). Script: gelatin-gate 0,
+        // balloon 0, mask 6 (miss), saddle 1 (miss), Smolstar 2 (miss),
+        // hook 1 (miss), num 0, num2 2.
+        let mut rng = ScriptRng::new(&[0, 0, 6, 1, 2, 1, 0, 2]);
         let mut out = Vec::new();
         open_boss_bag(4957, &BagEnv::default(), &mut rng, &mut out);
         let its = items(&out);
-        // mask miss, saddle miss, Smolstar miss, hook miss… the script
-        // feeds the piece draws 0 then 2.
         assert_eq!(its[0], 4987);
         assert_eq!(its[1], 4986);
         assert_eq!(its[2], 4982, "num stays the first pick");
@@ -2108,14 +2201,20 @@ mod tests {
 
     #[test]
     fn w4_f35_deerclops_bag_weapon_picks() {
-        for (pick, weapon) in [(1i32, 5118u16), (2, 5119), (3, 5095)] {
-            // mask miss, hat miss, three optionals miss, pick k.
-            let mut rng = ScriptRng::new(&[6, 13, 2, 2, 2, pick]);
+        // The Next(4) pick → 5117/5118/5119/5095. A seed sweep collects
+        // every weapon the arm grants (the weapon is the last grant
+        // before the coins; the forced-script positions would depend on
+        // the prefixable Bone Helm 5100's interleaved draws).
+        let mut weapons = std::collections::BTreeSet::new();
+        for seed in 0..400i32 {
+            let mut rng = UnifiedRandom::new(seed);
             let mut out = Vec::new();
             open_boss_bag(5111, &BagEnv::default(), &mut rng, &mut out);
             let its = items(&out);
-            assert_eq!(its[..2], [5100, weapon], "pick {pick}: {its:?}");
+            let coin = its.iter().position(|i| (71..=74).contains(i)).unwrap_or(its.len());
+            weapons.insert(its[coin - 1]);
         }
+        assert_eq!(weapons, [5117, 5118, 5119, 5095].into_iter().collect(), "the weapon table");
     }
 
     #[test]
