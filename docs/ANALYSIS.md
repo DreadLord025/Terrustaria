@@ -39627,6 +39627,34 @@ gores). The `DeathSnapshot` gains `ai2` (the 590 gate). Witnesses: the
 tolerated), the 501 20-count, the 452/454 84/127 counts — WRITTEN NOT
 RUN.
 
+### Batch 16 (10 kinds, the late-mid Kill bursts `:73046-73441`)
+
+467/468 (resize 176×176 centred; 4× dust-31 gravity Y-scatter + 30/20
+pairs dust-6/27 (mid fadeIn 2.5) + 10 dust-6/27 X + 10 dust-31 X, 2 gores
+scatter-no-lift), 485 (15× dust-6 noGravity vel −= oldVel×Next(20,60)×
+0.01), 484 (5× dust-78 noGravity vel −= oldVel/5 scale 0.85), 483 (the
+owner-gated 484 homing-spawn burst `:73162-73221` stays the spawn lane's
+draws; 20× dust-78 noGravity vel×4 + 7× dust-31 vel×0.9 scale 0.9 gravity
++ 3 pairs dust-6 (second keeps GRAVITY) + ONE gore at pos with the
+Next(-1,2) X/Y nudges instead of the ×0.05 ones; the owner-gated +100
+inflate + Damage unported), 523 (25× dust-256 noGravity position=(own+
+pos)/2 vel=Normalize(Next(−100,101) pair)×Next(1,30)×0.1 alpha=corpse
+alpha), 521 (20× the crystal-spark shape at 254 fadeIn 1.1/0.35/1.2/
+vel×2.5; the owner-gated 522 spawn burst stays the spawn lane's), 459/709
+(scale>=1 → resize 144×144 + 7/30 counts + 2 gores, else 3/10/0 on the
+original box; dust-31 gravity + dust-226 noGravity vel×1, position =
+Center + (w/2,0).RotatedBy(τ×NextDouble)×NextDouble — the shared
+`double_angle_ring_pos` helper, the 454 refactored onto it, INTEGER w/2;
+the 709's owner-gated 1110 pull unported state no draws), 639 (the
+moonlord arrow dust RECLAIMED from the moonlord module's census skip —
+the hook never consumed the draw; Next(5,10)× dust-220 at Center 0×0
+alpha 100 scale 0.5 vel×1.6 Y−− position=Lerp(own,Center,0.5) noGravity;
+the 640 ghost spawn stays `moonlord_arrow_kill`'s; the module doc note
+updated). Witnesses: the 467/468 84/64 counts + fadeIn mids, the 485/484
+counts, the 483 33-count/gravity split, the 523 alpha/speed cap, the 521
+20-count, the 459/709 scale-gate 13/37 counts, the 639/640 Next(5,10)
+count — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
