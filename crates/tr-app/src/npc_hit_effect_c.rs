@@ -79,6 +79,8 @@
 //! | 313-322 | `:83699` | the 491 Flying Dutchman death: the 861/862 scatter burst, gores 10-19 |
 //! | 323-332 | `:83699` | the 491 Flying Dutchman death: the 861/862 scatter burst, gores 20-29 |
 //! | 333-342 | `:83734` | the 492 Flying Dutchman (cannon) death: 7-dust type-31 burst + 10-gore Next(61,64) scatter |
+//! | 343-348 | `:83789-83794` | the 524-527 Desert Ghoul (normal/corrupt/crimson/hallow) death (6 gores, per-tier base) |
+//! | 349-352 | `:83818-83821` | the 528-529 Desert Lamia (light/dark) death (4 gores, per-tier head) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1857,6 +1859,90 @@ fn dutchman_cannon_death(
     }
 }
 
+/// The 524-527 Desert Ghoul death (`NPC.cs:83742-83794`, sites 343-348):
+/// the per-tier params (`num196` accent-dust type, `num197 = 5` base dust,
+/// `num198` gore base): 524 → (0, 5, 863), 525 → (75, 5, 867), 526 →
+/// (170, 5, 871), 527 → (67, 5, 879). The 20-iteration type-5 burst with a
+/// `Next(3) == 0 && num196 > 0`-gated accent dust (noGravity, scale 1.5,
+/// fadeIn 1, velocity ×3) — the C# `&&` evaluates `Next(3)` FIRST, so the
+/// draw fires even for 524 (num196 == 0) but the spawn is skipped. Then the
+/// 6 gores `num198 / +1 / +2 / +2 / +3 / +3` at the +0/+0/+20/+20/+34/+34 Y
+/// ladder.
+fn desert_ghoul_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:83742-83759` — the per-tier params.
+    let (num196, num198) = match npc_type {
+        525 => (75, 867),
+        526 => (170, 871),
+        527 => (67, 879),
+        _ => (0, 863), // 524
+    };
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83777-83788` — 20 iterations: type-5 + the gated accent dust.
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        // `:83780` — Next(3) draws FIRST (the && left operand), then the
+        // num196 > 0 check gates the spawn.
+        if rng.next_max(3) == 0 && num196 > 0 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, num196, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 1.0;
+            d.velocity *= 3.0;
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, num198, s); // :83789
+    gore.new_gore(rng, world, pos, vel, num198 + 1, s); // :83790
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num198 + 2, s); // :83791
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num198 + 2, s); // :83792
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, num198 + 3, s); // :83793
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, num198 + 3, s); // :83794
+}
+
+/// The 528-529 Desert Lamia death (`NPC.cs:83799-83821`, sites 349-352):
+/// the 20-dust type-5 burst (no accent), then the 4 gores — the head is
+/// `num202` (528 → 875, 529 → 876, `:83800-83804`), then 877/877 at +20 Y
+/// and 878 at +34 Y (the tail types are FIXED, not base-relative).
+fn desert_lamia_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:83799-83804` — the per-tier head.
+    let num202 = if npc_type == 529 { 876 } else { 875 };
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 20);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, num202, s); // :83818
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 877, s); // :83819
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 877, s); // :83820
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 878, s); // :83821
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2057,6 +2143,14 @@ pub fn hit_effect_c(
     // `:83723-83739` — the 492 Flying Dutchman cannon arm (sites 333-342).
     if npc_type == 492 && npc.hp <= 0 {
         dutchman_cannon_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:83740-83796` — the 524-527 Desert Ghoul arm (sites 343-348).
+    if (524..=527).contains(&npc_type) && npc.hp <= 0 {
+        desert_ghoul_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83797-83823` — the 528-529 Desert Lamia arm (sites 349-352).
+    if (npc_type == 528 || npc_type == 529) && npc.hp <= 0 {
+        desert_lamia_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3326,6 +3420,82 @@ mod tests {
             let _theta = twin.next_double();
         }
         assert_eq!(rng.peek(), twin.peek(), "the cannon death mirrors the C# draw order");
+    }
+
+    /// `NPC.cs:83789-83794` — the Desert Ghoul death: the per-tier gore base
+    /// (524→863, 525→867, 526→871, 527→879) with the base/+1/+2/+2/+3/+3
+    /// order. The accent-dust gate draws Next(3) even for 524 (num196==0).
+    #[test]
+    fn w4_f10_the_desert_ghoul_death_uses_the_per_tier_base() {
+        let w = air();
+        for (ty, base) in [(524, 863), (525, 867), (526, 871), (527, 879)] {
+            let n = boss(100.0, 100.0, 40.0, 50.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(227);
+            desert_ghoul_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+            assert_eq!(
+                types,
+                vec![base, base + 1, base + 2, base + 2, base + 3, base + 3],
+                "ghoul {ty}"
+            );
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(4).position, Vec2::new(100.0, 134.0));
+        }
+    }
+
+    /// `NPC.cs:83780` — the ghoul accent gate draws Next(3) BEFORE the
+    /// num196>0 check, so the 524 arm (num196==0) still advances the stream
+    /// 20 times. The twin replay pins that for both 524 and 525.
+    #[test]
+    fn w4_f10_the_desert_ghoul_gate_draws_even_when_accent_is_zero() {
+        let w = air();
+        for ty in [524, 525] {
+            let n = boss(100.0, 100.0, 40.0, 50.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(229);
+            desert_ghoul_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let mut twin = UnifiedRandom::new(229);
+            let census = |r: &mut UnifiedRandom| {
+                let _px = r.next_max(36);
+                let _py = r.next_max(46);
+                let _vx = r.next_range(-20, 21);
+                let _vy = r.next_range(-20, 21);
+                let _row = r.next_max(3);
+                let _scale = r.next_range(-20, 21);
+            };
+            for _ in 0..20 {
+                census(&mut twin); // type 5
+                if twin.next_max(3) == 0 && ty != 524 {
+                    census(&mut twin); // the accent dust (no tweak for 75/170/67)
+                }
+            }
+            for _ in 0..6 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "ghoul {ty} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:83818-83821` — the Desert Lamia death: the per-tier head
+    /// (528→875, 529→876) then the FIXED 877/877/878 tail.
+    #[test]
+    fn w4_f10_the_desert_lamia_death_uses_the_per_tier_head() {
+        let w = air();
+        for (ty, head) in [(528, 875), (529, 876)] {
+            let n = boss(100.0, 100.0, 40.0, 60.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(233);
+            desert_lamia_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![head, 877, 877, 878], "lamia {ty}");
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
