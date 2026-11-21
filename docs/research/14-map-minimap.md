@@ -646,6 +646,30 @@ fullscreen).
 
 ## W4-f46 × f29/e17 overlay composition (2026-11-21, closeout cross-note)
 
+> **UPDATED (final-retire pass, same day): the keep-one below is RESOLVED —
+> f29 EXECUTED research/140 on its branch.** The f29 tip is now `809d08238`:
+> a rebuild onto the e17 `8500c3e5` skeleton wholesale (`352644d2`) + the
+> six cited fixes F1-F6 (`e78178e1`/`f8df2276`/`22df1dee`/`8ccb7966`/
+> `8a29b825`/`b50d96ca`) + the secondary witness folds (`c19521b3`) + the
+> docs dedupe (`c15a1318`). **The merger takes the f29 TIP ONLY** — its tree
+> IS the e17 skeleton + fixes + 34-witness union; the e17 branch and the
+> pre-rebuild f29 commits (`map_overlay.rs`/`map_pylons.rs` era) must not
+> re-land (research/140's banner). The paragraphs below were written against
+> the PRE-rebuild tips (`e18bf6dd`/`8500c3e5`) and stay as the seam record,
+> with these corrections: the pan step now lives in `WorldMap::prepare`
+> delegating to the pure `map.rs::pan_target_step` (F6) — NOT f29's old
+> `update_map_input` site; the tip carries e17's pan field set
+> (`pan_target: bool` + `pan_target_end` + `pan_cancel_press` + `pylon_tile`
+> + `cancel_wormhole`), which converts 1:1 onto the union's
+> `pan_target: Option<[f32;2]>` (keep the union's representation, fold the
+> step + arming); the tip's `prepare` reset arm DOES clear the pan (dedupes
+> against the union's `recentre`); the draw wiring is e17's C#-order form
+> (fullscreen layer walk LAST at `:55996`, minimap FIRST at `:55703`) with
+> the `map_left_press` snapshot + the `map_layers_draw` 4-new-field
+> `MapIconInputs` extension (`map_fullscreen`/`pylon_tile`/`screen`/
+> `left_press`) — the union's two call sites gain those fields at merge.
+> The final merge instruction is research/84 §10.3.
+
 Read in full from git objects: `origin/task/W4-f29-map-overlay-2` @ `e18bf6dd`
 (census `e1ffdefc` → ports `09f71b61`/`9320326c`/`1de1ad19`/`a920b704c` →
 review `a0516edf` → docs `e18bf6dd`; 9/9 claimed pieces ported) and

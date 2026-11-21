@@ -431,28 +431,50 @@ all nine are now folded; checklist item 2 is CLOSED.**
    the union (`736c86ce`/`5566bf25`/`cd24857e`/`7d050b7c`/`b767ef91` + the
    docs). The merger only re-checks that e18 has not advanced past
    `75289a2db`; if it has, the recipe re-applies for the new commits only.
-3. **The overlay siblings are a SEPARATE keep-one, not part of this union:**
-   `origin/task/W4-f29-map-overlay-2` (`e18bf6dd`) and
-   `origin/task/W4-e17-map-overlay-layers` (`8500c3e5`, revived) port the
-   SAME nine overlay pieces twice. Take ONE implementation (research/14
-   "W4-f46 × f29/e17 overlay composition" lists the seams: the draws insert
-   before the hover text leaving the union's close/cursor tail last; the
-   head icon re-homes to `:55931` with the 255-loop; the pan state lands
-   twice — f29's `update_map_input` step vs e17's `prepare` lerp). The
-   two shared gaps are ALREADY CLOSED on the union (`aed75d0b`/`3f858937`):
-   the movement-key pan cancel (`Player.cs:24776-24791`, each held row
-   clears `pan_target`) and the `resetMapFull` pan clear (`Main.cs:55418`,
-   `WorldMap::recentre`). The union carries `pan_target: Option<[f32;2]>`
-   (f29's representation) — the overlay pick folds only its lerp STEP +
-   pylon-click ARMING hunks; its duplicate pan field/cancel code drops
-   (e17's bool+end pair converts 1:1 if e17 wins).
+3. **The overlay keep-one is RESOLVED on the f29 branch — take the f29 TIP
+   ONLY (`809d08238`, re-fetched by the final-retire pass).** The old ruling
+   ("f29 `e18bf6dd` and e17 `8500c3e5` port the same nine pieces twice, take
+   ONE") is superseded: f29 EXECUTED research/140 on its own branch
+   (`352644d2` rebuild onto the e17 `8500c3e5` skeleton wholesale →
+   `e78178e1` F1 int-truncated line endpoints → `f8df2276` F2 half-open
+   `Contains` hover → `22df1dee` F3 `Utils.Floor` truncation → `8ccb7966` F4
+   `Coin_0..3` strips + atlas 8131 < 8192 → `8a29b825` F5 fullscreen death
+   box without the −4 shift → `b50d96ca` F6 pure `pan_target_step` →
+   `c19521b3` secondary witness folds → `c15a1318` docs dedupe → `809d0823`
+   EXECUTED banner). **The f29 tip's tree IS the e17 skeleton + F1-F6 + the
+   34-witness union + the deduped docs**; its diff vs the e17 tip is exactly
+   those patches (12 files, verified by the final-retire pass). The e17
+   BRANCH and the pre-rebuild f29 commits (`map_overlay.rs`/`map_pylons.rs`
+   era, ≤ `d5aa3621`) must NOT re-land — research/140's banner owns that
+   instruction. The composition seams below still apply, with one
+   representation update: the rebuilt tip carries **e17's pan field set**
+   (`pan_target: bool` + `pan_target_end` + `pan_cancel_press` +
+   `pylon_tile` + `cancel_wormhole`), NOT the old f29 `Option` — the union's
+   `pan_target: Option<[f32;2]>` converts 1:1 (`None` = flag false,
+   `Some(end)` = armed + end); the merger keeps the union's representation
+   and folds the tip's `prepare` pan block as
+   `if let Some(end) = self.pan_target { … pan_target_step(self.pos, end,
+   self.pan_cancel_press) … }` ahead of the clamps, keeping F6's pure
+   helper verbatim. The two shared gaps stay CLOSED on the union
+   (`aed75d0b`/`3f858937`): the movement-key pan cancel
+   (`Player.cs:24776-24791`) and the `resetMapFull` pan clear
+   (`Main.cs:55418`, `WorldMap::recentre`) — the tip's `prepare` reset arm
+   also clears the pan (e17 had it), so that hunk dedupes against
+   `recentre`. The union's `try_open_fullscreen_map` + `set_open` compose
+   with the tip's `set_open` pylon-clear hunk (`Player.cs:29113` /
+   `Main.cs:41102`): the merged `set_open(true)` clears `pylon_tile` AND
+   arms the recentre (which clears the pan).
 4. **Anchors:** the union's rows are `map_sections.rs::get_next_map_draw`,
    `frame/world.rs::map_reveal_sweep_fields`, `map.rs::draw_to_map_section`,
    `map.rs::clear_map`, `ui/chrome.rs::fullmap_close_button_pos`,
    `ui/cursor.rs::draw_thick`, `ui/minimap.rs::apply_key_zoom`,
    `app/loop.rs`'s `MapAction::Style` arm, plus the shared-gap/dup rows
-   `map.rs::pan_target`, `map.rs::recentre`, `map.rs::map_key_alpha` —
-   plus the overlay pick's own rows.
+   `map.rs::pan_target`, `map.rs::recentre`, `map.rs::map_key_alpha`,
+   plus the re-folded e18d rows `app/loop.rs::try_open_fullscreen_map`,
+   `map.rs`'s corrupt-map + map-delay witness markers,
+   `frame/draw.rs::close_dialog_behind_fullmap`, `ui/mod.rs::draw_chat` —
+   plus the f29 tip's own rows (`map_npc_icons`, `map_player_icons`,
+   `map_layers::pylon_line`).
    Never delete rows to silence the canary; the f46 pre-union rows pointing
    at dropped files were already removed by the base adoption.
 5. **Run the catalog verification on the merged state** (this closeout was
@@ -463,8 +485,13 @@ all nine are now folded; checklist item 2 is CLOSED.**
    `app::w4_f46_minimap_zoom_key_tests` (incl. the alpha + style-2 pair),
    `app::w4_e18_map_drag_capture_tests::w4_f46_movement_keys_cancel_*`,
    `map::tests::w4_f46_the_reset_clears_*` +
-   `w4_f46_alpha_and_overlay_clamps_*`, `app::loop::tests::w4_f46_*`, and
-   the folded e18/f46 sets (§7).
+   `w4_f46_alpha_and_overlay_clamps_*`, `app::loop::tests::w4_f46_*`, the
+   re-folded e18d set (`app::loop::tests::w4_e18_the_map_open_arm_*`,
+   `app::clicks::w4_e18_map_icon_row_tests::*`,
+   `map::tests::w4_e18_a_corrupt_map_*` + `w4_e18_the_map_delay_*` + the
+   SIX `map_delay = 0` re-pins,
+   `app::frame::draw::w4_e18_fullmap_draw_head_tests::*`), the f29 tip's
+   34-witness union (research/140 §7), and the folded e18/f46 sets (§7).
 6. **Docs are already union-shaped:** research/14 (censuses + fold status +
    composition note), this file, PORT_MAP's map rows, ROADMAP row 14,
    ANALYSIS's union note. The overlay pick brings its own doc updates —
@@ -495,3 +522,119 @@ merger takes THIS branch and drops `task/W4-e18-minimap-reveal-queue`
 wholesale; item 2's merge-time duty shrinks to a tip re-check (if e18
 advanced past `75289a2db`, re-fold only the new commits per the recipe).
 All re-folded witnesses written not run (code-only, as tasked).
+
+### §10.3 FINAL map-merge instruction + MAP-FAMILY declaration (2026-11-21, final-retire)
+
+**Scope check (published, as tasked): f46 does NOT absorb the overlay.**
+The overlay is ~4 500 lines on the f29 tip (`map_npc_icons.rs` 950 +
+`map_player_icons.rs` 809 + `map_layers.rs` +723 + `map.rs` +320 +
+`clicks.rs` +139 + `assets.rs` +216 + draw wiring +520, diff vs `a725acb0`)
+— a subsystem rebuild already executed ON the f29 branch against the e17
+skeleton with its own 34-witness union and atlas measurement. Re-folding
+it into f46 would duplicate research/140's execution and re-open the
+keep-one it closed. **The union compose is: f46-union (reveal driver +
+map keys + open/close arms + load/delay/head/tail residuals) × f29-tip
+(the nine overlay draws + pylon click/pan + hover names) — merged as TWO
+branch landings, f46 first, f29 tip second.** The e17 branch is fully
+contained in the f29 tip's tree (`352644d2` took it wholesale; the tip-vs-
+e17 diff is exactly F1-F6 + witnesses + docs, 12 files — verified by
+direct diff read); e17 drops WITHOUT a separate landing.
+
+**f29c F1-F6 execution status (re-fetched `origin/task/W4-f29-map-overlay-2`
+@ `809d08238`): ALL SIX EXECUTED** — F1 `e78178e15`
+(`unclamped_center_int`), F2 `f8df2276f` (`rect_contains_int` on all three
+context hovers), F3 `22df1dee8` (`utils_floor`), F4 `8ccb7966b`
+(`Coin_0..3` + `Lookups.coin_anim`, atlas 8131 < 8192 measured), F5
+`8a29b8253` (`draw_death_marker(minimap)` + `death_hover_rect`, the wrong
+e17 fullscreen-box witness re-derived), F6 `b50d96ca0`
+(`map.rs::pan_target_step` pure, `prepare` delegates). Secondary folds
+`c19521b32`, docs dedupe `c15a13188`, EXECUTED banner `809d08238`. All
+witnesses written not run on that branch too; its catalog run is owed at
+merge like ours.
+
+**Merger order (the MAP FAMILY, in order):**
+
+1. **`task/W4-f46-minimap-reveal-2` (THIS union) → main.** Carries the
+   whole reveal/input family: the c35 `MapUpdateQueue` base, the e18
+   `WorldSections` grid + spiral + driver skeleton, the f46 salvages
+   (section paint, `/map` flag path, DoDraw placement, paused else-arm,
+   empty intersect, ctor flag), the close button + thick cursor, the
+   minimap/overlay keys + Tab cycle + alpha state (g53 superset fold),
+   the pan state + both cancels, and the re-folded e18d final sweep
+   (open/close arms + cues, Load catch, mapDelay, draw-head close,
+   draw-tail chat). e18/g53's map-key variants drop with their branches'
+   map hunks (§10.1).
+2. **`task/W4-f29-map-overlay-2` TIP (`809d08238`) → main, synced onto
+   post-f46 main.** Never the pre-rebuild commits; never a separate e17
+   landing. Hot-file resolutions (all semantic, per MAIN-RULES — re-read
+   the C#, never ours/theirs):
+   - **`map.rs`**: keep the union's `WorldMap` (statics/queues/alpha
+     fields/`pan_target: Option`/`recentre`/`load` catch/`map_delay`);
+     take the tip's additions (`pylon_tile`/`cancel_wormhole`/
+     `pan_cancel_press`, `pylon_view_fit`, `pan_target_step`,
+     `fullscreen_hover_name`); fold the tip's `prepare` pan block onto
+     the Option representation AHEAD of the clamps; the tip's reset-arm
+     pan clear dedupes against `recentre`; the tip's `set_open`
+     pylon-clear hunk joins the union's `set_open` (scale 2.5 + reset
+     arm); the tip's plain `load` loses to the union's catch-arm version.
+   - **`app/frame/draw.rs`**: keep the union's driver call
+     (`map_reveal_draw` ahead of `prepare`), `map_ready` gates, the
+     draw-head `close_dialog_behind_fullmap` (before the pylon scan),
+     the close-button/thick-cursor tail and the draw-tail `draw_chat`;
+     take the tip's overlay draws in its C#-order wiring (fullscreen:
+     tile hover → revenge/misc `:55922` → NPC heads `:55926` → the
+     255-head loop `:55931` REPLACING the union's single head icon →
+     death `:55977` → revenge row `:55988` → layer walk `:55996` LAST →
+     hover text → close button → cursor → chat; minimap: layer walk
+     FIRST `:55703` → revenge/misc → heads → pins/death → foreground →
+     row). The union's live-alpha arguments stay (`m.minimap_alpha` into
+     the layer walk's `b`, the tinted tile pass) — the tip's hardcoded
+     `1.0` opacity args take the union's alpha (the dup fold's D17
+     detail; e17/f29 predate it). `MapIconInputs` gains the tip's 4
+     fields at BOTH union call sites; the `map_left_press` snapshot +
+     `pan_cancel_press` feed + `pylon_click` drain + `cancel_wormhole`
+     clear ride the tip's frame.rs/draw.rs hunks.
+   - **`app/loop.rs` / `app/clicks.rs`**: the union's
+     `try_open_fullscreen_map` + cues + icon-row routing stay; the tip's
+     `handle_pylon_map_click` + `request_pylon_teleport` +
+     `world_sim/editing/doors.rs`'s 597 arm join (its TryOpening clears
+     duplicate the union helper — route the doors arm through
+     `try_open_fullscreen_map` + the pylon-view fit, keeping the C#
+     `:29103-29118` effects once).
+   - **`assets.rs`**: union of the union's `Cursor_11` + the tip's icon
+     sheets (one `Coin_0..3` block, one boss-head field
+     `npc_boss_heads`); re-measure the atlas after the merge (the tip
+     measured 8131 < 8192 without `Cursor_11`).
+   - **Docs**: research/14 keep-both-sections rule (§10 item 6);
+     research/140 lands with the tip; PORT_MAP/ANALYSIS union; the
+     tip's research/14 SUPERSEDED banner points at 140 — this file's
+     §10.3 is the cross-family order record.
+3. **Verify on the merged state** (§10 item 5's catalog command + the
+   canary), then the ancestor + symbol checks per MAIN-RULES.
+4. **Retire**: `task/W4-e18-minimap-reveal-queue` (fully absorbed, §10.2),
+   `task/W4-e17-map-overlay-layers` (fully contained in the f29 tip),
+   `task/W4-f29-map-overlay-2` + this branch after their merges; g53's
+   map-key hunks were already keep-oned (§10.1) — g53's own branch retires
+   with its achievement-screen scope, not here.
+
+**MAP-FAMILY declaration — every piece landed, by branch:**
+
+| Piece | C# anchor | Landed on | Status |
+| --- | --- | --- | --- |
+| Reveal queue (`MapUpdateQueue`) | `MapUpdateQueue.cs:21-108` | c35 → shared base `a725acb0` | in main-line base |
+| `WorldSections` grid + spiral + sweep driver | `WorldSections.cs`, `Main.cs:61863-61899` | e18 → THIS union | folded |
+| Section pixel paint + `/map` flag path + DoDraw placement + paused else-arm + empty intersect + ctor flag | `MapRenderer.cs:306-355`, `ToolkitDebugCommands.cs:480-503` | f46 salvages → THIS union | landed |
+| Map statics (`clearMap`/`mapReady`/load pair) + `/clearmap` + UsingMap drag gate | `Main.cs:789-805`, `:55342` | e18 → THIS union | folded |
+| Fullscreen close button + thick cursor | `Main.cs:56014-56040`, `:48064-48134` | e18 → THIS union | folded |
+| Fullscreen zoom keys + wheel + drag + clamps | `Player.cs:24898-24908`, `:25190-25197` | shared base | landed |
+| Minimap zoom/alpha keys (both styles) + Tab cycle + alpha state/tint | `Player.cs:24909-24965`, `Main.cs:55515-55566` | f46 closeout + g53/e18 dup fold → THIS union | landed (§10.1) |
+| Pan state + movement-key cancel + resetMapFull clear | `Player.cs:24776-24791`, `Main.cs:55418` | THIS union (shared-gap close) | landed |
+| Open/close arms + cues + icon row | `Player.cs:29103-29119`, `:24967-24986`, `Main.cs:41095-41120` | e18d → THIS union (§10.2) | re-folded |
+| Load catch arm + mapDelay + draw-head close + draw-tail chat | `WorldMap.cs:217-230`, `LightingEngine.cs:82-89`, `Main.cs:62150-62160` | e18d → THIS union (§10.2) | re-folded |
+| Six icon layers + ping detector/pool/relay | `Map/*Layer*.cs`, `Main.cs:55486-55495` | S1-L-4 → shared base | landed |
+| Nine overlay draws (boss/town heads, pins/death/misc/revenge, hover names, pylon lines/click/pan) + F1-F6 | `Main.cs:55922-56292`, `:56446-56539`, `MapOverlayDrawContext.cs`, `TeleportPylonsMapLayer.cs` | e17 skeleton + f29 fixes → **f29 TIP `809d08238`** | executed, merge pending |
+| Pings | `PingMapLayer.cs:16-51` | S1-L-4 (verified e18d/f29 censuses) | landed |
+| Pan inertia / legend / grid lines / arrow rotation / zoom indicator | — | PHANTOMS (three censuses agree) | nothing to port |
+| Unity-potion teleport hover/click | `Main.cs:55960-55975`, `:55998-56010` | UNPORTED seed — MP-client-only, netcode ladder | recorded |
+| `mapStyle == 2` overlay DRAW + style-0 retro | `Main.cs:55548-55578` | UNPORTED — D18 draw half (keys landed) | recorded |
+| Content-lost refresh | `MapRenderer.cs:363-377` | UNPORTED — D22 remainder (no GPU-reset path) | recorded |
