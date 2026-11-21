@@ -5872,10 +5872,22 @@ impl Npc {
             // The martians: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Scrambler/RayGunner/zapper
             // shot arms land with the projectile work).
-            NpcKind::GrayGrunt
-            | NpcKind::MartianEngineer
-            | NpcKind::GigaZapper
-            | NpcKind::MartianWalker => self.update_skeleton(world, player, dt),
+            NpcKind::GrayGrunt | NpcKind::MartianWalker => {
+                self.update_skeleton(world, player, dt)
+            }
+            // W4-g4 — the engineer (386) and the zapper (389) carry their
+            // `AI_003_Fighters` confused resets (`NPC.cs:58986-58989` /
+            // `:59048-59051`) ahead of the walker: the Confused debuff (31)
+            // parks the work timer at −60. The engineer's turret-spawn cycle
+            // and the zapper's spear shot are unported (the shot arms land
+            // with the projectile work) — the confused reset is the carried
+            // remainder; the non-confused timer arms stay with those machines.
+            NpcKind::MartianEngineer | NpcKind::GigaZapper => {
+                if self.buffs.find_buff_index(31).is_some() {
+                    self.ai[2] = -60.0;
+                }
+                self.update_skeleton(world, player, dt)
+            }
             // The officer: the same aiStyle-3 walker, plus its own
             // `AI_003_Fighters` bubble block (`NPC.cs:56222-56251`) — the
             // small-kinds wiring wave's ForceBubble lifecycle seam. The
@@ -11502,9 +11514,19 @@ impl Npc {
         if self.ai[1] > 0.0 {
             self.ai[1] -= 1.0;
         }
-        // `justHit`'s interrupt (`:59094`): the shot cycle rests 30.
+        // `justHit`'s interrupt (`:59091-59097`): the shot cycle rests 30.
         if self.hurt_cd > 0.0 && self.ai[1] > 30.0 {
             self.ai[1] = 30.0;
+            self.ai[2] = 0.0;
+        }
+        // W4-g4 — `NPC.cs:59197-59201`: the Confused debuff (31) zeroes the
+        // shot timer and the aim octant, so the confused shooter never fires
+        // (the `ai[2] > 0` fire gate below stays closed) and the sleep-exit
+        // resets ride. The C# latches `this.confused` from the buff scan
+        // (`:92029-92032`); the port reads buff 31 directly (the frost-trio
+        // convention, `npc.rs:10165`).
+        if self.buffs.find_buff_index(31).is_some() {
+            self.ai[1] = 0.0;
             self.ai[2] = 0.0;
         }
         if self.ai[2] > 0.0 {
@@ -12972,13 +12994,19 @@ impl Npc {
             self.rifleman_rearmed = true;
             self.ai[3] = -120.0;
         }
-        // `:58470-58473`: grounded clears the leap state.
-        if self.vy == 0.0 {
+        // W4-g4 — the Confused debuff (31) latch (`NPC.cs:92029-92032`); the
+        // rifleman's four confused arms read it (`:58470`/`:58485`/`:58566`/
+        // `:58576`). The port reads buff 31 directly (the frost-trio convention).
+        let confused = self.buffs.find_buff_index(31).is_some();
+        // `:58470-58473`: grounded OR confused clears the leap state.
+        if self.vy == 0.0 || confused {
             self.ai[2] = 0.0;
         }
         if self.vy != 0.0 && self.ai[2] == 1.0 {
-            // The flight homing (`:58480-58545`).
-            let dx = pcx - self.facing as f32 * 300.0 - cx;
+            // The flight homing (`:58480-58545`). `:58484-58488`: the confused
+            // rifleman homes on the MIRRORED side (`num114 = direction * -1`).
+            let aim_dir = if confused { -self.facing } else { self.facing };
+            let dx = pcx - aim_dir as f32 * 300.0 - cx;
             let dy = (pcy + h * 0.5) - (self.y + h);
             if dx < 0.0 && self.vx > 0.0 {
                 self.vx *= 0.9;
@@ -13001,7 +13029,8 @@ impl Npc {
             } else if dy > 20.0 && self.vy < 8.0 {
                 self.vy += 0.3;
             }
-        } else if pcy + 100.0 < self.y
+        } else if !confused
+            && pcy + 100.0 < self.y
             && crate::projectile::can_hit(
                 world,
                 self.x,
@@ -13014,12 +13043,17 @@ impl Npc {
                 player.height,
             )
         {
-            // `:58566-58571`'s leap arm.
+            // `:58566-58571`'s leap arm (`!this.confused` gate).
             self.vy = -5.0;
             self.ai[2] = 1.0;
         }
         if self.ai[3] < 0.0 {
             self.ai[3] += 1.0;
+        }
+        // `:58572-58579`: the confused rifleman's arming timer zeroes (the
+        // C# increments the negative timer first, then the confused reset).
+        if confused {
+            self.ai[3] = 0.0;
         }
         // `:58580-58594`'s arming: inside the 30-tick window the timer
         // advances only on the 800-px horizontal line of sight, then the
@@ -20597,6 +20631,94 @@ mod tests {
         let mut rng = UnifiedRandom::new(1);
         rifleman.update_vortex_rifleman(&w, &player, &mut rng);
         assert_eq!(rifleman.ai[3], 0.0, "no arming through the blocked walk");
+    }
+
+    /// W4-g4 — the confused shooter (`NPC.cs:59197-59201`): the Confused
+    /// debuff (31) zeroes the shot timer `ai[1]` and the aim octant `ai[2]`,
+    /// so the fire gate (`ai[2] > 0`) stays closed and no shot is queued.
+    /// The non-confused shooter at the half-cooldown fires.
+    #[test]
+    fn w4_g4_the_confused_shooter_never_fires() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX;
+        player.y = 20.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(1);
+        // The BrainScrambler mid-cycle: ai[1] = 40 (the 80-tick cooldown's
+        // half), ai[2] = 3 (the aim octant) — the fire arm's gate.
+        let mut calm = Npc::new(NpcKind::BrainScrambler, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        calm.ai[1] = 40.0;
+        calm.ai[2] = 3.0;
+        calm.update_martian_shooter(&w, &player, &mut rng);
+        assert!(!calm.wants_hostile_shot.is_empty(), "the calm shooter fires");
+
+        let mut confused = Npc::new(NpcKind::BrainScrambler, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        confused.ai[1] = 40.0;
+        confused.ai[2] = 3.0;
+        confused.buffs.add_buff(31, 600);
+        confused.update_martian_shooter(&w, &player, &mut rng);
+        assert_eq!(confused.ai[1], 0.0, "the confused reset zeroes the timer");
+        assert_eq!(confused.ai[2], 0.0, "the confused reset zeroes the octant");
+        assert!(confused.wants_hostile_shot.is_empty(), "the confused shooter never fires");
+    }
+
+    /// W4-g4 — the confused Vortex Rifleman (`NPC.cs:58470`/`:58566`/`:58576`):
+    /// the Confused debuff clears the leap state, blocks the leap arm and
+    /// zeroes the arming timer. The flight-homing mirror (`:58485`, the
+    /// `num114 = direction * -1` offset) is carried in the flight arm; the
+    /// confused reset clears `ai[2]` each tick so the arm is reached only
+    /// with the leap state re-armed (the C# reads the live field too).
+    #[test]
+    fn w4_g4_the_confused_rifleman_resets_the_leap_and_the_timer() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX;
+        player.y = 20.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(1);
+        let mut r = Npc::new(NpcKind::VortexRifleman, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        r.rifleman_rearmed = true;
+        r.ai[2] = 1.0; // the leap state
+        r.ai[3] = 10.0; // mid-arming
+        r.vy = 0.0;
+        r.buffs.add_buff(31, 600);
+        r.update_vortex_rifleman(&w, &player, &mut rng);
+        assert_eq!(r.ai[2], 0.0, "the confused reset clears the leap state");
+        assert_eq!(r.ai[3], 0.0, "the confused reset zeroes the arming timer");
+
+        // The leap arm is blocked: the player far above (pcy + 100 < y) with
+        // a clear line would leap the calm rifleman; the confused one stays.
+        let mut high = Player::spawn(&w);
+        high.x = 30.0 * TILE_PX;
+        high.y = 5.0 * TILE_PX;
+        let mut calm = Npc::new(NpcKind::VortexRifleman, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        calm.rifleman_rearmed = true;
+        calm.vy = 0.0;
+        calm.update_vortex_rifleman(&w, &high, &mut rng);
+        assert_eq!(calm.ai[2], 1.0, "the calm rifleman leaps toward the high player");
+        let mut conf = Npc::new(NpcKind::VortexRifleman, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        conf.rifleman_rearmed = true;
+        conf.vy = 0.0;
+        conf.buffs.add_buff(31, 600);
+        conf.update_vortex_rifleman(&w, &high, &mut rng);
+        assert_eq!(conf.ai[2], 0.0, "the confused rifleman never leaps");
+    }
+
+    /// W4-g4 — the engineer (386) and zapper (389) confused resets
+    /// (`NPC.cs:58986-58989` / `:59048-59051`): the Confused debuff parks the
+    /// work timer `ai[2]` at −60 ahead of the walker.
+    #[test]
+    fn w4_g4_the_confused_engineer_and_zapper_park_the_work_timer() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX;
+        player.y = 20.0 * TILE_PX;
+        for kind in [NpcKind::MartianEngineer, NpcKind::GigaZapper] {
+            let mut n = Npc::new(kind, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+            n.ai[2] = 30.0;
+            n.buffs.add_buff(31, 600);
+            n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(1));
+            assert_eq!(n.ai[2], -60.0, "{kind:?}: the confused reset parks ai[2]");
+        }
     }
 
     /// DW-3.4 — `NPC.CanBeChasedBy` (`NPC.cs:90030-90041`) over the gate's
