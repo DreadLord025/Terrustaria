@@ -7115,6 +7115,70 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI()`'s aiStyle-6 block (`Projectile.cs:24100-24228`) — the
+    /// purification-powder family's flight: the ×0.95 drag, the 180-tick
+    /// life, the `ai[1] == 0` first-tick dust burst (W4-e3: the seam) and
+    /// the 1019/1051's slow-kill. The `WorldGen.Convert` tile-spread block
+    /// (`:24152-24223`) is the tile lane's documented skip (no rand draw).
+    /// The kinds (10/11/463/1019/1051) have no ported rows yet — the arm is
+    /// kind-gated at the dispatch so it stays a no-op until they land.
+    fn ai_style6(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust::ProjDust {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
+        // `:24102-24103` — the family flags.
+        let flag = self.kind == 1051;
+        let flag2 = self.kind == 1019 || flag;
+        // `:24104-24109` — the drag, the age counter, the 180-tick kill.
+        self.vel *= 0.95;
+        self.ai[0] += 1.0;
+        if self.ai[0] == 180.0 {
+            self.kill();
+        }
+        // `:24110-24151` — the first-tick burst.
+        if self.ai[1] == 0.0 {
+            self.ai[1] = 1.0;
+            let mut num51 = 10 + self.kind as i32;
+            let mut num52 = 30;
+            if self.kind == 463 {
+                num51 = 231;
+            }
+            if flag2 {
+                num51 = 0;
+                num52 = 40;
+            }
+            if flag {
+                num52 = 50;
+            }
+            crate::projectile_dust::style6_burst(self, world, &mut d, num51, num52, flag, flag2);
+        }
+        // `:24152-24223` — the WorldGen.Convert tile spread (the tile lane's
+        // skip; no rand draw).
+        // `:24224-24227` — the 1019/1051's slow-kill.
+        if flag2 && self.vel.length() < 0.5 {
+            self.kill();
+        }
+    }
+
+    /// `AI_152_SuperStarSlash` (`Projectile.cs:22230-22351`) is OWNED by the
+    /// pushed W4-d16 lane (`projectile_ai_misc::ai_super_star_slash` + the
+    /// `152 =>` dispatch + the 729/976/977/1045 rows). W4-e3 does NOT
+    /// duplicate the machine: its four dust sites (`:22297`/`:22308` the
+    /// 977/1045 centre trail, `:22336` the 976 trail, `:22345` the 976
+    /// one-shot burst) are STAGED as `projectile_dust::star_slash_dust` /
+    /// `star_slash_976` with draw-mirror witnesses; the merge reconciliation
+    /// replaces d16's count-only skip blocks with those emitter calls (the
+    /// gate draws d16 keeps — `Next(8)`/`Next(3)` + the `NextFloat` pairs —
+    /// are exactly the emitters' leading draws).
+
     /// `AI()`'s aiStyle-21 music-note arm (`Projectile.cs:25585-25606`): the
     /// Magical Harp's 76/77/78. The rotation clamps `vx·0.1` to ±0.6; the
     /// speed decays by `ai[2]` per tick toward the `3·|ai[0]/2+0.5|` floor
@@ -7515,7 +7579,24 @@ impl Projectile {
     /// clamp, `rotation += 0.3f * direction`, and the per-type bounce kill
     /// threshold (5 default, 7 for the WaterBolt's lava bounce, 6 for the
     /// ball of fire, 8 for the ball of frost).
-    fn ai_ball_of_fire(&mut self, world: &World) {
+    ///
+    /// W4-e3 — the dust chain (`:24259-24336`) spawns through the
+    /// `projectile_dust` seam: the WaterBolt's lava burst + trail + 172
+    /// ladder, the 95/96 dust-75, the 253 dust-135 pair, the default dust-6
+    /// pair. The interleaved gore gate (`:24265`) keeps its draws; the 502
+    /// disco light stays the light lane's skip.
+    fn ai_ball_of_fire(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust::ProjDust {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         // `:24235-24244`: the one-shot sound gates of the Golem fireball 258
         // and the hostile cursed flame 96 — `localAI[0]` latches 1 and the
         // `SoundID.Item20` whoosh queues at `base.position` (S1-E-21h: the
@@ -7527,7 +7608,7 @@ impl Projectile {
         // `:24245-24301`: the WaterBolt's own block — the `extraUpdates = 5`
         // remap first (read off the *previous* tick's `ai[1]`, as the C#
         // orders it), then the lava probe at the centre that reverses the fall
-        // and marks `ai[1] = 1f`. The dust/gore spawns are SKIPPED.
+        // and marks `ai[1] = 1f`.
         if self.kind == WATER_BOLT {
             if self.ai[1] == 1.0 {
                 self.extra_updates = 5;
@@ -7541,11 +7622,36 @@ impl Projectile {
                 if in_lava {
                     self.ai[1] = 1.0;
                     self.vel.y = -self.vel.y;
+                    // `:24259-24264` — the four dust-31 lava puffs.
+                    crate::projectile_dust::style8_water_bolt_lava(self, world, &mut d);
+                    // `:24265-24271` — the gore gate (the gore lane's skip;
+                    // the Next(3) + the taken branch's Next(61,64) stay).
+                    if d.rng.next_range(0, 3) == 0 {
+                        let _ = d.rng.next_range(61, 64);
+                    }
                 }
             }
+            // `:24274-24278` — the ai[1] == 1 dust-31 trail.
+            crate::projectile_dust::style8_water_bolt_trail(self, world, &mut d);
+            // `:24279-24300` — the dust-172 ladder.
+            crate::projectile_dust::style8_water_bolt_172(self, world, &mut d);
+        } else if self.kind == 502 {
+            // `:24302-24308` — the disco light (the light lane's skip; no
+            // rand draw).
+        } else if matches!(self.kind, CURSED_FLAME_FRIENDLY | CURSED_FLAME) {
+            // `:24309-24313` — the 95/96 dust-75.
+            crate::projectile_dust::style8_cursed_flame(self, world, &mut d);
+        } else if self.kind == BALL_OF_FROST {
+            // `:24314-24323` — the 253 dust-135 pair.
+            crate::projectile_dust::style8_frost(self, world, &mut d);
+        } else {
+            // `:24324-24336` — the default dust-6 pair (the 258's
+            // getGoodWorld noLight arm rides the seed flag).
+            let get_good_world = world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+            crate::projectile_dust::style8_default(self, world, &mut d, get_good_world);
         }
-        // `:24304-24337`: the per-type dust spawns (the 502 disco light, the
-        // 95/96 cursed flame, the 253 frost, the default 6) are SKIPPED.
         // `:24338-24341`: the gravity timer — the WaterBolt reuses `ai[1]` as
         // its lava-bounce marker and 96/258 as their sound gate, so all three
         // keep the counter at rest and never reach the gravity.
@@ -17692,7 +17798,7 @@ impl ProjectilePool {
                         // it. The position is AI-set (the hand pin), so no
                         // `kill_step` runs.
                         20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
-                        8 => self.slots[i].ai_ball_of_fire(world),
+                        8 => self.slots[i].ai_ball_of_fire(world, rng, dust, dust_ctx),
                         24 => self.slots[i].ai_crystal_storm(world),
                         // S1-P-i14 (V5 gate) — `AI_078`
                         // (`Projectile.cs:30762-30790`): the Xenopopper
@@ -17793,6 +17899,24 @@ impl ProjectilePool {
                         // its segment spawn back to the pool, so it is a
                         // pool-side step like the magnet sphere's.
                         4 => self.vilethorn_step(i, world, rng, dust, dust_ctx),
+                        // W4-e3 — `AI()`'s `else if (this.aiStyle == 6)`
+                        // (`Projectile.cs:24100-24228`): the purification
+                        // powder family's drag + first-tick dust burst. The
+                        // kinds (10/11/463/1019/1051) have no rows yet — the
+                        // arm is kind-gated so it stays a no-op until they
+                        // land (the aiStyle-5 precedent).
+                        6 => {
+                            if matches!(self.slots[i].kind, 10 | 11 | 463 | 1019 | 1051) {
+                                self.slots[i].ai_style6(world, rng, dust, dust_ctx);
+                            }
+                        }
+                        // (W4-e3 keep-one: `AI_152_SuperStarSlash` is the
+                        // pushed W4-d16 lane's machine —
+                        // `projectile_ai_misc::ai_super_star_slash` + the
+                        // `152 =>` dispatch + the kind rows. Its four dust
+                        // sites are staged in `projectile_dust`
+                        // (`star_slash_dust`/`star_slash_976`); the merge
+                        // feeds them through d16's skip blocks.)
                         // (Resync keep-one: the aiStyle-5 falling stars ride
                         // main's kind-gated i17 arm above — extended there
                         // with the i22 Starfury 9 / Star Cannon 955 rows.)
@@ -23749,11 +23873,26 @@ mod s1_e_21h_sound_tests {
         World::new("t".into(), 64, 64)
     }
 
+    /// W4-e3 — the aiStyle-8 arm's dust seam fixtures: a scratch pool + a
+    /// permissive ctx (the whole world on-screen) and a seeded stream.
+    fn dust_fixtures(w: &World) -> (tr_core::particles::DustPool, tr_core::particles::SpawnCtx, tr_core::UnifiedRandom) {
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        (tr_core::particles::DustPool::new(), ctx, tr_core::UnifiedRandom::new(7))
+    }
+
     /// The first-tick cue latches: one `(2, style, position, 0)` intent per
     /// arm, fired once (the latch flag holds), at the C#'s `base.position`.
     #[test]
     fn s1_e_21h_the_first_tick_latches_queue_their_style_cues() {
         let w = air();
+        let (mut dust, ctx, mut rng) = dust_fixtures(&w);
         // (kind, arm runner, expected style, latch read) — the aiStyle-8
         // gate (`:24235-24244`), the aiStyle-27 shared latch
         // (`:26529-26540`), the aiStyle-28 latch (`:26648-26674`) and the
@@ -23779,7 +23918,7 @@ mod s1_e_21h_sound_tests {
                 ..Default::default()
             };
             match proj_data(kind).map(|d| d.ai_style) {
-                Some(8) => p.ai_ball_of_fire(&w),
+                Some(8) => p.ai_ball_of_fire(&w, &mut rng, &mut dust, &ctx),
                 Some(27) => p.ai_unholy_trident(&w),
                 Some(28) => p.ai_frost_bolt(&w),
                 Some(50) => p.ai_inferno_fork(&w),
@@ -23793,7 +23932,7 @@ mod s1_e_21h_sound_tests {
             // The latch holds: a second tick queues nothing new.
             p.wants_sound = None;
             match proj_data(kind).map(|d| d.ai_style) {
-                Some(8) => p.ai_ball_of_fire(&w),
+                Some(8) => p.ai_ball_of_fire(&w, &mut rng, &mut dust, &ctx),
                 Some(27) => p.ai_unholy_trident(&w),
                 Some(28) => p.ai_frost_bolt(&w),
                 Some(50) => p.ai_inferno_fork(&w),

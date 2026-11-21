@@ -803,6 +803,315 @@ pub(crate) fn style5_comet_tail(p: &Projectile, world: &World, d: &mut ProjDust)
 }
 
 // ---------------------------------------------------------------------------
+// Batch 4 — the aiStyle-6 first-tick burst (`Projectile.cs:24128-24150`),
+// the aiStyle-8 magic-bolt chain (`:24259-24336`) and the STAGED aiStyle-152
+// emitters (`:22297-22345` — the machine is the pushed W4-d16 lane's
+// `projectile_ai_misc::ai_super_star_slash`; these emitters replace its
+// count-only skip blocks at the merge, the e2 "staged emitters" precedent).
+// ---------------------------------------------------------------------------
+
+/// `:24110-24150` — the aiStyle-6 first-tick (`ai[1] == 0`) dust burst: the
+/// 10/11/463/1019/1051 family's `num52` dust (the 1051's per-dust `Next(3)`
+/// type pick, the 1019/1051's noGravity/scale/velocity ladder). The caller
+/// owns the `ai[1]` latch and the `num51`/`num52` parameter ladder.
+pub(crate) fn style6_burst(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    mut num51: i32,
+    num52: i32,
+    flag: bool,
+    flag2: bool,
+) {
+    for num53 in 0..num52 {
+        if flag {
+            // `:24132` — the 1051's per-dust type pick.
+            num51 = if d.rng.next_range(0, 3) == 0 { 309 } else { 0 };
+        }
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            num51,
+            p.vel.x,
+            p.vel.y,
+            50,
+            Color::default(),
+            1.0,
+        );
+        if flag2 {
+            let dust = d.pool.slot_mut(idx);
+            dust.no_gravity = num53 % 3 != 0;
+            if !dust.no_gravity {
+                dust.scale *= 1.25;
+                dust.velocity /= 2.0;
+                dust.velocity.y -= 2.2;
+            } else {
+                dust.scale *= 1.75;
+                dust.velocity += p.vel * 0.65;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 8 — the magic-bolt chain (`Projectile.cs:24259-24336`).
+// ---------------------------------------------------------------------------
+
+/// `:24259-24264` — the 27 Water Bolt's lava-bounce burst: four dust-31
+/// (×0.6 velocity, Y −2). The trailing `Next(3)` gore gate (`:24265-24271`)
+/// is the gore lane's skip (the caller keeps its draws).
+pub(crate) fn style8_water_bolt_lava(p: &Projectile, world: &World, d: &mut ProjDust) {
+    for _ in 0..4 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            31,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            1.5,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity *= 0.6;
+        dust.velocity.y -= 2.0;
+    }
+}
+
+/// `:24274-24278` — the 27 Water Bolt's `ai[1] == 1` dust-31: the `Next(2)`
+/// gate, then the centre puff (×0.2 velocity, scale 0.8).
+pub(crate) fn style8_water_bolt_trail(p: &Projectile, world: &World, d: &mut ProjDust) {
+    if p.ai[1] == 1.0 && d.rng.next_range(0, 2) == 0 {
+        let (cx, cy) = p.center();
+        let idx = d.new_dust(
+            world,
+            Vec2::new(cx, cy),
+            0,
+            0,
+            31,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            0.8,
+        );
+        d.pool.slot_mut(idx).velocity *= 0.2;
+    }
+}
+
+/// `:24279-24300` — the 27 Water Bolt's dust-172 trail: the `ai[1] == 0 ||
+/// Next(5) == 0` gate, then the five-dust ladder (the 4-px inset box, ×0.1
+/// velocity + 0.1·vel, the position pull) and the `Next(5)` dust-172 extra
+/// (×0.25 velocity + 0.5·vel, scale 0.6).
+pub(crate) fn style8_water_bolt_172(p: &Projectile, world: &World, d: &mut ProjDust) {
+    if p.ai[1] == 0.0 || d.rng.next_range(0, 5) == 0 {
+        for num66 in 0..5 {
+            let num67 = p.vel.x / 3.0 * num66 as f32;
+            let num68 = p.vel.y / 3.0 * num66 as f32;
+            let num69 = 4;
+            let idx = d.new_dust(
+                world,
+                Vec2::new(p.pos.x + num69 as f32, p.pos.y + num69 as f32),
+                p.w as i32 - num69 * 2,
+                p.h as i32 - num69 * 2,
+                172,
+                0.0,
+                0.0,
+                100,
+                Color::default(),
+                1.2,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.no_gravity = true;
+            dust.velocity *= 0.1;
+            dust.velocity += p.vel * 0.1;
+            dust.position.x -= num67;
+            dust.position.y -= num68;
+        }
+        if d.rng.next_range(0, 5) == 0 {
+            let num71 = 4;
+            let idx = d.new_dust(
+                world,
+                Vec2::new(p.pos.x + num71 as f32, p.pos.y + num71 as f32),
+                p.w as i32 - num71 * 2,
+                p.h as i32 - num71 * 2,
+                172,
+                0.0,
+                0.0,
+                100,
+                Color::default(),
+                0.6,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.velocity *= 0.25;
+            dust.velocity += p.vel * 0.5;
+        }
+    }
+}
+
+/// `:24309-24313` — the 95/96 cursed flame's dust-75: one puff at
+/// `position + velocity`, scale `3·scale`, noGravity.
+pub(crate) fn style8_cursed_flame(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let idx = d.new_dust(
+        world,
+        Vec2::new(p.pos.x + p.vel.x, p.pos.y + p.vel.y),
+        p.w as i32,
+        p.h as i32,
+        75,
+        p.vel.x,
+        p.vel.y,
+        100,
+        Color::default(),
+        3.0 * p.scale,
+    );
+    d.pool.slot_mut(idx).no_gravity = true;
+}
+
+/// `:24314-24323` — the 253 Ball of Frost's two dust-135 (×0.2 velocity,
+/// scale 2, noGravity, ×0.3 velocity).
+pub(crate) fn style8_frost(p: &Projectile, world: &World, d: &mut ProjDust) {
+    for _ in 0..2 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            135,
+            p.vel.x * 0.2,
+            p.vel.y * 0.2,
+            100,
+            Color::default(),
+            2.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity.x *= 0.3;
+        dust.velocity.y *= 0.3;
+    }
+}
+
+/// `:24324-24336` — the aiStyle-8 default's two dust-6 (×0.2 velocity,
+/// scale 2, noGravity, ×0.3 velocity); the 258 Golem fireball's
+/// `getGoodWorld` arm sets noLight.
+pub(crate) fn style8_default(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    get_good_world: bool,
+) {
+    for _ in 0..2 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            6,
+            p.vel.x * 0.2,
+            p.vel.y * 0.2,
+            100,
+            Color::default(),
+            2.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        if p.kind == 258 && get_good_world {
+            dust.no_light = true;
+        }
+        dust.no_gravity = true;
+        dust.velocity.x *= 0.3;
+        dust.velocity.y *= 0.3;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 152 — the SuperStarSlash (`Projectile.cs:22230-22351`). STAGED:
+// the machine + dispatch + kind rows are the pushed W4-d16 lane's
+// (`projectile_ai_misc::ai_super_star_slash`); these emitters replace its
+// count-only dust skip blocks at the merge. The gate draws d16 keeps
+// (`Next(8)` / `Next(3)` + the `NextFloat` pairs) are exactly the emitters'
+// leading draws — the reconciliation is a drop-in.
+// ---------------------------------------------------------------------------
+
+/// `:22292-22312` — the 977/1045 Zenith slash's dust: the `Next(8)` gate,
+/// then the dust-172 (977) / dust-229 (1045) at the centre (noGravity, the
+/// `NextVector2Circular(1,1)` + 0.5·vel velocity). The caller owns the
+/// ×0.96 drag.
+pub(crate) fn star_slash_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let dust_type = if p.kind == 977 { 172 } else { 229 };
+    if d.rng.next_range(0, 8) == 0 {
+        let (cx, cy) = p.center();
+        let idx = d.new_dust_direct(
+            world,
+            Vec2::new(cx, cy),
+            0,
+            0,
+            dust_type,
+            p.vel.x * 0.1,
+            p.vel.y * 0.1,
+            100,
+            Color::default(),
+            0.9,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.position = Vec2::new(cx, cy);
+        dust.velocity = next_vector2_circular(d.rng, 1.0, 1.0) + p.vel * 0.5;
+    }
+}
+
+/// `:22334-22347` — the 976 Terraprisma slash's dust: the `Next(3)` dust-40
+/// trail (noGravity, ×0.5 velocity), then the `localAI[1] == 0` one-shot
+/// 10-dust burst (each with the two `NextFloat` velocity draws). The caller
+/// owns the `localAI[1]` latch (set AFTER this call, as the C# orders it).
+pub(crate) fn star_slash_976(p: &Projectile, world: &World, d: &mut ProjDust) {
+    if d.rng.next_range(0, 3) == 0 {
+        let idx = d.new_dust_direct(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            40,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.2,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity = p.vel * 0.5;
+    }
+    if p.local_ai[1] == 0.0 {
+        for _ in 0..10 {
+            let idx = d.new_dust_direct(
+                world,
+                p.pos,
+                p.w as i32,
+                p.h as i32,
+                40,
+                0.0,
+                0.0,
+                0,
+                Color::default(),
+                0.7,
+            );
+            // `:22345` — the velocity: SafeNormalize(UnitY).RotatedBy(
+            // NextFloat·2π·0.25) · (NextFloat·3). TWO NextFloat draws.
+            let angle = d.rng.next_float() * (std::f32::consts::PI * 2.0) * 0.25;
+            let mag = d.rng.next_float() * 3.0;
+            let dir = crate::bow_launch::rotated_by(
+                crate::bow_launch::safe_normalize(p.vel, Vec2::Y),
+                angle as f64,
+            );
+            d.pool.slot_mut(idx).velocity = dir * mag;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
 // same pool call on a twin stream; run with
@@ -1481,6 +1790,295 @@ mod tests {
             }
             assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
         }
+    }
+
+
+    /// W4-e3 batch 4 — `:24110-24150`: the aiStyle-6 burst's parameter
+    /// ladder — the plain 30-dust (num51 = 10+kind), the 1019/1051 40/50-dust
+    /// noGravity ladder (num53 % 3: the gravity dust ×1.25 scale / ÷2 vel /
+    /// −2.2 Y, the noGravity ×1.75 / +0.65·vel), the 1051's per-dust Next(3)
+    /// type pick (309 vs 0). Mirrored.
+    #[test]
+    fn w4_e3_b4_style6_burst_ladder_and_type_pick() {
+        let w = world();
+        let c = ctx();
+        // The plain 10-kind: 30 dusts, type 20, no post-arms.
+        let p = proj(10);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(161);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(161);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style6_burst(&p, &w, &mut d, 20, 30, false, false);
+        for _ in 0..30 {
+            mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 10, 10, 20,
+                p.vel.x, p.vel.y, 50, Color::default(), 1.0,
+            );
+        }
+        assert_eq!(active(&pool).len(), 30);
+        for i in 0..30 {
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).dust_type, 20);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The 1051: 50 dusts, per-dust Next(3) pick, the flag2 ladder.
+        let q = proj(1051);
+        let mut qpool = DustPool::new();
+        let mut qrng = UnifiedRandom::new(161);
+        let mut qmirror = UnifiedRandom::new(161);
+        let mut qd = ProjDust { pool: &mut qpool, ctx: &c, rng: &mut qrng };
+        style6_burst(&q, &w, &mut qd, 0, 50, true, true);
+        assert_eq!(active(&qpool).len(), 50);
+        for num53 in 0..50 {
+            let t = if qmirror.next_range(0, 3) == 0 { 309 } else { 0 };
+            assert_eq!(qpool.slot(num53).dust_type, t, "the per-dust pick");
+            let no_gravity = num53 % 3 != 0;
+            assert_eq!(qpool.slot(num53).no_gravity, no_gravity);
+            if !no_gravity {
+                assert!(qpool.slot(num53).velocity.y < 0.0, "the −2.2 Y kick");
+            }
+        }
+        assert_eq!(qrng.next_range(0, 1000), qmirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 batch 4 — `:24259-24300`: the WaterBolt's lava burst (4 dust-31
+    /// ×0.6 −2 Y), the ai[1]==1 Next(2) centre trail (×0.2) and the
+    /// ai[1]==0 five-dust 172 ladder + the Next(5) extra. Mirrored.
+    #[test]
+    fn w4_e3_b4_water_bolt_lava_trail_and_ladder() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(27);
+        p.w = 16.0;
+        p.h = 16.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(171);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(171);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style8_water_bolt_lava(&p, &w, &mut d);
+        for _ in 0..4 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 16, 16, 31,
+                0.0, 0.0, 100, Color::default(), 1.5,
+            );
+            let md = mpool.slot_mut(idx);
+            md.velocity *= 0.6;
+            md.velocity.y -= 2.0;
+        }
+        assert_eq!(active(&pool).len(), 4);
+        // The 172 ladder (ai[1] == 0 → the gate short-circuits the Next(5)).
+        style8_water_bolt_172(&p, &w, &mut d);
+        for num66 in 0..5 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(p.pos.x + 4.0, p.pos.y + 4.0),
+                8, 8, 172, 0.0, 0.0, 100, Color::default(), 1.2,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity *= 0.1;
+            md.velocity += p.vel * 0.1;
+            md.position.x -= p.vel.x / 3.0 * num66 as f32;
+            md.position.y -= p.vel.y / 3.0 * num66 as f32;
+        }
+        if mirror.next_range(0, 5) == 0 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(p.pos.x + 4.0, p.pos.y + 4.0),
+                8, 8, 172, 0.0, 0.0, 100, Color::default(), 0.6,
+            );
+            let md = mpool.slot_mut(idx);
+            md.velocity *= 0.25;
+            md.velocity += p.vel * 0.5;
+        }
+        let act = active(&pool);
+        assert!(act.len() >= 9, "4 lava + 5 ladder (+ the extra)");
+        for &i in &act {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The ai[1]==1 trail: the Next(2) gate, the centre puff ×0.2.
+        p.ai[1] = 1.0;
+        let mut tpool = DustPool::new();
+        let mut trng = UnifiedRandom::new(171);
+        let mut tmpool = DustPool::new();
+        let mut tmirror = UnifiedRandom::new(171);
+        for _ in 0..10 {
+            let mut td = ProjDust { pool: &mut tpool, ctx: &c, rng: &mut trng };
+            style8_water_bolt_trail(&p, &w, &mut td);
+            if tmirror.next_range(0, 2) == 0 {
+                let (cx, cy) = p.center();
+                let idx = tmpool.new_dust(
+                    &mut tmirror, &c, &w, Vec2::new(cx, cy), 0, 0, 31,
+                    0.0, 0.0, 100, Color::default(), 0.8,
+                );
+                tmpool.slot_mut(idx).velocity *= 0.2;
+            }
+        }
+        assert_eq!(active(&tpool).len(), active(&tmpool).len());
+        for i in active(&tpool) {
+            assert_eq!(tpool.slot(i).velocity, tmpool.slot(i).velocity);
+        }
+        assert_eq!(trng.next_range(0, 1000), tmirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 batch 4 — `:24309-24336`: the cursed flame's dust-75 at
+    /// pos+vel (scale 3·scale, noGravity), the frost/default dust-135/6
+    /// pairs (×0.2 vel, scale 2, noGravity, ×0.3), the 258 getGoodWorld
+    /// noLight arm. Mirrored.
+    #[test]
+    fn w4_e3_b4_cursed_flame_frost_default_pairs() {
+        let w = world();
+        let c = ctx();
+        // The 95 cursed flame: one dust-75 at pos+vel.
+        let mut p = proj(95);
+        p.scale = 1.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(181);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(181);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style8_cursed_flame(&p, &w, &mut d);
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, Vec2::new(p.pos.x + p.vel.x, p.pos.y + p.vel.y),
+            10, 10, 75, p.vel.x, p.vel.y, 100, Color::default(), 3.0,
+        );
+        mpool.slot_mut(idx).no_gravity = true;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).position, mpool.slot(0).position);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert!(pool.slot(0).no_gravity);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The 258 default on a getGoodWorld: two dust-6, noLight.
+        let g = proj(258);
+        let mut gpool = DustPool::new();
+        let mut grng = UnifiedRandom::new(181);
+        let mut gd = ProjDust { pool: &mut gpool, ctx: &c, rng: &mut grng };
+        style8_default(&g, &w, &mut gd, true);
+        assert_eq!(active(&gpool).len(), 2);
+        for i in 0..2 {
+            assert_eq!(gpool.slot(i).dust_type, 6);
+            assert!(gpool.slot(i).no_light, "the getGoodWorld noLight");
+            assert!(gpool.slot(i).no_gravity);
+        }
+        // The 253 frost: two dust-135, no noLight.
+        let f = proj(253);
+        let mut fpool = DustPool::new();
+        let mut frng = UnifiedRandom::new(181);
+        let mut fd = ProjDust { pool: &mut fpool, ctx: &c, rng: &mut frng };
+        style8_frost(&f, &w, &mut fd);
+        assert_eq!(active(&fpool).len(), 2);
+        for i in 0..2 {
+            assert_eq!(fpool.slot(i).dust_type, 135);
+            assert!(!fpool.slot(i).no_light);
+        }
+    }
+
+    /// W4-e3 batch 4 (STAGED 152) — `:22292-22312`: the 977/1045 centre
+    /// trail's Next(8) gate + the NextVector2Circular(1,1) pair + 0.5·vel.
+    /// Mirrored; the emitter is the drop-in for d16's count-only skip.
+    #[test]
+    fn w4_e3_b4_star_slash_dust_centre_trail() {
+        let w = world();
+        let c = ctx();
+        for kind in [977u16, 1045] {
+            let p = proj(kind);
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(191);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(191);
+            for _ in 0..24 {
+                let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+                star_slash_dust(&p, &w, &mut d);
+                if mirror.next_range(0, 8) == 0 {
+                    let (cx, cy) = p.center();
+                    let dust_type = if kind == 977 { 172 } else { 229 };
+                    let idx = mpool.new_dust_direct(
+                        &mut mirror, &c, &w, Vec2::new(cx, cy), 0, 0, dust_type,
+                        p.vel.x * 0.1, p.vel.y * 0.1, 100, Color::default(), 0.9,
+                    );
+                    let unit_angle = std::f32::consts::PI * 2.0 * mirror.next_float();
+                    let unit = Vec2::new(
+                        (unit_angle as f64).cos() as f32,
+                        (unit_angle as f64).sin() as f32,
+                    );
+                    let r = mirror.next_float();
+                    let md = mpool.slot_mut(idx);
+                    md.no_gravity = true;
+                    md.position = Vec2::new(cx, cy);
+                    md.velocity = Vec2::new(unit.x * r, unit.y * r) + p.vel * 0.5;
+                }
+            }
+            let act = active(&pool);
+            assert_eq!(act.len(), active(&mpool).len(), "kind {kind}");
+            for &i in &act {
+                assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+                assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            }
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        }
+    }
+
+    /// W4-e3 batch 4 (STAGED 152) — `:22334-22347`: the 976's Next(3) trail
+    /// + the localAI[1]==0 one-shot 10-dust burst (the two NextFloat velocity
+    /// draws per dust). The latch is the CALLER's (set after the call) — the
+    /// second call with the latch set spawns only the gated trail.
+    #[test]
+    fn w4_e3_b4_star_slash_976_trail_and_one_shot_burst() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(976);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(201);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(201);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        star_slash_976(&p, &w, &mut d);
+        // Mirror the first call: the Next(3) trail gate + the 10-dust burst.
+        if mirror.next_range(0, 3) == 0 {
+            let idx = mpool.new_dust_direct(
+                &mut mirror, &c, &w, p.pos, 10, 10, 40,
+                0.0, 0.0, 0, Color::default(), 1.2,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity = p.vel * 0.5;
+        }
+        for _ in 0..10 {
+            let idx = mpool.new_dust_direct(
+                &mut mirror, &c, &w, p.pos, 10, 10, 40,
+                0.0, 0.0, 0, Color::default(), 0.7,
+            );
+            let angle = mirror.next_float() * (std::f32::consts::PI * 2.0) * 0.25;
+            let mag = mirror.next_float() * 3.0;
+            let dir = crate::bow_launch::rotated_by(
+                crate::bow_launch::safe_normalize(p.vel, Vec2::Y),
+                angle as f64,
+            );
+            mpool.slot_mut(idx).velocity = dir * mag;
+        }
+        let act = active(&pool);
+        assert_eq!(act.len(), active(&mpool).len());
+        assert!(act.len() >= 10, "the one-shot burst always fires");
+        for &i in &act {
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The caller latches localAI[1]; the second call draws only the gate.
+        p.local_ai[1] = 1.0;
+        let before = active(&pool).len();
+        let mut d2 = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        star_slash_976(&p, &w, &mut d2);
+        let gate = mirror.next_range(0, 3);
+        if gate == 0 {
+            mpool.new_dust_direct(
+                &mut mirror, &c, &w, p.pos, 10, 10, 40,
+                0.0, 0.0, 0, Color::default(), 1.2,
+            );
+        }
+        assert_eq!(active(&pool).len() - before, if gate == 0 { 1 } else { 0 });
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
 
 }
