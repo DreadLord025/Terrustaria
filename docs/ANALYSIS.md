@@ -39279,7 +39279,8 @@ click buffers; the player tick applies).
 
 ## The desert entrance residual (W4-g40 continuation, code-only, 2026-11-21)
 
-**Census first** (research `94-w4g40-biome-residual-census.md`): after the
+**Census first** (research `222-w4g40-biome-residual-census.md`, renumbered
+from 94 per the d54 research/150 registry): after the
 marble/granite residual closed (79361f00), the remaining C# biome classes
 were censused against the landed port. Co-lane claims READ, not touched:
 g44 owns FloatingIslands/IslandHouse (local census d32816ce + phase-2 tip),
@@ -39295,7 +39296,7 @@ tree-wide) — the real units are `Convert` (`WorldGen.cs:55085`) and
 (`desert_entrances.rs`, no branch since ab6c11f7). The shape-level port
 (97a7db29) skipped the stochastic modifiers and approximated three chains.
 Seventeen deviations found and closed verbatim (the full line-by-line list
-is in research 94); the load-bearing ones:
+is in research 222, renumbered from 94); the load-bearing ones:
 
 * `Shapes.Circle` (`Shapes.cs:33-49`) is a **y-major** row walk with the
   `(hr+1)²` inflation — not a normalised ellipse, and not x-major. With
@@ -39340,8 +39341,9 @@ chain is outcome-order-independent: a converted cell fails `OnlyTiles(53)`
 on any later visit; the larva Smooth chain is order-dependent in C#
 itself). The `SquareWallFrame`/`TileFrame` framing rides the post-pipeline
 seam. The hive carve's `PostPlacementEffect.Smooth`
-(`DesertHive.cs:197,216-218`) stays deferred — the next slice (the
-`tile_smooth_slope_one` seam now exists). `structures.AddStructure(area,
+(`DesertHive.cs:197,216-218`) closed with the W4-g40 hive-smooth slice
+(research 246 §2 — the effect map + the post-carve walk on the
+`tile_smooth_slope_one` seam, RNG-free). `structures.AddStructure(area,
 10)` (`DesertBiome.cs:43-44`) is the NON-protected list no ported
 `CanPlace` reads (`StructureMap.cs:19-52`) — a documented no-op, the
 thin-ice precedent.
@@ -39355,3 +39357,35 @@ NOT RUN — the Blotches ledger replayed independently, the circle walk
 order/extents, the SetTile mask, the IsSolid slope arms, the π literal,
 the squared bowl, the shifted larva shape, the direction draw, the
 anniversary stream separation, and the per-kind end-to-end replay.
+
+## The desert/marble family FINAL (W4-g40 close-out, code-only, 2026-11-21)
+
+Research `246-w4g40-desert-marble-final.md` is the lane-closing record
+(the census doc renumbered 94→222 per the d54 research/150 registry).
+Three census verdicts retire the dispatch's open questions: (1)
+**marble/granite MUSIC and runtime GROWTH do not exist in vanilla** —
+`MusicID.cs` has no marble/granite track, `UpdateAudio_DecideOnNewMusic`
+(`Main.cs:12175-12988`) and the `Convert`/`Grow*` families never read
+`ZoneMarble`/`ZoneGranite` or tiles 367/368 as a source; the zones' only
+runtime consumers are `Player.UpdateBiomes` and the out-of-scope RGB
+conditions. (2) The marble/granite SPAWN arms
+(`SetSpawnFlagsForChosenTile` `NPC.cs:1058-1141` + the cavern ladder
+`:5019-5042` — Medusa 480/Hoplite 481/GraniteGolem 482/GraniteFlyer 483)
+are UNCLAIMED at every tip but kind-gated on d40's roster merge —
+TASK-SEED with the prerequisite named, not ported (the
+consume-without-kind deviation). (3) The last unclaimed worldgen
+residual — the `DesertHive.PostPlacementEffect.Smooth` map
+(`DesertHive.cs:210-221`, the four mark sites `:284/:315/:331/:358`) —
+landed this round: `place_clusters_area` fills the hive-local effect
+grid, `full_desert` runs the post-carve x-major
+`Tile.SmoothSlope(applyToNeighbors:false)` walk on the
+`biomes::tile_smooth_slope_one` seam BEFORE `AddTileVariance` (the C#
+`Place` order). RNG-free; the shell edges gain slope/half-brick states,
+so both hash pins are stale-by-design where the hive fires (re-pin
+deferred); 3 witnesses WRITTEN NOT RUN. Compose maps measured hunk-by-hunk
+(research 246 §3): f42's sandstorm/mummy-tail vs g40's desert growth are
+disjoint (the only shared file `audio.rs` carries disjoint SFX-vs-MUSIC
+hunks); g17's ShakeTree/palm-ash hunks bracket g40's fossil-shatter and
+growth hunks without overlap in `editing.rs`/`kill.rs`/`growth.rs`; the
+BIOME-music ladder is g40's lane (P2) — g22/g23 own the MENU title-track
+ladder and cue plumbing only, keep-all-three with no duplicate arm.
