@@ -1,7 +1,7 @@
 # UNION-CONTRACT — the tile-draw pass family (g28/g29/g30/g31/g32) + the d56–d60 seam census
 
-**STATUS: FINAL — EXECUTED + ATTACHED (shadow) + TILEPASS-FINAL**
-(union-exec + attach + d-hunk prep + final phases, same branch
+**STATUS: FINAL — EXECUTED + ATTACHED (shadow) + TILEPASS-FINAL + RETIRED**
+(union-exec + attach + d-hunk prep + final + retire phases, same branch
 `task/W4-g31-tile-draw-pass-4`, code-only). The §1–§3
 keep/drop/rebind prescription was carried out IN-LANE — see §7 for the
 execution record. The attach phase censused the d-lane tips against
@@ -13,6 +13,13 @@ The FINAL phase (§9) executed the on-branch C-conflict resolutions
 (the `is_visible` promote-d60 keep-one), the 717 `lava_light_a`
 shadow-plan bind at the table-pass position and the §8.5 drip
 direct-bind order plan; the 85-witness inventory is pinned in §9.2.
+The RETIRE phase added the g84 multitile-mapping answer (§8.6), the
+d56-d60 latest-tip re-verify + the owner-lane receipts
+(research/136 §8.1/§8.2 — zero lane movement, zero stale
+instructions) and the FINAL merger-acceptance checklist (§10: gate
+command, the 85-witness name list, the A/B expectations, the
+scaffolding-drop steps, the ONE-`_rand` invariant, the
+g28/g29/g30/g32 keep-one branch-drop list).
 
 Merger assist for the TILE-PASS 5-WAY UNION. Written on `task/W4-g31-tile-draw-pass-4`
 (reconcile phase, code-only — NO code changes to any lane; this document is the
@@ -927,6 +934,11 @@ commit (item 4).
 | C6 (4 `solid_tile` twins) | two on-branch: `tile_ctor.rs:172` + `drawdata_cases_a.rs:129` — **bodies verified identical** (active ∧ TILE_SOLID ∧ ¬SOLID_TOP ∧ ¬half ∧ slope 0 ∧ ¬inactive, null ⇒ true) | keep-one stays a merge obligation per C6 (lowest-crate copy wins); no semantic conflict |
 | C7 (d58 chest position) | d58's hunk off-branch | merge obligation (MOVE to CAD step 8, never re-derive) |
 | `is_visible` promote-d60 (§1.4 correction) | g31's + pylons' copies ARE here | **EXECUTED**: `tr-render/src/tile_visibility.rs` (d60's shape, primitive params — tr-render has no tr-core dep so the correction's `&Tile` sketch cannot live there; the invisible bit is a parameter, d60 passes `false`, the union wrappers pass the real `World::invisible_block`); `tile_drains::is_visible` + `pylons::is_visible` rebound as thin wrappers, bodies deleted; d56's gate / d60's battery rebind at the merge |
+
+*(RETIRE-phase receipts: the C1/C3/C4/C7 owner lanes re-read at their
+tips — all unchanged, all obligations still open; the evidence table
++ the `is_visible`/g68-rescan off-branch halves:
+research/136 §8.2.)*
 
 ### 9.2 Witness inventory PIN (actual `#[test]` census, final tip)
 

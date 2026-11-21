@@ -547,3 +547,24 @@ verbatim. Spot re-verification of the two WIRED lanes' move-targets:
   are unchanged. `FillNeighbor::from_world` (:179, the real
   `World::invisible_block` bit) + its witness (:725) confirmed —
   the C4 rebind target exists exactly as §2 records.
+
+### 8.2 §9 owner-lane receipts (C1/C3/C4/C7 off-branch dispositions)
+
+The FINAL-phase §9.1 table left four pairs as off-branch merge
+obligations. Owner-lane receipts (tips re-read at retire, all
+unchanged — obligations STILL OPEN, none executed by their owners):
+
+| Pair | Owner lane / tip | Receipt (read evidence) | Status at retire |
+|---|---|---|---|
+| C1 (d57 TE-post vs d60 petals) | d57 `70f43aa72` / d60 `77429fe1d` | NO overlap verdict stands (§2): petals = tile 139 inside the battery chain, TE-post = `PostDrawTiles(true)`; d57 zero-RNG census unchanged | CLOSED as a question; no merge action needed |
+| C3 (d56 gate vs f15 dark-merge) | f15 `8ca19097d` | f15's tiles.rs still carries `let flame_tile = … \|\| glow.is_some()` (:799-802) + its witness asserting the term (:1925) — the fused gate NOT yet reborn as `tile_draw_gate(has_glow_texture, glow_mask_id)` params | OPEN — fold obligation: feed f15's record into d56's gate params, DELETE the fused term, re-pin the witness as the gate-argument assertion (§4); the 717 half binds `glow_mask_id: 362` together with the table-pass bind (§9.3) |
+| C4 (d59 vs f15 side-fill inputs) | f15 `8ca19097d` | f15's `tile_glow.rs::neighbor` (:55-58) STILL maps `FillNeighbor::from_tile` (invisible bit false); d59's `from_world` canonical confirmed at its tip | OPEN — one-line fold fix: `neighbor()` rebinds to `FillNeighbor::from_world` (the C# reads the real bit at both sites) |
+| C7 (d58 chest position) | d58 `a13635dcb` | the wired rewrite still sits INSIDE the dd block (:756, earlier than C# `:993`); its order witness still pins the dd-block markers | OPEN — F0 MOVE to CAD step 8 (never re-derive), witness re-pin per §4 with f15's `let (dd, glow)` marker |
+| `is_visible` rebinds (the executed keep-one's off-branch halves) | d56 `5d80b38a0` / d60 `77429fe1d` | d56's gate still INLINES the logic (`animated_tiles.rs:489-503`); d60's standalone `pub fn is_visible(tile: &Tile, …)` still at `tile_draw_particles.rs:442` | OPEN — both rebind to `tr_render::tile_visibility::is_visible` (primitive params) at the merge; d60's copy DROPS (its witness folds), d56's gate CALLS it |
+| g68 rescan drop (C5's off-branch half) | g68 `d247a1c9f` | `emit_liquid_drops_area` (:273) still WIRED via the frame/draw.rs rescan + persistent `App.tile_draw_rand` | OPEN — at the §8.5 bind, the rescan call DROPS (the CAD LiquidDrops arm owns emission); the persistent rand becomes the ONE `_rand` |
+
+**Final-table verdict: the retire phase found ZERO new lane movement
+and ZERO stale instructions.** The §8.3 wiring script, the F0-F4
+fold order and the C-pair dispositions are merge-ready as written;
+the only additions are §8.6's g84 mapping (new lane, new drop-list)
+and this receipt table.
