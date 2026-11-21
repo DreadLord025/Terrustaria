@@ -126,9 +126,14 @@ fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
 }
 
 /// The `flag24` door-bash type list (`NPC.cs:59996`), verbatim. NOTE 489
-/// (BloodZombie) is NOT in the list — on a non-blood-moon night its
-/// `ai[1]` resets every bash; on a blood moon `flag27` is false for
-/// EVERY type, so the Blood Zombie accumulates and opens doors too.
+/// (BloodZombie) is NOT in the list — flag27 (`:60007`,
+/// `(!bloodMoon || getGoodWorld) && !flag25 & flag24`) is false for it
+/// on EVERY night, so its `ai[1]` accumulates and it opens doors on a
+/// NORMAL night too. The flag24 types (the zombie family) reset `ai[1]`
+/// every bash on a normal night and only accumulate on a BLOOD MOON
+/// (or a graveyard 1/60 roll, flag25) — the blood-moon door-break is
+/// the flag24 types' privilege, not the Blood Zombie's (W4-g4 lane 15
+/// residual census: the old note had the distinction inverted).
 const DOOR_BASH_TYPES: [u16; 35] = [
     3, 691, 430, 590, 331, 332, 132, 161, 186, 187, 188, 189, 200, 223, 320, 321, 319, 21, 324,
     323, 322, 44, 196, 167, 77, 197, 202, 203, 449, 450, 451, 452, 481, 201, 635,
@@ -573,8 +578,9 @@ mod tests {
 
     /// The blood-moon gate (`NPC.cs:60007`): on a NORMAL night the zombie
     /// (type 3, in flag24) takes flag27 → `ai[1] = 0` before the +5, so it
-    /// never accumulates; the Blood Zombie (489, NOT in flag24) also
-    /// resets on a normal night but accumulates on a blood moon.
+    /// never accumulates. The Blood Zombie (489, NOT in flag24) never
+    /// takes flag27 — it accumulates on a normal night too (the W4-g4
+    /// residual census corrected the inverted note).
     #[test]
     fn the_blood_moon_gate_resets_the_bash_counter() {
         let mut w = ground();
@@ -589,6 +595,37 @@ mod tests {
         // flag27 resets ai[1] to 0, then +5 → 5 (not 13).
         assert_eq!(n.ai[1], 5.0, "the normal-night reset");
         assert!(!n.wants_door_bash.expect("the request").3, "never opens on a normal night");
+    }
+
+    /// W4-g4 lane 15 residual — the Blood Zombie's NORMAL-night door
+    /// open (`NPC.cs:59996`/`:60007`): 489 is NOT in flag24, so flag27
+    /// is false for it on every night — two bashes arm the open even
+    /// without a blood moon. The flag24 zombie twin resets (the test
+    /// above). This is the census's "fighters also open doors normally"
+    /// arm: the non-flag24 fighters, not the zombie family.
+    #[test]
+    fn w4_g4_the_blood_zombie_opens_doors_on_a_normal_night() {
+        let mut w = ground();
+        let i = w.index(21, 28);
+        w.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y: 0, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.blood_moon = false; // NORMAL night — no blood moon needed
+        let mut n = zombie_at(&w, 20);
+        n.kind = NpcKind::BloodZombie;
+        n.ai[1] = 8.0;
+        n.ai[2] = 59.0;
+        fighter_obstacle_scan(&mut n, &w, &mut UnifiedRandom::new(0));
+        // No flag27 reset: 8 + 5 → cap 10, the open armed on the FIRST
+        // bash (the flag24 zombie would reset to 5).
+        assert_eq!(n.ai[1], 10.0, "no reset — the non-flag24 accumulation");
+        assert!(n.wants_door_bash.expect("the request").3, "the open armed");
+        // The flag24 control on the same fixture: the zombie resets.
+        let mut z = zombie_at(&w, 20);
+        z.ai[1] = 8.0;
+        z.ai[2] = 59.0;
+        fighter_obstacle_scan(&mut z, &w, &mut UnifiedRandom::new(0));
+        assert_eq!(z.ai[1], 5.0, "the flag24 zombie resets on a normal night");
+        assert!(!z.wants_door_bash.expect("the request").3);
     }
 
     /// The else-flag8 reset (`NPC.cs:60280-60284`): with no floor under
