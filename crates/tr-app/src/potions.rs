@@ -1865,6 +1865,109 @@ mod tests {
         assert_eq!(q.buffs.buff_time[j], 300, "no expert extension for 94");
     }
 
+    /// W4-f49 lane 12 drink-while-sick census — the FULL interaction: mana
+    /// potions are NOT `potion`-flagged (`Item.cs`'s 110 row sets no
+    /// `potion`), so the Potion Sickness clock (`:52217-52220`) never gates
+    /// them, and Mana Sickness itself has NO use gate anywhere in
+    /// `ItemCheck` — a sick player drinks freely. Each drink's `AddBuff(94,
+    /// 300)` (`:51938`) stacks ADDITIVELY to the 600 cap
+    /// (`AddBuff_TryUpdatingExistingBuffTime` `:5410-5418`,
+    /// `BuffID.cs:53`), the next buff scan assigns `0.25 × time/300`
+    /// (`:10326` — up to 0.5 at the cap), and the recalc tail multiplies
+    /// `magicDamage` by `1 − reduction` ONCE per tick (`:25900-25903`).
+    /// The `manaPotionDelay = 0` write (`:51937`) keeps the QuickMana gate
+    /// open (the retail `ManaPotionDelay` debug flag is false).
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_drinking_while_mana_sick_stacks_the_timer_and_deepens_the_cut() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 5);
+        app.selected = 0;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana = 0;
+            p.mana_max = 200;
+        }
+        // Drink 1 — grants 94 @ 300 even with a Potion Sickness clock up
+        // (the mana potion is not potion-flagged, `:52217` never fires).
+        app.player.as_mut().unwrap().potion_delay = 3000;
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
+        {
+            let p = app.player.as_ref().unwrap();
+            let i = p.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+            assert_eq!(p.buffs.buff_time[i], 300);
+            assert_eq!(p.mana, 50);
+            assert_eq!(p.mana_potion_delay, 0, ":51937 keeps QuickMana open");
+        }
+        // Drink 2 WHILE SICK — no gate refuses; the timer stacks to 600.
+        app.swing = 0.0;
+        app.attack_cd = 0.0;
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held), "no sick-drink gate exists");
+        {
+            let p = app.player.as_ref().unwrap();
+            let i = p.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+            assert_eq!(p.buffs.buff_time[i], 600, "additive to the cap");
+            assert_eq!(p.mana, 100);
+        }
+        // Drink 3 — capped at 600, never beyond.
+        app.swing = 0.0;
+        app.attack_cd = 0.0;
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
+        {
+            let p = app.player.as_ref().unwrap();
+            let i = p.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+            assert_eq!(p.buffs.buff_time[i], 600, "the 600 cap");
+        }
+        // The scan + recalc: the stacked timer halves magic damage (0.5 at
+        // the cap), ONE multiply per tick — not compounded. The 601 grant
+        // leaves 600 after the tick-head decrement (`:9871-9873`), the
+        // editing.rs i19 witness convention.
+        let w = crate::test_world_helpers::ground();
+        {
+            let mut p = Player::spawn(&w);
+            p.buffs.add_buff(MANA_SICKNESS, 601);
+            p.update(&w, PlayerInput::default());
+            assert!(
+                (p.mana_sick_reduction - 0.5).abs() < 1e-4,
+                "0.25 × 600/300 after the head decrement: {}",
+                p.mana_sick_reduction
+            );
+            assert!(
+                (p.magic_damage - 0.5).abs() < 1e-4,
+                "the tail cut once: {}",
+                p.magic_damage
+            );
+            // A second tick at the same timer re-derives from the reset 1.0
+            // base — still 0.5, never 0.25 (no compounding).
+            p.buffs.buff_time[p.buffs.find_buff_index(MANA_SICKNESS).unwrap()] = 601;
+            p.update(&w, PlayerInput::default());
+            assert!(
+                (p.magic_damage - 0.5).abs() < 1e-4,
+                "assign-per-tick, not multiply: {}",
+                p.magic_damage
+            );
+        }
+        // The QuickMana path drinks while sick too (the chooser's only
+        // sickness gate is the POTION clock on potion-flagged rows).
+        let mut app2 = drink_app();
+        app2.inventory[0] = slot(110, 2);
+        {
+            let p = app2.player.as_mut().unwrap();
+            p.mana = 0;
+            p.mana_max = 200;
+            p.buffs.add_buff(MANA_SICKNESS, 600);
+            p.mana_sick = true;
+            p.mana_sick_reduction = 0.5;
+        }
+        assert!(quick_mana(&mut app2), "QuickMana has no mana-sick gate");
+        let p = app2.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 600, "the quick drink stacks to the cap");
+    }
+
     /// The flower drink's draws ride the PASSED stream key: the weapon path
     /// uses UpdatePlayers, the Last Prism interval pay uses UpdateProjectiles
     /// (`Main.cs:17775`). A pure mana potion (healLife 0) queues only the
