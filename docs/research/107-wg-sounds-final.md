@@ -163,3 +163,53 @@ per-screen, the batch-1 convention). The particles
 (the classic 24 + the arm exclusivity + the single-text MenuAccept).
 
 ---
+
+## §4 — the gen-progress screen sounds (item 4, d85/f23 co-lanes read)
+
+**The screen census** (every candidate file swept, `PlaySound`
+case-sensitive):
+
+| C# surface | sites | verdict |
+| --- | --- | --- |
+| `UIWorldLoad.cs` (the loading screen) | **1** — `:57` `PlaySound(11)`, `Update`'s Inventory-abort arm | LANDED: `session.rs::world_load_queue_abort` plays `Menu_Close` once per queue (the `!QueuedAbort` gate `:54`; the pure `world_load.rs::queue_abort_on_inventory` returns the edge, the caller owns the play — the S1-E-17 split). Witnessed: `flow.rs::s1_e_17_create_opens_the_loading_screen_with_a_live_job` (the +1/-0 played-count pin) + `world_load.rs::inventory_trigger_queues_abort_once` |
+| `UIGenProgressBar.cs` / `UIProgressBar.cs` (the bars) | **0** | CUE-LESS — the progress draw plays nothing (the per-pass tick is silent in vanilla) |
+| `WorldBuilding/*.cs` (the whole gen-pass machinery incl. `WorldGenerator.cs`, `GenPass.cs`, `GenerationProgress.cs`) | **0** | CUE-LESS — no pass-transition sounds exist; the f23 `pass_name_id`/`get_step_icon` table (`GenPassNameID.cs:223-330`) is icon-only |
+| `UIWorldGenDebug.cs` (the F5 debug gen screen, `:50-53` opens it) | **0** | CUE-LESS + DEBUG-DEFERRED (f23's port: the elements/icons landed, the screen has no driver — its own doc); zero sound work owed even when it wires |
+| `UIDebugLoadoutsList.cs` (the debug loadouts overlay — the task's "UILoadoutMenu") | **1** — `:123` `FadedMouseOver` `PlaySound(12)` | d85 landed the overlay (`ui/debug_loadouts.rs` + `clicks.rs::handle_debug_loadouts_clicks`); the Back close plays `Menu_Close` (`close_debug_loadouts`, the `IngameFancyUI.Close` `:167` cue), the search box plays `Menu_Tick` (`IngameFancyUI.OpenVirtualKeyboard` `:90`), the SearchCancel arms play 12/11 (`UIWrappedSearchBar.cs:153-164`) — all landed on d85. The `:123` HOVER 12 is the same g22b-class hover gap as §3 (the port has no per-element hover-edge dispatch for the overlays); recorded, not invented. The `OpenUIState` open path itself is CUE-LESS (`IngameFancyUI.cs:69-79` — no `PlaySound`) |
+| `UIDebugLoadoutItem.cs` (the rows) | **0** | the row apply (`LeftClick` `:143-148`) plays nothing itself — the close's 11 covers it (d85 landed) |
+| `EquipmentLoadout.cs` + `Player.TrySwitchingLoadout` (`Player.cs:5660-5683`) | **1** — `:5673` `PlaySound(12)` on the in-game loadout SWAP | the player loadout system is UNPORTED on every lane (`player.rs:1039`/:4889 "no loadouts" — main, d85, f23 all carry the note). NOT a gen-progress sound; the cue rides the loadout-system task when it lands (one `Menu_Tick` at the swap, after `RecordLoadoutChange`, before the net 147 — recorded for that lane) |
+
+**The bracket cues** (already landed, g24 batch 1 / S1-E-17): the
+generation-start 10 (`WorldGen.cs:6593`, `session.rs:61`) and the
+completion 10 (`:6603`, `session.rs:217`); the world-enter 11 (`:6843`,
+`app/mod.rs:2770`) belongs to the play flow, not the gen screen.
+
+**d85/f23 co-lane reads**: d85 @ `1d7d39a05` (the doc-sweep tip) carries the
+debug lists + loadout apply with the cues above; f23 @ `adf5c9083` (the
+deviation-pass tip) carries `worldgen_debug_elements.rs` /
+`worldgen_pass_icons.rs` / `pipeline.rs::pass_name_id` with ZERO sound
+sites (grep-verified). No overlap with g24: the abort-11 and the bracket
+10s are g24/S1-E-17 seams on main-heritage code, untouched by either lane.
+
+**Verdict**: the gen-progress surface owes NO new cue. The one audible
+site (the abort 11) is landed and witnessed; everything else is cue-less
+by census or a recorded gap owned by another lane (the overlay hover 12 →
+the g22b-class hover work; the loadout-swap 12 → the loadout-system task).
+The `world_load.rs` module doc now carries the census so the next reader
+does not re-derive it.
+
+---
+
+## Verification (code-only)
+
+No cargo/rustc/rustfmt/tests/graphify invoked. Witnesses WRITTEN NOT RUN:
+- `doors.rs::w4_g24_the_b3_adoption_contract_is_dyn_compatible` (§1)
+- `flow.rs::w4_g24_the_classic_option_seed_plays_the_chat_cue` (§3)
+
+Behaviour changes this round: the WorldSeed submit arm's two new cue
+branches (§3 — the classic 24 + the single-text MenuAccept); both are
+2D menu plays with ZERO `Main.rand` draws (case 24
+`LegacySoundPlayer.cs:957-962` draw-free; `menu_accept_style` carries
+variations 1 / pitch_variance 0 — the tracked path consumes no gameplay
+stream), so no RNG-stream drift. The census repairs (§2) and the doc
+contracts (§1/§4) are comment-only.
