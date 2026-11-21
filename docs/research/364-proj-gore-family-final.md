@@ -1,14 +1,23 @@
-# 360 — Projectile-gore-family FINAL + SEAL (W4-g16, task/W4-g16-gore-projectile-sites)
+# 364 — Projectile-gore-family FINAL + SEAL (W4-g16, task/W4-g16-gore-projectile-sites)
+
+> **Number chain: 247 (invalid self-pick) → 360 → 364.** The first draft
+> self-picked 247 — INVALID (247 = d10's §8 reservation, executed
+> `72431e61f`), renumbered to 360 pre-publish (`1254ff5e0`); 360 collided —
+> g10's `360-g10-pets-final` (`7414ba339`, 17:31) was first and KEEPS 360
+> per registry-150 §9 UNIFIED FINAL (d54 tip `b4c94432c`), row 364:
+> g16 `360-proj-gore-family-final` (`1254ff5e0` 17:40:42, third 360
+> claimant) → **364** (this rename; docs-only, no content change).
 
 Status: **SEALED** (2026-11-21, code-only — no cargo/tests/rustfmt/graphify
-invoked). Number per registry-150 LATEST (d54 tip `a15cb634b`, §8.7 FROZEN
-table): the 151-236 + 246-351 blocks consumed (191 assignments), NO
-self-picks below the free floor — **new docs take ≥360 after a registry
-check**; a fresh 364-ref `ls-tree docs/research/` sweep at this seal finds
-max seated **346** (g65's bible), nothing ≥352 → **360** claimed (the
-round-5 re-scan may re-assign; the §8.7 enforcement stands). The first
-draft of this doc self-picked 247 — INVALID (247 = d10's §8 reservation,
-executed `72431e61f`), renumbered before publish. Witnesses WRITTEN NOT
+invoked). Number per registry-150 §9 UNIFIED FINAL (d54 tip `b4c94432c`,
+§9.2 row 364): this doc was sealed as **360** under the then-current §8.7
+FROZEN table (d54 tip `a15cb634b` — the 151-236 + 246-351 blocks consumed
+(191 assignments), NO self-picks below the free floor — **new docs take
+≥360 after a registry check**; a fresh 364-ref `ls-tree docs/research/`
+sweep at this seal found max seated **346** (g65's bible), nothing ≥352 →
+**360** claimed). §9 re-assigned it to **364** (g10 first-add KEEPS 360).
+The first draft of this doc self-picked 247 — INVALID (247 = d10's §8
+reservation, executed `72431e61f`), renumbered before publish. Witnesses WRITTEN NOT
 RUN. C# cites are `decompiled/Terraria/Projectile.cs` (stable), read by
 DIRECT file path in ≤100-line windows (the junction is never recursed).
 Rust cites pin g16's tip **`72e4cae20`** and g65's pushed tip
@@ -284,11 +293,14 @@ re-derived, by direct read/grep/script:
   `:78329-78352`, `:78412-78444`).
 * The two divergences found: the 706 arm-coverage caveat (§3.2) and the
   503 stub draw-gate (§3.3) — both published, neither live today.
-* The registry check: registry-150 LATEST (d54 `a15cb634b` §8.7 FROZEN) —
-  the 151-351 blocks consumed, new docs ≥360; a fresh 364-ref ls-tree
-  sweep finds max seated 346, nothing ≥352 → **360** (this doc's claim;
-  the first draft's 247 self-pick was INVALID — d10's §8 reservation —
-  and renumbered before publish).
+* The registry check: registry-150 LATEST at seal time (d54 `a15cb634b`
+  §8.7 FROZEN) — the 151-351 blocks consumed, new docs ≥360; a fresh
+  364-ref ls-tree sweep found max seated 346, nothing ≥352 → **360**
+  claimed (the first draft's 247 self-pick was INVALID — d10's §8
+  reservation — and renumbered before publish). §9 UNIFIED FINAL (d54
+  `b4c94432c`, row 364) re-assigned the number: g10's 360 first-add
+  (`7414ba339` 17:31) KEEPS 360; this doc (17:40:42, third 360 claimant)
+  → **364** — chain 247-invalid-self → 360 → 364.
 * The 6 compose witnesses appended to `projectile_gore_o.rs` (§3.1) —
   WRITTEN NOT RUN.
 
@@ -311,6 +323,6 @@ named tips and MUST be re-pinned at the merge-time tips (the 111 §8
 re-census precedent). The kind assignments and draw-equivalence verdicts
 are tip-stable (the C# is frozen).
 
-**360 SEALED. The projectile-gore family's census, wiring, compose
+**364 SEALED (sealed as 360; renumbered per registry §9 row 364). The projectile-gore family's census, wiring, compose
 drop-table and bible are FINAL; the moving parts are the two published
 caveats (706 row-status, 503 stub gate) and the merge-time re-pin.**

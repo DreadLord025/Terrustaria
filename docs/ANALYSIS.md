@@ -39454,13 +39454,13 @@ ground machine 881/934/854/875/860 (:60816-62889, census-only
 blasts lane (`5fe6d940`, kinds 79/16/34/634/635/661) is a co-lane — read-only,
 no overlap with these gore rows, no double-feed.
 
-**SEAL (research/360, 2026-11-21, code-only)**: the family gate re-run
+**SEAL (research/364 — sealed as 360, renumbered per registry §9 row 364, 2026-11-21, code-only)**: the family gate re-run
 matches the f5 seal (111 §10.2) exactly — NPC 1345 / Projectile 165 /
 WorldGen 36 / Player 32 / Main 0 = Σ1578, the f5 window 853; the 165-line
 coverage cross-check finds every grep line cited by a `projectile_gore_*`
 module (159 exact + 6 range-cited — the `gore_j` 240-corner doc-comment
 line break + the `gore_m` frost table row), zero uncited. The g65 compose
-(research/360 §3): the death-dust drain (241 arms → **316** distinct kinds
+(research/364 §3): the death-dust drain (241 arms → **316** distinct kinds
 — the owed-pool "309" was the stale batch-28 census, 26i's "317" a +1
 miscount; the roster matches g65's 346 bible kind-for-kind) carries ZERO
 gore bodies and these modules ZERO dust refs — the bodies are DISJOINT,

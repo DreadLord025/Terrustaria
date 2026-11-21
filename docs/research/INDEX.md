@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 360 | Proj-gore-family FINAL + SEAL (W4-g16: the 165/165 coverage + the 1578 gate re-run, the g65-Kill compose — 316-kind drain DISJOINT bodies, the 12-hunk gore-stub drop-table, the 706/503 caveats, the family bible; number per registry-150 §8.7 new-docs-≥360) | `360-proj-gore-family-final.md` | ✅ SEALED |
+| 364 | Proj-gore-family FINAL + SEAL (W4-g16: the 165/165 coverage + the 1578 gate re-run, the g65-Kill compose — 316-kind drain DISJOINT bodies, the 12-hunk gore-stub drop-table, the 706/503 caveats, the family bible; number per registry-150 §9 row 364 — sealed as 360, chain 247-invalid-self→360→364, g10-360 first-add KEEPS) | `364-proj-gore-family-final.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

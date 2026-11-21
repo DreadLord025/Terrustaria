@@ -247,7 +247,7 @@ mod tests {
         assert_eq!(gore.slots()[..4].iter().filter(|g| g.active).count(), 4);
     }
 
-    // ---- W4-g16 SEAL compose witnesses (research/360 §3, WRITTEN NOT RUN) ----
+    // ---- W4-g16 SEAL compose witnesses (research/364 §3, WRITTEN NOT RUN) ----
     // Each pins a g16 body fn's draw row against the g65 `gore_census` stub
     // shape it supersedes at merge (projectile_death_dust.rs @ f6e07bb90):
     // the stub's let-_ discards become these real spawns, draw-for-draw.
