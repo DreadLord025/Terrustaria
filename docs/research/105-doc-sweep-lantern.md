@@ -443,3 +443,188 @@ claims read from this branch's tree (`lantern_sky.rs`, `audio.rs`,
 `craft.rs`/`recipes_gen.rs`, `frame.rs`, `editing.rs`, `world_events.rs`,
 `mod.rs`/`flow.rs`/`netglue.rs`). No working-tree code outside this lane
 was modified; every commit touches only this lane's files.
+
+---
+
+## 9. RETIRE phase — the keep-one publishes + the merge receipts
+
+The retire phase re-fetched every sibling tip (d17 `f6e5d7d3`, c39
+`4f72847e`, f41 `f21028f56` — all advanced past the FINAL phase's reads)
+and executed the four retire items. Code-only throughout: **no
+cargo/rustc/tests/rustfmt/graphify invoked**; every witness WRITTEN NOT
+RUN. One commit per item.
+
+### 9.1 The doves-volley duplicate — ADJUDICATED (d17 `8a9e035e` vs f40 `3d7a9b77`)
+
+**Byte-compare: NOT identical — divergent ports of the same C# arm**
+(`Player.cs:48383-48392`, re-read whole: `for (num131 = 0; num131 < 3;
+num131++)` → `NewProjectile(SpeedX: num4 + Next(-20,21)*0.1f, SpeedY:
+num5 + Next(-20,21)*0.1f, X: pointPosition.X, Y: pointPosition.Y, …)` →
+`return`). Both agree on the volley core: 3 shots, X draw before Y draw
+per shot, `Next(-20,21)*0.1` per axis, six `UpdatePlayers` draws, one
+consumable pay, the 4702 generic-tail single shot. The differences:
+
+| Axis | d17 `8a9e035e` | f40 `3d7a9b77` | C# truth |
+| --- | --- | --- | --- |
+| Arm shape | standalone `else if held.kind == 4682` in the per-item chain (the `:48383` position, after the Bat Scepter `:48344` arm) | merged into the `boomerang_use \|\| release_use` exact-centre arm with a `volley` count | the standalone arm; `return` before the tail |
+| Spawn point | `spawn` = centre `+dir*10` (the M4-PROJ-3 generic deviation), **no half-box subtract** | exact centre (`release_use` drops the lead) `− bw/2, − bh/2` | `pointPosition` (no lead) + `NewProjectile`'s `X − width/2` centre (`Projectile.cs:10876-10877`) |
+| Zero-aim | d17's gate refuses 4682 at zero aim (`!boomerang_use` only) | `release_use` escapes the gate; the facing fallback fires | `:47291-47296` fires at the facing — f40 correct |
+| Facing flip | none for the doves (the boomerang-only arm) | `ChangeDir` runs (`release_use`) | `:47214-47223` runs for every kind but 3611 — f40 correct |
+| Witness | count/band/consume (`thrown_app`, rows live on d17) | six-draw stream probe + lantern zero-draw contrast (`release_app`, rows absent here) | complementary — union keeps both |
+| Defect | none | the FINAL splice left `w4_f40_the_release_consume_spends_no_rng_draw` **unclosed** (the new test nested inside it; the file's brace census read 2046/2045) | — |
+
+**Verdict: KEEP d17's arm FORM (the standalone `else if` — it matches the
+C#'s per-item-chain structure and rides d17's live 851 rows), GRAFT f40's
+three corrections onto it** — the exact-centre spawn (`pcx − bw/2, pcy −
+bh/2`, the i08 precedent), the zero-aim escape + facing flip (the shared
+`release_use` prologue stays on this branch), and the six-draw witness.
+The f40 merged-arm variant (`volley` count inside the boomerang arm) is
+RETIRED; the boomerang arm returns to its i08 single-shot form. The
+lantern 4702's exact-centre geometry moves to a `release_spawn` override
+on the generic tail (`held.kind == 4702` → centre − half-box, other
+kinds keep `leaf_spawn` untouched) — the tail IS its C# arm (`:49437`),
+so the correction belongs there, not in the boomerang arm.
+
+Landed here: the d17-form doves arm (with the graft) in `editing.rs`'s
+per-item chain; the generic tail's `release_spawn` override; the
+brace-defect fix (the no-RNG witness closed with its stream assert
+restored); d17's `w4_d17_the_doves_release_three_and_the_lantern_one`
+witness re-derived VERBATIM beside the bone-javelin rig as the keep-one
+publish (UNION-SCOPED — its spawn-count asserts go green when d17's
+851/855 rows fold; this branch's spawn seam no-ops, the f40 draw-count +
+consume witnesses pin the branch-local behaviour); the module doc +
+anchor row re-pinned. **Merge instruction: take THIS branch's doves arm
++ the d17 witness copy here; DROP d17's original arm body's spawn-point
+half (replace with the grafted exact-centre form landed here) and its
+original witness copy (the duplicate); d17's zero-aim gate needs f40's
+`release_use` escape (this branch's gate line is the keeper).** The
+4682/4702 flight machine (`ai_dove`/`dove_movement`/`dove_bounce`) +
+the 851/855 rows stay d17's wholesale (c39 `bb19d79f` already retired
+its duplicate onto them — no third copy).
+
+### 9.2 The lantern WISH shop row — f41's eleven-row block dedupe-check
+
+f41's final sweep 2 (`be4cb841`) landed the Party Girl's full `case 13`
+rework: the eleven-row `BirthdayParty` gift block (`Chest.cs:2345-2358`,
+`StockWhen::PartyUp`), the day/night Bubble/Fog pair fix (`:2285-2294`),
+and — the overlap — **its own Release Lantern 4702 `LanternsUp` row**
+(`shop.rs:539`, `row(4702, StockWhen::LanternsUp)`).
+
+**Dedupe-check result: f40's row is NOT one of f41's eleven.** The
+eleven are 3749/3746/3739/3740/3741/3737/3738/3736/3745/3744/3743 — all
+`PartyUp`-gated gift rows at the shop TAIL (`:2345-2358`). The 4702 row
+is a separate `LanternsUp`-gated row mid-list (`:2309-2312`, after 4681,
+ahead of the always 4791 tail). Both branches ported it independently:
+
+| Piece | f40 (this branch) | f41 `be4cb841` | Verdict |
+| --- | --- | --- | --- |
+| row position | after 4681, before 4791 (`shop.rs:524`) | identical (`shop.rs:539`) | same — either survives |
+| gate variant | `StockWhen::LanternNight` | `StockWhen::LanternsUp` | KEEP f41's name (matches the C# property; f40's variant renames mechanically — the anchor row `shop.rs\|LanternNight,` re-points) |
+| `ShopFlags.lanterns_up` + default | present (`shop.rs:30`/`:84`) | present (`:42`/`:94`) | ONE field (identical name/type) |
+| gate eval | `LanternNight => flags.lanterns_up` (`:1282`) | `LanternsUp => flags.lanterns_up` (`:1341`) | one arm after the rename |
+| live feed | `npcs.rs:922` `lanterns_up(&app.world_events)` | `npcs.rs:988` identical expression | ONE feed line (byte-identical modulo comment) |
+| witnesses | gate-off/gate-on + num-order (`npc.rs:24168`) | row-order + prices inside its 11-row witness (`shop.rs:1834-1861`) | complementary — union keeps both (f41's tail-order witness covers 4702's position too) |
+
+**Merge instruction: KEEP f41's shop.rs `case 13` wholesale (it is the
+superset — the day/night fix + the eleven gift rows + the 4702 row);
+f40's row/gate-variant/feed contributions fold as the mechanical
+`LanternNight → LanternsUp` rename; keep ONE `lanterns_up` field + ONE
+feed line; both witness sets survive (f40's gate witness re-pins its
+variant name).** The Bubble/Fog day-gate fix and the eleven-row block
+are f41-unique — f40 does not duplicate them (its `case 13` keeps the
+old `Always`+`Night` pair; the merge takes f41's).
+
+### 9.3 The 114 merge-scope FINAL receipts (c39 `4f72847e`)
+
+c39's tip advanced past the FINAL phase's `8ecb288a` read: the final
+phase landed §8 (the v18 9-way union input, `5cdf6da6`), §9 (the
+event-flag census, `96b13e3b`), §10 (the wind/rain compose-verify,
+`9ac39893`) and §11 (the MERGE-SCOPE FINAL checklist + the 105/70
+cross-receipts, `4f72847e`). Its §11 cross-receipt of THIS note
+(`a06b16e4b`) confirms the four KEEP-c39 gate rows, the wind-drift /
+clear-order / case-4-label / invasion-id agreements — **no open
+conflict**. The per-item receipts against this branch's FINAL tip:
+
+| 114 §11 item | f40 receipt |
+| --- | --- |
+| 1 LanternSky module KEEP-f40 | **canonical here** — `render/lantern_sky.rs` complete (depth bands, the `:224` tint ladder, the reset, the world-seed graft `73eb9060`). c39's `event_skies.rs` lantern STATE fns verified STILL INTERIM at `4f72847e` (`activate_lanterns`/`deactivate_lanterns`/`generate_lanterns`/`reset_lantern`/`update_lanterns`/`draw_lanterns` all present, the module doc names this module the survivor). The merge folds this module wholesale + drops c39's lantern half + dedupes `Extra_134`. |
+| 2 world-load reset order | **canonical here** — the clear at `swap_world` (`mod.rs:2710-2711`) / `client_install_world` (`netglue.rs:2017-2018`), NOT `enter_loaded_world` (`5a19073e`). This branch's `world_clear` (`world_events.rs:336-349`) leaves `next_night_is_lantern_night` alone — matches `LanternNight.WorldClear` + c39's `world_clear` body. The PartySky reset (§1e follow-up-2) extends this seam at the merge. |
+| 6 TRWLD v18 union | **f40 claims NO v18 tail bytes.** This branch's `save.rs` stays `VERSION = 17` (verified); the lantern quad persists through f45's `.wld` flags-block sites (`flags.rs:211-214`/`:670-673`, the v≥207 arm — the quad is a `.wld`-native block, NOT a TRWLD tail field; §8.4's compose-contract witness pins it). The v18 union's 106-byte head (§8's table) carries no f40 row — the c43≡f45 identity block is f45's claim, keep-ONE there. f40's merge obligation: NONE on save.rs; the quad's restore rides f45's `from_wld` block. |
+| 7 Empress death arm (d125) | not f40's code — noted: the merge routes d125's arm through this branch's `on_game_event_cleared(ev, 23, first)` (id 23 default-arm, ARMS). The helper is canonical here (c39 `b5ab90db` re-derived it in-place). |
+| 9 d130 weather compose | f40's sky is flag-name-agnostic (§4's wind-drift verify — reads `speed_current` live). c39's §10a split-return shape makes the `lantern_night`/`lanterns_up` rename mechanical; the storm-deck clamp + full `LanternsCanPersist` graft are c39→d130 obligations, NOT f40 code. This branch keeps the base `!day_time` gate (`weather.rs:207`) — the merge takes c39's gate line (§3's table). |
+| 10 anchors | f40's 7 rows verified present on this tip (3 phase rows + 4 DOC-SWEEP rows; the release-arm row re-pinned by §9.1). c39's 7 rows (`7aff2857`) name no f40-owned marker — no cross-branch anchor collision. |
+
+**The your-module-canonical receipt:** c39 §7's remaining-scope list
+("f40's `render/lantern_sky.rs` module wholesale + the world-seed RNG
+graft + the shop wish row + the world-load reset") is discharged on this
+branch: the module is complete + canonical, the graft is IN it
+(`73eb9060`), the shop row lands per §9.2's keep-f41-superset verdict
+(f40's gate/feed contributions fold), the reset order is landed +
+witnessed. Nothing in c39's final phase changes f40's scope.
+
+### 9.4 The LANTERN-FAMILY declaration (the unified merger order)
+
+The family spans four lanes + the umbrella: **f40** (sky + use/luck —
+this branch), **c39** (gates + triggers + the umbrella exec), **f41**
+(party — the shop superset + the scheduler consumers), **d17** (the
+aiStyle-166 flight + rows). The unified merger order, folding research/
+105 §8 (this note) + c39 research/114 §7/§11 (its tip `4f72847e`):
+
+1. **d17's projectile machine first** (no lantern dependency): the
+   851/855 `proj_data` rows + `ai_dove`/`dove_movement`/`dove_bounce` +
+   `proj_frames` 4-row entries + c39's entity-light graft (`draw.rs`,
+   `bb19d79f`'s KEEP). The doves' spawn seam goes live here.
+2. **f40's use-side second** (§9.1's keep-one): this branch's doves arm
+   (the grafted d17 form) + the generic tail's `release_spawn` override
+   + the zero-aim/facing prologue + BOTH witness sets (d17's copy here
+   is the keeper). DROP d17's original arm spawn-point half + its
+   original witness copy.
+3. **c39's gates + triggers third**: the weather hunk takes c39's
+   `LanternGates::from_world` line + the storm-deck clamp + the rain
+   gate args (d130's landed order, §10b); the wind flag keeps ONE name
+   (mechanical rename, §10a); the trigger call sites keep ONE set (f40's
+   helper + ids — c39 re-derived the same signature, `b5ab90db`); the
+   five moon-boss death arms + World flags + the v18 tail ride c39's
+   §8 union layout (the 9-way 106-byte head, VERSION 18).
+4. **f40's sky module fourth**: `render/lantern_sky.rs` wholesale (the
+   seed graft included); DROP c39's `event_skies.rs` lantern half +
+   dedupe `Extra_134`; the PartySky depth-band retrofit (`4d184569`)
+   stays c39's; the world-load reset seam extends to the party sky
+   (§1e follow-up-2) on f40's clear sites.
+5. **f41's shop superset fifth**: `case 13` wholesale (the day/night
+   pair + the 11 gift rows + the 4702 row); f40's `LanternNight` variant
+   renames to `LanternsUp`; ONE `lanterns_up` field + feed line; both
+   witness sets survive (§9.2).
+6. **f45's persistence last** (the quad's `.wld` sites + the identity
+   block keep-ONE with c43): f40's clear-then-restore order is already
+   the contract (§8.4's typed-mirror witness compile-breaks on drift).
+
+Determinism notes for the merger: the doves' six draws ride the shared
+`loot_rng` UpdatePlayers borrow (both ports agree); the sky's private
+stream is `world_seed ^ 0x1A2B_3C4D` (both branches now carry the same
+graft — c39's interim copy seeds identically, `event_skies.rs:105`);
+the luck write is ONE beside-auras/zones snapshot (c39 retired its
+duplicate, `ce288dac`). All witnesses across the family remain WRITTEN
+NOT RUN until the merged tree runs the catalog command.
+
+### 9.5 RETIRE commits + verification
+
+| Hash | Item |
+| --- | --- |
+| (this phase's item 1) | §9.1 the doves adjudication + keep-one publish + brace fix |
+| (item 2) | §9.2 the shop-row dedupe receipt |
+| (item 3) | §9.3 the 114 FINAL receipts |
+| (item 4) | §9.4 the LANTERN-FAMILY declaration |
+
+Evidence: `Player.cs:48360-48404` (the doves arm re-read whole),
+`:47180-47253` (the anchor/facing prologue), `:47280-47309` (the
+zero-aim fallback), `:49425-49454` (the generic tail);
+`Projectile.cs:10860-10889` (`NewProjectile`'s half-box centre);
+`Chest.cs:2270-2369` (the whole Party Girl case — the 4702 row at
+`:2309-2312`, the eleven gift rows at `:2345-2358`); both doves commits
+read via `git show` (d17 `8a9e035e`, f40 `3d7a9b77`); both branch-tip
+`editing.rs`/`shop.rs`/`npcs.rs` reads via `git show`; c39's research/114
+whole at `4f72847e` (§7-§11) + its `event_skies.rs`/`save.rs` markers;
+f41's shop feed at `be4cb841`. The brace census (2046 open / 2045 close
+before the fix, balanced after) verified by direct file read. Code-only:
+no cargo/rustc/tests/rustfmt/graphify invoked.
