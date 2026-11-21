@@ -1,41 +1,50 @@
 # 132 — The persist MASTER MAP: three layers, one owner per field
 
-**Status: FINAL — THE PERSIST MASTER INDEX.** Written by W4-f44 crosspersist
-(branch `task/W4-f44-save-plr-2`, base `180b7430` audit DONE + the
-`d331ea7c` timestamp residual fix), closed by the FINAL phase (`63204f85`
-slot-11 property fix + this update). This doc sits ABOVE the per-layer
-contracts and is the **single entry point** for the persist merge:
+**Status: FINAL-FINAL — THE PERSIST MERGER-BIBLE (retire phase).** Written
+by W4-f44 crosspersist (branch `task/W4-f44-save-plr-2`, base `180b7430`
+audit DONE + the `d331ea7c` timestamp residual fix), closed by the FINAL
+phase (`63204f85` slot-11 property fix), re-opened and closed again by the
+RETIRE phase (this update): the L3 union is extended to **TEN claimants /
+a 107-byte fixed head** (§3-L3 — the old "97" carried an arithmetic slip,
+corrected below), the g88f v11 + 138-pushed receipts are seated (§2d/§3-L2),
+the g87 `dh` sentinel line is folded (§2e), and the e10 voice-write
+keep-one is final (§4). This doc sits ABOVE the per-layer contracts and is
+the **single entry point** for the persist merge:
 
 | Layer | Canonical contract | Where it lives at merge time |
 | --- | --- | --- |
 | L1 `.plr` | **research/99** (71-row offset table + gate matrix) | THIS branch |
-| L2 `.trplayer` | **research/103** (v10 superset FINAL) + **research/122** (line-8 addendum) | g88 tip `6998a4ecb` + its in-flight v10 crystal fold (worktree, unpushed at this probe) |
-| L2 fold-inputs | **research/135** (g90 six-line v7 + token map) + **research/138** (a6b reconcile — NOT pushed; its content read off the a6 worktree ANALYSIS, §3-L2 below) | g90 tip `b3b82d071` / a6 tip `8ed96ee5d` |
-| L3 `.trwld` union | **research/92-doc-sweep-bg §1** (g71c five-branch 21-byte head + dense variants, worktree state) re-extended by **research/64-addendum** (g72d, the 31-byte cave claim) + 135 §4 (g90 books) — the reconciled FINAL layout in §3-L3 below | g71 worktree over `e2d085ae4` |
-| L3 `.wld` flags | `wld/sections/flags.rs` per-field C# gates; f45's second-half claims co-lane | f45 tip `6352d3840` |
+| L2 `.trplayer` | **research/103** (**v11** superset FINAL — the torch fold landed) + **research/122** (line-8 addendum + the v11 post-receipt) | g88 tip `a9f1c29d8` (PUSHED — the v10/v11 folds are no longer worktree-only) |
+| L2 fold-inputs | **research/135** (g90 six-line v7 + token map — §2 rule LANDED in g88) + **research/138** (a6 4-way master reconcile — **PUSHED** at `d7de8bd53`; its verdicts seated in §3-L2 below) | g90 tip `94d33f2ca` / a6 tip `d7de8bd53` |
+| L3 `.trwld` union | **THIS doc §3-L3 is THE authoritative union** (107-byte head + W×H dense). research/92-doc-sweep-bg §1 (g71 five-branch 21-byte head, PUSHED at `f08e8d41e`) + research/64-v18-union-addendum (g72, PUSHED) + 135 §4 (g90 books) + 138 §5 (f45 identity) are the per-claimant inputs — each is a STRICT SUBSET of §3-L3; where they disagree on the total (21/53/65/97/98), §3-L3 wins | the union lands at the merge; no single branch carries it yet |
+| L3 `.wld` flags | `wld/sections/flags.rs` per-field C# gates; **f45's flags file is the merge base** (138 §5's verdict, re-verified this pass); f39 owns the force-today pair (f45 `9c1a01a42` defers it) | f45 tip `6352d3840` |
 
 Code-only lane: witnesses written, not run.
 
-Inputs read at the FINAL probe (2026-11-21 — tips this doc describes;
-worktree-only states are marked):
+Inputs read at the RETIRE probe (2026-11-21 — every tip below is PUSHED;
+the worktree-only states the FINAL probe described have all landed or
+been superseded):
 
 | Ref | Tip read | Persist state |
 | --- | --- | --- |
 | `origin/task/W4-g89-aegis-fruit-use` | `598642563` (g89f over g89e `e9ec8dcfc` / g89d `4344bd50`) | `.trplayer` **v9** 3-token unlock line (research/122); `.plr` fruit/gummy/ambrosia bools both halves; `.wld` book-two byte (g89e); `.trwld` stays **v17** |
-| `origin/task/W4-g88-life-fruit-use` | `6998a4ecb` (fold 5 docs) + **worktree v10 fold UNPUSHED** (research/103 updated in-tree: writer v10, tokens 4/5/6 LIVE crystal/arcane/pearl, §5a keep-own pending 138) | `.trplayer` **v10 SUPERSET** (research/103 FINAL — g89c+g90b+a6 folded); carries research/122 blob-verbatim |
-| `origin/task/W4-g90-artisan-bread-use` | `b3b82d071` (reconcile-input over lane 7 `73367e0af`) | `.trplayer` **v7** six 1-token lines + `.plr` bools 1/3/4/5/6 + `.trwld` **v18** 2-byte tail; research/**135** is its mechanical fold-input |
-| `origin/task/W4-a6-crystals-powerups` | `8ed96ee5d` (moved past `d46221b2b`: use arms 5337-5342/5043/5343/pets/books/drones) + **worktree a6b reconcile UNPUSHED** (the research/138 content: row-targeted achievements, pearl Player-field ownership, aegis f32 order, booster row order — ANALYSIS §W4-a6) | use arms + consumers; NO sidecar writer; `.wld` book-two/satchel/bought-pets bytes — overlaps g90 lane 7 / g89e / f45 |
-| `origin/task/W4-f33-torch-god-favor` | `8a000407f` (torch-favor v7-line: `6f2c122e8` use arm → `7954d6ed1` docs → `a429b37c0`/`8a000407f` shimmer+desert arms) | **ANOTHER v7 fork**: `.trplayer` v7 ONE 2-token line (the biome-torch pair) + `.plr` `:54777-54778` both halves + the 279-subset bools 2-3 capture; the event/favor/949 machines (`torch_god.rs`, keep-one over d19 per research/93) |
-| `origin/task/W4-g72-bg-layers-3` | `2b02345ce` (g72c: phases 7-8 DONE — the roll OWNED, `.wld` flags + `.trwld` v18 **31-byte cave-tail** + net header) + **worktree g72d UNPUSHED** (`108cc0934` research/64-addendum: the 53-byte five-claimant union layout; `7039b0638` d35 atlas cross-note) | `.trwld` v18 31 B (`cave_back_x[0..3]` 3×i32 + `cave_back_style[0..4]` 4×i32 + ice/jungle/hell u8); `.wld` flags arrays at C# i32 widths |
-| `origin/task/W4-g71-bg-layers-2` | `e2d085ae4` + **worktree g71c UNPUSHED** (rolls WIRED into `step_world_tail`; research/92 §1 re-extended to FIVE branches: g70/g71/g69/d125/d109, **21-byte fixed head + W×H dense variants LAST**) | `.trwld` v18 union owner-to-be; the g72/g90 claims NOT yet seated in its §1 — the re-extend obligation, §3-L3 |
+| `origin/task/W4-g88-life-fruit-use` | **`a9f1c29d8` (g88f fold 7 FINAL — PUSHED)** over `c8985b534` (v10 crystal fold) / `6998a4ecb` (fold 5 docs) | `.trplayer` **v11 SUPERSET** (research/103 FINAL — g89c+g90b+a6+f33 folded; the torch pair is LINE 16, both v7 recognition rules landed); carries research/122 + the v11 post-receipt |
+| `origin/task/W4-g90-artisan-bread-use` | **`94d33f2ca`** (reconcile over `b3b82d071` / lane 7 `73367e0af`) | `.trplayer` **v7** six 1-token lines + `.plr` bools 1/3/4/5/6 + `.trwld` **v18** 2-byte tail; research/**135** pushed (`135-g90-persist-folds.md`) — its §2 rule LANDED in g88f |
+| `origin/task/W4-a6-crystals-powerups` | **`d7de8bd53` (the 4-way master reconcile — PUSHED)** over `8ed96ee5d` | use arms + consumers; NO sidecar writer, NO `.trwld` claim; `.wld` book-two/satchel/bought-pets bytes — **research/138 pushed** (`138-powerup-master-reconcile.md`), its verdicts seated §3-L2/L3 |
+| `origin/task/W4-f33-torch-god-favor` | `8a000407f` (torch-favor v7-line: `6f2c122e8` use arm → `7954d6ed1` docs → `a429b37c0`/`8a000407f` shimmer+desert arms) | the v7 ONE 2-token pair-line fork — **FOLDED into g88f v11** (§2d's receipt); the event/favor/949 machines (`torch_god.rs`, keep-one over d19 per research/93) stay f33's |
+| `origin/task/W4-g72-bg-layers-3` | **`4a75715ef`** (final item 4: the `:11340` order-contract) over `39479b551` (the cave DRAW consumer) / `2b02345ce` (g72c persist) | `.trwld` v18 **31 B** cave block + `.wld` i32 arrays + net header; research/**64-v18-union-addendum PUSHED** (the 53-byte five-claimant proposal — a §3-L3 subset); the underworld seat it flagged FIRED (§3-L3) |
+| `origin/task/W4-g71-bg-layers-2` | **`f08e8d41e` (WIRING docs — PUSHED)** over `c13de6ee9` (rolls wired into `step_world_tail` + boot re-roll + atlas guard) / `e2d085ae4` | `.trwld` v18 3-byte surface tail + research/92 §1's five-branch 21-byte union (a §3-L3 subset); flags.rs now owns underworld/treeBG2..4/mushroom — the underworld `.trwld` seat FIRED |
+| `origin/task/W4-g87-demon-heart-use` | **`dfbcaf94b` (PUSHED — the NEW claimant this probe)** | `.trplayer` **v7 `dh` sentinel line** (extraAccessory + unlockedSuperCart — §2e, a NEW self-identifying v7 shape after the 5 historical numeric ones + g90b's six-line + f33's pair-line); `.trwld` v18 **3-byte pet trio**; `.wld` pets gate 217 flips; the use arms (Demon Heart/Minecart Powerup/Pet License) |
+| `origin/task/W4-c39-lantern-birthday` | **`8ecb288aa` (exec — PUSHED — the NEW claimant)** | `.trwld` v18 **5-byte moon-boss downeds** (`:1347-1351`) + `.wld` five flips — **field-identical to f39's claim, dedup §3-L3**; the lantern/party/wind machine (research/114's KEEP pieces land at the merge) |
+| `origin/task/W4-f39-weather-slimerain` | **`bd5a5a24a` (Phase B — PUSHED — the NEW claimant)** | the SAME `.trwld` 5-byte downeds + `.wld` flips (dedup with c39) **PLUS the force-today pair** (`.wld` gate 212 — f45 defers it); `tr-core/season.rs` (the FixtureClock-pinned date gates) + `World.refresh_seasons` (the re-derivation carrier — no `.trwld` season bytes) |
 | `origin/task/W4-g70-bg-layers-1` | `6b3049e19` (persist at `bbe47378` lineage) | `.trwld` **v18** 16-byte forest tail |
-| `origin/task/W4-g69-weather-clouds-parallax` | `9717c0bb` lineage (per g71c §1) | `.trwld` **v18** 1-byte crimson tail |
+| `origin/task/W4-g69-weather-clouds-parallax` | `9717c0bb` lineage (per g71 §1) | `.trwld` **v18** 1-byte crimson tail |
 | `origin/task/W4-d125-empress-r7-drain` | `d8047a10` | `.trwld` **v18** 1-byte downedEmpress tail |
-| `origin/task/W4-d109-framing-genrand-a3` | `81894095` | `.trwld` **v18** dense W×H framing-variants block (port-only, LAST) |
-| `origin/task/W4-f45-wld-header-2` (+c43 `076970809` in lineage) | `6352d3840` | `.wld` header/flags second half OWNED (13 phases); **c43's `.trwld` v18 44-byte identity tail** (generator version/GUID/worldId/CreationTime/LastPlayed) + the `.plr` `.bak`/revision-carry/UtcNow envelope — the seventh v18 claimant + the L1 envelope co-lane |
+| `origin/task/W4-d109-framing-genrand-a3` | `81894095` | `.trwld` **v18** dense W×H framing-variants block (port-only, LAST; `variants_from_save` arms resetFrame:false) |
+| `origin/task/W4-f45-wld-header-2` (+c43 `076970809` in lineage) | `6352d3840` | `.wld` header/flags second half OWNED (13 phases — the flags merge base per 138 §5); **c43's `.trwld` v18 44-byte identity tail** (generator version/GUID/worldId/CreationTime/LastPlayed) + the `.plr` `.bak`/revision-carry/UtcNow envelope — the L1 envelope co-lane |
 | `origin/task/W4-g55-ui-loadout-save` | `cde865fc2` | `.plr` loadout family + `.trplayer` v7 loadout block (folded into g88's superset) |
-| `origin/task/W4-e10-player-sounds-wave` | `2c024e444` | NO persist change — `voice_variant`/`voice_pitch_offset` are Player fields only (§4 below) |
-| this branch | `63204f85` (FINAL: the slot-11 property fix over `05e4020b` crosspersist) | `.plr` complete (research/99) + the timestamp fix + the UsingBiomeTorches property seam; `.trplayer` stays main's **v6**; `.trwld` stays **v17** |
+| `origin/task/W4-e10-player-sounds-wave` | **`432dd5ab1`** over `693e3850a` (the voice-picker + persistence docs) | **voice-write LANDED** (the char-creation picker + the draft→`.plr` threading + its own i32 transport diff) — the keep-one vs THIS branch's u8 transport is §4; the live-Player hydration hunk is still open on BOTH branches |
+| this branch | `bdd1cc79a` (FINAL docs over `63204f85` slot-11 property fix) | `.plr` complete (research/99) + the timestamp fix + the UsingBiomeTorches property seam; `.trplayer` stays main's **v6**; `.trwld` stays **v17** |
 
 ---
 
@@ -44,8 +53,8 @@ worktree-only states are marked):
 | Layer | File | Format | Writer / reader | Job |
 | --- | --- | --- | --- | --- |
 | **L1 `.plr`** | `Players/<name>.plr` | vanilla binary, AES-128-CBC, release **326** | `crates/tr-app/src/player_file.rs` | the CHARACTER: identity, appearance, stats, inventory/banks/loadouts, every per-player unlock/counter, the full `Player.Serialize` field set (`Player.cs:54750-54933`). Vanilla-interchangeable both ways. **Canonical field map: research/99's offset table** (71 rows, 3827-byte fresh layout). |
-| **L2 `.trplayer`** | `<world>.trplayer` | port-invented versioned TEXT | `crates/tr-app/src/persist.rs` | the LIVE SESSION next to a `.trwld`: position/hp/coins + the fields the live App mutates and must restore on world reload. NOT a `.plr` mirror — a lossy projection (kinds-only equips, 50-slot inventory). **Canonical contract: research/103 (v10 superset FINAL) + research/122 (line-8 addendum); fold-inputs: research/135 (g90) + research/138 (a6b, unpushed — content in the a6 worktree ANALYSIS); the f33 v7 fork: §2d below.** |
-| **L3 world** | `<world>.trwld` (native) / `<name>.wld` (vanilla) | port binary v17→v18 union / vanilla sections release 326 | `tr-core/src/save.rs` / `tr-core/src/wld/` | the WORLD: tiles, chests, NPCs, world-global flags. **`.trwld` union contract: research/92 §1 (g71c five-branch 21-byte head + dense) re-extended per §3-L3 below with g72d's 31-byte cave claim (research/64-addendum), 135 §4's book pair and c43's 44-byte identity block — the reconciled head is 97 bytes + W×H dense.** `.wld` flags codec: `wld/sections/flags.rs` (the C# gates). |
+| **L2 `.trplayer`** | `<world>.trplayer` | port-invented versioned TEXT | `crates/tr-app/src/persist.rs` | the LIVE SESSION next to a `.trwld`: position/hp/coins + the fields the live App mutates and must restore on world reload. NOT a `.plr` mirror — a lossy projection (kinds-only equips, 50-slot inventory). **Canonical contract: research/103 (v11 superset FINAL — the torch fold landed) + research/122 (line-8 addendum + the v11 post-receipt); fold-inputs: research/135 (g90, its §2 rule LANDED) + research/138 (a6, PUSHED — verdicts seated §3-L2); the f33 v7 fork: §2d's receipt; the g87 `dh` fork: §2e below.** |
+| **L3 world** | `<world>.trwld` (native) / `<name>.wld` (vanilla) | port binary v17→v18 union / vanilla sections release 326 | `tr-core/src/save.rs` / `tr-core/src/wld/` | the WORLD: tiles, chests, NPCs, world-global flags. **`.trwld` union contract: THIS doc §3-L3 — TEN claimants, the 107-byte fixed head + W×H dense (g70 forest 16 + g72 cave 31 + g71 surface 3 + underworld 1 + g69 crimson 1 + c39⨉f39 moon-boss 5 + g87 pets 3 + d125 empress 1 + g90 books 2 + c43/f45 identity 44).** The per-claimant docs (92 §1 / 64-add / 135 §4 / 138 §5) are subsets. `.wld` flags codec: `wld/sections/flags.rs` (the C# gates; f45's file is the merge base, f39 owns the force-today pair). |
 
 Side satellites (not layers): `<stem>.trfav` (the character star —
 vanilla's `favorites.json` store, `IO/FavoritesFile.cs:27-36`; the `.plr`
@@ -73,14 +82,23 @@ sidecar has no business mirroring: name/difficulty/appearance/colors
 (the character card), playtime, hairDye/team, the hide flags, banks
 1-4 + voidVaultInfo, buffs, spawn points, the quest/death counters
 (angler/dpad/builderAcc/bartender/golfer), dead+respawnTimer, the
-research pairs, creative powers, temp slots, super-cart, refunds,
-dialogues, hbLocked, the save timestamp, the metadata block. Also
-**L1-only among the unlock family**: `extraAccessory` (`:54776`, g87's
-demon-heart lane — research/122 §4.4 already pins "no sidecar line"),
+research pairs, creative powers, temp slots, super-cart's ENABLED bit
+(row 64 bit 1 — the UNLOCK bit 0 moved to §2b at the retire probe, g87's
+`dh` line), refunds, dialogues, hbLocked, the save timestamp, the
+metadata block. Also **L1-only among the unlock family**:
 `downedDD2EventAnyDifficulty`
 (`:54787` — 103 §2a token 7 stays RESERVED; if a DD2 lane ever needs it
 live, the token is there, but no pushed lane claims it), taxMoney, the
 death counters.
+
+**`extraAccessory` MOVED out of this list at the RETIRE probe**: g87
+`dfbcaf94b` gives it (and `unlockedSuperCart`) a live sidecar carrier
+(the v7 `dh` sentinel line, §2e) — they are §2b contested fields now.
+The FINAL probe's "research/122 §4.4 already pins no sidecar line" note
+is superseded: 122 §4.4 predates g87's push; the dual-carrier rule
+(§2b) applies — the Demon Heart use-grant (`Player.cs:45197`) mutates
+the live Player mid-world, so the sidecar is the only carrier that
+survives a world reload until the exit-save lands.
 
 **The biome-torch pair MOVED out of this list at the FINAL phase**: f33
 `8a000407f` gives `unlockedBiomeTorches`/`UsingBiomeTorches` a live
@@ -112,12 +130,14 @@ the same field must ride the `.plr` or a vanilla round-trip loses it.
 | `usedAegisFruit` | row 24 (`used_upgrades[1]`) | line 8 token 1 (g89) | g89 |
 | `usedGummyWorm` | row 27 (`[4]`) | line 8 token 2 (g89b) | g89b (field pre-existed i35) |
 | `usedAmbrosia` | row 28 (`[5]`) | line 8 token 3 (g89c) | g89c |
-| `usedGalaxyPearl` | row 26 (`[3]`) | line 8 token 4 RESERVED→g90 fold | g90 lane 7 |
-| `usedArcaneCrystal` | row 25 (`[2]`) | line 8 token 5 RESERVED→g90 fold | g90 lane 7 |
-| `usedAegisCrystal` | row 23 (`[0]`) | line 8 token 6 RESERVED→g90 fold | g90 lane 7 |
+| `usedAegisCrystal` | row 23 (`[0]`) | line 8 token 4 **LIVE at v10** | g90 lane 7 / a6 |
+| `usedArcaneCrystal` | row 25 (`[2]`) | line 8 token 5 **LIVE at v10** | g90 lane 7 / a6 |
+| `usedGalaxyPearl` | row 26 (`[3]`) | line 8 token 6 **LIVE at v10** | g90 lane 7 / a6 |
 | `ateArtisanBread` | row 21 | line 11 (g90, folded g88) | g90 |
-| `unlockedBiomeTorches` | row 19 (`:54777`, gate 229) | f33 v7 pair-line token 1 → fold to a NEW post-loadout line (§2d) | f33 |
-| `UsingBiomeTorches` (the slot-11 getter) | row 20 (`:54778`) + row 55 slot 11 | f33 v7 pair-line token 2 → same new line | f33 (transport); the slot-11 array stays L1-only |
+| `unlockedBiomeTorches` | row 19 (`:54777`, gate 229) | f33 v7 pair-line → **LANDED as line 16 at g88f v11** (§2d receipt) | f33 |
+| `UsingBiomeTorches` (the slot-11 getter) | row 20 (`:54778`) + row 55 slot 11 | same line 16 token 2 | f33 (transport); the slot-11 array stays L1-only |
+| `extraAccessory` | row 18 (`:54776`, gate 125) | g87 v7 `dh` line token 1 → fold per §2e | g87 (transport); was L1-only, §2a's note updated |
+| `unlockedSuperCart` | row 64 (the `:54914-54918` BitsByte bit 0, gate 253) | g87 v7 `dh` line token 2 → fold per §2e | g87 (transport); bit 1 `enabledSuperCart` stays L1-only |
 | `CurrentLoadoutIndex` + `Loadouts[3]` | rows 65-66 | lines 12-15 (g55, folded g88) | g55 |
 | inventory/armor/dye/coins/hp/pos | rows 40-42 (+ stats) | lines 2-7 (v1-v6 prefix) | pre-existing |
 
@@ -138,13 +158,15 @@ the same field must ride the `.plr` or a vanilla round-trip loses it.
    array onto six named fields — either way ONE set, never both).
    Same for `ate_artisan_bread` (g90's field == this lane's G7 field,
    same name, same slot — a clean textual dedup).
-3. **Within L2, one token per field.** 103 §2a's reserved positions are
-   the single registry; g90's six-line v7 block folds into tokens per
-   research/135 §2-3 (its lines are a LEGACY READ shape, never a second
-   write shape). The 103-vs-122 token-order conflict for 4/5/6 is
-   resolved by 135 §3: **103 §2a wins** (pearl=4/arcane=5/crystal=6) —
-   no pushed writer ever emitted token 4+, so no back-compat obligation
-   attaches to either order.
+3. **Within L2, one token per field.** 103 §2a's token map is the
+   single registry; g90's six-line v7 block folded into the v7
+   recognition rule (135 §2 — LANDED in g88f). The token-order question
+   for 4/5/6 is CLOSED: the pushed g88 v10 writer emits
+   **crystal=4/arcane=5/pearl=6** (the vanilla `.plr` relative order,
+   `Player.cs:54781/:54783/:54784`) — 103 §8's alignment note is the
+   receipt; 135 §3's pearl-first recommendation and this doc's FINAL
+   rule-3 parenthetical are superseded (138 §6 re-verified the written
+   order is binding). No renumbering ever.
 4. **L3 world globals never ride L2.** `combatBookWasUsed` /
    `combatBookVolumeTwoWasUsed` / `peddlersSatchelWasUsed` /
    bought-pets are WORLD flags (`NPC.cs:6339-6343`, `WorldFile.cs:1392-1394`/
@@ -248,6 +270,102 @@ feeds hp). f33's own ANALYSIS proposed a v8 both-line; that proposal is
 §4 back-compat matrix gain the f33 row at the g88 fold (the same edit
 that seats 135's six-line rule); this §2d is the mechanical input.
 
+**THE RECEIPT (retire probe — g88f `a9f1c29d8`, PUSHED): §2d CONSUMED.**
+The fold landed this section's proposal with ONE deliberate deviation:
+
+- **The recognition rule landed verbatim**: 103 §3's v7 arm now runs
+  "exactly ONE non-empty line, a 2-token pair with BOTH tokens 0/1 →
+  the biome-torch pair" (the value-range argument reproduced: the
+  permanent halves start 100/20, no maxima pair can be all-0/1).
+  Witness `f33s_torch_only_v7_loads_positionally`. 135 §2's six-1-token
+  rule landed in the same arm (`g90bs_six_line_v7_loads_positionally`,
+  the bounded-misread witness RETIRED).
+- **The union seat landed at line 16** (the LAST post-dye line, after
+  the loadout block) — §2d rule 2's seat exactly. **The version bumped
+  to v11** instead of §2d's "writer stays v10" append-only proposal:
+  g88 chose the explicit bump (103 §2b — v11 was free; the v10 files
+  back-read the pair false, witness
+  `the_v10_superset_still_loads_without_the_torch_pair`). The bump is
+  the safer shape (a v10 reader meeting a line-16 file tolerates it via
+  the shape walk's "any other shape → defaults kept", but the explicit
+  version makes the back-read contract testable) — **v11 is the merge
+  base, §2d's stay-v10 proposal is superseded**.
+- **The restore landed via the setter**: `app/mod.rs` writes
+  `Player.unlocked_biome_torches` + `set_using_biome_torches` (f33's
+  exact accessor spot after `luck()`), no second bool field — §2d
+  rule 3 / §2a's slot-11 semantics exactly.
+- **The conditional DROP-recommendation published** (103 §2b rule 3):
+  the line stays a deliberate dual-carrier until (a) the character-load
+  hydration AND (b) the exit-save both land; then the writer drops
+  line 16 and the reader keeps the arm as a back-read. Restore
+  precedence per §2c (character first, sidecar second, sidecar wins).
+- **The f44c-G7 redundancy adjudicated**: 103 §2b rule 4 pins f33's
+  named `.plr` torch fields as a clean textual dedup onto THIS branch's
+  identical named fields (the FINAL slot-11 property model is the
+  superset — f33's raw-bool witness re-pins per §2d rule 4).
+
+### 2e. The g87 `dh` sentinel line (a NEW v7 shape — retire-probe input)
+
+`origin/task/W4-g87-demon-heart-use` tip `dfbcaf94b` (PUSHED, read at
+this probe — the claimant the FINAL probe missed). Its `persist.rs`
+diff against main:
+
+- Writer bumps **v6 → v7** and appends ONE line after the dye line:
+  **`dh <extraAccessory> <unlockedSuperCart>`** — a SELF-IDENTIFYING
+  sentinel prefix + two 0/1 tokens (`Player.cs:866`/`:2052`, the
+  use-grants `:45197`/`:45209`). The sentinel follows 103 §6 rule 5's
+  contract (a shape distinct from the numeric pair/flag/loadout lines).
+- Reader: `"7"` joins the no-migrate arm; armor/kills/dye gates widened;
+  the `dh` line is OPTIONAL at v7 (a missing/non-`dh` line keeps both
+  false — token-tolerant).
+- `SavedPlayer` gains `extra_accessory` + `unlocked_super_cart`; the
+  `.plr` halves are explicitly deferred to THIS lane (research/99
+  rows 18 + 64 — both already ride the complete walk).
+
+**The collision:** under the g88 superset's v7 walk the `dh` line is a
+3-token first post-dye line — the shape walk's "any other shape →
+tolerated, defaults kept" arm would DROP both unlocks silently (not a
+corruption, but a loss). Under g87's own reader a g88/g89/g90 v7 file's
+first line is not `dh` and defaults stand — aligned but lossy. Neither
+reader is the merge winner; the fold:
+
+1. **Recognition rule (extends the v7 arm's):** a post-dye line whose
+   FIRST token is the literal `dh` → the g87 unlock pair
+   (`parts[1]`/`parts[2]` parse as 0/1). The sentinel is unambiguous —
+   no numeric line can start with `dh`. Runs BEFORE the shape walk,
+   beside the six-line and torch-pair rules.
+2. **Union seat:** append as a NEW 3-token sentinel line AFTER the
+   torch pair — **line 17, `dh <extra> <cart>`**. The version
+   adjudication: 103 §6 rule 4 reserved v12 for the DD2 token-7
+   activation, but that reservation is a TOKEN slot on the unlock
+   line (§2a), not a hard version claim — and no pushed writer ever
+   emitted v12. The `dh` line takes the next free version, **v12**;
+   the DD2 version reservation MOVES to **v13** (a future token-7
+   activation bumps v13 with the 7-token back-read). Zero back-compat
+   cost (the same no-pushed-writer argument 103 §8 used for the
+   crystal tokens). An append-only stay-v11 alternative exists (the
+   shape walk tolerates the extra line) but the explicit bump is the
+   safer shape — the same choice g88f made for the torch line (§2d's
+   receipt). The v11 reader back-reads a missing line 17 as
+   both-false.
+3. **Restore:** `p.extra_accessory = line17[1];
+   p.unlocked_super_cart = line17[2]` — plain bool fields (the C# has
+   no property indirection here; `enabledSuperCart` is NOT carried —
+   it is a session toggle, L1-only row 64 bit 1, and the sidecar must
+   not grow a token for it).
+4. **Witnesses:** g87's two (`w4_g87_the_demon_heart_and_super_cart_unlocks_round_trip`,
+   `w4_g87_a_v6_sidecar_loads_the_unlocks_false`) re-pin onto the
+   superset writer (the `7\n` header assertion becomes `12\n`; the
+   `dh 1 1` line assertion stays verbatim — the sentinel shape is
+   preserved at the new seat).
+5. **The `.wld`/`.trwld` halves:** g87's pet-trio flips dedup onto
+   f45's flags file (§3-L3 rule 3); its `.trwld` 3-byte claim seats in
+   the 107-byte union (§3-L3 rule 1). The use arms (Demon Heart /
+   Minecart Powerup / Pet License) are g87's — 138 §1 adjudicates the
+   Pet License arm to a6 (`use_pet_license`, the sole full-fidelity
+   claimant of the exchange legs); g87's simpler grant arm dedups onto
+   it at the merge, the persist carriers are unaffected.
+
 ## 3. Per-layer merge order (the FINAL merger persist-checklist)
 
 **Order: L1 → L2 → L3.** L1 first because the `.plr` is the vanilla
@@ -257,7 +375,7 @@ fold keeps; L3 last because the world union is independent of both
 (no player field rides it) and its arithmetic depends on the g-lane
 tips being final.
 
-### L1 `.plr` (player_file.rs — hot file, five lanes touch it)
+### L1 `.plr` (player_file.rs — hot file; the g-lanes + e10 + c43/f45 touch it)
 
 1. **Base = THIS branch** (`63204f85` FINAL): the complete 71-row walk,
    the G1-G7 fixes, the three shim depths, the timestamp fix, the
@@ -281,158 +399,315 @@ tips being final.
    re-pins onto the property witness. **Do NOT resurrect a stored
    `using_biome_torches` live field** — the C# has none; the toggle is
    `builderAccStatus[11]`.
-5. **Fold c43's envelope** (`076970809`, in f45's lineage): the `.bak`
+5. **Fold c43's envelope** (`076970809`, in f45's lineage — PUSHED,
+   re-read at this probe): the `.bak`
    copy before a re-save (`InternalSavePlayerFile:54730-54733`), the
    metadata revision CARRY (`PlayerFileWrite::revision` — this branch's
    writer still hardcodes 0 at the prologue; the carry is the one
    remaining L1 envelope gap, byte-neutral for created characters),
-   its UtcNow creation stamp dedups onto this branch's
-   `utc_now_binary()` (same semantics, keep one helper).
+   its UtcNow creation stamp + `with_mtime_fallback` dedup onto this
+   branch's `utc_now_binary()` + `read_player_file` fallback (same
+   semantics, same C# citations — keep one helper each; c43's
+   `read_player_bytes_at` split is a compatible refactor shape, take
+   whichever survives the textual merge, the semantics are identical).
+   **g87's `.plr` half needs NO fold**: its use-grant fields
+   (`extra_accessory` row 18, the super-cart BitsByte row 64) already
+   ride this branch's complete walk — g87's diff explicitly defers the
+   `.plr` to this lane (its persist.rs comments cite f44).
 6. **Keep the timestamp fix whole** (`read_player_file`'s mtime
-   fallback + `utc_now_binary`); g89/g90/f33's `last_saved_binary: 0`
-   literals in their session/test diffs dedup onto this branch's
-   `utc_now_binary()` (session) / stay 0 (fixtures).
-7. Anchors: this lane's rows stay; the g-lanes' `.plr` witnesses
+   fallback + `utc_now_binary`); g89/g90/f33's AND e10's
+   `last_saved_binary: 0` literals in their session/test diffs dedup
+   onto this branch's `utc_now_binary()` (session) / stay 0 (fixtures).
+   e10's session hunk still carries the pre-fix "the port tracks no
+   save clock" comment — this branch's session.rs is the newer shape.
+7. **Fold e10's voice-write, keep THIS branch's transport** (§4's
+   keep-one): e10's `player_file.rs` diff (the i32 `PlayerFile`/
+   `PlayerFileWrite` fields + the `finish_player_file` voice parameter)
+   DEDUPS onto this branch's u8 fields + `PlayerTail` walk — same
+   slots, same gates, same clamp, same Male-derive; this branch's
+   model additionally covers the inc1/inc2 depths through the shared
+   tail. KEEP e10's char-creation picker (`UICharacterCreation.cs:
+   452-528`), its `NewPlayerDraft.voice_variant/voice_pitch_offset`
+   fields and its `session.rs` threading hunk — re-pointed at this
+   branch's u8 writer fields (`voice_variant: draft.voice_variant as
+   u8`). e10's three voice witnesses re-pin onto the u8 assertions
+   (its `w4_e10_the_voice_pair_round_trips_at_the_csharp_offsets` ==
+   this branch's `the_voice_pair_round_trips_clamps_and_derives` first
+   arm — keep one; the clamp + gender-derive arms are already covered
+   here). The live-Player hydration hunk stays OPEN on both branches
+   (§4 — the f44c full-walk seam, `CharPlay` is routing-only).
+8. Anchors: this lane's rows stay; the g-lanes' `.plr` witnesses
    re-pin onto the array fields (their assertions are slot-value
    assertions — mechanically portable).
 
 ### L2 `.trplayer` (persist.rs — the g88 superset wins)
 
-Per research/103 §6 (FINAL v10) + research/122 §4 + research/135 §6 +
-§2d above, in order:
+Per research/103 §9 (the FINAL v11 checklist) + research/122 §4 +
+research/135 §6 + §2d/§2e above, in order:
 
-1. **Base = g88's v10 fold** (worktree over `6998a4ecb` at this probe —
-   the writer v10 superset, tokens 1-6 LIVE, the tolerant v7/v8/v9/v10
-   reader, the loadout block, research/103+122 in-tree). If the fold is
-   still unpushed at merge time, the pushed v9 tip + 103's §7 receipt
-   is the mechanical spec to re-apply it.
-2. **Extend the v7 legacy arm** with 135 §2's six-1-token-line rule
-   (g90 lane-7 files load positionally) AND §2d's one-line-2-token-0/1
-   rule (f33 torch pair; the value-range disambiguation vs the life
-   pair). Every other v7 shape keeps 103 §3's walk.
-3. **Tokens 4/5/6 are LIVE at v10** in the corrected vanilla-relative
-   order crystal=4/arcane=5/pearl=6 (103 §2a's FINAL map — the pre-v10
-   reservation listed pearl=4; no pushed writer ever emitted token 4+,
-   so the correction carried no back-compat cost). Short-line
-   back-reads for v7/v8/v9 kept.
-4. **Append the f33 torch-pair line** (line 16, after the loadout
-   block; §2d rule 2) — writer stays v10, short-line back-read defaults
-   false. Restore via the slot-11 setter.
-5. **Dedup** g90's `SavedPlayer` flag fields + App restores onto the
-   superset's (gummy/ambrosia/bread/crystals already folded); f33's
-   pair fields join the same restore block.
-6. **Seat research/138's adjudications when it pushes** (103 §5a's
-   keep-own is provisional): the a6b worktree ANALYSIS already records
-   the four reconcile fixes — row-targeted `complete_condition` (c36's
-   shape, NOT the `notify_custom("Use")` broadcast), the galaxy-pearl
-   Player-field ownership (`update_luck` mirrors into `LuckState`),
-   the aegis-crystal +0.2 f32 slot BETWEEN base +1 and crimson +1, the
-   booster row order fruit→gummy→ambrosia. These are use-arm/consumer
-   dedups, NOT persist-layout changes — the sidecar contract is
-   unaffected either way.
-7. This lane contributes NOTHING to L2 (main's v6 reader/writer is a
+1. **Base = g88f's pushed tip `a9f1c29d8`** (writer **v11**, tokens 1-6
+   LIVE, the torch pair at line 16, the tolerant v7-v11 reader with
+   BOTH recognition rules landed, the loadout block, research/103+122
+   in-tree). The FINAL probe's "worktree v10, re-apply if unpushed"
+   contingency is RETIRED — the fold is pushed; take the file whole.
+2. **The v7 legacy arm is DONE** (135 §2's six-1-token-line rule + §2d's
+   one-line-2-token-0/1 rule both landed in g88f — 103 §3/§8's receipt).
+   The merger ADDS §2e's `dh`-sentinel recognition to the same arm.
+3. **Tokens 4/5/6 are LIVE at v10+** in the C#-verified order
+   crystal=4/arcane=5/pearl=6 (103 §2a's FINAL map + §8's alignment
+   note; 138 §6 re-verified the written order is binding). Short-line
+   back-reads for v7/v8/v9/v10 kept. Token 7 (DD2) stays reserved.
+4. **The torch line 16 is LANDED** (§2d's receipt — the setter restore,
+   the conditional drop-recommendation, the v10 back-read witness).
+   Nothing left to do except the §2b dual-carrier revisit when the two
+   §2c seams land.
+5. **Append the g87 `dh` line** (§2e — line 17, writer bumps v12, the
+   DD2 version reservation moves to v13; the sentinel recognition in
+   the v7 arm; the v11 back-read defaults both false).
+6. **Dedup** g90's `SavedPlayer` flag fields + App restores onto the
+   superset's (all folded at v10/v11); f33's pair fields join the same
+   restore block (landed); g87's two fields join at the v12 fold.
+7. **Seat research/138's adjudications — PUSHED now (`d7de8bd53`), the
+   FINAL probe's "when it pushes" contingency is RETIRED.** 138 §1's
+   per-item verdicts (the C# re-read adjudications, a6's five fidelity
+   fixes landed):
+   - 29/109/1291 (Life/Mana Crystal, Life Fruit): **g88 keep-own**
+     (`crystals.rs`/`life_fruit.rs`); a6's three dups + c36's
+     `use_permanent_powerup` DROP; the shared row-targeted
+     `complete_condition` helper survives (c36's shape — NOT the
+     `notify_custom("Use")` broadcast).
+   - 5326 (Artisan Loaf): **g90 keep-own** (the skeleton-merchant shop
+     consumer `Chest.cs:2958` is its exclusive); a6's dup DROP.
+   - 4382/5336 (Combat Books): keep ONE — 138 recommends **a6**'s
+     `use_combat_book` (the single cluster seam) or g89e (pushed
+     precedent); the TRAINING_DAY consumer lands once.
+   - 5043 (Torch God's Favor): **a6's use arm** (the faithful setter —
+     BOTH `unlocked_biome_torches = true` AND
+     `builder_acc_status[11] = 0`, superseding c36 research/30's
+     keep-c36 note); **c36**'s `complete_condition` dispatch; **f33**'s
+     event machine + flag reads. Three-way split, no overlap to delete.
+   - 5343 (Satchel): keep ONE — a6 or g90; the shop +1 consumer
+     identical on both.
+   - 4829/4830/4910 (Pet Licenses): **a6** (`use_pet_license`, the sole
+     claimant of the exchange legs); g87's grant arm dedups (§2e).
+   - 5337-5342 (six shimmer permanents): **a6's
+     `use_shimmer_permanent`** is the single use-arm owner; g89's three
+     + g90's `use_shimmer_permanent_item` dedup onto it; **g90's Player
+     field declarations + consumer shapes are the merge anchors** (the
+     `update_luck` pearl mirror, the aegis-crystal f32 slot BETWEEN
+     base +1 and crimson +1, the booster row order fruit→gummy→
+     ambrosia — a6 now matches all three).
+   These are use-arm/consumer dedups, NOT persist-layout changes — the
+   sidecar contract is unaffected either way (103 §5a's keep-own for
+   the CARRIERS stands; 138 adjudicates the ARMS).
+8. This lane contributes NOTHING to L2 (main's v6 reader/writer is a
    strict prefix of the superset; the merge takes g88's file whole).
 
 ### L3 world (save.rs `.trwld` + wld/ `.wld`)
 
-1. **`.trwld` base = the g71c union RE-EXTENDED to seven claimants.**
-   The g71c worktree's research/92 §1 seats five (g70 16 + g71 3 +
-   g69 1 + d125 1 = 21-byte head, d109 dense LAST). Two more claims
-   must be seated before the union lands:
-   - **g72d's 31-byte cave block** (research/64-addendum, worktree
-     `108cc0934` over `2b02345ce`): its §2 recommends the cave block
-     BETWEEN g70's forest block and g71's surface bytes (the C#
-     `:1260-1269` field order). The g71c §1 layout does NOT carry it
-     yet — **the re-extend obligation this FINAL phase records**.
-   - **g90's 2-byte book pair** (135 §4): after the flag singles.
-   - **c43's 44-byte identity block** (`076970809`: u64 generator
-     version + 16 GUID + i32 worldId + 2×i64 ToBinary stamps) — the
-     seventh claimant, discovered at this FINAL probe; identity fields
-     are not bg-family, so they close the fixed head after the books.
-   The reconciled FINAL layout (one fixed shared order, extending both
-   92 §1's and 64-addendum §2's rationale):
+1. **`.trwld` base = THIS section's union — TEN claimants, 107-byte fixed
+   head + W×H dense.** This is THE authoritative layout: research/92 §1
+   (g71's five-branch 21-byte head, pushed `f08e8d41e`), research/64-add
+   (g72's 53-byte five-claimant proposal), 135 §4 (g90's 21), 138 §5
+   (f45's 65) and this doc's own FINAL "97" are all STRICT SUBSETS or
+   stale totals — each seats fewer claimants than the ten below.
+
+   **The arithmetic correction (the FINAL doc's slip):** the FINAL phase
+   published "Fixed head = 97 bytes: 16+31+3+1+1+2+44" — that sum is
+   **98**, not 97. The seven-claimant head was always 98 bytes. The retire
+   probe adds three more claims and one conditional seat that FIRED:
+
+   - **g87's 3-byte pet trio** (`dfbcaf94b`, PUSHED): `boughtCat`/
+     `boughtDog`/`boughtBunny` u8×3 (`WorldFile.cs:1392-1394`, the
+     4829/4830/4910 Pet License use-unlocks). 132's FINAL probe knew the
+     pets only as `.wld` flags (a6/f45 Ph11); g87 gives them a `.trwld`
+     claim — the same dual-carrier pattern the flags half has.
+   - **c39 ⨉ f39's 5-byte moon-boss downeds — ONE block, TWO claimants**
+     (`8ecb288aa` c39 exec / `bd5a5a24a` f39 Phase B, both PUSHED): BOTH
+     branches append the SAME five bytes in the SAME vanilla order
+     (`downedHalloweenKing downedHalloweenTree downedChristmasIceQueen
+     downedChristmasSantank downedChristmasTree`, `WorldFile.cs:
+     1347-1351`; the `NPC.cs:79210-79238` DoDeathEvents arms). The
+     save.rs/flags.rs hunks are field-identical — **dedup to ONE block**
+     (five bytes, not ten). Keep-one for the DEATH-ARM side: f39's
+     `DoDeathEvents` port is the season-lane owner (its Phase B wires
+     every season consumer through the resolved `World.halloween/xmas`);
+     c39's exec arms dedup onto it (research/114 §0.2's record stays the
+     landing history). f39 ALSO owns the `.wld` force-today pair
+     (`forceHalloweenForToday`/`forceXMasForToday`, `:1386-1387`, gate
+     212 — f45 `9c1a01a42` explicitly defers those bytes to f39). The
+     pair is `.wld`-only: the `.trwld` needs no force bytes because f39's
+     `World.refresh_seasons` re-derives the resolved seasons at dawn/load
+     (`Main.cs:65389-65391`, `WorldFile.cs:651-652`) — the runtime
+     re-derivation is the carrier, witnessed by f39's
+     `the season flags re-derive, not persist` arm.
+   - **The underworld seat FIRED** (the FINAL doc's OPEN conditional):
+     g71's pushed wiring rolls `RandomizeBackgrounds`' underworld
+     `Next(3)` (`bg_rolls.rs` → `set_surface_bg_style(9, …)`) AND its
+     flags.rs now writes/reads `world.underworld_bg_style`
+     (`WorldFile.cs:1376`). A rolled-and-`.wld`-persisted style with NO
+     `.trwld` byte would be lost on a native world reload — exactly the
+     loss class the union exists to prevent. Per 64-add §3's flagged
+     seat: **1 byte between g71's surface group and g69's crimson**.
+
+   The reconciled FINAL-FINAL layout (one fixed shared order — 92 §1's
+   forest-first rationale extended through 64-add §2's C# field order,
+   the flag singles in vanilla `.wld` write order, identity last):
 
    ```
    … v17 downedFishron byte (1)
-   v18 UNION tail — fixed head (97 bytes) + dense variants (W×H):
-     [0..16]   g70 forest block        (tree_x 3×i32 + styles 4×u8)
-     [16..47]  g72 cave block          (3×i32 bands + 4×i32 styles
-                                        + ice/jungle/hell u8)  — 64-add §1
-     [47..50]  g71 surface bytes       (snow/desert/ocean u8)
-     [50]      g69 crimson             u8
-     [51]      d125 downedEmpress      u8
-     [52..54]  g90 book-two + satchel  u8×2               — 135 §4
-     [54..97]  c43 identity block      (u64 + 16B GUID + i32 + 2×i64 = 44 B)
-     [97..97+W*H]  d109 dense variants (LAST, self-delimiting)
+   v18 UNION tail — fixed head (107 bytes) + dense variants (W×H):
+     [0..16]    g70 forest block        (tree_x 3×i32 + styles 4×u8)
+     [16..47]   g72 cave block          (cave_back_x 3×i32 + cave_back_style
+                                         4×i32 + ice/jungle/hell u8)  — 64-add §1
+     [47..50]   g71 surface bytes       (snow/desert/ocean u8)
+     [50]       g71 underworld_bg_style u8   — the FIRED seat (:1376)
+     [51]       g69 crimson             u8   (:1281)
+     [52..57]   c39⨉f39 moon-boss downeds u8×5 (king/tree/iceQueen/
+                                         santank/xmasTree — :1347-1351,
+                                         ONE deduped block)
+     [57..60]   g87 bought-pet trio     u8×3 (cat/dog/bunny — :1392-1394)
+     [60]       d125 downedEmpress      u8   (:1395)
+     [61..63]   g90 book-two + satchel  u8×2 (:1407-1408)  — 135 §4
+     [63..107]  c43/f45 identity block  (u64 generator version + 16B GUID
+                                         + i32 worldId + 2×i64 ToBinary
+                                         stamps = 44 B; :1225-1227/:1250-1251)
+     [107..107+W*H]  d109 dense variants (LAST, self-delimiting,
+                                         variants_from_save arms the
+                                         framing passes' resetFrame:false)
    ```
 
-   **Fixed head = 97 bytes: 16+31+3+1+1+2+44. Total = 97 + W×H.**
+   **Fixed head = 107 bytes: 16+31+3+1+1+5+3+1+2+44. Total = 107 + W×H.**
+   (The flag singles ride strict C# `.wld` write order — crimson
+   `:1281` < moon-boss `:1347-1351` < pets `:1392-1394` < empress
+   `:1395` < books `:1407-1408`; the FINAL doc's empress-before-books
+   seat moves one slot later, a free move under the forward-only
+   rule. The identity block is not flags-family, so it closes the
+   head; the dense block stays LAST per 92 §1.)
    VERSION stays 18; forward-only (no released v18 — every claimant is
-   unmerged task work). `v18_tail_len` returns `97 + width*height`.
-   The truncation-constant moves: g70/g71's 16/3 → 97 (92 §1.5's table),
-   g69/d125's 1 → 97, g90's six sites 2 → 97 (135 §4's table), g72's
-   eleven sites 31 → 97 (64-add §3's list), c43's 44 → 97; d109's
-   end-relative sites need only the helper's new return value. Every
-   claimant's round-trip witness keeps its assertions, only the tail
-   lengths move. The `underworldBG` seat (64-add §3's flag, C# `:1376`)
-   stays OPEN — if g71c's roll-wire persists it, insert 1 byte between
-   the surface group and crimson → 98-byte head, re-pin once.
-2. **The roll keep-one (g71c vs g72c):** BOTH branches now port
-   `RandomizeCaveBackgrounds` — g71c's `bg_rolls.rs` (WIRED into
-   `step_world_tail`, worktree) and g72c's `worldgen/cave_bg.rs`
-   (pushed, the `CaveRoll` trait driver). g71c's 92 §2 seam contract
-   claims canonical status; g72c's is pushed and carries the boot-side
-   Knuth driver + the width-arm drawn-count fix. **Adjudication owed at
-   the merge** (the docs disagree; both are faithful ports of
-   `WorldGen.cs:8192-8249`): keep ONE roll implementation, keep g72c's
-   boot dead-store seam (`App::new`, research/64 §2 correction) and
-   g71c's surface rolls; the persistence trio (`.wld` flags / `.trwld`
-   union / net header) is g72c's pushed shape either way. The
-   `world_hash` stale-by-design notes ride both.
-3. **`.wld` flags dedup**: g89e, g90 lane 7, a6 AND f45 Ph12 ALL write
-   `combatBookVolumeTwoWasUsed` (gate 259) — keep ONE (f45's claim is
-   the pushed `.wld`-specialist lane; g90's pair also owns the satchel
-   byte, gate 260; a6/f45 Ph11 add the bought-pets trio, gates 217,
-   tail 2021-2023 — independent bytes, no conflict). g72c's cave arrays
-   (i32 widths, `WorldFile.cs:1260-1268`/`:2058-2066`) vs f45 Ph6's
-   tree/cave claim — same fields, same gates; keep one codec half
-   (f45's flags file is the superset; g72c's arrays must survive it).
+   unmerged task work). `v18_tail_len` returns `107 + width*height`.
+   The truncation-constant moves (every claimant's end-relative sites):
+   g70/g71's 16/3 → 107 (92 §1.5's table), g69/d125's 1 → 107, g90's six
+   sites 2 → 107 (135 §4's table), g72's eleven sites 31 → 107 (64-add
+   §3's list), c43/f45's 44 → 107 (138 §5's +44 sites), g87's 3 → 107
+   (its `EMPTY_V16_TAIL` family + the v12/v14/pre-v18 probes), c39/f39's
+   5 → 107 (ONE set — the deduped block's witnesses keep one copy each);
+   d109's end-relative sites need only the helper's new return value.
+   Every claimant's round-trip witness keeps its assertions, only the
+   tail lengths move. The stale totals published elsewhere (92 §1's 21,
+   64-add's 53, 135 §4's 21, 138 §5's 65, this doc's FINAL 97/98) are
+   superseded by THIS table — the merger seats all ten in one pass.
+2. **The roll keep-one (g71 vs g72) — both PUSHED now.** g71's
+   `f08e8d41e` wires `bg_rolls.rs` into `step_world_tail` (the surface
+   rolls + the boot re-roll seam + the atlas budget guard) and g72's
+   `4a75715ef`/`39479b551` push the cave roll + the `:11340`
+   ORDER-CONTRACT + the cave-style DRAW consumer. The adjudication the
+   FINAL phase owed: **keep ONE cave-roll implementation** — g72's
+   `worldgen/cave_bg.rs` (the pushed `CaveRoll` trait driver with the
+   boot-side Knuth dead-store seam, research/64 §2 correction) is the
+   persistence-trio owner (`.wld` arrays / `.trwld` cave block / net
+   header); g71's `bg_rolls.rs::randomize_cave_backgrounds` is the SAME
+   port (`WorldGen.cs:8192-8249`) and dedups onto it. Keep g71's surface
+   rolls + its `step_world_tail` wire; g72's order-contract pins the
+   insert seat (after `apply_cave_backgrounds`, before the moon
+   `Next(9)` — `WorldGen.cs:11339-11341` contiguous on genRand). The
+   `world_hash` stale-by-design notes ride both; the moon-shift re-pin
+   is g72's published pattern.
+3. **`.wld` flags dedup — f45's flags file is the base (138 §5's verdict,
+   re-verified against the pushed tips):**
+   - `combatBookVolumeTwoWasUsed` (gate 259, tail 2036): g89e ⨉ g90 ⨉ a6
+     ⨉ f45 ALL write it — **keep f45's** (the pushed `.wld`-specialist
+     superset); the other three flips dedup.
+   - `peddlersSatchelWasUsed` (gate 260, tail 2037): g90 ⨉ a6 ⨉ f45 —
+     **keep f45's**.
+   - bought-pets trio (gate 217, tails 2021-2023): a6 ⨉ f45 ⨉ g87 —
+     **keep f45's** flips; g87's/a6's dedup (g87's `.trwld` claim is
+     separate, §3-L3 rule 1).
+   - the five moon-boss downeds (`:1347-1351`, v131+): c39 ⨉ f39 ⨉ f45
+     all flip the same five `false`s — **keep f45's** writer half; the
+     World-field declarations + death arms dedup per rule 1 (f39's
+     season-lane `DoDeathEvents` owns the semantics).
+   - the force-today pair (gate 212, tails 2002-2003): **f39 ONLY** —
+     f45 `9c1a01a42` explicitly leaves those bytes to the f39 lane;
+     take f39's `flags.rs` hunk verbatim.
+   - g72's cave arrays (i32 widths, `WorldFile.cs:1260-1268`/
+     `:2058-2066`) vs f45 Ph6's tree/cave claim — same fields, same
+     gates; keep one codec half (f45's flags file is the superset;
+     g72's arrays must survive it). g71's underworld/treeBG2..4/mushroom
+     flips (`f08e8d41e` flags.rs) are independent bytes — they ride.
 4. This lane contributes NOTHING to L3 (no save.rs/wld change).
 
-## 4. The e10b voice co-lane (research/99 row 67 cross-note)
+## 4. The e10 voice co-lane (research/99 rows 67-68 — the retire receipt)
 
-**`origin/task/W4-e10-player-sounds-wave` tip `2c024e444`: NO `.plr`
-write landed.** The branch's diff against main touches neither
-`player_file.rs` nor `persist.rs` (verified `git diff --stat` — empty
-for both). What it DOES carry:
+**RETIRE probe: `origin/task/W4-e10-player-sounds-wave` tip `432dd5ab1`
+(over `693e3850a`, the voice-picker + persistence docs commit) — the
+voice-write LANDED.** The FINAL probe's "NO `.plr` write" state is
+superseded. What e10 carries now (the diff against main, re-read):
 
+- **The char-creation picker** (`ui/char_creation.rs`, +866 lines):
+  the voice row UI (`UICharacterCreation.cs:452-528` — the play button
+  + prev/next cycling), `NewPlayerDraft.voice_variant: i32` +
+  `voice_pitch_offset: f32`, the `is_male` helper (the
+  `PlayerVariantID.Sets.Male` set `{0,1,2,3,8,10}` — identical to this
+  branch's inline matches! arm).
+- **The session threading** (`app/session.rs`): `save_created_character`
+  passes `draft.voice_variant`/`draft.voice_pitch_offset` into the
+  writer (its `last_saved_binary: 0` literal is the PRE-timestamp-fix
+  shape — this branch's `utc_now_binary()` is the newer session, §3-L1
+  rule 6).
+- **Its own transport diff** (`player_file.rs`, +146 lines): i32
+  `PlayerFile.voice_variant` + `PlayerFileWrite.voice_variant`, the
+  `finish_player_file` `voice: Option<(i32, f32)>` parameter (None for
+  the inc1/inc2 depths → the gender default stands in), the 1..4 clamp,
+  the <280 Male-derive, the 279-subset gender default, three witnesses.
 - `Player.voice_variant: i32` (ctor 1, `Player.cs:1346`/`:56045`),
   `voice_pitch_offset: f32` (`:1348`), `voice_override: i32` (`:1706`)
   — live fields feeding the ported `PlayHurtSound`/`PlayDeathSound`
-  decision trees (`player.rs:1933-1948` at its tip).
-- Its ANALYSIS deviation note: "**No voice-picker / save-load
-  surface.** `voiceVariant` stays at the ctor's 1 ... until a
-  character-creation/save surface lands."
+  decision trees; its `693e3850a` player.rs note pins the remaining
+  seam: "the live in-world Player's hydration from a loaded file is
+  the f44c save-load audit's seam (`CharPlay` is routing-only, spec
+  §9.4), so it stays at the ctor's 1 in play until that lands."
 
-**Row 67 status (this lane):** COMPLETE on the `.plr` side —
+**Row 67-68 status (this lane):** COMPLETE on the `.plr` side —
 `voice_variant: u8` + `voice_pitch_offset: f32` ride both models
-(`player_file.rs:361/364`, write `:54924-54925` slots, read gates
-280/281 with the <280 Male-derive `{0,1,2,3,8,10}` and the
-`LastMinuteFixes` 1..4 clamp `:55831`). The golden fixture's fresh
-voice byte 1 + pitch 0f are pinned.
+(`player_file.rs:367/370`, write `:54924-54925` at `:2085-2086`, read
+gates 280/281 at `:1159-1177` with the <280 Male-derive and the
+`LastMinuteFixes` 1..4 clamp `:55831` in `finish_player_file`). The
+golden fixture's fresh voice byte 1 + pitch 0f are pinned.
 
-**The merge seam (clean, no conflict):** e10's live field is `i32`,
-this lane's file field is `u8` — the hydration is
-`p.voice_variant = file.voice_variant as i32` (the 1..4 clamp already
-applied on the read side) and `p.voice_pitch_offset =
-file.voice_pitch_offset`, at the future character-load restore block.
-The save direction casts back (`file.voice_variant = p.voice_variant
-as u8`). e10 owns the CONSUMERS (the voice trees, the pitch remap
-`Utils.Remap(-1,1,-0.7,0.7)`); this lane owns the TRANSPORT. Neither
-branch needs a change for the other to land — the fields are declared
-at different layers with no textual overlap. The character-creation
-voice picker (S1-H-11's clipboard note: the creator writes the gender
-default `Male ? 1 : 2`) is the remaining UI seam, not a persist gap.
+**THE KEEP-ONE FINAL (the transport collision the retire probe found):**
+e10's diff and this branch's ph3 walk model THE SAME two slots with
+different field types (i32 vs u8) and different plumbing (a
+`finish_player_file` parameter vs the `PlayerTail` struct). **This
+branch's u8 transport is the merge base** — it is the file-faithful
+width (`(byte)voiceVariant`, `:54924`), it rides the complete-walk
+superset (the inc1/inc2 depths get the gender default through
+`PlayerTail::default` + the shared clamp; e10's None-parameter shape
+achieves the same but only on its main-base reader), and its witness
+(`the_voice_pair_round_trips_clamps_and_derives`) is the superset of
+e10's three (round-trip + clamp + gender-derive in one). The fold
+(§3-L1 rule 7): DELETE e10's `player_file.rs` diff, KEEP its picker +
+draft fields + session threading re-pointed at the u8 writer
+(`voice_variant: draft.voice_variant as u8` — the picker only offers
+1..3, the cast is lossless; a hand-edited draft clamps on the next
+read exactly like the C#). e10's `save_list.rs` test-fixture hunks
+(the `voice_variant: 1, voice_pitch_offset: 0.0` literals) dedup onto
+this branch's fixtures (same values, the u8 type).
+
+**The hydration hunk (STILL OPEN on both branches — the receipt):**
+neither branch hydrates a live in-world `Player` from a loaded `.plr`
+(this branch's reader feeds the card list, `save_list.rs:294`; e10's
+`693e3850a` note pins `CharPlay` as routing-only). The seam is
+unchanged and clean: `p.voice_variant = file.voice_variant as i32`
+(the 1..4 clamp already applied on the read side) + `p.voice_pitch_offset
+= file.voice_pitch_offset`, at the future character-load restore block
+(the same block that seats the G7 unlock restores, §2c). The save
+direction casts back (`file.voice_variant = p.voice_variant as u8`).
+e10 owns the CONSUMERS (the voice trees, the pitch remap
+`Utils.Remap(-1,1,-0.7,0.7)`); this lane owns the TRANSPORT. The
+picker UI seam the FINAL probe flagged is now CLOSED by e10's push —
+the remaining gap is the hydration hunk alone, and it is a shared
+remainder (the character-load path), not a voice-specific one.
 
 ## 5. The back-compat matrix (cross-layer)
 
@@ -444,21 +719,25 @@ default `Male ? 1 : 2`) is the remaining UI seam, not a persist gap.
 | port 326 inc1/inc2 | L1 | depth-1/2 retries | reached sections ride, rest defaults (research/99 §4) |
 | port `.plr` 0-stamp | L1 | `read_player_file` | **mtime fallback fills the stamp** (`d331ea7c`, `LoadPlayer:55096-55099`); byte-level read keeps 0 |
 | g89/g90/f33 `.plr` (main-base + their slots) | L1 | this branch's walk | their slots ARE G7/sweep slots — loads complete; their own readers load this branch's files too (same bytes; f33's raw torch bool reads through the slot-11 setter, §2a) |
+| e10 `.plr` (main-base + the voice pair, i32 model) | L1 | this branch's walk | byte-identical slots (`:54924-54925` u8+f32 either way) — loads complete both directions; the i32/u8 difference is in-memory only (§4's keep-one) |
 | `.plr` 229..229-only torch block (no builder array) | L1 | this branch's walk | the `:55242` setter's slot-11 value STANDS (the <230 count never reads slot 11) — the C# order, `63204f85` |
 | `.trplayer` v1/v2 | L2 | any lane reader | kinds migrate (`migrate_kind`) |
 | `.trplayer` v3-v6 | L2 | any lane reader | prefix rides, post-dye defaults |
-| `.trplayer` v7 (5 historical shapes + g90 six-line + f33 pair-line) | L2 | g88 superset + 135 §2 rule + §2d rule | all load (103 §4 matrix + the six-line row + the torch-pair row) |
+| `.trplayer` v7 (5 historical numeric shapes + g90b six-line + f33 pair-line + g87 dh-sentinel) | L2 | g88f v11 reader (the numeric rules LANDED) | the six numeric/six-line shapes load losslessly (103 §4 matrix + `g90bs_six_line_v7_loads_positionally` + `f33s_torch_only_v7_loads_positionally`); the `dh` line needs the §2e rule (next row) |
+| `.trplayer` v7 g87 `dh`-sentinel line | L2 | g88f v11 reader WITHOUT the §2e rule | **LOSS** (the 3-token `dh` line hits "any other shape → defaults kept" — both unlocks silently false); the §2e sentinel recognition is mandatory at the v12 fold |
+| `.trplayer` v7 g87 `dh`-line | L2 | g87's own reader | loads (its native shape); the numeric v7 files default both false — aligned but lossy, NOT the merge winner |
 | `.trplayer` v8/v9 short lines | L2 | g88 superset / g89 reader | tokens 1-3 back-read, rest false |
 | `.trplayer` v9 g88-superset | L2 | g89's reader | line 8 reads; pairs/bread/loadout lines IGNORED (g89's reader stops after line 8 — lossy but aligned; the superset reader is the merge winner) |
 | `.trplayer` v9 g89-file | L2 | g88 superset | unlock line positional, rest defaults |
-| `.trplayer` v10 short unlock line (3-token) | L2 | g88 v10 reader | tokens 1-3 read, crystal trio false (103 §7 back-read) |
-| `.trplayer` v10 pre-torch (no line 16) | L2 | the §2d-extended reader | torch pair defaults false (append-only back-read) |
-| `.trplayer` v7 g90-six-line | L2 | g89's reader | **CORRUPTS** (bread→aegis; 135 §2) — the fold's recognition rule is mandatory |
-| `.trplayer` v7 f33-pair-line | L2 | g88 superset WITHOUT the §2d rule | **CORRUPTS** (torch pair → life pair, hp feeds 1/1) — the value-range rule is mandatory |
+| `.trplayer` v10 short unlock line (3-token) | L2 | g88 v10+ reader | tokens 1-3 read, crystal trio false (103 §7 back-read) |
+| `.trplayer` v10 (no line 16) | L2 | g88f v11 reader | torch pair defaults false (`the_v10_superset_still_loads_without_the_torch_pair` — LANDED) |
+| `.trplayer` v11 (no line 17) | L2 | the §2e-extended v12 reader | the `dh` pair defaults false (the append-only back-read) |
+| `.trplayer` v7 g90-six-line | L2 | g89's reader | **CORRUPTS** (bread→aegis; 135 §2) — the recognition rule landed in g88f, the merge winner is safe |
+| `.trplayer` v7 f33-pair-line | L2 | a superset reader WITHOUT the §2d rule | **CORRUPTS** (torch pair → life pair, hp feeds 1/1) — the value-range rule landed in g88f |
 | `.trplayer` v7 f33-pair-line | L2 | f33's own reader | loads (its native shape); g90/g88 files' first line mis-reads as the pair — f33's reader is NOT the merge winner |
-| `.trwld` ≤17 | L3 | any v18 reader | union tail unread, Reset defaults |
-| `.trwld` v18 single-claimant (g70 16B / g71 3B / g69 1B / d125 1B / g90 2B / g72 31B / c43 44B / d109 dense-only) | L3 | the 97-byte-head union reader | **EOF/garbage — not back-compat** (92 §1 + 64-add §3: forward-only, no released v18; all eight are unmerged task work) |
-| `.wld` any release | L3 | `wld::parse` gates | per-field gates; book-two 259 / satchel 260 / pets 217 ride after the g90/a6/g89e/f45 dedup; the cave arrays ride g72c/f45-Ph6's one codec half |
+| `.trwld` ≤17 | L3 | any v18 reader | union tail unread, Reset defaults (each claimant's own: g72 the `World::new` zeros, g71 the setBG slot-0 defaults, c39/f39 the downs, g87/g90 false, c43/f45 the identity zeros + the re-stamp funnel) |
+| `.trwld` v18 single-claimant (g70 16B / g71 3B / g69 1B / d125 1B / g90 2B / g72 31B / c43-f45 44B / g87 3B / c39-f39 5B / d109 dense-only) | L3 | the 107-byte-head union reader | **EOF/garbage — not back-compat** (92 §1 + 64-add §3: forward-only, no released v18; all ten are unmerged task work) |
+| `.wld` any release | L3 | `wld::parse` gates | per-field gates; book-two 259 / satchel 260 / pets 217 / moon-boss v131+ ride f45's flags base; the force-today pair 212 rides f39's hunk; the cave arrays ride g72/f45-Ph6's one codec half; the underworld/treeBG2..4 flips ride g71's |
 
 ## 6. The six pre-existing divergences — re-verified (C# re-read)
 
@@ -574,32 +853,142 @@ balance sweep of the touched file, and a full `git diff` re-read of
 this phase's change. No cargo/tests/rustfmt/graphify per the lane
 constraint.
 
-## 8. The FINAL merger persist-checklist (condensed, in order)
+**RETIRE-phase verification (this pass):** the pushed-tip re-reads —
+g88f `a9f1c29d8` (research/103 FULL at v11 + research/122's v11
+post-receipt), g71 `f08e8d41e` (research/92-doc-sweep-bg FULL + the
+save.rs/flags.rs/bg_rolls.rs diffs — the underworld seat's trigger
+verified in the pushed code), g72 `4a75715ef` (research/64-v18-union-
+addendum FULL + the save.rs diff), g90 `94d33f2ca` (research/135 FULL +
+the save.rs diff), a6 `d7de8bd53` (research/138 FULL — the per-item
+verdict table + §4's byte-compare + §5's f45-collision + §6's
+token-order), g87 `dfbcaf94b` (the FULL persist.rs/save.rs/wld diffs),
+c39 `8ecb288aa` + f39 `bd5a5a24a` (the FULL save.rs/flags.rs/wld-mod
+diffs — the five-byte block's field-identity verified line-by-line),
+f45 `6352d3840` (the save.rs identity block + the flags.rs flips +
+`9c1a01a42`'s force-today deferral note), e10 `432dd5ab1`/`693e3850a`
+(the FULL player_file.rs/session.rs/save_list.rs diffs + the player.rs
+hydration note), d109 `81894095` (the save.rs dense-block diff); the
+C# `WorldFile.cs:1341-1410` flags-order re-read (the moon-boss/pets/
+books/force-today write order pinned); this branch's player_file.rs
+voice walk re-read (`:1159-1177`/`:1352-1353`/`:2085-2086` — the
+keep-one's u8 base verified). No cargo/tests/rustfmt/graphify per the
+lane constraint.
 
-1. **L1** (§3-L1): take THIS branch's `player_file.rs` whole → fold
-   g55 semantics → dedup g89/g90 named bools onto `used_upgrades[6]` →
-   dedup f33's torch transport (keep its live setter) → fold c43's
-   `.bak`/revision-carry envelope → keep the timestamp helpers whole.
-   Recognition rules: none needed (binary, version-gated); the gate
-   matrix is research/99 §2.
-2. **L2** (§3-L2): take g88's v10 superset `persist.rs` whole → seat
-   135 §2's six-line rule + §2d's torch-pair value-range rule in the
-   v7 arm → append the torch line 16 → dedup the `SavedPlayer`/restore
-   fields → seat 138's use-arm adjudications when pushed. Recognition
-   rules: 103 §3 (positional v8/v9/v10) + 135 §2 (six 1-token lines) +
-   §2d (one 2-token 0/1 line) + the lone-1-token aegis-first ambiguity
-   (103 §3, unchanged).
-3. **L3** (§3-L3): re-extend the g71c union to the 97-byte head +
-   dense layout above (seat g72d's 31 + g90's 2 + c43's 44) → move
-   every claimant's truncation constants → adjudicate the g71c/g72c
-   roll keep-one → dedup the `.wld` book-two/satchel/pets/cave-arrays
-   across g89e/g90/a6/f45/g72c. Dedup steps: one writer per file, one
-   slot/token per field, world globals never ride L2 (§2b rules 1-4).
-4. **Witness re-pins**: every lane's round-trip witnesses keep their
-   assertions; only tail lengths (L3) and field names (L1 array dedup,
-   L2 token map) move. The back-compat witness-matrix is §5 — run it
-   as the merge acceptance list.
-5. **Canaries**: add/keep the anchors rows for the union reader, the
-   superset writer and this branch's walk; the golden `.plr` fixture
-   stays byte-identical through every step (all fold defaults emit the
-   old hardcoded bytes).
+## 8. The FINAL-FINAL merger persist-checklist (THE merger-bible — all
+recognition rules, all claimants, all dedup steps, in order)
+
+**Order: L1 → L2 → L3** (§3's rationale). Every step below is a
+mechanical instruction; every adjudication is already made — the
+merger executes, it does not re-decide.
+
+### Step 1 — L1 `.plr` (`player_file.rs`)
+
+1. Take THIS branch's `player_file.rs` whole (`bdd1cc79a` lineage: the
+   71-row research/99 walk, G1-G7, the three shim depths, the
+   timestamp fix, the slot-11 property fix).
+2. Fold g55's loadout semantics onto the `LoadoutData` transport
+   (byte-identical, rows 65-66).
+3. Dedup g89's 3 + g90's 5 named unlock bools onto `used_upgrades[6]`
+   (indices: crystal 0, fruit 1, arcane 2, pearl 3, gummy 4, ambrosia
+   5 — the `.plr` file order `:54781-54786`, NOT the sidecar token
+   order); dedup g90's `ate_artisan_bread` onto the G7 field (same
+   name/slot — textual).
+4. Dedup f33's torch transport onto rows 19-20 (same named fields);
+   KEEP f33's live `set_using_biome_torches` setter + use arm + event
+   machines; never resurrect a stored `using_biome_torches` live
+   field. The 5043 use-arm owner is a6's faithful setter (138 §1).
+5. Fold c43/f45's envelope: the `.bak` copy, the revision CARRY
+   (`PlayerFileWrite::revision` — the one remaining L1 gap), the
+   UtcNow/mtime helpers dedup (keep one each).
+6. Fold e10's voice-write per §4's keep-one: DELETE its player_file.rs
+   diff (the u8 transport here is the base), KEEP the picker + draft
+   fields + session threading (`as u8` cast), dedup its save_list.rs
+   fixture literals + its round-trip witness onto
+   `the_voice_pair_round_trips_clamps_and_derives`.
+7. Keep the timestamp helpers whole; every lane's `last_saved_binary:
+   0` session literal → `utc_now_binary()` (fixtures stay 0).
+8. g87's `.plr` half needs NO fold (rows 18/64 already ride).
+9. **Recognition rules: NONE** (binary, version-gated) — the gate
+   matrix is research/99 §2; the accepted range [135, 326], the 279
+   subset shim, the inc1/inc2 retries.
+
+### Step 2 — L2 `.trplayer` (`persist.rs`)
+
+1. Take g88f's pushed `persist.rs` whole (`a9f1c29d8`: writer v11,
+   tokens 1-6 LIVE crystal=4/arcane=5/pearl=6, the torch line 16, the
+   tolerant reader). 103 §9 is the lane-local checklist; this step
+   list is the cross-layer one.
+2. The v7 recognition rules ALREADY LANDED (verify, don't re-add):
+   - **135 §2's six-line rule**: exactly six 1-token lines →
+     positional bread/crystal/arcane/pearl/gummy/ambrosia.
+   - **§2d's torch-pair rule**: exactly ONE 2-token line, both 0/1 →
+     the biome-torch pair (the value-range argument: maxima start
+     100/20).
+   - **The lone-1-token aegis-first ambiguity** (103 §3): the ONLY
+     surviving bounded misread (g90 bread-only → aegis slot); ends
+     at the fold, documented.
+3. ADD **§2e's `dh`-sentinel rule** to the v7 arm (first token `dh` →
+   the g87 unlock pair) + append **line 17 `dh <extra> <cart>`**,
+   writer bumps **v12** (the DD2 version reservation moves to v13;
+   token 7 on the unlock line stays DD2-reserved). v11 back-read:
+   missing line 17 → both false. Restore: plain bool fields, NOT
+   `enabledSuperCart` (L1-only).
+4. Dedup the `SavedPlayer`/App-restore fields (g90/f33 folded; g87's
+   two join at the v12 fold).
+5. Seat 138 §1's use-arm verdicts (§3-L2 rule 7's table — g88 keeps
+   the crystal/fruit carriers, a6 owns the shimmer/book/satchel/
+   license/torch arms, g90 owns the loaf + the Player-field consumer
+   anchors, c36's `complete_condition` is the shared dispatch).
+6. The torch line's conditional DROP (103 §2b rule 3): revisit ONLY
+   when the character-load hydration AND the exit-save both land.
+7. **Recognition rules summary (the complete registry)**: 103 §3's
+   positional v8-v11 unlock line + the shape walk (1-token bread /
+   2-token pairs / the pre-41 index line / 41-token sets / the v11
+   last-2-token torch line) + 135 §2's six-line + §2d's all-0/1 pair +
+   §2e's `dh` sentinel + the lone-flag ambiguity. World globals NEVER
+   ride L2 (§2b rule 4).
+
+### Step 3 — L3 world (`save.rs` `.trwld` + `wld/` `.wld`)
+
+1. Seat the **107-byte-head union** (§3-L3 rule 1's table — THE
+   authoritative layout): g70 16 + g72 31 + g71 3 + underworld 1 +
+   g69 1 + c39⨉f39 5 (ONE deduped block) + g87 3 + d125 1 + g90 2 +
+   c43/f45 44, then d109's W×H dense LAST. VERSION stays 18,
+   forward-only. `v18_tail_len` → `107 + width*height`.
+2. Move EVERY claimant's truncation constants to 107 (§3-L3's list;
+   the stale 21/53/65/97/98 totals in 92/64-add/135/138/this-doc's-
+   FINAL are superseded).
+3. The roll keep-one: g72's `cave_bg.rs` owns the cave roll + the
+   persistence trio; g71's surface rolls + `step_world_tail` wire
+   stay; g71's `randomize_cave_backgrounds` dedups (§3-L3 rule 2).
+4. The `.wld` flags base = f45's file (138 §5); dedup book-two (g89e/
+   g90/a6), satchel (g90/a6), pets (a6/g87), moon-boss (c39/f39) onto
+   it; take f39's force-today hunk verbatim (f45 defers); g72's cave
+   arrays + g71's underworld/treeBG flips ride (§3-L3 rule 3).
+5. The moon-boss death-arm keep-one: f39's season-lane `DoDeathEvents`
+   owns the semantics; c39's exec arms dedup; the resolved seasons
+   re-derive (f39's `refresh_seasons`), never persist.
+6. **Dedup steps (the invariants)**: one writer per file per save;
+   one slot/token per field; world globals never ride L2; the
+   dual-carrier fields keep BOTH carriers until the exit-save lands;
+   character-load restore FIRST, sidecar restore SECOND (§2c).
+
+### Step 4 — witness re-pins + acceptance
+
+1. Every lane's round-trip witnesses keep their assertions; only tail
+   lengths (L3 → 107), field names (L1 array dedup, L2 token map) and
+   version headers (L2 → v12 at the dh fold) move.
+2. The back-compat witness-matrix is §5 — run it as the merge
+   acceptance list (every row is a written witness on some lane).
+3. The e10 hydration hunk + the character-load restore block + the
+   exit-save are the SHARED remainders (§2c/§4) — they are seams, not
+   conflicts; no lane blocks another.
+
+### Step 5 — canaries
+
+1. Add/keep the anchors rows for the union reader, the superset
+   writer and this branch's walk; never delete rows to silence a
+   failure (AGENTS.md).
+2. The golden `.plr` fixture stays byte-identical through every step
+   (all fold defaults emit the old hardcoded bytes — the voice pair
+   1/0f, the pets/books/downeds false, the identity zeros).

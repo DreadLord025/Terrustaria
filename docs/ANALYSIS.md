@@ -19079,6 +19079,35 @@ FINAL head is **97 bytes + W×H dense**, with the per-claimant
 truncation-constant moves and the g71c/g72c roll keep-one adjudication
 recorded (§3-L3). The condensed L1→L2→L3 merger checklist is 132 §8.
 
+**W4-f44 RETIRE (2026-11-21, this commit): research/132 FINAL-FINAL — THE
+persist merger-bible.** The retire probe re-read every persist lane at its
+PUSHED tip (the FINAL probe's worktree states all landed) and closed the
+three open obligations: (1) **the L3 union is now TEN claimants / a
+107-byte fixed head + W×H dense** (132 §3-L3 is THE authoritative layout)
+— the FINAL "97" was an arithmetic slip (16+31+3+1+1+2+44 = 98); the
+retire additions are g87's 3-byte pet trio (`dfbcaf94b`), the c39⨉f39
+five-byte moon-boss downeds (`8ecb288aa`/`bd5a5a24a` — field-identical
+claims, ONE deduped block, f39's season-lane DoDeathEvents owns the
+semantics) and the FIRED underworld seat (g71's pushed wiring rolls +
+`.wld`-persists `underworld_bg_style` — a `.trwld` byte is mandatory, 1 B
+between the surface group and crimson); the flag singles ride strict C#
+`.wld` write order. (2) **the g88f receipt** (`a9f1c29d8`, v11): 132 §2d's
+torch-pair recognition rule + line-16 seat CONSUMED verbatim (the version
+bumped v11 instead of the stay-v10 proposal — the safer shape, superseded
+in the doc), 135 §2's six-line rule landed, research/138 PUSHED
+(`d7de8bd53`) and its per-item use-arm verdicts seated (132 §3-L2 rule 7);
+the NEW g87 `dh` sentinel line (the ninth v7 shape) folds as line 17 at
+v12, the DD2 version reservation moves to v13 (132 §2e). (3) **the e10
+voice-write landed** (`693e3850a`+ — the picker + draft + session
+threading + an i32 transport diff): the keep-one FINAL is this branch's
+u8 transport (the file-faithful width, the complete-walk superset, the
+superset witness); e10's player_file.rs diff dedups, its picker/threading
+fold with an `as u8` cast; the live-Player hydration hunk stays OPEN on
+both branches (the shared character-load seam, 132 §4). The FINAL-FINAL
+5-step merger checklist (all recognition rules, all claimants, all dedup
+steps) is 132 §8. Docs-only retire — no code change, golden parity
+untouched.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port

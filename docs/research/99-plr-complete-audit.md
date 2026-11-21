@@ -313,6 +313,19 @@ file-verbatim transport byte. Witness:
 witness re-pinned. Golden parity untouched (the fresh locked character
 writes the same false byte). See research/132 §6's addendum.
 
+**RETIRE-phase postscript (research/132 FINAL-FINAL):** rows 67-68 (the
+voice pair) gained a second claimant — e10's pushed voice-write
+(`693e3850a`+) models the same slots with i32 fields + a
+`finish_player_file` parameter. The keep-one FINAL (132 §4): THIS
+branch's u8 transport is the merge base (the file-faithful `(byte)`
+width, the `PlayerTail` walk covers the inc1/inc2 depths, the witness
+`the_voice_pair_round_trips_clamps_and_derives` is the superset of
+e10's three); e10's picker + draft fields + session threading fold with
+an `as u8` cast. Rows 18/64 (`extraAccessory`/the super-cart BitsByte)
+gained a sidecar co-carrier (g87's `dh` line, 132 §2e) — the L1 halves
+here are unchanged and need no fold. The byte layout of this table is
+untouched by the retire pass.
+
 ## 6. Witnesses (written, code-only — not run)
 
 New: `the_unlock_and_counter_header_fields_round_trip` (the G7 block, byte
