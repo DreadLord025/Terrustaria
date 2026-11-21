@@ -4828,6 +4828,117 @@ fn ice_tortoise_smoke_death(
     }
 }
 
+/// The 315 Headless Horseman death (`NPC.cs:89026-89052`, sites
+/// 752-755): the 20x dust-54 burst (alpha 50, ×2, noGravity), then the
+/// three gore-99 at the −10/+h/2−15/+h−20 Y offsets + the ×0.3 post,
+/// then the FOURTH gore 446 (the pumpkin) at position with the ×0.1
+/// post (NOT 0.3), `this.scale` carried.
+fn headless_horseman_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89038-89043` — the 20x dust-54 burst, alpha 50.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:89044-89049` — the three gore-99 + the ×0.3 post.
+    for dy in [-10.0, h / 2.0 - 15.0, h - 20.0] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+    // `:89050-89051` — the pumpkin 446 + the ×0.1 post.
+    let idx = gore.new_gore(rng, world, pos, vel, 446, s);
+    gore.slot_mut(idx).velocity *= 0.1;
+}
+
+/// The 254-261/634/635 mushroom zombie death (`NPC.cs:89053-89080`,
+/// sites 756-758): the 20x dust-165 burst (alpha 50, ×2, noGravity),
+/// then — UNLESS the type is 261 (the Fungi Spore, dust-only) — the
+/// three gores 375/376/377 at the −10/+h/2−15/+h−20 Y offsets + the
+/// ×0.3 post, `this.scale` carried.
+fn mushroom_zombie_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89065-89070` — the 20x dust-165 burst, alpha 50.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 165, 0.0, 0.0, 50, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    if npc_type == 261 {
+        return; // :89071 — the Fungi Spore is dust-only.
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:89073-89078` — the three gores + the ×0.3 post.
+    for (dy, t) in [(-10.0, 375), (h / 2.0 - 15.0, 376), (h - 20.0, 377)] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, t, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 140 Possessed Armor death (`NPC.cs:89081-89098`, sites 759-761):
+/// the 20x dust-54 burst (alpha 50, ×2, noGravity), then the three
+/// gore-99 at the −10/+h/2−15/+h−20 Y offsets + the ×0.3 post,
+/// `this.scale` carried. The `life <= 0` gate wraps the whole body.
+fn possessed_armor_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89085-89090` — the 20x dust-54 burst, alpha 50.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:89091-89096` — the three gore-99 + the ×0.3 post.
+    for dy in [-10.0, h / 2.0 - 15.0, h - 20.0] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5402,6 +5513,23 @@ pub fn hit_effect_d(
     // `:88959-88983` — the 82/158/159/250/253 arm (sites 749-751).
     else if matches!(npc_type, 82 | 158 | 159 | 250 | 253) {
         ice_tortoise_smoke_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88984-89002` — the 316/330 arm: NO gore sites (the 50x tinted
+    // dust-192 census is the dust lanes'; recorded, not ported).
+    // `:89003-89025` — the 662 arm: NO gore sites (the 50x dust-180
+    // census; recorded, not ported).
+    // `:89026-89052` — the 315 Headless Horseman arm (sites 752-755).
+    else if npc_type == 315 {
+        headless_horseman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89053-89080` — the 254-261/634/635 mushroom zombie arm (sites
+    // 756-758; the 261 Fungi Spore is dust-only).
+    else if matches!(npc_type, 254..=261 | 634 | 635) {
+        mushroom_zombie_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89081-89098` — the 140 Possessed Armor arm (sites 759-761).
+    else if npc_type == 140 {
+        possessed_armor_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9402,6 +9530,57 @@ mod tests {
                 let kx = twin.next_range(-20, 21) as f32 * 0.1;
                 assert_eq!(gore.slot(i).velocity.x, (1.0 + kx) * 0.3);
                 assert_eq!(gore.slot(i).velocity.y, -ky * 0.3);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:89044-89051` — the Headless Horseman: three gore-99 +
+    /// the pumpkin 446 with the ×0.1 post (NOT 0.3); `:89073-89078` —
+    /// the mushroom zombie triple (the 261 spore dust-only);
+    /// `:89091-89096` — the Possessed Armor triple.
+    #[test]
+    fn w4_f5d_the_horseman_pumpkin_and_the_mushroom_spore_skip() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(761);
+        let _ = hit_effect_d(&n, 315, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![99, 99, 99, 446]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 100.0));
+        let mut twin = UnifiedRandom::new(761);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        for i in 0..4 {
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            let damp = if i == 3 { 0.1 } else { 0.3 };
+            assert_eq!(gore.slot(i).velocity.x, (1.0 + kx) * damp);
+            assert_eq!(gore.slot(i).velocity.y, -ky * damp);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the horseman mirrors the C# draws");
+        for (kind, want) in [(254, vec![375, 376, 377]), (261, vec![]), (140, vec![99, 99, 99])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(769);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let got: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(got, want, "kind {kind}");
+            let mut twin = UnifiedRandom::new(769);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
         }
