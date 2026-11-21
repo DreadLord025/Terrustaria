@@ -39491,3 +39491,111 @@ field existed anywhere in `crates/`).
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
 (user directive). The 15 new witnesses (8 wall + 7 stealth) are owed a compile
 window before merge.
+
+## The pulley + carpet folded hosts (W4-f3, task/W4-f3-dust-player-3, 2026-11-21, code-only mode)
+
+The H-h2 escalation's folded hosts (3)/(4)/(5) of the third-batch dust census:
+the **rope-pulley attach/move/dismount machine** and the **Magic Carpet fly
+machine** — the two unported hosts the wallclimb escalation cited (`CarpetMovement`
+`:26766` "another lane", the pulley `:26135` cancel-host "stays folded"). Both now
+run. **Neither machine has a single dust site** — a line-by-line scan of
+`FindPulley` (`:19644-19749`), `CanMoveForwardOnRope` (`:24247-24266`),
+`CarpetMovement` (`:21842-21890`) and the Update rope block (`:26100-26493`)
+found ZERO `Dust.NewDust`/`Gore.NewGore` calls. Host (3) ("WallClimb DUST
+remaining in the pulley/carpet machines") is therefore a **zero-site census**:
+the wall type-31 dust already landed with the wallclimb escalation; the pulley
+and carpet contribute no new dust. Two commits, one per machine.
+
+### Machine 1 — the rope-pulley machine (`Player.cs:19644-19749` + `:26116-26493`)
+
+Ported verbatim into `player.rs` (`find_pulley` / `can_move_forward_on_rope` /
+`update_pulley_direction` / `pulley_sidestep` / `pulley_ride`), called at the C#
+slots: the head block (`:26116-26287`) after the extra-jump maintenance, the ride
+(`:26300-26493`) as the `else if`-replacement of the whole `:26494` movement arm.
+
+* **The attach** (`FindPulley`, `:19644-19749`): up/down held over a rope cell
+  (`WorldGen.IsRope`, the port's `render::ropes::is_rope`), the nearest-of-three
+  hang pick (+6 / centre / -6, strict `<` ties keep the earlier candidate), the
+  +6 → -6 solid-body fallback (the dir/facing writes land BEFORE each probe and
+  stay mutated even when all three refuse — the C#'s own behaviour). A lone rope
+  cell (no rope-kind neighbour above/below) snaps the hang to `row*16 + 22` and
+  captures the old-Y delta in `gfxOffY`; `stepSpeed = 2.5`, `velocity.X = 0`.
+* **The direction machine** (`:26128-26287`): `pulleyDir` 1 (centre) / 2 (side),
+  the fresh-press-or-8-tick-hold swing (`releaseLeft || leftTimer == 0`), the
+  `:26150` `|| rightTimer == 0` quirk OUTSIDE the direction/control parens
+  (verbatim), the lateral rope step (`CanMoveForwardOnRope`), the released-key /
+  velocity / rope-loss / CC dismounts, the jump-off (`:26281-26286`). The
+  **`:26135` `CancelAllJumpVisualEffects` host NOW FIRES** — the wallclimb
+  escalation cited it folded while this machine was unported.
+* **The ride** (`:26300-26493`): the climb (-0.2/tick past -3, cap -8) / descend
+  (+0.2/tick past 3, cap `maxFallSpeed`) / rest (×0.7, ±0.1 dead-band) velocity
+  machine, the head/foot-room probes + the side-step fallback, the rope-end
+  down-drop (`ropeCount = 10` re-attach lockout, 1 px/tick start), the X snap +
+  the 2-frame `|vy*0.75| + 0.75` cadence (>10 wrap), the per-tick flight refills
+  (`RefreshDoubleJumps`, `canCarpet = true`, wing/rocket budgets). The ride
+  REPLACES the `:26494` movement block — the port gates the jump/dash/wall/flight
+  arms off on a ride tick and calls the ride's own `:26491` `DashMovement`.
+* **The latches**: `releaseLeft`/`releaseRight` + `leftTimer`/`rightTimer` (the
+  7-tick hold timers, `:27618-27652`) and the
+  `instantMovementAccumulatedThisFrame.X` rope-step accumulator (`:24377` zero,
+  `:26200`/`:26204` ±1). The accumulator's only C# consumer is the accStopwatch
+  speed readout (`Main.cs:47089`) — unported (no stopwatch info-accessory row), a
+  cited seam.
+* **The rope-coil interplay** (host 5): the pulley attaches to the SAME
+  `td::TILE_ROPE` set the rope-coil placement writes (W4-g82/d4 —
+  213/214/353/365/366/504/449/450/451). A placed coil column climbs; a natural
+  vine never does (the g83 disjoint-set pin, `vine_checks.rs`
+  `w4_g83_vines_and_ropes_are_disjoint_sets`). The raw `Main.tileRope` probe
+  (`tile_rope_kind`) is distinct from `WorldGen.IsRope` (no platform/track column
+  probe) — the C# uses both (`:19665` raw, `:19652` IsRope).
+* **Cited folds**: `portableStoolInfo.IsInUse` (`:19646`, the Portable Stool has
+  no row), `gravDir != 1` (`:26269`/`:26112`, no gravity flip), the `Main.cameraX`
+  compensation snaps (`:19706`/`:26237`/`:26462`, render seams — the port's camera
+  follows the position), `rocketFrame` (`:26488`, no port field), the
+  `UpdateControlHolds` `releaseUp` latch (`:26492`/`:29080`, no port consumer —
+  the grapple jump-off reads `input.up` directly).
+
+### Machine 2 — the Magic Carpet fly (`Player.cs:21842-21890`)
+
+Ported verbatim into `player.rs` (`carpet_movement`), called at `:26766` right
+after the wall machines (pulley-ride-gated). The grant is item **934**
+(`:15034-15037`) — NOT 4989 (the Soaring Insignia, already ported as
+`empress_brooch`).
+
+* **The launch gate** (`:21845`): the carpet accessory + ALL nine extra-jump
+  can-flags spent + `jump == 0` + airborne + no rocket/wing budget + no mount. A
+  jump press while `canCarpet` arms the 300-tick budget (`:21847-21851`); holding
+  jump pins the rise at `-(gravity + 1e-6)` and runs the 6-frame `1 + |vx*0.5|`
+  glide cadence (>8 wrap, frame 0..5). `slowFall = false` — the carpet overrides
+  Featherfall (`:21888`).
+* **The re-arm** (`:26100-26115`): resting (`vy == 0`) or sliding re-arms
+  `canCarpet` and zeroes the budget/cadence; without the accessory the gate + pose
+  clear. The ride's `:26483` and the grapple head's `:22624` also set
+  `canCarpet = true`.
+* **The consumers**: the `:26613-26617` glide run boost (acceleration ×1.25, max
+  ×1.5 — reads the PREVIOUS tick's `carpetFrame`, since `CarpetMovement` runs
+  later at `:26766`) and the `:28066`/`:23537` step-up gate (`carpetFrame != -1`
+  steps up even while rising — the carpet climbs ledges mid-flight).
+  `ResetEffects` clears `carpet` (`:18657`).
+* **NO dust sites** — the carpet is a pure movement machine. The `gravDir == -1`
+  rise mirror (`:21862-21865`) folds to the `+1` arm.
+
+### Hosts (3)/(4) — the census results
+
+* **(3) WallClimb DUST remaining**: ZERO new sites. The pulley/carpet machines
+  carry no dust; the wall type-31 sites already landed with the wallclimb
+  escalation (`drain_wall_dust`). No shared-corner-chain drain needed here.
+* **(4) climbing-claw accessories**: VERIFIED already landed — the Climbing
+  Claws 953 / Shoe Spikes 975 (`spikedBoots++`, `:15040`/`:15044`), Tiger
+  Climbing Gear 976 (`+= 2`, `:15048`), Master Ninja Gear 984 (`= 2`, `:15066`),
+  the frog family 3994/3995/3996 (`:14426-14444`). The `:20600` region consumers
+  (the `:20632` auto-jump disarm, the `:20670`/`:20778` wall-jump) landed with
+  the wallclimb escalation; `spikedBoots`' only readers are the wall machines
+  (`:21637`/`:21753`/`:21775`) — no claw-specific arm remains unported.
+
+**RNG contract:** unchanged — neither machine draws from any stream (no dust, no
+sound, no gore). The pulley/carpet are deterministic velocity/position machines.
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
+(user directive). The 17 new witnesses (11 pulley + 6 carpet) are owed a compile
+window before merge.
