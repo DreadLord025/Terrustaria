@@ -69,8 +69,8 @@
 //! RUN (no compiler invoked on this branch); verified by re-reading the cited
 //! C# blocks and hand arithmetic.
 //!
-//! Deliberate skips (ANALYSIS): dust (the flare trail + the fairy's), sound
-//! (the fairy's Item28 `:45672`), the spelunker spot helper, `netUpdate`,
+//! Deliberate skips (ANALYSIS): dust (the flare trail + the fairy's), the
+//! spelunker spot helper, `netUpdate`,
 //! the wet movement half (the slot carries no liquid-wet flags — the dry
 //! integrate stands, the `wet` stick branch folds dry), the inner
 //! `SlopeCollision` passes (`correctSlopeCollision` is false for these kinds
@@ -425,8 +425,11 @@ fn fairy_glowstick_hover(p: &mut Projectile, world: &World) {
     let cy = p.pos.y + p.h * 0.5;
     let px = (cx / 16.0) as i32;
     let py = (cy / 16.0) as i32;
-    // `:45670-45675` — the one-shot: `ai[1] == 1` zeroes X and latches 2.
+    // `:45670-45675` — the one-shot: `ai[1] == 1` plays SoundID.Item28 at
+    // base.position (S1-E-21h d76, `:45672` — BEFORE the X-zero/latch), then
+    // zeroes X and latches 2.
     if p.ai[1] == 1.0 {
+        p.wants_sound = Some((2, 28, p.pos.x, p.pos.y, 0.0));
         p.vel.x = 0.0;
         p.ai[1] = 2.0;
     }
@@ -817,6 +820,12 @@ mod tests {
         fairy_glowstick_hover(&mut p, &w);
         assert_eq!(p.vel.x, 0.0);
         assert_eq!(p.ai[1], 2.0);
+        // S1-E-21h d76 (`:45672`): the one-shot queues Item28 at base.position.
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 28, p.pos.x, p.pos.y, 0.0)),
+            "the fairy's hover cue"
+        );
     }
 
     #[test]

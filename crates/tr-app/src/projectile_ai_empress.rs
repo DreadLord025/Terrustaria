@@ -36,9 +36,11 @@
 //!
 //! RNG by construction (every `Main.rand` draw cited, dust skips included):
 //! * **872 / 874 / 923: ZERO draws.** `AI_173` is pure maths; style 0 has no
-//!   arm; `AI_180`'s only effects are `SoundID.Item159` (`:44988`, skipped —
-//!   no sound layer) and the 13-point `CastLightOpen` walk (`:45020-45024`,
-//!   skipped — the lighting seam), neither draws.
+//!   arm; `AI_180`'s `SoundID.Item159` (`:44988`) now rides the `wants_sound`
+//!   seam (S1-E-21h d76 — the cue queues, its case-2 pitch draw rides the
+//!   drain's UpdateProjectiles stream, not the AI) and the 13-point
+//!   `CastLightOpen` walk (`:45020-45024`, skipped — the lighting seam)
+//!   draws nothing.
 //! * **873: ZERO draws in the AI.** The swirl/homing/opacity path
 //!   (`:45493-45557`) has no rand for the hostile kind. The 20-dust death
 //!   burst lives in `Kill()` (`:71490-71521`: per dust `NewDustPerfect` 6
@@ -372,8 +374,17 @@ fn ai_179_lance(p: &mut Projectile, rng: &mut dyn DropRng) {
 /// out of range → `Kill()` (`:45026-45029`). The 13-point light walk
 /// (`:45016-45024`) is the lighting-seam skip — ZERO rand draws.
 fn ai_180_sun_dance(p: &mut Projectile, npcs: &[EmpressNpcRef]) {
-    // `:44986-44989` — the first-tick sound: SKIPPED (no sound layer, no
-    // rand). `:44990` — the age counter.
+    // `:44986-44989` — the first-tick sound: SoundID.Item159 at base.Center
+    // (S1-E-21h d76, `:44988`). The C# gates on `localAI[0] == 0` and does
+    // NOT latch inside the if — the `localAI[0]++` below closes the window
+    // after one tick. The 159 playing-guard + ×0.75 volume arm
+    // (`LegacySoundPlayer.cs:582-588`) is the standing D4 deviation (the
+    // queue→drain batch plays at the style's own volume, no instance pool).
+    if p.local_ai[0] == 0.0 {
+        let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        p.wants_sound = Some((2, 159, cx, cy, 0.0));
+    }
+    // `:44990` — the age counter.
     p.local_ai[0] += 1.0;
     let num = 180.0; // `:44991`
     let num2 = PI / 9.0; // `:44993`
@@ -720,9 +731,17 @@ mod tests {
         p.ai[0] = 1.0; // the start angle
         p.ai[1] = 0.0; // the boss index
         p.vel = Vec2::new(5.0, 5.0);
+        // S1-E-21h d76 (`:44988`): the first-tick Item159 queues at the
+        // PRE-snap base.Center (the cue plays before the boss snap below).
+        let (pre_cx, pre_cy) = p.center();
         let mut rng = RecordRng::default();
         assert!(empress_proj_tick(&mut p, 0, &[], &[boss], &mut rng));
         assert_eq!(p.local_ai[0], 1.0);
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 159, pre_cx, pre_cy, 0.0)),
+            "the sun dance's first-tick cue at the pre-snap center"
+        );
         assert_eq!(p.alpha, 240); // 255 − 15
         assert_eq!(p.pos, Vec2::new(585.0, 385.0)); // centre snap − 15
         assert_eq!(p.vel, Vec2::ZERO);

@@ -40,11 +40,17 @@
 //! by re-reading the cited C# blocks and hand arithmetic.
 //!
 //! Deliberate skips (recorded in ANALYSIS "aiStyle-1 per-type arms, slice B"):
-//! - All `Main.rand` draws — the pool's aiStyle-1 arms keep zero RNG (the
-//!   precedent `ai_style1_rider`, projectile.rs:5109-5127). Every skipped
-//!   draw is cited at its point; the RNG-order argument lives in ANALYSIS.
-//! - Dust, light (`Lighting.AddLight`/`PlotTileLine`), sound and `netUpdate`
-//!   — no such layers in the pool.
+//! - The `Main.rand` draws that feed DUST only — the pool's aiStyle-1 arms
+//!   keep zero RNG for those (the precedent `ai_style1_rider`,
+//!   projectile.rs:5109-5127). Every skipped draw is cited at its point.
+//!   S1-E-21h d76 THREADS `rng` for the ONE state-bearing cue pick: the
+//!   Phantasmal Bolt 462's `Next(2)` Item124/125 choice (`:55272`), which
+//!   selects the played cue (the golf-strike precedent). Its `Next(5, 10)`
+//!   dust-count draw stays skipped with the dust.
+//! - Dust, light (`Lighting.AddLight`/`PlotTileLine`) and `netUpdate` — no
+//!   such layers in the pool. SOUND now rides the `wants_sound` seam
+//!   (S1-E-21h d76): the 601 portal pair, the 259/438/462/389/980 latch
+//!   chain, the 270 skull, the 581 vortex dart and the 686 Betsy Item20.
 //! - The Harpy-charm tail (`:57769-57793`, `AI_001_Features`) — no charm
 //!   feature in the port.
 //! - The port's clamp is ±16 (projectile.rs:5064) where the C# clamps the
@@ -53,6 +59,7 @@
 
 use glam::Vec2;
 use tr_core::World;
+use tr_core::loot::DropRng;
 
 use crate::projectile::{
     BALLISTA_SHOT, BETSY_FIREBALL, BLOWUP_SMOKE_MOONLORD, BRAIN_SCRAMBLER, CANNON_EXPLOSIVE,
@@ -142,15 +149,30 @@ fn finish_flight(p: &mut Projectile, world: &World) {
 /// port (the same stand-in the other owner-aware arms use); `None` means no
 /// player resolved and the steering is skipped. Every early `Kill(); return`
 /// is the port's death convention (`active = false`, `time_left = 0`).
-pub(crate) fn step(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>) {
+pub(crate) fn step(
+    p: &mut Projectile,
+    world: &World,
+    owner: Option<(f32, f32)>,
+    rng: &mut dyn DropRng,
+) {
     // ---- 1. The hook group above the counter ------------------------------
     // `:54066-54120` — the Cannon Explosive (601): the portal light
-    // (`:54068-54071`, skipped), the alpha-1..15 dust/sound window
-    // (`:54072-54095` — the 4× dust 264 with `Utils.RandomVector2(Main.rand,
-    // -1, 1)` draws + the Item114/115 cues, SKIPPED), the alpha fade 15, the
-    // 2-frame cycle at 4 ticks/frame (`Main.projFrames[601] = 2`), the
-    // alpha-0 dust 263 (`:54109-54119`, skipped).
+    // (`:54068-54071`, skipped), the alpha-1..15 dust window (`:54072-54086`
+    // — the 4× dust 264 with `Utils.RandomVector2(Main.rand, -1, 1)` draws,
+    // SKIPPED) + the Item114/115 portal cues (PORTED below, S1-E-21h d76),
+    // the alpha fade 15, the 2-frame cycle at 4 ticks/frame
+    // (`Main.projFrames[601] = 2`), the alpha-0 dust 263 (`:54109-54119`,
+    // skipped).
     if p.kind == CANNON_EXPLOSIVE {
+        // `:54072-54095` — the alpha-1..15 window: the 4× dust 264 (with its
+        // `Utils.RandomVector2` draws) stays SKIPPED, but the portal cue
+        // plays — `ai[0] != 0` → Item114, else Item115 (`:54087-54094`,
+        // S1-E-21h d76), at `base.position`, once per tick while the window
+        // holds (the C# has no latch here — the alpha fade closes it).
+        if p.alpha > 0 && p.alpha <= 15 {
+            let style = if p.ai[0] != 0.0 { 114 } else { 115 };
+            p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0));
+        }
         p.alpha -= 15;
         if p.alpha < 0 {
             p.alpha = 0;
@@ -246,16 +268,37 @@ pub(crate) fn step(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>)
     }
     // `:55209-55330` — the ai[1] == 0 sound-latch else-if chain. The
     // slice-B members: 259 (`:55239-55243`, Item33), 438 (`:55254-55258`,
-    // Item12), 462 (`:55269-55290` — its `Main.rand.Next(2)` sound pick
-    // (Item124/125) + `Next(5, 10)` dust-count draw and the dust 229 loop
-    // are SKIPPED with the dust), 389 (`:55296-55300`, Item12), 980
-    // (`:55326-55330`, Item17). Each kind appears once in the chain, so a
-    // per-kind match is exact.
+    // Item12), 462 (`:55269-55290` — its `Main.rand.Next(2)` cue pick
+    // (Item124/125) is PORTED, S1-E-21h d76; the `Next(5, 10)` dust-count
+    // draw + the dust 229 loop stay SKIPPED with the dust), 389
+    // (`:55296-55300`, Item12), 980 (`:55326-55330`, Item17). Each kind
+    // appears once in the chain, so a per-kind match is exact. The cues
+    // queue at `base.position` (the pre-movement position).
     if p.ai[1] == 0.0 {
         match p.kind {
-            GOLEM_EYE_BEAM | RAY_GUNNER | PHANTASMAL_BOLT | MINI_RETINA_LASER
-            | TRAP_VENOM_DART => {
+            GOLEM_EYE_BEAM => {
                 p.ai[1] = 1.0;
+                p.wants_sound = Some((2, 33, p.pos.x, p.pos.y, 0.0)); // :55242
+            }
+            RAY_GUNNER => {
+                p.ai[1] = 1.0;
+                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0)); // :55257
+            }
+            PHANTASMAL_BOLT => {
+                p.ai[1] = 1.0;
+                // `:55272-55279` — the ONE Next(2) cue pick: 0 → Item124,
+                // else Item125. The draw rides UpdateProjectiles; the dust
+                // count (`Next(5, 10)`) and the 229 loop stay skipped.
+                let style = if rng.next_range(0, 2) == 0 { 124 } else { 125 };
+                p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0));
+            }
+            MINI_RETINA_LASER => {
+                p.ai[1] = 1.0;
+                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0)); // :55299
+            }
+            TRAP_VENOM_DART => {
+                p.ai[1] = 1.0;
+                p.wants_sound = Some((2, 17, p.pos.x, p.pos.y, 0.0)); // :55329
             }
             _ => {}
         }
@@ -305,6 +348,9 @@ pub(crate) fn step(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>)
         }
         if p.local_ai[0] == 0.0 {
             p.local_ai[0] = 1.0;
+            // `:56078` — SoundID.Item8 at base.position (S1-E-21h d76); the
+            // 10× dust 5 burst stays skipped (reference arm — slice A owns 270).
+            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
         }
     }
     // `:56165-56183` — the Blowup Smoke (622): the dust 229 roll
@@ -320,20 +366,28 @@ pub(crate) fn step(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>)
         }
     }
     // `:56309-56326` — the Vortex Dart (581): the localAI[0] sound latch
-    // (Item17 skipped), the 2× dust `Utils.SelectRandom(Main.rand, 229,
-    // 161, 161)` rolls (`:56316-56325`, SKIPPED — zero RNG). No other
-    // state: the kind flies the counting generic flight.
+    // (Item17 at base.Center, `:56314`, S1-E-21h d76), the 2× dust
+    // `Utils.SelectRandom(Main.rand, 229, 161, 161)` rolls (`:56316-56325`,
+    // SKIPPED — dust-only). No other state: the kind flies the counting
+    // generic flight.
     if p.kind == VORTEX_DART && p.local_ai[0] == 0.0 {
         p.local_ai[0] = 1.0;
+        let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        p.wants_sound = Some((2, 17, cx, cy, 0.0));
     }
-    // `:56504-56532` — Betsy's fireball (686): the localAI[0] sound latch
-    // (DD2_BetsyFireballShot skipped), the alpha fade 25 from ai[0] >= 2
-    // (BEFORE this tick's gravity — the counter already rode above), the
-    // two dust rolls (`Main.rand.Next(4)` / `Next(3)` + the oldPos[9] gate,
-    // `:56519-56531`, SKIPPED).
+    // `:56504-56555` — Betsy's fireball (686): the localAI[0] one-shot —
+    // when `ai[1] != 2f` the Item20 cue plays (`:56540`, S1-E-21h d76; the
+    // DD2_BetsyFireballShot trackable at `:56541` is the D3 deferred family),
+    // then the alpha fade 25 from ai[0] >= 2 (BEFORE this tick's gravity —
+    // the counter already rode above), the two dust rolls
+    // (`Main.rand.Next(4)` / `Next(3)` + the oldPos[9] gate, `:56519-56531`,
+    // SKIPPED).
     if p.kind == BETSY_FIREBALL {
         if p.local_ai[0] == 0.0 {
             p.local_ai[0] = 1.0;
+            if p.ai[1] != 2.0 {
+                p.wants_sound = Some((2, 20, p.pos.x, p.pos.y, 0.0)); // :56540
+            }
         }
         if p.ai[0] >= 2.0 {
             p.alpha -= 25;
@@ -541,7 +595,7 @@ mod tests {
             TRAP_VENOM_DART,
         ] {
             let mut p = shot(k);
-            step(&mut p, &w, Some((1600.0, 800.0)));
+            step(&mut p, &w, Some((1600.0, 800.0)), &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert_eq!(p.ai[0], 0.0, "kind {k} must rest");
         }
         for k in [
@@ -552,7 +606,7 @@ mod tests {
             DEERCLOPS_ICE_CHUNK,
         ] {
             let mut p = shot(k);
-            step(&mut p, &w, Some((1600.0, 800.0)));
+            step(&mut p, &w, Some((1600.0, 800.0)), &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert_eq!(p.ai[0], 1.0, "kind {k} must count");
         }
     }
@@ -564,11 +618,11 @@ mod tests {
         let w = air();
         let mut p = shot(GOLEM_EYE_BEAM);
         p.alpha = 255;
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.ai[1], 1.0);
         assert_eq!(p.alpha, 245);
         for _ in 0..25 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         }
         assert_eq!(p.alpha, 0); // 255 − 26×10 clamps at 0
         assert_eq!(p.ai[0], 0.0); // flag3 rest
@@ -580,12 +634,12 @@ mod tests {
     fn the_flaming_wood_fades_hundred_and_faces_minus_pi2() {
         let w = air();
         let mut p = shot(FLAMING_WOOD); // the row's spawn alpha is 255
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.alpha, 155);
         assert_eq!(p.ai[1], 1.0);
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.alpha, 55);
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.alpha, 0);
         // vel (10, 0) → angle 0 → rot = −π/2.
         assert!((p.rot + std::f32::consts::FRAC_PI_2).abs() < 1e-6);
@@ -600,7 +654,7 @@ mod tests {
         let mut p = shot(BRAIN_SCRAMBLER);
         p.alpha = 255;
         for t in 1..=12 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert_eq!(p.frame, (t / 3) % 4, "tick {t}");
         }
         assert_eq!(p.alpha, 0); // 255 − 12×40 clamps
@@ -609,7 +663,7 @@ mod tests {
         assert!((p.rot - std::f32::consts::PI).abs() < 1e-5);
         let mut left = shot(BRAIN_SCRAMBLER);
         left.vel = Vec2::new(-10.0, 0.0);
-        step(&mut left, &w, None);
+        step(&mut left, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         // angle(−10, 0) = π; + π + π = 3π.
         assert!((left.rot - 3.0 * std::f32::consts::PI).abs() < 1e-5);
         assert_eq!(left.sprite_direction, -1);
@@ -622,13 +676,13 @@ mod tests {
         let w = air();
         let mut p = shot(RAY_GUNNER);
         p.alpha = 255;
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.alpha, 246); // 255 − 9
         assert_eq!(p.ai[1], 1.0); // the `:55254` latch
         let mut b = shot(PHANTASMAL_BOLT);
         b.alpha = 100;
         b.vel = Vec2::new(3.0, 4.0); // speed 5
-        step(&mut b, &w, None);
+        step(&mut b, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(b.alpha, 96);
     }
 
@@ -638,7 +692,7 @@ mod tests {
         let w = air();
         let mut p = shot(PHANTASMAL_BOLT);
         for t in 1..=45 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert_eq!(p.frame, (t / 9) % 5, "tick {t}");
         }
         assert_eq!(p.ai[1], 1.0); // the `:55269` latch
@@ -652,17 +706,17 @@ mod tests {
         let mut p = shot(SAUCER_LASER);
         p.alpha = 255;
         for _ in 0..34 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         }
         assert_eq!(p.local_ai[0], 100.0);
         assert_eq!(p.alpha, 0); // 255 − 34×25 clamps
         p.ai[1] = 1.0;
         for _ in 0..33 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert!(p.active);
         }
         assert_eq!(p.local_ai[0], 1.0); // 100 − 33×3
-        step(&mut p, &w, None); // 1 − 3 = −2 ≤ 0 → Kill
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0)); // 1 − 3 = −2 ≤ 0 → Kill
         assert!(!p.active);
         assert_eq!(p.time_left, 0);
     }
@@ -676,11 +730,11 @@ mod tests {
         let mut p = shot(BLOWUP_SMOKE_MOONLORD);
         assert_eq!(p.extra_updates, 2);
         for _ in 0..69 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert!(p.active);
         }
         assert_eq!(p.ai[1], 69.0);
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert!(!p.active);
         assert_eq!(p.time_left, 0);
     }
@@ -694,7 +748,7 @@ mod tests {
         let mut p = shot(CANNON_EXPLOSIVE);
         p.alpha = 255;
         for t in 1..=8 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert_eq!(p.frame, (t / 4) % 2, "tick {t}");
         }
         assert_eq!(p.alpha, 135); // 255 − 8×15
@@ -711,21 +765,21 @@ mod tests {
     fn the_skull_ages_speeds_and_cycles_three_frames() {
         let w = air();
         let mut p = shot(SKULL);
-        step(&mut p, &w, Some((1600.0, 800.0)));
+        step(&mut p, &w, Some((1600.0, 800.0)), &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.ai[1], 1.0); // age (the 31..109 window not yet open)
         assert_eq!(p.local_ai[0], 1.0);
         assert_eq!(p.alpha, 0);
         assert_eq!(p.frame, 1);
         assert!((p.vel.x - 10.2).abs() < 1e-4); // 10 × 1.02
         for t in 2..=6 {
-            step(&mut p, &w, Some((1600.0, 800.0)));
+            step(&mut p, &w, Some((1600.0, 800.0)), &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert_eq!(p.frame, t % 3, "tick {t}");
         }
         // The homing window: ai[1] = 31..109 steers toward the owner.
         let mut h = shot(SKULL);
         h.ai[1] = 40.0;
         h.vel = Vec2::new(18.0, 0.0); // ≥ 18: no speed-up, pure steering
-        step(&mut h, &w, Some((1600.0, 400.0))); // the owner straight above
+        step(&mut h, &w, Some((1600.0, 400.0)), &mut tr_core::unified_random::UnifiedRandom::new(0)); // the owner straight above
         assert_eq!(h.ai[1], 41.0);
         // The blend pulls Y negative (toward the owner above) and the
         // renormalisation keeps the speed at 18 — or, if the f32
@@ -748,34 +802,34 @@ mod tests {
         p.alpha = 255;
         // Tick 1: the counter → 1; the hook sees ai[0] = 1 → no fade; no
         // gravity; the drag rides every tick.
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.alpha, 255);
         assert_eq!(p.vel.y, 0.0);
         assert!((p.vel.x - 9.9).abs() < 1e-5);
         // Tick 2: the counter → 2; the hook sees 2 → the fade opens.
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.alpha, 230);
         // Tick 3: another 25.
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.alpha, 205);
         // The first +0.1 lands on the tick the counter reaches 10.
         let mut q = shot(BETSY_FIREBALL);
         q.vel = Vec2::ZERO;
         for _ in 0..9 {
-            step(&mut q, &w, None);
+            step(&mut q, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         }
         assert_eq!(q.ai[0], 9.0);
         assert_eq!(q.vel.y, 0.0);
-        step(&mut q, &w, None); // ai[0] = 10 → +0.1
+        step(&mut q, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0)); // ai[0] = 10 → +0.1
         assert!((q.vel.y - 0.1).abs() < 1e-6);
         // At ai[0] = 20 both +0.1s land (0.2/tick); the pin holds 20.
         let mut r = shot(BETSY_FIREBALL);
         r.ai[0] = 19.0;
         r.vel = Vec2::ZERO;
-        step(&mut r, &w, None); // 19→20: both gates true
+        step(&mut r, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0)); // 19→20: both gates true
         assert_eq!(r.ai[0], 20.0);
         assert!((r.vel.y - 0.2).abs() < 1e-6);
-        step(&mut r, &w, None); // 20→21→pinned 20: still 0.2
+        step(&mut r, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0)); // 20→21→pinned 20: still 0.2
         assert_eq!(r.ai[0], 20.0);
         assert!((r.vel.y - 0.4).abs() < 1e-6);
         // The rotation: vel (0, +y) → angle π/2 → rot π.
@@ -789,11 +843,11 @@ mod tests {
         let w = air();
         let mut p = shot(BALLISTA_SHOT);
         p.ai[0] = 59.0;
-        step(&mut p, &w, None); // 59→60: the > 60 gate still closed
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0)); // 59→60: the > 60 gate still closed
         assert_eq!(p.ai[0], 60.0);
         assert_eq!(p.vel.x, 10.0);
         assert_eq!(p.vel.y, 0.0);
-        step(&mut p, &w, None); // 60→61: the gate opens
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0)); // 60→61: the gate opens
         assert_eq!(p.ai[0], 61.0); // NOT pinned
         assert!((p.vel.x - 9.8).abs() < 1e-5);
         assert!((p.vel.y - 0.3).abs() < 1e-6);
@@ -811,7 +865,7 @@ mod tests {
         let mut p = shot(DEERCLOPS_ICE_CHUNK);
         p.ai[1] = 2.0;
         p.vel = Vec2::new(6.0, -8.0);
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.frame, 2);
         assert_eq!(p.local_ai[0], 1.0);
         assert_eq!(p.ai[0], 1.0); // 1 < 5: no gravity yet
@@ -820,11 +874,11 @@ mod tests {
         let expected = (-8.0f32).atan2(6.0) + 1.57;
         assert!((p.rot - expected).abs() < 1e-5);
         for _ in 0..4 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         }
         assert_eq!(p.ai[0], 5.0); // NOT pinned — the C# arm has no write
         assert!((p.vel.y - (-8.0 + 0.15)).abs() < 1e-5);
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.ai[0], 6.0);
         assert!((p.vel.y - (-8.0 + 0.30)).abs() < 1e-5);
     }
@@ -836,15 +890,15 @@ mod tests {
     fn the_latch_kinds_keep_the_generic_flight() {
         let w = air();
         let mut d = shot(VORTEX_DART);
-        step(&mut d, &w, None);
+        step(&mut d, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(d.local_ai[0], 1.0); // the `:56311` latch
         assert_eq!(d.ai[0], 1.0); // 581 counts
         let mut v = shot(TRAP_VENOM_DART);
-        step(&mut v, &w, None);
+        step(&mut v, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(v.ai[1], 1.0); // the `:55326` latch
         assert_eq!(v.ai[0], 0.0); // 980 rests (flag3)
         let mut m = shot(MINI_RETINA_LASER);
-        step(&mut m, &w, None);
+        step(&mut m, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(m.ai[1], 1.0); // the `:55296` latch
         assert_eq!(m.ai[0], 0.0);
         // The default rotation for all three: atan2(vy, vx) + 1.57.
@@ -863,7 +917,7 @@ mod tests {
         let w = air();
         let mut p = shot(VORTEX_DART);
         let x0 = p.pos.x;
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.vel.y, 0.0);
         assert_eq!(p.pos.x, x0 + 10.0);
         assert!((p.rot - 1.57).abs() < 1e-5);
@@ -878,11 +932,113 @@ mod tests {
         let mut p = shot(VORTEX_DART);
         p.ai[0] = 14.0;
         p.vel = Vec2::ZERO;
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.ai[0], 15.0);
         assert!((p.vel.y - 0.1).abs() < 1e-6);
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.ai[0], 15.0); // 15→16→pinned back
         assert!((p.vel.y - 0.2).abs() < 1e-6);
+    }
+
+    // ---- S1-E-21h d76: the slice-B cue witnesses (WRITTEN, NOT RUN) --------
+
+    /// The ai[1] latch chain (`:55209-55330`): 259→Item33, 438→Item12,
+    /// 389→Item12, 980→Item17, each once per life at the play-time position.
+    #[test]
+    fn s1_e_21h_d76_the_slice_b_latches_carry_their_cues() {
+        let w = air();
+        for (kind, style) in [
+            (GOLEM_EYE_BEAM, 33), // :55242
+            (RAY_GUNNER, 12),     // :55257
+            (MINI_RETINA_LASER, 12), // :55299
+            (TRAP_VENOM_DART, 17),   // :55329
+        ] {
+            let mut p = shot(kind);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
+            assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
+            assert_eq!(
+                p.wants_sound,
+                Some((2, style, 1600.0, 800.0, 0.0)),
+                "kind {kind}'s cue at base.position"
+            );
+            p.wants_sound = None;
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
+            assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
+        }
+    }
+
+    /// 462 (`:55272-55279`): the ONE Next(2) cue pick — 0 → Item124, else
+    /// Item125 — rides UpdateProjectiles; the dust count stays skipped.
+    #[test]
+    fn s1_e_21h_d76_the_phantasmal_bolt_picks_its_cue_on_one_draw() {
+        let w = air();
+        struct Seq(Vec<i32>, usize);
+        impl DropRng for Seq {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                let v = self.0[self.1];
+                self.1 += 1;
+                v
+            }
+            fn next_float(&mut self) -> f32 { 0.5 }
+        }
+        // Next(2) = 0 → Item124.
+        let mut p = shot(PHANTASMAL_BOLT);
+        let mut seq = Seq(vec![0], 0);
+        step(&mut p, &w, None, &mut seq);
+        assert_eq!(p.wants_sound, Some((2, 124, 1600.0, 800.0, 0.0)));
+        assert_eq!(seq.1, 1, "exactly ONE Next(2) — the dust count is skipped");
+        // Next(2) = 1 → Item125.
+        let mut q = shot(PHANTASMAL_BOLT);
+        let mut seq2 = Seq(vec![1], 0);
+        step(&mut q, &w, None, &mut seq2);
+        assert_eq!(q.wants_sound, Some((2, 125, 1600.0, 800.0, 0.0)));
+        // The latch holds: no second cue, no second draw.
+        q.wants_sound = None;
+        step(&mut q, &w, None, &mut seq2);
+        assert_eq!(q.wants_sound, None);
+        assert_eq!(seq2.1, 1, "the latch gates the draw to one per life");
+    }
+
+    /// 601 (`:54072-54095`): the alpha-1..15 portal window plays Item115
+    /// (ai[0] == 0) / Item114 (ai[0] != 0) once per tick while it holds.
+    #[test]
+    fn s1_e_21h_d76_the_cannon_portal_cue_tracks_ai0() {
+        let w = air();
+        let mut p = shot(CANNON_EXPLOSIVE);
+        p.alpha = 10; // inside the 1..15 window
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
+        assert_eq!(p.wants_sound, Some((2, 115, 1600.0, 800.0, 0.0)), "ai[0]==0 → Item115");
+        assert_eq!(p.alpha, 0); // 10 − 15 clamps
+        // A second tick: alpha 0 is OUTSIDE the window — no cue.
+        p.wants_sound = None;
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
+        assert_eq!(p.wants_sound, None);
+        // ai[0] != 0 → Item114.
+        let mut q = shot(CANNON_EXPLOSIVE);
+        q.alpha = 10;
+        q.ai[0] = 3.0;
+        step(&mut q, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
+        assert_eq!(q.wants_sound, Some((2, 114, 1600.0, 800.0, 0.0)));
+    }
+
+    /// 581 (`:56314`): the vortex dart's Item17 at base.Center; 686
+    /// (`:56540`): Betsy's Item20 at base.position gated on ai[1] != 2.
+    #[test]
+    fn s1_e_21h_d76_the_vortex_dart_and_betsy_cues() {
+        let w = air();
+        let mut d = shot(VORTEX_DART);
+        step(&mut d, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
+        let (cx, cy) = (1600.0 + d.w * 0.5, 800.0 + d.h * 0.5);
+        assert_eq!(d.wants_sound, Some((2, 17, cx, cy, 0.0)), "Item17 at Center");
+        // Betsy: ai[1] == 0 (≠ 2) → Item20.
+        let mut b = shot(BETSY_FIREBALL);
+        step(&mut b, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
+        assert_eq!(b.wants_sound, Some((2, 20, 1600.0, 800.0, 0.0)));
+        // Betsy with ai[1] == 2: the cue is gated OFF, the latch still rides.
+        let mut c = shot(BETSY_FIREBALL);
+        c.ai[1] = 2.0;
+        step(&mut c, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
+        assert_eq!(c.local_ai[0], 1.0);
+        assert_eq!(c.wants_sound, None, "ai[1]==2 gates the Item20");
     }
 }

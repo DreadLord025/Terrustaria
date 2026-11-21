@@ -316,6 +316,26 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_109", 2),
     ("Item_111", 2),
     ("Item_113", 2),
+    // S1-E-21h d76 — the second projectile-sound wave's bank gaps: the
+    // Cannon Explosive's portal pair (`Projectile.cs:54089`/`:54093`), the
+    // Phantasmal Bolt's `Next(2)` cue pick (`:55274`/`:55278`), the golf
+    // strike's Item126 (`:52467`), the Laser Drill's hum (`:66248`), the
+    // whip tip's Item153/193 (`:47732`/`:47728`) and the Sun Dance's
+    // Item159 (`:44988`). All `.xnb` assets verified on disk.
+    ("Item_114", 2),
+    ("Item_115", 2),
+    ("Item_124", 2),
+    ("Item_125", 2),
+    ("Item_126", 2),
+    ("Item_132", 2),
+    ("Item_153", 2),
+    ("Item_159", 2),
+    ("Item_193", 2),
+    // Item42 IS a legacy id-2 style (`SoundID.cs:1425`) — the SantaNK1
+    // missile's latch (`Projectile.cs:55161`, S1-E-21h d76). The landed
+    // wave's "trackable" deferral was a misclassification; the Flaming
+    // Wood 325's twin (`:55194`) stays as landed (slice A, keep-one).
+    ("Item_42", 2),
     ("Item_117", 2),
     ("Item_128", 2),
     ("Item_130", 2),
@@ -1954,18 +1974,19 @@ impl Audio {
     /// gates), the boomerang whoosh (`AI_003` `:38868-38891`), the Magic
     /// Missile hum (`AI_009` `:43361-43367`), the Light's Bane slash
     /// (`AI_188` `:42231-42239`) and the bomb blast
-    /// (`Kill_Bombs_DoUsualKillCode` `:78331`/:78386). Every ported site is
-    /// a `SoundID.ItemN` style play — the same façade as wave A
+    /// (`Kill_Bombs_DoUsualKillCode` `:78331`/:78386). The id-2 sites are
+    /// `SoundID.ItemN` style plays — the same façade as wave A
     /// (`SoundEngine.cs:93-99`: the `GetRandomPitch` NextFloat on the
     /// audio-only `sound_style_random`, then the attenuation gate
     /// `LegacySoundPlayer.cs:369-436`, then case 2's `Main.rand` pitch
-    /// roll). The gameplay draw rides the caller's stream — the pool pass
-    /// drains the queue under the `Main.cs:17775` `UpdateProjectiles`
-    /// swap. `pitch_offset` is the C# call's third argument (the ported
-    /// sites all pass none; the 301 Stacked Discs' −0.33 arm is deferred).
-    /// Returns the cue played; `None` when the gate refused or the style
-    /// is not a legacy id-2 row (the trackable families ride their own
-    /// façades — deferred, ANALYSIS S1-E-21h).
+    /// roll). S1-E-21h d76 adds the whip tip's id-3/4 NPC-family cues
+    /// (`AI_165_Whip` `:47720`/`:47724`) — the case-3/4 façades. The
+    /// gameplay draw rides the caller's stream — the pool pass drains the
+    /// queue under the `Main.cs:17775` `UpdateProjectiles` swap.
+    /// `pitch_offset` is the C# call's third argument (the ported sites all
+    /// pass none; the 301 Stacked Discs' −0.33 arm is deferred). Returns the
+    /// cue played; `None` when the gate refused or the family is unported
+    /// (the case-42 trackables ride their own façades — deferred, ANALYSIS).
     pub fn play_proj_sound(
         &mut self,
         (id, style): (u16, i32),
@@ -1974,6 +1995,29 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        // S1-E-21h d76 — the whip tip's NPC-family cues (`AI_165_Whip`
+        // `Projectile.cs:47720`/`:47724`): the Crimson Whip's NPCHit9 (id 3)
+        // and the Corrupt Whip's NPCDeath1 (id 4) ride their own case-3/4
+        // façades, resolved through the same `npc_sound_style` helper the
+        // wave-C/G plays use. The Corrupt Whip's ×0.6 volumeScale is DEFERRED
+        // (the queue→drain batch plays at the style's own volume — the Lights
+        // Bane post-gate-scale precedent, ANALYSIS S1-E-21h).
+        if id == 3 || id == 4 {
+            let (prefix, sid) = if id == 3 { ("NPC_Hit_", 3) } else { ("NPC_Killed_", 4) };
+            let cue = format!("{prefix}{style}");
+            let style_def = npc_sound_style(&cue, prefix, sid)?;
+            // `SoundEngine.cs:99` — the GetRandomPitch NextFloat rides the
+            // audio-only stream (variance 0 on every NPCHitN/NPCDeathN row,
+            // the draw still happens), then the case gate + pitch roll.
+            let draw = self.sound_style_random.next_float();
+            let offset = pitch_offset + sound::get_random_pitch(style_def.pitch_variance, draw);
+            let name = SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue)?;
+            return if id == 3 {
+                self.npc_hit_play(name, style_def, offset, x, y, rng)
+            } else {
+                self.npc_death_play(name, style_def, offset, x, y, rng)
+            };
+        }
         if id != 2 {
             return None;
         }
@@ -3793,6 +3837,52 @@ mod tests {
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
         assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d76 — the second wave's bank gaps resolve (the cannon portal
+    /// pair 114/115, the phantasmal pick 124/125, the golf strike 126, the
+    /// drill hum 132, the whip tip 153/193, the sun dance 159, the missile
+    /// latch 42) and the whip tip's id-3/4 NPC families ride the case-3/4
+    /// façades (one gameplay pitch draw each, after the gate).
+    #[test]
+    fn s1_e_21h_d76_the_proj_bank_gaps_and_the_whip_npc_families() {
+        use tr_core::unified_random::UnifiedRandom;
+        for style in [42, 114, 115, 124, 125, 126, 132, 153, 159, 193] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(3);
+            let cue = audio
+                .play_proj_sound((2, style), 0.0, 0.0, 0.0, &mut rng)
+                .unwrap_or_else(|| panic!("style {style} resolves"));
+            assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        }
+        // The Crimson Whip's NPCHit9 (id 3): one Next(-10, 11) pitch draw.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound((3, 9), 0.0, 0.0, 0.0, &mut rng),
+            Some("NPC_Hit_9")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "the case-3 pitch draw");
+        // The Corrupt Whip's NPCDeath1 (id 4): one Next(-10, 11) pitch draw.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_1")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "the case-4 pitch draw");
+        // The muted whip play draws nothing.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
     }
 

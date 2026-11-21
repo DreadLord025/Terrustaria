@@ -431,7 +431,9 @@ pub(crate) fn ai_golf_club_helper(
     // first.
     if !player.channel && p.ai[0] == 0.0 {
         let (cx, cy) = p.center();
-        tick.sounds.push((2, 1, cx, cy, 0.0));
+        // `:52448` — SoundID.Item1 at PLAYER.Center (not the helper's own
+        // center — the C# reads `player.Center`; S1-E-21h d76 fix).
+        tick.sounds.push((2, 1, player.center.x, player.center.y, 0.0));
         for (j, q) in slots.iter().enumerate() {
             // `:52452` — the shot vector is computed for EVERY slot (even
             // inactive ones) but only consumed by the survivors.
@@ -1346,6 +1348,12 @@ mod tests {
         assert_eq!(helper.ai[0], 1.0);
         assert_eq!(helper.ai[1], 1.0, "the follow-through tick counted");
         assert!(helper.net_update);
+        // S1-E-21h d76 (`:52448`/`:52467`): the cue list — Item1 at the
+        // PLAYER's center (500, 521), then one Item126 per struck ball at
+        // its center (510, 540). The far ball is not struck → no cue.
+        assert_eq!(tick.sounds.len(), 2, "Item1 + one Item126");
+        assert_eq!(tick.sounds[0], (2, 1, 500.0, 521.0, 0.0), "Item1 at player.Center");
+        assert_eq!(tick.sounds[1], (2, 126, 510.0, 540.0, 0.0), "Item126 at the ball");
         // Exactly ONE NextFloatDirection on the stream (the near ball).
         let mut witness = UnifiedRandom::new(7);
         let _ = witness.next_float();
