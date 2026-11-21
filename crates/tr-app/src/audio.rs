@@ -513,6 +513,9 @@ const TRACKED_CUES: &[&str] = &[
     // W4-d80 — the bomb fuse (`SoundID.cs:1764`, vol 0.2; the aiStyle-16
     // loop, `Projectile.cs:46917-46921`).
     "fuse",
+    // W4-d80 — the vampire sun-scorch sizzle (`SoundID.cs:1708`, vol 1;
+    // `Player.cs:28590-28603`).
+    "sizzle",
 ];
 
 /// The `Sounds/Custom/` trackables the item-use wave names

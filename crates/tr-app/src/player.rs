@@ -2078,6 +2078,24 @@ pub struct Player {
     /// (`VampireSeedSunlightExposure`, `:28672-28719`) is unported, so the
     /// flag stays false in play; `ResetEffects` clears it (`:18730`).
     pub vampire_burning_in_sunlight: bool,
+    /// `Player.sunScorchCounter` (`Player.cs:28588`): the vampire seed's
+    /// sun-scorch ramp — `Clamp(counter + (burning ? 1 : -num), 0, 300)`,
+    /// `num = 6` alive / 2 dead (the dead tick also clears the burning
+    /// flag, `:28583-28587`). `UpdateSunScorchValues` (`:28580-28604`)
+    /// ticks it on BOTH the live and dead paths (`:17079` / `:25634`);
+    /// the sizzle loop's volume rides `GetLerpValue(0, 120, counter,
+    /// clamped)`. W4-d80 (research/64 sites 22-24).
+    pub sun_scorch_counter: i32,
+    /// `Player._sizzleAudioHandle` (`Player.cs:28590`): the tracked sizzle
+    /// loop's `SlotId` (the `VampireSizzleTracker` condition reads the
+    /// counter mirror — the census fold). `SlotId::INVALID` while none.
+    pub sizzle_audio_handle: tr_core::slot::SlotId,
+    /// W4-d80 — the sizzle loop's live flag (the `VampireSizzleTracker`
+    /// condition fold, `VampireSizzleTracker.cs:12-19`): the closure reads
+    /// a shared mirror of `!gameMenu && vampireSeed && sunScorchCounter >
+    /// 0`; the sim refreshes it per tick (the pool cannot hand a live
+    /// player reference to a `Send` closure). `None` while no loop plays.
+    pub(crate) sizzle_alive: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
     /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
     /// damage (`:53537-53541`).
@@ -2916,6 +2934,9 @@ impl Player {
             magma_stone: false,
             catalyst_band: false,
             vampire_burning_in_sunlight: false,
+            sun_scorch_counter: 0,
+            sizzle_audio_handle: tr_core::slot::SlotId::INVALID,
+            sizzle_alive: None,
             has_molten_quiver: false,
             acc_sharp_barb: false,
             // S1-P-i35 — the fishing family's spawn defaults.
@@ -3812,10 +3833,38 @@ impl Player {
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
+        // W4-d80 — `Player.cs:17079`: `UpdateDead`'s tail ticks the
+        // sun-scorch counter (the dead arm: num 2, burning cleared) —
+        // AFTER the respawn-skip gates, exactly the C#'s placement.
+        self.tick_sun_scorch();
         if can_skip && jump_edge && self.respawn_timer > 0 {
             return true;
         }
         self.respawn_timer <= 0
+    }
+
+    /// `Player.UpdateSunScorchValues`' counter half (`Player.cs:28582-28589`):
+    /// `num = 6` alive, 2 dead (the dead tick also clears the burning flag);
+    /// `sunScorchCounter = Clamp(counter + (burning ? 1 : -num), 0, 300)`.
+    /// Runs on BOTH the live (`UpdateSunScorch` `:25634`) and dead
+    /// (`UpdateDead` `:17079`) paths. The sizzle play/follow half rides the
+    /// sim drain (`update_sizzle_audio`) — the player tick holds no `Audio`
+    /// borrow (the `wants_sound` convention). W4-d80 (research/64 site 24).
+    pub fn tick_sun_scorch(&mut self) {
+        let mut num = 6;
+        if self.dead {
+            self.vampire_burning_in_sunlight = false;
+            num = 2;
+        }
+        let delta = if self.vampire_burning_in_sunlight { 1 } else { -num };
+        self.sun_scorch_counter = (self.sun_scorch_counter + delta).clamp(0, 300);
+    }
+
+    /// `Player.UpdateSunScorchValues`' lerp (`Player.cs:28589`):
+    /// `GetLerpValue(0f, 120f, sunScorchCounter, clamped: true)` — the
+    /// sizzle loop's volume override.
+    pub fn sun_scorch_lerp(&self) -> f32 {
+        tr_core::scene::get_lerp_value(0.0, 120.0, self.sun_scorch_counter as f32, true)
     }
 
     /// `Player.Spawn(ReviveFromDeath)`: the dead flags clear, then the
@@ -6876,6 +6925,14 @@ impl Player {
         // per-tick clear runs after this update). The C# call sits after
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
+        // W4-d80 — `Player.UpdateSunScorch` (`Player.cs:25634`): the live
+        // tick's sun-scorch counter (the burning flag's granter,
+        // `VampireSeedSunlightExposure` `:28672-28719`, is unported — the
+        // flag stays false in play, so the counter decays; the Molten
+        // gate's test seam still drives it). The sizzle play/follow half
+        // rides the sim drain (`update_sizzle_audio`). The C# call sits
+        // just before `UpdateArmorSets` (`:25685`), matching this position.
+        self.tick_sun_scorch();
         crate::armor_sets::apply_armor_set_bonuses(self);
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
