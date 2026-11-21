@@ -197,26 +197,30 @@ pub(crate) fn advance_bg_alphas(
     // construction, exactly like the original's.
     let targets = far_layer_targets(style, jungle_bg, hallow_bg);
     let far_target = targets[0].unwrap_or(0) as i32;
-    for (i, a) in far.iter_mut().enumerate() {
+    // Index loop, not `iter_mut`: the guard reads the LIVE array
+    // (`Main.bgAlphaFarBackLayer[desiredBG]`), so a slot already visited this
+    // pass is seen at its updated value — the C#'s order, verbatim.
+    for i in 0..16 {
         let flag = targets.contains(&Some(i));
         if flag
-            || (*a != 0.0
+            || (far[i] != 0.0
                 && (!is_desert_variant_swap(far_target, i as i32, desert_set)
                     || !(far[far_target as usize] < 1.0)))
         {
-            *a = (*a + if flag { speed } else { -speed }).clamp(0.0, 1.0);
+            far[i] = (far[i] + if flag { speed } else { -speed }).clamp(0.0, 1.0);
         }
     }
     // `UpdateBGVisibility_FrontLayer` (`Main.cs:64087-64118`): the target layer
     // fades in, the rest out — a desert-variant swap holds the outgoing layer
-    // until the incoming one reaches 1 (`:64109`).
-    for (i, a) in front.iter_mut().enumerate() {
+    // until the incoming one reaches 1 (`:64109`). Same live-array read.
+    for i in 0..16 {
         if style == i as i32 {
-            *a = (*a + speed).min(1.0);
-        } else if *a != 0.0
-            && (!is_desert_variant_swap(style, i as i32, desert_set) || !(front[style as usize] < 1.0))
+            front[i] = (front[i] + speed).min(1.0);
+        } else if front[i] != 0.0
+            && (!is_desert_variant_swap(style, i as i32, desert_set)
+                || !(front[style as usize] < 1.0))
         {
-            *a = (*a - speed).max(0.0);
+            front[i] = (front[i] - speed).max(0.0);
         }
     }
 }
