@@ -143,6 +143,134 @@ pub fn kill_actuator(world: &mut World, x: i32, y: i32) -> bool {
     true
 }
 
+/// `WorldGen.paintTile` (`WorldGen.cs:44110-44132`): the active tile's paint
+/// colour becomes `color`. Returns false on a null/inactive cell or when the
+/// colour already matches (`b == color`, `:44118-44121`). The C#'s
+/// `paintEffect` dust (`:44122-44125`) and the `NetMessage.SendData(63)`
+/// broadcast (`:44127-44130`) are app-side — the core writes the colour only.
+pub fn paint_tile(world: &mut World, x: i32, y: i32, color: u8) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() {
+        return false;
+    }
+    if t.paint() == color {
+        return false;
+    }
+    let i = world.index(x, y);
+    world.tiles[i].set_paint(color);
+    true
+}
+
+/// `WorldGen.paintWall` (`WorldGen.cs:44230-44252`): the wall's paint colour
+/// becomes `color`. Returns false on a null/wall-less cell or when the colour
+/// already matches (`b == color`, `:44238-44241`). The C#'s `paintEffect` dust
+/// (`:44247-44250`) and the `NetMessage.SendData(64)` broadcast (`:44243-44246`)
+/// are app-side.
+pub fn paint_wall(world: &mut World, x: i32, y: i32, color: u8) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.wall == 0 {
+        return false;
+    }
+    if world.wall_paint(x, y) == color {
+        return false;
+    }
+    world.set_wall_paint(x, y, color);
+    true
+}
+
+/// `WorldGen.paintCoatTile` (`WorldGen.cs:44134-44180`): the active tile's
+/// Glow/Echo coating bits. `paint_coat_id` 0 clears both (only when at least
+/// one is set), 1 sets Glow (`fullbrightBlock`), 2 sets Echo (`invisibleBlock`);
+/// any other id returns false (`default:` arm). The id-0/id-2 arms re-frame the
+/// 3×3 neighbourhood (`SquareTileFrame(x, y, resetFrame: false)`, `:44153`/
+/// `:44168`); the id-1 arm does not. The C#'s `paintCoatEffect` dust
+/// (`:44175-44178`) and the `NetMessage.SendData(63, …, 1f)` broadcast
+/// (`:44171-44174`) are app-side.
+pub fn paint_coat_tile(world: &mut World, x: i32, y: i32, paint_coat_id: u8) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() {
+        return false;
+    }
+    let glow = t.fullbright_block();
+    let echo = world.invisible_block(x, y);
+    match paint_coat_id {
+        0 => {
+            if !glow && !echo {
+                return false;
+            }
+            let i = world.index(x, y);
+            world.tiles[i].flags &= !crate::tile::FLAG_FULLBRIGHT;
+            world.set_invisible_block(x, y, false);
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        1 => {
+            if glow {
+                return false;
+            }
+            let i = world.index(x, y);
+            world.tiles[i].flags |= crate::tile::FLAG_FULLBRIGHT;
+        }
+        2 => {
+            if echo {
+                return false;
+            }
+            world.set_invisible_block(x, y, true);
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// `WorldGen.paintCoatWall` (`WorldGen.cs:44182-44228`): the wall's Glow/Echo
+/// coating bits. `paint_coat_id` 0 clears both (only when at least one is set),
+/// 1 sets Glow (`fullbrightWall`), 2 sets Echo (`invisibleWall`); any other id
+/// returns false. The id-0/id-2 arms re-frame the 3×3 neighbourhood
+/// (`SquareWallFrame(x, y, resetFrame: false)`, `:44201`/`:44216`); the id-1 arm
+/// does not. The C#'s `paintCoatEffect` dust (`:44223-44226`) and the
+/// `NetMessage.SendData(64, …, 1f)` broadcast (`:44219-44222`) are app-side.
+pub fn paint_coat_wall(world: &mut World, x: i32, y: i32, paint_coat_id: u8) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.wall == 0 {
+        return false;
+    }
+    let glow = world.fullbright_wall(x, y);
+    let echo = world.invisible_wall(x, y);
+    match paint_coat_id {
+        0 => {
+            if !glow && !echo {
+                return false;
+            }
+            world.set_fullbright_wall(x, y, false);
+            world.set_invisible_wall(x, y, false);
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        1 => {
+            if glow {
+                return false;
+            }
+            world.set_fullbright_wall(x, y, true);
+        }
+        2 => {
+            if echo {
+                return false;
+            }
+            world.set_invisible_wall(x, y, true);
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        _ => return false,
+    }
+    true
+}
+
 /// The result of the right-click interaction dispatcher: what the click did,
 /// and every object destruction its cleanup kills performed (the port of
 /// vanilla's `Item.NewItem` side effects — `WorldGen.cs:86508` and peers).
@@ -1076,6 +1204,77 @@ mod tests {
         assert!(w.tile(10, 20).unwrap().active());
         assert_eq!(break_wall(&mut w, 10, 20), None);
         assert_eq!(w.tile(10, 20).unwrap().wall, WALL_UNBREAKABLE);
+    }
+
+    // ---- W4-g79: the paint/coating world writes ----------------------------
+
+    /// `WorldGen.paintTile` (`WorldGen.cs:44110-44132`): an active tile takes
+    /// the colour; a same-colour repaint and an inactive cell refuse.
+    #[test]
+    fn w4_g79_paint_tile_writes_the_colour_and_refuses_a_repaint() {
+        let mut w = ground_world();
+        assert!(paint_tile(&mut w, 10, 20, 1), "the unpainted floor takes Red");
+        assert_eq!(w.tile(10, 20).unwrap().paint(), 1);
+        assert!(!paint_tile(&mut w, 10, 20, 1), "the same colour refuses");
+        assert!(paint_tile(&mut w, 10, 20, 30), "Negative over Red lands");
+        assert_eq!(w.tile(10, 20).unwrap().paint(), 30);
+        // An inactive cell (above the floor) refuses.
+        assert!(!paint_tile(&mut w, 10, 15, 1));
+    }
+
+    /// `WorldGen.paintWall` (`WorldGen.cs:44230-44252`): a walled cell takes
+    /// the colour; a wall-less cell and a same-colour repaint refuse.
+    #[test]
+    fn w4_g79_paint_wall_writes_the_colour_and_needs_a_wall() {
+        let mut w = ground_world();
+        let i = w.index(10, 15);
+        w.tiles[i].wall = 4;
+        assert!(paint_wall(&mut w, 10, 15, 9), "the wood wall takes Blue");
+        assert_eq!(w.wall_paint(10, 15), 9);
+        assert!(!paint_wall(&mut w, 10, 15, 9), "the same colour refuses");
+        // A wall-less cell refuses even when active.
+        assert!(!paint_wall(&mut w, 10, 20, 1));
+    }
+
+    /// `WorldGen.paintCoatTile` (`WorldGen.cs:44134-44180`): the Glow (1) and
+    /// Echo (2) bits set once, the clear (0) arm needs at least one bit, and an
+    /// unknown id refuses. The Glow bit rides the tile flag, the Echo bit the
+    /// extras byte.
+    #[test]
+    fn w4_g79_paint_coat_tile_sets_glow_and_echo_then_clears() {
+        let mut w = ground_world();
+        assert!(paint_coat_tile(&mut w, 10, 20, 1), "Glow lands");
+        assert!(w.tile(10, 20).unwrap().fullbright_block());
+        assert!(!paint_coat_tile(&mut w, 10, 20, 1), "Glow already set refuses");
+        assert!(paint_coat_tile(&mut w, 10, 20, 2), "Echo lands beside Glow");
+        assert!(w.invisible_block(10, 20));
+        assert!(paint_coat_tile(&mut w, 10, 20, 0), "the clear arm takes both");
+        assert!(!w.tile(10, 20).unwrap().fullbright_block());
+        assert!(!w.invisible_block(10, 20));
+        assert!(!paint_coat_tile(&mut w, 10, 20, 0), "nothing left to clear");
+        assert!(!paint_coat_tile(&mut w, 10, 20, 3), "an unknown id refuses");
+        // An inactive cell refuses every id.
+        assert!(!paint_coat_tile(&mut w, 10, 15, 1));
+    }
+
+    /// `WorldGen.paintCoatWall` (`WorldGen.cs:44182-44228`): the wall's Glow
+    /// and Echo bits set once and clear together; a wall-less cell refuses.
+    #[test]
+    fn w4_g79_paint_coat_wall_sets_glow_and_echo_then_clears() {
+        let mut w = ground_world();
+        let i = w.index(10, 15);
+        w.tiles[i].wall = 4;
+        assert!(paint_coat_wall(&mut w, 10, 15, 1), "Glow lands on the wall");
+        assert!(w.fullbright_wall(10, 15));
+        assert!(!paint_coat_wall(&mut w, 10, 15, 1), "Glow already set refuses");
+        assert!(paint_coat_wall(&mut w, 10, 15, 2), "Echo lands beside Glow");
+        assert!(w.invisible_wall(10, 15));
+        assert!(paint_coat_wall(&mut w, 10, 15, 0), "the clear arm takes both");
+        assert!(!w.fullbright_wall(10, 15));
+        assert!(!w.invisible_wall(10, 15));
+        assert!(!paint_coat_wall(&mut w, 10, 15, 0), "nothing left to clear");
+        // A wall-less cell refuses.
+        assert!(!paint_coat_wall(&mut w, 10, 20, 1));
     }
 
     // ---- Phase 2 (DW-2.1 / DW-2.4): the item-use placement route -----------
