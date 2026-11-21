@@ -1052,6 +1052,25 @@ pub const NEBULA_ARCANUM: u16 = 617;
 /// `ProjectileID.NebulaArcanumSubshot` (618) — the Arcanum's arm (aiStyle
 /// 119, 18x30, `timeLeft = 420`, local-immunity 20).
 pub const NEBULA_ARCANUM_SUBSHOT: u16 = 618;
+// W4-d78 batch 2 — the Kill child-spawn family's unrowed kinds (the 617/246/
+// 117 death arms spawn these; without a row the data-carrying spawn declines
+// the child and the burst vanishes). Ids verified against `ID/ProjectileID.cs`.
+/// `ProjectileID.NebulaArcanumExplosionShotShard` (620, `ProjectileID.cs:1794`)
+/// — the Arcanum bolt's death shard (aiStyle 29, 8x8, alpha 255, magic,
+/// `penetrate = 1`; the 617 Kill arm `Projectile.cs:72354`/`:72370`).
+pub const NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD: u16 = 620;
+/// `ProjectileID.Stynger` (246, `ProjectileID.cs:1046`) — the Stynger
+/// launcher's bolt (aiStyle 1, 10x10, alpha 255, ranged, `extraUpdates = 1`;
+/// its Kill arm `Projectile.cs:76944-76986` spawns the 249 shrapnel).
+pub const STYNGER: u16 = 246;
+/// `ProjectileID.StyngerShrapnel` (249, `ProjectileID.cs:1052`) — the
+/// Stynger bolt's death shrapnel (aiStyle 2, 12x12, ranged; its OWN Kill arm
+/// `Projectile.cs:76987-77015` blasts a 100-box).
+pub const STYNGER_SHRAPNEL: u16 = 249;
+/// `ProjectileID.BoneShard` (1124, `ProjectileID.cs:2802`) — the Bone Arrow's
+/// death shard (aiStyle 1, 6x6, ranged, `timeLeft = 600`, scale 0.95,
+/// `extraUpdates = 1`; the 117 Kill arm `Projectile.cs:74748`).
+pub const BONE_SHARD: u16 = 1124;
 // S1-P-i22 — the magic guns + tomes' shots (`Player.ItemCheck_Shoot` census,
 // `Player.cs:47056-49468`). Every id is the verbatim `ProjectileID` value;
 // the `SetDefaults` arms are cited per row in [`proj_data`].
@@ -2821,6 +2840,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `tileCollide = false`, `penetrate = -1`, `timeLeft = 420`,
             // local-immunity 20; alpha at the 0 reset.
             NEBULA_ARCANUM_SUBSHOT => (18.0, 30.0, 119, -1, 420, 0, false, false, false, (true, 20, false, -1, 0, 1.0)),
+            // W4-d78 batch 2 — `Projectile.cs:6681-6690` the Arcanum's death
+            // shard (620): 8x8, aiStyle 29, `alpha = 255`, magic,
+            // `penetrate = 1`, friendly; the stock timeLeft 3600 /
+            // tileCollide true (`:774-775`/`:787` resets). The 617 Kill arm
+            // (`:72354`/`:72370`) spawns it with `ai[0]` = the dust-type pick
+            // (86/90); the AI_029 kind-gate reads it as the dust id only.
+            NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD => (
+                8.0, 8.0, 29, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `:6793-6804` LastPrism — 14x18, aiStyle 75, `penetrate = -1`,
             // `tileCollide = false` (`drawLayer = 7`/`ignoreWater` dropped);
             // the channel keep-alive and the 6x laser spawn are Phase 4's.
@@ -3263,6 +3292,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // old 1200 was a row deviation; `hide` has no port field):
             // 10x10 aiStyle-1 arrows (485's 24x24 box aside).
             117 => (10.0, 10.0, 1, 1, 1200, 2, true, true, false, RESET_STATE),
+            // W4-d78 batch 2 — `Projectile.cs:10514-10527` the Bone Shard
+            // (1124): 6x6, aiStyle 1, friendly, `penetrate = 1`,
+            // `timeLeft = 600`, ranged, tileCollide true, `extraUpdates = 1`.
+            // The arm writes `scale = 1.2f` (`:10521`) then OVERWRITES it
+            // with `scale = 0.95f` (`:10525`) — the row keeps the LAST write
+            // (the double-set quirk, verbatim). The 2-frame sheet is
+            // `Main.cs:8562`; the 117 Kill arm (`:74748`) spawns it.
+            BONE_SHARD => (6.0, 6.0, 1, 1, 600, 1, true, false, false, (false, -2, false, -1, 0, 0.95)),
             469 => (
                 10.0, 10.0, 1, 1, 1200, 0, true, true, false,
                 (false, -2, false, -1, 255, 1.0),
@@ -3777,6 +3814,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
             // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
             ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d78 batch 2 — the Stynger pair (the Kill child-spawn family).
+            // `Projectile.cs:3289-3298` — the Stynger bolt (246): 10x10,
+            // aiStyle 1, friendly, ranged, `alpha = 255`, `extraUpdates = 1`;
+            // the stock penetrate 1 / timeLeft 3600 / tileCollide true
+            // (`:774-775`/`:787` resets — the arm writes no override).
+            STYNGER => (
+                10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3314-3321` — the Stynger shrapnel (249): 12x12,
+            // aiStyle 2, friendly, ranged; the stock penetrate 1 / 3600 /
+            // tileCollide true, alpha at the 0 reset. The 5-frame sheet is
+            // `Main.cs:8610`.
+            STYNGER_SHRAPNEL => (12.0, 12.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // S1-P-i22 — the magic guns + tomes' shots. The verbatim
             // `SetDefaults` arms, in `ProjectileID` order; `light`/`magic`/
             // `melee`/`ranged`/`ignoreWater`/`drawLayer`/`armorPenetration`
@@ -4275,6 +4326,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-d78 batch 2 — the Kill child-spawn family's ranged kinds:
+            // the Stynger bolt/shrapnel (246/249, `:3295`/`:3320`) and the
+            // Bone Shard (1124, `:10523`).
+                | STYNGER | STYNGER_SHRAPNEL | BONE_SHARD
         ),
         magic: matches!(
             kind,
@@ -4308,6 +4363,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+            // W4-d78 batch 2 — the Arcanum's death shard (620, `:6687`).
+                | NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4662,6 +4719,14 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The 968's 24-frame sheet (`Main.cs:8706`) — the arm's
         // `frame = (int)ai[1]` pin (`Projectile.cs:23238`) reads it.
         968 => 24,
+        // W4-d78 batch 2 — the Kill child-spawn family's sheets: the Stynger
+        // shrapnel's 5 rows (`Main.cs:8610`; the aiStyle-2 arm has no frame
+        // writer for it, the slice reads frame 0) and the Bone Shard's 2 rows
+        // (`Main.cs:8562`; the AI_001 first-tick `frame = Next(2)` roll,
+        // `Projectile.cs:54016-54020`). The Stynger bolt 246 and the Arcanum
+        // shard 620 keep the stock 1 (no `projFrames` override).
+        STYNGER_SHRAPNEL => 5,
+        BONE_SHARD => 2,
         // The Frost Moon family (S1-D-4): the present's 2-frame sheet
         // (`Main.cs:8529`) — AI()'s aiStyle-58 arm pins frame 0/1
         // (`Projectile.cs:28915`/`:28928`); the frost shard's 5-frame sheet
@@ -4734,6 +4799,11 @@ mod tests {
         for k in [42, 65, 68, 354, 85, 117, 469, 485, 495, 819, 615, 630, 705, 714, 932] {
             assert_eq!(flags(k), (false, true, false), "kind {k}");
         }
+        // W4-d78 batch 2 — the Kill child-spawn family's ranged kinds
+        // (246/249 `:3295`/`:3320`, 1124 `:10523`).
+        for k in [STYNGER, STYNGER_SHRAPNEL, BONE_SHARD] {
+            assert_eq!(flags(k), (false, true, false), "kind {k}");
+        }
         for k in (133..=144).chain(338..=341).chain(715..=718) {
             assert_eq!(flags(k), (false, true, false), "kind {k}");
         }
@@ -4762,6 +4832,8 @@ mod tests {
         assert_eq!(flags(SKY_FRACTURE), (false, false, true));
         assert_eq!(flags(LAST_PRISM), (false, false, true));
         assert_eq!(flags(LEAF), (false, false, true));
+        // W4-d78 batch 2 — the Arcanum's death shard (620, `:6687`).
+        assert_eq!(flags(NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD), (false, false, true));
         // The melee families: yoyos (DefaultToYoyo), flails (DefaultToFlail),
         // the boomerangs, the sword beams, the yoyo on-hit shots.
         assert_eq!(flags(WOOD_YOYO), (true, false, false));
@@ -4792,5 +4864,57 @@ mod tests {
         assert!(!proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
+    }
+
+    /// W4-d78 batch 2 — the Kill child-spawn family's rows (WRITTEN, NOT RUN
+    /// — code-only mode). Each is the verbatim `SetDefaults` slice against
+    /// the C# arm cited per row; the class flags and frame counts ride the
+    /// census pins above.
+    #[test]
+    fn w4_d78_b2_the_child_spawn_family_rows_match_set_defaults() {
+        // The Stynger bolt (246, `:3289-3298`): 10x10 aiStyle 1, ranged,
+        // alpha 255, extraUpdates 1, the stock penetrate 1 / 3600 / collide.
+        let d = proj_data(STYNGER).expect("the 246 row");
+        assert_eq!((d.w, d.h, d.ai_style), (10.0, 10.0, 1));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 3600, 1));
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 255);
+        assert_eq!((d.melee, d.ranged, d.magic), (false, true, false));
+        assert!(!d.arrow && !d.trap);
+        // The Stynger shrapnel (249, `:3314-3321`): 12x12 aiStyle 2, ranged,
+        // the stock penetrate 1 / 3600 / collide, alpha at the 0 reset.
+        let d = proj_data(STYNGER_SHRAPNEL).expect("the 249 row");
+        assert_eq!((d.w, d.h, d.ai_style), (12.0, 12.0, 2));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 3600, 0));
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 0);
+        assert_eq!((d.melee, d.ranged, d.magic), (false, true, false));
+        // The Arcanum death shard (620, `:6681-6690`): 8x8 aiStyle 29, magic,
+        // alpha 255, penetrate 1, the stock 3600 / collide.
+        let d = proj_data(NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD).expect("the 620 row");
+        assert_eq!((d.w, d.h, d.ai_style), (8.0, 8.0, 29));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 3600, 0));
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 255);
+        assert_eq!((d.melee, d.ranged, d.magic), (false, false, true));
+        // The Bone Shard (1124, `:10514-10527`): 6x6 aiStyle 1, ranged,
+        // penetrate 1, timeLeft 600, extraUpdates 1, scale 0.95 (the LAST
+        // write wins over the 1.2 double-set), alpha at the 0 reset.
+        let d = proj_data(BONE_SHARD).expect("the 1124 row");
+        assert_eq!((d.w, d.h, d.ai_style), (6.0, 6.0, 1));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 600, 1));
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 0);
+        assert_eq!(d.scale, 0.95);
+        assert_eq!((d.melee, d.ranged, d.magic), (false, true, false));
+        // The frame slices: 249 = 5, 1124 = 2; 246/620 keep the stock 1.
+        assert_eq!(proj_frames(STYNGER_SHRAPNEL), 5);
+        assert_eq!(proj_frames(BONE_SHARD), 2);
+        assert_eq!(proj_frames(STYNGER), 1);
+        assert_eq!(proj_frames(NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD), 1);
+        // Every child kind reaches the spawner (the rows are not dead data).
+        for k in [STYNGER, STYNGER_SHRAPNEL, NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD, BONE_SHARD] {
+            assert!(spawnable_kinds().contains(&k), "kind {k} packs its sheet");
+        }
     }
 }

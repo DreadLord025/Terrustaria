@@ -39375,3 +39375,31 @@ luck sign, the x2-after-scaling order), the hurt seam checked against every
 `hurt_inner` caller (all keep the None lane). The 6 `w4_d78_b2_*` witness
 tests are WRITTEN, NOT RUN - **no cargo/rustc/rustfmt/tests/graphify
 invoked** (the Lead's constraint).
+
+## The projectile Kill death-effect wave, part 2b (W4-d78, 2026-11-21, code-only mode)
+
+**The child-kind rows** (4 kinds, verified MISSING on main — `proj_data`
+declined every one, so a future Kill-arm spawn would silently vanish):
+
+| kind | C# SetDefaults | box | style | pen | life | extra | alpha | scale | class | frames |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 246 Stynger | `:3289-3298` | 10x10 | 1 | 1 | 3600 | 1 | 255 | 1 | ranged | 1 |
+| 249 StyngerShrapnel | `:3314-3321` | 12x12 | 2 | 1 | 3600 | 0 | 0 | 1 | ranged | 5 |
+| 620 NebulaArcanumExplosionShotShard | `:6681-6690` | 8x8 | 29 | 1 | 3600 | 0 | 255 | 1 | magic | 1 |
+| 1124 BoneShard | `:10514-10527` | 6x6 | 1 | 1 | 600 | 1 | 0 | 0.95 | ranged | 2 |
+
+Every row is the `SetDefaults` body verbatim: the stock penetrate 1 /
+timeLeft 3600 / tileCollide true come from the `:774-775`/`:787` resets
+(the arms write no override); the 1124's `scale = 1.2f` (`:10521`) then
+`scale = 0.95f` (`:10525`) double-set keeps the LAST write. The class
+flags join the ranged/magic censuses (`:3295`/`:3320`/`:10523`/`:6687`);
+`proj_frames` gains 249=5 (`Main.cs:8610`) and 1124=2 (`:8562`), 246/620
+keep the stock 1. The 620's `ai[0]` payload is the 617 Kill arm's
+dust-type pick (86/90) — a dust id, NOT gem-staff feature bits; the
+AI_029 kind-gate (part 2c) reads it as the dust type only.
+
+**Verification.** Code-only: each row re-read against its C# block, the
+class censuses extended, the frame counts against `Main.cs`. The
+`w4_d78_b2_the_child_spawn_family_rows_match_set_defaults` witness plus
+the census-test extensions are WRITTEN, NOT RUN — **no cargo/rustc/
+rustfmt/tests/graphify invoked** (the Lead's constraint).
