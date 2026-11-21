@@ -9035,6 +9035,10 @@ mod tests {
         let mut app = melee_app();
         app.inventory[app.selected] = slot(1450, 1);
         app.npcs.clear();
+        // The cursor off the HUD so the mining arm never starts (the
+        // Bubble Wand has no pick — a mine attempt would refuse anyway,
+        // but the idle cursor keeps the tick clean).
+        app.mine_down = false;
         for _ in 0..200 {
             start_use_timers(&mut app, app.inventory[app.selected]);
             while app.swing > 0.0 {
