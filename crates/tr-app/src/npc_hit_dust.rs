@@ -389,6 +389,28 @@
 //!   noGravity.
 //! - 86904 — 343 (`:86898-86905`): ×100 dust 5.
 //! - 86923 — 691 (`:86917-86924`): ×100 dust 5.
+//! Batch 28 (the complex every-strike machines):
+//! - 81822 — the Rainbow Slime 661 (`:81813-81836`): ×100 loop, the
+//!   Next(5)==0 gate per iteration, hslToRgb(i/100%1,1,0.5)×0.5 colour
+//!   arg, dust 267; position = Centre + NextVector2Circular(w,h) (TWO
+//!   NextFloat draws), velocity = pos-Centre, noGravity, fadeIn
+//!   0.6+NextFloat·0.7, scale 0.35; the CloneDust sibling (scale/2,
+//!   fadeIn ×0.85, white×0.5) when the slot is not the sentinel.
+//! - 81868 — 521 (`:81862-81871`): ×200 dust-228 NewDustDirect at
+//!   (6·dir, vy), Transparent, scale 3, noGravity + velocity ×5.
+//! - 82998/83003 — the Solar Flare 516 (`:82994-83006`): EVERY strike,
+//!   FLAT 20 dust 6 at (2.5·dir,-2.5), velocity ×3, scale +=
+//!   NextFloat; the Next(2)==0 → dust 259 noGravity sibling.
+//! - 82018 — the Queen Slime minions 658-660 (`:81991-82023`): LIVE
+//!   FLAT 7, dust 4 (659 → 243 default colour), (2·dir,-1), alpha 80,
+//!   the per-type tint, post-spawn Next(3)!=0 → noGravity (the death
+//!   40-count halves are g60's).
+//! - 82051 — 667 (`:82025-82056`): LIVE FLAT 7 dust 10, alpha 80, scale
+//!   1.1, the same gate; the LIVE 3-gore sibling's argument draws
+//!   (Next(1,10) + Next(4) each, `:82043-82047`) ride BEFORE the dust
+//!   loop (bodies d55's).
+//! - 82070 — 676 (`:82058-82077`): LIVE FLAT 8 dust 310, alpha 80,
+//!   scale 1.1, the gate, then velocity ×1.5 + base.velocity·0.1.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -610,6 +632,58 @@ pub fn replay_hit_dust(
             }
             d.velocity *= 1.4; // `:85405`
             d.no_gravity = true; // `:85406`
+        }
+        return;
+    }
+    // `:82994-83006` — the Solar Flare: EVERY strike, FLAT 20 dust 6 at
+    // (2.5·dir, -2.5), velocity ×3, scale += NextFloat; the Next(2)==0
+    // sibling spawns dust 259 noGravity.
+    if s.npc_type == 516 {
+        for _ in 0..20 {
+            let idx = live_dust(s, 6, 2.5 * dir, -2.5, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            let d = dust.slot_mut(idx);
+            d.velocity *= 3.0; // `:82999`
+            d.scale += rng.next_float(); // `:83000`
+            if rng.next_max(2) == 0 {
+                // `:83003` — the sibling's own internals roll.
+                let sib = live_dust(s, 259, 2.5 * dir, -2.5, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                dust.slot_mut(sib).no_gravity = true; // `:83004`
+            }
+        }
+        return;
+    }
+    // `:81991-82077` — the Queen Slime minion trio + 667 + 676: the
+    // LIVE halves (FLAT 7/7/8, alpha 80, the post-spawn Next(3)!=0 →
+    // noGravity). The death halves' 40-count bursts are g60's lane, so
+    // this block gates on life > 0 (unlike the life-independent sphere/
+    // flare arms above). 667's LIVE 3-gore siblings' ARGUMENT draws ride
+    // BEFORE the dust loop (`:82043-82047`, the bodies d55's).
+    if s.life > 0 && matches!(s.npc_type, 658..=660 | 667 | 676) {
+        let (count, t, tint, sc) = match s.npc_type {
+            658 => (7, 4, Color::new(78, 136, 255, 150), 1.0),
+            659 => (7, 243, Color::default(), 1.0),
+            660 => (7, 4, Color::new(150, 100, 200, 150), 1.0),
+            667 => (7, 10, Color::default(), 1.1),
+            _ => (8, 310, Color::default(), 1.1), // 676
+        };
+        if s.npc_type == 667 {
+            // `:82043-82047` — 3 × (Next(1,10) then Next(4)); the
+            // velocity expressions consume them in argument order.
+            for _ in 0..3 {
+                let _ = rng.next_range(1, 10);
+                let _ = rng.next_max(4);
+            }
+        }
+        for _ in 0..count {
+            let idx = live_dust(s, t, 2.0 * dir, -1.0, 80, tint, sc, rng, dust, ctx, world);
+            let d = dust.slot_mut(idx);
+            if rng.next_max(3) != 0 {
+                d.no_gravity = true; // `:82019-82022` etc.
+            }
+            if s.npc_type == 676 {
+                d.velocity *= 1.5; // `:82075`
+                d.velocity += Vec2::new(s.vx, s.vy) * 0.1; // `:82076`
+            }
         }
         return;
     }
@@ -1802,6 +1876,63 @@ pub fn replay_hit_dust(
         343 | 691 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:81813-81836` — the Rainbow Slime's live shimmer: ×100 loop,
+        // the Next(5)==0 gate per iteration; the hsl colour arg (×0.5
+        // byte truncation, alpha 255·0.5 → 127), dust 267; the position
+        // re-anchor = Centre + NextVector2Circular(w,h) (NextFloat unit
+        // angle then NextFloat radius), velocity = pos − Centre,
+        // noGravity, fadeIn 0.6 + NextFloat·0.7, scale 0.35; the
+        // CloneDust sibling when the slot is not the sentinel.
+        661 => {
+            let bound = s.dmg / s.life_max as f64 * 100.0;
+            let mut i = 0u32;
+            while (i as f64) < bound {
+                if rng.next_max(5) == 0 {
+                    // `:81822` — hslToRgb(i/100 % 1, 1, 0.5) * 0.5f.
+                    let hsl = tr_core::tile_light::hsl_to_rgb(i as f32 / 100.0 % 1.0, 1.0, 0.5);
+                    let tint = Color::new(
+                        (hsl[0] * 255.0 * 0.5) as u8,
+                        (hsl[1] * 255.0 * 0.5) as u8,
+                        (hsl[2] * 255.0 * 0.5) as u8,
+                        (255.0 * 0.5) as u8,
+                    );
+                    let idx = live_dust(s, 267, 0.0, 0.0, 0, tint, 1.0, rng, dust, ctx, world);
+                    // `:81823` — NextVector2Circular: unit angle draw,
+                    // then the radius draw (Utils.cs:1261-1268).
+                    let angle = (std::f32::consts::TAU * rng.next_float()) as f64;
+                    let unit = Vec2::new(angle.cos() as f32, angle.sin() as f32);
+                    let circ = unit * Vec2::new(s.w as f32, s.h as f32) * rng.next_float();
+                    let d = dust.slot_mut(idx);
+                    d.position = Vec2::new(s.cx + circ.x, s.cy + circ.y);
+                    d.velocity = d.position - Vec2::new(s.cx, s.cy); // `:81824`
+                    d.no_gravity = true; // `:81825`
+                    d.fade_in = 0.6 + rng.next_float() * 0.7; // `:81826`
+                    d.scale = 0.35; // `:81827`
+                    if idx != 6000 {
+                        // `:81830-81833` — the CloneDust sibling.
+                        let sib = dust.clone_dust(rng, ctx, world, idx);
+                        let sd = dust.slot_mut(sib);
+                        sd.scale /= 2.0;
+                        sd.fade_in *= 0.85;
+                        sd.color = Color::new(127, 127, 127, 127); // white ×0.5
+                    }
+                }
+                i += 1;
+            }
+        }
+        // `:81862-81871` — 521: ×200 dust-228 NewDustDirect at (6·dir,
+        // vy), Transparent, scale 3, noGravity + velocity ×5.
+        521 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 200.0) {
+                let idx = dust.new_dust_direct(
+                    rng, ctx, world, Vec2::new(s.x, s.y), s.w, s.h, 228,
+                    6.0 * dir, s.vy, 0, Color::TRANSPARENT, 3.0,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true; // `:81869`
+                d.velocity *= 5.0; // `:81870`
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -3465,5 +3596,155 @@ mod tests {
         replay_hit_dust(&sx, &mut r3, &mut p3, &ctx, &world);
         assert_eq!(p3.slots().iter().filter(|d| d.active).count(), 1);
         assert!(p3.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 227));
+    }
+
+    /// W4-g62 batch 28 — the Solar Flare's every-strike sequence
+    /// (`NPC.cs:82996-83005`): 20 × (spawn, ×3, NextFloat scale add,
+    /// Next(2) gate, optional 259 sibling), even on death.
+    #[test]
+    fn w4_g62_the_solar_flare_sequence_mirrors() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(516, -2, 100, 5.0);
+        let mut rng = UnifiedRandom::new(229);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(229);
+        let mut twin = DustPool::new();
+        for _ in 0..20 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 6,
+                2.5, -2.5, 0, Color::default(), 1.0,
+            );
+            let d = twin.slot_mut(idx);
+            d.velocity *= 3.0;
+            d.scale += twin_rng.next_float();
+            if twin_rng.next_max(2) == 0 {
+                let sib = twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 259,
+                    2.5, -2.5, 0, Color::default(), 1.0,
+                );
+                twin.slot_mut(sib).no_gravity = true;
+            }
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 28 — the Rainbow Slime's gated shimmer
+    /// (`NPC.cs:81817-81834`): the Next(5) gate per iteration, the hsl
+    /// colour, the two circular draws, the clone sibling. A seed whose
+    /// first Next(5) hits pins the full sequence.
+    #[test]
+    fn w4_g62_the_rainbow_slime_gated_shimmer() {
+        let world = air();
+        let ctx = ctx();
+        // One iteration: dmg/lifeMax·100 = 1.
+        let s = snap(661, 100, 100, 1.0);
+        // Find a seed whose first Next(5) == 0.
+        let seed = (1..500).find(|&v| UnifiedRandom::new(v).next_max(5) == 0).unwrap();
+        let mut rng = UnifiedRandom::new(seed);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(seed);
+        let mut twin = DustPool::new();
+        assert_eq!(twin_rng.next_max(5), 0);
+        let hsl = tr_core::tile_light::hsl_to_rgb(0.0, 1.0, 0.5);
+        let tint = Color::new(
+            (hsl[0] * 255.0 * 0.5) as u8, (hsl[1] * 255.0 * 0.5) as u8,
+            (hsl[2] * 255.0 * 0.5) as u8, 127,
+        );
+        let idx = twin.new_dust(
+            &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 267,
+            0.0, 0.0, 0, tint, 1.0,
+        );
+        let angle = (std::f32::consts::TAU * twin_rng.next_float()) as f64;
+        let unit = Vec2::new(angle.cos() as f32, angle.sin() as f32);
+        let circ = unit * Vec2::new(24.0, 18.0) * twin_rng.next_float();
+        let d = twin.slot_mut(idx);
+        d.position = Vec2::new(112.0 + circ.x, 109.0 + circ.y);
+        d.velocity = d.position - Vec2::new(112.0, 109.0);
+        d.no_gravity = true;
+        d.fade_in = 0.6 + twin_rng.next_float() * 0.7;
+        d.scale = 0.35;
+        let sib = twin.clone_dust(&mut twin_rng, &ctx, &world, idx);
+        let sd = twin.slot_mut(sib);
+        sd.scale /= 2.0;
+        sd.fade_in *= 0.85;
+        sd.color = Color::new(127, 127, 127, 127);
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 28 — the Queen minion LIVE gate: a dead snapshot
+    /// draws NOTHING (the 40-count death halves are g60's); 667's live
+    /// gore-argument draws precede the dust loop; 676's velocity adds.
+    #[test]
+    fn w4_g62_the_queen_minion_live_gate_and_667_draws() {
+        let world = air();
+        let ctx = ctx();
+        let dead = snap(658, 0, 100, 10.0);
+        let mut rng = UnifiedRandom::new(233);
+        let twin = UnifiedRandom::new(233);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&dead, &mut rng, &mut dust, &ctx, &world);
+        assert_eq!(rng, twin, "the death halves are g60's");
+        assert!(dust.slots().iter().all(|d| !d.active));
+        // 667 live: 3 × 2 gore-arg draws then 7 × (spawn + Next(3)).
+        let s = snap(667, 100, 100, 10.0);
+        let mut r2 = UnifiedRandom::new(233);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&s, &mut r2, &mut p2, &ctx, &world);
+        let mut t2 = UnifiedRandom::new(233);
+        let mut q2 = DustPool::new();
+        for _ in 0..3 {
+            let _ = t2.next_range(1, 10);
+            let _ = t2.next_max(4);
+        }
+        for _ in 0..7 {
+            let idx = q2.new_dust(
+                &mut t2, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 10,
+                2.0, -1.0, 80, Color::default(), 1.1,
+            );
+            if t2.next_max(3) != 0 {
+                q2.slot_mut(idx).no_gravity = true;
+            }
+        }
+        assert_eq!(r2, t2);
+        assert_eq!(p2.slots(), q2.slots());
+        // 676 live: FLAT 8 dust 310, the velocity ×1.5 + 0.1·vel add.
+        let mut s3 = snap(676, 100, 100, 10.0);
+        s3.vx = 2.0;
+        s3.vy = -1.0;
+        let mut r3 = UnifiedRandom::new(233);
+        let mut p3 = DustPool::new();
+        replay_hit_dust(&s3, &mut r3, &mut p3, &ctx, &world);
+        let live: Vec<_> = p3.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 8);
+        assert!(live.iter().all(|d| d.dust_type == 310 && d.alpha == 80));
+    }
+
+    /// W4-g62 batch 28 — 521's Direct burst (`NPC.cs:81866-81871`):
+    /// ×200 dust 228 at (6·dir, vy), Transparent, scale 3, ×5 noGravity.
+    #[test]
+    fn w4_g62_the_521_direct_burst() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(521, 100, 100, 0.5); // ×200 → 1
+        s.vy = 1.5;
+        let mut rng = UnifiedRandom::new(239);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(239);
+        let mut twin = DustPool::new();
+        let idx = twin.new_dust_direct(
+            &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 228,
+            6.0, 1.5, 0, Color::TRANSPARENT, 3.0,
+        );
+        let d = twin.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 5.0;
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
     }
 }
