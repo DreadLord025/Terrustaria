@@ -265,6 +265,189 @@ impl SpawnArea {
     }
 }
 
+/// `NPC.SpawnOnPlayer(plr, 50)` (`NPC.cs:80475-80633`, the generic scan
+/// arm the King Slime takes): `GetSpawnArea`'s 500×50 attempts, each
+/// drawing a candidate tile (`Next(spawnArea.Left, Right)` +
+/// `Next(Top, Bottom)`), refusing solid/house-wall cells (the King's own
+/// `m < 250` wall quirk reads `tile[num16, num16]` — the C# typo, kept),
+/// walking down to the first solid row, then the King-only
+/// `Collision.CanHit` 20-tile headroom + player line-of-sight pair
+/// (`:80604-80614`, `m < 400`), the `HasTileSpawnSpace` clear-rect
+/// (`:80615`) and the `CheckNotSpawningOnScreen` off-screen gate
+/// (`:80624`). The last attempt (`m == 499`) relaxes the safe-area and
+/// spawn-space gates (`flag2`). On a hit `SpawnBoss` lands the King at
+/// `(x*16+8, y*16)` bottom-centre (`NewNPC`'s anchor, `:80770`), targets
+/// the player, arms `timeLeft *= 20` (`:80686`, 937*20) and broadcasts
+/// `Announcement.HasAwoken` (`NewNPC`'s type-50 arm, `:80787-80790` —
+/// the `SpawnBoss` switch's case-50 silence `:80705` is redundant).
+/// Returns the King, or `None` when all 500×50 attempts refuse.
+/// W4-f39 closeout: the kill-150 threshold arm calls THIS (the pre-fix
+/// port's `spawn_king_slime` surface scan could silently refuse, leaving
+/// the counter flipped with no King).
+pub(crate) fn spawn_king_slime_on_player(
+    world: &World,
+    player_pos: (f32, f32),
+    player_center: (f32, f32),
+    rng: &mut UnifiedRandom,
+) -> Option<Npc> {
+    // `Spawner.GetSpawnArea` (`NPC.cs:931-967`) — the scope/biome-gun
+    // extension folds (no scopes); the dual-dungeons safe-area halving
+    // folds (seed not ported). The same arithmetic as `get_spawn_area`
+    // (the full `SpawnContext` needs two dozen fields the scan never
+    // reads; the area math is duplicated here to keep the call light).
+    let num = (S_WIDTH / 16 * 7) / 10;
+    let num2 = (S_HEIGHT / 16 * 7) / 10;
+    let safe_range_x = (S_WIDTH / 16 * 52) / 100;
+    let safe_range_y = (S_HEIGHT / 16 * 52) / 100;
+    let px = (player_pos.0 / TILE_PX).floor() as i32;
+    let py = (player_pos.1 / TILE_PX).floor() as i32;
+    let clamp_x = |x: i32| x.clamp(0, world.width - 1);
+    let clamp_y = |y: i32| y.clamp(0, world.height - 1);
+    let spawn_area = SpawnArea {
+        left: clamp_x(px - num),
+        right: clamp_x(px + num),
+        top: clamp_y(py - num2),
+        bottom: clamp_y(py + num2),
+    };
+    let safe_area = SpawnArea {
+        left: clamp_x(px - safe_range_x),
+        right: clamp_x(px + safe_range_x),
+        top: clamp_y(py - safe_range_y),
+        bottom: clamp_y(py + safe_range_y),
+    };
+    if spawn_area.right <= spawn_area.left || spawn_area.bottom <= spawn_area.top {
+        return None;
+    }
+    let solid = |x: i32, y: i32| {
+        world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+    };
+    let num12 = 500; // `:80568` (the 316/82 200-attempt arm is not the King)
+    let num13 = 50; // `:80569`
+    let num14 = num12 / 2;
+    // `flag`/`num10`/`num11` (`:80565-80567`) live OUTSIDE the m-loop: a
+    // found-but-on-screen candidate survives into later attempts, gets
+    // re-validated by their headroom/spawn-space checks (the down-walk
+    // only ever SETS flag, never clears it), and the m == 499 `flag2`
+    // break accepts it even on-screen. Kept verbatim.
+    let mut flag = false;
+    let mut num10 = 0;
+    let mut num11 = 0;
+    for m in 0..num12 {
+        let flag2 = m == num12 - 1;
+        // `WorldGen.Skyblock.lowTiles` midair arm (`:80581`) folds —
+        // skyblock-only, the port's stand-in stays false.
+        for _n in 0..num13 {
+            let num15 = rng.next_range(spawn_area.left, spawn_area.right);
+            let num16 = rng.next_range(spawn_area.top, spawn_area.bottom);
+            // `:80589`: the solid refusal, the house-wall refusal
+            // (`m < 499`) and the King's `m < 250` wall quirk — the C#
+            // reads `Main.tile[num16, num16]` (both indices the Y roll),
+            // kept verbatim.
+            let house_wall = world
+                .tile(num15, num16)
+                .is_some_and(|t| tr_core::housing::is_house_wall(t.wall));
+            let king_wall = world
+                .tile(num16, num16)
+                .is_some_and(|t| t.wall > 0);
+            if solid(num15, num16) || (house_wall && m < num12 - 1) || (m < num14 && king_wall) {
+                continue;
+            }
+            // `:80593-80603`: walk down to the first solid row; the
+            // safe-area refusal applies until the last attempt. A miss
+            // leaves flag/num10/num11 as they were (the stale-candidate
+            // re-validation below reads them).
+            for num17 in num16..spawn_area.bottom {
+                if solid(num15, num17) && (flag2 || !safe_area.contains(num15, num16)) {
+                    num10 = num15;
+                    num11 = num17;
+                    flag = true;
+                    break;
+                }
+            }
+            // `:80604-80614`: the King-only (`m < 400`) headroom pair —
+            // CanHit from the tile above the ground 20 tiles up, then
+            // from there to the player's centre. Runs whenever flag is
+            // up (INCLUDING a stale candidate from an earlier m). A
+            // refusal zeroes the candidate and clears flag.
+            if flag && m < num12 - 100 {
+                let a = ((num10 as f32) * TILE_PX, (num11 as f32 - 1.0) * TILE_PX);
+                let b = ((num10 as f32) * TILE_PX, (num11 as f32 - 1.0 - 20.0) * TILE_PX);
+                if !crate::projectile::can_hit(world, a.0, a.1, 16.0, 16.0, b.0, b.1, 16.0, 16.0)
+                    || !crate::projectile::can_hit(
+                        world,
+                        b.0,
+                        b.1,
+                        16.0,
+                        16.0,
+                        player_center.0,
+                        player_center.1,
+                        0.0,
+                        0.0,
+                    )
+                {
+                    num10 = 0;
+                    num11 = 0;
+                    flag = false;
+                    continue;
+                }
+            }
+            // `:80615-80618`: the 2×3 clear rect (relaxed on the last m).
+            // A refusal clears flag only — the candidate coords survive.
+            if flag && !flag2 && !has_tile_spawn_space(world, num10, num11) {
+                flag = false;
+            }
+            if flag {
+                break;
+            }
+        }
+        // `:80624-80627`: `(!flag || flag2 || CheckNotSpawningOnScreen)
+        // && flag` — with a candidate up, break when the last attempt OR
+        // the tile is off-screen. The rect test reads the player's
+        // centre + the safe ranges directly (the full `SpawnContext`
+        // the ambient spawner builds is not needed). `:5444` uses
+        // `safeRangeX`/`safeRangeY` RAW as pixels (62/39 — tile-count
+        // fields spent unscaled in the screen rect; the ambient
+        // helper's `* TILE_PX` is that lane's own deviation, not copied
+        // here).
+        if flag && (flag2 || {
+            let rect_x = player_center.0 - (S_WIDTH / 2) as f32 - safe_range_x as f32;
+            let rect_y = player_center.1 - (S_HEIGHT / 2) as f32 - safe_range_y as f32;
+            let tile_px = num10 as f32 * TILE_PX;
+            let tile_py = num11 as f32 * TILE_PX;
+            let on_screen = tile_px + TILE_PX > rect_x
+                && tile_px < rect_x + (S_WIDTH + safe_range_x * 2) as f32
+                && tile_py + TILE_PX > rect_y
+                && tile_py < rect_y + (S_HEIGHT + safe_range_y * 2) as f32;
+            !on_screen
+        }) {
+            break;
+        }
+    }
+    if !flag {
+        return None;
+    }
+    let (x, y) = (num10, num11);
+    // `SpawnBoss` (`:80631`, `:80661-80703`): `NewNPC` at the bottom-centre
+    // anchor (`:80770` — position = (X - width/2, Y - height)), Start 1,
+    // target the player, `timeLeft *= 20` (`:80686` — activeTime 750 *
+    // 1.25 = 937, `:80772`/`:95186`).
+    let (w, h) = NpcKind::KingSlime.size();
+    let mut king = Npc::new(
+        NpcKind::KingSlime,
+        x as f32 * TILE_PX + 8.0 - w * 0.5,
+        y as f32 * TILE_PX - h,
+        -1,
+        0.0,
+    );
+    king.hp = king.max_hp;
+    king.boss = true;
+    king.target = 0;
+    king.despawn_timer = 937 * 20;
+    Some(king)
+}
+
 /// `Spawner.GetSpawnRate` (`NPC.cs:473-929`): the sequential multiplier
 /// chain, in the vanilla order with the vanilla cast widths (`spawn_rate`
 /// steps are `(double)`-then-`(int)`, `max_spawns` steps `(float)`-then-

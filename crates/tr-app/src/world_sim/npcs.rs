@@ -5440,10 +5440,41 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let threshold = if app.world.downed_slime_king { 75 } else { 150 };
             app.world.slime_rain_kills += 1;
             if app.world.slime_rain_kills >= threshold {
+                // `NPC.cs:79092`: `NPC.SpawnOnPlayer(closestPlayer.whoAmI,
+                // 50)` — the 500×50 off-screen scan (`NPC.cs:80475-80633`),
+                // NOT the surface-scan stand-in (which could refuse and
+                // leave the counter flipped with no King). W4-f39
+                // closeout: the real scan, on the `UpdateNPCs` stream
+                // (the death runs under the UpdateNPCs swap; the C#
+                // scan draws `Main.rand` live). The counter flips
+                // whether or not the scan finds a tile (`:79093` runs
+                // unconditionally after the call).
                 if let Some(p) = app.player.as_ref() {
-                    let xt = ((p.x / TILE_PX) as i32 + 12).clamp(2, app.world.width - 3);
-                    if let Some(k) = Npc::spawn_king_slime(&app.world, xt) {
+                    let pos = (p.x, p.y);
+                    let center = p.center();
+                    let mut rng = app.rngs.stream(RngKey::UpdateNpcs).clone();
+                    let king = spawner::spawn_king_slime_on_player(
+                        &app.world,
+                        pos,
+                        center,
+                        &mut rng,
+                    );
+                    *app.rngs.stream(RngKey::UpdateNpcs) = rng;
+                    if let Some(k) = king {
                         app.npcs.push(k);
+                        // `NewNPC`'s King-specific arm (`NPC.cs:80787-
+                        // 80790`): `Announcement.HasAwoken` with the
+                        // King's name (the `SpawnBoss` switch's case-50
+                        // silence `:80705` is redundant — NewNPC already
+                        // broadcast it).
+                        crate::chat::broadcast_death_text(
+                            &mut app.chat,
+                            &crate::lang::text_args(
+                                "Announcement.HasAwoken",
+                                &[crate::lang::npc_name(50)],
+                            ),
+                            crate::chat::COLOR_BOSS_OR_EVENT,
+                        );
                     }
                 }
                 app.world.slime_rain_kills = -threshold / 2;
