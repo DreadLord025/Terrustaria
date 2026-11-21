@@ -19417,7 +19417,6 @@ mod s1_d_3_moonlord_rng_witnesses {
     /// the inner loop's offset triple + gated dust + NextFloat) against
     /// a mirrored pool, returning the mirror rng for the smoke leg.
     fn mirror_storm(
-        core: &Npc,
         w: &World,
         dctx: &tr_core::particles::SpawnCtx,
         witness: &mut UnifiedRandom,
@@ -19572,7 +19571,7 @@ mod s1_d_3_moonlord_rng_witnesses {
         let (cw, ch) = core.size();
         let (cx, cy) = (core.x + cw * 0.5, core.y + ch * 0.5);
         core.update_moon_lord_core(&w, &p, &mut rng, &mut dust, &dctx);
-        mirror_storm(&core, &w, &dctx, &mut witness, &mut mirror, 123.0, cx, cy);
+        mirror_storm(&w, &dctx, &mut witness, &mut mirror, 123.0, cx, cy);
         assert_eq!(rng, witness, "the full storm census at 123");
         // The dust records match draw-for-draw (the fan + the inner).
         let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
@@ -19617,7 +19616,7 @@ mod s1_d_3_moonlord_rng_witnesses {
         core.update_moon_lord_core(&w, &p, &mut rng, &mut dust, &dctx);
         // The storm at 90: inner = ceil(90/60) = 2 — the FULL ledger
         // (W4-f4: the fan + inner dust internals now roll).
-        mirror_storm(&core, &w, &dctx, &mut mirror, &mut mpool, 90.0, cx0, cy0);
+        mirror_storm(&w, &dctx, &mut mirror, &mut mpool, 90.0, cx0, cy0);
         // The smoke: the offset pair + radius, then the gated triple.
         let ox = (mirror.next_double() as f32) * 2.0 - 1.0;
         let oy = (mirror.next_double() as f32) * 2.0 - 1.0;
