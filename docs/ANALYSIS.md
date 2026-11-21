@@ -39244,3 +39244,54 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## Birthday-party second half (W4-f41)
+
+The three unclaimed party-furniture slices land (c39 owns the event
+triggers/hats/bubbles; this lane took the items):
+
+- **The right-click arms** (`Player.cs:32278-32284`/`:32600-32605`):
+  `edit::interact_at` gains `PartyMonolithToggle` (455) and `CakeSlice`
+  (621) kind-literal arms ahead of the registry lookup (the dials/banks
+  shape — both defs carry `Interaction::None`). The app arms ride
+  `world_sim/editing/doors.rs::interact_tile`: the monolith plays the
+  case-28 mech cue on the UpdatePlayers stream (the switch-click path's
+  one `Next(-10,11)*0.01` behind the playing guard) then flips
+  `manual_party` with the THROW_A_PARTY up-edge (the wiring drain's
+  identical body); the cake grants SugarRush 192 for 7200 ticks + Item2
+  at the player centre (one `Next(-6,7)*0.01`). **Census**: tile 457 (the
+  party present) has NO right-click arm in the C# chain, and item 3749 is
+  NOT in `ItemID.Sets.OpenableBag` (`ItemID.cs:1384`) — the present is
+  place/break-only; `OpenPresent` fires for 1869 alone
+  (`ItemSlot.cs:1852-1855`).
+- **SugarRush** (`Player.cs:9935-9939`): `pickSpeed -= 0.2` (the port's
+  positive-bonus convention, the Mining-104 precedent) +
+  `moveSpeed += 0.2` per live slot, rebased every tick.
+- **The break records**: 455 joins `check_3x3_bottom`'s dispatch (the
+  `:53114` support group via the `:85526` gate; drop `case 455` → 3747
+  `:53224`); 621 joins the renamed `check_2x2` (the `:85796` group; drop
+  `case 621` → 3750 `:48609`); 457 gets `check_2x2_style` verbatim
+  (`Check2x2Style` `:52293-52436` via the `type != 457` gate `:85649` →
+  `goto case 254` `:85950`): the `:52300-52314` style decode, the
+  `:52323` **frameX-ONLY** integrity scan (frameY is never read), the
+  `:52328` floor gate, drop 3749 `:52395`, the 4x4 tail ring via
+  `region_ring`. The candelabra/sink slice keeps its deferred-pop
+  convention (ring: None) — recorded.
+- **The freeCake gift chain**: `NPC.freeCake` rides `WorldEvents`
+  (field-placement deviation — its writers are all party-machine sites:
+  `NaturalAttempt` `:106` arms, StartNight `Main.cs:65222` and clearWorld
+  `WorldGen.cs:6945` clear). `Npc.next_dialogue_free_cake` stands in for
+  the one-row `ConditionalDialogue` registry (`Init` `:124` registers
+  FreeCakeDialogue(208) alone); `CheckDialogue`'s
+  `(GameUpdateCount + whoAmI) % 10` poll + between-poll condition-fall
+  clear (`NPC.cs:90519-90532`) runs in `update_npcs`; `GetChat`'s head
+  (`:93768-93771`) in `talk_to_npc` gifts ONE SliceOfCake 3750
+  prefix-free (`SetDefaults(3750)` + `QuickSpawnItem(GiftRecieved)` —
+  the `slot_for_pickup` fill with the `GetOrDropItem` overflow at the
+  player centre) and answers `PartyGirlSpecialText.Cake<Next(1,4)>` on
+  the bare-Main.rand stand-in. The `NetMessage.SendData(51)` NPC-effect
+  broadcast is the net lane's.
+
+Verification: code-only — every arm re-read against the cited C# windows
+in ≤100-line reads; 15 witness tests WRITTEN NOT RUN — no
+cargo/rustc/tests/graphify invoked.
