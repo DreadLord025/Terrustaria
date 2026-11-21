@@ -1128,6 +1128,14 @@ pub const CHLOROPHYTE_SABER_STAB: u16 = 1127;
 /// `ai[0]` the negative chain delay, `ai[1]` the arc's tick budget.
 pub const WHITE_TIGER_POUNCE: u16 = 818;
 
+/// W4-d17 — `ProjectileID.ChumBucket` (820, `ProjectileID.cs:2194`) — the
+/// chum bucket's bait (aiStyle 163, `AI_163_Chum`
+/// `Projectile.cs:53474-53603`, the dispatch `:36615-36618`). The fishing
+/// attraction book (`ChumBucketProjectileHelper`) stays unported (the
+/// bobber module's `chumsInWater = 0` note); the bait's own physics +
+/// the 60-tick cap are ported.
+pub const CHUM_BUCKET: u16 = 820;
+
 /// W4-d17 — the aiStyle-161 kind set (the `DefaultToShortsword` callers:
 /// `Projectile.cs:7921`/`:8145`/`:8917`/`:10559`). The `Colliding` stab arm
 /// (`:15955`) and the `ownerHitCheck` gate (`:12637`) key on it.
@@ -3888,6 +3896,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `UpdatePosition`'s skip list names 818 (`:20435`) — the
             // CatmullRom arc IS the position (the dispatch folds the skip).
             WHITE_TIGER_POUNCE => (132.0, 132.0, 162, -1, TIME_LEFT_DEFAULT, 3, false, false, false, (true, -1, false, -1, 255, 1.0)),
+            // W4-d17 — `Projectile.cs:8019-8029` — the Chum Bucket bait
+            // (820): 12x12, aiStyle 163, `tileCollide = true`,
+            // `netImportant`, `penetrate = -1`, `timeLeft = 86400`. The
+            // stock extraUpdates 0; NO immunity slice (the bait is
+            // friendly but deals no damage — the spawner's damage 0).
+            CHUM_BUCKET => (12.0, 12.0, 163, -1, 86400, 0, true, false, false, RESET_STATE),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4176,6 +4190,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | FAIRY_GLOWSTICK | RAINBOW_GLOWSTICK | FLARE | BLUE_FLARE
                     | SPELUNKER_FLARE | CURSED_FLARE | RAINBOW_FLARE | SHIMMER_FLARE
             )
+            // W4-d17 — `Projectile.cs:8026`: the chum bait (820) sets
+            // `netImportant = true`.
+            || kind == CHUM_BUCKET
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
@@ -4766,6 +4783,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // wraps at it. The other glowsticks/flares keep the stock 1 (no
         // `projFrames` override in `Main.cs:8444-8727`).
         FAIRY_GLOWSTICK => 4,
+        // W4-d17 — the chum bait's 4-frame sheet (`Main.cs:8452`) — the
+        // first-tick `frame = Next(4)` roll (`Projectile.cs:53553`) picks
+        // the row; no frame machine steps it after.
+        CHUM_BUCKET => 4,
         _ => 1,
     }
 }

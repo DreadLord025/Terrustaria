@@ -17595,6 +17595,24 @@ impl ProjectilePool {
                             self.slots[i].direction =
                                 if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                         }
+                        // W4-d17 — `AI()`'s `else if (this.aiStyle == 163)`
+                        // (`Projectile.cs:36615-36618`) -> `AI_163_Chum`
+                        // (`:53474-53603`): the chum bucket's bait (820), the
+                        // style's ONLY row. Pool-side — the separation loop
+                        // reads the sibling slots. The movement is the shared
+                        // `kill_step` (HandleMovement's default arm — 820
+                        // matches no bounce type/style, so the generic
+                        // `position += velocity; Kill()` tail `:19849-19853`
+                        // takes it), run after the AI as the C# orders it.
+                        163 => {
+                            self.chum_step(i, world, rng);
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                            // `AutomaticallyChangesDirection` (`:17281-17288`):
+                            // the row leaves `manualDirectionChange` false.
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                        }
                         // S1-P-i16 — the aiStyle-34 fireworks rockets
                         // (`AI()` `Projectile.cs:27136-27188`): the
                         // velocity-pointing rotation + the ai[1] launch
@@ -21705,6 +21723,142 @@ impl ProjectilePool {
         }
         // `:71631-71634` — `this.Damage()` at the completed arc.
         self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+    }
+
+    /// W4-d17 — `AI_163_Chum` (`Projectile.cs:53474-53603`, the dispatch
+    /// `:36615-36618`): the chum bucket's bait (820), the style's ONLY row
+    /// (`:8019-8029`). Pool-side — the same-kind separation loop reads the
+    /// sibling slots (the `smolstar_step` precedent). The wet probe rides
+    /// the bobber's `probe_wet` at the tick head (the one-tick-lag
+    /// stand-in, ANALYSIS "Fishing rod"); the water line is the bobber's
+    /// `AI_061_FishingBobber_GetWaterLine` (`:53519` calls the same helper).
+    ///
+    /// RNG (per tick, in the C#'s order): the first tick's `Next(4)` frame
+    /// roll (`:53553`); while `frameCounter < 10 && wet` the two gore loops
+    /// (`:53558-53575`) — each `NewGoreDirect` spends the `Gore.NewGore`
+    /// internal kicks (`Next(10,31)` Y then `Next(-20,21)` X,
+    /// `Gore.cs:1327-1328`) THEN the call-site `NextVector2CircularEdge`
+    /// float (the velocity overwrite); the 1208 loop's scale adds one
+    /// `NextFloat` BEFORE its gore (the argument evaluation order). Then
+    /// the `Next(wet ? 90 : 5)` attraction gate (`:53581`); a taken DRY
+    /// gate spends one gore's kicks, a taken WET gate spends the kicks +
+    /// `NextFloatDirection` + `NextFloat` (`:53586`). The gore BODIES skip
+    /// (no gore layer); `ChildSafety.Disabled = true` statically
+    /// (`ChildSafety.cs:33`) so the dangerous-gore re-roll never fires.
+    ///
+    /// Skips (ANALYSIS): the `ChumBucketProjectileHelper.AddChumLocation`
+    /// book (`:53601` — the bobber module's `chumsInWater = 0` note stands);
+    /// the `netUpdate` write is kept (the pool's cadence reads it). The
+    /// `:53503-53514` tile-null guards + the discarded `_ = position.Y/16`
+    /// feed nothing live — the port keeps the water-line call only.
+    fn chum_step(&mut self, i: usize, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // The wet probe at the tick head (the bobber stand-in).
+        crate::projectile_bobber::probe_wet(&mut self.slots[i], world);
+        // `:53476-53499` — the same-kind separation: every other active
+        // 820 within width/2 Manhattan px pushes 0.05 per axis away.
+        let (kind, pos, w) = {
+            let p = &self.slots[i];
+            (p.kind, p.pos, p.w)
+        };
+        let num = 0.05;
+        let num2 = w / 2.0;
+        let mut push = Vec2::ZERO;
+        for (j, other) in self.slots.iter().enumerate() {
+            if j == i || !other.active || other.kind != kind {
+                continue;
+            }
+            if (pos.x - other.pos.x).abs() + (pos.y - other.pos.y).abs() < num2 {
+                push.x += if pos.x < other.pos.x { -num } else { num };
+                push.y += if pos.y < other.pos.y { -num } else { num };
+            }
+        }
+        let p = &mut self.slots[i];
+        p.vel += push;
+        if p.wet {
+            // `:53500-53535` — the wet physics: the X drag, the Y half on
+            // the way down, the water-line buoyancy.
+            p.vel.x *= 0.9;
+            if p.vel.y > 0.0 {
+                p.vel.y *= 0.5;
+            }
+            let (cx, cy) = p.center();
+            let num6 = tr_core::fishing::bobber_water_line(
+                world,
+                (cx / 16.0) as i32,
+                (cy / 16.0) as i32,
+                p.pos.y,
+                p.h,
+            );
+            if cy > num6 {
+                p.vel.y -= 0.1;
+                if p.vel.y < -8.0 {
+                    p.vel.y = -8.0;
+                }
+                if cy + p.vel.y < num6 {
+                    p.vel.y = num6 - cy;
+                }
+            } else {
+                p.vel.y = num6 - cy;
+            }
+        } else {
+            // `:53537-53549` — the dry physics: the ground friction, the
+            // 0.98 X drag, the +0.3 gravity capped 15.9.
+            if p.vel.y == 0.0 {
+                p.vel.x *= 0.95;
+            }
+            p.vel.x *= 0.98;
+            p.vel.y += 0.3;
+            if p.vel.y > 15.9 {
+                p.vel.y = 15.9;
+            }
+        }
+        // `:53550-53554` — the first-tick frame roll.
+        if p.frame_counter == 0 {
+            p.frame_counter = 1;
+            p.frame = rng.next_range(0, 4);
+        }
+        // `:53555-53576` — the entry-splash gore loops (wet, first 9 ticks).
+        if p.frame_counter < 10 && p.wet {
+            p.frame_counter += 1;
+            // `:53558-53566` — two 1201 gores: the kicks then the edge float.
+            for _ in 0..2 {
+                let _ = rng.next_range(10, 31); // Gore.NewGore Y kick
+                let _ = rng.next_range(-20, 21); // Gore.NewGore X kick
+                let _ = rng.next_float(); // NextVector2CircularEdge(10,10)
+            }
+            // `:53567-53575` — two 1208 gores: the scale NextFloat is the
+            // argument, evaluated BEFORE the gore's kicks.
+            for _ in 0..2 {
+                let _ = rng.next_float(); // the scale's NextFloat (`:53569`)
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+                let _ = rng.next_float(); // NextVector2CircularEdge(4,4)
+            }
+        }
+        // `:53577-53578` — the scale decay over the last 60 ticks + the spin.
+        p.scale = get_lerp_value(0.0, 60.0, p.time_left as f32);
+        p.rot += p.vel.x * 0.14;
+        // `:53579-53592` — the attraction gore gate. `flag` (the dry
+        // stillness veto) is the SECOND operand — the Next draw fires even
+        // when the veto holds (the ai026_c left-to-right precedent).
+        let flag = !p.wet && p.vel.length() < 0.8;
+        let max_value = if p.wet { 90 } else { 5 };
+        if rng.next_range(0, max_value) == 0 && !flag {
+            let _ = rng.next_range(10, 31); // the 1201 gore's Y kick
+            let _ = rng.next_range(-20, 21); // the X kick
+            if p.wet {
+                // `:53586` — NextFloatDirection then NextFloat.
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+            }
+        }
+        // `:53593-53602` — the 60-tick cap once the bait settles (ai0 >= 10
+        // is the spawner's settle marker; the bucket's use writes it). The
+        // AddChumLocation book skips (module doc).
+        if p.ai[0] >= 10.0 && p.time_left > 60 {
+            p.time_left = 60;
+            p.net_update = true;
+        }
     }
 
     fn magnet_sphere_step(&mut self, slot: usize, world: &World, npcs: &[Npc]) {
@@ -45081,5 +45235,115 @@ mod w4_d17_tiger_pounce_tests {
         assert!(npcs[0].hp < 1000, "the Kill re-Damage landed (:71631-71634)");
         assert!((1000 - npcs[0].hp) >= 51 && (1000 - npcs[0].hp) <= 69,
             "the base 1.5 multiplier + DamageVar: {}", 1000 - npcs[0].hp);
+    }
+}
+
+#[cfg(test)]
+mod w4_d17_chum_tests {
+    //! W4-d17 — the aiStyle-163 machine (`AI_163_Chum`,
+    //! `Projectile.cs:53474-53603`, the dispatch `:36615-36618`): the chum
+    //! bucket's bait (820). WRITTEN NOT RUN (code-only mode).
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The scripted stream: every gate returns `max - 1` (the attraction
+    /// gate MISSES), the floats count.
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, rng: &mut CensusRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    /// Witness 1 — the row + the dry physics + the first-tick census
+    /// (`:8019-8029`, `:53537-53554`, `:53579-53581`): the 12x12 box,
+    /// aiStyle 163, tileCollide true, netImportant, pen −1, timeLeft 86400,
+    /// projFrames 4. A dry bait at velocity (2, 0): the ground friction
+    /// (vel.y == 0) ×0.95 then ×0.98 → 1.862; gravity +0.3. The first tick
+    /// rolls Next(4) for the frame; the dry attraction gate Next(5) fires
+    /// (the stillness veto is the second operand — the draw stays even
+    /// though |vel| ≥ 0.8 here). No gore loops (dry).
+    #[test]
+    fn w4_d17_the_dry_bait_falls_and_rolls_the_frame() {
+        let d = proj_data(CHUM_BUCKET).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (12.0, 12.0, 163, -1));
+        assert_eq!((d.time_left, d.tile_collide), (86400, true));
+        assert!(d.net_important, ":8026");
+        assert_eq!(proj_frames(CHUM_BUCKET), 4, "Main.cs:8452");
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CHUM_BUCKET, 0, 400.0, 300.0, 2.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        let s = &pool.slots()[slot];
+        assert!(s.active);
+        assert!((s.vel.x - 1.862).abs() < 1e-4, "2 x 0.95 x 0.98 (:53541-53543)");
+        assert!((s.vel.y - 0.3).abs() < 1e-6, "the +0.3 gravity (:53544)");
+        assert_eq!(s.frame_counter, 1, "the first-tick latch (:53552)");
+        assert_eq!(s.frame, 3, "Next(4) returns max-1 = 3 (:53553)");
+        assert!((s.rot - 1.862 * 0.14).abs() < 1e-5, "the spin (:53578)");
+        // The census: Next(4) frame + Next(5) attraction gate. No floats.
+        assert_eq!(rng.draws, vec![(0, 4), (0, 5)], "the dry first-tick census");
+        assert_eq!(rng.floats, 0);
+        // The scale: timeLeft 86399 >> 60 → GetLerpValue clamps 1.
+        assert_eq!(s.scale, 1.0, "the scale holds until the last 60 (:53577)");
+    }
+
+    /// Witness 2 — the separation push + the 60-tick cap
+    /// (`:53476-53499`, `:53594-53598`): two baits 4 px apart (Manhattan <
+    /// width/2 = 6) push 0.05 per axis away from each other; the settled
+    /// bait (ai0 >= 10) caps timeLeft to 60 and flags netUpdate.
+    #[test]
+    fn w4_d17_the_baits_separate_and_the_settled_bait_caps() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let a = pool
+            .spawn_with_data_ai_owned(CHUM_BUCKET, 0, 400.0, 300.0, 0.0, 0.0, 0, 0.0, 10.0, 0.0)
+            .unwrap();
+        let b = pool
+            .spawn_with_data_ai_owned(CHUM_BUCKET, 0, 403.0, 301.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        let sa = &pool.slots()[a];
+        let sb = &pool.slots()[b];
+        // a is left/above b: pushed −0.05 X, −0.05 Y (then the dry physics).
+        // The separation applies BEFORE the drag: a.vel.x = −0.05, then
+        // vel.y != 0 so no ground friction, ×0.98 → −0.049; gravity +0.3.
+        assert!((sa.vel.x - (-0.049)).abs() < 1e-5, "a pushed left (:53484)");
+        assert!((sb.vel.x - 0.049).abs() < 1e-5, "b pushed right (:53488)");
+        // The settled bait a caps its life; b (ai0 0) keeps 86399.
+        assert_eq!(sa.time_left, 59, "the cap 60 minus the tail decrement (:53596)");
+        assert!(sa.net_update, ":53597");
+        assert_eq!(sb.time_left, 86399, "the unsettled bait keeps its life");
     }
 }
