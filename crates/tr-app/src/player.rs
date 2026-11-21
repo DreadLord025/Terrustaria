@@ -703,6 +703,18 @@ pub(crate) struct WallDust {
     pub(crate) rat_mount: bool,
 }
 
+/// One queued Vortex-stealth transition ring (`Player.cs:25872-25893`): the
+/// tick's `flag11` (the stealth value did NOT hit its clamp this tick) queues
+/// the centre snapshot; the drain (`player_dust::drain_vortex_stealth`) replays
+/// the two independent `Next(2)` gates, the `RotatedByRandom(2π)` spins (TWO
+/// `NextDouble` each, `Utils.cs:1697-1700`), the type-229/240 `NewDust` chains
+/// and the post-arms on the `UpdatePlayers` stream.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct VortexStealthDust {
+    pub(crate) cx: f32,
+    pub(crate) cy: f32,
+}
+
 /// One queued petrify-transition dust burst (`Player.cs:25226-25233`): the
 /// tick snapshots the box at the stoned-edge moment; the drain
 /// (`player_dust::drain_stoned_dust`) replays the 20 type-1 puffs + the per-puff
@@ -2212,6 +2224,11 @@ pub struct Player {
     /// `WallslideMovement`, `:26758-26765`), drained on the `UpdatePlayers`
     /// stream after the dash dust (`player_dust::drain_wall_dust`).
     pending_wall_dust: Option<WallDust>,
+    /// W4-f3 — the tick's queued Vortex-stealth transition ring
+    /// (`Player.cs:25872-25893`): one snapshot per `flag11` tick (the stealth
+    /// value changed without hitting its clamp), drained on the `UpdatePlayers`
+    /// stream (`player_dust::drain_vortex_stealth`).
+    pending_vortex_stealth_dust: Option<VortexStealthDust>,
     /// W4-f3 — the tick's queued petrify-transition burst
     /// (`Player.cs:25226-25233`): one snapshot on the stoned edge, drained on the
     /// `UpdatePlayers` stream (`player_dust::drain_stoned_dust`).
@@ -2310,10 +2327,30 @@ pub struct Player {
     /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
     /// sets the 881 and 934 flags shared with buffs 284/317).
     pub pet_flags: [bool; PROJ_COUNT],
-    // `Player.shroomiteStealth` + `stealth` (`Player.cs`): the shroomite
-    // armour's ranged knockback scale (`Main.cs:20342-20345`).
+    // `Player.shroomiteStealth` + `stealth` (`Player.cs:1554`/`:1562`): the
+    // stealth armour's shared fade value. `stealth` defaults to **1f** in C#
+    // (fully visible); the shroomite/vortex machines fade it toward 0 while
+    // still and back to 1 while moving. The ranged knockback scale reads it
+    // (`GetWeaponKnockback` `:53360-53367`).
     pub shroomite_stealth: bool,
     pub stealth: f32,
+    /// `Player.stealthTimer` (`Player.cs:1560`, int default 0): the shroomite
+    /// stand-still grace countdown — the fade only runs once it hits 0
+    /// (`:25745`/`:25794`), the Psycho Knife arm re-arms it to 15 (`:25737`).
+    /// NOT cleared by `ResetEffects` (a persistent countdown).
+    pub stealth_timer: i32,
+    /// `Player.setVortex` (`Player.cs:2818`): the Vortex armour set bonus
+    /// (`ArmorSetBonuses.Benefits.Vortex` `:42-45`, the 2757/2758/2759 triple
+    /// `:480`). `ResetEffects` clears it (`:18743`); the set-bonus match
+    /// re-grants per tick. Gates the vortex stealth machine (`:25826`) and the
+    /// down-double-tap toggle (`:56775`).
+    pub set_vortex: bool,
+    /// `Player.vortexStealthActive` (`Player.cs:2852`): the Vortex stealth
+    /// toggle state — the down-double-tap flips it (`:56777`), a dash cancels
+    /// it (`:21379`), a mount cancels it (`:25852`), and losing the set clears
+    /// it (`UpdateArmorSets_Always_Vortex` `:16317-16320`). While true the
+    /// stealth fades toward 0 (the `:25829-25853` arm).
+    pub vortex_stealth_active: bool,
     // `Player.spaceGun` (`Player.cs`): the mana row's exemption
     // (`Main.cs:20917`).
     pub space_gun: bool,
@@ -3174,6 +3211,7 @@ impl Player {
             pending_fast_run_dust: None,
             pending_double_jump_dust: None,
             pending_wall_dust: None,
+            pending_vortex_stealth_dust: None,
             pending_stoned_dust: None,
             pending_drown_bubble: None,
             pending_floor_dust: None,
@@ -3201,7 +3239,10 @@ impl Player {
             melee_enchant: 0,
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
-            stealth: 0.0,
+            stealth: 1.0,
+            stealth_timer: 0,
+            set_vortex: false,
+            vortex_stealth_active: false,
             space_gun: false,
             shadow_armor: false,
             crimson_regen: false,
@@ -3803,6 +3844,13 @@ impl Player {
         self.pending_wall_dust.take()
     }
 
+    /// W4-f3 — takes the Vortex-stealth transition ring snapshot
+    /// (`Player.cs:25872-25893`); the caller owns `Main.dust` and the
+    /// `UpdatePlayers` stream (`player_dust::drain_vortex_stealth`).
+    pub(crate) fn take_vortex_stealth_dust(&mut self) -> Option<VortexStealthDust> {
+        self.pending_vortex_stealth_dust.take()
+    }
+
     /// W4-f3 — takes the petrify-transition burst snapshot
     /// (`Player.cs:25226-25233`); the caller owns `Main.dust` and the
     /// `UpdatePlayers` stream (`player_dust::drain_stoned_dust`).
@@ -4028,6 +4076,7 @@ impl Player {
         self.pending_fast_run_dust = None;
         self.pending_double_jump_dust = None;
         self.pending_wall_dust = None;
+        self.pending_vortex_stealth_dust = None;
         self.pending_stoned_dust = None;
         self.pending_drown_bubble = None;
         self.pending_floor_dust = None;
@@ -4752,6 +4801,9 @@ impl Player {
         // callers are the PVP pair (`Player.cs:44098`, `Projectile.cs:14672`)
         // — unreachable here, so the port's callers all pass false and the
         // flag rides for parity + the maths test.
+        // W4-f3 — `Player.cs:38245`: `stealth = 1f` — any landed hit reveals
+        // the player (the stealth machines re-fade from the top next tick).
+        self.stealth = 1.0;
         let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
         let raw = if crit { raw * 2 } else { raw };
@@ -6019,11 +6071,13 @@ impl Player {
     /// staff's shot knockback takes the `minionKB` bonus FIRST (`:53348-53351`,
     /// `if (sItem.summon) KnockBack += this.minionKB`), then the melee glove's
     /// ×2 (`:53352-53355`), the Titan buff's ×1.5 (`:53356-53359`) and the
-    /// shroomite-stealth ranged scale (`:53360-53363`). The `setVortex` ranged
-    /// arm (`:53364-53367`) has no port field (the vortex stealth is unported)
-    /// and folds out. `ItemCheck_Shoot` calls this at `:47151` before the
-    /// spawn, so the minion/sentry shots carry the bonus — the port's throw
-    /// path previously passed the raw `fx_kb` and dropped it.
+    /// shroomite-stealth ranged scale (`:53360-53363`). W4-f3: the `setVortex`
+    /// ranged arm (`:53364-53367`) landed — the SAME ×(1+(1-stealth)*0.5)
+    /// scale, applied AFTER the shroomite one (the two flags are mutually
+    /// exclusive — the stealth if-else-if chain — so at most one fires).
+    /// `ItemCheck_Shoot` calls this at `:47151` before the spawn, so the
+    /// minion/sentry shots carry the bonus — the port's throw path previously
+    /// passed the raw `fx_kb` and dropped it.
     pub fn weapon_knockback(&self, def: &registry::ItemDef, knock_back: f32) -> f32 {
         let mut kb = knock_back;
         if def.summon {
@@ -6036,6 +6090,9 @@ impl Player {
             kb *= 1.5;
         }
         if def.ranged && self.shroomite_stealth {
+            kb *= 1.0 + (1.0 - self.stealth) * 0.5;
+        }
+        if def.ranged && self.set_vortex {
             kb *= 1.0 + (1.0 - self.stealth) * 0.5;
         }
         kb
@@ -6460,6 +6517,9 @@ impl Player {
         self.space_gun = false;
         self.shadow_armor = false;
         self.frost_burn = false;
+        // W4-f3 — `Player.cs:18326`: `shroomiteStealth = false`; the Shroomite
+        // triples re-grant it in the set-bonus match below.
+        self.shroomite_stealth = false;
         // S1-P-i10 — `ResetEffects`' on-hit accessory flag clears
         // (`Player.cs:18608` catalystBand, `:18610` magmaStone): the
         // `apply_equip_functional` arms (1322/1343/6178/6185) re-grant
@@ -6483,6 +6543,10 @@ impl Player {
         self.silence = false;
         self.dazed = false;
         self.weak_stacks = 0;
+        // `Player.cs:18377`: `aggro = 0` — ResetEffects zeroes it every tick;
+        // the stealth machines (`:25779`/`:25820`/`:25847`) and the accessory
+        // rows subtract from it per tick (W4-f3: the stealth writers landed).
+        self.aggro = 0;
         self.melee_damage = 1.0;
         self.ranged_damage = 1.0;
         self.magic_damage = 1.0;
@@ -6639,9 +6703,14 @@ impl Player {
         self.set_apprentice_t3 = false;
         // S1-P-i27 — `ResetEffects`' `setStardust = false` (`Player.cs:18743`)
         // and `setForbidden = false` (`:18745`): the armor-set block above
-        // re-derives both per tick.
+        // re-derives both per tick. W4-f3: the SAME line clears `setVortex`
+        // (`setVortex = (setNebula = (setStardust = false))`); the Vortex
+        // triple re-grants it in the set-bonus match. `vortexStealthActive`
+        // is NOT cleared here — `UpdateArmorSets_Always_Vortex` (`:16317`)
+        // owns that clear, gated on the freshly-derived `setVortex`.
         self.set_stardust = false;
         self.set_forbidden = false;
+        self.set_vortex = false;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -6883,7 +6952,29 @@ impl Player {
             (3381, 3382, 3383) => {
                 self.set_stardust = true;
             }
+            // W4-f3 — the Shroomite triples (`ArmorSetBonuses.cs:392-394`,
+            // `Benefits.Shroomite` `:370-373`): `shroomiteStealth = true` —
+            // the three helmet variants (1546 Headgear / 1547 Mask / 1548
+            // Helmet) over the shared Breastplate 1549 + Leggings 1550. The
+            // stealth machine (`Player.cs:25785-25825`) reads the flag.
+            (1546 | 1547 | 1548, 1549, 1550) => {
+                self.shroomite_stealth = true;
+            }
+            // W4-f3 — the Vortex triple (`ArmorSetBonuses.cs:480`,
+            // `Benefits.Vortex` `:42-45`): `setVortex = true`. The stealth
+            // machine (`Player.cs:25826-25895`) + the down-double-tap toggle
+            // (`:56775-56778`) read it. The stat half (+ranged damage/crit,
+            // `tr-core` SET_STATS) already applied above.
+            (2757, 2758, 2759) => {
+                self.set_vortex = true;
+            }
             _ => {}
+        }
+        // W4-f3 — `Player.UpdateArmorSets_Always_Vortex` (`Player.cs:16315-
+        // 16321`, called from `UpdateArmorSets` `:16311` right after the
+        // set-bonus Effect): losing the set drops the stealth toggle.
+        if !self.set_vortex {
+            self.vortex_stealth_active = false;
         }
         // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
         // `ArmorSetBonuses.Initialize` triples, `:396-500`): the damage/crit/
@@ -7379,6 +7470,11 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // W4-f3 — `Player.Update`'s stealth machine (`Player.cs:25733-25899`):
+        // the Psycho-Knife / Shroomite / Vortex if-else-if chain, then the
+        // `stealth = 1f` fallback. Runs after `UpdateArmorSets` (`:25685`)
+        // granted the set flags and before the Mana Sickness tail (`:25900`).
+        self.update_stealth();
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
         // multiplies `magicDamage *= 1 - manaSickReduction` then `*= manaHeat`
@@ -9440,6 +9536,9 @@ impl Player {
             if self.dash <= 0 {
                 return;
             }
+            // W4-f3 — `:21379`: an active dash cancels the Vortex stealth
+            // (the door-helper allow at `:21378` is unported).
+            self.vortex_stealth_active = false;
             if self.vx > threshold || self.vx < -threshold {
                 self.vx *= fast;
                 return;
@@ -9544,6 +9643,140 @@ impl Player {
                 t.active() && (tr_core::tiledata::TILE_SOLID.has(t.kind) || t.slope() != 0)
             })
         })
+    }
+
+    /// `Player.Update`'s stealth machine (`Player.cs:25733-25899`): the
+    /// Psycho-Knife (3106) / Shroomite / Vortex if-else-if chain over the
+    /// shared `stealth` value, then the `stealth = 1f` fallback (`:25896-
+    /// 25899`). The NetMessage-84 sends (`:25753`/`:25800`/`:25843`/`:25869`)
+    /// are MP-only (the port's single player). The Vortex arm's `flag11`
+    /// transition dust (`:25872-25893`) queues its snapshot; the drain
+    /// (`player_dust::drain_vortex_stealth`) replays the two ring gates.
+    fn update_stealth(&mut self) {
+        if self.frame_inputs.item_type == 3106 {
+            // `:25733-25783` — the Psycho Knife: swinging reveals (+0.1, the
+            // 15-tick grace), standing still fades (-0.02 once the grace
+            // runs out), moving reveals; the melee ×(1 + (1-stealth)*3) /
+            // +30 crit (capped 100) / -750 aggro bonuses ride the fade.
+            if self.frame_inputs.swing_active {
+                self.stealth_timer = 15; // `:25737`
+                if self.stealth > 0.0 {
+                    self.stealth += 0.1; // `:25740`
+                }
+            } else if self.vx > -0.1
+                && self.vx < 0.1
+                && self.vy > -0.1
+                && self.vy < 0.1
+                && !self.mount.is_active()
+            {
+                // `:25743-25757`: the still fade.
+                if self.stealth_timer == 0 && self.stealth > 0.0 {
+                    self.stealth -= 0.02;
+                    if self.stealth <= 0.0 {
+                        self.stealth = 0.0;
+                    }
+                }
+            } else {
+                // `:25758-25768`: moving reveals; a mount pins full.
+                if self.stealth > 0.0 {
+                    self.stealth += 0.1;
+                }
+                if self.mount.is_active() {
+                    self.stealth = 1.0;
+                }
+            }
+            if self.stealth > 1.0 {
+                self.stealth = 1.0; // `:25769-25772`
+            }
+            self.melee_damage += (1.0 - self.stealth) * 3.0; // `:25773`
+            self.melee_crit += ((1.0 - self.stealth) * 30.0) as i32; // `:25774`
+            if self.melee_crit > 100 {
+                self.melee_crit = 100; // `:25775-25778`
+            }
+            self.aggro -= ((1.0 - self.stealth) * 750.0) as i32; // `:25779`
+            if self.stealth_timer > 0 {
+                self.stealth_timer -= 1; // `:25780-25783`
+            }
+        } else if self.shroomite_stealth {
+            // `:25785-25825` — the Shroomite set: still (inside the run-speed
+            // dead-band, unmounted) fades -0.015 and re-arms the 30-tick
+            // grace; moving recovers at (|vx|+|vy|)*0.0075. The ranged
+            // ×(1 + remap*0.5) / +10 crit / -750 aggro bonuses ride the
+            // 1→0.75 remap (`:25817-25820`).
+            let num24 = self.max_run_speed - 0.1; // `:25788`
+            if self.vx > -num24
+                && self.vx < num24
+                && self.vy > -num24
+                && self.vy < num24
+                && !self.mount.is_active()
+            {
+                if self.stealth > 0.0 {
+                    self.stealth -= 0.015; // `:25793`
+                    self.stealth_timer = 30; // `:25794`
+                    if self.stealth <= 0.0 {
+                        self.stealth = 0.0; // `:25797`
+                    }
+                }
+            } else {
+                // `:25805-25816`: the moving recovery.
+                self.stealth += (self.vx.abs() + self.vy.abs()) * 0.0075;
+                if self.stealth > 1.0 {
+                    self.stealth = 1.0;
+                }
+                if self.mount.is_active() {
+                    self.stealth = 1.0;
+                }
+            }
+            // `:25817`: `Utils.Remap(stealth, 1, 0.75, 1, 0)` (clamped) —
+            // the inverted ramp: stealth 1 → 1, stealth 0.75 → 0.
+            let t = ((self.stealth - 1.0) / (0.75 - 1.0)).clamp(0.0, 1.0);
+            let num25 = 1.0 + t * (0.0 - 1.0);
+            self.ranged_damage += (1.0 - num25) * 0.5; // `:25818`
+            self.ranged_crit += ((1.0 - num25) * 10.0) as i32; // `:25819`
+            self.aggro -= ((1.0 - num25) * 750.0) as i32; // `:25820`
+            if self.stealth_timer > 0 {
+                self.stealth_timer -= 1; // `:25821-25824`
+            }
+        } else if self.set_vortex {
+            // `:25826-25895` — the Vortex set: the down-double-tap toggle
+            // (`key_double_tap_down`) drives `vortexStealthActive`; active
+            // fades -0.04 toward 0 (the ranged ×(1+(1-stealth)*0.8) / +20
+            // crit / -1200 aggro bonuses + the 0.3 run-speed cut), inactive
+            // recovers +0.04 toward 1. `flag11` is "the value changed without
+            // hitting its clamp" — the transition dust gate.
+            let mut flag11 = false;
+            if self.vortex_stealth_active {
+                self.stealth -= 0.04; // `:25832` (num26 feeds only the MP send)
+                if self.stealth < 0.0 {
+                    self.stealth = 0.0;
+                } else {
+                    flag11 = true; // `:25839`
+                }
+                self.ranged_damage += (1.0 - self.stealth) * 0.8; // `:25845`
+                self.ranged_crit += ((1.0 - self.stealth) * 20.0) as i32; // `:25846`
+                self.aggro -= ((1.0 - self.stealth) * 1200.0) as i32; // `:25847`
+                self.acc_run_speed *= 0.3; // `:25848`
+                self.max_run_speed *= 0.3; // `:25849`
+                if self.mount.is_active() {
+                    self.vortex_stealth_active = false; // `:25850-25853`
+                }
+            } else {
+                self.stealth += 0.04; // `:25858` (num27 feeds only the MP send)
+                if self.stealth > 1.0 {
+                    self.stealth = 1.0;
+                } else {
+                    flag11 = true; // `:25865`
+                }
+            }
+            if flag11 {
+                // `:25872-25893`: the transition ring — the two Next(2)
+                // gates + the spins + the NewDust chains ride the drain.
+                let (cx, cy) = self.center();
+                self.pending_vortex_stealth_dust = Some(VortexStealthDust { cx, cy });
+            }
+        } else {
+            self.stealth = 1.0; // `:25896-25899`
+        }
     }
 
     /// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70132`): an active, fully
@@ -11801,8 +12034,8 @@ impl Player {
     /// double-tap. S1-P-i27: the Forbidden set bonus's rest aim fires here
     /// (`:56779-56786`). The `CommandForbiddenStorm` half (`:56784`) is the
     /// storm command's own lane (deferred, ANALYSIS — it spawns the 656
-    /// projectile + pays mana). The Vortex stealth toggle (`:56775-56778`)
-    /// is the stealth system's lane (unported).
+    /// projectile + pays mana). W4-f3: the Vortex stealth toggle
+    /// (`:56775-56778`) landed — the set + no mount flips the state.
     ///
     /// `reversed` is `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`):
     /// when true the set-bonus cardinal is UP (keyDir 1), so the DOWN
@@ -11812,6 +12045,10 @@ impl Player {
         // keyDir 0 (down) != num when reversed → early return (`:56771-56774`).
         if 0 != num {
             return;
+        }
+        // `:56775-56778`: the Vortex stealth toggle.
+        if self.set_vortex && !self.mount.is_active() {
+            self.vortex_stealth_active = !self.vortex_stealth_active;
         }
         if self.set_forbidden {
             self.minion_rest_target_aim(world, mouse_world);
@@ -22607,9 +22844,9 @@ mod s1_p_i27_tests {
     }
 }
 
-/// W4-f3 — the wall-climb/wallslide machines (`Player.cs:21607-21840`) and the
-/// climbing-accessory grants (`:15038-15066`/`:14426-14444`). Code-only mode:
-/// WRITTEN NOT RUN.
+/// W4-f3 — the wall-climb/wallslide machines (`Player.cs:21607-21840`), the
+/// climbing-accessory grants (`:15038-15066`/`:14426-14444`) and the Vortex/
+/// Shroomite stealth machine (`:25733-25899`). Code-only mode: WRITTEN NOT RUN.
 #[cfg(test)]
 mod w4_f3_wall_stealth_tests {
     use super::*;
@@ -22774,5 +23011,110 @@ mod w4_f3_wall_stealth_tests {
         p.wall_climb_movement(&w, 0.4);
         assert!(!p.sliding, "no Rat — the machine returns (:21610)");
         assert!(p.take_wall_dust().is_none());
+    }
+
+    /// `:25826-25895` — the Vortex machine: inactive recovers +0.04 toward 1,
+    /// active fades -0.04 toward 0 with the ranged bonuses + the run-speed cut.
+    /// A transition tick (no clamp) queues the ring; a clamped tick does not.
+    #[test]
+    fn w4_f3_the_vortex_machine_fades_and_queues_the_ring() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_vortex = true;
+        p.stealth = 0.5;
+        p.vortex_stealth_active = false;
+        p.update_stealth();
+        assert!((p.stealth - 0.54).abs() < 1e-6, "the recovery (+0.04, :25858)");
+        assert!(p.take_vortex_stealth_dust().is_some(), "flag11 — the ring (:25865)");
+        // Active fades and applies the bonuses.
+        let mut p = Player::spawn(&w);
+        p.set_vortex = true;
+        p.stealth = 0.5;
+        p.vortex_stealth_active = true;
+        let rd0 = p.ranged_damage;
+        p.update_stealth();
+        assert!((p.stealth - 0.46).abs() < 1e-6, "the fade (-0.04, :25832)");
+        assert!(p.ranged_damage > rd0, "the ranged bonus (:25845)");
+        assert!(p.take_vortex_stealth_dust().is_some(), "flag11 (:25839)");
+        // A clamped tick (stealth hits 0) sets no flag11.
+        let mut p = Player::spawn(&w);
+        p.set_vortex = true;
+        p.stealth = 0.02;
+        p.vortex_stealth_active = true;
+        p.update_stealth();
+        assert_eq!(p.stealth, 0.0, "the clamp (:25835)");
+        assert!(p.take_vortex_stealth_dust().is_none(), "clamped — no ring");
+    }
+
+    /// `:56775-56778` + `:16317-16320` — the down-double-tap toggles the Vortex
+    /// stealth; losing the set clears it. A mount refuses the toggle.
+    #[test]
+    fn w4_f3_the_vortex_toggle_and_the_set_loss_clear() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_vortex = true;
+        let mouse = Vec2::new(p.x, p.y);
+        p.key_double_tap_down(&w, mouse, false);
+        assert!(p.vortex_stealth_active, "the toggle (:56777)");
+        p.key_double_tap_down(&w, mouse, false);
+        assert!(!p.vortex_stealth_active, "the toggle flips back");
+        // A mount refuses.
+        p.set_mount(1, false);
+        p.key_double_tap_down(&w, mouse, false);
+        assert!(!p.vortex_stealth_active, "the mount gate (:56775)");
+        // Losing the set clears the toggle on the next tick (Always_Vortex).
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2757;
+        p.equipped[1] = 2758;
+        p.equipped[2] = 2759;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_vortex, "the Vortex triple (ArmorSetBonuses.cs:480)");
+        p.vortex_stealth_active = true;
+        p.equipped[0] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.set_vortex, "the reset (:18743)");
+        assert!(!p.vortex_stealth_active, "Always_Vortex (:16319)");
+    }
+
+    /// `:25785-25825` — the Shroomite machine: still (inside the run-speed
+    /// dead-band) fades -0.015 and re-arms the 30-tick grace; the ranged
+    /// bonuses ride the 1→0.75 remap. The fallback pins stealth 1.
+    #[test]
+    fn w4_f3_the_shroomite_machine_fades_when_still() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shroomite_stealth = true;
+        p.stealth = 0.9;
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.max_run_speed = 3.0;
+        p.update_stealth();
+        assert!((p.stealth - 0.885).abs() < 1e-6, "the still fade (:25793)");
+        assert_eq!(p.stealth_timer, 29, "the grace re-arms to 30 then decays (:25794/:25823)");
+        // No set, no knife → the fallback pins 1.
+        let mut p = Player::spawn(&w);
+        p.stealth = 0.3;
+        p.update_stealth();
+        assert_eq!(p.stealth, 1.0, "the fallback (:25898)");
+    }
+
+    /// `:25845-25849` + `:53364-53367` — the Vortex ranged knockback scale and
+    /// the run-speed cut. The shroomite and vortex scales are mutually
+    /// exclusive (the if-else-if chain).
+    #[test]
+    fn w4_f3_the_vortex_knockback_and_run_speed() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        let ranged = crate::registry::get(435).unwrap(); // Cobalt Repeater
+        p.set_vortex = true;
+        p.stealth = 0.5;
+        assert_eq!(p.weapon_knockback(ranged, 4.0), 4.0 * 1.25, "(:53366)");
+        // The run-speed cut while active.
+        p.vortex_stealth_active = true;
+        p.acc_run_speed = 6.0;
+        p.max_run_speed = 3.0;
+        p.update_stealth();
+        assert!((p.acc_run_speed - 1.8).abs() < 1e-5, "the acc cut (:25848)");
+        assert!((p.max_run_speed - 0.9).abs() < 1e-5, "the max cut (:25849)");
     }
 }

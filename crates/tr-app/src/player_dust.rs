@@ -29,7 +29,7 @@
 //! `Main.rand` draw is a documented skip here.
 
 use crate::app::App;
-use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, FloorDust, JumpDust, SplashArm, SplashDust, StonedDust, WallDust, WingGlideDust};
+use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, FloorDust, JumpDust, SplashArm, SplashDust, StonedDust, VortexStealthDust, WallDust, WingGlideDust};
 use glam::Vec2;
 use tr_core::particles::Color;
 
@@ -964,6 +964,58 @@ pub(crate) fn drain_wall_dust(app: &mut App, b: WallDust) {
     d.no_gravity = true;
     if b.rat_mount {
         d.scale *= 0.5;
+    }
+}
+
+// ---- W4-f3: the Vortex-stealth transition ring (`Player.cs:25872-25893`) ----
+
+/// Drain the Vortex-stealth transition ring (`Player.cs:25872-25893`). TWO
+/// independent `Next(2)` gates, each drawing only on a 0:
+/// * the type-229 outer ring (`:25874-25883`): `UnitY.RotatedByRandom(2π)`
+///   (TWO `NextDouble`, left first — `Utils.cs:1697-1700`), `NewDust` at
+///   `Center - vector*30` (box 0×0), then `noGravity`, `position = Center -
+///   vector*Next(5,11)`, `velocity = vector.RotatedBy(π/2)*4`,
+///   `scale = 0.5 + NextFloat`, `fadeIn = 0.5`;
+/// * the type-240 inner ring (`:25884-25893`): a fresh spin, `NewDust` at
+///   `Center - vector2*30`, `noGravity`, `position = Center - vector2*12`,
+///   `velocity = vector2.RotatedBy(-π/2)*2`, `scale = 0.5 + NextFloat`,
+///   `fadeIn = 0.5`.
+/// The `flag11` gate (the stealth value changed without clamping) ran on the
+/// tick side; a refused gate spends NO draws (the C# `if` short-circuits).
+pub(crate) fn drain_vortex_stealth(app: &mut App, b: VortexStealthDust) {
+    let center = Vec2::new(b.cx, b.cy);
+    let tau = 6.2831854820251465f64;
+    let half_pi = 1.5707963705062866f64;
+    // `:25874`: the outer gate.
+    if app.rngs.stream(crate::app::RngKey::UpdatePlayers).next_max(2) == 0 {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let angle = rng.next_double() * tau - rng.next_double() * tau;
+        let vector = crate::bow_launch::rotated_by(Vec2::new(0.0, 1.0), angle);
+        let idx = nd(app, center - vector * 30.0, 0, 0, 229, 0.0, 0.0, 0, Color::default(), 1.0);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let radius = rng.next_range(5, 11) as f32;
+        let scale = 0.5 + rng.next_float();
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.position = center - vector * radius;
+        d.velocity = crate::bow_launch::rotated_by(vector, half_pi) * 4.0;
+        d.scale = scale;
+        d.fade_in = 0.5;
+    }
+    // `:25884`: the inner gate.
+    if app.rngs.stream(crate::app::RngKey::UpdatePlayers).next_max(2) == 0 {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let angle = rng.next_double() * tau - rng.next_double() * tau;
+        let vector2 = crate::bow_launch::rotated_by(Vec2::new(0.0, 1.0), angle);
+        let idx = nd(app, center - vector2 * 30.0, 0, 0, 240, 0.0, 0.0, 0, Color::default(), 1.0);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let scale = 0.5 + rng.next_float();
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.position = center - vector2 * 12.0;
+        d.velocity = crate::bow_launch::rotated_by(vector2, -half_pi) * 2.0;
+        d.scale = scale;
+        d.fade_in = 0.5;
     }
 }
 
@@ -2829,5 +2881,88 @@ mod tests {
         assert_eq!(d.position.x, corner_x + px as f32 + 4.0 - 10.0);
         assert_eq!(d.scale, scale * 1.2 * 0.5, "the Rat halves the scale");
         assert_eq!(stream_of(&mut app), rng);
+    }
+
+    // ---- W4-f3: Vortex-stealth transition ring witnesses --------------------
+
+    fn vortex_burst() -> VortexStealthDust {
+        VortexStealthDust { cx: 310.0, cy: 621.0 }
+    }
+
+    /// `:25872-25893` — both gates pass: the type-229 outer ring (spin + 6
+    /// default + Next(5,11) + NextFloat) then the type-240 inner ring (spin +
+    /// 6 default + NextFloat). Draw order: gate, 2×NextDouble, 6, Next(5,11),
+    /// NextFloat, gate, 2×NextDouble, 6, NextFloat.
+    #[test]
+    fn w4_f3_the_vortex_ring_replays_both_gates_in_order() {
+        // Find a seed where both Next(2) gates pass (the first and the one
+        // after the outer ring's draws).
+        let seed = (0..200i32)
+            .find(|&s| {
+                let mut r = UnifiedRandom::new(s);
+                if r.next_max(2) != 0 {
+                    return false;
+                }
+                let _ = r.next_double();
+                let _ = r.next_double();
+                for _ in 0..6 {
+                    r.next();
+                }
+                let _ = r.next_range(5, 11);
+                let _ = r.next_float();
+                r.next_max(2) == 0
+            })
+            .expect("a seed with both gates open");
+        let mut app = rig(seed);
+        let b = vortex_burst();
+        drain_vortex_stealth(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 2);
+        assert_eq!(slots[0].dust_type, 229);
+        assert_eq!(slots[1].dust_type, 240);
+        let center = Vec2::new(b.cx, b.cy);
+        let tau = 6.2831854820251465f64;
+        let half_pi = 1.5707963705062866f64;
+        let mut rng = UnifiedRandom::new(seed);
+        // Outer ring.
+        assert_eq!(rng.next_max(2), 0);
+        let a1 = rng.next_double() * tau - rng.next_double() * tau;
+        let v1 = crate::bow_launch::rotated_by(Vec2::new(0.0, 1.0), a1);
+        let _ = default_six(&mut rng, 0, 0, 0.0, 0.0, 1.0);
+        let radius = rng.next_range(5, 11) as f32;
+        let s1 = 0.5 + rng.next_float();
+        assert!(slots[0].no_gravity);
+        assert_eq!(slots[0].position, center - v1 * radius);
+        assert_eq!(slots[0].velocity, crate::bow_launch::rotated_by(v1, half_pi) * 4.0);
+        assert_eq!(slots[0].scale, s1);
+        assert_eq!(slots[0].fade_in, 0.5);
+        // Inner ring.
+        assert_eq!(rng.next_max(2), 0);
+        let a2 = rng.next_double() * tau - rng.next_double() * tau;
+        let v2 = crate::bow_launch::rotated_by(Vec2::new(0.0, 1.0), a2);
+        let _ = default_six(&mut rng, 0, 0, 0.0, 0.0, 1.0);
+        let s2 = 0.5 + rng.next_float();
+        assert!(slots[1].no_gravity);
+        assert_eq!(slots[1].position, center - v2 * 12.0);
+        assert_eq!(slots[1].velocity, crate::bow_launch::rotated_by(v2, -half_pi) * 2.0);
+        assert_eq!(slots[1].scale, s2);
+        assert_eq!(slots[1].fade_in, 0.5);
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:25874`/`:25884` — a refused gate spends NO draws beyond the gate
+    /// itself. Both gates refuse → 2 draws, zero slots.
+    #[test]
+    fn w4_f3_the_vortex_gates_refuse_without_dust() {
+        let seed = (0..200i32)
+            .find(|&s| {
+                let mut r = UnifiedRandom::new(s);
+                r.next_max(2) != 0 && r.next_max(2) != 0
+            })
+            .expect("a seed with both gates closed");
+        let mut app = rig(seed);
+        drain_vortex_stealth(&mut app, vortex_burst());
+        assert!(live(&app).is_empty());
+        assert_eq!(stream_of(&mut app), draws_after(seed, 2));
     }
 }

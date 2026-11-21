@@ -1472,6 +1472,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_stoned_dust() {
                 crate::player_dust::drain_stoned_dust(app, burst);
             }
+            // W4-f3 — the Vortex-stealth transition ring (`Player.cs:25872-
+            // 25893`): the stealth machine's `flag11` tick queues the centre;
+            // the drain replays the two Next(2) gates + the RotatedByRandom
+            // spins + the type-229/240 chains. The machine runs at `:25826`
+            // (after the stoned edge `:25228`), so the drain follows the
+            // stoned burst on the `UpdatePlayers` stream.
+            if let Some(burst) = p.take_vortex_stealth_dust() {
+                crate::player_dust::drain_vortex_stealth(app, burst);
+            }
             // `Player.SpawnFastRunParticles` (`Player.cs:20214`): the
             // fast-run footstep at the player's top-left position — the
             // case-17 `Main.rand.Next(-10, 11)` pitch roll (`:862`) rides
