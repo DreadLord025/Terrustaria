@@ -238,6 +238,20 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-c31 (2026-11-21, code-only): the faithful hive rewrite
+    // (`worldgen/hive.rs` — `HiveBiome.cs:11-383` + the `Beehives`
+    // `WorldGen.cs:15927-15976` and `BeeLarvaInBeehives` `:20868-20900`
+    // passes) replaces the shape-level dome. The pass keeps the shared
+    // `srng` stream but its DRAW SCHEDULE differs from the dome's (the
+    // tunnel chains' per-cell dither rolls, the honey-fall walks, the
+    // RandomWorldPoint origins vs the dome's jungle-span picks), so every
+    // downstream srng consumer re-rolls and the hive/larva tiles change.
+    // BOTH pins move BY DESIGN even on the 512 world (the count roll
+    // `1 + Next(0, 0)` = 1 hive still runs; the sub-vanilla band guard
+    // only skips when `maxY - 300 <= (surface+rock)>>1`, which a 512×512
+    // world's shallow layers can clear). Stale-by-design; the gate
+    // re-pins. The `a == b` determinism assertion stays green — the pass
+    // is a pure function of (world, stream), no ambient state.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +295,12 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-c31 (2026-11-21, code-only): the faithful hive rewrite (see the
+    // SEED42_512 note above) moves this pin too — the tunnel-carved hives,
+    // the honey-fall cubes/dents, the larva stands and the 231 Place3x3
+    // frames replace the dome's tiles, and the srng schedule shift
+    // re-rolls every downstream pass. Stale-by-design; the gate re-pins
+    // it sequentially after the S1-P-i33 mask re-pin. `a == b` stays green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

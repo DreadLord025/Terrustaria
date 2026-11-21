@@ -9698,7 +9698,10 @@ the follow-ups; the disc shape approximates the C#'s shrinking-ring walk.
 
 Deviations: the HiveBiome/HoneyPatchBiome placement machinery is the
 port's blob dome (the shape-level port); the Queen Bee summon from the
-larva and the fort doors = the follow-ups.
+larva and the fort doors = the follow-ups. **SUPERSEDED by W4-c31
+(2026-11-21)**: the faithful `HiveBiome` rewrite landed — see "Hive
+rewrite (W4-c31)" below; the dome is retired (kept for its test history)
+and the larva-break Queen Bee summon is wired.
 
 ## Biome spread (M5-SPREAD-2)
 
@@ -36054,6 +36057,95 @@ Mana Sickness (buff 94) — **not for weapons**:
   (the star-pickup heat `:35071` has no port seam). The
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
+
+## Hive rewrite (W4-c31, code-only, 2026-11-21)
+
+**The faithful `HiveBiome` port** (`crates/tr-core/src/worldgen/hive.rs`)
+replaces the shape-level dome (`structures::pass_beehives`, retired —
+kept for its test history). Three C# bodies ported 1:1:
+
+- **`HiveBiome.Place`** (`HiveBiome.cs:11-102`): the 100×100
+  `StructureMap.CanPlace` gate (the shared `can_place_general` —
+  `GeneralPlacementTiles` validity + the protected-rect list), the
+  `TooCloseToImportantLocations` 150-tile 10-step scan (`:258-285` — the
+  226 tile + the walls 83/3/87; NO underworld band, unlike the honey
+  patch's variant), the 15-disc scan (`Modifiers.IsSolid` = active +
+  `SolidOrSlopedTile`, the 75 % mud/hive ratio + the hive-60 count ≥ 2),
+  the `Next(2,5)` tunnel chains (drunk +`Next(7,10)`, remix +`Next(2,5)`),
+  each `Next(2,5)` linked `CreateHiveTunnel` steps, the honey-fall walk
+  per chain end (the ±1 direction roll, the `BadSpotForHoneyFall` 2×2
+  probe, the 50-tile drift cap, `CreateBlockedHoneyCube`'s 4×4 +
+  `CreateDentForHoneyFall`'s reversed pound walk), `CreateStandForLarva`
+  at the LAST chain's end, the drunk seed's 1000-try extra stand
+  (>10 away, inactive, wall 86), and the inflate-5 protected rect.
+- **`CreateHiveTunnel`** (`:127-256`): the radius-12..20 × budget-10..20
+  elliptical walk, the ±20 % per-step radius jitter, the ±10 wall-87
+  proximity vetoes, the surface wall-0 veto, the three dithered bands
+  (0.4 honey core with the 1-in-3 fill / 0.75 the 225 shell unless the
+  wall is 86/244 / 0.6 the 86 wall — NOT else-if, it overlays both),
+  the ±10·0.2 drift velocity with its ±10·0.05 walk, the double budget
+  burn per step. The drunk/remix radius branches are ported.
+- **The passes**: `Beehives` (`WorldGen.cs:15927-15976` — the
+  `1 + Next(5·s, 8·s)` count, drunk ×0.667, the 10000-attempt budget,
+  `RandomWorldPoint((surface+rock)>>1, 20, 300, 20)`, the drunk seed's
+  DISCARDED second point draw, the per-hive `Next(5)` honey-patch ring
+  through the existing `place_honey_patches_around`) and
+  `BeeLarvaInBeehives` (`:20868-20900` — the stand re-clear + the 231
+  `PlaceTile` → `Place3x3` `num=-2` shape, `:53534-53634`). The larva
+  anchors ride `GenVars.larva` (`LarvaAnchors`, the `larvaX/larvaY[100]`
+  + `numLarva` slice, the wrap-at-99 counter). The `larva` executed step
+  slots after `muds walls in jungle` (vanilla `:20813` → `:20868`),
+  66 → 67 steps.
+
+**The larva-break → Queen Bee seam** (`Check3x3`'s case 231,
+`WorldGen.cs:53230-53257`): the 231 joins `check_3x3_bottom`'s dispatch
+(the `:53114` support group, `TileFrameImportant` `:86000-86013`); the
+object-drop record carries `item: None` (the case spawns NO item) and
+`break_tile` resolves it app-side — three gore shards (300/301/302) at
+`((i+1)*16+8, j*16+{0,8,16})` on the `UpdatePlayers` stream, then the
+nearest-living-player Manhattan scan (<4800 px) → the Queen Bee 222 at
+the player (the Abeemination `SpawnOnPlayer` precedent — the tile-scan
+spawn fidelity is the recorded M4-BOSS deviation). The 231
+frame-important boot static (`Main.cs:7396`) keeps the `Place3x3` frames
+through the load-time framing.
+
+**Deviations (recorded):**
+1. `Shapes.Circle(15)`'s membership is the C# row-walk
+   (`Shapes.cs:33-49`: `±min(r, (int)sqrt((r+1)²−dy²))`), NOT the
+   Euclidean `dx²+dy² ≤ r²` the honey-patch port approximates — the
+   hive scan uses the exact rows (`circle_half_width`); the honey
+   patch's existing approximation is untouched (its own row).
+2. `FrameOutAllHiveContents` (`:104-125`) is a framing-only sweep — the
+   post-pipeline `frame_world`/`frame_walls` seam carries it (the
+   mahogany/temple precedent); it draws no RNG and writes no state.
+3. The `tileSolid[225]` window: vanilla's weight order runs Hives
+   (slot 50) BEFORE the Life Crystals tail's `225 = false` flip
+   (`:16850`, slot 60) and the Piles pass restores it (`:19454`, slot
+   80) before Larva (slot 99) — so BOTH C# slots read the boot table's
+   solid 225 (`Main.cs:10236`). The port reads the same boot table; no
+   window adjustment. The `tileSolid[229/232/162]` Larva-head pokes stay
+   the documented `solid_tile2` boot-table deferral.
+4. `CreateDentForHoneyFall`'s `PoundTile` rides the gated
+   `edit::pound_tile(generating: true)` (worldgen has no chest store —
+   the closure answers false); the non-generation effects never run.
+5. The pass keeps the shared `srng` stream (the port's stream contract)
+   but its draw schedule differs from the dome's — BOTH world-hash pins
+   are stale-by-design and re-pin at the merge gate (`world_hash.rs`'s
+   provenance block); the `a == b` determinism assertion stays green
+   (the pass is a pure function of world + stream).
+6. The sub-vanilla band guard: `maxY − 300 <= (surface+rock)>>1` skips
+   the attempt loop (the C# `Next` throws on the collapsed band; the
+   mahogany/thin-ice idiom).
+
+**Tests-as-code (written, not run — code-only mode):** 10 `hive.rs`
+witnesses (the Circle row-walk, the stand's clamp/clear/wrap, the Place
+gates' refusals, the tunnel carve + stand publish, the honey cube/dent
+shapes, the larva 3×3 frames + the blocked-body/floor refusals, the
+pass-level `a == b` full-tile determinism), 2 `kill.rs` witnesses (the
+231 break's no-item record + the supported-larva stay), 2 app witnesses
+(the gore + Queen Bee spawn, the far-player refusal). The pipeline
+step-count/order witnesses updated (67 steps, `larva` after `muds walls
+in jungle`).
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
