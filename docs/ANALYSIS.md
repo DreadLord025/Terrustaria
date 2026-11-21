@@ -34748,6 +34748,152 @@ constants NOT machines), the five new bank assets confirmed on disk.
 No cargo/rustc/tests/rustfmt/graphify invoked — the 9 witnesses are
 WRITTEN, NOT RUN.
 
+### Part 5 (d75, 2026-11-21, code-only mode) — the 502 row + the final census + the f1/d77 compose-receipt
+
+`task/W4-d75-proj-sounds-1`, part 5. The Lead's directive: (1) row the 502
+Meowmere if no sibling did, (2) close the first-120 census with the parts
+1-4 coverage, (3) receipt the f1/d77 composition against this branch's
+AI-side gates.
+
+**The 502 row (PORTED HERE).** Re-probed `origin/task/W4-d1-proj-ai-1-10`
+tip `e271b5bc8` (`git show …:crates/tr-app/src/projectile/data.rs` — zero
+`502`/`Meowmere` hits), d77 `d61e6362d` and f1 `bcdfcd62e` (same, zero
+hits): the row was unported on every relevant tip. The C# `SetDefaults`
+arm is an **else-if chain, not a switch** — there is no `case 502`; the
+block is `Projectile.cs:5732-5742` (`this.type == 502`): `width = 16`,
+`height = 16`, `aiStyle = 8`, `friendly = true`, `melee = true`,
+`penetrate = 5`, `usesLocalNPCImmunity = true`, `localNPCHitCooldown = 10`.
+Ported verbatim as the `MEOWMERE` row in `projectile/data.rs` (placed in
+`SetDefaults` order ahead of the Javelin 507): the state group
+`(true, 10, false, -1, 0, 1.0)`, the stock `timeLeft = 3600` (`:787`),
+`tileCollide` (`:775`), `extraUpdates = 0`; `friendly` is the pool's stock
+true (the seam's convention); `melee` joins the explicit melee census
+(`:5738`). The row arms the part-4 owed bounce gate through
+`spawn_with_data`'s row guard — the `(37, 6..10)` chime ladder is now
+live, no merge dependency left for the 502. The `:24346-24352` velocity
+rotation ported beside it (`rotation = velocity.ToRotation() + π/2`,
+`spriteDirection = direction = Sign(velocity.X)` on non-zero X — the
+`atan2` stand-in the skull arm uses); every other style-8 kind keeps the
+`+0.3` default. The rowless-set witness
+(`test_dw_2_1_the_out_of_scope_kinds_stay_rowless`) drops the 502 with
+the migration note. **Still skipped** (the row-porter's effect census,
+recorded): the `:18226-18237` hue dust ring (NextFloat draws), the
+`:18238-18253` owner-gated Damage resize, the `:24302-24308` disco
+`AddLight` (the row keeps `light = 0` — the C# arm sets no `this.light`),
+the `:73675-73687` Kill dust trail, the `:22367-22371` Shimmer lift and
+the `:79208` GetAlpha 200-alpha tint (draw-only). The
+`ProjectileID.cs:521-522` trail sets (`TrailingMode` 0 / `TrailCacheLength`
+25 for the 502) ride the unported trail layer — no `proj_data` field.
+
+**The first-120 final census (parts 1-4 coverage).** The range (sites
+#1-#120, end boundary `:41968`) closes as: 21 sites ported in part 1
+(11 latch + 10 cooldown/bounce), 10 in part 2, the `:31504` census gap in
+part 3, the owed gates armed in part 4 (502/288/465/383/1106 + the d3
+boulder sound layer), and the 502 row here — every SIBLING-CUED verdict
+of the part-3 table stands with its cited hash. **The remaining unrowed
+list after part 5** (no `proj_data` row on ANY pushed tip, re-confirmed
+against d1 `e271b5bc8` / d77 `d61e6362d` / f1 `bcdfcd62e`):
+
+- **261 BoulderOfEarth** (`:19649`, aiStyle 14 — the flail machine is
+  style 15, part 4's correction stands). Needs the row AND the style-14
+  boulder movement half (`HandleMovement` `:19643`'s ±3 gate +
+  `MakeBoulderOfEarthExplosion` `:20391`); no owed gate possible.
+- **1023 DeadCellsBarrel** (`:18780` bounce Dig) and **1081
+  MudBallPlayer** (`:19845` bounce Dig) — unrowed; d3's boulder family
+  stopped short of both (its `2d01693ca` rows 13 kinds, neither of
+  these). The bounce Digs arm with their rows + movement.
+- **The phaseblades** — `ProjectileID.cs:192`'s `IsAPhaseblade` set:
+  **1059-1072, 1074, 1075, 1076, 1101, 1102** (19 kinds; the 1073 is NOT
+  in the set). All unrowed on every pushed tip; the whoosh family
+  (`:39080-39393`) rides the unported `AI_003` phaseblade machine. The
+  part-4 dust-not-sound correction stands (`:19392/:19401/:19468` are
+  dust lines; the bounce arm carries no PlaySound).
+- The other owed kinds stay owed: **288** (gate armed, style-12 machine
+  in-tree), **465** (gate armed, style-88 in-tree), **383** (gate armed,
+  style-3 in-tree) — their rows belong to the AI lanes, the gates arm on
+  the row merge exactly as the 502's did here.
+
+**The f1/d77 compose-receipt (AI-side gates vs the kill-tail).** Read
+`origin/task/W4-d77-proj-sounds-3` tip `d61e6362d` (seam `9d35874af` +
+waves `2a0c2c1b2`/`75044e750`) and `origin/task/W4-f1-proj-sounds-4` tip
+`bcdfcd62e` (the 6-tuple adoption `4233ddb4b` + the final owed wave
+`45abf4235`). **The kind sets are DISJOINT**: d75's AI-side gates are
+502/288/465/383/1106 (wants_sound arms on `ai_ball_of_fire`,
+`ai_aqua_scepter`/`ai_golden_shower`, the style-88 head, `ai_boomerang`,
+`ai_flamethrower`) + the 455 `:31504` latch + the d3 boulder intents
+(1054 `(3,29)`, 1055 `(4,6)`, 1047 `(42,274)`); d77's `kill_tail_cue` and
+f1's `kill_sound_cue` maps carry NONE of those kinds (checked both pushed
+maps arm-by-arm — the only near-misses are the shared `Damage_GetHitbox`
+inflation reads at 383/1106/1023/1024, which are hitbox maths, not cues).
+The 502's Kill tail (`:73675-73687`) is dust-only — no death cue exists
+to overlap. Merge notes for the composer (d77c):
+
+- **The queue shape**: d75 is still 5-tuple `(id, style, x, y, pitch)`;
+  d77/f1 both carry the 6-tuple `volumeScale` widening. Every d75
+  `wants_sound` push folds to `volume = 1.0` (the f1 adoption precedent
+  — all d75 cues are stock-volume; the −34 Foxparks marker keeps its
+  volume INSIDE the by-name façade, and the Shatter ×0.35 inside
+  `play_shatter_sound`). The `(2,-34)` sentinel survives the widening
+  (the sixth slot is volume, not style — part 4's note confirmed against
+  the pushed shapes).
+- **The drain id-4 collision (the one real seam conflict)**: d75 routes
+  id 4 → `play_npc_death_style` (the STYLE overload — d3's
+  `PlaySound(SoundID.NPCDeath6, …)` is `SoundEngine.cs:88-99`, ONE
+  audio-only GetRandomPitch NextFloat); d77 routes id 4 →
+  `play_npc_death_int` (the int overload, no NextFloat — its 385/454
+  sites are `PlaySound(4, x, y, style)`). f1 routes both through
+  `play_proj_sound_scaled`'s int match (its doc labels the `(3,29)`/
+  `(4,6)` boulder calls "the int facade" — a MISREAD: they are style
+  calls). The composer must keep BOTH overload paths: d75's id-4 style
+  route for the boulder `(4,6)` intent, d77's int route for its
+  kill-tail 454/385/655 cues — the payload alone cannot distinguish
+  them (both `(4,6)`), so either a sentinel (the −34 precedent) or the
+  producer-side façade call is the seam. Same for id 29: d75's 455
+  `(29,104)` is the int overload (no truncation at the drain — the
+  façade truncates), d77's 452 `(29,103)` int too, but d77's drain
+  truncates x/y before `play_fighter_moan` while d75's does not (the
+  façade truncates anyway — the two are draw-identical, keep either).
+- **The id-29 gate-position wrinkle (the second seam note)**: d77's
+  drain truncates x/y BEFORE `play_fighter_moan`, so its attenuation
+  gate probes the truncated position; d75's 455 passes the untruncated
+  position (the gate probes it, `play_critter` truncates only the emit).
+  The C# 455 site is `PlaySound(29, (int)X, (int)Y, 104)` — the gate
+  probes the TRUNCATED position, so d77's shape is the faithful one;
+  the composer should keep the drain-side truncation for id 29 (d75's
+  455 witness pins the untruncated intent, not the gate probe — the two
+  differ only inside the last pixel of the attenuation radius).
+- **The boulder death-cue duplicates**: f1's final owed wave rows the
+  1054/1055/1047/1048/1053/99/727/1013/1014/1021/1057/1005/655 kinds on
+  `kill_sound_cue` — the SAME sites d3's `boulder_kill` already queues
+  on its own arms (d75 part 4 serves those intents). Keep-one applies
+  exactly as f1's doc recommends for its own map vs d77: with d3 merged,
+  the f1/d77c kill-map arms for the boulder family would DOUBLE-PLAY
+  (d3 parks the intent mid-Kill; the death hook fires again). Drop the
+  boulder-kind arms from the surviving kill map (or gate them on d3's
+  arm absence) — recorded here so the composer sees it.
+- **No other overlap**: d75's id-3 `(3,29)`/id-37/id-42 routes and the
+  `play_star_chime`/`play_foxparks_flame` façades are d75-unique; d77's
+  id-6/id-13 wall-break routes and f1's `play_npc_hit_int` style-29
+  route are theirs. The bank rows union cleanly (`Item_57/58/121`,
+  `NPC_Hit_29`, `rainbow_boulder`, `Zombie_104` from d75; d77/f1 add
+  `Zombie_103`, `NPC_Killed_19`, `Item_89` etc. — no shared-key
+  conflicts, the same asset per name).
+
+Witnesses (3 new `s1_e_21h_d75_p5_*`, WRITTEN NOT RUN): the verbatim row
+(the state group + every stock default + the sheet-pack membership), the
+live spawn path (the row resolves, the first blocked tick chimes style 6,
+the pre-bounce rotation faces +π/2 with direction 1), and the rotation's
+sign arms (−X flips the pair to −1, zero-X holds it). The rowless-set
+witness updated (502 leaves the OUT list).
+
+**Verification.** Code-only: the `:5732-5742` block re-read whole (no
+`case 502` exists — the else-if chain confirmed by grep), the
+`:24346-24352` rotation against `ToRotation` semantics, the sibling
+data.rs zero-hit greps via `git show`, both pushed kill maps read
+arm-by-arm for the disjointness claim, the d77/f1 drain shapes read from
+the pushed `world_sim/projectiles.rs`. No cargo/rustc/tests/rustfmt/
+graphify invoked — the witnesses are WRITTEN, NOT RUN.
+
 ## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
 
 Audit source: `docs/research/53-audit-pillars.md` (branch

@@ -241,6 +241,41 @@ BUG-17 "2 tests" for the front-end click cues are not in the audio modules eithe
 | D17 | **The ROADMAP summary row is stale**: `docs/ROADMAP.md:78` still says "front-end music and UI sounds missing (BUG-01/17)" although both were fixed on 2026-11-10, and it calls the bank "the 8-cue bank" while the table now holds 26 entries. `docs/PORT_MAP.md:240` likewise predates BUG-01/BUG-17. | cosmetic (docs) | No. |
 | D18 | The `M6-AUDIO-1` row claims the blizzard/thunder/critter/liquid-merge work; re-reading the Rust confirms the tables and the engine half, but two of the four emitters still have no caller (D14) and the thunder pitch/slot gaps persist (D1). The row's own text admits both. | — | Yes (the row text) |
 
+## S1-E-21h d75 — the first-120 final census (2026-11-21, part 5)
+
+The d75 lane (`task/W4-d75-proj-sounds-1`) owns `Projectile.cs`'s
+PlaySound sites #1-#120 in line order (site #120 = `:41968`; d76 takes
+#121-#240, d77 #241-#436 + the Kill tail). Final coverage after parts
+1-5 (the full per-site tables live in ANALYSIS "Part 1/2/3/4/5 (d75)"):
+
+- **Part 1**: 21 sites (11 first-tick latches + 10 cooldown/bounce arms).
+- **Part 2**: 10 sites (the 601 impact pair, the sonar bite, the
+  Spider-Egg/Saucer-Scrap/Greek-fire latches, the Crystal-Shard Shatter,
+  the yoyo-dash roar trio); the `:25280` gate proved C# dead code.
+- **Part 3**: the `:31504` census gap (the 455 zombie-voice latch) +
+  the deferral re-census against the pushed sibling tips.
+- **Part 4**: the owed kind-gated cues ARMED (502/288/465/383/1106) +
+  the d3 boulder-family sound layer (the id-3/id-4/id-37/id-42 drain
+  routes, `play_star_chime`/`play_foxparks_flame`).
+- **Part 5**: the 502 Meowmere ROW (`Projectile.cs:5732-5742` — the
+  else-if arm, no `case 502` exists) + the `:24346-24352` velocity
+  rotation: the part-4 bounce gate is live through `spawn_with_data`.
+
+**Remaining unrowed after part 5** (no `proj_data` row on any pushed
+tip — d1 `e271b5bc8`, d77 `d61e6362d`, f1 `bcdfcd62e` re-checked):
+
+| kind(s) | site(s) | blocker |
+| --- | --- | --- |
+| 261 BoulderOfEarth | `:19649` | row + the style-14 boulder movement (`:19643` ±3 gate, `MakeBoulderOfEarthExplosion` `:20391`); the flail machine is style 15, NOT 14 |
+| 1023 DeadCellsBarrel | `:18780` | row + movement (d3's boulder family stopped short of it) |
+| 1081 MudBallPlayer | `:19845` | row + movement (same) |
+| the phaseblades: 1059-1072, 1074, 1075, 1076, 1101, 1102 (`ProjectileID.cs:192`, 19 kinds — 1073 NOT in the set) | `:39080-39393` | rows + the unported `AI_003` phaseblade machine; the `:19392/:19401/:19468` lines are DUST, not sound |
+| 288 / 465 / 383 | `:24506` / `:31943` / `:19531` | rows only — the machines are in-tree and the owed gates ARMED (part 4); they go live on the row merge, the 502 precedent |
+
+The f1/d77 compose-receipt (the disjoint kind sets, the id-4
+style-vs-int overload collision, the id-29 gate truncation, the boulder
+kill-map double-play warning) is recorded in ANALYSIS "Part 5 (d75)".
+
 ## Task seeds
 
 1. **S — Port the `SoundID` style table.** Generate a Rust table from
