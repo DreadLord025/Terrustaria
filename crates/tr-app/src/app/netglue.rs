@@ -131,92 +131,115 @@ impl App {
     /// client's `PlaceChestDirect`/`DestroyChestDirect` apply (`:2124-2157`)
     /// is the apply-arm lane (g48-g51).
     fn host_chest_updates(&mut self, server: &net::Server, id: u32, cu: net::ChestUpdates) {
-        let (action, mut x, mut y, style) = (cu.action, cu.x as i32, cu.y as i32, cu.style as i32);
+        let (action, x, y, style) = (cu.action, cu.x as i32, cu.y as i32, cu.style as i32);
         match action {
             // `:2001-2017` — place a chest (21).
             0 => self.host_place_container(server, id, action, x, y, style, 21, false),
-            // `:2019-2039` — destroy a chest (21): decode the 2×2 anchor,
-            // `FindChest`, `KillTile`, relay only when the cell died.
-            1 => {
-                if self.world.tile(x, y).is_some_and(|t| t.kind == 21) {
-                    let t = self.world.tile(x, y).copied().unwrap();
-                    if t.frame_x % 36 != 0 {
-                        x -= 1;
-                    }
-                    if t.frame_y % 36 != 0 {
-                        y -= 1;
-                    }
-                    let number = crate::chest::find_chest(&self.world_chests, x, y)
-                        .map(|i| i as i16)
-                        .unwrap_or(-1);
-                    tr_core::edit::kill_tile(&mut self.world, x, y, false);
-                    if !self.world.tile(x, y).is_some_and(|t| t.active()) {
-                        server.broadcast(&S2c::ChestUpdates(net::ChestUpdates {
-                            action,
-                            x: x as i16,
-                            y: y as i16,
-                            style: 0,
-                            chest: number,
-                        }));
-                    }
-                }
-            }
+            // `:2019-2039` — destroy a chest (21): the 2×2 anchor decode.
+            1 => self.host_destroy_container(server, action, x, y, 21),
             // `:2043-2055` — place a dresser (88).
             2 => self.host_place_container(server, id, action, x, y, style, 88, false),
-            // `:2057-2074` — destroy a dresser (88): the 3×2 anchor decode
-            // (`frameX % 54 / 18`), `FindChest`, `KillTile`, relay on death.
-            3 => {
-                if self.world.tile(x, y).is_some_and(|t| t.kind == 88) {
-                    let t = self.world.tile(x, y).copied().unwrap();
-                    x -= i32::from(t.frame_x) % 54 / 18;
-                    if t.frame_y % 36 != 0 {
-                        y -= 1;
-                    }
-                    let number = crate::chest::find_chest(&self.world_chests, x, y)
-                        .map(|i| i as i16)
-                        .unwrap_or(-1);
-                    tr_core::edit::kill_tile(&mut self.world, x, y, false);
-                    if !self.world.tile(x, y).is_some_and(|t| t.active()) {
-                        server.broadcast(&S2c::ChestUpdates(net::ChestUpdates {
-                            action,
-                            x: x as i16,
-                            y: y as i16,
-                            style: 0,
-                            chest: number,
-                        }));
-                    }
-                }
-            }
+            // `:2057-2074` — destroy a dresser (88): the 3×2 anchor decode.
+            3 => self.host_destroy_container(server, action, x, y, 88),
             // `:2078-2094` — place a piggy-bank chest (467, secondType).
             4 => self.host_place_container(server, id, action, x, y, style, 467, true),
             // `:2096-2115` — destroy a piggy-bank chest (467): the 2×2 anchor.
-            5 => {
-                if self.world.tile(x, y).is_some_and(|t| t.kind == 467) {
-                    let t = self.world.tile(x, y).copied().unwrap();
-                    if t.frame_x % 36 != 0 {
-                        x -= 1;
-                    }
-                    if t.frame_y % 36 != 0 {
-                        y -= 1;
-                    }
-                    let number = crate::chest::find_chest(&self.world_chests, x, y)
-                        .map(|i| i as i16)
-                        .unwrap_or(-1);
-                    tr_core::edit::kill_tile(&mut self.world, x, y, false);
-                    if !self.world.tile(x, y).is_some_and(|t| t.active()) {
-                        server.broadcast(&S2c::ChestUpdates(net::ChestUpdates {
-                            action,
-                            x: x as i16,
-                            y: y as i16,
-                            style: 0,
-                            chest: number,
-                        }));
-                    }
-                }
-            }
+            5 => self.host_destroy_container(server, action, x, y, 467),
             _ => {}
         }
         self.world_key = None;
+    }
+
+    /// The shared destroy arm of `case 34` (`MessageBuffer.cs:2019-2039` /
+    /// `:2057-2074` / `:2096-2115`): the anchor decode (2×2 for 21/467, 3×2
+    /// for 88), `Chest.FindChest`, `WorldGen.KillTile`, and the relay carrying
+    /// the found index only when the cell died. The C# `KillTile` gates on
+    /// `Chest.CanDestroyChest` (a full chest refuses, `WorldGen.cs:63695`) and
+    /// removes the store entry through the cascade; the port's core
+    /// `kill_tile` carries neither (the M3-CHEST-UI no-store seam), so the
+    /// `can_kill_tile` + `chest_holds_items` gate and the `remove_chest` +
+    /// silent local close ride here — the `break_tile` compensation pattern
+    /// (`editing.rs:5559`/`:5604-5622`, S1-P-i43).
+    fn host_destroy_container(
+        &mut self,
+        server: &net::Server,
+        action: u8,
+        mut x: i32,
+        mut y: i32,
+        kind: u16,
+    ) {
+        if !self.world.tile(x, y).is_some_and(|t| t.kind == kind) {
+            return;
+        }
+        let t = self.world.tile(x, y).copied().unwrap();
+        // The anchor decode: the dresser's 3-wide `frameX % 54 / 18` column,
+        // the chest's 2-wide `frameX % 36 != 0`; the row walks back on
+        // `frameY % 36 != 0` for all three.
+        if kind == 88 {
+            x -= i32::from(t.frame_x) % 54 / 18;
+        } else if t.frame_x % 36 != 0 {
+            x -= 1;
+        }
+        if t.frame_y % 36 != 0 {
+            y -= 1;
+        }
+        let number = crate::chest::find_chest(&self.world_chests, x, y)
+            .map(|i| i as i16)
+            .unwrap_or(-1);
+        // `Chest.CanDestroyChest` (`Chest.cs:609-623`): a chest holding any
+        // real stack refuses the break — the `KillTile` entry's gate.
+        let holds_items = |cx: i32, cy: i32| {
+            self.world_chests
+                .iter()
+                .any(|c| c.tile == (cx, cy) && c.slots.iter().any(|s| s.count > 0))
+        };
+        if !tr_core::edit::can_kill_tile(&self.world, x, y, holds_items) {
+            return;
+        }
+        let kill = tr_core::edit::kill_tile(&mut self.world, x, y, false);
+        if !self.world.tile(x, y).is_some_and(|t| t.active()) {
+            // The store removal the C# cascade's `Chest.DestroyChest` runs
+            // (`Chest.cs:625-645`) + the silent local close (`:640-643`).
+            if let Some(idx) = crate::chest::find_chest(&self.world_chests, x, y) {
+                crate::chest::remove_chest(&mut self.world_chests, idx);
+                if let Some(p) = self.player.as_mut() {
+                    if p.chest == idx as i32 {
+                        p.chest = crate::bank::CHEST_CLOSED;
+                    }
+                }
+            }
+            // The host's `KillTile` drops the object item (`Main.netMode != 1`
+            // passes for the host, `WorldGen.cs:63860`): the cascade's
+            // `Check*` records through `registry::tile_drop` — the `break_tile`
+            // object-drop pattern (`editing.rs:5905-5913`). The bare
+            // `Main.rand` stream (the message handler runs outside every swap).
+            if let Some(kill) = kill {
+                for drop in &kill.object_drops {
+                    let id = drop
+                        .item
+                        .map(|item| item as u16)
+                        .or_else(|| crate::registry::tile_drop(drop.tile_kind, 0));
+                    if let Some(id) = id {
+                        let rng = self.rngs.global();
+                        crate::world_sim::items::spawn_item_drop(
+                            &mut self.items,
+                            rng,
+                            id,
+                            1,
+                            drop.x,
+                            drop.y,
+                        );
+                    }
+                }
+            }
+            server.broadcast(&S2c::ChestUpdates(net::ChestUpdates {
+                action,
+                x: x as i16,
+                y: y as i16,
+                style: 0,
+                chest: number,
+            }));
+        }
     }
 
     /// The shared place arm of `case 34` (`MessageBuffer.cs:2003-2016` /
@@ -6339,9 +6362,11 @@ mod w4_g52_relay_tests {
             !host_app.world.tile(100, 100).is_some_and(|t| t.active()),
             "the KillTile cascade cleared the chest"
         );
-        // The destroy relay carries the found index (0); the client apply is
-        // the sibling lane, so the host store entry survives (the C# client's
-        // DestroyChestDirect removes it, not the host).
-        assert_eq!(host_app.world_chests.len(), 1);
+        // The host's KillTile removes the store entry (the C# cascade's
+        // Chest.DestroyChest) and drops the chest item back (the host's
+        // `Main.netMode != 1` drop gate, WorldGen.cs:63860).
+        assert!(host_app.world_chests.is_empty(), "the store entry was removed");
+        assert_eq!(host_app.items.len(), 1, "the destroy dropped the chest item");
+        assert_eq!(host_app.items[0].kind, 48, "registry::tile_drop(21) = 48");
     }
 }

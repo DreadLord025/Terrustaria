@@ -39343,12 +39343,15 @@ kept; the missing arms landed on top.
   The g48 codec is byte-verbatim (keep-one at merge). The client's
   `PlaceChestDirect`/`DestroyChestDirect` apply (`:2124-2157`) is the
   apply-arm lane (g48-g51) — the client read is a no-op. The host's
-  destroy arm runs `KillTile` but does not remove the store entry (the C#
-  host's `Chest.DestroyChest` rides the `KillTile` cascade's
-  `CanDestroyChest` gate, which the port's core `kill_tile` does not carry
-  — the store removal is the client apply's `DestroyChestDirect`); the
-  `notNearOtherChests` flag is `false` at every host call site, so the
-  `NearOtherChests` gate never fires.
+  destroy arm gates on `can_kill_tile` + `chest_holds_items` (the C#
+  `KillTile`'s `Chest.CanDestroyChest` refusal, `WorldGen.cs:63695`),
+  removes the store entry + silently closes the local player (the
+  cascade's `Chest.DestroyChest`, `Chest.cs:625-645` — the port's core
+  `kill_tile` carries neither, the M3-CHEST-UI no-store seam, so the
+  `break_tile` compensation pattern rides here), and spawns the cascade's
+  object drop (the host's `Main.netMode != 1` drop gate,
+  `WorldGen.cs:63860`); the `notNearOtherChests` flag is `false` at every
+  host call site, so the `NearOtherChests` gate never fires.
 * The `28` cascade's send order (above): pre-apply in the port,
   post-apply in the C#; the wire bytes are the pre-strike body either
   way (the C# `SendData(23)` at `:105` runs inside the `28` send, which
