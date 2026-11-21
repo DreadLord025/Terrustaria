@@ -910,3 +910,83 @@ is orthogonal: if it lands, +1 byte → 107, re-pin once, both notes.
   on this tip (`4f72847e` lineage). The broadcast IS this section; the
   merger takes §8's head or mechanically re-seats per 12d — never a
   97/98/21-byte head that drops a claimant.
+
+---
+
+## 13. RETIRE — the d130f graft: EXACT 2 hunks (storm-deck clamp + LanternsCanPersist)
+
+d130's retire tip re-read: **`97ed44f5d`**
+(`origin/task/W4-d130-weather-ambience`, research/83 s7 adjudication —
+the snow-stream verdict; the weather bodies are unchanged from the
+`560a02ea` landing §10 verified). Both §10c obligations re-confirmed
+MISSING on that tip:
+
+- `crates/tr-app/src/rain.rs` `update_time` (`:696-712`): the
+  forced/calm check at `:710-712` falls straight into the
+  `// Main.cs:64833-64836.` ladybug drain at `:713` — **no `:64825-64831`
+  head clamp**.
+- `crates/tr-app/src/world_sim/weather.rs:292`:
+  `let lantern_can_persist = !world.day_time;` — **the base gate only**,
+  no `LanternsCanStart()` half.
+
+### Hunk 1 — `crates/tr-app/src/rain.rs` (insert after `:712`, before `:713`)
+
+Context: the closing `}` of the `if self.forced.is_some() || self.calm`
+early return; the `lanterns_up` parameter already exists in d130's
+landed signature (the f39 order §10b re-pinned c39 to) — the hunk
+compiles against d130's signature unchanged.
+
+```diff
+         if self.forced.is_some() || self.calm {
+             return;
+         }
++        // W4-c39 (graft): `Main.cs:64825-64831` — `UpdateTime`'s head, BEFORE
++        // the ladybug drain: while the lanterns are up `cloudBGActive = 0f`
++        // and `numClouds` caps at 30. The port's `numClouds` stand-in is
++        // pinned at 100 (`NUM_CLOUDS_STAND_IN`) and both `> 150`/`> 100`
++        // band arms are dead at 100 AND at 30, so the cap changes no
++        // outcome (recorded); the storm-deck clear is observable.
++        if lanterns_up {
++            self.cloud_bg = 0.0;
++        }
+         // `Main.cs:64833-64836`.
+         if self.lady_bug_rain_boost > 0 {
+             self.lady_bug_rain_boost -= day_rate;
+```
+
+Witness rides: `w4_c39_the_lantern_head_clamps_the_storm_deck_before_
+the_drain` (c39 `rain.rs:1878` — deck 0.8 → 0 under lanterns, untouched
+0.8 without; the boost still drains). d130 has no twin of this witness.
+
+### Hunk 2 — `crates/tr-app/src/world_sim/weather.rs` (replace `:292`)
+
+```diff
+         // `LanternNight.UpdateTime`'s persistence gate: the lanterns ride
+         // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`).
+-        let lantern_can_persist = !world.day_time;
++        let lantern_gates =
++            crate::world_events::LanternGates::from_world(world, &app.npcs);
++        let lantern_can_persist =
++            !world.day_time && crate::world_events::lanterns_can_start(&lantern_gates);
+         let _ = crate::world_events::update_time_lanterns(
+             &mut app.world_events,
+             lantern_can_persist,
+```
+
+`LanternGates::from_world(world, &app.npcs)` exists on BOTH tips with
+the same shape (d130 `world_events.rs:89`, c39 `:93`'s impl) — the
+`world`/`app` bindings are the tick's own, unchanged. **One mechanical
+rider:** d130's `lanterns_can_start` (`world_events.rs:115`) is private
+`fn`; c39's (`:122`) is `pub(crate)`. The merged `world_events.rs` must
+export it — either keep c39's lantern module (its `LanternGates` +
+`pub(crate) fn` already do) or bump d130's `:115` visibility one word.
+The gate bodies are identical on both tips (the `LanternNight.cs:49-56`
+seven-conjunct AND) — no logic choice.
+
+### What the graft does NOT touch (d130's KEEP, §10c rows 3/4)
+
+The slime-clock-first/entry-sample restructure, the `:64846` surface
+gate position, the if/else `StopRain` arm shape and `StartSlimeRain`'s
+`:64744` fix all stay d130's landed body. The wind rename
+(`lantern_night` ↔ `lanterns_up`) stays f40/105 §4's mechanical verdict.
+Exactly two hunks; WRITTEN NOT RUN (code-only — no cargo invoked).
