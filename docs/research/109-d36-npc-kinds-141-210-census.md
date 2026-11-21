@@ -1,9 +1,64 @@
 # 109 — W4-d36 NPC kinds 141-210: census, claims, id-band plan
 
 Status: CENSUS + PLAN (research phase; the port batches follow).
-Branch: `task/W4-d36-npc-kinds-141-210`, base `a725acb0` (claim `65e481f9`).
+Branch: `task/W4-d36x-npc-kinds-141-210-exec` (isolated executor worktree
+`TR-W4-d36x`, base `0eb4fee9` = the d36 claim+census tip), because the
+original `TR-W4-d36` worktree was being written concurrently by another
+d36 session (three foreign in-flight states preserved as stashes there).
 All numbers re-derived by script from the working tree + `git show` of the
 pushed tips (no compiler invoked; code-only mode).
+
+## 0b. E4 RE-PIN (authoritative — supersedes §3's 731-768 / 38-kind plan)
+
+The d37 reconcile EXTEND (`bdd59afba`, research/108 §E4) re-scanned **all
+354** pushed `task/W4-*` refs (the §0 six-tip read missed 13 claimants) and
+re-pinned the unpushed lanes: the canonical small-lane band is **731-761**
+(c10/c7/c8/c9/d125/d23/e26/g8), so **d36 moves to 762-811** (above the
+canonical max 761). A fresh scripted claim scan of every pushed tip's
+`NpcKind` enum + `cs_id` + bestiary rows (this session, post-fetch) confirms
+**21** of the 49 missing band ids are claimed elsewhere — the §2 list of 11
+was incomplete (it predated the g8 batch-3/4, d120 and g5 pushes):
+
+- g8 (`82c93cec`, batches 2-4): 150 IceBat, 151 Lavabat, 152 GiantFlyingFox,
+  156 RedDevil, 158 VampireBat, 164 WallCreeper, 165 WallCreeperWall,
+  169 IceElemental, 174 Herpling, 177 Derpling, 179 CrimsonAxe,
+  182 FloatyGross, 195 LostGirl, 196 Nymph (14).
+- d120 (town-chatter): 142 SantaClaus, 160 Truffle, 178 Steampunker,
+  209 Cyborg (4).
+- c4 (`22cec16f`): 157 Arapaima. d23 (`19109424`): 175 AngryTrapper.
+  g5 (style7-caster-doc): 172 RuneWizard (3).
+
+**28 kinds remain for d36** (proto **762-789**, ascending vanilla-id order;
+render_key **550-577**, the base render_key match tops out at 549 and the
+550+ band is free — script-verified): 141 ToxicSludge, 148 Penguin,
+149 PenguinBlack, 153 GiantTortoise, 154 IceTortoise, 155 Wolf, 159 Vampire,
+162 Frankenstein, 163 BlackRecluse, 166 SwampThing, 167 UndeadViking,
+168 CorruptPenguin, 170 PigronCorruption, 171 PigronHallow, 173 Crimera,
+176 MossHornet, 180 PigronCrimson, 181 FaceMonster, 185 SnowFlinx,
+197 ArmoredViking, 198 Lihzahrd, 199 LihzahrdCrawler, 201 HeadacheSkeleton,
+202 MisassembledSkeleton, 203 PantlessSkeleton, 204 SpikedJungleSlime,
+205 Moth, 206 IcyMerman.
+
+Bestiary folds among the 28 (ContentSamples.cs:1036/1052/1053):
+- 163 BlackRecluse → 238 BlackRecluseWall (d37's kind, NOT on this branch):
+  the fold target is absent, so 163 keeps a hand `cs_id` 163 and NO own
+  bestiary entry on this branch (the s1_f_3 sentinel path); the fold arm
+  lands at merge when d37's 238 row exists. `net_id()` reads need the
+  sentinel-safe path (the kind is not spawnable from a bestiary row here).
+- 198 Lihzahrd → 199 LihzahrdCrawler (both on this branch): 199 keeps its
+  OWN entry (net 199, the credit owner — the populator adds Temple info to
+  199 at :1395 and 198 folds onto it), 198 folds onto 199's credit. Both
+  keep their own cs_id + draw sheet (the d37 GoldfishWalker precedent).
+- 159 Vampire: own entry (158 VampireBat folds onto it, but 158 is g8's).
+- 201/202/203: own entries — the fold TARGETS of d40's 450/451/452
+  (cross-note: this wave UNBLOCKS those d40 folds).
+
+Count pins (this branch, post-wave): ALL_KINDS 270→298; to_u16/from_u16
+298 arms bijection; s1_f_3 covered+sentinel 298; ENTRIES 241→267 (+26:
+28 kinds − the 163 no-entry − the 198 fold); BESTIARY_NPC_SHEET_IDS
+181→207 (+26 visible); D36_SHEETS 28 draw rows (163/198 keep own sheets).
+The §3/§9 numbers below (731-768 / 38 kinds / 308) are SUPERSEDED by this
+section; they are kept as the historical first-pass record.
 
 ## 0. Foreign-writer incident (preserved, not discarded)
 
