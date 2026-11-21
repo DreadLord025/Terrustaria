@@ -232,6 +232,7 @@
 //! | 1130-1139 | `:88146-88174` | the 229 Pirate (shimmer dust-only branch) + 142 SantaClaus death (5 gores each) |
 //! | 1140-1149 | `:88192-88220` | the 178 Steampunker (4 gores) + 353/354 Stylist (6 gores) death (shimmer) |
 //! | 1150-1159 | `:88236-88260` | the 37 OldMan + 54 Clothier death (5 gores each, shimmer) |
+//! | 1160-1169 | `:88276-88303` | the 160 Truffle (type-26 dust) + 18 Nurse death (5 gores each, shimmer) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6762,6 +6763,72 @@ fn clothier_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1293 } else { 60 }, 1.0); // :88260
 }
 
+/// The 160 Truffle death (`NPC.cs:88272-88280`, sites 1160-1164): the
+/// 50-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder with shimmer variants — 188 (1366 shimmer) head, 189/189
+/// (1367) at +20, 190/190 (1368) at +34. Scale defaults to 1.
+fn truffle_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(160);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1366 } else { 188 }, 1.0); // :88276
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1367 } else { 189 }, 1.0); // :88277
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1367 } else { 189 }, 1.0); // :88278
+    gore.new_gore(rng, world, low, vel, if shimmer { 1368 } else { 190 }, 1.0); // :88279
+    gore.new_gore(rng, world, low, vel, if shimmer { 1368 } else { 190 }, 1.0); // :88280
+}
+
+/// The 18 Nurse death (`NPC.cs:88292-88303`, sites 1165-1169): the 50-dust
+/// type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the 5-gore
+/// ladder with shimmer variants — the head 33 (1324 shimmer) gated on
+/// `altTexture == 0` (the stand-in), then 34/34 (1326) at +20 and 35/35
+/// (1327) at +34. Scale defaults to 1.
+fn nurse_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(18);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    // `:88296-88298` — the head gated on altTexture == 0 (the stand-in).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1324 } else { 33 }, 1.0);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1326 } else { 34 }, 1.0); // :88300
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1326 } else { 34 }, 1.0); // :88301
+    gore.new_gore(rng, world, low, vel, if shimmer { 1327 } else { 35 }, 1.0); // :88302
+    gore.new_gore(rng, world, low, vel, if shimmer { 1327 } else { 35 }, 1.0); // :88303
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7584,6 +7651,14 @@ pub fn hit_effect_c(
     // `:88242-88261` — the 54 Clothier arm (sites 1155-1159).
     if npc_type == 54 && npc.hp <= 0 {
         clothier_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88262-88281` — the 160 Truffle arm (sites 1160-1164).
+    if npc_type == 160 && npc.hp <= 0 {
+        truffle_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88282-88304` — the 18 Nurse arm (sites 1165-1169).
+    if npc_type == 18 && npc.hp <= 0 {
+        nurse_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -11950,6 +12025,52 @@ mod tests {
         clothier_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1291, 1292, 1292, 1293, 1293]);
+    }
+
+    /// `NPC.cs:88276-88280` — the Truffle death: the 5-gore ladder
+    /// 188/189/190 (normal) or 1366/1367/1368 (shimmer).
+    #[test]
+    fn w4_f10_the_truffle_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1181);
+        truffle_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![188, 189, 189, 190, 190]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1181);
+        truffle_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1366, 1367, 1367, 1368, 1368]);
+    }
+
+    /// `NPC.cs:88298-88303` — the Nurse death: the 5-gore ladder 33/34/35
+    /// (normal) or 1324/1326/1327 (shimmer).
+    #[test]
+    fn w4_f10_the_nurse_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1187);
+        nurse_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![33, 34, 34, 35, 35]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1187);
+        nurse_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1324, 1326, 1326, 1327, 1327]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
