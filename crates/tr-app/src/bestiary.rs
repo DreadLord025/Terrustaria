@@ -2239,6 +2239,46 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Gold Dragonfly",
     },
+    // The fairy critters + the windy balloon (W4-d33 wiring): all four
+    // are VISIBLE cards — the `NPCID.cs:5148-5169` fairy draw modifiers
+    // only shift Position/Direction (no Hide), the balloon's
+    // `:5232-5239` row sets a CustomTexturePath + Scale 0.8 (no Hide);
+    // no `ContentSamples` credit fold. The names ride
+    // `Lang.GetNPCName` (en-US NPCs.json: "Pink Fairy" / "Green Fairy"
+    // / "Blue Fairy" / "Windy Balloon"). d42 batch-2/3's rows,
+    // constants-copy (keep-one d37c-E3).
+    BestiaryEntryDef {
+        credit_id: "FairyCritterPink",
+        net_id: 583,
+        kind: NpcKind::FairyCritterPink,
+        variant: None,
+        quick_unlock: false,
+        name: "Pink Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "FairyCritterGreen",
+        net_id: 584,
+        kind: NpcKind::FairyCritterGreen,
+        variant: None,
+        quick_unlock: false,
+        name: "Green Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "FairyCritterBlue",
+        net_id: 585,
+        kind: NpcKind::FairyCritterBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "WindyBalloon",
+        net_id: 594,
+        kind: NpcKind::WindyBalloon,
+        variant: None,
+        quick_unlock: false,
+        name: "Windy Balloon",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

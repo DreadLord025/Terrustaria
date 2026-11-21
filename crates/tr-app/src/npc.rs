@@ -1120,6 +1120,35 @@ pub enum NpcKind {
     /// member (`NPCID.cs:10126`); its OWN visible bestiary card
     /// "Gold Dragonfly" (`NPCs.json:639` — no Hide row, no credit fold).
     GoldDragonfly,
+    /// `NPCID.FairyCritterPink` (583, `NPCID.cs:11843`) — the treasure-
+    /// hunting fairy (`aiStyle 112`, the shared 583-585 row
+    /// `NPC.cs:16583-16607`): 18x20, dmg 0, def 0, 5 HP, kb 1 (the head
+    /// default — the row writes none), noGravity, rarity 2, catchItem
+    /// 4068. WIRED (W4-d33): the axis' 112 arm rides
+    /// `npc_ai_style112::style112_step`. Its OWN visible "Pink Fairy"
+    /// card (no Hide row — the `NPCID.cs:5163-5169` draw modifiers only
+    /// shift Position/Direction); whip-immune + the
+    /// ImmuneToAllBuffsThatAreNotWhips gap (`NPCID.cs:9410-9417`, d42's
+    /// documented deviation carried).
+    FairyCritterPink,
+    /// `NPCID.FairyCritterGreen` (584, `NPCID.cs:11845`) — the 583 row,
+    /// catchItem 4069 (`NPC.cs:16599`); own "Green Fairy" card, the same
+    /// whip immunity.
+    FairyCritterGreen,
+    /// `NPCID.FairyCritterBlue` (585, `NPCID.cs:11847`) — the 583 row,
+    /// catchItem 4070 (`NPC.cs:16602`); own "Blue Fairy" card, the same
+    /// whip immunity.
+    FairyCritterBlue,
+    /// `NPCID.WindyBalloon` (594, `NPCID.cs:11865`) — the balloon with a
+    /// slave slime on a string (`aiStyle 113`, `NPC.cs:16707-16719`):
+    /// 20x20, dmg 0, def 0, 1 HP, kb 0.3, value 0, noGravity, NO
+    /// HitSound (it only pops — NPCDeath63). WIRED (W4-d33): the axis'
+    /// 113 arm rides `npc_ai_style113::style113_step`. Its OWN visible
+    /// "Windy Balloon" card (the `NPCID.cs:5232-5239` draw modifiers set
+    /// a CustomTexturePath + Scale 0.8, no Hide); Confused-31 immune
+    /// (`NPCID.cs:9466-9472`). NOT `Main.npcCatchable` (the catch
+    /// census: `Main.cs:9326-9418` lists 583-585 but not 594).
+    WindyBalloon,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1214,6 +1243,19 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
     /// draws, the pinned variation like wave A).
     EowDig,
+    /// `PlaySound(27, (int)pos.X, (int)pos.Y)` — the fairy critters'
+    /// treasure chime (W4-d33, `AI_112_FairyCritter`'s state-3/5 entry
+    /// `NPC.cs:48327`/`:48545` + the state-4 leash `Next(30)==0` roll
+    /// `:48473`): the int overload of case 27 (the Pixie hum,
+    /// `SoundID.cs:76` — `SoundID.Pixie = 27`), NO `GetRandomPitch`;
+    /// case 27 (`LegacySoundPlayer.cs:979-996`) draws ONE
+    /// `Next(-10, 11) * 0.01` pitch either way (the live-instance
+    /// branch consumes it too — the E21g `play_pixie` convention).
+    FairyChime,
+    /// `PlaySound(SoundID.Item4, pos)` — the fairy's sparkle-despawn
+    /// burst chime (W4-d33, `NPC.FairyEffects`, `NPC.cs:48682`): the
+    /// style façade + case 2's one pitch draw (the Item8 precedent).
+    Item4,
 }
 
 /// One queued play: the cue plus the C# call site's world-pixel position
@@ -1767,6 +1809,54 @@ pub struct Npc {
     /// precedent); outside the sim it stays empty (the solo path scans
     /// no NPCs, only the session player — the module's `neighbors`).
     pub dragonfly_neighbors: Vec<crate::npc_ai_style114::DragonflyNeighbor>,
+    /// The aiStyle-112 fairies' separation-scan pool (W4-d33): every
+    /// `Main.npc[k]` slot as `AI_112_FairyCritter`'s same-style scan sees
+    /// it (`NPC.cs:48601-48612` — the Manhattan `width*1.5` window, Y-only
+    /// ±0.05). `Npc::update_rng` cannot see its siblings, so the sim's
+    /// pre-pass stamps this in slot order before each tick (the
+    /// `dragonfly_neighbors` precedent); outside the sim it stays empty.
+    pub fairy_neighbors: Vec<crate::npc_ai_style112::FairyNeighbor>,
+    /// `Main.timeForVisualEffects` pre-stamped by the sim before the
+    /// update (the `wind_speed_current` convention) — the aiStyle-112
+    /// glow dust's `(int)t % 2 == 0` parity gate reads it
+    /// (`NPC.cs:48631`). The AI's `&World` borrow cannot reach
+    /// `app.anim_time`; 0 until the sim stamps it.
+    pub time_for_visuals: f64,
+    /// `Main.windSpeedTarget` pre-stamped by the sim before the update
+    /// (the `wind_speed_current` convention) — the aiStyle-113 balloon's
+    /// cruise cap + free drift read it (`NPC.cs:47959`/`:48049`).
+    pub wind_speed_target: f32,
+    /// The aiStyle-113 balloon's slave spawn request (W4-d33,
+    /// `AI_113_WindyBalloon`'s first tick, `NPC.cs:47895-47912`):
+    /// (x, y, variant) — the sim drains it after the tick, spawns the
+    /// type-1 slave at the truncated position (`NewNPC`'s Bottom
+    /// placement), applies the variant `SetDefaults(-4/-7/-3)`
+    /// (`SetDefaultsFromNetId`, `:7678-7731`), writes `ai[0] = -999` +
+    /// netUpdate and links the pair through `carrier_uid` (the C#'s
+    /// `ai[3] = slot` holds a slot index; the port's list compacts — the
+    /// ForceBubble convention).
+    pub wants_balloon_slave: Option<(f32, f32, i32)>,
+    /// The aiStyle-113 balloon's slave-slot view, stamped by the sim's
+    /// pre-pass from the `carrier_uid` link (the ForceBubble rider
+    /// pre-pass precedent): `None` = no link / out of range. The module
+    /// writes `ai[3]` from it each tick (the slot-aligned C# read).
+    pub balloon_slave_view: Option<crate::npc_ai_style113::BalloonSlave>,
+    /// The aiStyle-113 balloon's per-tick slave ride
+    /// (`NPC.cs:48044-48045`): the slave's new CENTRE + the balloon's
+    /// velocity. The sim applies it to the linked slave slot after the
+    /// tick (the module cannot see the pool).
+    pub balloon_slave_ride: Option<(glam::Vec2, glam::Vec2)>,
+    /// The aiStyle-113 balloon's pop side effects on the slave
+    /// (`NPC.cs:47941-47951` / `:81805-81811`): the X-rewind amount
+    /// (applied to the slave's position too) and the release flag
+    /// (`ai[0] = 0`, `position.Y -= 10`, netUpdate).
+    pub balloon_pop_rewind: Option<f32>,
+    pub balloon_slave_release: bool,
+    /// The aiStyle-112 fairy's bestiary-nearby request (W4-d33,
+    /// `NPC.cs:48642-48648` → `AchievementsHelper.HandleSpecialEvent(22)`
+    /// → FIND_A_FAIRY, `AchievementsHelper.cs:361-363`): the sim drains
+    /// it after the tick (`wants_force_bubble` convention).
+    pub wants_fairy_bestiary_event: bool,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -3148,6 +3238,15 @@ impl Npc {
             wind_speed_current: 0.0,
             twin_time_lefts: Vec::new(),
             dragonfly_neighbors: Vec::new(),
+            fairy_neighbors: Vec::new(),
+            time_for_visuals: 0.0,
+            wind_speed_target: 0.0,
+            wants_balloon_slave: None,
+            balloon_slave_view: None,
+            balloon_slave_ride: None,
+            balloon_pop_rewind: None,
+            balloon_slave_release: false,
+            wants_fairy_bestiary_event: false,
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -3600,6 +3699,15 @@ impl Npc {
             | NpcKind::RedDragonfly
             | NpcKind::YellowDragonfly
             | NpcKind::GoldDragonfly => 1.0,
+            // The fairy critters (W4-d33 wiring): the shared 583-585 row
+            // writes NO knockBackResist (`NPC.cs:16583-16607`), so the
+            // head's 1f stands (the dragonfly row's precedent). The windy
+            // balloon: kb 0.3 (`NPC.cs:16714`). d42 batch-2/3's rows,
+            // constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => 1.0,
+            NpcKind::WindyBalloon => 0.3,
             _ => 0.4,
         }
     }
@@ -3988,6 +4096,13 @@ impl Npc {
             | NpcKind::RedDragonfly
             | NpcKind::YellowDragonfly
             | NpcKind::GoldDragonfly => 0,
+            // The fairy critters + the windy balloon (W4-d33 wiring):
+            // defense 0 each (`NPC.cs:16589` / `:16713`). d42 batch-2/3's
+            // rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+            | NpcKind::WindyBalloon => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4369,6 +4484,14 @@ impl Npc {
             | NpcKind::RedDragonfly
             | NpcKind::YellowDragonfly
             | NpcKind::GoldDragonfly => 0.0,
+            // The fairy critters (W4-d33 wiring): the row writes no value
+            // — the head's 0f stands (`NPC.cs:8544`); the windy balloon
+            // value 0 (`NPC.cs:16717`). d42 batch-2/3's rows,
+            // constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+            | NpcKind::WindyBalloon => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5028,6 +5151,22 @@ impl Npc {
             // The noGravity + tile-collide integration tail rides
             // `integrate_flyer_collision` (the Goldfish/ladybug shape).
             114 => self.ai_114_dragonfly(world, player, rng),
+            // `else if (this.aiStyle == 112) { this.AI_112_FairyCritter(); }`
+            // (`NPC.cs:41068-41071`; the machine `:48088-48650`) — the
+            // fairy critters 583-585, the style's only users. W4-d33
+            // wiring: the faithful `npc_ai_style112::style112_step` claims
+            // the arm on the ai_style AXIS (the vanilla `npc_type` feeds
+            // the colour/treasure gates via `cs_id()` — NOT a kind-match
+            // dispatch); the separation scan's pool reads the sim-stamped
+            // `fairy_neighbors` (the dragonfly_neighbors convention).
+            112 => self.ai_112_fairy(world, player, rng, dust, dust_ctx),
+            // `else if (this.aiStyle == 113) { this.AI_113_WindyBalloon(); }`
+            // (`NPC.cs:41072-41075`; the machine `:47888-48065`) — the
+            // Windy Balloon 594, the style's only user. W4-d33 wiring: the
+            // faithful `npc_ai_style113::style113_step` claims the arm;
+            // the slave link rides the sim-stamped `balloon_slave_view`
+            // (the ForceBubble carrier_uid convention).
+            113 => self.ai_113_balloon(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5815,6 +5954,166 @@ impl Npc {
         self.integrate_flyer_collision(world);
     }
 
+    /// W4-d33 wiring — the aiStyle-112 adapter: the fairy critters
+    /// (583-585) ride the faithful `npc_ai_style112::style112_step`
+    /// (`AI_112_FairyCritter`, `NPC.cs:48088-48650`). The AXIS feeds the
+    /// vanilla type through `cs_id()` (the colour/treasure gates read
+    /// 583/584/585 — NOT a kind match); the session player is the one
+    /// candidate + the `LocalPlayer` bestiary check; the separation scan
+    /// reads the sim-stamped `fairy_neighbors` pool (the
+    /// dragonfly_neighbors convention — empty on the solo path);
+    /// `time_for_visuals` rides the sim pre-stamp (0 solo); `net_mode` 0
+    /// (the host fold) and ticker 0 (the zombie stand-in). The glow dust
+    /// rolls the LIVE pool on the caller's `UpdateNPCs` stream (the
+    /// S1-F-13c threading).
+    fn ai_112_fairy(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let cand = crate::npc_target::session_candidate(player);
+        let neighbors = self.fairy_neighbors.clone();
+        let time_for_visuals = self.time_for_visuals;
+        let mut env = crate::npc_ai_style112::Style112Env {
+            world,
+            dust,
+            dust_ctx,
+            rng,
+            players: &[cand],
+            neighbors: &neighbors,
+            net_mode: 0,
+            time_for_visuals,
+            ticker: 0,
+            local_player: Some((
+                player.x,
+                player.y,
+                crate::player::WIDTH as i32,
+                crate::player::HEIGHT as i32,
+                player.dead,
+            )),
+        };
+        let out = crate::npc_ai_style112::style112_step(self, self.kind.cs_id() as i32, &mut env);
+        // The LAST noTileCollide write picks the integration branch
+        // (`NPC.cs:90490-90498`); capture before the drain moves `out`.
+        let no_tile = out.no_tile_collide.unwrap_or(false);
+        self.drain_style112_out(out);
+        // The integration tail: noGravity (the 583-585 row, `:16605`)
+        // skips the gravity term; noTileCollide picks raw add vs
+        // UpdateCollision (the Goldfish/ladybug
+        // `integrate_flyer_collision` shape).
+        if no_tile {
+            self.integrate_no_tile_collide();
+        } else {
+            let (w, h) = self.size();
+            self.wet = is_wet(world, self.x, self.y, w, h);
+            self.integrate_flyer_collision(world);
+        }
+    }
+
+    /// The aiStyle-112 outcome drain (the `drain_style75_out` shape):
+    /// the chimes ride `wants_sound` (the sim drains them on the
+    /// UpdateNPCs stream at the C# call position); `lava_immune` has no
+    /// `Npc` field (the module-doc seam — the lava lane is the player
+    /// hurt path's, no NPC lava damage exists yet); the
+    /// `dontTakeDamageFromHostiles` twin rides the same shield the
+    /// module already wrote to `dont_take_damage`; the light is the
+    /// draw-side feed's (`npc_lights::npc_light` reads the kind); the
+    /// bestiary event rides `wants_fairy_bestiary_event` (the sim
+    /// completes FIND_A_FAIRY, `AchievementsHelper.cs:361-363`).
+    fn drain_style112_out(&mut self, out: crate::npc_ai_style112::Style112Outcome) {
+        for (ty, style, x, y) in out.sounds {
+            let cue = match (ty, style) {
+                (27, _) => NpcSoundCue::FairyChime,
+                (2, 4) => NpcSoundCue::Item4,
+                _ => continue,
+            };
+            self.wants_sound.push(NpcSoundRequest { cue, x, y });
+        }
+        let _ = out.lava_immune; // no Npc field — the module's seam
+        let _ = out.dont_take_damage_from_hostiles; // the pair's twin
+        let _ = out.light; // the draw-side feed (npc_lights)
+        if out.bestiary_event {
+            self.wants_fairy_bestiary_event = true;
+        }
+        if out.died {
+            // `:48575-48584` — active=false, NO checkDead/loot (the
+            // sparkle-despawn). The despawn retain drops the slot with
+            // no death events (the style-70 detonation precedent).
+            self.despawn_timer = 0;
+            self.damage_override = Some(0);
+        }
+    }
+
+    /// W4-d33 wiring — the aiStyle-113 adapter: the Windy Balloon (594)
+    /// rides the faithful `npc_ai_style113::style113_step`
+    /// (`AI_113_WindyBalloon`, `NPC.cs:47888-48065`). The slave view
+    /// rides the sim-stamped `balloon_slave_view` (the ForceBubble
+    /// carrier_uid convention — None solo, so the free-drift branch
+    /// runs); `wind_speed_target` rides the sim pre-stamp; the gore
+    /// burst runs on a scratch pool here (the solo `update_rng`
+    /// convention — the argument + pool draws still ride the caller's
+    /// stream in C# order); net_mode 0, ticker 0.
+    fn ai_113_balloon(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        let wind = self.wind_speed_target;
+        let slave = self.balloon_slave_view;
+        let mut gore = tr_core::gore::GorePool::new();
+        let mut env = crate::npc_ai_style113::Style113Env {
+            world,
+            gore: &mut gore,
+            rng,
+            players: &[cand],
+            wind_speed_target: wind,
+            net_mode: 0,
+            slave,
+            ticker: 0,
+        };
+        let out = crate::npc_ai_style113::style113_step(self, &mut env);
+        self.drain_style113_out(out);
+        // The integration tail: noGravity (`NPC.cs:16718`) skips the
+        // gravity term; the tile collision runs through the 594 string
+        // box (`GetTileCollisionParameters`, `NPC.cs:92812-92820`) —
+        // the box extends DOWN over the string, so the balloon body
+        // itself never blocks (the slave's body does; the C#'s pop
+        // gates read the string box's collide flags). The port's
+        // `integrate_flyer_collision` probes the NPC's own box — the
+        // documented granularity (the string-box collision seam is
+        // the balloon's own `balloon_collision_box`, pinned by the
+        // module's witness; the live-box integration is the
+        // collision-pass wave).
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        self.integrate_flyer_collision(world);
+    }
+
+    /// The aiStyle-113 outcome drain: the spawn request queues on
+    /// `wants_balloon_slave` (the sim spawns the type-1 slave + links
+    /// `carrier_uid`, the ForceBubble drain precedent); the ride/pop
+    /// side effects queue for the sim's slave pass. The pop's NPCDeath63
+    /// is NOT queued here: the pop sets hp=-1, so the death retain
+    /// plays the kind's own NPC_Killed_63 cue exactly once (the
+    /// style-70 detonation precedent — the C#'s in-AI play and the
+    /// port's retain play are the same sound; queuing both would
+    /// double it).
+    fn drain_style113_out(&mut self, out: crate::npc_ai_style113::Style113Outcome) {
+        if let Some(spawn) = out.spawn {
+            self.wants_balloon_slave = Some((spawn.x as f32, spawn.y as f32, spawn.variant));
+        }
+        self.balloon_slave_ride = out.slave_ride;
+        self.balloon_pop_rewind = out.pop_rewind;
+        self.balloon_slave_release = out.slave_release;
+        let _ = out.sounds; // the death retain owns the NPCDeath63 play
+        if out.died {
+            // `:47947-47951` — life=-1 + active=false: the death retain
+            // owns the removal (hp already -1); the mid-update
+            // deactivation deals no contact (the style-70 precedent).
+            self.damage_override = Some(0);
+        }
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -6441,6 +6740,32 @@ impl Npc {
             | NpcKind::RedDragonfly
             | NpcKind::YellowDragonfly
             | NpcKind::GoldDragonfly => self.ai_114_dragonfly(world, player, rng),
+            // The fairy critters + the windy balloon (W4-d33 wiring):
+            // claimed by the aiStyle-112/113 axis above — these arms keep
+            // the kind match exhaustive and route direct-kind callers to
+            // the same machines (the dragonfly precedent). The axis path
+            // never reaches here (the style match claims 112/113 first);
+            // the fairy adapter needs the live dust pool, so the direct
+            // route builds the permissive scratch pair (the solo
+            // `update_rng` convention).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => {
+                let mut dust = tr_core::particles::DustPool::new();
+                let ctx = tr_core::particles::SpawnCtx {
+                    game_menu: false,
+                    game_paused: false,
+                    generating: false,
+                    screen_position: glam::Vec2::ZERO,
+                    screen_size: glam::Vec2::new(
+                        world.width as f32 * TILE_PX,
+                        world.height as f32 * TILE_PX,
+                    ),
+                    max_dust_to_draw: 6000,
+                };
+                self.ai_112_fairy(world, player, rng, &mut dust, &ctx);
+            }
+            NpcKind::WindyBalloon => self.ai_113_balloon(world, player, rng),
         }
     }
 
@@ -6823,6 +7148,28 @@ impl Npc {
                 );
                 self.frame = row;
                 self.frame_counter = counter;
+            }
+            // The fairy critters' `case 583..585` (`NPC.cs:69835-69848`):
+            // rotation = vx * 0.1; ++frameCounter >= 4 advances the row,
+            // wrapping at `Main.npcFrameCount[583..585]` = 4
+            // (`Main.cs:67142`, the 580-589 row).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => {
+                self.rotation = self.vx * 0.1;
+                let (row, counter) =
+                    crate::npc_ai_style112::fairy_find_frame(self.frame, self.frame_counter);
+                self.frame = row;
+                self.frame_counter = counter;
+            }
+            // The windy balloon's `case 594` (`NPC.cs:67993-67997`):
+            // spriteDirection = 1; frame.Y = (int)ai[2] — the RAW colour
+            // offset on the 32-wide sheet (frame.Width = 32), no counter
+            // (`Main.npcFrameCount[594]` = 1; the row index IS the colour
+            // 1..7 the first tick rolled).
+            NpcKind::WindyBalloon => {
+                self.sprite_dir = 1;
+                self.frame = self.ai[2] as u32;
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
@@ -9218,6 +9565,17 @@ impl Npc {
     }
 
     fn update_slime(&mut self, world: &World, player: &mut Player, _dt: f32) {
+        // W4-d33 wiring — `AI_001_Slimes`' balloon-slave leash
+        // (`NPC.cs:61046-61052`): `ai[0] == -999` pins frame 0, zeroes
+        // the counter + rotation and RETURNS — the leashed slime never
+        // hops (the balloon's ride pass owns its position/velocity).
+        // The release (`:81806`'s ai[0] = 0) frees it.
+        if self.ai[0] == -999.0 {
+            self.frame = 0;
+            self.frame_counter = 0.0;
+            self.rotation = 0.0;
+            return;
+        }
         // S1-D-3ff: the wave-A slimes ride this machine on their OWN
         // `SetDefaults` boxes (the C# arm reads `base.width/height`).
         // `kind.size()` — NOT `self.size()` — keeps the base Slime's
@@ -18774,6 +19132,14 @@ impl Npc {
             NpcKind::RedDragonfly => 599,
             NpcKind::YellowDragonfly => 600,
             NpcKind::GoldDragonfly => 601,
+            // The fairy critters + the windy balloon (W4-d33 wiring): the
+            // vanilla ids — unused by every arm above (the G6 key stays
+            // injective). d42 batch-2/3's rows, constants-copy (keep-one
+            // d37c-E3).
+            NpcKind::FairyCritterPink => 583,
+            NpcKind::FairyCritterGreen => 584,
+            NpcKind::FairyCritterBlue => 585,
+            NpcKind::WindyBalloon => 594,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -23852,7 +24218,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 277] = [
+    pub(super) const ALL_KINDS: [NpcKind; 281] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24139,6 +24505,11 @@ mod tests {
         NpcKind::RedDragonfly,
         NpcKind::YellowDragonfly,
         NpcKind::GoldDragonfly,
+        // The fairy critters + the windy balloon (W4-d33 wiring).
+        NpcKind::FairyCritterPink,
+        NpcKind::FairyCritterGreen,
+        NpcKind::FairyCritterBlue,
+        NpcKind::WindyBalloon,
     ];
 
     #[test]
@@ -24921,6 +25292,12 @@ mod tests {
                 // +6/+12 colour offsets (`:73499-73507`) are unreachable
                 // for this kind — the grid/cell bound precedent.
                 NpcKind::PresentMimic => 18,
+                // The windy balloon's `case 594` (`NPC.cs:67993-67997`)
+                // writes the RAW ai[2] colour as the COLUMN index on the
+                // 8-wide strip (`Main.cs:23861`'s `Frame(8, 1, frame.Y)`)
+                // — `Main.npcFrameCount[594]` = 1 is the ROW count, not
+                // the column bound (the Deerclops cell precedent).
+                NpcKind::WindyBalloon => 8,
                 _ => npc_rows(texture_net_id(kind)),
             };
             let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -27750,8 +28127,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            277,
-            "every decodable kind resolves (the wire roster's size - 277 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies, L-B gate)"
+            281,
+            "every decodable kind resolves (the wire roster's size - 281 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies + W4-d33 wiring's three fairies + the windy balloon, L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31402,6 +31779,13 @@ mod s1_d_2_tests {
         (NpcKind::RedDragonfly, 114),
         (NpcKind::YellowDragonfly, 114),
         (NpcKind::GoldDragonfly, 114),
+        // The fairy critters (W4-d33 wiring): aiStyle 112
+        // (`NPC.cs:16587`, the shared 583-585 row); the windy balloon
+        // aiStyle 113 (`:16711`).
+        (NpcKind::FairyCritterPink, 112),
+        (NpcKind::FairyCritterGreen, 112),
+        (NpcKind::FairyCritterBlue, 112),
+        (NpcKind::WindyBalloon, 113),
     ];
 
     #[test]
@@ -33816,6 +34200,14 @@ mod w4_d33_axis_census_tests {
             (NpcKind::DD2DarkMageT3, 109),
             // aiStyle 110 — Betsy 551 (`NPC.cs:16524`).
             (NpcKind::DD2Betsy, 110),
+            // aiStyle 112 — the fairy critters 583-585 (`NPC.cs:16587`,
+            // the shared row; W4-d33 wiring).
+            (NpcKind::FairyCritterPink, 112),
+            (NpcKind::FairyCritterGreen, 112),
+            (NpcKind::FairyCritterBlue, 112),
+            // aiStyle 113 — the windy balloon 594 (`NPC.cs:16711`;
+            // W4-d33 wiring).
+            (NpcKind::WindyBalloon, 113),
             // aiStyle 123 — the Deerclops 668 (`NPC.cs:17453`).
             (NpcKind::Deerclops, 123),
         ];
@@ -33834,7 +34226,9 @@ mod w4_d33_axis_census_tests {
     fn w4_d33_the_missing_styles_have_no_kind() {
         // 114 left the list with the dragonfly roster (W4-d33's wiring:
         // the five 595-599 kinds claim the style; 600/601 follow).
-        for style in [98u8, 99, 100, 101, 102, 103, 104, 111, 112, 113, 115, 116, 117, 118, 119, 120, 121, 122, 124, 125, 126, 127] {
+        // 112/113 left with the fairy/balloon wiring (the 583-585 +
+        // 594 kinds claim them through the ai_style AXIS arms).
+        for style in [98u8, 99, 100, 101, 102, 103, 104, 111, 115, 116, 117, 118, 119, 120, 121, 122, 124, 125, 126, 127] {
             assert!(
                 !ALL_KINDS.iter().any(|k| k.ai_style() == style),
                 "no kind claims aiStyle {style} until the roster wave"
@@ -34072,5 +34466,225 @@ mod w4_d33_dragonfly_tests {
                 assert!(n.frame < 4, "{kind:?} row {} of 4", n.frame);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_d33_fairy_balloon_tests {
+    //! W4-d33 wiring — the fairy critters (583-585, aiStyle 112) + the
+    //! windy balloon (594, aiStyle 113) roster wiring. Every row pins
+    //! verbatim to the C# (`NPC.cs:16583-16607` the shared fairy row,
+    //! `:16707-16719` the balloon row). WRITTEN, NOT RUN (code-only
+    //! mode); the dragonfly stat-pin precedent.
+    use super::*;
+    use super::tests::ground;
+
+    /// The four kinds' `SetDefaults` rows through the port's tables.
+    #[test]
+    fn w4_d33_the_fairy_balloon_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::FairyCritterPink, 583u16, 112u8, 18.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::FairyCritterGreen, 584, 112, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::FairyCritterBlue, 585, 112, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::WindyBalloon, 594, 113, 20.0, 20.0, 0, 0, 1, 0.3, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id (no fold)");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(shell.scale, 1.0, "{kind:?} scale (no row)");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            assert!(!shell.behind_tiles, "{kind:?} no behindTiles row");
+        }
+        // The sounds: NPCHit1/NPCDeath1 for the fairies
+        // (`NPC.cs:16591-16592`); the balloon NO HitSound + NPCDeath63
+        // (`:16716` — it only pops).
+        for kind in [
+            NpcKind::FairyCritterPink,
+            NpcKind::FairyCritterGreen,
+            NpcKind::FairyCritterBlue,
+        ] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        assert_eq!(NpcKind::WindyBalloon.hit_sound(), None, "the balloon only pops");
+        assert_eq!(
+            NpcKind::WindyBalloon.death_sound(),
+            Some("NPC_Killed_63"),
+            "NPCDeath63 (`SoundID.cs:1377`)"
+        );
+    }
+
+    /// The protocol ids ride d42's port-local band (359/360/361/368 —
+    /// the keep-one d37c-E3 constants-copy) and round-trip; the DRAW
+    /// sheets + net-id resolution ride the TRUE vanilla types.
+    #[test]
+    fn w4_d33_the_fairy_balloon_protocol_ids_round_trip() {
+        for (kind, proto, vanilla) in [
+            (NpcKind::FairyCritterPink, 359u16, 583u16),
+            (NpcKind::FairyCritterGreen, 360, 584),
+            (NpcKind::FairyCritterBlue, 361, 585),
+            (NpcKind::WindyBalloon, 368, 594),
+        ] {
+            assert_eq!(kind.to_u16(), proto, "{kind:?} proto (d42's band)");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} decode");
+            assert_eq!(
+                crate::npc::kind_from_net_id(vanilla as i32).map(|(k, _)| k),
+                Some(kind),
+                "{kind:?} net-id resolution (the catch/release chain)"
+            );
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                vanilla,
+                "{kind:?} draw sheet is its own NPC_<vanilla>"
+            );
+        }
+    }
+
+    /// The fairies' catch/convert chain: the baits 4068/4069/4070
+    /// (`NPC.cs:16596-16602`), the release plan's ai[2]=2 +
+    /// TargetClosest writes (`:80117-80126`), the catch verdict's
+    /// ai[2]>1 refusal (`Player.cs:44728-44734`). The balloon is NOT
+    /// catchable (`Main.cs:9326-9418` has no 594 row) and carries no
+    /// catch item.
+    #[test]
+    fn w4_d33_the_fairy_catch_and_release_chain_resolves() {
+        for (ty, item) in [(583, 4068), (584, 4069), (585, 4070)] {
+            assert_eq!(crate::bug_net::catch_item(ty, 0.0), item, "{ty}");
+            assert!(crate::bug_net::npc_catchable(ty), "{ty} catchable");
+            assert_eq!(crate::registry::make_npc(item as u16), ty as u16);
+        }
+        let mut rng = UnifiedRandom::new(7);
+        for ty in [583, 584, 585] {
+            let plan = crate::bug_net::release_plan(ty, 0, 1, &mut rng);
+            assert_eq!(plan.spawn_type, ty, "{ty} release keeps its type");
+            assert_eq!(plan.ai2, Some(2.0), "the released-glow state (`:80122`)");
+            assert!(plan.target_closest, "`:80123`");
+        }
+        // The verdict: ai[2] <= 1 catches, the released glow refuses
+        // (`Player.cs:44728-44734`).
+        assert_eq!(
+            crate::bug_net::catch_verdict(1991, 4068, 583, 0.0, 0.0, 0.0),
+            crate::bug_net::CatchVerdict::Catch
+        );
+        assert_eq!(
+            crate::bug_net::catch_verdict(1991, 4068, 583, 2.0, 0.0, 0.0),
+            crate::bug_net::CatchVerdict::Skip
+        );
+        // The balloon: no catch item, not catchable.
+        assert_eq!(crate::bug_net::catch_item(594, 0.0), 0);
+        assert!(!crate::bug_net::npc_catchable(594));
+        // The wild-critter friendly window (`NPC.cs:17851-17855`).
+        let n = Npc::new(NpcKind::FairyCritterPink, 0.0, 0.0, 1, 0.0);
+        assert!(n.friendly, "the catchable spawn is friendly");
+        assert_eq!(n.catchable_immunity, 90);
+        let b = Npc::new(NpcKind::WindyBalloon, 0.0, 0.0, 1, 0.0);
+        assert!(!b.friendly, "the balloon is not a catchable critter");
+        assert_eq!(b.catchable_immunity, 0);
+    }
+
+    /// The bestiary: all four keep their OWN visible cards (no Hide
+    /// rows, no credit fold — `NPCID.cs:5148-5169`/`:5232-5239`); the
+    /// three fairy sheets take grid slots, the balloon rides its
+    /// CustomTexturePath portrait (no sheet slot).
+    #[test]
+    fn w4_d33_the_fairy_balloon_bestiary_cards_are_their_own() {
+        for (kind, ty, name) in [
+            (NpcKind::FairyCritterPink, 583, "Pink Fairy"),
+            (NpcKind::FairyCritterGreen, 584, "Green Fairy"),
+            (NpcKind::FairyCritterBlue, 585, "Blue Fairy"),
+            (NpcKind::WindyBalloon, 594, "Windy Balloon"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, ty, "{kind:?} own net id");
+            assert_eq!(e.kind, kind, "{kind:?} no fold");
+            assert_eq!(e.name, name, "{kind:?} display name (NPCs.json)");
+            assert!(!e.quick_unlock);
+        }
+        for id in [583u16, 584, 585] {
+            assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
+        }
+        assert!(
+            !crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&594),
+            "the balloon's card is the custom portrait, not a sheet slot"
+        );
+        for name in ["NPC_583", "NPC_584", "NPC_585", "NPC_594"] {
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name),
+                "{name} is never packed into the atlas"
+            );
+        }
+        assert_eq!(crate::render::entities::npc_rows(583), 4);
+        assert_eq!(crate::render::entities::npc_rows(594), 1);
+    }
+
+    /// The immunity rows: the fairies are whip-immune
+    /// (`NPCID.cs:9410-9433`'s ImmuneToWhips; the
+    /// ImmuneToAllBuffsThatAreNotWhips mask stays the documented gap);
+    /// the balloon is Confused-31 immune only (`:9466-9472`).
+    #[test]
+    fn w4_d33_the_fairy_balloon_immunity_rows() {
+        for kind in [
+            NpcKind::FairyCritterPink,
+            NpcKind::FairyCritterGreen,
+            NpcKind::FairyCritterBlue,
+        ] {
+            assert!(crate::npc_buffs::whip_immune(kind), "{kind:?} whip-immune");
+            let buffs = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!buffs.buff_immune[31], "{kind:?} no SpecificallyImmuneTo row");
+        }
+        assert!(!crate::npc_buffs::whip_immune(NpcKind::WindyBalloon));
+        let b = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::WindyBalloon);
+        assert!(b.buff_immune[31], "the balloon Confused-immune");
+        assert!(!b.buff_immune[20], "not poison-immune");
+    }
+
+    /// The wired axis: a full `update_rng` tick routes each fairy onto
+    /// `style112_step` (the spawn-hop latch + the centre anchor,
+    /// `NPC.cs:48112-48152`) and the balloon onto `style113_step` (the
+    /// first tick's colour roll + slave spawn request,
+    /// `:47890-47913`); the FindFrame arms stay inside their strips.
+    #[test]
+    fn w4_d33_the_fairies_balloon_ride_the_wired_112_113_axis() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 60.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(583);
+        for kind in [
+            NpcKind::FairyCritterPink,
+            NpcKind::FairyCritterGreen,
+            NpcKind::FairyCritterBlue,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.local_ai[0], 1.0, "{kind:?} the launch latch");
+            assert_eq!(n.ai[0], 20.0 * TILE_PX + 9.0, "{kind:?} anchor X");
+            assert_eq!(n.ai[1], 10.0 * TILE_PX + 10.0, "{kind:?} anchor Y");
+            for _ in 0..120 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+                assert!(n.frame < 4, "{kind:?} row {} of 4", n.frame);
+            }
+        }
+        // The balloon: the first tick rolls the colour + raises the
+        // slave spawn request; the FindFrame case pins sprite_dir 1
+        // and the raw ai[2] column.
+        let mut b = Npc::new(NpcKind::WindyBalloon, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        b.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(b.local_ai[0], 1.0, "the first-tick latch");
+        assert!((1.0..=7.0).contains(&b.ai[2]), "the colour roll 1..7");
+        assert!(b.wants_balloon_slave.is_some(), "the slave spawn request");
+        assert!(b.net_update, "the first tick nets");
+        assert_eq!(b.sprite_dir, 1, "case 594's spriteDirection");
+        assert_eq!(b.frame, b.ai[2] as u32, "the raw colour column");
     }
 }

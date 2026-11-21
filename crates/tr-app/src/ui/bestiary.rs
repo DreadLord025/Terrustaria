@@ -1608,6 +1608,25 @@ fn portrait_data(
                 .unwrap_or(10.0);
             (sheet_i, h, 10.0, h, white)
         }
+        // W4-d33 wiring — the fairy critters' portraits: their OWN
+        // visible cards' sheet row height over
+        // `Main.npcFrameCount[583..585]` = 4 (`Main.cs:67142`), the
+        // frame width the sheet's own — the dragonfly rows' shape.
+        // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+        (NpcKind::FairyCritterPink, _)
+        | (NpcKind::FairyCritterGreen, _)
+        | (NpcKind::FairyCritterBlue, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // W4-d33 wiring — the windy balloon's card draws the
+        // CustomTexturePath single-frame portrait
+        // (`bestiary_custom_portraits`, `NPCID.cs:5232-5239` — the
+        // draw arm returns before the sheet read); the row keeps the
+        // match exhaustive at the 20x20 SetDefaults box.
+        (NpcKind::WindyBalloon, _) => (sheet_i, 20.0, 20.0, 20.0, white),
         // S1-D-3z — the holiday zombies' portrait rests the same 18x40
         // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).
         (NpcKind::ZombieDoctor

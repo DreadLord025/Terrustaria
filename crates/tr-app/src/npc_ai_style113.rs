@@ -8,9 +8,12 @@
 //! The family has exactly ONE vanilla member: the WindyBalloon 594
 //! (`NPCID.WindyBalloon`, `ID/NPCID.cs:11865`; `SetDefaults` row
 //! `NPC.cs:16707-16719`). The census of `this.aiStyle = 113;` returns
-//! exactly that one hit (`:16711`) — no projectile-space user. The
-//! port's roster has no balloon kind — the module lands UNWIRED (the
-//! `npc_ai_style73.rs` precedent).
+//! exactly that one hit (`:16711`) — no projectile-space user. WIRED
+//! by W4-d33 (the 594 kind + the axis' 113 arm): `Npc::ai_113_balloon`
+//! feeds the session player + the sim-stamped `balloon_slave_view`
+//! (the carrier_uid link) + the `wind_speed_target` stamp; the sim
+//! drains the slave spawn/ride/pop requests (the ForceBubble
+//! convention).
 //!
 //! ## The machine
 //!
@@ -88,7 +91,7 @@
 //! — the colour pick is a raw byte offset into the 32-wide sheet
 //! (`frame.Width = 32`), NOT a row index; no counter. The wiring
 //! caller applies it directly (documented, no pair function).
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
+#![allow(dead_code)] // WIRED by W4-d33 (axis 113 → style113_step); the defaults row + witnesses stay as the audit cross-check
 
 use crate::npc::Npc;
 use crate::npc_ai_style37::rotated_by;

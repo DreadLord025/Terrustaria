@@ -9,9 +9,11 @@
 //! Green 584 / Blue 585 (`ID/NPCID.cs:11843-11847`; the shared
 //! `SetDefaults` row `NPC.cs:16583-16607`). The census of
 //! `this.aiStyle = 112;` returns exactly that one row (`:16587`) — no
-//! projectile-space user. The port's roster has no fairy kind — the
-//! module lands UNWIRED (the `npc_ai_style73.rs` precedent), keyed on
-//! the vanilla `npc_type` until the roster wave.
+//! projectile-space user. WIRED by W4-d33 (the 583-585 kinds + the
+//! axis' 112 arm): `Npc::ai_112_fairy` feeds the session player + the
+//! sim-stamped `fairy_neighbors` pool + the `time_for_visuals` parity
+//! stamp; the vanilla `npc_type` rides `cs_id()` (the AXIS dispatch —
+//! not a kind match).
 //!
 //! ## The machine
 //!
@@ -110,7 +112,7 @@
 //! advances the row, wrapping at `Main.npcFrameCount[583..585] = 4`
 //! (`Main.cs:67142`, the 580-589 row). [`fairy_find_frame`] ports the
 //! counter pair (the style73 convention).
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
+#![allow(dead_code)] // WIRED by W4-d33 (axis 112 → style112_step, the cs_id feed); the defaults row + witnesses stay as the audit cross-check
 
 use crate::npc::Npc;
 use crate::npc_ai_style37::rotated_by;

@@ -1161,6 +1161,19 @@ fn play_npc_sound_request(
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
         }
+        // W4-d33 — the fairy critters' treasure chime (`NPC.cs:48327`/
+        // `:48473`/`:48545`, the int overload of case 27): the ONE
+        // `Next(-10, 11) * 0.01` pitch draw rides the caller's stream in
+        // BOTH branches (the E21g `play_pixie` convention).
+        NpcSoundCue::FairyChime => {
+            audio.play_pixie(req.x, req.y, rng);
+        }
+        // W4-d33 — the fairy's sparkle-despawn burst chime
+        // (`NPC.FairyEffects`, `NPC.cs:48682`, `SoundID.Item4`): the
+        // style façade + case 2's one pitch draw (the Item8 precedent).
+        NpcSoundCue::Item4 => {
+            audio.play_npc_item_cue(4, req.x, req.y, rng);
+        }
     }
 }
 
@@ -4301,6 +4314,96 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // The aiStyle-112 fairies' separation-scan pre-pass (W4-d33 wiring,
+    // `NPC.cs:48599-48612`): the arm scans every `Main.npc[k]` slot
+    // (k != whoAmI, active, aiStyle == 112) inside its own AI tick; the
+    // port stamps the pool once per tick in slot order with the self
+    // flag precomputed (the dragonfly pre-pass precedent — the
+    // tick-start snapshot, the carrier one-tick-lag family; RNG-free).
+    {
+        let is_fairy = |n: &Npc| n.kind.ai_style() == 112 && n.hp > 0;
+        if app.npcs.iter().any(is_fairy) {
+            for i in 0..app.npcs.len() {
+                if !is_fairy(&app.npcs[i]) {
+                    continue;
+                }
+                let pool: Vec<crate::npc_ai_style112::FairyNeighbor> = app
+                    .npcs
+                    .iter()
+                    .enumerate()
+                    .map(|(k, m)| crate::npc_ai_style112::FairyNeighbor {
+                        is_self: k == i,
+                        active: m.hp > 0,
+                        ai_style: m.kind.ai_style() as i32,
+                        x: m.x,
+                        y: m.y,
+                    })
+                    .collect();
+                app.npcs[i].fairy_neighbors = pool;
+            }
+        }
+    }
+    // The aiStyle-112/113 statics pre-stamp (W4-d33 wiring): the fairies'
+    // glow-dust parity gate reads `Main.timeForVisualEffects`
+    // (`NPC.cs:48631` — the draw pass's `(anim_time * 60) % 216000`
+    // convention, `app/frame/draw.rs:374`); the balloon's cruise cap +
+    // free drift read `Main.windSpeedTarget` (`NPC.cs:47959`/`:48049` —
+    // the DetonatingBubble wind pre-stamp precedent). The AI's `&World`
+    // borrow cannot reach either App field.
+    {
+        let visuals = (app.anim_time as f64 * 60.0) % 216000.0;
+        let wind_target = app.wind.speed_target;
+        for n in app.npcs.iter_mut() {
+            match n.kind.ai_style() {
+                112 => n.time_for_visuals = visuals,
+                113 => n.wind_speed_target = wind_target,
+                _ => {}
+            }
+        }
+    }
+    // The aiStyle-113 balloon's slave-view pre-pass (W4-d33 wiring,
+    // `AI_113_WindyBalloon_GetSlaveNPC`, `NPC.cs:48067-48086`): the
+    // link rides `carrier_uid` (the ForceBubble convention — the list
+    // compacts), resolved to the current slot here and re-stamped into
+    // `ai[3]` so the module's slot-aligned read stays verbatim. A
+    // found-but-dead slave rides `active: false` — the module's
+    // stale-IN-RANGE check resets ai[3] = -1 itself; a gone uid maps to
+    // `None` (the C#'s out-of-range arm leaves ai[3] untouched).
+    // ORDER DEVIATION: the C# reads at the balloon's own slot turn; the
+    // port stamps at tick start (the one-tick carrier lag family).
+    // RNG-free.
+    {
+        let mut views: Vec<(usize, Option<usize>, Option<crate::npc_ai_style113::BalloonSlave>)> =
+            Vec::new();
+        for bi in 0..app.npcs.len() {
+            if app.npcs[bi].kind != NpcKind::WindyBalloon || app.npcs[bi].hp <= 0 {
+                continue;
+            }
+            let slave_uid = app.npcs[bi].carrier_uid;
+            let slave_slot = if slave_uid == 0 {
+                None
+            } else {
+                app.npcs.iter().position(|m| m.uid != 0 && m.uid == slave_uid)
+            };
+            let view = slave_slot.map(|s| {
+                let m = &app.npcs[s];
+                crate::npc_ai_style113::BalloonSlave {
+                    active: m.hp > 0,
+                    npc_type: m.kind.cs_id() as i32,
+                    ai0: m.ai[0],
+                    scale: m.scale,
+                    wet: m.wet,
+                }
+            });
+            views.push((bi, slave_slot, view));
+        }
+        for (bi, slot, view) in views {
+            if let Some(s) = slot {
+                app.npcs[bi].ai[3] = s as f32;
+            }
+            app.npcs[bi].balloon_slave_view = view;
+        }
+    }
     let player = &mut app.player;
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the
     // DungeonSpirit's arm (`npc_ai_style56::style56_step`) needs the
@@ -6180,6 +6283,130 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
         app.npcs.extend(new_bubbles);
+    }
+    // The aiStyle-113 balloon's slave spawn + ride/pop drain (W4-d33
+    // wiring, `AI_113_WindyBalloon`'s first tick `NPC.cs:47895-47912` +
+    // the per-tick ride `:48044-48045` + the pop's slave side effects
+    // `:47943`/`:81805-81811`): the module raised the requests inside
+    // its tick; the sim resolves them here (the ForceBubble drain
+    // precedent — the C#'s `ai[3] = slot` holds a slot index, the port's
+    // list compacts so the stable uid carries the link; the slave-view
+    // pre-pass re-derives the slot-aligned `ai[3]` next tick).
+    {
+        let mut new_slaves: Vec<Npc> = Vec::new();
+        let mut next = app.next_npc_uid;
+        for n in app.npcs.iter_mut() {
+            if n.kind != NpcKind::WindyBalloon {
+                continue;
+            }
+            if let Some((x, y, variant)) = n.wants_balloon_slave.take() {
+                // The variant `SetDefaults(-4/-7/-3)`
+                // (`SetDefaultsFromNetId`, `NPC.cs:7678-7728`): -4 the
+                // Pinky stats (scale 0.6, life 150), -7 Purple (1.2,
+                // 40), -3 Green (0.9, 14) — the port's SlimeVariant
+                // table carries the same rows. The C# spawns type 1
+                // FIRST then re-defaults; the observable end state is
+                // the variant's scaled box at the Bottom anchor
+                // (`NewNPC`, `NPC.cs:80770`), timeLeft = activeTime *
+                // 1.25 = 937 (`:80772`).
+                let slime_variant = match variant {
+                    -4 => SlimeVariant::Pinky,
+                    -7 => SlimeVariant::Purple,
+                    -3 => SlimeVariant::Green,
+                    _ => SlimeVariant::Blue,
+                };
+                let stats = slime_variant.stats();
+                let (sw, sh) = NpcKind::Slime.size();
+                let (sw, sh) = (sw * stats.scale, sh * stats.scale);
+                let mut s = Npc::new(
+                    NpcKind::Slime,
+                    x - sw * 0.5,
+                    y - sh,
+                    1,
+                    0.0,
+                );
+                s.slime = slime_variant;
+                s.max_hp = stats.life;
+                s.hp = stats.life;
+                s.scale = stats.scale;
+                s.encourage_despawn(937);
+                s.uid = next;
+                next += 1;
+                // `:47908-47909` — the leash marker + netUpdate.
+                s.ai[0] = -999.0;
+                s.net_update = true;
+                // The two-way uid link; the balloon's `ai[1]` seeds
+                // from the slave's scale (`:47912`) — the size round
+                // trip next tick reads it.
+                s.carrier_uid = n.uid;
+                n.carrier_uid = s.uid;
+                n.ai[1] = s.scale;
+                n.net_update = true;
+                new_slaves.push(s);
+            }
+        }
+        app.next_npc_uid = next;
+        app.npcs.extend(new_slaves);
+    }
+    // The balloon's per-tick slave ride + pop side effects: the module
+    // cannot see the pool, so the sim applies the queued writes to the
+    // linked slave slot (`NPC.cs:48044-48045` — nPC.Center = Bottom +
+    // (0,-8) + (0,56*ai[1]), nPC.velocity = the balloon's; the pop's
+    // X-rewind `:47943` and the HitEffect release `:81805-81811`).
+    {
+        let mut rides: Vec<(u32, Option<(glam::Vec2, glam::Vec2)>, Option<f32>, bool)> =
+            Vec::new();
+        for n in app.npcs.iter_mut() {
+            if n.kind != NpcKind::WindyBalloon || n.carrier_uid == 0 {
+                continue;
+            }
+            let ride = n.balloon_slave_ride.take();
+            let rewind = n.balloon_pop_rewind.take();
+            let release = std::mem::take(&mut n.balloon_slave_release);
+            if ride.is_some() || rewind.is_some() || release {
+                rides.push((n.carrier_uid, ride, rewind, release));
+            }
+        }
+        for (uid, ride, rewind, release) in rides {
+            let Some(s) = app.npcs.iter_mut().find(|m| m.uid == uid) else {
+                continue;
+            };
+            if let Some((center, vel)) = ride {
+                let (sw, sh) = s.size();
+                s.x = center.x - sw * 0.5;
+                s.y = center.y - sh * 0.5;
+                s.vx = vel.x;
+                s.vy = vel.y;
+            }
+            if let Some(dx) = rewind {
+                s.x -= dx;
+            }
+            if release {
+                // `:81806-81810` — ai[0] = 0, position.Y -= 10,
+                // netUpdate: the slime hops free.
+                s.ai[0] = 0.0;
+                s.y -= 10.0;
+                s.net_update = true;
+                s.carrier_uid = 0;
+            }
+        }
+    }
+    // The aiStyle-112 fairies' bestiary-nearby drain (W4-d33 wiring,
+    // `NPC.cs:48642-48648` → `HandleSpecialEvent(22)` →
+    // `GetCondition("FIND_A_FAIRY", "Do").Complete()`,
+    // `AchievementsHelper.cs:361-363`): the module's inflated-hitbox
+    // check raised the request; the row completes here (the
+    // wants_force_bubble drain convention).
+    {
+        let mut fairy_near = false;
+        for n in app.npcs.iter_mut() {
+            if std::mem::take(&mut n.wants_fairy_bestiary_event) {
+                fairy_near = true;
+            }
+        }
+        if fairy_near {
+            let _ = app.achievements.notify_fairy_nearby();
+        }
     }
     // The aiStyle-75 carrier-gone Transform requests (`NPC.cs:36056-36063`:
     // 390 → 382 RayGunner, 416 → 518 SolarSpearman): `NPC.Transform`
@@ -18384,5 +18611,124 @@ mod w4_d33_dragonfly_sim_tests {
             "the Blue kill credits the visible Dragonfly card"
         );
         assert_eq!(app.bestiary.kills.get_kill_count("BlueDragonfly"), 0);
+    }
+}
+
+/// W4-d33 wiring — the fairy separation pre-pass + the balloon slave
+/// lifecycle through the LIVE sim (`NPC.cs:48599-48612` /
+/// `:47890-47912` / `:48044-48045`). WRITTEN, NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d33_fairy_balloon_sim_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn air_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        w.compute_column_surface();
+        w
+    }
+
+    /// The separation pre-pass stamps every fairy's pool in slot order
+    /// with the self flag; two stacked fairies push apart on Y only
+    /// (`NPC.cs:48601-48611` — the Manhattan width*1.5 window).
+    #[test]
+    fn w4_d33_the_sim_feeds_the_fairy_separation_pool() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = air_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 250.0 * TILE_PX;
+        player.y = 10.0 * TILE_PX;
+        app.player = Some(player);
+        // Two fairies 5 px apart vertically — inside the 27-px window.
+        // State 6 (the idle hover) keeps them near the player anchor;
+        // the player is far so state 0's flip cannot fire.
+        let mut a = Npc::new(NpcKind::FairyCritterPink, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        a.hp = a.max_hp;
+        a.local_ai[0] = 1.0; // skip the launch
+        let mut b = Npc::new(NpcKind::FairyCritterBlue, 20.0 * TILE_PX, 10.0 * TILE_PX + 5.0, 1, 0.0);
+        b.hp = b.max_hp;
+        b.local_ai[0] = 1.0;
+        app.npcs.push(a);
+        app.npcs.push(b);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let a = &app.npcs[0];
+        assert_eq!(a.fairy_neighbors.len(), 2, "the pool carries both slots");
+        assert!(a.fairy_neighbors[0].is_self, "slot 0 is self");
+        assert!(!a.fairy_neighbors[1].is_self);
+        assert_eq!(a.fairy_neighbors[1].ai_style, 112);
+        assert!(a.vy < 0.0, "the upper fairy pushes up (`:48605`)");
+        assert!(app.npcs[1].vy > 0.0, "the lower fairy pushes down");
+    }
+
+    /// The balloon's first tick through the sim: the slave spawns
+    /// (type 1, ai[0] = -999, the uid link), the balloon's ai[1] seeds
+    /// from the slave's scale, and the NEXT tick's ride writes the
+    /// slave's centre + velocity (`NPC.cs:48044-48045`).
+    #[test]
+    fn w4_d33_the_sim_spawns_and_rides_the_balloon_slave() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = air_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 20.0 * TILE_PX;
+        player.y = 12.0 * TILE_PX;
+        app.player = Some(player);
+        let mut b = Npc::new(NpcKind::WindyBalloon, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        b.hp = b.max_hp;
+        app.npcs.push(b);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), 2, "the slave spawned");
+        let balloon = &app.npcs[0];
+        let slave = &app.npcs[1];
+        assert_eq!(slave.kind, NpcKind::Slime);
+        assert_eq!(slave.ai[0], -999.0, "the leash marker (`:47908`)");
+        assert!(slave.net_update);
+        assert_ne!(balloon.carrier_uid, 0, "the uid link");
+        assert_eq!(slave.carrier_uid, balloon.uid, "the two-way link");
+        assert_eq!(balloon.ai[1], slave.scale, "the scale seed (`:47912`)");
+        assert!((1.0..=7.0).contains(&balloon.ai[2]), "the colour roll");
+        // The second tick: the slave view resolves, the ride writes.
+        update_npcs(&mut app, 1.0 / 60.0);
+        let balloon = app.npcs[0].clone();
+        let slave = &app.npcs[1];
+        assert!(balloon.balloon_slave_view.is_some(), "the view resolved");
+        assert_eq!(slave.vx, balloon.vx, "the ride's velocity (`:48045`)");
+        assert_eq!(slave.vy, balloon.vy);
+        // The ride's centre: Bottom + (0,-8) + (0,56*ai[1]).
+        let (bw, bh) = balloon.size();
+        let expected_y = balloon.y + bh - 8.0 + 56.0 * balloon.ai[1];
+        let (sw, sh) = slave.size();
+        assert!(
+            (slave.y + sh * 0.5 - expected_y).abs() < 2.0,
+            "the ride's centre (`:48044`): {} vs {expected_y}",
+            slave.y + sh * 0.5
+        );
+        let _ = sw;
+    }
+
+    /// The fairy-nearby achievement: a fairy inside the session
+    /// player's +300/+200 inflated hitbox completes FIND_A_FAIRY
+    /// (`NPC.cs:48642-48648` → `AchievementsHelper.cs:361-363`).
+    #[test]
+    fn w4_d33_the_fairy_nearby_completes_find_a_fairy() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = air_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 20.0 * TILE_PX;
+        player.y = 10.0 * TILE_PX;
+        app.player = Some(player);
+        let mut f = Npc::new(NpcKind::FairyCritterGreen, 20.0 * TILE_PX + 30.0, 10.0 * TILE_PX, 1, 0.0);
+        f.hp = f.max_hp;
+        f.local_ai[0] = 1.0;
+        app.npcs.push(f);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.achievements
+                .list
+                .iter()
+                .any(|a| a.name == "FIND_A_FAIRY" && a.completed),
+            "the nearby fairy completes the row"
+        );
     }
 }

@@ -66,6 +66,25 @@ pub(crate) fn npc_light(
         // Fire Imp is the port's only other aiStyle-8 kind; the remaining
         // vanilla members (693/172/281-286) are not ported.
         NpcKind::FireImp => (XAnchor::Center, [0.6, 0.6 * 0.65, 0.6 * 0.4]),
+        // W4-d33 wiring — the fairy critters' glow light
+        // (`NPC.cs:48641`: `AddLight(Center, value3.ToVector3() * 0.7)`
+        // — the per-type PRIMARY colour, `:48618-48630`: HotPink /
+        // LimeGreen / RoyalBlue, ToVector3 = /255). RNG-free (the Lerp
+        // NextFloat belongs to the dust half, which the sim's AI arm
+        // rolls on the UpdateNPCs stream — the light feed reads only
+        // the constant primary).
+        NpcKind::FairyCritterPink => (
+            XAnchor::Center,
+            [255.0 / 255.0 * 0.7, 105.0 / 255.0 * 0.7, 180.0 / 255.0 * 0.7],
+        ),
+        NpcKind::FairyCritterGreen => (
+            XAnchor::Center,
+            [50.0 / 255.0 * 0.7, 205.0 / 255.0 * 0.7, 50.0 / 255.0 * 0.7],
+        ),
+        NpcKind::FairyCritterBlue => (
+            XAnchor::Center,
+            [65.0 / 255.0 * 0.7, 105.0 / 255.0 * 0.7, 225.0 / 255.0 * 0.7],
+        ),
         _ => return None,
     };
     Some((
