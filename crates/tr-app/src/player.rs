@@ -1483,6 +1483,14 @@ pub struct Player {
     pub snake_cloak_override: bool,
     pub honey_comb: bool,
     pub strong_bees: bool,
+    /// `Player.panic` (`Player.cs:1154`): the Panic Necklace family's hurt
+    /// reaction flag — an accepted hit grants buff 63 (Panic!, `Hurt`
+    /// `:38237-38240`, `AddBuff(63, 480)`). Armed by the Panic Necklace 1290
+    /// (`:14892-14895`), the Sweetheart Necklace 1578 (`:15076-15080`) and the
+    /// Crossed Heart Necklace 6187 (`:14625-14628`); `ResetEffects` clears it
+    /// (`:18616`) and the equip rows re-arm per tick. W4-f50 (the d116
+    /// deferred hurt-reaction list, ANALYSIS wave B "Deferred families").
+    pub panic: bool,
     /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
@@ -2762,6 +2770,7 @@ impl Player {
             snake_cloak_override: false,
             honey_comb: false,
             strong_bees: false,
+            panic: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
@@ -4348,6 +4357,20 @@ impl Player {
                 return false;
             }
         }
+        // W4-f50 — the hurt-head reactions (`Player.cs:38237-38245`), after
+        // the dodge block and BEFORE the defense reduction: the Panic
+        // Necklace family's buff 63 (`AddBuff(63, 480)`, `:38237-38240`) and
+        // the Squire T2 set's Ballista Panic buff 205 (`AddBuff(205, 300)`,
+        // `:38241-38244`), then the stealth break (`stealth = 1f`, `:38245` —
+        // a hit always breaks the shroomite stealth; the stealth-decay
+        // machine itself is unported, the field write is the seam).
+        if self.panic {
+            self.buffs.add_buff(63, 480);
+        }
+        if self.set_squire_t2 {
+            self.buffs.add_buff(205, 300);
+        }
+        self.stealth = 1.0;
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
         // incoming raw damage stays the C# `num` (`Player.cs:38246`) — the
@@ -4364,8 +4387,18 @@ impl Player {
         let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
         let raw = if crit { raw * 2 } else { raw };
+        // W4-f50 — the invis strip (`Player.cs:38281-38290`): a hurt clears
+        // the Invisibility buff (10) from every slot. The C# loops `DelBuff(k)`
+        // with NO rescan; `clear_buff` matches that shape (the compacted-in
+        // slot is skipped, the same quirk). Runs BEFORE the cuffs arm
+        // (`:38291`). The football/golf-club arms (`:38255-38280`) need the
+        // projectile pool + inventory, so they queue for the world-sim drain
+        // (Phase 3, the `pending_retaliate` convention).
+        if self.invis {
+            self.buffs.clear_buff(10);
+        }
         // `Player.Hurt`'s magicCuffs arm (`Player.cs:38291-38303`): after the
-        // invis strip (`:38281-38290`, unported) and BEFORE the endurance step
+        // invis strip (`:38281-38290`) and BEFORE the endurance step
         // (`:38304`) — `num3 = (int)(num * 1f)` is the raw damage (crit-doubled
         // at `:38248-38251`; every ported caller passes `crit = false`, the
         // single-player C# lanes all do), the
@@ -5447,12 +5480,23 @@ impl Player {
             // Honey Comb 1132 (`:15072-15075`).
             1132 => self.honey_comb = true,
             // Panic Necklace 1578 (`:15076-15080`): the honeycomb + `panic`.
-            // The port has no `panic` field — the hurt buff `AddBuff(63,
-            // 480)` (`:38237-38240`) stays deferred (ANALYSIS, wave B).
-            1578 => self.honey_comb = true,
+            // W4-f50 wired the `panic` field — the hurt buff `AddBuff(63,
+            // 480)` (`:38237-38240`) now runs in `hurt_inner`.
+            1578 => {
+                self.honey_comb = true;
+                self.panic = true;
+            }
             // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
             // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
             6184 => self.honey_comb = true,
+            // W4-f50 — the panic family's other two sources: the bare Panic
+            // Necklace 1290 (`Player.cs:14892-14895`) and the Crossed Heart
+            // Necklace 6187 (`:14625-14628`, panic + longInvince).
+            1290 => self.panic = true,
+            6187 => {
+                self.panic = true;
+                self.long_invince = true;
+            }
             // S1-P-i10 + i37 keep-both (M1 re-sync): the Catalyst Band grants
             // BOTH flags — `Player.cs:14615-14619`: `accPoisonBarb`, `pStone`,
             // `catalystBand`. Magma Stone 1322 (`:15336-15339`): the bare flag;
@@ -6056,6 +6100,9 @@ impl Player {
         self.snake_cloak_override = false;
         self.honey_comb = false;
         self.strong_bees = false;
+        // W4-f50 — `ResetEffects`' `panic = false` (`Player.cs:18616`): the
+        // Panic Necklace rows (1290/1578/6187) re-arm it per tick.
+        self.panic = false;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
@@ -6447,6 +6494,10 @@ impl Player {
                 }
                 // `:9952-9955` — Swiftness (3): `moveSpeed += 0.25f`.
                 3 => self.move_speed += 0.25,
+                // W4-f50 — `:10130-10133`: Panic! (63): `moveSpeed++`. The
+                // hurt-head grants it (`:38239`); this is its per-tick reader
+                // (the `buff_effects.rs` pure-table row, now wired live).
+                63 => self.move_speed += 1.0,
                 // S1-P-i29 — `:10134-10137`: Mining (104) `pickSpeed -= 0.25f`
                 // (the port's positive bonus convention: a lower pickSpeed
                 // mines faster).
@@ -15384,6 +15435,106 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert!(!p.star_cloak && !p.honey_comb && !p.bee_cloak_override);
         assert!(!p.strong_bees && !p.snake_cloak_override);
+    }
+
+    #[test]
+    fn w4_f50_the_panic_necklace_grants_the_hurt_buff_and_arms_from_all_three_sources() {
+        // `Player.Hurt`'s panic arm (`Player.cs:38237-38240`): an accepted
+        // hit with `panic` armed grants buff 63 (Panic!) for 480 ticks. The
+        // three sources — 1290 (`:14892-14895`), 1578 (`:15076-15080`) and
+        // 6187 (`:14625-14628`, + longInvince) — all arm the flag; the
+        // `ResetEffects` clear (`:18616`) re-folds.
+        for kind in [1290u16, 1578, 6187] {
+            let mut p = player_with_accessory(kind);
+            assert!(p.panic, "kind {kind} arms panic");
+            p.hurt_cd = 0.0;
+            p.immune = false;
+            assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+            let slot = p.buffs.find_buff_index(63).expect("the hurt grants Panic!");
+            assert_eq!(p.buffs.buff_time[slot], 480, "AddBuff(63, 480)");
+        }
+        let p = player_with_accessory(6187);
+        assert!(p.long_invince, "the Crossed Heart Necklace arms longInvince");
+        // The 1578 keeps its honeycomb (the retaliate family, unchanged).
+        let p = player_with_accessory(1578);
+        assert!(p.honey_comb && p.panic);
+        // Without a source the flag clears and the hurt grants nothing.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1290;
+        p.update(&w, PlayerInput::default());
+        assert!(p.panic);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.panic, "the ResetEffects clear (:18616)");
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.buffs.find_buff_index(63).is_none(), "no panic, no buff");
+    }
+
+    #[test]
+    fn w4_f50_the_squire_t2_set_grants_ballista_panic_on_hurt() {
+        // `Player.Hurt`'s setSquireT2 arm (`Player.cs:38241-38244`): an
+        // accepted hit grants buff 205 (Ballista Panic) for 300 ticks. The
+        // T2 triple (3800/3801/3802) arms the flag; the buff's own reader
+        // (`ballista_panic`, `:11843-11846`) re-derives per tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 3800;
+        p.equipped[1] = 3801;
+        p.equipped[2] = 3802;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_squire_t2, "the Squire T2 triple arms the flag");
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let slot = p.buffs.find_buff_index(205).expect("the hurt grants Ballista Panic");
+        assert_eq!(p.buffs.buff_time[slot], 300, "AddBuff(205, 300)");
+    }
+
+    #[test]
+    fn w4_f50_the_hurt_breaks_stealth_and_strips_invisibility() {
+        // `Player.Hurt`'s stealth break (`Player.cs:38245`, `stealth = 1f`)
+        // and invis strip (`:38281-38290`, `DelBuff(10)` on every slot).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shroomite_stealth = true;
+        p.stealth = 0.3;
+        p.invis = true;
+        p.buffs.add_buff(10, 600);
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.stealth, 1.0, "the hit breaks the stealth (:38245)");
+        assert!(p.buffs.find_buff_index(10).is_none(), "the invis buff is stripped (:38281)");
+        // A refused hit (iframes) breaks neither — the C# returns early.
+        let mut q = Player::spawn(&w);
+        q.stealth = 0.3;
+        q.invis = true;
+        q.buffs.add_buff(10, 600);
+        q.immune = true;
+        assert!(!q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.stealth, 0.3, "the refused hit leaves the stealth");
+        assert!(q.buffs.find_buff_index(10).is_some(), "the refused hit keeps the invis");
+    }
+
+    #[test]
+    fn w4_f50_the_panic_buff_raises_the_move_speed() {
+        // `Player.UpdateBuffs`' Panic! reader (`Player.cs:10130-10133`):
+        // `moveSpeed++` per live slot. The hurt-head grants the buff; the
+        // next tick's scan folds the +1 into the run-speed merge.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let base = p.move_speed;
+        p.buffs.add_buff(63, 480);
+        p.update(&w, PlayerInput::default());
+        assert!(
+            (p.move_speed - (base + 1.0)).abs() < 1e-4,
+            "the Panic! buff adds moveSpeed++ (base {base}, got {})",
+            p.move_speed
+        );
     }
 
     #[test]
