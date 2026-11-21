@@ -24947,6 +24947,89 @@ mod tests {
         assert!(missing.is_empty(), "unarmed rowed styles: {:?}", missing);
     }
 
+    /// W4-d12 FINAL item 2 — the 111-120 band's FINAL census table: every
+    /// style in the decade is ARMED (a live dispatch arm above) and ROWED
+    /// (at least one `proj_data` kind rides it). NONE is UNARMED_ROWED —
+    /// the band's wiring completed across the lane's rounds: 111/112/114/
+    /// 116/117 (W4-d12 F1 + the explosion family), 113 (F1's whole-style
+    /// census), 115 (the Terrarian beam, S1-D-5), 118/119 (the Nebula
+    /// Arcanum pair), 120 (S1-P-i56's Stardust Guardian). The witness
+    /// re-derives BOTH sides from the source + the table (the §3b scan
+    /// shape) so a later row/arm deletion trips it per-style.
+    #[test]
+    fn w4_d12_final_the_111_120_band_is_all_armed_rowed() {
+        // The rowed side: the band's kinds straight from the data table.
+        let mut rowed: std::collections::BTreeMap<u8, Vec<u16>> =
+            std::collections::BTreeMap::new();
+        for kind in 0..=2048u16 {
+            if let Some(d) = proj_data(kind) {
+                if (111..=120).contains(&d.ai_style) {
+                    rowed.entry(d.ai_style).or_default().push(kind);
+                }
+            }
+        }
+        // The armed side: the dispatch's top-level arm labels (the §3b
+        // scan — exactly-24-space lines, the fall-through closes it).
+        let src = include_str!("projectile.rs");
+        let start = src
+            .find("match data.ai_style {")
+            .expect("the aiStyle dispatch");
+        let mut armed = std::collections::BTreeSet::new();
+        for line in src[start..].lines().skip(1) {
+            if line == "                        _ => {}" {
+                break;
+            }
+            if let Some(rest) = line.strip_prefix("                        ") {
+                if rest.starts_with(' ') {
+                    continue;
+                }
+                let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if !digits.is_empty()
+                    && rest[digits.len()..].trim_start().starts_with("=>")
+                {
+                    armed.insert(digits.parse::<u8>().unwrap());
+                }
+            }
+        }
+        // The FINAL table: style → the band's census kinds (the witness
+        // pins the EXPECTED membership, not just non-emptiness).
+        let expected: [(u8, &[u16]); 10] = [
+            (111, &[DRYADS_WARD_CIRCLE]),
+            (112, &[RAINBOW_CRYSTAL_EXPLOSION, TRUFFLE_SPORE, DANDELION_SEED]),
+            (113, &[BONE_JAVELIN, STARDUST_CELL_MINION_SHOT, DAYBREAK,
+                    TENTACLE_SPIKE, BLOOD_BUTCHERER, DEAD_CELLS_KILLING_DECK_CARD]),
+            (114, &[PORTAL_GUN_GATE]),
+            (115, &[TERRARIAN_BEAM]),
+            (116, &[SOLAR_FLARE_RAY]),
+            (117, &[SOLAR_COUNTER, SOLAR_WHIP_SWORD_EXPLOSION,
+                    STARDUST_GUARDIAN_EXPLOSION, DAYBREAK_EXPLOSION,
+                    DEAD_CELLS_MUSHROOM_BOI_EXPLOSION]),
+            (118, &[NEBULA_ARCANUM]),
+            (119, &[NEBULA_ARCANUM_SUBSHOT]),
+            (120, &[STARDUST_GUARDIAN]),
+        ];
+        for (style, kinds) in expected {
+            assert!(
+                armed.contains(&style),
+                "aiStyle {style} is UNARMED — the band's census broke"
+            );
+            let got = rowed.get(&style).unwrap_or_else(|| {
+                panic!("aiStyle {style} is ROWLESS — the band's census broke")
+            });
+            for k in kinds {
+                assert!(
+                    got.contains(k),
+                    "aiStyle {style} lost the {k} row — the census broke"
+                );
+            }
+        }
+        // No style in the band sits in the UNARMED_ROWED pin.
+        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
+        for style in 111..=120u8 {
+            assert!(!UNARMED_ROWED.contains(&style));
+        }
+    }
+
     /// S1-D-4c — the 185 row pin: `SetDefaults` (`Projectile.cs:2717-2727`)
     /// says 14×14, aiStyle **14**, penetrate −1, timeLeft 900, trap — the
     /// spiky ball rides the style-14 `ai_spear` arm, not the plain-arrow
