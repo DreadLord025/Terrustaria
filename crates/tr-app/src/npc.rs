@@ -1086,6 +1086,26 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.TownSlimeOld` (679) — Elder Slime (`aiStyle 7`):
+    /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
+    /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
+    TownSlimeOld,
+    /// `NPCID.TownSlimePurple` (680) — Clumsy Slime (`aiStyle 7`):
+    /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
+    /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
+    TownSlimePurple,
+    /// `NPCID.TownSlimeRainbow` (681) — Diva Slime (`aiStyle 7`):
+    /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
+    /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
+    TownSlimeRainbow,
+    /// `NPCID.TownSlimeRed` (682) — Surly Slime (`aiStyle 7`):
+    /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
+    /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
+    TownSlimeRed,
+    /// `NPCID.TownSlimeYellow` (683) — Mystic Slime (`aiStyle 7`):
+    /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
+    /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
+    TownSlimeYellow,
     /// `NPCID.YellowCockatiel` (674) — Yellow Cockatiel (`aiStyle 24`):
     /// 14x14, dmg 0, def 0, 5 HP, kb 0.8,
     /// value 0.0 (`NPC.cs:17538-17551`). W4-d43.
@@ -3714,6 +3734,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            NpcKind::TownSlimeOld => 0.5,
+            NpcKind::TownSlimePurple => 0.5,
+            NpcKind::TownSlimeRainbow => 0.5,
+            NpcKind::TownSlimeRed => 0.5,
+            NpcKind::TownSlimeYellow => 0.5,
             NpcKind::YellowCockatiel => 0.8,
             NpcKind::GrayCockatiel => 0.8,
             NpcKind::ShimmerSlime => 1.0,
@@ -4139,6 +4164,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            NpcKind::TownSlimeOld => 15,
+            NpcKind::TownSlimePurple => 15,
+            NpcKind::TownSlimeRainbow => 15,
+            NpcKind::TownSlimeRed => 15,
+            NpcKind::TownSlimeYellow => 15,
             NpcKind::YellowCockatiel => 0,
             NpcKind::GrayCockatiel => 0,
             NpcKind::ShimmerSlime => 5,
@@ -4556,6 +4586,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            NpcKind::TownSlimeOld => 0.0,
+            NpcKind::TownSlimePurple => 0.0,
+            NpcKind::TownSlimeRainbow => 0.0,
+            NpcKind::TownSlimeRed => 0.0,
+            NpcKind::TownSlimeYellow => 0.0,
             NpcKind::YellowCockatiel => 0.0,
             NpcKind::GrayCockatiel => 0.0,
             NpcKind::ShimmerSlime => 150.0,
@@ -6607,6 +6642,11 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            NpcKind::TownSlimeOld => self.update_guide(world, dt),
+            NpcKind::TownSlimePurple => self.update_guide(world, dt),
+            NpcKind::TownSlimeRainbow => self.update_guide(world, dt),
+            NpcKind::TownSlimeRed => self.update_guide(world, dt),
+            NpcKind::TownSlimeYellow => self.update_guide(world, dt),
             // W4-d43: the aiStyle-24 bird arm (NPC.cs:25313-25537, npc_ai_style24.rs ported unwired). The kind holds
             // still until its machine lands (the MartianTurret stand-in precedent).
             NpcKind::YellowCockatiel => {}
@@ -10505,6 +10545,31 @@ impl Npc {
             // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
             // (the strip stays inside the sheet).
             NpcKind::TownSlimeGreen => {}
+            // W4-d43: the town pet rides the humanoid-group case list
+            // (`NPC.cs:68622-68633`); the town machine keeps the walk band in
+            // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
+            // (the strip stays inside the sheet).
+            NpcKind::TownSlimeOld => {}
+            // W4-d43: the town pet rides the humanoid-group case list
+            // (`NPC.cs:68622-68633`); the town machine keeps the walk band in
+            // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
+            // (the strip stays inside the sheet).
+            NpcKind::TownSlimePurple => {}
+            // W4-d43: the town pet rides the humanoid-group case list
+            // (`NPC.cs:68622-68633`); the town machine keeps the walk band in
+            // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
+            // (the strip stays inside the sheet).
+            NpcKind::TownSlimeRainbow => {}
+            // W4-d43: the town pet rides the humanoid-group case list
+            // (`NPC.cs:68622-68633`); the town machine keeps the walk band in
+            // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
+            // (the strip stays inside the sheet).
+            NpcKind::TownSlimeRed => {}
+            // W4-d43: the town pet rides the humanoid-group case list
+            // (`NPC.cs:68622-68633`); the town machine keeps the walk band in
+            // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
+            // (the strip stays inside the sheet).
+            NpcKind::TownSlimeYellow => {}
         }
     }
 
@@ -20136,6 +20201,11 @@ impl Npc {
             NpcKind::ShimmerSlime => 676,
             NpcKind::Shimmerfly => 677,
             NpcKind::TownSlimeGreen => 678,
+            NpcKind::TownSlimeOld => 679,
+            NpcKind::TownSlimePurple => 680,
+            NpcKind::TownSlimeRainbow => 681,
+            NpcKind::TownSlimeRed => 682,
+            NpcKind::TownSlimeYellow => 683,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -25205,7 +25275,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 315] = [
+    pub(super) const ALL_KINDS: [NpcKind; 320] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25528,6 +25598,11 @@ mod tests {
         NpcKind::ShimmerSlime,
         NpcKind::Shimmerfly,
         NpcKind::TownSlimeGreen,
+        NpcKind::TownSlimeOld,
+        NpcKind::TownSlimePurple,
+        NpcKind::TownSlimeRainbow,
+        NpcKind::TownSlimeRed,
+        NpcKind::TownSlimeYellow,
         NpcKind::WyvernTail,
     ];
 
@@ -25839,6 +25914,37 @@ mod tests {
             (NpcKind::ShimmerSlime, 676, 1u8, 24.0, 18.0, 20, 5, 80, 1.0, 150.0),
             (NpcKind::Shimmerfly, 677, 64u8, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::TownSlimeGreen, 678, 7u8, 18.0, 20.0, 10, 15, 250, 0.5, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-d43 batch 10 — the new kinds' `SetDefaults` rows pin against the
+    /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
+    /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_batch10_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::TownSlimeOld, 679, 7u8, 18.0, 20.0, 10, 15, 250, 0.5, 0.0),
+            (NpcKind::TownSlimePurple, 680, 7u8, 18.0, 20.0, 10, 15, 250, 0.5, 0.0),
+            (NpcKind::TownSlimeRainbow, 681, 7u8, 18.0, 20.0, 10, 15, 250, 0.5, 0.0),
+            (NpcKind::TownSlimeRed, 682, 7u8, 18.0, 20.0, 10, 15, 250, 0.5, 0.0),
+            (NpcKind::TownSlimeYellow, 683, 7u8, 18.0, 20.0, 10, 15, 250, 0.5, 0.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -29421,7 +29527,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            315,
+            320,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

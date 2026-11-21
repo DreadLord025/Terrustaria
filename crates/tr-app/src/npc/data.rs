@@ -586,6 +586,11 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            NpcKind::TownSlimeOld => 679,
+            NpcKind::TownSlimePurple => 680,
+            NpcKind::TownSlimeRainbow => 681,
+            NpcKind::TownSlimeRed => 682,
+            NpcKind::TownSlimeYellow => 683,
             NpcKind::YellowCockatiel => 674,
             NpcKind::GrayCockatiel => 675,
             NpcKind::ShimmerSlime => 676,
@@ -961,6 +966,11 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            679 => NpcKind::TownSlimeOld,
+            680 => NpcKind::TownSlimePurple,
+            681 => NpcKind::TownSlimeRainbow,
+            682 => NpcKind::TownSlimeRed,
+            683 => NpcKind::TownSlimeYellow,
             674 => NpcKind::YellowCockatiel,
             675 => NpcKind::GrayCockatiel,
             676 => NpcKind::ShimmerSlime,
@@ -1044,6 +1054,11 @@ impl NpcKind {
                 | NpcKind::TownBunny
                 | NpcKind::TownSlimeBlue
                 | NpcKind::TownSlimeGreen
+                | NpcKind::TownSlimeOld
+                | NpcKind::TownSlimePurple
+                | NpcKind::TownSlimeRainbow
+                | NpcKind::TownSlimeRed
+                | NpcKind::TownSlimeYellow
                 | NpcKind::PartyGirl
         )
     }
@@ -1227,6 +1242,11 @@ impl NpcKind {
                 | NpcKind::TownBunny
                 | NpcKind::TownSlimeBlue
                 | NpcKind::TownSlimeGreen
+                | NpcKind::TownSlimeOld
+                | NpcKind::TownSlimePurple
+                | NpcKind::TownSlimeRainbow
+                | NpcKind::TownSlimeRed
+                | NpcKind::TownSlimeYellow
                 | NpcKind::WitchDoctor
         )
     }
@@ -1260,6 +1280,11 @@ impl NpcKind {
                     | NpcKind::TownBunny
                     | NpcKind::TownSlimeBlue
                     | NpcKind::TownSlimeGreen
+                    | NpcKind::TownSlimeOld
+                | NpcKind::TownSlimePurple
+                | NpcKind::TownSlimeRainbow
+                | NpcKind::TownSlimeRed
+                | NpcKind::TownSlimeYellow
                     | NpcKind::Mechanic
             )
     }
@@ -1901,6 +1926,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            NpcKind::TownSlimeOld => "NPC_Hit_1",
+            NpcKind::TownSlimePurple => "NPC_Hit_1",
+            NpcKind::TownSlimeRainbow => "NPC_Hit_1",
+            NpcKind::TownSlimeRed => "NPC_Hit_1",
+            NpcKind::TownSlimeYellow => "NPC_Hit_1",
             NpcKind::YellowCockatiel => "NPC_Hit_1",
             NpcKind::GrayCockatiel => "NPC_Hit_1",
             NpcKind::ShimmerSlime => "NPC_Hit_1",
@@ -2248,6 +2278,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            NpcKind::TownSlimeOld => "NPC_Killed_6",
+            NpcKind::TownSlimePurple => "NPC_Killed_6",
+            NpcKind::TownSlimeRainbow => "NPC_Killed_6",
+            NpcKind::TownSlimeRed => "NPC_Killed_6",
+            NpcKind::TownSlimeYellow => "NPC_Killed_6",
             NpcKind::YellowCockatiel => "NPC_Killed_1",
             NpcKind::GrayCockatiel => "NPC_Killed_1",
             NpcKind::ShimmerSlime => "NPC_Killed_1",
@@ -2663,6 +2698,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            NpcKind::TownSlimeOld => 7,
+            NpcKind::TownSlimePurple => 7,
+            NpcKind::TownSlimeRainbow => 7,
+            NpcKind::TownSlimeRed => 7,
+            NpcKind::TownSlimeYellow => 7,
             NpcKind::YellowCockatiel => 24,
             NpcKind::GrayCockatiel => 24,
             NpcKind::ShimmerSlime => 1,
@@ -3241,6 +3281,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            NpcKind::TownSlimeOld => (18.0, 20.0),
+            NpcKind::TownSlimePurple => (18.0, 20.0),
+            NpcKind::TownSlimeRainbow => (18.0, 20.0),
+            NpcKind::TownSlimeRed => (18.0, 20.0),
+            NpcKind::TownSlimeYellow => (18.0, 20.0),
             NpcKind::YellowCockatiel => (14.0, 14.0),
             NpcKind::GrayCockatiel => (14.0, 14.0),
             NpcKind::ShimmerSlime => (24.0, 18.0),
@@ -3362,6 +3407,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            NpcKind::TownSlimeOld => 679,
+            NpcKind::TownSlimePurple => 680,
+            NpcKind::TownSlimeRainbow => 681,
+            NpcKind::TownSlimeRed => 682,
+            NpcKind::TownSlimeYellow => 683,
             NpcKind::YellowCockatiel => 674,
             NpcKind::GrayCockatiel => 675,
             NpcKind::ShimmerSlime => 676,
@@ -3974,6 +4024,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            NpcKind::TownSlimeOld => 250,
+            NpcKind::TownSlimePurple => 250,
+            NpcKind::TownSlimeRainbow => 250,
+            NpcKind::TownSlimeRed => 250,
+            NpcKind::TownSlimeYellow => 250,
             NpcKind::YellowCockatiel => 5,
             NpcKind::GrayCockatiel => 5,
             NpcKind::ShimmerSlime => 80,
@@ -4383,6 +4438,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            NpcKind::TownSlimeOld => 10,
+            NpcKind::TownSlimePurple => 10,
+            NpcKind::TownSlimeRainbow => 10,
+            NpcKind::TownSlimeRed => 10,
+            NpcKind::TownSlimeYellow => 10,
             NpcKind::YellowCockatiel => 0,
             NpcKind::GrayCockatiel => 0,
             NpcKind::ShimmerSlime => 20,
