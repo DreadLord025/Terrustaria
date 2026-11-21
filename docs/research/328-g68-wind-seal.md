@@ -47,14 +47,15 @@ lane's own work is the leaf-cadence port + the wiring wave.
 | `32ee28ca5` | **final-phase (this seal)** | the wind-flag owner's three missing arms in `wind.rs` (see §2) + the player.rs push-copy retirement (see §5) |
 | `2075c3aaa` | **final-phase (this seal)** | the kite-drop feed — `spawn_loot`'s live `LootFlags.windy` reads `app.wind.windy_enough_for_kite_drops()` (was `Default::default()` false; the 8 kite rows `loot_db_gen.rs` now gate on the live target) |
 
-**Witness census: 33 WRITTEN NOT RUN** (grep-verified `fn w4_g68_*` at
-the seal tip) — `render/foliage.rs` 12, `tr-core/gore.rs` 14,
-`render/tiles.rs` 1 (the site-1 quarter-roll gate order), `sand.rs` 1,
-`tr-core/wind.rs` 3 (this seal). The wiring-4 commit message said 28;
-the file-level census finds 30 pre-seal (the wiring-2 A/B witnesses
-counted as 3 in the message but landed as the per-arm pins) — the
-grep count is authoritative. No cargo/rustc invoked on this lane
-(code-only).
+**Witness census: 31 WRITTEN NOT RUN** (grep-verified `fn w4_g68_*` at
+the seal tip; CORRECTED from the seal's own 33 — the per-file rows
+below always summed to 31, the 33 was an arithmetic slip) —
+`render/foliage.rs` 12, `tr-core/gore.rs` 14, `render/tiles.rs` 1 (the
+site-1 quarter-roll gate order), `sand.rs` 1, `tr-core/wind.rs` 3
+(this seal). The wiring-4 commit message said 28; the file-level
+census finds 28 pre-seal (the wiring-2 A/B witnesses counted as 3 in
+the message but landed as the per-arm pins) — the grep count is
+authoritative. No cargo/rustc invoked on this lane (code-only).
 
 ## 2. The final-phase missing arms (g68-unique, `32ee28ca5` + `2075c3aaa`)
 
@@ -320,6 +321,6 @@ the wind flag. No two family branches own the same fn body; the only
 cross-branch writes are the enumerated grafts (d130's `lanterns_up`,
 g68's G1-G3) and they are all published. **Gate command**: `cargo test
 --workspace -- --skip migrates_version_2_kinds_to_item_ids` — judge only
-by the `test result: ok` lines; 33 g68 witnesses (grep-verified) + c40's
+by the `test result: ok` lines; 31 g68 witnesses (grep-verified) + c40's
 8 push witnesses + the family's seals are WRITTEN NOT RUN (code-only),
 the merged tree's first full run is the gate.

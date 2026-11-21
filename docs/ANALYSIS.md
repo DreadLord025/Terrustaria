@@ -39595,7 +39595,8 @@ alive-advancing foreign co-lane). Adjudicated hunk-by-hunk:
   (`WorldGen.cs:86868` fluff 0 — an out-of-bounds cell is SKIPPED, not a
   refusal; the old `return false` refused every map-edge probe, the
   sunflower 2×5 window + the player `wind_here`). 3 witnesses WRITTEN
-  NOT RUN (33 total on the lane, grep-verified).
+  NOT RUN (31 total on the lane, grep-verified — the seal's 33 was an
+  arithmetic slip, the per-file rows sum to 31).
 * **RETIRED (player.rs, the push-chain copy): a c40-DUPLICATE.** c40
   pushed the SAME `windPushed` chain FIRST (`fa3717be1`/`bdd039802`/
   `7fc862c91`) as the STRICT SUPERSET (the `Auras.sandstorm_wind` →
