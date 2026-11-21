@@ -483,6 +483,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).
     for (kind, x, y, vx, vy) in app.projectiles.drain_mark_spawns() {
+        // W4-d9 — the aiStyle-89 ritual's 300-tick spawn carries the VANILLA
+        // dragon/squid ids 454/521 (`Projectile.cs:32350`/`:32354`); neither
+        // has a port `NpcKind` yet (the cultist census's unported summons,
+        // `npc_ai_cultist.rs:81-88`), and `from_u16` reads CS ids — a raw
+        // 454/521 would hit the Slime fallback. Skip until the summon kinds
+        // land (the `drain_shark_spawns` `_ => continue` precedent; the
+        // style-89 module doc records the deviation).
+        if kind == 454 || kind == 521 {
+            continue;
+        }
         let k = crate::npc::NpcKind::from_u16(kind).unwrap_or(crate::npc::NpcKind::Slime);
         let mut n = crate::npc::Npc::new(k, x, y, 1, 0.0);
         n.hp = n.max_hp;

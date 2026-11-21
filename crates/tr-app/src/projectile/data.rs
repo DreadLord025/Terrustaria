@@ -2491,6 +2491,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 87, friendly, tileCollide false, penetrate −1, alpha 255,
             // ignoreWater, timeLeft 18000, magic, idStatic-10.
             CLINGER_STAFF => (16.0, 200.0, 87, -1, 18000, 0, false, false, false, (false, -2, true, 10, 255, 1.0)),
+            // W4-d9 — `Projectile.cs:5655-5666`: the CultistRitual (490): 14x14,
+            // aiStyle 89, hostile, alpha 255, ignoreWater, tileCollide false,
+            // timeLeft 600, netImportant. The stock penetrate 1 (`:774`) stands.
+            CULTIST_RITUAL => (14.0, 14.0, 89, 1, 600, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // `Projectile.cs:5329-5339` — the Phantasmal Bolt (462): 8x8,
             // aiStyle 1, hostile, `alpha = 255`, extraUpdates 3, tileCollide
             // false, ignoreWater. S1-D-5 carries the C# alpha (the slice-B
@@ -4168,6 +4172,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | SHARK_PUP | LIL_HARPY | GLITTERY_BUTTERFLY | QUEEN_BEE_PET
                     | DUKE_FISHRON_PET | MOON_LORD_PET | DD2_BETSY_PET | PUFFERFISH
             )
+            // W4-d9 — `Projectile.cs:5665`: the CultistRitual's netImportant.
+            || kind == CULTIST_RITUAL
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
             || matches!(kind, GOLF_BALL | 739..=752),
@@ -4250,6 +4256,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == CULTIST_BOSS_ICE_MIST
             // W4-d9 — `Projectile.cs:5581`: the ClingerStaff's `ignoreWater`.
             || kind == CLINGER_STAFF
+            // W4-d9 — `Projectile.cs:5662`: the CultistRitual's `ignoreWater`.
+            || kind == CULTIST_RITUAL
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,

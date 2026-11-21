@@ -17926,6 +17926,24 @@ impl ProjectilePool {
                             );
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d9 — the aiStyle-89 CultistRitual 490 marker
+                        // (`Projectile.cs:32262-32386`): the alpha ramp, the
+                        // dust bursts (draws consumed), the 300-tick
+                        // dragon/squid spawn request, the 320-tick kill, the
+                        // host-validity kill. The spawn carries the vanilla
+                        // 454/521; the drain skips them until the summon
+                        // kinds land (the module doc's deviation).
+                        89 => {
+                            let any_dragon =
+                                npcs.iter().any(|n| n.hp > 0 && n.kind.net_id() == 454);
+                            crate::projectile_ai_style89::ai_cultist_ritual(
+                                &mut self.slots[i],
+                                &npcs[..],
+                                any_dragon,
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
                         102 => {
                             let player = owner.unwrap_or((0.0, 0.0));
                             let npcs = &npcs[..];

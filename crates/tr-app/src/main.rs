@@ -191,6 +191,7 @@ mod projectile_ai_moonlord;
 mod projectile_ai_style81;
 mod projectile_ai_style86;
 mod projectile_ai_style87;
+mod projectile_ai_style89;
 
 
 mod projectile_ai001_a;
