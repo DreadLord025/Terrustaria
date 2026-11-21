@@ -821,12 +821,16 @@ impl Rain {
     /// the port's 60 Hz accumulator owns the cadence (the draw stays pure).
     /// `gamePaused` is folded out (the weather cluster is pause-gated);
     /// `gameMenu` never holds in-world. The death probes are the real
-    /// `Collision.SolidCollision`/`WetCollision` 2x2 boxes (`:117`).
+    /// `Collision.SolidCollision`/`WetCollision` 2x2 boxes (`:117`); the
+    /// `:120` impact roll fires for ALL THREE `:117` kills (below-screen
+    /// included) and NEVER for the remix kill-only arm (`:110-116`).
     fn update_drops(&mut self, world: &World, i: &RainInputs) {
         // `:112/:117`: `screenPosition.Y + screenHeight + 100f` — the port's
         // camera is the view CENTRE; the world-space view bottom plus the
-        // 100 px margin scaled into world space (the sand.rs zoom convention).
-        let bottom = i.camera.y + i.screen.y * 0.5 / i.zoom + 100.0 / i.zoom;
+        // 100f margin as RAW world px (the C# adds it unscaled — g67's shape;
+        // the earlier 100/zoom fold was a deviation, re-pinned W4-d130
+        // reconcile, docs/research/83).
+        let bottom = i.camera.y + i.screen.y * 0.5 / i.zoom + 100.0;
         for slot in 0..MAX_DROPS {
             let mut d = self.drops[slot];
             if !d.active {
@@ -834,32 +838,40 @@ impl Rain {
             }
             // `:102`: `position += velocity`.
             d.pos += d.vel;
-            // `:110-116`: the remixWorld arm — no collision, only the bottom.
+            // `:103-116`: the gameMenu (+2000f) / remixWorld (+100f) kill-only
+            // arms — `active = false` and NOTHING else: the :120 impact roll
+            // sits inside the :117 else-if, so these arms never roll.
+            // `gameMenu` never holds in-world (folded); the remix arm stays.
             let die = if i.remix_world {
                 d.pos.y > bottom
             } else {
-                // `:117`: solid OR bottom OR wet.
-                crate::player::Player::solid_collision(world, d.pos.x, d.pos.y, 2.0, 2.0)
-                    || d.pos.y > bottom
-                    || crate::player::wet_collision(world, d.pos.x, d.pos.y, 2.0, 2.0)
+                // `:117`: solid OR bottom OR wet — the C# `||` short-circuits,
+                // so the wet probe runs only when dry AND on-screen.
+                let solid =
+                    crate::player::Player::solid_collision(world, d.pos.x, d.pos.y, 2.0, 2.0);
+                let below = d.pos.y > bottom;
+                let wet = !solid
+                    && !below
+                    && crate::player::wet_collision(world, d.pos.x, d.pos.y, 2.0, 2.0);
+                if solid || below || wet {
+                    // `:119` first: the drop dies BEFORE the roll/spawn.
+                    d.active = false;
+                    // `:120-131`: ONE combined branch — the gate rolls
+                    // `Main.rand.Next(100)` for ALL THREE kills, the
+                    // below-screen one included (`:120` sits outside the
+                    // NewDust call). The g67 reading is correct (006bc04d /
+                    // 40128e5d); the earlier collision-only gate was WRONG
+                    // and is fixed here (docs/research/83). The stand-in
+                    // splash keeps the roll; g67 owns the real
+                    // `Dust.NewDust(..., dustWater())` spawn + AI/draw.
+                    if self.range(0, 100) as f32 < i.gfx_quality * 100.0 {
+                        self.spawn_splash(d);
+                    }
+                }
+                solid || below || wet
             };
             if die {
                 d.active = false;
-                // `:119-131`: the impact dust fires only on the collision
-                // arms (solid/wet) — the bottom kill (`:112-116` remix, and
-                // the off-screen half of `:117`) spawns nothing. The port
-                // probes solid/wet again to pick the arm; the stand-in
-                // splash keeps the `Next(100) < gfxQuality * 100` roll (g67
-                // owns the real `Dust.NewDust(..., dustWater())` splash).
-                let collision = !i.remix_world
-                    && (crate::player::Player::solid_collision(
-                        world, d.pos.x, d.pos.y, 2.0, 2.0,
-                    ) || crate::player::wet_collision(
-                        world, d.pos.x, d.pos.y, 2.0, 2.0,
-                    ));
-                if collision && self.range(0, 100) as f32 < i.gfx_quality * 100.0 {
-                    self.spawn_splash(d);
-                }
             }
             self.drops[slot] = d;
         }
@@ -1203,7 +1215,11 @@ mod tests {
         let mut rain = Rain::with_forced(7, Some(1.0), false);
         run(&mut rain, &w, 120);
         assert!(rain.drop_count() > 100, "drops {}", rain.drop_count());
-        // The ground is below the camera, so impacts leave splashes at a steady state.
+        // `ground()` is 64 tall — SolidCollision/WetCollision clamp their
+        // scan at `height - 40` (row 24), so the row-30 floor is invisible
+        // and the drops die BELOW-SCREEN. The :120 gate rolls for that kill
+        // too (the combined :117 branch — W4-d130 reconcile), so at quality
+        // 1 the impacts still leave splashes at a steady state.
         assert!(!rain.splashes.is_empty(), "impacts should leave splashes");
     }
 
@@ -1214,6 +1230,123 @@ mod tests {
         run(&mut rain, &w, 240);
         assert_eq!(rain.drop_count(), 0);
         assert_eq!(rain.visual_alpha(), 0.0);
+    }
+
+    /// One drop pinned into a fixed slot at an exact position, so the NEXT
+    /// `update_drops` step moves it to `pos + vel` and the kill arm is
+    /// deterministic. `update_drops` is called directly — no spawn, no ramp.
+    fn pin_drop(rain: &mut Rain, slot: usize, pos: Vec2, vel: Vec2) {
+        rain.drops[slot] = Drop {
+            active: true,
+            pos,
+            vel,
+            scale: 1.0,
+            rot: 0.0,
+            kind: 0,
+        };
+    }
+
+    #[test]
+    fn the_impact_gate_rolls_for_all_three_kills() {
+        // W4-d130 reconcile witness — `Rain.cs:117-131`: the ONE combined
+        // branch rolls `Next(100) < gfxQuality*100` for the solid kill, the
+        // below-screen kill AND the wet kill. Hand-derived on Rain's stream:
+        // each kill consumes exactly ONE gate draw at quality 0 (the gate
+        // fails, no splash); g67's 40128e5d reading, re-verified against
+        // Rain.cs:96-133 (docs/research/83).
+        // (a) below-screen: an all-air world, camera bottom + 100 = 600;
+        // the drop steps to y 605 > 600, dry and on-screen-solid-free.
+        let w = World::new("air".into(), 64, 64);
+        let mut rain = Rain::with_forced(7, Some(0.0), false);
+        let mut i = inputs();
+        i.gfx_quality = 0.0; // the gate FAILS after its one draw — no splash
+        pin_drop(&mut rain, 3, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
+        let mut r = StreamReplay(rain.rng);
+        let _gate = r.next(0, 100);
+        rain.update_drops(&w, &i);
+        assert!(!rain.drops[3].active, "the below-screen kill fired");
+        assert_eq!(rain.rng, r.0, "exactly ONE draw: the gate");
+        // (b) quality 0 never splashes but STILL rolls — the positive arm:
+        // at quality 1 the same below-screen kill splashes (the stand-in
+        // consumes its own draws behind the gate).
+        let mut zero = Rain::with_forced(7, Some(0.0), false);
+        let mut zi = inputs();
+        zi.gfx_quality = 0.0;
+        pin_drop(&mut zero, 0, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
+        let state = zero.rng;
+        zero.update_drops(&w, &zi);
+        assert_ne!(zero.rng, state, "the gate rolls even at quality 0");
+        assert!(zero.splashes.is_empty(), "quality 0: no splash");
+        let mut one = Rain::with_forced(7, Some(0.0), false);
+        pin_drop(&mut one, 0, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
+        one.update_drops(&w, &inputs()); // quality 1
+        assert!(
+            !one.splashes.is_empty(),
+            "the below-screen kill SPLASHES at quality 1"
+        );
+        // (c) the solid kill: a TALL world — the probes clamp their scan at
+        // `height - 40` (`Collision.cs:2708`/`:1594`), so the floor must sit
+        // UNDER row 88 (128 - 40). Floor row 80 (y 1280); the drop steps to
+        // y 1282 inside it, well above the view bottom (1500).
+        let mut tall = World::new("rain-tall".into(), 64, 128);
+        for x in 0..64 {
+            let idx = tall.index(x, 80);
+            tall.tiles[idx] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            tall.tiles[idx].flags |= FLAG_ACTIVE;
+        }
+        tall.compute_column_surface();
+        tall.compute_chunks();
+        let mut solid_rain = Rain::with_forced(7, Some(0.0), false);
+        let mut si = inputs();
+        si.camera = Vec2::new(512.0, 1300.0);
+        si.gfx_quality = 0.0;
+        pin_drop(&mut solid_rain, 1, Vec2::new(500.0, 1268.0), Vec2::new(0.0, 14.0));
+        let mut r = StreamReplay(solid_rain.rng);
+        let _gate = r.next(0, 100);
+        solid_rain.update_drops(&tall, &si);
+        assert!(!solid_rain.drops[1].active, "the solid kill fired");
+        assert_eq!(solid_rain.rng, r.0, "solid kill: ONE gate draw");
+        assert!(solid_rain.splashes.is_empty(), "quality 0: no splash");
+        // (d) the wet kill: the same floor as a full liquid tile — the wet
+        // probe's surface is `tileY + (256-liquid)/32*2` (`Collision.cs`
+        // arm, `player.rs::wet_collision`); the drop steps into it dry-solid-
+        // free and dies with the SAME single gate draw.
+        let mut wet_w = World::new("rain-wet".into(), 64, 128);
+        for x in 0..64 {
+            let idx = wet_w.index(x, 80);
+            wet_w.tiles[idx].liquid = 255;
+        }
+        wet_w.compute_column_surface();
+        wet_w.compute_chunks();
+        let mut wet_rain = Rain::with_forced(7, Some(0.0), false);
+        pin_drop(&mut wet_rain, 2, Vec2::new(500.0, 1268.0), Vec2::new(0.0, 14.0));
+        let mut r = StreamReplay(wet_rain.rng);
+        let _gate = r.next(0, 100);
+        wet_rain.update_drops(&wet_w, &si);
+        assert!(!wet_rain.drops[2].active, "the wet kill fired");
+        assert_eq!(wet_rain.rng, r.0, "wet kill: ONE gate draw");
+        assert!(wet_rain.splashes.is_empty(), "quality 0: no splash");
+    }
+
+    #[test]
+    fn the_remix_kill_arm_never_rolls() {
+        // `Rain.cs:110-116`: the remixWorld arm is `active = false` ONLY —
+        // the :120 gate sits inside the :117 else-if, which never runs when
+        // remixWorld holds. No draw, no splash (g67 folded this arm out;
+        // the d130 core keeps it — docs/research/83).
+        let w = World::new("air".into(), 64, 64);
+        let mut rain = Rain::with_forced(7, Some(0.0), false);
+        let mut i = inputs();
+        i.remix_world = true;
+        pin_drop(&mut rain, 5, Vec2::new(500.0, 591.0), Vec2::new(0.0, 14.0));
+        let state = rain.rng;
+        rain.update_drops(&w, &i);
+        assert!(!rain.drops[5].active, "the remix bottom kill fired");
+        assert_eq!(rain.rng, state, "the remix arm consumes NO roll");
+        assert!(rain.splashes.is_empty(), "the remix arm never splashes");
     }
 
     #[test]

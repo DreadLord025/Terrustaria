@@ -1,0 +1,171 @@
+# 83 — Weather reconcile (W4-d130 merger assist + conflict resolution)
+
+Code-only pass on `task/W4-d130-weather-ambience` (base `393000e6`), reconciling the
+three weather lanes that touch the same systems: **W4-d130** (this branch — the
+verbatim rain fall/draw core + `Main.snowing()`), **W4-g67**
+(`task/W4-g67-weather-rain-splash`, `40128e5d` + `006bc04d` — the real rain splash
+lane), **W4-g11** (`task/W4-g11-dust-main-sites-1`, `94273f44`/`549021cc`/`25e180d4`
+bodies + `73545f0b` wiring) and **W4-d54 batch-4** (`48343a4c`, latent
+`world_dust_main.rs::snowing`). Every claim below was re-derived from the C# at the
+cited lines, not from commit messages.
+
+## 1. CRITICAL — the Rain.Update impact gate: g67 is RIGHT, d130 was WRONG (fixed)
+
+### The C# truth (`decompiled/Terraria/Rain.cs:96-133`, re-read line-by-line)
+
+```
+:98-101  if (Main.gamePaused) return;
+:102     position += velocity;
+:103-109 if (Main.gameMenu)      { if (Y > screenBottom + 2000f) active = false; }
+:110-116 else if (Main.remixWorld){ if (Y > screenBottom + 100f)  active = false; }
+:117     else if (Collision.SolidCollision(pos,2,2)
+              || pos.Y > screenBottom + 100f
+              || Collision.WetCollision(pos,2,2)) {
+:119         active = false;
+:120         if ((float)Main.rand.Next(100) < Main.gfxQuality * 100f) {
+:122-130         Dust.NewDust(pos - velocity, 2, 2, Dust.dustWater()) + 8 recipe writes
+             }
+         }
+```
+
+The `:117` condition is ONE combined `else if` — solid OR **below-screen** OR wet.
+The `:120` `Next(100) < gfxQuality*100` gate sits INSIDE that branch, AFTER
+`active = false`, so it rolls for **ALL THREE kills**, the below-screen kill
+included. There is no collision-only sub-gate anywhere in the method. The only
+kills that never roll are the `gameMenu` (`:103-109`, +2000f margin) and
+`remixWorld` (`:110-116`, +100f margin) arms, which merely clear `active`.
+The `+100f` margin is added to `screenPosition.Y + screenHeight` in RAW world
+pixels — no zoom division (the C# has no zoom term here).
+
+### Verdicts
+
+* **g67 (`006bc04d`, code `40128e5d`) — CORRECT on the gate.** Its `update_drops`
+  rolls `range(0,100) < gfx_quality*100` for `solid || below || wet` (its comment:
+  "the ONE combined branch rolls the gfx gate and spawns the splash for ALL THREE
+  kills (:119-131), the below-screen one included"). Matches Rain.cs:117-131
+  exactly, including the raw `+ 100.0` bottom margin.
+* **d130 (this branch, `ea4863d9`) — WRONG on the gate.** It re-probed
+  solid/wet after the kill and rolled only when a collision probe hit, with the
+  comment "the impact dust fires only on the collision arms … the off-screen half
+  of `:117` spawns nothing". That comment misreads the C# — `:120` is not gated on
+  which disjunct fired. Observable consequences of the old code: (a) below-screen
+  kills consumed NO `Next(100)` draw (a stream divergence on Rain's RNG); (b) no
+  splash on below-screen kills at any quality; (c) a redundant double probe.
+  Its `100.0 / zoom` bottom margin was also a deviation from the raw `+100f`.
+* **g67's one omission (kept from d130):** g67 folded out the `remixWorld` /
+  `gameMenu` kill-only arms ("no port seam: the drop sim runs in-world only",
+  its `update_drops` doc). `remixWorld` DOES hold in-world (the REMIX seed) —
+  folding it out would make remix drops die on solid tiles AND roll the gate,
+  where the C# kills them only below-screen and never rolls. d130 keeps the
+  remix arm; the union must too. `gameMenu` never holds in-world — that fold is
+  safe. g67 also uses `drops.swap_remove(i)` on a compacted Vec; d130's fixed
+  750-slot pool keeps the C#'s slot order (`Main.rain[i]`, `Main.cs:66801`) —
+  the union keeps d130's pool.
+
+### The fix (this branch, this reconcile commit)
+
+`crates/tr-app/src/rain.rs::update_drops`:
+* the `:117` branch now evaluates `solid || below || wet` once (C# `||`
+  short-circuit shape — the wet probe runs only when dry AND on-screen) and
+  rolls `range(0,100) < gfx_quality*100` for every one of the three kills;
+* the remix arm stays kill-only — no roll, no splash (`:110-116`);
+* the bottom margin is the raw `+ 100.0` world px (g67's shape);
+* the stand-in `spawn_splash` stays (g67's real DustPool spawn supersedes it at
+  merge — §3), but the GATE around it is now verbatim.
+
+Witnesses (WRITTEN NOT RUN — code-only mode):
+* `the_impact_gate_rolls_for_all_three_kills` — below-screen / solid / wet kills
+  each consume exactly ONE gate draw at quality 0 (hand-derived stream replay,
+  `StreamReplay`), never splash at quality 0, and the below-screen kill DOES
+  splash at quality 1. The solid/wet fixtures are 128-tall worlds with the
+  floor/liquid at row 80 — the probes clamp their scan at `height - 40`
+  (`Collision.cs:2708`/`:1594`), so a 64-tall world's row-30 floor is invisible
+  (g67's `tall_ground` lesson, adopted).
+* `the_remix_kill_arm_never_rolls` — the remix bottom kill consumes NO draw and
+  leaves no splash.
+* `forced_rain_spawns_drops_that_die_on_the_ground` comment re-pinned: on the
+  64-tall fixture the drops die BELOW-SCREEN (the clamped probes never see the
+  floor) — with the fixed gate that kill still splashes at quality 1, so the
+  steady-state assertion stands for the right reason now.
+
+## 2. The snowing() 3-way — KEEP d130's WIRED version
+
+All three arms port `Main.snowing()` (`Main.cs:13032-13116`). Comparison against
+the C# (re-read at `:13032-13116`):
+
+| aspect | C# | d54 batch-4 `48343a4c` (`world_dust_main.rs`) | g11 `73545f0b` (`main_dust.rs`) | d130 `5ae7f39a` (`snow.rs`) |
+| --- | --- | --- | --- | --- |
+| wiring | `Main.Update` `:17238`, before `EmitDust` `:17247` | **LATENT** — body + witnesses only, "rain.rs stand-in untouched" (its own commit note) | WIRED — `scene_scan::update_scene` before `emit_dust` | WIRED — same slot |
+| RNG slot | bare `Main.rand` (outside every `SwapRandom`) | takes the stream as a parameter (caller picks) | `NamedRngs::global()` — the port's bare-`Main.rand` stand-in | own splitmix stream (the WEATHER-2 per-consumer convention, documented) |
+| budget `:13057` | `Main.snowDust` static (reset `Dust.cs:428`, ++ `:1747`) | `env.snow_dust` param (caller must supply the census) | **live-census stand-in** — `minecart::live_type(pool,76)` per attempt (documented SandStormCount pattern) | **the real counter** — `DustPool.snow_dust` (head reset + the 76 arm's ++), read once per call |
+| tile gate `:13086` | `!t.nactive() && wall == 0`; `nactive()` = active && !actuated (`Tile.cs:240-247`) | **WRONG** — `!t.active()` misses the actuated arm (an actuated tile passes the C# gate, fails d54's) | correct — `!(t.active() && !t.inactive())` | correct — `(t.active() && !t.inactive()) \|\| wall != 0 → continue` |
+| `Math.Sign(0)` `:13099` | three-way sign, 0 at 0 | `signum()` — observation-equal (sqrt(0)=0 factor) but not the C# shape | explicit three-way match | explicit three-way match |
+| type-76 AI (`Dust.cs:1745-1763`) + tails (`:2073/:2081/:2127`) | shared `UpdateDust` | none (d50 lane deferred) | none — "until it lands the flakes ride the generic move/kills" | **ported** — `type_76_arm` + `type_76_tails` on the shared tick |
+| draw (`Main.DrawDust` generic 76) | `Main.cs:38968-39018` | none (draw lane deferred) | none (draw lane deferred) | **ported** — `(4,4)` origin, full-dark kill |
+
+The intensity/budget/attempt-loop/recipe maths are identical in all three
+(the `pow(count/6000, 4-3α)` f64 pow, the inner-`(int)` budget, the `1+50α`
+float loop, the BREAK-not-skip budget gate, the player-fall pull, the two
+edge `Next(5)` pushes, the off-screen y spread, the double `+0.2α` scale,
+the Deerclops fades). The differences are the four rows above.
+
+**KEEP recommendation: d130's `snow.rs`.** It is the only arm that is wired AND
+carries the real `Main.snowDust` counter AND the flake AI AND the draw; g11's
+census-per-attempt is an O(6000) scan inside the attempt loop standing in for a
+counter the port now has, and d54's body is latent with a tile-gate defect. At
+merge, keep-one: `snow.rs` survives; `main_dust.rs::snowing` + `SnowingEnv` and
+`world_dust_main.rs::snowing` + its `SnowingEnv` retire (g11's `TeleportEffect`
+and d54's other 9 styles are OUTSIDE this reconcile — they stay with their lanes).
+The one d130 deviation to carry into ANALYSIS (already recorded there): the
+per-consumer splitmix stream instead of the bare global — the WEATHER-2
+convention, same as the rain rig; if the merger prefers g11's `NamedRngs::global`
+slot instead, that is a stream-convention decision, not a maths one, and either
+way the d54/g11 bodies must not survive beside `snow.rs`.
+
+## 3. The splash union — g67's real splash supersedes d130's stand-in
+
+d130's `spawn_splash` is an explicit stand-in (its doc: "the verbatim pool spawn
++ the splash dust's AI/draw are g67's scope"). g67 (`40128e5d`) landed the real
+lane: `Dust.NewDust(position - velocity, 2, 2, Dust.dustWater())` through the d50
+`DustPool` contract on Rain's own stream, the eight recipe writes
+(`Rain.cs:123-130`: X−2, Y+2, alpha 38, vel×0.1, vel += −velocity×0.025,
+vel.Y −2, scale 0.6, noGravity), the refused-sentinel post-writes, the
+`Dust.cs:1834-1874` water-splash physics arm on the shared tick, and the
+`Main.DrawDust` generic draw (GetAlpha tint, (4,4)-origin rotated quad, GetColor
+overlay, Black kill). **The union at merge:**
+
+* **d130 keeps:** the verbatim fall/draw core — `MakeRain`'s float attempt loop +
+  AnyDanger throttle, `NewRain`'s first-inactive-slot budget (gfxQuality/snow²/
+  atmo⁹), the LIVE `windSpeedCurrent*18` fall velocity, the fixed 750-slot pool
+  in slot order, the remix kill-only arm, the raw `+100f` bottom margin, the
+  XNA byte tint chain, the `Main.snowing()` lane (§2).
+* **g67 supersedes:** the `Splash` vec + `SPLASH_LIFE` + `spawn_splash` stand-in
+  and its draw pass → the real DustPool spawn (`water_splash_arm` +
+  `draw_splashes` + the `update_rain` pool/spawn_ctx hand-off in
+  `world_sim/weather.rs` and `app/frame/draw.rs`). g67's gate reading is already
+  the truth (§1) — after this reconcile fix the two branches' `update_drops`
+  gates are semantically identical, so the conflict reduces to: d130's pool
+  shape + remix arm + inputs struct vs g67's spawn body + physics/draw lane.
+  Transplant g67's `spawn_splash(pool, ctx, …)` body and its `water_splash_arm`/
+  `draw_splashes` into d130's core; do NOT take g67's `update_drops` wholesale
+  (it lacks the remix arm and uses the compacted Vec).
+* **g67's witnesses port over** (recipe replay, gate census, below-screen cull,
+  wet kill, the 1834 chain, shared-loop tick, same-seed byte-equality) — they
+  were derived against the same gate this branch now has. Its `tall_ground`
+  fixture convention is already adopted by §1's witnesses.
+* d130's stand-in-only witnesses that assert `splashes` contents retire with the
+  vec; the gate/remix witnesses (§1) survive unchanged (they pin the roll, not
+  the puff).
+
+## Verification
+
+Code-only mode (per the task brief): no cargo/tests/graphify run. The fix was
+verified by re-reading `Rain.cs:96-133`, `Main.cs:13032-13116`, `Tile.cs:240-247`
+and diffing all three snowing arms + both update_drops bodies line-by-line
+against them. The new witnesses are WRITTEN NOT RUN, hand-derived from the C#
+with the port's `StreamReplay` splitmix replay. ANALYSIS "Rain and weather" +
+PORT_MAP's Rain.cs row re-pinned to the corrected gate; this doc + INDEX row
+record the reconcile.
+
+Commits: the fix + this doc land on `task/W4-d130-weather-ambience` on top of
+`393000e6` (hashes in the branch log / the report back to the Lead).

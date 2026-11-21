@@ -1241,8 +1241,13 @@ scale (`1 + Next(-20,21)*0.01`) then the `waterStyle*3 + Next(3)` frame. The fal
 is the LIVE `(windSpeedCurrent * 18, 14) * scale` (`GetRainFallVelocity`, `:91-94`) — the
 old frozen seed-time wind snapshot + sine term is retired. `Rain.Update` (`:96-133`)
 moves the drop and kills it on the real `Collision.SolidCollision`/`WetCollision` 2x2
-probes or below the view; the impact dust's `Next(100) < gfxQuality*100` roll fires only
-on the collision arms. The pool is the C#'s fixed 750 slots (`Main.cs:66801`) — slot
+probes or below the view; the impact dust's `Next(100) < gfxQuality*100` roll (`:120`)
+fires for ALL THREE kills of the ONE combined `:117` branch — the below-screen kill
+included — and NEVER for the `gameMenu`/`remixWorld` kill-only arms (`:103-116`, which
+only clear `active`). The `+100f` bottom margin is raw world px, unscaled by zoom.
+(W4-d130 reconcile, `docs/research/83-weather-reconcile.md`: the earlier collision-only
+reading was wrong; g67's `006bc04d` reading of `Rain.cs:117-131` is the verified truth.)
+The pool is the C#'s fixed 750 slots (`Main.cs:66801`) — slot
 order IS the draw/update order, never compacted. `DrawRain` (`Main.cs:38800-38826`)
 samples the light at `(int)(pos + 4) >> 4` per axis and tints through the XNA byte chain
 (`GetColor` → `* 0.85` → shimmer `* (1 - shimmerAlpha)`, alpha included), rotated about
@@ -1286,8 +1291,12 @@ on the frame's scene slot — the recorded cadence fold, same as the rest of the
 rig. (b) `Main.maxScreenW` is pinned at its Reach value 1920 (`Main.cs:66715`/`:3715`);
 the HiDef 4096 arm (`:3709`) is dropped. (c) the impact splash is still the port's
 stand-in puff — the verbatim `Dust.NewDust(..., dustWater())` splash + its AI/draw are
-g67's scope (weather-rain-splash); the `Next(100)` roll and the collision-only gate are
-verbatim. (d) `NewRain`'s depth factor (`Rain.cs:174-175`) is computed-and-discarded in
+g67's lane (weather-rain-splash, `40128e5d`/`006bc04d`), which supersedes the stand-in
+at merge: the union is d130's verbatim fall/draw core (fixed 750-slot pool, slot order,
+the remix kill-only arm, the live-wind velocity, the tint chain) + g67's real splash
+spawn/kill-gate (`docs/research/83-weather-reconcile.md`). The `Next(100)` gate is
+verbatim for ALL THREE `:117` kills (the reconcile fix — the earlier collision-only
+gate was a misreading). (d) `NewRain`'s depth factor (`Rain.cs:174-175`) is computed-and-discarded in
 the C# (a bare `Math.Max` statement) — ported as a note, no effect. Still first-pass: no
 lightning bolt geometry and no thunder audio — the flash rides WEATHER-1's tiered
 thunder chain, not a bolt mesh.
