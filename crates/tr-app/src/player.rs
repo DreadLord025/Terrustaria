@@ -2160,6 +2160,17 @@ pub struct Player {
     /// the use arm are the W4-g89 lane's — this branch only carries the
     /// flag through save/load.
     pub used_aegis_fruit: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia
+    /// permanent mining/placement speed (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45417-45422`, `UpdatePermanentBoosters` `:12861-12866` —
+    /// `pickSpeed -= 0.05f; tileSpeed += 0.05f; wallSpeed += 0.05f`). NOT
+    /// cleared by ResetEffects — a permanent unlock (the player-file
+    /// field, ctor `:56083` false, save `:54786` / load `:55260`).
+    /// W4-g88 v9-fold note: the field rides HERE for the superset sidecar
+    /// round-trip (g89c's token-3 position); the three-speed booster row
+    /// and the use arm are the W4-g89c lane's — this branch only carries
+    /// the flag through save/load.
+    pub used_ambrosia: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2966,6 +2977,7 @@ impl Player {
             override_fishing_bobber: -1,
             used_gummy_worm: false,
             used_aegis_fruit: false, // `Player.cs:56079`
+            used_ambrosia: false,    // `Player.cs:56083`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,

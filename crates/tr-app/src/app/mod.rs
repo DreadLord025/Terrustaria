@@ -2972,6 +2972,11 @@ impl App {
                     // `:12857-12860` — player.rs's S1-P-i35 consumer reads
                     // the flag). Older sidecars load false.
                     p.used_gummy_worm = saved.used_gummy_worm;
+                    // W4-g89c fold: the Ambrosia rides the unlock line's
+                    // THIRD token (v9, `Player.cs:55260`; the speed row
+                    // `:12861-12866` stays g89c's). Older sidecars load
+                    // false.
+                    p.used_ambrosia = saved.used_ambrosia;
                     // W4-g90 fold: the permanent artisan-loaf unlock rides
                     // the superset's FOURTH post-dye line
                     // (`Player.ateArtisanBread`, `Player.cs:2048`; vanilla
