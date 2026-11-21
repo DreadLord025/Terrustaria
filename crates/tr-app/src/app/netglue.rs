@@ -3239,10 +3239,11 @@ fn npc_seed(
         | crate::npc::NpcKind::DyeTrader
         | crate::npc::NpcKind::PartyGirl
         | crate::npc::NpcKind::GoblinTinkerer
-        // W4-d120 — the three town kinds seed like the town roster.
+        // W4-d120 — the four town kinds seed like the town roster.
         | crate::npc::NpcKind::SantaClaus
         | crate::npc::NpcKind::Truffle
-        | crate::npc::NpcKind::Steampunker => crate::npc::Npc::spawn_guide(world, tx)?,
+        | crate::npc::NpcKind::Steampunker
+        | crate::npc::NpcKind::Cyborg => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
@@ -3287,7 +3288,9 @@ fn npc_seed(
         | crate::npc::NpcKind::BoundWizard
         | crate::npc::NpcKind::BoundMechanic
         | crate::npc::NpcKind::WebbedStylist
-        | crate::npc::NpcKind::SleepingGolfer => {
+        | crate::npc::NpcKind::SleepingGolfer
+        // W4-d120 — the bound Tavernkeep seeds like the bound forms.
+        | crate::npc::NpcKind::BartenderUnconscious => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         crate::npc::NpcKind::EaterOfSouls

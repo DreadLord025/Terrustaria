@@ -2172,7 +2172,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Force Bubble",
     },
     // W4-d120 — AddTownNPCs_Manual (BestiaryDatabaseNPCsPopulator.cs:814-
-    // 817): the three town kinds' TownNPC entries; the names ride the
+    // 822): the four town kinds' TownNPC entries; the names ride the
     // en-US NPCs.json rows (`NPCName.<const>`).
     BestiaryEntryDef {
         credit_id: "SantaClaus",
@@ -2197,6 +2197,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Steampunker",
+    },
+    BestiaryEntryDef {
+        credit_id: "Cyborg",
+        net_id: 209,
+        kind: NpcKind::Cyborg,
+        variant: None,
+        quick_unlock: false,
+        name: "Cyborg",
     },
 ];
 
@@ -2363,6 +2371,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // bestiary draw modifiers hide it (`NPCID.cs:3721-3725`), so it
         // never has an entry of its own.
         NpcKind::SleepingAngler => NpcKind::Angler,
+        // W4-d120 — the bound Tavernkeep rides the Tavernkeep's row: the
+        // vanilla's draw modifier Hide=true (`NPCID.cs:5178-5184`), the
+        // Sleeping Angler precedent.
+        NpcKind::BartenderUnconscious => NpcKind::DD2Bartender,
         // The bound Wizard/Mechanic ride their freed rows (the C#'s
         // bestiary ids 106/123 have no entries of their own — the bound
         // Goblin 105 has none either).

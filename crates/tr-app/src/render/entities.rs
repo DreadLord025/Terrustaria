@@ -800,11 +800,12 @@ fn npc_add_height(n: &Npc) -> f32 {
                 | DyeTrader
                 | PartyGirl
                 | TravellingMerchant
-                // W4-d120 — the three town kinds' `townNPC = true` rows
+                // W4-d120 — the four town kinds' `townNPC = true` rows
                 // (the sitting-row gate below, `Main.cs:22169`).
                 | SantaClaus
                 | Truffle
                 | Steampunker
+                | Cyborg
         );
     let v = match n.kind {
         // `:22011` — 125/126 (the Twins) 30, `:22034` 126 again.
@@ -874,8 +875,10 @@ fn npc_add_height(n: &Npc) -> f32 {
         // `:22169` 269/270/271/274/277 — the Painted/vanity town ids' -2.
         // `:22174` the `townNPC && ai[0] == 5` sitting row: -4 as a flat
         // shift, -6 for the Mechanic's 124 and -14 for the town slimes.
-        // W4-d120 — `:22021-22024` the Steampunker's (178) `num = 2f`.
+        // W4-d120 — `:22021-22024` the Steampunker's (178) `num = 2f`,
+        // `:22152-22155` the bound Tavernkeep's (579) `num = -2f`.
         Steampunker => 2.0,
+        BartenderUnconscious => -2.0,
         _ => 0.0,
     };
     // `:22174`: the `townNPC && ai[0] == 5` sitting row — a `num -= 4`
@@ -3181,10 +3184,18 @@ pub(crate) fn draw_npcs(
             // ~73-px atlas headroom, the wyvern/d35 precedent): npc_sheet
             // returns None and the draw skips; the arms keep the vanilla
             // TextureAssets.Npc[type] ids for the atlas-repack wave.
-            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => {
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // The bound Tavernkeep: the flat 34x8 body, one row (the
+            // Sleeping Angler's shape; sheet deferred).
+            NpcKind::BartenderUnconscious => (
+                assets.npc_sheet(579),
+                assets.npc_sheet(579).map_or(8.0, |t| t.h),
+                [34.0, 8.0],
+                [n.x, n.y],
+            ),
         };
         let Some(tex) = tex else {
             continue;

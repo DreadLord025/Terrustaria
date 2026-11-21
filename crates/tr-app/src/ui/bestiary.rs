@@ -1595,11 +1595,14 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
-        // W4-d120 — the three town kinds' portraits rest the town twin's
-        // 48x38 box (the Merchant precedent).
-        (NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker, _) => {
+        // W4-d120 — the four town kinds' portraits rest the town twin's
+        // 48x38 box (the Merchant precedent); the bound Tavernkeep folds
+        // onto the Tavernkeep's entry (never drawn alone) — its arm keeps
+        // the match exhaustive at the flat 34x8 box.
+        (NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg, _) => {
             (sheet_i, 48.0, 38.0, 48.0, white)
         }
+        (NpcKind::BartenderUnconscious, _) => (sheet_i, 8.0, 34.0, 8.0, white),
     }
 }
 
