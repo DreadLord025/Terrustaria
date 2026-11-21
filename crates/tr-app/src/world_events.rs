@@ -333,6 +333,11 @@ pub(crate) fn tablet_destroyed(ev: &mut WorldEvents) {
 /// `WorldClear`'s family (`Main.cs:52245-52247`'s per-event clears —
 /// `LanternNight.WorldClear`/`BirthdayParty.WorldClear`; the ritual's
 /// `delay`/`recheck` ride the world's load reset, `WorldFile.cs:163`).
+/// W4-f40 RETIRE receipt (research/105 §9.3, c39 114 §11 item 2): this
+/// body leaves `next_night_is_lantern_night` alone — matches
+/// `LanternNight.WorldClear` (`LanternNight.cs:119-125`) and c39's
+/// `world_clear`; the clear-then-restore call sites are canonical here
+/// (`swap_world`/`client_install_world`, NOT `enter_loaded_world`).
 pub(crate) fn world_clear(ev: &mut WorldEvents) {
     ev.manual_lanterns = false;
     ev.genuine_lanterns = false;
