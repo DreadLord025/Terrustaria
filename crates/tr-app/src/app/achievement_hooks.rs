@@ -184,12 +184,17 @@ pub(crate) fn on_player_entered_world(app: &mut App) {
 /// NPC's type (no `townNPC` filter — the C# array is `NPCID.Count` wide), then
 /// the 25-id housed roster fires progression 17 (REAL_ESTATE_AGENT) and the
 /// 8 town slimes fire 26 (ALL_TOWN_SLIMES). Both tests are independent `if`s.
-/// The port's roster is partial: Truffle 160, Steampunker 178, Cyborg 209,
-/// Pirate 229, DD2 Bartender 550 and all eight town slimes (670/678-684) have
-/// no NpcKind rows, so both rows are unreachable in play until those kinds
-/// land — the wire is the faithful check, cited like the blood-moon no-op
-/// wires. `npc.home.is_none()` is the port's `homeless` flag
-/// (`world_sim/npcs.rs`'s arrival writes it).
+/// The port's roster is partial: Truffle 160, Steampunker 178, Cyborg 209 and
+/// Pirate 229 (four kinds) plus all eight town slimes (670/678-684) have no
+/// NpcKind rows, so both rows are unreachable in play until those kinds land
+/// — the wire is the faithful check, cited like the blood-moon no-op wires.
+/// DD2 Bartender 550 IS ported (`NpcKind::DD2Bartender`, bestiary `net_id:
+/// 550`), so it is NOT a missing roster id (the W4-c36 re-probe corrected the
+/// earlier "five missing kinds" census). The scan reads `n.kind.net_id()`,
+/// which resolves through `bestiary::ENTRIES` (`npc/data.rs:1186`) — there is
+/// NO hardcoded id list, so the check activates automatically the moment the
+/// d36/d39/d41/d43 kind bands land their bestiary rows. `npc.home.is_none()`
+/// is the port's `homeless` flag (`world_sim/npcs.rs`'s arrival writes it).
 pub(crate) fn check_real_estate_and_town_slimes(app: &mut App) {
     let mut housed: Vec<i32> = app
         .npcs
@@ -435,11 +440,11 @@ mod tests {
 
     /// W4-c36 DOC-SWEEP — `WorldGen.CheckAchievement_RealEstateAndTownSlimes`
     /// (`WorldGen.cs:5659-5677`): every ported town kind housed still leaves
-    /// REAL_ESTATE_AGENT open (Truffle/Steampunker/Cyborg/Pirate/Bartender
-    /// have no NpcKind rows), a homeless resident does not count, and the
-    /// town-slime row never fires without the eight slime kinds. The wire
-    /// is faithful but unreachable until the missing kinds land.
-    /// WRITTEN NOT RUN (code-only mode).
+    /// REAL_ESTATE_AGENT open (Truffle/Steampunker/Cyborg/Pirate have no
+    /// NpcKind rows — four kinds; DD2 Bartender 550 IS ported), a homeless
+    /// resident does not count, and the town-slime row never fires without
+    /// the eight slime kinds. The wire is faithful but unreachable until the
+    /// missing kinds land. WRITTEN NOT RUN (code-only mode).
     #[test]
     fn w4_c36_the_real_estate_check_needs_the_full_roster() {
         use crate::npc::{Npc, NpcKind};
@@ -465,7 +470,14 @@ mod tests {
             NpcKind::TaxCollector,
             NpcKind::Zoologist,
             NpcKind::Princess,
+            // W4-c36 re-probe: the Bartender IS ported (DD2Bartender, the
+            // bestiary row's net_id 550) — he counts toward the roster.
+            NpcKind::DD2Bartender,
         ];
+        // The scan reads `kind.net_id()` (bestiary-resolved, no hardcoded
+        // list) — pin the Bartender's id so the roster arm stays live when
+        // the d36/d41 kind bands land.
+        assert_eq!(NpcKind::DD2Bartender.net_id(), 550);
         for (i, kind) in ported.iter().enumerate() {
             let mut n = Npc::new(*kind, 32.0, 100.0, 1, 0.0);
             n.hp = n.max_hp;
@@ -473,7 +485,7 @@ mod tests {
             app.npcs.push(n);
         }
         check_real_estate_and_town_slimes(&mut app);
-        assert!(!done(&app, "REAL_ESTATE_AGENT"), "the five missing kinds keep it open");
+        assert!(!done(&app, "REAL_ESTATE_AGENT"), "the four missing kinds keep it open");
         assert!(!done(&app, "ALL_TOWN_SLIMES"), "no slime kinds exist");
         // A homeless resident is not housed: clearing one home changes
         // nothing observable here (the row was already open), but the

@@ -749,8 +749,12 @@ mod tests {
         assert_eq!(m.notify_progression(1), Some("YOU_CAN_DO_IT"));
         // An event id no row listens for is a no-op.
         assert_eq!(m.notify_progression(0), None);
-        // BOOK_WORM's row exists even though its notify site is blocked on
-        // S1-F-15 (`kills_needed_for`); the manager surface still dispatches.
+        // BOOK_WORM (progression 29 — `AchievementInitializer.cs:378-380`;
+        // there is no "bullseye" row). The old S1-F-15 tier-4 denominator
+        // bug is FIXED on main (`kills_needed_for` falls back to the 50
+        // default), so the gate is no longer blocked — the remaining
+        // early-100% deviation is the town/critter provider fold (c37's
+        // provider-enum task), not the ladder.
         assert_eq!(m.notify_progression(29), Some("BOOK_WORM"));
         // I_AM_LOOT rides the `Peek` CustomFlag (`:347`).
         assert_eq!(m.notify_custom("Peek"), Some("I_AM_LOOT"));
