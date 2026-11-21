@@ -7561,6 +7561,32 @@ branch can merge; the packing is NOT attempted here. The measurement scripts
 are session scratch (`Temp/opencode/l8b-atlas/{lzx_py,measure_atlas}.py`), not
 repo code.
 
+### Drill ability half + the mining-write split (W4-d8 final-phase, 2026-11-21)
+
+**Code-only mode** — no compiler/test invocation; the port was re-read against
+`Mount.cs` line-by-line and the witnesses **written, not run** (2 new:
+`w4_d8_the_drill_ability_math` + the extended crosshair witness). The Drill (8)
+mining payload splits along the Scutlix precedent's line (research/97 §1):
+
+- **Ported (the self-contained ability half)**: `DrillMountData`/`DrillBeam`
+  (`Mount.cs:20-58`), `UpdateDrill`'s cooldown tick + diode lerp (`:3036-3057`),
+  `AimAbility`'s Drill case (`:5466-5494`), `UseAbility`'s toggle + 453 spawn
+  tuple (`:3314-3335`), `UpdateEffects`'s no-crosshair clear (`:5010-5015`).
+  Wired into the 453 crosshair aim/release (`ai_mount_crosshair`) and the
+  player per-tick mount block (`Player.cs:26683-26686`). Zero draws.
+- **Deferred (the mining WRITE, M2-MOUNT-4)**: `UseDrill` (`:3059-3180`) —
+  `PickTile`/`PickWall` (the App-level `pick_tile_hit`/`wall_hammer_tick`
+  seams), the altar `Hurt` (`PlayerDeathReason.ByOther(4)`, `statLife/2`),
+  the dust-230 sparks, and **`Tile.SmoothSlope`** (`Tile.cs:792-865`, the
+  4-neighbour slope picker — UNPORTED, the new blocker; the port has
+  `WorldGen.SlopeTile`/`PoundTile` but not this). The `ItemCheck_HandleMount`
+  press path (`Player.cs:52922-52950`, the `noItems`/`StartChanneling`/
+  release-latch → 453 spawn) lands with the write. `use_ability_drill`
+  already returns the spawn tuple ready for it.
+- **`outerRingRotation`** (`Mount.cs:42`) is carried in the payload but ticked
+  by the unported draw seam (`UpdateFrame` `:3524-3533`, `Draw` `:5811`) — it
+  stays 0 until the mount draw layer activates it.
+
 ## Projectile pool (M4-PROJ-1)
 
 `crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
