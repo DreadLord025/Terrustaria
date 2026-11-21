@@ -97,6 +97,21 @@ pub enum FindFrameExtra7cKind {
     /// `NPCID.Salamander` = 498 (`NPCID.cs:11669`) — the 498..506
     /// nine-kind group (`NPC.cs:69849`).
     Salamander,
+    /// `NPCID.Salamander2` = 499 (`NPCID.cs:11671`) — the same group
+    /// (`NPC.cs:69850`).
+    Salamander2,
+    /// `NPCID.Salamander3` = 500 (`NPCID.cs:11673`) — the same group
+    /// (`NPC.cs:69851`).
+    Salamander3,
+    /// `NPCID.Salamander4` = 501 (`NPCID.cs:11675`) — the same group
+    /// (`NPC.cs:69852`).
+    Salamander4,
+    /// `NPCID.Salamander5` = 502 (`NPCID.cs:11677`) — the same group
+    /// (`NPC.cs:69853`).
+    Salamander5,
+    /// `NPCID.Salamander6` = 503 (`NPCID.cs:11679`) — the same group
+    /// (`NPC.cs:69854`).
+    Salamander6,
 }
 
 impl FindFrameExtra7cKind {
@@ -108,18 +123,29 @@ impl FindFrameExtra7cKind {
             Self::GiantShelly => 496,
             Self::GiantShelly2 => 497,
             Self::Salamander => 498,
+            Self::Salamander2 => 499,
+            Self::Salamander3 => 500,
+            Self::Salamander4 => 501,
+            Self::Salamander5 => 502,
+            Self::Salamander6 => 503,
         }
     }
 
     /// `Main.npcFrameCount[type]` (`Main.cs:67082`'s initializer,
     /// counted entry-by-entry): 494/495 = 8 (`:67132`'s 490-499 row,
-    /// entries 5/6), 496/497 = 12 (`:67132`, entries 7/8), 498 = 11
-    /// (`:67132`, entry 9).
+    /// entries 5/6), 496/497 = 12 (`:67132`, entries 7/8), 498/499 =
+    /// 11 (`:67132`, entries 9/10), 500..503 = 11 (`:67133`'s 500-509
+    /// row, entries 1-4).
     pub fn frame_count(self) -> u32 {
         match self {
             Self::Crawdad | Self::Crawdad2 => 8,
             Self::GiantShelly | Self::GiantShelly2 => 12,
-            Self::Salamander => 11,
+            Self::Salamander
+            | Self::Salamander2
+            | Self::Salamander3
+            | Self::Salamander4
+            | Self::Salamander5
+            | Self::Salamander6 => 11,
         }
     }
 }
@@ -134,6 +160,11 @@ pub fn find_frame_kind_extra7c(vanilla_type: i16) -> Option<FindFrameExtra7cKind
         496 => FindFrameExtra7cKind::GiantShelly,
         497 => FindFrameExtra7cKind::GiantShelly2,
         498 => FindFrameExtra7cKind::Salamander,
+        499 => FindFrameExtra7cKind::Salamander2,
+        500 => FindFrameExtra7cKind::Salamander3,
+        501 => FindFrameExtra7cKind::Salamander4,
+        502 => FindFrameExtra7cKind::Salamander5,
+        503 => FindFrameExtra7cKind::Salamander6,
         _ => return None,
     })
 }
@@ -317,7 +348,12 @@ pub fn find_frame_extra7c(kind: FindFrameExtra7cKind, s: &mut FrameState, i: &Fr
         // row, wrapping at the STRICT row > 7 back to 0 (rows 8..10
         // are the attack/air poses); the air (`:69902-69906`) zeroes
         // the counter and pins row 10. No rotation write.
-        FindFrameExtra7cKind::Salamander => {
+        FindFrameExtra7cKind::Salamander
+        | FindFrameExtra7cKind::Salamander2
+        | FindFrameExtra7cKind::Salamander3
+        | FindFrameExtra7cKind::Salamander4
+        | FindFrameExtra7cKind::Salamander5
+        | FindFrameExtra7cKind::Salamander6 => {
             if i.vy == 0.0 {
                 // `:69858-69866`.
                 if i.direction == 1 {
@@ -389,6 +425,11 @@ mod tests {
             FindFrameExtra7cKind::GiantShelly,
             FindFrameExtra7cKind::GiantShelly2,
             FindFrameExtra7cKind::Salamander,
+            FindFrameExtra7cKind::Salamander2,
+            FindFrameExtra7cKind::Salamander3,
+            FindFrameExtra7cKind::Salamander4,
+            FindFrameExtra7cKind::Salamander5,
+            FindFrameExtra7cKind::Salamander6,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -513,37 +554,47 @@ mod tests {
     /// [0,0,1,1,1,2,2,2,3,3,3,4]); the attack ladder pins rows 8/9/8
     /// off the ai[1] <12/<34 bands with the UNCONDITIONAL direction
     /// copy; the idle pins row 0 WITHOUT touching the counter; the
-    /// air pins row 10.
+    /// air pins row 10. ALL SIX landed salamanders ride the ONE
+    /// group machine (the 498..506 case list).
     #[test]
     fn f26s7c_the_salamander_walk_ladder_and_idle_hold() {
-        let k = FindFrameExtra7cKind::Salamander;
-        assert_eq!(
-            rows_over(k, input(2.0, 0.0), 12),
-            vec![0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4]
-        );
-        // The attack ladder: ai[1] 5/20/40 → rows 8/9/8, sprite -1.
-        for (a1, row) in [(5.0f32, 8u32), (20.0, 9), (40.0, 8)] {
-            let mut s = FrameState { row: 3, counter: 2.0, sprite_dir: 1, rotation: 0.0 };
-            let i = FrameInput {
-                direction: -1,
-                ai: [0.0, a1, 5.0, 0.0],
-                ..input(2.0, 0.0)
-            };
-            find_frame_extra7c(k, &mut s, &i);
-            assert_eq!((s.row, s.counter, s.sprite_dir), (row, 0.0, -1));
+        for k in [
+            FindFrameExtra7cKind::Salamander,
+            FindFrameExtra7cKind::Salamander2,
+            FindFrameExtra7cKind::Salamander3,
+            FindFrameExtra7cKind::Salamander4,
+            FindFrameExtra7cKind::Salamander5,
+            FindFrameExtra7cKind::Salamander6,
+        ] {
+            assert_eq!(
+                rows_over(k, input(2.0, 0.0), 12),
+                vec![0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4]
+            );
+            // The attack ladder: ai[1] 5/20/40 → rows 8/9/8, sprite -1.
+            for (a1, row) in [(5.0f32, 8u32), (20.0, 9), (40.0, 8)] {
+                let mut s = FrameState { row: 3, counter: 2.0, sprite_dir: 1, rotation: 0.0 };
+                let i = FrameInput {
+                    direction: -1,
+                    ai: [0.0, a1, 5.0, 0.0],
+                    ..input(2.0, 0.0)
+                };
+                find_frame_extra7c(k, &mut s, &i);
+                assert_eq!((s.row, s.counter, s.sprite_dir), (row, 0.0, -1));
+            }
+            // The idle: row 0, counter 2.5 HELD.
+            let mut s = FrameState { row: 3, counter: 2.5, sprite_dir: 1, rotation: 0.0 };
+            find_frame_extra7c(k, &mut s, &input(0.0, 0.0));
+            assert_eq!((s.row, s.counter), (0, 2.5));
+            // The air: row 10, counter zeroed.
+            let mut s = FrameState { row: 3, counter: 2.5, sprite_dir: 1, rotation: 0.0 };
+            find_frame_extra7c(k, &mut s, &input(2.0, -2.0));
+            assert_eq!((s.row, s.counter), (10, 0.0));
         }
-        // The idle: row 0, counter 2.5 HELD.
-        let mut s = FrameState { row: 3, counter: 2.5, sprite_dir: 1, rotation: 0.0 };
-        find_frame_extra7c(k, &mut s, &input(0.0, 0.0));
-        assert_eq!((s.row, s.counter), (0, 2.5));
-        // The air: row 10, counter zeroed.
-        let mut s = FrameState { row: 3, counter: 2.5, sprite_dir: 1, rotation: 0.0 };
-        find_frame_extra7c(k, &mut s, &input(2.0, -2.0));
-        assert_eq!((s.row, s.counter), (10, 0.0));
     }
 
-    /// The seam maps exactly this batch's ids — the no-case 493/507,
-    /// the port-covered 490 and the next-batch 499 stay `None`.
+    /// The seam maps exactly this wave's landed ids — the no-case
+    /// 493/507, the port-covered 490 and the next-batch 504 stay
+    /// `None`.
     #[test]
     fn f26s7c_the_seam_maps_exactly_the_slice() {
         for (id, k) in [
@@ -552,11 +603,16 @@ mod tests {
             (496, FindFrameExtra7cKind::GiantShelly),
             (497, FindFrameExtra7cKind::GiantShelly2),
             (498, FindFrameExtra7cKind::Salamander),
+            (499, FindFrameExtra7cKind::Salamander2),
+            (500, FindFrameExtra7cKind::Salamander3),
+            (501, FindFrameExtra7cKind::Salamander4),
+            (502, FindFrameExtra7cKind::Salamander5),
+            (503, FindFrameExtra7cKind::Salamander6),
         ] {
             assert_eq!(find_frame_kind_extra7c(id), Some(k));
             assert_eq!(k.vanilla_type(), id);
         }
-        for id in [490, 493, 499, 507, 508] {
+        for id in [490, 493, 504, 507, 508] {
             assert_eq!(find_frame_kind_extra7c(id), None, "type {id}");
         }
     }
