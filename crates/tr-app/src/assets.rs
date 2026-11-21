@@ -415,6 +415,17 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `Main.DrawLoadoutButtons:41950`) — a 3x3 grid (frameX = idle/active/
         // hover, frameY = the loadout index).
         "Extra_259",
+        // W4-g55: the loadout-share corner badges (`ItemSlot.cs:2733-2746`):
+        // Extra_310..312 = "this live item is shared FROM loadout 1/2/3"
+        // (`num18 = CurrentLoadoutIndex`), Extra_313..315 = "this air slot is
+        // filled BY a shared item from loadout 1/2/3" (`num16 =
+        // sharedFromLoadout`). Single-frame sheets drawn at the slot corner.
+        "Extra_310",
+        "Extra_311",
+        "Extra_312",
+        "Extra_313",
+        "Extra_314",
+        "Extra_315",
         // S1-L-8b: the `TextureAssets.GlowMask` strips the mount rows name —
         // SpookyWood 283 (`Mount.cs:1980`), WoF goat 284 (`:2095`), LavaShark
         // 285 (`:2187`), Bat 370 (`:2474`). They load as `Images/Glow_{id}`
@@ -1986,6 +1997,11 @@ pub struct Lookups {
     /// (`Main.DrawLoadoutButtons`, `Main.cs:41950`) — `Frame(3, 3, frameX, i)`,
     /// frameX 0 idle / 1 active / 2 hover-overlay, frameY the loadout index.
     pub extra_259: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[310..=315]`: the loadout-share corner badges
+    /// (`ItemSlot.cs:2733-2746`). Index 0..2 = the live-item badges
+    /// (`Clamp(310 + CurrentLoadoutIndex, 310, 312)`), index 3..5 = the
+    /// shared-ghost badges (`Clamp(313 + sharedFromLoadout, 313, 315)`).
+    pub loadout_share_badges: [Option<tr_render::SheetRect>; 6],
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -2410,6 +2426,9 @@ impl Lookups {
             extra_299: atlas.sheet("Extra_299").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
             extra_259: atlas.sheet("Extra_259").copied(),
+            loadout_share_badges: std::array::from_fn(|i| {
+                atlas.sheet(&format!("Extra_{}", 310 + i)).copied()
+            }),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),

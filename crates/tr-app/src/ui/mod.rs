@@ -725,6 +725,9 @@ pub fn draw_hud(
     // `Main.loadoutMouseOver` (`Main.cs:41990`) — the hovered-button latch the
     // `DoStatefulTickSound` 12 cue reads and writes.
     loadout_mouse_over: &mut i32,
+    // The LIVE equip set's share word (`App.equip_share_flags`) — the
+    // Extra_310-312 badge on a non-air shared slot (`ItemSlot.cs:2485-2488`).
+    equip_share_flags: u32,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -857,19 +860,20 @@ pub fn draw_hud(
     let mut loadout_hover_text: Option<String> = None;
     if inventory_open {
         // `GetEffectiveArmor`/`GetEffectiveDye` (`Player.cs:5690-5764`): the
-        // shared item for each AIR equip slot (the ghost icon). A live slot
-        // returns itself (`sharedFromLoadout == None`), so only the genuinely
-        // shared ones carry `Some`.
-        let shared_armor: [Option<ItemSlot>; 20] = std::array::from_fn(|i| {
+        // shared item + its source loadout for each AIR equip slot (the ghost
+        // icon + the Extra_313-315 badge). A live slot returns itself
+        // (`sharedFromLoadout == None`), so only the genuinely shared ones
+        // carry `Some`.
+        let shared_armor: [Option<(ItemSlot, usize)>; 20] = std::array::from_fn(|i| {
             player.and_then(|p| {
                 let (item, from) = p.get_effective_armor(i);
-                from.map(|_| item)
+                from.map(|f| (item, f))
             })
         });
-        let shared_dye: [Option<ItemSlot>; 10] = std::array::from_fn(|i| {
+        let shared_dye: [Option<(ItemSlot, usize)>; 10] = std::array::from_fn(|i| {
             player.and_then(|p| {
                 let (item, from) = p.get_effective_dye(i);
-                from.map(|_| item)
+                from.map(|f| (item, f))
             })
         });
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
@@ -920,6 +924,7 @@ pub fn draw_hud(
             loadout_flash,
             &shared_armor,
             &shared_dye,
+            equip_share_flags,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;

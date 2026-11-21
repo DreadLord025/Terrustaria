@@ -156,6 +156,19 @@ pub fn can_loadout_share_at(context: i32) -> bool {
     matches!(context, 8 | 9 | 10 | 11 | 12)
 }
 
+/// The share-badge sheet's slot in `Lookups::loadout_share_badges`
+/// (`ItemSlot.cs:2736`/`:2743`): the live-item badge is
+/// `(int)MathHelper.Clamp(310 + num18, 310, 312)` with `num18 =
+/// CurrentLoadoutIndex` (`:2487`); the shared-ghost badge is
+/// `(int)MathHelper.Clamp(313 + num16, 313, 315)` with `num16 =
+/// sharedFromLoadout` (`:2482`). The port's table indexes 0..5 = Extra_310..315,
+/// so the clamp's upper bound is the `min(2)` here (the indices are 0..2 by
+/// construction — the lower bound is a no-op).
+pub fn share_badge_index(loadout: usize, ghost: bool) -> usize {
+    let i = loadout.min(2);
+    if ghost { 3 + i } else { i }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,5 +211,20 @@ mod tests {
         assert_ne!(c0, c1);
         assert_ne!(c1, c2);
         assert_eq!(c0[3], 255);
+    }
+
+    /// W4-g55 — the share-badge sheet pick (`ItemSlot.cs:2736`/`:2743`):
+    /// the live-item badge is Extra_310+CurrentLoadoutIndex (table 0..2),
+    /// the shared-ghost badge Extra_313+sharedFromLoadout (table 3..5);
+    /// both clamp at the 3-loadout bound (`MathHelper.Clamp`).
+    #[test]
+    fn w4_g55_the_share_badge_sheets_follow_the_loadout_index() {
+        for i in 0..3 {
+            assert_eq!(share_badge_index(i, false), i, "Extra_{}", 310 + i);
+            assert_eq!(share_badge_index(i, true), 3 + i, "Extra_{}", 313 + i);
+        }
+        // The Clamp upper bound (310+num18 <= 312, 313+num16 <= 315).
+        assert_eq!(share_badge_index(7, false), 2);
+        assert_eq!(share_badge_index(7, true), 5);
     }
 }

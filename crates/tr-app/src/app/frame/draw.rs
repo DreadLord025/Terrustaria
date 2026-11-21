@@ -1790,6 +1790,7 @@ impl App {
                                 settings.flashy_effects_interface,
                             ),
                             &mut self.loadout_mouse_over,
+                            self.equip_share_flags,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
