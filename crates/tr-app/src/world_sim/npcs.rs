@@ -642,9 +642,20 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
     }
     if handed {
         // `:40251-40258`: the day flags — the world's `anglerQuestFinished`
-        // and this player's slot in `anglerWhoFinishedToday`.
+        // and this player's slot in `anglerWhoFinishedToday`. W4-f45: the
+        // name list rides the World (the `.wld` flags block carries it); the
+        // single player's name joins it (`Main.cs:40258`).
         app.world.angler_quest_finished = true;
         app.world.angler_quest_turned_in = true;
+        if !app
+            .world
+            .angler_who_finished_today
+            .contains(&app.player_name)
+        {
+            app.world
+                .angler_who_finished_today
+                .push(app.player_name.clone());
+        }
         // `AchievementsHelper.HandleAnglerService` (`:40260`,
         // `AchievementsHelper.cs:411-418`): SERVANT_IN_TRAINING (the `Finish`
         // flag) and the four `Finish` counters. The rows share the condition
@@ -713,9 +724,10 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
     }
     app.world.angler_swap_pending = false;
     // `:3760-3761`: the day reset (`anglerWhoFinishedToday.Clear()` collapses
-    // to the single-player flag).
+    // to the single-player flag; W4-f45 clears the name list too).
     app.world.angler_quest_finished = false;
     app.world.angler_quest_turned_in = false;
+    app.world.angler_who_finished_today.clear();
     let gates = crate::angler::QuestGates {
         hard_mode: app.world.hard_mode,
         // `WorldGen.crimson` — W4-f45 claims the world's evil flavour
@@ -4935,6 +4947,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // REAL_ESTATE_AGENT (17, `:5671`) on the full
                         // `CheckAchievement_RealEstateAndTownSlimes` roster.
                         let _ = app.notify_progression_net(8);
+                        // W4-f45 — `WorldGen.cs:5577-5608`: the arrival's
+                        // per-type unlock switch. The six ported kinds latch
+                        // their `unlocked*Spawn` flag (the `SpawnAllowed_*`
+                        // overrides read them back); the Truffle (160) and
+                        // the town slimes wait on their unported kinds.
+                        match kind {
+                            NpcKind::Merchant => app.world.unlocked_merchant_spawn = true, // case 17
+                            NpcKind::Nurse => app.world.unlocked_nurse_spawn = true, // case 18
+                            NpcKind::ArmsDealer => app.world.unlocked_arms_dealer_spawn = true, // case 19
+                            NpcKind::Demolitionist => app.world.unlocked_demolitionist_spawn = true, // case 38
+                            NpcKind::DyeTrader => app.world.unlocked_dye_trader_spawn = true, // case 207
+                            NpcKind::PartyGirl => app.world.unlocked_party_girl = true, // case 208
+                            NpcKind::Princess => app.world.unlocked_princess = true, // case 663
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -5339,6 +5366,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         app.rngs.stream(crate::app::RngKey::UpdateNpcs),
                     );
                     let _ = app.notify_progression_net(16);
+                }
+                // W4-f45 — `NPC.cs:79411-79414` (case 50): the first King
+                // Slime kill unlocks the Nerdy Slime (`unlockedSlimeBlueSpawn`
+                // + `ViolentlySpawnNerdySlime`). The port has no Nerdy Slime
+                // kind yet, so the unlock latch rides the file; the spawn
+                // itself waits on the town-slime roster.
+                if !app.world.unlocked_slime_blue_spawn {
+                    app.world.unlocked_slime_blue_spawn = true;
                 }
             }
             NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,

@@ -135,6 +135,24 @@ impl App {
         self.world.lantern_night_next_night_is_genuine =
             self.world_events.next_night_is_lantern_night;
         self.world.wind_speed_target = self.wind.speed_target;
+        // W4-f45 Ph4 — `BannerSystem.Save` (`BannerSystem.cs:172-186`): the
+        // sparse kill map densifies into the C#'s 293-entry array (the banner
+        // ids ARE the array indices — `bestiary::npc_to_banner` mirrors
+        // `NPCtoBanner`). The claimable array stays unowned.
+        for (banner, kills) in self.banners.pairs() {
+            if banner >= 0 && (banner as usize) < self.world.banner_kill_counts.len() {
+                self.world.banner_kill_counts[banner as usize] = kills;
+            }
+        }
+        // `Main.anglerWhoFinishedToday` (`WorldFile.cs:1329-1333`): the port's
+        // single player collapses the list to the bool `angler_quest_turned_in`
+        // — when it is set, the one player's name rides the list.
+        self.world.angler_who_finished_today.clear();
+        if self.world.angler_quest_turned_in {
+            self.world
+                .angler_who_finished_today
+                .push(self.player_name.clone());
+        }
         // `SaveWorldFlags:1251`: the LastPlayed slot is `DateTime.UtcNow.
         // ToBinary()` at save time — the loaded file's value is never the
         // writer's source. Both format branches below read the field, so

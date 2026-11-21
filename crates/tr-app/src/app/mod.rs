@@ -3482,13 +3482,25 @@ impl App {
         let seeded_chests = crate::chest_gen::store_from_records(&world, &sections.native.chests);
         // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
         // v8 section's recorded counts restore the tally; the vanilla rides
-        // them inside the world-flags block.
-        let seeded_banners: Vec<(i32, i32)> = sections
-            .native
-            .banners
-            .iter()
-            .map(|b| (b.banner, b.kills))
-            .collect();
+        // them inside the world-flags block. W4-f45: a `.wld` load reads the
+        // dense kill array out of the flags block (`World.banner_kill_counts`)
+        // and re-sparsifies it (the non-zero entries, ascending banner id).
+        let seeded_banners: Vec<(i32, i32)> = if sections.from_wld {
+            world
+                .banner_kill_counts
+                .iter()
+                .enumerate()
+                .filter(|(_, &kills)| kills != 0)
+                .map(|(banner, &kills)| (banner as i32, kills))
+                .collect()
+        } else {
+            sections
+                .native
+                .banners
+                .iter()
+                .map(|b| (b.banner, b.kills))
+                .collect()
+        };
         let world_chests = if sections.from_wld {
             let mut loaded = crate::chest::from_wld(&sections.data.chests);
             // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the

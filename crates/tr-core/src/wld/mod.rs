@@ -1778,6 +1778,18 @@ mod tests {
         world.crimson = true;
         world.dungeon_x = 123;
         world.dungeon_y = 456;
+        // W4-f45 Ph4: the banner tally (two non-zero entries at their dense
+        // indices), the seven spawn unlocks. The angler name list stays empty
+        // here (its variable-length round-trip has its own witness below).
+        world.banner_kill_counts[1] = 50;
+        world.banner_kill_counts[69] = 7;
+        world.unlocked_slime_blue_spawn = true;
+        world.unlocked_merchant_spawn = true;
+        world.unlocked_demolitionist_spawn = true;
+        world.unlocked_dye_trader_spawn = true;
+        world.unlocked_truffle_spawn = true;
+        world.unlocked_arms_dealer_spawn = true;
+        world.unlocked_nurse_spawn = true;
         world
     }
 
@@ -2074,6 +2086,43 @@ mod tests {
             (want.dungeon_x, want.dungeon_y),
             "{context}: dungeon anchor"
         );
+        // W4-f45 Ph4: the banner tally + the seven spawn unlocks.
+        assert_eq!(
+            got.banner_kill_counts, want.banner_kill_counts,
+            "{context}: bannerKillCounts"
+        );
+        assert_eq!(
+            got.angler_who_finished_today, want.angler_who_finished_today,
+            "{context}: anglerWhoFinishedToday"
+        );
+        assert_eq!(
+            got.unlocked_slime_blue_spawn, want.unlocked_slime_blue_spawn,
+            "{context}: unlockedSlimeBlueSpawn"
+        );
+        assert_eq!(
+            got.unlocked_merchant_spawn, want.unlocked_merchant_spawn,
+            "{context}: unlockedMerchantSpawn"
+        );
+        assert_eq!(
+            got.unlocked_demolitionist_spawn, want.unlocked_demolitionist_spawn,
+            "{context}: unlockedDemolitionistSpawn"
+        );
+        assert_eq!(
+            got.unlocked_dye_trader_spawn, want.unlocked_dye_trader_spawn,
+            "{context}: unlockedDyeTraderSpawn"
+        );
+        assert_eq!(
+            got.unlocked_truffle_spawn, want.unlocked_truffle_spawn,
+            "{context}: unlockedTruffleSpawn"
+        );
+        assert_eq!(
+            got.unlocked_arms_dealer_spawn, want.unlocked_arms_dealer_spawn,
+            "{context}: unlockedArmsDealerSpawn"
+        );
+        assert_eq!(
+            got.unlocked_nurse_spawn, want.unlocked_nurse_spawn,
+            "{context}: unlockedNurseSpawn"
+        );
     }
 
     #[test]
@@ -2192,6 +2241,13 @@ mod tests {
         tail[118..122].copy_from_slice(&world.invasion_size_start.to_le_bytes()); // (`:1339`)
         // W4-f45: the cultist delay at 122..126 (`:1340`).
         tail[122..126].copy_from_slice(&world.cultist_delay.to_le_bytes());
+        // W4-f45 Ph4: the banner kill array — the i16 count at 126..128, then
+        // 293 i32s at 128..1300 (`BannerSystem.Save`, `:1341`). The dense
+        // entries carry the world's tally; the claimable array stays zero.
+        for (i, &kills) in world.banner_kill_counts.iter().enumerate().take(293) {
+            let at = 128 + 4 * i;
+            tail[at..at + 4].copy_from_slice(&kills.to_le_bytes());
+        }
         // The event bosses past the banner arrays (which end at 1888):
         // dawn@1888, fishron@1889, martians@1890, cultist@1891, moonlord@1892.
         tail[1891] = u8::from(world.downed_ancient_cultist); // downedAncientCultist (`:1345`)
@@ -2256,7 +2312,15 @@ mod tests {
         tail[2025 + d] = u8::from(world.downed_queen_slime); // (`:1396`)
         // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
+        // W4-f45 Ph4: the six arrival unlocks + slime-blue join the owned set.
+        tail[2027 + d] = u8::from(world.unlocked_slime_blue_spawn); // (`:1398`)
+        tail[2028 + d] = u8::from(world.unlocked_merchant_spawn); // (`:1399`)
+        tail[2029 + d] = u8::from(world.unlocked_demolitionist_spawn); // (`:1400`)
         tail[2030 + d] = u8::from(world.unlocked_party_girl); // (`:1401`)
+        tail[2031 + d] = u8::from(world.unlocked_dye_trader_spawn); // (`:1402`)
+        tail[2032 + d] = u8::from(world.unlocked_truffle_spawn); // (`:1403`)
+        tail[2033 + d] = u8::from(world.unlocked_arms_dealer_spawn); // (`:1404`)
+        tail[2034 + d] = u8::from(world.unlocked_nurse_spawn); // (`:1405`)
         tail[2035 + d] = u8::from(world.unlocked_princess); // (`:1406`)
         tail[2026 + d] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
@@ -4163,6 +4227,100 @@ mod tests {
         data[tail_at + 44..tail_at + 48].copy_from_slice(&3i32.to_le_bytes());
         let w = parse(&data).expect("v106 loads");
         assert_eq!(w.invasion_size_start, 300, "pirates: 120 + ceil(180/60)*60");
+    }
+
+    /// W4-f45 Ph4 — the banner kill array, the angler name list and the seven
+    /// spawn unlocks land at their C# offsets and follow their read gates.
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_banner_tally_angler_list_and_unlocks_land() {
+        // v326: patch two banner entries + the seven unlock bytes into the
+        // independent `flags_tail` table and read them back.
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        // killCount[1]@132, killCount[69]@404 (128 + 4*i).
+        data[tail_at + 132..tail_at + 136].copy_from_slice(&50i32.to_le_bytes());
+        data[tail_at + 404..tail_at + 408].copy_from_slice(&7i32.to_le_bytes());
+        // The unlocks: slimeBlue@2027, merchant@2028, demo@2029, dyeTrader@2031,
+        // truffle@2032, armsDealer@2033, nurse@2034 (partyGirl@2030/princess@2035
+        // stay 0 here).
+        for off in [2027, 2028, 2029, 2031, 2032, 2033, 2034] {
+            data[tail_at + off] = 1;
+        }
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.banner_kill_counts[1], 50, "killCount[1] at tail 132");
+        assert_eq!(w.banner_kill_counts[69], 7, "killCount[69] at tail 404");
+        assert_eq!(w.banner_kill_counts[2], 0, "the untouched entries stay 0");
+        assert!(w.unlocked_slime_blue_spawn, "unlockedSlimeBlueSpawn at tail 2027");
+        assert!(w.unlocked_merchant_spawn, "unlockedMerchantSpawn at tail 2028");
+        assert!(w.unlocked_demolitionist_spawn, "unlockedDemolitionistSpawn at tail 2029");
+        assert!(w.unlocked_dye_trader_spawn, "unlockedDyeTraderSpawn at tail 2031");
+        assert!(w.unlocked_truffle_spawn, "unlockedTruffleSpawn at tail 2032");
+        assert!(w.unlocked_arms_dealer_spawn, "unlockedArmsDealerSpawn at tail 2033");
+        assert!(w.unlocked_nurse_spawn, "unlockedNurseSpawn at tail 2034");
+        assert!(!w.unlocked_party_girl, "the party girl byte stays 0");
+        assert!(!w.unlocked_princess, "the princess byte stays 0");
+        // The writer's own block carries the same values (the owned world's
+        // 2-slot celebrant list shifts the unlocks by d=8; the banner array
+        // sits before the party block, so it does not shift).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let block = expected_flags_block(&world);
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 132..tail_at + 136].try_into().unwrap()),
+            50, "killCount[1] round-trips"
+        );
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 404..tail_at + 408].try_into().unwrap()),
+            7, "killCount[69] round-trips"
+        );
+        for off in [2027, 2028, 2029, 2031, 2032, 2033, 2034] {
+            assert_eq!(buf[tail_at + off + d], 1, "unlock at tail {off}+d");
+        }
+        // The whole owned block matches the independent table.
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+
+        // --- the angler name list (variable-length) ----------------------
+        // A world with one finished-today name round-trips the list.
+        let mut world = World::new("Angler".into(), 300, 200);
+        world.angler_who_finished_today = vec!["Belsin".to_string()];
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the angler world parses");
+        assert_eq!(back.angler_who_finished_today, vec!["Belsin".to_string()]);
+        // Two names round-trip in order.
+        world.angler_who_finished_today = vec!["A".to_string(), "Bee".to_string()];
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the two-name world parses");
+        assert_eq!(back.angler_who_finished_today, vec!["A".to_string(), "Bee".to_string()]);
+
+        // --- the read gates ----------------------------------------------
+        // v249: the slime-blue byte does not exist yet.
+        let w = parse(&synthetic_file(249, &[2, 144], 160, 11)).expect("v249 loads");
+        assert!(!w.unlocked_slime_blue_spawn, "below 250: slime-blue stays false");
+        // v250: slime-blue lands (the tail's last byte — the eight unlocks
+        // need 251).
+        let mut data = synthetic_file(250, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 250);
+        data[tail_at + flags_tail(250).len() - 1] = 1;
+        let w = parse(&data).expect("v250 loads");
+        assert!(w.unlocked_slime_blue_spawn, "unlockedSlimeBlueSpawn reads from 250");
+        assert!(!w.unlocked_merchant_spawn, "below 251: the arrival unlocks stay false");
+        // v251: the eight-unlock block lands. The v251 tail lacks the 257
+        // afterPartyOfDoom byte + the 289 claimable array (589 bytes before
+        // the unlocks): merchant@2028-589=1439, nurse@2034-589=1445.
+        let mut data = synthetic_file(251, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 251);
+        data[tail_at + 1439] = 1; // unlockedMerchantSpawn
+        data[tail_at + 1445] = 1; // unlockedNurseSpawn
+        let w = parse(&data).expect("v251 loads");
+        assert!(w.unlocked_merchant_spawn, "unlockedMerchantSpawn reads from 251");
+        assert!(w.unlocked_nurse_spawn, "unlockedNurseSpawn reads from 251");
+        assert!(!w.unlocked_demolitionist_spawn, "the demo byte between stays 0");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

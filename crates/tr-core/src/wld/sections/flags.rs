@@ -114,10 +114,14 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(0); // cloudBGActive
     w.i16(0); // numClouds
     w.f32(world.wind_speed_target); // windSpeedTarget (W4-f45)
-    // WorldFile.cs:1333-1338: today's fisherman list (empty — the port collapses
-    // `Main.anglerWhoFinishedToday` to the bool `World.angler_quest_turned_in`,
-    // so the name list has no store), then the saved-NPC flags and the quest index.
-    w.i32(0); // anglerWhoFinishedToday.Count
+    // WorldFile.cs:1329-1338: today's fisherman list — W4-f45 claims the name
+    // list (`Main.anglerWhoFinishedToday`); the port's single player collapses
+    // its MEANING to the bool `angler_quest_turned_in`, but the file carries
+    // the real names. Then the saved-NPC flags and the quest index.
+    w.i32(world.angler_who_finished_today.len() as i32); // anglerWhoFinishedToday.Count
+    for name in &world.angler_who_finished_today {
+        w.cs_string(name);
+    }
     w.boolean(world.saved_angler); // savedAngler
     w.i32(world.angler_quest as i32); // anglerQuest
     w.boolean(world.saved_stylist); // savedStylist
@@ -125,15 +129,17 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.saved_golfer); // savedGolfer
     w.i32(world.invasion_size_start);
     w.i32(world.cultist_delay); // _tempCultistDelay (W4-f45; App.world_events snapshots it)
-              // WorldFile.cs:1341: `BannerSystem.Save` — the banner kill counts have
-              // no port store, so both arrays are written at their C# length, all zero.
+    // WorldFile.cs:1341: `BannerSystem.Save` — W4-f45 claims the kill counts
+    // (`App.banners` densifies into `World.banner_kill_counts` at save). The
+    // claimable array stays unowned (the port spawns the banner item at the
+    // death spot instead of queueing a claim), so it is written all zero.
     w.i16(MAX_BANNER_TYPES);
-    for _ in 0..MAX_BANNER_TYPES {
-        w.i32(0); // killCount
+    for i in 0..MAX_BANNER_TYPES as usize {
+        w.i32(world.banner_kill_counts.get(i).copied().unwrap_or(0)); // killCount
     }
     w.i16(MAX_BANNER_TYPES);
     for _ in 0..MAX_BANNER_TYPES {
-        w.u16(0); // claimableBanners
+        w.u16(0); // claimableBanners — unowned
     }
     // WorldFile.cs:1342-1362: the dial fast-forward, the event bosses and
     // the lunar towers. `downedMartians`, the cultist/Moon Lord kills, the
@@ -232,17 +238,18 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.downed_deerclops);
     // WorldFile.cs:1398-1410: the unlocked town-NPC spawns — set on the NPC's
     // arrival (`WorldGen.cs:5577-5604`), read at the spawn gates
-    // (`Main.cs:65785-65799` party girl, `:65949-65952` princess). The party
-    // girl, the princess and the rainbow slime have World state; the other
-    // unlocks are unowned.
-    w.boolean(false); // unlockedSlimeBlueSpawn
-    w.boolean(false); // unlockedMerchantSpawn
-    w.boolean(false); // unlockedDemolitionistSpawn
+    // (`Main.cs:65785-65799` party girl, `:65949-65952` princess) and the
+    // `SpawnAllowed_*` overrides (`NPC.cs:7069/7094/7119/7160/7177`). W4-f45
+    // claims the six arrival unlocks + the King Slime's slime-blue unlock;
+    // the party girl, princess and rainbow/red slimes were already owned.
+    w.boolean(world.unlocked_slime_blue_spawn); // unlockedSlimeBlueSpawn (W4-f45)
+    w.boolean(world.unlocked_merchant_spawn); // unlockedMerchantSpawn (W4-f45)
+    w.boolean(world.unlocked_demolitionist_spawn); // unlockedDemolitionistSpawn (W4-f45)
     w.boolean(world.unlocked_party_girl); // unlockedPartyGirlSpawn
-    w.boolean(false); // unlockedDyeTraderSpawn
-    w.boolean(false); // unlockedTruffleSpawn
-    w.boolean(false); // unlockedArmsDealerSpawn
-    w.boolean(false); // unlockedNurseSpawn
+    w.boolean(world.unlocked_dye_trader_spawn); // unlockedDyeTraderSpawn (W4-f45)
+    w.boolean(world.unlocked_truffle_spawn); // unlockedTruffleSpawn (W4-f45)
+    w.boolean(world.unlocked_arms_dealer_spawn); // unlockedArmsDealerSpawn (W4-f45)
+    w.boolean(world.unlocked_nurse_spawn); // unlockedNurseSpawn (W4-f45)
     w.boolean(world.unlocked_princess); // unlockedPrincessSpawn
     w.boolean(false); // combatBookVolumeTwoWasUsed
     w.boolean(false); // peddlersSatchelWasUsed
@@ -480,9 +487,13 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version < 95 {
         return Ok(());
     }
-    // WorldFile.cs:2131-2135 — today's angler list: a count then that many names.
+    // WorldFile.cs:2152-2156 — today's angler list: a count then that many
+    // names (W4-f45 claims the list; the C# clears it first).
     let anglers = r.i32()?;
-    skip_strings(r, anglers)?;
+    world.angler_who_finished_today.clear();
+    for _ in 0..anglers.max(0) {
+        world.angler_who_finished_today.push(r.string()?);
+    }
     if version < 99 {
         return Ok(());
     }
@@ -521,12 +532,20 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version < 109 {
         return Ok(());
     }
-    // WorldFile.cs:2157-2166 — `BannerSystem.Load` (the second array only from 289).
+    // WorldFile.cs:2203 — `BannerSystem.Load` (`BannerSystem.cs:188-212`):
+    // the kill counts land in the dense array (only the entries the array
+    // carries, `i < killCount.Length`); the claimable array (289+) stays
+    // unowned, skip-read. W4-f45 claims the kill counts.
     let kill_counts = r.i16()? as i32;
-    r.skip((kill_counts.max(0) as usize) * 4)?;
+    for i in 0..kill_counts.max(0) as usize {
+        let count = r.i32()?;
+        if i < world.banner_kill_counts.len() {
+            world.banner_kill_counts[i] = count;
+        }
+    }
     if version >= 289 {
         let claimable = r.i16()? as i32;
-        r.skip((claimable.max(0) as usize) * 2)?;
+        r.skip((claimable.max(0) as usize) * 2)?; // claimableBanners — unowned
     }
     if version < 128 {
         return Ok(());
@@ -665,14 +684,18 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.downed_deerclops = r.bool()?;
     }
     if version >= 250 {
-        r.skip(1)?; // unlockedSlimeBlueSpawn
+        world.unlocked_slime_blue_spawn = r.bool()?; // unlockedSlimeBlueSpawn (W4-f45)
     }
     if version >= 251 {
-        // WorldFile.cs:2396-2403 — the eight unlocks in write order; only the
-        // party girl (3rd) and the princess (8th) have World state.
-        r.skip(2)?; // unlockedMerchantSpawn, unlockedDemolitionistSpawn
+        // WorldFile.cs:2396-2403 — the eight unlocks in write order; W4-f45
+        // claims the six arrival unlocks beside the party girl/princess.
+        world.unlocked_merchant_spawn = r.bool()?; // unlockedMerchantSpawn
+        world.unlocked_demolitionist_spawn = r.bool()?; // unlockedDemolitionistSpawn
         world.unlocked_party_girl = r.bool()?; // unlockedPartyGirlSpawn
-        r.skip(4)?; // unlockedDyeTrader/Truffle/ArmsDealer/Nurse
+        world.unlocked_dye_trader_spawn = r.bool()?; // unlockedDyeTraderSpawn
+        world.unlocked_truffle_spawn = r.bool()?; // unlockedTruffleSpawn
+        world.unlocked_arms_dealer_spawn = r.bool()?; // unlockedArmsDealerSpawn
+        world.unlocked_nurse_spawn = r.bool()?; // unlockedNurseSpawn
         world.unlocked_princess = r.bool()?; // unlockedPrincessSpawn
     }
     if version >= 259 {
@@ -763,14 +786,6 @@ fn skip_one_string(r: &mut Reader) -> Result<()> {
         }
     }
     r.skip(len)
-}
-
-/// Skips `count` .NET strings (the angler list).
-fn skip_strings(r: &mut Reader, count: i32) -> Result<()> {
-    for _ in 0..count.max(0) {
-        skip_one_string(r)?;
-    }
-    Ok(())
 }
 
 /// `Main.FakeLoadInvasionStart` (`Main.cs:64488-64514`): the pre-107 load's

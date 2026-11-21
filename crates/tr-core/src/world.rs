@@ -674,6 +674,38 @@ pub struct World {
     /// stamps the entrance column/row (`worldgen/dungeon.rs`).
     pub dungeon_x: i32,
     pub dungeon_y: i32,
+
+    // --- W4-f45 Ph4: the banner tally, the angler list, the spawn unlocks ---
+    /// `BannerSystem.killCount[]` (`BannerSystem.cs:172-186`'s `Save`): the
+    /// per-banner kill counts as the C#'s dense 293-entry array. The live
+    /// owner is `App.banners` (the sparse map); the save densifies it here,
+    /// the load reads it back and the App re-sparsifies (`app/mod.rs`).
+    pub banner_kill_counts: Vec<i32>,
+    /// `Main.anglerWhoFinishedToday` (`WorldFile.cs:1329-1333` write /
+    /// `:2152-2156` read): the player names who handed in today's quest. The
+    /// port's single player collapses the list's meaning to the bool
+    /// `angler_quest_turned_in`, but the file carries the real name list.
+    pub angler_who_finished_today: Vec<String>,
+    /// `NPC.unlockedSlimeBlueSpawn` (`NPC.cs:79411-79414`): the King Slime's
+    /// death unlocks the Nerdy Slime (the `ViolentlySpawnNerdySlime` call).
+    pub unlocked_slime_blue_spawn: bool,
+    /// `NPC.unlockedMerchantSpawn` (`WorldGen.cs:5585`): the Merchant's
+    /// arrival unlock — overrides his 5000-copper gate (`NPC.cs:7177`).
+    pub unlocked_merchant_spawn: bool,
+    /// `NPC.unlockedDemolitionistSpawn` (`WorldGen.cs:5597`, override
+    /// `NPC.cs:7069`).
+    pub unlocked_demolitionist_spawn: bool,
+    /// `NPC.unlockedDyeTraderSpawn` (`WorldGen.cs:5588`, override
+    /// `NPC.cs:7119`).
+    pub unlocked_dye_trader_spawn: bool,
+    /// `NPC.unlockedTruffleSpawn` (`WorldGen.cs:5581`): the Truffle's arrival
+    /// unlock — the housing gate reads it (`housing.rs:456`).
+    pub unlocked_truffle_spawn: bool,
+    /// `NPC.unlockedArmsDealerSpawn` (`WorldGen.cs:5594`, override
+    /// `NPC.cs:7094`).
+    pub unlocked_arms_dealer_spawn: bool,
+    /// `NPC.unlockedNurseSpawn` (`WorldGen.cs:5591`, override `NPC.cs:7160`).
+    pub unlocked_nurse_spawn: bool,
 }
 
 impl World {
@@ -904,6 +936,18 @@ impl World {
             crimson: false,
             dungeon_x: 0,
             dungeon_y: 0,
+            // W4-f45 Ph4: the dense banner array starts at the C# length, all
+            // zero (`BannerSystem.cs:1454`'s cctor); the angler list empty;
+            // the spawn unlocks false.
+            banner_kill_counts: vec![0; 293],
+            angler_who_finished_today: Vec::new(),
+            unlocked_slime_blue_spawn: false,
+            unlocked_merchant_spawn: false,
+            unlocked_demolitionist_spawn: false,
+            unlocked_dye_trader_spawn: false,
+            unlocked_truffle_spawn: false,
+            unlocked_arms_dealer_spawn: false,
+            unlocked_nurse_spawn: false,
         }
     }
 
