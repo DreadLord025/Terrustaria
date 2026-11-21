@@ -939,6 +939,11 @@ RUN, the merge-verify wave executes).
 
 ## §-adjudication — the `:17238` SwapRandom scope (g11 final phase, d130 tip `560a02ea`)
 
+> **SUPERSEDED-IN-STATUS by the §-receipt below (dust-retire phase):** d130e
+> (`099df89e2`) APPLIED F1+F5+F7 on its own branch — the splitmix is retired
+> there. The scope walk below STANDS unchanged; the REFUTED-AS-APPLIED
+> disposition rows describe the `560a02ea` tip and are historical.
+
 The task brief flagged the snow-stream question as an ACTIVE
 adjudication: the g11 F1 claim (the bare `Main.rand` / `NamedRngs::global`
 slot) vs d130's kept per-consumer splitmix. Re-derived from the C# at the
@@ -1002,3 +1007,57 @@ Verification: code-only. The scope walk re-read `Main.cs:16774-16800`,
 `:5194`, `:6463` directly; the d130 tip's `snow.rs` re-read at
 `560a02ea` (the splitmix struct `:75-101` alive, `rand01`/`next_int`
 draw sites `:155-235`, `MAX_SCREEN_W` `:43`, `game_paused` `:53`/`:125`).
+
+## §-receipt — d130e APPLIED the global-stream fold (dust-retire phase, W4-g11)
+
+**F1-stands → F1-APPLIED.** The adjudication above read d130 at
+`560a02ea` (origin tip) where the splitmix was kept by §2's
+merger-delegation. The d130e session then applied the fold on ITS branch:
+
+* **`099df89e2` "adjudication F1+F5+F7"** — the `Snow` splitmix struct +
+  `App.snow` field + both init sites RETIRED (`app/mod.rs`: "W4-d130 F1:
+  no `snow` field"; `app/flow.rs` init dropped); `snowing` is a free fn
+  `pub(crate) fn snowing(…, rng: &mut UnifiedRandom, …)` and
+  `world_sim/scene_scan.rs` passes **`app.rngs.global()`** at the `:17238`
+  slot with the pre-swap scope proof cited in-line; the pool `NewDust`
+  rides `DustRng for UnifiedRandom`. **F5** landed too:
+  `while (attempt as f32) < num3` (the C# `for (int i…)` shape — the
+  earlier "float loop kept observation-equal" disposition is retired).
+  **F7** applied: the d130 witnesses re-pinned to `UnifiedRandom`
+  (gate/budget arms pin ZERO stream draws) and g11's three draw-sequence
+  mirrors PORTED by name — `w4_g11_snowing_mirrors_the_dry_arm_draw_sequence`,
+  `w4_g11_snowing_mirrors_the_storm_arm_with_deerclops` (the 26-attempt
+  frozen-counter rig), `w4_g11_snowing_breaks_on_the_counter_budget`
+  (the 4096-pin cap 31.2).
+* **`16a792d56` (d130 local tip)** — the g67b-post-union fold; for THIS
+  lane it adds the cull-kill into `snow::draw` (`splash_cull_rect` /
+  `dust_in_cull_rect`, `Main.cs:38832`/`:38847`/`:39020-39022` — the same
+  DrawDust loop covers type 76). F2 `MAX_SCREEN_W = 4096.0`, F3
+  `SnowInputs.game_paused` + the in-body disjunct, F4 the counter-once
+  param all re-verified alive at this tip.
+* **Counter feed verified faithful:** `Dust.UpdateDust` resets
+  `Main.snowDust = 0` (`Dust.cs:428`) then counts the live 76 arm
+  (`:1747`); the port's `particles.rs` mirrors it (`snow_dust = 0` at
+  the reset `:329`, `minecart.rs` recomputes per tick → `pool.snow_dust`),
+  and `scene_scan` reads the previous tick's count — same ordering as
+  the C# (`UpdateDust` `:18055` runs after snowing `:17238`).
+
+**Push-rescue flag (d130):** the fold commits `099df89e2` + `16a792d56`
+are LOCAL-ONLY on `TR-W4-d130` — origin tip is still `560a02eac`. The
+worktree is ALIVE (dirty: `docs/ANALYSIS.md`, `docs/PORT_MAP.md`,
+`docs/research/83-weather-reconcile.md` modified, mtime 2026-11-21
+08:57:45 vs probe 09:05). The merger must read the LOCAL tip (or the
+rescue push) or it silently re-merges the splitmix shape.
+
+**Merger delta shrinks to the DROP only:** g11's deprecated
+`main_dust.rs::snowing` + `SnowingEnv` + consts + the four snow witnesses
++ the `scene_scan` SnowingEnv block drop for d130's already-folded
+`snow.rs` — no patch-hunks to apply, no witness migration owed (F7 is
+done on d130). The `main_dust.rs` RETIRE-NOTE + fn doc are re-worded to
+this receipt in the same commit.
+
+Verification: code-only — `git show 099df89e2/16a792d56` full diffs read;
+`snow.rs`/`scene_scan.rs`/`app/mod.rs` grepped at `16a792d56` (no splitmix
+draw sites survive; `UnifiedRandom` witnesses present); `Dust.cs:419-441`
++ `Main.cs:66700` (init-only zero) read directly; d130 worktree
+`git status --porcelain` + file mtimes probed read-only.

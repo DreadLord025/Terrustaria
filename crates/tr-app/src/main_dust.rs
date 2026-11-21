@@ -40,11 +40,14 @@
 //! runs `:17238` with no enclosing `SwapRandom` (`Update` `:16774` →
 //! `DoUpdate` `:16788`, the first swap is `:17732` inside the LATER
 //! `DoUpdateInWorld`), so the C# draws land on the bare `Main.rand` that
-//! `RandomSwap.Swap` (`:3204-3215`) restores after every pass. d130's
-//! tip `560a02ea` KEPT its per-consumer splitmix (its §4: "the WEATHER-2
-//! convention decision of §2 stands") — F1 REFUTED-AS-APPLIED, the fold
-//! stays a merger decision per d130 §2's own delegation; the g11 F1
-//! hunks remain the published recommendation, not an applied patch.
+//! `RandomSwap.Swap` (`:3204-3215`) restores after every pass. **d130e
+//! retire receipt (research/83 §-receipt): the F1 fold is APPLIED on
+//! d130's branch — `099df89e2` (local tip `16a792d56`) retired the `Snow`
+//! splitmix (struct + `App.snow` field + both init sites), `snowing` is
+//! a free fn on `&mut UnifiedRandom` fed `app.rngs.global()` at the
+//! `scene_scan` `:17238` slot, the pool draws ride `DustRng for
+//! UnifiedRandom`, and F5's int loop landed with it. The earlier
+//! REFUTED-AS-APPLIED flag (`560a02ea` splitmix-kept) is RETIRED.**
 //! `TeleportEffect` is called from
 //! `Player.Teleport` (`Player.cs:37444`/`:37489`, the `UpdatePlayers`
 //! swap), `NPC.Teleport` (`NPC.cs:81044`/`:81051`, the caller's NPC pass)
@@ -58,12 +61,13 @@
 //! **RETIRE-NOTE (research/83 keep-one, d130-canonical): this module's
 //! `snowing` + `SnowingEnv` + `MAX_SCREEN_W`/`SNOW_TILE_MAX` are DEPRECATED
 //! — the merger drops them for d130's `snow.rs` (wired + the real
-//! `DustPool.snow_dust` counter + the type-76 AI/tails/draw); d130's tip
-//! `560a02ea` folded the g11 details it lacked (the in-body pause gate
-//! F3, the HiDef 4096 budget F2, the census wording) and KEPT its own
-//! stream (F1 not applied — see the adjudication above). This branch
-//! keeps the body compiling until the drop; the four snow witnesses
-//! below migrate to d130's fixture per §-patch F7 (the merger's port).**
+//! `DustPool.snow_dust` counter + the type-76 AI/tails/draw). d130e
+//! applied ALL the g11 folds: F2/F3/census at `85250712`, F1+F5+F7 at
+//! `099df89e2` (global stream, int loop, the g11 mirrors ported), the
+//! cull-kill at `16a792d56` (`snow::draw` shares the splash cull rect).
+//! This branch keeps the body compiling until the drop; the four snow
+//! witnesses below are ALREADY migrated on d130 (§-patch F7 applied —
+//! the merger just drops these copies).**
 //! The type-76 physics arm (`snowDust++`, the scale lerp — `Dust.cs:1745-1763`)
 //! is d50's `dust_physics.rs` lane; until it lands the flakes ride the
 //! generic `UpdateDust` move/kills, and the pool's generic draw pass is the
@@ -140,10 +144,10 @@ pub(crate) struct SnowingEnv {
 /// `NamedRngs::global()` — `:17238` sits before every `SwapRandom`).
 ///
 /// **DEPRECATED (research/83 keep-one): the merger drops this body for
-/// d130's `snow.rs::snowing` — see the module-doc RETIRE-NOTE. The g11
-/// details d130 lacked (the in-body pause gate, the HiDef 4096 budget)
-/// landed on ITS branch at `85250712`; the stream stays d130's splitmix
-/// (F1 refuted-as-applied, §-adjudication in research/83).**
+/// d130's `snow.rs::snowing` — see the module-doc RETIRE-NOTE. F2/F3
+/// landed on d130 at `85250712`; F1+F5+F7 APPLIED at `099df89e2` (the
+/// global `UnifiedRandom` stream — the splitmix retired, the g11 §-
+/// adjudication confirmed and folded; §-receipt in research/83).**
 ///
 /// `Main.snowDust` (`Main.cs:621`) is a Main static the pool does not carry
 /// (d50's note: the 76 arm's `snowDust++` is cited and skipped); the budget
