@@ -7736,17 +7736,41 @@ impl Npc {
                         );
                 }
             }
-            // The Dutchman: the 1-frame ship strip; its cannons ride the
-            // 9-frame strip (`Main.npcFrameCount`).
+            // The Dutchman: the 1-frame ship strip (491 PirateShip
+            // has NO FindFrame case — `Main.npcFrameCount[491]` = 1,
+            // `Main.cs:67133`; the row-0 pin is correct-by-
+            // construction, the 478 MothronEgg precedent). Its
+            // cannons ride `case 492` (`NPC.cs:71156-71158`): the
+            // row is `(int)ai[2]` — the aim octant the aiStyle-75
+            // machine owns (`NPC.cs:35789-35820`, ported verbatim in
+            // `npc_ai_style75.rs`'s 492 block). W4-f27 slice 9: the
+            // v1 free `(vx != 0) + 0.6 >= 8` strip here was WRONG —
+            // the cannon does not animate on velocity at all. Only
+            // row copies back (the arm never touches the counter/
+            // sprite/rotation — the 439-fix bridge shape).
             NpcKind::FlyingDutchman => {
                 self.frame = 0;
             }
             NpcKind::FlyingDutchmanCannon => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 9;
-                }
+                let mut s = crate::npc_findframe_extra9::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                    direction: self.facing,
+                };
+                let i = crate::npc_findframe_extra9::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    ai: self.ai,
+                };
+                crate::npc_findframe_extra9::find_frame_extra9(
+                    crate::npc_findframe_extra9::FindFrameExtra9Kind::PirateShipCannon,
+                    &mut s,
+                    &i,
+                );
+                self.frame = s.row;
             }
             // The pirates: the 16/20-frame humanoid strips (the same
             // accumulator).
@@ -7765,12 +7789,38 @@ impl Npc {
                     self.frame = (self.frame + 1) % count;
                 }
             }
+            // W4-f27 slice 9: the Goblin Summoner (471) rides
+            // `case 471` (`NPC.cs:75532-75617`) — the ai[3] phase
+            // machine: the shadowflame bands rows 17/18/19/18 with
+            // the >= 23 reset-tick row-18 hold, the summon row-16
+            // pin, the > 7 walk stride over rows 2..15, the air row
+            // 1, the idle row 0. The v1 free `(vx != 0) + 0.6 >= 8`
+            // strip here was WRONG (the 439-fix precedent). The
+            // machine writes row/counter/sprite only — the AI owns
+            // the rotation (`NPC.cs:56520`'s ×0.9 decay), so it is
+            // not copied back.
             NpcKind::GoblinSummoner => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 20;
-                }
+                let mut s = crate::npc_findframe_extra9::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                    direction: self.facing,
+                };
+                let i = crate::npc_findframe_extra9::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    ai: self.ai,
+                };
+                crate::npc_findframe_extra9::find_frame_extra9(
+                    crate::npc_findframe_extra9::FindFrameExtra9Kind::GoblinSummoner,
+                    &mut s,
+                    &i,
+                );
+                self.frame = s.row;
+                self.frame_counter = s.counter;
+                self.sprite_dir = s.sprite_dir;
             }
             // The hungry (3 frames) / the leech segments (1).
             // Case 115 — the Hungry (`NPC.cs:74995-75017`): the 3-row
@@ -27288,6 +27338,91 @@ mod s1_d_3b_tests {
         t.frame = 2;
         t.find_frame();
         assert_eq!(t.frame, 0);
+    }
+
+    #[test]
+    fn f27s9_the_summoner_and_the_cannon_ride_their_faithful_arms() {
+        // W4-f27 slice 9: the v1 free-strip arms for GoblinSummoner
+        // (cs_id 471 via the bestiary net_id, `bestiary.rs:1285`) and
+        // FlyingDutchmanCannon (cs_id 492, `bestiary.rs:1465`) were
+        // WRONG vs the C#'s `case 471` ai[3] machine
+        // (`NPC.cs:75532-75617`) and `case 492`'s `(int)ai[2]`
+        // one-liner (`NPC.cs:71156-71158`). Both arms now delegate
+        // to the extra-9 machines; the 491 ship keeps its row-0 pin
+        // (no FindFrame case). Expectations identical to the e9
+        // module witness (mechanical replay).
+        assert_eq!(NpcKind::GoblinSummoner.cs_id(), 471);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.cs_id(), 492);
+        // The summoner's grounded walk: vx 1 → +3 a tick, the > 7
+        // step every 3rd tick over rows 2..15.
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.vx = 1.0;
+        n.vy = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6]);
+        // The shadowflame phase: |v| = 5 → +3.5 a tick, the bands
+        // 17/18/18/19/19/18/18(reset)/17 — the reset tick HOLDS 18.
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.vx = 3.0;
+        n.vy = 4.0;
+        n.ai[3] = -1.0;
+        let mut rows = Vec::new();
+        for _ in 0..8 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![17, 18, 18, 19, 19, 18, 18, 17]);
+        // The summoning pin + the air pin + the idle snap.
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.frame = 5;
+        n.frame_counter = 9.0;
+        n.ai[3] = 1.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (16, 0.0));
+        n.ai[3] = 0.0;
+        n.vy = -2.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The machine never writes rotation — the bridge does not
+        // copy it back (the AI owns the ×0.9 decay).
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.rotation = 0.5;
+        n.vx = 1.0;
+        n.find_frame();
+        assert_eq!(n.rotation, 0.5);
+        // The cannon's row is (int)ai[2] — the counter/sprite/
+        // rotation are NEVER touched (the style75 machine owns the
+        // aim octant).
+        let mut c = bare(NpcKind::FlyingDutchmanCannon);
+        c.frame = 3;
+        c.frame_counter = 5.0;
+        c.sprite_dir = -1;
+        c.rotation = 0.5;
+        c.ai[2] = 4.0;
+        c.find_frame();
+        assert_eq!(c.frame, 4);
+        assert_eq!(c.frame_counter, 5.0);
+        assert_eq!((c.sprite_dir, c.rotation), (-1, 0.5));
+        c.ai[2] = 8.9;
+        c.find_frame();
+        assert_eq!(c.frame, 8, "the (int) truncation");
+        c.ai[2] = 0.0;
+        c.find_frame();
+        assert_eq!(c.frame, 0, "the no-sight clear");
+        // The 491 ship keeps the row-0 pin (no FindFrame case,
+        // npcFrameCount 1).
+        let mut ship = bare(NpcKind::FlyingDutchman);
+        ship.frame = 2;
+        ship.find_frame();
+        assert_eq!(ship.frame, 0);
     }
 
     #[test]
