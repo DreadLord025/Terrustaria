@@ -698,6 +698,16 @@ fn item_use_visuals_tick(app: &mut App) {
                     &app.world,
                 );
             }
+            // `:45009-45023` — the dust-only TAIL (the meleeEnchant-8 row +
+            // magmaStone), after enchant-7 and BEFORE the 1304 arm (the C#
+            // order — a melee 1304 with enchant-8/magmaStone draws both).
+            crate::player_dust_use::item_use_dust_tail(
+                &dust_state,
+                &mut app.dust,
+                &spawn_ctx,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
             // `:45024-45027` — the gore lane's 1304 ChildSafety arm.
             if held.kind == 1304 {
                 crate::player_gore_d::item1304_use_gore(
@@ -708,15 +718,6 @@ fn item_use_visuals_tick(app: &mut App) {
                     app.gore.child_safety.disabled,
                 );
             }
-            // `:45009-45023` — the dust-only TAIL (the meleeEnchant-8 row +
-            // magmaStone), after the enchant-7/1304 gores.
-            crate::player_dust_use::item_use_dust_tail(
-                &dust_state,
-                &mut app.dust,
-                &spawn_ctx,
-                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                &app.world,
-            );
         }
     }
     // `:51099-51125` — the useStyle-5 lantern mote (4262): the

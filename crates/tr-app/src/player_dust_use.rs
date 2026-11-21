@@ -346,8 +346,8 @@ pub fn item_use_dust_post(
 }
 
 /// `Player.ItemCheck_EmitUseVisuals`' dust-only TAIL after the gore lane's
-/// enchant-7/1304 arms (`Player.cs:45009-45023`): the meleeEnchant-8 row +
-/// the magmaStone arm. Every gate ALWAYS draws.
+/// enchant-7 arm and BEFORE its 1304 arm (`Player.cs:45009-45023`): the
+/// meleeEnchant-8 row + the magmaStone arm. Every gate ALWAYS draws.
 pub fn item_use_dust_tail(
     state: &ItemUseDustState,
     dust: &mut DustPool,
@@ -463,7 +463,7 @@ fn enchant_dust_rows(
         }
         // 7 is the gore lane's (enchant7_use_gore) — skipped here.
         // 8 runs in the tail (item_use_dust_tail), after the gore lane's
-        // enchant-7/1304 arms — the C# order.
+        // enchant-7 arm and before its 1304 arm — the C# order.
         _ => {}
     }
 }
