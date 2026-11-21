@@ -37377,9 +37377,10 @@ the stream while storing nothing).
   ichor stream 524, confetti 289, Volcano eruption) are OTHER workers'
   lanes; only the direct-swing debuffs land here.
 - 6178's `accPyroclast` half (`:14582`, the snapping-stone strike
-  `:44338-44341`) and 6185's `accPoisonBarb`/`pStone` halves
+  `:44338-44341`) landed in W4-e7 lane 23's strike half (`snapping_stone.rs`,
+  wired at this melee site); 6185's `accPoisonBarb`/`pStone` halves
   (`:14616-14617`) stay unported families — only the on-hit flag halves
-  land.
+  land here.
 - The C# evaluates the per-weapon switch for ANY item type — including
   tools swung as melee; the port matches on `held.kind` at the same
   site, so the Molten Pickaxe/Hamaxe rows fire on their mining-tool
@@ -39433,13 +39434,19 @@ shared `accSnappingStoneCooldown` countdown (`Update_SnappingStone`
 `Update_AmmoCycler`), the light-up getter (`:3391-3396` = `cooldown == 0`),
 and `snapping_stone_lights` in the ONE `EntityLights` batch (10 → 13 of the
 14). The strike machine (`TryMakingSnappingStoneStrike`,
-`Projectile.cs:14283-14395`, the 360-tick setter `:14316`) stays the cited
-projectile-family gap: it is RNG-bearing (the per-strike `ParticleOrchestrator`
-spawns draw `Main.rand`) and the 1121/1131/1132 proj rows are unported. The
-cooldown stays 0 in play, so the lights fire whenever a member is worn — the
-C# behaviour for a never-struck accessory. The recharge cue at the cooldown's
-zero crossing (`:28394-28408`, Item30/Item20/Item28 at `MountedCenter`) is the
-cited audio/particle seam (rides the strike family). 7 witnesses WRITTEN NOT RUN.
+`Projectile.cs:14283-14395`, the 360-tick setter `:14316`) LANDED in the strike
+half (`snapping_stone.rs` + the 1121/1131/1132 `proj_data` rows + the
+melee/PVE/recharge wiring, research/102 §1): the cooldown now arms to 360 on a
+strike, so the lights dim while cooling and relight at the recharge — the C#
+behaviour for a struck accessory (the never-struck case still lights whenever
+worn). The recharge cue at the cooldown's zero crossing (`:28394-28408`,
+Item30/Item20/Item28 at `MountedCenter`) fires at the world-sim countdown site
+(`snapping_stone_recharge` replays the burst's draws + returns the cue). The
+particle VISUALS are the cite-skip WITH draws kept (the `prefix.rs` convention,
+the per-arm census in research/102 §1); the strike sounds queue on the pool and
+drain on the hitting lane's stream (the S1-E-21c queue→drain convention — the
+case-2 sound draws defer to the drain, the dust draws stay inline). 7 lantern
+witnesses + 7 strike-half witnesses WRITTEN NOT RUN.
 
 **wing-27 Shroomite light — cited skip (f3 owns the producer).** The producer
 (`update_stealth`, `Player.cs:25733-25899`, `stealth` default 1f, the Shroomite

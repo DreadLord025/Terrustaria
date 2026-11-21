@@ -186,6 +186,12 @@ mod projectile;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
 mod projectile_ai_moonlord;
+// W4-e7 lane 23: the Snapping Stone trio's strike machine
+// (Projectile.TryMakingSnappingStoneStrike, Projectile.cs:14283-14395) +
+// the ParticleOrchestrator draw census — wired at the melee hit
+// (world_sim/editing.rs), the PVE walk (projectile.rs::damage_pve) and the
+// Update_SnappingStone zero-crossing (world_sim/player.rs).
+mod snapping_stone;
 
 
 mod projectile_ai001_a;

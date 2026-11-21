@@ -2090,8 +2090,8 @@ pub struct Player {
     // The ready lights (`:24571-24585`, `player_lights_b::snapping_stone_lights`)
     // read `accSnappingStoneLightUp` = `cooldown == 0`. The strike machine
     // (`Projectile.TryMakingSnappingStoneStrike`, `Projectile.cs:14283-14395`,
-    // the 360-tick cooldown setter `:14316`) is the unported projectile family
-    // (research/102) — the flags/cooldown/lights land here, the strike stays cited.
+    // the 360-tick cooldown setter `:14316`) lives in `snapping_stone.rs` —
+    // the flags/cooldown/lights land here, the strike arms the cooldown.
     /// `Player.accSnappingStone` (`Player.cs:1226`): 6167 Snapping Stone
     /// (`:14494-14496`) — the ranged strike (`Projectile.cs:13401-13404`).
     /// `ResetEffects` clears it (`:18476`).
@@ -4711,7 +4711,8 @@ impl Player {
     /// `Player.accSnappingStoneLightUp` (`Player.cs:3391-3400`): the getter
     /// is `accSnappingStoneCooldown == 0` — the ready lights
     /// (`:24571-24585`) gate on it. (The setter's `!value ? 60 : 0` arm has
-    /// no port caller — the strike machine that reads it is unported.)
+    /// no port caller — the strike machine arms the cooldown to 360 directly,
+    /// `snapping_stone.rs`, `Projectile.cs:14316`.)
     pub fn acc_snapping_stone_light_up(&self) -> bool {
         self.acc_snapping_stone_cooldown == 0
     }
@@ -4724,14 +4725,16 @@ impl Player {
     /// player pass at the `:24564` position (before `Update_HarpyCharm`
     /// `:24565` / `Update_AmmoCycler` `:24566`).
     ///
-    /// W4-e7 lane 23: the countdown lands verbatim; the recharge SOUND +
-    /// particle burst are the cited seam (the strike family that arms the
-    /// 360-tick cooldown is unported, so the cooldown never leaves 0 in play
-    /// today — the countdown is a no-op until the strike lands; the witness
-    /// pins the decrement + the zero-crossing gate). The C# plays at
+    /// W4-e7 lane 23: the countdown lands verbatim. The strike machine
+    /// (`snapping_stone.rs::try_making_snapping_stone_strike`) now arms the
+    /// 360-tick cooldown, so the countdown runs in play; the recharge SOUND +
+    /// particle burst at the zero-crossing are wired at the world-sim call
+    /// site (`world_sim/player.rs`, `snapping_stone::snapping_stone_recharge`
+    /// replays the burst's draws + returns the cue). The C# plays at
     /// `MountedCenter` with the style façade's pitch/volume arguments
     /// (`:28396` Item30 `-0.9f, 0.08f`; `:28401` Item20 default; `:28406`
-    /// Item28 `-0.9f, 0.08f`) — the audio seam rides the strike family.
+    /// Item28 `-0.9f, 0.08f`). This method keeps the countdown alone — the
+    /// zero-crossing cue is the caller's (it needs the audio + RNG borrows).
     pub fn update_snapping_stone(&mut self) {
         if self.acc_snapping_stone_cooldown <= 0 {
             return;
@@ -4739,8 +4742,10 @@ impl Player {
         self.acc_snapping_stone_cooldown -= 1;
         if self.acc_snapping_stone_cooldown == 0 {
             // `:28394-28408`: the recharge cue + particle burst (the first
-            // worn member wins). The sound/particle seam is cited above —
-            // the countdown itself is the ported half.
+            // worn member wins). The world-sim caller fires it at this
+            // zero-crossing (`snapping_stone::snapping_stone_recharge`); this
+            // method keeps the countdown alone (the audio/RNG borrows live
+            // at the call site).
         }
     }
 
@@ -5506,8 +5511,8 @@ impl Player {
             }
             6157 => self.acc_snake_band = true,
             // Armlet of Ruin 6179 (`:14584-14587`): accWickedArmlet +
-            // accArmletOfRuin (W4-e7 lane 23 — the summon-strike flag half;
-            // the strike `Projectile.cs:13405-13408` is the unported family).
+            // accArmletOfRuin (W4-e7 lane 23 — the summon-strike flag; the
+            // strike `Projectile.cs:13405-13408` is `snapping_stone.rs`).
             6179 => {
                 self.acc_wicked_armlet = true;
                 self.acc_armlet_of_ruin = true;
@@ -5532,16 +5537,16 @@ impl Player {
             // the OnFire3 infliction is `melee_on_hit.rs` (`:6552-6566`).
             1322 => self.magma_stone = true,
             // Pyroclast 6178 (`:14580-14583`): magmaStone + accPyroclast
-            // (W4-e7 lane 23 — the melee-strike flag half lands here; the
-            // strike `Player.cs:44338-44341` / `Projectile.cs:13397-13400`
-            // is the unported projectile family, research/102).
+            // (W4-e7 lane 23 — the melee-strike flag; the strike
+            // `Player.cs:44338-44341` / `Projectile.cs:13397-13400` is
+            // `snapping_stone.rs`, wired at the melee hit + the PVE walk).
             6178 => {
                 self.magma_stone = true;
                 self.acc_pyroclast = true;
             }
             // Snapping Stone 6167 (`:14494-14496`, W4-e7 lane 23): the bare
             // ranged-strike flag (the strike `Projectile.cs:13401-13404` is
-            // the unported projectile family, research/102).
+            // `snapping_stone.rs`, wired at the PVE walk).
             6167 => self.acc_snapping_stone = true,
             // Catalyst Band 6185 (`:14615-14619`): catalystBand + pStone +
             // accPoisonBarb (the AcceleratePoisons infliction is

@@ -1235,10 +1235,21 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // (`Player.cs:28385-28410`, called at `:24564` BEFORE
             // `Update_HarpyCharm` `:24565` / `Update_AmmoCycler` `:24566`):
             // the shared Snapping Stone strike cooldown counts down one per
-            // tick. The recharge cue at 0 is the cited strike-family seam
-            // (`Player::update_snapping_stone`); the ready lights
+            // tick. At the zero-crossing the first worn member's recharge
+            // cue fires (`:28392-28408`): the sound at MountedCenter + the
+            // particle burst's draws, both on the `UpdatePlayers` stream
+            // (`Main.cs:17754`). The strike machine (`snapping_stone.rs`)
+            // arms the 360-tick cooldown; the ready lights
             // (`player_lights_b::snapping_stone_lights`) read the live value.
+            let was_cooling = p.acc_snapping_stone_cooldown > 0;
             p.update_snapping_stone();
+            if was_cooling && p.acc_snapping_stone_cooldown == 0 {
+                let recharge_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                if let Some(cue) = crate::snapping_stone::snapping_stone_recharge(p, recharge_rng) {
+                    let sound_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    crate::snapping_stone::play_striking_sound(&mut app.audio, cue, sound_rng);
+                }
+            }
             p.ammo_cycling.tick();
             // `Player.Update_SentryBackpack` (`Player.cs:28428-28434`, called
             // at `:24568` right after `Update_AmmoCycler` `:24566`): the

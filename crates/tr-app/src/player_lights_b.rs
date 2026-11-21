@@ -26,9 +26,9 @@
 //!   centre light — Snapping Stone (0.1, 0.25, 0.4), Pyroclast (0.4, 0.25, 0.1),
 //!   Armlet of Ruin (0.2, 0.25, 0.6). The flags/cooldown/grants/clears/tick
 //!   landed in `player.rs`; the strike machine (`TryMakingSnappingStoneStrike`,
-//!   `Projectile.cs:14283-14395`) that arms the 360-tick cooldown is the
-//!   unported projectile family (research/102), so the cooldown stays 0 and the
-//!   lights fire whenever a member is worn.
+//!   `Projectile.cs:14283-14395`) now lives in `snapping_stone.rs` and arms the
+//!   360-tick cooldown, so the lights dim while a strike cools down and relight
+//!   at the recharge (the C# behaviour for a struck accessory).
 //! * **The three armor-set lights** (`UpdateArmorLights`, `:31149-31317`): the
 //!   head/body/legs slot colour triplets, the +0.5 per matching-set bonus, the
 //!   `spinningpoint` anchors rotated by `fullRotation` about
@@ -62,8 +62,8 @@
 //! quotient-truncated centre — the `kazzymodus_wing_light` shape. The light
 //! pets are Projectile.AI sites (projectile family); NightOwl sets
 //! `nightVision` only. The Snapping Stone STRIKE machine (the cooldown setter
-//! `Projectile.cs:14316` + `TryMakingSnappingStoneStrike`) stays the cited
-//! projectile-family gap (research/102) — its lights landed above.
+//! `Projectile.cs:14316` + `TryMakingSnappingStoneStrike`) landed in
+//! `snapping_stone.rs` (W4-e7 lane 23) — its lights are above.
 //!
 //! **Deliberate folds (recorded, ANALYSIS "The Player lights gap batch"):**
 //! * `vortexStealthActive` (`:31151`) has no port field — folds false, so the

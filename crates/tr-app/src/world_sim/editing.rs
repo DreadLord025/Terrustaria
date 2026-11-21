@@ -7678,6 +7678,17 @@ fn resolve_melee_strike(
     pcx: f32,
 ) {
                 let n = &app.npcs[idx];
+                // W4-e7 lane 23: the struck NPC's Copy reads, captured up
+                // front so the `n` borrow ends BEFORE the Snapping Stone
+                // strike's `&mut app.npcs` below (the NLL convention the
+                // pre-strike buff borrow already uses). `n_kind` feeds the
+                // cane/Flymeal gates; the defense/position/size/cue reads
+                // move here from their old pre-StatusToNPC spot.
+                let n_kind = n.kind;
+                let n_defense = n.defense();
+                let (nx, ny) = (n.x, n.y);
+                let (bw, bh) = n.size();
+                let hit_cue = n.kind.hit_sound();
                 // The Flymeal's TERRARIST (42) fires before the strike in the
                 // C# (`Player.cs:44377-44387` vs `:44404`), but the notify
                 // needs `&mut app` — it lands just ahead of the strike below,
@@ -7714,7 +7725,7 @@ fn resolve_melee_strike(
                 // (`Player.cs:44300-44304`): the Tax Collector's cane is a
                 // one-damage slap on the town (it showers coins on mobs,
                 // `:44362-44371` — the item drop rides the M3 item system).
-                let raw = if n.kind.is_town_npc_like() && held.kind == 3351 {
+                let mut raw = if n_kind.is_town_npc_like() && held.kind == 3351 {
                     1.0
                 } else {
                     raw
@@ -7731,16 +7742,59 @@ fn resolve_melee_strike(
                 // `UpdatePlayers` swap (`Main.cs:17754`).
                 let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
+                // W4-e7 lane 23 — `if (this.accPyroclast) Projectile.
+                // TryMakingSnappingStoneStrike(..., ref dmg, 1)`
+                // (`Player.cs:44338-44341`): the Pyroclast melee strike runs
+                // AFTER the crit roll (`:44298`) and BEFORE `Main.DamageVar`
+                // (`:44342`) — its `dmg += num13` bonus rides the
+                // pre-variance damage. The particle dust draws + the strike
+                // sounds' case-2 draws ride the same `UpdatePlayers` stream
+                // (`Main.cs:17754`); the sounds queue on the pool and drain
+                // below (the S1-E-21c convention).
+                if crate::snapping_stone::melee_strike_type(app.player.as_ref().unwrap()).is_some() {
+                    let targeter = {
+                        let p = app.player.as_ref().unwrap();
+                        (p.x, p.y, p.width, p.height)
+                    };
+                    let strike_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    // The C# `dmg += num13` adds the bonus to the int damage;
+                    // the bonus is independent of the incoming value, so the
+                    // port accumulates it from 0 and adds to the f32 `raw`
+                    // (the pre-variance damage the DamageVar below rolls).
+                    let mut bonus = 0i32;
+                    crate::snapping_stone::try_making_snapping_stone_strike(
+                        &mut app.projectiles,
+                        &app.world,
+                        &mut app.npcs,
+                        app.player.as_mut().unwrap(),
+                        app.local_id as u8,
+                        targeter,
+                        idx,
+                        &mut bonus,
+                        1,
+                        strike_rng,
+                    );
+                    raw += bonus as f32;
+                    // The strike's queued cues play on the SAME
+                    // `UpdatePlayers` stream (the C# plays them inline in
+                    // `ProcessHitAgainstNPC`, `Main.cs:17754`). Draining here
+                    // — not at the projectile pass tail — keeps the case-2
+                    // draws on the melee lane's stream.
+                    for sound in app.projectiles.drain_striking_sounds() {
+                        let sound_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        crate::snapping_stone::play_striking_sound(&mut app.audio, sound, sound_rng);
+                    }
+                }
                 let mut dmg = tr_core::damage::damage_var(loot_rng, raw, luck);
                 // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
                 // (`Player.cs:44344-44353`): the Flymeal takes full armour
                 // penetration (`armorPenetrationPercent = 1f`), doubles the
                 // rolled damage and doubles it again on the Nurse (type 18).
                 let mut pen_percent = 0.0f32;
-                if held.kind == 5129 && n.kind.is_town_npc_like() {
+                if held.kind == 5129 && n_kind.is_town_npc_like() {
                     pen_percent = 1.0;
                     dmg *= 2;
-                    if n.kind == NpcKind::Nurse {
+                    if n_kind == NpcKind::Nurse {
                         dmg *= 2;
                     }
                     // `:44377-44387` — the Flymeal's second block: a hit on a
@@ -7752,14 +7806,10 @@ fn resolve_melee_strike(
                     // type 453, which the port does not ship.
                     flymeal_town_hit = true;
                 }
-                // The struck NPC's Copy reads — captured before the
-                // mutable buff borrow below ends the `n` borrow (NLL).
-                let n_defense = n.defense();
-                let (nx, ny) = (n.x, n.y);
-                let (bw, bh) = n.size();
-                // The kind's hit cue (`NPC.HitSound`) — read before the app
-                // borrows below.
-                let hit_cue = n.kind.hit_sound();
+                // The struck NPC's Copy reads were captured up front (the
+                // `n_kind`/`n_defense`/`nx`/`ny`/`bw`/`bh`/`hit_cue` locals at
+                // the top of this resolution) so the Snapping Stone strike's
+                // `&mut app.npcs` above could run while the `n` borrow ended.
                 // `this.StatusToNPC(sItem.type, npcIndex)`
                 // (`Player.cs:44391`, the block `:6502-6617`) — the melee
                 // on-hit debuff infliction runs AFTER the crit/DamageVar

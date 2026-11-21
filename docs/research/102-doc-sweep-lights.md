@@ -19,6 +19,7 @@ what stays a cited gap with a wiring recipe. Cross-ref: `10-lighting.md`
 | Gap | Owner | State on THIS base |
 | --- | --- | --- |
 | Snapping Stone trio lights (`Player.cs:24575-24583`) | **this lane** | LANDED here (`5ae32127`) |
+| Snapping Stone strike machine (`Projectile.cs:14283-14395`) | **this lane** | LANDED here (strike half — `snapping_stone.rs` + rows 1121/1131/1132 + wiring) |
 | wing-27 Shroomite light (`Player.cs:36026`) | f3 stealth producer | cited skip — producer on unmerged `task/W4-f3-dust-player-3` |
 | WoF `gross` legacy light block (`LegacyLighting.cs:678-717`) | **d65** (S1-E-19d) | owned — `task/W4-d65-legacy-lighting-wof` (`c8a7e0e80`+) |
 | Modern mask `!inActive` + scanner residuals | **d66** | owned — `task/W4-d66-light-scanner-residuals` |
@@ -51,26 +52,71 @@ world-sim position in `world_sim/player.rs` before `Update_AmmoCycler`
 `:24566`). `player_lights_b.rs::snapping_stone_lights` rides the ONE
 `EntityLights` batch (10 → 13 of the 14 sites). 7 witnesses WRITTEN NOT RUN.
 
-**The strike machine stays cited** (the projectile-family gap, NOT ported
-here): `Projectile.TryMakingSnappingStoneStrike` (`Projectile.cs:14283-14395`)
-arms the 360-tick cooldown (`:14316`) and spawns the 1121/1131/1132 effect
-projectiles. It is RNG-bearing — the per-strike `ParticleOrchestrator` spawns
-draw `Main.rand` (`Spawn_SnappingStone` `ParticleOrchestrator.cs:593-646`:
-20 dust × `Next(3)` + conditional `Next(6)`; `Spawn_SnappingStoneMelee`
-`:648-731`: `NextFloatDirection` + 4 dust × 2 `NextFloatDirection`/`NextFloat`;
-`Spawn_SnappingStoneSummon` `:733-813`: 2 `NextFloat` + 23 dust ×
-`NextVector2Circular`(2) + `Next(6)`), and the proj rows 1121/1131/1132
-(`Projectile.cs:10491-10503`/`:10611-10635`: 10×10, friendly, local-immunity
-60, timeLeft 2, hide, noEnchantments) have no `proj_data` rows. The three
-call sites: melee `Player.cs:44338-44341` (accPyroclast, type 1), projectile
-`Projectile.cs:13397-13408` (melee/ranged → type 1, ranged → type 0,
-`changes.AddProjectileTagDamage` → type 2). Wiring recipe: add the three
-`proj_data` rows + a `try_making_snapping_stone_strike` sim seam (the
-`find_target_with_line_of_sight` `:45627-45660` retarget, the 2-strike loop,
-the `dmg += num13` bonus, the Item30/Item20/Item43 sounds at `MountedCenter`),
-threading the `UpdatePlayers`/`UpdateProjectiles` stream draws in the C#
-order. Until then the cooldown stays 0 in play, so the lights fire whenever a
-member is worn — the C# behaviour for a never-struck accessory.
+**The strike machine LANDED here** (W4-e7 lane 23, the strike half):
+`Projectile.TryMakingSnappingStoneStrike` (`Projectile.cs:14283-14395`) is
+ported in `crates/tr-app/src/snapping_stone.rs`. It arms the 360-tick
+cooldown (`:14316`), runs the 2-strike `FindTargetWithLineOfSight` scan
+(`:45632-45660`, the index-list skip variant — the shared helper's `immune`
+slice is the local-immunity row, so the module carries its own scan wrapper
+over `chaseable`/`npc_center`/`can_hit`), spawns the 1121/1131/1132 effect
+projectiles at the extra targets (`timeLeft = 2`, the melee class flip
+`:14343-14345`, Hellfire 323/180 on the extra targets + the victim for the
+melee arm), and adds the `dmg += num13` bonus (`:14368-14382`, base + 10 per
+missed slot, ×the class multiplier). The three `proj_data` rows landed
+(`Projectile.cs:10491-10503`/`:10611-10635`: 10×10, aiStyle 0, stock
+penetrate 1, tileCollide false, timeLeft 2, local-immunity 60; 1121 ranged,
+1131 melee, 1132 no class — the damage-class census updated).
+
+**Wiring (the three call sites):**
+* melee — `world_sim/editing.rs::resolve_melee_strike`, between the crit roll
+  (`Player.cs:44298`) and `Main.DamageVar` (`:44342`): accPyroclast → type 1
+  (`:44338-44341`). The bonus rides the pre-variance `raw`; the struck NPC's
+  Copy reads were hoisted so the `&mut app.npcs` borrow is clean.
+* projectile — `projectile.rs::damage_pve` at the `:13397` position (after the
+  yoyo doublings, before the boomerang arm / StatusNPC / StrikeNPC): the three
+  independent ifs (`(melee||ranged)&owned`+accPyroclast → 1, `ranged&owned`+
+  accSnappingStone → 0, `changes.AddProjectileTagDamage&owned`+accArmletOfRuin
+  → 2). `tag_damage_for` now also returns the `AddProjectileTagDamage` flag
+  (the C# computes `changes` once at `:12920`; the port reads the same value,
+  no second `ModifyHit` walk / no doubled crit draw).
+* recharge — `world_sim/player.rs` at the `:24564` countdown site: at the
+  zero-crossing the first worn member's cue fires (`snapping_stone_recharge`
+  replays the burst's draws + returns the Item30/Item20/Item28 cue, played at
+  `MountedCenter` on the `UpdatePlayers` stream).
+
+**The ParticleOrchestrator visuals are the cite-skip WITH draws kept** (the
+`prefix.rs` convention — no particle renderer, but every `Main.rand` draw the
+spawn bodies consume is replayed in the C#'s order). The per-arm draw census
+(WRITTEN, `snapping_stone.rs` module doc + the twin-stream witnesses):
+
+| Arm | C# site | Draws |
+| --- | --- | --- |
+| `Spawn_SnappingStone` | `ParticleOrchestrator.cs:593-646` | 20×(Next(3) + NewDust 6) + (#flag-true)×Next(6) = 140 + #flag-true |
+| `Spawn_SnappingStoneMelee` | `:648-731` | 1 + 4×(NextFloatDirection + NextFloat + NewDust 6 + type-6 Next(-10,6)) = 37 |
+| `Spawn_SnappingStoneSummon` | `:733-813` | 2 + 23×(NextVector2Circular 2 + NewDust 6 + Next(6)) = 209 |
+| `Spawn_SnappingStoneRecharge` | `:454-470` | 10×NewDust(player box) 6 = 60 |
+| `Spawn_PyroclasticStoneRecharge` | `:437-452` | 15×(NewDust 6 + type-6 1 + NextVector2Circular 2) = 135 |
+| `Spawn_ArmletOfRuinRecharge` | `:418-435` | 10×NewDust(player box) 6 = 60 |
+
+The strike's settings draws (`:14353-14354`: the `num12` NextFloat then the
+`NextFromRectangle` 2 int draws per extra target) ride the hitting lane's
+stream inline; the victim burst (`:14363-14367`) draws no settings (the
+position is the centre). The body sounds (Item72 `:605`, PyroclasticStone
+`:658`, ArmletOfRuin `:745`) + the owner-side Item30/Item20/Item43
+(`:14383-14394`) queue on the pool (`drain_striking_sounds`) and play through
+`Audio::play_use_sound_scaled` (the new `volumeScale` wrapper,
+`LegacySoundPlayer.cs:1411`'s post-attenuation multiply) — the melee/recharge
+sites drain on `UpdatePlayers`, the PVE site on `UpdateProjectiles` (the
+S1-E-21c queue→drain convention; the case-2 sound draws defer to the drain,
+the recorded ANALYSIS deviation, the dust draws stay inline). The 206/207
+styles have no bank cue yet (the façade draws identically then returns
+`None` — a bank gap). `ChildSafety.Disabled = true` (`ChildSafety.cs:33`)
+kills the dangerous-dust branch; the `Dust.NewDust` pool-pressure/off-screen
+early-outs are assumed not to fire (the `prefix.rs` pool assumption).
+
+The cooldown now leaves 0 in play (a strike arms 360), so the ready lights
+dim while cooling and relight at the recharge — the C# behaviour for a
+struck accessory (the never-struck case still lights whenever worn).
 
 ## 2. wing-27 Shroomite light — cited skip (f3 owns the producer)
 
@@ -221,8 +267,12 @@ nothing, so landing them leaves every gameplay stream untouched.
 ## Verification
 
 Code-only mode: **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked.** The
-10 new witnesses (7 Snapping Stone + 3 oscillator) are WRITTEN, NOT RUN. The
-first build after the merge must run `cargo test -p tr-app player_lights_b`
-plus `cargo test -p tr-app w4_e7` plus the catalog command. The two lantern
-commits: `5ae32127` (Snapping Stone trio), `999b292af` (global-flicker
-oscillators).
+10 lantern witnesses (7 Snapping Stone + 3 oscillator) plus the 7 strike-half
+witnesses (6 `snapping_stone.rs` + 1 `projectile/data.rs` row census) are
+WRITTEN, NOT RUN. The first build after the merge must run `cargo test -p
+tr-app snapping_stone` plus `cargo test -p tr-app player_lights_b` plus
+`cargo test -p tr-app w4_e7` plus the catalog command. The lantern commits:
+`5ae32127` (Snapping Stone trio), `999b292af` (global-flicker oscillators);
+the strike half lands in this lane's strike commit (`snapping_stone.rs` +
+the three `proj_data` rows + the melee/PVE/recharge wiring + the
+`play_use_sound_scaled` façade).
