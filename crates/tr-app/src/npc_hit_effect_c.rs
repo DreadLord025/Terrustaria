@@ -181,6 +181,7 @@
 //! | 783-787 | `:86704-86708` | the 534 DemonTaxCollector death (5 gores 894/895/895/896/896) |
 //! | 788-792 | `:86724-86728` | the 490 Drippler death (5 gores, two Next(3) type draws) |
 //! | 793-800 | `:86746-86756` | the shark family 65/692 death (4 gores each, vel x0.8, +14 X tails) |
+//! | 801-808 | `:86760-86770` | the sandshark 542/543 death (4 gores each) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4849,9 +4850,9 @@ fn drippler_death(
 /// head at position and the three tail gores at `position + (14, 0)`. The
 /// per-type quad: 65 Shark → [89,90,91,92], 692 Orca → [1403,1404,1405,1406],
 /// 542 SandShark → [944,945,946,947], 543 → [948,949,950,951], 544 →
-/// [952,953,954,955], 545 → [956,957,958,959]. This commit ports the 65/692
-/// (sites 793-800); the 542-545 land with the next batches. Scale defaults
-/// to 1.
+/// [952,953,954,955], 545 → [956,957,958,959]. This commit ports the
+/// 65/692/542/543 (sites 793-808); the 544/545 land with the next batch.
+/// Scale defaults to 1.
 fn shark_family_death(
     npc: &Npc,
     npc_type: i32,
@@ -4874,7 +4875,9 @@ fn shark_family_death(
     // `:86744-86785` — the per-type gore quad.
     let gores: &[i32] = match npc_type {
         65 => &[89, 90, 91, 92],
-        _ => &[1403, 1404, 1405, 1406], // 692 Orca
+        692 => &[1403, 1404, 1405, 1406],
+        542 => &[944, 945, 946, 947],
+        _ => &[948, 949, 950, 951], // 543 SandsharkCorrupt
     };
     let vel = Vec2::new(npc.vx, npc.vy) * 0.8;
     gore.new_gore(rng, world, pos, vel, gores[0], 1.0);
@@ -5481,9 +5484,9 @@ pub fn hit_effect_c(
     if npc_type == 490 && npc.hp <= 0 {
         drippler_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86730-86786` — the shark family arm; this commit owns the 65/692
-    // (sites 793-800); the 542-545 land with the next batches.
-    if (npc_type == 65 || npc_type == 692) && npc.hp <= 0 {
+    // `:86730-86786` — the shark family arm; the 65/692/542/543 (sites
+    // 793-808); the 544/545 land with the next batch.
+    if (npc_type == 65 || npc_type == 692 || npc_type == 542 || npc_type == 543) && npc.hp <= 0 {
         shark_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
@@ -8628,13 +8631,20 @@ mod tests {
         assert_eq!(rng.peek(), twin.peek(), "the drippler mirrors the C# draws");
     }
 
-    /// `NPC.cs:86746-86756` — the shark family: 65→[89,90,91,92],
-    /// 692→[1403,1404,1405,1406], the head at position and the three tails
+    /// `NPC.cs:86746-86770` — the shark family: 65→[89,90,91,92],
+    /// 692→[1403,1404,1405,1406], 542→[944,945,946,947],
+    /// 543→[948,949,950,951], the head at position and the three tails
     /// at +14 X, all at velocity x0.8.
     #[test]
     fn w4_f10_the_shark_family_death_uses_the_per_type_quad() {
         let w = air();
-        for (ty, gores) in [(65, [89, 90, 91, 92]), (692, [1403, 1404, 1405, 1406])] {
+        let cases: [(i32, [i32; 4]); 4] = [
+            (65, [89, 90, 91, 92]),
+            (692, [1403, 1404, 1405, 1406]),
+            (542, [944, 945, 946, 947]),
+            (543, [948, 949, 950, 951]),
+        ];
+        for (ty, gores) in cases {
             let mut n = boss(100.0, 100.0, 50.0, 30.0);
             n.vx = 5.0;
             n.vy = 0.0;
