@@ -199,6 +199,47 @@ pub(crate) fn try_interacting(app: &mut App, index: usize) -> u8 {
     0
 }
 
+/// W4-g56 — `Main.HoveringAnInteractable`'s lens half (`Main.cs:2861-2870`:
+/// `HoveringOverAnNPC || SmartInteractShowingGenuine ||
+/// HasInteractableObjectThatIsNotATile`; the NPC/smart-cursor halves have no
+/// port state). `TryInteractingWithVoidLens` sets the non-tile flag when an
+/// in-range lens is hovered with `!lastMouseInterface` (`:37688-37696`); the
+/// held-item right-click swap gate (`Player.cs:31528`'s `!mouseRightRelease
+/// || !HoveringAnInteractable`) reads it so a press over a lens opens the
+/// vault instead of flipping the held bag. This probe re-derives the same
+/// hover condition without the side effects (the draw pass owns those).
+pub(crate) fn hovering_lens(app: &App) -> bool {
+    if app.game_paused || app.last_mouse_interface {
+        return false;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    if p.dead {
+        return false;
+    }
+    let (sw, sh) = app.screen_size();
+    let world_mouse = app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom;
+    let mx = world_mouse.x as i32;
+    let my = world_mouse.y as i32;
+    for proj in app.projectiles.slots() {
+        if !proj.active || proj.kind != VOID_LENS {
+            continue;
+        }
+        if !lens_in_interaction_range(p, proj) {
+            continue;
+        }
+        let hovered = mx >= proj.pos.x as i32
+            && mx < (proj.pos.x + proj.w) as i32
+            && my >= proj.pos.y as i32
+            && my < (proj.pos.y + proj.h) as i32;
+        if hovered {
+            return true;
+        }
+    }
+    false
+}
+
 /// The per-frame draw-side pass: run `try_interacting` for every active
 /// lens slot (the C# calls it once per lens inside `DrawProjDirect`),
 /// storing the selection modes for the draw loop. Runs at the draw head,
