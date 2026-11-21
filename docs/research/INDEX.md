@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 64 | `RandomizeCaveBackgrounds` worldgen RNG-shift census (W4-g72 lane 3: the exact draw list/order/rejection loops/width-arm bounds + the moon-ordering constraint; phases 7-8 WIRED it — `worldgen/cave_bg.rs` + the `.wld`/`.trwld` v18/net persistence; §2 boot-roll caveat CORRECTED: fires once per process before any load, the load overwrites it; code-only) | `64-cave-bg-rng-shift-census.md` | 🟢 ported (census corrected) |
+| 64a | The v18 UNION addendum (W4-g72 final: OUR exact 31-byte claim — 3×i32 caveBackX + 4×i32 caveBackStyle + ice/jungle/hell u8 — seated BETWEEN g70's treeX half and g71's surface bytes in the C# .wld field order; the five-claimant 53-byte union layout + the 31→53 truncation-constant moves, input to g71c extending research/92 §1) | `64-v18-union-addendum.md` | 📋 merge instruction |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
