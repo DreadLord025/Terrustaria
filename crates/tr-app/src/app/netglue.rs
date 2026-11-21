@@ -1072,6 +1072,142 @@ impl App {
                     id,
                 );
             }
+            // `case 102` — the nebula booster pickup (W4-g50,
+            // `MessageBuffer.cs:3652-3660`): the host relays verbatim with
+            // the sender forced into the id byte (`:3659`'s
+            // `TrySendData(102, -1, -1, null, whoAmI, …)` — no ignoreClient,
+            // so the picker receives its own relay too).
+            C2s::NebulaLevelupRequest(n) => {
+                server.broadcast(&S2c::NebulaLevelupRequest(net::NebulaLevelupRequest {
+                    player_id: id as u8,
+                    buff_type: n.buff_type,
+                    x: n.x,
+                    y: n.y,
+                }));
+            }
+        }
+    }
+
+    /// The `102` client fan (`MessageBuffer.cs:3662-3705`): the picker's
+    /// team gate, the 700 px distance cull, the spiral dust trail per
+    /// qualifying player, then `NebulaLevelup` on the local player. The
+    /// port's player set is the local player + the peer snapshots (the C#
+    /// walks all 255 `Main.player` slots; the inactive ones fail `active`).
+    fn apply_nebula_levelup(&mut self, n: &net::NebulaLevelupRequest) {
+        let other = Vec2::new(n.x, n.y);
+        // The picker's team (`player11.team`, `:3666`): the local player or
+        // a peer snapshot; an unknown picker reads team 0 (no team gate).
+        let picker_team = if n.player_id as u32 == self.local_id {
+            self.player.as_ref().map(|p| p.team).unwrap_or(0)
+        } else {
+            self.remote_players
+                .get(&(n.player_id as u32))
+                .map(|p| p.team)
+                .unwrap_or(0)
+        };
+        let picker_center = if n.player_id as u32 == self.local_id {
+            self.player.as_ref().map(|p| {
+                let (cx, cy) = p.center();
+                Vec2::new(cx, cy)
+            })
+        } else {
+            self.remote_players.get(&(n.player_id as u32)).map(|p| {
+                Vec2::new(p.x + crate::player::WIDTH * 0.5, p.y + crate::player::HEIGHT * 0.5)
+            })
+        };
+        // The qualifying players: (center, team). The local player is
+        // active when present and living; a peer snapshot is active (the
+        // port keeps no dead peers — the 135/118 arms remove them).
+        let mut targets: Vec<(Vec2, i32)> = Vec::new();
+        if let Some(p) = self.player.as_ref() {
+            if !p.dead {
+                let (cx, cy) = p.center();
+                targets.push((Vec2::new(cx, cy), p.team));
+            }
+        }
+        for p in self.remote_players.values() {
+            targets.push((
+                Vec2::new(p.x + crate::player::WIDTH * 0.5, p.y + crate::player::HEIGHT * 0.5),
+                p.team,
+            ));
+        }
+        let ctx = self.spawn_ctx();
+        for (center, team) in targets {
+            // `:3666` — `player11.team != 0 && player11.team != player12.team`
+            // skips the player; team 0 picks up anyone. Then the 700 px
+            // distance cull (`!(player12.Distance(other) < 700f)`).
+            if picker_team != 0 && picker_team != team {
+                continue;
+            }
+            if (center - other).length() >= 700.0 {
+                continue;
+            }
+            // The dust trail (`:3670-3702`): the picker→player direction,
+            // the spiral spin, the per-6px dust spawns.
+            if let Some(picker_center) = picker_center {
+                let value2 = picker_center - center;
+                let len = value2.length();
+                let vector4 = if len > 0.0 && !value2.x.is_nan() && !value2.y.is_nan() {
+                    value2 / len
+                } else {
+                    Vec2::ZERO
+                };
+                if !vector4.x.is_nan() && !vector4.y.is_nan() && vector4 != Vec2::ZERO {
+                    let dust_type = match n.buff_type {
+                        179 => 86,
+                        173 => 90,
+                        176 => 88,
+                        _ => 90,
+                    };
+                    let mut spin = 0.0f64;
+                    let spin_step = std::f64::consts::PI / 15.0;
+                    let spinningpoint = Vec2::new(0.0, -8.0);
+                    let offset = Vec2::new(-3.0, -3.0);
+                    let mut fade = 0.0f32;
+                    let mut k = 0.0f32;
+                    while k < len / 6.0 {
+                        let position = center
+                            + 6.0 * k * vector4
+                            + crate::bow_launch::rotated_by(spinningpoint, spin)
+                            + offset;
+                        spin += spin_step;
+                        let rng = self.rngs.global();
+                        let idx = self.dust.new_dust(
+                            rng,
+                            &ctx,
+                            &self.world,
+                            position,
+                            6,
+                            6,
+                            dust_type,
+                            0.0,
+                            0.0,
+                            100,
+                            tr_core::particles::Color::default(),
+                            1.5,
+                        );
+                        // `:3698-3701` — the C# writes through the returned
+                        // index (6000 on a refused spawn); the fade counter
+                        // advances regardless (`num110 = fadeIn = num110 +
+                        // num111`). The port guards the sentinel write but
+                        // keeps the counter.
+                        fade += 0.005;
+                        if idx != tr_core::particles::DUST_SENTINEL {
+                            let d = self.dust.slot_mut(idx);
+                            d.no_gravity = true;
+                            d.velocity = Vec2::ZERO;
+                            d.fade_in = fade;
+                            d.velocity += vector4 * 1.5;
+                        }
+                        k += 1.0;
+                    }
+                }
+            }
+        }
+        // `player12.NebulaLevelup(num106)` (`:3704`) — the local player only
+        // (the method's `whoAmI != Main.myPlayer` guard, `Player.cs:57032`).
+        if let Some(p) = self.player.as_mut() {
+            p.nebula_levelup(n.buff_type as i32);
         }
     }
 
@@ -2023,6 +2159,22 @@ impl App {
                 self.world.tower_shield_vortex = clamp(t.vortex);
                 self.world.tower_shield_nebula = clamp(t.nebula);
                 self.world.tower_shield_stardust = clamp(t.stardust);
+            }
+            // `case 102` — the nebula booster fan (W4-g50,
+            // `MessageBuffer.cs:3662-3705`): for every active, living,
+            // same-team player within 700 px of the pickup point, the
+            // spiral dust trail from that player toward the picker, then
+            // `NebulaLevelup` on the local player. The dust draws ride the
+            // bare `Main.rand` stream (the message-time replay convention).
+            S2c::NebulaLevelupRequest(n) => {
+                self.apply_nebula_levelup(&n);
+            }
+            // `case 103` — the Moon Lord countdown statics (W4-g50,
+            // `MessageBuffer.cs:3708-3714`): `NPC.MaxMoonLordCountdown` then
+            // `NPC.MoonLordCountdown`, both raw ints.
+            S2c::MoonlordCountdown(m) => {
+                self.world.max_moon_lord_countdown = m.max;
+                self.world.moon_lord_countdown = m.countdown;
             }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
@@ -6295,5 +6447,47 @@ mod message_family_tests {
         assert_eq!(client_app.world.tower_shield_vortex, 55);
         assert_eq!(client_app.world.tower_shield_nebula, 0);
         assert_eq!(client_app.world.tower_shield_stardust, 100);
+    }
+
+    /// `case 102` (`MessageBuffer.cs:3662-3705`): the host relays with the
+    /// sender forced; the client bumps the local nebula tier and grants the
+    /// tier buff. The picker is the client itself, so the local player is
+    /// the fan's target.
+    #[test]
+    fn w4_g50_the_102_nebula_pickup_levels_the_local_player() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        let (cx, cy) = client_app.player.as_ref().unwrap().center();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NebulaLevelupRequest(net::NebulaLevelupRequest {
+                player_id: 250, // the host overrides it (`:3659`)
+                buff_type: 173,
+                x: cx,
+                y: cy,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        let p = client_app.player.as_ref().unwrap();
+        assert_eq!(p.nebula_level_life, 1, "the life tier bumped");
+        assert!(
+            p.buffs.find_buff_index(173).is_some(),
+            "the tier-1 life buff (173 + 1 - 1) granted"
+        );
+    }
+
+    /// `case 103` (`MessageBuffer.cs:3708-3714`): both countdown statics
+    /// land on the world.
+    #[test]
+    fn w4_g50_the_103_moonlord_countdown_stores_both_statics() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::MoonlordCountdown(net::MoonlordCountdown {
+                max: 3600,
+                countdown: 1800,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert_eq!(client_app.world.max_moon_lord_countdown, 3600);
+        assert_eq!(client_app.world.moon_lord_countdown, 1800);
     }
 }

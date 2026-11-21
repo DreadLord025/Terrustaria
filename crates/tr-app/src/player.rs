@@ -1451,6 +1451,15 @@ pub struct Player {
     /// heart family (`:35145-35148`, `Item.cs:49964`) and `GrabItems` pulls
     /// hearts at speed 15 / acc 5 (`:34949-34952`).
     pub life_magnet: bool,
+    /// `Player.nebulaLevelLife` / `nebulaLevelMana` / `nebulaLevelDamage`
+    /// (`Player.cs:924-930`, `nebulaMaxLevel = 3` `:922`): the nebula
+    /// booster tiers — `NebulaLevelup` (`:57030-57059`) clamps each +1 to
+    /// 0..3 and grants the tier buff (`type + level - 1`, 480 ticks); the
+    /// `102` client arm calls it (W4-g50). The buff-effect consumers
+    /// (`UpdateBuffs_NebulaBuffs` `:10446-10456`) ride the buff census.
+    pub nebula_level_life: i32,
+    pub nebula_level_mana: i32,
+    pub nebula_level_damage: i32,
     /// `Player.latestManaPotionDamageBonus` / `latestManaPotionDuration`
     /// (`Player.cs:982-984`): `TryApplyManaHeat` (`:52006-52014`) writes them
     /// on every mana-star pickup (`PickupItem` `:35071`) — power 0.2, time 2 s
@@ -2769,6 +2778,9 @@ impl Player {
             has_lucky_coin: false,
             mana_magnet: false,
             life_magnet: false,
+            nebula_level_life: 0,
+            nebula_level_mana: 0,
+            nebula_level_damage: 0,
             latest_mana_potion_damage_bonus: 0.0,
             latest_mana_potion_duration: 0.0,
             star_cloak: false,
@@ -4583,6 +4595,43 @@ impl Player {
 
     pub fn center(&self) -> (f32, f32) {
         (self.x + self.width * 0.5, self.y + self.height * 0.5)
+    }
+
+    /// `Player.NebulaLevelup` (`Player.cs:57030-57059`, W4-g50): the nebula
+    /// booster pickup's tier bump. The `whoAmI != Main.myPlayer` guard
+    /// (`:57032`) folds to the caller — the `102` client arm only calls it
+    /// on the local player. The existing tier buffs (`type..type+2`) are
+    /// deleted first (`:57037-57043`), then the matching level clamps +1 to
+    /// 0..3 (`nebulaMaxLevel`, `:922`) and the tier buff `type + level - 1`
+    /// grants for 480 ticks (`:57036`).
+    pub fn nebula_levelup(&mut self, buff_type: i32) {
+        let time = 480;
+        // `for i < maxBuffs: if buffType[i] in [type, type+3) DelBuff(i--)`.
+        let mut i = 0;
+        while i < crate::buffs::MAX_BUFFS {
+            let t = self.buffs.buff_type[i];
+            if t >= buff_type && t < buff_type + 3 {
+                self.buffs.del_buff(i);
+            } else {
+                i += 1;
+            }
+        }
+        match buff_type {
+            173 => {
+                self.nebula_level_life = (self.nebula_level_life + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_life - 1, time);
+            }
+            176 => {
+                self.nebula_level_mana = (self.nebula_level_mana + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_mana - 1, time);
+            }
+            179 => {
+                self.nebula_level_damage = (self.nebula_level_damage + 1).clamp(0, 3);
+                self.buffs
+                    .add_buff(buff_type + self.nebula_level_damage - 1, time);
+            }
+            _ => {}
+        }
     }
 
     /// `Entity.Bottom` (`Entity.cs:122-132`):

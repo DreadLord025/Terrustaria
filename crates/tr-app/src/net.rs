@@ -175,6 +175,16 @@ pub mod id {
     /// `NetMessage.cs:1371-1376`, `MessageBuffer.cs:3611-3651`,
     /// host→client only).
     pub const TOWER_SHIELDS: u8 = 101;
+    /// `102 NebulaLevelupRequest` (W4-g50, S1-I-4): `(byte)` picker,
+    /// `(ushort)` buffType, picker-centre Vector2 (`MessageID.cs:218`,
+    /// `NetMessage.cs:1377-1382`, `MessageBuffer.cs:3652-3706`). Both
+    /// directions — the host forces the id and relays.
+    pub const NEBULA_LEVELUP_REQUEST: u8 = 102;
+    /// `103 MoonlordHorror` (W4-g50, S1-I-4): the two NPC statics as raw
+    /// ints, MaxMoonLordCountdown then MoonLordCountdown (`MessageID.cs:220`,
+    /// `NetMessage.cs:1383-1386`, `MessageBuffer.cs:3708-3714`,
+    /// host→client only).
+    pub const MOONLORD_COUNTDOWN: u8 = 103;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -668,6 +678,10 @@ pub struct PlayerNet {
     /// fed by `115 MinionAttackTargetUpdate` (`MessageBuffer.cs:3591`;
     /// W4-g50).
     pub minion_attack_target_npc: i32,
+    /// `Main.player[id].team` (`Player.cs`), the `102` fan's team gate
+    /// (`MessageBuffer.cs:3666`; W4-g50). The 45 relay that feeds it is
+    /// parked, so peers read 0 until it lands.
+    pub team: i32,
 }
 
 impl Default for PlayerNet {
@@ -698,6 +712,7 @@ impl Default for PlayerNet {
             last_portal_color_index: 0,
             minion_rest_target_point: (0.0, 0.0),
             minion_attack_target_npc: -1,
+            team: 0,
         }
     }
 }
@@ -2042,6 +2057,32 @@ pub struct TowerShields {
     pub stardust: u16,
 }
 
+/// `msg 102 NebulaLevelupRequest`'s body (`NetMessage.cs:1377-1382`):
+/// `(byte)number, (ushort)number2, number3, number4` — the picker, the
+/// booster's `buffType` and the picker's centre (`Player.cs:35052` passes
+/// `Center.X`/`Center.Y` as the two floats). The host relays verbatim with
+/// the sender forced into the id byte (`MessageBuffer.cs:3654-3660`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NebulaLevelupRequest {
+    pub player_id: u8,
+    /// The booster item's `Item.buffType` — 173 life / 176 mana / 179 damage
+    /// (`MessageBuffer.cs:3681-3692`'s dust-kind switch).
+    pub buff_type: u16,
+    pub x: f32,
+    pub y: f32,
+}
+
+/// `msg 103 MoonlordHorror`'s body (`NetMessage.cs:1383-1386`): the two
+/// `NPC` statics as raw ints — `MaxMoonLordCountdown` then `MoonLordCountdown`
+/// (`NPC.cs:6031-6033`). Sent by the apocalypse start (`WorldGen.cs:86755`)
+/// and the join push (`MessageBuffer.cs:868`); the client stores both
+/// (`:3708-3714`). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MoonlordCountdown {
+    pub max: i32,
+    pub countdown: i32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2187,6 +2228,9 @@ pub enum C2s {
     /// changed (`Main.cs:17682-17685`; `MessageBuffer.cs:3584-3597` relays;
     /// W4-g50).
     MinionAttackTarget(MinionAttackTarget),
+    /// `102 NebulaLevelupRequest` - this client picked up a nebula booster
+    /// (`Player.cs:35052`; `MessageBuffer.cs:3654-3660` relays; W4-g50).
+    NebulaLevelupRequest(NebulaLevelupRequest),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2355,6 +2399,12 @@ pub enum S2c {
     /// `101 UpdateTowerShieldStrengths` - the four Lunar tower shields
     /// (`NetMessage.cs:1371-1376`; `MessageBuffer.cs:3611-3651`; W4-g50).
     TowerShields(TowerShields),
+    /// `102 NebulaLevelupRequest` - a peer's nebula booster pickup, relayed
+    /// (`MessageBuffer.cs:3659`; W4-g50).
+    NebulaLevelupRequest(NebulaLevelupRequest),
+    /// `103 MoonlordHorror` - the Moon Lord countdown statics
+    /// (`NetMessage.cs:1383-1386`; `MessageBuffer.cs:3708-3714`; W4-g50).
+    MoonlordCountdown(MoonlordCountdown),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2451,6 +2501,7 @@ impl C2s {
             Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
             Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
             Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
+            Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2545,6 +2596,11 @@ impl C2s {
             Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
             // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
             Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
+            // `NetMessage.cs:1377-1382`: byte picker + ushort buffType + the
+            // picker-centre floats.
+            Self::NebulaLevelupRequest(n) => {
+                w.u8(n.player_id).u16(n.buff_type).f32(n.x).f32(n.y)
+            }
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2721,6 +2777,14 @@ impl C2s {
                 player_id: r.u8()?,
                 npc: r.i16()?,
             }),
+            // `MessageBuffer.cs:3654-3656` — byte picker, ushort buffType,
+            // the picker-centre Vector2.
+            id::NEBULA_LEVELUP_REQUEST => Self::NebulaLevelupRequest(NebulaLevelupRequest {
+                player_id: r.u8()?,
+                buff_type: r.u16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2894,6 +2958,8 @@ impl S2c {
             Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
             Self::NpcPortalTeleport(_) => id::NPC_PORTAL_TELEPORT,
             Self::TowerShields(_) => id::TOWER_SHIELDS,
+            Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
+            Self::MoonlordCountdown(_) => id::MOONLORD_COUNTDOWN,
         }
     }
 
@@ -3100,6 +3166,14 @@ impl S2c {
                 .f32(p.y)
                 .f32(p.velocity_x)
                 .f32(p.velocity_y),
+            // `NetMessage.cs:1377-1382`: byte picker + ushort buffType + the
+            // picker-centre floats.
+            Self::NebulaLevelupRequest(n) => {
+                w.u8(n.player_id).u16(n.buff_type).f32(n.x).f32(n.y)
+            }
+            // `NetMessage.cs:1383-1386`: the two NPC statics as raw ints,
+            // MaxMoonLordCountdown first.
+            Self::MoonlordCountdown(m) => w.i32(m.max).i32(m.countdown),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3404,6 +3478,19 @@ impl S2c {
                 y: r.f32()?,
                 velocity_x: r.f32()?,
                 velocity_y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3654-3656` — byte picker, ushort buffType,
+            // the picker-centre Vector2.
+            id::NEBULA_LEVELUP_REQUEST => Self::NebulaLevelupRequest(NebulaLevelupRequest {
+                player_id: r.u8()?,
+                buff_type: r.u16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3711-3712` — the two raw ints, Max first.
+            id::MOONLORD_COUNTDOWN => Self::MoonlordCountdown(MoonlordCountdown {
+                max: r.i32()?,
+                countdown: r.i32()?,
             }),
             _ => return None,
         })
@@ -6130,6 +6217,58 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::TowerShields(d) => assert_eq!(d, t),
             other => panic!("expected 101, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `102 NebulaLevelupRequest` (`NetMessage.cs:1377-1382`): byte picker,
+    /// ushort buffType, the picker-centre floats. Both directions — the
+    /// host forces the id and relays (`MessageBuffer.cs:3654-3660`).
+    #[test]
+    fn w4_g50_nebula_levelup_request_round_trips() {
+        let n = NebulaLevelupRequest {
+            player_id: 2,
+            buff_type: 173,
+            x: 320.5,
+            y: 640.25,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&173u16.to_le_bytes());
+        body.extend_from_slice(&320.5f32.to_le_bytes());
+        body.extend_from_slice(&640.25f32.to_le_bytes());
+        let c = C2s::NebulaLevelupRequest(n).encode();
+        assert_eq!(c[2], 102);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NebulaLevelupRequest(d) => assert_eq!(d, n),
+            other => panic!("expected 102, got {:?}", other.msg_id()),
+        }
+        let f = S2c::NebulaLevelupRequest(n).encode();
+        assert_eq!(f[2], 102);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NebulaLevelupRequest(d) => assert_eq!(d, n),
+            other => panic!("expected 102, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `103 MoonlordHorror` (`NetMessage.cs:1383-1386`): the two raw ints,
+    /// MaxMoonLordCountdown first. Host→client only
+    /// (`MessageBuffer.cs:3708-3714`).
+    #[test]
+    fn w4_g50_moonlord_countdown_round_trips() {
+        let m = MoonlordCountdown {
+            max: 3600,
+            countdown: 1800,
+        };
+        let f = S2c::MoonlordCountdown(m).encode();
+        assert_eq!(f[2], 103);
+        let mut body = Vec::new();
+        body.extend_from_slice(&3600i32.to_le_bytes());
+        body.extend_from_slice(&1800i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MoonlordCountdown(d) => assert_eq!(d, m),
+            other => panic!("expected 103, got {:?}", other.msg_id()),
         }
     }
 }
