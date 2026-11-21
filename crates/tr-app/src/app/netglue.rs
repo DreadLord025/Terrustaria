@@ -897,12 +897,17 @@ impl App {
                     })); // `:2573`
                 }
             }
-            // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
-            // codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:4282-4297`, `:4328-4343`) land with the send-path pass (S1-I-4).
-            C2s::TogglePvp(_)
-            | C2s::PlayerMana(_)
+            // `case 30` — a client flipped its PvP flag
+            // (`MessageBuffer.cs:1851-1867`): the store + relay + the
+            // team-coloured chat fan-out — W4-g48 (`net_apply`).
+            C2s::TogglePvp(t) => {
+                crate::app::net_apply::host_toggle_pvp(self, server, id, t.hostile);
+            }
+            // S1-I-1 wave A: the join bundle's remaining client-sent ids have
+            // bodies + codecs (`net.rs`); the host apply/relay arms
+            // (`MessageBuffer.cs:2290-2306`, `:2325-2364`, `:4282-4297`,
+            // `:4328-4343`) land with the send-path pass (S1-I-4).
+            C2s::PlayerMana(_)
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
@@ -912,13 +917,17 @@ impl App {
             C2s::TileEdit(e) => {
                 crate::app::net_apply::host_tile_edit(self, server, id, e);
             }
+            // `case 19` — a client's door/trapdoor/gate toggle
+            // (`MessageBuffer.cs:1299-1334`): the action dispatch + the
+            // normalised-direction relay — W4-g48 (`net_apply`).
+            C2s::DoorToggle(d) => {
+                crate::app::net_apply::host_door_toggle(self, server, id, d);
+            }
             // S1-I-1 wave B: the world-sync region's remaining client-sent
             // ids have bodies + codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:1299-1334`, `:2909-2948`, `:4023-4042`,
-            // `:2355-2363`, `:4457-4462`) land with the send-path pass
-            // (S1-I-4).
-            C2s::DoorToggle(_)
-            | C2s::TilePaint(_)
+            // (`MessageBuffer.cs:2909-2948`, `:4023-4042`, `:2355-2363`,
+            // `:4457-4462`) land with the send-path pass (S1-I-4).
+            C2s::TilePaint(_)
             | C2s::WallPaint(_)
             | C2s::TilePicking(_)
             | C2s::TeamChangeUi(_)
@@ -2065,14 +2074,19 @@ impl App {
             // 2124-2157`'s PlaceChestDirect/DestroyChestDirect pass) rides
             // the tile-edit send-path pass (S1-I-4).
             S2c::ChestUpdates(_) => {}
-            // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
-            // codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:2695-2739`, `:3118-3126`, `:3147-3153`, `:4043-4048`,
-            // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
-            // with the send-path pass (S1-I-4) — nothing sends them yet.
-            S2c::TogglePvp(_)
-            | S2c::PlayerMana(_)
+            // `case 30` on a client — a peer's PvP flag
+            // (`MessageBuffer.cs:1858-1859`): the snapshot store; the chat
+            // line arrives as the `82` module — W4-g48 (`net_apply`).
+            S2c::TogglePvp(t) => {
+                crate::app::net_apply::client_toggle_pvp(self, t.player_id, t.hostile);
+            }
+            // S1-I-1 wave A: the join bundle's remaining server-sent ids have
+            // bodies + codecs (`net.rs`); the client read sites
+            // (`MessageBuffer.cs:2290-2306`, `:2325-2364`, `:2695-2739`,
+            // `:3118-3126`, `:3147-3153`, `:4043-4048`, `:4195-4203`,
+            // `:4238-4249`, `:4282-4297`, `:4328-4343`) land with the
+            // send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::PlayerMana(_)
             | S2c::TeamChange(_)
             | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
@@ -2089,14 +2103,19 @@ impl App {
             S2c::TileEdit(e) => {
                 crate::app::net_apply::client_tile_edit(self, e);
             }
+            // `case 19` on a client — the host's door relay
+            // (`MessageBuffer.cs:1307-1327`): the same action dispatch, no
+            // relay — W4-g48 (`net_apply`).
+            S2c::DoorToggle(d) => {
+                crate::app::net_apply::client_door_toggle(self, d);
+            }
             // S1-I-1 wave B: the world-sync region's remaining server-sent
             // ids have bodies + codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:1299-1334`, `:2909-2948`, `:4023-4042`,
-            // `:4450-4456`) land with the send-path pass (S1-I-4) — nothing
-            // sends them yet. The `11` arm is the d89 one above (keep-one
-            // dedupe at the g48 merge).
-            S2c::DoorToggle(_)
-            | S2c::TilePaint(_)
+            // (`MessageBuffer.cs:2909-2948`, `:4023-4042`, `:4450-4456`) land
+            // with the send-path pass (S1-I-4) — nothing sends them yet. The
+            // `11` arm is the d89 one above (keep-one dedupe at the g48
+            // merge).
+            S2c::TilePaint(_)
             | S2c::WallPaint(_)
             | S2c::TilePicking(_)
             | S2c::ExtraSpawnLoaded { .. }
@@ -6141,5 +6160,85 @@ mod g48_apply_tests {
         }
         assert!(cut, "the wire came off both sides");
         assert!(host_app.items.iter().any(|d| d.kind == 530), "the 530 drop");
+    }
+
+    /// `case 19` action 0 (`MessageBuffer.cs:1309-1311`): a client's door-open
+    /// toggle runs `WorldGen.OpenDoor` on the host and relays the normalised
+    /// direction to the other peers; the receiving client opens its copy.
+    #[test]
+    fn g48_19_door_open_toggle_replicates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A closed door (tile 10, 1x3) at (8, 1..3) above the dirt row (y 4),
+        // on both sides. `place_item_tile`'s y is the bottom row.
+        for app in [&mut host_app, &mut client_app] {
+            assert!(tr_core::edit::place_item_tile(&mut app.world, 8, 3, 10, 0, 1));
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DoorToggle(net::DoorToggle {
+                action: 0,
+                x: 8,
+                y: 2,
+                direction: 1,
+            }));
+        }
+        let mut opened = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            // The open door is tile 11 (the closed 10 became the open pair).
+            opened = host_app.world.tile(8, 2).is_some_and(|t| t.kind == 11)
+                && client_app.world.tile(8, 2).is_some_and(|t| t.kind == 11);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the door opened on both sides");
+    }
+
+    /// `case 30` (`MessageBuffer.cs:1851-1867`): a client's PvP flip stores
+    /// `hostile` on the host's peer copy, relays to the others and broadcasts
+    /// the team-coloured chat line (`Lang.mp[11]`, `Main.teamColor[team]`).
+    #[test]
+    fn g48_30_pvp_toggle_stores_relays_and_chats() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The peer is on team 1 (red) — the 12 spawn carried it; here the
+        // fixture sets it directly (the join default is 0).
+        host_app
+            .remote_players
+            .entry(client_app.local_id)
+            .or_default()
+            .team = 1;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TogglePvp(net::TogglePvp {
+                player_id: 255, // the host forces the sender (`:1854-1857`)
+                hostile: true,
+            }));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.hostile)
+                && !host_app.chat.messages.is_empty();
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 30 arm stored hostile and broadcast the chat");
+        // The chat line is the team-1 red (`Main.cs:6658`).
+        let line = &host_app.chat.messages[0];
+        assert_eq!(line.color, [218, 59, 59], "Main.teamColor[1]");
+        // The client received the relay (its own echo is skipped by the
+        // host's broadcast_except, so the flag lands via the module only if
+        // a second peer existed; here the host's store is the witness).
     }
 }

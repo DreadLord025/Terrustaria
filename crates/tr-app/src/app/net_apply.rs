@@ -9,6 +9,7 @@
 
 use tr_core::{edit, TILE_PX};
 
+use crate::app::netmodules::ModuleBody;
 use crate::app::App;
 use crate::net::{self, S2c};
 use crate::player;
@@ -535,6 +536,162 @@ pub(crate) fn client_player_hp(app: &mut App, player_id: u8, hp: i16, max_hp: i1
         p.hp = hp as i32;
         p.max_hp = (max_hp as i32).max(20);
         p.dead = p.hp <= 0; // `:1111`
+    }
+}
+
+/// `Main.teamColor[team]` (`Main.cs:6657-6662`) — the PVP chat line's colour
+/// (`MessageBuffer.cs:1864`). An out-of-range team reads white (the C# would
+/// throw; the wire byte is 0..5 in practice).
+fn team_color(team: u8) -> [u8; 3] {
+    match team {
+        1 => [218, 59, 59],
+        2 => [59, 218, 85],
+        3 => [59, 149, 218],
+        4 => [242, 221, 100],
+        5 => [224, 100, 242],
+        _ => [255, 255, 255],
+    }
+}
+
+/// The `19 ToggleDoorState` reader (`MessageBuffer.cs:1299-1334`): the
+/// action byte maps 0/1 door open/close, 2/3 trapdoor, 4/5 tall gate; the
+/// direction normalises `!= 0` to 1 else -1 (`:1306`) and the host relays
+/// the normalised byte (`:1330`). The trapdoor/tall-gate shifts
+/// (`WorldGen.ShiftTrapdoor` `:51447`, `ShiftTallGate` `:51723`) are unported
+/// (the `npc_ai_town.rs` cited skip) — those actions relay without a world
+/// change, exactly like the town-NPC gate arm.
+pub(crate) fn host_door_toggle(app: &mut App, server: &net::Server, id: u32, d: net::DoorToggle) {
+    let (x, y) = (d.x as i32, d.y as i32);
+    if !in_world(&app.world, x, y, 3) {
+        return; // `:1304`
+    }
+    let dir = if d.direction != 0 { 1 } else { -1 }; // `num47` (`:1306`)
+    apply_door_action(app, d.action, x, y, dir);
+    // `:1330` — the relay carries the NORMALISED direction byte.
+    server.broadcast_except(
+        &S2c::DoorToggle(net::DoorToggle {
+            direction: if dir == 1 { 1 } else { 0 },
+            ..d
+        }),
+        id,
+    );
+}
+
+/// The `19` client half: the same action dispatch, no relay.
+pub(crate) fn client_door_toggle(app: &mut App, d: net::DoorToggle) {
+    let (x, y) = (d.x as i32, d.y as i32);
+    if !in_world(&app.world, x, y, 3) {
+        return;
+    }
+    let dir = if d.direction != 0 { 1 } else { -1 };
+    apply_door_action(app, d.action, x, y, dir);
+}
+
+/// The `19` action switch (`MessageBuffer.cs:1307-1327`). The door open/close
+/// run the `tr_core::edit` seams (the same `WorldGen.OpenDoor`/`CloseDoor`
+/// the interaction path uses); the close is `forced: true` (`:1313`). The
+/// sounds are the seams' own (`WorldGen.cs:37727`/:31908) — the message
+/// handler's bare-stream precedent (S1-E-21i).
+fn apply_door_action(app: &mut App, action: u8, x: i32, y: i32, dir: i32) {
+    match action {
+        0 => {
+            // `WorldGen.OpenDoor(x, y, num47)` (`:1310`).
+            let mut drops = Vec::new();
+            if edit::open_door(&mut app.world, x, y, dir, &mut drops) {
+                app.audio.play_door_sound(
+                    true,
+                    x as f32 * TILE_PX,
+                    y as f32 * TILE_PX,
+                    app.rngs.global(),
+                );
+                spawn_object_drops(app, drops);
+                app.world_key = None;
+            }
+        }
+        1 => {
+            // `WorldGen.CloseDoor(x, y, forced: true)` (`:1313`) — the
+            // forced close skips the occupancy gate (the wired caller).
+            let mut drops = Vec::new();
+            if edit::close_door(&mut app.world, x, y, true, &|_, _| false, &mut drops) {
+                app.audio.play_door_sound(
+                    false,
+                    x as f32 * TILE_PX,
+                    y as f32 * TILE_PX,
+                    app.rngs.global(),
+                );
+                spawn_object_drops(app, drops);
+                app.world_key = None;
+            }
+        }
+        2 | 3 => {
+            // `WorldGen.ShiftTrapdoor(x, y, num47 == 1, 1/0)` (`:1316`/
+            // `:1319`) — unported (the trapdoor 386/387 shift, the
+            // `npc_ai_town.rs` cited skip); the relay still runs.
+        }
+        4 | 5 => {
+            // `WorldGen.ShiftTallGate(x, y, closing, forced: true)` (`:1322`/
+            // `:1325`) — unported (the tall gate 388/389, the same skip).
+        }
+        _ => {}
+    }
+}
+
+/// The door seams' object drops (`edit::ObjectDrop` → `registry::tile_drop`,
+/// the `doors.rs` `interaction_events` shape) on the bare global stream.
+fn spawn_object_drops(app: &mut App, drops: Vec<edit::ObjectDrop>) {
+    for d in drops {
+        if let Some(id) = crate::registry::tile_drop(d.tile_kind, 0) {
+            let rng = app.rngs.global();
+            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, 1, d.x, d.y);
+        }
+    }
+}
+
+/// The `30 TogglePVP` reader (`MessageBuffer.cs:1851-1867`): the host forces
+/// the id to the sender (`:1854-1857`), stores `hostile` (`:1859`), relays
+/// (`:1862`) and broadcasts the team-coloured chat line (`:1863-1864`,
+/// `Lang.mp[11]` on / `Lang.mp[12]` off, `NetworkText.FromKey(key, name)`).
+pub(crate) fn host_toggle_pvp(app: &mut App, server: &net::Server, id: u32, hostile: bool) {
+    let team = app
+        .remote_players
+        .get(&id)
+        .map(|p| p.team)
+        .unwrap_or(0);
+    if let Some(p) = app.remote_players.get_mut(&id) {
+        p.hostile = hostile; // `:1859`
+    }
+    server.broadcast_except(
+        &S2c::TogglePvp(net::TogglePvp {
+            player_id: id as u8,
+            hostile,
+        }),
+        id,
+    ); // `:1862`
+    // `:1863-1864` — the chat fan-out. The C# broadcasts to EVERYONE (no
+    // ignoreClient); the port's `NetTextModule` relay is the same shape
+    // (`host_module`'s TEXT arm). The keyed text resolves through the lang
+    // manager (`{0}` = the player's name).
+    let name = server.slot_name(id);
+    let key = if hostile { 11 } else { 12 };
+    let text = crate::lang::text_args(&format!("LegacyMultiplayer.{key}"), &[name]);
+    let color = team_color(team);
+    app.chat.new_text(text.clone(), color);
+    let sm = crate::app::netmodules::ServerMessage {
+        author: 255, // the server's own line
+        text,
+        color: net::Rgb(color[0], color[1], color[2]),
+    };
+    server.broadcast(&S2c::NetModule {
+        module: crate::app::netmodules::module_id::TEXT,
+        body: sm.encode(),
+    });
+}
+
+/// The `30` client half (`MessageBuffer.cs:1858-1859`): a peer's PvP flag
+/// lands in the snapshot store (the chat line arrives as the `82` module).
+pub(crate) fn client_toggle_pvp(app: &mut App, player_id: u8, hostile: bool) {
+    if let Some(p) = app.remote_players.get_mut(&(player_id as u32)) {
+        p.hostile = hostile;
     }
 }
 
