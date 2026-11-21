@@ -49,7 +49,10 @@ use crate::projectile::Projectile;
 use crate::projectile_gore_a::tombstone_landing_gore;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Entity.Center` (`Entity.cs:50-60`).
 fn center(p: &Projectile) -> Vec2 {
@@ -62,7 +65,7 @@ fn top(p: &Projectile) -> Vec2 {
 }
 
 /// `Utils.NextVector2Square` (`Utils.cs:1251-1254`) — TWO `NextDouble`.
-fn next_vector2_square(rng: &mut UnifiedRandom, min: f32, max: f32) -> Vec2 {
+fn next_vector2_square(rng: &mut dyn DropRng, min: f32, max: f32) -> Vec2 {
     let x = (max - min) * rng.next_double() as f32 + min;
     let y = (max - min) * rng.next_double() as f32 + min;
     Vec2::new(x, y)
@@ -78,20 +81,20 @@ fn rotated_by(v: Vec2, radians: f64) -> Vec2 {
 
 /// `Utils.RotatedByRandom` (`Utils.cs:1697-1700`) — TWO `NextDouble`:
 /// `RotatedBy(NextDouble*max - NextDouble*max)`.
-fn rotated_by_random(rng: &mut UnifiedRandom, v: Vec2, max: f64) -> Vec2 {
+fn rotated_by_random(rng: &mut dyn DropRng, v: Vec2, max: f64) -> Vec2 {
     let a = rng.next_double() * max;
     let b = rng.next_double() * max;
     rotated_by(v, a - b)
 }
 
 /// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — ONE `NextFloat`.
-fn next_vector2_unit(rng: &mut UnifiedRandom) -> Vec2 {
+fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
     let angle = std::f32::consts::PI * 2.0 * rng.next_float();
     Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
 }
 
 /// `Utils.NextVector2Circular` (`Utils.cs:1266-1269`) — unit + radius.
-fn next_vector2_circular(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
+fn next_vector2_circular(rng: &mut dyn DropRng, hw: f32, hh: f32) -> Vec2 {
     let unit = next_vector2_unit(rng);
     let r = rng.next_float();
     Vec2::new(unit.x * hw * r, unit.y * hh * r)
@@ -105,7 +108,7 @@ fn next_vector2_circular(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
 pub fn lava_bounce_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if rng.next_max(3) == 0 {
@@ -126,7 +129,7 @@ pub fn lava_bounce_gore(
 pub fn drill_unit_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if rng.next_max(5) == 0 {
@@ -147,7 +150,7 @@ pub fn drill_unit_gore(
 pub fn ai49_tombstone_landing(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     tombstone_landing_gore(p, 1.5, gore, rng, world);
@@ -163,7 +166,7 @@ pub fn ai49_tombstone_landing(
 pub fn tile_collision_burst(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let vector2 = top(p) - Vec2::new(0.0, 62.0);
@@ -211,7 +214,7 @@ pub fn tile_collision_burst(
 pub fn crystal_destruction_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let c = center(p);
@@ -246,7 +249,7 @@ pub fn volcano_gores(
     p: &Projectile,
     num7: i32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let flag = p.kind == 1125;
@@ -276,7 +279,7 @@ pub fn volcano_gores(
 pub fn fire_explosion_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     for _ in 0..2 {
@@ -306,7 +309,7 @@ pub fn fire_explosion_gores(
 pub fn pirate_jump_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) -> bool {
     if rng.next_max(4) != 0 {

@@ -39,14 +39,17 @@ use crate::projectile_gore_e::rocket_corner_gores;
 use crate::projectile_gore_l::kill312_gores;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// Site 142 — the 779/783/862/863 rocket corners (`Projectile.cs:78006-
 /// 78018`): the wave-E rocket row verbatim, keep-one.
 pub fn rocket_bomb_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     rocket_corner_gores(p, gore, rng, world);
@@ -58,7 +61,7 @@ pub fn rocket_bomb_gores(
 pub fn cluster_bomb_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
@@ -78,7 +81,7 @@ pub fn cluster_bomb_gores(
 pub fn dynamite_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     kill312_gores(p, gore, rng, world);
@@ -92,7 +95,7 @@ pub fn dynamite_gores(
 pub fn sticky_bomb_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let pos = Vec2::new(

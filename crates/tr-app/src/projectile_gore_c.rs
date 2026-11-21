@@ -45,7 +45,10 @@
 use crate::projectile::Projectile;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Entity.Center` (`Entity.cs:50-60`).
 fn center(p: &Projectile) -> Vec2 {
@@ -53,13 +56,13 @@ fn center(p: &Projectile) -> Vec2 {
 }
 
 /// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — ONE `NextFloat`.
-fn next_vector2_unit(rng: &mut UnifiedRandom) -> Vec2 {
+fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
     let angle = std::f32::consts::PI * 2.0 * rng.next_float();
     Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
 }
 
 /// `Utils.NextVector2Circular` (`Utils.cs:1266-1269`) — unit + radius.
-fn next_vector2_circular(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
+fn next_vector2_circular(rng: &mut dyn DropRng, hw: f32, hh: f32) -> Vec2 {
     let unit = next_vector2_unit(rng);
     let r = rng.next_float();
     Vec2::new(unit.x * hw * r, unit.y * hh * r)
@@ -73,7 +76,7 @@ fn next_vector2_circular(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
 pub fn pirate_jump_small_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let pos = center(p) + Vec2::new(-p.direction as f32 * 8.0, 0.0);
@@ -96,7 +99,7 @@ pub fn pirate_idle_gore(
     p: &Projectile,
     local_ai0: f32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) -> bool {
     let roll = rng.next_range(900, 1200);
@@ -123,7 +126,7 @@ pub fn rope_spawn_gore(
     x: i32,
     y: i32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if rng.next_max(4) == 0 {
@@ -148,7 +151,7 @@ pub fn toilet_pop_gores(
     p: &Projectile,
     count: i32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let c = center(p);
@@ -170,7 +173,7 @@ pub fn toilet_pop_gores(
 pub fn celeb2_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let off = Vec2::new(

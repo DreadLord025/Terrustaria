@@ -44,7 +44,10 @@ use crate::projectile_gore_b::fire_explosion_gores;
 use crate::projectile_gore_c::celeb2_gore;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Entity.Center` (`Entity.cs:50-60`).
 fn center(p: &Projectile) -> Vec2 {
@@ -59,14 +62,14 @@ fn rotated_by(v: Vec2, radians: f64) -> Vec2 {
 }
 
 /// `Utils.RotatedByRandom` (`Utils.cs:1697-1700`) — TWO `NextDouble`.
-fn rotated_by_random(rng: &mut UnifiedRandom, v: Vec2, max: f64) -> Vec2 {
+fn rotated_by_random(rng: &mut dyn DropRng, v: Vec2, max: f64) -> Vec2 {
     let a = rng.next_double() * max;
     let b = rng.next_double() * max;
     rotated_by(v, a - b)
 }
 
 /// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — ONE `NextFloat`.
-fn next_vector2_unit(rng: &mut UnifiedRandom) -> Vec2 {
+fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
     let angle = std::f32::consts::PI * 2.0 * rng.next_float();
     Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
 }
@@ -78,7 +81,7 @@ fn next_vector2_unit(rng: &mut UnifiedRandom) -> Vec2 {
 pub fn stellar_tune_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let unit = next_vector2_unit(rng);
@@ -98,7 +101,7 @@ pub fn dd2_explosion_gores(
     p: &Projectile,
     count: i32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     for _ in 0..count {
@@ -128,7 +131,7 @@ pub fn dd2_explosion_gores(
 pub fn goblin_bomb_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
@@ -148,7 +151,7 @@ pub fn goblin_bomb_gores(
 pub fn kill645_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     celeb2_gore(p, gore, rng, world);
@@ -160,7 +163,7 @@ pub fn kill645_gore(
 pub fn kill608_617_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     fire_explosion_gores(p, gore, rng, world);
@@ -174,7 +177,7 @@ pub fn kill608_617_gores(
 pub fn kill590_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let scale = 0.6 + rng.next_float() * 0.4;

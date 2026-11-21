@@ -39,7 +39,10 @@ use crate::projectile::Projectile;
 use crate::projectile_gore_g::kill483_gore;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Entity.Center` (`Entity.cs:50-60`).
 fn center(p: &Projectile) -> Vec2 {
@@ -53,7 +56,7 @@ fn center(p: &Projectile) -> Vec2 {
 pub fn kill312_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
@@ -75,7 +78,7 @@ pub fn kill312_gores(
 pub fn kill246_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     kill483_gore(p, gore, rng, world);
@@ -87,7 +90,7 @@ pub fn kill246_gore(
 pub fn kill249_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let ty = rng.next_range(61, 64);
@@ -109,7 +112,7 @@ pub fn duck_gores(
     p: &Projectile,
     is_371: bool,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let c = center(p);

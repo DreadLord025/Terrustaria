@@ -42,14 +42,17 @@ use crate::projectile::Projectile;
 use crate::projectile_gore_i::star_kill_gores;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// Site 97 — `Kill()`'s 12/955 star gores (`Projectile.cs:75704-75711`):
 /// the wave-I star row ×7, keep-one (the caller gates on the screen).
 pub fn kill12_star_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     star_kill_gores(p, gore, rng, world);
@@ -64,7 +67,7 @@ pub fn kill9_503_gores(
     count: i32,
     is_503: bool,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let vel = Vec2::new(p.vel.x * 0.05, p.vel.y * 0.05);
@@ -83,7 +86,7 @@ pub fn kill9_503_gores(
 pub fn kill12_low_damage_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     crate::projectile_gore_i::falling_star_kill_gores(p, false, gore, rng, world);
@@ -96,7 +99,7 @@ pub fn kill12_low_damage_gores(
 pub fn tombstone_head_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     for ty in [76, 77] {
@@ -118,7 +121,7 @@ pub fn corner_gores(
     p: &Projectile,
     magnitude: f32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
@@ -139,7 +142,7 @@ pub fn corner_gores(
 pub fn kill240_corner_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     corner_gores(p, 1.0, gore, rng, world);

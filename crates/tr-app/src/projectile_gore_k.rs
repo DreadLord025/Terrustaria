@@ -43,7 +43,10 @@ use crate::projectile::Projectile;
 use crate::projectile_gore_h::confetti_gores_vel;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Entity.Center` (`Entity.cs:50-60`).
 fn center(p: &Projectile) -> Vec2 {
@@ -51,13 +54,13 @@ fn center(p: &Projectile) -> Vec2 {
 }
 
 /// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — ONE `NextFloat`.
-fn next_vector2_unit(rng: &mut UnifiedRandom) -> Vec2 {
+fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
     let angle = std::f32::consts::PI * 2.0 * rng.next_float();
     Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
 }
 
 /// `Utils.NextVector2Circular` (`Utils.cs:1266-1269`) — unit + radius.
-fn next_vector2_circular(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
+fn next_vector2_circular(rng: &mut dyn DropRng, hw: f32, hh: f32) -> Vec2 {
     let unit = next_vector2_unit(rng);
     let r = rng.next_float();
     Vec2::new(unit.x * hw * r, unit.y * hh * r)
@@ -68,7 +71,7 @@ fn next_vector2_circular(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
 pub fn kill284_confetti(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     confetti_gores_vel(p, 5, -p.vel * 0.3, gore, rng, world);
@@ -80,7 +83,7 @@ pub fn kill284_confetti(
 pub fn kill286_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let ty = rng.next_range(61, 64);
@@ -98,7 +101,7 @@ pub fn kill286_gore(
 pub fn kill712_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     for _ in 0..3 {
@@ -114,7 +117,7 @@ pub fn kill712_gores(
 pub fn kill41_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     for _ in 0..2 {
@@ -133,7 +136,7 @@ pub fn kill41_gores(
 pub fn bee_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
@@ -155,7 +158,7 @@ pub fn bee_gores(
 pub fn barrel_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let c = center(p);

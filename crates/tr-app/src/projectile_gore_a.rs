@@ -70,7 +70,10 @@
 use crate::projectile::Projectile;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// The screen/world flags the trail gates read beyond the port's
 /// `Projectile` fields (the stand-in convention, `HitEffectInputs`).
@@ -99,7 +102,7 @@ fn center(p: &Projectile) -> Vec2 {
 pub fn enchant_seven_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     // `:17436-17440` — clamp the velocity copy to length 4.
@@ -130,7 +133,7 @@ pub fn super_star_trail(
     p: &Projectile,
     ctx: &TrailCtx,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if ctx.on_screen && rng.next_max(6) == 0 {
@@ -149,7 +152,7 @@ pub fn tombstone_landing_gore(
     p: &Projectile,
     scale: f32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     // `:23312` / `:23357` / `:23402` — position −10/−10, default velocity,
@@ -175,7 +178,7 @@ pub fn tombstone_landing_gore(
 pub fn ai503_trail(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if rng.next_max(48) == 0 {
@@ -197,7 +200,7 @@ pub fn falling_star_trail(
     p: &Projectile,
     ctx: &TrailCtx,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if ctx.on_screen && rng.next_max(6) == 0 {
@@ -217,7 +220,7 @@ pub fn shadowflare_trail(
     p: &Projectile,
     ctx: &TrailCtx,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if ctx.on_screen && rng.next_max(24) == 0 {
@@ -232,7 +235,7 @@ pub fn ai723_trail(
     p: &Projectile,
     ctx: &TrailCtx,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if ctx.on_screen && rng.next_max(6) == 0 {
@@ -247,7 +250,7 @@ pub fn ai9_trail(
     p: &Projectile,
     ctx: &TrailCtx,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if ctx.on_screen && rng.next_max(20) == 0 {
@@ -263,7 +266,7 @@ pub fn ai9_trail(
 pub fn ai_style2_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if rng.next_max(20) == 0 {

@@ -45,7 +45,10 @@ use crate::projectile_gore_i::lava_boulder_gores;
 use crate::projectile_gore_j::corner_gores;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Entity.Center` (`Entity.cs:50-60`).
 fn center(p: &Projectile) -> Vec2 {
@@ -61,7 +64,7 @@ pub fn scarab_bomb_gores(
     p: &Projectile,
     dig_dir: Vec2,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let pos = center(p) - Vec2::splat(20.0);
@@ -81,7 +84,7 @@ pub fn scarab_bomb_gores(
 pub fn bomb_corner_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     corner_gores(p, 1.0, gore, rng, world);
@@ -94,7 +97,7 @@ pub fn bomb_corner_gores(
 pub fn big_bomb_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     lava_boulder_gores(p, gore, rng, world);
@@ -111,7 +114,7 @@ pub fn big_bomb_gores(
 pub fn confetti_bomb_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];

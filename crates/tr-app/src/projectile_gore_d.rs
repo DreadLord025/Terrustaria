@@ -46,7 +46,10 @@ use crate::projectile::Projectile;
 use crate::projectile_gore_c::celeb2_gore;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Entity.Center` (`Entity.cs:50-60`).
 fn center(p: &Projectile) -> Vec2 {
@@ -54,14 +57,14 @@ fn center(p: &Projectile) -> Vec2 {
 }
 
 /// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — ONE `NextFloat`.
-fn next_vector2_unit(rng: &mut UnifiedRandom) -> Vec2 {
+fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
     let angle = std::f32::consts::PI * 2.0 * rng.next_float();
     Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
 }
 
 /// `Utils.NextVector2CircularEdge` (`Utils.cs:1271-1274`) — the unit ONLY
 /// (no radius draw, unlike Circular).
-fn next_vector2_circular_edge(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
+fn next_vector2_circular_edge(rng: &mut dyn DropRng, hw: f32, hh: f32) -> Vec2 {
     let unit = next_vector2_unit(rng);
     Vec2::new(unit.x * hw, unit.y * hh)
 }
@@ -72,7 +75,7 @@ pub fn celeb2_gore_n(
     p: &Projectile,
     count: i32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     for _ in 0..count {
@@ -93,7 +96,7 @@ pub fn ground_explosion_tile_gore(
     num3: i32,
     num5: f32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let ty = 61 + rng.next_max(3);
@@ -113,7 +116,7 @@ pub fn ground_explosion_tile_gore(
 pub fn chum_wet_ripples(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let pos = p.pos + Vec2::new(0.0, 6.0);
@@ -147,7 +150,7 @@ pub fn chum_idle_gore(
     p: &Projectile,
     wet: bool,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) -> bool {
     let max = if wet { 90 } else { 5 };
@@ -173,7 +176,7 @@ pub fn chum_idle_gore(
 pub fn ai026_881_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let ty = if p.kind == 934 { 1261 } else { 1226 };
@@ -187,7 +190,7 @@ pub fn ai026_881_gore(
 pub fn ai026_854_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let pos = Vec2::new(center(p).x, p.pos.y);
@@ -203,7 +206,7 @@ pub fn ai026_854_gore(
 pub fn ai026_875_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if rng.next_max(3) != 0 {
@@ -225,7 +228,7 @@ pub fn ai026_875_gore(
 pub fn ai026_854_leaf(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if rng.next_max(6) != 0 {

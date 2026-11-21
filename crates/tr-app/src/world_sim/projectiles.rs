@@ -383,6 +383,24 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(ctx) = golf_ctx {
         app.projectiles.set_golf_context(ctx);
     }
+    // W4-g16 wiring — the gore pool rides the pass (the C# `Gore.NewGore*`
+    // sites spawn into `Main.gore` mid-`UpdateProjectiles`, `Main.cs:17775`'s
+    // swap): move the App's pool in for the step, take it back after (the
+    // `golf_ctx` take/replace precedent). The trail gates read the padded
+    // screen (`Main.screenPosition`/`screenWidth/Height`, the capture
+    // driver's camera math) + the world's anniversary flag.
+    let gore_pool = std::mem::replace(&mut app.gore, tr_core::gore::GorePool::new());
+    app.projectiles.set_gore_pool(Some(gore_pool));
+    app.projectiles.set_trail_screen(Some((
+        Vec2::new(
+            app.camera.x - sw * 0.5 / app.zoom,
+            app.camera.y - sh * 0.5 / app.zoom,
+        ),
+        Vec2::new(sw, sh),
+    )));
+    app.projectiles.set_anniversary(
+        app.world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+    );
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
             &mut app.world,
@@ -397,6 +415,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             hostile_local,
         );
     });
+    // W4-g16 — the pool writeback: the sites spawned into it mid-walk.
+    if let Some(pool) = app.projectiles.take_gore_pool() {
+        app.gore = pool;
+    }
     app.projectile_step.cap_backlog();
     // S1-P-i55 — the golf context writeback: the arms mutated the clone
     // (RecordSwing / the cup scoring); the resolved state is authoritative

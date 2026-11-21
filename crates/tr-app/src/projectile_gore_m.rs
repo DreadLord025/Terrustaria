@@ -39,14 +39,17 @@ use crate::projectile_gore_j::corner_gores;
 use crate::projectile_gore_l::kill312_gores;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// Sites 132-135 — the 1077 frost bomb's four corners (`Projectile.cs:
 /// 77674-77689`): the wave-J corner row at magnitude 1.0, keep-one.
 pub fn frost_bomb_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     corner_gores(p, 1.0, gore, rng, world);
@@ -61,7 +64,7 @@ pub fn frost_bomb_gores(
 pub fn fluid_bomb_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     kill312_gores(p, gore, rng, world);
@@ -74,7 +77,7 @@ pub fn fluid_bomb_gores(
 pub fn bomb_bundle_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];

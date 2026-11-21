@@ -47,7 +47,10 @@ use crate::projectile_gore_b::fire_explosion_gores;
 use crate::projectile_gore_c::celeb2_gore;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Entity.Center` (`Entity.cs:50-60`).
 fn center(p: &Projectile) -> Vec2 {
@@ -62,7 +65,7 @@ fn center(p: &Projectile) -> Vec2 {
 pub fn coin_pile_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let c = center(p);
@@ -90,7 +93,7 @@ pub fn coin_pile_gores(
 pub fn cursed_flame_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     for i in 0..5 {
@@ -123,7 +126,7 @@ pub fn kill_row_gores(
     p: &Projectile,
     count: i32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     for _ in 0..count {
@@ -137,7 +140,7 @@ pub fn kill_row_gores(
 pub fn kill467_468_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     fire_explosion_gores(p, gore, rng, world);
@@ -149,7 +152,7 @@ pub fn kill467_468_gores(
 pub fn kill483_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let ty = rng.next_range(61, 64);

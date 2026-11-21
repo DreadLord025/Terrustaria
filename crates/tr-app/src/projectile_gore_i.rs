@@ -45,10 +45,13 @@ use crate::projectile::Projectile;
 use crate::projectile_gore_h::{confetti_gores, nebula_kill_gores};
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — ONE `NextFloat`.
-fn next_vector2_unit(rng: &mut UnifiedRandom) -> Vec2 {
+fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
     let angle = std::f32::consts::PI * 2.0 * rng.next_float();
     Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
 }
@@ -58,7 +61,7 @@ fn next_vector2_unit(rng: &mut UnifiedRandom) -> Vec2 {
 pub fn kill289_confetti(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     confetti_gores(p, 15, gore, rng, world);
@@ -71,7 +74,7 @@ pub fn kill289_confetti(
 pub fn tombstone_kill_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let pos = Vec2::new(
@@ -91,7 +94,7 @@ pub fn tombstone_kill_gore(
 pub fn lava_boulder_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let pos = Vec2::new(
@@ -115,7 +118,7 @@ pub fn lava_boulder_gores(
 pub fn kill1078_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     nebula_kill_gores(p, 3, gore, rng, world);
@@ -128,7 +131,7 @@ pub fn kill1078_gores(
 pub fn star_kill_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let len = p.vel.length();
@@ -146,7 +149,7 @@ pub fn star_kill_gores(
 pub fn shadow_kill_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let vel = Vec2::new(p.vel.x * 0.05, p.vel.y * 0.05);
@@ -165,7 +168,7 @@ pub fn falling_star_kill_gores(
     p: &Projectile,
     halve: bool,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let vel = Vec2::new(p.vel.x * 0.05, p.vel.y * 0.05);

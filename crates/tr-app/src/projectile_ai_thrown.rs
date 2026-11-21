@@ -471,6 +471,18 @@ pub(crate) fn beenade_death(
         let _ = rng.next_range(10, 31);
         let _ = rng.next_range(-20, 21);
     }
+    beenade_death_no_gores(p, strong_bees, rng)
+}
+
+/// W4-g16 wiring — the beenade's bee burst WITHOUT the four-gore census
+/// row: the pool's death hook spawns the gores for real
+/// (`projectile_gore_k::bee_gores`, the same 4×3 draws) before calling
+/// this, so the bee-count/velocity/type/damage rolls keep their C# order.
+pub(crate) fn beenade_death_no_gores(
+    p: &Projectile,
+    strong_bees: bool,
+    rng: &mut dyn DropRng,
+) -> Vec<BeeSpawn> {
     let mut out = Vec::new();
     // `:76455-76462` — the owner-gated bee burst. The pool only dispatches
     // locally-owned slots, so the gate folds true (the saucer precedent).

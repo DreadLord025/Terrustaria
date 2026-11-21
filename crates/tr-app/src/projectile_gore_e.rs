@@ -45,7 +45,10 @@ use crate::projectile::Projectile;
 use crate::projectile_gore_d::ground_explosion_tile_gore;
 use glam::Vec2;
 use tr_core::gore::GorePool;
-use tr_core::{UnifiedRandom, World};
+use tr_core::World;
+use tr_core::loot::DropRng;
+#[cfg(test)]
+use tr_core::UnifiedRandom;
 
 /// `Entity.Center` (`Entity.cs:50-60`).
 fn center(p: &Projectile) -> Vec2 {
@@ -53,7 +56,7 @@ fn center(p: &Projectile) -> Vec2 {
 }
 
 /// `Utils.NextVector2Square` (`Utils.cs:1251-1254`) — TWO `NextDouble`.
-fn next_vector2_square(rng: &mut UnifiedRandom, min: f32, max: f32) -> Vec2 {
+fn next_vector2_square(rng: &mut dyn DropRng, min: f32, max: f32) -> Vec2 {
     let x = (max - min) * rng.next_double() as f32 + min;
     let y = (max - min) * rng.next_double() as f32 + min;
     Vec2::new(x, y)
@@ -67,7 +70,7 @@ fn next_vector2_square(rng: &mut UnifiedRandom, min: f32, max: f32) -> Vec2 {
 pub fn ai026_860_idle_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let count = 3 + rng.next_max(3);
@@ -91,7 +94,7 @@ pub fn ogre_stomp_tile_gore(
     num4: i32,
     num7: f32,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     ground_explosion_tile_gore(p, i, j, num4, num7, gore, rng, world);
@@ -106,7 +109,7 @@ pub fn ogre_stomp_tile_gore(
 pub fn betsy_breath_gore(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if rng.next_max(5) != 0 {
@@ -140,7 +143,7 @@ pub fn book_storm_gore(
     alpha: i32,
     add_vx: bool,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     if rng.next_max(gate_max) != 0 {
@@ -166,7 +169,7 @@ pub fn book_storm_gore(
 pub fn rocket_corner_gores(
     p: &Projectile,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let mut n = -1.0f32;
@@ -196,7 +199,7 @@ pub fn mirror_gores(
     p: &Projectile,
     old_velocity: Vec2,
     gore: &mut GorePool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     world: &World,
 ) {
     let c = center(p);

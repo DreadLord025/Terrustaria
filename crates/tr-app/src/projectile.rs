@@ -7312,7 +7312,12 @@ impl Projectile {
     /// clamp, `rotation += 0.3f * direction`, and the per-type bounce kill
     /// threshold (5 default, 7 for the WaterBolt's lava bounce, 6 for the
     /// ball of fire, 8 for the ball of frost).
-    fn ai_ball_of_fire(&mut self, world: &World) {
+    fn ai_ball_of_fire(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        gore: Option<&mut tr_core::gore::GorePool>,
+    ) {
         // `:24235-24244`: the one-shot sound gates of the Golem fireball 258
         // and the hostile cursed flame 96 — `localAI[0]` latches 1 and the
         // `SoundID.Item20` whoosh queues at `base.position` (S1-E-21h: the
@@ -7324,7 +7329,13 @@ impl Projectile {
         // `:24245-24301`: the WaterBolt's own block — the `extraUpdates = 5`
         // remap first (read off the *previous* tick's `ai[1]`, as the C#
         // orders it), then the lava probe at the centre that reverses the fall
-        // and marks `ai[1] = 1f`. The dust/gore spawns are SKIPPED.
+        // and marks `ai[1] = 1f`. W4-g16 wiring: the bounce's gore
+        // (`:24265-24271`) is a REAL pool spawn (the type-27 twin of the
+        // Aqua Scepter's `:24581-24587`, `projectile_gore_b::lava_bounce_gore`);
+        // the dust loop before (`:24259-24264`) is the dust lane's. No pool
+        // (the pool-only tests): the bounce drew NOTHING here before (the
+        // whole block was the skip), so the gate + type census keeps the
+        // stream's shape for the fixture witnesses.
         if self.kind == WATER_BOLT {
             if self.ai[1] == 1.0 {
                 self.extra_updates = 5;
@@ -7338,6 +7349,11 @@ impl Projectile {
                 if in_lava {
                     self.ai[1] = 1.0;
                     self.vel.y = -self.vel.y;
+                    if let Some(gore) = gore {
+                        crate::projectile_gore_b::lava_bounce_gore(self, gore, rng, world);
+                    } else if rng.next_range(0, 3) == 0 {
+                        let _ = rng.next_range(61, 64);
+                    }
                 }
             }
         }
@@ -7452,7 +7468,12 @@ impl Projectile {
     /// (`:24599`/`:24604`/`:24622`) draw on the pass's stream in the C#'s
     /// order — the `ai[1] != 0f && Next(2) != 0` early-return (`:24604-24607`)
     /// is kept (it skips the trailing dust, not the movement).
-    fn ai_aqua_scepter(&mut self, world: &World, rng: &mut dyn DropRng) {
+    fn ai_aqua_scepter(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        gore: Option<&mut tr_core::gore::GorePool>,
+    ) {
         // Gate-merge (i20+i21): ONE aiStyle-12 arm serves both families — the
         // C# `else if (this.aiStyle == 12)` (`:24501-24635`) branches on type:
         // 280 (the Golden Shower) takes the `:24508-24546` head (0.002 decay,
@@ -7486,12 +7507,16 @@ impl Projectile {
                 self.vel.y = lcg.next_float() * -4.0 - 4.0;
                 self.vel.x = (lcg.next_float() - 0.5) * 5.0;
                 self.ai[1] = 1.0;
-                // The bounce's dust/gore (`:24575-24587`) are SKIPPED; the
-                // `Main.rand.Next(3)` gore gate (`:24581`) still draws, and
-                // the taken branch's `Gore.NewGore` type roll `Next(61, 64)`
-                // (`:24583`) stays on the stream (the gore-type-roll
-                // convention, `ai_freaking_pirates`' `Next(580,583)`).
-                if rng.next_range(0, 3) == 0 {
+                // W4-g16 wiring — the bounce's gore (`:24581-24587`) is a
+                // REAL pool spawn now (`projectile_gore_b::lava_bounce_gore`:
+                // the `Next(3)` gate, the `Next(61,64)` type, the NewGore
+                // kicks + the −6/×0.4/−− post-writes). The dust loop before
+                // (`:24575-24580`) is the dust lane's. No pool (the pool-only
+                // tests): the landed census keeps its gate + type draws —
+                // the witness's draw-count pin (the kicks were the skip).
+                if let Some(gore) = gore {
+                    crate::projectile_gore_b::lava_bounce_gore(self, gore, rng, world);
+                } else if rng.next_range(0, 3) == 0 {
                     let _ = rng.next_range(61, 64);
                 }
             }
@@ -14532,6 +14557,25 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// W4-g16 wiring — the LIVE gore pool for the pass (the `golf_ctx`
+    /// take/replace precedent): the C# `Gore.NewGore*` sites spawn into
+    /// `Main.gore` mid-`UpdateProjectiles`, so the world-sim pass moves the
+    /// App's pool in through [`ProjectilePool::set_gore_pool`] before the
+    /// step and takes it back after. `None` (the pool-only tests) keeps the
+    /// landed draw-only censuses — the witnesses' draw-count pins. The
+    /// site fns (`projectile_gore_a..o`) ride the SAME `UpdateProjectiles`
+    /// stream the censuses drew on (`GoreRng for dyn DropRng`, tr-core).
+    gore_pool: Option<tr_core::gore::GorePool>,
+    /// W4-g16 — the padded-screen trail gate (`Projectile.cs:23973` etc.):
+    /// `(screenPosition, screenSize)` the `TrailCtx.on_screen` stand-in
+    /// resolves from (the `set_disco` setter pattern — the pool cannot see
+    /// the App's camera). `None` = off-screen: the C# `&&` short-circuit
+    /// draws NOTHING for a screen-gated trail.
+    trail_screen: Option<(Vec2, Vec2)>,
+    /// W4-g16 — `Main.tenthAnniversaryWorld` (`Projectile.cs:23976`): the
+    /// 12/955 trail's second `SelectRandom` re-pick. The App feeds it per
+    /// tick (the world's seed flag); default false.
+    anniversary: bool,
 }
 
 impl Default for ProjectilePool {
@@ -14921,6 +14965,9 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            gore_pool: None,
+            trail_screen: None,
+            anniversary: false,
         }
     }
 
@@ -14994,6 +15041,69 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// W4-g16 wiring — move the LIVE gore pool in for the pass (the
+    /// `set_golf_context` take/replace precedent): the C# `Gore.NewGore*`
+    /// sites spawn into `Main.gore` mid-walk, so the world-sim pass hands
+    /// the App's pool over before `update_gore` and takes it back after.
+    /// While `None` (the pool-only tests) the landed draw-only censuses
+    /// keep their exact draw counts — the witnesses' pins.
+    pub fn set_gore_pool(&mut self, pool: Option<tr_core::gore::GorePool>) {
+        self.gore_pool = pool;
+    }
+
+    /// W4-g16 — take the gore pool back after the pass (the
+    /// `take_golf_context` precedent).
+    pub fn take_gore_pool(&mut self) -> Option<tr_core::gore::GorePool> {
+        self.gore_pool.take()
+    }
+
+    /// W4-g16 — the padded-screen trail gate's inputs: `(screenPosition,
+    /// screenSize)` in world px (`Main.screenPosition` / `(screenWidth,
+    /// screenHeight)`, `Projectile.cs:23972-23973`). `None` keeps every
+    /// screen-gated trail off-screen (the C# `&&` draws nothing).
+    pub fn set_trail_screen(&mut self, screen: Option<(Vec2, Vec2)>) {
+        self.trail_screen = screen;
+    }
+
+    /// W4-g16 — `Main.tenthAnniversaryWorld` (`Projectile.cs:23976`): the
+    /// 12/955 trail's second `SelectRandom` re-pick flag.
+    pub fn set_anniversary(&mut self, anniversary: bool) {
+        self.anniversary = anniversary;
+    }
+
+    /// W4-g16 — `TrailCtx.on_screen` (`Projectile.cs:23973` etc.):
+    /// `base.Hitbox.Intersects(Utils.CenteredRectangle(screenPosition +
+    /// screen/2, screen + (400,400)))`. The C# rect is the int-truncated
+    /// `CenteredRectangle` (`Utils.cs:947-950`) — the padded screen minus
+    /// 200 on each side; the hitbox is the int-truncated slot box (the
+    /// `damage_hitbox` convention). `None` screen = off-screen.
+    fn trail_on_screen(&self, p: &Projectile) -> bool {
+        let Some((sp, ss)) = self.trail_screen else {
+            return false;
+        };
+        // `CenteredRectangle(sp + ss/2, ss + 400)`: left/top = (int)(sp −
+        // 200), size = (int)(ss + 400).
+        let rx = (sp.x - 200.0) as i32;
+        let ry = (sp.y - 200.0) as i32;
+        let rw = (ss.x + 400.0) as i32;
+        let rh = (ss.y + 400.0) as i32;
+        let hx = p.pos.x as i32;
+        let hy = p.pos.y as i32;
+        let hw = p.w as i32;
+        let hh = p.h as i32;
+        hx < rx + rw && hx + hw > rx && hy < ry + rh && hy + hh > ry
+    }
+
+    /// W4-g16 — the trail context the screen-gated gore sites read (the
+    /// `TrailCtx` stand-in, `projectile_gore_a.rs`): the caller-resolved
+    /// padded-screen gate + the anniversary flag.
+    fn trail_ctx(&self, p: &Projectile) -> crate::projectile_gore_a::TrailCtx {
+        crate::projectile_gore_a::TrailCtx {
+            on_screen: self.trail_on_screen(p),
+            anniversary: self.anniversary,
+        }
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -17275,7 +17385,11 @@ impl ProjectilePool {
                         // water stream (22): the scale decay, the gravity and
                         // the LCG-seeded lava bounce. The dust gates draw the
                         // pass's threaded stream (`UpdateProjectiles`).
-                        12 => self.slots[i].ai_aqua_scepter(world, rng),
+                        12 => self.slots[i].ai_aqua_scepter(
+                            world,
+                            rng,
+                            self.gore_pool.as_mut(),
+                        ),
                         // (Resync keep-one: the aiStyle-36 bees ride main's
                         // i28 `projectile_ai_thrown::bee_step` arm below —
                         // ONE arm per style, the deny(unreachable_patterns)
@@ -17312,6 +17426,7 @@ impl ProjectilePool {
                                 world,
                                 &npcs[..],
                                 rng,
+                                self.gore_pool.as_mut(),
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
@@ -17409,7 +17524,7 @@ impl ProjectilePool {
                         // it. The position is AI-set (the hand pin), so no
                         // `kill_step` runs.
                         20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
-                        8 => self.slots[i].ai_ball_of_fire(world),
+                        8 => self.slots[i].ai_ball_of_fire(world, rng, self.gore_pool.as_mut()),
                         24 => self.slots[i].ai_crystal_storm(world),
                         // S1-P-i14 (V5 gate) — `AI_078`
                         // (`Projectile.cs:30762-30790`): the Xenopopper
@@ -20027,7 +20142,7 @@ impl ProjectilePool {
                 // ABOVE the 76308 arm in the C#, but the two kinds are
                 // disjoint so the order between them is unobservable),
                 // then the Bee Arrow's swarm (`:76407-76429`).
-                self.special_arrow_kill(i, npcs, old_velocity, player.as_deref(), rng, luck);
+                self.special_arrow_kill(i, world, npcs, old_velocity, player.as_deref(), rng, luck);
                 // S1-P-i18 — `Kill()`'s special-bullet arms
                 // (`Projectile.cs:75250-75268` the 89 split, `:75911-75974` the
                 // 283 debuff-spread burst, `:75975-75999` the 284 confetti,
@@ -20036,6 +20151,7 @@ impl ProjectilePool {
                 // to active, so each fires at most once per death.
                 self.special_bullet_kill(
                     i,
+                    world,
                     npcs,
                     doll_flags(player.as_deref()),
                     rng,
@@ -20343,8 +20459,15 @@ impl ProjectilePool {
         // `:73643` — `Damage()`: the box walk through the resized box
         // (the gem_bolt_aoe precedent).
         self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
-        // `:73644` — the explosion burst's draw census.
-        crate::projectile_ai_misc::celeb2_explosion(&self.slots[slot], world, rng);
+        // `:73644` — the explosion burst: W4-g16 wires the REAL gore spawns
+        // (the census's same draws ride the pool fns); no pool keeps the
+        // draw-only census (the witness pin).
+        crate::projectile_ai_misc::celeb2_explosion(
+            &self.slots[slot],
+            world,
+            rng,
+            self.gore_pool.as_mut(),
+        );
         // `Kill_ExplodeTiles`' 716/718 arm (`:77297`, `:77322-77329`):
         // the tile break, owner-gated (`:77267`).
         if !matches!(kind, 716 | 718) || self.slots[slot].owner != local_owner {
@@ -20817,6 +20940,7 @@ impl ProjectilePool {
     fn special_arrow_kill(
         &mut self,
         slot: usize,
+        world: &World,
         npcs: &mut [Npc],
         old_velocity: Vec2,
         player: Option<&crate::player::Player>,
@@ -20824,6 +20948,27 @@ impl ProjectilePool {
         luck: f32,
     ) {
         let kind = self.slots[slot].kind;
+        // W4-g16 wiring — `Kill()`'s 41 gore pair (`Projectile.cs:76323-
+        // 76330`): 2 × Next(61,64) at the position, ×0.4 then the
+        // Next(-10,11)*0.1 kicks — a REAL spawn BEFORE the blast resize
+        // (the C# order). The dust loops before (`:76311-76322`) draw
+        // nothing explicit. No pool: the burst was the documented skip.
+        if kind == HELLFIRE_ARROW {
+            if let Some(g) = self.gore_pool.as_mut() {
+                crate::projectile_gore_k::kill41_gores(&self.slots[slot], g, rng, world);
+            }
+        }
+        // W4-g16 wiring — `Kill()`'s 91/92 gore triple (`:75219-75222`):
+        // 3 × Next(16,18) at velocity ×0.05, BEFORE the star-spawn draws
+        // (`:75225-75226`). The 10-dust loop (`:75215-75218`) draws nothing
+        // explicit. No pool: the row was the documented skip.
+        if kind == HOLY_ARROW || kind == FALLING_STAR {
+            if let Some(g) = self.gore_pool.as_mut() {
+                crate::projectile_gore_i::falling_star_kill_gores(
+                    &self.slots[slot], false, g, rng, world,
+                );
+            }
+        }
         // The Hellfire blast: resize + the box walk through the dying
         // slot (the `gem_bolt_aoe` shape).
         if crate::special_arrows::hellfire_kill_resize(&mut self.slots[slot]) {
@@ -20942,6 +21087,7 @@ impl ProjectilePool {
     fn special_bullet_kill(
         &mut self,
         slot: usize,
+        world: &World,
         npcs: &mut [Npc],
         dolls: (bool, bool),
         rng: &mut dyn DropRng,
@@ -21025,13 +21171,38 @@ impl ProjectilePool {
                 self.venom_burst_spread(slot, npcs, dolls);
             }
             // `:75975-75999` — the PartyBullet's confetti: 10 dust + 5 gore, no
-            // `Damage()`. Purely visual — the whole arm is a documented skip
-            // (no state, no spawn, no damage; its draws go with the layers).
-            PARTY_BULLET => {}
+            // `Damage()`. W4-g16 wiring: the 5-gore row is a REAL spawn
+            // (`kill284_confetti`, the wave-H row at `-vel*0.3`); the dust
+            // loop's draws (`:75979-75986`, one Next(139,143) + seven kicks
+            // each) stay the dust lane's. No pool: the whole arm was the
+            // documented skip (its draws went with the layers).
+            PARTY_BULLET => {
+                if let Some(g) = self.gore_pool.as_mut() {
+                    // `:75979-75986` — the 10-dust loop's explicit draws
+                    // precede the gore row on the stream (the dust bodies
+                    // are the dust lane's; the draws stay).
+                    for _ in 0..10 {
+                        let _ = rng.next_range(139, 143);
+                        let _ = rng.next_range(-50, 51);
+                        let _ = rng.next_range(-50, 51);
+                        let _ = rng.next_range(-50, 51);
+                        let _ = rng.next_range(-50, 51);
+                        let _ = rng.next_range(-50, 51);
+                        let _ = rng.next_range(-50, 51);
+                        let _ = rng.next_range(-30, 31);
+                    }
+                    crate::projectile_gore_k::kill284_confetti(&self.slots[slot], g, rng, world);
+                }
+            }
             // `:76000-76034` — the ExplodingBullet's death: sound Item14 + 7
-            // dust-31 + 3×2 dust-6 + 1 gore (dust/gore-only draws, SKIPPED with
-            // the layers), then the owner-gated 80×80 AoE `Damage()` burst.
+            // dust-31 + 3×2 dust-6 (no explicit draws) + 1 gore, then the
+            // owner-gated 80×80 AoE `Damage()` burst. W4-g16: the gore is a
+            // REAL spawn (`kill286_gore`) BEFORE the resize (the C# order —
+            // the gore reads the bullet's own box).
             EXPLODING_BULLET => {
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_k::kill286_gore(&self.slots[slot], g, rng, world);
+                }
                 if self.slots[slot].owner != local_owner {
                     return;
                 }
@@ -21066,8 +21237,16 @@ impl ProjectilePool {
             }
             BEENADE => {
                 let strong = player.is_some_and(|p| p.strong_bees);
-                let bees =
-                    crate::projectile_ai_thrown::beenade_death(&self.slots[slot], strong, rng);
+                // W4-g16 wiring — the four bee gores (`:76439-76454`) are a
+                // REAL spawn BEFORE the bee-count draw (the C# order; the
+                // signs-first ×0.3 row, `projectile_gore_k::bee_gores`).
+                // `beenade_death` keeps the census when no pool is threaded.
+                let bees = if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_k::bee_gores(&self.slots[slot], g, rng, world);
+                    crate::projectile_ai_thrown::beenade_death_no_gores(&self.slots[slot], strong, rng)
+                } else {
+                    crate::projectile_ai_thrown::beenade_death(&self.slots[slot], strong, rng)
+                };
                 let owner = self.slots[slot].owner;
                 for b in bees {
                     // `NewProjectile` centres the box (`:10876-10877`); the
@@ -22079,7 +22258,7 @@ impl ProjectilePool {
         // `celeb2_death` precedent — the dolls/luck ride the pass's player).
         self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
         // `Kill_Bombs_DoUsualKillCode` — the family's draw census + spawns.
-        self.rocket_kill_census(slot, rng, local_owner);
+        self.rocket_kill_census(slot, world, rng, local_owner);
         // `Kill_ExplodeTiles` (`:77297-77365`): the tile-breaking rocket
         // kinds, owner-gated (`:77267` — the pool's local slots pass).
         let radius = match kind {
@@ -22167,7 +22346,20 @@ impl ProjectilePool {
     /// are the documented liquid-layer follow-up (ANALYSIS "Rocket & dart
     /// ammo") — the fills draw nothing, so the census is complete without
     /// them.
-    fn rocket_kill_census(&mut self, slot: usize, rng: &mut dyn tr_core::loot::DropRng, local_owner: u8) {
+    /// W4-g16 wiring: with the LIVE gore pool (`set_gore_pool`) the gore
+    /// rows are REAL spawns — the wave-M/N keep-one fns
+    /// (`fluid_bomb_gores`/`bomb_bundle_gores`/`rocket_bomb_gores`/
+    /// `cluster_bomb_gores`/`dynamite_gores`/`sticky_bomb_gores`) draw the
+    /// SAME type + kicks the census consumed, then write the C#'s
+    /// scale-then-sign postlude onto the spawned slots. No pool keeps the
+    /// draw-only census (the witnesses' draw-count pins).
+    fn rocket_kill_census(
+        &mut self,
+        slot: usize,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+    ) {
         // One gore's draw row: the type pick + the two NewGore kicks.
         fn gore(rng: &mut dyn tr_core::loot::DropRng) {
             let _ = rng.next_range(61, 64);
@@ -22191,15 +22383,29 @@ impl ProjectilePool {
             // (`:77759-77770`'s 2×2×2 loop shape), the Spread flood fill
             // (the liquid-layer follow-up — no draws).
             resize(&mut self.slots[slot], 22.0);
-            for _ in 0..8 {
-                gore(rng);
+            match self.gore_pool.as_mut() {
+                Some(g) => crate::projectile_gore_m::fluid_bomb_gores(
+                    &self.slots[slot], g, rng, world,
+                ),
+                None => {
+                    for _ in 0..8 {
+                        gore(rng);
+                    }
+                }
             }
         } else if matches!(kind, 799 | 800 | 801 | 810) {
             // `:77854-77892` — the dry family: the same shape (the sound
             // is 62 for 799, 14 otherwise — the cue skip).
             resize(&mut self.slots[slot], 22.0);
-            for _ in 0..8 {
-                gore(rng);
+            match self.gore_pool.as_mut() {
+                Some(g) => crate::projectile_gore_m::fluid_bomb_gores(
+                    &self.slots[slot], g, rng, world,
+                ),
+                None => {
+                    for _ in 0..8 {
+                        gore(rng);
+                    }
+                }
             }
         } else if matches!(kind, 793 | 796 | 794 | 797 | 795 | 798 | 808 | 809) {
             // `:77893-77979` — the Mini Nuke family: the 50×50 resize, the
@@ -22235,8 +22441,15 @@ impl ProjectilePool {
                     t += 1.0 / 11.0;
                 }
             }
-            for _ in 0..12 {
-                gore(rng);
+            match self.gore_pool.as_mut() {
+                Some(g) => crate::projectile_gore_m::bomb_bundle_gores(
+                    &self.slots[slot], g, rng, world,
+                ),
+                None => {
+                    for _ in 0..12 {
+                        gore(rng);
+                    }
+                }
             }
             resize(&mut self.slots[slot], 10.0);
         } else if matches!(kind, 779 | 783 | 862 | 863) {
@@ -22244,9 +22457,16 @@ impl ProjectilePool {
             // 15+5×2+3 dust (no explicit draws), the four-corner `Next(5)`
             // gates each spawning one gore when taken (`:78006-78018`).
             resize(&mut self.slots[slot], 22.0);
-            for _ in 0..4 {
-                if rng.next_range(0, 5) == 0 {
-                    gore(rng);
+            match self.gore_pool.as_mut() {
+                Some(g) => crate::projectile_gore_n::rocket_bomb_gores(
+                    &self.slots[slot], g, rng, world,
+                ),
+                None => {
+                    for _ in 0..4 {
+                        if rng.next_range(0, 5) == 0 {
+                            gore(rng);
+                        }
+                    }
                 }
             }
         } else if rocket_cluster(kind) {
@@ -22258,8 +22478,15 @@ impl ProjectilePool {
             // iterations, drift included) one `NextFloat` radius scale +
             // the spawn + one `Next(30)` timeLeft decrement.
             resize(&mut self.slots[slot], 22.0);
-            for _ in 0..4 {
-                gore(rng);
+            match self.gore_pool.as_mut() {
+                Some(g) => crate::projectile_gore_n::cluster_bomb_gores(
+                    &self.slots[slot], g, rng, world,
+                ),
+                None => {
+                    for _ in 0..4 {
+                        gore(rng);
+                    }
+                }
             }
             // `:78063-78086` — the ring is OWNER-gated (the remote owner's
             // cluster explodes with gores but no shards — and no ring
@@ -22314,8 +22541,15 @@ impl ProjectilePool {
             // 30+20×2 dust (no explicit draws), 8 gores (`:78117-78140`'s
             // 2×4 loop).
             resize(&mut self.slots[slot], 22.0);
-            for _ in 0..8 {
-                gore(rng);
+            match self.gore_pool.as_mut() {
+                Some(g) => crate::projectile_gore_n::dynamite_gores(
+                    &self.slots[slot], g, rng, world,
+                ),
+                None => {
+                    for _ in 0..8 {
+                        gore(rng);
+                    }
+                }
             }
         } else if matches!(kind, 139..=144 | 340 | 341) {
             // `:78142-78210` — Rocket III/IV: the 80×80 recentre, the 40
@@ -22328,8 +22562,15 @@ impl ProjectilePool {
                     let _ = rng.next_range(0, 10);
                 }
             }
-            for _ in 0..12 {
-                gore(rng);
+            match self.gore_pool.as_mut() {
+                Some(g) => crate::projectile_gore_n::sticky_bomb_gores(
+                    &self.slots[slot], g, rng, world,
+                ),
+                None => {
+                    for _ in 0..12 {
+                        gore(rng);
+                    }
+                }
             }
             resize(&mut self.slots[slot], 10.0);
         }
@@ -23481,7 +23722,7 @@ mod s1_e_21h_sound_tests {
                 ..Default::default()
             };
             match proj_data(kind).map(|d| d.ai_style) {
-                Some(8) => p.ai_ball_of_fire(&w),
+                Some(8) => p.ai_ball_of_fire(&w, &mut tr_core::tile_light::FastRandom::new(7), None),
                 Some(27) => p.ai_unholy_trident(&w),
                 Some(28) => p.ai_frost_bolt(&w),
                 Some(50) => p.ai_inferno_fork(&w),
@@ -23495,7 +23736,7 @@ mod s1_e_21h_sound_tests {
             // The latch holds: a second tick queues nothing new.
             p.wants_sound = None;
             match proj_data(kind).map(|d| d.ai_style) {
-                Some(8) => p.ai_ball_of_fire(&w),
+                Some(8) => p.ai_ball_of_fire(&w, &mut tr_core::tile_light::FastRandom::new(7), None),
                 Some(27) => p.ai_unholy_trident(&w),
                 Some(28) => p.ai_frost_bolt(&w),
                 Some(50) => p.ai_inferno_fork(&w),
