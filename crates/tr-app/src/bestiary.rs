@@ -2343,6 +2343,48 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Grebe",
     },
+    // W4-d42 - the NPCID 610-614 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "Rat",
+        net_id: 610,
+        kind: NpcKind::Rat,
+        variant: None,
+        quick_unlock: false,
+        name: "Rat",
+    },
+    BestiaryEntryDef {
+        credit_id: "Owl",
+        net_id: 611,
+        kind: NpcKind::Owl,
+        variant: None,
+        quick_unlock: false,
+        name: "Owl",
+    },
+    BestiaryEntryDef {
+        credit_id: "WaterStrider",
+        net_id: 612,
+        kind: NpcKind::WaterStrider,
+        variant: None,
+        quick_unlock: false,
+        name: "Water Strider",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldWaterStrider",
+        net_id: 613,
+        kind: NpcKind::GoldWaterStrider,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Water Strider",
+    },
+    BestiaryEntryDef {
+        credit_id: "ExplosiveBunny",
+        net_id: 614,
+        kind: NpcKind::ExplosiveBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Explosive Bunny",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

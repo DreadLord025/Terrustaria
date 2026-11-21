@@ -871,6 +871,10 @@ fn npc_add_height(n: &Npc) -> f32 {
         // shift, -6 for the Mechanic's 124 and -14 for the town slimes.
         // `Main.cs:22153` - the 579 row.
         BartenderUnconscious => -2.0,
+        // `Main.cs:22157` - the 612 row.
+        WaterStrider => 2.0,
+        // `Main.cs:22157` - the 613 row.
+        GoldWaterStrider => 2.0,
         _ => 0.0,
     };
     // `:22174`: the `townNPC && ai[0] == 5` sitting row — a `num -= 4`
@@ -3196,6 +3200,25 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::Rat => {
+                generic_anchor(assets.npc_sheet(610), npc_rows(610), n, w, h)
+            }
+            NpcKind::Owl => {
+                generic_anchor(assets.npc_sheet(611), npc_rows(611), n, w, h)
+            }
+            NpcKind::WaterStrider => {
+                generic_anchor(assets.npc_sheet(612), npc_rows(612), n, w, h)
+            }
+            NpcKind::GoldWaterStrider => {
+                generic_anchor(assets.npc_sheet(613), npc_rows(613), n, w, h)
+            }
+            NpcKind::ExplosiveBunny => {
+                generic_anchor(assets.npc_sheet(614), npc_rows(614), n, w, h)
             }
             // W4-d42 - the roster's draw arms ride the generic anchor over
             // their own NPC_<id> sheets. The sheets are NOT packed yet

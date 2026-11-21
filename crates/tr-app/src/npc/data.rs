@@ -621,6 +621,11 @@ impl NpcKind {
             NpcKind::Pupfish => 381,
             NpcKind::Grebe => 382,
             NpcKind::Grebe2 => 383,
+            NpcKind::Rat => 384,
+            NpcKind::Owl => 385,
+            NpcKind::WaterStrider => 386,
+            NpcKind::GoldWaterStrider => 387,
+            NpcKind::ExplosiveBunny => 388,
         }
     }
 
@@ -983,6 +988,11 @@ impl NpcKind {
             381 => NpcKind::Pupfish,
             382 => NpcKind::Grebe,
             383 => NpcKind::Grebe2,
+            384 => NpcKind::Rat,
+            385 => NpcKind::Owl,
+            386 => NpcKind::WaterStrider,
+            387 => NpcKind::GoldWaterStrider,
+            388 => NpcKind::ExplosiveBunny,
             _ => return None,
         })
     }
@@ -1898,6 +1908,12 @@ impl NpcKind {
             NpcKind::Pupfish => "NPC_Hit_1",
             NpcKind::Grebe => "NPC_Hit_1",
             NpcKind::Grebe2 => "NPC_Hit_1",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::Rat => "NPC_Hit_1",
+            NpcKind::Owl => "NPC_Hit_1",
+            NpcKind::WaterStrider => "NPC_Hit_1",
+            NpcKind::GoldWaterStrider => "NPC_Hit_1",
+            NpcKind::ExplosiveBunny => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2244,6 +2260,12 @@ impl NpcKind {
             NpcKind::Pupfish => "NPC_Killed_1",
             NpcKind::Grebe => "NPC_Killed_1",
             NpcKind::Grebe2 => "NPC_Killed_1",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::Rat => "NPC_Killed_4",
+            NpcKind::Owl => "NPC_Killed_1",
+            NpcKind::WaterStrider => "NPC_Killed_1",
+            NpcKind::GoldWaterStrider => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2659,6 +2681,12 @@ impl NpcKind {
             NpcKind::Pupfish => 16,
             NpcKind::Grebe => 7,
             NpcKind::Grebe2 => 68,
+            // W4-d42 - the NPCID 610-614 SetDefaults rows.
+            NpcKind::Rat => 7,
+            NpcKind::Owl => 24,
+            NpcKind::WaterStrider => 116,
+            NpcKind::GoldWaterStrider => 116,
+            NpcKind::ExplosiveBunny => 7,
         }
     }
 
@@ -3236,6 +3264,12 @@ impl NpcKind {
             NpcKind::Pupfish => (20.0, 18.0),
             NpcKind::Grebe => (22.0, 26.0),
             NpcKind::Grebe2 => (28.0, 22.0),
+            // W4-d42 - the NPCID 610-614 SetDefaults rows.
+            NpcKind::Rat => (14.0, 12.0),
+            NpcKind::Owl => (18.0, 34.0),
+            NpcKind::WaterStrider => (10.0, 10.0),
+            NpcKind::GoldWaterStrider => (10.0, 10.0),
+            NpcKind::ExplosiveBunny => (18.0, 20.0),
         }
     }
 
@@ -3386,6 +3420,14 @@ impl NpcKind {
             NpcKind::Pupfish => 607,
             NpcKind::Grebe => 608,
             NpcKind::Grebe2 => 609,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::Rat => 610,
+            NpcKind::Owl => 611,
+            NpcKind::WaterStrider => 612,
+            NpcKind::GoldWaterStrider => 613,
+            NpcKind::ExplosiveBunny => 614,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3961,6 +4003,12 @@ impl NpcKind {
             NpcKind::Pupfish => 5,
             NpcKind::Grebe => 5,
             NpcKind::Grebe2 => 5,
+            // W4-d42 - the NPCID 610-614 SetDefaults rows.
+            NpcKind::Rat => 5,
+            NpcKind::Owl => 5,
+            NpcKind::WaterStrider => 5,
+            NpcKind::GoldWaterStrider => 5,
+            NpcKind::ExplosiveBunny => 5,
         }
     }
 
@@ -4361,6 +4409,12 @@ impl NpcKind {
             NpcKind::Pupfish => 0,
             NpcKind::Grebe => 0,
             NpcKind::Grebe2 => 0,
+            // W4-d42 - the NPCID 610-614 SetDefaults rows.
+            NpcKind::Rat => 0,
+            NpcKind::Owl => 0,
+            NpcKind::WaterStrider => 0,
+            NpcKind::GoldWaterStrider => 0,
+            NpcKind::ExplosiveBunny => 0,
         }
     }
 }
