@@ -1157,6 +1157,54 @@ pub fn idle_sounds(
         let style = rng.next_range(57, 59);
         play(29, style, rng);
     }
+    // `:90159-90162` — type 389's 800-roll, Next(59, 61).
+    else if npc_type == 389 && rng.next_max(800) == 0 {
+        let style = rng.next_range(59, 61);
+        play(29, style, rng);
+    }
+    // `:90163-90166` — the Goblin Summoner's 600-roll, Next(61, 63).
+    else if npc_type == 471 && rng.next_max(600) == 0 {
+        let style = rng.next_range(61, 63);
+        play(29, style, rng);
+    }
+    // `:90167-90170` — type 482's 600-roll, Next(63, 66).
+    else if npc_type == 482 && rng.next_max(600) == 0 {
+        let style = rng.next_range(63, 66);
+        play(29, style, rng);
+    }
+    // `:90171-90174` — the Martian Drone's 700-roll, Next(66, 69).
+    else if npc_type == 388 && rng.next_max(700) == 0 {
+        let style = rng.next_range(66, 69);
+        play(29, style, rng);
+    }
+    // `:90175-90178` — the Martian Walker's 800-roll, Next(69, 73).
+    else if npc_type == 520 && rng.next_max(800) == 0 {
+        let style = rng.next_range(69, 73);
+        play(29, style, rng);
+    }
+    // `:90179-90182` — Mothron's 600-roll, pinned style 73.
+    else if npc_type == 477 && rng.next_max(600) == 0 {
+        play(29, 73, rng);
+    }
+    // `:90183-90186` — type 258's 700-roll, Next(74, 78).
+    else if npc_type == 258 && rng.next_max(700) == 0 {
+        let style = rng.next_range(74, 78);
+        play(29, style, rng);
+    }
+    // `:90187-90190` — type 252's 700-roll, pinned style 78.
+    else if npc_type == 252 && rng.next_max(700) == 0 {
+        play(29, 78, rng);
+    }
+    // `:90191-90194` — type 469's 700-roll, Next(79, 81).
+    else if npc_type == 469 && rng.next_max(700) == 0 {
+        let style = rng.next_range(79, 81);
+        play(29, style, rng);
+    }
+    // `:90195-90198` — the 253/82 pair's 700-roll, Next(81, 84).
+    else if (npc_type == 253 || npc_type == 82) && rng.next_max(700) == 0 {
+        let style = rng.next_range(81, 84);
+        play(29, style, rng);
+    }
 }
 
 /// `Main.cs:58741-58759`'s thunder strike tick (the `currentDayRateIteration
@@ -2083,8 +2131,8 @@ mod tests {
         assert!(gate(528, true), "the 528-532 break arm");
     }
 
-    /// W4-f2 — `IdleSounds`' else-if chain (`NPC.cs:90079-90158`, arms
-    /// 1-20): a matching type consumes its gate roll, then (on a hit) the
+    /// W4-f2 — `IdleSounds`' else-if chain (`NPC.cs:90079-90198`, arms
+    /// 1-30): a matching type consumes its gate roll, then (on a hit) the
     /// style roll, then the play's case-29 pitch draw — in that order, on
     /// the caller's stream. Seed 146 draws 0 on every gate (the derived
     /// witness seed); the `play` stand-in consumes the one
@@ -2127,6 +2175,18 @@ mod tests {
             (527, false, 700, Some((55, 57)), 56),
             (496, false, 600, Some((57, 59)), 58),
             (497, false, 600, Some((57, 59)), 58),
+            // Batch 3 — arms 21-30 (`:90159-90198`).
+            (389, false, 800, Some((59, 61)), 60),
+            (471, false, 600, Some((61, 63)), 62),
+            (482, false, 600, Some((63, 66)), 64),
+            (388, false, 700, Some((66, 69)), 67),
+            (520, false, 800, Some((69, 73)), 71),
+            (477, false, 600, None, 73),
+            (258, false, 700, Some((74, 78)), 76),
+            (252, false, 700, None, 78),
+            (469, false, 700, Some((79, 81)), 80),
+            (253, false, 700, Some((81, 84)), 82),
+            (82, false, 700, Some((81, 84)), 82),
         ];
         for &(ty, wet, gate, style_roll, style) in arms {
             let mut rng = UnifiedRandom::new(146);
