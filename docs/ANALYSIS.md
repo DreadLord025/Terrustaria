@@ -13067,6 +13067,85 @@ The TAIL changes are runtime-only (the tree-growth draw order, the drops, the
 overworld arm) — they touch NO worldgen pass stream, so both world-hash pins
 stay as G5 left them; 10 witnesses written not run.
 
+**The DISPATCHER follow-up (W4-g42, code-only — the shared-dispatcher census
+`docs/research/12j-g42-biome-mushroom.md` phase 7)**: the TAIL's case-70 find
+generalised — the overground dispatcher routed EVERY grass kind but 70
+through the UNDERGROUND slice (`update_world_grass_growth`, the `:74275-
+74508` body), so the whole overworld `switch (num10)` (`:74510-74866`) never
+ran on the surface, and the underground slice itself lacked its tail switch
+(`:74414-74507`). The full census (every case kind, overworld vs underground
+vs both) and the per-case fixes:
+
+- **D1 — the underground table** (`growth/grass.rs`): the kind-2 row the old
+  port carried is NOT in the C# table (`TileID.Sets.SpreadUnderground`,
+  `TileID.cs:622` = {23,661,109,199,662,60,70,633,226}) — removed (the
+  overworld kind 2 rides the overworld arm). The plant-above roll now routes
+  through the real `PlaceTile` per-kind arms (the flower ladder `:59507-
+  59581`, the jungle-plant 61 arm `:59582-59629`, the mushroom-71 arm
+  `:59651-59678` with the below-surface cattail climb) instead of the flat
+  tile write; the 226 `TooManyJunglePlantsNearby` veto (`:74359`, AFTER the
+  roll — the draw is spent even on the veto) and the `CopyPaintAndCoating`
+  (`:74367-74369`) landed.
+- **D2 — the overworld arms** (`growth/overworld.rs`, new): the shared
+  forest/evil/hallow/golf arm (`:74513-74702` — the plant rolls 2→3 Next(12),
+  23→24 / 199→201 / 661→24 / 662→201 / 109→110 Next(10), the thorn remap
+  32→23 / 352→199 with the frozen-spread early return, the golf remap 477→2 /
+  492→109, the full spread ladder incl. the infection grass-over-grass and
+  hallow arms), the jungle case-60 (`:74752-74813` — Next(7) plant-61 /
+  Next(500) tree / Next(25) rose if-else chain + the mud scan), the case-226
+  (`:74815-74828` — Next(7) + the density veto) and the ash case-633
+  (`:74829-74865` — Next(10) plant-637 + the ash-57 scan). The overground
+  dispatcher (`growth.rs`) routes per kind; the case-70 arm stays T-3's
+  `overworld_mushroom_growth`. The overground WALL arms (`:72499-72503`)
+  landed after the chain (the port lacked them entirely). The halloween
+  pumpkin arm (`:74524-74546`) folds off — `Main.halloween` has no port field
+  (the seasonal-constants-off precedent), the Next(75) never draws.
+- **D3 — the jungle helpers** (`growth/jungle.rs`, new): `PlaceJunglePlant`
+  (`:47779-47944`, the 2×2 / 3×2 arms, the jungle-family clearance set, the
+  solid-60 ground gate, the noItem kill sweep, the paint inheritance) and
+  `TooManyJunglePlantsNearby` (`:73164-73187`, the ±9×±5 clamped box, cap 2).
+- **D4 — the underground tail** (`growth/underground_tail.rs`, new): the
+  case-60 Plantera-bulb 238 (hardmode + all-three-mechs + Next(60), the ±150
+  step-2 scan) / life-fruit 236 (any-mech + Next(40), the ±60 scan, the
+  Next(3) style, the taken-arm BREAK) / jungle-rose 233 (Next(8) 3-wide,
+  Next(12) 2-wide fallback) arms, and the case-70 liquid-above cattail +
+  Next(250) tree arm. The runtime `PlaceCatTail` (`:58629-58742`) is a
+  runtime copy over `UnifiedRandom` (c33's worldgen copy rides the xorshift
+  `Rng`, fd7fae0e — the two streams never interleave); RNG-free at runtime
+  (the only draw, the gen-time slope flatten `:58724`, is behind
+  `isGeneratingOrLoadingWorld`). The underground dispatcher's else-if chain
+  no longer RETURNS at the grass arm — the walk continues to the sapling and
+  wall arms (the old `return` skipped them for every grass/lily/vine cell).
+- **D5 — the underground sapling arms** (`:73756-73780`): the 20/590/595/615
+  saplings at Next(5) → `AttemptToGrowTreeFromSapling(underground: true)` —
+  the GEMCORN 590's runtime growth the port lacked (the gem trees grew at
+  gen time only). The overground sapling arms (`:72431-72449`) no longer
+  return either (the C# arms fall through).
+- **The acorn PLANT side (item 27) and the gemcorn seeds (4851-4857, NOT the
+  4490-range — those are the gem ECHO walls)**: CENSUSED, already landed —
+  `Item.cs:1697-1710` (acorn createTile 20) / `:39599-39626` (the gemcorns
+  createTile 590 styles 0-6) ride the generated `itemdata.rs` rows through
+  the `TileObject.CanPlace`/`Place` registry route (`edit/place.rs::
+  place_item_tile`, the D_20/D_590 defs with the 10/0 alternates and the
+  stone-family anchors); the sunflower item 63 (tile 27, the d105 co-lane
+  boundary) rides the same route. No missing arm — no port needed.
+- **Co-lane boundaries**: g83's vine grow-tops (`:72506+`) and the
+  underground jungle-thorn kind-69 arm (`:73658`) stay g83's claimed lane
+  (fe5b5b8c, UNWIRED contested seam — the old overground kind-69 arm was
+  dead code, removed); c33's cattail/bamboo worldgen passes stay c33's
+  (fd7fae0e); d102/d106's growth.rs touches are re-export lines only (their
+  lanes are worldgen passes — no runtime dispatcher claim).
+
+Deviations: `PlayerLOS`/`TreeGrowFXCheck` unported (the T-3 precedent — the
+`&`/`&&` conjunctions evaluate the grow regardless); `SquareTileFrame`
+re-frames and netMode sends are the framer's/MP's job; expertMode folds to
+normal (the life-fruit Next(40)/radius-60); the `AllowedToSpreadInfections`
+flag rides a new runtime-only `World` field (the overground dispatcher has
+no flag parameter; `update_world` sets it per tick from the journey power).
+The changes are runtime-only — no worldgen pass stream touched, both
+world-hash pins stay; 14 witnesses written not run (5 overworld, 4
+underground-tail, 3 underground-slice, 2 dispatcher/gemcorn).
+
 - **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
   velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
   `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at

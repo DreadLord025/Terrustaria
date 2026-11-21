@@ -201,3 +201,81 @@ overworld tree grow, plant + mud spread). The runtime-only changes (the tree
 growth draw order, the drops, the overworld arm) touch NO worldgen pass stream
 — both world-hash pins stay as G5 left them (stale-by-design, re-pin deferred
 to the gate); the `a == b` determinism halves are untouched.
+
+## Phase 7 — the shared-dispatcher follow-up (the full case census)
+
+The TAIL's case-70 find generalised: the overground dispatcher
+(`update_world_overground_tile`) routed EVERY `SpreadOverground` kind but 70
+through `update_world_grass_growth` — the UNDERGROUND slice (`:74275-74508`,
+returns at `:74508` BEFORE the overworld `switch (num10)` at `:74510`). The
+C# overground caller passes `underground: false` (`:72357`); the underground
+caller passes `true` (`:73282`). The full census of every case kind:
+
+| kind | overworld arm (`:74510-74866`) | underground slice (`:74275-74508`) | port state at 8d367094 | verdict |
+| --- | --- | --- | --- | --- |
+| 2 | shared arm `:74513` (plant 3 Next(12), the dirt spread ladder) | NOT in the table (`TileID.cs:622`) | routed to the underground slice's phantom kind-2 row (maxValue 1, no plant) | WRONG both ways — D1/D2 |
+| 23/199/661/662 | shared arm (plant 24/201 Next(10), the infection ladder + the mud twins) | table rows (maxValue 2, infection-gated) + the soil scan | overworld ran the underground rows (wrong plant odds, no cross-infection ladder) | WRONG overworld — D2 |
+| 32/352 | shared arm via the thorn remap 32→23/352→199 (`:74594-74607`, frozen-spread early return) | not in the table (the caller's GrowSpike arm `:72359` still runs) | overworld ran the slice (no-op for 32/352) — the remap spread never ran | WRONG overworld — D2 |
+| 477/492 | shared arm via the golf remap 477→2/492→109 (`:74608-74613`) | not in the table | overworld no-op | WRONG overworld — D2 |
+| 109 | shared arm (plant 110 Next(10), the hallow ladder) | table row? NO — 109 IS in `SpreadUnderground` but has NO table row (the C# falls through with num=-1/num3=-1: no plant, no scan) | overworld ran the slice's no-op | WRONG overworld — D2 |
+| 60 | case-60 `:74752` (Next(7) plant 61 / Next(500) tree / Next(25) rose + the mud scan) | table row (plant 61 maxValue 10) + the tail switch `:74416` (bulb 238 / fruit 236 / rose 233) | overworld ran the underground row; the tail switch missing everywhere | WRONG overworld + MISSING tail — D2/D4 |
+| 70 | case-70 `:74704` (T-3, landed) | table row (plant 71 maxValue 10) + the tail `:74497` (cattail + Next(250) tree) | overworld fixed (T-3); the underground tail missing | MISSING tail — D4 |
+| 226 | case-226 `:74815` (Next(7) + TooManyJunglePlantsNearby) | table row (plant 61 maxValue 10, the `:74359` density veto) | overworld ran the underground row (no veto); the veto missing underground too | WRONG overworld + MISSING veto — D1/D2 |
+| 633 | case-633 `:74829` (Next(10) plant 637 + the ash-57 scan) | table row (plant 637 maxValue 2, the ash scan) | overworld ran the underground row (wrong odds) | WRONG overworld — D2 |
+| 69 | not in SpreadOverground (the old port's overground kind-69 arm was DEAD CODE) | the caller's `:73658` GrowSpike(69,60) — g83's claimed case (fe5b5b8c, UNWIRED) | dead overworld arm removed; the underground arm stays g83's | g83 lane |
+
+The underground slice's own gaps (D1): the phantom kind-2 row; the flat
+plant write (the C# `PlaceTile` carries the flower ladder `:59507-59581`,
+the jungle-61 arm `:59582-59629`, the mushroom-71 arm `:59651-59678` with the
+below-surface cattail climb — each with its own draws); the missing
+`CopyPaintAndCoating` (`:74367-74369`); the missing tail switch
+(`:74414-74507`). The underground DISPATCHER's own gaps (D4/D5): the `return`
+at the grass arm skipped the sapling arms (`:73756-73780` — the gemcorn 590's
+runtime growth) and the wall arms (`:73809-73813`) for every grass/lily/vine
+cell; the overground dispatcher lacked the wall arms entirely (`:72499-72503`).
+
+**The acorn PLANT side (item 27) — censused, ALREADY LANDED**: `Item.cs:1697-
+1710` (createTile 20, useStyle 1, consumable) rides the generated
+`itemdata.rs` row (`tile: Some(20)`) through `use_tile_item` →
+`place_item_tile` → the `TileObject.CanPlace`/`Place` registry route (the
+D_20 def: 1×2, origin (0,1), the 10 soil alternates, RandomStyleRange 3 —
+`TileObjectData.cs:4860-4909`). The `Place1x2` legacy arm (`:46652-46679`,
+the Next(3) frameX) is the NON-registry path the C# `PlaceTile` case-20
+(`:60013-60026`) uses for the smart-cursor/axe replant — the port's
+`try_replanting_tree` (editing.rs) already rides the registry route too.
+**The gemcorns are items 4851-4857** (`ItemID.cs:11385-11397`,
+`GemTree*Seed`; NOT the 4490-range — those are the gem ECHO walls,
+`Item.cs:39596+` neighbours), createTile 590 styles 0-6 (`Item.cs:39599-
+39626`), the D_590 def (the stone-family anchors {1,25,117,203,182,180,179,
+381,183,181,534,536,539,625,627}, StyleMultiplier 3 — `TileObjectData.cs:
+4910-4930`). All seven rows landed in `itemdata.rs`; the placement route is
+shared with the acorn. The gem sapling's GROWTH side (the underground
+Next(5) arm) was the missing half — D5. **The sunflower item 63** (tile 27,
+the d105 co-lane boundary) rides the same registry route (the D_27 def,
+2×4) — landed, no port needed.
+
+### Phase-7 landing ledger (one commit per case-family)
+
+| phase | scope | commit | status |
+| --- | --- | --- | --- |
+| D1 | the underground slice: the kind-2 row removed, the PlaceTile per-kind plant arms + the 226 veto + paint copy + the tail call (growth/grass.rs) | (this pass) | landed |
+| D2 | the overworld arms (growth/overworld.rs new) + the per-kind routing + the overground wall arms (growth.rs) | (this pass) | landed |
+| D3 | the jungle helpers (growth/jungle.rs new) | (this pass) | landed |
+| D4 | the underground tail + the runtime PlaceCatTail (growth/underground_tail.rs new) + the dispatcher no-return chain (growth.rs) | (this pass) | landed |
+| D5 | the underground sapling arms — the gemcorn 590 runtime growth (growth.rs) | (this pass) | landed |
+| D6 | docs/anchors/ledger (this pass) | (this commit) | landed |
+
+All phase-7 changes code-only (no cargo/tests/graphify). 14 witnesses WRITTEN
+NOT RUN: growth/overworld.rs (5 — the plain-grass plant roll + frame chain,
+the evil ladder + frozen thorn, the jungle draw order, the ash roll + spread,
+the 226 density veto), growth/underground_tail.rs (4 — the jungle tail draw
+order, the mushroom Next(250), the cattail rise + gates, the life-fruit gate
++ break), growth/grass.rs (3 — the kind-2 skip, the 226 roll-before-veto, the
+71 cattail-branch frame-draw skip), growth.rs (2 — the gemcorn underground
+grow + surface control, the grass-cell wall-arm reach). The runtime-only
+changes touch NO worldgen pass stream — both world-hash pins stay; the
+`a == b` halves untouched. Co-lane boundaries honoured: g83's kind-69 thorn
++ vine grow-tops (fe5b5b8c) stay UNWIRED g83 lane; c33's worldgen
+PlaceCatTail (fd7fae0e) untouched (the runtime copy is a separate fn over
+UnifiedRandom); d102/d106's growth.rs re-export lines untouched; d105's
+sunflower item row untouched.
