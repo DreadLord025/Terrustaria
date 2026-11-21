@@ -848,6 +848,12 @@ pub(crate) struct App {
     /// counter rides [`LiquidSystem`] itself, the C# static's home.
     pub(crate) liquids: LiquidSystem,
     pub(crate) liquid_step: FixedStepper,
+    /// `LiquidRenderer._frameState`/`_waterfallFrameState`
+    /// (`LiquidRenderer.cs:831-847`): the wind-driven liquid texture clock,
+    /// advanced once per client update (`Main.cs:17043`) beside the wind
+    /// sway counters. The two integer frames ride the G6 key's `anim` slot
+    /// (packed) and feed `draw_waters`' source rows.
+    pub(crate) liquid_clock: tr_core::liquid_draw::LiquidAnimClock,
     /// `CraftingUI._lastFilter` (`CraftingUI.cs:130`): the station filter the
     /// player's right-click on a crafting station installed
     /// (`Player.GetCraftingFilterForTile`, `Player.cs:33312-33335`, via
@@ -3990,6 +3996,7 @@ impl App {
             has_liquids,
             liquids: liquids_sim,
             liquid_step: FixedStepper::new(1.0 / 60.0, 8),
+            liquid_clock: tr_core::liquid_draw::LiquidAnimClock::default(),
             waterfall: tr_core::waterfall::WaterfallManager::new(),
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),

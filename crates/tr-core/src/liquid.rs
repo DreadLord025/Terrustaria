@@ -1106,9 +1106,14 @@ impl LiquidSystem {
         }
 
         // --- fall through the cell below ---------------------------------------
-        // The C# reads the LIVE `tile5.liquid` here (`:570-573`) — after the
-        // underworld evaporation may have shed units — not the entry snapshot
-        // (W4-g46's evaporation-graft companion fix).
+        // W4-g45 doc-sweep carry (8d581953, adopted onto the g47 base): the
+        // C# reads the LIVE `tile5.liquid` here (`Liquid.cs:570-575`), not
+        // the entry snapshot — the reaction block above may already have
+        // consumed this cell (the `LiquidCheck` side/up merge zeroes it,
+        // `:1256-1261`), and the g46 evap graft sheds units at the head.
+        // The pre-read `start.liquid` resurrected the consumed/shed units
+        // on every fall. `start` stays the kill-bookkeeping capture
+        // (`:464`) — the tail's 255→254 compare still reads it.
         let own_now = world.tiles[i].liquid;
         if let Some(below) = world.tile(x, y + 1).copied() {
             if !self.tile_is_solid(&below)
@@ -1423,6 +1428,18 @@ impl LiquidSystem {
                 // `Main.netMode == 2` → `NetMessage.SendData(17, …)` (`:1309`)
                 // — no multiplayer in the port.
             }
+            // W4-g45 doc-sweep carry (c8908a55, adopted onto the g47 base):
+            // the C# `tile4` is a LIVE reference — the gate (`:1286`) and
+            // the merge-type reads (`:1303`) run AFTER the burn, so a
+            // `tileCut` kind the kill just cleared passes on
+            // `!tile4.active()` even when it is not `tileObsidianKill` (the
+            // seven cut kinds outside the set: 444/518/519/549/637/638/711).
+            // The pre-kill copy refused those; re-read the cell. The kill
+            // keeps the liquid + type bits (`remove_tile`, `WorldGen.cs:63885`
+            // clears everything but wall/liquid), so the amount/type reads
+            // below see the same liquid the C# does. `flag` stays the PRE-kill
+            // read — the C# computes it at `:1274`, before `:1278`'s burn.
+            let down = world.tile(x, y + 1).copied().unwrap_or_default();
             if !((!down.active() || td::TILE_OBSIDIAN_KILL.has(down.kind)) || flag) {
                 return;
             }
@@ -3132,6 +3149,94 @@ mod liquid_sim {
         }
         assert!(prev > 0, "the film survives (decayed to {prev})");
     }
+
+    /// W4-g47 retire (the g45d co-lane carry, 8d581953's fix adopted) — the
+    /// fall arm reads the LIVE post-reaction level (`Liquid.cs:570-575`),
+    /// not the `:464` entry snapshot. The discriminator here is the
+    /// reaction consumption: lava 30 beside water 30 merges on the same
+    /// visit (`LiquidCheck`'s side arm zeroes the checking cell + lands
+    /// obsidian 56, `:1256-1270`); the fall arm must then move the LIVE 0,
+    /// not the pre-merge 30 — the old `start.liquid` read resurrected the
+    /// consumed lava into the cell below. quickSettle bypasses the lava
+    /// delay gate so the fall runs on the merge visit. The g45 evap-form
+    /// twin (`the_fall_arm_moves_the_post_evaporation_level`) rides
+    /// `liquid_merge_cadence` (research/69 A9.2 row 3). SEAL re-pins
+    /// (A9.2 row 2 + the re-pin rider): `new_flow_fixture` per the §11
+    /// sentinel convention, `add_water(&mut w)` per the union's g45b
+    /// guarded signature — the g47 scene (30,50) is border-safe, kept
+    /// as-is. Written, NOT run.
+    #[test]
+    fn the_fall_arm_reads_the_live_post_reaction_level() {
+        let mut w = shelf_world();
+        stone_row(&mut w, 20, 43, 70);
+        let i = w.index(30, 50);
+        w.tiles[i].liquid = 30;
+        set_kind(&mut w.tiles[i], 1);
+        let j = w.index(29, 50);
+        w.tiles[j].liquid = 30; // water beside the lava -> the side merge
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        sys.set_quick_settle(true);
+        sys.add_water(&mut w, 30, 50);
+        sys.update(&mut w);
+        assert_eq!(w.tiles[w.index(30, 50)].kind, 56, "the merge landed obsidian");
+        assert_eq!(w.tiles[w.index(30, 50)].liquid, 0, "the merge consumed the lava");
+        assert_eq!(
+            w.tiles[w.index(30, 51)].liquid, 0,
+            "the fall moved the LIVE 0, not the pre-merge 30"
+        );
+    }
+
+    /// W4-g46 SEAL merged shimmer-flow pin (research/69 A9.2 row 4 — ONE
+    /// pin, both assert families: the g47 closeout `4c81731b`
+    /// `shimmer_falls_every_visit_ungated` shelf fixture + `entry.delay`
+    /// zero assert, and the g45 `99a4f8ccf`
+    /// `shimmer_falls_every_visit_like_water` cadence-trace asserts).
+    /// Shimmer has NO delay gate (`Liquid.cs:542-545`: the arm runs
+    /// `ShimmerCheck` and falls straight through — no `delay++`/return;
+    /// only lava `:483-491` and honey `:514-522` throttle). A shimmer
+    /// column falls one tile per two passes like water (the down arm's
+    /// `skipLiquid` pair, `:586-587`, cleared next visit `:1096-1104`),
+    /// and its `delay` field stays 0 through every visit. The per-liquid
+    /// census verdict: water/shimmer ungated, lava 1-in-6, honey 1-in-11.
+    /// §11 sentinel switch: `new_flow_fixture` per the g46 convention
+    /// (the evap arm is water-only either way, `:466`
+    /// `liquidType() == 0`). RE-PIN: the g47 fixture seeded (30,0) — the
+    /// union's AddWater 5-tile border (`:1163`, g45b guards) refuses it,
+    /// so the scene shifts +6 down (source y=6, walls y=6..=36, floor
+    /// y=36; the fall lands y=11 after ten passes); `add_water` re-pinned
+    /// `&mut w`. The lava column would still sit at y=6 after ten visits
+    /// (its first fall lands on visit 6, the second on 19); honey's first
+    /// fall is visit 11. Written, NOT run.
+    #[test]
+    fn shimmer_falls_every_visit_ungated() {
+        let mut w = shelf_world();
+        for y in 6..=36 {
+            stone_row(&mut w, 29, 29, y);
+            stone_row(&mut w, 31, 31, y);
+        }
+        stone_row(&mut w, 30, 30, 36);
+        let i = w.index(30, 6);
+        w.tiles[i].liquid = 255;
+        set_kind(&mut w.tiles[i], 3);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        sys.add_water(&mut w, 30, 6);
+        for _ in 0..10 {
+            sys.update(&mut w);
+        }
+        assert_eq!(w.tiles[w.index(30, 11)].liquid, 255, "10 passes -> 5 tiles down");
+        assert_eq!(w.tiles[w.index(30, 6)].liquid, 0, "the source drained");
+        assert_eq!(
+            w.tiles[w.index(30, 16)].liquid, 0,
+            "no ungated every-visit flow"
+        );
+        assert_eq!(
+            kind_code(w.tiles[w.index(30, 11)].liquid_kind()),
+            3,
+            "the shimmer type rides the fall"
+        );
+        let entry = sys.active.iter().find(|e| (e.x, e.y) == (30, 11)).unwrap();
+        assert_eq!(entry.delay, 0, "no delay gate ever armed");
+    }
 }
 
 /// W4-g47 — the quick-settle witnesses: the two `Liquid.Update` arms
@@ -4486,22 +4591,33 @@ mod liquid_merge_cadence {
     }
 
     #[test]
-    fn quick_fall_bypasses_the_delay_gate() {
+    fn quick_fall_bypasses_both_delay_gates() {
         // `Liquid.cs:1083-1090`: the quickFall loop forces `delay = 10`
-        // before every Update, so the lava arm's `delay < 5` gate never
-        // fires — the column falls every visit like water. The quickFall
-        // loop also clears the fall's skipLiquid flag right after the
-        // update (`:1089`), so no visit is lost to it.
+        // before every Update, so the lava arm's `delay < 5` AND the honey
+        // arm's `delay < 10` gates never fire — the column falls every
+        // visit like water. The quickFall loop also clears the fall's
+        // skipLiquid flag right after the update (`:1089`), so no visit is
+        // lost to it.
         // Union re-pin: `update` derives `quick_fall = quick_settle` at the
         // pass head (`:1056-1068`, g47), so the witness arms quick_settle
         // instead of pinning the derived field directly.
-        let mut w = shaft(5, 120, 30, 2);
-        put_as(&mut w, 8, 6, 255, 1);
-        let mut sys = LiquidSystem::new_flow_fixture(&w);
-        sys.set_quick_settle(true);
-        sys.add_water(&mut w, 8, 6);
-        run(&mut sys, &mut w, 12);
-        assert_eq!(w.tiles[w.index(8, 18)].liquid, 255, "quickFall flows every visit");
+        // W4-g47 closeout carry (research/70 §11): the g47
+        // `quick_fall_bypasses_both_delay_gates` (lava + honey twins)
+        // dedupes onto this shaft fixture — the union's lava-only
+        // `quick_fall_bypasses_the_delay_gate` name retired, the honey
+        // twin added; the sentinel convention kept.
+        for kind in [1u8, 2u8] {
+            let mut w = shaft(5, 120, 30, 2);
+            put_as(&mut w, 8, 6, 255, kind);
+            let mut sys = LiquidSystem::new_flow_fixture(&w);
+            sys.set_quick_settle(true);
+            sys.add_water(&mut w, 8, 6);
+            run(&mut sys, &mut w, 12);
+            assert_eq!(
+                w.tiles[w.index(8, 18)].liquid, 255,
+                "kind {kind}: quickFall flows every visit"
+            );
+        }
     }
 
     #[test]
@@ -4588,6 +4704,43 @@ mod liquid_merge_cadence {
             assert_eq!(w.tiles[w.index(11, 10)].liquid, 0, "the pool consumed");
         }
     }
+
+    /// W4-g45 doc-sweep (`8d581953b`, SEAL carry) — the fall arm reads the
+    /// LIVE post-evaporation level (`Liquid.cs:570-575`), not the entry
+    /// snapshot (`:464`'s `byte liquid` capture is the kill-bookkeeping
+    /// value only). A 100-water cell one row above the floor INSIDE the
+    /// band evaporates to 98 on visit 1, then the down arm moves the 98 —
+    /// the pre-fix port moved the pre-evap 100, resurrecting the two shed
+    /// units on every fall. (The union's `own_now` form carries the fix;
+    /// this is the discriminating witness.) Written, NOT run.
+    #[test]
+    fn the_fall_arm_moves_the_post_evaporation_level() {
+        // shaft(5, 400, 350, 2): floor at 356, layer at 212; the cell at
+        // (8, 354) sits two rows above the floor, deep in the band, with
+        // the open (8, 355) below it.
+        let mut w = shaft(5, 400, 350, 2);
+        put_as(&mut w, 8, 354, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&mut w, 8, 354);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tiles[w.index(8, 354)].liquid, 0, "the source drained");
+        assert_eq!(
+            w.tiles[w.index(8, 355)].liquid, 98,
+            "the fall moved the post-evap 98, not the pre-evap 100"
+        );
+        // Visit 2 clears the skip flag; visit 3 the landed cell evaporates
+        // 98 -> 96 and stays (the floor below is solid, the walls fence the
+        // row arms).
+        run(&mut sys, &mut w, 2);
+        assert_eq!(w.tiles[w.index(8, 355)].liquid, 96, "the band keeps shedding");
+    }
+
+    // SEAL row-4 dedupe (research/69 A9.2): the g45 `99a4f8ccf` shimmer-flow
+    // twin `shimmer_falls_every_visit_like_water` DROPS here — its
+    // cadence-trace asserts (the drained source, the five-falls-in-ten
+    // landing, the no-every-visit-flow zero, the type ride) merged into
+    // `liquid_sim::shimmer_falls_every_visit_ungated` (ONE pin, both
+    // assert families, the g47 shelf fixture).
 }
 
 /// W4-g45 carry-forward (union re-fold per research/70's witness table) —
@@ -5321,3 +5474,123 @@ mod liquid_gen_driver {
         assert!(!sys.quick_settle());
     }
 }
+
+/// W4-g45 doc-sweep (`c8908a55`, SEAL carry) — the `LiquidCheck` down arm's
+/// LIVE post-burn reads (`Liquid.cs:1278-1306`): the C# `tile4` is a
+/// reference, so the merge gate (`:1286`) and the merge-type reads
+/// (`:1303`) see the cell AFTER the `tileCut` burn (`:1280`). The seven cut
+/// kinds OUTSIDE `tileObsidianKill` (444 BeeHive, 518 LilyPad, 519 Cattail,
+/// 549 Seaweed, 637 AshPlants, 638 AshVines, 711 — the generated bitset
+/// membership, hand-computed) pass the gate on `!tile4.active()` once the
+/// burn cleared them; the pre-kill copy the port used to read refused the
+/// drain/merge the C# performs. The existing plant-3 witness
+/// (`the_water_cell_down_arm_burns_no_plant`'s lava sibling) uses plant 3,
+/// which IS `tileObsidianKill` — it passes either way and cannot
+/// discriminate. Written, NOT run (code-only mode).
+#[cfg(test)]
+mod liquid_downarm_live {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    /// The `liquid_merge_cadence` fixture shape: (+6,+6) embed past
+    /// AddWater's 5-tile border, floor at `floor_y+6`, stock frame tables.
+    fn floor_world(width: i32, height: i32, floor_y: i32) -> World {
+        let mut w = World::new("downarm".into(), width + 12, height + 12);
+        for x in 0..width + 12 {
+            let i = w.index(x, floor_y + 6);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put_as(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    /// An active submerged object below the checking cell.
+    fn plant_below(w: &mut World, x: i32, y: i32, kind: u16, amount: u8, liquid: u8) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], liquid);
+        w.mark_chunk(x, y);
+    }
+
+    #[test]
+    fn the_burned_non_obsidian_kill_plant_lets_the_sub_24_drain_run() {
+        // `Liquid.cs:1286-1298`: lava 20 over Seaweed 549 (tileCut, NOT
+        // tileObsidianKill) holding water 30. The burn clears the plant;
+        // the LIVE gate passes on `!tile4.active()` and the sub-24 arm
+        // drains the lava cell + re-types it water. The pre-kill copy
+        // refused (active 549, not obsidianKill) and kept the lava.
+        let mut w = floor_world(9, 120, 8);
+        plant_below(&mut w, 10, 11, 549, 30, 0);
+        put_as(&mut w, 10, 10, 20, 1);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        sys.liquid_check(&mut w, 10, 10, 1, false);
+        assert!(!w.tiles[w.index(10, 11)].active(), "the seaweed burned");
+        assert_eq!(w.tiles[w.index(10, 10)].liquid, 0, "the sub-24 cell drained");
+        assert_eq!(kind_code(w.tiles[w.index(10, 10)].liquid_kind()), 0, "re-typed water");
+        assert_eq!(w.tiles[w.index(10, 11)].liquid, 30, "the pool below survives");
+        assert_eq!(w.tiles[w.index(10, 11)].kind, 0, "no merge tile under 24");
+    }
+
+    #[test]
+    fn the_burned_lily_pad_lets_the_full_merge_land_below() {
+        // `Liquid.cs:1299-1306`: lava 30 over LilyPad 518 (tileCut, NOT
+        // tileObsidianKill) holding water 30. The LIVE post-burn reads see
+        // an inactive cell with its water intact (`remove_tile` keeps the
+        // liquid + type bits, `WorldGen.cs:63885`), so the >=24 arm lands
+        // obsidian 56 at (x, y+1) — `GetLiquidMergeTypes(1, water)` reads
+        // the surviving water type. The pre-kill copy refused the merge.
+        let mut w = floor_world(9, 120, 8);
+        plant_below(&mut w, 10, 11, 518, 30, 0);
+        put_as(&mut w, 10, 10, 30, 1);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        sys.liquid_check(&mut w, 10, 10, 1, false);
+        assert_eq!(w.tiles[w.index(10, 11)].kind, 56, "the merge landed below");
+        assert_eq!(w.tiles[w.index(10, 10)].liquid, 0, "the lava consumed");
+        assert_eq!(w.tiles[w.index(10, 11)].liquid, 0, "the water consumed");
+    }
+
+    #[test]
+    fn the_honey_arm_burns_and_merges_the_same_way() {
+        // The burn gate is `thisLiquidType != 0` (`:1278`) — honey rides
+        // it too: honey 30 over Cattail 519 with water 30 lands the honey
+        // block 229 below (`GetLiquidMergeTypes(2, water)`).
+        let mut w = floor_world(9, 120, 8);
+        plant_below(&mut w, 10, 11, 519, 30, 0);
+        put_as(&mut w, 10, 10, 30, 2);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        sys.liquid_check(&mut w, 10, 10, 2, false);
+        assert_eq!(w.tiles[w.index(10, 11)].kind, 229, "honey + water -> 229");
+        assert_eq!(w.tiles[w.index(10, 10)].liquid, 0);
+        assert_eq!(w.tiles[w.index(10, 11)].liquid, 0);
+    }
+
+    #[test]
+    fn the_water_arm_never_burns_the_non_obsidian_kill_plant() {
+        // `:1278`'s `thisLiquidType != 0` gate: water over Seaweed 549
+        // holding LAVA 30 (a different type, so the `:1269` same-type early
+        // return does not fire) burns nothing — the plant stays ACTIVE,
+        // and the live gate refuses: active 549 is not obsidianKill and
+        // the container flag is false. The water cell keeps its liquid.
+        let mut w = floor_world(9, 120, 8);
+        plant_below(&mut w, 10, 11, 549, 30, 1);
+        put_as(&mut w, 10, 10, 30, 0);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
+        sys.liquid_check(&mut w, 10, 10, 0, false);
+        assert!(w.tiles[w.index(10, 11)].active(), "water burns no plant");
+        assert_eq!(w.tiles[w.index(10, 10)].liquid, 30, "the gate refused");
+        assert_eq!(w.tiles[w.index(10, 11)].kind, 549, "no merge tile");
+    }
+}
+
