@@ -1595,6 +1595,11 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d120 — the three town kinds' portraits rest the town twin's
+        // 48x38 box (the Merchant precedent).
+        (NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker, _) => {
+            (sheet_i, 48.0, 38.0, 48.0, white)
+        }
     }
 }
 

@@ -3238,7 +3238,11 @@ fn npc_seed(
         | crate::npc::NpcKind::Princess
         | crate::npc::NpcKind::DyeTrader
         | crate::npc::NpcKind::PartyGirl
-        | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
+        | crate::npc::NpcKind::GoblinTinkerer
+        // W4-d120 — the three town kinds seed like the town roster.
+        | crate::npc::NpcKind::SantaClaus
+        | crate::npc::NpcKind::Truffle
+        | crate::npc::NpcKind::Steampunker => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
