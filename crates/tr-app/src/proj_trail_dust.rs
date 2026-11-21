@@ -1557,6 +1557,169 @@ pub fn trail_650_point_sparkle(
     d.velocity *= 0.1; // `:35683`
 }
 
+/// Kind 813 — the Blood Nautilus tears' four-phase ritual dust (`AI()`
+/// aiStyle 108, `Projectile.cs:33760-34024`, the d11 e0395afc machine's
+/// census skips REPLACED). The shared ring body: `UnitY.RotatedByRandom
+/// (2π)` (TWO NextDouble draws), the dust at `Center - v*30` (0×0 box),
+/// noGravity, the position re-roll (`Next(10,21)` along v — the type-5
+/// arm only; the 240 keeps ×30), the ±π/2 spin velocity, `scale = 0.5 +
+/// NextFloat`, `fadeIn = 0.5`. `customData = Center` (the charge/full/
+/// dissolve arms) is the pool's dropped field.
+fn ritual_ring_813(
+    center: Vec2,
+    v: Vec2,
+    dust_type: i32,
+    reroll: bool,
+    speed: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center - v * 30.0, 0, 0, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true;
+    // `:33767`/`:33865`/`:33901`/`:33962` — the type-5 position re-roll.
+    d.position = if reroll {
+        center - v * rng.next_range(10, 21) as f32
+    } else {
+        center - v * 30.0
+    };
+    let spin = if dust_type == 240 { -1.5707963705062866 } else { 1.5707963705062866 };
+    d.velocity = rotated_by(v, spin) * speed;
+    d.scale = 0.5 + rng.next_float();
+    d.fade_in = 0.5;
+}
+
+/// The 813 wind-up (`:33760-33782`, `ai[0] <= 50`): two independent
+/// `Next(4)` gates — the type-5 ring (spin ×4) then the type-240 (×2).
+pub fn trail_813_windup(
+    center: Vec2,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let max = 6.2831854820251465f64;
+    if rng.next_range(0, 4) == 0 {
+        // `:33762-33771`
+        let ang = rng.next_double() * max - rng.next_double() * max;
+        let v = rotated_by(Vec2::UNIT_Y, ang);
+        ritual_ring_813(center, v, 5, true, 4.0, rng, dust, ctx, world);
+    }
+    if rng.next_range(0, 4) == 0 {
+        // `:33772-33781`
+        let ang = rng.next_double() * max - rng.next_double() * max;
+        let v = rotated_by(Vec2::UNIT_Y, ang);
+        ritual_ring_813(center, v, 240, false, 2.0, rng, dust, ctx, world);
+    }
+}
+
+/// The 813 charge (`:33858-33881`, `50 < ai[0] <= 90`): two independent
+/// `Next(2)` gates — the type-5 ring (spin ×6) then the type-240 (×3);
+/// both carry `customData = Center` (dropped).
+pub fn trail_813_charge(
+    center: Vec2,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let max = 6.2831854820251465f64;
+    if rng.next_range(0, 2) == 0 {
+        // `:33860-33870`
+        let ang = rng.next_double() * max - rng.next_double() * max;
+        let v = rotated_by(Vec2::UNIT_Y, ang);
+        ritual_ring_813(center, v, 5, true, 6.0, rng, dust, ctx, world);
+    }
+    if rng.next_range(0, 2) == 0 {
+        // `:33871-33881`
+        let ang = rng.next_double() * max - rng.next_double() * max;
+        let v = rotated_by(Vec2::UNIT_Y, ang);
+        ritual_ring_813(center, v, 240, false, 3.0, rng, dust, ctx, world);
+    }
+}
+
+/// The 813 full charge (`:33894-33918`, `90 < ai[0] <= 120`): ONE
+/// `Next(2)` if/else roll — the taken branch the type-5 ring (×6), the
+/// else the type-240 (×3).
+pub fn trail_813_full(
+    center: Vec2,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let max = 6.2831854820251465f64;
+    if rng.next_range(0, 2) == 0 {
+        // `:33896-33906`
+        let ang = rng.next_double() * max - rng.next_double() * max;
+        let v = rotated_by(Vec2::UNIT_Y, ang);
+        ritual_ring_813(center, v, 5, true, 6.0, rng, dust, ctx, world);
+    } else {
+        // `:33907-33917`
+        let ang = rng.next_double() * max - rng.next_double() * max;
+        let v = rotated_by(Vec2::UNIT_Y, ang);
+        ritual_ring_813(center, v, 240, false, 3.0, rng, dust, ctx, world);
+    }
+}
+
+/// The 813 dissolve (`:33951-33983`, `ai[0] > 120`): TWO `Next(3)` switch
+/// rolls — case 0 the type-5 ring, case 1 the type-240, case 2 nothing.
+/// The spin vector is pre-scaled by `this.scale` (the dissolve ramp) —
+/// it feeds the spawn point, the position re-roll AND the velocity.
+pub fn trail_813_dissolve(
+    center: Vec2,
+    scale: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let max = 6.2831854820251465f64;
+    for _ in 0..2 {
+        match rng.next_range(0, 3) {
+            0 => {
+                // `:33957-33968`
+                let ang = rng.next_double() * max - rng.next_double() * max;
+                let v = rotated_by(Vec2::UNIT_Y, ang) * scale;
+                ritual_ring_813(center, v, 5, true, 6.0, rng, dust, ctx, world);
+            }
+            1 => {
+                // `:33969-33980`
+                let ang = rng.next_double() * max - rng.next_double() * max;
+                let v = rotated_by(Vec2::UNIT_Y, ang) * scale;
+                ritual_ring_813(center, v, 240, false, 3.0, rng, dust, ctx, world);
+            }
+            _ => {} // `:33981` — case 2 draws nothing further.
+        }
+    }
+}
+
+/// The 813 opacity tail (`:34018-34024`, EVERY tick incl. the death tick —
+/// the dissolve `Kill()` does not return): `NextFloat < Opacity` gate,
+/// then `NewDustPerfect(Center + NextVector2Circular(3, 20), 90)` with
+/// `velocity = UnitY`, noGravity, `scale = this.scale`. The circular pair
+/// is the unit NextFloat + the radius NextFloat (the empress form).
+pub fn trail_813_opacity_tail(
+    center: Vec2,
+    opacity: f32,
+    scale: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if rng.next_float() < opacity {
+        let off = next_vector2_circular(rng, 3.0, 20.0);
+        let idx = dust.new_dust_perfect(&mut DustDraw(rng), ctx, world, center + off, 90, None, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.velocity = Vec2::UNIT_Y; // `:34021`
+        d.no_gravity = true; // `:34022`
+        d.scale = scale; // `:34023`
+    }
+}
+
 /// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — one `NextFloat`; the
 /// angle is FLOAT arithmetic (`0 + (float)π*2 * NextFloat()`), then
 /// `ToRotationVector2` (`Utils.cs:1665-1668`) cos/sin in double of the
@@ -3508,5 +3671,155 @@ mod tests {
             }
         }
         assert!(found, "a three-pass seed exists in 0..400");
+    }
+
+    /// Kind 813 — the four-phase machine's full-order mirror (the d11
+    /// census's gates REPLACED by the live bodies): each phase runs the
+    /// emitter on one stream and the verbatim C# statement sequence on a
+    /// twin — the gate draws, the RotatedByRandom pairs, the pool
+    /// internals, the post-writes and the opacity tail all land identical
+    /// records + identical stream tails.
+    #[test]
+    fn w4_g64_813_four_phase_full_order_mirror() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(1400.0, 900.0);
+        let max = 6.2831854820251465f64;
+        // The verbatim ring body on the mirror stream (the C# statement
+        // order: internals, noGravity, position re-roll, velocity, scale,
+        // fadeIn).
+        fn mirror_ring(
+            mpool: &mut DustPool,
+            mirror: &mut UnifiedRandom,
+            c: &SpawnCtx,
+            w: &World,
+            center: Vec2,
+            v: Vec2,
+            dust_type: i32,
+            reroll: bool,
+            speed: f32,
+        ) {
+            let idx = mpool.new_dust(mirror, c, w, center - v * 30.0, 0, 0, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+            let d = mpool.slot_mut(idx);
+            d.no_gravity = true;
+            d.position = if reroll {
+                center - v * mirror.next_range(10, 21) as f32
+            } else {
+                center - v * 30.0
+            };
+            let spin = if dust_type == 240 { -1.5707963705062866 } else { 1.5707963705062866 };
+            d.velocity = rotated_by(v, spin) * speed;
+            d.scale = 0.5 + mirror.next_float();
+            d.fade_in = 0.5;
+        }
+        for seed in [813i32, 814, 815] {
+            // Wind-up: two Next(4) gates, the 5 ring ×4 / the 240 ×2.
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            trail_813_windup(center, &mut rng, &mut pool, &c, &w);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(seed);
+            if mirror.next_range(0, 4) == 0 {
+                let ang = mirror.next_double() * max - mirror.next_double() * max;
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, ang), 5, true, 4.0);
+            }
+            if mirror.next_range(0, 4) == 0 {
+                let ang = mirror.next_double() * max - mirror.next_double() * max;
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, ang), 240, false, 2.0);
+            }
+            assert_eq!(active(&pool), active(&mpool), "wind-up slots (seed {seed})");
+            for i in active(&pool) {
+                assert_eq!(pool.slot(i), mpool.slot(i), "wind-up slot {i}");
+            }
+            for _ in 0..8 {
+                assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "wind-up tail");
+            }
+            // Charge: two Next(2) gates, ×6/×3.
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            trail_813_charge(center, &mut rng, &mut pool, &c, &w);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(seed);
+            if mirror.next_range(0, 2) == 0 {
+                let ang = mirror.next_double() * max - mirror.next_double() * max;
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, ang), 5, true, 6.0);
+            }
+            if mirror.next_range(0, 2) == 0 {
+                let ang = mirror.next_double() * max - mirror.next_double() * max;
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, ang), 240, false, 3.0);
+            }
+            assert_eq!(active(&pool), active(&mpool), "charge slots (seed {seed})");
+            for i in active(&pool) {
+                assert_eq!(pool.slot(i), mpool.slot(i), "charge slot {i}");
+            }
+            // Full: ONE Next(2) if/else.
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            trail_813_full(center, &mut rng, &mut pool, &c, &w);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(seed);
+            if mirror.next_range(0, 2) == 0 {
+                let a = mirror.next_double() * max - mirror.next_double() * max;
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, a), 5, true, 6.0);
+            } else {
+                let a = mirror.next_double() * max - mirror.next_double() * max;
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, a), 240, false, 3.0);
+            }
+            assert_eq!(active(&pool), active(&mpool), "full slots (seed {seed})");
+            for i in active(&pool) {
+                assert_eq!(pool.slot(i), mpool.slot(i), "full slot {i}");
+            }
+            // Dissolve: two Next(3) switch rolls, the scale-premultiplied v.
+            let scale = 0.75f32;
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            trail_813_dissolve(center, scale, &mut rng, &mut pool, &c, &w);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(seed);
+            for _ in 0..2 {
+                match mirror.next_range(0, 3) {
+                    0 => {
+                        let a = mirror.next_double() * max - mirror.next_double() * max;
+                        mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, a) * scale, 5, true, 6.0);
+                    }
+                    1 => {
+                        let a = mirror.next_double() * max - mirror.next_double() * max;
+                        mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, a) * scale, 240, false, 3.0);
+                    }
+                    _ => {}
+                }
+            }
+            assert_eq!(active(&pool), active(&mpool), "dissolve slots (seed {seed})");
+            for i in active(&pool) {
+                assert_eq!(pool.slot(i), mpool.slot(i), "dissolve slot {i}");
+            }
+            // Opacity tail: the NextFloat gate + the circular pair + the
+            // type-90 Perfect (UnitY, noGravity, scale).
+            for opacity in [0.0f32, 1.0] {
+                let mut pool = DustPool::new();
+                let mut rng = UnifiedRandom::new(seed);
+                trail_813_opacity_tail(center, opacity, scale, &mut rng, &mut pool, &c, &w);
+                let mut mpool = DustPool::new();
+                let mut mirror = UnifiedRandom::new(seed);
+                if mirror.next_float() < opacity {
+                    let unit_angle = (std::f64::consts::PI * 2.0) as f32 * mirror.next_float();
+                    let unit = Vec2::new((unit_angle as f64).cos() as f32, (unit_angle as f64).sin() as f32);
+                    let r = mirror.next_float();
+                    let off = Vec2::new(unit.x * 3.0 * r, unit.y * 20.0 * r);
+                    let idx = mpool.new_dust_perfect(&mut mirror, &c, &w, center + off, 90, None, 0, Color::default(), 1.0);
+                    let d = mpool.slot_mut(idx);
+                    d.velocity = Vec2::UNIT_Y;
+                    d.no_gravity = true;
+                    d.scale = scale;
+                }
+                assert_eq!(active(&pool), active(&mpool), "tail slots (seed {seed}, opacity {opacity})");
+                for i in active(&pool) {
+                    assert_eq!(pool.slot(i), mpool.slot(i), "tail slot {i}");
+                }
+                for _ in 0..8 {
+                    assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "tail stream");
+                }
+            }
+        }
     }
 }

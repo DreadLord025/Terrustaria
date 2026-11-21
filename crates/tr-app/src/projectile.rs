@@ -3862,17 +3862,29 @@ impl Projectile {
         self.pos += self.vel;
     }
 
-    /// `AI()`'s aiStyle-108 block (`Projectile.cs:33679-33988`) — the
-    /// ritual markers (the 578 lightning / the 579 portal): the timeline
-    /// `ai[0] <= 50 -> <= 90 -> <= 120 -> else` with the scale/alpha ramps
-    /// and the rotation decrements, the 578's aim rotation, the 580 bolt it
-    /// fires at the 90th tick, and the 579's two VortexAliens.
+    /// `AI()`'s aiStyle-108 block (`Projectile.cs:33679-34025`) — the
+    /// ritual markers (the 578 lightning / the 579 portal / the 813 Blood
+    /// Nautilus tears, W4-g64 remainder 2 reading the d11 e0395afc
+    /// machine): the timeline `ai[0] <= 50 -> <= 90 -> <= 120 -> else`
+    /// with the scale/alpha ramps and the rotation decrements, the 578's
+    /// aim rotation, the 580 bolt it fires at the 90th tick, the 579's two
+    /// VortexAliens, and the 813's BloodSquid (619) spawn + its four-phase
+    /// dust machine.
     ///
     /// W4-g64: the wind-up dust arms (the 579's 229/240 rings, the 578's
     /// 229 streak pair) are RE-ARMED on the live pool (`trail_579` /
     /// `trail_578`); the `ai[1] == 1f` 25-dust burst stays the co-lane's
-    /// one-shot, the 813 arm UNWIRED (no row); the late-stage clone spawn
-    /// rides the 580's own machine.
+    /// one-shot; the 813's four phases + the opacity tail are RE-ARMED
+    /// (`trail_813_windup`/`_charge`/`_full`/`_dissolve`/`_opacity_tail` —
+    /// the d11 census's gates-only skips REPLACED, the bodies + internals
+    /// now ride the stream). The charge/full/dissolve 578/579 dust arms
+    /// stay the co-lane's unmodelled skips (the d11 census: their gate
+    /// rolls are NOT on the stream, the 578/579 witnesses pin it). The
+    /// late-stage clone spawn rides the 580's own machine. The 813's 619
+    /// spawn intent carries the raw C# NPC id (the BloodSquid kind is
+    /// unported — the drain's `from_u16` folds it, a cited skip); the
+    /// spawn point is the C# `(int)Center` truncation (`:33884` — the d11
+    /// port carried the top-left, fixed here, ANALYSIS).
     fn ai_vortex_ritual(
         &mut self,
         player: (f32, f32),
@@ -3881,8 +3893,10 @@ impl Projectile {
         dust_ctx: &tr_core::particles::SpawnCtx,
         world: &World,
     ) {
-        // `:33696-33700`'s first-tick sound latch.
-        if self.local_ai[1] == 0.0 {
+        // `:33681` — flag53: the 578/579 pair (the 813 is NOT on it).
+        let flag53 = self.kind == VORTEX_PORTAL || self.kind == VORTEX_LIGHTNING;
+        // `:33696-33700`'s first-tick sound latch (the 578/579 only).
+        if flag53 && self.local_ai[1] == 0.0 {
             self.local_ai[1] = 1.0;
         }
         // `:33705-33713`'s aim (the 578 only: the 579's ai[1] is the burst
@@ -3897,19 +3911,22 @@ impl Projectile {
             };
         }
         self.ai[0] += 1.0;
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
         let scale;
         if self.ai[0] <= 50.0 {
-            // `:33716-33759` — W4-g64: the wind-up dust RE-ARMED on the live
-            // pool: the 579's two independent Next(4) rings (229/240) and
-            // the 578's Next(2) streak pair. The `ai[1] == 1f` 25-dust burst
-            // (`:33682-33695`) is the co-lane's one-shot; the 813 arm is
-            // UNWIRED (no row — the four-phase machine, the deferred ledger).
-            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            // `:33716-33783` — W4-g64: the wind-up dust RE-ARMED on the live
+            // pool: the 579's two independent Next(4) rings (229/240), the
+            // 578's Next(2) streak pair, and the 813's two Next(4) rings
+            // (5/240, `trail_813_windup`). The `ai[1] == 1f` 25-dust burst
+            // (`:33682-33695`) is the co-lane's one-shot.
             if self.kind == VORTEX_PORTAL {
                 crate::proj_trail_dust::trail_579(center, rng, dust, dust_ctx, world);
             }
             if self.kind == VORTEX_LIGHTNING {
                 crate::proj_trail_dust::trail_578(center, self.ai[1], rng, dust, dust_ctx, world);
+            }
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                crate::proj_trail_dust::trail_813_windup(center, rng, dust, dust_ctx, world);
             }
             scale = 0.0;
         } else if self.ai[0] <= 90.0 {
@@ -3917,11 +3934,22 @@ impl Projectile {
             scale = (self.ai[0] - 50.0) / 40.0;
             self.alpha = 255 - (255.0 * scale) as i32;
             self.rot -= std::f32::consts::PI / 20.0;
+            // `:33858-33881` — the 813's two Next(2) rings (5/240, ×6/×3,
+            // customData dropped). The 579/578 charge arms (`:33800-33837`)
+            // stay the co-lane's unmodelled skips (the d11 census).
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                crate::proj_trail_dust::trail_813_charge(center, rng, dust, dust_ctx, world);
+            }
         } else if self.ai[0] <= 120.0 {
             // `:33891-33893`'s full charge.
             scale = 1.0;
             self.alpha = 0;
             self.rot -= std::f32::consts::PI / 60.0;
+            // `:33894-33918` — the 813's ONE Next(2) if/else ring. The
+            // 578/579 else-arm (`:33919-33940`) stays the co-lane's skip.
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                crate::proj_trail_dust::trail_813_full(center, rng, dust, dust_ctx, world);
+            }
         } else {
             // `:33944-33950`'s dissolve.
             scale = 1.0 - (self.ai[0] - 120.0) / 60.0;
@@ -3929,7 +3957,20 @@ impl Projectile {
             self.rot -= std::f32::consts::PI / 30.0;
             if self.alpha >= 255 {
                 self.active = false;
-                return;
+                // W4-g64 (the d11 be58df9e fix): the C# `Kill()` does NOT
+                // return (`:33947-33950`) — the 813's death-tick dust
+                // gates + opacity tail below still roll. For the 578/579
+                // it is a no-op (the slot is dead, `ai[0] != 90`, the
+                // opacity tail is 813-only, their dissolve switch rolls
+                // are the co-lane's unmodelled skip), so their state
+                // stays byte-identical.
+            }
+            // `:33951-33983` — the 813's two Next(3) switch rings (the
+            // case-2 no-op draws nothing further; the spin vector carries
+            // the dissolve scale). The 578/579 twin switch (`:33984-34016`)
+            // stays the co-lane's unmodelled skip (the d11 census).
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                crate::proj_trail_dust::trail_813_dissolve(center, scale, rng, dust, dust_ctx, world);
             }
         }
         self.scale = scale;
@@ -3940,7 +3981,7 @@ impl Projectile {
                 // centre, `ai0 = ai[1]`.
                 let (vx, vy) = (self.ai[1].cos() * 8.0, self.ai[1].sin() * 8.0);
                 self.wants_ritual_bolt = Some((self.pos.x - vx, self.pos.y - vy, vx, vy, self.ai[1]));
-            } else {
+            } else if self.kind == VORTEX_PORTAL {
                 // `:33844-33856`'s two VortexAliens (427) at the centre
                 // with `-UnitY.RotatedByRandom(2*PI) * rand.Next(4, 9) - UnitY*2`.
                 // B-6d: BOTH spawn (`for num815 < 2`) — the single-Option
@@ -3963,7 +4004,29 @@ impl Projectile {
                     self.wants_mark_spawn
                         .push((NpcKind::VortexAlien.to_u16(), self.pos.x, self.pos.y, vx, vy));
                 }
+            } else if self.kind == BLOOD_NAUTILUS_TEARS {
+                // `:33882-33886`'s BloodSquid (619) at `(int)Center`, zero
+                // velocity. The raw C# id rides the intent (the kind is
+                // unported — the drain folds it, a cited skip). W4-g64:
+                // the C# truncates the CENTRE (`:33884`) — the d11 port
+                // carried the top-left; fixed here (ANALYSIS).
+                self.wants_mark_spawn.push((619, center.x as i32 as f32, center.y as i32 as f32, 0.0, 0.0));
             }
+        }
+        // `:34018-34024` — the 813's opacity dust tail: one NextFloat gate
+        // against Opacity (1 - alpha/255), the taken branch's
+        // NextVector2Circular pair + the type-90 Perfect (UnitY velocity,
+        // noGravity, scale = this.scale). EVERY tick incl. the death tick.
+        if self.kind == BLOOD_NAUTILUS_TEARS {
+            crate::proj_trail_dust::trail_813_opacity_tail(
+                center,
+                opacity_of(self.alpha),
+                self.scale,
+                rng,
+                dust,
+                dust_ctx,
+                world,
+            );
         }
     }
 
@@ -18366,8 +18429,9 @@ impl ProjectilePool {
                             self.slots[i].ai_vortex_bolt(world, rng);
                         }
                         108 => {
-                            // `AI()`'s aiStyle-108 block (`Projectile.cs:33679-33988`):
-                            // the Vortex ritual markers (578 lightning / 579 portal).
+                            // `AI()`'s aiStyle-108 block (`Projectile.cs:33679-34025`):
+                            // the Vortex ritual markers (578 lightning / 579 portal /
+                            // 813 Blood Nautilus tears, W4-g64 remainder 2).
                             let player_pos = owner
                                 .or(inputs.aim)
                                 .unwrap_or((self.slots[i].pos.x, self.slots[i].pos.y));
@@ -44998,6 +45062,156 @@ mod w4_g64_wiring_tests {
         }
         for _ in 0..8 {
             assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "stream tail");
+        }
+    }
+
+    /// W4-g64 remainder 2 — the 813 machine-side census (the d11
+    /// gates-only witness re-derived on the LIVE bodies): the per-phase
+    /// explicit draws stay in the d11 order (wind-up two Next(4), charge
+    /// two Next(2), full ONE Next(2), dissolve two Next(3)) with the
+    /// taken branches' RotatedByRandom pairs + re-roll + scale draws and
+    /// the pool internals now BETWEEN them; the opacity tail's NextFloat
+    /// gate runs every tick. A CountRng proves the explicit-draw bounds
+    /// sequence; the alpha-255 wind-up fails the opacity gate (one float).
+    #[test]
+    fn w4_g64_wire_813_phase_gates_keep_the_d11_order() {
+        struct CountRng {
+            ranges: Vec<(i32, i32)>,
+            floats: usize,
+        }
+        impl DropRng for CountRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min // every gate passes, every switch takes case 0
+            }
+            fn next_float(&mut self) -> f32 {
+                self.floats += 1;
+                0.0
+            }
+        }
+        let w = World::new("g64r2".into(), 200, 200);
+        let (mut sd, sc) = scratch_dust(&w);
+        let mk = || Projectile {
+            active: true,
+            kind: BLOOD_NAUTILUS_TEARS,
+            owner: 0,
+            pos: Vec2::new(1000.0, 1000.0),
+            w: 32.0,
+            h: 32.0,
+            tile_collide: false,
+            alpha: 255,
+            time_left: 600,
+            ..Default::default()
+        };
+        // Wind-up tick: two Next(4) gates pass → per ring the
+        // RotatedByRandom pair (TWO next_double draws — the CountRng's
+        // trait-default next_double is ONE next_float each), the 5-ring's
+        // Next(10,21) re-roll, the pool internals' ranges, then the tail
+        // gate. Assert the GATE bounds appear in order.
+        let mut p = mk();
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
+        let gates: Vec<(i32, i32)> = rng.ranges.iter().copied()
+            .filter(|&(lo, hi)| (lo, hi) == (0, 4)).collect();
+        assert_eq!(gates.len(), 2, "the wind-up's two Next(4) gates");
+        assert!(rng.ranges.contains(&(10, 21)), "the taken 5-ring's re-roll");
+        // alpha 255 → opacity 0 → the tail gate fails: the floats are
+        // the two rings' rotation pairs + scale draws + the internals +
+        // ONE tail gate (no circular pair).
+        let mut p2 = mk();
+        p2.alpha = 0; // opacity 1 → the tail's circular pair rolls
+        let mut rng2 = CountRng { ranges: Vec::new(), floats: 0 };
+        p2.ai_vortex_ritual((1100.0, 1100.0), &mut rng2, &mut sd, &sc, &w);
+        assert_eq!(rng2.floats, rng.floats + 2, "the taken tail adds the circular pair");
+        // Charge tick (ai[0] = 50 → 51): two Next(2) gates.
+        let mut p = mk();
+        p.ai[0] = 50.0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
+        let gates: Vec<(i32, i32)> = rng.ranges.iter().copied()
+            .filter(|&r| r == (0, 2)).collect();
+        assert_eq!(gates.len(), 2, "the charge's two Next(2) gates");
+        // Full tick (ai[0] = 90 → 91): ONE Next(2) if/else.
+        let mut p = mk();
+        p.ai[0] = 90.0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
+        let gates: Vec<(i32, i32)> = rng.ranges.iter().copied()
+            .filter(|&r| r == (0, 2)).collect();
+        assert_eq!(gates.len(), 1, "the full charge's single if/else roll");
+        // Dissolve tick (ai[0] = 120 → 121): two Next(3) switch rolls.
+        let mut p = mk();
+        p.ai[0] = 120.0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
+        let gates: Vec<(i32, i32)> = rng.ranges.iter().copied()
+            .filter(|&r| r == (0, 3)).collect();
+        assert_eq!(gates.len(), 2, "the dissolve's two Next(3) switch rolls");
+    }
+
+    /// W4-g64 remainder 2 — the 813's 90th-tick BloodSquid spawn rides the
+    /// C# `(int)Center` truncation (`:33884` — the d11 port carried the
+    /// top-left; the fix), zero velocity, the raw 619 id; the 813 is NOT
+    /// on flag53 (no sound latch). The death tick (ai[0] = 180) still
+    /// rolls the dissolve + the opacity tail (the Kill does not return).
+    #[test]
+    fn w4_g64_wire_813_squid_spawn_and_death_tick_tail() {
+        let w = World::new("g64r2".into(), 200, 200);
+        let (mut sd, sc) = scratch_dust(&w);
+        let mut p = Projectile {
+            active: true,
+            kind: BLOOD_NAUTILUS_TEARS,
+            owner: 0,
+            pos: Vec2::new(1000.7, 1000.9),
+            w: 32.0,
+            h: 32.0,
+            tile_collide: false,
+            alpha: 255,
+            time_left: 600,
+            ..Default::default()
+        };
+        let mut rng = tr_core::UnifiedRandom::new(813);
+        for _ in 0..90 {
+            p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
+        }
+        assert_eq!(p.ai[0], 90.0);
+        assert_eq!(p.local_ai[1], 0.0, "the 813 is not on flag53");
+        assert_eq!(p.wants_mark_spawn.len(), 1, "one BloodSquid");
+        let (kind, x, y, vx, vy) = p.wants_mark_spawn[0];
+        assert_eq!(kind, 619, "the raw C# NPC id");
+        assert_eq!((x, y), (1016.0, 1016.0), "(int)Center: 1000.7+16 / 1000.9+16 truncated");
+        assert_eq!((vx, vy), (0.0, 0.0));
+        // Run to the death tick: ai[0] = 180 → scale -1 → alpha 510 →
+        // Kill; the tail STILL rolls (the slot dead, the draw recorded).
+        for _ in 0..90 {
+            p.ai_vortex_ritual((1100.0, 1100.0), &mut rng, &mut sd, &sc, &w);
+        }
+        assert_eq!(p.ai[0], 180.0);
+        assert!(!p.active, "the dissolve kills at the end");
+        // The parity twin: the whole 180-tick life lands identical pools
+        // and stream tails on a second run.
+        let (mut sd2, sc2) = scratch_dust(&w);
+        let mut p2 = Projectile {
+            active: true,
+            kind: BLOOD_NAUTILUS_TEARS,
+            owner: 0,
+            pos: Vec2::new(1000.7, 1000.9),
+            w: 32.0,
+            h: 32.0,
+            tile_collide: false,
+            alpha: 255,
+            time_left: 600,
+            ..Default::default()
+        };
+        let mut rng2 = tr_core::UnifiedRandom::new(813);
+        for _ in 0..180 {
+            p2.ai_vortex_ritual((1100.0, 1100.0), &mut rng2, &mut sd2, &sc2, &w);
+        }
+        for i in 0..6000 {
+            assert_eq!(sd.slot(i), sd2.slot(i), "slot {i} deterministic");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), rng2.next_range(0, 1000), "stream tail");
         }
     }
 }

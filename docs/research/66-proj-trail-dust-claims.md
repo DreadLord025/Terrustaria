@@ -153,10 +153,23 @@ continuation; 659's twin CONTINUES (wired).
   `ai_rainbow_crystal_shard` replacing the draws-kept skip. The pool's
   `new_dust_perfect`/`new_dust_direct`/`clone_dust` became generic over
   `DustRng` (the `new_dust` shape; concrete callers unchanged).
-- **813 — still deferred.** No row on any pushed branch (the d-lane probe:
-  d12/d13/f19/f20 carry no 813 const). The 13 sites span four `ai[0]` phase
-  windows of the style-108 machine (`:33760/33858/33894/33951/34018`) — a
-  whole-machine port, and the port's `ai_vortex_ritual` covers 578/579 only.
+- **813 — UNBLOCKED, PORTED + WIRED (remainder wave, the d11 read).** The
+  d11 branch (`task/W4-d11-proj-ai-101-110`, tip `e0395afc`) landed the 813
+  completion: the shared `:6282-6293` row (read via `git show`, landed here
+  on the 578/579 arm) + the four-phase machine with the dust GATES modelled
+  and the bodies skipped (its census: wind-up two Next(4), charge two
+  Next(2), full ONE Next(2) if/else, dissolve two Next(3), the per-tick
+  opacity NextFloat gate; the dissolve `Kill()` does NOT return —
+  `be58df9e`). This wave REPLACES the census skips with the live bodies:
+  `trail_813_windup`/`_charge`/`_full`/`_dissolve` (the shared ring body —
+  the 5-arm's Next(10,21) position re-roll vs the 240's ×30 keep, the ×4/×2
+  wind-up vs ×6/×3 charge speeds, the dissolve's scale-premultiplied spin
+  vector, `customData = Center` dropped) + `trail_813_opacity_tail` (the
+  NextVector2Circular(3,20) pair + the type-90 Perfect, UnitY velocity,
+  scale = this.scale). The 578/579 charge/full/dissolve arms stay the
+  co-lane's unmodelled skips (the d11 census — their witnesses pin the
+  current stream). The 619 spawn point takes the C# `(int)Center`
+  truncation (`:33884` — the d11 port carried the top-left, fixed).
 - **957 — UNBLOCKED, PORTED + WIRED (remainder wave, the d13 read).** The
   d13 branch (`task/W4-d13-proj-ai-121-130`, tip `314fa6cd`, UNMERGED) rows
   were read via `git show`: the `GLOMMER_PET` row (20x20, aiStyle 124,
