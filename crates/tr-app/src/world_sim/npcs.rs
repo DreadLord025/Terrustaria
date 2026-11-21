@@ -5428,10 +5428,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         spawn_coins(app, &npc);
         spawn_loot(app, &npc);
-        // W4-g4 FINAL — `NPCLoot`'s last step (`NPC.cs:78897-78898`):
-        // `NPCLoot_DropMoney` then `NPCLoot_DropHeals` — the heart/star
-        // seam draws AFTER the coin + rule drops on the same stream.
-        spawn_heal_drops(app, &npc);
+        // W4-g4 SEAL — the heart/star heal feed (`NPC.cs:78898`) is f35's
+        // `spawn_heals` (npc_death_heals.rs, b72cdfbfc + 00a5b27db, the
+        // superset port with the boss tail). g4's duplicate seam was
+        // RETIRED here (research/91-seal-keep-one.md) — a second call
+        // would double-feed the UpdateNPCs stream. f35's merge wires it
+        // AFTER spawn_loot, the same slot.
     }
     // B-6b — the shield lifecycle's live consumers, at the death path's
     // tail (the C# owns the reset in the static state, `NPC.cs:95247-
@@ -7083,222 +7085,18 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
     }
 }
 
-/// `NPC.NPCLoot_DropHeals` (`NPC.cs:79098-79195`) + its leading
-/// `NPCLoot_DropCommonLifeAndMana` (`:79531-79557`), the LAST step of
-/// `NPCLoot` (`:78897-78898` — money first, heals after). W4-g4 FINAL:
-/// the heart-58 / star-184 seam f35's census explicitly leaves out
-/// (`65-expert-drop-trees-census.md:39` "missing, OUT of this task").
-/// Every gate draws on the `UpdateNPCs` stream in the C#'s order; the
-/// `RollLuck` gates ride `tr_core::loot::roll_luck` (the closest player's
-/// luck — the port's single player). The per-difficulty census: the ONLY
-/// difficulty input in either function is the 116-119 TheHungryII/leech
-/// arm's `!Main.expertMode || Next(5) == 0` (`:79183`) — classic always
-/// drops, expert/master draw a 1/5 gate (the port is single-difficulty
-/// classic, the `spawn_loot` `is_expert: false` precedent; the expert arm
-/// is threaded for the difficulty system's landing). Everything else is
-/// difficulty-free.
-fn spawn_heal_drops(app: &mut App, npc: &Npc) {
-    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
-    let net_id = entry.net_id;
-    let (x, y) = npc.center();
-    let luck = app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
-    // `closestPlayer.statLife < statLifeMax2` / `statMana < statManaMax2`
-    // — the port's single effective maxima (`player.rs:3609`'s convention).
-    let (life_below, mana_below) = app
-        .player
-        .as_ref()
-        .map(|p| (p.hp < p.max_hp, p.mana < p.mana_max))
-        .unwrap_or((false, false));
-    let rng = app.rngs.stream(RngKey::UpdateNpcs);
-    let mut out = Vec::new();
-    let expert = false; // the single-difficulty classic stand-in
-    drop_common_life_and_mana(
-        rng,
-        luck,
-        net_id,
-        npc.max_hp,
-        npc.damage,
-        life_below,
-        mana_below,
-        &mut out,
-    );
-    drop_heals_type_switch(rng, luck, net_id, expert, life_below, &mut out);
-    // The seasonal flags snapshot (the `spawn_loot` M5-SEED-1/2 shape).
-    let tenth = app
-        .world
-        .seeds
-        .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
-    let halloween = app
-        .world
-        .micro_seeds
-        .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
-    let xmas = app
-        .world
-        .micro_seeds
-        .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
-    for req in out {
-        // `Item.NewItem`'s heart/star seasonal remap (`Item.cs:49668-49714`)
-        // BEFORE the velocity triplet — the `spawn_loot` S1-P-i52 order.
-        let kind = crate::world_sim::items::seasonal_pickup_kind(
-            req.item as u16,
-            tenth,
-            halloween,
-            xmas,
-            rng,
-        );
-        let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
-        let vy = -1.5 - rng.next_float();
-        let phase = rng.next_float() * std::f32::consts::TAU;
-        app.items.push(ItemDrop::new(kind, req.stack as u32, 0, x, y, vx, vy, phase));
-    }
-}
-
-/// `NPCLoot_DropCommonLifeAndMana` (`NPC.cs:79531-79557`), verbatim draw
-/// order. `num` is 1 for the MotherSlime 16 / Slimer 121 (the else arm)
-/// and the CorruptSlime 81; both skip the 1/6 heart-or-star block. The
-/// block's second `Next(2)` draws ONLY when the first misses OR the mana
-/// gate fails (the else-if); the trailing 1/2 star roll draws for every
-/// `num == 0` kind. The `lifeMax > 1 && damage > 0` gates sit AFTER the
-/// `RollLuck` draws in the `&&` chain — a 1-hp critter still spends the
-/// luck roll.
-#[allow(clippy::too_many_arguments)]
-fn drop_common_life_and_mana(
-    rng: &mut dyn tr_core::loot::DropRng,
-    luck: f32,
-    net_id: i32,
-    life_max: i32,
-    damage: i32,
-    life_below: bool,
-    mana_below: bool,
-    out: &mut Vec<tr_core::loot::DropRequest>,
-) {
-    use tr_core::loot::{roll_luck, DropRequest};
-    let mut push = |item: i32| {
-        out.push(DropRequest { item, stack: 1, scattered: false, resets_money: false });
-    };
-    // `:79534-79552` — the num latch.
-    let num = if net_id == 16 || net_id == 121 {
-        1
-    } else if net_id == 81 {
-        1
-    } else {
-        0
-    };
-    // `:79537-79547` — the 1/6 heart-or-star block (num == 0 only).
-    if num == 0
-        && roll_luck(rng, luck, 6) == 0
-        && life_max > 1
-        && damage > 0
-    {
-        if rng.next_range(0, 2) == 0 && mana_below {
-            push(184);
-        } else if rng.next_range(0, 2) == 0 && life_below {
-            push(58);
-        }
-    }
-    // `:79553-79556` — the trailing 1/2 star roll (num == 0 only).
-    if num == 0
-        && roll_luck(rng, luck, 2) == 0
-        && life_max > 1
-        && damage > 0
-        && mana_below
-    {
-        push(184);
-    }
-}
-
-/// `NPCLoot_DropHeals`' type switch (`NPC.cs:79101-79194`), verbatim.
-/// The heart-58 chances per arm: the scarecrows 305-314 + Hellhound 329 /
-/// Poltergeist 330 `RollLuck(4)`; Splinterling 326 `RollLuck(6)`;
-/// HeadlessHorseman 315 ALWAYS; PresentMimic 341 `Next(5,11)` hearts;
-/// the zombie elves 338-340 `RollLuck(5)`; GingerbreadMan 342
-/// `Next(3) != 0` (2/3); MourningWood 325 / Pumpking 327 / Everscream 344 /
-/// IceQueen 345 / SantaNK1 346 `Next(6)+6` hearts; Creeper 267
-/// `Next(2)==0 && life below`; EoW 13-15 `Next(4)==0 && life below`;
-/// TheHungryII 116 / leech 117-119 `!expert || Next(5)==0` (the ONE
-/// per-difficulty arm); Probe 139 `Next(2)==0`.
-fn drop_heals_type_switch(
-    rng: &mut dyn tr_core::loot::DropRng,
-    luck: f32,
-    net_id: i32,
-    expert: bool,
-    life_below: bool,
-    out: &mut Vec<tr_core::loot::DropRequest>,
-) {
-    use tr_core::loot::{roll_luck, DropRequest};
-    let mut push = |item: i32| {
-        out.push(DropRequest { item, stack: 1, scattered: false, resets_money: false });
-    };
-    match net_id {
-        // `:79103-79119` — the ten scarecrows + the two ghost hounds.
-        305..=314 | 329 | 330 => {
-            if roll_luck(rng, luck, 4) == 0 {
-                push(58);
-            }
-        }
-        // `:79120-79125`.
-        326 => {
-            if roll_luck(rng, luck, 6) == 0 {
-                push(58);
-            }
-        }
-        // `:79126-79128` — the guaranteed heart.
-        315 => push(58),
-        // `:79129-79137` — 5-10 hearts.
-        341 => {
-            let n = rng.next_range(5, 11);
-            for _ in 0..n {
-                push(58);
-            }
-        }
-        // `:79138-79145`.
-        338..=340 => {
-            if roll_luck(rng, luck, 5) == 0 {
-                push(58);
-            }
-        }
-        // `:79146-79151` — the 2/3 heart.
-        342 => {
-            if rng.next_range(0, 3) != 0 {
-                push(58);
-            }
-        }
-        // `:79152-79164` — the moon bosses' 6-11 hearts.
-        325 | 327 | 344 | 345 | 346 => {
-            let n = rng.next_range(0, 6) + 6;
-            for _ in 0..n {
-                push(58);
-            }
-        }
-        // `:79165-79170` — the Creeper's gated 1/2.
-        267 => {
-            if rng.next_range(0, 2) == 0 && life_below {
-                push(58);
-            }
-        }
-        // `:79171-79178` — the EoW segments' gated 1/4.
-        13..=15 => {
-            if rng.next_range(0, 4) == 0 && life_below {
-                push(58);
-            }
-        }
-        // `:79179-79187` — the ONLY difficulty arm: classic always drops,
-        // expert/master draw the 1/5 (`!Main.expertMode || Next(5) == 0`
-        // — the `||` short-circuits the draw in classic).
-        116..=119 => {
-            if !expert || rng.next_range(0, 5) == 0 {
-                push(58);
-            }
-        }
-        // `:79188-79193`.
-        139 => {
-            if rng.next_range(0, 2) == 0 {
-                push(58);
-            }
-        }
-        _ => {}
-    }
-}
+// W4-g4 SEAL — the g4 FINAL `spawn_heal_drops` + its two pure helpers
+// (`drop_common_life_and_mana`/`drop_heals_type_switch`, the 55840d9a
+// port of NPC.cs:79098-79195/:79531-79557) are RETIRED here. The f35
+// census row the FINAL probe read (`65-expert-drop-trees-census.md:39`)
+// sits in a "Port status BEFORE this task" table — f35's own tip ported
+// the SAME seam FIRST (`b72cdfbfc` npc_death_heals.rs + the `00a5b27db`
+// spawn_heals wiring, both BEFORE g4's 55840d9a) as a SUPERSET (the boss
+// potions/hearts tail + the Badger's Hat latches + the EoW head latch).
+// Keep-one adjudication: f35 owns the heal seam (research/
+// 91-seal-keep-one.md); a second copy would double-feed the UpdateNPCs
+// death stream. The C# census survives in research/91-final-fighter-
+// census.md §1 (corrected by the seal note).
 
 #[cfg(test)]
 mod tests {
@@ -8304,164 +8102,11 @@ mod tests {
         );
     }
 
-    // W4-g4 FINAL — the heart/star seam witnesses (WRITTEN NOT RUN, the
-    // code-only mode). The pure helpers are pinned against the C#'s draw
-    // order (`NPC.cs:79098-79195`/`:79531-79557`). The forced-script
-    // shape is the `hurt_modifiers.rs:274` precedent: every draw records
-    // its (min, max) and pops the next scripted roll.
-
-    struct HealScriptRng {
-        rolls: Vec<i32>,
-        draws: Vec<(i32, i32)>,
-    }
-    impl HealScriptRng {
-        fn with_rolls(rolls: &[i32]) -> Self {
-            Self { rolls: rolls.to_vec(), draws: Vec::new() }
-        }
-        fn all_zero(n: usize) -> Self {
-            Self::with_rolls(&vec![0; n])
-        }
-    }
-    impl tr_core::loot::DropRng for HealScriptRng {
-        fn next_range(&mut self, min: i32, max: i32) -> i32 {
-            self.draws.push((min, max));
-            self.rolls.remove(0)
-        }
-        fn next_float(&mut self) -> f32 {
-            panic!("the luck-0 seam must never draw a float (RollLuck's gate)");
-        }
-    }
-
-    /// The common block's draw census at luck 0 (`:79537-79556`): a
-    /// num-0 kind spends RollLuck(6) [one Next(6)], then — on a hit with
-    /// both stat gates open — Next(2) (the mana arm), then the trailing
-    /// RollLuck(2) [one Next(2)]. An all-zero script hits every gate:
-    /// star (the mana arm) + star (the trailing roll), 3 draws total.
-    #[test]
-    fn w4_g4_common_life_and_mana_all_zero_script_draws_three() {
-        let mut script = HealScriptRng::all_zero(3);
-        let mut out = Vec::new();
-        drop_common_life_and_mana(&mut script, 0.0, 1, 60, 12, true, true, &mut out);
-        assert_eq!(
-            script.draws,
-            vec![(0, 6), (0, 2), (0, 2)],
-            "Next(6) + Next(2) [mana arm] + Next(2) [trailing luck roll]"
-        );
-        assert_eq!(
-            out.iter().map(|r| r.item).collect::<Vec<_>>(),
-            vec![184, 184],
-            "the mana arm wins the first Next(2); the trailing star lands"
-        );
-    }
-
-    /// The num latch (`:79534-79552`): the MotherSlime 16, the Slimer 121
-    /// and the CorruptSlime 81 skip BOTH rolls — zero draws, zero drops,
-    /// even with every stat gate open.
-    #[test]
-    fn w4_g4_common_life_and_mana_num_one_kinds_draw_nothing() {
-        for net_id in [16, 121, 81] {
-            let mut script = HealScriptRng::with_rolls(&[]);
-            let mut out = Vec::new();
-            drop_common_life_and_mana(&mut script, 0.0, net_id, 60, 12, true, true, &mut out);
-            assert!(script.draws.is_empty(), "net {net_id}: the num latch skips both rolls");
-            assert!(out.is_empty(), "net {net_id}: no drops");
-        }
-    }
-
-    /// The else-if second draw (`:79539-79546`): when the first Next(2)
-    /// hits but the mana gate is CLOSED, the second Next(2) still draws
-    /// (the else-if) and the heart arm reads it. All-zero script: mana
-    /// closed, life open → heart + trailing star, 3 draws.
-    #[test]
-    fn w4_g4_common_life_and_mana_mana_closed_falls_to_the_heart() {
-        let mut script = HealScriptRng::all_zero(3);
-        let mut out = Vec::new();
-        drop_common_life_and_mana(&mut script, 0.0, 1, 60, 12, true, false, &mut out);
-        assert_eq!(script.draws.len(), 3, "the else-if draws its own Next(2)");
-        assert_eq!(
-            out.iter().map(|r| r.item).collect::<Vec<_>>(),
-            vec![58, 184],
-            "the heart arm takes the fall-through; the trailing star lands"
-        );
-    }
-
-    /// The 1-hp critter gate (`:79537`/`:79553`): `lifeMax > 1` sits AFTER
-    /// the RollLuck draws — a critter still spends both luck rolls (2
-    /// draws) but drops nothing.
-    #[test]
-    fn w4_g4_common_life_and_mana_critter_still_spends_the_luck_rolls() {
-        let mut script = HealScriptRng::all_zero(2);
-        let mut out = Vec::new();
-        drop_common_life_and_mana(&mut script, 0.0, 1, 1, 0, true, true, &mut out);
-        assert_eq!(
-            script.draws,
-            vec![(0, 6), (0, 2)],
-            "both RollLuck draws precede the stat gates"
-        );
-        assert!(out.is_empty());
-    }
-
-    /// The type switch's per-arm draw census at luck 0, all-zero script
-    /// (`:79101-79194`): the scarecrow RollLuck(4) = 1 draw + 1 heart;
-    /// Splinterling RollLuck(6) = 1 + 1; the horseman 0 draws + 1 heart;
-    /// the mimic Next(5,11) = 1 draw + 5 hearts (the zero pick); the
-    /// GingerbreadMan Next(3) = 1 draw + 0 hearts (the != 0 gate misses
-    /// at zero); the moon bosses Next(6)+6 = 1 draw + 6 hearts; the
-    /// Creeper/EoW Next(2)/Next(4) = 1 + 1; the leech classic 0 draws +
-    /// 1 heart; the Probe Next(2) = 1 + 1; an unnamed kind 0 + 0.
-    #[test]
-    fn w4_g4_drop_heals_type_switch_draw_census() {
-        let rows: &[(i32, usize, usize)] = &[
-            (305, 1, 1), (314, 1, 1), (329, 1, 1), (330, 1, 1),
-            (326, 1, 1), (315, 0, 1), (341, 1, 5), (338, 1, 1),
-            (342, 1, 0), (325, 1, 6), (327, 1, 6), (344, 1, 6),
-            (345, 1, 6), (346, 1, 6), (267, 1, 1), (13, 1, 1),
-            (116, 0, 1), (119, 0, 1), (139, 1, 1), (1, 0, 0),
-        ];
-        for &(net_id, draws, hearts) in rows {
-            let mut script = HealScriptRng::all_zero(draws);
-            let mut out = Vec::new();
-            drop_heals_type_switch(&mut script, 0.0, net_id, false, true, &mut out);
-            assert_eq!(script.draws.len(), draws, "net {net_id}: the draw census");
-            assert_eq!(out.len(), hearts, "net {net_id}: the heart count");
-            assert!(out.iter().all(|r| r.item == 58 && r.stack == 1));
-        }
-    }
-
-    /// The ONE per-difficulty arm (`:79183`): expert draws the 1/5 gate
-    /// (1 draw); an all-zero script hits it (1 heart), a script whose
-    /// Next(5) returns 1 misses (0 hearts). Classic never draws.
-    #[test]
-    fn w4_g4_drop_heals_leech_arm_is_the_only_difficulty_gate() {
-        let mut hit = HealScriptRng::all_zero(1);
-        let mut out = Vec::new();
-        drop_heals_type_switch(&mut hit, 0.0, 117, true, true, &mut out);
-        assert_eq!(hit.draws, vec![(0, 5)]);
-        assert_eq!(out.len(), 1, "the expert 1/5 hits at zero");
-        let mut miss = HealScriptRng::with_rolls(&[1]);
-        let mut out = Vec::new();
-        drop_heals_type_switch(&mut miss, 0.0, 117, true, true, &mut out);
-        assert_eq!(miss.draws, vec![(0, 5)]);
-        assert!(out.is_empty(), "the expert 1/5 misses at 1");
-        let mut classic = HealScriptRng::with_rolls(&[]);
-        let mut out = Vec::new();
-        drop_heals_type_switch(&mut classic, 0.0, 117, false, true, &mut out);
-        assert!(classic.draws.is_empty(), "classic short-circuits the draw");
-        assert_eq!(out.len(), 1);
-    }
-
-    /// The stat-gated arms (`:79166`/`:79174`): the Creeper 267 and the
-    /// EoW 13 draw their gate even at full life, but drop nothing.
-    #[test]
-    fn w4_g4_drop_heals_full_life_gates_still_draw() {
-        for net_id in [267, 13] {
-            let mut script = HealScriptRng::all_zero(1);
-            let mut out = Vec::new();
-            drop_heals_type_switch(&mut script, 0.0, net_id, false, false, &mut out);
-            assert_eq!(script.draws.len(), 1, "net {net_id}: the gate draws first");
-            assert!(out.is_empty(), "net {net_id}: full life refuses the heart");
-        }
-    }
+    // W4-g4 SEAL — the heart/star seam witness set (HealScriptRng + the
+    // 7 helper pins) was RETIRED with the duplicate port; f35's
+    // npc_death_heals.rs carries its own 10-witness set for the same C#
+    // census (research/91-seal-keep-one.md). The money-stand-in witness
+    // below is g4-unique and stays.
 
     /// The money stand-ins are LIVE (W4-g4 FINAL): a Midas-debuffed NPC
     /// spends the extra Next(30,51) bump draw; a blood moon spends the
@@ -8501,32 +8146,9 @@ mod tests {
         );
     }
 
-    /// The death-path order (`NPC.cs:78897-78898`): the heal seam draws
-    /// AFTER the coins + the rule drops. A blue slime (net 1, num 0)
-    /// with both stat gates open spends the common block's rolls on the
-    /// same stream the coin/loot path left.
-    #[test]
-    fn w4_g4_spawn_heal_drops_rides_the_death_path_stream() {
-        use crate::app::flow::front_flow_tests::flow_app;
-        let mut a = flow_app(None, vec![], vec![]);
-        a.player = Some(crate::player::Player::spawn(&a.world));
-        let p = a.player.as_mut().unwrap();
-        p.hp = p.max_hp - 1;
-        p.mana = p.mana_max - 1;
-        let npc = Npc::spawn_slime_variant(
-            &a.world,
-            (a.player.as_ref().unwrap().x / 16.0) as i32,
-            SlimeVariant::Blue,
-        )
-        .expect("the surface spawns a blue slime");
-        let before = a.rngs.stream(crate::app::RngKey::UpdateNpcs).clone();
-        spawn_heal_drops(&mut a, &npc);
-        assert_ne!(
-            *a.rngs.stream(crate::app::RngKey::UpdateNpcs),
-            before,
-            "the common block's luck rolls always draw for a num-0 kind"
-        );
-    }
+    // W4-g4 SEAL — the `w4_g4_spawn_heal_drops_rides_the_death_path_stream`
+    // witness was RETIRED with the duplicate port; f35's wiring witness
+    // covers the same death-path slot (spawn_heals AFTER spawn_loot).
 
     // DW-2.5 — the runtime seams drive the new arms end to end: the slime
     // rain's carried item (`npc.ai[1]`, `SlimeBodyItemDropRule.cs:19-22`)

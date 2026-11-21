@@ -10,6 +10,16 @@ d22-live-session reconcile receipt, (3) the fighter-variant FINAL census,
 
 ## 1. The heart/star seam (item 1) — PORTED, f35 did NOT claim it
 
+> **SEAL CORRECTION (research/91-seal-keep-one.md §1):** this section's
+> ownership claim is INVERTED. The `:39` disclaimer below sits in f35's
+> **"Port status BEFORE this task"** table — f35's pushed tip ported the
+> SAME seam FIRST (`b72cdfbfc` + `00a5b27db`, both BEFORE g4's
+> `55840d9a`) as a SUPERSET (the boss tail + Badger's Hat + EoW latch).
+> Keep-one: **f35 owns the heal seam**; g4's duplicate `spawn_heal_drops`
+> was RETIRED by the seal commit. The C# draw census below stands
+> (verified line-by-line; both ports implement it identically) — read it
+> as the audit trail for f35's `npc_death_heals.rs`.
+
 **Probe result:** f35's tip `e0e5b53d` (origin/task/W4-f35-expert-drop-trees)
 explicitly leaves the death-side heal seam OUT:
 `docs/research/65-expert-drop-trees-census.md:39` —
@@ -254,6 +264,16 @@ but its offence (the 592 laser) is unported. d22's census counts it as
 shot belongs to the projectile-work lane (the same lane as the engineer's
 turret + the zapper's spear). **Recorded as the one fighter shooter
 remainder.**
+
+> **SEAL CORRECTION (research/91-seal-keep-one.md §3):** the 520's lane
+> is **d41** (band 491-560, claim `4ed22f0b3`), NOT a generic
+> projectile-work lane and NOT d43 (631-697). d41's batch 2
+> (`5d036721d`) set the precedent: it ported the salamander shooter
+> machine AND its SalamanderSpit 572 projectile in-lane. The 520
+> shooter-block (592 laser + aim cycle + 400-px stop, the params above
+> re-verified at the seal) is a **d41 task seed**. Only the engineer's
+> turret + the zapper's spear (kinds 386/389, outside the band claims)
+> stay with the projectile-work lane.
 
 ### The banner-carrier / goblin-peasant questions (the Lead's item 3)
 

@@ -36137,6 +36137,20 @@ The per-difficulty census: the ONLY difficulty input is the 116-119 leech
 arm's `!expert || Next(5)==0` (classic short-circuits the draw). The full
 census + the 9 witnesses live in `docs/research/91-final-fighter-census.md`.
 
+**SEAL-phase correction (the keep-one re-adjudication):** the FINAL probe
+misread f35's census row — it sits in a **"Port status BEFORE this task"**
+table. f35's pushed tip ported the SAME heal seam FIRST (`b72cdfbfc`
+08:19 `npc_death_heals.rs` + `00a5b27db` 08:43 the `spawn_heals` wiring —
+both BEFORE g4's `55840d9a` 09:16), as a SUPERSET: the boss
+potions/hearts tail (`:78945-79016`) + the Badger's Hat latch chain +
+the EoW head's dynamic boss latch, with its own anchors + 10 witnesses.
+**Keep-one: f35 owns the heal seam.** g4's duplicate `spawn_heal_drops`
++ helpers + the 8 seam witnesses are RETIRED on this branch (a second
+copy would double-feed the UpdateNPCs death stream). The g4-unique
+`spawn_coins` midas/blood-moon LIVE wiring stays (neither d22 nor f35
+carries it — both still pass `false, false`); it must survive the merge
+as a targeted hunk. Full adjudication: `docs/research/91-seal-keep-one.md`.
+
 ### The d22r RESUME fold-list (item 5 — CONSUMED, the reconcile landed)
 
 d22's tip re-probed to `b24977d9` (four pushed commits). Its style-3 core
@@ -36176,8 +36190,9 @@ stop retired by d22r); the goblin-peasant is the invasion four (26/27/28/
 111, the Peon smash live). **The ONE genuine remainder: the MartianWalker
 520** rides `update_skeleton` (the plain walker) but the C# 520 is a
 shooter-block type (`:59069`) — its walk is routed, but its 592 laser shot
-+ the aim cycle + the 400-px stop are unported (the projectile-work lane,
-the same lane as the engineer's turret + the zapper's spear). The ~123
++ the aim cycle + the 400-px stop are unported (**SEAL: a d41 task seed**
+— band 491-560, the salamander-572 in-lane precedent; only the engineer's
+turret + the zapper's spear stay with the projectile-work lane). The ~123
 unported style-3 types are kind-roster gaps (d34-d43), not AI-arm gaps.
 
 ### Deliberate folds / gaps (recorded)
