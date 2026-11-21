@@ -9,6 +9,17 @@ ADVANCED** `2b9ed81f` → `41b64b04` (+4 commits: the :3858 spout wiring
 `a3093a66`, DELEGATED-STATUS docs `d441713d`, fold-list extension
 `17161648`/`41b64b04`) — §1/§2/§4/§5 g73e rows updated below.
 
+**GAP-CLOSURE ROUND (2026-11-21, post-final-audit):** the §7.2 gap-table
+rows closed on this branch — **G3/G4 PORTED** (`dust_table.rs`
+`get_alpha_with_globals`, commit `641561c2`), **G5 dead-claim CORRECTED**
+(:2275 LIVE via ParticleOrchestrator, `d.color`-reconstructible) +
+**G6 CLOSED-EXACT** (sole 235 producer is single-player index 0,
+`c5a0e646`), **G2 ONE-EDIT hunk published §7.2a** (`84eb739b`), and the
+**f6 atan2 probe: f6 ALIVE** (origin `0f9fd642f`, +8 wiring commits;
+§7.1 hunk CONSUMED by its unpushed `76aeaf3c3` — §5 row 3
+RESOLVED-LOCAL). Remaining port-wide owed: G1 (the 52-light feed,
+S1-E-5) + G2's merge-time landing.
+
 Code-only crosslane round, 2026-11-21, on `task/W4-d54-dust-sites-world`
 (union EXECUTED `c792cf37`, research/66 §6). This doc is the **per-file
 keep-one FINAL table** for the whole dust family, the merge-order
@@ -31,7 +42,7 @@ work each lane still owes.
 | g13 | task/W4-g13-dust-main-sites-3 | `15fd99c9` | main_dust.rs sites 17-23 WIRED (draw-call feeds + DrawnThisUpdate relocation + item-sparkle 16px light-box fix + retro/Moon-Lord witness fixes), 18 witnesses |
 | g61 | task/W4-g61-npc-spawn-dust | `a9628928` | npc_spawn_visuals.rs — widest teleport (11 styles + pylon 9 + NPC driver + per-tick visuals + alt-texture) + spawn family, UNWIRED, 18 witnesses; particles.rs DustRng generalisation |
 | e4 | task/W4-e4-dust-sites-world-2 | `2a79551a` | orchestrator_dust.rs (orch 41-61, 9 witnesses) + mount_dust.rs (Mount 1-19, 10 witnesses), UNWIRED; lane complete 40/40 |
-| f6 | task/W4-f6-dust-world-3 | `5daa1d70` | mount_dust.rs ALL 27 Mount sites (24 witnesses) + **batch 4 LANDED**: world_dust.rs 13 small-file sites (8 witnesses) + 40-site delivery docs + fairy-color witness hardening |
+| f6 | task/W4-f6-dust-world-3 | `0f9fd642f` (gap-closure re-read; was `5daa1d70`) | mount_dust.rs ALL 27 Mount sites + batch-4 world_dust.rs 13 sites + **the wiring wave 1-6 LANDED** (spawn/dismount channel, frame extras, UpdateEffects, chest/poof, pylon/void-lens, lava bubbles + the borrow fix) — **ALIVE, 3 unpushed local commits** incl `76aeaf3c3` consuming this doc's §7.1 atan2 hunk (§5 row 3 RESOLVED-LOCAL) |
 | g63 | task/W4-g63-proj-trail-dust-1 | `b1e78b19` | projectile_trail_dust.rs — rowed inline-machine kinds ≤400 re-armed end-to-end, WIRED via update_dust from world_sim/projectiles.rs, 19 witnesses |
 | g64 | task/W4-g64-proj-trail-dust-2 | `77616a7d` | proj_trail_dust.rs — kinds >400 superset, 42 emitters + 16 re-armed call sites on the UpdateProjectiles stream (WIRED), 44 witnesses; particles.rs DustRng generalisation (second copy) |
 | e3 | task/W4-e3-dust-sites-proj-2 | `8023aa4d` | projectile_dust.rs — aiStyle-generic window :22297-24318 (41 sites + the 24328 edge pair, all 42 ported), 21 witnesses + 3 keep-one contracts vs d16/d1/f48 (doc sweep tip) |
@@ -188,7 +199,7 @@ research/66). No cargo/tests invoked this round.
 | - | ---- | ------- | ------ |
 | 1 | **g73e — the g75 post-fold falls sweep** | g73 (or the family merger) | **FINAL-AUDIT UPDATE: the fold-list is now FIVE commits** (`git log e30ad7ba..origin/task/W4-g75-honeyfall-draw` = 7 commits; `17161648`/`41b64b04` are the fold-list docs themselves). Per g75's own `41b64b04` per-hunk list: `d118f7ba` disco FIX critical (g73's mod.rs:300/:303 still carries the manager-local `update_disco_rgb` cycle, re-verified — out of phase with the app's `advance_disco`, init 0 vs Main.Initialize's DiscoR=255 :66780; replace with g75's `set_disco_rgb` latch fed from params.disco beside `set_show_invisible`, frame/draw.rs) + `f4e3071f` 2 lava-fountain witnesses (717 spawn arm already in g73 mod.rs:457) + `2b9ed81f` sweep docs + **`a3093a66` the :3858 spout wiring** (liquids.rs `liquid_behind_spout_refused` + manager-handle parameter/call-site hunks + tiles.rs call feed + anchor row; composes by OR with g80's `af6cd44f` inActive half — documented, not contested) + `d441713d` sound.rs DELEGATED-STATUS + 4 census-doc syncs (the two-tier keep-BOTH-fns contract). All 7 ancestry-checked ABSENT from g73 tip `82ae8b96` this round. Witness inventory: 43 + 5 sweep + 3 spout = **51** (g75's pinned final count supersedes this doc's earlier 48). |
 | 2 | **g11c — the snowing details F1-F7** | d130 (the canonical branch) or the weather merger | research/83's g11 addendum (`d892d8d4`) lists 7 exact folds onto d130's snow.rs: F1 g11's body + the `global` stream (retire the Snow splitmix + App.snow field), F2 MAX_SCREEN_W 4096 HiDef (re-derive every budget expectation), F3 restore the in-body gamePaused gate, F4 counter budget once-per-call (d130's shape — g11's per-attempt live_type census retires; this SUPERSEDES research/66 §6's "g11b hoist" note: the hoist target is d130's counter param, not g11's loop), F5 int attempt-loop shape, F6 env re-point (g11's scene_scan SnowingEnv block → SnowInputs + game_paused), F7 the 4 g11 snow witnesses re-pinned. VERIFIED at d130 tip `ec1d73c7`: snow.rs still pins 1920/splitmix/no pause gate — NONE of F1-F7 applied yet. |
-| 3 | **f6 double-atan2 drill fix** | the mount-resolve merger (step 7) | f6 tip still computes `d.y.atan2(d.x)` in F32; take e4's caller-passes-aim shape (double atan2, orchestrator_dust.rs:76-78 precedent). **EXACT 2-hunk patch published §7.1 (final-audit round)** — minimal in-place `(d.y as f64).atan2(d.x as f64) as f32` at mount_dust.rs:85 + the :1598 witness mirror; signature keeps (target, player_center), no RNG-order change. |
+| 3 | **f6 double-atan2 drill fix** | ~~the mount-resolve merger (step 7)~~ **RESOLVED-LOCAL by f6** | **GAP-CLOSURE PROBE (2026-11-21 08:28): f6 ALIVE and the hunk CONSUMED.** f6 advanced `5daa1d70` → origin `0f9fd642f` (+8: wiring 1-6 `bebd0c55f`/`ac0c7edcf`/`65ec64a29`/`bcd63051c`/`7dfcd0981`/`7c9165da7`, wiring docs `ac45e0d5f`, borrow fix `0f9fd642f`) and its LOCAL worktree carries 3 unpushed commits — **`76aeaf3c3` applies this doc's §7.1 EXACT hunks verbatim** ("apply d54 research/131 7.1 EXACT hunks (c89aea9f)"): `mount_dust.rs:88` now `(d.y as f64).atan2(d.x as f64) as f32` + the witness mirror :1849, signature kept. Also local: `8a34f6642` tile_draw_rand g68 keep-one contract + `a67d13638` mount-abilities activation contract (cites the atan2 fix as landed). **Merger note:** take f6's tip AFTER its push (the fix rides `76aeaf3c3`); if f6 stalls unpushed, the §7.1 hunk still applies mechanically at origin `0f9fd642f` — body :85 unchanged, witness mirror moved :1598 → **:1846** (the wiring wave grew the file; re-grep `let num = d.y.atan2(d.x);` — exactly 2 hits). |
 | 4 | **research/116's 6 wiring gaps** | the main-lane merger (step 4) | 10/11/13 fall-through on reachable callers (Queen-Slime hook, Shellphone), other_position on the reqs/queue, style-9 pylon extraInfo2, style-5 waterStyle param, Player.Teleport head/tail arms, the double-grant cleanup. |
 | 5 | **e3's 3 keep-one contracts** | the proj-lane mergers (step 9) | 152 drop-in vs d16 `e122a6b2`, 1051 burst vs d1 `e271b5bc`, cloak-five vs f48 `bba610bb` + the g64 unwired twins. |
 | 6 | **prefix.rs RainbowRodHit fold** | the wiring wave (step 7) | count-only drains → e4's full emitter, never both. |
@@ -229,6 +240,15 @@ wave's. No unclaimed checklist item remains on d54-owned files.
 ## 7. FINAL AUDIT ADDENDUM (final-audit round, 2026-11-21)
 
 ### 7.1 f6 drill-atan2 — the EXACT patch hunk (owed fold §5 row 3)
+
+**STATUS (gap-closure probe, 2026-11-21 08:28): CONSUMED by f6 locally**
+— f6's unpushed `76aeaf3c3` applies both hunks below verbatim (its
+commit message cites this doc + `c89aea9f`); at f6 local HEAD
+`a67d13638` the body reads `(d.y as f64).atan2(d.x as f64) as f32` at
+:88 and the witness mirror at :1849. The hunk text below is kept as the
+mechanical fallback for origin tip `0f9fd642f` (where :85 is still f32
+and the mirror sits at :1846, NOT the :1598 quoted below — the wiring
+wave moved it). See §5 row 3.
 
 Re-verified at the fetched f6 tip `5daa1d70`:
 `crates/tr-app/src/mount_dust.rs::drill_beam_dust` (fn at :75) still
@@ -450,3 +470,27 @@ d50-vs-main diff EMPTY (the G1 gap evidence); d130's particles.rs
 `snow_dust` field + minecart tick feed read at tip (the G2 seam).
 d54 anchors: 11/11 markers grep-present; branch diff 24 files, all
 task scope. No cargo/tests/rustfmt/graphify invoked.
+
+**Gap-closure round (2026-11-21, this addendum):** G3/G4 — the
+157/327 C# arms re-read verbatim (Dust.cs:2627-2676), the f32-floor
+expectations computed with f32-emulated arithmetic before pinning
+(m=255 → alpha 94), the 327 `(int)(sum)*255` operator precedence
+verified against the C# text (cast binds to the sum, max sum 0.45875
+< 1); `dust_table.rs` blob-swept across ALL remote branches (only e5
+differs — a one-line `lerp_color` pub, orthogonal). G5 — full-tree
+`customData =` producer census (every .cs, direct paths, no junction
+recursion); the four Color writers read with their noLightEmittance
+context; d54's `lightning_explosion_dust` re-read (no emittance set on
+the 226s). G6 — full-tree 235-producer census (three grep forms);
+NPC.cs:90957-90984 read whole; Player default 20×42 (Player.cs:1846/
+:1848) + Entity.Center + Main.myPlayer=0 (:66214) verified. G2 — d50
+tip 76 arm (:650-665) + env tail (:143) and d130 tip tick
+(:1069/:1106/:1126) + particles.rs (:233/:329) re-read; the two 76
+bodies diffed line-for-line (identical maths). f6 probe — origin
+re-fetched TWICE (the lane moved mid-round: `ac45e0d5f` →
+`0f9fd642f`), local worktree HEAD `a67d13638` read via `git -C`
+(3 unpushed commits, `76aeaf3c3` = the §7.1 hunk consumed, verified in
+the blob at :88/:1849); origin :85/:1846 still f32 (the fallback hunk
+targets). 2 new witnesses WRITTEN NOT RUN (code-only). Commits:
+`641561c2` (G3/G4), `c5a0e646` (G5/G6), `84eb739b` (G2 hunk), this
+commit (f6 probe + header). No cargo/tests/rustfmt/graphify invoked.
