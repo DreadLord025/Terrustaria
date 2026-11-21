@@ -137,9 +137,11 @@
 //!   scale 0.75 Transparent + Next(2)==0 child.
 //! - 83640/83643 — Stardust Soldier 411 (`:83634-83645`): ×20, the
 //!   Next(4) shape.
-//! DEFERRED: the Stardust Worm 402's oldPos trail (`:83579-83596`)
-//! needs the NPC oldPos ring the port does not carry yet — its arm
-//! lands with that field (documented in ANALYSIS).
+//! RESOLVED (the g60 ring landed): the Stardust Worm 402's LIVE arm
+//! (`:83565-83598`, batch 34) now rides `Npc.old_pos` — the head pair
+//! per ×3 iteration, then the per-slot Next(4)-gated trail with the
+//! zero-break INSIDE the gate; g60 owns the DEATH half (`:83599-83632`,
+//! a different site — the keep-one merge composes).
 //! Batch 10 (the desert/misc live arms):
 //! - 83764/83767 — the sandwalker group 524-527 (`:83740-83773`): ×20
 //!   dust 5 + Next(4)==0 && child>0 → the per-type child (524 has NONE —
@@ -471,6 +473,13 @@
 //!   Next(3) arg FIRST (Utils.cs:2459-2462), (2.5·dir,-2.5), alpha 200,
 //!   velocity ×2.4, scale += NextFloat. Mode census: 519→7, the SAME
 //!   TrailingMode row as 402 (`NPCID.cs:10430`).
+//! Batch 34 (the 402 LIVE hit arm — the death half is g60's :83611):
+//! - 83573/83577/83589/83593 — the Stardust Worm Head 402 (`:83565-
+//!   83598`): ×(dmg/lifeMax·3); per iteration the Next(3)==0 head 17
+//!   (dir,-1, Transparent, scale 0.75) + Next(2)==0 head 229 noGravity,
+//!   then EVERY oldPos slot draws Next(4); on ==0 a zero slot BREAKS
+//!   (inside the gate — later slots draw nothing), else the same
+//!   17/229 gated pair AT the slot (raw float position, no (int) cast).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1303,6 +1312,49 @@ pub fn replay_hit_dust(
                 if rng.next_max(gate) == 0 {
                     let idx = live_dust(s, 229, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
                     dust.slot_mut(idx).no_gravity = true;
+                }
+            }
+        }
+        // `:83565-83598` — the Stardust Worm Head's LIVE arm (g60 owns
+        // the DEATH half `:83599-83632`, a different site): ×(dmg/
+        // lifeMax·3), per iteration the Next(3)==0 head dust 17 (dir,
+        // -1, Transparent, scale 0.75) + the Next(2)==0 head dust-229
+        // noGravity child, THEN the oldPos trail loop — EVERY slot
+        // draws Next(4) FIRST (`:83581`); on == 0 a zero slot BREAKS
+        // (`:83583-83586`, inside the gate — later slots draw nothing),
+        // else the SAME 17/229 gated pair spawns AT the slot
+        // (`:83587-83594`, raw float position, no (int) cast here).
+        402 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 3.0) {
+                if rng.next_max(3) == 0 {
+                    live_dust(
+                        s, 17, dir, -1.0, 0, Color::TRANSPARENT, 0.75,
+                        rng, dust, ctx, world,
+                    ); // `:83573`
+                }
+                if rng.next_max(2) == 0 {
+                    let idx = live_dust(s, 229, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                    dust.slot_mut(idx).no_gravity = true; // `:83577`
+                }
+                for &slot in &s.old_pos {
+                    if rng.next_max(4) == 0 {
+                        if slot == Vec2::ZERO {
+                            break; // `:83583-83586` — an unfilled slot
+                        }
+                        if rng.next_max(3) == 0 {
+                            dust.new_dust(
+                                rng, ctx, world, slot, s.w, s.h, 17,
+                                dir, -1.0, 0, Color::TRANSPARENT, 0.75,
+                            ); // `:83589`
+                        }
+                        if rng.next_max(2) == 0 {
+                            let idx = dust.new_dust(
+                                rng, ctx, world, slot, s.w, s.h, 229,
+                                0.0, 0.0, 0, Color::default(), 1.0,
+                            ); // `:83593`
+                            dust.slot_mut(idx).no_gravity = true;
+                        }
+                    }
                 }
             }
         }
@@ -4319,5 +4371,112 @@ mod tests {
         }
         assert_eq!(rz, tz);
         assert_eq!(pz.slots(), qz.slots());
+    }
+
+    /// W4-g62 batch 34 — the Stardust Worm Head's LIVE arm (`NPC.cs:
+    /// 83565-83598`): ×(dmg/lifeMax·3) iterations of (Next(3) head 17 +
+    /// Next(2) head 229 + the per-slot Next(4) trail gate). The LIVE
+    /// ring: slots 0-2 filled, slot 3 zero — a passing gate on slot 3
+    /// BREAKS (slots 4-9 draw nothing THAT iteration; the next
+    /// iteration starts its walk over). The twin mirrors every draw.
+    #[test]
+    fn w4_g62_the_worm_head_live_trail_gates_per_slot() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(402, 700, 700, 700.0); // ×3 → 3 iterations
+        s.old_pos = [
+            Vec2::new(100.0, 100.0),
+            Vec2::new(94.0, 101.0),
+            Vec2::new(88.0, 103.0),
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::ZERO,
+        ];
+        let mut rng = UnifiedRandom::new(277);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(277);
+        let mut twin = DustPool::new();
+        for _ in 0..3 {
+            if twin_rng.next_max(3) == 0 {
+                twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 17,
+                    1.0, -1.0, 0, Color::TRANSPARENT, 0.75,
+                );
+            }
+            if twin_rng.next_max(2) == 0 {
+                let idx = twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 229,
+                    0.0, 0.0, 0, Color::default(), 1.0,
+                );
+                twin.slot_mut(idx).no_gravity = true;
+            }
+            for &slot in &s.old_pos {
+                if twin_rng.next_max(4) == 0 {
+                    if slot == Vec2::ZERO {
+                        break;
+                    }
+                    if twin_rng.next_max(3) == 0 {
+                        twin.new_dust(
+                            &mut twin_rng, &ctx, &world, slot, 24, 18, 17,
+                            1.0, -1.0, 0, Color::TRANSPARENT, 0.75,
+                        );
+                    }
+                    if twin_rng.next_max(2) == 0 {
+                        let idx = twin.new_dust(
+                            &mut twin_rng, &ctx, &world, slot, 24, 18, 229,
+                            0.0, 0.0, 0, Color::default(), 1.0,
+                        );
+                        twin.slot_mut(idx).no_gravity = true;
+                    }
+                }
+            }
+        }
+        assert_eq!(rng, twin_rng, "the stream matches call-for-call");
+        assert_eq!(dust.slots(), twin.slots());
+        // The fresh all-zero ring: each iteration's walk draws gates
+        // until the FIRST passing one breaks at slot 0 (the C#'s
+        // never-updated shape — g60's death witness precedent).
+        let z = snap(402, 700, 700, 700.0);
+        let mut rz = UnifiedRandom::new(277);
+        let mut pz = DustPool::new();
+        replay_hit_dust(&z, &mut rz, &mut pz, &ctx, &world);
+        let mut tz = UnifiedRandom::new(277);
+        let mut qz = DustPool::new();
+        for _ in 0..3 {
+            if tz.next_max(3) == 0 {
+                qz.new_dust(
+                    &mut tz, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 17,
+                    1.0, -1.0, 0, Color::TRANSPARENT, 0.75,
+                );
+            }
+            if tz.next_max(2) == 0 {
+                let idx = qz.new_dust(
+                    &mut tz, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 229,
+                    0.0, 0.0, 0, Color::default(), 1.0,
+                );
+                qz.slot_mut(idx).no_gravity = true;
+            }
+            for _ in 0..10 {
+                if tz.next_max(4) == 0 {
+                    break; // slot 0 is zero
+                }
+            }
+        }
+        assert_eq!(rz, tz);
+        assert_eq!(pz.slots(), qz.slots());
+        // A dead snapshot draws NOTHING (the death half :83599-83632
+        // is g60's site — this lane's replay stays silent).
+        let d = snap(402, 0, 700, 700.0);
+        let mut rd = UnifiedRandom::new(277);
+        let peek = rd.clone();
+        let mut pd = DustPool::new();
+        replay_hit_dust(&d, &mut rd, &mut pd, &ctx, &world);
+        assert_eq!(rd, peek, "no draws on the death side");
+        assert!(pd.slots().iter().all(|x| !x.active));
     }
 }
