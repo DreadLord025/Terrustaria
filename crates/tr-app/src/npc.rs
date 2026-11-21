@@ -22960,6 +22960,7 @@ mod tests {
         let mut next_id = 1u32;
         crate::npc_ai_style37::destroyer_family_step(
             &mut npcs, &w, &players, &mut rng, &mut next_id, 0,
+            &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w),
         );
         // The chain: the head + 81 links = 82 (`j <= count`, `:49840`).
         assert_eq!(npcs.len(), 82, "the destroyer chain length {}", npcs.len());

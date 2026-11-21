@@ -1912,6 +1912,10 @@ pub(crate) fn update_destroyers(app: &mut App) {
         return;
     }
     // The family machine (the chain spawn + the per-slot AI_037 ticks).
+    // W4-f4: the fade-in dust (site 49801) rolls the live pool on the
+    // UpdateNPCs stream — the permissive ctx (the whole world on-screen)
+    // matches the solo/test path; the fade reads the pre-integration box.
+    let destroyer_dust_ctx = crate::npc::permissive_dust_ctx(&app.world);
     let events = {
         let rng = app.rngs.stream(RngKey::UpdateNpcs);
         crate::npc_ai_style37::destroyer_family_step(
@@ -1921,6 +1925,8 @@ pub(crate) fn update_destroyers(app: &mut App) {
             rng,
             &mut app.next_worm_id,
             0, // the EverLastingTicker stamp (the S1-D-3p convention)
+            &mut app.dust,
+            &destroyer_dust_ctx,
         )
     };
     // The event resolve, in tick order (the C#'s per-slot side effects).
@@ -1950,9 +1956,10 @@ pub(crate) fn update_destroyers(app: &mut App) {
         if ev.despawn_family {
             despawn_family = true;
         }
-        // The fade dust (`:49799-49804`) and the AddLight (`:49929`) ride
-        // the documented cosmetic skip (the other machines' convention —
-        // no dust/light seam inside the AI pass yet; ANALYSIS).
+        // W4-f4: the fade dust (`:49799-49804`, site 49801) now rolls the
+        // live pool INSIDE destroyer_step (the fade_dust count stays for
+        // the witnesses). The AddLight (`:49929`) rides the documented
+        // cosmetic skip (no light seam inside the AI pass yet; ANALYSIS).
     }
     if despawn_family {
         // `NPC.cs:49971-49977` — every aiStyle-37 NPC goes inactive below
@@ -8705,12 +8712,17 @@ mod invasion_tests {
         }];
         let mut rng = UnifiedRandom::new(1);
         let mut next_id = 9u32;
+        // W4-f4: the fade dust (site 49801) rolls a scratch pool here (the
+        // test reads only the laser events; the live sim threads app.dust).
+        let mut fade_dust = tr_core::particles::DustPool::new();
+        let fade_ctx = crate::npc::permissive_dust_ctx(&w);
         // One body link fires ~once per 9100 ticks (the vanilla's 80
         // links make the fight rate) — the window gives the ~97% hit.
         let mut shot = None;
         for _ in 0..40000 {
             let events = crate::npc_ai_style37::destroyer_family_step(
                 &mut npcs, &w, &players, &mut rng, &mut next_id, 0,
+                &mut fade_dust, &fade_ctx,
             );
             for (i, ev) in events {
                 if let Some(laser) = ev.laser {
