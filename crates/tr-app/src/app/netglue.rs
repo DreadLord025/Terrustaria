@@ -543,6 +543,9 @@ impl App {
                     server.set_state(id, slot_state::IN_WORLD);
                     self.host_slot_join_complete(server, id, s);
                 }
+                // The in-world `12` re-send arm (`MessageBuffer.cs:903-948`)
+                // is W4-g48's (batch 11+12, the PlayerNet spawn fields +
+                // the leading id byte) — keep-one at merge, not re-wired here.
             }
             // `case 154` — the server echoes the probe straight back
             // (`MessageBuffer.cs:4419-4423`); the port's relay is the same
@@ -1497,6 +1500,155 @@ impl App {
                 },
             );
         }
+        // W4-g52 audit — the join bundle's `MessageBuffer.cs:851-866` tail:
+        // one `23` + `54` per live NPC slot, one `27` per pet/netImportant
+        // projectile. (The `57` evil bytes, the `103`/`101`/`136` event-state
+        // pushes and the banner module's full state are f21/d99/d94/d92-lane
+        // codecs — they land with those merges.) The `23` body stamps the
+        // cadence's stores (uid, generation, last-info) exactly like a
+        // cadence first sight, so the next tick does not re-send the spawn;
+        // the C# cadence re-sends on its own netSpam budget regardless.
+        {
+            let mut next = self.next_npc_uid;
+            for n in self.npcs.iter_mut() {
+                if n.uid == 0 {
+                    n.uid = next;
+                    next += 1;
+                }
+            }
+            self.next_npc_uid = next;
+        }
+        for (slot, npc) in self.npcs.iter().enumerate() {
+            if npc.hp <= 0 {
+                continue; // `Main.npc[i].active`
+            }
+            let kind = npc.kind.to_u16() as i16;
+            let (spawn, generation) = match self.net_npc_gen.get(&(slot as u32)) {
+                Some((k, g)) if *k == kind => (false, *g),
+                _ => {
+                    let g = self
+                        .net_npc_gen
+                        .get(&(slot as u32))
+                        .map(|(_, g)| g.wrapping_add(1))
+                        .unwrap_or(1);
+                    (true, g)
+                }
+            };
+            self.net_npc_gen.insert(slot as u32, (kind, generation));
+            let info = Self::npc_info_of(slot, npc, spawn, generation);
+            server.send(id, &S2c::NpcInfo(Box::new(info)));
+            self.net_npc_last_info.insert(npc.uid, info);
+            self.net_npc_uid_slot.insert(npc.uid, slot as u32);
+            self.net_npc_states.entry(npc.uid).or_default();
+            server.send(
+                id,
+                &S2c::NpcBuffs(net::NpcBuffs {
+                    npc: slot as i16,
+                    buffs: npc_buffs_of(npc),
+                }),
+            );
+        }
+        for (slot, p) in self.projectiles.slots().iter().enumerate() {
+            // `:861`: `projPet[type] || netImportant`.
+            if !p.active
+                || !(crate::projectile::proj_pet(p.kind) || p.net_important)
+            {
+                continue;
+            }
+            let key = self.projectiles.key_of(slot);
+            let st = net::ProjectileState {
+                key,
+                x: p.pos.x,
+                y: p.pos.y,
+                vx: p.vel.x,
+                vy: p.vel.y,
+                kind: p.kind as i16,
+                ai0: if p.ai[0] != 0.0 { Some(p.ai[0]) } else { None },
+                ai1: if p.ai[1] != 0.0 { Some(p.ai[1]) } else { None },
+                banner_id: 0,
+                damage: p.damage as i16,
+                knock_back: p.knock_back,
+                original_damage: p.original_damage as i16,
+                ai2: if p.ai[2] != 0.0 { Some(p.ai[2]) } else { None },
+            };
+            server.send(id, &S2c::Projectile(Box::new(st.clone())));
+            // The cadence's change-detect store: the join burst counts as
+            // sent (the same convention as the item burst's net_item_last).
+            self.net_proj_prev.insert(key, st);
+        }
+        // W4-g52 audit — `SyncConnectedPlayer`'s tail
+        // (`NetMessage.cs:2814-2818`): `SendNPCHousesAndTravelShop` (one `60`
+        // per housed town NPC + the traveller's `72`), `SendAnglerQuest`
+        // (`74`), `SendAllMarkersToPlayer` (`126` per marker). The credits
+        // push (`140`) is constants-off (the port's credits screen is
+        // untimed, `CreditsRollEvent._creditsRollRemainingTime` has no home).
+        let mut traveller_present = false;
+        for (slot, npc) in self.npcs.iter().enumerate() {
+            if npc.hp <= 0 {
+                continue;
+            }
+            // `:2830-2836`: townNPC && head index > 0, or aiStyle 7. The
+            // head-index stand-in is the housing set (`npc_view_of`'s same
+            // fold — the town residents minus the bound/sleeping kinds).
+            let town_like = npc.kind.is_town_npc() || npc.kind.ai_style() == 7;
+            if npc.kind == crate::npc::NpcKind::TravellingMerchant {
+                traveller_present = true; // `:2838-2841`
+            }
+            if !town_like {
+                continue;
+            }
+            let (hx, hy) = npc.home.unwrap_or((0, 0));
+            let status = if npc.home.is_some() { 2 } else { 1 };
+            server.send(
+                id,
+                &S2c::NpcHouse(net::NpcHouse {
+                    npc: slot as i16,
+                    home_x: hx as i16,
+                    home_y: hy as i16,
+                    status,
+                }),
+            );
+        }
+        if traveller_present {
+            // `SendTravelShop` (`NetMessage.cs:2645-2651`): the 40 shorts.
+            server.send(
+                id,
+                &S2c::TravelShop(net::TravelShop {
+                    items: self.world.travel_shop.iter().map(|&t| t as i16).collect(),
+                }),
+            );
+        }
+        // `SendAnglerQuest` (`NetMessage.cs:2653-2673`): the quest byte +
+        // the recipient's finished-today membership. The per-name list is
+        // g49's `angler_who_finished_today`; the port's single-flag stand-in
+        // (the SP `angler_quest_finished`) answers for the joining name.
+        server.send(
+            id,
+            &S2c::AnglerQuest(net::AnglerQuest {
+                quest: self.world.angler_quest,
+                finished: self.world.angler_quest_finished,
+            }),
+        );
+        for m in &self.revenge_markers {
+            server.send(
+                id,
+                &S2c::RevengeMarker(net::RevengeMarker {
+                    unique_id: m.unique_id as i32,
+                    x: m.location.x,
+                    y: m.location.y,
+                    npc_net_id: m.kind.net_id(),
+                    npc_hp_percent: m.hp_percent,
+                    npc_type: m.kind.cs_id() as i32,
+                    npc_ai_style: m.kind.ai_style() as i32,
+                    coins_value: m.coins_value as i32,
+                    base_value: m.base_value,
+                    // The marker struct carries no statue flag (the cache
+                    // gate excludes statue spawns via `should_cache`'s
+                    // callers); false is the C# field default.
+                    spawned_from_statue: false,
+                }),
+            );
+        }
         log::info!("slot {id} fully joined");
     }
 
@@ -1547,6 +1699,16 @@ impl App {
             // SpawnRequest` (`Netplay.cs:511-516`). The spawn is the header's
             // spawn tile — what `FindSpawn` computes on the cleared world.
             S2c::WorldInfo(info) => {
+                // W4-g52 audit — the C# reader applies the header fields at
+                // ANY state and only walks 3 → 4 inside the `State == 3`
+                // gate (`MessageBuffer.cs:654-658`); the re-pushes
+                // (`Main.cs:64560`'s 3600-tick heartbeat, the dawn/dusk
+                // `SendData(7)`s, the maxRaining change, the invasion end)
+                // arrive in-world and must NOT re-request the spawn.
+                if self.net_state >= net::client_state::IN_WORLD {
+                    self.apply_world_info_repush(&info);
+                    return;
+                }
                 let (sx, sy) = (info.spawn_tile_x as i32, info.spawn_tile_y as i32);
                 self.net_info = Some(*info);
                 self.net_state = net::client_state::WORLD_INFO;
@@ -2187,6 +2349,108 @@ impl App {
         }
     }
 
+    /// W4-g52 audit — the in-world `7 WorldInfo` re-push apply
+    /// (`MessageBuffer.cs:473-658`, the `netMode == 1` reader minus the
+    /// `State == 3` walk): the header fields with a port home land on the
+    /// live world; the world-evil/bg/tree/seed-flag groups without one stay
+    /// read-and-dropped (the standing `7` deviation, ANALYSIS). The C#
+    /// reader's `Main.raining = maxRaining > 0f` (`:530`) rides the rain
+    /// restore; `windSpeedCurrent` is NOT touched outside the State-3 gate.
+    fn apply_world_info_repush(&mut self, info: &net::WorldInfo) {
+        let w = &mut self.world;
+        w.time = info.time as f64;
+        w.day_time = info.day_time;
+        w.blood_moon = info.blood_moon;
+        w.eclipse = info.eclipse;
+        w.moon_phase = info.moon_phase;
+        w.moon_type = info.moon_type;
+        w.spawn_x = info.spawn_tile_x as i32;
+        w.spawn_y = info.spawn_tile_y as i32;
+        if info.world_surface > 0 {
+            w.world_surface = info.world_surface as f64;
+        }
+        if info.rock_layer > 0 {
+            w.rock_layer = info.rock_layer as f64;
+        }
+        w.sundial_cooldown = info.sundial_cooldown;
+        w.moondial_cooldown = info.moondial_cooldown;
+        w.hell_back_style = info.hell_back_style;
+        // `WorldGen.setBG` for the five surface styles the port owns
+        // (`MessageBuffer.cs:494-506`'s slot order 1/2/4/5/8).
+        w.set_surface_bg_style(1, info.backgrounds[4] as i32);
+        w.set_surface_bg_style(2, info.backgrounds[5] as i32);
+        w.set_surface_bg_style(4, info.backgrounds[7] as i32);
+        w.set_surface_bg_style(5, info.backgrounds[8] as i32);
+        w.set_surface_bg_style(8, info.backgrounds[10] as i32);
+        w.invasion_type = info.invasion_type as i32;
+        w.invasion_goblins = w.invasion_type == 1;
+        // The 14 flag groups (`NetMessage.cs:285-389` write order): the
+        // downed/event bits with World fields; the pet/seed/holiday bits
+        // are constants-off or generation-time (never rewritten mid-run).
+        let f = &info.world_flags;
+        w.shadow_orb_smashed = f[0].get(0);
+        w.downed_eoc = f[0].get(1);
+        w.downed_eow = f[0].get(2);
+        w.downed_skeletron = f[0].get(3);
+        w.hard_mode = f[0].get(4);
+        w.downed_plant_boss = f[0].get(7);
+        w.downed_mech_boss1 = f[1].get(0);
+        w.downed_mech_boss2 = f[1].get(1);
+        w.downed_mech_boss3 = f[1].get(2);
+        w.pumpkin_moon = f[1].get(6);
+        w.snow_moon = f[1].get(7);
+        w.fast_forward_to_dawn = f[2].get(1);
+        w.slime_rain = f[2].get(2);
+        w.downed_slime_king = f[2].get(3);
+        w.downed_queen_bee = f[2].get(4);
+        w.downed_fishron = f[2].get(5);
+        w.downed_martians = f[2].get(6);
+        w.downed_ancient_cultist = f[2].get(7);
+        w.downed_moon_lord = f[3].get(0);
+        w.downed_golem = f[3].get(6);
+        w.downed_pirates = f[4].get(0);
+        w.downed_frost = f[4].get(1);
+        w.downed_goblins = f[4].get(2);
+        w.dd2_event_ongoing = f[4].get(4);
+        w.dd2_downed_t1 = f[4].get(5);
+        w.dd2_downed_t2 = f[4].get(6);
+        w.dd2_downed_t3 = f[4].get(7);
+        w.combat_book_was_used = f[5].get(0);
+        w.downed_tower_solar = f[5].get(2);
+        w.downed_tower_vortex = f[5].get(3);
+        w.downed_tower_nebula = f[5].get(4);
+        w.downed_tower_stardust = f[5].get(5);
+        w.downed_queen_slime = f[6].get(6);
+        w.downed_deerclops = f[7].get(2);
+        w.unlocked_slime_rainbow_spawn = f[8].get(3);
+        w.unlocked_slime_red_spawn = f[8].get(4);
+        w.fast_forward_to_dusk = f[8].get(7);
+        // `Main.maxRaining` + `Main.raining = maxRaining > 0f`
+        // (`MessageBuffer.cs:529-530`); the rain machine keeps its own
+        // timer (the header carries no rainTime — the C# re-derives it).
+        self.world.max_raining = info.max_raining;
+        self.world.raining = info.max_raining > 0.0;
+        let raining = self.world.raining;
+        let rain_time = self.world.rain_time;
+        self.rain.restore_saved(raining, rain_time, info.max_raining);
+        self.wind.speed_target = info.wind_speed_target;
+        self.sandstorm.intended_severity = info.sandstorm_severity;
+        self.world.sandstorm_intended_severity = info.sandstorm_severity;
+    }
+
+    /// W4-g52 audit — the event-site `7 WorldInfo` re-push
+    /// (`NetMessage.SendData(7)` at the dawn/dusk boundaries
+    /// `Main.cs:65358-65361`/`:65406-65409`, the invasion end `:64356-64359`,
+    /// the maxRaining change `:64952-64958`): host-only, the LIVE header to
+    /// every broadcast-open slot. SP/client: a no-op (the C# gates on
+    /// `netMode == 2`).
+    pub(crate) fn net_world_repush(&self) {
+        if let NetRole::Host(server) = &self.net {
+            let info = self.world_info();
+            server.broadcast(&S2c::WorldInfo(Box::new(info)));
+        }
+    }
+
     /// The player-data push (`case 3`'s client half, `MessageBuffer.cs:237-282`):
     /// the identity, the health and the inventory arrays, adapted to the
     /// port's slot layout (`App.inventory` + the `EquipSlots`), then
@@ -2359,8 +2623,78 @@ impl App {
     }
 
     /// Builds the `7 WorldInfo` body from the live world (`App.world`).
+    /// W4-g52 audit — the port-owned fields are filled (the re-pushes at
+    /// `Main.cs:64560`/`:65361`/`:65409`/`:64359` carry the LIVE flags);
+    /// the fields without a port home still ride vanilla defaults
+    /// (ANALYSIS "7 WorldInfo fields without a port home").
     fn world_info(&self) -> net::WorldInfo {
         let w = &self.world;
+        // The 14 flag groups, `NetMessage.cs:285-389`'s write order — the
+        // bits with a World field; the pet/holiday/secret-seed bits the
+        // port pins at generation stay 0 mid-run (the seed groups ride
+        // `w.seeds` where the flag exists).
+        let mut f = [net::BitsByte::new(); 14];
+        f[0].set(0, w.shadow_orb_smashed);
+        f[0].set(1, w.downed_eoc);
+        f[0].set(2, w.downed_eow);
+        f[0].set(3, w.downed_skeletron);
+        f[0].set(4, w.hard_mode);
+        f[0].set(7, w.downed_plant_boss);
+        f[1].set(0, w.downed_mech_boss1);
+        f[1].set(1, w.downed_mech_boss2);
+        f[1].set(2, w.downed_mech_boss3);
+        f[1].set(3, w.downed_mech_boss_any());
+        f[1].set(4, self.rain.cloud_bg() >= 1.0);
+        f[1].set(6, w.pumpkin_moon);
+        f[1].set(7, w.snow_moon);
+        f[2].set(1, w.fast_forward_to_dawn);
+        f[2].set(2, w.slime_rain);
+        f[2].set(3, w.downed_slime_king);
+        f[2].set(4, w.downed_queen_bee);
+        f[2].set(5, w.downed_fishron);
+        f[2].set(6, w.downed_martians);
+        f[2].set(7, w.downed_ancient_cultist);
+        f[3].set(0, w.downed_moon_lord);
+        f[3].set(6, w.downed_golem);
+        f[3].set(7, crate::world_events::party_is_up(&self.world_events));
+        f[4].set(0, w.downed_pirates);
+        f[4].set(1, w.downed_frost);
+        f[4].set(2, w.downed_goblins);
+        f[4].set(3, self.sandstorm.happening);
+        f[4].set(4, w.dd2_event_ongoing);
+        f[4].set(5, w.dd2_downed_t1);
+        f[4].set(6, w.dd2_downed_t2);
+        f[4].set(7, w.dd2_downed_t3);
+        f[5].set(0, w.combat_book_was_used);
+        f[5].set(1, crate::world_events::lanterns_up(&self.world_events));
+        f[5].set(2, w.downed_tower_solar);
+        f[5].set(3, w.downed_tower_vortex);
+        f[5].set(4, w.downed_tower_nebula);
+        f[5].set(5, w.downed_tower_stardust);
+        f[6].set(4, w.seeds.contains(tr_core::seeds::SeedFlags::DRUNK));
+        f[6].set(6, w.downed_queen_slime);
+        f[6].set(7, w.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY));
+        f[7].set(0, w.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY));
+        f[7].set(1, w.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE));
+        f[7].set(2, w.downed_deerclops);
+        f[7].set(3, w.seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES));
+        f[7].set(4, w.seeds.contains(tr_core::seeds::SeedFlags::REMIX));
+        f[8].set(3, w.unlocked_slime_rainbow_spawn);
+        f[8].set(4, w.unlocked_slime_red_spawn);
+        f[8].set(7, w.fast_forward_to_dusk);
+        f[9].set(0, w.seeds.contains(tr_core::seeds::SeedFlags::NO_TRAPS));
+        f[9].set(1, w.seeds.contains(tr_core::seeds::SeedFlags::ZENITH));
+        f[9].set(6, w.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK));
+        // `NetMessage.cs:246-258`'s 13-byte bg block narrowed to the port's
+        // 11-row array (treeBG1..4 ride 0 — unported; corrupt..underworld
+        // map onto the five owned styles).
+        let mut backgrounds = [0u8; 11];
+        backgrounds[4] = w.corrupt_bg_style;
+        backgrounds[5] = w.jungle_bg_style;
+        backgrounds[7] = w.hallow_bg_style;
+        backgrounds[8] = w.crimson_bg_style;
+        backgrounds[10] = w.mushroom_bg_style;
+        let o = &w.ore_tiers;
         net::WorldInfo {
             time: w.time as i32,
             day_time: w.day_time,
@@ -2373,36 +2707,54 @@ impl App {
             spawn_tile_y: w.spawn_y as i16,
             world_surface: w.world_surface as i16,
             rock_layer: w.rock_layer as i16,
-            world_id: 1,
+            world_id: w.world_id,
             world_name: w.name.clone(),
             // `Main.GameMode` — the port has no mode byte yet; classic is 0.
             game_mode: 0,
-            unique_id: [0; 16],
+            unique_id: w.unique_id,
             // `Main.ActiveWorldFileData.WorldGeneratorVersion` — the port's
             // generator version lives in the world seed's place; the save
             // format's version is the closest port-side marker (M6-NET-2
             // pins this to the generator build).
-            generator_version: save::VERSION as u64,
+            generator_version: if w.generator_version != 0 {
+                w.generator_version
+            } else {
+                save::VERSION as u64
+            },
             moon_type: w.moon_type,
-            backgrounds: [0; 11],
+            backgrounds,
             ice_back_style: 0,
             jungle_back_style: 0,
             hell_back_style: w.hell_back_style,
-            wind_speed_target: 0.0,
-            num_clouds: 0,
+            wind_speed_target: self.wind.speed_target,
+            // The static cloud-field stand-in (`rain.rs` NUM_CLOUDS_STAND_IN).
+            num_clouds: 100,
             tree_x: [0; 3],
             tree_style: [0; 4],
             cave_back_x: [0; 3],
             cave_back_style: [0; 4],
             tree_tops: [0; net::TREE_TOPS_BYTES],
-            max_raining: 0.0,
-            world_flags: [net::BitsByte::new(); 14],
+            // `NetMessage.cs:281-284`: `!raining` forces the wire 0.
+            max_raining: if self.rain.is_raining() {
+                self.rain.max_raining()
+            } else {
+                0.0
+            },
+            world_flags: f,
             sundial_cooldown: w.sundial_cooldown,
             moondial_cooldown: w.moondial_cooldown,
-            saved_ore_tiers: [0; 7],
-            invasion_type: 0,
+            saved_ore_tiers: [
+                o.copper as i16,
+                o.iron as i16,
+                o.silver as i16,
+                o.gold as i16,
+                o.cobalt as i16,
+                o.mythril as i16,
+                o.adamantite as i16,
+            ],
+            invasion_type: w.invasion_type as i8,
             lobby_id: 0,
-            sandstorm_severity: 0.0,
+            sandstorm_severity: self.sandstorm.intended_severity,
             extra_spawn_points: Vec::new(),
             dungeon_x: 0,
             dungeon_y: 0,
@@ -3129,6 +3481,11 @@ impl App {
                 self.net_play_counter = self.net_play_counter.wrapping_add(6);
                 if self.net_play_counter % 3600 == 0 {
                     self.net_play_counter = 0;
+                    // W4-g52 audit — `Main.UpdateServer`'s 3600-tick header
+                    // re-push (`Main.cs:64557-64561`): the LIVE `7 WorldInfo`
+                    // (the flags/events the 205 Time pair does not carry).
+                    let info = self.world_info();
+                    server.broadcast(&S2c::WorldInfo(Box::new(info)));
                 }
                 if self.net_play_counter % 60 == 0 && !self.items.is_empty() {
                     self.last_item_update += 1;
@@ -6368,5 +6725,192 @@ mod w4_g52_relay_tests {
         assert!(host_app.world_chests.is_empty(), "the store entry was removed");
         assert_eq!(host_app.items.len(), 1, "the destroy dropped the chest item");
         assert_eq!(host_app.items[0].kind, 48, "registry::tile_drop(21) = 48");
+    }
+
+    /// W4-g52 audit — the 3600-tick `7 WorldInfo` re-push
+    /// (`Main.cs:64557-64561`): the header carries the LIVE flags; the
+    /// in-world client applies them WITHOUT re-requesting the spawn
+    /// (`MessageBuffer.cs:654-658`'s State-3-only walk).
+    #[test]
+    fn w4_g52_the_world_header_heartbeat_repushes_the_live_flags() {
+        let (mut host_app, mut client_app) = wide_pair();
+        host_app.world.blood_moon = true;
+        host_app.world.eclipse = true;
+        host_app.world.downed_eoc = true;
+        host_app.world.invasion_type = 1;
+        host_app.world.invasion_goblins = true;
+        // 3600 ticks at the batched +6 per 10 Hz tick = 600 net ticks.
+        for _ in 0..620 {
+            host_app.net_tick(1.0 / 60.0);
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(client_app.world.blood_moon, "the re-push carried the blood moon");
+        assert!(client_app.world.eclipse, "the re-push carried the eclipse");
+        assert!(client_app.world.downed_eoc, "the flag group carried downedBoss1");
+        assert_eq!(client_app.world.invasion_type, 1, "the invasionType rode");
+        assert_eq!(
+            client_app.net_state,
+            net::client_state::IN_WORLD,
+            "the in-world re-push never re-walks the join state machine"
+        );
+    }
+
+    /// W4-g52 audit — the dawn/dusk boundary re-push (`Main.cs:65358-65361` /
+    /// `:65406-65409`): a host crossing dusk broadcasts the header; the
+    /// client's day flag flips without a spawn re-request.
+    #[test]
+    fn w4_g52_the_dusk_boundary_repushes_the_header() {
+        let (mut host_app, mut client_app) = wide_pair();
+        host_app.world.day_time = true;
+        host_app.world.time = 53999.0;
+        let _ = crate::world_sim::clock::advance_time_with_events(&mut host_app, 5.0, false);
+        assert!(!host_app.world.day_time, "the host crossed dusk");
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(!client_app.world.day_time, "the boundary header flipped the client");
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+    }
+
+    /// W4-g52 audit — the join bundle's NPC/projectile tail
+    /// (`MessageBuffer.cs:851-866`): a live NPC and a pet projectile on the
+    /// host reach a NEWLY joining client at join, not on the next cadence.
+    #[test]
+    fn w4_g52_the_join_bundle_streams_the_live_npcs_and_pet_projectiles() {
+        let (mut host_app, mut first) = wide_pair();
+        host_app.npcs.clear();
+        let mut npc =
+            crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue);
+        npc.x = 100.0;
+        npc.y = 100.0;
+        host_app.npcs.push(npc);
+        // A pet projectile (kind 111, `Main.projPet`) + a plain arrow (not
+        // pet/netImportant — the join burst skips it).
+        host_app
+            .projectiles
+            .spawn(111, 0, Vec2::new(120.0, 100.0), Vec2::ZERO, 0, 0.0, false);
+        host_app
+            .projectiles
+            .spawn(1, 0, Vec2::new(140.0, 100.0), Vec2::ZERO, 10, 0.0, false);
+        let addr = match &host_app.net {
+            NetRole::Host(s) => s.addr().to_string(),
+            _ => unreachable!(),
+        };
+        let mut second = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            Vec::<crate::ui::save_list::PlayerEntry>::new(),
+            Vec::<crate::ui::save_list::WorldEntry>::new(),
+        );
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while second.net_state != net::client_state::IN_WORLD
+            && std::time::Instant::now() < deadline
+        {
+            second.poll_net();
+            first.poll_net();
+            host_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(second.net_state, net::client_state::IN_WORLD);
+        // The join burst arrived WITHOUT any cadence tick on the host.
+        assert!(
+            second.net_npcs.values().any(|n| n.hp > 0),
+            "the live NPC reached the joiner in the bundle"
+        );
+        let pet_synced = second
+            .projectiles
+            .slots()
+            .iter()
+            .any(|p| p.active && p.kind == 111);
+        assert!(pet_synced, "the pet projectile rode the join burst");
+        let arrow_synced = second
+            .projectiles
+            .slots()
+            .iter()
+            .any(|p| p.active && p.kind == 1);
+        assert!(!arrow_synced, "the plain arrow waits for the owner cadence");
+    }
+
+    /// W4-g52 audit — `SyncConnectedPlayer`'s tail (`NetMessage.cs:2814-2818`):
+    /// the housed town NPC's `60`, the traveller's `72`, the `74` quest and
+    /// the `126` markers reach the joiner.
+    #[test]
+    fn w4_g52_the_join_bundle_pushes_houses_shop_quest_and_markers() {
+        let (mut host_app, mut first) = wide_pair();
+        host_app.npcs.clear();
+        let mut guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        guide.home = Some((10, 10));
+        host_app.npcs.push(guide);
+        let mut traveller = crate::npc::Npc::new(
+            crate::npc::NpcKind::TravellingMerchant,
+            120.0,
+            100.0,
+            1,
+            0.0,
+        );
+        traveller.hp = traveller.max_hp;
+        host_app.npcs.push(traveller);
+        host_app.world.travel_shop[0] = 28;
+        host_app.world.angler_quest = 7;
+        host_app.revenge_markers.push(crate::revenge::RevengeMarker {
+            location: Vec2::new(300.0, 200.0),
+            kind: crate::npc::NpcKind::Zombie,
+            hp_percent: 0.5,
+            base_value: 10.0,
+            coins_value: 5_000,
+            expiration_tick: u64::MAX,
+            unique_id: 42,
+            force_expire: false,
+        });
+        let addr = match &host_app.net {
+            NetRole::Host(s) => s.addr().to_string(),
+            _ => unreachable!(),
+        };
+        let mut second = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            Vec::<crate::ui::save_list::PlayerEntry>::new(),
+            Vec::<crate::ui::save_list::WorldEntry>::new(),
+        );
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while second.net_state != net::client_state::IN_WORLD
+            && std::time::Instant::now() < deadline
+        {
+            second.poll_net();
+            first.poll_net();
+            host_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(second.net_state, net::client_state::IN_WORLD);
+        // The client apply arms for 60/72/74/126 are the g49/g51 lanes; the
+        // witness drains the raw frames (the 162-ack convention).
+        let mut saw_house = false;
+        let mut saw_shop = false;
+        let mut saw_quest = false;
+        let mut saw_marker = false;
+        while let Some(ev) = second.net_events_for_test() {
+            match ev {
+                net::ClientEvent::Frame(S2c::NpcHouse(h)) => {
+                    saw_house |= h.home_x == 10 && h.home_y == 10 && h.status == 2;
+                }
+                net::ClientEvent::Frame(S2c::TravelShop(s)) => {
+                    saw_shop |= s.items.first() == Some(&28);
+                }
+                net::ClientEvent::Frame(S2c::AnglerQuest(q)) => {
+                    saw_quest |= q.quest == 7;
+                }
+                net::ClientEvent::Frame(S2c::RevengeMarker(m)) => {
+                    saw_marker |= m.unique_id == 42 && m.coins_value == 5_000;
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_house, "the guide's 60 house push arrived");
+        assert!(saw_shop, "the traveller's 72 stock push arrived");
+        assert!(saw_quest, "the 74 angler quest arrived");
+        assert!(saw_marker, "the 126 revenge marker arrived");
     }
 }

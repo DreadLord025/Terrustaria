@@ -2436,6 +2436,9 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         invasion_warning(app);
         app.world.invasion_type = 0;
         app.world.invasion_delay = 0;
+        // W4-g52 audit — the invasion end's `SendData(7)` (`Main.cs:64356-64359`,
+        // `netMode == 2`): the cleared invasionType reaches the clients.
+        app.net_world_repush();
         return;
     }
     if app.world.invasion_x == app.world.spawn_x as f64 {

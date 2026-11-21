@@ -122,6 +122,13 @@ pub(crate) fn advance_time_with_events(
         let rng = app.rngs.stream(crate::app::RngKey::UpdateTime);
         advance_time(&mut app.world, dt, rng, any_player_life_over_120)
     };
+    // W4-g52 audit — the boundary `SendData(7)` re-pushes
+    // (`UpdateTime_StartNight` `Main.cs:65358-65361`, `UpdateTime_StartDay`
+    // `:65406-65409`, both `netMode == 2` only): the header carries the new
+    // day flag + the cleared event flags to every client.
+    if was_day != app.world.day_time {
+        app.net_world_repush();
+    }
     // The eclipse/blood-moon farewell rows ride before the scheduler block:
     // the RNG borrow below (`UpdateTime`'s stream) is exclusive, so the
     // achievement fan-out (which needs `&mut App`) resolves first.
