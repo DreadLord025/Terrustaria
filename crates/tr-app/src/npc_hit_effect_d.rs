@@ -1170,6 +1170,55 @@ fn elf_archer_death(
     gore.new_gore(rng, world, pos, vel, 536, 1.0); // :86369
 }
 
+/// The 47/57/58/464/465 corrupt/crimson critter arm
+/// (`NPC.cs:86371-86408`, sites 141-148): the 10x dust-5 burst, then the
+/// per-kind sub-branch — 57 Corrupt Goldfish → 84 (`:86387`), 58 Piranha
+/// → 85 (`:86391`), 464 Crimson Bunny → 668/669 (`:86395-86396`), 465
+/// Crimson Goldfish → 670/671 (`:86400-86401`), the 47 Corrupt Bunny
+/// fallthrough → 78/79 (`:86405-86406`). All at position, scale 1f.
+fn corrupt_critter_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86381-86384` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 57 {
+        gore.new_gore(rng, world, pos, vel, 84, 1.0); // :86387
+    } else if npc_type == 58 {
+        gore.new_gore(rng, world, pos, vel, 85, 1.0); // :86391
+    } else if npc_type == 464 {
+        gore.new_gore(rng, world, pos, vel, 668, 1.0); // :86395
+        gore.new_gore(rng, world, pos, vel, 669, 1.0); // :86396
+    } else if npc_type == 465 {
+        gore.new_gore(rng, world, pos, vel, 670, 1.0); // :86400
+        gore.new_gore(rng, world, pos, vel, 671, 1.0); // :86401
+    } else {
+        // `:86403-86407` — the 47 Corrupt Bunny fallthrough.
+        gore.new_gore(rng, world, pos, vel, 78, 1.0); // :86405
+        gore.new_gore(rng, world, pos, vel, 79, 1.0); // :86406
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -1328,6 +1377,11 @@ pub fn hit_effect_d(
     // `:86352-86370` — the 350 Elf Archer arm (sites 137-140).
     else if npc_type == 350 {
         elf_archer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86371-86408` — the 47/57/58/464/465 corrupt/crimson critter arm
+    // (sites 141-148).
+    else if matches!(npc_type, 47 | 57 | 58 | 464 | 465) {
+        corrupt_critter_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2371,6 +2425,43 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "frostmoon {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86387-86406` — the corrupt/crimson critter sub-branches:
+    /// 57→84, 58→85, 464→668/669, 465→670/671, the 47 fallthrough→78/79;
+    /// the draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_corrupt_critters_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (57, vec![84]),
+            (58, vec![85]),
+            (464, vec![668, 669]),
+            (465, vec![670, 671]),
+            (47, vec![78, 79]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(163);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "corrupt critter {kind}");
+            let mut twin = UnifiedRandom::new(163);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "corrupt critter {kind} mirrors the C# draws");
         }
     }
 }
