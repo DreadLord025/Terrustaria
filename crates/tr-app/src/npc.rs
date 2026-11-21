@@ -6716,6 +6716,44 @@ impl Npc {
         self.sprite_dir = s.sprite_dir;
     }
 
+    /// W4-d44 wire (f27 slice 7) — the bridge into
+    /// `npc_findframe_extra7`'s pure machines: copy the four
+    /// `FindFrame` fields out, run one tick, copy them back (the
+    /// `find_frame_wave_a` precedent). `direction` is `facing` (the
+    /// C#'s `Entity.direction`); the inputs are vx/vy/direction + the
+    /// four `ai` slots (the Devote's `ai[1]` chant, `NPC.cs:72001`),
+    /// `ai_action` (the ribbon slimes' num2 attack class,
+    /// `:66696-66704`) and `local_ai2` (the clone's pose selector,
+    /// `:72020`). No slice-7 arm reads `wet` and none reads the world
+    /// (the floater group's only `Main.rand` draw `:74844` is
+    /// 634-gated, the eye group's dust `:74007` is 23-gated — the
+    /// module header), so the hook rides the world-free `find_frame`
+    /// directly.
+    fn find_frame_wave_extra7(
+        &mut self,
+        kind: crate::npc_findframe_extra7::FindFrameExtra7Kind,
+    ) {
+        let mut s = crate::npc_findframe_extra7::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra7::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+            ai_action: self.ai_action,
+            local_ai2: self.local_ai[2],
+        };
+        crate::npc_findframe_extra7::find_frame_extra7(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     /// W4-d44 wire — the extra-6 claim set: the FULL slice-6 band
     /// 278-287 + 290-293 + 295, all 15 kinds (the in-module lookup
     /// verbatim). The first batch claimed 278-287 + 290 (the ≤11-kind
@@ -6726,6 +6764,34 @@ impl Npc {
         cs_id: u16,
     ) -> Option<crate::npc_findframe_extra6::FindFrameExtra6Kind> {
         crate::npc_findframe_extra6::find_frame_kind_extra6(cs_id as i16)
+    }
+
+    /// W4-d44 wire — the extra-7 claim set: the FIRST ELEVEN slice-7
+    /// ids 316/317/318/322/323/324/333/334/335/336/337 (the ≤11-kind
+    /// batch cap; the Ghost, the two costume eyes, the three costume
+    /// skeletons, the four ribbon slimes, the Christmas bunny). The
+    /// in-module lookup gates to the batch band — 437/438/440/442
+    /// EXCLUDED (a later batch). The band edges stay outside.
+    fn find_frame_kind_extra7_claimed(
+        cs_id: u16,
+    ) -> Option<crate::npc_findframe_extra7::FindFrameExtra7Kind> {
+        use crate::npc_findframe_extra7::FindFrameExtra7Kind as K;
+        match crate::npc_findframe_extra7::find_frame_kind_extra7(cs_id as i16) {
+            Some(
+                k @ (K::Ghost
+                | K::DemonEyeOwl
+                | K::DemonEyeSpaceship
+                | K::SkeletonTopHat
+                | K::SkeletonAstonaut
+                | K::SkeletonAlien
+                | K::SlimeRibbonWhite
+                | K::SlimeRibbonYellow
+                | K::SlimeRibbonGreen
+                | K::SlimeRibbonRed
+                | K::BunnyXmas),
+            ) => Some(k),
+            _ => None,
+        }
     }
 
     /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
@@ -6822,6 +6888,22 @@ impl Npc {
         // extra5 hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra6_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra6(kind);
+            return;
+        }
+        // W4-d44 wire (f27 slice 7) — the `cs_id`-keyed hook into the
+        // extra-wave-7 pure machines (`npc_findframe_extra7.rs`) via
+        // `find_frame_kind_extra7_claimed`: the FIRST ELEVEN ids
+        // 316/317/318/322/323/324/333/334/335/336/337 (the Ghost, the
+        // two costume eyes, the three costume skeletons, the four
+        // ribbon slimes, the Christmas bunny); 437/438/440/442 ride a
+        // later batch (the ≤11-kind cap). NO current kind's `cs_id`
+        // lands in the set (verified over the hand rows + the
+        // bestiary net ids), so this is stream-inert today; the arms
+        // draw no RNG (the floater draw `:74844` is 634-gated, the eye
+        // dust `:74007` is 23-gated — the module header) and none
+        // reads the world. The extra6 hook precedent.
+        if let Some(kind) = Self::find_frame_kind_extra7_claimed(self.kind.cs_id()) {
+            self.find_frame_wave_extra7(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -33928,6 +34010,50 @@ mod w4_d44_wire_tests {
         assert_eq!(Npc::find_frame_kind_extra6_claimed(296), None);
     }
 
+    /// The extra-7 hook fires for NO current kind — the inertness
+    /// proof (316-318/322-324/333-337 skip the hand rows + net ids).
+    #[test]
+    fn w4_d44_the_extra7_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                Npc::find_frame_kind_extra7_claimed(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-7 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The extra-7 claim set is the FIRST ELEVEN slice-7 ids
+    /// 316/317/318/322/323/324/333/334/335/336/337 (the ≤11-kind batch
+    /// cap); 437/438/440/442 ride a later batch and the band edges +
+    /// the port-covered 319-321/325-332 stay outside.
+    #[test]
+    fn w4_d44_the_extra7_claim_set_matches_the_batch_band() {
+        use crate::npc_findframe_extra7::FindFrameExtra7Kind as K;
+        let table = [
+            (316u16, K::Ghost),
+            (317, K::DemonEyeOwl),
+            (318, K::DemonEyeSpaceship),
+            (322, K::SkeletonTopHat),
+            (323, K::SkeletonAstonaut),
+            (324, K::SkeletonAlien),
+            (333, K::SlimeRibbonWhite),
+            (334, K::SlimeRibbonYellow),
+            (335, K::SlimeRibbonGreen),
+            (336, K::SlimeRibbonRed),
+            (337, K::BunnyXmas),
+        ];
+        for (id, k) in table {
+            assert_eq!(Npc::find_frame_kind_extra7_claimed(id), Some(k), "{id}");
+        }
+        // The later-batch ids + the band edges + the port-covered
+        // neighbours stay outside.
+        for id in [315, 319, 321, 325, 332, 338, 437, 438, 440, 442] {
+            assert_eq!(Npc::find_frame_kind_extra7_claimed(id), None, "{id}");
+        }
+    }
+
     /// The extra-6 bridge copies the three fields both ways and feeds
     /// vx/vy/facing/ai through — pinned on the Hell Armored Bones walk
     /// (the |vx|*2+1 accumulator, `NPC.cs:75861-75875`), the caster
@@ -34075,6 +34201,88 @@ mod w4_d44_wire_tests {
         n.frame_counter = 2.0;
         n.find_frame_wave_extra6(K::AngryBonesBigMuscle);
         assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+    }
+
+    /// The extra-7 bridge copies the four fields both ways and feeds
+    /// vx/vy/facing/ai/ai_action/local_ai2 through — pinned on the
+    /// Ghost floater tilt/flip (`NPC.cs:74850-74883`), the costume
+    /// eye atan2 aim + the literal 3.14 left-turn (`:74019-74031`),
+    /// the costume skeleton fighter delegate (`:69521-69585` via the
+    /// wave-B helper), the ribbon slime num2 attack class
+    /// (`:70828-70845` + `:66696-66704`) and the bunny hop
+    /// (`:76866-76903`).
+    #[test]
+    fn w4_d44_the_extra7_bridge_copies_the_four_fields_both_ways() {
+        use crate::npc_findframe_extra7::FindFrameExtra7Kind as K;
+        let mut n = bare(NpcKind::Piranha);
+        // Ghost: the vx-sign flip + the vx*0.1 tilt + the 6-tick strip
+        // (counter 5 → 6 steps row 0 → 1).
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.vx = -3.0;
+        n.vy = -1.0;
+        n.sprite_dir = 1;
+        n.find_frame_wave_extra7(K::Ghost);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (1, 0.0, -1));
+        assert_eq!(n.rotation, -0.3);
+        // Costume eye: the atan2 aim rides rotation; vx 0 freezes both
+        // the flip and the aim (the 8-tick strip still runs).
+        n.vx = 3.0;
+        n.vy = 4.0;
+        n.frame = 0;
+        n.frame_counter = 7.0;
+        n.find_frame_wave_extra7(K::DemonEyeOwl);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (1, 0.0, 1));
+        assert_eq!(n.rotation, 4.0f32.atan2(3.0));
+        n.vx = -3.0;
+        n.find_frame_wave_extra7(K::DemonEyeSpaceship);
+        assert_eq!(n.sprite_dir, -1);
+        assert_eq!(n.rotation, 4.0f32.atan2(-3.0) + 3.14);
+        // Costume skeleton: the fighter delegate — the |vx|*2+1 walk
+        // (counter 5 + 3 = 8 > 6 steps row 2 → 3), the lift-to-2, the
+        // grounded facing flip.
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.facing = -1;
+        n.sprite_dir = 1;
+        n.find_frame_wave_extra7(K::SkeletonTopHat);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (3, 0.0, -1));
+        // The 323 astronaut's 15-row sheet wraps one row earlier.
+        n.frame = 14;
+        n.frame_counter = 6.0;
+        n.find_frame_wave_extra7(K::SkeletonAstonaut);
+        assert_eq!(n.frame, 2, "the 15-row wrap");
+        n.frame = 15;
+        n.frame_counter = 6.0;
+        n.find_frame_wave_extra7(K::SkeletonAlien);
+        assert_eq!(n.frame, 2, "the 16-row wrap");
+        // Ribbon slime: ai_action 1 feeds the num2 == 4 attack class —
+        // +3/tick, counter 6 → 9 >= 8 steps row 0 → 1; no sprite or
+        // rotation write.
+        n.frame = 0;
+        n.frame_counter = 6.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.ai_action = 1;
+        n.sprite_dir = -1;
+        n.rotation = 0.5;
+        n.find_frame_wave_extra7(K::SlimeRibbonWhite);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5));
+        n.ai_action = 0;
+        // Bunny Xmas: the |vx|+1 walk (counter 5 + 3 = 8 > 6 steps
+        // row 0 → 1), the grounded flip; the air pins row 4 rising.
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.vx = 2.0;
+        n.facing = -1;
+        n.find_frame_wave_extra7(K::BunnyXmas);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (1, 0.0, -1));
+        n.vy = -1.0;
+        n.find_frame_wave_extra7(K::BunnyXmas);
+        assert_eq!((n.frame, n.frame_counter), (4, 0.0));
     }
 
     /// The wave-C bridge copies the five fields both ways and feeds
