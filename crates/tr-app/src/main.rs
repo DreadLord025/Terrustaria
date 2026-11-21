@@ -75,6 +75,9 @@ mod npc_ai_style65;
 // the TownCritter subset) — the Frog 361 / Duck 362 / DuckWhite 364 ride
 // the style-axis 7 arm (npc.rs); the full town machine stays unwired.
 mod npc_ai_town_critter;
+// W4-f18 first-20 port: the stat witnesses for the twenty kinds 355-380
+// + 430 (the census doc's first-20 list). WRITTEN NOT RUN (code-only).
+mod npc_w4_f18_witnesses;
 mod npc_ai_style70;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;
