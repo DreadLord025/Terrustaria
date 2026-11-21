@@ -18954,6 +18954,88 @@ post-201 gate stripped reads aligned, stamp 0). The golden byte-parity
 tests are untouched — the fixture's revision is 0 and its clock is the
 caller-supplied pin.
 
+## The `.wld` header/flags SECOND half (W4-f45)
+
+`task/W4-f45-wld-header-2` (code-only, 2026-11-21, base = W4-c43's tip
+`07697080`) claims the remaining header/flags fields that have live port
+state or a faithful gen/death source, in four phases. Every claim is a
+`World` field the `.wld` flags writer/reader (`wld/sections/flags.rs`)
+round-trips; the App-owned schedulers snapshot into the World at save
+(`saveglue.rs::save_world`, the `SetTempToOngoing` shape) and restore at
+load (`app/mod.rs`, `from_wld`-gated so a `.trwld`'s zeros never clobber the
+live defaults).
+
+- **Ph1 — the downed-flag census.** `downedClown`/`downedEmpressOfLight`
+  (`WorldFile.cs:1297`/`:1395`) round-trip (their kinds — Clown 109,
+  HallowBoss 636 — are unported, so no live setter yet). The five seasonal
+  bosses (`downedHalloweenKing/Tree`, `downedChristmasIceQueen/Santank/Tree`,
+  `:1347-1351`) gain their moon-gated death arms (`NPC.cs:79210-79239`):
+  the kill counts only while `pumpkin_moon`/`snow_moon` is up,
+  `SetEventFlagCleared`'s false→true transition guard fires the progression
+  notify, and `OnGameEventClearedForTheFirstTime` (`:78769-78793`) arms the
+  next lantern night for events 5/20 (the default arm) but NOT 4/21/22 (the
+  explicit no-op arm).
+- **Ph2 — the eight secret-seed bytes.** `forceHalloweenForever`/
+  `forceXMasForever`/`vampireSeed`/`infectedSeed`/`teamBasedSpawnsSeed`/
+  `dualDungeonsSeed`/`moreLightningSeed`/`noLightningSeed` (`:1418-1428`)
+  are the `InitializeSecretSeeds` mirrors of `World.micro_seeds`
+  (`WorldGen.cs:553-587`) — the same bits the `.trwld` v12 tail carries.
+  The `.wld` now derives them on load (the old "the `.wld` parse does not
+  derive `micro_seeds`" deviation is retired).
+- **Ph3 — the event snapshots + flavour.** `cultistDelay` (`:1340`), the
+  party quad + celebrant list (`:1361-1368`), the lantern quad
+  (`:1381-1384`), `windSpeedTarget` (`:1328`), `savedBartender` (`:1373`),
+  `dungeonX/Y` (`:1279-1280`) and `WorldGen.crimson` (`:1281`). The
+  schedulers' live state (`App.world_events`) and `App.wind.speed_target`
+  snapshot at save; the load restores them (the wind restores BOTH target
+  and current, `:2147`). The generator stamps the dungeon anchor
+  (`pipeline.rs::step_dungeon`, the drunk arm's `worldSurface + 70` row) and
+  the crimson flavour (`GenOptions.crimson`). **The flattened v107/108/109/
+  128 read gates are restored** (`LoadWorldFlags:2180-2208`): below 107
+  `invasionSizeStart` is re-derived by `FakeLoadInvasionStart`
+  (`Main.cs:64488-64514`), below 108 the cultist delay defaults to 86400,
+  below 109 the block ends, below 128 the dawn byte is absent. The angler
+  quest gate now reads `world.crimson` (the old "no evil-kind field"
+  deviation retired).
+- **Ph4 — the banner tally, the angler list, the spawn unlocks.**
+  `BannerSystem.killCount[]` (`:1341`) densifies from `App.banners` into
+  `World.banner_kill_counts` (the banner ids ARE the C# array indices —
+  `bestiary::npc_to_banner` mirrors `NPCtoBanner`); the claimable array
+  stays unowned (the port spawns the banner item at the death spot).
+  `anglerWhoFinishedToday` (`:1329-1333`) carries the real name list (the
+  turn-in pushes the player's name, the day reset clears it). The seven
+  spawn unlocks — `unlockedSlimeBlueSpawn` (King Slime death,
+  `NPC.cs:79411`) + the six arrival unlocks (`WorldGen.cs:5577-5608`) —
+  gain their setters and the `SpawnAllowed_*` overrides
+  (`NPC.cs:7069/7094/7119/7160/7177`).
+
+**Deliberate deviations.** The party celebrant list carries the C#'s stable
+`Main.npc` slots, but the port's live list indexes the compacted `Vec<Npc>`
+(the recorded `world_events.rs` deviation) — the slots are written as-is; a
+compacted-list remap is the follow-up. The Truffle's housing-gate consumer
+(`housing.rs:456`) keeps its parameter (the Truffle kind is unported, so the
+flag round-trips without a live reader). The Clown/Empress/bartender latches
+round-trip without live setters (their kinds/rescue paths are unported).
+
+**Still unowned (no port state, written at the C# default):** GameMode, the
+tree/cave back-style arrays, iceBackStyle/jungleBackStyle, cloudBGActive/
+numClouds, claimableBanners, the treeTop variation table, the world-gen
+manifest JSON, afterPartyOfDoom, meteorShowerCount/coinRain,
+extraSpawnPoints, forceHalloweenForToday/forceXMasForToday,
+boughtCat/Dog/Bunny, combatBookVolumeTwoWasUsed/peddlersSatchelWasUsed, and
+the remaining slime-colour unlocks (green/old/purple/yellow/copper).
+
+**Determinism.** The new fields are not in `world_hash`'s fold (the tile
+hashes are untouched); the gen stamps (dungeon anchor, crimson) are
+deterministic functions of the options/seed. The `.wld` flags block grows
+by the variable celebrant/angler lists — the `expected_flags_block` table
+computes the shift, and the owned-world sweep pins the whole block.
+
+Witnesses (written NOT run, code-only): the Ph1 seasonal-death census
+(`world_sim/npcs.rs`), the Ph1/Ph2/Ph3/Ph4 offset+gate witnesses
+(`wld/mod.rs::w4_f45_*`), and the extended `owned_world`/`assert_owned_fields`
+round-trip sweep. The compile window runs them.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
