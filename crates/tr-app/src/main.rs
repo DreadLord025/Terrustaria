@@ -211,6 +211,11 @@ mod projectile_ai_golf;
 // projectile/data.rs; the dispatch arm (107) + the kill hook are wired
 // in projectile.rs::update. Code-only mode — witnesses written not run.
 mod projectile_ai_djinn;
+// W4-f42 sandstorm second half: the desert debris + family AI (the
+// Vulture 61 aiStyle 17, the Antlion 69 aiStyle 19, the FlyingAntlion 581
+// aiStyle 44; the mummies + WalkingAntlion ride update_zombie, the
+// Tumbleweed 546 rides unicorn_step). Code-only — witnesses written not run.
+mod npc_ai_desert;
 // S1-P-i16: the dart guns' projectile AIs (267/477/478/479/442 aiStyle 1,
 // 443 aiStyle 77, 167-170 aiStyle 34, the 480 flame drop's dust census).
 mod projectile_ai_darts;

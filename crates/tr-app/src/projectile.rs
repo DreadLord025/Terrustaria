@@ -7191,6 +7191,37 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// W4-f42 — `AI_010`'s sand-ball arm for the Antlion's spit
+    /// (`Projectile.cs:57826-58100`, the type-31 path). The call site
+    /// (`NPC.cs:24462-24465`) sets `ai[0] = 2`, so the `ai0 != 2` dust gate
+    /// (`:57828-57835`) never fires and the `ai0 == 2` gravity arm
+    /// (`:58022-58037`) runs: +0.2 vy, the ±0.04 vx drag toward zero. The
+    /// owner is 255 (hostile), so the `myPlayer == owner` channel arm
+    /// (`:57953-57996`) and the tile-break scan (`:58038-58072`) never run.
+    fn ai_sand_ball_falling(&mut self, world: &World) {
+        // `:57951-57952`: the latch.
+        self.tile_collide = true;
+        self.local_ai[1] = 0.0;
+        // `:58022-58037`: the ai0 == 2 gravity + drag (the double compares).
+        if self.ai[0] == 2.0 {
+            self.vel.y += 0.2;
+            if (self.vel.x as f64) < -0.04 {
+                self.vel.x += 0.04;
+            } else if (self.vel.x as f64) > 0.04 {
+                self.vel.x -= 0.04;
+            } else {
+                self.vel.x = 0.0;
+            }
+        }
+        // `:58092-58099`: the spin + the fall cap.
+        self.rot += 0.1;
+        if self.vel.y > 10.0 {
+            self.vel.y = 10.0;
+        }
+        // The style-10 tile collision + kill-on-contact movement.
+        self.kill_step(world);
+    }
+
     /// The Book of Skulls' rider (`AI_001`'s `else if (this.type == 207 ||
     /// this.type == 837)` block, `Projectile.cs:56778-56887`): the in-tile
     /// `timeLeft` drain, the cached spawn speed, the alpha fade, the NPC
@@ -16963,6 +16994,15 @@ impl ProjectilePool {
                                 self.slots[i].ai_snowball_hostile(world);
                             } else if DUNGEON_DEBRIS.contains(&self.slots[i].kind) {
                                 self.slots[i].ai_dungeon_debris(world, rng, local_owner);
+                            } else if self.slots[i].kind == SAND_BALL_FALLING {
+                                // W4-f42 — the Antlion's sand ball: the
+                                // ai0 = 2 gravity arm (`AI_010`
+                                // `Projectile.cs:58022-58037`), the spin +
+                                // fall cap (`:58092-58099`), the style-10
+                                // tile collision. The ai0 != 2 dust gate
+                                // (`:57828-57835`) never fires for the
+                                // Antlion's spit (ai0 = 2 at the call site).
+                                self.slots[i].ai_sand_ball_falling(world);
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 7)`

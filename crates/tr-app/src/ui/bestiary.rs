@@ -1595,6 +1595,46 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-f42 — the sandstorm debris + desert family's portraits: the
+        // sheet's own row height over `Main.npcFrameCount[type]`
+        // (`Main.cs:67082`: 546 one frame, 61 six, 69 five, the mummies
+        // sixteen, 580 six, 581 nine); the frame width the sheet's own.
+        (NpcKind::Tumbleweed, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::Vulture, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(36.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::Antlion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(24.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::Mummy | NpcKind::DarkMummy | NpcKind::BloodMummy | NpcKind::LightMummy, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::WalkingAntlion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::FlyingAntlion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 30.0, h, white)
+        }
     }
 }
 

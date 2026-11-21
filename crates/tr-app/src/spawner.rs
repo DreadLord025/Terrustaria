@@ -196,6 +196,12 @@ pub struct SpawnContext<'a> {
     /// `NPC.CountNPCS(id)`'s scan source (`NPC.cs:7982-7995`): the moon
     /// ladders' `CountNPCS(id) < cap` gates read it per arm.
     pub moon_npc_counts: &'a [u16],
+    /// W4-f42 — `NPC.downedBoss1` (the EoC defeated): the sandstorm spawn
+    /// arm's pre-hardmode gate (`NPC.cs:3951`).
+    pub downed_boss1: bool,
+    /// W4-f42 — `Sandstorm.Happening`: the sandstorm spawn arm's event gate
+    /// (`NPC.cs:3949`).
+    pub sandstorm_happening: bool,
 }
 
 /// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap,
@@ -1134,6 +1140,71 @@ fn spawn_npc_at(
             }
             return None;
         }
+        // W4-f42 — the sandstorm spawn arm (`NPC.cs:3949-4018`): the
+        // zone chain's `else if (Sandstorm.Happening && ZoneSandstorm &&
+        // TileID.Sets.Conversion.Sand[tileType] && Spawning_SandstoneCheck)`
+        // — after the moon-event arms, before the surface probe. The
+        // pre-hardmode ladder (546/61/69), the hardmode ladder (541/510/
+        // 542-545/78/79/630/80), and the 546/580/581 fallthrough. The
+        // 541 SandElemental / 510 DuneSplicer / 542-545 SandSharks are
+        // unported kinds — their rolls consume and spawn nothing (the
+        // Wyvern arm's consume-and-return-None shape).
+        if ctx.sandstorm_happening
+            && ctx.flags.zone_sandstorm
+            && matches!(tile_kind, 53 | 112 | 116 | 234)
+            && spawning_sandstone_check(ctx.world, x, y / 16)
+        {
+            let hard = ctx.flags.hard_mode;
+            if !ctx.downed_boss1 && !hard {
+                // `:3953-3964` — the 1/2 tumbleweed, else the 1/2 vulture,
+                // else the antlion.
+                if rng.next_max(2) == 0 {
+                    return spawn_desert_ground(ctx, x, y, NpcKind::Tumbleweed);
+                } else if rng.next_max(2) == 0 {
+                    return spawn_desert_flyer(ctx, x, y, NpcKind::Vulture);
+                } else {
+                    return spawn_desert_ground(ctx, x, y, NpcKind::Antlion);
+                }
+            } else if hard && rng.next_max(20) == 0 && !ctx.moon_npc_counts.contains(&541) {
+                // `:3966-3969` — the SandElemental (541, unported): consume.
+                // (The roster scan rides `to_u16`'s protocol ids, but the
+                // unported 541/510's vanilla ids are free protocol slots —
+                // no ported kind encodes them, so `AnyNPCs(541)` is false
+                // and `CountNPCS(510)` is 0: the gates never close. The
+                // documented unported-kind fold, the Wyvern arm's shape.)
+                return None;
+            } else if hard && !no_worms && rng.next_max(3) == 0
+                && ctx.moon_npc_counts.iter().filter(|&&t| t == 510).count() < 4
+            {
+                // `:3970-3973` — the DuneSplicer (510, unported): consume.
+                return None;
+            } else if hard && !no_worms && rng.next_max(2) == 0 {
+                // `:3974-3990` — the SandShark family (542-545, unported):
+                // the corrupt/crimson/hallow tile picks the type; consume.
+                return None;
+            } else if hard && tile_kind == 53 && rng.next_max(3) == 0 {
+                // `:3991-3994` — the Mummy (78).
+                return spawn_desert_ground(ctx, x, y, NpcKind::Mummy);
+            } else if hard && tile_kind == 112 && rng.next_max(3) == 0 {
+                // `:3995-3998` — the DarkMummy (79).
+                return spawn_desert_ground(ctx, x, y, NpcKind::DarkMummy);
+            } else if hard && tile_kind == 234 && rng.next_max(3) == 0 {
+                // `:3999-4002` — the BloodMummy (630).
+                return spawn_desert_ground(ctx, x, y, NpcKind::BloodMummy);
+            } else if hard && tile_kind == 116 && rng.next_max(3) == 0 {
+                // `:4003-4006` — the LightMummy (80).
+                return spawn_desert_ground(ctx, x, y, NpcKind::LightMummy);
+            } else if rng.next_max(2) == 0 {
+                // `:4007-4010` — the Tumbleweed (546).
+                return spawn_desert_ground(ctx, x, y, NpcKind::Tumbleweed);
+            } else if rng.next_max(2) == 0 {
+                // `:4011-4014` — the WalkingAntlion (580).
+                return spawn_desert_ground(ctx, x, y, NpcKind::WalkingAntlion);
+            } else {
+                // `:4015-4018` — the FlyingAntlion (581).
+                return spawn_desert_flyer(ctx, x, y, NpcKind::FlyingAntlion);
+            }
+        }
         // The surface probe arm (`NPC.cs:4164-4199`, the `surfaceSpawn`
         // branch): the graveyard/snow-rain/rain specials ahead of it sit
         // behind unmodelled flags and consume nothing; `flag17` is the
@@ -2060,9 +2131,228 @@ fn spawn_basic_slime(
     Npc::spawn_slime_variant(ctx.world, x, variant)
 }
 
+/// W4-f42 — `Spawner.Spawning_SandstoneCheck` (`NPC.cs:5452-5491`): the
+/// 8-row × 9-column sand scan below the spawn tile — each row counts the
+/// centre tile plus up to 4 left + 4 right contiguous Conversion.Sand
+/// tiles; the total must reach 40 (the remix 10 is unported). The scan
+/// breaks a row's run at the first non-sand tile.
+fn spawning_sandstone_check(world: &tr_core::World, x: i32, y: i32) -> bool {
+    // `WorldGen.InWorld(x, y, 10)` — the 10-tile margin.
+    if x < 10 || y < 10 || x >= world.width - 10 || y >= world.height - 10 {
+        return false;
+    }
+    let is_sand = |tx: i32, ty: i32| {
+        world.tile(tx, ty).is_some_and(|t| {
+            t.active() && matches!(t.kind, 53 | 112 | 116 | 234)
+        })
+    };
+    let mut num = 0;
+    for i in 0..8 {
+        if !is_sand(x, y + i) {
+            break;
+        }
+        num += 1;
+        for j in 1..=4 {
+            if !is_sand(x + j, y + i) {
+                break;
+            }
+            num += 1;
+        }
+        for k in 1..=4 {
+            if !is_sand(x - k, y + i) {
+                break;
+            }
+            num += 1;
+        }
+    }
+    num >= 40
+}
+
+/// W4-f42 — the sandstorm arm's ground spawn (`SpawnNPC(spawnTileX * 16 + 8,
+/// spawnTileY * 16, kind)` → `NewNPC`'s `Bottom = (X, Y)`, `NPC.cs:80772`):
+/// feet on the found tile's top edge, X centred 8 px into the tile, facing
+/// toward the player (the invaders arm's placement).
+fn spawn_desert_ground(ctx: &SpawnContext, x: i32, y: i32, kind: NpcKind) -> Option<Npc> {
+    let (nw, nh) = kind.size();
+    let mut n = Npc::new(
+        kind,
+        x as f32 * TILE_PX + 8.0 - nw * 0.5,
+        y as f32 - nh,
+        if ctx.player_center.0 >= x as f32 * TILE_PX + 8.0 { 1 } else { -1 },
+        0.0,
+    );
+    n.hp = n.max_hp;
+    Some(n)
+}
+
+/// W4-f42 — the sandstorm arm's flyer spawn: the same Bottom placement (the
+/// C#'s `SpawnNPC` for the Vulture/FlyingAntlion uses the same call shape;
+/// the flyer's own AI lifts it on the first tick).
+fn spawn_desert_flyer(ctx: &SpawnContext, x: i32, y: i32, kind: NpcKind) -> Option<Npc> {
+    spawn_desert_ground(ctx, x, y, kind)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-f42 — `Spawner.Spawning_SandstoneCheck` (`NPC.cs:5452-5491`): the
+    /// 8×9 sand scan counts ≥ 40 (5 full rows) — 4 rows (36) fail, and a
+    /// non-sand centre breaks the row run early.
+    #[test]
+    fn sandstone_check_needs_forty_sand() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let mut w = World::new("t".into(), 200, 200);
+        let sand = |w: &mut World, x: i32, y: i32| {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile { kind: 53, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        };
+        // The InWorld(x, y, 10) margin refuses the edge.
+        assert!(!spawning_sandstone_check(&w, 5, 50));
+        // 4 full rows = 36 < 40.
+        for y in 50..54 {
+            for x in 26..=34 {
+                sand(&mut w, x, y);
+            }
+        }
+        assert!(!spawning_sandstone_check(&w, 30, 50));
+        // The 5th row reaches 45 ≥ 40.
+        for x in 26..=34 {
+            sand(&mut w, x, 54);
+        }
+        assert!(spawning_sandstone_check(&w, 30, 50));
+        // A non-sand centre on row 0 breaks the whole scan.
+        let i = w.index(30, 50);
+        w.tiles[i] = Tile { kind: 0, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        assert!(!spawning_sandstone_check(&w, 30, 50));
+        // The conversion family (112/116/234) counts as sand too.
+        let i = w.index(30, 50);
+        w.tiles[i] = Tile { kind: 234, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        assert!(spawning_sandstone_check(&w, 30, 50));
+    }
+
+    /// W4-f42 — the sandstorm arm's pre-hardmode ladder (`NPC.cs:3951-3964`):
+    /// the 546/61/69 picks over the found sand tile, the Bottom placement,
+    /// and the event gate (no sandstorm → no desert pick).
+    #[test]
+    fn sandstorm_pre_hardmode_picks_the_desert_trio() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 300..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.compute_column_surface();
+        let mut c = ctx(&w, 290.0 * 16.0, true);
+        c.sandstorm_happening = true;
+        c.flags.zone_sandstorm = true;
+        let mut seen = [false; 3];
+        for seed in 0..300u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) else {
+                continue;
+            };
+            let idx = match n.kind {
+                NpcKind::Tumbleweed => 0,
+                NpcKind::Vulture => 1,
+                NpcKind::Antlion => 2,
+                other => panic!("seed {seed}: the pre-hardmode arm picked {other:?}"),
+            };
+            seen[idx] = true;
+            // `SpawnNPC(spawnTileX * 16 + 8, spawnTileY * 16, kind)` →
+            // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80772`).
+            let (nw, nh) = n.kind.size();
+            assert_eq!(n.x, 210.0 * TILE_PX + 8.0 - nw * 0.5);
+            assert_eq!(n.y, 300.0 * TILE_PX - nh);
+            assert_eq!(n.hp, n.max_hp);
+        }
+        assert!(seen.iter().all(|&s| s), "all three pre-hardmode kinds spawn");
+        // The event gate: no sandstorm → the arm never fires (the day
+        // ladder's slime fallthrough takes over).
+        c.sandstorm_happening = false;
+        for seed in 0..50u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) {
+                assert!(
+                    !matches!(n.kind, NpcKind::Tumbleweed | NpcKind::Vulture | NpcKind::Antlion),
+                    "seed {seed}: the desert arm fired without the event"
+                );
+            }
+        }
+    }
+
+    /// W4-f42 — the sandstorm arm's hardmode ladder (`NPC.cs:3966-4018`):
+    /// the mummy family rides the sand-type rows (53 → 78, 112 → 79,
+    /// 234 → 630, 116 → 80) and the fallthrough picks 546/580/581; the
+    /// unported 541/510/542-545 arms consume their rolls and spawn nothing.
+    #[test]
+    fn sandstorm_hardmode_picks_the_mummies_and_antlions() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 300..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.compute_column_surface();
+        let mut c = ctx(&w, 290.0 * 16.0, true);
+        c.sandstorm_happening = true;
+        c.flags.zone_sandstorm = true;
+        c.flags.hard_mode = true;
+        let mut kinds = std::collections::HashSet::new();
+        for seed in 0..600u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) {
+                assert!(
+                    matches!(
+                        n.kind,
+                        NpcKind::Mummy
+                            | NpcKind::Tumbleweed
+                            | NpcKind::WalkingAntlion
+                            | NpcKind::FlyingAntlion
+                    ),
+                    "seed {seed}: unexpected hardmode pick {:?}",
+                    n.kind
+                );
+                kinds.insert(n.kind.to_u16());
+            }
+        }
+        assert!(kinds.contains(&NpcKind::Mummy.to_u16()), "the 53 row spawns the Mummy");
+        assert!(kinds.contains(&NpcKind::Tumbleweed.to_u16()));
+        assert!(kinds.contains(&NpcKind::WalkingAntlion.to_u16()));
+        assert!(kinds.contains(&NpcKind::FlyingAntlion.to_u16()));
+        // The 112 row spawns the DarkMummy.
+        for x in 206..=214 {
+            for y in 300..308 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 112, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut dark = false;
+        for seed in 0..600u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) {
+                if n.kind == NpcKind::DarkMummy {
+                    dark = true;
+                    break;
+                }
+            }
+        }
+        assert!(dark, "the 112 row spawns the DarkMummy");
+    }
 
     fn ctx(world: &World, y_px: f32, day: bool) -> SpawnContext<'_> {
         SpawnContext {
@@ -2096,6 +2386,8 @@ mod tests {
             probe_exists: false,
             sky_behind_player: false,
             moon_boss_cap_count: 0.0,
+            downed_boss1: false,
+            sandstorm_happening: false,
         }
     }
 
@@ -2970,6 +3262,8 @@ mod tests {
             probe_exists: false,
             sky_behind_player: false,
             moon_boss_cap_count: 0.0,
+            downed_boss1: false,
+            sandstorm_happening: false,
         }
     }
 
@@ -3188,6 +3482,8 @@ mod tests {
                     probe_exists: false,
                     sky_behind_player: false,
                     moon_boss_cap_count: 0.0,
+                    downed_boss1: false,
+                    sandstorm_happening: false,
                 };
                 let (spawned, _) = spawn_npc_call(Some(ctx), &mut rng, false);
                 decisions.push(spawned.map(|n| (n.kind as u8, n.x.to_bits())));
@@ -3450,6 +3746,8 @@ mod tests {
             probe_exists: false,
             sky_behind_player: true,
             moon_boss_cap_count: 0.0,
+            downed_boss1: false,
+            sandstorm_happening: false,
         }
     }
 

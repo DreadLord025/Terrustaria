@@ -586,6 +586,18 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-f42 — the sandstorm debris + desert family: the next-free
+            // 354..362 band (353 BlazingWheel reserved; the vanilla types
+            // ride cs_id/net_id, the bestiary rows).
+            NpcKind::Tumbleweed => 354,
+            NpcKind::Vulture => 355,
+            NpcKind::Antlion => 356,
+            NpcKind::Mummy => 357,
+            NpcKind::DarkMummy => 358,
+            NpcKind::BloodMummy => 359,
+            NpcKind::LightMummy => 360,
+            NpcKind::WalkingAntlion => 361,
+            NpcKind::FlyingAntlion => 362,
         }
     }
 
@@ -916,6 +928,17 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-f42 — the sandstorm debris + desert family (`to_u16`'s
+            // 354..362 band).
+            354 => NpcKind::Tumbleweed,
+            355 => NpcKind::Vulture,
+            356 => NpcKind::Antlion,
+            357 => NpcKind::Mummy,
+            358 => NpcKind::DarkMummy,
+            359 => NpcKind::BloodMummy,
+            360 => NpcKind::LightMummy,
+            361 => NpcKind::WalkingAntlion,
+            362 => NpcKind::FlyingAntlion,
             _ => return None,
         })
     }
@@ -1796,6 +1819,19 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-f42 — the sandstorm debris + desert family's hit cues:
+            // 546 NPCHit11 (`NPC.cs:15980`), 61 NPCHit28 (`:9563`),
+            // 69 NPCHit31 (`:9674`), 78/79/80 NPCHit1 (`:9807`/`:9820`/
+            // `:9833`), 630 NPCHit1 (`:17115`), 580 NPCHit31 (`:14862`),
+            // 581 NPCHit32 (`:14877`).
+            NpcKind::Tumbleweed => "NPC_Hit_11",
+            NpcKind::Vulture => "NPC_Hit_28",
+            NpcKind::Antlion | NpcKind::WalkingAntlion => "NPC_Hit_31",
+            NpcKind::FlyingAntlion => "NPC_Hit_32",
+            NpcKind::Mummy
+            | NpcKind::DarkMummy
+            | NpcKind::BloodMummy
+            | NpcKind::LightMummy => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2136,19 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-f42 — the sandstorm debris + desert family's death cues:
+            // 546 NPCDeath15 (`NPC.cs:15981`), 61 NPCDeath31 (`:9564`),
+            // 69 NPCDeath34 (`:9675`), 78/79/80 NPCDeath6 (`:9808`/`:9821`/
+            // `:9834`), 630 NPCDeath6 (`:17116`), 580 NPCDeath34 (`:14863`),
+            // 581 NPCDeath35 (`:14878`).
+            NpcKind::Tumbleweed => "NPC_Killed_15",
+            NpcKind::Vulture => "NPC_Killed_31",
+            NpcKind::Antlion | NpcKind::WalkingAntlion => "NPC_Killed_34",
+            NpcKind::FlyingAntlion => "NPC_Killed_35",
+            NpcKind::Mummy
+            | NpcKind::DarkMummy
+            | NpcKind::BloodMummy
+            | NpcKind::LightMummy => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -2200,6 +2249,11 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-f42 — the desert flyers' AI heads set noGravity every tick:
+            // the Vulture (61, aiStyle 17 `NPC.cs:24024`), the FlyingAntlion
+            // (581, aiStyle 44 `:30863`). The Antlion (69) toggles it per
+            // tick (the emergence), so its SetDefaults default stays false.
+            NpcKind::Vulture | NpcKind::FlyingAntlion => true,
             _ => false,
         }
     }
@@ -2272,6 +2326,14 @@ impl NpcKind {
             | NpcKind::ZombieSweater => 3,
             // aiStyle 3 — the Blood Zombie (S1-D-3z; `NPC.cs:14609`).
             NpcKind::BloodZombie => 3,
+            // aiStyle 3 — W4-f42: the desert walkers (`NPC.cs:9799`/
+            // `:9812`/`:17107`/`:9825` the mummies, `:14854` the Walking
+            // Antlion).
+            NpcKind::Mummy
+            | NpcKind::DarkMummy
+            | NpcKind::BloodMummy
+            | NpcKind::LightMummy
+            | NpcKind::WalkingAntlion => 3,
             // aiStyle 4 - NPC.cs:8707
             NpcKind::EyeOfCthulhu => 4,
             // aiStyle 5 - NPC.cs:8724, :8738, :9067, :9283
@@ -2309,6 +2371,12 @@ impl NpcKind {
             NpcKind::KingSlime => 15,
             // aiStyle 16 - NPC.cs:9465, :9508, :9615
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => 16,
+            // aiStyle 17 — W4-f42: the Vulture (`NPC.cs:9558`).
+            NpcKind::Vulture => 17,
+            // aiStyle 19 — W4-f42: the Antlion (`NPC.cs:9670`).
+            NpcKind::Antlion => 19,
+            // aiStyle 44 — W4-f42: the Flying Antlion (`NPC.cs:14872`).
+            NpcKind::FlyingAntlion => 44,
             // aiStyle 22 - NPC.cs:13194
             NpcKind::Poltergeist => 22,
             // aiStyle 22 — the Drippler (S1-D-3z; `NPC.cs:14623`).
@@ -2318,6 +2386,8 @@ impl NpcKind {
             NpcKind::PresentMimic => 25,
             // aiStyle 26 - NPC.cs:12982, :13179, :15078, :15121
             NpcKind::NebulaBeast | NpcKind::StardustSpiderSmall | NpcKind::HeadlessHorseman | NpcKind::Hellhound => 26,
+            // aiStyle 26 — W4-f42: the Tumbleweed (`NPC.cs:15976`).
+            NpcKind::Tumbleweed => 26,
             // aiStyle 27 - NPC.cs:10347
             NpcKind::WallOfFlesh => 27,
             // aiStyle 28 - NPC.cs:10365
@@ -2981,6 +3051,19 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-f42 — the sandstorm debris + desert family's `SetDefaults`
+            // boxes: 546 30x30 (`NPC.cs:15974-15975`), 61 36x36
+            // (`:9556-9557`), 69 24x24 (`:9668-9669`), the mummies 18x40
+            // (`:9801-9802`/`:9814-9815`/`:17109-17110`/`:9827-9828`),
+            // 580 26x26 (`:14856-14857`), 581 30x22 (`:14870-14871`).
+            NpcKind::Tumbleweed => (30.0, 30.0),
+            NpcKind::Vulture => (36.0, 36.0),
+            NpcKind::Antlion => (24.0, 24.0),
+            NpcKind::Mummy | NpcKind::DarkMummy | NpcKind::BloodMummy | NpcKind::LightMummy => {
+                (18.0, 40.0)
+            }
+            NpcKind::WalkingAntlion => (26.0, 26.0),
+            NpcKind::FlyingAntlion => (30.0, 22.0),
         }
     }
 
@@ -3135,6 +3218,9 @@ impl NpcKind {
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
+            // W4-f42 — the mummies' 16-frame humanoid strips
+            // (`Main.npcFrameCount[78/79/80/630]` = 16, `Main.cs:67082`).
+            NpcKind::Mummy | NpcKind::DarkMummy | NpcKind::BloodMummy | NpcKind::LightMummy => 16,
             _ => 1,
         }
     }
@@ -3201,6 +3287,9 @@ impl NpcKind {
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
                 | NpcKind::BlazingWheel
+                // W4-f42 — the Antlion's `behindTiles = true` row
+                // (`NPC.cs:9678`).
+                | NpcKind::Antlion
         )
     }
 
@@ -3622,6 +3711,18 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-f42 — the sandstorm debris + desert family's `lifeMax`:
+            // 546 50 (`NPC.cs:15979`), 61 40 (`:9561`), 69 45 (`:9672`),
+            // 78 130 (`:9806`), 79/630 180 (`:9819`/`:17114`), 80 200
+            // (`:9832`), 580 80 (`:14861`), 581 60 (`:14875`).
+            NpcKind::Tumbleweed => 50,
+            NpcKind::Vulture => 40,
+            NpcKind::Antlion => 45,
+            NpcKind::Mummy => 130,
+            NpcKind::DarkMummy | NpcKind::BloodMummy => 180,
+            NpcKind::LightMummy => 200,
+            NpcKind::WalkingAntlion => 80,
+            NpcKind::FlyingAntlion => 60,
         }
     }
 
@@ -3986,6 +4087,18 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-f42 — the sandstorm debris + desert family's `damage`:
+            // 546 30 (`NPC.cs:15977`), 61 15 (`:9559`), 69 10 (`:9671`),
+            // 78 50 (`:9804`), 79/630 60 (`:9817`/`:17112`), 80 55
+            // (`:9830`), 580 25 (`:14859`), 581 29 (`:14873`).
+            NpcKind::Tumbleweed => 30,
+            NpcKind::Vulture => 15,
+            NpcKind::Antlion => 10,
+            NpcKind::Mummy => 50,
+            NpcKind::DarkMummy | NpcKind::BloodMummy => 60,
+            NpcKind::LightMummy => 55,
+            NpcKind::WalkingAntlion => 25,
+            NpcKind::FlyingAntlion => 29,
         }
     }
 }

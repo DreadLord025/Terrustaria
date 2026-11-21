@@ -39244,3 +39244,111 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-f42 — the sandstorm second half (2026-11-21, code-only)
+
+The unclaimed remainder of the sandstorm task: the Djinn curse (596), the
+sandStorm field reuse, and the debris/desert spawn family. Three phases
+on `task/W4-f42-sandstorm-2` (fb326084 / 4bf7b2e8 / phase 3).
+
+### Phase 1 — the Djinn curse volley (596)
+
+* The LIVE path is `npc_ai_bat::ai_style_8_step` (the aiStyle-8 axis);
+  the unwired `npc_ai_caster` re-port (S1-D-3) keeps its own copy of the
+  volley — the shared `djinn_curse_search` + `to_tile`/`solid_tiles`
+  helpers live in `npc_ai_caster.rs` (one copy, `pub(crate)`).
+* The curse rides `wants_hostile_shot_ai` (ai0 = npc.target); the kb-1
+  override is kind-keyed in the world_sim ai_shots drain (the C# call
+  site passes KnockBack 1f, `NPC.cs:21155`).
+* The 596 AI is the pure `projectile_ai_djinn` module: the fade/frame
+  orbit gates carry the C# early-return shape (3 `Next(3)` gates), the
+  `timeLeft < 4` 60-box resize + Damage, and the Kill's 92-NextDouble
+  census (`curse_kill_draws`) ride the UpdateProjectiles stream.
+* Deviations: the curse trail's dust bodies are the projectile-arm skip
+  (the explicit draws stay on the stream); the single-player fold
+  (netMode 0) keeps the Item8 cue before the netMode gate and the
+  >2000px search bail draws nothing.
+
+### Phase 2 — the sandStorm field reuse
+
+* The per-tick `player.sand_storm` clear at the `Player.cs:26743` site
+  (before the jump block), the run boost ×1.5/×2 at `:26573` (after the
+  slippy chain), and `double_jump_visuals()` (`Player.cs:21905-21926`)
+  called before the flight section (whose head carries the `:26768`
+  wings/mount clear).
+* The sandstorm jump arm queues the 3 dust-124s (alpha 150, scale num4,
+  vel ×0.5num4, fadeIn 1.5num4) + the every-3rd-tick gore `Next(220,223)`
+  (vel = vel×0.3×num4, alpha 100) via `SandstormJumpVisual` /
+  `take_sandstorm_jump`, drained in `world_sim/player.rs` on the
+  UpdatePlayers stream (the arm-level draws in-step, the pool-internal
+  draws at the drain — the recorded placement deviation, the W-10
+  unicorn tails' precedent).
+
+### Phase 3 — the debris + desert family
+
+* The sandstorm spawn arm (`NPC.cs:3949-4018`) rides the dry/surface
+  ladder after the moon-event arms: `Sandstorm.Happening &&
+  ZoneSandstorm && Conversion.Sand[tileType] &&
+  Spawning_SandstoneCheck` (the 8×9 scan, `NPC.cs:5452-5491`, ≥40; the
+  remix 10 is unported). The pre-hardmode ladder picks 546/61/69; the
+  hardmode ladder the mummies (53→78, 112→79, 234→630, 116→80) and the
+  546/580/581 fallthrough.
+* Deviations (unported kinds consume their rolls and spawn nothing —
+  the Wyvern arm's shape): the 541 SandElemental (`Next(20)`, AnyNPCs
+  gate), the 510 DuneSplicer (`Next(3)`, CountNPCS<4, the (y+10)×16
+  placement), the 542-545 SandSharks (`Next(2)`, the Corrupt/Crimson/
+  Hallow tile picks). Their vanilla ids are free protocol slots, so the
+  roster gates read false/0 — no ported kind encodes them.
+* The nine kinds (Tumbleweed 546, Vulture 61, Antlion 69, Mummy 78,
+  DarkMummy 79, BloodMummy 630, LightMummy 80, WalkingAntlion 580,
+  FlyingAntlion 581) ride the port-local protocol ids 354-362 (353
+  BlazingWheel reserved); the vanilla types ride cs_id/net_id (the
+  bestiary ENTRIES rows) and the G6 render_key rides the same port band
+  (the vanilla 61/69/78/79/80 collide with the goblin/pirate/golem arms).
+* The mummies + WalkingAntlion ride the shared `update_zombie`
+  (aiStyle 3); their speed rows already live in `npc_ai3_speeds` (the
+  78/79/80/630 half-life rage `NPC.cs:57907-57943`, the 508/580/582 lerp
+  `:58139-58202`). The chase gate's `desert_fighter` term keeps them
+  encouraged in the day above the surface (the `:60302` exclusion list
+  + the `case 580` switch). Their moans ride the existing
+  `fighter_ambient_moans` Next(500) arm (`:57348`) — the
+  `fighter_walker_kind` gate now carries the five.
+* The Vulture (aiStyle 17) / Antlion (19) / FlyingAntlion (44) are the
+  pure `npc_ai_desert` cores returning `DesertOutcome{no_gravity,
+  no_tile_collide}` (the Npc struct has no live flags — the wrappers
+  integrate off them, the style71 convention). Deviations: the Antlion's
+  burrow-dust bodies are the skip (the `Next(2)` + optional `Next(2)`
+  draws stay on the stream, `NPC.cs:24517-24528`); the Vulture/
+  FlyingAntlion draw nothing.
+* The Tumbleweed rides `npc_ai_unicorn::unicorn_step` with the 546
+  branches woven in (num2=4, the sibling separation, the hop+NPCHit11
+  cue, the ZoneDesert despawn, the wind walk num10/num11, the sprite
+  inversion in the jump probe, the rotation tail `NPC.cs:62919-62923`).
+  The wind/zone/sibling inputs are pre-stamped in the sim (the
+  `wind_speed_target`/`player_zone_sandstorm`/`player_zone_desert`/
+  `tumbleweed_siblings` fields — the AI's `&World` borrow cannot reach
+  `app.wind`/`app.scene_metrics`; the FlyingAntlion's separation reuses
+  the sibling list).
+* The Antlion's sand ball (31, aiStyle 10) is the new `SAND_BALL_FALLING`
+  row + `ai_sand_ball_falling` (the ai0==2 gravity +0.2 / ±0.04 drag,
+  `Projectile.cs:58022-58037`); the ai0!=2 dust gate never fires (the
+  call site sets ai0=2); the `timeLeft = 300` override rides the
+  ai_shots drain (`NPC.cs:24464`).
+* The mummies' FindFrame rides the faithful wave-B humanoid-fighter arm
+  (`npc_findframe_b::find_frame_b`, the case-78/79/80/630 group); the
+  Vulture/Antlion/WalkingAntlion/FlyingAntlion carry their own case
+  arms; the Tumbleweed has no FindFrame case (the single frame stands,
+  the AI's rotation tail spins it).
+
+### Verification
+
+Code-only: every block re-read against the cited C# windows; the seam
+call sites checked against the actual signatures by read/grep; the
+exhaustive `NpcKind` matches (to_u16/from_u16, ai_style, size, max_hp,
+contact_damage, defense, value, knock_back_resist, update_kind_ai,
+find_frame, render_key, npc_seed, debuff_immune_ids, the bestiary
+portrait) all carry the nine kinds; the NPC_FRAME_COUNT table verified
+byte-identical to `Main.cs:67082-67153`; the bestiary sheet id/vec pair
+verified 190/190 aligned. The witness tests (8 djinn + 2 sandstorm-jump
++ 3 desert + 3 spawner) are WRITTEN, NOT RUN — **no cargo/rustc/tests/
+graphify invoked**.

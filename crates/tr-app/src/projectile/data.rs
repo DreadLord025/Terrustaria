@@ -232,6 +232,12 @@ pub const SHIMMER_ARROW: u16 = 1006;
 /// (`Projectile.cs:6450-6460`: 8×8, hostile, alpha 255, ignoreWater,
 /// timeLeft 180, tileCollide false).
 pub const DESERT_DJINN_CURSE: u16 = 596;
+/// `ProjectileID.SandBallFalling` (31, `ProjectileID.cs:616`) — the
+/// Antlion's spit (`NPC.cs:24462`/`:24477`), aiStyle 10
+/// (`Projectile.cs:1131-1140`: 10×10, knockBack 6, friendly + hostile,
+/// penetrate −1). The Antlion's call site overrides damage 10, ai0 = 2,
+/// timeLeft 300, friendly false.
+pub const SAND_BALL_FALLING: u16 = 31;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
 pub const DESTROYER_LASER: u16 = 100;
 /// `ProjectileID.SnowBallHostile` (109) — the Snow Balla's (net 145,
@@ -3974,7 +3980,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
-            // `Projectile.cs:6450-6460` — the Desert Djinn's curse (596):
+            // W4-f42 — the Djinn's curse (`Projectile.cs:6450-6460`):
             // 8×8, aiStyle 107, hostile, `alpha = 255`, `ignoreWater`,
             // `timeLeft = 180`, `tileCollide = false`. The stock penetrate 1
             // (`:774`) stands — the curse is a single-hit area burst (the
@@ -3982,6 +3988,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DESERT_DJINN_CURSE => {
                 (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
+            // W4-f42 — the Antlion's sand ball (`Projectile.cs:1131-1140`):
+            // 10×10, aiStyle 10, `penetrate = -1`, friendly + hostile (the
+            // Antlion's call site sets friendly false). The stock 3600 life
+            // (the call site overrides to 300, `NPC.cs:24464`); knockBack 6
+            // is overridden by the call's `KnockBack: 0f`.
+            SAND_BALL_FALLING => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {

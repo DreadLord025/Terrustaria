@@ -1140,6 +1140,9 @@ fn play_npc_sound_request(
         NpcSoundCue::Item8 => {
             audio.play_npc_item_cue(8, req.x, req.y, rng);
         }
+        NpcSoundCue::Item5 => {
+            audio.play_npc_item_cue(5, req.x, req.y, rng);
+        }
         NpcSoundCue::Item14 => {
             audio.play_npc_item_cue(14, req.x, req.y, rng);
         }
@@ -4249,6 +4252,39 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-f42 — the Tumbleweed's wind/zone pre-stamps (`NPC.cs:62709-62713`'s
+    // windSpeedTarget + ZoneSandstorm, `:62570`'s ZoneDesert) and the
+    // same-type separation scan (`:62382-62403`). The FlyingAntlion's 581
+    // separation (`:30997-31018`) reuses the sibling list. The AI's
+    // `&World` borrow cannot reach `app.wind`/`app.scene_metrics`/the
+    // sibling vec, so the sim stamps them before the update (the
+    // `wind_speed_current`/`twin_time_lefts` pre-pass convention).
+    {
+        let wind_target = app.wind.speed_target;
+        let zone_sandstorm = app.scene_metrics.zone_sandstorm;
+        let zone_desert = app.scene_metrics.zone_desert;
+        let desert_kind = |n: &Npc| {
+            (n.kind == NpcKind::Tumbleweed || n.kind == NpcKind::FlyingAntlion) && n.hp > 0
+        };
+        for i in 0..app.npcs.len() {
+            if !desert_kind(&app.npcs[i]) {
+                continue;
+            }
+            let kind_i = app.npcs[i].kind;
+            let siblings: Vec<(f32, f32)> = app
+                .npcs
+                .iter()
+                .enumerate()
+                .filter(|&(j, m)| j != i && m.kind == kind_i && m.hp > 0)
+                .map(|(_, m)| (m.x, m.y))
+                .collect();
+            let n = &mut app.npcs[i];
+            n.wind_speed_target = wind_target;
+            n.player_zone_sandstorm = zone_sandstorm;
+            n.player_zone_desert = zone_desert;
+            n.tumbleweed_siblings = siblings;
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding
@@ -5968,6 +6004,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if let (Some(slot), Some(scale)) = (slot, shot.scale) {
             app.projectiles.set_scale(slot, scale);
         }
+        // W4-f42 — the Antlion's sand ball (`NPC.cs:24462-24465` /
+        // `:24477-24480`): the call site's post-spawn `timeLeft = 300`
+        // (the ai0 = 2 payload already rides `spawn_hostile_ai`).
+        if let Some(slot) = slot {
+            if shot.kind == crate::projectile::SAND_BALL_FALLING {
+                app.projectiles.slots_mut()[slot].time_left = 300;
+            }
+        }
     }
     // The Horseman's gallop dust (`NPC.cs:62431-62437`, S1-D-4 W-10):
     // the arm-level gate + jitter draws already rode the UpdateNPCs
@@ -6768,6 +6812,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // slots count over the live wave-20 boss kinds — structurally
                 // 0 until the kinds land.
                 moon_boss_cap_count: spawner::moon_boss_cap_count(&app.npcs),
+                // W4-f42 — the sandstorm arm's gates (`NPC.cs:3949-3951`).
+                downed_boss1: app.world.downed_eoc,
+                sandstorm_happening: app.sandstorm.happening,
             })
         });
         // The one spawn path (`NPC.cs:308-342`) on the persistent `SpawnNPC`
@@ -7640,6 +7687,8 @@ mod tests {
                     probe_exists: false,
                     sky_behind_player: false,
                     moon_boss_cap_count: 0.0,
+                    downed_boss1: false,
+                    sandstorm_happening: false,
                 };
                 let mut rng = UnifiedRandom::new((seed + 1) as i32);
                 if let Some(n) = crate::spawner::try_spawn_an_npc(&ctx, &mut rng) {
