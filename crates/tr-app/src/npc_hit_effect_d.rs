@@ -1219,6 +1219,57 @@ fn corrupt_critter_death(
     }
 }
 
+/// The 173/174/181/182/268 crimson mob arm (`NPC.cs:86409-86448`, sites
+/// 149-158): the 50x dust-5 burst carries `this.alpha` (the fade-in
+/// mobs), then the per-kind sub-branch — 173 Crimera → 223/224
+/// (`:86425-86426`), 174 Herpling → 225/226 (`:86430-86431`), 181 Face
+/// Monster → 237 (`:86435`), 182 Floaty Gross → 238/239
+/// (`:86439-86440`), 268 Ichor Sticker → 403/404/405 (`:86444-86446`).
+/// All at position, scale 1f.
+fn crimson_mob_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86419-86422` — the 50x dust-5 burst, alpha = this.alpha.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 173 {
+        gore.new_gore(rng, world, pos, vel, 223, 1.0); // :86425
+        gore.new_gore(rng, world, pos, vel, 224, 1.0); // :86426
+    } else if npc_type == 174 {
+        gore.new_gore(rng, world, pos, vel, 225, 1.0); // :86430
+        gore.new_gore(rng, world, pos, vel, 226, 1.0); // :86431
+    } else if npc_type == 181 {
+        gore.new_gore(rng, world, pos, vel, 237, 1.0); // :86435
+    } else if npc_type == 182 {
+        gore.new_gore(rng, world, pos, vel, 238, 1.0); // :86439
+        gore.new_gore(rng, world, pos, vel, 239, 1.0); // :86440
+    } else if npc_type == 268 {
+        gore.new_gore(rng, world, pos, vel, 403, 1.0); // :86444
+        gore.new_gore(rng, world, pos, vel, 404, 1.0); // :86445
+        gore.new_gore(rng, world, pos, vel, 405, 1.0); // :86446
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -1382,6 +1433,11 @@ pub fn hit_effect_d(
     // (sites 141-148).
     else if matches!(npc_type, 47 | 57 | 58 | 464 | 465) {
         corrupt_critter_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86409-86448` — the 173/174/181/182/268 crimson mob arm (sites
+    // 149-158, the alpha-carrying 50x dust burst).
+    else if matches!(npc_type, 173 | 174 | 181 | 182 | 268) {
+        crimson_mob_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2462,6 +2518,46 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "corrupt critter {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86425-86446` — the crimson mob sub-branches: 173→223/224,
+    /// 174→225/226, 181→237, 182→238/239, 268→403/404/405; the 50x dust
+    /// burst carries this.alpha (the fade-in mobs).
+    #[test]
+    fn w4_f5d_the_crimson_mobs_spawn_the_kind_gores_with_alpha_dust() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 28.0);
+        n.alpha = 120;
+        for (kind, want) in [
+            (173, vec![223, 224]),
+            (174, vec![225, 226]),
+            (181, vec![237]),
+            (182, vec![238, 239]),
+            (268, vec![403, 404, 405]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(167);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "crimson mob {kind}");
+            let faded = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(faded.alpha, 120, "the dust carries this.alpha");
+            let mut twin = UnifiedRandom::new(167);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 28);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "crimson mob {kind} mirrors the C# draws");
         }
     }
 }
