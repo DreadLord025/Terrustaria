@@ -1,0 +1,210 @@
+{
+ "staticRows": "        \"NPC_430\",\n        \"NPC_431\",\n        \"NPC_432\",\n        \"NPC_433\",\n        \"NPC_434\",\n        \"NPC_435\",\n        \"NPC_436\",\n        \"NPC_437\",\n        \"NPC_438\",\n        \"NPC_442\",\n        \"NPC_443\",\n        \"NPC_444\",\n        \"NPC_445\",\n        \"NPC_446\",\n        \"NPC_447\",\n        \"NPC_448\",\n        \"NPC_454\",\n        \"NPC_455\",\n        \"NPC_456\",\n        \"NPC_457\",\n        \"NPC_458\",\n        \"NPC_459\",\n        \"NPC_462\",\n        \"NPC_463\",\n        \"NPC_464\",\n        \"NPC_465\",\n        \"NPC_469\",\n        \"NPC_470\",\n        \"NPC_472\",\n        \"NPC_478\",\n        \"NPC_482\",\n        \"NPC_484\",\n        \"NPC_485\",\n        \"NPC_486\",\n        \"NPC_487\",\n        \"NPC_488\",",
+ "bestiaryIds": "437, 438, 442, 443, 444, 445, 446, 447, 448, 454, 462, 463, 464, 465, 469, 470, 472, 482, 484, 485, 486, 487",
+ "bestiaryVec": "                atlas.sheet(\"NPC_437\").copied(),\n                atlas.sheet(\"NPC_438\").copied(),\n                atlas.sheet(\"NPC_442\").copied(),\n                atlas.sheet(\"NPC_443\").copied(),\n                atlas.sheet(\"NPC_444\").copied(),\n                atlas.sheet(\"NPC_445\").copied(),\n                atlas.sheet(\"NPC_446\").copied(),\n                atlas.sheet(\"NPC_447\").copied(),\n                atlas.sheet(\"NPC_448\").copied(),\n                atlas.sheet(\"NPC_454\").copied(),\n                atlas.sheet(\"NPC_462\").copied(),\n                atlas.sheet(\"NPC_463\").copied(),\n                atlas.sheet(\"NPC_464\").copied(),\n                atlas.sheet(\"NPC_465\").copied(),\n                atlas.sheet(\"NPC_469\").copied(),\n                atlas.sheet(\"NPC_470\").copied(),\n                atlas.sheet(\"NPC_472\").copied(),\n                atlas.sheet(\"NPC_482\").copied(),\n                atlas.sheet(\"NPC_484\").copied(),\n                atlas.sheet(\"NPC_485\").copied(),\n                atlas.sheet(\"NPC_486\").copied(),\n                atlas.sheet(\"NPC_487\").copied(),",
+ "d40Const": "    430, // ArmedZombie (Hide-fold)\n    431, // ArmedZombieEskimo (Hide-fold)\n    432, // ArmedZombiePincussion (Hide-fold)\n    433, // ArmedZombieSlimed (Hide-fold)\n    434, // ArmedZombieSwamp (Hide-fold)\n    435, // ArmedZombieTwiggy (Hide-fold)\n    436, // ArmedZombieCenx (Hide-fold)\n    437, // CultistTablet\n    438, // CultistDevote\n    442, // GoldBird\n    443, // GoldBunny\n    444, // GoldButterfly\n    445, // GoldFrog\n    446, // GoldGrasshopper\n    447, // GoldMouse\n    448, // GoldWorm\n    454, // CultistDragonHead\n    455, // CultistDragonBody1 (Hide-fold)\n    456, // CultistDragonBody2 (Hide-fold)\n    457, // CultistDragonBody3 (Hide-fold)\n    458, // CultistDragonBody4 (Hide-fold)\n    459, // CultistDragonTail (Hide-fold)\n    462, // Fritz\n    463, // Nailhead\n    464, // CrimsonBunny\n    465, // CrimsonGoldfish\n    469, // ThePossessed\n    470, // CrimsonPenguin\n    472, // ShadowFlameApparition\n    478, // MothronEgg (Hide-fold)\n    482, // GraniteGolem\n    484, // EnchantedNightcrawler\n    485, // Grubby\n    486, // Sluggy\n    487, // Buggy\n    488, // TargetDummy (Hide-fold)",
+ "texRows": "        NpcKind::ArmedZombie => 430,\n        NpcKind::ArmedZombieEskimo => 431,\n        NpcKind::ArmedZombiePincussion => 432,\n        NpcKind::ArmedZombieSlimed => 433,\n        NpcKind::ArmedZombieSwamp => 434,\n        NpcKind::ArmedZombieTwiggy => 435,\n        NpcKind::ArmedZombieCenx => 436,\n        NpcKind::BoneThrowingSkeleton => 449,\n        NpcKind::BoneThrowingSkeleton2 => 450,\n        NpcKind::BoneThrowingSkeleton3 => 451,\n        NpcKind::BoneThrowingSkeleton4 => 452,\n        NpcKind::CultistDragonBody1 => 455,\n        NpcKind::CultistDragonBody2 => 456,\n        NpcKind::CultistDragonBody3 => 457,\n        NpcKind::CultistDragonBody4 => 458,\n        NpcKind::CultistDragonTail => 459,\n        NpcKind::MothronEgg => 478,\n        NpcKind::TargetDummy => 488,",
+ "nudgeRows": "        // W4-d40: the `Main.cs:23003-23046` num46/num47 else-if overrides\n        // for the 421-490 band (the generic draw anchor, `:25511`).\n        DeadlySphere => num46 = 7.0, // `:23003` type == 467\n        EnchantedNightcrawler => num46 = 2.0, // `:23019` type == 484\n        GraniteFlyer => num46 = 14.0, // `:23023` type == 483\n        Mothron => num47 = 22.0, // `:23027` type == 477\n        MothronEgg => num46 -= 2.0, // `:23031` type == 478\n        ThePossessed if n.ai[2] == 1.0 => num46 = 14.0, // `:23043` type == 469 && ai[2] == 1",
+ "drawArm": "            // W4-d40 sheets phase: the 56 kinds of the 421-490 band draw\n            // their OWN `NPC_<id>` sheet (`D40_SHEETS`, the 36 packed; the\n            // 20 deferred return None and the draw skips — the wyvern\n            // precedent) at `SetFrameSize`'s integer-division row height\n            // (`NPC.cs:66666`) over `Main.npcFrameCount[type]`\n            // (`Main.cs:67082`, `npc_rows`), generic centred anchor\n            // (`Main.cs:25511-25516`) — the blood-moon/small-kinds shape.\n            // The Hide-fold kinds (ArmedZombie*, BoneThrowingSkeleton*,\n            // CultistDragonBody*, MothronEgg, TargetDummy) draw their own\n            // sheets via `texture_net_id`'s vanilla rows (the d35\n            // DiggerBody/SeekerBody fishron-hazard precedent).\n            NpcKind::ArmedZombie\n            | NpcKind::ArmedZombieEskimo\n            | NpcKind::ArmedZombiePincussion\n            | NpcKind::ArmedZombieSlimed\n            | NpcKind::ArmedZombieSwamp\n            | NpcKind::ArmedZombieTwiggy\n            | NpcKind::ArmedZombieCenx\n            | NpcKind::CultistTablet\n            | NpcKind::CultistDevote\n            | NpcKind::CultistBossClone\n            | NpcKind::GoldBird\n            | NpcKind::GoldBunny\n            | NpcKind::GoldButterfly\n            | NpcKind::GoldFrog\n            | NpcKind::GoldGrasshopper\n            | NpcKind::GoldMouse\n            | NpcKind::GoldWorm\n            | NpcKind::BoneThrowingSkeleton\n            | NpcKind::BoneThrowingSkeleton2\n            | NpcKind::BoneThrowingSkeleton3\n            | NpcKind::BoneThrowingSkeleton4\n            | NpcKind::SkeletonMerchant\n            | NpcKind::CultistDragonHead\n            | NpcKind::CultistDragonBody1\n            | NpcKind::CultistDragonBody2\n            | NpcKind::CultistDragonBody3\n            | NpcKind::CultistDragonBody4\n            | NpcKind::CultistDragonTail\n            | NpcKind::Butcher\n            | NpcKind::CreatureFromTheDeep\n            | NpcKind::Fritz\n            | NpcKind::Nailhead\n            | NpcKind::CrimsonBunny\n            | NpcKind::CrimsonGoldfish\n            | NpcKind::Psycho\n            | NpcKind::DeadlySphere\n            | NpcKind::DrManFly\n            | NpcKind::ThePossessed\n            | NpcKind::CrimsonPenguin\n            | NpcKind::ShadowFlameApparition\n            | NpcKind::BigMimicCorruption\n            | NpcKind::BigMimicCrimson\n            | NpcKind::BigMimicHallow\n            | NpcKind::BigMimicJungle\n            | NpcKind::Mothron\n            | NpcKind::MothronEgg\n            | NpcKind::MothronSpawn\n            | NpcKind::Medusa\n            | NpcKind::GreekSkeleton\n            | NpcKind::GraniteGolem\n            | NpcKind::GraniteFlyer\n            | NpcKind::EnchantedNightcrawler\n            | NpcKind::Grubby\n            | NpcKind::Sluggy\n            | NpcKind::Buggy\n            | NpcKind::TargetDummy\n            => {\n                let ty = texture_net_id(n.kind);\n                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)\n            }",
+ "rotRows": "                    | NpcKind::GoldBird\n                    | NpcKind::GoldButterfly\n                    | NpcKind::GoldWorm\n                    | NpcKind::CultistDragonHead\n                    | NpcKind::CultistDragonBody1\n                    | NpcKind::CultistDragonBody2\n                    | NpcKind::CultistDragonBody3\n                    | NpcKind::CultistDragonBody4\n                    | NpcKind::CultistDragonTail\n                    | NpcKind::CreatureFromTheDeep\n                    | NpcKind::CrimsonGoldfish\n                    | NpcKind::DeadlySphere\n                    | NpcKind::ThePossessed\n                    | NpcKind::ShadowFlameApparition\n                    | NpcKind::Mothron\n                    | NpcKind::MothronEgg\n                    | NpcKind::MothronSpawn\n                    | NpcKind::GraniteFlyer\n                    | NpcKind::EnchantedNightcrawler\n                    | NpcKind::Grubby\n                    | NpcKind::Sluggy\n                    | NpcKind::Buggy",
+ "portraits": [
+  {
+   "name": "CultistTablet",
+   "id": 437,
+   "rows": 4,
+   "sheetW": 66,
+   "boxH": "54.0",
+   "boxW": "54.0",
+   "arm": "        (NpcKind::CultistTablet, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 4.0)\n                .unwrap_or(54.0);\n            (sheet_i, h, 66.0, h, white)\n        }"
+  },
+  {
+   "name": "CultistDevote",
+   "id": 438,
+   "rows": 4,
+   "sheetW": 40,
+   "boxH": "40.0",
+   "boxW": "22.0",
+   "arm": "        (NpcKind::CultistDevote, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 4.0)\n                .unwrap_or(40.0);\n            (sheet_i, h, 40.0, h, white)\n        }"
+  },
+  {
+   "name": "GoldBird",
+   "id": 442,
+   "rows": 5,
+   "sheetW": 30,
+   "boxH": "14.0",
+   "boxW": "14.0",
+   "arm": "        (NpcKind::GoldBird, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 5.0)\n                .unwrap_or(14.0);\n            (sheet_i, h, 30.0, h, white)\n        }"
+  },
+  {
+   "name": "GoldBunny",
+   "id": 443,
+   "rows": 7,
+   "sheetW": 48,
+   "boxH": "20.0",
+   "boxW": "18.0",
+   "arm": "        (NpcKind::GoldBunny, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 7.0)\n                .unwrap_or(20.0);\n            (sheet_i, h, 48.0, h, white)\n        }"
+  },
+  {
+   "name": "GoldButterfly",
+   "id": 444,
+   "rows": 3,
+   "sheetW": 24,
+   "boxH": "10.0",
+   "boxW": "10.0",
+   "arm": "        (NpcKind::GoldButterfly, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 3.0)\n                .unwrap_or(10.0);\n            (sheet_i, h, 24.0, h, white)\n        }"
+  },
+  {
+   "name": "GoldFrog",
+   "id": 445,
+   "rows": 13,
+   "sheetW": 26,
+   "boxH": "10.0",
+   "boxW": "12.0",
+   "arm": "        (NpcKind::GoldFrog, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 13.0)\n                .unwrap_or(10.0);\n            (sheet_i, h, 26.0, h, white)\n        }"
+  },
+  {
+   "name": "GoldGrasshopper",
+   "id": 446,
+   "rows": 2,
+   "sheetW": 18,
+   "boxH": "10.0",
+   "boxW": "14.0",
+   "arm": "        (NpcKind::GoldGrasshopper, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 2.0)\n                .unwrap_or(10.0);\n            (sheet_i, h, 18.0, h, white)\n        }"
+  },
+  {
+   "name": "GoldMouse",
+   "id": 447,
+   "rows": 6,
+   "sheetW": 20,
+   "boxH": "12.0",
+   "boxW": "14.0",
+   "arm": "        (NpcKind::GoldMouse, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 6.0)\n                .unwrap_or(12.0);\n            (sheet_i, h, 20.0, h, white)\n        }"
+  },
+  {
+   "name": "GoldWorm",
+   "id": 448,
+   "rows": 2,
+   "sheetW": 14,
+   "boxH": "4.0",
+   "boxW": "10.0",
+   "arm": "        (NpcKind::GoldWorm, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 2.0)\n                .unwrap_or(4.0);\n            (sheet_i, h, 14.0, h, white)\n        }"
+  },
+  {
+   "name": "CultistDragonHead",
+   "id": 454,
+   "rows": 3,
+   "sheetW": 80,
+   "boxH": "32.0",
+   "boxW": "32.0",
+   "arm": "        (NpcKind::CultistDragonHead, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 3.0)\n                .unwrap_or(32.0);\n            (sheet_i, h, 80.0, h, white)\n        }"
+  },
+  {
+   "name": "Fritz",
+   "id": 462,
+   "rows": 9,
+   "sheetW": 34,
+   "boxH": "24.0",
+   "boxW": "20.0",
+   "arm": "        (NpcKind::Fritz, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 9.0)\n                .unwrap_or(24.0);\n            (sheet_i, h, 34.0, h, white)\n        }"
+  },
+  {
+   "name": "Nailhead",
+   "id": 463,
+   "rows": 16,
+   "sheetW": 32,
+   "boxH": "40.0",
+   "boxW": "18.0",
+   "arm": "        (NpcKind::Nailhead, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 16.0)\n                .unwrap_or(40.0);\n            (sheet_i, h, 32.0, h, white)\n        }"
+  },
+  {
+   "name": "CrimsonBunny",
+   "id": 464,
+   "rows": 7,
+   "sheetW": 34,
+   "boxH": "20.0",
+   "boxW": "18.0",
+   "arm": "        (NpcKind::CrimsonBunny, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 7.0)\n                .unwrap_or(20.0);\n            (sheet_i, h, 34.0, h, white)\n        }"
+  },
+  {
+   "name": "CrimsonGoldfish",
+   "id": 465,
+   "rows": 6,
+   "sheetW": 38,
+   "boxH": "20.0",
+   "boxW": "18.0",
+   "arm": "        (NpcKind::CrimsonGoldfish, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 6.0)\n                .unwrap_or(20.0);\n            (sheet_i, h, 38.0, h, white)\n        }"
+  },
+  {
+   "name": "ThePossessed",
+   "id": 469,
+   "rows": 12,
+   "sheetW": 52,
+   "boxH": "26.0",
+   "boxW": "38.0",
+   "arm": "        (NpcKind::ThePossessed, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 12.0)\n                .unwrap_or(26.0);\n            (sheet_i, h, 52.0, h, white)\n        }"
+  },
+  {
+   "name": "CrimsonPenguin",
+   "id": 470,
+   "rows": 12,
+   "sheetW": 28,
+   "boxH": "34.0",
+   "boxW": "16.0",
+   "arm": "        (NpcKind::CrimsonPenguin, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 12.0)\n                .unwrap_or(34.0);\n            (sheet_i, h, 28.0, h, white)\n        }"
+  },
+  {
+   "name": "ShadowFlameApparition",
+   "id": 472,
+   "rows": 6,
+   "sheetW": 52,
+   "boxH": "24.0",
+   "boxW": "40.0",
+   "arm": "        (NpcKind::ShadowFlameApparition, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 6.0)\n                .unwrap_or(24.0);\n            (sheet_i, h, 52.0, h, white)\n        }"
+  },
+  {
+   "name": "GraniteGolem",
+   "id": 482,
+   "rows": 20,
+   "sheetW": 48,
+   "boxH": "48.0",
+   "boxW": "28.0",
+   "arm": "        (NpcKind::GraniteGolem, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 20.0)\n                .unwrap_or(48.0);\n            (sheet_i, h, 48.0, h, white)\n        }"
+  },
+  {
+   "name": "EnchantedNightcrawler",
+   "id": 484,
+   "rows": 2,
+   "sheetW": 18,
+   "boxH": "4.0",
+   "boxW": "10.0",
+   "arm": "        (NpcKind::EnchantedNightcrawler, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 2.0)\n                .unwrap_or(4.0);\n            (sheet_i, h, 18.0, h, white)\n        }"
+  },
+  {
+   "name": "Grubby",
+   "id": 485,
+   "rows": 4,
+   "sheetW": 18,
+   "boxH": "4.0",
+   "boxW": "10.0",
+   "arm": "        (NpcKind::Grubby, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 4.0)\n                .unwrap_or(4.0);\n            (sheet_i, h, 18.0, h, white)\n        }"
+  },
+  {
+   "name": "Sluggy",
+   "id": 486,
+   "rows": 4,
+   "sheetW": 18,
+   "boxH": "4.0",
+   "boxW": "10.0",
+   "arm": "        (NpcKind::Sluggy, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 4.0)\n                .unwrap_or(4.0);\n            (sheet_i, h, 18.0, h, white)\n        }"
+  },
+  {
+   "name": "Buggy",
+   "id": 487,
+   "rows": 4,
+   "sheetW": 18,
+   "boxH": "4.0",
+   "boxW": "10.0",
+   "arm": "        (NpcKind::Buggy, _) => {\n            let h = entry_sheet(lookups, entry)\n                .map(|s| s.height as f32 / 4.0)\n                .unwrap_or(4.0);\n            (sheet_i, h, 18.0, h, white)\n        }"
+  }
+ ]
+}

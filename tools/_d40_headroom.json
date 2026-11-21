@@ -1,0 +1,704 @@
+[
+ {
+  "label": "base (HEAD, gore landed)",
+  "sheets": 9497,
+  "height": 8115,
+  "overflow": false
+ },
+ {
+  "label": "base + boot font",
+  "sheets": 9498,
+  "height": 8119,
+  "overflow": false
+ },
+ {
+  "label": "base + pushed union (403)",
+  "sheets": 9899,
+  "height": 9361,
+  "overflow": true
+ },
+ {
+  "label": "base + font + pushed union",
+  "sheets": 9900,
+  "height": 9361,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_430 (1)",
+  "sheets": 9498,
+  "height": 8115,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_431 (2)",
+  "sheets": 9499,
+  "height": 8149,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_432 (3)",
+  "sheets": 9500,
+  "height": 8136,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_433 (4)",
+  "sheets": 9501,
+  "height": 8133,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_434 (5)",
+  "sheets": 9502,
+  "height": 8140,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_435 (6)",
+  "sheets": 9503,
+  "height": 8157,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_436 (7)",
+  "sheets": 9504,
+  "height": 8161,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_437 (8)",
+  "sheets": 9505,
+  "height": 8158,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_438 (9)",
+  "sheets": 9506,
+  "height": 8169,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_440 (10)",
+  "sheets": 9507,
+  "height": 8239,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_442 (11)",
+  "sheets": 9508,
+  "height": 8238,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_443 (12)",
+  "sheets": 9509,
+  "height": 8255,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_444 (13)",
+  "sheets": 9510,
+  "height": 8249,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_445 (14)",
+  "sheets": 9511,
+  "height": 8219,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_446 (15)",
+  "sheets": 9512,
+  "height": 8219,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_447 (16)",
+  "sheets": 9513,
+  "height": 8218,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_448 (17)",
+  "sheets": 9514,
+  "height": 8218,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_449 (18)",
+  "sheets": 9515,
+  "height": 8185,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d40 through NPC_450 (19)",
+  "sheets": 9516,
+  "height": 8328,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_451 (20)",
+  "sheets": 9517,
+  "height": 8373,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_452 (21)",
+  "sheets": 9518,
+  "height": 8357,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_453 (22)",
+  "sheets": 9519,
+  "height": 8342,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_454 (23)",
+  "sheets": 9520,
+  "height": 8359,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_455 (24)",
+  "sheets": 9521,
+  "height": 8360,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_456 (25)",
+  "sheets": 9522,
+  "height": 8366,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_457 (26)",
+  "sheets": 9523,
+  "height": 8360,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_458 (27)",
+  "sheets": 9524,
+  "height": 8367,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_459 (28)",
+  "sheets": 9525,
+  "height": 8370,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_460 (29)",
+  "sheets": 9526,
+  "height": 8306,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_461 (30)",
+  "sheets": 9527,
+  "height": 8390,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_462 (31)",
+  "sheets": 9528,
+  "height": 8386,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_463 (32)",
+  "sheets": 9529,
+  "height": 8386,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_464 (33)",
+  "sheets": 9530,
+  "height": 8394,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_465 (34)",
+  "sheets": 9531,
+  "height": 8387,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_466 (35)",
+  "sheets": 9532,
+  "height": 8383,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_467 (36)",
+  "sheets": 9533,
+  "height": 8367,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_468 (37)",
+  "sheets": 9534,
+  "height": 8290,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_469 (38)",
+  "sheets": 9535,
+  "height": 8367,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_470 (39)",
+  "sheets": 9536,
+  "height": 8367,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_472 (40)",
+  "sheets": 9537,
+  "height": 8357,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_473 (41)",
+  "sheets": 9538,
+  "height": 8472,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_474 (42)",
+  "sheets": 9539,
+  "height": 8288,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_475 (43)",
+  "sheets": 9540,
+  "height": 8275,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_476 (44)",
+  "sheets": 9541,
+  "height": 8302,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_477 (45)",
+  "sheets": 9542,
+  "height": 8301,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_478 (46)",
+  "sheets": 9543,
+  "height": 8300,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_479 (47)",
+  "sheets": 9544,
+  "height": 8290,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_480 (48)",
+  "sheets": 9545,
+  "height": 8352,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_481 (49)",
+  "sheets": 9546,
+  "height": 8468,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_482 (50)",
+  "sheets": 9547,
+  "height": 8484,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_483 (51)",
+  "sheets": 9548,
+  "height": 8486,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_484 (52)",
+  "sheets": 9549,
+  "height": 8486,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_485 (53)",
+  "sheets": 9550,
+  "height": 8490,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_486 (54)",
+  "sheets": 9551,
+  "height": 8489,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_487 (55)",
+  "sheets": 9552,
+  "height": 8489,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d40 through NPC_488 (56)",
+  "sheets": 9553,
+  "height": 8489,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_430 (1)",
+  "sheets": 9900,
+  "height": 9352,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_431 (2)",
+  "sheets": 9901,
+  "height": 9365,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_432 (3)",
+  "sheets": 9902,
+  "height": 9352,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_433 (4)",
+  "sheets": 9903,
+  "height": 9368,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_434 (5)",
+  "sheets": 9904,
+  "height": 9358,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_435 (6)",
+  "sheets": 9905,
+  "height": 9369,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_436 (7)",
+  "sheets": 9906,
+  "height": 9368,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_437 (8)",
+  "sheets": 9907,
+  "height": 9373,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_438 (9)",
+  "sheets": 9908,
+  "height": 9360,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_440 (10)",
+  "sheets": 9909,
+  "height": 9346,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_442 (11)",
+  "sheets": 9910,
+  "height": 9351,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_443 (12)",
+  "sheets": 9911,
+  "height": 9358,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_444 (13)",
+  "sheets": 9912,
+  "height": 9358,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_445 (14)",
+  "sheets": 9913,
+  "height": 9360,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_446 (15)",
+  "sheets": 9914,
+  "height": 9360,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_447 (16)",
+  "sheets": 9915,
+  "height": 9359,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_448 (17)",
+  "sheets": 9915,
+  "height": 9359,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_449 (18)",
+  "sheets": 9916,
+  "height": 9444,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_450 (19)",
+  "sheets": 9917,
+  "height": 9419,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_451 (20)",
+  "sheets": 9918,
+  "height": 9408,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_452 (21)",
+  "sheets": 9919,
+  "height": 9405,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_453 (22)",
+  "sheets": 9920,
+  "height": 9459,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_454 (23)",
+  "sheets": 9921,
+  "height": 9475,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_455 (24)",
+  "sheets": 9922,
+  "height": 9458,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_456 (25)",
+  "sheets": 9923,
+  "height": 9470,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_457 (26)",
+  "sheets": 9924,
+  "height": 9456,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_458 (27)",
+  "sheets": 9925,
+  "height": 9473,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_459 (28)",
+  "sheets": 9926,
+  "height": 9470,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_460 (29)",
+  "sheets": 9927,
+  "height": 9404,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_461 (30)",
+  "sheets": 9928,
+  "height": 9387,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_462 (31)",
+  "sheets": 9929,
+  "height": 9392,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_463 (32)",
+  "sheets": 9930,
+  "height": 9392,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_464 (33)",
+  "sheets": 9931,
+  "height": 9399,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_465 (34)",
+  "sheets": 9931,
+  "height": 9399,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_466 (35)",
+  "sheets": 9932,
+  "height": 9529,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_467 (36)",
+  "sheets": 9933,
+  "height": 9528,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_468 (37)",
+  "sheets": 9934,
+  "height": 9502,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_469 (38)",
+  "sheets": 9935,
+  "height": 9535,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_470 (39)",
+  "sheets": 9936,
+  "height": 9518,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_472 (40)",
+  "sheets": 9937,
+  "height": 9529,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_473 (41)",
+  "sheets": 9938,
+  "height": 9526,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_474 (42)",
+  "sheets": 9939,
+  "height": 9576,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_475 (43)",
+  "sheets": 9940,
+  "height": 9591,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_476 (44)",
+  "sheets": 9941,
+  "height": 9561,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_477 (45)",
+  "sheets": 9942,
+  "height": 9589,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_478 (46)",
+  "sheets": 9943,
+  "height": 9589,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_479 (47)",
+  "sheets": 9944,
+  "height": 9596,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_480 (48)",
+  "sheets": 9945,
+  "height": 9616,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_481 (49)",
+  "sheets": 9946,
+  "height": 9622,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_482 (50)",
+  "sheets": 9947,
+  "height": 9568,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_483 (51)",
+  "sheets": 9948,
+  "height": 9772,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_484 (52)",
+  "sheets": 9948,
+  "height": 9772,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_485 (53)",
+  "sheets": 9948,
+  "height": 9772,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_486 (54)",
+  "sheets": 9948,
+  "height": 9772,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_487 (55)",
+  "sheets": 9948,
+  "height": 9772,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d40 through NPC_488 (56)",
+  "sheets": 9949,
+  "height": 9772,
+  "overflow": true
+ },
+ {
+  "label": "+ font + pushed + ALL d40 (56)",
+  "sheets": 9950,
+  "height": 9772,
+  "overflow": true
+ }
+]

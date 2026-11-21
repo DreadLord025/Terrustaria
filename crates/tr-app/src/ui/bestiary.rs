@@ -1594,73 +1594,167 @@ fn portrait_data(
         // `SetDefaults` box: 489 the 18x40 humanoid box (`NPC.cs:14607-
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        // W4-d40 sheets phase: the 421-490 band's portraits. The 22
+        // PACKED own-entry kinds ride the sheet's own row height over
+        // `Main.npcFrameCount[type]` (the d35/c4 swimmers' shape); the
+        // fallback rests the SetDefaults box. The 20 deferred kinds and
+        // the 14 Hide-fold kinds keep the SetDefaults box rest (their
+        // sheets are not packed / their entries fold onto the head).
         (NpcKind::ArmedZombie, _)
         | (NpcKind::ArmedZombieEskimo, _)
         | (NpcKind::ArmedZombiePincussion, _)
         | (NpcKind::ArmedZombieSlimed, _)
-        | (NpcKind::ArmedZombieSwamp, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
-        (NpcKind::ArmedZombieTwiggy, _)
+        | (NpcKind::ArmedZombieSwamp, _)
+        | (NpcKind::ArmedZombieTwiggy, _)
         | (NpcKind::ArmedZombieCenx, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::CultistTablet, _) => (sheet_i, 54.0, 54.0, 54.0, white),
-        (NpcKind::CultistDevote, _) => (sheet_i, 40.0, 22.0, 40.0, white),
+        (NpcKind::CultistTablet, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(54.0);
+            (sheet_i, h, 66.0, h, white)
+        }
+        (NpcKind::CultistDevote, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
         (NpcKind::CultistBossClone, _) => (sheet_i, 50.0, 24.0, 50.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
-        (NpcKind::GoldBird, _) => (sheet_i, 14.0, 14.0, 14.0, white),
-        (NpcKind::GoldBunny, _) => (sheet_i, 20.0, 18.0, 20.0, white),
-        (NpcKind::GoldButterfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
-        (NpcKind::GoldFrog, _) => (sheet_i, 10.0, 12.0, 10.0, white),
-        (NpcKind::GoldGrasshopper, _) => (sheet_i, 10.0, 14.0, 10.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
-        (NpcKind::GoldMouse, _) => (sheet_i, 12.0, 14.0, 12.0, white),
-        (NpcKind::GoldWorm, _) => (sheet_i, 4.0, 10.0, 4.0, white),
+        (NpcKind::GoldBird, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::GoldBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 48.0, h, white)
+        }
+        (NpcKind::GoldButterfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::GoldFrog, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::GoldGrasshopper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GoldMouse, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(12.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::GoldWorm, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(4.0);
+            (sheet_i, h, 14.0, h, white)
+        }
         (NpcKind::BoneThrowingSkeleton, _)
         | (NpcKind::BoneThrowingSkeleton2, _)
-        | (NpcKind::BoneThrowingSkeleton3, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
-        (NpcKind::BoneThrowingSkeleton4, _)
-        | (NpcKind::SkeletonMerchant, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::CultistDragonHead, _)
-        | (NpcKind::CultistDragonBody1, _)
-        | (NpcKind::CultistDragonBody2, _) => (sheet_i, 32.0, 32.0, 32.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
-        (NpcKind::CultistDragonBody3, _)
+        | (NpcKind::BoneThrowingSkeleton3, _)
+        | (NpcKind::BoneThrowingSkeleton4, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::SkeletonMerchant, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::CultistDragonHead, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 80.0, h, white)
+        }
+        (NpcKind::CultistDragonBody1, _)
+        | (NpcKind::CultistDragonBody2, _)
+        | (NpcKind::CultistDragonBody3, _)
         | (NpcKind::CultistDragonBody4, _)
         | (NpcKind::CultistDragonTail, _) => (sheet_i, 32.0, 32.0, 32.0, white),
-        (NpcKind::Butcher, _)
-        | (NpcKind::CreatureFromTheDeep, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
-        (NpcKind::Fritz, _) => (sheet_i, 24.0, 20.0, 24.0, white),
-        (NpcKind::Nailhead, _)
-        | (NpcKind::Psycho, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::CrimsonBunny, _)
-        | (NpcKind::CrimsonGoldfish, _) => (sheet_i, 20.0, 18.0, 20.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::Butcher, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::CreatureFromTheDeep, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Fritz, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(24.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::Nailhead, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        (NpcKind::Psycho, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::CrimsonBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::CrimsonGoldfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 38.0, h, white)
+        }
         (NpcKind::DeadlySphere, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         (NpcKind::DrManFly, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::ThePossessed, _) => (sheet_i, 26.0, 38.0, 26.0, white),
-        (NpcKind::CrimsonPenguin, _) => (sheet_i, 34.0, 16.0, 34.0, white),
-        (NpcKind::ShadowFlameApparition, _) => (sheet_i, 24.0, 40.0, 24.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::ThePossessed, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 52.0, h, white)
+        }
+        (NpcKind::CrimsonPenguin, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::ShadowFlameApparition, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(24.0);
+            (sheet_i, h, 52.0, h, white)
+        }
         (NpcKind::BigMimicCorruption, _)
         | (NpcKind::BigMimicCrimson, _)
         | (NpcKind::BigMimicHallow, _)
         | (NpcKind::BigMimicJungle, _) => (sheet_i, 44.0, 28.0, 44.0, white),
         (NpcKind::Mothron, _) => (sheet_i, 50.0, 80.0, 50.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
         (NpcKind::MothronEgg, _) => (sheet_i, 34.0, 34.0, 34.0, white),
         (NpcKind::MothronSpawn, _) => (sheet_i, 30.0, 46.0, 30.0, white),
         (NpcKind::Medusa, _)
         | (NpcKind::GreekSkeleton, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::GraniteGolem, _) => (sheet_i, 48.0, 28.0, 48.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::GraniteGolem, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 48.0, h, white)
+        }
         (NpcKind::GraniteFlyer, _) => (sheet_i, 30.0, 20.0, 30.0, white),
-        (NpcKind::EnchantedNightcrawler, _)
-        | (NpcKind::Grubby, _)
+        (NpcKind::EnchantedNightcrawler, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(4.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Grubby, _)
         | (NpcKind::Sluggy, _)
-        | (NpcKind::Buggy, _) => (sheet_i, 4.0, 10.0, 4.0, white),
-        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        | (NpcKind::Buggy, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(4.0);
+            (sheet_i, h, 18.0, h, white)
+        }
         (NpcKind::TargetDummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }

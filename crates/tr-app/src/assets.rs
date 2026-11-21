@@ -1275,6 +1275,54 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-d40 sheets phase — the 36 packed kinds of the 421-490 band
+        // (`render/entities.rs`'s D40_SHEETS). The wave's other 20 sheets
+        // (440/449/450/451/452/453/460/461/466/467/468/473/474/475/476/
+        // 477/479/480/481/483) stay DEFERRED: the id-order greedy over the
+        // real .xnb dims (tools/_d40_pass2.js, the c4 LZX harness) packs
+        // these 36 at 8185 px main / 8186 px boot-font — 7/6 px under the
+        // 8192 strict-GPU bound; every skipped sheet would overflow. The
+        // in-flight sibling branches' pushed additions already overflow
+        // the bound on their own (union 9361 px, +1169; the padded AREA
+        // alone 8835 px > 8192 — a second atlas page is mandatory, the d35
+        // ATLAS-REPACK plan docs/research/113). The atlas-repack wave owns
+        // that reconciliation; these 36 join its input list.
+        "NPC_430",
+        "NPC_431",
+        "NPC_432",
+        "NPC_433",
+        "NPC_434",
+        "NPC_435",
+        "NPC_436",
+        "NPC_437",
+        "NPC_438",
+        "NPC_442",
+        "NPC_443",
+        "NPC_444",
+        "NPC_445",
+        "NPC_446",
+        "NPC_447",
+        "NPC_448",
+        "NPC_454",
+        "NPC_455",
+        "NPC_456",
+        "NPC_457",
+        "NPC_458",
+        "NPC_459",
+        "NPC_462",
+        "NPC_463",
+        "NPC_464",
+        "NPC_465",
+        "NPC_469",
+        "NPC_470",
+        "NPC_472",
+        "NPC_478",
+        "NPC_482",
+        "NPC_484",
+        "NPC_485",
+        "NPC_486",
+        "NPC_487",
+        "NPC_488",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1860,7 +1908,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 203] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1895,6 +1943,18 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
         // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
+        // W4-d40 sheets phase — the 22 packed own-entry kinds' portrait
+        // sheets, appended last so the earlier slots keep their indexes.
+        // The Hide-fold kinds (430-436/449-452/455-459/478/488) are NOT
+        // here: their entries fold onto the head (or have no entry), whose
+        // own rows above carry the portrait; their DRAW sheets ride
+        // D40_SHEETS (the texture_net_id vanilla rows). The 16 deferred
+        // own-entry kinds (440/453/460/461/466/467/468/473-477/479/480/
+        // 481/483) are NOT here either: their sheets are deferred, the
+        // portrait rests the SetDefaults box (entry_sheet returns None).
+        437, 438, 442, 443, 444, 445, 446, 447, 448, 454,
+        462, 463, 464, 465, 469, 470, 472, 482, 484, 485,
+        486, 487,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2657,6 +2717,33 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
+                // W4-d40 sheets phase — the 22 packed own-entry kinds'
+                // strips, in BESTIARY_NPC_SHEET_IDS' appended order (the
+                // Hide-fold kinds fold onto the heads' rows above; the 16
+                // deferred own-entry kinds' sheets are not packed, so their
+                // portrait rests the SetDefaults box via entry_sheet None).
+                atlas.sheet("NPC_437").copied(),
+                atlas.sheet("NPC_438").copied(),
+                atlas.sheet("NPC_442").copied(),
+                atlas.sheet("NPC_443").copied(),
+                atlas.sheet("NPC_444").copied(),
+                atlas.sheet("NPC_445").copied(),
+                atlas.sheet("NPC_446").copied(),
+                atlas.sheet("NPC_447").copied(),
+                atlas.sheet("NPC_448").copied(),
+                atlas.sheet("NPC_454").copied(),
+                atlas.sheet("NPC_462").copied(),
+                atlas.sheet("NPC_463").copied(),
+                atlas.sheet("NPC_464").copied(),
+                atlas.sheet("NPC_465").copied(),
+                atlas.sheet("NPC_469").copied(),
+                atlas.sheet("NPC_470").copied(),
+                atlas.sheet("NPC_472").copied(),
+                atlas.sheet("NPC_482").copied(),
+                atlas.sheet("NPC_484").copied(),
+                atlas.sheet("NPC_485").copied(),
+                atlas.sheet("NPC_486").copied(),
+                atlas.sheet("NPC_487").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
