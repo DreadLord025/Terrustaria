@@ -254,6 +254,7 @@
 //! | 1318-1325 | `:88858-88887` | the 170/180 + 171 Pigron deaths (4 gores each at Y+h/2-10) |
 //! | 1326-1334 | `:88901-88956` | the 290 Paladin (3 random gores) + 87-92 Wyvern (N random gores) + 78-80/630 Mummy (smoke trio) |
 //! | 1335-1344 | `:88977-89077` | the 82-family Wraith trio + 315 HeadlessHorseman (+446) + 254-family spore 375/376/377 |
+//! | 1345-1354 | `:89091-89263` | the 140 PossessedArmor trio + 39/40/41 BoneSerpent head + 139 Probe quadrants + 467 DeadlySphere pair |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8031,6 +8032,153 @@ fn spore_family_death(
     }
 }
 
+/// The 140 PossessedArmor death (`NPC.cs:89085-89096`, sites 1345-1347):
+/// the 20-dust type-54 burst (Alpha 50, scale 1.5, velocity ×2, noGravity
+/// post-writes), then the shared 99 smoke trio.
+fn possessed_armor_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    smoke_99_trio(npc, gore, rng, world, hit_direction);
+}
+
+/// The 39/40/41 BoneSerpent death (`NPC.cs:89109-89113`, site 1348): the
+/// 20-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then ONE
+/// gore at position with the computed type `type - 39 + 67` — 39 Head → 67,
+/// 40 Body → 68, 41 Tail → 69. Scale defaults to 1.
+fn bone_serpent_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), npc_type - 39 + 67, 1.0);
+}
+
+/// The 139 Probe death (`NPC.cs:89214-89242`, sites 1349-1352): the 10-dust
+/// type-31 burst (Alpha 100, scale 1.5, velocity ×1.4 post-write), then the
+/// 5-iteration PAIRED type-6 burst (first: scale 2.5, noGravity, ×5; second:
+/// scale 1.5, ×3 — both Alpha 100), then FOUR gores at position, velocity
+/// `default` (Zero), type `Next(61, 64)` per gore, each `velocity *= 0.4`
+/// FIRST then the quadrant ±1 post-writes (+X/+Y, −X/+Y, +X/−Y, −X/−Y).
+/// Scale defaults to 1.
+fn probe_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:89214-89218` — the 10-dust type-31 burst.
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx).velocity *= 1.4;
+    }
+    // `:89219-89226` — the 5 paired type-6 dusts.
+    for _ in 0..5 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 2.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 5.0;
+        let idx2 = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx2).velocity *= 3.0;
+    }
+    // `:89227-89242` — the four quadrant gores.
+    let quadrants: [(f32, f32); 4] = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+    for (dx, dy) in quadrants {
+        let ty = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+        let g = gore.slot_mut(idx);
+        g.velocity *= 0.4;
+        g.velocity.x += dx;
+        g.velocity.y += dy;
+    }
+}
+
+/// The 467 DeadlySphere death (`NPC.cs:89249-89263`, sites 1353-1354): the
+/// 7-dust type-31 burst (Alpha 100, scale 1.5, velocity ×1.4), then the
+/// 3-iteration PAIRED type-6 burst (scale 2.5 noGravity ×5, then scale 1.5
+/// ×3), then TWO gores of type 660 at position with `base.velocity`. Scale
+/// defaults to 1.
+fn deadly_sphere_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:89249-89253` — the 7-dust type-31 burst.
+    for _ in 0..7 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx).velocity *= 1.4;
+    }
+    // `:89254-89261` — the 3 paired type-6 dusts.
+    for _ in 0..3 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 2.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 5.0;
+        let idx2 = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx2).velocity *= 3.0;
+    }
+    // `:89262-89263` — the 660 pair at position with base.velocity.
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 660, 1.0);
+    gore.new_gore(rng, world, pos, vel, 660, 1.0);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9012,6 +9160,22 @@ pub fn hit_effect_c(
     // 1342-1344).
     if ((254..=261).contains(&npc_type) || npc_type == 634 || npc_type == 635) && npc.hp <= 0 {
         spore_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89081-89098` — the 140 PossessedArmor arm (sites 1345-1347).
+    if npc_type == 140 && npc.hp <= 0 {
+        possessed_armor_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89099-89114` — the 39/40/41 BoneSerpent arm (site 1348).
+    if (39..=41).contains(&npc_type) && npc.hp <= 0 {
+        bone_serpent_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89210-89244` — the 139 Probe arm (sites 1349-1352).
+    if npc_type == 139 && npc.hp <= 0 {
+        probe_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:89245-89265` — the 467 DeadlySphere arm (sites 1353-1354).
+    if npc_type == 467 && npc.hp <= 0 {
+        deadly_sphere_death(npc, dust, dust_ctx, gore, rng, world);
     }
     outcome
 }
@@ -14156,6 +14320,98 @@ mod tests {
         spore_family_death(&n, 261, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 0);
         assert!(dust2.slots().iter().any(|d| d.active && d.dust_type == 165));
+    }
+
+    /// `NPC.cs:89091-89096` — the PossessedArmor death: the 99 smoke trio.
+    #[test]
+    fn w4_f10_the_possessed_armor_death_spawns_the_smoke_trio() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1439);
+        possessed_armor_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![99, 99, 99]);
+    }
+
+    /// `NPC.cs:89113` — the BoneSerpent death: the computed head type
+    /// `type - 39 + 67` — 39 → 67, 40 → 68, 41 → 69.
+    #[test]
+    fn w4_f10_the_bone_serpent_death_uses_the_computed_type() {
+        let w = air();
+        for (ty, gore_ty) in [(39, 67), (40, 68), (41, 69)] {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(1447);
+            bone_serpent_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "serpent {ty}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        }
+    }
+
+    /// `NPC.cs:89227-89242` — the Probe death: four Next(61,64) gores at
+    /// position, ×0.4 FIRST then the quadrant ±1 post-writes. The twin
+    /// replays 10 type-31 dusts (6 draws), 5 type-6 PAIRS (7 draws each —
+    /// the type-6 tweak adds Next(-10,6)), then per gore the type draw +
+    /// 2 kicks.
+    #[test]
+    fn w4_f10_the_probe_death_spawns_the_quadrant_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1451);
+        probe_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        let mut twin = UnifiedRandom::new(1451);
+        for _ in 0..10 {
+            let _px = twin.next_max(30 - 4);
+            let _py = twin.next_max(30 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            // The paired type-6 dusts: the default 6 + the tweak draw.
+            let _px = twin.next_max(30 - 4);
+            let _py = twin.next_max(30 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+            let _tweak = twin.next_range(-10, 6);
+        }
+        let quadrants: [(f32, f32); 4] = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+        for (i, (dx, dy)) in quadrants.iter().enumerate() {
+            let ty = twin.next_range(61, 64);
+            assert_eq!(gore.slot(i).gore_type, ty);
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).velocity.x, kx * 0.4 + dx);
+            assert_eq!(gore.slot(i).velocity.y, -ky * 0.4 + dy);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the probe mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89262-89263` — the DeadlySphere death: the 660 pair at
+    /// position with base.velocity, after the 7+3×2 dust bursts.
+    #[test]
+    fn w4_f10_the_deadly_sphere_death_spawns_the_660_pair() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 30.0, 30.0);
+        n.vx = 2.0;
+        n.vy = -1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1453);
+        deadly_sphere_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![660, 660]);
+        let dust_active = dust.slots().iter().filter(|d| d.active).count();
+        assert!(dust_active >= 10, "7 + 6 dusts spawned: {dust_active}");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
