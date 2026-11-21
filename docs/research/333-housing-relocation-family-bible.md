@@ -1,11 +1,12 @@
-# 304 — The housing-relocation family bible (W4-d119 FINAL) + the seal receipts
+# 333 — The housing-relocation family bible (W4-d119 FINAL) + the seal receipts
 
 > Wave 4 · researched 2026-11-21 · sources: decompiled + crates + ROADMAP/ANALYSIS/PORT_MAP
-> Registry: research/150 round 3 (`51a28d09e`, §7) pins **304+ FREE**; a fresh
-> `git log --all --name-only -- docs/research/` sweep at this commit's fetch
-> finds NO doc numbered ≥304 at any tip (281–303 taken per §7). This doc takes
-> **304** per the registry rule (next number ≥ the free floor after a fresh
-> sweep — not max-on-origin+1). Code-only mode: no cargo/tests/rustfmt/graphify
+> **RENUMBERED 304→333 per registry research/150 §9 UNIFIED FINAL** (d54 tip
+> `b243c7086`, §9.2 row 333): the round-3 self-pick **304** collided with d50's
+> §7.4 published assignment — **d50-§7.4-KEEPS-304**; d119 takes **333**.
+> Chain-history: originally numbered **304** per research/150 round 3
+> (`51a28d09e`, §7 — floor 304 FREE, fresh all-tip sweep, no doc ≥304 at any
+> tip); superseded by §9. Code-only mode: no cargo/tests/rustfmt/graphify
 > invoked; every witness cited is WRITTEN NOT RUN.
 
 ## Scope

@@ -141,7 +141,7 @@ fn worldgen_solid_tile(world: &World, x: i32, y: i32) -> bool {
 /// (the d118 verbatim shape, `housing::solid_tiles_in_box`'s twin — d118
 /// rewrote that fn at its tip, so the merge keeps d118's housing.rs copy and
 /// NEVER takes g44's housing.rs wholesale; research/87 RETIRE §5 blob census,
-/// consumed receipt in research/304 §3).
+/// consumed receipt in research/333 §3).
 fn collision_solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
     if x0 < 0 || x1 >= world.width || y0 < 0 || y1 >= world.height - 40 {
         return true;

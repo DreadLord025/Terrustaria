@@ -7276,7 +7276,7 @@ Deviations:
   the d119 consumption at `dd8a2f764`; d118's own lane executes the SAME
   ONE verbatim hunk on its own branch (tip `91db266ea` still narrow) —
   NEVER take g44's housing.rs wholesale (d118 rewrote
-  `solid_tiles_in_box`); research/304 §3 carries both halves.
+  `solid_tiles_in_box`); research/333 §3 carries both halves.
 - **The homeless anchor tiles**: `Npc.home` conflates homeless + homeTile;
   the arrival's anchor feeds the immediate `QuickFindHome` and is not
   stored on a homeless NPC — later re-scans ride the 2 s look pass at the
@@ -7293,7 +7293,7 @@ Deviations:
   The 678-flag8 arm — the f41e census's named "remaining tail" — now has
   its predicate landed (`slime_green_flag8`/`slime_green_can_spawn`, the
   `ctx.genuine_party` production feed); the splice folds it into f43's
-  `TailFlags` twin, ONE gate (the seal section below + research/304 §4).
+  `TailFlags` twin, ONE gate (the seal section below + research/333 §4).
 
 Verification: code-only — every function re-read against the cited C#
 windows; the seams checked by read/grep (`kind_from_net_id`,
@@ -7307,9 +7307,9 @@ cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
 ### The d119 seal (2026-11-21, code-only — the family bible + the 678-flag8 gate)
 
 The lane's SEAL close-out; the full merger map + receipts live in
-**research/304** (the housing-relocation-family bible; registry-number per
-research/150 round 3 `51a28d09e`: floor 304, fresh all-tip sweep — no doc
-≥304 at any tip).
+**research/333** (the housing-relocation-family bible; renumbered 304→333 per
+research/150 §9 UNIFIED FINAL, d54 tip `b243c7086` — d50-§7.4-KEEPS-304; the
+round-3 `51a28d09e` floor-304 self-pick superseded).
 
 - **The 678-flag8 gate lands** (the f41e party census's remaining tail,
   research/70 §8h `d118ff9d` / the PARTY SEAL `ef3a481a6` §9e): the C#

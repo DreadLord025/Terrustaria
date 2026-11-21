@@ -344,7 +344,7 @@ pub(crate) fn update_time_spawn_town_npcs(
     // `:65916-65919` — the TownSlimeGreen 678 flag8 arm has NO LADDER entry
     // (no ported kind — d43's kinds lane); its gate lands as the pure
     // `slime_green_can_spawn` above, fed `ctx.genuine_party`, folding into
-    // f43's `tail_can_spawn` row at the splice (ONE gate, research/304).
+    // f43's `tail_can_spawn` row at the splice (ONE gate, research/333).
 
     // `:65957-66114` — the priority ladder: the first eligible kind wins.
     for (i, kind) in LADDER.iter().enumerate() {
