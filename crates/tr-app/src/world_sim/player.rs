@@ -1104,6 +1104,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // App's swing/reuse timers (fed before the tick, the
             // `frame_inputs` convention).
             p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
+            // W4-c39 — `Player.RecalculateLuck`'s lantern-night term
+            // (`Player.cs:29146-29149`): `LanternNight.LanternsUp` adds 0.3
+            // luck. The flag is fed before the tick's `update_luck` →
+            // `recalculate_luck` reads it (the `frame_inputs` convention).
+            p.luck_state.lantern_night =
+                crate::world_events::lanterns_up(&app.world_events);
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -3331,5 +3337,37 @@ mod tests {
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
         );
+    }
+
+    /// W4-c39 — the lantern-night luck term wires live (`Player.cs:29146-29149`):
+    /// `LanternNight.LanternsUp` feeds `luck_state.lantern_night` before the
+    /// tick's `recalculate_luck`, adding 0.3 luck; the lanterns-down tick
+    /// clears it.
+    #[test]
+    fn w4_c39_the_lantern_night_adds_luck_live() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("luck".into(), 40, 200);
+        app.world.compute_column_surface();
+        let mut p = Player::spawn(&app.world);
+        // Underground: the torch scan's surface gate keeps torch_luck at 0,
+        // so the lantern term is the only luck source.
+        p.y = 150.0 * 16.0;
+        app.player = Some(p);
+        // Lanterns up: the tick feeds the flag and the luck gains 0.3.
+        app.world_events.manual_lanterns = true;
+        update_player(&mut app, 1.0 / 60.0);
+        let pl = app.player.as_ref().unwrap();
+        assert!(pl.luck_state.lantern_night, "the flag feeds from LanternsUp");
+        assert!(
+            (pl.luck_state.luck - 0.3).abs() < 1e-4,
+            "the lantern night adds 0.3 luck: {}",
+            pl.luck_state.luck
+        );
+        // Lanterns down: the flag clears and the term drops.
+        app.world_events.manual_lanterns = false;
+        update_player(&mut app, 1.0 / 60.0);
+        let pl = app.player.as_ref().unwrap();
+        assert!(!pl.luck_state.lantern_night);
+        assert!(pl.luck_state.luck.abs() < 1e-4, "the term drops: {}", pl.luck_state.luck);
     }
 }
