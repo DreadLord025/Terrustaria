@@ -39631,3 +39631,14 @@ command (the merger's verify): `cargo test --workspace -- --skip
 migrates_version_2_kinds_to_item_ids` — judge only by the `test result:
 ok` lines; every witness WRITTEN NOT RUN (code-only, no cargo/rustc
 invoked on this lane).
+
+**The final-phase addendum (research/328 §8, post-seal):** §8.1 closes
+the wind-SYSTEM census — every `UpdateWeather` wind arm (`Main.cs:
+58830-58950`) verified 1:1 against `wind.rs::update_rain`, ONE missing
+arm found + fixed: the WindGrid scan's `WindGrid.cs:91` dead-player
+gate (`f5a65c7da`, `.filter(|p| !p.dead)` on the `draw.rs` borrow — a
+drifting corpse no longer stamps gust cells). The cloud-count tail
+(`:58952-59036`) is the g69 lane's, documented unported; the
+creative-freeze fold + the sway-counter cadence split are pre-existing
+documented deviations. 32 witnesses on the lane (the seal's 33 was an
+arithmetic slip, corrected `08a4c3bb0`; +1 the dead-player pin).

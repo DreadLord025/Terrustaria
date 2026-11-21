@@ -321,6 +321,54 @@ the wind flag. No two family branches own the same fn body; the only
 cross-branch writes are the enumerated grafts (d130's `lanterns_up`,
 g68's G1-G3) and they are all published. **Gate command**: `cargo test
 --workspace -- --skip migrates_version_2_kinds_to_item_ids` — judge only
-by the `test result: ok` lines; 31 g68 witnesses (grep-verified) + c40's
-8 push witnesses + the family's seals are WRITTEN NOT RUN (code-only),
-the merged tree's first full run is the gate.
+by the `test result: ok` lines; 32 g68 witnesses (grep-verified, +1 the
+§8 dead-player gate pin) + c40's 8 push witnesses + the family's seals
+are WRITTEN NOT RUN (code-only), the merged tree's first full run is
+the gate.
+
+## 8. FINAL-PHASE ADDENDUM (post-seal, this lane) — the wind-system census close, the particle interplay, the leaf-gore chain, the shake cross-note, the §8.5 receipt
+
+Seven commits on top of the seal + rename (`97a6fd083`): `08a4c3bb0`
+(the census-count correction 33→31), `f5a65c7da` (the WindGrid
+dead-player gate, +1 witness → 32), and the five per-item docs
+commits below (§8.1 the item-1 census close, §8.2 item 2, §8.3 item 3,
+§8.4 item 4, §8.5 item 5). All findings re-verified against the C# at
+the post-seal tips: g67 `534ba9a35`, c40 `8b7eb0e1e`, g17 `2c73354f1`
+(the docs-only research renumber 304→339 on top of `3dec710dc` — the
+code cites below are the `3dec710dc` bodies, unchanged), g31
+`36b5f2d78`, d130 `b8f655708`, d60 `77429fe1d`.
+
+### 8.1 The wind SYSTEM census (item 1 close) — C# `Main.UpdateWeather` :58737-59037 vs the port
+
+There is NO `Main.UpdateWind` in the 1.4.5.8 decompile — the brief's
+":59000-region" is `UpdateWeather`'s cloud-count tail; the wind machine
+is `:58830-58950` inside it. Full arm-by-arm verify (the port =
+`tr-core/wind.rs::Wind::update_rain` + `world_sim/weather.rs::
+update_world_tick`):
+
+| C# arm | lines | port | verdict |
+| --- | --- | --- | --- |
+| the drift `num7 = 0.0003 + |num8-current|*0.0015`, `num8 = target*(1+5/9*maxRaining)`, move-towards | :58830-58849 | `wind.rs:195-211` | 1:1 (the f32 op order kept) |
+| netMode/gameMenu early-out | :58850-58853 | `frozen` fold (`wind.rs:215-217`) | documented (module doc) |
+| creative FreezeWind gate | :58854 | `frozen` fold | documented — the creative power id 10 is NOT ported (`creative.rs:427` `test_DW_6_3_the_unported_vanilla_ids_are_never_written` pins ids 9/10/12 never written); the `frozen` FIELD exists and the world tick could feed it, a creative-power-wave obligation |
+| LanternNight.LanternsUp early-out | :58856-58859 | d130's `lanterns_up` graft (`b8f655708`, §3) | composing hunk-disjoint, both keep |
+| `windCounter--`, the `Next(4)/Next(2)/±100` walk | :58860-58888 | `wind.rs:220-234` | 1:1 incl the draw order |
+| the <120-life 0.35 cap (BOTH sites) | :58889-58892, :58917-58920 | `wind.rs:235-237, :256-258` | 1:1; the 255-player scan folds to the one local player (`weather.rs:135`, the S1-L-2 witness) |
+| `extremeWindCounter--` + the 13/30 → (1/2 → calm 7200..28801 | ±200) / 13/20 → ±400 / else ±850 tiers | :58893-58916 | `wind.rs:240-255` | 1:1 incl the `Next(30)<13`/`Next(20)<13` gate order |
+| the >0.3/>0.5/>0.7 counter extensions (5..11/10..21/15..31) | :58921-58932 | `wind.rs:259-267` | 1:1, all three thresholds CUMULATIVE (not else-if) — kept |
+| `ResetWindCounter` (900..2701, extreme 10..31) | :58698-58706 | `wind.rs:292-297` | 1:1; the C#'s fresh `FastRandom.CreateWithRandomSeed()` per call vs the port's shared xorshift64 is the documented deviation (module doc) |
+| the 2/3 direction-flip roll | :58938-58941 | `wind.rs:273-278` | 1:1 (the sign captured BEFORE the walk) |
+| the ±0.8 target clamp OUTSIDE the counter gate | :58943-58950 | `wind.rs:282-287` | 1:1 (runs even when the counter did not fire) |
+| the cloud-count walk + weatherCounter | :58952-59036 | UNPORTED — `rain.rs:57-60` documents the `numClouds = 100` stand-in (the `numClouds > 150`/`> 100` ChangeRain arms read false), `sky.rs:276-280` the clear-weather clamp equilibrium | the g69 cloud-parallax lane's (`task/W4-g69-weather-clouds-parallax` exists); NOT a wind-arm gap — the wind machine ends at :58950 |
+| `PostContentLoadInitialize` wind init ±0.8 | :10874-10875 | `Wind::new` (`wind.rs:98-118`) | 1:1 ranges; the C# rolls on Main.rand between moonType and numClouds, the port on its own seeded stream — the documented determinism stand-in |
+| `UpdateWindyDayState` | :12992-13030 | `wind.rs:128-162` | 1:1 incl the remix branch (the seal's arm 1) |
+| `TileDrawing.Update` counters (tree 1/240+2, grass 1/180+4, sunflower 1/420+5, vine 1/120+0.4) | TileDrawing.cs:367-386 | `advance_*` (`wind.rs`), driven `draw.rs:827-847` | 1:1 formulas; CADENCE deviation documented: tree/grass advance per DRAW, sunflower/vine per 60 Hz step — the C# advances ALL FOUR per world update (`TilesRenderer.Update()` Main.cs:17812). The per-frame pair is the S1-G-8 convention (the sway counters ride the G6 key); the wiring wave's per-frame-move contract covers the reconciliation |
+| `EnsureWindGridSize` + `_windGrid.Update()` + ScanPlayers | :377-378, WindGrid.cs:25-101 | `draw.rs:858-882` + `WindGrid` (`wind.rs:482+`) | 1:1 EXCEPT the dead-player gate — **FIXED `f5a65c7da`**: the C# `ScanPlayer` head refuses `!active || dead` (WindGrid.cs:91); the port fed every `Some(player)` incl the drifting corpse. The `.filter(|p| !p.dead)` now rides the borrow (+1 source-pin witness). The `velocity == 0` / camera-intersect / NaN gates were already inside `scan_player` (`wind.rs:618-633`) |
+| the push family (GetWindGridPush/2Axis/Complex/Average/Highest) | :8554-8607, :9195-9233 | `wind.rs:645-787` | 1:1 verbatim incl the `for i in 0..1` quirk (:9222) and the `(int)` truncations; the CONSUMERS: vines (:9076 → `vines.rs:160`) wired; the grass passes (:8368, :8425) NOT wired — `tiles.rs:879/887` documents "the WindGrid gust push is not ported" (the g31/g84 drain lane owns the grass passes, §8.5); the multi-tile-vine Highest (:9242) rides the unported DrawMultiTileVinesInWind pass (g84's mapping answer, g31 §8.6) |
+
+**Missing-arm verdict: ONE found + fixed** (the dead-player gate). The
+creative-freeze fold and the counter-cadence split are pre-existing
+documented deviations, not new gaps. The `TR_WIND_FORCE` clamp ±1.24
+(`draw.rs:825`) matches the rain-scaled current's max `0.8*(1+5/9)` ≈
+1.244 — the screenshot pin, not a sim arm.
+
