@@ -39244,3 +39244,77 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The NPC HitEffect gore table (W4-f10, wave C, task/W4-f10-gore-sites-3, 2026-11-21, code-only mode)
+
+The THIRD batch of `NPC.HitEffect`'s per-NPC gore/dust death arms
+(`NPC.cs:81654+`), covering `NPC.cs:82206-89831` — from the 551 Betsy
+flipped branch to the terminal 156 RedDevil `else` where the C# chain
+closes (`:89832-89834`). **The HitEffect gore table is now COMPLETE for
+the wave-C range**: 1441 numbered gore sites across 170 commits (first
+`21bcd2d5`, tip `1fb60ae39`; base `a725acb0`), ported into the
+self-contained `crates/tr-app/src/npc_hit_effect_c.rs` (~15 660 lines,
+251 witness tests). Wave A (d55, sites 1-30, `:81660-81941`) and wave B
+(e5/g16/g17) claims were probed clean at start and left untouched; the
+non-flipped Betsy branch stays wave B's.
+
+### Shape
+
+- `pub fn hit_effect_c(npc: &mut Npc, npc_type, hit_direction, dmg, gore,
+  dust, dust_ctx, rng, world) -> HitEffectOutcomeC` — a pure dispatcher;
+  `&mut Npc` only for the WanderingEye `local_ai[0]` latch. Every arm is
+  life-gated (`hp <= 0`) unless the C# fires on every hit (the snails
+  359/360/655, the party-slime `ai[1]==1345`, the WanderingEye 133, the
+  426/9999-dmg Cultist Tablet dmg gate).
+- The strike-stream RNG contract: every `NewDust`/`NewGore` draw rides
+  the caller's `UnifiedRandom` in exact C# order — the 6 default-block
+  dust draws (Next(w-4), Next(h-4), Next(-20,21)x2, Next(3),
+  Next(-20,21)), the type-6/242 tweak's extra Next(-10,6), the post-spawn
+  gates (472's Next(3) noGravity), the count draws (Wyvern Next(1,4)
+  FIRST), the per-gore type draws (Next(61,64)/Next(11,14) BEFORE the
+  kicks), and the NewGore kicks (Y Next(10,31) subtracted, X Next(-20,21)
+  added). The twin-stream witnesses replay the census and pin
+  `rng.peek()` equality.
+- Shared helpers: `death_dust_loop`, `five_gore_type5_death`,
+  `five_gore_ladder`, `blood_zombie_ladder`, `smoke_99_trio` (the
+  -10/h2-15/h-20 ladder), `mech_explosion_tail` (the type-31 + paired
+  type-6 + quadrant-gore explosion shared by the Destroyer/ElfCopter/
+  SantaNK1/SkeletronPrime/Prime-limb deaths),
+  `red_hat_skeletron_adjustments_enabled` (`NPC.cs:66671-66682`), plus
+  the rotation/select/anchor helpers.
+
+### Documented stand-ins (deliberate deviations)
+
+- `this.color` -> `Color::default()` — the ported kinds set no
+  SetDefaults color; the tinted arms (hornet 18, ManEater 40) pass
+  `this.alpha`/`this.scale` through but the color stays the stand-in.
+- `altTexture` -> treated as 0 (no port field): every `altTexture == 0`
+  head gate fires; the `altTexture == 2` variants never fire (documented
+  per arm).
+- `IsShimmerVariant` -> `variation_index == 1 &&
+  npc_ai_town::shimmer_town_transform(type)` (the ported shimmer set).
+- `NPCID.Sets.IsTownPet` -> the existing `npc_ai_town::is_town_pet`
+  (637/638/656/670/678-684, `ID/NPCID.cs:10118`).
+- The 265 Plantera branch inside the 262/263/264 gate is dead code (the
+  gate excludes 265) — documented, not ported.
+- The 590/591 wet-gate dust detail is deferred to the wiring wave.
+
+### Roster/projectile seams (`HitEffectOutcomeC`)
+
+The spawns this module cannot reach are returned as anchors for the
+wiring wave: `nebula_brain_spawn`, `nebula_predictor_shot`,
+`dutchman_death_shots`, `slimer_spawn`, `king_slime_babies`,
+`maggot_zombie_spawns`, and (wave C) `destroyer_probe_drop` — the 135
+DestroyerBody's non-fatal `ai[2]` probe latch (`:89268-89284`): the
+`IsMechQueenUp` read, the Next(25/50) draw, the latch and the NPC-139
+spawn are the wiring wave's; the anchor `(pos.X + width/2, pos.Y +
+height)` is returned.
+
+### Verification
+
+Code-only: every arm re-read against the cited <=100-line C# windows; the
+pool APIs (`GorePool::new_gore` kicks/sticky/ChildSafety, `DustPool::
+new_dust` default block + tweak chain, `slot_mut` post-writes) checked
+by read against `tr-core/src/gore.rs`/`particles.rs`. The 251 witness
+tests are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
+graphify invoked**. The `:91340` loveStruck heart gore is in a different
+function (not HitEffect) and stays out of scope.
