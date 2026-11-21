@@ -12430,8 +12430,9 @@ mod tests {
         assert!(!broke, "the first hit is a fail tick");
         assert_eq!(app.world.tree_shakes, vec![(30, 261)]);
         let live = app.gore.slots().iter().filter(|g| g.active).count();
-        // hitTree: 4 rows × 3 trunk gores + the top row's 5 leaves = 17.
-        assert_eq!(live, 17, "the hit-tree burst (:29617-29636, num3 = 5)");
+        // hitTree with height 1 (`:63416` passes 1): 1 row × 3 trunk
+        // gores + the top row's 5 leaves = 8.
+        assert_eq!(live, 8, "the hit-tree burst (:29617-29636, height 1, num3 = 5)");
         for g in app.gore.slots().iter().filter(|g| g.active) {
             assert_eq!(g.gore_type, 910, "the forest leaf style");
         }

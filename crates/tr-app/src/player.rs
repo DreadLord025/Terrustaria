@@ -3377,6 +3377,26 @@ impl Player {
         std::mem::take(&mut self.pending_dash_gores)
     }
 
+    /// W4-g17 wiring — arms the double-tap window (`dashTime = 15`, the
+    /// first tap's write, `Player.cs:21583`): the witness seam for the
+    /// dash-launch drain (the lifecycle's own witnesses drive the full
+    /// double-tap through `update`).
+    pub(crate) fn arm_dash_window(&mut self) {
+        self.dash_time = 15;
+        self.right_prev = false;
+    }
+
+    /// W4-g17 wiring — sets the airborne extra-jump gate state (the
+    /// jump exhausted, the release latched, a fall velocity): the
+    /// witness seam for the jump-tail drain (the chain's own witnesses
+    /// drive the full press/release cadence through `update`).
+    pub(crate) fn arm_airborne_jump_gate(&mut self) {
+        self.on_ground = false;
+        self.vy = 2.0;
+        self.jump = 0;
+        self.release_jump = true;
+    }
+
     /// W4-g17 wiring — takes the dodge burst request (`true` = Mystic
     /// Sash, `false` = Ninja; `Player.cs:38060-38160`).
     pub(crate) fn take_dodge_gores(&mut self) -> Option<bool> {

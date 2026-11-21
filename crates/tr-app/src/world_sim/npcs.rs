@@ -2186,9 +2186,29 @@ pub(crate) fn spawn_queen_bee_on_player(app: &mut App) -> bool {
     let in_safe = |x: i32, y: i32| {
         x >= safe_area.left && x < safe_area.right && y >= safe_area.top && y < safe_area.bottom
     };
+    // `Spawner.CheckNotSpawningOnScreen` (NPC.cs:5436-5450): the tile
+    // must lie outside the player's inflated screen rect.
+    let not_on_screen = |x: i32, y: i32| {
+        let num = spawner::S_WIDTH / 2;
+        let num2 = spawner::S_HEIGHT / 2;
+        let safe_range_x = (spawner::S_WIDTH / 16 * 52) / 100;
+        let safe_range_y = (spawner::S_HEIGHT / 16 * 52) / 100;
+        let rect_x = pcx - num as f32 - safe_range_x as f32 * TILE_PX;
+        let rect_y = pcy - num2 as f32 - safe_range_y as f32 * TILE_PX;
+        let tile_px = x as f32 * TILE_PX;
+        let tile_py = y as f32 * TILE_PX;
+        !(tile_px + TILE_PX > rect_x
+            && tile_px < rect_x + (spawner::S_WIDTH + safe_range_x * 2) as f32
+            && tile_py + TILE_PX > rect_y
+            && tile_py < rect_y + (spawner::S_HEIGHT + safe_range_y * 2) as f32)
+    };
     let rng = app.rngs.stream(RngKey::UpdatePlayers);
     let mut found: Option<(i32, i32)> = None;
-    // `:80575-80625` — the 500 rounds × 50 candidates.
+    // `:80575-80625` — the 500 rounds × 50 candidates. `flag` persists
+    // ACROSS candidates (the C# never resets it inside the n-loop): a
+    // found ground that fails the spawn-space gate keeps `flag` true,
+    // so the round-end check can still break with the stale position.
+    let mut flag = false;
     'rounds: for m in 0..500 {
         let last_round = m == 499;
         for _ in 0..50 {
@@ -2217,17 +2237,29 @@ pub(crate) fn spawn_queen_bee_on_player(app: &mut App) -> bool {
                 y += 1;
             }
             let Some(gy) = ground else { continue };
-            // `:80618-80621` — the spawn-space gate (the last round
-            // skips it, the C# `!flag2`).
-            if !last_round && !spawner::has_tile_spawn_space(&app.world, x, gy) {
-                continue;
-            }
+            flag = true;
             found = Some((x, gy));
-            break;
+            // `:80618-80621` — the spawn-space gate (the last round
+            // skips it, the C# `!flag2`); a refusal clears `flag` but
+            // the C# `num10/num11` keep the position.
+            if !last_round && !spawner::has_tile_spawn_space(&app.world, x, gy) {
+                flag = false;
+            }
+            if flag {
+                break;
+            }
         }
-        if found.is_some() {
-            break 'rounds;
+        // `:80622-80625` — the round-end check: `(!flag || flag2 ||
+        // CheckNotSpawningOnScreen(num10, num11)) && flag`.
+        if flag {
+            let (fx, fy) = found.unwrap();
+            if last_round || not_on_screen(fx, fy) {
+                break 'rounds;
+            }
         }
+    }
+    if !flag {
+        return false;
     }
     let Some((x, y)) = found else {
         return false;
@@ -8402,6 +8434,9 @@ mod tests {
             let mut p = crate::player::Player::spawn(&app.world);
             p.x = 150.0 * TILE_PX;
             p.y = 118.0 * TILE_PX;
+            // The camera on the player so the confetti dust is on-screen
+            // (the `Dust.NewDust` cull reads `SpawnCtx.screen_position`).
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
             app.player = Some(p);
             app
         }

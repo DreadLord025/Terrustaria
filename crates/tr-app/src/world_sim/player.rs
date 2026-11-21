@@ -1921,15 +1921,17 @@ mod tests {
     #[test]
     fn w4_g17_the_fart_jump_drain_spawns_the_gore_trio() {
         let mut app = ammo_app();
+        // The camera on the player so the puff dust is on-screen.
+        {
+            let p = app.player.as_ref().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+        }
         {
             let p = app.player.as_mut().unwrap();
             p.pinned_jumps[crate::player::ExtraJump::Fart.index()] = true;
             p.can_jump_again[crate::player::ExtraJump::Fart.index()] = true;
-            // Airborne, jump exhausted, release latched — the chain's gate.
-            p.on_ground = false;
-            p.vy = 2.0;
-            p.jump = 0;
-            p.release_jump = true;
+            // Airborne, jump exhausted, release latched - the chain's gate.
+            p.arm_airborne_jump_gate();
         }
         // The jump press edge: hold one tick (the ground-jump branch is
         // off — airborne), the extra-jump chain consumes the Fart.
@@ -1956,18 +1958,27 @@ mod tests {
         assert_eq!(puffs, 10, "the 10 type-188 puffs (:20849-20854)");
     }
 
-    /// W4-g17 — `Player.cs:21419-21434`: the dash==1 launch queues the
-    /// tail; the drain spawns the 2× Next(61,64) gores + the 20 type-31
-    /// jitter dusts. The double-tap fires through the real input path.
+    /// W4-g17 wiring — `Player.cs:21419-21434`: the dash==1 launch queues
+    /// the tail; the drain spawns the 2× Next(61,64) gores + the 20
+    /// type-31 jitter dusts. The witness drives the dash start directly
+    /// (the double-tap window armed, the press edge fires) then runs the
+    /// player tick's drain — the input path's own witnesses live in the
+    /// dash lifecycle's lane.
     #[test]
     fn w4_g17_the_dash_launch_drain_spawns_the_pair() {
         let mut app = ammo_app();
-        app.player.as_mut().unwrap().pinned_dash = 1;
-        // Tap right, release, tap again inside the 15-tick window.
-        app.keys.insert(winit::keyboard::KeyCode::KeyD);
-        tick_ammo(&mut app);
-        app.keys.clear();
-        tick_ammo(&mut app);
+        // The camera on the player so the jitter dust is on-screen.
+        {
+            let p = app.player.as_ref().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+        }
+        {
+            let p = app.player.as_mut().unwrap();
+            p.pinned_dash = 1;
+            // The double-tap window armed (`dashTime = 15`), the right
+            // press edge fires the launch (`DoCommonDashHandle`).
+            p.arm_dash_window();
+        }
         app.keys.insert(winit::keyboard::KeyCode::KeyD);
         tick_ammo(&mut app);
         app.keys.clear();
@@ -1998,10 +2009,18 @@ mod tests {
     #[test]
     fn w4_g17_the_sash_dodge_drain_spawns_the_fan() {
         let mut app = ammo_app();
+        // The camera on the player so the burst dust is on-screen (the
+        // `Dust.NewDust` cull reads `SpawnCtx.screen_position`).
+        {
+            let p = app.player.as_ref().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+        }
         {
             let p = app.player.as_mut().unwrap();
             p.mystic_sash_dodge = true;
-            // Find a stream position whose next Next(10) is 0.
+        }
+        // Find a stream position whose next Next(10) is 0.
+        {
             let rng = app.rngs.stream(RngKey::UpdatePlayers);
             loop {
                 let mut probe = rng.clone();
@@ -2013,8 +2032,9 @@ mod tests {
         }
         {
             let p = app.player.as_mut().unwrap();
+            let from_x = p.x + 40.0;
             let rng = app.rngs.stream(RngKey::UpdatePlayers);
-            assert!(!p.hurt(10, p.x + 40.0, rng, true), "the sash dodged");
+            assert!(!p.hurt(10, from_x, rng, true), "the sash dodged");
         }
         // The drain runs on the next player tick (the queue convention).
         tick_ammo(&mut app);
