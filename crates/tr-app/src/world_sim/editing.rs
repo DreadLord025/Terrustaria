@@ -2357,7 +2357,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // the team-dye puff gate (`:24270`) reads it against TeamDyeShaderIndex.
         if let Some(def) = registry::get(held.kind) {
             if def.hair_dye >= 0 {
-                let shader = crate::player::hair_dye_shader_index(held.kind);
+                // `Item.cs:48714-48717`: the Hair Dye Remover (1990, raw
+                // hairDye 0) KEEPS 0 — the post-processing skips it; every
+                // other dye takes the shader index.
+                let shader = if def.hair_dye == 0 {
+                    0
+                } else {
+                    crate::player::hair_dye_shader_index(held.kind)
+                };
                 if let Some(p) = app.player.as_mut() {
                     p.hair_dye = shader;
                 }

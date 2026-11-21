@@ -7848,6 +7848,10 @@ impl Player {
         // tell "moved onto the plate" from "stands on it".
         self.old_x = self.x;
         self.old_y = self.y;
+        // W4-e1 — `Player.cs:28073-28081`: the `falling` flag — |vy| > gravity
+        // at the movement head (the pre-collision velocity), read by
+        // FloorVisuals (`:28271`) for MakeFloorDust's 20-dust landing burst.
+        let falling = self.vy > gravity || self.vy < -gravity;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
@@ -7862,12 +7866,16 @@ impl Player {
             self.pending_switch_trip = Some(((m.x / 16.0) as i32, (m.y / 16.0) as i32));
         }
 
-        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
-        // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
+        // `Player.cs:25219-25234`: the petrification TRANSITION — the Hurt is
+        // rising-edge + local-player only (`:25221`), but the Item0 dig sound
+        // and the 20-puff burst fire on EITHER edge (`stoned != lastStoned`).
+        // The difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
         let stoned = self.buffs.find_buff_index(156).is_some();
-        if stoned && !self.last_stoned {
-            let cx = self.x + self.width * 0.5;
-            self.hurt_inner(20, cx, false, rng, true, false, None, true);
+        if stoned != self.last_stoned {
+            if stoned {
+                let cx = self.x + self.width * 0.5;
+                self.hurt_inner(20, cx, false, rng, true, false, None, true);
+            }
             // W4-e1 — `:25225-25233`: the stoned-transition burst (site 25228)
             // — the Item0 dig sound (no Main.rand draw in the int overload,
             // the sound lane's) + 20 type-1 puffs with the per-puff Next(2)
@@ -7967,12 +7975,12 @@ impl Player {
 
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
         // the movement block reads the flags next tick (one tick stale). The
-        // `falling` flag (`:28073-28081`) is |vy| > gravity at the movement
-        // head; on the grounded call site vy==0, so it folds false (the
-        // 20-dust landing burst fires from the airborne FloorVisuals callers
-        // the port does not reach yet — documented).
+        // `falling` flag is the movement-head capture above (a landing tick
+        // arrives here with vy==0 but falling=true — the 20-dust burst fires;
+        // the TryBouncingBlocks caller `:23567`/`:28223` is the bounce lane's,
+        // unported — ANALYSIS).
         if self.vy == 0.0 && !grappling {
-            self.floor_visuals(world, false);
+            self.floor_visuals(world, falling);
         }
 
         self.update_survival(world, rng);
@@ -10281,6 +10289,13 @@ impl Player {
     /// cancels the active state (`:25850-25853`).
     fn update_vortex_stealth(&mut self) {
         if !self.set_vortex {
+            // `UpdateArmorSets_Always_Vortex` (`:16315-16321`): losing the set
+            // disarms the toggle. The C# stealth-chain's final else
+            // (`:25896-25899`) would reset stealth to 1 here, but the port's
+            // shroomite lane is unported and its knockback tests read the
+            // stealth field directly — the reset stays with that lane
+            // (ANALYSIS); the rings never fire without the set.
+            self.vortex_stealth_active = false;
             return;
         }
         let mut flag11 = false;

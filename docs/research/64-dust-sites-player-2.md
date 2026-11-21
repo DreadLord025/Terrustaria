@@ -93,3 +93,68 @@ writes exactly like the C#). Gore siblings stay W4-d55's (argument draws
 consumed in order where they interleave). `gravDir` folds to the vanilla
 `1f` (no gravity flip in the port). `shader`/`customData` are dropped
 fields (the pool contract). Code-only mode: witnesses WRITTEN NOT RUN.
+
+## Completion (2026-11-21)
+
+All 40 sites landed on `task/W4-e1-dust-sites-player-2`:
+
+| Commit | Scope |
+|--------|-------|
+| `7c4b7d15` | claim: census + this ledger |
+| `b1a96d0c` | batch 1 (sites 1–10, lines 12569–19555) |
+| `e8219a01` | batch 2 (sites 11–20, lines 20320–21941) |
+| `73d0aa6b` | batch 3 (sites 21–30, lines 21962–25228) |
+| `53add802` | batch 4 (sites 31–40, lines 25877–27933) |
+| (fixup) | drain execution-order + fidelity fixes below |
+
+26 draw-mirror witnesses in `player_dust2.rs` — WRITTEN NOT RUN (code-only
+mode; no cargo/graphify runs this task).
+
+### Fidelity fixes after the four batches (re-read of the C#)
+
+- **Drain order = execution order, not line order.** `UpdateHairDyeDust`
+  (`:24593`) and the manaHeat block (`:24630`) run BEFORE the stoned
+  transition (`:25219`), the Vortex rings (`:25872`, UpdateEquips tail
+  `:25633`), CheckDrowning (`:27655`), the splash block (`:27772`) and
+  FloorVisuals (`:28271`). The `world_sim/player.rs` drain was reordered to
+  match; the floor dust now drains after the splash-sound drain.
+- **`falling` is a movement-head capture** (`:28073-28081`, |vy| > gravity
+  BEFORE the collision resolve) — a landing tick reaches FloorVisuals with
+  vy==0 but falling=true, so the 20-dust landing burst fires. Batch 3's
+  initial hard-fold to `false` was wrong; fixed.
+- **Stoned burst fires on EITHER edge** (`:25219` `stoned != lastStoned`);
+  only the 20-damage Hurt is rising-edge-gated (`:25221`). Fixed.
+- **Hair Dye Remover (1990)** keeps `hairDye = 0` (`Item.cs:48714` skips the
+  shader-index post-processing when the raw value is 0); the use grant
+  special-cases it instead of storing −1.
+- **Losing the Vortex set disarms the toggle**
+  (`UpdateArmorSets_Always_Vortex`, `:16315-16321`).
+
+### Documented deviations (per-site folds)
+
+- **23316**: the breathing-reed (`hasBreathingReed`) and mount-mouth
+  (`MouthPosition`, mounts 52/54) anchor adjustments have no port fields —
+  the base anchor (direction×12, +4) stands; `gravDir` folds to 1.
+- **23983**: the shimmer-block ParticleOrchestrator arm (`:23792-23818`,
+  tiles 659/667) is the particle-orchestrator lane's — its draws are NOT
+  NewDust and stay there. The 666/712 landing sound (Item177) and the
+  FloorVisuals shimmer buff-120 grant are the sound/buff lanes'. The
+  TryBouncingBlocks FloorVisuals caller (`:23567`/`:28223`) is the bounce
+  lane's (unported) — only the grounded caller (`:28271`) fires here.
+- **24274**: the gore sibling (`:24285`) body is W4-d55's; its Next(225)
+  gate + argument draws + post-write draws are consumed here in order.
+  `hairDye` stores the shader index (`TeamDyeShaderIndex` = 9 = Party Hair
+  Dye 1984's bind, `ID/ContentSamples.cs` DyeShaderIDs.Initialize); the use
+  grant lives in `world_sim/editing.rs` (press-edge stands in for
+  ItemTimeIsZero).
+- **24641/24654**: latent — `mana_heat` stays 1.0 in the port (no writer;
+  the buff-396 decay `:10328-10341` is unported), but the machinery is
+  ported faithfully (`Utils.Remap` clamped, NewDustDirect 267 + CloneDust).
+- **25877/25887**: the stealth-chain's final else (`:25896-25899`,
+  `stealth = 1` without any stealth armor) stays with the shroomite lane —
+  the port's knockback tests read `stealth` directly; the rings never fire
+  without the set. The ±0.04 ramp, ranged damage/crit/aggro grants,
+  run-speed ×0.3 and the mount cancel are ported.
+- **27785–27933**: the exit jump clamp (`:27864`) is a movement seam; the
+  splash gate stands alone (the S1-E-21f sound block's convention). Dust
+  drains BEFORE the splash sound (C# dust-then-PlaySound within the block).
