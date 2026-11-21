@@ -112,6 +112,23 @@ pub enum FindFrameExtra7cKind {
     /// `NPCID.Salamander6` = 503 (`NPCID.cs:11679`) — the same group
     /// (`NPC.cs:69854`).
     Salamander6,
+    /// `NPCID.Salamander7` = 504 (`NPCID.cs:11681`) — the same group
+    /// (`NPC.cs:69855`).
+    Salamander7,
+    /// `NPCID.Salamander8` = 505 (`NPCID.cs:11683`) — the same group
+    /// (`NPC.cs:69856`).
+    Salamander8,
+    /// `NPCID.Salamander9` = 506 (`NPCID.cs:11685`) — the same group
+    /// (`NPC.cs:69857`).
+    Salamander9,
+    /// `NPCID.GiantWalkingAntlion` = 508 (`NPCID.cs:11693`) — the
+    /// 508/532/580/582 group (`NPC.cs:70067`); only 508 is this
+    /// wave's (532/580/582 ride later slices).
+    GiantWalkingAntlion,
+    /// `NPCID.GiantFlyingAntlion` = 509 (`NPCID.cs:11695`) — the
+    /// 509/581 group (`NPC.cs:70104`); only 509 is this wave's (581
+    /// rides a later slice).
+    GiantFlyingAntlion,
 }
 
 impl FindFrameExtra7cKind {
@@ -128,14 +145,20 @@ impl FindFrameExtra7cKind {
             Self::Salamander4 => 501,
             Self::Salamander5 => 502,
             Self::Salamander6 => 503,
+            Self::Salamander7 => 504,
+            Self::Salamander8 => 505,
+            Self::Salamander9 => 506,
+            Self::GiantWalkingAntlion => 508,
+            Self::GiantFlyingAntlion => 509,
         }
     }
 
     /// `Main.npcFrameCount[type]` (`Main.cs:67082`'s initializer,
     /// counted entry-by-entry): 494/495 = 8 (`:67132`'s 490-499 row,
     /// entries 5/6), 496/497 = 12 (`:67132`, entries 7/8), 498/499 =
-    /// 11 (`:67132`, entries 9/10), 500..503 = 11 (`:67133`'s 500-509
-    /// row, entries 1-4).
+    /// 11 (`:67132`, entries 9/10), 500..506 = 11 (`:67133`'s 500-509
+    /// row, entries 1-7), 508 = 6 (`:67133`, entry 9), 509 = 9
+    /// (`:67133`, entry 10).
     pub fn frame_count(self) -> u32 {
         match self {
             Self::Crawdad | Self::Crawdad2 => 8,
@@ -145,7 +168,12 @@ impl FindFrameExtra7cKind {
             | Self::Salamander3
             | Self::Salamander4
             | Self::Salamander5
-            | Self::Salamander6 => 11,
+            | Self::Salamander6
+            | Self::Salamander7
+            | Self::Salamander8
+            | Self::Salamander9 => 11,
+            Self::GiantWalkingAntlion => 6,
+            Self::GiantFlyingAntlion => 9,
         }
     }
 }
@@ -165,6 +193,11 @@ pub fn find_frame_kind_extra7c(vanilla_type: i16) -> Option<FindFrameExtra7cKind
         501 => FindFrameExtra7cKind::Salamander4,
         502 => FindFrameExtra7cKind::Salamander5,
         503 => FindFrameExtra7cKind::Salamander6,
+        504 => FindFrameExtra7cKind::Salamander7,
+        505 => FindFrameExtra7cKind::Salamander8,
+        506 => FindFrameExtra7cKind::Salamander9,
+        508 => FindFrameExtra7cKind::GiantWalkingAntlion,
+        509 => FindFrameExtra7cKind::GiantFlyingAntlion,
         _ => return None,
     })
 }
@@ -353,7 +386,10 @@ pub fn find_frame_extra7c(kind: FindFrameExtra7cKind, s: &mut FrameState, i: &Fr
         | FindFrameExtra7cKind::Salamander3
         | FindFrameExtra7cKind::Salamander4
         | FindFrameExtra7cKind::Salamander5
-        | FindFrameExtra7cKind::Salamander6 => {
+        | FindFrameExtra7cKind::Salamander6
+        | FindFrameExtra7cKind::Salamander7
+        | FindFrameExtra7cKind::Salamander8
+        | FindFrameExtra7cKind::Salamander9 => {
             if i.vy == 0.0 {
                 // `:69858-69866`.
                 if i.direction == 1 {
@@ -393,6 +429,71 @@ pub fn find_frame_extra7c(kind: FindFrameExtra7cKind, s: &mut FrameState, i: &Fr
                 s.row = 10;
             }
         }
+        // `case 508/532/580/582` (`NPC.cs:70067-70103`): the Giant
+        // Walking Antlion (only 508 is this wave's). The air
+        // (`:70071-70075`) pins row 1 WITHOUT touching the counter;
+        // the idle (`:70076-70080`) pins row 0, counter untouched
+        // too; the sprite copies are SIGN-GATED (`:70081-70088` —
+        // direction AND vx must agree, the mismatch keeps the old
+        // sprite); the walk lifts any row < 2 to 2 (`:70089-70092`),
+        // accumulates `1 + |vx| / 2` (`:70093`), the > 6 counter
+        // steps a row, wrapping at row >= the 6-row count back to 2
+        // (`:70098-70101` — rows 2..5 are the walk strip). No
+        // rotation write.
+        FindFrameExtra7cKind::GiantWalkingAntlion => {
+            if i.vy != 0.0 {
+                // `:70071-70075` — the counter is NOT touched.
+                s.row = 1;
+                return;
+            }
+            if i.vx == 0.0 {
+                // `:70076-70080` — the counter is NOT touched.
+                s.row = 0;
+                return;
+            }
+            // `:70081-70088`.
+            if i.direction < 0 && i.vx < 0.0 {
+                s.sprite_dir = -1;
+            }
+            if i.direction > 0 && i.vx > 0.0 {
+                s.sprite_dir = 1;
+            }
+            // `:70089-70101`.
+            if s.row < 2 {
+                s.row = 2;
+            }
+            s.counter += 1.0 + i.vx.abs() / 2.0;
+            if s.counter > 6.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= kind.frame_count() {
+                s.row = 2;
+            }
+        }
+        // `case 509/581` (`NPC.cs:70104-70119`): the Giant Flying
+        // Antlion (only 509 is this wave's). The sprite copy is
+        // SIGN-GATED (`:70106-70109` — vx and direction must share a
+        // sign); the counter ticks EVERY tick (`++frameCounter`,
+        // `:70110`) with the >= 3 step over the FULL 9-row sheet,
+        // wrapping at row >= the count back to 0 (`:70113-70117`).
+        // No velocity gate — the flyer flaps in place. No rotation
+        // write.
+        FindFrameExtra7cKind::GiantFlyingAntlion => {
+            // `:70106-70109`.
+            if (i.vx > 0.0 && i.direction > 0) || (i.vx < 0.0 && i.direction < 0) {
+                s.sprite_dir = i.direction;
+            }
+            // `:70110-70118`.
+            s.counter += 1.0;
+            if s.counter >= 3.0 {
+                s.counter = 0.0;
+                s.row += 1;
+                if s.row >= kind.frame_count() {
+                    s.row = 0;
+                }
+            }
+        }
     }
 }
 
@@ -430,6 +531,11 @@ mod tests {
             FindFrameExtra7cKind::Salamander4,
             FindFrameExtra7cKind::Salamander5,
             FindFrameExtra7cKind::Salamander6,
+            FindFrameExtra7cKind::Salamander7,
+            FindFrameExtra7cKind::Salamander8,
+            FindFrameExtra7cKind::Salamander9,
+            FindFrameExtra7cKind::GiantWalkingAntlion,
+            FindFrameExtra7cKind::GiantFlyingAntlion,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -554,8 +660,8 @@ mod tests {
     /// [0,0,1,1,1,2,2,2,3,3,3,4]); the attack ladder pins rows 8/9/8
     /// off the ai[1] <12/<34 bands with the UNCONDITIONAL direction
     /// copy; the idle pins row 0 WITHOUT touching the counter; the
-    /// air pins row 10. ALL SIX landed salamanders ride the ONE
-    /// group machine (the 498..506 case list).
+    /// air pins row 10. ALL NINE salamanders ride the ONE group
+    /// machine (the 498..506 case list).
     #[test]
     fn f26s7c_the_salamander_walk_ladder_and_idle_hold() {
         for k in [
@@ -565,6 +671,9 @@ mod tests {
             FindFrameExtra7cKind::Salamander4,
             FindFrameExtra7cKind::Salamander5,
             FindFrameExtra7cKind::Salamander6,
+            FindFrameExtra7cKind::Salamander7,
+            FindFrameExtra7cKind::Salamander8,
+            FindFrameExtra7cKind::Salamander9,
         ] {
             assert_eq!(
                 rows_over(k, input(2.0, 0.0), 12),
@@ -592,9 +701,9 @@ mod tests {
         }
     }
 
-    /// The seam maps exactly this wave's landed ids — the no-case
-    /// 493/507, the port-covered 490 and the next-batch 504 stay
-    /// `None`.
+    /// The seam maps exactly this wave's 15 ids — the no-case
+    /// 493/507, the port-covered 490, the later-slice group members
+    /// 532/581 and the next-band 516 stay `None`.
     #[test]
     fn f26s7c_the_seam_maps_exactly_the_slice() {
         for (id, k) in [
@@ -608,12 +717,121 @@ mod tests {
             (501, FindFrameExtra7cKind::Salamander4),
             (502, FindFrameExtra7cKind::Salamander5),
             (503, FindFrameExtra7cKind::Salamander6),
+            (504, FindFrameExtra7cKind::Salamander7),
+            (505, FindFrameExtra7cKind::Salamander8),
+            (506, FindFrameExtra7cKind::Salamander9),
+            (508, FindFrameExtra7cKind::GiantWalkingAntlion),
+            (509, FindFrameExtra7cKind::GiantFlyingAntlion),
         ] {
             assert_eq!(find_frame_kind_extra7c(id), Some(k));
             assert_eq!(k.vanilla_type(), id);
         }
-        for id in [490, 493, 504, 507, 508] {
+        for id in [490, 493, 507, 516, 532, 581] {
             assert_eq!(find_frame_kind_extra7c(id), None, "type {id}");
+        }
+    }
+
+    /// The walking antlion: the air/idle pins leave the counter
+    /// ALONE; the sprite copies are SIGN-GATED (the mismatch keeps
+    /// the old sprite); the walk lifts to row 2 and accumulates
+    /// 1 + |vx|/2 with the > 6 step over rows 2..5 (replay: vx=3 →
+    /// [2,2,3,3,3,4,4,4,5,5,5,2]).
+    #[test]
+    fn f26s7c_the_walking_antlion_lift_and_sign_gates() {
+        let k = FindFrameExtra7cKind::GiantWalkingAntlion;
+        assert_eq!(
+            rows_over(k, input(3.0, 0.0), 12),
+            vec![2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 2]
+        );
+        // The air: row 1, counter 2.5 HELD.
+        let mut s = FrameState { row: 4, counter: 2.5, sprite_dir: 1, rotation: 0.0 };
+        find_frame_extra7c(k, &mut s, &input(3.0, 2.0));
+        assert_eq!((s.row, s.counter), (1, 2.5));
+        // The idle: row 0, counter 2.5 HELD.
+        let mut s = FrameState { row: 4, counter: 2.5, sprite_dir: 1, rotation: 0.0 };
+        find_frame_extra7c(k, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 2.5));
+        // The mismatch: direction 1 + vx -3 keeps sprite 1, lifts to
+        // row 2, counter 0 + 2.5 = 2.5.
+        let mut s = FrameState { row: 0, counter: 0.0, sprite_dir: 1, rotation: 0.0 };
+        find_frame_extra7c(k, &mut s, &input(-3.0, 0.0));
+        assert_eq!((s.row, s.counter, s.sprite_dir), (2, 2.5, 1));
+    }
+
+    /// The flying antlion: the >= 3 step over the FULL 9-row sheet
+    /// with no velocity gate (replay: vx=3 dir 1 →
+    /// [0,0,1,1,1,2,2,2,3,3,3,4]); the sprite copy is SIGN-GATED —
+    /// the mismatch keeps the old sprite while the flap runs.
+    #[test]
+    fn f26s7c_the_flying_antlion_full_sheet_flap() {
+        let k = FindFrameExtra7cKind::GiantFlyingAntlion;
+        assert_eq!(
+            rows_over(k, input(3.0, 0.0), 12),
+            vec![0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4]
+        );
+        // The full-sheet wrap: 27 ticks cycle rows 0..8 back to 0.
+        let rows = rows_over(k, input(0.0, 0.0), 28);
+        assert_eq!(rows[26], 8);
+        assert_eq!(rows[27], 0);
+        // The mismatch: direction 1 + vx -3 keeps sprite -1.
+        let mut s = FrameState { row: 0, counter: 0.0, sprite_dir: -1, rotation: 0.0 };
+        find_frame_extra7c(k, &mut s, &input(-3.0, 0.0));
+        assert_eq!((s.row, s.counter, s.sprite_dir), (0, 1.0, -1));
+    }
+
+    /// The 15-kind strip sweep: every kind ticks 72 input combos
+    /// (ai[0] 0/1/5/2 × vx 0/1/3 × vy 0/-2/2 × ai[2] -1/2, ai[1] =
+    /// 15, direction alternating) for 10 ticks each — every row
+    /// stays inside its own sheet (the 7b 72-combo sweep precedent,
+    /// the shelly state axis swapped for the mimic one; the full
+    /// 1080-combo × 10-tick sweep replayed against the line-for-line
+    /// C# transcriptions before writing).
+    #[test]
+    fn f26s7c_the_15_kind_strip_sweep_stays_in_sheet() {
+        let kinds = [
+            FindFrameExtra7cKind::Crawdad,
+            FindFrameExtra7cKind::Crawdad2,
+            FindFrameExtra7cKind::GiantShelly,
+            FindFrameExtra7cKind::GiantShelly2,
+            FindFrameExtra7cKind::Salamander,
+            FindFrameExtra7cKind::Salamander2,
+            FindFrameExtra7cKind::Salamander3,
+            FindFrameExtra7cKind::Salamander4,
+            FindFrameExtra7cKind::Salamander5,
+            FindFrameExtra7cKind::Salamander6,
+            FindFrameExtra7cKind::Salamander7,
+            FindFrameExtra7cKind::Salamander8,
+            FindFrameExtra7cKind::Salamander9,
+            FindFrameExtra7cKind::GiantWalkingAntlion,
+            FindFrameExtra7cKind::GiantFlyingAntlion,
+        ];
+        for k in kinds {
+            let mut s = FrameState::default();
+            let mut combo = 0;
+            for ai0 in [0.0f32, 1.0, 5.0, 2.0] {
+                for vx in [0.0f32, 1.0, 3.0] {
+                    for vy in [0.0f32, -2.0, 2.0] {
+                        for ai2 in [-1.0f32, 2.0] {
+                            let i = FrameInput {
+                                vx,
+                                vy,
+                                direction: if combo % 2 == 0 { 1 } else { -1 },
+                                ai: [ai0, 15.0, ai2, 0.0],
+                            };
+                            for _ in 0..10 {
+                                find_frame_extra7c(k, &mut s, &i);
+                                assert!(
+                                    s.row < k.frame_count(),
+                                    "{k:?} combo {combo} row {} escapes the {}-row sheet",
+                                    s.row,
+                                    k.frame_count()
+                                );
+                            }
+                            combo += 1;
+                        }
+                    }
+                }
+            }
         }
     }
 }
