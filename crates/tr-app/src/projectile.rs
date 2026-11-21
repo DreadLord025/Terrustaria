@@ -18638,10 +18638,25 @@ impl ProjectilePool {
                                 // `HandleMovement` -> `UpdatePosition` (`:19858`/`:20445`).
                                 // The aiStyle-197 rows keep `tileCollide = true` and are NOT in
                                 // the blocked-move chain's kill default: their arm
-                                // (`:18637-18643`) calls `AI_197_HandleTileCollision`, whose
-                                // observable half is `ai[0] = 1f` (`:40250`). The sound, the
-                                // `HitTiles` and the 1025 gore/dust burst (`:40248-40316`) are
-                                // SKIPPED - no sound, dust or gore layer in the pool.
+                                // (`:18637-18643`) calls `AI_197_HandleTileCollision` when
+                                // `ai[0] == 0`, whose observable half is `ai[0] = 1f`
+                                // (`:40250`). The sound + the `HitTiles` are SKIPPED; the
+                                // 30-dust loop (`:40258-40272`) is the dust lane's skip.
+                                // W4-g16 wiring — the 1025 barnacle's tile-collision gore
+                                // burst (`:40273-40304`, `tile_collision_burst`) is a REAL
+                                // spawn at the C# call position: the `ai[0] == 0` gate
+                                // (`:18639`) BEFORE the step latches it to 1, and the
+                                // `type == 1025` gate (`:40252`) inside the handler. No
+                                // pool: the burst was the documented skip.
+                                if self.slots[i].ai[0] == 0.0
+                                    && self.slots[i].kind == DEAD_CELLS_BARNACLE
+                                {
+                                    if let Some(g) = self.gore_pool.as_mut() {
+                                        crate::projectile_gore_b::tile_collision_burst(
+                                            &self.slots[i], g, rng, world,
+                                        );
+                                    }
+                                }
                                 self.slots[i].sentry_turret_step(world);
                         }
                         130 => {
@@ -20169,7 +20184,7 @@ impl ProjectilePool {
                         local_owner,
                     );
                 } else {
-                    self.explode_bomb(i, world, npcs);
+                    self.explode_bomb(i, world, npcs, rng);
                 }
             }
             // The per-sub-step `Damage()` calls (`Projectile.cs:17078`) moved
@@ -22458,9 +22473,25 @@ impl ProjectilePool {
 
     /// `Kill()`'s bomb path: `PrepareBombToBlow` (`Projectile.cs:46770-
     /// 46844`) resizes the box and re-arms the damage, `Damage()` walks the
-    /// NPCs through the resized box, `Kill_ExplodeTiles` (`:77265-77380`)
-    /// digs the radius circle, and the slot deactivates.
-    fn explode_bomb(&mut self, slot: usize, world: &mut World, npcs: &mut [Npc]) {
+    /// NPCs through the resized box, `Kill_Bombs_DoUsualKillCode`
+    /// (`:77648-78210`) spawns the family's gore rows, `Kill_ExplodeTiles`
+    /// (`:77265-77380`) digs the radius circle, and the slot deactivates.
+    ///
+    /// W4-g16 wiring batch 5 — the gore rows ride the PASS's stream (`rng`,
+    /// the `UpdateProjectiles` `Main.rand` the C# `Kill_Bombs` draws on),
+    /// threaded in alongside the gore pool. The `Damage()` walk KEEPS its
+    /// frozen zero-rng `FastRandom::new(0)` (the documented M4-PROJ-9
+    /// deviation, ANALYSIS "Bombs") — the gore draws are a SEPARATE stream
+    /// consumer and do NOT feed the damage walk (no double-feed, the module
+    /// RNG contract). `None` pool (the pool-only tests) spawns nothing — the
+    /// bomb family had no landed census, so there is no draw pin to keep.
+    fn explode_bomb(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        npcs: &mut [Npc],
+        rng: &mut dyn DropRng,
+    ) {
         // S1-P-i28 — the grenades (30/397/517) resize to 128×128 and set
         // knockback 8 but KEEP their damage (`PrepareBombToBlow`
         // `Projectile.cs:46799-46803` — no `damage =` line), unlike the bombs
@@ -22492,7 +22523,9 @@ impl ProjectilePool {
         p.knock_back = knock_back;
         p.tile_collide = false;
         p.detonated = false;
-        // `Damage()` — the PVE walk through the resized box.
+        // `Damage()` — the PVE walk through the resized box. The frozen
+        // zero-rng stream is the documented M4-PROJ-9 deviation (ANALYSIS
+        // "Bombs") — the gore rows below ride the PASS's stream, NOT this one.
         self.damage_pve(
             world,
             slot,
@@ -22502,6 +22535,45 @@ impl ProjectilePool {
             None,
             &mut tr_core::tile_light::FastRandom::new(0),
         );
+        // W4-g16 wiring batch 5 — `Kill_Bombs_DoUsualKillCode`'s gore rows
+        // (`Projectile.cs:77648-78210`), on the PASS's stream (the C# `Kill()`
+        // runs them after `Damage()` `:70671` and before `Kill_ExplodeTiles`
+        // `:77260`). The dust loops interleaved are the dust lanes' skip.
+        // The 22×22 recentre (`:78332` the bomb-corner family) precedes the
+        // gores; the dynamite's 200×200 recentre (`:78387-78394`) precedes
+        // its boulder rows. The 102/75 post-gore 128×128 + Damage + 22
+        // restore (`:78367-78382`), the 588 confetti bomb (`:78449-78497`)
+        // and the 773 scarab (`:78286-78297`, the dig-direction push) are
+        // DEFERRED — those kinds are not in this arm's `PrepareBombToBlow`
+        // set (the 102/108/164 blast kinds ride their own death paths, the
+        // 588/773/75 have no rows). The site fns stay landed in
+        // `projectile_gore_o.rs`; the wiring rides the host's path when it
+        // lands (the `npc_hit_effect_a.rs` precedent).
+        let kind = self.slots[slot].kind;
+        if matches!(kind, BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH | GRENADE | STICKY_GRENADE | BOUNCY_GRENADE) {
+            // `:78329-78366` — the bomb-corner family: the 22×22 recentre,
+            // the four corner gores (magnitude 1.0, `bomb_corner_gores`).
+            let cx = self.slots[slot].pos.x + self.slots[slot].w * 0.5;
+            let cy = self.slots[slot].pos.y + self.slots[slot].h * 0.5;
+            self.slots[slot].w = 22.0;
+            self.slots[slot].h = 22.0;
+            self.slots[slot].pos = Vec2::new(cx - 11.0, cy - 11.0);
+            if let Some(g) = self.gore_pool.as_mut() {
+                crate::projectile_gore_o::bomb_corner_gores(&self.slots[slot], g, rng, world);
+            }
+        } else if kind == DYNAMITE {
+            // `:78384-78436` — the big-bomb family: the 200×200 recentre
+            // (`:78387-78394`), the eight boulder gores (`big_bomb_gores`,
+            // the wave-I lava-boulder row ×2 at the resized box's centre−24).
+            let cx = self.slots[slot].pos.x + self.slots[slot].w * 0.5;
+            let cy = self.slots[slot].pos.y + self.slots[slot].h * 0.5;
+            self.slots[slot].w = 200.0;
+            self.slots[slot].h = 200.0;
+            self.slots[slot].pos = Vec2::new(cx - 100.0, cy - 100.0);
+            if let Some(g) = self.gore_pool.as_mut() {
+                crate::projectile_gore_o::big_bomb_gores(&self.slots[slot], g, rng, world);
+            }
+        }
         // S1-P-i28 — `Kill_ExplodeTiles` (`Projectile.cs:77265-77296`): the
         // grenades (30/397/517) take the `ExplodeCrackedTiles` arm
         // (`:77271-77295` → `:78758-78778`) — ONLY cracked-brick tiles in the
@@ -45444,5 +45516,142 @@ mod w4_g16_batch3_kill_gore_tests {
         let gore = pool.take_gore_pool().unwrap();
         assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 4, "four corners");
         assert!((pool.slots()[slot].w - 96.0).abs() < 1e-6, "the trailing 96×96");
+    }
+
+    /// The 1025 barnacle's tile-collision burst (`:40273-40304`): the
+    /// `ai[0] == 0` gate (`:18639`) BEFORE the step latches it to 1, the
+    /// `type == 1025` gate (`:40252`). Three iterations × three gores = 9.
+    /// The 30-dust loop before is the dust lane's skip. The first tick's
+    /// aiStyle-197 arm draws nothing (ai[0]==0, frame 3, no target), so the
+    /// burst is the only stream consumer — the exact draw ORDER is pinned by
+    /// the site-fn witness in `projectile_gore_b.rs` (the jitter draws
+    /// precede the second/third Circular); here we pin the COUNT + the latch
+    /// + the one-shot gate.
+    #[test]
+    fn w4_g16_b5_the_1025_burst_draws_nine_gores_on_the_first_tick() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(DEAD_CELLS_BARNACLE, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the 1025 row spawns");
+        pool.slots_mut()[slot].time_left = 36000;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(71);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        let gore = pool.take_gore_pool().unwrap();
+        let active = gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(active, 9, "three iterations × three gores");
+        assert_eq!(pool.slots()[slot].ai[0], 1.0, "the step latched ai[0] = 1");
+        // The second tick: ai[0] == 1 → no burst (the gate is one-shot).
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut rng2 = UnifiedRandom::new(71);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng2,
+            0,
+            true,
+        );
+        let gore2 = pool.take_gore_pool().unwrap();
+        assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 0, "no second burst");
+    }
+
+    /// The bomb-corner family (`:78329-78366`): the 22×22 recentre + the four
+    /// corner gores (magnitude 1.0) on the PASS's stream — the frozen
+    /// zero-rng Damage walk draws nothing on the pass stream (no NPC). The
+    /// grenade's damage is KEPT (PrepareBombToBlow sets none).
+    #[test]
+    fn w4_g16_b5_the_bomb_corners_ride_the_pass_stream() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(BOMB, 0, 320.0, 320.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .expect("the 28 row spawns");
+        // Latch the detonation directly (the fuse is the AI's job).
+        pool.slots_mut()[slot].detonated = true;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(73);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        let mut twin = UnifiedRandom::new(73);
+        for _ in 0..4 {
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the four corner rows on the pass stream");
+        let gore = pool.take_gore_pool().unwrap();
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 4, "four corners");
+        assert!(!pool.slots()[slot].active, "the bomb died");
+    }
+
+    /// The dynamite big-bomb (`:78384-78436`): the 200×200 recentre + the
+    /// eight boulder gores (the wave-I lava-boulder row ×2 — Next(61,64) +
+    /// kicks each, scale 1.5, ±1.5 signs) on the PASS's stream.
+    #[test]
+    fn w4_g16_b5_the_dynamite_boulders_ride_the_pass_stream() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(DYNAMITE, 0, 320.0, 320.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .expect("the 29 row spawns");
+        pool.slots_mut()[slot].detonated = true;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(75);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        let mut twin = UnifiedRandom::new(75);
+        for _ in 0..8 {
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the eight boulder rows on the pass stream");
+        let gore = pool.take_gore_pool().unwrap();
+        let active: Vec<&tr_core::gore::Gore> = gore.slots().iter().filter(|g| g.active).collect();
+        assert_eq!(active.len(), 8, "eight boulders");
+        for g in &active {
+            assert!((g.scale - 1.5).abs() < 1e-6, "scale 1.5");
+        }
+        assert!(!pool.slots()[slot].active, "the dynamite died");
     }
 }
