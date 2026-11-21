@@ -29,6 +29,7 @@ mod buff_effects_accessory;
 mod buff_effects_boosters;
 mod buff_effects_tail;
 mod buff_frame_wiring;
+mod buff_inferno_aura;
 mod bug_net;
 mod chat;
 mod chest;

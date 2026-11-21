@@ -199,6 +199,12 @@ fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
     if kind == 3624 {
         p.auto_actuator = true;
     }
+    // `:12825-12828` — the Guide to Critter Companions (4767) and its
+    // upgrade (5323) arm `dontHurtCritters` (the Inferno aura's critter
+    // refusal reads it, `Player.cs:20515`).
+    if kind == 4767 || kind == 5323 {
+        p.dont_hurt_critters = true;
+    }
 }
 
 /// The summon-cap half of `Player.UpdateEquips` (M4-PROJ-8 phase 2): the
@@ -1237,6 +1243,41 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.audio.play("hungry");
                 }
                 p.pending_hungry_sounds = 0;
+                // W4-f12 gap 2 — the Inferno aura's NPC damage ring
+                // (`Player.cs:10224-10238`): the roster scan the wiring
+                // deferred. Runs right after the frame fold set `p.inferno`
+                // / the cadence gate; the strike requests drain onto the
+                // hit-sound + probe seams below (the C# order: combat text
+                // inside the scan, sound + HitEffect after the strike).
+                let damage_tick = p.inferno_counter % 60 == 0;
+                let strikes = crate::buff_inferno_aura::inferno_aura_scan(
+                    p,
+                    &mut app.npcs,
+                    damage_tick,
+                    &app.scene_metrics,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.combat_texts,
+                    app.lookups.combat_text_font.as_ref(),
+                );
+                for s in strikes {
+                    // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`):
+                    // the kind's `HitSound` at `base.position`, the pitch
+                    // draw on the same `UpdatePlayers` stream.
+                    let (nx, ny) = (app.npcs[s.idx].x, app.npcs[s.idx].y);
+                    if let Some(cue) = app.npcs[s.idx].kind.hit_sound() {
+                        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        app.audio.play_npc_hit_sound(cue, nx, ny, rng);
+                    }
+                    // `StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
+                    // the Destroyer body's probe gate rides the strike's
+                    // stream (the melee/proj precedent).
+                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+                        &mut app.npcs[s.idx], probe_rng, false,
+                    ) {
+                        app.npcs[s.idx].wants_probe = Some(anchor);
+                    }
+                }
             }
             // S1-E-7 wave C: the accessory/set-bonus buff arms
             // (`Player.cs:10800-11400` + the imbues `:12013-12044`) — the

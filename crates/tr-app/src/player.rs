@@ -2059,8 +2059,14 @@ pub struct Player {
     pub soul_drain: i32,
     /// `Player.infernoCounter` (`Player.cs:1104`) — the Inferno aura's 60-tick
     /// damage cadence (`:10218`), incremented per tick (`:24595-24598`, cap
-    /// 180). The aura scan itself is deferred (needs the world roster).
+    /// 180). The aura scan rides `buff_frame_wiring::inferno_aura_scan`.
     pub inferno_counter: i32,
+    /// `Player.dontHurtCritters` (`Player.cs:1390`): the Guide to Critter
+    /// Companions (4767) / its upgrade (5323) refuse critter damage
+    /// (`CanNPCBeHitByPlayerOrPlayerProjectile`, `:20513-20529`). Cleared in
+    /// `ResetEffects` (`:18780`), re-granted by
+    /// `RefreshMechanicalAccsFromItemType` (`:12825-12828`).
+    pub dont_hurt_critters: bool,
     // ---- W4-f12: the wired debuff/status flag halves (the C# `Player` bools
     // the wave-B/E arms set; `ResetEffects` clears them, the scan re-arms).
     // The DoT flags (poisoned/venom/onFire/…) are NOT here — the regen lane
@@ -3012,6 +3018,7 @@ impl Player {
             frame_state: crate::buff_effects_frame::FrameState::default(),
             soul_drain: 0,
             inferno_counter: 0,
+            dont_hurt_critters: false,
             stoned: false,
             ichor: false,
             broken_armor: false,
@@ -6099,6 +6106,9 @@ impl Player {
         // (`RefreshMechanicalAccsFromItemType`, `:12799-12820`).
         self.info_acc_mech_show_wires = false;
         self.auto_actuator = false;
+        // `Player.cs:18780`: `dontHurtCritters = false` — the critter-book
+        // grant (`:12825-12828`) re-arms it per tick.
+        self.dont_hurt_critters = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()
