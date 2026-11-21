@@ -4308,6 +4308,20 @@ impl Npc {
         }
     }
 
+    /// W4-d11 DOC-SWEEP — `NPC.canGhostHeal` (`NPC.cs:6263`, the stock
+    /// `true` at `:8553`): the ghost-heal / nebula-proc gate
+    /// (`Projectile.cs:13816`). The four `SetDefaults` overrides write
+    /// false: the ForceBubble 384 (`:13893`), the MartianTurret 387
+    /// (`:13933`), the MartianDrone 388 (`:13950`) and AncientDoom 523
+    /// (`:15811` — unported). The three ported kinds gate false; every
+    /// other ported kind keeps true.
+    pub fn can_ghost_heal(&self) -> bool {
+        !matches!(
+            self.kind,
+            NpcKind::ForceBubble | NpcKind::MartianTurret | NpcKind::MartianDrone
+        )
+    }
+
     /// The scaled size for slime variants (the hitbox rides
     /// `SetDefaults_ForNetId`'s size scale).
     pub fn size(&self) -> (f32, f32) {

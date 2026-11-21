@@ -663,6 +663,16 @@ pub struct Projectile {
     /// `UpdateProjectiles` stream (the `wants_mark_spawn` intent shape —
     /// the pool cannot borrow the App's combat-text vec).
     pub wants_heal_text: Option<(f32, f32, f32, f32, i32)>,
+    /// W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup proc
+    /// (`Projectile.cs:13826-13830`): (kind, cx, cy, vx, vy) — the
+    /// `Item.RequestNewItem` payload (the 3453/3454/3455 pick, the
+    /// victim's centre, the hit-direction-scaled velocity). The
+    /// world-sim pass spawns the drop on the `UpdateProjectiles` stream
+    /// (the `wants_mark_spawn` intent shape). The rolls (the Next(3)
+    /// gate, the SelectRandom pick, the two velocity draws) run at the
+    /// hit site in C# order; the drop spawn itself is draw-free (the
+    /// explicit-velocity arm, `Item.cs:49738-49741`).
+    pub wants_nebula_pickup: Option<(u16, f32, f32, f32, f32)>,
     /// The aiStyle-50 one-shot (`Projectile.cs:74341-74350`'s `Kill()` arm):
     /// the Inferno Fork bolt 295 spawns its blast 296 exactly once, however
     /// the bolt died (the arm's fade kill, `timeLeft`, or a penetrating hit).
@@ -837,6 +847,7 @@ impl Default for Projectile {
             wants_shark_spawn: None,
             wants_cloud_segment: None,
             wants_heal_text: None,
+            wants_nebula_pickup: None,
             minion: false,
             sentry: false,
             minion_slots: 0.0,
@@ -23505,6 +23516,49 @@ impl ProjectilePool {
                 // arms: the Cascade's 1125, the Kraken's 3× 1135, the Chik's
                 // 5× 1134 and the Eye-of-Cthulhu's homing 1130.
                 self.yoyo_on_hit(slot, idx as u16, hit, player.as_deref_mut(), rng);
+                // W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup
+                // proc (`Projectile.cs:13826-13830`, inside the
+                // `canGhostHeal | flag9` block `:13816` under `flag10`
+                // `:13810`): a magic shot, the owner wearing the set, the
+                // 30-tick cooldown at 0 and a 1/3 roll spawn one of the
+                // three nebula pickups at the victim's centre. The C#
+                // order: the Next(3) gate FIRST (the `&&` short-circuit —
+                // the magic/set/cooldown terms draw nothing), then the
+                // SelectRandom pick (one Next(3)), then the two velocity
+                // draws (Next(10,31) and Next(-20,1)). `num23` is the hit
+                // direction (`:13598`'s base.direction; the port's
+                // `from_x`-derived sign — the strike's knockback side).
+                // flag9 (the target-dummy debug override) is constants-off.
+                let nebula_gate = !npc_immortal
+                    && strike_dmg > 0
+                    && npc_life_max_gt5
+                    && self.slots[slot].friendly
+                    && npcs[idx].can_ghost_heal();
+                if nebula_gate {
+                    if let Some(pl) = player.as_deref_mut() {
+                        let magic = self.slots[slot].magic;
+                        if magic
+                            && pl.set_nebula
+                            && pl.nebula_cd == 0
+                            && rng.next_range(0, 3) == 0
+                        {
+                            pl.nebula_cd = 30;
+                            // `Utils.SelectRandom(Main.rand, 3453, 3454,
+                            // 3455)` — one Next(3) pick (`Utils.cs:2459`).
+                            let kind = [3453u16, 3454, 3455][rng.next_range(0, 3) as usize];
+                            // `num23` — the hit direction: the C# reads
+                            // base.direction (`:13598`); the port's strike
+                            // side is the from_x sign relative to the
+                            // victim's centre (the knockback direction).
+                            let (ncx, ncy) = npcs[idx].center();
+                            let num23 = if from_x < ncx { 1.0 } else { -1.0 };
+                            let vx = rng.next_range(10, 31) as f32 * 0.2 * num23;
+                            let vy = rng.next_range(-20, 1) as f32 * 0.2;
+                            self.slots[slot].wants_nebula_pickup =
+                                Some((kind, ncx, ncy, vx, vy));
+                        }
+                    }
+                }
             }
             if landed {
                 let p = &mut self.slots[slot];
@@ -30700,6 +30754,7 @@ mod phasmal_projectile_tests {
             wants_shark_spawn: None,
             wants_cloud_segment: None,
             wants_heal_text: None,
+            wants_nebula_pickup: None,
             w: 14.0,
             h: 14.0,
             tile_collide: true,
@@ -31168,6 +31223,7 @@ mod ritual_projectile_tests {
             wants_shark_spawn: None,
             wants_cloud_segment: None,
             wants_heal_text: None,
+            wants_nebula_pickup: None,
             w: 32.0,
             h: 32.0,
             tile_collide: false,
