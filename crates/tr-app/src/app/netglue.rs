@@ -968,9 +968,18 @@ impl App {
             }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`)
+            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`)
             // land with the send-path pass (S1-I-4).
             C2s::TogglePvp(_) | C2s::PlayerMana(_) | C2s::TeamChange(_) => {}
+            // `case 157` — the team UI click (`MessageBuffer.cs:2325-2364`,
+            // the shared `case 45: case 157:` arm): force the subject to the
+            // sender, set the team, relay as `45`, then the team-chat fan-out
+            // to the sender + the old/new team members. The 157-only
+            // team-based-spawns tail (`:2355-2363`, `158`) needs the unported
+            // `teamBasedSpawnsSeed` + `ExtraSpawnPointManager` — parked.
+            C2s::TeamChangeFromUi(t) => {
+                self.apply_team_change_net(server, id, t.team);
+            }
             // `case 150`'s host half (`MessageBuffer.cs:4361-4384`):
             // `SetOrRequestSpectating` / the stop-relay need the unported
             // spectating system (`Player.spectating`); parked (S1-I-4).
@@ -2082,6 +2091,58 @@ impl App {
             // (`Player.spectating`, `Player.cs:1634`); both arms park with it
             // (S1-I-4).
             S2c::SpectatePlayer(_) => {}
+            // `case 153`'s client half (`MessageBuffer.cs:4408-4417`):
+            // `GetHurtByDebuff(damage)` (`NPC.cs:91864-91888`) — the DoT
+            // drain bypasses StrikeNPC (no i-frames, no knockback). The
+            // damage lands on the carrier (`realLife`, the port's
+            // `carrier_index`); the immortal gate skips the subtraction; a
+            // life ≤ 0 floors to 1 + the 9999 no-interaction kill (the
+            // port's instant-kill hp=0 convention, `npc.rs`'s
+            // StrikeNPCNoInteraction note). The combat text (`:91879`,
+            // LifeRegenNegative DoT) spawns on the struck NPC's box.
+            S2c::NpcDebuffDamage(d) => {
+                let slot = d.npc as usize;
+                if slot >= self.npcs.len() {
+                    return;
+                }
+                let target = crate::npc::Npc::carrier_index(&self.npcs, slot).unwrap_or(slot);
+                let amount = d.damage as i32;
+                if !self.npcs[target].immortal {
+                    self.npcs[target].hp -= amount; // `:91877`
+                }
+                // `:91879` — the DoT combat text on the STRUCK NPC's box.
+                // The text size rides the combat-font measurement (the
+                // heal-life convention, `world_sim/items.rs`); gravDir 1.0
+                // (the port has no gravity-flip system).
+                let (nx, ny) = (self.npcs[slot].x, self.npcs[slot].y);
+                let (nw, nh) = self.npcs[slot].size();
+                let text = amount.to_string();
+                let size = match self.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                crate::combat_text::spawn_amount(
+                    &mut self.combat_texts,
+                    crate::combat_text::Rect {
+                        x: nx,
+                        y: ny,
+                        width: nw,
+                        height: nh,
+                    },
+                    crate::combat_text::LIFE_REGEN_NEGATIVE,
+                    amount,
+                    false,
+                    true,
+                    size,
+                    1.0,
+                    self.rngs.global(),
+                );
+                if self.npcs[target].hp <= 0 && !self.npcs[target].immortal {
+                    // `:91880-91887` — life = 1 + StrikeNPCNoInteraction(9999);
+                    // the port's no-interaction instant kill is hp = 0.
+                    self.npcs[target].hp = 0;
+                }
+            }
             // `case 135`'s client half (`MessageBuffer.cs:4195-4203`):
             // `Main.player[num103].immuneAlpha = 255` — the dead-peer ghost
             // fade. The port's `immuneAlpha` blinkVisual half is draw-side
@@ -3327,6 +3388,78 @@ impl App {
         }
         if TOWN_SLIMES.iter().all(|&t| housed[t]) {
             self.notify_progression_net(26); // `:5675`
+        }
+    }
+
+    /// `Main.teamColor` (`Main.cs:6657-6662`): the six team colours, index 0
+    /// white (no team) through 5 pink.
+    fn team_color(team: u8) -> net::Rgb {
+        const COLORS: [(u8, u8, u8); 6] = [
+            (255, 255, 255), // 0 white
+            (218, 59, 59),   // 1 red
+            (59, 218, 85),   // 2 green
+            (59, 149, 218),  // 3 blue
+            (242, 221, 100), // 4 yellow
+            (224, 100, 242), // 5 pink
+        ];
+        let (r, g, b) = COLORS[(team as usize).min(5)];
+        net::Rgb(r, g, b)
+    }
+
+    /// The shared `case 45: case 157:` host arm (`MessageBuffer.cs:2325-
+    /// 2364`): force the subject to the sender (`:2329-2332`), set the team
+    /// (`:2336`), relay as `45` with `ignoreClient = sender` (`:2342`), then
+    /// the team-chat fan-out (`:2343-2354`): `Lang.mp[13 + team]` (team 5 →
+    /// `mp[22]`) formatted with the player name, sent to the sender + every
+    /// old-team / new-team member. The 157-only team-based-spawns tail
+    /// (`:2355-2363`) is the caller's (parked — no `teamBasedSpawnsSeed`).
+    fn apply_team_change_net(&mut self, server: &net::Server, id: u32, new_team: u8) {
+        let old_team = self
+            .remote_players
+            .get(&id)
+            .map(|p| p.team)
+            .unwrap_or(0);
+        self.remote_players.entry(id).or_default().team = new_team; // `:2336`
+        let name = server.slot_name(id);
+        // `:2342` — relay as 45 to the OTHERS.
+        server.broadcast_except(
+            &S2c::TeamChange(net::TeamChange {
+                player_id: id as u8,
+                team: new_team,
+            }),
+            id,
+        );
+        // `:2343-2347` — the message key (team 5 special-cased to mp[22]).
+        let key_idx = if new_team == 5 { 22 } else { 13 + new_team as usize };
+        let text = crate::lang::text_args(
+            &format!("LegacyMultiplayer.{key_idx}"),
+            &[name.clone()],
+        );
+        let color = Self::team_color(new_team);
+        let sm = crate::app::netmodules::ServerMessage {
+            author: id as u8,
+            text,
+            color,
+        };
+        let frame = S2c::NetModule {
+            module: crate::app::netmodules::module_id::TEXT,
+            body: sm.encode(),
+        };
+        // `:2348-2354` — the sender + the old-team / new-team members. The
+        // host's own slot (0) rides `player.team`; the peers ride PlayerNet.
+        let host_team = self.player.as_ref().map(|p| p.team as u8).unwrap_or(0);
+        for peer in 0..255u32 {
+            let peer_team = if peer == 0 {
+                host_team
+            } else {
+                self.remote_players.get(&peer).map(|p| p.team).unwrap_or(0)
+            };
+            let receives = peer == id
+                || (old_team > 0 && peer_team == old_team)
+                || (new_team > 0 && peer_team == new_team);
+            if receives {
+                server.send(peer, &frame);
+            }
         }
     }
 
@@ -4588,6 +4721,79 @@ mod handshake_tests {
         assert!(!p.hide_visible_accessory[2]);
         assert!(p.hide_visible_accessory[3], "bit 3 hid slot 3");
         assert!(!p.hide_visible_accessory[4]);
+    }
+
+    /// W4-g51 `153 NPCDebuffDamage`: the client's `GetHurtByDebuff` drains hp
+    /// directly (no i-frames), the immortal gate skips, and a life ≤ 0 takes
+    /// the no-interaction kill (`MessageBuffer.cs:4408-4417`,
+    /// `NPC.cs:91864-91888`).
+    #[test]
+    fn the_npc_debuff_damage_drains_hp_and_kills_at_zero() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 0.0, 0.0, 1, 0.0);
+        npc.hp = 30;
+        client_app.npcs.push(npc);
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::NpcDebuffDamage(net::NpcDebuffDamage {
+                    npc: 0,
+                    damage: 10,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.npcs[0].hp, 20, "the DoT drained 10");
+        // A lethal tick floors to the no-interaction kill (hp = 0).
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::NpcDebuffDamage(net::NpcDebuffDamage {
+                    npc: 0,
+                    damage: 9999,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.npcs[0].hp, 0, "the lethal tick took the kill");
+    }
+
+    /// W4-g51 `157 TeamChangeFromUI`: the host forces the subject, sets the
+    /// team and relays as 45 (`MessageBuffer.cs:2325-2364`); the team-chat
+    /// fan-out reaches the sender.
+    #[test]
+    fn the_team_change_from_ui_sets_the_team_and_relays() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let (mut host_app, mut client_app) = in_world_pair();
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::TeamChangeFromUi(net::TeamChange {
+                        player_id: 99, // overridden to the sender (1)
+                        team: 2,
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert_eq!(host_app.remote_players[&1].team, 2, "the team was set");
+        // The sender received the team-chat line (green team, mp[15]).
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            client_app
+                .chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("green team")),
+            "the team-chat fan-out reached the sender"
+        );
     }
 
     #[test]

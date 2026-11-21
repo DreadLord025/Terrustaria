@@ -189,6 +189,16 @@ pub mod id {
     /// W4-g51 lifted the parked d97 codec; the apply is parked (the port has
     /// no spectating system yet).
     pub const SPECTATE_PLAYER: u8 = 150;
+    /// `153 NPCDebuffDamage` (`MessageID.cs:320`) — an NPC's debuff tick
+    /// damage, host-sent (`NetMessage.cs:1646-1649`,
+    /// `MessageBuffer.cs:4408-4417`). W4-g51 lifted the parked d92 codec and
+    /// wired the client `GetHurtByDebuff` arm.
+    pub const NPC_DEBUFF_DAMAGE: u8 = 153;
+    /// `157 TeamChangeFromUI` (`MessageID.cs:328`) — the team UI click;
+    /// shares 45's body (`NetMessage.cs:970-974`), the reader adds the
+    /// team-spawn tail (`MessageBuffer.cs:2355-2363`). W4-g51 lifted the
+    /// parked d97 codec and wired the shared team apply+relay.
+    pub const TEAM_CHANGE_FROM_UI: u8 = 157;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -640,6 +650,9 @@ pub struct PlayerNet {
     /// is unported (no loadout system); the accessory-visibility bits are
     /// stored-not-simulated on the peer. `None` = never synced.
     pub loadout: Option<SyncLoadout>,
+    /// `Main.player[id].team`, fed by `45 TeamChange` / `157 TeamChangeFromUI`
+    /// (`MessageBuffer.cs:2325-2364`). 0 = no team (the C# field default).
+    pub team: u8,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1765,6 +1778,19 @@ pub struct SpectatePlayer {
     pub target: i16,
 }
 
+/// `msg 153 NPCDebuffDamage`'s body (`NetMessage.cs:1646-1649`): `(byte)` npc
+/// slot + `(short)` damage. BOTH sides apply `GetHurtByDebuff` and the host
+/// relays to the others (`MessageBuffer.cs:4410-4416`); the damage lands on
+/// `realLife` when set, the immortal gate skips the subtraction, and a
+/// life ≤ 0 is floored to 1 + a 9999 `StrikeNPCNoInteraction`
+/// (`NPC.cs:91864-91888`). Host-sent only (the electric-eel pulse,
+/// `NPC.cs:91853-91860`), so it is `S2c`-only like `97`/`98`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcDebuffDamage {
+    pub npc: u8,
+    pub damage: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1904,6 +1930,10 @@ pub enum C2s {
     /// (`Player.SetOrRequestSpectating`, `Player.cs:17252`; the host arm
     /// `MessageBuffer.cs:4361-4384`).
     SpectatePlayer(SpectatePlayer),
+    /// `157 TeamChangeFromUI` - a client clicked the team UI
+    /// (`Main.cs:42766`); the shared reader arm relays as 45 and runs the
+    /// team-spawn tail for 157 (`MessageBuffer.cs:2342`/`:2355-2363`).
+    TeamChangeFromUi(TeamChange),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2056,6 +2086,10 @@ pub enum S2c {
     /// `SetOrRequestSpectating` (`Player.cs:17271`); the client applies a
     /// peer's value or its own stop (`:4380-4383`).
     SpectatePlayer(SpectatePlayer),
+    /// `153 NPCDebuffDamage` - an NPC's debuff tick damage, host-sent and
+    /// relayed (`MessageBuffer.cs:4408-4417`); the client applies
+    /// `GetHurtByDebuff` (`NPC.cs:91864-91888`).
+    NpcDebuffDamage(NpcDebuffDamage),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2152,6 +2186,7 @@ impl C2s {
             Self::LucyPopup(_) => id::LUCY_POPUP,
             Self::CrystalInvasionSkip => id::CRYSTAL_INVASION_SKIP,
             Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
+            Self::TeamChangeFromUi(_) => id::TEAM_CHANGE_FROM_UI,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2246,6 +2281,8 @@ impl C2s {
             Self::CrystalInvasionSkip => w,
             // `NetMessage.cs:1639-1642`: (byte)number, (short)number2.
             Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
+            // `NetMessage.cs:970-974` — 157 shares 45's case.
+            Self::TeamChangeFromUi(t) => w.u8(t.player_id).u8(t.team),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2416,6 +2453,11 @@ impl C2s {
                 player_id: r.u8()?,
                 target: r.i16()?,
             }),
+            // `MessageBuffer.cs:2325-2333` — 157 shares 45's reader arm.
+            id::TEAM_CHANGE_FROM_UI => Self::TeamChangeFromUi(TeamChange {
+                player_id: r.u8()?,
+                team: r.u8()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2584,6 +2626,7 @@ impl S2c {
             Self::CavernMonsterTypes(_) => id::CAVERN_MONSTER_TYPES,
             Self::LucyPopup(_) => id::LUCY_POPUP,
             Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
+            Self::NpcDebuffDamage(_) => id::NPC_DEBUFF_DAMAGE,
         }
     }
 
@@ -2769,6 +2812,8 @@ impl S2c {
             // `NetMessage.cs:1639-1642`: (byte)number, (short)number2 (the
             // relay reuses the writer case).
             Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
+            // `NetMessage.cs:1646-1649`: (byte)npc, (short)damage.
+            Self::NpcDebuffDamage(d) => w.u8(d.npc).i16(d.damage),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3031,6 +3076,11 @@ impl S2c {
             id::SPECTATE_PLAYER => Self::SpectatePlayer(SpectatePlayer {
                 player_id: r.u8()?,
                 target: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4410-4411`: (byte)npc, (short)damage.
+            id::NPC_DEBUFF_DAMAGE => Self::NpcDebuffDamage(NpcDebuffDamage {
+                npc: r.u8()?,
+                damage: r.i16()?,
             }),
             _ => return None,
         })
@@ -5373,6 +5423,42 @@ mod tests {
             S2c::SpectatePlayer(d) => assert_eq!(d, s),
             other => panic!("expected 150, got {:?}", other.msg_id()),
         }
+    }
+
+    /// W4-g51: the `153 NPCDebuffDamage` body byte-pins the slot+damage pair
+    /// (`NetMessage.cs:1646-1649`: byte npc, short damage); S2c-only.
+    #[test]
+    fn w4_g51_npc_debuff_damage_round_trips() {
+        let d = NpcDebuffDamage { npc: 7, damage: 50 };
+        let mut body = vec![7u8];
+        body.extend_from_slice(&50i16.to_le_bytes());
+        let f = S2c::NpcDebuffDamage(d).encode();
+        assert_eq!(f[2], 153);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcDebuffDamage(x) => assert_eq!(x, d),
+            other => panic!("expected 153, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `157 TeamChangeFromUI` body shares 45's case
+    /// (`NetMessage.cs:970-974`: byte player, byte team); C2s-only.
+    #[test]
+    fn w4_g51_team_change_from_ui_shares_the_45_body() {
+        let t = TeamChange {
+            player_id: 2,
+            team: 3,
+        };
+        let c = C2s::TeamChangeFromUi(t).encode();
+        assert_eq!(c[2], 157);
+        assert_eq!(&c[3..], &[2, 3]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TeamChangeFromUi(d) => assert_eq!(d, t),
+            other => panic!("expected 157, got {:?}", other.msg_id()),
+        }
+        // The 45 body is byte-identical.
+        let f = C2s::TeamChange(t).encode();
+        assert_eq!(&c[3..], &f[3..]);
     }
 
     #[test]
