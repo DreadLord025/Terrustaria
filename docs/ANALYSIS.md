@@ -36147,6 +36147,100 @@ pass-level `a == b` full-tile determinism), 2 `kill.rs` witnesses (the
 step-count/order witnesses updated (67 steps, `larva` after `muds walls
 in jungle`).
 
+## Jungle residuals (W4-c31, code-only, 2026-11-21)
+
+The hive landed; this pass censuses the **rest of the C# `WorldGen` jungle
+family** against the port and ports the missing pieces verbatim (the census
+table: `docs/research/12k-c31-jungle-residuals.md`). Three gaps filled:
+
+1. **`JungleShrines` faithful rewrite** (`worldgen/structures.rs::
+   pass_jungle_shrines`, `WorldGen.cs:15977-16131`) — replaces the
+   shape-level hut ("the C#'s exact brick patterns are not 1:1"). The
+   `GenVars.jungleHut` material pick (`Reset` `:11167` `Next(5)` →
+   `:11317-11336` map to 119/120/158/175/45, drawn in the Reset stand-in
+   AFTER `crimson_left` — the order deviation keeps the existing Reset draw
+   byte-identical), the hut count `Next(7,12) * maxTilesX/4200`, the
+   dungeon-opposite-half origin search with the `num4 > maxTilesX*10` retry
+   valve, the 30-radius hive/temple proximity veto (the 225/229/226/119/120
+   tiles + the walls 86/87, stride-3), `structures.CanPlace(area, 1)` over
+   the pass-local protected rects, the brick shell + carved interior with
+   the hut-specific wall (23/24/42/45/10), the 100-try `PlaceTile(4, style
+   3)` torch, the floor carve, the mud pillars, the shrinking roof rows and
+   the `JChestX/Y` publication. Fresh `pass_rng("Jungle Chests")` slot (the
+   shape-level pass rode the shared `srng`).
+2. **Plantera bulb event placement** (`growth/plantera.rs`,
+   `WorldGen.cs:74127-74267`) — `GeneratePlanteraBulbOnAllMechsDefeated`
+   (the 2500-attempt jungle-half rectangle, the 500/200 force/any-tile
+   tiers, the ceiling walk) + `AttemptToGeneratePlanteraBulbAt` (the 4×4
+   mud/grass score ≥ 12 with the container/furniture/painting/boulder veto,
+   the `ClearTile` + grass ring, the 238 place). The
+   `NPC.OnGameEventClearedForTheFirstTime` case-16/17/18 hook
+   (`NPC.cs:78780-78788`) wires it at the mech-boss death path
+   (`world_sim/npcs.rs`, the `UpdateNpcs` stream). The full
+   `PlaceJunglePlant` port (`growth/jungle_plants.rs`, `:47779-47944` — the
+   2×2 236/238/702 + 3×2 233 shapes) is shared by the event and the growth
+   tick. `World.dungeon_x/y` published by the dungeon step + read/written in
+   the `.wld` flags + TRWLD v18.
+3. **Life-fruit / bulb / 233 hardmode growth** (`growth/grass.rs` case-60
+   tail, `WorldGen.cs:74414-74496`) — the `Next(25)` gate + liquid veto, the
+   all-mechs `Next(60)` bulb arm (150-radius stride-2 density), the any-mech
+   `Next(30/40)` life-fruit arm (60/50-radius, `Next(3)` style), the 233
+   detritus fallback (`Next(8)` styleY 0 / `Next(12)` styleY 1). The
+   plant-above `flag` + the 226 `TooManyJunglePlantsNearby` veto restored
+   (`:74355-74376`). The case-70 mushroom tail (`:74497-74506` —
+   `PlaceCatTail` + the `Next(250)` `GrowTree`); `PlaceCatTail` ported
+   (`growth/decorations.rs`, `:58629-58742`).
+
+**Deviations (recorded):**
+1. The `JungleShrines` rewrite moves OFF the shared `srng` onto its own
+   `pass_rng("Jungle Chests")` slot, so every downstream `srng` consumer
+   re-rolls and the shrine tiles change; the Reset `jungle_hut` draw shifts
+   the Reset-stream tail. BOTH world-hash pins are stale-by-design and
+   re-pin at the merge gate (`world_hash.rs`'s provenance block); the
+   `a == b` determinism assertion stays green (the pass is a pure function
+   of world + stream).
+2. The port has no global `StructureMap`, so the cross-pass protected-rect
+   intersection is carried by a pass-local `protected` vec (the shrine
+   rects accumulate via `AddProtectedStructure`); the hive/temple avoidance
+   is the C#'s own 30-radius tile/wall proximity veto. The
+   `tileSolid[137] = false` window (`:16129`) has no mutable port table —
+   the dart-trap solidity is read by the temple/trap passes at their own
+   slots (the hive.rs window precedent).
+3. `PlaceJunglePlant`'s `KillTile` collapse + `CopyPaintAndCoating` no-op
+   follow the existing `biome_detail.rs::place_jungle_plant_detritus`
+   precedent (the box is fully rewritten on success; paint is 0 during
+   generation / the growth tick carries no paint source here).
+4. The bulb event's `Main.dungeonX` reads `World.dungeon_x`;
+   `Main.UnderworldLayer` = `maxTilesY - 200` (`Main.cs:2790`).
+   `Main.expertMode` is constants-off (single-difficulty), so the
+   life-fruit `maxValue2` collapses to 40 and the density radius to 60 (the
+   classic arm); the expert branches are carried for the difficulty flip.
+5. The `NetMessage.SendTileSquare` sides are MP scope (the host path); the
+   `PlayerLOS` gate on the mushroom-tree arm gates the draw-side
+   `TreeGrowFXCheck` leaf FX only (the tree already grew) — the FX has no
+   growth-tick channel in the port.
+6. The sub-vanilla valve: a collapsed shrine y band
+   `[(surface+rock)/2, maxY-400)` skips the pass before any draw (the C#
+   `Next` throws on the empty range; the mahogany/thin-ice idiom).
+
+**Tests-as-code (written, not run — code-only mode):** 4 `structures.rs`
+shrine witnesses (the material/wall placement, the pass-level `a == b`
+full-tile determinism, the collapsed-band valve, the hive proximity veto),
+6 `jungle_plants.rs` witnesses (the 2×2 fruit / bulb / 3×2 detritus frames,
+the non-grass/solid-occupant refusals, the `a == b` determinism), 4
+`plantera.rs` witnesses (the event placement, the `a == b` determinism, the
+force-arm grass ring, the container veto), 4 `grass.rs` hardmode-tail
+witnesses (the fruit/bulb/detritus growth, the `a == b` determinism, the
+pre-hardmode detritus-only arm, the liquid veto).
+
+**Verification.** Code-only: every C# site was re-read line-by-line
+(`WorldGen.cs:15977-16131`, `:74127-74267`, `:74414-74506`, `:47779-47944`,
+`:58629-58742`, `NPC.cs:78780-78788`); the port seams were checked by
+read/grep (the `GenVars.jungle_hut` field, the Reset draw order, the
+`World.dungeon_x/y` publication + the `.wld`/TRWLD v18 round trip, the
+mech-death hook, the `place_jungle_plant`/`place_cat_tail` seams). The
+witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

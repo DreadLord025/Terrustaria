@@ -252,6 +252,22 @@ mod tests {
     // world's shallow layers can clear). Stale-by-design; the gate
     // re-pins. The `a == b` determinism assertion stays green — the pass
     // is a pure function of (world, stream), no ambient state.
+    // W4-c31 jungle residuals (2026-11-21, code-only): the faithful
+    // `JungleShrines` rewrite (`worldgen/structures.rs`,
+    // `WorldGen.cs:15977-16131`) replaces the shape-level hut. The pass
+    // moves OFF the shared `srng` onto its own fresh
+    // `pass_rng("Jungle Chests")` slot, so every downstream `srng` consumer
+    // (the chests, altars, pyramids, pots, cave houses, mini-biomes) re-rolls
+    // along the stream, and the shrine tiles themselves change (the
+    // `GenVars.jungleHut` material, the proximity veto, the torch/floor/
+    // pillars/roof sweeps). The Reset stand-in also draws `jungle_hut`
+    // (`Next(5)`) AFTER `crimson_left`, shifting the Reset-stream tail.
+    // BOTH pins move BY DESIGN. On the 512 world the shrine y band
+    // `[(surface+rock)/2, maxY-400)` collapses (the sub-vanilla valve skips
+    // the pass), but the `srng` schedule shift + the Reset `jungle_hut` draw
+    // still move the downstream tiles. Stale-by-design; the gate re-pins.
+    // The `a == b` determinism assertion stays green — the pass is a pure
+    // function of (world, stream), no ambient state.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -301,6 +317,13 @@ mod tests {
     // frames replace the dome's tiles, and the srng schedule shift
     // re-rolls every downstream pass. Stale-by-design; the gate re-pins
     // it sequentially after the S1-P-i33 mask re-pin. `a == b` stays green.
+    // W4-c31 jungle residuals (2026-11-21, code-only): the faithful
+    // `JungleShrines` rewrite (see the SEED42_512 note above) moves this pin
+    // too — on a DEFAULT-sized world the shrine y band is live, so the
+    // faithful huts (the `jungleHut` material shells, the carved interiors,
+    // the torches, the mud pillars, the roof rows) replace the shape-level
+    // boxes, and the `srng` schedule shift re-rolls every downstream pass.
+    // Stale-by-design; the gate re-pins. `a == b` stays green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
