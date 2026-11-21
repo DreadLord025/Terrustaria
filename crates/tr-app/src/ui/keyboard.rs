@@ -1011,6 +1011,23 @@ mod tests {
 
     const SCREEN: Vec2 = Vec2::new(1600.0, 900.0);
 
+    /// W4-g22 DOC-SWEEP witness — the keyboard's hover census: ONLY the
+    /// Submit/Cancel pair sounds (`FadedMouseOver`, `:1071`); the grid
+    /// keys and the textbox are colour-only (`:637-644`, `:234-241`).
+    #[test]
+    fn doc_sweep_only_submit_cancel_hover_sounds() {
+        let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
+        for grid in [false, true] {
+            let l = layout(SCREEN, grid);
+            assert_eq!(hover_element(&l, centre(l.submit)), Some(0));
+            assert_eq!(hover_element(&l, centre(l.cancel)), Some(1));
+            assert_eq!(hover_element(&l, centre(l.textbox)), None);
+            assert_eq!(hover_element(&l, centre(key_rect(l.grid_origin, 0, 0, 1))), None);
+            assert_eq!(hover_element(&l, centre(key_rect(l.grid_origin, 0, 4, 1))), None);
+            assert_eq!(hover_element(&l, Vec2::new(10.0, 10.0)), None);
+        }
+    }
+
     #[test]
     fn layout_matches_the_source_table_at_1600x900() {
         // The desktop layer (`show_gamepad_hints == false`) — the screen the
