@@ -1083,6 +1083,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player.miscCounter++` (`Player.cs:31827`): the sandstorm leg
             // pose's 4-tick turn cadence reads it.
             p.misc_counter = p.misc_counter.wrapping_add(1);
+            // W4-f6 wiring — the mount visual-effect inputs: the
+            // `timeForVisualEffects` tick counter (the Pixie tail's even-tick
+            // gate, `Mount.cs:5147`), `WindForVisuals` + the wind-exposure
+            // gate (the Witch Broom trinket sway, `Mount.cs:3568-3572`).
+            p.time_for_visuals = (app.anim_time as f64 * 60.0) % 216000.0;
+            p.wind_for_visuals = app.wind.speed_current;
+            let (mcx, mcy) = p.center();
+            p.wind_in_place = app.wind.in_a_place_with_wind(
+                &app.world, (mcx / 16.0) as i32, (mcy / 16.0) as i32, 1, 1,
+            );
             // `Player.cs:28162-28176,28233-28236`: `vector7` captures the
             // pre-movement position, `flag34` is false on a mount or while
             // tongued, and `HandleRunning` fires after movement when grounded.
@@ -1561,6 +1571,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 crate::mount_dust::drain_mount_dust(
                     mount_dust,
                     &app.player_name,
+                    p,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                     &mut app.dust,
                     &spawn_ctx,

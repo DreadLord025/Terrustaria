@@ -464,6 +464,38 @@ fn direction_to(origin: Vec2, target: Vec2) -> Vec2 {
     (target - origin).normalize_or_zero()
 }
 
+/// `Mount.GetWitchBroomTrinketRotation` (`Mount.cs:3562-3574`), verbatim —
+/// RNG-FREE (the wind/miscCounter sway). `wind_in_place` is
+/// `WorldGen.InAPlaceWithWind(Center.ToTileCoordinates(), 1, 1)`,
+/// `wind_for_visuals` is `Main.WindForVisuals` (= `windSpeedCurrent`).
+pub(crate) fn witch_broom_trinket_rotation(
+    vx: f32,
+    misc_counter: u32,
+    wind_for_visuals: f32,
+    wind_in_place: bool,
+) -> f32 {
+    let num = (vx / 10.0).clamp(-1.0, 1.0); // `:3564`
+    let num3 = if wind_in_place { 1.0 } else { 0.5 }; // `:3567-3571`
+    // `:3572` — the wind sway (the double-sin of the f32 miscCounter/300).
+    let num2 = (misc_counter as f32 / 300.0 * (std::f32::consts::PI * 2.0) * 3.0).sin()
+        * (std::f32::consts::PI / 4.0)
+        * wind_for_visuals.abs()
+        * 0.5
+        + (std::f32::consts::PI / 4.0) * (0.0 - wind_for_visuals) * 0.5;
+    // `:3573` — the velocity sway + the wind term.
+    num * (misc_counter as f32 / 150.0 * (std::f32::consts::PI * 2.0) * 3.0).sin()
+        * (std::f32::consts::PI / 4.0)
+        * 0.5
+        + num * (std::f32::consts::PI / 4.0) * 0.5
+        + num2 * num3
+}
+
+/// `Mount.GetWitchBroomTrinketOriginOffset` (`Mount.cs:3576-3579`):
+/// `(29 * direction, -4)`.
+pub(crate) fn witch_broom_trinket_origin_offset(facing: i32) -> Vec2 {
+    Vec2::new(29.0 * facing as f32, -4.0)
+}
+
 /// Site 4626 — the golf-cart smoke (`Mount.cs:4623-4639`). **DEAD CODE**:
 /// `EmitGolfCartSmoke` has ZERO callers in the decompile (the golf-cart
 /// `UpdateFrame_GolfCart` :4570-4621 calls `EmitGolfCartWheelDust` +
@@ -721,20 +753,23 @@ pub fn broom_trinket_sparkle(
 }
 
 /// Site 4849 — the Witch Broom's trinket trail (`Mount.cs:4834-4855`): the
-/// gate is `NextFloat() <= num12` where `num12 = 0.1 + velocity.Length()/30`
-/// (the NextFloat draws EVERY tick; a fail breaks). On a pass, ONE
-/// `NextFloat()` phase (`num13`), then 8 steps (`num14 = 0..1 step 0.125`),
-/// each a `Next(15) == 0` gate; on a 0, the spoke
+/// pos4 anchor draws ONE `NextFloat()` jitter FIRST (`:4835`, `Center +
+/// (18 - 20*NextFloat()*direction, 12)`, folded through the caller's
+/// `RotatedRelativePoint` via `rot4`), THEN the gate `NextFloat() <= num12`
+/// where `num12 = 0.1 + velocity.Length()/30` (a fail breaks). On a pass,
+/// ONE `NextFloat()` phase (`num13`), then 8 steps (`num14 = 0..1 step
+/// 0.125`), each a `Next(15) == 0` gate; on a 0, the spoke
 /// `((2π*num14 + num13).ToRotationVector2() * (0.5, 1) * 4).RotatedBy(
 /// fullRotation)`, then `NewDustPerfect(pos4 + spoke, 43, Zero, 254,
 /// yellow, 0.3)`; `velocity = spoke*0.025 + DirectionTo(pos5,
-/// dust.position)*0.5`, `fadeIn = 0.3`, `noLightEmittance`. `pos4`/`pos5`
-/// are the caller's rotated anchors (`Center + (18 - 20*NextFloat()*
-/// direction, 12)` and `Center + (52*direction, -6)` — the pos4 NextFloat
-/// is drawn BEFORE the gate, :4835). Returns whether the gate passed.
+/// dust.position)*0.5`, `fadeIn = 0.3`, `noLightEmittance`. `pos4_base` is
+/// the un-jittered `Center + (18, 12)`; `pos5` the caller's rotated
+/// `Center + (52*direction, -6)`. Returns whether the gate passed.
 #[allow(clippy::too_many_arguments)]
 pub fn broom_trinket_trail(
-    pos4: Vec2,
+    pos4_base: Vec2,
+    facing: i32,
+    rot4: impl Fn(Vec2) -> Vec2,
     pos5: Vec2,
     full_rotation: f32,
     vel_len: f32,
@@ -743,6 +778,8 @@ pub fn broom_trinket_trail(
     ctx: &SpawnCtx,
     world: &World,
 ) -> bool {
+    // `:4835` — the pos4 jitter NextFloat draws BEFORE the gate (:4839).
+    let pos4 = rot4(pos4_base + Vec2::new(-20.0 * rng.next_float() * facing as f32, 0.0));
     let num12 = 0.1 + vel_len / 30.0; // `:4834`
     if !(rng.next_float() <= num12) {
         return false; // `:4839-4842` — the NextFloat still ran.
@@ -1603,6 +1640,34 @@ pub(crate) enum MountDustRequest {
         charge: f32, center: Vec2, bottom_left: Vec2, width: i32,
         facing: i32, vel: Vec2, vx: f32, vy: f32, run_speed: f32,
     },
+    /// `Mount.cs:4703` — the gem-minecart sparkle (the caller folds
+    /// `Center + (0,10)*Directions` through `RotatedRelativePoint`).
+    GemSparkle { spawn_point: Vec2, dust_type: i32 },
+    /// `Mount.cs:4719` — the steam-minecart puff (`Center + (-10,-4)*Dir`).
+    SteamPuff { spawn_point: Vec2, dust_type: i32, vx: f32, frame: i32 },
+    /// `Mount.cs:4750` — the exhaust-minecart smoke (the caller folds the
+    /// per-dust anchor; `anchor_base` = `Center + (-18,20)*Dir` rotated).
+    ExhaustSmoke { center: Vec2, facing: i32, vel: Vec2, dust_type: i32 },
+    /// `Mount.cs:4782` — the confetti-minecart burst.
+    ConfettiBurst { center: Vec2, facing: i32, vel: Vec2 },
+    /// `Mount.cs:4824` — the Witch Broom trinket sparkle (the caller folds
+    /// the trinket swing through `RotatedRelativePoint`).
+    BroomSparkle { trinket_point: Vec2 },
+    /// `Mount.cs:4849` — the Witch Broom trinket trail. `pos4_base` is the
+    /// un-jittered `Center + (18, 12)`; the emitter draws the pos4 NextFloat
+    /// (`:4835`, BEFORE the gate) and the drain folds it through the
+    /// player's `RotatedRelativePoint` (the `player` arg).
+    BroomTrail {
+        pos4_base: Vec2, pos5: Vec2, facing: i32, full_rotation: f32, vel_len: f32,
+    },
+    /// `Mount.cs:5061`/`:5071` — the Drill-mount exhaust trail (the caller
+    /// folds the `vector6`/`vector7` fullRotation anchors).
+    DrillTrail { center: Vec2, anchor_now: Vec2, anchor_old: Vec2 },
+    /// `Mount.cs:5099` — the Lava-cart bubble trail (the caller folds the
+    /// shadow-offset anchors `value`/`vector2`/`vector4`).
+    LavaTrail { value: Vec2, anchor: Vec2, delta: Vec2, vel_len: f32 },
+    /// `Mount.cs:5149` — the Pixie tail (the even-tick + speed gates).
+    PixieTail { center: Vec2, vel: Vec2, time_for_visuals: f64 },
     /// `Mount.DoSpawnDust` (`:6371`) from `SetMount` (`:6300`,
     /// `is_dismounting` false) or `Dismount` (`:6169`, true).
     Spawn {
@@ -1637,11 +1702,14 @@ pub(crate) enum MountDustRequest {
 
 /// The drain: one request → its emitter, on the caller's `UpdatePlayers`
 /// stream. `player_name` is `Main.player[whoAmI].name` (the fairy-color
-/// dev-name switch reads it). The `netMode == 2` heads (`:6322`/`:6373`)
-/// are the single-player drop.
+/// dev-name switch reads it); `player` resolves the Witch Broom's pos4
+/// `RotatedRelativePoint` fold at drain time (the jitter NextFloat draws
+/// inside the emitter, so the fold cannot be pre-computed). The
+/// `netMode == 2` heads (`:6322`/`:6373`) are the single-player drop.
 pub(crate) fn drain_mount_dust(
     requests: Vec<MountDustRequest>,
     player_name: &str,
+    player: &crate::player::Player,
     rng: &mut UnifiedRandom,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
@@ -1678,6 +1746,36 @@ pub(crate) fn drain_mount_dust(
                     charge, center, bottom_left, width, facing, vel, run_speed,
                     rng, dust, ctx, world,
                 );
+            }
+            MountDustRequest::GemSparkle { spawn_point, dust_type } => {
+                gem_minecart_sparkle(spawn_point, dust_type, rng, dust, ctx, world);
+            }
+            MountDustRequest::SteamPuff { spawn_point, dust_type, vx, frame } => {
+                steam_minecart_puff(spawn_point, dust_type, vx, frame, rng, dust, ctx, world);
+            }
+            MountDustRequest::ExhaustSmoke { center, facing, vel, dust_type } => {
+                exhaust_minecart_smoke(center, facing, vel, dust_type, rng, dust, ctx, world);
+            }
+            MountDustRequest::ConfettiBurst { center, facing, vel } => {
+                confetti_minecart_burst(center, facing, vel, rng, dust, ctx, world);
+            }
+            MountDustRequest::BroomSparkle { trinket_point } => {
+                broom_trinket_sparkle(trinket_point, rng, dust, ctx, world);
+            }
+            MountDustRequest::BroomTrail { pos4_base, pos5, facing, full_rotation, vel_len } => {
+                broom_trinket_trail(
+                    pos4_base, facing, |p| player.rotated_relative_point(p, 0),
+                    pos5, full_rotation, vel_len, rng, dust, ctx, world,
+                );
+            }
+            MountDustRequest::DrillTrail { center, anchor_now, anchor_old } => {
+                drill_mount_trail(center, anchor_now, anchor_old, rng, dust, ctx, world);
+            }
+            MountDustRequest::LavaTrail { value, anchor, delta, vel_len } => {
+                lava_cart_trail(value, anchor, delta, vel_len, rng, dust, ctx, world);
+            }
+            MountDustRequest::PixieTail { center, vel, time_for_visuals } => {
+                pixie_tail(center, vel, time_for_visuals, player_name, rng, dust, ctx, world);
             }
             MountDustRequest::Spawn {
                 kind, spawn_dust, spawn_dust_no_gravity, is_cart, is_dismounting,
@@ -2917,7 +3015,8 @@ mod tests {
         };
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(97);
-        drain_mount_dust(vec![req], "Terrarian", &mut rng, &mut pool, &c, &w);
+        let pl = crate::player::Player::spawn(&w);
+        drain_mount_dust(vec![req], "Terrarian", &pl, &mut rng, &mut pool, &c, &w);
         let mut dpool = DustPool::new();
         let mut drng = UnifiedRandom::new(97);
         wolf_spawn_dust(pos, 20, 42, vel, &mut drng, &mut dpool, &c, &w);
@@ -2954,7 +3053,8 @@ mod tests {
         };
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(53);
-        drain_mount_dust(vec![req], "Terrarian", &mut rng, &mut pool, &c, &w);
+        let pl = crate::player::Player::spawn(&w);
+        drain_mount_dust(vec![req], "Terrarian", &pl, &mut rng, &mut pool, &c, &w);
         let mut dpool = DustPool::new();
         let mut drng = UnifiedRandom::new(53);
         basilisk_run_dust(bottom_left, 20, 6.0, 0.0, 8.0, &mut drng, &mut dpool, &c, &w);
@@ -2993,7 +3093,8 @@ mod tests {
         };
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(101);
-        drain_mount_dust(vec![req], "Terrarian", &mut rng, &mut pool, &c, &w);
+        let pl = crate::player::Player::spawn(&w);
+        drain_mount_dust(vec![req], "Terrarian", &pl, &mut rng, &mut pool, &c, &w);
         let mut dpool = DustPool::new();
         let mut drng = UnifiedRandom::new(101);
         failed_dismount_dust(
@@ -3005,6 +3106,32 @@ mod tests {
             assert_eq!(pool.slot(i).velocity, dpool.slot(i).velocity);
             assert_eq!(pool.slot(i).scale, dpool.slot(i).scale);
             assert_eq!(pool.slot(i).scale, 0.7, "the Bat pins scale 0.7");
+        }
+        assert_eq!(rng.next(), drng.next(), "the drain changes no draws");
+    }
+
+    /// W4-f6 WIRING — the Pixie-tail effect request: the drain routes to
+    /// `pixie_tail` unchanged (the even-tick gate passes at time 0).
+    #[test]
+    fn w4_f6_drain_pixie_tail_matches_the_direct_emitter() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(500.0, 400.0);
+        let vel = Vec2::new(8.0, 0.0);
+        let req = MountDustRequest::PixieTail { center, vel, time_for_visuals: 0.0 };
+        let pl = crate::player::Player::spawn(&w);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(71);
+        drain_mount_dust(vec![req], "Terrarian", &pl, &mut rng, &mut pool, &c, &w);
+        let mut dpool = DustPool::new();
+        let mut drng = UnifiedRandom::new(71);
+        pixie_tail(center, vel, 0.0, "Terrarian", &mut drng, &mut dpool, &c, &w);
+        assert_eq!(active(&pool).len(), active(&dpool).len());
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i).position, dpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, dpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).color, dpool.slot(i).color);
+            assert_eq!(pool.slot(i).dust_type, 278);
         }
         assert_eq!(rng.next(), drng.next(), "the drain changes no draws");
     }
