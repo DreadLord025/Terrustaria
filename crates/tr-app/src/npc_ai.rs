@@ -1156,9 +1156,13 @@ mod tests {
         assert_eq!(conf.sprite_dir, 1, "the lockstep rides the flip");
         assert_eq!(conf.vx.to_bits(), 1.0f32.to_bits(), "the walk reverses");
         assert_eq!(calm.vx.to_bits(), (-1.0f32).to_bits());
-        // walker_step_ladder (the aiStyle-3 ladder — the headcrab/goblin
-        // stand-ins): the ladder's accel reads the flipped direction.
-        let mut calm3 = Npc::new(NpcKind::VortexHeadcrab, 90.0 * 16.0, 118.0 * 16.0 - 20.0, 1, 0.0);
+        // walker_step_ladder (the aiStyle-3 ladder — the VortexSoldier
+        // stand-in): the ladder's accel reads the flipped direction.
+        // W4-g4 P9: the kind is the Soldier 429 (null immunity row,
+        // `NPCID.cs:8561`), NOT the Headcrab 428 — the headcrab is
+        // Confused-immune (`NPCID.cs:8555-8559`), so its buff-31 add is
+        // rejected and the flip never fires for it in the C#.
+        let mut calm3 = Npc::new(NpcKind::VortexSoldier, 90.0 * 16.0, 118.0 * 16.0 - 56.0, 1, 0.0);
         calm3.on_ground = true;
         let mut conf3 = calm3.clone();
         conf3.buffs.add_buff(31, 600);

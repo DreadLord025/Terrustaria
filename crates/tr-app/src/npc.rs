@@ -20664,15 +20664,20 @@ mod tests {
         player.x = 40.0 * TILE_PX;
         player.y = 20.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(1);
-        // The BrainScrambler mid-cycle: ai[1] = 40 (the 80-tick cooldown's
+        // The RayGunner mid-cycle: ai[1] = 40 (the 80-tick cooldown's
         // half), ai[2] = 3 (the aim octant) — the fire arm's gate.
-        let mut calm = Npc::new(NpcKind::BrainScrambler, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        // W4-g4 P9: the kind is the RayGunner 382 (null immunity row,
+        // `NPCID.cs:8345`), NOT the BrainScrambler 381 — the scrambler is
+        // Confused-immune (`NPCID.cs:8339-8343`), so `add_buff(31)` is
+        // rejected and its confused arm is unreachable in the C#. Both
+        // share `update_martian_shooter`.
+        let mut calm = Npc::new(NpcKind::RayGunner, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
         calm.ai[1] = 40.0;
         calm.ai[2] = 3.0;
         calm.update_martian_shooter(&w, &player, &mut rng);
         assert!(!calm.wants_hostile_shot.is_empty(), "the calm shooter fires");
 
-        let mut confused = Npc::new(NpcKind::BrainScrambler, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        let mut confused = Npc::new(NpcKind::RayGunner, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
         confused.ai[1] = 40.0;
         confused.ai[2] = 3.0;
         confused.buffs.add_buff(31, 600);
@@ -20680,6 +20685,12 @@ mod tests {
         assert_eq!(confused.ai[1], 0.0, "the confused reset zeroes the timer");
         assert_eq!(confused.ai[2], 0.0, "the confused reset zeroes the octant");
         assert!(confused.wants_hostile_shot.is_empty(), "the confused shooter never fires");
+        // The BrainScrambler's immunity: the add is rejected and the
+        // latch never reads (`NPC.AddBuff`'s immune guard,
+        // `NPC.cs:89928-89931`).
+        let mut scram = Npc::new(NpcKind::BrainScrambler, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        scram.buffs.add_buff(31, 600);
+        assert!(scram.buffs.find_buff_index(31).is_none(), "381 rejects Confused");
     }
 
     /// W4-g4 — the confused Vortex Rifleman (`NPC.cs:58470`/`:58566`/`:58576`):
