@@ -863,6 +863,11 @@ impl App {
             // clear/IsOccupied-gated set + relay (`:3942-3963`) land with
             // the apply-wiring lanes (g48-g52) / S1-I-4.
             C2s::DisplayDollSync(_) | C2s::TileEntityInteraction(_) => {}
+            // S1-I-1 W4-f21: `123`'s host TEWeaponsRack.TryPlacing
+            // (`MessageBuffer.cs:3978-3994`) and `124`'s hat-rack
+            // dye-unfold + ReadItem + relay (`:3995-4022`) land with the
+            // apply-wiring lanes (g48-g52) / S1-I-4.
+            C2s::WeaponsRackTryPlacing(_) | C2s::HatRackItemSync(_) => {}
         }
     }
 
@@ -1963,6 +1968,10 @@ impl App {
             // clear/SetInteractionAnchor (`:3964-3975`) land with the
             // apply-wiring lanes (g48-g52) / S1-I-4.
             S2c::DisplayDollSync(_) | S2c::TileEntityInteraction(_) => {}
+            // S1-I-1 W4-f21: `124`'s client hat-rack dye-unfold + ReadItem
+            // (`MessageBuffer.cs:4004-4016`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            S2c::HatRackItemSync(_) => {}
         }
     }
 

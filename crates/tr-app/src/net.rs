@@ -341,6 +341,18 @@ pub mod id {
     /// clear/set). Client sends: `TileEntity.cs:280`/`:285`,
     /// `Main.cs:17605`.
     pub const TE_INTERACTION_REQUEST: u8 = 122;
+    /// `123 WeaponsRackTryPlacing` (`MessageID.cs:260`) — writer
+    /// `NetMessage.cs:1479-1488` (the exact 89 body), reader
+    /// `MessageBuffer.cs:3978-3994` (host-only `TEWeaponsRack.TryPlacing`).
+    /// Client send: `TEWeaponsRack.cs:212`. C2s-only.
+    pub const WEAPONS_RACK_TRY_PLACING: u8 = 123;
+    /// `124 TEHatRackItemSync` (`MessageID.cs:262`) — writer
+    /// `NetMessage.cs:1489-1508` (`(byte)player + int entityId +
+    /// (byte)slot` with the DYE +2 fold, then `TEHatRack.WriteItem` or the
+    /// `int 0 + byte 0` fallback), reader `MessageBuffer.cs:3995-4022`
+    /// (the `>= 2` dye unfold + the `>= 2` slot refusal). Client sends:
+    /// `ItemSlot.cs:1117`/`:1216`/`:1766`/`:1770`, `TEHatRack.cs:322`/`:368`.
+    pub const TE_HAT_RACK_ITEM_SYNC: u8 = 124;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2292,6 +2304,38 @@ pub struct TileEntityInteraction {
     pub player_id: u8,
 }
 
+/// `msg 124 TEHatRackItemSync`'s body (`NetMessage.cs:1489-1508`):
+/// `(byte)player + int entityId + (byte)slot`, where the writer FOLDS the
+/// dye flag into the slot (`num4 += 2` when `number4 == 1f`, `:1492-1496`)
+/// and the reader UNFOLDS it (`>= 2` → dye, `-2`,
+/// `MessageBuffer.cs:4005-4009`). The tail is `TEHatRack.WriteItem`
+/// (`TEHatRack.cs:378-388`: ushort type + ushort stack + byte prefix) or
+/// the no-entity `int 0 + byte 0` fallback (`:1505-1506`) — again
+/// byte-width-identical (5), so the fallback decodes as an air slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HatRackItemSync {
+    pub player_id: u8,
+    pub entity_id: i32,
+    /// The WIRE slot byte: 0/1 items, 2/3 dyes (the +2 fold).
+    pub wire_slot: u8,
+    pub item: TeItem,
+}
+
+impl HatRackItemSync {
+    /// The reader's unfold (`MessageBuffer.cs:4005-4009`): `>= 2` is a
+    /// dye slot, the index is `wire_slot - 2`.
+    pub fn is_dye(&self) -> bool {
+        self.wire_slot >= 2
+    }
+    pub fn slot_index(&self) -> u8 {
+        if self.wire_slot >= 2 {
+            self.wire_slot - 2
+        } else {
+            self.wire_slot
+        }
+    }
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2461,6 +2505,14 @@ pub enum C2s {
     /// tile-entity interaction (`TileEntity.cs:280`/`:285`;
     /// `MessageBuffer.cs:3942-3977`). Both directions.
     TileEntityInteraction(TileEntityInteraction),
+    /// `123 WeaponsRackTryPlacing` — a client tries to place its held
+    /// item on a weapons rack (`TEWeaponsRack.cs:212`; host `TryPlacing`,
+    /// `MessageBuffer.cs:3978-3994`). C2s-only; the 89 body twin.
+    WeaponsRackTryPlacing(TryPlacingItem),
+    /// `124 TEHatRackItemSync` — a client changed a hat-rack slot/dye
+    /// (`ItemSlot.cs:1117` etc.; host id-force + dye-unfold + relay
+    /// `MessageBuffer.cs:3995-4022`). Both directions.
+    HatRackItemSync(HatRackItemSync),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2698,6 +2750,10 @@ pub enum S2c {
     /// `122 RequestTileEntityInteraction` — the host's anchor relay
     /// (`MessageBuffer.cs:3955`/`:3961`). Both directions.
     TileEntityInteraction(TileEntityInteraction),
+    /// `124 TEHatRackItemSync` — the host's hat-rack relay
+    /// (`MessageBuffer.cs:4019`, re-folded via `flag19.ToInt()`). Both
+    /// directions.
+    HatRackItemSync(HatRackItemSync),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2766,6 +2822,8 @@ impl C2s {
             Self::ToggleParty => id::TOGGLE_PARTY,
             Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
             Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
+            Self::WeaponsRackTryPlacing(_) => id::WEAPONS_RACK_TRY_PLACING,
+            Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2889,6 +2947,16 @@ impl C2s {
             Self::DisplayDollSync(d) => write_doll_sync(d, w),
             // `NetMessage.cs:1475-1478`: int entityId + (byte)player.
             Self::TileEntityInteraction(t) => w.i32(t.entity_id).u8(t.player_id),
+            // `NetMessage.cs:1479-1488` — the exact 89 body under id 123.
+            Self::WeaponsRackTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // `NetMessage.cs:1489-1508`: (byte)player + int id + the
+            // already-folded wire slot + WriteItem (or the air fallback,
+            // which is the same 5 bytes as an air TeItem slot).
+            Self::HatRackItemSync(h) => h
+                .item
+                .write_slot(w.u8(h.player_id).i32(h.entity_id).u8(h.wire_slot)),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3105,6 +3173,25 @@ impl C2s {
             id::TE_INTERACTION_REQUEST => Self::TileEntityInteraction(TileEntityInteraction {
                 entity_id: r.i32()?,
                 player_id: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3984-3988` — the exact 89 read under 123.
+            id::WEAPONS_RACK_TRY_PLACING => Self::WeaponsRackTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3997-4016`: byte + int + byte slot; the
+            // dye unfold + the >= 2 refusal are the apply arm's — the
+            // codec keeps the wire slot verbatim and reads the 5-byte
+            // tail either way (the refusal path reads int+byte, the same
+            // width as ReadItem's ushort+ushort+byte).
+            id::TE_HAT_RACK_ITEM_SYNC => Self::HatRackItemSync(HatRackItemSync {
+                player_id: r.u8()?,
+                entity_id: r.i32()?,
+                wire_slot: r.u8()?,
+                item: TeItem::read_slot(r)?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -3334,6 +3421,7 @@ impl S2c {
             Self::CombatTextString(_) => id::COMBAT_TEXT_STRING,
             Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
             Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
+            Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
         }
     }
 
@@ -3522,6 +3610,10 @@ impl S2c {
             // `NetMessage.cs:1458-1474` / `:1475-1478` — the shared bodies.
             Self::DisplayDollSync(d) => write_doll_sync(d, w),
             Self::TileEntityInteraction(t) => w.i32(t.entity_id).u8(t.player_id),
+            // `NetMessage.cs:1489-1508` — the shared hat-rack body.
+            Self::HatRackItemSync(h) => h
+                .item
+                .write_slot(w.u8(h.player_id).i32(h.entity_id).u8(h.wire_slot)),
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -3878,6 +3970,13 @@ impl S2c {
             id::TE_INTERACTION_REQUEST => Self::TileEntityInteraction(TileEntityInteraction {
                 entity_id: r.i32()?,
                 player_id: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3997-4016` — the shared hat-rack read.
+            id::TE_HAT_RACK_ITEM_SYNC => Self::HatRackItemSync(HatRackItemSync {
+                player_id: r.u8()?,
+                entity_id: r.i32()?,
+                wire_slot: r.u8()?,
+                item: TeItem::read_slot(r)?,
             }),
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
@@ -7156,6 +7255,88 @@ mod tests {
         }
         // A truncated player byte must not decode.
         assert!(C2s::decode(122, &mut NetReader::new(&[42, 0, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_weapons_rack_try_placing_is_the_89_twin() {
+        // `NetMessage.cs:1479-1488` — the exact 89 body under id 123.
+        let b = TryPlacingItem {
+            x: 12,
+            y: 300,
+            kind: 3384,
+            prefix: 0,
+            stack: 1,
+        };
+        let f123 = C2s::WeaponsRackTryPlacing(b).encode();
+        let f89 = C2s::ItemFrameTryPlacing(b).encode();
+        assert_eq!(f123[2], 123);
+        assert_eq!(f89[2], 89);
+        assert_eq!(&f123[3..], &f89[3..]); // identical bodies
+        let mut r = NetReader::new(&f123[3..]);
+        match C2s::decode(f123[2], &mut r).expect("decode") {
+            C2s::WeaponsRackTryPlacing(d) => assert_eq!(d, b),
+            other => panic!("expected 123, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(123, &mut NetReader::new(&f123[3..])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_hat_rack_item_sync_round_trips_both_directions() {
+        // `NetMessage.cs:1489-1508`: (byte)player + int id + (byte)slot
+        // with the dye +2 fold, then WriteItem (ushort type + ushort
+        // stack + byte prefix, TEHatRack.cs:385-387).
+        for wire_slot in [0u8, 1, 2, 3] {
+            let h = HatRackItemSync {
+                player_id: 1,
+                entity_id: 55,
+                wire_slot,
+                item: TeItem { kind: 100, prefix: 81, stack: 1 },
+            };
+            let mut body = vec![1u8];
+            body.extend_from_slice(&55i32.to_le_bytes());
+            body.push(wire_slot);
+            body.extend_from_slice(&100u16.to_le_bytes());
+            body.extend_from_slice(&1u16.to_le_bytes());
+            body.push(81);
+            let f = C2s::HatRackItemSync(h).encode();
+            assert_eq!(f[2], 124);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::HatRackItemSync(d) => {
+                    assert_eq!(d, h);
+                    // The reader's unfold (:4005-4009).
+                    assert_eq!(d.is_dye(), wire_slot >= 2);
+                    assert_eq!(d.slot_index(), wire_slot % 2);
+                }
+                other => panic!("expected 124, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+            let f = S2c::HatRackItemSync(h).encode();
+            assert_eq!(f[2], 124);
+            match S2c::decode(124, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::HatRackItemSync(d) => assert_eq!(d, h),
+                other => panic!("expected 124, got {:?}", other.msg_id()),
+            }
+        }
+        // The no-entity fallback (`NetMessage.cs:1505-1506`: int 0 +
+        // byte 0) is the same 5 bytes as an air slot — decodes air.
+        let fallback = HatRackItemSync {
+            player_id: 0,
+            entity_id: -1,
+            wire_slot: 0,
+            item: TeItem::default(),
+        };
+        let f = C2s::HatRackItemSync(fallback).encode();
+        assert_eq!(f.len(), 3 + 6 + 5);
+        match C2s::decode(124, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::HatRackItemSync(d) => assert_eq!(d.item, TeItem::default()),
+            other => panic!("expected 124, got {:?}", other.msg_id()),
+        }
+        // A truncated prefix byte must not decode.
+        assert!(C2s::decode(124, &mut NetReader::new(&[1, 55, 0, 0, 0, 0, 100, 0, 1, 0])).is_none());
     }
 
     #[test]
