@@ -858,6 +858,11 @@ impl App {
             // (`MessageBuffer.cs:3809-3814`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             C2s::ToggleParty => {}
+            // S1-I-1 W4-f21: `121`'s host doll ReadData + id-force + relay
+            // (`MessageBuffer.cs:3920-3941`) and `122`'s anchor
+            // clear/IsOccupied-gated set + relay (`:3942-3963`) land with
+            // the apply-wiring lanes (g48-g52) / S1-I-4.
+            C2s::DisplayDollSync(_) | C2s::TileEntityInteraction(_) => {}
         }
     }
 
@@ -1953,6 +1958,11 @@ impl App {
             // (`MessageBuffer.cs:3235-3242`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             S2c::CombatTextString(_) => {}
+            // S1-I-1 W4-f21: `121`'s client doll ReadData/ReadDummySync
+            // (`MessageBuffer.cs:3930-3935`) and `122`'s client anchor
+            // clear/SetInteractionAnchor (`:3964-3975`) land with the
+            // apply-wiring lanes (g48-g52) / S1-I-4.
+            S2c::DisplayDollSync(_) | S2c::TileEntityInteraction(_) => {}
         }
     }
 

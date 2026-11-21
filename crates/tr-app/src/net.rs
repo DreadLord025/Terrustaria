@@ -327,6 +327,20 @@ pub mod id {
     /// text. No live `SendData(119)` site tree-wide — the writer arm is
     /// the census record. S2c-only.
     pub const COMBAT_TEXT_STRING: u8 = 119;
+    /// `121 TEDisplayDollDataSync` (`MessageID.cs:256`) — writer
+    /// `NetMessage.cs:1458-1474` (`(byte)player + int entityId +
+    /// (byte)itemIndex + (byte)command` + the doll's `WriteData` or the
+    /// dummy fallback), reader `MessageBuffer.cs:3920-3941` (host id-force
+    /// + relay). Client sends: `ItemSlot.cs:1109-1762`, the doll's own
+    /// pose sync `TEDisplayDoll.cs:907`.
+    pub const TE_DISPLAY_DOLL_SYNC: u8 = 121;
+    /// `122 RequestTileEntityInteraction` (`MessageID.cs:258`) — writer
+    /// `NetMessage.cs:1475-1478` (`int entityId + (byte)player`), reader
+    /// `MessageBuffer.cs:3942-3977` (host: the -1 clear / the
+    /// `IsOccupied`-gated anchor set + relay; client: the anchor
+    /// clear/set). Client sends: `TileEntity.cs:280`/`:285`,
+    /// `Main.cs:17605`.
+    pub const TE_INTERACTION_REQUEST: u8 = 122;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1850,6 +1864,8 @@ pub struct TeItem {
 }
 
 impl TeItem {
+    /// The `WriteExtraData` triple order: `(short)type + (byte)prefix +
+    /// (short)stack` (`TEItemFrame.cs:42-44` and its twins).
     fn write_to(self, w: NetWriter) -> NetWriter {
         w.i16(self.kind).u8(self.prefix).i16(self.stack)
     }
@@ -1858,6 +1874,20 @@ impl TeItem {
             kind: r.i16()?,
             prefix: r.u8()?,
             stack: r.i16()?,
+        })
+    }
+    /// The `WriteItem` single-slot order: `(ushort)type + (ushort)stack +
+    /// (byte)prefix` — STACK BEFORE PREFIX, unlike the extra-data triple
+    /// (`TEDisplayDoll.cs:758-764`, `TEHatRack.cs:378-388`; the readers
+    /// `:766-770` / `:390-394` match).
+    fn write_slot(self, w: NetWriter) -> NetWriter {
+        w.u16(self.kind as u16).u16(self.stack as u16).u8(self.prefix)
+    }
+    fn read_slot(r: &mut NetReader) -> Option<Self> {
+        Some(Self {
+            kind: r.u16()? as i16,
+            stack: r.u16()? as i16,
+            prefix: r.u8()?,
         })
     }
     /// C#'s `IsAir` (`Item.cs:385-394`): `type <= 0 || stack <= 0`.
@@ -2214,6 +2244,54 @@ pub struct CombatTextString {
     pub text: NetText,
 }
 
+/// The doll-sync tail (`TEDisplayDoll.WriteData`, `TEDisplayDoll.cs:780-800`
+/// / `WriteDummySync` `:824-833`): command 2 carries the pose byte;
+/// commands 0/1/3 carry one item triple from the equip/dye/misc array.
+/// The no-entity fallback (`Dummy`) writes a zero pose byte for command 2
+/// and `int 0 + byte 0` otherwise — the SAME byte widths as the real
+/// shapes (1, and 4+1 = 2+1+2 = 5), so a dummy frame decodes cleanly as
+/// `Pose(0)` / an air `TeItem` and the C# reader's `ReadDummySync`
+/// (`:835-844`) likewise just consumes and discards. `Dummy` is therefore
+/// a writer-side variant; decode always yields the real-doll shapes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DollSyncData {
+    /// command 2 — the pose byte (`ReadPose`, `:846-849`).
+    Pose(u8),
+    /// commands 0 (equip) / 1 (dyes) / 3 (misc) — one item triple.
+    Item(TeItem),
+    /// The no-entity fallback (`WriteDummySync`): command 2 → one zero
+    /// byte; else `int 0 + byte 0`. Writer-side only (see above).
+    Dummy,
+}
+
+/// `msg 121 TEDisplayDollDataSync`'s body (`NetMessage.cs:1458-1474`):
+/// `(byte)player + int entityId + (byte)itemIndex + (byte)command`, then
+/// the doll's `WriteData(itemIndex, command)` when the entity exists,
+/// else `WriteDummySync`. The reader (`MessageBuffer.cs:3920-3941`)
+/// forces the player id to the sender on the host and relays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DisplayDollSync {
+    pub player_id: u8,
+    pub entity_id: i32,
+    pub item_index: u8,
+    /// 0 equip, 1 dyes, 2 pose, 3 misc (`TEDisplayDoll.cs:782-798`).
+    pub command: u8,
+    pub data: DollSyncData,
+}
+
+/// `msg 122 RequestTileEntityInteraction`'s body
+/// (`NetMessage.cs:1475-1478`): the entity `int` id (`-1` = clear the
+/// anchor) and the player byte. The host
+/// (`MessageBuffer.cs:3950-3963`) forces the player to the sender,
+/// refuses an occupied entity (`TileEntity.IsOccupied`) and relays; the
+/// client (`:3964-3975`) clears or sets the interaction anchor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileEntityInteraction {
+    /// `-1` clears the anchor (`MessageBuffer.cs:3952-3956`).
+    pub entity_id: i32,
+    pub player_id: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2375,6 +2453,14 @@ pub enum C2s {
     /// (`BirthdayParty.cs:154`; host `ToggleManualParty`,
     /// `MessageBuffer.cs:3809-3814`). C2s-only.
     ToggleParty,
+    /// `121 TEDisplayDollDataSync` — a client changed a doll slot/pose
+    /// (`ItemSlot.cs:1109-1762`; host id-force + relay
+    /// `MessageBuffer.cs:3920-3941`). Both directions.
+    DisplayDollSync(DisplayDollSync),
+    /// `122 RequestTileEntityInteraction` — a client opened/closed a
+    /// tile-entity interaction (`TileEntity.cs:280`/`:285`;
+    /// `MessageBuffer.cs:3942-3977`). Both directions.
+    TileEntityInteraction(TileEntityInteraction),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2606,6 +2692,12 @@ pub enum S2c {
     /// record; client-only reader `MessageBuffer.cs:3235-3242`).
     /// S2c-only.
     CombatTextString(CombatTextString),
+    /// `121 TEDisplayDollDataSync` — the host's doll relay
+    /// (`MessageBuffer.cs:3938`). Both directions.
+    DisplayDollSync(DisplayDollSync),
+    /// `122 RequestTileEntityInteraction` — the host's anchor relay
+    /// (`MessageBuffer.cs:3955`/`:3961`). Both directions.
+    TileEntityInteraction(TileEntityInteraction),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2672,6 +2764,8 @@ impl C2s {
             Self::DevCommands(_) => id::DEV_COMMANDS,
             Self::GemLockToggle(_) => id::GEM_LOCK_TOGGLE,
             Self::ToggleParty => id::TOGGLE_PARTY,
+            Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
+            Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2790,6 +2884,11 @@ impl C2s {
             Self::GemLockToggle(g) => w.i16(g.x).i16(g.y).bool(g.on),
             // No writer case for 111 — `SendData(111)` writes a bare frame.
             Self::ToggleParty => w,
+            // `NetMessage.cs:1458-1474`: (byte)player + int id +
+            // (byte)itemIndex + (byte)command + WriteData/WriteDummySync.
+            Self::DisplayDollSync(d) => write_doll_sync(d, w),
+            // `NetMessage.cs:1475-1478`: int entityId + (byte)player.
+            Self::TileEntityInteraction(t) => w.i32(t.entity_id).u8(t.player_id),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3000,6 +3099,13 @@ impl C2s {
             }),
             // `MessageBuffer.cs:3809-3814`: the host reads NOTHING.
             id::TOGGLE_PARTY => Self::ToggleParty,
+            // `MessageBuffer.cs:3922-3935` — the shared doll read.
+            id::TE_DISPLAY_DOLL_SYNC => Self::DisplayDollSync(read_doll_sync(r)?),
+            // `MessageBuffer.cs:3944-3945`: ReadInt32 + ReadByte.
+            id::TE_INTERACTION_REQUEST => Self::TileEntityInteraction(TileEntityInteraction {
+                entity_id: r.i32()?,
+                player_id: r.u8()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3075,6 +3181,52 @@ fn read_sign_data(r: &mut NetReader) -> Option<SignData> {
         text: r.str()?,
         sender: r.u8()?,
         flags: r.u8()?,
+    })
+}
+
+/// `121`'s shared writer (`NetMessage.cs:1458-1474`): the header then the
+/// command-keyed tail — `TEDisplayDoll.WriteData` (`TEDisplayDoll.cs:780-800`)
+/// for a real doll, `WriteDummySync` (`:824-833`) for the fallback.
+fn write_doll_sync(d: &DisplayDollSync, w: NetWriter) -> NetWriter {
+    let w = w
+        .u8(d.player_id)
+        .i32(d.entity_id)
+        .u8(d.item_index)
+        .u8(d.command);
+    match d.data {
+        DollSyncData::Pose(p) => w.u8(p),
+        DollSyncData::Item(i) => i.write_slot(w),
+        DollSyncData::Dummy => {
+            if d.command == 2 {
+                w.u8(0)
+            } else {
+                w.i32(0).u8(0)
+            }
+        }
+    }
+}
+
+/// `121`'s shared reader (`MessageBuffer.cs:3922-3935` →
+/// `TEDisplayDoll.ReadData` `:802-822` / `ReadDummySync` `:835-844`): the
+/// command byte keys the tail; the dummy shapes are byte-width-identical
+/// to the real ones, so both decode as the real shapes (see
+/// [`DollSyncData`]).
+fn read_doll_sync(r: &mut NetReader) -> Option<DisplayDollSync> {
+    let player_id = r.u8()?;
+    let entity_id = r.i32()?;
+    let item_index = r.u8()?;
+    let command = r.u8()?;
+    let data = if command == 2 {
+        DollSyncData::Pose(r.u8()?)
+    } else {
+        DollSyncData::Item(TeItem::read_slot(r)?)
+    };
+    Some(DisplayDollSync {
+        player_id,
+        entity_id,
+        item_index,
+        command,
+        data,
     })
 }
 
@@ -3180,6 +3332,8 @@ impl S2c {
             Self::ShopOverride(_) => id::SHOP_OVERRIDE,
             Self::SmartTextMessage(_) => id::SMART_TEXT_MESSAGE,
             Self::CombatTextString(_) => id::COMBAT_TEXT_STRING,
+            Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
+            Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
         }
     }
 
@@ -3365,6 +3519,9 @@ impl S2c {
                 .text
                 .clone()
                 .write_to(w.f32(c.x).f32(c.y).rgb(c.color)),
+            // `NetMessage.cs:1458-1474` / `:1475-1478` — the shared bodies.
+            Self::DisplayDollSync(d) => write_doll_sync(d, w),
+            Self::TileEntityInteraction(t) => w.i32(t.entity_id).u8(t.player_id),
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -3715,6 +3872,12 @@ impl S2c {
                 y: r.f32()?,
                 color: r.rgb()?,
                 text: NetText::read_from(r)?,
+            }),
+            // `MessageBuffer.cs:3922-3935` / `:3944-3945` — shared reads.
+            id::TE_DISPLAY_DOLL_SYNC => Self::DisplayDollSync(read_doll_sync(r)?),
+            id::TE_INTERACTION_REQUEST => Self::TileEntityInteraction(TileEntityInteraction {
+                entity_id: r.i32()?,
+                player_id: r.u8()?,
             }),
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
@@ -6892,6 +7055,107 @@ mod tests {
         assert!(C2s::decode(119, &mut NetReader::new(&body)).is_none());
         // A truncated text must not decode.
         assert!(S2c::decode(119, &mut NetReader::new(&body[..body.len() - 1])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_display_doll_sync_round_trips_both_directions() {
+        // `NetMessage.cs:1458-1474`: (byte)player + int id + (byte)slot +
+        // (byte)command + WriteData. Command 0/1/3 = the WriteItem slot
+        // order (ushort type + ushort STACK + byte PREFIX —
+        // TEDisplayDoll.cs:758-764), command 2 = the pose byte.
+        let d = DisplayDollSync {
+            player_id: 1,
+            entity_id: 77,
+            item_index: 4,
+            command: 0,
+            data: DollSyncData::Item(TeItem { kind: 100, prefix: 81, stack: 1 }),
+        };
+        let mut body = vec![1u8];
+        body.extend_from_slice(&77i32.to_le_bytes());
+        body.push(4);
+        body.push(0);
+        body.extend_from_slice(&100u16.to_le_bytes());
+        body.extend_from_slice(&1u16.to_le_bytes()); // stack BEFORE prefix
+        body.push(81);
+        let f = C2s::DisplayDollSync(d).encode();
+        assert_eq!(f[2], 121);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::DisplayDollSync(got) => assert_eq!(got, d),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::DisplayDollSync(d).encode();
+        assert_eq!(f[2], 121);
+        match S2c::decode(121, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::DisplayDollSync(got) => assert_eq!(got, d),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // The pose command (2) carries ONE byte
+        // (`TEDisplayDoll.cs:785-789`, the :907 pose-sync send).
+        let pose = DisplayDollSync {
+            command: 2,
+            item_index: 3, // the pose rides item_index at :907
+            data: DollSyncData::Pose(3),
+            ..d
+        };
+        let f = C2s::DisplayDollSync(pose).encode();
+        assert_eq!(f.len(), 3 + 7 + 1);
+        match C2s::decode(121, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::DisplayDollSync(got) => assert_eq!(got, pose),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // The dummy fallback is byte-width-identical: command 2 → one
+        // zero byte (decodes Pose(0)); else int 0 + byte 0 (decodes an
+        // air TeItem) — `WriteDummySync` :824-833.
+        let dummy_pose = DisplayDollSync { command: 2, data: DollSyncData::Dummy, ..d };
+        let f = C2s::DisplayDollSync(dummy_pose).encode();
+        assert_eq!(*f.last().unwrap(), 0);
+        match C2s::decode(121, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::DisplayDollSync(got) => assert_eq!(got.data, DollSyncData::Pose(0)),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        let dummy_item = DisplayDollSync { command: 1, data: DollSyncData::Dummy, ..d };
+        let f = C2s::DisplayDollSync(dummy_item).encode();
+        assert_eq!(f.len(), 3 + 7 + 5);
+        match C2s::decode(121, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::DisplayDollSync(got) => {
+                assert_eq!(got.data, DollSyncData::Item(TeItem::default()));
+            }
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // A truncated slot tail must not decode.
+        assert!(C2s::decode(121, &mut NetReader::new(&body[..body.len() - 1])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_tile_entity_interaction_round_trips_both_directions() {
+        // `NetMessage.cs:1475-1478`: int entityId + (byte)player. The -1
+        // clear (`TileEntity.cs:280`, `Main.cs:17605`) and the open
+        // (`TileEntity.cs:285`).
+        for entity_id in [-1i32, 42] {
+            let t = TileEntityInteraction { entity_id, player_id: 2 };
+            let mut body = entity_id.to_le_bytes().to_vec();
+            body.push(2);
+            let f = C2s::TileEntityInteraction(t).encode();
+            assert_eq!(f[2], 122);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::TileEntityInteraction(got) => assert_eq!(got, t),
+                other => panic!("expected 122, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+            let f = S2c::TileEntityInteraction(t).encode();
+            assert_eq!(f[2], 122);
+            match S2c::decode(122, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::TileEntityInteraction(got) => assert_eq!(got, t),
+                other => panic!("expected 122, got {:?}", other.msg_id()),
+            }
+        }
+        // A truncated player byte must not decode.
+        assert!(C2s::decode(122, &mut NetReader::new(&[42, 0, 0, 0])).is_none());
     }
 
     #[test]
