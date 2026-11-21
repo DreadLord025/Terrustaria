@@ -704,8 +704,20 @@ impl App {
                     if let Some(m) = self.map.as_mut() {
                         m.set_open(false);
                     }
+                    // W4-e10 — `Player.ToggleInv`'s map-close arm plays the
+                    // menu close (`SoundEngine.PlaySound(11)`,
+                    // `Player.cs:4976`).
+                    self.audio.play("Menu_Close");
                 } else {
                     self.inventory_open = !self.inventory_open;
+                    // W4-e10 — `ToggleInv`'s close arm plays 11
+                    // (`Player.cs:5056`); the open arm's `OpenInventory()`
+                    // plays 10 (`Player.cs:5087`, `quiet` false).
+                    self.audio.play(if self.inventory_open {
+                        "Menu_Open"
+                    } else {
+                        "Menu_Close"
+                    });
                 }
             }
             KeyCode::F1 => self.debug = !self.debug,
@@ -736,6 +748,11 @@ impl App {
                     if let Some(m) = self.map.as_mut() {
                         let open = !m.open;
                         m.set_open(open);
+                        // W4-e10 — the close arm plays 11
+                        // (`Player.cs:24973`); the open arm rides
+                        // `TryOpeningFullscreenMap`'s `PlaySound(10)`
+                        // (`Player.cs:29111`).
+                        self.audio.play(if open { "Menu_Open" } else { "Menu_Close" });
                     }
                 }
             }
@@ -781,6 +798,13 @@ impl App {
             // so only a *different* key takes this arm.
             _ if self.is_bound(crate::input_map::Action::Inventory, code) => {
                 self.inventory_open = !self.inventory_open;
+                // W4-e10 — the rebound `cInv` key rides the same ToggleInv
+                // arms: open 10 (`Player.cs:5087`), close 11 (`:5056`).
+                self.audio.play(if self.inventory_open {
+                    "Menu_Open"
+                } else {
+                    "Menu_Close"
+                });
             }
             _ => {}
         }
@@ -915,6 +939,42 @@ mod tests {
         assert!(app.inventory_open, "I toggles the inventory now");
         app.world_key(KeyCode::KeyI);
         assert!(!app.inventory_open);
+    }
+
+    /// W4-e10 — the ToggleInv/menu sound witnesses: the inventory open plays
+    /// 10 (`Player.OpenInventory`, `Player.cs:5087`), the close plays 11
+    /// (`ToggleInv`'s close arm, `:5056`); the fullscreen-map open rides
+    /// `TryOpeningFullscreenMap`'s 10 (`:29111`) and the closes play 11
+    /// (`ToggleInv`'s map arm `:4976`, the `cMapFull` close `:24973`).
+    #[test]
+    fn w4_e10_the_inventory_toggle_plays_open_and_close() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let before = app.audio.played_count();
+        app.world_key(KeyCode::Escape); // open
+        assert!(app.inventory_open);
+        assert_eq!(app.audio.played_count(), before + 1, "the open chime");
+        app.world_key(KeyCode::Escape); // close
+        assert!(!app.inventory_open);
+        assert_eq!(app.audio.played_count(), before + 2, "the close chime");
+        // The rebound `cInv` key rides the same arms.
+        app.settings.keybinds[crate::input_map::Action::Inventory.index()] = "I".into();
+        app.apply_settings();
+        app.world_key(KeyCode::KeyI);
+        assert_eq!(app.audio.played_count(), before + 3, "the rebound open chime");
+    }
+
+    #[test]
+    fn w4_e10_the_map_toggles_play_their_menu_cues() {
+        let mut app = map_app(); // the map live and OPEN
+        let before = app.audio.played_count();
+        app.world_key(KeyCode::Escape); // ToggleInv's map-close arm, `:4976`
+        assert!(!app.map.as_ref().is_some_and(|m| m.open));
+        assert_eq!(app.audio.played_count(), before + 1, "the map close chime");
+        app.world_key(KeyCode::KeyM); // TryOpeningFullscreenMap, `:29111`
+        assert!(app.map.as_ref().is_some_and(|m| m.open));
+        assert_eq!(app.audio.played_count(), before + 2, "the map open chime");
+        app.world_key(KeyCode::KeyM); // the cMapFull close, `:24973`
+        assert_eq!(app.audio.played_count(), before + 3, "the cMapFull close chime");
     }
 
     #[test]
