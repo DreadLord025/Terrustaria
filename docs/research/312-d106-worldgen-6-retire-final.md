@@ -1,8 +1,18 @@
-# 281 — W4-d106 WORLDGEN-6 RETIRE FINAL: overlap census + keep-one drop-hunks + the e20 fidelity receipts + the pin schedule + the family declaration
+# 312 — W4-d106 WORLDGEN-6 RETIRE FINAL: overlap census + keep-one drop-hunks + the e20 fidelity receipts + the pin schedule + the family declaration
 
 > **STATUS: RETIRE FINAL — 2026-11-21, branch
 > `task/W4-d106-worldgen-passes-6` (retire phase, base COMPLETE `4612ffc57`,
 > R1–R6 all landed, retire commit `87ff33322`).**
+>
+> **RENUMBERED 281 → 312 (registry-150 §9 UNIFIED FINAL, d54 tip
+> `b243c7086`, §9.2 row 312 — chain 240 → 281 → 312).** The round-2 281 was
+> a self-pick into f26's §7.3-assigned block (281 = f26's
+> `68-findframe-census-addendum-7h.md`); §9.2 assigns d106 **312** (the
+> §8.7 note confirms: d106 KEEPS 312; c9's 312 self-pick → 349). Executed
+> per dispatch: `git mv` + this header + all branch refs (INDEX / ANALYSIS
+> / PORT_MAP / 12f + the cleanup.rs / spider_gem_moss.rs comments) repoint
+> to **research-312**; the content is unchanged. The round-2 history below
+> is kept as the chain record.
 >
 > **RENUMBERED 240 → 281 (registry-150 round-2 self-adjudication, the SEAL
 > verify pass).** The original pick took **240** as "the first free number

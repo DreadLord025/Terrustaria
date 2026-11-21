@@ -39247,10 +39247,11 @@ click buffers; the player tick applies).
 
 ## W4-d106 worldgen lane 6 — retire-phase fidelity notes (2026-11-21, code-only)
 
-The full retire record is `docs/research/281-d106-worldgen-6-retire-final.md`
+The full retire record is `docs/research/312-d106-worldgen-6-retire-final.md`
 (the overlap census, the keep-one drop-hunks, the pin schedule, the family
-declaration; RENUMBERED 240→281 per registry-150 round 2 — 240 belongs to
-g58's earlier executed push, 281 verified free at a fresh 360-tip sweep).
+declaration; RENUMBERED 240→281→312 per registry-150 §9 UNIFIED FINAL
+(d54 tip `b243c7086`), §9.2 row 312 — 240 belongs to g58's earlier executed
+push, the round-2 281 self-pick collided with f26's §7.3 assignment).
 The three behaviour-relevant facts:
 
 - **Gen-time `kill_tile(..., true)` is NOT a deviation.** The C#
@@ -39277,4 +39278,4 @@ The three behaviour-relevant facts:
 
 Witnesses for all three are WRITTEN NOT RUN (code-only branch); both
 classic hash pins stay stale-by-design, the sequential re-pin schedule is
-research-281 §4.
+research-312 §4.
