@@ -3228,11 +3228,10 @@ pub(crate) fn draw_npcs(
             // height over `Main.npcFrameCount[type]` (34 three frames,
             // 289 six, 694 thirty; `Main.cs:67082-67153`) with the generic
             // centred anchor — the pumpkin arm's shape. The C#'s
-            // `GetAlpha` overrides (34/289 white / (250,250,250,50),
-            // `NPC.cs:93609-93611` + `Main.cs:23120`; the 694 book-state
-            // white/lerp, `NPC.cs:93417-93427`) are the documented tint
-            // deviation (ANALYSIS "The style-10 family wiring") — the
-            // port's light-multiplied tint stands.
+            // `GetAlpha` overrides (34 white via `Main.cs:23120-23123`,
+            // 289 (250,250,250,50) `NPC.cs:93609-93611`, the 694 book-state
+            // white/lerp `:93417-93427`) ARE carried — the tint seam below
+            // (W4-c3 gap 4, the d70 co-lane pattern).
             NpcKind::CursedSkull => {
                 pumpkin_moon_draw(assets.npc_sheet(34), npc_rows(34), n, w, h)
             }
@@ -3286,6 +3285,52 @@ pub(crate) fn draw_npcs(
             ]
         } else {
             [c[0] * fade, c[1] * fade, c[2] * fade, fade]
+        };
+        // W4-c3 gap 4 — the style-10 family's `GetAlpha` overrides, ported
+        // through the tint seam (the d70 `GetMoonLordColoring` co-lane
+        // pattern). These are DRAW-VISIBLE: the skulls self-illuminate
+        // (the C# returns a fixed colour, NOT light-multiplied), so the
+        // light-fold above would hide them in the dark dungeon.
+        // - 34 Cursed Skull: `Main.cs:23120-23123` sets `npcColor = White`
+        //   for `aiStyle == 10 && type != 694` BEFORE `GetAlpha`; the 34
+        //   has no `GetAlpha` type arm, so the generic fade rides White →
+        //   `[fade; 4]` (alpha 0 → White).
+        // - 289 Giant Cursed Skull: same `npcColor = White`, then
+        //   `GetAlpha`'s `:93609-93611` returns the literal
+        //   `(250, 250, 250, 50)` EARLY (the fade is NOT applied).
+        // - 694 Water Bolt Mimic: `GetAlpha`'s `:93417-93427` returns early
+        //   (no fade): ai[3] 3 → `newColor` (the light colour); ai[3] 4 →
+        //   `Lerp(newColor, White, clamp(frame.Y / 40 / 17))` (the row
+        //   height is 40, so `frame.Y / 40` is `n.frame`); else → White.
+        //   The book-state and the frame are coupled (closed pins row 0,
+        //   wake climbs 0..16, active walks 17..29), so the tint is
+        //   frame-determined — the G6 `render_key`'s `frame` term already
+        //   disambiguates it (no new key term).
+        let base = match n.kind {
+            NpcKind::CursedSkull => [fade, fade, fade, fade],
+            NpcKind::GiantCursedSkull => [
+                250.0 / 255.0,
+                250.0 / 255.0,
+                250.0 / 255.0,
+                50.0 / 255.0,
+            ],
+            NpcKind::WaterBoltMimic => {
+                if n.ai[3] == 3.0 {
+                    // `return newColor` — the light colour, alpha 255.
+                    [c[0], c[1], c[2], 1.0]
+                } else if n.ai[3] == 4.0 {
+                    let amt = (n.frame as f32 / 17.0).clamp(0.0, 1.0);
+                    [
+                        c[0] + (1.0 - c[0]) * amt,
+                        c[1] + (1.0 - c[1]) * amt,
+                        c[2] + (1.0 - c[2]) * amt,
+                        1.0,
+                    ]
+                } else {
+                    [1.0, 1.0, 1.0, 1.0]
+                }
+            }
+            _ => base,
         };
         let tint = if n.hurt_cd > 0.0 {
             [
@@ -3879,6 +3924,58 @@ mod anchor_tests {
         let uv8 = moon_lord_head_uv(&t, 8);
         assert!((uv8[0] - 2.0 / 3.0).abs() < 1e-6, "cell 8 sits in column 2");
         assert!((uv8[1] - 2.0 / 3.0).abs() < 1e-6, "and row 2");
+    }
+
+    /// W4-c3 gap 4 — the style-10 family's `GetAlpha` tint overrides. The
+    /// skulls self-illuminate (the C# returns a fixed colour, NOT the
+    /// light-multiplied tint), the 694 lerp rides the book-state. These pin
+    /// the tint arithmetic the draw seam applies. WRITTEN, NOT RUN
+    /// (code-only mode). The light colour `c` is a dark dungeon sample
+    /// (0.1, 0.1, 0.1) so the self-illumination is visible against it.
+    #[test]
+    fn w4_c3_the_style10_get_alpha_overrides() {
+        let c = [0.1f32, 0.1, 0.1];
+        // 34 Cursed Skull: `Main.cs:23120-23123` npcColor = White, the
+        // generic fade rides it (alpha 0 -> fade 1 -> White).
+        let n = bare(NpcKind::CursedSkull);
+        let fade = 1.0 - n.alpha as f32 / 255.0;
+        assert_eq!(fade, 1.0, "the 34 spawns at alpha 0");
+        let tint34 = [fade, fade, fade, fade];
+        assert_eq!(tint34, [1.0, 1.0, 1.0, 1.0], "the 34 draws White");
+        // 289 Giant Cursed Skull: `NPC.cs:93609-93611` returns the literal
+        // (250, 250, 250, 50) EARLY (no fade).
+        let tint289 = [250.0 / 255.0, 250.0 / 255.0, 250.0 / 255.0, 50.0 / 255.0];
+        assert!((tint289[0] - 0.98039216).abs() < 1e-6);
+        assert!((tint289[3] - 0.19607843).abs() < 1e-6);
+        // The 289's tint is NOT the light colour (self-illumination).
+        assert!(tint289[0] > c[0], "the 289 is brighter than the dark light");
+        // 694 Water Bolt Mimic: `NPC.cs:93417-93427`.
+        // ai[3] 3 (closed): return newColor (the light colour, alpha 255).
+        let mut n694 = bare(NpcKind::WaterBoltMimic);
+        n694.ai[3] = 3.0;
+        let closed = [c[0], c[1], c[2], 1.0];
+        assert_eq!(closed, [0.1, 0.1, 0.1, 1.0], "the closed book keeps the light");
+        // ai[3] 4 (wake): Lerp(newColor, White, clamp(frame / 17)).
+        n694.ai[3] = 4.0;
+        n694.frame = 0;
+        let amt0 = (n694.frame as f32 / 17.0).clamp(0.0, 1.0);
+        assert_eq!(amt0, 0.0, "row 0 -> the light colour");
+        n694.frame = 17;
+        let amt17 = (n694.frame as f32 / 17.0).clamp(0.0, 1.0);
+        assert_eq!(amt17, 1.0, "row 17 -> White");
+        n694.frame = 8;
+        let amt8 = (n694.frame as f32 / 17.0).clamp(0.0, 1.0);
+        let lerp8 = [
+            c[0] + (1.0 - c[0]) * amt8,
+            c[1] + (1.0 - c[1]) * amt8,
+            c[2] + (1.0 - c[2]) * amt8,
+            1.0,
+        ];
+        assert!((lerp8[0] - (0.1 + 0.9 * 8.0 / 17.0)).abs() < 1e-6);
+        // else (active): White.
+        n694.ai[3] = 0.0;
+        let active = [1.0f32, 1.0, 1.0, 1.0];
+        assert_eq!(active, [1.0, 1.0, 1.0, 1.0], "the active mimic draws White");
     }
 
     #[test]
