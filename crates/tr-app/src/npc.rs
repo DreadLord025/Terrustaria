@@ -1133,6 +1133,20 @@ pub enum NpcKind {
     /// `npc_ai_critter::critter_ai` (the AI_007 wander/hop subset, the
     /// flag8 mouse row). Shimmer → 677 (`(447, 677)`).
     GoldMouse,
+    /// `NPCID.GoldBunny` (443, `NPCID.cs:11559`) — the gold bunny critter
+    /// (`NPC.cs:14262-14274`): 18x20, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default), rarity 3, catchItem 2890. WIRED (W4-c9):
+    /// the kind-match arm rides `npc_ai_critter::critter_ai` (the AI_007
+    /// wander/hop subset, the default cap 1 / accel 0.07 bunny row).
+    /// Shimmer → 677 (`(443, 677)`).
+    GoldBunny,
+    /// `NPCID.GoldFrog` (445, `NPCID.cs:11563`) — the gold frog critter
+    /// (`NPC.cs:14290-14302`): 12x10, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default), rarity 3, catchItem 2892. WIRED (W4-c9):
+    /// the kind-match arm rides `npc_ai_critter::critter_ai` (the flag10
+    /// frog row — the dry walk; the wet swim override is the documented
+    /// stand-in). Shimmer → 677 (`(445, 677)`).
+    GoldFrog,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3606,7 +3620,7 @@ impl Npc {
             // (`NPC.cs:14256`); the GoldGrasshopper/GoldMouse write none —
             // the head's 1f (`NPC.cs:8533`) stands.
             NpcKind::GoldBird => 0.8,
-            NpcKind::GoldGrasshopper | NpcKind::GoldMouse => 1.0,
+            NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 1.0,
             _ => 0.4,
         }
     }
@@ -3991,8 +4005,8 @@ impl Npc {
             // each (`NPC.cs:13579` / `:13593` / `:17286` / `:17585`).
             NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail | NpcKind::Shimmerfly => 0,
             // The gold critters (W4-c9): defense 0 each (`NPC.cs:14253` /
-            // `:14309` / `:14324`).
-            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse => 0,
+            // `:14309` / `:14324` / `:14268` / `:14296`).
+            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4370,7 +4384,7 @@ impl Npc {
             NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail | NpcKind::Shimmerfly => 0.0,
             // The gold critters (W4-c9): the rows write no value — the
             // head's 0f (`NPC.cs:8544`) stands.
-            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse => 0.0,
+            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6747,6 +6761,9 @@ impl Npc {
             NpcKind::GoldBird => self.update_gold_bird(world, player, rng),
             NpcKind::GoldGrasshopper => self.update_gold_grasshopper(world, player, rng),
             NpcKind::GoldMouse => crate::npc_ai_critter::critter_ai(self, world, player, rng),
+            NpcKind::GoldBunny | NpcKind::GoldFrog => {
+                crate::npc_ai_critter::critter_ai(self, world, player, rng)
+            }
         }
     }
 
@@ -9536,6 +9553,89 @@ impl Npc {
                     if self.frame >= self.rows() {
                         self.frame = 2;
                     }
+                }
+            }
+            // W4-c9 — the GoldBunny's `case 443` (the 46/47/303/337 bunny
+            // group, `NPC.cs:76851-76904`): the grounded flip, the idle
+            // row 0, the |vx| + 1 walk accumulator stepping at >6 over
+            // `npcFrameCount[443]` = 7 (`Main.cs:67128`); the rising row 4
+            // and the falling row 6.
+            NpcKind::GoldBunny => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            // W4-c9 — the GoldFrog's `case 445` (the 361/687 frog group,
+            // `NPC.cs:76618-76685`): spriteDirection = direction; the wet
+            // swim rows 10/11/12 by |vx|; the grounded idle steps rows
+            // 0..5 at the >6 counter, the grounded walk the 6-tick phases
+            // (rows 0/6/8/9), the falling row 9 and the rising row 8.
+            // `npcFrameCount[445]` = 13 (`Main.cs:67118`).
+            NpcKind::GoldFrog => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter = 0.0;
+                    if self.vx > 0.25 || self.vx < -0.25 {
+                        self.frame = 10;
+                    } else if self.vx > 0.15 || self.vx < -0.15 {
+                        self.frame = 11;
+                    } else {
+                        self.frame = 12;
+                    }
+                } else if self.vy == 0.0 {
+                    if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                        }
+                        if self.frame > 5 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter < 6.0 {
+                            self.frame = 0;
+                        } else if self.frame_counter < 12.0 {
+                            self.frame = 6;
+                        } else if self.frame_counter < 18.0 {
+                            self.frame = 8;
+                        } else {
+                            self.frame = 9;
+                            if self.frame_counter >= 23.0 {
+                                self.frame_counter = 0.0;
+                            }
+                        }
+                    }
+                } else if self.vy > 0.0 {
+                    self.frame = 9;
+                } else {
+                    self.frame = 8;
                 }
             }
             // S1-D-3 W-9 fishron wiring — `case 371 : case 372 : case 373`
@@ -19175,6 +19275,8 @@ impl Npc {
             NpcKind::GoldBird => 442,
             NpcKind::GoldGrasshopper => 446,
             NpcKind::GoldMouse => 447,
+            NpcKind::GoldBunny => 443,
+            NpcKind::GoldFrog => 445,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -24253,7 +24355,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 277] = [
+    pub(super) const ALL_KINDS: [NpcKind; 279] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24543,6 +24645,9 @@ mod tests {
         NpcKind::GoldBird,
         NpcKind::GoldGrasshopper,
         NpcKind::GoldMouse,
+        // The gold critters (W4-c9): the bunny + the frog.
+        NpcKind::GoldBunny,
+        NpcKind::GoldFrog,
     ];
 
     #[test]
@@ -28154,8 +28259,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            277,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate; + W4-c9's snail family four + the first three gold critters)"
+            279,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate; + W4-c9's snail family four + the five gold critters 442/443/445/446/447)"
         );
         assert!(
             covered > 43,
@@ -34432,6 +34537,8 @@ mod w4_c9_snail_wiring_tests {
             (NpcKind::GoldBird, 24u8, 442u16),
             (NpcKind::GoldGrasshopper, 1, 446),
             (NpcKind::GoldMouse, 7, 447),
+            (NpcKind::GoldBunny, 7, 443),
+            (NpcKind::GoldFrog, 7, 445),
         ] {
             assert_eq!(kind.ai_style(), style, "{kind:?}");
             assert_eq!(kind.to_u16(), id, "{kind:?} keeps its vanilla slot");
@@ -34444,19 +34551,21 @@ mod w4_c9_snail_wiring_tests {
         assert_eq!(NpcKind::GoldBird.size(), (14.0, 14.0));
         assert_eq!(NpcKind::GoldGrasshopper.size(), (14.0, 10.0));
         assert_eq!(NpcKind::GoldMouse.size(), (14.0, 12.0));
+        assert_eq!(NpcKind::GoldBunny.size(), (18.0, 20.0));
+        assert_eq!(NpcKind::GoldFrog.size(), (12.0, 10.0));
         // The GoldBird's kb 0.8 (`NPC.cs:14256`); the others the head's 1.
         let bird = Npc::new(NpcKind::GoldBird, 0.0, 0.0, 1, 0.0);
         assert_eq!(bird.knock_back_resist(), 0.8);
         let mouse = Npc::new(NpcKind::GoldMouse, 0.0, 0.0, 1, 0.0);
         assert_eq!(mouse.knock_back_resist(), 1.0);
         // The Confused (31) immunity rows (`NPCID.cs:8612-8652`).
-        for kind in [NpcKind::GoldBird, NpcKind::GoldGrasshopper, NpcKind::GoldMouse] {
+        for kind in [NpcKind::GoldBird, NpcKind::GoldGrasshopper, NpcKind::GoldMouse, NpcKind::GoldBunny, NpcKind::GoldFrog] {
             let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
             assert!(b.buff_immune[31], "{kind:?} SpecificallyImmuneTo 31");
         }
-        // The shimmer transform target (`NPCID.cs:10470`'s 442/446/447 →
-        // 677 rows).
-        for id in [442u16, 446, 447] {
+        // The shimmer transform target (`NPCID.cs:10470`'s 442-447 → 677
+        // rows).
+        for id in [442u16, 443, 445, 446, 447] {
             assert_eq!(tr_core::shimmer::transform_to_npc(id), 677);
         }
     }

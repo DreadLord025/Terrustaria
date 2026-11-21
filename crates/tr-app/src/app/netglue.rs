@@ -3589,6 +3589,9 @@ fn npc_seed(
         crate::npc::NpcKind::GoldGrasshopper | crate::npc::NpcKind::GoldMouse => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        crate::npc::NpcKind::GoldBunny | crate::npc::NpcKind::GoldFrog => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
         crate::npc::NpcKind::GoldBird => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?

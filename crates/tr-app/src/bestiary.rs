@@ -2237,6 +2237,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Gold Mouse",
     },
+    BestiaryEntryDef {
+        credit_id: "GoldBunny",
+        net_id: 443,
+        kind: NpcKind::GoldBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldFrog",
+        net_id: 445,
+        kind: NpcKind::GoldFrog,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Frog",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

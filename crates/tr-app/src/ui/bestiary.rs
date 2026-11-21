@@ -1608,6 +1608,8 @@ fn portrait_data(
         (NpcKind::GoldBird, _) => (sheet_i, 14.0, 14.0, 14.0, white),
         (NpcKind::GoldGrasshopper, _) => (sheet_i, 10.0, 14.0, 10.0, white),
         (NpcKind::GoldMouse, _) => (sheet_i, 12.0, 14.0, 12.0, white),
+        (NpcKind::GoldBunny, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        (NpcKind::GoldFrog, _) => (sheet_i, 10.0, 12.0, 10.0, white),
     }
 }
 

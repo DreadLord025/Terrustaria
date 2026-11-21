@@ -1259,7 +1259,7 @@ pub(crate) const SNAIL_SHEETS: &[u32] = &[359, 360, 655, 677];
 /// (446) and the Gold Mouse (447) each draw their own `NPC_<id>` art.
 /// Keyed by the vanilla net id ([`NpcKind::net_id`]) in
 /// [`NpcAssets::npc_sheet`].
-pub(crate) const GOLD_CRITTER_SHEETS: &[u32] = &[442, 446, 447];
+pub(crate) const GOLD_CRITTER_SHEETS: &[u32] = &[442, 446, 447, 443, 445];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3202,7 +3202,7 @@ pub(crate) fn draw_npcs(
             // generic centred anchor (the pumpkin arm's shape; scale 1).
             // The GoldBird rotates (the vx*0.1 tilt, the whitelist below);
             // the grasshopper/mouse do not.
-            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse => {
+            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
