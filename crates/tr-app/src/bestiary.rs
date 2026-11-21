@@ -2264,30 +2264,44 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
     )
 }
 
+/// W4-c8 final — `NPC.CountsAsACritter` (`NPC.cs:6887-6897`): the
+/// GENERIC gate, not a kind list — `lifeMax <= 5 && damage == 0 &&
+/// type != 594 && type != 686` (the WindyBalloon 594 / BoundTownSlimePurple
+/// 686 exclusions, `NPCID.cs:11865`/`:12049`, both unported kinds). The
+/// port reads the kind's `SetDefaults` rows (`max_hp`/`contact_damage`,
+/// the same stand-ins [`scan_world_for_critter_sights`] uses on the live
+/// NPC). This is the PROVIDER CONTRACT for every critter lane: a kind
+/// rowed by c7 (fireflies 355/358/654/677), c9 (snails 359/360/655),
+/// c10 (waterfowl 362-365/602/603/608/609), e26 (Frog 361 / LadyBug 604)
+/// or c4 (Goldfish 55 / GoldGoldfish 592 / GoldGoldfishWalker 593) is
+/// auto-covered the moment its `SetDefaults` rows land — all those C#
+/// rows are lifeMax 5 / damage 0 (e.g. `NPC.cs:13601-13655` the
+/// frog/duck block), so no per-lane provider wiring is needed.
+fn counts_as_a_critter(kind: NpcKind) -> bool {
+    kind.max_hp() <= 5
+        && kind.contact_damage() == 0
+        && kind.cs_id() != 594
+        && kind.cs_id() != 686
+}
+
 /// W4-c8 sweep — `BestiaryEntry.Critter` (`BestiaryEntry.cs:82-101`):
-/// every `CountsAsACritter` NPC (`NPC.cs:6887-6897` — `lifeMax <= 5 &&
-/// damage == 0 && type != 594 && type != 686`) registers with the
-/// `CritterUICollectionInfoProvider`, NOT the kill-count provider. The
-/// ported roster's critter entries: the nine aiStyle-66 crawlers (all
-/// 5-HP/0-dmg; the digger 375 folds onto the TruffleWorm entry but its
-/// own row exists — the ForceBubble precedent). The Goldfish 55 is
-/// lifeMax 5 / damage 0 in the C# too (`NPC.cs:9460-9473`) but the
-/// port's entry rides the kill provider today (the c4 wave's row —
-/// left unchanged, the no-behaviour-change freeze; its C# provider is
-/// the critter one, recorded here for the c4 follow-up).
+/// every `CountsAsACritter` NPC registers with the
+/// `CritterUICollectionInfoProvider`, NOT the kill-count provider
+/// (`AddEmptyEntries_CrittersAndEnemies_Automated`,
+/// `BestiaryDatabaseNPCsPopulator.cs:851-868`). W4-c8 final: the dispatch
+/// is the GENERIC [`counts_as_a_critter`] gate (was the nine-kind list)
+/// — the Goldfish 55's C# provider IS the critter one (`NPC.cs:9460-9473`
+/// lifeMax 5 / damage 0), so the c4-wave freeze is lifted here (the c4
+/// follow-up the sweep recorded). The one exclusion: the DD2 lane
+/// portal 549 passes the raw gate (lifeMax 5 / damage 0,
+/// `NPC.cs:16035-16037`) but is `Hide = true` (`NPCID.cs:4910-4915`) —
+/// the populator's `GetExclusions` (`:870-886`) never registers an entry
+/// for it, so the port's fold row keeps the kill provider (the
+/// ForceBubble precedent). The digger 375 is Hide too but its own row
+/// was landed WITH the sight provider by the sweep (the witness pins
+/// it) — kept.
 fn is_critter_entry(entry: &BestiaryEntryDef) -> bool {
-    matches!(
-        entry.kind,
-        NpcKind::Worm
-            | NpcKind::TruffleWorm
-            | NpcKind::TruffleWormDigger
-            | NpcKind::GoldWorm
-            | NpcKind::EnchantedNightcrawler
-            | NpcKind::Grubby
-            | NpcKind::Sluggy
-            | NpcKind::Buggy
-            | NpcKind::Maggot
-    )
+    entry.kind != NpcKind::DD2LanePortal && counts_as_a_critter(entry.kind)
 }
 
 /// W4-c8 sweep — `CritterUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2304,20 +2318,58 @@ fn critter_unlock_state(credit_id: &str, sights: &WorldBestiary) -> UnlockState 
     }
 }
 
+/// W4-c8 final — the gold-critter PEER table
+/// (`BestiaryDatabaseNPCsPopulator.cs:703-716`): the 13
+/// `GoldCritterUICollectionInfoProvider` registrations — gold net id →
+/// its normal-critter peers' credit ids (`NPCID.Search.GetName` names).
+/// 593 GoldGoldfishWalker is in the COLLECTION but NOT in this table —
+/// it rides the plain critter provider (its own entry, `NPCID.cs:5227`
+/// no Hide). The 539 squirrel is the one TWO-peer row (`{299, 538}`).
+/// This is the cross-lane contract: e26's GoldLadyBug 605 → {604} and
+/// c4's GoldGoldfish 592 → {55} auto-ride the gold provider once their
+/// rows land; d40's 442-447 band and the unported 601/613/627/539 rows
+/// are pinned here for their lanes.
+const GOLD_PEER_TABLE: &[(u16, &[&str])] = &[
+    (443, &["Bunny"]),                    // GoldBunny
+    (442, &["Bird"]),                     // GoldBird
+    (592, &["Goldfish"]),                 // GoldGoldfish
+    (444, &["Butterfly"]),                // GoldButterfly
+    (601, &["RedDragonfly"]),             // GoldDragonfly
+    (445, &["Frog"]),                     // GoldFrog
+    (446, &["Grasshopper"]),              // GoldGrasshopper
+    (605, &["LadyBug"]),                  // GoldLadyBug
+    (447, &["Mouse"]),                    // GoldMouse
+    (627, &["Seahorse"]),                 // GoldSeahorse
+    (613, &["WaterStrider"]),             // GoldWaterStrider
+    (448, &["Worm"]),                     // GoldWorm
+    (539, &["Squirrel", "SquirrelRed"]),  // SquirrelGold
+];
+
 /// W4-c8 sweep — `GoldCritterUICollectionInfoProvider`
 /// (`GoldCritterUICollectionInfoProvider.cs:21-75`): the gold entry's
 /// state is the MAX of its own sight and its normal-critter peers'
-/// sights (448's peer list is `{357}`, the populator's dictionary
-/// `BestiaryDatabaseNPCsPopulator.cs:715`), BUT the whole entry stays
+/// sights (the [`GOLD_PEER_TABLE`] row), BUT the whole entry stays
 /// tier 0 until ANY gold critter in `NPCID.Sets.GoldCrittersCollection`
 /// (`NPCID.cs:10121-10125`) has been seen (`:46-52`'s
 /// `TryFindingOneGoldCritterThatIsAlreadyUnlocked`).
-fn gold_critter_unlock_state(sights: &WorldBestiary) -> UnlockState {
+/// W4-c8 final: SET-COMPLETE census — the 14-member collection below
+/// matches the C# list verbatim (443/442/592/593/444/601/445/446/605/
+/// 447/627/613/448/539), the `IsGoldCritter` bool set (`:10126`) is the
+/// SAME 14 ids (the sparkle arm's family — only 448 is ported on this
+/// branch); d40's gold band 442-447 + the c4 592/593 + e26 605 rows
+/// slot into the credit-id strings unchanged when they merge.
+fn gold_critter_unlock_state(
+    gold_credit: &str,
+    peers: &[&str],
+    sights: &WorldBestiary,
+) -> UnlockState {
     // `:23-37` — max(own, the normal peers).
-    let mut state = critter_unlock_state("GoldWorm", sights);
-    let peer = critter_unlock_state("Worm", sights);
-    if peer > state {
-        state = peer;
+    let mut state = critter_unlock_state(gold_credit, sights);
+    for peer in peers {
+        let peer_state = critter_unlock_state(peer, sights);
+        if peer_state > state {
+            state = peer_state;
+        }
     }
     if state == UnlockState::NotKnownAtAll {
         return state;
@@ -2350,13 +2402,19 @@ fn gold_critter_unlock_state(sights: &WorldBestiary) -> UnlockState {
 }
 
 /// W4-c8 sweep — the WORLD-aware unlock dispatch (the C#
-/// `UIInfoProvider` polymorphism): the critter entries ride the sight
-/// providers, the GoldWorm the gold provider, everything else the
-/// kill-count provider unchanged. The kill-only [`unlock_state`] stays
-/// for the kill-provider callers/tests.
+/// `UIInfoProvider` polymorphism): the gold-table entries ride the gold
+/// provider, the other critter entries the sight provider, everything
+/// else the kill-count provider unchanged. The kill-only
+/// [`unlock_state`] stays for the kill-provider callers/tests. W4-c8
+/// final: the gold arm is table-driven (`net_id` in
+/// [`GOLD_PEER_TABLE`]) — a merged lane's gold row needs no dispatch
+/// edit.
 pub fn unlock_state_world(entry: &BestiaryEntryDef, bestiary: &WorldBestiary) -> UnlockState {
-    if entry.kind == NpcKind::GoldWorm {
-        return gold_critter_unlock_state(bestiary);
+    if let Some((_, peers)) = GOLD_PEER_TABLE
+        .iter()
+        .find(|(net, _)| *net as i32 == entry.net_id)
+    {
+        return gold_critter_unlock_state(entry.credit_id, peers, bestiary);
     }
     if is_critter_entry(entry) {
         return critter_unlock_state(entry.credit_id, bestiary);
@@ -2413,6 +2471,22 @@ pub fn completion_percent_world(bestiary: &WorldBestiary) -> f32 {
 /// kinds). The session player is the one hitbox (the S1-D-3p
 /// convention); a dead player still counts (the C# scan has no dead
 /// gate — only `player.active`). RNG-free.
+/// W4-c8 final — the CROSS-LANE PROVIDER CONTRACT: the gate below is
+/// GENERIC (no kind list), so a critter rowed by ANY lane is scanned
+/// the moment its `SetDefaults` rows land — c7's Firefly 355 /
+/// LightningBug 358 / Lavafly 654 / Shimmerfly 677, c9's Snail 359 /
+/// GlowingSnail 360 / MagmaSnail 655, c10's Duck 362-365 / Seagull
+/// 602/603 / Grebe 608/609, e26's Frog 361 / LadyBug 604 / GoldLadyBug
+/// 605 and c4's Goldfish 55 / GoldGoldfish 592 / GoldGoldfishWalker
+/// 593 are ALL lifeMax 5 / damage 0 in the C# (`NPC.cs:13601-13655`
+/// the frog/duck block, `:9460-9473` the goldfish, `:16763+` the
+/// ladybugs). Their `entry_for_npc` credit lands in the same sights
+/// set the [`crate::bestiary::unlock_state_world`] dispatch reads —
+/// the generic [`crate::bestiary::counts_as_a_critter`] gate + the
+/// `GOLD_PEER_TABLE` gold arm cover the UI side. NO per-lane scan or
+/// provider edit is needed. (The bestiary-entry Hide folds — 549 lane
+/// portal — keep the kill provider; the digger 375 folds onto the
+/// TruffleWorm credit here, its own row stands for the sweep witness.)
 pub(crate) fn scan_world_for_critter_sights(app: &mut crate::app::App) {
     let Some(p) = app.player.as_ref() else {
         return;
@@ -2648,13 +2722,34 @@ mod tests {
     /// W4-c8 sweep — the critter entries unlock on SIGHT, not kills
     /// (`CritterUICollectionInfoProvider.cs:14-20`): no sight → tier 0
     /// even with 50 kills; one sight → tier 4 outright with ZERO kills.
+    /// W4-c8 final: the nine-kind slice stays pinned (the generic gate
+    /// now also covers the Goldfish — its own witness below).
     /// WRITTEN, NOT RUN (code-only mode).
     #[test]
     fn w4_c8_the_critter_entries_unlock_on_sight_not_kills() {
         let mut bestiary = WorldBestiary::new();
         let crawler_entries: Vec<&BestiaryEntryDef> = ENTRIES
             .iter()
-            .filter(|e| is_critter_entry(e) && e.kind != NpcKind::GoldWorm)
+            .filter(|e| {
+                is_critter_entry(e)
+                    && matches!(
+                        e.kind,
+                        NpcKind::Worm
+                            | NpcKind::TruffleWorm
+                            | NpcKind::TruffleWormDigger
+                            | NpcKind::GoldWorm
+                            | NpcKind::EnchantedNightcrawler
+                            | NpcKind::Grubby
+                            | NpcKind::Sluggy
+                            | NpcKind::Buggy
+                            | NpcKind::Maggot
+                    )
+            })
+            .collect();
+        assert_eq!(crawler_entries.len(), 9, "the nine crawler rows");
+        let crawler_entries: Vec<&BestiaryEntryDef> = crawler_entries
+            .into_iter()
+            .filter(|e| e.kind != NpcKind::GoldWorm)
             .collect();
         assert_eq!(crawler_entries.len(), 8, "the eight non-gold crawler rows");
         for e in &crawler_entries {
@@ -2748,6 +2843,137 @@ mod tests {
         // The kill-only form does NOT see the sight (the two forms
         // differ exactly on the critter rows).
         assert_eq!(completion_percent(&bestiary.kills), 0.0);
+    }
+
+    /// W4-c8 final — the GENERIC critter gate
+    /// (`NPC.CountsAsACritter`, `NPC.cs:6887-6897`): every ported
+    /// 5-HP/0-dmg kind auto-rides the sight provider — the Goldfish 55
+    /// (the c4 lane's row, the sweep's recorded follow-up) now unlocks
+    /// on sight like the crawlers, and the DD2 lane portal 549 (raw
+    /// gate passes but Hide=true → no C# entry, `NPCID.cs:4910-4915`)
+    /// keeps the kill provider. The cross-lane contract: c7/c9/c10/e26
+    /// kinds are 5-HP/0-dmg in the C# (`NPC.cs:13601-13655` etc.) —
+    /// once rowed they pass this gate with NO provider wiring.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_final_the_generic_critter_gate_covers_the_goldfish() {
+        // The raw gate: the nine crawlers + the Goldfish pass; the
+        // hostile/bulky kinds never do.
+        for kind in [
+            NpcKind::Worm,
+            NpcKind::TruffleWorm,
+            NpcKind::TruffleWormDigger,
+            NpcKind::GoldWorm,
+            NpcKind::EnchantedNightcrawler,
+            NpcKind::Grubby,
+            NpcKind::Sluggy,
+            NpcKind::Buggy,
+            NpcKind::Maggot,
+            NpcKind::Goldfish,
+        ] {
+            assert!(counts_as_a_critter(kind), "{kind:?} is a critter");
+        }
+        for kind in [
+            NpcKind::Zombie,       // 45 HP / 14 dmg
+            NpcKind::Piranha,      // 30 HP / 25 dmg
+            NpcKind::ForceBubble,  // 1000 HP (0 dmg alone is not enough)
+            NpcKind::DetonatingBubble, // 1 HP but 100 dmg
+            NpcKind::FungiSpore,   // 1 HP but 80 dmg
+        ] {
+            assert!(!counts_as_a_critter(kind), "{kind:?} is NOT a critter");
+        }
+        // The Goldfish entry dispatches to the sight provider now.
+        let fish = ENTRIES.iter().find(|e| e.kind == NpcKind::Goldfish).unwrap();
+        assert!(is_critter_entry(fish));
+        let mut bestiary = WorldBestiary::new();
+        for _ in 0..50 {
+            bestiary.kills.register_kill("Goldfish");
+        }
+        assert_eq!(
+            unlock_state_world(fish, &bestiary),
+            UnlockState::NotKnownAtAll,
+            "55 — kills do not unlock the critter row"
+        );
+        bestiary.set_was_seen_directly("Goldfish");
+        assert_eq!(
+            unlock_state_world(fish, &bestiary),
+            UnlockState::CanShowDropsWithDropRates,
+            "55 — one sight is tier 4"
+        );
+        // The 549 lane portal: raw gate true, Hide exclusion — the kill
+        // provider stands (the ForceBubble precedent).
+        assert!(counts_as_a_critter(NpcKind::DD2LanePortal));
+        let portal = ENTRIES
+            .iter()
+            .find(|e| e.kind == NpcKind::DD2LanePortal)
+            .unwrap();
+        assert!(!is_critter_entry(portal), "549 Hide — no critter entry");
+        let mut b2 = WorldBestiary::new();
+        b2.set_was_seen_directly("DD2LanePortal");
+        assert_eq!(
+            unlock_state_world(portal, &b2),
+            UnlockState::NotKnownAtAll,
+            "a sight does not unlock the kill-provider row"
+        );
+    }
+
+    /// W4-c8 final — the gold set census: the 14-member collection
+    /// matches `NPCID.cs:10121-10125` verbatim and every collection id
+    /// opens the gate (the `TryFindingOneGoldCritterThatIsAlreadyUnlocked`
+    /// loop `:56-66`); the peer table carries all 13 registrations
+    /// (`BestiaryDatabaseNPCsPopulator.cs:703-716`) — 593 is collection-
+    /// only (no gold provider, the plain critter row). Each member's
+    /// sight + the GoldWorm's own sight unlocks 448 — proving the gate
+    /// reads the WHOLE set, not just 448's own id. WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c8_final_the_gold_collection_is_the_full_fourteen() {
+        let gold = ENTRIES.iter().find(|e| e.kind == NpcKind::GoldWorm).unwrap();
+        // The collection: the C# list order (443/442/592/593/444/601/
+        // 445/446/605/447/627/613/448/539) as credit ids.
+        let collection = [
+            ("GoldBunny", 443u16),
+            ("GoldBird", 442),
+            ("GoldGoldfish", 592),
+            ("GoldGoldfishWalker", 593),
+            ("GoldButterfly", 444),
+            ("GoldDragonfly", 601),
+            ("GoldFrog", 445),
+            ("GoldGrasshopper", 446),
+            ("GoldLadyBug", 605),
+            ("GoldMouse", 447),
+            ("GoldSeahorse", 627),
+            ("GoldWaterStrider", 613),
+            ("GoldWorm", 448),
+            ("SquirrelGold", 539),
+        ];
+        for (credit, _net) in collection {
+            let mut b = WorldBestiary::new();
+            // The member seen + the GoldWorm itself seen: gate opens,
+            // max(own, 357) = tier 4.
+            b.set_was_seen_directly(credit);
+            b.set_was_seen_directly("GoldWorm");
+            assert_eq!(
+                unlock_state_world(gold, &b),
+                UnlockState::CanShowDropsWithDropRates,
+                "{credit} opens the collection gate"
+            );
+        }
+        // The peer table: 13 rows, 593 absent (collection-only), the
+        // 539 squirrel the one two-peer row.
+        assert_eq!(GOLD_PEER_TABLE.len(), 13);
+        assert!(!GOLD_PEER_TABLE.iter().any(|(net, _)| *net == 593));
+        let squirrel = GOLD_PEER_TABLE.iter().find(|(net, _)| *net == 539).unwrap();
+        assert_eq!(squirrel.1, &["Squirrel", "SquirrelRed"]);
+        // The ported gold row (448) dispatches through the table; a
+        // non-table critter (357) does not gate on the collection.
+        let worm = ENTRIES.iter().find(|e| e.kind == NpcKind::Worm).unwrap();
+        let mut b3 = WorldBestiary::new();
+        b3.set_was_seen_directly("Worm");
+        assert_eq!(
+            unlock_state_world(worm, &b3),
+            UnlockState::CanShowDropsWithDropRates,
+            "357 is the plain critter provider — no gold gate"
+        );
     }
 
     #[test]
