@@ -583,6 +583,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // The zone flags (`Player.ZoneSnow`-family) — the torch-luck table's
         // inputs (`Player.cs:17924-18036`), refreshed beside the auras.
         p.zones = app.scene_metrics.zones();
+        // W4-f40 (canonical placement, research/114 §1d — c39's duplicate
+        // before-grapple write retired onto this one): `Player.RecalculateLuck`'s
+        // lantern-night term (`Player.cs:29146-29149`, `if (LanternNight.
+        // LanternsUp) luck += 0.3f`). The C# reads the static live inside
+        // `UpdateLuck`; the port snapshots `LanternsUp` once per tick beside
+        // the auras/zones (the flag only flips at the dusk/dawn boundaries
+        // and `UpdateTime`, never mid-player-step), so `update_luck`'s
+        // `recalculate_luck` below reads the same value the C# would. The
+        // +0.3 add itself already lives in `luck.rs::recalculate_luck` (the
+        // M4-EVENT-4 neutral-default input this wires).
+        p.luck_state.lantern_night = crate::world_events::lanterns_up(&app.world_events);
         // The held torch's style (`inventory[selectedItem].createTile == 4`,
         // `Player.cs:17917-17920`).
         p.held_torch_style = app
@@ -1104,12 +1115,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // App's swing/reuse timers (fed before the tick, the
             // `frame_inputs` convention).
             p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
-            // W4-c39 — `Player.RecalculateLuck`'s lantern-night term
-            // (`Player.cs:29146-29149`): `LanternNight.LanternsUp` adds 0.3
-            // luck. The flag is fed before the tick's `update_luck` →
-            // `recalculate_luck` reads it (the `frame_inputs` convention).
-            p.luck_state.lantern_night =
-                crate::world_events::lanterns_up(&app.world_events);
+            // W4-c39 exec (research/114 §1d): the duplicate luck write here
+            // DROPPED — f40's beside-auras/zones placement is canonical (the
+            // single write moved up beside `p.zones`).
             p.update_with_grapple(
                 &app.world,
                 input,
