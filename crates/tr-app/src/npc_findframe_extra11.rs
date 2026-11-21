@@ -468,8 +468,8 @@ pub fn find_frame_extra11(kind: FindFrameExtra11Kind, s: &mut FrameState, i: &Fr
             }
             s.row = (s.counter / 8.0) as i32 as u32 + 2;
         }
-        // `case 558` (`NPC.cs:67838` → `:67841-67873`, shared with
-        // 559/560 — batch 3): the vx-sign sprite copies
+        // `case 558`/`case 559`/`case 560` (`NPC.cs:67838-67840` →
+        // `:67841-67873`): the vx-sign sprite copies
         // (`:67842-67849`), the `ToRotation` aim (`Utils.cs:1655` =
         // atan2(vy, vx)) + `(float)Math.PI` when vx < 0 (`:67850-67854`
         // — the REAL PI, not the eye group's literal 3.14f),
@@ -479,7 +479,9 @@ pub fn find_frame_extra11(kind: FindFrameExtra11Kind, s: &mut FrameState, i: &Fr
         // else the ++counter >= 6 step over rows 0-3 with the >= 4
         // wrap (`:67864-67872`). Our v1 arm missed the sprite AND
         // rotation writes entirely.
-        FindFrameExtra11Kind::DD2WyvernT1 => {
+        FindFrameExtra11Kind::DD2WyvernT1
+        | FindFrameExtra11Kind::DD2WyvernT2
+        | FindFrameExtra11Kind::DD2WyvernT3 => {
             // `:67842-67849`.
             if i.vx > 0.0 {
                 s.sprite_dir = 1;
@@ -512,9 +514,60 @@ pub fn find_frame_extra11(kind: FindFrameExtra11Kind, s: &mut FrameState, i: &Fr
                 }
             }
         }
-        // The batch-3 kinds land in the next commit (the 5-kinds-
-        // per-commit rule — the e10 batch-1 catch-all precedent).
-        _ => unimplemented!("extra-11 batch 3"),
+        // `case 561`/`case 562`/`case 563` (`NPC.cs:67756-67758` →
+        // `:67759-67796`): the goblin shape with the ai[1] > 0 &&
+        // ai[0] > 0 attack gate (`:67759-67773`): the UNCONDITIONAL
+        // sprite copy, the row outside 10..13 OR ai[1] == 89 resets to
+        // row 10 + counter 0, the ++counter >= 6 step gated on row < 13
+        // (the row-13 counter-keep-growing quirk); else the walk: the
+        // vy == 0 sprite copy (`:67774-67777`), the air-OR-backpedal
+        // row-8 pin (`:67778-67783`), the idle row-9 snap
+        // (`:67784-67789`), the |vx| accumulator with the >= 64 (or
+        // negative) reset (`:67790-67794`) and the `(int)(counter/8)`
+        // row (`:67795`) over rows 0-7.
+        FindFrameExtra11Kind::DD2JavelinT1
+        | FindFrameExtra11Kind::DD2JavelinT2
+        | FindFrameExtra11Kind::DD2JavelinT3 => {
+            // `:67759-67773`.
+            if i.ai1 > 0.0 && i.ai0 > 0.0 {
+                s.sprite_dir = i.direction;
+                if s.row < 10 || s.row > 13 || i.ai1 == 89.0 {
+                    s.row = 10;
+                    s.counter = 0.0;
+                }
+                s.counter += 1.0;
+                if s.counter >= 6.0 && s.row < 13 {
+                    s.counter = 0.0;
+                    s.row += 1;
+                }
+                return;
+            }
+            // `:67774-67777`.
+            if i.vy == 0.0 {
+                s.sprite_dir = i.direction;
+            }
+            // `:67778-67783`.
+            if i.vy != 0.0
+                || (i.direction == -1 && i.vx > 0.0)
+                || (i.direction == 1 && i.vx < 0.0)
+            {
+                s.counter = 0.0;
+                s.row = 8;
+                return;
+            }
+            // `:67784-67789`.
+            if i.vx == 0.0 {
+                s.counter = 0.0;
+                s.row = 9;
+                return;
+            }
+            // `:67790-67795`.
+            s.counter += i.vx.abs();
+            if s.counter >= 64.0 || s.counter < 0.0 {
+                s.counter = 0.0;
+            }
+            s.row = (s.counter / 8.0) as i32 as u32;
+        }
     }
 }
 
@@ -759,13 +812,17 @@ mod tests {
         }
     }
 
-    /// 558 the DD2 wyvern: the vx-sign sprite + the ToRotation aim
+    /// 558-560 the DD2 wyverns: the vx-sign sprite + the ToRotation aim
     /// (+PI when vx < 0, the vx*0.1 non-dive override) + the dive
     /// row-4 pin / the >=6 full-4 step. Expectations re-derived by
     /// mechanical replay (the rotation is the one f32 transcendental).
     #[test]
     fn f27s11_wyvern_aims_and_steps_the_full_four_rows() {
-        let k = FindFrameExtra11Kind::DD2WyvernT1;
+        for k in [
+            FindFrameExtra11Kind::DD2WyvernT1,
+            FindFrameExtra11Kind::DD2WyvernT2,
+            FindFrameExtra11Kind::DD2WyvernT3,
+        ] {
         // The >=6 step over rows 0-3 (row 4 is the dive pin only).
         let rows = rows_over(k, input(1.0, 0.0), 20);
         assert_eq!(
@@ -799,6 +856,111 @@ mod tests {
         find_frame_extra11(k, &mut s, &input(0.0, 5.0));
         assert_eq!(s.sprite_dir, -1);
         assert_eq!(s.rotation, 0.0);
+        }
+    }
+
+    /// 561-563 the DD2 javelineers: the goblin shape with the
+    /// ai[1] > 0 && ai[0] > 0 attack gate (rows 10-13, the ai[1] == 89
+    /// reset) + the walk (air 8, idle 9, the |vx| >=64 reset +
+    /// counter/8 row). Expectations re-derived by mechanical replay.
+    #[test]
+    fn f27s11_javelineers_walk_the_goblin_shape_with_the_89_reset() {
+        for k in [
+            FindFrameExtra11Kind::DD2JavelinT1,
+            FindFrameExtra11Kind::DD2JavelinT2,
+            FindFrameExtra11Kind::DD2JavelinT3,
+        ] {
+            // vx 4: the (int)(counter/8) row, the >=64 reset tick row 0.
+            let rows = rows_over(k, input(4.0, 0.0), 16);
+            assert_eq!(rows, vec![0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 0]);
+            // The attack ladder: ai0 1 + ai1 1 — rows 10(x5)/11/12(x6
+            // each)/13.
+            let mut i = input(0.0, 0.0);
+            i.ai0 = 1.0;
+            i.ai1 = 1.0;
+            let rows = rows_over(k, i, 20);
+            assert_eq!(
+                rows,
+                vec![10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 13, 13, 13]
+            );
+            // The ai[1] == 89 reset: row 10, counter 0 THEN ++ → 1.
+            let mut s = FrameState { row: 12, counter: 3.0, ..Default::default() };
+            let mut i89 = i;
+            i89.ai1 = 89.0;
+            find_frame_extra11(k, &mut s, &i89);
+            assert_eq!((s.row, s.counter), (10, 1.0));
+            // The attack gate needs BOTH ai slots > 0 — ai0 alone
+            // falls to the walk (the goblin's ai0-only gate differs).
+            let mut s = FrameState { row: 12, counter: 3.0, ..Default::default() };
+            let mut i_only0 = input(0.0, 0.0);
+            i_only0.ai0 = 1.0;
+            find_frame_extra11(k, &mut s, &i_only0);
+            assert_eq!((s.row, s.counter), (9, 0.0), "the idle snap, not the ladder");
+            // The air pin: row 8 + counter 0.
+            let mut s = FrameState { row: 3, counter: 20.0, ..Default::default() };
+            find_frame_extra11(k, &mut s, &input(4.0, -3.0));
+            assert_eq!((s.row, s.counter), (8, 0.0));
+            // The idle snap: row 9 + counter 0.
+            find_frame_extra11(k, &mut s, &input(0.0, 0.0));
+            assert_eq!((s.row, s.counter), (9, 0.0));
+        }
+    }
+
+    /// The 15-kind strip sweep: a 5x3x3 vx/vy/direction input grid
+    /// (plus the ai0/ai1/ai2 variants), 40 ticks each — every row
+    /// stays inside its sheet (the extra-10 precedent).
+    #[test]
+    fn f27s11_fifteen_kind_strip_sweep_stays_inside_the_sheets() {
+        let kinds = [
+            FindFrameExtra11Kind::ArmedZombieTwiggy,
+            FindFrameExtra11Kind::ArmedZombieCenx,
+            FindFrameExtra11Kind::DD2Bartender,
+            FindFrameExtra11Kind::DD2GoblinT1,
+            FindFrameExtra11Kind::DD2GoblinT2,
+            FindFrameExtra11Kind::DD2GoblinT3,
+            FindFrameExtra11Kind::DD2GoblinBomberT1,
+            FindFrameExtra11Kind::DD2GoblinBomberT2,
+            FindFrameExtra11Kind::DD2GoblinBomberT3,
+            FindFrameExtra11Kind::DD2WyvernT1,
+            FindFrameExtra11Kind::DD2WyvernT2,
+            FindFrameExtra11Kind::DD2WyvernT3,
+            FindFrameExtra11Kind::DD2JavelinT1,
+            FindFrameExtra11Kind::DD2JavelinT2,
+            FindFrameExtra11Kind::DD2JavelinT3,
+        ];
+        for k in kinds {
+            let count = k.frame_count();
+            for vx in [-4.0f32, -1.0, 0.0, 1.0, 4.0] {
+                for vy in [-3.0f32, 0.0, 3.0] {
+                    for direction in [-1i32, 0, 1] {
+                        for ai0 in [0.0f32, 1.0, 2.0] {
+                            for ai1 in [0.0f32, 1.0, 29.0, 41.0, 89.0] {
+                                for ai2 in [0.0f32, 3.0, 7.0, 12.0, 20.0] {
+                                    let i = FrameInput {
+                                        vx,
+                                        vy,
+                                        direction,
+                                        ai0,
+                                        ai1,
+                                        ai2,
+                                    };
+                                    let mut s = FrameState::default();
+                                    for tick in 0..40 {
+                                        find_frame_extra11(k, &mut s, &i);
+                                        assert!(
+                                            s.row < count,
+                                            "type {} tick {tick} row {} >= {count} (vx {vx}, vy {vy}, dir {direction})",
+                                            k.vanilla_type(),
+                                            s.row
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// The seam maps exactly the slice's vanilla types (the full
