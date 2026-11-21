@@ -39403,3 +39403,68 @@ class censuses extended, the frame counts against `Main.cs`. The
 `w4_d78_b2_the_child_spawn_family_rows_match_set_defaults` witness plus
 the census-test extensions are WRITTEN, NOT RUN — **no cargo/rustc/
 rustfmt/tests/graphify invoked** (the Lead's constraint).
+
+## The projectile Kill death-effect wave, part 2c (W4-d78, 2026-11-21, code-only mode)
+
+**The child-spawn Kill arms** (`projectile.rs::child_spawn_kill`, wired in
+the once-per-death hook after `hostile_death_blast`):
+
+| parent | C# arm | resize | penetration | children | damage |
+| --- | --- | --- | --- | --- | --- |
+| 617 NebulaArcanum | `:72278-72373` | 176×176 | max=pen=−1 | 620 ×(Next(5,9)+Next(5,9)) | (int)(dmg×0.65 double), kb×0.8 |
+| 246 Stynger | `:76944-76986` | 150×150 | pen=−1, max=0 | 249 ×Next(2,6) | full dmg/kb, child max=0 |
+| 249 StyngerShrapnel | `:76987-77015` | 100×100 | pen=−1 (NO max write) | none (own blast) | — |
+| 117 BoneArrow | `:74734-74751` | none | none | 1124 ×2 | (int)(dmg×0.25f), kb 0 |
+
+The 617 arm also sweeps every active 618 subshot whose `ai[1]` matches the
+dying bolt's key (`:72329-72335`, the `f32::from_bits(key)` bit-match — the
+618 spawn's `ai1: this.key` `:34737`); a 618's Kill is dust-only (`:72394`,
+the g65 lane's), so `pool.kill` is the exact deactivate. The 617 fans draw
+per shard: `RandomVector2(-30,30)` = 2 NextDouble, the direction pair
+`Next(-100,101)` ×2 with the while-both-zero redraw, Normalize, the Y-flip
+(fan 1 at 0.2 / fan 2 at 0.4), then the speed `Next(70,101)` / `Next(40,81)`
+×0.1; the dust-type pick `SelectRandom(86,90)` = `Next(2)` (`Utils.cs:2459`)
+rides fan 1, the opposite type fan 2. The 246's per-shrapnel jitter keeps
+the ±0.01 float round-trip quirk verbatim and the `8f/(float)Math.Sqrt`
+speed scale (float products, double sqrt, float quotient); the spawn sits
+at `Centre − oldVelocity`. The 117's per-shard velocity is
+`SafeNormalize(UnitX).RotatedBy(π).RotatedByRandom(0.5235987901687622)` ×
+`(1 + NextFloat×2)` — the π literal is the float-rounded
+3.1415927410125732 (NOT the double π), the RotatedByRandom is TWO
+NextDouble draws (left operand first), and the aiStyle-1 spawn clamp
+(`:10895-10902`, the ×0.97 decay) applies to the 1124 child. Every child
+spawn recentres by its row's box (the C# `NewProjectile` takes the CENTRE,
+`:10876`); the corpse-flag lift (`special_arrow_kill`'s bee precedent)
+keeps the dying slot out of `GetNextSlot`.
+
+**The child AI arms**: the 620 rides a NEW AI_029 kind-gate
+(`ai_nebula_shard`, `:37672-37704` — ai[1] ages, >40 kills with NO return,
+vy+=0.2 cap 18, vx×0.98; its ai[0] is the dust-type pick 86/90, NOT gem
+feature bits, so the gem arm would misread it) + the `HandleMovement`
+522/620 full-axis bounce (`:18796-18806`, no penetrate spend). The 246
+rides `ai_stynger` (`AI_001` `:57129-57141` — alpha−20 floor 0, ai[0]≥60
+pins at 60 + vy+=0.15). The 1124 rides `ai_bone_shard` (`:54016-54020` the
+first-tick `frame = Next(2)` latch — a behaviour draw on the pass stream,
+the 909 precedent — + the generic 15-tick gravity + `:57582-57585` the
+spin tail `rotation += (|vx|+|vy|)×0.05` REPLACING the default rotation).
+The 249's aiStyle-2 arm (`:23495-23502`, the always-on +0.25 fall) was
+already ported. The 1124's `Colliding` gate (`:15413-15418`, ai[0]<15
+refuses) joins the plain PVE walk; the 246/249's 7-tick per-type immunity
+(`:14024-14031`) joins BOTH walks' ladders.
+
+**Deliberate skips (cited at the seams):** the dust/gore bodies + the
+Item14/sound-0 cues (the g65/g16/d77 lanes', skipped WITH their draws —
+the 617's 4+30×2+10+10 dust loops, the 2-gore `Next(61,64)` + kicks, the
+246/249's gore `Next(61,64)` + `Next(-1,2)` ×2); the 620's dust-scale fade
+factor `(60−ai[1])/60` (dust-only); the bounce-block tile-cut prologue's
+`Next(3)` (`:17948`, no tile-cut layer — the `dd2_sentry_step` precedent).
+No gameplay draw added/removed/reordered: the bursts' draws are the
+landed-blast DamageVar + the spawn rolls, in C# order, on the pass's
+UpdateProjectiles stream; every refusal draws NOTHING.
+
+**Verification.** Code-only: every arm re-read against its C# block (the
+resize/penetration pairs, the draw orders, the float/double precision, the
+π literal, the key bit-match, the Colliding/immunity gates), the dispatch
+gates checked kind-disjoint from A/B/C/riders/frost/moonlord/special-arrows.
+The 10 `w4_d78_b2c_*` witness tests are WRITTEN, NOT RUN — **no cargo/
+rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).
