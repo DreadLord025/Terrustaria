@@ -3895,14 +3895,27 @@ impl Projectile {
                 self.active = false;
             }
         } else {
+            // `:33462-33464` — the `!(ai[0] >= 0f)` early return: a
+            // negative counter (a spawn-time ai0 below -1) waits without
+            // fading. W4-d11 verbatim fix.
+            if self.ai[0] < 0.0 {
+                return;
+            }
             self.alpha -= 25;
             if self.alpha < 0 {
                 self.alpha = 0;
-                // `:33467-33475`'s spawn.
+                // `:33467-33475`'s spawn. W4-d11 anchor fix: the C#
+                // spawns at `(int)Center.X, (int)Bottom.Y` — the port's
+                // intent carried the top-left (a 10/20 px deviation).
                 if self.local_ai[1] == 0.0 && self.local_ai[0] > 0.0 {
                     self.local_ai[1] = 1.0;
-                    self.wants_mark_spawn
-                        .push((self.local_ai[0] as u16, self.pos.x, self.pos.y, 0.0, 0.0));
+                    self.wants_mark_spawn.push((
+                        self.local_ai[0] as u16,
+                        self.pos.x + self.w * 0.5,
+                        self.pos.y + self.h,
+                        0.0,
+                        0.0,
+                    ));
                 }
             }
         }
@@ -30592,10 +30605,14 @@ mod phasmal_projectile_tests {
 
     #[test]
     fn the_stardust_mark_spawns_the_carried_npc() {
-        // `AI_103`: the fade-in spawns the id in `localAI[0]`.
+        // `AI_103`: the fade-in spawns the id in `localAI[0]`. W4-d11:
+        // the anchor is `(int)Center.X, (int)Bottom.Y` (`:33473`) — the
+        // 20x20 mark at (500, 100) spawns at (510, 120).
         let npcs: Vec<Npc> = Vec::new();
         let world = surface_world();
         let mut p = spawn(STARDUST_MARK, 500.0, 100.0);
+        p.w = 20.0;
+        p.h = 20.0;
         p.local_ai[0] = NpcKind::StardustCellBig.to_u16() as f32;
         for _ in 0..12 {
             p.ai_stardust_mark(&world, &npcs);
@@ -30603,13 +30620,67 @@ mod phasmal_projectile_tests {
         let (kind, x, y, _vx, _vy) = p.wants_mark_spawn[0];
         assert_eq!(p.wants_mark_spawn.len(), 1, "the mark spawns one");
         assert_eq!(kind, NpcKind::StardustCellBig.to_u16());
-        assert!((x - 500.0).abs() < 1.0 && (y - 100.0).abs() < 1.0);
+        assert!((x - 510.0).abs() < 1.0 && (y - 120.0).abs() < 1.0, "Center.X / Bottom.Y");
         // The pool's drain carries it out.
         let mut pool = ProjectilePool::new();
         pool.slots[0] = p;
         let drained = pool.drain_mark_spawns();
         assert_eq!(drained.len(), 1);
         assert!(pool.slots[0].wants_mark_spawn.is_empty(), "the intent clears");
+    }
+
+    /// W4-d11 — the 540 row carries alpha 255 (`Projectile.cs:6159`):
+    /// the fade-in starts invisible, the spawn fires when alpha crosses
+    /// 0 (tick 11 from 255: 255 - 11*25 = -20 -> 0), and the fade-out
+    /// kills at alpha >= 250 (tick 30 + 10).
+    #[test]
+    fn w4_d11_103_the_mark_fades_from_255_and_dies_at_250() {
+        let d = proj_data(STARDUST_MARK).unwrap();
+        assert_eq!(d.alpha, 255, ":6159");
+        let npcs: Vec<Npc> = Vec::new();
+        let world = surface_world();
+        let mut p = spawn(STARDUST_MARK, 500.0, 100.0);
+        p.alpha = d.alpha;
+        p.local_ai[0] = NpcKind::StardustCellBig.to_u16() as f32;
+        for _ in 0..10 {
+            p.ai_stardust_mark(&world, &npcs);
+        }
+        assert_eq!(p.alpha, 5, "tick 10: 255 - 250");
+        assert!(p.wants_mark_spawn.is_empty(), "not yet visible");
+        p.ai_stardust_mark(&world, &npcs);
+        assert_eq!(p.alpha, 0, "tick 11 clamps to 0");
+        assert_eq!(p.wants_mark_spawn.len(), 1, "the spawn fires at 0");
+        assert_eq!(p.local_ai[1], 1.0, "the one-shot latch");
+        // The fade-out: ticks 30..39 add 25; at 250 the mark dies.
+        for _ in 0..19 {
+            p.ai_stardust_mark(&world, &npcs);
+        }
+        assert_eq!(p.ai[0], 30.0);
+        for _ in 0..9 {
+            p.ai_stardust_mark(&world, &npcs);
+        }
+        assert_eq!(p.alpha, 225, "9 fade-out ticks");
+        assert!(p.active);
+        p.ai_stardust_mark(&world, &npcs);
+        assert_eq!(p.alpha, 250);
+        assert!(!p.active, "alpha >= 250 -> Kill");
+    }
+
+    /// W4-d11 — `:33462-33464`'s negative-counter early return: a mark
+    /// spawned with ai0 = -3 waits two ticks without fading.
+    #[test]
+    fn w4_d11_103_a_negative_counter_waits_without_fading() {
+        let npcs: Vec<Npc> = Vec::new();
+        let world = surface_world();
+        let mut p = spawn(STARDUST_MARK, 500.0, 100.0);
+        p.alpha = 255;
+        p.ai[0] = -3.0;
+        p.ai_stardust_mark(&world, &npcs); // -2: the early return
+        assert_eq!(p.alpha, 255, "no fade while ai[0] < 0");
+        p.ai_stardust_mark(&world, &npcs); // -1: still waiting
+        assert_eq!(p.alpha, 255);
+        p.ai_stardust_mark(&world, &npcs); // 0: the fade starts
+        assert_eq!(p.alpha, 230);
     }
 
     #[test]

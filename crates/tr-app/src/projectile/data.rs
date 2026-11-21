@@ -2455,8 +2455,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // rows): the 452/454/455/456 hostile set (timeLeft 600,
             // penetrate -1 except the bolt) and the drama smoke 622.
             // `:6151-6160`'s StardustTowerMark (the 540): 20x20, aiStyle
-            // 103, timeLeft 300, hostile.
-            STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false, RESET_STATE),
+            // 103, timeLeft 300, hostile, alpha 255 (`:6159` — W4-d11 row
+            // fix: the fade-in starts invisible).
+            STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:6239-6247`'s NebulaEye (the 574): 18x18, aiStyle 102,
             // timeLeft 600, tileCollide false. W4-d11 row fix: the stock
             // penetrate 1 (`:774` — the arm sets none), NOT -1.
