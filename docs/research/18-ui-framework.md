@@ -103,7 +103,7 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 | Snap points `:124-145, :271-283`, `SnapPoint.cs` | MISSING | — | gamepad navigation absent |
 | Gamepad / `UILinkPointNavigator` (`UserInterface.cs:184-187`) | MISSING | — | NoGamepadSupport / gamepad branch unported |
 | `Activate`/`Deactivate`/`Initialize` :548-605 | MISSING | — | immediate mode; screens carry their own reset |
-| State stack `_history`/`GoBack` :305-322 | MISSING | `flow.rs` `next_flow_state` | code comment (`pointer.rs:8-10`) claims zero call sites in 1.4.5.8 — **unverified** here |
+| State stack `_history`/`GoBack` :305-322 | MISSING | `flow.rs` `next_flow_state` | code comment (`pointer.rs:6-15`) claims zero call sites in 1.4.5.8 — **VERIFIED 2026-11-21** (W4-d85 doc-sweep: all 8 `.GoBack()` hits are UIState-own methods; `_history` is write-only) |
 | `GameInterfaceLayer` / `InterfaceScaleType` | MISSING | fixed order in `frame.rs` | no named layer list, no per-layer zoom matrix (`Game`/`UI`/`None`) |
 | `UIPanel` 9-slice / separators / scrollbar sprite | PORTED | `panel.rs` :1-21 (`CORNER`/`BAR` constants) | draw-only; thumb drag per screen |
 | `UITextPanel` / `UIImageButton` / `UIColoredImageButton` | PORTED | `uistate.rs:290-527` | tests `text_panel_rect_*`, `lookups_default_*` |
@@ -303,9 +303,14 @@ fns across 31 files (framework-relevant subset):
 - **S — Pin the event order.** Add a `ui/pointer.rs` test that reproduces
   `UserInterface.cs:190-228`'s order (hover swap before clicks, left before right)
   against the front-end dispatch in `app/loop.rs:390-403`. Depends on nothing.
-- **S — Verify the `GoBack` dead-code claim.** Grep `decompiled` for
-  `UserInterface.GoBack` / `.GoBack()` call sites and record the result in
-  `pointer.rs:8-10`; if non-empty, add a `flow.rs` history seed. (S)
+- ~~**S — Verify the `GoBack` dead-code claim.**~~ **DONE 2026-11-21
+  (W4-d85 doc-sweep lane 30)**: the full `decompiled/` + `decompiled-libs/`
+  sweep for `.GoBack()` finds 8 call sites, all UIState-own methods
+  (`UICharacterCreation.cs:1207/:2378`, `UIWorldCreation.cs:667/:1375`,
+  `UIWorldCreationAdvanced.cs:472/:530`,
+  `UIWorldCreationAdvancedSecretSeedsList.cs:383/:410`); zero callers of
+  `UserInterface.GoBack` (`UserInterface.cs:305-313`) — the `_history`
+  list is write-only in 1.4.5.8. Evidence recorded in `pointer.rs:6-15`.
 - **M — Port margins into `uistate::resolve`.** Add `margin: [f32;4]` to the
   signature and reproduce `:293-297`/`:317-318` (add then subtract), with a test
   against a C# hand-computed case. Closes deviation 1 for future callers.
@@ -329,9 +334,11 @@ fns across 31 files (framework-relevant subset):
   `Element.viewport`. Remaining: the *scrollbar* is still static on those screens
   (the `UIScrollbar` drag element is untouched) and `UIInnerList.RecalculateChildren`
   is still per-screen arithmetic.
-- **M — `UIWorldCreationAdvanced` + secret-seeds list** (ROADMAP:953): a
-  `ui/world_creation_advanced.rs` immediate port; unblocks seed selection.
-  Depends on the `UIList` seed above for its option rows.
+- ~~**M — `UIWorldCreationAdvanced` + secret-seeds list** (ROADMAP:953)~~
+  **DONE 2026-11-20 (W4-d85 rows 11-12)**: `ui/world_creation_advanced.rs`
+  + `ui/secret_seeds_list.rs` immediate ports; the option rows derive
+  arithmetically (the `UIList` ∞-height seed landed). The Everything
+  icon's glitch animation landed 2026-11-21 (doc-sweep lane 30).
 - **L — Screens with no counterpart:** `UIManageControls` (20 lines C#, has
   `input_map.rs` data behind it) and `UICreativePowersMenu`. `UIWorkshop*` /
   `UIResourcePack*` should be scoped out (Steam-only) and recorded in module 38.
