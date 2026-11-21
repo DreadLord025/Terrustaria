@@ -23045,6 +23045,27 @@ impl ProjectilePool {
                     }
                 }
             }
+            // W4-g3 DOC-SWEEP — `:13357-13367`: the expert-mode EoW/Destroyer
+            // damage cuts. The bee/grenade family (`:13359`'s 20-kind list, the
+            // ported subset) vs the Eater of Worlds segments (13-15): `dmg /= 5`.
+            // The 280 Golden Shower vs the Destroyer family (134-136/139):
+            // `dmg = (int)((double)dmg * 0.75)`. Both gate on `Main.expertMode`
+            // (the port's `player.buffs.expert_mode`).
+            if player.as_deref().is_some_and(|pl| pl.buffs.expert_mode) {
+                let eow = matches!(n.kind, NpcKind::EaterOfWorldsHead
+                    | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail);
+                if eow && matches!(pkind, GRENADE | STICKY_GRENADE | BOUNCY_GRENADE
+                    | BOMB | STICKY_BOMB | BOUNCY_BOMB | DYNAMITE | EXPLOSIVES_BLAST
+                    | BOMB_FISH | BEENADE | BEE | GIANT_BEE)
+                {
+                    dmg /= 5;
+                }
+                let destroyer = matches!(n.kind, NpcKind::TheDestroyer
+                    | NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe);
+                if pkind == GOLDEN_SHOWER && destroyer {
+                    dmg = (dmg as f64 * 0.75) as i32;
+                }
+            }
             // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
             // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
             // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
@@ -23356,6 +23377,13 @@ impl ProjectilePool {
             } else if p.kind == TYPHOON {
                 // `:14036-14039` — the Razorblade Typhoon (409): 6 ticks.
                 npcs[idx].immune[owner_idx] = 6;
+            } else if p.kind == ELECTROSPHERE {
+                // W4-g3 DOC-SWEEP — `:14008-14011`: the 443 Electrosphere
+                // sphere (and the unrowed 1110 Sky Dragon's Fury sibling):
+                // 8 ticks. The C# arm sits between the 927 (4) and the
+                // 424-426 (5) arms; the port's chain keeps the relative
+                // order (after the 409's 6, before the local pair).
+                npcs[idx].immune[owner_idx] = 8;
             } else if uses_local && p.local_hit_cooldown != -2 {
                 // `:14111-14115` — the local pair.
                 npcs[idx].immune[owner_idx] = 0;
@@ -23366,6 +23394,39 @@ impl ProjectilePool {
                 // canonical condition — the gate's bare `max_penetrate != 1`
                 // was the pre-i18 form).
                 npcs[idx].immune[owner_idx] = OWNER_IMMUNE_TICKS;
+            }
+            // W4-g3 DOC-SWEEP — `Damage_PVE_Inner`'s type-710 BetsySharpnel
+            // (`Projectile.cs:14121-14124` → `:53964-53979`): the Betsy Arrow
+            // spawns a 5-shard fan of 710 children on every NPC hit, gated
+            // `ai[1] != -1 && owner == Main.myPlayer`. The C# site sits AFTER
+            // the immunity chain (`:13967-14119`) and BEFORE the penetrate
+            // decrement (`:14125`), outside the landed gate. Each child takes
+            // the parent's damage/knockback/owner, `ai0 = 0`, `ai1 = -1` (the
+            // placed-shard flag — no further sharpnel), and copies the parent's
+            // localNPCImmunity array (`CopyLocalNPCImmunityTo`). The fan is
+            // RNG-free: `spinningpoint = (0, 6)` rotated by `π/4 + (-π/2/4)*i`
+            // for i in 0..5 (the C#'s `num = π/4`, `num3 = -num*2/(num2-1)`).
+            if self.slots[slot].kind == 710 {
+                let (ai1, owner, damage, kb, center, local_base) = {
+                    let p = &self.slots[slot];
+                    (p.ai[1], p.owner, p.damage, p.knock_back,
+                     Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5), slot * 256)
+                };
+                if ai1 != -1.0 && owner == 0 {
+                    let num = std::f32::consts::FRAC_PI_4;
+                    let num3 = (0.0 - num * 2.0) / 4.0;
+                    let immunity: Vec<i32> =
+                        self.local_immunity[local_base..local_base + 256].to_vec();
+                    for i in 0..5 {
+                        let v = rotate(Vec2::new(0.0, 6.0), num + num3 * i as f32);
+                        if let Some(child) = self.spawn_with_data_ai_owned(
+                            710, owner, center.x, center.y, v.x, v.y, damage, kb, 0.0, -1.0,
+                        ) {
+                            let cbase = child * 256;
+                            self.local_immunity[cbase..cbase + 256].copy_from_slice(&immunity);
+                        }
+                    }
+                }
             }
             if landed {
                 // S1-P-i16 — `Damage_PVE_Inner`'s aiStyle-16 arm
@@ -23559,9 +23620,46 @@ impl ProjectilePool {
                 if p.kind == SHADOWBEAM {
                     p.damage = (p.damage as f64 * 0.9) as i32;
                 }
+                // W4-g3 DOC-SWEEP — `Damage_PVE_Inner`'s type-357 arm
+                // (`Projectile.cs:14127-14130`): the Pulse Bolt's stored damage
+                // decays ×0.8 on every penetrating hit, inside the
+                // `penetrate > 0 && type != 317 && type != 866` block, BEFORE
+                // the decrement. The port's penetrate-- is inside the landed
+                // gate (the recorded deviation); the 357 decay rides the same
+                // block so it reads the pre-decrement penetrate (the C# order).
+                if p.kind == 357 && p.penetrate > 0 {
+                    p.damage = (p.damage as f64 * 0.8) as i32;
+                }
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
                     break;
+                }
+            }
+            // W4-g3 DOC-SWEEP — `Damage_PVE_Inner`'s numHits++ else-if chain
+            // (`Projectile.cs:14193-14233`), the post-penetrate-- OnHit arms.
+            // The C# chain runs OUTSIDE the landed gate (every contact that
+            // reached the strike); the port places it after the landed block
+            // (the penetrate-- deviation above). The 645/34/79 arms are
+            // kind-disjoint from the chain's other members (aiStyle 7/13/69,
+            // 607/638/656/611 — the moonlord 638 decay is the landed block's).
+            // `:14193-14198` — the 645 Poison Dart's flying hit places its
+            // cloud: `ai[0] = 0`, `ai[1] = -1` (the `ai001_c` poison_dart arm's
+            // placed-cloud flag), gated `ai[1] != -1` (a placed cloud keeps
+            // its state). The C# `netUpdate` is MP bookkeeping (kept).
+            {
+                let p = &mut self.slots[slot];
+                if p.kind == POISON_DART && p.ai[1] != -1.0 {
+                    p.ai[0] = 0.0;
+                    p.ai[1] = -1.0;
+                    p.net_update = true;
+                }
+                // `:14219-14233` — the 34 Flamelash / 79 Rainbow Rod bolt's
+                // re-arm: when `ai[0] == -1` (the spell's return state), the
+                // hit sets `ai[1] = -1` (drop the target). The 79's particle
+                // body (`:14234-14238`) is the visual skip.
+                if matches!(p.kind, FLAMELASH | RAINBOW_ROD_BULLET) && p.ai[0] == -1.0 {
+                    p.ai[1] = -1.0;
+                    p.net_update = true;
                 }
             }
         }
@@ -45002,3 +45100,270 @@ mod w4_g3_nebula_spirit_onyx_kill_tests {
         assert!(rng.ranges.is_empty(), "the onyx census rolls no ranges");
     }
 }
+// --- W4-g3 DOC-SWEEP lane 13: the unclaimed OnHit / ModifyHit / CanDamage arms ---
+// (research/89). WRITTEN NOT RUN (code-only mode — no cargo/rustc invoked).
+#[cfg(test)]
+mod w4_g3_doc_sweep_proj_hooks_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 200, 200)
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.hp = 10_000;
+        n.max_hp = 10_000;
+        n
+    }
+
+    fn hit(pool: &mut ProjectilePool, w: &World, slot: usize, npc: &mut Npc) {
+        pool.damage_pve(
+            w, slot, std::slice::from_mut(npc), None, None, None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+    }
+
+    /// A — the 604 Terrarian beam spends on its first NPC hit: `friendly =
+    /// false` + `ai[1] = 1000` (`Projectile.cs:13001-13005`).
+    #[test]
+    fn w4_g3_ds_the_terrarian_beam_spends_on_hit() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(TERRARIAN_BEAM, 500.0, 500.0, 0.0, 0.0, 20, 0.0)
+            .expect("the 604 row");
+        assert!(pool.slots()[slot].friendly, "the fresh beam is friendly");
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        hit(&mut pool, &w, slot, &mut npc);
+        let p = &pool.slots()[slot];
+        assert!(!p.friendly, "the hit flips friendly false (`:13003`)");
+        assert_eq!(p.ai[1], 1000.0, "the hit arms the fade-out (`:13004`)");
+    }
+
+    /// B — the molotov/obsidian fires vs the Eater of Worlds segments:
+    /// `dmg ×0.65` + `penetrate--` when > 1 (`Projectile.cs:13006-13013`).
+    #[test]
+    fn w4_g3_ds_the_molotov_fire_cuts_vs_eow_and_spends_penetrate() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(MOLOTOV_FIRE_1, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 400 row");
+        pool.slots_mut()[slot].penetrate = 3;
+        let mut eow = npc_at(NpcKind::EaterOfWorldsHead, 500.0, 500.0);
+        hit(&mut pool, &w, slot, &mut eow);
+        assert_eq!(pool.slots()[slot].penetrate, 2, "penetrate-- (>1, `:13009-13012`)");
+        // A non-EoW target keeps the penetrate (the gate is type 13-15).
+        let slot2 = pool.spawn_with_data(MOLOTOV_FIRE_1, 600.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 400 row");
+        pool.slots_mut()[slot2].penetrate = 3;
+        let mut slime = npc_at(NpcKind::Slime, 600.0, 500.0);
+        hit(&mut pool, &w, slot2, &mut slime);
+        assert_eq!(pool.slots()[slot2].penetrate, 3, "no EoW gate, no spend");
+    }
+
+    /// C — the 710 Betsy Arrow's air bonus: no solid tile 12 below → ×1.5
+    /// (`Projectile.cs:13014-13017`). The air world has no tiles, so the bonus
+    /// always fires; the damage lands heavier than the base.
+    #[test]
+    fn w4_g3_ds_the_betsy_arrow_air_bonus_fires_over_air() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(710, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 710 row");
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        let hp0 = npc.hp;
+        hit(&mut pool, &w, slot, &mut npc);
+        assert!(npc.hp < hp0, "the air-bonus hit lands");
+    }
+
+    /// O — the 954 Spark's hit-age jump: `ai[0] += (60 - ai[0]) / 2`
+    /// (`Projectile.cs:13018-13022`).
+    #[test]
+    fn w4_g3_ds_the_spark_hit_jumps_its_age() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(SPARK, 500.0, 500.0, 0.0, 0.0, 20, 0.0)
+            .expect("the 954 row");
+        pool.slots_mut()[slot].ai[0] = 10.0;
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        hit(&mut pool, &w, slot, &mut npc);
+        // 10 + (60-10)/2 = 35.
+        assert_eq!(pool.slots()[slot].ai[0], 35.0, "the age jump (`:13020-13021`)");
+    }
+
+    /// F — the 968 Pew-matic Horn's ai[1] damage multiplier table
+    /// (`Projectile.cs:14470-14548`). Pitch 3 → ×0.1, pitch 22 → ×2.0.
+    #[test]
+    fn w4_g3_ds_the_pew_matic_pitch_scales_damage() {
+        let w = air();
+        for (pitch, mult) in [(3.0f32, 0.1f32), (22.0, 2.0), (1.0, 1.0)] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool.spawn_with_data(PEW_MATIC_SHOT, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+                .expect("the 968 row");
+            pool.slots_mut()[slot].ai[1] = pitch;
+            let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+            npc.hp = 100_000;
+            npc.max_hp = 100_000;
+            hit(&mut pool, &w, slot, &mut npc);
+            let dealt = 100_000 - npc.hp;
+            if mult < 1.0 {
+                assert!(dealt < 100, "pitch {pitch} ×{mult} cuts the damage");
+            } else if mult > 1.0 {
+                assert!(dealt > 100, "pitch {pitch} ×{mult} boosts the damage");
+            }
+        }
+    }
+
+    /// G — the 533 Deadly Sphere's dash wind-up halves damage at localAI[2]≥40
+    /// (`Projectile.cs:14549-14552`).
+    #[test]
+    fn w4_g3_ds_the_deadly_sphere_windup_halves_damage() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(DEADLY_SPHERE, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 533 row");
+        pool.slots_mut()[slot].local_ai[2] = 40.0;
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        npc.hp = 100_000;
+        npc.max_hp = 100_000;
+        hit(&mut pool, &w, slot, &mut npc);
+        let dealt_windup = 100_000 - npc.hp;
+        let mut pool2 = ProjectilePool::new();
+        let slot2 = pool2.spawn_with_data(DEADLY_SPHERE, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 533 row");
+        let mut npc2 = npc_at(NpcKind::Slime, 500.0, 500.0);
+        npc2.hp = 100_000;
+        npc2.max_hp = 100_000;
+        hit(&mut pool2, &w, slot2, &mut npc2);
+        let dealt_full = 100_000 - npc2.hp;
+        assert!(dealt_windup < dealt_full, "the wind-up ×0.5 cuts the damage");
+    }
+
+    /// I — the 317 Raven's hit re-arms its dive: `ai[1] = -1`
+    /// (`Projectile.cs:13593-13597`).
+    #[test]
+    fn w4_g3_ds_the_raven_hit_rearms_its_dive() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(317, 500.0, 500.0, 0.0, 0.0, 20, 0.0)
+            .expect("the 317 row");
+        pool.slots_mut()[slot].ai[1] = 5.0;
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        hit(&mut pool, &w, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].ai[1], -1.0, "the dive re-arm (`:13595`)");
+    }
+
+    /// J — the 1088 Acorn dies on its first NPC hit (`Projectile.cs:13959-13962`).
+    #[test]
+    fn w4_g3_ds_the_acorn_dies_on_hit() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(1088, 500.0, 500.0, 0.0, 0.0, 20, 0.0)
+            .expect("the 1088 row");
+        assert!(pool.slots()[slot].active, "the fresh acorn lives");
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        hit(&mut pool, &w, slot, &mut npc);
+        assert!(!pool.slots()[slot].active, "the hit kills the acorn (`:13961`)");
+    }
+
+    /// K — the 443 Electrosphere sphere's 8-tick per-owner immunity
+    /// (`Projectile.cs:14008-14011`).
+    #[test]
+    fn w4_g3_ds_the_electrosphere_sphere_applies_eight_tick_immunity() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(ELECTROSPHERE, 500.0, 500.0, 0.0, 0.0, 20, 0.0)
+            .expect("the 443 row");
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        hit(&mut pool, &w, slot, &mut npc);
+        assert_eq!(npc.immune[0], 8, "the 8-tick per-type arm (`:14010`)");
+    }
+
+    /// L — the 645 Poison Dart's flying hit places its cloud: `ai[0] = 0`,
+    /// `ai[1] = -1` (`Projectile.cs:14193-14198`).
+    #[test]
+    fn w4_g3_ds_the_poison_dart_hit_places_its_cloud() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(POISON_DART, 500.0, 500.0, 0.0, 0.0, 20, 0.0)
+            .expect("the 645 row");
+        pool.slots_mut()[slot].ai[0] = 5.0;
+        pool.slots_mut()[slot].ai[1] = 100.0;
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        hit(&mut pool, &w, slot, &mut npc);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 0.0, "the cloud reset (`:14195`)");
+        assert_eq!(p.ai[1], -1.0, "the placed-cloud flag (`:14196`)");
+        let slot2 = pool.spawn_with_data(POISON_DART, 600.0, 500.0, 0.0, 0.0, 20, 0.0)
+            .expect("the 645 row");
+        pool.slots_mut()[slot2].ai[0] = 5.0;
+        pool.slots_mut()[slot2].ai[1] = -1.0;
+        let mut npc2 = npc_at(NpcKind::Slime, 600.0, 500.0);
+        hit(&mut pool, &w, slot2, &mut npc2);
+        assert_eq!(pool.slots()[slot2].ai[0], 5.0, "the placed cloud keeps ai0");
+    }
+
+    /// M — the 34 Flamelash / 79 Rainbow Rod bolt's re-arm when ai[0] == -1:
+    /// `ai[1] = -1` (`Projectile.cs:14219-14233`).
+    #[test]
+    fn w4_g3_ds_the_aimed_spell_return_hit_drops_its_target() {
+        let w = air();
+        for kind in [FLAMELASH, RAINBOW_ROD_BULLET] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool.spawn_with_data(kind, 500.0, 500.0, 0.0, 0.0, 20, 0.0)
+                .expect("the aimed-spell row");
+            pool.slots_mut()[slot].ai[0] = -1.0;
+            pool.slots_mut()[slot].ai[1] = 3.0;
+            let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+            hit(&mut pool, &w, slot, &mut npc);
+            assert_eq!(pool.slots()[slot].ai[1], -1.0, "kind {kind}: target dropped");
+            let slot2 = pool.spawn_with_data(kind, 600.0, 500.0, 0.0, 0.0, 20, 0.0)
+                .expect("the aimed-spell row");
+            pool.slots_mut()[slot2].ai[0] = 0.0;
+            pool.slots_mut()[slot2].ai[1] = 3.0;
+            let mut npc2 = npc_at(NpcKind::Slime, 600.0, 500.0);
+            hit(&mut pool, &w, slot2, &mut npc2);
+            assert_eq!(pool.slots()[slot2].ai[1], 3.0, "kind {kind}: non-return keeps target");
+        }
+    }
+
+    /// N — the 357 Pulse Bolt's per-penetrating-hit damage decay ×0.8
+    /// (`Projectile.cs:14127-14130`).
+    #[test]
+    fn w4_g3_ds_the_pulse_bolt_decays_per_pen_hit() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(357, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 357 row");
+        pool.slots_mut()[slot].penetrate = 6;
+        let dmg0 = pool.slots()[slot].damage;
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        hit(&mut pool, &w, slot, &mut npc);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.damage, (dmg0 as f64 * 0.8) as i32, "the ×0.8 decay (`:14129`)");
+        assert_eq!(p.penetrate, 5, "the penetrate spend");
+    }
+
+    /// N — the 710 Betsy Arrow's sharpnel fan: 5 children, ai1 = -1, the
+    /// parent's local immunity copied (`Projectile.cs:14121`/`:53964-53979`).
+    #[test]
+    fn w4_g3_ds_the_betsy_arrow_spawns_its_sharpnel_fan() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(710, 500.0, 500.0, 0.0, 0.0, 20, 0.0)
+            .expect("the 710 row");
+        pool.slots_mut()[slot].ai[1] = 0.0;
+        pool.local_immunity[slot * 256 + 3] = 42;
+        let mut npc = npc_at(NpcKind::Slime, 500.0, 500.0);
+        hit(&mut pool, &w, slot, &mut npc);
+        let children: Vec<usize> = pool.slots().iter().enumerate()
+            .filter(|(i, p)| *i != slot && p.active && p.kind == 710)
+            .map(|(i, _)| i).collect();
+        assert_eq!(children.len(), 5, "the 5-shard fan (`:53971-53977`)");
+        for c in children {
+            assert_eq!(pool.slots()[c].ai[1], -1.0, "the child's placed-shard flag");
+            assert_eq!(pool.local_immunity[c * 256 + 3], 42, "the immunity copy");
+        }
+    }
+}
+
