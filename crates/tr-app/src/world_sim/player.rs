@@ -646,6 +646,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // (`Player.cs:38984-38986`).
             let moon_event_live =
                 app.world.snow_moon || app.world.pumpkin_moon || app.world.dd2_event_ongoing;
+            // W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045`):
+            // `difficulty == 2 && (statLifeMax <= 0 || !Main.surviveHardcoreDeath)`.
+            let hardcore_permadeath = app.active_player_difficulty() == 2
+                && (app.player.as_ref().map_or(0, |p| p.max_hp) <= 0
+                    || !crate::death::survive_hardcore_death(app.world.seeds));
             app.respawn_skip_available =
                 p.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
             let mut respawn_now = false;
@@ -666,8 +671,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &app.projectiles,
                     app.local_id as i32,
                 );
-                respawn_now = p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
-                    || respawn_now;
+                respawn_now = p.update_dead(
+                    input.jump,
+                    boss_near,
+                    danger_near,
+                    moon_event_live,
+                    hardcore_permadeath,
+                ) || respawn_now;
                 // `Player.UpdateDead`'s tail (`Player.cs:17079`): the dead
                 // tick still ramps the sun-scorch counter down (−2/tick,
                 // `UpdateSunScorchValues` `:28583-28587` — the dead branch

@@ -14105,7 +14105,7 @@ mod tests {
         p.channel_proj_expected = 16;
         p.channel_index_expected = 7;
         p.channel_target = Vec2::new(500.0, 400.0);
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         assert!(!p.channel, "the dead tick clears the latch");
         assert_eq!(p.channel_item, 0);
         assert_eq!(p.channel_target, Vec2::ZERO);

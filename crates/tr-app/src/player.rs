@@ -726,6 +726,13 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.ghost` (`Player.cs:38909`'s spectating / `:17053`): the
+    /// hardcore permadeath ghost — set when the respawn timer expires on a
+    /// hardcore player whose `statLifeMax` hit 0 (or whose world does not
+    /// survive hardcore death). A ghost never respawns
+    /// (`AllowsRespawnTimerSkip` `:38964`, `UpdateDead` `:17045-17055`).
+    /// W4-f30: the hardcore death penalty (`death.rs`).
+    pub ghost: bool,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
     /// the facing-inheritance gate reads (`:77749`). The stealth armour
@@ -2508,6 +2515,7 @@ impl Player {
         };
         Self {
             dead: false,
+            ghost: false,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -3771,8 +3779,9 @@ impl Player {
 
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
     /// 90-tick lockout, with no boss hindering, no danger NPCs nearby and
-    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The
-    /// `ghost`/`pvpDeath` branches stay unreachable in the port.
+    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The `ghost`
+    /// branch is live since W4-f30 (the hardcore permadeath); `pvpDeath`
+    /// stays unreachable (no PVP).
     pub fn allows_respawn_timer_skip(
         &self,
         boss_near: bool,
@@ -3782,9 +3791,10 @@ impl Player {
         !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near || moon_event_live)
     }
 
-    /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
+    /// `Player.ghost` (the hardcore permadeath, W4-f30) — the PVP-death
+    /// half stays false (no PVP).
     fn ghost_like(&self) -> bool {
-        false
+        self.ghost
     }
 
     /// `Player.UpdateDead` (`Player.cs:16919-17070`): `deadTime++`, the
@@ -3797,6 +3807,11 @@ impl Player {
         boss_near: bool,
         danger_near: bool,
         moon_event_live: bool,
+        // W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045`):
+        // `difficulty == 2 && (statLifeMax <= 0 || !Main.surviveHardcoreDeath)`.
+        // The caller folds the difficulty + the seed predicate; a true value
+        // routes the expiry to the ghost instead of the respawn.
+        hardcore_permadeath: bool,
     ) -> bool {
         self.dead_time += 1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
@@ -3824,6 +3839,20 @@ impl Player {
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
         self.chest = crate::bank::CHEST_CLOSED;
+        // W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045-17067`):
+        // a hardcore player whose life pool hit 0 (or whose world does not
+        // survive hardcore death) never respawns — the timer still counts
+        // down, but the expiry sets the ghost instead of reviving. The
+        // respawn-skip below is already ghost-gated (`AllowsRespawnTimerSkip`
+        // `:38964`), so a ghost can neither skip nor revive.
+        if hardcore_permadeath {
+            if self.respawn_timer <= 0 {
+                // `:17051-17054` — `whoAmI == Main.myPlayer || netMode == 2`;
+                // the port's dead branch is the local player.
+                self.ghost = true;
+            }
+            return false;
+        }
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
@@ -13409,7 +13438,7 @@ mod tests {
         // the last tick reports the respawn.
         let mut revived_at = None;
         for tick in 0..700 {
-            if p.update_dead(false, false, false, false) {
+            if p.update_dead(false, false, false, false, false) {
                 revived_at = Some(tick);
                 break;
             }
@@ -13429,7 +13458,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, true, true);
         p.respawn_timer = 4000; // the save-load can exceed the cap
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         // The clamp catches the decrement result (Player.cs:17049).
         assert_eq!(p.respawn_timer, 3600);
     }
@@ -13445,12 +13474,12 @@ mod tests {
         p.chest_x = 20;
         p.chest_y = 10;
         p.start_death(&w, false, false);
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         assert_eq!(p.chest, -1, "the world chest closes (:17020)");
         assert_eq!((p.chest_x, p.chest_y), (20, 10), "the origin stays");
         // A bank closes too (the C# writes -1 unconditionally).
         p.chest = -4;
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         assert_eq!(p.chest, -1, "the safe closes too");
     }
 
@@ -13745,13 +13774,13 @@ mod tests {
         // Inside the 90-tick lockout: no skip even on the jump edge (the
         // held jump's edge is consumed while the lockout runs).
         for _ in 0..89 {
-            assert!(!p.update_dead(true, false, false, false));
+            assert!(!p.update_dead(true, false, false, false, false));
         }
         // The lockout expired but the held jump has no fresh edge; a release
         // and a new press do.
-        assert!(!p.update_dead(true, false, false, false));
-        assert!(!p.update_dead(false, false, false, false));
-        assert!(p.update_dead(true, false, false, false));
+        assert!(!p.update_dead(true, false, false, false, false));
+        assert!(!p.update_dead(false, false, false, false, false));
+        assert!(p.update_dead(true, false, false, false, false));
     }
 
     #[test]
@@ -13760,7 +13789,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(false, false, false, false);
+            p.update_dead(false, false, false, false, false);
         }
         assert!(!p.allows_respawn_timer_skip(true, false, false));
         assert!(p.allows_respawn_timer_skip(false, false, false));
@@ -13774,13 +13803,13 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(true, false, false, false);
+            p.update_dead(true, false, false, false, false);
         }
         // The held jump consumed its edge at the lockout expiry...
-        assert!(!p.update_dead(true, false, false, false));
+        assert!(!p.update_dead(true, false, false, false, false));
         // ...release and press again: the edge fires.
-        p.update_dead(false, false, false, false);
-        assert!(p.update_dead(true, false, false, false));
+        p.update_dead(false, false, false, false, false);
+        assert!(p.update_dead(true, false, false, false, false));
     }
 
     use super::*;
@@ -19917,18 +19946,48 @@ mod tests {
             assert!(p.dead);
             assert_eq!(p.respawn_timer, 600);
             for _ in 0..599 {
-                assert!(!p.update_dead(false, false, false, false));
+                assert!(!p.update_dead(false, false, false, false, false));
             }
             assert_eq!(p.respawn_timer, 1);
-            assert!(p.update_dead(false, false, false, false), "revive on tick 600");
+            assert!(p.update_dead(false, false, false, false, false), "revive on tick 600");
             // The dead tick zeroes the life (`:17016`).
             p.hp = 40;
-            p.update_dead(false, false, false, false);
+            p.update_dead(false, false, false, false, false);
             assert_eq!(p.hp, 0, "UpdateDead sets statLife = 0");
             p.revive();
             assert!(!p.dead);
             assert_eq!(p.hp, 100, "max(max/2, 100)");
             assert!(p.immune && p.immune_time == 180, "180 revive i-frames");
+        }
+
+        /// W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045-17055`):
+        /// a permadeath hardcore player's timer expiry sets the ghost, never
+        /// the respawn; the ghost refuses the respawn skip (`:38964`).
+        #[test]
+        fn the_hardcore_ghost_never_respawns() {
+            let w = ground_world();
+            let mut p = Player::spawn(&w);
+            p.start_death(&w, false, false);
+            assert_eq!(p.respawn_timer, 600);
+            for _ in 0..599 {
+                assert!(!p.update_dead(false, false, false, false, true));
+            }
+            assert!(!p.ghost, "no ghost before the expiry");
+            // Tick 600: the expiry ghosts instead of reviving.
+            assert!(!p.update_dead(false, false, false, false, true));
+            assert!(p.ghost, "the expiry sets the ghost");
+            assert!(p.dead, "the ghost stays dead");
+            // The ghost refuses the skip even with a jump press.
+            assert!(!p.allows_respawn_timer_skip(false, false, false));
+            assert!(!p.update_dead(true, false, false, false, true));
+            // A surviving-world hardcore player (gate false) still respawns.
+            let mut q = Player::spawn(&w);
+            q.start_death(&w, false, false);
+            for _ in 0..599 {
+                q.update_dead(false, false, false, false, false);
+            }
+            assert!(q.update_dead(false, false, false, false, false), "the survivor revives");
+            assert!(!q.ghost);
         }
     }
 }

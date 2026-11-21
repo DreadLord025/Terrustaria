@@ -1220,7 +1220,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.potion_delay = 1234;
         p.mana_potion_delay = 42;
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         assert_eq!((p.potion_delay, p.mana_potion_delay), (0, 0));
     }
 
