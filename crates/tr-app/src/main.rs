@@ -200,6 +200,11 @@ mod projectile_ai_pets124;
 // three kill gates and the owner tail (`Projectile.cs:35697-35833`).
 // Code-only — witnesses written not run.
 mod projectile_ai_wire_kite;
+// W4-d13 — the aiStyle-126 column family (654 geyser / 670 ogre stomp): the
+// anchor scan, the column-height growth, the stomp's tick-12 child split and
+// the dust RNG census (`Projectile.cs:35834-35997`). Code-only — witnesses
+// written not run.
+mod projectile_ai_geyser;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;

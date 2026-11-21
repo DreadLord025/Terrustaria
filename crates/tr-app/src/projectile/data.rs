@@ -1033,6 +1033,12 @@ pub const STYLE124_PETS: [u16; 7] = [
 /// `ProjectileID.WireKite` (651) — the Grand Design / Multicolor Wrench's
 /// mass-wire kite (aiStyle 125, `Projectile.cs:6990-7000`).
 pub const WIRE_KITE: u16 = 651;
+/// `ProjectileID.GeyserTrap` (654) — the geyser's steam column (aiStyle 126,
+/// `Projectile.cs:7024-7037`); the friendly + hostile + trap row.
+pub const GEYSER_TRAP: u16 = 654;
+/// `ProjectileID.DD2OgreStomp` (670) — the Ogre's stomp shockwave (aiStyle
+/// 126, `Projectile.cs:7174-7185`); the hostile-only row, the ±3 split.
+pub const OGRE_STOMP: u16 = 670;
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -3551,6 +3557,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `tileCollide = false`, `penetrate = -1`; `drawLayer = 5` is a
             // draw-side field with no pool consumer. The stock 3600 life.
             WIRE_KITE => (10.0, 10.0, 125, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // W4-d13 — `Projectile.cs:7024-7037` (654, the Geyser Trap): 30x30,
+            // aiStyle 126, `alpha = 255`, `tileCollide = false`, `ignoreWater`,
+            // `timeLeft = 120`, friendly AND hostile, `penetrate = -1`, `trap`.
+            // The row shape carries neither friendly nor hostile (the
+            // data-row deviation census); the spawn path sets friendly=false.
+            GEYSER_TRAP => (30.0, 30.0, 126, -1, 120, 0, false, false, true, (false, -2, false, -1, 255, 1.0)),
+            // W4-d13 — `Projectile.cs:7174-7185` (670, the Ogre Stomp): the
+            // same 30x30 aiStyle-126 row MINUS friendly/trap — hostile only.
+            OGRE_STOMP => (30.0, 30.0, 126, -1, 120, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -4217,9 +4232,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d13 — the aiStyle-124 pets set `ignoreWater` themselves
             // (`Projectile.cs:6986`/`:8470`/`:8516`/`:8562`/`:8584`/`:9043`).
             || STYLE124_PETS.contains(&kind)
-            // W4-d13 — the Wire Kite sets `ignoreWater`
-            // (`Projectile.cs:6996`).
-            || kind == WIRE_KITE
+            // W4-d13 — the Wire Kite / geyser / stomp set `ignoreWater`
+            // (`Projectile.cs:6996`/`:7031`/`:7181`).
+            || matches!(kind, WIRE_KITE | GEYSER_TRAP | OGRE_STOMP)
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)

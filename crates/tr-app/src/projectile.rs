@@ -17503,6 +17503,42 @@ impl ProjectilePool {
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
                         }
+                        // W4-d13 — `AI()`'s `else if (this.aiStyle == 126)`
+                        // (`Projectile.cs:35834-35997`): the Geyser Trap
+                        // (654) / Ogre Stomp (670) column. The dust census
+                        // rides the pass's stream (the module doc); the
+                        // stomp's tick-12 children spawn through the pool.
+                        126 => {
+                            let children =
+                                self.slots[i].ai_geyser_stomp(world, rng, local_owner);
+                            let (kind, damage, kb, owner_id) = {
+                                let p = &self.slots[i];
+                                (p.kind, p.damage, p.knock_back, p.owner)
+                            };
+                            for c in children {
+                                // `NewProjectile` centres the box
+                                // (`:10876-10877`); velocity -UnitY.
+                                if let Some(s) = self.spawn_with_data_ai_owned(
+                                    kind,
+                                    owner_id,
+                                    c.x - 15.0,
+                                    c.y - 15.0,
+                                    0.0,
+                                    -1.0,
+                                    damage,
+                                    kb,
+                                    0.0,
+                                    0.0,
+                                ) {
+                                    self.slots[s].local_ai[1] = c.local_ai1;
+                                    self.slots[s].friendly = false;
+                                }
+                            }
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:7030`/`:7180`) — the free integrate.
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.

@@ -570,8 +570,20 @@ fn spawn_device_kind(
     ai1: f32,
 ) {
     if crate::projectile::proj_data(kind).is_some() {
-        app.projectiles
+        let slot = app
+            .projectiles
             .spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, ai0, ai1);
+        // W4-d13 — the geyser (654) is a trap that hurts the player: the C#
+        // row sets friendly AND hostile (`Projectile.cs:7033-7034`); the
+        // port's `!friendly` hostile proxy needs friendly=false so the
+        // aiStyle-126 column's contact damage reaches the player (the
+        // `damage_player` gate). The row shape carries neither flag (the
+        // data-row deviation census).
+        if kind == crate::projectile::GEYSER_TRAP {
+            if let Some(s) = slot {
+                app.projectiles.slots_mut()[s].friendly = false;
+            }
+        }
     }
 }
 
