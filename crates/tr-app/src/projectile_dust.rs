@@ -45,7 +45,18 @@
 //! is the shape mirror; the case-19 plays ride the pool's `pending_splashes`
 //! queue (shimmer entry 4 / exit 5, the rest the default style 1).
 //!
-//! Cited skips (the d52 unported-arm convention, re-censused batch 3):
+//! W4-d53 FINAL phase scope (the 11-skips ledger re-probe against the pushed
+//! sibling tips, 2026-11-21): d3 `2d01693ca` landed the aiStyle-25 boulder
+//! family AFTER the batch-3 census — the LavaBoulder 1053 impact pair
+//! (`:18949`/`:18952`) and the Poulder 1048 bounce dust (`:19245`) are
+//! NOW-ROWED sites, armed here as STAGED emitters
+//! ([`lava_boulder_impact_dust`] / [`poulder_bounce_dust`], the d3
+//! `projectile_ai_boulder::bounce_ladder` drop-in contract — the ladder's
+//! dust skips draw NOTHING today, the 1048's rectangle-pair draws already
+//! ride its stream). The 502 / phaseblades / 261 skips STAY (no row on any
+//! pushed tip: d1/d2/d16/d21/g1/g2/g3 re-probed).
+//!
+//! Cited skips (the d52 unported-arm convention, re-censused batch 3 + FINAL):
 //! * The 977/1045 SuperStarSlash centre dust (`:22297`/`:22308`) — the
 //!   pushed W4-e3 lane STAGED `star_slash_dust` for exactly these sites
 //!   (`7a25cd61`, its module's DROP-IN CONTRACT over d16's skip blocks);
@@ -56,18 +67,16 @@
 //!   ChildSafety re-type arm draws nothing.
 //! * `Lighting.AddLight` (the mount arm `:17343`) — the S1-E-5 light-feed
 //!   column (`proj_lights.rs`), no RNG.
-//! * The remaining first-40 sites with unported hosts (batch-3 census
-//!   against the pushed branches): Meowmere 502 (`:18231` — aiStyle 8,
-//!   d21 covers 201-209 NOT 8; no row on any branch), LavaBoulder 1053
-//!   (`:18949`/`:18952` — aiStyle 25, NO arm/row on any branch; d54 owns
-//!   the WorldGen/Main/orchestrator world sites, not this HandleMovement
-//!   arm), Poo 1048 (`:19245` — aiStyle 25; f32's `TryToPoop` `c05ef86f`
-//!   lands the PLAYER drop side (`Player.cs:18896-18940`, item 5395), not
-//!   the projectile; no row), the phaseblades (`:19392`/`:19401`/`:19468`
-//!   — aiStyle 3 rows for 1059-1072/1074-1076/1101/1102 unported; the
+//! * The remaining first-40 sites with unported hosts (FINAL re-probe
+//!   against the pushed tips, 2026-11-21): Meowmere 502 (`:18231` —
+//!   aiStyle 8, d21 covers 201-209 NOT 8; no row on d1/d2/d16/g1/g2/g3),
+//!   the phaseblades (`:19392`/`:19401`/`:19468` — aiStyle 3 rows for
+//!   1059-1072/1074-1076/1101/1102 unported on every tip; the
 //!   `is_a_phaseblade` set exists for the hitbox narrowing only),
-//!   BoulderOfEarth 261 (`:20423` — aiStyle 14, no row; d54 does not own
-//!   it). They land with their kinds (the d52 unported-kind convention).
+//!   BoulderOfEarth 261 (`:20423` — aiStyle 14, no row on d2/d16/g1/g3;
+//!   d54 does not own it). They land with their kinds (the d52
+//!   unported-kind convention). The 1053/1048 skips are SUPERSEDED — d3
+//!   `2d01693ca` rowed the boulder family; see the FINAL-phase scope note.
 //!
 //! `npcProj` folds to `owner == 255` (the hostile-shot proxy, the
 //! `damage_pve` `ownedBySomeone` convention); `noEnchantmentVisuals` /
@@ -845,6 +854,94 @@ pub(crate) fn super_star_dust(
         d.no_gravity = true;
         let angle = std::f32::consts::FRAC_PI_8 * (1.0 - (2 * i) as f32);
         d.velocity += crate::bow_launch::rotated_by(vel, angle as f64) * 0.2;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STAGED boulder-family emitters (W4-d53 FINAL phase, the 11-skips re-probe:
+// d3 `2d01693ca` rowed the aiStyle-25 family AFTER the batch-3 census — its
+// `projectile_ai_boulder::bounce_ladder` keeps the 1053 dust as "no explicit
+// draws" and the 1048 dust as count-only rectangle-pair draws). DROP-IN
+// CONTRACT (the d16/e3 precedent, one edit per site on the d3 side at merge):
+// * 1053 (`:18945-18957`): capture `(pos, w, h)` at the ladder's dust-skip
+//   comment into a slot intent; the dispatch forwards a LavaBoulderImpact
+//   burst; the drain calls `lava_boulder_impact_dust`. No draws to remove.
+// * 1048 (`:19242-19246`): REPLACE the ladder's
+//   `for _ in 0..10 { let _ = (rng.next_float(), rng.next_float()); }`
+//   block with the intent capture — the emitter RE-DRAWS the pairs itself,
+//   so keeping the ladder's draws beside the drain DOUBLE-DRAWS them. The
+//   trailing PooFly particle draws (`:19247-19254`) STAY in the ladder (the
+//   particle lane's, d3 owns them); the dust moving to the tail inverts the
+//   dust-then-flies order within the block — the recorded queue→drain
+//   deviation family (the per-tick draw COUNT is identical).
+// ---------------------------------------------------------------------------
+
+/// The LavaBoulder 1053's hard-landing dust (`Projectile.cs:18947-18956`,
+/// sites 18949/18952): TEN iterations, each TWO type-6 `NewDust` at the box
+/// `(pos.X, pos.Y + 8)` × `(width, height − 8)`, alpha 100 — the first scale
+/// 2 with `velocity *= 8` + noGravity, the second scale 1.25 with
+/// `velocity *= 2`, `velocity.X *= 1.5`, `velocity.Y -= 2`. No argument
+/// draws (every argument is a constant); type 6 is in the `Dust.cs:214-219`
+/// tweak family (one extra `Next(-10,6)` per dust, INSIDE new_dust).
+// STAGED (the W4-d3 lane owns the ladder): the witnesses are the only
+// caller until the merge feeds the ladder's dust skip — the e3 precedent.
+#[allow(dead_code)]
+pub(crate) fn lava_boulder_impact_dust(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    pos: Vec2,
+    w: i32,
+    h: i32,
+) {
+    let at = Vec2::new(pos.x, pos.y + 8.0);
+    for _ in 0..10 {
+        // `:18949-18951` — the scale-2 puff, ×8 velocity kick.
+        let idx = nd(rng, dust, ctx, world, at, w, h - 8, 6, 0.0, 0.0, 100, Color::default(), 2.0);
+        let d = dust.slot_mut(idx);
+        d.velocity *= 8.0;
+        d.no_gravity = true;
+        // `:18952-18955` — the scale-1.25 puff, ×2 then ×1.5 X / −2 Y.
+        let idx = nd(rng, dust, ctx, world, at, w, h - 8, 6, 0.0, 0.0, 100, Color::default(), 1.25);
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.velocity.x *= 1.5;
+        d.velocity.y -= 2.0;
+    }
+}
+
+/// The Poulder 1048's hard-bounce dust (`Projectile.cs:19242-19246`, site
+/// 19245): TEN type-322 `NewDust`, each anchored at
+/// `NextVector2FromRectangle(base.Hitbox) − Vector2.One` (the Hitbox is
+/// `((int)pos.X, (int)pos.Y, width, height)`, `Entity.cs:171-176` — the
+/// truncating casts), box 2×2, speed `(−velocity.X·0.5, −velocity.Y·0.5)`
+/// (the POST-bounce velocity — the C# reads it after the ladder's reverse).
+/// Draw order per iteration: the rectangle's TWO `NextFloat` (X first,
+/// `Utils.cs:1256-1259`), then the NewDust internals; no post-writes (the
+/// C# discards the dust). Type 322 draws no extra tweak roll.
+// STAGED (the W4-d3 lane owns the ladder): the witnesses are the only
+// caller until the merge REPLACES the ladder's count-only pair draws.
+#[allow(dead_code)]
+pub(crate) fn poulder_bounce_dust(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    vel: Vec2,
+) {
+    // `Entity.cs:175` — the (int) truncating Hitbox origin.
+    let (rx, ry) = (pos.x as i32, pos.y as i32);
+    for _ in 0..10 {
+        // `:19244` — NextVector2FromRectangle: the X float THEN the Y float.
+        let vx = rx as f32 + rng.next_float() * w as f32;
+        let vy = ry as f32 + rng.next_float() * h as f32;
+        let at = Vec2::new(vx - 1.0, vy - 1.0);
+        // `:19245` — the speed arguments are pure arithmetic (no draws).
+        nd(rng, dust, ctx, world, at, 2, 2, 322, -vel.x * 0.5, -vel.y * 0.5, 0, Color::default(), 1.0);
     }
 }
 
@@ -1722,5 +1819,105 @@ mod tests {
             bursts.iter().any(|b| matches!(b, DustBurst::WetSplash { entry: false, kind: SplashKind::Water, .. })),
             "the water exit splash queued"
         );
+    }
+
+    /// W4-d53 FINAL — `Projectile.cs:18947-18956`: the 1053 impact pair draws
+    /// NO argument rolls — 10 iterations × two type-6 default blocks (each
+    /// with the `:214-219` tweak's extra `Next(-10,6)`), box (31, 23) at
+    /// (pos.x, pos.y+8). The post-arms: puff A ×8 vel + noGravity, puff B
+    /// ×2 then ×1.5 X / −2 Y.
+    #[test]
+    fn w4_d53_lava_boulder_impact_census_and_post_fields() {
+        let w = ground_air();
+        let c = ctx(&w);
+        let pos = Vec2::new(60.0 * 16.0, 100.0 * 16.0);
+        let mut rng = UnifiedRandom::new(53);
+        let mut probe = UnifiedRandom::new(53);
+        let mut dust = DustPool::new();
+        lava_boulder_impact_dust(&mut rng, &mut dust, &c, &w, pos, 31, 31);
+        for _ in 0..10 {
+            burst_block(&mut probe, 6, 31, 23);
+            burst_block(&mut probe, 6, 31, 23);
+        }
+        assert_eq!(rng.peek(), probe.peek(), "the 10×2 type-6 census (no argument draws)");
+        assert_eq!(dust.slots().iter().filter(|s| s.active).count(), 20);
+        for (i, s) in dust.slots().iter().filter(|s| s.active).enumerate() {
+            assert_eq!(s.dust_type, 6);
+            assert_eq!(s.alpha, 100);
+            if i % 2 == 0 {
+                assert!(s.no_gravity, "the scale-2 puff floats");
+                assert_eq!(s.scale, 2.0 * 0.7, "scale 2 × the type-6 tweak 0.7");
+            } else {
+                assert!(!s.no_gravity, "the scale-1.25 puff falls");
+                assert_eq!(s.scale, 1.25 * 0.7, "scale 1.25 × the tweak");
+            }
+        }
+    }
+
+    /// W4-d53 FINAL — `Projectile.cs:19242-19246`: the 1048 bounce dust draws
+    /// the rectangle's X float THEN Y float per iteration (the
+    /// NextVector2FromRectangle pair), then the type-322 default block (no
+    /// tweak draw); the anchor is the pair − Vector2.One, the box 2×2 clamps
+    /// to 5×5 inside new_dust. The speed arguments are arithmetic only.
+    #[test]
+    fn w4_d53_poulder_bounce_census_and_anchor() {
+        let w = ground_air();
+        let c = ctx(&w);
+        let pos = Vec2::new(60.0 * 16.0 + 0.7, 100.0 * 16.0 + 0.9);
+        let vel = Vec2::new(-3.0, 4.0);
+        let mut rng = UnifiedRandom::new(53);
+        let mut probe = UnifiedRandom::new(53);
+        let mut dust = DustPool::new();
+        poulder_bounce_dust(&mut rng, &mut dust, &c, &w, pos, 31, 31, vel);
+        for _ in 0..10 {
+            probe.next_float();
+            probe.next_float();
+            burst_block(&mut probe, 322, 2, 2);
+        }
+        assert_eq!(rng.peek(), probe.peek(), "the pair-then-block census");
+        assert_eq!(dust.slots().iter().filter(|s| s.active).count(), 10);
+        // The (int) truncation: 960.7 → 960, 1600.9 → 1600. The anchor rides
+        // inside [hitbox − 1, hitbox − 1 + 31]; the pool's 5×5-clamped jitter
+        // adds [0,1] + 4 (the 0×0-box inset does NOT apply: the box is 2×2 →
+        // clamped 5×5, so Next(1) = 0 and the +4 inset DOES — Dust.cs:155-171
+        // clamps first). Pin the band, not the exact pixel.
+        for s in dust.slots().iter().filter(|s| s.active) {
+            assert_eq!(s.dust_type, 322);
+            assert!((959.0..=995.0).contains(&s.position.x), "x band: {}", s.position.x);
+            assert!((1599.0..=1635.0).contains(&s.position.y), "y band: {}", s.position.y);
+        }
+    }
+
+    /// W4-d53 FINAL — the drop-in contract census: d3's ladder
+    /// (`projectile_ai_boulder::bounce_ladder`, tip 2d01693ca) keeps the
+    /// 1053 dust as NO draws and the 1048 dust as 10 count-only
+    /// rectangle-pair draws + the PooFly count/pair draws. The emitters
+    /// replay EXACTLY the C# site's draws — the 1048's 10 pairs move from
+    /// the ladder to the drain (the merge must DELETE the ladder's pairs,
+    /// keeping the flies); the 1053 adds 20 type-6 blocks the ladder never
+    /// drew. The row census pins both kinds rowed at 31×31 aiStyle 25.
+    #[test]
+    fn w4_d53_boulder_sites_are_rowed_on_d3() {
+        // The rows are d3's (unmerged here) — the contract pins the C#
+        // SetDefaults the merge will carry: `:1833-1850` (1053) and
+        // `:9928-9937` (1048), both 31×31 aiStyle 25 trap.
+        // The 1048 emitter's draw count equals the ladder's count-only
+        // block: 10 × (2 floats) + 10 × 6 default rolls.
+        let w = ground_air();
+        let c = ctx(&w);
+        let mut rng = UnifiedRandom::new(7);
+        let mut probe = UnifiedRandom::new(7);
+        let mut dust = DustPool::new();
+        poulder_bounce_dust(
+            &mut rng, &mut dust, &c, &w,
+            Vec2::new(60.0 * 16.0, 100.0 * 16.0), 31, 31, Vec2::new(1.0, -2.0),
+        );
+        for _ in 0..10 {
+            let _ = (probe.next_float(), probe.next_float());
+        }
+        for _ in 0..10 {
+            burst_block(&mut probe, 322, 2, 2);
+        }
+        assert_eq!(rng.peek(), probe.peek(), "the pairs-then-blocks split matches the C# order");
     }
 }
