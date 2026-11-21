@@ -645,8 +645,8 @@ rows refine. Do not duplicate that row; replace or extend it.
 4. **Item ownership / grab delay in MP** вЂ” `NewItemOwnership`,
    `playerIndexTheItemIsReservedFor`, `WorldItem.DefaultGrabDelay = 100`
    (`WorldItem.cs:110`): the port has the host-side reservation map only.
-5. **Grab-range accessories** вЂ” `goldRing`/`treasureMagnet` remain unported;
-   `manaMagnet`/`lifeMagnet` and the star/heart pickup arms of `PickupItem`
+5. **Grab-range accessories** вЂ” `goldRing`/`manaMagnet`/`lifeMagnet`/`treasureMagnet` all LIVE
+   (i50/i52/W4-g15 lane 5 — the 5010/5126 treasure grants); the star/heart pickup arms of `PickupItem`
    (`Player.cs:35055-35099`) landed in S1-P-i52 (the nebula 3453-3455 +
    ManaCloak-star 4143 arms stay out).
 6. **Death drops** вЂ” `Player.DropItems`/`DropItemsOnDeath` (`Player.cs:54302+`),

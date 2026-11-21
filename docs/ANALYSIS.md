@@ -38392,12 +38392,13 @@ excluded, and the Player fields/clocks/scan arms it referenced landed.
   answers `can_take` for them (the C# predicate), so the seam is one
   dispatch arm wide.
 - The accessory margins (`goldRing`/`manaMagnet`/`lifeMagnet`/
-  `treasureMagnet`) ride the `GrabFlags` seam with false defaults - the
-  equipment grants are unported families (the `manaMagnet` note at
-  `player.rs:986`); the Journey far-range +240 reads the live
-  `far_placement_range` flag. `preventAllItemPickups` (the Encumbering
-  Stone) has no port flag - `CanAcceptItemIntoInventory` is
-  unconditional.
+  `treasureMagnet`) ride the `GrabFlags` seam. UPDATE (W4-g15 lane 5): the
+  grants are now LIVE — `goldRing` (S1-P-i50), `manaMagnet` (S1-P-i52),
+  `lifeMagnet` (buff 105), `treasureMagnet` (5010/5126, this lane) — and
+  BOTH grab halves (host + client optimistic) read the live flags; the
+  Journey far-range +240 reads `far_placement_range`.
+  `preventAllItemPickups` (the Encumbering Stone) has no port flag -
+  `CanAcceptItemIntoInventory` is unconditional.
 - The shimmer decay is now ungated on `!shimmered`
   (`WorldItem.cs:538-545`): a transformed drop's 1.0 ramp dries to 0 over
   100 ticks, which re-opens `GrabItems`' `shimmerTime != 0` gate

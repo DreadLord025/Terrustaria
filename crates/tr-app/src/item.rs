@@ -675,11 +675,12 @@ const FRICTION_X: f32 = 0.95;
 const FRICTION_EPSILON: f32 = 0.1;
 
 /// The accessory flags `GetItemGrabRange`/`GrabItems` read
-/// (`Player.cs:35133-35151`/`:34943-34963`). The port's equipment pass has
-/// not landed the Mana Magnet / Treasure Magnet grants (the `manaMagnet`
-/// family is a recorded unported seam, `player.rs:986`); the Gold Ring's
-/// `gold_ring` flag is live (S1-P-i50); the Lifeforce buff's `lifeMagnet`
-/// (`buff_effects.rs:52`) wires here when the accumulator lands on Player.
+/// (`Player.cs:35133-35151`/`:34943-34963`). The Gold Ring's `gold_ring`
+/// flag is live (S1-P-i50); the Mana Magnet family landed in S1-P-i52
+/// (`player.rs` 2219/2220/2221/4000); the Treasure Magnet 5010 / Hand Of
+/// Creation 5126 grants landed in W4-g15 lane 5 (`player.rs`
+/// `treasure_magnet`); the Heartreach buff 105 arms `life_magnet`
+/// (`player.rs:6518`).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct GrabFlags {
     pub gold_ring: bool,
