@@ -4383,6 +4383,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // convention — the aiStyle-75 `TargetClosest` reads).
                 let cand = crate::npc_target::session_candidate(player);
                 let players = [cand];
+                // W4-d11 DOC-SWEEP — `NPC.cs:53166-53179`'s type-124 head
+                // block: the Mechanic re-derives `localAI[0]` from the
+                // pool's `lazyNPCOwnedProjectileSearchArray` cache each
+                // tick (1 while the cached slot is an active 582 aimed
+                // back at her, else 0) — the `:55214-55217` gate reads it
+                // to suppress a second throw. The C# runs it inside the
+                // Mechanic's own AI_007 head; the port's town arm is the
+                // unwired `town_npc_ai` seam (W4-b3's lane), so the
+                // derivation runs here at the slot turn, pre-AI — the
+                // ForceBubble pre-pass precedent. The pool is borrowed
+                // immutably (the wrench write ran LAST tick's projectile
+                // pass — the C#'s UpdateNPCs-before-UpdateProjectiles
+                // order, `Main.cs:17767`/`:17775`).
+                for i in 0..npcs.len() {
+                    if npcs[i].kind == NpcKind::Mechanic && npcs[i].hp > 0 {
+                        npcs[i].local_ai[0] =
+                            if app.projectiles.mechanic_wrench_latched(i) { 1.0 } else { 0.0 };
+                    }
+                }
                 for i in 0..npcs.len() {
                     // The NPC's slot index (the C#'s `NPC.whoAmI`) — the
                     // spawn requests that carry an owner reference (the

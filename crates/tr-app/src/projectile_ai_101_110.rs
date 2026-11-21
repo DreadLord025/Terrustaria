@@ -724,9 +724,13 @@ pub(crate) fn ai_nebula_sphere(
 /// at the latched speed; the shared `rotation += pi/10` spin.
 ///
 /// `host` is the pool-resolved `ai[1]` NPC slot (the C#
-/// `Main.npc[(int)ai[1]]`). The `lazyNPCOwnedProjectileSearchArray`
-/// write (`:34050`) is the town-NPC owned-projectile latch — unported
-/// (the `npc_ai_town.rs:1594-1595` cited skip). ZERO `Main.rand` draws.
+/// `Main.npc[(int)ai[1]]`). W4-d11 DOC-SWEEP: the
+/// `lazyNPCOwnedProjectileSearchArray` write (`:34050`) rides the
+/// `wants_owned_latch` intent (the pool cannot borrow the array from a
+/// slot arm) — the dispatch writes `[ai[1]] = who_am_i` after the call
+/// when the return leg ran (`ai[0] == 1` and the slot still active, the
+/// C# write's position between the host gate and the catch kill).
+/// ZERO `Main.rand` draws.
 ///
 /// Movement: the 582 rides `HandleMovement`'s aiStyle-109 arm
 /// (`:19512-19571`) — the tile bounce (reverse BOTH axes + `ai[0] = 1` +
@@ -760,8 +764,12 @@ pub(crate) fn ai_mechanic_wrench(
             return;
         }
         let h = host.unwrap();
-        // `:34050` — the lazyNPCOwnedProjectileSearchArray latch: cited
-        // skip (the town-NPC seam is unported).
+        // `:34050` — the lazyNPCOwnedProjectileSearchArray write: the
+        // dispatch applies it after this call (the `wants_owned_latch`
+        // seam — the C# writes `[ai[1]] = whoAmI` HERE, between the host
+        // gate and the catch kill; the port's post-call gate
+        // `active && ai[0] == 1` reproduces it exactly: every path that
+        // passes this line either kills (inactive) or keeps ai[0] == 1).
         let zero3 = crate::projectile::npc_center(h);
         p.tile_collide = false;
         let num820 = p.local_ai[1];
@@ -1626,6 +1634,41 @@ mod tests {
         assert_eq!(p.ai[0], 1.0, "the return arms");
         assert!(p.net_update, ":19570");
         assert!(p.wants_sound.is_some(), "the Dig thud");
+    }
+
+    /// W4-d11 DOC-SWEEP — `:34050`'s latch + `NPC.cs:53166-53179`'s
+    /// re-derivation: the dispatch writes `[ai[1]] = whoAmI` when the
+    /// return leg ran and the slot survived; `mechanic_wrench_latched`
+    /// reads 1 only while the cached slot is an ACTIVE 582 aimed back at
+    /// the NPC. A dead wrench / a wrong host / a wrong kind all read 0.
+    #[test]
+    fn w4_d11_sweep_the_wrench_latch_gates_the_second_throw() {
+        let mut pool = ProjectilePool::default();
+        // Slot 3: a returning wrench aimed at NPC 7.
+        let mut p = proj(582);
+        p.ai[0] = 1.0;
+        p.ai[1] = 7.0;
+        pool.slots_mut()[3] = p;
+        // The dispatch's write (the `:34050` seam): [7] = 3.
+        pool.write_owned_latch(7, 3);
+        assert!(pool.mechanic_wrench_latched(7), "the live returning wrench");
+        assert!(!pool.mechanic_wrench_latched(8), "another NPC reads 0");
+        // The catch kill: the slot dies -> the gate opens next tick.
+        pool.slots_mut()[3].active = false;
+        assert!(!pool.mechanic_wrench_latched(7), "a dead wrench reads 0");
+        // A live slot of the WRONG kind reads 0 (`:53173`'s type == 582).
+        let mut q = proj(584);
+        q.ai[1] = 7.0;
+        pool.slots_mut()[3] = q;
+        assert!(!pool.mechanic_wrench_latched(7), "the type gate");
+        // A live 582 aimed at ANOTHER NPC reads 0 (`:53173`'s ai[1] gate).
+        let mut r = proj(582);
+        r.ai[1] = 9.0;
+        pool.slots_mut()[3] = r;
+        assert!(!pool.mechanic_wrench_latched(7), "the host gate");
+        // The absent entry reads 0 (the C# zero-init).
+        assert_eq!(pool.lazy_npc_owned(200), 0);
+        assert!(!pool.mechanic_wrench_latched(200));
     }
 
     /// The 584 row (`Projectile.cs:6340-6348`).

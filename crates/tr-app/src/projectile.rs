@@ -14590,6 +14590,16 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// `NPC.lazyNPCOwnedProjectileSearchArray` (`NPC.cs:6431`,
+    /// `new int[MaxNPCs]` at `:95263`) — W4-d11 DOC-SWEEP: the per-NPC
+    /// cache of the last 582 MechanicWrench that armed its return leg
+    /// (`Projectile.cs:34050` writes `[ai[1]] = whoAmI`). The Mechanic's
+    /// `AI_007` head (`NPC.cs:53166-53179`) re-derives `localAI[0]` from
+    /// it each tick: 1 while the cached slot is an active 582 aimed back
+    /// at this NPC, else 0 — the gate that suppresses a second throw
+    /// (`:55214-55217`). Indexed by the port's NPC vec position (the
+    /// `who_am_i` seam); absent entries read 0 (the C# zero-init).
+    lazy_npc_owned_search: Vec<i32>,
 }
 
 impl Default for ProjectilePool {
@@ -14979,6 +14989,7 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            lazy_npc_owned_search: Vec::new(),
         }
     }
 
@@ -16149,6 +16160,41 @@ impl ProjectilePool {
             }
         }
         out
+    }
+
+    /// W4-d11 DOC-SWEEP — `NPC.lazyNPCOwnedProjectileSearchArray[whoAmI]`
+    /// (`NPC.cs:6431`/`:53168`): the cached wrench slot the 582's return
+    /// leg wrote (`Projectile.cs:34050`). Absent entries read 0 (the C#
+    /// `new int[MaxNPCs]` zero-init, `:95263`).
+    pub fn lazy_npc_owned(&self, who_am_i: usize) -> i32 {
+        self.lazy_npc_owned_search.get(who_am_i).copied().unwrap_or(0)
+    }
+
+    /// W4-d11 DOC-SWEEP — `NPC.cs:53166-53179`'s type-124 head block: the
+    /// Mechanic re-derives `localAI[0]` from the cached slot each tick —
+    /// 1 while `IndexInRange(num4)` and the slot is an ACTIVE 582 whose
+    /// `ai[1]` points back at this NPC, else 0. The `:55214-55217` gate
+    /// reads it to suppress a second throw while the wrench lives.
+    /// `IndexInRange` is `index >= 0 && index < Count` (the pool's slot
+    /// count); the port's `slots()` is the same dense array.
+    pub fn mechanic_wrench_latched(&self, who_am_i: usize) -> bool {
+        let num4 = self.lazy_npc_owned(who_am_i);
+        if num4 < 0 || num4 as usize >= self.slots.len() {
+            return false;
+        }
+        let p = &self.slots[num4 as usize];
+        p.active && p.kind == MECHANIC_WRENCH && p.ai[1] == who_am_i as f32
+    }
+
+    /// W4-d11 DOC-SWEEP — the `:34050` write seam
+    /// (`lazyNPCOwnedProjectileSearchArray[(int)ai[1]] = whoAmI`): the
+    /// aiStyle-109 dispatch calls it after the arm when the return leg
+    /// ran and the slot survived; the witness tests drive it directly.
+    pub fn write_owned_latch(&mut self, npc_slot: usize, proj_slot: i32) {
+        if self.lazy_npc_owned_search.len() <= npc_slot {
+            self.lazy_npc_owned_search.resize(npc_slot + 1, 0);
+        }
+        self.lazy_npc_owned_search[npc_slot] = proj_slot;
     }
 
     /// S1-D-3 W-9 fishron wiring — the aiStyle-64 cloud's shark spawn
@@ -18049,6 +18095,20 @@ impl ProjectilePool {
                                 world,
                                 host,
                             );
+                            // W4-d11 DOC-SWEEP — `:34050`'s
+                            // `lazyNPCOwnedProjectileSearchArray[ai[1]] =
+                            // whoAmI`: the write sits between the host gate
+                            // and the catch kill, so it lands exactly when
+                            // the return leg ran and the slot survived
+                            // (`active && ai[0] == 1` — the bounce's
+                            // `ai[0] = 1` write happens inside the same
+                            // call, matching the C#'s post-AI state only
+                            // when the AI itself armed the return; a
+                            // bounce-armed slot writes NEXT tick, the
+                            // one-tick intent lag the drain family carries).
+                            if self.slots[i].active && self.slots[i].ai[0] == 1.0 {
+                                self.write_owned_latch(host_idx, i as i32);
+                            }
                         }
                         // W4-d11 — aiStyle 110 (`AI()` `:34066-34109`):
                         // the 584 NurseSyringeHeal — the town-NPC host
