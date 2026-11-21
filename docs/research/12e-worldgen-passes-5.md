@@ -109,5 +109,12 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
       (DW-5.3's adjacency re-pinned +4); witness
       `w4_d105_the_random_gems_step_sits_after_the_mushrooms` + 3 unit
       tests.
-- [ ] 44 Moss Grass
+- [x] 44 Moss Grass — `spider_gem_moss.rs::pass_moss_grass` +
+      `place_long_moss` (`:20769-20812` + the `PlaceTile`-184 arm
+      `:59703-59720`, the two independent moss/moss-brick gates each
+      drawing a `Next(3)` frame variant); step `moss grass` between
+      `random gems` and `muds walls in jungle` (DW-5.3's adjacency
+      re-pinned +5); witness
+      `w4_d105_the_moss_grass_step_sits_after_the_random_gems` + 3 unit
+      tests.
 - [ ] 45 Larva

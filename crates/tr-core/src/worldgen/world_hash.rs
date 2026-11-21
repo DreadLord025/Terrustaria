@@ -265,6 +265,9 @@ mod tests {
     // #43 Random Gems scatters the exposed gems 178 (the weighted Next(12)
     // styles + the Next(3) frame_y) and the marble/granite diamond patches
     // (`WorldGen.cs:20729-20768`) — both pins move again by design.
+    // #44 Moss Grass grows the long moss 184 on the free neighbours of
+    // every moss tile (`WorldGen.cs:20769-20812`) — both pins move again
+    // by design.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its

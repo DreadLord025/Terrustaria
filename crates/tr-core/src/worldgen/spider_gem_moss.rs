@@ -1437,6 +1437,80 @@ fn solid_tile_allow_right_slope(world: &World, x: i32, y: i32) -> bool {
         && !t.inactive()
 }
 
+/// `LongMoss` (`WorldGen.cs:20769-20812`): the full-world sweep — every
+/// active moss tile (`Main.tileMoss`) grows the long moss (184) on each of
+/// its four free neighbours via `PlaceTile(184)`. The sweep draws no RNG
+/// of its own beyond the `PlaceTile`-184 arm's `Next(3)` frame variants.
+pub(crate) fn pass_moss_grass(world: &mut World, rng: &mut Rng) {
+    let last_x = world.width - 5;
+    for i in 5..last_x {
+        for j in 5..world.height - 5 {
+            // `:20781` — the active moss gate.
+            if !world
+                .tile(i, j)
+                .is_some_and(|t| t.active() && crate::tiledata::TILE_MOSS.has(t.kind))
+            {
+                continue;
+            }
+            // `:20783-20806` — the four neighbours (left, right, up, down).
+            for k in 0..4 {
+                let (nx, ny) = match k {
+                    0 => (i - 1, j),
+                    1 => (i + 1, j),
+                    2 => (i, j - 1),
+                    _ => (i, j + 1),
+                };
+                if world.tile(nx, ny).is_some_and(|t| !t.active()) {
+                    place_long_moss(world, nx, ny, rng);
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.PlaceTile`'s long-moss arm (`WorldGen.cs:59703-59720`, type
+/// 184): two independent gates — a solid `tileMoss` neighbour, then a solid
+/// `tileMossBrick` neighbour — each writing active 184 with `frameX
+/// style*18` (the pass passes style 0) and a fresh `frameY Next(3)*18`.
+/// Both gates can fire on one cell (two draws); the liquid gate
+/// (`:59454-59471` — 184 is NOT in the refusal list) passes every liquid
+/// cell.
+fn place_long_moss(world: &mut World, x: i32, y: i32, rng: &mut Rng) {
+    // The four neighbour reads (the type test reads inactive cells too —
+    // the C# tests `.type` with no active gate; `SolidTile` gates it).
+    let neighbours = [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)];
+    let moss_side = neighbours.iter().any(|&(nx, ny)| {
+        world.tile(nx, ny).is_some_and(|t| crate::tiledata::TILE_MOSS.has(t.kind))
+            && solid_tile(world, nx, ny)
+    });
+    if moss_side {
+        let frame_y = rng.range(0, 3) * 18;
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 184;
+            t.frame_x = 0;
+            t.frame_y = frame_y as i16;
+        }
+        crate::edit::square_tile_frame_gen(world, x, y);
+    }
+    let brick_side = neighbours.iter().any(|&(nx, ny)| {
+        world
+            .tile(nx, ny)
+            .is_some_and(|t| crate::tiledata::SET_CONVERSION_MOSS_BRICK.has(t.kind))
+            && solid_tile(world, nx, ny)
+    });
+    if brick_side {
+        let frame_y = rng.range(0, 3) * 18;
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 184;
+            t.frame_x = 0;
+            t.frame_y = frame_y as i16;
+        }
+        crate::edit::square_tile_frame_gen(world, x, y);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1934,5 +2008,61 @@ mod tests {
             assert_eq!(t.frame_x % 18, 0);
             assert!(t.frame_y == 0 || t.frame_y == 18 || t.frame_y == 36);
         }
+    }
+
+    /// `place_long_moss` (`WorldGen.cs:59703-59720`): a free cell beside a
+    /// solid moss tile takes the long moss (184), frameX 0, frameY a
+    /// Next(3)*18 variant.
+    #[test]
+    fn place_long_moss_grows_beside_the_moss() {
+        let mut w = flat_world(200, 600, 60);
+        // A moss tile at (100, 200), a free cell at (101, 200).
+        let i = w.index(100, 200);
+        w.tiles[i].kind = MOSS_TILES[0];
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        carve_pocket(&mut w, 101, 200, 1, 1);
+        let mut rng = Rng(0x42);
+        place_long_moss(&mut w, 101, 200, &mut rng);
+        let t = w.tile(101, 200).unwrap();
+        assert!(t.active() && t.kind == 184);
+        assert_eq!(t.frame_x, 0);
+        assert!(t.frame_y == 0 || t.frame_y == 18 || t.frame_y == 36);
+    }
+
+    /// The no-moss refusal: a free cell with only stone neighbours stays
+    /// empty (no write, no draw).
+    #[test]
+    fn place_long_moss_refuses_without_moss() {
+        let mut w = flat_world(200, 600, 60);
+        carve_pocket(&mut w, 100, 200, 1, 1);
+        let mut rng = Rng(0x42);
+        let mut replay = Rng(0x42);
+        place_long_moss(&mut w, 100, 200, &mut rng);
+        assert!(!w.tile(100, 200).unwrap().active());
+        assert_eq!(rng.next_u32(), replay.next_u32(), "no draw on refusal");
+    }
+
+    /// The full pass (`:20769-20812`): the long moss grows on the free
+    /// neighbours of the moss tiles.
+    #[test]
+    fn the_moss_grass_pass_grows_the_long_moss() {
+        let mut w = flat_world(400, 600, 60);
+        // A moss patch with air around it.
+        carve_pocket(&mut w, 100, 200, 60, 40);
+        for x in 110..150 {
+            for y in 210..230 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = MOSS_TILES[(x + y) as usize % 5];
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut rng = Rng(0x99);
+        pass_moss_grass(&mut w, &mut rng);
+        let long_moss = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 184)
+            .count();
+        assert!(long_moss > 0, "the long moss grew ({long_moss})");
     }
 }
