@@ -285,3 +285,108 @@ biomeSight `:955 Next(480)` — no BiomeSight set member (`TileID.cs:578/
 :582/:587`). So the `Next(60)` is the FIRST `_rand` draw for an admitted
 cell, then the battery's ambient type test fails (12/639 are not 31/696)
 and the shine `Next(300)` follows — stream-exact with the C#.
+
+### 7.2 The Goblin Scout day-surface ladder — SPAWN CONTRACT (unclaimed, doc-only)
+
+**Claim census.** Six in-flight lanes touch `crates/tr-app/src/spawner.rs`
+(c38 moon-wave rosters, c40 sandstorm, c41 town-spawn invaders, c6
+pumpking blade, f32 luck consumers, g17 gore-world sites — re-derived by
+`git diff --name-only origin/main...<branch>` over all 353 W4 branches).
+NONE carries scout / `NPC.cs:4478` / day-surface-ladder content (grep
+`scout|4478|day_surface` over each lane's spawner.rs: zero hits). W4-g61
+(npc-spawn-dust) ports the spawn/teleport-in DUST visuals, not the ladder.
+The scout gate is therefore UNCLAIMED. It is NOT self-contained/small:
+the arm sits ~15 else-if rungs deep in the day-surface chain, each
+preceding rung drawing on `Main.rand` — porting it alone would desync the
+stream. Per the contract this lane publishes the EXACT spawn-contract for
+the spawner-lane owner; the arm itself stays UNWIRED.
+
+**The enclosing gates (all must hold to reach the day ladder).**
+`SpawnAnNPC` (`NPC.cs:1282`) dispatches by zone; the surface ladder is the
+`else if (this.surfaceSpawn)` arm (`:4165`), reached only when no
+tower/corruption/crimson/jungle/dungeon/meteor/etc. zone arm matched and
+`!this.invaders` (the invaders ladder `:1424` is a SIBLING — an active
+goblin army spawns invasion enemies, NEVER the scout). Inside surfaceSpawn:
+the graveyard `:4172`, snow-rain `:4184`, rain `:4189`, martian-probe
+`:4194` specials return early; then `if (!this.ZoneGraveyard &&
+Main.dayTime)` (`:4199`) opens the DAY ladder. So the scout's full
+precondition: **surface band (`spawnTileY <= Main.worldSurface`), day
+(`Main.dayTime`), not graveyard, no invasion active, no zone special.**
+
+**The day-ladder draw order (`NPC.cs:4202-4501`, `num45 =
+Math.Abs(spawnTileX - Main.spawnTileX)`).** Each rung is an `else if`;
+the `&&` operand order is the DRAW order — a term left of the
+`Main.rand` roll gates it draw-free, a term RIGHT of the roll is tested
+only after the draw is consumed (and a failed right-term still leaves
+the draw spent). The scout is rung 11. The rungs and their exact draw
+positions:
+
+| # | C# | Gate terms LEFT of the first draw (draw-free if false) | First draw | Terms RIGHT of the draw / follow-ups |
+| - | -- | ---------------------------------------------------- | ---------- | ------------------------------------ |
+| 1 | `:4202` | `!waterTile && num45 < maxTilesX/2` | `Next(15)` | `tileType ∈ {2,477,109,492,147,161}` AFTER the roll; hit → the critter sub-ladder (snow 148/149 `Next(2)`, stinkbug/butterfly/gold/holiday/bird rolls) |
+| 2 | `:4302` | `!waterTile && beachDistance < spawnTileX < maxTilesX-beachDistance` | `Next(12)` | `tileType==53` AFTER; hit → `Next(366,368)` |
+| 3 | `:4306` | `(tileType ∈ {2,477,53}) && !tooWindy && !raining && dayTime` | `Next(3)` (`!=0`) | `(spawnTileY<=worldSurface \|\| remix) && FindCattailTop` AFTER; hit → goldCritter + dragonfly rolls |
+| 4 | `:4325` | `!waterTile && num45 < maxTilesX/3 && dayTime && time<18000 && (tileType ∈ {2,477,109,492})` | `Next(4)` | `spawnTileY<=worldSurface && CountNPCS(74)+CountNPCS(297)+CountNPCS(298)<6` AFTER; hit → `Next(4)` + goldCritter |
+| 5 | `:4346` | `!waterTile && num45 < maxTilesX/3` | `Next(15)` | `tileType ∈ {2,477,109,492,147}` AFTER; hit → `Next(4)` + goldCritter |
+| 6 | `:4367` | `!waterTile && num45 > maxTilesX/3 && tileType==2` | `Next(300)` | `!AnyNPCs(50)` AFTER; hit → SpawnOnPlayer(50) |
+| 7 | `:4371` | `!waterTile && num45 > maxTilesX/8 && (tileType ∈ {2,147,60,161})` | `Next(160)` | `!AnyNPCs(696) && !AnyNPCs(695)` AFTER; hit → HasItem(5663/5664) + RollLuck(100) |
+| 8 | `:4386` | `!xRange && tileType==53 && (spawnTileX<beachDistance \|\| spawnTileX>maxTilesX-beachDistance)` | `Next(10)` | the beach water chain (`!waterTile` → 602; water → the 50-row scan + `Next(10)` + `Next(4)`) |
+| 9 | `:4470` | `!waterTile && tileType==53` | `Next(5)` | `Spawning_SandstoneCheck` AFTER; hit → 69 |
+| 10 | `:4474` | `tileType==53 && !waterTile` | none | → 61 (vulture), terminal for sand |
+| 11 | `:4478` | **THE SCOUT** — `!waterTile && (num45 > maxTilesX/3 \|\| remixWorld)` | `Next(15)` | on miss: `!downedGoblins && shadowOrbSmashed` then `Next(7)` — see below |
+| 12 | `:4482` | `raining` | `Next(4)` | hit → 224 |
+| 13 | `:4486` | `!waterTile && raining` | `Next(2)` | hit → 225 |
+| 14 | `:4490` | `!waterTile && wallType==0 && IsItAHappyWindyDay && isSpawningInWindDirection` | `Next(3)` (`!=0`) | hit → 594 |
+| 15 | `:4494` | `!waterTile && wallType==0 && (tileType ∈ {2,477}) && happyWindyDay && windDir` | `Next(10)` (`!=0`) | `Main.tile[spawnTileX,spawnTileY].type==tileType` AFTER; hit → 628 |
+| 16 | `:4498` | `!waterTile` | none | → `GetBasicSlimeToSpawn(surface:true, tileType, num45)` |
+
+**The scout arm verbatim (`NPC.cs:4478-4481`):**
+```csharp
+else if (!this.waterTile && (num45 > Main.maxTilesX / 3 || Main.remixWorld)
+    && (Main.rand.Next(15) == 0
+        || (!NPC.downedGoblins && WorldGen.shadowOrbSmashed && Main.rand.Next(7) == 0)))
+{
+    this.SpawnNPC(spawnTileX * 16 + 8, spawnTileY * 16, 73);
+}
+```
+**Draw contract for the spawner-lane owner:**
+1. Static gate FIRST (draw-free): `!waterTile && (num45 > maxTilesX/3 ||
+   remixWorld)`. If it fails, the rung draws NOTHING and falls through.
+2. `Main.rand.Next(15)` — drawn ALWAYS when the static gate passes.
+   `== 0` → spawn 73 (GoblinScout), return.
+3. On a `Next(15)` MISS, evaluate `!NPC.downedGoblins &&
+   WorldGen.shadowOrbSmashed` (both draw-free flags). ONLY if both hold,
+   draw `Main.rand.Next(7)`; `== 0` → spawn 73, return. The `Next(7)` is
+   short-circuited away when either flag is false (a miss with
+   `downedGoblins` or `!shadowOrbSmashed` consumes ONLY the `Next(15)`).
+4. Both miss → fall through to rung 12 (the rain arms).
+
+So the scout's per-attempt draw budget is **1 (`Next(15)`) + conditionally
+1 (`Next(7)`)** — the second draw exists ONLY while the goblin army has
+not been downed AND an orb has been smashed. This is the "second-chance"
+gate the §6 census named. The spawn is `SpawnNPC(spawnTileX*16+8,
+spawnTileY*16, 73)` → `NewNPC`'s `Bottom=(X,Y)` placement (feet on the
+found tile's top edge, X centred 8 px in), the same machinery the port's
+invaders/moon arms use. `NpcKind::GoblinScout` (73) is W4-d35's in-flight
+data wave (`npc.rs`, `NPC.cs:9732-9746`) — the kind lands there; this
+contract is the SPAWN gate only.
+
+**Why the flags matter (the progression chain).** `shadowOrbSmashed` is
+raised ONLY by case-31 orb smashes (`WorldGen.cs:54292`, the g85 seam-3
+fix — 12/639/696 never arm it). `downedGoblins` clears the gate once the
+army is defeated. So the scout spawns in the window **after the first
+shadow-orb smash, before the goblin army is downed** — exactly the
+pre-invasion scouting phase. The dawn invasion roll (`Main.cs:65448-65461`,
+landed `world.rs::roll_morning_invasion`) is the OTHER `shadowOrbSmashed`
+consumer; both read the same flag the g85 loot fix now sets correctly.
+
+**Port insertion point.** `spawner.rs:1155-1160` — the day arm currently
+falls straight to `spawn_basic_slime` ("the day ladder's
+critter/water/wind specials all sit behind unmodelled tile+weather
+gates"). The ladder owner replaces that fallthrough with rungs 1-16 in
+the table order; the scout rung reads `ctx.world.shadow_orb_smashed` +
+`ctx.world.downed_goblins` (both landed fields, `world.rs:374`/`:213`)
+and `ctx.world.seeds.contains(SeedFlags::REMIX)` for the remix term;
+`num45` is `(x - ctx.world.spawn_x).abs()` (the `spawn_basic_slime` dist
+convention). The stream is the same `UnifiedRandom` the night ladder
+already rides (the `SpawnNPC` swap, `Main.rand`).
