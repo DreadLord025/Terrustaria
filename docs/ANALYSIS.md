@@ -19107,7 +19107,8 @@ round-trip sweep. The compile window runs them.
 ### Final phase: the full walk audit + the VERSION-gate census
 
 `task/W4-f45-wld-header-2` final phase (`2e13cfafc` + `ad153feb3`, code-only)
-publishes **research/137-wld-final-audit.md** — the complete
+publishes **research/279-wld-final-audit.md** (renumbered 137→279 per the
+research/150 registry §6.3 — 137 belongs to g84) — the complete
 `SaveWorldFlags:1238-1430` / `LoadWorldFlags:1981-2517` ownership table
 (every field, write/read line, gate, owner), the g90 booster-pair keep-one
 (the `.wld` halves byte-identical; the `.trwld` v18 tails ride the g71 §1-FULL
@@ -19135,7 +19136,7 @@ fixes landed:**
   the target all match). The post-walk placement is byte-equivalent (nothing
   after `:2130` touches the rain triple).
 
-**Recorded observations (research/137 §5, not byte-walk defects):** the
+**Recorded observations (research/279 §5, not byte-walk defects):** the
 pre-267 zenith inference's `EVERYTHING_DEPS` widening (pre-existing, the C#
 sets zenithWorld only); `downedMechBossAny` derived vs stored (equivalent for
 C# files); the moonType/moonPhase read guards (no-ops for valid files); the
@@ -19145,7 +19146,7 @@ ordering (the clock seam, a no-byte side-effect); the manifest empty-string
 write (the C# writes the null-field JSON even when empty — c44 fixture owns
 the payload).
 
-**The remaining-unowned census answer (research/137 §1.5):** five families —
+**The remaining-unowned census answer (research/279 §1.5):** five families —
 claimableBanners (no claim queue; the item spawns at the death spot), the
 TreeTops variation table (a derived mirror; the sources are owned), the
 world-gen manifest (no gen metadata), forceSeasonsForToday (f39), and the

@@ -1,4 +1,10 @@
-# 137 — WLD FINAL: the full SaveWorldFlags/LoadWorldFlags walk audit (W4-f45)
+# 279 — WLD FINAL: the full SaveWorldFlags/LoadWorldFlags walk audit (W4-f45)
+
+> **RENUMBERED 137 → 279** per the research/150 registry §6.3 (round 2,
+> W4-d54 `72226e500`): 137 belongs to g84's `137-g84-g31-keep-one.md`
+> (pushed first, 09:37:33 vs f45's 14:14:09 `d2a8276a2`). Renamed
+> `137-wld-final-audit.md` → `279-wld-final-audit.md`; every ref re-pointed
+> (INDEX / ANALYSIS / PORT_MAP / ROADMAP). Content unchanged.
 
 > **SEALED (WLD SEAL).** The WLD lane closes at `d2a8276a2` — **the wld
 > family:** f45 owns the `.wld` base (header + the full flags walk; this
