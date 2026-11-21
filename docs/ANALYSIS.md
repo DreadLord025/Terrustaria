@@ -36115,9 +36115,10 @@ the arms `hit_wire_single` lacked vs the C# `HitWireSingle` switch
   `reframe_area` wake (the `open_door` precedent), not the C#'s exact
   per-cell loop bounds.
 
-23 witness tests WRITTEN NOT RUN (10 batch-1 + 6 batch-2 + 4 batch-3 engine +
-3 batch-3 app). The `validate_tile_square` helper went `pub(crate)` (the
-c42 fix-round precedent, shared with the campfire/tall-gate/trapdoor validators).
+25 witness tests WRITTEN NOT RUN (10 batch-1 [6 wiring + 4 minecart] + 6
+batch-2 + 9 batch-3 [4 engine + 3 app drain + 2 wiring_devices unit]). The
+`validate_tile_square` helper went `pub(crate)` (the c42 fix-round precedent,
+shared with the campfire/tall-gate/trapdoor validators).
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
