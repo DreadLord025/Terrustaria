@@ -155,6 +155,16 @@ pub mod id {
     /// (`MessageID.cs:206`, `NetMessage.cs:1337-1346`,
     /// `MessageBuffer.cs:3538-3557`). Both directions.
     pub const TELEPORT_PLAYER_PORTAL: u8 = 96;
+    /// `99 MinionRestTargetUpdate` (W4-g50, S1-I-4): `(byte)` player +
+    /// `MinionRestTargetPoint` Vector2 (`MessageID.cs:212`,
+    /// `NetMessage.cs:1353-1356`, `MessageBuffer.cs:3570-3583`). Both
+    /// directions — the host forces the id and relays.
+    pub const MINION_REST_TARGET: u8 = 99;
+    /// `115 MinionAttackTargetUpdate` (W4-g50, S1-I-4): `(byte)` player +
+    /// `(short)MinionAttackTargetNPC` (`MessageID.cs:244`,
+    /// `NetMessage.cs:1357-1360`, `MessageBuffer.cs:3584-3597`). Both
+    /// directions — the host forces the id and relays.
+    pub const MINION_ATTACK_TARGET: u8 = 115;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -641,6 +651,13 @@ pub struct PlayerNet {
     /// `Main.player[id].lastPortalColorIndex`, fed by the `96` reader
     /// (`MessageBuffer.cs:3549`; W4-g50).
     pub last_portal_color_index: i16,
+    /// `Main.player[id].MinionRestTargetPoint` (`Player.cs:3006`), fed by
+    /// `99 MinionRestTargetUpdate` (`MessageBuffer.cs:3577`; W4-g50).
+    pub minion_rest_target_point: (f32, f32),
+    /// `Main.player[id].MinionAttackTargetNPC` (`Player.cs:3008`, -1 none),
+    /// fed by `115 MinionAttackTargetUpdate` (`MessageBuffer.cs:3591`;
+    /// W4-g50).
+    pub minion_attack_target_npc: i32,
 }
 
 impl Default for PlayerNet {
@@ -669,6 +686,8 @@ impl Default for PlayerNet {
             stealth: 1.0,
             emote_time: 0,
             last_portal_color_index: 0,
+            minion_rest_target_point: (0.0, 0.0),
+            minion_attack_target_npc: -1,
         }
     }
 }
@@ -1954,6 +1973,28 @@ pub struct PlayerPortalTeleport {
     pub velocity_y: f32,
 }
 
+/// `msg 99 MinionRestTargetUpdate`'s body (`NetMessage.cs:1353-1356`): the
+/// player id then `Player.MinionRestTargetPoint` as a `Vector2` (two `float`s,
+/// `Player.cs:3006`). Sent when the local point drifts from the last-synced
+/// copy (`Main.cs:17678-17681`); the server overrides the id to the sender
+/// and relays (`MessageBuffer.cs:3570-3583`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MinionRestTarget {
+    pub player_id: u8,
+    pub x: f32,
+    pub y: f32,
+}
+
+/// `msg 115 MinionAttackTargetUpdate`'s body (`NetMessage.cs:1357-1360`): the
+/// player id then `Player.MinionAttackTargetNPC` as a `short`
+/// (`Player.cs:3008`, `-1` = none). Sent on change (`Main.cs:17682-17685`);
+/// the server overrides the id and relays (`MessageBuffer.cs:3584-3597`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MinionAttackTarget {
+    pub player_id: u8,
+    pub npc: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2092,6 +2133,13 @@ pub enum C2s {
     /// teleport (`PortalHelper.cs:188-192`); the host forces the id to the
     /// sender and relays (`MessageBuffer.cs:3541-3555`; W4-g50).
     PlayerPortalTeleport(PlayerPortalTeleport),
+    /// `99 MinionRestTargetUpdate` - this client's minion rest point moved
+    /// (`Main.cs:17678-17681`; `MessageBuffer.cs:3570-3583` relays; W4-g50).
+    MinionRestTarget(MinionRestTarget),
+    /// `115 MinionAttackTargetUpdate` - this client's minion attack target
+    /// changed (`Main.cs:17682-17685`; `MessageBuffer.cs:3584-3597` relays;
+    /// W4-g50).
+    MinionAttackTarget(MinionAttackTarget),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2248,6 +2296,12 @@ pub enum S2c {
     /// `96 TeleportPlayerThroughPortal` — a peer's portal teleport, relayed
     /// by the host (`MessageBuffer.cs:3554`; W4-g50).
     PlayerPortalTeleport(PlayerPortalTeleport),
+    /// `99 MinionRestTargetUpdate` - a peer's minion rest point, relayed
+    /// (`MessageBuffer.cs:3580`; W4-g50).
+    MinionRestTarget(MinionRestTarget),
+    /// `115 MinionAttackTargetUpdate` - a peer's minion attack target,
+    /// relayed (`MessageBuffer.cs:3594`; W4-g50).
+    MinionAttackTarget(MinionAttackTarget),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2342,6 +2396,8 @@ impl C2s {
             Self::ItemFrameTryPlacing(_) => id::ITEM_FRAME_TRY_PLACING,
             Self::MurderPortal { .. } => id::MURDER_PORTAL,
             Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
+            Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
+            Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2432,6 +2488,10 @@ impl C2s {
                 .f32(p.y)
                 .f32(p.velocity_x)
                 .f32(p.velocity_y),
+            // `NetMessage.cs:1353-1356`: (byte)number + WriteVector2.
+            Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
+            // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
+            Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2596,6 +2656,17 @@ impl C2s {
                 y: r.f32()?,
                 velocity_x: r.f32()?,
                 velocity_y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3572-3577` — byte player + ReadVector2.
+            id::MINION_REST_TARGET => Self::MinionRestTarget(MinionRestTarget {
+                player_id: r.u8()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3586-3591` — byte player + (short) target.
+            id::MINION_ATTACK_TARGET => Self::MinionAttackTarget(MinionAttackTarget {
+                player_id: r.u8()?,
+                npc: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2766,6 +2837,8 @@ impl S2c {
             Self::SpawnInstancedItem(_) => id::SPAWN_INSTANCED_ITEM,
             Self::EmoteBubble(_) => id::EMOTE_BUBBLE,
             Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
+            Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
+            Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
         }
     }
 
@@ -2957,6 +3030,10 @@ impl S2c {
                 .f32(p.y)
                 .f32(p.velocity_x)
                 .f32(p.velocity_y),
+            // `NetMessage.cs:1353-1356`: (byte)number + WriteVector2.
+            Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
+            // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
+            Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3233,6 +3310,17 @@ impl S2c {
                 y: r.f32()?,
                 velocity_x: r.f32()?,
                 velocity_y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3572-3577` — byte player + ReadVector2.
+            id::MINION_REST_TARGET => Self::MinionRestTarget(MinionRestTarget {
+                player_id: r.u8()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3586-3591` — byte player + (short) target.
+            id::MINION_ATTACK_TARGET => Self::MinionAttackTarget(MinionAttackTarget {
+                player_id: r.u8()?,
+                npc: r.i16()?,
             }),
             _ => return None,
         })
@@ -5849,6 +5937,62 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::PlayerPortalTeleport(d) => assert_eq!(d, p),
             other => panic!("expected 96, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `99 MinionRestTargetUpdate` (`NetMessage.cs:1353-1356`): byte player
+    /// + WriteVector2. Both directions — the host forces the id and relays
+    /// (`MessageBuffer.cs:3570-3583`).
+    #[test]
+    fn w4_g50_minion_rest_target_round_trips() {
+        let m = MinionRestTarget {
+            player_id: 2,
+            x: 320.5,
+            y: 640.25,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&320.5f32.to_le_bytes());
+        body.extend_from_slice(&640.25f32.to_le_bytes());
+        let c = C2s::MinionRestTarget(m).encode();
+        assert_eq!(c[2], 99);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MinionRestTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 99, got {:?}", other.msg_id()),
+        }
+        let f = S2c::MinionRestTarget(m).encode();
+        assert_eq!(f[2], 99);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MinionRestTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 99, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `115 MinionAttackTargetUpdate` (`NetMessage.cs:1357-1360`): byte
+    /// player + (short) target (-1 = none). Both directions
+    /// (`MessageBuffer.cs:3584-3597`).
+    #[test]
+    fn w4_g50_minion_attack_target_round_trips() {
+        let m = MinionAttackTarget {
+            player_id: 3,
+            npc: -1,
+        };
+        let mut body = vec![3u8];
+        body.extend_from_slice(&(-1i16).to_le_bytes());
+        let c = C2s::MinionAttackTarget(m).encode();
+        assert_eq!(c[2], 115);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MinionAttackTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 115, got {:?}", other.msg_id()),
+        }
+        let f = S2c::MinionAttackTarget(m).encode();
+        assert_eq!(f[2], 115);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MinionAttackTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 115, got {:?}", other.msg_id()),
         }
     }
 }

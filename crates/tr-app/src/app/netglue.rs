@@ -1037,6 +1037,41 @@ impl App {
                     id,
                 );
             }
+            // `case 99` — the minion rest point (W4-g50,
+            // `MessageBuffer.cs:3570-3583`): the host forces the subject to
+            // the sender (`:3575`), stores the point and relays it
+            // (`:3580`'s `TrySendData(99, -1, whoAmI, …)`).
+            C2s::MinionRestTarget(m) => {
+                let peer = id as u8;
+                if let Some(p) = self.remote_players.get_mut(&id) {
+                    p.minion_rest_target_point = (m.x, m.y);
+                }
+                server.broadcast_except(
+                    &S2c::MinionRestTarget(net::MinionRestTarget {
+                        player_id: peer,
+                        x: m.x,
+                        y: m.y,
+                    }),
+                    id,
+                );
+            }
+            // `case 115` — the minion attack target (W4-g50,
+            // `MessageBuffer.cs:3584-3597`): the host forces the subject to
+            // the sender (`:3589`), stores the target and relays it
+            // (`:3594`'s `TrySendData(115, -1, whoAmI, …)`).
+            C2s::MinionAttackTarget(m) => {
+                let peer = id as u8;
+                if let Some(p) = self.remote_players.get_mut(&id) {
+                    p.minion_attack_target_npc = m.npc as i32;
+                }
+                server.broadcast_except(
+                    &S2c::MinionAttackTarget(net::MinionAttackTarget {
+                        player_id: peer,
+                        npc: m.npc,
+                    }),
+                    id,
+                );
+            }
         }
     }
 
@@ -1933,6 +1968,30 @@ impl App {
             // the wire's id byte (the host already forced it to the sender).
             S2c::PlayerPortalTeleport(p) => {
                 self.apply_player_portal_teleport(p.player, &p);
+            }
+            // `case 99` — a peer's minion rest point (W4-g50,
+            // `MessageBuffer.cs:3577`): `Main.player[num163].MinionRestTargetPoint
+            // = ReadVector2()`. The subject is the wire's id byte.
+            S2c::MinionRestTarget(m) => {
+                if m.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        p.minion_rest_target_point = Vec2::new(m.x, m.y);
+                    }
+                } else if let Some(p) = self.remote_players.get_mut(&(m.player_id as u32)) {
+                    p.minion_rest_target_point = (m.x, m.y);
+                }
+            }
+            // `case 115` — a peer's minion attack target (W4-g50,
+            // `MessageBuffer.cs:3591`): `Main.player[num154].MinionAttackTargetNPC
+            // = ReadInt16()`. The subject is the wire's id byte.
+            S2c::MinionAttackTarget(m) => {
+                if m.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        p.minion_attack_target_npc = m.npc as i32;
+                    }
+                } else if let Some(p) = self.remote_players.get_mut(&(m.player_id as u32)) {
+                    p.minion_attack_target_npc = m.npc as i32;
+                }
             }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
@@ -6133,5 +6192,29 @@ mod message_family_tests {
         assert_eq!((entry.vx, entry.vy), (2.5, -1.0));
         assert_eq!((entry.off_x, entry.off_y), (0.0, 0.0), "netOffset zeroed");
         assert_eq!(entry.last_portal_color_index, 4, "the un-flipped wire color");
+    }
+
+    /// `case 99`/`115` (`MessageBuffer.cs:3570-3597`): the host forces the
+    /// subject to the sender, stores the minion target and relays it.
+    #[test]
+    fn w4_g50_the_minion_targets_relay_to_the_peer_snapshot() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let peer = client_app.local_id;
+        host_app.remote_players.entry(peer).or_default();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MinionRestTarget(net::MinionRestTarget {
+                player_id: 250, // the host overrides it (`:3575`)
+                x: 320.0,
+                y: 640.0,
+            }));
+            client.send(&C2s::MinionAttackTarget(net::MinionAttackTarget {
+                player_id: 250, // the host overrides it (`:3589`)
+                npc: 7,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        let entry = host_app.remote_players.get(&peer).expect("peer stored");
+        assert_eq!(entry.minion_rest_target_point, (320.0, 640.0));
+        assert_eq!(entry.minion_attack_target_npc, 7);
     }
 }
