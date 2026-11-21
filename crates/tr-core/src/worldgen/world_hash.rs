@@ -271,6 +271,11 @@ mod tests {
     // scatter (583-589) and the stalactite/stalagmite placement move tile
     // bytes BY DESIGN. The pass draws only its own stream; a == b stays
     // green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R5 (2026-11-21, code-only): the `Remove Broken Traps` pass
+    // (`WorldGen.cs:22121-22140`) lands after `stalac` — the wire-network
+    // BFS strips broken trap circuits (the dungeon/temple/mining-explosives
+    // wires), moving tile + wire bytes BY DESIGN. Draws no RNG; a == b
+    // stays green. Re-pin DEFERRED to the merge gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -332,6 +337,9 @@ mod tests {
     // trees + speleothems move this pin BY DESIGN on the fresh
     // `pass_unified("Stalac")` stream; a == b stays green. Re-pin DEFERRED
     // to the merge gate.
+    // W4-d106 R5 (code-only): `Remove Broken Traps` (see SEED42_512 above)
+    // — the broken-circuit strip moves this pin BY DESIGN (no RNG draw);
+    // a == b stays green. Re-pin DEFERRED to the merge gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

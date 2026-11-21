@@ -532,6 +532,195 @@ fn seat_floor(world: &mut World, x: i32, y: i32, altar: bool) {
     t.flags &= !FLAG_HALF_BRICK;
 }
 
+// --- W4-d106 R5: Remove Broken Traps ------------------------------------------
+
+/// `WorldGen.IsItATrap` (`WorldGen.cs:26788-26803`): an active actuator, or
+/// a mechanism that is not on the ignore-when-validating list.
+fn is_it_a_trap(t: &Tile) -> bool {
+    if !t.active() {
+        return false;
+    }
+    if t.actuator() {
+        return true;
+    }
+    if td::SET_IS_A_MECHANISM.has(t.kind) {
+        return !td::SET_IGNORE_WHEN_VALIDATING_TRAPS.has(t.kind);
+    }
+    false
+}
+
+/// `WorldGen.IsItATrigger` (`WorldGen.cs:26805-26823`): an active trigger
+/// kind, the golden-chest style-4 pressure plate (467 frameX/36 == 4), or a
+/// minecart-track pressure plate (314 frameX 20/21, `Minecart.IsPressurePlate`
+/// `Minecart.cs:549-560`).
+fn is_it_a_trigger(t: &Tile) -> bool {
+    if !t.active() {
+        return false;
+    }
+    if td::SET_IS_A_TRIGGER.has(t.kind) {
+        return true;
+    }
+    if t.kind == 467 && t.frame_x as i32 / 36 == 4 {
+        return true;
+    }
+    if t.kind == 314 && matches!(t.frame_x, 20 | 21) {
+        return true;
+    }
+    false
+}
+
+/// `Tile.ResetToType` (`Tile.cs:249-259`): liquid 0, `sTileHeader = 32`
+/// (active, no half-brick/actuator/inactive), the other headers 0, frames 0,
+/// the new kind. The wall is kept (the C# does not touch it).
+fn reset_to_type(t: &mut Tile, kind: u16) {
+    t.liquid = 0;
+    t.flags = FLAG_ACTIVE;
+    t.meta = 0;
+    t.frame_x = 0;
+    t.frame_y = 0;
+    t.kind = kind;
+}
+
+/// `WorldGen.ClearBrokenTraps` (`WorldGen.cs:26840-26958`): flood-fill the
+/// red-wire network from `start`, bounded by the two 2000 counters; if the
+/// network carries BOTH a trap and a trigger it is a working circuit and is
+/// left alone, otherwise every visited cell loses its wire (and actuator —
+/// with the boulder-above reset) and its trap/trigger tile dies (the 314
+/// track keeps its frame, set to 1). `visited` is the pass-wide
+/// already-went-over set (the C# `pointsWeAlreadyWentOver`).
+fn clear_broken_traps(world: &mut World, start: (i32, i32), visited: &mut Vec<(i32, i32)>) {
+    // The C#'s two-list swap BFS (`t`/`t2`), each bounded by 2000.
+    let mut t: Vec<(i32, i32)> = Vec::new();
+    let mut t2: Vec<(i32, i32)> = vec![start];
+    let mut list: Vec<(i32, i32)> = Vec::new();
+    let mut has_trap = false;
+    let mut has_trigger = false;
+    let mut num = 2000;
+    while !t2.is_empty() {
+        num -= 1;
+        if num <= 0 {
+            break;
+        }
+        std::mem::swap(&mut t, &mut t2);
+        t2.clear();
+        let mut num2 = 2000;
+        while !t.is_empty() {
+            num2 -= 1;
+            if num2 <= 0 {
+                break;
+            }
+            let item = t.remove(0);
+            // `:26867` — InWorld(item, 5).
+            if item.0 < 5
+                || item.1 < 5
+                || item.0 >= world.width - 5
+                || item.1 >= world.height - 5
+            {
+                continue;
+            }
+            if !world.wires.wire(item.0, item.1) {
+                continue;
+            }
+            // `:26874-26875` — record the cell in both lists.
+            visited.push(item);
+            list.push(item);
+            let tile = world.tile(item.0, item.1).copied().unwrap_or_default();
+            if is_it_a_trap(&tile) {
+                has_trap = true;
+            }
+            if is_it_a_trigger(&tile) {
+                has_trigger = true;
+            }
+            if has_trigger && has_trap {
+                break;
+            }
+            // `:26888-26907` — queue the four neighbours not already in list.
+            for (nx, ny) in [
+                (item.0 - 1, item.1),
+                (item.0 + 1, item.1),
+                (item.0, item.1 - 1),
+                (item.0, item.1 + 1),
+            ] {
+                if !list.contains(&(nx, ny)) {
+                    t2.push((nx, ny));
+                }
+            }
+        }
+        if has_trigger && has_trap {
+            break;
+        }
+    }
+    // `:26915-26918` — a working circuit is left alone.
+    if has_trigger && has_trap {
+        return;
+    }
+    // `:26919-26957` — strip the broken network.
+    for &(x, y) in &list {
+        world.wires.set(x, y, crate::wiring::WireColor::Red, false);
+        let tile = world.tile(x, y).copied().unwrap_or_default();
+        if tile.actuator() {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.flags &= !crate::tile::FLAG_ACTUATOR;
+            }
+            // `:26926-26940` — a boulder above with frameX % 16 == 0 resets
+            // the 2×2 boulder block above to stone.
+            let above = world.tile(x, y - 1).copied().unwrap_or_default();
+            if td::SET_BOULDERS.has(above.kind) && above.frame_x % 16 == 0 {
+                for i in 0..2 {
+                    for j in -2..0 {
+                        let boulder = world
+                            .tile(x + i, y + j)
+                            .is_some_and(|t| t.active() && td::SET_BOULDERS.has(t.kind));
+                        if boulder {
+                            if let Some(t) = world.tile_mut(x + i, y + j) {
+                                reset_to_type(t, 1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // `:26942-26956` — the trap tile dies (except the statue 105); the
+        // trigger tile dies too, except the minecart track 314 (frameX = 1).
+        let tile = world.tile(x, y).copied().unwrap_or_default();
+        if is_it_a_trap(&tile) && tile.kind != 105 {
+            kill_tile(world, x, y, true);
+        } else if is_it_a_trigger(&tile) {
+            if tile.kind == 314 {
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.frame_x = 1;
+                }
+            } else {
+                kill_tile(world, x, y, true);
+            }
+        }
+    }
+}
+
+/// `Remove Broken Traps` (`GenPassNameID.BrokenTrapCleanup`,
+/// `WorldGen.cs:22121-22140`) — W4-d106 R5. The 50-margin sweep finds every
+/// red-wired cell not already visited and clears its broken network. The
+/// gate `!noTrapsWorldGen || tenthAnniversaryWorldGen || notTheBees` runs the
+/// sweep on a classic world (noTraps off). Draws no RNG.
+pub(crate) fn remove_broken_traps(world: &mut World, opts: &GenOptions) {
+    // `:22123` — the gate.
+    let no_traps = opts.flags.contains(SeedFlags::NO_TRAPS);
+    let anniversary = opts.flags.contains(SeedFlags::TENTH_ANNIVERSARY);
+    let not_the_bees = opts.flags.contains(SeedFlags::NOT_THE_BEES);
+    if no_traps && !anniversary && !not_the_bees {
+        return;
+    }
+    let mut visited: Vec<(i32, i32)> = Vec::new();
+    let num = 50;
+    for i in num..world.width - num {
+        for j in 50..world.height - 50 {
+            if world.wires.wire(i, j) && !visited.contains(&(i, j)) {
+                clear_broken_traps(world, (i, j), &mut visited);
+            }
+        }
+    }
+}
+
 // --- W4-d106 R3 witnesses (written NOT run — code-only branch) ---------------
 
 #[cfg(test)]
@@ -603,5 +792,72 @@ mod tests {
         };
         tile_cleanup(&mut sky, &mut Rng(42), &sky_opts);
         assert_eq!(sky.tiles, before, "skyblock skips the pass");
+    }
+
+    // --- W4-d106 R5 witnesses (written NOT run — code-only branch) ----------
+
+    /// A wired dart trap (137) with NO trigger is a broken circuit: the
+    /// sweep strips its wire and kills the trap.
+    #[test]
+    fn r5_a_broken_trap_circuit_is_stripped() {
+        let mut w = World::new("traps".into(), 200, 200);
+        // A dart trap at (100,100), wired, no trigger anywhere.
+        let i = w.index(100, 100);
+        w.tiles[i] = Tile { kind: 137, flags: FLAG_ACTIVE, ..Default::default() };
+        w.wires.set(100, 100, crate::wiring::WireColor::Red, true);
+        w.wires.set(101, 100, crate::wiring::WireColor::Red, true);
+        remove_broken_traps(&mut w, &opts());
+        assert!(!w.wires.wire(100, 100), "the broken wire was stripped");
+        assert!(!w.wires.wire(101, 100), "the whole network was stripped");
+        assert!(
+            !w.tile(100, 100).is_some_and(|t| t.active() && t.kind == 137),
+            "the trap died"
+        );
+    }
+
+    /// A wired trap WITH a trigger (a pressure plate 135) is a working
+    /// circuit: the sweep leaves it alone.
+    #[test]
+    fn r5_a_working_circuit_is_left_alone() {
+        let mut w = World::new("traps".into(), 200, 200);
+        let i = w.index(100, 100);
+        w.tiles[i] = Tile { kind: 137, flags: FLAG_ACTIVE, ..Default::default() };
+        let j = w.index(102, 100);
+        w.tiles[j] = Tile { kind: 135, flags: FLAG_ACTIVE, ..Default::default() };
+        for x in 100..=102 {
+            w.wires.set(x, 100, crate::wiring::WireColor::Red, true);
+        }
+        remove_broken_traps(&mut w, &opts());
+        assert!(w.wires.wire(100, 100), "the working wire survived");
+        assert!(
+            w.tile(100, 100).is_some_and(|t| t.active() && t.kind == 137),
+            "the working trap survived"
+        );
+    }
+
+    /// The pass is deterministic (a == b) and the noTraps gate skips it.
+    #[test]
+    fn r5_the_pass_is_deterministic_and_no_traps_skips_it() {
+        let build = || {
+            let mut w = World::new("traps".into(), 200, 200);
+            let i = w.index(100, 100);
+            w.tiles[i] = Tile { kind: 137, flags: FLAG_ACTIVE, ..Default::default() };
+            w.wires.set(100, 100, crate::wiring::WireColor::Red, true);
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        remove_broken_traps(&mut a, &opts());
+        remove_broken_traps(&mut b, &opts());
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        assert_eq!(a.wires.wire(100, 100), b.wires.wire(100, 100));
+        // noTraps (without anniversary/notTheBees) skips the sweep.
+        let mut nt = build();
+        let nt_opts = GenOptions {
+            flags: SeedFlags::from(SeedFlags::NO_TRAPS),
+            ..opts()
+        };
+        remove_broken_traps(&mut nt, &nt_opts);
+        assert!(nt.wires.wire(100, 100), "noTraps skips the sweep");
     }
 }

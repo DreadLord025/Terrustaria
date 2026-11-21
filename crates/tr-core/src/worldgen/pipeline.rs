@@ -1426,6 +1426,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // gem-tree grower + PlaceTight share vanilla's single genRand), so the
     // insertion shifts no other step's ledger.
     step!("stalac", "Stalac", step_stalac),
+    // The vanilla Remove Broken Traps slot (`WorldGen.cs:22121`): after
+    // Stalac (`:22038`) and before Final Cleanup (`:22141`) — W4-d106 R5.
+    // The pass draws no RNG (the wire-network BFS is deterministic over the
+    // tile/wire state), so the insertion shifts no other step's ledger.
+    step!("remove broken traps", "Remove Broken Traps", step_remove_broken_traps),
     step!("world tail", "", step_world_tail),
     // The vanilla `GenerateWorld` tail (`WorldGen.cs:22431-22444`): the
     // seed `Finish*` passes — M5-SEED-1's `step_seed_finish`, gated per
@@ -2799,6 +2804,20 @@ fn step_stalac(
     );
 }
 
+/// The vanilla Remove Broken Traps slot (`WorldGen.cs:22121-22140`) —
+/// W4-d106 R5: the wire-network BFS that strips broken trap circuits. Draws
+/// no RNG.
+fn step_remove_broken_traps(
+    world: &mut World,
+    _gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    cleanup::remove_broken_traps(world, opts);
+}
+
 fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
@@ -3265,7 +3284,9 @@ mod tests {
         // `WorldGen.cs:21520`) between `cacti` and `lihzahrd altar`.
         // W4-d106 R4: + `stalac` (vanilla "Stalac", `WorldGen.cs:22038`)
         // after `water plants`.
-        assert_eq!(names.len(), 70);
+        // W4-d106 R5: + `remove broken traps` (vanilla "Remove Broken
+        // Traps", `WorldGen.cs:22121`) after `stalac`.
+        assert_eq!(names.len(), 71);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3365,6 +3386,7 @@ mod tests {
                 "lihzahrd altar",
                 "water plants",
                 "stalac",
+                "remove broken traps",
                 "world tail",
                 "seed finish",
             ]
