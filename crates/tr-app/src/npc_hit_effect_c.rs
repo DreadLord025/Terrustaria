@@ -169,6 +169,8 @@
 //! | 723-732 | `:86465-86486` | the zombie family 190/191/192/193/194 death (2 gores each, +14 X offset) |
 //! | 733-738 | `:86490-86501` | the demon-eye family 317/318/2 death (completes the block) |
 //! | 739-740 | `:86518-86519` | the 157 Arapaima death (2 gores 186/187, +14 X offset) |
+//! | 741-743 | `:86532-86542` | the 133 WanderingEye hit/death (hit-half <50% latch gore 1 + 2 death gores 155) |
+//! | 744-749 | `:86568-86576` | the antlion 69/580 death (type-250 dust, per-type gores) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4566,6 +4568,80 @@ fn arapaima_death(
     gore.new_gore(rng, world, pos + Vec2::new(14.0, 0.0), vel, 187, 1.0); // :86519
 }
 
+/// The 133 WanderingEye hit/death (`NPC.cs:86523-86543`, sites 741-743):
+/// on a HIT (`life > 0`) below half life with `localAI[0] == 0`, latch
+/// `localAI[0] = 1` and spawn gore 1 (the one-time "eye pop"); on DEATH the
+/// 50-dust type-5 burst then the 2 gores 155/155 at position and
+/// `position + (0, 14)`. Scale defaults to 1. The hit-half dust loop is
+/// dmg-scaled (the wiring wave's); the gore latch is ported here.
+fn wandering_eye_hit(
+    npc: &mut Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc.hp > 0 {
+        // `:86529-86533` — the below-half-life eye-pop latch.
+        if (npc.hp as f32) < (npc.max_hp as f32) * 0.5 && npc.local_ai[0] == 0.0 {
+            npc.local_ai[0] = 1.0;
+            gore.new_gore(rng, world, pos, vel, 1, 1.0); // :86532
+        }
+    } else {
+        // `:86537-86540` — the 50-dust type-5 death burst.
+        for _ in 0..50 {
+            dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+                Color::default(), 1.0,
+            );
+        }
+        gore.new_gore(rng, world, pos, vel, 155, 1.0); // :86541
+        gore.new_gore(rng, world, pos + Vec2::new(0.0, 14.0), vel, 155, 1.0); // :86542
+    }
+}
+
+/// The antlion family death (`NPC.cs:86545-86605`): the type-250 dust burst
+/// (SpeedX `2*hitDirection`, SpeedY -2; count 50, or 10 for the 582 larva),
+/// then the per-type gores at position. This commit ports the 69 Antlion
+/// (sites 744-745: [97,98]) and the 580 WalkingAntlion (sites 746-749:
+/// [1094,1095,1096,1097]). The 581/508/509/582 variants land with the next
+/// batches. Scale defaults to 1.
+fn antlion_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:86547-86553` — the 582 larva uses a 10-dust burst, the rest 50.
+    let count = if npc_type == 582 { 10 } else { 50 };
+    for _ in 0..count {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 250, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:86566-86605` — the per-type gore list.
+    let gores: &[i32] = match npc_type {
+        69 => &[97, 98],
+        _ => &[1094, 1095, 1096, 1097], // 580 WalkingAntlion
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for &ty in gores {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4578,7 +4654,7 @@ fn arapaima_death(
 /// wave-A/B `StrikeNPC_Inner` claim. Returns the roster side-effects the
 /// wiring caller owes ([`HitEffectOutcomeC`]).
 pub fn hit_effect_c(
-    npc: &Npc,
+    npc: &mut Npc,
     npc_type: i32,
     hit_direction: f32,
     dmg: f64,
@@ -5122,6 +5198,17 @@ pub fn hit_effect_c(
     // `:86504-86520` — the 157 Arapaima arm (sites 739-740).
     if npc_type == 157 && npc.hp <= 0 {
         arapaima_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86521-86544` — the 133 WanderingEye arm (sites 741-743); the hit-half
+    // eye-pop latch fires on EVERY hit (not life-gated).
+    if npc_type == 133 {
+        wandering_eye_hit(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86545-86606` — the antlion family arm; this commit owns the 69/580
+    // variants (sites 744-749); the 581/508/509/582 land with the next
+    // batches.
+    if (npc_type == 69 || npc_type == 580) && npc.hp <= 0 {
+        antlion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8094,6 +8181,55 @@ mod tests {
         assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
     }
 
+    /// `NPC.cs:86529-86542` — the WanderingEye: the hit-half eye-pop latch
+    /// (below half life, localAI[0]==0 -> gore 1 + latch), and the death
+    /// half's 2 gores 155/155 at position and +14 Y.
+    #[test]
+    fn w4_f10_the_wandering_eye_hit_latches_and_death_spawns() {
+        let w = air();
+        // Hit below half life: the eye-pop fires once and latches.
+        let mut n = boss(100.0, 100.0, 30.0, 30.0);
+        n.hp = 40;
+        n.max_hp = 100;
+        n.local_ai[0] = 0.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(709);
+        wandering_eye_hit(&mut n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 1);
+        assert_eq!(n.local_ai[0], 1.0);
+        // A second hit: the latch blocks the eye-pop.
+        let before = gore.slots().iter().filter(|g| g.active).count();
+        wandering_eye_hit(&mut n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), before);
+        // Death: the 2 gores 155/155.
+        let mut n2 = boss(100.0, 100.0, 30.0, 30.0);
+        n2.hp = 0;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(709);
+        wandering_eye_hit(&mut n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types: Vec<i32> = gore2.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![155, 155]);
+        assert_eq!(gore2.slot(1).position, Vec2::new(100.0, 114.0));
+    }
+
+    /// `NPC.cs:86568-86576` — the antlion 69 (97/98) and 580
+    /// (1094/1095/1096/1097), after the type-250 dust burst.
+    #[test]
+    fn w4_f10_the_antlion_death_uses_the_per_type_list() {
+        let w = air();
+        for (ty, gores) in [(69, [97, 98]), (580, [1094, 1095, 1096, 1097])] {
+            let n = boss(100.0, 100.0, 40.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(719);
+            antlion_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "antlion {ty}");
+        }
+    }
+
     /// The wave-C dispatch gates the flipped Betsy branch on
     /// `spriteDirection == -1` and `life <= 0`; a non-flipped or living
     /// Betsy spawns nothing here (the non-flipped branch is wave B's).
@@ -8104,22 +8240,22 @@ mod tests {
         let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(5);
         // Flipped + dead -> the 10 gores.
-        let n = boss(100.0, 100.0, 232.0, 156.0);
-        hit_effect_c(&n, 551, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let mut n = boss(100.0, 100.0, 232.0, 156.0);
+        hit_effect_c(&mut n, 551, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
         assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 10);
         // Non-flipped -> nothing here (wave B's branch).
         let mut gore2 = GorePool::new();
         let mut dust2 = DustPool::new();
         let mut n2 = boss(100.0, 100.0, 232.0, 156.0);
         n2.sprite_dir = 1;
-        hit_effect_c(&n2, 551, 1.0, 10.0, &mut gore2, &mut dust2, &ctx(), &mut rng, &w);
+        hit_effect_c(&mut n2, 551, 1.0, 10.0, &mut gore2, &mut dust2, &ctx(), &mut rng, &w);
         assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 0);
         // Living -> nothing (the hit half is dust-only, the wiring wave's).
         let mut gore3 = GorePool::new();
         let mut dust3 = DustPool::new();
         let mut n3 = boss(100.0, 100.0, 232.0, 156.0);
         n3.hp = 50;
-        hit_effect_c(&n3, 551, 1.0, 10.0, &mut gore3, &mut dust3, &ctx(), &mut rng, &w);
+        hit_effect_c(&mut n3, 551, 1.0, 10.0, &mut gore3, &mut dust3, &ctx(), &mut rng, &w);
         assert_eq!(gore3.slots().iter().filter(|g| g.active).count(), 0);
     }
 }
