@@ -6645,7 +6645,8 @@ mod s1_l6_tests {
         // `ToggleHangingLantern` (`Wiring.cs:2817-2841`): the 2-tall sprite's
         // frameX ±18 keyed on the hit cell's frameX, SkipWire on both cells.
         // The bottom cell (10, 21) is the wired hit; the anchor row is
-        // `frameY / 18` reduced below 2 → row 20.
+        // `frameY / 18` reduced below 2 → row 20. Both cells share the lit
+        // state (frameX 0 unlit / 18 lit), so both flip together.
         let mut w = world();
         put(&mut w, 10, 20, 42, 0, 0);
         put(&mut w, 10, 21, 42, 0, 18);
@@ -6655,13 +6656,13 @@ mod s1_l6_tests {
         let mut wiring = Wiring::new();
         wiring.trip_wire(&mut w, 8, 21, 1, 1);
         assert_eq!(w.tile_frame_x(10, 20), 18, "the top cell flips +18");
-        assert_eq!(w.tile_frame_x(10, 21), 36, "the bottom cell flips +18");
+        assert_eq!(w.tile_frame_x(10, 21), 18, "the bottom cell flips +18");
         assert!(wiring.skip.contains(&(10, 20)), "SkipWire the top cell");
         assert!(wiring.skip.contains(&(10, 21)), "SkipWire the bottom cell");
-        // The return trip flips back (the hit cell's frameX 36 > 0 → −18).
+        // The return trip flips back (the hit cell's frameX 18 > 0 → −18).
         wiring.trip_wire(&mut w, 8, 21, 1, 1);
         assert_eq!(w.tile_frame_x(10, 20), 0);
-        assert_eq!(w.tile_frame_x(10, 21), 18);
+        assert_eq!(w.tile_frame_x(10, 21), 0);
     }
 
     #[test]
