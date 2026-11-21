@@ -400,3 +400,55 @@ the SAME live flag the rain spawn does — no stream coupling (the leaf
 physics rolls UpdateGores, the rain spawn rolls its own), so the
 families compose without ordering constraints.
 
+### 8.3 The leaf GORE types chain verify (item 3) — emit → gore-pool → draw
+
+The full chain from g68's cadence, verified end-to-end at this tip:
+
+1. **EMIT** (`foliage.rs:499-597`): the `draw_tree_foliage` top/branch
+   sites (`:443/:462/:479` — the C# :8121/:8166/:8214 order) roll
+   `emit_tree_leaves`; the 192/384 living-wood arm (`tiles.rs:1107-
+   1131`) carries the site-1 quarter-roll (wiring-3). The passStyle
+   comes from `tree_leaf_pass_style` (`foliage.rs:719-759`).
+2. **POOL** (`gore.rs:433-443` `new_gore_direct` → `new_gore`): the
+   SpecialAI-3 arm (`gore.rs:585-606`, Gore.cs:1391-1402) rolls the
+   four draws (vel X/Y, row, counter) and frames the leaf 32×8 (the
+   910-925/1113-1121/1248-1255/1257/1278 set, `gore_id.rs:30`); the
+   paint column rides `frame.current_column` (`foliage.rs:595`).
+3. **TICK** (`world.rs:642` gores phase → `gore.rs:1035` →
+   `update_leaf` :1541-1702): the Gore_UpdateLeaf port (the 14 g68
+   physics witnesses).
+4. **DRAW** (`draw.rs:1316` → `render/gore.rs:220`): the
+   `draws_in_front` gate (:133-142 — leaves are not IsDrip, always
+   front), the `gore_sheets` lookup (:239 — every Gore_<id> packed,
+   910/911 via STATIC_SHEET_NAMES, the rest via the enumeration
+   `assets.rs:80-97`), the 32-column `source_rect` (:39-44), the
+   `GetAlpha` tint. **The chain is CLOSED — no private leaf pool
+   remains** (the phase-1 retirement).
+
+**The g17 hallow-tables relationship (the keep-one flag):** g17
+(`3dec710dc`) landed `tr-core/tree.rs::tree_leaf` — the FULL
+`GetTreeLeaf` port incl BOTH hallow tables (the style-3 x%3 nine-entry
+table AND the style-20 x%6 eighteen-entry 1113-1121 table) + the
+`height_add = 5` ref-write + the `hollow_tree_foliage_style` reader
+(the `.wld` setBG(4) byte, `world.rs:121`). g68's `tree_leaf_pass_style`
+is a SIMPLIFIED TWIN: it lacks the style-20 arm (its comment says
+"unreachable today" — WRONG since the `.wld` load carries
+`hallow_bg_style` 2/3, `wld/sections/flags.rs:456`, and g17's
+`hollow_tree_foliage_style` maps 2|3 → 20 — a loaded vanilla hallow
+world DOES reach the style-20 table), lacks the
+`frameX in {22,44,66}` guard on the frame pick (harmless — the caller
+only feeds marker frames), and drops the height_add (the ambient shed
+never reads treeHeight — the C# `out var _` discards it too,
+TileDrawing.cs:7791). **Keep-one recommendation: g17's `tree_leaf`
+WINS at the merge** (the strict superset, the C#-complete tables, the
+world-aware hallow style; g17's own doc comment already flags the g68
+twin as "the style-20-unreachable simplification"); g68's
+`emit_tree_leaves` rebinds its one call site (`foliage.rs:526`) to
+`tree::tree_leaf(world, grass_x, marker.kind, marker.frame_x,
+marker.frame_y, ground).1` and the local twin DELETES. The g68
+`hallowed` range check (`:530`, 917..=925 | 1113..=1121) already
+covers BOTH tables' outputs — the rebind changes no gate. This is the
+C2-class leaf dedupe's FOURTH copy (the three `emit_living_tree_leaf`
+copies keep-one onto g68's foliage body per g31 §9.1; the passStyle
+TABLE keep-one is this new row — g17 canonical).
+
