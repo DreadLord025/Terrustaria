@@ -72,18 +72,24 @@ rest of wave 4 (d36/d39/d41+ bands, ~200 more NPC sheets forecast).
 
 | form | page 0 | page 1 | sheets on p1 | notes |
 |---|---|---|---|---|
-| **incremental skyline** (page 0 = HEAD base packed ALONE) | **8188** | **1924** | 317-385 | page-0 layout == today's, every existing UV unchanged |
-| incremental maxrects | 7988 | 1924 | same | page-0 repack unnecessary; skyline form wins on UV stability |
-| spill maxrects (cap 8192, overflow → fresh page) | 8192 | 700-1018 | 7031-7836 | most sheets move; page-0 UVs all change |
-| boundary skyline (pack unbounded, cut at 8192, re-pack tail) | 8163-8192 | 1232-1298 | 8868-8941 | below-boundary UVs stable, but tail is huge |
+| **boundary skyline** (pack unbounded, cut at 8192, re-pack tail) — CHOSEN | 8163-8192 | 1232-1298 | 8868-8941 | below-boundary UVs stable; this IS the Rust contract (§3 step 1) |
+| incremental skyline (page 0 = HEAD base packed ALONE) | 8188 | 1924 | 317-385 | UV-stable alternative; needs a pinned pre-W4 name set — rejected on maintainability |
+| incremental maxrects | 7988 | 1924 | same | page-0 repack unnecessary |
+| spill maxrects (cap 8192, overflow → fresh page) | 8192 | 700-1018 | 7031-7836 | smallest page 1, but maxrects is not the landed packer |
 
-**Chosen fix: the INCREMENTAL form with the landed skyline packer.**
-Page 0 keeps HEAD's exact layout (8188 px, the sheets-phase witness
-numbers stay valid); every W4 addition packs into page 1 (1924 px for the
-full 385-sheet worst case — 23.5% of a page). The merger's per-branch
-sheet additions are UV-neutral for everything already on main, the
-`build_ref` world-swap contract is preserved per page, and the d35
-deferred 12 + d40's 56 simply append to page 1's input list.
+**Chosen fix: a SECOND ATLAS PAGE with the landed skyline packer, in the
+boundary-split form** (pack unbounded as today, keep every rect entirely
+under the 8192 cap on page 0, re-pack the straddling/overflow tail into
+page 1). The incremental form (page 0 = HEAD base packed alone) is the
+measured UV-stable alternative — it keeps the sheets-phase witness
+numbers (8188) literally valid — but it requires pinning the pre-W4 name
+set forever, which 26 interleaving branches make unmaintainable. UV
+stability across builds is NOT a correctness requirement (every lookup
+is rebuilt from the atlas each build; nothing persists UVs), so the
+general form wins on maintainability. Its measured cost: page 0
+8163-8192, page 1 1232-1298 px — both pages far under the bound, with
+room for the rest of wave 4 (d36/d39/d41+ bands, ~200 more NPC sheets
+forecast). The d35 deferred 12 + d40's 56 simply join the input list.
 
 ## 2. Census: the single-page assumption (what the merger must touch)
 
@@ -99,19 +105,19 @@ texture left. Census (file:line):
 - `atlas.rs:56-61` — `Atlas {width, height, pixels, sheets}`: one pixel
   buffer. **Becomes `pages: Vec<AtlasPage>`** (`AtlasPage {height, pixels}`;
   width stays the shared 8192). `Atlas::build`/`build_ref` (atlas.rs:64-165)
-  pack page 0 exactly as today; sheets that don't fit the 8192 cap spill
-  to page 1 (same sort, same skyline, fresh bin). The incremental contract:
-  page 0's input is the HEAD enumeration, page 1's input is the additions —
-  but the IMPLEMENTATION should be the general cap-spill form (sort once,
-  fill page 0 to the cap, overflow → page 1), because the merger cannot
-  guarantee "HEAD first" ordering once 26 branches' const-list rows
-  interleave. **Measured consequence**: the general spill form moves most
-  sheets to page 1 (7031+); the incremental form keeps them. The merger
-  chooses: (a) general spill — simpler code, all UVs recomputed anyway
-  (they always are, per build); or (b) two-pass incremental — page 0 =
-  the pre-W4 name set pinned by a witness, page 1 = the rest. Both are
-  deterministic; (a) is recommended (no pinned name list to maintain).
-  The heights in §1's table bound both forms.
+  run the skyline pass UNBOUNDED exactly as today, then split: every rect
+  entirely under the 8192 cap keeps its page-0 position; the straddling /
+  overflow tail re-packs into page 1 (same sort order restricted to the
+  tail, same skyline, fresh bin). This is the measured `boundaryTwoPage`
+  form (§1 table: page 0 8163-8192, page 1 1232-1298). It is the general
+  boundary-split shape — the merger cannot guarantee "HEAD first" ordering
+  once 26 branches' const-list rows interleave, so no pinned pre-W4 name
+  set is maintained. UV stability across builds is not a correctness
+  requirement (every lookup is rebuilt from the atlas each build; nothing
+  persists UVs). The tail set is a pure function of the input list, so the
+  form is deterministic. The incremental alternative (page 0 = HEAD base
+  alone, 8188/1924) is recorded in §1's table but rejected on
+  maintainability.
 - `atlas.rs:178-201` — `frame_is_opaque`/`rect_is_opaque` index
   `self.pixels` with `self.width` stride: **index `pages[sheet.page]`**.
 - `sprite.rs:264-283` — ONE `create_texture_with_data` (D2,
@@ -126,12 +132,17 @@ texture left. Census (file:line):
   main atlas page 0 (every existing `layer: 0` push site — 20+ in
   sprite.rs — stays valid), extend to `layer < MAIN_PAGE_COUNT` = main
   page `layer`, `layer >= MAIN_PAGE_COUNT` = font layer
-  `layer - MAIN_PAGE_COUNT`. Alternative (cleaner): a separate
-  `page: u32` instance field + a `font` flag — but that grows the
-  instance layout (11 attributes today) and touches every push site;
-  the layer-range encoding touches ONLY `sample_tex` + the UV producers.
-  **Recommended: layer-range encoding with a `MAIN_PAGES` uniform**
-  (or a compile-time constant 2, bumped when page 3 arrives).
+  `layer - MAIN_PAGE_COUNT`. **The font offset lands at ONE chokepoint**:
+  `push_font_glyph` (sprite.rs:1088-1109) is the only producer of font
+  instances (its `layer` arg is the 1-based `PageRect.layer` from
+  font_atlas.rs:149-153); it adds `MAIN_PAGE_COUNT - 1` so font page 1
+  maps to instance layer `MAIN_PAGE_COUNT`. No font_atlas.rs change, no
+  caller change. Alternative (cleaner): a separate `page: u32` instance
+  field + a `font` flag — but that grows the instance layout (11
+  attributes today) and touches every push site; the layer-range
+  encoding touches ONLY `sample_tex`, `push_font_glyph`, and the UV
+  producers. **Recommended: layer-range encoding with a `MAIN_PAGES`
+  uniform** (or a compile-time constant 2, bumped when page 3 arrives).
 - `sprite.rs:494-522` — the `sheets` UV map, `font_uv0/1`, `white_uv`:
   divide by `atlas.width/height` — **per-page height**
   (`pages[rect.page].height`); `__white`/`__font` stay on page 0.
@@ -153,8 +164,8 @@ texture left. Census (file:line):
 ### tr-app (the wide surface — mechanical, ~300 sites)
 - `assets.rs:2311` — `Lookups.atlas_size: (u32, u32)`: **add
   `page_heights: Vec<u32>`** (or `atlas_sizes: Vec<(u32,u32)>`); every
-  `uv_rect(rect, self.atlas_size, …)` call (30 sites in assets.rs,
-  `uv_rect` def at :3354-3366) reads `page_heights[rect.page]`.
+  `uv_rect(rect, self.atlas_size, …)` call (23 sites in assets.rs, 30
+  across tr-app; `uv_rect` def at :3354-3366) reads `page_heights[rect.page]`.
   `uv_rect`'s signature gains the page height (or takes `&Lookups`).
 - `assets.rs:3347-3350` — the other UV helper (`sheet_frame_uv`-shaped,
   divides by `atlas.width/height`): same per-page fix.
@@ -178,9 +189,12 @@ texture left. Census (file:line):
   becomes `lookups.page_heights[rect.page]`. `aw` is unchanged (8192 on
   every page). ~30 distinct files, one pattern.
 - `app/mod.rs:4692-4705` — the boot build + the `> 8192` warn: the warn
-  becomes per-page (a page over 8192 is now a BUG, not a warning — the
-  spill form guarantees the cap); `app/mod.rs:4880,4904` index
-  `atlas.pixels` for the opacity pre-pass → `pages[rect.page].pixels`.
+  becomes per-page. NOTE: the boundary form does NOT by itself guarantee
+  page 1 ≤ 8192 (it guarantees page 0 ≤ 8192; page 1 is the re-packed
+  tail, measured ≤ 1298 px for the whole W4 union). The build must ASSERT
+  every page ≤ 8192 and, if a future tail ever exceeds it, recurse the
+  split into page 2 (the array form makes N pages free). `app/mod.rs:4880,4904`
+  index `atlas.pixels` for the opacity pre-pass → `pages[rect.page].pixels`.
 - `app/loop.rs:71`, `app/mod.rs:2776` — `SpriteRenderer::new(gpu, atlas, …)`:
   signature unchanged (the Atlas carries its pages).
 - `app/saveglue.rs:947` — `Atlas::build(Vec::new(), 8192)`: still valid
@@ -196,10 +210,10 @@ texture left. Census (file:line):
   now asserts page 0 ≤ 8192 AND page 1 ≤ 8192.
 - `render/entities.rs:3758-3891` — the d35 packing audit: unchanged in
   spirit (the 21 packed / 12 deferred split), but the deferred 12 become
-  PACKABLE once page 1 exists — the merger wave should admit them (they
-  cost page-1 height only; measured: +0 px on page 0, page 1 1924 → 1924
-  in the incremental form because the deferred sheets are already in the
-  385-addition worst case).
+  PACKABLE once page 1 exists — the merger wave should admit them. In the
+  chosen boundary-split form they join the sorted input; the measured worst
+  case (+d35deferred scenario) is skyline 9478 unbounded → page 0 8192 /
+  page 1 1298 (boundary form), both under the bound.
 - `ui/bestiary.rs:2077,2197-2204`, `render/gore.rs:379-413` — synthetic
   `(8192, 8192)` atlas sizes in unit tests: stay valid for page-0 rects.
 
@@ -208,9 +222,10 @@ texture left. Census (file:line):
 Order of operations (each step independently mergeable):
 
 1. **tr-render first** (the deep module): `SheetRect.page`, `Atlas.pages`,
-   cap-spill `build_ref` (skyline unchanged, page 0 fills to 8192, overflow
-   re-packs page 1 with the same sort order restricted to the overflow
-   set — deterministic: the overflow set is a pure function of the input),
+   boundary-split `build_ref` (skyline unchanged + unbounded; rects entirely
+   under the 8192 cap keep their page-0 position, the straddling/overflow
+   tail re-packs page 1 with the same sort order restricted to the tail —
+   deterministic: the tail set is a pure function of the input),
    array texture + D2Array binding + `sample_tex` layer-range encoding,
    bake-at-push half-texel inset, per-page UV normalization in the
    renderer's `sheets` map. All atlas.rs witnesses extended to 2 pages.
@@ -231,13 +246,14 @@ Order of operations (each step independently mergeable):
    SOME page; the packing audit witness (`render/entities.rs`) extends
    to assert page membership.
 5. **Re-measure**: `node tools/_d35_repack_measure.js` after the merge —
-   the skyline column must show page 0 ≤ 8192 AND page 1 ≤ 8192 for every
-   scenario. The harness's `spillTwoPage`/`boundaryTwoPage` forms are the
-   reference; the Rust cap-spill form must match `spillTwoPage`'s page
-   assignment shape (not necessarily its maxrects geometry — the Rust
-   packer is skyline; the skyline spill form is the boundary form with
-   the cap applied DURING packing, which the harness can simulate by
-   capping the skyline bin height — a follow-up harness extension).
+   every scenario must show page 0 ≤ 8192 AND page 1 ≤ 8192. The harness's
+   `boundaryTwoPage` (skyline) is the measured reference: pack unbounded,
+   keep every rect entirely under the cap on page 0, re-pack the tail.
+   The Rust implementation may apply the cap DURING packing (a sheet
+   whose placement would exceed 8192 goes to page 1) — a different page
+   assignment whose heights are NOT yet measured; the boundary numbers
+   (page 1 ≤ 1298 px) are the evidence-backed bound, and any during-
+   packing variant must be re-measured in the harness before landing.
 
 **What NOT to do**: do not swap skyline for maxrects (measured worse on
 the union, chaotic ordering); do not compress the atlas to BC2/BC3 to
@@ -246,11 +262,12 @@ depends on exact RGBA8 texels; BC lossy compression breaks pixel
 equality); do not raise the bound past 8192 (the strict-GPU limit is
 real: `max_texture_dimension_2d` on the target adapters).
 
-**Memory cost**: page 1 at 1924 px × 8192 × 4 B ≈ 63 MB (incremental
-form) or ~33 MB (spill form, 1018 px). Page 0 stays ~268 MB. Total
-~300-330 MB — the font array already costs 256 MB/layer (BC2, 8192²),
-so this is within the existing budget shape. The spill form's smaller
-page 1 is a secondary argument for it.
+**Memory cost**: page 0 at 8192 px × 8192 × 4 B ≈ 268 MB; page 1 at
+≤1298 px (the chosen skyline boundary-split form) ≈ 43 MB. Total
+~311 MB — the font array already costs 256 MB/layer (BC2, 8192²), so
+this is within the existing budget shape. (The incremental alternative
+would be 268 + 63 MB; the maxrects spill form 268 + 33 MB — all the same
+order.)
 
 ## 4. The union list (407 names, owner branches, priority order)
 
