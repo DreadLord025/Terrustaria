@@ -39327,7 +39327,8 @@ then overwrites position/velocity — zero velocity survives.
   the update, so the flag stays set and emission stops — the port's
   `!game_paused` approximates the steady state, not the mechanism.
 * **The per-rebuild emission cadence — the exact d60 wiring contract
-  (W4-g68 deferred-2).** C# runs the emission bodies from THREE draw-pass
+  (W4-g68 deferred-2; site 1's leaf arm GATED by wiring-3, 2026-11-21).**
+  C# runs the emission bodies from THREE draw-pass
   sites, each with its own cadence:
   1. `DrawSingleTile` (`TileDrawing.cs:965-968`): the
      `_isActiveAndNotPaused && (!Lighting.UpdateEveryFrame ||
@@ -39370,6 +39371,24 @@ then overwrites position/velocity — zero velocity survives.
   port field cleared per world tick / set after the first draw. Do NOT
   widen the G6 key to force per-frame rebuilds — that re-tiles the whole
   world every frame (the cache exists to avoid exactly that).
+  **Wiring-3 cadence verify (2026-11-21):** the frequency chain is 1:1 —
+  `wind::leaf_frequency` matches `UpdateLeafFrequency`
+  (`TileDrawing.cs:7719-7771`) band-for-band incl. the ×7, and
+  `emit_tree_leaves`' hallowed /2 → height-10000 → branch ×3 order matches
+  `:7816-7833` exactly (`Main.WindForVisuals` = `windSpeedCurrent`,
+  `Main.cs:2823`, so the live re-derivation equals the per-update tick).
+  The DIVERGENCE found + fixed: the inline 192/384 arm lacked site 1's
+  quarter-roll — the C# wraps the whole `DrawTiles_EmitParticles` call
+  (the leaf arms included) in the throwaway
+  `FastRandom(TileFrameSeed).WithModifier(x,y).Next(4)==0` gate
+  (`:965-968`), so the port shed 4× too often. The arm now carries the
+  gate (the `flame::tile_frame_seed_at` 5-draw-cycle schedule, the
+  throwaway roll never steps `leaf_rng`); the witness pins the gate
+  order + the 1/14000 dead-calm rate + the seed schedule. STILL the
+  d60 wiring wave's: the per-frame pass move (the cached-range cadence
+  deviation above), the persistent `_rand` for the leaf gates (the drip
+  arm's `App.tile_draw_rand` is the precedent), and the DrawnThisUpdate
+  flag gate.
 * ~~`Gore_UpdateLeaf`'s lava arm five-dust puff stays dropped~~ —
   **WIRED (W4-g68 deferred-1).** `GorePool::update` now takes the
   `DustPool` + `SpawnCtx` seam (`None` keeps the drop for pool-only

@@ -1089,7 +1089,30 @@ pub(crate) fn draw_tiles(
                     // open downwind cells in strong wind, the paint column
                     // rides the gore frame, and type 384 sheds 914.
                     // `TileDrawing.cs:6848-6855` + `:7549-7592`.
-                    if emit_effects && matches!(tile.kind, 192 | 384) {
+                    // W4-g68 wiring-3: the site-1 quarter-roll gate
+                    // (`DrawSingleTile`, `:965-968`) — the C# wraps the
+                    // WHOLE `DrawTiles_EmitParticles` call (the 192/384
+                    // arms included) in `_isActiveAndNotPaused &&
+                    // (!Lighting.UpdateEveryFrame || FastRandom(
+                    // Main.TileFrameSeed).WithModifier(x,y).Next(4)==0)`.
+                    // `UpdateEveryFrame` (`Lighting.cs:77-87`) is false
+                    // whenever render targets are required (the normal
+                    // path), so the quarter-roll normally APPLIES: the
+                    // shed rate is frequency/4 × 1/4 per eligible draw,
+                    // and the eligible set rotates on the 5-draw
+                    // TileFrameSeed cycle (`Main.cs:61719-61723` — the
+                    // port's `flame::tile_frame_seed_at` schedule). The
+                    // roll is a THROWAWAY per-tile FastRandom: it does
+                    // NOT step `leaf_rng`.
+                    if emit_effects
+                        && matches!(tile.kind, 192 | 384)
+                        && tr_core::tile_light::FastRandom::new(
+                            tr_core::flame::tile_frame_seed_at(anim_time),
+                        )
+                        .with_modifier(tx, ty)
+                        .next(4)
+                            == 0
+                    {
                         let max_value =
                             tr_core::wind::leaf_frequency(wind.speed_current) / 4;
                         if leaf_rng.next_range(0, max_value) == 0 {
@@ -1794,6 +1817,52 @@ fn draw_tile_flames(
 mod tests {
     use super::*;
     use tr_core::wind::Wind;
+
+    /// W4-g68 wiring-3: the site-1 leaf cadence
+    /// (`TileDrawing.cs:965-968` → `:6848-6855`). The C# gates the WHOLE
+    /// `DrawTiles_EmitParticles` call on the THROWAWAY
+    /// `FastRandom(Main.TileFrameSeed).WithModifier(x,y).Next(4)==0`
+    /// quarter-roll (the normal render-target path —
+    /// `Lighting.UpdateEveryFrame` is false, `Lighting.cs:77-87`), THEN
+    /// the 192/384 arms roll `_rand.Next(_leafFrequency/4)`. The port's
+    /// inline arm must carry BOTH gates, the quarter-roll FIRST, and the
+    /// throwaway roll must not step `leaf_rng`.
+    #[test]
+    fn w4_g68_the_leaf_arm_carries_the_site1_quarter_roll() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let arm = &body[body.find("matches!(tile.kind, 192 | 384)").unwrap()..];
+        let arm = &arm[..arm.find("draw_tile_flames").unwrap()];
+        let quarter = arm
+            .find("tile_frame_seed_at(anim_time)")
+            .expect("the throwaway TileFrameSeed quarter-roll");
+        let with_mod = arm.find(".with_modifier(tx, ty)").expect("WithModifier(x,y)");
+        let next4 = arm.find(".next(4)").expect("Next(4)");
+        let freq = arm
+            .find("leaf_frequency(wind.speed_current) / 4")
+            .expect("the frequency/4 gate");
+        assert!(
+            quarter < freq && with_mod < freq && next4 < freq,
+            "the quarter-roll precedes the frequency gate (the C# call-site wrap)"
+        );
+        // The throwaway is a fresh FastRandom — never `leaf_rng` (the
+        // `_rand` stand-in): the C# roll does not step the gate stream.
+        let roll = &arm[arm.find("FastRandom::new(").unwrap()..next4];
+        assert!(
+            !roll.contains("leaf_rng"),
+            "the quarter-roll is THROWAWAY — leaf_rng steps only on the frequency gate"
+        );
+        // The rate census: frequency/4 × 1/4 — at dead calm the C# shed
+        // chance per eligible tile-draw is 1/(14000/4) × 1/4 = 1/14000.
+        assert_eq!(tr_core::wind::leaf_frequency(0.0) / 4, 3500);
+        // The 5-draw seed cycle: the port's schedule advances the seed 12
+        // times per second (60 fps / 5), the flame pass's convention.
+        let s0 = tr_core::flame::tile_frame_seed_at(0.0);
+        let s1 = tr_core::flame::tile_frame_seed_at(1.0 / 12.0);
+        assert_eq!(s1, tr_core::flame::random_next_seed(s0));
+        assert_eq!(tr_core::flame::tile_frame_seed_at(4.9 / 60.0), s0);
+    }
 
     /// S1-G-1f draw-order witness: the back-rope hook sits at the C#
     /// dispatch position — AFTER `DrawSingleTile`'s visibility gates
