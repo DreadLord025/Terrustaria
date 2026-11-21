@@ -22842,6 +22842,38 @@ impl ProjectilePool {
                     }
                 }
             }
+            // W4-g3 DOC-SWEEP — `Damage_GetProjectileSpecificDamageMultiplier`
+            // (`Projectile.cs:14432-14566`), the per-NPC `num6 = (int)((float)
+            // this.damage * projectileSpecificDamageMultiplier)` (`:12852`)
+            // BEFORE the crit/tag/DamageVar block. The flail family's ×1.2/×2
+            // (`:14447-14465`) is the `flail_damage_adjust` above; the two
+            // remaining rowed+armed kinds' multipliers land here.
+            // `:14470-14548` — the 968 Pew-matic Horn's 24-case `ai[1]` table
+            // (the note pitch picks the damage scale). `(int)this.ai[1]`
+            // truncates; an out-of-range pitch keeps `num = 1f` (the switch's
+            // default — no case writes it).
+            if p.kind == PEW_MATIC_SHOT {
+                let mult = match p.ai[1] as i32 {
+                    0 | 2 | 17 => 1.5f32,
+                    3 => 0.1,
+                    7 => 0.25,
+                    9 => 0.75,
+                    10..=16 => 0.5,
+                    18 => 1.6,
+                    19 => 1.8,
+                    20 | 23 => 1.9,
+                    21 => 1.7,
+                    22 => 2.0,
+                    _ => 1.0,
+                };
+                damage = (damage as f32 * mult) as i32;
+            }
+            // `:14549-14552` — the 533 Deadly Sphere's dash wind-up:
+            // `localAI[2] >= 40f` halves the damage (the spin-up counter the
+            // `ai_twins_minion` arm decays toward zero, `:29640`).
+            if p.kind == DEADLY_SPHERE && p.local_ai[2] >= 40.0 {
+                damage = (damage as f32 * 0.5) as i32;
+            }
             let touches = if is_whip {
                 let (nw, nh) = n.size();
                 tr_core::whip::sweep_hits(
@@ -23131,9 +23163,25 @@ impl ProjectilePool {
             // convention (false until the NPC debuff scan lands here).
             if let Some(pl) = player.as_deref() {
                 let num5 = pl.get_armor_penetration(is_whip) + self.slots[slot].armor_penetration;
+                // W4-g3 DOC-SWEEP — `Damage_PVE_Inner`'s `armorPenetrationPercent`
+                // (`Projectile.cs:13232-13235`): the 688/689/690 DD2 Lightning
+                // Aura sentries ignore the target's defense entirely (`= 1f`)
+                // unless the target is the Dungeon Guardian (type 68, unported
+                // — the gate is always true for the ported kinds) or its
+                // defense is ≥ 999. The percent feeds `checkArmorPenetration`'s
+                // `defense * percent` term (`NPC.cs:81166`), so 1.0 adds the
+                // full defense back to the penetration.
+                let armor_pen_percent = if matches!(self.slots[slot].kind,
+                    LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3)
+                    && npcs[idx].defense() < 999
+                {
+                    1.0
+                } else {
+                    0.0
+                };
                 dmg += tr_core::damage::check_armor_penetration(
                     num5,
-                    0.0,
+                    armor_pen_percent,
                     npcs[idx].defense(),
                     false,
                     false,
@@ -23159,6 +23207,16 @@ impl ProjectilePool {
             // melee-only ones never fire for an arrow by construction.
             crate::special_arrows::status_npc(self.slots[slot].kind, &mut npcs[idx], rng);
             self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
+            // W4-g3 DOC-SWEEP — `Damage_PVE_Inner`'s type-317 arm
+            // (`Projectile.cs:13593-13597`): the Raven's hit re-arms its dive
+            // (`ai[1] = -1`, the `ai_raven` arm's `ai[1] == -1 → 17` countdown
+            // restarts). The C# site sits after StatusNPC/tag (`:13580-13584`)
+            // and before the knockback direction (`:13598`), pre-strike.
+            if self.slots[slot].kind == 317 {
+                let pj = &mut self.slots[slot];
+                pj.ai[1] = -1.0;
+                pj.net_update = true;
+            }
             let expert = player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
             let landed = Npc::strike_projectile(
                 npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,
@@ -23182,6 +23240,16 @@ impl ProjectilePool {
                 if let Some(cue) = npcs[idx].kind.hit_sound() {
                     self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
                 }
+            }
+            // W4-g3 DOC-SWEEP — `Damage_PVE_Inner`'s type-1088 arm
+            // (`Projectile.cs:13959-13962`): the Acorn Slingshot's acorn dies
+            // on its first NPC hit (`this.Kill()`). The C# site sits after the
+            // whip per-type switch (`:13904-13956`) and BEFORE the immunity
+            // application (`:13967`), outside the landed gate (it runs on
+            // every contact that reached this point). The port's `kill`
+            // deactivates the slot; the death hook resolves the Kill arms.
+            if self.slots[slot].kind == 1088 {
+                self.kill(slot);
             }
             // `Projectile.cs:13967-14119`: the immunity application, in the
             // C#'s if/else order. The id-static gate reads the CURRENT
