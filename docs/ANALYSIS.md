@@ -6793,6 +6793,29 @@ re-flag is itself stale — g88 fold 7 landed 33 min before it (135 §8.4's
 census). No `g87b-143` ref exists on origin; the re-adjudication is
 a6's own 138 §10.
 
+**W4-g90 RETIRE — the 68-vs-106 union receipt (research/135 §10)**: the
+68-byte five-way table above is itself SUPERSEDED — c39's research/114
+§8 (tip `8e0946ff0`, read at retire) publishes the NINE-way **106-byte**
+fixed head: 138 §5a's five claimants miss FOUR pushed v18 writers (g72's
+31-B cave block `4a75715ef`, g69's crimson byte, c39's 5-B moon quintet,
+d109's dense W×H). Under the 106 head **g90's pair seats 104/105 — the
+LAST fixed-head block** (the c39-table claim verified against the table
+AND `WorldFile.cs:1392-1394/:1407-1408` directly: the books are the last
+C#-backed flag rows the union seats; d109's dense variants follow at
+106). The journey 19/20 → 22/23 → 104/105; every truncation constant
+moves **+106** (the six sites re-pinned at this tip: `save.rs:1202/
+:1314/:1345/:1532/:1555/:1584`, comments-only seat notes landed). The
+f44/g71 consolidation reads: f44 FINAL `bdd1cc79a` (132 §3-L3) seats a
+97-byte head missing the quintet+licenses with its own 97/98 off-by-one
+(identity `[54..97]` = a 43-B span for 44 B); g71 FINAL `f08e8d41e`
+(92-doc-sweep-bg §1 — NOT the roadmap-reverification file) seats 21
+bytes, 85 short. c39 §12's CORRECTION-input broadcast stands; this lane
+CONCURS — the merger takes 114 §8's head, never a 97/98/21/68 head that
+drops a claimant. One order nuance recorded (135 §10e): the empress
+`.wld` row is `:1395`, AFTER the licenses `:1392-1394`, while 114 §8
+seats empress [100] before the licenses [101..104] — the block set and
+the g90 seat are identical under both readings; no g90 byte moves.
+
 **W4-g90 artisan-loaf consumer census (`33d4b1625`)**: the
 `ateArtisanBread` full-source census is exactly four families — the
 use arm (`Player.cs:45218-45221`), `AdjTiles`' TB=4 crafting reach

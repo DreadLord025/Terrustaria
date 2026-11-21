@@ -439,6 +439,12 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // (`combat_book_was_used`) rides the .wld flags half only (its .trwld
     // carrier is the recorded remainder — the i35 fishing context reads
     // the .wld-loaded field).
+    // UNION SEAT (research/135 §10, the 106-byte nine-way receipt): at the
+    // merge this pair rides offsets [104]/[105] of c39 research/114 §8's
+    // 106-byte fixed head — the LAST fixed-head block before d109's dense
+    // variants ([106..]); the journey 19/20 (135 §4, 21-byte) → 22/23
+    // (138 §5a, 68-byte) → 104/105 (114 §8, 106-byte). This branch keeps
+    // its own 2-byte tail until the union lands (the standing decision).
     w.write_all(&[
         u8::from(world.combat_book_volume_two_was_used),
         u8::from(world.peddlers_satchel_was_used),
@@ -828,7 +834,9 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     // v18: the combat-book-two + Peddler's-Satchel world flags (W4-g90
     // lane 7 — the v15 queen-slime byte's shape). A pre-v18 file loads
     // both false (the fresh-world default; the C# reads them from .wld
-    // v259/v260, `WorldFile.cs:2404-2405`).
+    // v259/v260, `WorldFile.cs:2404-2405`). UNION SEAT: [104]/[105] of
+    // the 106-byte nine-way head at the merge (research/135 §10 / c39
+    // research/114 §8 — the writer's seat note).
     if version >= 18 {
         world.combat_book_volume_two_was_used = r.u8()? != 0;
         world.peddlers_satchel_was_used = r.u8()? != 0;
@@ -1190,7 +1198,8 @@ mod tests {
         // fixed flags block + four empty colour counts + one empty entity count +
         // one empty chest count + one empty banner count + one empty bestiary count.
         // (+1: the v17 downedFishron byte rides the flags block's tail;
-        // +2: the v18 book-two/satchel pair, W4-g90 lane 7.)
+        // +2: the v18 book-two/satchel pair, W4-g90 lane 7 — union re-pin:
+        // the trailing +2 becomes +106, research/135 §10.)
         buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1 + 2));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
@@ -1303,6 +1312,7 @@ mod tests {
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
         // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
         // the v17 fishron flag (1) and the v18 book-two/satchel pair (2).
+        // Union re-pin: the trailing +2 becomes +106 (research/135 §10).
         let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 2;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
@@ -1331,7 +1341,8 @@ mod tests {
     /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
     /// for an empty rain event), the v15 Queen Slime flag byte, the v16
     /// five style bytes, the v17 downedFishron byte (S1-D-3 W-9) and the
-    /// v18 book-two + satchel flag pair (W4-g90 lane 7).
+    /// v18 book-two + satchel flag pair (W4-g90 lane 7). Union re-pin: the
+    /// trailing +2 becomes +106 (research/135 §10, the nine-way head).
     const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 2;
 
     fn back_flags(buf: &[u8]) -> u16 {
@@ -1519,7 +1530,8 @@ mod tests {
         // A pre-v15 file (the tail truncated, the version patched) loads
         // with the flag down — the vanilla's own reset arm (`:2376`).
         // The v16 style bytes + the v17 fishron byte + the v18 book-two/
-        // satchel pair ride behind the v15 flag (8 bytes).
+        // satchel pair ride behind the v15 flag (8 bytes). Union re-pin:
+        // the trailing -2 becomes -106 (research/135 §10).
         let mut v14 = buf.clone();
         v14.truncate(v14.len() - 1 - 5 - 1 - 2);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
@@ -1542,7 +1554,8 @@ mod tests {
         assert!(back.combat_book_volume_two_was_used, "book two survives");
         assert!(back.peddlers_satchel_was_used, "the satchel survives");
         // A pre-v18 file (the pair truncated, the version patched) loads
-        // both false — the version gate, not a length guess.
+        // both false — the version gate, not a length guess. Union re-pin:
+        // the -2 becomes -106 (research/135 §10, the nine-way head).
         let mut v17 = buf.clone();
         v17.truncate(v17.len() - 2);
         v17[8..12].copy_from_slice(&17u32.to_le_bytes());
@@ -1572,7 +1585,8 @@ mod tests {
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
         // (+1: the v17 downedFishron byte rides the flags block's tail;
-        // +2: the v18 book-two/satchel pair, W4-g90 lane 7.)
+        // +2: the v18 book-two/satchel pair, W4-g90 lane 7 — union re-pin:
+        // the trailing +2 becomes +106, research/135 §10.)
         buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 2));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
