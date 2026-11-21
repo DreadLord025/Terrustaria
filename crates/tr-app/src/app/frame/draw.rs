@@ -661,6 +661,11 @@ impl App {
                         // port `oldDrawWater`'s true-store (`:57938`), so the
                         // flag rides false; `WaterfallManager.Draw` clears it
                         // at `:1125` either way.
+                        // `WaterfallManager.Draw`'s head (`WaterfallManager.cs:1120`):
+                        // the `_shouldShowInvisibleBlocksAndWalls` latch GetAlpha's
+                        // default arm reads (`:1037`) — the same value the light
+                        // params carry (`Main.cs:58023-58030`).
+                        waterfall.set_show_invisible(params.draw_invisible_walls);
                         let (lights, waterfall_scan, lavafall_scan) = waterfall.draw(
                             world,
                             light,

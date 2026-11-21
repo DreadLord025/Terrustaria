@@ -60,6 +60,68 @@ pub struct Listener {
     pub server: bool,
 }
 
+/// `Main.Ambience`'s per-loop tick (`Main.cs:13466-13508`) + the
+/// `LegacySoundPlayer` case-34/35 volume math (`:376-397` attenuation walk,
+/// `:419-422` ambient scaling, `:1249-1307` strength/50 × the 0.2/0.65
+/// multiplier × `(1 - shimmerAlpha)`).
+///
+/// `strength <= 0` re-plays at the CAMERA CENTRE with strength 0 — the
+/// `Main.cs:13484`/`:13506` stop arm (the loop's volume falls to 0 and the
+/// sink stops). The `(int)` casts of `Main.cs:13477`/`:13500` truncate the
+/// triple before the walk. Out of attenuation range the C# falls out of the
+/// `flag` block WITHOUT touching the live loop — `None` means "leave the
+/// loop at its last volume", not "stop it". The pan divides by the FIXED
+/// `MaxWorldViewSize.X * 0.5` (960, `Main.cs:66714`), not the window width.
+///
+/// The lavafall channel's `ambientLava` blend (`Main.cs:13488-13497`) is not
+/// ported (`Main.ambientLava*` stays at the load reset), so the caller feeds
+/// the lavafall triple alone.
+#[allow(clippy::too_many_arguments)]
+pub fn liquid_ambience(
+    strength: f32,
+    x: f32,
+    y: f32,
+    mult: f32,
+    camera: (f32, f32),
+    ambient_volume: f32,
+    quiet_or_menu: bool,
+    shimmer_alpha: f32,
+) -> Option<(f32, f32)> {
+    // `Main.cs:13475-13486` / `:13498-13506`: strength > 0 plays at the
+    // triple; otherwise the stop arm plays at the camera centre, strength 0.
+    let (sx, sy, ss) = if strength > 0.0 {
+        (x, y, strength)
+    } else {
+        (camera.0, camera.1, 0.0)
+    };
+    // `(int)Main.ambient*fallX/Y/Strength` (`Main.cs:13477`/`:13500`).
+    let (px, py, ps) = (sx as i32 as f32, sy as i32 as f32, ss as i32);
+    let sentinel = px == -1.0 || py == -1.0;
+    let dx = px - camera.0;
+    let dy = py - camera.1;
+    let dist = (dx * dx + dy * dy).sqrt();
+    if !sentinel && dist >= SOUND_ATTENUATION_DISTANCE {
+        // `LegacySoundPlayer.cs:392-397`: flag stays false → the case never
+        // runs → the live loop is untouched.
+        return None;
+    }
+    let (atten, pan) = if sentinel {
+        (1.0, 0.0)
+    } else {
+        (
+            1.0 - dist / SOUND_ATTENUATION_DISTANCE,
+            (dx / (MAX_WORLD_VIEW_WIDTH * 0.5)).clamp(-1.0, 1.0),
+        )
+    };
+    // `:419-422`: the ambience slider, QuietAmbientSounds and gameMenu.
+    let atten = atten * ambient_volume * if quiet_or_menu { 0.0 } else { 1.0 };
+    // `:1251-1256` / `:1281-1286`: strength/50 clamped to 1, the per-channel
+    // multiplier, the shimmer mute.
+    let strength_factor = (ps as f32 / 50.0).min(1.0);
+    let volume = atten * strength_factor * mult * (1.0 - shimmer_alpha);
+    Some((volume, pan))
+}
+
 /// `LegacySoundPlayer.PlaySound(int type, int x, int y, int Style, float volumeScale)`
 /// (`LegacySoundPlayer.cs:360`), reduced to what decides whether and how loud a cue
 /// plays. The per-type instance bookkeeping, pitch randomisation and the remaining
@@ -673,6 +735,7 @@ fn s1_e_24_the_perceived_volume_is_the_16609_power() {
     // volume sits below it (`0.5^1.66 = 0.316` — the exponent is above 1).
     assert!(perceived_volume(0.5) < 0.5);
 }
+
 }
 
 #[test]

@@ -45,8 +45,20 @@ pub struct WaterfallDraw {
     pub source: [i32; 4],
     /// `SpriteEffects.FlipHorizontally`.
     pub flip: bool,
-    /// Premultiplied-by-opacity tint, matching `Color * alpha`.
+    /// Premultiplied-by-opacity tint, matching `Color * alpha`. The shimmer
+    /// fall (type 25) DISCARDS it: `WaterfallManager.DrawWaterfall(int, ...)`
+    /// (`WaterfallManager.cs:972-980`) replaces the colour with the
+    /// `SetShimmerVertexColors` base/sparkle pair — the consumer rebuilds it
+    /// from [`Self::cell`] + [`Self::opacity`].
     pub color: [f32; 4],
+    /// The walked cell `(num13, num14)` the `DrawWaterfall` overload receives
+    /// (`WaterfallManager.cs:969`): the shimmer vertex colours sample
+    /// `GetCornerColors(x, y)` and the per-corner wave functions here.
+    pub cell: [i32; 2],
+    /// The overload's `opacity` argument — `GetAlpha`'s result, NOT the
+    /// stylized tint. `SetShimmerVertexColors` / `_Sparkle` scale the base and
+    /// sparkle colours by it (`WaterfallManager.cs:975`/`:978`).
+    pub opacity: f32,
 }
 
 /// A `WaterfallManager.TrySparkling` spawn: the `Dust.NewDust` position in world
@@ -142,6 +154,11 @@ pub struct WaterfallManager {
     /// frame in the fixed pre-draw phase (deterministically, whether or not the
     /// G6 world range rebuilds); the tile pass consumes the buffered quads.
     pending_quads: Vec<WaterfallDraw>,
+
+    /// `WaterfallManager._shouldShowInvisibleBlocksAndWalls` (`:74`): the
+    /// static latch `Draw()` refreshes per frame (`:1120`) and `GetAlpha`
+    /// reads (`:1037`). False until the app latches it.
+    show_invisible_blocks_and_walls: bool,
 }
 
 impl Default for WaterfallManager {
@@ -179,6 +196,7 @@ impl WaterfallManager {
             disco_style: 0,
             pending_sparkles: Vec::new(),
             pending_quads: Vec::new(),
+            show_invisible_blocks_and_walls: false,
         }
     }
 
@@ -444,6 +462,15 @@ impl WaterfallManager {
         }
     }
 
+    /// `WaterfallManager.Draw`'s head latch (`WaterfallManager.cs:1120`):
+    /// `_shouldShowInvisibleBlocksAndWalls = Main.ShouldShowInvisibleBlocksAndWalls()`
+    /// — read by `GetAlpha`'s default arm (`:1037`) so the Echo coating /
+    /// monolith view keeps the wall damp. The app passes its
+    /// `LightParams::draw_invisible_walls` (`Main.cs:58023-58030`).
+    pub fn set_show_invisible(&mut self, show: bool) {
+        self.show_invisible_blocks_and_walls = show;
+    }
+
     /// `WaterfallManager.Draw` (`WaterfallManager.cs:1118-1174`): resets
     /// `stopAtStep` and runs one `DrawWaterfall(style, liquidAlpha[i])` pass per
     /// water style with a non-zero alpha. The water-style index maps to the
@@ -593,7 +620,10 @@ fn any_liquid_kind(kind: LiquidKind, tiles: &[&Tile; 3]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA};
+    use crate::tile::{
+        FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_INACTIVE, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA,
+        FLAG_LIQUID_SHIMMER,
+    };
 
     fn world_with_air() -> World {
         let mut w = World::new("test".into(), 80, 60);
@@ -1293,4 +1323,5 @@ mod tests {
         assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
         assert_eq!(scan.y, 10.0 * 16.0 + 8.0, "the quirk freezes Y at the head");
     }
+
 }

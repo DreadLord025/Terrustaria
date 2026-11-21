@@ -2121,10 +2121,14 @@ impl Audio {
 
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
     /// two persistent liquid loops whose Volume/Pan update in place every ¼ s
-    /// tick (`Main.Ambience`, `Main.cs:13466-13515`). `volume <= 0` stops the
+    /// tick (`Main.Ambience`, `Main.cs:13466-13508`). `volume <= 0` stops the
     /// channel outright (the vanilla stops the instance; no fade). The pan is
     /// baked at creation (a documented deviation — XNA re-pans the live
-    /// instance).
+    /// instance). The playing branch re-pitches: the waterfall loop rides
+    /// `Pitch = -0.2f` (`:1268`), the lavafall `Pitch = -0f` (`:1298`); XNA
+    /// scales the frequency by `2^pitch`, so the sink speed is `2^pitch`
+    /// (applied to both branches — the C# creation branch inherits the
+    /// previous instance's pitch, the port pins the same steady-state value).
     pub fn set_liquid_loop(&mut self, channel: usize, volume: f32, pan: f32) {
         let Some((channels, rate, samples)) = self.liquid_cues.get(channel).cloned().flatten()
         else {
@@ -2132,6 +2136,8 @@ impl Audio {
         };
         let Some(handle) = &self.handle else { return };
         let (left, right) = crate::sound::pan_gains(pan);
+        // `:1268` (channel 0, waterfall) / `:1298` (channel 1, lavafall).
+        let speed = if channel == 0 { 2.0f32.powf(-0.2) } else { 1.0 };
         if volume <= 0.0 {
             if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
                 sink.stop();
@@ -2141,6 +2147,7 @@ impl Audio {
         }
         if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
             sink.set_volume(volume);
+            sink.set_speed(speed);
             return;
         }
         // A fresh looped sink: the decoded PCM wrapped in an infinite repeat.
@@ -2156,6 +2163,7 @@ impl Audio {
         if let Ok(sink) = rodio::Sink::try_new(handle) {
             sink.append(source);
             sink.set_volume(volume);
+            sink.set_speed(speed);
             self.liquid_loops[channel] = Some(sink);
         }
     }

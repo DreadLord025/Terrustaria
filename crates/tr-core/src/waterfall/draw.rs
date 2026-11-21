@@ -314,8 +314,18 @@ impl WaterfallManager {
                         &mut self.pending_sparkles,
                     );
                 }
-                let alpha = get_alpha(draw_alpha, num22, num12, num14, k, &tile3, world);
-                let color5 = stylize_color(
+                let alpha = get_alpha(
+                    draw_alpha,
+                    num22,
+                    num12,
+                    num14,
+                    k,
+                    &tile3,
+                    world,
+                    num13,
+                    self.show_invisible_blocks_and_walls,
+                );
+                let mut color5 = stylize_color(
                     alpha,
                     num12,
                     light_tint(light, style, num13, num14, time),
@@ -384,6 +394,13 @@ impl WaterfallManager {
                 }
 
                 let num41 = tile3.liquid as i32 / 16;
+                // Every quad the geometry arms push this step belongs to the
+                // walked cell `(num13, num14)` at `GetAlpha`'s opacity — the
+                // `DrawWaterfall(int, ...)` overload's `(x, y, opacity)`
+                // arguments (`WaterfallManager.cs:969`), which the shimmer
+                // consumer needs for its vertex colours. Filled below,
+                // before the cell advances.
+                let quad_mark = out.len();
                 if flag2 && num17 != num31 {
                     let num42 = 2;
                     let src = [num21, 24, 32, 16 - num41 - num42];
@@ -416,14 +433,18 @@ impl WaterfallManager {
                 if num15 == 0 && num30 != 0 && num16 == 1 && num17 != num18 {
                     num30 = 0;
                     num17 = num18;
-                    let color = [1.0, 1.0, 1.0, 1.0];
+                    // `WaterfallManager.cs:749`: `color5 = Color.White` — the
+                    // MUTATION sticks for the rest of the step (the later
+                    // arms draw white and `color4 = color5` carries it into
+                    // the next step), not just this quad.
+                    color5 = [1.0, 1.0, 1.0, 1.0];
                     let src = [num21, 24, 32, 16 - num41];
                     push(
                         out,
                         num12 as u8,
                         [num13 as f32 * 16.0 - 16.0, num14 as f32 * 16.0 + 16.0],
                         src,
-                        color,
+                        color5,
                         true,
                     );
                 }
@@ -699,6 +720,12 @@ impl WaterfallManager {
                 if tile3.liquid > 0 && !tile3.half_brick() {
                     k = 1000;
                 }
+                // The overload arguments for this step's quads (see
+                // `quad_mark` above) — captured before the cell advances.
+                for q in &mut out[quad_mark..] {
+                    q.cell = [num13, num14];
+                    q.opacity = alpha;
+                }
                 num16 = num33;
                 num18 = num17;
                 num15 = num32;
@@ -831,7 +858,8 @@ fn stylize_color(
     ]
 }
 
-/// `WaterfallManager.GetAlpha`.
+/// `WaterfallManager.GetAlpha` (`WaterfallManager.cs:1030-1044`).
+#[allow(clippy::too_many_arguments)]
 fn get_alpha(
     alpha: f32,
     max_steps: i32,
@@ -840,13 +868,22 @@ fn get_alpha(
     s: i32,
     tile: &Tile,
     world: &World,
+    x: i32,
+    show_invisible: bool,
 ) -> f32 {
     let mut num = match kind {
         1 => 1.0,
         14 => 0.8,
         25 => 0.75,
+        // `:1037`: `(wall != 0 && (showInvisible || (wall != 318 &&
+        // !invisibleWall()))) || !(y < worldSurface)` — the Echo-coated wall
+        // (or the glass wall 318) skips the damp unless the invisible-view
+        // latch is on.
         _ => {
-            if (tile.wall != 0 && tile.wall != 318) || (y as f64) >= world.world_surface {
+            if (tile.wall != 0
+                && (show_invisible || (tile.wall != 318 && !world.invisible_wall(x, y))))
+                || (y as f64) >= world.world_surface
+            {
                 0.6 * alpha
             } else {
                 alpha
@@ -926,9 +963,12 @@ fn try_sparkling(
     }
 }
 
-/// `WorldGen.SolidTile`: active, solid, not a solid top, not a half brick or slope.
+/// `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`): nactive (active AND not
+/// actuated-inactive, `Tile.cs:240-247`), solid, not a solid top, not a half
+/// brick or slope.
 pub(super) fn solid_tile(t: &Tile) -> bool {
     t.active()
+        && !t.inactive()
         && (t.kind as usize) < td::TILE_COUNT
         && td::TILE_SOLID.has(t.kind)
         && !td::TILE_SOLID_TOP.has(t.kind)
@@ -967,6 +1007,11 @@ fn push(
         source,
         flip,
         color,
+        // The walk fills these per step before the cell advances (the
+        // `DrawWaterfall` overload's `(x, y, opacity)`); the rain arm never
+        // reads them (no vertex-colour path).
+        cell: [0, 0],
+        opacity: 1.0,
     });
 }
 

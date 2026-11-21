@@ -317,29 +317,20 @@ impl App {
                 ),
             ];
             for (channel, (strength, x, y, mult)) in sources.into_iter().enumerate() {
-                // The positional attenuation (`LegacySoundPlayer.cs:383-397`).
-                let dist = ((x - self.camera.x).powi(2) + (y - self.camera.y).powi(2)).sqrt();
-                let (atten, pan) = if dist < sound::SOUND_ATTENUATION_DISTANCE {
-                    (
-                        1.0 - dist / sound::SOUND_ATTENUATION_DISTANCE,
-                        ((x - self.camera.x) / (screen.x * 0.5)).clamp(-1.0, 1.0),
-                    )
-                } else {
-                    (0.0, 0.0)
-                };
-                // `:1249-1279`: strength/50 (clamped 1) x the 0.2/0.65
-                // multiplier x (1 - shimmerAlpha).
-                let strength_factor = (strength / 50.0).min(1.0);
-                let volume = if quiet {
-                    0.0
-                } else {
-                    atten
-                        * strength_factor
-                        * mult
-                        * (1.0 - self.scene_state.shimmer_alpha)
-                        * ambient
-                };
-                self.audio.set_liquid_loop(channel, volume, pan);
+                // The per-channel walk + case-34/35 volume math, extracted
+                // pure for the witnesses (`sound::liquid_ambience`).
+                if let Some((volume, pan)) = sound::liquid_ambience(
+                    strength,
+                    x,
+                    y,
+                    mult,
+                    (self.camera.x, self.camera.y),
+                    ambient,
+                    quiet,
+                    self.scene_state.shimmer_alpha,
+                ) {
+                    self.audio.set_liquid_loop(channel, volume, pan);
+                }
             }
         }
 
