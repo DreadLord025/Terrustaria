@@ -4361,3 +4361,79 @@ mod offset_fix {
         assert_eq!(npc_health_bar_scale(NpcKind::TheDestroyer), 1.0);
     }
 }
+
+/// W4-d38 sheets phase — the frame-strip witnesses for the wave's kinds:
+/// every draw arm's sheet is packed (`STATIC_SHEET_NAMES` + the `D38_*` rows
+/// feeding `npc_sheets`), every kind's row count matches the verbatim
+/// `Main.npcFrameCount` table (`Main.cs:67082`), and the REAL retail dims
+/// (measured by tools/_d38_dims.py through atlas_sim's LZX/XNB reader) divide
+/// into whole `SetFrameSize` rows (`NPC.cs:90780-90800` integer division).
+/// WRITTEN, NOT RUN (code-only mode).
+#[cfg(test)]
+mod d38_sheet_tests {
+    use super::*;
+
+    /// (kind, real sheet w, real sheet h, rows) — the dims decoded from
+    /// `assets/Content/Images/NPC_<id>.xnb` (tools/_d38_dims.json).
+    const STRIPS: &[(NpcKind, f32, f32, u32)] = &[
+        (NpcKind::RaggedCaster, 40.0, 168.0, 3),
+        (NpcKind::RaggedCasterOpenCoat, 40.0, 168.0, 3),
+        (NpcKind::Necromancer, 40.0, 168.0, 3),
+        (NpcKind::NecromancerArmored, 44.0, 168.0, 3),
+        (NpcKind::DiabolistRed, 42.0, 168.0, 3),
+    ];
+
+    /// Every wave kind draws its OWN sheet, the row count is the verbatim
+    /// `Main.npcFrameCount` value, and the real strip divides into whole rows
+    /// (`NPC.SetFrameSize`'s integer division — the 286 tail is the ONE
+    /// non-multiple, kept as the C# drops it).
+    #[test]
+    fn w4_d38_the_strips_divide_into_their_vanilla_rows() {
+        assert_eq!(STRIPS.len(), 5, "the wave so far");
+        for &(kind, w, h, rows) in STRIPS {
+            let net = texture_net_id(kind);
+            assert_eq!(net, kind.cs_id(), "{kind:?} draws its own sheet");
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+            let t = BgTex { uv: [0.0, 0.0, 1.0, 1.0], w, h };
+            let fh = vanilla_row_h(&t, rows);
+            assert_eq!(fh, (h as i32 / rows as i32) as f32, "{kind:?} row height");
+            if net != 286 {
+                assert_eq!(h as i32 % rows as i32, 0, "{kind:?}: whole rows");
+            } else {
+                assert_eq!(h as i32 % rows as i32, 2, "NPC_286's 2 px tail");
+            }
+            // The draw arm's own arithmetic: pumpkin_moon_draw keeps the
+            // sheet width and centres the row on the box.
+            let n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+            let (bw, bh) = kind.size();
+            let (_, dfh, size, pos) = pumpkin_moon_draw(Some(&t), rows, &n, bw, bh);
+            assert_eq!(dfh, fh, "{kind:?}: draw row == SetFrameSize row");
+            assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
+            assert_eq!(pos, [100.0 + bw * 0.5 - w * 0.5, 100.0 + bh * 0.5 - fh * 0.5]);
+            // The frame the machine walks stays inside the strip.
+            let uv = npc_frame_uv(&t, fh, rows - 1);
+            assert!(uv[3] <= 1.0 + 1e-6, "{kind:?}: the last row stays in-bounds");
+        }
+    }
+
+    /// The M4-NPC-3v audit, d38 edition: every sheet the wave's draw arms ask
+    /// `npc_sheet` for is in the packing list, and the `D38_*` rows feeding
+    /// `npc_sheets` are exactly the wave's 35 net ids.
+    #[test]
+    fn w4_d38_every_draw_sheet_is_packed() {
+        use crate::assets::STATIC_SHEET_NAMES;
+        let all: Vec<u32> = D38_B1_SHEETS.iter().chain(D38_B2_SHEETS)
+            .chain(D38_B3_SHEETS).chain(D38_B4_SHEETS).chain(D38_B5_SHEETS)
+            .chain(D38_B6_SHEETS).chain(D38_B7_SHEETS).copied().collect();
+        assert_eq!(all.len(), 35);
+        for &id in &all {
+            let name = format!("NPC_{id}");
+            assert!(STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} has a D38 row but is never packed");
+        }
+        for &(kind, _, _, _) in STRIPS {
+            let net = texture_net_id(kind);
+            assert!(all.contains(&(net as u32)), "NPC_{net} has no D38 row");
+        }
+    }
+}
