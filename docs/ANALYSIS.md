@@ -39655,6 +39655,28 @@ counts, the 483 33-count/gravity split, the 523 alpha/speed cap, the 521
 20-count, the 459/709 scale-gate 13/37 counts, the 639/640 Next(5,10)
 count — WRITTEN NOT RUN.
 
+### Batch 17 (10 kinds, the small bursts + the 424-family `:73431-73861`)
+
+640 (the moonlord ghost — the same dust arm as the 639, split into its
+own match arm), 682 (22× dust-272 at Center 0×0 scale 0.5 vel×1.6 Y−−
+position=Lerp(own,Center,0.5) — GRAVITY ON, unlike the 639), 449
+(Next(3,7)× dust-228 at Center−vel/2 alpha 100 scale 2.1 vel×2
+noGravity), 448 (resize 112×112 centred; 4× dust-31 gravity NO scatter +
+40 pairs dust-228; one gore), 616 (resize 80×80 centred; 4× dust-31
+gravity + 40 pairs dust-229 BOTH alpha 200 (vel×2 / ×1.2); one gore),
+836 (3× dust-31 alpha 50 White scale 0.8 vel×0.5 noGravity), 1092 (6×
+dust-269 Direct at base.Left box w×4 White scale 1.2 noLight), 424/425/
+426 (the box recentres at (int)(128×scale); 8× dust-31 gravity + 32 pairs
+dust-6 alpha 100 + 2 gores; the owner-gated localAI[1]=−1 + Damage
+unported state no draws; THEN 5× SelectRandom(6,259,158) speed
+(2.5×direction,−2.5) alpha 200 vel×2.4 scale+=NextFloat — the type
+argument draws BEFORE the spawn internals). The 868/869/996 arms stay
+DEFERRED: their WorldGen.RandomizeTreeStyle/Background/MoonState draws
+are state-bearing and unported (no port of the randomizers exists).
+Witnesses: the 682 gravity-on 22-count, the 449 Next(3,7) count, the
+448/616 84-counts + the 616 alpha-200 pairs, the 836/1092 colours, the
+424-family 77-count/segment split — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
