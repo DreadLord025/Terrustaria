@@ -96,7 +96,8 @@ still open items in ROADMAP §3.
 | `delay` (lava 5 / honey 10 / quickFall 10) | MISSING | — | `Liquid.cs:51`, `:485-491`, `:516-522`, `:1083-1091`; `Entry` has only `x/y/kill` |
 | `quickSettle` / `quickFall` | MISSING | — | `Liquid.cs:35/33`, `:588-591`, `:944-948`, `:1063-1068` |
 | Liquid reactions (`Lava/Honey/ShimmerCheck` → `LiquidCheck` → merge tiles) | MISSING | — | grep for `liquid_check/LiquidCheck/quick_water/settle_water/AttemptToMove` over `crates/` returns nothing; obsidian 56 / honey block 229 / crisp honey 230 / shimmer 659 never form, no `num >= 24` pooling (`Liquid.cs:1225-1443`) |
-| Underworld water evaporation | MISSING | — | `Liquid.cs:466-474` (−2 per update below `UnderworldLayer`, water only); no Rust line matches |
+| Underworld water evaporation | PORTED | `liquid.rs::update_tile` (the `y > underworld_layer && kind == 0` arm) | `Liquid.cs:466-474` — `min(2, liquid)` shed per update below `UnderworldLayer` (`Main.cs:2790`, `maxTilesY - 200`), water-only (the type bits, not `anyWater`); an emptied cell retires (`kill = 999`, `:475-478`). W4-g46: `LiquidSystem::underworld_layer` seeded from the world height; the fall arm reads the live post-evaporation level; the flow witnesses pin the band out of reach (`new_flow_fixture`, the `tool.rs` `i32::MAX` convention). Witnesses: `underworld_water_evaporates_two_per_update`, `a_sub_two_film_evaporates_whole`, `water_above_the_underworld_layer_does_not_evaporate`, `lava_honey_and_shimmer_never_evaporate` |
+| `DelWater` retirement drain + tail (`:1470-1599`) | PORTED | `liquid.rs::del_water` + `end_pass` (the backwards splice sweep), `edit/kill.rs::check_alch_tile`/`check_lily_pad`/`square_tile_frame_record`, app `resolve_liquid_retire_kills` | W4-g46: the sub-2/sub-20 drain arms, the unequal-side wakes, the reaction re-check (the lava arm burns the 3×3 grass ring `:1532-1560`), and the alch/lily tail (`:1580-1598`) run on every retired cell — including a drained one (no early return). The retirement sweep walks BACKWARDS (`:1109`) and splices via the C#'s copy-last-into-slot (`:1575-1579`, `x/y/kill` only). The lily tail's branch is `quickFall || (below==255 && above==0)` → `CheckLilyPad`, else `SquareTileFrame` (`:1586-1597`); `TileFrameImportant` case 518 (`WorldGen.cs:84966`) dispatches `CheckLilyPad`. The kill records' loot rides the `UpdateLiquid` stream (`WorldGen.cs:71529`). The `stuck`-gated kill-reset arm (`:1506-1510`) parks with R-11-7. Witness: `the_retire_sweep_splices_backwards_and_the_lily_tail_runs_on_drained_cells` |
 | Stuck detection + panic mode + `QuickWater` | MISSING | — | `Liquid.cs:966-1054`, `:1131-1149`, `:104-435`; also the post-load settle `WorldFile.cs:735-760` |
 | Kill threshold 8 / MP `10+players/3` | PARTIAL | `liquid.rs:21` | 8 hardcoded (correct for single player; MP variant absent) |
 | `.wld` liquid bytes | PORTED | `wld/sections/tiles.rs:85-100`, `:237-242` | Liquid amount then kind byte, per the cited `WorldFile.cs:1480-1491`; the liquid byte participates in the RLE key exactly as `bTileHeader` does in the writer |
@@ -134,11 +135,15 @@ still open items in ROADMAP §3.
    (`delay < 5`) and honey every 11th (`delay < 10`) — C# `Liquid.cs:485-491/516-522`.
    Without `delay`, lava/honey propagate ~6-11× faster than vanilla and settle differently.
    Not admitted.
-3. **Underworld evaporation missing (behavioural, med).** `Liquid.cs:466-474` removes 2
-   units per update from water below `UnderworldLayer`; the port conserves mass there.
-   The existing mass-conservation assertions (`liquid.rs:445`) encode the *opposite*
-   invariant, so this needs a deliberate deviation note in ANALYSIS before changing.
-   Not admitted.
+3. **Underworld evaporation — PORTED (W4-g46).** `Liquid.cs:466-474` removes
+   `min(2, liquid)` units per update from water below `UnderworldLayer`; the port
+   now does the same (`update_tile`'s evaporation arm, gated on
+   `LiquidSystem::underworld_layer = height - 200`). The mass-conservation
+   witnesses exclude the band via `new_flow_fixture` (the fixture worlds are
+   shorter than a vanilla underworld, so the sentinel `i32::MAX` parks the gate
+   out of reach — the `tool.rs` convention); the evaporation witnesses use a
+   250-tall world with a sealed pocket inside the band. The fall arm reads the
+   live post-evaporation level (the C#'s `tile5.liquid`, not the entry snapshot).
 4. **Skip/window mechanics differ (determinism, med).** (a) `skipLiquid` is not ported at
    all, so tiles the original would skip a pass for are updated; (b) the C# window is a
    fixed 2500-slot stride with a clamp that *re-walks the entire active list every update
@@ -150,10 +155,17 @@ still open items in ROADMAP §3.
    **(b) FIXED 2026-11-13 (S1-A-8):** the port now walks the fixed `curMaxLiquid / cycles`
    stride with the `numLiquid` clamp (`liquid.rs::LiquidSystem::update`), matching
    `Liquid.cs:1069-1106`; (a) `skipLiquid` is still unported.
-5. **Missing `genRand` nudge (determinism, low-med).** `Liquid.cs:892-895`
-   (`num == 254 && WorldGen.genRand.Next(30) == 0 → 255`) is absent; the C# call also
-   consumes a shared RNG draw, so settled-surface levels differ by 1 unit on ~1/30 of
-   cells. Not admitted.
+5. **`genRand` nudge — PORTED, per-consumer stream (determinism, low-med).**
+   `Liquid.cs:892-895` (`num == 254 && WorldGen.genRand.Next(30) == 0 → 255`) is
+   ported in the 3-cell surface arm (`update_tile`). It is the ONLY `genRand` draw
+   in `Liquid.cs` (RNG census). Vanilla shares one `genRand` (= `Main.rand`,
+   `WorldGen.cs:4445`) across all consumers; the port keeps a per-consumer
+   `UnifiedRandom` (`LiquidSystem::surface_rng`, seeded from the world seed in
+   `new`, the `place_rng` precedent) so the draw never interleaves with other
+   systems — the recorded deviation. The roll runs once per 3-cell average that
+   rounds to 254, BEFORE any neighbour write (the C# order). Witness:
+   `surface_rng_is_the_world_seeded_unified_stream` pins the stream draw-for-draw
+   against an independent world-seeded `UnifiedRandom`.
 6. **Missing extra wake calls (determinism, low).** In the 7- and 5-neighbour arms the
    original re-queues ±1/±2/±3 whenever the neighbour *or the centre* changed
    (`Liquid.cs:748-771`, `:821-836`); the port only queues on an actual write
@@ -186,10 +198,16 @@ still open items in ROADMAP §3.
 - **S** — Add the `delay` field to `Entry` + the lava 5 / honey 10 gate and the
   `quickFall`-sets-10 pre-pass flag (`Liquid.cs:51/485/516/1087`). Needs a seeded test that a
   lava column falls exactly on the C# cadence.
-- **S** — Port underworld water evaporation (`Liquid.cs:466-474`), gated on the port's
-  `underworld_layer` constant; update the mass-conservation test to exclude the band.
-- **S** — Port the `genRand` 254→255 nudge (`Liquid.cs:892-895`) on the ported RNG seam and
-  record the consumed draw in the determinism notes.
+- **S — DONE (W4-g46)** — Port underworld water evaporation (`Liquid.cs:466-474`), gated on
+  `LiquidSystem::underworld_layer` (`height - 200`); the mass-conservation witnesses exclude
+  the band via `new_flow_fixture`. See the port-status row + deviation 3.
+- **S — DONE (W4-g46)** — Port the `genRand` 254→255 nudge (`Liquid.cs:892-895`) on the
+  per-consumer `surface_rng` seam; the consumed draw is recorded in deviation 5 and pinned by
+  `surface_rng_is_the_world_seeded_unified_stream`.
+- **S — DONE (W4-g46)** — Port the `DelWater` retirement drain + tail (`Liquid.cs:1470-1599`):
+  the backwards splice sweep, the drain arms, the lava grass-ring burn, and the alch/lily tail
+  (`CheckAlch`/`CheckLilyPad`/`SquareTileFrame`), with the kill records' loot resolved app-side
+  on the `UpdateLiquid` stream. See the port-status row.
 - **M** — Port `skipLiquid` (tile flag + the gate in the pass loop + the two writes after a
   fall, `Liquid.cs:586-587/1096-1103`) and switch the pass window to the C# 2500-slot stride
   with the `numLiquid` clamp, so a small active list re-walks every update. Includes a

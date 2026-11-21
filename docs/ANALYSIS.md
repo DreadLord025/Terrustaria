@@ -18287,6 +18287,75 @@ Documented deviations, none reachable from the ported runtime surface:
   (both `false` вЂ” the exact runtime state) and
   `createMergeTilesDuringGen` rides the `WorldGen.cs:22480` caller.
 
+## The liquid evaporation + retirement drain (W4-g46, 2026-11-21, code-only — tests written NOT run)
+
+Two `Liquid.cs` surfaces landed on `task/W4-g46-liquid-evaporation`:
+
+**Underworld water evaporation** (`Liquid.cs:466-474`). Below `Main.UnderworldLayer`
+(`Main.cs:2790`, `maxTilesY - 200`) a WATER cell sheds `min(2, liquid)` units per
+update; lava/honey/shimmer never evaporate (the gate reads `liquidType() == 0`, the
+type bits — not `anyWater`). The arm runs in `update_tile` BEFORE the reaction block
+and the flow, and a cell it empties retires immediately (`kill = 999`, `:475-478`).
+`LiquidSystem::underworld_layer` is seeded from the world height in `new`. The fall
+arm reads the LIVE post-evaporation level (the C#'s `tile5.liquid`, `:570-573`), not
+the entry snapshot; the kill bookkeeping at the tail keeps the pre-evaporation
+snapshot (the C#'s `byte liquid = tile5.liquid` captured at `:464`).
+
+- **Deviation (test isolation):** the flow witnesses' fixture worlds are shorter than
+  a vanilla underworld, so `height - 200` would sit above every cell and evaporate the
+  fixtures. `LiquidSystem::new_flow_fixture` (`#[cfg(test)]`) pins `underworld_layer`
+  to `i32::MAX` — the `tool.rs:378` sentinel convention — isolating the fall/level
+  mechanics under test. The evaporation witnesses use a 250-tall world with a sealed
+  1-cell pocket inside the band, so the ledger is exact (no fall/level interference).
+  Production always uses `new` (the real `height - 200` gate).
+
+**`DelWater` retirement drain + tail** (`Liquid.cs:1470-1599`). The `kill >= 8`
+retirement sweep (`:1109-1119`) walks the active list BACKWARDS and runs the full
+`DelWater` per dead entry: the sub-2 film zeroes itself + its thin side neighbours,
+the sub-20 film drains when any open neighbour holds less, the tail wakes the unequal
+sub-250 sides, re-runs the cell's reaction check (the lava arm burns the 3×3 grass
+ring, `:1532-1560`), and the alch/lily tail (`:1580-1598`) runs on the retired cell's
+kind — INCLUDING a drained cell (the C# has no early return before `:1580`).
+
+- **The splice** (`:1575-1579`): `DelWater` removes the entry by copying the LAST
+  entry's `x`/`y`/`kill` into its slot (the relocated entry keeps the slot's `delay` —
+  a vanilla quirk kept 1:1) and decrementing `numLiquid`. `end_pass` mirrors this
+  swap-remove while walking downward, so entries `AddWater` appends during the sweep
+  land where the C# puts them and are never re-visited. The 254→255 settle
+  (`:1113-1116`) precedes each drain.
+- **The lily tail's branch** (`:1586-1597`): `quickFall` → `CheckLilyPad`; otherwise
+  the pad's below is FULL (255) AND its above is DRY → `CheckLilyPad`; any other state
+  takes the plain `SquareTileFrame` reframe. `TileFrameImportant` case 518
+  (`WorldGen.cs:84966-84968`) dispatches `CheckLilyPad`, so the port's
+  `square_tile_frame` carries a 518 arm (like the tree/cactus inline arms).
+  `check_lily_pad` (`WorldGen.cs:59203-59310`) is the pad's settle check: a non-water
+  pad dies, the column scan finds the first solid floor (dirt 2/477 → row 0,
+  hallowed/corrupt grass 109/116 → row 18 — the C# tests 109 twice, no crimson 23 arm,
+  jungle grass 60 → row 36), the pad's `frameY` snaps to the row, a wet cell above
+  lifts the pad up, a dry pad over an empty below sinks one cell, a pad over an
+  occupied non-solid non-platform below dies, an unrecognised floor kills it. The
+  moves keep the moved pad's frame (`resetFrame: false`) and decline an out-of-world
+  destination (the C#'s null tile would throw; the port stays put).
+- **The kill records' loot**: the engine is pure, so the grass-ring/herb/pad kills
+  queue `TileKill` records (`retire_kills`) and the app drains them after the pass
+  (`resolve_liquid_retire_kills`), resolving the same `KillTile_DropItems` rolls a
+  player break does on the `UpdateLiquid` stream (the C# runs them inside that swap,
+  `WorldGen.cs:71529`). The pot/pile `genRand` stand-ins take one throw each, the
+  palm/mushroom canopy re-rolls and the Coin Portal request ride the `break_tile` seam.
+- **Parked:** the `stuck`-gated kill-reset arm (`:1506-1510`) belongs to the stuck
+  self-clear machine (R-11-7); the port has no stuck mode, so the arm would resurrect
+  the entry and is left with that task.
+
+**RNG census (`Liquid.cs`):** the ONLY `WorldGen.genRand` draw in the file is the
+3-cell surface nudge `Next(30)` (`:892-895`, `num == 254 && genRand.Next(30) == 0 →
+255`). No `Main.rand` draw appears in `Liquid.cs` itself; the retirement kills' loot
+rolls run inside the caller's `UpdateLiquid` swap (`WorldGen.cs:71529`). The nudge
+rides a per-consumer `UnifiedRandom` (`surface_rng`, world-seeded, the `place_rng`
+precedent) — vanilla shares one `genRand` (= `Main.rand`, `WorldGen.cs:4445`), so the
+port's stream never interleaves with other systems (the recorded deviation, research/11
+#5). `surface_rng_is_the_world_seeded_unified_stream` pins it draw-for-draw against an
+independent world-seeded `UnifiedRandom`.
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as

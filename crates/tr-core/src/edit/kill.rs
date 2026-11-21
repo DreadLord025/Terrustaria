@@ -231,6 +231,13 @@ pub(crate) fn square_tile_frame_gen(world: &mut World, x: i32, y: i32) {
 /// `TileFrame` walk whose `Check*` chain may pop the tile's object, the
 /// produced drops handed to the app layer.
 pub fn square_tile_frame_default(world: &mut World, x: i32, y: i32) -> Vec<ObjectDrop> {
+    square_tile_frame_record(world, x, y).object_drops
+}
+
+/// The same `SquareTileFrame` walk, returning the WHOLE kill record — the
+/// `Liquid.DelWater` tail's reframe arms (`Liquid.cs:1544`/`:1553`/`:1592`)
+/// need the cascade's pots/herbs/piles too, not just the object drops.
+pub fn square_tile_frame_record(world: &mut World, x: i32, y: i32) -> TileKill {
     let mut destroy_object = false;
     let mut kill = TileKill {
         kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
@@ -238,7 +245,24 @@ pub fn square_tile_frame_default(world: &mut World, x: i32, y: i32) -> Vec<Objec
     };
     square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill);
     after_edit(world, x, y);
-    kill.object_drops
+    kill
+}
+
+/// `WorldGen.CheckAlch(x, y)` as a standalone entry — the `Liquid.DelWater`
+/// tail's `Main.tileAlch` arm (`Liquid.cs:1580-1583`). Runs the herb check
+/// and its (unguarded) kill loop; the per-cell herb drops ride the record.
+pub fn check_alch_tile(world: &mut World, x: i32, y: i32) -> Option<TileKill> {
+    let plan = check_alch(world, x, y)?;
+    let mut destroy_object = false;
+    let mut kill = TileKill {
+        kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
+        ..Default::default()
+    };
+    if let Some(herb) = plan.herb_event {
+        kill.herb_events.push(herb);
+    }
+    kill_plan_cells(world, &plan.cells, false, &mut destroy_object, &mut kill);
+    Some(kill)
 }
 
 /// The body of `KillTile` plus the shared `WorldGen.destroyObject` flag
@@ -436,6 +460,22 @@ fn square_tile_frame(
         // mushroom tree's support check + the top-cell canopy re-roll.
         if cell.kind == 72 {
             check_mushroom_tree(world, cx, cy, no_item, destroy_object, kill);
+            continue;
+        }
+        // `TileFrameImportant`'s `case 518` (`WorldGen.cs:84966-84968`): the
+        // lily pad's settle check. Like the tree arms it carries no
+        // `destroyObject` guard and `return`s from `TileFrameImportant` — the
+        // pad's kills fold into the record, no plan/kill-loop machinery.
+        if cell.kind == 518 {
+            if let Some(inner) = check_lily_pad(world, cx, cy) {
+                kill.object_drops.extend(inner.object_drops);
+                kill.events.extend(inner.events);
+                kill.herb_events.extend(inner.herb_events);
+                kill.pile_events.extend(inner.pile_events);
+                kill.tree_events.extend(inner.tree_events);
+                kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
+                kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
+            }
             continue;
         }
         // `TileFrame`'s non-solid arm (`WorldGen.cs:81361-81374`): the cactus
@@ -2737,6 +2777,120 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pile_event: None,
         ring: None,
     })
+}
+
+/// `WorldGen.CheckLilyPad` (`WorldGen.cs:59203-59310`) — the lily pad 518's
+/// settle check, called from `Liquid.DelWater`'s tail (`Liquid.cs:1584-1597`).
+/// A non-water pad dies (`:59209-59217`); otherwise the column scan
+/// (`:59218-59226`) finds the first `nactive` solid floor: dirt 2/477 → row
+/// 0, hallowed/corrupt grass 109/116 → row 18 (the C# tests 109 twice,
+/// `:59233` — no crimson 23 arm), jungle grass 60 → row 36 (`:59229-59240`).
+/// The pad's `frameY` snaps to the row; a wet cell above lifts the pad up
+/// (`:59251-59267`), a dry pad over an empty below sinks one cell
+/// (`:59274-59291`), a pad over an occupied non-solid non-platform below
+/// dies (`:59292-59299`); an unrecognised floor kills it (`:59302-59309`).
+/// The moves' `SquareTileFrame(…, resetFrame: false)` keeps the moved pad's
+/// frame (`WorldGen.cs:80191` — only the centre cell's reset is skipped,
+/// and the pad's `TileFrameImportant` check is this same routine, so the
+/// port reframes the ring through `after_edit` without re-entering it).
+/// The `Main.netMode == 1` gate and the net messages have no port consumer.
+pub fn check_lily_pad(world: &mut World, x: i32, y: i32) -> Option<TileKill> {
+    let pad = *world.tile(x, y)?;
+    if tile_liquid_type_bits(&pad) != 0 {
+        return crate::edit::kill_tile(world, x, y, false);
+    }
+    // :59218-59226 — the floor scan; out-of-world reads stop it (the C#'s
+    // null probe, `:59222-59225`).
+    let mut ny = y;
+    loop {
+        let cell = world.tile(x, ny).copied().unwrap_or_default();
+        if cell.active() && td::TILE_SOLID.has(cell.kind) && !td::TILE_SOLID_TOP.has(cell.kind) {
+            break;
+        }
+        if ny >= world.height - 50 {
+            break;
+        }
+        ny += 1;
+        if world.tile(x, ny).is_none() {
+            return None;
+        }
+    }
+    let floor_kind = world.tile(x, ny).map(|t| t.kind).unwrap_or(0);
+    let row: i16 = match floor_kind {
+        2 | 477 => 0,
+        109 | 116 => 18,
+        60 => 36,
+        _ => -1,
+    };
+    if row < 0 {
+        return crate::edit::kill_tile(world, x, y, false);
+    }
+    if row != pad.frame_y {
+        let i = world.index(x, y);
+        world.tiles[i].frame_y = row;
+        world.mark_chunk(x, y);
+    }
+    let above = world.tile(x, y - 1).copied().unwrap_or_default();
+    if above.liquid > 0 && !above.active() {
+        lily_pad_move(world, x, y, y - 1);
+        return None;
+    }
+    let here = world.tile(x, y).copied().unwrap_or_default();
+    if here.liquid != 0 {
+        return None;
+    }
+    let below = world.tile(x, y + 1).copied().unwrap_or_default();
+    if !below.active() {
+        lily_pad_move(world, x, y, y + 1);
+        return None;
+    }
+    if !td::SET_PLATFORMS.has(below.kind)
+        && (!td::TILE_SOLID.has(below.kind) || td::TILE_SOLID_TOP.has(below.kind))
+    {
+        return crate::edit::kill_tile(world, x, y, false);
+    }
+    None
+}
+
+/// The lily pad's up/down move (`WorldGen.cs:59251-59267`/`:59274-59291`):
+/// the destination takes the pad's identity (frames, paint, no slope/half),
+/// the origin goes inactive type 0, and the ring reframes without resetting
+/// the moved pad's frame (`resetFrame: false`).
+fn lily_pad_move(world: &mut World, x: i32, from_y: i32, to_y: i32) {
+    let src = *world.tile(x, from_y).unwrap();
+    // The destination must be in-world: a pad at the bottom row sinking into
+    // `y + 1` (or a top-row pad lifting into `y - 1`) reads an out-of-world
+    // default as "empty" and would index past the grid. The C#'s
+    // `Main.tile[x, y + 1]` is null there and the write would throw; the port
+    // declines the move (the pad stays put), the safe reading of the null.
+    if world.tile(x, to_y).is_none() {
+        return;
+    }
+    let di = world.index(x, to_y);
+    let dst = &mut world.tiles[di];
+    dst.kind = 518;
+    dst.flags |= crate::tile::FLAG_ACTIVE;
+    dst.frame_x = src.frame_x;
+    dst.frame_y = src.frame_y;
+    dst.flags &= !crate::tile::FLAG_HALF_BRICK;
+    dst.set_slope(0);
+    dst.set_paint(src.paint());
+    let si = world.index(x, from_y);
+    world.tiles[si].flags &= !crate::tile::FLAG_ACTIVE;
+    world.tiles[si].kind = 0;
+    super::after_edit(world, x, to_y);
+    world.mark_chunk(x, from_y);
+}
+
+/// `Tile.liquidType()` — the two header bits regardless of the amount
+/// (`Tile.cs:344-360`).
+fn tile_liquid_type_bits(t: &Tile) -> u8 {
+    match t.liquid_kind() {
+        crate::tile::LiquidKind::Water => 0,
+        crate::tile::LiquidKind::Lava => 1,
+        crate::tile::LiquidKind::Honey => 2,
+        crate::tile::LiquidKind::Shimmer => 3,
+    }
 }
 
 /// Clears the active tile at `(x, y)` and keeps the wall and the liquid. The caller is

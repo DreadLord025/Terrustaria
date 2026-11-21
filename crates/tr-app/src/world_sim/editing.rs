@@ -5764,6 +5764,70 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     app.world_key = None;
 }
 
+/// The `Liquid.DelWater` tail's kill records (`Liquid.cs:1529-1598`, drained
+/// from `LiquidSystem::drain_retire_kills`): the lava grass-ring reframes,
+/// the herb `CheckAlch` and the lily-pad `CheckLilyPad`/`SquareTileFrame`
+/// kills carry the same loot rolls a player break does. The C# runs them
+/// inside `UpdateLiquid`'s `Main.rand` swap (`WorldGen.cs:71529`), so the
+/// rolls ride the `UpdateLiquid` stream; the pot/pile `genRand` stand-ins
+/// take one throw each, the `break_tile` precedent. No hit cell (the pad /
+/// herb cell's own drops ride its `herb_events`/`object_drops` records).
+pub(crate) fn resolve_liquid_retire_kills(app: &mut App, kills: Vec<edit::TileKill>) {
+    if kills.is_empty() {
+        return;
+    }
+    let ctx = drop_ctx(app);
+    for kill in &kills {
+        let (drops, portals) = {
+            let main_rng = app.rngs.stream(crate::app::RngKey::UpdateLiquid);
+            break_drop_events(kill, &app.world, None, false, 0, main_rng, &ctx)
+        };
+        for (id, count, x, y) in drops {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateLiquid);
+            spawn_item_drop(&mut app.items, rng, id, count, x, y);
+        }
+        // The canopy re-rolls the cascade recorded (`break_tile`'s seam): one
+        // `UpdateLiquid` throw seeds each `FastRandom` `genRand` stand-in.
+        for (px, py) in &kill.palm_frame_rolls {
+            let mut gen_stream = tr_core::tile_light::FastRandom::new(
+                app.rngs
+                    .stream(crate::app::RngKey::UpdateLiquid)
+                    .next() as u64,
+            );
+            let frame_x = (gen_stream.next_range(7, 10) * 22) as i16;
+            if let Some(cell) = app.world.tile_mut(*px, *py) {
+                cell.frame_x = frame_x;
+            }
+        }
+        for (mx, my) in &kill.mushroom_frame_rolls {
+            let mut gen_stream = tr_core::tile_light::FastRandom::new(
+                app.rngs
+                    .stream(crate::app::RngKey::UpdateLiquid)
+                    .next() as u64,
+            );
+            let frame_y = (gen_stream.next(3) * 18) as i16;
+            if let Some(cell) = app.world.tile_mut(*mx, *my) {
+                cell.frame_x = 18;
+                cell.frame_y = frame_y;
+            }
+        }
+        // The Coin Portal projectile of the pot loot (`WorldGen.cs:57176-
+        // 57182`); the port has no 518 family yet — `spawn_with_data` declines
+        // it and the kill still returns like the C# (the `break_tile` seam).
+        for (px, py) in portals {
+            let _ = app.projectiles.spawn_with_data(
+                518,
+                px as f32 * TILE_PX + 16.0,
+                py as f32 * TILE_PX + 16.0,
+                0.0,
+                -12.0,
+                0,
+                0.0,
+            );
+        }
+    }
+}
+
 /// The world/player inputs the drop resolvers read. Every C# flag with no
 /// port state defaults to `false` (`Main.expertMode/dontStarveWorld` — the
 /// world modes are not persisted yet; remix/getGood/tenth/vampire never reach

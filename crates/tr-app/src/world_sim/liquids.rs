@@ -28,6 +28,11 @@ pub(crate) fn update_liquids(app: &mut App, dt: f32) {
             }
         }
     });
+    // The `DelWater` tail's kill records (`Liquid.cs:1529-1598`): the lava
+    // grass-ring, the herb and the lily-pad kills resolve their loot on the
+    // `UpdateLiquid` stream (the C# runs them inside that swap).
+    let retire_kills = app.liquids.drain_retire_kills();
+    super::editing::resolve_liquid_retire_kills(app, retire_kills);
     app.liquid_step.cap_backlog();
 }
 

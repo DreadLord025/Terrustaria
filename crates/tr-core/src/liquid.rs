@@ -76,6 +76,19 @@ pub struct LiquidSystem {
     /// the cue inline (`!Main.gameMenu && !isGeneratingOrLoadingWorld`);
     /// the port's engine is pure, so the caller's seam carries it.
     merge_events: Vec<(TileChangeType, i32, i32)>,
+    /// The `Liquid.DelWater` tail's kill records (`Liquid.cs:1544`/`:1553`/
+    /// `:1582`/`:1588`/`:1596` — the grass→dirt converts, the herb
+    /// `CheckAlch`, the lily-pad `CheckLilyPad`/`SquareTileFrame`): the C#
+    /// kills carry `KillTile_DropItems` loot; the engine is pure, so the
+    /// records queue here and the app drains them after the pass (the
+    /// `merge_events` precedent, S1-E-25).
+    retire_kills: Vec<crate::edit::TileKill>,
+    /// The 3-cell surface average's `WorldGen.genRand.Next(30)` nudge
+    /// stream (`Liquid.cs:892-895`) — a per-consumer `UnifiedRandom` seeded
+    /// from the world seed (the `place_rng` precedent; vanilla shares one
+    /// `genRand`, documented in ANALYSIS). Drawn only when the average
+    /// rounds to 254.
+    surface_rng: crate::unified_random::UnifiedRandom,
     /// `Liquid.tilesIgnoreWater`'s state (`Liquid.cs:69-73`): during a pass
     /// the grate 546 and the boulder family lose solidity, so water falls
     /// through grates and settles past boulders; the C#'s stock
@@ -92,6 +105,13 @@ pub struct LiquidSystem {
     /// runtime `UpdateLiquid` re-arms it per cell. The app layer clears the
     /// flag at the tick head (the `:17753` seam).
     bubble_solid: bool,
+    /// `Main.UnderworldLayer` (`Main.cs:2790`, `maxTilesY - 200`) — the depth
+    /// gate of the water evaporation (`Liquid.cs:466`). Production seeds it
+    /// from the world height in [`Self::new`]; the flow witnesses pin it to
+    /// `i32::MAX` to isolate the fall/level mechanics from the band (the
+    /// `tool.rs` test convention), since their fixture worlds are shorter
+    /// than a vanilla underworld.
+    underworld_layer: i32,
 }
 
 /// One `PlayLiquidChangeSound` row (`WorldGen.cs:4632-4650`): the merge kind
@@ -142,11 +162,27 @@ impl LiquidSystem {
             generating: false,
             remix_world_gen: false,
             merge_events: Vec::new(),
+            retire_kills: Vec::new(),
+            surface_rng: crate::unified_random::UnifiedRandom::new(world.seed as i32),
             // The stock solidity: the grate and the boulders are solid and
             // the bubble is not (`Main.cs:10124`, `Main.cs:17753`).
             ignore_solids: false,
             bubble_solid: false,
+            // `Main.UnderworldLayer = maxTilesY - 200` (`Main.cs:2790`).
+            underworld_layer: world.height - 200,
         }
+    }
+
+    /// The flow witnesses' constructor: the fixture worlds are shorter than a
+    /// vanilla underworld, so `height - 200` would sit above every cell and
+    /// evaporate the fixtures. The sentinel parks the evaporation band out of
+    /// reach (the `tool.rs` `i32::MAX` convention), isolating the fall/level
+    /// mechanics under test. The evaporation witnesses use [`Self::new`].
+    #[cfg(test)]
+    pub(crate) fn new_flow_fixture(world: &World) -> Self {
+        let mut sys = Self::new(world);
+        sys.underworld_layer = i32::MAX;
+        sys
     }
 
     pub fn active_len(&self) -> usize {
@@ -166,6 +202,12 @@ impl LiquidSystem {
     /// merge (`!Main.gameMenu && !isGeneratingOrLoadingWorld`).
     pub fn drain_merge_events(&mut self) -> Vec<LiquidMergeEvent> {
         std::mem::take(&mut self.merge_events)
+    }
+
+    /// The `DelWater` tail's kill records (`Liquid.cs:1529-1598`), drained
+    /// by the app after the pass to resolve the loot rolls.
+    pub fn drain_retire_kills(&mut self) -> Vec<crate::edit::TileKill> {
+        std::mem::take(&mut self.retire_kills)
     }
 
     pub fn buffered_len(&self) -> usize {
@@ -313,14 +355,48 @@ impl LiquidSystem {
     }
 
     /// `wetCounter >= cycles` bookkeeping: retire dead entries, promote buffered cells.
-    fn end_pass(&mut self, world: &World) {
-        let old = std::mem::take(&mut self.active);
-        for e in old {
+    fn end_pass(&mut self, world: &mut World) {
+        // `Liquid.cs:1109-1119` — the retirement sweep visits the list
+        // BACKWARDS (`num7 = numLiquid - 1; num7 >= 0; num7--`) and each
+        // `kill >= 8` entry runs the full `DelWater`. `DelWater` splices the
+        // entry out by copying the LAST entry into its slot (`:1575-1579`);
+        // the port mirrors that swap-remove so entries `AddWater` appends
+        // during the sweep land where the C# puts them and are never
+        // re-visited (the loop only walks downward).
+        let mut l = self.active.len();
+        while l > 0 {
+            l -= 1;
+            let e = self.active[l];
             if e.kill < KILL_PASSES {
-                self.active.push(e);
-            } else {
-                self.set_checking(e.x, e.y, false);
+                continue;
             }
+            // The 254→255 settle (`:1113-1116`) precedes the drain: a cell
+            // that drifted to 254 tops off to a full tile before the drain
+            // arms read its amount.
+            if world.tile(e.x, e.y).is_some_and(|t| t.liquid == 254) {
+                let i = world.index(e.x, e.y);
+                world.tiles[i].liquid = 255;
+                world.mark_chunk(e.x, e.y);
+                self.dirty = true;
+            }
+            self.del_water(world, e.x, e.y);
+            // `:1575-1579` — `numLiquid--`, copy the last entry into slot
+            // `l`, drop the tail. The C# copies `x`/`y`/`kill` only — the
+            // relocated entry keeps slot `l`'s `delay` (the retired entry's
+            // flow throttle), a vanilla quirk kept 1:1. `last >= l` always
+            // (appends only grow the list), so the read is in-bounds;
+            // `last == l` is a self-copy.
+            let last = self.active.len() - 1;
+            let tail = self.active[last];
+            self.active[l].x = tail.x;
+            self.active[l].y = tail.y;
+            self.active[l].kill = tail.kill;
+            self.active.pop();
+            // `:1576` — the retired cell's `checkingLiquid` clears. The C#
+            // does this before the alch/lily tail; the port's tail never
+            // re-queues liquid (the pure `square_tile_frame` has no
+            // `AddWater`), so clearing after `del_water` is the same state.
+            self.set_checking(e.x, e.y, false);
         }
         self.refill_from_buffer(world);
     }
@@ -334,6 +410,148 @@ impl LiquidSystem {
             self.add_water(world, x, y);
             if self.active.len() > before {
                 promoted += 1;
+            }
+        }
+    }
+
+    /// `Liquid.DelWater` (`Liquid.cs:1470-1599`) — the retirement drain of a
+    /// settled cell: a sub-2 film zeroes itself and its thin side neighbours,
+    /// a sub-20 film drains when any open neighbour holds less, the tail
+    /// wakes the unequal sides, re-runs the cell's reaction check (the lava
+    /// arm also burns the 3×3 grass ring), and the alch/lily-pad checks run.
+    /// The C# splices the entry out of the array (`:1575-1579`) and clears its
+    /// `checkingLiquid` (`:1576`); [`Self::end_pass`] mirrors both around this
+    /// call. The `stuck`-gated kill-reset arm (`:1506-1510`) parks with the
+    /// stuck self-clear (R-11-7).
+    fn del_water(&mut self, world: &mut World, x: i32, y: i32) {
+        let here = world.tile(x, y).copied().unwrap_or_default();
+        let left = world.tile(x - 1, y).copied().unwrap_or_default();
+        let right = world.tile(x + 1, y).copied().unwrap_or_default();
+        let down = world.tile(x, y + 1).copied().unwrap_or_default();
+        let i = world.index(x, y);
+        // `:1478-1505` — the sub-2 / sub-20 drain arms.
+        if here.liquid < 2 {
+            world.tiles[i].liquid = 0;
+            world.mark_chunk(x, y);
+            self.dirty = true;
+            if left.liquid < 2 {
+                if let Some(t) = world.tile_mut(x - 1, y) {
+                    t.liquid = 0;
+                }
+            } else {
+                self.add_water(world, x - 1, y);
+            }
+            if right.liquid < 2 {
+                if let Some(t) = world.tile_mut(x + 1, y) {
+                    t.liquid = 0;
+                }
+            } else {
+                self.add_water(world, x + 1, y);
+            }
+        } else if here.liquid < 20 {
+            let open = |t: &Tile| {
+                !t.active() || !td::TILE_SOLID.has(t.kind) || td::TILE_SOLID_TOP.has(t.kind)
+            };
+            if (left.liquid < here.liquid && open(&left))
+                || (right.liquid < here.liquid && open(&right))
+                || (down.liquid < 255 && open(&down))
+            {
+                world.tiles[i].liquid = 0;
+                world.mark_chunk(x, y);
+                self.dirty = true;
+            }
+        }
+        // (`:1506-1510` — the `stuck`-gated kill-reset arm parks with the
+        // stuck self-clear, R-11-7: the port has no stuck mode, so the
+        // condition's `!Liquid.stuck` is always true and the arm would
+        // resurrect the entry — it belongs to that task's machine.)
+        let amount = world.tiles[i].liquid;
+        // `:1511-1514` — a cell under 250 with liquid above wakes the above.
+        if amount < 250 && world.tile(x, y - 1).is_some_and(|t| t.liquid > 0) {
+            self.add_water(world, x, y - 1);
+        }
+        if amount == 0 {
+            // `:1515-1518` — the drained cell resets its type to water. The
+            // C# falls THROUGH to the alch/lily tail (`:1580`) — a drained
+            // herb or pad cell still runs its check — so no early return.
+            set_kind(&mut world.tiles[i], 0);
+            world.mark_chunk(x, y);
+        } else {
+            // `:1519-1528` — wake the unequal sub-250 open sides.
+            let open = |t: &Tile| {
+                !t.active() || !td::TILE_SOLID.has(t.kind) || td::TILE_SOLID_TOP.has(t.kind)
+            };
+            if right.liquid > 0 && right.liquid < 250 && open(&right) && amount != right.liquid {
+                self.add_water(world, x + 1, y);
+            }
+            if left.liquid > 0 && left.liquid < 250 && open(&left) && amount != left.liquid {
+                self.add_water(world, x - 1, y);
+            }
+            // `:1529-1569` — the reaction re-check; the lava arm burns the
+            // 3×3 grass ring (`:1532-1560`).
+            if any_is(&world.tiles[i], 1) {
+                self.lava_check(world, x, y);
+                for gx in (x - 1)..=(x + 1) {
+                    for gy in (y - 1)..=(y + 1) {
+                        let Some(cell) = world.tile(gx, gy).copied() else {
+                            continue;
+                        };
+                        if !cell.active() {
+                            continue;
+                        }
+                        if matches!(cell.kind, 2 | 23 | 109 | 199 | 477 | 492) {
+                            // `tile.type = 0` + `SquareTileFrame`
+                            // (`:1543-1544`) — the grass becomes dirt in
+                            // place; the ring walk carries the cascade
+                            // records.
+                            let gi = world.index(gx, gy);
+                            world.tiles[gi].kind = 0;
+                            world.mark_chunk(gx, gy);
+                            self.retire_kills
+                                .push(crate::edit::square_tile_frame_record(world, gx, gy));
+                        } else if matches!(cell.kind, 60 | 70 | 661 | 662) {
+                            // `tile.type = 59` (`:1552`) — jungle/mushroom
+                            // grass becomes mud.
+                            let gi = world.index(gx, gy);
+                            world.tiles[gi].kind = 59;
+                            world.mark_chunk(gx, gy);
+                            self.retire_kills
+                                .push(crate::edit::square_tile_frame_record(world, gx, gy));
+                        }
+                    }
+                }
+            } else if any_is(&world.tiles[i], 2) {
+                self.honey_check(world, x, y);
+            } else if any_is(&world.tiles[i], 3) {
+                self.shimmer_check(world, x, y);
+            }
+        }
+        // `:1580-1598` — the alch / lily-pad tail on the retired cell's kind
+        // (the C# holds `tile4`, a live reference, so it re-reads after the
+        // checks above; the port re-reads too). Runs even for a drained cell
+        // — the C# has no early return before it.
+        let kind_now = world.tile(x, y).map(|t| t.kind).unwrap_or(0);
+        if crate::tileobject::tile_alch(kind_now) {
+            if let Some(kill) = crate::edit::check_alch_tile(world, x, y) {
+                self.retire_kills.push(kill);
+            }
+        } else if kind_now == 518 {
+            // `:1586-1597`: quickFall → CheckLilyPad; otherwise the pad's
+            // below is FULL (255) and its above is DRY → CheckLilyPad; any
+            // other state takes the plain SquareTileFrame reframe.
+            let record = if self.quick_fall {
+                crate::edit::check_lily_pad(world, x, y)
+            } else {
+                let below_full = world.tile(x, y + 1).is_some_and(|t| t.liquid == 255);
+                let above_wet = world.tile(x, y - 1).is_some_and(|t| t.liquid > 0);
+                if !below_full || above_wet {
+                    Some(crate::edit::square_tile_frame_record(world, x, y))
+                } else {
+                    crate::edit::check_lily_pad(world, x, y)
+                }
+            };
+            if let Some(kill) = record {
+                self.retire_kills.push(kill);
             }
         }
     }
@@ -353,6 +571,25 @@ impl LiquidSystem {
             return (KILL_DEAD, delay);
         }
         let kind = kind_code(start.liquid_kind());
+
+        // --- underworld water evaporation (`Liquid.cs:466-474`) --------------
+        // Below `Main.UnderworldLayer` (`Main.cs:2790`, `maxTilesY - 200`) a
+        // WATER cell (`liquidType() == 0`, the type bits — not `anyWater`)
+        // sheds `min(2, liquid)` units per update. Lava/honey/shimmer never
+        // evaporate. The evaporation runs BEFORE the reaction block and the
+        // flow, and a cell it empties retires immediately (`:475-478`,
+        // `kill = 999`). `start` keeps the pre-evaporation level for the kill
+        // bookkeeping at the tail (the C#'s `byte liquid = tile5.liquid`
+        // captured at `:464`).
+        if y > self.underworld_layer && kind == 0 && world.tiles[i].liquid > 0 {
+            let b = world.tiles[i].liquid.min(2);
+            world.tiles[i].liquid -= b;
+            world.mark_chunk(x, y);
+            self.dirty = true;
+            if world.tiles[i].liquid == 0 {
+                return (KILL_DEAD, delay);
+            }
+        }
 
         // --- `Liquid.Update`'s reaction block (`Liquid.cs:475-560`) -----------
         // A lava cell checks itself first; every other cell wakes its lava
@@ -410,20 +647,23 @@ impl LiquidSystem {
         }
 
         // --- fall through the cell below ---------------------------------------
+        // The C# reads the LIVE `tile5.liquid` here (`:570-573`) — after the
+        // underworld evaporation may have shed units — not the entry snapshot.
+        let own_now = world.tiles[i].liquid;
         if let Some(below) = world.tile(x, y + 1).copied() {
             if !self.tile_is_solid(&below)
                 && (below.liquid == 0 || kind_code(below.liquid_kind()) == kind)
                 && below.liquid < 255
             {
                 let mut amount = 255 - below.liquid;
-                if amount > start.liquid {
-                    amount = start.liquid;
+                if amount > own_now {
+                    amount = own_now;
                 }
                 // The original keeps a 255 source intact when only one unit moves.
-                let keep_one = amount == 1 && start.liquid == 255;
+                let keep_one = amount == 1 && own_now == 255;
                 let j = world.index(x, y + 1);
                 if !keep_one {
-                    world.tiles[i].liquid = start.liquid - amount;
+                    world.tiles[i].liquid = own_now - amount;
                 }
                 world.tiles[j].liquid += amount;
                 set_kind(&mut world.tiles[j], kind);
@@ -514,7 +754,20 @@ impl LiquidSystem {
                     set_level(world, self, x + 2, y, avg, kind);
                     new_own = avg;
                 } else {
-                    let avg = round_level(l + r + own as f32 + bias, 3);
+                    // The three-cell arm (`Liquid.cs:889-909`): the only
+                    // `WorldGen.genRand` draw in the liquid file —
+                    // `num == 254 && genRand.Next(30) == 0 → 255` (`:892-895`).
+                    // Deviation (research/11 #5, ANALYSIS): vanilla shares one
+                    // `genRand` across all consumers; the port keeps a
+                    // per-consumer stream (`LiquidSystem::surface_rng`, seeded
+                    // from the world seed in `new`, the `place_rng` precedent),
+                    // so the draw never interleaves with other systems. The
+                    // roll runs exactly once per 3-cell average, BEFORE any
+                    // neighbour write — the C# order.
+                    let mut avg = round_level(l + r + own as f32 + bias, 3);
+                    if avg == 254 && self.surface_rng.next_max(30) == 0 {
+                        avg = 255;
+                    }
                     set_level(world, self, x - 1, y, avg, kind);
                     set_level(world, self, x + 1, y, avg, kind);
                     new_own = avg;
@@ -1010,7 +1263,7 @@ mod tests {
         w.frame_important = vec![false; td::TILE_COUNT];
         w.compute_column_surface();
         w.compute_chunks();
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         // The water delay gate moves a cell every ~6 ticks (`Liquid.cs:484`).
         for _ in 0..40 {
@@ -1046,7 +1299,7 @@ mod tests {
         w.frame_important = vec![false; td::TILE_COUNT];
         w.compute_column_surface();
         w.compute_chunks();
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         for _ in 0..8 {
             sys.update(&mut w);
@@ -1078,7 +1331,7 @@ mod tests {
         w.frame_important = vec![false; td::TILE_COUNT];
         w.compute_column_surface();
         w.compute_chunks();
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         for _ in 0..40 {
             sys.update(&mut w);
@@ -1143,7 +1396,7 @@ mod tests {
         let mut w = basin(9, 8);
         put_as(&mut w, 4, 4, 30, 1);
         put_as(&mut w, 5, 4, 30, 0);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         sys.add_water(&w, 5, 4);
         run(&mut sys, &mut w, 1);
@@ -1157,7 +1410,7 @@ mod tests {
         let mut w = basin(9, 8);
         put_as(&mut w, 4, 4, 30, 2);
         put_as(&mut w, 5, 4, 30, 0);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         sys.add_water(&w, 5, 4);
         run(&mut sys, &mut w, 1);
@@ -1173,7 +1426,7 @@ mod tests {
         let mut w = basin(9, 8);
         put_as(&mut w, 4, 4, 30, 2);
         put_as(&mut w, 5, 4, 30, 1);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         sys.add_water(&w, 5, 4);
         run(&mut sys, &mut w, 1);
@@ -1187,7 +1440,7 @@ mod tests {
         let mut w = basin(9, 8);
         put_as(&mut w, 4, 4, 30, 3);
         put_as(&mut w, 5, 4, 30, 0);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         sys.add_water(&w, 5, 4);
         run(&mut sys, &mut w, 1);
@@ -1204,7 +1457,7 @@ mod tests {
         let mut w = basin(9, 8);
         put_as(&mut w, 4, 4, 30, 1);
         put_as(&mut w, 5, 4, 20, 0);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         sys.add_water(&w, 5, 4);
         run(&mut sys, &mut w, 1);
@@ -1221,7 +1474,7 @@ mod tests {
         let mut w = basin(9, 8);
         put_as(&mut w, 4, 4, 30, 1);
         put_as(&mut w, 4, 5, 30, 0);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         sys.add_water(&w, 4, 5);
         run(&mut sys, &mut w, 1);
@@ -1243,7 +1496,7 @@ mod tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.tiles[i].liquid = 30;
         put_as(&mut w, 4, 4, 30, 1);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         run(&mut sys, &mut w, 1);
         assert_eq!(w.tile(4, 5).unwrap().kind, 56, "the plant burned, the merge landed");
@@ -1304,7 +1557,7 @@ mod tests {
         w.tiles[stone].flags |= FLAG_ACTIVE;
         w.tiles[stone].liquid = 30;
         set_kind(&mut w.tiles[stone], 1);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.liquid_check(&mut w, 4, 4, 0, false);
         assert_eq!(w.tile(4, 5).unwrap().kind, 56, "the stone cell was merged into");
         assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
@@ -1333,7 +1586,7 @@ mod tests {
         w.tiles[stone].flags |= FLAG_ACTIVE;
         w.tiles[stone].liquid = 30;
         set_kind(&mut w.tiles[stone], 1);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.liquid_check(&mut w, 4, 4, 0, false);
         assert_eq!(
             sys.drain_merge_events(),
@@ -1344,7 +1597,7 @@ mod tests {
 
         // The generation arm: `isGeneratingOrLoadingWorld` blocks the sound
         // (`Liquid.cs:1345`'s gate) — the same merge queues nothing.
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.generating = true;
         sys.liquid_check(&mut w, 4, 4, 0, false);
         assert!(
@@ -1357,7 +1610,7 @@ mod tests {
     fn water_falls_and_fills_the_pit_bottom() {
         let mut w = basin(9, 8);
         put(&mut w, 4, 4, 255);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         run(&mut sys, &mut w, 400);
         assert_eq!(
@@ -1382,7 +1635,7 @@ mod tests {
         for x in 3..=7 {
             put(&mut w, x, 5, 200);
         }
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.wake_around(&w, 5, 5, 4);
         run(&mut sys, &mut w, 400);
         let levels: Vec<i32> = (0..11)
@@ -1410,7 +1663,7 @@ mod tests {
             };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 5);
         run(&mut sys, &mut w, 300);
         for y in 2..6 {
@@ -1460,7 +1713,7 @@ mod tests {
 
         let hole = w.index(10, 7);
         w.tiles[hole] = Tile::default();
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.wake_around(&w, 10, 7, 4);
         run(&mut sys, &mut w, 1200);
 
@@ -1480,7 +1733,7 @@ mod tests {
     fn add_water_deduplicates_tiles() {
         let mut w = basin(6, 4);
         put(&mut w, 2, 3, 100);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         for _ in 0..5 {
             sys.add_water(&w, 2, 3);
         }
@@ -1498,7 +1751,7 @@ mod tests {
         for x in 0..width {
             put(&mut w, x, 5, 100);
         }
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         for x in 0..width {
             sys.add_water(&w, x, 5);
         }
@@ -1554,13 +1807,157 @@ mod tests {
         w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
         w.frame_important = vec![false; td::TILE_COUNT];
         put(&mut w, 4, 4, 255);
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 4, 4);
         run(&mut sys, &mut w, 400);
         assert!(
             w.tile(4, 8).unwrap().liquid > 0,
             "water entered the actuated floor tile"
         );
+    }
+
+    /// A stone cell at `(x, y)` — the evaporation fixtures' sealed pocket.
+    fn stone(w: &mut World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// A sealed 1-cell pocket at `(x, y)` (stone left/right/below, open above)
+    /// holding `amount` of liquid `kind`. The pocket isolates the evaporation
+    /// arm from the fall/level arms so the ledger is exact.
+    fn pocket(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        stone(w, x - 1, y);
+        stone(w, x + 1, y);
+        stone(w, x, y + 1);
+        put_as(w, x, y, amount, kind);
+    }
+
+    #[test]
+    fn underworld_water_evaporates_two_per_update() {
+        // `Liquid.cs:466-474`: below `UnderworldLayer` (`maxTilesY - 200`) a
+        // water cell sheds `min(2, liquid)` per update. A 250-tall world's
+        // layer is y=50; the sealed pocket at y=60 is inside the band.
+        let mut w = World::new("evap".into(), 20, 250);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        pocket(&mut w, 10, 60, 10, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 10, 60);
+        // 10 → 8 → 6 → 4 → 2 → 0: five updates empty the cell.
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tile(10, 60).unwrap().liquid, 8, "one update sheds 2");
+        run(&mut sys, &mut w, 4);
+        assert_eq!(w.tile(10, 60).unwrap().liquid, 0, "five updates empty it");
+        assert_eq!(sys.active_len(), 0, "the emptied cell retired (kill=999)");
+    }
+
+    #[test]
+    fn a_sub_two_film_evaporates_whole() {
+        // `Liquid.cs:468-472`: `b = min(2, liquid)` — a 1-unit film sheds its
+        // single unit, never underflowing the byte.
+        let mut w = World::new("evap".into(), 20, 250);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        pocket(&mut w, 10, 60, 1, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 10, 60);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tile(10, 60).unwrap().liquid, 0, "the 1-unit film is gone");
+        assert_eq!(sys.active_len(), 0);
+    }
+
+    #[test]
+    fn water_above_the_underworld_layer_does_not_evaporate() {
+        // The gate is `y > UnderworldLayer` (`:466`): a pocket at y=40 in the
+        // same 250-tall world (layer 50) keeps every unit.
+        let mut w = World::new("evap".into(), 20, 250);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        pocket(&mut w, 10, 40, 10, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 10, 40);
+        run(&mut sys, &mut w, 8);
+        assert_eq!(w.tile(10, 40).unwrap().liquid, 10, "no evaporation above the layer");
+    }
+
+    #[test]
+    fn lava_honey_and_shimmer_never_evaporate() {
+        // `liquidType() == 0` (`:466`) — only water evaporates; the other
+        // three kinds keep their mass inside the band.
+        for kind in [1u8, 2, 3] {
+            let mut w = World::new("evap".into(), 20, 250);
+            w.frame_important = vec![false; td::TILE_COUNT];
+            w.compute_column_surface();
+            w.compute_chunks();
+            pocket(&mut w, 10, 60, 10, kind);
+            let mut sys = LiquidSystem::new(&w);
+            sys.add_water(&w, 10, 60);
+            run(&mut sys, &mut w, 8);
+            assert_eq!(
+                w.tile(10, 60).unwrap().liquid, 10,
+                "kind {kind} must not evaporate"
+            );
+        }
+    }
+
+    #[test]
+    fn the_retire_sweep_splices_backwards_and_the_lily_tail_runs_on_drained_cells() {
+        // `Liquid.cs:1109-1119` walks the list backwards; `:1580-1598` runs the
+        // alch/lily tail even when the cell drained to 0 (no early return).
+        // A lily pad 518 over a full (255) below with a dry above takes the
+        // `CheckLilyPad` arm; here the pad's below is empty so the pad sinks.
+        let mut w = World::new("lily".into(), 30, 260);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.frame_important[518] = true;
+        w.compute_column_surface();
+        w.compute_chunks();
+        // A dirt floor at y=70; the pad sits at y=68 with a water film, the
+        // cell below (y=69) empty. The pad's liquid drains (sub-20 film, open
+        // below), then the lily tail sinks it onto y=69.
+        stone(&mut w, 15, 70);
+        w.tiles[w.index(15, 70)].kind = 2; // dirt → frame row 0
+        let pad = w.index(15, 68);
+        w.tiles[pad] = Tile { kind: 518, ..Default::default() };
+        w.tiles[pad].flags |= FLAG_ACTIVE;
+        w.tiles[pad].liquid = 5;
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 15, 68);
+        // Let the film drain and the entry retire (kill reaches 8).
+        run(&mut sys, &mut w, 40);
+        // The pad moved down onto y=69 (the empty cell below), origin cleared.
+        assert_eq!(w.tile(15, 69).unwrap().kind, 518, "the pad sank one cell");
+        assert!(!w.tile(15, 68).unwrap().active(), "the origin went inactive");
+    }
+
+    #[test]
+    fn surface_rng_is_the_world_seeded_unified_stream() {
+        // RNG census: the ONLY `WorldGen.genRand` draw in `Liquid.cs` is the
+        // 3-cell surface nudge `Next(30)` (`:892`). The port keeps it on a
+        // per-consumer `UnifiedRandom` seeded from the world seed (the
+        // `place_rng` precedent; vanilla shares one `genRand`, ANALYSIS). This
+        // pins the stream to the standard world-seeded `UnifiedRandom` — the
+        // determinism contract — draw-for-draw against an independent instance.
+        let mut w = World::new("nudge".into(), 20, 250);
+        w.seed = 42;
+        let sys = LiquidSystem::new(&w);
+        let mut reference = crate::unified_random::UnifiedRandom::new(42);
+        let mut rng = sys.surface_rng.clone();
+        for i in 0..32 {
+            assert_eq!(rng.next_max(30), reference.next_max(30), "nudge draw {i}");
+        }
+        // A different world seed gives a different stream (no hard-coded seed).
+        let mut w2 = World::new("nudge".into(), 20, 250);
+        w2.seed = 7;
+        let sys2 = LiquidSystem::new(&w2);
+        let mut reference2 = crate::unified_random::UnifiedRandom::new(7);
+        let mut rng2 = sys2.surface_rng.clone();
+        for i in 0..8 {
+            assert_eq!(rng2.next_max(30), reference2.next_max(30), "seed-7 draw {i}");
+        }
     }
 }
 
@@ -1607,7 +2004,7 @@ mod liquid_sim {
         w.mark_chunk(30, 50);
         w.compute_column_surface();
         w.compute_chunks();
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 30, 50);
         for _ in 0..10 {
             sys.update(&mut w);
@@ -1639,7 +2036,7 @@ mod liquid_sim {
         w.mark_chunk(31, 69);
         w.compute_column_surface();
         w.compute_chunks();
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 31, 69);
         for _ in 0..12 {
             sys.update(&mut w);
@@ -1685,7 +2082,7 @@ mod liquid_sim {
         w.mark_chunk(31, 69);
         w.compute_column_surface();
         w.compute_chunks();
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 30, 69);
         sys.add_water(&w, 31, 69);
         for _ in 0..12 {
@@ -1718,7 +2115,7 @@ mod liquid_sim {
         w.mark_chunk(30, 40);
         w.compute_column_surface();
         w.compute_chunks();
-        let mut sys = LiquidSystem::new(&w);
+        let mut sys = LiquidSystem::new_flow_fixture(&w);
         sys.add_water(&w, 30, 40);
         let total = |w: &World| -> i32 {
             (0..64)
@@ -1750,7 +2147,7 @@ mod liquid_sim {
         w2.mark_chunk(31, 69);
         w2.compute_column_surface();
         w2.compute_chunks();
-        let mut sys2 = LiquidSystem::new(&w2);
+        let mut sys2 = LiquidSystem::new_flow_fixture(&w2);
         sys2.add_water(&w2, 31, 69);
         let row_total = |w: &World| -> i32 {
             (0..64)
