@@ -2323,14 +2323,14 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
-        // W4-f40: the world-load event clear (`WorldGen.cs:6996`
-        // `LanternNight.WorldClear()` + the `LanternSky.Reset` the
-        // `SkyManager.Reset` family runs, `SkyManager.cs:15-22`): the
-        // lantern flags/cooldown/edge clear and the sky deactivates. The
-        // vanilla file carries no lantern temps (S1-J-7), so they reset on
-        // load by design.
-        crate::world_events::world_clear(&mut self.world_events);
-        self.lantern_sky.reset();
+        // W4-f40 DOC-SWEEP: the lantern world-load clear (`WorldGen.cs:6996`
+        // `LanternNight.WorldClear()` + the `SkyManager.Reset` family) lives
+        // at the clear-then-restore sites — `swap_world` (ahead of the
+        // `App::new` restore) and `client_install_world` (ahead of the tile
+        // install) — NOT here: this tail runs AFTER the restore, and a
+        // clear here would clobber a loaded lantern night (the C#
+        // `clearWorld` precedes `SetOngoingToTemps`, `WorldFile.cs:1977`
+        // vs `:173-176`).
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -2697,6 +2697,18 @@ impl App {
     /// so the menu stays alive with its own world rather than a black screen.
     pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
         let (world, sections) = load_world(path)?;
+        // W4-f40 DOC-SWEEP: the C# `LoadWorld` runs `WorldGen.clearWorld()`
+        // (`WorldFile.cs:1977`) BEFORE `LoadWorldFlags` reads the event temps
+        // back (`SetOngoingToTemps`, `:173-176`) — the clear-then-restore
+        // order. The port's restore rides `App::new` below (f45's from_wld
+        // block), so the clear runs here, ahead of it; a clear in
+        // `enter_loaded_world` (AFTER the rebuild) would clobber the
+        // restored lantern quad. The fresh `App::new` builds
+        // `WorldEvents`/`LanternSky` from defaults anyway — this pins the
+        // order for any future restore-onto-self path. The failed-load
+        // early return above leaves the current world untouched.
+        crate::world_events::world_clear(&mut self.world_events);
+        self.lantern_sky.reset();
         let content = assets::content_dir().context("no retail Content directory")?;
         let mut static_cache = self.static_sheets.take();
         let mut fonts_cache = self.fonts_cache.take();

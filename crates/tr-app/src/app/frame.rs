@@ -1125,6 +1125,42 @@ mod tests {
         );
     }
 
+    /// W4-f40 DOC-SWEEP — the lantern quad SURVIVES `enter_loaded_world`:
+    /// the C# `LoadWorld` runs `WorldGen.clearWorld()` (which calls
+    /// `LanternNight.WorldClear`, `WorldGen.cs:6996`) at
+    /// `WorldFile.cs:1977`, BEFORE `LoadWorldFlags` reads the lantern temps
+    /// and `SetOngoingToTemps` (`:173-176`) restores them. The port's
+    /// restore rides `App::new` (the f45 `from_wld` block), so the clear
+    /// lives in `swap_world` ahead of the rebuild — this tail must not
+    /// clear, or a saved lantern night dies on every load.
+    #[test]
+    fn w4_f40_entering_a_loaded_world_keeps_the_restored_lantern_quad() {
+        let mut app = in_world_app();
+        app.world_events.genuine_lanterns = true;
+        app.world_events.manual_lanterns = true;
+        app.world_events.next_night_is_lantern_night = true;
+        app.world_events.lantern_nights_on_cooldown = 5;
+        app.enter_loaded_world();
+        let ev = &app.world_events;
+        assert!(ev.genuine_lanterns && ev.manual_lanterns, "the up flags ride");
+        assert!(ev.next_night_is_lantern_night, "the armed next night rides");
+        assert_eq!(ev.lantern_nights_on_cooldown, 5, "the cooldown rides");
+        // The source-order pin: `swap_world` clears BEFORE the `App::new`
+        // rebuild (the restore), and the shared tail carries no clear.
+        let src = include_str!("mod.rs");
+        let swap_at = src.find("fn swap_world(").expect("swap_world");
+        let swap_body = &src[swap_at..];
+        let clear_at = swap_body.find("world_clear(").expect("the swap clear");
+        let rebuild_at = swap_body.find("*self = App::new(").expect("the rebuild");
+        assert!(clear_at < rebuild_at, "clear-then-restore (WorldFile.cs:1977)");
+        let enter_at = src.find("fn enter_loaded_world(").expect("the tail");
+        let enter_body = &src[enter_at..enter_at + 2600];
+        assert!(
+            !enter_body.contains("world_clear("),
+            "the post-restore tail must not clear the quad"
+        );
+    }
+
     /// The Phase-2 stepper tests' fixture: the in-world app with a slime on a
     /// ground world — the DW-1.2 shape, minus the water/rain instruments the
     /// pacing doesn't read. The liquid sim is rebuilt for the swapped world's

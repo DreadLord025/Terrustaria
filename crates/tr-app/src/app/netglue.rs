@@ -2008,6 +2008,14 @@ impl App {
             }
         }
         let _ = want;
+        // W4-f40 DOC-SWEEP: the net client's world install runs the C#
+        // `WorldGen.clearWorld()` (`Netplay.cs:500`, the state-4 arm) BEFORE
+        // the tile sections land — the lantern event clear + sky reset ride
+        // here (the install mutates `self` in place, no `App::new` rebuild,
+        // so the shared `enter_loaded_world` tail must NOT carry the clear:
+        // it would clobber the single-player restore).
+        crate::world_events::world_clear(&mut self.world_events);
+        self.lantern_sky.reset();
         self.world = world;
         self.liquids = LiquidSystem::new(&self.world);
         self.map = Some(map::WorldMap::new(&self.world));
