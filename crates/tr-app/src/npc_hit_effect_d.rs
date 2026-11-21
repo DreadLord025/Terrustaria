@@ -610,7 +610,11 @@ fn gem_squirrel_death(
 /// position + wing pair at Center ±(4,0) (`:86002-86019`), the 674/675
 /// cockatiel triples (same shape, `:86020-86031`), the 299 Squirrel → 433
 /// (`:86034`), 538 Red Squirrel → 897 (`:86038`), 300 Mouse → 434
-/// (`:86042`), 610 Rat → 1163 (`:86046`). The remaining
+/// (`:86042`), 610 Rat → 1163 (`:86046`), 626 Seahorse → 1197 (`:86050`),
+/// 102 Angler Fish → 116 (`:86054`), 224 Flying Fish → 312/313
+/// (`:86058-86059`), 587 Eyeball Flying Fish → extra 50x dust-5 at
+/// (2.5·hd, −2.5) then 1104/1105 (`:86061-86069`), 616 Turtle →
+/// 1166/1167/1168/1168 (`:86070-86076`). The remaining
 /// sub-branches land in later batches; an unported kind in the arm spawns
 /// the dust burst only (the census note — the gores follow in source
 /// order).
@@ -715,6 +719,41 @@ fn critter_arm_death(
         gore.new_gore(rng, world, pos, vel, 434, 1.0); // :86042
     } else if npc_type == 610 {
         gore.new_gore(rng, world, pos, vel, 1163, 1.0); // :86046
+    } else if npc_type == 626 {
+        gore.new_gore(rng, world, pos, vel, 1197, 1.0); // :86050
+    } else if npc_type == 102 {
+        gore.new_gore(rng, world, pos, vel, 116, 1.0); // :86054
+    } else if npc_type == 224 {
+        gore.new_gore(rng, world, pos, vel, 312, 1.0); // :86058
+        gore.new_gore(rng, world, pos, vel, 313, 1.0); // :86059
+    } else if npc_type == 587 {
+        // `:86061-86069` — the 587 Eyeball Flying Fish: an EXTRA 50x
+        // dust-5 burst at (2.5*hd, -2.5) runs AFTER the shared 10x burst
+        // and BEFORE the two gores (the C# order).
+        let (w, h) = npc.size();
+        for _ in 0..50 {
+            dust.new_dust(
+                rng,
+                dust_ctx,
+                world,
+                pos,
+                w as i32,
+                h as i32,
+                5,
+                2.5 * hit_direction,
+                -2.5,
+                0,
+                Color::default(),
+                1.0,
+            );
+        }
+        gore.new_gore(rng, world, pos, vel, 1104, 1.0); // :86067
+        gore.new_gore(rng, world, pos, vel, 1105, 1.0); // :86068
+    } else if npc_type == 616 {
+        gore.new_gore(rng, world, pos, vel, 1166, 1.0); // :86072
+        gore.new_gore(rng, world, pos, vel, 1167, 1.0); // :86073
+        gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86074
+        gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86075
     }
 }
 
@@ -790,8 +829,9 @@ pub fn hit_effect_d(
         gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     // `:85942-86091` — the 29-type critter arm; the 46/303/337/540, 67,
-    // 55/230, 615, 74, 297, 298, 671-675, 299, 538, 300, 610 sub-branches
-    // are live (sites 42-75), the rest land later.
+    // 55/230, 615, 74, 297, 298, 671-675, 299, 538, 300, 610, 626, 102,
+    // 224, 587, 616 sub-branches are live (sites 42-85), the rest land
+    // later.
     else if matches!(
         npc_type,
         46 | 55
@@ -1472,5 +1512,68 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "critter {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:86050-86075` — the water critters: 626 Seahorse 1197,
+    /// 102 Angler Fish 116, 224 Flying Fish 312/313, 616 Turtle
+    /// 1166/1167/1168/1168; the draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_water_critters_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (626, vec![1197]),
+            (102, vec![116]),
+            (224, vec![312, 313]),
+            (616, vec![1166, 1167, 1168, 1168]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(89);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "water critter {kind}");
+            let mut twin = UnifiedRandom::new(89);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "water critter {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86061-86068` — the 587 Eyeball Flying Fish: the extra 50x
+    /// dust-5 burst runs BETWEEN the shared 10x burst and the two gores
+    /// (the stream order: 10 dust, 50 dust, 2 gores' kicks).
+    #[test]
+    fn w4_f5d_the_eyeball_fish_inserts_the_fifty_dust_burst() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(97);
+        let _ = hit_effect_d(&n, 587, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1104, 1105]);
+        let mut twin = UnifiedRandom::new(97);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 30, 26);
+        }
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 26);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the eyeball fish mirrors the C# draws");
     }
 }
