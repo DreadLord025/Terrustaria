@@ -1,37 +1,38 @@
-//! W4-g1 lane a — the six FUNCTIONAL `Kill()` hooks missing for rowed+armed
-//! kinds (census `docs/research/26d-projectile-kill-hooks-census.md`):
+//! W4-g1 lane a — the FUNCTIONAL `Kill()` hooks this lane OWNS after the
+//! d78 FINAL dedupe (census `docs/research/26d-projectile-kill-hooks-census.md`,
+//! adjudication `26f-d78-final-kill-dedupe.md` §1, commit `fd59c51a` on
+//! `task/W4-d78-ui-sounds-menus`): **459/521/522/80 KEEP; the hostile EVP
+//! trio 452/454/448 DROPPED** — d78's `hostile_death_blast` +
+//! `damage_evp_boxed` port `Damage_EVP` (`:14773-14900`) verbatim (DamageVar,
+//! hostileDamageScaling, the ×2, the BossNoCheese cooldown lane), where this
+//! lane's first-round `death_burst_player_hit` rode `hurt_with_source` with
+//! RAW damage and its General-lane immune gate would refuse the 452/454
+//! boss blasts the C# `:14799` lands. g65's death-dust bodies carry the
+//! same census draws inside the bodies — keeping g1's standalone censuses
+//! would double-roll the stream.
 //!
-//! - **452 PhantasmalEye** (`Projectile.cs:72987-73013`): Resize 144×144 →
-//!   the dust/gore census → Resize 30×30 → `Damage()` (the hostile EVP burst).
-//! - **454 PhantasmalSphere** (`:73014-73045`): the recentre-208 box → the
-//!   ring dust + 3-gore census → `Damage()` (the hostile EVP burst).
 //! - **459 ChargedBlasterOrb** (`:73338-73371`, the 459/709 SHARED burst —
 //!   g1's claim per the f20 F3 cross-note, commit `01e0b1083` on
 //!   `task/W4-f20-proj-ai-verify-2`, which ports the 709-ONLY half
 //!   `:73372-73388` + the 1110 row): at `scale >= 1` the Resize-144 →
 //!   `Damage()` (the friendly PVE burst) → dust/gore rings, in that C#
-//!   order; below 1 the small 3+10 dust census, zero gores. The arm is
-//!   459-gated here (709 is unrowed on this branch — d15 owns the row);
-//!   at the merge the pool gate widens to `459 | 709` (kind-disjoint from
-//!   f20's `sky_dragons_fury_kill`, which seats the 709-only half).
+//!   order; below 1 the small 3+10 dust census, zero gores. The pool gate
+//!   is `459 | 709` (the 709 row lives on d15 — row-gated inert here;
+//!   kind-disjoint from f20's `sky_dragons_fury_kill`, which seats the
+//!   709-only half).
 //! - **521 CrystalPulse** (`:73292-73327`): the 20-dust census, then the
 //!   owner-gated `Next(3,6)`-count CrystalPulse2 (522) split — the velocity
 //!   draws are STATE-BEARING and feed the spawns inline. The 522's own
 //!   Kill arm (`:73271-73290`, the 10-dust census) lands with the shard.
-//! - **448 SaucerMissile** (`:73603-73631`): the recentre-112 box → the
-//!   dust/gore census → `Damage()` (the hostile EVP burst).
 //! - **80 IceBlock** (`:75533-75553`): the `ai[0] >= 0` sound/dust census +
 //!   the tile-127 `WorldGen.KillTile` break (the pool hook owns the tile
-//!   write, `ice_block_kill_tile` in projectile.rs).
+//!   write, the ICE_BLOCK arm of `ProjectilePool::kill_hooks_a`).
 //!
 //! C# sources read WHOLE (the golden rule): the `Kill()` head `:70642-70660`
 //! (the `!active` guard + the `num = timeLeft` capture), each arm above, the
 //! `Damage()` body `:12487-12516`, `Damage_CanDealDamage` `:12446-12485`
-//! (none of the six kinds is on the refusal list), `Damage_EVP`
-//! `:14773-14900` (the hostile player hit — the `BossNoCheese` cooldown
-//! `:14782-14787` is the standing single-lane deviation, M4-HAZARD-1), and
-//! `Colliding`'s per-kind gates `:15406-15412` (454) / `:15447-15450` (452) +
-//! the fallback `:15887-15891`.
+//! (none of the kept kinds is on the refusal list), and the `Entity.Resize`
+//! maths `:22353-22359`.
 //!
 //! RNG contract (the `UpdateProjectiles` stream, `Main.cs:17775-17777`):
 //! every EXPLICIT `Main.rand` draw stays in the C#'s order; the dust/gore
@@ -41,13 +42,22 @@
 //! (`Gore.cs:1327-1328`) — plus the explicit position `Next(100)` pair, the
 //! `Next(61,64)` type and the two post-write `Next(-10,11)` kicks (the 7-draw
 //! `gore()` row, the `celeb2_explosion` precedent; g16 upgrades these census
-//! rows to the `GorePool` at its wiring wave). The 454/459 ring dust draws
+//! rows to the `GorePool` at its wiring wave). The 459 ring dust draws
 //! TWO `next_double` per particle (the `RotatedBy(2π·NextDouble())` angle then
 //! the `NextDouble()` radius, `Utils.cs:1675-1684`); the argument evaluation
 //! order is left-to-right (`(width/2, 0).RotatedBy(2π·d1) * d2`).
 //!
-//! Sound cues (`Item14`/`Item27`/`Item110`/legacy 29/4/0) are the sound-lane
-//! skip (g21-25); the `PlaySound` draws nothing on this stream in the port's
+//! MERGER NOTE (the g65 keep-one, research/26i): g65's pushed death-dust
+//! bodies (`459 | 709` / `521` / `522` / `80` arms, `projectile_death_dust.rs`
+//! @ `b0842907c`) carry these SAME explicit draws inside their bodies — at
+//! the g1×g65 merge the census calls here DROP per-kind (the bodies
+//! supersede them, the 26i §3 pattern); the STATE (resize + Damage + the
+//! 522 split spawns + the tile break) stays g1's.
+//!
+//! Sound cues (`Item27`/`Item110`/`Item118`) are the sound-lane skip
+//! (g21-25/d77 — the 521 Item110 cue `:73294` and the 80 Item27 gate
+//! `:75537` are already armed on d77's `kill_tail_cue`, cue-first, per
+//! 26f §5); the `PlaySound` draws nothing on this stream in the port's
 //! queue convention until the cue lands.
 //!
 //! CODE-ONLY MODE (W4-g1): the witness tests at the bottom are WRITTEN NOT
@@ -59,10 +69,10 @@ use tr_core::loot::DropRng;
 
 use crate::projectile::{Projectile, safe_normalize};
 
-/// One gore's draw row (the `celeb2_explosion::gore` shape, shared by the
-/// 452/454/459/448 bursts): the position `Next(100)` pair, the `Next(61,64)`
-/// type, the `NewGore` kicks (`Gore.cs:1327-1328`), the two post-write
-/// `Next(-10,11)` velocity kicks (`:73008-73009` etc.).
+/// One gore's draw row (the `celeb2_explosion::gore` shape, the 459 burst):
+/// the position `Next(100)` pair, the `Next(61,64)` type, the `NewGore`
+/// kicks (`Gore.cs:1327-1328`), the two post-write `Next(-10,11)` velocity
+/// kicks (`:73369-73370`).
 fn gore(rng: &mut dyn DropRng) {
     let _ = rng.next_range(0, 100);
     let _ = rng.next_range(0, 100);
@@ -73,7 +83,7 @@ fn gore(rng: &mut dyn DropRng) {
     let _ = rng.next_range(-10, 11);
 }
 
-/// One ring-dust particle's two DOUBLE draws (`:73024` etc.): the
+/// One ring-dust particle's two DOUBLE draws (`:73356` etc.): the
 /// `RotatedBy(2π·NextDouble())` angle, then the `NextDouble()` radius. The
 /// dust body is the skip; only the draws stay.
 fn ring_dust(rng: &mut dyn DropRng) {
@@ -83,9 +93,8 @@ fn ring_dust(rng: &mut dyn DropRng) {
 
 /// `Entity.Resize` (`Projectile.cs:22353-22359`): the position snaps to the
 /// old centre, the box grows, then `Center = position` recentres on the
-/// INTEGER half (`width / 2` on the C#'s int field). The 452's two resizes
-/// and the 459's scale-gated resize ride this; the 454/448 recentre shapes
-/// are the arms' own (below).
+/// INTEGER half (`width / 2` on the C#'s int field). The 459's scale-gated
+/// resize rides this.
 fn resize(p: &mut Projectile, side: f32) {
     let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
     p.pos = center;
@@ -95,47 +104,11 @@ fn resize(p: &mut Projectile, side: f32) {
     p.pos.y -= (side as i32 / 2) as f32;
 }
 
-/// **452 PhantasmalEye** — `Kill()`'s arm (`Projectile.cs:72987-73013`):
-/// `Resize(144, 144)`, the 4-dust-31 + 40×2-dust-229 census (no explicit
-/// draws), ONE gore, `Resize(30, 30)`, then `Damage()` (the pool hook runs
-/// the EVP burst through the final 30×30 box). The legacy sound 29 style 103
-/// is the sound skip.
-pub(crate) fn phantasmal_eye_kill(p: &mut Projectile, rng: &mut dyn DropRng) {
-    resize(p, 144.0); // `:72990`
-    // `:72991-73003` — the 4 + 80 dusts roll nothing explicit.
-    gore(rng); // `:73004-73010`
-    resize(p, 30.0); // `:73011`
-    // `:73012` — `Damage()` rides the pool hook (the 30×30 box).
-}
-
-/// **454 PhantasmalSphere** — `Kill()`'s arm (`Projectile.cs:73014-73045`):
-/// `position = Center`, the 208×208 box recentred on the integer half, the
-/// 7 ring dusts + 60×2 ring dusts (TWO doubles each), THREE gores, then
-/// `Damage()` (the pool hook, the 208×208 box). The legacy sound 4 style 6
-/// is the sound skip.
-pub(crate) fn phantasmal_sphere_kill(p: &mut Projectile, rng: &mut dyn DropRng) {
-    // `:73017-73020` — the recentre-208 shape (the arm's own, not Resize).
-    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-    p.pos = center;
-    p.w = 208.0;
-    p.h = 208.0;
-    p.pos.x -= (p.w as i32 / 2) as f32;
-    p.pos.y -= (p.h as i32 / 2) as f32;
-    // `:73021-73025` — 7 ring dusts.
-    for _ in 0..7 {
-        ring_dust(rng);
-    }
-    // `:73026-73036` — 60 × 2 ring dusts.
-    for _ in 0..60 {
-        ring_dust(rng);
-        ring_dust(rng);
-    }
-    // `:73037-73043` — three gores.
-    for _ in 0..3 {
-        gore(rng);
-    }
-    // `:73044` — `Damage()` rides the pool hook (the 208×208 box).
-}
+// (d78 FINAL drop, 26f §1 @ fd59c51a: the 452 PhantasmalEye / 454
+// PhantasmalSphere / 448 SaucerMissile arms lived here — d78's
+// `hostile_death_blast` + `damage_evp_boxed` own the resize state + the
+// verbatim Damage_EVP hit, g65's pushed bodies own the dust/gore draws;
+// g1's raw-damage `death_burst_player_hit` + standalone censuses DROPPED.)
 
 /// **459 ChargedBlasterOrb** — `Kill()`'s 459/709 SHARED arm
 /// (`Projectile.cs:73338-73352`), the resize + burst-flag half: at
@@ -172,23 +145,6 @@ pub(crate) fn charged_blaster_orb_kill_draws(burst: bool, rng: &mut dyn DropRng)
     for _ in 0..n_gore {
         gore(rng);
     }
-}
-
-/// **448 SaucerMissile** — `Kill()`'s arm (`Projectile.cs:73603-73631`):
-/// the recentre-112 box, the 4-dust-31 + 40×2-dust-228 census (no explicit
-/// draws), ONE gore, then `Damage()` (the pool hook, the 112×112 box). The
-/// `Item14` cue is the sound skip.
-pub(crate) fn saucer_missile_kill(p: &mut Projectile, rng: &mut dyn DropRng) {
-    // `:73606-73609` — the recentre-112 shape (the arm's own).
-    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-    p.pos = center;
-    p.w = 112.0;
-    p.h = 112.0;
-    p.pos.x -= (p.w as i32 / 2) as f32;
-    p.pos.y -= (p.h as i32 / 2) as f32;
-    // `:73610-73622` — the 4 + 80 dusts roll nothing explicit.
-    gore(rng); // `:73623-73629`
-    // `:73630` — `Damage()` rides the pool hook (the 112×112 box).
 }
 
 /// **522 CrystalPulse2** — `Kill()`'s own arm (`Projectile.cs:73271-73290`),
@@ -321,19 +277,6 @@ pub(crate) fn ice_block_kill_draws(p: &Projectile, _rng: &mut dyn DropRng) {
     }
 }
 
-/// `Colliding`'s per-kind gate for the hostile death bursts
-/// (`Projectile.cs:15406-15412` / `:15447-15450`): the 454 refuses while
-/// `0 <= ai[0] < 60 && ai[1] != -1`; the 452 refuses while `ai[0] < 2`; the
-/// 448 has no gate (the fallback `:15888` overlap). The pool's EVP burst
-/// reads this AFTER the box overlap.
-pub(crate) fn hostile_burst_colliding(p: &Projectile) -> bool {
-    match p.kind {
-        452 => p.ai[0] >= 2.0,
-        454 => !(p.ai[0] >= 0.0 && p.ai[0] < 60.0 && p.ai[1] != -1.0),
-        _ => true,
-    }
-}
-
 /// W4-g1 lane a — the witnesses (WRITTEN NOT RUN, code-only mode). The draw
 /// sequences replay the C#'s explicit `Main.rand` calls in order; the
 /// scripted rng returns fixed values so the state-bearing 521 split is
@@ -341,7 +284,7 @@ pub(crate) fn hostile_burst_colliding(p: &Projectile) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::projectile::{proj_data, CRYSTAL_PULSE, ICE_BLOCK, PHANTASMAL_EYE, PHANTASMAL_SPHERE, CHARGED_BLASTER_ORB, SAUCER_MISSILE};
+    use crate::projectile::{proj_data, CRYSTAL_PULSE, ICE_BLOCK, CHARGED_BLASTER_ORB};
 
     /// A scripted stream: `next_range` pops the front of `ranges` (clamped
     /// into [min,max) for sanity), `next_double` pops `doubles`, `next_float`
@@ -394,38 +337,6 @@ mod tests {
         p
     }
 
-    /// The 452 arm: Resize 144 → ONE gore (7 range draws) → Resize 30. The
-    /// final box is 30×30 recentred on the ORIGINAL centre (`:72990`/`:73011`
-    /// — both resizes keep the centre).
-    #[test]
-    fn w4_g1a_the_phantasmal_eye_kill_resizes_and_censuses_one_gore() {
-        let mut p = proj(PHANTASMAL_EYE);
-        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-        let mut rng = ScriptRng::new(&[50, 50, 62, 20, 0, 5, -5], &[]);
-        phantasmal_eye_kill(&mut p, &mut rng);
-        assert_eq!((p.w, p.h), (30.0, 30.0), "the trailing Resize(30,30)");
-        assert_eq!(p.pos, center - Vec2::new(15.0, 15.0), "recentred on the centre");
-        assert_eq!(rng.range_log.len(), 7, "one gore row");
-        assert_eq!(rng.range_log[0], (0, 100));
-        assert_eq!(rng.range_log[2], (61, 64));
-        assert_eq!(rng.range_log[3], (10, 31));
-        assert_eq!(rng.range_log[4], (-20, 21));
-    }
-
-    /// The 454 arm: the 208 box + 7 + 120 ring dusts (2 doubles each = 254)
-    /// + 3 gores (21 ranges). The box recentres on the original centre.
-    #[test]
-    fn w4_g1a_the_phantasmal_sphere_kill_draws_254_doubles_and_21_ranges() {
-        let mut p = proj(PHANTASMAL_SPHERE);
-        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-        let mut rng = ScriptRng::new(&[0; 21], &[0.0; 254]);
-        phantasmal_sphere_kill(&mut p, &mut rng);
-        assert_eq!((p.w, p.h), (208.0, 208.0));
-        assert_eq!(p.pos, center - Vec2::new(104.0, 104.0));
-        assert_eq!(rng.log.iter().filter(|s| **s == "double").count(), 254);
-        assert_eq!(rng.range_log.len(), 21, "three gore rows");
-    }
-
     /// The 459 arm at scale 1: the Resize-144 + burst flag TRUE, then the
     /// census (37 ring dusts = 74 doubles + 2 gores = 14 ranges). Below 1:
     /// flag FALSE, no resize, 13 ring dusts (26 doubles), zero gores. The
@@ -453,19 +364,6 @@ mod tests {
         charged_blaster_orb_kill_draws(burst, &mut rng);
         assert_eq!(rng.range_log.len(), 0, "zero gores below scale 1");
         assert_eq!(rng.log.iter().filter(|s| **s == "double").count(), 26);
-    }
-
-    /// The 448 arm: the 112 box + ONE gore (7 ranges), no explicit dust
-    /// draws. The box recentres on the original centre.
-    #[test]
-    fn w4_g1a_the_saucer_missile_kill_resizes_112_and_censuses_one_gore() {
-        let mut p = proj(SAUCER_MISSILE);
-        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-        let mut rng = ScriptRng::new(&[0; 7], &[]);
-        saucer_missile_kill(&mut p, &mut rng);
-        assert_eq!((p.w, p.h), (112.0, 112.0));
-        assert_eq!(p.pos, center - Vec2::new(56.0, 56.0));
-        assert_eq!(rng.range_log.len(), 7);
     }
 
     /// The 521 split: the 20-dust census (20 `Next(3)` gates; scripted all
@@ -564,29 +462,6 @@ mod tests {
         assert!(crystal_pulse2_step(&mut p), "tick 41 kills");
         assert!(!p.active);
         assert!((p.vel.y - 0.4).abs() < 1e-4, "the kill tick still integrates");
-    }
-
-    /// The hostile burst gates: the 452 refuses below ai[0] 2, the 454
-    /// refuses inside the 0..60 window unless ai[1] == -1, the 448 always
-    /// passes (the fallback overlap is the pool's).
-    #[test]
-    fn w4_g1a_the_hostile_burst_colliding_gates() {
-        let mut eye = proj(PHANTASMAL_EYE);
-        eye.ai[0] = 1.0;
-        assert!(!hostile_burst_colliding(&eye));
-        eye.ai[0] = 2.0;
-        assert!(hostile_burst_colliding(&eye));
-        let mut sphere = proj(PHANTASMAL_SPHERE);
-        sphere.ai[0] = 30.0;
-        sphere.ai[1] = 0.0;
-        assert!(!hostile_burst_colliding(&sphere), "inside the window");
-        sphere.ai[1] = -1.0;
-        assert!(hostile_burst_colliding(&sphere), "ai[1] == -1 opens it");
-        sphere.ai[0] = 60.0;
-        sphere.ai[1] = 0.0;
-        assert!(hostile_burst_colliding(&sphere), "past the window");
-        let missile = proj(SAUCER_MISSILE);
-        assert!(hostile_burst_colliding(&missile));
     }
 
     /// The 80 draw census rolls nothing (the dust bodies are the skip); the

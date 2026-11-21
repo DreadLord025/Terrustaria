@@ -1,5 +1,20 @@
-# 26d — Projectile `Kill()` / on-hit / tile-collide hook census (W4-g1, lane a)
+# 26d — Projectile `Kill()` / on-hit / tile-collide hook census (W4-g1, lane a) — SEALED
 
+> **SEALED 2026-11-21 (the d78-fold round).** The lane's final ownership:
+> **g1 KEEPS 459/521/522/80** (the shared 459|709 burst, the 521 split, the
+> 522 row/arm/bounce/Kill-census, the 80 tile break); the hostile EVP trio
+> **452/454/448 DROPPED from g1** per the d78 FINAL adjudication
+> (`26f-d78-final-kill-dedupe.md` §1, d78 tip `fd59c51a`) — d78's
+> `hostile_death_blast` + `damage_evp_boxed` port `Damage_EVP` verbatim
+> (g1's first-round hit was raw-damage and its General immune gate would
+> refuse the boss blasts the C# `:14799` lands); g65's pushed bodies own
+> the trio's draws. The 459|709 pool-gate widening EXECUTED on this branch
+> (was "at the merge" — the local const matches f20's byte-for-byte). The
+> family ledger: `26d-g1-proj-missing-a-family-bible.md`. g1 witnesses:
+> **12 WRITTEN NOT RUN** (code-only; the DONE tip carried 18 despite its
+> "22" message — 4 module + 3 pool hostile-trio witnesses dropped with
+> their hooks, one 709-gate witness added: 6 module + 6 pool).
+>
 > Researched 2026-11-21 against `a725acb0` (wave-3 complete). C# cites are
 > `decompiled/Terraria/Projectile.cs` (stable); Rust cites are
 > `crates/tr-app/src/projectile.rs` / `projectile/data.rs` at this revision.
@@ -22,20 +37,26 @@
 - A hook is PORTABLE here only if its kind already has a `proj_data` row AND a
   dispatch arm on main (else it defers with its AI arm, the F3/F5 pattern).
 
-## Verdict — six functional Kill hooks missing for rowed+armed kinds (lane a)
+## Verdict — six functional Kill hooks found (lane a); FOUR kept after the d78 fold
 
-| kind | name | C# Kill arm | row / arm on main | what is missing |
+The census found six functional hooks missing for rowed+armed kinds. The
+d78 FINAL adjudication (26f §1) moved the hostile EVP trio to d78; the
+table records the FINAL owner per kind:
+
+| kind | name | C# Kill arm | row / arm on main | FINAL owner / state |
 | --- | --- | --- | --- | --- |
-| 452 | PhantasmalEye | `:72987-73013` | `data.rs:2454` / `ai_phasmal_eye` | Resize 144 → dust/gore → Resize 30 → `Damage()` (hostile EVP burst) |
-| 454 | PhantasmalSphere | `:73014-73045` | `data.rs:2455` / `ai_phasmal_sphere` | recentre 208 box → dust/gore → `Damage()` (hostile EVP burst) |
-| 459 | ChargedBlasterOrb | `:73338-73371` (459 half) | `data.rs:3814` / `ai_charged_blaster_orb` | scale≥1 → Resize 144 → `Damage()` → dust/gore (friendly PVE burst) |
-| 521 | CrystalPulse | `:73292-73327` | `data.rs:3825` / `ai_crystal_pulse` | dust census + owner-gated 3-5× CrystalPulse2 (522) split spawn |
-| 448 | SaucerMissile | `:73603-73631` | `data.rs:1960` / `ai_saucer_missile` | recentre 112 box → dust/gore → `Damage()` (hostile EVP burst) |
-| 80 | IceBlock | `:75533-75553` | `data.rs:2675` / `ai_ice_block` | ai0≥0 sound/dust + the tile-127 `WorldGen.KillTile` break |
+| 452 | PhantasmalEye | `:72987-73013` | `data.rs:2454` / `ai_phasmal_eye` | **d78** (`hostile_death_blast` 144→30 + `damage_evp_boxed`); g65 the dust/gore body; d77 the cue — g1 DROPPED |
+| 454 | PhantasmalSphere | `:73014-73045` | `data.rs:2455` / `ai_phasmal_sphere` | **d78** (recentre 208 + verbatim EVP); g65 the body; d77 the cue — g1 DROPPED |
+| 459 | ChargedBlasterOrb | `:73338-73371` (459/709 SHARED) | `data.rs:3814` / `ai_charged_blaster_orb` | **g1 KEEP** — scale≥1 → Resize 144 → `Damage()` → dust/gore rings (the :73351 order); the gate is `459 \| 709` |
+| 521 | CrystalPulse | `:73292-73327` | `data.rs:3825` / `ai_crystal_pulse` | **g1 KEEP** — dust census + owner-gated 3-5× CrystalPulse2 (522) split spawn |
+| 448 | SaucerMissile | `:73603-73631` | `data.rs:1960` / `ai_saucer_missile` | **d78** (recentre 112 + verbatim EVP); g65 the body; d77 the cue — g1 DROPPED |
+| 80 | IceBlock | `:75533-75553` | `data.rs:2675` / `ai_ice_block` | **g1 KEEP** — ai0≥0 census + the tile-127 `WorldGen.KillTile` break |
 
-All six are UNCLAIMED (no pushed branch ports them). Ported by this lane in
-`crates/tr-app/src/projectile_kill_hooks_a.rs` + pool death hooks + the 522
-row/arm (the 522's own Kill dust census `:73271-73290` lands with it).
+g1's kept set lives in `crates/tr-app/src/projectile_kill_hooks_a.rs` +
+the pool death hooks + the 522 row/arm (the 522's own Kill dust census
+`:73271-73290` lands with it). The trio's g1 first-round code (the hooks,
+`hostile_burst_colliding`, the pool's `death_burst_player_hit` and the
+dispatcher arms) is DROPPED on this branch — no raw-damage EVP survives.
 
 **709/459 dedupe cross-note (resume round, 2026-11-21):** the 459/709 arm is
 SHARED (`if (this.type == 459 || this.type == 709)` `:73338`). The burst half
@@ -45,8 +66,10 @@ claim; the 709-only half `:73372-73388` (the Sky Dragon's Fury circle: the
 the 1110 row/arm was ported by **f20** (`task/W4-f20-proj-ai-verify-2`,
 commit `01e0b1083`, census `26f` F3 — the "UNROWED, deferred" note above is
 superseded by that landing). The two halves are kind-disjoint at the pool:
-this lane's `CHARGED_BLASTER_ORB` gate widens to `459 | 709` at the merge
-(709's row lives on d15; the gate is inert for 709 until then), f20's
+this lane's gate is **already widened to `459 | 709`** (executed in the
+seal round — the local `MONK_STAFF_T3_ALT_SHOT_KIND` const is byte-identical
+to f20's, same file position, keep-one at the g1×f20 merge; 709's row lives
+on d15, so the gate is inert for 709 until then), f20's
 `sky_dragons_fury_kill` owns the 709-only tail. No overlap, no double-port.
 
 ## Deferred functional hooks (kind unrowed / AI arm unported — not this lane)
@@ -90,19 +113,18 @@ spawn inline.
 
 ## Deviations (deliberate, recorded)
 
-- **Hostile EVP death bursts (452/454/448).** The C# `Damage()` → `Damage_EVP`
-  (`:14773-14900`) hits the player through the resized box via `Colliding`'s
-  fallback (`:15888` `myRect.Intersects`). The port's standing `damage_player`
-  is a centre-point stand-in (`SIZE = 6`); the death bursts need the FULL
-  resized box, so a dedicated `death_burst_player_hit` tests the box overlap and
-  reproduces the per-kind `Colliding` gates (452 `ai[0] >= 2` `:15447`, 454
-  `!(0 <= ai[0] < 60 && ai[1] != -1)` `:15408`). The hurt rides the SAME
-  `hurt_with_source` seam as `damage_player` (raw damage, dodgeable, kind). The
-  EVP `×2` / `hostileDamageScaling` / banner / cold multipliers and the
-  `BossNoCheese` immunity cooldown (`:14782-14787`) are the STANDING
-  single-lane deviations (M4-HAZARD-1: the per-cooldown array collapses onto the
-  one `hurt_cd`/General lane) — recorded, not re-derived here. The burst does NOT
-  re-kill the slot (already dead; the C# EVP has no kill-on-hit).
+- **Hostile EVP death bursts (452/454/448) — DROPPED from g1 (26f §1).**
+  The first-round port's `death_burst_player_hit` rode `hurt_with_source`
+  with RAW damage (the "standing M4-HAZARD-1 deviations": no DamageVar /
+  hostileDamageScaling / ×2 / BossNoCheese cooldown), and its General-lane
+  immune gate would refuse the 452/454 boss blasts through spawn i-frames
+  which the C# `:14799` lands. d78's `damage_evp_boxed` ports
+  `Damage_EVP` (`:14773-14900`) VERBATIM (DamageVar(−owner.luck) `:14831`,
+  hostileDamageScaling `:14842`, the ×2 `:14844`, the BossNoCheese-vs-
+  General cooldown `:14779-14797` through `hurt_inner_cooldown`), so the
+  adjudication keeps d78's state + hit and g65's dust/gore bodies; g1's
+  hooks, censuses, `hostile_burst_colliding` and the pool hit fn are
+  removed on this branch. No raw-damage EVP deviation remains in g1.
 - **The 522 CrystalPulse2 split child** gains a row + AI arm + bounce this lane
   (it is the 521 hook's spawn target, so row+arm+hook land together — the F3
   pattern). Its `HandleMovement` bounce (`:18796-18806`) is the full ±1.0
@@ -114,9 +136,16 @@ spawn inline.
   arm into `charged_blaster_orb_kill` (resize + flag) and
   `charged_blaster_orb_kill_draws` (census) with the pool's `damage_pve_boxed`
   between them, so the per-hit crit/DamageVar draws stay ahead of the ring
-  draws on the stream. The 452/454/448 arms run `Damage()` LAST (`:73012`/
-  `:73044`/`:73630`), census first — their pool order is census → burst.
+  draws on the stream. (The dropped trio ran `Damage()` LAST, census first —
+  that order lives in d78's port now.)
 - **The 522 kill-tick movement skip.** The C# `Update` returns at `:17027-
   17030` when the AI killed the slot, so `HandleMovement` does NOT run on the
   ai[1] > 40 kill tick (the gravity/drag writes at `:37750-37755` still ran
   inside the AI arm); the pool gates `crystal_pulse2_move` on `active`.
+- **The g65 census keep-one (26i).** g65's pushed death-dust bodies
+  (`459 | 709` / `521` / `522` / `80` arms, `projectile_death_dust.rs` @
+  `b0842907c`) carry the SAME explicit draws inside their bodies. At the
+  g1×g65 merge the g1 census calls DROP per-kind (the bodies supersede
+  them, the 26i §3 pattern); g1's STATE (the resize + Damage + the 522
+  split spawns + the tile break) stays. Until that merge g1's censuses
+  are the only draw source on this branch (g65's module is not here).
