@@ -173,8 +173,10 @@ pub(crate) fn check_morning_lanterns(ev: &mut WorldEvents) {
 
 /// `BirthdayParty.CheckNight` (`BirthdayParty.cs:37-51`): the genuine party
 /// clears at dusk (its celebrating roster with it) and the manual one
-/// expires, with the "everyone has gone home" broadcast — `Lang.misc[99]`
-/// keyed, `new Color(255, 0, 160)`.
+/// expires, with the keyed farewell broadcast — `Lang.misc[99]` =
+/// "Party time's over!" (`Legacy.json`'s `"99"` row; the stale base
+/// literal "Everyone has gone home!" was a bug — research/70 §1i,
+/// research/114 §0.4), `new Color(255, 0, 160)`.
 pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
     let mut cleared = false;
     if ev.genuine_party {
@@ -187,7 +189,8 @@ pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
         ev.manual_party = false;
     }
     if cleared {
-        chat::broadcast_death_text(chat, "Everyone has gone home!", [255, 0, 160]);
+        // `Lang.misc[99]` — the keyed row, not the stale base literal.
+        chat::broadcast_death_text(chat, &crate::lang::misc(99), [255, 0, 160]);
     }
 }
 
@@ -289,8 +292,8 @@ pub(crate) fn update_time_lanterns(
 /// `_wasCelebrating` edge, the sky activates/deactivates (the returned
 /// `Option<bool>` — the port's party-sky layer owns it) and the celebrating
 /// roster prunes: every celebrant that no longer passes `CanNPCParty` is
-/// removed, and an emptied roster drops the genuine party with the
-/// "everyone has gone home" broadcast (unless a manual party holds it up).
+/// removed, and an emptied roster drops the genuine party with the keyed
+/// `Lang.misc[99]` farewell (unless a manual party holds it up).
 ///
 /// The C#'s prune loop (`:200-206`) calls `RemoveAt(i)` WITHOUT decrementing
 /// `i` — the element after a removal is skipped that pass. The port keeps
@@ -319,7 +322,7 @@ pub(crate) fn update_time_party(
                 ev.genuine_party = false;
                 if !ev.manual_party {
                     // `:212` — `Lang.misc[99]`, `new Color(255, 0, 160)`.
-                    chat::broadcast_death_text(chat, "Everyone has gone home!", [255, 0, 160]);
+                    chat::broadcast_death_text(chat, &crate::lang::misc(99), [255, 0, 160]);
                 }
             }
         }
@@ -352,21 +355,30 @@ pub(crate) fn update_time_cultist(
     false
 }
 
-/// `NPC.SetEventFlagCleared` + `OnGameEventClearedForTheFirstTime`
-/// (`NPC.cs:78759-78795`): the FIRST clear of a progression flag arms the
-/// next lantern night. The C#'s switch arms `NextNightIsLanternNight` on
-/// the default row and on cases 10/16/17/18; only cases 4 (Pumpking),
-/// 21 (Evergreen) and 22 (Santa-NK1) skip it — none of those three kinds
-/// is ported, so every ported first-clear arms the flag. `was_down` is
-/// the flag's pre-kill value (the C# `eventFlag != flag` edge).
-///
-/// The case-10 credits roll and the case-16/17/18 mech-trio Plantera-bulb
-/// pass (`WorldGen.GeneratePlanteraBulbOnAllMechsDefeated`) are unported
-/// (the credits event and the bulb pass are later waves).
-pub(crate) fn on_game_event_cleared_first_time(ev: &mut WorldEvents, was_down: bool) {
-    if !was_down {
-        ev.next_night_is_lantern_night = true;
+/// `NPC.OnGameEventClearedForTheFirstTime`'s lantern half (`NPC.cs:78769-
+/// 78793`): a boss/event's FIRST clear arms the next night as a lantern
+/// night. The C# `SetEventFlagCleared(ref flag, id)` (`:78759-78766`) calls
+/// this only on the flag's false→true edge, so the caller passes `first` =
+/// "the downed flag was false before this kill". The switch sets
+/// `NextNightIsLanternNight = true` for the default arm and cases 10
+/// (Moon Lord) / 16/17/18 (the mech trio); ONLY cases 4 (Mourning Wood,
+/// type 325), 21 (Everscream, 344) and 22 (SantaNK1, 346) — the moon-event
+/// bosses — skip it. Pumpking (327) is id **5**, the DEFAULT arm: its
+/// first kill ARMS the lantern night (research/114 §0.1 — the earlier
+/// "case 4 (Pumpking)" label was wrong). The case-10 credits roll and the
+/// case-16/17/18 Plantera-bulb generation are separate systems (the bulb
+/// pass is unported; recorded). The port's `game_event_id` is the C#
+/// `gameEventId` the death arms already cite.
+pub(crate) fn on_game_event_cleared(ev: &mut WorldEvents, game_event_id: i32, first: bool) {
+    if !first {
+        return;
     }
+    // `NPC.cs:78789-78792`: the three moon-event bosses never arm it.
+    if matches!(game_event_id, 4 | 21 | 22) {
+        return;
+    }
+    // The default arm + cases 10/16/17/18 all set the flag (`:78773-78788`).
+    ev.next_night_is_lantern_night = true;
 }
 
 /// `CultistRitual.CultistSlain` (`CultistRitual.cs:48-51`): `- 3600`.
@@ -622,9 +634,17 @@ mod tests {
         assert_eq!(edge, Some(true), "the up-edge fires");
         assert!(ev.celebrating_npcs.is_empty());
         assert!(!ev.genuine_party, "an emptied roster drops the genuine party");
+        // The keyed farewell: `Lang.misc[99]` = "Party time's over!" when
+        // the locale loads; the manager answers the key itself otherwise
+        // (`get_text_value`'s None arm) — either way it is the misc[99] row.
+        let farewell = crate::lang::misc(99);
         assert!(
-            chat.messages.iter().any(|m| m.text.contains("gone home")),
-            "the broadcast fires (no manual party)"
+            farewell == "Party time's over!" || farewell == "LegacyMisc.99",
+            "the misc[99] row: {farewell}"
+        );
+        assert!(
+            chat.messages.iter().any(|m| m.text == farewell),
+            "the keyed broadcast fires (no manual party)"
         );
         // The manual-party arm: no broadcast when ManualParty holds it up.
         let mut ev2 = WorldEvents::default();
@@ -635,7 +655,7 @@ mod tests {
         let _ = update_time_party(&mut ev2, &[false], &mut chat2);
         assert!(!ev2.genuine_party);
         assert!(
-            !chat2.messages.iter().any(|m| m.text.contains("gone home")),
+            !chat2.messages.iter().any(|m| m.text == crate::lang::misc(99)),
             "the manual party suppresses the broadcast (`:210-214`)"
         );
     }
@@ -655,5 +675,34 @@ mod tests {
         // i=2: past len, stop. Slot 1 survives.
         assert_eq!(ev.celebrating_npcs, vec![1], "the C# RemoveAt stride skips slot 1");
         assert!(ev.genuine_party, "the roster is non-empty, the party stands");
+    }
+
+    /// W4-c39 exec (research/114 §1a, f40's table witness RE-DERIVED) —
+    /// `OnGameEventClearedForTheFirstTime`'s id table (`NPC.cs:78769-78793`):
+    /// ONLY 4 (Mourning Wood 325), 21 (Everscream 344), 22 (SantaNK1 346)
+    /// skip; Pumpking 327 is id **5**, the default arm — it ARMS. A repeat
+    /// clear (`first == false`) never arms, whatever the id.
+    #[test]
+    fn w4_c39_the_event_clear_id_table_skips_only_the_three_moon_bosses() {
+        for id in [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 23, 24, 25] {
+            let mut ev = WorldEvents::default();
+            on_game_event_cleared(&mut ev, id, true);
+            assert!(
+                ev.next_night_is_lantern_night,
+                "id {id} arms the lantern night (default + 10/16/17/18)"
+            );
+            // The edge gate: a repeat clear never re-arms.
+            let mut ev2 = WorldEvents::default();
+            on_game_event_cleared(&mut ev2, id, false);
+            assert!(!ev2.next_night_is_lantern_night, "id {id}: no edge, no arm");
+        }
+        for id in [4, 21, 22] {
+            let mut ev = WorldEvents::default();
+            on_game_event_cleared(&mut ev, id, true);
+            assert!(
+                !ev.next_night_is_lantern_night,
+                "id {id} is a skip row (`NPC.cs:78789-78792`)"
+            );
+        }
     }
 }

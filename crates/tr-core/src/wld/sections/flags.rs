@@ -135,19 +135,20 @@ pub fn write(w: &mut Writer, world: &World) {
     }
     // WorldFile.cs:1342-1362: the dial fast-forward, the event bosses and
     // the lunar towers. `downedMartians`, the cultist/Moon Lord kills, the
-    // four tower downeds/actives and the apocalypse phase are World-owned;
-    // the seasonal bosses stay unowned (no port state). S1-D-3 W-9:
-    // `downedFishron` is World-owned now (the case-370 death flag).
+    // four tower downeds/actives and the apocalypse phase are World-owned.
+    // S1-D-3 W-9: `downedFishron` is World-owned now (the case-370 death
+    // flag); W4-c39 exec: the five seasonal bosses are World-owned too
+    // (the `NPC.cs:79210-79238` death arms, research/114 §0.2).
     w.boolean(world.fast_forward_to_dawn);
     w.boolean(world.downed_fishron); // downedFishron
     w.boolean(world.downed_martians);
     w.boolean(world.downed_ancient_cultist); // downedAncientCultist
     w.boolean(world.downed_moon_lord); // downedMoonlord
-    w.boolean(false); // downedHalloweenKing
-    w.boolean(false); // downedHalloweenTree
-    w.boolean(false); // downedChristmasIceQueen
-    w.boolean(false); // downedChristmasSantank
-    w.boolean(false); // downedChristmasTree
+    w.boolean(world.downed_halloween_king); // downedHalloweenKing
+    w.boolean(world.downed_halloween_tree); // downedHalloweenTree
+    w.boolean(world.downed_christmas_ice_queen); // downedChristmasIceQueen
+    w.boolean(world.downed_christmas_santank); // downedChristmasSantank
+    w.boolean(world.downed_christmas_tree); // downedChristmasTree
     w.boolean(world.downed_tower_solar); // downedTowerSolar
     w.boolean(world.downed_tower_vortex); // downedTowerVortex
     w.boolean(world.downed_tower_nebula); // downedTowerNebula
@@ -500,7 +501,13 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.downed_martians = r.bool()?;
     world.downed_ancient_cultist = r.bool()?; // downedAncientCultist
     world.downed_moon_lord = r.bool()?; // downedMoonlord
-    r.skip(5)?; // downedHalloweenKing .. downedChristmasTree
+    // W4-c39 exec: the seasonal bosses are World-owned now (the death
+    // arms landed, research/114 §0.2) — the five rows read back.
+    world.downed_halloween_king = r.bool()?; // downedHalloweenKing
+    world.downed_halloween_tree = r.bool()?; // downedHalloweenTree
+    world.downed_christmas_ice_queen = r.bool()?; // downedChristmasIceQueen
+    world.downed_christmas_santank = r.bool()?; // downedChristmasSantank
+    world.downed_christmas_tree = r.bool()?; // downedChristmasTree
     if version < 140 {
         return Ok(());
     }
