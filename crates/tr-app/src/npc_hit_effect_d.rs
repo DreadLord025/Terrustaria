@@ -5157,6 +5157,38 @@ fn destroyer_death(
     }
 }
 
+/// The 347 Elf Copter death (`NPC.cs:89324-89354`, sites 787-792): the
+/// FOUR gores 524/525/526/527 at position FIRST (before the dust), then
+/// the 7x/4x mech smoke burst, then only TWO quadrant smoke gores —
+/// the +/+ and the -/- (NOT the full four), scale 1f.
+fn elf_copter_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:89328-89331` — the four gores BEFORE the dust.
+    for t in [524, 525, 526, 527] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0);
+    }
+    // `:89332-89344` — the 7x dust-31 + 4x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 7, 4);
+    // `:89345-89352` — the TWO quadrant smoke gores (+/+ then -/-).
+    for (dx, dy) in [(1.0, 1.0), (-1.0, -1.0)] {
+        let t = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, t, 1.0);
+        let g = gore.slot_mut(idx);
+        g.velocity *= 0.4;
+        g.velocity.x += dx;
+        g.velocity.y += dy;
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5775,6 +5807,10 @@ pub fn hit_effect_d(
     // 135 hit-half probe launch is the wiring seam).
     else if (134..=136).contains(&npc_type) {
         destroyer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89324-89354` — the 347 Elf Copter arm (sites 787-792).
+    else if npc_type == 347 {
+        elf_copter_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9976,5 +10012,44 @@ mod tests {
             assert_eq!(active, 1, "the gate refused spawns only the 156");
         }
         assert_eq!(rng.peek(), twin.peek(), "the destroyer mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89328-89352` — the Elf Copter: the four 524-527 BEFORE
+    /// the 7x/4x census, then only TWO quadrants (+/+ and -/-).
+    #[test]
+    fn w4_f5d_the_elf_copter_four_then_two_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(821);
+        let _ = hit_effect_d(&n, 347, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..4], &[524, 525, 526, 527]);
+        for t in &types[4..] {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(821);
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..7 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        for _ in 0..4 {
+            twin_dust(&mut twin, 40, 40);
+            twin_dust(&mut twin, 40, 40);
+        }
+        for (i, (dx, dy)) in [(1.0, 1.0), (-1.0, -1.0)].iter().enumerate() {
+            let t = twin.next_range(61, 64);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(4 + i).gore_type, t);
+            assert_eq!(gore.slot(4 + i).velocity.x, kx * 0.4 + dx);
+            assert_eq!(gore.slot(4 + i).velocity.y, -ky * 0.4 + dy);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the elf copter mirrors the C# draws");
     }
 }
