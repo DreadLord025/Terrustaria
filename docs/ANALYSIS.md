@@ -39356,3 +39356,23 @@ per-fn keep table, the g13 test-helper rename, the Moon-Lord feed fuse)
 is research/116 §6 — the merger's worklist for d54f-131. Two new/extended
 witnesses (the style-13 pre-AI clear, the statue latch census) WRITTEN
 NOT RUN.
+
+Dust-retire phase (research/83 §-receipt, research/116 §7, research/65
+final sweep): **d130e APPLIED the F1 global-stream fold on its own
+branch** — `099df89e2` retired the `Snow` splitmix (struct + `App.snow`
++ both inits), `snowing` is a free fn on `&mut UnifiedRandom` fed
+`app.rngs.global()` at the `scene_scan` slot, F5's int loop + F7's
+witness re-pins + g11's three draw-mirrors landed with it; `16a792d56`
+(the d130 LOCAL tip, origin still `560a02eac` — push-rescue flag) adds
+the cull-kill into `snow::draw`. The REFUTED-AS-APPLIED flag is RETIRED;
+the merger's snow delta shrinks to the DROP of g11's deprecated copies
+(no hunks, no witness migration owed). The g61b worktree probe: ALIVE
+(tracked-clean + 2 scratch dumps; wiring.rs mtime 08:30 vs probe 09:05),
+local tip `b5ff1803d` +9 over origin `a96289284` (seams 1-6 + docs + 2
+borrow-fix rounds) — seam 6 key-summon cross-verified NO DUP with the
+dispatcher (a NewNPC spawn family, never TeleportEffect). The Main.cs
+dust-family final sweep (research/65): ZERO unclaimed sites — all 23
+NewDust-family sites + the CloneDust + the pool ctor/UpdateDust/DrawDust/
+DrawCapture-cull/counter windows map to the union-table owners. The
+ONE-paragraph merger instruction for dust-master 131 is research/116
+§7.2. Code-only; the `main_dust.rs` RETIRE-NOTE re-worded to the receipt.
