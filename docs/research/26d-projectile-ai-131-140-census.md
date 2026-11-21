@@ -29,6 +29,27 @@ rowed-but-unarmed deferral (the census §3c pattern, `UNARMED_ROWED` now
 `[141, 156, 164, 169, 206]`). d15 lands `AI_141_MonkStaffT1Explosion`
 (`:69602+`) on the existing row.
 
+### Doc-sweep item 1 update (2026-11-21) — d15's claim verified landed
+
+`origin/task/W4-d15-proj-ai-141-150` `2cea7454` lands the 141 arm
+(`projectile_ai_dd2.rs`, the 20-tick counter kill + the tick-1 tile-walk
+dust census + the 25-point rings, `Projectile.cs:69602-69620` +
+`:69680-69772`) with a **field-identical** 698 row: `(75, 200, 141, -1, 5,
+0, false, false, false, (true, -1, false, -1, 255, 1.0))` — byte-for-byte
+d14's `MONK_STAFF_T1_EXPLOSION` row (`data.rs:2683-2694`). d15's final
+phase (`053a1118`) arms all ten 141-150 styles; its coverage pin takes
+**140** as the rowed-but-unarmed deferral (`90b368a4` — the mirror of
+d14's 141 entry, since `AI_140_MonkStaffT1` is d14's arm outside d15's
+slice): d15's `UNARMED_ROWED` is `[140, 156, 164, 169, 206]`.
+
+**Merge reconciliation** (both branches are in flight — neither is an
+ancestor of `origin/main`): keep-one dedupe of the 698 row + const (the
+two are identical), keep d14's `ai_monk_staff` (140) AND d15's 141 arm,
+and reconcile the pin to `[156, 164, 169, 206]` — BOTH 140 and 141 are
+armed in the merged tree, so neither belongs in the deferral list. d15's
+own cross-note (`b1d2a416`) records the same reconcile from its side;
+d14's pin comment (`projectile.rs:24553+`) carries the matching note.
+
 ## Finding F5 (f19 verify branch `ec5dec82`) — RESOLVED by d14
 
 `data.rs` rowed 687 as 12×12 aiStyle **1** extraUpdates 1 tileCollide true;

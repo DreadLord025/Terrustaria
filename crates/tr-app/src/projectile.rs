@@ -24554,6 +24554,14 @@ mod tests {
         // Explosion` `:69602+`) is rowed so the 140 arm's ground-impact
         // spawn resolves, but its arm is d15's claim (141-150) — the
         // rowed-but-unarmed deferral (the census §3c pattern).
+        // W4-d14 doc-sweep item 1 cross-note: d15 (`2cea7454`, tip
+        // `5b7f028d`) LANDED the 141 arm + a field-identical 698 row and
+        // removed 141 from ITS pin, taking 140 instead (d14's arm — the
+        // mirror deferral, `90b368a4`): d15's list is `[140, 156, 164,
+        // 169, 206]`. The integrate is a keep-one 698 row/const dedupe +
+        // this pin's reconciliation — BOTH 140 and 141 are armed in the
+        // merged tree, so the merged list drops both: `[156, 164, 169,
+        // 206]` (d15's `b1d2a416` cross-note records the same reconcile).
         const UNARMED_ROWED: [u8; 5] = [141, 156, 164, 169, 206];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
