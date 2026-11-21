@@ -36,6 +36,9 @@ def lineno(pos):
 
 
 # --- the tag catalog: Family.Name -> (key, frame) ---------------------------
+# Visuals rows are SpawnConditionDecorativeOverlayInfoElement ctors with NO
+# language key / filter frame (SpawnConditionDecorativeOverlayInfoElement.cs:16)
+# — they carry key "" / frame 0 and never join the filter list.
 tags = {}  # "Biomes.Surface" -> (key, frame, ctor_line)
 for m in re.finditer(
     r"(Biomes|Events|Invasions|Times)\.(\w+) = new SpawnCondition\w+\(\"([^\"]+)\", (\d+)",
@@ -43,32 +46,91 @@ for m in re.finditer(
 ):
     fam, name, key, frame = m.groups()
     tags[f"{fam}.{name}"] = (key, int(frame), lineno(m.start()))
-assert len(tags) >= 60, f"tag catalog too small: {len(tags)}"
+for m in re.finditer(r"Visuals\.(\w+) = new SpawnConditionDecorativeOverlayInfoElement\(", text):
+    tags[f"Visuals.{m.group(1)}"] = ("", 0, lineno(m.start()))
+assert len(tags) >= 68, f"tag catalog too small: {len(tags)}"
 
 # --- the portrait background providers (W4-e23 remainder) --------------------
 # `SpawnConditionBestiaryInfoElement`'s optional backgroundImagePath /
 # backgroundColor ctor args (SpawnConditionBestiaryInfoElement.cs:15-20):
 # the biome backdrop the info-page portrait draws
 # (UIBestiaryNPCEntryPortrait.cs:30-41). Overlay elements
-# (SpawnConditionBestiaryOverlayInfoElement) carry an OVERLAY path, not a
-# background — they are not background providers, so they stay None here.
+# (SpawnConditionBestiaryOverlayInfoElement /
+# SpawnConditionDecorativeOverlayInfoElement) carry an OVERLAY path + optional
+# color instead (SpawnConditionBestiaryOverlayInfoElement.cs:17-22,
+# SpawnConditionDecorativeOverlayInfoElement.cs:16-20) — they are not
+# background providers, so their bg stays None and the overlay columns carry
+# the draw (UIBestiaryNPCEntryPortrait.cs:42-55, W4-e23 final phase).
 tag_bg = {}  # "Biomes.Surface" -> (path_or_None, color_or_None)
+tag_overlay = {}  # full -> (path_or_None, color_or_None)
 for m in re.finditer(
     r"(Biomes|Events|Invasions|Times)\.(\w+) = new (SpawnCondition\w+)\("
     r"\"([^\"]+)\", (\d+)"
     r"(?:, \"([^\"]+)\")?"
-    r"(?:, new Color\((\d+), (\d+), (\d+)\))?",
+    r"(?:, (?:new Color\((\d+), (\d+), (\d+)\)|Color\.(\w+)))?",
     text,
 ):
-    fam, name, cls, key, frame, path, cr, cg, cb = m.groups()
+    fam, name, cls, key, frame, path, cr, cg, cb, cname = m.groups()
     full = f"{fam}.{name}"
-    if cls != "SpawnConditionBestiaryInfoElement":
-        tag_bg[full] = (None, None)  # overlay elements: no background image
-        continue
+    color = None
+    if cr is not None:
+        color = f"[{cr}, {cg}, {cb}, 255]"
+    elif cname == "White":
+        color = "[255, 255, 255, 255]"
+    elif cname is not None:
+        raise AssertionError(f"unhandled named color {cname} at {full}")
     # Strip the "Images/" prefix — the atlas sheet names are bare ("MapBG1").
     sheet = path[len("Images/"):] if path else None
-    color = f"[{cr}, {cg}, {cb}, 255]" if cr is not None else None
-    tag_bg[full] = (sheet, color)
+    if cls == "SpawnConditionBestiaryInfoElement":
+        tag_bg[full] = (sheet, color)
+    else:
+        tag_bg[full] = (None, None)  # overlay elements: no background image
+        tag_overlay[full] = (sheet, color)
+# The Visuals decorative overlays (no key/frame ctor args).
+for m in re.finditer(
+    r"Visuals\.(\w+) = new SpawnConditionDecorativeOverlayInfoElement\("
+    r"\"([^\"]+)\"(?:, (?:new Color\((\d+), (\d+), (\d+)\)|Color\.(\w+)))?\)",
+    text,
+):
+    name, path, cr, cg, cb, cname = m.groups()
+    color = None
+    if cr is not None:
+        color = f"[{cr}, {cg}, {cb}, 255]"
+    elif cname == "White":
+        color = "[255, 255, 255, 255]"
+    elif cname is not None:
+        raise AssertionError(f"unhandled named color {cname} at Visuals.{name}")
+    tag_overlay[f"Visuals.{name}"] = (path[len("Images/"):], color)
+assert len(tag_overlay) == 11, f"overlay catalog: {len(tag_overlay)} != 11"
+
+# --- the ctor display flags ---------------------------------------------------
+# DisplayTextPriority (FilterProviderInfoElement.cs:20) feeds the biome-flavor
+# fallback's >= scan; HideInPortraitInfo (:22) suppresses the Misc info row
+# (Blizzard only, :109). DisplayPriority (the OVERLAY classes' own property,
+# SpawnConditionBestiaryOverlayInfoElement.cs:13 /
+# SpawnConditionDecorativeOverlayInfoElement.cs:14) orders the portrait
+# overlays (NPCPortraitInfoElement.cs:82-83's OrderBy). All Visuals rows set 1.
+tag_text_prio = {}
+tag_hide_info = set()
+tag_overlay_prio = {}
+tag_order_prio = {}
+for m in re.finditer(
+    r"(Biomes|Events|Invasions|Times|Visuals)\.(\w+) = new SpawnCondition\w+\([^\n]*\)\s*\{(.*?)\};",
+    text, re.S,
+):
+    fam, name, body = m.groups()
+    full = f"{fam}.{name}"
+    pm = re.search(r"DisplayTextPriority = (-?\d+)", body)
+    if pm:
+        tag_text_prio[full] = int(pm.group(1))
+    if "HideInPortraitInfo = true" in body:
+        tag_hide_info.add(full)
+    pm = re.search(r"DisplayPriority = (-?[\d.]+)f", body)
+    if pm:
+        tag_overlay_prio[full] = float(pm.group(1))
+    pm = re.search(r"OrderPriority = (-?[\d.]+)f", body)
+    if pm:
+        tag_order_prio[full] = float(pm.group(1))
 
 # --- the filter order (GetCommonInfoElementsForFilters) ---------------------
 m = re.search(r"GetCommonInfoElementsForFilters\(\)\s*\{.*?return new List<IBestiaryInfoElement>\s*\{(.*?)\};", text, re.S)
@@ -79,8 +141,9 @@ assert len(filter_order) == 57, f"filter count {len(filter_order)} != 57"
 filter_list_line = lineno(m.start())
 
 # --- the per-entry tag walk --------------------------------------------------
-# The relationship passes span :888-2027; ModifyEntriesThatNeedIt :601-748
-# adds preference-wrapped tags. Both are AddRange/AddTags of CommonTags rows
+# The relationship passes span :888-2027 (the decorations pass :2028-2071 is
+# replayed separately below); ModifyEntriesThatNeedIt :601-748 adds
+# preference-wrapped tags. Both are AddRange/AddTags of CommonTags rows
 # plus eleven Info.Remove rows. We replay them in SOURCE ORDER per entry.
 events = []  # (phase, line, net_id, op, tag, preferred)
 pat_add = re.compile(
@@ -156,17 +219,116 @@ boss, boss_ln = prio_list("BossBestiaryPriority")
 # row for that future consumer; membership helpers skip it. `Info.Remove(tag)`
 # likewise never removes a wrap.
 per_entry = {}  # net -> list[(tag, preferred)]
-for ln, net, op, tag, pref in ((e[1], e[2], e[3], e[4], e[5]) for e in events):
-    lst = per_entry.setdefault(net, [])
-    if op == "add":
-        lst.append((tag, pref))
-    else:
-        # List.Remove removes the FIRST occurrence only (C# semantics), and
-        # only a plain (non-wrapped) row can match the tag reference.
-        for i, (t, p) in enumerate(lst):
-            if t == tag and not p:
-                del lst[i]
-                break
+
+
+def apply_events(evs):
+    for ln, net, op, tag, pref in ((e[1], e[2], e[3], e[4], e[5]) for e in evs):
+        lst = per_entry.setdefault(net, [])
+        if op == "add":
+            lst.append((tag, pref))
+        else:
+            # List.Remove removes the FIRST occurrence only (C# semantics),
+            # and only a plain (non-wrapped) row can match the tag reference.
+            for i, (t, p) in enumerate(lst):
+                if t == tag and not p:
+                    del lst[i]
+                    break
+
+
+# Populate order (:544-555): relationships (:549-550, phase 0) -> decorations
+# (:551) -> ModifyEntriesThatNeedIt (:552, phase 1). The decorations pass
+# reads the post-relationship Info, so it runs BETWEEN the two phases.
+apply_events([e for e in events if e[0] == 0])
+
+# --- the decorations pass (AddNPCBiomeRelationships_AddDecorations_Automated,
+# :2028-2071) ------------------------------------------------------------------
+# Populate (:544-555) runs it AFTER the relationships (:551) and BEFORE
+# ModifyEntriesThatNeedIt (:552). It iterates ContentSamples.NpcsByNetId —
+# EVERY sampled net id (-65..696), not only the tagged entries — and the
+# membership tests are reference checks on the plain rows (the preference
+# wraps land later anyway). The Rain arm CONTINUES (no other visual that
+# entry); every other arm is an independent if.
+DECORATION_RULES = [
+    # (trigger tag, [visual tags], continues)
+    ("Events.Rain", None, True),  # Snow ? Visuals.Blizzard : Visuals.Rain
+    ("Events.Eclipse", ["Visuals.EclipseSun"], False),
+    ("Times.NightTime", ["Visuals.Moon"], False),
+    ("Times.DayTime", ["Visuals.Sun"], False),
+    ("Invasions.PumpkinMoon", ["Visuals.PumpkinMoon"], False),
+    ("Invasions.FrostMoon", ["Visuals.FrostMoon"], False),
+    ("Biomes.Meteor", ["Visuals.Moon", "Visuals.Meteor"], False),
+]
+for net in range(-65, 697):
+    plain = {t for t, p in per_entry.get(net, []) if not p}
+    for trigger, visuals, cont in DECORATION_RULES:
+        if trigger not in plain:
+            continue
+        lst = per_entry.setdefault(net, [])
+        if visuals is None:  # the Rain arm (:2033-2044)
+            lst.append(
+                ("Visuals.Blizzard" if "Biomes.Snow" in plain else "Visuals.Rain", False)
+            )
+        else:
+            for v in visuals:
+                lst.append((v, False))
+        if cont:
+            break
+
+apply_events([e for e in events if e[0] == 1])
+
+# --- the biome-flavor fallback (TryGivingEntryFlavorTextIfItIsMissing,
+# :773-800, run by ModifyEntriesThatNeedIt :637 AFTER the preference wraps
+# :603-636 and BEFORE the Moon Lord provider :639) ------------------------------
+# Entries whose factory added no FlavorTextBestiaryInfoElement (the
+# `Language.Exists("Bestiary_FlavorText.npc_<ConstName>")` gate,
+# BestiaryEntry.cs:46-50/:69-72/:92-95) get a `Bestiary_BiomeText.biome_<Tail>`
+# row from their spawn-condition tags: the FIRST preference-wrapped
+# SpawnConditionBestiaryInfoElement wins outright (:783-787 — the world-evil
+# wrap is NOT that class, so 533/529 fall through to the scan); else the
+# plain tag with the HIGHEST DisplayTextPriority, ties to the LATER row
+# (`>=`, :788-792). The scan sees ONLY SpawnConditionBestiaryInfoElement
+# rows — the overlay elements (Events.Rain/Blizzard/Sandstorm) are the
+# OTHER class and never feed the flavor. The per-NPC key's existence is a
+# Language read (the en-US JSON `Bestiary_FlavorText` section — the runtime
+# `lang::exists` reads the same table); the biome key itself is recorded
+# unconditionally (the C# adds the element without an Exists check, :798).
+NPC_CONST = {}
+for m in re.finditer(r"public const short (\w+) = (-?\d+);", npcid):
+    NPC_CONST[int(m.group(2))] = m.group(1)
+LANG = ROOT / "decompiled" / "Terraria.Localization.Content.en-US.Game.json"
+lang_text = LANG.read_text(encoding="utf-8-sig")
+i = lang_text.index('"Bestiary_FlavorText"')
+# The flavor block is the LAST Bestiary_* section — the next top-level
+# section key closes it (the CreativePowers block follows).
+m = re.search(r'^\t"(\w+)": \{', lang_text[i:], re.M)
+flavor_section = lang_text[i:i + m.start()] if m else lang_text[i:]
+flavor_fallback = {}  # net -> biome language key
+for net in sorted(per_entry):
+    const = NPC_CONST.get(net)
+    if const is None or f'"npc_{const}"' in flavor_section:
+        continue  # the factory row exists (or the id has no name row at all)
+    chosen = None
+    best = None
+    for t, p in per_entry[net]:
+        if t not in tags or not tags[t][0]:
+            continue  # the Visuals rows carry no key — not spawn conditions
+        if p:
+            # Only the plain preference wrap class matches :783; the two
+            # world-evil rows (533/529) are the OTHER class — skipped there.
+            if net in (533, 529):
+                continue
+            chosen = t
+            break
+        if t in tag_overlay:
+            continue  # SpawnConditionBestiaryOverlayInfoElement — not :788's class
+        prio = tag_text_prio.get(t, 0)
+        if best is None or prio >= best:
+            chosen = t
+            best = prio
+    if chosen is not None:
+        key = tags[chosen][0]
+        tail = key[key.index(".") + 1:]
+        flavor_fallback[net] = f"Bestiary_BiomeText.biome_{tail}"
 
 # tag id assignment: filter order first (the C# GetLowestBiomeGroupIndex reads
 # the common-filter list), then any remaining catalog tags in ctor order.
@@ -193,13 +355,16 @@ w("//! `ContentSamples.cs:765-773`).")
 w("//!")
 w("//! Source: BestiaryDatabaseNPCsPopulator.cs + NPCID.cs (Terraria 1.4.5.8).")
 w("")
-w("/// One `SpawnConditionBestiaryInfoElement` tag")
-w("/// (`FilterProviderInfoElement.cs:24-29`): the language key + the")
-w("/// `Icon_Tags_Shadow` frame index (`frame % 16`, `frame / 16` on the")
-w("/// 16x5 sheet), plus the portrait background provider's image sheet +")
-w("/// tint (`SpawnConditionBestiaryInfoElement.cs:15-20` — the optional")
-w("/// `backgroundImagePath`/`backgroundColor` ctor args; overlay elements")
-w("/// carry no background). W4-e23 remainder: the biome portrait backdrops.")
+w("/// One `SpawnCondition*` tag (`FilterProviderInfoElement.cs:24-29`): the")
+w("/// language key + the `Icon_Tags_Shadow` frame index (`frame % 16`,")
+w("/// `frame / 16` on the 16x5 sheet), plus the portrait background")
+w("/// provider's image sheet + tint (`SpawnConditionBestiaryInfoElement.cs:15-20`")
+w("/// — the optional `backgroundImagePath`/`backgroundColor` ctor args) or")
+w("/// the overlay provider's image + tint")
+w("/// (`SpawnConditionBestiaryOverlayInfoElement.cs:17-22` /")
+w("/// `SpawnConditionDecorativeOverlayInfoElement.cs:16-20`). The Visuals")
+w("/// rows carry no key/frame (\"\"/0 — decorative only). W4-e23 remainder 3")
+w("/// + the final-phase overlays.")
 w("#[derive(Clone, Copy, Debug, PartialEq, Eq)]")
 w("pub struct TagDef {")
 w("    pub key: &'static str,")
@@ -209,20 +374,47 @@ w("    /// `None` when the tag draws no backdrop.")
 w("    pub bg: Option<&'static str>,")
 w("    /// `GetBackgroundColor`'s tint, `None` = `Color.White`.")
 w("    pub bg_color: Option<[u8; 4]>,")
+w("    /// `GetBackgroundOverlayImage`'s sheet name, `None` = no overlay.")
+w("    pub overlay: Option<&'static str>,")
+w("    /// `GetBackgroundOverlayColor`, `None` = the portrait's")
+w("    /// `Color.Lerp(White, portraitColor, 0.5)` fallback")
+w("    /// (`UIBestiaryNPCEntryPortrait.cs:53`).")
+w("    pub overlay_color: Option<[u8; 4]>,")
+w("    /// `DisplayTextPriority` (`FilterProviderInfoElement.cs:20`) — the")
+w("    /// biome-flavor fallback's `>=` scan (`:788-792`).")
+w("    pub text_priority: i32,")
+w("    /// `HideInPortraitInfo` (`FilterProviderInfoElement.cs:22`, `:57-60`)")
+w("    /// — the Misc info row is suppressed (Blizzard only, `:109`).")
+w("    pub hide_in_portrait_info: bool,")
+w("    /// The overlay class's `DisplayPriority`")
+w("    /// (`SpawnConditionBestiaryOverlayInfoElement.cs:13` /")
+w("    /// `SpawnConditionDecorativeOverlayInfoElement.cs:14`) — the portrait")
+w("    /// overlay sort key (`NPCPortraitInfoElement.cs:82-83`, `:97-104`).")
+w("    pub display_priority: f32,")
+w("    /// `OrderPriority` (`IBestiaryPrioritizedElement`) — the Misc info")
+w("    /// rows' descending order (`UIBestiaryEntryInfoPage.cs:142`/`:165-172`).")
+w("    pub order_priority: f32,")
 w("}")
 w("")
 w(f"/// The tag catalog in id order. Ids 0..{len(filter_order)-1} are the")
 w(f"/// `GetCommonInfoElementsForFilters` list (`:{filter_list_line}`), the")
 w("/// order `GetLowestBiomeGroupIndex` scans (`ContentSamples.cs:775-786`);")
 w("/// the remaining ids are catalog tags outside the filter list (Oasis,")
-w("/// SlimeRain, Blizzard), ctor order.")
+w("/// SlimeRain, Blizzard, the eight Visuals), ctor order.")
 w("pub const TAGS: &[TagDef] = &[")
 for t in tag_names:
     key, frame, ln = tags[t]
     bg, bg_color = tag_bg.get(t, (None, None))
+    ov, ov_color = tag_overlay.get(t, (None, None))
     bg_lit = f'Some("{bg}")' if bg else "None"
     color_lit = f"Some({bg_color})" if bg_color else "None"
-    w(f'    TagDef {{ key: "{key}", frame: {frame}, bg: {bg_lit}, bg_color: {color_lit} }}, // {t} (:{ln})')
+    ov_lit = f'Some("{ov}")' if ov else "None"
+    ov_color_lit = f"Some({ov_color})" if ov_color else "None"
+    tp = tag_text_prio.get(t, 0)
+    hide = "true" if t in tag_hide_info else "false"
+    dp = tag_overlay_prio.get(t, 0.0)
+    op = tag_order_prio.get(t, 0.0)
+    w(f'    TagDef {{ key: "{key}", frame: {frame}, bg: {bg_lit}, bg_color: {color_lit}, overlay: {ov_lit}, overlay_color: {ov_color_lit}, text_priority: {tp}, hide_in_portrait_info: {hide}, display_priority: {dp}, order_priority: {op} }}, // {t} (:{ln})')
 w("];")
 w("")
 w(f"/// The filter-list length — `AvailableFilters` carries the three named")
@@ -241,9 +433,11 @@ w("    pub preferred: bool,")
 w("}")
 w("")
 w("/// The per-entry tag lists, net-id ascending — the relationship passes'")
-w("/// AddRange/AddTags replayed in source order with the eleven")
-w("/// `Info.Remove` rows applied (first-occurrence removal, C# `List.Remove`).")
-w("/// Entries without tags carry no row.")
+w("/// AddRange/AddTags replayed in Populate order (relationships ->")
+w("/// decorations -> modify) with the eleven `Info.Remove` rows applied")
+w("/// (first-occurrence removal, C# `List.Remove`). The decorations pass")
+w("/// (`AddNPCBiomeRelationships_AddDecorations_Automated:2028-2071`) appends")
+w("/// the Visuals overlay rows. Entries without tags carry no row.")
 w("pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[")
 
 
@@ -266,6 +460,28 @@ w("pub static SEARCH_ALIASES: &[(i32, &str)] = &[")
 for net, alias, ln in sorted(aliases, key=lambda a: (a[0], a[2])):
     w(f'    ({net}, "{alias}"), // :{ln}')
 w("];")
+w("")
+w("/// `TryGivingEntryFlavorTextIfItIsMissing` (`:773-800`, run at `:637`):")
+w("/// the entries whose factory found no `Bestiary_FlavorText.npc_<Const>`")
+w("/// row get a `Bestiary_BiomeText.biome_<Tail>` flavor element from their")
+w("/// spawn-condition tags — the first preference-wrapped tag wins (`:783-787`,")
+w("/// the world-evil wrap class excepted), else the plain tag with the")
+w("/// highest `DisplayTextPriority` (`>=`, ties to the later row, `:788-792`).")
+w("/// The element is added WITHOUT an Exists check (`:798`) — the runtime")
+w("/// `Language.GetText` shows the key itself when the row is missing.")
+w("pub static FLAVOR_FALLBACK: &[(i32, &str)] = &[")
+for net in sorted(flavor_fallback):
+    w(f'    ({net}, "{flavor_fallback[net]}"),')
+w("];")
+w("")
+w("/// The entry's biome-flavor fallback key (`FLAVOR_FALLBACK`), `None` when")
+w("/// the factory's per-NPC row exists or no spawn-condition tag matched.")
+w("pub fn flavor_fallback_key(net_id: i32) -> Option<&'static str> {")
+w("    FLAVOR_FALLBACK")
+w("        .binary_search_by_key(&net_id, |&(id, _)| id)")
+w("        .map(|i| FLAVOR_FALLBACK[i].1)")
+w("        .ok()")
+w("}")
 w("")
 for name, ids, ln in [
     ("TOWN_NPC_BESTIARY_PRIORITY", town, town_ln),

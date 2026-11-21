@@ -369,10 +369,17 @@ const STATIC_NAMES = constStringList(assetsSrc, 'STATIC_SHEET_NAMES');
 const GLOW_NAMES = constStringList(assetsSrc, 'GLOW_SHEET_NAMES');
 
 // The L-8b branch's STATIC_SHEET_NAMES (renamed minecart rows + 25 additions).
+// The branch may be merged-and-deleted (the W4 worktrees prune their remotes);
+// the scenario then collapses to the current STATIC list (no delta).
 const { execSync } = require('child_process');
-const l8bSrc = execSync('git show origin/task/S1-L-8b-mount-data:crates/tr-app/src/assets.rs',
-  { cwd: path.join(__dirname, '..'), maxBuffer: 64 * 1024 * 1024 }).toString();
-const L8B_STATIC = constStringList(l8bSrc, 'STATIC_SHEET_NAMES');
+let L8B_STATIC = STATIC_NAMES;
+try {
+  const l8bSrc = execSync('git show origin/task/S1-L-8b-mount-data:crates/tr-app/src/assets.rs',
+    { cwd: path.join(__dirname, '..'), maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+  L8B_STATIC = constStringList(l8bSrc, 'STATIC_SHEET_NAMES');
+} catch {
+  console.log('L-8b ref gone (merged+pruned) — the mount scenario reads the current STATIC list');
+}
 const L8B_ADDITIONS = L8B_STATIC.filter(n => !STATIC_NAMES.includes(n));
 const L8B_REMOVED = STATIC_NAMES.filter(n => !L8B_STATIC.includes(n));
 

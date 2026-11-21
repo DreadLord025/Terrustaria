@@ -14886,8 +14886,7 @@ the base). The S1-E-26 wave C "Deferred" list above is now mostly closed.
    Atlas +26 MapBG sheets (7728→7753 px skyline, under 8192). The decorative
    overlays (`Visuals.*`, `UIBestiaryNPCEntryPortrait.cs:42-55`) and the
    `TryGivingEntryFlavorTextIfItIsMissing` biome-flavor fallback (`:773-800`)
-   stay deferred (the port's flavor text is the per-NPC
-   `Bestiary_FlavorText.npc_*` row only).
+   LANDED in the final phase (2026-11-21, see item 10 below).
 8. **The gamepad link points** (`SetupGamepadPoints`, ids 3000+) stay
    unported (the whole gamepad-navigation layer is out of scope).
 9. **The hover sound ticks fire (LANDED 2026-11-21, remainder 4).** The
@@ -14902,6 +14901,47 @@ the base). The S1-E-26 wave C "Deferred" list above is now mostly closed.
    per open frame in the click cluster and plays `Menu_Tick` (sound 12) on a
    fired edge; the closed screen resets the latches. The click cues (sound
    11/12) still play from the click handler.
+10. **The decorative overlays + the biome-flavor fallback + the Misc
+    spawn-condition rows draw (LANDED 2026-11-21, final phase).** Three
+    deferred pieces of the info page close together:
+    (a) `AddNPCBiomeRelationships_AddDecorations_Automated`
+    (`BestiaryDatabaseNPCsPopulator.cs:2028-2071`) replays in
+    `gen_bestiary_tags.py` BETWEEN the relationship passes and
+    `ModifyEntriesThatNeedIt` (the `Populate:544-555` order): the Rain arm
+    picks `Visuals.Blizzard` when the entry carries Snow else `Visuals.Rain`
+    and CONTINUES; Eclipse/NightTime/DayTime/PumpkinMoon/FrostMoon are
+    independent ifs; the Meteor biome adds Moon AND Meteor. The eight
+    `Visuals.*` rows join the tag catalog (ids 60-67, no key/frame — the
+    decorative class carries none, `SpawnConditionDecorativeOverlayInfoElement.cs:16`);
+    `TagDef` gains `overlay`/`overlay_color`/`text_priority`/
+    `hide_in_portrait_info`/`display_priority`/`order_priority` (the ctor
+    initializer flags). `portrait_overlays` ports
+    `NPCPortraitInfoElement.cs:77-83`: only when NO preference-matched
+    provider won the image (`!flag2`), the overlay providers collect in
+    entry order and `OrderBy` the stable `DisplayPriority`; the draw
+    (`UIBestiaryNPCEntryPortrait.cs:42-55`) pushes each `ScaleToFit` over the
+    inner box between the backdrop and the icon, tinted by its own color or
+    `Color.Lerp(White, portraitColor, 0.5)` (`npc_portrait_overlay_color`,
+    the dead-code allowance lifted). Atlas +9 `MapBGOverlay1..9` sheets
+    (measured 7753→7759 px skyline via `tools/atlas_sim.js`, under 8192; the
+    harness's deleted-L-8b-ref read now tolerates the pruned branch).
+    (b) `TryGivingEntryFlavorTextIfItIsMissing` (`:773-800`, run at `:637`)
+    replays into the generated `FLAVOR_FALLBACK` table (118 rows): entries
+    whose factory found no `Bestiary_FlavorText.npc_<Const>` row get the
+    first preference-wrapped spawn-condition tag's `Bestiary_BiomeText.biome_<Tail>`
+    key (the world-evil wrap class excepted — 533/529 fall through), else
+    the plain `SpawnConditionBestiaryInfoElement` with the highest
+    `DisplayTextPriority` (`>=`, ties to the later row; the overlay class
+    never feeds the scan). `flavor_text` falls back to it from tier 2 —
+    the element is added WITHOUT an Exists check (`:798`).
+    (c) The Misc info rows: `FilterProviderInfoElement.ProvideUIElement`
+    (`:55-95`) draws the entry's plain spawn-condition tags from tier 1 as
+    the (-14,1)x34 (43,56,101) panel rows — the framed `Icon_Tags_Shadow`
+    icon at Left 5 + the 0.8 display name at PaddingLeft 38 with the
+    `DynamicallyScaleDownToWidth` shrink, the `ShowButtonName` hover; the
+    group orders by `OrderPriority` descending (biomes 0, Times -1,
+    Events -2), `HideInPortraitInfo` (Blizzard) suppressed. The
+    `bestiary_info_category` Misc arm now has live rows.
 
 Tests (written, not run): `bestiary_filter::tests` (10 - the filter list,
 the active-OR + search gate, the saucer boss removal, the wrap-membership

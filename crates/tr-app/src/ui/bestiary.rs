@@ -754,7 +754,6 @@ pub fn npc_portrait_inner(card: [f32; 4]) -> [f32; 4] {
 /// The overlay tint fallback (`UIBestiaryNPCEntryPortrait.cs:53`): an
 /// overlay without its own colour takes `Color.Lerp(Color.White,
 /// portraitColor, 0.5)`.
-#[allow(dead_code)] // the port's entries carry no background overlays yet
 pub fn npc_portrait_overlay_color(
     overlay_color: Option<[u8; 4]>,
     portrait_color: [u8; 4],
@@ -762,6 +761,44 @@ pub fn npc_portrait_overlay_color(
     overlay_color.unwrap_or_else(|| {
         super::char_creation::lerp_rgb([255, 255, 255, 255], portrait_color, 0.5)
     })
+}
+
+/// The portrait's decorative overlays (`NPCPortraitInfoElement.cs:77-83`):
+/// while NO preference-matched provider won the background image (`!flag2`,
+/// `:77`), every `IBestiaryBackgroundOverlayAndColorProvider` in entry order
+/// with a non-null overlay image joins the list, then `OrderBy` the
+/// `DisplayPriority` (`:82-83`, `GetSortingValueForElement:97-104` — a stable
+/// ascending sort, ties keep entry order). The port's providers are the
+/// tag rows' overlay columns (the decorations pass's Visuals rows +
+/// Events.Sandstorm); the Visuals rows all carry priority 1, Sandstorm 0.
+/// Returns `(sheet_name, overlay_color)` pairs in draw order; the color's
+/// `None` rides [`npc_portrait_overlay_color`]'s Lerp fallback at the draw.
+pub fn portrait_overlays(net_id: i32) -> Vec<(&'static str, Option<[u8; 4]>)> {
+    let tags = crate::bestiary_tags::entry_tags(net_id);
+    // `flag2` — a preference-matched provider with an image won (`:43-57`),
+    // the same pass-1 pick `portrait_backdrop` runs.
+    let evil = WORLD_EVIL_PREFERENCE.iter().find(|&&(id, _, _)| id == net_id);
+    let matched_won = tags.iter().any(|t| {
+        let matched = if let Some(&(_, corrupt, _)) = evil {
+            t.preferred && t.tag == corrupt
+        } else {
+            t.preferred
+        };
+        matched && crate::bestiary_tags::TAGS[t.tag as usize].bg.is_some()
+    });
+    if matched_won {
+        return Vec::new(); // `:77` — the overlays only ride the fallback arm
+    }
+    let mut list: Vec<(f32, usize, &'static str, Option<[u8; 4]>)> = Vec::new();
+    for (i, t) in tags.iter().enumerate() {
+        let def = &crate::bestiary_tags::TAGS[t.tag as usize];
+        if let Some(overlay) = def.overlay {
+            list.push((def.display_priority, i, overlay, def.overlay_color));
+        }
+    }
+    // `OrderBy` is stable (`:82`); the entry-order index breaks ties.
+    list.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.cmp(&b.1)));
+    list.into_iter().map(|(_, _, s, c)| (s, c)).collect()
 }
 
 // --- UIBestiarySortingOptionsGrid (W4-d81 census row 15) -------------------------
@@ -1031,16 +1068,24 @@ pub fn entry_hover_text(entry: &crate::bestiary::BestiaryEntryDef, state: Unlock
 /// `Language.Exists` — the port's credit id IS the `NPCName.<Const>` tail
 /// (`ContentSamples.cs:862-873`). `FlavorTextBestiaryInfoElement` shows it
 /// from tier 2 (`FlavorTextBestiaryInfoElement.cs:20-23`).
+///
+/// The biome-flavor fallback (`TryGivingEntryFlavorTextIfItIsMissing`,
+/// `BestiaryDatabaseNPCsPopulator.cs:773-800`, run at `:637`): entries whose
+/// factory found no per-NPC row carry a `Bestiary_BiomeText.biome_<Tail>`
+/// element instead — the generated `FLAVOR_FALLBACK` table replays the
+/// preference-first / highest-`DisplayTextPriority` pick. That element is
+/// added WITHOUT an Exists check (`:798`), so the fallback row shows from
+/// tier 2 unconditionally (`Language.GetText` prints the key itself when
+/// the translation is missing — `lang::text`'s same contract).
 pub fn flavor_text(entry: &crate::bestiary::BestiaryEntryDef, state: UnlockState) -> Option<String> {
     if state < UnlockState::CanShowStats {
         return None;
     }
     let key = format!("Bestiary_FlavorText.npc_{}", entry.credit_id);
     if crate::lang::exists(&key) {
-        Some(crate::lang::text(&key))
-    } else {
-        None
+        return Some(crate::lang::text(&key));
     }
+    crate::bestiary_tags::flavor_fallback_key(entry.net_id).map(crate::lang::text)
 }
 
 /// `true` while the cursor is over the Back panel (`MakeExitButton`'s
@@ -2376,6 +2421,10 @@ enum InfoRow {
     KillCounter(String),
     /// `ItemDropBestiaryInfoElement` — one `UIBestiaryInfoItemLine`.
     Drop { name: String, rate: String, locked: bool },
+    /// `FilterProviderInfoElement.ProvideUIElement` (`:55-95`) — the Misc
+    /// category's spawn-condition row: the framed tag icon + the display
+    /// name (`HideInPortraitInfo` rows never produce one, `:57-60`).
+    SpawnCondition { tag: u32 },
     /// `UIHorizontalSeparator` (`:153-158`).
     Separator,
 }
@@ -2441,6 +2490,32 @@ fn build_info_rows(
         }
         if !g.is_empty() {
             groups.push(g);
+        }
+    }
+    // 6. Misc — the spawn-condition tag rows
+    // (`FilterProviderInfoElement.ProvideUIElement:55-95`): from tier 1,
+    // `HideInPortraitInfo` suppressed (`:57-64`), the plain rows only (the
+    // preference wraps / Visuals produce null — neither is a
+    // FilterProviderInfoElement). Within the group the C# orders by
+    // `OrderPriority` DESCENDING, stable (`UIBestiaryEntryInfoPage.cs:142`,
+    // `GetIndividualElementPriority:165-172`): the biome rows (0) first in
+    // entry order, then the Times (-1), then the Events (-2).
+    if state.known() {
+        let mut rows: Vec<(f32, usize, u32)> = Vec::new();
+        for (i, t) in crate::bestiary_tags::entry_tags(entry.net_id).iter().enumerate() {
+            let def = &crate::bestiary_tags::TAGS[t.tag as usize];
+            if t.preferred || def.key.is_empty() || def.hide_in_portrait_info {
+                continue;
+            }
+            rows.push((def.order_priority, i, t.tag));
+        }
+        rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.1.cmp(&b.1)));
+        if !rows.is_empty() {
+            groups.push(
+                rows.into_iter()
+                    .map(|(_, _, tag)| (InfoRow::SpawnCondition { tag }, 34.0))
+                    .collect(),
+            );
         }
     }
     // Interleave the separators between groups, none after the last.
@@ -2573,8 +2648,22 @@ fn draw_info_row(
             // The biome backdrop (`UIBestiaryNPCEntryPortrait.cs:30-41`):
             // the preference-picked provider's image, `ScaleToFit` over the
             // inner box, tinted by the portrait color. W4-e23 remainder.
+            let portrait_color = portrait_backdrop(entry.net_id)
+                .map(|(_, tint)| tint)
+                .unwrap_or([255, 255, 255, 255]);
             if let Some((sheet_name, tint)) = portrait_backdrop(entry.net_id) {
                 if let Some(sheet) = lookups.map_bg_sheet(sheet_name) {
+                    push_whole(r, lookups, sheet, inner, super::color::tint(tint));
+                }
+            }
+            // The decorative overlays (`UIBestiaryNPCEntryPortrait.cs:42-55`,
+            // W4-e23 final phase): each provider's image `ScaleToFit` over the
+            // same inner box, its own color or the White/portraitColor Lerp
+            // (`:53`), in the DisplayPriority order (`:82-83`). They draw
+            // BETWEEN the backdrop and the icon (`:56` appends the icon last).
+            for (sheet_name, overlay_color) in portrait_overlays(entry.net_id) {
+                if let Some(sheet) = lookups.map_bg_sheet(sheet_name) {
+                    let tint = npc_portrait_overlay_color(overlay_color, portrait_color);
                     push_whole(r, lookups, sheet, inner, super::color::tint(tint));
                 }
             }
@@ -2631,6 +2720,31 @@ fn draw_info_row(
                 }
             } else {
                 text::hud_text(r, lookups, tx, ty, 0.8, [1.0; 4], &format!("  {name} {rate}"));
+            }
+        }
+        InfoRow::SpawnCondition { tag } => {
+            // `FilterProviderInfoElement.ProvideUIElement` (`:55-95`): the
+            // (-14, 1) x 34 panel at Left 5, bg (43, 56, 101), transparent
+            // border; the framed tag icon at Left 5 VAlign 0.5 (`:75-77`),
+            // the 0.8 display name at PaddingLeft 38 VAlign 0.5 with
+            // `DynamicallyScaleDownToWidth` (`:78-87`); the hover prints the
+            // name (`ShowButtonName:105-112`).
+            let def = &crate::bestiary_tags::TAGS[*tag as usize];
+            let panel = [content[0] + 5.0, ty, content[2] - 14.0, 34.0];
+            r.push_ui_sprite([panel[0], panel[1]], [panel[2], panel[3]], r.white_uv(), super::color::tint([43, 56, 101, 255]));
+            if let Some(sheet) = lookups.ui_bestiary_tag_icons {
+                let (fw, fh) = (sheet.width as f32 / 16.0, sheet.height as f32 / 5.0);
+                let dst = [panel[0] + 5.0, panel[1] + (34.0 - fh) * 0.5, fw, fh];
+                super::bestiary_screen_draw::draw_tag_frame(r, lookups, &sheet, def.frame, dst, [1.0; 4]);
+            }
+            let label = crate::lang::text(def.key);
+            let avail = panel[2] - 38.0 - 5.0; // PaddingLeft 38, PaddingRight 5 (`:74`/`:81`)
+            let w = text::hud_text_width(r, lookups, &label, 0.8);
+            let scale = if w > avail { 0.8 * avail / w } else { 0.8 };
+            let lh = text::line_height(lookups) * scale;
+            text::hud_text(r, lookups, panel[0] + 38.0, ty + (34.0 - lh) * 0.5, scale, [1.0; 4], &label);
+            if super::in_rect(mouse, panel) {
+                super::tooltip::draw_mouse_text(r, lookups, mouse, &label, screen, super::UiPulse::default());
             }
         }
         InfoRow::Separator => {
@@ -3868,6 +3982,123 @@ mod tests {
         // The Moon Lord's tagless roster neighbours: an id with no tag row
         // and no own provider (e.g. 999, outside the catalog) → None.
         assert_eq!(portrait_backdrop(999), None);
+    }
+
+    // --- W4-e23 final phase: the decorative overlays + the biome flavor -----
+
+    /// `AddNPCBiomeRelationships_AddDecorations_Automated` (`:2028-2071`):
+    /// the Demon Eye (2) carries NightTime → Visuals.Moon (tag 61); the
+    /// Blue Slime (1) carries DayTime → Visuals.Sun (tag 60); the Worm
+    /// (357) carries Rain (no Snow) → Visuals.Rain (tag 66). WRITTEN, NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn the_decorations_pass_appends_the_visuals_rows() {
+        let tags = crate::bestiary_tags::entry_tags(2);
+        assert!(tags.iter().any(|t| t.tag == 61), "the Demon Eye's moon");
+        let tags = crate::bestiary_tags::entry_tags(1);
+        assert!(tags.iter().any(|t| t.tag == 60), "the Blue Slime's sun");
+        let tags = crate::bestiary_tags::entry_tags(357);
+        assert!(tags.iter().any(|t| t.tag == 66), "the Worm's rain");
+        // The Meteor Head (23) carries the Meteor biome → BOTH the moon
+        // and the meteor overlays (`:2065-2069`), in that order.
+        let tags = crate::bestiary_tags::entry_tags(23);
+        let visual: Vec<u32> = tags.iter().map(|t| t.tag).filter(|&t| t >= 60).collect();
+        assert_eq!(visual, vec![61, 65]);
+    }
+
+    /// `NPCPortraitInfoElement.cs:77-83` + `UIBestiaryNPCEntryPortrait.cs:42-55`:
+    /// the overlays draw only when no preference-matched provider won the
+    /// image, ordered by DisplayPriority (the Meteor Head's moon+meteor both
+    /// carry 1 — entry order stands). WRITTEN, NOT RUN.
+    #[test]
+    fn the_portrait_overlays_ride_the_fallback_arm() {
+        // The Demon Eye: NightTime's MapBG1 wins un-preferred, so the moon
+        // overlay draws (MapBGOverlay4, White).
+        assert_eq!(portrait_overlays(2), vec![("MapBGOverlay4", Some([255, 255, 255, 255]))]);
+        // The Meteor Head: moon then meteor (stable DisplayPriority 1 ties).
+        assert_eq!(
+            portrait_overlays(23),
+            vec![
+                ("MapBGOverlay4", Some([255, 255, 255, 255])),
+                ("MapBGOverlay7", Some([255, 255, 255, 255])),
+            ]
+        );
+        // The Eater of Souls (6) carries a PREFERENCE-matched Corruption
+        // provider with an image → flag2 true → NO overlays (`:77`).
+        assert!(portrait_overlays(6).is_empty());
+        // The Rain visual's tint is (200, 200, 200), not White (`:315`).
+        assert_eq!(portrait_overlays(357), vec![("MapBGOverlay2", Some([200, 200, 200, 255]))]);
+    }
+
+    /// `UIBestiaryNPCEntryPortrait.cs:53`: an overlay without its own color
+    /// takes `Color.Lerp(White, portraitColor, 0.5)` — the truncating lerp.
+    /// WRITTEN, NOT RUN.
+    #[test]
+    fn the_overlay_color_lerps_toward_the_portrait_color() {
+        // The night portrait color (35, 40, 40): (255+35)/2 = 145,
+        // (255+40)/2 = 147.5 → 147 (the truncating lerp_rgb).
+        assert_eq!(
+            npc_portrait_overlay_color(None, [35, 40, 40, 255]),
+            [145, 147, 147, 255]
+        );
+        // An own color wins outright.
+        assert_eq!(
+            npc_portrait_overlay_color(Some([1, 2, 3, 255]), [35, 40, 40, 255]),
+            [1, 2, 3, 255]
+        );
+    }
+
+    /// `TryGivingEntryFlavorTextIfItIsMissing` (`:773-800`): the Burning
+    /// Sphere (25) has no `npc_BurningSphere` flavor row, so its Underworld
+    /// tag supplies `biome_TheUnderworld`; the Chaos Ball (30) rides the
+    /// Goblins invasion. Entries WITH a per-NPC row (the Guide 22, the
+    /// Meteor Head 23) carry no fallback. WRITTEN, NOT RUN.
+    #[test]
+    fn the_biome_flavor_fallback_fills_the_missing_rows() {
+        use crate::bestiary_tags::flavor_fallback_key;
+        assert_eq!(flavor_fallback_key(25), Some("Bestiary_BiomeText.biome_TheUnderworld"));
+        assert_eq!(flavor_fallback_key(30), Some("Bestiary_BiomeText.biome_Goblins"));
+        assert_eq!(flavor_fallback_key(22), None);
+        assert_eq!(flavor_fallback_key(23), None);
+        // The fallback shows from tier 2 like the per-NPC row
+        // (`FlavorTextBestiaryInfoElement.cs:20-23`) — and the Burning
+        // Sphere's entry resolves it through flavor_text.
+        let entry = crate::bestiary::ENTRIES.iter().find(|e| e.net_id == 25).unwrap();
+        assert!(flavor_text(entry, UnlockState::CanShowPortraitOnly).is_none());
+        let got = flavor_text(entry, UnlockState::CanShowStats).expect("the biome fallback");
+        assert_eq!(got, crate::lang::text("Bestiary_BiomeText.biome_TheUnderworld"));
+        // The highest-DisplayTextPriority scan: the Spazmatism (128) carries
+        // only the NightTime tag row, so its fallback is biome_NightTime.
+        assert_eq!(flavor_fallback_key(128), Some("Bestiary_BiomeText.biome_NightTime"));
+    }
+
+    /// `FilterProviderInfoElement.ProvideUIElement` (`:55-95`): the Misc
+    /// spawn-condition rows produce from tier 1, `HideInPortraitInfo`
+    /// (Blizzard, tag 58) never does, the Visuals/wrapped rows never do;
+    /// the group orders by OrderPriority descending — the biome rows (0)
+    /// before the Times (-1) before the Events (-2). WRITTEN, NOT RUN.
+    #[test]
+    fn the_spawn_condition_rows_order_and_gate() {
+        let tags = crate::bestiary_tags::TAGS;
+        assert!(tags[58].hide_in_portrait_info, "Events.Blizzard hides");
+        assert!(!tags[4].hide_in_portrait_info, "Events.Rain shows");
+        assert_eq!(tags[0].order_priority, 0.0); // Biomes.Surface
+        assert_eq!(tags[1].order_priority, -1.0); // Times.DayTime
+        assert_eq!(tags[4].order_priority, -2.0); // Events.Rain
+        // The Blue Slime (1): Surface (0) + DayTime (-1) + Visuals.Sun —
+        // the row order is Surface then DayTime, the Visuals row skipped.
+        let entry = crate::bestiary::ENTRIES.iter().find(|e| e.net_id == 1).unwrap();
+        let mut rows: Vec<(f32, usize, u32)> = Vec::new();
+        for (i, t) in crate::bestiary_tags::entry_tags(1).iter().enumerate() {
+            let def = &tags[t.tag as usize];
+            if t.preferred || def.key.is_empty() || def.hide_in_portrait_info {
+                continue;
+            }
+            rows.push((def.order_priority, i, t.tag));
+        }
+        rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.1.cmp(&b.1)));
+        assert_eq!(rows.iter().map(|&(_, _, t)| t).collect::<Vec<_>>(), vec![0, 1]);
+        let _ = entry;
     }
 }
 

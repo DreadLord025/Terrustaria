@@ -321,8 +321,9 @@ fn tag_icon_dst(button: [f32; 4], size: [f32; 2]) -> [f32; 4] {
 
 /// One `Icon_Tags_Shadow` frame — the 16x5 sheet sliced by the linear
 /// frame index (`FilterProviderInfoElement.cs:27-28`: `X = frame % 16`,
-/// `Y = frame / 16`).
-fn draw_tag_frame(
+/// `Y = frame / 16`). Shared with the info page's spawn-condition rows
+/// (`GetFilterImage`, `:31-39` — the same framed sheet).
+pub(super) fn draw_tag_frame(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     sheet: &tr_render::SheetRect,

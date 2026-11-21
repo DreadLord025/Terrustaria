@@ -1061,6 +1061,19 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "MapBG40", // corrupt underground desert
         "MapBG41", // crimson underground desert
         "MapBG42", // hallow underground desert
+        // W4-e23 final phase: the portrait's decorative overlays — the
+        // `Visuals.*` + `Events.Sandstorm` overlay ctor paths
+        // (`BestiaryDatabaseNPCsPopulator.cs:112`/`:291-322`, drawn by
+        // `UIBestiaryNPCEntryPortrait.cs:42-55`).
+        "MapBGOverlay1", // sandstorm
+        "MapBGOverlay2", // rain
+        "MapBGOverlay3", // sun
+        "MapBGOverlay4", // moon
+        "MapBGOverlay5", // eclipse sun
+        "MapBGOverlay6", // blizzard
+        "MapBGOverlay7", // meteor
+        "MapBGOverlay8", // pumpkin moon
+        "MapBGOverlay9", // frost moon
         // P5 settings sliders (`AssetInitializer.cs:345-349`): the
         // `IngameOptions.DrawValueBar` chrome and the `Main.DrawMenu` HSL colour
         // sliders. `ColorHighlight` is `Images/UI/Slider_Highlight`, NOT
@@ -2577,6 +2590,7 @@ impl Lookups {
             bestiary_backdrops: crate::bestiary_tags::TAGS
                 .iter()
                 .filter_map(|t| t.bg)
+                .chain(crate::bestiary_tags::TAGS.iter().filter_map(|t| t.overlay))
                 .chain(std::iter::once("MapBG1")) // the Moon Lord provider
                 .filter_map(|name| atlas.sheet(name).copied().map(|s| (name, s)))
                 .collect(),

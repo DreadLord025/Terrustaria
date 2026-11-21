@@ -12,13 +12,16 @@
 //!
 //! Source: BestiaryDatabaseNPCsPopulator.cs + NPCID.cs (Terraria 1.4.5.8).
 
-/// One `SpawnConditionBestiaryInfoElement` tag
-/// (`FilterProviderInfoElement.cs:24-29`): the language key + the
-/// `Icon_Tags_Shadow` frame index (`frame % 16`, `frame / 16` on the
-/// 16x5 sheet), plus the portrait background provider's image sheet +
-/// tint (`SpawnConditionBestiaryInfoElement.cs:15-20` — the optional
-/// `backgroundImagePath`/`backgroundColor` ctor args; overlay elements
-/// carry no background). W4-e23 remainder: the biome portrait backdrops.
+/// One `SpawnCondition*` tag (`FilterProviderInfoElement.cs:24-29`): the
+/// language key + the `Icon_Tags_Shadow` frame index (`frame % 16`,
+/// `frame / 16` on the 16x5 sheet), plus the portrait background
+/// provider's image sheet + tint (`SpawnConditionBestiaryInfoElement.cs:15-20`
+/// — the optional `backgroundImagePath`/`backgroundColor` ctor args) or
+/// the overlay provider's image + tint
+/// (`SpawnConditionBestiaryOverlayInfoElement.cs:17-22` /
+/// `SpawnConditionDecorativeOverlayInfoElement.cs:16-20`). The Visuals
+/// rows carry no key/frame (""/0 — decorative only). W4-e23 remainder 3
+/// + the final-phase overlays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TagDef {
     pub key: &'static str,
@@ -28,74 +31,102 @@ pub struct TagDef {
     pub bg: Option<&'static str>,
     /// `GetBackgroundColor`'s tint, `None` = `Color.White`.
     pub bg_color: Option<[u8; 4]>,
+    /// `GetBackgroundOverlayImage`'s sheet name, `None` = no overlay.
+    pub overlay: Option<&'static str>,
+    /// `GetBackgroundOverlayColor`, `None` = the portrait's
+    /// `Color.Lerp(White, portraitColor, 0.5)` fallback
+    /// (`UIBestiaryNPCEntryPortrait.cs:53`).
+    pub overlay_color: Option<[u8; 4]>,
+    /// `DisplayTextPriority` (`FilterProviderInfoElement.cs:20`) — the
+    /// biome-flavor fallback's `>=` scan (`:788-792`).
+    pub text_priority: i32,
+    /// `HideInPortraitInfo` (`FilterProviderInfoElement.cs:22`, `:57-60`)
+    /// — the Misc info row is suppressed (Blizzard only, `:109`).
+    pub hide_in_portrait_info: bool,
+    /// The overlay class's `DisplayPriority`
+    /// (`SpawnConditionBestiaryOverlayInfoElement.cs:13` /
+    /// `SpawnConditionDecorativeOverlayInfoElement.cs:14`) — the portrait
+    /// overlay sort key (`NPCPortraitInfoElement.cs:82-83`, `:97-104`).
+    pub display_priority: f32,
+    /// `OrderPriority` (`IBestiaryPrioritizedElement`) — the Misc info
+    /// rows' descending order (`UIBestiaryEntryInfoPage.cs:142`/`:165-172`).
+    pub order_priority: f32,
 }
 
 /// The tag catalog in id order. Ids 0..56 are the
 /// `GetCommonInfoElementsForFilters` list (`:327`), the
 /// order `GetLowestBiomeGroupIndex` scans (`ContentSamples.cs:775-786`);
 /// the remaining ids are catalog tags outside the filter list (Oasis,
-/// SlimeRain, Blizzard), ctor order.
+/// SlimeRain, Blizzard, the eight Visuals), ctor order.
 pub const TAGS: &[TagDef] = &[
-    TagDef { key: "Bestiary_Biomes.Surface", frame: 0, bg: Some("MapBG1"), bg_color: None }, // Biomes.Surface (:208)
-    TagDef { key: "Bestiary_Times.DayTime", frame: 36, bg: None, bg_color: None }, // Times.DayTime (:258)
-    TagDef { key: "Bestiary_Events.Party", frame: 48, bg: Some("MapBG1"), bg_color: None }, // Events.Party (:101)
-    TagDef { key: "Bestiary_Events.WindyDay", frame: 41, bg: Some("MapBG1"), bg_color: None }, // Events.WindyDay (:71)
-    TagDef { key: "Bestiary_Events.Rain", frame: 40, bg: None, bg_color: None }, // Events.Rain (:86)
-    TagDef { key: "Bestiary_Times.NightTime", frame: 37, bg: Some("MapBG1"), bg_color: Some([35, 40, 40, 255]) }, // Times.NightTime (:263)
-    TagDef { key: "Bestiary_Events.BloodMoon", frame: 38, bg: Some("MapBG26"), bg_color: Some([200, 190, 180, 255]) }, // Events.BloodMoon (:76)
-    TagDef { key: "Bestiary_Biomes.Graveyard", frame: 35, bg: Some("MapBG27"), bg_color: None }, // Biomes.Graveyard (:209)
-    TagDef { key: "Bestiary_Biomes.Underground", frame: 1, bg: Some("MapBG2"), bg_color: None }, // Biomes.Underground (:213)
-    TagDef { key: "Bestiary_Biomes.Caverns", frame: 2, bg: Some("MapBG32"), bg_color: None }, // Biomes.Caverns (:217)
-    TagDef { key: "Bestiary_Biomes.Granite", frame: 30, bg: Some("MapBG17"), bg_color: Some([100, 100, 100, 255]) }, // Biomes.Granite (:234)
-    TagDef { key: "Bestiary_Biomes.Marble", frame: 29, bg: Some("MapBG18"), bg_color: None }, // Biomes.Marble (:238)
-    TagDef { key: "Bestiary_Biomes.UndergroundMushroom", frame: 25, bg: Some("MapBG21"), bg_color: None }, // Biomes.UndergroundMushroom (:215)
-    TagDef { key: "Bestiary_Biomes.SpiderNest", frame: 34, bg: Some("MapBG19"), bg_color: None }, // Biomes.SpiderNest (:226)
-    TagDef { key: "Bestiary_Biomes.Snow", frame: 5, bg: Some("MapBG12"), bg_color: None }, // Biomes.Snow (:222)
-    TagDef { key: "Bestiary_Biomes.UndergroundSnow", frame: 6, bg: Some("MapBG4"), bg_color: None }, // Biomes.UndergroundSnow (:218)
-    TagDef { key: "Bestiary_Biomes.Desert", frame: 3, bg: Some("MapBG10"), bg_color: None }, // Biomes.Desert (:223)
-    TagDef { key: "Bestiary_Biomes.UndergroundDesert", frame: 4, bg: Some("MapBG15"), bg_color: None }, // Biomes.UndergroundDesert (:221)
-    TagDef { key: "Bestiary_Events.Sandstorm", frame: 43, bg: None, bg_color: None }, // Events.Sandstorm (:112)
-    TagDef { key: "Bestiary_Biomes.Ocean", frame: 28, bg: Some("MapBG11"), bg_color: None }, // Biomes.Ocean (:219)
-    TagDef { key: "Bestiary_Biomes.Jungle", frame: 22, bg: Some("MapBG9"), bg_color: None }, // Biomes.Jungle (:216)
-    TagDef { key: "Bestiary_Biomes.UndergroundJungle", frame: 23, bg: Some("MapBG13"), bg_color: None }, // Biomes.UndergroundJungle (:210)
-    TagDef { key: "Bestiary_Biomes.Meteor", frame: 44, bg: Some("MapBG1"), bg_color: Some([35, 40, 40, 255]) }, // Biomes.Meteor (:224)
-    TagDef { key: "Bestiary_Biomes.TheDungeon", frame: 32, bg: Some("MapBG5"), bg_color: None }, // Biomes.TheDungeon (:212)
-    TagDef { key: "Bestiary_Biomes.TheUnderworld", frame: 33, bg: Some("MapBG3"), bg_color: None }, // Biomes.TheUnderworld (:211)
-    TagDef { key: "Bestiary_Biomes.Sky", frame: 26, bg: Some("MapBG33"), bg_color: None }, // Biomes.Sky (:242)
-    TagDef { key: "Bestiary_Biomes.TheCorruption", frame: 7, bg: Some("MapBG6"), bg_color: Some([200, 200, 200, 255]) }, // Biomes.TheCorruption (:206)
-    TagDef { key: "Bestiary_Biomes.UndergroundCorruption", frame: 8, bg: Some("MapBG23"), bg_color: None }, // Biomes.UndergroundCorruption (:235)
-    TagDef { key: "Bestiary_Biomes.CorruptIce", frame: 11, bg: Some("MapBG34"), bg_color: Some([200, 200, 200, 255]) }, // Biomes.CorruptIce (:239)
-    TagDef { key: "Bestiary_Biomes.CorruptDesert", frame: 9, bg: Some("MapBG37"), bg_color: None }, // Biomes.CorruptDesert (:231)
-    TagDef { key: "Bestiary_Biomes.CorruptUndergroundDesert", frame: 10, bg: Some("MapBG40"), bg_color: None }, // Biomes.CorruptUndergroundDesert (:228)
-    TagDef { key: "Bestiary_Biomes.Crimson", frame: 12, bg: Some("MapBG7"), bg_color: Some([200, 200, 200, 255]) }, // Biomes.TheCrimson (:207)
-    TagDef { key: "Bestiary_Biomes.UndergroundCrimson", frame: 13, bg: Some("MapBG24"), bg_color: None }, // Biomes.UndergroundCrimson (:236)
-    TagDef { key: "Bestiary_Biomes.CrimsonIce", frame: 16, bg: Some("MapBG35"), bg_color: Some([200, 200, 200, 255]) }, // Biomes.CrimsonIce (:241)
-    TagDef { key: "Bestiary_Biomes.CrimsonDesert", frame: 14, bg: Some("MapBG38"), bg_color: None }, // Biomes.CrimsonDesert (:232)
-    TagDef { key: "Bestiary_Biomes.CrimsonUndergroundDesert", frame: 15, bg: Some("MapBG41"), bg_color: None }, // Biomes.CrimsonUndergroundDesert (:229)
-    TagDef { key: "Bestiary_Biomes.TheHallow", frame: 17, bg: Some("MapBG8"), bg_color: None }, // Biomes.TheHallow (:214)
-    TagDef { key: "Bestiary_Biomes.UndergroundHallow", frame: 18, bg: Some("MapBG22"), bg_color: None }, // Biomes.UndergroundHallow (:237)
-    TagDef { key: "Bestiary_Biomes.HallowIce", frame: 21, bg: Some("MapBG36"), bg_color: Some([200, 200, 200, 255]) }, // Biomes.HallowIce (:240)
-    TagDef { key: "Bestiary_Biomes.HallowDesert", frame: 19, bg: Some("MapBG39"), bg_color: None }, // Biomes.HallowDesert (:233)
-    TagDef { key: "Bestiary_Biomes.HallowUndergroundDesert", frame: 20, bg: Some("MapBG42"), bg_color: None }, // Biomes.HallowUndergroundDesert (:230)
-    TagDef { key: "Bestiary_Biomes.SurfaceMushroom", frame: 24, bg: Some("MapBG20"), bg_color: None }, // Biomes.SurfaceMushroom (:220)
-    TagDef { key: "Bestiary_Biomes.TheTemple", frame: 31, bg: Some("MapBG14"), bg_color: None }, // Biomes.TheTemple (:227)
-    TagDef { key: "Bestiary_Invasions.Goblins", frame: 49, bg: Some("MapBG1"), bg_color: None }, // Invasions.Goblins (:32)
-    TagDef { key: "Bestiary_Invasions.OldOnesArmy", frame: 55, bg: Some("MapBG1"), bg_color: None }, // Invasions.OldOnesArmy (:35)
-    TagDef { key: "Bestiary_Invasions.Pirates", frame: 50, bg: Some("MapBG11"), bg_color: None }, // Invasions.Pirates (:33)
-    TagDef { key: "Bestiary_Invasions.Martian", frame: 53, bg: Some("MapBG1"), bg_color: Some([35, 40, 40, 255]) }, // Invasions.Martian (:34)
-    TagDef { key: "Bestiary_Events.Eclipse", frame: 39, bg: Some("MapBG1"), bg_color: Some([60, 30, 0, 255]) }, // Events.Eclipse (:96)
-    TagDef { key: "Bestiary_Invasions.PumpkinMoon", frame: 51, bg: Some("MapBG1"), bg_color: Some([35, 40, 40, 255]) }, // Invasions.PumpkinMoon (:36)
-    TagDef { key: "Bestiary_Invasions.FrostMoon", frame: 52, bg: Some("MapBG12"), bg_color: Some([35, 40, 40, 255]) }, // Invasions.FrostMoon (:37)
-    TagDef { key: "Bestiary_Events.Halloween", frame: 45, bg: Some("MapBG1"), bg_color: None }, // Events.Halloween (:81)
-    TagDef { key: "Bestiary_Events.Christmas", frame: 46, bg: Some("MapBG12"), bg_color: None }, // Events.Christmas (:91)
-    TagDef { key: "Bestiary_Invasions.FrostLegion", frame: 54, bg: Some("MapBG12"), bg_color: None }, // Invasions.FrostLegion (:38)
-    TagDef { key: "Bestiary_Biomes.NebulaPillar", frame: 58, bg: Some("MapBG28"), bg_color: None }, // Biomes.NebulaPillar (:243)
-    TagDef { key: "Bestiary_Biomes.SolarPillar", frame: 56, bg: Some("MapBG29"), bg_color: None }, // Biomes.SolarPillar (:244)
-    TagDef { key: "Bestiary_Biomes.VortexPillar", frame: 57, bg: Some("MapBG30"), bg_color: None }, // Biomes.VortexPillar (:245)
-    TagDef { key: "Bestiary_Biomes.StardustPillar", frame: 59, bg: Some("MapBG31"), bg_color: None }, // Biomes.StardustPillar (:246)
-    TagDef { key: "Bestiary_Events.SlimeRain", frame: 47, bg: Some("MapBG1"), bg_color: None }, // Events.SlimeRain (:66)
-    TagDef { key: "Bestiary_Events.Blizzard", frame: 42, bg: None, bg_color: None }, // Events.Blizzard (:106)
-    TagDef { key: "Bestiary_Biomes.Oasis", frame: 27, bg: Some("MapBG10"), bg_color: None }, // Biomes.Oasis (:225)
+    TagDef { key: "Bestiary_Biomes.Surface", frame: 0, bg: Some("MapBG1"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Surface (:208)
+    TagDef { key: "Bestiary_Times.DayTime", frame: 36, bg: None, bg_color: None, overlay: None, overlay_color: None, text_priority: -1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -1.0 }, // Times.DayTime (:258)
+    TagDef { key: "Bestiary_Events.Party", frame: 48, bg: Some("MapBG1"), bg_color: None, overlay: None, overlay_color: None, text_priority: 1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -2.0 }, // Events.Party (:101)
+    TagDef { key: "Bestiary_Events.WindyDay", frame: 41, bg: Some("MapBG1"), bg_color: None, overlay: None, overlay_color: None, text_priority: 1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -2.0 }, // Events.WindyDay (:71)
+    TagDef { key: "Bestiary_Events.Rain", frame: 40, bg: None, bg_color: None, overlay: None, overlay_color: None, text_priority: 1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -2.0 }, // Events.Rain (:86)
+    TagDef { key: "Bestiary_Times.NightTime", frame: 37, bg: Some("MapBG1"), bg_color: Some([35, 40, 40, 255]), overlay: None, overlay_color: None, text_priority: -1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -1.0 }, // Times.NightTime (:263)
+    TagDef { key: "Bestiary_Events.BloodMoon", frame: 38, bg: Some("MapBG26"), bg_color: Some([200, 190, 180, 255]), overlay: None, overlay_color: None, text_priority: 1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -2.0 }, // Events.BloodMoon (:76)
+    TagDef { key: "Bestiary_Biomes.Graveyard", frame: 35, bg: Some("MapBG27"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Graveyard (:209)
+    TagDef { key: "Bestiary_Biomes.Underground", frame: 1, bg: Some("MapBG2"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Underground (:213)
+    TagDef { key: "Bestiary_Biomes.Caverns", frame: 2, bg: Some("MapBG32"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Caverns (:217)
+    TagDef { key: "Bestiary_Biomes.Granite", frame: 30, bg: Some("MapBG17"), bg_color: Some([100, 100, 100, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Granite (:234)
+    TagDef { key: "Bestiary_Biomes.Marble", frame: 29, bg: Some("MapBG18"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Marble (:238)
+    TagDef { key: "Bestiary_Biomes.UndergroundMushroom", frame: 25, bg: Some("MapBG21"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.UndergroundMushroom (:215)
+    TagDef { key: "Bestiary_Biomes.SpiderNest", frame: 34, bg: Some("MapBG19"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.SpiderNest (:226)
+    TagDef { key: "Bestiary_Biomes.Snow", frame: 5, bg: Some("MapBG12"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Snow (:222)
+    TagDef { key: "Bestiary_Biomes.UndergroundSnow", frame: 6, bg: Some("MapBG4"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.UndergroundSnow (:218)
+    TagDef { key: "Bestiary_Biomes.Desert", frame: 3, bg: Some("MapBG10"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Desert (:223)
+    TagDef { key: "Bestiary_Biomes.UndergroundDesert", frame: 4, bg: Some("MapBG15"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.UndergroundDesert (:221)
+    TagDef { key: "Bestiary_Events.Sandstorm", frame: 43, bg: None, bg_color: None, overlay: Some("MapBGOverlay1"), overlay_color: Some([255, 255, 255, 255]), text_priority: 1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -2.0 }, // Events.Sandstorm (:112)
+    TagDef { key: "Bestiary_Biomes.Ocean", frame: 28, bg: Some("MapBG11"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Ocean (:219)
+    TagDef { key: "Bestiary_Biomes.Jungle", frame: 22, bg: Some("MapBG9"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Jungle (:216)
+    TagDef { key: "Bestiary_Biomes.UndergroundJungle", frame: 23, bg: Some("MapBG13"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.UndergroundJungle (:210)
+    TagDef { key: "Bestiary_Biomes.Meteor", frame: 44, bg: Some("MapBG1"), bg_color: Some([35, 40, 40, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Meteor (:224)
+    TagDef { key: "Bestiary_Biomes.TheDungeon", frame: 32, bg: Some("MapBG5"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.TheDungeon (:212)
+    TagDef { key: "Bestiary_Biomes.TheUnderworld", frame: 33, bg: Some("MapBG3"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.TheUnderworld (:211)
+    TagDef { key: "Bestiary_Biomes.Sky", frame: 26, bg: Some("MapBG33"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Sky (:242)
+    TagDef { key: "Bestiary_Biomes.TheCorruption", frame: 7, bg: Some("MapBG6"), bg_color: Some([200, 200, 200, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.TheCorruption (:206)
+    TagDef { key: "Bestiary_Biomes.UndergroundCorruption", frame: 8, bg: Some("MapBG23"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.UndergroundCorruption (:235)
+    TagDef { key: "Bestiary_Biomes.CorruptIce", frame: 11, bg: Some("MapBG34"), bg_color: Some([200, 200, 200, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.CorruptIce (:239)
+    TagDef { key: "Bestiary_Biomes.CorruptDesert", frame: 9, bg: Some("MapBG37"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.CorruptDesert (:231)
+    TagDef { key: "Bestiary_Biomes.CorruptUndergroundDesert", frame: 10, bg: Some("MapBG40"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.CorruptUndergroundDesert (:228)
+    TagDef { key: "Bestiary_Biomes.Crimson", frame: 12, bg: Some("MapBG7"), bg_color: Some([200, 200, 200, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.TheCrimson (:207)
+    TagDef { key: "Bestiary_Biomes.UndergroundCrimson", frame: 13, bg: Some("MapBG24"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.UndergroundCrimson (:236)
+    TagDef { key: "Bestiary_Biomes.CrimsonIce", frame: 16, bg: Some("MapBG35"), bg_color: Some([200, 200, 200, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.CrimsonIce (:241)
+    TagDef { key: "Bestiary_Biomes.CrimsonDesert", frame: 14, bg: Some("MapBG38"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.CrimsonDesert (:232)
+    TagDef { key: "Bestiary_Biomes.CrimsonUndergroundDesert", frame: 15, bg: Some("MapBG41"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.CrimsonUndergroundDesert (:229)
+    TagDef { key: "Bestiary_Biomes.TheHallow", frame: 17, bg: Some("MapBG8"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.TheHallow (:214)
+    TagDef { key: "Bestiary_Biomes.UndergroundHallow", frame: 18, bg: Some("MapBG22"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.UndergroundHallow (:237)
+    TagDef { key: "Bestiary_Biomes.HallowIce", frame: 21, bg: Some("MapBG36"), bg_color: Some([200, 200, 200, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.HallowIce (:240)
+    TagDef { key: "Bestiary_Biomes.HallowDesert", frame: 19, bg: Some("MapBG39"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.HallowDesert (:233)
+    TagDef { key: "Bestiary_Biomes.HallowUndergroundDesert", frame: 20, bg: Some("MapBG42"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.HallowUndergroundDesert (:230)
+    TagDef { key: "Bestiary_Biomes.SurfaceMushroom", frame: 24, bg: Some("MapBG20"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.SurfaceMushroom (:220)
+    TagDef { key: "Bestiary_Biomes.TheTemple", frame: 31, bg: Some("MapBG14"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.TheTemple (:227)
+    TagDef { key: "Bestiary_Invasions.Goblins", frame: 49, bg: Some("MapBG1"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Invasions.Goblins (:32)
+    TagDef { key: "Bestiary_Invasions.OldOnesArmy", frame: 55, bg: Some("MapBG1"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Invasions.OldOnesArmy (:35)
+    TagDef { key: "Bestiary_Invasions.Pirates", frame: 50, bg: Some("MapBG11"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Invasions.Pirates (:33)
+    TagDef { key: "Bestiary_Invasions.Martian", frame: 53, bg: Some("MapBG1"), bg_color: Some([35, 40, 40, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Invasions.Martian (:34)
+    TagDef { key: "Bestiary_Events.Eclipse", frame: 39, bg: Some("MapBG1"), bg_color: Some([60, 30, 0, 255]), overlay: None, overlay_color: None, text_priority: 1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -2.0 }, // Events.Eclipse (:96)
+    TagDef { key: "Bestiary_Invasions.PumpkinMoon", frame: 51, bg: Some("MapBG1"), bg_color: Some([35, 40, 40, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Invasions.PumpkinMoon (:36)
+    TagDef { key: "Bestiary_Invasions.FrostMoon", frame: 52, bg: Some("MapBG12"), bg_color: Some([35, 40, 40, 255]), overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Invasions.FrostMoon (:37)
+    TagDef { key: "Bestiary_Events.Halloween", frame: 45, bg: Some("MapBG1"), bg_color: None, overlay: None, overlay_color: None, text_priority: 1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -2.0 }, // Events.Halloween (:81)
+    TagDef { key: "Bestiary_Events.Christmas", frame: 46, bg: Some("MapBG12"), bg_color: None, overlay: None, overlay_color: None, text_priority: 1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -2.0 }, // Events.Christmas (:91)
+    TagDef { key: "Bestiary_Invasions.FrostLegion", frame: 54, bg: Some("MapBG12"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Invasions.FrostLegion (:38)
+    TagDef { key: "Bestiary_Biomes.NebulaPillar", frame: 58, bg: Some("MapBG28"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.NebulaPillar (:243)
+    TagDef { key: "Bestiary_Biomes.SolarPillar", frame: 56, bg: Some("MapBG29"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.SolarPillar (:244)
+    TagDef { key: "Bestiary_Biomes.VortexPillar", frame: 57, bg: Some("MapBG30"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.VortexPillar (:245)
+    TagDef { key: "Bestiary_Biomes.StardustPillar", frame: 59, bg: Some("MapBG31"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.StardustPillar (:246)
+    TagDef { key: "Bestiary_Events.SlimeRain", frame: 47, bg: Some("MapBG1"), bg_color: None, overlay: None, overlay_color: None, text_priority: 1, hide_in_portrait_info: false, display_priority: 0.0, order_priority: -2.0 }, // Events.SlimeRain (:66)
+    TagDef { key: "Bestiary_Events.Blizzard", frame: 42, bg: None, bg_color: None, overlay: None, overlay_color: None, text_priority: 1, hide_in_portrait_info: true, display_priority: 0.0, order_priority: -2.0 }, // Events.Blizzard (:106)
+    TagDef { key: "Bestiary_Biomes.Oasis", frame: 27, bg: Some("MapBG10"), bg_color: None, overlay: None, overlay_color: None, text_priority: 0, hide_in_portrait_info: false, display_priority: 0.0, order_priority: 0.0 }, // Biomes.Oasis (:225)
+    TagDef { key: "", frame: 0, bg: None, bg_color: None, overlay: Some("MapBGOverlay3"), overlay_color: Some([255, 255, 255, 255]), text_priority: 0, hide_in_portrait_info: false, display_priority: 1.0, order_priority: 0.0 }, // Visuals.Sun (:291)
+    TagDef { key: "", frame: 0, bg: None, bg_color: None, overlay: Some("MapBGOverlay4"), overlay_color: Some([255, 255, 255, 255]), text_priority: 0, hide_in_portrait_info: false, display_priority: 1.0, order_priority: 0.0 }, // Visuals.Moon (:295)
+    TagDef { key: "", frame: 0, bg: None, bg_color: None, overlay: Some("MapBGOverlay5"), overlay_color: Some([255, 255, 255, 255]), text_priority: 0, hide_in_portrait_info: false, display_priority: 1.0, order_priority: 0.0 }, // Visuals.EclipseSun (:299)
+    TagDef { key: "", frame: 0, bg: None, bg_color: None, overlay: Some("MapBGOverlay8"), overlay_color: Some([255, 255, 255, 255]), text_priority: 0, hide_in_portrait_info: false, display_priority: 1.0, order_priority: 0.0 }, // Visuals.PumpkinMoon (:303)
+    TagDef { key: "", frame: 0, bg: None, bg_color: None, overlay: Some("MapBGOverlay9"), overlay_color: Some([255, 255, 255, 255]), text_priority: 0, hide_in_portrait_info: false, display_priority: 1.0, order_priority: 0.0 }, // Visuals.FrostMoon (:307)
+    TagDef { key: "", frame: 0, bg: None, bg_color: None, overlay: Some("MapBGOverlay7"), overlay_color: Some([255, 255, 255, 255]), text_priority: 0, hide_in_portrait_info: false, display_priority: 1.0, order_priority: 0.0 }, // Visuals.Meteor (:311)
+    TagDef { key: "", frame: 0, bg: None, bg_color: None, overlay: Some("MapBGOverlay2"), overlay_color: Some([200, 200, 200, 255]), text_priority: 0, hide_in_portrait_info: false, display_priority: 1.0, order_priority: 0.0 }, // Visuals.Rain (:315)
+    TagDef { key: "", frame: 0, bg: None, bg_color: None, overlay: Some("MapBGOverlay6"), overlay_color: Some([255, 255, 255, 255]), text_priority: 0, hide_in_portrait_info: false, display_priority: 1.0, order_priority: 0.0 }, // Visuals.Blizzard (:319)
 ];
 
 /// The filter-list length — `AvailableFilters` carries the three named
@@ -114,25 +145,27 @@ pub struct EntryTag {
 }
 
 /// The per-entry tag lists, net-id ascending — the relationship passes'
-/// AddRange/AddTags replayed in source order with the eleven
-/// `Info.Remove` rows applied (first-occurrence removal, C# `List.Remove`).
-/// Entries without tags carry no row.
+/// AddRange/AddTags replayed in Populate order (relationships ->
+/// decorations -> modify) with the eleven `Info.Remove` rows applied
+/// (first-occurrence removal, C# `List.Remove`). The decorations pass
+/// (`AddNPCBiomeRelationships_AddDecorations_Automated:2028-2071`) appends
+/// the Visuals overlay rows. Entries without tags carry no row.
 pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
-    (-10, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (-10, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (-9, &[EntryTag { tag: 8, preferred: false }]),
     (-8, &[EntryTag { tag: 8, preferred: false }]),
-    (-7, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (-7, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (-6, &[EntryTag { tag: 9, preferred: false }]),
     (-5, &[EntryTag { tag: 9, preferred: false }]),
-    (-4, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (-3, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (-4, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (-3, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (-2, &[EntryTag { tag: 26, preferred: false }]),
     (-1, &[EntryTag { tag: 26, preferred: false }, EntryTag { tag: 27, preferred: false }, EntryTag { tag: 26, preferred: true }]),
-    (1, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (2, &[EntryTag { tag: 5, preferred: false }]),
-    (3, &[EntryTag { tag: 5, preferred: false }]),
-    (4, &[EntryTag { tag: 5, preferred: false }]),
-    (5, &[EntryTag { tag: 5, preferred: false }]),
+    (1, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (2, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (3, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (4, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (5, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (6, &[EntryTag { tag: 26, preferred: false }, EntryTag { tag: 27, preferred: false }, EntryTag { tag: 26, preferred: true }]),
     (7, &[EntryTag { tag: 26, preferred: false }, EntryTag { tag: 27, preferred: false }, EntryTag { tag: 26, preferred: true }]),
     (8, &[EntryTag { tag: 26, preferred: false }, EntryTag { tag: 27, preferred: false }]),
@@ -150,7 +183,7 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (20, &[EntryTag { tag: 20, preferred: false }]),
     (21, &[EntryTag { tag: 9, preferred: false }]),
     (22, &[EntryTag { tag: 0, preferred: false }]),
-    (23, &[EntryTag { tag: 22, preferred: false }]),
+    (23, &[EntryTag { tag: 22, preferred: false }, EntryTag { tag: 61, preferred: false }, EntryTag { tag: 65, preferred: false }]),
     (24, &[EntryTag { tag: 24, preferred: false }]),
     (25, &[EntryTag { tag: 24, preferred: false }]),
     (26, &[EntryTag { tag: 43, preferred: false }]),
@@ -172,13 +205,13 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (43, &[EntryTag { tag: 21, preferred: false }]),
     (44, &[EntryTag { tag: 9, preferred: false }]),
     (45, &[EntryTag { tag: 9, preferred: false }]),
-    (46, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (46, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (47, &[EntryTag { tag: 6, preferred: false }]),
     (48, &[EntryTag { tag: 25, preferred: false }]),
     (49, &[EntryTag { tag: 9, preferred: false }]),
     (50, &[EntryTag { tag: 0, preferred: false }]),
     (51, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 21, preferred: false }, EntryTag { tag: 20, preferred: true }]),
-    (52, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 21, preferred: false }, EntryTag { tag: 5, preferred: false }, EntryTag { tag: 20, preferred: true }]),
+    (52, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 21, preferred: false }, EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }, EntryTag { tag: 20, preferred: true }]),
     (53, &[EntryTag { tag: 6, preferred: false }]),
     (54, &[EntryTag { tag: 8, preferred: false }]),
     (55, &[EntryTag { tag: 0, preferred: false }]),
@@ -200,14 +233,14 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (71, &[EntryTag { tag: 23, preferred: false }]),
     (72, &[EntryTag { tag: 23, preferred: false }]),
     (73, &[EntryTag { tag: 0, preferred: false }]),
-    (74, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (74, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (75, &[EntryTag { tag: 36, preferred: false }]),
     (77, &[EntryTag { tag: 9, preferred: false }]),
     (78, &[EntryTag { tag: 16, preferred: false }, EntryTag { tag: 17, preferred: false }, EntryTag { tag: 16, preferred: true }]),
     (79, &[EntryTag { tag: 29, preferred: false }, EntryTag { tag: 30, preferred: false }, EntryTag { tag: 29, preferred: true }]),
     (80, &[EntryTag { tag: 39, preferred: false }, EntryTag { tag: 40, preferred: false }, EntryTag { tag: 39, preferred: true }]),
     (81, &[EntryTag { tag: 26, preferred: false }, EntryTag { tag: 27, preferred: false }, EntryTag { tag: 26, preferred: true }]),
-    (82, &[EntryTag { tag: 5, preferred: false }]),
+    (82, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (83, &[EntryTag { tag: 27, preferred: false }]),
     (84, &[EntryTag { tag: 37, preferred: false }]),
     (85, &[EntryTag { tag: 9, preferred: false }]),
@@ -229,7 +262,7 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (101, &[EntryTag { tag: 27, preferred: false }]),
     (102, &[EntryTag { tag: 9, preferred: false }, EntryTag { tag: 20, preferred: false }, EntryTag { tag: 21, preferred: false }, EntryTag { tag: 9, preferred: true }]),
     (103, &[EntryTag { tag: 9, preferred: false }]),
-    (104, &[EntryTag { tag: 5, preferred: false }]),
+    (104, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (107, &[EntryTag { tag: 8, preferred: false }]),
     (108, &[EntryTag { tag: 36, preferred: false }]),
     (109, &[EntryTag { tag: 6, preferred: false }]),
@@ -245,49 +278,49 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (119, &[EntryTag { tag: 24, preferred: false }]),
     (120, &[EntryTag { tag: 37, preferred: false }]),
     (121, &[EntryTag { tag: 26, preferred: false }, EntryTag { tag: 27, preferred: false }, EntryTag { tag: 26, preferred: true }]),
-    (122, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 36, preferred: false }]),
+    (122, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 36, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (124, &[EntryTag { tag: 14, preferred: false }]),
-    (125, &[EntryTag { tag: 5, preferred: false }]),
-    (126, &[EntryTag { tag: 5, preferred: false }]),
-    (127, &[EntryTag { tag: 5, preferred: false }]),
-    (128, &[EntryTag { tag: 5, preferred: false }]),
-    (129, &[EntryTag { tag: 5, preferred: false }]),
-    (130, &[EntryTag { tag: 5, preferred: false }]),
-    (131, &[EntryTag { tag: 5, preferred: false }]),
-    (132, &[EntryTag { tag: 5, preferred: false }]),
-    (133, &[EntryTag { tag: 5, preferred: false }]),
-    (134, &[EntryTag { tag: 5, preferred: false }]),
-    (135, &[EntryTag { tag: 5, preferred: false }]),
-    (136, &[EntryTag { tag: 5, preferred: false }]),
+    (125, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (126, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (127, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (128, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (129, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (130, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (131, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (132, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (133, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (134, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (135, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (136, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (137, &[EntryTag { tag: 37, preferred: false }]),
     (138, &[EntryTag { tag: 37, preferred: false }]),
-    (139, &[EntryTag { tag: 5, preferred: false }]),
-    (140, &[EntryTag { tag: 5, preferred: false }]),
+    (139, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (140, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (141, &[EntryTag { tag: 8, preferred: false }]),
     (142, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 51, preferred: false }]),
     (143, &[EntryTag { tag: 52, preferred: false }]),
     (144, &[EntryTag { tag: 52, preferred: false }]),
     (145, &[EntryTag { tag: 52, preferred: false }]),
-    (147, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (147, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (148, &[EntryTag { tag: 14, preferred: false }]),
     (149, &[EntryTag { tag: 14, preferred: false }]),
     (150, &[EntryTag { tag: 15, preferred: false }]),
     (151, &[EntryTag { tag: 24, preferred: false }]),
-    (152, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 20, preferred: false }]),
+    (152, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 20, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (153, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 21, preferred: false }, EntryTag { tag: 20, preferred: true }]),
     (154, &[EntryTag { tag: 15, preferred: false }]),
-    (155, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 14, preferred: false }]),
+    (155, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 14, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (156, &[EntryTag { tag: 24, preferred: false }]),
     (157, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 21, preferred: false }, EntryTag { tag: 20, preferred: true }]),
-    (158, &[EntryTag { tag: 47, preferred: false }]),
-    (159, &[EntryTag { tag: 47, preferred: false }]),
+    (158, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
+    (159, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
     (160, &[EntryTag { tag: 41, preferred: false }]),
-    (161, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 14, preferred: false }]),
-    (162, &[EntryTag { tag: 47, preferred: false }]),
+    (161, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 14, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (162, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
     (163, &[EntryTag { tag: 13, preferred: false }]),
     (164, &[EntryTag { tag: 13, preferred: false }]),
     (165, &[EntryTag { tag: 13, preferred: false }]),
-    (166, &[EntryTag { tag: 47, preferred: false }]),
+    (166, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
     (167, &[EntryTag { tag: 15, preferred: false }]),
     (168, &[EntryTag { tag: 6, preferred: false }]),
     (169, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 15, preferred: false }, EntryTag { tag: 15, preferred: true }]),
@@ -307,21 +340,21 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (183, &[EntryTag { tag: 31, preferred: false }, EntryTag { tag: 32, preferred: false }, EntryTag { tag: 31, preferred: true }]),
     (184, &[EntryTag { tag: 15, preferred: false }]),
     (185, &[EntryTag { tag: 15, preferred: false }]),
-    (186, &[EntryTag { tag: 5, preferred: false }]),
-    (187, &[EntryTag { tag: 5, preferred: false }]),
-    (188, &[EntryTag { tag: 5, preferred: false }]),
-    (189, &[EntryTag { tag: 5, preferred: false }]),
-    (190, &[EntryTag { tag: 5, preferred: false }]),
-    (191, &[EntryTag { tag: 5, preferred: false }]),
-    (192, &[EntryTag { tag: 5, preferred: false }]),
-    (193, &[EntryTag { tag: 5, preferred: false }]),
-    (194, &[EntryTag { tag: 5, preferred: false }]),
+    (186, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (187, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (188, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (189, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (190, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (191, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (192, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (193, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (194, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (195, &[EntryTag { tag: 9, preferred: false }]),
     (196, &[EntryTag { tag: 9, preferred: false }]),
     (197, &[EntryTag { tag: 15, preferred: false }]),
     (198, &[EntryTag { tag: 42, preferred: false }]),
     (199, &[EntryTag { tag: 42, preferred: false }]),
-    (200, &[EntryTag { tag: 5, preferred: false }]),
+    (200, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (201, &[EntryTag { tag: 9, preferred: false }]),
     (202, &[EntryTag { tag: 9, preferred: false }]),
     (203, &[EntryTag { tag: 9, preferred: false }]),
@@ -344,14 +377,14 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (220, &[EntryTag { tag: 19, preferred: false }]),
     (221, &[EntryTag { tag: 19, preferred: false }]),
     (222, &[EntryTag { tag: 21, preferred: false }]),
-    (223, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 5, preferred: false }]),
-    (224, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 0, preferred: false }]),
-    (225, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 0, preferred: false }]),
+    (223, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 5, preferred: false }, EntryTag { tag: 66, preferred: false }]),
+    (224, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 0, preferred: false }, EntryTag { tag: 66, preferred: false }]),
+    (225, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 0, preferred: false }, EntryTag { tag: 66, preferred: false }]),
     (226, &[EntryTag { tag: 42, preferred: false }]),
     (227, &[EntryTag { tag: 20, preferred: false }]),
     (228, &[EntryTag { tag: 20, preferred: false }]),
     (229, &[EntryTag { tag: 19, preferred: false }]),
-    (230, &[EntryTag { tag: 4, preferred: false }]),
+    (230, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 66, preferred: false }]),
     (231, &[EntryTag { tag: 21, preferred: false }]),
     (232, &[EntryTag { tag: 21, preferred: false }]),
     (233, &[EntryTag { tag: 21, preferred: false }]),
@@ -364,17 +397,17 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (240, &[EntryTag { tag: 31, preferred: false }, EntryTag { tag: 32, preferred: false }, EntryTag { tag: 31, preferred: true }]),
     (241, &[EntryTag { tag: 31, preferred: false }, EntryTag { tag: 32, preferred: false }, EntryTag { tag: 31, preferred: true }]),
     (242, &[EntryTag { tag: 31, preferred: false }, EntryTag { tag: 32, preferred: false }, EntryTag { tag: 31, preferred: true }]),
-    (243, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 4, preferred: false }, EntryTag { tag: 58, preferred: false }]),
-    (244, &[EntryTag { tag: 36, preferred: false }, EntryTag { tag: 4, preferred: false }]),
+    (243, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 4, preferred: false }, EntryTag { tag: 58, preferred: false }, EntryTag { tag: 67, preferred: false }]),
+    (244, &[EntryTag { tag: 36, preferred: false }, EntryTag { tag: 4, preferred: false }, EntryTag { tag: 66, preferred: false }]),
     (245, &[EntryTag { tag: 42, preferred: false }]),
     (246, &[EntryTag { tag: 42, preferred: false }]),
     (247, &[EntryTag { tag: 42, preferred: false }]),
     (248, &[EntryTag { tag: 42, preferred: false }]),
     (249, &[EntryTag { tag: 42, preferred: false }]),
-    (250, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 0, preferred: false }]),
-    (251, &[EntryTag { tag: 47, preferred: false }]),
+    (250, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 0, preferred: false }, EntryTag { tag: 66, preferred: false }]),
+    (251, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
     (252, &[EntryTag { tag: 45, preferred: false }]),
-    (253, &[EntryTag { tag: 47, preferred: false }]),
+    (253, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
     (254, &[EntryTag { tag: 41, preferred: false }]),
     (255, &[EntryTag { tag: 41, preferred: false }]),
     (256, &[EntryTag { tag: 41, preferred: false }, EntryTag { tag: 12, preferred: false }]),
@@ -418,77 +451,77 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (294, &[EntryTag { tag: 23, preferred: false }]),
     (295, &[EntryTag { tag: 23, preferred: false }]),
     (296, &[EntryTag { tag: 23, preferred: false }]),
-    (297, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (298, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (299, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (297, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (298, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (299, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (300, &[EntryTag { tag: 8, preferred: false }]),
     (301, &[EntryTag { tag: 7, preferred: false }]),
-    (302, &[EntryTag { tag: 50, preferred: false }, EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (303, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 50, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (302, &[EntryTag { tag: 50, preferred: false }, EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (303, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 50, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (304, &[EntryTag { tag: 7, preferred: false }]),
-    (305, &[EntryTag { tag: 48, preferred: false }]),
-    (306, &[EntryTag { tag: 48, preferred: false }]),
-    (307, &[EntryTag { tag: 48, preferred: false }]),
-    (308, &[EntryTag { tag: 48, preferred: false }]),
-    (309, &[EntryTag { tag: 48, preferred: false }]),
-    (310, &[EntryTag { tag: 48, preferred: false }]),
-    (311, &[EntryTag { tag: 48, preferred: false }]),
-    (312, &[EntryTag { tag: 48, preferred: false }]),
-    (313, &[EntryTag { tag: 48, preferred: false }]),
-    (314, &[EntryTag { tag: 48, preferred: false }]),
-    (315, &[EntryTag { tag: 48, preferred: false }]),
+    (305, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (306, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (307, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (308, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (309, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (310, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (311, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (312, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (313, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (314, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (315, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
     (316, &[EntryTag { tag: 7, preferred: false }]),
-    (317, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }]),
-    (318, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }]),
-    (319, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }]),
-    (320, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }]),
-    (321, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }]),
+    (317, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (318, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (319, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (320, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (321, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 50, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (322, &[EntryTag { tag: 50, preferred: false }, EntryTag { tag: 9, preferred: false }]),
     (323, &[EntryTag { tag: 50, preferred: false }, EntryTag { tag: 9, preferred: false }]),
     (324, &[EntryTag { tag: 50, preferred: false }, EntryTag { tag: 9, preferred: false }]),
-    (325, &[EntryTag { tag: 48, preferred: false }]),
-    (326, &[EntryTag { tag: 48, preferred: false }]),
-    (327, &[EntryTag { tag: 48, preferred: false }]),
-    (328, &[EntryTag { tag: 48, preferred: false }]),
-    (329, &[EntryTag { tag: 48, preferred: false }]),
-    (330, &[EntryTag { tag: 48, preferred: false }]),
-    (331, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 51, preferred: false }]),
-    (332, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 51, preferred: false }]),
-    (333, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (334, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (335, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (336, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (337, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (338, &[EntryTag { tag: 49, preferred: false }]),
-    (339, &[EntryTag { tag: 49, preferred: false }]),
-    (340, &[EntryTag { tag: 49, preferred: false }]),
-    (341, &[EntryTag { tag: 49, preferred: false }]),
-    (342, &[EntryTag { tag: 49, preferred: false }]),
-    (343, &[EntryTag { tag: 49, preferred: false }]),
-    (344, &[EntryTag { tag: 49, preferred: false }]),
-    (345, &[EntryTag { tag: 49, preferred: false }]),
-    (346, &[EntryTag { tag: 49, preferred: false }]),
-    (347, &[EntryTag { tag: 49, preferred: false }]),
-    (348, &[EntryTag { tag: 49, preferred: false }]),
-    (349, &[EntryTag { tag: 49, preferred: false }]),
-    (350, &[EntryTag { tag: 49, preferred: false }]),
-    (351, &[EntryTag { tag: 49, preferred: false }]),
-    (352, &[EntryTag { tag: 49, preferred: false }]),
+    (325, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (326, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (327, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (328, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (329, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (330, &[EntryTag { tag: 48, preferred: false }, EntryTag { tag: 63, preferred: false }]),
+    (331, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (332, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (333, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (334, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (335, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (336, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (337, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 51, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (338, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (339, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (340, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (341, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (342, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (343, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (344, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (345, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (346, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (347, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (348, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (349, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (350, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (351, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
+    (352, &[EntryTag { tag: 49, preferred: false }, EntryTag { tag: 64, preferred: false }]),
     (353, &[EntryTag { tag: 19, preferred: false }]),
     (354, &[EntryTag { tag: 13, preferred: false }]),
-    (355, &[EntryTag { tag: 5, preferred: false }]),
-    (356, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (357, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 4, preferred: false }]),
-    (358, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 36, preferred: false }]),
+    (355, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (356, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (357, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 4, preferred: false }, EntryTag { tag: 66, preferred: false }]),
+    (358, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 36, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (359, &[EntryTag { tag: 9, preferred: false }]),
     (360, &[EntryTag { tag: 41, preferred: false }, EntryTag { tag: 12, preferred: false }]),
     (361, &[EntryTag { tag: 20, preferred: false }]),
-    (362, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (363, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (364, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (365, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (366, &[EntryTag { tag: 16, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (367, &[EntryTag { tag: 16, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (362, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (363, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (364, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (365, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (366, &[EntryTag { tag: 16, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (367, &[EntryTag { tag: 16, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (368, &[EntryTag { tag: 0, preferred: false }]),
     (369, &[EntryTag { tag: 19, preferred: false }]),
     (370, &[EntryTag { tag: 19, preferred: false }]),
@@ -544,24 +577,24 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (427, &[EntryTag { tag: 55, preferred: false }]),
     (428, &[EntryTag { tag: 55, preferred: false }]),
     (429, &[EntryTag { tag: 55, preferred: false }]),
-    (430, &[EntryTag { tag: 5, preferred: false }]),
-    (431, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 5, preferred: false }]),
-    (432, &[EntryTag { tag: 5, preferred: false }]),
-    (433, &[EntryTag { tag: 5, preferred: false }]),
-    (434, &[EntryTag { tag: 5, preferred: false }]),
-    (435, &[EntryTag { tag: 5, preferred: false }]),
-    (436, &[EntryTag { tag: 5, preferred: false }]),
+    (430, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (431, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (432, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (433, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (434, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (435, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (436, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (438, &[EntryTag { tag: 23, preferred: false }]),
     (439, &[EntryTag { tag: 23, preferred: false }]),
     (440, &[EntryTag { tag: 23, preferred: false }]),
     (441, &[EntryTag { tag: 14, preferred: false }]),
-    (442, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (443, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (444, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (442, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (443, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (444, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (445, &[EntryTag { tag: 20, preferred: false }]),
     (446, &[EntryTag { tag: 0, preferred: false }]),
     (447, &[EntryTag { tag: 8, preferred: false }]),
-    (448, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 4, preferred: false }]),
+    (448, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 4, preferred: false }, EntryTag { tag: 66, preferred: false }]),
     (449, &[EntryTag { tag: 9, preferred: false }]),
     (450, &[EntryTag { tag: 9, preferred: false }]),
     (451, &[EntryTag { tag: 9, preferred: false }]),
@@ -573,16 +606,16 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (457, &[EntryTag { tag: 23, preferred: false }]),
     (458, &[EntryTag { tag: 23, preferred: false }]),
     (459, &[EntryTag { tag: 23, preferred: false }]),
-    (460, &[EntryTag { tag: 47, preferred: false }]),
-    (461, &[EntryTag { tag: 47, preferred: false }]),
-    (462, &[EntryTag { tag: 47, preferred: false }]),
-    (463, &[EntryTag { tag: 47, preferred: false }]),
+    (460, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
+    (461, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
+    (462, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
+    (463, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
     (464, &[EntryTag { tag: 6, preferred: false }]),
     (465, &[EntryTag { tag: 6, preferred: false }]),
-    (466, &[EntryTag { tag: 47, preferred: false }]),
-    (467, &[EntryTag { tag: 47, preferred: false }]),
-    (468, &[EntryTag { tag: 47, preferred: false }]),
-    (469, &[EntryTag { tag: 47, preferred: false }]),
+    (466, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
+    (467, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
+    (468, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
+    (469, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
     (470, &[EntryTag { tag: 6, preferred: false }]),
     (471, &[EntryTag { tag: 43, preferred: false }]),
     (472, &[EntryTag { tag: 43, preferred: false }]),
@@ -590,14 +623,14 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (474, &[EntryTag { tag: 32, preferred: false }]),
     (475, &[EntryTag { tag: 37, preferred: false }]),
     (476, &[EntryTag { tag: 21, preferred: false }]),
-    (477, &[EntryTag { tag: 47, preferred: false }]),
-    (478, &[EntryTag { tag: 47, preferred: false }]),
-    (479, &[EntryTag { tag: 47, preferred: false }]),
+    (477, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
+    (478, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
+    (479, &[EntryTag { tag: 47, preferred: false }, EntryTag { tag: 62, preferred: false }]),
     (480, &[EntryTag { tag: 11, preferred: false }]),
     (481, &[EntryTag { tag: 11, preferred: false }]),
     (482, &[EntryTag { tag: 10, preferred: false }]),
     (483, &[EntryTag { tag: 10, preferred: false }]),
-    (484, &[EntryTag { tag: 5, preferred: false }]),
+    (484, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (485, &[EntryTag { tag: 20, preferred: false }]),
     (486, &[EntryTag { tag: 20, preferred: false }]),
     (487, &[EntryTag { tag: 20, preferred: false }]),
@@ -646,12 +679,12 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (532, &[EntryTag { tag: 17, preferred: false }]),
     (533, &[EntryTag { tag: 30, preferred: false }, EntryTag { tag: 35, preferred: false }]),
     (534, &[EntryTag { tag: 24, preferred: false }]),
-    (535, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (535, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (536, &[EntryTag { tag: 6, preferred: false }]),
     (537, &[EntryTag { tag: 17, preferred: false }]),
-    (538, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (539, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (540, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 2, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (538, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (539, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (540, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 2, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (541, &[EntryTag { tag: 16, preferred: false }, EntryTag { tag: 18, preferred: false }]),
     (542, &[EntryTag { tag: 16, preferred: false }, EntryTag { tag: 18, preferred: false }]),
     (543, &[EntryTag { tag: 29, preferred: false }, EntryTag { tag: 18, preferred: false }]),
@@ -692,24 +725,24 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (580, &[EntryTag { tag: 16, preferred: false }, EntryTag { tag: 17, preferred: false }, EntryTag { tag: 18, preferred: false }, EntryTag { tag: 17, preferred: true }]),
     (581, &[EntryTag { tag: 16, preferred: false }, EntryTag { tag: 17, preferred: false }, EntryTag { tag: 18, preferred: false }, EntryTag { tag: 17, preferred: true }]),
     (582, &[EntryTag { tag: 17, preferred: false }]),
-    (583, &[EntryTag { tag: 5, preferred: false }]),
-    (584, &[EntryTag { tag: 5, preferred: false }]),
-    (585, &[EntryTag { tag: 5, preferred: false }]),
+    (583, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (584, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (585, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (586, &[EntryTag { tag: 6, preferred: false }]),
     (587, &[EntryTag { tag: 6, preferred: false }]),
     (588, &[EntryTag { tag: 0, preferred: false }]),
-    (590, &[EntryTag { tag: 5, preferred: false }]),
-    (591, &[EntryTag { tag: 5, preferred: false }]),
+    (590, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (591, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (592, &[EntryTag { tag: 0, preferred: false }]),
-    (593, &[EntryTag { tag: 4, preferred: false }]),
+    (593, &[EntryTag { tag: 4, preferred: false }, EntryTag { tag: 66, preferred: false }]),
     (594, &[EntryTag { tag: 3, preferred: false }]),
-    (595, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (596, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (597, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (598, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (599, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (600, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (601, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (595, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (596, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (597, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (598, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (599, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (600, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (601, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (602, &[EntryTag { tag: 19, preferred: false }]),
     (603, &[EntryTag { tag: 19, preferred: false }]),
     (604, &[EntryTag { tag: 3, preferred: false }]),
@@ -719,13 +752,13 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (608, &[EntryTag { tag: 16, preferred: false }]),
     (609, &[EntryTag { tag: 16, preferred: false }]),
     (610, &[EntryTag { tag: 7, preferred: false }]),
-    (611, &[EntryTag { tag: 5, preferred: false }]),
-    (612, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (613, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (611, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
+    (612, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (613, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (614, &[EntryTag { tag: 8, preferred: false }]),
     (615, &[EntryTag { tag: 19, preferred: false }]),
-    (616, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (617, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (616, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (617, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (618, &[EntryTag { tag: 6, preferred: false }]),
     (619, &[EntryTag { tag: 6, preferred: false }]),
     (620, &[EntryTag { tag: 6, preferred: false }]),
@@ -744,7 +777,7 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (633, &[EntryTag { tag: 0, preferred: false }]),
     (634, &[EntryTag { tag: 12, preferred: false }]),
     (635, &[EntryTag { tag: 12, preferred: false }]),
-    (636, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 36, preferred: false }]),
+    (636, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 36, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (637, &[EntryTag { tag: 0, preferred: false }]),
     (638, &[EntryTag { tag: 0, preferred: false }]),
     (639, &[EntryTag { tag: 9, preferred: false }]),
@@ -769,19 +802,19 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (658, &[EntryTag { tag: 36, preferred: false }]),
     (659, &[EntryTag { tag: 36, preferred: false }]),
     (660, &[EntryTag { tag: 36, preferred: false }]),
-    (661, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 36, preferred: false }]),
+    (661, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 36, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (663, &[EntryTag { tag: 36, preferred: false }]),
     (664, &[EntryTag { tag: 8, preferred: false }, EntryTag { tag: 9, preferred: false }]),
     (665, &[EntryTag { tag: 8, preferred: false }]),
     (666, &[EntryTag { tag: 26, preferred: false }]),
-    (668, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 4, preferred: false }, EntryTag { tag: 58, preferred: false }]),
-    (669, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (668, &[EntryTag { tag: 14, preferred: false }, EntryTag { tag: 4, preferred: false }, EntryTag { tag: 58, preferred: false }, EntryTag { tag: 67, preferred: false }]),
+    (669, &[EntryTag { tag: 0, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (670, &[EntryTag { tag: 0, preferred: false }]),
-    (671, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (672, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (673, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (674, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }]),
-    (675, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }]),
+    (671, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (672, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (673, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (674, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
+    (675, &[EntryTag { tag: 20, preferred: false }, EntryTag { tag: 1, preferred: false }, EntryTag { tag: 60, preferred: false }]),
     (676, &[EntryTag { tag: 9, preferred: false }]),
     (677, &[EntryTag { tag: 9, preferred: false }]),
     (678, &[EntryTag { tag: 0, preferred: false }]),
@@ -793,7 +826,7 @@ pub static ENTRY_TAGS: &[(i32, &[EntryTag])] = &[
     (684, &[EntryTag { tag: 0, preferred: false }]),
     (687, &[EntryTag { tag: 20, preferred: false }]),
     (688, &[EntryTag { tag: 19, preferred: false }]),
-    (689, &[EntryTag { tag: 5, preferred: false }]),
+    (689, &[EntryTag { tag: 5, preferred: false }, EntryTag { tag: 61, preferred: false }]),
     (690, &[EntryTag { tag: 7, preferred: false }]),
     (691, &[EntryTag { tag: 7, preferred: false }]),
     (692, &[EntryTag { tag: 19, preferred: false }]),
@@ -825,6 +858,144 @@ pub static SEARCH_ALIASES: &[(i32, &str)] = &[
     (636, "fairy"), // :749
     (657, "slime queen"), // :747
 ];
+
+/// `TryGivingEntryFlavorTextIfItIsMissing` (`:773-800`, run at `:637`):
+/// the entries whose factory found no `Bestiary_FlavorText.npc_<Const>`
+/// row get a `Bestiary_BiomeText.biome_<Tail>` flavor element from their
+/// spawn-condition tags — the first preference-wrapped tag wins (`:783-787`,
+/// the world-evil wrap class excepted), else the plain tag with the
+/// highest `DisplayTextPriority` (`>=`, ties to the later row, `:788-792`).
+/// The element is added WITHOUT an Exists check (`:798`) — the runtime
+/// `Language.GetText` shows the key itself when the row is missing.
+pub static FLAVOR_FALLBACK: &[(i32, &str)] = &[
+    (-2, "Bestiary_BiomeText.biome_TheCorruption"),
+    (8, "Bestiary_BiomeText.biome_UndergroundCorruption"),
+    (9, "Bestiary_BiomeText.biome_UndergroundCorruption"),
+    (11, "Bestiary_BiomeText.biome_Underground"),
+    (12, "Bestiary_BiomeText.biome_Underground"),
+    (14, "Bestiary_BiomeText.biome_TheCorruption"),
+    (15, "Bestiary_BiomeText.biome_TheCorruption"),
+    (25, "Bestiary_BiomeText.biome_TheUnderworld"),
+    (30, "Bestiary_BiomeText.biome_Goblins"),
+    (33, "Bestiary_BiomeText.biome_TheDungeon"),
+    (40, "Bestiary_BiomeText.biome_TheUnderworld"),
+    (41, "Bestiary_BiomeText.biome_TheUnderworld"),
+    (70, "Bestiary_BiomeText.biome_TheDungeon"),
+    (72, "Bestiary_BiomeText.biome_TheDungeon"),
+    (88, "Bestiary_BiomeText.biome_Sky"),
+    (89, "Bestiary_BiomeText.biome_Sky"),
+    (90, "Bestiary_BiomeText.biome_Sky"),
+    (91, "Bestiary_BiomeText.biome_Sky"),
+    (92, "Bestiary_BiomeText.biome_Sky"),
+    (96, "Bestiary_BiomeText.biome_Underground"),
+    (97, "Bestiary_BiomeText.biome_Underground"),
+    (99, "Bestiary_BiomeText.biome_UndergroundCorruption"),
+    (100, "Bestiary_BiomeText.biome_UndergroundCorruption"),
+    (112, "Bestiary_BiomeText.biome_TheCorruption"),
+    (114, "Bestiary_BiomeText.biome_TheUnderworld"),
+    (118, "Bestiary_BiomeText.biome_TheUnderworld"),
+    (119, "Bestiary_BiomeText.biome_TheUnderworld"),
+    (128, "Bestiary_BiomeText.biome_NightTime"),
+    (129, "Bestiary_BiomeText.biome_NightTime"),
+    (130, "Bestiary_BiomeText.biome_NightTime"),
+    (131, "Bestiary_BiomeText.biome_NightTime"),
+    (135, "Bestiary_BiomeText.biome_NightTime"),
+    (136, "Bestiary_BiomeText.biome_NightTime"),
+    (158, "Bestiary_BiomeText.biome_Eclipse"),
+    (163, "Bestiary_BiomeText.biome_SpiderNest"),
+    (164, "Bestiary_BiomeText.biome_SpiderNest"),
+    (199, "Bestiary_BiomeText.biome_TheTemple"),
+    (236, "Bestiary_BiomeText.biome_UndergroundJungle"),
+    (239, "Bestiary_BiomeText.biome_Crimson"),
+    (246, "Bestiary_BiomeText.biome_TheTemple"),
+    (247, "Bestiary_BiomeText.biome_TheTemple"),
+    (248, "Bestiary_BiomeText.biome_TheTemple"),
+    (249, "Bestiary_BiomeText.biome_TheTemple"),
+    (261, "Bestiary_BiomeText.biome_UndergroundMushroom"),
+    (263, "Bestiary_BiomeText.biome_UndergroundJungle"),
+    (264, "Bestiary_BiomeText.biome_UndergroundJungle"),
+    (265, "Bestiary_BiomeText.biome_UndergroundJungle"),
+    (328, "Bestiary_BiomeText.biome_PumpkinMoon"),
+    (348, "Bestiary_BiomeText.biome_FrostMoon"),
+    (354, "Bestiary_BiomeText.biome_SpiderNest"),
+    (363, "Bestiary_BiomeText.biome_Surface"),
+    (365, "Bestiary_BiomeText.biome_Surface"),
+    (371, "Bestiary_BiomeText.biome_Ocean"),
+    (373, "Bestiary_BiomeText.biome_Ocean"),
+    (375, "Bestiary_BiomeText.biome_UndergroundMushroom"),
+    (384, "Bestiary_BiomeText.biome_Martian"),
+    (392, "Bestiary_BiomeText.biome_Martian"),
+    (393, "Bestiary_BiomeText.biome_Martian"),
+    (394, "Bestiary_BiomeText.biome_Martian"),
+    (403, "Bestiary_BiomeText.biome_StardustPillar"),
+    (404, "Bestiary_BiomeText.biome_StardustPillar"),
+    (408, "Bestiary_BiomeText.biome_StardustPillar"),
+    (410, "Bestiary_BiomeText.biome_StardustPillar"),
+    (413, "Bestiary_BiomeText.biome_SolarPillar"),
+    (414, "Bestiary_BiomeText.biome_SolarPillar"),
+    (431, "Bestiary_BiomeText.biome_Snow"),
+    (432, "Bestiary_BiomeText.biome_NightTime"),
+    (433, "Bestiary_BiomeText.biome_NightTime"),
+    (455, "Bestiary_BiomeText.biome_TheDungeon"),
+    (456, "Bestiary_BiomeText.biome_TheDungeon"),
+    (457, "Bestiary_BiomeText.biome_TheDungeon"),
+    (458, "Bestiary_BiomeText.biome_TheDungeon"),
+    (459, "Bestiary_BiomeText.biome_TheDungeon"),
+    (476, "Bestiary_BiomeText.biome_UndergroundJungle"),
+    (478, "Bestiary_BiomeText.biome_Eclipse"),
+    (492, "Bestiary_BiomeText.biome_Pirates"),
+    (495, "Bestiary_BiomeText.biome_Caverns"),
+    (497, "Bestiary_BiomeText.biome_Caverns"),
+    (498, "Bestiary_BiomeText.biome_Caverns"),
+    (500, "Bestiary_BiomeText.biome_Caverns"),
+    (501, "Bestiary_BiomeText.biome_Caverns"),
+    (502, "Bestiary_BiomeText.biome_Caverns"),
+    (503, "Bestiary_BiomeText.biome_Caverns"),
+    (504, "Bestiary_BiomeText.biome_Caverns"),
+    (505, "Bestiary_BiomeText.biome_Caverns"),
+    (506, "Bestiary_BiomeText.biome_Caverns"),
+    (511, "Bestiary_BiomeText.biome_UndergroundDesert"),
+    (512, "Bestiary_BiomeText.biome_UndergroundDesert"),
+    (514, "Bestiary_BiomeText.biome_UndergroundDesert"),
+    (515, "Bestiary_BiomeText.biome_UndergroundDesert"),
+    (516, "Bestiary_BiomeText.biome_SolarPillar"),
+    (519, "Bestiary_BiomeText.biome_SolarPillar"),
+    (523, "Bestiary_BiomeText.biome_TheDungeon"),
+    (530, "Bestiary_BiomeText.biome_UndergroundDesert"),
+    (535, "Bestiary_BiomeText.biome_Surface"),
+    (548, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (549, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (552, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (553, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (555, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (556, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (558, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (559, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (561, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (562, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (566, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (568, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (570, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (572, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (574, "Bestiary_BiomeText.biome_OldOnesArmy"),
+    (591, "Bestiary_BiomeText.biome_NightTime"),
+    (603, "Bestiary_BiomeText.biome_Ocean"),
+    (609, "Bestiary_BiomeText.biome_Desert"),
+    (622, "Bestiary_BiomeText.biome_BloodMoon"),
+    (623, "Bestiary_BiomeText.biome_BloodMoon"),
+    (665, "Bestiary_BiomeText.biome_Underground"),
+    (666, "Bestiary_BiomeText.biome_TheCorruption"),
+    (689, "Bestiary_BiomeText.biome_NightTime"),
+];
+
+/// The entry's biome-flavor fallback key (`FLAVOR_FALLBACK`), `None` when
+/// the factory's per-NPC row exists or no spawn-condition tag matched.
+pub fn flavor_fallback_key(net_id: i32) -> Option<&'static str> {
+    FLAVOR_FALLBACK
+        .binary_search_by_key(&net_id, |&(id, _)| id)
+        .map(|i| FLAVOR_FALLBACK[i].1)
+        .ok()
+}
 
 /// `NPCID.Sets.TownNpcBestiaryPriority` (`NPCID.cs:10106`) —
 /// the sorting-id priority list; `IndexOf` gives the rank, -1 maps to
