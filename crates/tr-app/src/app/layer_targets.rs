@@ -103,6 +103,17 @@ pub(crate) fn render_layer_targets(
     now_secs: f32,
 ) -> TileDrawStats {
     let mut stats = TileDrawStats::default();
+    // GATE RNG fix (`TileDrawing._rand`, `TileDrawing.cs:104,191`): ONE
+    // stream per frame across the halves + the direct-screen blocks. The
+    // fused walk rolls the kind-192 leaf cells (all SOLID —
+    // `TILE_SOLID.has(192)`, no forced override) row-major, then the
+    // foliage `EmitTreeLeaves` rolls; the gated path reproduces that
+    // consumption order exactly: Solid cells → NonSolid cells (no rolls —
+    // 192 is solid) → extras foliage. Pre-seed with the fused pin.
+    frame.scratch.leaf_rng_shared = true;
+    frame.scratch.leaf_rng = Some(tr_core::tile_light::FastRandom::new(
+        frame.sparkle_seed ^ 0x9E37_79B9_7F4A_7C15,
+    ));
     // `Main.Camera.Center` / `Camera.ScaledSize` (`Camera.cs:14,50`): the
     // port's camera is the view centre, the backbuffer the unscaled size
     // (the zoom-1 layer path — the GameViewMatrix translation is 0 at the
@@ -167,6 +178,10 @@ pub(crate) fn render_layer_targets(
     // The entity tail: NPCs over tiles (`:63301`), players (`:62256`),
     // items (`:62278`), the edit cursor.
     draw_direct_screen(gpu, renderer, frame, TileFilter::Screen, dst, now_secs, &mut stats);
+    // GATE RNG fix: the frame's stream is consumed; drop the shared mode so
+    // a later fused call (gate toggled off) re-seeds from its own pin.
+    frame.scratch.leaf_rng_shared = false;
+    frame.scratch.leaf_rng = None;
     stats
 }
 

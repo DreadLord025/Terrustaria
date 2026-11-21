@@ -157,6 +157,13 @@ impl CaptureRenderer for GpuCaptureRenderer<'_> {
         let cw = &mut self.cw;
         let capture_background = settings.capture_background;
         let anim_time = cw.anim_time;
+        // GATE RNG fix: one leaf-roll stream per chunk render — the C#
+        // `DrawCapture`'s `DrawTiles` calls share the live `TileDrawing._rand`
+        // (`TileDrawing.cs:104`); the port pins the chunk's stream to the
+        // capture's sparkle seed (0) so the halves consume it in order.
+        cw.scratch.leaf_rng_shared = true;
+        cw.scratch.leaf_rng =
+            Some(tr_core::tile_light::FastRandom::new(0x9E37_79B9_7F4A_7C15));
         tr_render::render_to_targets(
             self.family,
             &gpu.device,
@@ -174,6 +181,10 @@ impl CaptureRenderer for GpuCaptureRenderer<'_> {
         );
         // Composite the layers onto the framebuffer in `DrawCapture` order.
         composite_capture(gpu, renderer, self.family, self.compositor, camera, screen, &fb, anim_time);
+        // GATE RNG fix: the chunk's stream is consumed; restore the fused
+        // per-call re-seed semantics for whatever draws next.
+        self.cw.scratch.leaf_rng_shared = false;
+        self.cw.scratch.leaf_rng = None;
         self.renderer.set_screen_override(None);
         // `UseScaling`: downscale the framebuffer into the scaled buffer
         // (`CaptureCamera.cs:196-200`) and read it back (`:202`).

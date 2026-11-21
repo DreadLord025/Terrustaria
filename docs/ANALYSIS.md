@@ -24998,10 +24998,140 @@ Deviations / scope (deliberate):
   when `UseScaling` and reads the pixels back (`read_texture_rgba`), writing
   `SavePath/Captures/<name>.png` (or the per-chunk PNGs when unscaled). It
   rides the same gate; with it off the S1-E-17 no-op stub drains the queue.
-  The capture entity passes (`captureEntities` arms, `:56876-57017`) and the
-  biome background-index override are unported this round (the chunk renders
-  tiles/walls/liquids/backdrop only); the four `LightTiles` calls collapse to
-  one `compute_into` (the modern engine's single-pass equivalent).
+  The `captureEntities` arms (`:56876-57017`) are ported at the port's
+  entity-pass granularity (see "The DrawCapture entity arms" below); the
+  biome background-index override rides the chunk's surface pass (see
+  "The DrawCapture biome background override" below).
+
+### The four `LightTiles` calls (S1-G-13 consumers census, 2026-11-21)
+
+`DrawCapture` runs `Lighting.Initialize(); Main.renderCount = 99; for (j =
+0; j < 4; j++) Lighting.LightTiles(area);` with `mapEnabled = false`
+(`Main.cs:56725-56733`). The four calls are NOT four lighting iterations —
+they walk the modern engine's four-state cycle exactly once:
+
+- `Lighting.Initialize` (`Lighting.cs:89-98`) → `NewEngine.Rebuild()`
+  (`LightingEngine.cs:237-244`) sets `_state = EngineState.MinimapUpdate`
+  (enum value 0, `:13-20`) and empties both light maps.
+- `LightTiles(area)` (`Lighting.cs:100-107`) = `UpdateGlobalBrightness()`
+  + `_activeEngine.ProcessArea(area)`. `ProcessArea`
+  (`LightingEngine.cs:76-108`) dispatches on `_state` and increments it
+  (`IncrementState`, `:110-113`, mod 4):
+  1. **MinimapUpdate** — `mapDelay`/`ExportToMiniMap`; `mapEnabled` is false
+     so the export early-returns (`:248-251`). Sets `renderCount = 3`.
+  2. **ExportMetrics** — `Main.UpdateSceneMetrics()`. Sets `renderCount = 0`.
+  3. **Scan** — `ProcessScan(area)` (`:115-126`): inflate 28, scanner
+     `Update()` + `ExportTo`. Sets `renderCount = 1`.
+  4. **Blur** — `ProcessBlur()` + `Present()` (`:128-139`): decay, per-frame
+     lights, `Blur()`, then the working→active swap. Sets `renderCount = 2`.
+
+So the visible light after the loop is exactly ONE scan+blur of `area`
+(inflated 28) — the port's single `compute_into(world, x0, y0, x1, y1,
+params)` (`capture_render.rs`, `AREA_PADDING = 28` matches the inflate) is
+**truly equivalent** for the modern engine; no 4-call shape is needed. The
+two side effects the loop also carries are the minimap export (suppressed
+by the `mapEnabled = false` save/restore, `:56726/:56733` — the port's
+capture never touches the map) and `UpdateSceneMetrics` (the port's scene
+metrics are not re-scanned per capture — the chunk's biome comes from
+`CaptureSettings`, documented). The other per-layer `LightTiles` call
+positions in `Main.cs`: the lightning flash/decay pairs in `UpdateWeather`
+(`:58773-58774`, `:58779-58780` — two calls = Scan+Blur, the same
+one-cycle trick), the `renderNow` pair in `DoDraw`'s head
+(`:61845-61846`), and the single per-frame call at `:62145`
+(`Main.GetAreaToLight()` — the phase-armed frame path). The legacy engines'
+`LightTiles` runs a full per-call iteration (the Retro/White/Trippy
+`ProcessArea` is not state-cycled), which is why the legacy capture keeps
+the frame's presented light — the documented deviation already recorded in
+`capture_render.rs`.
+
+### GATE RNG divergence — A/B record + fix (S1-G-13 consumers, 2026-11-21)
+
+**The divergence (pre-fix, `TR_LAYER_TARGETS=1`).** `TileDrawing._rand` is
+ONE `UnifiedRandom` for the whole `TileDrawing` instance
+(`TileDrawing.cs:104`, ctor `:191`) — every `Draw(solidLayer)` and
+`PostDrawTiles` call continues the same stream. The port's fused
+`draw_tiles` pins one `FastRandom` per call (`sparkle_seed ^
+0x9E37_79B9_7F4A_7C15`) and consumes it in the fused walk order: the
+kind-192 leaf-cell rolls (`TileDrawing.cs:6848-6851` →
+`EmitLivingTreeLeaf` `:7549-7556`: one `Next(leafFrequency/4)` per visible
+192 cell + one `Next(2)` per hit), then the foliage `EmitTreeLeaves` rolls
+(`:7779-7833`, one `Next(frequency)` per tree top/branch + the hallowed
+`Next(28)` jitter). The gated path split that into separate `draw_tiles`
+calls, each RE-SEEDING: the Solid callback rolled the 192 cells (192 is
+`TILE_SOLID`, no forced override — witness
+`the_leaf_cell_rolls_live_in_the_solid_half`) and discarded the advanced
+stream; the ScreenExtras block's foliage then re-rolled from the PRISTINE
+seed. **Exact leaf-spawn delta expectation:** with N visible 192 cells the
+fused stream hands the foliage roll #k the draw at stream position
+`N + hits + k` (hits = the `Next(2)` sideways rolls); the pre-fix gated
+path handed it draw #k from position 0 — every foliage roll after the
+first 192 cell diverges, so the expected spawn-count delta is
+`O(tree_tops × P(hit))` per frame (at the default wind ≤ 0.1,
+`leaf_frequency = 14000`, `P(hit) ≈ 1/14000` per top — rare but
+non-deterministic across the gate; at wind > 1.1, `frequency = 70`,
+`P ≈ 1/70` — visibly different leaf showers). The 192-cell spawns
+themselves were identical (the Solid half rolls them first from the same
+seed); only the foliage half diverged.
+
+**The fix (landed).** A shared pre-seeded stream passed to the halves:
+`DrawScratch.leaf_rng: Option<FastRandom>` + `leaf_rng_shared: bool`.
+`render_layer_targets` pre-seeds once per frame with the fused pin; every
+`draw_tiles` call takes/continues/parks the stream when shared (all three
+exits); the tail clears the shared mode. Consumption order under the gate
+= Solid cells → NonSolid cells (no rolls — 192 is solid) → extras foliage
+= the fused order exactly. The capture chunk pins its own stream once per
+render (`capture_render.rs`, seed `0x9E37…` — the capture's sparkle seed
+is 0). The fused default (`leaf_rng_shared == false`) re-seeds per call
+and never reads the slot — the frozen path is byte-identical. Witnesses:
+`the_shared_leaf_stream_continues_across_gated_calls` (the pristine
+re-seed repeats the first draw — the divergence pin),
+`the_gated_consumers_pre_seed_and_clear_the_shared_stream`.
+
+### The DrawCapture entity arms (S1-G-13 consumers census, 2026-11-21)
+
+Full census of the `captureEntities` arms (`Main.cs:56876-57017`) and the
+port's mapping (the port has no NPC/projectile draw-cache split — the
+`CacheNPCDraws`/`DrawCachedNPCs`/`DrawCachedProjs` buckets collapse into
+the single `draw_npcs(behind_tiles)` / projectile-slot passes):
+
+| C# site | Arm | Port |
+|---|---|---|
+| `:56876-56883` | `CacheNPCDraws`/`CacheProjDraws` + `DrawCachedNPCs(MoonMoon, behindTiles: true)` | no Moon-Moon mechanic ported; the behind-tiles NPC pass covers the bucket (documented) |
+| `:56928-56933` | `DrawWoF` | the WoF body/eye draw through `draw_npcs` (the port has no separate WoF pass; documented) |
+| `:56934-56940` | `DrawGoreBehind` | unported (the gore pool's behind pass is a documented gap, `render/gore.rs` module docs) |
+| `:56941-56947` | `MoonlordDeathDrama.DrawPieces`/`DrawExplosions` | `screen_fx::draw_moonlord_pieces`/`draw_moonlord_explosions` |
+| `:56951` | `DrawCachedNPCs(BehindNonSolidTiles, behindTiles: true)` (unconditional) | `draw_npcs(behind_tiles: true)` — runs even without `captureEntities`, like the C# |
+| `:56964-56972` | `waterfallManager.FindWaterfalls(forced: true)` + `Draw` | `find_waterfalls(world, view, true)` + `draw` + the quad push |
+| `:56973-56979` | `DrawCachedProjs(BehindNPCsAndTiles)` + `DrawNPCs(behindTiles: true)` | the behind-tiles NPC pass (above) + the projectile pass (no behind-bucket split) |
+| `:56989-57017` | `DrawPlayers_BehindNPCs` → `DrawCachedProjs(BehindNPCs)` → `DrawNPCs()` → `DrawCachedNPCs(NPCProjectiles)` → `DrawSuperSpecialProjectiles(FirstFractals)` → `DrawCachedProjs(BehindProjectiles)` → `DrawProjectiles` → `DrawPlayers_AfterProjectiles` → `DrawCachedProjs(OverPlayers)` → `DrawCachedNPCs(OverPlayers)` → `DrawItems` → `DrawRain` → `DrawGore` → `DrawDust` | `draw_player` → the projectile slots → `draw_npcs(behind_tiles: false)` → `items.draw` → `rain.draw` → `gore::draw` → `sand::draw` + `minecart::draw` (the port's entity-tail order, `render/tiles.rs`'s `Screen` block) |
+
+The port draws the tail in its own frozen entity order (player → npcs →
+items, the `TileFilter::Screen` shape) rather than the C#'s
+players-behind-NPCs split — the same documented z-order approximation the
+frame path carries. The capture tail rides the chunk camera at zoom 1
+into the framebuffer between the tile and water composites
+(`:56989-57017` sits between `DrawTiles(solidLayer: true)` `:56986` and
+`DrawLiquid(bg: false)` `:57026`).
+
+### The DrawCapture biome background override (S1-G-13 consumers, 2026-11-21)
+
+`DrawCapture` swaps the two bg-alpha arrays for fresh zeroed ones, then
+`UpdateBGVisibility_BackLayer(settings.Biome.BackgroundIndex, 1f)` +
+`UpdateBGVisibility_FrontLayer(..., 1f)` (`Main.cs:56675-56680`), restoring
+the live arrays at `:57075-57076`. With a zeroed start and transition
+amount 1 the result is exact: `bgAlphaFrontLayer[bgIndex] = 1` (all others
+0, `:64099-64117`), and the far layer(s) per the `UpdateBGVisibility_BackLayer`
+switch (`:64157-64208`): 2→1, 3→(jungleBG==5 ? 15 : 0), 1/5/13/14→2,
+6→(hallowBG==3 ? 6 : 2), 4→3, 7→4, 8→5, 9→{0,6}, 10/11/12→self, default→0
+— the port's `biome::far_layer_targets` + `advance_bg_alphas(speed = 1)`
+reproduce it from zeroed arrays. `HolyTileCount` is forced to
+`HallowTileMax` when `bgIndex == 6` (`:56683`) so the hallow surface rows
+draw; the port's surface chains gate on the alpha alone (no HolyTileCount
+input), so the override needs no metrics mutation. The capture's
+background pass (`render_capture_layer`'s Background arm) now renders the
+surface chains at the chunk camera with these capture-only arrays (the
+live frame's arrays are untouched — the port passes them as arguments,
+the C# save/restore equivalent), then the underground backdrop.
 - **`IsContentLost` has no wgpu equivalent** вЂ” device loss recreates
   everything; `ensure` re-inits on absence or backbuffer-size change
   (the null-check half of `:58154`).

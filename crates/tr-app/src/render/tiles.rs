@@ -72,6 +72,22 @@ pub(crate) struct DrawScratch {
     /// parks them here between the two callbacks. The fused default never
     /// reads it.
     pub(crate) vine_roots: Vec<(i32, i32)>,
+    /// S1-G-13 consumers (GATE RNG fix): the shared leaf-roll stream the
+    /// gated halves continue (`TileDrawing._rand` is ONE `UnifiedRandom`
+    /// across every `Draw`/`PostDrawTiles` call, `TileDrawing.cs:104,191`).
+    /// The fused default re-seeds per call (the frozen per-frame pin) and
+    /// never reads this; the gated path pre-seeds it once per frame
+    /// (`layer_targets::render_layer_targets`) and each `draw_tiles` call
+    /// takes/continues/returns it, so the solid half's 192-cell rolls
+    /// advance the stream the extras block's `EmitTreeLeaves` rolls read —
+    /// the fused single-stream shape. ANALYSIS "The render-target family
+    /// (S1-G-13)" A/B section.
+    pub(crate) leaf_rng: Option<tr_core::tile_light::FastRandom>,
+    /// Whether [`Self::leaf_rng`] rides along: the gated consumers set it
+    /// (the layer callbacks AND their direct-screen blocks share one
+    /// stream per frame); the fused default leaves it false — every fused
+    /// call re-seeds from `sparkle_seed` and never touches the slot.
+    pub(crate) leaf_rng_shared: bool,
 }
 
 /// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
@@ -412,11 +428,19 @@ pub(crate) fn draw_tiles(
     tile_filter: TileFilter,
 ) -> TileDrawStats {
     let t_total = Instant::now();
-    // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
-    // per frame like the sparkle draws.
-    let mut leaf_rng = tr_core::tile_light::FastRandom::new(
-        sparkle_seed ^ 0x9E37_79B9_7F4A_7C15,
-    );
+    // `TileDrawing._rand` (`TileDrawing.cs:104,191`): ONE `UnifiedRandom`
+    // lives across every `Draw`/`PostDrawTiles` call. The fused default
+    // keeps the frozen per-frame pin (re-seed each call); the gated halves
+    // continue the shared stream the caller pre-seeded once per frame
+    // (GATE RNG fix — the solid half's cell rolls must advance the stream
+    // the extras block's foliage rolls read, exactly like the fused walk).
+    let mut leaf_rng = if scratch.leaf_rng_shared {
+        scratch.leaf_rng.take().unwrap_or_else(|| {
+            tr_core::tile_light::FastRandom::new(sparkle_seed ^ 0x9E37_79B9_7F4A_7C15)
+        })
+    } else {
+        tr_core::tile_light::FastRandom::new(sparkle_seed ^ 0x9E37_79B9_7F4A_7C15)
+    };
     let half = screen * 0.5 / zoom;
     let min = camera - half;
     let max = camera + half;
@@ -1267,6 +1291,10 @@ pub(crate) fn draw_tiles(
         if tile_filter == TileFilter::NonSolid {
             scratch.vine_roots = std::mem::take(&mut vine_roots);
         }
+        // GATE RNG fix: hand the advanced stream to the next gated call.
+        if scratch.leaf_rng_shared {
+            scratch.leaf_rng = Some(leaf_rng);
+        }
         stats.instances = stats.quads;
         stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
         return stats;
@@ -1317,6 +1345,11 @@ pub(crate) fn draw_tiles(
     // direct-screen extras block stops here; the entity tail rides its own
     // `TileFilter::Screen` pass after the tile composite.
     if tile_filter == TileFilter::ScreenExtras {
+        // GATE RNG fix: the extras block consumed the foliage rolls; the
+        // entity tail (`Screen`) draws none, but keep the stream parked.
+        if scratch.leaf_rng_shared {
+            scratch.leaf_rng = Some(leaf_rng);
+        }
         stats.instances = stats.quads;
         stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
         return stats;
@@ -1453,6 +1486,11 @@ pub(crate) fn draw_tiles(
         + stats.waterfalls
         + stats.items;
     stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
+    // GATE RNG fix: the tail exit parks the stream too (the fused default
+    // never reads the slot — `leaf_rng_shared` is false there).
+    if scratch.leaf_rng_shared {
+        scratch.leaf_rng = Some(leaf_rng);
+    }
     stats
 }
 
@@ -2496,5 +2534,85 @@ mod tests {
             assert!(TileFilter::Solid.keeps(kind, true));
             assert!(!TileFilter::NonSolid.keeps(kind, true));
         }
+    }
+
+    // GATE RNG fix witnesses (S1-G-13 consumers): the shared leaf-roll
+    // stream reproduces the fused single-stream consumption order.
+
+    /// The kind-192 leaf cells (the ONLY cell-loop rolls,
+    /// `TileDrawing.cs:6849-6855`) are SOLID — they land in the Solid half,
+    /// so the gated Solid callback's rolls are exactly the fused walk's
+    /// cell rolls, and the NonSolid half rolls nothing.
+    #[test]
+    fn the_leaf_cell_rolls_live_in_the_solid_half() {
+        assert!(td::TILE_SOLID.has(192), "living-leaf blocks are solid");
+        assert!(tile_draw_layer_solid(192));
+        assert!(TileFilter::Solid.keeps(192, true));
+        assert!(!TileFilter::NonSolid.keeps(192, true));
+    }
+
+    /// The shared-stream mechanics: a gated call takes the parked stream,
+    /// advances it, and parks it back; the next call continues from the
+    /// advanced state — NOT from the pristine seed. The fused default
+    /// (`leaf_rng_shared == false`) ignores the slot entirely.
+    #[test]
+    fn the_shared_leaf_stream_continues_across_gated_calls() {
+        use tr_core::tile_light::FastRandom;
+        let seed = 0x1234_5678_9ABC_DEF0u64 ^ 0x9E37_79B9_7F4A_7C15;
+        let mut scratch = DrawScratch::default();
+        scratch.leaf_rng_shared = true;
+        scratch.leaf_rng = Some(FastRandom::new(seed));
+        // Call 1 (the Solid half): take + roll + park.
+        let mut rng = scratch.leaf_rng.take().unwrap();
+        let first = rng.next_range(0, 500);
+        scratch.leaf_rng = Some(rng);
+        // Call 2 (the extras foliage): continues — the fused single-stream
+        // shape. Re-seeding here (the pre-fix bug) would repeat `first`.
+        let mut rng = scratch.leaf_rng.take().unwrap();
+        let second = rng.next_range(0, 500);
+        scratch.leaf_rng = Some(rng);
+        // The reference: one uninterrupted stream from the same seed.
+        let mut reference = FastRandom::new(seed);
+        assert_eq!(first, reference.next_range(0, 500));
+        assert_eq!(second, reference.next_range(0, 500));
+        // The pristine re-seed (the pre-fix gated behaviour) diverges.
+        let mut pristine = FastRandom::new(seed);
+        assert_eq!(pristine.next_range(0, 500), first);
+        assert_ne!(
+            pristine.next_range(0, 500),
+            second,
+            "the pre-fix re-seed repeats the first draw — the divergence pin"
+        );
+        // The fused default never reads the slot: with the flag off the
+        // parked stream stays untouched while the call re-seeds its own.
+        scratch.leaf_rng_shared = false;
+        let parked_seed = scratch.leaf_rng.unwrap().seed;
+        let mut fused = FastRandom::new(seed);
+        let _ = fused.next_range(0, 500);
+        assert_eq!(scratch.leaf_rng.unwrap().seed, parked_seed);
+        assert_ne!(fused.seed, parked_seed);
+    }
+
+    /// The gated frame pre-seeds the shared stream with the fused pin
+    /// (`sparkle_seed ^ 0x9E37…`) and clears the shared mode at the tail;
+    /// the capture chunk pins its own stream once per render.
+    #[test]
+    fn the_gated_consumers_pre_seed_and_clear_the_shared_stream() {
+        let lt = include_str!("../app/layer_targets.rs");
+        assert!(lt.contains("frame.scratch.leaf_rng_shared = true;"));
+        assert!(lt.contains("frame.sparkle_seed ^ 0x9E37_79B9_7F4A_7C15"));
+        assert!(lt.contains("frame.scratch.leaf_rng_shared = false;"));
+        let cr = include_str!("../app/capture_render.rs");
+        assert!(cr.contains("cw.scratch.leaf_rng_shared = true;"));
+        assert!(cr.contains("self.cw.scratch.leaf_rng_shared = false;"));
+        // Every draw_tiles exit parks the stream back when shared.
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        assert_eq!(
+            body.matches("scratch.leaf_rng = Some(leaf_rng);").count(),
+            3,
+            "all three exits (halves, extras, tail) park the stream"
+        );
     }
 }
