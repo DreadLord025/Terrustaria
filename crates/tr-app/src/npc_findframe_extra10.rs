@@ -480,6 +480,9 @@ pub fn find_frame_extra10(kind: FindFrameExtra10Kind, s: &mut FrameState, i: &Fr
                 s.counter = 0.0;
             }
         }
+        // The batch-2/3 kinds land in the next commits (the 5-kinds-
+        // per-commit rule — the e8 batch-1 catch-all precedent).
+        _ => unimplemented!("extra-10 batch 2/3"),
     }
 }
 
@@ -745,13 +748,17 @@ mod tests {
         }
     }
 
-    /// The seam maps exactly the batch's vanilla types so far (the
-    /// later batches widen the list — the final slice pins all 15).
+    /// The seam maps exactly the slice's vanilla types (the full
+    /// 15-id set from batch 1 — the e8 precedent; the batch-2/3 arms
+    /// land behind the catch-all, the seam is stable).
     #[test]
     fn f27s10_seam_covers_exactly_the_slice() {
         for t in 0..697i16 {
             let k = find_frame_kind_extra10(t);
-            let claimed = [531, 532, 534, 535, 536];
+            let claimed = [
+                531, 532, 534, 535, 536, 537, 538, 539, 540, 541, 542, 543, 544,
+                545, 549,
+            ];
             assert_eq!(k.is_some(), claimed.contains(&t), "type {t}");
             if let Some(k) = k {
                 assert_eq!(k.vanilla_type(), t);
