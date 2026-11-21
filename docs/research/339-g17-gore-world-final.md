@@ -1,27 +1,33 @@
-# 304 — W4-g17 research FINAL + the GORE-WORLD-family bible (registry 304, f5f seal)
+# 339 — W4-g17 research FINAL + the GORE-WORLD-family bible (registry 339, f5f seal)
+
+> **Chain-banner (registry §9 UNIFIED FINAL, row 339): 304 → 339.**
+> The lane's original 304 self-pick (`3dec710dc`, 16:32:44) landed AFTER the
+> §7.4 publication that ASSIGNED 304 to d50 (`243-d50-dust-type-table-final.md`
+> → `304`, published 16:07 `0426245f2`). Per §8.6: post-§7.4-contested;
+> **d50 KEEPS 304**, g17 → **339**. Chain: 304 → 339. Renamed per §9.2
+> (registry `docs/research/150` at d54 tip `b243c7086`); §9 is the single
+> authority, NO SELF-PICKS.
 
 Date: 2026-11-21. **Code-only mode** — no cargo/tests/rustfmt/graphify
 invoked; every claim below was verified by re-reading the cited C# and the
 landed Rust at this branch's tip `f0fe1bbdd`. Witnesses are WRITTEN, NOT
 RUN (owed the merge-verify window). Branch: `task/W4-g17-gore-world-sites`.
 
-## 0. The registry number — 304 (verified FREE)
+## 0. The registry number — 339 (renamed from 304 per §8.6/§9.2; 304 = d50)
 
-The research-number collision registry (`docs/research/150` at
-`origin/task/W4-d54-dust-sites-world` tip `38bfd1d22`, §7 round-3 authority)
-assigns losers to **151–236 + 246–280 + 281–303** and declares **"Numbers
-304+ are FREE. Do NOT pick max-on-origin+1; check this registry AND a
-fresh all-tip sweep first."** Both checks were run this round:
+**SUPERSEDED claim (chain-history).** At authoring time the lane read the
+research-number collision registry (`docs/research/150` at
+`origin/task/W4-d54-dust-sites-world` tip `38bfd1d22`, §7 round-3 authority),
+which assigned losers to **151–236 + 246–280 + 281–303** and declared
+"Numbers 304+ are FREE" — and the fresh all-tip sweep found max 280, nothing
+at 304+. The lane took 304 on that basis (`3dec710dc`, 16:32:44). That
+sweep predated the landed §7.4 assignment: **304 was ASSIGNED to d50**
+(published 16:07 `0426245f2`), so g17's push is post-§7.4-contested.
 
-1. The registry §7 block ends at 303 (machine-checked unique, no gaps).
-2. A fresh all-tip sweep (`git ls-tree docs/research/` over every
-   `origin/task/W4-*` branch, ~360 tips) finds the max claimed number
-   **280**; nothing at 281–303 is pushed yet (they are registry
-   *assignments*, not executions) and nothing at 304+ exists at any tip.
-
-**304 = this doc.** No collision; the g17 lane takes it under the
-registry's claim-time convention (first-add `%cI`). Sibling FINAL docs
-this round: g58's 240–243 (happiness), g68's 247 (wind), d120's 143
+**Current verdict (§8.6 amendment + §9 UNIFIED FINAL row 339, registry at
+d54 tip `b243c7086`): d50 KEEPS 304; this doc is 339.** Chain: 304 → 339.
+No self-picks; §9 is the single authority. Sibling FINAL docs
+read at authoring time: g58's 240–243 (happiness), g68's 247 (wind), d120's 143
 (chatter retire) — all read for cross-lane contracts below.
 
 ## 1. SEAL item 1 — g17c landed (verified at tip)
@@ -193,7 +199,9 @@ claimed. The g17 lane's 68 are SEALED.
 - `DrawNPCChatButtons`: full-tree caller scan (zero hits beyond the
   definition); the `npcChatFocus` writer census.
 - Registry: registry-150 §7 read at d54's tip + a fresh all-tip
-  `git ls-tree docs/research/` sweep (max 280, 304 free).
+  `git ls-tree docs/research/` sweep (max 280, 304 free — the authoring-time
+  read, chain-history; SUPERSEDED by §8.6: 304 = d50's assignment, this doc
+  renamed 304 → 339 per §9.2 row 339).
 - The compose seam: `axe_tile_hit` `:1870-1901` re-read line-by-line
   against `WorldGen.cs:63131-63418`; the new witness written.
 - Co-lane contracts: g58 research/240/242/243, g68 research/247, d120

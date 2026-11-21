@@ -39595,10 +39595,12 @@ Stand-ins: the `noUseGraphic`/`noMelee` fields fold to `sItem.melee` (the
 (skipped). 2 witnesses (the Terra Blade type-64 + the Night's Edge
 always-type-27, written not run).
 
-## The gore-world seal (W4-g17, research FINAL — research/304)
+## The gore-world seal (W4-g17, research FINAL — research/339)
 
 The lane's research FINAL + the GORE-WORLD-family bible landed as
-`docs/research/304-g17-gore-world-final.md` (registry 304, verified free
+`docs/research/339-g17-gore-world-final.md` (registry 339 per §9.2 —
+renamed from 304, §8.6: the 304 self-pick was post-§7.4-contested, d50
+KEEPS 304; chain 304→339; originally verified free
 against registry-150 §7 + a fresh all-tip sweep). Three verifications
 closed this round (code-only, witnesses WRITTEN NOT RUN):
 
@@ -39629,5 +39631,5 @@ closed this round (code-only, witnesses WRITTEN NOT RUN):
 
 The keep-one contracts hold at the co-lane tips: the sandstorm arm is
 f42's (`4bf7b2e88`), the msg-112 net arm g50's; this lane's twins retire
-at merge. The family bible (research/304 §4) is the merger's one-paragraph
+at merge. The family bible (research/339 §4) is the merger's one-paragraph
 read: one owner lane per family file, no double-feed, the 68 SEALED.
