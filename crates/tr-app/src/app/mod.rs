@@ -1438,14 +1438,21 @@ impl App {
         }
         // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
         // per-frame cursor delta (`Main.grabMapX`/`grabMapY`).
+        // `Main.cs:55342`: `Main.mouseLeft && !CaptureManager.Instance.UsingMap`
+        // — while the capture interface owns the map the whole drag block is
+        // skipped (`CaptureManager.cs:44-54`: false while inactive); the grab
+        // anchor is NOT touched, exactly like the C# leaving grabMapX/Y stale.
         let cursor = self.mouse_pos;
         if self.mine_down {
-            if let Some(anchor) = self.map_grab {
-                let d = map::map_drag_delta([cursor.x - anchor[0], cursor.y - anchor[1]], m.scale);
-                m.pos[0] += d[0];
-                m.pos[1] += d[1];
+            if !self.capture.using_map() {
+                if let Some(anchor) = self.map_grab {
+                    let d =
+                        map::map_drag_delta([cursor.x - anchor[0], cursor.y - anchor[1]], m.scale);
+                    m.pos[0] += d[0];
+                    m.pos[1] += d[1];
+                }
+                self.map_grab = Some([cursor.x, cursor.y]);
             }
-            self.map_grab = Some([cursor.x, cursor.y]);
         } else {
             self.map_grab = None;
         }
@@ -5924,5 +5931,45 @@ mod s1_p_i44_tests {
         app.update_shop_close();
         assert!(app.shop_npc.is_none());
         assert!(app.shop_stock.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_map_drag_capture_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-e18 residual census (written, not run - code-only): the drag's
+    /// `!CaptureManager.Instance.UsingMap` gate (`Main.cs:55342`). With the
+    /// capture interface active and its EdgeSelection mode (mode 0 always
+    /// answers true, `CaptureInterface.cs:100-103`) the whole drag block
+    /// skips - the position does not move AND the grab anchor stays stale
+    /// (the C# touches neither grabMapX/Y inside the skipped block).
+    #[test]
+    fn w4_e18_the_capture_using_map_gate_skips_the_whole_drag_block() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // A real-sized world: map_clamp_pos's 10..width-10 range inverts on
+        // the 8x8 fixture (f32::clamp panics on min > max).
+        app.world = tr_core::World::new("drag".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.map.as_mut().unwrap().open = true;
+        // Park inside the clamp so the tail clamp cannot masquerade as a pan.
+        app.map.as_mut().unwrap().pos = [50.0, 50.0];
+        app.mine_down = true;
+        app.map_grab = Some([100.0, 100.0]);
+        app.mouse_pos = Vec2::new(140.0, 120.0);
+        // Capture active, mode 0 (EdgeSelection) -> UsingMap true.
+        app.capture.interface.active = true;
+        app.capture.interface.selected_mode = 0;
+        let pos_before = app.map.as_ref().unwrap().pos;
+        app.update_map_input();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.pos, pos_before, "the UsingMap gate skipped the pan");
+        assert_eq!(app.map_grab, Some([100.0, 100.0]), "the anchor stays stale");
+        // Deactivating the interface flips UsingMap false
+        // (`CaptureManager.cs:44-54`) and the drag runs.
+        app.capture.interface.active = false;
+        app.update_map_input();
+        assert_eq!(app.map_grab, Some([140.0, 120.0]), "the anchor re-grabs");
     }
 }

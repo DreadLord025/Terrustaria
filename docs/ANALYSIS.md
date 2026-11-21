@@ -19046,8 +19046,24 @@ Deliberate deviations: the 5 ms budget is the C#'s own wall-clock stopwatch
 (`TimeLogger.StartTimestamp`), so the sections-per-frame count is
 machine-dependent exactly like vanilla — no fixed-count stand-in. The
 `DrawToMap_Section` render-target blit is the dirty-rect push (one texture,
-not the 5×2 grid); the pixels are identical. The `loadMapLock`/`loadMapLastX`
-staged-upload counters are unmodelled (the port uploads in one bulk write).
+not the 5×2 grid); the pixels are identical. ~~The `loadMapLock`/`loadMapLastX`
+staged-upload counters are unmodelled~~ **closed (W4-e18 residual census,
+2026-11-21)**: the four `Main` statics (`clearMap`/`mapReady`/`loadMapLock`/
+`loadMapLastX`, `Main.cs:789-805`) now live on `WorldMap`; the `DrawToMap` tail
+(`MapRenderer.cs:196-199`) sets `map_ready` + lifts the load pair, the load arms
+all three (`WorldMap.cs:211-213`), the `clearMap` consume (`:161-173`) rides
+`prepare` as a full re-upload, and `Main.DrawMap`'s `!mapReady` gate
+(`Main.cs:55283`) gates both draw branches. `loadMapLastX` stays 0 (the bulk
+write has no intermediate progress; the MP consumers `WorldGen.cs:6823-6825` /
+`Netplay.cs:506-508` are unported). The same pass landed `WorldMap.Clear`
+(`WorldMap.cs:249-258`), the `/clearmap` debug row
+(`ToolkitDebugCommands.cs:497-503`), the `/map` row's missing `clearMap = true`
+head (`:483`) and the drag's `!CaptureManager.Instance.UsingMap` gate
+(`Main.cs:55342`, the whole block skips — anchor untouched). Still unmodelled:
+the `IsChanged`/`ConsumeUpdate` + run-merge walk and the `maxMapUpdates` budget
+(`MapRenderer.cs:203-286`) — the dirty list carries exactly the changed tiles,
+identical pixels (see `docs/research/14-map-minimap.md` "W4-e18 residual
+census").
 Witnesses: 8 `map_sections::tests::w4_e18_*` (grid dims, first-draw centre,
 spiral coverage/exhaustion, restart-on-move, ClearMapDraw, refresh
 double-count, truncating TileLoaded, quadrant pick), 3 `map::tests::w4_e18_*`
