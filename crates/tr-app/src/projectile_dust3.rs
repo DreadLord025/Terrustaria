@@ -1371,8 +1371,9 @@ mod tests {
         assert!(!t.no_gravity, "the post-gate missed keeps gravity");
         // scale: (1)*0.7 [tweak] *1.25 [188] *0.25 [ramp] = 0.21875.
         assert!((t.scale - 0.21875).abs() < 1e-4);
-        // The first draw is NewDust's pos.x (no Next(2) gate).
-        assert_eq!(s.log[0], "range(0,10)");
+        // The first draw is NewDust's pos.x (no Next(2) gate); the 6x6 box
+        // gives next_max(width-4) = next_max(2).
+        assert_eq!(s.log[0], "range(0,2)");
     }
 
     /// `:26461-26468` - the hostile Trident's 20-step dust-27 trail
