@@ -186,14 +186,20 @@ pub(crate) fn on_player_entered_world(app: &mut App) {
 /// 8 town slimes fire 26 (ALL_TOWN_SLIMES). Both tests are independent `if`s.
 /// The port's roster is partial: Truffle 160, Steampunker 178, Cyborg 209 and
 /// Pirate 229 (four kinds) plus all eight town slimes (670/678-684) have no
-/// NpcKind rows, so both rows are unreachable in play until those kinds land
-/// — the wire is the faithful check, cited like the blood-moon no-op wires.
+/// NpcKind rows ON THIS BASE, so both rows are unreachable in play until
+/// those kinds land — the wire is the faithful check, cited like the
+/// blood-moon no-op wires. NOTIFY-SYNC (4): all four town kinds ARE on
+/// pushed tips now — 160/178/209 on d120 `4b17a2cf1` (proto 242/243/244,
+/// bestiary net ids vanilla), 229 on d37 `08f7d25cf` (proto 361, bestiary
+/// net_id 229); the eight slimes remain unported on EVERY tip (d43 =
+/// main, f43's census is id-keyed pure fns with no kinds).
 /// DD2 Bartender 550 IS ported (`NpcKind::DD2Bartender`, bestiary `net_id:
 /// 550`), so it is NOT a missing roster id (the W4-c36 re-probe corrected the
 /// earlier "five missing kinds" census). The scan reads `n.kind.net_id()`,
 /// which resolves through `bestiary::ENTRIES` (`npc/data.rs:1186`) — there is
 /// NO hardcoded id list, so the check activates automatically the moment the
-/// d36/d39/d41/d43 kind bands land their bestiary rows. `npc.home.is_none()`
+/// d120/d37 kind rows merge (the slimes wait for d43/f43's kind lane).
+/// `npc.home.is_none()`
 /// is the port's `homeless` flag (`world_sim/npcs.rs`'s arrival writes it).
 pub(crate) fn check_real_estate_and_town_slimes(app: &mut App) {
     let mut housed: Vec<i32> = app
@@ -441,10 +447,13 @@ mod tests {
     /// W4-c36 DOC-SWEEP — `WorldGen.CheckAchievement_RealEstateAndTownSlimes`
     /// (`WorldGen.cs:5659-5677`): every ported town kind housed still leaves
     /// REAL_ESTATE_AGENT open (Truffle/Steampunker/Cyborg/Pirate have no
-    /// NpcKind rows — four kinds; DD2 Bartender 550 IS ported), a homeless
-    /// resident does not count, and the town-slime row never fires without
-    /// the eight slime kinds. The wire is faithful but unreachable until the
-    /// missing kinds land. WRITTEN NOT RUN (code-only mode).
+    /// NpcKind rows ON THIS BASE — four kinds; DD2 Bartender 550 IS ported),
+    /// a homeless resident does not count, and the town-slime row never
+    /// fires without the eight slime kinds. NOTIFY-SYNC (4): the four kinds
+    /// are on d120 `4b17a2cf1` (160/178/209) + d37 `08f7d25cf` (229) — the
+    /// roster arm activates at their merge with zero c36 edits (the
+    /// bestiary-resolved scan); the slimes stay unported on every tip.
+    /// WRITTEN NOT RUN (code-only mode).
     #[test]
     fn w4_c36_the_real_estate_check_needs_the_full_roster() {
         use crate::npc::{Npc, NpcKind};
@@ -476,7 +485,8 @@ mod tests {
         ];
         // The scan reads `kind.net_id()` (bestiary-resolved, no hardcoded
         // list) — pin the Bartender's id so the roster arm stays live when
-        // the d36/d41 kind bands land.
+        // the d120/d37 kind rows merge (NOTIFY-SYNC (4): 160/178/209 on
+        // d120, 229 on d37 — all four now on pushed tips).
         assert_eq!(NpcKind::DD2Bartender.net_id(), 550);
         for (i, kind) in ported.iter().enumerate() {
             let mut n = Npc::new(*kind, 32.0, 100.0, 1, 0.0);
@@ -485,7 +495,7 @@ mod tests {
             app.npcs.push(n);
         }
         check_real_estate_and_town_slimes(&mut app);
-        assert!(!done(&app, "REAL_ESTATE_AGENT"), "the four missing kinds keep it open");
+        assert!(!done(&app, "REAL_ESTATE_AGENT"), "the four missing-on-base kinds keep it open");
         assert!(!done(&app, "ALL_TOWN_SLIMES"), "no slime kinds exist");
         // A homeless resident is not housed: clearing one home changes
         // nothing observable here (the row was already open), but the
@@ -629,5 +639,31 @@ mod tests {
             app.achievements.complete_condition("TO_INFINITY_AND_BEYOND", "Do"),
             None
         );
+    }
+
+    /// W4-c36 NOTIFY-SYNC (4) — IT_CAN_TALK's consumer half: the row is a
+    /// single `Progression(18)` (`AchievementInitializer.cs:252-254`); the
+    /// published arrival hunk (research/30 NOTIFY-SYNC (4), the d120 merge)
+    /// fires `notify_progression_net(18)` on the Truffle's arrival
+    /// (`WorldGen.cs:5579-5583`, case 160 — beside the
+    /// `unlockedTruffleSpawn` set). One notify completes; the row never
+    /// re-fires. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c36_it_can_talk_fires_on_progression_eighteen() {
+        use crate::achievements::CondKind;
+        let mut app = app_with_player();
+        let row = app
+            .achievements
+            .list
+            .iter()
+            .find(|a| a.name == "IT_CAN_TALK")
+            .expect("the registry row");
+        assert_eq!(row.conditions.len(), 1);
+        assert!(matches!(row.conditions[0].kind, CondKind::ProgressionEvent(18)));
+        assert!(!done(&app, "IT_CAN_TALK"));
+        let first = app.notify_progression_net(18);
+        assert_eq!(first, Some("IT_CAN_TALK"));
+        assert!(done(&app, "IT_CAN_TALK"));
+        assert_eq!(app.notify_progression_net(18), None);
     }
 }

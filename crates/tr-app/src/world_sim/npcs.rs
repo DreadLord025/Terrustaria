@@ -4945,7 +4945,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
                         // (progression 8) — the Truffle's IT_CAN_TALK (18,
-                        // `:5580`) waits on a ported Truffle kind.
+                        // `:5580`) waits on the d120 Truffle kind's merge
+                        // (NOTIFY-SYNC (4): the kind IS on d120 4b17a2cf1;
+                        // the notify hunk is published in research/30).
                         let _ = app.notify_progression_net(8);
                         // W4-c36 DOC-SWEEP — `WorldGen.cs:5609`: the
                         // successful arrival runs the roster check

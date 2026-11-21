@@ -292,11 +292,16 @@ Witnesses: `save_world_writes_the_achievement_condition_state`,
   `WorldGen.cs:5659-5677`): **check PORTED (DOC-SWEEP)** —
   `achievement_hooks.rs::check_real_estate_and_town_slimes`, wired at the
   arrival (`:5609`), the fished-out 682 (`Player.cs:52435`) and the
-  rainbow-slime release (`WorldItem.cs:1742`). UNREACHABLE in play: Truffle
-  160, Steampunker 178, Cyborg 209, Pirate 229 (FOUR kinds — the W4-c36
-  re-probe: Bartender 550 IS ported, `DD2Bartender`) and the eight
-  town slimes 670/678-684 have no NpcKind rows.
-- Progression 18 (Truffle arrival, `WorldGen.cs:5580`): no Truffle NpcKind.
+  rainbow-slime release (`WorldItem.cs:1742`). UNREACHABLE in play ON
+  THIS BASE: Truffle 160, Steampunker 178, Cyborg 209, Pirate 229 (FOUR
+  kinds — the W4-c36 re-probe: Bartender 550 IS ported, `DD2Bartender`)
+  and the eight town slimes 670/678-684 have no NpcKind rows.
+  **NOTIFY-SYNC (4): the four town kinds are on d120 `4b17a2cf1`
+  (160/178/209) + d37 `08f7d25cf` (229) — the roster arm activates at
+  their merge; the slimes stay unported on every tip.**
+- Progression 18 (Truffle arrival, `WorldGen.cs:5580`): the Truffle kind
+  is on d120 `4b17a2cf1` (NOTIFY-SYNC (4)) — the notify hunk is published
+  there; the arrival-ladder entry is d120/f43's lane.
 - ~~Progression 22 (`WorldGen.UnlockDoor`, `WorldGen.cs:37627`)~~ **PORTED
   (DOC-SWEEP)** — `editing/doors.rs::try_unlock_temple_door` + `unlock_door`:
   the Temple Key 1141 pay (inventory + void-bag bank4), the +54 frame shift,
@@ -369,7 +374,7 @@ gap list, after c36+f30):**
 
 | Row | Cond | C# site | Missing owning system |
 | --- | --- | --- | --- |
-| IT_CAN_TALK | 18 | `WorldGen.cs:5580` | Truffle kind 160 |
+| IT_CAN_TALK | 18 | `WorldGen.cs:5580` | ~~Truffle kind 160~~ **kind LANDED on d120 `4b17a2cf1`** (proto 242, bestiary net_id 160) — the notify-18 wire + the arrival-ladder entry stay open (NOTIFY-SYNC (4)) |
 | TURN_GNOME_TO_STATUE | 24 | `NPC.cs:55896` | gnome AI |
 | QUEEN_MACHINE | 31 | `NPC.cs:78866` | Mechdusa summon 5334 + combined-boss death (f30 cited; the seed gate landed) |
 | FEAR_THE_SUN | 33 | `Player.cs:28647` | vampire sun-scorch (f30 cited) |
@@ -419,7 +424,7 @@ branches exist.
 
 | Row | Cond | Owning lane / tip | In main? | Post-merge seam |
 | --- | --- | --- | --- | --- |
-| IT_CAN_TALK | 18 | d36 `65e481f96` (CLAIM only); d119 `04d7f9fd2` adds the `unlocked_truffle_spawn` housing gate but NO Truffle kind and NO notify 18 | no | the arrival switch (`world_sim/npcs.rs:4949`'s cited comment) — `net_id() == 160` arm → 18 + `unlockedTruffleSpawn` (`WorldGen.cs:5579-5583`) |
+| IT_CAN_TALK | 18 | ~~d36 `65e481f96` (CLAIM only)~~ **NOTIFY-SYNC (4): the Truffle kind IS ported — on d120 `4b17a2cf1`, NOT d36** (kinds A `2891b0bd8`: SantaClaus 142/Truffle 160/Steampunker 178, proto 241-243; Cyborg 209 proto 244 in kinds B; bestiary net ids vanilla). d36 stays CLAIM-only; d119 `04d7f9fd2`'s `unlocked_truffle_spawn` housing gate reads the f45 World latch (`6352d3840`, `world.rs:797`). STILL NO notify 18 on any tip (d120's arrival comment `npcs.rs:5038` still says "waits on a ported Truffle kind" — stale, the kind is on its own tip) | no | the arrival switch (`world_sim/npcs.rs:4949`'s cited comment) — `net_id() == 160` arm → 18 + `unlockedTruffleSpawn` (`WorldGen.cs:5579-5583`); the exact hunk is published in NOTIFY-SYNC (4); the arrival LADDER entry (Truffle's `condition_holds` arm + LADDER row) is d120/f43's lane — the kind alone never arrives |
 | TURN_GNOME_TO_STATUE | 24 | none — d40's 473 row is BigMimicCorruption, NOT the gnome | no | gnome AI (`NPC.cs:55896`) unowned |
 | QUEEN_MACHINE | 31 | f30 `f8cef8cb8` (seed gate + mecha_mayhem machine; 31 CITED) | no | Mechdusa summon 5334 + combined-boss death (`NPC.cs:78857-78869`) unowned |
 | FEAR_THE_SUN | 33 | f50 `ff56e6e51` does NOT port `UpdateSunScorch` (grep: no sun_scorch writer); the `vampire_burning_in_sunlight` flag still has no play writer (`armor_sets.rs:345`) | no | `Player.cs:28647` unowned |
@@ -479,7 +484,11 @@ roster check activates with ZERO c36 edits. Re-probe corrections landed
 this pass: **Bartender 550 IS ported** (`DD2Bartender`, `ENTRIES` row +
 `dd2_pool_id`), so the missing roster is FOUR town kinds (160/178/209/229)
 + the eight slimes — the witness now carries the Bartender and pins
-`net_id() == 550`. The bands are not porting yet (claim-only tips above).
+`net_id() == 550`. ~~The bands are not porting yet (claim-only tips
+above).~~ **NOTIFY-SYNC (4) UPDATE: all four town kinds ARE on pushed
+tips now** — see the NOTIFY-SYNC (4) section below (d120 `4b17a2cf1`
+lands 160/178/209, d37 `08f7d25cf` lands 229; the eight slimes stay
+unported on every tip).
 
 ### (4) f30 co-lane dedupe table (f30 `f8cef8cb8`, no f30b branch exists)
 
@@ -732,6 +741,68 @@ the pass tail (the lava-fishing/splash convention — the completion is
 RNG-free, no stream impact). The `SoundID.Item62` cue + the 15-dust
 burst (`:70865-70869`) stay d20's cited visual seams. Witness (this
 branch, the consumer half): `w4_c36_to_infinity_completes_on_the_do_flag`.
+
+### (4) The 17/26 roster — the missing-4 UPDATE: all four town kinds on pushed tips
+
+The re-probe's missing list was Truffle 160 / Steampunker 178 / Cyborg 209 /
+Pirate 229 + the eight slimes. **NOTIFY-SYNC re-read (tips `4b17a2cf1` /
+`08f7d25cf`): ALL FOUR town kinds are now ported on pushed tips:**
+
+| id | kind | lane / commit | proto id | bestiary net_id |
+| --- | --- | --- | --- | --- |
+| 160 | Truffle | d120 kinds A `2891b0bd8` | 242 | 160 (`bestiary.rs:2186`) |
+| 178 | Steampunker | d120 kinds A `2891b0bd8` | 243 | 178 (`:2194`) |
+| 209 | Cyborg | d120 kinds B `e4e400629` | 244 | 209 (`:2202`) |
+| 229 | Pirate | d37 `750d8e446` (tip `08f7d25cf`) | 361 | 229 (`bestiary.rs:2187`) |
+
+(d120 also lands SantaClaus 142 proto 241 — NOT a roster id; the
+BartenderUnconscious 579 folds onto DD2Bartender's Hide row.) The
+roster scan reads `kind.net_id()` through `bestiary::ENTRIES` — **zero
+c36 edits at their merge**; the witness's missing-4 comments are updated
+to name the owning tips. The 25-id roster's other rows are all on main
+(107/550 corrected by the re-probe; 353/441/588/633/663 verified in
+`bestiary.rs:813-845`).
+
+**The eight town slimes (670/678-684) remain UNPORTED on every tip** —
+the all-branch grep for `net_id: 670|678|…|684` is empty; d43's tip
+equals main (zero commits — the lead's "slime-8 d43r-band" has no pushed
+port; no d43r branch exists). f43 `79a037f5e` ports the SPAWN ladder
+(`town_arrival_pets.rs`, id-keyed pure fns, UNWIRED — its own census
+note) and f45 Ph13 `7a65b6800` claims the slime-colour unlock latches
+(the kinds stay unported, its own message). ALL_TOWN_SLIMES 26 stays
+unreachable until d43/f43's kind lane lands the eight NpcKind rows.
+
+**The residual 17-gate after the four kinds merge: the ARRIVAL ladder.**
+d120's `LADDER` (`town_arrival.rs:31`) is still the 21-kind main list —
+Truffle/Steampunker/Cyborg have NO ladder entry and `condition_holds`
+folds `_ => false` (`:219`); d37's Pirate is `is_town_npc_like` but also
+outside the ladder. The kinds can be spawned (netglue seeds / debug) and
+the roster check counts them, but the vanilla arrival path needs the
+ladder arms (`Main.cs:65852-65956` — f43's census owns the Santa/truffle
+gates). That is d120/f43's wiring lane, not c36's.
+
+**IT_CAN_TALK 18 — the exact notify hunk (publish for the d120 merge):**
+the C# fires in the arrival switch (`WorldGen.cs:5577-5583`), case 160:
+notify 18 + `NPC.unlockedTruffleSpawn = true` + `SendData(7)`. The port's
+arrival arm (`world_sim/npcs.rs:4949`, the `notify_progression_net(8)`
+site) gains, right after the NO_HOBO notify:
+
+```rust
+                        // `WorldGen.cs:5579-5583` — the Truffle's arrival
+                        // fires IT_CAN_TALK (18) and sets
+                        // `NPC.unlockedTruffleSpawn` (the f45 World latch,
+                        // `world.rs:797`); the `SendData(7)` world-flag
+                        // sync rides the netglue flag push.
+                        if n.kind.net_id() == 160 {
+                            let _ = app.notify_progression_net(18);
+                            app.world.unlocked_truffle_spawn = true;
+                        }
+```
+
+(constants-copy: the Truffle kind is d120's, the World latch is f45's —
+neither is on this base; the hunk lands with their merge. The stale
+"waits on a ported Truffle kind" comments on c36 `:4947` and d120
+`:5038` retire then.)
 
 ## Task seeds
 
