@@ -259,6 +259,7 @@
 //! | 1360-1367 | `:89197-89207` | the 36 SkeletronHand death (RedHat 1401/1402x3 or normal 56/57x3) |
 //! | 1368-1372 | `:89290-89318` | the 134-136 Destroyer death (head 156 + 50%-gated quadrant burst) + probe-drop seam |
 //! | 1373-1378 | `:89328-89349` | the 347 ElfCopter death (524-527 heads + the diagonal 2-gore explosion) |
+//! | 1379-1388 | `:89359-89390` | the 346 SantaNK1 death (518-523 heads + the full 4-quadrant explosion) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8384,6 +8385,37 @@ fn elf_copter_death(
     );
 }
 
+/// The 346 SantaNK1 death (`NPC.cs:89359-89393`, sites 1379-1388): the six
+/// heads 518/519/520/521/522/523 at position with `base.velocity` FIRST,
+/// then the explosion tail — 10 type-31 dusts, 5 type-6 pairs, and the
+/// full FOUR quadrant gores (+X/+Y, −X/+Y, +X/−Y, −X/−Y). Scale defaults
+/// to 1.
+fn santa_nk1_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for ty in [518, 519, 520, 521, 522, 523] {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0); // :89359-89364
+    }
+    mech_explosion_tail(
+        npc,
+        10,
+        5,
+        &[(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)],
+        dust,
+        dust_ctx,
+        gore,
+        rng,
+        world,
+    );
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9407,6 +9439,10 @@ pub fn hit_effect_c(
     // `:89324-89354` — the 347 ElfCopter arm (sites 1373-1378).
     if npc_type == 347 && npc.hp <= 0 {
         elf_copter_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:89355-89395` — the 346 SantaNK1 arm (sites 1379-1388).
+    if npc_type == 346 && npc.hp <= 0 {
+        santa_nk1_death(npc, dust, dust_ctx, gore, rng, world);
     }
     outcome
 }
@@ -14802,6 +14838,28 @@ mod tests {
             assert_eq!(gore.slot(i + 4).velocity.y, -ky * 0.4 + dy);
         }
         assert_eq!(rng.peek(), twin.peek(), "the elf copter mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89359-89393` — the SantaNK1 death: the six 518-523 heads
+    /// then the full four-quadrant explosion (10 total gores).
+    #[test]
+    fn w4_f10_the_santa_nk1_death_spawns_the_ten_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1487);
+        santa_nk1_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        let heads: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(heads, vec![518, 519, 520, 521, 522, 523]);
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 10);
+        for i in 6..10 {
+            let t = gore.slot(i).gore_type;
+            assert!((61..64).contains(&t), "quadrant gore {i} type {t}");
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+        let dust_active = dust.slots().iter().filter(|d| d.active).count();
+        assert!(dust_active >= 15, "10 + 10 dusts spawned: {dust_active}");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
