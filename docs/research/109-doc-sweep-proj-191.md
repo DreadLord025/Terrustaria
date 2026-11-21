@@ -797,24 +797,29 @@ Dispatch lines at HEAD `projectile.rs`; rows at HEAD `projectile/data.rs`:
 were already armed on the pre-d20 base (`a725acb04`, verified by git-show this
 seal). The band's residuals are merge-order + cross-lane seeds only: the 190
 AI for 1043/972/982/983/984/997 is d19's (compose at merge), the 200 dedupe is
-T3, camera T1 / sounds T6a-b / pet-chain T4a-c remain seeded (T4b landed
-`9bc29bc7f`; T4a in flight in the co-lane's uncommitted work).
+T3, camera T1 / sounds T6a-b remain seeded cross-lane. The pet chain T4a-c is
+now LANDED on this branch: T4b persistence `9bc29bc7f`, T4a pet-buff shoot arm
++ the 881/934/994/956 rows `649b355a2` (the T4c row half — the 994 JunimoPet
+row — landed with T4a; the aiStyle-26 slice-C keep-alive extension for 994
+remains the pet-AI lane's, the row spawns inert until then, the same
+row-gate-inert shape as the 190 slashes pre-merge).
 
 ## S5 — the FINAL declaration (registry 109)
 
 **The 191-200 band is COMPLETE on task/W4-d20-proj-ai-191-200.** Seven
 verbatim AI arms + rows + dispatch + RNG-census witnesses (all WRITTEN NOT
 RUN), the terra-chain use-path T5 (four arms + copied slash rows + ai2 drain
-fix + 7 witnesses), the T4b pet persistence, and the six-item doc-sweep with
-cross-lane seeds. The sword family composes per d19 26g §8's five ordered
+fix + 7 witnesses), the T4b pet persistence, the T4a pet-buff shoot arm + the
+881/934/994/956 pet rows (`649b355a2`, + 3 witnesses), and the six-item
+doc-sweep with cross-lane seeds. The sword family composes per d19 26g §8's five ordered
 steps with ONE amendment published here: step 4's dedupe covers the whole
 slash set (972/982/983/984/997 + 1043), keep-d19, drop d20's `7b4173846`
 copies at the four exact hunks (S2); step 5's T5 is LANDED and feeds the §7
 envelope contract exactly — the merger runs d19's
 `w4_d19_the_terra_chain_payload_feeds_the_190_envelope` plus d20's
 `w4_d20_t5_*` witnesses against the merged pool as the gate. No further d20
-rounds are owed on the band; the open seeds (T1/T3/T4a/T4c/T6a/T6b) belong to
-their named lanes.
+rounds are owed on the band; the open seeds (T1/T3/T6a/T6b + the T4c
+aiStyle-26 slice-C keep-alive extension for 994) belong to their named lanes.
 
 ### Seal verification performed (code-only)
 
@@ -834,3 +839,26 @@ their named lanes.
   193/194/197 at base `a725acb04`.
 - NO cargo/tests/rustfmt/graphify run (lane constraint); witnesses WRITTEN
   NOT RUN; commit + push only, no merge, primary untouched.
+
+### Post-seal receipt — T4a LANDED (`649b355a2`)
+
+The co-lane dirty-2 the seal observed IDLE was this lane's own in-flight T4a
+work (the server restarted mid-task); it is now committed and pushed on this
+branch, NOT a foreign co-lane. `649b355a2` ports `ItemCheck_Shoot`'s generic
+pet-buff shoot arm (`Player.cs:48561-48583`) into `fire_non_ammo_shot`
+(`editing.rs:3194-3264`, before the summon arm): the
+`projPet[shoot] || 72/18/500/650 && !summon` gate, the owner's same-kind kill
+scan (72 cross-kills 86/87; item 5131 cross-kills 881/934), then ONE spawn at
+`pointPosition` damage 0 / kb 0 / ai0=ai1=ai2=0. The four pet rows
+(881 KingSlimePet / 934 QueenSlimePet / 994 JunimoPet / 956 BerniePet,
+`Projectile.cs:8451/8874/9436/9024`, aiStyle 26, 20×20 / 956 20×28, pen −1,
+timeLeft 18000, netImportant overlay) land in `projectile/data.rs` so the arm
+spawns through `spawn_with_data_ai` (row-less kinds fall back to the plain
+`spawn`, the `spawn_pet_if_needed` precedent). This closes the Jumino 5276 →
+994 chain's SPAWN half (T4b persistence `9bc29bc7f` + the T4c row half both
+landed); the aiStyle-26 slice-C keep-alive extension for 994
+(`Projectile.cs:58845-58855`, `petFlagJunimoPet`) remains the pet-AI lane's —
+the 994 row spawns inert until then, the same row-gate-inert shape as the 190
+slashes pre-merge. 3 witnesses (`w4_d20_t4a_*`, `editing.rs` test tail)
+WRITTEN NOT RUN; anchors row added. Code-only: no cargo/tests/rustfmt/
+graphify; commit + push own branch, no merge, primary untouched.
