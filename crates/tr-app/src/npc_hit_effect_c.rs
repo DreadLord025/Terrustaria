@@ -124,6 +124,10 @@
 //! | 532-538 | `:84974-84980` | the 245 Golem body death: the fixed tail 360/361/362/363/364/367/366 |
 //! | 539-545 | `:84984-84990` | the 249 GolemHeadFree death (4 random 368/370 + fixed 365/363/362) |
 //! | 546-548 | `:84994-84996` | the 247/248 Golem fist death (3 gores 369/371/370) |
+//! | 549 | `:85060` | the 243 IceGolem death (1 gore 359, 200-dust type-161 burst) |
+//! | 550 | `:85042` | the 225 UmbrellaSlime death (1 gore 314, blue alpha-100 type-4 dust) |
+//! | 551-552 | `:85133-85137` | the 604 LadyBug death (2 Next(2)-gated gores 1148/1149) |
+//! | 553-554 | `:85157-85161` | the 669 Stinkbug death (2 Next(2)-gated gores 1275/1276) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3295,6 +3299,130 @@ fn golem_fist_death(
     gore.new_gore(rng, world, pos, vel, 370, s); // :84996
 }
 
+/// The 243 IceGolem death (`NPC.cs:85056-85060`, site 549): the 200-dust
+/// type-161 burst (SpeedX `2*hitDirection`, SpeedY -2), then the single
+/// gore 359 at position.
+fn ice_golem_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:85056-85059` — the 200-dust type-161 burst.
+    for _ in 0..200 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 161, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 359, npc.scale); // :85060
+}
+
+/// The 225 UmbrellaSlime death (`NPC.cs:85038-85042`, site 550): the
+/// 50-dust type-4 burst (SpeedX `2*hitDirection`, SpeedY -2, alpha 100,
+/// color `(0,80,255,100)`), then the single gore 314 at position.
+fn umbrella_slime_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:85038-85041` — the 50-dust type-4 burst (blue, alpha 100).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 4, 2.0 * hit_direction, -2.0, 100,
+            Color::new(0, 80, 255, 100), 1.0,
+        );
+    }
+    gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 314, npc.scale); // :85042
+}
+
+/// The shared critter gated-dust burst (`NPC.cs:85118-85130` et al.): 6
+/// type-198 dusts (SpeedX `2*hitDirection`, SpeedY -2), each `Next(2) == 0`
+/// ? (noGravity, scale `1.5*this.scale`) : (scale `0.8*this.scale`). The
+/// gate draw fires per dust; both branches write the scale.
+fn critter_gated_dust(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..6 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 198, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        if rng.next_max(2) == 0 {
+            d.no_gravity = true;
+            d.scale = 1.5 * npc.scale;
+        } else {
+            d.scale = 0.8 * npc.scale;
+        }
+    }
+}
+
+/// The 604 LadyBug death (`NPC.cs:85118-85138`, sites 551-552): the shared
+/// critter gated-dust burst, then TWO independent `Next(2) == 0`-gated gores
+/// 1148/1149 at position (each gate draws before its conditional spawn).
+/// Scale defaults to 1.
+fn ladybug_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    critter_gated_dust(npc, dust, dust_ctx, rng, world, hit_direction);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, pos, vel, 1148, 1.0); // :85133
+    }
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, pos, vel, 1149, 1.0); // :85137
+    }
+}
+
+/// The 669 Stinkbug death (`NPC.cs:85142-85162`, sites 553-554): the shared
+/// critter gated-dust burst, then TWO independent `Next(2) == 0`-gated gores
+/// 1275/1276 at position. Same shape as the LadyBug, different types.
+fn stinkbug_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    critter_gated_dust(npc, dust, dust_ctx, rng, world, hit_direction);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, pos, vel, 1275, 1.0); // :85157
+    }
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, pos, vel, 1276, 1.0); // :85161
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3679,6 +3807,22 @@ pub fn hit_effect_c(
         } else if npc_type == 247 || npc_type == 248 {
             golem_fist_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
         }
+    }
+    // `:85045-85062` — the 243 IceGolem arm (site 549).
+    if npc_type == 243 && npc.hp <= 0 {
+        ice_golem_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85027-85044` — the 225 UmbrellaSlime arm (site 550).
+    if npc_type == 225 && npc.hp <= 0 {
+        umbrella_slime_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85116-85139` — the 604 LadyBug arm (sites 551-552).
+    if npc_type == 604 && npc.hp <= 0 {
+        ladybug_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85140-85163` — the 669 Stinkbug arm (sites 553-554).
+    if npc_type == 669 && npc.hp <= 0 {
+        stinkbug_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5878,6 +6022,77 @@ mod tests {
         assert_eq!(types, vec![369, 371, 370]);
         for i in 0..3 {
             assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+    }
+
+    /// `NPC.cs:85060` — the IceGolem death: the single gore 359 at
+    /// position, after the 200-dust type-161 burst.
+    #[test]
+    fn w4_f10_the_ice_golem_death_spawns_the_single_gore() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(461);
+        ice_golem_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 359);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+    }
+
+    /// `NPC.cs:85042` — the UmbrellaSlime death: the single gore 314 at
+    /// position, after the 50-dust type-4 blue alpha-100 burst.
+    #[test]
+    fn w4_f10_the_umbrella_slime_death_spawns_the_single_gore() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(463);
+        umbrella_slime_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 314);
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.color, Color::new(0, 80, 255, 100));
+    }
+
+    /// `NPC.cs:85133-85137` / `:85157-85161` — the LadyBug / Stinkbug
+    /// deaths: the critter gated-dust burst then two Next(2)-gated gores.
+    /// The twin replay pins the gate draws (both branches spawn a dust; the
+    /// gore gates draw even when refused).
+    #[test]
+    fn w4_f10_the_ladybug_and_stinkbug_deaths_gate_the_gores() {
+        let w = air();
+        for (f, gores) in [
+            (ladybug_death as fn(&Npc, &mut DustPool, &SpawnCtx, &mut GorePool, &mut UnifiedRandom, &World, f32), [1148, 1149]),
+            (stinkbug_death, [1275, 1276]),
+        ] {
+            let n = boss(100.0, 100.0, 20.0, 20.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(467);
+            f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            // The twin: 6 x (6-draw census + Next(2) gate), then 2 x (Next(2)
+            // gate; a taken gate adds 2 kicks).
+            let mut twin = UnifiedRandom::new(467);
+            for _ in 0..6 {
+                let _px = twin.next_max(16);
+                let _py = twin.next_max(16);
+                let _vx = twin.next_range(-20, 21);
+                let _vy = twin.next_range(-20, 21);
+                let _row = twin.next_max(3);
+                let _scale = twin.next_range(-20, 21);
+                let _gate = twin.next_max(2);
+            }
+            for _ in 0..2 {
+                if twin.next_max(2) == 0 {
+                    let _ky = twin.next_range(10, 31);
+                    let _kx = twin.next_range(-20, 21);
+                }
+            }
+            assert_eq!(rng.peek(), twin.peek(), "the critter death mirrors the C# draws");
+            // Every spawned gore is one of the two gated types.
+            for g in gore.slots().iter().filter(|g| g.active) {
+                assert!(gores.contains(&g.gore_type), "critter type {}", g.gore_type);
+            }
         }
     }
 
