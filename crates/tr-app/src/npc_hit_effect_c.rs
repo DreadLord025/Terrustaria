@@ -207,6 +207,7 @@
 //! | 965-970 | `:87252-87257` | the 266 Brain of Cthulhu death (6 gores 396-401, Next(-30,31)*0.2 velocity) |
 //! | 971 | `:87273` | the 267 Creeper death (1 gore 402) |
 //! | 972-973 | `:87355-87356` | the 5 Servant of Cthulhu death (2 gores 6/7) |
+//! | 974-981 | `:87374-87383` | the 113/114 Wall of Flesh/Eye death (4 quadrant gores each) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5524,6 +5525,43 @@ fn servant_of_cthulhu_death(
     gore.new_gore(rng, world, pos, vel, 7, 1.0); // :87356
 }
 
+/// The 113/114 Wall of Flesh / Eye death (`NPC.cs:87368-87383`, sites
+/// 974-981): the 50-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -1),
+/// then 4 quadrant gores at `this.scale` — the corners
+/// `(pos.X, pos.Y)`, `(pos.X, pos.Y + height/2)`, `(pos.X + width/2, pos.Y)`,
+/// `(pos.X + width/2, pos.Y + height/2)` (the C# integer width/2, height/2).
+/// The 114 Eye uses 137/139/139/137, the 113 mouth uses 137/138/138/137.
+fn wall_of_flesh_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:87368-87371` — the 50-dust type-5 burst (SpeedY -1).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let hw = (w as i32 / 2) as f32;
+    let hh = (h as i32 / 2) as f32;
+    // `:87372-87383` — the per-type quadrant types.
+    let mid = if npc_type == 114 { 139 } else { 138 };
+    gore.new_gore(rng, world, pos, vel, 137, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + hh), vel, mid, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x + hw, pos.y), vel, mid, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x + hw, pos.y + hh), vel, 137, s);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6195,6 +6233,10 @@ pub fn hit_effect_c(
     // `:87341-87357` — the 5 Servant of Cthulhu arm (sites 972-973).
     if npc_type == 5 && npc.hp <= 0 {
         servant_of_cthulhu_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87358-87386` — the 113/114 Wall of Flesh/Eye arm (sites 974-981).
+    if (npc_type == 113 || npc_type == 114) && npc.hp <= 0 {
+        wall_of_flesh_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9844,6 +9886,28 @@ mod tests {
         servant_of_cthulhu_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![6, 7]);
+    }
+
+    /// `NPC.cs:87374-87383` — the Wall of Flesh/Eye death: the 4 quadrant
+    /// gores (114 → 137/139/139/137, 113 → 137/138/138/137) at the integer
+    /// width/2, height/2 corners.
+    #[test]
+    fn w4_f10_the_wall_of_flesh_death_spawns_the_quadrants() {
+        let w = air();
+        for (ty, mid) in [(114, 139), (113, 138)] {
+            let n = boss(100.0, 100.0, 50.0, 60.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(919);
+            wall_of_flesh_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![137, mid, mid, 137], "wof {ty}");
+            // width/2 = 25, height/2 = 30.
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 130.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(125.0, 100.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(125.0, 130.0));
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
