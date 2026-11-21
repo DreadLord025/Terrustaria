@@ -3324,6 +3324,21 @@ pub(crate) fn draw_npcs(
             NpcKind::TownBunny => {
                 pumpkin_moon_draw(assets.npc_sheet(656), npc_rows(656), n, w, h)
             }
+            NpcKind::QueenSlimeBoss => {
+                queen_slime_draw(assets.npc_sheet(657), n, w, h)
+            }
+            NpcKind::QueenSlimeMinionBlue => {
+                pumpkin_moon_draw(assets.npc_sheet(658), npc_rows(658), n, w, h)
+            }
+            NpcKind::QueenSlimeMinionPink => {
+                pumpkin_moon_draw(assets.npc_sheet(659), npc_rows(659), n, w, h)
+            }
+            NpcKind::QueenSlimeMinionPurple => {
+                pumpkin_moon_draw(assets.npc_sheet(660), npc_rows(660), n, w, h)
+            }
+            NpcKind::EmpressButterfly => {
+                pumpkin_moon_draw(assets.npc_sheet(661), npc_rows(661), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3482,6 +3497,8 @@ pub(crate) fn draw_npcs(
                     | NpcKind::SporeBat
                     | NpcKind::HellButterfly
                     | NpcKind::MagmaSnail
+                    | NpcKind::QueenSlimeMinionPurple
+                    | NpcKind::EmpressButterfly
                     | NpcKind::DungeonSpirit
             )
         {

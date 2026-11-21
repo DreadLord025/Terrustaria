@@ -1086,6 +1086,26 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.QueenSlimeBoss` (657) — Queen Slime (`aiStyle 121`):
+    /// 114x100, dmg 60, def 26, 18000 HP, kb 0.0,
+    /// value 60000.0, boss (`NPC.cs:17310-17325`). W4-d43.
+    QueenSlimeBoss,
+    /// `NPCID.QueenSlimeMinionBlue` (658) — Crystal Slime (`aiStyle 1`):
+    /// 24x18, dmg 40, def 35, 150 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17326-17337`). W4-d43.
+    QueenSlimeMinionBlue,
+    /// `NPCID.QueenSlimeMinionPink` (659) — Bouncy Slime (`aiStyle 1`):
+    /// 24x18, dmg 40, def 35, 150 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17326-17337`). W4-d43.
+    QueenSlimeMinionPink,
+    /// `NPCID.QueenSlimeMinionPurple` (660) — Heavenly Slime (`aiStyle 14`):
+    /// 40x30, dmg 50, def 30, 120 HP, kb 0.8,
+    /// value 0.0 (`NPC.cs:17338-17350`). W4-d43.
+    QueenSlimeMinionPurple,
+    /// `NPCID.EmpressButterfly` (661) — Prismatic Lacewing (`aiStyle 65`):
+    /// 10x10, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0, noGravity (`NPC.cs:17351-17366`). W4-d43.
+    EmpressButterfly,
     /// `NPCID.GemBunnyAmber` (652) — Amber Bunny (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
@@ -3085,7 +3105,7 @@ impl Npc {
             // S1-D-3 W-9: Duke Fishron's `boss = true` row
             // (`NPC.cs:13716`) — the target-facing inheritance gate
             // (`npc_target.rs`'s `!npc.boss` term) reads it.
-            boss: matches!(kind, NpcKind::DukeFishron | NpcKind::HallowBoss),
+            boss: matches!(kind, NpcKind::DukeFishron | NpcKind::HallowBoss | NpcKind::QueenSlimeBoss),
             collide_x: false,
             collide_y: false,
             old_vx: 0.0,
@@ -3632,6 +3652,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            NpcKind::QueenSlimeBoss => 0.0,
+            NpcKind::QueenSlimeMinionBlue => 1.0,
+            NpcKind::QueenSlimeMinionPink => 1.0,
+            NpcKind::QueenSlimeMinionPurple => 0.8,
+            NpcKind::EmpressButterfly => 1.0,
             NpcKind::GemBunnyAmber => 1.0,
             NpcKind::HellButterfly => 1.0,
             NpcKind::Lavafly => 1.0,
@@ -4037,6 +4062,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            NpcKind::QueenSlimeBoss => 26,
+            NpcKind::QueenSlimeMinionBlue => 35,
+            NpcKind::QueenSlimeMinionPink => 35,
+            NpcKind::QueenSlimeMinionPurple => 30,
+            NpcKind::EmpressButterfly => 0,
             NpcKind::GemBunnyAmber => 0,
             NpcKind::HellButterfly => 0,
             NpcKind::Lavafly => 0,
@@ -4434,6 +4464,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            NpcKind::QueenSlimeBoss => 60000.0,
+            NpcKind::QueenSlimeMinionBlue => 0.0,
+            NpcKind::QueenSlimeMinionPink => 0.0,
+            NpcKind::QueenSlimeMinionPurple => 0.0,
+            NpcKind::EmpressButterfly => 0.0,
             NpcKind::GemBunnyAmber => 0.0,
             NpcKind::HellButterfly => 0.0,
             NpcKind::Lavafly => 0.0,
@@ -6465,6 +6500,15 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d43: AI_121_QueenSlime (NPC.cs:45202-45812) — the queen slime machine is unported. The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::QueenSlimeBoss => {}
+            NpcKind::QueenSlimeMinionBlue => self.update_slime(world, player, dt),
+            NpcKind::QueenSlimeMinionPink => self.update_slime(world, player, dt),
+            NpcKind::QueenSlimeMinionPurple => self.update_cave_bat(world, player, rng),
+            // W4-d43: AI_065_Butterflies (NPC.cs:44896-45119) — the butterfly machine is unported. The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::EmpressButterfly => {}
             NpcKind::GemBunnyAmber => self.update_guide(world, dt),
             // W4-d43: AI_065_Butterflies (NPC.cs:44896-45119) — the butterfly machine is unported. The kind holds
             // still until its machine lands (the MartianTurret stand-in precedent).
@@ -9887,6 +9931,180 @@ impl Npc {
             // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
             // (the strip stays inside the sheet).
             NpcKind::TownBunny => {}
+            NpcKind::QueenSlimeBoss => {
+                // `case 657` (`NPC.cs:66848-66960`): the Queen Slime's flight /
+                // fall / ground strips. The sheet is a 2x16 GRID (32 cells,
+                // `Main.cs:23632`'s `Frame(2, 16)`); the cell index rides
+                // `frame` (the Deerclops grid precedent). Phase 2 (`life <=
+                // lifeMax/2`) swaps the flight band 4..7 for 20..23.
+                let half = self.hp <= self.max_hp / 2;
+                let mut cell = self.frame;
+                if (half && self.kind.no_gravity()) || self.vy < 0.0 {
+                    if !(20..=23).contains(&cell) {
+                        if !(4..=7).contains(&cell) {
+                            cell = 4;
+                            self.frame_counter = -1.0;
+                        }
+                        self.frame_counter += 1.0;
+                        if self.frame_counter >= 4.0 {
+                            self.frame_counter = 0.0;
+                            cell += 1;
+                            if cell >= 7 {
+                                cell = if !half { 7 } else { 22 };
+                            }
+                        }
+                    } else {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter >= 5.0 {
+                            self.frame_counter = 0.0;
+                            cell += 1;
+                            if cell >= 24 {
+                                cell = 20;
+                            }
+                        }
+                    }
+                    self.frame = cell;
+                } else if self.vy > 0.0 {
+                    if !(8..=10).contains(&cell) {
+                        cell = 8;
+                        self.frame_counter = -1.0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame_counter = 0.0;
+                        cell += 1;
+                        if cell >= 10 {
+                            cell = 10;
+                        }
+                    }
+                    self.frame = cell;
+                } else if self.vy == 0.0 {
+                    if self.ai[0] == 5.0 {
+                        self.frame_counter = 0.0;
+                        cell = match (self.ai[1] as i32) / 3 % 3 {
+                            1 => 14,
+                            2 => 15,
+                            _ => 13,
+                        };
+                    } else if self.ai[0] == 4.0 {
+                        self.frame_counter = 0.0;
+                        cell = match (self.ai[1] as i32) / 15 {
+                            1 => 11,
+                            2 | 3 => 10,
+                            _ => 12,
+                        };
+                    } else {
+                        let ground = (10..=12).contains(&cell);
+                        let cadence = if ground { 6.0 } else { 10.0 };
+                        if !ground && cell >= 4 {
+                            cell = 0;
+                            self.frame_counter = -1.0;
+                        }
+                        self.frame_counter += 1.0;
+                        if self.frame_counter >= cadence {
+                            self.frame_counter = 0.0;
+                            cell += 1;
+                            if (!ground || cell == 13) && cell >= 4 {
+                                cell = 0;
+                            }
+                        }
+                    }
+                    self.frame = cell;
+                }
+            }
+            NpcKind::QueenSlimeMinionBlue => {
+                // `case 658 : case 659 : case 667 : case 676` (`NPC.cs:70820-70843`):
+                // the queen-slime minion / golden / shimmer slime flap — the
+                // counter ticks once, doubled while moving (`num2 > 0`) and
+                // tripled in the crouch class (`num2 == 4`); >=8 advances one
+                // row and wraps at the strip. (The 302/304 sprite snap is not
+                // these kinds'.)
+                self.frame_counter += 1.0;
+                if num2 > 0 {
+                    self.frame_counter += 1.0;
+                }
+                if num2 == 4 {
+                    self.frame_counter += 1.0;
+                }
+                if self.frame_counter >= 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= self.rows() {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::QueenSlimeMinionPink => {
+                // `case 658 : case 659 : case 667 : case 676` (`NPC.cs:70820-70843`):
+                // the queen-slime minion / golden / shimmer slime flap — the
+                // counter ticks once, doubled while moving (`num2 > 0`) and
+                // tripled in the crouch class (`num2 == 4`); >=8 advances one
+                // row and wraps at the strip. (The 302/304 sprite snap is not
+                // these kinds'.)
+                self.frame_counter += 1.0;
+                if num2 > 0 {
+                    self.frame_counter += 1.0;
+                }
+                if num2 == 4 {
+                    self.frame_counter += 1.0;
+                }
+                if self.frame_counter >= 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= self.rows() {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::QueenSlimeMinionPurple => {
+                // `case 660` (`NPC.cs:74005-74061`): the heavenly slime minion's
+                // bat flap — the one-shot `localAI[0]` init pins row 2
+                // (`:74014-74018`), the sprite flips on the velocity sign and
+                // the rotation tilts `vx * 0.1` (`:74032-74043`), the 6-tick
+                // counter (the 660 row, `:74046-74049`) advances and wraps at
+                // the 4-row strip.
+                if self.local_ai[0] == 0.0 {
+                    self.local_ai[0] = 1.0;
+                    self.frame = 2;
+                }
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= self.rows() {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::EmpressButterfly => {
+                // `case 653 : case 661` (`NPC.cs:72741-72772`): the butterfly
+                // flap — the rotation tilts `vx * 0.3`, the sprite follows the
+                // facing, the `1 + (|vx| + |vy|)/2` accumulator steps rows
+                // 0/1/2/1 on the 7-tick bands (the 444/653/661 colour offset
+                // does not apply to these two types, `:72766`).
+                self.rotation = self.vx * 0.3;
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0 + (self.vx.abs() + self.vy.abs()) / 2.0;
+                if self.frame_counter < 7.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 14.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 21.0 {
+                    self.frame = 2;
+                } else {
+                    self.frame = 1;
+                    if self.frame_counter >= 27.0 {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
         }
     }
 
@@ -19498,6 +19716,11 @@ impl Npc {
             NpcKind::Lavafly => 654,
             NpcKind::MagmaSnail => 655,
             NpcKind::TownBunny => 656,
+            NpcKind::QueenSlimeBoss => 657,
+            NpcKind::QueenSlimeMinionBlue => 658,
+            NpcKind::QueenSlimeMinionPink => 659,
+            NpcKind::QueenSlimeMinionPurple => 660,
+            NpcKind::EmpressButterfly => 661,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24567,7 +24790,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 295] = [
+    pub(super) const ALL_KINDS: [NpcKind; 300] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24870,6 +25093,11 @@ mod tests {
         NpcKind::Lavafly,
         NpcKind::MagmaSnail,
         NpcKind::TownBunny,
+        NpcKind::QueenSlimeBoss,
+        NpcKind::QueenSlimeMinionBlue,
+        NpcKind::QueenSlimeMinionPink,
+        NpcKind::QueenSlimeMinionPurple,
+        NpcKind::EmpressButterfly,
         NpcKind::WyvernTail,
     ];
 
@@ -25057,6 +25285,37 @@ mod tests {
             (NpcKind::Lavafly, 654, 64u8, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::MagmaSnail, 655, 67u8, 14.0, 14.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::TownBunny, 656, 7u8, 18.0, 20.0, 10, 15, 250, 0.5, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-d43 batch 6 — the new kinds' `SetDefaults` rows pin against the
+    /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
+    /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_batch6_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::QueenSlimeBoss, 657, 121u8, 114.0, 100.0, 60, 26, 18000, 0.0, 60000.0),
+            (NpcKind::QueenSlimeMinionBlue, 658, 1u8, 24.0, 18.0, 40, 35, 150, 1.0, 0.0),
+            (NpcKind::QueenSlimeMinionPink, 659, 1u8, 24.0, 18.0, 40, 35, 150, 1.0, 0.0),
+            (NpcKind::QueenSlimeMinionPurple, 660, 14u8, 40.0, 30.0, 50, 30, 120, 0.8, 0.0),
+            (NpcKind::EmpressButterfly, 661, 65u8, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -25808,6 +26067,7 @@ mod tests {
                 // +6/+12 colour offsets (`:73499-73507`) are unreachable
                 // for this kind — the grid/cell bound precedent.
                 NpcKind::PresentMimic => 18,
+                NpcKind::QueenSlimeBoss => 32,
                 _ => npc_rows(texture_net_id(kind)),
             };
             let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -28637,7 +28897,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            295,
+            300,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
