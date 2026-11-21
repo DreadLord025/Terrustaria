@@ -135,5 +135,24 @@ lands.
 - (following batches recorded in their commit messages + this table)
 
 Kinds with NO ported `proj_data` row keep their dust arm UNWIRED (the
-row is the wiring gate — the S1-F-9b convention); their emitters land
-cited + witnessed, the row/dispatch stays the AI lane's remainder.
+row is the wiring gate — the S1-F-9b convention). Batch 1 landed the
+281 bunny emitter cited + witnessed as the unwired precedent; the
+remaining unrowed per-kind emitters (12/87/93/118/119/128/129/162/177/
+196/229/261/288/291/305/307/335/358) and the `AI_001` per-kind arms
+(41/55/120/174/176/207/265/267/270/275/276/282/299/325/337/350/355/
+357/374/376) are the lane's continuation — the `AI_001` arms live in
+the slice modules (`projectile_ai001_a/b/c`, `special_arrows`,
+`projectile_special_bullets`, `projectile_ai_darts`), the AI lanes'
+contested territory, so they ride a follow-up round rather than this
+inline-machine pass.
+
+## Status (2026-11-21)
+
+The ROWED inline-machine kinds ≤400 are RE-ARMED end-to-end (batches
+1-4): every kind with a `proj_data` row whose `AI()` arm carries
+per-kind trailing/ambient dust now spawns through the live `DustPool`
+on the `UpdateProjectiles` stream, wired from
+`world_sim/projectiles.rs` via the `update_dust` seam. The no-dust
+rowed kinds are censused closed (batch 4). 21 draw-mirror witnesses
+WRITTEN NOT RUN (code-only). The unrowed-kind emitters + the `AI_001`
+slice arms are the documented remainder above.
