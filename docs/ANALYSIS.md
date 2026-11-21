@@ -18924,6 +18924,65 @@ captures its armour/dye pairs + hide BitsBytes. **Evidence**:
 `the_legacy_subset_keeps_its_equip_and_hide_state`; the golden fixture's
 fresh-tail read + the inc1/inc2 shallow retries extended to the new fields.
 
+**W4-f44 phase 3 (2026-11-21): the .plr remainder — every field now rides.**
+The ten field families the writer used to emit at fresh defaults and the
+reader consumed-and-dropped are captured verbatim on BOTH models, completing
+`Serialize` (`Player.cs:54750-54933`) / `Deserialize` (`:55134-55764`):
+(1) `playTime.Ticks` (`:54754`/`:55150-55157` gate 138), `hairDye`
+(`:54756`/`:55163-55166` gate 82), `team` (`:54757`/`:55167-55170` gate 283);
+(2) `bank`/`bank2`/`bank3` 40×(type,stack,prefix) each (`:54838-54855`/
+`:55449-55487`, gate 58 with the <58 20-slot arm cited, bank3 gate 182) —
+the bank read is `netDefaults`/`stack`/`Prefix` with NO `TurnToAir`, so an
+over-count id airs id+prefix while the stack rides (`Item.cs:48670-48688`
+then `Prefix` no-ops on air `:515-518`); legacy -1..-48 verbatim per ph2;
+(3) `buffType`/`buffTime[44]` as the COMPACTED live pairs (`:54864-54876`/
+`:55578-55599`, the zero-type `num28--`/`num27--` compaction verbatim, count
+gates 10/22/44 at 74/252) — the write pads to 44 and zeroes the
+`Main.buffNoSave` types, the FULL table ported (`Main.cs:8969-9069` explicit
+101 + the 173..=181 loop `:9070-9073` + the 66 mount buffs
+`BuffID.Sets.MountType` `ID/BuffID.cs:169` via `Main.cs:9206-9213`);
+(4) the bed spawn points `spX/spY/spI/spN[200]` (`:54877-54888`/`:55600-55611`,
+the -1 sentinel + 200 cap verbatim both sides); (5) `anglerQuestsFinished`
+(gate 98), `DpadRadial.Bindings[4]` (gate 162, fresh -1×4), `builderAccStatus[12]`
+(count gates 8/10/11/12 at 164/167/197/230 PLUS the <210 `[0]=1` and <249
+inventory-3611 `[1]=1` fixups `:55654-55673`, state-only), `bartenderQuestLog`
+(gate 181), `dead` + the conditional `respawnTimer` with the
+`Utils.Clamp(0,60000)` read (`:55684`), `golferScoreAccumulated` (gate 206);
+(6) `_temporaryItemSlots[4]` as `Option<(type,stack,prefix)>`
+(`SaveTemporaryItemSlotContents:54935-54959`/`LoadTemporaryItemSlotContents:54962-54985`,
+gate 214, BitsByte + per-set-bit triples); (7) the super-cart BitsByte
+(`:54914-54918`/`:55710-55715` gate 253, fresh byte **2** from the
+`enabledSuperCart = true` field default `:2054`) — the <253 fallback derives
+the unlock from `HasItemInAnyInventory(3353)` (`:55716-55719` → `:55931-55970`,
+`HasItem` needs stack > 0 `:55906-55916`); (8) the voice pair
+(`:54924-54925`/`:55728-55741` gates 280/281) — the read clamps the variant to
+1..4 (`LoadPlayer_LastMinuteFixes:55831`) and the <280 arm derives `Male ? 1 : 2`
+from `PlayerVariantID.Sets.Male` {0,1,2,3,8,10} (`ID/PlayerVariantID.cs:20`,
+`Player.cs:3405-3410`) after the skinVariant clamp, zeroing the pitch;
+(9) the crafting refunds as count + (type,stack,prefix) triples
+(`CraftingRequests.SavePossibleRefunds:353-362`/`:55746-55754` gate 300);
+(10) `oneTimeDialoguesSeen` as count + strings, deduped first-occurrence on
+both sides (the `HashSet.Add`, `Player.cs:3209`/`:54927-54932`/`:55755-55762`
+gate 310). **Documented stand-ins**: the equip arrays carry no stack in the
+card model, so the <253 cart-derive treats a non-air equip slot as stack > 0;
+the dialogues keep first-occurrence order (the HashSet's practical add-only
+enumeration order). **Back-compat**: the legacy 279 subset shim now also
+captures playtime/hairDye (it has no team byte); the inc1/inc2 truncation
+retries keep their fresh defaults for the sections they never reach.
+**Golden parity preserved**: every `PlayerFileWrite` default emits the exact
+fresh-ctor byte the pre-ph3 writer hardcoded — `golden_plr_writer_matches_
+the_csharp_fixture_byte_for_byte` stays byte-identical (3840 bytes).
+**Evidence** (witnesses written, code-only — not run): `the_header_fields_
+round_trip`, `the_banks_round_trip_and_stay_byte_faithful` (offset 1322),
+`the_buffs_round_trip_compacted_and_no_save_types_zero`, `the_spawn_points_
+round_trip_with_the_sentinel` (offset 2754), `the_quest_and_death_fields_
+round_trip` + `the_builder_acc_legacy_fixups_apply_without_extra_bytes`
+(hand-built 205 body), `the_temp_slots_round_trip_through_the_bits_byte`,
+`the_super_cart_byte_rides_and_the_legacy_unlock_derives` (hand-built 252
+body), `the_voice_pair_round_trips_clamps_and_derives` (hand-built 279 body,
+all 12 variants), `the_refunds_round_trip_as_count_and_triples`,
+`the_dialogues_round_trip_deduped`.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port

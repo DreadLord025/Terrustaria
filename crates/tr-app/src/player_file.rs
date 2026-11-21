@@ -211,10 +211,11 @@ pub struct PlayerFile {
     pub spawn_points: Vec<(i32, i32, i32, String)>,
     /// `Player.bank` (the piggy bank's 40 slots, `Chest.cs:142-144` maxItems),
     /// each `(type, stack, prefix)` — read at >= 58 (`Deserialize:55449-55456`;
-    /// the < 58 arm reads 20, `:55464-55471`). `netDefaults` airs an
-    /// out-of-range id AFTER the whole record, stack/prefix ride
-    /// (`Item.cs:49930-49933`'s shape via `:55453-55455`); the legacy -1..-48
-    /// ids ride verbatim like the equip tails.
+    /// the < 58 arm reads 20, `:55464-55471`). The read is
+    /// `netDefaults`/`stack`/`Prefix` with NO `TurnToAir`: an out-of-range id
+    /// airs id+prefix (`Item.cs:48670-48688` then `Prefix` no-ops on air
+    /// `:515-518`) while the stack rides; the legacy -1..-48 ids ride verbatim
+    /// like the equip tails.
     pub bank: [(i32, i32, u8); 40],
     /// `Player.bank2` (the safe), the same shape (`:55457-55462` / `:55472-55477`).
     pub bank2: [(i32, i32, u8); 40],
