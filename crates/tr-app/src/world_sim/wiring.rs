@@ -241,6 +241,19 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // whole `app` into the closure would break its disjoint capture of
         // `app.wiring_step`'s receiver borrow.
         actuation_drops.extend(app.wiring.take_actuation_drops());
+        // R-12-5 driver 4 — the `XferWater` post-transfer `SquareTileFrame`
+        // wakes (`Wiring.cs:512`/`:516`/`:521`): each touched pump cell's
+        // 3×3 reframe re-queues its wet cells through `Liquid.AddWater`
+        // (`WorldGen.cs:81344-81346`), so pump-teleported liquid joins the
+        // settle lists and flows on the next `UpdateLiquid` pass. The
+        // engine queues the positions; the 3×3 walk is `wake_around(r=1)`
+        // (its dry/solid/checking guards are `AddWater`'s own). The C#
+        // reframe also re-derives neighbour frames — the pump bodies keep
+        // their frames (the transfer touches only liquid), so the liquid
+        // wake is the whole observable here.
+        for (px, py) in app.wiring.take_pump_wakes() {
+            app.liquids.wake_around(&app.world, px, py, 1);
+        }
         // The trap emissions (`HitWireSingle`'s case 137): the spear's
         // proximity cap reads the pool, so the drain splits it from the
         // direct shots.
@@ -645,6 +658,62 @@ mod tests {
     fn trip_and_tick(app: &mut App) {
         app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
         update_wiring(app, 1.0 / 60.0);
+    }
+
+    /// R-12-5 driver 4 (written, NOT run): the e21 pump/settle compose —
+    /// `XferWater`'s `SquareTileFrame` wakes (`Wiring.cs:512`/`:516`/`:521`
+    /// → `WorldGen.cs:81344-81346` `AddWater`) feed the teleported liquid
+    /// into the settle lists, and the runtime pump driver flows it on the
+    /// next pass. Without the wake seam the out-body water would sit
+    /// forever (no active entry owns it).
+    #[test]
+    fn r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows() {
+        let mut app = app_with(135, 0, 0); // any device rig; rebuilt below
+        // The pump rig on the 64×64 test world: in pump (10,10) over 200
+        // water, out pump (20,10), the switch (9,10), red wire between.
+        {
+            let w = &mut app.world;
+            let put = |w: &mut tr_core::world::World, x: i32, kind: u16, liquid: u8| {
+                let i = w.index(x, 10);
+                w.tiles[i] = Tile { kind, frame_x: 18, frame_y: 18, liquid, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+                w.wires.set(x, 10, tr_core::wiring::WireColor::Red, true);
+            };
+            put(w, 10, 142, 200);
+            put(w, 20, 143, 0);
+            put(w, 9, 135, 0);
+            for x in 11..20 {
+                w.wires.set(x, 10, tr_core::wiring::WireColor::Red, true);
+            }
+            // A floor two rows under the out body so the woken blob has
+            // a deterministic landing (the shaft-free open grid would
+            // fall it past the probe row).
+            for x in 0..64 {
+                let i = w.index(x, 12);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        // The fixture's LiquidSystem is sized for the 8×8 flow world —
+        // rebuild it for the swapped grid (the App::new construction).
+        app.liquids = tr_core::liquid::LiquidSystem::new(&app.world);
+        assert_eq!(app.liquids.active_len(), 0, "nothing queued before the trip");
+        app.wiring.trip_wire(&mut app.world, 9, 10, 1, 1);
+        assert_eq!(app.world.tile(19, 10).unwrap().liquid, 200, "the transfer landed");
+        assert_eq!(app.liquids.active_len(), 0, "the engine only queues the wakes");
+        update_wiring(&mut app, 1.0 / 60.0);
+        assert!(
+            app.liquids.active_len() > 0,
+            "the SquareTileFrame wake queued the out-body water"
+        );
+        // Two 60 Hz liquid ticks = one UpdateLiquid pass (the skipCount
+        // driver): the woken blob falls out of the pump body.
+        crate::world_sim::liquids::update_liquids(&mut app, 1.0 / 60.0);
+        crate::world_sim::liquids::update_liquids(&mut app, 1.0 / 60.0);
+        assert!(
+            app.world.tile(19, 11).unwrap().liquid > 0,
+            "the teleported water flows on the settle pass"
+        );
     }
 
     fn npc_of(kind: crate::npc::NpcKind, x: f32, y: f32) -> crate::npc::Npc {

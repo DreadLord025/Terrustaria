@@ -18519,6 +18519,32 @@ research/70's witness table — unchanged by this carry). Witnesses
 `...::the_gen_settle_loop_drains_the_lists_and_drops_quick_settle`,
 `...::the_gen_settle_loop_on_a_diffusing_film_still_clears_the_tail`.
 
+**The e21 pump/settle compose** (R-12-5 driver 4): the pump active-gate
+(`Wiring.cs:2043-2125` — the 142/143 registration, the 19-cap, the 2×2
+SkipWire) and `XferWater` (`:475-523` — the type-matched 255-capped
+teleport with the live in-tile re-read) were landed by M7-WIRE/e21, but
+the compose with the settle pump was MISSING: the C# fires
+`WorldGen.SquareTileFrame` after every out transfer (`:512`), on the
+emptied in tile (`:516`) and on the in tail (`:521`), and `TileFrame`
+re-queues every wet cell through `Liquid.AddWater`
+(`WorldGen.cs:81344-81346`, `netMode != 1 && !generatingWorld`) — that is
+how pump-teleported liquid joins the active lists and flows. The port's
+`xfer_water` mutated the tiles and never woke the settle (its doc claimed
+"the port's liquid sim reads the tiles next tick" — false: the sim walks
+its ACTIVE LIST, not the grid). Fixed: `Wiring` queues the touched
+positions (`pump_wakes`, in the C#'s call order — the emptied-in arm
+queues twice, `:516` + `:521`), the app wiring tick drains them into
+`LiquidSystem::wake_around(x, y, 1)` (the 3×3 `TileFrame` walk; the
+dry/solid/checking guards are `AddWater`'s own). The reframe's
+neighbour-frame half is a no-op for pumps (the transfer touches only
+liquid, the bodies keep their frames). The wake is dedupe-safe
+(`checkingLiquid`) and RNG-free. Witnesses (written, NOT run):
+`wiring::tests::the_pump_moves_water_and_adopts_the_type` extended (the
+three wake sites in order + the drain),
+`world_sim::wiring::tests::r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows`
+(the full compose: trip → transfer → wake → skipCount pass → the blob
+falls out of the out body).
+
 ### The DelWater keep-one (W4-g47 vs W4-g45, for the merger)
 
 Both branches ported `Liquid.DelWater` (`:1470-1599`) independently. **g47's

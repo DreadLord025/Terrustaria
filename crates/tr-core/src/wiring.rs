@@ -250,6 +250,15 @@ pub struct Wiring {
     /// registration at `:2065-2125`).
     in_pumps: Vec<(i32, i32)>,
     out_pumps: Vec<(i32, i32)>,
+    /// The `XferWater` post-transfer `SquareTileFrame` wakes
+    /// (`Wiring.cs:512`/`:516`/`:521`): every touched pump cell queues its
+    /// 3×3 reframe, whose `TileFrame` re-queues each wet cell through
+    /// `Liquid.AddWater` (`WorldGen.cs:81344-81346`). The engine has no
+    /// LiquidSystem handle, so the positions queue here and the app wiring
+    /// tick drains them into `LiquidSystem::wake_around(x, y, 1)` — the
+    /// settle pump picks the teleported liquid up on its next pass
+    /// (R-12-5 driver 4, the e21 pump/settle compose).
+    pump_wakes: Vec<(i32, i32)>,
     /// `Wiring.blockPlayerTeleportationForOneIteration` (`Wiring.cs:3126`).
     block_player_teleportation: bool,
     /// The per-tile toggles collected by the flood (`PixelBoxPass`,
@@ -789,6 +798,14 @@ impl Wiring {
     /// [`Self::actuation_drops`]).
     pub fn take_actuation_drops(&mut self) -> Vec<crate::edit::ObjectDrop> {
         std::mem::take(&mut self.actuation_drops)
+    }
+
+    /// Drains the `XferWater` post-transfer reframe wakes (see
+    /// [`Self::pump_wakes`]) — the app tick feeds each into
+    /// `LiquidSystem::wake_around(x, y, 1)` (the `SquareTileFrame` 3×3
+    /// `TileFrame` → `AddWater` chain, `WorldGen.cs:81344-81346`).
+    pub fn take_pump_wakes(&mut self) -> Vec<(i32, i32)> {
+        std::mem::take(&mut self.pump_wakes)
     }
 
     /// Drains the teleport events computed by the last `TripWire`.
@@ -1886,6 +1903,9 @@ impl Wiring {
                         out_tile.set_liquid_kind(in_type);
                     }
                 }
+                // `WorldGen.SquareTileFrame(num3, num4)` (`Wiring.cs:512`)
+                // — the out cell's reframe wake (R-12-5 driver 4).
+                self.pump_wakes.push((outx, outy));
                 {
                     let in_tile = world.tile_mut(inx, iny).unwrap();
                     in_tile.liquid = in_tile.liquid.saturating_sub(amount);
@@ -1893,10 +1913,15 @@ impl Wiring {
                     // tile (`Wiring.cs:513-516`).
                     if in_tile.liquid == 0 {
                         in_tile.clear_liquid_kind();
+                        self.pump_wakes.push((inx, iny));
                         break;
                     }
                 }
             }
+            // `WorldGen.SquareTileFrame(num, num2)` (`Wiring.cs:521`) —
+            // the in cell's tail reframe, even when nothing transferred
+            // or the emptied arm already queued it (the C# fires both).
+            self.pump_wakes.push((inx, iny));
         }
     }
 
@@ -3910,6 +3935,15 @@ mod teleport_tests {
         assert_eq!(out.liquid, 200, "the transfer landed in the out body");
         assert_eq!(out.liquid_kind(), LiquidKind::Water, "the type adopted");
         assert_eq!(w.tile(10, 10).unwrap().liquid, 0, "the in tile emptied");
+        // R-12-5 driver 4: the SquareTileFrame wakes queued in the C#'s
+        // call order — the out cell (`:512`), the emptied in cell
+        // (`:516`), the in tail (`:521`, fires even after the break).
+        assert_eq!(
+            wiring.take_pump_wakes(),
+            vec![(19, 10), (10, 10), (10, 10)],
+            "the three reframe sites in order"
+        );
+        assert!(wiring.take_pump_wakes().is_empty(), "the drain empties");
     }
 
     fn the_pump_registration_caps_at_19() {
