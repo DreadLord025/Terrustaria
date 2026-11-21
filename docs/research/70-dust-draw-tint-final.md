@@ -109,6 +109,19 @@ research/131 §7.2's gap-table rows G3/G4 flip to CLOSED (this doc +
 resolve. G5/G6 are closure rows, unchanged. **The Dust.cs port-wide
 coverage now has NO open tint/physics/light gap — only wiring seams.**
 
+## 5. FINAL cross-references (the three-doc closure set)
+
+- research/68 §5 — the Main.cs dust-family COMPLETE declaration (the
+  spawn census + non-spawn machinery + the sibling re-probe at the final
+  tips g11 `9a9ac1fd` / g12 `f24dd76a`).
+- research/69 §6-7 — the d50 strip-contract receipt (tip `2e243a2d`
+  UNCHANGED, §4 stands) + the 94/94 light-family closure.
+- This doc — the tint column table-complete + G3/G4 CLOSED.
+- **For the d54f-131 master (research/131 §7.2): G1 CLOSED (`a234107a`),
+  G3 CLOSED + G4 CLOSED (`daf7b780`, this doc); G2 stays the d50×d130
+  resolve; G5/G6 closure rows unchanged. No open port gap remains in the
+  Dust.cs / Main.cs dust family — only wiring seams.**
+
 ## Delivered this phase
 
 - `crates/tr-core/src/dust_table.rs` — `get_alpha_mouse_text` +

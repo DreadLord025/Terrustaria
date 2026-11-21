@@ -1,7 +1,9 @@
 # 68 — Main dust residuals doc-sweep (W4-g13, lane 41): sibling re-probe, residual census, Dust.cs internals audit, lavaBubbles consumers
 
-Status: DONE (W4-g13 sweep phase, code-only — one small port landed
-`1af79847`, 2 witnesses WRITTEN NOT RUN; the rest is census/flags).
+Status: DONE + FINAL (W4-g13 sweep phase, code-only — one small port
+landed `1af79847`, 2 witnesses WRITTEN NOT RUN; the rest is census/flags;
+§5 is the final-phase family-complete declaration for the d54f-131
+master, sibling tips re-probed at g11 `9a9ac1fd` / g12 `f24dd76a`).
 Probed tips (all fetched from origin, base `a725acb0`): g11 `13a1c48e`
 (+ docs-only tip `d892d8d4`), g12 `665cd1e8`, d50 `2e243a2d`,
 f6 `5daa1d70`, d54 `c792cf37` (research/66 EXECUTED), this branch
@@ -170,6 +172,46 @@ maintained by `DustPool::update_dust`, g13's increment landed
   pure tr-core fn with no pool/rng access, so the consumer must ride
   the App draw caller, f6's staged-emitter contract). g13's maintained
   counter feeds BOTH consumers correctly; no unclaimed reader remains.
+
+## 5. FINAL — the Main.cs dust-family status declaration (for d54f-131 master)
+
+Final-phase re-probe (base `daf7b780`): g11 ADVANCED `d892d8d4` →
+`9a9ac1fd` (union 1-3 EXECUTED: the g61 widest-11 teleport body adapted,
+the App dispatcher + 6 gap closures, research/116 executed + research/83
+F1-F7 published as exact patch-hunks for d130); g12 ADVANCED `665cd1e8` →
+`f24dd76a` (render-lane doc-sweep + the wave-A slime scales — NO dust-site
+change; the `:24756` g13 boundary comment still present at
+`main_dust_b.rs:18`/`:413`). d50 `2e243a2d` UNCHANGED (research/69 §6);
+d54 `c89aea9f` (research/131 FINAL); g67 `30b39fceb` (the DrawDust cull
+`2c452edd` ancestor-verified, research/70 §1).
+
+**The family-complete declaration:**
+
+| Column | Sites | Owner + evidence | Status |
+| ------ | ----- | ---------------- | ------ |
+| Main.cs spawn windows | 23 NewDust-family + 1 CloneDust | g11 1-8 (`9a9ac1fd`, snowing body DEPRECATED for d130's snow.rs per research/83 keep-one; teleport rides the g61 body), g12 9-16 (`f24dd76a`), g13 17-23 (`main_dust.rs`, WIRED `35404f8a`+) | **ZERO unclaimed** (§2 stands; the g11/g12 advances touch no g13 site) |
+| Main.cs non-spawn machinery | pool init / UpdateWorld_Dust / DrawCapture cull / lavaBubbles read | S1-E-1 / S1-E-3 / g13 `1af79847` / g13 wired feed | CLOSED (§2 table) |
+| DrawDust cull + else-kill | `:38831-38847`, `:39020-39022` | g67 `2c452edd` (rain.rs, ancestor of `30b39fceb`); the d130 fold is research/134 R3 | PORTED |
+| DrawDust tint column | GetAlpha/GetColor all consumers | S1-E-2 table + g13's 157/327 closures (`daf7b780`, research/70); minecart/sand draws live | TABLE-COMPLETE (the trail walks = the DRAW lane's remainder, not a Main gap) |
+| Dust.UpdateDust lights | 94 = 42 + 52 | `dust_lights.rs` (S1-E-5) + g13 `dust_lights_b.rs` (`a234107a`, WIRED) | **94/94 CLOSED** (research/69) |
+| Dust.UpdateDust physics | every type-arm | d50 `dust_physics.rs` staged (3 wiring flags → contracts, research/69 §4-6) | PORTED, wiring owed to d50's wave |
+| lavaBubbles consumers | 2 readers | g13 retro (wired) + f6 modern (staged, `_random` seam f6's) | BOTH ACCOUNTED (§4) |
+
+**Residual notes refreshed at the final tips:**
+- The g11 snowing budget-hoist (§1's "STILL owed") is SUPERSEDED at
+  `9a9ac1fd`: the body is DEPRECATED wholesale for d130's `snow.rs`
+  (research/83 keep-one); the in-loop `live_type` read survives only in
+  the deprecated body the merger drops. No hoist work remains for g11.
+- The `main_dust.rs` filename union (§1) now resolves THREE-way: g13's
+  bodies + g11's dispatcher/seams (its snowing half DROPS for d130) +
+  g12's `main_dust_b.rs` stays separate. The moon-lord double-feed fuse
+  flag (§1) stands — both halves still dead (`flag8`), one caller pass
+  at the wiring wave.
+- **Verdict for the d54f-131 master: the Main.cs dust family is
+  COMPLETE — zero unclaimed spawn windows, zero unclaimed non-spawn
+  machinery, the 94-light family closed, the tint column table-complete.
+  Everything remaining is wiring (d50's contracts, the DRAW lane's
+  generic walk, the union merge mechanics), not porting.**
 
 ## Delivered this sweep
 

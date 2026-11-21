@@ -39452,3 +39452,15 @@ close here on main's `dust_table.rs` (empty diff on every sibling):
   327 draw-count + dead-raise pins, the census composition pins (the
   6/15/59-64 WHITE override, the packed-0 overlay gate, the 264
   base×0.3→GetColor chain, the 331 GetColor(GetAlpha(WHITE)) trail tint).
+
+**The Main.cs dust-family FINAL declaration (research/68 §5, for the
+d54f-131 master).** Re-probed at the final sibling tips (g11 `9a9ac1fd`
+union-EXECUTED — its snowing body DEPRECATED for d130's `snow.rs`, the
+budget-hoist residual superseded; g12 `f24dd76a` — no dust-site change,
+the `:24756` boundary holds): the 23-site spawn census has ZERO
+unclaimed windows, the non-spawn machinery is closed (the DrawCapture
+cull `1af79847`, the DrawDust cull+else-kill g67 `2c452edd`), the light
+family is 94/94 (research/69 §7), the tint column table-complete
+(research/70). Everything remaining is WIRING — d50's strip/retire
+contracts (research/69 §4-6, tip UNCHANGED), the DRAW lane's generic
+walk, the three-way `main_dust.rs` union — not porting.

@@ -227,6 +227,18 @@ still carries the compensating decrements (`:381` re-read
 (no `dust_physics` reference in any live crate file — only this lane's
 doc comments cite it).
 
+## 7. FINAL status — the dust-light family closed for the d54f-131 master
+
+At the final phase (`daf7b780` base) the light column is **94/94**:
+42 FIRST-ladder (`dust_lights.rs`, S1-E-5) + 52 second-chain (this
+module, `a234107a`, WIRED). d54 research/131 §7.2's G1 row flips CLOSED.
+The two remaining light-adjacent items are CONTRACTS, not gaps: §4's
+strip (d50's wiring wave, receipt §6 — tip UNCHANGED) and §5's retire
+(the same wave, arm-by-arm). The 226 customData site stays absent
+wholesale (the field drop, research/131 G5). The Main.cs family
+declaration rides research/68 §5; the DRAW-tint closures ride
+research/70.
+
 ## Delivered this lane
 
 - `crates/tr-app/src/dust_lights_b.rs` — the 52-arm collector + feed +
