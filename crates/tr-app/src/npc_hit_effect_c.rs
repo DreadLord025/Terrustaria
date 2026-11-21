@@ -174,6 +174,9 @@
 //! | 750-758 | `:86580-86591` | the antlion 581/508 death (5 and 4 gores respectively) |
 //! | 759-765 | `:86595-86604` | the antlion 509/582 death (completes the antlion block) |
 //! | 766-768 | `:86621-86623` | the 61 death (3 gores 86/87/88, +14 X offset) |
+//! | 769-770 | `:86639-86640` | the 301 Raven death (2 gores 438/439, +14 X offset) |
+//! | 771-772 | `:86656-86657` | the 252 Parrot death (2 gores 373/374) |
+//! | 773-777 | `:86675-86679` | the 489 BloodZombie death (5 gores 722/723/723/724/724) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4676,6 +4679,87 @@ fn vulture_death(
     gore.new_gore(rng, world, pos + Vec2::new(14.0, 0.0), vel, 88, 1.0); // :86623
 }
 
+/// The 301 Raven death (`NPC.cs:86635-86640`, sites 769-770): the 50-dust
+/// type-5 burst, then the 2 gores 438 at position and 439 at
+/// `position + (14, 0)`. Scale defaults to 1.
+fn raven_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 438, 1.0); // :86639
+    gore.new_gore(rng, world, pos + Vec2::new(14.0, 0.0), vel, 439, 1.0); // :86640
+}
+
+/// The 252 Parrot death (`NPC.cs:86652-86657`, sites 771-772): the 50-dust
+/// type-5 burst, then the 2 gores 373/374 at position. Scale defaults to 1.
+fn parrot_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 373, 1.0); // :86656
+    gore.new_gore(rng, world, pos, vel, 374, 1.0); // :86657
+}
+
+/// The 489 BloodZombie / 586 ZombieMerman death (`NPC.cs:86669-86687`):
+/// the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then
+/// the 5 gores at the +0/+20/+20/+34/+34 Y ladder at `this.scale`. This
+/// commit ports the 489 BloodZombie (sites 773-777: 722/723/723/724/724);
+/// the 586 ZombieMerman lands with the next batch.
+fn blood_zombie_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:86669-86672` — the 50-dust type-5 burst (SpeedX 2.5*dir).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 722, s); // :86675
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 723, s); // :86676
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 723, s); // :86677
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 724, s); // :86678
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 724, s); // :86679
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5249,6 +5333,19 @@ pub fn hit_effect_c(
     // `:86607-86624` — the 61 Vulture arm (sites 766-768).
     if npc_type == 61 && npc.hp <= 0 {
         vulture_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86625-86641` — the 301 Raven arm (sites 769-770).
+    if npc_type == 301 && npc.hp <= 0 {
+        raven_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86642-86658` — the 252 Parrot arm (sites 771-772).
+    if npc_type == 252 && npc.hp <= 0 {
+        parrot_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86659-86689` — the 489/586 BloodZombie/ZombieMerman arm; this commit
+    // owns the 489 (sites 773-777); the 586 lands with the next batch.
+    if npc_type == 489 && npc.hp <= 0 {
+        blood_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8295,6 +8392,53 @@ mod tests {
         assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
         assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
         assert_eq!(gore.slot(2).position, Vec2::new(114.0, 100.0));
+    }
+
+    /// `NPC.cs:86639-86640` — the Raven death: the 2 gores 438/439, tail at
+    /// +14 X.
+    #[test]
+    fn w4_f10_the_raven_death_spawns_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 36.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(733);
+        raven_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 438);
+        assert_eq!(gore.slot(1).gore_type, 439);
+        assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+    }
+
+    /// `NPC.cs:86656-86657` — the Parrot death: the 2 gores 373/374.
+    #[test]
+    fn w4_f10_the_parrot_death_spawns_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 24.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(739);
+        parrot_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![373, 374]);
+    }
+
+    /// `NPC.cs:86675-86679` — the BloodZombie death: the 5 gores
+    /// 722/723/723/724/724 at +0/+20/+34 Y, at this.scale.
+    #[test]
+    fn w4_f10_the_blood_zombie_death_spawns_the_five_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.scale = 1.1;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(743);
+        blood_zombie_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![722, 723, 723, 724, 724]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        assert_eq!(gore.slot(0).scale, 1.1);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
