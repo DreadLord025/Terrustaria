@@ -241,6 +241,18 @@ pub enum TileInteraction {
     /// changes and no sound plays. No object drops — the dial arms kill no
     /// tiles.
     DialRefused,
+    /// W4-e10 — the buff-station family (`Player.cs:32594-32634`): the seven
+    /// right-click buff tiles (Crystal Ball 125, Slice of Cake 621, War Table
+    /// 464, Dead Cells Potion Station 699, Sharpening Station 377, Bewitching
+    /// Table 354, Ammo Box 287). Each arm sets `flag2 = true`, grants its buff
+    /// for the fixed duration, then plays its `SoundID.ItemNN` style at
+    /// `base.position` (the player's TOP-LEFT). The buff grant + cue are
+    /// app-side (the core has no player); this variant carries the tile kind.
+    /// The arms kill no tiles, so there are never drops. The C# chain tests
+    /// these kind literals BEFORE the dial branches (`:32636`) and the
+    /// crafting-station tail (`:33279`) — 699 also counts as a Bone Welder
+    /// (`TileCountsAs` 699→13), but the buff arm wins the click first.
+    BuffStation { kind: u16 },
     /// The Extractinator branch (tiles 219/642) ran: the clicked tile is an
     /// extractinator and the held item decides the rest (`Player.cs:41665-41697`
     /// — the C# arm is item-anchored inside `PlaceThing`, so it rides the
@@ -293,6 +305,15 @@ pub fn interact_at(
     // the kind literal before the dials and the furniture.
     if matches!(t.kind, 132 | 136 | 144) {
         return TileInteraction::HitSwitch { x: i, y: j };
+    }
+    // W4-e10 — the buff-station family (`Player.cs:32594-32634`): the seven
+    // right-click buff tiles, tested as kind literals BEFORE the dial branches
+    // (`:32636`) and the crafting-station tail (`:33279`), exactly the C# chain
+    // order. The buff grant + the `SoundID.ItemNN` style play are app-side (the
+    // core has no player); the variant carries the kind. 699 also counts as a
+    // Bone Welder (`TileCountsAs` 699→13), but the buff arm wins the click first.
+    if matches!(t.kind, 125 | 621 | 464 | 699 | 377 | 354 | 287) {
+        return TileInteraction::BuffStation { kind: t.kind };
     }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no
@@ -2186,6 +2207,35 @@ mod tests {
             TileInteraction::RightClickToggle { kind: 215, .. }
         ));
         assert_eq!(w2.tile_frame_y(9, 18), 0, "the invalid square keeps its frames");
+    }
+
+    /// W4-e10 — the buff-station family (`Player.cs:32594-32634`): the seven
+    /// right-click buff tiles answer `BuffStation` with their kind, BEFORE the
+    /// dial branches (`:32636`) and the crafting-station tail (`:33279`). 699
+    /// also counts as a Bone Welder (`TileCountsAs` 699→13), but the buff arm
+    /// wins the click first — it never reaches the station tail.
+    #[test]
+    fn w4_e10_the_buff_station_family_routes_before_the_station_tail() {
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        for kind in [125u16, 621, 464, 699, 377, 354, 287] {
+            let mut w = object_world();
+            set_active(&mut w, 10, 19, kind);
+            match interact_at(&mut w, 10, 19, 1, &blocked) {
+                TileInteraction::BuffStation { kind: k } => assert_eq!(k, kind),
+                other => panic!("kind {kind}: expected BuffStation, got {other:?}"),
+            }
+        }
+        // An inactive station cell is invisible (`TileInteractionsCheck`).
+        let mut w = object_world();
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 125,
+            ..Default::default()
+        };
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &blocked),
+            TileInteraction::None
+        ));
     }
 
     #[test]
