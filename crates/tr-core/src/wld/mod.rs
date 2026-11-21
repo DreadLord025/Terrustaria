@@ -156,6 +156,13 @@ impl<'a> SectionTable<'a> {
         if version < 87 {
             bail!("unsupported world format {version} (expected >= 87)");
         }
+        // W4-f45 final census: the C# rejects a later-version file outright
+        // (`WorldFile.cs:712` `num2 > 326 -> StatusID.LaterVersion`, the same
+        // guard `GetAllMetadata:197` runs); the port used to walk a v327+ file
+        // as if it were v326 and mis-parse its unknown tail.
+        if version > FORMAT_VERSION {
+            bail!("world format {version} is from a later version (max {FORMAT_VERSION})");
+        }
         let mut metadata = FileMetadata::default();
         if version >= 135 {
             let at = r.0.pos();
@@ -257,19 +264,22 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
     r.seek(table.pointers[0])?;
     let name = r.string()?;
     let mut seed = 0u64;
+    let mut seed_text = String::new();
     let mut generator_version = 0u64;
     let mut unique_id = [0u8; 16];
     if version >= 179 {
         // `Main.ActiveWorldFileData.SeedText` — the port's seed is the u64 its
         // decimal text parses to (0 when foreign, matching `World::seed`'s
         // ".wld-loaded worlds" note); `header::write_world_head` emits the same
-        // text form, so the seed round-trips.
-        seed = if version == 179 {
+        // text form, so the seed round-trips. The raw text is kept for
+        // `FixEndlessRainWorlds`'s `GetSecretSeedCodes` walk (W4-f45 final).
+        seed_text = if version == 179 {
             // v179 stored the seed as an i32 (`LoadHeader:1956`).
-            r.i32()?.to_string().parse().unwrap_or(0)
+            r.i32()?.to_string()
         } else {
-            r.string()?.parse().unwrap_or(0)
+            r.string()?
         };
+        seed = seed_text.parse().unwrap_or(0);
         generator_version = r.u64()?;
     }
     if version >= 181 {
@@ -294,6 +304,15 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
     world.unique_id = unique_id;
     world.world_id = world_id;
     load_header_flags(&mut r, &mut world, version)?;
+    // `WorldFile.FixEndlessRainWorlds` (`WorldFile.cs:3284-3298`, called from
+    // `LoadWorldFlags:2130` right after the rain triple): a v<=317 file whose
+    // saved rain time ran a year or more (5184000 ticks) and whose seed text
+    // does NOT carry the rainsForAYear secret gets its rain snapshot cleared —
+    // the endless-rain bug worlds saved before the fix. The C# runs it on the
+    // `_temp*` fields before anything else reads them; the port's flags walk
+    // lands the triple in `World`, and nothing between `:2130` and the end of
+    // the walk touches it, so the post-walk position is byte-equivalent.
+    fix_endless_rain_worlds(&mut world, version, &seed_text);
     // `LoadWorld_Version2:1772-1775`: the header must end exactly at pointer 1.
     expect_section_end(&r, &table.pointers, 1)?;
 
@@ -533,6 +552,28 @@ pub fn load_sections(table: &SectionTable<'_>) -> Result<SectionData> {
 /// (the phase's stub lane); the parser keeps only this seam.
 fn load_header_flags(r: &mut Reader, world: &mut World, version: i32) -> Result<()> {
     sections::flags::read(r, world, version)
+}
+
+/// `WorldFile.FixEndlessRainWorlds` (`WorldFile.cs:3284-3298`): the endless-
+/// rain bug fix-up the load runs on the rain snapshot (`LoadWorldFlags:2130`).
+/// A v>317 file, or one whose saved rain time is under a year (5184000 ticks =
+/// 24h * 3600 * 60), keeps its rain; a v<=317 year-long-rain file keeps it only
+/// when its seed text carries the rainsForAYear secret (`GetSecretSeedCodes`
+/// splits on '|', `WorldFileData.cs:199-206`; each code goes through
+/// `SecretSeed.Check`'s normalise+hash match, `WorldGen.cs:468-480` — the
+/// port's `check_input_for_secret_seed`). Otherwise the triple clears.
+fn fix_endless_rain_worlds(world: &mut World, version: i32, seed_text: &str) {
+    if version > 317 || world.rain_time < 5_184_000 {
+        return;
+    }
+    for code in seed_text.split('|') {
+        if crate::seeds::check_input_for_secret_seed(code) == Some("rainsForAYear") {
+            return;
+        }
+    }
+    world.raining = false;
+    world.rain_time = 0;
+    world.max_raining = 0.0;
 }
 
 fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i32) -> Result<()> {
@@ -1018,6 +1059,14 @@ mod tests {
         }
         if version >= 323 {
             z(&mut b, 2); // moreLightningSeed, noLightningSeed
+        }
+        // W4-f45 final census: the legacy u32 only 299..312 read
+        // (`LoadWorldFlags:2512-2515`, the reader's `(299..313)` skip). The
+        // table must carry it or a v299..312 synthetic file mis-aligns at the
+        // manifest string (the reader would eat the manifest + 3 section bytes
+        // as the u32).
+        if (299..313).contains(&version) {
+            z(&mut b, 4); // the legacy u32 (`:2514`)
         }
         if version >= 299 {
             z(&mut b, 1); // WorldGen.Manifest — the empty .NET string
@@ -4242,10 +4291,11 @@ mod tests {
         let w = parse(&data).expect("v297 loads");
         assert!(w.micro_seeds.contains(MS::TEAM_BASED_SPAWNS), "reads from 297");
         assert!(!w.micro_seeds.contains(MS::DUAL_DUNGEONS), "below 304");
-        // v304: the dual-dungeons byte is last.
+        // v304: the dual-dungeons byte is last before the legacy u32 + the
+        // manifest (both present from 299; the u32 only through 312).
         let mut data = synthetic_file(304, &[2, 144], 160, 11);
         let tail_at = tail_offset_in_synthetic(&data, 304);
-        data[tail_at + flags_tail(304).len() - 1] = 1;
+        data[tail_at + flags_tail(304).len() - 6] = 1;
         let w = parse(&data).expect("v304 loads");
         assert!(w.micro_seeds.contains(MS::DUAL_DUNGEONS), "reads from 304");
         assert!(!w.micro_seeds.contains(MS::MORE_LIGHTNING), "below 323");
@@ -4852,6 +4902,112 @@ mod tests {
             assert_eq!(buf[tail_at + off + d], 1, "slime unlock at tail {off}+d");
         }
         assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 FINAL — the later-version reject (`WorldFile.cs:712`
+    /// `num2 > 326 -> StatusID.LaterVersion`, the `GetAllMetadata:197` guard):
+    /// a v327 file is rejected outright, not walked as a v326 shape. Written,
+    /// NOT run (code-only mode).
+    #[test]
+    fn w4_f45_final_the_later_version_file_is_rejected() {
+        let mut data = fixture();
+        data[0..4].copy_from_slice(&327i32.to_le_bytes());
+        assert!(parse(&data).is_err(), "v327 is a later-version file");
+        // The current version still loads (the gate is strictly greater).
+        let data = fixture();
+        assert!(parse(&data).is_ok(), "v326 loads");
+    }
+
+    /// W4-f45 FINAL — the legacy u32 window (`LoadWorldFlags:2512-2515`): the
+    /// 299..312 files carry a u32 between the last seed byte and the manifest
+    /// string; 313+ dropped it. The `flags_tail` table now carries the window
+    /// (the Ph2 v304 witness's offset was re-pinned with it). Written, NOT run.
+    #[test]
+    fn w4_f45_final_the_legacy_u32_window_walks() {
+        use crate::seeds::MicroSeedFlags as MS;
+        // v299: the window opens — the dual-dungeons byte is absent (304),
+        // the u32 + manifest are the tail's last five bytes.
+        let data = synthetic_file(299, &[2, 144], 160, 11);
+        assert!(parse(&data).is_ok(), "v299 walks the u32 + manifest");
+        // v312: the window's last version — the dual byte sits 6 from the end
+        // (dual 1 + u32 4 + manifest 1).
+        let mut data = synthetic_file(312, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 312);
+        data[tail_at + flags_tail(312).len() - 6] = 1; // dualDungeonsSeed
+        let w = parse(&data).expect("v312 loads");
+        assert!(w.micro_seeds.contains(MS::DUAL_DUNGEONS), "the dual byte at len-6");
+        // v313: the u32 is gone — the dual byte sits 2 from the end.
+        let mut data = synthetic_file(313, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 313);
+        data[tail_at + flags_tail(313).len() - 2] = 1; // dualDungeonsSeed
+        let w = parse(&data).expect("v313 loads");
+        assert!(w.micro_seeds.contains(MS::DUAL_DUNGEONS), "the dual byte at len-2");
+        assert!(!w.micro_seeds.contains(MS::MORE_LIGHTNING), "below 323");
+    }
+
+    /// W4-f45 FINAL — `FixEndlessRainWorlds` (`WorldFile.cs:3284-3298`, called
+    /// at `LoadWorldFlags:2130`): a v<=317 file whose saved rain ran a year
+    /// (5184000 ticks) gets its rain triple cleared UNLESS the seed text
+    /// carries the rainsForAYear secret ("bring a towel" — the community
+    /// plaintext, verified against the registered code
+    /// `xYBNU5Soje9VhQHNQXETDKbwlc+7XZau`, `WorldGen.cs:3032`, through the
+    /// game's own BCrypt walk). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_final_fix_endless_rain_worlds_clears_the_year_long_bug_rain() {
+        // A v317 file with a year-long rain snapshot (tail 67/68..72/72..76).
+        let mut data = synthetic_file(317, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 317);
+        data[tail_at + 67] = 1; // _tempRaining
+        data[tail_at + 68..tail_at + 72].copy_from_slice(&5_184_000i32.to_le_bytes());
+        data[tail_at + 72..tail_at + 76].copy_from_slice(&0.5f32.to_le_bytes());
+        // The fixture's seed text "12345" carries no secret — the triple clears.
+        let w = parse(&data).expect("v317 loads");
+        assert!(!w.raining, "the bug rain is cleared");
+        assert_eq!(w.rain_time, 0);
+        assert_eq!(w.max_raining, 0.0);
+        // Under a year (5183999): the threshold keeps the rain.
+        let mut data = synthetic_file(317, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 317);
+        data[tail_at + 67] = 1;
+        data[tail_at + 68..tail_at + 72].copy_from_slice(&5_183_999i32.to_le_bytes());
+        data[tail_at + 72..tail_at + 76].copy_from_slice(&0.5f32.to_le_bytes());
+        let w = parse(&data).expect("v317 loads");
+        assert!(w.raining, "under a year: the rain stays");
+        assert_eq!(w.rain_time, 5_183_999);
+        // v318: the version gate keeps the year-long rain (the fix shipped).
+        let mut data = synthetic_file(318, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 318);
+        data[tail_at + 67] = 1;
+        data[tail_at + 68..tail_at + 72].copy_from_slice(&5_184_000i32.to_le_bytes());
+        data[tail_at + 72..tail_at + 76].copy_from_slice(&0.5f32.to_le_bytes());
+        let w = parse(&data).expect("v318 loads");
+        assert!(w.raining, "v318: the rain stays");
+        assert_eq!(w.rain_time, 5_184_000);
+        // The rainsForAYear seed keeps its year-long rain: splice the header's
+        // seed string ("12345", 6 bytes) to "bring a towel" (14 bytes) and
+        // shift pointers 1.. by the +8 delta (pointer 0 is the header start,
+        // ahead of the seed string; the importance bitmap is ahead of both).
+        let mut data = synthetic_file(317, &[2, 144], 160, 11);
+        let ptr_at = 4 + 20 + 2; // v317 >= 135: version + metadata + count
+        let ptr0 = i32::from_le_bytes(data[ptr_at..ptr_at + 4].try_into().unwrap()) as usize;
+        let seed_at = ptr0 + cs_string("TileFixture").len();
+        let mut spliced = Vec::new();
+        spliced.extend_from_slice(&data[..seed_at]);
+        spliced.extend(cs_string("bring a towel"));
+        spliced.extend_from_slice(&data[seed_at + cs_string("12345").len()..]);
+        for i in 1..11 {
+            let at = ptr_at + 4 * i;
+            let p = i32::from_le_bytes(spliced[at..at + 4].try_into().unwrap());
+            spliced[at..at + 4].copy_from_slice(&(p + 8).to_le_bytes());
+        }
+        let tail_at = tail_offset_in_synthetic(&spliced, 317);
+        spliced[tail_at + 67] = 1;
+        spliced[tail_at + 68..tail_at + 72].copy_from_slice(&5_184_000i32.to_le_bytes());
+        spliced[tail_at + 72..tail_at + 76].copy_from_slice(&0.5f32.to_le_bytes());
+        let w = parse(&spliced).expect("the rainsForAYear v317 loads");
+        assert!(w.raining, "the secret seed keeps its endless rain");
+        assert_eq!(w.rain_time, 5_184_000);
+        assert_eq!(w.max_raining, 0.5);
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------
