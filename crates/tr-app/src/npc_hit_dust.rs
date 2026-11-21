@@ -243,6 +243,21 @@
 //!   ×100 — 262 above half life gates Next(3)!=0 → 166 else 167 (the
 //!   draw ONLY when type==262 && life > lifeMax/2, integer half); the
 //!   `:87175` type-265 arm is dead inside this group.
+//! Batch 17 (the worm/demon/town-adjacent live arms):
+//! - 85248 — the Truffle Worms 374/375 (`:85244-85251`): EVERY strike
+//!   (no life gate), FLAT 6 dust 165, (0,0), alpha 50 scale 1.5,
+//!   velocity ×2 + noGravity.
+//! - 85321 — 154 (`:85315-85324`): ×50 dust 67 at (vx,vy), alpha 90,
+//!   scale 1.5, noGravity + velocity ×0.2.
+//! - 89748 — the Man Eaters 43/56 (`:89742-89750`): ×100 dust 40,
+//!   this.alpha/color, scale 1.2.
+//! - 89765 — 175 (`:89759-89767`): ×100 dust 40, same shape.
+//! - 89782 — 48 (`:89776-89784`): ×100 dust 5.
+//! - 89799 — the demons 62/66 (`:89793-89801`): ×100 dust 5.
+//! - 87991 — Zoologist 633 (`:87985-87993`): ×100 dust 5.
+//! - 88029 — Travelling Merchant 368 (`:88023-88031`): ×100 dust 5.
+//! - 87681 — Tax Collector 441 (`:87675-87683`): ×100 dust 5.
+//! - 87701 — 86 (`:87695-87703`): ×100 dust 5.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -425,6 +440,18 @@ pub fn replay_hit_dust(
                 rng, dust, ctx, world,
             );
             dust.slot_mut(idx).velocity *= 2.0;
+        }
+        return;
+    }
+    // `:85244-85251` — the Truffle Worms: EVERY strike (no life gate),
+    // FLAT 6 dust 165, (0,0), alpha 50 scale 1.5, velocity ×2 +
+    // noGravity.
+    if s.npc_type == 374 || s.npc_type == 375 {
+        for _ in 0..6 {
+            let idx = live_dust(s, 165, 0.0, 0.0, 50, Color::default(), 1.5, rng, dust, ctx, world);
+            let d = dust.slot_mut(idx);
+            d.velocity *= 2.0;
+            d.no_gravity = true;
         }
         return;
     }
@@ -1258,6 +1285,31 @@ pub fn replay_hit_dust(
                 } else {
                     live_dust(s, 167, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
                 }
+            }
+        }
+        // `:85315-85324` — 154: ×50 dust 67 at the NPC's own velocity,
+        // alpha 90 scale 1.5, noGravity + velocity ×0.2.
+        154 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 67, s.vx, s.vy, 90, Color::default(), 1.5, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true; // `:85322`
+                d.velocity *= 0.2; // `:85323`
+            }
+        }
+        // `:89742-89767` — the Man Eaters (43/56) + 175: ×100 dust 40,
+        // this.alpha/color, scale 1.2.
+        43 | 56 | 175 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 40, dir, -1.0, s.alpha, s.color, 1.2, rng, dust, ctx, world);
+            }
+        }
+        // `:89776-89801`/`:87985-88031`/`:87675-87703` — the ×100 dust-5
+        // group: 48, the demons 62/66, the Zoologist, the Travelling
+        // Merchant, the Tax Collector, 86.
+        48 | 62 | 66 | 633 | 368 | 441 | 86 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -2533,5 +2585,50 @@ mod tests {
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
         }
+    }
+
+    /// W4-g62 batch 17 — the Truffle Worm bursts on EVERY strike (no
+    /// life gate, `NPC.cs:85246`), FLAT 6 regardless of dmg; the 154
+    /// arm's ×0.2 velocity brake.
+    #[test]
+    fn w4_g62_the_truffle_worm_and_154_rows() {
+        let world = air();
+        let ctx = ctx();
+        for life in [5, 0, -3] {
+            let s = snap(374, life, 5, 1.0);
+            let mut r = UnifiedRandom::new(167);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 6, "life {life}");
+            assert!(live.iter().all(|d| d.dust_type == 165 && d.no_gravity && d.alpha == 50));
+        }
+        let mut s = snap(154, 100, 100, 10.0); // ×50 → 5
+        s.vx = 2.0;
+        s.vy = -1.0;
+        let mut r = UnifiedRandom::new(167);
+        let mut p = DustPool::new();
+        replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+        let mut tr = UnifiedRandom::new(167);
+        let mut tp = DustPool::new();
+        for _ in 0..5 {
+            let idx = tp.new_dust(
+                &mut tr, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 67,
+                2.0, -1.0, 90, Color::default(), 1.5,
+            );
+            let d = tp.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 0.2;
+        }
+        assert_eq!(r, tr);
+        assert_eq!(p.slots(), tp.slots());
+        // The Man Eater row: dust 40 scale 1.2 with the NPC rows.
+        let me = snap(43, 100, 100, 5.0);
+        let mut r2 = UnifiedRandom::new(167);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&me, &mut r2, &mut p2, &ctx, &world);
+        let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 5);
+        assert!(live.iter().all(|d| d.dust_type == 40));
     }
 }
