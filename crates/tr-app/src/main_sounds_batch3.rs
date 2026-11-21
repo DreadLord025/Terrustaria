@@ -13,12 +13,15 @@
 //!    is a menu-row activation playing legacy id 10 (open), 11 (back/close) or
 //!    12 (tick/toggle). The rows and toggles themselves are ALREADY ported
 //!    (`menu/pages.rs` + `menu/actions.rs`); the per-site cue seam that
-//!    replaces the blanket `Menu_Tick` is **W4-g22's in-flight
-//!    `Menu::pending_cue`** (uncommitted at probe time). This lane does NOT
-//!    re-port that seam — it records the 75 sites as a census
-//!    ([`DRAW_MENU_CUE_CENSUS`]) the merger replays against g22's `pending_cue`
-//!    mapping to prove the g23 window is covered (the W4-g18 `e8`-keeps-the-
-//!    single-copy precedent).
+//!    replaces the blanket `Menu_Tick` is **W4-g22's `Menu::pending_cue`**
+//!    (landed `e0f81135`, merged into this branch by the union phase). This
+//!    lane does NOT re-port that seam — it records the 75 sites as a census
+//!    ([`DRAW_MENU_CUE_CENSUS`]) the union replayed against g22's mapping
+//!    (the W4-g18 `e8`-keeps-the-single-copy precedent): 62 rows covered by
+//!    g22's generic arms, 9 g22-missed rows ported in the union (the Video
+//!    Parallax/Effects 11-quirks, both ResetKeys 11s, the Resolution
+//!    cycle/borderless/Apply cues, the ManageControls/Steam-join 10s), 4
+//!    front-end rows documented (see the union notes in ANALYSIS.md).
 //!
 //! 2. **The tail sites** (`:51276`-`:66248`, 16 sites) outside `DrawMenu`.
 //!    Thunder (`:58761`) is landed (`rain.rs::thunder_step` +
@@ -37,6 +40,7 @@
 //! `soundVolume == 0` returns null for type > 35). Every other g23 site is a
 //! draw-free legacy id (10/11/12) or the already-landed case-43 thunder. The
 //! hover ticks and cue arms draw NOTHING.
+#![allow(dead_code)] // census pins + deferred machines — the wired halves ride Menu::pending_cue / pending_ticks (g22 union)
 
 /// One `DrawMenu` inline-cue site: the C# line, the `menuMode` branch it sits
 /// in, the legacy id it plays, and whether the row/toggle is already ported.
@@ -53,8 +57,9 @@ pub struct DrawMenuCueSite {
 
 /// The 75 `DrawMenu` sites of the g23 window, in C# line order
 /// (`Main.cs:49734-51052`). Census only — the rows are landed, the cue seam is
-/// g22's. The merger checks every row here resolves to the same id through
-/// `Menu::pending_cue` once g22 lands.
+/// g22's `pending_cue` (the union replay verified every row resolves to the
+/// id recorded here; the 9 rows g22's generic arms missed were ported in the
+/// union phase, the 4 front-end rows documented in ANALYSIS.md).
 pub const DRAW_MENU_CUE_CENSUS: &[DrawMenuCueSite] = &[
     // menuMode 11 — the Settings hub (`Main.cs:49706-49774`).
     DrawMenuCueSite { line: 49734, menu_mode: 11, cue: 10, ported: true }, // -> 1111 Video
@@ -203,25 +208,27 @@ pub fn value_bar_hover_tick(right_hover_before: i32, right_hover_after: i32) -> 
 
 /// `Main.CanceledGivingServerPassword` (`Main.cs:51950-51956`): the join
 /// password screen's cancel plays id 11 (`:51952`) then drops to menuMode 0
-/// and disconnects. **W4-g23: WIRED** — `menu/actions.rs`'s `Act::Nav` arm
-/// queues the id on the JoinPassword Back row (`:48592-48596`,
-/// `selectedMenu == 3`); the port's Back returns to the port screen (the
-/// documented plan deviation, `menu/pages.rs`), the cue id is the C#'s.
+/// and disconnects. **W4-g23: WIRED (g22 union)** — the JoinPassword Back
+/// row (`:48592-48596`, `selectedMenu == 3`) rides g22's `pending_cue`
+/// `password_back` arm in `menu/actions.rs` (the union fixed g22's tuple to
+/// the row's actual `JoinIp` target); the port's Back deviates from the
+/// vanilla disconnect, the cue id is the C#'s. This helper pins the id.
 pub fn canceled_giving_server_password_cue() -> u32 {
     11 // `:51952`
 }
 
 /// `Main.OnSubmitServerIP` (`Main.cs:52056-52062`): submitting the join IP
-/// plays id 12 (`:52059`) then opens menuMode 131. **W4-g23: WIRED** — both
-/// the Accept row (`menu/actions.rs`'s `Act::Nav` arm, `:50865-50868`) and
-/// the Enter path (`Menu::submit_join_ip`) queue the id; the frame drain
-/// plays it. This is a tail-site call position, NOT one of the 75 DrawMenu
-/// census rows — it does not ride g22's seam.
+/// plays id 12 (`:52059`) then opens menuMode 131. **W4-g23: WIRED (g22
+/// union)** — both the Accept row (`menu/actions.rs`'s `Act::Nav`
+/// `ip_submit` arm, `:50865-50868`) and the Enter path
+/// (`Menu::submit_join_ip`) queue `"Menu_Tick"` on g22's `pending_cue`;
+/// the event loop's single activation drain plays it. This helper pins
+/// the id.
 ///
 /// The sibling text-change ticks (`:50796` getIP, `:50901` getPort,
 /// `:48551`/`:48675` the password screens — `GetInputText`'s per-frame
-/// string compare) are DrawMenu-inline sites in g22's window boundary
-/// census; they ride g22's seam, not this lane.
+/// string compare) ride g22's `character`/backspace change-diff arms on
+/// the same queue (the union census replay confirmed the ids match).
 pub fn on_submit_server_ip_cue() -> u32 {
     12 // `:52059`
 }

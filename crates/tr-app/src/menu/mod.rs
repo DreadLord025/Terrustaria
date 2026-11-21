@@ -359,6 +359,14 @@ pub struct Menu {
     /// recorded (`:51276` colour-focus tick, `:51575` volume-bar hover tick),
     /// drained by the frame loop after `Menu::draw` — the C# plays them
     /// inline inside `DrawMenu`, the port's draw half cannot borrow `Audio`.
+    /// **Union contract (W4-g22 ∪ W4-g23)**: this queue carries DRAW-TIME
+    /// chrome cues only (the C# plays them inside the per-frame `DrawMenu`
+    /// slider blocks, once per frame); every ACTIVATION cue (row clicks,
+    /// keys, text edits — the C# `selectedMenu` arms) rides
+    /// [`Self::pending_cue`], the single-slot take-once queue g22 landed.
+    /// The two never overlap: an activation frame drains `pending_cue` in
+    /// the event loop BEFORE the draw, the chrome queue drains after the
+    /// draw — the same statement order the C# plays them in.
     pending_ticks: Vec<u32>,
     /// `Main.setKey` (`Main.cs:50408-50410` / `:50523-50526`): the bind row
     /// being rebound on the menuMode 27/272727 lists — the row shows `"_"`
@@ -380,6 +388,19 @@ pub struct Menu {
     pub screen_size: Vec2,
     /// "Not ported yet" notice for the vanilla screens we do not have.
     pub hint: Option<String>,
+    /// W4-g22 — the per-site cue the last activation/text edit asked for
+    /// (`Main.DrawMenu`'s inline `SoundEngine.PlaySound` calls, the g22
+    /// window `Main.cs:48489-49727`). The menu is pure state; the App drains
+    /// this after `click`/`key`/`character` and plays it through `Audio`,
+    /// REPLACING the old blanket `Menu_Tick` on every non-`None` action
+    /// (the C# plays 10 on nav-forward, 11 on back, 12 on toggles — never a
+    /// uniform tick). `None` means the activation drew no cue (the C# arm
+    /// has no `PlaySound`, e.g. the Quit row `:48975-48978`).
+    /// W4-g23 union: the g23 window's activation sites (`:49734-51052`, the
+    /// 75-row census replay + the `:52059`/`:51952` submit/cancel arms) ride
+    /// THIS queue too — one activation drain; the draw-time chrome ticks
+    /// stay on [`Self::pending_ticks`] (see its union-contract note).
+    pub pending_cue: Option<&'static str>,
     /// Write `config.json` on every toggle (off in unit tests).
     persist: bool,
     time: f32,
@@ -440,6 +461,7 @@ impl Menu {
             map_binds: seed_map_binds,
             screen_size: Vec2::new(1600.0, 900.0),
             hint: None,
+            pending_cue: None,
             persist: true,
             time: 0.0,
             logo_scale: 0.1,
@@ -558,6 +580,11 @@ impl Menu {
             _ => return,
         };
         target.push(c);
+        // W4-g22 — `Main.GetInputText` runs once per frame and the screen
+        // plays 12 iff the string CHANGED (`Main.cs:50794-50797` for 13,
+        // `:50899-50902` for 131, `:48549-48552` for 31, `:48673-48676`
+        // for 30). An appended char always changes it.
+        self.pending_cue = Some("Menu_Tick");
     }
 
     /// Hit-tests the boxes recorded by the last [`Menu::draw`]. The position is
@@ -594,6 +621,15 @@ impl Menu {
             Some(i) => self.activate(i),
             None => Action::None,
         }
+    }
+
+    /// W4-g22 — drains the per-site cue the last activation/text edit queued
+    /// (`Main.DrawMenu`'s inline `PlaySound` arms). The App calls this after
+    /// `click`/`key`/`character` and plays the result; the old blanket
+    /// `Menu_Tick` on every non-`None` action is gone (the C# plays 10/11/12
+    /// per site, never a uniform tick).
+    pub fn take_cue(&mut self) -> Option<&'static str> {
+        self.pending_cue.take()
     }
 
     fn step_animation(&mut self, dt: f32) {
@@ -3258,9 +3294,11 @@ mod tests {
         assert!(m.take_pending_ticks().is_empty());
     }
 
-    /// W4-g23 — the IP-submit cue arm (`Main.cs:52056-52062`,
+    /// W4-g23 union — the IP-submit cue arm (`Main.cs:52056-52062`,
     /// `:50865-50868`): BOTH the Accept row (`selectedMenu == 9`) and the
     /// Enter path reach `OnSubmitServerIP`'s `PlaySound(12)` (`:52059`).
+    /// The union lands the id on g22's `pending_cue` (one activation drain;
+    /// g22 left this arm cue-less for g23's site).
     #[test]
     fn w4_g23_the_ip_submit_ticks_on_the_accept_row_and_enter() {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -3269,32 +3307,317 @@ mod tests {
         m.get_ip = "127.0.0.1".into();
         m.activate(9);
         assert_eq!(m.page, Page::JoinPort);
-        assert_eq!(m.take_pending_ticks(), vec![12], "`:52059` via the row");
+        assert_eq!(m.take_cue(), Some("Menu_Tick"), "`:52059` via the row");
         // The Enter path (`Main.inputTextEnter`, `:50865-50868`).
         let mut m = menu(Page::JoinIp);
         m.get_ip = "127.0.0.1".into();
         m.key(winit::keyboard::KeyCode::Enter);
         assert_eq!(m.page, Page::JoinPort);
-        assert_eq!(m.take_pending_ticks(), vec![12], "`:52059` via Enter");
+        assert_eq!(m.take_cue(), Some("Menu_Tick"), "`:52059` via Enter");
     }
 
-    /// W4-g23 — the password-cancel cue arm (`Main.cs:51950-51956`,
+    /// W4-g23 union — the password-cancel cue arm (`Main.cs:51950-51956`,
     /// `:48592-48596`): the join-password Back row plays 11
-    /// (`CanceledGivingServerPassword`, `:51952`). The port's Back returns
-    /// to the port screen (the documented plan deviation); the cue id is
-    /// the C#'s either way. Escape walks the parent WITHOUT the cue — the
-    /// C# `flag5` gamepad-Back arm is unported, so no id is invented.
+    /// (`CanceledGivingServerPassword`, `:51952`). The port's Back row
+    /// targets `Page::JoinIp` (the documented plan deviation, `pages.rs`);
+    /// the cue id is the C#'s either way. Escape walks the parent
+    /// (`JoinPort`) and rides g22's `flag5` 11 (`:48592`'s OR arm).
     #[test]
     fn w4_g23_the_password_cancel_back_row_ticks_11() {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let mut m = menu(Page::JoinPassword);
         m.activate(3); // the Back row
         assert_eq!(m.page, Page::JoinIp);
-        assert_eq!(m.take_pending_ticks(), vec![11], "`:51952`");
-        // Escape (the port's parent walk) queues nothing.
+        assert_eq!(m.take_cue(), Some("Menu_Close"), "`:51952`");
+        // Escape (g22's parent walk) queues the flag5 arm's 11.
         let mut m = menu(Page::JoinPassword);
         m.key(winit::keyboard::KeyCode::Escape);
         assert_eq!(m.page, Page::JoinPort);
-        assert!(m.take_pending_ticks().is_empty());
+        assert_eq!(m.take_cue(), Some("Menu_Close"), "`:48592`'s flag5 OR");
+    }
+
+    // ---- W4-g22: the per-site cue queue (Main.cs:48489-49727) -------------
+    // Written, not run (code-only mode). Every assertion pins the C# site's
+    // own `PlaySound` id through the `pending_cue`/`take_cue` seam.
+
+    #[test]
+    fn g22_forward_opens_queue_ten_and_back_rows_eleven() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        // Main -> Multiplayer: `:48925` plays 10.
+        let mut m = menu(Page::Main);
+        m.activate(1);
+        assert_eq!(m.take_cue(), Some("Menu_Open"));
+        // Multiplayer Back -> Main: `:50732` plays 11 (the port's parent
+        // relation; the C# site is g23's but the cue id is the same).
+        let mut m = menu(Page::Multiplayer);
+        m.activate(3);
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+        // Settings -> General: `:49720` plays 10.
+        let mut m = menu(Page::Settings);
+        m.activate(0);
+        assert_eq!(m.take_cue(), Some("Menu_Open"));
+        // General Back -> Settings: `:49868` plays 11.
+        let mut m = menu(Page::General);
+        m.activate(5);
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+        // Credits Back -> Main: `:49702` plays 11.
+        let mut m = Menu::open_credits(Settings::default());
+        m.activate(0);
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+    }
+
+    #[test]
+    fn g22_the_volume_open_is_the_eleven_quirk_and_the_accept_rows_are_silent() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        // Settings row 3 (Volume): `:49741` plays 11 — a FORWARD open with
+        // the close cue (the C# quirk).
+        let mut m = menu(Page::Settings);
+        m.activate(3);
+        assert_eq!(m.page, Page::Volume);
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+        // JoinIp Accept -> JoinPort: `OnSubmitServerIP` (`:52056-52062`)
+        // plays 12 (`:52059`) — g23's tail site, landed on this queue by
+        // the union (g22's probe left the arm cue-less for g23's seam).
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = "127.0.0.1".into();
+        let accept = m.items().iter().position(|i| !i.header && i.label == crate::lang::menu(4)).unwrap();
+        m.activate(accept);
+        assert_eq!(m.page, Page::JoinPort);
+        assert_eq!(m.take_cue(), Some("Menu_Tick"));
+        // JoinPort Accept -> JoinPassword: `OnSubmitServerPort`
+        // (`:52047-52054`) has no PlaySound — silent.
+        let mut m = menu(Page::JoinPort);
+        m.get_port = "7777".into();
+        let accept = m.items().iter().position(|i| !i.header && i.label == crate::lang::menu(4)).unwrap();
+        m.activate(accept);
+        assert_eq!(m.page, Page::JoinPassword);
+        assert_eq!(m.take_cue(), None);
+        // HostPassword Back -> Multiplayer: `ExitServerPasswordMenu`
+        // (`:52020-52031`) is SILENT.
+        let mut m = menu(Page::HostPassword);
+        m.activate(3);
+        assert_eq!(m.take_cue(), None);
+        // JoinPassword Back -> JoinIp: `CanceledGivingServerPassword`
+        // (`:51952`) plays 11 despite the deviated target (the union fix —
+        // g22's tuple named JoinPort, which no row produces).
+        let mut m = menu(Page::JoinPassword);
+        m.activate(3);
+        assert_eq!(m.page, Page::JoinIp);
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+    }
+
+    #[test]
+    fn g22_toggles_queue_twelve_except_the_silent_cycles_and_quit() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        // AutoSave row 0: `:49796` plays 12.
+        let mut m = menu(Page::General);
+        m.activate(0);
+        assert_eq!(m.take_cue(), Some("Menu_Tick"));
+        // The 889 lobby XOR: `:48786` plays 12.
+        let mut m = menu(Page::ServerSettings);
+        m.activate(1);
+        assert_eq!(m.take_cue(), Some("Menu_Tick"));
+        // MinimapFrame (`:49945`), ResourceSets (`:49951`), BossBarText
+        // (`:49970`): the cycle helpers play NOTHING.
+        let mut m = menu(Page::Interface);
+        for row in [6, 7, 9] {
+            m.activate(row);
+            assert_eq!(m.take_cue(), None, "row {row} is a silent cycle");
+        }
+        // PortraitPreference (`:49963`) and FlashyEffectsInterface
+        // (`:49976`) DO play 12.
+        for row in [8, 10] {
+            m.activate(row);
+            assert_eq!(m.take_cue(), Some("Menu_Tick"), "row {row} ticks");
+        }
+        // The port's invented Zoom row has no vanilla twin — cue-less.
+        let mut m = menu(Page::Video);
+        m.activate(1);
+        assert_eq!(m.take_cue(), None);
+        // The Quit row (`:48975-48978`) sets GameAskedToQuit — NO cue.
+        let mut m = menu(Page::Main);
+        let action = m.activate(6);
+        assert!(matches!(action, Action::Quit));
+        assert_eq!(m.take_cue(), None);
+    }
+
+    #[test]
+    fn g22_the_out_rows_and_confirms_cue_per_site() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        // Singleplayer (`:48917`) and Achievements (`:48932`) play 10.
+        let mut m = menu(Page::Main);
+        assert!(matches!(m.activate(0), Action::Singleplayer));
+        assert_eq!(m.take_cue(), Some("Menu_Open"));
+        assert!(matches!(m.activate(2), Action::Achievements));
+        assert_eq!(m.take_cue(), Some("Menu_Open"));
+        // Confirm Yes plays 10 (`:49430`/`:49457`/`:49684`), No plays 11
+        // (`:49436`/`:49463`/`:49689`); Escape ORs into No (`flag5`).
+        for page in [Page::ConfirmDeletePlayer, Page::ConfirmDeleteWorld, Page::ConfirmDiscard] {
+            let mut m = menu(page);
+            assert!(matches!(m.activate(1), Action::ConfirmYes));
+            assert_eq!(m.take_cue(), Some("Menu_Open"));
+            assert!(matches!(m.activate(2), Action::ConfirmNo));
+            assert_eq!(m.take_cue(), Some("Menu_Close"));
+            assert!(matches!(m.key(winit::keyboard::KeyCode::Escape), Action::ConfirmNo));
+            assert_eq!(m.take_cue(), Some("Menu_Close"));
+        }
+    }
+
+    #[test]
+    fn g22_the_language_rows_split_ten_and_twelve_by_page() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // The settings language page (1213): `:48522` plays 12, stays up.
+        let mut m = menu(Page::Language);
+        m.activate(1);
+        assert_eq!(m.page, Page::Language);
+        assert_eq!(m.take_cue(), Some("Menu_Tick"));
+        // The first-launch picker (1212): `:48489` plays 10, jumps to title.
+        let mut m = menu(Page::LanguageInitial);
+        m.activate(1);
+        assert_eq!(m.page, Page::Main);
+        assert_eq!(m.take_cue(), Some("Menu_Open"));
+        crate::lang::init(tr_core::localization::GameCulture::English);
+    }
+
+    #[test]
+    fn g22_text_edits_tick_on_change_and_backspace_is_diff_gated() {
+        // `character` appends -> the string changed -> 12 (`:50794-50797`).
+        let mut m = menu(Page::JoinIp);
+        m.character('1');
+        assert_eq!(m.take_cue(), Some("Menu_Tick"));
+        // Backspace on a non-empty string: changed -> 12.
+        m.key(winit::keyboard::KeyCode::Backspace);
+        assert_eq!(m.take_cue(), Some("Menu_Tick"));
+        // Backspace on the empty string: NO change, NO cue.
+        m.key(winit::keyboard::KeyCode::Backspace);
+        assert_eq!(m.take_cue(), None);
+        // The connecting overlay eats text (`:48546`'s WritingText gate is
+        // the port's `connecting` early return) — no cue.
+        let mut m = menu(Page::JoinPassword);
+        m.connecting = true;
+        m.character('x');
+        assert_eq!(m.take_cue(), None);
+    }
+
+    #[test]
+    fn g22_escape_parent_walk_queues_eleven_and_take_cue_drains_once() {
+        let mut m = menu(Page::General);
+        m.key(winit::keyboard::KeyCode::Escape);
+        assert_eq!(m.page, Page::Settings);
+        assert_eq!(m.take_cue(), Some("Menu_Close")); // `:49868`'s flag5 arm
+        // The drain is take-once: a second read is None.
+        assert_eq!(m.take_cue(), None);
+        // The in-game keybinds Back rides IngameFancyUI.Close's loud 11.
+        let mut m = menu(Page::Keybindings);
+        m.in_game_keybinds = true;
+        assert!(matches!(m.key(winit::keyboard::KeyCode::Escape), Action::ReturnToWorld));
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+    }
+
+    // ---- W4-g23 union: the 75-site census replay (written not run) --------
+    // The g23 window's rows g22's generic arms MISSED, ported in the union.
+    // Each assertion pins the census id through the ONE activation drain.
+
+    /// The Video page's two forward opens that play the CLOSE cue
+    /// (`Main.cs:50002` Parallax, `:50075` Effects — the `:49741` Volume
+    /// quirk's twins g22's window ended before).
+    #[test]
+    fn w4_g23_union_the_video_parallax_and_effects_opens_play_eleven() {
+        let mut m = menu(Page::Video);
+        m.activate(2); // Parallax row (`:50002`)
+        assert_eq!(m.page, Page::Parallax);
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+        let mut m = menu(Page::Video);
+        m.activate(10); // Effects row (`:50075`)
+        assert_eq!(m.page, Page::Effects);
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+        // Resolution stays a plain forward 10 (`:49995`).
+        let mut m = menu(Page::Video);
+        m.activate(0);
+        assert_eq!(m.page, Page::Resolution);
+        assert_eq!(m.take_cue(), Some("Menu_Open"));
+    }
+
+    /// Both Reset-to-Default rows play 11 (`Main.cs:50458` map /
+    /// `:50563` gameplay) — g22's `Act::ResetKeys` arm was cue-less.
+    #[test]
+    fn w4_g23_union_the_reset_keys_rows_play_eleven() {
+        let mut m = menu(Page::MapKeys);
+        m.activate(6); // the map Reset row
+        assert_eq!(m.take_cue(), Some("Menu_Close")); // `:50458`
+        let mut m = menu(Page::Keybindings);
+        m.activate(14); // the gameplay Reset row
+        assert_eq!(m.take_cue(), Some("Menu_Close")); // `:50563`
+        // A bind row opens the capture cue-lessly (`:50460-50463`/`:50565`).
+        let mut m = menu(Page::Keybindings);
+        m.activate(0);
+        assert_eq!(m.take_cue(), None);
+    }
+
+    /// The not-ported Resolution rows keep their vanilla activation cues
+    /// (`Main.cs:50181` cycle 12, `:50201` borderless 12, `:50225` Apply 11);
+    /// the Fullscreen row delegates to `SetDisplayMode`, which is SILENT
+    /// (`:66253-66432` — no `PlaySound`).
+    #[test]
+    fn w4_g23_union_the_resolution_hint_rows_keep_their_cues() {
+        let mut m = menu(Page::Resolution);
+        m.activate(0); // cycle (`:50181`)
+        assert!(m.hint.is_some());
+        assert_eq!(m.take_cue(), Some("Menu_Tick"));
+        m.activate(1); // borderless (`:50201`)
+        assert_eq!(m.take_cue(), Some("Menu_Tick"));
+        m.activate(2); // fullscreen — SetDisplayMode is silent
+        assert_eq!(m.take_cue(), None);
+        m.activate(3); // Apply (`:50225`)
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+        assert_eq!(m.page, Page::Resolution, "the SetResolution body stays unported");
+        m.activate(4); // Back (`:50238`)
+        assert_eq!(m.page, Page::Video);
+        assert_eq!(m.take_cue(), Some("Menu_Close"));
+    }
+
+    /// The ManageControls (`Main.cs:50686`) and Steam-join (`:50726`) Hint
+    /// rows play 10 before their unported bodies; the Main page's
+    /// ResourcePacks Hint row stays cue-less (g22's window, recorded).
+    #[test]
+    fn w4_g23_union_the_manage_controls_and_steam_hint_rows_play_ten() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut m = menu(Page::Controls);
+        m.activate(2); // ManageControls (`:50686`)
+        assert!(m.hint.is_some());
+        assert_eq!(m.take_cue(), Some("Menu_Open"));
+        let mut m = menu(Page::Multiplayer);
+        m.activate(1); // Steam join (`:50726`)
+        assert!(m.hint.is_some());
+        assert_eq!(m.take_cue(), Some("Menu_Open"));
+        let mut m = menu(Page::Main);
+        m.activate(3); // ResourcePacks — g22's window, cue-less there
+        assert!(m.hint.is_some());
+        assert_eq!(m.take_cue(), None);
+    }
+
+    /// The union queue contract: an ACTIVATION cue lands on `pending_cue`
+    /// (the event-loop drain) and NEVER on the chrome `pending_ticks`; a
+    /// DRAW-TIME chrome tick lands on `pending_ticks` and never on
+    /// `pending_cue`. The two drains cannot double-play one site.
+    #[test]
+    fn w4_g23_union_the_activation_and_chrome_queues_never_overlap() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        // Activation: the IP Accept queues the submit 12 on pending_cue.
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = "127.0.0.1".into();
+        m.activate(9);
+        assert_eq!(m.take_cue(), Some("Menu_Tick"));
+        assert!(m.take_pending_ticks().is_empty(), "no chrome leak");
+        // Chrome: a volume-bar hover-enter queues on pending_ticks only.
+        let mut m = menu(Page::Volume);
+        let right_x = 1600.0 / 2.0 - 40.0 + 37.0;
+        let (_, hit) = sliders::value_bar_rects(right_x, 332.0);
+        m.mouse = Vec2::new(hit[0] + hit[2] * 0.5, hit[1] + hit[3] * 0.5);
+        m.mouse_down = false;
+        m.drag_volume_screen(1600.0);
+        assert_eq!(m.take_pending_ticks(), vec![12]);
+        assert_eq!(m.take_cue(), None, "no activation leak");
     }
 }

@@ -267,12 +267,31 @@ impl ApplicationHandler for App {
                                         }
                                     }
                                 }
+                                // W4-g22 — the text-edit cue (`Main.cs:
+                                // 50794-50797`/`:50899-50902`/`:48549-48552`/
+                                // `:48673-48676`): `character` queued 12 on
+                                // the change; drain before the key arm runs.
+                                if let Some(cue) =
+                                    self.menu.as_mut().and_then(|m| m.take_cue())
+                                {
+                                    self.audio.play(cue);
+                                }
                             }
                             let action = self
                                 .menu
                                 .as_mut()
                                 .map(|m| m.key(code))
                                 .unwrap_or(menu::Action::None);
+                            // W4-g22 — the per-site cue the key arm queued
+                            // (the Back rows' 11, the confirm No's 11, the
+                            // backspace change-diff 12). The old blanket
+                            // `Menu_Tick` never ran on the key path; the
+                            // queue is the C#'s own per-site plays.
+                            if let Some(cue) =
+                                self.menu.as_mut().and_then(|m| m.take_cue())
+                            {
+                                self.audio.play(cue);
+                            }
                             self.apply_menu_action(action, event_loop);
                             return;
                         }
@@ -447,11 +466,18 @@ impl ApplicationHandler for App {
                                 }
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
-                                // Bug 17: the legacy menu's click tick —
-                                // `Main.DoStatefulTickSound` (`Main.cs:3244`,
-                                // `:3256`) / the settings rows' activation.
-                                if !matches!(action, menu::Action::None) {
-                                    self.audio.play("Menu_Tick");
+                                // W4-g22 — the per-site cue the activation
+                                // queued (`Main.DrawMenu`'s inline plays:
+                                // 10 forward / 11 Back / 12 toggles, the
+                                // g22 window `Main.cs:48489-49727`). The
+                                // old blanket `Menu_Tick` on every non-None
+                                // action is gone — the C# never plays a
+                                // uniform tick (the Quit row `:48975-48978`
+                                // is silent). The hover tick above stays:
+                                // it is `DoStatefulTickSound` (`:3244`/
+                                // `:3256`), g21's site.
+                                if let Some(cue) = m.take_cue() {
+                                    self.audio.play(cue);
                                 }
                                 self.apply_menu_action(action, event_loop);
                             }
