@@ -1010,6 +1010,21 @@ pub struct Player {
     /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a
     /// recorded follow-up (ANALYSIS "The wiring tools (S1-P-i34)").
     pub auto_actuator: bool,
+    /// `Player.rulerLine` (`Player.cs:2360`): the Ruler (486) / Wire Kite
+    /// (3611) measurement line. `ResetEffects` re-sets it TRUE every tick
+    /// (`:18693`), so it reads on unless nothing has run yet; grants at
+    /// `RefreshMechanicalAccsFromItemType` (`:12805-12808`) + the held arm
+    /// (`:15190-15193`). Counted by `GetBuilderAccsCountToShow` (`:47596`).
+    pub ruler_line: bool,
+    /// `Player.rulerGrid` (`Player.cs:2358`): the Laser Ruler (2799) / Wire
+    /// Kite (3611) grid. Cleared in `ResetEffects` (`:18692`), re-granted at
+    /// `:12809-12812` + the held arm (`:15194-15197`). Counted at `:47596`.
+    pub ruler_grid: bool,
+    /// `Player.autoPaint` (`Player.cs:2472`): the Paint Sprayer (2216) /
+    /// Architect Gizmo Pack (3061) / Presserator (5126) auto-paint. Cleared
+    /// in `ResetEffects` (`:18533`), re-granted at `:12813-12816` + the held
+    /// arms (`:15271-15294`). Counted at `:47596`.
+    pub auto_paint: bool,
     /// `Player.builderAccStatus` (`Player.cs:814`, `BuilderAccToggleIDs.Count
     /// = 12` at `:77`): the info-accessory toggle states. Slots 4/5/6/7 are
     /// the red/blue/green/yellow wire visibility, 9 the actuator visibility
@@ -2635,6 +2650,11 @@ impl Player {
             actuation_rod_lock_setting: false,
             info_acc_mech_show_wires: false,
             auto_actuator: false,
+            // C# field inits are false; `ResetEffects` re-sets `rulerLine`
+            // true per tick (`Player.cs:18692-18693`).
+            ruler_line: false,
+            ruler_grid: false,
+            auto_paint: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
             // (`:56092`): the ruler-line toggle starts off, the rest on.
             builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -5996,6 +6016,12 @@ impl Player {
         // (`RefreshMechanicalAccsFromItemType`, `:12799-12820`).
         self.info_acc_mech_show_wires = false;
         self.auto_actuator = false;
+        // `Player.cs:18692-18693`/`:18533`: `ResetEffects` clears the grid
+        // and paint flags but re-sets `rulerLine = true` unconditionally —
+        // the ruler-line toggle starts ON every tick.
+        self.ruler_grid = false;
+        self.ruler_line = true;
+        self.auto_paint = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()

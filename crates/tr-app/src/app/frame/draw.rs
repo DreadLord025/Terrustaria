@@ -186,7 +186,10 @@ impl App {
                 self.player.as_ref().is_some_and(|p| p.tile_replacement_enabled());
             let info_acc_mech_show_wires =
                 self.player.as_ref().is_some_and(|p| p.info_acc_mech_show_wires);
+            let ruler_line = self.player.as_ref().is_some_and(|p| p.ruler_line);
+            let ruler_grid = self.player.as_ref().is_some_and(|p| p.ruler_grid);
             let auto_actuator = self.player.as_ref().is_some_and(|p| p.auto_actuator);
+            let auto_paint = self.player.as_ref().is_some_and(|p| p.auto_paint);
             // `Main.ActivePlayerFileData.Player.difficulty` for the world-select
             // grey-out (`UIWorldSelect.cs:179`) — snapshotted before the disjoint
             // borrow below (it reads `self.session_draft`).
@@ -1828,7 +1831,10 @@ impl App {
                             using_biome_torches,
                             tile_replacement_enabled,
                             info_acc_mech_show_wires,
+                            ruler_line,
+                            ruler_grid,
                             auto_actuator,
+                            auto_paint,
                             &mut self.hotbar_lock_hover,
                             &mut self.toggle_acc_hover,
                             // The buff bar (`Main.DrawInterface_Resources_Buffs`).

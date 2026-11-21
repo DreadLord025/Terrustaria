@@ -1943,7 +1943,10 @@ impl App {
         if left && self.inventory_open {
             let push_up = ui::chrome::builder_accs_count_to_show(
                 self.player.as_ref().is_some_and(|p| p.info_acc_mech_show_wires),
+                self.player.as_ref().is_some_and(|p| p.ruler_line),
+                self.player.as_ref().is_some_and(|p| p.ruler_grid),
                 self.player.as_ref().is_some_and(|p| p.auto_actuator),
+                self.player.as_ref().is_some_and(|p| p.auto_paint),
                 self.player.as_ref().is_some_and(|p| p.unlocked_biome_torches),
             ) >= 10;
             if ui::chrome::hotbar_lock_hit(&self.lookups, push_up, self.mouse_pos) {

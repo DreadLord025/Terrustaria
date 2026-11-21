@@ -792,19 +792,27 @@ pub fn draw_torch_biome_icon(
 
 /// `Main.GetBuilderAccsCountToShow` (`Main.cs:47592-47597`): the total icon
 /// count the `pushSideToolsUp` gate reads (`totalDrawnIcons >= 10`,
-/// `:41043`/`:47370`). The port models the block-replacement icon (always 1)
-/// and the torch-biome icon (1 while unlocked); the ruler-line/grid and
-/// auto-paint flags are unported (false), the wire icons ride
-/// `info_acc_mech_show_wires` (6) and the actuator icon `auto_actuator` (1).
+/// `:41043`/`:47370`). Exact C# sum: `InfoAccMechShowWires*6 + rulerLine +
+/// rulerGrid + autoActuator + autoPaint + blockReplaceIcons(1) +
+/// torchGodIcons(0|1)` — max 12. `ruler_line` starts ON (`ResetEffects`,
+/// `Player.cs:18693`), `ruler_grid`/`auto_paint` re-derive per tick from the
+/// Ruler/Laser Ruler/paint-sprayer grants (`:12805-12816`). The wire icons
+/// ride `info_acc_mech_show_wires` (6), the actuator icon `auto_actuator` (1).
 pub fn builder_accs_count_to_show(
     info_acc_mech_show_wires: bool,
+    ruler_line: bool,
+    ruler_grid: bool,
     auto_actuator: bool,
+    auto_paint: bool,
     unlocked_biome_torches: bool,
 ) -> i32 {
     let block_replace_icons = 1;
     let torch_god_icons = if unlocked_biome_torches { 1 } else { 0 };
     (if info_acc_mech_show_wires { 6 } else { 0 })
+        + (if ruler_line { 1 } else { 0 })
+        + (if ruler_grid { 1 } else { 0 })
         + (if auto_actuator { 1 } else { 0 })
+        + (if auto_paint { 1 } else { 0 })
         + block_replace_icons
         + torch_god_icons
 }
@@ -1339,21 +1347,29 @@ mod tests {
         assert!(!torch_biome_hit(&empty, false, Vec2::new(5.0, 75.0)));
     }
 
-    /// `Main.GetBuilderAccsCountToShow` (`Main.cs:47592-47597`): the
-    /// block-replacement icon always counts 1, the torch-god icon 1 while
-    /// unlocked; wires add 6, the actuator 1; the ruler/paint flags fold to
-    /// false. The `>= 10` push-up gate (`:41043`/`:47370`) needs wires +
-    /// actuator + both icons (6+1+1+1 = 9 stays down; +torch = 10 pushes).
+    /// `Main.GetBuilderAccsCountToShow` (`Main.cs:47592-47597`): the exact
+    /// sum `wires*6 + rulerLine + rulerGrid + autoActuator + autoPaint +
+    /// blockReplaceIcons(1) + torchGodIcons(0|1)` — max 12. The ruler line
+    /// is ON by default (`ResetEffects` re-sets it, `Player.cs:18693`), so
+    /// the resting count is 2; the `>= 10` push-up gate
+    /// (`:41043`/`:47370`) fires at wires + actuator + torch (6+1+1+1+1).
     #[test]
     fn batch5_builder_accs_count_and_push_gate() {
-        // The default player: block-replace only.
-        assert_eq!(builder_accs_count_to_show(false, false, false), 1);
-        assert_eq!(builder_accs_count_to_show(false, false, true), 2);
-        assert_eq!(builder_accs_count_to_show(true, false, false), 7);
-        assert_eq!(builder_accs_count_to_show(true, true, false), 8);
-        // 9 < 10: no push-up; 10 >= 10: pushed up.
-        assert!(builder_accs_count_to_show(true, true, false) < 10);
-        assert!(builder_accs_count_to_show(true, true, true) >= 10);
+        // (wires, ruler_line, ruler_grid, actuator, paint, torches).
+        // Everything off: block-replace only.
+        assert_eq!(builder_accs_count_to_show(false, false, false, false, false, false), 1);
+        // The default player: ruler line ON (`Player.cs:18693`) + block replace.
+        assert_eq!(builder_accs_count_to_show(false, true, false, false, false, false), 2);
+        assert_eq!(builder_accs_count_to_show(false, true, false, false, false, true), 3);
+        assert_eq!(builder_accs_count_to_show(true, true, false, false, false, false), 8);
+        // 9 < 10: no push-up; wires+actuator+torch with the ruler line = 10.
+        assert_eq!(builder_accs_count_to_show(true, true, false, true, false, false), 9);
+        assert!(builder_accs_count_to_show(true, true, false, true, false, false) < 10);
+        assert_eq!(builder_accs_count_to_show(true, true, false, true, false, true), 10);
+        assert!(builder_accs_count_to_show(true, true, false, true, false, true) >= 10);
+        // Each extra toggle adds exactly 1; all on = the C# max of 12.
+        assert_eq!(builder_accs_count_to_show(true, true, true, true, false, true), 11);
+        assert_eq!(builder_accs_count_to_show(true, true, true, true, true, true), 12);
     }
 
     /// `DoStatefulTickSound(ref bool, bool)` (`Main.cs:3237-3247`) — the

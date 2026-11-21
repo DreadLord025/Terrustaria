@@ -710,7 +710,10 @@ pub fn draw_hud(
     using_biome_torches: bool,
     tile_replacement_enabled: bool,
     info_acc_mech_show_wires: bool,
+    ruler_line: bool,
+    ruler_grid: bool,
     auto_actuator: bool,
+    auto_paint: bool,
     hotbar_lock_hover: &mut bool,
     toggle_acc_hover: &mut i32,
     // The buff bar (`Main.DrawInterface_Resources_Buffs`, `Main.cs:43203`):
@@ -1009,7 +1012,10 @@ pub fn draw_hud(
         // `totalDrawnIcons >= 10` (`:41042-41043`). W4-g21 batch 5 host 71.
         let push_side_tools_up = chrome::builder_accs_count_to_show(
             info_acc_mech_show_wires,
+            ruler_line,
+            ruler_grid,
             auto_actuator,
+            auto_paint,
             unlocked_biome_torches,
         ) >= 10;
         if chrome::draw_hotbar_lock(
