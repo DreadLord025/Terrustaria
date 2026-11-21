@@ -293,6 +293,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_59", 2),
     ("Item_60", 2),
     ("Item_61", 2),
+    // S1-E-21h f1 fifth batch — the rocket families' Item62
+    // (`Kill_Bombs_DoUsualKillCode` `Projectile.cs:77737`/`:77781`/`:77820`/
+    // `:77859`/`:77897`/`:77983`/`:78025`/`:78146`, the II-kind / shrapnel /
+    // cluster / Rocket-III cues; the `.xnb` asset verified on disk).
+    ("Item_62", 2),
     ("Item_63", 2),
     ("Item_64", 2),
     ("Item_66", 2),
@@ -3873,6 +3878,31 @@ mod tests {
             assert_eq!(audio.play_proj_sound((id, style), 0.0, 0.0, 0.0, &mut rng), None);
             assert_eq!(rng.peek(), peek, "the muted id-{id} play is draw-free");
         }
+    }
+
+    /// S1-E-21h f1 fifth batch — the rocket families' Item62 bank gap
+    /// resolves (`Kill_Bombs_DoUsualKillCode` `Projectile.cs:77737`-`:78146`),
+    /// and the style plays its one case-2 `Next(-6, 7)` pitch draw on the
+    /// caller's stream only when audible. Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_b5_the_rocket_item62_bank_gap_resolves() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        let cue = audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Item_62"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one case-2 pitch draw");
+        assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        // Muted: the gate refuses before the case-2 switch — no draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted Item62 play is draw-free");
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract

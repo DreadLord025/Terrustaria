@@ -21424,6 +21424,34 @@ impl ProjectilePool {
             42 => Some((0, 0, x, y, 0.0)),
             // `:76207` — the hostile Snow Ball's Dig thud.
             SNOW_BALL_HOSTILE => Some((0, 0, x, y, 0.0)),
+            // S1-E-21h f1 fifth batch — the `Kill()` tail's per-kind death
+            // cues (`:76252`-`:77208`, the `!projPet` chain's rowed kinds).
+            // Every arm below plays at the PRE-resize `base.position` (none
+            // resizes ahead of its play), so the death-hook read is exact.
+            // The rocket/bomb families (`Kill_Bombs_DoUsualKillCode`) are
+            // NOT here — their cues ride `rocket_kill_census` (the death
+            // hook runs after their resizes; see that fn).
+            // `:76283` — the Water Bolt's Item10.
+            WATER_BOLT => Some((2, 10, x, y, 0.0)),
+            // `:76300` — the Demon Sickle / Demon Scythe's Item10.
+            DEMON_SICKLE | DEMON_SCYTHE => Some((2, 10, x, y, 0.0)),
+            // `:77018`/`:77033`/`:77048` — the three water bottles' Shatter
+            // (`PlaySound(13, pos)`, the int overload — no draws).
+            HOLY_WATER | UNHOLY_WATER | BLOOD_WATER => Some((13, 0, x, y, 0.0)),
+            // `:77063` — the hostile Unholy Trident's Item10.
+            UNHOLY_TRIDENT_HOSTILE => Some((2, 10, x, y, 0.0)),
+            // `:77077` — the Unholy Trident's Item10.
+            UNHOLY_TRIDENT => Some((2, 10, x, y, 0.0)),
+            // `:77094` — the Sword Beam's Item10.
+            SWORD_BEAM => Some((2, 10, x, y, 0.0)),
+            // `:77107` — the Enchanted Beam's Item10.
+            ENCHANTED_BEAM => Some((2, 10, x, y, 0.0)),
+            // `:77124` — the Terra Beam's Item10.
+            TERRA_BEAM => Some((2, 10, x, y, 0.0)),
+            // `:77138` — the Light Beam's Item10.
+            LIGHT_BEAM => Some((2, 10, x, y, 0.0)),
+            // `:77153` — the Night Beam's Item10.
+            NIGHT_BEAM => Some((2, 10, x, y, 0.0)),
             _ => None,
         };
         if let Some(req) = cue {
@@ -22369,13 +22397,27 @@ impl ProjectilePool {
             // (`:77759-77770`'s 2×2×2 loop shape), the Spread flood fill
             // (the liquid-layer follow-up — no draws).
             resize(&mut self.slots[slot], 22.0);
+            // S1-E-21h f1 fifth batch — the wet/lava/honey death cue
+            // (`:77737`/`:77781`/`:77820`, Item62 for the II kinds
+            // 785/788/791; `:77741`/`:77785`/`:77824`, Item14 otherwise).
+            // The C# plays AFTER `Resize(22, 22)` at `base.position` (the
+            // post-resize top-left), so the cue reads the resized box.
+            let style = if matches!(kind, 785 | 788 | 791) { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
             for _ in 0..8 {
                 gore(rng);
             }
         } else if matches!(kind, 799 | 800 | 801 | 810) {
-            // `:77854-77892` — the dry family: the same shape (the sound
-            // is 62 for 799, 14 otherwise — the cue skip).
+            // `:77854-77892` — the dry family: the same shape. S1-E-21h f1
+            // fifth batch — the cue (`:77859` Item62 for the II kind 800;
+            // `:77863` Item14 otherwise; the C# names 800, NOT 799 — the
+            // pre-port "62 for 799" comment was wrong), post-`Resize(22)`
+            // `base.position`.
             resize(&mut self.slots[slot], 22.0);
+            let style = if kind == 800 { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
             for _ in 0..8 {
                 gore(rng);
             }
@@ -22388,6 +22430,19 @@ impl ProjectilePool {
             // 1/11-step rings' one `NextFloat` rotation + one `NextFloat`
             // velocity scale per particle (`:77951-77965`), 12 gores
             // (`:77966-77977`'s 3×2×2 loop), the 10×10 recentre.
+            // S1-E-21h f1 fifth batch — the Mini Nuke cue (`:77897` Item62
+            // for 794/797; `:77901` Item14 otherwise) plays at `base.Center`
+            // BEFORE `Resize(50, 50)` — the centre is resize-invariant, so
+            // reading it ahead of the resize matches the C# play point.
+            let style = if matches!(kind, 794 | 797) { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((
+                2,
+                style,
+                p.pos.x + p.w * 0.5,
+                p.pos.y + p.h * 0.5,
+                0.0,
+            ));
             resize(&mut self.slots[slot], 50.0);
             for _ in 0..50 {
                 let _ = rng.next_range(0, 5); // dust scale (`:77909`)
@@ -22422,6 +22477,11 @@ impl ProjectilePool {
             // 15+5×2+3 dust (no explicit draws), the four-corner `Next(5)`
             // gates each spawning one gore when taken (`:78006-78018`).
             resize(&mut self.slots[slot], 22.0);
+            // S1-E-21h f1 fifth batch — the shrapnel cue (`:77983`, Item62
+            // for ALL four kinds — no Item14 sibling), post-`Resize(22)`
+            // `base.position`.
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, 62, p.pos.x, p.pos.y, 0.0));
             for _ in 0..4 {
                 if rng.next_range(0, 5) == 0 {
                     gore(rng);
@@ -22436,6 +22496,14 @@ impl ProjectilePool {
             // iterations, drift included) one `NextFloat` radius scale +
             // the spawn + one `Next(30)` timeLeft decrement.
             resize(&mut self.slots[slot], 22.0);
+            // S1-E-21h f1 fifth batch — the cluster cue (`:78025` Item62
+            // for 777/781; `:78029` Item14 otherwise), post-`Resize(22)`
+            // `base.position` — queued BEFORE the owner-gated ring (the
+            // remote owner's cluster still plays its cue, `:78023` precedes
+            // the `:78063` owner gate).
+            let style = if matches!(kind, 777 | 781) { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
             for _ in 0..4 {
                 gore(rng);
             }
@@ -22491,6 +22559,15 @@ impl ProjectilePool {
             // `:78088-78141` — the plain rockets: the 22×22 recentre, the
             // 30+20×2 dust (no explicit draws), 8 gores (`:78117-78140`'s
             // 2×4 loop).
+            // S1-E-21h f1 fifth batch — the plain-rocket cue (`:78096`,
+            // Item14) plays at `base.position` BEFORE the 22×22 recentre
+            // (the post-`PrepareBombToBlow` top-left). The Item62 sibling
+            // (`:78092`, kinds 133/136) is d77's pick — excluded here so the
+            // cue stays kind-disjoint from d77's selection.
+            if !matches!(kind, 133 | 136) {
+                let p = &self.slots[slot];
+                self.pending_proj_sounds.push((2, 14, p.pos.x, p.pos.y, 0.0));
+            }
             resize(&mut self.slots[slot], 22.0);
             for _ in 0..8 {
                 gore(rng);
@@ -22500,6 +22577,14 @@ impl ProjectilePool {
             // smoke dust with a `Next(2)` gate (one `Next(10)` fadeIn when
             // taken) each (`:78162-78166`), the 70×2 dust (no draws), 12
             // gores (`:78176-78203`'s 3×4 loop), the 10×10 recentre.
+            // S1-E-21h f1 fifth batch — the Rocket III/IV cue (`:78146`
+            // Item62 for 139; `:78150` Item14 otherwise) plays at
+            // `base.position` BEFORE the 80×80 recentre (the
+            // post-`PrepareBombToBlow` top-left). d77's `:78218` pick is the
+            // scarab-773 arm's dead 794/797 clause, NOT this arm.
+            let style = if kind == 139 { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
             resize(&mut self.slots[slot], 80.0);
             for _ in 0..40 {
                 if rng.next_range(0, 2) == 0 {
@@ -24058,6 +24143,110 @@ mod s1_e_21h_sound_tests {
         let queued = pool.drain_proj_sounds();
         assert_eq!(queued, vec![(2, 27, 96.0, 96.0, 0.0)], "the zero latch plays");
         pool.kill(slot);
+    }
+
+    /// S1-E-21h f1 fifth batch — the `Kill()` tail's per-kind death cues
+    /// (`:76252`-`:77208`): the 13 rowed kinds queue their `(id, style)` at
+    /// the PRE-resize `base.position` (none of these arms resizes ahead of
+    /// its play). The water bottles ride the id-13 Shatter; the rest are
+    /// id-2 Item10. Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_b5_the_kill_tail_cues_queue_their_payloads() {
+        let mut pool = ProjectilePool::new();
+        // (kind, id, style) — the 12 sites :76283/:76300/:77018/:77033/
+        // :77048/:77063/:77077/:77094/:77107/:77124/:77138/:77153.
+        let cases: [(u16, u16, i32); 13] = [
+            (WATER_BOLT, 2, 10),
+            (DEMON_SICKLE, 2, 10),
+            (DEMON_SCYTHE, 2, 10),
+            (HOLY_WATER, 13, 0),
+            (UNHOLY_WATER, 13, 0),
+            (BLOOD_WATER, 13, 0),
+            (UNHOLY_TRIDENT_HOSTILE, 2, 10),
+            (UNHOLY_TRIDENT, 2, 10),
+            (SWORD_BEAM, 2, 10),
+            (ENCHANTED_BEAM, 2, 10),
+            (TERRA_BEAM, 2, 10),
+            (LIGHT_BEAM, 2, 10),
+            (NIGHT_BEAM, 2, 10),
+        ];
+        for (kind, id, style) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 64.0, 64.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row"));
+            pool.kill_sound_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
+            assert_eq!(queued[0], (id, style, 64.0, 64.0, 0.0), "kind {kind}'s payload");
+            assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
+            pool.kill(slot);
+        }
+    }
+
+    /// S1-E-21h f1 fifth batch — the rocket families' death cues ride
+    /// `rocket_kill_census` (NOT the death hook — the hook runs after their
+    /// resizes). The cue position is the C# play point: post-`Resize(22)`
+    /// `base.position` for the wet/dry/shrapnel/cluster arms, `base.Center`
+    /// before `Resize(50)` for the Mini Nuke, and the post-`PrepareBombToBlow`
+    /// top-left before the family resize for the plain / Rocket III/IV arms.
+    /// The plain arm's 133/136 Item62 sibling (`:78092`) is d77's pick — the
+    /// port gates it out. Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_b5_the_rocket_cues_queue_at_their_play_points() {
+        // (kind, style, position-mode) — mode 0 = post-Resize(22) top-left,
+        // 1 = Centre (pre-Resize(50)), 2 = pre-family-resize top-left.
+        let cases: [(u16, i32, u8); 15] = [
+            (785, 62, 0), (788, 62, 0), (791, 62, 0), // wet/lava/honey II
+            (784, 14, 0), (787, 14, 0), (790, 14, 0), // wet/lava/honey I
+            (800, 62, 0), (799, 14, 0),               // dry II / I
+            (794, 62, 1), (797, 62, 1), (793, 14, 1), // Mini Nuke
+            (779, 62, 0), (862, 62, 0),               // shrapnel
+            (777, 62, 0), (776, 14, 0),               // cluster II / I
+            (139, 62, 2),                             // Rocket III
+        ];
+        for (kind, style, mode) in cases {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 90, 4.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row"));
+            // Stand in for `PrepareBombToBlow`'s resize (the census runs
+            // after it): a 128×128 box recentred on the spawn centre (107,107).
+            {
+                let p = &mut pool.slots_mut()[slot];
+                p.w = 128.0;
+                p.h = 128.0;
+                p.pos = Vec2::new(107.0 - 64.0, 107.0 - 64.0); // (43,43)
+            }
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.rocket_kill_census(slot, &mut rng, 0);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one rocket cue");
+            let (qx, qy) = match mode {
+                // post-Resize(22): centre (107,107) − 11 = (96,96).
+                0 => (96.0, 96.0),
+                // Centre before Resize(50): (107,107).
+                1 => (107.0, 107.0),
+                // pre-family-resize top-left: (43,43).
+                _ => (43.0, 43.0),
+            };
+            assert_eq!(queued[0], (2, style, qx, qy, 0.0), "kind {kind}'s play point");
+        }
+        // The plain arm's 133/136 are d77's Item62 pick — the port queues
+        // NOTHING for them (the else-branch Item14 covers 134/135/137/138).
+        for kind in [133u16, 136] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool.spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 90, 4.0).unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.rocket_kill_census(slot, &mut rng, 0);
+            assert!(pool.drain_proj_sounds().is_empty(), "kind {kind} is d77's pick");
+        }
+        // The plain else-branch (134) queues Item14 at the pre-resize top-left.
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(134, 100.0, 100.0, 0.0, 0.0, 90, 4.0).unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.rocket_kill_census(slot, &mut rng, 0);
+        let queued = pool.drain_proj_sounds();
+        assert_eq!(queued, vec![(2, 14, 100.0, 100.0, 0.0)], ":78096 the 134 else-branch");
     }
 }
 

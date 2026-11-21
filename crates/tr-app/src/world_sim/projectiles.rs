@@ -882,6 +882,56 @@ mod s1_e_21h_sound_stream_tests {
             "the once-per-death cue draws nothing on tick 2"
         );
     }
+
+    /// S1-E-21h f1 fifth batch — the Kill-tail death cue's stream contract:
+    /// the Holy Water bottle (69, `:77018` Shatter) dies this pass and queues
+    /// its id-13 cue; the Shatter case draws NOTHING (`LegacySoundPlayer.cs:
+    /// 783-792`), so the `UpdateProjectiles` stream stays pristine whether
+    /// audible or muted — the gate still precedes the (empty) case. The
+    /// bottle is aiStyle 2 (RNG-free flight), spawned `time_left = 1` so the
+    /// lifetime block kills it on tick 1. Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_b5_the_water_bottle_shatter_cue_is_draw_free() {
+        use crate::projectile::HOLY_WATER;
+        fn dying_bottle_app() -> App {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.projectiles.spawn_with_data_ai_owned(
+                HOLY_WATER, 0, 32.0, 32.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0,
+            );
+            let slot = app
+                .projectiles
+                .slots()
+                .iter()
+                .position(|p| p.active && p.kind == HOLY_WATER)
+                .expect("the bottle lives");
+            app.projectiles.slots_mut()[slot].time_left = 1;
+            app
+        }
+        // Audible: the Shatter plays but draws nothing — every stream pristine.
+        let mut app = dying_bottle_app();
+        app.audio.set_listener(listener(1.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine — the Shatter case draws nothing",
+                key.name()
+            );
+        }
+        // Muted: the gate refuses before the (empty) case — still pristine.
+        let mut app = dying_bottle_app();
+        app.audio.set_listener(listener(0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine under the muted gate",
+                key.name()
+            );
+        }
+    }
 }
 
 #[cfg(test)]
