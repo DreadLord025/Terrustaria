@@ -69,9 +69,9 @@ pub(crate) struct GpuCaptureRenderer<'a> {
     pub compositor: &'a mut TargetCompositor,
     pub cw: CaptureWorld<'a>,
     /// `CaptureCamera._frameBuffer` (`:97`).
-    frame_buffer: Option<(wgpu::Texture, wgpu::TextureView)>,
+    pub frame_buffer: Option<(wgpu::Texture, wgpu::TextureView)>,
     /// `CaptureCamera._scaledFrameBuffer` (`:155`), sized per capture.
-    scaled_buffer: Option<(wgpu::Texture, wgpu::TextureView, u32)>,
+    pub scaled_buffer: Option<(wgpu::Texture, wgpu::TextureView, u32)>,
 }
 
 impl<'a> GpuCaptureRenderer<'a> {
