@@ -16054,6 +16054,12 @@ impl ProjectilePool {
         if GEM_BOLTS.contains(&kind) {
             self.slots[slot].gem_staves_finalize();
         }
+        // W4-d10 — `FinalizeProjectile`'s aiStyle-93 arm
+        // (`Projectile.cs:22045-22048`): the nail's spawn tilt.
+        if data.ai_style == 93 {
+            let v = self.slots[slot].vel;
+            self.slots[slot].rot = v.y.atan2(v.x) + 1.57;
+        }
         // `NewProjectile`'s channel tracking (`Projectile.cs:11097-11100`):
         // `if (Owner == Main.myPlayer) Main.player[Owner].TryUpdateChannel
         // (projectile)` — the LAST local spawn of the cancel key's expected
@@ -18033,6 +18039,17 @@ impl ProjectilePool {
                             );
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
+                        }
+                        // W4-d10 — `AI()`'s `else if (this.aiStyle == 93)`
+                        // (`Projectile.cs:32821-32882`): the Nail Gun's
+                        // nail (514) — the fade, the hover/gravity free
+                        // flight, the NPC anchor + release, the 90-tick
+                        // fuse. The movement is the 93 blocked-move arm
+                        // (`:18819-18832`) + the stuck UpdatePosition skip
+                        // (`:20435`).
+                        93 => {
+                            crate::projectile_ai_91_100::ai_nail(&mut self.slots[i], npcs, rng);
+                            crate::projectile_ai_91_100::nail_move(&mut self.slots[i], world);
                         }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing
@@ -20061,7 +20078,7 @@ impl ProjectilePool {
                 // ABOVE the 76308 arm in the C#, but the two kinds are
                 // disjoint so the order between them is unobservable),
                 // then the Bee Arrow's swarm (`:76407-76429`).
-                self.special_arrow_kill(i, npcs, old_velocity, player.as_deref(), rng, luck);
+                self.special_arrow_kill(i, npcs, old_velocity, player.as_deref(), rng, luck, local_owner);
                 // S1-P-i18 — `Kill()`'s special-bullet arms
                 // (`Projectile.cs:75250-75268` the 89 split, `:75911-75974` the
                 // 283 debuff-spread burst, `:75975-75999` the 284 confetti,
@@ -20856,11 +20873,20 @@ impl ProjectilePool {
         player: Option<&crate::player::Player>,
         rng: &mut dyn DropRng,
         luck: f32,
+        local_owner: u8,
     ) {
         let kind = self.slots[slot].kind;
         // The Hellfire blast: resize + the box walk through the dying
         // slot (the `gem_bolt_aoe` shape).
         if crate::special_arrows::hellfire_kill_resize(&mut self.slots[slot]) {
+            self.damage_pve_boxed(slot, npcs, doll_flags(player), rng, luck);
+        }
+        // W4-d10 — `Kill()`'s nail arm (`Projectile.cs:76343-76375`): the
+        // 514's death resizes to 112×112, pins ai[0]=2 and runs Damage()
+        // through the box (the ×1.35 blast multiplier). C# body order:
+        // the 76343 arm sits between the Hellfire (76308) and the Bee
+        // (76407) arms — kind-disjoint, the order is unobservable.
+        if crate::projectile_ai_91_100::nail_kill(&mut self.slots[slot], rng, local_owner) {
             self.damage_pve_boxed(slot, npcs, doll_flags(player), rng, luck);
         }
         // The Holy Arrow's star / the star's own one-deep chain.
@@ -22666,6 +22692,15 @@ impl ProjectilePool {
             {
                 continue;
             }
+            // W4-d10 — `Damage_CanDealDamage` (`:12452-12455`): the nail
+            // deals damage only in the free (0) and blast (2) states —
+            // the wall-stuck (1) and NPC-stuck (<0) states are inert.
+            if proj_data(p.kind).is_some_and(|d| d.ai_style == 93)
+                && p.ai[0] != 0.0
+                && p.ai[0] != 2.0
+            {
+                continue;
+            }
             // `Damage_PVE_Inner`'s friendly refusal (`:12601-12611`): the
             // `!this.friendly` early return. The port's pass historically
             // ran every slot regardless of the flag (the hostile shots'
@@ -22854,6 +22889,26 @@ impl ProjectilePool {
             if matches!(self.slots[slot].kind, TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3) {
                 self.slots[slot].ai[1] += 1.0;
                 self.slots[slot].net_update = true;
+            }
+            // W4-d10 — `Damage_PVE_Inner`'s aiStyle-93 arm
+            // (`Projectile.cs:13334-13344`): the first hit sticks the nail
+            // to the victim (`ai[1]=0`, `ai[0]=-victim-1`, the velocity
+            // points at the NPC's center), and the damage scales ×0.15
+            // (×1.35 in the blast state 2). Post-DamageVar, verbatim.
+            if proj_data(self.slots[slot].kind).is_some_and(|d| d.ai_style == 93) {
+                if self.slots[slot].ai[0] == 0.0 {
+                    let (ncx, ncy) = n.center();
+                    let (bcx, bcy) = self.slots[slot].center();
+                    self.slots[slot].ai[1] = 0.0;
+                    self.slots[slot].ai[0] = -(idx as f32) - 1.0;
+                    self.slots[slot].vel = Vec2::new(ncx - bcx, ncy - bcy);
+                    self.slots[slot].net_update = true;
+                }
+                dmg = if self.slots[slot].ai[0] != 2.0 {
+                    (dmg as f64 * 0.15) as i32
+                } else {
+                    (dmg as f64 * 1.35) as i32
+                };
             }
             // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
             // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
@@ -23112,6 +23167,10 @@ impl ProjectilePool {
                 // unported (`Player.cs:47019-47026` returns the original
                 // time when the flag is false), so the window is 5.
                 npcs[idx].immune[owner_idx] = 5;
+            } else if p.kind == NAIL_FRIENDLY {
+                // W4-d10 — `:13996-13999`: the nail (514) pins a 1-tick
+                // per-owner window (the rapid re-stick).
+                npcs[idx].immune[owner_idx] = 1;
             } else if matches!(p.kind, NEBULA_BLAZE_1 | NEBULA_BLAZE_2 | SPIRIT_FLAME) {
                 // `:14016-14023` — the 634/635/659 per-type arm: 5 ticks.
                 npcs[idx].immune[owner_idx] = 5;

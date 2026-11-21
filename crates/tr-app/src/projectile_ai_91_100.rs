@@ -514,6 +514,166 @@ pub(crate) fn shadowflame_move(p: &mut Projectile, world: &World) {
     p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
 }
 
+/// `AI()`'s aiStyle-93 arm (`Projectile.cs:32821-32882`) — the Nail Gun's
+/// nail (514). The alpha fade (−25, floor 0), the 18 fall cap, the free
+/// state's 20-tick hover then the 0.1 gravity + 0.992 X decay with the
+/// atan2+1.57 tilt; the stuck state (`ai[0] < 0`, the victim index
+/// `-ai[0]-1`) re-anchors to the NPC's center every tick, releases on the
+/// NPC's death with TWO `Next(-100, 101)` draws + the 6-speed normalize,
+/// and the 90-tick stuck fuse kills. `ai[0] == 2` is the death-blast
+/// state (`Kill()` `:76373`) — it rides the else arm's anchor read with
+/// index −3 (the C#'s own out-of-range read; the port guards it to the
+/// release, the documented fold — the blast's Damage() runs in the kill
+/// hook before any AI tick sees the state).
+pub(crate) fn ai_nail(p: &mut Projectile, npcs: &[Npc], rng: &mut dyn DropRng) {
+    // `:32823-32830` — the alpha fade.
+    if p.alpha > 0 {
+        p.alpha -= 25;
+        if p.alpha <= 0 {
+            p.alpha = 0;
+        }
+    }
+    // `:32831-32834` — the fall cap.
+    if p.vel.y > 18.0 {
+        p.vel.y = 18.0;
+    }
+    // `:32835-32845` — the free flight: the 20-tick hover, then gravity.
+    if p.ai[0] == 0.0 {
+        p.ai[1] += 1.0;
+        if p.ai[1] > 20.0 {
+            p.vel.y += 0.1;
+            p.vel.x *= 0.992;
+        }
+        p.rot = p.vel.y.atan2(p.vel.x) + 1.57;
+        return;
+    }
+    // `:32846` — every non-free state flies through tiles.
+    p.tile_collide = false;
+    if p.ai[0] == 1.0 {
+        // `:32847-32851` — the wall-stuck brake.
+        p.vel *= 0.6;
+    } else {
+        // `:32852-32873` — the NPC anchor. The C# reads
+        // `Main.npc[(int)(0f - ai[0]) - 1]` and anchors FIRST, then tests
+        // the death; the port guards the index (the ai[0]==2 blast
+        // state's −3 read never reaches the AI — Kill() deactivates at
+        // its tail — the documented fold).
+        let idx = (0.0 - p.ai[0]) as i32 - 1;
+        let anchor = npcs.get(idx.max(0) as usize).filter(|_| idx >= 0);
+        if let Some(n) = anchor {
+            // `:32856-32858` — the anchor write runs even for a dead NPC
+            // (the C# order: position first, the death test after).
+            let (ncx, ncy) = n.center();
+            p.pos = Vec2::new(ncx, ncy) - p.vel;
+            p.pos.x -= (p.w as i32 / 2) as f32;
+            p.pos.y -= (p.h as i32 / 2) as f32;
+        }
+        let alive = anchor.is_some_and(|n| n.hp > 0);
+        if !alive {
+            // `:32859-32868` — the release: tileCollide back on, the
+            // free state re-armed at the hover boundary, the random
+            // 6-speed kick. TWO Next(-100, 101) draws, X then Y.
+            p.tile_collide = true;
+            p.ai[0] = 0.0;
+            p.ai[1] = 20.0;
+            let x = rng.next_range(-100, 101) as f32;
+            let y = rng.next_range(-100, 101) as f32;
+            let v = Vec2::new(x, y);
+            p.vel = safe_normalize(v) * 6.0;
+            p.net_update = true;
+        } else if let Some(n) = anchor {
+            // `:32869-32872` — the (width+height)/3 INT-division
+            // speed cap's 0.99 decay.
+            let (nw, nh) = n.size();
+            if p.vel.length() > ((nw as i32 + nh as i32) / 3) as f32 {
+                p.vel *= 0.99;
+            }
+        }
+    }
+    // `:32874-32881` — the stuck fuse (every non-free state).
+    if p.ai[0] != 0.0 {
+        p.ai[1] += 1.0;
+        if p.ai[1] > 90.0 {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+        }
+    }
+}
+
+/// The nail's movement: `HandleMovement`'s blocked-move aiStyle-93 arm
+/// (`Projectile.cs:18819-18832`) — a blocked move re-arms the wall-stuck
+/// state (`ai[0]=1`, `ai[1]=0`, tileCollide off, the position steps once,
+/// the velocity restores to the pre-collision direction at speed 3). The
+/// collision box is the 4×4 `GetCollisionParams` slice (`:19962-19966`).
+/// `UpdatePosition` (`:20435`) SKIPS the integrate while stuck
+/// (`aiStyle == 93 && ai[0] < 0`); the free/wall states integrate.
+pub(crate) fn nail_move(p: &mut Projectile, world: &World) {
+    if p.tile_collide {
+        let last = p.vel;
+        let off = Vec2::new(p.w * 0.5 - 2.0, p.h * 0.5 - 2.0);
+        let tc = crate::collision::tile_collision(
+            world,
+            [p.pos.x + off.x, p.pos.y + off.y],
+            [p.vel.x, p.vel.y],
+            4.0,
+            4.0,
+            true,
+            true,
+        );
+        p.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        if p.vel != last {
+            // `:18821-18831` — the wall-stuck re-arm.
+            p.ai[1] = 0.0;
+            p.ai[0] = 1.0;
+            p.net_update = true;
+            p.tile_collide = false;
+            p.pos += p.vel;
+            p.vel = safe_normalize(last) * 3.0;
+        }
+    }
+    // `UpdatePosition` (`:20435-20446`): the stuck nail holds position.
+    if !(p.ai[0] < 0.0) {
+        p.pos += p.vel;
+    }
+    // `AutomaticallyChangesDirection` (`:17283` — 93 not excluded).
+    p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
+}
+
+/// The nail's `Kill()` blast (`Projectile.cs:76343-76375`): the Item14
+/// cue, the 10×dust-31 + 6×(dust-6 pair + the `Next(2)` third) burst —
+/// the dust bodies are the pool-wide kill-dust skip, the SIX explicit
+/// `Next(2)` draws stay (the empress kill-dust census precedent keeps the
+/// call-site draws). The local-owner arm resizes to 112×112 centred,
+/// `penetrate = -1`, `ai[0] = 2` and runs `Damage()` through the box (the
+/// pool's `damage_pve_boxed` seam — the caller runs it when this returns
+/// true). Returns true when the resize fired.
+pub(crate) fn nail_kill(p: &mut Projectile, rng: &mut dyn DropRng, local_owner: u8) -> bool {
+    if p.kind != 514 {
+        return false;
+    }
+    // `:76345` — the Item14 cue at base.position.
+    p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
+    // `:76346-76363` — the dust bursts: the bodies skip, the 6 Next(2)
+    // gates draw in order.
+    for _ in 0..6 {
+        let _ = rng.next_range(0, 2);
+    }
+    // `:76364-76375` — the owner-gated blast resize (the pool simulates
+    // local-owned slots; the gate stays explicit for the 255 hostile case).
+    if p.owner != local_owner {
+        return false;
+    }
+    p.penetrate = -1;
+    let cx = p.pos.x + (p.w as i32 / 2) as f32;
+    let cy = p.pos.y + (p.h as i32 / 2) as f32;
+    p.w = 112.0;
+    p.h = 112.0;
+    p.pos = Vec2::new(cx - 56.0, cy - 56.0);
+    p.ai[0] = 2.0;
+    true
+}
+
 // Witnesses (W4-d10 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -771,5 +931,130 @@ mod tests {
         slots[1].vel = Vec2::ZERO;
         ai_clouds(&mut slots, 0, &w, &mut [], None, 0, &mut rng);
         assert!(slots[0].vel.x > 0.0 && slots[0].vel.y < 0.0, "j>i → (1,-1)");
+    }
+
+    /// The 514 row (`Projectile.cs:5841-5850`): 10×10, aiStyle 93,
+    /// penetrate 3, alpha 255, ranged, the stock tileCollide/timeLeft.
+    #[test]
+    fn w4_d10_s93_the_nail_row_is_verbatim() {
+        let d = proj_data(514).unwrap();
+        assert_eq!((d.w, d.h), (10.0, 10.0));
+        assert_eq!(d.ai_style, 93);
+        assert_eq!(d.penetrate, 3);
+        assert_eq!(d.alpha, 255);
+        assert!(d.ranged);
+        assert!(d.tile_collide);
+        assert_eq!(d.time_left, 3600);
+    }
+
+    /// The free flight (`:32823-32845`): the alpha fade floors at 0, the
+    /// 20-tick hover holds the velocity, tick 21 adds the 0.1 gravity +
+    /// 0.992 X decay, the tilt is atan2+1.57. ZERO draws.
+    #[test]
+    fn w4_d10_s93_the_nail_hovers_then_falls() {
+        let mut p = proj(514);
+        p.vel = Vec2::new(5.0, 0.0);
+        let mut rng = CensusRng::default();
+        for _ in 0..20 {
+            ai_nail(&mut p, &[], &mut rng);
+        }
+        assert_eq!(p.ai[1], 20.0);
+        assert_eq!(p.vel, Vec2::new(5.0, 0.0), "the hover holds");
+        assert_eq!(p.alpha, 0, "255 - 25*11 floors at 0");
+        ai_nail(&mut p, &[], &mut rng);
+        assert!((p.vel.y - 0.1).abs() < 1e-6);
+        assert!((p.vel.x - 5.0 * 0.992).abs() < 1e-5);
+        assert!((p.rot - (0.1f32.atan2(5.0 * 0.992) + 1.57)).abs() < 1e-5);
+        assert!(rng.ranges.is_empty() && rng.floats == 0);
+        // The 18 fall cap.
+        p.vel.y = 20.0;
+        ai_nail(&mut p, &[], &mut rng);
+        assert!(p.vel.y <= 18.1, "the cap precedes the gravity add");
+    }
+
+    /// The NPC anchor + release (`:32852-32873`): the stuck nail rides the
+    /// victim's center; the victim's death releases with TWO Next(-100,101)
+    /// draws and the 6-speed normalize; the 90-tick fuse kills.
+    #[test]
+    fn w4_d10_s93_the_nail_sticks_releases_and_fuses() {
+        let mut n = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 2000.0, 900.0, 1, 0.0);
+        n.hp = 40;
+        n.max_hp = 40;
+        let mut p = proj(514);
+        p.ai[0] = -1.0; // victim index 0
+        p.vel = Vec2::new(2.0, 0.0);
+        let mut rng = CensusRng::default();
+        ai_nail(&mut p, &[n.clone()], &mut rng);
+        let (ncx, ncy) = n.center();
+        assert_eq!(p.pos.x, ncx - 2.0 - 5.0, "center - velocity - width/2");
+        assert_eq!(p.pos.y, ncy - 5.0);
+        assert!(!p.tile_collide);
+        assert_eq!(p.ai[1], 1.0, "the fuse ticks");
+        assert!(rng.ranges.is_empty(), "the live anchor draws nothing");
+        // The death release: two draws, the 6-speed kick, the free re-arm.
+        n.hp = 0;
+        ai_nail(&mut p, &[n], &mut rng);
+        assert_eq!(rng.ranges, vec![(-100, 101), (-100, 101)]);
+        assert_eq!(p.ai[0], 0.0);
+        assert_eq!(p.ai[1], 20.0);
+        assert!(p.tile_collide);
+        assert!(p.net_update);
+        // CensusRng returns min: (-100,-100) normalized * 6.
+        assert!((p.vel.length() - 6.0).abs() < 1e-4);
+        // The 90-tick fuse: ai[1] 91 > 90 → dead.
+        let mut q = proj(514);
+        q.ai[0] = 1.0;
+        q.ai[1] = 90.0;
+        ai_nail(&mut q, &[], &mut rng);
+        assert!(!q.active, "the wall-stuck fuse kills at 91");
+    }
+
+    /// The wall-stuck movement (`:18819-18832`): a blocked move re-arms
+    /// ai[0]=1 with the 3-speed restore; the stuck nail's UpdatePosition
+    /// skip (`:20435`) holds the position.
+    #[test]
+    fn w4_d10_s93_the_wall_block_sticks_the_nail() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut p = proj(514);
+        p.vel = Vec2::new(8.0, 0.0);
+        // A wall directly ahead of the 4×4 probe box.
+        let tx = ((p.pos.x + p.w * 0.5 + 2.0 + 8.0) / 16.0) as i32;
+        let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
+        let i = w.index(tx, ty);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        nail_move(&mut p, &w);
+        assert_eq!(p.ai[0], 1.0, "the wall-stuck re-arm");
+        assert_eq!(p.ai[1], 0.0);
+        assert!(!p.tile_collide);
+        assert!((p.vel.length() - 3.0).abs() < 1e-4, "the 3-speed restore");
+        // The NPC-stuck skip: ai[0] < 0 holds the position.
+        let mut q = proj(514);
+        q.ai[0] = -1.0;
+        q.vel = Vec2::new(4.0, 0.0);
+        let before = q.pos;
+        nail_move(&mut q, &w);
+        assert_eq!(q.pos, before, ":20435 — the stuck nail holds");
+    }
+
+    /// The kill blast (`:76343-76375`): the Item14 cue, the SIX Next(2)
+    /// draws, the 112×112 resize + ai[0]=2 + penetrate −1 (local owner).
+    #[test]
+    fn w4_d10_s93_the_nail_blast_resizes_and_draws_six() {
+        let mut p = proj(514);
+        let mut rng = CensusRng::default();
+        assert!(nail_kill(&mut p, &mut rng, 0));
+        assert_eq!(p.wants_sound, Some((2, 14, 1600.0, 800.0, 0.0)));
+        assert_eq!(rng.ranges, vec![(0, 2); 6], "the six dust gates");
+        assert_eq!((p.w, p.h), (112.0, 112.0));
+        assert_eq!(p.ai[0], 2.0);
+        assert_eq!(p.penetrate, -1);
+        // The centre holds: 1600+5 → 1605, the new box 1605-56 = 1549.
+        assert_eq!(p.pos, Vec2::new(1549.0, 749.0));
+        // A foreign owner skips the resize (the draws still ran).
+        let mut q = proj(514);
+        q.owner = 1;
+        assert!(!nail_kill(&mut q, &mut rng, 0));
+        assert_eq!(q.w, 10.0);
     }
 }

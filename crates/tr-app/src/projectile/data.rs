@@ -725,6 +725,9 @@ pub const GAS_TRAP: u16 = 1007;
 /// `ProjectileID.cs:2810`) — the claymore's spore orb, aiStyle 92
 /// (`Projectile.cs:10565-10579`), the idStatic-30 pair. W4-d10.
 pub const SPORE_CLOUD: u16 = 1128;
+/// `ProjectileID.NailFriendly` (514, `ProjectileID.cs:1582`) — the Nail
+/// Gun's nail, aiStyle 93 (`Projectile.cs:5841-5850`). W4-d10.
+pub const NAIL_FRIENDLY: u16 = 514;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1684,6 +1687,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             SPORE_CLOUD => (
                 30.0, 30.0, 92, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
                 (false, -2, true, 30, 0, 1.1),
+            ),
+            // W4-d10 — the Nail Gun's nail (`Projectile.cs:5841-5850`):
+            // 10×10, aiStyle 93, penetrate 3, alpha 255, ranged; the stock
+            // tileCollide/timeLeft. The AI is `ai_nail` + the 4×4
+            // collision box (`:19962`).
+            NAIL_FRIENDLY => (
+                10.0, 10.0, 93, 3, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
@@ -4353,6 +4364,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-d10 — the Nail Gun's nail (514, `:5849`).
+                | NAIL_FRIENDLY
         ),
         magic: matches!(
             kind,
