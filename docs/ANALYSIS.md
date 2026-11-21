@@ -1245,9 +1245,10 @@ lightning flash every 5вЂ“15 s. The flash is a 0.38-alpha full-screen white 
 decays over ~11 ticks; there is no bolt geometry or thunder audio yet.
 
 Snow biomes use vanilla's `DustID.Snowflake` (type 76): rain drops are suppressed and the
-ambient snow dust is spawned at `500 * screenWidth/1920` per second (scaled by
-`1 + 2*cloudAlpha`), falling at 2вЂ“5 px/tick with a per-flake sine sway and the storm wind.
-Flakes die on solid or wet tiles and are drawn from `Dust` frame 76 (X = 760, Y = 0/10/20).
+ambient snow dust is `Main.snowing()` (`Main.cs:13032-13116`, the W4-g11 `main_dust.rs`
+port) spawning into the shared `DustPool` at the `Main.cs:17238` slot on the bare
+`Main.rand` stream. The retired session-local `Snowflake` vector (the
+`500 * screenWidth/1920` rate, the sine sway, the Rain-stream rolls) is gone — keep-one.
 
 First-pass simplifications, as updated by later tasks: the session-local weather
 schedule is **retired** вЂ” M1.4-BG-22 landed the vanilla `rainTime`/`maxRaining` pair
@@ -39273,10 +39274,13 @@ Deliberate deviations / drops (all cited in the module):
   g12's style 10), the MP portal-colour hue ladder (SP port), style 9's
   pylon dust (`TeleportPylonsSystem.SpawnInWorldDust` — not a Main.cs
   NewDust site).
-- **Staged, not wired** (the W4-e2 batch-1 precedent): the snow site's
-  live stand-in (`rain.rs`'s Snowflake vector) keeps running until the
-  dust-76 physics/draw wiring round; the teleport callers' effect halves
-  are the port's documented render seams (`player.rs::teleport_style`).
-  `#![allow(dead_code)]` until the wiring; the 11 witnesses
+- **Staged → wired (the W4-g11 wiring round):** `snowing` is WIRED —
+  `world_sim::scene_scan::update_scene` calls it at the `:17238` slot
+  (before `Sandstorm.EmitDust` `:17247`) on `NamedRngs::global()`, and the
+  `rain.rs` `Snowflake` vector stand-in is retired (keep-one: the flakes
+  live in the shared pool; the 76 physics arm is d50's `dust_physics.rs`
+  lane, the generic draw pass the draw lane's). The teleport callers'
+  effect halves are the port's documented render seams
+  (`player.rs::teleport_style`). The 11 witnesses
   (`main_dust.rs::tests`) mirror every draw sequence with full-stream
   equality. WRITTEN NOT RUN — no cargo/rustc invoked (code-only).

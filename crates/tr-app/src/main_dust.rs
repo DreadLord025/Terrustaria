@@ -23,16 +23,18 @@
 //! and `Wiring.Teleport` (`Wiring.cs:3154`/`:3170`, the `UpdateWorldGen`
 //! swap) — the caller passes its pass's stream key.
 //!
-//! Wiring status (staged, the W4-e2 batch-1 precedent): the snow site's
-//! live stand-in is `rain.rs`'s `Snowflake` vector (`spawn_snow`); it keeps
-//! running until the dust-76 physics/draw wiring round (d50's
-//! `dust_physics.rs` carries the 76 arm — `snowDust++`, the scale lerp —
-//! and the pool's generic draw pass is the draw lane's). The
-//! `TeleportEffect` callers' effect halves are the port's documented
-//! render seams (`player.rs::teleport_style` — "the camera/effect/map
-//! halves are render seams"; `recall_teleport` runs its own recall dust,
-//! NOT `TeleportEffect`). The witnesses below pin the ports; the wiring
-//! follows with those seams. WRITTEN NOT RUN (code-only mode).
+//! Wiring status: the snow site is WIRED (W4-g11 wiring round) —
+//! `world_sim::scene_scan::update_scene` calls `snowing` at the `:17238`
+//! slot (before `Sandstorm.EmitDust` `:17247`, on `NamedRngs::global()`),
+//! and the `rain.rs` `Snowflake` vector stand-in is retired (keep-one). The
+//! type-76 physics arm (`snowDust++`, the scale lerp — `Dust.cs:1745-1763`)
+//! is d50's `dust_physics.rs` lane; until it lands the flakes ride the
+//! generic `UpdateDust` move/kills, and the pool's generic draw pass is the
+//! draw lane's. The `TeleportEffect` callers' effect halves are the port's
+//! documented render seams (`player.rs::teleport_style` — "the camera/effect/
+//! map halves are render seams"; `recall_teleport` runs its own recall dust,
+//! NOT `TeleportEffect`). The witnesses below pin the ports. WRITTEN NOT RUN
+//! (code-only mode).
 
 // The entry points are staged (see the wiring note above) — the witnesses
 // exercise them under `cfg(test)`; the lint stays quiet until the wiring.

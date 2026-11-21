@@ -2009,7 +2009,9 @@ impl App {
                             liquids.active_len(),
                             rain.visual_alpha(),
                             rain.drop_count(),
-                            rain.snow_count(),
+                            // W4-g11: the flakes are the shared pool's live
+                            // type-76 population (`Main.snowing`'s spawns).
+                            crate::minecart::live_type(dust, 76),
                         );
                     }
 
