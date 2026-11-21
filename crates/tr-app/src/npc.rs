@@ -33873,7 +33873,7 @@ mod s1_f_13d_tests {
     }
 }
 
-/// W4-c7 SEAL (research/283 §3/§6) — the d37 E8 roster receipts, pinned
+/// W4-c7 SEAL (research/350 §3/§6) — the d37 E8 roster receipts, pinned
 /// against the CURRENT tip. The E8 renumber (Firefly 355→735,
 /// LightningBug 358→736) is MERGE-TIME work (the 108 merge order); this
 /// witness pins the as-pushed state + the seams that must NOT move
@@ -33883,7 +33883,7 @@ mod s1_f_13d_tests {
 mod w4_c7_seal_roster_tests {
     use super::*;
 
-    /// research/283 §3 — the c7 four keep their vanilla protocol ids at
+    /// research/350 §3 — the c7 four keep their vanilla protocol ids at
     /// this tip (the E8 table's "old" column); the cs_id hand rows ride
     /// the same values; the Shimmerfly 677 is CANONICAL-c7 (c9's
     /// duplicate drops at merge — E8 c9 table), so `from_u16(677)`

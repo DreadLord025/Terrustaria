@@ -1,4 +1,4 @@
-# 283 — W4-c7 SEAL: the critter-family FINAL census + bible (registry-number adjudicated)
+# 350 — W4-c7 SEAL: the critter-family FINAL census + bible (registry-number adjudicated)
 
 Branch `task/W4-c7-style65-critters` (stacked on `task/W4-c7-style64-fireflies`
 tip `c2cc6ec61`, base `a725acb04` wave-3 complete). Seal date 2026-11-21,
@@ -8,7 +8,16 @@ c7 lane's FINAL artifact — the style-65 extension was CENSUSED, not
 re-ported (the canonical machine is d30's, §1); the seal lands the
 cross-lane receipts + three witness pins + the family bible.
 
-## 0. Registry-number adjudication (research/150 rules)
+**Number chain: 283 → 350.** The seal's §0 tips-only sweep self-picked 283
+AFTER the §8 publication (`0a658c7b3`, 16:4x) — registry-150's LATEST
+(`origin/task/W4-d54-dust-sites-world` `a15cb634b`) §8.7 FROZEN table rules
+every post-§8 self-pick contested: c7's 283 row (add `09978b3bd` ~16:5x)
+is assigned **350**; 283 itself stays f26's reservation (§8.7 note: "283:
+f26-reservation KEEPS; g59→321 (§8.2); c7→350 (§8.7)"). This rename
+executes that assignment — NO new self-pick. The §0 sweep below is kept
+as the historical record of the contested 283 pick.
+
+## 0. Registry-number adjudication (research/150 rules) — HISTORICAL (283 pick, superseded by §8.7 → 350)
 
 Registry: `150-research-number-registry.md` lives on
 `origin/task/W4-d54-dust-sites-world` (tip blob `cf077631f`), §6 refresh:
@@ -28,11 +37,12 @@ TRIPLE-claimed, 282 DOUBLE-claimed**:
 | 282 | d125 `282-d125-retire-final.md` | `5a26ae348` 15:44:38 | **WINS 282** |
 | 282 | g48 `282-39-item-ownership-seed.md` | `9c776ca2f` 15:50:24 | loses → owes ≥283 rename |
 
-**283 is the first number no tip claims** (the sweep's max used key is
-282). This doc takes **283**. The d125/g48 losers must self-adjudicate
-per registry §6.3's cutoff note (first-add wins; losers take the next
-free ≥283 after a fresh sweep — 283 is taken by THIS doc's push, so they
-take 284+). No other lane's file is touched.
+The sweep's max used key was 282, so the seal self-picked **283** as
+"first free" — **CONTESTED and SUPERSEDED**: the tips-only sweep missed
+§8's reservations (283 is f26's) and the §8.7 FROZEN table assigns this
+doc **350** (see the chain banner above). The d125/g48 281/282 losers
+were likewise renumbered by the registry's later rounds (§8/§8.1), not
+by this seal's ≥283 note. No other lane's file is touched.
 
 ## 1. Git-log census — what landed on the c7 lane + the style-65 field
 
@@ -286,7 +296,7 @@ the witnesses pin the c7-side facts that hold TODAY).
 
 ## 7. Cross-refs
 
-- ANALYSIS "The critter-family SEAL (W4-c7, research/283)" (the
+- ANALYSIS "The critter-family SEAL (W4-c7, research/350)" (the
   deviation-free receipt paragraph).
 - PORT_MAP: the aiStyle-64 row's seal tail + the new aiStyle-65
   census row (the d30-canonical keep-one).

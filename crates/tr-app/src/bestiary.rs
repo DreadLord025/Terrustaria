@@ -2508,7 +2508,7 @@ mod tests {
     }
 }
 
-/// W4-c7 SEAL (research/283) — the critter-family cross-lane receipts,
+/// W4-c7 SEAL (research/350) — the critter-family cross-lane receipts,
 /// pinned against the CURRENT tip's tables. The c8 generic gate +
 /// GOLD_PEER_TABLE land with c8's merge; these witnesses pin the c7-side
 /// facts that hold TODAY (the auto-cover inputs + the gold absence).
@@ -2529,7 +2529,7 @@ mod w4_c7_seal_tests {
             && kind.cs_id() != 686
     }
 
-    /// research/283 §2 — the four c7 kinds auto-cover the sight provider
+    /// research/350 §2 — the four c7 kinds auto-cover the sight provider
     /// with ZERO provider wiring: hp 5 (`npc/data.rs:3666`) / dmg 0
     /// (`:4034`) / cs_id ∉ {594, 686}. The 549 DD2LanePortal passes the
     /// RAW gate (hp 5 `:3470`, dmg 0 `:3835`) but is Hide
@@ -2559,13 +2559,13 @@ mod w4_c7_seal_tests {
         assert_eq!(NpcKind::DD2LanePortal.cs_id(), 549);
     }
 
-    /// research/283 §4 — c7's gold kinds: NONE. The 14-member
+    /// research/350 §4 — c7's gold kinds: NONE. The 14-member
     /// `NPCID.Sets.GoldCrittersCollection` (`NPCID.cs:10121-10125`,
     /// verbatim) contains no firefly id; the 13-row provider dictionary
     /// (`BestiaryDatabaseNPCsPopulator.cs:703-716`, verbatim pairs) has
     /// no firefly key — 356 appears ONLY as the 444 GoldButterfly's
     /// peer (the row activates when the f18/d39 keep-one lands the
-    /// canonical Butterfly, research/283 §3).
+    /// canonical Butterfly, research/350 §3).
     #[test]
     fn w4_c7_seal_the_gold_table_has_no_firefly_row() {
         const GOLD_COLLECTION: [u16; 14] = [

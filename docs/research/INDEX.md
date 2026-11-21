@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base - no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 283 | W4-c7 SEAL: the critter-family FINAL census + bible (registry-number adjudicated — 281/282 taken by d30/d125/g48 pushes, 283 first free; the style-65 keep-one receipts, the SIGHT-gate auto-cover, the d37 E8 roster receipts, the gold peer table; code-only) | `283-c7-critter-family-final.md` | ✅ SEALED |
+| 350 | W4-c7 SEAL: the critter-family FINAL census + bible (registry-number adjudicated — chain 283→350 per registry-150 §8.7 FROZEN table, the post-§8 283 self-pick contested, 283=f26-reservation; the style-65 keep-one receipts, the SIGHT-gate auto-cover, the d37 E8 roster receipts, the gold peer table; code-only) | `350-c7-critter-family-final.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

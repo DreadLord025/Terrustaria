@@ -39273,15 +39273,18 @@ cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
 
-## The critter-family SEAL (W4-c7, research/283, 2026-11-21, code-only mode)
+## The critter-family SEAL (W4-c7, research/350, 2026-11-21, code-only mode)
 
 The c7 lane's FINAL artifact (`task/W4-c7-style65-critters`, stacked on
-the pushed style-64 tip `c2cc6ec61`): **research/283** — the
+the pushed style-64 tip `c2cc6ec61`): **research/350** — the
 critter-family census + bible, registry-number adjudicated per
 research/150 (the fresh 360-tip sweep caught 281 TRIPLE-claimed
 (d30 `ec89521fb` 15:42:58 wins / d125 `5a26ae348` / g48 `9c776ca2f`)
-and 282 DOUBLE-claimed (d125 wins / g48); **283 is the first free
-number**, taken by this seal). NO style-65 code was ported on this
+and 282 DOUBLE-claimed (d125 wins / g48); the seal self-picked 283
+"first free" — a post-§8 tips-only pick, CONTESTED: registry-150 §8.7's
+FROZEN table (`a15cb634b`) assigns c7 **350**, 283 stays f26's
+reservation; **number chain 283 → 350**, executed as the assignment).
+NO style-65 code was ported on this
 lane — the census found the machine already five-way copied across the
 wave; d30's research/281 §3 keep-one (the whole-arm
 `ai_065_butterflies` CANONICAL, the f18/d39 356-only `ai_065_step`
@@ -39307,5 +39310,5 @@ Butterfly keep-one). Three witnesses WRITTEN NOT RUN
 (`bestiary.rs::w4_c7_seal_tests` ×2, `npc.rs::w4_c7_seal_roster_tests`
 ×1) + three anchors canary rows. **No deliberate deviations** — the
 seal is receipts-only; the merge-time work (E8 renumbers, keep-one
-drops, sheet-grid gap closes) is itemized in research/283 §5's bible
+drops, sheet-grid gap closes) is itemized in research/350 §5's bible
 paragraph. No cargo/tests/rustfmt/graphify invoked.
