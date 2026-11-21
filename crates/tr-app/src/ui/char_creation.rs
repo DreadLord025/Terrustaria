@@ -1541,8 +1541,84 @@ pub fn click_cue(click: Click) -> Option<u32> {
         // plays 12 after the difficulty write — the row is a button of its
         // own, not a `Click_*` handler.
         Click::Difficulty(_) => 12,
+        // `UIHairStyleButton.LeftMouseDown` (`UIHairStyleButton.cs:82`)
+        // plays 12 after the hair write.
+        Click::Hair(_) => 12,
         _ => return None,
     })
+}
+
+/// The hover-sounding element under the pointer — the census of the four
+/// DrawSelf-latched buttons (`UIDifficultyButton.cs:49-60`,
+/// `UIHairStyleButton.cs:43-54`, `UIClothStyleButton.cs:67-78` — each plays
+/// 12 once on the hover edge, re-arming on exit) plus the two
+/// `FadedMouseOver` panels (Back/Create, `:1226` — sound on every
+/// `MouseOver` event, which the framework fires on the enter edge only,
+/// `UIElement.cs:510-520`) and the ten `UIColoredImageButton.MouseOver`
+/// category buttons (`UIColoredImageButton.cs:95`). The ids are stable per
+/// element so the App's edge latch (`front_hover_hit`) fires once per
+/// enter; `None` over anything silent (the plates' name button latches too
+/// — `UICharacterNameButton.cs:69` — id 100).
+pub fn hover_element(l: &Layout, category: usize, mouse: Vec2) -> Option<u32> {
+    for id in CATEGORY_IDS {
+        if in_rect(mouse, l.categories[id]) {
+            return Some(id as u32); // `UIColoredImageButton.cs:95`
+        }
+    }
+    if in_rect(mouse, l.back) {
+        return Some(10); // `FadedMouseOver` (`:1226`)
+    }
+    if in_rect(mouse, l.create) {
+        return Some(11); // `FadedMouseOver` (`:1226`)
+    }
+    match middle_for(category) {
+        MiddleMenu::Info => {
+            if in_rect(mouse, l.info_name) {
+                return Some(100); // `UICharacterNameButton.cs:69`
+            }
+            for (k, _) in DIFFICULTY_IDS.iter().enumerate() {
+                if in_rect(mouse, l.difficulty_buttons[k]) {
+                    return Some(12 + k as u32); // `UIDifficultyButton.cs:53`
+                }
+            }
+        }
+        MiddleMenu::Hairstyles => {
+            // The list clips (`GetClippingRectangle`, `:254`): a button
+            // outside the view never draws, so its DrawSelf latch never
+            // fires — the hit-test clips the same way.
+            let view = uistate::inner(l.hair_list, HAIR_LIST_PADDING);
+            if in_rect(mouse, view) {
+                for (i, _) in HAIRSTYLES.iter().enumerate() {
+                    if in_rect(mouse, hair_button(l.hair_grid, i)) {
+                        return Some(20 + i as u32); // `UIHairStyleButton.cs:47`
+                    }
+                }
+            }
+        }
+        MiddleMenu::ClothStyles => {
+            for (i, _) in VALID_CLOTH_STYLES.iter().enumerate() {
+                if in_rect(mouse, l.cloth_buttons[i]) {
+                    return Some(300 + i as u32); // `UIClothStyleButton.cs:71`
+                }
+            }
+            // The template Copy/Paste/Randomize trio are
+            // `UIColoredImageButton`s too (`:406-430`).
+            for (k, _) in l.template_buttons.iter().enumerate() {
+                if in_rect(mouse, l.template_buttons[k]) {
+                    return Some(320 + k as u32); // `UIColoredImageButton.cs:95`
+                }
+            }
+        }
+        MiddleMenu::Hsl { .. } => {
+            // The hex Copy/Paste/Randomize trio (`:1006-1031`).
+            for (k, _) in l.hsl_buttons.iter().enumerate() {
+                if in_rect(mouse, l.hsl_buttons[k]) {
+                    return Some(330 + k as u32); // `UIColoredImageButton.cs:95`
+                }
+            }
+        }
+    }
+    None
 }
 
 /// The click table over the live geometry: the categories bar (always), the
@@ -2752,8 +2828,35 @@ mod tests {
         for d in DIFFICULTY_IDS {
             assert_eq!(click_cue(Click::Difficulty(d)), Some(12), "difficulty {d}");
         }
+        // The hair buttons (`UIHairStyleButton.cs:82`).
+        assert_eq!(click_cue(Click::Hair(0)), Some(12));
+        assert_eq!(click_cue(Click::Hair(51)), Some(12));
         // A dead click is silent.
         assert_eq!(click_cue(Click::None), None);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the hover census: every sounding element
+    /// answers a stable id, silent space answers `None`, and the hair grid
+    /// clips to the list view (`UIHairStyleButton.DrawSelf` only runs for
+    /// drawn buttons).
+    #[test]
+    fn doc_sweep_hover_elements_answer_stable_ids() {
+        let l = layout(SCREEN, 40.0);
+        let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
+        assert_eq!(hover_element(&l, 0, centre(l.categories[3])), Some(3));
+        assert_eq!(hover_element(&l, 0, centre(l.back)), Some(10));
+        assert_eq!(hover_element(&l, 0, centre(l.create)), Some(11));
+        assert_eq!(hover_element(&l, 0, centre(l.info_name)), Some(100));
+        assert_eq!(hover_element(&l, 0, centre(l.difficulty_buttons[1])), Some(13));
+        assert_eq!(hover_element(&l, 2, centre(hair_button(l.hair_grid, 0))), Some(20));
+        assert_eq!(hover_element(&l, 1, centre(l.cloth_buttons[0])), Some(300));
+        assert_eq!(hover_element(&l, 1, centre(l.template_buttons[2])), Some(322));
+        assert_eq!(hover_element(&l, 3, centre(l.hsl_buttons[0])), Some(330));
+        // A far-outside-the-view hair cell is clipped (row 20 sits ~961 px
+        // down the unscrolled grid, the view is 119 tall).
+        assert_eq!(hover_element(&l, 2, centre(hair_button(l.hair_grid, 200))), None);
+        // The preview and the panel border are silent.
+        assert_eq!(hover_element(&l, 0, centre(l.preview)), None);
     }
 
     #[test]

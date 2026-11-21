@@ -1211,9 +1211,9 @@ impl App {
     /// The element id under the pointer on the live front screen — the
     /// framework's `GetElementAt` (`UIElement.cs:324-352`), fed to the pointer
     /// machine so its `LastClicked` compares elements and a card's double-click
-    /// is recognised (`UICharacterListItem.cs:68-69`). `None` on the screens
-    /// without element ids (the creation screens and the keyboard) and when no
-    /// front screen is live.
+    /// is recognised (`UICharacterListItem.cs:68-69`). Also feeds the Bug-17
+    /// hover edge on the creation screen (W4-g22 DOC-SWEEP). `None` on the
+    /// keyboard and when no front screen is live.
     pub(crate) fn front_hit(&self) -> Option<u32> {
         let front = self.front.as_ref()?;
         let (sw, sh) = self.screen_size();
@@ -1232,6 +1232,17 @@ impl App {
                 let l = self.select_layout(screen, &header, self.worlds.len());
                 let favorites: Vec<bool> = self.worlds.iter().map(|w| w.is_favorite).collect();
                 ui::world_select::hit_element(&l, &favorites, self.mouse_pos)
+            }
+            // W4-g22 DOC-SWEEP — the creator's hover-sounding elements
+            // (`hover_element`'s census: the DrawSelf-latched buttons +
+            // the FadedMouseOver panels + the UIColoredImageButtons). The
+            // +1000 base keeps the ids off the select screens' `select_hit`
+            // range so a screen switch never reads a stale latch as the
+            // same element. The loop's Bug-17 edge plays the 12.
+            FrontScreen::CharCreation(state) => {
+                let l = ui::char_creation::layout(screen, 0.0);
+                ui::char_creation::hover_element(&l, state.category, self.mouse_pos)
+                    .map(|id| id + 1000)
             }
             _ => None,
         }
@@ -1665,6 +1676,48 @@ pub(crate) mod front_flow_tests {
         let before = app.audio.played_count();
         front_press(&mut app);
         assert_eq!(app.audio.played_count(), before + 1, "one 12 on randomize");
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — the creator's hover edge plays one
+    /// Menu_Tick per enter through the loop's Bug-17 latch (`front_hit` now
+    /// answers the creator's sounding elements), staying inside is silent,
+    /// and re-entering after an exit plays again (the DrawSelf
+    /// `_soundedHover` reset, `UIHairStyleButton.cs:51-53`).
+    #[test]
+    fn doc_sweep_creator_hover_edge_ticks_once_per_enter() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The loop's cursor-moved path (`app/loop.rs`'s Bug-17 block).
+        let hover = |app: &mut App| {
+            let hit = app.front_hit();
+            if hit != app.front_hover_hit {
+                if hit.is_some() {
+                    app.audio.play("Menu_Tick");
+                }
+                app.front_hover_hit = hit;
+            }
+        };
+        app.mouse_pos = centre(l.categories[2]);
+        let before = app.audio.played_count();
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one tick on enter");
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "no repeat inside");
+        // Exit to the preview (silent), then re-enter: the latch re-arms.
+        app.mouse_pos = centre(l.preview);
+        hover(&mut app);
+        app.mouse_pos = centre(l.categories[2]);
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 2, "re-enter ticks again");
+        // Moving to a DIFFERENT sounding element is a fresh enter.
+        app.mouse_pos = centre(l.back);
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 3, "a new element ticks");
     }
 
     #[test]
