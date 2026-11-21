@@ -1662,10 +1662,8 @@ impl SceneState {
 
     /// `MoonlordDeathDrama.ThrowPieces` (`MoonlordDeathDrama.cs:227-238`): the
     /// four flung body parts, seeded by `DramaSeed` from its own stream.
-    ///
-    /// No caller yet — the Moon Lord's death path is unported (`NPC.cs:82681`
-    /// is the only call site).
-    #[allow(dead_code)]
+    /// W4-d70 DOC-SWEEP: the Moon Lord core's death (`NPC.cs:82681`'s
+    /// `HitEffect(0, 1337)` arm) calls it through the sim's death pass.
     pub fn throw_pieces(&mut self, core_center: [f32; 2], drama_seed: i32) {
         let mut r = crate::UnifiedRandom::new(drama_seed);
         // `Vector2.UnitY.RotatedBy(a)` = `(-sin a, cos a)`.
@@ -1697,8 +1695,8 @@ impl SceneState {
 
     /// `MoonlordDeathDrama.AddExplosion` (`MoonlordDeathDrama.cs:240-243`): one
     /// 7-frame blast at `spot`, the frame speed from the shared `Main.rand`
-    /// stream. No caller yet (the Moon Lord's death path is unported).
-    #[allow(dead_code)]
+    /// stream. W4-d70 DOC-SWEEP: the crash drama's dust-storm spots
+    /// (`NPC.cs:41364`) call it through the sim's request drain.
     pub fn add_explosion(&mut self, spot: [f32; 2], rand: &mut crate::UnifiedRandom) {
         let frame_speed = rand.next_range(2, 4);
         self.moonlord_explosions.push(MoonlordExplosion {
@@ -1709,8 +1707,9 @@ impl SceneState {
     }
 
     /// `MoonlordDeathDrama.RequestLight` (`:245-256`): register a light spot and
-    /// raise this frame's whitening request (clamped to 1).
-    #[allow(dead_code)]
+    /// raise this frame's whitening request (clamped to 1). W4-d70 DOC-SWEEP:
+    /// the core's phase ramps + the DD2 crystal's win/loss scenes call it
+    /// through the sim's request drain.
     pub fn request_light(&mut self, light: f32, spot: [f32; 2]) {
         self.moonlord_light_sources.push(spot);
         let light = light.min(1.0);
