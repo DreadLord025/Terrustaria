@@ -491,7 +491,9 @@ fn growth_solid_kind(kind: u16) -> bool {
 /// `WorldGen.GrowMoreVines` (`:45586-45621`): the vine-density cap around
 /// `(x, y)` — the ±4/±6/±10 box's vine count, the LOS-weighted accumulation
 /// below the source and the 60 budget (÷5 on the mushroom vine 528).
-fn grow_more_vines(world: &World, x: i32, y: i32) -> bool {
+/// W4-g83d vine-retire keep-one: `pub(crate)` for `vine_growth`'s delegate
+/// (its former self-contained re-port retired — contract §10.3).
+pub(crate) fn grow_more_vines(world: &World, x: i32, y: i32) -> bool {
     if x < 30 || y < 30 || x >= world.width - 30 || y >= world.height - 30 {
         return false;
     }

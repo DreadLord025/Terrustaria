@@ -26256,6 +26256,32 @@ Wire-phase-2 verification: code-only; 7 new witnesses written not run
 seam-5 UpdateWorldGen-position twin] + 1 framing.rs down-merge + 1 vines.rs
 full-IsVisible); census 74 file-total (g83 share 52), contract §9.2.
 
+### Retire phase — SEALED (g83d vine-retire, 2026-11-21)
+
+The lane is COMPLETE for its scope; research/123 §10 is the seal: every
+sibling tip re-probed (g42 ADVANCED to `910cc9747` — the GROWTH SEAL +
+FINAL rewrote both growth dispatchers g83 wires into; the §10.2 merge
+script re-binds g83's three insertions onto g42's shape: the vine tail
+between `grass_pass` and the wall arms, the thorn else-if after the
+vine-family arm, the dead-69 deletion a same-deletion union; g31 ADVANCED
+to `9d1e331db` — the `is_visible` keep-one EXECUTED as the promoted
+`tr_render::tile_visibility`, hunk B re-pinned at the retire tip, §10.4;
+d106/g48 advanced with NEW 3-arg `kill_tile` sites — the §10.5 rng-rebind
+census names each site's stream; d102/d109/d110/d56-d60 UNCHANGED). The
+on-branch duplicate RETIRED (§10.3): `vine_growth.rs`'s self-contained
+`grow_more_vines` re-port + its private `IS_VINE`/`in_world`/`can_hit_line`
+helpers dropped onto `growth.rs::grow_more_vines` (lifted `pub(crate)`,
+the same `:45586-45621` port line-for-line; the thin delegate keeps the
+9 density/grow witnesses unchanged). The vine-family merger bible
+(§10.6) + the merger-acceptance checklist (§10.7: the gate command, the
+74-witness name-set census, the stream pins, the 6 anchors rows, the
+keep-one symbol list) are published. The rope family stays out (g82's
+seal `6e5f6b748` pins the pulley gate `is_rope`+`tileRope`, the §7
+disjoint-set witness). World-hash pins unchanged on g83's side; the
+standing deviations stand (the `frame_world` cosmetic-only check-skip,
+LitNature/biomeSight, the MP sends). Code-only; no compiler invoked; the
+deferred gate stays the merge pass's command.
+
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_accessory.rs` ports the `Player.UpdateBuffs`

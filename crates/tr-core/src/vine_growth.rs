@@ -46,98 +46,31 @@
 //! carried. The port-only `frame_important[vine]` write is dropped at wiring
 //! (contract §2 — C# never marks the 8 vine kinds frame-important).
 
-use crate::tiledata as td;
 use crate::unified_random::UnifiedRandom;
 use crate::world::World;
 
-/// `TileID.Sets.IsVine` (`TileID.cs:531`):
-/// `CreateBoolSet(52, 382, 62, 115, 205, 528, 636, 638)`.
-const IS_VINE: [u16; 8] = [52, 382, 62, 115, 205, 528, 636, 638];
-
-/// `WorldGen.InWorld(x, y, fluff)` (the `int` overload).
-#[inline]
-fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
-    x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
-}
-
-/// `Collision.CanHitLine`'s tile-solid LOS walk — the port's `growth.rs`
-/// `can_hit_line` (`:451-483`) verbatim: a Bresenham line between the two
-/// 1×1 px boxes, blocked by any active solid (non-solidTop) cell.
-fn can_hit_line(world: &World, x1: i32, y1: i32, x2: i32, y2: i32) -> bool {
-    let steep = (y2 - y1).abs() > (x2 - x1).abs();
-    let (mut ax, mut ay, mut bx, mut by) = (x1, y1, x2, y2);
-    if steep {
-        std::mem::swap(&mut ax, &mut ay);
-        std::mem::swap(&mut bx, &mut by);
-    }
-    let dx = (bx - ax).abs();
-    let dy = (by - ay).abs();
-    let sx = if ax < bx { 1 } else { -1 };
-    let sy = if ay < by { 1 } else { -1 };
-    let mut err = dx / 2;
-    let mut i = ax;
-    loop {
-        let (px, py) = if steep { (ay, i) } else { (i, ay) };
-        if world.tile(px, py).is_some_and(|t| {
-            t.active()
-                && (t.kind as usize) < td::TILE_COUNT
-                && td::TILE_SOLID.has(t.kind)
-                && !td::TILE_SOLID_TOP.has(t.kind)
-        }) {
-            return false;
-        }
-        if i == bx {
-            break;
-        }
-        err -= dy;
-        if err < 0 {
-            ay += sy;
-            err += dx;
-        }
-        i += sx;
-    }
-    true
-}
+// W4-g83d vine-retire: the module's former `IS_VINE` const + `in_world` +
+// `can_hit_line` helpers RETIRED with the `grow_more_vines` re-port — their
+// only consumer was the density copy, now the thin delegate below. The
+// canonical copies live in `growth.rs` (`IS_VINE` :446 / `can_hit_line`
+// :451 / `growth_solid_kind` :485), one owner per mechanic (contract §10.3).
 
 /// `WorldGen.GrowMoreVines` (`WorldGen.cs:45586-45621`): the vine-density cap
 /// around `(x, y)` — the ±4/±6/+10 box's active-vine count, the LOS-weighted
 /// accumulation below the source (`(j-y)*2`, or `*20` for the mushroom vine
-/// 528) and the 60 budget (÷5 → 12 when the SOURCE is 528). The port's
-/// `growth.rs:494` carries the same; re-ported here so the module is
-/// self-contained off the contested `growth.rs`.
+/// 528) and the 60 budget (÷5 → 12 when the SOURCE is 528).
+///
+/// W4-g83d vine-retire keep-one: the former self-contained re-port (this
+/// module's private copy + its `IS_VINE`/`in_world`/`can_hit_line` helpers)
+/// RETIRED — `growth.rs::grow_more_vines` is the canonical copy (the same
+/// C# window, the same `growth_solid_kind` solid/non-solidTop LOS gate,
+/// byte-equivalent behaviour; the two were line-for-line the same port).
+/// The contested-`growth.rs` rationale died with the wire phase 2 (§3 —
+/// d102/d106/g42 touch only the re-export block); the 2 density witnesses
+/// below run against the canonical fn unchanged (contract §10.3).
+#[inline]
 fn grow_more_vines(world: &World, x: i32, y: i32) -> bool {
-    // `if (!InWorld(x, y, 30)) return false;` (`:45588-45591`).
-    if !in_world(world, x, y, 30) {
-        return false;
-    }
-    let (lo_x, lo_y, hi_y) = (4, 6, 10);
-    let mut budget = 60;
-    if world.tile(x, y).is_some_and(|t| t.kind == 528) {
-        budget /= 5;
-    }
-    let mut count = 0;
-    for i in (x - lo_x)..=(x + lo_x) {
-        for j in (y - lo_y)..=(y + hi_y) {
-            if world
-                .tile(i, j)
-                .is_some_and(|t| t.active() && IS_VINE.contains(&t.kind))
-            {
-                count += 1;
-                if j > y && can_hit_line(world, x, y, i, j) {
-                    let weight = if world.tile(i, j).is_some_and(|t| t.kind == 528) {
-                        20
-                    } else {
-                        2
-                    };
-                    count += (j - y) * weight;
-                }
-                if count > budget {
-                    return false;
-                }
-            }
-        }
-    }
-    true
+    crate::growth::grow_more_vines(world, x, y)
 }
 
 /// `WorldGen.TooManyJungleVinesNearby` (`WorldGen.cs:73189-73212`): the ±9×±5

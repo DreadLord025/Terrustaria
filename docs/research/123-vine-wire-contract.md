@@ -1,5 +1,12 @@
 # 123 — the vine wire contract (W4-g83 wiring phase)
 
+**STATUS: SEALED (g83d vine-retire, §10).** The four residual groups are
+ported + wired, the keep-ones executed, the sibling tips re-verified and
+the hunk scripts re-pinned at the CURRENT tips (§10.1/§10.4), the
+on-branch duplicate retired (§10.3), the vine-family merger bible
+published (§10.6). Re-probe citations only from here — never re-open
+scope.
+
 **Scope:** the per-function attach seams for W4-g83's four residual groups
 (rising-vine draw pass, vine lifecycle checks, grow-tops/jungle-thorn, thorn
 down-merge), written on `task/W4-g83-vine-draw-residuals` after the four
@@ -519,3 +526,244 @@ unchanged: the worldgen callers' new
 re-roll (none exists in the pinned passes' framing rings — the temple
 furniture/altar, the FTW plant kills and the no-traps spikes frame no 549),
 and the xorshift pass streams are untouched.
+
+---
+
+## 10. RETIRE phase — EXECUTED (g83d vine-retire, this branch)
+
+**STATUS: SEALED.** The lane is COMPLETE for its scope (the four residual
+groups ported + wired, the census pins landed, the keep-ones executed);
+this phase freezes the contract (re-probe citations only, never re-open
+scope), re-verifies every sibling tip, re-pins the hunk scripts at the
+CURRENT tips, executes the on-branch duplicate retirement, and publishes
+the vine-family merger bible (§10.6). No cargo/rustc/tests/graphify
+invoked; witnesses WRITTEN NOT RUN.
+
+### 10.1 Latest-tip re-verify (the contract's sibling table, re-probed)
+
+| Lane | Contract-read tip | RETIRE tip | Delta verdict |
+|---|---|---|---|
+| g31 union | `c3027a38` | `9d1e331db` (3 retire commits) | the RETIRE-phase receipts landed (research/136 §8.1/§8.2 + UNION-CONTRACT §10): the `is_visible` keep-one is now EXECUTED as `tr-render/src/tile_visibility.rs` (d60's shape promoted, primitive params), g31's `tile_drains::is_visible` :185-195 is a thin wrapper over it — §9.1 hunk-B item 3 RE-PINNED (§10.4); `rising_vine_strip` :553-624 / struct :528-544 / `drain_reverse_vines` :628-639 / the 2 strip witnesses :1891/:1913 unchanged in shape |
+| d102 | `29e8859b` | `29e8859bd` | UNCHANGED — the `growth.rs` re-export +1 only |
+| d106 | `e2c2609c` | `4612ffc57` (+R6 Final Cleanup) | `growth.rs` still ONLY the re-export +4 (`kill_invalid_tree_above`); the new worldgen passes' `kill_tile` calls (cleanup.rs, 14 sites) ride the 3-arg pre-wire signature — the §2 threading rebind applies at merge (§10.5); the pass pins move BY DESIGN (d106's own re-pin deferral), g83's worldgen stand-ins stay draw-free on them (no 549 in the cleanup framing rings) |
+| g42 | `d4836bbd` | `910cc9747` (GROWTH SEAL + FINAL) | **ADVANCED — the dispatcher rewrite**: both `update_world_overground_tile`/`update_world_underground_tile` restructured (the nactive/actuated splits, the early-return removals, the overworld grass routing, the wall-arm relocations). g83's §3 seams MOVE (§10.2); g42's own comments claim the 69 arm + the vine grow-tops for g83 ("stays out of this dispatcher until g83 wires it") — the merge script below composes them. `edit/kill.rs` +49 (the 71-plant Mushroom drop arm + witness, `tree_drop_record` region — NOT the check loop); `growth/decorations.rs` ±2 (`CAT_TAIL_DISTANCE` pub lift only, `grow_check_seaweed` untouched); `framing.rs` EMPTY |
+| d109 | `81894095` | `81894095e` | UNCHANGED — `frame_world`/`frame_walls` variant-reuse gates, no `frame_of_variant` body edit |
+| d110 | `054e3dc2` | `054e3dc2a` | UNCHANGED — fn-HEAD self_frame_8way + wall-arm rework, disjoint from the :880 thorn insertion |
+| g48 | `9e037b7c` | `2b61530b4` (correction phase) | `framing.rs` still ONLY the appended `section_tile_frame` (+75, after `reframe_area`); NEW `edit/replace.rs` + `edit/shift.rs` modules carry 3-arg `kill_tile` calls (replace.rs :220/:230, shift.rs :219) — the §2 threading rebind applies (§10.5); `section_tile_frame` reads `frame_rng` for the variant rolls and runs NO checks — the §2.3 note stands (the net Reframe SHOULD run the check arms; the g48 merger picks it up with the threaded rng) |
+| d58/d59 | `a13635dc`/`f70498be` | `a13635dcb`/`f70498be0` | UNCHANGED — the WIRED `tiles.rs` hunk zones as censused |
+| d56/d57/d60 | `5d80b38a`/`70f43aa7`/`77429fe1` | `5d80b38a0`/`70f43aa72`/`77429fe1d` | UNCHANGED — empty `tiles.rs`/`vines.rs` diffs; d60's `is_visible` :442 drops onto the promoted tr-render copy at the family merge (g31 UNION-CONTRACT §1.4 correction, EXECUTED) |
+| g82 (rope seal, cross-family) | — | `6e5f6b748` | the ROPE-FAMILY bible pins **g83 vines OUT** (the pulley gate is `is_rope`+`tileRope`, never `IsVine`) — consistent with §7's census witness |
+
+### 10.2 The g42 dispatcher-merge script (the §3 seams at `910cc9747`)
+
+g42's rewrite does NOT delete g83's arms — it re-homes the surrounding
+structure. The merged `growth.rs` takes g42's dispatcher SHAPE with g83's
+three insertions re-bound:
+
+1. **Overground:** g42's `update_world_overground_tile` ends with the
+   `grass_pass` block (the overworld routing match) + the thorn-32/352
+   arms, then the wall arms (`spread_grass_walls`/`spread_desert_walls`,
+   `:72499-72503`) at the fn tail. g83's `grow_overground_vines(world, x,
+   y, rng)` call inserts BETWEEN them — AFTER the `grass_pass` block,
+   BEFORE the wall arms (the C# order: grass/moss `:72355-72497` → wall
+   spread `:72499-72503` → the `if(nactive)` vine chain `:72504`). NOTE
+   this REVERSES the pre-wire contract's "wall-spread goes BEFORE the
+   vine call" note only in the sense that g42 now OWNS the wall arms'
+   position — the vine call still sits after them in the merged fn, and
+   g83's §3.2(a) early-return rationale is SUPERSEDED: g42 removed the
+   alch/sapling/cactus/moss `return`s (the C# arms fall through), so the
+   vine tail now runs for those kinds too — faithful, since none of them
+   is a vine-chain source and the C# walks them to `:72504` as well. The
+   actuated/inactive paths return BEFORE the tail (g42's `nactive` gates,
+   `:72216`) — faithful (the C# vine chain is inside `if(nactive)`).
+2. **Underground:** g42 split the nactive body into
+   `underground_nactive_arms`; the vine families are now an `else if
+   matches!(kind, 60|62|633|638|70|528|661|636|662|205)` arm calling
+   `grow_vine_arm` (the grass kinds ride the grass arm above — the C#
+   else-if order). g83's `grow_underground_jungle_thorn(world, i, j, rng)`
+   call inserts as the NEXT else-if arm (`else if kind == 69 { ... }`,
+   the `:73658` position) — or a flat call right after the chain (69 is
+   disjoint from every earlier arm; g42's comment explicitly parks the
+   slot for g83). The sapling arms (`:73756-73780`, g42 D5) follow, then
+   the dispatcher's wall arms — the thorn arm draws no RNG, so the
+   stream position is unchanged either way; the else-if form is the
+   C#-shape preference.
+3. **The dead overground-69 arm:** g42 ALREADY deleted it (its diff
+   carries the same deletion with the g83 citation) — the merge is a
+   same-deletion trivial union; g83's branch deletion and g42's agree.
+4. **The `frame_important[vine]` drop:** g42's `grow_vine_arm` is the
+   pre-wire form (it never carried the flag write in its region — the
+   write was g83's seam-1 deletion inside the same fn); the merged fn
+   keeps g83's dropped-flag body + g42's kind-gated call site.
+5. **Witness rebinds:** g83's 3 growth.rs dispatcher witnesses
+   (`w4_g83_the_overground_dispatcher_grows_the_vine_tail`,
+   `w4_g83_the_vine_write_draws_the_update_worldgen_position`,
+   `w4_g83_the_jungle_thorn_rides_the_underground_dispatcher`) run
+   against the MERGED dispatchers unchanged in assertion — but the
+   stream-twin's hand-driven prefix gains g42's new draws ONLY when the
+   pick kind rides a g42 arm (a 52/69 pick rides neither the overworld
+   grass routing nor the sapling arms, so the pinned prefixes stay
+   exact; the dye-head `Next(3000)` position is unchanged). g42's own
+   margin-clamp witness (`w4_g42_final_the_overground_window_clamps_at_the_margin`)
+   drives a dirt-2 pick — the merged tail's plain-arm `Next(1)` draw
+   lands AFTER its twin comparison point only if the twin replays the
+   vine chain; the merger re-pins that twin's prefix with the
+   `grow_overground_vines` draws (the g83 seam-5 twin is the template).
+
+### 10.3 The on-branch duplicate retirement (EXECUTED, this phase)
+
+`vine_growth.rs`'s self-contained `grow_more_vines` re-port (+ its
+private `IS_VINE` const, `in_world`, `can_hit_line` — ~90 lines) RETIRED
+onto `growth.rs::grow_more_vines` (the canonical copy, lifted
+`pub(crate)`): the two were the same `:45586-45621` port line-for-line
+(the same ±4/±6/+10 box, the 528 ÷5 budget, the `(j-y)*2`/`*20` LOS
+weights, the same solid/non-solidTop Bresenham gate — `growth_solid_kind`
+== the retired copy's inline `TILE_SOLID && !TILE_SOLID_TOP` test). The
+contested-`growth.rs` rationale died with wire phase 2 (the sibling
+contest is re-exports only, §3.3/§10.1). `vine_growth::grow_more_vines`
+stays as the thin delegate (the 2 density witnesses + the 7 grow-arm
+witnesses run unchanged). The `thorn_down_merge_frame` fixture + the
+`vines.rs` strip bodies stay (their keep-ones already executed, §9/§9.1;
+the g31-side halves are hunk B, the union merge's job). NOT retired:
+`vine_checks.rs`'s `in_world`/`safe_kind` (different consumers, the
+50-border seaweed gate — not a `growth.rs` copy).
+
+### 10.4 Hunk-B re-pin at the g31 retire tip (`9d1e331db`)
+
+§9.1's hunk B stands with TWO line/shape corrections:
+
+* item 1: DELETE `rising_vine_strip` **:553-624** + the
+  `RisingVineSegment` struct **:528-544** (was :550-622/:525-547 at the
+  contract read); import g83's `vines::{rising_vine_strip_segments,
+  RisingVineSegment}` — the struct is field-identical (12 fields,
+  `seam_top` last; verified at both tips), g83's carries the docs.
+* item 2: `drain_reverse_vines` **:628-639** keeps its signature, the
+  body rebinds to `rising_vine_strip_segments(..., show_invisible)`.
+* item 3 CORRECTED: g31's `is_visible` **:185-195** is NO LONGER an
+  inline copy — it is the thin wrapper over the PROMOTED
+  `tr_render::tile_visibility::is_visible` (the keep-one EXECUTED on the
+  g31 branch, UNION-CONTRACT §1.4 correction / research/136 §4). At the
+  family merge g83's `vines.rs::is_visible` (:499-510, the inline
+  byte-shape copy) rebinds to the SAME promoted fn (the wrapper shape
+  g31's :185-195 already has — `world.tile` read + delegate with
+  `tile.kind, tile.frame_y, world.invisible_block(x, y), show_invisible`);
+  the behaviour is identical (the promoted fn's `if flag { return
+  show_invisible } true` == the inline `!flag || show_invisible`). The
+  `w4_g83_the_rising_visible_reads_the_full_is_visible` witness runs
+  unchanged.
+* item 4: the 2 strip witnesses **:1891/:1913** rebind to
+  `rising_vine_strip_segments` (same args + the trailing sight flag).
+* item 5: `drain_draw_data` == g83's inline `draw_data` + half-brick
+  probe — re-verified line-for-line at `9d1e331db` (the same
+  solid-above test, the same `draw_data(kind, x, y, fx, fy, 0,
+  solid_above)`, the same 8/0 half). No delta.
+
+### 10.5 The rng-threading rebind census (the 3-arg callers on sibling tips)
+
+The §2 seam-1 threading changed `kill_tile`/`square_tile_frame_*` to
+take `&mut UnifiedRandom`. Sibling tips carry NEW 3-arg call sites the
+merger must rebind (the stream each rides, per the C# context):
+
+| Tip | Site | Stream bind |
+|---|---|---|
+| g42 `910cc9747` | `growth/jungle.rs:109` + `:157` (the jungle-plant kill sweeps, `noItem:true`) | the growth tick's `UpdateWorldGen` rng (the callers are the overworld jungle arms) — thread the dispatcher's `rng` through `place_jungle_plant`'s signature |
+| g48 `2b61530b4` | `edit/replace.rs:220`/`:230` (the ReplaceTile neighbour kills) | the net apply's bare global stream (the `apply_edit` convention) — thread from `replace_tile_commit`'s caller |
+| g48 `2b61530b4` | `edit/shift.rs:219` (the tall-gate/trapdoor shift kills) | the wiring tick's `self.rand` (the `HitWireSingle` context) — thread from the shift callers |
+| d106 `4612ffc57` | `worldgen/cleanup.rs` (14 `kill_tile` sites, `noItem:true`) | a fresh `UnifiedRandom(world.seed)` genRand stand-in (the temple/finish_seeds convention) — the kills are generation-time; the stand-in draws ONLY on a seaweed tip re-roll (none in the cleanup rings), so d106's by-design pin moves stay g83-neutral |
+| g48 `2b61530b4` | `edit.rs:796`/`:977` (`validate_tile_square`/door kills — PRE-EXISTING sites, g83's branch already rebound its own copies) | the merge keeps g83's threaded form; g48's `pub(crate)` lift of `validate_tile_square` + the `solid_tile` pub lift compose (distinct lines) |
+
+### 10.6 VINE-FAMILY merger bible (one paragraph, the lane's whole truth)
+
+The vine family merges as: **g83 tip (`6dd967a2` + this seal) is the
+CANONICAL vine lane** — keep `render/vines.rs`'s rising-pass half whole
+(`draw_reverse_vines`/`rising_vine_strip_segments`/`collect_reverse_vine_root`
++ the `show_invisible`/full-IsVisible form), `tr-core::vine_checks` +
+`tr-core::vine_growth` whole (the `grow_more_vines` delegate onto
+`growth.rs`'s canonical copy, the `thorn_down_merge_frame` witness
+fixture), the `edit/kill.rs` check dispatch (case-549 before the tree
+arms + IsVine after cactus-80) + the WHOLE 41-file genRand threading
+(the caller's ACTIVE stream, never `frame_rng` — the kill.rs/growth.rs
+stream twins are the acceptance pins), the `framing.rs` 4-line thorn
+down-merge after the own-slope match, the dropped
+`frame_important[vine]` writes, and the interim fused-pass `tiles.rs`
+hunks (case-549 crawl + inline skip + the `draw_vines` tail) UNTIL the
+g31 union's `draw_layer` replaces them; **apply hunk B** (§10.4, the
+g31-side rebind at `9d1e331db`: drop `rising_vine_strip` + its struct,
+`drain_reverse_vines` rebinds, the 2 strip witnesses rebind, g83's
+`is_visible` rebinds onto the promoted `tr_render::tile_visibility`);
+**take g42's dispatcher SHAPE** (`910cc9747`: the nactive/actuated
+splits, the overworld grass routing, the wall-arm positions, the
+already-deleted dead-69 arm) with g83's three insertions re-bound per
+§10.2 (the vine tail between `grass_pass` and the wall arms, the thorn
+else-if after the vine-family arm) + the §10.5 rng rebinds (g42's 2
+jungle-kill sites, g48's 3 replace/shift sites, d106's 14 cleanup sites
+on the seed stand-in); **d109/d110/g48's framing hunks are disjoint**
+(fn-HEAD / frame_world-walls / appended section_tile_frame vs the :880
+insertion — the g48 merger adds the check arms to `section_tile_frame`
+per §2.3); **the rope family stays out** (g82's seal pins the pulley
+gate `is_rope`+`tileRope`, §7's disjoint-set witness; f3c's pulley
+movement composes without touching vines); the standing deviations
+stay recorded (the `frame_world` cosmetic-only check-skip, the LitNature
+shader + biomeSight dust, the MP sends, the lily-61/wall-spread/444-396
+parks); the world-hash pins stay UNCHANGED on g83's side (the worldgen
+stand-ins draw only on a seaweed tip re-roll — none in the pinned
+passes' rings; d106's own pin moves are ITS lane's by-design re-pins);
+after the merge run the deferred gate `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` — every lane witness was WRITTEN
+NOT RUN under the code-only constraint.
+
+### 10.7 Merger-acceptance checklist
+
+1. **Gate:** `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`
+   (judge by the `test result: ok` lines only — cargo may exit 1 on
+   success in this project).
+2. **The 74-witness census (PINNED BY NAME-SET, actual `#[test]` counts
+   at the retire tip):** `render/vines.rs` 21 (10 S1-G-1a + 11 g83:
+   the reverse-set/crawl/lone-root/calm-climb/negated-sway/no-remix/
+   40-window/gap-row10/echo-hide/full-IsVisible/bottom-centre),
+   `vine_checks.rs` 17 (15 + 2 census: the disjoint-sets + the
+   frame-important asymmetry), `vine_growth.rs` 16 (the box-count/clamp/
+   mushroom-budget/border-guard density pair + the plain/flower-wall/
+   same-family/mushroom/jungle/occupied-below grow arms + the thorn-69
+   fire + the lone/fold/four-pairs/non-thorn/sloped down-merge set),
+   `render/tiles.rs` 14 (12 + the 2 source-order: the crawl-rides-switch
+   + the rising-after-hanging), `edit/kill.rs` +2 (the dispatch
+   conversion/kill + the seaweed caller-stream twin), `growth.rs` +3
+   (the overground tail + the UpdateWorldGen-position twin + the
+   underground thorn/dead-arm pair), `framing.rs` +1 (the down-merge
+   fold-after-slope). Total **74** (g83 share **52**: 11+17+16+2+2+3+1).
+   The 2 tiles.rs source-order witnesses RETIRE with the fused pass at
+   the union bind (their assertions covered by g29's `post_draw_orders`
+   + g31's bucket witness) — the post-union census is 72.
+3. **Stream pins:** the kill.rs seaweed twin (the exact caller-stream
+   prefix, `frame_rng` seeded differently) + the growth.rs
+   UpdateWorldGen-position twin (equal `UnifiedRandom` state + equal
+   tiles) must pass on the MERGED dispatchers (§10.2 item 5's re-pin
+   note); the world-hash pins (`SEED42_512`/`DEFAULT_WORLD`) unchanged
+   by g83's wires (the fix/vines-destroy-walls re-pin is that lane's).
+4. **Anchors:** the 6 g83 rows (vines.rs `draw_reverse_vines` :899,
+   vine_checks.rs `check_vines` :900, vine_growth.rs
+   `grow_overground_vines` :901, tiles.rs `collect_reverse_vine_root`
+   :902, kill.rs `check_underwater_plant` :903, framing.rs
+   `let grass_below: u16 = match me` :904) survive the merge; the
+   tiles.rs row repoints to the g30 classify arm at the union bind.
+5. **Keep-one symbols:** `rising_vine_strip_segments` (g83, the g31
+   strip drops), `collect_reverse_vine_root` (g83, g30's inline crawl
+   drops), `is_visible` → `tr_render::tile_visibility` (the promoted
+   survivor; g83's inline copy + d60's standalone drop),
+   `grow_more_vines` (growth.rs canonical; the vine_growth delegate
+   stays), `thorn_down_merge_frame` (the witness fixture delegating to
+   `frame_of_variant`), `top_edge_can_be_attached_to` (torch.rs,
+   byte-identical blob `737d4cf4`).
+
+### 10.8 Retire-phase verification
+
+Code-only: every §10.1 tip re-probed via `git rev-parse`/`git diff`
+against the contract-read tips; the g42 dispatcher rewrite read in full
+(the 794-line `growth.rs` diff + the jungle.rs kill sites); the g31
+retire tip's `tile_drains.rs` struct/fn/witness spans + the promoted
+`tile_visibility.rs` read whole; the §10.3 retirement is a mechanical
+delegate (the two copies were the same port — the C# `:45586-45621`
+window re-read); the §10.5 sites grep-pinned at the named tips. No
+cargo/rustc/tests/graphify invoked. The deferred gate stays the merge
+pass's command (§10.7 item 1).
